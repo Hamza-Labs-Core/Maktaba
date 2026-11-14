@@ -55,6 +55,14 @@ import com.hamzalabs.maktaba.player.shell.PlayerShell
 import com.hamzalabs.maktaba.player.shell.Route
 import com.hamzalabs.maktaba.player.watch.FakeStreams
 import com.hamzalabs.maktaba.player.watch.LocalPlayerBuild
+import com.hamzalabs.maktaba.player.watch.CastHooks
+import com.hamzalabs.maktaba.player.watch.LocalCastHooks
+import com.hamzalabs.maktaba.core.session.HomeInfo
+import androidx.compose.ui.test.assertTextEquals
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -87,6 +95,10 @@ class PipBackgroundCastTest {
     /** The picture-in-picture settings the screen gave the activity, in order. */
     private val pip = mutableListOf<PictureInPictureParams>()
     private val routes = FakeCastRoutes()
+    private val channel = FakeCastChannel()
+    private val castScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private var receiver: FakeCastPlayer? = null
+    private var sender: CastSender? = null
 
     @Before
     fun setUp() {
@@ -100,9 +112,20 @@ class PipBackgroundCastTest {
     fun tearDown() {
         // the route's player is let go with the screen
         compose.activityRule.scenario.moveToState(Lifecycle.State.DESTROYED)
+        castScope.cancel()
     }
 
-    private fun open() {
+    /** Opens the player; with [cast], a fake receiver and Cast session in place of Google's. */
+    private fun open(cast: Boolean = false) {
+        val hooks = if (!cast) CastHooks() else CastHooks(
+            player = { local, transfer -> FakeCastPlayer(local, transfer).also { receiver = it } },
+            sender = { client ->
+                CastSender(
+                    client, channel, castScope, lang = { appLanguage(compose.activity) }, appId = "MAKTABA1",
+                    discover = { HomeInfo(id = "h1", urls = listOf("https://h1.relay.maktaba.tv"), apiLevel = 1) },
+                ).also { sender = it }
+            },
+        )
         compose.setContent {
             MaktabaTheme(ThemeMode.Dark) {
                 Surface {
@@ -114,6 +137,7 @@ class PipBackgroundCastTest {
                         },
                         LocalPipParams provides { _, params -> pip += params },
                         LocalCastRoutes provides routes,
+                        LocalCastHooks provides hooks,
                     ) {
                         PlayerShell(
                             sections = listOf(PlayerSection.Home),
@@ -243,16 +267,130 @@ class PipBackgroundCastTest {
         open()
         untilPlaying()
         assertFalse("no receiver: no button", shown(CAST_BUTTON_TAG))
+        assertTrue("but the line that no TV was found", shown(CAST_NONE_TAG))
         routes.receiver = true
         until { shown(CAST_BUTTON_TAG) }
+        assertFalse(shown(CAST_NONE_TAG))
         routes.receiver = false
         until { !shown(CAST_BUTTON_TAG) }
+    }
+
+    @Test
+    fun withoutCastNothingOfItShows() {
+        routes.on = false
+        routes.receiver = true
+        open()
+        untilPlaying()
+        assertFalse(shown(CAST_BUTTON_TAG))
+        assertFalse(shown(CAST_NONE_TAG))
+    }
+
+    @Test
+    fun noTvFoundSaysTheTvMustBeOnTheSameNetwork() {
+        open()
+        untilPlaying()
+        compose.onNodeWithTag(CAST_NONE_TAG).performClick()
+        until { shown("cast-no-devices") }
+        compose.onNodeWithTag("cast-no-devices").assertTextEquals(compose.activity.getString(R.string.cast_no_devices))
+    }
+
+    // ---------- T05 (story 58.06): cast, lock, resume, with a fake Cast context ----------
+
+    @Test
+    fun castLockAndResumeShowTheReceiversState() = castLockResume(
+        playingOn = "Playing on Living Room TV",
+    )
+
+    @Test
+    @Config(qualifiers = "ar-w411dp-h891dp-xxhdpi")
+    fun castLockAndResumeShowTheReceiversStateInArabic() = castLockResume(
+        playingOn = "يُعرض على Living Room TV",
+    )
+
+    private fun castLockResume(playingOn: String) {
+        grantsAnswer()
+        open(cast = true)
+        untilPlaying()
+        val sender = requireNotNull(sender)
+        until { sender.mode == CastMode.Grant }
+        assertEquals("the receiver's screens follow the app's language", if (playingOn.startsWith("Playing")) "en" else "ar", appLanguage(compose.activity))
+        channel.connect("Living Room TV")
+        routes.receiver = true
+        val cast = requireNotNull(receiver)
+        cast.startCasting(atMs = 2_000)
+        until { shown("casting") && cast.handed.isNotEmpty() }
+        compose.onNodeWithTag("casting-to").assertTextEquals(playingOn)
+        compose.onNodeWithTag("casting-title").assertTextEquals("The Message")
+        assertFalse("no picture in picture while casting", pip.lastOrNull()?.isAutoEnterEnabled == true)
+        val handed = cast.handed.single().media!!.customData!!
+        assertEquals(if (playingOn.startsWith("Playing")) "en" else "ar", handed.getString("lang"))
+        repeat(20) { clock.advanceTime(50); shadowOf(Looper.getMainLooper()).idle() }
+        val posts = streams.progress().size
+
+        // the phone locks: the activity stops; the TV plays on, and reports by itself
+        compose.activityRule.scenario.moveToState(Lifecycle.State.CREATED)
+        cast.receiverPlays("v1", atMs = 3_500, title = "The Message")
+        repeat(40) { clock.advanceTime(500); shadowOf(Looper.getMainLooper()).idle() }
+        assertEquals("the phone posts no progress while the receiver reports", posts, streams.progress().size)
+
+        // back on the phone: the mini controller shows the receiver's state
+        compose.activityRule.scenario.moveToState(Lifecycle.State.RESUMED)
+        until { shown("casting") }
+        compose.onNodeWithTag("casting-to").assertTextEquals(playingOn)
+        assertEquals(3_500L, NowPlaying.player?.currentPosition)
+        assertFalse("no older-home line", shown("cast-old-home"))
+    }
+
+    @Test
+    fun anOlderHomeSaysTheTvShowsGooglesPlayer() {
+        // no grants route (FakeHome's plain 404): the Default Media Receiver, the signed URL
+        open(cast = true)
+        untilPlaying()
+        val sender = requireNotNull(sender)
+        until { sender.mode == CastMode.OldHome }
+        channel.connect("Living Room TV")
+        requireNotNull(receiver).startCasting(atMs = 1_000)
+        until { shown("cast-old-home") }
+        compose.onNodeWithTag("cast-old-home").assertTextEquals(compose.activity.getString(R.string.cast_old_home))
+    }
+
+    @Test
+    fun aRefusedGrantSaysWhyAndThePhonePlaysOn() {
+        grantsAnswer(refuse = "access-denied")
+        open(cast = true)
+        val player = untilPlaying()
+        val sender = requireNotNull(sender)
+        until { sender.mode == CastMode.Grant }
+        channel.connect("Living Room TV")
+        requireNotNull(receiver).startCasting(atMs = 1_000)
+        until { shown("cast-error") }
+        compose.onNodeWithTag("cast-error").assertTextEquals(compose.activity.getString(R.string.cast_error_refused))
+        assertEquals(1, channel.ends)
+        requireNotNull(receiver).stopCasting()
+        until { player.playWhenReady && !shown("casting") }
+        compose.onNodeWithTag("cast-error").performClick()
+        until { !shown("cast-error") }
+    }
+
+    private fun grantsAnswer(refuse: String? = null) {
+        home.answer("/api/cast/grants") { r ->
+            val body = r.body?.utf8().orEmpty()
+            when {
+                body == "{}" -> FakeHome.json("""{"type":"x","title":"x","status":422,"code":"invalid_request"}""", code = 422)
+                refuse != null -> FakeHome.json("""{"type":"https://maktaba.tv/problems/$refuse","title":"no","status":403,"code":"$refuse"}""", code = 403)
+                else -> FakeHome.json("""{"grant":"cast_G1","scope":"cast","expires_at":"2099-01-01T00:00:00Z","video_id":"v1"}""", code = 201)
+            }
+        }
     }
 }
 
 /** Receivers on the network as a test sets them; the button is a plain one. */
 class FakeCastRoutes : CastRoutes {
+    var on by mutableStateOf(true)
     var receiver by mutableStateOf(false)
+
+    @Composable
+    override fun on(): Boolean = on
 
     @Composable
     override fun available(): Boolean = receiver

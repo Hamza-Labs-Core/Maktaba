@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- One call to the home's API (Epic 58 story 58.12): a screen fills it in and hands it to the
+     ApiTask, which sets response {status, data} when the home answers. -->
+<component name="ApiRequest" extends="Node">
+  <interface>
+    <field id="method" type="string" value="GET" />
+    <field id="path" type="string" />
+    <field id="body" type="assocarray" />
+    <field id="hasBody" type="boolean" value="false" />
+    <field id="tag" type="string" />
+    <!-- raw: the response also carries the body as text (a WebVTT file, story 58.13) -->
+    <field id="raw" type="boolean" value="false" />
+    <field id="response" type="assocarray" />
+  </interface>
+</component>

@@ -22,6 +22,13 @@ android {
         val capabilitiesGate = providers.gradleProperty("maktaba.capabilitiesGate").orNull.orEmpty()
         require(capabilitiesGate.all { it.isLetterOrDigit() }) { "maktaba.capabilitiesGate is on or off" }
         buildConfigField("String", "CAPABILITIES_GATE", "\"$capabilitiesGate\"")
+        // Story 58.06: Maktaba's Cast receiver, by the application ID shared/cast/app.json keeps
+        // (public, never a secret); -Pmaktaba.castAppId overrides it. Empty: no receiver is
+        // registered, and the Player shows no Cast button (media/Cast.kt).
+        val castAppId = providers.gradleProperty("maktaba.castAppId").orNull
+            ?: (groovy.json.JsonSlurper().parse(rootProject.file("../../shared/cast/app.json")) as Map<*, *>)["receiver_app_id"]?.toString().orEmpty()
+        require(castAppId.all { it.isLetterOrDigit() }) { "the Cast receiver's application ID is letters and digits" }
+        buildConfigField("String", "CAST_APP_ID", "\"$castAppId\"")
         // One app for phones, foldables and tablets (one Google Play listing): the layout follows
         // the window, and the device the API is told comes from the screen (ClientHeader.deviceFor).
         // Its name is res/values*/strings.xml's app_name ("Maktaba Player", «مشغل مكتبة»).

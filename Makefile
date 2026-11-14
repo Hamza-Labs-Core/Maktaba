@@ -57,7 +57,17 @@ UNIT_PER_TEST_SOFT_CAP  ?= 400ms
 # test passed in runs of 3m35s-3m50s (Epic 36's index worker, the error
 # logging, the claim loop's tests) and the tier failed main on time alone,
 # holding releases: 5m is the slowest of those plus ~30%.
-INTEGRATION_TIER_BUDGET ?= 5m
+# By 2026-11-14 the tier failed PRs on time alone again (5m0.2s, 5m5.6s,
+# every test passing). Main's last 15 runs took 2m29s-4m29s. The tier is
+# as long as the API module's go test (wall = it plus ~15s: 144-303s, 132
+# packages summing 310-464s of package time), with pytest -m integration
+# beside it (124-278s; 127 tests passing on 2026-10-26, 271 now); both
+# move together run to run, sharing the runner's 4 vCPUs. Locally the
+# pytest side takes 35s, its slowest test 6s; its 41,834 warnings
+# (SQLite's deprecated datetime adapter) were a third of the tvrelease
+# tests' time and are gone. The failing runs were ~20% slower in every
+# module, a slower runner: 6m30s is the slowest of them plus ~30%.
+INTEGRATION_TIER_BUDGET ?= 6m30s
 E2E_TIER_BUDGET         ?= 5m
 MEDIA_E2E_TIER_BUDGET   ?= 9m
 PERF_CI_TIER_BUDGET     ?= 2m
@@ -376,13 +386,20 @@ test-integration:  ## Integration tier (Story 20.1, Epic 20.4).
 		$(MAKE) --no-print-directory test-integration-inner
 
 # The Go modules run four at a time (tools/ci/integration-go.sh: their output in order,
-# the tier failing when any fails), with the pipeline's integration tests beside them.
+# the tier failing when any fails), with the pipeline's integration tests beside them
+# (their 25 slowest listed, as each Go module's ten slowest are). The tier's wall is the api
+# module's go test plus ~2s; pytest ends before it. pytest's `session time:` line splits its
+# session (PR #1303): 125s of 215s was collection, the job's first Python run compiling the
+# bytecode of everything the tests import on one core beside the Go builds (15s cold, 4s
+# warm, with the runner to itself). Collecting only the files holding integration tests left
+# it at 119s; a warm-up collection before the tier cut it to 54s, but the tests then took the
+# time back and the tier stayed api-bound, so neither shipped.
 # pytest exits 5 when no tests match the marker: that is no failure (the `|| ...` forms:
 # .SHELLFLAGS has -e).
 .PHONY: test-integration-inner
 test-integration-inner:
 	@py_log="$$(mktemp)"; \
-	( cd $(PIPELINE_DIR) && uv run pytest -m integration ) >"$$py_log" 2>&1 & py=$$!; \
+	( cd $(PIPELINE_DIR) && uv run pytest -m integration --durations=25 ) >"$$py_log" 2>&1 & py=$$!; \
 	go_rc=0; $(if $(INTEGRATION_GO_PG_URL),MAKTABA_TEST_PG_URL='$(INTEGRATION_GO_PG_URL)') \
 		bash tools/ci/integration-go.sh $(INTEGRATION_GO_MODULES) || go_rc=$$?; \
 	py_rc=0; wait $$py || py_rc=$$?; \
@@ -607,8 +624,12 @@ tv-build-ios:  ## Build the Apple TV app (scheme "Maktaba TV" in apps/apple/Makt
 	xcodebuild -project apps/apple/Maktaba.xcodeproj -scheme "Maktaba TV" -destination 'generic/platform=tvOS Simulator' CODE_SIGNING_ALLOWED=NO build
 
 .PHONY: tv-build-android
-tv-build-android:  ## Assemble the Android TV debug APK via the Gradle wrapper. Needs the Android SDK.
-	cd $(ANDROID_TV_DIR) && ./gradlew :app:assembleDebug
+tv-build-android:  ## Assemble the Android TV debug APK (Google Play build) via the Gradle wrapper. Needs the Android SDK.
+	cd $(ANDROID_TV_DIR) && ./gradlew :app:assembleGoogleDebug
+
+.PHONY: tv-build-firetv
+tv-build-firetv:  ## Assemble the Fire TV debug APK (the Android TV app's amazon flavor) and check it has no Google Play code. Needs the Android SDK.
+	cd $(ANDROID_TV_DIR) && ./gradlew :app:assembleAmazonDebug :app:checkAmazonDependencies :app:checkAmazonManifest
 
 .PHONY: native-sync
 native-sync: build-web  ## Rebuild web/dist and sync it into the native platforms (Capacitor cap sync).
@@ -686,9 +707,9 @@ package-mobile-ios: native-sync  ## Archive the iOS app (unsigned — see workfl
 	@echo "==> archive at $(MOBILE_DIR)/ios/App/build/Maktaba.xcarchive (a signed .ipa needs Apple certs)"
 
 .PHONY: package-tv-android
-package-tv-android:  ## Assemble the Android TV release APK. Needs the Android SDK + JDK17.
-	@cd $(ANDROID_TV_DIR) && ./gradlew --no-daemon :app:assembleRelease
-	@echo "==> output under $(ANDROID_TV_DIR)/app/build/outputs/apk/release/"
+package-tv-android:  ## Assemble the Android TV and Fire TV release APKs (google and amazon flavors). Needs the Android SDK + JDK17.
+	@cd $(ANDROID_TV_DIR) && ./gradlew --no-daemon :app:assembleGoogleRelease :app:assembleAmazonRelease
+	@echo "==> output under $(ANDROID_TV_DIR)/app/build/outputs/apk/google/release/ and apk/amazon/release/"
 
 .PHONY: package-all
 package-all: package-desktop package-mobile-android package-mobile-ios package-tv-android  ## Build every client package (desktop + mobile iOS/Android + Android TV). tvOS .ipa is distributed manually via Xcode/TestFlight.

@@ -6,11 +6,15 @@ import { useI18n } from "../../lib/i18n";
 import { desktopBigScreenState, setDesktopStartInBigScreen } from "../../lib/bigScreen";
 import { SUBTITLE_SCALES, usePrefs } from "../prefs";
 import { Screen } from "../ui";
+import { useLauncher } from "../../tv/launcher";
+import { tellLauncher } from "../input/bridge";
 
 /** onExit null: no Leave big screen (the TV build, story 58.08). */
 export function BigSettings({ onExit }: { onExit: (() => void) | null }) {
   const { t, locale, setLocale, n } = useI18n();
   const [prefs, update] = usePrefs();
+  // in the Samsung or LG launcher (story 58.09): its home picker, and how the home is reached
+  const launcher = useLauncher();
   // null: not the desktop app (or its shell does not serve this page)
   const [start, setStart] = useState<boolean | null>(null);
 
@@ -78,6 +82,22 @@ export function BigSettings({ onExit }: { onExit: (() => void) | null }) {
                 void setDesktopStartInBigScreen(v).then((ok) => !ok && setStart(!v));
               }}
             />
+          </Setting>
+        )}
+        {launcher && (
+          <Setting
+            label={t("tv.account.connection")}
+            hint={launcher.plain ? t("tv.plainHttp") : t("tv.account.encrypted")}
+          >
+            <button
+              type="button"
+              className="bs-btn"
+              data-bs-focus="set:switch-home"
+              data-testid="switch-home"
+              onClick={() => tellLauncher("maktaba:openHomePicker")}
+            >
+              {t("tv.account.switchHome")}
+            </button>
           </Setting>
         )}
         {onExit && (

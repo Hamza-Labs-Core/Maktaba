@@ -2,6 +2,7 @@ package homes
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"net/http/httptest"
 	"net/netip"
@@ -88,6 +89,31 @@ func TestLANEntriesNamesThenPinnedAddresses(t *testing.T) {
 	}
 }
 
+// Story 58.03: ReachFor is what the home list shows per home, and what a home hands a TV's
+// cloud code: the relay and direct addresses and the connections in the order apps try.
+func TestReachForGivesEachHomeItsConnections(t *testing.T) {
+	d := &Deps{RelayHost: "relay.maktaba.tv"}
+	hs := []stores.Server{
+		{ID: "a", Slug: "skylark", Plan: "pro", DirectIP: sql.NullString{String: "81.2.3.4", Valid: true}, DirectPort: sql.NullInt64{Int64: 32400, Valid: true}},
+		{ID: "b", Slug: "wren", Plan: "pro", DirectIP: sql.NullString{String: "2001:db8::1", Valid: true}, DirectPort: sql.NullInt64{Int64: 32400, Valid: true}},
+		{ID: "c", Slug: "finch", Plan: "pro"},
+	}
+	got := d.ReachFor(context.Background(), hs)
+	if a := got["a"]; a.RelayURL != "https://skylark.relay.maktaba.tv" || a.DirectURL != "http://81.2.3.4:32400" ||
+		len(a.Connections) != 2 || a.Connections[0].Kind != "direct" || a.Connections[1].Kind != "relay" {
+		t.Fatalf("a: %+v", a)
+	}
+	if b := got["b"]; b.DirectURL != "http://[2001:db8::1]:32400" {
+		t.Fatalf("b (IPv6): %+v", b)
+	}
+	if c := got["c"]; c.DirectURL != "" || len(c.Connections) != 1 || c.Connections[0].Kind != "relay" {
+		t.Fatalf("c (relay only): %+v", c)
+	}
+	if none := (&Deps{}).ReachFor(context.Background(), hs[2:]); none["c"].RelayURL != "" || len(none["c"].Connections) != 0 {
+		t.Fatalf("no relay host: %+v", none["c"])
+	}
+}
+
 // T07 (story 50.16): with the pool on, the home's primary relay is listed as relay_hint just
 // before the stable relay address; a home listing no relay gets no hint; no pool, no hint.
 func TestRelayHint(t *testing.T) {
@@ -99,7 +125,7 @@ func TestRelayHint(t *testing.T) {
 	req := httptest.NewRequest("GET", "/v1/homes", nil)
 	const id = "00000000-0000-4000-8000-000000000042"
 	primary := relay.Assign(id, []relay.PoolRelay{{ID: "r1", CapacityMbps: 1000}, {ID: "r2", CapacityMbps: 1000}, {ID: "r3", CapacityMbps: 1000}}).Primary
-	hint := d.relayHint(req, id, "skylark")
+	hint := d.relayHint(req.Context(), id, "skylark")
 	if hint != "https://skylark."+primary+".relay.maktaba.tv" {
 		t.Fatalf("hint %q, want skylark on %s", hint, primary)
 	}
@@ -114,10 +140,10 @@ func TestRelayHint(t *testing.T) {
 	if got := withRelayHint(connectionsFor("http://81.2.3.4:32400", "https://skylark.relay.maktaba.tv", false), hint); len(got) != 1 || got[0].Kind != "direct" {
 		t.Fatalf("no relay on the plan: %+v", got)
 	}
-	if (&Deps{RelayHost: "relay.maktaba.tv"}).relayHint(req, id, "skylark") != "" {
+	if (&Deps{RelayHost: "relay.maktaba.tv"}).relayHint(req.Context(), id, "skylark") != "" {
 		t.Fatal("pool off: a hint")
 	}
-	if (&Deps{RelayHost: "relay.maktaba.tv", Pool: relay.NewPool(relay.NewMemPoolStore(), "")}).relayHint(req, id, "skylark") != "" {
+	if (&Deps{RelayHost: "relay.maktaba.tv", Pool: relay.NewPool(relay.NewMemPoolStore(), "")}).relayHint(req.Context(), id, "skylark") != "" {
 		t.Fatal("no healthy relay: a hint")
 	}
 }

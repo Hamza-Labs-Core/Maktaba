@@ -18,6 +18,10 @@ import UIKit
 /// puts the simulator's lost tap at the front of the failure. Each cancelled touch is also
 /// in the app's log (the CI job keeps it). Like `TextSizeHook`: a Debug build's only, and
 /// only with the flag. The Player's UI-test targets compile this file too.
+///
+/// It also logs each time the app's scene leaves or comes back to the front (`sceneNote`),
+/// and how long each touch was held (`TouchWatcher.heldLine`, debug): a failing tap's line
+/// says whether its touch reached the app at all, and whether it read as a long hold.
 enum TouchHook {
     static let flag = "-maktaba-touch-hook"
     static let ask = "com.hamzalabs.maktaba.uitest.touches.ask"
@@ -52,6 +56,10 @@ enum TouchHook {
         log.notice("touch cancelled by the system (\(cancelled, privacy: .public) since launch): a UI test's tap may be lost (#639)")
     }
 
+    @MainActor static func noteHeld(_ line: String) {
+        log.debug("\(line, privacy: .public)")
+    }
+
     /// Watches the touches and answers the tests when launched with `flag`; without it, does
     /// nothing. Whether it watches.
     @discardableResult
@@ -70,7 +78,30 @@ enum TouchHook {
             guard let window = note.object as? UIWindow else { return }
             MainActor.assumeIsolated { watch(window) }
         }
+        for name in scenePhases {
+            NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { note in
+                guard let line = sceneNote(note.name) else { return }
+                log.notice("\(line, privacy: .public)")
+            }
+        }
         return true
+    }
+
+    /// The scene changes the hook logs: leaving the front and coming back.
+    static let scenePhases: [Notification.Name] = [
+        UIScene.willDeactivateNotification, UIScene.didEnterBackgroundNotification,
+        UIScene.willEnterForegroundNotification, UIScene.didActivateNotification,
+    ]
+
+    /// The app log's line for a scene change, nil for any other notification.
+    static func sceneNote(_ name: Notification.Name) -> String? {
+        switch name {
+        case UIScene.willDeactivateNotification: "scene: no longer active (a system screen or the Home Screen over it)"
+        case UIScene.didEnterBackgroundNotification: "scene: in the background (the app is off the screen; a UI test's tap may be lost)"
+        case UIScene.willEnterForegroundNotification: "scene: coming back to the front"
+        case UIScene.didActivateNotification: "scene: active"
+        default: nil
+        }
     }
 
     /// Adds a `TouchWatcher` to `window` unless it has one. Whether it added one.
@@ -86,6 +117,9 @@ enum TouchHook {
 /// touches, runs beside every other recognizer and cannot be stopped by one, so it sees
 /// each touch to its end. A touch the system cancels is counted (`TouchHook`).
 final class TouchWatcher: UIGestureRecognizer, UIGestureRecognizerDelegate {
+    /// When each live touch began (its `timestamp`), for the held line.
+    private var began: [ObjectIdentifier: TimeInterval] = [:]
+
     init() {
         super.init(target: nil, action: nil)
         cancelsTouchesInView = false
@@ -94,13 +128,31 @@ final class TouchWatcher: UIGestureRecognizer, UIGestureRecognizerDelegate {
         delegate = self
     }
 
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
+        for t in touches { began[ObjectIdentifier(t)] = t.timestamp }
+    }
+
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent) {
+        noteHeld(touches, cancelled: false)
         if Self.allEnded(event, besides: touches) { state = .failed }
     }
 
     override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent) {
+        noteHeld(touches, cancelled: true)
         TouchHook.noteCancelled(touches.count)
         state = .failed
+    }
+
+    private func noteHeld(_ touches: Set<UITouch>, cancelled: Bool) {
+        for t in touches {
+            guard let start = began.removeValue(forKey: ObjectIdentifier(t)) else { continue }
+            TouchHook.noteHeld(Self.heldLine(t.timestamp - start, at: t.location(in: nil), cancelled: cancelled))
+        }
+    }
+
+    /// The app log's line for a touch held `held` seconds, lifted (or cancelled) at `point`.
+    static func heldLine(_ held: TimeInterval, at point: CGPoint, cancelled: Bool = false) -> String {
+        String(format: "touch held %.2f s at (%.0f, %.0f)", held, point.x, point.y) + (cancelled ? ", cancelled" : "")
     }
 
     /// Whether no touch of `event` goes on after `ending` (all ended or cancelled).

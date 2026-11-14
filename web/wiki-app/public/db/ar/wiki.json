@@ -13,7 +13,7 @@
   ],
   "counts": {
     "diagram": 14,
-    "endpoint": 257,
+    "endpoint": 263,
     "entity": 42,
     "epic": 60,
     "feature": 3,
@@ -21,7 +21,7 @@
     "phase": 17,
     "plan": 372,
     "review": 15,
-    "story": 733
+    "story": 742
   },
   "parts": [
     "wiki-epics-01-09.json",
@@ -3220,13 +3220,22 @@
         "story-54.40",
         "story-54.41",
         "story-54.42",
-        "story-54.43"
+        "story-54.43",
+        "story-54.44",
+        "story-54.45",
+        "story-54.46",
+        "story-54.47",
+        "story-54.48",
+        "story-54.49",
+        "story-54.50",
+        "story-54.51",
+        "story-54.52"
       ],
       "files": {
         "readme": "specs/epics/54-plugins/README.md"
       },
       "metadata": {
-        "story_count": 43,
+        "story_count": 52,
         "plan_count": 0,
         "mockup_count": 0
       },
@@ -5898,7 +5907,8 @@
         "story-10.12",
         "story-11.10",
         "story-23.6",
-        "story-25.2"
+        "story-25.2",
+        "story-58.9"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -5957,7 +5967,9 @@
         "Auth",
         "get"
       ],
-      "related": [],
+      "related": [
+        "story-58.9"
+      ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
       },
@@ -7579,6 +7591,36 @@
       }
     },
     {
+      "id": "ep-post-cast-grants",
+      "type": "endpoint",
+      "title": "POST /cast/grants",
+      "content": "إصدار تصريح بثّ لجهاز استقبال Cast",
+      "tags": [
+        "api",
+        "Sessions",
+        "post"
+      ],
+      "related": [
+        "story-58.6",
+        "story-58.17"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/cast/grants",
+        "tag": "Sessions",
+        "operationId": "createCastGrant"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "d436492575c8b929"
+        }
+      }
+    },
+    {
       "id": "ep-get-stream-sessions-id",
       "type": "endpoint",
       "title": "GET /stream/sessions/{id}",
@@ -7835,6 +7877,7 @@
         "story-54.11",
         "story-54.13",
         "story-54.41",
+        "story-54.44",
         "story-55.2",
         "story-57.12",
         "story-59.16",
@@ -7892,6 +7935,7 @@
         "story-54.11",
         "story-54.13",
         "story-54.41",
+        "story-54.44",
         "story-55.2",
         "story-57.12",
         "story-59.16",
@@ -9981,6 +10025,9 @@
         "story-54.37",
         "story-54.38",
         "story-54.42",
+        "story-54.48",
+        "story-54.50",
+        "story-54.51",
         "story-55.2",
         "story-56.13",
         "story-58.13",
@@ -10110,7 +10157,9 @@
       "related": [
         "story-51.17",
         "story-54.27",
-        "story-54.37"
+        "story-54.37",
+        "story-54.48",
+        "story-54.51"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -12246,6 +12295,81 @@
       }
     },
     {
+      "id": "ep-get-plugins",
+      "type": "endpoint",
+      "title": "GET /plugins",
+      "content": "عرض الإضافات",
+      "tags": [
+        "api",
+        "Plugins",
+        "get"
+      ],
+      "related": [
+        "story-25.10",
+        "story-50.11",
+        "story-54.1",
+        "story-54.2",
+        "story-54.3",
+        "story-54.4",
+        "story-54.5",
+        "story-54.6",
+        "story-54.7",
+        "story-54.8",
+        "story-54.9",
+        "story-54.10",
+        "story-54.11",
+        "story-54.12",
+        "story-54.13",
+        "story-54.14",
+        "story-54.15",
+        "story-54.16",
+        "story-54.17",
+        "story-54.18",
+        "story-54.19",
+        "story-54.20",
+        "story-54.21",
+        "story-54.22",
+        "story-54.23",
+        "story-54.24",
+        "story-54.25",
+        "story-54.26",
+        "story-54.27",
+        "story-54.31",
+        "story-54.35",
+        "story-54.37",
+        "story-54.38",
+        "story-54.39",
+        "story-54.40",
+        "story-54.41",
+        "story-54.42",
+        "story-54.43",
+        "story-54.44",
+        "story-54.45",
+        "story-54.46",
+        "story-54.52",
+        "story-57.1",
+        "story-57.3",
+        "story-57.17",
+        "story-59.7",
+        "story-59.16"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/plugins",
+        "tag": "Plugins",
+        "operationId": "listPlugins"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "324c00f316092875"
+        }
+      }
+    },
+    {
       "id": "ep-get-plugins-isolation",
       "type": "endpoint",
       "title": "GET /plugins/isolation",
@@ -13548,6 +13672,62 @@
       }
     },
     {
+      "id": "ep-get-me-app-sign-ins",
+      "type": "endpoint",
+      "title": "GET /me/app-sign-ins",
+      "content": "عرض التطبيقات المسجّل دخولها برمز",
+      "tags": [
+        "api",
+        "Auth",
+        "get"
+      ],
+      "related": [
+        "story-58.3"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/me/app-sign-ins",
+        "tag": "Auth",
+        "operationId": "listAppSignIns"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "27df401b687a8788"
+        }
+      }
+    },
+    {
+      "id": "ep-delete-me-app-sign-ins-id",
+      "type": "endpoint",
+      "title": "DELETE /me/app-sign-ins/{id}",
+      "content": "تسجيل خروج تطبيق",
+      "tags": [
+        "api",
+        "Auth",
+        "delete"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "DELETE",
+        "path": "/me/app-sign-ins/{id}",
+        "tag": "Auth",
+        "operationId": "deleteAppSignIn"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "0fb67aef40a83de7"
+        }
+      }
+    },
+    {
       "id": "ep-get-parental-settings",
       "type": "endpoint",
       "title": "GET /parental/settings",
@@ -13803,6 +13983,65 @@
       }
     },
     {
+      "id": "ep-get-pairing-cloud-code-code",
+      "type": "endpoint",
+      "title": "GET /pairing/cloud-code/{code}",
+      "content": "قراءة رمز تلفاز من سحابة مكتبة",
+      "tags": [
+        "api",
+        "Devices",
+        "get"
+      ],
+      "related": [
+        "story-58.3"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/pairing/cloud-code/{code}",
+        "tag": "Devices",
+        "operationId": "getCloudTvCode"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "e05ce4b39079a5bf"
+        }
+      }
+    },
+    {
+      "id": "ep-post-pairing-cloud-approve",
+      "type": "endpoint",
+      "title": "POST /pairing/cloud-approve",
+      "content": "الموافقة على رمز تلفاز من سحابة مكتبة",
+      "tags": [
+        "api",
+        "Devices",
+        "post"
+      ],
+      "related": [
+        "story-58.3",
+        "story-58.17"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/pairing/cloud-approve",
+        "tag": "Devices",
+        "operationId": "approveCloudTvCode"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "f48ce5b099226ad9"
+        }
+      }
+    },
+    {
       "id": "ep-post-users",
       "type": "endpoint",
       "title": "POST /users",
@@ -14029,7 +14268,8 @@
         "story-2.2",
         "story-7.4",
         "story-7.17",
-        "story-9.15"
+        "story-9.15",
+        "story-58.10"
       ],
       "files": {
         "schema": "specs/architecture.md#8-database-schema",

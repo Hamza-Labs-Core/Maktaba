@@ -122,6 +122,7 @@ func JWTBearer(set *keys.Set, expectedAud string) func(http.Handler) http.Handle
 				RefreshFamily:      c.Fam,
 				AgeCeiling:         c.Ac,
 			}
+			p.ApplyRestricted(c.Rst) // a cloud code's TV: no admin, no credential of its own
 			// a cloud sign-in's token: its link scope caps it (a play
 			// token is no admin, whatever is_admin says)
 			p.ApplyCloudScope(c.Scp, nil) // a play token lists its libraries itself

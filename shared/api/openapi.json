@@ -2980,6 +2980,102 @@
         "operationId": "createSession"
       }
     },
+    "/cast/grants": {
+      "post": {
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "Mint a cast grant for a Cast receiver",
+        "description": "A signed-in sender (the Android Player, the Apple Player, the web) mints a cast grant for Maktaba's Cast receiver at cast.maktaba.tv, naming exactly one video (`video_id`) or one of the caller's own play queues (`queue_id`). The sender passes the grant to the receiver in the Cast load request's custom data, never the person's own token. The grant lasts at most six hours. With it, and only for the items it names, the receiver opens and keeps stream sessions (`POST /api/stream/sessions` and its `{id}` routes, progress and errors included), reads the video (`GET /api/videos/{id}`, its chapters, subtitles and poster) and walks the queue (`GET /api/me/play-queues/{id}`, `PUT /api/me/play-queues/{id}/current`); every other route and item answers 403 with `code` `cast_scope`. The grant acts as its user, read again on each request: the user's libraries now, and a restricted account's parental limit (with the minting sign-in's device age limit), so an item hidden since the mint answers 404. Send it as `Authorization: Bearer <grant>`. A home without this route (404) is older than the cast grant: a sender casts to Google's Default Media Receiver there. The guide is maktaba.dev's Casting page.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CastGrantRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The grant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CastGrant"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`video_id` is not an id.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "The caller may not mint a grant: a cast grant itself (`cast_scope`), the admin token, which is no person (`cast_needs_person`), or a sign-in through Maktaba Cloud (`cast_via_cloud`). Also a video in a library the caller was not given (`access-denied`).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such video or queue, a queue that is another person's, or a video the caller's parental limit hides (answered as a missing one).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Neither or both of `video_id` and `queue_id`.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "description": "The home has no signing key to mint with yet; ask again after `Retry-After`.",
+            "headers": {
+              "Retry-After": {
+                "$ref": "#/components/headers/Retry-After"
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "createCastGrant"
+      }
+    },
     "/stream/sessions/{id}": {
       "parameters": [
         {
@@ -11774,6 +11870,83 @@
         "operationId": "runStageNow"
       }
     },
+    "/plugins": {
+      "get": {
+        "tags": [
+          "Plugins"
+        ],
+        "summary": "List the plugins",
+        "description": "The installed plugins, each with its state, its jobs and what it uses, the home's plugin policy, and the parts of Maktaba itself that are not plugins. By default `plugins` holds only the plugins an admin installed, as clients that list them as installed plugins expect. With `release=true` it also holds the plugins Maktaba publishes that came with this release (`publisher.id` is `maktaba`, `source` is `release`), in the same shape.",
+        "x-maktaba-role": "admin",
+        "parameters": [
+          {
+            "name": "release",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            },
+            "description": "`true`: also list the plugins Maktaba publishes that came with this release. Left out, the list is the installed plugins only."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The plugins.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "plugins": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                      },
+                      "description": "The installed plugins by id; with `release=true`, also the plugins Maktaba publishes."
+                    },
+                    "policy": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "The home's plugin policy (`allow_unreviewed`)."
+                    },
+                    "core": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                      },
+                      "description": "The parts of Maktaba itself that must always run. They are not plugins and are never in `plugins`."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "Admin only.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "listPlugins"
+      }
+    },
     "/plugins/isolation": {
       "get": {
         "tags": [
@@ -17519,6 +17692,115 @@
         "operationId": "getMyParentalTime"
       }
     },
+    "/me/app-sign-ins": {
+      "get": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "List the apps signed in by code",
+        "description": "The caller's own apps signed in by a code a phone or the web approved (TVs, phones, remotes), newest use first. A TV that signed in with a Maktaba Cloud code says so (`via`).",
+        "responses": {
+          "200": {
+            "description": "The caller's app sign-ins.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "The sign-in (its refresh family)."
+                          },
+                          "kind": {
+                            "type": "string",
+                            "description": "What signed in: the app (tv, player, remote and so on)."
+                          },
+                          "label": {
+                            "type": "string",
+                            "description": "What the device called itself, or its platform."
+                          },
+                          "via": {
+                            "type": "string",
+                            "enum": [
+                              "cloud_code"
+                            ],
+                            "description": "Present when a TV signed in with a code from Maktaba Cloud."
+                          },
+                          "created_at": {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          "last_seen_at": {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          "expires_at": {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          "current": {
+                            "type": "boolean",
+                            "description": "The sign-in this request came with."
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "listAppSignIns"
+      }
+    },
+    "/me/app-sign-ins/{id}": {
+      "delete": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Sign an app out",
+        "description": "Ends one of the caller's app sign-ins: the app must sign in again. Another person's sign-in answers 404.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Signed out."
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "deleteAppSignIn"
+      }
+    },
     "/parental/settings": {
       "get": {
         "tags": [
@@ -18051,6 +18333,220 @@
           }
         },
         "operationId": "approvePairingCode"
+      }
+    },
+    "/pairing/cloud-code/{code}": {
+      "get": {
+        "tags": [
+          "Devices"
+        ],
+        "summary": "Read a TV's code from Maktaba Cloud",
+        "description": "A TV that cannot find the home asks Maktaba Cloud for a code and shows it. A person signed in on the home reads it here first: what the TV is and the country of its address, so they can say it is their TV. The home asks the cloud through its relay agent; it needs remote access turned on. A sign-in through Maktaba Cloud cannot approve a device, so it is refused here too.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Eight characters, with or without the dash."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The code is open: what asked with it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "description": "The code as the TV shows it (ABCD-2345)."
+                    },
+                    "platform": {
+                      "type": "string",
+                      "description": "What the TV said it is (tizen, webos, roku and so on)."
+                    },
+                    "app_version": {
+                      "type": "string"
+                    },
+                    "country": {
+                      "type": "string",
+                      "description": "The country of the TV's public address, as two letters; empty when the cloud could not tell."
+                    },
+                    "expires_at": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A sign-in through Maktaba Cloud.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The cloud holds no open code by that name: unknown, expired or already approved.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "This home is not registered with Maktaba Cloud (`code`: `cloud_not_linked`): approve the home's own code instead.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Maktaba Cloud is out of reach.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "getCloudTvCode"
+      }
+    },
+    "/pairing/cloud-approve": {
+      "post": {
+        "tags": [
+          "Devices"
+        ],
+        "summary": "Approve a TV's code from Maktaba Cloud",
+        "description": "Signs the TV showing a Maktaba Cloud code in as the caller, or, with `as_user`, as a restricted account the caller looks after (a guardian or an admin). The home makes one of its own device codes for that person, approves it at once and hands it to the cloud as the TV's single-use grant, with the home's connections; the TV redeems the grant with `POST /api/pairing/device/token`. The TV gets the approver's role, libraries and parental policy. No cloud account is needed: the home's registration with the cloud is enough. A sign-in through Maktaba Cloud cannot approve.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "description": "The code the TV shows."
+                  },
+                  "as_user": {
+                    "type": "string",
+                    "format": "uuid",
+                    "description": "The restricted account to sign the TV in as; absent: the caller."
+                  }
+                },
+                "required": [
+                  "code"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Approved; the TV signs in on its next poll of the cloud.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "approved"
+                      ]
+                    },
+                    "user_id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "description": "Whose sign-in the TV gets."
+                    },
+                    "platform": {
+                      "type": "string"
+                    },
+                    "country": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A sign-in through Maktaba Cloud, or a restricted account naming another account (`code`: `restricted`).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The cloud holds no open code by that name, or `as_user` is not a restricted account the caller looks after.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Someone approved the code first, or this home is not registered with Maktaba Cloud (`code`: `cloud_not_linked`).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Maktaba Cloud is out of reach; nothing was approved.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "approveCloudTvCode"
       }
     },
     "/users": {
@@ -20808,7 +21304,7 @@
           },
           "client_profile": {
             "type": "string",
-            "description": "Hint for the encoder ladder (e.g. `web`, `ios`, `tv-1080p`)."
+            "description": "The client profile the streaming service decides direct play, remux or transcode by: `generic` (also the fallback for a name it does not know), `desktop-player`, `browser-chrome`, `browser-safari`, `ios-native`, `tvos`, `android-native`, `androidtv`, and the TV platforms `firetv`, `tizen`, `webos`, `roku`, `cast` and `vega`. A TV profile alone is a baseline every model of its platform plays (H.264 1080p in HLS); `device_caps` widens it."
           },
           "audio_track": {
             "type": "string",
@@ -20844,6 +21340,114 @@
           },
           "accept_queue": {
             "type": "boolean"
+          },
+          "device_caps": {
+            "$ref": "#/components/schemas/DeviceCaps",
+            "description": "What the device reports it plays, from its platform's own query, sent at start and again whenever its output changes (a new session at the same position: a session never changes its mode). Optional."
+          }
+        }
+      },
+      "DeviceCaps": {
+        "type": "object",
+        "description": "A device's report of what it plays. The streaming service merges it into the client profile: the report narrows the profile freely and widens it only up to the platform's ceiling, so a report can never ask for more than its platform plays (Samsung never gets Dolby Vision; Roku gets it only as profile 5, and AV1 only by DASH). A field left out is the profile's. Keys this home does not know are ignored; a value of the wrong type is a 400. Each list holds at most 32 entries.",
+        "properties": {
+          "containers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 32,
+            "description": "Containers it plays directly (`mp4`, `mkv`, `ts`, …)."
+          },
+          "video": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DeviceVideoCap"
+            },
+            "maxItems": 32,
+            "description": "Video codecs it decodes, each with its limits."
+          },
+          "hdr": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 32,
+            "description": "HDR formats it shows: `hdr10`, `hlg`, `dv-p5`, `dv-p7`, `dv-p8`. A Dolby Vision profile 8 or 7 source goes to a device without its `dv-*` as its HDR10 or HLG base layer, by remux."
+          },
+          "audio": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 32,
+            "description": "Audio codecs it decodes (`aac`, `ac3`, `eac3`, …)."
+          },
+          "passthrough": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 32,
+            "description": "Audio it passes on undecoded to a receiver. TrueHD and DTS go to a device that neither decodes nor passes them as EAC3, the video untouched."
+          },
+          "max_audio_channels": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "The most audio channels it plays."
+          },
+          "hls_segments": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "ts",
+                "fmp4"
+              ]
+            },
+            "maxItems": 32,
+            "description": "HLS segment formats it plays. HEVC and AV1 go in fMP4; everything else stays in TS unless the device lists only `fmp4`."
+          },
+          "dash": {
+            "type": "boolean",
+            "description": "Whether it plays DASH."
+          },
+          "max_bitrate_kbps": {
+            "type": "integer",
+            "minimum": 100,
+            "description": "The highest bitrate it plays. A relay plan's cap still applies over it. Left out with `video` given, the platform's ceiling holds."
+          }
+        }
+      },
+      "DeviceVideoCap": {
+        "type": "object",
+        "description": "One video codec a device decodes and its limits.",
+        "required": [
+          "codec"
+        ],
+        "properties": {
+          "codec": {
+            "type": "string",
+            "description": "`h264`, `hevc`, `av1` or `vp9`."
+          },
+          "max_height": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "The tallest picture it decodes in this codec (clamped to the platform's ceiling)."
+          },
+          "max_fps": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "The highest frame rate it decodes in this codec."
+          },
+          "bit_depth": {
+            "type": "integer",
+            "enum": [
+              8,
+              10,
+              12
+            ],
+            "description": "The deepest samples it decodes in this codec."
           }
         }
       },
@@ -20921,6 +21525,10 @@
             "items": {
               "type": "string"
             }
+          },
+          "stream_sig": {
+            "type": "string",
+            "description": "The signed-URL token for every path under the session's `/stream/{session_id}/` (its subtitle renditions, `subs/sidecar/{lang}.vtt`, `subs/auto.vtt`, `chapters.json`), in every mode, direct play too. A player that cannot send a header (a TV's media player, a Cast receiver) fetches them with `?sig=` and this token. It expires with the session's URLs."
           }
         }
       },
@@ -23120,6 +23728,59 @@
           "restricted": true,
           "tier_limit": 9,
           "can_manage": false
+        }
+      },
+      "CastGrantRequest": {
+        "type": "object",
+        "description": "What is cast: exactly one of the two.",
+        "properties": {
+          "video_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The one video cast."
+          },
+          "queue_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "One of the caller's own play queues (Play all, Shuffle): the receiver walks it."
+          }
+        }
+      },
+      "CastGrant": {
+        "type": "object",
+        "description": "A cast grant and what it names.",
+        "required": [
+          "grant",
+          "scope",
+          "expires_at"
+        ],
+        "properties": {
+          "grant": {
+            "type": "string",
+            "description": "The grant, starting `cast_`: the receiver's bearer. Never logged, never shown."
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "cast"
+            ],
+            "description": "Always `cast`."
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the grant ends, at most six hours from the mint. A receiver lets the item playing then finish and shows that the cast has ended."
+          },
+          "video_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The video the grant names, when it names one."
+          },
+          "queue_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The play queue the grant names, when it names one."
+          }
         }
       }
     },

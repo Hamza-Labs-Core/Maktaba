@@ -1,0 +1,94 @@
+# Reusable gate for the Roku channel (Epic 58 stories 58.15 and 58.16; 58.12 and 58.13 add to
+# it). Roku has no emulator (research.md §6.6): its BrightScript runs on brs-engine in Node.
+#
+#   - the build tools' lint (ruff) and the catalogs' check (English and Arabic, key for key);
+#   - the generated files are current: the device shaper's tables, the shared vectors'
+#     expected outputs (python-bidi and arabic-reshaper, pinned) and the shaped catalogs,
+#     which fail on a string too long for its label;
+#   - the reference and the build step's own tests (T02);
+#   - BrightScript on brs-engine: VisualText against every vector (T03), its timing (T04),
+#     the layout direction helper and the catalog reader;
+#   - the channel (58.12): its build with BrighterScript and bslint, held under Roku's size
+#     limit (T02); its logic, also packaged for side-loading on a Roku (T01, T04's package);
+#     its screens drawn by brs-engine's SceneGraph against a mock home and a mock cloud, keys
+#     sent over ECP, focus read from the channel's log and screenshots compared with the
+#     references in tests/screens (T03). Find on this network runs here only: the /24 probe
+#     needs 127.0.0.x to refuse at once, as Linux does.
+#
+# The run keeps brs-engine's stdout, the channel's log of each screen run, the mock home's
+# requests and the screenshots for 30 days, passed or failed. No secret, no network call beyond
+# the packages (the mock home and cloud listen on 127.0.0.1).
+
+name: Roku channel
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  roku:
+    name: Roku channel
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6.0.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6.4.0
+        with:
+          node-version-file: apps/tv/roku/.nvmrc
+          package-manager-cache: false
+      - uses: astral-sh/setup-uv@v8.1.0
+        with:
+          enable-cache: false
+      - name: Logs folder
+        run: mkdir -p apps/tv/roku/build/logs
+
+      - name: The build tools' lint
+        working-directory: apps/tv/roku/tools
+        run: |
+          uvx ruff@0.14.3 check .
+          uvx ruff@0.14.3 format --check .
+
+      - name: The Roku catalogs, English and Arabic (tools/i18n/check_tv_catalogs.py)
+        run: python3 tools/i18n/check_tv_catalogs.py apps/tv/roku/i18n
+
+      - name: Generated files are current (tables, vectors, shaped catalogs)
+        env:
+          REQS: apps/tv/roku/tools/requirements.txt
+        run: |
+          uv run --no-project --python 3.12 --with-requirements "$REQS" python apps/tv/roku/tools/gen_tables.py --check
+          uv run --no-project --python 3.12 --with-requirements "$REQS" python apps/tv/roku/tools/gen_vectors.py --check
+          uv run --no-project --python 3.12 --with-requirements "$REQS" python apps/tv/roku/tools/shape_strings.py --check
+
+      - name: The reference and the build step (T02)
+        run: >-
+          uv run --no-project --python 3.12 --with-requirements apps/tv/roku/tools/requirements.txt
+          pytest apps/tv/roku/tools/tests -q -p no:cacheprovider
+          | tee apps/tv/roku/build/logs/pytest.log
+
+      - name: Install brs-engine
+        working-directory: apps/tv/roku
+        run: npm ci --no-audit --no-fund
+
+      - name: BrightScript on brs-engine (58.15 T03, T04; 58.12 T01, T02, T03)
+        working-directory: apps/tv/roku
+        run: npm test | tee build/logs/node-test.log
+
+      # brs-engine's stdout for each BrightScript test and the Python and Node test output,
+      # passed or failed (.github/actions/tv-logs: 30 days, linked from the job summary; 58.16)
+      - name: App logs
+        if: always()
+        uses: ./.github/actions/tv-logs
+        with:
+          name: roku-logs
+          what: brs-engine stdout of each BrightScript test, the channel's log of each screen run, its screenshots, and the pytest and node test output
+          path: |
+            apps/tv/roku/build/logs/
+            apps/tv/roku/build/screens/

@@ -17,7 +17,7 @@ for (const lang of ["en", "ar"] as const) {
       await settle(page);
       const items = page.locator(`${list} li`);
       const all = await items.count();
-      expect(all, "the index lists every topic").toBe(44);
+      expect(all, "the index lists every topic").toBe(45);
       await expect(page.locator("#count")).toContainText(String(all));
       const box = page.locator("#filter");
       await expect(box).toBeVisible();
@@ -76,6 +76,6 @@ test.describe("help without JavaScript", () => {
   test("the box is hidden and every topic is there", async ({ page }) => {
     await page.goto("/help/");
     await expect(page.locator(".filter")).toBeHidden();
-    await expect(page.locator("[data-filter-list] li:visible")).toHaveCount(44);
+    await expect(page.locator("[data-filter-list] li:visible")).toHaveCount(45);
   });
 });

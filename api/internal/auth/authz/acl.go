@@ -32,6 +32,25 @@ func (s *ACLStore) LibrariesFor(ctx context.Context, userID string) ([]string, e
 	return out, rows.Err()
 }
 
+// AllLibraries lists every library id, one by one: what an admin's sign-in that may not act
+// as an admin reads (a TV signed in through a cloud code, Epic 58 story 58.03).
+func (s *ACLStore) AllLibraries(ctx context.Context) ([]string, error) {
+	rows, err := s.DB.QueryContext(ctx, `SELECT CAST(id AS TEXT) FROM libraries ORDER BY 1`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}
+
 // Grant inserts (user_id, library_id). Idempotent: a duplicate insert
 // is a no-op (the (user_id, library_id) primary key handles it via ON
 // CONFLICT).

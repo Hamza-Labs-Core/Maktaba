@@ -6,14 +6,15 @@ import android.os.Build
 
 /**
  * Works out this app's [ClientHeader] (once, at start): the app from its package, the device
- * from the screen ([ClientHeader.deviceFor]: a hinge sensor, else the smallest width).
+ * from the screen ([ClientHeader.deviceFor]: a hinge sensor, else the smallest width). The TV app
+ * passes its store build's [tvPlatform] (`androidtv` or `firetv`).
  */
-fun ClientHeader.init(context: Context) {
+fun ClientHeader.init(context: Context, tvPlatform: String = ClientHeader.ANDROID_TV) {
     val version = runCatching {
         context.packageManager.getPackageInfo(context.packageName, 0).versionName
     }.getOrNull()
     val hinge = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
         context.packageManager.hasSystemFeature(PackageManager.FEATURE_SENSOR_HINGE_ANGLE)
     val device = deviceFor(context.resources.configuration.smallestScreenWidthDp, hinge)
-    use(make(context.packageName, version, device))
+    use(make(context.packageName, version, device, tvPlatform))
 }

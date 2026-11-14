@@ -107,7 +107,7 @@ func (s *Store) Add(ctx context.Context, serverID string, in In) (int64, bool, e
         ON CONFLICT (server_id, home_report_id) DO NOTHING
         RETURNING id`,
 		serverID, in.HomeReportID, s.now().UTC(), in.HappenedAt, in.App, in.Version, in.Platform, in.Category,
-		pq.Array(nonNil(in.Fingerprints)), []byte(in.Body), nullBytes(in.Screenshot)).Scan(&id)
+		pq.Array(nonNil(in.Fingerprints)), string(in.Body), nullBytes(in.Screenshot)).Scan(&id)
 	if err == nil {
 		return id, true, nil
 	}
