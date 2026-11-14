@@ -56,8 +56,8 @@ hold the public keys.
 
 ### 2. Delivery
 
-- **To the edge.** On every change the cloud API sends `POST
-  https://ingest.maktaba.tv/_control/revocations` with the signed list. The `Revocations` DO
+- **To the edge.** On every change the cloud API sends `PUT
+  https://ingest.maktaba.tv/v1/control/revocations` with the signed list. The `Revocations` DO
   checks the signature and the version, stores it, and fans it out to every `ChannelLive` and
   `PublisherControl` it names, plus a global flag. A pull every 60 s
   (`GET api.maktaba.tv/v1/broadcast/revocations`) backs up the push.
@@ -68,7 +68,11 @@ hold the public keys.
   - So a playing viewer is stopped at the next playlist reload (≤ 4 s with 4 s segments), and a
     new viewer at once.
   - Ingest is refused for `off_air`, `suspend` and `terminate`.
-- **To homes.** It rides the cloud link: a push within 1 minute and a poll every 10 minutes. The
+- **To homes.** It rides the cloud link: a push within 1 minute and a poll every 10 minutes.
+  A home's copy keeps only the global, channel and programme entries and those naming that home
+  or its owner's account, never another home's or account's. It is signed as a control post of
+  its own type, `revocations-home`, which the edge refuses, so a home cannot replay its shorter
+  copy to the edge as the cloud's list. The
   edge also sends `revoked` over the control WebSocket (50.22), so a home learns of it even when
   the cloud link is the thing that is down.
 - **Timing target:** ≤ 60 s from the admin's action to viewers stopping (README §4.2).
@@ -152,6 +156,9 @@ in `broadcast_revocation_audit`.
 | `broadcast.reason.notice` | a copyright notice | إشعار بشأن حقوق النشر |
 | `broadcast.reason.report` | a report we reviewed | بلاغ راجعناه |
 | `broadcast.reason.incident` | a service problem on our side | مشكلة في الخدمة من جهتنا |
+| `broadcast.reason.abuse` | misuse of the service | إساءة استخدام الخدمة |
+| `broadcast.reason.repeat_infringer` | repeated valid copyright notices | إشعارات صحيحة متكررة بشأن حقوق النشر |
+| `broadcast.terminated` | Broadcasting from this account has ended: {reason}. Its channels can't be published again. | انتهى البث من هذا الحساب: {reason}. لا يمكن نشر قنواته مجددًا. |
 
 ## Build plan
 

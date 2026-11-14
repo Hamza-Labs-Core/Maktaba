@@ -844,6 +844,19 @@ build fails when the two differ.
 
 ### Added
 
+- **Maktaba can take a broadcast off air within a minute (Epic 50, story 50.25).** A service
+  admin stops one programme (the channel shows its slate until a time), a channel, a publisher's
+  account, a home or every broadcast from the admin console's new Broadcast kill switch page,
+  with the reason and a note; each change needs a fresh MFA check and is audited, and only a
+  service admin is answered. The cloud signs one revocation list and sends it to the broadcast
+  edge at once, with a pull every minute as the backup: viewers of a stopped channel are
+  refused at their next playlist and the home stops uploading. The home keeps the newest signed
+  copy, refuses an older one, and shows on its Broadcast page why a channel or the whole home
+  was stopped; if it can't check the list for two days its published channels keep running but
+  a new publish waits. With the cloud's API down, two edge variables stop one channel or
+  everything at once (`docs/runbooks/cloud/broadcast-kill.md`). A home's copy carries only its
+  own entries, signed so the edge won't take it as the full list.
+
 - **Apps can tell when they and the home are too far apart (story 58.01).** The home now
   publishes its API level, the oldest level it still serves, and the oldest build of each app it
   signs in, with no sign-in needed (`GET /api/discovery/home`: `api_level`, `api_level_oldest`,
