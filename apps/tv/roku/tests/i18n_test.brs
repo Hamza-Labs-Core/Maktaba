@@ -23,6 +23,18 @@ sub Main()
     ' a long template wraps to its label, each line reordered
     long = ar.Format("compat.updateHome.admin", ["المنزل الرئيسي في الطابق الثاني"])
     t_Eq("ar format wraps", long.Split(Chr(10)).Count() >= 2, true)
+    ' Arabic inside the English catalog (a language's own name, Account's "Language: العربية")
+    ' is visual too: the build step shapes it left to right, as it shapes the Arabic catalog
+    t_Str("en static holding Arabic is visual", en.Tr("account.language.ar"), ar.Tr("account.language.ar"))
+    t_Eq("en static holding Arabic is shaped", Asc(Left(en.Tr("account.language.ar"), 1)) >= &hFE70, true)
+    ' a template gets its values raw and shapes the whole line in both languages: an Arabic
+    ' name in an English line, and in an Arabic line (a value shaped before Format would be
+    ' left in logical order there, with the rest of the line)
+    name = "بيت جدي"
+    t_Str("en format with an Arabic value", en.Format("account.home", [name]), VisualLines("Home: " + name, 60, 1, "ltr")[0])
+    t_Str("en format with an Arabic value: the name is visual", en.Format("account.home", [name]), "Home: " + VisualText(name, 0))
+    t_Str("ar format with an Arabic value", ar.Format("account.home", [name]), VisualLines("الجهاز الرئيسي: " + name, 60, 1, "rtl")[0])
+    t_Str("en format of a plain line is left alone", en.Format("account.home", ["Test home"]), "Home: Test home")
     ' missing keys
     t_Str("missing Tr", en.Tr("no.such.key"), "no.such.key")
     t_Str("missing Format", ar.Format("no.such.key", []), "no.such.key")

@@ -288,6 +288,13 @@ build fails when the two differ.
 
 ### Fixed
 
+- **Roku shows Arabic inside English lines joined and in the right order.** On the Account
+  screen in English, the language row read "Language: " with the Arabic name's letters unjoined
+  and reversed. The build step now shapes every catalog string that holds Arabic, in the English
+  catalog too, and a line filled with a home's or a person's name is shaped in both languages, so
+  an Arabic home name reads right on Account, Choose your home, Find on this network, the
+  connecting line and the update screen.
+
 - **An Arabic title reads the same on the Cast receiver as on every other TV (story 58.15).**
   On a TV playing from a sender set to English, a title such as "الحلقة 3 — Intro" showed with
   the number on the wrong side of the Arabic. The receiver's titles now take their direction

@@ -27,8 +27,8 @@ sub onParams()
     s = m.global.session
     user = s.user
     if user = invalid then user = ""
-    m.who.text = m.i18n.Format("account.signedInAs", [ui_Vis(user, 30)])
-    m.home.text = m.i18n.Format("account.home", [ui_Vis(s.name, 30)])
+    m.who.text = m.i18n.Format("account.signedInAs", [ui_Arg(user)])
+    m.home.text = m.i18n.Format("account.home", [ui_Arg(s.name)])
     ' story 58.14: a parent manages this account, its limit (or the device's)
     managed = ParentalManagedLines(s.parental, m.i18n)
     if managed.Count() > 0 then
