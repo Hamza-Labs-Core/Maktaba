@@ -7,7 +7,7 @@
 // it: in the Player (Profile → Approve a TV) or on maktaba.tv/tv. The answer names the home,
 // its connections (story 50.13's order: LAN first, the relay last) and a grant, the home's
 // own single-use pairing secret. The launcher reaches the home by the first connection that
-// answers as that home (isApprovedHome) and hands the grant to the home's /tv/ over the bridge
+// answers as a home, among those its certificate proves (grantAddresses), and hands the grant to the home's /tv/ over the bridge
 // (`maktaba:signIn`), which redeems it in the home's origin (POST /api/pairing/device/token):
 // the launcher never holds a token. A cloud code's TV is restricted on the home (never an
 // admin, whoever approved it).
@@ -16,7 +16,7 @@
 // to nothing else (cloud/internal/middleware/tvcors.go). The poll secret and the grant stay
 // in memory: never stored, never in a URL, never in the log (log.ts redacts both fields).
 
-import type { FetchLike, HomeAnswer } from "./discovery";
+import type { FetchLike } from "./discovery";
 import { log } from "./log";
 
 declare const __CLOUD_BASE__: string | undefined;
@@ -224,43 +224,19 @@ function isIpHost(host: string): boolean {
 }
 
 /**
- * The cloud's addresses for the home that lead to it alone, as bases: https by name (the
- * relay, the home's direct name, its LAN names under its own certificate), where the TV's
- * certificate check proves the home. A plain http address or a raw IP proves nothing (the
- * cloud keeps the home's plain public address for older apps, and an address can change hands).
+ * The addresses the grant may go to, in the cloud's order: https by name (the relay, the
+ * home's direct name, its LAN names under its own certificate), where the TV's certificate
+ * check proves the home. The cloud names a home by its own server id, which the home's
+ * /api/discovery/home does not say (it gives its instance id), so the home is known by these
+ * addresses alone. A plain http address or a raw IP proves nothing: anyone on that network or
+ * on the path can answer there and say anything about itself (another machine on the same
+ * private range at a relative's house, the home's plain public address after it changed hands),
+ * so the grant never goes to one.
  */
-function provenNames(conns: unknown): string[] {
+export function grantAddresses(conns: unknown): string[] {
   return usableConnections(conns).filter((b) => {
     const u = new URL(b);
     return u.protocol === "https:" && !isIpHost(u.hostname);
-  });
-}
-
-/**
- * Whether the home that answered at `base` is the one the cloud approved the code for.
- * The cloud names a home by its own server id, which the home's /api/discovery/home does not
- * say (it gives the home's instance id), so the check is by address:
- *  - an https name the cloud gives for the home (its relay, its direct name, a LAN name under
- *    its certificate) leads to that home alone: the certificate proves it;
- *  - a plain http or raw IP address can lead to another machine (a TV at a relative's house on
- *    the same private range, a public address that changed hands), so the home answering there
- *    counts only when it lists one of those names among its own addresses (a home with remote
- *    access lists its relay). Another home there is passed over, and never sent the grant.
- */
-export function isApprovedHome(
-  base: string,
-  answer: HomeAnswer,
-  conns: unknown,
-): boolean {
-  if (usableConnections(conns).indexOf(base) < 0) return false;
-  const named = provenNames(conns);
-  if (named.indexOf(base) >= 0) return true;
-  return (Array.isArray(answer.urls) ? answer.urls : []).some((raw) => {
-    try {
-      return named.indexOf(baseOf(new URL(String(raw)))) >= 0;
-    } catch {
-      return false;
-    }
   });
 }
 

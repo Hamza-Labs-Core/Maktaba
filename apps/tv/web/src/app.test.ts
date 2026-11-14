@@ -298,44 +298,28 @@ describe("the cloud code", () => {
     expect(w.calls.filter((c) => c.url.endsWith("/poll")).length).toBe(polls);
   });
 
-  it("passes over another home answering on a plain LAN address", async () => {
+  it("never sends the grant to a plain LAN address, whatever answers there", async () => {
     vi.useFakeTimers();
     const relay = "https://h1.relay.maktaba.tv";
-    // another home answers on the same private address (a relative's network): passed over
-    const w = world({
-      approved: () => true,
-      answers: [PLAIN, relay],
-      urls: (b) => (b === PLAIN ? [PLAIN, "https://other.relay.maktaba.tv"] : [b]),
-    });
-    const m = mount(w.fetch);
-    await m.l.start();
-    await vi.advanceTimersByTimeAsync(5_000);
-    await vi.advanceTimersByTimeAsync(100);
-    expect(m.frame()!.src).toBe(`${relay}/tv/?bridge=1&lang=en`);
-    expect(logText()).toContain("did not answer as the home");
-  });
-
-  it("takes the LAN name first when the approving home answers there (it lists its relay)", async () => {
-    vi.useFakeTimers();
-    const relay = "https://h1.relay.maktaba.tv";
-    const w = world({ approved: () => true, answers: [NAME, relay], urls: () => [NAME, relay] });
-    const m = mount(w.fetch);
-    await m.l.start();
-    await vi.advanceTimersByTimeAsync(5_000);
-    await vi.advanceTimersByTimeAsync(100);
-    expect(m.frame()!.src).toBe(`${NAME}/tv/?bridge=1&lang=en`);
-  });
-
-  it("takes a plain LAN address when the home there lists its relay", async () => {
-    vi.useFakeTimers();
-    const relay = "https://h1.relay.maktaba.tv";
+    // something answers on the plain address, even saying it is the home: never tried
     const w = world({ approved: () => true, answers: [PLAIN, relay], urls: () => [PLAIN, relay] });
     const m = mount(w.fetch);
     await m.l.start();
     await vi.advanceTimersByTimeAsync(5_000);
     await vi.advanceTimersByTimeAsync(100);
-    // a plain address: the frame is told it is one
-    expect(m.frame()!.src).toBe(`${PLAIN}/tv/?bridge=1&lang=en&plain=1`);
+    expect(m.frame()!.src).toBe(`${relay}/tv/?bridge=1&lang=en`);
+    expect(w.calls.some((c) => c.url.startsWith(PLAIN))).toBe(false);
+  });
+
+  it("takes the home's LAN name first when it answers there (its certificate proves it)", async () => {
+    vi.useFakeTimers();
+    const relay = "https://h1.relay.maktaba.tv";
+    const w = world({ approved: () => true, answers: [NAME, relay] });
+    const m = mount(w.fetch);
+    await m.l.start();
+    await vi.advanceTimersByTimeAsync(5_000);
+    await vi.advanceTimersByTimeAsync(100);
+    expect(m.frame()!.src).toBe(`${NAME}/tv/?bridge=1&lang=en`);
   });
 
   it("says so when none of the home's connections answers", async () => {

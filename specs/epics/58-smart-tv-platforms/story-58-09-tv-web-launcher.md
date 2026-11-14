@@ -86,12 +86,11 @@ A typed address (`Enter the home's address`) is the last option, under More ways
   pinned to a certificate name (`local_ip` with `tls_name`: a web runtime cannot check a
   certificate against another name), and takes the first that answers as that home. The cloud
   names the home by its own server id, which the home's discovery answer does not give (it
-  gives the home's instance id), so the check is by address: an https name the cloud gives for
-  the home (its relay, its direct name, a LAN name under its certificate) is taken as it is,
-  since the certificate proves the home; a plain http or raw IP address (the cloud also keeps
-  the home's plain public address, for older apps) only when the home answering there lists
-  one of those names among its own addresses. Another home on the same private address (a TV
-  at a relative's house) is passed over and never sent the grant. The compat
+  gives the home's instance id), so the home is known by address: the grant goes only to an
+  https name the cloud gives for it (its relay, its direct name, a LAN name under its
+  certificate), where the certificate proves the home. A plain http or raw IP address (the
+  cloud also keeps the home's plain public address, for older apps) is never tried: anyone on
+  that network or on the path could answer there as the home. The compat
   check runs as for any home, the home is saved by that address, and its `/tv/` is loaded with
   the grant waiting for it (the bridge's `signIn`). When none answers, Cannot reach <home>
   offers Try again (the same connections) and Back (a new code).

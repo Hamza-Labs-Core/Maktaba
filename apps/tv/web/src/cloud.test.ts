@@ -6,7 +6,7 @@ import {
   CLOUD_BASE,
   CodeFlow,
   createCode,
-  isApprovedHome,
+  grantAddresses,
   pollCode,
   RETRY_DOWN_MS,
   usableConnections,
@@ -268,94 +268,29 @@ describe("the code screen's loop", () => {
   });
 });
 
-describe("which answering home is the approving one", () => {
-  // the cloud names the home by its server id; the home answers with its instance id
-  const CONNS = [
-    { url: "http://192.168.1.20:8088", kind: "local" },
-    { url: "https://10-0-0-7.h1.direct.example:8443", kind: "local" },
-    { url: "https://h1.direct.example", kind: "direct" },
-    { url: "https://den.relay.maktaba.tv", kind: "relay" },
-    // the home's plain public address, kept for older apps
-    { url: "http://203.0.113.5:8088", kind: "direct" },
-  ];
-  const answer = (urls: string[]) => ({ id: "instance-7", name: "Den", urls });
-
-  it("takes a name Maktaba Cloud gives the home, whatever id answers there", () => {
+describe("the addresses the grant may go to", () => {
+  it("keeps only https names, in the cloud's order: the certificate proves the home", () => {
     expect(
-      isApprovedHome("https://den.relay.maktaba.tv", answer([]), CONNS),
-    ).toBe(true);
-    expect(isApprovedHome("https://h1.direct.example", answer([]), CONNS)).toBe(
-      true,
-    );
-  });
-
-  it("takes a LAN name under the home's certificate as it is: the certificate proves it", () => {
-    expect(
-      isApprovedHome(
-        "https://10-0-0-7.h1.direct.example:8443",
-        answer([]),
-        CONNS,
-      ),
-    ).toBe(true);
-  });
-
-  it("takes a plain or raw address, even a direct one, only from a home listing a proven name", () => {
-    expect(
-      isApprovedHome(
-        "http://203.0.113.5:8088",
-        answer(["http://203.0.113.5:8088"]),
-        CONNS,
-      ),
-    ).toBe(false);
-    expect(
-      isApprovedHome(
-        "http://203.0.113.5:8088",
-        answer(["https://h1.direct.example"]),
-        CONNS,
-      ),
-    ).toBe(true);
-    expect(
-      isApprovedHome(
-        "http://203.0.113.5:8088",
-        answer(["http://192.168.1.20:8088"]),
-        CONNS,
-      ),
-    ).toBe(false);
-  });
-
-  it("takes a LAN address only from a home that lists the approving home's relay", () => {
-    const den = answer([
-      "http://192.168.1.20:8088/",
+      grantAddresses([
+        { url: "http://192.168.1.20:8088", kind: "local" },
+        { url: "https://10-0-0-7.h1.direct.example:8443", kind: "local" },
+        {
+          url: "https://10.0.0.7:8443",
+          kind: "local_ip",
+          tls_name: "10-0-0-7.h1.direct.example",
+        },
+        { url: "https://10.0.0.7:8443", kind: "local" },
+        { url: "https://[fd00::7]:8443", kind: "local" },
+        { url: "https://h1.direct.example", kind: "direct" },
+        // the home's plain public address, kept for older apps
+        { url: "http://203.0.113.5:8088", kind: "direct" },
+        { url: "https://den.relay.maktaba.tv/", kind: "relay" },
+      ]),
+    ).toEqual([
+      "https://10-0-0-7.h1.direct.example:8443",
+      "https://h1.direct.example",
       "https://den.relay.maktaba.tv",
     ]);
-    expect(isApprovedHome("http://192.168.1.20:8088", den, CONNS)).toBe(true);
-    // another home on the same private address, at a relative's house: passed over
-    const other = answer([
-      "http://192.168.1.20:8088",
-      "https://other.relay.maktaba.tv",
-    ]);
-    expect(isApprovedHome("http://192.168.1.20:8088", other, CONNS)).toBe(
-      false,
-    );
-    expect(
-      isApprovedHome(
-        "http://192.168.1.20:8088",
-        answer(["http://192.168.1.20:8088"]),
-        CONNS,
-      ),
-    ).toBe(false);
-  });
-
-  it("never takes an address the cloud did not give", () => {
-    const den = answer(["https://den.relay.maktaba.tv"]);
-    expect(isApprovedHome("https://evil.example", den, CONNS)).toBe(false);
-    expect(isApprovedHome("https://den.relay.maktaba.tv", den, [])).toBe(false);
-    expect(
-      isApprovedHome(
-        "http://192.168.1.20:8088",
-        { id: "x", name: "", urls: "nope" } as never,
-        CONNS,
-      ),
-    ).toBe(false);
+    expect(grantAddresses("nope")).toEqual([]);
   });
 });
