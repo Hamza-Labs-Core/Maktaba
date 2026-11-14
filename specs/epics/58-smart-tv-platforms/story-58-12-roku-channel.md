@@ -20,7 +20,8 @@ comes after Samsung and LG.
 - BrightScript and SceneGraph, written in **BrighterScript**: a superset that compiles to
   BrightScript, with classes, imports and type checks.
 - Built and side-loaded with `roku-deploy`.
-- Unit tests with **Rooibos** on a device, and with **brs-engine** in Node on CI (58.16).
+- Unit tests: the BrightScript logic tests run on **brs-engine** in Node on CI (58.16) and, as a
+  device-test package (`tools/build.mjs --device-tests`), on a Roku, in place of Rooibos.
 - The code lives at `apps/tv/roku`.
 
 **Screens.** Epic 56's TV layout, as the Apple TV and Android TV apps have it, built from
