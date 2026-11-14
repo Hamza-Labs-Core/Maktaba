@@ -57,29 +57,21 @@ data class TvApproval(
     val addresses: List<String> get() = ordered.mapNotNull { Home.normalizeWithPath(it.url) }.distinct()
 
     /**
-     * The addresses that lead to this home alone: https by name (its relay, its direct name, its
-     * LAN names under its certificate) and a raw LAN address pinned to one of its names
-     * (`local_ip`, checked by [com.hamzalabs.maktaba.core.api.PinnedNames]), where the
-     * certificate check proves the home. A plain http address or an unpinned raw IP proves
-     * nothing: the cloud keeps the home's plain public address for older apps, an address can
-     * change hands, and a private one is another machine on another network.
+     * The addresses the grant may go to, in the cloud's order: https by name (its relay, its
+     * direct name, its LAN names under its certificate) and a raw LAN address pinned to one of
+     * its names (`local_ip`, checked by [com.hamzalabs.maktaba.core.api.PinnedNames]), where
+     * the certificate check proves the home. The cloud names the home by its own server id, not
+     * the id the home answers with, so the home is known by these addresses alone. A plain http
+     * address or an unpinned raw IP proves nothing: anyone on that network or on the path can
+     * answer there and say anything about itself (the cloud keeps the home's plain public
+     * address for older apps, an address can change hands, a private one is another machine on
+     * another network), so the grant never goes to one.
      */
-    val provenAddresses: List<String>
+    val grantAddresses: List<String>
         get() = ordered.filter { c ->
             val u = c.url.toHttpUrlOrNull() ?: return@filter false
             u.isHttps && (!isIpHost(u.host) || (c.kind == "local_ip" && !c.tlsName.isNullOrBlank()))
         }.mapNotNull { Home.normalizeWithPath(it.url) }.distinct()
-
-    /**
-     * Whether the home that answered at [url] is the one that approved: a proven address is it;
-     * any other only when the home there lists a proven address among its own (a home with
-     * remote access lists its relay). Another home there is passed over and never sent the grant.
-     */
-    fun approvedAt(url: String, info: HomeInfo): Boolean {
-        val proven = provenAddresses
-        if (url in proven) return true
-        return info.urls.mapNotNull { Home.normalizeWithPath(it) }.any { it in proven }
-    }
 
     /** A grant must have the home's pairing secret's shape, or it is no approval. */
     val wellFormed: Boolean get() = homeId.isNotBlank() && GRANT.matches(grant)

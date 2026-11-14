@@ -402,17 +402,10 @@ class AppSession(
      * Finds the home at [urls] (the first that answers as it), saying each step in [progress]:
      * finding, each address tried, and why none did ([NotAHome], rethrown).
      */
-    private suspend fun find(
-        urls: List<String>,
-        expectId: String?,
-        probe: HomeProbe,
-        stage: ConnectStage,
-        attempt: Int,
-        accept: (String, HomeInfo) -> Boolean = { _, _ -> true },
-    ): Reached {
+    private suspend fun find(urls: List<String>, expectId: String?, probe: HomeProbe, stage: ConnectStage, attempt: Int): Reached {
         _progress.value = ConnectProgress.Finding(attempt)
         try {
-            return probe.first(urls, expectId, { u, i, n -> _progress.value = ConnectProgress.Trying(shown(u), i, n, attempt) }, accept)
+            return probe.first(urls, expectId) { u, i, n -> _progress.value = ConnectProgress.Trying(shown(u), i, n, attempt) }
         } catch (e: NotAHome) {
             _progress.value = ConnectProgress.Failed(e.reason, urls.map(::shown), stage, attempt)
             throw e
@@ -827,9 +820,9 @@ class AppSession(
 
     /**
      * Signs this TV in with a cloud code's approval (story 58.03, on Android TV and Fire TV):
-     * reaches the approving home by the first of the cloud's connections where it answers
-     * ([TvApproval.approvedAt]: by its addresses, since the cloud's id for it is not the one it
-     * answers with), redeems the grant there (`POST /api/pairing/device/token`) for this
+     * reaches the approving home by the first of the cloud's connections where it answers, among
+     * those a certificate proves ([TvApproval.grantAddresses]: the cloud's id for it is not the
+     * one it answers with), redeems the grant there (`POST /api/pairing/device/token`) for this
      * device's own tokens at that address, and then uses the home, which opens signed in as a
      * kept sign-in does (in the session's scope: the screen that asked may go away meanwhile).
      * The home decides who the TV is: the approver, restricted (a cloud code's TV never acts as
@@ -845,7 +838,8 @@ class AppSession(
             approval.homeId,
             approval.connections.mapNotNull { c -> c.tlsName?.takeIf { c.kind == "local_ip" }?.let { c.url to it } },
         )
-        val r = find(approval.addresses, null, probe, ConnectStage.Cloud, attempt, approval::approvedAt)
+        // only where a certificate proves the home ([TvApproval.grantAddresses])
+        val r = find(approval.grantAddresses, null, probe, ConnectStage.Cloud, attempt)
         val name = r.info.name?.trim()?.takeIf { it.isNotEmpty() } ?: approval.homeName.ifBlank { r.url.substringAfter("://") }
         _progress.value = ConnectProgress.Found(name, attempt)
         succeeded()

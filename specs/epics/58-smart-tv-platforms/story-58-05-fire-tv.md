@@ -69,10 +69,10 @@ checklist guard until the checklist's result line is recorded.
   homes on this network and the typed address beside it. The TV polls at the cloud's interval
   (five seconds more on `slow_down`), takes a new code when one runs out or is gone, and asks
   again after 30 s when the cloud gives none, saying so while the other ways stay. On approval
-  it tries the cloud's connections in order and takes the first where the approving home
-  answers, known by address (an https name proves the home by its certificate; a raw LAN address
-  pinned to its name counts too; a plain address only when the home there lists one of those
-  names), redeems the grant there for its own tokens at that address, and opens the home signed
+  it tries, in the cloud's order, only the connections where a certificate proves the home (an
+  https name; a raw LAN address pinned to its name), since the cloud's id for the home is not
+  the one it answers with and a plain address could be answered by anyone; it redeems the grant
+  at the first that answers for its own tokens at that address, and opens the home signed
   in, restricted as every cloud code's TV is. The poll secret and the grant are never stored,
   put in a URL or logged. Checklist rows 12 to 15 cover it on a device.
 
@@ -98,7 +98,7 @@ checklist guard until the checklist's result line is recorded.
 | T03 | Kotlin unit | recorded `MediaCodecList` answers of three Fire TV models | build `device_caps` | the vectors of 58.02 T07 |
 | T04 | Instrumented, Android TV emulator API 30 **without Google APIs** (`system-images;android-30;android-tv;x86`: the API 30 `android-tv` image exists only as x86); the `firetv-emulator` job | `amazonDebug` APK, mock home | sign in by code, play a clip, Back to launcher | passes; logcat attached to the CI report |
 | T05 | Manifest test | merged `amazonRelease` manifest | parse | both launcher filters; touchscreen and leanback not required |
-| T07 | Kotlin unit (`client`, `TvCloudCodeTest`) | mock cloud and homes, one over https | create, poll, renew, approve | the platform and version sent; slow_down, gone, expiry and no code handled; another home on a plain LAN address passed over; the grant redeemed only at the approving home, tokens kept for that address; the poll secret and grant in no URL |
+| T07 | Kotlin unit (`client`, `TvCloudCodeTest`) | mock cloud and homes, one over https | create, poll, renew, approve | the platform and version sent; slow_down, gone, expiry and no code handled; a plain LAN address never tried; the grant redeemed only where a certificate proves the home, tokens kept for that address; the poll secret and grant in no URL |
 | T08 | Robolectric + Roborazzi (`CloudCodeTvTest`), both flavors | the home picker against a mock cloud | first start | the code, its QR and where to approve it, the other ways beside it, all on screen; en and ar, dark; an approval signs the TV in |
 | T06 | Real-device checklist (written, `docs/stores/amazon.md`) | Fire TV Stick 4K Max (Fire OS 8), one Fire OS 7 device | each release candidate before promotion from Live App Testing | sign-in, 4K HDR10, DV p8, EAC3 passthrough, Arabic, sleep and wake mid-video |
 
@@ -141,5 +141,5 @@ code panel adds these to both:
 | `.github/workflows/_android-tv.yml` | amazon flavor build, T01 and its must-fail fixture run, T04 (`firetv-emulator`, script `tools/ci/firetv-journey.sh`) on the no-Google image |
 | `.github/workflows/tv-release.yml` | the Amazon APK, staged by `tools/release/amazon_submit.py stage`; `commit` after the checklist |
 | `docs/stores/amazon.md` | listing, checklist, Live App Testing steps |
-| `apps/android/client/…/core/session/TvCloudCode.kt` (new), `AppSession.signInWithTvApproval` | the cloud code's calls and loop; the approving home by address; the grant redeemed |
+| `apps/android/client/…/core/session/TvCloudCode.kt` (new), `AppSession.signInWithTvApproval` | the cloud code's calls and loop; the addresses the grant may go to; the grant redeemed |
 | `apps/tv/android/app/…/ui/screens/CloudCodePanel.kt` (new), `HomePickerScreen.kt` | the code as the picker's first panel |

@@ -195,7 +195,7 @@ class TvCloudCodeTest {
         c.map { (url, kind) -> CloudConnection(url, kind, if (kind == "local_ip") pinned else null) }
 
     @Test
-    fun theApprovingHomeIsKnownByItsAddressesNotItsId() {
+    fun theGrantGoesOnlyWhereACertificateProvesTheHome() {
         val a = TvApproval(
             CLOUD_ID, "Den",
             conns(
@@ -204,28 +204,25 @@ class TvCloudCodeTest {
                 "https://10.0.0.7:8443" to "local_ip",
                 "https://h1.direct.example" to "direct",
                 "http://203.0.113.5:8088" to "direct",
+                "https://203.0.113.5:8443" to "direct",
                 "https://den.relay.maktaba.tv" to "relay",
                 pinned = "10-0-0-7.h1.direct.example",
             ),
             GRANT,
         )
-        val nobody = HomeInfo(id = "instance-7", name = "Den")
-        // an https name: the certificate proves the home, whatever id it answers with
-        assertTrue(a.approvedAt("https://den.relay.maktaba.tv", nobody))
-        assertTrue(a.approvedAt("https://h1.direct.example", nobody))
-        assertTrue(a.approvedAt("https://10-0-0-7.h1.direct.example:8443", nobody))
-        assertTrue("a raw LAN address pinned to the home's name", a.approvedAt("https://10.0.0.7:8443", nobody))
-        // a plain or raw address: only a home listing one of those names
-        assertFalse(a.approvedAt("http://192.168.1.20:8088", nobody.copy(urls = listOf("http://192.168.1.20:8088"))))
-        assertFalse(
-            "another home on the same private address",
-            a.approvedAt("http://192.168.1.20:8088", nobody.copy(urls = listOf("http://192.168.1.20:8088", "https://other.relay.maktaba.tv"))),
+        // https names and the raw LAN address pinned to the home's name, in the cloud's order;
+        // never a plain address or an unpinned raw IP
+        assertEquals(
+            listOf(
+                "https://10-0-0-7.h1.direct.example:8443",
+                "https://10.0.0.7:8443",
+                "https://h1.direct.example",
+                "https://den.relay.maktaba.tv",
+            ),
+            a.grantAddresses,
         )
-        assertTrue(a.approvedAt("http://192.168.1.20:8088", nobody.copy(urls = listOf("http://192.168.1.20:8088", "https://den.relay.maktaba.tv/"))))
-        assertFalse("the plain public address proves nothing", a.approvedAt("http://203.0.113.5:8088", nobody.copy(urls = listOf("http://203.0.113.5:8088"))))
-        // an unpinned raw address proves nothing either
         val unpinned = a.copy(connections = conns("https://10.0.0.7:8443" to "local_ip"))
-        assertFalse(unpinned.approvedAt("https://10.0.0.7:8443", nobody))
+        assertEquals(emptyList<String>(), unpinned.grantAddresses)
     }
 
     // ---------- signing in with the approval ----------
@@ -261,12 +258,12 @@ class TvCloudCodeTest {
     }
 
     @Test
-    fun anotherHomeOnTheLanIsPassedOverAndTheGrantRedeemedAtTheRelay() = runBlocking {
+    fun aPlainLanAddressIsNeverTriedAndTheGrantRedeemedAtTheRelay() = runBlocking {
         lateinit var relayUrl: String
         val relay = home("relay", relayTls(), urls = { listOf(relayUrl) })
         relayUrl = relay.url("/").toString().trimEnd('/').replace("127.0.0.1", "localhost")
-        // another home answers on the plain LAN address (a relative's network)
-        val other = home("other", null, urls = { listOf("https://other.relay.maktaba.tv") }, homeId = "instance-9")
+        // something answers on the plain LAN address, even listing the home's relay
+        val other = home("other", null, urls = { listOf("https://other.relay.maktaba.tv", relayUrl) }, homeId = "instance-9")
         val lan = other.url("/").toString().trimEnd('/')
         val tokens = mutableMapOf<String, MemoryTokens>()
         val s = session(tokens)
@@ -277,7 +274,7 @@ class TvCloudCodeTest {
         assertEquals("sara", (s.phase.value as AppSession.Phase.SignedIn).user.username)
         assertEquals("the TV's tokens, under the relay's address only", FRESH, tokens.getValue(relayUrl).access)
         assertNull(tokens[lan]?.access)
-        assertTrue("the other home never saw the grant", seenNow().none { it.first == "other" && it.second.url.encodedPath == "/api/pairing/device/token" })
+        assertTrue("the plain LAN address is never tried", seenNow().none { it.first == "other" })
         val redeem = seenNow().single { it.second.url.encodedPath == "/api/pairing/device/token" }.second
         assertEquals("""{"device_code":"$GRANT","device_label":"Living room TV"}""", redeem.body!!.utf8())
         assertNull("redeemed without a token", redeem.headers["Authorization"])
@@ -287,28 +284,30 @@ class TvCloudCodeTest {
     }
 
     @Test
-    fun theApprovingHomeOnTheLanIsUsedThereFirst() = runBlocking {
-        val relayUrl = "https://den.relay.maktaba.tv"
-        val lanHome = home("lan", null, urls = { listOf("http://192.168.1.20:8088", relayUrl) })
-        val lan = lanHome.url("/").toString().trimEnd('/')
+    fun theHomesLanNameIsUsedFirst() = runBlocking {
+        // its LAN name under its certificate (here `localhost`), and a relay that is not reached
+        lateinit var lanUrl: String
+        val lanHome = home("lan", relayTls(), urls = { listOf(lanUrl) })
+        lanUrl = lanHome.url("/").toString().trimEnd('/').replace("127.0.0.1", "localhost")
         val tokens = mutableMapOf<String, MemoryTokens>()
         val s = session(tokens)
-        s.signInWithTvApproval(TvApproval(CLOUD_ID, "Den", conns(lan to "local", relayUrl to "relay"), GRANT), "TV", probe)
+        s.signInWithTvApproval(TvApproval(CLOUD_ID, "Den", conns(lanUrl to "local", "https://den.relay.invalid" to "relay"), GRANT), "TV", probe)
         signedIn(s)
-        assertEquals(lan, s.current.value?.url)
-        assertEquals(FRESH, tokens.getValue(lan).access)
+        assertEquals(lanUrl, s.current.value?.url)
+        assertEquals(FRESH, tokens.getValue(lanUrl).access)
     }
 
     @Test
-    fun noConnectionAnsweringAsTheHomeIsSaidAndNothingSent() = runBlocking {
-        val other = home("other", null, urls = { listOf("https://other.relay.maktaba.tv") }, homeId = "instance-9")
+    fun noProvenAddressAnsweringIsSaidAndNothingSent() = runBlocking {
+        // only a plain address: never tried, so no home, and the grant goes nowhere
+        val other = home("other", null, urls = { listOf("https://den.relay.maktaba.tv") }, homeId = "instance-9")
         val s = session(mutableMapOf())
         try {
             s.signInWithTvApproval(TvApproval(CLOUD_ID, "Den", conns(other.url("/").toString() to "local"), GRANT), "TV", probe)
-            fail("no home answered as the approving one")
+            fail("no address a certificate proves")
         } catch (_: NotAHome) {
         }
-        assertTrue(seenNow().none { it.second.url.encodedPath == "/api/pairing/device/token" })
+        assertTrue(seenNow().none { it.first == "other" })
         assertTrue(s.phase.value !is AppSession.Phase.SignedIn)
     }
 

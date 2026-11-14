@@ -893,10 +893,9 @@ build fails when the two differ.
   58.05).** The TV app's home picker now opens on a code from Maktaba Cloud with its QR code;
   a phone signed in to the home approves it from Approve a TV or device, on any network, and
   the TV opens that home signed in as the approver, restricted (never an admin). The homes on
-  the TV's network and a typed address stay beside it. The TV knows the approving home by its
-  address (an https name proves it by its certificate), so another home on the same private
-  address is passed over and never sent the grant; the poll secret and the grant are never
-  stored, put in a URL or logged.
+  the TV's network and a typed address stay beside it. The grant goes only to an address whose
+  certificate proves the home (never a plain http or raw IP address, where anyone could answer);
+  the poll secret and the grant are never stored, put in a URL or logged.
 
 - **Roku's sign-in shows a QR (Epic 58, story 58.12).** The Roku channel's code screen now shows
   a QR beside the code, as the other TV apps do: a phone's camera opens the approve page with

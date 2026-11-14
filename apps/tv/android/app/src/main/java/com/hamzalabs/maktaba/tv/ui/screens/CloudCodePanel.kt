@@ -32,6 +32,7 @@ import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import com.hamzalabs.maktaba.core.diagnostics.AppLog
 import com.hamzalabs.maktaba.core.session.AppSession
+import com.hamzalabs.maktaba.core.session.HomeProbe
 import com.hamzalabs.maktaba.core.session.TvCodeState
 import com.hamzalabs.maktaba.core.session.TvCodes
 import com.hamzalabs.maktaba.core.session.waitForTvApproval
@@ -80,7 +81,7 @@ internal fun tvDeviceLabel(): String = stringResource(R.string.tv_label).let { b
  * Leaving the picker stops it; the session finishes a sign-in already under way.
  */
 @Composable
-fun CloudCodePanel(session: AppSession, modifier: Modifier = Modifier) {
+fun CloudCodePanel(session: AppSession, modifier: Modifier = Modifier, probe: HomeProbe = remember { HomeProbe() }) {
     val label = tvDeviceLabel()
     var ui by remember { mutableStateOf<CloudCodeUi>(CloudCodeUi.Asking) }
     var expiresAt by remember { mutableLongStateOf(0L) }
@@ -108,7 +109,7 @@ fun CloudCodePanel(session: AppSession, modifier: Modifier = Modifier) {
         val name = approval.homeName.ifBlank { approval.homeId }
         ui = CloudCodeUi.Opening(name)
         try {
-            session.signInWithTvApproval(approval, label)
+            session.signInWithTvApproval(approval, label, probe)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {

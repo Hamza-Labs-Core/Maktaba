@@ -180,11 +180,11 @@ Checked on `main` at 0770a41db (2026-11-08). Details and file paths are in resea
   connection list and a single-use pairing grant, and the TV redeems the grant on the home by
   the best connection: LAN first, relay last. The approver needs no cloud account, only a home
   with remote access. The cloud names the home by its own server id, not the id the home
-  answers with, so a TV knows the approving home by address: an https name the cloud gives for
-  it (its relay, its direct name, a LAN name under its certificate, or on Android a raw LAN
-  address pinned to that name) proves the home by its certificate, and a plain or raw address
-  counts only when the home answering there lists one of those names. The grant is never sent
-  to another home.
+  answers with, so a TV knows the approving home by address: the grant goes only to an https
+  name the cloud gives for it (its relay, its direct name, a LAN name under its certificate, or
+  on Android a raw LAN address pinned to that name), where the certificate proves the home. A
+  plain http or raw IP address is never tried for the grant: anyone on that network or on the
+  path could answer there as the home.
 - **HTTPS everywhere it can be.** The per-home certificates of story 50.15 give LAN addresses valid
   HTTPS, which web TVs and Cast receivers need (no certificate pinning in a web runtime, and no
   mixed content). Where a router blocks those names, web TVs and Roku fall back to plain HTTP on

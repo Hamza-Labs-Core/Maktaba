@@ -16,7 +16,14 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.github.takahirom.roborazzi.RoborazziOptions
 import com.github.takahirom.roborazzi.captureRoboImage
+import com.hamzalabs.maktaba.core.api.ApiClient
 import com.hamzalabs.maktaba.core.api.AuthTokens
+import com.hamzalabs.maktaba.core.api.exchange
+import com.hamzalabs.maktaba.core.session.HomeProbe
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.tls.HandshakeCertificates
+import okhttp3.tls.HeldCertificate
 import com.hamzalabs.maktaba.core.jwt
 import com.hamzalabs.maktaba.core.session.AppSession
 import com.hamzalabs.maktaba.core.session.KeyValueStore
@@ -64,24 +71,51 @@ class CloudCodeTvTest {
     private fun json(code: Int, body: String) =
         MockResponse.Builder().code(code).setHeader("Content-Type", "application/json").body(body).build()
 
-    private fun server(name: String, route: (RecordedRequest) -> MockResponse) = MockWebServer().apply {
+    private fun server(name: String, tls: HandshakeCertificates? = null, route: (RecordedRequest) -> MockResponse) = MockWebServer().apply {
         dispatcher = object : Dispatcher() {
             override fun dispatch(request: RecordedRequest): MockResponse {
                 seen += name to request
                 return route(request)
             }
         }
+        tls?.let { useHttps(it.sslSocketFactory()) }
         start()
         servers += this
     }
 
+    // the home over https at `localhost`, its certificate from a test authority the TV trusts:
+    // the grant goes only where a certificate proves the home
+    // (made in the root locale: a certificate's dates are not written in Arabic digits)
+    private val ca by lazy { inRootLocale { HeldCertificate.Builder().certificateAuthority(0).build() } }
+    private val homeTls by lazy {
+        inRootLocale {
+            HandshakeCertificates.Builder()
+                .heldCertificate(HeldCertificate.Builder().addSubjectAlternativeName("localhost").signedBy(ca).build(), ca.certificate).build()
+        }
+    }
+    private val trust by lazy { HandshakeCertificates.Builder().addTrustedCertificate(ca.certificate).build() }
+    private val trusting: OkHttpClient by lazy {
+        ApiClient.defaultHttp.newBuilder().sslSocketFactory(trust.sslSocketFactory(), trust.trustManager).build()
+    }
+
+    private fun <T> inRootLocale(make: () -> T): T {
+        val was = java.util.Locale.getDefault()
+        java.util.Locale.setDefault(java.util.Locale.ROOT)
+        try {
+            return make()
+        } finally {
+            java.util.Locale.setDefault(was)
+        }
+    }
+    private val probe = HomeProbe { url -> trusting.exchange(Request.Builder().url(url).build()).let { it.code to String(it.body) } }
+
     private lateinit var cloud: MockWebServer
     private lateinit var home: MockWebServer
-    private val homeUrl get() = home.url("/").toString().trimEnd('/')
+    private val homeUrl get() = home.url("/").toString().trimEnd('/').replace("127.0.0.1", "localhost")
 
     @Before
     fun start() {
-        home = server("home") { r ->
+        home = server("home", homeTls) { r ->
             when (r.url.encodedPath) {
                 // the home lists its relay among its own addresses: the one the cloud gave
                 "/api/discovery/home" -> json(200, """{"id":"instance-7","name":"Den","urls":["$homeUrl","$RELAY"],"api_level":1,"api_level_oldest":1}""")
@@ -187,9 +221,9 @@ class CloudCodeTvTest {
     @Test @Config(qualifiers = TV)
     fun anApprovalSignsTheTvInAtTheApprovingHome() {
         val tokens = mutableMapOf<String, MemoryTokens>()
-        val session = AppSession(MapStore(), MainScope(), { tokens.getOrPut(it) { MemoryTokens() } })
+        val session = AppSession(MapStore(), MainScope(), { tokens.getOrPut(it) { MemoryTokens() } }, clientFor = { url, t -> ApiClient(url, t, trusting) })
         session.cloudApi = cloud.url("/").toString()
-        compose.setContent { MaktabaTvTheme { LibraryBackdrop { CloudCodePanel(session, Modifier.fillMaxSize()) } } }
+        compose.setContent { MaktabaTvTheme { LibraryBackdrop { CloudCodePanel(session, Modifier.fillMaxSize(), probe) } } }
         until("the code") { shown("cloud-code") }
         approved = true
         until("signed in at the home") { session.phase.value is AppSession.Phase.SignedIn }

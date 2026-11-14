@@ -115,7 +115,7 @@ fun HomePickerScreen(app: MaktabaTVApp, probe: HomeProbe = remember { HomeProbe(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             // the first way in: a code from Maktaba Cloud, approved from any network (58.03)
-            CloudCodePanel(session, Modifier.weight(1.4f))
+            CloudCodePanel(session, Modifier.weight(1.4f), probe)
             ReadingPanel(Modifier.weight(1f).testTag("picker-other-ways"), contentPadding = 20.dp) {
                 SectionTitle(stringResource(R.string.choose_home))
                 Text(
