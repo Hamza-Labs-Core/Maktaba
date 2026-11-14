@@ -2,7 +2,7 @@
 -- +goose Up
 -- +goose StatementBegin
 --
--- Slot 0228 (Epic 50, story 50.24) - takedowns: what Maktaba Cloud's signed instruction took
+-- Slot 0229 (Epic 50, story 50.24) - takedowns: what Maktaba Cloud's signed instruction took
 -- off a published channel after a copyright notice.
 --
 --   broadcast_takedowns   one row per instruction the home applied: the item (a video) or the
@@ -11,13 +11,13 @@
 --                         withdrawn notice, when Maktaba restored it
 --
 -- video_taken_down(video) is true while a takedown stands on the item or on a source it comes
--- from, and video_publishable_reason() (slot 0227's one rule) answers NULL for it whatever its
+-- from, and video_publishable_reason() (slot 0228's one rule) answers NULL for it whatever its
 -- reason was (an own mark, a cleared mark, CC BY, a permission): the scheduler leaves it out, the
 -- channel's player slates a slot already scheduled, and the Broadcast page's share drops it.
 -- Nothing else of the library changes, and nothing here leaves the home.
 --
--- Additive: a new table and function, slot 0227's function re-created with one more check
--- (SECURITY DEFINER still, as slot 0227 made it: the livetv plugins' statements call it).
+-- Additive: a new table and function, slot 0228's function re-created with one more check
+-- (SECURITY DEFINER still, as slot 0228 made it: the livetv plugins' statements call it).
 --
 CREATE TABLE IF NOT EXISTS broadcast_takedowns (
     id           text         PRIMARY KEY,

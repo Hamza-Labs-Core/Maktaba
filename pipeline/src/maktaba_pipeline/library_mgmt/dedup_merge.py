@@ -122,7 +122,7 @@ RULES: Mapping[tuple[str, str], Rule] = {
     ("clip_group_items", "video_id"): Rule("union", ()),  # one clip group per video
     ("filler_items", "video_id"): Rule("union", ("pool_id",)),
     ("channel_programs", "video_id"): Rule("move"),
-    # a takedown Maktaba Cloud's instruction applied to the item (slot 0228) stands on the
+    # a takedown Maktaba Cloud's instruction applied to the item (slot 0229) stands on the
     # keeper: the same content never airs again because its copy was merged
     ("broadcast_takedowns", "video_id"): Rule("move"),
     ("promo_links", "video_id"): Rule("union", (), relib=True),

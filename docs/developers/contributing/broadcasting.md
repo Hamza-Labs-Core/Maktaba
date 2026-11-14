@@ -152,7 +152,7 @@ signed instruction:
   (`purpose: "speedtest"`), which the edge takes on its speed test only.
 - **Applying one.** A takedown names the item (its id, or the programme on the channel at the
   notice's time, read from `channel_programs`) or a source (a YouTube channel or playlist, a
-  speaker, a label). The home writes a row in `broadcast_takedowns`; slot 0228's
+  speaker, a label). The home writes a row in `broadcast_takedowns`; slot 0229's
   `video_taken_down()` makes `video_publishable_reason()` answer `NULL` for it, so the scheduler
   leaves it out and a slot already scheduled plays the slate. The home answers
   (`POST .../takedowns/{id}/ack`) `applied` with the end of the slot on air now, `not_found` (the

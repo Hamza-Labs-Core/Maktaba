@@ -275,7 +275,7 @@ func TestPublishableOnlySwitch(t *testing.T) {
 
 // The rule's functions a plugin's statement calls answer for a role with no grant on the
 // tables they read (a plugin's maktaba_fp_* role): they are SECURITY DEFINER, and a later
-// slot that re-creates one (slot 0228's takedown check) keeps it so.
+// slot that re-creates one (slot 0229's takedown check) keeps it so.
 func TestTheRuleAnswersARoleWithNoGrants(t *testing.T) {
 	h := newPubHome(t)
 	ctx := context.Background()
