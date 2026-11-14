@@ -6,7 +6,9 @@
 }
 
 :80 {
-	reverse_proxy 127.0.0.1:8443 {
+	# blue and green, as production's RELAY_UPSTREAMS: a restart for new database URLs starts
+	# the other colour and drains the old (entrypoint.sh, story 50.18)
+	reverse_proxy 127.0.0.1:8443 127.0.0.1:8453 {
 		lb_try_duration 5s
 		lb_try_interval 100ms
 		health_uri /readyz

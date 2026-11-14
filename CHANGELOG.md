@@ -14,6 +14,16 @@ build fails when the two differ.
 
 ### Changed
 
+- **The cloud's database can run on machines of its own (Epic 50, story 50.18).** Three
+  database nodes (a primary, a replica that confirms every commit, and a second replica) sit
+  behind PgBouncer and a Floating IP of their own; losing the primary promotes the replica that
+  has every commit, the address follows it, and the cloud's machines reconnect without a
+  restart. The cloud now works through PgBouncer's transaction pool (each query with arguments
+  goes in one round trip), and a script moves the Phase 1 pair's database to the new nodes with
+  one short pause in writes. In the cloud rehearsal the primary was killed under load with no
+  committed write lost, and the move ran end to end. Nothing changes for households until the
+  machines are created.
+
 - **The cloud's api can run on several machines at once (Epic 50, story 50.17).** The worker's
   jobs (expired sign-in cleanup, account deletions, the relayed streams' sweep, pay-as-you-go
   reports) run on exactly one node, the one holding a database lock, and another node takes
@@ -843,6 +853,16 @@ build fails when the two differ.
   alerted.
 
 ### Added
+
+- **A cast grant for Maktaba's Cast receiver (Epic 58, story 58.07).** A signed-in phone or
+  browser can now mint a cast grant on the home (`POST /api/cast/grants`) for the one video or
+  play queue it casts. The TV uses the grant to open its own stream sessions, report where it
+  stopped, renew its links and move through the queue, so the phone can sleep or leave and
+  Continue Watching still shows the TV's place. A grant lasts at most six hours, acts as its
+  person (their libraries and a child's parental limit, read again on every request), is
+  never an admin, and reaches nothing else: any other video or route is refused. The home's
+  API answers Maktaba's receiver page at cast.maktaba.tv without cookies. A sign-in through
+  Maktaba Cloud and the admin token cannot mint one.
 
 - **Apps can tell when they and the home are too far apart (story 58.01).** The home now
   publishes its API level, the oldest level it still serves, and the oldest build of each app it
@@ -2625,6 +2645,19 @@ build fails when the two differ.
   Play/Pause and the media keys of both makers' remotes; the red key opens a card's actions), in
   English and Arabic, with its own fonts. Back on Home asks Leave Maktaba? before it closes.
   Signed out, it sends the TV to the home's sign-in and back.
+
+- **Playback that fits each TV (story 58.02).** A TV app can now report what its device plays
+  (`device_caps` on a stream session: containers, codecs with their height, frame rate and bit
+  depth, HDR formats, audio and passthrough, HLS segment formats, DASH, bitrate), and the home
+  merges it with the new `firetv`, `tizen`, `webos`, `roku`, `cast` and `vega` profiles: the
+  report narrows a profile freely and widens it only up to its platform's ceiling. A file whose
+  picture the TV plays but whose container, audio or Dolby Vision layer it does not is now
+  remuxed, the video copied, never encoded: HEVC and AV1 in fMP4 HLS segments (TS stays the
+  default), Dolby Vision profile 8 as its HDR10 or HLG base layer (Samsung never gets Dolby
+  Vision; Roku gets only profile 5), TrueHD and DTS as EAC3, with a stereo AAC track beside it on
+  Roku, and AV1 on Roku by DASH. Subtitles stay in step in fMP4 sessions. Each session also
+  carries `stream_sig`, which signs its subtitle and chapter URLs, so a TV player that sends no
+  header fetches every URL it needs. The older profiles decide as before.
 
 - **The broadcast edge, built and rehearsed in CI (story 50.21).** Maktaba Cloud now has the
   Cloudflare Worker a published channel will play from: a home pushes each segment of each

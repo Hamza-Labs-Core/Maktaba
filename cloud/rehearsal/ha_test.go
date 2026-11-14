@@ -19,6 +19,7 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/relay/simhome"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/rehearsal/seed"
+	"github.com/lib/pq"
 )
 
 // The Phase 1 pair (story 50.07): tools/rehearsal-cloud/compose-ha.yml.
@@ -32,6 +33,13 @@ type haExtra struct {
 	// noEdgeWait skips the wait for the plain-HTTP relay through fipfront: 50.31's scenarios
 	// run production's Caddyfile, which serves relay names over TLS only
 	noEdgeWait bool
+	// story 50.18: the database's nodes (default: the pair), the services `up` starts (default:
+	// all), what the scenario waits for once they are up (default: a leader with a streaming
+	// sync standby among the pair), and the relay the homes reach (default: the leader's blue)
+	nodes    []string
+	services []string
+	ready    func(*ha) bool
+	relay    string
 }
 
 type ha struct {
@@ -76,6 +84,13 @@ func (h *ha) envHA() []string {
 	}
 	return append(h.env(),
 		"NODE_IMAGE="+node,
+		// story 50.18's database nodes and the second fake (the database's Floating IP)
+		fmt.Sprintf("DB1_PG_PORT=%d", p[0]+102), fmt.Sprintf("DB2_PG_PORT=%d", p[0]+103), fmt.Sprintf("DB3_PG_PORT=%d", p[0]+104),
+		fmt.Sprintf("DB1_API_PORT=%d", p[0]+202), fmt.Sprintf("DB2_API_PORT=%d", p[0]+203), fmt.Sprintf("DB3_API_PORT=%d", p[0]+204),
+		fmt.Sprintf("FAKEHCLOUD_DB_PORT=%d", p[0]+301), fmt.Sprintf("API_POOL_PORT=%d", p[0]+302),
+		"FAKEHCLOUD_DB_NETWORK="+h.project+"_dbfip",
+		fmt.Sprintf("FAKEHCLOUD_DB_SERVERS=1=%s-node-a-1@10.62.0.11,2=%s-node-b-1@10.62.0.12,11=%s-db-1-1@10.62.0.31,12=%s-db-2-1@10.62.0.32,13=%s-db-3-1@10.62.0.33",
+			h.project, h.project, h.project, h.project, h.project),
 		fmt.Sprintf("A_PG_PORT=%d", p[0]+100), fmt.Sprintf("B_PG_PORT=%d", p[0]+101),
 		fmt.Sprintf("A_API_PORT=%d", p[0]+200), fmt.Sprintf("B_API_PORT=%d", p[0]+201),
 		fmt.Sprintf("FAKEHCLOUD_PORT=%d", p[0]+300),
@@ -96,10 +111,18 @@ func upHAWith(t *testing.T, scenario string, extra *haExtra) *ha {
 	c.edge = fmt.Sprintf("http://127.0.0.1:%d", p[1])
 	h := &ha{cluster: c, pg: map[string]int{"node-a": p[0] + 100, "node-b": p[0] + 101},
 		api: map[string]int{"node-a": p[0] + 200, "node-b": p[0] + 201}}
+	if extra != nil && len(extra.nodes) > 0 {
+		all := map[string]int{"node-a": 0, "node-b": 1, "db-1": 2, "db-2": 3, "db-3": 4}
+		h.pg, h.api = map[string]int{}, map[string]int{}
+		for _, n := range extra.nodes {
+			h.pg[n], h.api[n] = p[0]+100+all[n], p[0]+200+all[n]
+		}
+	}
 	pki := filepath.Join(c.dir, ".work", "pki-"+scenario)
 	_ = os.RemoveAll(pki)
 	if out, err := exec.Command("bash", filepath.Join(repoRoot(t), "deploy/cloud-ha/bin/make-etcd-certs"), pki,
-		"node-a=10.60.0.11", "node-b=10.60.0.12", "witness=10.60.0.13").CombinedOutput(); err != nil {
+		"node-a=10.60.0.11", "node-b=10.60.0.12", "witness=10.60.0.13",
+		"db-1=10.60.0.31", "db-2=10.60.0.32", "db-3=10.60.0.33").CombinedOutput(); err != nil {
 		t.Fatalf("make-etcd-certs: %v\n%s", err, out)
 	}
 	// the containers read them as root; the key files are 0600 on purpose in production
@@ -121,8 +144,8 @@ func upHAWith(t *testing.T, scenario string, extra *haExtra) *ha {
 		logs, _ := h.composeHA("logs", "--no-color", "--timestamps")
 		var b strings.Builder
 		b.WriteString(logs)
-		for _, n := range []string{"node-a", "node-b"} {
-			for _, f := range []string{"patroni.log", "relay.log", "etcd.log", "caddy.log", "api.log", "connector.log"} {
+		for _, n := range []string{"node-a", "node-b", "db-1", "db-2", "db-3"} {
+			for _, f := range []string{"patroni.log", "relay.log", "etcd.log", "caddy.log", "api.log", "connector.log", "pgbouncer.log"} {
 				out, _ := exec.Command("docker", "exec", h.project+"-"+n+"-1", "cat", "/var/log/"+f).CombinedOutput()
 				fmt.Fprintf(&b, "\n===== %s /var/log/%s\n%s", n, f, out)
 			}
@@ -132,11 +155,19 @@ func upHAWith(t *testing.T, scenario string, extra *haExtra) *ha {
 			_, _ = h.composeHA("down", "-v", "--remove-orphans")
 		}
 	})
-	h.mustHA("up", "-d")
-	waitFor(t, 3*time.Minute, "a leader and a streaming sync standby", func() bool {
-		l := h.leader()
-		return l != "" && h.syncStandby(other(l))
-	})
+	upArgs := []string{"up", "-d"}
+	if extra != nil {
+		upArgs = append(upArgs, extra.services...)
+	}
+	h.mustHA(upArgs...)
+	if extra != nil && extra.ready != nil {
+		waitFor(t, 3*time.Minute, "the cluster ready", func() bool { return extra.ready(h) })
+	} else {
+		waitFor(t, 3*time.Minute, "a leader and a streaming sync standby", func() bool {
+			l := h.leader()
+			return l != "" && h.syncStandby(other(l))
+		})
+	}
 	if extra == nil || !extra.noEdgeWait {
 		waitFor(t, time.Minute, "the edge through the Floating IP", func() bool {
 			resp, err := http.Get(c.edge + "/readyz")
@@ -150,6 +181,14 @@ func upHAWith(t *testing.T, scenario string, extra *haExtra) *ha {
 	api := simhome.API()
 	c.api = &httptestServer{URL: api.URL, close: api.Close}
 	return h
+}
+
+// nodes: the database's nodes the scenario runs (the pair, or story 50.18's)
+func (h *ha) nodes() []string {
+	if h.extra != nil && len(h.extra.nodes) > 0 {
+		return h.extra.nodes
+	}
+	return []string{"node-a", "node-b"}
 }
 
 func other(n string) string {
@@ -223,16 +262,26 @@ func (h *ha) homesOnHA(n int) []string {
 		h.mu.Unlock()
 		slugs[i] = slug
 	}
-	waitFor(h.t, 3*time.Minute, fmt.Sprintf("%d homes online", n), func() bool { return h.tunnelsOn(l) == n })
+	relay := l + "-blue"
+	if h.extra != nil && h.extra.relay != "" {
+		relay = h.extra.relay
+	}
+	waitFor(h.t, 3*time.Minute, fmt.Sprintf("%d homes online", n), func() bool { return h.tunnelsBy(relay) == n })
 	return slugs
 }
 
 // tunnelsOn counts node's relay's tunnels in the directory (read on the current primary).
-func (h *ha) tunnelsOn(node string) int {
-	for _, n := range []string{"node-a", "node-b"} {
+// tunnelsOn counts a node's tunnels on either colour of its relay (a restart for new database
+// URLs is a blue/green, story 50.18).
+func (h *ha) tunnelsOn(node string) int { return h.tunnelsBy(node+"-blue", node+"-green") }
+
+// tunnelsBy counts the tunnels of the relays named in the directory, read on any node that
+// answers.
+func (h *ha) tunnelsBy(relays ...string) int {
+	for _, n := range h.nodes() {
 		db := h.db(n)
 		var c int
-		err := db.QueryRow(`SELECT count(*) FROM relay_tunnels WHERE relay_id = $1`, node+"-blue").Scan(&c)
+		err := db.QueryRow(`SELECT count(*) FROM relay_tunnels WHERE relay_id = ANY($1)`, pq.Array(relays)).Scan(&c)
 		_ = db.Close()
 		if err == nil {
 			return c
@@ -244,15 +293,20 @@ func (h *ha) tunnelsOn(node string) int {
 // writer commits a row every 100 ms on whichever node is writable, and keeps the ids
 // Postgres acknowledged (a commit returns only once the sync standby has it).
 type writer struct {
-	mu    sync.Mutex
-	acked []int64
-	stop  chan struct{}
-	done  chan struct{}
+	mu     sync.Mutex
+	acked  []int64
+	last   time.Time     // the newest acknowledged commit
+	maxGap time.Duration // the longest time between two acknowledged commits (writes held)
+	stop   chan struct{}
+	done   chan struct{}
 }
 
 func (h *ha) startWriter() *writer {
 	w := &writer{stop: make(chan struct{}), done: make(chan struct{})}
-	dbs := map[string]*sql.DB{"node-a": h.db("node-a"), "node-b": h.db("node-b")}
+	dbs := map[string]*sql.DB{}
+	for _, n := range h.nodes() {
+		dbs[n] = h.db(n)
+	}
 	for _, db := range dbs {
 		_, _ = db.Exec(`CREATE TABLE IF NOT EXISTS rehearsal_writes (id bigint PRIMARY KEY, at timestamptz NOT NULL DEFAULT now())`)
 	}
@@ -285,6 +339,11 @@ func (h *ha) startWriter() *writer {
 				cancel()
 				if err == nil && time.Since(start) < 59*time.Second {
 					w.mu.Lock()
+					now := time.Now()
+					if !w.last.IsZero() && now.Sub(w.last) > w.maxGap {
+						w.maxGap = now.Sub(w.last)
+					}
+					w.last = now
 					w.acked = append(w.acked, next)
 					w.mu.Unlock()
 					break
@@ -295,12 +354,26 @@ func (h *ha) startWriter() *writer {
 	return w
 }
 
-// writeOrder: the leader first (a write tried on the replica only fails).
+// writeOrder: the leader first (a write tried on a replica only fails).
 func (h *ha) writeOrder() []string {
-	if l := h.leader(); l != "" {
-		return []string{l, other(l)}
+	l := h.leader()
+	out := []string{}
+	if l != "" {
+		out = append(out, l)
 	}
-	return []string{"node-a", "node-b"}
+	for _, n := range h.nodes() {
+		if n != l {
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
+// held is the longest time writes waited, so far.
+func (w *writer) held() time.Duration {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.maxGap
 }
 
 func (w *writer) halt() []int64 {
