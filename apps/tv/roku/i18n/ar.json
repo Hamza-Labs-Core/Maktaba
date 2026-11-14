@@ -123,5 +123,25 @@
   "roku.weekday.3": "الأربعاء",
   "roku.weekday.4": "الخميس",
   "roku.weekday.5": "الجمعة",
-  "roku.weekday.6": "السبت"
+  "roku.weekday.6": "السبت",
+  "parental.time.left": "بقي %1$s اليوم",
+  "parental.time.warning": "تنتهي المشاهدة بعد %1$s.",
+  "parental.time.minutes": {
+    "zero": "%1$d دقيقة",
+    "one": "دقيقة واحدة",
+    "two": "دقيقتان",
+    "few": "%1$d دقائق",
+    "many": "%1$d دقيقة",
+    "other": "%1$d دقيقة"
+  },
+  "parental.time.hours": {
+    "zero": "%1$d ساعة",
+    "one": "ساعة واحدة",
+    "two": "ساعتان",
+    "few": "%1$d ساعات",
+    "many": "%1$d ساعة",
+    "other": "%1$d ساعة"
+  },
+  "parental.time.hoursMinutes": "%1$s و%2$s",
+  "parental.time.underMinute": "أقل من دقيقة"
 }

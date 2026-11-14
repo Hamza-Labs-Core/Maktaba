@@ -146,3 +146,62 @@ def test_main_exits_non_zero_and_names_the_key(tmp_path: Path, capsys: pytest.Ca
 def test_the_repositorys_tv_catalogs_pass() -> None:
     problems, _ = ctc.check(ctc.CATALOGS)
     assert problems == []
+
+
+AR_MINUTES = {
+    "zero": "%1$d دقيقة",
+    "one": "دقيقة واحدة",
+    "two": "دقيقتان",
+    "few": "%1$d دقائق",
+    "many": "%1$d دقيقة",
+    "other": "%1$d دقيقة",
+}
+EN_MINUTES = {"one": "%1$d minute", "other": "%1$d minutes"}
+
+
+def test_a_plural_with_each_languages_forms_passes(tmp_path: Path) -> None:
+    write(tmp_path, "apps/tv/roku/i18n", {"t.minutes": EN_MINUTES}, {"t.minutes": AR_MINUTES})
+    assert run(tmp_path, "apps/tv/roku/i18n") == []
+
+
+def test_an_arabic_plural_missing_a_form_fails_naming_it(tmp_path: Path) -> None:
+    ar = {k: v for k, v in AR_MINUTES.items() if k != "few"}
+    write(tmp_path, "apps/tv/roku/i18n", {"t.minutes": EN_MINUTES}, {"t.minutes": ar})
+    problems = run(tmp_path, "apps/tv/roku/i18n")
+    assert len(problems) == 1
+    assert "'t.minutes' has no 'few' form" in problems[0] and "ar.json" in problems[0]
+
+
+def test_an_english_plural_with_a_form_english_does_not_use_fails(tmp_path: Path) -> None:
+    write(tmp_path, "apps/tv/roku/i18n", {"t.minutes": {**EN_MINUTES, "two": "%1$d minutes"}}, {"t.minutes": AR_MINUTES})
+    assert run(tmp_path, "apps/tv/roku/i18n") == [
+        "apps/tv/roku/i18n/en.json: 't.minutes' has a 'two' form, which en does not use"
+    ]
+
+
+def test_a_plural_in_one_language_only_fails(tmp_path: Path) -> None:
+    write(tmp_path, "apps/tv/roku/i18n", {"t.minutes": EN_MINUTES}, {"t.minutes": "%1$d دقيقة"})
+    assert run(tmp_path, "apps/tv/roku/i18n") == [
+        "apps/tv/roku/i18n: 't.minutes' is a plural in en.json and not in ar.json"
+    ]
+
+
+def test_plural_placeholders_compare_other_and_bound_each_form(tmp_path: Path) -> None:
+    ar = {**AR_MINUTES, "other": "دقائق", "few": "%1$d %2$s دقائق"}
+    write(tmp_path, "apps/tv/roku/i18n", {"t.minutes": EN_MINUTES}, {"t.minutes": ar})
+    problems = run(tmp_path, "apps/tv/roku/i18n")
+    assert any("'t.minutes' placeholders differ" in p for p in problems)
+    assert any("form 'few' has placeholders its 'other' lacks" in p for p in problems)
+
+
+def test_latin_words_in_an_arabic_plural_form_fail(tmp_path: Path) -> None:
+    write(tmp_path, "apps/tv/roku/i18n", {"t.minutes": EN_MINUTES}, {"t.minutes": {**AR_MINUTES, "two": "two دقيقة"}})
+    problems = run(tmp_path, "apps/tv/roku/i18n")
+    assert problems == [
+        "apps/tv/roku/i18n/ar.json: 't.minutes' form 'two' has Latin words that are not product names or code: two"
+    ]
+
+
+def test_a_nested_object_that_is_not_a_plural_is_still_dotted_keys(tmp_path: Path) -> None:
+    write(tmp_path, "apps/tv/web/i18n", {"home": {"one": "One"}}, {"home": {"one": "واحد"}})
+    assert run(tmp_path, "apps/tv/web/i18n") == []
