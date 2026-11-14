@@ -163,22 +163,11 @@ final class PlayerShellTests: XCTestCase {
         XCTAssertNil(PlayerUITestCase.cancelledTouches(in: nil), "no app, no answer")
     }
 
-    /// A failure while the app is in the background starts with that, before a lost tap's
-    /// note; in front, not running, or not known, the failure is left as it is.
-    @MainActor
-    func testAFailureWithTheAppOffTheScreenSaysSo() {
-        let issue = XCTIssue(type: .assertionFailure, compactDescription: "the switch reads 0")
-        for state: XCUIApplication.State in [.runningBackground, .runningBackgroundSuspended] {
-            XCTAssertEqual(PlayerUITestCase.withOffScreen(issue, state: state).compactDescription,
-                           PlayerUITestCase.offScreenNote + "the switch reads 0")
-        }
-        for state: XCUIApplication.State? in [.runningForeground, .notRunning, .unknown, nil] {
-            XCTAssertEqual(PlayerUITestCase.withOffScreen(issue, state: state).compactDescription, "the switch reads 0")
-        }
-        let both = PlayerUITestCase.withOffScreen(PlayerUITestCase.withLostTaps(issue, cancelled: 1), state: .runningBackground)
-        XCTAssertEqual(both.compactDescription,
-                       PlayerUITestCase.offScreenNote + PlayerUITestCase.lostTapsNote(1) + "the switch reads 0")
-        XCTAssertTrue(PlayerUITestCase.offScreenNote.contains("in the background"))
+    /// A touch's line in the app's log says how long it was held and where, in points.
+    func testTheTouchWatcherSaysHowLongATouchWasHeld() {
+        XCTAssertEqual(TouchWatcher.heldLine(0.0812, at: CGPoint(x: 637.5, y: 827)),
+                       "touch held 0.08 s at (638, 827)")
+        XCTAssertEqual(TouchWatcher.heldLine(1.5, at: .zero, cancelled: true), "touch held 1.50 s at (0, 0), cancelled")
     }
 
     /// Each scene change the touch hook watches has its own line in the app's log; another

@@ -165,29 +165,9 @@ class PlayerUITestCase: XCTestCase {
         // on the main thread, so on the main actor, where `app` lives: XCTest records a UI
         // test's issues there (any other thread records the issue as it is)
         nonisolated(unsafe) let test = self
-        let (cancelled, state) = MainActor.assumeIsolated { (Self.cancelledTouches(in: test.app), test.app?.state) }
-        super.record(Self.withOffScreen(Self.withLostTaps(issue, cancelled: cancelled), state: state))
+        let cancelled = MainActor.assumeIsolated { Self.cancelledTouches(in: test.app) }
+        super.record(Self.withLostTaps(issue, cancelled: cancelled))
     }
-
-    /// `issue`, its description led by `offScreenNote` when the app was in the background at
-    /// the failure; as it is otherwise.
-    ///
-    /// On CI the system sent the app to the Home Screen in the middle of a tap (main runs
-    /// 43372573155, 43409306425, 43409448093, 43176025371: the recording shows the Home Screen
-    /// from the tap on, and XCTest still terminates the same pid at tear-down). The test then
-    /// read the app's last tree ("the switch still reads 1") and failed as if the tap had done
-    /// nothing. The app's log has a "scene:" line for each time it left the front (`TouchHook`).
-    nonisolated static func withOffScreen(_ issue: XCTIssue, state: XCUIApplication.State?) -> XCTIssue {
-        guard state == .runningBackground || state == .runningBackgroundSuspended else { return issue }
-        var issue = issue
-        issue.compactDescription = offScreenNote + issue.compactDescription
-        return issue
-    }
-
-    /// The words a failure starts with when the app was off the screen at the failure.
-    nonisolated static let offScreenNote = "[the app was in the background at this failure: the Home Screen showed, "
-        + "so what the test read is the app's last screen; see the app's \"scene:\" lines and the system log kept "
-        + "with the results before reading the failure as the app's] "
 
     /// How many touches the system cancelled in `app` since it launched; nil when it is not
     /// running or does not answer (launched without the hook).
@@ -272,6 +252,33 @@ class PlayerUITestCase: XCTestCase {
                 last = now
             }
             RunLoop.current.run(until: Date().addingTimeInterval(0.25))
+        }
+    }
+
+    /// Taps the switch `toggle` (a `Toggle`'s element, its switch inside) until it reads
+    /// `value`, as #1000 does for a Home row: once it stands still, then read until it changes.
+    ///
+    /// On a loaded CI runner a tap that lands dead centre on a still switch has left it as it
+    /// was, with no touch cancelled and the app in front: main runs 43372573155, 43344331335
+    /// and 43332124998 (`testPlaybackSettingsAreKept`, "it reads Optional(1)"), 43409306425,
+    /// 43176025371, 43141129651 and 43300055899 (`testAlsoSendToMaktabaWhenTheHomeAllowsIt`,
+    /// the box still 0 in the hierarchy kept at the failure). A tap that did nothing leaves
+    /// nothing behind, so a switch that still reads what it read before the tap gets one more
+    /// tap; a second miss fails naming the switch, and so does any other value. The app's log
+    /// says how long each touch was held (`TouchWatcher`), for the next miss.
+    func flip(_ toggle: XCUIElement, to value: String, _ what: String,
+              file: StaticString = #filePath, line: UInt = #line) {
+        for attempt in 1 ... 2 {
+            waitUntilStill(toggle, timeout: 5)
+            let before = toggle.value as? String
+            toggle.switches.firstMatch.tap()
+            if waitUntil({ toggle.value as? String == value }) { return }
+            let now = toggle.value as? String
+            guard now == before else {
+                return XCTFail("\(what): reads \(now ?? "nothing") after the tap, not \(value)", file: file, line: line)
+            }
+            XCTAssertLessThan(attempt, 2, "\(what): still \(now ?? "nothing") after two taps on a still switch",
+                              file: file, line: line)
         }
     }
 

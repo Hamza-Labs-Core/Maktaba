@@ -19,12 +19,9 @@ import UIKit
 /// in the app's log (the CI job keeps it). Like `TextSizeHook`: a Debug build's only, and
 /// only with the flag. The Player's UI-test targets compile this file too.
 ///
-/// It also logs each time the app's scene leaves or comes back to the front (`sceneNote`).
-/// On CI the system sent the app to the Home Screen in the middle of a test's tap (main runs
-/// 43372573155, 43409306425, 43409448093, 43176025371: the recording shows the Home Screen
-/// from the tap on, XCTest still terminates the same pid at tear-down); the system then
-/// cancels the touch, and the test failed on what the tap should have done ("the switch
-/// still reads 1"). The line puts the app leaving the front next to the cancelled touch.
+/// It also logs each time the app's scene leaves or comes back to the front (`sceneNote`),
+/// and how long each touch was held (`TouchWatcher.heldLine`, debug): a failing tap's line
+/// says whether its touch reached the app at all, and whether it read as a long hold.
 enum TouchHook {
     static let flag = "-maktaba-touch-hook"
     static let ask = "com.hamzalabs.maktaba.uitest.touches.ask"
@@ -57,6 +54,10 @@ enum TouchHook {
     @MainActor static func noteCancelled(_ touches: Int) {
         cancelled += max(touches, 1)
         log.notice("touch cancelled by the system (\(cancelled, privacy: .public) since launch): a UI test's tap may be lost (#639)")
+    }
+
+    @MainActor static func noteHeld(_ line: String) {
+        log.debug("\(line, privacy: .public)")
     }
 
     /// Watches the touches and answers the tests when launched with `flag`; without it, does
@@ -116,6 +117,9 @@ enum TouchHook {
 /// touches, runs beside every other recognizer and cannot be stopped by one, so it sees
 /// each touch to its end. A touch the system cancels is counted (`TouchHook`).
 final class TouchWatcher: UIGestureRecognizer, UIGestureRecognizerDelegate {
+    /// When each live touch began (its `timestamp`), for the held line.
+    private var began: [ObjectIdentifier: TimeInterval] = [:]
+
     init() {
         super.init(target: nil, action: nil)
         cancelsTouchesInView = false
@@ -124,13 +128,31 @@ final class TouchWatcher: UIGestureRecognizer, UIGestureRecognizerDelegate {
         delegate = self
     }
 
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
+        for t in touches { began[ObjectIdentifier(t)] = t.timestamp }
+    }
+
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent) {
+        noteHeld(touches, cancelled: false)
         if Self.allEnded(event, besides: touches) { state = .failed }
     }
 
     override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent) {
+        noteHeld(touches, cancelled: true)
         TouchHook.noteCancelled(touches.count)
         state = .failed
+    }
+
+    private func noteHeld(_ touches: Set<UITouch>, cancelled: Bool) {
+        for t in touches {
+            guard let start = began.removeValue(forKey: ObjectIdentifier(t)) else { continue }
+            TouchHook.noteHeld(Self.heldLine(t.timestamp - start, at: t.location(in: nil), cancelled: cancelled))
+        }
+    }
+
+    /// The app log's line for a touch held `held` seconds, lifted (or cancelled) at `point`.
+    static func heldLine(_ held: TimeInterval, at point: CGPoint, cancelled: Bool = false) -> String {
+        String(format: "touch held %.2f s at (%.0f, %.0f)", held, point.x, point.y) + (cancelled ? ", cancelled" : "")
     }
 
     /// Whether no touch of `event` goes on after `ending` (all ended or cancelled).
