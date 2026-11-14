@@ -628,6 +628,7 @@ export function readManifest() {
 export const DOWNLOAD = {
   name: "download",
   story: "60.11",
+  paths: [PATH],
   async build({ write, resolves, script, env = process.env, log = console.log }) {
     const got = await readRelease({ env });
     const data = releaseData(got, { expect: env.WEBSITE_EXPECT_RELEASE || "" });

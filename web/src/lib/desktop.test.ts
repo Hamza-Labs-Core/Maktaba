@@ -82,6 +82,33 @@ describe("resolveMenuAction", () => {
     }
   });
 
+  // Epic 60 story 60.12 T07: the Help menu opens maktaba.tv's help in the UI's language
+  it("opens maktaba.tv/help/ from the Help menu, and /ar/help/ in Arabic", () => {
+    expect(resolveMenuAction("open-docs", "en")).toEqual({
+      kind: "external",
+      url: "https://maktaba.tv/help/",
+    });
+    expect(resolveMenuAction("open-docs", "ar")).toEqual({
+      kind: "external",
+      url: "https://maktaba.tv/ar/help/",
+    });
+    const was = document.documentElement.lang;
+    try {
+      document.documentElement.lang = "ar";
+      expect(resolveMenuAction("open-docs")).toEqual({
+        kind: "external",
+        url: "https://maktaba.tv/ar/help/",
+      });
+      document.documentElement.lang = "en";
+      expect(resolveMenuAction("open-docs")).toEqual({
+        kind: "external",
+        url: "https://maktaba.tv/help/",
+      });
+    } finally {
+      document.documentElement.lang = was;
+    }
+  });
+
   it("maps library-1..9 → navigate to that library slot", () => {
     expect(resolveMenuAction("library-1")).toEqual({
       kind: "navigate-library",

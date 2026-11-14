@@ -7,7 +7,8 @@
 // apps' face, which carries Arabic and Latin; @fontsource ships it as WOFF, which resvg cannot
 // read, so woffToSfnt() unpacks each file (WOFF 1.0 is zlib per table) before it is handed over.
 // The colours are the placeholder stylesheet's dark ones (before the part A shell). The home page's
-// card is part B's (story 60.01 part B, `social-home` in design/mockups/part-b.mjs; cardSvgB):
+// card is part B's (story 60.01 part B, `social-home` in design/mockups/part-b.mjs; cardSvgB), as
+// are the download page's and the help pages' (60.12):
 // the both-script wordmark at the top, the tagline in the display face (Amiri Bold, the copy the
 // Apple app ships), the arch at the inline end and maktaba.tv with one line at the foot. Every
 // page in part B's shell takes it (isPartBCard: the download page, and with Phase 3 the install
@@ -244,11 +245,16 @@ export const CARD_SUB = {
     en: "Privacy, terms and copyright",
     ar: "الخصوصية وشروط الاستخدام وحقوق النشر",
   },
+  // the help index and every topic (story 60.12)
+  "/help/": {
+    en: "Help, the same as in the app",
+    ar: "المساعدة نفسها التي في التطبيق",
+  },
 };
 
 /** The families whose every page takes its CARD_SUB line: the index and each problem page, each
- * legal page (Epic 60 Phase 3). Any other key is one page. */
-export const CARD_FAMILIES = ["/problems/", "/legal/"];
+ * legal page (Epic 60 Phase 3), each help page (60.12). Any other key is one page. */
+export const CARD_FAMILIES = ["/problems/", "/legal/", "/help/"];
 
 /** A page's foot line, or undefined when its card is part A's. */
 export function cardSub(sitePath) {

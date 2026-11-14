@@ -31,8 +31,11 @@ export const ORIGIN = "https://maktaba.tv";
 export const GITHUB = "https://github.com/Hamza-Labs-Core/Maktaba";
 export const LATEST_RELEASE = `${GITHUB}/releases/latest`;
 export const DEVPORTAL = "https://maktaba.dev/";
-/** Help, until the help pages exist (60.12): the install guides' troubleshooting page. */
-export const HELP = "/install/troubleshooting/";
+/** The install guides' troubleshooting page: where part A linked Help until the help pages
+ * (60.12), and where a problem page's "Who can help" still sends a household. */
+export const TROUBLESHOOTING = "/install/troubleshooting/";
+/** Help: the help pages (story 60.12), which every build makes before the pages that link them. */
+export const HELP = "/help/";
 
 export const SITE_MARKER = '<meta name="maktaba-site" content="maktaba-website" />';
 
@@ -245,7 +248,7 @@ export const T = {
       [
         "Help",
         [
-          ["Troubleshooting", HELP],
+          ["Help topics", HELP],
           ["Messages and what they mean", "/problems/"],
         ],
       ],
@@ -294,7 +297,7 @@ export const T = {
       [
         "المساعدة",
         [
-          ["حل المشكلات", HELP],
+          ["مواضيع المساعدة", HELP],
           ["الرسائل ومعانيها", "/problems/"],
         ],
       ],
@@ -344,7 +347,7 @@ export const T_B = {
       [
         "Help",
         [
-          l.help === HELP ? ["Troubleshooting", HELP] : ["Help topics", l.help],
+          l.help === TROUBLESHOOTING ? ["Troubleshooting", l.help] : ["Help topics", l.help],
           ["Messages and what they mean", "/problems/"],
         ],
       ],
@@ -383,7 +386,7 @@ export const T_B = {
       [
         "المساعدة",
         [
-          l.help === HELP ? ["حل المشكلات", HELP] : ["مواضيع المساعدة", l.help],
+          l.help === TROUBLESHOOTING ? ["حل المشكلات", l.help] : ["مواضيع المساعدة", l.help],
           ["الرسائل ومعانيها", "/problems/"],
         ],
       ],
@@ -408,11 +411,11 @@ export const T_B = {
 };
 
 /** Where part B's Download and Help go: their pages once built (`resolves`, build.mjs's
- * resolver), else the latest release and the troubleshooting guide, as part A links them. */
+ * resolver), else the latest release and the troubleshooting guide. */
 export function bLinks(resolves = () => false) {
   return {
     download: resolves("/download/") ? "/download/" : LATEST_RELEASE,
-    help: resolves("/help/") ? "/help/" : HELP,
+    help: resolves(HELP) ? HELP : TROUBLESHOOTING,
   };
 }
 

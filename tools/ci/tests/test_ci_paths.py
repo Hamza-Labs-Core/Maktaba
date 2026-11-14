@@ -184,9 +184,10 @@ CASES: dict[str, tuple[list[str], set[str], dict[str, set[str]]]] = {
         {"unit", "integration", "node-packaging", "components-packs"},
         {"lint": {"go"}, "unit": {"go"}},
     ),
+    # and the website: its help pages take each topic's title and summary from the catalog (60.12)
     "the language files run the catalog's words check": (
         ["web/src/i18n/ar.json"],
-        {"unit", "e2e", "build-artifacts", "plugins"},
+        {"unit", "e2e", "build-artifacts", "plugins", "website"},
         {"lint": {"web", "catalog"}, "unit": {"web"}},
     ),
     "web only": (

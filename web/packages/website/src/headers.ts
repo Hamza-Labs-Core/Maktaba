@@ -8,7 +8,7 @@ export const APEX = "maktaba.tv";
 import table from "./redirects.json";
 
 /** The Worker's redirects, source path → target path (src/redirects.json, which the link check
- * reads too). /docs goes to the front door until the help pages exist (60.12 makes it /help/). */
+ * reads too). /docs goes to the help pages (story 60.12). */
 export const REDIRECTS: Readonly<Record<string, string>> = Object.fromEntries(
   Object.entries(table).filter(([k]) => k.startsWith("/"))
 );

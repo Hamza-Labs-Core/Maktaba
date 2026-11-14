@@ -49,6 +49,15 @@ export const FIRST_SCREEN: Record<string, string[]> = {
 };
 
 /**
+ * Families whose pages are as long as their text (a help topic is Epic 41's, up to 32,000 px tall
+ * at 360 px): their reference is the page's first TALL[kind] pixels, full width, so it stays under
+ * 1 MB and holds the template (the head, the table of contents, the article's type). The shortest
+ * topic fits, so its references show the related topics and the footer too. Every topic is
+ * checked by the structural tests (axe, keyboard, reflow, RTL) instead.
+ */
+export const TALL: Record<string, number> = { help: 4000 };
+
+/**
  * Pages built from data that changes on its own: their reference holds the template, drawn with
  * saved data. The download page (story 60.11) is built from the latest release, which moves with
  * every tag; each value it takes from the release sits in an element marked data-release, and
@@ -131,8 +140,11 @@ for (const p of visualPages()) {
         const firstScreen = FIRST_SCREEN[en];
         // a page has its first-screen masks (Playwright's default colour) or its screenshots'
         const shots = !firstScreen && (await page.locator(SHOT_MASK).count()) > 0;
+        const cap = TALL[p.kind];
+        const height = cap ? await page.evaluate(() => document.documentElement.scrollHeight) : 0;
         await expect(page).toHaveScreenshot(shotName(p, s.width, s.light), {
           fullPage: !firstScreen,
+          ...(cap && height > cap ? { clip: { x: 0, y: 0, width: s.width, height: cap } } : {}),
           mask: (firstScreen ?? (shots ? [SHOT_MASK] : [])).map((sel) => page.locator(sel)),
           ...(shots ? { maskColor: SHOT_MASK_COLOR } : {}),
           animations: "disabled",

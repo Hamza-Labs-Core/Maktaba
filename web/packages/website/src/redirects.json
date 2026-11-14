@@ -1,7 +1,7 @@
 {
-  "$comment": "The Worker's redirects (src/worker.ts): a source path, the path it sends to (301). The link check (scripts/links.mjs) reads this table too: a link to a source passes when its target opens a page. /docs is the address apps and old links print; it goes to the front door until the help pages exist (60.12 makes it /help/).",
-  "/docs": "/",
-  "/docs/": "/",
-  "/ar/docs": "/ar/",
-  "/ar/docs/": "/ar/"
+  "$comment": "The Worker's redirects (src/worker.ts): a source path, the path it sends to (301). The link check (scripts/links.mjs) reads this table too: a link to a source passes when its target opens a page. /docs is the address apps and old links print: it goes to the help pages (60.12). A help topic whose id changes keeps its old path here, sent to the new one (/help/<old>/ and /ar/help/<old>/).",
+  "/docs": "/help/",
+  "/docs/": "/help/",
+  "/ar/docs": "/ar/help/",
+  "/ar/docs/": "/ar/help/"
 }

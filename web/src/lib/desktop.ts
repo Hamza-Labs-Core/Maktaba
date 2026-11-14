@@ -44,7 +44,19 @@ export type MenuAction =
   | { kind: "big-screen" }
   | { kind: "big-screen-leave" };
 
-const DOCS_URL = "https://maktaba.tv/docs";
+/** The Help menu's page: maktaba.tv's help (Epic 60 story 60.12), in the UI's language. */
+export const DOCS_URL = "https://maktaba.tv/help/";
+export const DOCS_URL_AR = "https://maktaba.tv/ar/help/";
+
+/** The help page for a language: Arabic opens /ar/help/, every other language /help/. */
+export function docsUrl(lang: string): string {
+  return lang === "ar" ? DOCS_URL_AR : DOCS_URL;
+}
+
+/** The UI's language, as the i18n provider sets it on <html lang> ("en" outside a page). */
+function uiLang(): string {
+  return typeof document === "undefined" ? "en" : document.documentElement.lang || "en";
+}
 
 /**
  * The static custom menu-item ids this layer knows how to resolve.
@@ -92,7 +104,7 @@ export const KNOWN_MENU_IDS = [
  * Predefined items (quit/close/copy/...) and unknown ids return null —
  * those are handled natively and must not trigger a frontend action.
  */
-export function resolveMenuAction(id: string): MenuAction | null {
+export function resolveMenuAction(id: string, lang: string = uiLang()): MenuAction | null {
   // Cmd+1..9 — switch to library slot N (Story 13.7).
   const libMatch = /^library-([1-9])$/.exec(id);
   if (libMatch) {
@@ -123,7 +135,7 @@ export function resolveMenuAction(id: string): MenuAction | null {
     case "report-problem":
       return { kind: "navigate", to: "/account/report" };
     case "open-docs":
-      return { kind: "external", url: DOCS_URL };
+      return { kind: "external", url: docsUrl(lang) };
     default:
       return null;
   }
