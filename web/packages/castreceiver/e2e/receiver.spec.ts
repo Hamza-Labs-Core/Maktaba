@@ -5,6 +5,12 @@
 // runner's image).
 
 import { expect, test, type Page } from "@playwright/test";
+import {
+  arabicFontLoaded,
+  expectedOrder,
+  vectorInput,
+  visualOrder,
+} from "../../../../shared/i18n/visual_order.mjs";
 import { customData, mockHome } from "./mockHome";
 
 const visual = process.env.CAST_VISUAL === "1";
@@ -134,6 +140,39 @@ for (const lang of ["en", "ar"] as const) {
       );
       await shot(page, `update-${lang}`);
     });
+  });
+}
+
+// Story 58.15: "الحلقة 3 — Intro" reads Arabic first (on the right), then 3, the dash and Intro,
+// as Roku's VisualText draws it and /tv/ shows it (vector episode.06), whatever the sender's
+// language: a title is isolated and takes its direction from its first letter, in the bundled
+// Arabic font.
+for (const lang of ["en", "ar"] as const) {
+  test(`an Arabic title reads in Roku's order, joined (${lang}, 58.15)`, async ({ page }, info) => {
+    await mockHome(page, info, { lang, title: vectorInput("episode.06") });
+    await page.goto("/r/");
+    await expect(screen(page)).toHaveAttribute("data-screen", "idle");
+    await page.evaluate(
+      (d) => (window as unknown as { __caf: { load(d: unknown): Promise<unknown> } }).__caf.load(d),
+      customData(lang)
+    );
+    await page.evaluate(() => {
+      const caf = (
+        window as unknown as { __caf: { emit(t: string): void; at(t: number, d: number): void } }
+      ).__caf;
+      caf.emit("PLAYING");
+      caf.at(60, 5400);
+    });
+    await expect(screen(page)).toHaveAttribute("data-screen", "playing");
+    const title = page.locator(".mk-title");
+    await expect(title).toHaveText(vectorInput("episode.06"));
+    await page.evaluate(() => document.fonts.ready);
+    expect(await title.evaluate(visualOrder)).toBe(expectedOrder("episode.06"));
+    // a face loads when text first needs it, which can be after document.fonts.ready
+    await expect
+      .poll(() => title.evaluate(arabicFontLoaded), { message: "the title's bundled Arabic font" })
+      .toBe(true);
+    await page.screenshot({ path: info.outputPath(`arabic-title-${lang}.png`) });
   });
 }
 

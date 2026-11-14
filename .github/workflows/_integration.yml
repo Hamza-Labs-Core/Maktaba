@@ -17,10 +17,20 @@ permissions:
   contents: read
 
 jobs:
+  # The tier's Go modules, in two shards of about the same test time on two runners: api
+  # (422-451 s of package time on 2026-11-14) and the rest (cmd/maktaba-server 365-395 s,
+  # streaming 78-88 s, the small modules). On one 4-vCPU runner they ran their tests side by
+  # side and the tier's wall was api's, slowed by the others (the Makefile's
+  # INTEGRATION_TIER_BUDGET comment). The pipeline's half is the pipeline job below.
   integration:
     if: inputs.integration
     runs-on: ubuntu-22.04
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [api, rest]
+    name: integration (${{ matrix.shard }})
 
     services:
       postgres:
@@ -81,8 +91,8 @@ jobs:
           # keep the wheels: pruned (setup-uv's default) main's entry held 6 MB, and every
           # run downloaded the whole set from PyPI again
           prune-cache: false
-          # restore main's uv cache; only a push to main saves it
-          save-cache: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          # restore main's uv cache; only a push to main saves it, from one shard (one key)
+          save-cache: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && matrix.shard == 'api' }}
 
       - name: Install pipeline deps
         working-directory: pipeline
@@ -141,14 +151,127 @@ jobs:
       # scratch database. The `make migrate` above already made the
       # cluster-wide maktaba_worker role, and the service user is a
       # superuser, so the roles and extensions (pg_trgm, unaccent,
-      # pgcrypto) the migrations want are there.
-      - name: Run integration tier
-        run: make test-integration INTEGRATION_GO_PG_URL="$DATABASE_URL"
+      # pgcrypto) the migrations want are there. This job runs its shard's
+      # modules (the Makefile's INTEGRATION_GO_SHARD).
+      - name: Run integration tier (Go, ${{ matrix.shard }})
+        env:
+          SHARD: ${{ matrix.shard }}
+        run: make test-integration-go INTEGRATION_GO_SHARD="$SHARD" INTEGRATION_GO_PG_URL="$DATABASE_URL"
+
+      # The cloud module lives outside the Makefile's GO_MODULES set, so
+      # `make test-integration` skips it. Run its integration-tagged
+      # tests explicitly against the Postgres service container. The
+      # relay/api stores + migrations are the integration surface; this
+      # gate compiles the `integration` build tag and runs any such
+      # tests (a no-op until they land) so the wiring is in place.
+      - name: Run cloud integration tests
+        if: matrix.shard == 'rest'
+        working-directory: cloud
+        env:
+          MAKTABA_CLOUD_DB_URL: postgres://maktaba:maktaba@localhost:5432/maktaba?sslmode=disable
+        run: go test -tags=integration -count=1 ./...
+
+  # The pipeline's half of the integration tier, and its other pytest runs that need this
+  # Postgres and ffmpeg, on a runner of their own. Beside the Go modules, pytest's collection
+  # took 120-147 s of CPU-starved time (9 s cold on a machine to itself) and the Go builds lost
+  # the core it held (the Makefile's INTEGRATION_TIER_BUDGET comment).
+  pipeline:
+    if: inputs.integration
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: pgvector/pgvector:0.8.7-pg16
+        env:
+          POSTGRES_USER: maktaba
+          POSTGRES_PASSWORD: maktaba
+          POSTGRES_DB: maktaba
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U maktaba"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgres://maktaba:maktaba@localhost:5432/maktaba?sslmode=disable
+
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      # the plugin API's dev server (tests/plugins/firstparty/test_dev_api_sessions.py), the
+      # relay's Go hub, and `make migrate` build Go
+      - uses: actions/setup-go@v6.4.0
+        with:
+          go-version-file: api/go.mod
+          cache: false
+
+      # restore only: main's entries (.github/actions/go-cache); only a push to main saves
+      - name: Go caches
+        id: go-cache
+        uses: ./.github/actions/go-cache
+
+      # this job's Go modules, retried; later steps read the module cache only
+      - name: Go modules
+        uses: ./.github/actions/go-mod-download
+        with:
+          modules: all
+
+      - uses: actions/setup-python@v6.2.0
+        with:
+          python-version-file: pipeline/.python-version
+
+      - uses: astral-sh/setup-uv@v8.1.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: pipeline/uv.lock
+          prune-cache: false
+          # restore main's uv cache; the integration job saves it on a push to main
+          save-cache: false
+
+      - name: Install pipeline deps
+        working-directory: pipeline
+        # every extra but torch's CUDA tree: no test runs torch (tools/ci/pipeline-deps.sh)
+        run: ../tools/ci/pipeline-deps.sh
+
+      - name: Wait for Postgres
+        run: |
+          for i in {1..30}; do
+            if pg_isready -h localhost -p 5432 -U maktaba >/dev/null 2>&1; then
+              echo "postgres ready"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::Postgres not ready after 60s"
+          exit 1
+
+      # as in the integration job: lock order strict (#642), and no waiting for the disk
+      - name: Strict lock order, no fsync
+        run: |
+          psql "$DATABASE_URL" \
+            -c "ALTER ROLE maktaba SET maktaba.lock_order_strict = 'on'" \
+            -c "ALTER SYSTEM SET fsync = off" \
+            -c "ALTER SYSTEM SET synchronous_commit = off" \
+            -c "ALTER SYSTEM SET full_page_writes = off" \
+            -c "SELECT pg_reload_conf()"
+
+      # the cluster-wide maktaba_worker role and the extensions, as the pipeline's
+      # Postgres tests had them in the integration job
+      - name: Run migrations
+        run: make migrate
+
+      # pytest -m integration, its 25 slowest tests and its `session time:` line at the end
+      # of this step's log; no MAKTABA_TEST_PG_URL, as in the tier before (the Postgres
+      # cases run in the steps after)
+      - name: Run integration tier (pipeline)
+        run: make test-integration-py
 
       # The pipeline's file tests (Epic 47: verify, swap, trash, convert, dedup)
       # make their media with real ffmpeg and skip without it. ffmpeg is
-      # installed only after the integration tier: on PATH earlier, it would
-      # also switch on the Go real-ffmpeg suites that belong to media-e2e.
+      # installed only after the tier, which ran without it before.
       - name: Apt package cache
         id: apt-cache
         uses: actions/cache/restore@v4
@@ -191,18 +314,6 @@ jobs:
         env:
           MAKTABA_TEST_PG_URL: postgres://maktaba:maktaba@localhost:5432/maktaba?sslmode=disable
         run: uv run pytest -q -m integration tests/cluster/test_relay_two_process.py -p no:cacheprovider
-
-      # The cloud module lives outside the Makefile's GO_MODULES set, so
-      # `make test-integration` skips it. Run its integration-tagged
-      # tests explicitly against the Postgres service container. The
-      # relay/api stores + migrations are the integration surface; this
-      # gate compiles the `integration` build tag and runs any such
-      # tests (a no-op until they land) so the wiring is in place.
-      - name: Run cloud integration tests
-        working-directory: cloud
-        env:
-          MAKTABA_CLOUD_DB_URL: postgres://maktaba:maktaba@localhost:5432/maktaba?sslmode=disable
-        run: go test -tags=integration -count=1 ./...
 
       - name: Save the apt package cache
         if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.apt-cache.outputs.cache-hit != 'true'
