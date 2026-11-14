@@ -19776,7 +19776,7 @@
           },
           "client_profile": {
             "type": "string",
-            "description": "Hint for the encoder ladder (e.g. `web`, `ios`, `tv-1080p`)."
+            "description": "The client profile the streaming service decides direct play, remux or transcode by: `generic` (also the fallback for a name it does not know), `desktop-player`, `browser-chrome`, `browser-safari`, `ios-native`, `tvos`, `android-native`, `androidtv`, and the TV platforms `firetv`, `tizen`, `webos`, `roku`, `cast` and `vega`. A TV profile alone is a baseline every model of its platform plays (H.264 1080p in HLS); `device_caps` widens it."
           },
           "audio_track": {
             "type": "string",
@@ -19812,6 +19812,114 @@
           },
           "accept_queue": {
             "type": "boolean"
+          },
+          "device_caps": {
+            "$ref": "#/components/schemas/DeviceCaps",
+            "description": "What the device reports it plays, from its platform's own query, sent at start and again whenever its output changes (a new session at the same position: a session never changes its mode). Optional."
+          }
+        }
+      },
+      "DeviceCaps": {
+        "type": "object",
+        "description": "A device's report of what it plays. The streaming service merges it into the client profile: the report narrows the profile freely and widens it only up to the platform's ceiling, so a report can never ask for more than its platform plays (Samsung never gets Dolby Vision; Roku gets it only as profile 5, and AV1 only by DASH). A field left out is the profile's. Keys this home does not know are ignored; a value of the wrong type is a 400. Each list holds at most 32 entries.",
+        "properties": {
+          "containers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 32,
+            "description": "Containers it plays directly (`mp4`, `mkv`, `ts`, …)."
+          },
+          "video": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DeviceVideoCap"
+            },
+            "maxItems": 32,
+            "description": "Video codecs it decodes, each with its limits."
+          },
+          "hdr": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 32,
+            "description": "HDR formats it shows: `hdr10`, `hlg`, `dv-p5`, `dv-p7`, `dv-p8`. A Dolby Vision profile 8 or 7 source goes to a device without its `dv-*` as its HDR10 or HLG base layer, by remux."
+          },
+          "audio": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 32,
+            "description": "Audio codecs it decodes (`aac`, `ac3`, `eac3`, …)."
+          },
+          "passthrough": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 32,
+            "description": "Audio it passes on undecoded to a receiver. TrueHD and DTS go to a device that neither decodes nor passes them as EAC3, the video untouched."
+          },
+          "max_audio_channels": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "The most audio channels it plays."
+          },
+          "hls_segments": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "ts",
+                "fmp4"
+              ]
+            },
+            "maxItems": 32,
+            "description": "HLS segment formats it plays. HEVC and AV1 go in fMP4; everything else stays in TS unless the device lists only `fmp4`."
+          },
+          "dash": {
+            "type": "boolean",
+            "description": "Whether it plays DASH."
+          },
+          "max_bitrate_kbps": {
+            "type": "integer",
+            "minimum": 100,
+            "description": "The highest bitrate it plays. A relay plan's cap still applies over it. Left out with `video` given, the platform's ceiling holds."
+          }
+        }
+      },
+      "DeviceVideoCap": {
+        "type": "object",
+        "description": "One video codec a device decodes and its limits.",
+        "required": [
+          "codec"
+        ],
+        "properties": {
+          "codec": {
+            "type": "string",
+            "description": "`h264`, `hevc`, `av1` or `vp9`."
+          },
+          "max_height": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "The tallest picture it decodes in this codec (clamped to the platform's ceiling)."
+          },
+          "max_fps": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "The highest frame rate it decodes in this codec."
+          },
+          "bit_depth": {
+            "type": "integer",
+            "enum": [
+              8,
+              10,
+              12
+            ],
+            "description": "The deepest samples it decodes in this codec."
           }
         }
       },
@@ -19889,6 +19997,10 @@
             "items": {
               "type": "string"
             }
+          },
+          "stream_sig": {
+            "type": "string",
+            "description": "The signed-URL token for every path under the session's `/stream/{session_id}/` (its subtitle renditions, `subs/sidecar/{lang}.vtt`, `subs/auto.vtt`, `chapters.json`), in every mode, direct play too. A player that cannot send a header (a TV's media player, a Cast receiver) fetches them with `?sig=` and this token. It expires with the session's URLs."
           }
         }
       },
