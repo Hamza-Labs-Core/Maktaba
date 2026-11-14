@@ -104,6 +104,10 @@ type Error struct {
 	Status int
 	Code   string
 	Detail string
+	// badConn: the connection was closed before the statement ran (driver.ErrBadConn) or
+	// the database ended the session, rolling it back: a statement outside a transaction
+	// is safe to run again.
+	badConn bool
 }
 
 func (e *Error) Error() string { return e.Code + ": " + e.Detail }
@@ -294,9 +298,33 @@ func (e *Executor) Stmt(ctx context.Context, sc Scope, req Request) (*Response, 
 		return nil, dbError(err)
 	}
 	out, ref := run(ctx, conn, st, req, decoded)
+	if ref != nil && ref.badConn && req.Op != "executemany" {
+		// a kept connection the database closed meanwhile (it restarted): the statement
+		// was not run, so it runs once more on a new connection, as database/sql does for
+		// its own pool. The plugin's other kept connections are as old: they go too. Not
+		// an executemany, whose earlier rows may be written already.
+		e.release(sc, conn, true)
+		e.dropIdle(sc)
+		if conn, err = e.acquire(ctx, sc); err != nil {
+			return nil, dbError(err)
+		}
+		out, ref = run(ctx, conn, st, req, decoded)
+	}
 	// a statement's own failure leaves the connection as it was; a lost one is not reused
 	e.release(sc, conn, ref != nil && ref.Status == 503)
 	return out, ref
+}
+
+// dropIdle closes the plugin's kept connections.
+func (e *Executor) dropIdle(sc Scope) {
+	key := roleKey(sc)
+	e.mu.Lock()
+	idle := e.idle[key]
+	delete(e.idle, key)
+	e.mu.Unlock()
+	for _, c := range idle {
+		discard(c)
+	}
 }
 
 func roleKey(sc Scope) string { return sc.PluginID + "@" + sc.Version }
@@ -447,17 +475,34 @@ func commandTag(text string, n int64) string {
 }
 
 // dbError maps a database error: a permission refusal (42501) is the plugin's role
-// meeting a table outside its manifest, 403 plugin_capability; anything else is the
-// statement's own failure, answered with Postgres's code so the plugin's code sees it.
+// meeting a table outside its manifest, 403 plugin_capability; a connection the database
+// closed or refused (it is stopping, starting or restarted) is 503, which the plugin's
+// side retries (the job fails as retryable); anything else is the statement's own
+// failure, 409 with Postgres's code so the plugin's code sees it.
 func dbError(err error) *Error {
 	var pe *pq.Error
 	if errors.As(err, &pe) {
 		if pe.Code == "42501" {
 			return refuse(403, CodeCapability, pe.Message)
 		}
+		if connectionLost(string(pe.Code)) {
+			// the session ended: a statement of its own was not run, or was rolled back
+			ref := refuse(503, CodeDatabase, string(pe.Code)+": "+pe.Message)
+			ref.badConn = true
+			return ref
+		}
 		return refuse(409, CodeDatabase, string(pe.Code)+": "+pe.Message)
 	}
-	return refuse(503, CodeDatabase, err.Error())
+	ref := refuse(503, CodeDatabase, err.Error())
+	ref.badConn = errors.Is(err, driver.ErrBadConn)
+	return ref
+}
+
+// connectionLost reports whether a Postgres error code says the connection went, not
+// the statement: class 08 (connection exception) and the server's own shutdown codes
+// (57P01 admin_shutdown, 57P02 crash_shutdown, 57P03 cannot_connect_now).
+func connectionLost(code string) bool {
+	return strings.HasPrefix(code, "08") || code == "57P01" || code == "57P02" || code == "57P03"
 }
 
 func (e *Executor) tx(sc Scope, id string) (*openTx, *Error) {

@@ -41,7 +41,7 @@ async def leader(db: Any, key: str) -> AsyncIterator[bool]:
                 with contextlib.suppress(Exception):
                     await db.execute("SELECT pg_advisory_unlock(hashtext($1))", key)
         return
-    async with pool.acquire() as conn:
+    async with db.connection() as conn:  # bounded (runtime.Database)
         got = bool(await conn.fetchval("SELECT pg_try_advisory_lock(hashtext($1))", key))
         try:
             yield got

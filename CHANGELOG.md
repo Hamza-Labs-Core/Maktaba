@@ -273,6 +273,37 @@ build fails when the two differ.
 
 ### Fixed
 
+- **The Queues page says which workers are not running their jobs, and an admin can restart
+  them.** A worker can stay up and start nothing while the others work (after the database
+  restarts, for one). The page now names each such worker (main, transcription or search, with
+  its machine): one that has not reported in for two minutes, or one with a free slot that has
+  started nothing for ten minutes while a job it could take waited. It says since when and
+  how many jobs wait; they stay queued and nothing is lost. **Restart these workers** restarts
+  only the workers named, **Restart all workers** every worker of the computer that runs
+  Maktaba. Queues that are paused, or whose pool is full or set to 0, raise no notice. System
+  health says the same on its Queues line. Before, such a stall looked like a calm page, and
+  the only way out was to end a process by hand.
+
+- **A database restart no longer fails jobs for good.** A step that runs as one of Maktaba's
+  plugins (the second listen, among others) could meet a connection the database had closed
+  and fail with `plugin_database: driver: bad connection`, never to be tried again. The server
+  now runs such a statement once more on a new connection, and a job that still finds the
+  database away fails as retryable and is tried again by itself.
+
+- **Maktaba says when its machine is overloaded.** When the computer that runs Maktaba has had
+  more than twice as much work as processor cores for five minutes, the Queues page and System
+  health (**This machine's load**) say so: jobs and the database are slow until it eases, and
+  these programs use the most CPU. Maktaba stops no program by itself. On a Mac or Linux
+  server; Windows keeps no load figure.
+- **Processing goes on by itself after the database restarts.** When the home's database was
+  restarted (or stopped answering for a while) under a running worker, the worker could stay up
+  for hours doing nothing: no job started, nothing was logged, and its health check still said
+  "ok", so nothing restarted it and every queue waited for someone to restart it by hand. A
+  worker now picks its work up again as soon as the database answers, and hears about new jobs
+  at once again. Its health check says "ok" only while it can start jobs: it turns not-ok when
+  the worker has not looked at the queue, or the database has not answered it, for five minutes,
+  and a worker that cannot get back to work ends so that it is started again.
+
 - **Transcription gives its memory back when idle.** On a Mac, each transcription runner kept
   Whisper and the second listen's model loaded (5 to 10 GB each, with two runners on a large
   Mac) for as long as it ran. After ten minutes without transcription work it now lets both go,
@@ -813,19 +844,6 @@ build fails when the two differ.
 
 ### Added
 
-- **A home can broadcast chosen Live TV channels to viewers outside it (Epic 50, story 50.22).**
-  An admin sets a channel up on the new Broadcast panel of the Live TV page (its link name,
-  invite-only or open, always on or only while someone watches, its qualities) and publishes it
-  after ticking that the home has the rights to what it airs. Before anything starts the home
-  checks, in order, the Maktaba Cloud plan, the publisher agreement, the schedule, the measured
-  internet upload (suggesting fewer qualities when it is too slow) and the encoder's free slots,
-  and names the first that fails. A published channel's qualities (up to 1080p, three by
-  default) are made at home and each segment is sent once to the broadcast edge, so the upload
-  is the same however many people watch; the channel shows an offline card when the home is
-  away, keeps going for a day without Maktaba Cloud, and is never released while published.
-  Only admins can set up, publish or unpublish, and the API enforces it. Broadcasting is off
-  until an admin turns it on, and nothing reaches viewers until the broadcast edge is deployed.
-
 - **Apps can tell when they and the home are too far apart (story 58.01).** The home now
   publishes its API level, the oldest level it still serves, and the oldest build of each app it
   signs in, with no sign-in needed (`GET /api/discovery/home`: `api_level`, `api_level_oldest`,
@@ -835,6 +853,14 @@ build fails when the two differ.
   fails any response change an older app would get wrong until the level is raised
   (`docs/api/levels.md`). The `X-Maktaba-Client` header names the smart TV platforms (`tizen`,
   `webos`, `firetv`, `roku`, `vega`, `cast`) and the Samsung and LG launcher (`tv-web`).
+
+- **The apps say when they and the home need an update (story 58.01).** The Android phone
+  and TV apps and the iPhone, iPad, Mac and Apple TV apps read the home's API level before they
+  sign in. A home too old for the app shows **This home needs an update**, naming the home and
+  its version, with **Admin → Updates** for its admin and whom to ask for anyone else; an app
+  too old for the home, or below its floor (`426 client_too_old`), shows **Update this app**
+  with the store to open. Both pages have **Try again** and **Choose another home**, in English
+  and Arabic, and a home from before the contract lets every app carry on.
 
 - **Choose Maktaba's ports on a NAS (story 59.08).** Another app on the NAS, such as Plex or the
   NAS's own UI, may already use one of Maktaba's ports. Each one can now be set in the container's
@@ -2591,6 +2617,27 @@ build fails when the two differ.
   healthy relays (`maktaba-cloud relay-dns`); staff take a relay out with `maktaba-cloud relay
   drain|down|activate`. Off until `[relay.pool] enabled = true`; proven in the cloud rehearsal
   (relay loss, relay added).
+
+- **Maktaba on a Samsung or LG TV's browser engine: `/tv/` (story 58.08).** The home now serves
+  a TV build of the big screen at `/tv/`, made for the older Chromium of a 2020 Samsung or LG TV
+  and checked for it on every build. It is the screen the coming Samsung and LG apps load: the
+  library tabs, series, collections and playlists of the big screen, driven by the remote (Back,
+  Play/Pause and the media keys of both makers' remotes; the red key opens a card's actions), in
+  English and Arabic, with its own fonts. Back on Home asks Leave Maktaba? before it closes.
+  Signed out, it sends the TV to the home's sign-in and back.
+
+- **A home can broadcast chosen Live TV channels to viewers outside it (Epic 50, story 50.22).**
+  An admin sets a channel up on the new Broadcast panel of the Live TV page (its link name,
+  invite-only or open, always on or only while someone watches, its qualities) and publishes it
+  after ticking that the home has the rights to what it airs. Before anything starts the home
+  checks, in order, the Maktaba Cloud plan, the publisher agreement, the schedule, the measured
+  internet upload (suggesting fewer qualities when it is too slow) and the encoder's free slots,
+  and names the first that fails. A published channel's qualities (up to 1080p, three by
+  default) are made at home and each segment is sent once to the broadcast edge, so the upload
+  is the same however many people watch; the channel shows an offline card when the home is
+  away, keeps going for a day without Maktaba Cloud, and is never released while published.
+  Only admins can set up, publish or unpublish, and the API enforces it. Broadcasting is off
+  until an admin turns it on, and nothing reaches viewers until the broadcast edge is deployed.
 
 - **The broadcast edge, built and rehearsed in CI (story 50.21).** Maktaba Cloud now has the
   Cloudflare Worker a published channel will play from: a home pushes each segment of each

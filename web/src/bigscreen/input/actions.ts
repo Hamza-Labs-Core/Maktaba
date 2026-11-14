@@ -31,6 +31,6 @@ export const ACTION_EVENT = "maktaba:big-action";
 
 export interface ActionDetail {
   action: BigAction;
-  /** "key", "pad" or "media": the player shows its controls for any. */
-  source: "key" | "pad" | "media";
+  /** "key", "pad", "media" or "bridge" (a TV launcher, story 58.09): the player shows its controls for any. */
+  source: "key" | "pad" | "media" | "bridge";
 }

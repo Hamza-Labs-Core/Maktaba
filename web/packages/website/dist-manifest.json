@@ -3067,6 +3067,7 @@
       "faq-pause",
       "faq-redo",
       "file-actions",
+      "host-overloaded",
       "how-to-use",
       "item-history",
       "job-states",
@@ -3121,6 +3122,7 @@
       "waiting-service-retrying",
       "waiting-upstream",
       "what-it-is",
+      "workers-stalled",
       "youtube-sources"
     ],
     "/ar/help/recovery/index.html": [
@@ -3597,6 +3599,7 @@
       "item-components",
       "item-dependency",
       "item-host-access",
+      "item-host-load",
       "item-pipeline",
       "item-plex-livetv",
       "item-plugin-runners",
@@ -12719,6 +12722,7 @@
       "faq-pause",
       "faq-redo",
       "file-actions",
+      "host-overloaded",
       "how-to-use",
       "item-history",
       "job-states",
@@ -12773,6 +12777,7 @@
       "waiting-service-retrying",
       "waiting-upstream",
       "what-it-is",
+      "workers-stalled",
       "youtube-sources"
     ],
     "/help/recovery/index.html": [
@@ -13249,6 +13254,7 @@
       "item-components",
       "item-dependency",
       "item-host-access",
+      "item-host-load",
       "item-pipeline",
       "item-plex-livetv",
       "item-plugin-runners",

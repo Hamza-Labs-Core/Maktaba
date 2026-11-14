@@ -144,3 +144,45 @@ func TestOnlyTheSameMethodIsCompared(t *testing.T) {
 		t.Fatal("the same method, 125% worse, passed")
 	}
 }
+
+// The memory gate reads the live heap when both sides have one: the same heap within 20 %
+// passes whatever the containers' peaks did (the peak swung +28 % on a relay that held 70 B
+// more per tunnel), and a heap 20 % worse fails. A relay that stops serving its heap fails
+// rather than switching the gate off. A base whose relay predates the series (the transition)
+// is not compared on memory and says so; two files from before MemMethod compare their peaks.
+func TestTheMemoryGateReadsTheLiveHeap(t *testing.T) {
+	heap := func(perTunnel, peak float64) Baseline {
+		return Baseline{Method: Method, CPUSecondsPerMbit: 0.0004, MemMethod: MemMethod,
+			HeapBytesPerTunnel: perTunnel, MemBytesPerTunnel: peak}
+	}
+	ok, rep := Compare(heap(30_000, 254_000), heap(33_000, 327_000), Regressed)
+	if !ok || !strings.Contains(rep, "live heap bytes per tunnel") || !strings.Contains(rep, "not gated") {
+		t.Fatalf("10%% more heap, a peak 29%% higher, failed:\n%s", rep)
+	}
+	// 64 KB per tunnel held on a 30 KB figure
+	if ok, rep := Compare(heap(30_000, 300_000), heap(30_000+65_536, 300_000), Regressed); ok {
+		t.Fatalf("a 64 KB per-tunnel leak passed:\n%s", rep)
+	}
+	if ok, _ := Compare(heap(30_000, 300_000), heap(36_100, 250_000), Regressed); ok {
+		t.Fatal("20.3% more heap passed on a lower peak")
+	}
+	gone := heap(0, 300_000)
+	gone.MemMethod = ""
+	if ok, rep := Compare(heap(30_000, 300_000), gone, Regressed); ok || !strings.Contains(rep, "serves no") {
+		t.Fatalf("a relay that dropped its heap passed:\n%s", rep)
+	}
+	before := Baseline{Method: Method, CPUSecondsPerMbit: 0.0004, MemBytesPerTunnel: 254_000}
+	ok, rep = Compare(before, heap(30_000, 327_000), Regressed)
+	if !ok || !strings.Contains(rep, "not compared (the base's relay serves no live heap)") {
+		t.Fatalf("the transition:\n%s", rep)
+	}
+	if ok, _ := Compare(before, Baseline{Method: Method, CPUSecondsPerMbit: 0.0004, MemBytesPerTunnel: 327_000}, Regressed); ok {
+		t.Fatal("two files from before the heap: a peak 29% higher passed")
+	}
+	// a heap figure measured some other way is no heap figure
+	other := heap(30_000, 254_000)
+	other.MemMethod = "something-else"
+	if ok, rep := Compare(other, heap(90_000, 254_000), Regressed); !ok || !strings.Contains(rep, "not compared") {
+		t.Fatalf("another method's heap compared:\n%s", rep)
+	}
+}
