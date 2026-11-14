@@ -99,6 +99,8 @@ _web: &web
   - 'docs/nas/checklists/synology.md'
   # the problem types the web compares are checked against the registry (story 60.06)
   - 'shared/api/problems.json'
+  # the Cast sender: the receiver's app id (vite.config.ts) and the load vectors (58.06)
+  - 'shared/cast/**'
   # Epic 59's strings check reads the stories' Strings tables and the container's texts (59.14)
   - 'specs/epics/59-nas/story-*.md'
   - 'cmd/maktaba-server/container_preflight.go'
@@ -786,6 +788,8 @@ android_apps:
   - 'shared/compat/**'
   # the playback vectors the client's DeviceCapsTest runs (58.02, 58.05)
   - 'shared/playback/**'
+  # the Cast sender's app id and load vectors (58.06)
+  - 'shared/cast/**'
   - '.github/workflows/_android-apps.yml'
   # the wrapper's jar check and distribution fetch (tools/ci/gradle-wrapper.sh), through fetch-pinned.sh
   - 'tools/ci/gradle-wrapper.sh'
@@ -886,6 +890,8 @@ apple_apps:
   - 'shared/api/problems.json'
   # the compatibility vectors MaktabaKit's CompatTests run (58.01)
   - 'shared/compat/**'
+  # the Cast sender's app id and load vectors (58.06)
+  - 'shared/cast/**'
   - 'apps/tv/tvos/**'
   - 'tools/apple/**'
   - '.github/workflows/_apple-apps.yml'

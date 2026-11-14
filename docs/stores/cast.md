@@ -116,6 +116,12 @@ remote debugging of the receiver) for the whole run.
 | 13 | Two senders cast to one TV | the second takes over; the first sees its mini controller end |
 | 14 | A grant left to expire mid-film (more than 6 hours, or a shortened TTL on a test home) | the film plays to its end, then the "cast has ended" screen |
 | 15 | The receiver's console in the remote debugger during 1 to 14 | no Content Security Policy violation, no uncaught error |
+| 16 | Each sender in English, then Arabic: cast a video, lock the phone (or close the Chrome tab) for 20 minutes | the TV plays on; the home's Continue Watching shows the TV's position |
+| 17 | Play all, then Shuffle, from each sender | the TV plays the server queue; each sender's mini controller follows the next item |
+| 18 | The iPhone's first cast | the local network screen, then iOS's prompt, then the TV list with AirPlay beside the Cast TVs |
+| 19 | Chrome on the home's `http://` address, then on its `https://` address | no Cast button, then the button and Chrome's TV picker |
+| 20 | The Android Player on a test home from before the cast grant | the TV shows Google's player with the plain signed URL; the phone says the home is older |
+| 21 | A guest network that hides devices from each other | each sender says the TV must be on the same network |
 
 ## Results
 
