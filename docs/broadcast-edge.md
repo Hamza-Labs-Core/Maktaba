@@ -41,7 +41,11 @@ one kind never passes as another.
 
 - **Ingest token** payload: `{typ: "ingest", pub, ch, rungs[], home, kbps, iat, exp, kid}`.
   `pub` is the publisher: the home (its server id, the same as `home`), the id the edge keys
-  `PublisherControl` by and the cloud bills usage to; `ch` the edge's channel id, `rungs` the rung names
+  `PublisherControl` by and the cloud bills usage to. **One publisher key everywhere:** the
+  token's `pub` and `home`, a usage window's `publisher`, a plan's `pub`, a viewer token's `pub`
+  (50.26) and the cloud's entitlements (50.20, per home) are all the home's server id, never the
+  owner's account id. The cloud refuses to mint a token whose `pub` is not its `home`, and the
+  edge refuses one as `401 bad_token`. `ch` is the edge's channel id, `rungs` the rung names
   the channel may push (top first, at most 4, never `slate`), `kbps` the plan's top bitrate (the
   size guard). It lives 24 h; the home asks again every hour, so a cloud outage stops no
   broadcast for a day. A token for another channel, or a rung it does not list, is `403`; a bad,
@@ -52,8 +56,8 @@ one kind never passes as another.
 - **Key rotation.** Each payload names its key (`kid`, the first 8 bytes of the public key's
   SHA-256 in hex). Add the new public key to `CLOUD_PUBKEYS`, switch `broadcast.key_path` to the
   new key, and remove the old public key 24 h later.
-- **Viewer token** payload: `{pub, ch, session, mode, exp, country?}`, `exp` at most 10 minutes
-  ahead. `mode` is `full`, `lowest`, `wait` (`429 broadcast_full`) or `off` (`403`).
+- **Viewer token** payload: `{pub, ch, session, mode, exp, country?}` (`pub` the home's server
+  id), `exp` at most 10 minutes ahead. `mode` is `full`, `lowest`, `wait` (`429 broadcast_full`) or `off` (`403`).
 - Both sides check the same vectors: `cloud/internal/broadcast/testdata/vectors.json` (TEST keys
   from public labels; `go test ./internal/broadcast -run TestVectors -update` rewrites them):
   the ingest token, the control posts, and the whole edge↔cloud contract below (a signed usage

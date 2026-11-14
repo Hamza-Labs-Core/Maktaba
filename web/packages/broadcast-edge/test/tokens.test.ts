@@ -12,7 +12,9 @@ const V = JSON.parse(E.TEST_VECTORS) as {
   at_ms: number;
   cloud_pubkeys: string;
   ingest: string;
-  ingest_claims: { ch: string; rungs: string[]; pub: string };
+  ingest_claims: { ch: string; rungs: string[]; pub: string; home: string };
+  channel: { server: string; local: string; id: string };
+  state: { publisher: string };
   plan: string;
   revocations: string;
   edge: {
@@ -58,6 +60,18 @@ describe("T01 ingest token at the edge", () => {
     const r = await putSegment(ch, "240p", 1);
     expect(r.status).toBe(403);
     expect(await r.json()).toEqual({ error: "wrong_rung" });
+    expect((await E.SEGMENTS.list({ prefix: `test/${ch}/` })).objects).toHaveLength(0);
+  });
+
+  it("refuses a token whose publisher is not its home with 401, writing nothing", async () => {
+    // a publisher is a home (its server id): a token naming another id, such as the owner's, is
+    // not one the cloud mints
+    const ch = newChannel();
+    const r = await putSegment(ch, "src", 1, {
+      token: await ingestToken({ ch, pub: "owner-user-1", home: "home-1" }),
+    });
+    expect(r.status).toBe(401);
+    expect(await r.json()).toEqual({ error: "bad_token" });
     expect((await E.SEGMENTS.list({ prefix: `test/${ch}/` })).objects).toHaveLength(0);
   });
 
@@ -117,7 +131,16 @@ describe("vectors shared with the cloud (cloud/internal/broadcast)", () => {
     });
     expect(v.ok).toBe(true);
     if (v.ok)
-      expect(v.claims).toMatchObject({ pub: "pub-1", rungs: ["src", "720p", "480p"], kbps: 10000 });
+      expect(v.claims).toMatchObject({
+        pub: V.channel.server,
+        home: V.channel.server,
+        ch: V.channel.id,
+        rungs: ["src", "720p", "480p"],
+        kbps: 10000,
+      });
+    // one publisher key: the token, the channel, the usage windows and the plans name one server id
+    expect(V.ingest_claims.pub).toBe(V.ingest_claims.home);
+    expect(V.ingest_claims.pub).toBe(V.state.publisher);
     expect(
       await verifyIngest(V.ingest, V.cloud_pubkeys, V.at_ms + 24 * 3600_000, {
         ch: V.ingest_claims.ch,

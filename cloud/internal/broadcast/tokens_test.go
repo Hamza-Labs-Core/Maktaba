@@ -41,7 +41,7 @@ func pubkeys(keys ...Key) map[string]ed25519.PublicKey {
 }
 
 func goodClaims() IngestClaims {
-	return IngestClaims{Pub: "pub-1", Ch: ChannelID("srv-1", "7"), Rungs: []string{"src", "720p", "480p"}, Home: "srv-1", Kbps: 10000}
+	return IngestClaims{Pub: vectorPublisher, Ch: ChannelID(vectorPublisher, "7"), Rungs: []string{"src", "720p", "480p"}, Home: vectorPublisher, Kbps: 10000}
 }
 
 func TestIssueAndVerify(t *testing.T) {
@@ -85,6 +85,7 @@ func TestIssueRefusesBadClaims(t *testing.T) {
 		"repeated rung": func(c *IngestClaims) { c.Rungs = []string{"src", "src"} },
 		"no kbps":       func(c *IngestClaims) { c.Kbps = 0 },
 		"no publisher":  func(c *IngestClaims) { c.Pub = "" },
+		"the owner":     func(c *IngestClaims) { c.Pub = "user-1" }, // the publisher is the home, never its owner
 	} {
 		c := goodClaims()
 		mut(&c)
@@ -193,7 +194,7 @@ func makeVectors(t *testing.T) []byte {
 	if v.Plan, err = SignPlan(k, v.PlanState, vectorAt); err != nil {
 		t.Fatal(err)
 	}
-	v.Revocations, _ = SignControl(k, "revocations", map[string]any{"version": 1, "pubs": []string{}, "channels": []string{ChannelID("srv-1", "7")}, "homes": []string{}}, vectorAt, 24*time.Hour)
+	v.Revocations, _ = SignControl(k, "revocations", map[string]any{"version": 1, "pubs": []string{}, "channels": []string{ChannelID(vectorPublisher, "7")}, "homes": []string{}}, vectorAt, 24*time.Hour)
 	e := testKey(t, "edge-1")
 	v.Edge.Seed = b64.EncodeToString(e.Priv.Seed())
 	v.Edge.Public = b64.EncodeToString(e.Priv.Public().(ed25519.PublicKey))
@@ -204,8 +205,8 @@ func makeVectors(t *testing.T) []byte {
 	reply, _ := json.Marshal(UsageReply{Taken: []string{w.Key}, Duplicates: []string{}, Rejected: []Rejected{},
 		States: []billing.PublisherState{v.State}, Plans: []Plan{v.PlanState}})
 	v.Edge.UsageReply = string(reply)
-	v.Channel.Server, v.Channel.Local = "srv-1", "7"
-	v.Channel.ID = ChannelID("srv-1", "7")
+	v.Channel.Server, v.Channel.Local = vectorPublisher, "7"
+	v.Channel.ID = ChannelID(vectorPublisher, "7")
 	out, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {
 		t.Fatal(err)
