@@ -344,7 +344,9 @@ func (c *Ctl) Event(ctx context.Context, ch uuid.UUID, ev Event) {
 		}
 		c.mu.Unlock()
 	case "revoked":
-		_ = c.Store.SetState(ctx, ch, "revoked", "")
+		// Maktaba's kill switch (50.25): the reason (notice, report, incident, ...) is what the
+		// Broadcast page shows; the list's own entries are the API's (detail "list:<reason>")
+		_ = c.Store.SetState(ctx, ch, "revoked", ev.Reason)
 	case "plan_off":
 		_ = c.Store.SetState(ctx, ch, "offline", "planOff")
 	case "restored":

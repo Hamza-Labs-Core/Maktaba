@@ -4,11 +4,25 @@
 // 10 minutes after they were written (an alarm every 60 s). The home's control WebSocket lands
 // here too, so the channel can tell the home a rung stalled or the channel was revoked.
 //
+// Revocations (50.25): the channel holds the list's verdict for itself (its channel, its
+// publisher, its home, or a global entry), handed to it on each install and re-read from the
+// Revocations object at most every 10 s. An off_air verdict refuses ingest (403 revoked) and
+// play (503 off_air with the reason, so a playing viewer gets the off-air card at the next
+// playlist); a slate verdict loops the slate in every rung's playlist until it ends. The home
+// hears each change on its control socket: revoked, slate, restored.
+//
 // It never looks inside a segment and never decides what airs: it orders what the home sent.
 import { DurableObject } from "cloudflare:workers";
 import { now } from "./clock";
 import type { Delivery, Env } from "./env";
 import { log } from "./log";
+import {
+  breakGlass,
+  sameVerdict,
+  verdictFor,
+  type RevocationList,
+  type Verdict as Revocation,
+} from "./revocations";
 import {
   advance,
   append,
@@ -18,6 +32,7 @@ import {
   newRung,
   renderMaster,
   renderMedia,
+  renderSlateLoop,
   RETAIN_MS,
   rungStatus,
   type RungInfo,
@@ -32,6 +47,8 @@ export const BURST_PER_SECOND = 4;
 /** Slate segments a channel may hold (a short loop). */
 export const MAX_SLATE = 8;
 const ALARM_EVERY_MS = 60_000;
+/** A channel re-reads the revocation list at most this often (a missed fan-out, a home entry). */
+export const REVOCATION_CHECK_MS = 10_000;
 
 export type ChannelStatus = "waiting" | "live" | "offline_slate" | "off_air" | "revoked";
 
@@ -56,7 +73,8 @@ interface State {
   slate: SlateSegment[];
   /** replaced slate objects, deleted 10 minutes after they were replaced */
   retired: Record<string, number>;
-  revoked: string | null;
+  /** what the revocation list says of this channel (50.25) */
+  verdict: Revocation | null;
   plan: ChannelPlan;
   stream: { uid: string; rtmps_url: string; stream_key: string } | null;
   counters: { segments_in: number; bytes_in: number; playlist_misses: number };
@@ -91,7 +109,7 @@ export interface AppendInput extends PrecheckInput {
 export type PlaylistAnswer =
   | { kind: "playlist"; body: string }
   | { kind: "stream"; uid: string | null }
-  | { kind: "error"; status: number; error: string };
+  | { kind: "error"; status: number; error: string; reason?: string };
 
 function initial(): State {
   return {
@@ -105,7 +123,7 @@ function initial(): State {
     onAir: true,
     slate: [],
     retired: {},
-    revoked: null,
+    verdict: null,
     plan: { off: false },
     stream: null,
     counters: { segments_in: 0, bytes_in: 0, playlist_misses: 0 },
@@ -116,12 +134,14 @@ export class ChannelLive extends DurableObject<Env> {
   private s: State = initial();
   /** recent PUT times per rung (memory only: an eviction forgets a second's worth) */
   private burst = new Map<string, number[]>();
+  /** the revocation list as last handed over or read (memory only: re-read after an eviction) */
+  private revs: { at: number; list: RevocationList } | null = null;
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
     ctx.blockConcurrencyWhile(async () => {
       const saved = await ctx.storage.get<State>("s");
-      if (saved) this.s = { ...initial(), ...saved };
+      if (saved) this.s = { ...initial(), ...saved, verdict: saved.verdict ?? null };
     });
   }
 
@@ -145,7 +165,7 @@ export class ChannelLive extends DurableObject<Env> {
   }
 
   status(at: number = now()): ChannelStatus {
-    if (this.s.revoked) return "revoked";
+    if (this.s.verdict?.stop === "off_air") return "revoked";
     if (!this.s.onAir) return "off_air";
     const all = Object.values(this.s.rungs).map((r) => rungStatus(r, at));
     if (all.length === 0) return "waiting";
@@ -158,7 +178,9 @@ export class ChannelLive extends DurableObject<Env> {
 
   /** precheck answers before the Worker writes anything to R2 (§2's guards and retries). */
   async precheck(inp: PrecheckInput): Promise<PrecheckVerdict> {
-    if (this.s.revoked) return "revoked";
+    // a channel not yet appended to knows its publisher and home from this request only
+    await this.checkRevocations(now(), { pub: inp.pub, home: inp.home });
+    if (this.s.verdict?.stop === "off_air") return "revoked";
     if (this.s.plan.off) return "plan_off";
     if (this.s.pub && this.s.pub !== inp.pub) return "wrong_publisher";
     const t = now();
@@ -250,18 +272,53 @@ export class ChannelLive extends DurableObject<Env> {
     if (plan.off) this.notify({ type: "plan_off" });
   }
 
-  async revoke(reason: string): Promise<void> {
-    if (this.s.revoked === reason) return;
-    this.s.revoked = reason;
-    await this.save();
-    this.notify({ type: "revoked", reason });
+  /** applyList takes a newly installed revocation list (the Revocations fan-out). */
+  async applyList(list: RevocationList, ch: string): Promise<Revocation | null> {
+    if (!this.s.ch) this.s.ch = ch;
+    this.revs = { at: now(), list };
+    await this.reverdict(now());
+    return this.s.verdict;
   }
 
-  async restore(): Promise<void> {
-    if (!this.s.revoked) return;
-    this.s.revoked = null;
+  /** checkRevocations re-reads the list when the copy is 10 s old (or missing). */
+  private async checkRevocations(
+    t: number,
+    who: { pub?: string; home?: string } = {}
+  ): Promise<void> {
+    if (!this.revs || t - this.revs.at >= REVOCATION_CHECK_MS) {
+      try {
+        const list = await this.env.REVOCATIONS.get(
+          this.env.REVOCATIONS.idFromName("global")
+        ).current();
+        this.revs = { at: t, list };
+      } catch (err) {
+        // keep the verdict held: a stop stays a stop while the list can't be read
+        log("warn", "revocation list unreadable", {
+          component: "channel",
+          channel: this.s.ch,
+          err,
+        });
+        return;
+      }
+    }
+    await this.reverdict(t, who);
+  }
+
+  /** reverdict applies the list to this channel and tells the home when the answer changed. */
+  private async reverdict(t: number, who: { pub?: string; home?: string } = {}): Promise<void> {
+    if (!this.revs) return;
+    const v = verdictFor(
+      this.revs.list,
+      { ch: this.s.ch, pub: this.s.pub ?? who.pub, home: this.s.home ?? who.home },
+      t
+    );
+    if (sameVerdict(v, this.s.verdict)) return;
+    this.s.verdict = v;
     await this.save();
-    this.notify({ type: "restored" });
+    if (v?.stop === "off_air") this.notify({ type: "revoked", action: v.action, reason: v.reason });
+    else if (v?.stop === "slate")
+      this.notify({ type: "slate", reason: v.reason, until: new Date(v.until).toISOString() });
+    else this.notify({ type: "restored" });
   }
 
   /** delivery is this channel's: the publisher's override, else the global var. */
@@ -271,8 +328,13 @@ export class ChannelLive extends DurableObject<Env> {
     return this.env.BROADCAST_DELIVERY === "stream" ? "stream" : "r2";
   }
 
-  private refusal(at: number): PlaylistAnswer | null {
-    if (this.s.revoked) return { kind: "error", status: 403, error: "revoked" };
+  private async refusal(at: number): Promise<PlaylistAnswer | null> {
+    const glass = breakGlass(this.env, this.s.ch);
+    if (glass) return { kind: "error", status: 503, error: "off_air", reason: glass.reason };
+    await this.checkRevocations(at);
+    const v = this.s.verdict;
+    if (v?.stop === "off_air")
+      return { kind: "error", status: 503, error: "off_air", reason: v.reason };
     if (this.s.plan.off) return { kind: "error", status: 403, error: "broadcast_off" };
     if (this.status(at) === "off_air") return { kind: "error", status: 503, error: "off_air" };
     return null;
@@ -286,8 +348,10 @@ export class ChannelLive extends DurableObject<Env> {
   async media(rung: string, mode: "full" | "lowest" = "full"): Promise<PlaylistAnswer> {
     const t = now();
     this.s.counters.playlist_misses++;
-    const no = this.refusal(t);
+    const no = await this.refusal(t);
     if (no) return no;
+    const slate = this.programmeSlate(t);
+    if (slate) return slate;
     if (this.delivery() === "stream") return { kind: "stream", uid: this.s.stream?.uid ?? null };
     const r = this.s.rungs[rung];
     if (!r) return { kind: "error", status: 404, error: "no_such_rung" };
@@ -303,14 +367,30 @@ export class ChannelLive extends DurableObject<Env> {
   async master(mode: "full" | "lowest"): Promise<PlaylistAnswer> {
     const t = now();
     this.s.counters.playlist_misses++;
-    const no = this.refusal(t);
+    const no = await this.refusal(t);
     if (no) return no;
-    if (this.delivery() === "stream") return { kind: "stream", uid: this.s.stream?.uid ?? null };
+    if (this.delivery() === "stream" && !this.programmeSlate(t))
+      return { kind: "stream", uid: this.s.stream?.uid ?? null };
     // no state post yet: the rungs seen, top first, with their measured bandwidth
     const info = this.rungInfo();
     const list = masterRungs(info, mode, this.planRungs());
     if (list.length === 0) return { kind: "error", status: 404, error: "not_live" };
     return { kind: "playlist", body: renderMaster(list) };
+  }
+
+  /**
+   * programmeSlate is the slate loop while a programme entry holds (50.25 §1), every rung the
+   * same; with no slate uploaded the channel is off air until the entry ends. Null otherwise.
+   */
+  private programmeSlate(t: number): PlaylistAnswer | null {
+    const v = this.s.verdict;
+    if (v?.stop !== "slate" || t >= v.until) return null;
+    const since = Date.parse(
+      this.revs?.list.entries.find((e) => e.id === v.id)?.since ?? new Date(t).toISOString()
+    );
+    const body = renderSlateLoop(this.s.slate, Number.isFinite(since) ? since : t, t);
+    if (!body) return { kind: "error", status: 503, error: "off_air", reason: v.reason };
+    return { kind: "playlist", body };
   }
 
   /** planRungs is the rungs the plan allows (top first), or undefined for all. */
@@ -348,14 +428,15 @@ export class ChannelLive extends DurableObject<Env> {
    * as a playlist (revoked, the plan off, off air), else the channel's live input.
    */
   async streamFor(): Promise<PlaylistAnswer> {
-    const no = this.refusal(now());
+    const no = await this.refusal(now());
     if (no) return no;
     return { kind: "stream", uid: this.s.stream?.uid ?? null };
   }
 
   /** streamRefusal is why the home may not have a Stream live input now, or null. */
   async streamRefusal(): Promise<string | null> {
-    if (this.s.revoked) return "revoked";
+    await this.checkRevocations(now());
+    if (this.s.verdict?.stop === "off_air") return "revoked";
     if (this.s.plan.off) return "broadcast_off";
     return null;
   }
@@ -384,8 +465,15 @@ export class ChannelLive extends DurableObject<Env> {
     pub: string | null;
     rungs: Record<string, RungState>;
     slate: SlateSegment[];
+    verdict: Revocation | null;
   }> {
-    return { status: this.status(), pub: this.s.pub, rungs: this.s.rungs, slate: this.s.slate };
+    return {
+      status: this.status(),
+      pub: this.s.pub,
+      rungs: this.s.rungs,
+      slate: this.s.slate,
+      verdict: this.s.verdict,
+    };
   }
 
   // ---- the alarm: playlists move on, old objects go, counts are reported -------------------

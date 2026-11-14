@@ -38,13 +38,15 @@ func TestBroadcastHandlerForwardsOnlyItsRoutes(t *testing.T) {
 		{"POST", "/admin/cloud-link/broadcast/channels", `{"slug":"a"}`},
 		{"DELETE", "/admin/cloud-link/broadcast/channels/0b9a4b5e-5d1c-4a43-9a5e-1c2b3d4e5f60", ""},
 		{"POST", "/admin/cloud-link/broadcast/ingest-token", `{"channel":"c"}`},
+		{"GET", "/admin/cloud-link/broadcast/revocations", ""},
 	} {
 		if rec := call(c.method, c.path, c.body); rec.Code != http.StatusCreated || rec.Body.String() != `{"ok":true}` {
 			t.Errorf("%s %s: %d %s", c.method, c.path, rec.Code, rec.Body)
 		}
 	}
 	want := []string{"GET /v1/broadcast/state ", `POST /v1/broadcast/channels {"slug":"a"}`,
-		"DELETE /v1/broadcast/channels/0b9a4b5e-5d1c-4a43-9a5e-1c2b3d4e5f60 ", `POST /v1/broadcast/ingest-token {"channel":"c"}`}
+		"DELETE /v1/broadcast/channels/0b9a4b5e-5d1c-4a43-9a5e-1c2b3d4e5f60 ", `POST /v1/broadcast/ingest-token {"channel":"c"}`,
+		"GET /v1/broadcast/revocations "}
 	if strings.Join(seen, "|") != strings.Join(want, "|") {
 		t.Fatalf("cloud saw %q", seen)
 	}
@@ -54,12 +56,13 @@ func TestBroadcastHandlerForwardsOnlyItsRoutes(t *testing.T) {
 		{"DELETE", "/admin/cloud-link/broadcast/channels/../../servers"},
 		{"GET", "/admin/cloud-link/broadcast/"},
 		{"PUT", "/admin/cloud-link/broadcast/channels"},
+		{"POST", "/admin/cloud-link/broadcast/revocations"},
 	} {
 		if rec := call(c.method, c.path, ""); rec.Code != http.StatusNotFound {
 			t.Errorf("%s %s: %d, want 404", c.method, c.path, rec.Code)
 		}
 	}
-	if len(seen) != 4 {
+	if len(seen) != 5 {
 		t.Fatalf("a refused call reached the cloud: %q", seen)
 	}
 }

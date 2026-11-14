@@ -336,3 +336,24 @@ func TestStatesAndSlateArgs(t *testing.T) {
 		t.Fatalf("effective %v", got)
 	}
 }
+
+// Story 50.25: the edge's revoked event names the reason, which the channel keeps for the
+// Broadcast page; restored puts it back on air; a programme's slate changes nothing here.
+func TestCtlRevokedEventKeepsTheReason(t *testing.T) {
+	ch := uuid.New()
+	store := &memStore{states: map[uuid.UUID]string{}, report: map[uuid.UUID]map[string]any{}}
+	c := newTestCtl(t, store, &fakeSource{}, &fakeFFmpeg{})
+	ctx := context.Background()
+	c.Event(ctx, ch, Event{Type: "revoked", Action: "off_air", Reason: "notice"})
+	if got := store.state(ch); got != "revoked/notice" {
+		t.Fatalf("after revoked: %q", got)
+	}
+	c.Event(ctx, ch, Event{Type: "slate", Reason: "notice"})
+	if got := store.state(ch); got != "revoked/notice" {
+		t.Fatalf("a slate event changed the state: %q", got)
+	}
+	c.Event(ctx, ch, Event{Type: "restored"})
+	if got := store.state(ch); got != "live/" {
+		t.Fatalf("after restored: %q", got)
+	}
+}
