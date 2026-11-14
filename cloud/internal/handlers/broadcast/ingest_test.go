@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -72,7 +73,7 @@ func errOf(w *httptest.ResponseRecorder) string {
 	return b["error"]
 }
 
-const twoRungs = `{"channel":"7","rungs":["src","480p"]}`
+const twoRungs = `{"channel":"7","rungs":["src","480p"],"cloud_id":"0b9a4b5e-5d1c-4a43-9a5e-1c2b3d4e5f60"}`
 
 // Role rule: only a home's own agent credential gets a token; a user, an anonymous caller or a
 // wrong secret gets 401.
@@ -108,14 +109,14 @@ func TestIngestTokenNeedsThePlan(t *testing.T) {
 // Role rule: more rungs than the plan allows is 403.
 func TestIngestTokenRungsWithinThePlan(t *testing.T) {
 	r, _ := setup(t, true)
-	w := post(r, "pro-home", "s3cret", `{"channel":"7","rungs":["src","720p","480p"]}`)
+	w := post(r, "pro-home", "s3cret", `{"channel":"7","rungs":["src","720p","480p"],"cloud_id":"0b9a4b5e-5d1c-4a43-9a5e-1c2b3d4e5f60"}`)
 	if w.Code != 403 || errOf(w) != "plan_rungs" {
 		t.Fatalf("%d %s", w.Code, w.Body)
 	}
-	if w := post(r, "pro-home", "s3cret", `{"channel":"7","rungs":["SRC","x"]}`); w.Code != 400 {
+	if w := post(r, "pro-home", "s3cret", `{"channel":"7","rungs":["SRC","x"],"cloud_id":"0b9a4b5e-5d1c-4a43-9a5e-1c2b3d4e5f60"}`); w.Code != 400 {
 		t.Fatalf("bad rung names: %d", w.Code)
 	}
-	if w := post(r, "pro-home", "s3cret", `{"channel":"../7","rungs":["src"]}`); w.Code != 400 {
+	if w := post(r, "pro-home", "s3cret", `{"channel":"../7","rungs":["src"],"cloud_id":"0b9a4b5e-5d1c-4a43-9a5e-1c2b3d4e5f60"}`); w.Code != 400 {
 		t.Fatalf("bad channel: %d", w.Code)
 	}
 }
@@ -179,7 +180,7 @@ func TestIngestTokenCarriesGeo(t *testing.T) {
 	r := chi.NewRouter()
 	MountIngest(r, d)
 
-	w := post(r, "pro-home", "s3cret", `{"channel":"7","rungs":["src"],"geo":{"mode":"allow","countries":["SA","EG"]}}`)
+	w := post(r, "pro-home", "s3cret", `{"channel":"7","rungs":["src"],"cloud_id":"0b9a4b5e-5d1c-4a43-9a5e-1c2b3d4e5f60","geo":{"mode":"allow","countries":["SA","EG"]}}`)
 	if w.Code != 200 {
 		t.Fatalf("%d %s", w.Code, w.Body)
 	}
@@ -194,20 +195,20 @@ func TestIngestTokenCarriesGeo(t *testing.T) {
 	}
 
 	// no channel rule: Maktaba's list still goes in
-	w = post(r, "pro-home", "s3cret", `{"channel":"7","rungs":["src"]}`)
+	w = post(r, "pro-home", "s3cret", `{"channel":"7","rungs":["src"],"cloud_id":"0b9a4b5e-5d1c-4a43-9a5e-1c2b3d4e5f60"}`)
 	_ = json.Unmarshal(w.Body.Bytes(), &resp)
 	c, _ = bc.VerifyIngest(map[string]ed25519.PublicKey{k.Kid: k.Priv.Public().(ed25519.PublicKey)}, resp.Token, at)
 	if c.Geo == nil || strings.Join(c.Geo.Deny, ",") != "KP" {
 		t.Fatalf("maktaba list dropped: %+v", c.Geo)
 	}
 
-	if w := post(r, "pro-home", "s3cret", `{"channel":"7","rungs":["src"],"geo":{"mode":"everywhere"}}`); w.Code != 400 || errOf(w) != "invalid_geo" {
+	if w := post(r, "pro-home", "s3cret", `{"channel":"7","rungs":["src"],"cloud_id":"0b9a4b5e-5d1c-4a43-9a5e-1c2b3d4e5f60","geo":{"mode":"everywhere"}}`); w.Code != 400 || errOf(w) != "invalid_geo" {
 		t.Fatalf("bad mode: %d %s", w.Code, w.Body)
 	}
 
 	// never a token without Maktaba's list
 	denyErr = errors.New("db down")
-	if w := post(r, "pro-home", "s3cret", `{"channel":"7","rungs":["src"]}`); w.Code != 500 || errOf(w) != "geo_lookup_failed" {
+	if w := post(r, "pro-home", "s3cret", `{"channel":"7","rungs":["src"],"cloud_id":"0b9a4b5e-5d1c-4a43-9a5e-1c2b3d4e5f60"}`); w.Code != 500 || errOf(w) != "geo_lookup_failed" {
 		t.Fatalf("lookup failure: %d %s", w.Code, w.Body)
 	}
 }
@@ -239,9 +240,12 @@ func TestIngestTokenRecordsTheEdgeChannel(t *testing.T) {
 	if want := "pro-home " + cloudID + " " + bc.ChannelID("pro-home", "7"); len(got) != 1 || got[0] != want {
 		t.Fatalf("recorded %q, want %q", got, want)
 	}
-	for _, body := range []string{`{"channel":"7","rungs":["src"]}`, `{"channel":"7","rungs":["src"],"cloud_id":"'; DROP"}`} {
-		if w := post(r, "pro-home", "s3cret", body); w.Code != http.StatusOK {
-			t.Fatalf("token = %d", w.Code)
+	// no cloud id, or a malformed one: 400 bad_request, no token, nothing recorded
+	for _, body := range []string{`{"channel":"7","rungs":["src"]}`, `{"channel":"7","rungs":["src"],"cloud_id":""}`,
+		`{"channel":"7","rungs":["src"],"cloud_id":"'; DROP"}`, `{"channel":"7","rungs":["src"],"cloud_id":"------------------------------------"}`} {
+		if w := post(r, "pro-home", "s3cret", body); w.Code != http.StatusBadRequest || errOf(w) != "bad_request" ||
+			strings.Contains(w.Body.String(), "mkbi1.") {
+			t.Fatalf("%s = %d %s", body, w.Code, w.Body)
 		}
 	}
 	if len(got) != 1 {
@@ -272,8 +276,60 @@ func TestIngestTokenFailsClosedWithoutTheBinding(t *testing.T) {
 	if w.Code != http.StatusServiceUnavailable || errOf(w) != "edge_channel_unavailable" || strings.Contains(w.Body.String(), "mkbi1.") {
 		t.Fatalf("the bind failed = %d %s", w.Code, w.Body)
 	}
-	// a malformed cloud id is not looked up at all
-	if w := post(r, "pro-home", "s3cret", `{"channel":"7","rungs":["src"],"cloud_id":"------------------------------------"}`); w.Code != http.StatusOK {
-		t.Fatalf("a malformed cloud id = %d", w.Code)
+	// a cloud id that is not one of the home's live channels: no token
+	d.EdgeChannels = func(context.Context, string, string, string) error { return ErrNotPublished }
+	if w := post(r, "pro-home", "s3cret", `{"channel":"7","rungs":["src"],"cloud_id":"0b9a4b5e-5d1c-4a43-9a5e-1c2b3d4e5f60"}`); w.Code != http.StatusNotFound ||
+		errOf(w) != "channel_not_published" {
+		t.Fatalf("an unknown cloud id = %d %s", w.Code, w.Body)
 	}
+}
+
+// The speed test before the first publish: a token of its own type, 10 minutes, no rungs and no
+// country rule, issued without a cloud id and never bound.
+func TestSpeedTestToken(t *testing.T) {
+	seed := sha256.Sum256([]byte("maktaba-broadcast TEST KEY, never for production: handler"))
+	k, _ := bc.KeyFromSeed(seed[:])
+	bound := 0
+	d := &IngestDeps{
+		Agents: fakeAgents{"pro-home": "s3cret", "free-home": "s3cret"}, Key: &k,
+		Plans:        fakePlans{"pro-home": {Publisher: "user-pro", MaxRungs: 2, MaxTopKbps: 3000}},
+		Now:          func() time.Time { return at },
+		EdgeChannels: func(context.Context, string, string, string) error { bound++; return nil },
+	}
+	r := chi.NewRouter()
+	MountIngest(r, d)
+	w := post(r, "pro-home", "s3cret", `{"channel":"7","purpose":"speedtest"}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("speed-test token = %d %s", w.Code, w.Body)
+	}
+	var resp struct {
+		Token     string    `json:"token"`
+		ExpiresAt time.Time `json:"expires_at"`
+		Rungs     []string  `json:"rungs"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	claims := decodeClaims(t, resp.Token)
+	if claims["typ"] != bc.SpeedTestType || len(claims["rungs"].([]any)) != 0 || claims["geo"] != nil ||
+		!resp.ExpiresAt.Equal(at.Add(bc.SpeedTestTTL).UTC()) || bound != 0 {
+		t.Fatalf("speed-test token %v, expires %s, bound %d", claims, resp.ExpiresAt, bound)
+	}
+	// still behind the plan
+	if w := post(r, "free-home", "s3cret", `{"channel":"7","purpose":"speedtest"}`); w.Code != 403 {
+		t.Fatalf("a home without the plan = %d", w.Code)
+	}
+}
+
+// decodeClaims reads a signed token's payload (the signature is checked elsewhere).
+func decodeClaims(t *testing.T, token string) map[string]any {
+	t.Helper()
+	rest, ok := strings.CutPrefix(token, bc.IngestPrefix)
+	body, _, found := strings.Cut(rest, ".")
+	raw, err := base64.RawURLEncoding.DecodeString(body)
+	var m map[string]any
+	if !ok || !found || err != nil || json.Unmarshal(raw, &m) != nil {
+		t.Fatalf("not a token: %q", token)
+	}
+	return m
 }

@@ -17,8 +17,16 @@ type Cloud interface {
 	State(ctx context.Context) (Plan, error)
 	Publish(ctx context.Context, req PublishRequest) (CloudChannel, error)
 	Unpublish(ctx context.Context, cloudID string) error
-	IngestToken(ctx context.Context, channel string, rungs []string, geo *Geo) (IngestToken, error)
+	// IngestToken asks for a published channel's token, named by its cloud id (required: the
+	// cloud binds the channel's edge id to it, story 50.24).
+	IngestToken(ctx context.Context, channel, cloudID string, rungs []string, geo *Geo) (IngestToken, error)
+	// SpeedTestToken asks for a speed-test token: the upload measured before the first publish,
+	// good on the edge's speed test only.
+	SpeedTestToken(ctx context.Context, channel string) (IngestToken, error)
 }
+
+// ErrNoCloudID is a token asked for a channel the cloud has not given an id (not published).
+var ErrNoCloudID = errors.New("broadcast: the channel has no cloud id; publish it first")
 
 // PublishRequest is POST /v1/broadcast/channels (story 50.20's handler).
 type PublishRequest struct {
@@ -69,9 +77,6 @@ var ErrUnreachable = errors.New("broadcast: Maktaba Cloud is unreachable")
 type Agent struct {
 	Addr   string
 	Client *http.Client
-	// CloudID is a channel's id in the cloud ("" when unpublished): sent with its ingest token's
-	// request, so the cloud learns the channel's edge id (story 50.24). nil: not sent.
-	CloudID func(ctx context.Context, channel string) string
 }
 
 func (a *Agent) do(ctx context.Context, method, path string, body, out any) error {
@@ -150,18 +155,23 @@ func (a *Agent) Revocations(ctx context.Context) (string, error) {
 // IngestToken asks for the channel's ingest token (valid 24 h, asked again hourly). geo is
 // the channel's country rule (story 50.23 §5, nil: none): the cloud signs it into the token
 // with Maktaba's deny list, and the edge checks it at play and at every playlist.
-func (a *Agent) IngestToken(ctx context.Context, channel string, rungs []string, geo *Geo) (IngestToken, error) {
+func (a *Agent) IngestToken(ctx context.Context, channel, cloudID string, rungs []string, geo *Geo) (IngestToken, error) {
 	var t IngestToken
-	body := map[string]any{"channel": channel, "rungs": rungs}
+	if cloudID == "" {
+		return t, ErrNoCloudID // the cloud refuses a token without it (400): don't ask
+	}
+	body := map[string]any{"channel": channel, "cloud_id": cloudID, "rungs": rungs}
 	if geo != nil {
 		body["geo"] = geo
 	}
-	if a.CloudID != nil {
-		if id := a.CloudID(ctx, channel); id != "" {
-			body["cloud_id"] = id
-		}
-	}
 	err := a.do(ctx, http.MethodPost, "ingest-token", body, &t)
+	return t, err
+}
+
+// SpeedTestToken asks for a speed-test token (10 minutes, the speed test only).
+func (a *Agent) SpeedTestToken(ctx context.Context, channel string) (IngestToken, error) {
+	var t IngestToken
+	err := a.do(ctx, http.MethodPost, "ingest-token", map[string]any{"channel": channel, "purpose": "speedtest"}, &t)
 	return t, err
 }
 

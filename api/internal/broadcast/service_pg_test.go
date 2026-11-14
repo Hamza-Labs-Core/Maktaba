@@ -25,6 +25,8 @@ type fakeCloud struct {
 	unpublished []string
 	tokens      int
 	geos        []*Geo
+	cloudIDs    []string
+	speedTests  int
 	ingestURL   string
 	n           int
 }
@@ -63,11 +65,30 @@ func (f *fakeCloud) Unpublish(_ context.Context, id string) error {
 	return nil
 }
 
-func (f *fakeCloud) IngestToken(_ context.Context, ch string, rungs []string, geo *Geo) (IngestToken, error) {
+func (f *fakeCloud) SpeedTestToken(_ context.Context, ch string) (IngestToken, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.n++
+	if f.down {
+		return IngestToken{}, ErrUnreachable
+	}
+	f.speedTests++
+	url := f.ingestURL
+	if url == "" {
+		url = "http://ingest.invalid"
+	}
+	return IngestToken{Token: "mkbi1.speed", Channel: "edge-" + ch[:8], ExpiresAt: time.Now().Add(10 * time.Minute), IngestURL: url}, nil
+}
+
+func (f *fakeCloud) IngestToken(_ context.Context, ch, cloudID string, rungs []string, geo *Geo) (IngestToken, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.n++
 	f.geos = append(f.geos, geo)
+	f.cloudIDs = append(f.cloudIDs, cloudID)
+	if cloudID == "" {
+		return IngestToken{}, &CloudError{Status: http.StatusBadRequest, Code: "bad_request"} // as the cloud answers
+	}
 	if f.down {
 		return IngestToken{}, ErrUnreachable
 	}
@@ -179,6 +200,10 @@ func TestPublishOnTheHome(t *testing.T) {
 	if err := db.QueryRowContext(ctx, `SELECT token FROM broadcast_ingest_tokens WHERE channel_id::text = $1`, ch).Scan(&token); err != nil || token != "mkbi1.tok" {
 		t.Fatalf("token %q %v", token, err)
 	}
+	// story 50.24: the first token already names the cloud id the publish answered
+	if len(cloud.cloudIDs) != 1 || cloud.cloudIDs[0] != "0b9a4b5e-5d1c-4a43-9a5e-1c2b3d4e5f60" {
+		t.Fatalf("the token's cloud ids: %q", cloud.cloudIDs)
+	}
 	// story 50.23 §5: the token is asked for with the channel's country rule
 	if len(cloud.geos) != 1 || cloud.geos[0] == nil || cloud.geos[0].Mode != GeoAllow ||
 		strings.Join(cloud.geos[0].Countries, ",") != "SA,EG" {
@@ -246,14 +271,15 @@ func TestTokensAndPendingUnpublish(t *testing.T) {
 	}
 }
 
-// §3: the speed test PUTs to the edge with the channel's token, stores the rate, and a
+// §3: the speed test PUTs to the edge with the channel's token (before the first publish, a
+// speed-test token: story 50.24), stores the rate, and a
 // rate below the published channels' need drops the newest channel's top rung.
 func TestSpeedTestStoresAndDrops(t *testing.T) {
 	db, ch, admin := homeWithChannel(t)
 	ctx := context.Background()
 	var rate = 100_000
 	edge := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPut || r.URL.Path != "/v1/ingest/speedtest" || r.Header.Get("Authorization") != "Bearer mkbi1.tok" ||
+		if r.Method != http.MethodPut || r.URL.Path != "/v1/ingest/speedtest" || (r.Header.Get("Authorization") != "Bearer mkbi1.tok" && r.Header.Get("Authorization") != "Bearer mkbi1.speed") ||
 			r.Header.Get("X-Maktaba-Time") == "" {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
@@ -270,6 +296,10 @@ func TestSpeedTestStoresAndDrops(t *testing.T) {
 	up, err := svc.SpeedTest(ctx, "publish")
 	if err != nil || up.Kbps != 100_000 {
 		t.Fatalf("first test: %+v %v", up, err)
+	}
+	// before the first publish: a speed-test token, never an ingest token without a cloud id
+	if cloud.speedTests != 1 || cloud.tokens != 0 {
+		t.Fatalf("before publishing: %d speed-test tokens, %d ingest tokens", cloud.speedTests, cloud.tokens)
 	}
 	if _, err := svc.Publish(ctx, ch, true, Admin{UserID: admin, Name: "Amina"}); err != nil {
 		t.Fatal(err)

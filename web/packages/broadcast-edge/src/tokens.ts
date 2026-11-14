@@ -21,6 +21,8 @@ export const VIEWER_DOMAIN = "maktaba-broadcast-viewer-v1";
 
 /** An ingest token lives 24 h; the home refreshes it every hour (50.22). */
 export const INGEST_MAX_TTL_S = 24 * 3600;
+/** A speed-test token lives at most 10 minutes (50.24: the cloud issues it without a cloud id). */
+export const SPEEDTEST_MAX_TTL_S = 600;
 /** A viewer token lives at most 10 minutes (50.26 mints it). */
 export const VIEWER_MAX_TTL_S = 600;
 /** Clock slack allowed on a token's expiry bounds. */
@@ -28,7 +30,9 @@ const SLACK_S = 60;
 
 /** The ingest token's claims: one publisher, one channel, its rungs, and the plan's top kbps. */
 export interface IngestClaims {
-  typ: "ingest";
+  /** "ingest", or "ingest-speedtest": a speed-test token (no cloud id, before the first publish),
+   * taken on /v1/ingest/speedtest only */
+  typ: "ingest" | "ingest-speedtest";
   /** publisher: the cloud account that publishes */
   pub: string;
   /** channel: the edge's opaque channel id (the cloud derives it from the home and channel) */
@@ -141,13 +145,16 @@ export async function verifyIngest(
   token: string,
   pubkeys: string,
   nowMs: number,
-  want: { ch?: string; rung?: string }
+  want: { ch?: string; rung?: string; speedtest?: boolean }
 ): Promise<Checked<IngestClaims>> {
   const v = await verifyCloud(token, INGEST_PREFIX, INGEST_DOMAIN, pubkeys);
   if (!v.ok) return { ok: false, status: 401, error: v.error };
   const p = v.payload;
+  // a speed-test token is good for the speed test only, never for a segment or the stream
+  if (p.typ === "ingest-speedtest" && !want.speedtest)
+    return { ok: false, status: 403, error: "speedtest_only" };
   if (
-    p.typ !== "ingest" ||
+    (p.typ !== "ingest" && p.typ !== "ingest-speedtest") ||
     typeof p.pub !== "string" ||
     typeof p.ch !== "string" ||
     typeof p.home !== "string" ||
@@ -159,7 +166,8 @@ export async function verifyIngest(
     return { ok: false, status: 401, error: "bad_token" };
   const nowS = nowMs / 1000;
   if (p.exp <= nowS) return { ok: false, status: 401, error: "expired" };
-  if (p.exp - p.iat > INGEST_MAX_TTL_S + SLACK_S || p.iat > nowS + SLACK_S)
+  const maxTTL = p.typ === "ingest-speedtest" ? SPEEDTEST_MAX_TTL_S : INGEST_MAX_TTL_S;
+  if (p.exp - p.iat > maxTTL + SLACK_S || p.iat > nowS + SLACK_S)
     return { ok: false, status: 401, error: "bad_lifetime" };
   if (want.ch !== undefined && p.ch !== want.ch)
     return { ok: false, status: 403, error: "wrong_channel" };

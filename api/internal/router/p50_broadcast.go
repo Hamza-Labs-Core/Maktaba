@@ -33,7 +33,7 @@ type BroadcastDeps struct {
 func MountBroadcast(r chi.Router, d BroadcastDeps) *broadcast.Service {
 	svc := &broadcast.Service{Store: &broadcast.Store{DB: d.DB}, Logger: d.Logger}
 	if d.AgentAddr != "" {
-		agent := &broadcast.Agent{Addr: d.AgentAddr, CloudID: cloudIDs(d.DB)}
+		agent := &broadcast.Agent{Addr: d.AgentAddr}
 		svc.Cloud = agent
 		// takedowns and reports (50.24): Maktaba's signed instructions and this home's records
 		svc.Moderation = agent
@@ -50,18 +50,6 @@ func MountBroadcast(r chi.Router, d BroadcastDeps) *broadcast.Service {
 	}
 	(&broadcast.Routes{Service: svc, Names: userNames(d.DB)}).Mount(r)
 	return svc
-}
-
-// cloudIDs is a channel's id in Maktaba Cloud ("" when it has none).
-func cloudIDs(db *sql.DB) func(ctx context.Context, channel string) string {
-	return func(ctx context.Context, channel string) string {
-		if db == nil {
-			return ""
-		}
-		var id string
-		_ = db.QueryRowContext(ctx, `SELECT COALESCE(cloud_id, '') FROM broadcast_channels WHERE channel_id::text = $1`, channel).Scan(&id)
-		return id
-	}
 }
 
 // userNames is a user's display name (else username) for the rights confirmation.

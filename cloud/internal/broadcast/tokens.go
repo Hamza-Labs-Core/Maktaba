@@ -43,6 +43,10 @@ const (
 	RefreshEvery = time.Hour
 	// MaxRungs bounds a token's rung list whatever a plan says.
 	MaxRungs = 4
+	// SpeedTestType and SpeedTestTTL: a speed-test token measures the upload before a channel is
+	// published (50.22); the edge takes it on /v1/ingest/speedtest only, never for a segment.
+	SpeedTestType = "ingest-speedtest"
+	SpeedTestTTL  = 10 * time.Minute
 )
 
 var b64 = base64.RawURLEncoding
@@ -186,6 +190,21 @@ func IssueIngest(k Key, c IngestClaims, now time.Time) (string, error) {
 	c.Kid = k.Kid
 	c.Iat = now.Unix()
 	c.Exp = now.Add(IngestTTL).Unix()
+	return sign(k, IngestPrefix, IngestDomain, c)
+}
+
+// IssueSpeedTest signs a speed-test token, valid SpeedTestTTL: no rungs and no country rule, so
+// it can push nothing a viewer sees.
+func IssueSpeedTest(k Key, c IngestClaims, now time.Time) (string, error) {
+	if c.Pub == "" || c.Ch == "" || c.Home == "" || c.Kbps <= 0 {
+		return "", ErrBadClaims
+	}
+	c.Typ = SpeedTestType
+	c.Rungs = []string{}
+	c.Geo = nil
+	c.Kid = k.Kid
+	c.Iat = now.Unix()
+	c.Exp = now.Add(SpeedTestTTL).Unix()
 	return sign(k, IngestPrefix, IngestDomain, c)
 }
 

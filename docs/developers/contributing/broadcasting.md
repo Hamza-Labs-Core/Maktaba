@@ -145,6 +145,11 @@ signed instruction:
   broadcast keys (the revocation list's), `typ: "takedowns"`, naming this home. A forged or expired
   batch, or another home's, is refused and logged (`broadcast_takedowns_refused`, SEV2). Without
   the keys the home applies none.
+- **The edge id.** Every ingest-token request names the channel's cloud id (the publish
+  answer); the cloud refuses one without it (`400 bad_request`). The first token binds the
+  channel's edge id to that cloud id, so a takedown's programme slate always names the edge id the
+  home uploads to. The speed test before the first publish asks for a speed-test token instead
+  (`purpose: "speedtest"`), which the edge takes on its speed test only.
 - **Applying one.** A takedown names the item (its id, or the programme on the channel at the
   notice's time, read from `channel_programs`) or a source (a YouTube channel or playlist, a
   speaker, a label). The home writes a row in `broadcast_takedowns`; slot 0228's

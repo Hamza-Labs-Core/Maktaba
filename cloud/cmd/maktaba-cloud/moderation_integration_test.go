@@ -276,7 +276,8 @@ func TestModerationNoticeTakedownCounterRestore(t *testing.T) {
 
 // Story 50.24: a channel's edge id binds once, under a row lock. The same channel again is fine,
 // whatever the cloud id's case; another local channel is refused; of two concurrent binds naming
-// different channels exactly one wins; another home's cloud id binds nothing.
+// different channels exactly one wins; another home's cloud id, or one naming no channel, is not
+// published (no token).
 func TestEdgeChannelBindsOnce(t *testing.T) {
 	e := newEnv(t)
 	owner := e.registerVerified("owner@example.test")
@@ -302,8 +303,11 @@ func TestEdgeChannelBindsOnce(t *testing.T) {
 	if err := bind(ctx, h.id, ch, edge8); !errors.Is(err, broadcasth.ErrEdgeMismatch) {
 		t.Fatalf("another channel: %v", err)
 	}
-	if err := bind(ctx, "00000000-0000-0000-0000-000000000000", ch, edge8); err != nil {
+	if err := bind(ctx, "00000000-0000-0000-0000-000000000000", ch, edge8); !errors.Is(err, broadcasth.ErrNotPublished) {
 		t.Fatalf("another home's cloud id: %v", err)
+	}
+	if err := bind(ctx, h.id, "0b9a4b5e-5d1c-4a43-9a5e-1c2b3d4e5f60", edge8); !errors.Is(err, broadcasth.ErrNotPublished) {
+		t.Fatalf("a cloud id that names no channel: %v", err)
 	}
 
 	race := newChannel("quran")

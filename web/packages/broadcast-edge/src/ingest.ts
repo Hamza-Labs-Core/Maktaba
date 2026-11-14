@@ -89,7 +89,7 @@ async function authorize(
   request: Request,
   env: Env,
   t: number,
-  want: { ch?: string; rung?: string }
+  want: { ch?: string; rung?: string; speedtest?: boolean }
 ): Promise<{ ok: true; claims: IngestClaims } | { ok: false; res: Response }> {
   const v = await verifyIngest(bearer(request), env.CLOUD_PUBKEYS, t, want);
   if (!v.ok) return { ok: false, res: problem(v.status, v.error) };
@@ -356,7 +356,7 @@ async function postStream(env: Env, ch: string): Promise<Response> {
 }
 
 async function speedtest(request: Request, env: Env, t: number): Promise<Response> {
-  const a = await authorize(request, env, t, {});
+  const a = await authorize(request, env, t, { speedtest: true });
   if (!a.ok) return a.res;
   const started = Date.now();
   let bytes = 0;
