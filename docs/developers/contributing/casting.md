@@ -113,6 +113,35 @@ The grant goes in the Cast load request's `MediaInfo.customData`, never in heade
 - **`api_level`** is the home's level from `GET /api/discovery/home`. The receiver page is
   served per level at `https://cast.maktaba.tv/r/<api_level>/`.
 
+## The senders
+
+Every sender follows the same rules, kept in `shared/cast/`:
+
+- **`app.json`** holds the receiver's application ID from Google's Cast console
+  (docs/stores/cast.md), its URL and the custom namespace. The ID is public, never a secret,
+  and each build reads it: vite for the web (`MAKTABA_CAST_APP_ID` overrides it). **Empty, no
+  sender shows Cast**: no button, no Cast SDK started.
+- **`load-vectors.json`** holds the custom data above, case by case, with the sender's own
+  address and the home's discovery list as input. Each sender runs every case in its unit
+  tests. When no address qualifies (a home reached only at `http://` or by IP), the sender
+  hides Cast for that home.
+
+A sender mints the grant with the person's own sign-in when the cast starts (and for the
+item that plays next when the person picks another), loads it, then follows the receiver's
+media status: the item, the queue position, the time. While the receiver plays, the sender
+posts no progress of its own: the receiver reports it with the grant, and Continue Watching
+follows the TV. About 30 minutes before the grant ends, a sender that is still running mints a
+fresh one and sends it as the namespace's `grant` message.
+
+The grant's refusals have their problem pages: `cast_via_cloud`, `cast_needs_person`,
+`cast_scope` (shared/api/problems.json).
+
+**The web** (`web/src/lib/cast/`, the player's `CastControl`): Google's Cast Web Sender, loaded
+only in Chrome on an HTTPS page with an ID set. A page reached at `http://`, another browser,
+or a sign-in through Maktaba Cloud shows no button. Tests: Vitest against a fake of the SDK
+(`web/src/test/fakeCast.ts`). The web is served by the home itself, so it never meets a home
+older than the cast grant.
+
 ## The receiver
 
 `web/packages/castreceiver`, served at `https://cast.maktaba.tv/r/` (the one URL registered in

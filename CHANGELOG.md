@@ -2753,6 +2753,18 @@ build fails when the two differ.
   (an older home is asked to update); it needs the Cast console registration and the phone
   apps' update (story 58.06) before anyone can cast to it.
 
+- **Cast to a TV from Chrome (Epic 58, story 58.06).** In Chrome, on the home's secure address,
+  the web player's **Cast to a TV** sends the video, or the whole **Play all** or **Shuffle**
+  queue, to a Chromecast, a Google TV or a TV with Chromecast built in, through Maktaba's own
+  receiver. The browser mints a cast grant for the video or queue and hands it to the TV, which
+  then plays and reports progress by itself, so the tab can close and Continue Watching follows
+  the TV; the player shows the TV's name, play, pause and **Stop casting**, and the TV follows
+  the web app's language. No Cast button on `http://`, in other browsers or through Maktaba
+  Cloud. The receiver's application ID lives in `shared/cast/app.json` with the custom-data
+  vectors every sender runs (`shared/cast/load-vectors.json`); until the ID is set, no build
+  shows Cast. The cast grant's refusals (`cast_via_cloud`, `cast_needs_person`, `cast_scope`)
+  now have their problem pages.
+
 ### Changed
 
 - **A machine that loses its home stays usable** under a notice instead of the whole app being

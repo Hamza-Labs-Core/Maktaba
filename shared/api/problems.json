@@ -408,6 +408,75 @@
       "install": null
     },
     {
+      "slug": "cast-needs-person",
+      "status": 403,
+      "area": "playback",
+      "audience": "app",
+      "codes": [
+        "cast_needs_person"
+      ],
+      "title": {
+        "en": "A cast needs a person's sign-in",
+        "ar": "يحتاج البث إلى تسجيل دخول شخص"
+      },
+      "means": {
+        "en": "A cast grant is minted for a person's own sign-in. The admin token belongs to no one, so it cannot cast.",
+        "ar": "يُصدَر تصريح البث لتسجيل دخول شخص بعينه. ورمز المسؤول لا يخصّ أحدًا، فلا يمكنه البث."
+      },
+      "do": {
+        "en": "Sign in as the person who is watching, then cast again.",
+        "ar": "سجّلوا الدخول باسم الشخص الذي يشاهد، ثم ابدؤوا البث من جديد."
+      },
+      "help": "videos#cast",
+      "install": null
+    },
+    {
+      "slug": "cast-scope",
+      "status": 403,
+      "area": "playback",
+      "audience": "app",
+      "codes": [
+        "cast_scope"
+      ],
+      "title": {
+        "en": "The cast grant doesn't cover this",
+        "ar": "تصريح البث لا يشمل هذا"
+      },
+      "means": {
+        "en": "A cast grant lets a TV play only the video or the queue it was made for. This request asked for something else, or a grant tried to make another grant.",
+        "ar": "يسمح تصريح البث للتلفاز بتشغيل المقطع أو القائمة التي صُنع لها فقط. وقد طلب هذا الطلب شيئًا آخر، أو حاول تصريحٌ أن يصنع تصريحًا آخر."
+      },
+      "do": {
+        "en": "Cast the video again from the phone or the browser: a new cast makes a new grant.",
+        "ar": "ابدؤوا بث المقطع من جديد من الهاتف أو المتصفح: فكل بث جديد يصنع تصريحًا جديدًا."
+      },
+      "help": "videos#cast",
+      "install": null
+    },
+    {
+      "slug": "cast-via-cloud",
+      "status": 403,
+      "area": "playback",
+      "audience": "person",
+      "codes": [
+        "cast_via_cloud"
+      ],
+      "title": {
+        "en": "Casting needs a sign-in on the home",
+        "ar": "يحتاج البث إلى تسجيل الدخول على المنزل"
+      },
+      "means": {
+        "en": "A sign-in through Maktaba Cloud cannot start a cast: the TV's pass would outlive the cloud link.",
+        "ar": "لا يمكن لتسجيل دخول عبر Maktaba Cloud أن يبدأ بثًّا: فتصريح التلفاز سيبقى بعد انتهاء رابط السحابة."
+      },
+      "do": {
+        "en": "Open the home at its own secure address (https), sign in there, then cast.",
+        "ar": "افتحوا المنزل بعنوانه الآمن الخاص (https)، وسجّلوا الدخول هناك، ثم ابدؤوا البث."
+      },
+      "help": "videos#cast",
+      "install": null
+    },
+    {
       "slug": "catalog-unavailable",
       "status": 503,
       "area": "store",
