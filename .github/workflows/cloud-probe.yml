@@ -63,6 +63,8 @@ jobs:
           FILE_URL: https://canary.relay.maktaba.tv/canary/10mb.bin
           PUSHGATEWAY_URL: ${{ secrets.PUSHGATEWAY_URL }}
           PUSHGATEWAY_TOKEN: ${{ secrets.PUSHGATEWAY_TOKEN }}
+          # the canary broadcast (story 50.28): played every 60 s once its pass URL is set
+          BROADCAST_PASS_URL: ${{ secrets.BROADCAST_PASS_URL }}
           NETWORK1_URL: ${{ secrets.PUSHGATEWAY_URL && format('{0}/status/network1.json', secrets.PUSHGATEWAY_URL) || '' }}
           ROUNDS_FILE: ${{ vars.STATUS_PAGE == 'true' && format('{0}/rounds', runner.temp) || '' }}
           ROUND_CMD: ${{ vars.STATUS_PAGE == 'true' && format('bash status/publish-data.sh status-data {0}/rounds --if-changed', runner.temp) || '' }}

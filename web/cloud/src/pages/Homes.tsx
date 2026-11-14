@@ -8,6 +8,7 @@
 // linked to this account gives nothing (owning it is no account in it), and Manage is
 // refused there unless the person is an admin of the home whose own link allows managing.
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { Badge } from "@ds/components/Badge/Badge";
 import { Button } from "@ds/components/Button/Button";
 import { Card } from "@ds/components/Card/Card";
@@ -131,6 +132,14 @@ export function Homes() {
               <p className="mkc-muted">
                 {t("homes.notLinked")}{" "}
                 <a href={new URL("/account", h.relay_url).toString()}>{t("homes.openHome")}</a>
+              </p>
+            )}
+            {/* a home's broadcast viewers (story 50.28): its owner only, as the cloud enforces */}
+            {h.owned && (
+              <p>
+                <Link to={`/homes/${encodeURIComponent(h.server_id)}/viewers`}>
+                  {t("homes.viewers")}
+                </Link>
               </p>
             )}
           </Card>

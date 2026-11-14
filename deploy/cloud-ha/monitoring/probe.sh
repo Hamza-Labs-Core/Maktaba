@@ -9,7 +9,11 @@
 # results beside network 1's (the witness's own probes, NETWORK1_URL, read with the same token;
 # older than 2 minutes or unreachable counts as no answer), for status/update.mjs.
 #
-# Env: CANARY_URL, API_URL, STATUS_URL, FILE_URL, PUSHGATEWAY_URL, PUSHGATEWAY_TOKEN,
+# The canary broadcast (story 50.28): with BROADCAST_PASS_URL set, every other round (60 s) also
+# plays it as a viewer (broadcast-probe.sh, NETWORK=actions), and the round records it as
+# broadcasting: {actions, witness} for the status page's Broadcasting component.
+#
+# Env: CANARY_URL, API_URL, STATUS_URL, FILE_URL, PUSHGATEWAY_URL, PUSHGATEWAY_TOKEN, BROADCAST_PASS_URL,
 # NETWORK1_URL, ROUNDS_FILE, ROUND_CMD (run after each round: the status page publishes a
 # change at once), ROUNDS (10), EVERY (30), CONNECT_TO (curl --connect-to, the rehearsal's edge).
 set -uo pipefail
@@ -23,11 +27,16 @@ network1() { # network 1's latest view, or nulls when it is stale or unreachable
     [ -n "${n1}" ] || n1='{}'
     jq -c --argjson now "$(date -u +%s)" 'if ((.at // "1970-01-01T00:00:00Z") | fromdateiso8601) >= ($now - 120) then . else {} end' <<<"${n1}" 2>/dev/null || echo '{}'
 }
-record() { # record <canary> <api>: one round for the status page
+record() { # record <canary> <api> [broadcast]: one round for the status page
     [ -n "${ROUNDS_FILE:-}" ] || return 0
-    network1 | jq -c --arg at "$(date -u +%FT%TZ)" --argjson c "$1" --argjson a "$2" \
-        '{at: $at, relay: {actions: $c, witness: .relay, held_ratio: .held_ratio}, api: {actions: $a, witness: .api}, push: {lag: .push_lag}}' \
+    network1 | jq -c --arg at "$(date -u +%FT%TZ)" --argjson c "$1" --argjson a "$2" --arg b "${3:-}" \
+        '{at: $at, relay: {actions: $c, witness: .relay, held_ratio: .held_ratio}, api: {actions: $a, witness: .api}, push: {lag: .push_lag}}
+         + (if $b == "" then {} else {broadcasting: {actions: ($b | tonumber), witness: .broadcast}} end)' \
         >>"${ROUNDS_FILE}"
+}
+bstate="$(mktemp)"; trap 'rm -f "${bstate}"' EXIT
+broadcast_play() { # one play of the canary broadcast: 1 or 0 (its own series go to the Pushgateway)
+    NETWORK=actions STATE_FILE="${bstate}" bash "$(dirname "$0")/broadcast-probe.sh" >/dev/null 2>&1 && echo 1 || echo 0
 }
 push() {
     [ -n "${PUSHGATEWAY_URL:-}" ] || return 0
@@ -44,8 +53,10 @@ canary_fails=0 api_fails=0 worst=0
 for i in $(seq 1 "${rounds}"); do
     c="$(check "${CANARY_URL:?}")" a="$(check "${API_URL:?}")" s=1
     [ -z "${STATUS_URL:-}" ] || s="$(check "${STATUS_URL}")"
-    echo "probe: round ${i}: canary ${c}, api ${a}, status ${s}"
-    record "${c}" "${a}"
+    b=""
+    if [ -n "${BROADCAST_PASS_URL:-}" ] && [ $((i % 2)) = 1 ]; then b="$(broadcast_play)"; fi
+    echo "probe: round ${i}: canary ${c}, api ${a}, status ${s}${b:+, broadcast ${b}}"
+    record "${c}" "${a}" "${b}"
     [ -z "${ROUND_CMD:-}" ] || bash -c "${ROUND_CMD}" || echo "probe: the round command failed" >&2
     printf 'probe_success{job="canary"} %s\nprobe_success{job="api"} %s\nprobe_success{job="status"} %s\n' "${c}" "${a}" "${s}" | push
     if [ "${c}" = 1 ]; then canary_fails=0; else canary_fails=$((canary_fails + 1)); fi

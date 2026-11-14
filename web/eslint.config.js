@@ -24,6 +24,8 @@ export default tseslint.config(
       "packages/website/dist",
       "packages/website/node_modules",
       "packages/website/.wrangler",
+      "packages/broadcast-edge/node_modules",
+      "packages/broadcast-edge/.wrangler",
       "design-system/build",
       "design-system/storybook",
       "design-system/**/*.stories.tsx",

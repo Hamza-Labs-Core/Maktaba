@@ -37,6 +37,36 @@ type Config struct {
 	Direct      DirectConfig
 	Turnstile   TurnstileConfig
 	Admin       AdminConfig
+	Broadcast   BroadcastConfig
+}
+
+// BroadcastConfig is the cloud's side of the broadcast edge (Epic 50 story 50.21): the key that
+// signs ingest tokens and control posts (its public half goes in the edge's CLOUD_PUBKEYS), the
+// ingest host homes push to, and the edge's public key its posts to the API are checked with.
+type BroadcastConfig struct {
+	Enabled bool // broadcast.enabled: issue ingest tokens (default false)
+	// KeyPath is broadcast.key_path: the Ed25519 seed file (base64url or 32 raw bytes, 0600).
+	KeyPath string
+	// IngestURL is broadcast.ingest_url, default https://ingest.maktaba.tv.
+	IngestURL string
+	// EdgePublicKey is broadcast.edge_public_key: base64url Ed25519 (EDGE_SIGNING_KEY's half).
+	EdgePublicKey string
+
+	// Story 50.28's analytics: the edge's Analytics Engine events, read through Cloudflare's SQL
+	// API. AnalyticsAccountID is broadcast.analytics_account_id; the API token (Account Analytics:
+	// Read) is the file at broadcast.analytics_token_path or env
+	// MAKTABA_CLOUD_BROADCAST_ANALYTICS_TOKEN, never in the config. Without both, the worker's
+	// rollup is off (the series and the analytics pages show what was rolled up before).
+	AnalyticsAccountID string
+	AnalyticsTokenPath string
+	AnalyticsToken     string
+	// AnalyticsURL is broadcast.analytics_url, default https://api.cloudflare.com/client/v4.
+	AnalyticsURL string
+	// AnalyticsK is broadcast.analytics_k: fewer sessions than this fold into "other" (default 5).
+	AnalyticsK int
+	// MonthlyBudgetUSD is broadcast.monthly_budget_usd: broadcast_cost_80pct fires past 80 %
+	// of it (0, the default: no budget, the alert quiet).
+	MonthlyBudgetUSD float64
 }
 
 // AdminConfig is the operator console's own settings (Epic 50 story 50.33 §7).
@@ -304,6 +334,8 @@ func (r RelayConfig) PoolPrivate() string {
 func defaultConfig() Config {
 	return Config{
 		Direct: DirectConfig{DNSListen: ":53", Budget: 45, CheckEvery: 15 * time.Minute},
+		Broadcast: BroadcastConfig{IngestURL: "https://ingest.maktaba.tv",
+			AnalyticsURL: "https://api.cloudflare.com/client/v4", AnalyticsK: 5},
 		Server: ServerConfig{
 			ListenAddr:    "0.0.0.0:8080",
 			OriginMode:    OriginTunnel,
@@ -398,6 +430,9 @@ func applyEnvOverrides(c *Config) {
 	}
 	if v := os.Getenv("MAKTABA_CLOUD_WEB_URL"); v != "" {
 		c.Server.WebURL = v
+	}
+	if v := os.Getenv("MAKTABA_CLOUD_BROADCAST_ANALYTICS_TOKEN"); v != "" {
+		c.Broadcast.AnalyticsToken = v
 	}
 	if v := os.Getenv("MAKTABA_CLOUD_TOKEN_SECRET"); v != "" {
 		c.Auth.TokenSecret = v
@@ -522,6 +557,24 @@ func assign(c *Config, section, key, val string) error {
 		return nil
 	}
 	switch section + "." + key {
+	case "broadcast.enabled":
+		return setBool(&c.Broadcast.Enabled, val)
+	case "broadcast.key_path":
+		c.Broadcast.KeyPath = val
+	case "broadcast.ingest_url":
+		c.Broadcast.IngestURL = val
+	case "broadcast.edge_public_key":
+		c.Broadcast.EdgePublicKey = val
+	case "broadcast.analytics_account_id":
+		c.Broadcast.AnalyticsAccountID = val
+	case "broadcast.analytics_token_path":
+		c.Broadcast.AnalyticsTokenPath = val
+	case "broadcast.analytics_url":
+		c.Broadcast.AnalyticsURL = val
+	case "broadcast.analytics_k":
+		return setInt(&c.Broadcast.AnalyticsK, val)
+	case "broadcast.monthly_budget_usd":
+		return setFloat(&c.Broadcast.MonthlyBudgetUSD, val)
 	case "direct.enabled":
 		return setBool(&c.Direct.Enabled, val)
 	case "direct.domains":

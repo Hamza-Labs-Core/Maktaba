@@ -2570,6 +2570,30 @@ build fails when the two differ.
   pass the API now also returns in the body to native apps, so the screen works while the API
   is down; a refusal says only admins can open it and never signs the app out.
 
+<<<<<<< HEAD
+- **The broadcast edge, built and rehearsed in CI (story 50.21).** Maktaba Cloud now has the
+  Cloudflare Worker a published channel will play from: a home pushes each segment of each
+  rendition once to `ingest.maktaba.tv`, and viewers' players fetch playlists and segments from
+  `live.maktaba.tv` at Cloudflare's edge, so a home's upload is the same for one viewer as for
+  ten thousand. Each home has its own signed ingest token for one channel and its rungs, valid a
+  day and asked for again every hour; a viewer's token lives ten minutes. When a home goes
+  quiet, its channel plays the home's offline slate and returns to live when it is back.
+  Segments are deleted ten minutes after they arrive; nothing is kept for catch-up. Stream is the
+  switchable fallback. The edge stores and delivers what a home sends and never chooses, ranks
+  or recommends anything. It is not deployed yet: broadcasting stays off until its gate opens.
+
+- **Viewer analytics and broadcast monitoring (story 50.28).** A home that broadcasts through
+  Maktaba Cloud gets a **Viewers** page at app.maktaba.tv (from **Homes**, for the home's owner
+  only): viewers watching now and viewer-hours today, over 7 days and this month against the
+  plan's allowance; with the Broadcaster add-on also the most viewers at once, average watch
+  time, countries, devices, quality watched, playback errors and viewers turned away, with a CSV
+  export. Countries and devices with fewer than 5 viewers are grouped as **Other**, and no names,
+  accounts or addresses are kept. Maktaba's staff can read the same numbers, each read audited.
+  The cloud now also watches its broadcasting: a canary broadcast played every minute from two
+  networks, alerts on its error budget, ingest lag, a stale revocation list, the edge's monthly
+  cost and a mismatch between analytics and billing, and a **Broadcasting** line on the status
+  page once broadcasting opens.
+=======
 - **A pool of relays (story 50.16).** The cloud can run several relay machines in one pool:
   each home keeps its tunnel on one relay and an idle standby tunnel on another, chosen by
   weighted rendezvous hashing, so a relay lost costs a home seconds, and adding one moves only
@@ -2578,6 +2602,7 @@ build fails when the two differ.
   healthy relays (`maktaba-cloud relay-dns`); staff take a relay out with `maktaba-cloud relay
   drain|down|activate`. Off until `[relay.pool] enabled = true`; proven in the cloud rehearsal
   (relay loss, relay added).
+>>>>>>> origin/main
 
 ### Changed
 

@@ -48,5 +48,16 @@ if [ "$(jq -c '[.relay.actions, .relay.witness]' "${work}/rounds")" = "[1,null]"
 else
     echo "FAIL unreachable: $(cat "${work}/rounds") $(cat "${work}/out")"; fails=1
 fi
+# the canary broadcast (story 50.28): every other round plays it, recorded beside network 1's
+printf '{"at":"%s","relay":1,"api":1,"broadcast":1}\n' "$(date -u +%FT%TZ)" >"${work}/www/status/network1.json"
+rm -f "${work}/rounds"
+ROUNDS=2 EVERY=0 CANARY_URL="http://127.0.0.1:${port}/api/health" API_URL="http://127.0.0.1:${port}/readyz" \
+    BROADCAST_PASS_URL="http://127.0.0.1:${port}/no-pass" \
+    NETWORK1_URL="http://127.0.0.1:${port}/status/network1.json" ROUNDS_FILE="${work}/rounds" bash "${here}/probe.sh" >"${work}/out" 2>&1
+if [ "$(jq -c '.broadcasting' "${work}/rounds" | tr '\n' ' ')" = '{"actions":0,"witness":1} null ' ]; then
+    echo "ok   the canary broadcast is played every other round"
+else
+    echo "FAIL broadcast: $(cat "${work}/rounds") $(cat "${work}/out")"; fails=1
+fi
 if [ "${fails}" != 0 ]; then exit 1; fi
 echo "all passed"

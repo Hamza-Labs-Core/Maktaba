@@ -100,6 +100,7 @@ jobs:
       runner_stages: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.runner_stages == 'true' }}
       store: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.store == 'true' }}
       cloudflare: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.cloudflare == 'true' }}
+      broadcast_edge: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.broadcast_edge == 'true' }}
       mdns: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.mdns == 'true' }}
       log_bench: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.log_bench == 'true' }}
       integration: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.integration == 'true' }}
@@ -280,6 +281,14 @@ jobs:
     needs: [changes]
     if: needs.changes.outputs.cloudflare == 'true'
     uses: ./.github/workflows/_cloudflare.yml
+
+  broadcast-edge:
+    # Epic 50 (50.21): the broadcast edge's Worker in Miniflare, the cloud's ingest tokens on the
+    # shared vectors, and the rehearsal under wrangler dev; no secret, no call to Cloudflare
+    # (see _broadcast-edge.yml)
+    needs: [changes]
+    if: needs.changes.outputs.broadcast_edge == 'true'
+    uses: ./.github/workflows/_broadcast-edge.yml
 
   e2e:
     needs: [changes, integration]
@@ -589,6 +598,7 @@ jobs:
       - runner-stages
       - store
       - cloudflare
+      - broadcast-edge
       - e2e
       - media-e2e
       - perf-ci

@@ -291,6 +291,16 @@ a:hover {
   font-size: var(--font-size-h2);
   font-weight: 700;
 }
+/* label and value pairs (the viewers page's hours, story 50.28) */
+.mkc-dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--space-2) var(--space-4);
+  margin: 0 0 var(--space-3);
+}
+.mkc-dl dd {
+  margin: 0;
+}
 
 @media (max-width: 640px) {
   .mkc-shell__main {

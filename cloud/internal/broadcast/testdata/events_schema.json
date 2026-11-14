@@ -1,0 +1,17 @@
+{
+  "dataset": "broadcast_events",
+  "comment": "Story 50.28 §1: the columns of every broadcast_events data point, in order. The edge (web/packages/broadcast-edge/src/events.ts) writes them and the cloud's rollup (cloud/internal/broadcast/rollup.go) reads them; both tests check this file. Append only: a column never moves.",
+  "index": "publisher",
+  "blobs": ["event", "publisher", "channel", "country", "device", "access", "mode", "rung", "code", "from", "to", "session"],
+  "doubles": ["startup_ms", "minutes", "rebuffer_ms", "bitrate_kbps", "switch_ms", "segment_bytes", "upload_to_visible_ms", "glass_to_glass_ms"],
+  "events": {
+    "play": {"blobs": ["publisher", "channel", "country", "device", "access", "mode", "session"], "doubles": ["startup_ms"]},
+    "beat": {"blobs": ["publisher", "channel", "country", "device", "rung", "session"], "doubles": ["minutes", "rebuffer_ms", "bitrate_kbps"]},
+    "switch": {"blobs": ["publisher", "channel", "from", "to"], "doubles": ["switch_ms"]},
+    "error": {"blobs": ["publisher", "channel", "code"], "doubles": []},
+    "blocked": {"blobs": ["publisher", "channel", "code"], "doubles": []},
+    "ingest": {"blobs": ["publisher", "channel", "rung"], "doubles": ["segment_bytes", "upload_to_visible_ms", "glass_to_glass_ms"]}
+  },
+  "devices": ["web", "ios", "tvos", "android", "androidtv", "desktop"],
+  "blocked_reasons": ["geo", "full", "ip", "revoked"]
+}

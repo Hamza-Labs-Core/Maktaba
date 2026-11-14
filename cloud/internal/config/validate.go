@@ -27,6 +27,14 @@ func Validate(c Config, role Role) error {
 	if c.Database.URL == "" {
 		return fmt.Errorf("%w: [database].url", ErrMissing)
 	}
+	// story 50.28: the folding threshold is never off (0 is the default, 5), and a budget is
+	// never negative
+	if c.Broadcast.AnalyticsK < 0 || c.Broadcast.AnalyticsK > 100 {
+		return fmt.Errorf("config: broadcast.analytics_k %d: from 1 to 100", c.Broadcast.AnalyticsK)
+	}
+	if c.Broadcast.MonthlyBudgetUSD < 0 {
+		return fmt.Errorf("config: broadcast.monthly_budget_usd must not be negative")
+	}
 	switch role {
 	case RoleAPI:
 		if c.Server.ListenAddr == "" {
@@ -43,6 +51,10 @@ func Validate(c Config, role Role) error {
 		}
 		if err := validateAdminListener(c.Server); err != nil {
 			return err
+		}
+		// the broadcast edge's ingest tokens (story 50.21) are never on without their key
+		if c.Broadcast.Enabled && c.Broadcast.KeyPath == "" {
+			return fmt.Errorf("%w: broadcast.enabled is on but broadcast.key_path is not set", ErrMissing)
 		}
 		// the auth pages' bot check (story 50.30 §4) is never on without its secret
 		if c.Turnstile.Enabled && c.Turnstile.Secret == "" {

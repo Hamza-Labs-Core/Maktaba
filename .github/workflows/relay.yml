@@ -417,10 +417,11 @@ jobs:
         run: |
           shellcheck -x deploy/cloud-ha/setup.sh deploy/cloud-ha/bin/* deploy/cloud-ha/tests/*.sh
           bash deploy/cloud-ha/tests/scripts-test.sh
-      - name: The monitoring configs, rules and probe (Epic 50 stories 50.09 to 50.11)
+      - name: The monitoring configs, rules and probes (Epic 50 stories 50.09 to 50.11, 50.28)
         run: |
           bash deploy/cloud-ha/monitoring/check.sh
           bash deploy/cloud-ha/monitoring/probe-test.sh
+          bash deploy/cloud-ha/monitoring/broadcast-probe-test.sh
           bash deploy/cloud-ha/monitoring/status-export-test.sh
           shellcheck deploy/cloud-ha/monitoring/*.sh
       - name: The one-click runbook actions (Epic 50 story 50.12)

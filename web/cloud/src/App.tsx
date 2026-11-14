@@ -16,6 +16,7 @@ import { Account } from "./pages/Account";
 import { Billing } from "./pages/Billing";
 import { LinkHome } from "./pages/LinkHome";
 import { Homes } from "./pages/Homes";
+import { BroadcastAnalytics } from "./pages/BroadcastAnalytics";
 
 export function Providers({ children }: { children: ReactNode }) {
   return (
@@ -131,6 +132,7 @@ export function AppRoutes() {
           <Route path="billing" element={<Billing />} />
           {/* a linked home's player and remote, served by the cloud (42.9) */}
           <Route path="homes" element={<Homes />} />
+          <Route path="homes/:id/viewers" element={<BroadcastAnalytics />} />
           {/* a home's Account page sends a person here to link their cloud account (42.7) */}
           <Route path="link-home" element={<LinkHome />} />
         </Route>
