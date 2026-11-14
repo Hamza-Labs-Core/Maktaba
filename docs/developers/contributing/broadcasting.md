@@ -16,9 +16,9 @@ caller with no session `401`, before anything is read or sent to Maktaba Cloud.
 |---|---|---|
 | Broadcast page | `web/src/pages/Admin/LiveTV/BroadcastPanel.tsx` | set up a channel, publish it, see its state, measure the upload |
 | Home API | `api/internal/broadcast/` | the routes, the publish checks, the speed test, the ingest-token refresh (`api:broadcast_tokens`) |
-| Cloud link | `cloud/internal/cloudlink/broadcast.go` | the relay agent forwards five calls to Maktaba Cloud with the home's credential; the API never holds it |
+| Cloud link | `cloud/internal/cloudlink/broadcast.go` | the relay agent forwards the broadcast calls (publish, tokens, the revocation list, takedowns) to Maktaba Cloud with the home's credential; the API never holds it |
 | Broadcaster | `streaming/internal/broadcast/` | one ladder ffmpeg per channel, the uploader, the control socket, the offline slate (`streaming:broadcast_uploader`, `streaming:broadcast_control`) |
-| Database | slot 0226 | `broadcast_channels`, `broadcast_uplink`, `broadcast_confirmations`, `broadcast_ingest_tokens` |
+| Database | slots 0226, 0227, 0229 | `broadcast_channels`, `broadcast_uplink`, `broadcast_confirmations`, `broadcast_ingest_tokens`; the publishable rule (0227); `broadcast_takedowns` (0229) |
 | Settings | `rules.broadcast` | `uplink_share` (0.5), `rung_slot_weight` (0.5), `allow_software_rungs` (off) |
 
 All three loops belong to the `livetv.broadcast` component. It is in no bundle, so it is off
@@ -134,6 +134,42 @@ Maktaba can stop a broadcast with a signed revocation list (story 50.25; the edg
   home?}`; the Broadcast page shows the stale warning, why the home is stopped, and why each
   revoked channel was taken off (`broadcast.reason.<reason>`).
 
+## Takedowns and notices
+
+Maktaba Cloud takes copyright notices and viewers' reports about published channels (story
+50.24). A service admin decides each one in the console, and a takedown reaches the home as a
+signed instruction:
+
+- **The instructions.** Every minute the API asks the agent
+  (`GET /admin/cloud-link/broadcast/takedowns`). The answer is a control post signed with the
+  broadcast keys (the revocation list's), `typ: "takedowns"`, naming this home. A forged or expired
+  batch, or another home's, is refused and logged (`broadcast_takedowns_refused`, SEV2). Without
+  the keys the home applies none.
+- **Applying one.** A takedown names the item (its id, or the programme on the channel at the
+  notice's time, read from `channel_programs`) or a source (a YouTube channel or playlist, a
+  speaker, a label). The home writes a row in `broadcast_takedowns`; slot 0229's
+  `video_taken_down()` makes `video_publishable_reason()` answer `NULL` for it, so the scheduler
+  leaves it out and a slot already scheduled plays the slate. The home answers
+  (`POST .../takedowns/{id}/ack`) `applied` with the end of the slot on air now (the edge's
+  programme slate holds just that long), `not_found` (the item is gone; the notice still counts)
+  or `failed`. A restore clears the row the same way.
+- **The cloud learns** only the item's opaque id and its title, the guide's own fields. Nothing of
+  the library leaves the home.
+- **The page.** `GET /api/tv/broadcast/moderation` returns the cloud's records for this home (the
+  statements of reasons, the reports about its content without the reporter's email, the active
+  strikes against the limit, whether broadcasting ended) and the takedowns applied here. The
+  Broadcast page shows them (`BroadcastNotices.tsx`), with the counter-notice form:
+  `POST /api/tv/broadcast/moderation/counter-notices` needs every element the law asks for; the
+  cloud's refusals read as `broadcast.counterNoticeIncomplete`, `broadcast.counterNoticeFiled` and
+  `broadcast.counterNoticeUnknown`.
+- **Strikes.** Each accepted notice is a strike on the publisher (one per item per 30 days). Three
+  active strikes in 12 months end broadcasting for the account: the cloud adds a publisher
+  `terminate` entry to the revocation list, which stops every channel (see **Taken off air**).
+
+The cloud's side (the public forms, the queue, the strikes, the records) is in
+`cloud/internal/moderation/` and `cloud/internal/handlers/moderation/`; the runbooks are
+`docs/runbooks/cloud/broadcast-takedown.md` and `broadcast-urgent-report.md`.
+
 ## Tests
 
 - `api/internal/broadcast`: the checks (T01, T04, T05), the role test (T09), and the database
@@ -150,4 +186,11 @@ Maktaba can stop a broadcast with a signed revocation list (story 50.25; the edg
   (T06).
 - `api/internal/broadcast/revocations_test.go` and `revocations_pg_test.go`: the cloud's signed
   vector, the strongest stop, anti-rollback, a stopped and lifted channel, a stale copy (T04).
-- `web/src/pages/Admin/LiveTV/BroadcastPanel.test.tsx`: the page, in English and Arabic.
+- `api/internal/broadcast/takedown_test.go` and `takedown_pg_test.go`: a batch verifies only
+  with the broadcast key, for this home; a takedown by time, by id and by source, its answer with
+  the slot's end, a restore, a forged batch.
+- `cloud/cmd/maktaba-cloud/moderation_integration_test.go`: notice, takedown, counter-notice and
+  restore; three strikes end broadcasting; the roles (a customer `401`, the wrong staff role
+  `403`).
+- `web/src/pages/Admin/LiveTV/BroadcastPanel.test.tsx` and `BroadcastNotices.test.tsx`: the page
+  and its notices, in English and Arabic.

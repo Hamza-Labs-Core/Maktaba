@@ -2660,6 +2660,19 @@ build fails when the two differ.
   sees that the channel isn't available in their country. An item that loses its permission
   plays the "Not available online" card until the schedule is rebuilt.
 
+- **Copyright notices and reports about broadcast channels (Epic 50, story 50.24).** Anyone can
+  send Maktaba a copyright notice or report a published channel, through forms that check each
+  required element and stop bots; an urgent report (illegal content) pages the on-call admin. A
+  service admin decides each one on the admin console's new Notices and reports page, always
+  with a reason and, for a takedown or a restore, a fresh MFA check; every decision is audited
+  and only a service admin is answered. A takedown reaches the home as a signed instruction: the
+  home takes the programme (or its whole source) out of its published channels, the edge shows
+  the slate until the slot ends if it is on air, and the home answers what it did. The publisher
+  sees a statement of reasons in English and Arabic on the Broadcast page and by email, can file
+  a counter-notice there, and the item can come back 10 business days later unless the claimant
+  goes to court. Three valid notices in 12 months end broadcasting for the account (remote play
+  is not affected). The records can be exported for counsel and are kept 3 years.
+
 - **Maktaba can take a broadcast off air within a minute (Epic 50, story 50.25).** A service
   admin stops one programme (the channel shows its slate until a time), a channel, a publisher's
   account, a home or every broadcast from the admin console's new Broadcast kill switch page,

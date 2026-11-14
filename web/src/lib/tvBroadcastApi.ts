@@ -153,6 +153,69 @@ export interface PublishableView {
   shares: Share[];
 }
 
+/** A statement of reasons Maktaba sent this home (story 50.24): a takedown, the strike
+ * warning, the end of broadcasting, a restore. */
+export interface ModerationStatement {
+  id: string;
+  kind: "takedown" | "strike_warning" | "terminated" | "restored" | "report";
+  action_id?: string;
+  params: Record<string, string | number | boolean>;
+  created_at: string;
+  can_counter: boolean;
+  counter_notice?: { filed_at: string; restore_after: string; restored_at?: string };
+}
+
+/** A report a viewer sent about this home's content (without the reporter's email). */
+export interface ModerationReport {
+  id: string;
+  category: "copyright" | "illegal" | "abuse" | "other";
+  channel: string;
+  programme: string;
+  at: string;
+  text: string;
+  status: string;
+  received_at: string;
+}
+
+/** A takedown this home applied from Maktaba's signed instruction. */
+export interface AppliedTakedown {
+  id: string;
+  notice_id?: string;
+  scope: "item" | "source";
+  video_id?: string;
+  source_kind?: string;
+  source_ref?: string;
+  programme: string;
+  applied_at: string;
+  restored_at?: string;
+}
+
+export interface ModerationView {
+  cloud: "ok" | "unreachable" | "unclaimed";
+  records?: {
+    statements?: ModerationStatement[];
+    reports?: ModerationReport[];
+    strikes?: number;
+    strike_limit?: number;
+    strike_window_months?: number;
+    terminated?: boolean;
+  };
+  takedowns?: AppliedTakedown[];
+}
+
+/** A counter-notice to one takedown: the elements the law requires. */
+export interface CounterNoticeRequest {
+  action_id: string;
+  name: string;
+  address: string;
+  phone: string;
+  email: string;
+  explanation: string;
+  mistake: boolean;
+  consent: boolean;
+  signature: string;
+}
+
 /** A refusal: its i18n key (broadcast.<code>), the check that failed and its values. */
 export interface BroadcastRefusal {
   code: string;
@@ -202,4 +265,10 @@ export const tvBroadcastApi = {
       enabled,
       confirm,
     }),
+  moderation: () => api.get<ModerationView>("/api/tv/broadcast/moderation"),
+  counterNotice: (req: CounterNoticeRequest) =>
+    api.post<{ id: string; restore_after: string }>(
+      "/api/tv/broadcast/moderation/counter-notices",
+      req
+    ),
 };

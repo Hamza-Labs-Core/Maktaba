@@ -16,6 +16,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"regexp"
 	"time"
@@ -62,6 +63,19 @@ type IngestDeps struct {
 	// GeoDeny is Maktaba's broadcast country deny list (story 50.23 §5), merged into every
 	// token; nil: none. A failure to read it refuses the token (never a token without it).
 	GeoDeny func(ctx context.Context) ([]string, error)
+	// EdgeChannels records a published channel's edge id when the home names its cloud id (story
+	// 50.24: a takedown's programme slate names it); nil: not recorded. A failure is logged only.
+	EdgeChannels func(ctx context.Context, serverID, cloudID, edgeChannel string) error
+}
+
+// DBEdgeChannels writes broadcast_channels.edge_channel for the home's own live channel.
+func DBEdgeChannels(db *sql.DB) func(ctx context.Context, serverID, cloudID, edgeChannel string) error {
+	return func(ctx context.Context, serverID, cloudID, edgeChannel string) error {
+		_, err := db.ExecContext(ctx, `UPDATE broadcast_channels SET edge_channel = $3
+            WHERE id::text = $2 AND server_id::text = $1 AND unpublished_at IS NULL
+              AND edge_channel IS DISTINCT FROM $3`, serverID, cloudID, edgeChannel)
+		return err
+	}
 }
 
 // DBGeoDeny reads broadcast_geo_deny.
@@ -93,6 +107,9 @@ type tokenReq struct {
 	// Channel is the home's own channel id; the edge sees an opaque id derived from it.
 	Channel string   `json:"channel"`
 	Rungs   []string `json:"rungs"`
+	// CloudID is the channel's id in the cloud (the publish answer), so the cloud learns the
+	// edge id of its published channel (story 50.24); "" from an older home.
+	CloudID string `json:"cloud_id"`
 	// Geo is the channel's own country rule (story 50.23 §5): the publisher's restriction on
 	// their own channel.
 	Geo *struct {
@@ -111,7 +128,10 @@ type tokenResp struct {
 	MaxTopKbps   int       `json:"max_top_kbps"`
 }
 
-var localChannelRE = regexp.MustCompile(`^[A-Za-z0-9_.:-]{1,64}$`)
+var (
+	localChannelRE = regexp.MustCompile(`^[A-Za-z0-9_.:-]{1,64}$`)
+	uuidRE         = regexp.MustCompile(`^[0-9a-fA-F-]{36}$`)
+)
 
 func (d *IngestDeps) now() time.Time {
 	if d.Now != nil {
@@ -181,6 +201,11 @@ func (d *IngestDeps) IngestToken(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeErr(w, 500, "sign_failed", "")
 		return
+	}
+	if d.EdgeChannels != nil && uuidRE.MatchString(req.CloudID) {
+		if err := d.EdgeChannels(r.Context(), serverID, req.CloudID, ch); err != nil {
+			slog.Warn("broadcast: the channel's edge id was not recorded", "err", err, "server_id", serverID)
+		}
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, 200, tokenResp{

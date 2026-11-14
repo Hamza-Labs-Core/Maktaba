@@ -69,6 +69,9 @@ var ErrUnreachable = errors.New("broadcast: Maktaba Cloud is unreachable")
 type Agent struct {
 	Addr   string
 	Client *http.Client
+	// CloudID is a channel's id in the cloud ("" when unpublished): sent with its ingest token's
+	// request, so the cloud learns the channel's edge id (story 50.24). nil: not sent.
+	CloudID func(ctx context.Context, channel string) string
 }
 
 func (a *Agent) do(ctx context.Context, method, path string, body, out any) error {
@@ -141,7 +144,35 @@ func (a *Agent) Unpublish(ctx context.Context, cloudID string) error {
 
 // Revocations is the signed broadcast revocation list (50.25), as the cloud sent it.
 func (a *Agent) Revocations(ctx context.Context) (string, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+a.Addr+"/admin/cloud-link/broadcast/revocations", nil)
+	return a.text(ctx, "revocations", "revocations")
+}
+
+// IngestToken asks for the channel's ingest token (valid 24 h, asked again hourly). geo is
+// the channel's country rule (story 50.23 §5, nil: none): the cloud signs it into the token
+// with Maktaba's deny list, and the edge checks it at play and at every playlist.
+func (a *Agent) IngestToken(ctx context.Context, channel string, rungs []string, geo *Geo) (IngestToken, error) {
+	var t IngestToken
+	body := map[string]any{"channel": channel, "rungs": rungs}
+	if geo != nil {
+		body["geo"] = geo
+	}
+	if a.CloudID != nil {
+		if id := a.CloudID(ctx, channel); id != "" {
+			body["cloud_id"] = id
+		}
+	}
+	err := a.do(ctx, http.MethodPost, "ingest-token", body, &t)
+	return t, err
+}
+
+// Takedowns is this home's signed takedown instructions (story 50.24), as the cloud sent them.
+func (a *Agent) Takedowns(ctx context.Context) (string, error) {
+	return a.text(ctx, "takedowns", "takedowns")
+}
+
+// text asks a route whose answer is a signed text (the revocation list, the instructions).
+func (a *Agent) text(ctx context.Context, path, code string) (string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+a.Addr+"/admin/cloud-link/broadcast/"+path, nil)
 	if err != nil {
 		return "", err
 	}
@@ -156,20 +187,27 @@ func (a *Agent) Revocations(ctx context.Context) (string, error) {
 	defer func() { _ = resp.Body.Close() }()
 	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 256<<10))
 	if resp.StatusCode != http.StatusOK {
-		return "", &CloudError{Status: resp.StatusCode, Code: "revocations"}
+		return "", &CloudError{Status: resp.StatusCode, Code: code}
 	}
 	return string(raw), nil
 }
 
-// IngestToken asks for the channel's ingest token (valid 24 h, asked again hourly). geo is
-// the channel's country rule (story 50.23 §5, nil: none): the cloud signs it into the token
-// with Maktaba's deny list, and the edge checks it at play and at every playlist.
-func (a *Agent) IngestToken(ctx context.Context, channel string, rungs []string, geo *Geo) (IngestToken, error) {
-	var t IngestToken
-	body := map[string]any{"channel": channel, "rungs": rungs}
-	if geo != nil {
-		body["geo"] = geo
-	}
-	err := a.do(ctx, http.MethodPost, "ingest-token", body, &t)
-	return t, err
+// AckTakedown answers one instruction.
+func (a *Agent) AckTakedown(ctx context.Context, id string, ack TakedownAck) error {
+	return a.do(ctx, http.MethodPost, "takedowns/"+id+"/ack", ack, nil)
+}
+
+// Moderation is the home's moderation records: its statements, the reports about its content and
+// its publisher's standing (the cloud's JSON, passed on).
+func (a *Agent) Moderation(ctx context.Context) (json.RawMessage, error) {
+	var raw json.RawMessage
+	err := a.do(ctx, http.MethodGet, "moderation", nil, &raw)
+	return raw, err
+}
+
+// CounterNotice files a counter-notice; the cloud's answer (or its refusal) is passed on.
+func (a *Agent) CounterNotice(ctx context.Context, body json.RawMessage) (json.RawMessage, error) {
+	var raw json.RawMessage
+	err := a.do(ctx, http.MethodPost, "moderation/counter-notices", body, &raw)
+	return raw, err
 }

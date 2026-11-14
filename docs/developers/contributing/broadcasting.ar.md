@@ -15,9 +15,9 @@
 |---|---|---|
 | صفحة البث | `web/src/pages/Admin/LiveTV/BroadcastPanel.tsx` | تجهيز قناة، ونشرها، ورؤية حالتها، وقياس سرعة الرفع |
 | واجهة المنزل البرمجية | `api/internal/broadcast/` | المسارات، وفحوص النشر، واختبار السرعة، وتجديد رموز الاستقبال (`api:broadcast_tokens`) |
-| رابط السحابة | `cloud/internal/cloudlink/broadcast.go` | يمرّر وكيل الترحيل خمسة طلبات إلى سحابة مكتبة باعتماد المنزل؛ ولا تحمله الواجهة البرمجية أبدًا |
+| رابط السحابة | `cloud/internal/cloudlink/broadcast.go` | يمرّر وكيل الترحيل طلبات البث (النشر، والرموز، وقائمة الإلغاء، والإزالات) إلى سحابة مكتبة باعتماد المنزل؛ ولا تحمله الواجهة البرمجية أبدًا |
 | الباثّ | `streaming/internal/broadcast/` | ffmpeg واحد لسلّم الجودات لكل قناة، والرافع، ومقبس التحكم، وبطاقة الانقطاع (`streaming:broadcast_uploader`، `streaming:broadcast_control`) |
-| قاعدة البيانات | الخانة 0226 | `broadcast_channels`، `broadcast_uplink`، `broadcast_confirmations`، `broadcast_ingest_tokens` |
+| قاعدة البيانات | الخانات 0226 و0227 و0229 | `broadcast_channels`، `broadcast_uplink`، `broadcast_confirmations`، `broadcast_ingest_tokens`؛ وقاعدة قابلية النشر (0227)؛ و`broadcast_takedowns` (0229) |
 | الإعدادات | `rules.broadcast` | `uplink_share` (0.5)، `rung_slot_weight` (0.5)، `allow_software_rungs` (متوقف) |
 
 الحلقات الثلاث كلها تابعة للمكوّن `livetv.broadcast`. وهو خارج كل الحزم، فيبقى متوقفًا حتى يشغّله
@@ -127,6 +127,39 @@
   home?}`؛ وتعرض صفحة البث تحذير النسخة القديمة، وسبب إيقاف المنزل، وسبب إيقاف كل قناة
   (`broadcast.reason.<reason>`).
 
+## الإزالات والإشعارات
+
+تتلقى سحابة مكتبة إشعارات حقوق النشر وبلاغات المشاهدين عن القنوات المنشورة (القصة 50.24). ويبتّ
+مشرف الخدمة في كلٍّ منها من لوحة التحكم، وتصل الإزالة إلى المنزل تعليمةً موقَّعة:
+
+- **التعليمات.** تسأل الواجهة البرمجية الوكيل كل دقيقة
+  (`GET /admin/cloud-link/broadcast/takedowns`). والجواب منشور تحكم موقَّع بمفاتيح البث (مفاتيح
+  قائمة الإلغاء)، بالنوع `typ: "takedowns"`، ويسمّي هذا المنزل. وتُرفض الدفعة المزوّرة أو المنتهية،
+  أو دفعة منزل آخر، ويُسجَّل ذلك (`broadcast_takedowns_refused`، SEV2). ومن دون المفاتيح لا يطبّق
+  المنزل أيًّا منها.
+- **تطبيق تعليمة.** تسمّي الإزالة العنصر (معرّفه، أو البرنامج المعروض على القناة في وقت الإشعار،
+  مقروءًا من `channel_programs`) أو مصدرًا (قناة يوتيوب أو قائمة تشغيل، أو متحدثًا، أو علامة). ويكتب
+  المنزل صفًّا في `broadcast_takedowns`؛ فتجعل الدالة `video_taken_down()` في الخانة 0229 الدالةَ
+  `video_publishable_reason()` تجيب `NULL` عنه، فيتركه المجدول، وتعرض الخانة المجدولة من قبل الشاشة
+  البديلة. ويجيب المنزل (`POST .../takedowns/{id}/ack`) بـ`applied` مع نهاية الخانة المعروضة الآن
+  (فتبقى شاشة البرنامج البديلة على الحافة تلك المدة فقط)، أو `not_found` (العنصر محذوف، ويظل
+  الإشعار محسوبًا)، أو `failed`. والإعادة تمحو الصف بالطريقة نفسها.
+- **لا تعرف السحابة** إلا معرّف العنصر المعتم وعنوانه، وهما من حقول الدليل نفسه. ولا يغادر المنزلَ
+  شيء من المكتبة.
+- **الصفحة.** يعيد `GET /api/tv/broadcast/moderation` سجلات السحابة لهذا المنزل (بيانات الأسباب،
+  وبلاغات محتواه دون بريد المُبلِّغ، والمخالفات السارية مقابل الحد، وهل انتهى البث) والإزالات المطبّقة
+  هنا. وتعرضها صفحة البث (`BroadcastNotices.tsx`) مع نموذج الإشعار المضاد:
+  يحتاج `POST /api/tv/broadcast/moderation/counter-notices` كل عنصر يطلبه القانون؛ وتُقرأ رفوض
+  السحابة بالرموز `broadcast.counterNoticeIncomplete` و`broadcast.counterNoticeFiled`
+  و`broadcast.counterNoticeUnknown`.
+- **المخالفات.** كل إشعار مقبول مخالفة على الناشر (واحدة لكل عنصر كل 30 يومًا). وثلاث مخالفات سارية
+  خلال 12 شهرًا تنهي البث للحساب: تضيف السحابة بند `terminate` للناشر إلى قائمة الإلغاء، فيتوقف كل
+  قنواته (انظر **الإيقاف عن البث**).
+
+جانب السحابة (النماذج العامة، والطابور، والمخالفات، والسجلات) في `cloud/internal/moderation/`
+و`cloud/internal/handlers/moderation/`؛ وأدلة التشغيل هي `docs/runbooks/cloud/broadcast-takedown.md`
+و`broadcast-urgent-report.md`.
+
 ## الاختبارات
 
 - `api/internal/broadcast`: الفحوص (T01 وT04 وT05)، واختبار الدور (T09)، واختبارات قاعدة البيانات
@@ -142,4 +175,9 @@
 - `api/internal/broadcast/revocations_test.go` و`revocations_pg_test.go`: المتجه الموقَّع من
   السحابة، والإيقاف الأقوى، ومنع الرجوع إلى نسخة أقدم، وقناة أُوقفت ثم رُفع إيقافها، ونسخة
   قديمة (T04).
-- `web/src/pages/Admin/LiveTV/BroadcastPanel.test.tsx`: الصفحة، بالإنجليزية والعربية.
+- `api/internal/broadcast/takedown_test.go` و`takedown_pg_test.go`: لا تتحقق الدفعة إلا بمفتاح البث
+  ولهذا المنزل؛ وإزالة بالوقت وبالمعرّف وبالمصدر، وجوابها مع نهاية الخانة، والإعادة، ودفعة مزوّرة.
+- `cloud/cmd/maktaba-cloud/moderation_integration_test.go`: الإشعار والإزالة والإشعار المضاد والإعادة؛
+  وثلاث مخالفات تنهي البث؛ والأدوار (العميل `401`، ودور الموظف الخاطئ `403`).
+- `web/src/pages/Admin/LiveTV/BroadcastPanel.test.tsx` و`BroadcastNotices.test.tsx`: الصفحة
+  وإشعاراتها، بالإنجليزية والعربية.

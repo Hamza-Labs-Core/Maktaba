@@ -34,6 +34,9 @@ type Service struct {
 	// Revocations is the home's copy of Maktaba's broadcast revocation list (50.25); nil or
 	// without keys: not honoured (the edge still refuses a revoked ingest).
 	Revocations *Revocations
+	// Moderation is Maktaba Cloud's takedowns and reports for this home (story 50.24); nil: the
+	// home is not claimed, and no instruction is asked for.
+	Moderation ModerationCloud
 }
 
 func (s *Service) now() time.Time {
@@ -330,10 +333,11 @@ func (s *Service) refreshToken(ctx context.Context, ch Channel) error {
 // RefreshEvery is how often a published channel's token is asked for again (§2).
 const RefreshEvery = time.Hour
 
-// Tick refreshes due tokens, retries pending unpublishes, honours the revocation list and runs
-// the daily speed test.
+// Tick refreshes due tokens, retries pending unpublishes, honours the revocation list, applies
+// Maktaba's takedown instructions and runs the daily speed test.
 func (s *Service) Tick(ctx context.Context) {
 	s.applyRevocations(ctx)
+	s.applyTakedowns(ctx)
 	pending, err := s.Store.PendingUnpublish(ctx)
 	if err == nil {
 		for id, cloud := range pending {

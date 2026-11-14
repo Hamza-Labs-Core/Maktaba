@@ -29,6 +29,11 @@ import (
 //	PUT  /api/tv/broadcast/publishable/items                   mark items own or cleared (or clear the mark)
 //	PUT  /api/tv/broadcast/publishable/only                    {enabled, confirm}: off takes a typed confirmation
 //
+// and the notices and reports about this home's channels (story 50.24):
+//
+//	GET  /api/tv/broadcast/moderation                   Maktaba's statements, the reports, the strikes, the takedowns applied
+//	POST /api/tv/broadcast/moderation/counter-notices   a counter-notice to a takedown
+//
 // Every route answers 403 to anyone but an admin, whatever livetv.broadcast's state (the
 // router's ComponentRoutes answer 409 component_off to an admin while it is off).
 type Routes struct {
@@ -49,6 +54,8 @@ var Paths = []string{
 	"POST /api/tv/broadcast/publishable/sources/{id}/withdraw",
 	"PUT /api/tv/broadcast/publishable/items",
 	"PUT /api/tv/broadcast/publishable/only",
+	"GET /api/tv/broadcast/moderation",
+	"POST /api/tv/broadcast/moderation/counter-notices",
 }
 
 // Mount wires the routes.
@@ -63,6 +70,8 @@ func (h *Routes) Mount(r chi.Router) {
 	r.Post("/api/tv/broadcast/publishable/sources/{id}/withdraw", h.withdrawSource)
 	r.Put("/api/tv/broadcast/publishable/items", h.markItems)
 	r.Put("/api/tv/broadcast/publishable/only", h.publishableOnly)
+	r.Get("/api/tv/broadcast/moderation", h.moderation)
+	r.Post("/api/tv/broadcast/moderation/counter-notices", h.counterNotice)
 }
 
 func admin(w http.ResponseWriter, r *http.Request) *principal.Principal {
@@ -348,4 +357,70 @@ func (h *Routes) publishableOnly(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"publishable_only": on})
+}
+
+// moderationView is GET /api/tv/broadcast/moderation: the cloud's records for this home (nil when
+// it was not reached; Cloud says why) and the takedowns this home applied.
+type moderationView struct {
+	Cloud     string          `json:"cloud"` // ok, unreachable, unclaimed
+	Records   json.RawMessage `json:"records,omitempty"`
+	Takedowns []Takedown      `json:"takedowns"`
+}
+
+func (h *Routes) moderation(w http.ResponseWriter, r *http.Request) {
+	if admin(w, r) == nil {
+		return
+	}
+	v := moderationView{Cloud: "unclaimed", Takedowns: []Takedown{}}
+	if h.Service.Store != nil && h.Service.Store.DB != nil {
+		t, err := h.Service.Store.Takedowns(r.Context())
+		if err != nil {
+			fail(w, r, err)
+			return
+		}
+		v.Takedowns = t
+	}
+	if m := h.Service.Moderation; m != nil {
+		v.Cloud = "ok"
+		raw, err := m.Moderation(r.Context())
+		if err != nil {
+			v.Cloud = "unreachable"
+		} else {
+			v.Records = raw
+		}
+	}
+	writeJSON(w, http.StatusOK, v)
+}
+
+func (h *Routes) counterNotice(w http.ResponseWriter, r *http.Request) {
+	if admin(w, r) == nil {
+		return
+	}
+	body, err := io.ReadAll(io.LimitReader(r.Body, 16<<10))
+	if err != nil || !json.Valid(body) {
+		httperror.Write(w, r, httperror.BadRequest("body must be {action_id, name, address, phone, email, explanation, mistake, consent, signature}"))
+		return
+	}
+	m := h.Service.Moderation
+	if m == nil {
+		fail(w, r, problem(http.StatusConflict, "", "unclaimed", nil))
+		return
+	}
+	raw, err := m.CounterNotice(r.Context(), body)
+	var ce *CloudError
+	switch {
+	case errors.As(err, &ce) && ce.Status == http.StatusUnprocessableEntity:
+		fail(w, r, problem(http.StatusBadRequest, "", "counterNoticeIncomplete", nil))
+	case errors.As(err, &ce) && ce.Status == http.StatusConflict:
+		fail(w, r, problem(http.StatusConflict, "", "counterNoticeFiled", nil))
+	case errors.As(err, &ce) && ce.Status == http.StatusNotFound:
+		fail(w, r, problem(http.StatusConflict, "", "counterNoticeUnknown", nil))
+	case err != nil:
+		fail(w, r, problem(http.StatusBadGateway, "", "cloudUnreachable", nil))
+	default:
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "no-store")
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write(raw)
+	}
 }

@@ -166,3 +166,20 @@ tests:
             exp_annotations:
               summary: "No api node runs the worker's jobs: no node holds the worker's leader lock"
               runbook_url: docs/runbooks/cloud/worker-no-leader.md
+  # story 50.24 §4: an urgent broadcast report pages the on-call admin within 90 s (one scrape
+  # and one rule evaluation)
+  - interval: 30s
+    input_series:
+      - series: 'maktaba_errors_total{job="cloud",service="cloud.api",code="moderation_urgent_report"}'
+        values: '0 0 1 1 1 1'
+    alert_rule_test:
+      - eval_time: 30s
+        alertname: broadcast_urgent_report
+        exp_alerts: []
+      - eval_time: 1m30s
+        alertname: broadcast_urgent_report
+        exp_alerts:
+          - exp_labels: {severity: sev2, service: cloud.api}
+            exp_annotations:
+              summary: "An urgent report about a broadcast channel: decide within the hour"
+              runbook_url: docs/runbooks/cloud/broadcast-urgent-report.md

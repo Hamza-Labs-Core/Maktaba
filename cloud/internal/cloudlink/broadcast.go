@@ -17,7 +17,9 @@ const BroadcastPrefix = "/admin/cloud-link/broadcast/"
 // broadcastRoutes are the only cloud calls the home's API may make through the agent for
 // broadcasting, each with the server's own credential: the publisher's state (plan,
 // agreement), publishing and unpublishing a channel, a channel's ingest token (story 50.21)
-// and the revocation list (story 50.25). Anything else is 404: the loopback port is no general proxy.
+// the revocation list (story 50.25), and the takedown instructions, their acks, the home's
+// moderation records and a counter-notice (story 50.24). Anything else is 404: the loopback port
+// is no general proxy.
 var broadcastRoutes = []struct {
 	method string
 	path   *regexp.Regexp
@@ -28,6 +30,11 @@ var broadcastRoutes = []struct {
 	{http.MethodPost, regexp.MustCompile(`^ingest-token$`)},
 	// the signed broadcast revocation list (story 50.25), only this home's entries
 	{http.MethodGet, regexp.MustCompile(`^revocations$`)},
+	// takedowns and reports (story 50.24): only this home's
+	{http.MethodGet, regexp.MustCompile(`^takedowns$`)},
+	{http.MethodPost, regexp.MustCompile(`^takedowns/[0-9a-fA-F-]{36}/ack$`)},
+	{http.MethodGet, regexp.MustCompile(`^moderation$`)},
+	{http.MethodPost, regexp.MustCompile(`^moderation/counter-notices$`)},
 }
 
 // BroadcastHandler serves BroadcastPrefix on loopback: the home's API asks the cloud's

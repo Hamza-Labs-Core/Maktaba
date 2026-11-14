@@ -10,12 +10,16 @@
 // would add the most, each with Record permission (pre-filled, its About page opened); the
 // permissions recorded, each withdrawable; the publishable-only switch (off takes a typed
 // confirmation); and each channel's countries as an allow or a deny list.
+//
+// Story 50.24: the notices Maktaba sent about the published channels, the strikes, and the
+// counter-notice form (BroadcastNotices).
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@ds/components/Button/Button";
 import { Card } from "@ds/components/Card/Card";
 import { Input } from "@ds/components/Input/Input";
 import { Modal } from "@ds/components/Modal/Modal";
 import { CopyField } from "../../../components/CopyField";
+import { BroadcastNotices } from "./BroadcastNotices";
 import { ApiError } from "../../../lib/api";
 import { componentsApi, refusalOf } from "../../../lib/componentsApi";
 import { useFlag } from "../../../lib/flags";
@@ -325,6 +329,8 @@ export function BroadcastPanel() {
           onChanged={() => void reload()}
         />
       )}
+
+      <BroadcastNotices />
 
       {recording && (
         <RecordDialog

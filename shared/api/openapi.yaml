@@ -12864,6 +12864,218 @@ paths:
           $ref: '#/components/responses/RateLimited'
         default:
           $ref: '#/components/responses/InternalError'
+  /tv/broadcast/moderation:
+    get:
+      tags:
+      - Broadcasting
+      summary: Notices and reports about this home's channels
+      description: 'What Maktaba Cloud told this home about its published channels: each statement of reasons (a programme taken down after a copyright notice, with the claimant unless they asked for privacy, and whether a counter-notice can be filed), the strike warning, the end of broadcasting, a restore; the reports viewers sent about its content, without the reporter''s email; and the publisher''s active strikes against the limit. It also lists the takedowns this home applied from Maktaba''s signed instructions. records is the cloud''s answer, absent when the cloud was not reached (cloud says why).'
+      x-maktaba-role: admin
+      operationId: getBroadcastModeration
+      responses:
+        '200':
+          description: The cloud's records and the takedowns applied here.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  cloud:
+                    type: string
+                    enum:
+                    - ok
+                    - unreachable
+                    - unclaimed
+                  records:
+                    type: object
+                    properties:
+                      statements:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            id:
+                              type: string
+                            kind:
+                              type: string
+                              enum:
+                              - takedown
+                              - strike_warning
+                              - terminated
+                              - restored
+                              - report
+                            action_id:
+                              type: string
+                            params:
+                              type: object
+                            created_at:
+                              type: string
+                              format: date-time
+                            can_counter:
+                              type: boolean
+                            counter_notice:
+                              type: object
+                      reports:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            id:
+                              type: string
+                            category:
+                              type: string
+                              enum:
+                              - copyright
+                              - illegal
+                              - abuse
+                              - other
+                            channel:
+                              type: string
+                            programme:
+                              type: string
+                            at:
+                              type: string
+                              format: date-time
+                            text:
+                              type: string
+                            status:
+                              type: string
+                            received_at:
+                              type: string
+                              format: date-time
+                      strikes:
+                        type: integer
+                      strike_limit:
+                        type: integer
+                      strike_window_months:
+                        type: integer
+                      terminated:
+                        type: boolean
+                  takedowns:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        notice_id:
+                          type: string
+                        scope:
+                          type: string
+                          enum:
+                          - item
+                          - source
+                        video_id:
+                          type: string
+                          format: uuid
+                        source_kind:
+                          type: string
+                        source_ref:
+                          type: string
+                        programme:
+                          type: string
+                        applied_at:
+                          type: string
+                          format: date-time
+                        restored_at:
+                          type: string
+                          format: date-time
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Admin only.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: Broadcasting is off on this home.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /tv/broadcast/moderation/counter-notices:
+    post:
+      tags:
+      - Broadcasting
+      summary: File a counter-notice
+      description: 'Files a counter-notice to one of this home''s takedowns, with the statements the law requires: the material was removed by mistake or misidentification, and consent to the jurisdiction of the court for the address. Maktaba sends the claimant a copy; unless the claimant says they went to court, the item can be restored 10 business days later.'
+      x-maktaba-role: admin
+      operationId: fileBroadcastCounterNotice
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - action_id
+              - name
+              - address
+              - email
+              - explanation
+              - mistake
+              - consent
+              - signature
+              properties:
+                action_id:
+                  type: string
+                name:
+                  type: string
+                address:
+                  type: string
+                phone:
+                  type: string
+                email:
+                  type: string
+                  format: email
+                explanation:
+                  type: string
+                mistake:
+                  type: boolean
+                consent:
+                  type: boolean
+                signature:
+                  type: string
+      responses:
+        '201':
+          description: 'Filed: its id and when the restore window opens.'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  restore_after:
+                    type: string
+                    format: date-time
+        '400':
+          description: A required element is missing (broadcast.counterNoticeIncomplete).
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Admin only.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: Already filed, not this home's takedown, the home is not claimed, or broadcasting is off.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '502':
+          description: Maktaba Cloud could not be reached.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
 components:
   securitySchemes:
     bearerAuth:

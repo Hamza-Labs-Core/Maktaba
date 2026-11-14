@@ -6120,6 +6120,54 @@
     "/components/schemas/CastGrant/properties/queue_id/description": {
       "en": "The play queue the grant names, when it names one.",
       "ar": "قائمة التشغيل التي يسمّيها التصريح، إن سمّى قائمة."
+    },
+    "/paths/~1tv~1broadcast~1moderation/get/summary": {
+      "en": "Notices and reports about this home's channels",
+      "ar": "ملاحظات وبلاغات عن قنوات هذا المنزل"
+    },
+    "/paths/~1tv~1broadcast~1moderation/get/description": {
+      "en": "What Maktaba Cloud told this home about its published channels: each statement of reasons (a programme taken down after a copyright notice, with the claimant unless they asked for privacy, and whether a counter-notice can be filed), the strike warning, the end of broadcasting, a restore; the reports viewers sent about its content, without the reporter's email; and the publisher's active strikes against the limit. It also lists the takedowns this home applied from Maktaba's signed instructions. records is the cloud's answer, absent when the cloud was not reached (cloud says why).",
+      "ar": "ما أبلغت به سحابة مكتبة هذا المنزل عن قنواته المنشورة: كل بيان أسباب (برنامج أُزيل بعد إشعار بشأن حقوق النشر، مع اسم صاحب الشكوى ما لم يطلب الخصوصية، وهل يمكن تقديم إشعار مضاد)، وتحذير المخالفات، وانتهاء البث، والإعادة؛ والبلاغات التي أرسلها المشاهدون عن محتواه، دون بريد المُبلِّغ؛ ومخالفات الناشر السارية مقابل الحد. ويسرد أيضًا عمليات الإزالة التي طبّقها هذا المنزل من تعليمات مكتبة الموقَّعة. records هو جواب السحابة، ويغيب إن تعذّر الوصول إليها (ويبيّن cloud السبب)."
+    },
+    "/paths/~1tv~1broadcast~1moderation/get/responses/200/description": {
+      "en": "The cloud's records and the takedowns applied here.",
+      "ar": "سجلات السحابة وعمليات الإزالة المطبّقة هنا."
+    },
+    "/paths/~1tv~1broadcast~1moderation/get/responses/403/description": {
+      "en": "Admin only.",
+      "ar": "للمشرفين فقط."
+    },
+    "/paths/~1tv~1broadcast~1moderation/get/responses/409/description": {
+      "en": "Broadcasting is off on this home.",
+      "ar": "البث متوقف على هذا المنزل."
+    },
+    "/paths/~1tv~1broadcast~1moderation~1counter-notices/post/summary": {
+      "en": "File a counter-notice",
+      "ar": "تقديم إشعار مضاد"
+    },
+    "/paths/~1tv~1broadcast~1moderation~1counter-notices/post/description": {
+      "en": "Files a counter-notice to one of this home's takedowns, with the statements the law requires: the material was removed by mistake or misidentification, and consent to the jurisdiction of the court for the address. Maktaba sends the claimant a copy; unless the claimant says they went to court, the item can be restored 10 business days later.",
+      "ar": "يقدّم إشعارًا مضادًا لإحدى عمليات الإزالة في هذا المنزل، مع الإقرارات التي يشترطها القانون: أن المادة أُزيلت عن خطأ أو سوء تعرّف، والموافقة على اختصاص محكمة العنوان. ترسل مكتبة نسخة إلى صاحب الشكوى؛ وما لم يُبلغ بأنه لجأ إلى المحكمة، يمكن إعادة العنصر بعد 10 أيام عمل."
+    },
+    "/paths/~1tv~1broadcast~1moderation~1counter-notices/post/responses/201/description": {
+      "en": "Filed: its id and when the restore window opens.",
+      "ar": "قُدّم: معرّفه وموعد فتح نافذة الإعادة."
+    },
+    "/paths/~1tv~1broadcast~1moderation~1counter-notices/post/responses/400/description": {
+      "en": "A required element is missing (broadcast.counterNoticeIncomplete).",
+      "ar": "ينقص عنصر مطلوب (broadcast.counterNoticeIncomplete)."
+    },
+    "/paths/~1tv~1broadcast~1moderation~1counter-notices/post/responses/403/description": {
+      "en": "Admin only.",
+      "ar": "للمشرفين فقط."
+    },
+    "/paths/~1tv~1broadcast~1moderation~1counter-notices/post/responses/409/description": {
+      "en": "Already filed, not this home's takedown, the home is not claimed, or broadcasting is off.",
+      "ar": "قُدّم سابقًا، أو ليست عملية إزالة لهذا المنزل، أو المنزل غير مرتبط، أو البث متوقف."
+    },
+    "/paths/~1tv~1broadcast~1moderation~1counter-notices/post/responses/502/description": {
+      "en": "Maktaba Cloud could not be reached.",
+      "ar": "تعذّر الوصول إلى سحابة مكتبة."
     }
   }
 }

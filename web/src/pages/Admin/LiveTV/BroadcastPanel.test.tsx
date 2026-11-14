@@ -188,7 +188,7 @@ describe("BroadcastPanel", () => {
 
   // Story 50.25: what the revocation list does, as the home shows it
   it("names why Maktaba took a channel off air, from the list or the edge", async () => {
-    get.mockResolvedValue(
+    serve(
       view({
         channels: [
           channel({ state: "revoked", detail: "list:notice" }),
@@ -210,7 +210,7 @@ describe("BroadcastPanel", () => {
   });
 
   it("warns while the home's copy of the list is stale, and says when the home is stopped", async () => {
-    get.mockResolvedValue(
+    serve(
       view({
         revocations: {
           version: 3,
@@ -230,7 +230,7 @@ describe("BroadcastPanel", () => {
   });
 
   it("shows a suspension and a publish refused by the list with its reason", async () => {
-    get.mockResolvedValue(
+    serve(
       view({
         revocations: {
           version: 3,
@@ -262,7 +262,7 @@ describe("BroadcastPanel", () => {
 
   it("renders the list's warnings in Arabic", async () => {
     localStorage.setItem("mkt:locale", "ar");
-    get.mockResolvedValue(
+    serve(
       view({
         channels: [channel({ state: "revoked", detail: "list:notice" })],
         revocations: { version: 3, stale: true, days: 4 },

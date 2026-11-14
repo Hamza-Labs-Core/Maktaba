@@ -211,3 +211,37 @@ func TestIngestTokenCarriesGeo(t *testing.T) {
 		t.Fatalf("lookup failure: %d %s", w.Code, w.Body)
 	}
 }
+
+// Story 50.24: a token asked with the channel's cloud id records the channel's edge id (a
+// takedown's programme slate names it); an older home's body without it records nothing.
+func TestIngestTokenRecordsTheEdgeChannel(t *testing.T) {
+	seed := sha256.Sum256([]byte("maktaba-broadcast TEST KEY, never for production: handler"))
+	k, _ := bc.KeyFromSeed(seed[:])
+	var got []string
+	d := &IngestDeps{
+		Agents: fakeAgents{"pro-home": "s3cret"}, Key: &k,
+		Plans: fakePlans{"pro-home": {Publisher: "user-pro", MaxRungs: 2, MaxTopKbps: 3000}},
+		Now:   func() time.Time { return at },
+		EdgeChannels: func(_ context.Context, serverID, cloudID, edge string) error {
+			got = append(got, serverID+" "+cloudID+" "+edge)
+			return nil
+		},
+	}
+	r := chi.NewRouter()
+	MountIngest(r, d)
+	const cloudID = "0b9a4b5e-5d1c-4a43-9a5e-1c2b3d4e5f60"
+	if w := post(r, "pro-home", "s3cret", `{"channel":"7","rungs":["src"],"cloud_id":"`+cloudID+`"}`); w.Code != http.StatusOK {
+		t.Fatalf("token = %d %s", w.Code, w.Body)
+	}
+	if want := "pro-home " + cloudID + " " + bc.ChannelID("pro-home", "7"); len(got) != 1 || got[0] != want {
+		t.Fatalf("recorded %q, want %q", got, want)
+	}
+	for _, body := range []string{`{"channel":"7","rungs":["src"]}`, `{"channel":"7","rungs":["src"],"cloud_id":"'; DROP"}`} {
+		if w := post(r, "pro-home", "s3cret", body); w.Code != http.StatusOK {
+			t.Fatalf("token = %d", w.Code)
+		}
+	}
+	if len(got) != 1 {
+		t.Fatalf("a body without a cloud id recorded %q", got)
+	}
+}
