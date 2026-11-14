@@ -163,6 +163,24 @@ final class PlayerShellTests: XCTestCase {
         XCTAssertNil(PlayerUITestCase.cancelledTouches(in: nil), "no app, no answer")
     }
 
+    /// A touch's line in the app's log says how long it was held and where, in points.
+    func testTheTouchWatcherSaysHowLongATouchWasHeld() {
+        XCTAssertEqual(TouchWatcher.heldLine(0.0812, at: CGPoint(x: 637.5, y: 827)),
+                       "touch held 0.08 s at (638, 827)")
+        XCTAssertEqual(TouchWatcher.heldLine(1.5, at: .zero, cancelled: true), "touch held 1.50 s at (0, 0), cancelled")
+    }
+
+    /// Each scene change the touch hook watches has its own line in the app's log; another
+    /// notification has none.
+    func testTheTouchHookLogsEachSceneChange() {
+        let lines = TouchHook.scenePhases.compactMap(TouchHook.sceneNote)
+        XCTAssertEqual(lines.count, 4)
+        XCTAssertEqual(Set(lines).count, 4, "one line per change")
+        XCTAssertTrue(lines.allSatisfy { $0.hasPrefix("scene: ") })
+        XCTAssertTrue(TouchHook.sceneNote(UIScene.didEnterBackgroundNotification)?.contains("background") == true)
+        XCTAssertNil(TouchHook.sceneNote(UIWindow.didBecomeVisibleNotification))
+    }
+
     /// A size the hook sets on a scene reaches its views while they show: the trait a view
     /// reads, and a label's Dynamic Type font, smaller at XS and larger at AX3; the default
     /// takes the override off again. A size the tests do not use changes nothing.
