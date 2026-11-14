@@ -67,7 +67,7 @@ func notCloudLinked() *httperror.Error {
 // mints a credential of its own (true when it wrote the answer). Other
 // packages (API tokens, pairing) call it too.
 func RefuseCloudSession(w http.ResponseWriter, r *http.Request, p *principal.Principal) bool {
-	if !p.ViaCloud() {
+	if !p.MintsNoCredential() {
 		return false
 	}
 	httperror.Write(w, r, &httperror.Error{Type: TypeCloudSession, Title: "sign in on the home",

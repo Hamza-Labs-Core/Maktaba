@@ -39,6 +39,7 @@ import (
 	pushh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/push"
 	serversh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/servers"
 	staffh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/staff"
+	tvcodesh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/tvcodes"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/homeassert"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/license"
 	mailpkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/mail"
@@ -218,6 +219,17 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 		homes.PoolHosts = cfg.Relay.PoolHostTemplate()
 	}
 
+	// TV codes (Epic 58 story 58.03): a TV signs in from anywhere with a code a home claims. The
+	// payloads are sealed under a key derived from the token secret (every api process shares
+	// it); this role sweeps the rows an hour past expiry.
+	tvBox, err := staffauth.NewBox(tvcodesh.BoxKey(string(secret)))
+	if err != nil {
+		return apiRouters{}, nil, err
+	}
+	tvStore := &tvcodesh.SQLStore{DB: pool.DB}
+	tvCodes := &tvcodesh.Deps{Store: tvStore, Servers: servers, Reach: homes, Box: tvBox,
+		Trusted: cfg.Server.TrustedProxies, Logger: logger}
+
 	// Push dispatcher — both drivers may be nil in non-prod; the
 	// dispatcher will log no-driver and skip those rows safely.
 	var apns pushpkg.Driver
@@ -253,6 +265,7 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 	// rollback: homes keep them in their outbox).
 	reportStore := &reports.Store{DB: pool.DB}
 	go reports.RunSweeper(metricsCtx, reportStore, logger)
+	go tvcodesh.RunSweeper(metricsCtx, tvStore, logger)
 	// The release dSYMs' symbol tables their Apple crashes are read against (53.14, 53.16):
 	// uploaded with the token in MAKTABA_CLOUD_SYMBOLS_TOKEN_FILE (none: uploads are off).
 	symbolDeps := &symbols.Deps{Store: &symbols.Store{DB: pool.DB}, Token: symbolsToken(), Logger: logger}
@@ -343,6 +356,10 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 		// a release's symbol tables: the symbols token, no account
 		symbols.MountUpload(app, symbolDeps)
 		homesh.MountPublic(app, homes)
+		// a TV's code and its polls: no account, limited per address (58.03); a home claims a
+		// code with its server secret
+		tvcodesh.MountPublic(app, tvCodes)
+		tvcodesh.MountAgent(app, tvCodes)
 
 		// Anonymous usage data from homes: no account, no server secret.
 		// The address is read for the rate limit only, never stored.

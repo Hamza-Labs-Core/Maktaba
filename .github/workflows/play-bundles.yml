@@ -195,7 +195,8 @@ jobs:
         run: |
           set -euo pipefail
           chmod +x ./gradlew
-          ./gradlew --no-daemon --stacktrace :app:bundleRelease \
+          # the app's Google Play build (its `google` flavor; `amazon` is Fire TV's, tv-release.yml)
+          ./gradlew --no-daemon --stacktrace :app:bundleGoogleRelease \
             -Pmaktaba.versionName="$NAME" -Pmaktaba.versionCode="$CODE"
 
       # Play refuses an unsigned bundle, so an unsigned one gets an -unsigned name and is not
@@ -211,8 +212,9 @@ jobs:
           [ -n "${ANDROID_UPLOAD_KEYSTORE_FILE:-}" ] && signed=true
           suffix=""
           [ "$signed" = true ] || suffix="-unsigned"
-          collect() { # APP MODULE_DIR AAB_NAME
-            local aab="$2/build/outputs/bundle/release/$3"
+          collect() { # APP MODULE_DIR AAB_NAME [VARIANT]
+            local variant="${4:-release}"
+            local aab="$2/build/outputs/bundle/${variant}/$3"
             local name="maktaba-$1-${NAME}${suffix}.aab"
             [ -f "$aab" ] || { echo "::error::$aab was not built"; exit 1; }
             if [ "$signed" = true ]; then
@@ -221,11 +223,11 @@ jobs:
               grep -q '^jar verified' <<<"$verify" || { echo "::error::$aab is not signed: $verify"; exit 1; }
             fi
             cp "$aab" "out/$name"
-            cp "$2/build/outputs/mapping/release/mapping.txt" "mapping/maktaba-$1-${NAME}-mapping.txt"
+            cp "$2/build/outputs/mapping/${variant}/mapping.txt" "mapping/maktaba-$1-${NAME}-mapping.txt"
           }
           collect player apps/android/player player-release.aab
           collect remote apps/android/remote remote-release.aab
-          collect tv apps/tv/android/app app-release.aab
+          collect tv apps/tv/android/app app-google-release.aab googleRelease
           ( cd out && sha256sum ./*.aab | sed 's# \./# #' >"maktaba-play-${NAME}.sha256" )
           echo "signed=$signed" >>"$GITHUB_OUTPUT"
           if [ "$signed" != true ]; then
@@ -333,9 +335,11 @@ jobs:
           mkdir -p "$tables"
           shopt -s nullglob
           libs=()
-          for dir in apps/android/player apps/android/remote apps/tv/android/app; do
+          for dir in apps/android/player/build/intermediates/merged_native_libs/release \
+            apps/android/remote/build/intermediates/merged_native_libs/release \
+            apps/tv/android/app/build/intermediates/merged_native_libs/googleRelease; do
             while IFS= read -r -d '' so; do libs+=("$so"); done < <(
-              find "$dir/build/intermediates/merged_native_libs/release" -name '*.so' -print0 2>/dev/null)
+              find "$dir" -name '*.so' -print0 2>/dev/null)
           done
           bare=0
           for so in "${libs[@]}"; do

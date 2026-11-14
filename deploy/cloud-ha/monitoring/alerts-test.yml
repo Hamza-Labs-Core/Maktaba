@@ -209,3 +209,41 @@ tests:
             exp_annotations:
               summary: "No api node runs the worker's jobs: no node holds the worker's leader lock"
               runbook_url: docs/runbooks/cloud/worker-no-leader.md
+  # the review home's probe (story 58.04): a failed check alerts by its name; a passed run clears it
+  - interval: 15m
+    input_series:
+      - series: 'review_home_probe_success{job="review_home",instance="actions",check="discovery"}'
+        values: '1 1 1 1'
+      - series: 'review_home_probe_success{job="review_home",instance="actions",check="cloud_code"}'
+        values: '1 0 0 1'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: review_home_down
+        exp_alerts: []
+      - eval_time: 17m
+        alertname: review_home_down
+        exp_alerts:
+          - exp_labels: {severity: sev2, check: cloud_code}
+            exp_annotations:
+              summary: "The store reviewers' home fails its cloud_code check"
+              runbook_url: docs/runbooks/cloud/review-home-down.md
+      - eval_time: 47m
+        alertname: review_home_down
+        exp_alerts: []
+  # the probe stops reporting: stale after an hour
+  # (the Pushgateway keeps serving the last value: a sample a minute that stops changing)
+  - interval: 1m
+    input_series:
+      - series: 'review_home_probe_last_run_seconds{job="review_home",instance="actions"}'
+        values: '0+60x30 1800x90'
+    alert_rule_test:
+      - eval_time: 45m
+        alertname: review_home_probe_stale
+        exp_alerts: []
+      - eval_time: 100m
+        alertname: review_home_probe_stale
+        exp_alerts:
+          - exp_labels: {severity: sev3}
+            exp_annotations:
+              summary: "The store reviewers' home has not been checked for over an hour"
+              runbook_url: docs/runbooks/cloud/review-home-down.md

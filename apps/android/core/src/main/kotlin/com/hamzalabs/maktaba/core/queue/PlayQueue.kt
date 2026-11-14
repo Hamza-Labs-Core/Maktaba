@@ -1,5 +1,6 @@
 package com.hamzalabs.maktaba.core.queue
 
+import com.hamzalabs.maktaba.core.api.ClientHeader
 import com.hamzalabs.maktaba.core.api.ApiClient
 import com.hamzalabs.maktaba.core.api.ApiException
 import com.hamzalabs.maktaba.core.api.VideoTitle
@@ -229,7 +230,7 @@ class ApiQueueTransport(
     private fun request(url: okhttp3.HttpUrl, method: String, body: String?, token: String): Request =
         Request.Builder().url(url)
             .header("Accept", "application/json")
-            .header("X-Maktaba-Client", "native")
+            .header(ClientHeader.NAME, ClientHeader.value)
             .header("Authorization", "Bearer $token")
             .method(method, body?.toRequestBody(JSON) ?: if (method == "POST" || method == "PUT") "".toRequestBody(JSON) else null)
             .build()

@@ -28,5 +28,10 @@
     "file": "api/internal/httperror/httperror.go",
     "link": "https://maktaba.tv/ar/problems/",
     "reason": "the Arabic problem pages' base the HTML error page appends a slug to (meaningLink), not a link"
+  },
+  {
+    "file": "apps/tv/web/tizen/config.xml",
+    "link": "https://maktaba.tv/apps/samsung",
+    "reason": "the Samsung widget's id (a W3C widget id is an IRI that names the app and is never opened), not a link"
   }
 ]

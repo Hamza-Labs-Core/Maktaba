@@ -119,6 +119,8 @@ jobs:
           - rebalance-add-relay
           # 50.20 T10: a Broadcaster publisher across every mode, an API outage, a repeated window
           - broadcast-plans
+          # 58.03 T04: a TV signs in through the relay with a cloud code the canary home claims
+          - tv-code
           # 50.18: the database on three nodes behind PgBouncer and its Floating IP: the
           # primary killed under load (no committed write lost, the apps ride it out, backups
           # from the new layout), and the move from the Phase 1 pair

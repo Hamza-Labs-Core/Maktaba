@@ -14,6 +14,7 @@
 package homes
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -206,29 +207,32 @@ func withRelayHint(conns []connection, hint string) []connection {
 }
 
 // relayHint is home id's relay hint, or "" (no pool, or no healthy relay).
-func (d *Deps) relayHint(r *http.Request, id, slug string) string {
+func (d *Deps) relayHint(ctx context.Context, id, slug string) string {
 	if d.Pool == nil || d.RelayHost == "" {
 		return ""
 	}
-	a, ok := d.Pool.Assign(r.Context(), id)
+	a, ok := d.Pool.Assign(ctx, id)
 	if !ok {
 		return ""
 	}
 	return "https://" + slug + "." + relay.TunnelHost(d.PoolHosts, a.Primary)
 }
 
-// List answers the homes this cloud account reaches.
-func (d *Deps) List(w http.ResponseWriter, r *http.Request) {
-	uid := middleware.GetUserID(r.Context())
-	if uid == "" {
-		writeErr(w, http.StatusUnauthorized, "unauthorized", "")
-		return
-	}
-	hs, err := d.Servers.HomesFor(r.Context(), uid)
-	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "list_failed", "")
-		return
-	}
+// Connection is one way to reach a home, as apps (and a TV given a cloud code, story 58.03)
+// receive it.
+type Connection = connection
+
+// Reach is how apps reach one home (story 50.13): its relay and direct addresses and its
+// connections in the order apps try them.
+type Reach struct {
+	RelayURL    string
+	DirectURL   string
+	Connections []Connection
+}
+
+// ReachFor is each home's Reach, by server id. A failed lookup of the direct entries leaves them
+// out (the relay and the plain direct address still go).
+func (d *Deps) ReachFor(ctx context.Context, hs []stores.Server) map[string]Reach {
 	// story 50.15: the homes whose direct name passed its outside check
 	reach := map[string]stores.Reachable{}
 	lan := map[string]stores.LANHome{}
@@ -237,17 +241,17 @@ func (d *Deps) List(w http.ResponseWriter, r *http.Request) {
 		for _, h := range hs {
 			ids = append(ids, h.ID)
 		}
-		if found, err := d.Direct.ReachableFor(r.Context(), ids); err == nil {
+		if found, err := d.Direct.ReachableFor(ctx, ids); err == nil {
 			reach = found
 		}
 		// and their LAN entries (50.15 §3)
-		if found, err := d.Direct.LANFor(r.Context(), ids); err == nil {
+		if found, err := d.Direct.LANFor(ctx, ids); err == nil {
 			lan = found
 		}
 	}
-	out := make([]homeView, 0, len(hs))
+	out := make(map[string]Reach, len(hs))
 	for _, h := range hs {
-		v := homeView{ServerID: h.ID, Name: h.Name, Slug: h.Slug, Online: h.Online, Linked: h.Linked, Owned: h.Owned}
+		var v Reach
 		if d.RelayHost != "" {
 			v.RelayURL = "https://" + h.Slug + "." + d.RelayHost
 		}
@@ -263,11 +267,37 @@ func (d *Deps) List(w http.ResponseWriter, r *http.Request) {
 			secure = "https://" + net.JoinHostPort(direct.Name(rc.IP, rc.HomeID, rc.Domain), strconv.Itoa(rc.Port))
 		}
 		v.Connections = withRelayHint(connectionsFor(v.DirectURL, v.RelayURL, billing.RelayIncluded(h.Plan), secure),
-			d.relayHint(r, h.ID, h.Slug))
+			d.relayHint(ctx, h.ID, h.Slug))
 		if l, ok := lan[h.ID]; ok {
 			v.Connections = append(localConnections(l), v.Connections...)
 		}
-		out = append(out, v)
+		out[h.ID] = v
+	}
+	return out
+}
+
+// List answers the homes this cloud account reaches.
+func (d *Deps) List(w http.ResponseWriter, r *http.Request) {
+	uid := middleware.GetUserID(r.Context())
+	if uid == "" {
+		writeErr(w, http.StatusUnauthorized, "unauthorized", "")
+		return
+	}
+	hs, err := d.Servers.HomesFor(r.Context(), uid)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "list_failed", "")
+		return
+	}
+	servers := make([]stores.Server, 0, len(hs))
+	for _, h := range hs {
+		servers = append(servers, h.Server)
+	}
+	reach := d.ReachFor(r.Context(), servers)
+	out := make([]homeView, 0, len(hs))
+	for _, h := range hs {
+		rc := reach[h.ID]
+		out = append(out, homeView{ServerID: h.ID, Name: h.Name, Slug: h.Slug, Online: h.Online, Linked: h.Linked, Owned: h.Owned,
+			RelayURL: rc.RelayURL, DirectURL: rc.DirectURL, Connections: rc.Connections})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"homes": out})
 }

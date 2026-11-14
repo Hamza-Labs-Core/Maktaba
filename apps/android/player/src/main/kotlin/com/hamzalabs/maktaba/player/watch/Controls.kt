@@ -69,6 +69,7 @@ import com.hamzalabs.maktaba.core.ui.InkAndBrass
 import com.hamzalabs.maktaba.core.ui.formatDuration
 import com.hamzalabs.maktaba.player.Playback
 import com.hamzalabs.maktaba.player.R
+import com.hamzalabs.maktaba.player.media.CastMode
 import com.hamzalabs.maktaba.player.media.LocalCastRoutes
 import kotlinx.coroutines.delay
 
@@ -182,6 +183,7 @@ fun PlayerControls(
                     onClose = onClose,
                     onTracks = { sheet = Sheet.Tracks; touched++ },
                     onQuality = { sheet = Sheet.Quality; touched++ },
+                    castMode = playback.castSender?.mode,
                     modifier = Modifier.align(Alignment.TopCenter),
                 )
                 CenterRow(
@@ -219,7 +221,7 @@ fun PlayerControls(
 }
 
 @Composable
-private fun TopRow(title: String, onClose: () -> Unit, onTracks: () -> Unit, onQuality: () -> Unit, modifier: Modifier) {
+private fun TopRow(title: String, onClose: () -> Unit, onTracks: () -> Unit, onQuality: () -> Unit, modifier: Modifier, castMode: CastMode? = null) {
     Row(
         modifier.fillMaxWidth().safeDrawingPadding().padding(12.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -236,9 +238,12 @@ private fun TopRow(title: String, onClose: () -> Unit, onTracks: () -> Unit, onQ
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f),
         )
-        // Cast (FR-38): only while a receiver is on the network
+        // Cast (FR-38, story 58.06): the button while a receiver is on the network, else the
+        // line that none was found; nothing without Cast, or for a home no TV can reach
         val cast = LocalCastRoutes.current
-        if (cast.available()) cast.Button(Modifier)
+        if (cast.on() && castMode != CastMode.Unreachable) {
+            if (cast.available()) cast.Button(Modifier) else com.hamzalabs.maktaba.player.media.NoTvButton()
+        }
         IconButton(onClick = onTracks, modifier = Modifier.testTag("tracks-button")) {
             Icon(Icons.Filled.ClosedCaption, stringResource(R.string.watch_tracks), tint = Color.White)
         }

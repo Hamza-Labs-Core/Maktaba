@@ -71,8 +71,7 @@ final class PlayerProfileUITests: PlayerUITestCase {
         XCTAssertTrue(app.staticTexts["سجل المشاهدة"].exists)
         shot("profile")
 
-        history.tap()
-        XCTAssertTrue(element("history.v2").waitForExistence(timeout: 10), "the history in Arabic")
+        open(history, shows: element("history.v2"), "the history in Arabic")
         let remove = element("history.remove.v2")
         XCTAssertLessThan(remove.frame.midX, width * 0.5, "the remove button is on the left, at the row's end")
         shot("profile-history")
@@ -83,9 +82,8 @@ final class PlayerProfileUITests: PlayerUITestCase {
     func testHistoryRemovesOneItem() {
         home.stub("DELETE", "/api/me/history/v5", status: 204)
         launchProfile()
-        element("profile.history").tap()
         let row = element("history.v5")
-        XCTAssertTrue(row.waitForExistence(timeout: 10), "the history")
+        open(element("profile.history"), shows: row, "the history")
         XCTAssertTrue(element("history.v2").exists && element("history.v1").exists)
         shot("profile-history")
 
@@ -99,8 +97,7 @@ final class PlayerProfileUITests: PlayerUITestCase {
     func testARefusedRemovalPutsTheRowBack() {
         home.stub("DELETE", "/api/me/history/v5", status: 500, body: #"{"title":"boom","status":500}"#)
         launchProfile()
-        element("profile.history").tap()
-        XCTAssertTrue(element("history.v5").waitForExistence(timeout: 10))
+        open(element("profile.history"), shows: element("history.v5"), "the history")
         element("history.remove.v5").tap()
         XCTAssertTrue(app.alerts.firstMatch.waitForExistence(timeout: 5), "says it did not work")
         app.alerts.firstMatch.buttons.firstMatch.tap()
@@ -109,9 +106,8 @@ final class PlayerProfileUITests: PlayerUITestCase {
 
     func testAHistoryRowOpensItsVideo() {
         launchProfile()
-        element("profile.history").tap()
         let row = element("history.v2")
-        XCTAssertTrue(row.waitForExistence(timeout: 10))
+        open(element("profile.history"), shows: row, "the history")
         row.tap()
         XCTAssertTrue(element("screen.video").waitForExistence(timeout: 5), "the video's page")
         app.navigationBars.buttons.firstMatch.tap()
@@ -121,8 +117,7 @@ final class PlayerProfileUITests: PlayerUITestCase {
     func testSessionsSignsOneOut() {
         home.stub("DELETE", "/api/me/sessions/sess-1", status: 204)
         launchProfile()
-        element("profile.sessions").tap()
-        XCTAssertTrue(element("session.sess-1").waitForExistence(timeout: 10), "the sessions")
+        open(element("profile.sessions"), shows: element("session.sess-1"), "the sessions")
         XCTAssertTrue(app.staticTexts["Maktaba · iPhone"].exists, "a session named by its user agent")
         XCTAssertTrue(app.staticTexts["A browser"].exists, "one with no user agent")
         shot("profile-sessions")
@@ -151,15 +146,13 @@ final class PlayerProfileUITests: PlayerUITestCase {
         home.stub("GET", "/api/me/playlists/pl-2", body: Self.playlist)
         home.stub("GET", "/api/me/videos", body: Self.favorites)
         launchProfile()
-        element("profile.favorites").tap()
-        XCTAssertTrue(element("favorites.grid").waitForExistence(timeout: 10), "the favorites")
+        open(element("profile.favorites"), shows: element("favorites.grid"), "the favorites")
         XCTAssertTrue(home.requests.contains { $0.path == "/api/me/videos" && $0.value("favorite") == "true" }, "asks for favorites")
         XCTAssertTrue(element("video.v3").exists && element("video.v7").exists, "each favorite as a card")
         shot("profile-favorites")
         element("profile.back").tap()
 
-        element("profile.playlists").tap()
-        XCTAssertTrue(element("playlist.pl-1").waitForExistence(timeout: 10), "the playlists")
+        open(element("profile.playlists"), shows: element("playlist.pl-1"), "the playlists")
         XCTAssertTrue(app.staticTexts["Weekend documentaries"].exists)
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH '1 video'")).firstMatch.exists, "one video, singular")
         shot("profile-playlists")
@@ -177,20 +170,17 @@ final class PlayerProfileUITests: PlayerUITestCase {
         launchProfile()
         let playback = element("profile.playback")
         scrollTo(playback)
-        playback.tap()
         let autoplay = app.switches["playback.autoplay"].firstMatch
-        XCTAssertTrue(autoplay.waitForExistence(timeout: 5))
+        // a tap the system cancelled (#639) gets one more (`open`): iteration 18 of run
+        // 43599999810 lost this row's tap and failed before the switch
+        open(playback, shows: autoplay, "the Playback page", timeout: 5)
         XCTAssertEqual(autoplay.value as? String, "1", "next episode: on by default")
         XCTAssertEqual(app.switches["playback.subtitles"].value as? String, "0", "subtitles: off by default")
         XCTAssertEqual(app.switches["playback.resume"].value as? String, "1", "resume without asking: on")
         shot("profile-playback")
-        // the page has just taken the list's place: tapped once it is still, and the switch
-        // read until it shows the change. Read in the same instant as the tap it still said
-        // "1" on a loaded iPad (CI, 2026-11-12), with no touch cancelled and the setting kept
-        waitUntilStill(autoplay, timeout: 5)
-        autoplay.switches.firstMatch.tap()
-        XCTAssertTrue(waitUntil { self.app.switches["playback.autoplay"].firstMatch.value as? String == "0" },
-                      "next episode: off once tapped (it reads \(String(describing: autoplay.value)))")
+        // the page has just taken the list's place: tapped once it is still, read until it
+        // shows the change, tapped once more if a loaded runner's tap left it as it was (`flip`)
+        flip(autoplay, to: "0", "next episode: off once tapped")
 
         // kept on this device: a relaunch without the reset reads it back
         app.terminate()
@@ -199,9 +189,8 @@ final class PlayerProfileUITests: PlayerUITestCase {
         signIn()
         XCTAssertTrue(element("screen.profile").waitForExistence(timeout: 15))
         scrollTo(element("profile.playback"))
-        element("profile.playback").tap()
         let kept = app.switches["playback.autoplay"].firstMatch
-        XCTAssertTrue(kept.waitForExistence(timeout: 5), "the Playback page")
+        open(element("profile.playback"), shows: kept, "the Playback page", timeout: 5)
         XCTAssertEqual(kept.value as? String, "0", "kept")
     }
 

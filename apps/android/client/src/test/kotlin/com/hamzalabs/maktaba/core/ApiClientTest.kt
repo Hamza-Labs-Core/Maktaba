@@ -102,6 +102,50 @@ class ApiClientTest {
         assertFalse(seen.last().body!!.utf8().contains("audio_track"))
     }
 
+    /** Story 58.05: a TV sends what it plays; a home from before 58.02 refuses the key, so it is asked again without. */
+    @Test
+    fun deviceCapsGoWithTheOpenAndAnOlderHomeIsAskedAgainWithout() = runBlocking {
+        val caps = kotlinx.serialization.json.buildJsonObject {
+            put("hdr", kotlinx.serialization.json.JsonArray(listOf(kotlinx.serialization.json.JsonPrimitive("hdr10"))))
+        }
+        route = { json(201, """{"session_id":"s1","mode":"direct","direct_url":"/stream/direct/v1?sig=y"}""") }
+        val c = client(MemoryTokens(fresh, "r1"))
+        c.openStream("v1", profile = "firetv", deviceCaps = caps)
+        val body = seen.last().body!!.utf8()
+        assertTrue(body, body.contains("\"device_caps\":{\"hdr\":[\"hdr10\"]}") && body.contains("\"client_profile\":\"firetv\""))
+
+        // an older home: its strict reader refuses the key it does not know
+        val older = client(MemoryTokens(fresh, "r1"))
+        route = { r ->
+            if (r.body!!.utf8().contains("device_caps")) {
+                json(400, """{"type":"https://maktaba.dev/problems/invalid-json","title":"invalid json","status":400,"detail":"json: unknown field \"device_caps\""}""")
+            } else {
+                json(201, """{"session_id":"s2","mode":"transcode","manifest_url":"/stream/s2/master.m3u8?sig=x"}""")
+            }
+        }
+        val before = seen.size
+        val s = older.openStream("v1", profile = "firetv", deviceCaps = caps)
+        assertEquals("s2", s.sessionId)
+        assertEquals(2, seen.size - before)
+        assertFalse(seen.last().body!!.utf8().contains("device_caps"))
+        // and it is not offered to that home again
+        older.openStream("v1", profile = "firetv", deviceCaps = caps)
+        assertEquals(3, seen.size - before)
+        assertFalse(seen.last().body!!.utf8().contains("device_caps"))
+
+        // any other 400 is the home's answer, not a reason to ask again
+        route = { json(400, """{"type":"about:blank","title":"bad","status":400,"detail":"video_id required"}""") }
+        val third = client(MemoryTokens(fresh, "r1"))
+        val n = seen.size
+        try {
+            third.openStream("v1", deviceCaps = caps)
+            fail("a 400 for something else is thrown")
+        } catch (e: ApiException.Status) {
+            assertEquals(400, e.code)
+        }
+        assertEquals(1, seen.size - n)
+    }
+
     @Test
     fun aQualityChoiceCapsTheStreamAndTheLadderIsRead() = runBlocking {
         route = {

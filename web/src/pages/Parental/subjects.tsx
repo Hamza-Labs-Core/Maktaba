@@ -75,10 +75,17 @@ export async function loadOptions(
         (o) => str(o.folder) || str(o.url)
       );
     case "plugin":
-      return options(obj(await api.get<unknown>("/api/plugins")).plugins, (o) => {
-        const names = obj(obj(o.names).name);
-        return str(names[ctx.locale]) || str(names.en) || str(o.id);
-      });
+      // installed plugins only: a plugin that came with Maktaba (source "release") is not
+      // one a rule can name. The home leaves those out of this list; this is the second guard
+      return options(
+        list(obj(await api.get<unknown>("/api/plugins")).plugins).filter(
+          (p) => str(obj(p).source) !== "release"
+        ),
+        (o) => {
+          const names = obj(obj(o.names).name);
+          return str(names[ctx.locale]) || str(names.en) || str(o.id);
+        }
+      );
     case "video": {
       const q = ctx.query.trim();
       if (q.length < MIN_QUERY) return [];

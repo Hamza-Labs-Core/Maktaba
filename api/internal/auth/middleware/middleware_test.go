@@ -454,3 +454,22 @@ func TestJWTBearer_CloudScopeCaps(t *testing.T) {
 		}
 	}
 }
+
+// A restricted token (a TV signed in with a cloud code, Epic 58 story 58.03) is never an admin,
+// whatever is_admin says, and mints no credential of its own; a plain token is untouched.
+func TestJWTBearer_RestrictedCaps(t *testing.T) {
+	s := setWithKey(t)
+	for _, rst := range []bool{true, false} {
+		tok, err := jwt.Sign(s, jwt.Claims{Iss: "maktaba", Aud: "api", Sub: "u", Usr: "u", IsAdmin: true, Lib: []string{"a"}, Rst: rst})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var got *principal.Principal
+		req := httptest.NewRequest("GET", "/api/x", nil)
+		req.Header.Set("Authorization", "Bearer "+tok)
+		JWTBearer(s, "api")(capture(&got)).ServeHTTP(httptest.NewRecorder(), req)
+		if got == nil || got.IsAdmin == rst || got.AccessAllLibraries == rst || got.Restricted != rst || got.MintsNoCredential() != rst || got.ViaCloud() {
+			t.Errorf("rst %v: principal %+v", rst, got)
+		}
+	}
+}
