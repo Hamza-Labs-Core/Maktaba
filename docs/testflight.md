@@ -235,18 +235,25 @@ Nothing here submits the apps for App Store review or adds external testers.
 
 ## When Install fails though the build is listed
 
-Seen from about 0.3.100 to 0.3.142 (November 2026): TestFlight lists the new build for an
-internal tester, and Install or Update answers
+Open as of 2026-11-14, from about 0.3.100: TestFlight lists the new build for an internal
+tester, and Install or Update answers
 
 > Could not install Maktaba Player. The requested app is not available or doesn't exist.
 
-The uploads were all green, and nothing in what is built or uploaded had changed (the same
-Xcode, export and app settings before and after). It is the app record's state in App Store
-Connect, not the build.
+What is known:
 
-What fixed it (2026-11-14, by the owner, in App Store Connect): make the app available for
-sale for a few minutes, then remove it from sale again. Installs from TestFlight worked
-afterwards. It is a workaround: why the record got into that state is not known.
+- It is not the build. The uploads were all green, and nothing in what is built or uploaded
+  changed around when it began (the same Xcode, export and app settings before and after).
+- Apple's developer forums have many threads with this exact message and no answer from Apple.
+  The one cause posters name is the app record's sale state: an app listed as "Removed from
+  Sale", after which no build installs
+  ([778597](https://developer.apple.com/forums/thread/778597),
+  [837048](https://developer.apple.com/forums/thread/837048),
+  [826537](https://developer.apple.com/forums/thread/826537)).
+- A workaround posted on Stack Overflow, not tried here: make the app available for sale for a
+  few minutes, then remove it from sale again; that poster's TestFlight installs worked
+  afterwards.
 
-If it happens again, do this first. The build, the tester group and the device are not where
-to look.
+App Store Connect is the owner's: the record's sale state, the workaround and a report to
+Apple (Feedback Assistant, or a Developer Support case) are done there, by hand. When it is
+settled, write here what the record's state was and what cleared it.
