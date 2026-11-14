@@ -91,7 +91,23 @@
     "parental.profile.limitAll": "Content limit: All ages",
     "parental.profile.limitNone": "Content limit: what a parent allowed",
     "tv.parental.askOnPhone": "A parent can answer from Maktaba on their phone.",
-    "parental.blocked.deviceAll": "This device is limited to All ages."
+    "parental.blocked.deviceAll": "This device is limited to All ages.",
+    "parental.time.up.title": "Time's up for today",
+    "parental.time.outside.title": "Not watching time yet",
+    "parental.time.askMore": "Ask for more time",
+    "parental.ask.sentTime": "You asked for more time. Waiting for a parent.",
+    "parental.time.cannotCheck": "Your home can't check your watching time right now. Try again in a moment.",
+    "parental.player.stopped": "This video is no longer available on this account.",
+    "roku.parental.ask15": "15 minutes",
+    "roku.parental.ask30": "30 minutes",
+    "roku.parental.ask60": "1 hour",
+    "roku.weekday.0": "Sunday",
+    "roku.weekday.1": "Monday",
+    "roku.weekday.2": "Tuesday",
+    "roku.weekday.3": "Wednesday",
+    "roku.weekday.4": "Thursday",
+    "roku.weekday.5": "Friday",
+    "roku.weekday.6": "Saturday"
   },
   "templates": {
     "launcher.connecting": {
@@ -178,6 +194,16 @@
       "text": "Content limit: %1$s+",
       "widthChars": 60,
       "lines": 1
+    },
+    "parental.time.next": {
+      "text": "You can watch again at %1$s",
+      "widthChars": 60,
+      "lines": 1
+    },
+    "parental.time.saved": {
+      "text": "Your place in this video is saved at %1$s.",
+      "widthChars": 60,
+      "lines": 2
     }
   }
 }

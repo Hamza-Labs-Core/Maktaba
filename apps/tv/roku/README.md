@@ -69,7 +69,8 @@ blank cards that never take the focus.
   mock cloud that approves a code), runs it on brs-node's SceneGraph with ECP, sends keys,
   follows the focus through the channel's log and compares screenshots with `tests/screens/`
   (the player's among them: its overlay, pickers, an Arabic cue, a seek, Up next, a refused
-  session)
+  session, and the player's parental answers: time's up with Ask for more time, and a title
+  hidden while it plays, against a mock home that refuses as the real one does)
   (English and Arabic, dark; a mean difference under 12 on a 480×270 copy). After a deliberate
   change: `UPDATE_SCREENS=1 node --test tests/screens.test.mjs`, look at every image, commit.
   Find on this network runs on Linux only (macOS has no 127.0.0.x addresses for the probe; in
