@@ -93,11 +93,28 @@ func TestCORS_PackagedAppOriginWithoutCredentials(t *testing.T) {
 		if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "" {
 			t.Fatalf("%s GET without a bearer: Allow-Origin %q", origin, got)
 		}
-		req.Header.Set("Authorization", "Bearer x")
+		// a bearer header alone proves nothing (an invalid token is no sign-in)
+		req.Header.Set("Authorization", "Bearer garbage")
 		rec = httptest.NewRecorder()
 		h.ServeHTTP(rec, req)
+		if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "" {
+			t.Fatalf("%s GET with an unverified bearer: Allow-Origin %q", origin, got)
+		}
+		// verified by the API (MarkVerified), or a 401: answered
+		verified := CORS(DefaultCORS())(MarkVerified(func(*http.Request) bool { return true })(
+			http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("{}")) })))
+		rec = httptest.NewRecorder()
+		verified.ServeHTTP(rec, req)
 		if got := rec.Header().Get("Access-Control-Allow-Origin"); got != origin {
-			t.Fatalf("%s GET with a bearer: Allow-Origin %q", origin, got)
+			t.Fatalf("%s GET with a verified bearer: Allow-Origin %q", origin, got)
+		}
+		unauth := CORS(DefaultCORS())(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusUnauthorized)
+		}))
+		rec = httptest.NewRecorder()
+		unauth.ServeHTTP(rec, req)
+		if got := rec.Header().Get("Access-Control-Allow-Origin"); got != origin {
+			t.Fatalf("%s 401: Allow-Origin %q, want it readable (the TV renews on it)", origin, got)
 		}
 	}
 	// before it holds a token: whether it is signed in, a renewal and a code's redemption are

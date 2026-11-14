@@ -73,8 +73,10 @@ launcher has answered `hello`, `/tv/` sends nothing but `ready` and `hello`.
 - A packaged app's origin (`null`, `file://`, `app://…`) gets its own origin back and the
   headers a bearer call needs, never `Access-Control-Allow-Credentials`: no cookie is sent
   cross-site, and every rule of who may do what is the API's, as for any device. It is
-  answered only for a call that carries a bearer token (or its preflight), and before a token
-  for `/api/auth/me`, `/api/auth/refresh` and `/api/pairing/device/token`: a web page can
+  answered only once the API has verified the call's bearer token (a made-up token is no
+  sign-in), on a 401 (the TV renews its token on it), for a preflight that asks to send
+  `Authorization`, and before a token for `/api/auth/me`, `/api/auth/refresh` and
+  `/api/pairing/device/token`: a web page can
   claim `null` too, and must read nothing that needs no sign-in. Starting a code
   (`POST /api/pairing/device`) is not answered, so the `--bundle-ui` copy signs in by the
   cloud code (a grant it redeems at the token route).

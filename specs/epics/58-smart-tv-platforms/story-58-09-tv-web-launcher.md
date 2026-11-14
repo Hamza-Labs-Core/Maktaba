@@ -82,7 +82,9 @@ A typed address (`Enter the home's address`) is the last option, under More ways
 - A packaged app's origin (`null`, `file://`, `app://…`) gets its own origin back and the headers
   a bearer call needs (the `--bundle-ui` copy of the UI calls the home cross-origin), never
   `Access-Control-Allow-Credentials`: no cookie rides cross-site, and every role rule stays the
-  API's. It is answered only for a bearer call (or its preflight), and before a token for
+  API's. It is answered only once the API has verified the call's bearer (a made-up token is no
+  sign-in), on a 401 (the TV renews on it), for a preflight asking to send `Authorization`,
+  and before a token for
   `/api/auth/me`, `/api/auth/refresh` and `/api/pairing/device/token`: a web page can claim
   `null` too. Starting a code is not answered (a fresh code read cross-origin could be phished),
   so the `--bundle-ui` copy signs in by the cloud code, redeeming its grant at the token route. The allow-list for web origins (`httpsec/cors.go`) is unchanged. The UI in the iframe

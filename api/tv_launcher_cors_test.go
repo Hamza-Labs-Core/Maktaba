@@ -33,6 +33,8 @@ func TestPackagedTVOrigin_RolesUnchanged(t *testing.T) {
 	mux.Handle("/api/libraries", ok)
 	mux.Handle("/api/users", middleware.RequireAdmin(ok))
 	mux.Handle("/api/discovery/home", ok)
+	// a route that needs no sign-in (on the public allow-list): starting a pairing code
+	mux.Handle("/api/pairing/device", ok)
 	stack := st.applySecurity(mux, nil, nil, nil)
 
 	k, err := keys.FromPEM(priv, pub)
@@ -76,11 +78,8 @@ func TestPackagedTVOrigin_RolesUnchanged(t *testing.T) {
 			if rec.Code != c.want {
 				t.Errorf("%s %s (token %v): %d, want %d", origin, c.path, c.token != "", rec.Code, c.want)
 			}
-			// answered only for a bearer call (a page claiming null reads no unsigned answer)
-			want := ""
-			if c.token != "" {
-				want = origin
-			}
+			// answered for a verified bearer, and on a 401 (the TV renews on it)
+			want := origin
 			if got := rec.Header().Get("Access-Control-Allow-Origin"); got != want {
 				t.Errorf("%s %s (token %v): Allow-Origin %q, want %q", origin, c.path, c.token != "", got, want)
 			}
@@ -91,6 +90,23 @@ func TestPackagedTVOrigin_RolesUnchanged(t *testing.T) {
 		rec := call(origin, "/api/discovery/home", "")
 		if rec.Code != http.StatusOK || rec.Header().Get("Access-Control-Allow-Origin") != "*" {
 			t.Errorf("%s discovery: %d, Allow-Origin %q", origin, rec.Code, rec.Header().Get("Access-Control-Allow-Origin"))
+		}
+	}
+	// a page claiming null with a made-up bearer reads no route that needs no sign-in: an
+	// invalid token is no sign-in, and the packaged origin is answered only once verified
+	for _, tok := range []string{"", "garbage", "pat_garbage"} {
+		req := httptest.NewRequest(http.MethodPost, "/api/pairing/device", nil)
+		req.Header.Set("Origin", "null")
+		if tok != "" {
+			req.Header.Set("Authorization", "Bearer "+tok)
+		}
+		rec := httptest.NewRecorder()
+		stack.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("pairing start (bearer %q): %d, want the route to run", tok, rec.Code)
+		}
+		if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "" {
+			t.Errorf("pairing start with bearer %q: Allow-Origin %q, want none", tok, got)
 		}
 	}
 	// a web page's origin still gets no CORS answer on the API
