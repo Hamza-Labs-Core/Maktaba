@@ -3,6 +3,7 @@
 <component name="AddressScreen" extends="Screen">
   <script type="text/brightscript" uri="AddressScreen.brs" />
   <script type="text/brightscript" uri="pkg:/components/common.brs" />
+  <script type="text/brightscript" uri="pkg:/components/theme.brs" />
   <script type="text/brightscript" uri="pkg:/source/config.brs" />
   <script type="text/brightscript" uri="pkg:/source/net.brs" />
   <script type="text/brightscript" uri="pkg:/source/nav.brs" />

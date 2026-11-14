@@ -46,6 +46,8 @@ export interface MockOptions {
   holdSession?: Promise<void>;
   /** builds.json in place of the deployed one */
   builds?: unknown;
+  /** the video's title in place of the test data's (an Arabic title with Latin, story 58.15) */
+  title?: string;
 }
 
 const json = (route: Route, body: unknown, status = 200) =>
@@ -82,7 +84,7 @@ export async function mockHome(page: Page, info: TestInfo, o: MockOptions): Prom
   );
   if (o.builds) await page.route("**/r/builds.json", (route) => json(route, o.builds));
 
-  const t = TITLES[o.lang];
+  const t = { ...TITLES[o.lang], ...(o.title ? { title: o.title } : {}) };
   const handler = async (route: Route, base: string) => {
     const req = route.request();
     const url = new URL(req.url());
