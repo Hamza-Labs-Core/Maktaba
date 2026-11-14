@@ -289,7 +289,8 @@ export function pairPage(
   nonce: string,
   pub: string,
   liveOrigin: string,
-  result?: { key: string; status: number }
+  result?: { key: string; status: number },
+  tvCode = ""
 ): Response {
   const q = `?tv=${enc(nonce)}${pub ? `&p=${enc(pub)}` : ""}`;
   let body: string;
@@ -297,13 +298,16 @@ export function pairPage(
   else if (!nonce)
     body = `<h1>${esc(t("site.pair.title", lang))}</h1><p>${esc(t("site.pair.noTv", lang))}</p>`;
   else {
-    const code = pub
+    const codeField = pub
       ? `<label for="code">${esc(t("guest.enterCode", lang))}</label><input id="code" name="code" autocomplete="off" inputmode="text" pattern="[Mm][Kk]-[A-Za-z0-9]{4}" placeholder="MK-XXXX">`
       : "";
     const open = pub
       ? `<button type="submit" name="open" value="1">${esc(t("site.pair.sendOpen", lang))}</button>`
       : "";
-    body = `<h1>${esc(t("site.pair.title", lang))}</h1><form method="post" action="/${lang}/pair${esc(q)}"><label for="invite">${esc(t("site.pair.invite", lang))}</label><input id="invite" name="invite" autocomplete="off" inputmode="url">${code}<button type="submit">${esc(t("site.pair.send", lang))}</button>${open}</form>`;
+    const check = tvCode
+      ? `<p>${esc(t("site.pair.check", lang))} <strong class="code" dir="ltr">${esc(tvCode)}</strong></p>`
+      : "";
+    body = `<h1>${esc(t("site.pair.title", lang))}</h1>${check}<form method="post" action="/${lang}/pair${esc(q)}"><label for="invite">${esc(t("site.pair.invite", lang))}</label><input id="invite" name="invite" autocomplete="off" inputmode="url">${codeField}<button type="submit">${esc(t("site.pair.send", lang))}</button>${open}</form>`;
   }
   return page({
     lang,

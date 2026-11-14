@@ -492,21 +492,40 @@ describe("the apps' reads", () => {
 });
 
 describe("TV pairing", () => {
-  async function open(): Promise<{ nonce: string; url: string }> {
+  interface Pair {
+    nonce: string;
+    url: string;
+    poll_key: string;
+    code: string;
+  }
+
+  async function open(): Promise<Pair> {
     const r = await postJSON("/api/v1/pair", {});
     expect(r.status).toBe(201);
-    return (await r.json()) as { nonce: string; url: string };
+    return (await r.json()) as Pair;
+  }
+
+  /** poll is the TV's long-poll, with its poll key. */
+  function poll(p: Pair, wait = 0, key = p.poll_key) {
+    return get(`/api/v1/pair/${p.nonce}?wait=${wait}`, { "X-Maktaba-Pair-Key": key });
   }
 
   it("the QR flow: the phone sends an invite, the TV's long-poll gets a pass that plays", async () => {
     const s = await setup();
     const p = await open();
     expect(p.url).toBe(`${WATCH}/pair?tv=${p.nonce}`);
+    // the poll key is the TV's alone: never in the QR code's address
+    expect(p.url).not.toContain(p.poll_key);
+    expect(p.code).toMatch(/^[A-HJ-NP-Z2-9]{4}$/);
     // nothing yet
-    expect((await get(`/api/v1/pair/${p.nonce}?wait=0`)).status).toBe(204);
+    expect((await poll(p)).status).toBe(204);
     // the TV waits; the phone sends while it waits
-    const waiting = get(`/api/v1/pair/${p.nonce}?wait=10`);
+    const waiting = poll(p, 10);
     const inv = await invite({ pub: s.pub, max: 1 });
+    // someone who only saw the QR code polls with no key, or a wrong one: nothing for them
+    const thief = get(`/api/v1/pair/${p.nonce}?wait=0`);
+    expect((await thief).status).toBe(410);
+    expect((await poll(p, 0, "x".repeat(22))).status).toBe(410);
     const sent = await postJSON(`/api/v1/pair/${p.nonce}`, { invite: `${WATCH}/i/${inv}` });
     expect(sent.status).toBe(200);
     const got = await waiting;
@@ -516,7 +535,7 @@ describe("TV pairing", () => {
     expect(h.publisher).toBe(s.pub);
     expect(h.credential).toMatch(/^mkbg1\./);
     // handed over once
-    expect((await get(`/api/v1/pair/${p.nonce}?wait=0`)).status).toBe(410);
+    expect((await poll(p)).status).toBe(410);
     // the TV's pass plays
     const play = await postJSON(
       "/api/v1/play",
@@ -539,10 +558,10 @@ describe("TV pairing", () => {
     const p = await open();
     const sent = await postJSON(`/api/v1/pair/${p.nonce}`, { publisher: s.pub, code: "mk-ab12" });
     expect(sent.status).toBe(200);
-    expect((await get(`/api/v1/pair/${p.nonce}?wait=0`)).status).toBe(200);
+    expect((await poll(p)).status).toBe(200);
   });
 
-  it("the phone's open session gives the TV its own", async () => {
+  it("the phone's open session goes to the TV as it is: same id, same expiry", async () => {
     const s = await setup();
     const ts = await postJSON("/api/v1/open/turnstile", { token: `good-${Math.random()}` });
     expect(ts.status).toBe(200);
@@ -556,13 +575,14 @@ describe("TV pairing", () => {
       { Cookie: `mko=${session}` }
     );
     expect(sent.status).toBe(200);
-    const h = (await (await get(`/api/v1/pair/${p.nonce}?wait=0`)).json()) as {
+    const h = (await (await poll(p)).json()) as {
       credential: string;
       kind: string;
       channels: string[];
     };
     expect(h.kind).toBe("open");
-    expect(h.credential).not.toBe(session);
+    // no new session is minted: the TV shares the phone's limits and Turnstile check
+    expect(h.credential).toBe(session);
     expect(h.channels).toEqual([s.ch2]);
   });
 
@@ -575,8 +595,10 @@ describe("TV pairing", () => {
     });
     expect(late.status).toBe(410);
     expect(((await late.json()) as { key: string }).key).toBe("site.pair.gone");
-    expect((await get(`/api/v1/pair/${p.nonce}?wait=0`)).status).toBe(410);
-    expect((await get(`/api/v1/pair/nope?wait=0`)).status).toBe(410);
+    expect((await poll(p)).status).toBe(410);
+    expect(
+      (await get(`/api/v1/pair/nope?wait=0`, { "X-Maktaba-Pair-Key": p.poll_key })).status
+    ).toBe(410);
   });
 
   it("the phone's page: a form that sends, with no script", async () => {
@@ -584,13 +606,15 @@ describe("TV pairing", () => {
     const p = await open();
     const pageHtml = await (await get(`/pair?tv=${p.nonce}`, { "Accept-Language": "en" })).text();
     expect(pageHtml).toContain("Paste the invite link");
+    // the same code the TV shows, to check before sending
+    expect(pageHtml).toContain(`>${p.code}</strong>`);
     const inv = await invite({ pub: s.pub });
     const form = new FormData();
     form.set("invite", `${WATCH}/i/${inv}`);
     const r = await call(`${WATCH}/en/pair?tv=${p.nonce}`, { method: "POST", body: form });
     expect(r.status).toBe(200);
     expect(await r.text()).toContain("The TV will start in a moment");
-    expect((await get(`/api/v1/pair/${p.nonce}?wait=0`)).status).toBe(200);
+    expect((await poll(p)).status).toBe(200);
   });
 
   it("an invite link or a bare token", () => {

@@ -9,8 +9,8 @@
 //   GET  /pair, /<lang>/pair             the phone's side of TV pairing; POST: send to the TV
 //   GET  /api/v1/lineup?publisher=       the grid as JSON (the apps)
 //   GET  /api/v1/guide?publisher=&channel=   a channel's guide as JSON (the apps)
-//   POST /api/v1/pair                    the TV: a pairing nonce (pairing.ts)
-//   GET  /api/v1/pair/<nonce>?wait=25    the TV's long-poll
+//   POST /api/v1/pair                    the TV: a pairing nonce, its poll key and code (pairing.ts)
+//   GET  /api/v1/pair/<nonce>?wait=25    the TV's long-poll (X-Maktaba-Pair-Key)
 //   POST /api/v1/pair/<nonce>            the phone: send a credential to the TV
 //
 // Without a language prefix a page answers in the Accept-Language's (Arabic by default), and
@@ -21,13 +21,19 @@ import { DEFAULT_LIVE_HOST, globallyOff, type Env } from "../env";
 import { getBranding, getGuide, nowNext, today, type Programme } from "../guide";
 import { CODE_RE, PASS_TTL_S, randomId } from "../invites";
 import { clientIP, ipHash } from "../limits";
-import { NONCE_RE, PAIR_TTL_MS, PAIR_WAIT_MS, type Handover } from "../pairing";
+import {
+  NONCE_RE,
+  PAIR_KEY_HEADER,
+  PAIR_TTL_MS,
+  PAIR_WAIT_MS,
+  pairCode,
+  type Handover,
+} from "../pairing";
 import {
   answer,
   body as jsonBody,
   channelState,
   credOf,
-  openSession,
   redeemToken,
   refuse,
   str,
@@ -162,7 +168,10 @@ export async function handleSite(request: Request, env: Env, url: URL): Promise<
     const okNonce = NONCE_RE.test(nonce) ? nonce : "";
     const okPub = PUB_RE.test(pub) ? pub : "";
     if (request.method === "POST") return pairForm(request, env, lang, okNonce, okPub);
-    return pairPage(lang, okNonce, okPub, live);
+    if (!okNonce) return pairPage(lang, "", okPub, live);
+    const code = await pairing(env, okNonce).live();
+    if (!code) return pairPage(lang, okNonce, okPub, live, { key: "site.pair.gone", status: 410 });
+    return pairPage(lang, okNonce, okPub, live, undefined, code);
   }
   if (rest[0] === "legal" && rest.length === 2 && (LEGAL as readonly string[]).includes(rest[1]!))
     return legalPage(lang, rest[1] as LegalPage, live);
@@ -245,9 +254,16 @@ function pairing(env: Env, nonce: string) {
 
 async function pairOpen(env: Env, url: URL): Promise<Response> {
   const nonce = randomId();
-  if (!(await pairing(env, nonce).open())) return answer(503, { error: "pair_unavailable" });
+  const key = randomId();
+  const code = pairCode();
+  if (!(await pairing(env, nonce).open(key, code)))
+    return answer(503, { error: "pair_unavailable" });
   return answer(201, {
     nonce,
+    // the TV's alone: sent with each poll, never shown or put in the QR code
+    poll_key: key,
+    // shown on the TV beside the QR code; the phone's page shows it too
+    code,
     url: `${url.origin}/pair?tv=${nonce}`,
     expires_at: new Date(now() + PAIR_TTL_MS).toISOString(),
     poll: `/api/v1/pair/${nonce}`,
@@ -259,7 +275,8 @@ async function pairPoll(request: Request, env: Env, nonce: string, url: URL): Pr
   if (!NONCE_RE.test(nonce)) return refuse(request, 410, "pair_gone");
   const w = Number(url.searchParams.get("wait") ?? NaN);
   const waitMs = Number.isFinite(w) ? Math.max(0, Math.min(PAIR_WAIT_MS, w * 1000)) : PAIR_WAIT_MS;
-  const r = await pairing(env, nonce).take(waitMs);
+  const key = request.headers.get(PAIR_KEY_HEADER) ?? "";
+  const r = await pairing(env, nonce).take(key, waitMs);
   if (r.status === "ready") return answer(200, r.handover);
   if (r.status === "pending") return new Response(null, { status: 204 });
   return refuse(request, 410, "pair_gone");
@@ -297,17 +314,19 @@ async function pairDeliver(
   let handover: Handover;
   if (inp.open) {
     if (!PUB_RE.test(inp.publisher)) return { ok: false, status: 400, error: "bad_request" };
-    const { cred } = await credOf(request, env, inp.publisher);
-    if (cred.kind !== "open") return { ok: false, status: 403, error: "turnstile_required" };
+    const { cred, open, openExp } = await credOf(request, env, inp.publisher);
+    if (cred.kind !== "open" || !open || openExp === undefined)
+      return { ok: false, status: 403, error: "turnstile_required" };
     const chs = await viewer(env, inp.publisher).openChannels();
     if (chs.length === 0) return { ok: false, status: 403, error: "invite_required" };
-    const s = await openSession("turnstile", env);
+    // the phone's own session, not a new one: the same id (one live session, the same daily
+    // minutes and network limit) and the same expiry, so no check is skipped or extended
     handover = {
       publisher: inp.publisher,
-      credential: s.token,
+      credential: open,
       kind: "open",
       channels: chs,
-      expires_at: new Date(s.exp * 1000).toISOString(),
+      expires_at: new Date(openExp * 1000).toISOString(),
     };
   } else {
     let token = inviteToken(inp.invite);

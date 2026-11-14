@@ -196,14 +196,17 @@ The apps' reads, with the pass as `Authorization: Bearer`:
 |---|---|
 | `GET /api/v1/lineup?publisher=` | `{publisher: {id, name, logo?}, channels: [{id, name, number, state, now, next}]}` |
 | `GET /api/v1/guide?publisher=&channel=` | the channel's programmes; `403` for a channel the credential does not open |
-| `POST /api/v1/pair` | a TV's pairing: `{nonce, url, expires_at, poll}`, 10 minutes |
-| `GET /api/v1/pair/<nonce>?wait=25` | the TV's long-poll: `200 {publisher, credential, kind, channels, expires_at}` once, `204` not yet, `410 pair_gone` |
+| `POST /api/v1/pair` | a TV's pairing: `{nonce, poll_key, code, url, expires_at, poll}`, 10 minutes |
+| `GET /api/v1/pair/<nonce>?wait=25` | the TV's long-poll, with `X-Maktaba-Pair-Key: <poll_key>`: `200 {publisher, credential, kind, channels, expires_at}` once, `204` not yet, `410 pair_gone` (also a missing or wrong key) |
 | `POST /api/v1/pair/<nonce>` | the phone: `{invite}` (a link or the token), `{publisher, code}`, or `{publisher, open: true}` with its open session |
 
 `Pairing` (Durable Object `PAIRING`, migration `v3`, one per nonce) keeps the credential until
-the TV takes it, then forgets it, and deletes everything at the end of its 10 minutes. An invite
-sent to a TV counts a new device use; the phone's own pass is never reused. An open session sent
-to a TV is a fresh one.
+the TV takes it, then forgets it, and deletes everything at the end of its 10 minutes. The QR
+code carries only the nonce; the poll key stays on the TV, so someone who sees the code cannot
+collect the credential. The TV shows a 4-character code beside the QR code and the phone's page
+shows the same one, to check before sending (RFC 8628 §5.4). An invite sent to a TV counts a new
+device use; the phone's own pass is never reused. An open session is handed over as it is (the
+same id and expiry), so the TV shares the phone's limits and no Turnstile check is skipped.
 
 `WATCH_SITE_OFF = 1` turns every page into "temporarily unavailable" while the API and playback
 stay up; `TURNSTILE_SITE_KEY` shows the Turnstile widget on an open channel's page.

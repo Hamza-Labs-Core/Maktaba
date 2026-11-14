@@ -12,9 +12,10 @@ settings and credentials are in [broadcast-edge.md](broadcast-edge.md).
   app's preview of it, uses nothing.
 - **An open channel** (only for a verified publisher): anyone with its address watches after one
   Turnstile check, which gives a 12 h session.
-- **A TV:** the TV shows a QR code that opens `watch.maktaba.tv/pair?tv=<code>` on a phone. The
-  guest pastes the invite link there (or sends the phone's open session), and the TV starts. A
-  TV counts as its own device on the invite.
+- **A TV:** the TV shows a QR code and a 4-character code. The QR code opens
+  `watch.maktaba.tv/pair?tv=…` on a phone, which shows the same 4 characters to check. The guest
+  pastes the invite link there (or sends the phone's open session), and the TV starts. A TV
+  counts as its own device on the invite; an open session is shared with the phone.
 
 ## The pages
 

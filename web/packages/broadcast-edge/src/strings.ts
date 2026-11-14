@@ -112,6 +112,10 @@ export const STRINGS: Record<string, Record<Lang, string>> = {
     en: "Paste the invite link you were sent",
     ar: "الصق رابط الدعوة الذي أُرسل إليك",
   },
+  "site.pair.check": {
+    en: "Send only if your TV shows this code:",
+    ar: "أرسل فقط إذا كان تلفازك يعرض هذا الرمز:",
+  },
   "site.pair.send": { en: "Send to the TV", ar: "أرسل إلى التلفاز" },
   "site.pair.sendOpen": { en: "Watch this broadcast on the TV", ar: "شاهد هذا البث على التلفاز" },
   "site.pair.sent": {

@@ -307,7 +307,7 @@ async function invitePost(request: Request, env: Env, token: string): Promise<Re
 
 // ---- open sessions ------------------------------------------------------------------------
 
-export async function openSession(
+async function openSession(
   via: "turnstile" | "attest",
   env: Env
 ): Promise<{ token: string; exp: number }> {
@@ -341,7 +341,7 @@ export async function credOf(
   request: Request,
   env: Env,
   pub: string
-): Promise<{ cred: Cred; pass?: string; passExp?: number }> {
+): Promise<{ cred: Cred; pass?: string; passExp?: number; open?: string; openExp?: number }> {
   const c = cookies(request);
   const auth = bearer(request);
   const t0 = now();
@@ -358,7 +358,7 @@ export async function credOf(
   const openText = c[OPEN_COOKIE] ?? (auth.startsWith(OPEN_PREFIX) ? auth : "");
   if (openText) {
     const o = await readOpen(openText, env.VIEWER_TOKEN_KEY, t0);
-    if (o) return { cred: { kind: "open", id: o.id } };
+    if (o) return { cred: { kind: "open", id: o.id }, open: openText, openExp: o.exp };
   }
   return { cred: { kind: "none" } };
 }
