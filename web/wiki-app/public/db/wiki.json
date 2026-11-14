@@ -13,7 +13,7 @@
   ],
   "counts": {
     "diagram": 14,
-    "endpoint": 258,
+    "endpoint": 263,
     "entity": 42,
     "epic": 60,
     "feature": 3,
@@ -11462,6 +11462,115 @@
         "path": "/users",
         "tag": "Auth",
         "operationId": "createUser"
+      }
+    },
+    {
+      "id": "ep-get-tv-broadcast",
+      "type": "endpoint",
+      "title": "GET /tv/broadcast",
+      "content": "The Broadcast page",
+      "tags": [
+        "api",
+        "Broadcasting",
+        "get"
+      ],
+      "related": [
+        "story-50.22"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/tv/broadcast",
+        "tag": "Broadcasting",
+        "operationId": "getBroadcast"
+      }
+    },
+    {
+      "id": "ep-put-tv-broadcast-channels-id",
+      "type": "endpoint",
+      "title": "PUT /tv/broadcast/channels/{id}",
+      "content": "Set up a channel for broadcasting",
+      "tags": [
+        "api",
+        "Broadcasting",
+        "put"
+      ],
+      "related": [
+        "story-50.22"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "PUT",
+        "path": "/tv/broadcast/channels/{id}",
+        "tag": "Broadcasting",
+        "operationId": "setupBroadcastChannel"
+      }
+    },
+    {
+      "id": "ep-post-tv-broadcast-channels-id-publish",
+      "type": "endpoint",
+      "title": "POST /tv/broadcast/channels/{id}/publish",
+      "content": "Publish a channel",
+      "tags": [
+        "api",
+        "Broadcasting",
+        "post"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/tv/broadcast/channels/{id}/publish",
+        "tag": "Broadcasting",
+        "operationId": "publishBroadcastChannel"
+      }
+    },
+    {
+      "id": "ep-post-tv-broadcast-channels-id-unpublish",
+      "type": "endpoint",
+      "title": "POST /tv/broadcast/channels/{id}/unpublish",
+      "content": "Unpublish a channel",
+      "tags": [
+        "api",
+        "Broadcasting",
+        "post"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/tv/broadcast/channels/{id}/unpublish",
+        "tag": "Broadcasting",
+        "operationId": "unpublishBroadcastChannel"
+      }
+    },
+    {
+      "id": "ep-post-tv-broadcast-speedtest",
+      "type": "endpoint",
+      "title": "POST /tv/broadcast/speedtest",
+      "content": "Measure the upload",
+      "tags": [
+        "api",
+        "Broadcasting",
+        "post"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/tv/broadcast/speedtest",
+        "tag": "Broadcasting",
+        "operationId": "measureBroadcastUplink"
       }
     },
     {

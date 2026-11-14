@@ -13,7 +13,7 @@
   ],
   "counts": {
     "diagram": 14,
-    "endpoint": 258,
+    "endpoint": 263,
     "entity": 42,
     "epic": 60,
     "feature": 3,
@@ -14084,6 +14084,145 @@
         "lang": "ar",
         "source": {
           "content": "86033f75a4c0876a"
+        }
+      }
+    },
+    {
+      "id": "ep-get-tv-broadcast",
+      "type": "endpoint",
+      "title": "GET /tv/broadcast",
+      "content": "صفحة البث",
+      "tags": [
+        "api",
+        "Broadcasting",
+        "get"
+      ],
+      "related": [
+        "story-50.22"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/tv/broadcast",
+        "tag": "Broadcasting",
+        "operationId": "getBroadcast"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "819506a4f1eec65c"
+        }
+      }
+    },
+    {
+      "id": "ep-put-tv-broadcast-channels-id",
+      "type": "endpoint",
+      "title": "PUT /tv/broadcast/channels/{id}",
+      "content": "تجهيز قناة للبث",
+      "tags": [
+        "api",
+        "Broadcasting",
+        "put"
+      ],
+      "related": [
+        "story-50.22"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "PUT",
+        "path": "/tv/broadcast/channels/{id}",
+        "tag": "Broadcasting",
+        "operationId": "setupBroadcastChannel"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "996577a00049ef69"
+        }
+      }
+    },
+    {
+      "id": "ep-post-tv-broadcast-channels-id-publish",
+      "type": "endpoint",
+      "title": "POST /tv/broadcast/channels/{id}/publish",
+      "content": "نشر قناة",
+      "tags": [
+        "api",
+        "Broadcasting",
+        "post"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/tv/broadcast/channels/{id}/publish",
+        "tag": "Broadcasting",
+        "operationId": "publishBroadcastChannel"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "142caba9b15f68d0"
+        }
+      }
+    },
+    {
+      "id": "ep-post-tv-broadcast-channels-id-unpublish",
+      "type": "endpoint",
+      "title": "POST /tv/broadcast/channels/{id}/unpublish",
+      "content": "إلغاء نشر قناة",
+      "tags": [
+        "api",
+        "Broadcasting",
+        "post"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/tv/broadcast/channels/{id}/unpublish",
+        "tag": "Broadcasting",
+        "operationId": "unpublishBroadcastChannel"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "0a77087a49a31345"
+        }
+      }
+    },
+    {
+      "id": "ep-post-tv-broadcast-speedtest",
+      "type": "endpoint",
+      "title": "POST /tv/broadcast/speedtest",
+      "content": "قياس سرعة الرفع",
+      "tags": [
+        "api",
+        "Broadcasting",
+        "post"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/tv/broadcast/speedtest",
+        "tag": "Broadcasting",
+        "operationId": "measureBroadcastUplink"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "6be233444c12eb69"
         }
       }
     },

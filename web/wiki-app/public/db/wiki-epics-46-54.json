@@ -2556,7 +2556,9 @@
         "ep-put-settings",
         "ep-get-ws",
         "ep-get-components",
-        "ep-get-channels"
+        "ep-get-channels",
+        "ep-get-tv-broadcast",
+        "ep-put-tv-broadcast-channels-id"
       ],
       "files": {
         "story": "specs/epics/50-cloud-no-downtime/story-50-22-home-broadcaster.md",
@@ -2568,7 +2570,9 @@
         "PUT /settings",
         "GET /ws",
         "GET /components",
-        "GET /channels"
+        "GET /channels",
+        "GET /tv/broadcast",
+        "PUT /tv/broadcast/channels/{id}"
       ],
       "db_tables": [],
       "metadata": {

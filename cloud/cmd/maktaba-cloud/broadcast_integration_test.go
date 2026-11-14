@@ -192,6 +192,10 @@ func TestBroadcastPublishAndAgreement(t *testing.T) {
 	if st["plan"] != "guest" || st["max_channels"].(float64) != 1 || st["max_concurrent_viewers"].(float64) != 5 || st["mode"] != "full" {
 		t.Fatalf("the home's state: %v", st)
 	}
+	// story 50.22: the home's publish check 2 reads the owner's acceptance here
+	if st["agreement_accepted"] != true {
+		t.Fatalf("the owner accepted the agreement: %v", st)
+	}
 	// the catalog shows both tiers, prices TBD
 	cat := e.client().mustStatus(e.client().do("GET", "/v1/billing/plans", nil), http.StatusOK).json(t)
 	b := cat["broadcast"].(map[string]any)["broadcaster"].(map[string]any)
@@ -205,7 +209,10 @@ func TestBroadcastPublishAndAgreement(t *testing.T) {
 // its channels past one.
 func TestBroadcastBillingRolesAndItems(t *testing.T) {
 	withBroadcastPrices(t)
-	e := newEnvFull(t, &fakeProvider{}, nil, func(c *config.Config) { c.Broadcast.Enabled = true })
+	e := newEnvFull(t, &fakeProvider{}, nil, func(c *config.Config) {
+		c.Broadcast.Enabled = true
+		c.Broadcast.KeyPath = ingestKeyFile(t) // broadcasting on signs ingest tokens (50.21)
+	})
 	owner := e.registerVerified("bowner@example.test")
 	uid := e.userID("bowner@example.test")
 	h := claimHome(e, owner, "bhome")
@@ -348,6 +355,7 @@ func TestBroadcastEdgeUsageAndPAYG(t *testing.T) {
 		c.Broadcast.Enabled = true
 		c.Broadcast.PlansEnforce = true // the harness's config starts from zero values, not the defaults
 		c.Broadcast.EdgePublicKey = base64.StdEncoding.EncodeToString(pub)
+		c.Broadcast.KeyPath = ingestKeyFile(t) // broadcasting on signs ingest tokens (50.21)
 	})
 	edge := edgeClient{e: e, priv: priv}
 	owner := e.registerVerified("caster@example.test")

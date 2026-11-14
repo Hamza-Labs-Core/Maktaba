@@ -3469,38 +3469,6 @@
       "en": "Admin only.",
       "ar": "للمشرفين وحدهم."
     },
-    "/paths/~1plugins/get/summary": {
-      "en": "List the plugins",
-      "ar": "عرض الإضافات"
-    },
-    "/paths/~1plugins/get/description": {
-      "en": "The installed plugins, each with its state, its jobs and what it uses, the home's plugin policy, and the parts of Maktaba itself that are not plugins. By default `plugins` holds only the plugins an admin installed, as clients that list them as installed plugins expect. With `release=true` it also holds the plugins Maktaba publishes that came with this release (`publisher.id` is `maktaba`, `source` is `release`), in the same shape.",
-      "ar": "الإضافات المثبّتة، ولكل منها حالتها ومهامّها وما تستخدمه، وسياسة الإضافات في الجهاز الرئيسي، وأجزاء مكتبة نفسها التي ليست إضافات. افتراضيًا لا يضم `plugins` إلا الإضافات التي ثبّتها مسؤول، كما تتوقع التطبيقات التي تعرضها على أنها الإضافات المثبّتة. ومع `release=true` يضم أيضًا الإضافات التي تنشرها مكتبة وجاءت مع هذا الإصدار (`publisher.id` هو `maktaba` و`source` هو `release`)، بالشكل نفسه."
-    },
-    "/paths/~1plugins/get/parameters/0/description": {
-      "en": "`true`: also list the plugins Maktaba publishes that came with this release. Left out, the list is the installed plugins only.",
-      "ar": "`true`: تُعرض أيضًا الإضافات التي تنشرها مكتبة وجاءت مع هذا الإصدار. وبدونه تقتصر القائمة على الإضافات المثبّتة."
-    },
-    "/paths/~1plugins/get/responses/200/description": {
-      "en": "The plugins.",
-      "ar": "الإضافات."
-    },
-    "/paths/~1plugins/get/responses/200/content/application~1json/schema/properties/plugins/description": {
-      "en": "The installed plugins by id; with `release=true`, also the plugins Maktaba publishes.",
-      "ar": "الإضافات المثبّتة مرتّبة بمعرّفها؛ ومع `release=true` الإضافات التي تنشرها مكتبة أيضًا."
-    },
-    "/paths/~1plugins/get/responses/200/content/application~1json/schema/properties/policy/description": {
-      "en": "The home's plugin policy (`allow_unreviewed`).",
-      "ar": "سياسة الإضافات في الجهاز الرئيسي (`allow_unreviewed`)."
-    },
-    "/paths/~1plugins/get/responses/200/content/application~1json/schema/properties/core/description": {
-      "en": "The parts of Maktaba itself that must always run. They are not plugins and are never in `plugins`.",
-      "ar": "أجزاء مكتبة نفسها التي يجب أن تعمل دائمًا. وهي ليست إضافات ولا تظهر في `plugins` أبدًا."
-    },
-    "/paths/~1plugins/get/responses/403/description": {
-      "en": "Admin only.",
-      "ar": "للمشرفين وحدهم."
-    },
     "/paths/~1plugins~1isolation/get/summary": {
       "en": "Plugin isolation",
       "ar": "عزل الإضافات"
@@ -4100,6 +4068,14 @@
     "/tags/23/description": {
       "en": "Age tiers on the home's content (0, 9, 13, 16, 18, or unrated) and the table that maps each country's rating labels to them.",
       "ar": "الفئات العمرية لمحتوى المنزل (0 أو 9 أو 13 أو 16 أو 18 أو غير مصنَّف) والجدول الذي يقابل تصنيفات كل بلد بها."
+    },
+    "/tags/24/name": {
+      "en": "Broadcasting",
+      "ar": "البث"
+    },
+    "/tags/24/description": {
+      "en": "Publishing Live TV channels to viewers outside the home (admins only): each published channel's qualities are made at home and each segment is sent once to Maktaba's broadcast edge.",
+      "ar": "نشر قنوات البث المباشر لمشاهدين خارج المنزل (للمشرفين فقط): تُصنع جودات كل قناة منشورة في المنزل، ويُرسل كل مقطع مرة واحدة إلى حافة البث في مكتبة."
     },
     "/paths/~1parental~1children/get/summary": {
       "en": "The restricted accounts the caller looks after",
@@ -5565,6 +5541,366 @@
       "en": "The caller is an admin, or the guardian of at least one restricted account: show the Family screens.",
       "ar": "المتصل مشرف، أو وليّ حساب مقيَّد واحد على الأقل: اعرض شاشات العائلة."
     },
+    "/paths/~1discovery~1home/get/summary": {
+      "en": "Who this home is, and its API level",
+      "ar": "من هو هذا المنزل، ومستوى واجهته البرمجية"
+    },
+    "/paths/~1discovery~1home/get/description": {
+      "en": "Public, no sign-in, limited per IP. What an app needs to list a home it found (mDNS, a QR code, a typed address), to know it again, and to tell whether it and the home can work together: `api_level`, `api_level_oldest` and `client_floor` are the compatibility contract (docs/api/levels.md). An app reads them each time it reaches the home, before signing in. A home older than the contract sends none of them: read both levels as 0 and the floor as empty.",
+      "ar": "عام، دون تسجيل دخول، ومحدود لكل عنوان IP. ما يحتاجه التطبيق ليعرض منزلًا وجده (عبر mDNS أو رمز QR أو عنوان مكتوب)، وليتعرّف عليه لاحقًا، وليعرف هل يستطيع العمل معه: الحقول `api_level` و`api_level_oldest` و`client_floor` هي عقد التوافق (docs/api/levels.md). يقرؤها التطبيق في كل مرة يصل فيها إلى المنزل، قبل تسجيل الدخول. المنزل الأقدم من هذا العقد لا يرسل أيًّا منها: اقرأ المستويين على أنهما 0 والحد الأدنى فارغًا."
+    },
+    "/paths/~1discovery~1home/get/responses/200/description": {
+      "en": "The home.",
+      "ar": "المنزل."
+    },
+    "/components/schemas/DiscoveryHome/description": {
+      "en": "A home as the apps see it: its identity, its addresses, how one signs in, and the compatibility contract.",
+      "ar": "المنزل كما تراه التطبيقات: هويته وعناوينه وطريقة تسجيل الدخول إليه، وعقد التوافق."
+    },
+    "/components/schemas/DiscoveryHome/properties/id/description": {
+      "en": "The home's instance id, the mDNS TXT `id`.",
+      "ar": "معرّف نسخة المنزل، وهو `id` في سجل TXT الخاص بـ mDNS."
+    },
+    "/components/schemas/DiscoveryHome/properties/name/description": {
+      "en": "The home's display name.",
+      "ar": "الاسم المعروض للمنزل."
+    },
+    "/components/schemas/DiscoveryHome/properties/version/description": {
+      "en": "The home's release.",
+      "ar": "إصدار المنزل."
+    },
+    "/components/schemas/DiscoveryHome/properties/urls/description": {
+      "en": "The home's base URLs: the LAN ones first, then the relay one; the request's own origin when the home knows none.",
+      "ar": "عناوين المنزل الأساسية: عناوين الشبكة المحلية أولًا ثم عنوان المُرحِّل، وأصل الطلب نفسه حين لا يعرف المنزل أي عنوان."
+    },
+    "/components/schemas/DiscoveryHome/properties/sign_in/description": {
+      "en": "How one signs in here: a password, and a code approved from a phone when the home can hand out tokens.",
+      "ar": "طرق تسجيل الدخول هنا: كلمة مرور، ورمز يُعتمد من هاتف حين يستطيع المنزل إصدار الرموز المميزة."
+    },
+    "/components/schemas/DiscoveryHome/properties/stream_port/description": {
+      "en": "The port of the home's live TV, when the home knows it.",
+      "ar": "منفذ البث التلفزيوني المباشر للمنزل، حين يعرفه المنزل."
+    },
+    "/components/schemas/DiscoveryHome/properties/api_level/description": {
+      "en": "This home's API level. It rises by one each time a response changes in a way an older app would get wrong; adding fields does not raise it.",
+      "ar": "مستوى الواجهة البرمجية لهذا المنزل. يرتفع بمقدار واحد كلما تغيّرت استجابة بطريقة قد يخطئ فيها تطبيق أقدم؛ وإضافة الحقول لا ترفعه."
+    },
+    "/components/schemas/DiscoveryHome/properties/api_level_oldest/description": {
+      "en": "The oldest API level this home still answers correctly. An app built for a lower level must be updated. A home keeps serving every level released in the last 12 months.",
+      "ar": "أقدم مستوى للواجهة البرمجية ما زال هذا المنزل يجيب عنه إجابة صحيحة. التطبيق المبني لمستوى أدنى يجب تحديثه. يظل المنزل يخدم كل مستوى صدر خلال الأشهر الاثني عشر الماضية."
+    },
+    "/components/schemas/DiscoveryHome/properties/client_floor/description": {
+      "en": "The oldest build of each app this home serves, keyed `<app>/<platform>` as `X-Maktaba-Client` names them. Empty unless a home release must refuse an old build (a security fix); a build below it gets 426 `client_too_old` at sign-in.",
+      "ar": "أقدم إصدار من كل تطبيق يخدمه هذا المنزل، بمفتاح `<app>/<platform>` كما يسمّيهما `X-Maktaba-Client`. يكون فارغًا ما لم يضطر إصدار للمنزل إلى رفض إصدار قديم (إصلاح أمني)؛ والإصدار الأدنى منه يتلقى 426 `client_too_old` عند تسجيل الدخول."
+    },
+    "/paths/~1auth~1login/post/responses/426/description": {
+      "en": "This app build is below the home's client floor (`code: client_too_old`, with `floor`, the oldest build this home serves, and `client`, the `<app>/<platform>` it read from `X-Maktaba-Client`). The app shows Update this app. A request without the header (the web) is never refused.",
+      "ar": "إصدار هذا التطبيق أدنى من الحد الأدنى الذي يخدمه المنزل (`code: client_too_old`، مع `floor` وهو أقدم إصدار يخدمه هذا المنزل، و`client` وهو `<app>/<platform>` كما قرأه من `X-Maktaba-Client`). يعرض التطبيق صفحة «حدِّث هذا التطبيق». أما الطلب الذي لا يحمل هذا الترويسة (الويب) فلا يُرفض أبدًا."
+    },
+    "/paths/~1auth~1refresh/post/responses/426/description": {
+      "en": "This app build is below the home's client floor (`code: client_too_old`, with `floor`, the oldest build this home serves, and `client`, the `<app>/<platform>` it read from `X-Maktaba-Client`). The app shows Update this app. A request without the header (the web) is never refused.",
+      "ar": "إصدار هذا التطبيق أدنى من الحد الأدنى الذي يخدمه المنزل (`code: client_too_old`، مع `floor` وهو أقدم إصدار يخدمه هذا المنزل، و`client` وهو `<app>/<platform>` كما قرأه من `X-Maktaba-Client`). يعرض التطبيق صفحة «حدِّث هذا التطبيق». أما الطلب الذي لا يحمل هذا الترويسة (الويب) فلا يُرفض أبدًا."
+    },
+    "/paths/~1tv~1broadcast/get/summary": {
+      "en": "The Broadcast page",
+      "ar": "صفحة البث"
+    },
+    "/paths/~1tv~1broadcast/get/description": {
+      "en": "Every Live TV channel with its broadcast setup and state, the last upload measurement, the Maktaba Cloud plan (null when the cloud cannot be asked), the broadcast rules, the upload budget and what published channels use, and the publish checks in the order they run.",
+      "ar": "كل قنوات البث المباشر مع إعداد بثها وحالتها، وآخر قياس للرفع، وخطة سحابة مكتبة (null حين يتعذّر سؤال السحابة)، وقواعد البث، وميزانية الرفع وما تستهلكه القنوات المنشورة، وفحوص النشر بترتيب تنفيذها."
+    },
+    "/paths/~1tv~1broadcast/get/responses/200/description": {
+      "en": "The page.",
+      "ar": "الصفحة."
+    },
+    "/paths/~1tv~1broadcast/get/responses/200/content/application~1json/schema/properties/channels/items/description": {
+      "en": "A Live TV channel and how it is broadcast.",
+      "ar": "قناة من البث المباشر وطريقة بثها."
+    },
+    "/paths/~1tv~1broadcast/get/responses/200/content/application~1json/schema/properties/channels/items/properties/configured/description": {
+      "en": "Whether it has a broadcast setup.",
+      "ar": "هل لها إعداد بث."
+    },
+    "/paths/~1tv~1broadcast/get/responses/200/content/application~1json/schema/properties/channels/items/properties/slug/description": {
+      "en": "The public link's name: `https://watch.maktaba.tv/<slug>`.",
+      "ar": "اسم الرابط العام: `https://watch.maktaba.tv/<slug>`."
+    },
+    "/paths/~1tv~1broadcast/get/responses/200/content/application~1json/schema/properties/channels/items/properties/mode/description": {
+      "en": "`open` channels are always on; invite-only ones may start only when someone watches.",
+      "ar": "القنوات `open` تعمل دائمًا؛ أما القنوات بالدعوة فقد لا تبدأ إلا حين يشاهدها أحد."
+    },
+    "/paths/~1tv~1broadcast/get/responses/200/content/application~1json/schema/properties/channels/items/properties/rungs/description": {
+      "en": "The qualities, top first: `src` is the channel's own encode, copied.",
+      "ar": "الجودات، الأعلى أولًا: `src` هو ترميز القناة نفسها، منسوخًا."
+    },
+    "/paths/~1tv~1broadcast/get/responses/200/content/application~1json/schema/properties/channels/items/properties/countries/description": {
+      "en": "Where it may be watched (ISO 3166 codes); empty: everywhere.",
+      "ar": "أين يمكن مشاهدتها (رموز ISO 3166)؛ فارغة: في كل مكان."
+    },
+    "/paths/~1tv~1broadcast/get/responses/200/content/application~1json/schema/properties/channels/items/properties/detail/description": {
+      "en": "Why it is not live, when it is not: `tokenExpired`, `clockSkew`, `edgeUnavailable`, `rungDropped`, `planOff`, `softwareRungs`.",
+      "ar": "سبب عدم بثها حين لا تكون مباشرة: `tokenExpired`، `clockSkew`، `edgeUnavailable`، `rungDropped`، `planOff`، `softwareRungs`."
+    },
+    "/paths/~1tv~1broadcast/get/responses/200/content/application~1json/schema/properties/channels/items/properties/dropped_rungs/description": {
+      "en": "Top qualities removed because the measured upload fell.",
+      "ar": "الجودات العليا التي أُزيلت لأن سرعة الرفع المقيسة انخفضت."
+    },
+    "/paths/~1tv~1broadcast/get/responses/409/description": {
+      "en": "Broadcasting is off on this home (`code: component_off`, `component: livetv.broadcast`): an admin turns it on in Components.",
+      "ar": "البث متوقف في هذا المنزل (`code: component_off`، `component: livetv.broadcast`): يشغّله المشرف من المكوّنات."
+    },
+    "/paths/~1tv~1broadcast/get/responses/403/description": {
+      "en": "Admin only.",
+      "ar": "للمشرفين فقط."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}/put/summary": {
+      "en": "Set up a channel for broadcasting",
+      "ar": "تجهيز قناة للبث"
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}/put/description": {
+      "en": "Saves a channel's slug, access, mode, qualities and countries. An `open` channel is always on. A published channel's setup waits for an unpublish (`409`, `code: broadcast.unpublishFirst`).",
+      "ar": "يحفظ اسم رابط القناة ونوع الوصول والوضع والجودات والدول. القناة `open` تعمل دائمًا. إعداد القناة المنشورة ينتظر إلغاء نشرها (`409`، `code: broadcast.unpublishFirst`)."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}/put/parameters/0/description": {
+      "en": "The channel.",
+      "ar": "القناة."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}/put/responses/200/description": {
+      "en": "The channel as saved.",
+      "ar": "القناة كما حُفظت."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}/put/responses/200/content/application~1json/schema/description": {
+      "en": "A Live TV channel and how it is broadcast.",
+      "ar": "قناة من البث المباشر وطريقة بثها."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}/put/responses/200/content/application~1json/schema/properties/configured/description": {
+      "en": "Whether it has a broadcast setup.",
+      "ar": "هل لها إعداد بث."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}/put/responses/200/content/application~1json/schema/properties/slug/description": {
+      "en": "The public link's name: `https://watch.maktaba.tv/<slug>`.",
+      "ar": "اسم الرابط العام: `https://watch.maktaba.tv/<slug>`."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}/put/responses/200/content/application~1json/schema/properties/mode/description": {
+      "en": "`open` channels are always on; invite-only ones may start only when someone watches.",
+      "ar": "القنوات `open` تعمل دائمًا؛ أما القنوات بالدعوة فقد لا تبدأ إلا حين يشاهدها أحد."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}/put/responses/200/content/application~1json/schema/properties/rungs/description": {
+      "en": "The qualities, top first: `src` is the channel's own encode, copied.",
+      "ar": "الجودات، الأعلى أولًا: `src` هو ترميز القناة نفسها، منسوخًا."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}/put/responses/200/content/application~1json/schema/properties/countries/description": {
+      "en": "Where it may be watched (ISO 3166 codes); empty: everywhere.",
+      "ar": "أين يمكن مشاهدتها (رموز ISO 3166)؛ فارغة: في كل مكان."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}/put/responses/200/content/application~1json/schema/properties/detail/description": {
+      "en": "Why it is not live, when it is not: `tokenExpired`, `clockSkew`, `edgeUnavailable`, `rungDropped`, `planOff`, `softwareRungs`.",
+      "ar": "سبب عدم بثها حين لا تكون مباشرة: `tokenExpired`، `clockSkew`، `edgeUnavailable`، `rungDropped`، `planOff`، `softwareRungs`."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}/put/responses/200/content/application~1json/schema/properties/dropped_rungs/description": {
+      "en": "Top qualities removed because the measured upload fell.",
+      "ar": "الجودات العليا التي أُزيلت لأن سرعة الرفع المقيسة انخفضت."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}/put/responses/400/description": {
+      "en": "A field is not valid (`code: broadcast.<field>`).",
+      "ar": "حقل غير صالح (`code: broadcast.<field>`)."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}/put/responses/404/description": {
+      "en": "No such channel.",
+      "ar": "لا توجد قناة كهذه."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}/put/responses/409/description": {
+      "en": "The slug is taken, the channel is published, or broadcasting is off.",
+      "ar": "اسم الرابط مستخدم، أو القناة منشورة، أو البث متوقف."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}/put/responses/403/description": {
+      "en": "Admin only.",
+      "ar": "للمشرفين فقط."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1publish/post/summary": {
+      "en": "Publish a channel",
+      "ar": "نشر قناة"
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1publish/post/description": {
+      "en": "Runs the publish checks, stores the admin's rights confirmation on the home, publishes the channel on Maktaba Cloud (only the confirmation's date and the agreement version are sent) and fetches its ingest token. The home's broadcaster starts uploading within seconds.",
+      "ar": "يشغّل فحوص النشر، ويحفظ تأكيد المشرف للحقوق في المنزل، وينشر القناة في سحابة مكتبة (لا يُرسل إلا تاريخ التأكيد ونسخة الاتفاقية)، ويجلب رمز الاستقبال الخاص بها. يبدأ باثّ المنزل الرفع خلال ثوانٍ."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1publish/post/parameters/0/description": {
+      "en": "The channel.",
+      "ar": "القناة."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1publish/post/requestBody/content/application~1json/schema/properties/confirm_rights/description": {
+      "en": "The admin confirms the home has the rights to broadcast what the channel airs.",
+      "ar": "يؤكد المشرف أن للمنزل حق بث ما تعرضه القناة."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1publish/post/responses/200/description": {
+      "en": "Published.",
+      "ar": "نُشرت."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1publish/post/responses/200/content/application~1json/schema/description": {
+      "en": "A Live TV channel and how it is broadcast.",
+      "ar": "قناة من البث المباشر وطريقة بثها."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1publish/post/responses/200/content/application~1json/schema/properties/configured/description": {
+      "en": "Whether it has a broadcast setup.",
+      "ar": "هل لها إعداد بث."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1publish/post/responses/200/content/application~1json/schema/properties/slug/description": {
+      "en": "The public link's name: `https://watch.maktaba.tv/<slug>`.",
+      "ar": "اسم الرابط العام: `https://watch.maktaba.tv/<slug>`."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1publish/post/responses/200/content/application~1json/schema/properties/mode/description": {
+      "en": "`open` channels are always on; invite-only ones may start only when someone watches.",
+      "ar": "القنوات `open` تعمل دائمًا؛ أما القنوات بالدعوة فقد لا تبدأ إلا حين يشاهدها أحد."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1publish/post/responses/200/content/application~1json/schema/properties/rungs/description": {
+      "en": "The qualities, top first: `src` is the channel's own encode, copied.",
+      "ar": "الجودات، الأعلى أولًا: `src` هو ترميز القناة نفسها، منسوخًا."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1publish/post/responses/200/content/application~1json/schema/properties/countries/description": {
+      "en": "Where it may be watched (ISO 3166 codes); empty: everywhere.",
+      "ar": "أين يمكن مشاهدتها (رموز ISO 3166)؛ فارغة: في كل مكان."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1publish/post/responses/200/content/application~1json/schema/properties/detail/description": {
+      "en": "Why it is not live, when it is not: `tokenExpired`, `clockSkew`, `edgeUnavailable`, `rungDropped`, `planOff`, `softwareRungs`.",
+      "ar": "سبب عدم بثها حين لا تكون مباشرة: `tokenExpired`، `clockSkew`، `edgeUnavailable`، `rungDropped`، `planOff`، `softwareRungs`."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1publish/post/responses/200/content/application~1json/schema/properties/dropped_rungs/description": {
+      "en": "Top qualities removed because the measured upload fell.",
+      "ar": "الجودات العليا التي أُزيلت لأن سرعة الرفع المقيسة انخفضت."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1publish/post/responses/409/description": {
+      "en": "Refused by a publish check (`code: broadcast.<check code>`, with `check`, the first failed check of plan, agreement, publishable, uplink, encoder, rights, and `params`, such as `suggestion`, a ladder that fits). Nothing is started and nothing is sent to Maktaba Cloud.",
+      "ar": "رفضه أحد فحوص النشر (`code: broadcast.<check code>`، مع `check`، أول فحص فشل من plan وagreement وpublishable وuplink وencoder وrights، و`params` مثل `suggestion`، مجموعة جودات تناسب). لا يبدأ شيء ولا يُرسل شيء إلى سحابة مكتبة."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1publish/post/responses/502/description": {
+      "en": "Maktaba Cloud refused the channel (`code: broadcast.cloudRefused`); nothing was published.",
+      "ar": "رفضت سحابة مكتبة القناة (`code: broadcast.cloudRefused`)؛ لم يُنشر شيء."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1publish/post/responses/503/description": {
+      "en": "Maktaba Cloud could not be reached (`code: broadcast.cloudUnreachable`); nothing was published.",
+      "ar": "تعذّر الوصول إلى سحابة مكتبة (`code: broadcast.cloudUnreachable`)؛ لم يُنشر شيء."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1publish/post/responses/403/description": {
+      "en": "Admin only.",
+      "ar": "للمشرفين فقط."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1unpublish/post/summary": {
+      "en": "Unpublish a channel",
+      "ar": "إلغاء نشر قناة"
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1unpublish/post/description": {
+      "en": "Stops the channel's broadcast at once and removes its ingest token. When Maktaba Cloud cannot be reached, the unpublish is sent again until it is taken.",
+      "ar": "يوقف بث القناة فورًا ويحذف رمز الاستقبال الخاص بها. حين يتعذّر الوصول إلى سحابة مكتبة، يُعاد إرسال إلغاء النشر حتى يُقبل."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1unpublish/post/parameters/0/description": {
+      "en": "The channel.",
+      "ar": "القناة."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1unpublish/post/responses/200/description": {
+      "en": "Unpublished.",
+      "ar": "أُلغي النشر."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1unpublish/post/responses/200/content/application~1json/schema/description": {
+      "en": "A Live TV channel and how it is broadcast.",
+      "ar": "قناة من البث المباشر وطريقة بثها."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1unpublish/post/responses/200/content/application~1json/schema/properties/configured/description": {
+      "en": "Whether it has a broadcast setup.",
+      "ar": "هل لها إعداد بث."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1unpublish/post/responses/200/content/application~1json/schema/properties/slug/description": {
+      "en": "The public link's name: `https://watch.maktaba.tv/<slug>`.",
+      "ar": "اسم الرابط العام: `https://watch.maktaba.tv/<slug>`."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1unpublish/post/responses/200/content/application~1json/schema/properties/mode/description": {
+      "en": "`open` channels are always on; invite-only ones may start only when someone watches.",
+      "ar": "القنوات `open` تعمل دائمًا؛ أما القنوات بالدعوة فقد لا تبدأ إلا حين يشاهدها أحد."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1unpublish/post/responses/200/content/application~1json/schema/properties/rungs/description": {
+      "en": "The qualities, top first: `src` is the channel's own encode, copied.",
+      "ar": "الجودات، الأعلى أولًا: `src` هو ترميز القناة نفسها، منسوخًا."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1unpublish/post/responses/200/content/application~1json/schema/properties/countries/description": {
+      "en": "Where it may be watched (ISO 3166 codes); empty: everywhere.",
+      "ar": "أين يمكن مشاهدتها (رموز ISO 3166)؛ فارغة: في كل مكان."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1unpublish/post/responses/200/content/application~1json/schema/properties/detail/description": {
+      "en": "Why it is not live, when it is not: `tokenExpired`, `clockSkew`, `edgeUnavailable`, `rungDropped`, `planOff`, `softwareRungs`.",
+      "ar": "سبب عدم بثها حين لا تكون مباشرة: `tokenExpired`، `clockSkew`، `edgeUnavailable`، `rungDropped`، `planOff`، `softwareRungs`."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1unpublish/post/responses/200/content/application~1json/schema/properties/dropped_rungs/description": {
+      "en": "Top qualities removed because the measured upload fell.",
+      "ar": "الجودات العليا التي أُزيلت لأن سرعة الرفع المقيسة انخفضت."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1unpublish/post/responses/404/description": {
+      "en": "No such channel.",
+      "ar": "لا توجد قناة كهذه."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1unpublish/post/responses/409/description": {
+      "en": "Broadcasting is off, or this home is not claimed in Maktaba Cloud.",
+      "ar": "البث متوقف، أو هذا المنزل غير مربوط بسحابة مكتبة."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1unpublish/post/responses/403/description": {
+      "en": "Admin only.",
+      "ar": "للمشرفين فقط."
+    },
+    "/paths/~1tv~1broadcast~1speedtest/post/summary": {
+      "en": "Measure the upload",
+      "ar": "قياس سرعة الرفع"
+    },
+    "/paths/~1tv~1broadcast~1speedtest/post/description": {
+      "en": "Sends test data to the broadcast edge for up to 10 seconds and stores the measured upload. A measurement below what published channels need removes the newest channel's top quality. It also runs every day at night.",
+      "ar": "يرسل بيانات اختبار إلى حافة البث مدة أقصاها 10 ثوانٍ ويحفظ سرعة الرفع المقيسة. القياس الأقل مما تحتاجه القنوات المنشورة يزيل أعلى جودة من أحدث قناة. ويعمل أيضًا كل يوم ليلًا."
+    },
+    "/paths/~1tv~1broadcast~1speedtest/post/responses/200/description": {
+      "en": "The measurement.",
+      "ar": "القياس."
+    },
+    "/paths/~1tv~1broadcast~1speedtest/post/responses/409/description": {
+      "en": "Broadcasting is off, no channel is set up yet, or this home is not claimed in Maktaba Cloud.",
+      "ar": "البث متوقف، أو لم تُجهَّز أي قناة بعد، أو هذا المنزل غير مربوط بسحابة مكتبة."
+    },
+    "/paths/~1tv~1broadcast~1speedtest/post/responses/502/description": {
+      "en": "Maktaba Cloud or the broadcast edge could not be reached.",
+      "ar": "تعذّر الوصول إلى سحابة مكتبة أو إلى حافة البث."
+    },
+    "/paths/~1tv~1broadcast~1speedtest/post/responses/403/description": {
+      "en": "Admin only.",
+      "ar": "للمشرفين فقط."
+    },
+    "/paths/~1plugins/get/summary": {
+      "en": "List the plugins",
+      "ar": "عرض الإضافات"
+    },
+    "/paths/~1plugins/get/description": {
+      "en": "The installed plugins, each with its state, its jobs and what it uses, the home's plugin policy, and the parts of Maktaba itself that are not plugins. By default `plugins` holds only the plugins an admin installed, as clients that list them as installed plugins expect. With `release=true` it also holds the plugins Maktaba publishes that came with this release (`publisher.id` is `maktaba`, `source` is `release`), in the same shape.",
+      "ar": "الإضافات المثبّتة، ولكل منها حالتها ومهامّها وما تستخدمه، وسياسة الإضافات في الجهاز الرئيسي، وأجزاء مكتبة نفسها التي ليست إضافات. افتراضيًا لا يضم `plugins` إلا الإضافات التي ثبّتها مسؤول، كما تتوقع التطبيقات التي تعرضها على أنها الإضافات المثبّتة. ومع `release=true` يضم أيضًا الإضافات التي تنشرها مكتبة وجاءت مع هذا الإصدار (`publisher.id` هو `maktaba` و`source` هو `release`)، بالشكل نفسه."
+    },
+    "/paths/~1plugins/get/parameters/0/description": {
+      "en": "`true`: also list the plugins Maktaba publishes that came with this release. Left out, the list is the installed plugins only.",
+      "ar": "`true`: تُعرض أيضًا الإضافات التي تنشرها مكتبة وجاءت مع هذا الإصدار. وبدونه تقتصر القائمة على الإضافات المثبّتة."
+    },
+    "/paths/~1plugins/get/responses/200/description": {
+      "en": "The plugins.",
+      "ar": "الإضافات."
+    },
+    "/paths/~1plugins/get/responses/200/content/application~1json/schema/properties/plugins/description": {
+      "en": "The installed plugins by id; with `release=true`, also the plugins Maktaba publishes.",
+      "ar": "الإضافات المثبّتة مرتّبة بمعرّفها؛ ومع `release=true` الإضافات التي تنشرها مكتبة أيضًا."
+    },
+    "/paths/~1plugins/get/responses/200/content/application~1json/schema/properties/policy/description": {
+      "en": "The home's plugin policy (`allow_unreviewed`).",
+      "ar": "سياسة الإضافات في الجهاز الرئيسي (`allow_unreviewed`)."
+    },
+    "/paths/~1plugins/get/responses/200/content/application~1json/schema/properties/core/description": {
+      "en": "The parts of Maktaba itself that must always run. They are not plugins and are never in `plugins`.",
+      "ar": "أجزاء مكتبة نفسها التي يجب أن تعمل دائمًا. وهي ليست إضافات ولا تظهر في `plugins` أبدًا."
+    },
+    "/paths/~1plugins/get/responses/403/description": {
+      "en": "Admin only.",
+      "ar": "للمشرفين وحدهم."
+    },
     "/paths/~1pairing~1cloud-code~1{code}/get/summary": {
       "en": "Read a TV's code from Maktaba Cloud",
       "ar": "قراءة رمز تلفاز من سحابة مكتبة"
@@ -5760,66 +6096,6 @@
     "/components/schemas/Session/properties/stream_sig/description": {
       "en": "The signed-URL token for every path under the session's `/stream/{session_id}/` (its subtitle renditions, `subs/sidecar/{lang}.vtt`, `subs/auto.vtt`, `chapters.json`), in every mode, direct play too. A player that cannot send a header (a TV's media player, a Cast receiver) fetches them with `?sig=` and this token. It expires with the session's URLs.",
       "ar": "رمز الرابط الموقَّع لكل مسار تحت `/stream/{session_id}/` الخاص بالجلسة (نسخ الترجمة فيها و`subs/sidecar/{lang}.vtt` و`subs/auto.vtt` و`chapters.json`)، في كل نمط، والتشغيل المباشر أيضًا. والمشغّل الذي لا يستطيع إرسال ترويسة (مشغّل وسائط التلفاز، أو مستقبِل Cast) يجلبها بـ`?sig=` وهذا الرمز. وتنتهي صلاحيته مع روابط الجلسة."
-    },
-    "/paths/~1discovery~1home/get/summary": {
-      "en": "Who this home is, and its API level",
-      "ar": "من هو هذا المنزل، ومستوى واجهته البرمجية"
-    },
-    "/paths/~1discovery~1home/get/description": {
-      "en": "Public, no sign-in, limited per IP. What an app needs to list a home it found (mDNS, a QR code, a typed address), to know it again, and to tell whether it and the home can work together: `api_level`, `api_level_oldest` and `client_floor` are the compatibility contract (docs/api/levels.md). An app reads them each time it reaches the home, before signing in. A home older than the contract sends none of them: read both levels as 0 and the floor as empty.",
-      "ar": "عام، دون تسجيل دخول، ومحدود لكل عنوان IP. ما يحتاجه التطبيق ليعرض منزلًا وجده (عبر mDNS أو رمز QR أو عنوان مكتوب)، وليتعرّف عليه لاحقًا، وليعرف هل يستطيع العمل معه: الحقول `api_level` و`api_level_oldest` و`client_floor` هي عقد التوافق (docs/api/levels.md). يقرؤها التطبيق في كل مرة يصل فيها إلى المنزل، قبل تسجيل الدخول. المنزل الأقدم من هذا العقد لا يرسل أيًّا منها: اقرأ المستويين على أنهما 0 والحد الأدنى فارغًا."
-    },
-    "/paths/~1discovery~1home/get/responses/200/description": {
-      "en": "The home.",
-      "ar": "المنزل."
-    },
-    "/components/schemas/DiscoveryHome/description": {
-      "en": "A home as the apps see it: its identity, its addresses, how one signs in, and the compatibility contract.",
-      "ar": "المنزل كما تراه التطبيقات: هويته وعناوينه وطريقة تسجيل الدخول إليه، وعقد التوافق."
-    },
-    "/components/schemas/DiscoveryHome/properties/id/description": {
-      "en": "The home's instance id, the mDNS TXT `id`.",
-      "ar": "معرّف نسخة المنزل، وهو `id` في سجل TXT الخاص بـ mDNS."
-    },
-    "/components/schemas/DiscoveryHome/properties/name/description": {
-      "en": "The home's display name.",
-      "ar": "الاسم المعروض للمنزل."
-    },
-    "/components/schemas/DiscoveryHome/properties/version/description": {
-      "en": "The home's release.",
-      "ar": "إصدار المنزل."
-    },
-    "/components/schemas/DiscoveryHome/properties/urls/description": {
-      "en": "The home's base URLs: the LAN ones first, then the relay one; the request's own origin when the home knows none.",
-      "ar": "عناوين المنزل الأساسية: عناوين الشبكة المحلية أولًا ثم عنوان المُرحِّل، وأصل الطلب نفسه حين لا يعرف المنزل أي عنوان."
-    },
-    "/components/schemas/DiscoveryHome/properties/sign_in/description": {
-      "en": "How one signs in here: a password, and a code approved from a phone when the home can hand out tokens.",
-      "ar": "طرق تسجيل الدخول هنا: كلمة مرور، ورمز يُعتمد من هاتف حين يستطيع المنزل إصدار الرموز المميزة."
-    },
-    "/components/schemas/DiscoveryHome/properties/stream_port/description": {
-      "en": "The port of the home's live TV, when the home knows it.",
-      "ar": "منفذ البث التلفزيوني المباشر للمنزل، حين يعرفه المنزل."
-    },
-    "/components/schemas/DiscoveryHome/properties/api_level/description": {
-      "en": "This home's API level. It rises by one each time a response changes in a way an older app would get wrong; adding fields does not raise it.",
-      "ar": "مستوى الواجهة البرمجية لهذا المنزل. يرتفع بمقدار واحد كلما تغيّرت استجابة بطريقة قد يخطئ فيها تطبيق أقدم؛ وإضافة الحقول لا ترفعه."
-    },
-    "/components/schemas/DiscoveryHome/properties/api_level_oldest/description": {
-      "en": "The oldest API level this home still answers correctly. An app built for a lower level must be updated. A home keeps serving every level released in the last 12 months.",
-      "ar": "أقدم مستوى للواجهة البرمجية ما زال هذا المنزل يجيب عنه إجابة صحيحة. التطبيق المبني لمستوى أدنى يجب تحديثه. يظل المنزل يخدم كل مستوى صدر خلال الأشهر الاثني عشر الماضية."
-    },
-    "/components/schemas/DiscoveryHome/properties/client_floor/description": {
-      "en": "The oldest build of each app this home serves, keyed `<app>/<platform>` as `X-Maktaba-Client` names them. Empty unless a home release must refuse an old build (a security fix); a build below it gets 426 `client_too_old` at sign-in.",
-      "ar": "أقدم إصدار من كل تطبيق يخدمه هذا المنزل، بمفتاح `<app>/<platform>` كما يسمّيهما `X-Maktaba-Client`. يكون فارغًا ما لم يضطر إصدار للمنزل إلى رفض إصدار قديم (إصلاح أمني)؛ والإصدار الأدنى منه يتلقى 426 `client_too_old` عند تسجيل الدخول."
-    },
-    "/paths/~1auth~1login/post/responses/426/description": {
-      "en": "This app build is below the home's client floor (`code: client_too_old`, with `floor`, the oldest build this home serves, and `client`, the `<app>/<platform>` it read from `X-Maktaba-Client`). The app shows Update this app. A request without the header (the web) is never refused.",
-      "ar": "إصدار هذا التطبيق أدنى من الحد الأدنى الذي يخدمه المنزل (`code: client_too_old`، مع `floor` وهو أقدم إصدار يخدمه هذا المنزل، و`client` وهو `<app>/<platform>` كما قرأه من `X-Maktaba-Client`). يعرض التطبيق صفحة «حدِّث هذا التطبيق». أما الطلب الذي لا يحمل هذا الترويسة (الويب) فلا يُرفض أبدًا."
-    },
-    "/paths/~1auth~1refresh/post/responses/426/description": {
-      "en": "This app build is below the home's client floor (`code: client_too_old`, with `floor`, the oldest build this home serves, and `client`, the `<app>/<platform>` it read from `X-Maktaba-Client`). The app shows Update this app. A request without the header (the web) is never refused.",
-      "ar": "إصدار هذا التطبيق أدنى من الحد الأدنى الذي يخدمه المنزل (`code: client_too_old`، مع `floor` وهو أقدم إصدار يخدمه هذا المنزل، و`client` وهو `<app>/<platform>` كما قرأه من `X-Maktaba-Client`). يعرض التطبيق صفحة «حدِّث هذا التطبيق». أما الطلب الذي لا يحمل هذا الترويسة (الويب) فلا يُرفض أبدًا."
     },
     "/paths/~1cast~1grants/post/summary": {
       "en": "Mint a cast grant for a Cast receiver",

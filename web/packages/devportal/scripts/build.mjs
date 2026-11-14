@@ -87,6 +87,7 @@ const GUIDES = {
     "tv-launcher.md",
     "casting.md",
     "parental-controls.md",
+    "broadcasting.md",
     "playback.md",
     "ci.md",
     "pull-requests.md",

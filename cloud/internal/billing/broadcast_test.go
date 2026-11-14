@@ -1,6 +1,7 @@
 package billing
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -209,5 +210,14 @@ func TestBroadcastNotices(t *testing.T) {
 	st.PAYG = BroadcastPAYG{On: true, CapCents: 1000, SpentCents: 1000}
 	if got := BroadcastNotices(st); strings.Join(got, ",") != "allowance_80,allowance_100,cap_80,cap_100" {
 		t.Errorf("everything: %v", got)
+	}
+}
+
+// Story 50.22: a home reads its owner's acceptance of the Broadcaster agreement in its state
+// (publish check 2).
+func TestPublisherStateCarriesTheAgreement(t *testing.T) {
+	b, err := json.Marshal(PublisherState{AgreementAccepted: true, AgreementVersion: BroadcastAgreementVersion})
+	if err != nil || !strings.Contains(string(b), `"agreement_accepted":true`) || !strings.Contains(string(b), `"agreement_version":`) {
+		t.Fatalf("%s %v", b, err)
 	}
 }
