@@ -143,8 +143,8 @@ else
     fail "db primary: calls=$(cat "${work}/dbprimary/calls" 2>/dev/null) active=$(cat "${work}/dbprimary/active" 2>/dev/null)"
 fi
 role both primary DB_FLOATING_IP_ID=8
-if [ "$(count "${work}/both/calls")" = 2 ] && sed -n 1p "${work}/both/calls" | grep -q 'floating_ips/8/' \
-    && sed -n 2p "${work}/both/calls" | grep -q 'floating_ips/7/' && [ "$(cat "${work}/both/active")" = start ]; then
+if [ "$(count "${work}/both/calls")" = 2 ] && sed -n 1p "${work}/both/calls" | grep 'floating_ips/8/' >/dev/null \
+    && sed -n 2p "${work}/both/calls" | grep 'floating_ips/7/' >/dev/null && [ "$(cat "${work}/both/active")" = start ]; then
     ok "pair primary with a database Floating IP: the database's first, then the relay's; processes started"
 else
     fail "both: calls=$(cat "${work}/both/calls" 2>/dev/null) active=$(cat "${work}/both/active" 2>/dev/null)"

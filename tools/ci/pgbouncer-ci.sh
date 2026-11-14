@@ -50,7 +50,7 @@ docker run -d --name "${name}" "${net[@]}" -v "${work}:/cfg:ro" "${PGB_IMAGE:-po
     exec sleep infinity' >/dev/null
 for _ in $(seq 1 90); do
     if docker exec "${name}" sh -c 'PGPASSWORD='"${pass}"' psql -h 127.0.0.1 -p 6432 -U '"${user}"' -d postgres -Atqc "SELECT 1" && PGPASSWORD='"${pass}"' psql -h 127.0.0.1 -p 6433 -U '"${user}"' -d postgres -Atqc "SELECT 1"' >/dev/null 2>&1; then
-        docker exec "${name}" pgbouncer --version | head -1
+        docker exec "${name}" pgbouncer --version | awk 'NR == 1'
         echo "pgbouncer-ci: transaction pool on 6432, session pool on 6433"
         exit 0
     fi
