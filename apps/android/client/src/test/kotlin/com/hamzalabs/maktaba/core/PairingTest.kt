@@ -292,8 +292,11 @@ class PairingTest {
         val phase = s.phase.value as AppSession.Phase.SignedIn
         assertEquals("amina", phase.user.username)
         assertEquals("a1", tokens.getValue(base).access)
-        assertNull("asking for a code carries no token", seen.first { it.url.encodedPath.endsWith("/api/pairing/device") }.headers["Authorization"])
-        assertEquals("native", seen.first().headers["X-Maktaba-Client"])
-        assertEquals("Bearer a1", seen.last().headers["Authorization"])
+        // The server records on its own thread, and the session may still be talking to it:
+        // iterate a copy taken under the list's lock, never the live synchronized list.
+        val log = synchronized(seen) { seen.toList() }
+        assertNull("asking for a code carries no token", log.first { it.url.encodedPath.endsWith("/api/pairing/device") }.headers["Authorization"])
+        assertEquals("native", log.first().headers["X-Maktaba-Client"])
+        assertEquals("Bearer a1", log.first { it.url.encodedPath.endsWith("/api/auth/me") }.headers["Authorization"])
     }
 }
