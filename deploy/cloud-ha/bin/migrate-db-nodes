@@ -89,13 +89,22 @@ streaming() {
     lag="$(jq -r '[."Lag in MB", ."Receive Lag", ."Replay Lag"] | map(select(. != null and . != "unknown")) | (max // 0)' <<<"${row}")"
     [ "${lag}" = 0 ]
 }
-wait_for() { # wait_for <what> <command...>
-    local what=$1 _; shift
+# wait_until <command...>: true once the command is, false after WAIT seconds of asking. A
+# member's role right after a change in the cluster (a switchover, an etcd member added or
+# removed, Patroni stopped on a node) takes a few seconds to settle: a replica on the old
+# timeline restarts to follow the new leader, and Patroni's list can be empty while etcd elects.
+# A check that follows such a change asks through this, never once.
+wait_until() {
+    local _
     for _ in $(seq 1 "${wait_s}"); do
         if "$@"; then return 0; fi
         sleep 1
     done
-    die "${what}: not within ${wait_s} s"
+    return 1
+}
+wait_for() { # wait_for <what> <command...>
+    local what=$1; shift
+    wait_until "$@" || die "${what}: not within ${wait_s} s"
 }
 # host_of <member>: the SSH address of a member (the pair, then the database nodes)
 host_of() {
@@ -110,6 +119,14 @@ writable_via() {
     local out
     out="$(on "$1" ". /etc/maktaba/cloud-ha.env; PGPASSWORD=\"\${PG_APP_PASSWORD}\" PGCONNECT_TIMEOUT=3 ${ssl_env} psql -h ${db_host} -p 6432 -U \"\${PG_APP_USER:-maktaba}\" -d \"\${PG_APP_DB:-maktaba}\" -Atqc 'SELECT pg_is_in_recovery()'" 2>/dev/null)" || return 1
     [ "${out}" = f ]
+}
+# serving <member>: it leads, or it streams with no lag
+serving() { [ "$(leader_member)" = "$1" ] || streaming "$1"; }
+# db_leads: one of the database nodes leads (Patroni's /primary)
+db_leads() {
+    local h
+    for h in "${db_hosts[@]}"; do leads "${h}" && return 0; done
+    return 1
 }
 # is_sync <member>: Patroni's synchronous standby
 is_sync() { member_row "$1" | jq -e '.Role | test("sync"; "i")' >/dev/null; }
@@ -265,7 +282,10 @@ do_retire() {
     local m h a b
     for h in "${db_hosts[@]}"; do
         m="$(name "${h}")"
-        [ "$(leader_member)" = "${m}" ] || streaming "${m}" || refuse "${m} neither leads nor streams: the database nodes must all serve first"
+        # right after the etcd step (and the switchover before it) a replica may still be
+        # restarting onto the new leader's timeline: waited for, up to WAIT
+        wait_until serving "${m}" \
+            || refuse "${m} neither leads nor streams within ${wait_s} s: the database nodes must all serve first"
     done
     for h in "${pair[@]}"; do
         m="$(name "${h}")"
@@ -285,6 +305,8 @@ pair_gone() { [ -z "$(member_row "$1")" ] && [ -z "$(member_row "$2")" ]; }
 
 do_backup() {
     local h
+    # right after retire, Patroni's leader key may still be settling: waited for, up to WAIT
+    wait_until db_leads || refuse "no database node leads within ${wait_s} s"
     for h in "${db_hosts[@]}"; do
         if leads "${h}"; then
             on "${h}" "${BACKUP_CMD:-sudo -u postgres env CLOUD_HA_ENV=/etc/maktaba/cloud-ha.env maktaba-backup full}" || die "the full backup on $(name "${h}") failed"

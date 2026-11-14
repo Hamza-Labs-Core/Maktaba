@@ -903,6 +903,8 @@ apple_apps:
   - 'shared/cast/**'
   - 'apps/tv/tvos/**'
   - 'tools/apple/**'
+  # the check that each UI job's result bundle ran its selected tests
+  - 'tools/ci/xcresult_ran.py'
   - '.github/workflows/_apple-apps.yml'
   # the demo library the product screenshots' UI tests bundle and serve (story 60.09)
   - 'tests/fixtures/demo-library/**'
@@ -928,6 +930,7 @@ apple_player_ui:
   - 'tools/apple/check-app-log.py'
   - 'tools/apple/sim-settle.py'
   - 'tools/apple/export-shots.py'
+  - 'tools/ci/xcresult_ran.py'
   - '.github/workflows/_apple-apps.yml'
   # its on-demand caller for the shots alone (60.09)
   - '.github/workflows/product-shots.yml'
