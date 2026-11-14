@@ -70,7 +70,9 @@ TV                        Maktaba Cloud                    Phone (Player, signed
   cloud code as their first screen. The launcher calls the cloud from its packaged page, so the
   cloud answers `/v1/tv/codes` and `/v1/tv/codes/poll` to a packaged app's origin (58.09's
   CORS), and the home's `/tv/` redeems the grant the launcher hands it over the bridge. The
-  Android TV and Fire TV apps do not ask for one yet (58.05).
+  Android TV app and its Fire TV build show it as the home picker's first panel, the homes on
+  this network beside it, asking as `androidtv` or `firetv` and redeeming the grant themselves
+  (58.05).
 
 **Limits and safety:**
 - A code lasts 10 minutes and is used once. A poll faster than `interval` gets `slow_down`.
