@@ -16,6 +16,7 @@ import { Account } from "./pages/Account";
 import { Billing } from "./pages/Billing";
 import { LinkHome } from "./pages/LinkHome";
 import { Homes } from "./pages/Homes";
+import { Broadcast } from "./pages/Broadcast";
 import { ApproveTv } from "./pages/ApproveTv";
 import { BroadcastAnalytics } from "./pages/BroadcastAnalytics";
 
@@ -60,6 +61,9 @@ function Shell() {
             </NavLink>
             <NavLink to="/billing" className="mkc-shell__link">
               {t("nav.billing")}
+            </NavLink>
+            <NavLink to="/broadcast" className="mkc-shell__link">
+              {t("nav.broadcast")}
             </NavLink>
           </nav>
         )}
@@ -131,6 +135,8 @@ export function AppRoutes() {
         <Route element={<RequireAuth />}>
           <Route path="account" element={<Account />} />
           <Route path="billing" element={<Billing />} />
+          {/* who may watch each home's channels: invites and access (50.26) */}
+          <Route path="broadcast" element={<Broadcast />} />
           {/* a linked home's player and remote, served by the cloud (42.9) */}
           <Route path="homes" element={<Homes />} />
           <Route path="homes/:id/viewers" element={<BroadcastAnalytics />} />

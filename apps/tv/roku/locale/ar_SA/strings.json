@@ -204,6 +204,52 @@
       "text": "حُفظ موضعك في هذا المقطع عند %1$s.",
       "widthChars": 60,
       "lines": 2
+    },
+    "parental.time.left": {
+      "text": "بقي %1$s اليوم",
+      "widthChars": 40,
+      "lines": 1
+    },
+    "parental.time.warning": {
+      "text": "تنتهي المشاهدة بعد %1$s.",
+      "widthChars": 48,
+      "lines": 1
+    },
+    "parental.time.hoursMinutes": {
+      "text": "%1$s و%2$s",
+      "widthChars": 32,
+      "lines": 1
+    },
+    "parental.time.underMinute": {
+      "text": "أقل من دقيقة",
+      "widthChars": 20,
+      "lines": 1
+    }
+  },
+  "plurals": {
+    "parental.time.minutes": {
+      "forms": {
+        "zero": "%1$d دقيقة",
+        "one": "دقيقة واحدة",
+        "two": "دقيقتان",
+        "few": "%1$d دقائق",
+        "many": "%1$d دقيقة",
+        "other": "%1$d دقيقة"
+      },
+      "widthChars": 16,
+      "lines": 1
+    },
+    "parental.time.hours": {
+      "forms": {
+        "zero": "%1$d ساعة",
+        "one": "ساعة واحدة",
+        "two": "ساعتان",
+        "few": "%1$d ساعات",
+        "many": "%1$d ساعة",
+        "other": "%1$d ساعة"
+      },
+      "widthChars": 16,
+      "lines": 1
     }
   }
 }

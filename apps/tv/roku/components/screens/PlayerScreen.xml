@@ -4,7 +4,8 @@
      title, series and episode, position, chapter, scrub thumbnails, Up next, the audio and
      subtitle pickers, and a subtitle layer that draws Arabic cues in visual order. When the
      home stops the stream for a restricted account's time, the time's-up page takes the screen
-     (Epic 57 story 57.15, on Roku). -->
+     (Epic 57 story 57.15, on Roku); before that, the time left and its warnings show in the end
+     corner. -->
 <component name="PlayerScreen" extends="Screen">
   <script type="text/brightscript" uri="PlayerScreen.brs" />
   <script type="text/brightscript" uri="pkg:/components/common.brs" />
@@ -48,6 +49,15 @@
       <Poster id="upNextPoster" translation="[20,20]" width="420" height="200" loadDisplayMode="scaleToZoom" />
       <Label id="upNextLabel" translation="[20,232]" width="420" height="40" />
       <Label id="upNextTitle" translation="[20,272]" width="420" height="44" />
+    </Group>
+    <!-- a restricted account's time (Epic 57 story 57.15, as Android TV's): the five- and
+         one-minute warnings over the time left once 15 minutes or fewer remain, in the end
+         corner (below Up next while it shows); placed by the code, mirrored in Arabic -->
+    <Group id="time">
+      <Rectangle id="warnBox" width="640" height="64" color="0x000000A0" visible="false" />
+      <Label id="warn" width="640" height="64" horizAlign="center" vertAlign="center" visible="false" />
+      <Rectangle id="leftBox" width="640" height="56" color="0x000000A0" visible="false" />
+      <Label id="leftNote" width="640" height="56" horizAlign="center" vertAlign="center" visible="false" />
     </Group>
     <Label id="status" translation="[160,440]" width="1600" height="200" horizAlign="center" wrap="true" visible="false" />
     <TvButton id="back" translation="[800,680]" width="320" visible="false" />

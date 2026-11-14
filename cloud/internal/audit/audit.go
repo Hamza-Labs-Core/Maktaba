@@ -33,19 +33,22 @@ const (
 	// ActionAdminBroadcastGeo is a service admin changing Maktaba's broadcast country deny
 	// list (story 50.23 §5).
 	ActionAdminBroadcastGeo = "admin.broadcast.geo_deny"
-	ActionAdminBlock        = "admin.abuse.block"
-	ActionAdminUnblock      = "admin.abuse.unblock"
-	ActionAdminErase        = "admin.privacy.erase"
-	ActionRoleGrant         = "role.grant"
-	ActionRoleRevoke        = "role.revoke"
-	ActionEmailVerified     = "auth.email_verified"
-	ActionPasswordReset     = "auth.password_reset"
-	ActionPasswordChange    = "account.password_change"
-	ActionRefreshReplay     = "auth.refresh_replay"
-	ActionAccountDelete     = "account.delete"
-	ActionDeletionCancel    = "account.delete_cancel"
-	ActionDisputeSuspend    = "billing.dispute_suspend"
-	ActionSessionsRevoked   = "account.sessions_revoked"
+	// ActionAdminBroadcastInviteRevoke is a service admin revoking a publisher's viewer invite
+	// (story 50.26).
+	ActionAdminBroadcastInviteRevoke = "admin.broadcast.invite.revoke"
+	ActionAdminBlock                 = "admin.abuse.block"
+	ActionAdminUnblock               = "admin.abuse.unblock"
+	ActionAdminErase                 = "admin.privacy.erase"
+	ActionRoleGrant                  = "role.grant"
+	ActionRoleRevoke                 = "role.revoke"
+	ActionEmailVerified              = "auth.email_verified"
+	ActionPasswordReset              = "auth.password_reset"
+	ActionPasswordChange             = "account.password_change"
+	ActionRefreshReplay              = "auth.refresh_replay"
+	ActionAccountDelete              = "account.delete"
+	ActionDeletionCancel             = "account.delete_cancel"
+	ActionDisputeSuspend             = "billing.dispute_suspend"
+	ActionSessionsRevoked            = "account.sessions_revoked"
 )
 
 // Entry is one audit row.
