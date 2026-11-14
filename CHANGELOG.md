@@ -2253,6 +2253,20 @@ build fails when the two differ.
 
 ### Added
 
+- **Cast to a TV from the iPhone and iPad Player (Epic 58, story 58.06).** Beside AirPlay, the
+  player's **Cast** button lists Google Cast TVs (a Chromecast, a Google TV, a TV with
+  Chromecast built in) next to AirPlay, which stays first. Before the first cast, a screen
+  explains that the app needs to see devices on the Wi-Fi, then iOS asks. The phone mints a
+  cast grant for the video and hands it to Maktaba's receiver, which plays it and reports
+  progress itself: the phone stops posting its own, so with the phone locked Continue Watching
+  follows the TV, and on return the mini controller (play, pause, ±10 s, **Stop casting**)
+  shows where the TV is. A home older than the cast grant gets the plain signed stream and a
+  line saying the TV shows Google's player; a refused grant is shown and nothing is cast; with
+  no TV found, the list says the TV must be on the same Wi-Fi and suggests AirPlay. Cast shows
+  only where the home has an HTTPS address the TV can reach, and only once the receiver's ID is
+  set in `shared/cast/app.json` (the build reads it into `apps/apple/Config/Cast.xcconfig`, and
+  adds the Cast Bonjour services then); the Mac and the Apple TV have no Cast.
+
 - **Approve a TV's code on maktaba.tv (story 58.03).** The QR code a TV shows beside its cloud
   code opens maktaba.tv/tv, which forwards to Maktaba Cloud: a person signed in there sees the
   TV's platform and country, asks themselves **Is this your TV?**, picks one of the homes that
@@ -2927,20 +2941,6 @@ build fails when the two differ.
   number is always the home's own answer, asked every 30 seconds (every 10 in the last six
   minutes). Arabic uses its plural forms (دقيقة واحدة، دقيقتان، 5 دقائق، 12 دقيقة), and the Roku
   catalog and its check now carry plural strings in both languages.
-
-- **Cast to a TV from the iPhone and iPad Player (Epic 58, story 58.06).** Beside AirPlay, the
-  player's **Cast** button lists Google Cast TVs (a Chromecast, a Google TV, a TV with
-  Chromecast built in) next to AirPlay, which stays first. Before the first cast, a screen
-  explains that the app needs to see devices on the Wi-Fi, then iOS asks. The phone mints a
-  cast grant for the video and hands it to Maktaba's receiver, which plays it and reports
-  progress itself: the phone stops posting its own, so with the phone locked Continue Watching
-  follows the TV, and on return the mini controller (play, pause, ±10 s, **Stop casting**)
-  shows where the TV is. A home older than the cast grant gets the plain signed stream and a
-  line saying the TV shows Google's player; a refused grant is shown and nothing is cast; with
-  no TV found, the list says the TV must be on the same Wi-Fi and suggests AirPlay. Cast shows
-  only where the home has an HTTPS address the TV can reach, and only once the receiver's ID is
-  set in `shared/cast/app.json` (the build reads it into `apps/apple/Config/Cast.xcconfig`, and
-  adds the Cast Bonjour services then); the Mac and the Apple TV have no Cast.
 
 ### Changed
 
