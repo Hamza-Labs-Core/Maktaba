@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -23,6 +24,7 @@ type fakeCloud struct {
 	published   []PublishRequest
 	unpublished []string
 	tokens      int
+	geos        []*Geo
 	ingestURL   string
 	n           int
 }
@@ -61,10 +63,11 @@ func (f *fakeCloud) Unpublish(_ context.Context, id string) error {
 	return nil
 }
 
-func (f *fakeCloud) IngestToken(_ context.Context, ch string, rungs []string) (IngestToken, error) {
+func (f *fakeCloud) IngestToken(_ context.Context, ch string, rungs []string, geo *Geo) (IngestToken, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.n++
+	f.geos = append(f.geos, geo)
 	if f.down {
 		return IngestToken{}, ErrUnreachable
 	}
@@ -83,7 +86,7 @@ var broadcasterPlan = Plan{Tier: "broadcaster", MaxChannels: 3, MaxRungs: 3, Max
 	Access: []string{"invite", "open"}, AgreementAccepted: true, AgreementVersion: 2}
 
 // homeWithChannel is a scratch home with one channel scheduled for the next 24 h (80 % of
-// it), an admin, and the channel set up for broadcasting.
+// it, all the admin's own recordings) and an admin.
 func homeWithChannel(t *testing.T) (*sql.DB, string, string) {
 	t.Helper()
 	db, _ := clustertest.ScratchDB(t)
@@ -97,12 +100,22 @@ func homeWithChannel(t *testing.T) (*sql.DB, string, string) {
 		VALUES (gen_random_uuid(), 'amina', 'x', true, 'Amina') RETURNING id::text`).Scan(&admin); err != nil {
 		t.Fatal(err)
 	}
+	// the programmes are the admin's own recordings (story 50.23): check 3 counts them
+	var lib, vid string
+	if err := db.QueryRowContext(ctx, `INSERT INTO libraries (name, roots) VALUES ('Seerah', '{}') RETURNING id::text`).Scan(&lib); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRowContext(ctx, `INSERT INTO videos (library_id, content_hash, path, filename, size_bytes, mtime, title,
+		duration_sec, publishable_reason) VALUES ($1::uuid, encode(sha256('seerah'::bytea), 'hex'), '/m/seerah.mp4', 'seerah.mp4', 1, now(), 'Seerah', 2880, 'own')
+		RETURNING id::text`, lib).Scan(&vid); err != nil {
+		t.Fatal(err)
+	}
 	now := time.Now()
 	for i := 0; i < 24; i++ {
 		start := now.Add(time.Duration(i) * time.Hour)
 		end := start.Add(48 * time.Minute) // 80 % of each hour
-		if _, err := db.ExecContext(ctx, `INSERT INTO channel_programs (channel_id, seq, start_at, end_at, source_duration)
-			VALUES ($1::uuid, $2, $3, $4, 2880000)`, ch, i+1, start, end); err != nil {
+		if _, err := db.ExecContext(ctx, `INSERT INTO channel_programs (channel_id, seq, start_at, end_at, source_duration, video_id)
+			VALUES ($1::uuid, $2, $3, $4, 2880000, $5::uuid)`, ch, i+1, start, end, vid); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -117,7 +130,8 @@ func TestPublishOnTheHome(t *testing.T) {
 	ctx := context.Background()
 	cloud := &fakeCloud{plan: broadcasterPlan}
 	svc := &Service{Store: &Store{DB: db}, Cloud: cloud}
-	if _, err := svc.SaveSetup(ctx, ch, SetupRequest{Slug: "seerah", Access: "invite", Mode: "on_demand"}); err != nil {
+	if _, err := svc.SaveSetup(ctx, ch, SetupRequest{Slug: "seerah", Access: "invite", Mode: "on_demand",
+		Countries: []string{"sa", "EG"}, GeoMode: "allow"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -164,6 +178,14 @@ func TestPublishOnTheHome(t *testing.T) {
 	var token string
 	if err := db.QueryRowContext(ctx, `SELECT token FROM broadcast_ingest_tokens WHERE channel_id::text = $1`, ch).Scan(&token); err != nil || token != "mkbi1.tok" {
 		t.Fatalf("token %q %v", token, err)
+	}
+	// story 50.23 §5: the token is asked for with the channel's country rule
+	if len(cloud.geos) != 1 || cloud.geos[0] == nil || cloud.geos[0].Mode != GeoAllow ||
+		strings.Join(cloud.geos[0].Countries, ",") != "SA,EG" {
+		t.Fatalf("geo with the token: %+v", cloud.geos)
+	}
+	if _, err := svc.SaveSetup(ctx, ch, SetupRequest{GeoMode: "both"}); !errors.As(err, &p) {
+		t.Fatalf("bad geo mode accepted while live: %v", err)
 	}
 	// a published channel's setup waits for an unpublish
 	if _, err := svc.SaveSetup(ctx, ch, SetupRequest{Slug: "other"}); !errors.As(err, &p) || p.Refusal.Code != "unpublishFirst" {

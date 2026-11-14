@@ -90,7 +90,8 @@ func (r *ReleaseRepo) ProgramsFrom(ctx context.Context, channelID uuid.UUID, fro
 	}
 	rows, err := r.pool.Query(ctx, `
 		SELECT cp.seq, cp.kind, cp.video_id, cp.start_at, cp.end_at,
-		       cp.source_offset, cp.source_duration, v.path, `+srcCol+`, cp.title_snapshot
+		       cp.source_offset, cp.source_duration, v.path, `+srcCol+`, cp.title_snapshot,
+		       `+r.notPublishableCol(ctx)+`
 		FROM channel_programs cp
 		LEFT JOIN videos v ON v.id = cp.video_id
 		WHERE cp.channel_id = $1 AND cp.sched_gen = $4 AND cp.end_at > $2
@@ -108,7 +109,7 @@ func (r *ReleaseRepo) ProgramsFrom(ctx context.Context, channelID uuid.UUID, fro
 		var path, src *string
 		var snap []byte
 		if err := rows.Scan(&b.Seq, &b.Kind, &vid, &b.StartAt, &b.EndAt,
-			&b.SourceOffsetMS, &b.SourceDurationMS, &path, &src, &snap); err != nil {
+			&b.SourceOffsetMS, &b.SourceDurationMS, &path, &src, &snap, &b.NotPublishable); err != nil {
 			return nil, err
 		}
 		if vid != nil {

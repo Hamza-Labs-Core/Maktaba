@@ -324,6 +324,15 @@ func TestPlanNext_Kinds(t *testing.T) {
 	if s := PlanNext([]ProgramBlock{live}, t0); s.Kind != KindSlate || s.Message != MsgLiveUnavailable {
 		t.Errorf("live without url: %+v", s)
 	}
+	// Story 50.23 §3: a published channel's item that lost its mark keeps its time as the
+	// slate, naming the next programme.
+	lost := blk(5, KindProgram, t0, time.Hour)
+	lost.NotPublishable = true
+	after := blk(6, KindProgram, t0.Add(time.Hour), time.Hour)
+	if s := PlanNext([]ProgramBlock{lost, after}, t0); s.Kind != KindSlate || s.Message != MsgNotOnline ||
+		!s.End.Equal(lost.EndAt) || s.Next == nil || s.Next.Seq != 6 {
+		t.Errorf("lost its mark: %+v", s)
+	}
 	// A block starting within a second is started now at its offset.
 	b := blk(2, KindProgram, t0.Add(500*time.Millisecond), time.Minute)
 	b.SourceOffsetMS = 1234

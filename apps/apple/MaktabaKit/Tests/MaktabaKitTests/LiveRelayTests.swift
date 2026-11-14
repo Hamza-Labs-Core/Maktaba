@@ -125,6 +125,18 @@ actor FakeRelayOrigin {
         #expect(await following.value == true)
     }
 
+    /// A channel left on for hours reloads its playlist thousands of times: what the loader
+    /// remembers of them does not grow.
+    @Test func aLongWatchRemembersOnlyTheNewestPlaylists() async throws {
+        let opened = URL(string: "\(Self.cf)/tok1/manifest/video.m3u8")!
+        let loader = LiveRelayLoader(url: opened, fetch: FakeRelayOrigin([:]).fetch)
+        for n in 0..<500 {
+            _ = try? await loader.playlist(for: URL(string: "maktaba-relay+\(Self.cf)/tok1/manifest/stream_t1.m3u8?n=\(n)")!)
+        }
+        #expect(loader.fetched.count == LiveRelayLoader.remembered)
+        #expect(loader.fetched.last?.query() == "n=499", "the newest are the ones kept")
+    }
+
     /// A refused playlist fails the request with the origin's status (AVPlayer says it).
     @Test func aRefusedPlaylistFails() async throws {
         let loader = LiveRelayLoader(url: URL(string: "\(Self.cf)/tok1/manifest/video.m3u8")!,

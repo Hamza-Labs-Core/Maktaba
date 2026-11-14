@@ -54,7 +54,7 @@ func (s *Service) publishable() Publishable {
 	if s.Publishable != nil {
 		return s.Publishable
 	}
-	return ScheduledPublishable{}
+	return MarkedPublishable{}
 }
 
 // Problem is an error the page shows with its code (broadcast.<code>) and values.
@@ -79,6 +79,9 @@ type SetupRequest struct {
 	Mode      string   `json:"mode"`
 	Rungs     []string `json:"rungs"`
 	Countries []string `json:"countries"`
+	// GeoMode is how Countries read (story 50.23 §5): allow (only there, the default) or
+	// deny (everywhere but there).
+	GeoMode string `json:"geo_mode"`
 }
 
 // SaveSetup checks and stores a channel's setup. A published channel's setup is changed
@@ -103,6 +106,9 @@ func (s *Service) SaveSetup(ctx context.Context, id string, req SetupRequest) (C
 	if len(req.Rungs) == 0 {
 		req.Rungs = append([]string(nil), DefaultLadder...)
 	}
+	if req.GeoMode == "" {
+		req.GeoMode = GeoAllow
+	}
 	out := s.Store.Output(ctx)
 	switch {
 	case !slugRE.MatchString(req.Slug):
@@ -114,6 +120,8 @@ func (s *Service) SaveSetup(ctx context.Context, id string, req SetupRequest) (C
 	case req.Access == "open" && req.Mode != "always_on":
 		// open channels are always on (§2); on demand is for invite-only ones
 		return ch, problem(http.StatusBadRequest, "", "openIsAlwaysOn", nil)
+	case req.GeoMode != GeoAllow && req.GeoMode != GeoDeny:
+		return ch, problem(http.StatusBadRequest, "", "badGeoMode", nil)
 	}
 	if err := ValidLadder(req.Rungs, out.Source); err != nil {
 		return ch, problem(http.StatusBadRequest, "", "badLadder", map[string]any{"detail": err.Error()})
@@ -133,7 +141,8 @@ func (s *Service) SaveSetup(ctx context.Context, id string, req SetupRequest) (C
 	if taken {
 		return ch, problem(http.StatusConflict, "", "slugTaken", nil)
 	}
-	if err := s.Store.SaveSetup(ctx, id, req.Slug, Setup{Access: req.Access, Mode: req.Mode, Rungs: req.Rungs}, countries); err != nil {
+	if err := s.Store.SaveSetup(ctx, id, req.Slug, Setup{Access: req.Access, Mode: req.Mode, Rungs: req.Rungs},
+		Geo{Mode: req.GeoMode, Countries: countries}); err != nil {
 		return ch, err
 	}
 	return s.Store.Get(ctx, id)
@@ -273,6 +282,8 @@ func (s *Service) Publish(ctx context.Context, id string, confirmed bool, by Adm
 	if err := s.Store.MarkPublished(ctx, id, cc.ID, state, detail, by.Name); err != nil {
 		return ch, err
 	}
+	// what was planned from the full rules is rewritten from publishable items (§3 of 50.23)
+	s.RescheduleLimited(ctx, id)
 	s.log().Info("broadcast: channel published", "channel_id", id, "slug", ch.Slug, "access", ch.Access,
 		"mode", ch.Mode, "rungs", strings.Join(ch.Rungs, ","), "event", "broadcast_published")
 	return s.Store.Get(ctx, id)
@@ -299,12 +310,14 @@ func (s *Service) Unpublish(ctx context.Context, id string) (Channel, error) {
 	if err := s.Store.MarkUnpublished(ctx, id, pending); err != nil {
 		return ch, err
 	}
+	// the full rules come back from the block on air (50.23 §3)
+	s.RescheduleLimited(ctx, id)
 	s.log().Info("broadcast: channel unpublished", "channel_id", id, "event", "broadcast_unpublished")
 	return s.Store.Get(ctx, id)
 }
 
 func (s *Service) refreshToken(ctx context.Context, ch Channel) error {
-	tok, err := s.Cloud.IngestToken(ctx, ch.ID, Effective(ch.Rungs, ch.Dropped))
+	tok, err := s.Cloud.IngestToken(ctx, ch.ID, Effective(ch.Rungs, ch.Dropped), ch.Geo())
 	if err != nil {
 		return err
 	}
@@ -408,7 +421,7 @@ func (s *Service) SpeedTest(ctx context.Context, source string) (Uplink, error) 
 		}
 		for _, c := range chs {
 			if c.Configured {
-				tok, terr := s.Cloud.IngestToken(ctx, c.ID, c.Rungs)
+				tok, terr := s.Cloud.IngestToken(ctx, c.ID, c.Rungs, c.Geo())
 				if terr != nil {
 					if p := cloudRefusal(terr); p != nil {
 						return Uplink{}, p

@@ -12,6 +12,7 @@
 // hears each change on its control socket: revoked, slate, restored.
 //
 // It never looks inside a segment and never decides what airs: it orders what the home sent.
+import type { Geo } from "./geo";
 import { DurableObject } from "cloudflare:workers";
 import { now } from "./clock";
 import type { Delivery, Env } from "./env";
@@ -79,6 +80,10 @@ interface State {
   verdict: Revocation | null;
   plan: ChannelPlan;
   stream: { uid: string; rtmps_url: string; stream_key: string } | null;
+  /** the country rule of the newest ingest token (50.23 §5); null: none */
+  geo?: Geo | null;
+  /** that token's iat: an older token never replaces a newer one's rule */
+  geoIat?: number;
   counters: { segments_in: number; bytes_in: number; playlist_misses: number };
 }
 
@@ -91,6 +96,10 @@ export interface PrecheckInput {
   hash8: string;
   bytes: number;
   dur: number;
+  /** the ingest token's country rule (50.23 §5) */
+  geo?: Geo | null;
+  /** the ingest token's iat */
+  iat?: number;
 }
 
 export type PrecheckVerdict =
@@ -231,6 +240,7 @@ export class ChannelLive extends DurableObject<Env> {
     this.s.onAir = true;
     this.s.pub ??= inp.pub;
     this.s.home = inp.home;
+    this.takeGeo(inp.geo ?? null, inp.iat ?? 0);
     this.s.counters.segments_in++;
     this.s.counters.bytes_in += inp.bytes;
     const registerWith = this.s.registered ? null : this.s.pub;
@@ -282,6 +292,29 @@ export class ChannelLive extends DurableObject<Env> {
     this.s.plan = plan;
     await this.save();
     if (plan.off) this.notify({ type: "plan_off" });
+  }
+
+  /** geo is the channel's country rule (50.23 §5), as its newest ingest token carried it. */
+  async geo(): Promise<Geo | null> {
+    return this.s.geo ?? null;
+  }
+
+  /**
+   * noteGeo records the rule of a token-authenticated ingest call that appends no segment (the
+   * slate, the state post, the Stream input, the control socket), so a channel fed only that
+   * way still carries its rule. A token older than the one the rule came from is ignored.
+   */
+  async noteGeo(geo: Geo | null, iat: number): Promise<void> {
+    if (this.takeGeo(geo, iat)) await this.save();
+  }
+
+  private takeGeo(geo: Geo | null, iat: number): boolean {
+    if (iat < (this.s.geoIat ?? 0)) return false;
+    const changed =
+      JSON.stringify(geo) !== JSON.stringify(this.s.geo ?? null) || iat !== this.s.geoIat;
+    this.s.geo = geo;
+    this.s.geoIat = iat;
+    return changed;
   }
 
   /** applyList takes a newly installed revocation list (the Revocations fan-out). */

@@ -8,6 +8,7 @@ var Sensitive = map[string]bool{
 	"POST /v1/admin/accounts/{id}/unsuspend":       true,
 	"POST /v1/admin/accounts/{id}/plan":            true,
 	"POST /v1/admin/servers/{id}/broadcast":        true,
+	"PUT /v1/admin/broadcast/geo-deny":             true,
 	"POST /v1/admin/broadcast/invites/{id}/revoke": true,
 	"POST /v1/admin/abuse/block":                   true,
 	"POST /v1/admin/abuse/unblock":                 true,

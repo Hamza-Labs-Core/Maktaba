@@ -366,7 +366,7 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 		serversh.MountAgent(app, serversDeps)
 		broadcasth.MountAgent(app, broadcastDeps)
 		broadcasth.MountAccessAgent(app, broadcastDeps)
-		broadcasth.MountIngest(app, ingestDeps(cfg, servers, broadcastStore, logger))
+		broadcasth.MountIngest(app, ingestDeps(cfg, servers, broadcastStore, pool, logger))
 		// the broadcast edge: each request signed with its key, no account
 		edgeh.Mount(app, edgeDeps)
 		broadcasth.MountRevocations(app, revDeps)
@@ -635,9 +635,11 @@ func revocationDeps(cfg config.Config, servers *stores.Servers, pool *db.Pool, l
 // ingestDeps wires the broadcast edge's ingest tokens (story 50.21): on whenever
 // broadcast.key_path is set (otherwise the route answers 503 broadcast_disabled). Who gets one
 // is 50.20's entitlement (broadcasth.StorePlans): while broadcast.enabled is off, only the
-// test publishers a service admin granted.
-func ingestDeps(cfg config.Config, servers *stores.Servers, store *billingpkg.BroadcastStore, logger *slog.Logger) *broadcasth.IngestDeps {
-	d := &broadcasth.IngestDeps{Agents: servers, Plans: broadcasth.StorePlans{Store: store}, IngestURL: cfg.Broadcast.IngestURL}
+// test publishers a service admin granted. Maktaba's country deny list (story 50.23) rides
+// every token.
+func ingestDeps(cfg config.Config, servers *stores.Servers, store *billingpkg.BroadcastStore, pool *db.Pool, logger *slog.Logger) *broadcasth.IngestDeps {
+	d := &broadcasth.IngestDeps{Agents: servers, Plans: broadcasth.StorePlans{Store: store}, IngestURL: cfg.Broadcast.IngestURL,
+		GeoDeny: broadcasth.DBGeoDeny(pool.DB)}
 	if cfg.Broadcast.KeyPath == "" {
 		return d
 	}

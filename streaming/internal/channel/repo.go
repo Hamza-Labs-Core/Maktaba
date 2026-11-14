@@ -49,6 +49,10 @@ type ProgramBlock struct {
 	SourceURL string
 	// Info is the display part of title_snapshot (the strip's text).
 	Info BlockInfo
+	// NotPublishable is a block of a published channel whose item lost its publishable
+	// mark after it was scheduled (Epic 50 story 50.23 §3): it plays the slate, and the
+	// next top-up replaces it.
+	NotPublishable bool
 }
 
 // Duration is the wall-clock length of the block.

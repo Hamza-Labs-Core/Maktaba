@@ -142,7 +142,7 @@ async def run(db: Any, job: Any, ctx: StageContext) -> StageResult:
             unread += 1  # private or removed: nothing to learn
             continue
         got = exact_info(info)
-        await _store(db, yid, got.upload_date, got.description, got.age_limit)
+        await _store(db, yid, got.upload_date, got.description, got.age_limit, got.license)
         done.append((yid, got.upload_date.isoformat() if got.upload_date else None))
     return StageResult(
         output_hash=canonical_hash({"dates": sorted(done, key=lambda x: x[0])}),
@@ -157,7 +157,12 @@ async def run(db: Any, job: Any, ctx: StageContext) -> StageResult:
 
 
 async def _store(
-    db: Any, youtube_id: str, d: date | None, description: str | None, age_limit: int | None = None
+    db: Any,
+    youtube_id: str,
+    d: date | None,
+    description: str | None,
+    age_limit: int | None = None,
+    licence: str | None = None,
 ) -> None:
     if d is not None:
         await db.execute(
@@ -180,6 +185,14 @@ async def _store(
             "UPDATE youtube_videos SET age_limit = $2 WHERE youtube_id = $1",
             youtube_id,
             age_limit,
+        )
+    if licence is not None:
+        # the licence as YouTube says it now (story 50.23): a CC BY video changed to the
+        # standard licence stops being publishable at this refresh
+        await db.execute(
+            "UPDATE youtube_videos SET license = $2 WHERE youtube_id = $1",
+            youtube_id,
+            licence,
         )
 
 

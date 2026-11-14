@@ -184,7 +184,9 @@ export async function handleIngest(request: Request, env: Env, url: URL): Promis
     const a = await authorize(request, env, t, {});
     if (!a.ok) return a.res;
     if (request.headers.get("Upgrade") !== "websocket") return problem(426, "websocket_required");
-    return channel(env, a.claims.ch).fetch(request);
+    const stub = channel(env, a.claims.ch);
+    await stub.noteGeo(a.claims.geo ?? null, a.claims.iat);
+    return stub.fetch(request);
   }
 
   const seg = path.match(/^\/v1\/ingest\/([^/]+)\/([^/]+)\/(\d{1,12})\.ts$/);
@@ -196,6 +198,8 @@ export async function handleIngest(request: Request, env: Env, url: URL): Promis
     if (!CH_RE.test(ch)) return problem(400, "bad_channel");
     const a = await authorize(request, env, t, { ch });
     if (!a.ok) return a.res;
+    // every token-authenticated call carries the channel's country rule (50.23 §5)
+    await channel(env, ch).noteGeo(a.claims.geo ?? null, a.claims.iat);
     if (act[2] === "guide") return postGuide(request, env, a.claims.pub, ch, t);
     return act[2] === "state" ? postState(request, env, ch) : postStream(env, ch);
   }
@@ -229,7 +233,17 @@ async function putSegment(
   const declared = Number(request.headers.get("Content-Length") ?? NaN);
   const stub = channel(env, ch, request);
   const hash8 = wantHash.slice(0, 8);
-  const base = { pub: claims.pub, home: claims.home, rung, rungs: claims.rungs, seq, hash8, dur };
+  const base = {
+    pub: claims.pub,
+    home: claims.home,
+    rung,
+    rungs: claims.rungs,
+    seq,
+    hash8,
+    dur,
+    geo: claims.geo ?? null,
+    iat: claims.iat,
+  };
 
   // the cheap checks first: a retry or a stale segment is answered before its body is read
   if (!isSlate) {
@@ -255,6 +269,7 @@ async function putSegment(
   }
 
   if (isSlate) {
+    await stub.noteGeo(claims.geo ?? null, claims.iat);
     const r = await stub.putSlate(
       { idx: seq, hash8, key, dur, bytes: body.byteLength, at: t },
       ch,

@@ -2971,6 +2971,17 @@ build fails when the two differ.
   stay under the code as other ways. The app built with the home's UI inside it signs in the
   same way.
 
+- **A published channel airs only what may be shared online (Epic 50, story 50.23).** While a
+  Live TV channel is broadcast, it airs only publishable items: the household's own recordings,
+  items cleared with a proof link, Creative Commons Attribution videos (read from YouTube at
+  intake and at every refresh), and sources the household recorded permission for, with the link
+  where the source allows sharing. The Broadcast page shows how much of each channel's next 7
+  days may air and the sources that would add most, each with Record permission. Turning the
+  limit off takes a typed confirmation. Each channel can play only in chosen countries or
+  everywhere but them, and Maktaba's own deny list applies to every channel; a viewer outside
+  sees that the channel isn't available in their country. An item that loses its permission
+  plays the "Not available online" card until the schedule is rebuilt.
+
 ### Changed
 
 - **A machine that loses its home stays usable** under a notice instead of the whole app being
@@ -3929,6 +3940,21 @@ build fails when the two differ.
   parent said no. A no to more time is about its own day: once the request's end has passed,
   the page offers Ask for more time again, as the web, Android TV and Apple TV already do. A no
   given the same day still shows, with Ask again.
+
+- **Playing at home costs the Apple apps less, and the Apple TV's live player always lets go.**
+  The Apple apps read a home's streams through a small proxy inside the app. It now passes
+  each stream on in the pieces it arrives in, where it used to handle every byte on its own
+  (about a quarter of the processor time for the same stream, measured on a Mac), at a lower
+  priority than the remote. It holds the home back while the player reads slowly or is paused,
+  so memory does not grow with the file, and the app does not time a pause: a paused film keeps its
+  connection for as long as the home keeps its own; it ends the home's request when the player drops a connection mid-stream (a
+  channel change, a seek), and serves at most 16 requests at once. A stream the home cuts
+  short reaches the player as an error, never as a whole file. On Apple TV, Menu leaves the
+  live player in at most two presses whatever the channel is doing (starting, buffering,
+  failed, time's up), unless the viewer changed channel, pressed Select or asked for the
+  banner in between; the picture and sound stop at
+  once without waiting for the home, and a picture that keeps stalling writes at most one log
+  line a second.
 
 ## [0.2.0] - 2026-10-19
 
