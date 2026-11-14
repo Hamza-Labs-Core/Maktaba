@@ -131,7 +131,7 @@ func runRelay(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Mig
 		logger.Error("relay: the pool did not start", "err", err)
 		os.Exit(1)
 	}
-	r.Get("/v1/relay/ws", (&relaypkg.TunnelServer{
+	r.Get("/v1/relay/ws", evidenceWrap((&relaypkg.TunnelServer{
 		Registry:   registry,
 		Store:      relaypkg.NewTunnelStore(serversStore),
 		Logger:     logger,
@@ -140,7 +140,7 @@ func runRelay(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Mig
 		Directory:  directory,
 		Direct:     directHandler(cfg, pool, logger),
 		Rebalancer: rebalancer,
-	}).ServeHTTP)
+	}).ServeHTTP))
 
 	// All non-control paths fall through to the proxy. We deliberately
 	// don't restrict by route prefix — the proxied server's URL space
@@ -330,3 +330,6 @@ func relayPlans(cfg config.Config, db *sql.DB, relayID string) *relayh.Plans {
 func relayMetrics(c *metricspkg.Collector, extra ...func(io.Writer) error) http.HandlerFunc {
 	return metricspkg.PrometheusHandler(c, append(extra, metricspkg.WriteGoHeap)...)
 }
+
+// evidenceWrap: TEMPORARY (the leak evidence for load-small's heap gate; removed before merge).
+var evidenceWrap = func(h http.HandlerFunc) http.HandlerFunc { return h }
