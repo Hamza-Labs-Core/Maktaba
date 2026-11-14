@@ -229,4 +229,11 @@ func TestRotateSignsEveryDeviceOut(t *testing.T) {
 	if err := reviewhome.Rotate(ctx, db, reviewhome.Accounts{Viewer: "nobody-here", ViewerPassword: "a-long-pass-for-nobody", Child: "reviewer-child", ChildPassword: "x-long-pass-for-the-kid"}); !errors.Is(err, users.ErrNotFound) {
 		t.Errorf("rotate with no such account = %v, want ErrNotFound", err)
 	}
+	// nor with the child missing: the viewer keeps the password it had
+	if err := reviewhome.Rotate(ctx, db, reviewhome.Accounts{Viewer: "reviewer", ViewerPassword: "a-third-round-pass-01", Child: "nobody-here", ChildPassword: "x-long-pass-for-the-kid"}); !errors.Is(err, users.ErrNotFound) {
+		t.Errorf("rotate with no such child = %v, want ErrNotFound", err)
+	}
+	if u, err := us.GetByUsername(ctx, "reviewer"); err != nil || u.VerifyPassword(next.ViewerPassword) != nil {
+		t.Errorf("a rotation that could not finish changed the viewer's password (%v)", err)
+	}
 }

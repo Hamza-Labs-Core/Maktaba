@@ -141,7 +141,11 @@ func Rotate(ctx context.Context, db *sql.DB, a Accounts) error {
 		return err
 	}
 	us := users.New(db)
-	for _, p := range [][2]string{{a.Viewer, a.ViewerPassword}, {a.Child, a.ChildPassword}} {
+	pairs := [][2]string{{a.Viewer, a.ViewerPassword}, {a.Child, a.ChildPassword}}
+	// both accounts are looked up before either password changes: a missing or admin account
+	// leaves both passwords as they were, never one rotated and one not
+	ids := make([]string, len(pairs))
+	for i, p := range pairs {
 		u, err := us.GetByUsername(ctx, p[0])
 		if err != nil {
 			return fmt.Errorf("%s: %w", p[0], err)
@@ -149,14 +153,17 @@ func Rotate(ctx context.Context, db *sql.DB, a Accounts) error {
 		if u.IsAdmin {
 			return fmt.Errorf("%s: %w", p[0], ErrAdmin)
 		}
+		ids[i] = u.ID
+	}
+	for i, p := range pairs {
 		pw, no := p[1], false
-		if _, err := us.Update(ctx, u.ID, users.UpdateInput{Password: &pw, MustChangePassword: &no}); err != nil {
+		if _, err := us.Update(ctx, ids[i], users.UpdateInput{Password: &pw, MustChangePassword: &no}); err != nil {
 			return fmt.Errorf("%s: %w", p[0], err)
 		}
-		if _, err := sessions.New(db).RevokeAllForUser(ctx, u.ID); err != nil {
+		if _, err := sessions.New(db).RevokeAllForUser(ctx, ids[i]); err != nil {
 			return fmt.Errorf("%s: sign out browsers: %w", p[0], err)
 		}
-		if _, err := refresh.New(db).RevokeAllForUser(ctx, u.ID); err != nil {
+		if _, err := refresh.New(db).RevokeAllForUser(ctx, ids[i]); err != nil {
 			return fmt.Errorf("%s: sign out devices: %w", p[0], err)
 		}
 	}
