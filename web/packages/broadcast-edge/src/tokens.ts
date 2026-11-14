@@ -98,7 +98,7 @@ function split(
   }
 }
 
-async function verifyCloud(
+export async function verifyCloud(
   token: string,
   prefix: string,
   domain: string,

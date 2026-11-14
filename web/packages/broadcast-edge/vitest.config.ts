@@ -9,6 +9,10 @@ import { defineConfig } from "vitest/config";
 //   - the Stream signing key: Epic 34's TEST key (web/packages/tvsite/src/testdata/parity.json);
 //   - the Stream API: a fake Worker bound as STREAM_API (no call leaves the machine).
 const vectors = readFileSync("../../../cloud/internal/broadcast/testdata/vectors.json", "utf8");
+const inviteVectors = readFileSync(
+  "../../../cloud/internal/broadcast/testdata/invite_vectors.json",
+  "utf8"
+);
 const parity = JSON.parse(readFileSync("../tvsite/src/testdata/parity.json", "utf8")) as {
   kid: string;
   jwk: string;
@@ -28,6 +32,30 @@ export default {
       return Response.json({ success: true, result: { uid, rtmps: { url: "rtmps://live.cloudflare.com:443/live/", streamKey: "key-" + uid } } });
     }
     return Response.json({ success: false }, { status: 404 });
+  },
+};`;
+
+// A fake Turnstile siteverify: "good-…" tokens pass once (a replay answers timeout-or-duplicate).
+const fakeTurnstile = `
+const used = new Set();
+export default {
+  async fetch(request) {
+    const form = await request.formData();
+    const token = form.get("response");
+    if (form.get("secret") !== "test-turnstile-secret") return Response.json({ success: false, "error-codes": ["invalid-input-secret"] });
+    if (!String(token).startsWith("good-")) return Response.json({ success: false, "error-codes": ["invalid-input-response"] });
+    if (used.has(token)) return Response.json({ success: false, "error-codes": ["timeout-or-duplicate"] });
+    used.add(token);
+    return Response.json({ success: true });
+  },
+};`;
+
+// A fake attestation verifier: "valid-…" attestations pass.
+const fakeAttest = `
+export default {
+  async fetch(request) {
+    const b = await request.json();
+    return Response.json({ valid: String(b.attestation).startsWith("valid-") });
   },
 };`;
 
@@ -57,13 +85,31 @@ export default defineConfig({
           STREAM_KEY_ID: parity.kid,
           STREAM_KEY_JWK: parity.jwk,
           TEST_VECTORS: vectors,
+          TEST_INVITE_VECTORS: inviteVectors,
+          TURNSTILE_SECRET: "test-turnstile-secret",
         },
-        serviceBindings: { STREAM_API: "fake-stream" },
+        serviceBindings: {
+          STREAM_API: "fake-stream",
+          TURNSTILE_API: "fake-turnstile",
+          ATTEST_API: "fake-attest",
+        },
         workers: [
           {
             name: "fake-stream",
             modules: true,
             script: fakeStream,
+            compatibilityDate: "2026-08-15",
+          },
+          {
+            name: "fake-turnstile",
+            modules: true,
+            script: fakeTurnstile,
+            compatibilityDate: "2026-08-15",
+          },
+          {
+            name: "fake-attest",
+            modules: true,
+            script: fakeAttest,
             compatibilityDate: "2026-08-15",
           },
         ],

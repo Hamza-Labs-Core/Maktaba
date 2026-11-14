@@ -146,34 +146,44 @@ func (dp *Deps) push(ctx context.Context, server string) error {
 }
 
 // PushPending pushes every publisher whose access state the edge hasn't taken (the worker runs
-// it every minute). It answers how many were pushed.
+// it every minute), in batches until none is left, so an hourly refresh of every publisher never
+// holds a real change back past the minute (a change is pushed by its own request first). It
+// answers how many were pushed; one that fails stays for the next run.
 func (dp *Deps) PushPending(ctx context.Context) (int, error) {
 	if dp.Edge == nil || dp.Key == nil {
 		return 0, nil
 	}
-	rows, err := dp.DB.QueryContext(ctx, `SELECT id::text FROM servers WHERE broadcast_access_version > broadcast_access_pushed ORDER BY id LIMIT 200`)
-	if err != nil {
-		return 0, err
-	}
-	var ids []string
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			_ = rows.Close()
-			return 0, err
+	n, after := 0, ""
+	for ctx.Err() == nil {
+		rows, err := dp.DB.QueryContext(ctx, `
+            SELECT id::text FROM servers WHERE broadcast_access_version > broadcast_access_pushed AND id::text > $1
+             ORDER BY id::text LIMIT 200`, after)
+		if err != nil {
+			return n, err
 		}
-		ids = append(ids, id)
-	}
-	_ = rows.Close()
-	n := 0
-	for _, id := range ids {
-		if err := dp.push(ctx, id); err != nil {
-			if dp.Logger != nil {
-				dp.Logger.Warn("broadcast: access push failed", "server_id", id, "err", err)
+		var ids []string
+		for rows.Next() {
+			var id string
+			if err := rows.Scan(&id); err != nil {
+				_ = rows.Close()
+				return n, err
 			}
-			continue
+			ids = append(ids, id)
 		}
-		n++
+		_ = rows.Close()
+		if len(ids) == 0 {
+			break
+		}
+		for _, id := range ids {
+			if err := dp.push(ctx, id); err != nil {
+				if dp.Logger != nil {
+					dp.Logger.Warn("broadcast: access push failed", "server_id", id, "err", err)
+				}
+				continue
+			}
+			n++
+		}
+		after = ids[len(ids)-1]
 	}
 	return n, nil
 }

@@ -15,7 +15,7 @@ import {
 import worker from "../src/worker";
 import { now } from "../src/clock";
 
-export const E = env as unknown as Env & { TEST_VECTORS: string };
+export const E = env as unknown as Env & { TEST_VECTORS: string; TEST_INVITE_VECTORS: string };
 export const INGEST = "https://ingest.maktaba.tv";
 export const LIVE = "https://live.maktaba.tv";
 
@@ -38,7 +38,7 @@ export async function cloudKid(label = "cloud-1"): Promise<string> {
   return hex(await crypto.subtle.digest("SHA-256", pub)).slice(0, 16);
 }
 
-async function signCloud(
+export async function signCloud(
   prefix: string,
   domain: string,
   payload: unknown,
@@ -109,9 +109,15 @@ export function call(
   init?: RequestInit,
   envOver: Partial<Env> = {}
 ): Promise<Response> {
-  // the coarse per-location limiter is off unless a test brings one: the exact per-rung guard
-  // (ChannelLive) is what the tests measure, on a clock they move
-  return worker.fetch(new Request(input, init), { ...E, RL: undefined, ...envOver } as Env);
+  // the coarse per-location limiters are off unless a test brings one: the exact guards
+  // (ChannelLive's per rung, ViewerAccess's) are what the tests measure, on a clock they move
+  return worker.fetch(new Request(input, init), {
+    ...E,
+    RL: undefined,
+    PLAY_RL: undefined,
+    API_RL: undefined,
+    ...envOver,
+  } as Env);
 }
 
 /** segmentBody is a fake TS segment of `size` bytes, different for each (rung, seq, salt). */

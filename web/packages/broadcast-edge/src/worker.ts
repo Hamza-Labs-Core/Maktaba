@@ -10,26 +10,31 @@
 // docs/broadcast-edge.md describes the settings, the secrets and how to run it.
 import { DEFAULT_INGEST_HOST, DEFAULT_LIVE_HOST, DEFAULT_WATCH_HOST, type Env } from "./env";
 import { problem } from "./http";
+import { handleAccessControl } from "./access";
 import { handleIngest } from "./ingest";
 import { handleLive } from "./live";
 import { log } from "./log";
+import { handleWatch } from "./play";
 
 export { ChannelLive } from "./channel_live";
 export { PublisherControl } from "./publisher";
 export { Revocations } from "./revocations";
+export { ViewerAccess } from "./access";
 
 export type Host = "ingest" | "live" | "watch";
 
 /**
  * hostOf picks the edge's role from the hostname. Any other host (wrangler dev on localhost, the
- * CI rehearsal) is routed by path: /v1/… is ingest, everything else live.
+ * CI rehearsal) is routed by path: /v1/… is ingest, /api/… and /i/… watch, everything else live.
  */
 export function hostOf(env: Env, url: URL): Host {
   const h = url.hostname;
   if (h === (env.INGEST_HOST || DEFAULT_INGEST_HOST)) return "ingest";
   if (h === (env.LIVE_HOST || DEFAULT_LIVE_HOST)) return "live";
   if (h === (env.WATCH_HOST || DEFAULT_WATCH_HOST)) return "watch";
-  return url.pathname.startsWith("/v1/") ? "ingest" : "live";
+  if (url.pathname.startsWith("/v1/")) return "ingest";
+  if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/i/")) return "watch";
+  return "live";
 }
 
 export default {
@@ -38,12 +43,15 @@ export default {
     try {
       switch (hostOf(env, url)) {
         case "ingest":
+          // the viewer-access control posts (50.26) beside 50.21's
+          if (url.pathname === "/v1/control/access" || url.pathname === "/v1/control/passes")
+            return await handleAccessControl(request, env, url.pathname);
           return await handleIngest(request, env, url);
         case "live":
           return await handleLive(request, env, url);
         case "watch":
-          // the site, its API and the guide blobs arrive with 50.26 and 50.27
-          return problem(404, "not_found");
+          // the viewer API and the invite page (50.26); the site and the guide arrive with 50.27
+          return await handleWatch(request, env, url);
       }
     } catch (err) {
       log("error", "request failed", {
