@@ -31,8 +31,8 @@ import Network
 /// chunked`), so one cut short is an error for the player and never a whole body.
 /// Every response says `Connection: close`: on the loopback a new connection costs a few
 /// milliseconds a playlist or segment (measured, `ProxyCopyCost`), the requests to the home
-/// reuse the URL session's connections all the same, and one request a connection is what
-/// lets a closed connection mean "the player left".
+/// reuse the URL session's connections all the same, and one request a connection needs no
+/// request framing here.
 ///
 /// An AirPlay receiver (story 48.24) cannot reach the device's loopback. A video hands it the
 /// session's signed URL instead; a live channel at home has none (the web port's gate opens
