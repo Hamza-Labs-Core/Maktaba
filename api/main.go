@@ -1385,5 +1385,6 @@ func embedderClient(pipelineClient, searchPipelineClient grpcpipeline.Client) an
 // Cloud only through the relay agent's loopback admin port, which the supervisor sets in
 // MAKTABA_CLOUDLINK_ADMIN (unset: the home is not claimed and nothing can be published).
 func broadcastDeps(db *sql.DB, loops *runner.Runner, logger *slog.Logger) router.BroadcastDeps {
-	return router.BroadcastDeps{DB: db, AgentAddr: os.Getenv("MAKTABA_CLOUDLINK_ADMIN"), Loops: loops, Logger: logger}
+	return router.BroadcastDeps{DB: db, AgentAddr: os.Getenv("MAKTABA_CLOUDLINK_ADMIN"), Loops: loops, Logger: logger,
+		RevocationKeys: os.Getenv("MAKTABA_BROADCAST_PUBKEYS")}
 }

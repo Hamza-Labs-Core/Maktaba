@@ -93,6 +93,42 @@ export async function control(
   });
 }
 
+/** A signed revocation list (50.25), as the cloud's SignRevocations writes it. */
+export async function revocationList(
+  version: number,
+  entries: Record<string, unknown>[],
+  label = "cloud-1",
+  typ = "revocations"
+): Promise<string> {
+  const t = Math.floor(now() / 1000);
+  return signCloud(
+    CONTROL_PREFIX,
+    CONTROL_DOMAIN,
+    {
+      schema: 1,
+      version,
+      issued_at: new Date(t * 1000).toISOString(),
+      expires_at: new Date((t + 48 * 3600) * 1000).toISOString(),
+      entries,
+      typ,
+      kid: await cloudKid(label),
+      iat: t,
+      exp: t + 48 * 3600,
+    },
+    label
+  );
+}
+
+/** installList puts a list at the edge as the cloud's push does; the next version is returned. */
+export async function installList(entries: Record<string, unknown>[]): Promise<Response> {
+  const stub = E.REVOCATIONS.get(E.REVOCATIONS.idFromName("global"));
+  const version = (await stub.current()).version + 1;
+  return call(`${INGEST}/v1/control/revocations`, {
+    method: "PUT",
+    body: await revocationList(version, entries),
+  });
+}
+
 export async function viewerToken(over: Partial<ViewerClaims> & { ch: string }): Promise<string> {
   return mintViewerToken(E.VIEWER_TOKEN_KEY, {
     pub: "pub-1",

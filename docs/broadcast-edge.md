@@ -122,6 +122,33 @@ token (Epic 34's `sign.ts`, valid until the viewer token expires). Tokens, modes
 revocations and metering stay the same; Stream's viewer-minutes are counted apart
 (`minutes_stream`).
 
+## Revocations
+
+Story 50.25's kill switch. The cloud keeps one signed list; a service admin changes it from the
+admin console (each change audited, each a fresh MFA check).
+
+- **The list** is a control post (`mkbc1.<payload>.<signature>`, domain
+  `maktaba-broadcast-control-v1`) of `typ: "revocations"`: `{schema: 1, version, issued_at,
+  expires_at (48 h), entries: [{id, kind, ref, action, reason, since, until?}]}`. `kind` is
+  `channel`, `programme`, `publisher`, `home` or `global`; `action` is `off_air`, `slate` (a
+  programme, with `until`), `suspend` or `terminate`; `reason` is `notice`, `report`,
+  `incident`, `abuse` or `repeat_infringer`.
+- **Delivery.** The cloud `PUT`s it to `/v1/control/revocations` on every change; a cron every
+  minute pulls `API_ORIGIN` + `/v1/broadcast/revocations` (signed as an edge request with
+  `EDGE_SIGNING_KEY`) as the backup. `GET /v1/control/revocations` answers the version held. An
+  older version is `409`; an equal one is a no-op; a bad signature or an unknown key is `401`
+  and a log line with `alert: SEV2`.
+- **A home's copy** is filtered (its own entries and the opaque ones) and has
+  `typ: "revocations-home"`, which the edge refuses, so a home cannot replay it here.
+- **Enforcement.** The `Revocations` object fans a new list out to the channels it names;
+  `ChannelLive` also re-reads it every 10 s. A stopped channel's viewers get `503 {error:
+  "off_air", reason}` at the next playlist (≤ 1 s cache), a new session at once, and ingest
+  `403 {error: "revoked", reason}`. A programme's slate loops the channel's slate until `until`
+  while ingest stays open. The home hears `revoked`, `slate` and `restored` on its control socket.
+- **Break-glass**, with the cloud API down: `BROADCAST_OFF_CHANNELS` (comma-separated channel
+  ids) or `BROADCAST_GLOBAL_OFF = 1`, checked before anything else, reason `incident`. The
+  runbook is `docs/runbooks/cloud/broadcast-kill.md`.
+
 ## The seams later stories fill
 
 | Story | Seam | Where |
@@ -129,7 +156,7 @@ revocations and metering stay the same; Stream's viewer-minutes are counted apar
 | 50.20 | The cloud pushes a publisher's plan: `PUT /v1/control/plan` with a control post `{typ: "plan", pub, mode, version, max_rungs?, max_top_kbps?, max_viewers?, delivery?}`. An older `version` is `409`. `mode` is what a new session gets; `off` stops ingest and play. | `PublisherControl.setPlan`, `ChannelLive.setPlan` |
 | 50.20 | Usage: 5-minute windows `{key: "<pub>:<window start>", publisher, window_start, window_end, minutes_full, minutes_lowest, minutes_stream, segments_in, bytes_in, peak_sessions}`, kept 7 days, posted every 5 minutes to `API_ORIGIN` + `/_edge/usage` as `{edge: "broadcast-edge", windows: [...]}`, signed (edge post). A window is resent until a `2xx`. | `PublisherControl.alarm`, `pendingUsage`, `ack` |
 | 50.22 | The home's uploader: the ingest endpoints above, the slate, the control socket, the speed test. | `ingest.ts` |
-| 50.25 | The revocation list: `PUT /v1/control/revocations` with a control post `{typ: "revocations", version, pubs[], channels[], homes[]}`; `GET` answers the version held. A newer list revokes what it adds (ingest and playlists refused, the home told) and restores what it drops. `BROADCAST_GLOBAL_OFF = 1` stops everything. | `Revocations.install`, `ChannelLive.revoke` |
+| 50.25 | The revocation list (see **Revocations** below) | `revocations.ts`, `ChannelLive.applyList` |
 | 50.26 | Viewer tokens (mint with `mintViewerToken`, the same `VIEWER_TOKEN_KEY`), the session's mode, the concurrent count (`PublisherControl.beat` answers `concurrent`), the watch site on `watch.` | `tokens.ts`, `publisher.ts`, `worker.ts` |
 | 50.28 | Analytics Engine `broadcast_events`: per request `[kind, channel, cache status]` (segment, playlist, master), per channel a minute's `[segments_in, bytes_in, playlist_misses]`, per viewer-minute `[channel, mode, delivery]` | `live.ts`, `channel_live.ts`, `publisher.ts` |
 
@@ -145,8 +172,10 @@ revocations and metering stay the same; Stream's viewer-minutes are counted apar
 | `BROADCAST_ENV` | var | `staging` or `production`: the R2 keys' first part |
 | `BROADCAST_DELIVERY` | var | `r2` (default) or `stream` |
 | `BROADCAST_GLOBAL_OFF` | var | `1` stops every broadcast (50.25's break-glass) |
+| `BROADCAST_OFF_CHANNELS` | var | comma-separated edge channel ids stopped at once (50.25's break-glass) |
+| cron `* * * * *` | trigger | pulls the revocation list from `API_ORIGIN` (50.25) |
 | `INGEST_HOST`, `LIVE_HOST`, `WATCH_HOST` | var | the hostnames (the cache keys use `LIVE_HOST`) |
-| `API_ORIGIN` | var | where usage is posted; unset, nothing is |
+| `API_ORIGIN` | var | where usage is posted and the revocation list pulled from; unset, neither happens |
 | `CORS_ORIGINS` | var | comma-separated; unset, the defaults above |
 | `CLOUD_PUBKEYS` | secret | `{"<kid>": "<base64url Ed25519 public key>"}`: `broadcast.PublicKeysJSON` prints it |
 | `VIEWER_TOKEN_KEY` | secret | base64url, 32 bytes; the same on `watch.` |
@@ -200,4 +229,4 @@ Nothing here is deployed. The first deploy needs, on Maktaba's Cloudflare accoun
   is kept.
 - `BROADCAST_DELIVERY = stream`, globally or per publisher (a plan push), if R2 delivery must
   stop.
-- `BROADCAST_GLOBAL_OFF = 1` stops everything.
+- `BROADCAST_GLOBAL_OFF = 1` stops everything; `BROADCAST_OFF_CHANNELS` stops the channels it names.

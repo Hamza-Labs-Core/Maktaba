@@ -27,6 +27,8 @@ routes = [
 BROADCAST_ENV = "staging"
 BROADCAST_DELIVERY = "r2"
 BROADCAST_GLOBAL_OFF = "0"
+# break-glass per channel (story 50.25 §3): comma-separated channel ids, empty when unused
+BROADCAST_OFF_CHANNELS = ""
 INGEST_HOST = "staging-ingest.maktaba.dev"
 LIVE_HOST = "staging-live.maktaba.dev"
 WATCH_HOST = "staging-watch.maktaba.dev"
@@ -69,6 +71,10 @@ simple = { limit = 60, period = 10 }
 [observability]
 enabled = true
 
+# The revocation list's pull every minute (story 50.25 §2), the backup to the cloud's push
+[triggers]
+crons = ["* * * * *"]
+
 # Production: the same Worker under its own name, buckets and hosts (`wrangler deploy --env production`)
 [env.production]
 name = "maktaba-broadcast-production"
@@ -83,6 +89,7 @@ routes = [
 BROADCAST_ENV = "production"
 BROADCAST_DELIVERY = "r2"
 BROADCAST_GLOBAL_OFF = "0"
+BROADCAST_OFF_CHANNELS = ""
 INGEST_HOST = "ingest.maktaba.tv"
 LIVE_HOST = "live.maktaba.tv"
 WATCH_HOST = "watch.maktaba.tv"
@@ -119,3 +126,6 @@ simple = { limit = 60, period = 10 }
 
 [env.production.observability]
 enabled = true
+
+[env.production.triggers]
+crons = ["* * * * *"]

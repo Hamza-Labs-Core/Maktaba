@@ -179,7 +179,10 @@ func makeVectors(t *testing.T) []byte {
 	}
 	v.IngestClaims, _ = VerifyIngest(pubkeys(k), v.Ingest, vectorAt)
 	v.Plan, _ = SignControl(k, "plan", map[string]any{"pub": "pub-1", "mode": "lowest", "version": 3, "max_rungs": 2, "max_top_kbps": 3000}, vectorAt, 15*time.Minute)
-	v.Revocations, _ = SignControl(k, "revocations", map[string]any{"version": 1, "pubs": []string{}, "channels": []string{ChannelID("srv-1", "7")}, "homes": []string{}}, vectorAt, 24*time.Hour)
+	v.Revocations, _, err = SignRevocations(k, 1842, vectorEntries(), vectorAt)
+	if err != nil {
+		t.Fatal(err)
+	}
 	e := testKey(t, "edge-1")
 	v.Edge.Seed = b64.EncodeToString(e.Priv.Seed())
 	v.Edge.Public = b64.EncodeToString(e.Priv.Public().(ed25519.PublicKey))

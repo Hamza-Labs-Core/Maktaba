@@ -14,12 +14,16 @@ import (
 )
 
 // Event is one message of the edge's control socket (GET /v1/ingest/ws): hello,
-// rung_stalled, on_air, off_air, revoked, restored, plan_off, pong; and the on-demand
-// wake and sleep, and limits (a rung the plan's mode removed).
+// rung_stalled, on_air, off_air, revoked (with the revocation's action and reason, 50.25),
+// slate (a programme's slate airs until a time; the home keeps uploading), restored,
+// plan_off, pong; and the on-demand wake and sleep, and limits (a rung the plan's mode
+// removed).
 type Event struct {
 	Type   string `json:"type"`
 	Rung   string `json:"rung,omitempty"`
 	Reason string `json:"reason,omitempty"`
+	// Action is a revoked event's: off_air, suspend or terminate.
+	Action string `json:"action,omitempty"`
 	// Rungs is a limits event's rungs (top first).
 	Rungs []string `json:"rungs,omitempty"`
 }

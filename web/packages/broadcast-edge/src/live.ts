@@ -9,6 +9,10 @@
 // A segment costs a token check (no Durable Object, no R2), then the edge cache under a key with
 // no token; only a miss reads R2. A playlist miss asks ChannelLive, which also answers whether
 // the channel is revoked or off air. The home is never fetched.
+//
+// The kill switch (50.25): break-glass (BROADCAST_GLOBAL_OFF, BROADCAST_OFF_CHANNELS) is checked
+// first, before the token; a revoked channel answers 503 off_air with the reason on play, on the
+// heartbeat and at the next playlist, so a playing viewer gets the off-air card within a reload.
 import {
   cached,
   masterCacheKey,
@@ -19,10 +23,11 @@ import {
 } from "./cache";
 import type { PlaylistAnswer } from "./channel_live";
 import { now } from "./clock";
-import { globalDelivery, globallyOff, type Env } from "./env";
+import { globalDelivery, type Env } from "./env";
 import { geoBlocked, geoFor } from "./geo";
 import { json, preflight, problem, withLiveHeaders } from "./http";
 import { log } from "./log";
+import { breakGlass, stopVerdict } from "./revocations";
 import { manifestURL, streamConfigured } from "./stream_fallback";
 import { verifyViewer, type ViewerClaims } from "./tokens";
 
@@ -40,9 +45,10 @@ async function route(request: Request, env: Env, url: URL): Promise<Response> {
   const parts = url.pathname.split("/").filter(Boolean);
   if (parts.length < 3) return problem(404, "not_found");
   const [token, ch] = [parts[0]!, parts[1]!];
+  const glass = breakGlass(env, ch);
+  if (glass) return offAir(glass.reason);
   const v = await verifyViewer(token, env.VIEWER_TOKEN_KEY, now(), ch);
   if (!v.ok) return problem(v.status, v.error);
-  if (globallyOff(env)) return problem(503, "broadcast_off");
   const claims = v.claims;
   if (claims.mode === "off") return problem(403, "broadcast_off");
   if (claims.mode === "wait") return problem(429, "broadcast_full", { "Retry-After": "30" });
@@ -77,6 +83,11 @@ async function geoCheck(request: Request, env: Env, ch: string): Promise<Respons
     indexes: [ch],
   });
   return problem(451, "geo_blocked");
+}
+
+/** offAir is a stopped channel's answer: the player shows the off-air card. */
+function offAir(reason: string): Response {
+  return json(503, { error: "off_air", reason });
 }
 
 function channel(env: Env, ch: string) {
@@ -120,7 +131,10 @@ function playlistResponse(answer: PlaylistAnswer): Response {
       headers: { "Content-Type": HLS, "Cache-Control": PLAYLIST_CACHE_CONTROL },
     });
   }
-  if (answer.kind === "error") return problem(answer.status, answer.error);
+  if (answer.kind === "error")
+    return answer.reason
+      ? json(answer.status, { error: answer.error, reason: answer.reason })
+      : problem(answer.status, answer.error);
   return problem(500, "unexpected");
 }
 
@@ -139,7 +153,7 @@ async function toStream(env: Env, claims: ViewerClaims, uid: string | null): Pro
 /** viaStream is the global Stream delivery: the channel's refusals first, then the redirect. */
 async function viaStream(env: Env, claims: ViewerClaims): Promise<Response> {
   const a = await channel(env, claims.ch).streamFor();
-  if (a.kind === "error") return problem(a.status, a.error);
+  if (a.kind === "error") return playlistResponse(a);
   return toStream(env, claims, a.kind === "stream" ? a.uid : null);
 }
 
@@ -178,6 +192,8 @@ async function media(env: Env, claims: ViewerClaims, rung: string): Promise<Resp
 }
 
 async function beat(env: Env, claims: ViewerClaims): Promise<Response> {
+  const stop = await stopVerdict(env, { pub: claims.pub, ch: claims.ch }, now());
+  if (stop?.stop === "off_air") return offAir(stop.reason);
   const r = await env.PUBLISHER.get(env.PUBLISHER.idFromName(claims.pub)).beat(
     claims.pub,
     claims.session,

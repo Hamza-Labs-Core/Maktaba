@@ -231,4 +231,9 @@ func TestBroadcastDepsUseTheRelayAgent(t *testing.T) {
 	if d := broadcastDeps(nil, nil, nil); d.AgentAddr != "" {
 		t.Fatalf("an unclaimed home has an agent: %+v", d)
 	}
+	// story 50.25: broadcast signing keys beyond the release's come from the environment
+	t.Setenv("MAKTABA_BROADCAST_PUBKEYS", `{"k1":"AAAA"}`)
+	if d := broadcastDeps(nil, nil, nil); d.RevocationKeys != `{"k1":"AAAA"}` {
+		t.Fatalf("the revocation keys: %+v", d)
+	}
 }

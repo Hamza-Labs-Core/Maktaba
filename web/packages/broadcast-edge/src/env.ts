@@ -29,6 +29,8 @@ export interface Env {
   EDGE_SIGNING_KEY?: string;
   /** "1" stops every broadcast at the edge (break-glass, 50.25). */
   BROADCAST_GLOBAL_OFF?: string;
+  /** Comma-separated channel ids taken off air at the edge (break-glass, 50.25). */
+  BROADCAST_OFF_CHANNELS?: string;
   /** "r2" (default) | "stream": the delivery when a publisher has no override (§5, Q8). */
   BROADCAST_DELIVERY?: string;
   /** The API the edge reports usage to (50.20); unset: nothing is posted. */
@@ -60,4 +62,23 @@ export function globalDelivery(env: Env): Delivery {
 
 export function globallyOff(env: Env): boolean {
   return env.BROADCAST_GLOBAL_OFF === "1" || env.BROADCAST_GLOBAL_OFF === "true";
+}
+
+const offCache = new Map<string, Set<string>>();
+
+/** channelOff is BROADCAST_OFF_CHANNELS naming ch (parsed once per value per isolate). */
+export function channelOff(env: Env, ch: string): boolean {
+  const raw = env.BROADCAST_OFF_CHANNELS ?? "";
+  if (!raw) return false;
+  let set = offCache.get(raw);
+  if (!set) {
+    set = new Set(
+      raw
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean)
+    );
+    offCache.set(raw, set);
+  }
+  return set.has(ch);
 }

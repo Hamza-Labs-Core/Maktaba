@@ -50,6 +50,30 @@ export interface BroadcastPlan {
   agreement_accepted: boolean;
 }
 
+/** The home's copy of the broadcast revocation list (story 50.25). */
+export interface RevocationStatus {
+  version: number;
+  fetched_at?: string;
+  /** Past its expiry, or none yet: new publishes wait (broadcast.revocationsStale). */
+  stale: boolean;
+  days: number;
+  /** An entry stopping every channel here: this home, its publisher, or everything. */
+  home?: { action: "off_air" | "suspend" | "terminate"; reason: string; kind: string };
+}
+
+/** The reasons the list gives (broadcast.reason.<r>). */
+export const REVOCATION_REASONS = ["notice", "report", "incident", "abuse", "repeat_infringer"];
+
+/**
+ * revokedReason is the reason a revoked channel's detail carries: "list:<reason>" when the
+ * home's copy of the list stopped it, the bare reason when the edge did. Null when the detail
+ * names no known reason.
+ */
+export function revokedReason(detail: string | undefined): string | null {
+  const r = (detail ?? "").replace(/^list:/, "");
+  return REVOCATION_REASONS.includes(r) ? r : null;
+}
+
 export interface BroadcastView {
   channels: BroadcastChannel[];
   uplink: Uplink;
@@ -61,6 +85,8 @@ export interface BroadcastView {
   rungs: string[];
   source_height: number;
   checks: string[];
+  /** Absent while the home does not honour the list (no keys configured). */
+  revocations?: RevocationStatus;
 }
 
 export interface BroadcastSetup {

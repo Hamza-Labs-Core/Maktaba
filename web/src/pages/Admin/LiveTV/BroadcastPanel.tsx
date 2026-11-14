@@ -22,6 +22,7 @@ import { useFlag } from "../../../lib/flags";
 import { useI18n } from "../../../lib/i18n";
 import {
   broadcastRefusal,
+  revokedReason,
   tvBroadcastApi,
   watchLink,
   type BroadcastChannel,
@@ -69,6 +70,7 @@ export function BroadcastPanel() {
     (r: BroadcastRefusal) => {
       const params: Record<string, string | number> = { ...r.params };
       if (typeof params.kbps === "number") params.kbps = `${mbps(params.kbps)} Mbps`;
+      if (typeof params.reason === "string") params.reason = t(`broadcast.reason.${params.reason}`);
       const text = t(r.code, params);
       return r.check ? `${t(`broadcast.check.${r.check}`)}: ${text}` : text;
     },
@@ -187,6 +189,21 @@ export function BroadcastPanel() {
       <p className="mkt-livetv__hint">{t("broadcast.alwaysOnNote")}</p>
       {view.cloud !== "ok" && <p role="status">{t(`broadcast.cloud.${view.cloud}`)}</p>}
       {view.plan && !view.plan.plan && <p role="status">{t("broadcast.needsPro")}</p>}
+      {view.revocations?.home && (
+        <p role="alert" data-testid="broadcast-stopped">
+          {t(
+            view.revocations.home.action === "terminate"
+              ? "broadcast.terminated"
+              : "broadcast.revoked.suspended",
+            { reason: t(`broadcast.reason.${view.revocations.home.reason}`) }
+          )}
+        </p>
+      )}
+      {view.revocations?.stale && (
+        <p role="status" data-testid="broadcast-stale">
+          {t("broadcast.revocationsStale", { days: view.revocations.days })}
+        </p>
+      )}
 
       <section aria-label={t("broadcast.uplink.title")}>
         <h3>{t("broadcast.uplink.title")}</h3>
@@ -241,7 +258,17 @@ export function BroadcastPanel() {
                 </td>
                 <td>
                   {t(`broadcast.state.${c.state}`)}
-                  {c.detail && <div className="mkt-livetv__hint">{t(`broadcast.${c.detail}`)}</div>}
+                  {c.state === "revoked" ? (
+                    <div className="mkt-livetv__hint">
+                      {revokedReason(c.detail)
+                        ? t("broadcast.revoked.channel", {
+                            reason: t(`broadcast.reason.${revokedReason(c.detail)}`),
+                          })
+                        : t("broadcast.offAir")}
+                    </div>
+                  ) : (
+                    c.detail && <div className="mkt-livetv__hint">{t(`broadcast.${c.detail}`)}</div>
+                  )}
                   {published && c.slug && (
                     <CopyField label={t("broadcast.link")} value={watchLink(c.slug)} />
                   )}

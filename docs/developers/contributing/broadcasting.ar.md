@@ -15,7 +15,7 @@
 |---|---|---|
 | صفحة البث | `web/src/pages/Admin/LiveTV/BroadcastPanel.tsx` | تجهيز قناة، ونشرها، ورؤية حالتها، وقياس سرعة الرفع |
 | واجهة المنزل البرمجية | `api/internal/broadcast/` | المسارات، وفحوص النشر، واختبار السرعة، وتجديد رموز الاستقبال (`api:broadcast_tokens`) |
-| رابط السحابة | `cloud/internal/cloudlink/broadcast.go` | يمرّر وكيل الترحيل أربعة طلبات إلى سحابة مكتبة باعتماد المنزل؛ ولا تحمله الواجهة البرمجية أبدًا |
+| رابط السحابة | `cloud/internal/cloudlink/broadcast.go` | يمرّر وكيل الترحيل خمسة طلبات إلى سحابة مكتبة باعتماد المنزل؛ ولا تحمله الواجهة البرمجية أبدًا |
 | الباثّ | `streaming/internal/broadcast/` | ffmpeg واحد لسلّم الجودات لكل قناة، والرافع، ومقبس التحكم، وبطاقة الانقطاع (`streaming:broadcast_uploader`، `streaming:broadcast_control`) |
 | قاعدة البيانات | الخانة 0226 | `broadcast_channels`، `broadcast_uplink`، `broadcast_confirmations`، `broadcast_ingest_tokens` |
 | الإعدادات | `rules.broadcast` | `uplink_share` (0.5)، `rung_slot_weight` (0.5)، `allow_software_rungs` (متوقف) |
@@ -104,6 +104,29 @@
 - **البطاقة.** مرة لكل رمز يصنع بطاقة انقطاع مدتها 4 ثوانٍ (اسم القناة وعبارة الانقطاع بالإنجليزية
   والعربية) ويرفعها. تُقرأ النصوص من ملفات، ولا توضع في مخطط المرشّحات أبدًا.
 
+## الإيقاف عن البث
+
+تستطيع مكتبة إيقاف بثٍّ بقائمة إلغاء موقَّعة (القصة 50.25؛ وجانب الحافة في
+`docs/broadcast-edge.md`، قسم **Revocations**). ويلتزم بها المنزل أيضًا:
+
+- **نسخته.** تقرأ الواجهة البرمجية القائمة كل 10 دقائق عبر الوكيل
+  (`GET /admin/cloud-link/broadcast/revocations`). وتتحقق من توقيع Ed25519 بالمفاتيح في
+  `BuiltinRevocationKeys` مع `MAKTABA_BROADCAST_PUBKEYS` (`{"<kid>": "<base64url key>"}`)، وتحفظ
+  أحدث نسخة في `app_settings` (`broadcast.revocations`). وتُرفض النسخة الأقدم، حتى بعد إعادة
+  التشغيل. ولا ترسل السحابة إلى المنزل إلا بنوده هو والبنود المعتمة، موقَّعةً بالنوع
+  `typ: "revocations-home"`. وإن لم تُضبط أي مفاتيح فلا يلتزم المنزل بأي قائمة.
+- **ما تفعله.** البند الذي يسمّي معرّف قناة منشورة على الحافة، أو ناشرها، أو هذا المنزل، يجعل
+  حالة القناة `revoked` بالتفصيل `list:<reason>`. وترفعه قائمة لاحقة لم تعد تسمّيه؛ أما الإيقاف
+  الذي أرسلته الحافة عبر مقبس التحكم فترفعه رسالة `restored` من الحافة. وشاشة البرنامج البديلة
+  لا تغيّر شيئًا في المنزل: فالحافة هي التي تكرّر الشاشة البديلة.
+- **النشر.** يرفض الإيقافُ نشرًا جديدًا بالرمز `broadcast.revoked.channel` أو
+  `broadcast.revoked.suspended` أو `broadcast.terminated`، ومع كلٍّ منها `params.reason`. والنسخة
+  التي تجاوزت صلاحيتها البالغة 48 ساعة، أو غيابها، ترفض نشرًا جديدًا بالرمز
+  `broadcast.revocationsStale` (`params.days`)؛ وتستمر القنوات المنشورة من قبل.
+- **الصفحة.** يحمل `GET /api/tv/broadcast` الحقل `revocations: {version, fetched_at, stale, days,
+  home?}`؛ وتعرض صفحة البث تحذير النسخة القديمة، وسبب إيقاف المنزل، وسبب إيقاف كل قناة
+  (`broadcast.reason.<reason>`).
+
 ## الاختبارات
 
 - `api/internal/broadcast`: الفحوص (T01 وT04 وT05)، واختبار الدور (T09)، واختبارات قاعدة البيانات
@@ -116,4 +139,7 @@
   للنشر وحدها (T03)؛ والرخصة عند الاستلام والتحديث (T01 وT02).
 - `streaming/internal/channel/publishable_pg_test.go`: العنصر الذي فقد علامته يعرض البطاقة (T04).
 - `web/packages/broadcast-edge/test/geo.test.ts` واختبارات الاستقبال في السحابة: قاعدة الدول (T06).
+- `api/internal/broadcast/revocations_test.go` و`revocations_pg_test.go`: المتجه الموقَّع من
+  السحابة، والإيقاف الأقوى، ومنع الرجوع إلى نسخة أقدم، وقناة أُوقفت ثم رُفع إيقافها، ونسخة
+  قديمة (T04).
 - `web/src/pages/Admin/LiveTV/BroadcastPanel.test.tsx`: الصفحة، بالإنجليزية والعربية.

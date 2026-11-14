@@ -16,7 +16,7 @@ caller with no session `401`, before anything is read or sent to Maktaba Cloud.
 |---|---|---|
 | Broadcast page | `web/src/pages/Admin/LiveTV/BroadcastPanel.tsx` | set up a channel, publish it, see its state, measure the upload |
 | Home API | `api/internal/broadcast/` | the routes, the publish checks, the speed test, the ingest-token refresh (`api:broadcast_tokens`) |
-| Cloud link | `cloud/internal/cloudlink/broadcast.go` | the relay agent forwards four calls to Maktaba Cloud with the home's credential; the API never holds it |
+| Cloud link | `cloud/internal/cloudlink/broadcast.go` | the relay agent forwards five calls to Maktaba Cloud with the home's credential; the API never holds it |
 | Broadcaster | `streaming/internal/broadcast/` | one ladder ffmpeg per channel, the uploader, the control socket, the offline slate (`streaming:broadcast_uploader`, `streaming:broadcast_control`) |
 | Database | slot 0226 | `broadcast_channels`, `broadcast_uplink`, `broadcast_confirmations`, `broadcast_ingest_tokens` |
 | Settings | `rules.broadcast` | `uplink_share` (0.5), `rung_slot_weight` (0.5), `allow_software_rungs` (off) |
@@ -111,6 +111,29 @@ outside with `451 geo_blocked`.
   words in English and Arabic) and uploads it. The texts are read from files, never put in the
   filter graph.
 
+## Taken off air
+
+Maktaba can stop a broadcast with a signed revocation list (story 50.25; the edge's side is in
+`docs/broadcast-edge.md`, **Revocations**). The home honours it too:
+
+- **Its copy.** Every 10 minutes the API reads the list through the agent
+  (`GET /admin/cloud-link/broadcast/revocations`). It checks the Ed25519 signature against
+  `BuiltinRevocationKeys` plus `MAKTABA_BROADCAST_PUBKEYS` (`{"<kid>": "<base64url key>"}`), and
+  keeps the newest copy in `app_settings` (`broadcast.revocations`). An older version is refused,
+  even after a restart. The cloud sends a home only its own entries and the opaque ones, signed
+  as `typ: "revocations-home"`. With no keys configured the home does not honour a list.
+- **What it does.** An entry naming a published channel's edge id, its publisher or this home
+  sets the channel to `revoked` with detail `list:<reason>`. A later list that no longer names
+  it lifts it; a stop the edge sent over the control socket is lifted by the edge's `restored`.
+  A programme's slate changes nothing on the home: the edge loops the slate.
+- **Publishing.** A stop refuses a new publish with `broadcast.revoked.channel`,
+  `broadcast.revoked.suspended` or `broadcast.terminated`, each with `params.reason`. A copy
+  past its 48 h expiry, or none, refuses a new publish with `broadcast.revocationsStale`
+  (`params.days`); channels already published keep running.
+- **The page.** `GET /api/tv/broadcast` carries `revocations: {version, fetched_at, stale, days,
+  home?}`; the Broadcast page shows the stale warning, why the home is stopped, and why each
+  revoked channel was taken off (`broadcast.reason.<reason>`).
+
 ## Tests
 
 - `api/internal/broadcast`: the checks (T01, T04, T05), the role test (T09), and the database
@@ -125,4 +148,6 @@ outside with `451 geo_blocked`.
   slate (T04).
 - `web/packages/broadcast-edge/test/geo.test.ts` and the cloud's ingest tests: the country rule
   (T06).
+- `api/internal/broadcast/revocations_test.go` and `revocations_pg_test.go`: the cloud's signed
+  vector, the strongest stop, anti-rollback, a stopped and lifted channel, a stale copy (T04).
 - `web/src/pages/Admin/LiveTV/BroadcastPanel.test.tsx`: the page, in English and Arabic.

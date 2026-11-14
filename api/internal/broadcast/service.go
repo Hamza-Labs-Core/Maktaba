@@ -31,6 +31,9 @@ type Service struct {
 	// Notice tells the home's admins something changed (the uplink rule dropped a rung,
 	// a token expired); nil: logged only.
 	Notice func(ctx context.Context, channelID, code string)
+	// Revocations is the home's copy of Maktaba's broadcast revocation list (50.25); nil or
+	// without keys: not honoured (the edge still refuses a revoked ingest).
+	Revocations *Revocations
 }
 
 func (s *Service) now() time.Time {
@@ -240,6 +243,9 @@ func (s *Service) Publish(ctx context.Context, id string, confirmed bool, by Adm
 	if ch.Published() {
 		return ch, nil
 	}
+	if p := s.revocationRefusal(ctx, ch); p != nil {
+		return ch, p
+	}
 	plan, err := s.Cloud.State(ctx)
 	if err != nil {
 		if p := cloudRefusal(err); p != nil {
@@ -324,8 +330,10 @@ func (s *Service) refreshToken(ctx context.Context, ch Channel) error {
 // RefreshEvery is how often a published channel's token is asked for again (§2).
 const RefreshEvery = time.Hour
 
-// Tick refreshes due tokens, retries pending unpublishes and runs the daily speed test.
+// Tick refreshes due tokens, retries pending unpublishes, honours the revocation list and runs
+// the daily speed test.
 func (s *Service) Tick(ctx context.Context) {
+	s.applyRevocations(ctx)
 	pending, err := s.Store.PendingUnpublish(ctx)
 	if err == nil {
 		for id, cloud := range pending {

@@ -21,7 +21,7 @@ import { json, problem } from "./http";
 import { log } from "./log";
 import { segmentKey } from "./playlist";
 import type { PlanState } from "./publisher";
-import { forgetRevocations, isRevoked, revocationsFor } from "./revocations";
+import { forgetRevocations, stopVerdict } from "./revocations";
 import { createLiveInput, streamConfigured } from "./stream_fallback";
 import { verifyControl, verifyIngest, type IngestClaims } from "./tokens";
 
@@ -95,9 +95,14 @@ async function authorize(
   if (!v.ok) return { ok: false, res: problem(v.status, v.error) };
   const skew = clockCheck(request, t);
   if (skew) return { ok: false, res: skew };
-  const list = await revocationsFor(env);
-  if (isRevoked(list, { pub: v.claims.pub, ch: v.claims.ch, home: v.claims.home }))
-    return { ok: false, res: problem(403, "revoked") };
+  // a programme's slate keeps the home uploading; off_air, suspend and terminate refuse it
+  const stop = await stopVerdict(
+    env,
+    { pub: v.claims.pub, ch: v.claims.ch, home: v.claims.home },
+    t
+  );
+  if (stop?.stop === "off_air")
+    return { ok: false, res: json(403, { error: "revoked", reason: stop.reason }) };
   return { ok: true, claims: v.claims };
 }
 

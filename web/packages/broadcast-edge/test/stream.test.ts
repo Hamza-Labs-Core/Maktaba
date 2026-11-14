@@ -132,7 +132,13 @@ describe("T08 Stream mode", () => {
     const ch2 = newChannel();
     await askStream(ch2, pub);
     await runInDurableObject(env.CHANNEL.get(env.CHANNEL.idFromName(ch2)), (o) =>
-      o.revoke("revoked")
+      o.applyList(
+        {
+          version: 1,
+          entries: [{ id: "r-1", kind: "channel", ref: ch2, action: "off_air", reason: "notice" }],
+        },
+        ch2
+      )
     );
     const r = await call(
       `${LIVE}/${await viewerToken({ ch: ch2, pub })}/${ch2}/master.m3u8`,
@@ -141,8 +147,8 @@ describe("T08 Stream mode", () => {
         BROADCAST_DELIVERY: "stream",
       }
     );
-    expect(r.status).toBe(403);
-    expect(await r.json()).toEqual({ error: "revoked" });
+    expect(r.status).toBe(503);
+    expect(await r.json()).toEqual({ error: "off_air", reason: "notice" });
   });
 
   it("answers 503 until the channel has a live input", async () => {

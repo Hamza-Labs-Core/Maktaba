@@ -305,3 +305,50 @@ export function measuredBandwidth(rs: RungState): number {
   if (live.length === 0) return 0;
   return Math.max(...live.map((e) => (e.bytes * 8) / Math.max(0.1, e.dur)));
 }
+
+/** The shortest slate segment the loop plays, in seconds. */
+export const MIN_LOOP_SEG_S = 0.1;
+
+/**
+ * renderSlateLoop writes a media playlist that loops the channel's slate from `since` (a
+ * programme entry's slate, 50.25): the newest WINDOW entries of the loop at `now`, a
+ * discontinuity at each wrap. Null with no slate.
+ */
+export function renderSlateLoop(slate: SlateSegment[], since: number, now: number): string | null {
+  // a segment under MIN_LOOP_SEG_S is no real slate segment; leaving it out keeps the loop's
+  // length (and the arithmetic below) sane
+  const segs = [...slate].sort((a, b) => a.idx - b.idx).filter((x) => x.dur >= MIN_LOOP_SEG_S);
+  if (segs.length === 0) return null;
+  const len = segs.length;
+  const prefix: number[] = [];
+  let loopMs = 0;
+  for (const x of segs) {
+    prefix.push(loopMs);
+    loopMs += x.dur * 1000;
+  }
+  const startOf = (k: number) => since + Math.floor(k / len) * loopMs + prefix[k % len]!;
+  const elapsed = Math.max(0, now - since);
+  // the loop we are in, then the segment within it: a walk of at most len steps
+  const q = Math.floor(elapsed / loopMs);
+  const off = elapsed - q * loopMs;
+  let j = 0;
+  while (j + 1 < len && prefix[j + 1]! <= off) j++;
+  const k = q * len + j;
+  const first = Math.max(0, k - WINDOW + 1);
+  const wrapsBefore = first > 0 ? Math.floor((first - 1) / len) : 0;
+  const lines = [
+    "#EXTM3U",
+    "#EXT-X-VERSION:6",
+    `#EXT-X-TARGETDURATION:${Math.ceil(Math.max(...segs.map((x) => x.dur)))}`,
+    `#EXT-X-MEDIA-SEQUENCE:${first}`,
+    `#EXT-X-DISCONTINUITY-SEQUENCE:${wrapsBefore}`,
+  ];
+  for (let i = first; i <= k; i++) {
+    const x = segs[i % len]!;
+    if (i > 0 && i % len === 0) lines.push("#EXT-X-DISCONTINUITY");
+    lines.push(`#EXT-X-PROGRAM-DATE-TIME:${new Date(startOf(i)).toISOString()}`);
+    lines.push(`#EXTINF:${fmtDur(x.dur)},`);
+    lines.push(`../slate/${segmentName(x.idx, x.hash8)}`);
+  }
+  return lines.join("\n") + "\n";
+}

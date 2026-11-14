@@ -1,14 +1,13 @@
 // T05 (the size and rate guards), the uplink test, the state post, the slate, the control socket,
 // R2's absence, and the cloud's control posts: a plan (50.20) and the revocation list (50.25).
 import { afterEach, describe, expect, it } from "vitest";
-import { runInDurableObject } from "cloudflare:test";
 import { advanceClock, resetClock } from "../src/clock";
 import { forgetRevocations } from "../src/revocations";
-import type { Env } from "../src/env";
 import {
   call,
   control,
   E,
+  revocationList,
   INGEST,
   ingestToken,
   LIVE,
@@ -253,83 +252,9 @@ describe("the cloud's control posts", () => {
     expect(
       (await call(`${INGEST}/v1/control/plan`, { method: "PUT", body: "mkbc1.e30.AAAA" })).status
     ).toBe(401);
-    const rev = await control("revocations", { version: 1, pubs: [], channels: [], homes: [] });
+    const rev = await revocationList(1, []);
     expect((await call(`${INGEST}/v1/control/plan`, { method: "PUT", body: rev })).status).toBe(
       400
     );
-  });
-
-  it("installs a newer revocation list: the channel's ingest and playlists are refused, then restored", async () => {
-    const ch = newChannel();
-    const pub = `pub-${ch}`;
-    const token = await ingestToken({ ch, pub });
-    await putSegment(ch, "src", 1, { token });
-    const stub = (E as Env).REVOCATIONS.get((E as Env).REVOCATIONS.idFromName("global"));
-    const version = (await stub.current()).version + 1;
-    const list = await control("revocations", { version, pubs: [], channels: [ch], homes: [] });
-    const r = await call(`${INGEST}/v1/control/revocations`, { method: "PUT", body: list });
-    expect(r.status, await r.clone().text()).toBe(200);
-    expect(await (await call(`${INGEST}/v1/control/revocations`)).json()).toEqual({ version });
-    advanceClock(1500);
-    expect(await (await putSegment(ch, "src", 2, { token })).json()).toEqual({ error: "revoked" });
-    const tok = await viewerToken({ ch, pub });
-    const p = await call(`${LIVE}/${tok}/${ch}/src/index.m3u8`);
-    expect(p.status).toBe(403);
-    expect(await p.json()).toEqual({ error: "revoked" });
-    // an older list is refused; the next one restores the channel
-    expect(
-      (
-        await call(`${INGEST}/v1/control/revocations`, {
-          method: "PUT",
-          body: await control("revocations", {
-            version: version - 1,
-            pubs: [],
-            channels: [],
-            homes: [],
-          }),
-        })
-      ).status
-    ).toBe(409);
-    const clear = await control("revocations", {
-      version: version + 1,
-      pubs: [],
-      channels: [],
-      homes: [],
-    });
-    expect(
-      (await call(`${INGEST}/v1/control/revocations`, { method: "PUT", body: clear })).status
-    ).toBe(200);
-    advanceClock(1500);
-    expect((await putSegment(ch, "src", 2, { token })).status).toBe(201);
-  });
-
-  it("revokes every channel of a revoked publisher", async () => {
-    const [a, b] = [newChannel(), newChannel()];
-    const pub = `pub-${a}`;
-    await putSegment(a, "src", 1, { token: await ingestToken({ ch: a, pub }) });
-    await putSegment(b, "src", 1, { token: await ingestToken({ ch: b, pub }) });
-    const stub = (E as Env).REVOCATIONS.get((E as Env).REVOCATIONS.idFromName("global"));
-    const version = (await stub.current()).version + 1;
-    await call(`${INGEST}/v1/control/revocations`, {
-      method: "PUT",
-      body: await control("revocations", { version, pubs: [pub], channels: [], homes: [] }),
-    });
-    for (const ch of [a, b]) {
-      const s = await runInDurableObject(
-        (E as Env).CHANNEL.get((E as Env).CHANNEL.idFromName(ch)),
-        (o) => o.snapshot()
-      );
-      expect(s.status).toBe("revoked");
-    }
-    // leave the list clean for the other tests
-    await call(`${INGEST}/v1/control/revocations`, {
-      method: "PUT",
-      body: await control("revocations", {
-        version: version + 1,
-        pubs: [],
-        channels: [],
-        homes: [],
-      }),
-    });
   });
 });

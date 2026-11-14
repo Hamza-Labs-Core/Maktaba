@@ -186,6 +186,95 @@ describe("BroadcastPanel", () => {
     expect(post).toHaveBeenCalledWith("/api/tv/broadcast/speedtest");
   });
 
+  // Story 50.25: what the revocation list does, as the home shows it
+  it("names why Maktaba took a channel off air, from the list or the edge", async () => {
+    get.mockResolvedValue(
+      view({
+        channels: [
+          channel({ state: "revoked", detail: "list:notice" }),
+          channel({ id: "c2", name: "Quran", number: 102, state: "revoked", detail: "incident" }),
+          channel({ id: "c3", name: "Kids", number: 103, state: "revoked", detail: "" }),
+        ],
+      })
+    );
+    renderPanel();
+    expect(
+      await screen.findByText(
+        "Maktaba took this channel off air: a copyright notice. See your notices on the Broadcast page."
+      )
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/took this channel off air: a service problem on our side/)
+    ).toBeInTheDocument();
+    expect(screen.getByText("This channel is off air.")).toBeInTheDocument();
+  });
+
+  it("warns while the home's copy of the list is stale, and says when the home is stopped", async () => {
+    get.mockResolvedValue(
+      view({
+        revocations: {
+          version: 3,
+          stale: true,
+          days: 4,
+          home: { action: "terminate", reason: "repeat_infringer", kind: "publisher" },
+        },
+      })
+    );
+    renderPanel();
+    expect(await screen.findByTestId("broadcast-stale")).toHaveTextContent(
+      "couldn't check Maktaba's broadcast list for 4 days"
+    );
+    expect(screen.getByTestId("broadcast-stopped")).toHaveTextContent(
+      "Broadcasting from this account has ended: repeated valid copyright notices."
+    );
+  });
+
+  it("shows a suspension and a publish refused by the list with its reason", async () => {
+    get.mockResolvedValue(
+      view({
+        revocations: {
+          version: 3,
+          stale: false,
+          days: 0,
+          home: { action: "suspend", reason: "abuse", kind: "home" },
+        },
+      })
+    );
+    post.mockRejectedValue(
+      problem(409, { code: "broadcast.revoked.channel", params: { reason: "report" } })
+    );
+    renderPanel();
+    expect(await screen.findByTestId("broadcast-stopped")).toHaveTextContent(
+      "Broadcasting from this home is suspended: misuse of the service."
+    );
+    expect(screen.queryByTestId("broadcast-stale")).not.toBeInTheDocument();
+    await userEvent.click(await screen.findByRole("button", { name: "Publish this channel" }));
+    await userEvent.click(screen.getByLabelText(/I have the rights to broadcast/));
+    await userEvent.click(screen.getAllByRole("button", { name: "Publish this channel" }).at(-1)!);
+    await waitFor(() =>
+      expect(
+        screen
+          .getAllByRole("alert")
+          .some((a) => a.textContent?.includes("took this channel off air: a report we reviewed"))
+      ).toBe(true)
+    );
+  });
+
+  it("renders the list's warnings in Arabic", async () => {
+    localStorage.setItem("mkt:locale", "ar");
+    get.mockResolvedValue(
+      view({
+        channels: [channel({ state: "revoked", detail: "list:notice" })],
+        revocations: { version: 3, stale: true, days: 4 },
+      })
+    );
+    renderPanel();
+    expect(await screen.findByTestId("broadcast-stale")).toHaveTextContent("منذ 4 أيام");
+    expect(
+      screen.getByText(/أوقفت مكتبة بث هذه القناة: إشعار بشأن حقوق النشر/)
+    ).toBeInTheDocument();
+  });
+
   it("renders in Arabic", async () => {
     localStorage.setItem("mkt:locale", "ar");
     serve(view());

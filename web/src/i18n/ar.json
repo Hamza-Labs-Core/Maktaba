@@ -8369,5 +8369,15 @@
   "tv.exitConfirm.no": "البقاء",
   "tv.signIn.title": "سجّل الدخول للمشاهدة",
   "tv.signIn.body": "هذا التلفاز لم يسجّل الدخول إلى منزل Maktaba بعد.",
-  "tv.signIn.go": "تسجيل الدخول"
+  "tv.signIn.go": "تسجيل الدخول",
+  "broadcast.offAir": "هذه القناة متوقفة عن البث.",
+  "broadcast.revoked.channel": "أوقفت مكتبة بث هذه القناة: {reason}. راجع الإشعارات في صفحة البث.",
+  "broadcast.revoked.suspended": "البث من هذا الجهاز موقوف: {reason}.",
+  "broadcast.terminated": "انتهى البث من هذا الحساب: {reason}. لا يمكن نشر قنواته مجددًا.",
+  "broadcast.revocationsStale": "تعذّر على هذا الجهاز التحقق من قائمة البث لدى مكتبة منذ {days} أيام. تستمر القنوات المنشورة، وتنتظر الجديدة حتى يتم التحقق.",
+  "broadcast.reason.notice": "إشعار بشأن حقوق النشر",
+  "broadcast.reason.report": "بلاغ راجعناه",
+  "broadcast.reason.incident": "مشكلة في الخدمة من جهتنا",
+  "broadcast.reason.abuse": "إساءة استخدام الخدمة",
+  "broadcast.reason.repeat_infringer": "إشعارات صحيحة متكررة بشأن حقوق النشر"
 }
