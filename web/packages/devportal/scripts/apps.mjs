@@ -116,10 +116,13 @@ export const APPS = [
                 [
                   t("[Maktaba TV](/apps/tv/)", "[تطبيق التلفاز](/apps/tv/)"),
                   t("watching across the room", "المشاهدة من أنحاء الغرفة"),
-                  t("Apple TV, Android TV, Google TV", "آبل تي في، أندرويد تي في، جوجل تي في"),
                   t(
-                    "TestFlight on the Apple TV; Google Play internal testing, or the signed `.apk` when a release carries one",
-                    "TestFlight على آبل تي في؛ الاختبار الداخلي في Google Play، أو ملف `.apk` الموقَّع حين يتضمنه الإصدار"
+                    "Apple TV, Android TV, Google TV, Samsung TVs from 2020",
+                    "آبل تي في، أندرويد تي في، جوجل تي في، تلفزيونات سامسونج من 2020"
+                  ),
+                  t(
+                    "TestFlight on the Apple TV; Google Play internal testing, or the signed `.apk` when a release carries one; Samsung's app store once Samsung approves it",
+                    "TestFlight على آبل تي في؛ الاختبار الداخلي في Google Play، أو ملف `.apk` الموقَّع حين يتضمنه الإصدار؛ ومتجر تطبيقات سامسونج بعد موافقة سامسونج"
                   ),
                 ],
                 [
@@ -883,8 +886,69 @@ export const APPS = [
                     `الاختبار الداخلي في Google Play، أو تثبيت \`maktaba-tv-<version>.apk\` يدويًا حين يتضمنه [أحدث إصدار](${RELEASES}) (ولا يُرفق إلا الإصدار الموقَّع)`
                   ),
                 ],
+                [
+                  t(
+                    "Samsung TVs from 2020 (Tizen 5.5 or later)",
+                    "تلفزيونات سامسونج من 2020 (Tizen 5.5 أو أحدث)"
+                  ),
+                  t(
+                    "Samsung's app store (Apps on the TV), once Samsung approves it: in the United States first, then in further countries, the Gulf included, after Samsung's partner approval",
+                    "متجر تطبيقات سامسونج (التطبيقات على التلفاز) بعد موافقة سامسونج: في الولايات المتحدة أولًا، ثم في بلدان أخرى منها الخليج بعد موافقة سامسونج على الشراكة"
+                  ),
+                ],
               ],
             },
+          },
+        ],
+      },
+      {
+        h: t("On a Samsung TV", "على تلفاز سامسونج"),
+        blocks: [
+          {
+            p: t(
+              "The Samsung app is a small launcher: it finds the home, by searching this network or with the home's address, and then shows the home's own TV screens, so they update with the home and not through the store. Signing in is by a code approved from a phone; on the home's network without encryption it is by code only, so no password crosses the network in the clear.",
+              "تطبيق سامسونج مُشغِّل صغير: يعثر على الجهاز الرئيسي بالبحث في هذه الشبكة أو بعنوانه، ثم يعرض شاشات التلفاز الخاصة بالجهاز الرئيسي نفسه، فتتحدّث مع الجهاز الرئيسي لا عبر المتجر. ويكون تسجيل الدخول برمز يُوافَق عليه من الهاتف؛ وعلى شبكة المنزل دون تشفير لا يكون إلا بالرمز، فلا تعبر كلمة مرور الشبكة مكشوفة."
+            ),
+          },
+          {
+            ul: [
+              t(
+                "Plays with the TV's own player: 4K, HDR10 and HLG where the TV has them, and Dolby Digital and Dolby Digital Plus passed through to a soundbar or receiver that takes them. Samsung TVs have no Dolby Vision, so such a file plays as HDR10.",
+                "يشغّل بمشغّل التلفاز نفسه: دقة 4K وHDR10 وHLG حيث يدعمها التلفاز، مع تمرير Dolby Digital وDolby Digital Plus إلى مكبّر الصوت أو جهاز الاستقبال الذي يقبلهما. ولا تدعم تلفزيونات سامسونج Dolby Vision، فيُشغَّل ملفها بصيغة HDR10."
+              ),
+              t(
+                "The TV tells the home what it plays, so the home sends the file as it is when it can and converts only what the TV cannot play. If the TV still cannot play a file, it says **The TV couldn't play this. Trying a converted version…** and plays a converted one.",
+                "يُعلِم التلفاز الجهاز الرئيسي بما يستطيع تشغيله، فيرسل الجهاز الرئيسي الملف كما هو متى أمكن ولا يحوّل إلا ما لا يشغّله التلفاز. وإن تعذّر على التلفاز تشغيل ملف رغم ذلك، يقول **تعذّر على التلفاز تشغيل هذا. جارٍ تجربة نسخة محوّلة…** ويشغّل نسخة محوّلة."
+              ),
+              t(
+                "Subtitles are drawn by Maktaba, not the TV, so Arabic is joined and right to left, at the size chosen in the TV app's settings.",
+                "تُرسم الترجمة بواسطة مكتبة لا بواسطة التلفاز، فتظهر العربية متصلة ومن اليمين إلى اليسار، بالحجم المختار في إعدادات تطبيق التلفاز."
+              ),
+              t(
+                "The remote's play, pause, rewind, fast-forward and colour keys work; Back on the top screen asks before leaving the app.",
+                "تعمل أزرار التشغيل والإيقاف المؤقت والترجيع والتقديم والأزرار الملوّنة في جهاز التحكم؛ ويسأل زر الرجوع في الشاشة العليا قبل مغادرة التطبيق."
+              ),
+              t(
+                "A Samsung TV older than 2020 is told it is too old for the app, and that it can still be cast to from a phone if it supports Google Cast or AirPlay.",
+                "يُخبَر تلفاز سامسونج الأقدم من 2020 بأنه أقدم من أن يعمل عليه التطبيق، وبأنه ما زال يمكن البث إليه من الهاتف إن كان يدعم Google Cast أو AirPlay."
+              ),
+            ],
+          },
+          {
+            shots: [
+              shot(
+                "samsung-error",
+                "wide",
+                "The Samsung app playing: Arabic subtitles drawn right to left, and the notice that a converted version follows",
+                "تطبيق سامسونج أثناء التشغيل: ترجمة عربية مرسومة من اليمين إلى اليسار، وتنبيه بأن نسخة محوّلة ستتبع"
+              ),
+            ],
+          },
+          {
+            p: t(
+              "That screenshot is from the launcher's browser test with Samsung's TV interfaces stood in for (the frame behind the text stands in for the video). How it is built: [the TV launcher](/contributing/tv-launcher/).",
+              "هذه اللقطة من اختبار المُشغِّل في المتصفح مع محاكاة واجهات تلفاز سامسونج (والإطار خلف النص بديل عن الفيديو). وطريقة بنائه في [مُشغِّل التلفاز](/contributing/tv-launcher/)."
+            ),
           },
         ],
       },

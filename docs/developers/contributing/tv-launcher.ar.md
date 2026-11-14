@@ -95,3 +95,48 @@ pnpm e2e:launcher             # بعد build:tv وbuild:launcher
 
 يفتح `pnpm e2e:launcher` المشغّل من `file://` مع محاكاة لسامسونج وأخرى لإل جي، مقابل منزل
 وهمي على شبكة التلفاز `/24`، بالإنجليزية والعربية، ويحفظ سجل المشغّل ولقطات الشاشة والتتبعات.
+
+## سامسونج (القصة 58.10)
+
+الشيفرة الخاصة بسامسونج هي `apps/tv/web/src/platform/tizen.ts` و`src/platform/tizen/` ومجلد
+الحزمة `apps/tv/web/tizen/`.
+
+- **المشغّل هو AVPlay** (`webapis.avplay`)، مشغّل سامسونج نفسه: وسائط HTML5 على تلفزيونات
+  سامسونج تتوقف عند 1080p، أما AVPlay فيشغّل HLS (بمقاطع TS أو fMP4) وملفات MP4 وMKV وTS عبر
+  عنوانها بدقة 4K وHDR، مع تمرير صوت Dolby. تفتح `play` العنوان الموقَّع (لا يستطيع AVPlay إضافة
+  ترويسة لكل مقطع)، وتغطي الشاشة تحت الإطار الشفاف بنسبة العرض الأصلية، وتطلب 4K لمصدر بدقة 2160p
+  (الحقل الاختياري `height` في `play`؛ `ADAPTIVE_INFO FIXED_MAX_RESOLUTION=3840X2160`، مع
+  `SET_MODE_4K` للبرامج الثابتة الأقدم)، ثم تنتقل إلى `start_sec` وتشغّل. و`audioTrack {i}` هو
+  المسار الصوتي رقم i في البث، وتسرد `state` المسارات (`audio_tracks`). ويُعلَّق AVPlay حين يخفي
+  مبدّل التطبيقات في التلفاز التطبيق، ويُستعاد بعده.
+- **يرسم المشغّل الترجمة بنفسه** (`src/subtitles/`، مشتركة مع إل جي)، لأن عارض التلفاز يعكس
+  العربية: يُجلب ملف WebVTT المرافق من `subtitles` في `play` ويُوقَّت بزمن تشغيل AVPlay؛ ويصل
+  المسار المضمَّن (`subtitle {id: "embedded:<n>"}`، مسار النص رقم n في AVPlay) نصًا من AVPlay.
+  والحجم هو الحقل الاختياري `subtitle_scale` في `play` و`subtitle`.
+- **الأخطاء:** يصبح خطأ AVPlay قيمة `state.error` (`"avplay <السبب>"`)؛ وتعيد `/tv/` المحاولة
+  مرة واحدة مع `force_transcode`، ويقول المشغّل فوق الفيديو في الأثناء **تعذّر على التلفاز تشغيل
+  هذا. جارٍ تجربة نسخة محوّلة…**.
+- **ما يشغّله التلفاز** (`device_caps` في `hello`، بصيغة الواجهة البرمجية في القصة 58.02):
+  الشاشة من `webapis.productinfo`، والترميزات من مفكك ترميز التلفاز، وHDR من `webapis.avinfo`،
+  والتمرير من وضع إخراج الصوت (`tizen.tvaudiocontrol`). ولا يسرد أبدًا Dolby Vision (لا تدعمه
+  تلفزيونات سامسونج) ولا HDR10+، وتُختبر المطابقة مقابل متجهات سامسونج في
+  `shared/playback/caps-vectors.json`.
+- **الأزرار:** تُسجَّل أزرار الوسائط والأزرار الملوّنة عبر `tizen.tvinputdevice` عند البدء (لا
+  يرسل تلفاز سامسونج زرًا غير مسجَّل إلى أي صفحة). وزر الرجوع هو 10009؛ وبعد **مغادرة مكتبة؟**
+  في `/tv/` يغادر المشغّل عبر `tizen.application`.
+
+**الحزمة** (`apps/tv/web/tizen/`): `config.xml` (معرّف التطبيق، وTizen 5.5 فما بعده،
+والصلاحيات، والوصول والتنقل المفتوحان لأسماء المنازل الخاصة بكل منزل، وسياسة أمان محتوى تسمح
+بالإطارات والطلبات عبر `https:` و`http:` الشبكة المحلية فقط)، والأيقونة، و`package_wgt.py`
+(مجلد التجهيز وملف `.wgt` غير موقَّع؛ ويُضاف `webapis.js` الخاص بسامسونج إلى `index.html`)،
+و`lint_wgt.py` (‏config.xml كما هو مسرود بالضبط) و`sign_wgt.sh` (واجهة سطر أوامر Tizen Studio
+بشهادات المشروع، من أسرار الإصدار فقط). ويبنيها `tv-web-release.yml` ويوقّعها عند وسم تغيّر فيه
+المشغّل. أما المتجر وقائمة الفحص على التلفزيونات الحقيقية وشهادات التوقيع ففي
+[docs/stores/samsung.md](https://github.com/Hamza-Labs-Core/Maktaba/blob/main/docs/stores/samsung.md).
+
+```sh
+cd web && pnpm build:launcher && cd ..
+python3 apps/tv/web/tizen/package_wgt.py --dist web/dist-launcher --version 1.0.0 --out build/tizen
+python3 apps/tv/web/tizen/lint_wgt.py build/tizen/maktaba-tizen-1.0.0-unsigned.wgt --version 1.0.0
+python3 -m unittest discover -s apps/tv/web/tizen -p 'test_*.py'
+```

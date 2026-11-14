@@ -100,3 +100,48 @@ own copy of `/tv/` with `?home=<address>` and reaches the home's API there; the 
 `pnpm e2e:launcher` opens the launcher from `file://` with a Samsung and an LG shim, against a
 mock home on the TV's `/24`, in English and Arabic, and keeps the launcher's log, the
 screenshots and the traces.
+
+## Samsung (story 58.10)
+
+The Samsung-only code is `apps/tv/web/src/platform/tizen.ts`, `src/platform/tizen/` and the
+package folder `apps/tv/web/tizen/`.
+
+- **The player is AVPlay** (`webapis.avplay`), Samsung's own: HTML5 media on Samsung TVs stops
+  at 1080p, while AVPlay plays HLS (TS or fMP4) and MP4, MKV and TS files by URL in 4K and HDR,
+  with Dolby passthrough. `play` opens the signed URL (AVPlay cannot add a header per segment),
+  covers the screen under the transparent iframe, letterboxed, asks for 4K for a 2160p source
+  (the optional `height` of `play`; `ADAPTIVE_INFO FIXED_MAX_RESOLUTION=3840X2160`, with
+  `SET_MODE_4K` for an older firmware), seeks to `start_sec` and plays. `audioTrack {i}` is the
+  i-th audio track of the stream, and `state` lists them (`audio_tracks`). AVPlay is suspended
+  while the TV's app switcher hides the app, and restored after.
+- **Subtitles are drawn by the launcher** (`src/subtitles/`, shared with LG), since the TV's
+  renderer reverses Arabic: a sidecar WebVTT from `play`'s `subtitles` is fetched and timed by
+  AVPlay's play time; an embedded track (`subtitle {id: "embedded:<n>"}`, AVPlay's text track n)
+  comes as text from AVPlay. The size is the optional `subtitle_scale` of `play` and `subtitle`.
+- **Errors:** AVPlay's error becomes `state.error` (`"avplay <reason>"`); `/tv/` retries once
+  with `force_transcode`, and the launcher says **The TV couldn't play this. Trying a converted
+  version…** over the video meanwhile.
+- **What the TV plays** (`device_caps` in `hello`, the API's shape of story 58.02): the panel
+  from `webapis.productinfo`, the codecs from the TV's decoder, HDR from `webapis.avinfo`, and
+  passthrough from the audio output mode (`tizen.tvaudiocontrol`). It never lists Dolby Vision
+  (Samsung TVs have none) or HDR10+, and the mapping is tested against the Samsung vectors of
+  `shared/playback/caps-vectors.json`.
+- **Keys:** the media and colour keys are registered with `tizen.tvinputdevice` at start (a
+  Samsung TV sends an unregistered key to no page). Back is 10009; after `/tv/`'s **Leave
+  Maktaba?**, the launcher leaves through `tizen.application`.
+
+**The package** (`apps/tv/web/tizen/`): `config.xml` (the app ID, Tizen 5.5 and up, the
+privileges, open access and navigation for the homes' per-home names, a CSP that allows frames
+and requests over `https:` and the LAN's `http:` only), the icon, `package_wgt.py` (the stage
+and an unsigned `.wgt`; `index.html` gains Samsung's `webapis.js`), `lint_wgt.py` (config.xml
+exactly as listed) and `sign_wgt.sh` (Tizen Studio's CLI with the project's certificates, from
+the release secrets only). `tv-web-release.yml` builds and signs it on a tag whose launcher
+changed. The store, the checklist on real TVs and the signing certificates are in
+[docs/stores/samsung.md](https://github.com/Hamza-Labs-Core/Maktaba/blob/main/docs/stores/samsung.md).
+
+```sh
+cd web && pnpm build:launcher && cd ..
+python3 apps/tv/web/tizen/package_wgt.py --dist web/dist-launcher --version 1.0.0 --out build/tizen
+python3 apps/tv/web/tizen/lint_wgt.py build/tizen/maktaba-tizen-1.0.0-unsigned.wgt --version 1.0.0
+python3 -m unittest discover -s apps/tv/web/tizen -p 'test_*.py'
+```

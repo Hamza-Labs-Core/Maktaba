@@ -14,7 +14,7 @@ One page per TV platform (Epic 58). Each holds the platform's **real-device chec
 ## Why a checklist
 
 CI runs what a runner can run: unit tests, Playwright with platform shims, Robolectric and the
-Android TV emulator, brs-engine, the Samsung emulator and the webOS Simulator as smoke tests.
+Android TV emulator, brs-engine and the webOS Simulator as smoke tests (the Samsung TV emulator is not run: [samsung.md](samsung.md) says why).
 None of these is a real TV: no AVPlay, no HDR, no passthrough, no real remote, no Roku renderer,
 no Google Cast SDK on a device. What only a device shows is in its page's checklist, so no one
 mistakes a fake for a real device.
