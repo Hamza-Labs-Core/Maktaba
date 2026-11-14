@@ -288,6 +288,12 @@ build fails when the two differ.
 
 ### Fixed
 
+- **An Arabic title reads the same on the Cast receiver as on every other TV (story 58.15).**
+  On a TV playing from a sender set to English, a title such as "الحلقة 3 — Intro" showed with
+  the number on the wrong side of the Arabic. The receiver's titles now take their direction
+  from their first letter, as `/tv/` and the Roku channel do. The Roku channel's colours are
+  now generated from the design tokens, like the other apps'.
+
 - **The older playback profiles read HEVC and Dolby audio by ffprobe's names.** A player that
   names one of the older client profiles (`android-native`, `androidtv`) now direct-plays an
   HEVC file it decodes: the profiles spelled HEVC `h265` and the probe says `hevc`, so those
@@ -869,6 +875,10 @@ build fails when the two differ.
 
 ### Added
 
+- **Roku's sign-in shows a QR (Epic 58, story 58.12).** The Roku channel's code screen now shows
+  a QR beside the code, as the other TV apps do: a phone's camera opens the approve page with
+  the code filled in (maktaba.tv/tv for a cloud code, the home's own page for the home's code).
+  The channel draws the QR itself, so no image is fetched from the home or the cloud.
 - **Playing on Roku (Epic 58, story 58.13).** The Roku channel's player: it tells the home
   what this Roku plays (H.264, HEVC, AV1 inside DASH, HDR10, HLG, Dolby Vision 5, the Dolby
   passthroughs), so a 4K HDR file plays directly where the Roku can and is converted only where

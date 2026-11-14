@@ -24,7 +24,9 @@ not-available line. Nothing is sold in the channel.
 | `components/MainScene.*` | the screen stack, the session (the scene's HTTP agent carries the bearer for posters), deep links, the leave dialog |
 | `components/tasks/` | `ApiTask` (one thread for the API), `HomeTask` (connect, probe, read an address), `CodeTask` (the cloud code and the home's own code) |
 | `components/screens/`, `components/widgets/` | the screens and their parts (`PosterCard`, `PillRow`, `TvButton`, the dialogs) |
+| `source/qr.brs`, `components/widgets/QrCode.*` | the code screen's QR: the web app's encoder (`web/src/lib/qr.ts`) in BrightScript, run in `CodeTask` on the code's `verify_url`, drawn as one Rectangle per run of dark modules; `tests/qr.test.mjs` asks both encoders for the same modules |
 | `components/common.brs` | what the screens share: labels in the bundled font, mirrored placement, rows and grids in reading order |
+| `components/theme.brs` | the dark colours, generated from `web/design-system/tokens/` by `make build-tokens` (never edited by hand) |
 | `tools/build.mjs` | the build (T02): BrighterScript with bslint, fonts and images, the zip under 4 MB; `--test` for the screen tests, `--device-tests` for checklist row 1 |
 
 ## The player (story 58.13)
