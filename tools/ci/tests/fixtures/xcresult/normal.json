@@ -1,0 +1,392 @@
+{
+  "devices": [
+    {
+      "architecture": "arm64",
+      "deviceId": "31243605-0D1B-4E57-B09C-F3547285832D",
+      "deviceName": "maktaba-ci-43613104921-ipad-5",
+      "modelName": "iPad Pro 11-inch (M5)",
+      "osBuildNumber": "23F77",
+      "osVersion": "26.5",
+      "platform": "iOS Simulator"
+    }
+  ],
+  "testNodes": [
+    {
+      "children": [
+        {
+          "children": [
+            {
+              "children": [
+                {
+                  "duration": "1m 47s",
+                  "durationInSeconds": 107.31782793998718,
+                  "name": "testUpdateThisAppEnglish()",
+                  "nodeIdentifier": "PlayerCompatUITests/testUpdateThisAppEnglish()",
+                  "nodeIdentifierURL": "test://com.apple.xcode/Maktaba/Maktaba%20Player%20iPad%20UITests/PlayerCompatUITests/testUpdateThisAppEnglish",
+                  "nodeType": "Test Case",
+                  "result": "Passed"
+                }
+              ],
+              "name": "PlayerCompatUITests",
+              "nodeIdentifierURL": "test://com.apple.xcode/Maktaba/Maktaba%20Player%20iPad%20UITests/PlayerCompatUITests",
+              "nodeType": "Test Suite",
+              "result": "Passed"
+            },
+            {
+              "children": [
+                {
+                  "duration": "34s",
+                  "durationInSeconds": 34.96671998500824,
+                  "name": "testEmptyHome()",
+                  "nodeIdentifier": "PlayerHomeUITests/testEmptyHome()",
+                  "nodeIdentifierURL": "test://com.apple.xcode/Maktaba/Maktaba%20Player%20iPad%20UITests/PlayerHomeUITests/testEmptyHome",
+                  "nodeType": "Test Case",
+                  "result": "Passed"
+                },
+                {
+                  "duration": "30s",
+                  "durationInSeconds": 30.530372977256775,
+                  "name": "testEmptyRowIsAbsent()",
+                  "nodeIdentifier": "PlayerHomeUITests/testEmptyRowIsAbsent()",
+                  "nodeIdentifierURL": "test://com.apple.xcode/Maktaba/Maktaba%20Player%20iPad%20UITests/PlayerHomeUITests/testEmptyRowIsAbsent",
+                  "nodeType": "Test Case",
+                  "result": "Passed"
+                }
+              ],
+              "name": "PlayerHomeUITests",
+              "nodeIdentifierURL": "test://com.apple.xcode/Maktaba/Maktaba%20Player%20iPad%20UITests/PlayerHomeUITests",
+              "nodeType": "Test Suite",
+              "result": "Passed"
+            },
+            {
+              "children": [
+                {
+                  "duration": "0.42s",
+                  "durationInSeconds": 0.4173480272293091,
+                  "name": "testARepeatVisitWithinMaxAgeFetchesNothing()",
+                  "nodeIdentifier": "PlayerImageCacheTests/testARepeatVisitWithinMaxAgeFetchesNothing()",
+                  "nodeIdentifierURL": "test://com.apple.xcode/Maktaba/Maktaba%20Player%20iPad%20UITests/PlayerImageCacheTests/testARepeatVisitWithinMaxAgeFetchesNothing",
+                  "nodeType": "Test Case",
+                  "result": "Passed"
+                }
+              ],
+              "name": "PlayerImageCacheTests",
+              "nodeIdentifierURL": "test://com.apple.xcode/Maktaba/Maktaba%20Player%20iPad%20UITests/PlayerImageCacheTests",
+              "nodeType": "Test Suite",
+              "result": "Passed"
+            },
+            {
+              "children": [
+                {
+                  "duration": "1m 6s",
+                  "durationInSeconds": 66.33868098258972,
+                  "name": "testALibraryShowsFromPluginsOnlyWithAPanel()",
+                  "nodeIdentifier": "PlayerLibrariesUITests/testALibraryShowsFromPluginsOnlyWithAPanel()",
+                  "nodeIdentifierURL": "test://com.apple.xcode/Maktaba/Maktaba%20Player%20iPad%20UITests/PlayerLibrariesUITests/testALibraryShowsFromPluginsOnlyWithAPanel",
+                  "nodeType": "Test Case",
+                  "result": "Passed"
+                },
+                {
+                  "duration": "1m 48s",
+                  "durationInSeconds": 108.45139801502228,
+                  "name": "testEpisodesAtAX3()",
+                  "nodeIdentifier": "PlayerLibrariesUITests/testEpisodesAtAX3()",
+                  "nodeIdentifierURL": "test://com.apple.xcode/Maktaba/Maktaba%20Player%20iPad%20UITests/PlayerLibrariesUITests/testEpisodesAtAX3",
+                  "nodeType": "Test Case",
+                  "result": "Passed"
+                },
+                {
+                  "duration": "44s",
+                  "durationInSeconds": 44.181902050971985,
+                  "name": "testFacetsAndSortChangeTheRequestsQuery()",
+                  "nodeIdentifier": "PlayerLibrariesUITests/testFacetsAndSortChangeTheRequestsQuery()",
+                  "nodeIdentifierURL": "test://com.apple.xcode/Maktaba/Maktaba%20Player%20iPad%20UITests/PlayerLibrariesUITests/testFacetsAndSortChangeTheRequestsQuery",
+                  "nodeType": "Test Case",
+                  "result": "Passed"
+                },
+                {
+                  "duration": "1m 9s",
+                  "durationInSeconds": 69.08418095111847,
+                  "name": "testLibrariesInArabic()",
+                  "nodeIdentifier": "PlayerLibrariesUITests/testLibrariesInArabic()",
+                  "nodeIdentifierURL": "test://com.apple.xcode/Maktaba/Maktaba%20Player%20iPad%20UITests/PlayerLibrariesUITests/testLibrariesInArabic",
+                  "nodeType": "Test Case",
+                  "result": "Passed"
+                },
+                {
+                  "duration": "30s",
+                  "durationInSeconds": 30.253824949264526,
+                  "name": "testMarkWatchedOnASeasonMarksEachEpisode()",
+                  "nodeIdentifier": "PlayerLibrariesUITests/testMarkWatchedOnASeasonMarksEachEpisode()",
+                  "nodeIdentifierURL": "test://com.apple.xcode/Maktaba/Maktaba%20Player%20iPad%20UITests/PlayerLibrariesUITests/testMarkWatchedOnASeasonMarksEachEpisode",
+                  "nodeType": "Test Case",
+                  "result": "Passed"
+                }
+              ],
+              "name": "PlayerLibrariesUITests",
+              "nodeIdentifierURL": "test://com.apple.xcode/Maktaba/Maktaba%20Player%20iPad%20UITests/PlayerLibrariesUITests",
+              "nodeType": "Test Suite",
+              "result": "Passed"
+            },
+            {
+              "children": [
+                {
+                  "duration": "58s",
+                  "durationInSeconds": 58.52284502983093,
+                  "name": "testGuideNowLineScrollAndProgrammeSheet()",
+                  "nodeIdentifier": "PlayerLiveUITests/testGuideNowLineScrollAndProgrammeSheet()",
+                  "nodeIdentifierURL": "test://com.apple.xcode/Maktaba/Maktaba%20Player%20iPad%20UITests/PlayerLiveUITests/testGuideNowLineScrollAndProgrammeSheet",
+                  "nodeType": "Test Case",
+                  "result": "Passed"
+                },
+                {
+                  "duration": "42s",
+                  "durationInSeconds": 42.201499938964844,
+                  "name": "testGuideScrollsThroughTheChannels()",
+                  "nodeIdentifier": "PlayerLiveUITests/testGuideScrollsThroughTheChannels()",
+                  "nodeIdentifierURL": "test://com.apple.xcode/Maktaba/Maktaba%20Player%20iPad%20UITests/PlayerLiveUITests/testGuideScrollsThroughTheChannels",
+                  "nodeType": "Test Case",
+                  "result": "Passed"
+                },
+                {
+                  "duration": "23s",
+                  "durationInSeconds": 23.760715007781982,
+                  "name": "testLiveTVOffExplainsItToAnAdmin()",
+                  "nodeIdentifier": "PlayerLiveUITests/testLiveTVOffExplainsItToAnAdmin()",
+                  "nodeIdentifierURL": "test://com.apple.xcode/Maktaba/Maktaba%20Player%20iPad%20UITests/PlayerLiveUITests/testLiveTVOffExplainsItToAnAdmin",
+                  "nodeType": "Test Case",
+                  "result": "Passed"
+                },
+                {
+                  "duration": "26s",
+                  "durationInSeconds": 26.699734926223755,
+                  "name": "testNowListsTheChannelsWithProgress()",
+                  "nodeIdentifier": "PlayerLiveUITests/testNowListsTheChannelsWithProgress()",
+                  "nodeIdentifierURL": "test://com.apple.xcode/Maktaba/Maktaba%20Player%20iPad%20UITests/PlayerLiveUITests/testNowListsTheChannelsWithProgress",
+                  "nodeType": "Test Case",
+                  "result": "Passed"
+                }
+              ],
+              "name": "PlayerLiveUITests",
+              "nodeIdentifierURL": "test://com.apple.xcode/Maktaba/Maktaba%20Player%20iPad%20UITests/PlayerLiveUITests",
+              "nodeType": "Test Suite",
+              "result": "Passed"
+            },
+            {
+              "children": [
+                {
+                  "duration": "24s",
+                  "durationInSeconds": 24.793571949005127,
+                  "name": "testAChannelOpenedBeforeTheLimitIsKnownStillShowsTheSlate()",
+                  "nodeIdentifier": "PlayerParentalUITests/testAChannelOpenedBeforeTheLimitIsKnownStillShowsTheSlate()",
+                  "nodeIdentifierURL": "test://com.apple.xcode/Maktaba/Maktaba%20Player%20iPad%20UITests/PlayerParentalUITests/testAChannelOpenedBeforeTheLimitIsKnownStillShowsTheSlate",
+                  "nodeType": "Test Case",
+                  "result": "Passed"
+                },
+                {
+                  "duration": "24s",
+                  "durationInSeconds": 24.388731956481934,
+                  "name": "testALinkToABlockedVideoIsTheBlockedPageAndAsksAParent()",
+                  "nodeIdentifier": "PlayerParentalUITests/testALinkToABlockedVideoIsTheBlockedPageAndAsksAParent()",
+                  "nodeIdentifierURL": "test://com.apple.xcode/Maktaba/Maktaba%20Player%20iPad%20UITests/PlayerParentalUITests/testALinkToABlockedVideoIsTheBlockedPageAndAsksAParent",
+                  "nodeType": "Test Case",
+                  "result": "Passed"
+                },
+                {
+                  "duration": "22s",
+                  "durationInSeconds": 22.683101058006287,
+                  "name": "testARestrictedChildsProfileSaysWhoManagesItAndHasNoFamily()",
+                  "nodeIdentifier": "PlayerParentalUITests/testARestrictedChildsProfileSaysWhoManagesItAndHasNoFamily()",
+                  "nodeIdentifierURL": "test://com.apple.xcode/Maktaba/Maktaba%20Player%20iPad%20UITests/PlayerParentalUITests/testARestrictedChildsProfileSaysWhoManagesItAndHasNoFamily",
+                  "nodeType": "Test Case",
+                  "result": "Passed"
+                },
+                {
+                  "duration": "21s",
+                  "durationInSeconds": 21.785338044166565,
+                  "name": "testHomeShowsTheTimeLeft()",
+                  "nodeIdentifier": "PlayerParentalUITests/testHomeShowsTheTimeLeft()",
+                  "nodeIdentifierURL": "test://com.apple.xcode/Maktaba/Maktaba%20Player%20iPad%20UITests/PlayerParentalUITests/testHomeShowsTheTimeLeft",
+                  "nodeType": "Test Case",
+                  "result": "Passed"
+                }
+              ],
+              "name": "PlayerParentalUITests",
+              "nodeIdentifierURL": "test://com.apple.xcode/Maktaba/Maktaba%20Player%20iPad%20UITests/PlayerParentalUITests",
+              "nodeType": "Test Suite",
+              "result": "Passed"
+            },
+            {
+              "children": [
+                {
+                  "duration": "34s",
+                  "durationInSeconds": 34.94124901294708,
+                  "name": "testThemeIsDarkOnAFreshInstallAndLightChangesTheAppAtOnce()",
+                  "nodeIdentifier": "PlayerProfileUITests/testThemeIsDarkOnAFreshInstallAndLightChangesTheAppAtOnce()",
+                  "nodeIdentifierURL": "test://com.apple.xcode/Maktaba/Maktaba%20Player%20iPad%20UITests/PlayerProfileUITests/testThemeIsDarkOnAFreshInstallAndLightChangesTheAppAtOnce",
+                  "nodeType": "Test Case",
+                  "result": "Passed"
+                }
+              ],
+              "name": "PlayerProfileUITests",
+              "nodeIdentifierURL": "test://com.apple.xcode/Maktaba/Maktaba%20Player%20iPad%20UITests/PlayerProfileUITests",
+              "nodeType": "Test Suite",
+              "result": "Passed"
+            },
+            {
+              "children": [
+                {
+                  "duration": "32s",
+                  "durationInSeconds": 32.39601397514343,
+                  "name": "testSearchByMeaningOffShowsAViewerNoLine()",
+                  "nodeIdentifier": "PlayerSearchUITests/testSearchByMeaningOffShowsAViewerNoLine()",
+                  "nodeIdentifierURL": "test://com.apple.xcode/Maktaba/Maktaba%20Player%20iPad%20UITests/PlayerSearchUITests/testSearchByMeaningOffShowsAViewerNoLine",
+                  "nodeType": "Test Case",
+                  "result": "Passed"
+                }
+              ],
+              "name": "PlayerSearchUITests",
+              "nodeIdentifierURL": "test://com.apple.xcode/Maktaba/Maktaba%20Player%20iPad%20UITests/PlayerSearchUITests",
+              "nodeType": "Test Suite",
+              "result": "Passed"
+            },
+            {
+              "children": [
+                {
+                  "duration": "0.18s",
+                  "durationInSeconds": 0.18029296398162842,
+                  "name": "testLiveTVGoingOffWithAChannelOpenLeavesItsStackAlone()",
+                  "nodeIdentifier": "PlayerShellTests/testLiveTVGoingOffWithAChannelOpenLeavesItsStackAlone()",
+                  "nodeIdentifierURL": "test://com.apple.xcode/Maktaba/Maktaba%20Player%20iPad%20UITests/PlayerShellTests/testLiveTVGoingOffWithAChannelOpenLeavesItsStackAlone",
+                  "nodeType": "Test Case",
+                  "result": "Passed"
+                },
+                {
+                  "duration": "0.12s",
+                  "durationInSeconds": 0.11888206005096436,
+                  "name": "testTheTouchWatcherSaysHowLongATouchWasHeld()",
+                  "nodeIdentifier": "PlayerShellTests/testTheTouchWatcherSaysHowLongATouchWasHeld()",
+                  "nodeIdentifierURL": "test://com.apple.xcode/Maktaba/Maktaba%20Player%20iPad%20UITests/PlayerShellTests/testTheTouchWatcherSaysHowLongATouchWasHeld",
+                  "nodeType": "Test Case",
+                  "result": "Passed"
+                }
+              ],
+              "name": "PlayerShellTests",
+              "nodeIdentifierURL": "test://com.apple.xcode/Maktaba/Maktaba%20Player%20iPad%20UITests/PlayerShellTests",
+              "nodeType": "Test Suite",
+              "result": "Passed"
+            },
+            {
+              "children": [
+                {
+                  "duration": "22s",
+                  "durationInSeconds": 22.578454971313477,
+                  "name": "testASingleSectionStillOpensRoutes()",
+                  "nodeIdentifier": "PlayerShellUITests/testASingleSectionStillOpensRoutes()",
+                  "nodeIdentifierURL": "test://com.apple.xcode/Maktaba/Maktaba%20Player%20iPad%20UITests/PlayerShellUITests/testASingleSectionStillOpensRoutes",
+                  "nodeType": "Test Case",
+                  "result": "Passed"
+                }
+              ],
+              "name": "PlayerShellUITests",
+              "nodeIdentifierURL": "test://com.apple.xcode/Maktaba/Maktaba%20Player%20iPad%20UITests/PlayerShellUITests",
+              "nodeType": "Test Suite",
+              "result": "Passed"
+            },
+            {
+              "children": [
+                {
+                  "duration": "28s",
+                  "durationInSeconds": 28.89746403694153,
+                  "name": "testADeepLinkOpensTheVideoPage()",
+                  "nodeIdentifier": "PlayerVideoUITests/testADeepLinkOpensTheVideoPage()",
+                  "nodeIdentifierURL": "test://com.apple.xcode/Maktaba/Maktaba%20Player%20iPad%20UITests/PlayerVideoUITests/testADeepLinkOpensTheVideoPage",
+                  "nodeType": "Test Case",
+                  "result": "Passed"
+                },
+                {
+                  "duration": "32s",
+                  "durationInSeconds": 32.953831911087036,
+                  "name": "testThePosterIsAtTheTopAtItsOwnShapeAndSize()",
+                  "nodeIdentifier": "PlayerVideoUITests/testThePosterIsAtTheTopAtItsOwnShapeAndSize()",
+                  "nodeIdentifierURL": "test://com.apple.xcode/Maktaba/Maktaba%20Player%20iPad%20UITests/PlayerVideoUITests/testThePosterIsAtTheTopAtItsOwnShapeAndSize",
+                  "nodeType": "Test Case",
+                  "result": "Passed"
+                }
+              ],
+              "name": "PlayerVideoUITests",
+              "nodeIdentifierURL": "test://com.apple.xcode/Maktaba/Maktaba%20Player%20iPad%20UITests/PlayerVideoUITests",
+              "nodeType": "Test Suite",
+              "result": "Passed"
+            },
+            {
+              "children": [
+                {
+                  "duration": "0.13s",
+                  "durationInSeconds": 0.13321101665496826,
+                  "name": "testAPlayerWaitingFifteenSecondsIsStuck()",
+                  "nodeIdentifier": "PlayerWatchTests/testAPlayerWaitingFifteenSecondsIsStuck()",
+                  "nodeIdentifierURL": "test://com.apple.xcode/Maktaba/Maktaba%20Player%20iPad%20UITests/PlayerWatchTests/testAPlayerWaitingFifteenSecondsIsStuck",
+                  "nodeType": "Test Case",
+                  "result": "Passed"
+                }
+              ],
+              "name": "PlayerWatchTests",
+              "nodeIdentifierURL": "test://com.apple.xcode/Maktaba/Maktaba%20Player%20iPad%20UITests/PlayerWatchTests",
+              "nodeType": "Test Suite",
+              "result": "Passed"
+            },
+            {
+              "children": [
+                {
+                  "duration": "37s",
+                  "durationInSeconds": 37.223575949668884,
+                  "name": "testControlsHideAfterFourSecondsAndATapShowsThem()",
+                  "nodeIdentifier": "PlayerWatchUITests/testControlsHideAfterFourSecondsAndATapShowsThem()",
+                  "nodeIdentifierURL": "test://com.apple.xcode/Maktaba/Maktaba%20Player%20iPad%20UITests/PlayerWatchUITests/testControlsHideAfterFourSecondsAndATapShowsThem",
+                  "nodeType": "Test Case",
+                  "result": "Passed"
+                },
+                {
+                  "duration": "38s",
+                  "durationInSeconds": 38.29309105873108,
+                  "name": "testOpensAtTheResumePositionAndReportsProgress()",
+                  "nodeIdentifier": "PlayerWatchUITests/testOpensAtTheResumePositionAndReportsProgress()",
+                  "nodeIdentifierURL": "test://com.apple.xcode/Maktaba/Maktaba%20Player%20iPad%20UITests/PlayerWatchUITests/testOpensAtTheResumePositionAndReportsProgress",
+                  "nodeType": "Test Case",
+                  "result": "Passed"
+                },
+                {
+                  "duration": "47s",
+                  "durationInSeconds": 47.228963971138,
+                  "name": "testUpNextShowsWhenTheNextEpisodeIsFoundAfterTheEnd()",
+                  "nodeIdentifier": "PlayerWatchUITests/testUpNextShowsWhenTheNextEpisodeIsFoundAfterTheEnd()",
+                  "nodeIdentifierURL": "test://com.apple.xcode/Maktaba/Maktaba%20Player%20iPad%20UITests/PlayerWatchUITests/testUpNextShowsWhenTheNextEpisodeIsFoundAfterTheEnd",
+                  "nodeType": "Test Case",
+                  "result": "Passed"
+                }
+              ],
+              "name": "PlayerWatchUITests",
+              "nodeIdentifierURL": "test://com.apple.xcode/Maktaba/Maktaba%20Player%20iPad%20UITests/PlayerWatchUITests",
+              "nodeType": "Test Suite",
+              "result": "Passed"
+            }
+          ],
+          "name": "Maktaba Player iPad UITests",
+          "nodeIdentifierURL": "test://com.apple.xcode/Maktaba/Maktaba%20Player%20iPad%20UITests",
+          "nodeType": "UI test bundle",
+          "result": "Passed"
+        }
+      ],
+      "name": "Maktaba Player iPad",
+      "nodeType": "Test Plan",
+      "result": "Passed"
+    }
+  ],
+  "testPlanConfigurations": [
+    {
+      "configurationId": "1",
+      "configurationName": "Test Scheme Action"
+    }
+  ]
+}

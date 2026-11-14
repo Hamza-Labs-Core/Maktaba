@@ -1,0 +1,56 @@
+-only-testing
+Maktaba Player iPad UITests/PlayerCompatUITests/testUpdateThisAppEnglish
+-only-testing
+Maktaba Player iPad UITests/PlayerHomeUITests/testEmptyHome
+-only-testing
+Maktaba Player iPad UITests/PlayerHomeUITests/testEmptyRowIsAbsent
+-only-testing
+Maktaba Player iPad UITests/PlayerImageCacheTests/testARepeatVisitWithinMaxAgeFetchesNothing
+-only-testing
+Maktaba Player iPad UITests/PlayerLibrariesUITests/testALibraryShowsFromPluginsOnlyWithAPanel
+-only-testing
+Maktaba Player iPad UITests/PlayerLibrariesUITests/testEpisodesAtAX3
+-only-testing
+Maktaba Player iPad UITests/PlayerLibrariesUITests/testFacetsAndSortChangeTheRequestsQuery
+-only-testing
+Maktaba Player iPad UITests/PlayerLibrariesUITests/testLibrariesInArabic
+-only-testing
+Maktaba Player iPad UITests/PlayerLibrariesUITests/testMarkWatchedOnASeasonMarksEachEpisode
+-only-testing
+Maktaba Player iPad UITests/PlayerLiveUITests/testGuideNowLineScrollAndProgrammeSheet
+-only-testing
+Maktaba Player iPad UITests/PlayerLiveUITests/testGuideScrollsThroughTheChannels
+-only-testing
+Maktaba Player iPad UITests/PlayerLiveUITests/testLiveTVOffExplainsItToAnAdmin
+-only-testing
+Maktaba Player iPad UITests/PlayerLiveUITests/testNowListsTheChannelsWithProgress
+-only-testing
+Maktaba Player iPad UITests/PlayerParentalUITests/testAChannelOpenedBeforeTheLimitIsKnownStillShowsTheSlate
+-only-testing
+Maktaba Player iPad UITests/PlayerParentalUITests/testALinkToABlockedVideoIsTheBlockedPageAndAsksAParent
+-only-testing
+Maktaba Player iPad UITests/PlayerParentalUITests/testARestrictedChildsProfileSaysWhoManagesItAndHasNoFamily
+-only-testing
+Maktaba Player iPad UITests/PlayerParentalUITests/testHomeShowsTheTimeLeft
+-only-testing
+Maktaba Player iPad UITests/PlayerProfileUITests/testThemeIsDarkOnAFreshInstallAndLightChangesTheAppAtOnce
+-only-testing
+Maktaba Player iPad UITests/PlayerSearchUITests/testSearchByMeaningOffShowsAViewerNoLine
+-only-testing
+Maktaba Player iPad UITests/PlayerShellTests/testLiveTVGoingOffWithAChannelOpenLeavesItsStackAlone
+-only-testing
+Maktaba Player iPad UITests/PlayerShellTests/testTheTouchWatcherSaysHowLongATouchWasHeld
+-only-testing
+Maktaba Player iPad UITests/PlayerShellUITests/testASingleSectionStillOpensRoutes
+-only-testing
+Maktaba Player iPad UITests/PlayerVideoUITests/testADeepLinkOpensTheVideoPage
+-only-testing
+Maktaba Player iPad UITests/PlayerVideoUITests/testThePosterIsAtTheTopAtItsOwnShapeAndSize
+-only-testing
+Maktaba Player iPad UITests/PlayerWatchTests/testAPlayerWaitingFifteenSecondsIsStuck
+-only-testing
+Maktaba Player iPad UITests/PlayerWatchUITests/testControlsHideAfterFourSecondsAndATapShowsThem
+-only-testing
+Maktaba Player iPad UITests/PlayerWatchUITests/testOpensAtTheResumePositionAndReportsProgress
+-only-testing
+Maktaba Player iPad UITests/PlayerWatchUITests/testUpNextShowsWhenTheNextEpisodeIsFoundAfterTheEnd
