@@ -66,5 +66,5 @@ relay path once the names point at the pool.
 ## Proven in CI
 
 The cloud rehearsal runs three relays behind a round-robin edge (`tools/rehearsal-cloud/
-compose-pool.yml`) with a fake Cloudflare: `relay-pool-kill-one` and `rebalance-add-relay`
+compose-relay-pool.yml`) with a fake Cloudflare: `relay-pool-kill-one` and `rebalance-add-relay`
 (`docs/cloud-rehearsal.md`).

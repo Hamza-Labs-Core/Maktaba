@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -69,7 +70,10 @@ func runAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	if err := server.RunAll(ctx, logger, cfg.Server.ShutdownGrace, srvs...); err != nil {
+	// in a pool behind a load balancer (story 50.17), /readyz fails for server.drain_delay
+	// before the listeners close
+	if err := server.RunAllDraining(ctx, logger, cfg.Server.ShutdownGrace, cfg.Server.DrainDelay,
+		func() { a.Draining.Store(true) }, srvs...); err != nil {
 		logger.Error("server exited with error", "err", err)
 		os.Exit(1)
 	}
@@ -91,6 +95,8 @@ type apiOverrides struct {
 type apiRouters struct {
 	User  *chi.Mux
 	Admin *chi.Mux
+	// Draining set makes both listeners' /readyz answer 503 (shutdown in a pool, story 50.17).
+	Draining *atomic.Bool
 }
 
 // newAPI builds the api role's routers. stop releases its background
@@ -277,10 +283,12 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 	// The client IP is resolved first, the access log included: CF-Connecting-IP only from a
 	// peer in server.trusted_proxies (Epic 50 story 50.31).
 	// The user listener answers server.user_hosts only and has no admin route (story 50.32).
+	draining := &atomic.Bool{}
 	r := server.NewRouter(logger, pool, mig, build, server.DefaultOrigins(cfg),
-		server.WithTrustedProxies(cfg.Server.TrustedProxies), server.WithUserHosts(cfg.Server.UserHosts))
+		server.WithTrustedProxies(cfg.Server.TrustedProxies), server.WithUserHosts(cfg.Server.UserHosts),
+		server.WithDraining(draining.Load))
 	adminR := server.NewAdminRouter(logger, pool, mig, build, cfg.Server.AdminHost,
-		cfg.Server.AdminOriginOrDefault(), cfg.Server.TrustedProxies)
+		cfg.Server.AdminOriginOrDefault(), cfg.Server.TrustedProxies, server.WithDraining(draining.Load))
 	// NewRouter has already registered the health probes, and chi
 	// refuses Use after a route, so the app routes and their middleware
 	// live in a group.
@@ -289,12 +297,13 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 		// refill 5/s — plenty for the sign-in form, harsh for credential
 		// stuffing — and burst 5, one per 12 s for the routes that send mail.
 		// Per-account lockout (10 failures / 15 min) lives in the login
-		// handler.
-		app.Use(authRateLimit(ratelimit.NewLimiter(30, 5), authh.RateLimitedPaths))
-		app.Use(authRateLimit(ratelimit.NewLimiter(5, 1.0/12), authh.MailPaths))
+		// handler. They guard against brute force, so every api node shares
+		// them, in Postgres (story 50.17 §3): three nodes don't triple a limit.
+		app.Use(authRateLimit(ratelimit.NewPG(pool.DB, "auth", 30, 5, logger), authh.RateLimitedPaths))
+		app.Use(authRateLimit(ratelimit.NewPG(pool.DB, "mail", 5, 1.0/12, logger), authh.MailPaths))
 		app.Use(blockedIPs(detector, logger))
 		// a claim code is 8 characters: its redeem is limited per IP too
-		app.Use(authRateLimit(ratelimit.NewLimiter(30, 5), []string{"/v1/servers/claims/redeem"}))
+		app.Use(authRateLimit(ratelimit.NewPG(pool.DB, "claim", 30, 5, logger), []string{"/v1/servers/claims/redeem"}))
 
 		// A home's agent: the claim code or the server's own secret is its
 		// credential, never a user token.
@@ -347,8 +356,8 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 	adminR.Group(func(g chi.Router) {
 		g.Use(middleware.IPAllowList(cfg.Admin.IPAllowlist, auditLog, logger))
 		// §6: sign-in, the second factor and the re-check, burst 5 then 1 per 12 s per IP
-		g.Use(prefixRateLimit(ratelimit.NewLimiter(5, 1.0/12), staffh.RateLimitedPrefixes))
-		g.Use(authRateLimit(ratelimit.NewLimiter(30, 5), []string{"/v1/staff/refresh"}))
+		g.Use(prefixRateLimit(ratelimit.NewPG(pool.DB, "staff", 5, 1.0/12, logger), staffh.RateLimitedPrefixes))
+		g.Use(authRateLimit(ratelimit.NewPG(pool.DB, "staff_refresh", 30, 5, logger), []string{"/v1/staff/refresh"}))
 		staffh.Mount(g, &staffh.Deps{
 			Staff: staffStore, Signer: staffSigner, Box: staffBox, Gate: staffGate, WebAuthn: staffRP,
 			Turnstile: staffTurnstile(cfg, tsGuard, o.Turnstile), TurnstileSiteKey: cfg.Turnstile.SiteKey,
@@ -385,11 +394,17 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 		})
 	})
 
-	return apiRouters{User: r, Admin: adminR}, stopMetrics, nil
+	return apiRouters{User: r, Admin: adminR, Draining: draining}, stopMetrics, nil
+}
+
+// keyedLimiter is a rate limiter as a middleware: ratelimit.Limiter (this process's buckets)
+// or ratelimit.PG (every node's, story 50.17).
+type keyedLimiter interface {
+	Middleware(keyFn func(*http.Request) string) func(http.Handler) http.Handler
 }
 
 // authRateLimit applies l, keyed by client IP, to the given paths only.
-func authRateLimit(l *ratelimit.Limiter, paths []string) func(http.Handler) http.Handler {
+func authRateLimit(l keyedLimiter, paths []string) func(http.Handler) http.Handler {
 	set := map[string]bool{}
 	for _, p := range paths {
 		set[p] = true
@@ -403,7 +418,7 @@ func authRateLimit(l *ratelimit.Limiter, paths []string) func(http.Handler) http
 }
 
 // prefixRateLimit applies l, keyed by client IP, to the paths under the given prefixes.
-func prefixRateLimit(l *ratelimit.Limiter, prefixes []string) func(http.Handler) http.Handler {
+func prefixRateLimit(l keyedLimiter, prefixes []string) func(http.Handler) http.Handler {
 	return l.Middleware(func(req *http.Request) string {
 		for _, p := range prefixes {
 			if strings.HasPrefix(req.URL.Path, p) {

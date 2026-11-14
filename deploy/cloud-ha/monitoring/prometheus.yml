@@ -25,6 +25,12 @@ scrape_configs:
         labels: {node: node-a}
       - targets: ["${NODE_B_ADDR}:9443"]
         labels: {node: node-b}
+  # the api pool's workers (story 50.17): worker_leader{node} on each node's worker control port
+  # (MAKTABA_CLOUD_WORKER_CONTROL_ADDR, the node's private address :9090). The owner lists the
+  # nodes in /etc/prometheus/targets/api-nodes.json; with none (Phase 1) nothing is scraped.
+  - job_name: worker
+    file_sd_configs:
+      - files: ["/etc/prometheus/targets/api-*.json"]
   # Patroni: patroni_primary, patroni_replica, patroni_failovers_total
   - job_name: patroni
     static_configs:

@@ -126,6 +126,14 @@ jobs:
           uv run --no-project --python 3.12 --with pyyaml==6.0.3 --with pytest==8.4.2
           pytest tools/ci/tests -q -p no:cacheprovider
 
+      # Story 58.15: every TV catalog (apps/tv/web, the Cast receiver, Roku) has each key in
+      # English and Arabic, the same placeholders, and no untranslated Latin word in Arabic. A
+      # catalog not there yet is skipped, so each platform's story turns it on with its catalog.
+      - name: The TV catalogs, English and Arabic (tools/i18n/check_tv_catalogs.py)
+        run: |
+          python3 tools/i18n/check_tv_catalogs.py
+          uv run --no-project --python 3.12 --with pytest==8.4.2 pytest tools/i18n/tests -q -p no:cacheprovider
+
       # docs/trail: every event and snapshot (front matter, sections, citations, no secrets,
       # the computed Index and Missing events), by the agent-trail Action
       # (github.com/Hamza-Labs-Core/agent-trail) with this repository's .trail.toml. It

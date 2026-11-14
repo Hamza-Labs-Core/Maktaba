@@ -84,7 +84,7 @@ func repoRoot(t *testing.T) string {
 }
 
 // TestScenario runs every scenario (C01–C10, 50.11's status-feed, 53.16's report-symbolicated,
-// 50.16's relay pool);
+// 50.16's relay pool, 50.17's api-pool);
 // one with -run 'TestScenario/<name>'.
 func TestScenario(t *testing.T) {
 	skip := notBuilt(t)
@@ -112,6 +112,7 @@ func TestScenario(t *testing.T) {
 		{"origin-only-via-edge", originOnlyViaEdge},
 		{"origin-aop", originAOP},
 		{"report-symbolicated", reportSymbolicated},
+		{"api-pool", apiPool},
 		{"relay-pool-kill-one", relayPoolKillOne},
 		{"rebalance-add-relay", rebalanceAddRelay},
 	} {
@@ -126,10 +127,12 @@ func TestScenario(t *testing.T) {
 				c = upOnly(t, s.name)
 			case "direct-remote":
 				c = upDirect(t, s.name)
+			case "api-pool":
+				c = upPool(t, s.name)
 			case "relay-pool-kill-one":
-				c = upPool(t, s.name, "postgres", "r1", "r2", "r3", "edge")
+				c = upRelayPool(t, s.name, "postgres", "r1", "r2", "r3", "edge")
 			case "rebalance-add-relay":
-				c = upPool(t, s.name, "postgres", "r1", "r2", "edge")
+				c = upRelayPool(t, s.name, "postgres", "r1", "r2", "edge")
 			case "failover-kill-leader", "failover-network-partition", "switchover", "restore-pitr",
 				"runbook-switchover", "runbook-forced-failover", "runbook-dns-swap",
 				"origin-only-via-edge", "origin-aop":
