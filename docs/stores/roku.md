@@ -132,7 +132,7 @@ debug console (`telnet <roku-ip> 8085`) for the whole run.
 | 7 | Switch to Arabic | text joined and in reading order, rows start at the right, Left moves forward |
 | 8 | Arabic subtitles and the player overlay | drawn joined, right to left, in the bundled font |
 | 9 | A Persian title with letters outside the shaping table | shown in logical order, logged, no crash |
-| 10 | Shaping 20 long descriptions on the Roku Express | within 50 ms per screen |
+| 10 | Shaping 20 long descriptions on the Roku Express: the `TIMING shape=… loop=… units=…` line the device-test package prints (row 1, `tests/timing_test.brs`) | `shape` within 50 ms per screen; the line kept with the result, as `loop` says how much faster the device is than brs-engine (T04's CI ceiling is 3.5 `units` on brs-engine, where the 20 cost about 2.5) |
 | 11 | Voice search | the query reaches the home and results show |
 | 12 | The audio guide | reads every focusable label |
 | 13 | Posters on Home, a library's grid and a series | every poster draws (the scene's HTTP agent carries the bearer; brs-engine fetches posters without it, so only a device shows this) |
