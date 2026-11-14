@@ -23,6 +23,8 @@ import androidx.media3.common.util.UnstableApi
 import androidx.test.espresso.Espresso
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.hamzalabs.maktaba.core.session.CloudSession
+import com.hamzalabs.maktaba.core.session.PreferencesStore
 import com.hamzalabs.maktaba.core.api.ClientHeader
 import com.hamzalabs.maktaba.core.session.AppSession
 import com.hamzalabs.maktaba.tv.playback.TvPlayback
@@ -39,6 +41,7 @@ import mockwebserver3.MockWebServer
 import mockwebserver3.RecordedRequest
 import okio.Buffer
 import org.junit.After
+import org.junit.BeforeClass
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -59,6 +62,20 @@ import java.util.concurrent.atomic.AtomicBoolean
 @RunWith(AndroidJUnit4::class)
 class FireTvJourneyTest {
     @get:Rule val rule = createAndroidComposeRule<MainActivity>()
+
+    companion object {
+        /**
+         * The picker opens on the cloud code (58.03): before the app starts, its cloud is an
+         * address nothing answers at, so the journey never asks the hosted cloud for a code
+         * (the picker says the code is unavailable and keeps the other ways).
+         */
+        @JvmStatic
+        @BeforeClass
+        fun noHostedCloud() {
+            val context = InstrumentationRegistry.getInstrumentation().targetContext
+            PreferencesStore(context, "session").put(CloudSession.KEY_API, "http://127.0.0.1:9")
+        }
+    }
 
     private val server = MockWebServer()
     private val approved = AtomicBoolean(false)

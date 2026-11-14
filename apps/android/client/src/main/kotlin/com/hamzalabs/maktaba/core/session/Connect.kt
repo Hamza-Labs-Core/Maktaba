@@ -159,12 +159,15 @@ class HomeProbe(private val get: suspend (HttpUrl) -> Pair<Int, String> = ::defa
      * another home answers is passed over: a local address reused by another home on this
      * network. [onTry] hears each address as it is tried (the address, its place from 1, how
      * many). [NotAHome] when none does, its reason the most telling of what answered: another
-     * home, else something that is not a home, else nothing.
+     * home, else something that is not a home, else nothing. [accept] passes over a home that
+     * answered but is not the one wanted, as another home (a cloud code's approving home is
+     * known by its addresses, not its id: [TvApproval.approvedAt]).
      */
     suspend fun first(
         urls: List<String>,
         expectId: String? = null,
         onTry: (url: String, index: Int, count: Int) -> Unit = { _, _, _ -> },
+        accept: (url: String, info: HomeInfo) -> Boolean = { _, _ -> true },
     ): Reached {
         var why: String? = null
         var reason = FailReason.NoAnswer
@@ -176,7 +179,7 @@ class HomeProbe(private val get: suspend (HttpUrl) -> Pair<Int, String> = ::defa
             onTry(u, i + 1, urls.size)
             try {
                 val info = probe(u)
-                if (expectId != null && info.id != null && !sameHome(expectId, info.id)) {
+                if ((expectId != null && info.id != null && !sameHome(expectId, info.id)) || !accept(u, info)) {
                     why = "another home answered at $u"
                     worse(FailReason.OtherHome)
                     return@forEachIndexed

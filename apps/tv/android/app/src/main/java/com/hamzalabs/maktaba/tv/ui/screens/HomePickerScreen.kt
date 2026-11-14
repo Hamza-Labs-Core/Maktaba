@@ -1,7 +1,6 @@
 package com.hamzalabs.maktaba.tv.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -57,7 +56,8 @@ import com.hamzalabs.maktaba.core.R as CoreR
 import com.hamzalabs.maktaba.core.diagnostics.AppLog
 
 /**
- * Choosing the home (Epic 42 story 42.10): the homes this TV used (Your homes; hold Select on
+ * Choosing the home (Epic 42 story 42.10), with the cloud code first (story 58.03's TV side,
+ * 58.05: [CloudCodePanel], approved from any network), then the other ways: the homes this TV used (Your homes; hold Select on
  * one to rename or remove it), the ones announcing themselves on this network (mDNS
  * `_maktaba._tcp`, `role=home` only, one row per home id: the session's, browsed while the
  * app is in front: [AppSession.nearby]) that are not among them, or one by its address or a pasted
@@ -110,19 +110,21 @@ fun HomePickerScreen(app: MaktabaTVApp, probe: HomeProbe = remember { HomeProbe(
 
     LibraryBackdrop {
         Row(
-            Modifier.fillMaxSize().padding(horizontal = 80.dp, vertical = 48.dp),
-            horizontalArrangement = Arrangement.spacedBy(48.dp),
+            Modifier.fillMaxSize().padding(horizontal = 40.dp, vertical = 24.dp),
+            horizontalArrangement = Arrangement.spacedBy(20.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            ReadingPanel(Modifier.weight(1.3f)) {
+            // the first way in: a code from Maktaba Cloud, approved from any network (58.03)
+            CloudCodePanel(session, Modifier.weight(1.4f))
+            ReadingPanel(Modifier.weight(1f).testTag("picker-other-ways"), contentPadding = 20.dp) {
                 SectionTitle(stringResource(R.string.choose_home))
                 Text(
                     stringResource(R.string.choose_home_hint),
-                    style = MaterialTheme.typography.bodyLarge,
+                    style = MaterialTheme.typography.bodyMedium,
                     color = MaktabaPalette.Muted,
-                    modifier = Modifier.padding(top = 8.dp, bottom = 16.dp),
+                    modifier = Modifier.padding(top = 4.dp, bottom = 8.dp),
                 )
-                LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                LazyColumn(Modifier.weight(1f, fill = false), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     if (saved.isNotEmpty()) {
                         item { Heading(stringResource(CoreR.string.homes_saved)) }
                         items(saved, key = { "saved:" + it.url }) { home ->
@@ -153,36 +155,39 @@ fun HomePickerScreen(app: MaktabaTVApp, probe: HomeProbe = remember { HomeProbe(
                         item {
                             Text(
                                 stringResource(if (found.isEmpty()) CoreR.string.homes_looking else CoreR.string.homes_all_saved),
-                                style = MaterialTheme.typography.bodyLarge,
+                                style = MaterialTheme.typography.bodyMedium,
                                 color = MaktabaPalette.Faint,
                             )
                         }
                     }
                 }
-            }
-            ReadingPanel(Modifier.weight(1f)) {
-                Text(stringResource(R.string.enter_address), style = MaterialTheme.typography.titleLarge, color = MaktabaPalette.Text)
-                // an address reads left to right in Arabic too
-                CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
-                    TvTextField(
-                        value = address,
-                        onValueChange = { address = it; problem = null },
-                        label = stringResource(CoreR.string.address_label),
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp).testTag("picker-address"),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Go),
-                        keyboardActions = KeyboardActions(onGo = { add() }),
-                    )
-                }
-                Text(stringResource(R.string.address_hint), style = MaterialTheme.typography.labelMedium, color = MaktabaPalette.Faint)
-                if (connecting) {
-                    Text(stringResource(CoreR.string.connecting), color = MaktabaPalette.Muted, modifier = Modifier.padding(top = 8.dp))
-                }
-                problem?.let { Text(it, color = MaktabaPalette.Gold, modifier = Modifier.padding(top = 8.dp)) }
-                Box(Modifier.padding(top = 16.dp)) {
+                Text(
+                    stringResource(R.string.enter_address),
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaktabaPalette.Gold,
+                    modifier = Modifier.padding(top = 12.dp),
+                )
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    // an address reads left to right in Arabic too
+                    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                        TvTextField(
+                            value = address,
+                            onValueChange = { address = it; problem = null },
+                            label = stringResource(CoreR.string.address_label),
+                            modifier = Modifier.weight(1f).padding(vertical = 8.dp).testTag("picker-address"),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Go),
+                            keyboardActions = KeyboardActions(onGo = { add() }),
+                        )
+                    }
                     MaktabaButton(onClick = ::add, enabled = !connecting, modifier = Modifier.focusRequester(connectButton)) {
                         Text(stringResource(CoreR.string.connect))
                     }
                 }
+                Text(stringResource(R.string.address_hint), style = MaterialTheme.typography.labelSmall, color = MaktabaPalette.Faint)
+                if (connecting) {
+                    Text(stringResource(CoreR.string.connecting), color = MaktabaPalette.Muted, modifier = Modifier.padding(top = 4.dp))
+                }
+                problem?.let { Text(it, color = MaktabaPalette.Gold, modifier = Modifier.padding(top = 4.dp)) }
             }
         }
     }

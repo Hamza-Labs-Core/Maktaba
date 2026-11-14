@@ -2,6 +2,8 @@ package com.hamzalabs.maktaba.core.session
 
 import com.hamzalabs.maktaba.core.api.ApiClient
 import com.hamzalabs.maktaba.core.api.ApiException
+import com.hamzalabs.maktaba.core.api.AuthTokens
+import com.hamzalabs.maktaba.core.api.PinnedNames
 import com.hamzalabs.maktaba.core.api.Capabilities
 import com.hamzalabs.maktaba.core.api.CapabilitiesAnswer
 import com.hamzalabs.maktaba.core.api.capabilities
@@ -28,6 +30,8 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
@@ -398,10 +402,17 @@ class AppSession(
      * Finds the home at [urls] (the first that answers as it), saying each step in [progress]:
      * finding, each address tried, and why none did ([NotAHome], rethrown).
      */
-    private suspend fun find(urls: List<String>, expectId: String?, probe: HomeProbe, stage: ConnectStage, attempt: Int): Reached {
+    private suspend fun find(
+        urls: List<String>,
+        expectId: String?,
+        probe: HomeProbe,
+        stage: ConnectStage,
+        attempt: Int,
+        accept: (String, HomeInfo) -> Boolean = { _, _ -> true },
+    ): Reached {
         _progress.value = ConnectProgress.Finding(attempt)
         try {
-            return probe.first(urls, expectId) { u, i, n -> _progress.value = ConnectProgress.Trying(shown(u), i, n, attempt) }
+            return probe.first(urls, expectId, { u, i, n -> _progress.value = ConnectProgress.Trying(shown(u), i, n, attempt) }, accept)
         } catch (e: NotAHome) {
             _progress.value = ConnectProgress.Failed(e.reason, urls.map(::shown), stage, attempt)
             throw e
@@ -812,6 +823,69 @@ class AppSession(
         if (c !== client) return
         c.signInWithAssertion(assertion)
         signedIn(c, c.whoami())
+    }
+
+    /**
+     * Signs this TV in with a cloud code's approval (story 58.03, on Android TV and Fire TV):
+     * reaches the approving home by the first of the cloud's connections where it answers
+     * ([TvApproval.approvedAt]: by its addresses, since the cloud's id for it is not the one it
+     * answers with), redeems the grant there (`POST /api/pairing/device/token`) for this
+     * device's own tokens at that address, and then uses the home, which opens signed in as a
+     * kept sign-in does (in the session's scope: the screen that asked may go away meanwhile).
+     * The home decides who the TV is: the approver, restricted (a cloud code's TV never acts as
+     * an admin). A home whose level does not fit is used unsigned, its compatibility page
+     * showing, and the grant is not spent. [NotAHome] when no connection answers as the home;
+     * the home's refusal as [ApiException.Status].
+     */
+    suspend fun signInWithTvApproval(approval: TvApproval, label: String, probe: HomeProbe = this.probe) {
+        val attempt = attemptFor(Tried(ConnectStage.Cloud, listOf(approval.homeName.ifBlank { approval.homeId })))
+        again = { signInWithTvApproval(approval, label, probe) }
+        // its raw LAN addresses checked against its own names (story 50.15 §3)
+        PinnedNames.pinHome(
+            approval.homeId,
+            approval.connections.mapNotNull { c -> c.tlsName?.takeIf { c.kind == "local_ip" }?.let { c.url to it } },
+        )
+        val r = find(approval.addresses, null, probe, ConnectStage.Cloud, attempt, approval::approvedAt)
+        val name = r.info.name?.trim()?.takeIf { it.isNotEmpty() } ?: approval.homeName.ifBlank { r.url.substringAfter("://") }
+        _progress.value = ConnectProgress.Found(name, attempt)
+        succeeded()
+        val home = Home(
+            r.url, name, r.info.id,
+            addresses = approval.addresses + r.info.urls.mapNotNull { Home.normalizeWithPath(it) },
+            cloudServer = approval.homeId,
+            cloudAddresses = approval.addresses,
+        )
+        // story 58.01: the home's level decides first, from the answer just read
+        val known = _homes.value.firstOrNull { it.url == r.url }
+        if (!admit(known?.copy(name = name) ?: home, r.info)) {
+            use(home, checked = true, allowed = false)
+            return
+        }
+        val step = ConnectProgress.SigningIn(known?.label ?: name, ConnectStage.Cloud, attempt)
+        _progress.value = step
+        try {
+            val c = clientFor(home.httpUrl, tokensFor(r.url))
+            val body = buildJsonObject {
+                put("device_code", approval.grant)
+                if (label.isNotBlank()) put("device_label", label)
+            }
+            val (status, text) = c.publicPost("/api/pairing/device/token", body)
+            if (status != 200) throw ApiException.Status(status, text.take(200))
+            val tokens = try {
+                ApiClient.json.decodeFromString(AuthTokens.serializer(), text)
+            } catch (e: Exception) {
+                throw ApiException.Decoding(e.message ?: e.toString())
+            }
+            c.keep(tokens)
+        } catch (e: CancellationException) {
+            clearIf(step)
+            throw e
+        } catch (e: Exception) {
+            _progress.value = ConnectProgress.Failed(reasonFor(e), listOf(shown(r.url)), ConnectStage.Cloud, attempt)
+            throw e
+        }
+        // the TV's tokens are kept for this address: the home opens signed in
+        use(home, checked = true)
     }
 
     /** Names a known home for this app ([nickname] blank: back to the home's own name). */

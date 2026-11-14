@@ -96,14 +96,15 @@ jobs:
           ./gradlew --no-daemon --stacktrace :app:testGoogleDebugUnitTest :app:verifyRoborazziGoogleDebug :app:lintGoogleDebug :app:assembleGoogleDebug :app:bundleGoogleRelease
 
       # Story 58.05: the Fire TV build. T01 and T05 (no Google Play code, the manifest), its
-      # screens from the amazon flavor (T02: the demo shots and Update this app, en and ar, dark),
+      # screens from the amazon flavor (T02: the demo shots, Update this app and the cloud code
+      # picker, en and ar, dark),
       # and its release APK (R8 on, unsigned).
       - name: Fire TV build
         run: |
           set -euo pipefail
           ./gradlew --no-daemon --stacktrace :app:checkAmazonDependencies :app:checkAmazonManifest :app:lintAmazonRelease :app:assembleAmazonRelease
           ./gradlew --no-daemon --stacktrace :app:testAmazonDebugUnitTest \
-            --tests '*.DemoScreenshotTest' --tests '*.CompatScreenTest' --tests '*.FireTvBuildTest' --tests '*.TvDeviceCapsTest' \
+            --tests '*.DemoScreenshotTest' --tests '*.CompatScreenTest' --tests '*.FireTvBuildTest' --tests '*.TvDeviceCapsTest' --tests '*.CloudCodeTvTest' \
             -Proborazzi.test.verify=true
 
       # T01's proof: with Play Services added to the Fire TV build, the check must fail, and for

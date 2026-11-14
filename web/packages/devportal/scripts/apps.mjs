@@ -857,6 +857,10 @@ export const APPS = [
           {
             ul: [
               t(
+                "**Signing in** on Android TV, Google TV and Fire TV: the TV opens on a code from Maktaba Cloud and its QR code. On a phone signed in to the home, **Approve a TV or device** takes the code, from any network: the TV does not need to be at home. The homes on the TV's network and a typed address are beside it. A TV signed in by a cloud code watches as the person who approved it, and never runs the home.",
+                "**تسجيل الدخول** على أندرويد تي في وجوجل تي في وفاير تي في: يفتح التلفاز على رمز من Maktaba Cloud ورمز QR الخاص به. وعلى هاتف مسجَّل الدخول إلى الجهاز الرئيسي، يأخذ **الموافقة على تلفاز أو جهاز** الرمز من أي شبكة: لا يلزم أن يكون التلفاز في المنزل. وبجانبه الأجهزة الرئيسية على شبكة التلفاز وعنوان يُكتب. والتلفاز الذي سُجّل دخوله برمز سحابي يشاهد باسم من وافق عليه، ولا يدير الجهاز الرئيسي أبدًا."
+              ),
+              t(
                 "**Home**: the home's rows, continue watching first.",
                 "**الرئيسية**: صفوف الجهاز الرئيسي، وأولها تابع المشاهدة."
               ),
@@ -1093,6 +1097,12 @@ export const APPS = [
                 "مكتبة على فاير تي في: تبويباتها والمقترحات"
               ),
               shot(
+                "firetv-cloud-code",
+                "wide",
+                "Signing in on a Fire TV: a code from Maktaba Cloud and its QR code, the homes on this network and an address beside it",
+                "تسجيل الدخول على فاير تي في: رمز من Maktaba Cloud ورمز QR الخاص به، وبجانبهما الأجهزة الرئيسية على هذه الشبكة وعنوان"
+              ),
+              shot(
                 "lgtv-watch",
                 "wide",
                 "Playing on an LG TV: the TV's own player under the controls, and Arabic subtitles drawn by Maktaba",
@@ -1132,8 +1142,8 @@ export const APPS = [
           },
           {
             p: t(
-              "The first four screenshots are from the Apple TV app, the sign-in from the Android TV app, the next two from the Fire TV build, the next from the LG app and the next from the Samsung app, each taken in its browser test with a pretend TV (behind the Samsung shot, a frame stands in for the video), and the last four from the Roku channel, drawn by brs-engine (Roku's own renderer differs a little; behind the player, the video is black). The Android TV app, its Fire TV build and the Roku channel have the same sections as the Apple TV app, laid out for the TV's remote.",
-              "أول أربع لقطات من تطبيق آبل تي في، ولقطة تسجيل الدخول من تطبيق أندرويد تي في، واللقطتان التاليتان من إصدار فاير تي في، والتالية من تطبيق LG والتي تليها من تطبيق سامسونج، وكلٌّ منهما التُقطت في اختبار تطبيقها في المتصفح مع تلفاز وهمي (وخلف لقطة سامسونج إطار بديل عن الفيديو)، وآخر أربع لقطات من قناة روكو كما يرسمها brs-engine (ويختلف عنه عارض روكو نفسه قليلًا، والفيديو خلف المشغّل أسود). ولتطبيق أندرويد تي في وإصداره لفاير تي في وقناة روكو أقسام تطبيق آبل تي في نفسها، مرتبةً لجهاز تحكم التلفاز."
+              "The first four screenshots are from the Apple TV app, the sign-in from the Android TV app, the next three from the Fire TV build, the next from the LG app and the next from the Samsung app, each taken in its browser test with a pretend TV (behind the Samsung shot, a frame stands in for the video), and the last four from the Roku channel, drawn by brs-engine (Roku's own renderer differs a little; behind the player, the video is black). The Android TV app, its Fire TV build and the Roku channel have the same sections as the Apple TV app, laid out for the TV's remote.",
+              "أول أربع لقطات من تطبيق آبل تي في، ولقطة تسجيل الدخول من تطبيق أندرويد تي في، واللقطات الثلاث التالية من إصدار فاير تي في، والتالية من تطبيق LG والتي تليها من تطبيق سامسونج، وكلٌّ منهما التُقطت في اختبار تطبيقها في المتصفح مع تلفاز وهمي (وخلف لقطة سامسونج إطار بديل عن الفيديو)، وآخر أربع لقطات من قناة روكو كما يرسمها brs-engine (ويختلف عنه عارض روكو نفسه قليلًا، والفيديو خلف المشغّل أسود). ولتطبيق أندرويد تي في وإصداره لفاير تي في وقناة روكو أقسام تطبيق آبل تي في نفسها، مرتبةً لجهاز تحكم التلفاز."
             ),
           },
           { p: SHOTS_NOTE },
