@@ -45,7 +45,7 @@ func TestWorkerGroupAsTheMigrationsMadeIt(t *testing.T) {
 	}
 }
 
-// Slot 0226: a broadcast ingest token is a credential: neither the migrated worker group
+// Slot 0227: a broadcast ingest token is a credential: neither the migrated worker group
 // nor one made again may read it.
 func TestWorkerGroupCannotReadIngestTokens(t *testing.T) {
 	db, _ := clustertest.ScratchDB(t)

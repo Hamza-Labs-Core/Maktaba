@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 --
--- Slot 0226 (Epic 50, story 50.22) - home broadcasting: the channels the home publishes to
+-- Slot 0227 (Epic 50, story 50.22) - home broadcasting: the channels the home publishes to
 -- viewers outside it through Maktaba Cloud's broadcast edge.
 --
 --   broadcast_channels       one row per channel the admin set up for broadcasting: its
@@ -155,7 +155,7 @@ LANGUAGE sql IMMUTABLE AS $f$
         -- at them, a child's requests and a child's activity; their routes run on the
         -- home, whose API alone reads and writes them
         'parental_pins', 'parental_pin_failures', 'parental_requests', 'parental_events',
-        -- home broadcasting (slot 0226): what the home publishes, its uplink measurements, the
+        -- home broadcasting (slot 0227): what the home publishes, its uplink measurements, the
         -- admins' rights confirmations and the ingest tokens; the home's API and front door
         -- alone read them (a token is a credential)
         'broadcast_channels', 'broadcast_uplink', 'broadcast_confirmations', 'broadcast_ingest_tokens'

@@ -73,8 +73,8 @@ type Ctl struct {
 	Now    func() time.Time
 	// Poll (default 5 s), StatePeriod (default 10 s) and SleepGrace (default 5 min);
 	// RestartDelay is the wait before a crashed ffmpeg starts again (default 500 ms);
-	// RungPoll is how often each rung's playlist is read (default the RungWatcher's 500 ms).
-	Poll, StateEvery, Grace, RestartDelay, RungPoll time.Duration
+	// WatchPoll is how often each rung's playlist is read (RungWatcher's default, 500 ms).
+	Poll, StateEvery, Grace, RestartDelay, WatchPoll time.Duration
 
 	mu       sync.Mutex
 	jobs     map[uuid.UUID]Job
@@ -345,9 +345,7 @@ func (c *Ctl) Event(ctx context.Context, ch uuid.UUID, ev Event) {
 		}
 		c.mu.Unlock()
 	case "revoked":
-		// Maktaba's kill switch (50.25): the reason (notice, report, incident, ...) is what the
-		// Broadcast page shows; the list's own entries are the API's (detail "list:<reason>")
-		_ = c.Store.SetState(ctx, ch, "revoked", ev.Reason)
+		_ = c.Store.SetState(ctx, ch, "revoked", "")
 	case "plan_off":
 		_ = c.Store.SetState(ctx, ch, "offline", "planOff")
 	case "restored":
@@ -506,7 +504,7 @@ func (c *Ctl) runLadder(ctx context.Context, j Job, s *session, dir string) erro
 	defer cancel()
 	var wg sync.WaitGroup
 	for _, r := range j.Rungs {
-		w := &RungWatcher{Dir: filepath.Join(dir, r), Rung: r, Up: s.up, Poll: c.RungPoll}
+		w := &RungWatcher{Dir: filepath.Join(dir, r), Rung: r, Up: s.up, Poll: c.WatchPoll}
 		wg.Add(1)
 		go func() { defer wg.Done(); w.Run(lctx) }()
 	}

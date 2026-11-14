@@ -390,6 +390,13 @@ func (r *rehearsal) wave7Scenario() {
 	if c := readChange(t, db, change); c.state != "approved" {
 		t.Fatalf("the TV change %s is %s before its swap, want approved: %s", change, c.state, changeEvents(db, change))
 	}
+	// the swap replaces the slot live now: a previous release's supervisor reported its
+	// own shutdown's slot exits to the front door, which could fail over to the standby as
+	// the install restarted whole (the slots and the release they air are kept)
+	if now := liveSlot(t, db); now != slot0 {
+		r.logf("16.7: the update moved the live slot from %s to %s (roles %v)", slot0, now, slotRoles(t, db))
+		slot0 = now
+	}
 	if code, body := a.adminJSON("POST", "/api/tv/changes/"+change+"/promote", map[string]any{}); code != http.StatusOK &&
 		code != http.StatusAccepted {
 		t.Fatalf("Swap now for the TV change %s: %d %s", change, code, body)
