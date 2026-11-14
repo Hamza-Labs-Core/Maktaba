@@ -38,7 +38,6 @@ def pytest_sessionfinish(session, exitstatus):
 
 _INNER_TESTS = """
 import os
-import re
 import threading
 
 import conftest
