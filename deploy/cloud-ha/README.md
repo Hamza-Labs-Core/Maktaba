@@ -235,6 +235,86 @@ the secrets the deploy already uses (`RELAY_HOST_A`, `RELAY_HOST_B`, `RELAY_SSH_
 Edit on maktaba.tv only), `CF_ZONE_ID`, `FLOATING_IP`, `PUBLIC_IP_A` and `PUBLIC_IP_B` (the
 nodes' own public IPv4 addresses).
 
+## The api pool (story 50.17, Phase 2)
+
+Phase 2 runs the api and the worker on several machines at once, so losing one is a non-event
+and adding one is a configuration change. The code is the same on one node: everything below
+works unchanged on the Phase 1 pair, and nothing here is deployed until the owner creates it.
+
+```
+Cloudflare Tunnel ── cloudflared on api-1 and api-2 ── LB11 (private address only)
+                                                        ├── api-1  (api + worker)
+                                                        ├── api-2  (api + worker)
+                                                        └── api-3  (api + worker)
+                                                                │ private network
+                                                           Postgres (the Phase 1 pair, then 50.18)
+```
+
+- **The worker runs once.** Every node runs a worker; its jobs run only on the node holding the
+  Postgres session lock `pg_try_advisory_lock(8472613)` (one above the migrator's), tried every
+  15 s on a connection of its own. A node that goes loses its session and the lock, and another
+  takes it within 15 s; a stopped worker hands it over at once. The holder renews its row in
+  `cloud_leaders` every 15 s; a heartbeat older than 60 s (a hung process that keeps its
+  connection) lets another node end that backend. `worker_leader{node}` on each worker's
+  `/metrics`; `worker_no_leader` (sev2) when no node holds it for 2 minutes
+  ([runbook](../../docs/runbooks/cloud/worker-no-leader.md)).
+- **Rate limits.** The limits that guard against brute force (sign-in, password reset, the mail
+  routes, claim redeem, the console's sign-in) live in Postgres (`cloud_rate_buckets`, one
+  UPSERT a request), so three nodes don't triple them; the general per-IP limits stay per node.
+  With the database away a node's own bucket decides.
+- **Caches.** Each relay keeps one LISTEN connection (`cloud/internal/cache`): the triggers of
+  migration 00500003 (and a writer's `cache.Notify` on `cloud_cache`, in its transaction) drop
+  an entry on every node within a second; a reconnect expires every entry. The api keeps no
+  copy of a plan or an account: any node answers from the database.
+- **Stopping a node.** On SIGTERM the api answers `/readyz` 503 for `server.drain_delay` (12 s on
+  the pool) while it keeps serving, so the balancer takes it out before the port closes, then
+  finishes what is in flight within `shutdown_grace`.
+
+**What the owner creates** (none of it is called from the repository):
+
+1. **LB11** in the private network, its public interface off (50.31): an HTTP service on port
+   8090 to the targets' private `:8090`, and a second on 8091 to `:8091` (the console, 50.32);
+   health check `GET /readyz` every 5 s, timeout 3 s, 2 failures to remove and 2 passes to add
+   back; algorithm least connections; no sticky sessions.
+2. **Three api machines** in the private network, each with `/etc/maktaba/cloud-ha.env`
+   (`NODE_NAME`, `NODE_ADDR`, `PRIVATE_NET`, `SSH_FROM`; `TUNNEL=yes` on two of them),
+   `/etc/maktaba/cloud.env` (the database URL and the secrets, as on A and B) and
+   `/etc/maktaba/cloud.toml`:
+
+   ```toml
+   [server]
+   env = "production"
+   listen_addr = "<NODE_ADDR>:8090"
+   admin_listen_addr = "<NODE_ADDR>:8091"
+   admin_host = "admin.maktaba.tv"
+   user_hosts = ["api.maktaba.tv", "app.maktaba.tv", "maktaba.tv"]
+   trusted_proxies = ["<the LB's private address>/32"]
+   drain_delay = "12s"
+
+   [database]
+   url = "postgres://…"          # PgBouncer once 50.18 lands
+   direct_url = "postgres://…"   # the primary itself: the worker's lock and LISTEN
+   ```
+
+   then `sudo deploy/cloud-ha/setup.sh --role api` on each: UFW (22 from `SSH_FROM`; 8090, 8091,
+   9090 and 9100 from the private network only), the api and worker units (always on: no leader
+   to wait for), the worker's control port on the private address for the witness's Prometheus,
+   and cloudflared where `TUNNEL=yes`. List the nodes for Prometheus in
+   `/etc/prometheus/targets/api-nodes.json` on the witness (`[{"targets": ["<addr>:9090"]}]`).
+3. **The Tunnel's ingress** to the balancer's private address (`deploy/cloudflare/tunnel.maktaba.tv.json`).
+4. Stop the api and worker on the Phase 1 pair once the pool serves.
+
+**Deploys** go one node at a time with [`bin/api-rollout`](bin/api-rollout) `<tag>`
+(`API_NODES="api-1 api-2 api-3"`): each node gets `app-update` over SSH, drains, restarts, and
+must stay ready for 15 s before the next. A node that never gets there stops the rollout; the
+nodes after it keep their release. **Rollback:** point the Tunnel's ingress back at the Phase 1
+leader's loopback and start its api and worker; the code is the same on one node, so it stays.
+
+The rehearsal's `api-pool` (`tools/rehearsal-cloud/compose-pool.yml`, HAProxy standing in for
+LB11) proves it: the lock moves within 15 s of its holder's kill, the sign-in limit holds
+across the nodes, a plan change reaches both relays within a second, and a rolling deploy fails
+no request with each stopping node out of the balancer within 10 s.
+
 ## Day to day
 
 | What | How |

@@ -36,6 +36,7 @@ probe (GitHub Actions) mails on its own, so a broken witness doesn't silence a S
 | [abuse-ddos.md](abuse-ddos.md) | a traffic spike, abuse |
 | [secrets-rotation.md](secrets-rotation.md) | a secret leaked, or might have |
 | [tunnel-down.md](tunnel-down.md) | the API's Tunnel is down |
+| [worker-no-leader.md](worker-no-leader.md) | no api node runs the worker's jobs (the api pool) |
 | [staff-security.md](staff-security.md) | a staff account's security alert |
 | [status-page.md](status-page.md) | posting an incident or a maintenance notice |
 | [capacity.md](capacity.md) | the relay is filling its node: resize, or start Phase 2 |

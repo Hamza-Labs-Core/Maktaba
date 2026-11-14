@@ -14,16 +14,15 @@ build fails when the two differ.
 
 ### Changed
 
-- **The big screen gets the TV apps' library (story 58.08).** A library on the big screen
-  (`/big`) now opens on the tabs of the Apple TV and Android TV apps: Recommended, Library (Show
-  videos or series, Sort, Filter and a letter rail, A to Z and the Arabic letters), Collections,
-  Playlists and Categories. Play and Shuffle play the Library tab's view in its order on the play
-  queue; collections and playlists have their own pages with Play and Shuffle; a series gains Mark
-  watched and a season's Mark season watched. On a focused card Play/Pause plays it, and a long OK
-  or the menu key offers Play next, Add to queue, Add to playlist, Go to series and Mark watched.
-  Back steps out to the tab's top, then its tabs, then out; each tab keeps its place. Up next shows
-  in a video's last 30 seconds, and a shuffled queue offers Shuffle again. A focused card grows by
-  1.08 inside the brass ring.
+- **The cloud's api can run on several machines at once (Epic 50, story 50.17).** The worker's
+  jobs (expired sign-in cleanup, account deletions, the relayed streams' sweep, pay-as-you-go
+  reports) run on exactly one node, the one holding a database lock, and another node takes
+  over within 15 s when it goes; the sign-in, password-reset, mail and claim limits are shared
+  by every node, so more machines don't loosen them; a stopping node leaves its load balancer
+  before it closes, and a plan change reaches every relay's cache within a second. In the cloud
+  rehearsal three nodes behind a stand-in load balancer moved the worker within 15 s of a kill,
+  refused the 31st sign-in across the three, and took a rolling deploy with no failed request.
+  Nothing changes for households until the machines are created.
 
 - **Messages in Arabic speak to the whole household (story 60.06).** The Arabic of every
   message the API sends, and of its page on maktaba.tv, now addresses the household in the plural
@@ -2902,6 +2901,17 @@ build fails when the two differ.
   twin, and the build fails on an Arabic page left mostly in English. The Synology guide now says
   to run setup in Container Manager's terminal, as the container expects, and a container waiting
   for setup says how in English and Arabic, in each NAS's own words.
+
+- **The big screen gets the TV apps' library (story 58.08).** A library on the big screen
+  (`/big`) now opens on the tabs of the Apple TV and Android TV apps: Recommended, Library (Show
+  videos or series, Sort, Filter and a letter rail, A to Z and the Arabic letters), Collections,
+  Playlists and Categories. Play and Shuffle play the Library tab's view in its order on the play
+  queue; collections and playlists have their own pages with Play and Shuffle; a series gains Mark
+  watched and a season's Mark season watched. On a focused card Play/Pause plays it, and a long OK
+  or the menu key offers Play next, Add to queue, Add to playlist, Go to series and Mark watched.
+  Back steps out to the tab's top, then its tabs, then out; each tab keeps its place. Up next shows
+  in a video's last 30 seconds, and a shuffled queue offers Shuffle again. A focused card grows by
+  1.08 inside the brass ring.
 
 ### Fixed
 

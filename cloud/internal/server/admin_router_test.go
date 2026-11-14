@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -142,5 +143,66 @@ func TestRunAll(t *testing.T) {
 	}
 	if _, err := http.Get("http://" + good.Addr + "/"); err == nil {
 		t.Fatal("the good listener kept serving after the other failed")
+	}
+}
+
+// RunAllDraining (the api pool, story 50.17): on shutdown the node goes unready at once and
+// keeps serving for the delay, so the load balancer takes it out before its port closes.
+func TestRunAllDraining(t *testing.T) {
+	hello := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ok")) })
+	a := &http.Server{Addr: listenerFree(t), Handler: hello}
+	ctx, cancel := context.WithCancel(context.Background())
+	var unready atomic.Bool
+	done := make(chan error, 1)
+	go func() {
+		done <- RunAllDraining(ctx, slog.New(slog.DiscardHandler), 2*time.Second, 600*time.Millisecond,
+			func() { unready.Store(true) }, a)
+	}()
+	get := func() error {
+		res, err := http.Get("http://" + a.Addr + "/")
+		if err == nil {
+			_ = res.Body.Close()
+		}
+		return err
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for get() != nil {
+		if time.Now().After(deadline) {
+			t.Fatal("never answered")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	stopped := time.Now()
+	cancel()
+	time.Sleep(100 * time.Millisecond)
+	if !unready.Load() {
+		t.Fatal("not unready after the stop")
+	}
+	if err := get(); err != nil {
+		t.Fatalf("closed during the drain delay: %v", err)
+	}
+	if err := <-done; err != nil {
+		t.Fatalf("a clean stop returned %v", err)
+	}
+	if took := time.Since(stopped); took < 600*time.Millisecond {
+		t.Fatalf("closed %s after the stop, before the delay", took)
+	}
+	if err := get(); err == nil {
+		t.Fatal("still serving after the drain")
+	}
+}
+
+// The admin listener's /readyz drains too (its own load balancer service, 50.32).
+func TestAdminReadyzDrains(t *testing.T) {
+	draining := false
+	admin := NewAdminRouter(slog.New(slog.DiscardHandler), nil, nil, BuildInfo{}, "admin.maktaba.tv",
+		"https://admin.maktaba.tv", nil, WithDraining(func() bool { return draining }))
+	draining = true
+	req := httptest.NewRequest("GET", "/readyz", nil)
+	req.Host = "admin.maktaba.tv"
+	rec := httptest.NewRecorder()
+	admin.ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable || !strings.Contains(rec.Body.String(), "draining") {
+		t.Fatalf("draining admin readyz: %d %s", rec.Code, rec.Body)
 	}
 }

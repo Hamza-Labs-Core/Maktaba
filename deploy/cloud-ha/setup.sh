@@ -4,6 +4,7 @@
 # (etcd, the third vote). Idempotent: run it again after changing /etc/maktaba/cloud-ha.env.
 #
 #   sudo deploy/cloud-ha/setup.sh --role a|b|witness
+#   sudo deploy/cloud-ha/setup.sh --role api     # a node of Phase 2's api pool (story 50.17)
 #
 # Order: W first, then A (bootstraps the cluster), then B (joins as a replica).
 #
@@ -23,21 +24,86 @@ role=""
 while [ $# -gt 0 ]; do
 	case "$1" in
 		--role) role="$2"; shift ;;
-		*) die "unknown argument $1 (usage: setup.sh --role a|b|witness)" ;;
+		*) die "unknown argument $1 (usage: setup.sh --role a|b|witness|api)" ;;
 	esac
 	shift
 done
-case "${role}" in a|b|witness) ;; *) die "usage: setup.sh --role a|b|witness" ;; esac
+case "${role}" in a|b|witness|api) ;; *) die "usage: setup.sh --role a|b|witness|api" ;; esac
 [ "$(id -u)" -eq 0 ] || die "must run as root (sudo)"
 
 ENV_FILE=/etc/maktaba/cloud-ha.env
 [ -r "${ENV_FILE}" ] || die "${ENV_FILE} is missing: copy deploy/cloud-ha/cloud-ha.env.example there and fill it in"
 # shellcheck disable=SC1090
 . "${ENV_FILE}"
-: "${NODE_NAME:?}" "${NODE_ADDR:?}" "${PRIVATE_NET:?}" "${ETCD_INITIAL_CLUSTER:?}"
+: "${NODE_NAME:?}" "${NODE_ADDR:?}" "${PRIVATE_NET:?}"
 
 # shellcheck disable=SC1091  # the pinned versions, beside this script
 . "${here}/versions.env"
+
+# ---------------------------------------------------------------------------------------
+# --role api: a node of the api pool (Epic 50 story 50.17, README "The api pool"): the api and
+# the worker, always running, behind the load balancer; no Postgres, etcd, Patroni or Caddy.
+# The balancer reaches the api's listeners on the private address (8090 the user names, 8091
+# the console), checking /readyz; the worker runs its jobs only while it holds the leader lock.
+# With TUNNEL=yes (two of the nodes) the node also runs the Cloudflare Tunnel's connector,
+# whose ingress points at the balancer's private address (50.31).
+# ---------------------------------------------------------------------------------------
+if [ "${role}" = api ]; then
+	log "packages (api node)"
+	export DEBIAN_FRONTEND=noninteractive
+	apt-get update -qq
+	apt-get install -y -qq chrony ufw curl ca-certificates gnupg >/dev/null
+	systemctl enable --now chrony >/dev/null
+
+	log "UFW (api node): 22 from SSH_FROM; 8090, 8091, the worker port and the metrics from the private network"
+	ufw --force reset >/dev/null
+	ufw default deny incoming >/dev/null
+	ufw default allow outgoing >/dev/null
+	for src in ${SSH_FROM:-}; do ufw allow from "${src}" to any port 22 proto tcp >/dev/null; done
+	[ -n "${SSH_FROM:-}" ] || ufw allow 22/tcp >/dev/null
+	for port in 8090 8091 9090 9100; do
+		ufw allow from "${PRIVATE_NET}" to any port "${port}" proto tcp >/dev/null
+	done
+	ufw --force enable >/dev/null
+
+	id maktaba >/dev/null 2>&1 || useradd --system --home /var/lib/maktaba --shell /usr/sbin/nologin maktaba
+	install -m 0644 "${here}/systemd/maktaba-cloud-api.service" "${here}/systemd/maktaba-cloud-worker.service" \
+		"${here}/systemd/maktaba-cloudflared.service" /etc/systemd/system/
+	install -m 0755 "${here}/bin/app-update" /usr/local/bin/
+	[ -f /etc/maktaba/cloud.toml ] || die "/etc/maktaba/cloud.toml is missing (README, \"The api pool\")"
+	[ -f /etc/maktaba/cloud.env ] || die "/etc/maktaba/cloud.env is missing (the database URL and the secrets)"
+	grep -q '^MAKTABA_NODE_ID=' /etc/maktaba/cloud.env || echo "MAKTABA_NODE_ID=${NODE_NAME}" >>/etc/maktaba/cloud.env
+	grep -q '^MAKTABA_CLOUD_LOGS_DIR=' /etc/maktaba/cloud.env ||
+		echo "MAKTABA_CLOUD_LOGS_DIR=/var/lib/maktaba-cloud/logs" >>/etc/maktaba/cloud.env
+	# the drain the balancer needs: 2 failed checks 5 s apart, then the port may close
+	grep -q '^MAKTABA_CLOUD_DRAIN_DELAY=' /etc/maktaba/cloud.env || echo "MAKTABA_CLOUD_DRAIN_DELAY=12s" >>/etc/maktaba/cloud.env
+	# the worker's /metrics (worker_leader) for the witness's Prometheus, on the private address
+	grep -q '^MAKTABA_CLOUD_WORKER_CONTROL_ADDR=' /etc/maktaba/cloud.env ||
+		echo "MAKTABA_CLOUD_WORKER_CONTROL_ADDR=${NODE_ADDR}:9090" >>/etc/maktaba/cloud.env
+
+	if [ "${TUNNEL:-no}" = yes ]; then
+		if [ ! -f /etc/apt/sources.list.d/cloudflared.list ]; then
+			curl -fsSL https://pkg.cloudflare.com/cloudflare-public-v2.gpg -o /usr/share/keyrings/cloudflare-public-v2.gpg
+			echo "deb [signed-by=/usr/share/keyrings/cloudflare-public-v2.gpg] https://pkg.cloudflare.com/cloudflared any main" \
+				>/etc/apt/sources.list.d/cloudflared.list
+			apt-get update -qq
+		fi
+		apt-get install -y -qq --allow-downgrades "cloudflared=${CLOUDFLARED_VERSION:?}" >/dev/null
+		apt-mark hold cloudflared >/dev/null
+		id cloudflared >/dev/null 2>&1 || useradd --system --home /nonexistent --shell /usr/sbin/nologin cloudflared
+		if [ -f /etc/maktaba/tunnel.token ]; then chgrp cloudflared /etc/maktaba/tunnel.token && chmod 0640 /etc/maktaba/tunnel.token; fi
+	fi
+
+	systemctl daemon-reload
+	# in the pool the api and worker always run (no leader to wait for); no binary until the
+	# first rollout (bin/api-rollout installs it through app-update)
+	systemctl enable maktaba-cloud-api maktaba-cloud-worker
+	if [ -x /usr/local/bin/maktaba-cloud ]; then systemctl restart maktaba-cloud-api maktaba-cloud-worker; fi
+	if [ "${TUNNEL:-no}" = yes ]; then systemctl enable --now maktaba-cloudflared || true; fi
+	log "${NODE_NAME} is an api node: add its private address to the load balancer's targets"
+	exit 0
+fi
+: "${ETCD_INITIAL_CLUSTER:?}"
 ETCD_VERSION="${ETCD_VERSION:-v3.6.5}"
 PATRONI_VERSION="${PATRONI_VERSION:-4.1.5}"
 
