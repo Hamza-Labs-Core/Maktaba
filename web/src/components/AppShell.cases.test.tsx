@@ -312,6 +312,7 @@ const ADMIN_LINKS = [
   ["nav.admin.filler", "/admin/filler"],
   ["nav.admin.liveTv", "/admin/live-tv"],
   ["nav.admin.tvChanges", "/admin/live-tv/changes"],
+  ["nav.admin.broadcastAccess", "/admin/broadcast-access"],
   ["nav.admin.analytics", "/admin/analytics"],
   ["nav.admin.audit", "/admin/audit"],
   ["nav.admin.health", "/admin/health"],

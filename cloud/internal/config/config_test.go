@@ -439,3 +439,21 @@ direct_url = "postgres://primary/db"
 		t.Fatalf("env: drain %s, direct %q", cfg.Server.DrainDelay, cfg.Database.DirectURL)
 	}
 }
+
+// Story 50.26: broadcast.open_access.enabled and broadcast.watch_url parse; open access is never
+// on behind a shut gate.
+func TestBroadcastOpenAccessConfig(t *testing.T) {
+	c := defaultConfig()
+	if c.Broadcast.OpenAccess || c.Broadcast.WatchURL != "https://watch.maktaba.tv" {
+		t.Fatalf("defaults: %+v", c.Broadcast)
+	}
+	if err := parseTOML("[broadcast]\nwatch_url = \"https://staging-watch.maktaba.dev\"\n[broadcast.open_access]\nenabled = true\n", &c); err != nil {
+		t.Fatal(err)
+	}
+	if !c.Broadcast.OpenAccess || c.Broadcast.WatchURL != "https://staging-watch.maktaba.dev" {
+		t.Fatalf("parsed: %+v", c.Broadcast)
+	}
+	if err := ValidateBroadcast(BroadcastConfig{OpenAccess: true}); err == nil {
+		t.Fatal("open access behind a shut gate was accepted")
+	}
+}

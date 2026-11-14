@@ -3,6 +3,11 @@
 import type { ChannelLive } from "./channel_live";
 import type { PublisherControl } from "./publisher";
 import type { Revocations } from "./revocations";
+import type { ViewerAccess } from "./access";
+import type { Pairing } from "./pairing";
+
+/** A Workers Rate Limiting binding. */
+export type RateLimit = { limit(opts: { key: string }): Promise<{ success: boolean }> };
 
 export interface Env {
   /** R2 bucket maktaba-broadcast-<env>: segments (10 minutes) and slates. */
@@ -12,6 +17,27 @@ export interface Env {
   CHANNEL: DurableObjectNamespace<ChannelLive>;
   PUBLISHER: DurableObjectNamespace<PublisherControl>;
   REVOCATIONS: DurableObjectNamespace<Revocations>;
+  /** One per publisher: invites' uses, guest passes, viewer sessions and their limits (50.26). */
+  VIEWER: DurableObjectNamespace<ViewerAccess>;
+  /** One per TV pairing nonce: the credential a phone sends a TV, for 10 minutes (50.27). */
+  PAIRING: DurableObjectNamespace<Pairing>;
+  /** watch.maktaba.tv's play requests: 30 a minute per address (50.26 §4). */
+  PLAY_RL?: RateLimit;
+  /** watch.maktaba.tv's other API requests: 120 a minute per address. */
+  API_RL?: RateLimit;
+  /** Turnstile's public site key for the watch pages' widget (50.27); unset: no widget. */
+  TURNSTILE_SITE_KEY?: string;
+  /** "1": the watch pages say "temporarily unavailable"; the API and playback stay up. */
+  WATCH_SITE_OFF?: string;
+  /** The Turnstile secret (open access, 50.26 §2); unset: open sessions answer 503. */
+  TURNSTILE_SECRET?: string;
+  /** Turnstile's siteverify (a fake service binding in tests; absent: challenges.cloudflare.com). */
+  TURNSTILE_API?: Fetcher;
+  /**
+   * The native apps' attestation verifier (App Attest, Play Integrity; 50.27): POST /verify
+   * {platform, attestation} answers {valid}. Absent: the exchange answers 503.
+   */
+  ATTEST_API?: Fetcher;
   /** Analytics Engine dataset broadcast_events (50.28). Optional: absent in dev. */
   AE?: AnalyticsEngineDataset;
   /** A coarse per-location guard in front of the exact per-rung one in ChannelLive. */

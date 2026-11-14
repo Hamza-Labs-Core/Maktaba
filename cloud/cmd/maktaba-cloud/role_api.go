@@ -197,7 +197,17 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 		}
 	}
 	ipSalt := sha256.Sum256([]byte("maktaba-broadcast-agreement-ip\x00" + string(secret)))
-	broadcastDeps := &broadcasth.Deps{DB: pool.DB, Servers: servers, Store: broadcastStore, Logger: logger, IPSalt: ipSalt[:]}
+	broadcastDeps := &broadcasth.Deps{DB: pool.DB, Servers: servers, Store: broadcastStore, Logger: logger, IPSalt: ipSalt[:],
+		OpenAccess: cfg.Broadcast.OpenAccess, WatchURL: cfg.Broadcast.WatchURL}
+	// viewer access (story 50.26): invites and the access posts need the broadcast key
+	if cfg.Broadcast.KeyPath != "" {
+		if k, err := broadcast.LoadKey(cfg.Broadcast.KeyPath); err == nil {
+			broadcastDeps.Key = &k
+			broadcastDeps.Edge = broadcasth.HTTPEdge{Base: cfg.Broadcast.IngestURL}
+		} else {
+			logger.Warn("broadcast invites disabled", "err", err)
+		}
+	}
 	// the kill switch (story 50.25): the signed list for the edge and homes, and the console's
 	// add and lift (wired on the admin listener below)
 	revDeps := revocationDeps(cfg, servers, pool, logger, edgeDeps.Key)
@@ -335,6 +345,7 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 		// credential, never a user token.
 		serversh.MountAgent(app, serversDeps)
 		broadcasth.MountAgent(app, broadcastDeps)
+		broadcasth.MountAccessAgent(app, broadcastDeps)
 		broadcasth.MountIngest(app, ingestDeps(cfg, servers, pool, logger))
 		// the broadcast edge: each request signed with its key, no account
 		edgeh.Mount(app, edgeDeps)
@@ -372,6 +383,7 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 			(&healthh.Deps{DB: pool.DB}).Mount(g)
 			billingh.Mount(g, billing)
 			broadcasth.MountUser(g, broadcastDeps)
+			broadcasth.MountAccessUser(g, broadcastDeps)
 			pushh.Mount(g, pushh.Deps{DB: pool.DB, Dispatcher: dispatcher})
 		})
 	})
