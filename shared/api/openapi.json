@@ -18987,6 +18987,671 @@
           }
         }
       }
+    },
+    "/tv/broadcast/publishable": {
+      "get": {
+        "tags": [
+          "Broadcasting"
+        ],
+        "summary": "Publishable sources and shares",
+        "description": "Whether published channels air only publishable items, the source permissions recorded on this home (withdrawn ones too, as the record), and each channel's publishable share of the next 7 days with the sources that would add the most hours if marked. Nothing here is sent to Maktaba Cloud.",
+        "x-maktaba-role": "admin",
+        "operationId": "getBroadcastPublishable",
+        "responses": {
+          "200": {
+            "description": "The switch, the permissions and the shares.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "publishable_only": {
+                      "type": "boolean"
+                    },
+                    "sources": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "channel",
+                              "playlist",
+                              "speaker",
+                              "label"
+                            ]
+                          },
+                          "ref": {
+                            "type": "string"
+                          },
+                          "label": {
+                            "type": "string"
+                          },
+                          "proof_url": {
+                            "type": "string",
+                            "format": "uri"
+                          },
+                          "proof_file": {
+                            "type": "string"
+                          },
+                          "note": {
+                            "type": "string"
+                          },
+                          "credit": {
+                            "type": "string"
+                          },
+                          "non_commercial": {
+                            "type": "boolean"
+                          },
+                          "recorded_by": {
+                            "type": "string"
+                          },
+                          "recorded_at": {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          "revoked_at": {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          "revoked_reason": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "shares": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "channel_id": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "scheduled_seconds": {
+                            "type": "integer"
+                          },
+                          "publishable_seconds": {
+                            "type": "integer"
+                          },
+                          "percent": {
+                            "type": "integer"
+                          },
+                          "suggestions": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string"
+                                },
+                                "ref": {
+                                  "type": "string"
+                                },
+                                "label": {
+                                  "type": "string"
+                                },
+                                "seconds": {
+                                  "type": "integer"
+                                },
+                                "url": {
+                                  "type": "string",
+                                  "format": "uri"
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "Admin only.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Broadcasting is off on this home.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/tv/broadcast/publishable/sources": {
+      "post": {
+        "tags": [
+          "Broadcasting"
+        ],
+        "summary": "Record a source permission",
+        "description": "Records that a source allows sharing: a YouTube channel id, a playlist id, a speaker (a speaker named on an item, or a reciter's library) or a label, with a link to where the source says so. Every item from that source becomes publishable at once.",
+        "x-maktaba-role": "admin",
+        "operationId": "recordBroadcastSource",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "kind",
+                  "ref",
+                  "proof_url"
+                ],
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "channel",
+                      "playlist",
+                      "speaker",
+                      "label"
+                    ]
+                  },
+                  "ref": {
+                    "type": "string"
+                  },
+                  "label": {
+                    "type": "string"
+                  },
+                  "proof_url": {
+                    "type": "string",
+                    "format": "uri"
+                  },
+                  "proof_file": {
+                    "type": "string"
+                  },
+                  "note": {
+                    "type": "string"
+                  },
+                  "credit": {
+                    "type": "string"
+                  },
+                  "non_commercial": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The permission.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "channel",
+                        "playlist",
+                        "speaker",
+                        "label"
+                      ]
+                    },
+                    "ref": {
+                      "type": "string"
+                    },
+                    "label": {
+                      "type": "string"
+                    },
+                    "proof_url": {
+                      "type": "string",
+                      "format": "uri"
+                    },
+                    "proof_file": {
+                      "type": "string"
+                    },
+                    "note": {
+                      "type": "string"
+                    },
+                    "credit": {
+                      "type": "string"
+                    },
+                    "non_commercial": {
+                      "type": "boolean"
+                    },
+                    "recorded_by": {
+                      "type": "string"
+                    },
+                    "recorded_at": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "revoked_at": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "revoked_reason": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A field is missing or not valid; the proof must be a link.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "Admin only.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Broadcasting is off on this home.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/tv/broadcast/publishable/sources/{id}/withdraw": {
+      "post": {
+        "tags": [
+          "Broadcasting"
+        ],
+        "summary": "Withdraw a source permission",
+        "description": "Withdraws a permission at once. Its items stop being publishable: a published channel plays the slate in a slot already scheduled, and the next top-up replaces it. The permission stays as the record.",
+        "x-maktaba-role": "admin",
+        "operationId": "withdrawBroadcastSource",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "reason": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The withdrawn permission.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "channel",
+                        "playlist",
+                        "speaker",
+                        "label"
+                      ]
+                    },
+                    "ref": {
+                      "type": "string"
+                    },
+                    "label": {
+                      "type": "string"
+                    },
+                    "proof_url": {
+                      "type": "string",
+                      "format": "uri"
+                    },
+                    "proof_file": {
+                      "type": "string"
+                    },
+                    "note": {
+                      "type": "string"
+                    },
+                    "credit": {
+                      "type": "string"
+                    },
+                    "non_commercial": {
+                      "type": "boolean"
+                    },
+                    "recorded_by": {
+                      "type": "string"
+                    },
+                    "recorded_at": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "revoked_at": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "revoked_reason": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No standing permission has this id.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "Admin only.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Broadcasting is off on this home.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/tv/broadcast/publishable/items": {
+      "put": {
+        "tags": [
+          "Broadcasting"
+        ],
+        "summary": "Mark items publishable",
+        "description": "Marks items as the admin's own recordings (by id, or every item of a folder, a series or a collection in one action), records a proof link for one item (reason cleared), or removes the mark (reason none).",
+        "x-maktaba-role": "admin",
+        "operationId": "markBroadcastItems",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "reason"
+                ],
+                "properties": {
+                  "reason": {
+                    "type": "string",
+                    "enum": [
+                      "own",
+                      "cleared",
+                      "none"
+                    ]
+                  },
+                  "video_ids": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid"
+                    }
+                  },
+                  "library_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "folder": {
+                    "type": "string"
+                  },
+                  "series_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "collection_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "proof_url": {
+                    "type": "string",
+                    "format": "uri"
+                  },
+                  "note": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "How many items changed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "changed": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "No items named, an unknown reason, or a cleared item without its proof link.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "Admin only.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Broadcasting is off on this home.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/tv/broadcast/publishable/only": {
+      "put": {
+        "tags": [
+          "Broadcasting"
+        ],
+        "summary": "Limit published channels to publishable items",
+        "description": "Turns broadcast.publishable_only on or off for this home. It is on by default; turning it off takes the typed confirmation (turn off, or إيقاف).",
+        "x-maktaba-role": "admin",
+        "operationId": "setBroadcastPublishableOnly",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "enabled"
+                ],
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "confirm": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The setting now.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "publishable_only": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Turning it off without the typed confirmation.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "Admin only.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Broadcasting is off on this home.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
     }
   },
   "components": {

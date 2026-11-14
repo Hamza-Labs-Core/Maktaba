@@ -5868,6 +5868,122 @@
     "/paths/~1tv~1broadcast~1speedtest/post/responses/403/description": {
       "en": "Admin only.",
       "ar": "للمشرفين فقط."
+    },
+    "/paths/~1tv~1broadcast~1publishable/get/summary": {
+      "en": "Publishable sources and shares",
+      "ar": "المصادر القابلة للنشر ونسبها"
+    },
+    "/paths/~1tv~1broadcast~1publishable/get/description": {
+      "en": "Whether published channels air only publishable items, the source permissions recorded on this home (withdrawn ones too, as the record), and each channel's publishable share of the next 7 days with the sources that would add the most hours if marked. Nothing here is sent to Maktaba Cloud.",
+      "ar": "هل تعرض القنوات المنشورة العناصر القابلة للنشر فقط، وأذونات المصادر المسجلة على هذا المنزل (والمسحوبة أيضًا، للسجل)، ونسبة ما يقبل النشر من الأيام السبعة القادمة في كل قناة مع المصادر التي تضيف أكثر الساعات لو سُجّلت. لا يُرسل شيء من هذا إلى سحابة مكتبة."
+    },
+    "/paths/~1tv~1broadcast~1publishable/get/responses/200/description": {
+      "en": "The switch, the permissions and the shares.",
+      "ar": "المفتاح والأذونات والنسب."
+    },
+    "/paths/~1tv~1broadcast~1publishable/get/responses/403/description": {
+      "en": "Admin only.",
+      "ar": "للمشرفين فقط."
+    },
+    "/paths/~1tv~1broadcast~1publishable/get/responses/409/description": {
+      "en": "Broadcasting is off on this home.",
+      "ar": "البث متوقف على هذا المنزل."
+    },
+    "/paths/~1tv~1broadcast~1publishable~1sources/post/summary": {
+      "en": "Record a source permission",
+      "ar": "تسجيل إذن مصدر"
+    },
+    "/paths/~1tv~1broadcast~1publishable~1sources/post/description": {
+      "en": "Records that a source allows sharing: a YouTube channel id, a playlist id, a speaker (a speaker named on an item, or a reciter's library) or a label, with a link to where the source says so. Every item from that source becomes publishable at once.",
+      "ar": "يسجّل أن مصدرًا يسمح بالمشاركة: معرّف قناة يوتيوب، أو معرّف قائمة تشغيل، أو متحدثًا (متحدثًا مذكورًا في عنصر، أو مكتبة قارئ)، أو جهة إصدار، مع رابط الموضع الذي يقول فيه المصدر ذلك. يصبح كل عنصر من هذا المصدر قابلًا للنشر فورًا."
+    },
+    "/paths/~1tv~1broadcast~1publishable~1sources/post/responses/201/description": {
+      "en": "The permission.",
+      "ar": "الإذن."
+    },
+    "/paths/~1tv~1broadcast~1publishable~1sources/post/responses/400/description": {
+      "en": "A field is missing or not valid; the proof must be a link.",
+      "ar": "حقل ناقص أو غير صالح؛ ويجب أن يكون الإثبات رابطًا."
+    },
+    "/paths/~1tv~1broadcast~1publishable~1sources/post/responses/403/description": {
+      "en": "Admin only.",
+      "ar": "للمشرفين فقط."
+    },
+    "/paths/~1tv~1broadcast~1publishable~1sources/post/responses/409/description": {
+      "en": "Broadcasting is off on this home.",
+      "ar": "البث متوقف على هذا المنزل."
+    },
+    "/paths/~1tv~1broadcast~1publishable~1sources~1{id}~1withdraw/post/summary": {
+      "en": "Withdraw a source permission",
+      "ar": "سحب إذن مصدر"
+    },
+    "/paths/~1tv~1broadcast~1publishable~1sources~1{id}~1withdraw/post/description": {
+      "en": "Withdraws a permission at once. Its items stop being publishable: a published channel plays the slate in a slot already scheduled, and the next top-up replaces it. The permission stays as the record.",
+      "ar": "يسحب الإذن فورًا. تتوقف عناصره عن كونها قابلة للنشر: تعرض القناة المنشورة اللوحة في الفترة المجدولة سلفًا، ويستبدلها التحديث التالي للجدول. يبقى الإذن للسجل."
+    },
+    "/paths/~1tv~1broadcast~1publishable~1sources~1{id}~1withdraw/post/responses/200/description": {
+      "en": "The withdrawn permission.",
+      "ar": "الإذن المسحوب."
+    },
+    "/paths/~1tv~1broadcast~1publishable~1sources~1{id}~1withdraw/post/responses/404/description": {
+      "en": "No standing permission has this id.",
+      "ar": "لا يوجد إذن قائم بهذا المعرّف."
+    },
+    "/paths/~1tv~1broadcast~1publishable~1sources~1{id}~1withdraw/post/responses/403/description": {
+      "en": "Admin only.",
+      "ar": "للمشرفين فقط."
+    },
+    "/paths/~1tv~1broadcast~1publishable~1sources~1{id}~1withdraw/post/responses/409/description": {
+      "en": "Broadcasting is off on this home.",
+      "ar": "البث متوقف على هذا المنزل."
+    },
+    "/paths/~1tv~1broadcast~1publishable~1items/put/summary": {
+      "en": "Mark items publishable",
+      "ar": "تعليم العناصر قابلة للنشر"
+    },
+    "/paths/~1tv~1broadcast~1publishable~1items/put/description": {
+      "en": "Marks items as the admin's own recordings (by id, or every item of a folder, a series or a collection in one action), records a proof link for one item (reason cleared), or removes the mark (reason none).",
+      "ar": "يعلّم العناصر بأنها تسجيلات المشرف الخاصة (بالمعرّف، أو كل عناصر مجلد أو مسلسل أو مجموعة دفعة واحدة)، أو يسجّل رابط إثبات لعنصر واحد (السبب cleared)، أو يزيل العلامة (السبب none)."
+    },
+    "/paths/~1tv~1broadcast~1publishable~1items/put/responses/200/description": {
+      "en": "How many items changed.",
+      "ar": "عدد العناصر التي تغيّرت."
+    },
+    "/paths/~1tv~1broadcast~1publishable~1items/put/responses/400/description": {
+      "en": "No items named, an unknown reason, or a cleared item without its proof link.",
+      "ar": "لم تُذكر عناصر، أو السبب غير معروف، أو عنصر بالسبب cleared بلا رابط إثبات."
+    },
+    "/paths/~1tv~1broadcast~1publishable~1items/put/responses/403/description": {
+      "en": "Admin only.",
+      "ar": "للمشرفين فقط."
+    },
+    "/paths/~1tv~1broadcast~1publishable~1items/put/responses/409/description": {
+      "en": "Broadcasting is off on this home.",
+      "ar": "البث متوقف على هذا المنزل."
+    },
+    "/paths/~1tv~1broadcast~1publishable~1only/put/summary": {
+      "en": "Limit published channels to publishable items",
+      "ar": "قصر القنوات المنشورة على العناصر القابلة للنشر"
+    },
+    "/paths/~1tv~1broadcast~1publishable~1only/put/description": {
+      "en": "Turns broadcast.publishable_only on or off for this home. It is on by default; turning it off takes the typed confirmation (turn off, or إيقاف).",
+      "ar": "يشغّل broadcast.publishable_only أو يوقفه لهذا المنزل. هو مشغّل افتراضيًا، وإيقافه يتطلب كتابة التأكيد (turn off أو إيقاف)."
+    },
+    "/paths/~1tv~1broadcast~1publishable~1only/put/responses/200/description": {
+      "en": "The setting now.",
+      "ar": "الإعداد الآن."
+    },
+    "/paths/~1tv~1broadcast~1publishable~1only/put/responses/400/description": {
+      "en": "Turning it off without the typed confirmation.",
+      "ar": "محاولة إيقافه دون كتابة التأكيد."
+    },
+    "/paths/~1tv~1broadcast~1publishable~1only/put/responses/403/description": {
+      "en": "Admin only.",
+      "ar": "للمشرفين فقط."
+    },
+    "/paths/~1tv~1broadcast~1publishable~1only/put/responses/409/description": {
+      "en": "Broadcasting is off on this home.",
+      "ar": "البث متوقف على هذا المنزل."
     }
   }
 }
