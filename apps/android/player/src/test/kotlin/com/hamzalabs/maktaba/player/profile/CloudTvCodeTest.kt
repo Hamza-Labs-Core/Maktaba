@@ -131,15 +131,20 @@ class CloudTvCodeTest {
         compose.onNodeWithTag("profile-root").performScrollToNode(hasTestTag("profile-sessions"))
         compose.onNodeWithTag("profile-sessions").performClick()
         waitForTag("session-s1")
-        compose.onNodeWithTag("sessions-list").performScrollToNode(hasTestTag("app-sign-in-a2"))
+        // a lazy list holds only the rows on screen: scroll to each before asserting it
+        compose.onNodeWithTag("sessions-list").performScrollToNode(hasTestTag("app-sign-ins"))
         compose.onNodeWithTag("app-sign-ins").assertExists()
+        compose.onNodeWithTag("sessions-list").performScrollToNode(hasTestTag("app-sign-in-a2"))
         compose.onNodeWithText(app.getString(R.string.profile_app_via_cloud_code, "Samsung")).assertExists()
         assertEquals("Samsung TV, via Maktaba Cloud code", app.getString(R.string.profile_app_via_cloud_code, "Samsung"))
+        compose.onNodeWithTag("sessions-list").performScrollToNode(hasTestTag("app-sign-in-a1"))
         compose.onNodeWithText("Living room TV").assertExists()
         compose.onNodeWithTag("app-sign-out-a1").performClick()
         gone("app-sign-in-a1")
+        compose.onNodeWithTag("sessions-list").performScrollToNode(hasTestTag("app-sign-in-a2"))
         compose.onNodeWithTag("app-sign-in-a2").assertExists()
         assertTrue(home.requests.any { it.method == "DELETE" && it.url.encodedPath == "/api/me/app-sign-ins/a1" })
+        compose.onNodeWithTag("sessions-list").performScrollToNode(hasTestTag("session-s1"))
         compose.onNodeWithTag("session-s1").assertExists()
     }
 
