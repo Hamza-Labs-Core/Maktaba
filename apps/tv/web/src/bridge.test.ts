@@ -14,7 +14,14 @@ const INFO: HelloInfo = {
   year: 2020,
   engine: "Chromium 69",
   version: "1.0.0",
-  device_caps: { video: ["h264"], audio: ["aac"], hdr: [], max_height: 2160 },
+  device_caps: {
+    containers: ["mp4"],
+    video: [{ codec: "h264", max_height: 2160 }],
+    hdr: [],
+    audio: ["aac"],
+    passthrough: [],
+    hls_segments: ["ts"],
+  },
   keys: ["MediaPlayPause", "ColorF0Red"],
 };
 
@@ -179,6 +186,37 @@ describe("the launcher's bridge (T02)", () => {
     // the media URL's sig never reaches the log
     expect(logText()).not.toContain("sig=abc");
     expect(logText()).toContain("sig=[REDACTED]");
+  });
+
+  it("passes the optional height and subtitle size on, and drops bad values", async () => {
+    const s = setup();
+    const seen: unknown[] = [];
+    const scales: number[] = [];
+    s.player.p.play = async (req) => {
+      seen.push([req.height, req.subtitle_scale]);
+    };
+    s.player.p.subtitleScale = (n) => scales.push(n);
+    s.fromHome({ type: "maktaba:play", url: `${HOME}/a.m3u8`, height: 2160, subtitle_scale: 1.5 });
+    s.fromHome({ type: "maktaba:play", url: `${HOME}/b.m3u8`, height: -1, subtitle_scale: "x" });
+    s.fromHome({ type: "maktaba:subtitle", id: "ar", subtitle_scale: 2 });
+    s.fromHome({ type: "maktaba:subtitle", id: "ar", subtitle_scale: 0 });
+    await Promise.resolve();
+    expect(seen).toEqual([
+      [2160, 1.5],
+      [undefined, undefined],
+    ]);
+    expect(scales).toEqual([2]);
+    expect(
+      checkMessage("uiToLauncher", {
+        type: "maktaba:play",
+        url: `${HOME}/a.m3u8`,
+        height: 2160,
+        subtitle_scale: 1.25,
+      })
+    ).toEqual([]);
+    expect(
+      checkMessage("uiToLauncher", { type: "maktaba:subtitle", id: null, subtitle_scale: 1 })
+    ).toEqual([]);
   });
 
   it("refuses a play of anything but http(s) media", () => {

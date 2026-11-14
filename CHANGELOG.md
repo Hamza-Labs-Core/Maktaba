@@ -2698,6 +2698,17 @@ build fails when the two differ.
   Appstore once the Amazon keys are set; it reaches the store only after the real-device
   checklist in `docs/stores/amazon.md` passed. Nothing is sold in it.
 
+- **Maktaba on LG TVs (story 58.11).** An LG TV on webOS 5 or later (2020 on) gets Maktaba as
+  an app: the launcher, packed as an `.ipk` that each release whose launcher changed attaches,
+  ready for the LG Content Store. Videos play on the TV's own player, with no conversion where
+  the TV can play the file: 4K, HDR10 and HLG, Dolby audio passed to a receiver, and Dolby
+  Vision only on the model years proven on a real TV. The app tells the home what the TV plays,
+  so the home converts only what it must; a file the TV refuses is opened again, converted,
+  from where it stopped. Subtitles are drawn by Maktaba, Arabic right to left, at the player's
+  sizes, and the Audio panel switches tracks. Back and the Magic Remote work as on the web
+  pages; Back from Home asks before leaving. The store listing, the review scenario and the
+  real-device checklist are in English and Arabic; the submission is made by a person.
+
 ### Changed
 
 - **A machine that loses its home stays usable** under a notice instead of the whole app being
