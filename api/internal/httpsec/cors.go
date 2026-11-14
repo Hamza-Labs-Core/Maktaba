@@ -90,76 +90,66 @@ func asksBearer(r *http.Request) bool {
 	return false
 }
 
-// packagedGate holds a packaged origin's answer until the response is written: it is given
-// only when the API verified the caller's token (MarkVerified), or the answer is a 401 (a
+// packagedGate marks a packaged origin's request whose answer waits for the API's verdict:
+// MarkVerified gives it when the caller's token was verified, and unauthWriter on a 401 (a
 // TV must read it to renew its token, and it tells nothing). The header alone proves
 // nothing: an invalid bearer is treated as no sign-in, and a page claiming `null` could
 // send `Bearer garbage` to a route that needs no sign-in.
-type packagedGate struct{ verified bool }
+type packagedGate struct{ origin string }
 
 type gateKey struct{}
 
-// MarkVerified opens the packaged-origin gate when verified says the request's credential
-// was checked (placed after the API's credential middlewares). Outside a gated request it
-// does nothing.
+// allowPackaged gives a packaged origin its answer (never credentials).
+func allowPackaged(h http.Header, origin string) {
+	h.Set("Access-Control-Allow-Origin", origin)
+	h.Set("Access-Control-Expose-Headers", exposedHeaders)
+}
+
+// MarkVerified gives a packaged origin its answer when verified says the request's
+// credential was checked (placed after the API's credential middlewares, before any
+// handler writes). Outside a packaged origin's request it does nothing.
 func MarkVerified(verified func(*http.Request) bool) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if g, ok := r.Context().Value(gateKey{}).(*packagedGate); ok && verified(r) {
-				g.verified = true
+				allowPackaged(w.Header(), g.origin)
 			}
 			next.ServeHTTP(w, r)
 		})
 	}
 }
 
-// gatedWriter sets the packaged origin's CORS headers at WriteHeader when the gate is open.
-type gatedWriter struct {
+// unauthWriter gives a packaged origin its answer on a 401 (a status always set with
+// WriteHeader); the body is the handler's, untouched.
+type unauthWriter struct {
 	http.ResponseWriter
-	gate    *packagedGate
-	origin  string
-	written bool
+	origin string
 }
 
-func (g *gatedWriter) WriteHeader(code int) {
-	if !g.written {
-		g.written = true
-		if g.gate.verified || code == http.StatusUnauthorized {
-			h := g.Header()
-			h.Set("Access-Control-Allow-Origin", g.origin)
-			h.Set("Access-Control-Expose-Headers", exposedHeaders)
-		}
+func (u *unauthWriter) WriteHeader(code int) {
+	if code == http.StatusUnauthorized {
+		allowPackaged(u.Header(), u.origin)
 	}
-	g.ResponseWriter.WriteHeader(code)
-}
-
-func (g *gatedWriter) Write(b []byte) (int, error) {
-	if !g.written {
-		g.WriteHeader(http.StatusOK)
-	}
-	return g.ResponseWriter.Write(b)
+	u.ResponseWriter.WriteHeader(code)
 }
 
 // Flush passes a streaming answer's flush through.
-func (g *gatedWriter) Flush() {
-	if f, ok := g.ResponseWriter.(http.Flusher); ok {
-		if !g.written {
-			g.WriteHeader(http.StatusOK)
-		}
+func (u *unauthWriter) Flush() {
+	if f, ok := u.ResponseWriter.(http.Flusher); ok {
 		f.Flush()
 	}
 }
 
 // Hijack passes a WebSocket upgrade through (a socket answers no CORS headers).
-func (g *gatedWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
-	if hj, ok := g.ResponseWriter.(http.Hijacker); ok {
+func (u *unauthWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	if hj, ok := u.ResponseWriter.(http.Hijacker); ok {
 		return hj.Hijack()
 	}
 	return nil, nil, errors.New("httpsec: the response writer cannot be hijacked")
 }
 
 // Unwrap lets http.ResponseController reach the writer underneath.
-func (g *gatedWriter) Unwrap() http.ResponseWriter { return g.ResponseWriter }
+func (u *unauthWriter) Unwrap() http.ResponseWriter { return u.ResponseWriter }
 
 // packagedHeaders are the request headers a packaged app's calls carry.
 const packagedHeaders = "Authorization, Content-Type, X-Maktaba-Client, X-Request-Id"
@@ -249,10 +239,9 @@ func CORS(cfg CORSConfig) func(http.Handler) http.Handler {
 					h.Set("Access-Control-Allow-Origin", origin)
 					h.Set("Access-Control-Expose-Headers", exposedHeaders)
 				default:
-					// answered once the token is verified (see packagedGate)
-					gate := &packagedGate{}
-					r = r.WithContext(context.WithValue(r.Context(), gateKey{}, gate))
-					w = &gatedWriter{ResponseWriter: w, gate: gate, origin: origin}
+					// answered once the token is verified, or on a 401 (see packagedGate)
+					r = r.WithContext(context.WithValue(r.Context(), gateKey{}, &packagedGate{origin: origin}))
+					w = &unauthWriter{ResponseWriter: w, origin: origin}
 				}
 			}
 			if origin != "" {
