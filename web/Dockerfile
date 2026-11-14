@@ -35,6 +35,12 @@ RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store \
 # the plugin flow chart's drawing (story 54.41) is the SDK's own, imported from source as
 # @maktaba/flowchart (web/tsconfig.json, vite.config.ts): it keeps its repo-relative place
 COPY tools/plugin-sdk/js/src/flowchart.ts /src/tools/plugin-sdk/js/src/flowchart.ts
+# the Samsung and LG launcher's source and the compatibility vectors its tests read (story
+# 58.09): web/tsconfig.json typechecks them with the web app, at their repo-relative place
+COPY apps/tv/web/src /src/apps/tv/web/src
+COPY apps/tv/web/bridge.schema.json /src/apps/tv/web/bridge.schema.json
+COPY apps/tv/web/i18n /src/apps/tv/web/i18n
+COPY shared/compat /src/shared/compat
 COPY web ./
 RUN pnpm run build
 

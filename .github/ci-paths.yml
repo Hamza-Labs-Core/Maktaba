@@ -819,6 +819,13 @@ tv_web:
   - 'web/e2e/tv/**'
   - 'web/tv-build/**'
   - '.github/workflows/_tv-web.yml'
+  # the Samsung and LG launcher (story 58.09): its build, its Playwright, its Vitest (the
+  # vitest config names its tests) and the compatibility vectors its tests run (58.01)
+  - 'web/vite.launcher.config.ts'
+  - 'web/playwright.launcher.config.ts'
+  - 'web/e2e/launcher/**'
+  - 'web/vitest.config.ts'
+  - 'shared/compat/**'
 
 # The Roku channel (Epic 58 stories 58.12, 58.13, 58.15): its BrightScript on brs-engine, the
 # build-time shaping of its Arabic catalogs and the shared vectors both are held to (_roku.yml)
