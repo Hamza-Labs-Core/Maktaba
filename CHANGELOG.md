@@ -293,11 +293,13 @@ build fails when the two differ.
   each stream on in the pieces it arrives in, where it used to handle every byte on its own
   (about a quarter of the processor time for the same stream, measured on a Mac), at a lower
   priority than the remote. It holds the home back while the player reads slowly or is paused,
-  so memory does not grow with the file; it ends the home's request the moment the player
-  closes a connection (a channel change, a seek), gives up a player that takes nothing for a
-  minute, and serves at most 32 requests at once, so abandoned requests cannot pile up while a
-  home is slow. On Apple TV, Menu leaves the live player in at most two presses whatever the
-  channel is doing (starting, buffering, failed, time's up), the picture and sound stop at
+  so memory does not grow with the file, and a paused film keeps its connection however long
+  the pause; it ends the home's request when the player drops a connection mid-stream (a
+  channel change, a seek), and serves at most 32 requests at once. A stream the home cuts
+  short reaches the player as an error, never as a whole file. On Apple TV, Menu leaves the
+  live player in at most two presses whatever the channel is doing (starting, buffering,
+  failed, time's up), unless the viewer changed channel, pressed Select or asked for the
+  banner in between; the picture and sound stop at
   once without waiting for the home, and a picture that keeps stalling writes at most one log
   line a second.
 

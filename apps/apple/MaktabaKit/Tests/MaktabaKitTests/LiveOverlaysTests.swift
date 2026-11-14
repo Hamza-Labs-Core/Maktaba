@@ -86,8 +86,8 @@ struct LiveOverlaysTests {
         #expect(o.banner(at: at(3)), "info brings it back")
     }
 
-    /// Two presses always leave, whatever shows again between them.
-    @Test func aSecondBackLeavesWhateverCameBack() {
+    /// A second Back leaves when what shows came back by itself between the presses.
+    @Test func aSecondBackLeavesWhenAStallBroughtTheBannerBack() {
         // a picture that keeps stalling and moving again brings the banner back each time
         var o = LiveOverlays()
         o.tuned(at: at(0))
@@ -100,19 +100,39 @@ struct LiveOverlaysTests {
         back = o.back(at: at(2.7))
         #expect(!back, "the second press leaves all the same")
 
-        // a channel change between the presses (the banner again)
+        // long after, Back puts away again before it leaves
         o = LiveOverlays()
         o.tuned(at: at(0))
         o.playback(playing: true, at: at(0))
         back = o.back(at: at(1))
         #expect(back)
+        o.stalled(at: at(18))
+        o.resumed(at: at(20))
+        back = o.back(at: at(21))
+        #expect(back, "a press long after the first is a first press again")
+        back = o.back(at: at(22))
+        #expect(!back)
+    }
+
+    /// What the viewer asked for between two presses starts over: Back puts it away, it does
+    /// not throw the viewer out of the player.
+    @Test func backAfterTheViewersOwnActionPutsAwayFirst() {
+        // Up, Back (the banner away), Up again, Back: the new channel's banner goes, the player stays
+        var o = LiveOverlays()
+        o.tuned(at: at(0))
+        o.playback(playing: true, at: at(0))
+        var back = o.back(at: at(1))
+        #expect(back)
         o.tuned(at: at(1.5))
         o.playback(playing: true, at: at(2))
         #expect(o.banner(at: at(2.1)))
         back = o.back(at: at(2.2))
-        #expect(!back)
+        #expect(back, "the new channel's banner is put away; the player stays")
+        #expect(!o.banner(at: at(2.3)))
+        back = o.back(at: at(2.4))
+        #expect(!back, "and the next press leaves")
 
-        // the mini-guide closed, then opened again by a stray Select
+        // Back (the mini-guide closes), Select (it opens again), Back: it closes again
         o = LiveOverlays()
         o.tuned(at: at(0))
         o.playback(playing: true, at: at(0))
@@ -120,19 +140,21 @@ struct LiveOverlaysTests {
         back = o.back(at: at(11))
         #expect(back, "the mini-guide closes first")
         o.toggleMiniGuide(at: at(11.5))
+        #expect(o.miniGuide(at: at(11.6)))
         back = o.back(at: at(12))
-        #expect(!back)
+        #expect(back, "opened again by Select: Back closes it again")
+        #expect(!o.miniGuide(at: at(12.1)))
 
-        // long after, Back puts away again before it leaves
+        // Back (the banner away), the info press, Back: the banner goes again
         o = LiveOverlays()
         o.tuned(at: at(0))
         o.playback(playing: true, at: at(0))
         back = o.back(at: at(1))
         #expect(back)
-        o.showBanner(at: at(20))
-        back = o.back(at: at(21))
-        #expect(back, "a press long after the first is a first press again")
-        back = o.back(at: at(22))
+        o.showBanner(at: at(2))
+        back = o.back(at: at(3))
+        #expect(back, "asked for again: put away again")
+        back = o.back(at: at(3.5))
         #expect(!back)
     }
 

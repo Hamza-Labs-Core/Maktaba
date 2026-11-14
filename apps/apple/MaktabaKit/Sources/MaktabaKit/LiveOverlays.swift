@@ -18,9 +18,10 @@ import Foundation
 ///   the last channel change in it, or playback starting, whichever is latest. Its time
 ///   stands still while the channel buffers.
 /// - Back (Menu) closes the mini-guide first, then a banner over a playing channel; only then
-///   does it leave the player. Two presses always leave: a Back within `backAgain` of one
-///   that put something away leaves, whatever came back in between (a stall that ended and
-///   brought the banner back, a tune, the mini-guide opened again).
+///   does it leave the player. A Back within `backAgain` of one that put something away
+///   leaves, even when something came back by itself in between (a stall that ended and
+///   brought the banner back). What the viewer asked for in between (a channel change,
+///   Select, the info press) starts over: Back puts that away first.
 /// - The overlays sit at the bottom of the picture, unless the home burns the channel's logo
 ///   into a bottom corner: then at the top (`edge(clearing:)`), so they never cover it.
 public struct LiveOverlays: Equatable, Sendable {
@@ -36,7 +37,8 @@ public struct LiveOverlays: Equatable, Sendable {
     /// A second Back this soon after one that put something away leaves the player.
     public static let backAgain: Duration = .seconds(5)
 
-    /// When Back last put something away (nil: it has not, or the player was told to leave).
+    /// When Back last put something away (nil: it has not, the viewer has done something
+    /// else since, or the player was told to leave).
     private var putAwayAt: Instant?
 
     /// Whether the channel is playing now (a buffering stall does not change it).
@@ -65,7 +67,8 @@ public struct LiveOverlays: Equatable, Sendable {
         playing = false
         playingSince = nil
         stalledSince = nil
-        showBanner(at: t)
+        putAwayAt = nil
+        raiseBanner(at: t)
         miniGuideFrom = guide ? t : nil
     }
 
@@ -79,7 +82,7 @@ public struct LiveOverlays: Equatable, Sendable {
         } else {
             playingSince = nil
             // stopped: the banner says which channel this is while it is not playing
-            showBanner(at: t)
+            raiseBanner(at: t)
         }
     }
 
@@ -105,12 +108,19 @@ public struct LiveOverlays: Equatable, Sendable {
 
     /// The remote's info press: the banner again, its full time from now.
     public mutating func showBanner(at t: Instant) {
+        putAwayAt = nil
+        raiseBanner(at: t)
+    }
+
+    /// The banner shows from `t` (the viewer's doing or not).
+    private mutating func raiseBanner(at t: Instant) {
         bannerFrom = t
         bannerDismissed = false
     }
 
     /// Select (while the channel plays or starts): the mini-guide opens, or closes.
     public mutating func toggleMiniGuide(at t: Instant) {
+        putAwayAt = nil
         miniGuideFrom = miniGuide(at: t) ? nil : t
     }
 
