@@ -47,11 +47,20 @@ instead of the Default Media Receiver.
   parental limit (58.14).
 - The receiver uses the grant to renew signed URLs and to report progress itself, so the phone
   can sleep or leave the house and the home still knows where the TV is.
+- **The contract is shared.** `shared/cast/app.json` holds the receiver's application ID (empty
+  until the Cast console registration; no build shows Cast until it is set), its URL and the
+  custom namespace. `shared/cast/load-vectors.json` holds the load's custom data case by case,
+  and the web, Android and Apple senders each run it.
+- **Older homes.** A sender learns that a home predates the grant from the grant route's 404.
+  The web never meets such a home: the home serves the web itself.
 
 **Android Player.** The `CastOptionsProvider` application ID becomes Maktaba's, and `CastItems`
 adds the custom data above. The existing Media3 `CastPlayer` handover (remote-to-local) is kept.
-The Default Media Receiver stays as a fallback when the home is older than the cast grant
-(`api_level` below the level of this story): the sender then sends a plain signed URL, as today.
+The Default Media Receiver stays as a fallback when the home is older than the cast grant (the
+grant route answers 404): the sender switches with `CastContext.setReceiverApplicationId` and
+sends a plain signed URL, as today. The Apple Player cannot switch application IDs after setup,
+so for an older home it loads a plain signed URL on Maktaba's receiver, which plays a load
+without Maktaba custom data as it came (58.07).
 
 **Apple Player.** It gains the Google Cast iOS SDK beside AirPlay:
 - **Info.plist.** `NSLocalNetworkUsageDescription` (which exists for home discovery) and
@@ -62,9 +71,13 @@ The Default Media Receiver stays as a fallback when the home is older than the c
   on Apple TVs and AirPlay TVs.
 - **No tvOS.** The Cast SDK is iOS and iPadOS only.
 
-**The web.** It gains the Cast Web Sender (Chrome only, HTTPS pages only):
-- The button shows only where `chrome.cast` loads.
+**The web.** It gains the Cast Web Sender, **Cast to a TV** (`web/src/lib/cast/`,
+`components/CastControl.tsx`):
+- The button shows only in Chrome where `chrome.cast` loads, on an HTTPS page, outside Maktaba
+  Cloud, with an application ID set and a home address a TV can reach.
 - On a home reached over plain HTTP, the button is hidden, with a line in Help.
+- It follows the receiver's media status (the queue's next video, the position) and renews the
+  grant over the custom namespace 30 minutes before it ends.
 
 **Queue and controls.** Play all and Shuffle (Epic 56) cast the server queue (`queue_id`). The
 receiver walks it with the grant. Pause, seek, next, audio and subtitle choice are sent as
@@ -123,8 +136,8 @@ the Cast SDK (T02–T05). The pairing of a sender with a receiver is checked onl
 
 | File | Change |
 |---|---|
-| `api/internal/handlers/streaming/castgrant.go` (new) | `POST /api/cast/grants`; the `cast` scope in `principal` |
-| `apps/android/player/…/media/Cast.kt` | Maktaba's app ID, custom data, fallback |
+| `api/internal/castgrant/` (new: `castgrant.go`, `gate.go`) | `POST /api/cast/grants`; the `cast` audience, and the gate (before the parental gate) that limits a grant to `castgrant.Routes` for its items |
+| `apps/android/player/…/media/Cast.kt`, `CastSender.kt`, `CastButton.kt` | Maktaba's app ID, custom data, fallback |
 | `apps/apple/Player/…/Cast/` (new), `project.yml` | Cast iOS SDK, interstitial, picker |
-| `web/src/lib/cast/` (new) | Web Sender |
-| `shared/cast/app.json` | the receiver's application ID |
+| `web/src/lib/cast/` (new), `web/src/components/CastControl.tsx` | Web Sender |
+| `shared/cast/app.json`, `shared/cast/load-vectors.json` (new) | the receiver's application ID, URL and namespace; the load vectors every sender runs |
