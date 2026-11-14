@@ -135,15 +135,6 @@ jobs:
         # versions as no-ops, so this exits 0 with no DDL emitted.
         run: make migrate
 
-      # The tier's pytest was the job's first Python run: its collection compiled the
-      # bytecode of every module the tests import (pytest's rewritten test modules among
-      # them) on one core while the Go modules built on all four, 119-125 s of a 215-268 s
-      # session (PR #1303's `session time:` lines), where a warm collection beside a Go build
-      # takes ~10 s. Collecting once here, with the runner to itself, writes that bytecode.
-      - name: Warm the pipeline's bytecode
-        working-directory: pipeline
-        run: uv run pytest --collect-only -q -m integration -p no:cacheprovider | tail -n 2
-
       # The Go tests gated on MAKTABA_TEST_PG_URL (cluster, secrets,
       # tvremote, tvcluster, streaming placement, ...) run here against
       # the Postgres service: each creates, migrates and drops its own
