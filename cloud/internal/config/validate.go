@@ -62,6 +62,9 @@ func Validate(c Config, role Role) error {
 		if err := ValidatePeerAddr(c.Relay.PeerAddr); err != nil {
 			return err
 		}
+		if err := validatePool(c.Relay); err != nil {
+			return err
+		}
 	case RoleWorker:
 		// Worker uses control port only; no public listener required.
 	case RoleDNS:
@@ -75,6 +78,32 @@ func Validate(c Config, role Role) error {
 		}
 	default:
 		return fmt.Errorf("config: unknown role %q", role)
+	}
+	return nil
+}
+
+// validatePool checks the relay pool's keys when it is on (story 50.16): the directory (any
+// relay forwards to the one holding a home), the member's id, addresses and capacity, and a
+// host template naming the member.
+func validatePool(r RelayConfig) error {
+	if !r.PoolEnabled {
+		return nil
+	}
+	switch {
+	case r.PeerAddr == "":
+		return fmt.Errorf("%w: [relay].peer_addr (the pool forwards between relays)", ErrMissing)
+	case r.PoolMemberID() == "":
+		return fmt.Errorf("%w: [relay].pool.member", ErrMissing)
+	case net.ParseIP(r.PoolPublicIP) == nil:
+		return fmt.Errorf("config: [relay].pool.public_ip %q: the relay's public IP address", r.PoolPublicIP)
+	case net.ParseIP(r.PoolPrivate()) == nil:
+		return fmt.Errorf("config: [relay].pool.private_ip %q: the relay's private IP address", r.PoolPrivate())
+	case r.PoolCapacityMbps <= 0:
+		return fmt.Errorf("config: [relay].pool.capacity_mbps %d: above 0", r.PoolCapacityMbps)
+	case !strings.Contains(r.PoolHostTemplate(), "{id}"):
+		return fmt.Errorf("config: [relay].pool.hosts %q: it names the member with {id}", r.PoolHostTemplate())
+	case r.RebalanceRate <= 0 || r.RebalanceEvery <= 0:
+		return fmt.Errorf("config: [relay].pool.rebalance_rate and rebalance_every are above 0")
 	}
 	return nil
 }
