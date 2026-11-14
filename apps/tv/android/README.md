@@ -1,6 +1,7 @@
 # Maktaba Android TV
 
-The Android TV / Google TV app (minSdk 28, target 37): a 10-foot Compose-for-TV UI over the
+The Android TV / Google TV app, and the same app for Fire TV (minSdk 28, target 37): a 10-foot
+Compose-for-TV UI over the
 same Maktaba API as every other client, built on the phone apps' shared **core**
 ([`apps/android/core`](../../android/core)): the API client with one token refresh at a time,
 Keystore-sealed tokens, the player's per-request stream token, and finding homes on the
@@ -47,25 +48,62 @@ resume.
 that scale up with a 3 dp gold ring on focus, buttons that turn gold. English and Arabic
 (`values-ar`, right to left; the system's per-app language setting lists both).
 
+## Two store builds: Google Play and Fire TV
+
+One codebase, two flavors in the `store` dimension (story 58.05):
+
+| Flavor | Store | Platform it names | Manifest |
+|---|---|---|---|
+| `google` | Google Play (Android TV, Google TV) | `androidtv` | Leanback required, `LEANBACK_LAUNCHER` |
+| `amazon` | Amazon Appstore (Fire TV on Fire OS 7, 8, 14, 16) | `firetv` | `src/amazon`: Leanback and `amazon.hardware.fire_tv` not required, `LEANBACK_LAUNCHER` and `LAUNCHER` |
+
+Both use stock Media3 (the same version; tunnel mode off) and the same screens and catalogs. The
+flavor sets `BuildConfig.TV_PLATFORM`, which the app sends in `X-Maktaba-Client`
+(`tv/<version> (firetv; tv)`), asks for as its streaming profile, and uses for Update this app's
+words (Google Play, or the Amazon Appstore). Each stream open also carries `device_caps`, what
+this TV's decoders, display and audio output play (`playback/DeviceCapsReader.kt`, built by the
+shared `DeviceCaps` in `apps/android/client`), so the home sends each model what it plays.
+
+The Fire TV build carries no Google Play code: `:app:checkAmazonDependencies` fails when the
+`amazonRelease` classpath holds any `com.google.android.gms`, `com.google.firebase` or
+`com.android.billingclient` module (it names the path that brought it in), and
+`:app:checkAmazonManifest` checks the merged manifest. Both run in `check` and in CI, and CI also
+proves the dependency check fails with Play Services added (`-Pmaktaba.gmsFixture`). The store
+listing, the real-device checklist and the submission steps are in
+[docs/stores/amazon.md](../../../docs/stores/amazon.md).
+
 ## Build and test
 
 ```bash
 cd apps/tv/android
-./gradlew :app:testDebugUnitTest :app:verifyRoborazziDebug :app:lintDebug :app:assembleDebug
+./gradlew :app:testGoogleDebugUnitTest :app:verifyRoborazziGoogleDebug :app:lintGoogleDebug :app:assembleGoogleDebug
+# the Fire TV build
+./gradlew :app:checkAmazonDependencies :app:checkAmazonManifest :app:assembleAmazonDebug
 ```
 
-The sign-in code screen has screenshot references on a 1080p TV, English and Arabic
-(`app/src/test/screenshots`, Robolectric + Roborazzi); after a deliberate change to it, record
-them again with `./gradlew :app:testDebugUnitTest -Proborazzi.test.record=true` and look at each.
+The screens have screenshot references on a 1080p TV, English and Arabic
+(`app/src/test/screenshots`, Robolectric + Roborazzi; the demo shots are
+`demo/androidtv-*` from the Google build and `demo/firetv-*` from the Fire TV build); after a
+deliberate change, record them again with
+`./gradlew :app:testGoogleDebugUnitTest -Proborazzi.test.record=true` (and
+`:app:testAmazonDebugUnitTest --tests '*.DemoScreenshotTest' --tests '*.CompatScreenTest' -Proborazzi.test.record=true`)
+and look at each.
 
-CI runs the same, plus an unsigned `:app:bundleRelease` (R8 on), on every change to this app or
-the shared core (`_android-tv.yml`). A `v*` tag builds the sideload APK (`tv-release.yml`) and the
+The Fire TV journey (`src/androidTestAmazon`, `FireTvJourneyTest`: sign in by code against a mock
+home, play a clip, Back leaves the app) runs in CI on Google's Android TV emulator, API 30, with
+Play services removed for the run (`tools/ci/firetv-journey.sh`), logcat kept in the report.
+
+CI runs the same, plus an unsigned `:app:bundleGoogleRelease` and `:app:assembleAmazonRelease`
+(R8 on), on every change to this app or
+the shared core (`_android-tv.yml`). A `v*` tag builds the sideload APK and the Fire TV APK
+`maktaba-tv-<version>-amazon.apk` (`tv-release.yml`) and the
 Google Play bundle `maktaba-tv-<version>.aab`, signed with the Play upload key
 (`play-bundles.yml`, [docs/google-play.md](../../../docs/google-play.md)). JDK 17 and the Android
 SDK (platform 37).
 
 On an emulator: create an Android TV or Google TV AVD (`system-images;android-36;google-tv;arm64-v8a`,
-device `tv_1080p`), install `app/build/outputs/apk/debug/app-debug.apk`. The emulator reaches
+device `tv_1080p`), install `app/build/outputs/apk/google/debug/app-google-debug.apk` (or the
+Fire TV build, `apk/amazon/debug/app-amazon-debug.apk`; a real Fire TV takes it over `adb connect`). The emulator reaches
 a home on the LAN by its address, and its mDNS browse finds it too.
 
 ## Next steps (not built)

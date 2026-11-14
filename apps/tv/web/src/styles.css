@@ -216,7 +216,8 @@ bdi {
 .ml-subs {
   position: absolute;
   inset-inline: 0;
-  inset-block-end: 7%;
+  /* above /tv/'s progress bar and buttons, which show over the picture on any key */
+  inset-block-end: 20%;
   z-index: 1;
   padding-inline: 8%;
   text-align: center;

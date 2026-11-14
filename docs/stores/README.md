@@ -11,6 +11,10 @@ One page per TV platform (Epic 58). Each holds the platform's **real-device chec
 | [lg.md](lg.md) | LG (webOS) | the launcher (`.ipk`) |
 | [roku.md](roku.md) | Roku | the channel |
 
+Every page's **submission notes** point to [review-home.md](review-home.md): the project's
+review home (review.maktaba.tv) that each store's reviewers sign in to, the notes' text, and the
+release checklist's steps around a submission round.
+
 ## Why a checklist
 
 CI runs what a runner can run: unit tests, Playwright with platform shims, Robolectric and the
@@ -38,6 +42,10 @@ mistakes a fake for a real device.
   version.** Its submission step runs `tools/release/tv_checklist_guard.py --platform <page>
   --version <X.Y.Z>`, which stops with the reason when the version has no result or its newest
   result failed, and prints the passing line for the release notes otherwise.
+- **After each submission round** (accepted or rejected), the release session rotates the review
+  home's passwords: new values in the release secrets, then `deploy/review-home/seed.sh rotate`
+  on the review home ([review-home.md](review-home.md#a-submission-round)). Before a round it
+  holds the review home's updates for the review window.
 - The device's log from the run (Roku's debug console on port 8085, `sdb dlog`, `ares-log`,
   logcat, the Cast CaC Tool's capture) is attached to the result: a link after the line, to an
   issue or a release asset. Logs pass the existing redaction (no `sig`, tokens or grants)

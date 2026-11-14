@@ -3,6 +3,7 @@ package com.hamzalabs.maktaba.tv
 import com.hamzalabs.maktaba.core.api.ApiClient
 import com.hamzalabs.maktaba.core.api.ApiException
 import com.hamzalabs.maktaba.core.api.AuthTokens
+import com.hamzalabs.maktaba.core.api.ClientHeader
 import com.hamzalabs.maktaba.core.session.TokenStore
 import com.hamzalabs.maktaba.tv.data.Rail
 import com.hamzalabs.maktaba.tv.data.RailItem
@@ -51,12 +52,14 @@ class TvApiTest {
         r.url.encodedPath == "/api/videos/v1" ->
             json(200, """{"id":"v1","filename":"a.mp4","title":"A","display_title":"The A","duration_sec":600,"playback_state":{"position_sec":125,"completed":false}}""")
         r.url.encodedPath == "/api/videos/gone" -> json(404, "{}")
+        r.url.encodedPath == "/api/me/watched" -> json(200, "{}")
         r.url.encodedPath == "/api/videos" -> json(200, """{"items":[{"id":"v1","filename":"a.mp4"}],"next":"c2"}""")
         else -> json(404, "{}")
     }
 
     @Before
     fun start() {
+        ClientHeader.use(TV_HEADER)
         server = MockWebServer()
         server.dispatcher = object : Dispatcher() {
             override fun dispatch(request: RecordedRequest): MockResponse {
@@ -68,7 +71,10 @@ class TvApiTest {
     }
 
     @After
-    fun stop() = server.close()
+    fun stop() {
+        server.close()
+        ClientHeader.use("native")
+    }
 
     private fun api(tokens: Tokens) = TvApi(ApiClient(server.url("/"), tokens, now = { nowSec * 1000 }))
 
@@ -78,7 +84,21 @@ class TvApiTest {
         assertEquals("The A", v.displayTitle)
         assertEquals(125.0, v.resumeSec!!, 0.0)
         assertEquals("Bearer $fresh", seen.single().headers["Authorization"])
-        assertEquals("native", seen.single().headers["X-Maktaba-Client"])
+        assertEquals(TV_HEADER, seen.single().headers["X-Maktaba-Client"])
+    }
+
+    /** Story 58.05: every call names the TV app and its store build; these sent `native`. */
+    @Test
+    fun everyCallNamesTheTvAppToTheHome() = runBlocking {
+        val tvApi = api(Tokens(fresh, "r1"))
+        tvApi.videos(library = "lib1")
+        tvApi.markWatched(listOf("v1"))
+        assertEquals(listOf("/api/videos", "/api/me/watched"), seen.map { it.url.encodedPath })
+        seen.forEach { assertEquals(it.url.encodedPath, TV_HEADER, it.headers["X-Maktaba-Client"]) }
+    }
+
+    private companion object {
+        const val TV_HEADER = "tv/9.9.9 (firetv; tv)"
     }
 
     @Test

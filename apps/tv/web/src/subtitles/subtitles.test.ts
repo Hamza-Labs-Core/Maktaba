@@ -125,6 +125,22 @@ describe("SubtitleLayer", () => {
     expect(layer.text()).toBe("");
   });
 
+  it("shows an escaped tag in a cue as the letters it is, never as an element", () => {
+    const layer = new SubtitleLayer(host);
+    const cues = parseVtt(
+      "WEBVTT\n\n00:00:01.000 --> 00:00:02.000\n&lt;script&gt;alert(1)&lt;/script&gt; <<b>img src=x onerror=alert(1)>\n"
+    );
+    layer.setCues(cues, "en");
+    layer.render(1.5);
+    const cue = layer.element.querySelector(".ml-cue") as HTMLElement;
+    // the entities decode to text: the page shows "<script>…" and runs nothing
+    expect(cue.textContent).toContain("<script>alert(1)</script>");
+    expect(layer.element.querySelector("script, img, b")).toBeNull();
+    expect(layer.element.querySelectorAll("*").length).toBe(
+      layer.element.querySelectorAll(".ml-cue, .ml-cue > span").length
+    );
+  });
+
   it("shows AVPlay's text, its direction from the text", () => {
     const layer = new SubtitleLayer(host);
     layer.showText("<b>أهلًا</b>");

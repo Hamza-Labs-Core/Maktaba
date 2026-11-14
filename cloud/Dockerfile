@@ -49,8 +49,8 @@ COPY apps/tv/web/src /src/apps/tv/web/src
 COPY apps/tv/web/bridge.schema.json /src/apps/tv/web/bridge.schema.json
 COPY apps/tv/web/i18n /src/apps/tv/web/i18n
 COPY shared/compat /src/shared/compat
-# the device caps vectors the Samsung launcher's caps test reads (story 58.10)
-COPY shared/playback /src/shared/playback
+# the device-caps vectors the LG platform's tests read (story 58.11)
+COPY shared/playback/caps-vectors.json /src/shared/playback/caps-vectors.json
 COPY web ./
 RUN node design-system/build/build-tokens.mjs \
     && VERSION=${VERSION} COMMIT=${COMMIT} SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH} pnpm build:player:cloud \

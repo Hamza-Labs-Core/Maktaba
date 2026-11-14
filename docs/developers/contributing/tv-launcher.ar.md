@@ -77,6 +77,29 @@
   بدء رمز (`POST /api/pairing/device`)، فتسجّل نسخة `--bundle-ui` الدخول برمز السحابة (تصريح
   تستبدله في مسار الرمز المميز).
 
+## التشغيل عبر المشغّل
+
+حين يذكر `hello` الرسالة `play`، لا تشغّل `/tv/` الفيديو بنفسها: يشغّله مشغّل التلفاز نفسه في
+المشغّل، تحت الـiframe الشفاف (AVPlay في سامسونج، و`<video>` في إل جي)، ويصير عنصر `<video>` في
+`/tv/` بديلًا عنه (`web/src/bigscreen/input/launcherMedia.ts`):
+
+- تصير `play()` و`pause()` وتعيين `currentTime` وتفعيل أحد `audioTracks` وإظهار مسار نصي
+  الرسائلَ `maktaba:play` و`pause` و`resume` و`seek` و`audioTrack` و`subtitle`؛
+- تطلق كل رسالة `maktaba:state` أحداث العنصر نفسه (`loadedmetadata` و`timeupdate` و`pause`
+  و`waiting` و`playing` و`seeked` و`ended`)، فتبقى إرسالات التقدم وبلاغات التوقف وأزرار
+  التحكم هي الشيفرة نفسها كما في المتصفح؛
+- يحمل `<html>` الصنف `tv-launcher-video` أثناء التشغيل، وتصير الصفحة شفافة حتى مستوى الفيديو؛
+- تُحوَّل العناوين إلى عناوين مطلقة (صفحة المشغّل `file://`)، والترجمات الجانبية هي
+  `sub-<الترتيب>` في `play.subtitles`، والحجم هو `--mkt-caption-scale` الخاص بالمشغّل.
+
+تُرسل جلسات البث التي تُفتح داخل المشغّل `client_profile` (`tizen` أو `webos`) و`device_caps`
+الخاصة بالمشغّل (القصة 58.02). وحين يُبلغ مشغّل التلفاز عن خطأ، تُفتح الجلسة مرة أخرى واحدة مع
+`force_transcode` من حيث توقفت، ويُظهر الخطأ الثاني شاشة الخطأ. وقد تذكر الحالة مسارات صوت
+البث (`audio_tracks`، أُضيفت في `bridge_level` 1). ويرسم المشغّل الترجمات بنفسه في طبقة الترجمة
+المشتركة (`apps/tv/web/src/subtitles/`): ملفات WebVTT يقرؤها المشغّل، من اليمين إلى اليسار للعربية
+ولكل لغة تُكتب من اليمين (من لغة المسار، وإلا من أول حرف قوي في النص)، بأحجام `/tv/`، ونصًا
+دائمًا لا ترميزًا.
+
 ## البناء والاختبار
 
 ```sh
@@ -95,6 +118,43 @@ pnpm e2e:launcher             # بعد build:tv وbuild:launcher
 
 يفتح `pnpm e2e:launcher` المشغّل من `file://` مع محاكاة لسامسونج وأخرى لإل جي، مقابل منزل
 وهمي على شبكة التلفاز `/24`، بالإنجليزية والعربية، ويحفظ سجل المشغّل ولقطات الشاشة والتتبعات.
+
+## إل جي (webOS)
+
+- **المشغّل** (`platform/webos-player.ts`): عنصر `<video>` الخاص بالتلفاز، والعنوان الموقّع
+  يُعيَّن عليه مباشرة: يشغّل webOS 5 وما بعده HLS v7 (مقاطع TS وfMP4) وملفات MP4 وMKV تشغيلًا
+  أصليًا، ومعها HDR، فلا hls.js ولا MSE. ويُعيَّن موضع البدء بعد وصول البيانات الوصفية، وتبقى
+  السرعة 1.0 (لا يشغّل webOS سرعة غيرها)، وتُرسم إشارات الملف الجانبي حسب الوقت، ويبقى المسار
+  النصي لنسخة البيان مخفيًا وتُرسم إشاراته النشطة.
+- **قدرات الجهاز** (`platform/webos-caps.ts`): `DeviceCaps` الخاصة بالواجهة البرمجية من وصف
+  التلفاز و`MediaSource.isTypeSupported`، مختبرة مقابل `shared/playback/caps-vectors.json`.
+  ولا يُبلَّغ عن Dolby Vision بالملف الشخصي 8 إلا لسنة طراز في `DV_GOOD_YEARS`، التي تملؤها قائمة
+  فحص الأجهزة الحقيقية؛ وإلا يرسل المنزل الطبقة الأساسية HDR10.
+- **Luna** (`platform/webos-luna.ts`): `webOS.service.request` و`webOS.deviceInfo` حين تُحمَّل
+  مكتبة webOSTV.js من إل جي، وإلا `PalmServiceBridge` الخاص ببيئة التشغيل. ولا تُستدعى إلا
+  الخدمات الموثقة: `com.palm.connectionmanager/getStatus` (مجموعة ACG ‏`network.query`)
+  و`com.webos.service.tv.systemproperty/getSystemInfo` (`systemconfig.query`). ودون webOSTV.js
+  تُعدّ الشاشة UHD داعمة لـHDR10 وHLG، ولا يُدّعى Dolby Vision أبدًا.
+- **المفاتيح:** زر الرجوع هو 461، وفي الرئيسية وبعد تأكيد `/tv/` يغادر المشغّل عبر
+  `webOS.platformBack()`، وإلا `PalmSystem.platformBack()` (يسلّم `disableBackHistoryAPI` في
+  `appinfo.json` زر الرجوع إلى التطبيق). وتصل مفاتيح الوسائط (415 و19 و413 و417 و412) ومفاتيح
+  الألوان (403–406) دون تسجيل، ويصل مؤشر Magic Remote إلى الـiframe مباشرة.
+- **الحزمة** (`apps/tv/web/webos/`): `appinfo.json` مع أيقوناته (يقصّها
+  `tools/icons/make-icons.py`) وعنوانه العربي؛ يحزم `package.mjs` بناء المشغّل بالأداة
+  `ares-package` (`@webos-tools/cli` بإصدار مثبّت) دون توقيع (توقّع إل جي عند التقديم)؛ ويفتح
+  `lint-ipk.mjs` ملف `.ipk` ويفحص `appinfo.json`.
+
+```sh
+cd web && pnpm build:launcher && cd ..
+node apps/tv/web/webos/package.mjs --version 1.4.2        # dist/maktaba-webos-1.4.2.ipk
+node apps/tv/web/webos/lint-ipk.mjs dist/maktaba-webos-1.4.2.ipk --version 1.4.2
+node --test apps/tv/web/webos/webos-package.test.mjs
+ares-install --device <tv> dist/maktaba-webos-1.4.2.ipk  # تلفاز في وضع المطوّر
+```
+
+يشغّل `web/e2e/launcher/webos.ui.spec.ts` فيديو من `/tv/` عبر عنصر `<video>` في المشغّل مع محاكاة
+لـwebOS. ويُرفق الوسم `v*` الذي تغيّر فيه المشغّل ملف `.ipk` بالإصدار (`tv-web-release.yml`).
+وخطوات المتجر وقائمة فحص الأجهزة الحقيقية في `docs/stores/lg.md`.
 
 ## سامسونج (القصة 58.10)
 

@@ -1,0 +1,103 @@
+{
+  "lang": "ar",
+  "rtl": true,
+  "strings": {
+    "launcher.title": "ﺔﺒﺘﻜﻣ",
+    "launcher.start.title": "ﻲﺴﻴﺋﺮﻟﺍ ﻙﺯﺎﻬﺟ ﺮﺘﺧﺍ",
+    "launcher.saved.title": "ﺔﻴﺴﻴﺋﺮﻟﺍ ﻚﺗﺰﻬﺟﺃ",
+    "launcher.saved.last": "ﻡﺍﺪﺨﺘﺳﺍ ﺮﺧﺁ",
+    "launcher.find.title": "ﺔﻜﺒﺸﻟﺍ ﻩﺬﻫ ﻲﻓ ﺚﺤﺑﺍ",
+    "launcher.find.searching": "…ﺔﻴﺴﻴﺋﺮﻟﺍ ﺔﺒﺘﻜﻣ ﺓﺰﻬﺟﺃ ﻦﻋ ﺚﺤﺒﻟﺍ ﺭﺎﺟ",
+    "launcher.find.found": "ﺔﻜﺒﺸﻟﺍ ﻩﺬﻫ ﻲﻓ ﺔﻴﺴﻴﺋﺮﻟﺍ ﺓﺰﻬﺟﻷﺍ",
+    "launcher.find.none": ".ﺔﻜﺒﺸﻟﺍ ﻩﺬﻫ ﻲﻓ ﻲﺴﻴﺋﺭ ﺯﺎﻬﺟ ﻰﻠﻋ ﺮﺜﻌﻳ ﻢﻟ",
+    "launcher.find.noIp": "ﺯﺎﻬﺠﻟﺍ ﻥﺍﻮﻨﻋ ﻞﺧﺩﺃ .ﺔﻜﺒﺸﻟﺍ ﻲﻓ ﻪﻧﺍﻮﻨﻋ ﺯﺎﻔﻠﺘﻟﺍ ﺍﺬﻫ ﺮﻛﺬﻳ ﻢﻟ\n.ﻚﻟﺫ ﻦﻣ ﻻﺪﺑ ﻲﺴﻴﺋﺮﻟﺍ",
+    "launcher.find.again": "ﻯﺮﺧﺃ ﺓﺮﻣ ﺚﺤﺑﺍ",
+    "launcher.typed.title": "ﻲﺴﻴﺋﺮﻟﺍ ﺯﺎﻬﺠﻟﺍ ﻥﺍﻮﻨﻋ ﻞﺧﺩﺃ",
+    "launcher.typed.label": "192.168.1.20 ﻞﺜﻣ ،ﻥﺍﻮﻨﻌﻟﺍ",
+    "launcher.typed.connect": "ﻞﺼﺗﺍ",
+    "launcher.typed.invalid": ".192.168.1.20 ﻞﺜﻣ ﺎﺌﻴﺷ ﺏﺮﺟ .ﺎﻧﺍﻮﻨﻋ ﺲﻴﻟ ﺍﺬﻫ",
+    "launcher.more": "ﻯﺮﺧﺃ ﻕﺮﻃ",
+    "launcher.back": "ﻉﻮﺟﺭ",
+    "launcher.unreachable.body": "ﺯﺎﻔﻠﺘﻟﺍ ﺍﺬﻫ ﺔﻜﺒﺷ ﻰﻠﻋ ﻪﻧﺃﻭ ﻞﻤﻌﻳ ﻲﺴﻴﺋﺮﻟﺍ ﺯﺎﻬﺠﻟﺍ ﻥﺃ ﻦﻣ ﺪﻛﺄﺗ\n.ﺎﻬﺴﻔﻧ",
+    "launcher.tryAgain": "ﻯﺮﺧﺃ ﺓﺮﻣ ﻝﻭﺎﺣ",
+    "launcher.chooseAnother": "ﺮﺧﺁ ﺎﻴﺴﻴﺋﺭ ﺍﺯﺎﻬﺟ ﺮﺘﺧﺍ",
+    "launcher.forget": "ﻲﺴﻴﺋﺮﻟﺍ ﺯﺎﻬﺠﻟﺍ ﺍﺬﻫ ﺲﻧﺍ",
+    "launcher.plainHttp": "ﻚﺘﻜﺒﺷ ﻰﻠﻋ ﺮﻴﻔﺸﺗ ﻥﻭﺩ ﻞﺼﺘﻣ",
+    "launcher.plainHttpCode": ".ﺮﻴﻔﺸﺗ ﻥﻭﺩ ﺍﺪﺑﺃ ﺭﻭﺮﻤﻟﺍ ﺔﻤﻠﻛ ﻞﺳﺮﺗ ﻻ :ﺰﻣﺮﺑ ﻝﻮﺧﺪﻟﺍ ﻞﺠﺳ",
+    "launcher.tooOld": "ﻚﻧﺎﻜﻣﺈﺑ ﻝﺍﺯ ﺎﻣ .ﺔﺒﺘﻜﻣ ﻖﻴﺒﻄﺗ ﻪﻴﻠﻋ ﻞﻤﻌﻳ ﻥﺃ ﻦﻣ ﻡﺪﻗﺃ ﺯﺎﻔﻠﺘﻟﺍ ﺍﺬﻫ\nﻭﺃ Google Cast ﻢﻋﺪﻳ ﻥﺎﻛ ﻥﺇ ﻚﻔﺗﺎﻫ ﻰﻠﻋ ﺔﺒﺘﻜﻣ ﻦﻣ ﻪﻴﻟﺇ ﺚﺒﻟﺍ\n.AirPlay",
+    "compat.updateHome.title": "ﺚﻳﺪﺤﺗ ﻰﻟﺇ ﻲﺴﻴﺋﺮﻟﺍ ﺯﺎﻬﺠﻟﺍ ﺍﺬﻫ ﺝﺎﺘﺤﻳ",
+    "compat.updateApp.title": "ﻖﻴﺒﻄﺘﻟﺍ ﺍﺬﻫ ﺙﺪﺣ",
+    "compat.updateApp.roku": "ﻰﻠﻋ ﻞﺼﺤﺘﻟ Roku ﺯﺎﻬﺟ ﻞﻴﻐﺸﺗ ﺪﻋﺃ .ﺎﻴﺋﺎﻘﻠﺗ ﺕﺍﻮﻨﻘﻟﺍ Roku ﺙﺪﺤﻳ\n.ﻥﻵﺍ ﺚﻳﺪﺤﺘﻟﺍ",
+    "roku.notAvailable": ".ﺡﺎﺘﻣ ﺮﻴﻏ ﻮﻳﺪﻴﻔﻟﺍ ﺍﺬﻫ",
+    "roku.exitConfirm": "؟ﺔﺒﺘﻜﻣ ﺞﻣﺎﻧﺮﺑ ﻦﻣ ﺝﻭﺮﺨﻟﺍ",
+    "roku.options": "ﺪﻳﺰﻤﻠﻟ * ﻂﻐﺿﺍ",
+    "nav.home": "ﺔﻴﺴﻴﺋﺮﻟﺍ",
+    "nav.libraries": "ﺕﺎﺒﺘﻜﻤﻟﺍ",
+    "nav.search": "ﺚﺤﺒﻟﺍ",
+    "nav.account": "ﺏﺎﺴﺤﻟﺍ",
+    "home.continueWatching": "ﺓﺪﻫﺎﺸﻤﻟﺍ ﺔﻌﺑﺎﺘﻣ",
+    "home.recentlyAdded": "ﺎﺜﻳﺪﺣ ﻒﻴﺿﺃ",
+    "home.forYou": "ﻚﻟ ﺡﺮﺘﻘﻣ",
+    "library.tab.recommended": "ﺕﺎﺣﺮﺘﻘﻤﻟﺍ",
+    "library.tab.library": "ﺔﺒﺘﻜﻤﻟﺍ",
+    "library.tab.collections": "ﺕﺎﻋﻮﻤﺠﻤﻟﺍ",
+    "library.tab.playlists": "ﻞﻴﻐﺸﺘﻟﺍ ﻢﺋﺍﻮﻗ",
+    "library.tab.categories": "ﺕﺎﺌﻔﻟﺍ",
+    "action.play": "ﻞﻴﻐﺸﺗ",
+    "action.shuffle": "ﻲﺋﺍﻮﺸﻋ ﻞﻴﻐﺸﺗ",
+    "video.startOver": "ﺔﻳﺍﺪﺒﻟﺍ ﻦﻣ",
+    "search.hint": "ﻚﺘﺒﺘﻜﻣ ﻲﻓ ﺚﺤﺑﺍ",
+    "account.switchHome": "ﻲﺴﻴﺋﺮﻟﺍ ﺯﺎﻬﺠﻟﺍ ﻞﻳﺪﺒﺗ",
+    "account.signOut": "ﺝﻭﺮﺨﻟﺍ ﻞﻴﺠﺴﺗ",
+    "account.language": "ﺔﻐﻠﻟﺍ",
+    "account.language.en": "ﺔﻳﺰﻴﻠﺠﻧﻹﺍ",
+    "account.language.ar": "ﺔﻴﺑﺮﻌﻟﺍ"
+  },
+  "templates": {
+    "launcher.connecting": {
+      "text": "جارٍ الاتصال بـ %1$s…",
+      "widthChars": 48,
+      "lines": 1
+    },
+    "launcher.notHome": {
+      "text": "لم يُجب أي جهاز رئيسي لمكتبة على %1$s.",
+      "widthChars": 60,
+      "lines": 2
+    },
+    "launcher.unreachable.title": {
+      "text": "تعذّر الوصول إلى %1$s",
+      "widthChars": 48,
+      "lines": 1
+    },
+    "launcher.version": {
+      "text": "الإصدار %1$s",
+      "widthChars": 32,
+      "lines": 1
+    },
+    "compat.updateHome.admin": {
+      "text": "حدِّث مكتبة على %1$s من الإدارة ← التحديثات، ثم عُد.",
+      "widthChars": 60,
+      "lines": 3
+    },
+    "compat.updateHome.viewer": {
+      "text": "اطلب من مسؤول %1$s تحديث مكتبة.",
+      "widthChars": 60,
+      "lines": 2
+    },
+    "compat.homeVersion": {
+      "text": "يعمل %1$s بإصدار مكتبة %2$s.",
+      "widthChars": 60,
+      "lines": 1
+    },
+    "compat.updateApp.why": {
+      "text": "لم يعد %1$s يعمل مع هذا الإصدار من التطبيق.",
+      "widthChars": 60,
+      "lines": 2
+    },
+    "video.resumeFrom": {
+      "text": "المتابعة من %1$s",
+      "widthChars": 32,
+      "lines": 1
+    }
+  }
+}

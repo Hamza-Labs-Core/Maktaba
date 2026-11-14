@@ -4,6 +4,12 @@
 # updates with the home (story 58.08). So a tag builds the packages only when the launcher
 # changed since the previous tag (or on a run by hand); each store review is weeks.
 #
+#   webos-ipk   maktaba-webos-<version>.ipk: `pnpm build:launcher`, packed by LG's webOS CLI
+#               (apps/tv/web/webos/package.mjs, ares-package from @webos-tools/cli), linted
+#               (lint-ipk.mjs) and attached to the tag's release. Nothing is signed: LG signs a
+#               package when it is submitted, so no key is held. A person uploads it to LG's
+#               Seller Lounge with docs/stores/lg.md (Seller Lounge has no upload API).
+#
 #   tizen-wgt   maktaba-tizen-<version>.wgt: `pnpm build:launcher`, package_wgt.py's stage,
 #               signed by Tizen Studio's CLI (apps/tv/web/tizen/sign_wgt.sh) with the project's
 #               Samsung author and distributor certificates, linted (lint_wgt.py --signed) and
@@ -81,6 +87,65 @@ jobs:
           echo "changed=${changed}" >> "$GITHUB_OUTPUT"
           echo "the launcher since ${prev:-the first tag}: changed=${changed}"
 
+  webos-ipk:
+    name: LG (.ipk)
+    needs: [guard, launcher-changed]
+    if: needs.launcher-changed.outputs.changed == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write # gh release upload
+    steps:
+      - uses: actions/checkout@v6.0.2
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@0e279bb959325dab635dd2c09392533439d90093 # v6.0.8
+        with:
+          version: 9.15.4
+          run_install: false
+      - uses: actions/setup-node@v6.4.0
+        with:
+          node-version-file: web/.nvmrc
+          package-manager-cache: false
+      - name: Install web deps
+        working-directory: web
+        run: pnpm install --frozen-lockfile
+      - name: Design tokens
+        run: node web/design-system/build/build-tokens.mjs
+      - name: build:launcher, checked for Chromium 68
+        working-directory: web
+        env:
+          TAG: ${{ github.ref_name }}
+        run: VERSION="${TAG#v}" pnpm run build:launcher
+
+      - name: Pack and lint the package
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          version="${TAG#v}"
+          node apps/tv/web/webos/package.mjs --version "${version}" --out out
+          node apps/tv/web/webos/lint-ipk.mjs "out/maktaba-webos-${version}.ipk" --version "${version}"
+          ( cd out && sha256sum "maktaba-webos-${version}.ipk" > "maktaba-webos-${version}.ipk.sha256" )
+          printf '### LG TV package\n\nmaktaba-webos-%s.ipk is packed, linted and attached to the %s release, for LG Seller Lounge (docs/stores/lg.md).\n' "${version}" "${TAG}" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload CI artifact
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: maktaba-webos
+          path: out/*.ipk*
+          if-no-files-found: ignore
+          retention-days: 14
+
+      # to the tag's release (a draft until release.yml's files are in; a published release
+      # only gains the files it lacks)
+      - name: Attach to GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: tools/release/release-assets.sh upload "${TAG}" out/*.ipk out/*.ipk.sha256
+
   tizen-wgt:
     name: Samsung (.wgt)
     needs: [guard, launcher-changed]
@@ -93,7 +158,7 @@ jobs:
       - uses: actions/checkout@v6.0.2
         with:
           persist-credentials: false
-      - uses: pnpm/action-setup@v6.0.8
+      - uses: pnpm/action-setup@0e279bb959325dab635dd2c09392533439d90093 # v6.0.8
         with:
           version: 9.15.4
           run_install: false

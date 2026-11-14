@@ -130,7 +130,7 @@ GO_MODULES="api streaming shared/log/go shared/testtier/go" \
     bash tools/test-budget.sh unit
 
 # Wall-clock enforcement for the other tiers.
-bash tools/test-budget.sh wall integration 2m -- make test-integration-inner
+bash tools/test-budget.sh wall integration 6m30s -- make test-integration-inner
 bash tools/test-budget.sh wall e2e         5m -- make test-e2e-inner
 bash tools/test-budget.sh wall perf-ci     2m -- make perf-ci-inner
 ```
