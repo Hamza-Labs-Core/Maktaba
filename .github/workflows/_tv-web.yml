@@ -67,13 +67,14 @@ jobs:
           CI: 'true'
         run: pnpm e2e:tv
 
-      - name: Screenshots, console and network logs, traces and report
+      # the screenshots, the console and network logs, the traces and the report, passed or
+      # failed (.github/actions/tv-logs: 30 days, linked from the job summary; story 58.16)
+      - name: App logs
         if: always()
-        uses: actions/upload-artifact@v7.0.1
+        uses: ./.github/actions/tv-logs
         with:
-          name: tv-web-ui
+          name: tv-web-logs
+          what: Playwright's screenshots (dark, en and ar), console and network logs, traces and report
           path: |
             web/test-results/tv
             web/test-results/tv-report
-          retention-days: 30
-          if-no-files-found: warn
