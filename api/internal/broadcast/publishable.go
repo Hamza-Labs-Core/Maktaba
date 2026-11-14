@@ -5,7 +5,7 @@ package broadcast
 // An item is publishable when the home's admins say so: it is their own recording, a
 // one-off item they cleared with a proof link, a YouTube video under Creative Commons
 // Attribution (found at intake), or it comes from a source they recorded a permission for
-// (a YouTube channel or playlist, a speaker, a label). The rule itself is slot 0227's SQL
+// (a YouTube channel or playlist, a speaker, a label). The rule itself is slot 0228's SQL
 // functions, so the scheduler, the channel's player and this page all read the same one.
 // Nothing here is sent to Maktaba Cloud.
 
@@ -116,7 +116,7 @@ type PublishableView struct {
 	Shares          []Share      `json:"shares"`
 }
 
-// MarkedPublishable counts only what slot 0227's rule says may air: check 3 of a publish.
+// MarkedPublishable counts only what slot 0228's rule says may air: check 3 of a publish.
 type MarkedPublishable struct{}
 
 // Seconds is the channel's scheduled time inside [from, to) whose item is publishable.

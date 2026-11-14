@@ -9,11 +9,11 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// PGStore reads the published channels and their tokens (slot 0226). The front door runs
+// PGStore reads the published channels and their tokens (slot 0227). The front door runs
 // as the home's own database user; a machine's login cannot read broadcast_ingest_tokens.
 type PGStore struct{ Pool *pgxpool.Pool }
 
-// Available reports whether slot 0226 exists (the API migrates it, maybe after this
+// Available reports whether slot 0227 exists (the API migrates it, maybe after this
 // process started).
 func (s PGStore) Available(ctx context.Context) bool {
 	var ok bool

@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 --
--- SQLite parity sibling for slot 0226 (Epic 50, story 50.22): home broadcasting's tables.
+-- SQLite parity sibling for slot 0227 (Epic 50, story 50.22): home broadcasting's tables.
 -- A SQLite home is a single machine: no roles and no machine copies. The broadcaster runs
 -- only against Postgres (as the push relay does); the tables keep the schemas alike.
 --

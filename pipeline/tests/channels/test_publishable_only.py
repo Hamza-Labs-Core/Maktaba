@@ -2,7 +2,7 @@
 
 T03: rules mixing sources build from the publishable ones while ``publishable_only`` is
 on, and from every one when it is off (or the channel is not published). T05: a Quran
-reciter is a source like any other. The rule itself (which ids may air) is slot 0227's
+reciter is a source like any other. The rule itself (which ids may air) is slot 0228's
 SQL, tested against Postgres in the API; here the repo answers it.
 """
 

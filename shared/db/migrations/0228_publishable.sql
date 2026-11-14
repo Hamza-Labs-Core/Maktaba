@@ -2,7 +2,7 @@
 -- +goose Up
 -- +goose StatementBegin
 --
--- Slot 0227 (Epic 50, story 50.23) - publishable sources: what a published channel may air.
+-- Slot 0228 (Epic 50, story 50.23) - publishable sources: what a published channel may air.
 --
 -- An item is publishable for one of four reasons, all decided on the home by its admins:
 --

@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 --
--- SQLite parity sibling for slot 0227 (Epic 50, story 50.23): publishable sources and the
+-- SQLite parity sibling for slot 0228 (Epic 50, story 50.23): publishable sources and the
 -- item marks. Broadcasting runs only against Postgres (slot 0226), so the functions that
 -- read these are Postgres only; the tables and columns keep the schemas alike.
 --

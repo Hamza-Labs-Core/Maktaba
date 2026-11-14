@@ -115,11 +115,15 @@ func BuildSlots(opts Options) ([]Process, error) {
 
 // SlotExitReporter tells the front door at once that a slot process ended
 // (faster than its next probe): POST <stream>/internal/tv/slot-exited/<name>.
+// A slot stopped by the supervisor's own shutdown is not reported: the front door
+// stops with it, and a report reaching it first fails the TV over to the standby
+// and saves those roles for the next start (an update that restarts the install
+// whole would find the live slot moved).
 func SlotExitReporter(streamAddr string) func(Process, ExitInfo) {
 	base := "http://" + LocalAddr(streamAddr, ports.StreamingPublic.PortString())
 	client := &http.Client{Timeout: 2 * time.Second}
-	return func(p Process, _ ExitInfo) {
-		if p.Role != RoleTVSlot {
+	return func(p Process, info ExitInfo) {
+		if p.Role != RoleTVSlot || info.Reason == ReasonShutdown {
 			return
 		}
 		go func() {

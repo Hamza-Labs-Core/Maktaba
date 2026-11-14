@@ -120,7 +120,7 @@ GRANT SELECT ON components, component_overrides, component_status, component_met
     TO maktaba_worker;
 -- slot 0179
 GRANT EXECUTE ON FUNCTION component_override_seed(uuid, jsonb) TO maktaba_worker;
--- slot 0226: a broadcast ingest token is a credential
+-- slot 0227: a broadcast ingest token is a credential
 REVOKE ALL ON broadcast_ingest_tokens FROM maktaba_worker;
 `
 

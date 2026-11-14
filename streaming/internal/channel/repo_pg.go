@@ -71,7 +71,7 @@ func (r *PGRepo) sourceURLColumn(ctx context.Context) bool {
 	return r.hasSourceURL
 }
 
-// publishableFuncs reports whether slot 0227's publishable rule exists (story 50.23).
+// publishableFuncs reports whether slot 0228's publishable rule exists (story 50.23).
 func (r *PGRepo) publishableFuncs(ctx context.Context) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -88,7 +88,7 @@ func (r *PGRepo) publishableFuncs(ctx context.Context) bool {
 
 // notPublishableCol is the select expression of ProgramBlock.NotPublishable: a published
 // channel's block whose item may no longer air (story 50.23 §3). The item is read only
-// when the channel is limited; before slot 0227 it is false.
+// when the channel is limited; before slot 0228 it is false.
 func (r *PGRepo) notPublishableCol(ctx context.Context) string {
 	if !r.publishableFuncs(ctx) {
 		return "false"

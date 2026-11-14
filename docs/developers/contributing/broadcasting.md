@@ -18,7 +18,7 @@ caller with no session `401`, before anything is read or sent to Maktaba Cloud.
 | Home API | `api/internal/broadcast/` | the routes, the publish checks, the speed test, the ingest-token refresh (`api:broadcast_tokens`) |
 | Cloud link | `cloud/internal/cloudlink/broadcast.go` | the relay agent forwards the broadcast calls (publish, tokens, the revocation list, takedowns) to Maktaba Cloud with the home's credential; the API never holds it |
 | Broadcaster | `streaming/internal/broadcast/` | one ladder ffmpeg per channel, the uploader, the control socket, the offline slate (`streaming:broadcast_uploader`, `streaming:broadcast_control`) |
-| Database | slots 0226, 0227, 0228 | `broadcast_channels`, `broadcast_uplink`, `broadcast_confirmations`, `broadcast_ingest_tokens`; the publishable rule (0227); `broadcast_takedowns` (0228) |
+| Database | slots 0227, 0228, 0229 | `broadcast_channels`, `broadcast_uplink`, `broadcast_confirmations`, `broadcast_ingest_tokens`; the publishable rule (0228); `broadcast_takedowns` (0229) |
 | Settings | `rules.broadcast` | `uplink_share` (0.5), `rung_slot_weight` (0.5), `allow_software_rungs` (off) |
 
 All three loops belong to the `livetv.broadcast` component. It is in no bundle, so it is off
@@ -55,7 +55,7 @@ Free to watch isn't a licence to re-broadcast. While a channel is published, it 
 code does, not legal advice.
 
 An item is publishable for one of four reasons, in this order (`video_publishable_reason`, slot
-0227; the scheduler, the streaming player and the API all call the same SQL):
+0228; the scheduler, the streaming player and the API all call the same SQL):
 
 | Reason | Where it comes from |
 |---|---|
