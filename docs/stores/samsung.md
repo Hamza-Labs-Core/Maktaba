@@ -3,6 +3,15 @@
 The Samsung launcher, a `.wgt` hosting the home's `/tv/` UI (story 58.10). Story 58.04 adds the
 listing and the Seller Office notes here.
 
+## Submission notes
+
+The store's reviewers sign in to the project's review home, review.maktaba.tv (story 58.04).
+The notes, what reviewers get and how a submission round goes are in
+[review-home.md](review-home.md): its text goes in Seller Office's **Test account** fields and the notes for the verification test. The password is never written
+here: the notes name the release secret `REVIEW_HOME_VIEWER_PASSWORD` (and, for the parental
+checks, `REVIEW_HOME_CHILD_PASSWORD`), and the release session fills each in when it submits.
+After the round, the release checklist rotates both ([review-home.md](review-home.md#a-submission-round)).
+
 ## Real-device checklist
 
 Run before each launcher release candidate is uploaded to Seller Office (58.10 T05). The rule

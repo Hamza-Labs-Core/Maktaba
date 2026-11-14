@@ -864,6 +864,16 @@ build fails when the two differ.
 
 ### Added
 
+- **A home for TV store reviewers (Epic 58, story 58.04).** review.maktaba.tv is a Maktaba home
+  the project runs with public-domain and openly licensed content only (Blender's and Netflix's
+  open films, a CC BY lecture series, a LibriVox audiobook, each titled in English and Arabic),
+  test files for 4K HDR10, 1080p, an MKV with EAC3 and Arabic subtitles and a transcode, a
+  viewer account for reviewers and a restricted child for the parental checks.
+  `maktaba-server review-home seed|rotate` sets it up and rotates its passwords after each
+  submission round; the passwords live only in the release secrets, every store's submission
+  notes name the secret (`docs/stores/review-home.md`), and a check every 15 minutes walks the
+  cloud code and a stream of each test file.
+
 - **A cast grant for Maktaba's Cast receiver (Epic 58, story 58.07).** A signed-in phone or
   browser can now mint a cast grant on the home (`POST /api/cast/grants`) for the one video or
   play queue it casts. The TV uses the grant to open its own stream sessions, report where it

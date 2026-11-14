@@ -3,6 +3,15 @@
 The Android TV app's `amazon` flavor (story 58.05). Story 58.04 adds the listing and the
 submission notes here; story 58.18 adds Vega OS.
 
+## Submission notes
+
+The store's reviewers sign in to the project's review home, review.maktaba.tv (story 58.04).
+The notes, what reviewers get and how a submission round goes are in
+[review-home.md](review-home.md): its text goes in the Amazon Developer Console's **Testing instructions** for the app (App Submission → Testing instructions), with the test account's username and password in the fields it gives. The password is never written
+here: the notes name the release secret `REVIEW_HOME_VIEWER_PASSWORD` (and, for the parental
+checks, `REVIEW_HOME_CHILD_PASSWORD`), and the release session fills each in when it submits.
+After the round, the release checklist rotates both ([review-home.md](review-home.md#a-submission-round)).
+
 ## Real-device checklist
 
 Run before each release candidate is promoted from Live App Testing to the store (58.05 T06).
