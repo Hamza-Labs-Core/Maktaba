@@ -11,6 +11,7 @@ import (
 	"time"
 
 	billingpkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/billing"
+	cachepkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/cache"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/db"
 	relayh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/relay"
@@ -87,11 +88,14 @@ func runRelay(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Mig
 
 	// Story 50.05: home lookups through a cache that outlives a database
 	// failover, dropped at once by the database's change notifications.
+	// One LISTEN connection per node (story 50.17 §4, cachepkg.Bus): a reconnect expires every
+	// entry, so none is served fresh before the database is read again.
 	var cache *relayh.HomeCache
+	bus := &cachepkg.Bus{Logger: logger}
 	if cfg.Relay.CacheEnabled {
 		cache = &relayh.HomeCache{Lookup: serversStore}
-		if err := stores.Listen(ctx, cfg.Database.URL, []string{stores.ChannelTierChanged, stores.ChannelServerChanged}, logger,
-			func(_, slug string) { cache.Invalidate(slug) }, cache.Expire); err != nil {
+		bus.Add(cachepkg.Funcs{OnInvalidate: func(_, slug string) { cache.Invalidate(slug) }, OnReset: cache.Expire})
+		if err := bus.Start(ctx, cfg.Database.ListenURL()); err != nil {
 			logger.Warn("relay: the change listener did not start; the cache refreshes each minute", "err", err)
 		}
 	}
@@ -179,7 +183,7 @@ func runRelay(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Mig
 			h(w, req)
 		}
 	}
-	r.Get("/metrics", relayControl(metricspkg.PrometheusHandler(collector, relaypkg.WriteMetrics, relayh.WriteMetrics, relayh.WriteCacheMetrics, meter.WriteMetrics, obs.WriteMetrics)))
+	r.Get("/metrics", relayControl(metricspkg.PrometheusHandler(collector, relaypkg.WriteMetrics, relayh.WriteMetrics, relayh.WriteCacheMetrics, bus.WriteMetrics, meter.WriteMetrics, obs.WriteMetrics)))
 	r.Get("/privacy", relayControl(privacy.PolicyHandler))
 	// Story 25.23: the edge's on-demand TLS asks here before it requests a
 	// certificate (Caddy `on_demand_tls { ask … }`): 200 only for the bare
