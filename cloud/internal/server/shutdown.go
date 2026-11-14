@@ -59,6 +59,15 @@ func RunDraining(ctx context.Context, logger *slog.Logger, srv *http.Server, gra
 // inside one grace. A listener that fails takes the others down with it: the node's
 // systemd unit restarts the role whole, rather than leaving half of it serving.
 func RunAll(ctx context.Context, logger *slog.Logger, grace time.Duration, srvs ...*http.Server) error {
+	return RunAllDraining(ctx, logger, grace, 0, nil, srvs...)
+}
+
+// RunAllDraining is RunAll that, on shutdown, first calls unready (the node's /readyz then
+// answers 503) and keeps serving for delay before it closes the listeners (Epic 50 story
+// 50.17): the load balancer in front of the api pool takes the node out after its failed
+// checks, so no new request meets a closed port, and the requests already in flight finish
+// inside grace. A listener that fails skips the delay.
+func RunAllDraining(ctx context.Context, logger *slog.Logger, grace, delay time.Duration, unready func(), srvs ...*http.Server) error {
 	errs := make(chan error, len(srvs))
 	for _, srv := range srvs {
 		go func(srv *http.Server) {
@@ -79,6 +88,20 @@ func RunAll(ctx context.Context, logger *slog.Logger, grace time.Duration, srvs 
 	case <-ctx.Done():
 	case sig := <-sigs:
 		logger.Info("shutdown signal", "signal", sig.String())
+	}
+	if failed == nil && delay > 0 {
+		if unready != nil {
+			unready()
+		}
+		logger.Info("draining: /readyz answers 503 while the load balancer takes this node out",
+			"delay", delay.String(), "event", "api_draining")
+		select {
+		case <-time.After(delay):
+		case failed = <-errs:
+			logger.Error("a listener failed while draining", "err", failed)
+		case sig := <-sigs:
+			logger.Info("a second shutdown signal: closing now", "signal", sig.String())
+		}
 	}
 	shCtx, cancel := context.WithTimeout(context.Background(), grace)
 	defer cancel()

@@ -13738,6 +13738,42 @@
       }
     },
     {
+      "id": "ep-get-discovery-home",
+      "type": "endpoint",
+      "title": "GET /discovery/home",
+      "content": "من هو هذا المنزل، ومستوى واجهته البرمجية",
+      "tags": [
+        "api",
+        "Devices",
+        "get"
+      ],
+      "related": [
+        "story-42.2",
+        "story-42.5",
+        "story-42.10",
+        "story-58.1",
+        "story-58.7",
+        "story-58.9",
+        "story-58.17",
+        "story-59.8"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/discovery/home",
+        "tag": "Devices",
+        "operationId": "getDiscoveryHome"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "6905f4b361fe75b8"
+        }
+      }
+    },
+    {
       "id": "ep-post-pairing-approve",
       "type": "endpoint",
       "title": "POST /pairing/approve",
