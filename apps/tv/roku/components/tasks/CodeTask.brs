@@ -56,7 +56,7 @@ sub code_Cloud()
             c = r.data
             interval = 5
             if c.interval <> invalid and c.interval > 0 then interval = c.interval
-            m.top.code = {code: c.code, qr: NetJoin(cloud, "/v1/tv/codes/" + c.code.Replace("-", "") + "/qr.png"), expiresIn: c.expires_in, verifyUrl: c.verify_url}
+            m.top.code = {code: c.code, qr: code_Qr(c.verify_url), expiresIn: c.expires_in, verifyUrl: c.verify_url}
             m.top.state = "waiting"
             print "[code] cloud code shown"
             renew = false
@@ -156,7 +156,7 @@ sub code_Home()
         c = r.data
         interval = 2
         if c.interval <> invalid and c.interval > 0 then interval = c.interval
-        m.top.code = {code: c.code, qr: "", expiresIn: 600, verifyUrl: c.verify_url}
+        m.top.code = {code: c.code, qr: code_Qr(c.verify_url), expiresIn: 600, verifyUrl: c.verify_url}
         m.top.state = "waiting"
         renew = false
         while not m.top.stop and not renew
@@ -173,3 +173,15 @@ sub code_Home()
         end while
     end while
 end sub
+
+' The QR of the approve page the code came with (its verify_url: the cloud's maktaba.tv/tv?c=…,
+' or the home's own /pair?code=…), encoded here, off the render thread, as the other TV apps
+' draw it; invalid when there is no address or it is too long.
+function code_Qr(url as Dynamic) as Dynamic
+    if type(url) <> "roString" and type(url) <> "String" then return invalid
+    if url = "" then return invalid
+    clock = CreateObject("roTimespan")
+    rows = QrEncode(url)
+    if rows <> invalid then print "[qr] encoded "; Len(url); " bytes into "; rows.Count(); " modules in "; clock.TotalMilliseconds(); " ms"
+    return rows
+end function

@@ -875,14 +875,10 @@ build fails when the two differ.
 
 ### Added
 
-- **Parental controls on the new TVs (Epic 58, story 58.14).** A child's account signed in on a
-  Samsung or LG TV (`/tv/`), Roku, Fire TV or Android TV sees only what its limits allow, as
-  everywhere else. Something hidden, opened from a link, shows This isn't available with the
-  limit and Ask a parent, which takes the remote's focus; a parent answers from Maktaba on their
-  phone, and a yes opens it on the TV without a restart. The TV's Account or Settings says a
-  parent manages the account, and its content limit. Samsung, LG and Roku ask for no PIN on the
-  remote; Fire TV and Android TV keep the guardian's PIN. A deep link to a hidden item shows the
-  not-available line and asks nothing. English and Arabic, mirrored.
+- **Roku's sign-in shows a QR (Epic 58, story 58.12).** The Roku channel's code screen now shows
+  a QR beside the code, as the other TV apps do: a phone's camera opens the approve page with
+  the code filled in (maktaba.tv/tv for a cloud code, the home's own page for the home's code).
+  The channel draws the QR itself, so no image is fetched from the home or the cloud.
 - **Playing on Roku (Epic 58, story 58.13).** The Roku channel's player: it tells the home
   what this Roku plays (H.264, HEVC, AV1 inside DASH, HDR10, HLG, Dolby Vision 5, the Dolby
   passthroughs), so a 4K HDR file plays directly where the Roku can and is converted only where
@@ -2822,6 +2818,26 @@ build fails when the two differ.
   your TV?** with its platform and country, and approves it only then; a home without remote
   access is told to use the home's own code. **Sessions** lists the apps signed in with a code,
   each signed out there, a cloud-code TV named as one.
+
+- **The broadcast edge, built and rehearsed in CI (story 50.21).** Maktaba Cloud now has the
+  Cloudflare Worker a published channel will play from: a home pushes each segment of each
+  rendition once to `ingest.maktaba.tv`, and viewers' players fetch playlists and segments from
+  `live.maktaba.tv` at Cloudflare's edge, so a home's upload is the same for one viewer as for
+  ten thousand. Each home has its own signed ingest token for one channel and its rungs, valid a
+  day and asked for again every hour; a viewer's token lives ten minutes. When a home goes
+  quiet, its channel plays the home's offline slate and returns to live when it is back.
+  Segments are deleted ten minutes after they arrive; nothing is kept for catch-up. Stream is the
+  switchable fallback. The edge stores and delivers what a home sends and never chooses, ranks
+  or recommends anything. It is not deployed yet: broadcasting stays off until its gate opens.
+
+- **Parental controls on the new TVs (Epic 58, story 58.14).** A child's account signed in on a
+  Samsung or LG TV (`/tv/`), Roku, Fire TV or Android TV sees only what its limits allow, as
+  everywhere else. Something hidden, opened from a link, shows This isn't available with the
+  limit and Ask a parent, which takes the remote's focus; a parent answers from Maktaba on their
+  phone, and a yes opens it on the TV without a restart. The TV's Account or Settings says a
+  parent manages the account, and its content limit. Samsung, LG and Roku ask for no PIN on the
+  remote; Fire TV and Android TV keep the guardian's PIN. A deep link to a hidden item shows the
+  not-available line and asks nothing. English and Arabic, mirrored.
 
 ### Changed
 
