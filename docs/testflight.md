@@ -250,9 +250,20 @@ What is known:
   ([778597](https://developer.apple.com/forums/thread/778597),
   [837048](https://developer.apple.com/forums/thread/837048),
   [826537](https://developer.apple.com/forums/thread/826537)).
-- A workaround posted on Stack Overflow, not tried here: make the app available for sale for a
-  few minutes, then remove it from sale again; that poster's TestFlight installs worked
-  afterwards.
+- A Stack Overflow question on this message
+  ([66172052](https://stackoverflow.com/questions/66172052/how-to-fix-the-requested-app-is-not-available-or-doesnt-exist-in-testflight))
+  has the same cause in every answer: the app record is "Removed from Sale" (not on sale).
+  What its posters did, none of it tried here yet:
+  - released the app on the App Store again, and TestFlight came back (the accepted answer);
+  - with a version approved and waiting for developer release: released it for sale for a few
+    minutes, then removed it from sale again;
+  - were told by Apple to submit a new build for review;
+  - pressed "Notify testers" on a build shown as approved with a yellow mark;
+  - gave up on the record and made a new app.
+  The asker's began after renewing the developer programme membership.
+- So the first thing to read is each app's status on its App Store page in App Store Connect.
+  Putting an app on sale for a few minutes needs a version Apple has approved; an app never
+  submitted has none.
 
 App Store Connect is the owner's: the record's sale state, the workaround and a report to
 Apple (Feedback Assistant, or a Developer Support case) are done there, by hand. When it is
