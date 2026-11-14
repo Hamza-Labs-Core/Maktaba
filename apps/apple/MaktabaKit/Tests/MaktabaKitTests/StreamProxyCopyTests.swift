@@ -20,6 +20,8 @@ final class LoopbackHome: @unchecked Sendable {
         var holds = false
         /// The connection is dropped after this many body bytes (the home failing mid-body).
         var cutAfter: Int?
+        /// At `cutAfter` the home goes silent (the connection stays open), not away.
+        var silentThen = false
     }
 
     struct Seen: Sendable {
@@ -174,23 +176,25 @@ final class LoopbackHome: @unchecked Sendable {
         head += a.saysLength ? "Content-Length: \(range.count)\r\n" : "Transfer-Encoding: chunked\r\n"
         for (k, v) in a.headers { head += "\(k): \(v)\r\n" }
         head += "Connection: close\r\n\r\n"
-        let whole = range, cutAt = a.cutAfter.map { range.lowerBound + $0 }, chunked = !a.saysLength
+        let whole = range, cutAt = a.cutAfter.map { range.lowerBound + $0 }, chunked = !a.saysLength, silent = a.silentThen
         conn.send(content: Data(head.utf8), completion: .contentProcessed { [weak self] error in
             guard let self, error == nil else { return }
-            if req.method == "HEAD" { self.end(conn, done) } else { self.write(conn, whole, done, cutAt: cutAt, chunked: chunked) }
+            if req.method == "HEAD" { self.end(conn, done) } else { self.write(conn, whole, done, cutAt: cutAt, chunked: chunked, silent: silent) }
         })
     }
 
-    private func write(_ conn: NWConnection, _ rest: Range<Int>, _ done: Once, cutAt: Int? = nil, chunked: Bool = false) {
+    private func write(_ conn: NWConnection, _ rest: Range<Int>, _ done: Once, cutAt: Int? = nil, chunked: Bool = false, silent: Bool = false) {
         guard !rest.isEmpty else {
             if chunked { conn.send(content: Data("0\r\n\r\n".utf8), completion: .idempotent) }
             end(conn, done)
             return
         }
         if let cutAt, rest.lowerBound >= cutAt {
-            // the home fails here: no orderly end
-            done.run {}
-            conn.forceCancel()
+            // the home fails here: no orderly end (or says nothing more, the connection open)
+            if !silent {
+                done.run {}
+                conn.forceCancel()
+            }
             return
         }
         let n = min(64 << 10, rest.count, cutAt.map { $0 - rest.lowerBound } ?? Int.max)
@@ -204,7 +208,7 @@ final class LoopbackHome: @unchecked Sendable {
                 return
             }
             self.lock.withLock { self.written += n }
-            self.write(conn, piece.upperBound..<rest.upperBound, done, cutAt: cutAt, chunked: chunked)
+            self.write(conn, piece.upperBound..<rest.upperBound, done, cutAt: cutAt, chunked: chunked, silent: silent)
         })
     }
 
@@ -218,9 +222,26 @@ final class LoopbackHome: @unchecked Sendable {
 final class RawPlayer: @unchecked Sendable {
     private let conn: NWConnection
     private let queue = DispatchQueue(label: "test.raw-player")
+    private let lock = NSLock()
+    private var states: [String] = []
+    /// The connection's states so far (a failed test says them).
+    var history: String { lock.withLock { states.joined(separator: ">") } }
 
     init(port: UInt16) {
         conn = NWConnection(host: "127.0.0.1", port: NWEndpoint.Port(rawValue: port)!, using: .tcp)
+        conn.stateUpdateHandler = { [weak self] s in
+            guard let self else { return }
+            let tries = self.lock.withLock { () -> Int in
+                self.states.append("\(s)")
+                return self.states.count
+            }
+            // a connection that could not start (seen on a busy Mac: the local port it chose
+            // was taken, "address already in use", and it then waits for the network to
+            // change, which never comes on the loopback) is started again
+            if case .waiting = s, tries < 40 {
+                self.queue.asyncAfter(deadline: .now() + 0.05) { self.conn.restart() }
+            }
+        }
         conn.start(queue: queue)
     }
 
@@ -310,6 +331,8 @@ func eventually(_ seconds: Double = 5, _ ok: @Sendable () -> Bool) async -> Bool
 
     /// A proxy for `home`, signed in with a token that has not expired.
     static func proxy(_ home: LoopbackHome, headPatience: Duration = StreamProxy.headPatience,
+                      homePatience: Duration = StreamProxy.homePatience, requestTimeout: TimeInterval? = nil,
+                      reach: StreamProxy.Reach = .loopback,
                       sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }) throws -> StreamProxy {
         let claims = Data(#"{"exp":4102444800}"#.utf8).base64EncodedString()
             .replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
@@ -319,9 +342,11 @@ func eventually(_ seconds: Double = 5, _ ok: @Sendable () -> Bool) async -> Bool
         // a session with a delegate of its own, as the app's (`PinnedTrust.session`) has
         let config = URLSessionConfiguration.ephemeral
         config.httpMaximumConnectionsPerHost = perHost
+        // the session's own timer, short in a test that proves it is not what times a pause
+        if let requestTimeout { config.timeoutIntervalForRequest = requestTimeout }
         let session = URLSession(configuration: config, delegate: PinnedTrust.shared, delegateQueue: nil)
         return try StreamProxy(client: APIClient(home: home.url, tokens: tokens, session: session), session: session,
-                               headPatience: headPatience, sleep: sleep)
+                               reach: reach, headPatience: headPatience, homePatience: homePatience, sleep: sleep)
     }
 
     /// The most connections the proxy's session opens to the home at once.
@@ -457,8 +482,10 @@ func eventually(_ seconds: Double = 5, _ ok: @Sendable () -> Bool) async -> Bool
         defer { home.stop() }
         let size = 48 << 20
         home.on("/stream/abc/big.mp4", .init(length: size))
-        // the one timer (a request's head) is 200 ms here: the slow read lasts fifteen of them
-        let proxy = try Self.proxy(home, headPatience: .milliseconds(200))
+        // every timer is short here (a request's head 200 ms, the home's silence 400 ms, the
+        // URL session's own request timeout 1 s): the slow read outlasts each several times,
+        // and one delivery (up to 4 MB) takes far longer than any of them to drain
+        let proxy = try Self.proxy(home, headPatience: .milliseconds(200), homePatience: .milliseconds(400), requestTimeout: 1)
         try await proxy.start()
         defer { proxy.stop() }
         let player = RawPlayer(port: try #require(proxy.port))
@@ -487,16 +514,18 @@ func eventually(_ seconds: Double = 5, _ ok: @Sendable () -> Bool) async -> Bool
         defer { home.stop() }
         let size = 48 << 20
         home.on("/stream/abc/big.mp4", .init(length: size))
-        let proxy = try Self.proxy(home, headPatience: .milliseconds(200))
+        // the home's silence is timed at 400 ms and the URL session's own request timeout is
+        // 1 s: the pause lasts 3 s, several times each (a pause is not the home's silence)
+        let proxy = try Self.proxy(home, headPatience: .milliseconds(200), homePatience: .milliseconds(400), requestTimeout: 1)
         try await proxy.start()
         defer { proxy.stop() }
         let player = RawPlayer(port: try #require(proxy.port))
         defer { player.close() }
         player.ask(Self.target(proxy, "/stream/abc/big.mp4"))
         var got = await player.read(100_000)
-        // paused: the home stops writing, and nothing happens for ten head-timers
+        // paused: the home stops writing, and nothing happens for many timers
         _ = try #require(await settled { home.bytesWritten }, "the home never stopped writing")
-        try await Task.sleep(for: .seconds(2))
+        try await Task.sleep(for: .seconds(3))
         #expect(proxy.serving == 1 && home.abandoned == 0, "a paused player is not dropped")
         let (rest, failed) = await player.readToEnd()
         got += rest
@@ -504,6 +533,167 @@ func eventually(_ seconds: Double = 5, _ ok: @Sendable () -> Bool) async -> Bool
         #expect(!failed && head.hasPrefix("HTTP/1.1 200"))
         #expect(body.count == size && LoopbackHome.matches(body, from: 0), "\(body.count) of \(size) bytes")
         #expect(home.seen.count == 1, "one request: nothing was asked again")
+    }
+
+    /// A home that goes silent mid-body (its connection open) is given up after the time the
+    /// proxy gives it, and the player sees an error: a body short of its length, or in chunks
+    /// without its last chunk.
+    @Test func aHomeThatGoesSilentMidBodyIsGivenUp() async throws {
+        let home = try await LoopbackHome()
+        defer { home.stop() }
+        home.on("/stream/abc/known.ts", .init(length: 8 << 20, cutAfter: 1 << 20, silentThen: true))
+        home.on("/stream/abc/unknown.ts", .init(length: 8 << 20, saysLength: false, cutAfter: 1 << 20, silentThen: true))
+        let proxy = try Self.proxy(home, homePatience: .milliseconds(500))
+        try await proxy.start()
+        defer { proxy.stop() }
+        let port = try #require(proxy.port)
+        for path in ["known.ts", "unknown.ts"] {
+            let player = RawPlayer(port: port)
+            defer { player.close() }
+            player.ask(Self.target(proxy, "/stream/abc/\(path)"))
+            let began = ContinuousClock.now
+            let all = await player.readToEnd()
+            let (head, body) = split(all.data)
+            #expect(head.hasPrefix("HTTP/1.1 200"))
+            #expect(ContinuousClock.now - began < .seconds(5), "\(path): given up in the proxy's time, not the session's minute")
+            if path == "known.ts" {
+                #expect(body.count < 8 << 20, "\(path): short of its length (\(body.count))")
+            } else {
+                #expect(head.contains("Transfer-Encoding: chunked") && all.data.suffix(5) != Data("0\r\n\r\n".utf8), "\(path): no last chunk")
+            }
+            #expect(await eventually { proxy.serving == 0 }, "\(path): serving \(proxy.serving)")
+        }
+        #expect(await eventually { home.abandoned == 2 }, "the home's requests were ended: \(home.abandoned)")
+    }
+
+    /// A home that never sends an answer's head is given up: the player gets a 502.
+    @Test func aHomeThatNeverAnswersIsGivenUp() async throws {
+        let home = try await LoopbackHome()
+        defer { home.stop() }
+        home.on("/stream/abc/slow.m3u8", .init(holds: true))
+        let proxy = try Self.proxy(home, homePatience: .milliseconds(500))
+        try await proxy.start()
+        defer { proxy.stop() }
+        let began = ContinuousClock.now
+        let (_, response) = try await URLSession.shared.data(from: try #require(proxy.local(home.url.appending(path: "stream/abc/slow.m3u8"))))
+        #expect((response as? HTTPURLResponse)?.statusCode == 502)
+        #expect(ContinuousClock.now - began < .seconds(5))
+        #expect(await eventually { proxy.serving == 0 && home.abandoned == 1 })
+    }
+
+    /// Every place taken by requests nobody waits for (their players closed their side before
+    /// the home answered: tunes and seeks that moved on while the home was silent): the
+    /// oldest gives its place to a new request, which is served, not refused.
+    @Test func aFullProxyGivesAnAbandonedPlaceToANewRequest() async throws {
+        let home = try await LoopbackHome()
+        defer { home.stop() }
+        home.on("/stream/abc/slow.m3u8", .init(holds: true))
+        home.on("/stream/abc/small.ts", .init(length: 1000))
+        let proxy = try Self.proxy(home)
+        try await proxy.start()
+        defer { proxy.stop() }
+        let port = try #require(proxy.port)
+        let gone = (0..<StreamProxy.mostAtOnce).map { _ in RawPlayer(port: port) }
+        defer { gone.forEach { $0.close() } }
+        for p in gone {
+            p.ask(Self.target(proxy, "/stream/abc/slow.m3u8"))
+            p.finishSending()
+        }
+        #expect(await eventually { proxy.serving == StreamProxy.mostAtOnce && home.seen.count == StreamProxy.mostAtOnce },
+                "serving \(proxy.serving), the home saw \(home.seen.count)")
+        // a new request is served: the oldest abandoned one gave its place, and its request
+        // to the home was ended
+        let small = try #require(proxy.local(home.url.appending(path: "stream/abc/small.ts")))
+        let (data, response) = try await URLSession.shared.data(from: small)
+        #expect((response as? HTTPURLResponse)?.statusCode == 200 && data.count == 1000)
+        #expect(await eventually { home.abandoned == 1 && proxy.serving == StreamProxy.mostAtOnce - 1 },
+                "abandoned \(home.abandoned), serving \(proxy.serving)")
+        // full again, and again a new request is served
+        let another = RawPlayer(port: port)
+        defer { another.close() }
+        another.ask(Self.target(proxy, "/stream/abc/slow.m3u8"))
+        another.finishSending()
+        #expect(await eventually { proxy.serving == StreamProxy.mostAtOnce })
+        let (more, again) = try await URLSession.shared.data(from: small)
+        #expect((again as? HTTPURLResponse)?.statusCode == 200 && more.count == 1000)
+        #expect(await eventually { home.abandoned == 2 }, "abandoned \(home.abandoned)")
+    }
+
+    /// Requests that share a URL session one after another, and requests under way at the
+    /// same time, never see each other's bytes.
+    @Test func reusedSessionsNeverCrossStreams() async throws {
+        let home = try await LoopbackHome()
+        defer { home.stop() }
+        home.on("/stream/abc/file.mp4", .init(length: 64 << 20))
+        let proxy = try Self.proxy(home)
+        try await proxy.start()
+        defer { proxy.stop() }
+        let local = try #require(proxy.local(home.url.appending(path: "stream/abc/file.mp4")))
+        for round in 0..<4 {
+            // six ranges at once, each its own part of the file, of different lengths
+            try await withThrowingTaskGroup(of: Void.self) { group in
+                for k in 0..<6 {
+                    let from = (round * 6 + k) * 1_000_003, count = 300_000 + k * 700_001
+                    group.addTask {
+                        var r = URLRequest(url: local)
+                        r.setValue("bytes=\(from)-\(from + count - 1)", forHTTPHeaderField: "Range")
+                        let (data, _) = try await URLSession.shared.data(for: r)
+                        #expect(data.count == count && LoopbackHome.matches(data, from: from), "range from \(from)")
+                    }
+                }
+                try await group.waitForAll()
+            }
+            #expect(await eventually { proxy.serving == 0 })
+            #expect(proxy.idleSessions <= UpstreamSessions.keptIdle)
+        }
+    }
+
+    /// A request cancelled while its callback is held gives its session back, and the next
+    /// request on that same session gets its own answer, whole.
+    @Test func cancellingAHeldRequestFreesItsSessionForTheNext() async throws {
+        let home = try await LoopbackHome()
+        defer { home.stop() }
+        home.on("/stream/abc/big.mp4", .init(length: 128 << 20))
+        home.on("/stream/abc/next.ts", .init(length: 2 << 20))
+        let sessions = UpstreamSessions(like: URLSession(configuration: .ephemeral))
+        defer { sessions.close() }
+        for _ in 0..<3 {
+            let first = sessions.take()
+            let held = UpstreamBody(URLRequest(url: home.url.appending(path: "stream/abc/big.mp4")), session: first) { sessions.give(first) }
+            #expect(try await held.response()?.statusCode == 200)
+            // nobody takes the body: its callback is held at the mark
+            #expect(await eventually { held.peak >= UpstreamBody.highWater }, "kept \(held.peak)")
+            held.cancel()
+            #expect(await eventually { sessions.idleCount == 1 }, "the cancelled request gave its session back")
+            let again = sessions.take()
+            #expect(again === first, "the same session serves the next request")
+            let body = UpstreamBody(URLRequest(url: home.url.appending(path: "stream/abc/next.ts")), session: again) { sessions.give(again) }
+            #expect(try await body.response()?.statusCode == 200)
+            var got = Data()
+            while let chunk = try await body.next() { got += chunk }
+            #expect(got.count == 2 << 20 && LoopbackHome.matches(got, from: 0), "\(got.count) bytes")
+            #expect(await eventually { sessions.idleCount == 1 })
+        }
+    }
+
+    /// A connection the LAN proxy accepted really has keepalive on; one the loopback proxy
+    /// accepted has not.
+    @Test func anAcceptedLANConnectionHasKeepalive() async throws {
+        let home = try await LoopbackHome()
+        defer { home.stop() }
+        // the "network" address of a test is this Mac's loopback: the proxy is the LAN kind
+        let lan = try Self.proxy(home, reach: .lan(host: "127.0.0.1"))
+        let loop = try Self.proxy(home)
+        try await lan.start()
+        try await loop.start()
+        defer { lan.stop(); loop.stop() }
+        let a = RawPlayer(port: try #require(lan.port)), b = RawPlayer(port: try #require(loop.port))
+        defer { a.close(); b.close() }
+        #expect(await eventually { lan.servingOptions.count == 1 && loop.servingOptions.count == 1 })
+        let onLAN = try #require(lan.servingOptions.first), onLoop = try #require(loop.servingOptions.first)
+        #expect(onLAN.enableKeepalive && onLAN.keepaliveIdle == 30 && onLAN.keepaliveInterval == 10 && onLAN.keepaliveCount == 3)
+        #expect(onLAN.connectionDropTime == 120)
+        #expect(!onLoop.enableKeepalive)
     }
 
     /// A client that connects and never sends a whole request is closed.
@@ -515,7 +705,8 @@ func eventually(_ seconds: Double = 5, _ ok: @Sendable () -> Bool) async -> Bool
         defer { proxy.stop() }
         let silent = RawPlayer(port: try #require(proxy.port))
         defer { silent.close() }
-        #expect(await eventually(2) { proxy.serving == 1 })
+        // accepted, then closed (looked at by the count: on a busy Mac both can pass between two looks)
+        #expect(await eventually { proxy.acceptedCount == 1 }, "the connection: \(silent.history)")
         #expect(await eventually(3) { proxy.serving == 0 }, "serving \(proxy.serving)")
         #expect(home.seen.isEmpty)
     }
@@ -582,7 +773,7 @@ func eventually(_ seconds: Double = 5, _ ok: @Sendable () -> Bool) async -> Bool
         for round in 1...4 {
             let players = (0..<5).map { _ in RawPlayer(port: port) }
             players.forEach { $0.ask(Self.target(proxy, "/stream/abc/slow.m3u8")) }
-            #expect(await eventually { proxy.serving == 5 && home.seen.count == 5 * round }, "serving \(proxy.serving), the home saw \(home.seen.count)")
+            #expect(await eventually { proxy.serving == 5 && home.seen.count == 5 * round }, "serving \(proxy.serving), the home saw \(home.seen.count); players \(players.map(\.history))")
             players.forEach { $0.close() }
             home.answerHeld()
             #expect(await eventually { proxy.serving == 0 }, "round \(round): serving \(proxy.serving)")

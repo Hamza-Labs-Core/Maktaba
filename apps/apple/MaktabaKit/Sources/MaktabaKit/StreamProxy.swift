@@ -22,9 +22,15 @@ import Network
 ///   a player that reads slowly or is paused holds the home back, memory does not grow;
 /// - the request to the home ends the moment the player closes its connection (a channel
 ///   change, a seek, a rendition switch: the connection fails or a write to it does) and when
-///   the proxy is stopped; at most `mostAtOnce` requests are served at once.
-/// A player that is connected and takes nothing (a paused film, a full buffer) is never
-/// dropped, however long: it holds its place and the home is held back. On the device's
+///   the proxy is stopped; at most `mostAtOnce` requests are served at once, and when
+///   every place is taken a request whose player closed its side before any answer went
+///   gives its place to a new one (503 only when every place is delivering);
+/// - a home that says nothing for `homePatience` while it is waited on fails the request.
+/// A player that is connected and takes nothing (a paused film, a full buffer) is not
+/// dropped for it, however long: it holds its place and the home is held back, and neither
+/// the proxy nor the URL session times the pause. What can still end a paused request is the
+/// home itself closing a connection it could not write to for too long: the player then
+/// gets an error on its next read and asks again. On the device's
 /// loopback a player that has gone is known by its connection (the system closes its
 /// sockets); an AirPlay receiver on the network can vanish without a word, so the LAN
 /// proxy's connections use TCP keepalive (`lanKeepalive`) and the stack finds it gone.
@@ -58,7 +64,8 @@ public final class StreamProxy: @unchecked Sendable {
     private let lock = NSLock()
     private var boundPort: UInt16?
     /// The requests being served now, each with its task (cancelled by `stop`).
-    private var open: [ObjectIdentifier: (peer: Peer, task: Task<Void, Never>?)] = [:]
+    private var open: [ObjectIdentifier: (peer: Peer, task: Task<Void, Never>?, order: Int)] = [:]
+    private var accepted = 0
     private var stopped = false
     public let reach: Reach
     /// The only home paths served (`/stream/channel/{id}/`), nil: any `/stream/` path.
@@ -73,6 +80,12 @@ public final class StreamProxy: @unchecked Sendable {
     /// slowly, or not at all for a while, keeps its connection.
     static let headPatience: Duration = .seconds(30)
     private let headPatience: Duration
+    /// How long the home may say nothing while the proxy waits on it (for the answer's head,
+    /// or for the next bytes of a body) before the request is given up as failed: the minute
+    /// a URL session gives a request. It does not run while the proxy itself holds the
+    /// home's bytes for a player that reads slowly or is paused (`UpstreamBody`).
+    static let homePatience: Duration = .seconds(60)
+    private let homePatience: Duration
     /// The most bytes written to the player in one piece: backpressure and a player's leaving
     /// are felt slice by slice, not once per multi-megabyte chunk.
     static let slice = 64 << 10
@@ -102,13 +115,15 @@ public final class StreamProxy: @unchecked Sendable {
 
     public convenience init(client: APIClient, session: URLSession = PinnedTrust.session, reach: Reach = .loopback,
                             onlyUnder: String? = nil) throws {
-        try self.init(client: client, session: session, reach: reach, onlyUnder: onlyUnder, headPatience: Self.headPatience) { try await Task.sleep(for: $0) }
+        try self.init(client: client, session: session, reach: reach, onlyUnder: onlyUnder, headPatience: Self.headPatience, homePatience: Self.homePatience) { try await Task.sleep(for: $0) }
     }
 
     init(client: APIClient, session: URLSession, reach: Reach = .loopback, onlyUnder: String? = nil,
          headPatience: Duration = StreamProxy.headPatience,
+         homePatience: Duration = StreamProxy.homePatience,
          sleep: @escaping @Sendable (Duration) async throws -> Void) throws {
         self.headPatience = headPatience
+        self.homePatience = homePatience
         self.client = client
         sessions = UpstreamSessions(like: session)
         self.sleep = sleep
@@ -183,6 +198,9 @@ public final class StreamProxy: @unchecked Sendable {
     /// How many URL sessions wait for the next request (never more than a few).
     var idleSessions: Int { sessions.idleCount }
 
+    /// How many connections were accepted since the proxy started.
+    var acceptedCount: Int { lock.withLock { accepted } }
+
     /// How many requests are being served now.
     var serving: Int { lock.withLock { open.count } }
 
@@ -192,10 +210,23 @@ public final class StreamProxy: @unchecked Sendable {
     private func accept(_ conn: NWConnection) {
         let peer = Peer(conn, queue: queue, headPatience: headPatience)
         let id = ObjectIdentifier(peer)
-        let full = lock.withLock { () -> Bool? in
-            if stopped { return nil }
-            open[id] = (peer, nil)
-            return open.count > Self.mostAtOnce
+        // every place taken: the oldest request nobody waits for any more (its player closed
+        // its side before a byte of the answer went: a tune or a seek that moved on while the
+        // home was slow) gives its place up; only when every place is delivering is the new
+        // request refused
+        let (full, evicted) = lock.withLock { () -> (Bool?, (peer: Peer, task: Task<Void, Never>?, order: Int)?) in
+            if stopped { return (nil, nil) }
+            accepted += 1
+            open[id] = (peer, nil, accepted)
+            guard open.count > Self.mostAtOnce else { return (false, nil) }
+            let victim = open.filter { $0.key != id && $0.value.peer.abandoned }.min { $0.value.order < $1.value.order }
+            guard let victim else { return (true, nil) }
+            open.removeValue(forKey: victim.key)
+            return (false, victim.value)
+        }
+        if let evicted {
+            evicted.task?.cancel()
+            evicted.peer.close()
         }
         guard let full else { conn.cancel(); return }
         peer.start()
@@ -210,6 +241,11 @@ public final class StreamProxy: @unchecked Sendable {
         }
         lock.withLock { if open[id] != nil { open[id]?.task = task } }
         peer.whenGone { task.cancel() }
+    }
+
+    /// The TCP options of the connections being served (a test reads the keepalive off them).
+    var servingOptions: [NWProtocolTCP.Options] {
+        lock.withLock { open.values.map(\.peer) }.compactMap { $0.conn.parameters.defaultProtocolStack.transportProtocol as? NWProtocolTCP.Options }
     }
 
     var port: UInt16? { lock.withLock { boundPort } }
@@ -345,7 +381,11 @@ public final class StreamProxy: @unchecked Sendable {
             for (k, v) in try await client.playbackHeaders(minLife: 60).headers { r.setValue(v, forHTTPHeaderField: k) }
             // a session of this request's own: its callbacks are held while the player reads slowly
             let own = sessions.take()
-            let body = UpstreamBody(r, session: own) { [sessions] in sessions.give(own) }
+            // the session's own idle timer must not run while a player's pause holds the home's
+            // bytes here (it would fail the request and cut the film short on resume): it is
+            // set out of the way, and `UpstreamBody` times the home's silence itself
+            r.timeoutInterval = UpstreamSessions.never
+            let body = UpstreamBody(r, session: own, silence: homePatience) { [sessions] in sessions.give(own) }
             let http: HTTPURLResponse?
             do {
                 http = try await body.response()
@@ -409,6 +449,12 @@ final class Peer: @unchecked Sendable {
     private var headRead = false
     /// The write under way (one at a time).
     private var writer: CheckedContinuation<Void, Error>?
+    /// Something of the answer was handed to the connection.
+    private var wrote = false
+
+    /// The player closed its side and nothing of an answer has gone to it yet: nobody may be
+    /// waiting for this request any more (or a client that half-closes waits on a slow home).
+    var abandoned: Bool { lock.withLock { readEnded && !wrote && !gone } }
     private let headPatience: Duration
 
     init(_ conn: NWConnection, queue: DispatchQueue, headPatience: Duration) {
@@ -424,6 +470,7 @@ final class Peer: @unchecked Sendable {
             let here = lock.withLock { () -> Bool in
                 if gone { return false }
                 writer = done
+                wrote = true
                 return true
             }
             guard here else { done.resume(throwing: CancellationError()); return }
@@ -540,6 +587,11 @@ final class Peer: @unchecked Sendable {
 final class UpstreamSessions: @unchecked Sendable {
     /// How many idle sessions are kept for the next requests.
     static let keptIdle = 4
+    /// A timeout that never comes (a week): the session's request and resource timers are
+    /// not what ends a request here (`UpstreamBody`'s own count of the home's silence is).
+    static let never: TimeInterval = 7 * 24 * 3600
+    /// The callback queues' name, as a sample of the app shows them.
+    static let queueName = "com.hamzalabs.maktaba.stream-proxy.upstream"
 
     private let base: URLSession
     private let lock = NSLock()
@@ -554,9 +606,12 @@ final class UpstreamSessions: @unchecked Sendable {
     func take() -> URLSession {
         if let s = lock.withLock({ idle.popLast() }) { return s }
         let callbacks = OperationQueue()
+        callbacks.name = Self.queueName
         callbacks.maxConcurrentOperationCount = 1
         callbacks.qualityOfService = .utility
-        return URLSession(configuration: base.configuration, delegate: base.delegate, delegateQueue: callbacks)
+        let config = base.configuration
+        config.timeoutIntervalForResource = max(config.timeoutIntervalForResource, Self.never)
+        return URLSession(configuration: config, delegate: base.delegate, delegateQueue: callbacks)
     }
 
     /// The request that took `session` has ended.
@@ -599,6 +654,19 @@ final class UpstreamSessions: @unchecked Sendable {
 /// megabytes.) The callback queue is therefore held while a player reads slowly: the session
 /// must be this request's own (`UpstreamSessions`), never one shared with other requests.
 /// Cancelling (the player left) lets a held callback go and ends the request to the home.
+///
+/// A held callback parks one thread of its session's queue (URLSession has no asynchronous
+/// data callback to hold instead): one for each request whose player reads slowly or is
+/// paused, at most `StreamProxy.mostAtOnce` (16) a proxy, 32 with the LAN proxy beside it;
+/// in practice the one or two requests a paused player has open. The queues are utility
+/// priority and named `UpstreamSessions.queueName`.
+///
+/// While a callback is held the session reads nothing, so its own idle timer would fail the
+/// request about a minute into a pause: the proxy sets that timer out of the way and counts
+/// the home's silence here instead (`silence`), only while it is the home that is waited on
+/// (for the answer's head, or for more of the body while nothing is held). Silence that
+/// long fails the request (`URLError.timedOut`): the player gets an error, never a body
+/// that looks whole.
 final class UpstreamBody: NSObject, URLSessionDataDelegate, @unchecked Sendable {
     /// The bytes kept before the session's callbacks are held.
     static let highWater = 256 << 10
@@ -614,16 +682,55 @@ final class UpstreamBody: NSObject, URLSessionDataDelegate, @unchecked Sendable 
     private var most = 0
     private var biggest = 0
     private let done: (@Sendable () -> Void)?
+    /// A data callback is held (the proxy has the bytes: the home is not being waited on).
+    private var held = false
+    /// When the home last gave something, or a held callback was let go.
+    private var heard = ContinuousClock.now
+    private let silence: Duration
 
     /// `session`: this request's own (its callbacks are held while the body waits to be
-    /// taken). `done`: called once, when the request has ended, however it ended.
-    init(_ request: URLRequest, session: URLSession, done: (@Sendable () -> Void)? = nil) {
+    /// taken). `silence`: how long the home may say nothing while it is waited on. `done`:
+    /// called once, when the request has ended, however it ended.
+    init(_ request: URLRequest, session: URLSession, silence: Duration = StreamProxy.homePatience,
+         done: (@Sendable () -> Void)? = nil) {
         self.done = done
+        self.silence = silence
         super.init()
         let t = session.dataTask(with: request)
         t.delegate = self
         task = t
         t.resume()
+        listen()
+    }
+
+    /// Looks, a few times within `silence`, whether the home has said nothing for that long
+    /// while it was waited on; the request then fails as timed out. Ends with the request.
+    private func listen() {
+        let step = max(silence / 4, .milliseconds(10))
+        let seconds = Double(step.components.seconds) + Double(step.components.attoseconds) / 1e18
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + seconds) { [weak self] in
+            guard let self else { return }
+            let (over, silent) = self.locked { (self.ended != nil || self.cancelled, !self.held && ContinuousClock.now - self.heard >= self.silence) }
+            if over { return }
+            if silent { self.fail(URLError(.timedOut)) } else { self.listen() }
+        }
+    }
+
+    /// The request failed here (the home went silent): whoever waits hears, and it is cancelled.
+    private func fail(_ error: Error) {
+        let (h, b, t) = locked { () -> (CheckedContinuation<HTTPURLResponse?, Error>?, CheckedContinuation<Data?, Error>?, URLSessionDataTask?) in
+            guard ended == nil else { return (nil, nil, nil) }
+            ended = .failure(error)
+            if head == nil { head = .failure(error) }
+            kept = Data()
+            cancelled = true
+            lock.broadcast()
+            defer { headWaiter = nil; bodyWaiter = nil }
+            return (headWaiter, bodyWaiter, task)
+        }
+        h?.resume(throwing: error)
+        b?.resume(throwing: error)
+        t?.cancel()
     }
 
     private func locked<T>(_ f: () -> T) -> T {
@@ -696,6 +803,8 @@ final class UpstreamBody: NSObject, URLSessionDataDelegate, @unchecked Sendable 
                     completionHandler: @escaping @Sendable (URLSession.ResponseDisposition) -> Void) {
         let http = response as? HTTPURLResponse
         let waiter = locked { () -> CheckedContinuation<HTTPURLResponse?, Error>? in
+            heard = .now
+            guard head == nil else { return nil }
             head = .success(http)
             defer { headWaiter = nil }
             return headWaiter
@@ -707,6 +816,7 @@ final class UpstreamBody: NSObject, URLSessionDataDelegate, @unchecked Sendable 
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
         lock.lock()
         biggest = max(biggest, data.count)
+        heard = .now
         if let w = bodyWaiter {
             // asked for already: handed straight on (nothing is kept while it waits)
             bodyWaiter = nil
@@ -721,14 +831,20 @@ final class UpstreamBody: NSObject, URLSessionDataDelegate, @unchecked Sendable 
         if kept.isEmpty { kept = data } else { kept.append(data) }
         most = max(most, kept.count)
         // held here until the bytes are taken: the session delivers nothing more meanwhile
-        while kept.count >= Self.highWater, !cancelled { lock.wait() }
+        while kept.count >= Self.highWater, !cancelled {
+            held = true
+            lock.wait()
+        }
+        // let go: from now it is the home that is waited on again
+        held = false
+        heard = .now
         lock.unlock()
     }
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
         let (h, b) = locked { () -> (CheckedContinuation<HTTPURLResponse?, Error>?, CheckedContinuation<Data?, Error>?) in
-            let end: Result<Void, Error> = error.map { .failure($0) } ?? .success(())
-            ended = end
+            // one that failed here (the home's silence) keeps that failure
+            if ended == nil { ended = error.map { .failure($0) } ?? .success(()) }
             if head == nil { head = .failure(error ?? URLError(.badServerResponse)) }
             self.task = nil
             defer { headWaiter = nil; bodyWaiter = nil }
