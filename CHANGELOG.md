@@ -273,6 +273,37 @@ build fails when the two differ.
 
 ### Fixed
 
+- **The Queues page says which workers are not running their jobs, and an admin can restart
+  them.** A worker can stay up and start nothing while the others work (after the database
+  restarts, for one). The page now names each such worker (main, transcription or search, with
+  its machine): one that has not reported in for two minutes, or one with a free slot that has
+  started nothing for ten minutes while a job it could take waited. It says since when and
+  how many jobs wait; they stay queued and nothing is lost. **Restart these workers** restarts
+  only the workers named, **Restart all workers** every worker of the computer that runs
+  Maktaba. Queues that are paused, or whose pool is full or set to 0, raise no notice. System
+  health says the same on its Queues line. Before, such a stall looked like a calm page, and
+  the only way out was to end a process by hand.
+
+- **A database restart no longer fails jobs for good.** A step that runs as one of Maktaba's
+  plugins (the second listen, among others) could meet a connection the database had closed
+  and fail with `plugin_database: driver: bad connection`, never to be tried again. The server
+  now runs such a statement once more on a new connection, and a job that still finds the
+  database away fails as retryable and is tried again by itself.
+
+- **Maktaba says when its machine is overloaded.** When the computer that runs Maktaba has had
+  more than twice as much work as processor cores for five minutes, the Queues page and System
+  health (**This machine's load**) say so: jobs and the database are slow until it eases, and
+  these programs use the most CPU. Maktaba stops no program by itself. On a Mac or Linux
+  server; Windows keeps no load figure.
+- **Processing goes on by itself after the database restarts.** When the home's database was
+  restarted (or stopped answering for a while) under a running worker, the worker could stay up
+  for hours doing nothing: no job started, nothing was logged, and its health check still said
+  "ok", so nothing restarted it and every queue waited for someone to restart it by hand. A
+  worker now picks its work up again as soon as the database answers, and hears about new jobs
+  at once again. Its health check says "ok" only while it can start jobs: it turns not-ok when
+  the worker has not looked at the queue, or the database has not answered it, for five minutes,
+  and a worker that cannot get back to work ends so that it is started again.
+
 - **Transcription gives its memory back when idle.** On a Mac, each transcription runner kept
   Whisper and the second listen's model loaded (5 to 10 GB each, with two runners on a large
   Mac) for as long as it ran. After ten minutes without transcription work it now lets both go,

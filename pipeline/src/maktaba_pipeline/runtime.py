@@ -67,10 +67,12 @@ from .engine.workers import (
 from .extensions import discover
 from .extensions.store import ExtensionState, ensure_rows, load_state
 from .log import get_logger
+from .log.liveness import Progress, clear_progress, stale_from_env, watch_progress
 from .log.tasks import watch as watch_task
 from .pipeline.heartbeat import DEFAULT_HEARTBEAT_SEC, heartbeat_for
 from .pipeline.reaper import Reaper
 from .pipeline.runner import ClaimLoop, WorkerConfig, default_worker_id, install_signal_handlers
+from .pipeline.watchdog import Watchdog, database_watch
 from .plugins.loader import load_installed as load_plugins
 
 __all__ = [
@@ -150,6 +152,16 @@ _TX_CONN: contextvars.ContextVar[Any] = contextvars.ContextVar("maktaba_tx_conn"
 PG_POOL_MAX = 10
 #: an unused pooled connection closes after this long (asyncpg keeps one for 300 s)
 PG_POOL_IDLE_SEC = 60.0
+#: how long a statement waits for a pool connection (a free slot, and a new connection
+#: when the server ended the old one). Without a bound a pool whose slots never come
+#: back made every loop of the worker wait for good, in silence
+PG_ACQUIRE_TIMEOUT_SEC = 60.0
+#: how long giving a connection back may take (asyncpg resets it, and first waits for the
+#: server to acknowledge a statement the caller was cancelled in). Past it the connection
+#: is terminated: the server ends its session, and the slot is free
+PG_RELEASE_TIMEOUT_SEC = 10.0
+#: how long a ROLLBACK may take before the connection is terminated instead
+PG_ROLLBACK_TIMEOUT_SEC = 10.0
 #: how long a closed SQLite database waits for aiosqlite's worker thread to end
 _SQLITE_THREAD_END_SEC = 5.0
 
@@ -227,14 +239,41 @@ class Database:
         return self._lock
 
     @contextlib.asynccontextmanager
+    async def connection(self) -> AsyncIterator[Any]:
+        """A pool connection for the block (Postgres), taken and given back within a
+        bound.
+
+        asyncpg's own ``async with pool.acquire()`` waits without limit on both ends: for
+        a slot, and at the release for the server to acknowledge a statement the caller
+        was cancelled in (a timeout, a stopped job). A database that stops answering and
+        then drops the connection never sends that acknowledgement, so the task never
+        left the block (2026-11-13: the worker's loops ended up waiting there for hours,
+        alive and silent). Here the wait for a slot ends in ``TimeoutError`` and a release
+        that cannot finish terminates the connection, which frees the slot."""
+        conn = await self._pool.acquire(timeout=PG_ACQUIRE_TIMEOUT_SEC)
+        try:
+            yield conn
+        finally:
+            await self._give_back(conn)
+
+    async def _give_back(self, conn: Any) -> None:
+        try:
+            await self._pool.release(conn, timeout=PG_RELEASE_TIMEOUT_SEC)
+        except Exception as exc:  # noqa: BLE001 - the block's own outcome stands
+            # asyncpg terminated the connection it could not reset (its slot is free);
+            # the work done on it was committed or failed on its own account before this
+            _terminate(conn)
+            _log.warning("pg_connection_dropped_at_release", error=f"{type(exc).__name__}: {exc}")
+
+    @contextlib.asynccontextmanager
     async def transaction(self) -> AsyncIterator[Any]:
         outer = _TX_CONN.get()
         if self.dialect == "postgres":
             if outer is not None:
-                async with outer.transaction():  # savepoint
+                async with _pg_transaction(outer):  # savepoint
                     yield outer
                 return
-            async with self._pool.acquire() as conn, conn.transaction():
+            async with self.connection() as conn, _pg_transaction(conn):
                 token = _TX_CONN.set(conn)
                 try:
                     yield conn
@@ -298,7 +337,7 @@ class Database:
         if tx is not None:
             yield tx
             return
-        async with self._pool.acquire() as conn:
+        async with self.connection() as conn:
             yield conn
 
     @contextlib.asynccontextmanager
@@ -376,6 +415,51 @@ class Database:
         thread = getattr(self._conn, "_thread", None)
         if isinstance(thread, threading.Thread) and thread.is_alive():
             await asyncio.to_thread(thread.join, _SQLITE_THREAD_END_SEC)
+
+
+def _terminate(conn: Any) -> None:
+    """End a Postgres connection without a word to the server (its session, and what it
+    left open, end there); a connection the pool already took back is left alone."""
+    with contextlib.suppress(Exception):
+        conn.terminate()
+
+
+def _usable(conn: Any) -> bool:
+    try:
+        return not conn.is_closed()
+    except Exception:  # noqa: BLE001 - detached: the pool took it back
+        return False
+
+
+@contextlib.asynccontextmanager
+async def _pg_transaction(conn: Any) -> AsyncIterator[None]:
+    """A transaction (a savepoint inside one) on ``conn`` whose end never waits on a
+    connection that cannot answer.
+
+    asyncpg's ``async with conn.transaction()`` sends ROLLBACK whatever ended the block.
+    After a cancel that statement first waits for the server to acknowledge the cancelled
+    one, with no limit, and a server that dropped the connection never does: the task
+    stayed in the block for good. So a cancelled block (and one whose connection is
+    closed) is not rolled back by statement: the connection is terminated, and the server
+    rolls back what the session left open. Any other failure rolls back within
+    ``PG_ROLLBACK_TIMEOUT_SEC``, else terminates the same way. The block's own exception
+    is the one raised (asyncpg replaced it with "the underlying connection is closed")."""
+    tx = conn.transaction()
+    await tx.start()
+    try:
+        yield
+    except asyncio.CancelledError:
+        _terminate(conn)
+        raise
+    except BaseException:
+        if _usable(conn):
+            try:
+                await asyncio.wait_for(tx.rollback(), PG_ROLLBACK_TIMEOUT_SEC)
+            except Exception:  # noqa: BLE001 - the block's failure is the one to report
+                _terminate(conn)
+        raise
+    else:
+        await tx.commit()
 
 
 def connect(url: str) -> Awaitable[Database]:
@@ -472,6 +556,10 @@ async def run(
     the full stage graph, syncs it into ``job_stages``, registers this worker
     (host, served stages, path map) and heartbeats, claims per resource pool,
     samples health, and runs the reconciler and the retention job.
+
+    A worker that cannot work ends with 75 (:mod:`.pipeline.watchdog`): one of its core
+    loops ended, the claim loop stopped passing, or (a home's worker) the database
+    stopped answering for longer than a bound.
     """
 
     owned_db = db is None
@@ -508,6 +596,12 @@ async def run(
     for task in background:
         # a loop that dies says so when it does, not never (log/tasks.py)
         watch_task(task)
+    # a forced exit only once the graceful one had its time: the jobs' drain, then the
+    # search index's close (__main__)
+    watchdog = Watchdog(shutdown, hard_exit_sec=cfg.shutdown_drain_sec + 60.0)
+    for task in background:
+        if task.get_name() in _CORE_LOOPS:
+            watchdog.guard(task)
 
     _log.info(
         "pipeline_runtime_starting",
@@ -538,13 +632,47 @@ async def run(
     async def _loop_dispatch(job: Job) -> None:
         await dispatch_for_db(database, job)
 
+    claims = bool(stage_names) or selector is not None
+    # what must keep moving for jobs to run: /healthz answers for it (the supervisor
+    # restarts a worker that says it is stuck), and past a grace the watchdog ends it
+    passes = Progress(
+        "dispatch",
+        "no pass of the claim loop",
+        # a quiet queue is looked at every claim_poll_max_sec: never stale for that
+        max(stale_from_env("MAKTABA_PIPELINE_DISPATCH_STALE"), 4 * cfg.claim_poll_max_sec),
+    )
     claim_loop = ClaimLoop(
         database,
         worker_cfg,
         _loop_dispatch,
         semaphores=(None if cfg.engine else {s: asyncio.Semaphore(1) for s in cfg.stages}),
         shutdown_event=shutdown,
+        on_pass=passes.mark,
     )
+    if claims:
+        watch_progress(watchdog.watch(passes))
+    if cfg.role == "home":
+        # a joined machine's home may be off for hours: its beat pauses it and brings it
+        # back (cluster/node.py), and that is never a reason to stop
+        answers = watch_progress(
+            watchdog.watch(
+                Progress(
+                    "database",
+                    "no answer from the database",
+                    stale_from_env("MAKTABA_PIPELINE_DB_STALE"),
+                )
+            )
+        )
+        background.append(
+            watchdog.guard(
+                watch_task(
+                    asyncio.create_task(
+                        database_watch(database, answers, shutdown), name="database-watch"
+                    )
+                )
+            )
+        )
+    background.append(watch_task(asyncio.create_task(watchdog.run(), name="watchdog")))
     if components is not None:
         # a component's drain cancels its stages' jobs still running at its deadline
         components.claims = claim_loop
@@ -565,14 +693,26 @@ async def run(
         paused=node_paused if agent is not None and agent.is_node else None,
     )
     reaper.start()
+    if reaper.task is not None:
+        watchdog.guard(reaper.task)
 
     try:
-        if stage_names or selector is not None:
-            await claim_loop.run()
+        if claims:
+            try:
+                await claim_loop.run()
+            except Exception as exc:
+                if shutdown.is_set():
+                    raise
+                _log.exception("claim_loop_died")
+                watchdog.fail(f"the claim loop died: {type(exc).__name__}: {exc}")
+            else:
+                # it returns at shutdown only
+                watchdog.fail("the claim loop returned")
         else:
             await shutdown.wait()
     finally:
         shutdown.set()
+        clear_progress()
         from .search import gate
 
         gate.close()  # as _close_index_on_shutdown, should the loop end on its own
@@ -592,8 +732,14 @@ async def run(
         if owned_db:
             await database.close()
         _log.info("pipeline_runtime_stopped")
-    # 77 when the home refused this machine for good (revoked): services stop restarting
-    return exitcodes.exit_code(0)
+    # 77 when the home refused this machine for good (revoked): services stop restarting;
+    # 75 when the watchdog ended a worker that could not work: start it again
+    return exitcodes.exit_code(watchdog.exit_code)
+
+
+#: the loops a worker cannot do without: one that ends before shutdown ends the worker
+#: (the reaper, the database watch and the claim loop are guarded where they start)
+_CORE_LOOPS = frozenset({"worker-hb", "stage-selection", "components"})
 
 
 async def _close_index_on_shutdown(shutdown: asyncio.Event) -> None:
