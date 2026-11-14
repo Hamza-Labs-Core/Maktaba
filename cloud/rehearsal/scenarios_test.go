@@ -111,6 +111,7 @@ func TestScenario(t *testing.T) {
 		{"origin-only-via-edge", originOnlyViaEdge},
 		{"origin-aop", originAOP},
 		{"report-symbolicated", reportSymbolicated},
+		{"broadcast-plans", broadcastPlans},
 	} {
 		t.Run(s.name, func(t *testing.T) {
 			if why, ok := skip[s.name]; ok || s.run == nil {
@@ -165,7 +166,7 @@ type cluster struct {
 	project string
 	dir     string   // tools/rehearsal-cloud
 	base    string   // the compose file ("": compose.yml; direct-remote: compose-direct.yml)
-	over    []string // compose files over it (relay-plans: compose-plans.yml)
+	over    []string // compose files over it (relay-plans: compose-plans.yml; broadcast-plans: compose-broadcast.yml)
 	extra   []string // more environment for compose (a scenario's own ports and ids)
 	edge    string   // http://127.0.0.1:<port>
 	db      *sql.DB
@@ -232,8 +233,11 @@ func (c *cluster) must(args ...string) string {
 func up(t *testing.T, scenario string) *cluster {
 	t.Helper()
 	c := &cluster{t: t, project: "mr-" + scenario, dir: filepath.Join(repoRoot(t), "tools/rehearsal-cloud")}
-	if scenario == "relay-plans" {
+	switch scenario {
+	case "relay-plans":
 		c.over = []string{"compose-plans.yml"}
+	case "broadcast-plans":
+		c.over = []string{"compose-broadcast.yml"}
 	}
 	ports := portsFor(c.project)
 	c.edge = fmt.Sprintf("http://127.0.0.1:%d", ports[1])

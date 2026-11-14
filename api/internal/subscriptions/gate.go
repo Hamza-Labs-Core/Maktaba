@@ -26,6 +26,8 @@ var refusalText = map[Feature]string{
 		"This home is on %s. Apply a license in Settings → Subscription.",
 	FeatureFederation: "Connecting other Maktaba homes needs the Pro plan. This home is on %s. " +
 		"Apply a license in Settings → Subscription.",
+	FeatureBroadcast: "Sharing channels with people outside your home needs the Pro plan. This home is on %s. " +
+		"Upgrade in Maktaba Cloud's Billing page.",
 }
 
 // Epic 50 story 50.19: the home tier is Maktaba Cloud's Basic plan

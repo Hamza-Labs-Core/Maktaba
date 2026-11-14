@@ -36,6 +36,27 @@ type Config struct {
 	Direct      DirectConfig
 	Turnstile   TurnstileConfig
 	Admin       AdminConfig
+	Broadcast   BroadcastConfig
+}
+
+// BroadcastConfig is home broadcasting's (Epic 50 story 50.20).
+type BroadcastConfig struct {
+	// Enabled is broadcast.enabled, the broadcasting gate (default false): off, only the test
+	// publishers a service admin granted may publish, and homes' licences don't carry the
+	// broadcast flag. The api role refuses to start with it on while any broadcast catalog
+	// value is TBD (billing.BroadcastLaunchCheck), naming each.
+	Enabled bool
+	// PlansEnforce is broadcast.plans.enforce (default true). Off is the rollback: every
+	// publisher's new sessions get full quality up to the concurrent-viewer limit, and the
+	// viewer-minutes are still counted.
+	PlansEnforce bool
+	// PAYGReports is billing.broadcast_payg.enabled (default true): off stops new pay-as-you-go
+	// viewer-hour reports; the queued ones still go, so nothing used goes unbilled.
+	PAYGReports bool
+	// EdgePublicKey is broadcast.edge_public_key: the base64 Ed25519 public key the broadcast
+	// edge signs its usage posts with (POST /_edge/usage). Public, so it may sit in the file;
+	// the private half is a Worker secret. Empty: the edge routes answer 503.
+	EdgePublicKey string
 }
 
 // AdminConfig is the operator console's own settings (Epic 50 story 50.33 §7).
@@ -279,6 +300,7 @@ func defaultConfig() Config {
 
 			StreamLimitEnabled: true,
 		},
+		Broadcast: BroadcastConfig{PlansEnforce: true, PAYGReports: true},
 	}
 }
 
@@ -584,6 +606,14 @@ func assign(c *Config, section, key, val string) error {
 		return setDur(&c.Relay.ShutdownGrace, val)
 	case "relay.editions_dir":
 		c.Relay.EditionsDir = val
+	case "broadcast.enabled":
+		return setBool(&c.Broadcast.Enabled, val)
+	case "broadcast.plans.enforce":
+		return setBool(&c.Broadcast.PlansEnforce, val)
+	case "billing.broadcast_payg.enabled":
+		return setBool(&c.Broadcast.PAYGReports, val)
+	case "broadcast.edge_public_key":
+		c.Broadcast.EdgePublicKey = val
 	}
 	return nil
 }

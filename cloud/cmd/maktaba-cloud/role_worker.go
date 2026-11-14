@@ -54,6 +54,9 @@ func runWorker(logger *slog.Logger, cfg config.Config, pool *db.Pool, _ *db.Migr
 	if r := usageReporter(cfg, pool, logger); r != nil {
 		go r.Run(ctx, time.Hour)
 	}
+	// story 50.20: the hourly pay-as-you-go viewer-hour reports (with a payment provider), the
+	// allowance and cap notices, the daily reconciliation and the usage windows' sweep
+	go broadcastReporter(cfg, pool, logger).Run(ctx, time.Hour)
 	// direct remote access (story 50.15): certificates and the outside checks
 	if j := directJobs(cfg, pool, logger); j != nil {
 		go j.Run(ctx)
@@ -159,5 +162,36 @@ func usageReporter(cfg config.Config, pool *db.Pool, logger *slog.Logger) *billi
 					"You've used 80% of your pay-as-you-go limit this month."
 			}
 			return mailer.Send(ctx, mailpkg.Message{To: u.Email, Kind: kind, Subject: subject, Body: body})
+		}}
+}
+
+// broadcastNotice is the email of each broadcast notice kind (story 50.20 §5).
+var broadcastNotice = map[string][2]string{
+	billingpkg.NoticeAllowanceNear: {"80% of this month's viewing is used", "Your channels have used 80% of this month's viewer-hours."},
+	billingpkg.NoticeAllowanceUsed: {"This month's viewing allowance is used",
+		"Your channels have used this month's viewer-hours. New viewers now follow your plan: pay as you go if it is on, then lower quality, then a wait. People already watching continue."},
+	billingpkg.NoticeCapNear:    {"80% of your viewing limit is used", "You've used 80% of this month's pay-as-you-go limit for your channels."},
+	billingpkg.NoticeCapReached: {"Your viewing limit is reached", "You've reached this month's pay-as-you-go limit. New viewers watch in lower quality until next month, or until you raise your limit."},
+}
+
+// broadcastReporter is the worker's broadcast reporter. It sends the viewer-hour reports only
+// with a payment provider that takes payments and billing.broadcast_payg.enabled; the notices
+// go to the home owner's email either way.
+func broadcastReporter(cfg config.Config, pool *db.Pool, logger *slog.Logger) *billingpkg.BroadcastReporter {
+	p, err := billingpkg.New(cfg.Billing.Provider)
+	if err != nil {
+		p = billingpkg.None{}
+	}
+	var mailer mailpkg.Mailer = mailpkg.LogMailer{Logger: logger}
+	store := &billingpkg.BroadcastStore{DB: pool.DB, Enabled: cfg.Broadcast.Enabled, Enforce: cfg.Broadcast.PlansEnforce}
+	return &billingpkg.BroadcastReporter{Store: store, Provider: p, Logger: logger, Enabled: cfg.Broadcast.PAYGReports && p.Enabled(),
+		Notify: func(ctx context.Context, serverID, kind string) error {
+			var email string
+			if err := pool.DB.QueryRowContext(ctx, `SELECT u.email FROM servers s JOIN users u ON u.id = s.owner_user_id WHERE s.id = $1`,
+				serverID).Scan(&email); err != nil {
+				return err
+			}
+			m := broadcastNotice[kind]
+			return mailer.Send(ctx, mailpkg.Message{To: email, Kind: "broadcast_" + kind, Subject: m[0], Body: m[1]})
 		}}
 }

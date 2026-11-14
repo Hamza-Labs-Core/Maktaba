@@ -3,6 +3,7 @@ package subscriptions
 import (
 	"crypto/ed25519"
 	"crypto/rand"
+	"strings"
 	"testing"
 	"time"
 )
@@ -147,5 +148,36 @@ func TestVerifierRejectsUnknownTier(t *testing.T) {
 		if _, err := v.Verify(lic, now); err == nil {
 			t.Fatalf("tier %q should be rejected by the verifier", bad)
 		}
+	}
+}
+
+// Epic 50 story 50.20: no tier grants broadcast; the cloud's licence lists it for a Pro home
+// (guest sharing) or a Broadcaster home, and a refusal names Pro.
+func TestBroadcastIsAListedFeature(t *testing.T) {
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 11, 13, 0, 0, 0, 0, time.UTC)
+	v := &Verifier{PublicKey: pub}
+	for _, c := range []struct {
+		features []Feature
+		want     bool
+	}{{nil, false}, {[]Feature{FeatureBroadcast}, true}} {
+		lic, err := Sign(priv, LicenseInner{LicenseID: "cloud-s", Tier: TierPro, IssuedAt: now, ExpiresAt: now.Add(31 * 24 * time.Hour),
+			Features: c.features, ServerID: "s"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		ent, err := v.Verify(lic, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := ent.Allows(FeatureBroadcast); got != c.want {
+			t.Errorf("pro with %v: broadcast %v", c.features, got)
+		}
+	}
+	if r := Refusal(FeatureBroadcast, string(TierHome)); !strings.Contains(r.Detail, "Pro plan") {
+		t.Errorf("refusal: %s", r.Detail)
 	}
 }

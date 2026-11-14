@@ -1,6 +1,8 @@
 package config
 
 import (
+	"crypto/ed25519"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"net"
@@ -8,6 +10,8 @@ import (
 	"net/url"
 	"os"
 	"strings"
+
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/billing"
 )
 
 // Role identifies which set of features this process is providing.
@@ -47,6 +51,9 @@ func Validate(c Config, role Role) error {
 		// the auth pages' bot check (story 50.30 §4) is never on without its secret
 		if c.Turnstile.Enabled && c.Turnstile.Secret == "" {
 			return fmt.Errorf("%w: turnstile.enabled is on but MAKTABA_CLOUD_TURNSTILE_SECRET is not set", ErrMissing)
+		}
+		if err := ValidateBroadcast(c.Broadcast); err != nil {
+			return err
 		}
 	case RoleRelay:
 		if c.Server.ListenAddr == "" {
@@ -198,4 +205,31 @@ func validateAdminListener(s ServerConfig) error {
 		}
 	}
 	return nil
+}
+
+// ValidateBroadcast is the broadcasting gate (story 50.20 T07): broadcast.enabled is refused
+// while any broadcast catalog value is TBD, naming each; and an edge key, when set, must be an
+// Ed25519 public key.
+func ValidateBroadcast(b BroadcastConfig) error {
+	if b.EdgePublicKey != "" {
+		if _, err := EdgeKey(b.EdgePublicKey); err != nil {
+			return err
+		}
+	}
+	if !b.Enabled {
+		return nil
+	}
+	if err := billing.BroadcastLaunchCheck(billing.Tiers, billing.Broadcaster); err != nil {
+		return fmt.Errorf("config: broadcast.enabled is refused: %w", err)
+	}
+	return nil
+}
+
+// EdgeKey decodes broadcast.edge_public_key.
+func EdgeKey(s string) (ed25519.PublicKey, error) {
+	b, err := base64.StdEncoding.DecodeString(strings.TrimSpace(s))
+	if err != nil || len(b) != ed25519.PublicKeySize {
+		return nil, errors.New("config: broadcast.edge_public_key must be a base64 Ed25519 public key (32 bytes)")
+	}
+	return ed25519.PublicKey(b), nil
 }
