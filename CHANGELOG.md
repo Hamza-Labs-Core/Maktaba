@@ -2912,6 +2912,17 @@ build fails when the two differ.
   to run setup in Container Manager's terminal, as the container expects, and a container waiting
   for setup says how in English and Arabic, in each NAS's own words.
 
+- **The big screen gets the TV apps' library (story 58.08).** A library on the big screen
+  (`/big`) now opens on the tabs of the Apple TV and Android TV apps: Recommended, Library (Show
+  videos or series, Sort, Filter and a letter rail, A to Z and the Arabic letters), Collections,
+  Playlists and Categories. Play and Shuffle play the Library tab's view in its order on the play
+  queue; collections and playlists have their own pages with Play and Shuffle; a series gains Mark
+  watched and a season's Mark season watched. On a focused card Play/Pause plays it, and a long OK
+  or the menu key offers Play next, Add to queue, Add to playlist, Go to series and Mark watched.
+  Back steps out to the tab's top, then its tabs, then out; each tab keeps its place. Up next shows
+  in a video's last 30 seconds, and a shuffled queue offers Shuffle again. A focused card grows by
+  1.08 inside the brass ring.
+
 ### Fixed
 
 - **A TV held on its old streaming software stays there through schedule and settings
