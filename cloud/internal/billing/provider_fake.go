@@ -15,6 +15,9 @@ type Fake struct {
 	mu      sync.Mutex
 	reports map[string]UsageReport
 	items   map[string]FakeItems
+	// story 50.20: broadcast items by subscription and home, and viewer-hour reports by ID
+	bitems   map[string]BroadcastItems
+	breports map[string]BroadcastUsageReport
 	// Down makes every call fail as an unreachable provider would.
 	Down bool
 }
@@ -100,4 +103,65 @@ func (f *Fake) Items(sub string) FakeItems {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.items[sub]
+}
+
+func (f *Fake) SetBroadcastItems(_ context.Context, sub string, it BroadcastItems) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.Down {
+		return ErrFakeDown
+	}
+	if f.bitems == nil {
+		f.bitems = map[string]BroadcastItems{}
+	}
+	f.bitems[sub+"/"+it.ServerID] = it
+	return nil
+}
+
+func (f *Fake) ReportBroadcastUsage(_ context.Context, r BroadcastUsageReport) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.Down {
+		return ErrFakeDown
+	}
+	if f.breports == nil {
+		f.breports = map[string]BroadcastUsageReport{}
+	}
+	if _, seen := f.breports[r.ID]; !seen {
+		f.breports[r.ID] = r
+	}
+	return nil
+}
+
+func (f *Fake) ReportedBroadcastUsage(_ context.Context, sub, server string, month time.Time) (int64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.Down {
+		return 0, ErrFakeDown
+	}
+	var h int64
+	for _, r := range f.breports {
+		if r.SubscriptionID == sub && r.ServerID == server && MonthStart(r.At).Equal(MonthStart(month)) {
+			h += r.Hours
+		}
+	}
+	return h, nil
+}
+
+// BroadcastReports are the viewer-hour reports taken, by ID.
+func (f *Fake) BroadcastReports() map[string]BroadcastUsageReport {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make(map[string]BroadcastUsageReport, len(f.breports))
+	for k, v := range f.breports {
+		out[k] = v
+	}
+	return out
+}
+
+// BroadcastItemsOf are a home's broadcast items on a subscription as last set.
+func (f *Fake) BroadcastItemsOf(sub, server string) BroadcastItems {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.bitems[sub+"/"+server]
 }

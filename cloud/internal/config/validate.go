@@ -1,6 +1,8 @@
 package config
 
 import (
+	"crypto/ed25519"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"net"
@@ -8,6 +10,8 @@ import (
 	"net/url"
 	"os"
 	"strings"
+
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/billing"
 )
 
 // Role identifies which set of features this process is providing.
@@ -48,6 +52,9 @@ func Validate(c Config, role Role) error {
 		if c.Turnstile.Enabled && c.Turnstile.Secret == "" {
 			return fmt.Errorf("%w: turnstile.enabled is on but MAKTABA_CLOUD_TURNSTILE_SECRET is not set", ErrMissing)
 		}
+		if err := ValidateBroadcast(c.Broadcast); err != nil {
+			return err
+		}
 	case RoleRelay:
 		if c.Server.ListenAddr == "" {
 			return fmt.Errorf("%w: [server].listen_addr", ErrMissing)
@@ -56,6 +63,9 @@ func Validate(c Config, role Role) error {
 			return fmt.Errorf("%w: [relay].public_host", ErrMissing)
 		}
 		if err := ValidatePeerAddr(c.Relay.PeerAddr); err != nil {
+			return err
+		}
+		if err := validatePool(c.Relay); err != nil {
 			return err
 		}
 	case RoleWorker:
@@ -71,6 +81,32 @@ func Validate(c Config, role Role) error {
 		}
 	default:
 		return fmt.Errorf("config: unknown role %q", role)
+	}
+	return nil
+}
+
+// validatePool checks the relay pool's keys when it is on (story 50.16): the directory (any
+// relay forwards to the one holding a home), the member's id, addresses and capacity, and a
+// host template naming the member.
+func validatePool(r RelayConfig) error {
+	if !r.PoolEnabled {
+		return nil
+	}
+	switch {
+	case r.PeerAddr == "":
+		return fmt.Errorf("%w: [relay].peer_addr (the pool forwards between relays)", ErrMissing)
+	case r.PoolMemberID() == "":
+		return fmt.Errorf("%w: [relay].pool.member", ErrMissing)
+	case net.ParseIP(r.PoolPublicIP) == nil:
+		return fmt.Errorf("config: [relay].pool.public_ip %q: the relay's public IP address", r.PoolPublicIP)
+	case net.ParseIP(r.PoolPrivate()) == nil:
+		return fmt.Errorf("config: [relay].pool.private_ip %q: the relay's private IP address", r.PoolPrivate())
+	case r.PoolCapacityMbps <= 0:
+		return fmt.Errorf("config: [relay].pool.capacity_mbps %d: above 0", r.PoolCapacityMbps)
+	case !strings.Contains(r.PoolHostTemplate(), "{id}"):
+		return fmt.Errorf("config: [relay].pool.hosts %q: it names the member with {id}", r.PoolHostTemplate())
+	case r.RebalanceRate <= 0 || r.RebalanceEvery <= 0:
+		return fmt.Errorf("config: [relay].pool.rebalance_rate and rebalance_every are above 0")
 	}
 	return nil
 }
@@ -198,4 +234,31 @@ func validateAdminListener(s ServerConfig) error {
 		}
 	}
 	return nil
+}
+
+// ValidateBroadcast is the broadcasting gate (story 50.20 T07): broadcast.enabled is refused
+// while any broadcast catalog value is TBD, naming each; and an edge key, when set, must be an
+// Ed25519 public key.
+func ValidateBroadcast(b BroadcastConfig) error {
+	if b.EdgePublicKey != "" {
+		if _, err := EdgeKey(b.EdgePublicKey); err != nil {
+			return err
+		}
+	}
+	if !b.Enabled {
+		return nil
+	}
+	if err := billing.BroadcastLaunchCheck(billing.Tiers, billing.Broadcaster); err != nil {
+		return fmt.Errorf("config: broadcast.enabled is refused: %w", err)
+	}
+	return nil
+}
+
+// EdgeKey decodes broadcast.edge_public_key.
+func EdgeKey(s string) (ed25519.PublicKey, error) {
+	b, err := base64.StdEncoding.DecodeString(strings.TrimSpace(s))
+	if err != nil || len(b) != ed25519.PublicKeySize {
+		return nil, errors.New("config: broadcast.edge_public_key must be a base64 Ed25519 public key (32 bytes)")
+	}
+	return ed25519.PublicKey(b), nil
 }

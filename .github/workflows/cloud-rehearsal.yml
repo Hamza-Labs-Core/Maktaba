@@ -114,6 +114,11 @@ jobs:
           # 50.17: three api nodes behind HAProxy (LB11): the worker's lock, the shared sign-in
           # limit, a change reaching every cache, a rolling deploy with no failed request
           - api-pool
+          # 50.16 T08, T09: the relay pool loses a relay, then gains one
+          - relay-pool-kill-one
+          - rebalance-add-relay
+          # 50.20 T10: a Broadcaster publisher across every mode, an API outage, a repeated window
+          - broadcast-plans
     steps:
       - uses: actions/checkout@v6.0.2
       - uses: actions/setup-go@v6.4.0

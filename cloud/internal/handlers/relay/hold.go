@@ -124,12 +124,9 @@ func (d *Deps) hold(w http.ResponseWriter, r *http.Request, slug, serverID strin
 			if hopped || d.Directory == nil {
 				continue
 			}
-			if p, ok := d.Directory.Lookup(r.Context(), slug); ok {
-				if d.forward(w, r, slug, serverID, p) {
-					countHeld(HeldFound)
-					return nil, true
-				}
-				d.Directory.Forget(slug)
+			if d.forwardIfElsewhere(w, r, slug, serverID, nil) {
+				countHeld(HeldFound)
+				return nil, true
 			}
 		}
 	}

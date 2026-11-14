@@ -15,6 +15,11 @@ export const bigPath = {
   library: (id: string) => `${BIG_BASE}/library/${encodeURIComponent(id)}`,
   seriesList: `${BIG_BASE}/series`,
   series: (id: string) => `${BIG_BASE}/series/${encodeURIComponent(id)}`,
+  collection: (id: string) => `${BIG_BASE}/collection/${encodeURIComponent(id)}`,
+  /** a pipeline group (topic or clip) of a library */
+  autoCollection: (libraryId: string, kind: "topic" | "clip", id: string) =>
+    `${BIG_BASE}/library/${encodeURIComponent(libraryId)}/collection/${kind}/${encodeURIComponent(id)}`,
+  playlist: (id: string) => `${BIG_BASE}/playlist/${encodeURIComponent(id)}`,
   video: (id: string) => `${BIG_BASE}/video/${encodeURIComponent(id)}`,
   watch: (id: string, opts: { t?: number; series?: string | null } = {}) => {
     const q = new URLSearchParams();
