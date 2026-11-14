@@ -2669,6 +2669,15 @@ build fails when the two differ.
   carries `stream_sig`, which signs its subtitle and chapter URLs, so a TV player that sends no
   header fetches every URL it needs. The older profiles decide as before.
 
+- **The Samsung and LG app's launcher (story 58.09).** The app a Samsung (Tizen) or LG (webOS)
+  TV will install finds the home (the last one used opens at once; Find on this network tries
+  every address of the TV's network; or the home's address typed), checks that the home and the
+  app can work together, and shows the home's own TV interface full screen. Inside it the TV
+  signs in by the home's code, approved on a phone or a computer, and never asks for a password;
+  on the home's network without HTTPS the code screen and Settings → Connection say the
+  connection is not encrypted, and Settings → Switch home picks another home. English and
+  Arabic, right to left in Arabic. The store packages come with stories 58.10 and 58.11.
+
 - **Sign a TV in from anywhere with a code (story 58.03).** A TV that cannot find its home, or is
   at a relative's house, can ask Maktaba Cloud for a code (`POST /v1/tv/codes`), and a person
   signed in on the home approves it (`POST /api/pairing/cloud-approve`, after

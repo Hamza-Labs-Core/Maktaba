@@ -47,3 +47,34 @@ body,
   box-shadow: 0 0 0 5px #f2cb7a;
   transform: scale(1.08);
 }
+
+/* The code sign-in in the Samsung or LG launcher (story 58.09): the code large, the approve
+   page and the waiting line beside the QR code (mirrored in Arabic) */
+.tv-code__body {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 72px;
+  margin-block-end: 32px;
+}
+.tv-code__text {
+  max-inline-size: 900px;
+  text-align: start;
+}
+.tv-signin .tv-code__code {
+  font-size: 104px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: #e3b252;
+  font-variant-numeric: tabular-nums;
+  margin: 0 0 32px;
+}
+.tv-signin .tv-code__quiet {
+  font-size: 24px;
+  margin-block-end: 16px;
+}
+.tv-signin .tv-code__plain {
+  font-size: 24px;
+  color: #e3b252;
+  margin-block-end: 32px;
+}
