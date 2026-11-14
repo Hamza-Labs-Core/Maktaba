@@ -16,6 +16,7 @@ import { log } from "../log";
 import {
   IDLE,
   playableUrl,
+  type AudioTrackInfo,
   type PlayRequest,
   type PlayerAdapter,
   type PlayerState,
@@ -198,7 +199,23 @@ export class WebOSPlayer implements PlayerAdapter {
       buffering: this.buffering,
       ended: v.ended,
       error: this.error,
+      ...(this.audioTracks().length > 0 ? { audio_tracks: this.audioTracks() } : {}),
     };
+  }
+
+  /** The element's audio tracks as the UI lists them. */
+  private audioTracks(): AudioTrackInfo[] {
+    const tracks = (this.video as HTMLVideoElement & { audioTracks?: AudioTrackList }).audioTracks;
+    const out: AudioTrackInfo[] = [];
+    for (let i = 0; i < (tracks?.length ?? 0); i++) {
+      const t = tracks![i]!;
+      out.push({
+        enabled: !!t.enabled,
+        ...(t.language ? { lang: t.language } : {}),
+        ...(t.label ? { label: t.label } : {}),
+      });
+    }
+    return out;
   }
 
   private hideTextTracks(): void {

@@ -277,7 +277,14 @@ describe("WebOSPlayer", () => {
     expect(f.calls).toEqual(["play", "currentTime=125"]);
     expect(f.audio.map((a) => a.enabled)).toEqual([false, true]);
     expect(p.active()).toBe(true);
-    expect(p.state()).toMatchObject({ position: 125, duration: 600, ended: false, error: null });
+    expect(p.state()).toEqual({
+      position: 125,
+      duration: 600,
+      buffering: true,
+      ended: false,
+      error: null,
+      audio_tracks: [{ enabled: false }, { enabled: true }],
+    });
     // the signature never reaches the log
     expect(logText()).not.toContain("abc");
   });
