@@ -169,7 +169,7 @@ Checked on `main` at 0770a41db (2026-11-08). Details and file paths are in resea
 | Way | Fire TV | Samsung, LG | Roku | Vega | Cast receiver |
 |---|---|---|---|---|---|
 | Saved home | yes | yes | yes | yes | n/a |
-| **Cloud code** (any network; a phone approves) | planned in the shared core; not built yet (58.05) | planned as the default; not built yet (58.09's second part) | **default** | **default** | n/a |
+| **Cloud code** (any network; a phone approves) | planned in the shared core; not built yet (58.05) | **default** (58.09's second part) | **default** | **default** | n/a |
 | mDNS | yes | no API | no API | — | n/a |
 | Subnet probe of the TV's /24, then the home's own code | — | yes (the code shown by `/tv/` in the frame) | yes | yes | n/a |
 | Typed address | yes | yes | yes | yes | n/a |
@@ -178,8 +178,9 @@ Checked on `main` at 0770a41db (2026-11-08). Details and file paths are in resea
 - **The cloud code.** The TV gets a code from Maktaba Cloud (`/v1/tv/codes`). A phone signed in to
   the home approves it in the Player (Profile → Approve a TV). The home then hands the cloud its
   connection list and a single-use pairing grant, and the TV redeems the grant on the home by
-  the best connection: LAN first, relay last. The approver needs no cloud account, only a home
-  with remote access.
+  the best connection: LAN first, relay last. On Samsung and LG the launcher hands the grant to
+  the home's `/tv/` over the bridge (`signIn`), which redeems it in the home's origin. The
+  approver needs no cloud account, only a home with remote access.
 - **HTTPS everywhere it can be.** The per-home certificates of story 50.15 give LAN addresses valid
   HTTPS, which web TVs and Cast receivers need (no certificate pinning in a web runtime, and no
   mixed content). Where a router blocks those names, web TVs and Roku fall back to plain HTTP on

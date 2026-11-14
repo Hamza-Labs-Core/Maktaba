@@ -11,7 +11,10 @@
 
 import { log } from "./log";
 
-export type FetchLike = (url: string, init?: { signal?: AbortSignal }) => Promise<Response>;
+export type FetchLike = (
+  url: string,
+  init?: { signal?: AbortSignal; method?: string; headers?: Record<string, string>; body?: string }
+) => Promise<Response>;
 
 /** GET /api/discovery/home's answer (the fields the launcher reads). */
 export interface HomeAnswer {

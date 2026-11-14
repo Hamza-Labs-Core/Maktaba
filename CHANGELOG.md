@@ -882,6 +882,14 @@ build fails when the two differ.
 
 ### Added
 
+- **Samsung and LG TVs sign in with a code from Maktaba Cloud (Epic 58, story 58.09).** The
+  Samsung and LG app now opens on a code with a QR, which works on any network: scan it, or open
+  maktaba.tv/tv, or in Maktaba on a phone signed in to the home choose Profile → Approve a TV or
+  device, and the TV opens that home, reached by the best address the home gives (on the same
+  network first, through Maktaba's relay from anywhere else). A TV signed in this way can watch,
+  never run the home, whoever approved it. Find on this network and typing the home's address
+  stay under the code as other ways. The app built with the home's UI inside it signs in the
+  same way.
 - **Roku's sign-in shows a QR (Epic 58, story 58.12).** The Roku channel's code screen now shows
   a QR beside the code, as the other TV apps do: a phone's camera opens the approve page with
   the code filled in (maktaba.tv/tv for a cloud code, the home's own page for the home's code).

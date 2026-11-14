@@ -120,6 +120,10 @@ func BoxKey(tokenSecret string) []byte {
 	return sum[:]
 }
 
+// PublicPaths are the TV's routes: the ones a packaged TV app (the Samsung and LG launcher,
+// story 58.09) calls from its own origin, which server.WithTVOrigins answers.
+var PublicPaths = []string{"/v1/tv/codes", "/v1/tv/codes/poll"}
+
 // MountPublic registers the TV's routes (no account), each limited per address.
 func MountPublic(r chi.Router, d *Deps) {
 	if d.CreateLimit == nil {
@@ -128,8 +132,8 @@ func MountPublic(r chi.Router, d *Deps) {
 	if d.PollLimit == nil {
 		d.PollLimit = ratelimit.NewLimiter(60, 1)
 	}
-	r.With(d.CreateLimit.Middleware(ratelimit.IPKey)).Post("/v1/tv/codes", d.Create)
-	r.With(d.PollLimit.Middleware(ratelimit.IPKey)).Post("/v1/tv/codes/poll", d.Poll)
+	r.With(d.CreateLimit.Middleware(ratelimit.IPKey)).Post(PublicPaths[0], d.Create)
+	r.With(d.PollLimit.Middleware(ratelimit.IPKey)).Post(PublicPaths[1], d.Poll)
 }
 
 // MountAgent registers a home's routes (its server secret is the credential).

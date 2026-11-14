@@ -1,7 +1,11 @@
 // Story 58.09 — the launcher: finding the home, checking it fits, and hosting its /tv/.
 //
-//   start      the saved homes (the last used opens at once), Find on this network, and
-//              under More ways, Enter the home's address
+//   start      the cloud code (story 58.03, cloud.ts): a code from Maktaba Cloud with a QR of
+//              its approve page, which works on any network; then the saved homes (the last
+//              used opens at once at start), Find on this network, and under More ways,
+//              Enter the home's address
+//   cloud      an approved code: the home's connections in the cloud's order, the first that
+//              answers as that home is loaded, and the grant goes to its /tv/ (signIn)
 //   find       the subnet probe of the TV's /24 (probe.ts); each home found is listed
 //   typed      an address typed with the remote
 //   connect    GET /api/discovery/home, the HTTPS name or the plain-HTTP fallback
@@ -10,10 +14,11 @@
 //   frame      the home's /tv/?bridge=1 full screen, the bridge (bridge.ts) to it, the video
 //              plane under it
 //
-// Sign-in is /tv/'s, in the home's origin: over plain HTTP, or when the UI is bundled, it
-// signs in by code only (the home's own code), and the launcher never sees a credential.
+// Sign-in is /tv/'s, in the home's origin: it redeems a cloud code's grant the launcher hands
+// it, or shows the home's own code. The launcher never sees a token.
 
 import { LauncherBridge, type BridgeAction, type HelloInfo } from "./bridge";
+import { CodeFlow, usableConnections, type CloudApproval, type CodeState } from "./cloud";
 import { decide, type Verdict } from "./compat";
 import {
   chooseConnection,
@@ -30,7 +35,7 @@ import { log } from "./log";
 import { VideoElementPlayer, type PlayerAdapter } from "./player";
 import { probeSubnet, type FoundHome } from "./probe";
 import { OLDEST_CHROMIUM, chromiumMajor, type Platform } from "./platform/types";
-import { button, h, ltr } from "./ui/dom";
+import { button, h, ltr, qr } from "./ui/dom";
 import { focusFirst, moveFocus, type Move } from "./ui/focus";
 import {
   APP_NAME,
@@ -59,6 +64,7 @@ type Screen =
   | { kind: "typed"; error?: string }
   | { kind: "connecting"; label: string }
   | { kind: "unreachable"; home: SavedHome }
+  | { kind: "cloudUnreachable"; approval: CloudApproval }
   | { kind: "notHome"; address: string }
   | { kind: "compat"; verdict: Exclude<Verdict, "ok">; home: HomeAnswer; at: string }
   | { kind: "tooOld" }
@@ -84,6 +90,10 @@ export class Launcher {
     abort: { aborted: false },
   };
   private info: HelloInfo | null = null;
+  private code: CodeState = { phase: "asking" };
+  private codeFlow: CodeFlow | null = null;
+  /** The approved code's grant, until the frame it is for takes it. */
+  private grant: string | null = null;
   private keys: string[] = [];
   private readonly player: PlayerAdapter;
   private current: Connection | null = null;
@@ -169,7 +179,14 @@ export class Launcher {
   }
 
   private async connect(foundAt: string, answer: HomeAnswer): Promise<void> {
+    this.grant = null;
     const conn = await chooseConnection(foundAt, answer, this.d.fetch);
+    await this.connectAt(conn, foundAt);
+  }
+
+  /** A home reached at conn (foundAt: where it was found on the LAN, when it was). */
+  private async connectAt(conn: Connection, foundAt: string | null): Promise<void> {
+    const at = foundAt ?? conn.base;
     const verdict = decide(conn.home, {
       name: APP_NAME,
       platform: this.d.platform.name,
@@ -179,7 +196,8 @@ export class Launcher {
     });
     log("launcher", `home ${conn.home.id} level ${conn.home.api_level ?? 0}: ${verdict}`);
     if (verdict !== "ok") {
-      this.show({ kind: "compat", verdict, home: conn.home, at: foundAt });
+      this.grant = null;
+      this.show({ kind: "compat", verdict, home: conn.home, at });
       return;
     }
     // a plain-HTTP fallback never replaces a saved HTTPS address (the name may answer again)
@@ -190,7 +208,7 @@ export class Launcher {
       name: conn.home.name || conn.home.id,
       base: keep ? keep.base : conn.base,
       plain: keep ? false : conn.plain,
-      ...(foundAt.startsWith("http:") ? { lan: foundAt } : keep?.lan ? { lan: keep.lan } : {}),
+      ...(foundAt?.startsWith("http:") ? { lan: foundAt } : keep?.lan ? { lan: keep.lan } : {}),
     });
     this.loadFrame(conn);
   }
@@ -225,7 +243,10 @@ export class Launcher {
     frame.src = target.src;
     this.stage.appendChild(frame);
     this.frame = frame;
+    const grant = this.grant;
+    this.grant = null;
     this.bridge = new LauncherBridge({
+      grant,
       frame: () => frame.contentWindow,
       origins: target.origins,
       targetOrigin: target.targetOrigin,
@@ -321,6 +342,7 @@ export class Launcher {
       case "typed":
       case "notHome":
       case "unreachable":
+      case "cloudUnreachable":
       case "compat":
         this.show({ kind: "start", picker: true });
         return;
@@ -337,8 +359,68 @@ export class Launcher {
 
   private show(s: Screen): void {
     this.screen = s;
+    if (s.kind === "start") this.startCode();
+    else this.stopCode();
     if (s.kind !== "frame") this.app.hidden = false;
     this.render();
+  }
+
+  // ---- the cloud code -----------------------------------------------------------------
+
+  /** Shows a code while the start screen is up (a new run each time it comes back). */
+  private startCode(): void {
+    if (this.codeFlow) return;
+    const flow = new CodeFlow({
+      fetch: this.d.fetch,
+      platform: this.d.platform.name,
+      appVersion: LAUNCHER_VERSION,
+      onState: (st) => {
+        if (this.codeFlow !== flow) return;
+        this.code = st;
+        if (this.screen.kind === "start") this.renderCode();
+      },
+      onApproved: (a) => {
+        if (this.codeFlow !== flow) return;
+        this.codeFlow = null;
+        void this.connectCloud(a);
+      },
+    });
+    this.codeFlow = flow;
+    this.code = { phase: "asking" };
+    void flow.start();
+  }
+
+  private stopCode(): void {
+    this.codeFlow?.stop();
+    this.codeFlow = null;
+  }
+
+  /** A new code at once (Get a new code). */
+  private renewCode(): void {
+    this.stopCode();
+    this.startCode();
+    this.renderCode();
+  }
+
+  /**
+   * An approved code: the first of the home's connections that answers as that home (LAN
+   * first, the relay last), checked to fit, saved, and loaded with the grant for its /tv/.
+   */
+  async connectCloud(a: CloudApproval): Promise<void> {
+    this.show({ kind: "connecting", label: a.home_name || a.home_id });
+    for (const base of usableConnections(a.connections)) {
+      const answer = await readHome(base, this.d.fetch, CONNECT_TIMEOUT_MS);
+      if (!answer || answer.id !== a.home_id) {
+        log("launcher", `cloud code: ${originOf(base)} did not answer as the home`);
+        continue;
+      }
+      log("launcher", `cloud code: home ${a.home_id} reached at ${originOf(base)}`);
+      this.grant = a.grant;
+      await this.connectAt({ base, plain: base.startsWith("http:"), home: answer }, null);
+      return;
+    }
+    log("error", `cloud code: no connection of home ${a.home_id} answered`);
+    this.show({ kind: "cloudUnreachable", approval: a });
   }
 
   private render(): void {
@@ -390,6 +472,21 @@ export class Launcher {
             })
           )
         );
+      case "cloudUnreachable":
+        return page(
+          "cloud-unreachable",
+          t("launcher.unreachable.title", s.approval.home_name || s.approval.home_id),
+          h("p", { class: "ml-lead", text: t("launcher.cloud.unreachable") }),
+          h(
+            "div",
+            { class: "ml-actions" },
+            button(t("launcher.tryAgain"), "retry", () => void this.connectCloud(s.approval), {
+              primary: true,
+              autofocus: true,
+            }),
+            button(t("launcher.back"), "back", () => this.show({ kind: "start", picker: true }))
+          )
+        );
       case "notHome":
         return page(
           "not-home",
@@ -424,25 +521,17 @@ export class Launcher {
 
   private startView(): HTMLElement {
     const homes = savedHomes();
-    const list = homes.length
-      ? h(
-          "section",
-          { class: "ml-section", attrs: { "aria-labelledby": "saved-title" } },
-          h("h2", { id: "saved-title", text: t("launcher.saved.title") }),
-          ...homes.map((home, i) =>
-            button(home.name, `home:${home.id}`, () => void this.connectSaved(home), {
-              primary: i === 0,
-              autofocus: i === 0,
-              testid: `saved-home`,
-              sub: home.plain
-                ? t("launcher.plainHttp")
-                : i === 0
-                  ? t("launcher.saved.last")
-                  : undefined,
-            })
-          )
-        )
-      : null;
+    const saved = homes.map((home, i) =>
+      button(home.name, `home:${home.id}`, () => void this.connectSaved(home), {
+        autofocus: i === 0,
+        testid: `saved-home`,
+        sub: home.plain
+          ? t("launcher.plainHttp")
+          : i === 0
+            ? t("launcher.saved.last")
+            : undefined,
+      })
+    );
     const more = h(
       "details",
       { class: "ml-more", testid: "more-ways" },
@@ -451,19 +540,85 @@ export class Launcher {
     );
     return page(
       "start",
-      t("launcher.start.title"),
-      list,
+      t("launcher.cloud.title"),
+      h("div", { class: "ml-code", id: "ml-code", testid: "cloud-code-panel" }, ...this.codeParts()),
       h(
-        "div",
-        { class: "ml-actions" },
-        button(t("launcher.find.title"), "find", () => this.startFind(), {
-          primary: !homes.length,
-          autofocus: !homes.length,
-        })
+        "section",
+        { attrs: { "aria-labelledby": "other-title" } },
+        h("h2", { id: "other-title", text: t("launcher.other") }),
+        h(
+          "div",
+          { class: "ml-row" },
+          ...saved,
+          button(t("launcher.find.title"), "find", () => this.startFind(), {
+            autofocus: !homes.length,
+          }),
+          more
+        )
       ),
-      more,
       this.footer()
     );
+  }
+
+  /** The code panel's content: the code and its QR, or why there is none. */
+  private codeParts(): Node[] {
+    const c = this.code;
+    if (c.phase === "asking")
+      return [
+        h("p", {
+          class: "ml-lead",
+          testid: "cloud-status",
+          attrs: { "aria-live": "polite" },
+          text: t("launcher.cloud.asking"),
+        }),
+      ];
+    if (c.phase === "down")
+      return [
+        h("div", { class: "ml-code__text" },
+          h("p", { class: "ml-lead", testid: "cloud-status", role: "status", text: t("launcher.cloud.down") }),
+          button(t("launcher.tryAgain"), "new-code", () => this.renewCode())
+        ),
+      ];
+    const page = c.code.verify_url.replace(/\?.*$/, "").replace(/^https?:\/\//, "");
+    const minutes = Math.max(1, Math.round((c.expiresAt - Date.now()) / 60000));
+    const image = qr(c.code.verify_url, t("launcher.cloud.qr"));
+    return [
+      h(
+        "div",
+        { class: "ml-code__text" },
+        h("p", { class: "ml-code__code", testid: "cloud-code", dir: "ltr", text: c.code.code }),
+        h("p", { class: "ml-lead" }, ...splitAround(t("launcher.cloud.where", "\u0000"), ltr(page))),
+        h("p", { class: "ml-quiet", text: t("launcher.cloud.app") }),
+        h(
+          "p",
+          { class: "ml-quiet" },
+          t("launcher.cloud.expires", minutes),
+          " ",
+          h("span", {
+            testid: "cloud-status",
+            attrs: { "aria-live": "polite" },
+            text: t("launcher.cloud.waiting"),
+          })
+        ),
+        button(t("launcher.cloud.new"), "new-code", () => this.renewCode())
+      ),
+      image ? h("div", { class: "ml-code__qr" }, image) : null,
+    ].filter((x): x is HTMLElement => x !== null);
+  }
+
+  /** Redraws the code panel alone, keeping the remote's focus where it was. */
+  private renderCode(): void {
+    const panel = this.app.querySelector("#ml-code");
+    if (!panel) return;
+    const active = this.d.window.document.activeElement as HTMLElement | null;
+    const focus = active && panel.contains(active) ? active.getAttribute("data-focus") : null;
+    panel.textContent = "";
+    for (const n of this.codeParts()) panel.appendChild(n);
+    if (focus) {
+      const again = panel.querySelector<HTMLElement>(`[data-focus="${focus}"]`);
+      if (again) again.focus();
+      else focusFirst(this.app);
+    }
   }
 
   private footer(): HTMLElement {
@@ -679,7 +834,7 @@ export class Launcher {
 function page(id: string, title: string, ...children: (Node | null)[]): HTMLElement {
   return h(
     "section",
-    { class: "ml-screen", testid: `screen-${id}`, attrs: { "aria-labelledby": `title-${id}` } },
+    { class: id === "start" ? "ml-screen ml-screen--wide" : "ml-screen", testid: `screen-${id}`, attrs: { "aria-labelledby": `title-${id}` } },
     h("div", { class: "ml-brand", attrs: { "aria-hidden": "true" } }, t("launcher.title")),
     h("h1", { id: `title-${id}`, text: title }),
     ...children
