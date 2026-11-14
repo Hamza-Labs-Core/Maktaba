@@ -283,6 +283,16 @@ build fails when the two differ.
 
 ### Fixed
 
+- **The older playback profiles read HEVC and Dolby audio by ffprobe's names.** A player that
+  names one of the older client profiles (`android-native`, `androidtv`) now direct-plays an
+  HEVC file it decodes: the profiles spelled HEVC `h265` and the probe says `hevc`, so those
+  files were transcoded. Those profiles also stop direct-playing HDR or Dolby Vision they do not
+  show (a Dolby Vision profile 5 file on an Android phone, HDR10 AV1 in Chrome): it is
+  transcoded to SDR instead. `browser-chrome`, `browser-safari`, `ios-native` and `tvos` no
+  longer list HEVC (Chrome decodes it only on some hardware; Safari and AVPlayer refuse HEVC
+  tagged `hev1`), so they keep transcoding it as before. The apps that ship today send no such
+  profile, so nothing they play changes.
+
 - **The Queues page says which workers are not running their jobs, and an admin can restart
   them.** A worker can stay up and start nothing while the others work (after the database
   restarts, for one). The page now names each such worker (main, transcription or search, with
