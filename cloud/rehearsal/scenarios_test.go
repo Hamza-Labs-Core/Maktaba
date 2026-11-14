@@ -84,7 +84,7 @@ func repoRoot(t *testing.T) string {
 }
 
 // TestScenario runs every scenario (C01–C10, 50.11's status-feed, 53.16's report-symbolicated,
-// 50.17's api-pool);
+// 50.16's relay pool, 50.17's api-pool);
 // one with -run 'TestScenario/<name>'.
 func TestScenario(t *testing.T) {
 	skip := notBuilt(t)
@@ -113,6 +113,8 @@ func TestScenario(t *testing.T) {
 		{"origin-aop", originAOP},
 		{"report-symbolicated", reportSymbolicated},
 		{"api-pool", apiPool},
+		{"relay-pool-kill-one", relayPoolKillOne},
+		{"rebalance-add-relay", rebalanceAddRelay},
 	} {
 		t.Run(s.name, func(t *testing.T) {
 			if why, ok := skip[s.name]; ok || s.run == nil {
@@ -127,6 +129,10 @@ func TestScenario(t *testing.T) {
 				c = upDirect(t, s.name)
 			case "api-pool":
 				c = upPool(t, s.name)
+			case "relay-pool-kill-one":
+				c = upRelayPool(t, s.name, "postgres", "r1", "r2", "r3", "edge")
+			case "rebalance-add-relay":
+				c = upRelayPool(t, s.name, "postgres", "r1", "r2", "edge")
 			case "failover-kill-leader", "failover-network-partition", "switchover", "restore-pitr",
 				"runbook-switchover", "runbook-forced-failover", "runbook-dns-swap",
 				"origin-only-via-edge", "origin-aop":

@@ -100,6 +100,7 @@ for downtime, and a check in CI keeps any page or template from offering one.
 | The Floating IP | The relay's address. When a node becomes the leader, Patroni's callback moves the address to it and starts the cloud there. DNS never changes on a failover. |
 | Blue and green relay processes | A deploy starts the new release beside the old one, waits for it to stay healthy for 30 seconds, then drains the old one. A watch rolls back on its own. |
 | The tunnel directory | Which relay process holds each home's tunnel, so a process without it forwards the request to the one with it. |
+| The relay pool (off until turned on) | Several relay machines in one pool. Each home keeps its tunnel on one relay and an idle standby tunnel on another, chosen by weighted rendezvous hashing over the healthy relays, so losing a relay costs its homes seconds and adding one moves only the homes it wins. Apps get a `relay_hint` that goes straight to the home's relay, and the witness keeps `relay.maktaba.tv` round robin over the healthy ones. |
 | One wildcard certificate per node | `*.relay.maktaba.tv`, issued by a DNS challenge, so the standby node already has it before it is needed. |
 | Backups | The database's log and a nightly backup go to Hetzner Object Storage and to Cloudflare R2, encrypted, with 30 days of point-in-time restore. A restore is tried every week. |
 | Monitoring | The witness probes a canary home through the relay every 30 seconds; GitHub's runners probe it from outside Hetzner too. Alerts page the owner and link to a runbook, and the same probes set the status page. |
@@ -134,6 +135,8 @@ breaks them on purpose:
 | `status-feed` | stops every relay process | the status page's `summary.json` says remote access is down within two probe rounds, and working again after two passing ones |
 | `runbook-switchover`, `runbook-forced-failover`, `runbook-dns-swap` | runs the one-click recovery workflows' scripts; for the DNS swap, with the Hetzner API down | each does what its runbook says against the real pair: a new leader, the old one fenced, the relay's names on the new leader |
 | `load-small` | 1,000 homes and 50 players at 5 Mbit/s, with the base commit's relay and then this commit's, on one runner | the relay's CPU per Mbit (its own CPU time, the median of three rounds) and memory per tunnel no more than 20 % worse than the base's |
+| `relay-pool-kill-one` | kills one of three relays under 1,000 homes and 100 streams | no request fails 10 s after; every home holds a new standby within 60 s; the dead relay leaves the DNS round robin within 30 s |
+| `rebalance-add-relay` | starts a third relay beside two under 1,000 homes | only the homes it wins move, at most 20 a second; no request fails |
 | `relay-plans` | homes on Free, Basic and Pro behind the relay with the plans enforced; a test build sets the plans' numbers not chosen yet, and the payment provider is a fake | Free is refused with its tunnel kept; Basic is asked to fit 3 Mbit/s, paced to it, and a third stream is refused while two play on; Pro past its allowance plays at Basic's quality; pay-as-you-go plays in full and its gigabyte reaches the provider once, through an outage |
 
 A cloud deploy is refused unless the rehearsal passed on that exact commit. No Hetzner,

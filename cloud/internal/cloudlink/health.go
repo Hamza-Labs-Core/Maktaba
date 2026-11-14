@@ -27,6 +27,10 @@ type LinkState struct {
 	BytesIn  int64 `json:"bytes_in"`
 	BytesOut int64 `json:"bytes_out"`
 	Requests int64 `json:"requests"`
+	// Relay and StandbyRelay are the pool members the primary and standby tunnels are on
+	// (story 50.16; empty outside a pool).
+	Relay        string `json:"relay,omitempty"`
+	StandbyRelay string `json:"standby_relay,omitempty"`
 }
 
 // Backoff computes exponential backoff with a cap. attempt is 1-based.
@@ -81,6 +85,10 @@ type Supervisor struct {
 	// Direct carries direct remote access's frames (story 50.15) when set: the agent announces
 	// the feature and serves /admin/cloud-link/direct from it.
 	Direct *Direct
+
+	// the relay pool (story 50.16, pool.go)
+	poolOnce sync.Once
+	ps       *poolState
 
 	mu    sync.Mutex
 	state LinkState
@@ -153,6 +161,15 @@ func (s *Supervisor) setOnline(slug string) {
 	s.state.Attempts = 0
 }
 
+func (s *Supervisor) setRelay(res DialResult) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.state.Relay = ""
+	if res.Relays != nil {
+		s.state.Relay = res.Relays.Here
+	}
+}
+
 func (s *Supervisor) setCounters(st Stats) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -178,8 +195,14 @@ func (s *Supervisor) Run(ctx context.Context) error {
 		s.Dialer.direct = true
 	}
 	dial := s.dial
+	pooled := dial == nil && !s.legacy
 	if dial == nil {
 		dial = s.Dialer.Dial
+	}
+	if pooled {
+		// story 50.16: dial by the pool's assignment, and keep a standby tunnel
+		dial = s.primaryDial
+		go s.runStandby(ctx)
 	}
 	attempt := 0
 	for {
@@ -202,8 +225,15 @@ func (s *Supervisor) Run(ctx context.Context) error {
 		for {
 			s.setOnline(res.Slug)
 			s.setTicket(res.Ticket)
+			if pooled {
+				s.adoptPrimary(res)
+				s.setRelay(res)
+			}
 			next := s.serveTunnel(ctx, res, dial)
 			if next == nil {
+				if pooled {
+					s.primaryDropped(res)
+				}
 				break
 			}
 			// drained: the new tunnel is up; serve it at once
@@ -266,12 +296,18 @@ func (s *Supervisor) serveTunnel(ctx context.Context, res DialResult, dial func(
 			if json.Unmarshal(f.Payload, &p) == nil {
 				s.setTicket(p.Ticket)
 			}
+		case KindRelays:
+			var p RelaysPayload
+			if json.Unmarshal(f.Payload, &p) == nil {
+				s.adoptRelays(&p)
+			}
 		case KindDrain:
 			var p DrainPayload
 			if json.Unmarshal(f.Payload, &p) != nil {
 				return
 			}
 			s.setTicket(p.Ticket)
+			s.adoptRelays(p.Relays)
 			select {
 			case drains <- p: // a second DRAIN while moving is ignored
 			default:

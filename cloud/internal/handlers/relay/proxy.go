@@ -178,7 +178,9 @@ func (d *Deps) Handler() http.Handler {
 		// tunnel the home just left) is routed once more: to the home's new tunnel
 		for attempt := 0; ; attempt++ {
 			t, _ := d.Registry.Lookup(slug)
-			if t != nil && !t.Draining() {
+			// a home's standby tunnel here serves only while its primary is nowhere live (story
+			// 50.16): forwardIfElsewhere sends the request to the primary first
+			if t != nil && !t.Draining() && (!t.Standby() || hopped) {
 				if d.serve(w, r, sv, t) && attempt == 0 {
 					continue
 				}
