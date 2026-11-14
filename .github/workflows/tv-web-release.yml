@@ -89,11 +89,6 @@ jobs:
     timeout-minutes: 30
     permissions:
       contents: write # gh release upload
-    env:
-      TIZEN_AUTHOR_P12_BASE64: ${{ secrets.TIZEN_AUTHOR_P12_BASE64 }}
-      TIZEN_AUTHOR_PASSWORD: ${{ secrets.TIZEN_AUTHOR_PASSWORD }}
-      TIZEN_DISTRIBUTOR_P12_BASE64: ${{ secrets.TIZEN_DISTRIBUTOR_P12_BASE64 }}
-      TIZEN_DISTRIBUTOR_PASSWORD: ${{ secrets.TIZEN_DISTRIBUTOR_PASSWORD }}
     steps:
       - uses: actions/checkout@v6.0.2
         with:
@@ -131,12 +126,17 @@ jobs:
           sudo apt-get update -qq
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq zip unzip gnome-keyring dbus-x11 libsecret-1-0
 
-      # signs with the owner's certificates, or rehearses with a throwaway one (see the header)
+      # signs with the owner's certificates, or rehearses with a throwaway one (see the header);
+      # the secrets reach this step only, never the install and build steps' package scripts
       - name: Sign
         id: sign
         continue-on-error: true
         env:
           TAG: ${{ github.ref_name }}
+          TIZEN_AUTHOR_P12_BASE64: ${{ secrets.TIZEN_AUTHOR_P12_BASE64 }}
+          TIZEN_AUTHOR_PASSWORD: ${{ secrets.TIZEN_AUTHOR_PASSWORD }}
+          TIZEN_DISTRIBUTOR_P12_BASE64: ${{ secrets.TIZEN_DISTRIBUTOR_P12_BASE64 }}
+          TIZEN_DISTRIBUTOR_PASSWORD: ${{ secrets.TIZEN_DISTRIBUTOR_PASSWORD }}
         run: |
           set -euo pipefail
           version="${TAG#v}"
