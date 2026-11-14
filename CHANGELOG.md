@@ -2860,7 +2860,6 @@ build fails when the two differ.
   switchable fallback. The edge stores and delivers what a home sends and never chooses, ranks
   or recommends anything. It is not deployed yet: broadcasting stays off until its gate opens.
 
-<<<<<<< HEAD
 - **A home can broadcast chosen Live TV channels to viewers outside it (Epic 50, story 50.22).**
   An admin sets a channel up on the new Broadcast panel of the Live TV page (its link name,
   invite-only or open, always on or only while someone watches, its qualities) and publishes it
@@ -2873,7 +2872,7 @@ build fails when the two differ.
   away, keeps going for a day without Maktaba Cloud, and is never released while published.
   Only admins can set up, publish or unpublish, and the API enforces it. Broadcasting is off
   until an admin turns it on, and nothing reaches viewers until the broadcast edge is deployed.
-=======
+
 - **Parental controls on the new TVs (Epic 58, story 58.14).** A child's account signed in on a
   Samsung or LG TV (`/tv/`), Roku, Fire TV or Android TV sees only what its limits allow, as
   everywhere else. Something hidden, opened from a link, shows This isn't available with the
@@ -2882,7 +2881,6 @@ build fails when the two differ.
   parent manages the account, and its content limit. Samsung, LG and Roku ask for no PIN on the
   remote; Fire TV and Android TV keep the guardian's PIN. A deep link to a hidden item shows the
   not-available line and asks nothing. English and Arabic, mirrored.
->>>>>>> origin/main
 
 - **A published channel airs only what may be shared online (Epic 50, story 50.23).** While a
   Live TV channel is broadcast, it airs only publishable items: the household's own recordings,
