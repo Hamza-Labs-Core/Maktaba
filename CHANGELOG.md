@@ -2688,6 +2688,16 @@ build fails when the two differ.
   connection is not encrypted, and Settings → Switch home picks another home. English and
   Arabic, right to left in Arabic. The store packages come with stories 58.10 and 58.11.
 
+- **Maktaba TV on Fire TV (story 58.05).** The Android TV app now has an Amazon Appstore build
+  for Fire TV sticks, the Cube and Fire TV Edition sets (Fire OS 7 or later): the same screens in
+  English and Arabic, signing in by the home's code, Amazon's remote, and Amazon's launcher. It
+  carries no Google Play code (CI checks its dependencies and manifest on every run), names itself
+  `firetv` to the home, and opens each stream with a report of what the TV plays (its hardware
+  decoders, the screen's HDR and the receiver's surround formats), which an older home is not
+  sent. A tag builds `maktaba-tv-<version>-amazon.apk`, signed and staged as a draft in the
+  Appstore once the Amazon keys are set; it reaches the store only after the real-device
+  checklist in `docs/stores/amazon.md` passed. Nothing is sold in it.
+
 ### Changed
 
 - **A machine that loses its home stays usable** under a notice instead of the whole app being
@@ -3628,6 +3638,10 @@ build fails when the two differ.
   they read the video, so a non-admin gets 403 whether or not the video exists. In the web, a
   library's refusal reads "Not available in this library" to anyone who is not an admin; an admin
   keeps the read-only reason and its fix.
+
+- **The Android TV app names itself to the home.** Its library, playlist and play-queue calls sent
+  `X-Maktaba-Client: native` instead of the app's name and version, so the home could not tell a
+  TV too old for it on those calls; they now send the same header as sign-in does.
 
 ## [0.2.0] - 2026-10-19
 
