@@ -3,7 +3,6 @@
 package pgbundle
 
 import (
-	"bytes"
 	"context"
 	"io"
 	"os"
@@ -40,12 +39,25 @@ func TestRealStartAfterAKillWaitsForTheBackendsLeft(t *testing.T) {
 	if err := b.Prepare(ctx, io.Discard); err != nil {
 		t.Fatal(err)
 	}
-	var logs bytes.Buffer // every start's log, kept in the test's report
-	t.Cleanup(func() { t.Logf("postgres's log:\n%s", logs.String()) })
+	// every start's log, kept in the test's report. A file, not a buffer: with a buffer
+	// the server writes to a pipe, the processes stopped below keep that pipe open, and
+	// Wait on the killed postmaster never returns.
+	logFile, err := os.Create(filepath.Join(root, "postgres.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	logged := func() string {
+		raw, _ := os.ReadFile(logFile.Name())
+		return string(raw)
+	}
+	t.Cleanup(func() {
+		t.Logf("postgres's log:\n%s", logged())
+		_ = logFile.Close()
+	})
 	start := func() (*exec.Cmd, <-chan error) {
 		t.Helper()
 		srv := exec.Command(b.Bin("postgres"), b.ServerArgs()...)
-		srv.Stdout, srv.Stderr = &logs, &logs
+		srv.Stdout, srv.Stderr = logFile, logFile
 		if err := srv.Start(); err != nil {
 			t.Fatal(err)
 		}
@@ -98,19 +110,23 @@ func TestRealStartAfterAKillWaitsForTheBackendsLeft(t *testing.T) {
 	if err := srv.Process.Signal(syscall.SIGKILL); err != nil {
 		t.Fatal(err)
 	}
-	<-exited
+	select {
+	case <-exited:
+	case <-time.After(30 * time.Second):
+		t.Fatal("the killed postmaster was not reaped in 30 s")
+	}
 	lock := filepath.Join(b.Data, "postmaster.pid")
 	if raw, err := os.ReadFile(lock); err != nil || !shmInUse(string(raw)) {
 		t.Fatalf("the stopped process does not hold the killed postmaster's shared memory (lock: %v)", err)
 	}
 
 	// what crash-looped: the start made at once
-	logs.WriteString("--- the start made at once after the kill ---\n")
+	_, _ = logFile.WriteString("--- the start made at once after the kill ---\n")
 	_, exited = start()
 	if err := ready(exited); err == nil {
 		t.Fatal("postgres started next to a process of the killed postmaster: the reproduction no longer holds")
 	}
-	if !strings.Contains(logs.String(), "shared memory block") {
+	if !strings.Contains(logged(), "shared memory block") {
 		t.Fatal("postgres did not stop on the shared memory still in use")
 	}
 
@@ -123,7 +139,7 @@ func TestRealStartAfterAKillWaitsForTheBackendsLeft(t *testing.T) {
 	if d := time.Since(began); d < held-500*time.Millisecond || d > time.Minute {
 		t.Fatalf("waited %s for a process that held the memory %s", d, held)
 	}
-	logs.WriteString("--- the start after AwaitShmFree ---\n")
+	_, _ = logFile.WriteString("--- the start after AwaitShmFree ---\n")
 	srv, exited = start()
 	t.Cleanup(func() {
 		_ = srv.Process.Signal(os.Interrupt)
