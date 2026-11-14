@@ -194,6 +194,11 @@ func TestPGCastGrantVideo(t *testing.T) {
 	// viewer's own session of another video, opened with their own sign-in
 	wantScope(t, c.with(g, http.MethodPost, "/api/stream/sessions", `{"video_id":"`+pfKid+`"}`))
 	wantScope(t, c.with(g, http.MethodGet, "/api/videos/"+pfKid, ""))
+	// a body the gate cannot read is refused by the gate itself (cast_scope), never passed on
+	// to the handler: trailing bytes or a second value carry no video past it
+	wantScope(t, c.with(g, http.MethodPost, "/api/stream/sessions", `{"video_id":"`+pfKid+`"} x`))
+	wantScope(t, c.with(g, http.MethodPost, "/api/stream/sessions", `{"video_id":"`+pfKid+`"}{"video_id":"`+pfTeen+`"}`))
+	wantScope(t, c.with(g, http.MethodPost, "/api/stream/sessions", `not json`))
 	own := c.raw("viewer", http.MethodPost, "/api/stream/sessions", `{"video_id":"`+pfKid+`"}`)
 	var ownSess map[string]any
 	_ = json.Unmarshal(own.Body.Bytes(), &ownSess)

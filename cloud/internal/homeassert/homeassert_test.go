@@ -76,6 +76,7 @@ func TestIssueRefusesIncomplete(t *testing.T) {
 		{PurposeSignIn, "", "sv", ""},
 		{PurposeSignIn, "cu", "", ""},
 		{PurposeLink, "cu", "sv", ""},
+		{PurposeTVCode, "cu", "sv", ""}, // a TV code approval names its code
 	} {
 		if _, _, err := s.Issue(c.pur, c.sub, c.aud, c.non, ""); err == nil {
 			t.Fatalf("issued %+v", c)
@@ -91,5 +92,14 @@ func TestDeriveIsStableAndSeparate(t *testing.T) {
 	}
 	if a.PublicKeyB64() == NewSigner(ed25519.NewKeyFromSeed(seed)).PublicKeyB64() {
 		t.Fatal("derived key equals the source key")
+	}
+}
+
+// A TV code approval (story 58.03) carries its code as the nonce, and nothing else of a link's.
+func TestIssueTVCode(t *testing.T) {
+	s := goldenSigner(t)
+	_, p, err := s.Issue(PurposeTVCode, "cu", "sv", "ABCD2345", "a label")
+	if err != nil || p.Pur != PurposeTVCode || p.Non != "ABCD2345" || p.Lbl != "" {
+		t.Fatalf("issued %+v, %v", p, err)
 	}
 }

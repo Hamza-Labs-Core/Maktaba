@@ -2231,6 +2231,15 @@ build fails when the two differ.
 
 ### Added
 
+- **Approve a TV's code on maktaba.tv (story 58.03).** The QR code a TV shows beside its cloud
+  code opens maktaba.tv/tv, which forwards to Maktaba Cloud: a person signed in there sees the
+  TV's platform and country, asks themselves **Is this your TV?**, picks one of the homes that
+  linked their cloud account, and approves (`GET /v1/tv/codes/{code}`,
+  `POST /v1/tv/codes/{code}/approve`). The cloud asks that home through the relay, with a one-use
+  assertion for that account, home and code (`POST /api/pairing/cloud-assertion` on the home),
+  and the home signs the TV in as the user it linked, restricted like every cloud code's TV. A
+  home the account is not linked to, or one that is offline or out of reach, approves nothing.
+
 - **A library's Series and Collections tabs (Epic 45 story 45.24).** A library's page is now
   Overview | Browse | Series | Collections, each tab its own address (Back returns to the tab
   before). **Series**: every series of the library as a poster grid with its episodes and your
@@ -2788,19 +2797,6 @@ build fails when the two differ.
   everything at once (`docs/runbooks/cloud/broadcast-kill.md`). A home's copy carries only its
   own entries, signed so the edge won't take it as the full list.
 
-- **A home can broadcast chosen Live TV channels to viewers outside it (Epic 50, story 50.22).**
-  An admin sets a channel up on the new Broadcast panel of the Live TV page (its link name,
-  invite-only or open, always on or only while someone watches, its qualities) and publishes it
-  after ticking that the home has the rights to what it airs. Before anything starts the home
-  checks, in order, the Maktaba Cloud plan, the publisher agreement, the schedule, the measured
-  internet upload (suggesting fewer qualities when it is too slow) and the encoder's free slots,
-  and names the first that fails. A published channel's qualities (up to 1080p, three by
-  default) are made at home and each segment is sent once to the broadcast edge, so the upload
-  is the same however many people watch; the channel shows an offline card when the home is
-  away, keeps going for a day without Maktaba Cloud, and is never released while published.
-  Only admins can set up, publish or unpublish, and the API enforces it. Broadcasting is off
-  until an admin turns it on, and nothing reaches viewers until the broadcast edge is deployed.
-
 - **The Samsung and LG app's launcher (story 58.09).** The app a Samsung (Tizen) or LG (webOS)
   TV will install finds the home (the last one used opens at once; Find on this network tries
   every address of the TV's network; or the home's address typed), checks that the home and the
@@ -2877,8 +2873,12 @@ build fails when the two differ.
   device): a cloud code can be read out to anyone anywhere. No cloud account is needed, only a
   home with remote access. Codes last 10 minutes, at most 10 per address, and the cloud sweeps
   them an hour after they expire. `GET /api/me/app-sign-ins` lists a person's apps signed in by
-  code (a cloud-code TV says so) and `DELETE /api/me/app-sign-ins/{id}` signs one out. The
-  approve screens in the Players and the web follow.
+  code (a cloud-code TV says so) and `DELETE /api/me/app-sign-ins/{id}` signs one out.
+  **Approve a TV** in the Android and Apple Players and the web's **Sign in a device** take
+  these codes: a code the home does not hold is looked up in the cloud, the app asks **Is this
+  your TV?** with its platform and country, and approves it only then; a home without remote
+  access is told to use the home's own code. **Sessions** lists the apps signed in with a code,
+  each signed out there, a cloud-code TV named as one.
 
 - **The broadcast edge, built and rehearsed in CI (story 50.21).** Maktaba Cloud now has the
   Cloudflare Worker a published channel will play from: a home pushes each segment of each
@@ -2902,6 +2902,19 @@ build fails when the two differ.
   networks, alerts on its error budget, ingest lag, a stale revocation list, the edge's monthly
   cost and a mismatch between analytics and billing, and a **Broadcasting** line on the status
   page once broadcasting opens.
+
+- **A home can broadcast chosen Live TV channels to viewers outside it (Epic 50, story 50.22).**
+  An admin sets a channel up on the new Broadcast panel of the Live TV page (its link name,
+  invite-only or open, always on or only while someone watches, its qualities) and publishes it
+  after ticking that the home has the rights to what it airs. Before anything starts the home
+  checks, in order, the Maktaba Cloud plan, the publisher agreement, the schedule, the measured
+  internet upload (suggesting fewer qualities when it is too slow) and the encoder's free slots,
+  and names the first that fails. A published channel's qualities (up to 1080p, three by
+  default) are made at home and each segment is sent once to the broadcast edge, so the upload
+  is the same however many people watch; the channel shows an offline card when the home is
+  away, keeps going for a day without Maktaba Cloud, and is never released while published.
+  Only admins can set up, publish or unpublish, and the API enforces it. Broadcasting is off
+  until an admin turns it on, and nothing reaches viewers until the broadcast edge is deployed.
 
 ### Changed
 
