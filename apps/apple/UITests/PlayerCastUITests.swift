@@ -100,7 +100,9 @@ final class PlayerCastUITests: PlayerUITestCase {
         tapCast()
         app.buttons["cast.interstitial.continue"].tap()
         let empty = element("cast.picker.empty")
-        XCTAssertTrue(empty.waitForExistence(timeout: 15), "the empty state")
+        // the list looks for 5 s before it says none was found, and one snapshot of the sheet
+        // over the playing video took 14 s on a CI iPad: a 15 s wait checked once, too early
+        XCTAssertTrue(empty.waitForExistence(timeout: 40), "the empty state")
         XCTAssertTrue(empty.label.contains("same Wi-Fi network"))
         XCTAssertTrue(empty.label.contains("AirPlay"))
         shot("cast-empty")
