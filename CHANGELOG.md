@@ -2902,6 +2902,16 @@ build fails when the two differ.
   viewers, never stopping one already watching. Viewers never pay. Maktaba's staff can list
   and revoke a home's invites, with a reason, in the audit log.
 
+- **Guests watch a home's broadcast on watch.maktaba.tv (Epic 50, story 50.27).** An invite link
+  now opens the publisher's own pages: the channels the guest may watch, with what is on now and
+  next; each channel's player with today's programmes, the credit of a Creative Commons
+  programme and a Report link; and a guide. Pages are Arabic by default, right to left, with
+  English a tap away, and never link to another publisher. Channels switch with up and down, a
+  swipe or the channel's number; when the home goes offline its slate plays with a note instead
+  of an error. The home publishes each channel's guide, name, number and logo to the edge. A TV
+  can be paired by a QR code that opens a page on the guest's phone; the apps' **Watch a
+  broadcast** screens follow.
+
 ### Changed
 
 - **A machine that loses its home stays usable** under a notice instead of the whole app being

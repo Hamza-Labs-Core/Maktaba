@@ -233,6 +233,21 @@ export class ViewerAccess extends DurableObject<Env> {
       .sort();
   }
 
+  /**
+   * allowed lists the channels a credential may watch (the watch pages' grid and guide, 50.27): a
+   * revoked or unknown pass opens none.
+   */
+  async allowed(cred: Cred): Promise<string[]> {
+    if (cred.kind === "pass" && (this.revoked(cred.inv, cred.id) || !this.s.passes[cred.id]))
+      return [];
+    return this.channelsFor(cred);
+  }
+
+  /** openChannels lists the channels anyone may watch after Turnstile (none when open is off). */
+  async openChannels(): Promise<string[]> {
+    return this.channelsFor({ kind: "open", id: "" });
+  }
+
   /** play admits a new session on ch, or says which rule refused it. */
   async play(ch: string, cred: Cred, ip: string, plan: PlanView | null): Promise<PlayResult> {
     const t = now();
