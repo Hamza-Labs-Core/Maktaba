@@ -103,12 +103,15 @@ func writeControl(c *websocket.Conn, f Frame) error {
 // Ticket (story 50.03) replaces Secret on a reconnect: a resume ticket the
 // relay issued, checked by HMAC instead of argon2id. Features lists what the
 // home understands (FeatureDrain, FeatureTicket); an older home sends none.
+//
+// Role (story 50.16) is RoleStandby for a home's standby tunnel; empty or RolePrimary otherwise.
 type AuthPayload struct {
 	ServerID string   `json:"server_id"`
 	Secret   string   `json:"secret,omitempty"`
 	Ticket   string   `json:"ticket,omitempty"`
 	Flow     int      `json:"flow,omitempty"`
 	Features []string `json:"features,omitempty"`
+	Role     string   `json:"role,omitempty"`
 }
 
 func (a AuthPayload) has(feature string) bool {
@@ -132,6 +135,9 @@ type AuthOKPayload struct {
 	Flow     int       `json:"flow,omitempty"`
 	Ticket   string    `json:"ticket,omitempty"`
 	Features []string  `json:"features,omitempty"`
+	// Relays is the home's place in the relay pool (story 50.16), when the pool is on and the
+	// home announced FeaturePool.
+	Relays *RelaysPayload `json:"relays,omitempty"`
 }
 
 // TunnelStore is what the tunnel accept handler needs from the servers
@@ -237,6 +243,9 @@ type TunnelServer struct {
 	// it; nil: off. DirectEvery is how often a home is given what it is owed (default 1m).
 	Direct      DirectHandler
 	DirectEvery time.Duration
+	// Rebalancer places homes in the relay pool (story 50.16): the handshake answers with the
+	// home's assignment and moves a home on the wrong relay; nil: the pool is off (one relay).
+	Rebalancer *Rebalancer
 }
 
 // ServeHTTP upgrades and authenticates one home's tunnel. The agent must
@@ -307,8 +316,29 @@ func (ts *TunnelServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	canTicket := ts.Tickets != nil && ap.has(FeatureTicket)
 	canDrain := ts.Drain && ap.has(FeatureDrain)
 	canDirect := ts.Direct != nil && ap.has(FeatureDirect)
+	canPool := ts.Rebalancer != nil && ap.has(FeaturePool)
+	standby := ap.Role == RoleStandby
+	if standby && !canPool {
+		// a standby tunnel to a relay outside a pool: the home keeps its one tunnel
+		fail("no_pool")
+		return
+	}
 	okp := AuthOKPayload{Slug: sv.Slug, IssuedAt: time.Now().UTC()}
 	opts := []TunnelOption{WithFeatures(canDrain, canTicket)}
+	var assign Assignment
+	assigned := false
+	if canPool {
+		okp.Features = append(okp.Features, FeaturePool)
+		opts = append(opts, WithPool(standby))
+		if assign, assigned = ts.Rebalancer.Pool.Assign(r.Context(), sv.ID); assigned {
+			p := ts.Rebalancer.Payload(assign)
+			okp.Relays = &p
+		}
+	}
+	role := RolePrimary
+	if standby {
+		role = RoleStandby
+	}
 	if flow {
 		okp.Flow = FlowVersion
 		opts = append(opts, WithFlowControl())
@@ -339,15 +369,20 @@ func (ts *TunnelServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	t := NewTunnel(sv.ID, sv.Slug, &wsConn{c: c}, opts...)
 	// online first, then routable: whatever finds the tunnel finds the server online
 	if !reg.Up(sv.Slug, t, func() {
-		markOnline(logger, store, sv.ID, true)
-		ts.directory(logger, func(ctx context.Context, d Directory) error { return d.Up(ctx, sv.Slug, sv.ID, t.Seq()) })
+		if !standby {
+			markOnline(logger, store, sv.ID, true)
+		}
+		ts.directory(logger, func(ctx context.Context, d Directory) error { return d.Up(ctx, sv.Slug, sv.ID, role, t.Seq()) })
 	}) {
 		// gone while it waited its turn, or a newer connection is in: nothing to record
 		t.Close()
 		logger.Info("relay: a stale tunnel attempt dropped", "home_h", mlog.HashHome(sv.ID), "event", "tunnel_stale")
 		return
 	}
-	logger.Info("relay: tunnel up", "home_h", mlog.HashHome(sv.ID), "flow", flow, "method", method, "event", "tunnel_up")
+	logger.Info("relay: tunnel up", "home_h", mlog.HashHome(sv.ID), "flow", flow, "method", method, "role", role, "event", "tunnel_up")
+	if assigned {
+		ts.Rebalancer.AtHandshake(t, assign)
+	}
 	if canTicket {
 		go ts.refreshTickets(t)
 	}
@@ -363,9 +398,15 @@ func (ts *TunnelServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// a tunnel a reconnect replaced is not the server going offline
 		// the directory row goes whether or not t was the live tunnel here:
 		// Down deletes it only when it is still this tunnel's
-		ts.directory(logger, func(ctx context.Context, d Directory) error { return d.Down(ctx, sv.Slug, t.Seq()) })
-		if reg.Down(sv.Slug, t, func() { markOnline(logger, store, sv.ID, false) }) {
-			logger.Info("relay: tunnel down", "home_h", mlog.HashHome(sv.ID), "event", "tunnel_down")
+		ts.directory(logger, func(ctx context.Context, d Directory) error { return d.Down(ctx, sv.Slug, role, t.Seq()) })
+		if reg.Down(sv.Slug, t, func() {
+			// a standby going is not the home going; nor is a tunnel whose home is on another
+			// relay process now (it moved: a drain, a rebalance, its standby)
+			if !standby && !ts.elsewhere(sv.Slug) {
+				markOnline(logger, store, sv.ID, false)
+			}
+		}) {
+			logger.Info("relay: tunnel down", "home_h", mlog.HashHome(sv.ID), "role", role, "event", "tunnel_down")
 		}
 	}()
 }
@@ -381,6 +422,19 @@ func (ts *TunnelServer) directory(logger *slog.Logger, write func(context.Contex
 	if err := write(ctx, ts.Directory); err != nil {
 		logger.Warn("relay: writing the tunnel directory failed", "err", err, "event", "relay_directory_write_failed")
 	}
+}
+
+// elsewhere reports whether another live relay process holds a tunnel of slug's (the
+// directory, read fresh).
+func (ts *TunnelServer) elsewhere(slug string) bool {
+	if ts.Directory == nil {
+		return false
+	}
+	ts.Directory.Forget(slug)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	_, ok := ts.Directory.Lookup(ctx, slug)
+	return ok
 }
 
 // resume authenticates a home by its resume ticket: the HMAC and expiry

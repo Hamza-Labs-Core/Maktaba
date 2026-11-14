@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"slices"
 	"sync"
 	"time"
@@ -74,6 +75,8 @@ type authPayload struct {
 	Ticket   string   `json:"ticket,omitempty"`
 	Flow     int      `json:"flow,omitempty"`
 	Features []string `json:"features,omitempty"`
+	// Role is "standby" for the home's standby tunnel (story 50.16); empty for its primary.
+	Role string `json:"role,omitempty"`
 }
 
 // authOKPayload is what the cloud echoes on success (relay.AuthOKPayload).
@@ -87,6 +90,8 @@ type authOKPayload struct {
 	Ticket string `json:"ticket,omitempty"`
 	// Features are the ones the cloud agreed to (direct: story 50.15).
 	Features []string `json:"features,omitempty"`
+	// Relays is the home's place in the relay pool (story 50.16).
+	Relays *RelaysPayload `json:"relays,omitempty"`
 }
 
 var (
@@ -131,6 +136,10 @@ type DialResult struct {
 	Ticket string
 	// Direct: the cloud agreed to direct remote access's frames (story 50.15).
 	Direct bool
+	// Relays: the home's place in the relay pool, when the relay runs one (story 50.16).
+	Relays *RelaysPayload
+	// Host: the host this tunnel was dialled at ("" the Endpoint's own).
+	Host string
 }
 
 // Dialer opens a WSS tunnel to the cloud relay and performs the AUTH
@@ -171,6 +180,31 @@ func (d *Dialer) SetTicket(t string) { d.tickets.set(t) }
 // AUTH_FAIL or a malformed reply it closes the socket and returns an
 // error so the caller's backoff loop can retry.
 func (d *Dialer) Dial(ctx context.Context) (DialResult, error) {
+	return d.DialTo(ctx, "", "")
+}
+
+// endpointAt is the Endpoint with its host replaced by host (a pool member's,
+// story 50.16): the scheme and path stay, any port is dropped. "" is the
+// Endpoint itself.
+func (d *Dialer) endpointAt(host string) string {
+	if host == "" {
+		return d.Endpoint
+	}
+	u, err := url.Parse(d.Endpoint)
+	if err != nil {
+		return d.Endpoint
+	}
+	u.Host = host
+	return u.String()
+}
+
+// DialTo is Dial at host (a pool member's tunnel host; "" the Endpoint's) in
+// role ("" or relay.RolePrimary, or relay.RoleStandby).
+func (d *Dialer) DialTo(ctx context.Context, host, role string) (DialResult, error) {
+	endpoint := d.endpointAt(host)
+	if role == relay.RolePrimary {
+		role = ""
+	}
 	timeout := d.HandshakeTimeout
 	if timeout <= 0 {
 		timeout = 5 * time.Second
@@ -182,9 +216,9 @@ func (d *Dialer) Dial(ctx context.Context) (DialResult, error) {
 	once := func(ticket string) (DialResult, error) {
 		dctx, cancel := context.WithTimeout(ctx, timeout)
 		defer cancel()
-		c, _, err := wd.DialContext(dctx, d.Endpoint, nil)
+		c, _, err := wd.DialContext(dctx, endpoint, nil)
 		if err != nil {
-			return DialResult{}, fmt.Errorf("cloudlink: dial %s: %w", d.Endpoint, err)
+			return DialResult{}, fmt.Errorf("cloudlink: dial %s: %w", endpoint, err)
 		}
 		conn := &wsFrameConn{c: c}
 		features := agentFeatures
@@ -193,11 +227,12 @@ func (d *Dialer) Dial(ctx context.Context) (DialResult, error) {
 		} else if d.direct {
 			features = append(append([]string(nil), agentFeatures...), relay.FeatureDirect)
 		}
-		res, err := authenticateWith(conn, d.ServerID, d.Secret, ticket, features)
+		res, err := authenticateRole(conn, d.ServerID, d.Secret, ticket, features, role)
 		if err != nil {
 			_ = conn.Close()
 			return DialResult{}, err
 		}
+		res.Host = host
 		return res, nil
 	}
 	ticket := d.Ticket()
@@ -224,7 +259,11 @@ func authenticate(conn FrameConn, serverID, secret, ticket string) (DialResult, 
 }
 
 func authenticateWith(conn FrameConn, serverID, secret, ticket string, features []string) (DialResult, error) {
-	ap := authPayload{ServerID: serverID, Secret: secret, Flow: FlowVersion, Features: features}
+	return authenticateRole(conn, serverID, secret, ticket, features, "")
+}
+
+func authenticateRole(conn FrameConn, serverID, secret, ticket string, features []string, role string) (DialResult, error) {
+	ap := authPayload{ServerID: serverID, Secret: secret, Flow: FlowVersion, Features: features, Role: role}
 	if ticket != "" {
 		ap.Secret, ap.Ticket = "", ticket
 	}
@@ -242,8 +281,12 @@ func authenticateWith(conn FrameConn, serverID, secret, ticket string, features 
 		if err := json.Unmarshal(reply.Payload, &ok); err != nil {
 			return DialResult{}, fmt.Errorf("%w: bad AUTH_OK json: %v", ErrAuthProtocol, err)
 		}
-		return DialResult{Conn: conn, Slug: ok.Slug, Flow: ok.Flow >= FlowVersion, Ticket: ok.Ticket,
-			Direct: slices.Contains(ok.Features, relay.FeatureDirect)}, nil
+		res := DialResult{Conn: conn, Slug: ok.Slug, Flow: ok.Flow >= FlowVersion, Ticket: ok.Ticket,
+			Direct: slices.Contains(ok.Features, relay.FeatureDirect)}
+		if slices.Contains(ok.Features, relay.FeaturePool) {
+			res.Relays = ok.Relays
+		}
+		return res, nil
 	case KindAuthFail:
 		if ticket != "" && bytes.Contains(reply.Payload, []byte("ticket_invalid")) {
 			return DialResult{}, fmt.Errorf("%w: %s", ErrTicketRefused, string(reply.Payload))

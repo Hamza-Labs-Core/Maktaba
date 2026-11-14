@@ -26,6 +26,8 @@
 //	0x22  DRAIN           payload = JSON DrainPayload: open a new tunnel, then let this one
 //	                      finish its streams (story 50.03)
 //	0x23  TICKET          payload = JSON TicketPayload: a fresh resume ticket
+//	0x24  RELAYS          payload = JSON RelaysPayload: the home's place in the relay pool
+//	                      changed (story 50.16): its primary and standby relays
 //
 // DRAIN and TICKET are sent only to a home that announced the features
 // "drain" and "ticket" in AUTH; an older home never sees them (a frame kind
@@ -63,6 +65,7 @@ const (
 	KindWindowUpdate byte = 0x0c
 	KindDrain        byte = 0x22
 	KindTicket       byte = 0x23
+	KindRelays       byte = 0x24
 )
 
 // Tunnel features a home announces in AUTH ("features"), story 50.03.
@@ -71,7 +74,33 @@ const (
 	FeatureDrain = "drain"
 	// FeatureTicket: the home keeps resume tickets and presents them.
 	FeatureTicket = "ticket"
+	// FeaturePool: the home follows its place in the relay pool (story 50.16): it dials the
+	// relays AUTH_OK, DRAIN and RELAYS name, and holds a standby tunnel ("role":"standby").
+	FeaturePool = "pool"
 )
+
+// Tunnel roles (AuthPayload.Role, story 50.16): a home's primary tunnel carries its requests;
+// its standby, on another relay, idles (PINGs) and carries them only once the primary's relay
+// is gone. An empty role is a primary.
+const (
+	RolePrimary = "primary"
+	RoleStandby = "standby"
+)
+
+// RelayTarget is one relay of a home's assignment: its member id and the host its tunnel is
+// dialled at (r3.relay.maktaba.tv; the path and scheme stay the home's own).
+type RelayTarget struct {
+	ID   string `json:"id"`
+	Host string `json:"host"`
+}
+
+// RelaysPayload is a home's place in the relay pool (story 50.16 §3), in AUTH_OK, DRAIN and
+// RELAYS: its primary relay, its standby (none in a pool of one) and the relay that sent it.
+type RelaysPayload struct {
+	Primary RelayTarget  `json:"primary"`
+	Standby *RelayTarget `json:"standby,omitempty"`
+	Here    string       `json:"here,omitempty"`
+}
 
 // Drain reasons (DrainPayload.Reason).
 const (
@@ -88,6 +117,9 @@ type DrainPayload struct {
 	WithinMS   int64  `json:"within_ms"`
 	DeadlineMS int64  `json:"deadline_ms"`
 	Ticket     string `json:"ticket,omitempty"`
+	// Relays: where to move (a rebalance in the relay pool, story 50.16); absent: anywhere
+	// (the home dials its endpoint as before).
+	Relays *RelaysPayload `json:"relays,omitempty"`
 }
 
 // TicketPayload carries a fresh resume ticket (sent every TicketRefresh).
