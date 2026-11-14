@@ -11,5 +11,5 @@ test("I18n reads the catalogs, fills templates and shapes Arabic", () => {
   const r = runBrs("i18n", [join(ROKU, "tests", "i18n_test.brs")]);
   assert.deepEqual(r.failures, [], r.failures.join("\n"));
   assert.equal(r.fail, 0);
-  assert.ok(r.pass >= 15, `${r.pass} checks`);
+  assert.ok(r.pass >= 40, `${r.pass} checks`);
 });
