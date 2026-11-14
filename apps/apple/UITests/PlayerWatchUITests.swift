@@ -332,10 +332,23 @@ final class PlayerWatchUITests: PlayerUITestCase {
         waitFor("paused") { state["playing"] == "false" }
         let at = Int(state["position"] ?? "") ?? 0
         let surface = element("player.surface")
-        surface.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.3)).doubleTap()
-        waitFor("the right side seeks \(rightSeeks) s") { Int(state["position"] ?? "") == at + rightSeeks }
-        surface.coordinate(withNormalizedOffset: CGVector(dx: 0.1, dy: 0.3)).doubleTap()
-        waitFor("the left side seeks back") { Int(state["position"] ?? "") == at }
+        doubleTap(surface, dx: 0.9, from: at, "the right side seeks \(rightSeeks) s") { $0 == at + rightSeeks }
+        doubleTap(surface, dx: 0.1, from: at + rightSeeks, "the left side seeks back") { $0 == at }
+    }
+
+    /// A double tap at `dx`, checked by the position it moves to. On a loaded CI simulator the
+    /// second tap can arrive seconds late (#1309's run 43606583050, iPad: the touch log shows
+    /// the left side's touches end 14.3 s and 18.6 s), and the app rightly takes two single
+    /// taps, which show and hide the controls and leave the position where it was. Then the
+    /// position still reads `from`, and the double tap is made once more; a seek to anywhere
+    /// else still fails.
+    private func doubleTap(_ surface: XCUIElement, dx: CGFloat, from: Int, _ what: String, _ moved: @escaping (Int?) -> Bool) {
+        for attempt in 1 ... 2 {
+            surface.coordinate(withNormalizedOffset: CGVector(dx: dx, dy: 0.3)).doubleTap()
+            if waitUntil(timeout: 15, { moved(Int(self.state["position"] ?? "")) }) { return }
+            let now = Int(state["position"] ?? "")
+            guard now == from, attempt < 2 else { return XCTFail("timed out: \(what) (state: \(state))") }
+        }
     }
 
     private func waitFor(_ what: String, timeout: TimeInterval = 15, _ done: () -> Bool) {

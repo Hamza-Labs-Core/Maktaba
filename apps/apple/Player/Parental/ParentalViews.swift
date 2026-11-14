@@ -90,6 +90,13 @@ struct BlockedPageView: View {
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("screen.blocked")
         .task { await page.load() }
+        // made before the limit was read: made again once it is (`BlockedPage.outdated`)
+        .onChange(of: context.session.parental.current) { _, now in
+            guard page.outdated(by: now) else { return }
+            let fresh = BlockedPage(client: context.client, subject: page.subject, limit: now)
+            page = fresh
+            Task { await fresh.load() }
+        }
         // what became of the request for this: the home's list of the child's own requests,
         // read while the app is in front and a request waits (`RequestFollow`)
         .task(id: Following(front: scenePhase == .active, waiting: page.waiting)) {
@@ -445,10 +452,17 @@ struct TimeUpView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("screen.timeUp")
-        .task {
-            let p = BlockedPage(client: context.client, subject: .time(minutes: minutes), limit: context.session.parental.current)
+        // the page, made again if it was made before the limit was read (`BlockedPage.outdated`);
+        // the home has just refused for a parental reason, so an unread limit is read now
+        .task(id: context.session.parental.current) {
+            let now = context.session.parental.current
+            if let page, !page.outdated(by: now) { return }
+            let p = BlockedPage(client: context.client, subject: .time(minutes: minutes), limit: now)
             await p.load()
             page = p
+        }
+        .task {
+            if context.session.parental.current == .none { await context.session.parental.refresh() }
         }
         .sheet(isPresented: $enteringPIN) {
             PinSheet(client: context.client, subject: .time(minutes: minutes), people: page?.unlockers ?? []) {
