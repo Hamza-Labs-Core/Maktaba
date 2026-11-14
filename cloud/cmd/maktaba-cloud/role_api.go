@@ -195,7 +195,6 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 	}
 	ipSalt := sha256.Sum256([]byte("maktaba-broadcast-agreement-ip\x00" + string(secret)))
 	broadcastDeps := &broadcasth.Deps{DB: pool.DB, Servers: servers, Store: broadcastStore, Logger: logger, IPSalt: ipSalt[:]}
-	withIngestTokens(broadcastDeps, cfg, pool, logger)
 	serversDeps := serversh.Deps{Servers: servers, Assertions: assertions, Licenses: licenses,
 		ManageURL: strings.TrimRight(cfg.Server.WebURL, "/") + "/billing"}
 	homes := &homesh.Deps{Servers: servers, Users: users, Signer: assertions, RelayHost: cfg.Relay.PublicHost,
@@ -325,6 +324,7 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 		// credential, never a user token.
 		serversh.MountAgent(app, serversDeps)
 		broadcasth.MountAgent(app, broadcastDeps)
+		broadcasth.MountIngest(app, ingestDeps(cfg, servers, broadcastStore, logger))
 		// the broadcast edge: each request signed with its key, no account
 		edgeh.Mount(app, edgeDeps)
 		reports.MountAgent(app, &reports.AgentDeps{Store: reportStore, Servers: servers, Logger: logger,
@@ -545,19 +545,21 @@ func turnstileGuard(cfg config.Config, fake turnstile.Verifier) (*turnstile.Guar
 		ClientIP: func(r *http.Request) string { return cmw.GetClientIP(r.Context()) }}, nil
 }
 
-// withIngestTokens turns on the broadcast edge's ingest tokens (story 50.21) when
-// broadcast.key_path is set; without it the route answers 503 broadcast_disabled. Who may
-// publish is the plan's (and, while broadcast.enabled is off, the gate's) to say, not the key's.
-func withIngestTokens(d *broadcasth.Deps, cfg config.Config, pool *db.Pool, logger *slog.Logger) {
-	d.Plans, d.IngestURL = broadcasth.DBPlans{DB: pool.DB}, cfg.Broadcast.IngestURL
+// ingestDeps wires the broadcast edge's ingest tokens (story 50.21): on whenever
+// broadcast.key_path is set (otherwise the route answers 503 broadcast_disabled). Who gets one
+// is 50.20's entitlement (broadcasth.StorePlans): while broadcast.enabled is off, only the
+// test publishers a service admin granted.
+func ingestDeps(cfg config.Config, servers *stores.Servers, store *billingpkg.BroadcastStore, logger *slog.Logger) *broadcasth.IngestDeps {
+	d := &broadcasth.IngestDeps{Agents: servers, Plans: broadcasth.StorePlans{Store: store}, IngestURL: cfg.Broadcast.IngestURL}
 	if cfg.Broadcast.KeyPath == "" {
-		return
+		return d
 	}
 	k, err := broadcast.LoadKey(cfg.Broadcast.KeyPath)
 	if err != nil {
 		logger.Warn("broadcast ingest tokens disabled", "err", err)
-		return
+		return d
 	}
 	d.Key = &k
 	logger.Info("broadcast ingest tokens on", "kid", k.Kid)
+	return d
 }

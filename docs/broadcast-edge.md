@@ -179,11 +179,17 @@ revocations and metering stay the same; Stream's viewer-minutes are counted apar
 | `STREAM_ACCOUNT_ID`, `STREAM_CUSTOMER_CODE`, `STREAM_KEY_ID` | var | the fallback's account and signing key id |
 | `STREAM_API_TOKEN`, `STREAM_KEY_JWK` | secret | the fallback's API token (Stream: Edit) and signing key |
 
-The cloud's side (`cloud.toml`): `[broadcast] enabled` (50.20's broadcasting gate), `key_path`
-(the Ed25519 seed, 0600; without it the ingest-token route answers `503 broadcast_disabled`),
-`ingest_url` (default `https://ingest.maktaba.tv`) and `edge_public_key` (base64url, as printed
-from the seed; standard base64 is read too). Until 50.22 reads the Broadcaster tier's ladder, an
-active Pro owner's home gets Pro's guest sharing (2 rungs, 3,000 kbps) and any other plan none.
+The cloud's side (`cloud.toml`): `[broadcast] enabled` (50.20's broadcasting gate; the api role
+refuses to start with it on and no `key_path`), `key_path` (the Ed25519 seed, 0600; without it
+the ingest-token route answers `503 broadcast_disabled`), `ingest_url` (default
+`https://ingest.maktaba.tv`) and `edge_public_key` (base64url, as printed from the seed; standard
+base64 is read too).
+
+Who gets an ingest token is 50.20's entitlement (`broadcasth.StorePlans`): a home with no plan,
+or whose owner is not active, gets `403 broadcast_not_in_plan`; while `broadcast.enabled` is off,
+only a test publisher a service admin granted gets one (`403 broadcast_not_enabled` for the
+others); otherwise the home's tier from the catalog sets the rungs and the top bitrate (Pro's
+guest sharing, or the Broadcaster add-on), and more rungs than it allows is `403 plan_rungs`.
 
 ## Running it
 

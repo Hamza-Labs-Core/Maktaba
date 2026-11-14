@@ -8,10 +8,8 @@
 //	                                     402 broadcast_limit {limit}, 409 broadcast_agreement_required
 //	DELETE /v1/broadcast/channels/{id}   a home: unpublish one
 //	GET  /v1/broadcast/state             a home: its PublisherState (the Broadcast page's usage)
-//	POST /v1/broadcast/ingest-token      a home: its channel's ingest token (story 50.21,
-//	                                     ingest_token.go)
 //
-// Story 50.22 adds the ladder and PATCH to the channel routes.
+// Story 50.22 adds the ladder, the ingest token (50.21) and PATCH to the channel routes.
 package broadcast
 
 import (
@@ -25,12 +23,10 @@ import (
 	"log/slog"
 	"net/http"
 	"regexp"
-	"time"
 
 	"github.com/go-chi/chi/v5"
 
 	billingpkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/billing"
-	bc "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/broadcast"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/middleware"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/stores"
 )
@@ -43,15 +39,6 @@ type Deps struct {
 	Logger  *slog.Logger
 	// IPSalt keys the hash of the address an agreement was accepted from (never the address).
 	IPSalt []byte
-
-	// The ingest token (story 50.21, ingest_token.go). Agents checks the home's credential
-	// (Servers when nil); Plans says what it may publish; a nil Key turns the route off
-	// (503 broadcast_disabled).
-	Agents    Agents
-	Plans     Plans
-	Key       *bc.Key
-	IngestURL string
-	Now       func() time.Time
 }
 
 // MountAgent registers the routes a home calls with its server credential.
@@ -59,7 +46,6 @@ func MountAgent(r chi.Router, d *Deps) {
 	r.Post("/v1/broadcast/channels", d.Publish)
 	r.Delete("/v1/broadcast/channels/{id}", d.Unpublish)
 	r.Get("/v1/broadcast/state", d.State)
-	r.Post("/v1/broadcast/ingest-token", d.IngestToken)
 }
 
 // MountUser registers the account routes (inside the bearer-token group).
@@ -120,17 +106,10 @@ func (d *Deps) ipHash(ip string) string {
 	return hex.EncodeToString(m.Sum(nil))[:32]
 }
 
-func (d *Deps) agents() Agents {
-	if d.Agents != nil {
-		return d.Agents
-	}
-	return d.Servers
-}
-
 // agent authenticates a home by its id and secret (basic auth); false after writing 401.
 func (d *Deps) agent(w http.ResponseWriter, r *http.Request) (string, bool) {
 	id, secret, ok := r.BasicAuth()
-	if !ok || id == "" || d.agents().VerifySecret(r.Context(), id, secret) != nil {
+	if !ok || d.Servers.VerifySecret(r.Context(), id, secret) != nil {
 		w.Header().Set("WWW-Authenticate", `Basic realm="maktaba-server"`)
 		writeErr(w, http.StatusUnauthorized, "unauthorized", "")
 		return "", false

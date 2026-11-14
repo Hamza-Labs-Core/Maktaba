@@ -294,6 +294,27 @@ func TestParsePrefixesCIDRsOnly(t *testing.T) {
 	}
 }
 
+// Story 50.21: the ingest host has a default, its keys parse, and broadcasting on without the
+// ingest-token key is refused.
+func TestBroadcastIngestConfig(t *testing.T) {
+	c := defaultConfig()
+	if c.Broadcast.IngestURL != "https://ingest.maktaba.tv" || c.Broadcast.KeyPath != "" {
+		t.Fatalf("defaults: %+v", c.Broadcast)
+	}
+	if err := parseTOML("[broadcast]\nkey_path = \"/opt/maktaba-cloud/secrets/broadcast.key\"\ningest_url = \"https://ingest-staging.maktaba.tv\"\n", &c); err != nil {
+		t.Fatal(err)
+	}
+	if c.Broadcast.KeyPath != "/opt/maktaba-cloud/secrets/broadcast.key" || c.Broadcast.IngestURL != "https://ingest-staging.maktaba.tv" {
+		t.Fatalf("parsed: %+v", c.Broadcast)
+	}
+	c.Database.URL = "postgres://x"
+	c.Server.ListenAddr = "127.0.0.1:8090"
+	c.Broadcast.Enabled, c.Broadcast.KeyPath = true, ""
+	if err := Validate(c, RoleAPI); err == nil || !strings.Contains(err.Error(), "broadcast.key_path") {
+		t.Fatalf("on without a key: %v", err)
+	}
+}
+
 // Story 50.20: the broadcast keys, their defaults, and the broadcasting gate (T07).
 func TestBroadcastConfig(t *testing.T) {
 	c := defaultConfig()
@@ -320,20 +341,9 @@ func TestBroadcastConfig(t *testing.T) {
 	}
 }
 
-// Story 50.21: the ingest host has a default, the key settings parse, and the edge's key reads
-// as base64url or standard base64. The ingest tokens' key is optional: without it the
-// ingest-token route answers 503 (cmd/maktaba-cloud's TestBroadcastIngestTokenRouteIsWired).
-func TestBroadcastEdgeConfig(t *testing.T) {
-	c := defaultConfig()
-	if c.Broadcast.IngestURL != "https://ingest.maktaba.tv" || c.Broadcast.KeyPath != "" {
-		t.Fatalf("defaults: %+v", c.Broadcast)
-	}
-	if err := parseTOML("[broadcast]\nkey_path = \"/k\"\ningest_url = \"https://ingest-staging.maktaba.tv\"\n", &c); err != nil {
-		t.Fatal(err)
-	}
-	if c.Broadcast.KeyPath != "/k" || c.Broadcast.IngestURL != "https://ingest-staging.maktaba.tv" {
-		t.Fatalf("%+v", c.Broadcast)
-	}
+// The edge's key reads as base64url (how the docs and the shared vectors print it) or standard
+// base64, padded or not.
+func TestEdgeKeyEncodings(t *testing.T) {
 	raw := make([]byte, 32)
 	raw[0], raw[1] = 0xfb, 0xff // '-' and '_' in base64url, '+' and '/' in standard base64
 	for _, s := range []string{base64.RawURLEncoding.EncodeToString(raw), base64.URLEncoding.EncodeToString(raw),

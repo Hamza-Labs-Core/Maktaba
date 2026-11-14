@@ -217,7 +217,8 @@ enabled = false
 # Worker's EDGE_SIGNING_KEY. Empty: the edge routes answer 503.
 edge_public_key = ""
 # The Ed25519 seed (0600) that signs ingest tokens and control posts (story 50.21); its public
-# half goes in the edge's CLOUD_PUBKEYS. Empty: the ingest-token route answers 503.
+# half goes in the edge's CLOUD_PUBKEYS. Required while enabled is on; empty, the ingest-token
+# route answers 503.
 key_path = ""
 ingest_url = "https://ingest.maktaba.tv"
 
