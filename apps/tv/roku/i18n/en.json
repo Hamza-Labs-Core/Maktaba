@@ -533,5 +533,95 @@
     "widthChars": 60,
     "lines": 2
   },
-  "parental.blocked.deviceAll": "This device is limited to All ages."
+  "parental.blocked.deviceAll": "This device is limited to All ages.",
+  "@parental.time.up.title": {
+    "widthChars": 40,
+    "lines": 1
+  },
+  "parental.time.up.title": "Time's up for today",
+  "@parental.time.outside.title": {
+    "widthChars": 40,
+    "lines": 1
+  },
+  "parental.time.outside.title": "Not watching time yet",
+  "@parental.time.next": {
+    "widthChars": 60,
+    "lines": 1
+  },
+  "parental.time.next": "You can watch again at %1$s",
+  "@parental.time.saved": {
+    "widthChars": 60,
+    "lines": 2
+  },
+  "parental.time.saved": "Your place in this video is saved at %1$s.",
+  "@parental.time.askMore": {
+    "widthChars": 40,
+    "lines": 1
+  },
+  "parental.time.askMore": "Ask for more time",
+  "@parental.ask.sentTime": {
+    "widthChars": 60,
+    "lines": 2
+  },
+  "parental.ask.sentTime": "You asked for more time. Waiting for a parent.",
+  "@parental.time.cannotCheck": {
+    "widthChars": 60,
+    "lines": 2
+  },
+  "parental.time.cannotCheck": "Your home can't check your watching time right now. Try again in a moment.",
+  "@parental.player.stopped": {
+    "widthChars": 60,
+    "lines": 2
+  },
+  "parental.player.stopped": "This video is no longer available on this account.",
+  "@roku.parental.ask15": {
+    "widthChars": 16,
+    "lines": 1
+  },
+  "roku.parental.ask15": "15 minutes",
+  "@roku.parental.ask30": {
+    "widthChars": 16,
+    "lines": 1
+  },
+  "roku.parental.ask30": "30 minutes",
+  "@roku.parental.ask60": {
+    "widthChars": 16,
+    "lines": 1
+  },
+  "roku.parental.ask60": "1 hour",
+  "@roku.weekday.0": {
+    "widthChars": 16,
+    "lines": 1
+  },
+  "roku.weekday.0": "Sunday",
+  "@roku.weekday.1": {
+    "widthChars": 16,
+    "lines": 1
+  },
+  "roku.weekday.1": "Monday",
+  "@roku.weekday.2": {
+    "widthChars": 16,
+    "lines": 1
+  },
+  "roku.weekday.2": "Tuesday",
+  "@roku.weekday.3": {
+    "widthChars": 16,
+    "lines": 1
+  },
+  "roku.weekday.3": "Wednesday",
+  "@roku.weekday.4": {
+    "widthChars": 16,
+    "lines": 1
+  },
+  "roku.weekday.4": "Thursday",
+  "@roku.weekday.5": {
+    "widthChars": 16,
+    "lines": 1
+  },
+  "roku.weekday.5": "Friday",
+  "@roku.weekday.6": {
+    "widthChars": 16,
+    "lines": 1
+  },
+  "roku.weekday.6": "Saturday"
 }

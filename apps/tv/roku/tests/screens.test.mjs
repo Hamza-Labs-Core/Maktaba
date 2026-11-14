@@ -450,6 +450,134 @@ test("T04 (58.14): a restricted child: the blocked page asks a parent and a yes 
   }
 });
 
+test("T05 (58.14): the player stops for the home's parental answers: time's up, Ask for more time, a title hidden mid-play", { timeout: 300000 }, async () => {
+  // T04 left the channel in English. The mock home answers as the real one: 403 parental_time
+  // on the open and on the heartbeat once the time is over, 404 for a video hidden mid-play
+  home.state.restricted = true;
+  home.state.requests = [];
+  const later = () => new Date(Date.now() + 2 * 3600e3).toISOString();
+  const c = await Channel.start("player-parental", zip, data);
+  try {
+    await c.waitFor(/\[parental\] limited=true/, 30000);
+    await c.waitFor(/\[home\] for you/, 30000);
+
+    // the time is over before the video opens: the open is refused, and the page says why
+    home.state.time = { reason: "limit_reached", next: later() };
+    const v = videos[12];
+    await c.input({ contentId: v.id, mediaType: "movie" });
+    await c.waitFor(/\[link\] play/);
+    await c.waitFor(/\[screen\] PlayerScreen timesup reason=limit_reached/, 20000);
+    assert.ok(requests.some((l) => l.startsWith(`home session video=${v.id} profile=roku start=600`)), "the open asked for the saved place");
+    // the main action has the remote's focus: the first minutes to ask for
+    await c.waitFor(/\[focus\] timesup tuAsk0/);
+    assert.doesNotMatch(c.out, /\[player\] failed/, "never the player's raw error");
+    await compare(c, "player-timesup-en");
+    // Right moves along the row; OK asks for 30 minutes
+    await c.key("Right");
+    await c.waitFor(/\[focus\] timesup tuAsk1/);
+    await c.key("Select");
+    await c.waitFor(/\[parental\] asked time/);
+    assert.ok(requests.some((l) => l === "home ask kind=time id=30"), "the request asks for 30 minutes");
+    // once asked, the minute buttons go and Check again takes the focus
+    await c.waitFor(/\[focus\] timesup tuCheck/);
+    await compare(c, "player-timesup-asked-en");
+    // Check again asks the home, which still says no: the page stays
+    const opens = requests.filter((l) => l.startsWith(`home session video=${v.id}`)).length;
+    await c.key("Select");
+    await c.waitFor(/\[parental\] check again at\s+600/);
+    await c.waitFor(/\[screen\] PlayerScreen timesup reason=limit_reached/, 10000);
+    assert.equal(requests.filter((l) => l.startsWith(`home session video=${v.id}`)).length, opens + 1, "Check again opened once more");
+    // the parent says yes from their phone: the next read opens the video again, where it stopped
+    home.state.requests[0].status = "approved";
+    await c.waitFor(/\[parental\] approved time/, 30000);
+    await c.waitFor(/\[parental\] times up closed/, 10000);
+    await c.waitFor(/\[screen\] PlayerScreen ready/);
+
+    // the home ends the time while it plays (watching hours): the heartbeat after a seek is
+    // refused, the video stops and its session closes (brs-engine's Video node stays at 0, so a
+    // seek of 10 s lands at 10)
+    home.state.requests = [];
+    home.state.time = { reason: "outside_slot", next: later() };
+    await c.key("Right", 200);
+    await c.waitFor(/\[seek\] to\s+10\b/);
+    await c.waitFor(/\[screen\] PlayerScreen timesup reason=outside_slot/, 10000);
+    await c.waitFor(/\[focus\] timesup tuAsk0/);
+    assert.ok(requests.some((l) => /^home progress s\d+ pos=10 completed=false$/.test(l)), "the refused heartbeat carried the position");
+    await new Promise((r) => setTimeout(r, 500));
+    const last = requests.filter((l) => /^home session video=/.test(l)).length;
+    assert.ok(requests.some((l, i) => /^home close s\d+$/.test(l) && i > requests.findLastIndex((x) => x === "home time over")), "the stopped stream's session closed");
+    // nothing asks the home again by itself
+    await new Promise((r) => setTimeout(r, 2000));
+    assert.equal(requests.filter((l) => /^home session video=/.test(l)).length, last, "no open by itself");
+    await c.key("Back");
+    await c.waitFor(/\[nav\] back to HomeScreen/);
+
+    // a video hidden by the limit while it plays: "This isn't available", that it stopped, and
+    // Ask a parent; a yes plays it again from where it stopped
+    home.state.time = null;
+    const w = videos[16];
+    await c.input({ contentId: w.id, mediaType: "movie" });
+    await c.waitFor(/\[screen\] PlayerScreen ready/, 20000);
+    home.state.hiddenNow.add(w.id);
+    await c.key("Right", 200);
+    await c.waitFor(/\[parental\] the home ended the stream/, 10000);
+    await c.waitFor(/\[parental\] blocked stopped=true at=\s*10\b/);
+    await c.waitFor(/\[screen\] BlockedScreen ready kind=video restricted=true/, 10000);
+    await c.waitFor(/\[focus\] blocked none/);
+    await compare(c, "player-blocked-en");
+    await c.key("Select");
+    await c.waitFor(/\[parental\] asked/);
+    assert.ok(requests.some((l) => l === `home ask kind=video id=${w.id}`), "the request names the video");
+    home.state.requests[0].status = "approved";
+    await c.waitFor(/\[parental\] approved video/, 30000);
+    await c.waitFor(/\[screen\] PlayerScreen ready/, 20000);
+    assert.ok(requests.some((l) => l.startsWith(`home session video=${w.id} profile=roku start=10 `)), "the yes played it again from where it stopped");
+    // Back goes Home: neither the blocked page nor the first player is left on the stack
+    await c.key("Back");
+    await c.waitFor(/\[nav\] back to HomeScreen/);
+
+    // Arabic: the same pages, the button row mirrored (the first minutes at the right)
+    await c.key("Up");
+    await c.waitFor(/\[focus\] home menu/);
+    await c.keys(["Right", "Right", "Right"]);
+    await c.key("Select");
+    await c.waitFor(/\[screen\] AccountScreen ready lang=en managed=true/);
+    await c.keys(["Down", "Down", "Down"]);
+    await c.key("Select");
+    await c.waitFor(/\[account\] ar/);
+    await c.waitFor(/\[screen\] AccountScreen ready lang=ar/);
+    await c.key("Back");
+    await c.waitFor(/\[nav\] back to HomeScreen/);
+    await c.waitFor(/\[home\] for you/, 20000);
+    home.state.requests = [];
+    home.state.time = { reason: "limit_reached", next: later() };
+    await c.input({ contentId: v.id, mediaType: "movie" });
+    await c.waitFor(/\[screen\] PlayerScreen timesup reason=limit_reached/, 20000);
+    await c.waitFor(/\[focus\] timesup tuAsk0/);
+    await compare(c, "player-timesup-ar");
+    // in Arabic Left moves forward
+    await c.key("Left");
+    await c.waitFor(/\[focus\] timesup tuAsk1/);
+    await c.key("Back");
+    await c.waitFor(/\[nav\] back to HomeScreen/);
+    home.state.time = null;
+    const x = videos[20];
+    await c.input({ contentId: x.id, mediaType: "movie" });
+    await c.waitFor(/\[screen\] PlayerScreen ready/, 20000);
+    home.state.hiddenNow.add(x.id);
+    await c.key("Left", 200);
+    await c.waitFor(/\[screen\] BlockedScreen ready kind=video restricted=true/, 10000);
+    await c.waitFor(/\[focus\] blocked none/);
+    await compare(c, "player-blocked-ar");
+  } finally {
+    await c.stop();
+    home.state.restricted = false;
+    home.state.time = null;
+    home.state.hiddenNow.clear();
+    home.state.requests = [];
+  }
+});
+
 // The probe walks the whole /24; brs-engine's roUrlTransfer is synchronous, so each address
 // that does not answer waits for its connection to fail. Linux refuses loopback addresses
 // (127.0.0.2…) at once; macOS has no such addresses and waits out each one.
