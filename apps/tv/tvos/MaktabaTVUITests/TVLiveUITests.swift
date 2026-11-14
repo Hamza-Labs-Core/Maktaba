@@ -378,6 +378,82 @@ final class TVLiveUITests: XCTestCase {
         XCTAssertTrue(banner.waitForNonExistence(timeout: 15), "and the banner after its time")
     }
 
+    /// Menu always leaves the live player, in at most two presses (one puts an overlay away),
+    /// whatever the channel is doing: starting (the home has not answered), playing with the
+    /// banner up, with the mini-guide open, right after a channel change, buffering on a
+    /// segment the home holds, and after the channel failed. Once left, nothing more is asked
+    /// of the home's stream: the player really stopped.
+    func testMenuAlwaysLeavesTheLivePlayer() throws {
+        signIn("en")
+        openLiveTab("Live TV")
+        let first = app.buttons["live.channel.ch-1"]
+        XCTAssertTrue(first.waitForExistence(timeout: 20), "the Now grid; the home saw \(home.seen)")
+        let player = element("live.player")
+
+        func tune() {
+            moveFocus(to: first, with: .down)
+            remote.press(.select)
+            XCTAssertTrue(player.waitForExistence(timeout: 10), "the live player")
+        }
+        func leave(_ phase: String) {
+            remote.press(.menu)
+            if !player.waitForNonExistence(timeout: 3) {
+                remote.press(.menu)
+                XCTAssertTrue(player.waitForNonExistence(timeout: 5), "\(phase): two presses of Menu did not leave the player")
+            }
+            XCTAssertTrue(first.waitForExistence(timeout: 10), "\(phase): back on the Live tab")
+        }
+        func playing() {
+            XCTAssertTrue(element("live.player.starting").waitForNonExistence(timeout: 30), "the channel plays")
+        }
+
+        // starting: the home has not answered the playlist
+        home.hold("GET", "/stream/channel/ch-1/index.m3u8")
+        tune()
+        XCTAssertTrue(element("live.player.starting").waitForExistence(timeout: 10), "starting")
+        leave("starting")
+        home.release()
+
+        // playing, the banner up
+        tune()
+        playing()
+        XCTAssertTrue(element("live.player.banner").exists, "the banner is up")
+        leave("playing")
+        // the player stopped: nothing more is asked of the stream
+        sleep(2)
+        let asked = home.seen.filter { $0.contains("/stream/") }.count
+        sleep(6)
+        XCTAssertEqual(home.seen.filter { $0.contains("/stream/") }.count, asked, "a player that was left asks the home for nothing more")
+
+        // the mini-guide open
+        tune()
+        playing()
+        remote.press(.select)
+        XCTAssertTrue(element("live.miniguide").waitForExistence(timeout: 10), "the mini-guide")
+        leave("mini-guide")
+
+        // right after a channel change
+        tune()
+        playing()
+        remote.press(.up)
+        leave("channel change")
+
+        // buffering: a segment the home holds
+        home.hold("GET", "/stream/channel/ch-1/seg6.ts")
+        tune()
+        playing()
+        XCTAssertTrue(element("live.player.buffering").waitForExistence(timeout: 60),
+                      "the picture waits for the held segment; the home saw \(home.seen.suffix(12))")
+        leave("buffering")
+        home.release()
+
+        // failed: the home refuses the channel
+        home.stub("GET", "/stream/channel/ch-1/index.m3u8", status: 500, body: #"{"status":500,"title":"error"}"#)
+        tune()
+        XCTAssertTrue(element("live.player.error").waitForExistence(timeout: 30), "the channel failed")
+        leave("failed")
+    }
+
     /// The bug: the banner could cover a channel logo the home burns into a bottom
     /// corner. With ch-1's logo bottom right (`watermark_position`), the banner and the
     /// mini-guide sit at the top, clear of that corner.
