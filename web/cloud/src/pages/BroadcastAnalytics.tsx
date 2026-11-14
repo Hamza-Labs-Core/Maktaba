@@ -1,6 +1,6 @@
 // /homes/:id/viewers — a publisher's viewer analytics (Epic 50 story 50.28 §3), from
 // GET /v1/broadcast/analytics. The cloud answers only the home's owner (403 otherwise) and only
-// folded counts: a country or device with fewer than 5 sessions in the period is "Other", and
+// folded counts: a country or device with fewer than 5 sessions in an hour is "Other" for that hour, and
 // nothing personal is kept. Pro's guest sharing sees live viewers and hours; the Broadcaster
 // tier everything. Times are in the viewer's own time zone.
 import { useState } from "react";
