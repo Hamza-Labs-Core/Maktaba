@@ -181,7 +181,7 @@ jobs:
     name: Player UI tests (${{ matrix.device }} ${{ matrix.shard }}/${{ matrix.shards }})
     if: inputs.player_ui
     runs-on: macos-26
-    timeout-minutes: 60
+    timeout-minutes: 170 # TEMPORARY: -test-iterations 3
     permissions:
       contents: read
       actions: read # the build's artifact, as soon as it is uploaded
@@ -334,7 +334,7 @@ jobs:
           echo "shard $shard/$shards: ${#only[@]} arguments for $((${#only[@]} / 2)) tests"
           xctestrun=$(ls "$PRODUCTS/Products/${scheme}_iphonesimulator"*.xctestrun)
           TEST_RUNNER_MAKTABA_SHOTS="$SHOTS" xcodebuild test-without-building -xctestrun "$xctestrun" \
-            -destination "id=$UDID" -resultBundlePath "$RESULTS/$device-$shard.xcresult" "${only[@]}"
+            -destination "id=$UDID" -resultBundlePath "$RESULTS/$device-$shard.xcresult" -test-iterations 3 "${only[@]}"
 
       # the app's own log (MaktabaKit's `Log`: the requests to the mock home, connects,
       # sign-ins), kept with the results, read once the tests are done: a failed wait
