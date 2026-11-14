@@ -44,6 +44,14 @@ for (let i = 0; i < 80; i++) {
   });
 }
 
+/**
+ * Story 58.14: a 16+ video. With `state.restricted` the home holds the viewer to 9+ and answers
+ * 404 for it (as for a missing one) until a parent approves the viewer's request for it; Home's
+ * Continue watching still lists it first (a limit tightened since the row was read).
+ */
+export const LATE = uuid(998);
+const late = { id: LATE, title: "Late Night Film", filename: "late.mkv", library_id: LIB, duration_sec: 5400, position_sec: 900, completed: false, series: null, description: "A film for grown-ups.", playable: true };
+
 /** A video whose stream session the home refuses (every transcode slot taken). */
 export const REFUSED = uuid(8);
 
@@ -83,16 +91,6 @@ function poster(id) {
   return c.toBuffer("image/png");
 }
 
-function qr() {
-  const c = createCanvas(420, 420);
-  const g = c.getContext("2d");
-  g.fillStyle = "#fff";
-  g.fillRect(0, 0, 420, 420);
-  g.fillStyle = "#000";
-  for (let y = 0; y < 21; y++) for (let x = 0; x < 21; x++) if ((x * 7 + y * 13) % 5 < 2 || (x < 7 && y < 7)) g.fillRect(x * 20, y * 20, 20, 20);
-  return c.toBuffer("image/png");
-}
-
 function json(res, status, body) {
   res.writeHead(status, { "Content-Type": "application/json" });
   res.end(JSON.stringify(body));
@@ -114,7 +112,9 @@ function readBody(req) {
 
 /** Starts the home; log(line) gets each request. */
 export function startHome(log) {
-  const state = { access: new Set(), refresh: new Set(), expired: new Set(), n: 0, grant: "G1", deviceCode: "dc1", clientHeaders: new Set() };
+  const state = { access: new Set(), refresh: new Set(), expired: new Set(), n: 0, grant: "G1", deviceCode: "dc1", clientHeaders: new Set(), restricted: false, requests: [] };
+  // story 58.14: the late video is the viewer's to see once not restricted, or once approved
+  const lateShown = () => !state.restricted || state.requests.some((r) => r.subject_id === LATE && r.status === "approved");
   const card = (v) => ({ id: v.id, title: v.title, filename: v.filename, library_id: v.library_id, duration_sec: v.duration_sec, position_sec: v.position_sec, completed: v.completed, series: v.series });
   const mint = () => {
     state.n++;
@@ -135,7 +135,7 @@ export function startHome(log) {
       const port = server.address().port;
       return json(res, 200, { id: HOME_ID, name: "Test home", version: "0.3.150", urls: [`http://127.0.0.1:${port}`], sign_in: { password: true, code: true }, api_level: 1, api_level_oldest: 1, client_floor: {} });
     }
-    if (p === "/api/pairing/device" && req.method === "POST") return json(res, 201, { code: "HKMN-4567", device_code: state.deviceCode, expires_at: new Date(Date.now() + 6e5).toISOString(), verify_path: "/pair", interval: 1 });
+    if (p === "/api/pairing/device" && req.method === "POST") return json(res, 201, { code: "HKMN-4567", device_code: state.deviceCode, expires_at: new Date(Date.now() + 6e5).toISOString(), verify_path: "/pair?code=HKMN-4567", verify_url: `http://127.0.0.1:${server.address().port}/pair?code=HKMN-4567`, interval: 1 });
     if (p === "/api/pairing/device/token" && req.method === "POST") {
       if (body.device_code === state.grant || body.device_code === state.deviceCode) {
         const t = mint();
@@ -178,6 +178,20 @@ export function startHome(log) {
       return json(res, 401, { type: "unauthorized" });
     }
     if (p === "/api/auth/me") return json(res, 200, { id: "u-viewer", username: "viewer", is_admin: false, home_name: "Test home" });
+    if (p === "/api/me/parental") return json(res, 200, state.restricted ? { restricted: true, max_tier: 9, allow_only: false, version: 1 } : { restricted: false });
+    if (p === "/api/me/parental/requests" && req.method === "POST") {
+      log(`home ask kind=${body.subject_kind} id=${body.subject_id}`);
+      const r = { id: `r${state.requests.length + 1}`, subject_kind: body.subject_kind, subject_id: body.subject_id, status: "pending", created_at: new Date().toISOString(), expires_at: new Date(Date.now() + 864e5).toISOString() };
+      state.requests.unshift(r);
+      return json(res, 201, { request: r });
+    }
+    if (p === "/api/me/parental/requests") return json(res, 200, { requests: state.requests });
+    if (p === `/api/videos/${LATE}`) {
+      if (!lateShown()) return json(res, 404, { type: "about:blank", title: "Not Found", status: 404, detail: "not found" });
+      return json(res, 200, { ...card(late), display_title: late.title, description: late.description, playable: true, playback_state: { position_sec: late.position_sec, completed: false } });
+    }
+    if (p === "/api/home" && state.restricted)
+      return json(res, 200, { continue_watching: [late, ...videos.filter((v) => v.position_sec > 0).slice(0, 7)].map(card), recently_added: videos.slice(20, 32).map(card), on_deck: [], recently_watched: [], collection_rows: [] });
     if (p === "/api/home") return json(res, 200, { continue_watching: videos.filter((v) => v.position_sec > 0).slice(0, 8).map(card), recently_added: videos.slice(20, 32).map(card), on_deck: [], recently_watched: [], collection_rows: [] });
     if (p === "/api/recommendations") return json(res, 200, { rails: [{ id: "for-you", title: "For you", reason_kind: "for_you", items: videos.slice(40, 48).map((v) => ({ video_id: v.id, poster_url: `/api/videos/${v.id}/poster` })) }] });
     if (p === "/api/libraries") return json(res, 200, { items: [{ id: LIB, name: "Films and series" }, { id: uuid(901), name: "محاضرات" }] });
@@ -265,11 +279,7 @@ export function startCloud(log, homePort) {
       const body = await readBody(req);
       state.created++;
       log(`cloud code for platform=${body.platform}`);
-      return json(res, 201, { code: "ABCD-2345", poll_secret: "secret", expires_in: 600, interval: 1, verify_url: `http://127.0.0.1:${server.address().port}/tv?c=ABCD2345` });
-    }
-    if (p === "/v1/tv/codes/ABCD2345/qr.png") {
-      res.writeHead(200, { "Content-Type": "image/png" });
-      return res.end(qr());
+      return json(res, 201, { code: "ABCD-2345", poll_secret: "secret", expires_in: 600, interval: 1, verify_url: "https://maktaba.tv/tv?c=ABCD2345" });
     }
     if (p === "/v1/tv/codes/poll" && req.method === "POST") {
       await readBody(req);

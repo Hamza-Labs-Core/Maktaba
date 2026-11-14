@@ -163,6 +163,19 @@ final class PlayerShellTests: XCTestCase {
         XCTAssertNil(PlayerUITestCase.cancelledTouches(in: nil), "no app, no answer")
     }
 
+    /// A tap that should open a page is tapped again only when the page is not open and the
+    /// app counted a touch cancelled during it; never when it landed or the app did not answer.
+    func testOnlyACancelledTapThatOpenedNothingIsRetried() {
+        XCTAssertTrue(PlayerUITestCase.retriesTap(cancelledBefore: 0, cancelledAfter: 1, arrived: false))
+        XCTAssertTrue(PlayerUITestCase.retriesTap(cancelledBefore: 2, cancelledAfter: 4, arrived: false))
+        XCTAssertFalse(PlayerUITestCase.retriesTap(cancelledBefore: 0, cancelledAfter: 1, arrived: true), "the page opened")
+        XCTAssertFalse(PlayerUITestCase.retriesTap(cancelledBefore: 1, cancelledAfter: 1, arrived: false), "no touch cancelled")
+        XCTAssertFalse(PlayerUITestCase.retriesTap(cancelledBefore: nil, cancelledAfter: 1, arrived: false), "no count before")
+        XCTAssertFalse(PlayerUITestCase.retriesTap(cancelledBefore: 0, cancelledAfter: nil, arrived: false), "no count after")
+        XCTAssertFalse(PlayerUITestCase.retriesTap(cancelledBefore: TouchHook.most + 1, cancelledAfter: TouchHook.most + 1,
+                                                   arrived: false), "past the counted range, no rise to see")
+    }
+
     /// A touch's line in the app's log says how long it was held and where, in points.
     func testTheTouchWatcherSaysHowLongATouchWasHeld() {
         XCTAssertEqual(TouchWatcher.heldLine(0.0812, at: CGPoint(x: 637.5, y: 827)),

@@ -20,6 +20,12 @@ object ProfileHome {
         {"id":"s2","created_at":"2026-10-15T12:00:00Z","last_seen_at":"2026-10-25T12:00:00Z","expires_at":"2026-11-14T12:00:00Z","ip":null,"user_agent":"Mozilla/5.0 (Windows NT 10.0) Chrome/130.0 Safari/537.36","current":false}
     ]}"""
 
+    /** The apps signed in by a code (story 58.03): a TV through a Maktaba Cloud code, and one on the home's network. */
+    const val APP_SIGN_INS = """{"items":[
+        {"id":"a1","kind":"tv","label":"tizen","via":"cloud_code","created_at":"2026-10-30T09:00:00Z","last_seen_at":"2026-10-31T07:00:00Z","expires_at":"2026-11-29T09:00:00Z","current":false},
+        {"id":"a2","kind":"tv","label":"Living room TV","via":"","created_at":"2026-10-20T09:00:00Z","last_seen_at":"2026-10-30T20:00:00Z","expires_at":"2026-11-19T09:00:00Z","current":false}
+    ]}"""
+
     const val PLAYLISTS = """{"items":[
         {"id":"p1","name":"Ramadan","description":"The month's lessons","videos":2,"duration_sec":5400,"poster_video_ids":["v3","v5"],"created_at":"2026-10-01T09:00:00Z","updated_at":"2026-10-29T09:00:00Z","hand_ordered":true}
     ]}"""
@@ -39,12 +45,14 @@ object ProfileHome {
 
     private val noContent: MockResponse get() = MockResponse.Builder().code(204).build()
 
-    /** Answers every Profile route on [home]; a DELETE of a history row or a session answers 204. */
+    /** Answers every Profile route on [home]; a DELETE of a history row, a session or an app sign-in answers 204. */
     fun install(home: FakeHome) {
         home.answer("/api/me/history") { json(HISTORY) }
         listOf("v1", "v2", "v4").forEach { id -> home.answer("/api/me/history/$id") { noContent } }
         home.answer("/api/me/sessions") { json(SESSIONS) }
         listOf("s1", "s2").forEach { id -> home.answer("/api/me/sessions/$id") { noContent } }
+        home.answer("/api/me/app-sign-ins") { json(APP_SIGN_INS) }
+        listOf("a1", "a2").forEach { id -> home.answer("/api/me/app-sign-ins/$id") { noContent } }
         home.answer("/api/me/playlists") { json(PLAYLISTS) }
         home.answer("/api/me/playlists/p1") { json(PLAYLIST) }
         home.answer("/api/me/videos") { json(FAVORITES) }

@@ -1,0 +1,79 @@
+# The broadcast edge (Epic 50 story 50.21, web/packages/broadcast-edge): its typecheck and its
+# tests in Miniflare (T01-T09: tokens, the timeline and playlists, the guards, the cache key,
+# headers, the clean-up alarm, the Stream fallback on a fake Stream API, the fan-out), the cloud's
+# token signer on the shared vectors, both environments bundled by `wrangler deploy --dry-run`,
+# and the rehearsal: the real Worker under `wrangler dev --local` with a fake home pushing 3 rungs
+# and 1,000 simulated viewers over HTTP. ci.yml runs it on a pull request that touches the edge or
+# the cloud's broadcast package (the `broadcast_edge` filter of .github/ci-paths.yml);
+# broadcast-edge.yml runs it before a deploy. No secret, no call to Cloudflare.
+
+name: Broadcast edge
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  broadcast-edge:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: web/packages/broadcast-edge
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - uses: actions/setup-node@v6.4.0
+        with:
+          node-version-file: web/packages/broadcast-edge/.nvmrc
+          package-manager-cache: false
+
+      - uses: actions/setup-go@v6.4.0
+        with:
+          go-version-file: cloud/go.mod
+          cache: false
+
+      - name: Go modules
+        uses: ./.github/actions/go-mod-download
+        with:
+          modules: cloud
+
+      # restore only: main's entries (.github/actions/node-cache); only a push to main saves
+      - name: npm cache
+        uses: ./.github/actions/node-cache
+        with:
+          package-manager: npm
+          lock-hash: ${{ hashFiles('web/packages/broadcast-edge/package-lock.json') }}
+
+      - name: Install
+        run: npm ci --no-audit --no-fund
+
+      # the vectors the edge's tests verify are the ones the cloud signs (stale: go test -update)
+      - name: The cloud's ingest tokens and endpoint
+        working-directory: cloud
+        run: go test ./internal/broadcast/... ./internal/handlers/broadcast/...
+
+      - name: Typecheck and tests (Miniflare)
+        run: npm test
+
+      # both environments' bindings and bundles, offline (no token, nothing uploaded)
+      - name: Bundle (wrangler deploy --dry-run)
+        run: |
+          npx wrangler deploy --dry-run --outdir "$RUNNER_TEMP/edge-staging"
+          npx wrangler deploy --dry-run --env production --outdir "$RUNNER_TEMP/edge-production"
+
+      - name: Rehearsal (wrangler dev, 1 home, 1,000 viewers)
+        run: node scripts/rehearsal.mjs --viewers 1000 --segments 12 2>&1 | tee "$RUNNER_TEMP/rehearsal.log"
+
+      - name: Keep the rehearsal's report and log
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: broadcast-edge-rehearsal
+          path: |
+            web/packages/broadcast-edge/rehearsal-report.json
+            ${{ runner.temp }}/rehearsal.log
+          if-no-files-found: ignore
+          retention-days: 14

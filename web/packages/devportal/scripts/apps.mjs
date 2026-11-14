@@ -48,6 +48,12 @@ const SIGN_IN = [
   },
   {
     p: t(
+      "A TV that cannot find the home on its network (at a relative's house, or a platform with no local discovery) shows a code from **Maktaba Cloud** instead. It is approved in the same place: the app first asks the home, then the cloud, and asks **Is this your TV?** with the TV's platform and country before approving. The person approving needs no cloud account, only a home with remote access turned on. A TV signed in this way watches as that person but never acts as an admin and cannot sign in other devices. It shows under **Profile → Sessions** (the web app's **Active sessions**) as a TV via a Maktaba Cloud code, and is signed out from there.",
+      "التلفاز الذي لا يجد الجهاز الرئيسي في شبكته (في بيت أحد الأقارب، أو على منصة بلا اكتشاف محلي) يعرض بدلًا من ذلك رمزًا من **Maktaba Cloud**. ويُوافق عليه في المكان نفسه: يسأل التطبيق الجهاز الرئيسي أولًا ثم السحابة، ثم يسأل **هل هذا تلفازك؟** مع منصة التلفاز وبلده قبل الموافقة. ولا يحتاج من يوافق إلى حساب سحابي، بل إلى جهاز رئيسي فُعّل فيه الوصول عن بُعد. والتلفاز الذي يسجّل دخوله هكذا يشاهد باسم ذلك الشخص، لكنه لا يتصرّف أبدًا كمسؤول ولا يستطيع تسجيل دخول أجهزة أخرى. ويظهر في **الملف الشخصي ← الجلسات** (صفحة **الجلسات النشطة** في تطبيق الويب) تلفازًا عبر رمز Maktaba Cloud، ومنها يُسجَّل خروجه."
+    ),
+  },
+  {
+    p: t(
       "The home enforces every role itself. An app hiding a screen is a convenience, not the rule: a modified app holding a viewer's token is still a viewer.",
       "يفرض الجهاز الرئيسي كل دور بنفسه. أما إخفاء التطبيق لشاشة ما فهو تيسير لا قاعدة: فالتطبيق المعدَّل الذي يحمل رمز مشاهد يبقى مشاهدًا."
     ),
@@ -492,6 +498,17 @@ export const APPS = [
         ],
       },
       { h: t("Signing in", "تسجيل الدخول"), blocks: SIGN_IN.slice(0, 2) },
+      {
+        h: t("A child's account on a TV", "حساب طفل على التلفاز"),
+        blocks: [
+          {
+            p: t(
+              "Sign the TV in with the child's own account: the home then shows it only what the child's limits allow, on every TV, through the cloud and on a cast, and the TV cannot get around them. Something hidden, opened from a link, shows **This isn't available** with the limit and **Ask a parent**, which takes the remote's focus; a parent answers from Maktaba on their phone, and a yes opens it on the TV without a restart. **Account** says that a parent manages the account, and its content limit. On Samsung, LG and Roku there is no parent PIN to type on the remote; the Apple TV, Android TV and Fire TV apps also take the guardian's PIN. Developers: [Parental controls](/contributing/parental-controls/).",
+              "سجّل دخول التلفاز بحساب الطفل نفسه: عندها لا يعرض عليه الجهاز الرئيسي إلا ما تسمح به حدود الطفل، على كل تلفاز، وعبر السحابة وعند البث، ولا يستطيع التلفاز الالتفاف عليها. وما كان مخفيًا وفُتح من رابط يعرض **هذا غير متاح** مع الحد و**اطلب من أحد الوالدين**، الذي يأخذ تركيز جهاز التحكم؛ ويرد أحد الوالدين من مكتبة على هاتفه، والموافقة تفتحه على التلفاز دون إعادة تشغيل. وتقول **الحساب** إن أحد الوالدين يدير الحساب، وحدّ المحتوى فيه. ولا يوجد على سامسونج وإل جي وروكو رمز للوالدين يُكتب بجهاز التحكم؛ وتقبل تطبيقات آبل تي في وأندرويد تي في وفاير تي في رمز الولي أيضًا. للمطورين: [الرقابة الأبوية](/contributing/parental-controls/)."
+            ),
+          },
+        ],
+      },
       {
         h: t("Screenshots", "لقطات الشاشة"),
         blocks: [
@@ -1401,8 +1418,8 @@ export const APPS = [
                 "**البث إلى تلفاز**، في Chrome على العنوان الآمن للجهاز الرئيسي (`https://`): يرسل المشغّل المقطع، أو قائمة **تشغيل الكل** و**تشغيل عشوائي** كلها، إلى Chromecast أو Google TV أو تلفاز مدمج فيه Chromecast على شبكة Wi-Fi نفسها، عبر المستقبِل الخاص بمكتبة. يجلب التلفاز المقطع من الجهاز الرئيسي بنفسه بتصريح بث (تصريح مدته ست ساعات لذلك المقطع أو تلك القائمة، وليس تسجيل دخول الشخص أبدًا)، فيمكن إغلاق التبويب وتبقى **تابع المشاهدة** تتبع التلفاز؛ ويعرض المشغّل اسم التلفاز والتشغيل والإيقاف المؤقت و**إيقاف البث**، وتتبع شاشات التلفاز لغة تطبيق الويب. لا يظهر زر البث على `http://` ولا في المتصفحات الأخرى ولا عبر سحابة مكتبة. ويظهر حين تحمل النسخة معرّف تطبيق مستقبِل البث (`shared/cast/app.json`)؛ والعقد في [دليل البث](/contributing/casting/)."
               ),
               t(
-                "**Account**: devices, **Connect an app** (the link and QR code the apps take), sessions, API tokens, history and preferences; and **Sign in a device**, where a code is approved.",
-                "**الحساب**: الأجهزة، و**ربط تطبيق** (الرابط ورمز QR اللذان تقبلهما التطبيقات)، والجلسات، ورموز الواجهة البرمجية، والسجل، والتفضيلات؛ وصفحة **تسجيل دخول جهاز** للموافقة على الرموز."
+                "**Account**: devices, **Connect an app** (the link and QR code the apps take), sessions and the apps signed in with a code, API tokens, history and preferences; and **Sign in a device**, where a code is approved.",
+                "**الحساب**: الأجهزة، و**ربط تطبيق** (الرابط ورمز QR اللذان تقبلهما التطبيقات)، والجلسات والتطبيقات المسجّل دخولها برمز، ورموز الواجهة البرمجية، والسجل، والتفضيلات؛ وصفحة **تسجيل دخول جهاز** للموافقة على الرموز."
               ),
               t(
                 "For admins: the libraries and their processing, the queue and its failures, the Live TV channels, the machines, the users, the updates and the settings.",

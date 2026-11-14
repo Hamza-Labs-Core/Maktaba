@@ -8,6 +8,7 @@
   </interface>
   <script type="text/brightscript" uri="TvButton.brs" />
   <script type="text/brightscript" uri="pkg:/components/common.brs" />
+  <script type="text/brightscript" uri="pkg:/components/theme.brs" />
   <script type="text/brightscript" uri="pkg:/source/i18n.brs" />
   <script type="text/brightscript" uri="pkg:/source/layout.brs" />
   <script type="text/brightscript" uri="pkg:/source/config.brs" />

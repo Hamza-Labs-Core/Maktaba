@@ -158,8 +158,9 @@ class PlayerUITestCase: XCTestCase {
     /// the touch, so the app never sees the tap (about once in a few hundred taps). The test
     /// then fails on what the tap should have done, which reads as an app bug. When a test
     /// fails, the running app is asked how many touches the system cancelled since launch
-    /// (`TouchHook`); if any, the failure starts with that. Retrying is not an option: the
-    /// failure stays a failure, with its real cause named.
+    /// (`TouchHook`); if any, the failure starts with that. The failure stays a failure, with
+    /// its real cause named; only a tap that opens a page gets a second try, and only when the
+    /// app counted a cancelled touch during it and the page did not open (`open(_:shows:_:)`).
     override nonisolated func record(_ issue: XCTIssue) {
         guard Thread.isMainThread else { return super.record(issue) }
         // on the main thread, so on the main actor, where `app` lives: XCTest records a UI
@@ -190,6 +191,44 @@ class PlayerUITestCase: XCTestCase {
         let count = cancelled > TouchHook.most ? "more than \(TouchHook.most) touches" : cancelled == 1 ? "1 touch" : "\(cancelled) touches"
         return "[the simulator may have dropped a tap: the system cancelled \(count) of this test before the app saw it end; "
             + "see #639 (backboardd's digitizer race) and the app's log before reading the failure as the app's] "
+    }
+
+    /// Taps `row` and waits (at most `timeout`) for `destination`, the page it opens. When the
+    /// page did not open and the app counted a touch cancelled by the system during the tap
+    /// (#639's backboardd race, `TouchHook`), the tap never reached the app: it is tapped once
+    /// more, in an activity named "Retrying a cancelled tap" so the result bundle shows each
+    /// retry. A tap that landed (no touch cancelled, or the page open) is never repeated; a
+    /// page that still does not open fails naming `what`. In run 43599999810 (`-test-iterations
+    /// 20` on the 12 Player UI shards) the one failure of 237 was such a cancelled tap on
+    /// Profile's Playback row (iphone 5/6, iteration 18), and the runner crashed after it.
+    @discardableResult
+    func open(_ row: XCUIElement, shows destination: XCUIElement, _ what: String, timeout: TimeInterval = 10,
+              file: StaticString = #filePath, line: UInt = #line) -> Bool {
+        let before = Self.cancelledTouches(in: app)
+        row.tap()
+        if destination.waitForExistence(timeout: timeout) { return true }
+        let after = Self.cancelledTouches(in: app)
+        guard Self.retriesTap(cancelledBefore: before, cancelledAfter: after, arrived: destination.exists) else {
+            XCTFail("\(what): not open after the tap", file: file, line: line)
+            return false
+        }
+        let lost = (after ?? 0) - (before ?? 0)
+        return XCTContext.runActivity(named: "Retrying a cancelled tap: \(what) (the system cancelled \(lost) touch\(lost == 1 ? "" : "es"), #639)") { _ in
+            waitUntilStill(row, timeout: 5)
+            row.tap()
+            let opened = destination.waitForExistence(timeout: timeout)
+            XCTAssertTrue(opened, "\(what): not open after a second tap (the first was cancelled by the system)",
+                          file: file, line: line)
+            return opened
+        }
+    }
+
+    /// Whether a tap that should have opened a page gets a second try: only when the page is
+    /// not open and the app's count of cancelled touches rose during the tap. With no count
+    /// (the app did not answer) the tap is not repeated: it may have landed.
+    nonisolated static func retriesTap(cancelledBefore: Int?, cancelledAfter: Int?, arrived: Bool) -> Bool {
+        guard !arrived, let before = cancelledBefore, let after = cancelledAfter else { return false }
+        return after > before
     }
 
     /// Closes the app if it is running.
@@ -285,6 +324,36 @@ class PlayerUITestCase: XCTestCase {
         }
     }
 
+    /// Opens `target`'s context menu with a long press and waits for `item`, one of its
+    /// buttons; when the press was taken as a tap (`page`, the screen a tap opens, showed),
+    /// goes `back`, lets the target settle again (`settle`) and presses once more. A second
+    /// miss fails, and so does a press that showed neither the menu nor the page.
+    ///
+    /// On CI's iPhone (main run 43598615449, after the hold had already gone from 1.2 to 2.5
+    /// to 4 s) the app's log has the press as "touch held 4.00 s at (100, 723)": held the
+    /// whole time, on the still card, Home asking nothing, and ended, not cancelled. A menu
+    /// that opens cancels the touch that opened it (Home's card tests log one cancel per
+    /// press), so the menu's long press never began, and the lift was the card's tap. A
+    /// longer hold cannot change that; a press that opened the page leaves nothing behind
+    /// once the page is closed, so it is pressed again.
+    func openMenu(on target: XCUIElement, item: XCUIElement, page: XCUIElement, _ what: String,
+                  settle: () -> Void, back: () -> Void, file: StaticString = #filePath, line: UInt = #line) {
+        for attempt in 1 ... 2 {
+            settle()
+            target.press(forDuration: Self.menuHold)
+            if item.waitForExistence(timeout: 10) { return }
+            guard page.exists else {
+                return XCTFail("\(what): no menu and no page after the press", file: file, line: line)
+            }
+            XCTAssertLessThan(attempt, 2, "\(what): both presses were taken as taps (the page opened)", file: file, line: line)
+            back()
+            XCTAssertTrue(waitUntil { target.isHittable }, "\(what): back where the press began", file: file, line: line)
+        }
+    }
+
+    /// How long a press that opens a context menu holds.
+    static let menuHold: TimeInterval = 2.5
+
     /// True once `condition` holds, after at least `reads` looks and at least `timeout` seconds
     /// (false when both have passed without it). On a loaded runner one look at the app's tree
     /// took 4.2 s (#761's iPad): a deadline alone ended after a single look, taken while the
@@ -342,7 +411,21 @@ class PlayerUITestCase: XCTestCase {
         field.typeText("\n")
         let byCode = app.buttons[language == "ar" ? "برمز" : "With a code"]
         XCTAssertTrue(byCode.waitForExistence(timeout: 10 * patience), "the sign-in screen offers a code")
-        byCode.tap()
+        // tapped once it stands still, and checked by the code it asks the home for: on CI's
+        // iPhone (main run 43598615449, attempt 2) the app logged this tap as "touch held 0.17 s
+        // at (286, 500), cancelled", 0.8 s after the button showed and 2.4 s after the connect
+        // began: the system dropped it as the sign-in screen settled, no code was asked for, and
+        // the wait for "signed in" ran out. A dropped tap asks nothing, so it gets one more tap;
+        // a second miss fails naming it
+        let asked = { self.home.seen.filter { $0 == "POST /api/pairing/device" }.count }
+        let before = asked()
+        for attempt in 1 ... 2 {
+            waitUntilStill(byCode, timeout: 5 * patience)
+            byCode.tap()
+            if waitUntil(timeout: 5 * patience, { asked() > before }) { break }
+            XCTAssertTrue(byCode.exists, "no code asked for, and \"With a code\" is gone")
+            XCTAssertLessThan(attempt, 2, "two taps on \"With a code\" asked the home for no code")
+        }
         home.approve()
         XCTAssertTrue(byCode.waitForNonExistence(timeout: 20 * patience), "approved: signed in")
     }

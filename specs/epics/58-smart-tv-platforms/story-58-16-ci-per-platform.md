@@ -17,7 +17,6 @@ mistakes a fake for a real device.
 |---|---|---|
 | `_android-tv.yml` (exists) | `apps/tv/android/**`, `apps/android/core/**`, `apps/android/client/**` | both flavors; 58.05 T01–T05 |
 | `_tv-web.yml` (new) | `apps/tv/web/**`, `web/src/bigscreen/**`, `web/vite.config.ts` | Vitest; `build:tv` + 58.08 T01; Playwright launcher + `/tv/` against the mock home; package lint for `.wgt` and `.ipk` |
-| `_tv-web-emulators.yml` (new, not required) | same | Samsung TV emulator (KVM) and LG webOS TV Simulator (Xvfb) smoke runs: launch, code screen, find on network |
 | `_cast-receiver.yml` (new) | `web/packages/castreceiver/**` | Vitest; Playwright with the CAF stub |
 | `_roku.yml` (new) | `apps/tv/roku/**`, `shared/i18n/visual-vectors.json` | BrighterScript build and lint; brs-engine unit and render tests |
 | `_vega.yml` (58.18) | `apps/tv/vega/**` | Jest; Vega Virtual Device run if KVM is available on the runner |
@@ -28,12 +27,18 @@ mistakes a fake for a real device.
 | Platform | In CI, automated | Needs a real device |
 |---|---|---|
 | Fire TV | Robolectric screenshots; instrumented tests on Google's Android TV emulator (API 30, no Google APIs); dependency and manifest checks | codecs, HDR, Dolby, Amazon's remote and launcher behaviour (58.05 T06) |
-| Samsung | launcher and `/tv/` in Playwright with a `webapis` shim; package lint; the Samsung emulator as a smoke test (no AVPlay, no UHD) | AVPlay playback, HDR, passthrough, keys on the real remote, performance (58.10 T05) |
-| LG | the same in Playwright with a webOS shim; the webOS Simulator as a smoke test (no real media) | native HLS, HDR, Dolby Vision per year, Magic Remote, performance (58.11 T05) |
+| Samsung | launcher and `/tv/` in Playwright with a `webapis` shim; package lint; signing rehearsed on each tag | AVPlay playback, HDR, passthrough, keys on the real remote, performance (58.10 T05) |
+| LG | the same in Playwright with a webOS shim; the `.ipk` packed and linted | native HLS, HDR, Dolby Vision per year, Magic Remote, performance (58.11 T05) |
 | Cast receiver | Playwright with a CAF stub | anything involving Google's SDK on a device, LAN fetch rules, formats (58.07 T05) |
 | Cast senders | unit and UI tests with SDK fakes | discovery and the session with a real receiver (58.06 T06) |
 | Roku | brs-engine logic, focus and layout tests; build and lint | the Video node, rendering, fonts, timing, certification (58.12 T04–T05, 58.13 T05–T06) |
 | Vega | Jest; the Vega Virtual Device where the runner has KVM | real Fire TV Stick playback (58.18) |
+
+**No emulator job for Samsung or LG.** The Samsung TV emulator needs Tizen Studio's TV extension
+and a KVM runner; LG's webOS TV Simulator downloads only behind LG's license page, with no
+address a runner can fetch. Neither has a documented headless mode, and neither has a media
+pipeline (no AVPlay, no UHD, no real media), so a smoke run would show less than the Playwright
+shims do. They are not run in CI (58.10, 58.11; `docs/stores/samsung.md`, `docs/stores/lg.md`).
 
 **Real-device checklists.** Each platform has a checklist in `docs/stores/<platform>.md`. It is run
 by a person on the devices it lists before a release candidate is promoted or submitted, and its
@@ -94,7 +99,7 @@ None.
 
 ## Edge cases
 
-- **The emulator job is flaky** (KVM missing on a runner): it is not required. It reports
+- **An emulator run is flaky** (KVM missing on a runner, for Vega's Virtual Device): it is not required. It reports
   "skipped: no KVM" and the required jobs decide the merge. Flakiness in a required job is
   fixed, never retried away.
 
@@ -102,7 +107,7 @@ None.
 
 | File | Change |
 |---|---|
-| `.github/workflows/_tv-web.yml`, `_tv-web-emulators.yml`, `_cast-receiver.yml`, `_roku.yml` (new) | jobs |
+| `.github/workflows/_tv-web.yml`, `_cast-receiver.yml`, `_roku.yml` (new) | jobs |
 | `tools/ci/ci_paths.py` | paths |
 | `tools/release/tv_checklist_guard.py` (new) | T03 |
 | `docs/stores/*.md` | checklists |

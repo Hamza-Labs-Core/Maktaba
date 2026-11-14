@@ -16,6 +16,7 @@ import { Account } from "./pages/Account";
 import { Billing } from "./pages/Billing";
 import { LinkHome } from "./pages/LinkHome";
 import { Homes } from "./pages/Homes";
+import { ApproveTv } from "./pages/ApproveTv";
 
 export function Providers({ children }: { children: ReactNode }) {
   return (
@@ -133,6 +134,8 @@ export function AppRoutes() {
           <Route path="homes" element={<Homes />} />
           {/* a home's Account page sends a person here to link their cloud account (42.7) */}
           <Route path="link-home" element={<LinkHome />} />
+          {/* a TV's Maktaba Cloud code, from the QR's maktaba.tv/tv?c= (story 58.03) */}
+          <Route path="tv" element={<ApproveTv />} />
         </Route>
         {/* story 50.32: the operator console is not in this app (admin.maktaba.tv), so a
             bookmarked /admin is this 404 like any unknown path */}

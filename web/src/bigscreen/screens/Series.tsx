@@ -10,6 +10,7 @@ import { useI18n } from "../../lib/i18n";
 import { seriesPictureUrl } from "../../pages/Library/SeriesBrowser";
 import { bigPath, useBigNav } from "../nav";
 import { Empty, Failed, Grid, Loading, Ltr, Picture, Progress, Screen, clock } from "../ui";
+import { BigBlockedOr } from "./Blocked";
 import { markWatched } from "../../lib/me";
 import { errorText } from "../../lib/errorText";
 import { playSource, type QueueSourceRef } from "../../lib/playQueue";
@@ -187,6 +188,16 @@ export function BigSeries() {
     [data, season]
   );
 
+  // Epic 58 story 58.14: for a limited sign-in a 404 may be the limit: ask a parent
+  if (err?.status === 404)
+    return (
+      <BigBlockedOr
+        kind="series"
+        id={id}
+        onCheck={() => setReload((x) => x + 1)}
+        message={t("big.series.notFound")}
+      />
+    );
   if (err)
     return (
       <Failed

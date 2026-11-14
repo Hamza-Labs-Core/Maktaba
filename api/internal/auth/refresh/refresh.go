@@ -330,6 +330,99 @@ func (s *Store) ListFamiliesForUser(ctx context.Context, userID string) ([]Famil
 	return out, rows.Err()
 }
 
+// AppSignIn is an app's sign-in by code (a pairing), as the person's list of their devices shows
+// it: what the device said it was when it signed in.
+type AppSignIn struct {
+	FamilyID string
+	// Kind, Label and Via are the first token's device_kind, device_label and via (a rotated
+	// token keeps only its address).
+	Kind       string
+	Label      string
+	Via        string
+	CreatedAt  time.Time
+	LastSeenAt time.Time
+	ExpiresAt  time.Time
+}
+
+// ListAppSignIns is a user's live sign-ins made by pairing (an app approved by code), newest
+// use first. Portable SQL (Postgres and SQLite): the families first, then each one's first
+// token, whose client_meta says what signed in.
+func (s *Store) ListAppSignIns(ctx context.Context, userID string) ([]AppSignIn, error) {
+	const q = `SELECT family_id, MIN(issued_at), MAX(issued_at), MAX(expires_at)
+	             FROM refresh_tokens WHERE user_id = $1
+	            GROUP BY family_id
+	           HAVING SUM(CASE WHEN revoked_at IS NULL AND expires_at > $2 THEN 1 ELSE 0 END) > 0
+	            ORDER BY MAX(issued_at) DESC, family_id`
+	rows, err := s.DB.QueryContext(ctx, q, userID, time.Now().UTC())
+	if err != nil {
+		return nil, err
+	}
+	var fams []AppSignIn
+	for rows.Next() {
+		var a AppSignIn
+		if err := rows.Scan(&a.FamilyID, &a.CreatedAt, &a.LastSeenAt, &a.ExpiresAt); err != nil {
+			_ = rows.Close()
+			return nil, err
+		}
+		fams = append(fams, a)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	out := []AppSignIn{}
+	for _, a := range fams {
+		var raw []byte
+		err := s.DB.QueryRowContext(ctx, `SELECT client_meta FROM refresh_tokens WHERE family_id = $1 AND user_id = $2
+		                                   ORDER BY issued_at ASC LIMIT 1`, a.FamilyID, userID).Scan(&raw)
+		if err != nil {
+			return nil, err
+		}
+		var meta map[string]any
+		_ = json.Unmarshal(raw, &meta)
+		if meta["origin"] != "pairing" {
+			continue
+		}
+		a.Kind, _ = meta["device_kind"].(string)
+		a.Label, _ = meta["device_label"].(string)
+		a.Via, _ = meta["via"].(string)
+		out = append(out, a)
+	}
+	return out, nil
+}
+
+// FamilyVia is how a family's device came by its code (its first token's client_meta "via",
+// e.g. "cloud_code"); "" for any other sign-in or an unknown family. Rotated tokens carry
+// other meta, so the first token is read.
+func (s *Store) FamilyVia(ctx context.Context, familyID string) (string, error) {
+	var raw []byte
+	err := s.DB.QueryRowContext(ctx, `SELECT client_meta FROM refresh_tokens WHERE family_id = $1
+	                                   ORDER BY issued_at ASC LIMIT 1`, familyID).Scan(&raw)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	var meta map[string]any
+	_ = json.Unmarshal(raw, &meta)
+	via, _ := meta["via"].(string)
+	return via, nil
+}
+
+// RevokeFamilyOf revokes a family only when it is userID's: false when it is not (or has no
+// live token), so another person's family is never touched.
+func (s *Store) RevokeFamilyOf(ctx context.Context, userID, familyID string) (bool, error) {
+	const q = `UPDATE refresh_tokens
+	             SET revoked_at = now()
+	             WHERE family_id = $1 AND user_id = $2 AND revoked_at IS NULL`
+	res, err := s.DB.ExecContext(ctx, q, familyID, userID)
+	if err != nil {
+		return false, err
+	}
+	n, _ := res.RowsAffected()
+	return n > 0, nil
+}
+
 // FamilySummary is one row of ListFamiliesForUser's result.
 type FamilySummary struct {
 	FamilyID   string

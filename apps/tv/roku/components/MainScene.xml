@@ -9,11 +9,13 @@
   </interface>
   <script type="text/brightscript" uri="MainScene.brs" />
   <script type="text/brightscript" uri="common.brs" />
+  <script type="text/brightscript" uri="theme.brs" />
   <script type="text/brightscript" uri="pkg:/source/config.brs" />
   <script type="text/brightscript" uri="pkg:/source/net.brs" />
   <script type="text/brightscript" uri="pkg:/source/nav.brs" />
   <script type="text/brightscript" uri="pkg:/source/store.brs" />
   <script type="text/brightscript" uri="pkg:/source/deeplink.brs" />
+  <script type="text/brightscript" uri="pkg:/source/parental.brs" />
   <script type="text/brightscript" uri="pkg:/source/compat.brs" />
   <script type="text/brightscript" uri="pkg:/source/i18n.brs" />
   <script type="text/brightscript" uri="pkg:/source/layout.brs" />

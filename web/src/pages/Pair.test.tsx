@@ -13,7 +13,7 @@ vi.mock("../lib/api", async () => {
 import { ApiError } from "../lib/api";
 import en from "../i18n/en.json";
 import { renderPage, memberUser } from "../test/pageHarness";
-import { Pair, normalizePairCode, type PairRequest } from "./Pair";
+import { Pair, isCloudShaped, normalizePairCode, type PairRequest } from "./Pair";
 
 function problem(status: number, title: string, detail?: string) {
   return new ApiError({ type: "about:blank", status, title, detail });
@@ -173,6 +173,106 @@ describe("Pair", () => {
       const code = screen.getByText("ABCD-1234");
       expect(code.getAttribute("dir")).toBe("ltr");
       expect(screen.getByRole("button", { name: "موافقة" })).toBeInTheDocument();
+    } finally {
+      localStorage.removeItem("mkt:locale");
+    }
+  });
+});
+
+// Epic 58 story 58.03 T06: a TV's code from Maktaba Cloud, approved here after the person
+// confirms the TV by its platform and country.
+describe("Pair: a code from Maktaba Cloud", () => {
+  const TV = {
+    code: "WEBS-2345",
+    platform: "tizen",
+    app_version: "1.0.0",
+    country: "JO",
+    expires_at: "2026-11-14T12:10:00Z",
+  };
+  function cloudNotLinked() {
+    return new ApiError({
+      type: "https://maktaba.tv/problems/cloud-not-linked",
+      status: 409,
+      title: "remote access is off",
+      code: "cloud_not_linked",
+    });
+  }
+
+  it("knows a cloud code's shape: no 0 or 1", () => {
+    expect(isCloudShaped("WEBS-2345")).toBe(true);
+    expect(isCloudShaped("ABCD-1234")).toBe(false);
+    expect(isCloudShaped("WEBS-2340")).toBe(false);
+  });
+
+  it("a code the home does not hold is looked up in the cloud, confirmed, then approved", async () => {
+    get.mockImplementation((url: string) =>
+      url === "/api/pairing/device/WEBS-2345"
+        ? Promise.reject(problem(404, "not found"))
+        : url === "/api/pairing/cloud-code/WEBS-2345"
+          ? Promise.resolve(TV)
+          : Promise.reject(new Error(`unmocked GET ${url}`))
+    );
+    post.mockResolvedValue({ status: "approved", platform: "tizen", country: "JO" });
+    open("/pair?code=webs-2345");
+    expect(
+      await screen.findByText(/Is this your TV\? .*Samsung.*, in .*Jordan.*\./)
+    ).toBeInTheDocument();
+    // nothing is approved until the person says so
+    expect(post).not.toHaveBeenCalled();
+    await userEvent.setup().click(screen.getByRole("button", { name: "Approve" }));
+    expect(await screen.findByText(en["approveTv.cloud.done"])).toBeInTheDocument();
+    expect(post).toHaveBeenCalledWith("/api/pairing/cloud-approve", { code: "WEBS-2345" });
+    expect(post).not.toHaveBeenCalledWith("/api/pairing/approve", expect.anything());
+  });
+
+  it("a cloud code with no country names the platform alone", async () => {
+    get.mockImplementation((url: string) =>
+      url.startsWith("/api/pairing/device/")
+        ? Promise.reject(problem(404, "not found"))
+        : Promise.resolve({ ...TV, country: "" })
+    );
+    open("/pair?code=webs-2345");
+    expect(await screen.findByText(/^Is this your TV\? .*Samsung.*\.$/)).toBeInTheDocument();
+  });
+
+  it("a home without remote access says to use the home's code", async () => {
+    get.mockImplementation((url: string) =>
+      url.startsWith("/api/pairing/device/")
+        ? Promise.reject(problem(404, "not found"))
+        : Promise.reject(cloudNotLinked())
+    );
+    open("/pair?code=webs-2345");
+    expect(await screen.findByText(en["approveTv.cloud.needsRemote"])).toBeInTheDocument();
+    expect(post).not.toHaveBeenCalled();
+  });
+
+  it("a code shaped like the home's only (it has a 1) is not looked up in the cloud", async () => {
+    get.mockRejectedValue(problem(404, "not found"));
+    open("/pair?code=abcd-1234");
+    expect(await screen.findByText(/not waiting for a sign-in/)).toBeInTheDocument();
+    expect(get).toHaveBeenCalledTimes(1);
+  });
+
+  it("a cloud code no longer open is not waiting; a home code still approves the old way", async () => {
+    get.mockRejectedValue(problem(404, "not found"));
+    open("/pair?code=webs-2345");
+    expect(await screen.findByText(/not waiting for a sign-in/)).toBeInTheDocument();
+    expect(get).toHaveBeenCalledWith("/api/pairing/cloud-code/WEBS-2345");
+  });
+
+  it("in Arabic the question reads right to left, the country in Arabic", async () => {
+    get.mockImplementation((url: string) =>
+      url.startsWith("/api/pairing/device/")
+        ? Promise.reject(problem(404, "not found"))
+        : Promise.resolve(TV)
+    );
+    localStorage.setItem("mkt:locale", "ar");
+    try {
+      open("/pair?code=webs-2345");
+      expect(
+        await screen.findByText(/هل هذا تلفازك؟ .*Samsung.*، في .*الأردن/)
+      ).toBeInTheDocument();
+      expect(document.documentElement.dir).toBe("rtl");
     } finally {
       localStorage.removeItem("mkt:locale");
     }

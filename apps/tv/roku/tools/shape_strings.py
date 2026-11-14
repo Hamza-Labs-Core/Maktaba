@@ -13,7 +13,9 @@ width. A key without metadata fails too: every label has a size.
 
 Arabic lines are broken before reordering (the first line holds the start of the sentence) and
 each line is reordered with the paragraph direction right to left; they are joined with "\\n"
-for a Label with `wrap` on. English is left to the Label's own wrapping.
+for a Label with `wrap` on. English is left to the Label's own wrapping, except a string that
+holds Arabic (a language's own name, as Account's "العربية"): it is shaped the same way with the
+paragraph direction left to right, or Roku would draw its Arabic unjoined and reversed.
 
 A string with a placeholder (`%1$s`, `%1$d`) cannot be shaped before its value is known: it is
 kept in logical order as a template, with its label size, and the channel's `I18n.Format`
@@ -36,6 +38,7 @@ import argparse
 import json
 import re
 import sys
+import unicodedata
 from pathlib import Path
 from typing import Any
 from xml.sax.saxutils import escape
@@ -51,6 +54,11 @@ PLACEHOLDER = re.compile(r"%(?:\d+\$)?[sd]")
 
 class Unfit(Exception):
     pass
+
+
+def has_rtl(text: str) -> bool:
+    """True when the text holds a right-to-left letter (Arabic or Hebrew): it needs shaping."""
+    return any(unicodedata.bidirectional(ch) in ("R", "AL") for ch in text)
 
 
 def size(meta: dict[str, Any], key: str) -> tuple[int, int]:
@@ -93,8 +101,8 @@ def shape_catalog(lang: str, catalog: dict[str, str], meta: dict[str, Any]) -> t
         except Unfit as e:
             problems.append(str(e))
             continue
-        if rtl:
-            strings[key] = "\n".join(visual.visual_lines(text, width, lines, "rtl"))
+        if rtl or has_rtl(text):
+            strings[key] = "\n".join(visual.visual_lines(text, width, lines, "rtl" if rtl else "ltr"))
             assert len(strings[key].split("\n")) == len(wrapped)
         else:
             strings[key] = text

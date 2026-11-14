@@ -24,6 +24,8 @@ export default tseslint.config(
       "packages/website/dist",
       "packages/website/node_modules",
       "packages/website/.wrangler",
+      "packages/broadcast-edge/node_modules",
+      "packages/broadcast-edge/.wrangler",
       "packages/castreceiver/dist",
       "packages/castreceiver/node_modules",
       "packages/castreceiver/.wrangler",
