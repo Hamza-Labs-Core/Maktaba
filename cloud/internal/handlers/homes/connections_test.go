@@ -1,6 +1,8 @@
 package homes
 
 import (
+	"context"
+	"database/sql"
 	"encoding/json"
 	"net/netip"
 	"testing"
@@ -81,5 +83,30 @@ func TestLANEntriesNamesThenPinnedAddresses(t *testing.T) {
 	b, _ := json.Marshal(got[0])
 	if string(b) != `{"url":"https://192-168-1-20.`+hid+`.direct-a.example:8444","kind":"local"}` {
 		t.Errorf("a local entry has no tls_name: %s", b)
+	}
+}
+
+// Story 58.03: ReachFor is what the home list shows per home, and what a home hands a TV's
+// cloud code: the relay and direct addresses and the connections in the order apps try.
+func TestReachForGivesEachHomeItsConnections(t *testing.T) {
+	d := &Deps{RelayHost: "relay.maktaba.tv"}
+	hs := []stores.Server{
+		{ID: "a", Slug: "skylark", Plan: "pro", DirectIP: sql.NullString{String: "81.2.3.4", Valid: true}, DirectPort: sql.NullInt64{Int64: 32400, Valid: true}},
+		{ID: "b", Slug: "wren", Plan: "pro", DirectIP: sql.NullString{String: "2001:db8::1", Valid: true}, DirectPort: sql.NullInt64{Int64: 32400, Valid: true}},
+		{ID: "c", Slug: "finch", Plan: "pro"},
+	}
+	got := d.ReachFor(context.Background(), hs)
+	if a := got["a"]; a.RelayURL != "https://skylark.relay.maktaba.tv" || a.DirectURL != "http://81.2.3.4:32400" ||
+		len(a.Connections) != 2 || a.Connections[0].Kind != "direct" || a.Connections[1].Kind != "relay" {
+		t.Fatalf("a: %+v", a)
+	}
+	if b := got["b"]; b.DirectURL != "http://[2001:db8::1]:32400" {
+		t.Fatalf("b (IPv6): %+v", b)
+	}
+	if c := got["c"]; c.DirectURL != "" || len(c.Connections) != 1 || c.Connections[0].Kind != "relay" {
+		t.Fatalf("c (relay only): %+v", c)
+	}
+	if none := (&Deps{}).ReachFor(context.Background(), hs[2:]); none["c"].RelayURL != "" || len(none["c"].Connections) != 0 {
+		t.Fatalf("no relay host: %+v", none["c"])
 	}
 }

@@ -129,8 +129,12 @@ access turned on.
 
 The cloud keeps a code's poll secret as a hash and its payload sealed, deletes the payload on the
 poll that delivers it, and sweeps the rows an hour after they expire. The TV is signed in as the
-approver, with their role, libraries and parental policy, and shows in their list of app
-sign-ins (`GET /api/me/app-sign-ins`) as a TV via a cloud code, where it can be signed out.
+approver, with their libraries and parental policy, and shows in their list of app sign-ins
+(`GET /api/me/app-sign-ins`) as a TV via a cloud code, where it can be signed out. It never acts
+as an admin, even when an admin approved it: a cloud code can be read out to anyone anywhere, so
+an admin's TV reads every library, named one by one, and its tokens say no admin, also after a
+refresh. The cloud caps each home's lookups and claims (30, then one every 6 seconds), counted
+after its secret is checked.
 
 ## The cloud rehearsal
 

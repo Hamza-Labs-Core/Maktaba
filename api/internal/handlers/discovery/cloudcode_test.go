@@ -133,7 +133,7 @@ func TestCloudCodeRefusals(t *testing.T) {
 // The agent client: what each answer of the relay agent means.
 func TestAgentCloudCodesAnswers(t *testing.T) {
 	status := http.StatusOK
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		if status != http.StatusOK {
 			w.WriteHeader(status)
 			return

@@ -100,7 +100,10 @@ Rows are swept an hour after expiry.
 - **Given** a code approved and already delivered, **when** it is polled again, **then** it
   answers `410` and holds no secret.
 - **Given** a viewer approving a code, **then** the TV signs in as that viewer, with that
-  viewer's libraries and parental policy; an admin approving gives an admin sign-in.
+  viewer's libraries and parental policy. An admin approving gives a sign-in that never acts as
+  an admin (it reads every library, named one by one, and stays so when it refreshes): a cloud
+  code can be read out to anyone anywhere, so approving one hands over watching, never running
+  the home.
 - **Given** a home not registered with the cloud, **then** Approve a TV says a cloud code needs
   remote access turned on and offers the home's own code instead.
 

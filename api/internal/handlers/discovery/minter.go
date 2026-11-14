@@ -16,6 +16,7 @@ package discovery
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/jwt"
@@ -115,6 +116,20 @@ func (m *tokenMinter) MintVia(ctx context.Context, userID, deviceKind, deviceLab
 		}
 		isAdmin = a
 	}
+	// a TV that came by a cloud code never acts as an admin, even an admin's: its code can be
+	// read out to anyone anywhere, so an approval hands over watching, never running the home
+	// (Epic 58 story 58.03). It reads every library, named one by one.
+	if isAdmin && via == ViaCloudCode {
+		all, ok := m.libs.(allLibraries)
+		if !ok {
+			return MintedTokens{}, errNoAllLibraries
+		}
+		l, err := all.AllLibraries(ctx)
+		if err != nil {
+			return MintedTokens{}, err
+		}
+		return m.mint(ctx, userID, deviceKind, deviceLabel, via, false, l, now)
+	}
 
 	// Mirror handlers/auth.librariesFor exactly: admins read everything,
 	// so skip the ACL lookup and emit an empty slice (the verifier sets
@@ -133,6 +148,17 @@ func (m *tokenMinter) MintVia(ctx context.Context, userID, deviceKind, deviceLab
 		}
 	}
 
+	return m.mint(ctx, userID, deviceKind, deviceLabel, via, isAdmin, libs, now)
+}
+
+// allLibraries lists every library (*authz.ACLStore).
+type allLibraries interface {
+	AllLibraries(ctx context.Context) ([]string, error)
+}
+
+var errNoAllLibraries = errors.New("discovery: no library list for a cloud code's admin sign-in")
+
+func (m *tokenMinter) mint(ctx context.Context, userID, deviceKind, deviceLabel, via string, isAdmin bool, libs []string, now time.Time) (MintedTokens, error) {
 	// the refresh token first: the access token names its family
 	meta := map[string]any{"origin": "pairing"}
 	if deviceKind != "" {

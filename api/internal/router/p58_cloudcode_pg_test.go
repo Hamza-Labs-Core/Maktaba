@@ -187,7 +187,9 @@ func TestPGCloudCodeSignsTheTVInAsTheApprover(t *testing.T) {
 		wantLibs  []string
 	}{
 		{"viewer", "", "VWER2345", ccViewer, false, []string{ccLibA}},
-		{"admin", "", "ADMN2345", ccAdmin, true, []string{}},
+		// an admin's TV never acts as an admin (a code can be read out to anyone): it reads
+		// every library, named one by one
+		{"admin", "", "ADMN2345", ccAdmin, false, []string{ccLibA, ccLibB}},
 		// a restricted child approving for itself is allowed; the TV is the child's, restricted
 		{"child", "", "CHVD2345", ccChild, false, []string{ccLibA, ccLibB}},
 		// a guardian approving as the child they look after (57.02)
@@ -222,6 +224,43 @@ func TestPGCloudCodeSignsTheTVInAsTheApprover(t *testing.T) {
 	// the child's TV is held to its policy: the parental policy is the child's own
 	if tier := read(`SELECT max_tier::text FROM parental_policies WHERE user_id = $1`, ccChild); tier != "9" {
 		t.Fatalf("child policy %s", tier)
+	}
+}
+
+// An admin's cloud-code TV stays a viewer when it refreshes its token; the admin's own sign-ins
+// are untouched.
+func TestPGCloudCodeAdminTVRefreshesAsAViewer(t *testing.T) {
+	h, agent, _ := setupCloudCode(t)
+	if rec := ccDo(h, "admin", http.MethodPost, "/api/pairing/cloud-approve", `{"code":"RFSH2345"}`); rec.Code != http.StatusOK {
+		t.Fatalf("approve: %d %s", rec.Code, rec.Body.String())
+	}
+	rec := ccDo(h, "", http.MethodPost, "/api/pairing/device/token", `{"device_code":"`+agent.grant("RFSH2345")+`"}`)
+	var tok struct {
+		RefreshToken string `json:"refresh_token"`
+	}
+	if _ = json.Unmarshal(rec.Body.Bytes(), &tok); rec.Code != http.StatusOK || tok.RefreshToken == "" {
+		t.Fatalf("redeem: %d %s", rec.Code, rec.Body.String())
+	}
+	for range 2 { // and after a rotation too
+		rec = ccDo(h, "", http.MethodPost, "/api/auth/refresh", `{"refresh_token":"`+tok.RefreshToken+`"}`)
+		var out struct {
+			AccessToken  string `json:"access_token"`
+			RefreshToken string `json:"refresh_token"`
+			User         struct {
+				IsAdmin bool `json:"is_admin"`
+			} `json:"user"`
+		}
+		if _ = json.Unmarshal(rec.Body.Bytes(), &out); rec.Code != http.StatusOK || out.User.IsAdmin {
+			t.Fatalf("refresh: %d %s", rec.Code, rec.Body.String())
+		}
+		parts := strings.Split(out.AccessToken, ".")
+		b, _ := base64.RawURLEncoding.DecodeString(parts[1])
+		var c ccClaims
+		_ = json.Unmarshal(b, &c)
+		if c.Usr != ccAdmin || c.IsAdmin || strings.Join(c.Lib, ",") != ccLibA+","+ccLibB {
+			t.Fatalf("refreshed claims %+v", c)
+		}
+		tok.RefreshToken = out.RefreshToken
 	}
 }
 

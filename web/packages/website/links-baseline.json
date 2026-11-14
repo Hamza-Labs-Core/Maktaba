@@ -1,1 +1,8 @@
-[]
+[
+  {
+    "file": "cloud/internal/handlers/tvcodes/handler.go",
+    "link": "https://maktaba.tv/tv",
+    "story": "58.03",
+    "reason": "the page a TV shows beside its cloud code, where a person signs in to approve it; story 58.03 ships the page in the pull request after the cloud API, and the API names it now so TV apps built against it show the right address"
+  }
+]

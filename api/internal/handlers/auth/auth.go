@@ -489,6 +489,18 @@ func (h *Handler) Refresh(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.Internal("resolve library acl").Wrap(err))
 		return
 	}
+	// a TV that came by a cloud code never acts as an admin (Epic 58 story 58.03)
+	noAdmin := false
+	if scope == "" && u.IsAdmin {
+		if noAdmin, err = h.cloudCodeFamily(r.Context(), next.FamilyID); err == nil && noAdmin {
+			claims.IsAdmin = false
+			claims.Lib, err = h.everyLibrary(r.Context())
+		}
+		if err != nil {
+			httperror.Write(w, r, httperror.Internal("resolve a cloud code's libraries").Wrap(err))
+			return
+		}
+	}
 	// the sign-in and its device's age limit ride in the token (`fam`, `ac`): a
 	// limit that cannot be read mints no token (Epic 57 story 57.04)
 	claims.Fam = next.FamilyID
@@ -506,6 +518,9 @@ func (h *Handler) Refresh(w http.ResponseWriter, r *http.Request) {
 	user := toUserResponse(u)
 	if scope != "" {
 		user = cloudUser(u, scope)
+	}
+	if noAdmin {
+		user.IsAdmin = false
 	}
 	common.WriteJSON(w, r, http.StatusOK, nativeLoginResponse{
 		AccessToken:      access,
@@ -869,6 +884,27 @@ func (h *Handler) CookieAuth(next http.Handler) http.Handler {
 }
 
 // ---------- internal helpers ----------
+
+// cloudCodeFamily reports whether a refresh family is a TV that came by a cloud code
+// (discovery.ViaCloudCode on its first token): such a sign-in never acts as an admin.
+func (h *Handler) cloudCodeFamily(ctx context.Context, familyID string) (bool, error) {
+	via, err := h.RefreshTokens.FamilyVia(ctx, familyID)
+	return via == viaCloudCode, err
+}
+
+// viaCloudCode is discovery.ViaCloudCode (this package cannot import the handler's).
+const viaCloudCode = "cloud_code"
+
+// everyLibrary names every library: what an admin's sign-in that may not act as an admin reads.
+func (h *Handler) everyLibrary(ctx context.Context) ([]string, error) {
+	all, ok := h.ACL.(interface {
+		AllLibraries(ctx context.Context) ([]string, error)
+	})
+	if !ok {
+		return nil, errors.New("auth: no library list")
+	}
+	return all.AllLibraries(ctx)
+}
 
 // librariesFor snapshots the libraries this user can read for the JWT
 // `lib[]` claim. Admins read everything, so we skip the ACL lookup and

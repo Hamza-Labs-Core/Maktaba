@@ -33,6 +33,7 @@ import (
 	"net/http"
 	"net/netip"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -90,8 +91,12 @@ type Deps struct {
 	// PollLimit the polls (burst 60, one a second, when nil).
 	CreateLimit *ratelimit.Limiter
 	PollLimit   *ratelimit.Limiter
-	Now         func() time.Time
-	Logger      *slog.Logger
+	// AgentLimit caps each home's lookups and claims, counted after its secret is checked
+	// (so no one else spends a home's allowance): burst 30, then one every 6 s, when nil. A
+	// home approving a TV makes two calls; a home trying codes it was not given runs out.
+	AgentLimit *ratelimit.Limiter
+	Now        func() time.Time
+	Logger     *slog.Logger
 }
 
 func (d *Deps) now() time.Time {
@@ -122,6 +127,9 @@ func MountPublic(r chi.Router, d *Deps) {
 
 // MountAgent registers a home's routes (its server secret is the credential).
 func MountAgent(r chi.Router, d *Deps) {
+	if d.AgentLimit == nil {
+		d.AgentLimit = ratelimit.NewLimiter(30, 1.0/6)
+	}
 	r.Get("/v1/homes/{id}/tv-codes/{code}", d.Lookup)
 	r.Post("/v1/homes/{id}/tv-codes/{code}/claim", d.Claim)
 }
@@ -268,6 +276,12 @@ func (d *Deps) home(w http.ResponseWriter, r *http.Request) (string, bool) {
 	if !ok || id != chi.URLParam(r, "id") || d.Servers.VerifySecret(r.Context(), id, secret) != nil {
 		w.Header().Set("WWW-Authenticate", `Basic realm="maktaba-server"`)
 		writeErr(w, http.StatusUnauthorized, "unauthorized", "")
+		return "", false
+	}
+	if d.AgentLimit != nil && !d.AgentLimit.Allow("home:"+id) {
+		d.log().Warn("tv codes: a home is over its lookups", "server_id", id, "event", "tv_code_agent_limited")
+		w.Header().Set("Retry-After", strconv.Itoa(d.AgentLimit.RetryAfter()))
+		writeErr(w, http.StatusTooManyRequests, "rate_limited", "")
 		return "", false
 	}
 	return id, true

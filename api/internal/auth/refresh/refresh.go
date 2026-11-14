@@ -390,6 +390,25 @@ func (s *Store) ListAppSignIns(ctx context.Context, userID string) ([]AppSignIn,
 	return out, nil
 }
 
+// FamilyVia is how a family's device came by its code (its first token's client_meta "via",
+// e.g. "cloud_code"); "" for any other sign-in or an unknown family. Rotated tokens carry
+// other meta, so the first token is read.
+func (s *Store) FamilyVia(ctx context.Context, familyID string) (string, error) {
+	var raw []byte
+	err := s.DB.QueryRowContext(ctx, `SELECT client_meta FROM refresh_tokens WHERE family_id = $1
+	                                   ORDER BY issued_at ASC LIMIT 1`, familyID).Scan(&raw)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	var meta map[string]any
+	_ = json.Unmarshal(raw, &meta)
+	via, _ := meta["via"].(string)
+	return via, nil
+}
+
 // RevokeFamilyOf revokes a family only when it is userID's: false when it is not (or has no
 // live token), so another person's family is never touched.
 func (s *Store) RevokeFamilyOf(ctx context.Context, userID, familyID string) (bool, error) {

@@ -370,3 +370,31 @@ func TestBadInput(t *testing.T) {
 		t.Fatalf("platform kept as %q", v.Platform)
 	}
 }
+
+// A home trying codes it was not given runs out of lookups; someone without its secret spends
+// none of them.
+func TestAHomesLookupsAreCapped(t *testing.T) {
+	rg := newRig(t)
+	path := "/v1/homes/" + homeID + "/tv-codes/ABCD2345"
+	for range 40 {
+		req := httptest.NewRequest("GET", path, nil)
+		req.SetBasicAuth(homeID, "wrong")
+		w := httptest.NewRecorder()
+		rg.h.ServeHTTP(w, req)
+		if w.Code != http.StatusUnauthorized {
+			t.Fatalf("wrong secret: %d", w.Code)
+		}
+	}
+	for i := range 30 {
+		if w := rg.do("GET", path, "", nil, true); w.Code != http.StatusNotFound {
+			t.Fatalf("lookup %d: %d", i+1, w.Code)
+		}
+	}
+	w := rg.do("GET", path, "", nil, true)
+	if w.Code != http.StatusTooManyRequests || w.Header().Get("Retry-After") == "" {
+		t.Fatalf("lookup 31: %d %v", w.Code, w.Header())
+	}
+	if w := rg.do("POST", path+"/claim", "", map[string]string{"grant": "aaaaaaaaaaaaaaaaaaaaaa"}, true); w.Code != http.StatusTooManyRequests {
+		t.Fatalf("a claim over the cap: %d", w.Code)
+	}
+}
