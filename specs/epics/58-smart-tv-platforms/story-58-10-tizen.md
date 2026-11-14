@@ -109,7 +109,9 @@ The launcher's catalogs (58.09) and these:
 | Key | English | Arabic |
 |---|---|---|
 | `tizen.error.playback` | The TV couldn't play this. Trying a converted version… | تعذّر على التلفاز تشغيل هذا. جارٍ تجربة نسخة محوّلة… |
-| `tizen.subtitles.size` | Subtitle size | حجم الترجمة (not shipped: the size comes from `/tv/`; As built) |
+| `tizen.subtitles.size` | Subtitle size | حجم الترجمة |
+
+`tizen.subtitles.size` did not ship: the size comes from `/tv/`'s own setting (As built).
 
 ## Edge cases
 
