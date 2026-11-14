@@ -331,6 +331,8 @@ jobs:
             while IFS= read -r t; do only+=(-only-testing "$target/$t"); done \
               < <(python3 ../../tools/apple/ui-shard.py "$device" "$shard" "$shards" UITests/Player*Tests.swift)
           fi
+          # TEMPORARY (fix/player-profile-switch-flake): each shard repeats the one flaky test 20 times
+          if [ "$shard" != shots ]; then only=(-only-testing "$target/PlayerProfileUITests/testPlaybackSettingsAreKept" -test-iterations 20); fi
           echo "shard $shard/$shards: ${#only[@]} arguments for $((${#only[@]} / 2)) tests"
           xctestrun=$(ls "$PRODUCTS/Products/${scheme}_iphonesimulator"*.xctestrun)
           TEST_RUNNER_MAKTABA_SHOTS="$SHOTS" xcodebuild test-without-building -xctestrun "$xctestrun" \
