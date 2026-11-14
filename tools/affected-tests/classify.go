@@ -275,22 +275,34 @@ func gradleClass(p, root, family, unit, instr string) Class {
 		}
 		return Class{}
 	}
-	switch set {
-	case "test", "testDebug", "testRelease":
+	// test, testDebug, a flavor's testAmazon or testGoogleDebug; androidTest, androidTestAmazon
+	var platform string
+	switch {
+	case gradleSet(set, "test"):
+		platform = unit
+	case gradleSet(set, "androidTest"):
+		platform = instr
+	}
+	if platform != "" {
 		if isTestName(path.Base(p)) {
-			return Class{Kind: KindTest, Platform: unit, Family: family, Project: root}
+			return Class{Kind: KindTest, Platform: platform, Family: family, Project: root}
 		}
-		return Class{Kind: KindTestSupport, Platform: unit, Family: family, Project: root}
-	case "androidTest":
-		if isTestName(path.Base(p)) {
-			return Class{Kind: KindTest, Platform: instr, Family: family, Project: root}
-		}
-		return Class{Kind: KindTestSupport, Platform: instr, Family: family, Project: root}
+		return Class{Kind: KindTestSupport, Platform: platform, Family: family, Project: root}
 	}
 	if generated(p) {
 		return Class{Platform: unit, Family: family, Project: root}
 	}
 	return Class{Kind: KindSource, Platform: unit, Family: family, Project: root}
+}
+
+// gradleSet says whether a source set is [base] itself or [base] for a build type or flavor
+// (testDebug, testAmazon, androidTestAmazonDebug): the base followed by a capital letter.
+func gradleSet(set, base string) bool {
+	if set == base {
+		return true
+	}
+	rest, ok := strings.CutPrefix(set, base)
+	return ok && rest[0] >= 'A' && rest[0] <= 'Z'
 }
 
 // familyTests is which families' tests a source's searches (UI strings, names) look in:

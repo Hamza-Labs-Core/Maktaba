@@ -864,6 +864,16 @@ build fails when the two differ.
 
 ### Added
 
+- **A home for TV store reviewers (Epic 58, story 58.04).** review.maktaba.tv is a Maktaba home
+  the project runs with public-domain and openly licensed content only (Blender's and Netflix's
+  open films, a CC BY lecture series, a LibriVox audiobook, each titled in English and Arabic),
+  test files for 4K HDR10, 1080p, an MKV with EAC3 and Arabic subtitles and a transcode, a
+  viewer account for reviewers and a restricted child for the parental checks.
+  `maktaba-server review-home seed|rotate` sets it up and rotates its passwords after each
+  submission round; the passwords live only in the release secrets, every store's submission
+  notes name the secret (`docs/stores/review-home.md`), and a check every 15 minutes walks the
+  cloud code and a stream of each test file.
+
 - **A cast grant for Maktaba's Cast receiver (Epic 58, story 58.07).** A signed-in phone or
   browser can now mint a cast grant on the home (`POST /api/cast/grants`) for the one video or
   play queue it casts. The TV uses the grant to open its own stream sessions, report where it
@@ -2678,6 +2688,16 @@ build fails when the two differ.
   connection is not encrypted, and Settings → Switch home picks another home. English and
   Arabic, right to left in Arabic. The store packages come with stories 58.10 and 58.11.
 
+- **Maktaba TV on Fire TV (story 58.05).** The Android TV app now has an Amazon Appstore build
+  for Fire TV sticks, the Cube and Fire TV Edition sets (Fire OS 7 or later): the same screens in
+  English and Arabic, signing in by the home's code, Amazon's remote, and Amazon's launcher. It
+  carries no Google Play code (CI checks its dependencies and manifest on every run), names itself
+  `firetv` to the home, and opens each stream with a report of what the TV plays (its hardware
+  decoders, the screen's HDR and the receiver's surround formats), which an older home is not
+  sent. A tag builds `maktaba-tv-<version>-amazon.apk`, signed and staged as a draft in the
+  Appstore once the Amazon keys are set; it reaches the store only after the real-device
+  checklist in `docs/stores/amazon.md` passed. Nothing is sold in it.
+
 - **Sign a TV in from anywhere with a code (story 58.03).** A TV that cannot find its home, or is
   at a relative's house, can ask Maktaba Cloud for a code (`POST /v1/tv/codes`), and a person
   signed in on the home approves it (`POST /api/pairing/cloud-approve`, after
@@ -3044,6 +3064,19 @@ build fails when the two differ.
   Back steps out to the tab's top, then its tabs, then out; each tab keeps its place. Up next shows
   in a video's last 30 seconds, and a shuffled queue offers Shuffle again. A focused card grows by
   1.08 inside the brass ring.
+
+- **One Plugins page for every plugin (story 54.44).** Settings → Plugins lists every plugin
+  in one list, the ones Maktaba publishes and the ones you installed, each marked with who
+  publishes it, with a filter. Every plugin has its own switch on its card, its jobs of the
+  last day, its problems (a link to its failed jobs and its logs) and the memory of the
+  program that runs it, said plainly when several plugins share that program. Each plugin has
+  a page at its own address. A plugin by Maktaba still comes with Maktaba and is updated with
+  it; its page says so instead of offering Remove. The parts that must always run are part of
+  Maktaba itself and are no longer shown as plugins. The Components page links to each
+  plugin's page. For scripts: `GET /api/plugins` has no `built_in` field any more. Its
+  `plugins` list is the installed plugins, as before; `GET /api/plugins?release=true` adds
+  Maktaba's plugins with `publisher` and `source`. `GET /api/queues/failures` takes several
+  stages in `stage`.
 
 ### Fixed
 
@@ -3619,6 +3652,10 @@ build fails when the two differ.
   they read the video, so a non-admin gets 403 whether or not the video exists. In the web, a
   library's refusal reads "Not available in this library" to anyone who is not an admin; an admin
   keeps the read-only reason and its fix.
+
+- **The Android TV app names itself to the home.** Its library, playlist and play-queue calls sent
+  `X-Maktaba-Client: native` instead of the app's name and version, so the home could not tell a
+  TV too old for it on those calls; they now send the same header as sign-in does.
 
 ## [0.2.0] - 2026-10-19
 
