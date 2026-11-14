@@ -140,6 +140,11 @@ type ServerConfig struct {
 	// Epic 50 story 50.32): /v1/admin/* and /v1/staff/* only. Empty means none, and the
 	// console has no address at all.
 	AdminListenAddr string
+	// MetricsListenAddr is the private series' own listener (server.metrics_listen_addr, env
+	// MAKTABA_CLOUD_METRICS_ADDR; story 50.28): /metrics with the broadcast series, beside
+	// /readyz and /healthz, on a loopback or private address only. The main listener's /metrics
+	// never has them, whatever a request's Host says. Empty: they are not served.
+	MetricsListenAddr string
 	// AdminHost is the one Host the admin listener answers (server.admin_host,
 	// admin.maktaba.tv); any other is 404. Required with AdminListenAddr.
 	AdminHost string
@@ -433,6 +438,10 @@ func applyEnvOverrides(c *Config) {
 	if v := os.Getenv("MAKTABA_CLOUD_LISTEN_ADDR"); v != "" {
 		c.Server.ListenAddr = v
 	}
+	// the blue/green relay units (story 50.08) give each colour its own metrics port
+	if v := os.Getenv("MAKTABA_CLOUD_METRICS_ADDR"); v != "" {
+		c.Server.MetricsListenAddr = v
+	}
 	if v := os.Getenv("MAKTABA_CLOUD_PUBLIC_URL"); v != "" {
 		c.Server.PublicURL = v
 	}
@@ -659,6 +668,8 @@ func assign(c *Config, section, key, val string) error {
 		c.Server.Env = val
 	case "server.admin_listen_addr":
 		c.Server.AdminListenAddr = val
+	case "server.metrics_listen_addr":
+		c.Server.MetricsListenAddr = val
 	case "server.admin_host":
 		c.Server.AdminHost = strings.ToLower(val)
 	case "server.admin_origin":

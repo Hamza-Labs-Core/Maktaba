@@ -30,6 +30,12 @@ origin_mode = "tunnel"
 admin_listen_addr = "127.0.0.1:8091"
 admin_host        = "admin.localhost"
 admin_origin      = "http://localhost:5175"
+# The private series' own listener (story 50.28): /metrics with the broadcast series (business
+# figures), beside /readyz and /healthz, on a loopback or private address only, in every
+# environment. listen_addr's /metrics never has them, whatever a request's Host says. Env
+# MAKTABA_CLOUD_METRICS_ADDR (each relay colour sets its own: 127.0.0.1:8445, 127.0.0.1:8455).
+# Unset: they are not served.
+# metrics_listen_addr = "127.0.0.1:8092"
 # The names listen_addr answers (any other Host is 404; /healthz, /readyz and /metrics answer
 # on any). Production: ["api.maktaba.tv", "app.maktaba.tv", "maktaba.tv"]. Empty: any name.
 user_hosts = []

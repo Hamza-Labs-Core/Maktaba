@@ -35,8 +35,11 @@ invite label.
   countries jsonb, devices jsonb, rebuffer_ratio, errors)`, and keeps it 13 months.
 - **Metering truth** is `PublisherControl`'s count (50.20 §3). The hourly rollup is a
   cross-check, and a difference over 2 % in a day raises a SEV3.
-- **Folding small counts:** any country or device with fewer than 5 sessions in the shown period
-  goes into "other" (`broadcast.analytics.k = 5`).
+- **Folding small counts:** any country or device with fewer than 5 sessions in an hour goes into
+  "other" for that hour (`broadcast.analytics.k = 5`), and a period adds its hours' folded counts.
+  The fold is decided per hour, the rollup's grain, never over the shown period: the caller picks
+  a period's edges (the time zone moves a day by whole hours, today grows each hour), and two
+  periods an hour apart, each folded as a whole, would differ by exactly that hour's small groups.
 
 ### 3. What the publisher sees
 
@@ -140,7 +143,7 @@ Times are in the publisher's time zone. Export as CSV.
 | `broadcast.analytics.countries` | Countries | البلدان |
 | `broadcast.analytics.other` | Other | أخرى |
 | `broadcast.analytics.quality` | Quality watched | الجودة المشاهَدة |
-| `broadcast.analytics.privacy` | Places and devices with fewer than 5 viewers are grouped as "Other". We don't keep viewers' addresses or identities. | تُجمع الأماكن والأجهزة التي يقل مشاهدوها عن 5 تحت "أخرى". لا نحتفظ بعناوين المشاهدين أو هوياتهم. |
+| `broadcast.analytics.privacy` | Places and devices with fewer than 5 viewers in an hour are grouped as "Other" for that hour. We don't keep viewers' addresses or identities. | تُجمع الأماكن والأجهزة التي يقل مشاهدوها في ساعة عن 5 تحت "أخرى" في تلك الساعة. لا نحتفظ بعناوين المشاهدين أو هوياتهم. |
 | `status.component.broadcasting` | Broadcasting | البث |
 
 ## Build plan
