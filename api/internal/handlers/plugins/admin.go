@@ -2,10 +2,12 @@ package plugins
 
 // The admin routes of Epic 54 Phase 1 (stories 54.07, 54.08 §3, 54.10, 54.11):
 //
-//	GET    /api/plugins                      installed plugins
+//	GET    /api/plugins                      every plugin: the installed ones and the ones Maktaba
+//	                                         publishes, in one list (story 54.44), and core
 //	GET    /api/plugins/policy               the home's policy (allow_unreviewed)
 //	GET    /api/plugins/graph                the home's plugin graph and its findings (54.39, 54.41)
-//	GET    /api/plugins/{id}/downstream      other plugins' stages that go idle when it is off
+//	GET    /api/plugins/{id}/downstream      what turning it off does: other plugins' stages that go
+//	                                         idle, the components that stop with it, what needs it
 //	GET    /api/plugins/{id}/flow            its flow: the whole set, each member's state, the missing (54.41)
 //	PUT    /api/plugins/policy               change it
 //	GET    /api/plugins/isolation            each machine's isolation level and the switch (59.07)
@@ -30,7 +32,8 @@ package plugins
 //
 // Every one is admin-only: no sign-in 401; a viewer, a cloud-linked play sign-in (its
 // scope clears IsAdmin) and a token without the admin scope 403. Switches go through the
-// components service, so they write the rows and audit actions of /api/components/plugin.<id>.
+// components service, so they write the rows and audit actions of /api/components/plugin.<id>
+// (for a plugin Maktaba publishes: of the component whose stages it implements).
 
 import (
 	"context"
@@ -51,7 +54,6 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
 	pl "github.com/Hamza-Labs-Core/Maktaba/api/internal/plugins"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/plugins/catalog"
-	"github.com/Hamza-Labs-Core/Maktaba/api/internal/plugins/firstparty"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/plugins/storelink"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/components"
 )
@@ -96,9 +98,9 @@ func (h *Admin) Mount(r chi.Router) {
 		r.Put("/api/plugins/panel-order", h.putPanelOrder)
 		r.Get("/api/plugins/catalog", h.catalogView)
 		r.Get("/api/plugins/trust", h.trust)
-		r.Put("/api/plugins/{id}/auto-update", h.autoUpdate)
-		r.Post("/api/plugins/{id}/rate", h.rate)
-		r.Post("/api/plugins/{id}/report", h.reportPlugin)
+		r.With(h.notWithRelease).Put("/api/plugins/{id}/auto-update", h.autoUpdate)
+		r.With(h.notWithRelease).Post("/api/plugins/{id}/rate", h.rate)
+		r.With(h.notWithRelease).Post("/api/plugins/{id}/report", h.reportPlugin)
 		r.Get("/api/plugins/store-account", h.storeStatus)
 		r.Post("/api/plugins/store-account/link", h.storeLink)
 		r.Post("/api/plugins/store-account/poll", h.storePoll)
@@ -107,21 +109,21 @@ func (h *Admin) Mount(r chi.Router) {
 		r.Post("/api/plugins/store-account/entitlements/refresh", h.refreshEntitlements)
 		r.Post("/api/plugins/store-account/buy", h.buy)
 		r.Get("/api/plugins/{id}", h.show)
-		r.Put("/api/plugins/{id}/grants", h.grants)
-		r.Put("/api/plugins/{id}/report-logs", h.reportLogs)
+		r.With(h.notWithRelease).Put("/api/plugins/{id}/grants", h.grants)
+		r.With(h.notWithRelease).Put("/api/plugins/{id}/report-logs", h.reportLogs)
 		r.Post("/api/plugins/{id}/enable", h.switchTo(components.WantEnabled))
 		r.Post("/api/plugins/{id}/disable", h.switchTo(components.WantInstalled))
 		r.Post("/api/plugins/{id}/start", h.hold(false))
 		r.Post("/api/plugins/{id}/stop", h.hold(true))
-		r.Post("/api/plugins/{id}/update", h.update)
-		r.Post("/api/plugins/{id}/rollback", h.rollback)
-		r.Delete("/api/plugins/{id}", h.remove)
-		r.Get("/api/plugins/{id}/writes", h.writes)
+		r.With(h.notWithRelease).Post("/api/plugins/{id}/update", h.update)
+		r.With(h.notWithRelease).Post("/api/plugins/{id}/rollback", h.rollback)
+		r.With(h.notWithRelease).Delete("/api/plugins/{id}", h.remove)
+		r.With(h.notWithRelease).Get("/api/plugins/{id}/writes", h.writes)
 		r.Get("/api/plugins/{id}/downstream", h.downstream)
 		r.Get("/api/plugins/{id}/flow", h.flow)
-		r.Get("/api/plugins/{id}/settings", h.getSettings)
-		r.Put("/api/plugins/{id}/settings", h.putSettings)
-		r.Post("/api/plugins/{id}/writes/revert", h.revert)
+		r.With(h.notWithRelease).Get("/api/plugins/{id}/settings", h.getSettings)
+		r.With(h.notWithRelease).Put("/api/plugins/{id}/settings", h.putSettings)
+		r.With(h.notWithRelease).Post("/api/plugins/{id}/writes/revert", h.revert)
 	})
 }
 
@@ -204,7 +206,7 @@ func (h *Admin) actor(r *http.Request) svc.Actor {
 }
 
 func (h *Admin) list(w http.ResponseWriter, r *http.Request) {
-	v, err := h.L.List(r.Context())
+	v, core, err := h.L.ListAll(r.Context())
 	if err != nil {
 		h.fail(w, r, err)
 		return
@@ -214,41 +216,20 @@ func (h *Admin) list(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, r, err)
 		return
 	}
-	common.WriteJSON(w, r, http.StatusOK, map[string]any{"plugins": v, "policy": pol, "built_in": builtIn()})
+	common.WriteJSON(w, r, http.StatusOK, map[string]any{"plugins": v, "policy": pol, "core": core})
 }
 
-// BuiltIn is one of Maktaba's own first-party plugins as the Plugins page lists it under
-// "Built into Maktaba" (story 54.22 §4): its name in both languages, its component (the
-// Components page's switch is its switch: no grants dialog), its stages, and what it can do
-// (fp.trusted.<capability> words with their parameter).
-type BuiltIn struct {
-	ID           string              `json:"id"`
-	Name         string              `json:"name"`
-	NameAr       string              `json:"name_ar"`
-	Summary      string              `json:"summary"`
-	SummaryAr    string              `json:"summary_ar"`
-	Component    string              `json:"component"`
-	Stages       []string            `json:"stages"`
-	Capabilities []map[string]string `json:"capabilities"`
-}
-
-func builtIn() []BuiltIn {
-	list, err := firstparty.Plugins()
-	if err != nil {
-		return []BuiltIn{}
-	}
-	out := make([]BuiltIn, 0, len(list))
-	for _, fp := range list {
-		strs, _ := fp.Manifest["strings"].(map[string]any)
-		word := func(lang, key string) string {
-			k, _ := strs[key].(string)
-			return fp.Strings[lang][k]
+// notWithRelease refuses the routes a plugin that comes with the Maktaba release has no
+// part in yet (story 54.44): it is updated with Maktaba, is not removed on its own, has no
+// grants to change and no schema settings or recorded writes (409 plugin_with_release).
+func (h *Admin) notWithRelease(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := pl.RefuseWithRelease(chi.URLParam(r, "id")); err != nil {
+			h.fail(w, r, err)
+			return
 		}
-		out = append(out, BuiltIn{ID: fp.ID, Name: word("en", "name"), NameAr: word("ar", "name"),
-			Summary: word("en", "summary"), SummaryAr: word("ar", "summary"), Component: fp.Trusted.Component,
-			Stages: fp.Stages, Capabilities: fp.Capabilities()})
-	}
-	return out
+		next.ServeHTTP(w, r)
+	})
 }
 
 func (h *Admin) graph(w http.ResponseWriter, r *http.Request) {
@@ -261,12 +242,12 @@ func (h *Admin) graph(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Admin) downstream(w http.ResponseWriter, r *http.Request) {
-	d, err := h.L.Downstream(r.Context(), chi.URLParam(r, "id"))
+	d, err := h.L.Effect(r.Context(), chi.URLParam(r, "id"))
 	if err != nil {
 		h.fail(w, r, err)
 		return
 	}
-	common.WriteJSON(w, r, http.StatusOK, map[string]any{"stages": d})
+	common.WriteJSON(w, r, http.StatusOK, d)
 }
 
 func (h *Admin) flow(w http.ResponseWriter, r *http.Request) {
@@ -514,11 +495,12 @@ func (h *Admin) grants(w http.ResponseWriter, r *http.Request) {
 	common.WriteJSON(w, r, http.StatusOK, out)
 }
 
-// apply applies one change of plugin.<id> through the components service and answers the
+// apply applies one change of the plugin's component through the components service and answers the
 // plugin as it now is.
 func (h *Admin) apply(w http.ResponseWriter, r *http.Request, ch svc.Change) {
 	id := chi.URLParam(r, "id")
-	ch.ID = components.PluginPrefix + id
+	// a Maktaba-published plugin's switch is its component's desired row (story 54.44)
+	ch.ID = pl.ComponentOf(id)
 	if _, err := h.L.Show(r.Context(), id); err != nil {
 		h.fail(w, r, err)
 		return
