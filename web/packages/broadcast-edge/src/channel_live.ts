@@ -8,6 +8,7 @@
 import { DurableObject } from "cloudflare:workers";
 import { now } from "./clock";
 import type { Delivery, Env } from "./env";
+import { ingest as ingestEvent, write } from "./events";
 import { log } from "./log";
 import {
   advance,
@@ -20,6 +21,7 @@ import {
   renderMedia,
   RETAIN_MS,
   rungStatus,
+  type Entry,
   type RungInfo,
   type RungState,
   type RungStatus,
@@ -86,6 +88,8 @@ export interface AppendInput extends PrecheckInput {
   key: string;
   disc: boolean;
   pdt: number;
+  /** edge time the upload started (50.28's upload-to-visible) */
+  recv?: number;
 }
 
 export type PlaylistAnswer =
@@ -179,6 +183,7 @@ export class ChannelLive extends DurableObject<Env> {
     if (inp.rungs.length > 0) this.s.order = inp.rungs;
     const r = this.rung(inp.rung);
     const t = now();
+    const before = r.nextN;
     const v = append(
       r,
       {
@@ -189,10 +194,17 @@ export class ChannelLive extends DurableObject<Env> {
         bytes: inp.bytes,
         disc: inp.disc,
         pdt: inp.pdt,
+        ...(inp.recv !== undefined ? { recv: inp.recv } : {}),
       },
       t
     );
     if (v !== "new") return v;
+    this.recordVisible(
+      inp.pub,
+      inp.rung,
+      r.entries.filter((e) => e.n >= before),
+      t
+    );
     const resumed = !this.s.onAir;
     this.s.onAir = true;
     this.s.pub ??= inp.pub;
@@ -452,15 +464,33 @@ export class ChannelLive extends DurableObject<Env> {
     return doomed.length;
   }
 
-  /** report sends the last minute's counts to Analytics Engine (50.28) and the publisher (50.20). */
+  /**
+   * recordVisible writes 50.28's `ingest` event for each live segment an append made visible:
+   * its bytes, upload-to-visible, and for the canary publisher glass-to-glass (now minus the
+   * segment's PROGRAM-DATE-TIME, the home's clock).
+   */
+  private recordVisible(pub: string, rung: string, visible: Entry[], t: number): void {
+    const canary = !!this.env.CANARY_PUBLISHER && pub === this.env.CANARY_PUBLISHER;
+    for (const e of visible) {
+      if (e.kind !== "live") continue;
+      write(
+        this.env,
+        ingestEvent(
+          pub,
+          this.s.ch,
+          rung,
+          e.bytes,
+          e.recv !== undefined ? Math.max(0, t - e.recv) : 0,
+          canary ? Math.max(0, t - e.pdt) : undefined
+        )
+      );
+    }
+  }
+
+  /** report sends the last minute's ingest counts to the publisher (50.20). */
   private async report(): Promise<void> {
     const c = this.s.counters;
     if (c.segments_in === 0 && c.bytes_in === 0 && c.playlist_misses === 0) return;
-    this.env.AE?.writeDataPoint({
-      blobs: ["channel_minute", this.s.ch, this.status()],
-      doubles: [c.segments_in, c.bytes_in, c.playlist_misses],
-      indexes: [this.s.ch],
-    });
     if (this.s.pub && (c.segments_in > 0 || c.bytes_in > 0)) {
       try {
         await this.env.PUBLISHER.get(this.env.PUBLISHER.idFromName(this.s.pub)).recordIngest(

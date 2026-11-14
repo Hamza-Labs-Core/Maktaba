@@ -63,7 +63,13 @@ interface State {
   windows: Record<string, UsageWindow & { sent: boolean }>;
 }
 
-export type BeatResult = { counted: boolean; concurrent: number; delivery: Delivery };
+export type BeatResult = {
+  counted: boolean;
+  /** the session's first counted beat: the Worker writes 50.28's `play` event */
+  first: boolean;
+  concurrent: number;
+  delivery: Delivery;
+};
 
 export class PublisherControl extends DurableObject<Env> {
   private s: State = { pub: "", plan: null, channels: [], sessions: {}, windows: {} };
@@ -171,14 +177,15 @@ export class PublisherControl extends DurableObject<Env> {
       if (delivery === "stream") w.minutes_stream++;
       w.peak_sessions = Math.max(w.peak_sessions, Object.keys(this.s.sessions).length);
       counted = true;
-      this.env.AE?.writeDataPoint({
-        blobs: ["viewer_minute", ch, mode, delivery],
-        doubles: [1],
-        indexes: [ch],
-      });
       await this.save();
     }
-    return { counted, concurrent: Object.keys(this.s.sessions).length, delivery };
+    // first: the session's first counted beat (the Worker writes 50.28's play event)
+    return {
+      counted,
+      first: counted && !last,
+      concurrent: Object.keys(this.s.sessions).length,
+      delivery,
+    };
   }
 
   async recordIngest(segments: number, bytes: number): Promise<void> {

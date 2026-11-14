@@ -265,6 +265,7 @@ async function putSegment(
     key,
     disc: request.headers.get(HEADER_DISCONTINUITY) === "1",
     pdt,
+    recv: t,
   });
   if (v === "new") return json(201, { status: "created", key });
   if (v === "duplicate") return json(200, { status: "duplicate" });

@@ -53,6 +53,8 @@ export interface ViewerClaims {
   mode: Mode;
   exp: number;
   country?: string;
+  /** the channel's access when the token was minted (50.28's analytics): invite (default) or open */
+  acc?: "invite" | "open";
 }
 
 export type Checked<T> = { ok: true; claims: T } | { ok: false; status: 401 | 403; error: string };
