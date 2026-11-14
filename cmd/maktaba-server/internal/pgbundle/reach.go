@@ -152,8 +152,39 @@ func (r Reach) machineAddrs() []string {
 	return out
 }
 
+// asker runs one statement (Querier): what a look of the cluster asks through.
+type asker interface {
+	Query(ctx context.Context, database, sql string) ([]string, error)
+}
+
+// notThere reports whether a statement failed because what it reads is not made yet (a
+// database not migrated that far: psql's "relation ... does not exist", "column ... does
+// not exist"). Any other failure (a server too busy to answer in time, one going down) is
+// no answer at all.
+func notThere(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "does not exist")
+}
+
+// askApart asks one of the questions a database not migrated yet cannot answer: none is
+// the answer there (ok false), and any other failure is the look's (it changes nothing:
+// a question that timed out is not a "no", or a busy minute would drop the required link
+// and start the server again, then again once it is read).
+func askApart(ctx context.Context, q asker, sql string) (answer string, ok bool, err error) {
+	rows, err := q.Query(ctx, AppDatabase, sql)
+	if notThere(err) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	if len(rows) != 1 {
+		return "", false, nil
+	}
+	return strings.TrimSpace(rows[0]), true, nil
+}
+
 // reach reads what the cluster asks for now from the running server.
-func (b Bundle) reach(ctx context.Context, q Querier) (Reach, error) {
+func (b Bundle) reach(ctx context.Context, q asker) (Reach, error) {
 	rows, err := q.Query(ctx, AppDatabase, reachSQL)
 	if err != nil {
 		return Reach{}, err
@@ -166,14 +197,18 @@ func (b Bundle) reach(ctx context.Context, q Querier) (Reach, error) {
 		return Reach{}, fmt.Errorf("the cluster's reach: %q", rows[0])
 	}
 	r := Reach{Open: open == "t"}
-	if req, err := q.Query(ctx, AppDatabase, requireSQL); err == nil && len(req) == 1 {
-		r.Require = strings.TrimSpace(req[0]) == "t"
+	req, ok, err := askApart(ctx, q, requireSQL)
+	if err != nil {
+		return Reach{}, fmt.Errorf("whether the cluster link is required: %w", err)
 	}
-	if roles, err := q.Query(ctx, AppDatabase, certRolesSQL); err == nil && len(roles) == 1 {
-		for _, role := range strings.Split(strings.TrimSpace(roles[0]), ",") {
-			if machineRoleRe.MatchString(role) {
-				r.CertRoles = append(r.CertRoles, role)
-			}
+	r.Require = ok && req == "t"
+	roles, _, err := askApart(ctx, q, certRolesSQL)
+	if err != nil {
+		return Reach{}, fmt.Errorf("the machines' certificates: %w", err)
+	}
+	for _, role := range strings.Split(roles, ",") {
+		if machineRoleRe.MatchString(role) {
+			r.CertRoles = append(r.CertRoles, role)
 		}
 	}
 	if addrs = strings.TrimSpace(addrs); addrs != "" {

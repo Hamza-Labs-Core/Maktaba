@@ -2,6 +2,7 @@ package pgbundle
 
 import (
 	"context"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -207,5 +208,56 @@ func TestClusterCAOnlyWhileTheLinkIsRequired(t *testing.T) {
 	}
 	if !hasCA() {
 		t.Fatal("require: the server does not take the cluster CA")
+	}
+}
+
+// answers is a database for one look: each statement's rows, or its failure.
+type answers struct {
+	require, roles       []string
+	requireErr, rolesErr error
+}
+
+func (a answers) Query(_ context.Context, _ string, sql string) ([]string, error) {
+	switch sql {
+	case reachSQL:
+		return []string{"t|10.0.0.7"}, nil
+	case requireSQL:
+		return a.require, a.requireErr
+	case certRolesSQL:
+		return a.roles, a.rolesErr
+	}
+	return nil, errors.New("not asked in a look: " + sql)
+}
+
+// A look the database answers in part is no look: a question that ran out of time (a busy
+// server) must not read as "the link is not required", which started Postgres again, and
+// again one look later when it was read (the live home, 2026-11-13: ten times in a day).
+func TestALookHalfAnsweredChangesNothing(t *testing.T) {
+	ctx := context.Background()
+	role := "maktaba_node_0123456789abcdef0123456789abcdef"
+	full := answers{require: []string{"t"}, roles: []string{role}}
+	r, err := Bundle{}.reach(ctx, full)
+	if err != nil || !r.Open || !r.Require || len(r.CertRoles) != 1 {
+		t.Fatalf("a look fully answered: %+v, %v", r, err)
+	}
+	busy := errors.New("psql: context deadline exceeded: ")
+	for name, a := range map[string]answers{
+		"the required link not answered": {requireErr: busy, roles: []string{role}},
+		"the certificates not answered":  {require: []string{"t"}, rolesErr: busy},
+		"the server going down": {requireErr: errors.New(
+			`psql: exit status 2: psql: error: connection to server at "127.0.0.1" failed: FATAL:  the database system is shutting down`)},
+	} {
+		if r, err := (Bundle{}).reach(ctx, a); err == nil {
+			t.Errorf("%s: read as %+v, want the look to fail", name, r)
+		}
+	}
+	// a database not migrated that far has no such table: the rest still answers
+	old := answers{
+		requireErr: errors.New(`psql: exit status 3: ERROR:  relation "app_settings" does not exist`),
+		rolesErr:   errors.New(`psql: exit status 3: ERROR:  column n.update_state does not exist`),
+	}
+	r, err = Bundle{}.reach(ctx, old)
+	if err != nil || !r.Open || r.Require || len(r.CertRoles) != 0 {
+		t.Fatalf("a database not migrated yet: %+v, %v", r, err)
 	}
 }
