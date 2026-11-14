@@ -49,4 +49,11 @@ func TestAnAccessTokenCarriesItsSignInAndDeviceLimitOnANode(t *testing.T) {
 	if p := g.r.verifyJWT(context.Background(), sign(jwt.Claims{})); p == nil || p.RefreshFamily != "" || p.AgeCeiling != nil {
 		t.Fatalf("a token with neither: %+v, want no sign-in and no limit", p)
 	}
+	// Epic 58 story 58.03: a cloud code's TV (rst) is no admin on a node either
+	if p := g.r.verifyJWT(context.Background(), sign(jwt.Claims{IsAdmin: true, Rst: true})); p == nil || p.IsAdmin || p.AccessAllLibraries || !p.MintsNoCredential() {
+		t.Fatalf("a restricted admin token: %+v, want no admin", p)
+	}
+	if p := g.r.verifyJWT(context.Background(), sign(jwt.Claims{IsAdmin: true})); p == nil || !p.IsAdmin || p.Restricted {
+		t.Fatalf("an admin token: %+v", p)
+	}
 }

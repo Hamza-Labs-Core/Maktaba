@@ -103,7 +103,9 @@ Rows are swept an hour after expiry.
   viewer's libraries and parental policy. An admin approving gives a sign-in that never acts as
   an admin (it reads every library, named one by one, and stays so when it refreshes): a cloud
   code can be read out to anyone anywhere, so approving one hands over watching, never running
-  the home.
+  the home. Whoever approved it, a cloud code's TV mints no credential of its own (no API
+  token, no approval of another device): its token says so (`rst`), and so does the approval
+  the home keeps, so a restart between approving and signing in changes nothing.
 - **Given** a home not registered with the cloud, **then** Approve a TV says a cloud code needs
   remote access turned on and offers the home's own code instead.
 

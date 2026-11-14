@@ -13,6 +13,8 @@ import (
 	"testing"
 
 	"github.com/go-chi/chi/v5"
+
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 )
 
 // fakeCloud is CloudCodes: one open code, a claim that fails when claimErr is set.
@@ -166,5 +168,53 @@ func TestAgentCloudCodesAnswers(t *testing.T) {
 	t.Setenv("MAKTABA_CLOUDLINK_ADMIN", "")
 	if _, err := (AgentCloudCodes{}).Lookup(context.Background(), "WEBS2345"); !errors.Is(err, ErrCloudNotLinked) {
 		t.Fatalf("no address: %v", err)
+	}
+}
+
+// The approval itself says it came by a cloud code: a home that restarted between the approval
+// and the TV's redeem still mints a restricted sign-in.
+func TestCloudApproveSurvivesARestart(t *testing.T) {
+	cloud := &fakeCloud{open: "WEBS2345"}
+	h, fm, r := newCloudHandler(t, cloud)
+	if rec := do(r, http.MethodPost, "/api/pairing/cloud-approve", `{"code":"WEBS2345"}`, "viewer-1"); rec.Code != http.StatusOK {
+		t.Fatalf("approve = %d %s", rec.Code, rec.Body.String())
+	}
+	h.requests.mu.Lock()
+	h.requests.m = map[string]deviceRequest{} // the restart: requests are in memory, tickets are not
+	h.requests.mu.Unlock()
+	if rec := poll(r, cloud.grants[0]); rec.Code != http.StatusOK {
+		t.Fatalf("redeem after a restart = %d %s", rec.Code, rec.Body.String())
+	}
+	if fm.lastUID != "viewer-1" || fm.lastVia != ViaCloudCode {
+		t.Fatalf("minted for %q via %q", fm.lastUID, fm.lastVia)
+	}
+}
+
+// A restricted sign-in (a cloud code's TV) or a cloud one approves nothing: neither a cloud code
+// nor a home code, and it is not told what is waiting.
+func TestARestrictedSignInApprovesNothing(t *testing.T) {
+	cloud := &fakeCloud{open: "WEBS2345"}
+	_, _, r := newCloudHandler(t, cloud)
+	s := startDevice(t, r)
+	for _, p := range []*principal.Principal{{UserID: "admin-1", Restricted: true}, {UserID: "admin-1", CloudScope: principal.CloudScopeManage}} {
+		as := func(method, path, body string) *httptest.ResponseRecorder {
+			req := httptest.NewRequest(method, path, strings.NewReader(body))
+			req = req.WithContext(principal.WithPrincipal(context.Background(), p))
+			rec := httptest.NewRecorder()
+			r.ServeHTTP(rec, req)
+			return rec
+		}
+		if rec := as(http.MethodPost, "/api/pairing/cloud-approve", `{"code":"WEBS2345"}`); rec.Code != http.StatusForbidden {
+			t.Fatalf("%+v cloud-approve = %d", p, rec.Code)
+		}
+		if rec := as(http.MethodPost, "/api/pairing/approve", `{"code":"`+s.Code+`"}`); rec.Code != http.StatusForbidden {
+			t.Fatalf("%+v approve = %d", p, rec.Code)
+		}
+		if rec := as(http.MethodGet, "/api/pairing/pending", ""); !strings.Contains(rec.Body.String(), `"count":0`) {
+			t.Fatalf("%+v pending = %s", p, rec.Body.String())
+		}
+	}
+	if len(cloud.grants) != 0 {
+		t.Fatalf("grants = %v", cloud.grants)
 	}
 }

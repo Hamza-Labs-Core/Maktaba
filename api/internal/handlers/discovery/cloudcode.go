@@ -179,7 +179,7 @@ func cloudCaller(w http.ResponseWriter, r *http.Request) *principal.Principal {
 		httperror.Write(w, r, unauthorized())
 		return nil
 	}
-	if p.ViaCloud() {
+	if p.MintsNoCredential() {
 		httperror.Write(w, r, httperror.Forbidden(httperror.TypeCloudSession,
 			"a sign-in through Maktaba Cloud cannot sign in a device; sign in on the home"))
 		return nil
@@ -291,13 +291,12 @@ func (h *Handler) CloudApprove(w http.ResponseWriter, r *http.Request) {
 		Created:  time.Unix(now.Unix(), 0).UTC(),
 		Expires:  time.Unix(exp.Unix(), 0).UTC(),
 		LookedUp: now,
-		Via:      ViaCloudCode,
 		approved: true,
 	}, now) {
 		httperror.Write(w, r, httperror.Unavailable(30))
 		return
 	}
-	key := deviceTicketPrefix + homeCode
+	key := cloudTicketPrefix + homeCode
 	if err := h.Store.Insert(r.Context(), discovery.PairingTicket{
 		Code: key, UserID: userID, IssuedAt: now, ExpiresAt: exp,
 	}); err != nil {

@@ -190,6 +190,8 @@ func (m *tokenMinter) mint(ctx context.Context, userID, deviceKind, deviceLabel,
 		IsAdmin: isAdmin,
 		// the sign-in a device's age signal is kept under (Epic 57 story 57.04)
 		Fam: rt.FamilyID,
+		// a cloud code's TV mints nothing of its own and is never an admin (story 58.03)
+		Rst: via == ViaCloudCode,
 	})
 	if err != nil {
 		return MintedTokens{}, err

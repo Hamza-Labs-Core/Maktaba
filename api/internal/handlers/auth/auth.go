@@ -489,15 +489,20 @@ func (h *Handler) Refresh(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.Internal("resolve library acl").Wrap(err))
 		return
 	}
-	// a TV that came by a cloud code never acts as an admin (Epic 58 story 58.03)
+	// a TV that came by a cloud code stays restricted: it never acts as an admin and mints no
+	// credential of its own (Epic 58 story 58.03)
 	noAdmin := false
-	if scope == "" && u.IsAdmin {
-		if noAdmin, err = h.cloudCodeFamily(r.Context(), next.FamilyID); err == nil && noAdmin {
-			claims.IsAdmin = false
-			claims.Lib, err = h.everyLibrary(r.Context())
+	if scope == "" {
+		restricted, err := h.cloudCodeFamily(r.Context(), next.FamilyID)
+		if err == nil && restricted {
+			claims.Rst = true
+			if u.IsAdmin {
+				noAdmin, claims.IsAdmin = true, false
+				claims.Lib, err = h.everyLibrary(r.Context())
+			}
 		}
 		if err != nil {
-			httperror.Write(w, r, httperror.Internal("resolve a cloud code's libraries").Wrap(err))
+			httperror.Write(w, r, httperror.Internal("resolve a cloud code's sign-in").Wrap(err))
 			return
 		}
 	}

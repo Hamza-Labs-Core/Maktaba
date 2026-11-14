@@ -63,6 +63,9 @@ const (
 	deviceTicketPrefix = "device."
 	// legacyTicketPrefix is a TV approval written before story 42.6 (still collected).
 	legacyTicketPrefix = "tv."
+	// cloudTicketPrefix is an approval of a TV's cloud code (story 58.03): the ticket itself
+	// says so, so the sign-in is restricted even when the home restarted in between.
+	cloudTicketPrefix = "device-cc."
 	// legacyDeviceKind is the device kind of an app that does not say what it is (the
 	// TVs from before X-Maktaba-Client).
 	legacyDeviceKind = "tv"
@@ -98,9 +101,6 @@ type deviceRequest struct {
 	// LookedUp is when a signed-in person first read this code (DeviceLookup): the app
 	// showing it says "your phone found this TV".
 	LookedUp time.Time
-	// Via is how the device came to hold its code: "" asked here, ViaCloudCode a TV given it by
-	// Maktaba Cloud (story 58.03). Its session says so.
-	Via string
 	// approved: made already approved (a cloud code), so no phone is told it is waiting.
 	approved bool
 }
@@ -293,7 +293,7 @@ func (h *Handler) DeviceLookup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// a cloud sign-in may read a code but cannot approve it: the device is not told
-	if !principal.FromContext(r.Context()).ViaCloud() {
+	if !principal.FromContext(r.Context()).MintsNoCredential() {
 		h.requests.lookedUp(code, now)
 	}
 	common.WriteJSON(w, r, http.StatusOK, deviceLookupResponse{
@@ -334,7 +334,7 @@ func (h *Handler) DevicePending(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	out := pendingResponse{Requests: []pendingRequest{}}
-	if !p.ViaCloud() {
+	if !p.MintsNoCredential() {
 		for _, req := range h.requests.pending(h.now()) {
 			out.Requests = append(out.Requests, pendingRequest{
 				ID:          req.ID,
@@ -380,7 +380,7 @@ func (h *Handler) Approve(w http.ResponseWriter, r *http.Request) {
 	}
 	// an app's tokens outlive a cloud link and carry the person's full role (Epic 42 story
 	// 42.7, as for a phone's pairing): only a sign-in on the home approves one
-	if p.ViaCloud() {
+	if p.MintsNoCredential() {
 		httperror.Write(w, r, httperror.Forbidden(httperror.TypeCloudSession,
 			"a sign-in through Maktaba Cloud cannot sign in a device; sign in on the home"))
 		return
@@ -480,7 +480,13 @@ func (h *Handler) DeviceToken(w http.ResponseWriter, r *http.Request) {
 	}
 	code := h.deviceCode(raw)
 	asked, held := h.requests.get(code, now)
+	via := ""
 	t, err := h.Store.Consume(r.Context(), deviceTicketPrefix+code)
+	if errors.Is(err, discovery.ErrCodeNotFound) {
+		if t, err = h.Store.Consume(r.Context(), cloudTicketPrefix+code); err == nil {
+			via = ViaCloudCode
+		}
+	}
 	if errors.Is(err, discovery.ErrCodeNotFound) {
 		t, err = h.Store.Consume(r.Context(), legacyTicketPrefix+code)
 	}
@@ -523,8 +529,14 @@ func (h *Handler) DeviceToken(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	var tok MintedTokens
-	if vm, ok := h.Minter.(ViaMinter); ok && held && asked.Via != "" {
-		tok, err = vm.MintVia(r.Context(), t.UserID, kind, label, asked.Via)
+	if via != "" {
+		// a cloud code's sign-in is restricted: a minter that cannot say so mints nothing
+		vm, ok := h.Minter.(ViaMinter)
+		if !ok {
+			httperror.Write(w, r, httperror.Unavailable(0))
+			return
+		}
+		tok, err = vm.MintVia(r.Context(), t.UserID, kind, label, via)
 	} else {
 		tok, err = h.Minter.Mint(r.Context(), t.UserID, kind, label)
 	}

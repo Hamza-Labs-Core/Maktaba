@@ -133,7 +133,10 @@ approver, with their libraries and parental policy, and shows in their list of a
 (`GET /api/me/app-sign-ins`) as a TV via a cloud code, where it can be signed out. It never acts
 as an admin, even when an admin approved it: a cloud code can be read out to anyone anywhere, so
 an admin's TV reads every library, named one by one, and its tokens say no admin, also after a
-refresh. The cloud caps each home's lookups and claims (30, then one every 6 seconds), counted
+refresh. Whoever approved it, its tokens carry `rst` (restricted): the sign-in mints no
+credential of its own (no API token, no approval of another device), the same refusal a
+sign-in through the cloud gets. The home keeps the approval under its own ticket prefix, so a
+restart between approving and signing in still gives a restricted sign-in. The cloud caps each home's lookups and claims (30, then one every 6 seconds), counted
 after its secret is checked.
 
 ## The cloud rehearsal

@@ -106,6 +106,7 @@ func setupCloudCode(t *testing.T) (http.Handler, *ccAgent, func(q string, args .
 	r := router.New(router.Deps{IdempotencyStore: idempotency.NewMemoryStore()})
 	router.MountP9(r, router.P9Deps{DB: db, Keys: ks})
 	router.MountP10(r, router.P10Deps{DB: db, Keys: ks, Logger: slog.Default()})
+	router.MountP11(r, router.P11Deps{DB: db})
 	h := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		var p *principal.Principal
 		switch req.Header.Get("X-Test-As") {
@@ -117,6 +118,9 @@ func setupCloudCode(t *testing.T) (http.Handler, *ccAgent, func(q string, args .
 			p = &principal.Principal{UserID: ccChild, Libraries: []string{ccLibA, ccLibB}, Source: principal.SourceJWT}
 		case "guardian":
 			p = &principal.Principal{UserID: ccGuardian, Source: principal.SourceJWT}
+		case "tv-admin": // the admin's cloud-code TV, as its token's rst claim makes it
+			p = &principal.Principal{UserID: ccAdmin, Libraries: []string{ccLibA, ccLibB}, Source: principal.SourceJWT}
+			p.ApplyRestricted(true)
 		case "cloud-viewer":
 			p = &principal.Principal{UserID: ccViewer, Libraries: []string{ccLibA}, Source: principal.SourceJWT, CloudScope: "play"}
 		}
@@ -145,6 +149,7 @@ type ccClaims struct {
 	IsAdmin bool     `json:"is_admin"`
 	Lib     []string `json:"lib"`
 	Fam     string   `json:"fam"`
+	Rst     bool     `json:"rst"`
 }
 
 // redeem plays the TV: it redeems the grant the cloud handed it on the home.
@@ -208,7 +213,7 @@ func TestPGCloudCodeSignsTheTVInAsTheApprover(t *testing.T) {
 			t.Fatalf("%s: the cloud got no grant", c.who)
 		}
 		got := redeem(t, h, grant)
-		if got.Usr != c.wantUser || got.IsAdmin != c.wantAdmin || strings.Join(got.Lib, ",") != strings.Join(c.wantLibs, ",") {
+		if got.Usr != c.wantUser || got.IsAdmin != c.wantAdmin || !got.Rst || strings.Join(got.Lib, ",") != strings.Join(c.wantLibs, ",") {
 			t.Fatalf("row %d (%s): the TV signed in as %+v", i, c.who, got)
 		}
 		// the sign-in is the approver's, and says it came by a cloud code
@@ -257,10 +262,36 @@ func TestPGCloudCodeAdminTVRefreshesAsAViewer(t *testing.T) {
 		b, _ := base64.RawURLEncoding.DecodeString(parts[1])
 		var c ccClaims
 		_ = json.Unmarshal(b, &c)
-		if c.Usr != ccAdmin || c.IsAdmin || strings.Join(c.Lib, ",") != ccLibA+","+ccLibB {
+		if c.Usr != ccAdmin || c.IsAdmin || !c.Rst || strings.Join(c.Lib, ",") != ccLibA+","+ccLibB {
 			t.Fatalf("refreshed claims %+v", c)
 		}
 		tok.RefreshToken = out.RefreshToken
+	}
+}
+
+// A cloud code's TV mints no credential of its own: no API token, no approval of another TV
+// (either kind of code), so it cannot climb back to the admin it was approved by.
+func TestPGCloudCodeTVMintsNothing(t *testing.T) {
+	h, agent, _ := setupCloudCode(t)
+	if rec := ccDo(h, "tv-admin", http.MethodPost, "/api/me/tokens", `{"name":"climb"}`); rec.Code != http.StatusForbidden {
+		t.Fatalf("an API token: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := ccDo(h, "admin", http.MethodPost, "/api/me/tokens", `{"name":"mine"}`); rec.Code != http.StatusCreated && rec.Code != http.StatusOK {
+		t.Fatalf("the admin's own API token: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := ccDo(h, "tv-admin", http.MethodPost, "/api/pairing/cloud-approve", `{"code":"CLMB2345"}`); rec.Code != http.StatusForbidden {
+		t.Fatalf("a cloud code: %d %s", rec.Code, rec.Body.String())
+	}
+	if agent.grant("CLMB2345") != "" {
+		t.Fatal("the cloud got a grant")
+	}
+	start := ccDo(h, "", http.MethodPost, "/api/pairing/device", "")
+	var s struct {
+		Code string `json:"code"`
+	}
+	_ = json.Unmarshal(start.Body.Bytes(), &s)
+	if rec := ccDo(h, "tv-admin", http.MethodPost, "/api/pairing/approve", `{"code":"`+s.Code+`"}`); s.Code == "" || rec.Code != http.StatusForbidden {
+		t.Fatalf("a home code %q: %d %s", s.Code, rec.Code, rec.Body.String())
 	}
 }
 
