@@ -38,6 +38,15 @@ export interface PlayerState {
   buffering: boolean;
   ended: boolean;
   error: string | null;
+  /** The stream's audio tracks, when the player can list them (additive, bridge_level 1). */
+  audio_tracks?: AudioTrackInfo[];
+}
+
+/** One audio track of the stream: the UI's Audio panel lists them, by index. */
+export interface AudioTrackInfo {
+  enabled: boolean;
+  lang?: string;
+  label?: string;
 }
 
 export interface PlayerAdapter {

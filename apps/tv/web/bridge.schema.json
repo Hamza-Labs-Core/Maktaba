@@ -68,6 +68,16 @@
         "bit_depth": { "type": "integer" }
       }
     },
+    "audioTrack": {
+      "type": "object",
+      "required": ["enabled"],
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "lang": { "type": "string" },
+        "label": { "type": "string" }
+      }
+    },
     "subtitle": {
       "type": "object",
       "required": ["id", "url"],
@@ -227,7 +237,8 @@
         "duration": { "type": "number" },
         "buffering": { "type": "boolean" },
         "ended": { "type": "boolean" },
-        "error": { "type": ["string", "null"] }
+        "error": { "type": ["string", "null"] },
+        "audio_tracks": { "type": "array", "items": { "$ref": "#/definitions/audioTrack" } }
       }
     },
     "maktaba:visibility": {

@@ -65,6 +65,11 @@ import { useMyParental, useMyTime } from "../lib/parental";
 import { timeRefusal, type TimeRefusal } from "../lib/parentalApi";
 import { TimeLeft, TimesUp, TimeWarning } from "../components/parental/TimeState";
 import { BlockedOr } from "../components/parental/AskParent";
+import {
+  attachLauncher,
+  launcherPlays,
+  launcherSessionFields,
+} from "../bigscreen/input/launcherMedia";
 
 interface OpenSessionResponse {
   session_id: string;
@@ -213,6 +218,9 @@ export function VideoPlayer({
   // not the viewer's yet, so no progress is posted (it would move the resume
   // point back).
   const startingRef = useRef(false);
+  // Epic 58: the Samsung or LG launcher's player failed this stream; the session was opened
+  // again as a transcode from here (once a video: a second failure is the error screen).
+  const forcedRef = useRef<{ videoId: string; at: number } | null>(null);
 
   // Posts a playback failure of the stream now attached to the server's log.
   const report = useCallback(
@@ -314,11 +322,17 @@ export function VideoPlayer({
     setSession(null);
     // the open call's own id (the same action's): its playlist carries it as rid
     const rid = actionRequestId();
+    const forced = forcedRef.current?.videoId === videoId ? forcedRef.current : null;
+    if (!forced) forcedRef.current = null;
+    const from = forced ? forced.at : startAt;
     api
       .post<OpenSessionResponse>("/api/stream/sessions", {
         video_id: videoId,
         // a transcode starts there (?t=, the resume point)
-        ...(startAt > 0 ? { start_sec: Math.floor(startAt) } : {}),
+        ...(from > 0 ? { start_sec: Math.floor(from) } : {}),
+        // in a TV launcher: which TV, and what it decodes (Epic 58)
+        ...launcherSessionFields(),
+        ...(forced ? { force_transcode: true } : {}),
       })
       .then((s) => {
         if (cancelled) {
@@ -463,6 +477,50 @@ export function VideoPlayer({
       if (Number.isFinite(d) && d > 0 && el.currentTime > d - 1)
         el.currentTime = Math.max(0, d - 1);
     };
+    // Epic 58: in a Samsung or LG launcher, the TV's own player plays it (AVPlay, webOS's
+    // <video>) under the page, and this element stands in for it (launcherMedia.ts). A
+    // failure opens the stream again once as a transcode, from where it stopped.
+    if (launcherPlays()) {
+      const direct = session.direct_url || !session.manifest_url;
+      const url = direct
+        ? session.direct_url || ""
+        : withRequestId(session.manifest_url || "", session.rid);
+      const h = attachLauncher(
+        el,
+        {
+          url,
+          startAt: at,
+          subtitles: (session.subtitles ?? []).map((s) => ({
+            ...s,
+            url: carrySig(s.url, session.manifest_url || session.direct_url || ""),
+          })),
+        },
+        (error) => {
+          const position = el.currentTime;
+          const again = forcedRef.current?.videoId === videoId;
+          report(session, {
+            engine: direct ? "direct" : "native",
+            outcome: again ? "fatal" : "reopen",
+            code: "launcher_player",
+            message: error,
+            url,
+          });
+          if (again) {
+            playFailed();
+            return;
+          }
+          forcedRef.current = { videoId, at: position };
+          resumeRef.current = { at: position, play: true };
+          setReload((x) => x + 1);
+        }
+      );
+      el.addEventListener("loadedmetadata", clampStart, { once: true });
+      return () => {
+        el.removeEventListener("loadedmetadata", clampStart);
+        el.removeEventListener("playing", onPlaying);
+        h.detach();
+      };
+    }
     // direct_url: the file itself (the API keeps it in manifest_url too, for the apps)
     if (session.direct_url || !session.manifest_url) {
       const onMeta = () => {
@@ -501,6 +559,8 @@ export function VideoPlayer({
         .post<OpenSessionResponse>("/api/stream/sessions", {
           video_id: videoId,
           start_sec: Math.floor(position),
+          ...launcherSessionFields(),
+          ...(forcedRef.current?.videoId === videoId ? { force_transcode: true } : {}),
         })
         .then((s) => {
           if (cancelled) {
