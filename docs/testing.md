@@ -132,6 +132,10 @@ GO_MODULES="api streaming shared/log/go shared/testtier/go" \
 # Wall-clock enforcement for the other tiers.
 bash tools/test-budget.sh wall integration 6m30s -- make test-integration-inner
 bash tools/test-budget.sh wall e2e         5m -- make test-e2e-inner
+# CI runs the integration tier on three runners, each part under its own budget:
+#   make test-integration-go INTEGRATION_GO_SHARD=api    (wall integration-go-api 6m30s)
+#   make test-integration-go INTEGRATION_GO_SHARD=rest   (wall integration-go-rest 6m30s)
+#   make test-integration-py                             (wall integration-py 3m)
 bash tools/test-budget.sh wall perf-ci     2m -- make perf-ci-inner
 ```
 
