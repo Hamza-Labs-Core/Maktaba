@@ -161,13 +161,26 @@ describe("T01 the events a viewer's requests write", () => {
     });
     expect(play.session).not.toBe(session);
     expect(named(points[1]!)).toMatchObject({ rung: "720p", minutes: 1, rebuffer_ms: 400 });
+    expect(named(points[2]!)).toMatchObject({ from: "src", to: "720p", switch_ms: 250 });
     expect(named(points[3]!).code).toBe("decode_failed");
     forbidden(points, tok);
 
-    // a second beat within the minute counts nothing and writes no play or beat
+    // a second beat within the minute counts nothing and writes nothing, its report included
     points.length = 0;
-    await call(`${LIVE}/${tok}/${ch}/beat`, { method: "POST", headers, body: "{}" }, { AE });
+    await call(
+      `${LIVE}/${tok}/${ch}/beat`,
+      { method: "POST", headers, body: JSON.stringify({ ...report, errors: ["again"] }) },
+      { AE }
+    );
     expect(points).toEqual([]);
+    // a body over 4 KB is ignored, the beat still answers
+    const big = await call(
+      `${LIVE}/${await viewerToken({ ch })}/${ch}/beat`,
+      { method: "POST", headers, body: JSON.stringify({ rung: "x".repeat(5000) }) },
+      { AE }
+    );
+    expect(big.status).toBe(200);
+    expect(named(points[1]!).rung).toBe("");
   });
 
   it("a full channel writes blocked full; a revoked one blocked revoked", async () => {

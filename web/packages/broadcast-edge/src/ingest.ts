@@ -59,7 +59,7 @@ function clockCheck(request: Request, t: number): Response | null {
 }
 
 /** readCapped reads a body, refusing it (null) once it passes `max` bytes. */
-async function readCapped(request: Request, max: number): Promise<Uint8Array | null> {
+export async function readCapped(request: Request, max: number): Promise<Uint8Array | null> {
   const declared = Number(request.headers.get("Content-Length") ?? NaN);
   if (Number.isFinite(declared) && declared > max) return null;
   if (!request.body) return new Uint8Array();

@@ -27,6 +27,7 @@ import { now } from "./clock";
 import { globalDelivery, globallyOff, type Env } from "./env";
 import * as ev from "./events";
 import { json, preflight, problem, withLiveHeaders } from "./http";
+import { readCapped } from "./ingest";
 import { log } from "./log";
 import { manifestURL, streamConfigured } from "./stream_fallback";
 import { verifyViewer, type ViewerClaims } from "./tokens";
@@ -187,7 +188,11 @@ async function media(env: Env, claims: ViewerClaims, rung: string): Promise<Resp
   return out;
 }
 
-/** BeatReport is what a player may say with its heartbeat; every field is optional. */
+/**
+ * BeatReport is what a player may say with its heartbeat; every field is optional. Switches and
+ * errors are written only with a counted beat (at most one a minute per session); a beat that
+ * answers counted: false wasn't recorded, and the player sends them again with its next one.
+ */
 export interface BeatReport {
   rung?: string;
   rebuffer_ms?: number;
@@ -203,16 +208,20 @@ const CODE_RE = /^[a-z0-9_]{1,40}$/;
 
 async function readReport(request: Request): Promise<BeatReport> {
   try {
-    const text = await request.text();
-    if (!text || text.length > BEAT_BODY_MAX) return {};
-    const r = JSON.parse(text) as unknown;
+    const body = await readCapped(request, BEAT_BODY_MAX);
+    if (!body || body.byteLength === 0) return {};
+    const r = JSON.parse(new TextDecoder().decode(body)) as unknown;
     return typeof r === "object" && r !== null ? (r as BeatReport) : {};
   } catch {
     return {};
   }
 }
 
-const num = (n: unknown): number => (typeof n === "number" && Number.isFinite(n) && n >= 0 ? n : 0);
+/** num is a player's number, or 0 when it isn't one; capped so one report can't skew a sum. */
+const num = (n: unknown, max: number): number =>
+  typeof n === "number" && Number.isFinite(n) && n >= 0 ? Math.min(n, max) : 0;
+const MS_MAX = 600_000; // 10 minutes
+const KBPS_MAX = 100_000;
 const rungName = (r: unknown): string => (typeof r === "string" && RUNG_RE.test(r) ? r : "");
 
 async function beat(request: Request, env: Env, claims: ViewerClaims): Promise<Response> {
@@ -236,20 +245,26 @@ async function beat(request: Request, env: Env, claims: ViewerClaims): Promise<R
     session: await ev.sessionHash(env.VIEWER_TOKEN_KEY, claims.session, now()),
   };
   if (r.counted) {
-    if (r.first) ev.write(env, ev.play(viewer, num(report.startup_ms)));
+    if (r.first) ev.write(env, ev.play(viewer, num(report.startup_ms, MS_MAX)));
     ev.write(
       env,
-      ev.beat(viewer, rungName(report.rung), num(report.rebuffer_ms), num(report.kbps))
+      ev.beat(
+        viewer,
+        rungName(report.rung),
+        Math.min(num(report.rebuffer_ms, MS_MAX), 60_000), // at most the minute itself
+        num(report.kbps, KBPS_MAX)
+      )
     );
-  }
-  for (const s of (Array.isArray(report.switches) ? report.switches : []).slice(0, 10)) {
-    const from = rungName(s?.from);
-    const to = rungName(s?.to);
-    if (from && to) ev.write(env, ev.rungSwitch(claims.pub, claims.ch, from, to, num(s.ms)));
-  }
-  for (const code of (Array.isArray(report.errors) ? report.errors : []).slice(0, 10)) {
-    if (typeof code === "string" && CODE_RE.test(code))
-      ev.write(env, ev.error(claims.pub, claims.ch, code));
+    for (const s of (Array.isArray(report.switches) ? report.switches : []).slice(0, 10)) {
+      const from = rungName(s?.from);
+      const to = rungName(s?.to);
+      if (from && to)
+        ev.write(env, ev.rungSwitch(claims.pub, claims.ch, from, to, num(s.ms, MS_MAX)));
+    }
+    for (const code of (Array.isArray(report.errors) ? report.errors : []).slice(0, 10)) {
+      if (typeof code === "string" && CODE_RE.test(code))
+        ev.write(env, ev.error(claims.pub, claims.ch, code));
+    }
   }
   return json(200, { counted: r.counted, concurrent: r.concurrent, delivery: r.delivery });
 }
