@@ -1,4 +1,5 @@
-// Stories 58.09 and 58.11 — LG webOS. The packaged app speaks to luna (webos-luna.ts): the
+// Stories 58.09 and 58.11 — LG webOS. The packaged app speaks to luna (webos-luna.ts; its
+// ACG groups, network.query and systemconfig.query, are in appinfo.json): the
 // connection manager names the TV's address for the subnet probe, the system properties and
 // config describe the model (webOS.deviceInfo when webOSTV.js is loaded). webOS delivers the
 // color and media keys without registration; Back is key code 461, and leaving goes back to
@@ -62,7 +63,7 @@ export function webosPlatform(w: Window): Platform {
       return { model: info.modelName || "LG TV", year, engine: engineOf(ua) };
     },
     async localIp(): Promise<string | null> {
-      const res = await luna(w, "luna://com.webos.service.connectionmanager", "getStatus");
+      const res = await luna(w, "luna://com.palm.connectionmanager", "getStatus");
       return res ? ipFromStatus(res) : null;
     },
     registerKeys(): string[] {

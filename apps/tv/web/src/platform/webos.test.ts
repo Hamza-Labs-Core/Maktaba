@@ -117,7 +117,7 @@ describe("luna", () => {
   beforeEach(() => clearLog());
   it("speaks to PalmServiceBridge when webOSTV.js is absent", async () => {
     const { w, calls } = palmWindow({
-      "luna://com.webos.service.connectionmanager/getStatus": {
+      "luna://com.palm.connectionmanager/getStatus": {
         returnValue: true,
         wired: { state: "disconnected" },
         wifi: { state: "connected", ipAddress: "192.168.1.40" },
@@ -125,19 +125,15 @@ describe("luna", () => {
     });
     const p = webosPlatform(w);
     expect(await p.localIp()).toBe("192.168.1.40");
-    expect(calls[0]).toBe("luna://com.webos.service.connectionmanager/getStatus {}");
+    expect(calls[0]).toBe("luna://com.palm.connectionmanager/getStatus {}");
   });
-  it("reads the device from the system properties and config", async () => {
-    const { w } = palmWindow({
+  it("reads the device from the system properties; UHD counts as HDR10, never Dolby Vision", async () => {
+    const { w, calls } = palmWindow({
       "luna://com.webos.service.tv.systemproperty/getSystemInfo": {
         returnValue: true,
         modelName: "OLED65G1",
         sdkVersion: "6.3.0",
         UHD: "true",
-      },
-      "luna://com.webos.service.config/getConfigs": {
-        returnValue: true,
-        configs: { "tv.model.supportHDR": true, "tv.config.supportDolbyHDRContents": true },
       },
     });
     expect(await readDeviceInfo(w)).toEqual({
@@ -145,12 +141,30 @@ describe("luna", () => {
       sdkVersion: "6.3.0",
       uhd: true,
       hdr10: true,
-      dolbyVision: true,
+      dolbyVision: false,
     });
+    // only the documented services (appinfo.json's ACG groups)
+    expect(calls.map((c) => c.split(" ")[0])).toEqual([
+      "luna://com.webos.service.tv.systemproperty/getSystemInfo",
+    ]);
     const p = webosPlatform(w);
     expect(await p.device()).toEqual({ model: "OLED65G1", year: 2021, engine: "Chromium 87" });
-    // 2021 is not a year the checklist marked good for Dolby Vision
     expect(p.deviceCaps().hdr).toEqual(["hdr10", "hlg"]);
+  });
+  it("takes webOS.deviceInfo when webOSTV.js is there", async () => {
+    const d = {
+      modelName: "OLED55C2",
+      sdkVersion: "7.1.0",
+      uhd: true,
+      hdr10: true,
+      dolbyVision: true,
+    };
+    const { w, calls } = palmWindow(
+      {},
+      { webOS: { deviceInfo: (cb: (x: unknown) => void) => cb(d) } }
+    );
+    expect(await readDeviceInfo(w)).toEqual(d);
+    expect(calls).toEqual([]);
   });
   it("fails closed: a refused call or no answer is null, logged", async () => {
     vi.useFakeTimers();

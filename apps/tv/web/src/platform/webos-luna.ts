@@ -93,8 +93,10 @@ const truthy = (v: unknown) => v === true || v === "true";
 
 /**
  * The TV's description: webOS.deviceInfo when webOSTV.js is there, else luna's system
- * properties (model, SDK version, UHD) and config (HDR10 and Dolby Vision), the same keys
- * webOSTV.js reads.
+ * properties (model, SDK version, UHD; ACG systemconfig.query). Without webOSTV.js no
+ * documented call names HDR10 or Dolby Vision: every LG UHD TV of webOS 5 and later decodes
+ * HDR10 and HLG, so a UHD panel counts as HDR10, and Dolby Vision is never claimed (the home
+ * then sends the HDR10 base layer).
  */
 export async function readDeviceInfo(w: Window): Promise<WebOSDeviceInfo> {
   const info = w.webOS?.deviceInfo;
@@ -114,11 +116,7 @@ export async function readDeviceInfo(w: Window): Promise<WebOSDeviceInfo> {
     if (typeof sys.sdkVersion === "string") out.sdkVersion = sys.sdkVersion;
     out.uhd = truthy(sys.UHD);
   }
-  const cfg = await luna(w, "luna://com.webos.service.config", "getConfigs", {
-    configNames: ["tv.model.supportHDR", "tv.config.supportDolbyHDRContents"],
-  });
-  const configs = (cfg?.configs ?? {}) as Record<string, unknown>;
-  out.hdr10 = truthy(configs["tv.model.supportHDR"]);
-  out.dolbyVision = truthy(configs["tv.config.supportDolbyHDRContents"]);
+  out.hdr10 = !!out.uhd;
+  out.dolbyVision = false;
   return out;
 }
