@@ -84,6 +84,7 @@ const GUIDES = {
     "conventions.md",
     "problem-types.md",
     "api-levels.md",
+    "casting.md",
     "parental-controls.md",
     "playback.md",
     "ci.md",
