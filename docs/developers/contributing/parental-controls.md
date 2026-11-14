@@ -221,6 +221,13 @@ showing `/tv/` gets the same answers as a TV. What it adds is the screens:
 - **No PIN on Samsung, LG or Roku.** Six digits on a remote are slow; the guardian answers from
   their phone. The Android TV, Fire TV and Apple TV apps keep the PIN Epic 57 built.
 - **Account or Settings** says that a parent manages the account, and its content limit.
+- **The player's stop.** A session open or a progress post refused with 403 `parental_time`
+  stops the video and closes its session; the TV shows the time's-up page (why, when watching
+  opens again, where it stopped) with **Ask for more time** (15, 30 or 60 minutes, the first
+  focused) and **Check again**. A parent's yes, or Check again, opens the session again from
+  where it stopped, and the home decides. A 404 to a progress post (the video is hidden now)
+  shows the blocked page with a line that the video stopped; a yes plays it again. On Roku,
+  `no_heartbeat` (a pause of over a minute) opens the stream again once where it was.
 - **A deep link** (Roku's launch and voice links, a link by id) to a hidden item shows the
   not-available line on Home and asks nothing: the id may name nothing at all.
 - **A cast grant** is minted only for what the sender may see, and every session it opens is

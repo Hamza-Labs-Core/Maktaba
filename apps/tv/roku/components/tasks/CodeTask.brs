@@ -79,7 +79,10 @@ sub code_Cloud()
 end sub
 
 ' The grant goes to the first of the cloud's connections that answers as the approving home
-' (LAN first, the relay last; story 50.13's order), at a level this channel can use.
+' (LAN first, the relay last; story 50.13's order), at a level this channel can use. The home is
+' known by its address, not by the cloud's home_id (NetIsApprovedHome): a name the cloud gives it
+' at an https name the cloud gives (its certificate proves it), any other address only when the
+' home there lists one of those names.
 sub code_Redeem(p as Object)
     m.top.state = "signing_in"
     for each conn in NetCloudConnections(p.connections)
@@ -88,7 +91,7 @@ sub code_Redeem(p as Object)
             base = Left(base, Len(base) - 1)
         end while
         a = code_Discover(base)
-        if a <> invalid and a.id = p.home_id then
+        if a <> invalid and NetIsApprovedHome(base, a, p.connections) then
             verdict = CompatDecide(a, CompatApp())
             if verdict <> "ok" then
                 m.top.result = {ok: false, verdict: verdict, home: {id: a.id, name: a.name, base: base}}
