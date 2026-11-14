@@ -6,21 +6,27 @@
 #   - the switchover was announced on the status page 48 h before (50.11): --announced, or
 #     --unannounced for an emergency (logged)
 # then `patronictl switchover --leader <current> --candidate <other> --force`, and waits
-# until the candidate leads.
+# until the candidate leads. The default candidate is the synchronous standby (three database
+# nodes, story 50.18: the one that has every commit), else the first replica.
 #
-# Usage: switchover --announced|--unannounced [--candidate <member>]
+# --db (the database nodes, story 50.18, and the move to them): the candidate runs no Caddy;
+# its PgBouncer must answer instead (pg_isready on PGB_PORT, 6432), since the database's
+# Floating IP lands there.
+#
+# Usage: switchover --announced|--unannounced [--candidate <member>] [--db]
 # Env: PATRONICTL (patronictl -c /etc/patroni/patroni.yml), CADDY_CHECK_URL_<member> (the
 # candidate's edge health URL; default http://<its private address>:8081/, the Caddyfile's
 # own health site), WAIT (120).
 set -uo pipefail
 
 ctl="${PATRONICTL:-patronictl -c /etc/patroni/patroni.yml}"
-announced="" candidate=""
+announced="" candidate="" db=no
 while [ $# -gt 0 ]; do
     case "$1" in
         --announced) announced=yes ;;
         --unannounced) announced=no ;;
         --candidate) candidate="$2"; shift ;;
+        --db) db=yes ;;
         *) echo "switchover: unknown argument $1" >&2; exit 2 ;;
     esac
     shift
@@ -32,9 +38,14 @@ members="$(${ctl} list -f json 2>/dev/null)" || refuse "patronictl list failed: 
 leader="$(jq -r '.[] | select(.Role == "Leader" or .Role == "leader") | .Member' <<<"${members}")"
 [ -n "${leader}" ] || refuse "the cluster has no leader"
 if [ -z "${candidate}" ]; then
-    candidate="$(jq -r '.[] | select(.Role != "Leader" and .Role != "leader") | .Member' <<<"${members}" | head -n1)"
+    candidate="$(jq -r '[.[] | select(.Role != "Leader" and .Role != "leader")] | (map(select(.Role | test("sync"; "i"))) + .) | .[0].Member // empty' <<<"${members}")"
 fi
 [ -n "${candidate}" ] || refuse "no replica to switch to"
+# in synchronous mode Patroni switches only to the synchronous standby (412 otherwise)
+sync="$(jq -r '[.[] | select(.Role | test("sync"; "i")) | .Member] | join(" ")' <<<"${members}")"
+if [ -n "${sync}" ] && [[ " ${sync} " != *" ${candidate} "* ]]; then
+    refuse "${candidate} is not the synchronous standby (${sync}): Patroni switches only to it"
+fi
 [ "${candidate}" != "${leader}" ] || refuse "${candidate} already leads"
 row="$(jq -c --arg m "${candidate}" '.[] | select(.Member == $m)' <<<"${members}")"
 [ -n "${row}" ] || refuse "${candidate} is not a member"
@@ -44,13 +55,22 @@ lag="$(jq -r '[."Lag in MB", ."Receive Lag", ."Replay Lag"] | map(select(. != nu
 [ "${state}" = streaming ] || refuse "${candidate} is ${state}, not streaming"
 [ "${lag}" = 0 ] || refuse "${candidate} lags ${lag} MB behind ${leader}"
 host="$(jq -r '.Host' <<<"${row}")"; host="${host%%:*}"
-var="CADDY_CHECK_URL_${candidate//[^A-Za-z0-9]/_}"
-url="${!var:-http://${host}:8081/}"
-curl -fsS -k --max-time 5 -o /dev/null "${url}" || refuse "${candidate}'s Caddy does not answer at ${url}"
+if [ "${db}" = yes ]; then
+    pg_isready -q -h "${host}" -p "${PGB_PORT:-6432}" -t 5 || refuse "${candidate}'s PgBouncer does not answer at ${host}:${PGB_PORT:-6432}"
+    edge="PgBouncer answers"
+else
+    var="CADDY_CHECK_URL_${candidate//[^A-Za-z0-9]/_}"
+    url="${!var:-http://${host}:8081/}"
+    curl -fsS -k --max-time 5 -o /dev/null "${url}" || refuse "${candidate}'s Caddy does not answer at ${url}"
+    edge="Caddy healthy"
+fi
 
 [ "${announced}" = yes ] || echo "switchover: UNANNOUNCED (an emergency): no status page notice" >&2
-echo "switchover: ${leader} -> ${candidate} (streaming, lag 0, Caddy healthy)"
-${ctl} switchover --leader "${leader}" --candidate "${candidate}" --force || refuse "patronictl switchover failed"
+echo "switchover: ${leader} -> ${candidate} (streaming, lag 0, ${edge})"
+# patronictl prints a refused switchover and still exits 0
+out="$(${ctl} switchover --leader "${leader}" --candidate "${candidate}" --force 2>&1)" || { echo "${out}"; refuse "patronictl switchover failed"; }
+echo "${out}"
+if grep -qi "switchover failed" <<<"${out}"; then refuse "Patroni refused: $(grep -i "switchover failed" <<<"${out}" | tail -n1)"; fi
 
 wait_s="${WAIT:-120}"
 for _ in $(seq 1 "${wait_s}"); do

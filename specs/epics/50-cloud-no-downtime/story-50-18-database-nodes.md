@@ -39,13 +39,19 @@ PgBouncer runs on each DB node next to Postgres (the Floating IP lands on the pr
 PgBouncer).
 
 - **Pool mode `transaction`** for normal traffic. The cloud uses `database/sql` with
-  `github.com/lib/pq` (`cloud/go.mod`) and no explicit `Prepare` calls (checked 2026-11-03);
-  lib/pq's placeholder queries use unnamed statements, which work in transaction mode.
-  PgBouncer ≥ 1.21 with `max_prepared_statements = 200` covers any named statements added later.
+  `github.com/lib/pq` (`cloud/go.mod`) and no explicit `Prepare` calls (checked 2026-11-03).
+  lib/pq sends a query with arguments as an unnamed statement in two round trips (Parse and
+  Describe, then Bind and Execute), and a transaction pool can hand the second to another
+  server connection ("bind message supplies 2 parameters, but prepared statement requires 1",
+  found on 2026-11-14 running the integration suite through PgBouncer). `db.Open` therefore
+  adds `binary_parameters=yes` to the URL, which sends each query in one round trip; jsonb
+  arguments go as strings, since a `[]byte` argument is then sent in binary. PgBouncer ≥ 1.21
+  with `max_prepared_statements = 200` covers any named statements added later.
 - **Session pool** (a second PgBouncer database entry, `cloud_session`) for the connections that
-  need a session: the worker's **advisory lock** (50.17), the **LISTEN** connection for cache
-  invalidation (50.17), and `migrate up` (the migrator's `pg_advisory_lock(8472612)`).
-  `cloud/internal/config` gets `db.session_url` for these.
+  need a session: the worker's **advisory lock** (50.17) and the **LISTEN** connection for cache
+  invalidation (50.17), through 50.17's `database.direct_url`. The migrator's lock becomes a
+  transaction lock (`pg_advisory_xact_lock(8472612)` in a transaction held open for the run),
+  so `migrate up` goes through the transaction pool.
 - `default_pool_size` 20 per database/user, `max_client_conn` 2,000.
 
 ### 4. Moving from Phase 1 with no downtime
@@ -113,7 +119,7 @@ None.
 | `deploy/cloud-ha/patroni/patroni.yml` | `synchronous_node_count`, three members. |
 | `deploy/cloud-ha/bin/on-role-change` | DB-only mode: move the DB Floating IP, start nothing else. |
 | `deploy/cloud-ha/bin/migrate-db-nodes` (new) | §4 as guarded steps. |
-| `cloud/internal/config/config.go`, `cloud/internal/db/pool.go` | `db.session_url` and a session pool for locks, LISTEN and migrations. |
+| `cloud/internal/db/pool.go` | `binary_parameters=yes` on every URL; the migrator's lock a transaction lock. `database.direct_url` (50.17) is the session pool's URL. |
 | `deploy/cloud-ha/monitoring/alerts.yml` | `pgbouncer_down`, sync replica missing. |
 
 ### Tests

@@ -147,6 +147,49 @@ tests:
             exp_annotations:
               summary: "A staff passkey's counter went backwards; the passkey was disabled"
               runbook_url: docs/runbooks/cloud/staff-security.md
+  # the database nodes (story 50.18): PgBouncer down on a replica is not a page; on the primary
+  # it pages after a minute
+  - interval: 30s
+    input_series:
+      - series: 'up{job="pgbouncer",node="db-1"}'
+        values: '1 1 0 0 0 0 0 0'
+      - series: 'up{job="pgbouncer",node="db-2"}'
+        values: '0 0 0 0 0 0 0 0'
+      - series: 'patroni_primary{job="patroni",node="db-1"}'
+        values: '1 1 1 1 1 1 1 1'
+      - series: 'patroni_primary{job="patroni",node="db-2"}'
+        values: '0 0 0 0 0 0 0 0'
+    alert_rule_test:
+      - eval_time: 30s
+        alertname: pgbouncer_down
+        exp_alerts: []
+      - eval_time: 3m
+        alertname: pgbouncer_down
+        exp_alerts:
+          - exp_labels: {severity: sev1, node: db-1}
+            exp_annotations:
+              summary: "PgBouncer is down on the database primary (db-1): the apps can't reach the database"
+              runbook_url: docs/runbooks/cloud/pgbouncer-down.md
+  # a synchronous replica moving between two replicas raises nothing; none for 2 minutes does
+  - interval: 30s
+    input_series:
+      - series: 'patroni_primary{node="db-1"}'
+        values: '1 1 1 1 1 1 1 1 1 1'
+      - series: 'patroni_sync_standby{node="db-2"}'
+        values: '1 1 0 0 0 0 0 0 0 0'
+      - series: 'patroni_sync_standby{node="db-3"}'
+        values: '0 0 1 1 0 0 0 0 0 0'
+    alert_rule_test:
+      - eval_time: 1m30s
+        alertname: sync_replica_missing
+        exp_alerts: []
+      - eval_time: 4m30s
+        alertname: sync_replica_missing
+        exp_alerts:
+          - exp_labels: {severity: sev2}
+            exp_annotations:
+              summary: "No synchronous replica: commits are on the primary alone (RPO is not 0)"
+              runbook_url: docs/runbooks/cloud/sync-replica-missing.md
   # the api pool's worker (story 50.17): the lock moves within a scrape, no alert; no node holds
   # it for 2 minutes, worker_no_leader
   - interval: 30s

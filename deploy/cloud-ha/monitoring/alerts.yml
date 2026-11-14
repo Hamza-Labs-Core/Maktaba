@@ -92,6 +92,26 @@ groups:
           summary: "The leader could not take the Floating IP"
           runbook_url: docs/runbooks/cloud/hetzner-api-down.md
 
+  - name: maktaba-database
+    rules:
+      # the database nodes (story 50.18): PgBouncer on the primary is where the database's
+      # Floating IP lands; Patroni doesn't watch it, so its exporter does
+      - alert: pgbouncer_down
+        expr: (max by (node) (up{job="pgbouncer"} == 0 or pgbouncer_up == 0)) and on (node) (max by (node) (patroni_primary) == 1)
+        for: 1m
+        labels: {severity: sev1}
+        annotations:
+          summary: "PgBouncer is down on the database primary ({{ $labels.node }}): the apps can't reach the database"
+          runbook_url: docs/runbooks/cloud/pgbouncer-down.md
+      # a commit waits for one synchronous replica; none means commits are on the primary alone
+      - alert: sync_replica_missing
+        expr: sum(patroni_sync_standby or vector(0)) < 1 and sum(patroni_primary or vector(0)) > 0
+        for: 2m
+        labels: {severity: sev2}
+        annotations:
+          summary: "No synchronous replica: commits are on the primary alone (RPO is not 0)"
+          runbook_url: docs/runbooks/cloud/sync-replica-missing.md
+
   - name: maktaba-machines
     rules:
       - alert: cert_expiring
