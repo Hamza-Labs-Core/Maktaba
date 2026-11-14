@@ -48,7 +48,9 @@ const (
 var b64 = base64.RawURLEncoding
 
 // IngestClaims is what an ingest token binds: one publisher, one channel, its rungs (top
-// first) and the plan's top bitrate, for one home.
+// first) and the plan's top bitrate, for one home. A publisher is a home: Pub is the home's
+// server id, always equal to Home, the one key the edge's PublisherControl, the usage windows,
+// the plans (story 50.20) and the viewer tokens (50.26) share.
 type IngestClaims struct {
 	Typ   string   `json:"typ"`
 	Pub   string   `json:"pub"`
@@ -174,6 +176,9 @@ var (
 func IssueIngest(k Key, c IngestClaims, now time.Time) (string, error) {
 	if c.Pub == "" || c.Ch == "" || c.Home == "" || c.Kbps <= 0 || len(c.Rungs) == 0 || len(c.Rungs) > MaxRungs {
 		return "", ErrBadClaims
+	}
+	if c.Pub != c.Home {
+		return "", fmt.Errorf("%w: the publisher must be the home's server id", ErrBadClaims)
 	}
 	seen := map[string]bool{}
 	for _, r := range c.Rungs {

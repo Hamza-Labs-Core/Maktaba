@@ -60,8 +60,9 @@ type BroadcastConfig struct {
 	KeyPath string
 	// IngestURL is broadcast.ingest_url, default https://ingest.maktaba.tv.
 	IngestURL string
-	// EdgePublicKey is broadcast.edge_public_key: the Ed25519 public key the broadcast edge
-	// signs its posts to the API with (POST /_edge/usage). Public, so it may sit in the file;
+	// EdgePublicKey is broadcast.edge_public_key: the Ed25519 public key (base64url or standard
+	// base64) of EDGE_SIGNING_KEY, the key the broadcast edge signs its posts to the API with
+	// (broadcast.VerifyEdgeRequest). Public, so it may sit in the file;
 	// the private half is a Worker secret. Empty: the edge routes answer 503.
 	EdgePublicKey string
 }
