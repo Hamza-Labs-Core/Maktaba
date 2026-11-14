@@ -4,11 +4,12 @@ import SwiftUI
 /// Home (FR-10 to FR-13): the hero, then the rows in FR-10's order (an empty one is absent).
 /// A card opens its video's page (a series group its series); its context menu (a long press,
 /// a secondary click on the Mac) has Resume on a Continue Watching card (the player at the
-/// person's position) and Not interested on a recommendation. Pull to refresh (⌘R on the
-/// Mac) reads Home again; what was read last shows at once, on a new launch too (FR-12). A
-/// home with nothing the person may watch says so, with Switch home and Sign out (FR-13). The
-/// rows are MaktabaKit's `HomeShelves`, built as on the Apple TV: a row that could not be read
-/// shows as a tile whose Try again reads Home again.
+/// person's position) and Not interested on a recommendation, which VoiceOver also offers as
+/// the card's custom actions (`HomeCardAction`). Pull to refresh (⌘R on the Mac) reads Home
+/// again; what was read last shows at once, on a new launch too (FR-12). A home with nothing
+/// the person may watch says so, with Switch home and Sign out (FR-13). The rows are
+/// MaktabaKit's `HomeShelves`, built as on the Apple TV: a row that could not be read shows as
+/// a tile whose Try again reads Home again.
 struct HomeScreen: View {
     let context: PlayerContext
     @State private var queueDoc: QueueDoc?
@@ -213,25 +214,23 @@ struct HomeScreen: View {
         }
         .buttonStyle(.plain)
         .contextMenu {
-            if let at = card.resumeAt {
-                Button {
-                    pushed = .watch(videoID: card.videoID, at: at)
+            ForEach(HomeCardAction.of(card), id: \.self) { action in
+                Button(role: action.isDestructive ? .destructive : nil) {
+                    action.run(on: card, cardHandlers)
                 } label: {
-                    Label { Text("Resume", tableName: "Components", comment: "The hero's button: go on from where it stopped") }
-                        icon: { Image(systemName: "play.fill") }
+                    Label { Text(action.title) } icon: { Image(systemName: action.systemImage) }
                 }
-                .accessibilityIdentifier("home.menu.resume")
+                .accessibilityIdentifier(action.identifier)
             }
-            if card.recommended {
-                Button(role: .destructive) {
-                    Task {
-                        if !(await model.dismiss(card.videoID)) { showDismissFailed() }
-                    }
+        }
+        // the menu's items as VoiceOver custom actions: reachable without the long press
+        .accessibilityActions {
+            ForEach(HomeCardAction.of(card), id: \.self) { action in
+                Button {
+                    action.run(on: card, cardHandlers)
                 } label: {
-                    Label { Text("Not interested", tableName: "Home", comment: "A recommendation's menu: show it no more") }
-                        icon: { Image(systemName: "hand.thumbsdown") }
+                    Text(action.title)
                 }
-                .accessibilityIdentifier("home.menu.notInterested")
             }
         }
         .accessibilityIdentifier("home.card.\(card.id)")
@@ -366,6 +365,13 @@ struct HomeScreen: View {
             .overlay(Capsule().strokeBorder(Color.mktBorder, lineWidth: 0.5))
             .padding(MaktabaTokens.Spacing.s4)
             .accessibilityIdentifier("home.dismissFailed")
+    }
+
+    /// What a card's menu item and its VoiceOver custom action do (`HomeCardAction.run`).
+    private var cardHandlers: HomeCardAction.Handlers {
+        HomeCardAction.Handlers(open: { pushed = $0 },
+                                dismiss: { await model.dismiss($0) },
+                                dismissFailed: { showDismissFailed() })
     }
 
     private func showDismissFailed() {
