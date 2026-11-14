@@ -88,7 +88,12 @@ test("T03: sign in by cloud code, browse in English, deep links, Back, then Arab
     await c.waitFor(/\[screen\] StartScreen ready homes=\s*0/, 30000);
     await compare(c, "start-en");
     await c.key("Select");
+    // the QR of the cloud's verify_url (maktaba.tv/tv?c=…), encoded in the Task and drawn on
+    // the device: a version 3 symbol, 29 modules a side; no image is asked of anyone
+    await c.waitFor(/\[qr\] encoded\s+32 bytes into\s+29 modules/, 20000);
+    await c.waitFor(/\[qr\] drawn\s+29 modules at\s+11 px/);
     await c.waitFor(/\[screen\] CodeScreen ready mode=cloud/);
+    assert.ok(!requests.some((l) => l.includes("qr.png")), "the QR is drawn, never fetched");
     await compare(c, "code-en");
     // the phone approves (the mock cloud, on its third poll); the grant goes to the home's LAN
     // address, never to the pinned local_ip a Roku cannot verify
@@ -175,7 +180,12 @@ test("T03: sign in by cloud code, browse in English, deep links, Back, then Arab
     await compare(c, "library-en");
     // down the grid: pages load as focus nears the end (36 a page, 80 in all), and only the
     // focused page and one each side keep their posters
-    for (let i = 0; i < 13; i++) await c.key("Down");
+    // to the last row of two pages (66), then the third page (asked for as focus nears the end)
+    // before going on: keys must not outrun the home's answer
+    for (let i = 0; i < 11; i++) await c.key("Down");
+    await c.waitFor(/\[focus\] library grid\s+66\b/, 10000);
+    await c.waitFor(/\[grid\] posters loaded\s+\d+ of\s+80/, 10000);
+    for (let i = 0; i < 2; i++) await c.key("Down");
     await c.waitFor(/\[focus\] library grid\s+7\d/, 10000);
     const loads = [...c.out.matchAll(/\[grid\] posters loaded\s+(\d+) of\s+(\d+)/g)].map((m) => [Number(m[1]), Number(m[2])]);
     assert.ok(loads.some(([, total]) => total === 80), "the third page loaded");
@@ -396,6 +406,8 @@ test("T03: Find on this network lists the home and signs in by the home's own co
     await compare(c, "find-en");
     await c.key("Select");
     await c.waitFor(/\[home\] h1test: plain HTTP on the LAN/, 10000);
+    // the home's own code carries its approve page (/pair?code=…) as a QR too
+    await c.waitFor(/\[qr\] encoded\s+\d+ bytes into\s+\d+ modules/, 20000);
     await c.waitFor(/\[screen\] CodeScreen ready mode=home/);
     await c.waitFor(/\[screen\] HomeScreen ready/, 20000);
   } finally {
