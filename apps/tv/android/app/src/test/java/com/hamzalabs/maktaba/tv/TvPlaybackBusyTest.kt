@@ -15,6 +15,11 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import mockwebserver3.Dispatcher
 import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
@@ -30,6 +35,7 @@ import org.junit.runner.RunWith
 import org.robolectric.Shadows.shadowOf
 import java.time.Duration
 import java.util.Base64
+import java.util.Collections
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
@@ -49,6 +55,8 @@ class TvPlaybackBusyTest {
     private val busy = AtomicInteger()
     private var retryAfter: String? = "10"
     private var playback: TvPlayback? = null
+    /** The opens' bodies, in order. */
+    private val bodies: MutableList<String> = Collections.synchronizedList(mutableListOf())
 
     private class Tokens(var a: String?, var r: String?) : TokenStore {
         override val access get() = a
@@ -71,6 +79,7 @@ class TvPlaybackBusyTest {
                 return when {
                     p == "/api/stream/sessions" && request.method == "POST" -> {
                         val n = opens.incrementAndGet()
+                        bodies += request.body?.utf8().orEmpty()
                         if (busy.getAndUpdate { if (it > 0) it - 1 else 0 } > 0) {
                             MockResponse.Builder().code(503)
                                 .setHeader("Content-Type", "application/problem+json")
@@ -104,9 +113,13 @@ class TvPlaybackBusyTest {
     /** Lets everything on its way land ([settleLooper]): what the home was asked cannot still be moving. */
     private fun settle() = settleLooper(calls, background, asked = { opens.get() })
 
-    private fun playback(): TvPlayback {
+    private fun playback(deviceCaps: (suspend () -> kotlinx.serialization.json.JsonObject?)? = null): TvPlayback {
         val client = ApiClient(server.url("/"), Tokens(token, "r1"), calls.http)
-        return TvPlayback(context, client, "v1", 0, scope, background, signedOut = {}).also { playback = it }
+        return if (deviceCaps == null) {
+            TvPlayback(context, client, "v1", 0, scope, background, signedOut = {})
+        } else {
+            TvPlayback(context, client, "v1", 0, scope, background, signedOut = {}, deviceCaps = deviceCaps)
+        }.also { playback = it }
     }
 
     /** Runs the main looper's due work (the home's answers land there) until [condition] holds. */
@@ -193,5 +206,24 @@ class TvPlaybackBusyTest {
         assertEquals(1_000, busyRetryMs(0))
         assertEquals(60_000, busyRetryMs(3_600))
         assertTrue(BUSY_RETRY_SEC == 10L)
+    }
+
+    /** Story 58.05: each ask, the first and the one after the wait, names this build's profile and reads the report again. */
+    @Test
+    fun eachAskAfterTheWaitCarriesTheProfileAndAFreshReport() {
+        busy.set(1)
+        val reads = AtomicInteger()
+        val pb = playback(deviceCaps = {
+            buildJsonObject { put("max_bitrate_kbps", JsonPrimitive(reads.incrementAndGet())) }
+        })
+        pb.start()
+        runUntil { pb.waiting != null }
+        idleFor(10_000)
+        runUntil { pb.player != null }
+        assertEquals(2, opens.get())
+        assertEquals("read at each open", 2, reads.get())
+        val sent = bodies.map { Json.parseToJsonElement(it).jsonObject }
+        sent.forEach { assertEquals(BuildConfig.TV_PLATFORM, it.getValue("client_profile").jsonPrimitive.content) }
+        assertEquals(listOf("1", "2"), sent.map { it.getValue("device_caps").jsonObject.getValue("max_bitrate_kbps").toString() })
     }
 }
