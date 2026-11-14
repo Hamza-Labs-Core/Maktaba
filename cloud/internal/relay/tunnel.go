@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -48,6 +49,11 @@ type Tunnel struct {
 	inflight atomic.Int64
 	// tracked: in its registry's open set (Registry.track)
 	tracked atomic.Bool
+	// the relay pool (story 50.16): the home follows its assignment (canPool), and this is its
+	// standby tunnel rather than its primary; told is the assignment last sent to it
+	canPool, standby bool
+	toldMu           sync.Mutex
+	told             Assignment
 	// direct remote access (story 50.15): the home speaks its frames (WithDirect)
 	direct DirectHandler
 	from   netip.Addr
@@ -104,6 +110,38 @@ func NewTunnel(serverID, slug string, conn FrameConn, opts ...TunnelOption) *Tun
 // WithFeatures records what the home announced at AUTH.
 func WithFeatures(drain, ticket bool) TunnelOption {
 	return func(t *Tunnel) { t.canDrain, t.canTicket = drain, ticket }
+}
+
+// WithPool marks a home that follows its place in the relay pool (FeaturePool), and whether
+// this tunnel is its standby (story 50.16).
+func WithPool(standby bool) TunnelOption {
+	return func(t *Tunnel) { t.canPool, t.standby = true, standby }
+}
+
+// Standby reports whether this is the home's standby tunnel (story 50.16).
+func (t *Tunnel) Standby() bool { return t.standby }
+
+// Pooled reports whether the home follows its place in the relay pool.
+func (t *Tunnel) Pooled() bool { return t.canPool }
+
+// Told is the assignment last sent to the home on this tunnel; SetTold records a new one.
+func (t *Tunnel) Told() Assignment {
+	t.toldMu.Lock()
+	defer t.toldMu.Unlock()
+	return t.told
+}
+
+// SetTold records the assignment sent to the home.
+func (t *Tunnel) SetTold(a Assignment) {
+	t.toldMu.Lock()
+	t.told = a
+	t.toldMu.Unlock()
+}
+
+// SendRelays tells the home its place in the pool (a RELAYS frame).
+func (t *Tunnel) SendRelays(p RelaysPayload) error {
+	b, _ := json.Marshal(p)
+	return t.writeFrame(Frame{Kind: KindRelays, Payload: b})
 }
 
 // FlowControl reports whether the tunnel is windowed.

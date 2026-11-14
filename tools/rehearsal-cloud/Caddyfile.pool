@@ -1,0 +1,23 @@
+# The relay pool's stable names in the rehearsal (story 50.16): round robin over the relays, as
+# relay.maktaba.tv's DNS round robin is; a relay whose /readyz fails is out of rotation (what
+# relay-dns does to its A record, there within 30 s). Plain HTTP: production's TLS is each
+# relay's own Caddy (deploy/cloud-ha/relay-pool).
+{
+	admin off
+	auto_https off
+}
+
+:80 {
+	reverse_proxy {$RELAY_UPSTREAMS} {
+		lb_policy round_robin
+		lb_try_duration 5s
+		lb_try_interval 100ms
+		health_uri /readyz
+		health_interval 500ms
+		health_timeout 2s
+		health_passes 1
+		health_fails 1
+		fail_duration 2s
+		flush_interval -1
+	}
+}

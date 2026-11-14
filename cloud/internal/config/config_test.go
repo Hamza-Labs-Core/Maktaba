@@ -319,6 +319,62 @@ func TestBroadcastConfig(t *testing.T) {
 	}
 }
 
+// Story 50.16: the pool is off by default; its keys from the file and the per-machine env; on,
+// the relay role needs the directory, the member's addresses and a host template with {id}.
+func TestRelayPoolConfig(t *testing.T) {
+	c, err := Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Relay.PoolEnabled || c.Relay.PoolCapacityMbps != 1000 || c.Relay.RebalanceEvery.Seconds() != 30 || c.Relay.RebalanceRate != 20 {
+		t.Errorf("defaults: %+v", c.Relay)
+	}
+	if c.Relay.PoolHostTemplate() != "{id}.relay.maktaba.tv" {
+		t.Errorf("default hosts %q", c.Relay.PoolHostTemplate())
+	}
+	dir := t.TempDir()
+	path := dir + "/relay.toml"
+	if err := os.WriteFile(path, []byte("[relay]\npool.enabled = true\npool.capacity_mbps = 2000\npool.hosts = \"{id}.relay.test\"\npool.rebalance_every = \"10s\"\npool.rebalance_rate = 5\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("MAKTABA_CLOUD_RELAY_ID", "r2-blue")
+	t.Setenv("MAKTABA_CLOUD_RELAY_PEER_ADDR", "10.0.1.12:8444")
+	t.Setenv("MAKTABA_CLOUD_RELAY_POOL_MEMBER", "r2")
+	t.Setenv("MAKTABA_CLOUD_RELAY_POOL_PUBLIC_IP", "203.0.113.12")
+	t.Setenv("MAKTABA_CLOUD_DB_URL", "postgres://x")
+	c, err = Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := c.Relay
+	if !r.PoolEnabled || r.PoolMemberID() != "r2" || r.PoolPublicIP != "203.0.113.12" || r.PoolPrivate() != "10.0.1.12" ||
+		r.PoolCapacityMbps != 2000 || r.PoolHostTemplate() != "{id}.relay.test" || r.RebalanceEvery.Seconds() != 10 || r.RebalanceRate != 5 {
+		t.Errorf("pool: %+v", r)
+	}
+	if err := Validate(c, RoleRelay); err != nil {
+		t.Errorf("a full pool config refused: %v", err)
+	}
+	for name, mut := range map[string]func(*Config){
+		"no peer addr":   func(c *Config) { c.Relay.PeerAddr = "" },
+		"no public ip":   func(c *Config) { c.Relay.PoolPublicIP = "" },
+		"bad public ip":  func(c *Config) { c.Relay.PoolPublicIP = "relay.example" },
+		"no capacity":    func(c *Config) { c.Relay.PoolCapacityMbps = 0 },
+		"hosts no {id}":  func(c *Config) { c.Relay.PoolHosts = "relay.test" },
+		"no rebalancing": func(c *Config) { c.Relay.RebalanceRate = 0 },
+	} {
+		bad := c
+		mut(&bad)
+		if err := Validate(bad, RoleRelay); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+	off := c
+	off.Relay.PoolEnabled, off.Relay.PoolPublicIP = false, ""
+	if err := Validate(off, RoleRelay); err != nil {
+		t.Errorf("pool off needs none of it: %v", err)
+	}
+}
+
 // The api pool's settings (Epic 50 story 50.17): the drain before the listeners close and the
 // direct connection for a session of its own, from the file or the environment.
 func TestLoad_APIPool(t *testing.T) {

@@ -48,6 +48,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/privacy"
 	pushpkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/push"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/ratelimit"
+	relaypkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/relay"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/reports"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/server"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/staffauth"
@@ -189,6 +190,11 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 		WebURL: cfg.Server.WebURL}
 	if cfg.Direct.Enabled {
 		homes.Direct = stores.NewDirect(pool.DB) // story 50.15: a direct entry once its check passed
+	}
+	if cfg.Relay.PoolEnabled {
+		// story 50.16: each home's relay hint, its primary relay in the pool (read-only view)
+		homes.Pool = relaypkg.NewPool(relaypkg.PGPoolStore{DB: pool.DB}, "")
+		homes.PoolHosts = cfg.Relay.PoolHostTemplate()
 	}
 
 	// Push dispatcher — both drivers may be nil in non-prod; the

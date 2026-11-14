@@ -1242,8 +1242,8 @@ export const APPS = [
         blocks: [
           {
             p: t(
-              "The big screen is a full-screen view for a TV or a big monitor: **Home**, **Libraries**, **Series**, **Search**, **Live TV** and **Settings**, in large type, always in the dark library theme. It shows the same videos, watch progress and permissions as the normal view. On a library, a series and a season, **Play** and **Shuffle** start the play queue. Open it with **Big screen** at the top of any page, or `g` then `b`; in the desktop apps, **View → Big Screen**, and **Start in Big Screen** opens it at launch. Leave it with **Leave big screen** in its top row; in the desktop apps, **View → Leave Big Screen**, or **View → Big Screen** again. In Arabic the screens run right to left and the arrows follow them.",
-              "الشاشة الكبيرة عرض بملء الشاشة لتلفاز أو شاشة كبيرة: **الرئيسية** و**المكتبات** و**السلاسل** و**البحث** و**البث المباشر** و**الإعدادات**، بخط كبير وبمظهر المكتبة الداكن دائمًا. وتعرض المقاطع نفسها وتقدّم المشاهدة نفسه والصلاحيات نفسها التي في العرض العادي. وفي المكتبة والسلسلة والموسم يبدأ زرّا **تشغيل** و**تشغيل عشوائي** قائمة الانتظار. افتحها بزر **الشاشة الكبيرة** أعلى أي صفحة، أو بالضغط على `g` ثم `b`؛ وفي تطبيقات سطح المكتب بالأمر **عرض ← الشاشة الكبيرة**، ويفتحها خيار **البدء بالشاشة الكبيرة** عند التشغيل. واخرج منها بزر **الخروج من الشاشة الكبيرة** في صفها العلوي؛ وفي تطبيقات سطح المكتب بالأمر **عرض ← الخروج من الشاشة الكبيرة**، أو بالأمر **عرض ← الشاشة الكبيرة** مرة أخرى. وبالعربية تسير الشاشات من اليمين إلى اليسار، وتتبعها الأسهم."
+              "The big screen is a full-screen view for a TV or a big monitor: **Home**, **Libraries**, **Series**, **Search**, **Live TV** and **Settings**, in large type, always in the dark library theme. It shows the same videos, watch progress and permissions as the normal view. A library opens on its tabs, as on the TV apps: **Recommended**, **Library** (Show videos or series, **Sort**, **Filter** and a letter rail, A to Z then the Arabic letters, or the other way round in Arabic), **Collections**, **Playlists** and **Categories**. **Play** and **Shuffle** in its header play the Library tab's view in its order, filters included, on the play queue; a series, a season, a collection and a playlist have their own. On a focused card, Play/Pause plays it at once, and holding OK (or the menu key) offers Play next, Add to queue, Add to playlist, Go to series and Mark watched. Back steps out: to the top of the tab, then to its tabs, then out of the library. Each tab remembers where you were. Open it with **Big screen** at the top of any page, or `g` then `b`; in the desktop apps, **View → Big Screen**, and **Start in Big Screen** opens it at launch. Leave it with **Leave big screen** in its top row; in the desktop apps, **View → Leave Big Screen**, or **View → Big Screen** again. In Arabic the screens run right to left and the arrows follow them.",
+              "الشاشة الكبيرة عرض بملء الشاشة لتلفاز أو شاشة كبيرة: **الرئيسية** و**المكتبات** و**السلاسل** و**البحث** و**البث المباشر** و**الإعدادات**، بخط كبير وبمظهر المكتبة الداكن دائمًا. وتعرض المقاطع نفسها وتقدّم المشاهدة نفسه والصلاحيات نفسها التي في العرض العادي. وتُفتح المكتبة على تبويباتها كما في تطبيقات التلفاز: **المقترحات** و**المكتبة** (عرض المقاطع أو السلاسل، و**ترتيب** و**تصفية** وشريط حروف من A إلى Z ثم الحروف العربية، أو بالعكس بالعربية) و**المجموعات** و**قوائم التشغيل** و**الفئات**. ويشغّل زرّا **تشغيل** و**تشغيل عشوائي** في رأسها عرضَ تبويب المكتبة بترتيبه وتصفياته في قائمة الانتظار؛ وللسلسلة والموسم والمجموعة وقائمة التشغيل أزرارها الخاصة. وعلى البطاقة المحددة يشغّلها زر التشغيل/الإيقاف فورًا، ويعرض الضغط المطوّل على OK (أو زر القائمة) خيارات التشغيل التالي والإضافة إلى قائمة الانتظار والإضافة إلى قائمة تشغيل والانتقال إلى السلسلة وتعليمها كمُشاهَدة. ويرجع زر الرجوع خطوة خطوة: إلى أعلى التبويب، ثم إلى التبويبات، ثم إلى خارج المكتبة. ويتذكّر كل تبويب موضعك فيه. افتحها بزر **الشاشة الكبيرة** أعلى أي صفحة، أو بالضغط على `g` ثم `b`؛ وفي تطبيقات سطح المكتب بالأمر **عرض ← الشاشة الكبيرة**، ويفتحها خيار **البدء بالشاشة الكبيرة** عند التشغيل. واخرج منها بزر **الخروج من الشاشة الكبيرة** في صفها العلوي؛ وفي تطبيقات سطح المكتب بالأمر **عرض ← الخروج من الشاشة الكبيرة**، أو بالأمر **عرض ← الشاشة الكبيرة** مرة أخرى. وبالعربية تسير الشاشات من اليمين إلى اليسار، وتتبعها الأسهم."
             ),
           },
           {
@@ -1274,6 +1274,18 @@ export const APPS = [
                   t("Back", "زر الرجوع"),
                 ],
                 [t("Search", "البحث"), t("`/`", "`/`"), t("Y or △", "‏Y أو △"), t("—", "—")],
+                [
+                  t("Play the focused card", "تشغيل البطاقة المحددة"),
+                  t("the Play/Pause media key", "مفتاح التشغيل/الإيقاف"),
+                  t("X or □", "‏X أو □"),
+                  t("Play/Pause", "التشغيل/الإيقاف"),
+                ],
+                [
+                  t("A card's actions", "خيارات البطاقة"),
+                  t("hold `Enter`, or the menu key", "الضغط المطوّل على `Enter`، أو مفتاح القائمة"),
+                  t("Menu or Options", "Menu أو Options"),
+                  t("hold OK", "الضغط المطوّل على OK"),
+                ],
               ],
             },
           },

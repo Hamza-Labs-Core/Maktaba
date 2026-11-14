@@ -2570,6 +2570,7 @@ build fails when the two differ.
   pass the API now also returns in the body to native apps, so the screen works while the API
   is down; a refusal says only admins can open it and never signs the app out.
 
+<<<<<<< HEAD
 - **The broadcast edge, built and rehearsed in CI (story 50.21).** Maktaba Cloud now has the
   Cloudflare Worker a published channel will play from: a home pushes each segment of each
   rendition once to `ingest.maktaba.tv`, and viewers' players fetch playlists and segments from
@@ -2592,6 +2593,16 @@ build fails when the two differ.
   networks, alerts on its error budget, ingest lag, a stale revocation list, the edge's monthly
   cost and a mismatch between analytics and billing, and a **Broadcasting** line on the status
   page once broadcasting opens.
+=======
+- **A pool of relays (story 50.16).** The cloud can run several relay machines in one pool:
+  each home keeps its tunnel on one relay and an idle standby tunnel on another, chosen by
+  weighted rendezvous hashing, so a relay lost costs a home seconds, and adding one moves only
+  the homes it wins. Any relay answers for any home. Apps get a `relay_hint` connection that
+  goes straight to the home's relay. The witness keeps `relay.maktaba.tv` round robin over the
+  healthy relays (`maktaba-cloud relay-dns`); staff take a relay out with `maktaba-cloud relay
+  drain|down|activate`. Off until `[relay.pool] enabled = true`; proven in the cloud rehearsal
+  (relay loss, relay added).
+>>>>>>> origin/main
 
 ### Changed
 
@@ -2934,6 +2945,17 @@ build fails when the two differ.
   twin, and the build fails on an Arabic page left mostly in English. The Synology guide now says
   to run setup in Container Manager's terminal, as the container expects, and a container waiting
   for setup says how in English and Arabic, in each NAS's own words.
+
+- **The big screen gets the TV apps' library (story 58.08).** A library on the big screen
+  (`/big`) now opens on the tabs of the Apple TV and Android TV apps: Recommended, Library (Show
+  videos or series, Sort, Filter and a letter rail, A to Z and the Arabic letters), Collections,
+  Playlists and Categories. Play and Shuffle play the Library tab's view in its order on the play
+  queue; collections and playlists have their own pages with Play and Shuffle; a series gains Mark
+  watched and a season's Mark season watched. On a focused card Play/Pause plays it, and a long OK
+  or the menu key offers Play next, Add to queue, Add to playlist, Go to series and Mark watched.
+  Back steps out to the tab's top, then its tabs, then out; each tab keeps its place. Up next shows
+  in a video's last 30 seconds, and a shuffled queue offers Shuffle again. A focused card grows by
+  1.08 inside the brass ring.
 
 ### Fixed
 
