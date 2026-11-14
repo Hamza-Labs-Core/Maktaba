@@ -36,6 +36,7 @@ export const FEATURES = [
   "cloud_metadata_backup",
   "advanced_analytics",
   "federation",
+  "broadcast",
 ] as const;
 
 export type Tier = "free" | "home" | "pro";

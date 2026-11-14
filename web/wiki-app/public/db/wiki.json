@@ -13,7 +13,7 @@
   ],
   "counts": {
     "diagram": 14,
-    "endpoint": 254,
+    "endpoint": 256,
     "entity": 42,
     "epic": 60,
     "feature": 3,
@@ -7009,6 +7009,27 @@
       }
     },
     {
+      "id": "ep-post-queues-workers-restart",
+      "type": "endpoint",
+      "title": "POST /queues/workers/restart",
+      "content": "Restart the pipeline workers",
+      "tags": [
+        "api",
+        "Queue",
+        "post"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/queues/workers/restart",
+        "tag": "Queue",
+        "operationId": "restartQueueWorkers"
+      }
+    },
+    {
       "id": "ep-get-queues-stage",
       "type": "endpoint",
       "title": "GET /queues/{stage}",
@@ -11189,6 +11210,36 @@
         "path": "/libraries/manage",
         "tag": "Libraries",
         "operationId": "listManagedLibraries"
+      }
+    },
+    {
+      "id": "ep-get-discovery-home",
+      "type": "endpoint",
+      "title": "GET /discovery/home",
+      "content": "Who this home is, and its API level",
+      "tags": [
+        "api",
+        "Devices",
+        "get"
+      ],
+      "related": [
+        "story-42.2",
+        "story-42.5",
+        "story-42.10",
+        "story-58.1",
+        "story-58.7",
+        "story-58.9",
+        "story-58.17",
+        "story-59.8"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/discovery/home",
+        "tag": "Devices",
+        "operationId": "getDiscoveryHome"
       }
     },
     {

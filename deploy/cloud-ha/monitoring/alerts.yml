@@ -43,6 +43,18 @@ groups:
           summary: "The month's downtime budget burns: {{ $value | humanizePercentage }} of the last 6 h down"
           runbook_url: docs/runbooks/cloud/canary-down.md
 
+  - name: maktaba-api-pool
+    rules:
+      # the api pool (story 50.17): each node's worker says whether it holds the leader lock;
+      # with workers scraped and none holding it for 2 minutes, nobody runs the jobs
+      - alert: worker_no_leader
+        expr: max(worker_leader) < 1
+        for: 2m
+        labels: {severity: sev2}
+        annotations:
+          summary: "No api node runs the worker's jobs: no node holds the worker's leader lock"
+          runbook_url: docs/runbooks/cloud/worker-no-leader.md
+
   - name: maktaba-pair
     rules:
       - alert: failover_happened

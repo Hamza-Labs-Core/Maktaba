@@ -12,6 +12,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/compat"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/discovery"
 )
 
@@ -48,8 +49,8 @@ func TestDiscoveryHomeShape(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
-	if len(got) != 5 {
-		t.Fatalf("keys = %v, want id, name, version, urls, sign_in only", got)
+	if len(got) != 8 {
+		t.Fatalf("keys = %v, want id, name, version, urls, sign_in, api_level, api_level_oldest, client_floor only", got)
 	}
 	if got["id"] != "0a1b2c3d-0000-4000-8000-000000000000" || got["name"] != "Kitchen" || got["version"] != "1.6.0" {
 		t.Fatalf("identity = %v", got)
@@ -136,7 +137,35 @@ func TestDiscoveryHomeStreamPort(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
-	if got["stream_port"] != float64(18081) || len(got) != 6 {
-		t.Fatalf("answer = %v, want stream_port 18081 beside the five keys", got)
+	if got["stream_port"] != float64(18081) || len(got) != 9 {
+		t.Fatalf("answer = %v, want stream_port 18081 beside the eight keys", got)
+	}
+}
+
+// T01 (Epic 58 story 58.01): the compatibility contract, with no sign-in: the home's API
+// level, the oldest it still answers, and its client floor (an empty object by default).
+func TestDiscoveryHomeCompatibilityContract(t *testing.T) {
+	var got map[string]any
+	rec := getHome(homeRouter(&Handler{}, -1), nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 without a sign-in", rec.Code)
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got["api_level"] != float64(compat.Level) || got["api_level_oldest"] != float64(compat.Oldest) {
+		t.Fatalf("levels = %v / %v, want %d / %d", got["api_level"], got["api_level_oldest"], compat.Level, compat.Oldest)
+	}
+	if floor, ok := got["client_floor"].(map[string]any); !ok || len(floor) != len(compat.ReleaseFloor) {
+		t.Fatalf("client_floor = %#v, want the release's floor as an object", got["client_floor"])
+	}
+
+	// a home release that raises a floor publishes it
+	h := &Handler{ClientFloor: compat.Floor{"tv-web/webos": "1.4.0"}}
+	got = nil
+	_ = json.Unmarshal(getHome(homeRouter(h, -1), nil).Body.Bytes(), &got)
+	floor, _ := got["client_floor"].(map[string]any)
+	if len(floor) != 1 || floor["tv-web/webos"] != "1.4.0" {
+		t.Fatalf("client_floor = %v", got["client_floor"])
 	}
 }

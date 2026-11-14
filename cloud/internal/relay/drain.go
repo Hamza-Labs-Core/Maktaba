@@ -26,6 +26,8 @@ type DrainOptions struct {
 	Reason   string
 	Within   time.Duration // the home opens its new tunnel within this
 	Deadline time.Duration // the old tunnel closes after this, streams or not
+	// Relays says where to move (a rebalance in the relay pool, story 50.16); nil: anywhere
+	Relays *RelaysPayload
 }
 
 // idlePoll is how often a drained tunnel of an older home is checked for
@@ -48,10 +50,22 @@ func (t *Tunnel) Drain(o DrainOptions, ticket string) {
 				WithinMS:   o.Within.Milliseconds(),
 				DeadlineMS: o.Deadline.Milliseconds(),
 				Ticket:     ticket,
+				Relays:     o.Relays,
 			})
 			_ = t.writeFrame(Frame{Kind: KindDrain, Payload: p})
 		}
 		go t.drainWatch(o.Deadline, !t.canDrain)
+	})
+}
+
+// Retire takes a standby tunnel out of service without asking the home anything: its home
+// dialled a primary tunnel to this relay (it lost its primary's relay), so the standby closes
+// once the requests it carries end, or after deadline. The home's own standby logic dials
+// its next standby by its assignment.
+func (t *Tunnel) Retire(deadline time.Duration) {
+	t.drainOnce.Do(func() {
+		t.draining.Store(true)
+		go t.drainWatch(deadline, true)
 	})
 }
 

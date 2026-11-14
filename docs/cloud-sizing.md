@@ -47,6 +47,16 @@ the median is compared. Two lessons shaped it:
   measured 0.00045 to 0.00087 across runners (#832): the figure depends on the CPU the job lands
   on. Only a comparison on one runner holds.
 
+The memory figure is the relays' Go live heap, `maktaba_go_heap_live_bytes` on their `/metrics`
+(the bytes the last garbage collection found reachable; reading it forces no collection). It is
+read once before the homes connect and every 5 s under the load; each round's samples give a
+median, the rounds' medians give the figure, less the heap before, over the tunnels. The first
+version divided the containers' peak `docker stats` memory by the tunnels: one sample of a
+sawtooth that rides on the garbage between collections. Main alone read 254k to 327k bytes per
+tunnel, and a relay holding 70 B more per tunnel read −13 % on one run and +28 % on the next
+(#1252). The peak is still written and shown, not gated. A base whose relay serves no live heap
+is reported without a memory comparison; a relay that stops serving it fails.
+
 ## The Phase 2 trigger
 
 `relay_capacity_used` (relayed Mbit/s ÷ the measured figure) and `relay_tunnels_used` (open

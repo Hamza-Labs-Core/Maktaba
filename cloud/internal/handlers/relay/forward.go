@@ -29,21 +29,56 @@ var defaultPeerTransport = &http.Transport{
 	ResponseHeaderTimeout: DefaultHeadTimeout + 5*time.Second,
 }
 
-// forwardIfElsewhere forwards r to the peer the directory names for slug,
-// when there is one newer than the local tunnel t (nil: none here). It
-// reports whether the request was answered.
+// forwardIfElsewhere forwards r to a peer the directory names for slug and
+// reports whether the request was answered. With no tunnel here (t nil) it
+// tries the home's primary, then its standby (story 50.16): a primary whose
+// relay is gone falls through to the standby at once. A local tunnel loses
+// only to a primary elsewhere: a draining one to a newer primary (the home's
+// new tunnel), a standby to any live primary (new requests go to the primary).
 func (d *Deps) forwardIfElsewhere(w http.ResponseWriter, r *http.Request, slug, serverID string, t *relaypkg.Tunnel) bool {
 	if d.Directory == nil {
 		return false
 	}
-	p, ok := d.Directory.Lookup(r.Context(), slug)
-	if !ok || t != nil && p.Seq <= t.Seq() {
+	tried := false
+	for _, p := range d.Directory.Peers(r.Context(), slug) {
+		if t != nil && (p.Role == relaypkg.RoleStandby || !t.Standby() && p.Seq <= t.Seq()) {
+			continue
+		}
+		if peerIsDown(p) {
+			continue
+		}
+		tried = true
+		if d.forward(w, r, slug, serverID, p) {
+			return true
+		}
+		markPeerDown(p)
+	}
+	if tried {
+		d.Directory.Forget(slug)
+	}
+	return false
+}
+
+// PeerDownFor is how long a peer that did not take a connection is skipped
+// (its relay is likely gone: the directory drops its rows within 20 s), so
+// requests do not each pay the connect timeout meanwhile.
+var PeerDownFor = 5 * time.Second
+
+var peersDown sync.Map // relay id + addr -> time.Time it is skipped until
+
+func peerKey(p relaypkg.Peer) string { return p.RelayID + "|" + p.Addr }
+
+func markPeerDown(p relaypkg.Peer) { peersDown.Store(peerKey(p), time.Now().Add(PeerDownFor)) }
+
+func peerIsDown(p relaypkg.Peer) bool {
+	v, ok := peersDown.Load(peerKey(p))
+	if !ok {
 		return false
 	}
-	if d.forward(w, r, slug, serverID, p) {
+	if time.Now().Before(v.(time.Time)) {
 		return true
 	}
-	d.Directory.Forget(slug)
+	peersDown.Delete(peerKey(p))
 	return false
 }
 

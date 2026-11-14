@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+# api-rollout <tag>: put a release on the api pool's nodes one at a time (Epic 50 story 50.17),
+# so the load balancer always has the others to send requests to.
+#
+# For each node in API_NODES, in order: RESTART_CMD installs the release and restarts the
+# node's api and worker (by default `app-update <tag>` over SSH). The api's SIGTERM turns its
+# /readyz to 503 for server.drain_delay (12 s) while it keeps serving, so the load balancer
+# (health check every 5 s, out after 2 failures) takes it out before its port closes; the
+# requests already in flight finish inside its shutdown grace. The worker's leader lock moves to
+# another node at once (its session ends). The rollout then waits until the node's /readyz has
+# answered 200 for READY_STABLE seconds (the balancer puts it back after 2 passes) before it
+# touches the next node. A node that never gets there stops the rollout, exit 1: the nodes not
+# reached yet keep the release they run, and app-update has already put the failed node back on
+# its previous binary.
+#
+# Env:
+#   API_NODES      the nodes, in order ("api-1 api-2 api-3"; their SSH names)
+#   RESTART_CMD    run as: RESTART_CMD <node> <tag> (default: ssh <node> sudo /usr/local/bin/app-update <tag>)
+#   READY_URL      the node's readiness URL, {node} replaced by its name
+#                  (default http://{node}:8090/readyz, over the private network)
+#   READY_STABLE   seconds the node must stay ready before the next one (default 15)
+#   READY_WITHIN   seconds a node has to get there (default 120)
+#   CHECK_EVERY    seconds between readiness checks (default 1)
+set -euo pipefail
+tag="${1:?usage: api-rollout <tag>}"
+nodes="${API_NODES:?API_NODES names the nodes of the pool}"
+ready_url="${READY_URL:-}"
+[ -n "${ready_url}" ] || ready_url='http://{node}:8090/readyz'
+
+stable="${READY_STABLE:-15}"
+within="${READY_WITHIN:-120}"
+every="${CHECK_EVERY:-1}"
+log() { echo "api-rollout: $*" >&2; }
+
+restart() { # restart <node>
+	if [ -n "${RESTART_CMD:-}" ]; then
+		# shellcheck disable=SC2086  # RESTART_CMD is a command line
+		${RESTART_CMD} "$1" "${tag}"
+	else
+		ssh -o BatchMode=yes "$1" "sudo /usr/local/bin/app-update ${tag}"
+	fi
+}
+
+ready() { # ready <node>: /readyz answers 200
+	local placeholder='{node}'
+	curl -fsS -o /dev/null --max-time 3 "${ready_url//"${placeholder}"/$1}"
+}
+
+# wait_stable <node>: ready for <stable> seconds in a row, within <within> seconds
+wait_stable() {
+	local start since=0 now
+	start="$(date +%s)"
+	while :; do
+		now="$(date +%s)"
+		if ready "$1"; then
+			[ "${since}" -gt 0 ] || since="${now}"
+			[ $((now - since)) -lt "${stable}" ] || return 0
+		else
+			since=0
+		fi
+		[ $((now - start)) -lt "${within}" ] || return 1
+		sleep "${every}"
+	done
+}
+
+done_nodes=()
+for n in ${nodes}; do
+	log "${n}: ${tag}"
+	if ! restart "${n}"; then
+		log "${n}: the restart failed; the nodes after it keep their release (done: ${done_nodes[*]:-none})"
+		exit 1
+	fi
+	if ! wait_stable "${n}"; then
+		log "${n}: not ready ${stable} s in a row within ${within} s; stopping (done: ${done_nodes[*]:-none})"
+		exit 1
+	fi
+	done_nodes+=("${n}")
+	log "${n}: ready on ${tag}"
+done
+log "${tag} runs on every node: ${done_nodes[*]}"

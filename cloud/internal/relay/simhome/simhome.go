@@ -22,6 +22,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -29,6 +30,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/gorilla/websocket"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/cloudlink"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/relay"
@@ -203,6 +206,10 @@ type Options struct {
 	// ServerID replaces Creds' id: the servers row's id when the relay is the
 	// real one, on a seeded database (the rehearsal).
 	ServerID string
+	// Resolve maps a host the home dials (a relay pool member's tunnel host, story 50.16:
+	// "r1.relay.test") to the address it is reached at here ("127.0.0.1:18443"); a host not in
+	// it is dialled as it is.
+	Resolve func(host string) (addr string, ok bool)
 }
 
 // Start runs home i against the relay's tunnel endpoint (ws://…/v1/relay/ws),
@@ -222,6 +229,19 @@ func Start(i int, endpoint, api string, o Options) *Home {
 		o.PingEvery = 5 * time.Second
 	}
 	d := &cloudlink.Dialer{Endpoint: endpoint, ServerID: id, Secret: secret, HandshakeTimeout: 10 * time.Second}
+	if o.Resolve != nil {
+		nd := &net.Dialer{Timeout: 5 * time.Second}
+		d.WS = &websocket.Dialer{HandshakeTimeout: 10 * time.Second,
+			NetDialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+				host, _, err := net.SplitHostPort(addr)
+				if err == nil {
+					if to, ok := o.Resolve(host); ok {
+						addr = to
+					}
+				}
+				return nd.DialContext(ctx, network, addr)
+			}}
+	}
 	sup := &cloudlink.Supervisor{
 		Dialer:    d,
 		Proxy:     &cloudlink.LocalProxy{BaseURL: api, Client: homeClient(id)},

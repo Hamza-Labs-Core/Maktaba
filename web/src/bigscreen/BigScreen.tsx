@@ -18,7 +18,13 @@ import { usePads } from "./input/usePads";
 import { backTarget, bigPath, depthOf, useBigNav } from "./nav";
 import { Dialog } from "./ui";
 import { BigHome } from "./screens/Home";
-import { BigLibraries, BigLibrary } from "./screens/Libraries";
+import { BigLibraries } from "./screens/Libraries";
+import { BigLibrary } from "./screens/Library";
+import { BigAutoCollection, BigCollection, BigPlaylist } from "./screens/Collection";
+import { CardMenu } from "./CardMenu";
+import { LongPress, cardOf, hasMenu, type CardActions } from "./cards";
+import { BigModeContext, useBigMode, type BigMode } from "./mode";
+import { BRIDGE_EXIT, listenToLauncher, tellLauncher } from "./input/bridge";
 import { BigSeries, BigSeriesList } from "./screens/Series";
 import { BigVideo } from "./screens/Video";
 import { BigSearch } from "./screens/Search";
@@ -50,16 +56,26 @@ function isLivePlayerPath(pathname: string): boolean {
   return /^\/big\/live\/[^/]+/.test(pathname);
 }
 
-/** Leaves big screen: full screen off, back to the page the user came from. */
+/**
+ * Leaves big screen: full screen off, back to the page the user came from. In
+ * the TV build there is no page to go back to: the launcher closes the app
+ * (outside one, the window is asked to close).
+ */
 export function useExitBigScreen() {
   const nav = useNavigate();
+  const mode = useBigMode();
   return useCallback(() => {
+    if (mode === "tv") {
+      tellLauncher(BRIDGE_EXIT);
+      window.close();
+      return;
+    }
     void setFullScreen(false);
     nav(returnPath(), { replace: true });
-  }, [nav]);
+  }, [nav, mode]);
 }
 
-export default function BigScreen() {
+export default function BigScreen({ mode = "desktop" }: { mode?: BigMode }) {
   const { dir } = useI18n();
   const rootRef = useRef<HTMLDivElement | null>(null);
   const [idle, setIdle] = useState(false);
@@ -88,9 +104,11 @@ export default function BigScreen() {
       data-bs-root
       data-testid="big-screen"
     >
-      <FocusProvider rootRef={rootRef}>
-        <Frame />
-      </FocusProvider>
+      <BigModeContext.Provider value={mode}>
+        <FocusProvider rootRef={rootRef}>
+          <Frame />
+        </FocusProvider>
+      </BigModeContext.Provider>
     </div>
   );
 }
@@ -103,9 +121,13 @@ function Frame() {
   const exit = useExitBigScreen();
   const [asking, setAsking] = useState(false);
   const [pad, setPad] = useState<PadLayout | null>(null);
+  // a card's actions (a long OK or the menu key), and what the last one did
+  const [menuFor, setMenuFor] = useState<CardActions | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const player = isPlayerPath(location.pathname);
   const live = isLivePlayerPath(location.pathname);
   const { t } = useI18n();
+  const mode = useBigMode();
 
   const back = useCallback(() => {
     const where = backTarget(location.pathname, depthOf(location.state));
@@ -132,6 +154,16 @@ function Frame() {
       });
       window.dispatchEvent(ev);
       if (ev.defaultPrevented) return true;
+      // Epic 56 §6.5: Play/Pause plays the focused card; the menu key opens its actions
+      const card = player ? null : cardOf(document.activeElement);
+      if (card && (action === "playPause" || action === "play")) {
+        card.play();
+        return true;
+      }
+      if (hasMenu(card) && action === "menu") {
+        setMenuFor(card);
+        return true;
+      }
       if (action === "back") back();
       else if (isDirection(action)) focus.move(action);
       else if (action === "select") {
@@ -143,8 +175,16 @@ function Frame() {
       else return false;
       return true;
     },
-    [focus, back, go]
+    [focus, back, go, player]
   );
+
+  // a long OK on a card opens its actions; a short one presses it
+  const longPress = useRef<LongPress | null>(null);
+  useEffect(() => {
+    if (!notice) return;
+    const id = setTimeout(() => setNotice(null), 4000);
+    return () => clearTimeout(id);
+  }, [notice]);
 
   // the keyboard (and remotes that present themselves as one)
   useEffect(() => {
@@ -166,10 +206,38 @@ function Frame() {
         ) || !!target?.isContentEditable;
       const action = keyAction(e, { typing, player });
       if (!action) return;
+      if (action === "select" && !player && !focus.topLayer()) {
+        const el = document.activeElement as HTMLElement | null;
+        const card = cardOf(el);
+        if (el && hasMenu(card)) {
+          // held: the actions; released early: the card's own press (on key up)
+          e.preventDefault();
+          if (!longPress.current)
+            longPress.current = new LongPress(
+              () => el.click(),
+              () => setMenuFor(card)
+            );
+          longPress.current.down(e.repeat);
+          return;
+        }
+      }
       if (act(action, "key")) e.preventDefault();
     };
+    const onKeyUp = (e: KeyboardEvent) => {
+      const lp = longPress.current;
+      if (!lp || keyAction(e, { player }) !== "select") return;
+      longPress.current = null;
+      e.preventDefault();
+      lp.up();
+    };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    window.addEventListener("keyup", onKeyUp);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("keyup", onKeyUp);
+      longPress.current?.cancel();
+      longPress.current = null;
+    };
   }, [act, back, focus, live, player]);
 
   // game controllers; on the live player they press its keys
@@ -178,6 +246,15 @@ function Frame() {
     if (live && !focus.topLayer() && action !== "back") return pressLiveKey(action);
     act(action, "pad");
   });
+
+  // the TV launcher's bridge (story 58.09): keys it saw first, as actions
+  useEffect(() => {
+    if (mode !== "tv") return;
+    return listenToLauncher((action) => {
+      if (live && !focus.topLayer() && action !== "back") return pressLiveKey(action);
+      act(action, "bridge");
+    });
+  }, [mode, act, live, focus]);
 
   // the desktop tray's Play / Pause
   useEffect(() => {
@@ -204,6 +281,9 @@ function Frame() {
           <Route index element={<BigHome />} />
           <Route path="libraries" element={<BigLibraries />} />
           <Route path="library/:id" element={<BigLibrary />} />
+          <Route path="library/:libraryId/collection/:kind/:id" element={<BigAutoCollection />} />
+          <Route path="collection/:id" element={<BigCollection />} />
+          <Route path="playlist/:id" element={<BigPlaylist />} />
           <Route path="series" element={<BigSeriesList />} />
           <Route path="series/:id" element={<BigSeries />} />
           <Route path="video/:id" element={<BigVideo />} />
@@ -225,7 +305,10 @@ function Frame() {
               </BigFeatureRoute>
             }
           />
-          <Route path="settings" element={<BigSettings onExit={() => setAsking(true)} />} />
+          <Route
+            path="settings"
+            element={<BigSettings onExit={mode === "tv" ? null : () => setAsking(true)} />}
+          />
           <Route path="*" element={<BigHome />} />
         </Routes>
       </main>
@@ -236,10 +319,16 @@ function Frame() {
           <Hint k={pad ? "Y" : "/"}>{t("big.hint.search")}</Hint>
         </footer>
       )}
+      {menuFor && <CardMenu card={menuFor} onClose={() => setMenuFor(null)} onDone={setNotice} />}
+      {notice && (
+        <p className="bs-notice" role="status" data-testid="big-notice">
+          {notice}
+        </p>
+      )}
       {asking && (
         <Dialog
-          title={t("big.exit.title")}
-          body={t("big.exit.body")}
+          title={mode === "tv" ? t("tv.exitConfirm") : t("big.exit.title")}
+          body={mode === "tv" ? undefined : t("big.exit.body")}
           onClose={() => setAsking(false)}
           testId="big-exit"
         >
@@ -250,7 +339,7 @@ function Frame() {
             data-bs-autofocus
             onClick={() => setAsking(false)}
           >
-            {t("big.exit.stay")}
+            {mode === "tv" ? t("tv.exitConfirm.no") : t("big.exit.stay")}
           </button>
           <button
             type="button"
@@ -258,7 +347,7 @@ function Frame() {
             data-bs-focus="exit-leave"
             onClick={exit}
           >
-            {t("big.exit.leave")}
+            {mode === "tv" ? t("tv.exitConfirm.yes") : t("big.exit.leave")}
           </button>
         </Dialog>
       )}
@@ -314,6 +403,7 @@ function Tabs() {
   const current = (to: string) =>
     to === bigPath.home ? pathname === to || pathname === `${to}/` : pathname.startsWith(to);
   const exit = useExitBigScreen();
+  const mode = useBigMode();
   return (
     <header className="bs-top">
       <span className="bs-brand" aria-hidden="true">
@@ -333,16 +423,19 @@ function Tabs() {
           </button>
         ))}
       </nav>
-      {/* always in reach, with a mouse or the arrows: the way out is not only Back on Home */}
-      <button
-        type="button"
-        className="bs-tab bs-leave"
-        data-bs-focus="tab:leave"
-        data-testid="big-leave"
-        onClick={exit}
-      >
-        {t("big.exit.leave")}
-      </button>
+      {/* always in reach, with a mouse or the arrows: the way out is not only Back on Home;
+          the TV build has nothing to go back to (Back on Home leaves the app) */}
+      {mode !== "tv" && (
+        <button
+          type="button"
+          className="bs-tab bs-leave"
+          data-bs-focus="tab:leave"
+          data-testid="big-leave"
+          onClick={exit}
+        >
+          {t("big.exit.leave")}
+        </button>
+      )}
       <time className="bs-clock" dateTime={now.toISOString()}>
         {new Intl.DateTimeFormat(locale === "ar" ? "ar-EG" : "en", {
           hour: "numeric",

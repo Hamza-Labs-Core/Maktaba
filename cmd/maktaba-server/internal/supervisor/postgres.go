@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"runtime"
+	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbundle"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/ports"
@@ -43,6 +44,7 @@ func BuildPostgres(b pgbundle.Bundle) (Process, error) {
 		// whether it listens beyond this machine, at each start (pgbundle.WatchReach)
 		Args:        b.ServerArgs,
 		BeforeStart: b.ClearStaleLock,
+		Settle:      b.AwaitShmFree,
 		// checked after BeforeStart, which ends a postmaster a killed server left
 		Binds: []ports.Bind{{Addr: b.Addr(), What: "database port"}},
 	}
@@ -52,7 +54,32 @@ func BuildPostgres(b pgbundle.Bundle) (Process, error) {
 		// the other roles get, it needs no console
 		p.Stop = func() { _ = b.StopCommand().Run() }
 	}
-	return p, nil
+	return patient(p), nil
+}
+
+// The bounds of a Postgres the supervisor runs (the home's, a node's copy). Stopping one
+// ends every connection, and killing one costs a crash recovery and can leave backends
+// holding its shared memory, next to which no new one starts: both are far worse than
+// waiting out a slow spell. The home's was stopped as hung, and killed, when it was slow
+// for about a minute, most often in the middle of a shutdown it had been asked for.
+const (
+	// PostgresProbeTimeout is how long one liveness check waits for the postmaster's
+	// answer: it forks a backend to give it, which takes seconds on a busy machine.
+	PostgresProbeTimeout = 15 * time.Second
+	// PostgresHangAfter is how long its checks must fail in a row before it is taken for
+	// hung and asked to shut down. An answer of any kind in that time (ready, starting
+	// up, recovering, shutting down, too many clients) starts the count again.
+	PostgresHangAfter = 5 * time.Minute
+	// PostgresStopGrace is how long its fast shutdown (ending the sessions, then a
+	// checkpoint of everything not yet written) has before it is killed: at a restart,
+	// at the server's stop and after a hang. 30 s was too short on a busy disk.
+	PostgresStopGrace = 2 * time.Minute
+)
+
+// patient gives a Postgres process those bounds.
+func patient(p Process) Process {
+	p.ProbeTimeout, p.HangAfter, p.StopGrace = PostgresProbeTimeout, PostgresHangAfter, PostgresStopGrace
+	return p
 }
 
 // postgresCheck maps the readiness answer onto the liveness check: starting up
