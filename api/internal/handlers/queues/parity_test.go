@@ -426,6 +426,8 @@ func pulseFixture(running, waiting int64, beat, done any, paused bool, stuck ...
 		&queuestest.Rule{Match: "select max(finished_at)", Cols: []string{"m"}, Rows: [][]driver.Value{{done}}},
 		&queuestest.Rule{Match: "from queue_control", Cols: []string{"p"}, Rows: [][]driver.Value{{paused}}},
 		&queuestest.Rule{Match: "j.claimed_by", Cols: []string{"id", "stage", "label", "kind", "sid", "hb", "by", "run"}, Rows: stuck},
+		// the workers beat and no runnable job waits (workerstate_test.go has the rule)
+		workersRule(t0.Add(-5*time.Second), 0, 0, nil, nil),
 	)
 }
 

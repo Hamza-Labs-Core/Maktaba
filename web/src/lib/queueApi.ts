@@ -934,6 +934,21 @@ export interface Pulse {
   stuck: StuckJob[];
   /** How many jobs stalled (shown to everyone). */
   stuck_count?: number;
+  /** Whether the workers run the waiting jobs (missing from an older server). */
+  workers?: WorkersState;
+}
+/** `not_responding`: jobs wait and no worker runs them. */
+export interface WorkersState {
+  state: "running" | "not_responding";
+  /** no_heartbeat: no worker reports in; no_dispatch: they report in and start nothing. */
+  reason?: "no_heartbeat" | "no_dispatch";
+  /** When the workers stopped running jobs (not_responding only). */
+  since: string | null;
+  last_seen_at: string | null;
+  /** The runnable jobs nothing runs. */
+  waiting: number;
+  /** This server can restart its workers (it runs under a supervisor). */
+  can_restart: boolean;
 }
 
 export interface LibraryCollections {
@@ -994,6 +1009,8 @@ export const queueApi = {
     ),
   pauseAll: () => api.post<void>("/api/queues/pause-all"),
   resumeAll: () => api.post<void>("/api/queues/resume-all"),
+  /** Restart this machine's pipeline workers (admin; the API refuses anyone else). */
+  restartWorkers: () => api.post<{ restarted: number }>("/api/queues/workers/restart"),
   patchStage: (stage: string, body: { enabled?: boolean; write_mode?: "auto" | "review" }) =>
     api.patch<StageInfo>(`/api/queues/${q(stage)}`, body),
   retry: (stage: string, body: { cause?: string; job_ids?: number[] }) =>

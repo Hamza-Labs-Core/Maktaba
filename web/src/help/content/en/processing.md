@@ -142,6 +142,17 @@ Each source also has **Retry gone/skipped** and **Remove** (it stops following t
 
 Below the numbers, a tile can also show two small links: **… failed** (failed items of this queue) and **… need you** (items Maktaba will not try again by itself; see [… need you](/help/failures#needs-you)). Both open [Failing items](/help/failures#failing-items) for that queue, where an admin can fix items one by one.
 
+### The workers are not running jobs {#workers-stalled}
+
+A red notice under the header, **The workers are not running jobs.**, means jobs are waiting and nothing runs them. It says since when, how many jobs wait, and which of two things Maktaba saw:
+
+- **No worker has reported in since then**: no worker process has reported in for two minutes or more.
+- **The workers report in but have started no job since then**: a worker that serves the waiting queue is up, no job runs, and nothing has started or finished for ten minutes or more.
+
+Waiting jobs stay queued and nothing is lost: they start when the workers run again. Paused queues, and jobs that wait for the model, a share or disk space, never raise this notice.
+
+An admin sees **Restart the workers**. It restarts the worker processes on the computer that runs Maktaba; a job that was running is picked up again, and the notice goes away once jobs start, usually within a minute. Other users see **Ask an admin to restart the workers.** If the notice says the server cannot restart its workers from here, restart Maktaba on the computer that runs it. The button restarts the workers of that computer only: a worker on another machine is restarted on that machine.
+
 ### Overall state {#overall-state}
 
 - **All caught up**: nothing runs, nothing needs you.
