@@ -6,7 +6,7 @@ import { runInDurableObject } from "cloudflare:test";
 import { resetClock } from "../src/clock";
 import type { Env } from "../src/env";
 import * as ev from "../src/events";
-import { call, E, LIVE, newChannel, putSegment, viewerToken } from "./helpers";
+import { call, E, installList, LIVE, newChannel, putSegment, viewerToken } from "./helpers";
 
 afterEach(() => resetClock());
 
@@ -191,15 +191,18 @@ describe("T01 the events a viewer's requests write", () => {
     expect(named(points[0]!)).toMatchObject({ event: "blocked", code: "full", channel: ch });
 
     await putSegment(ch, "src", 1);
-    await (E as Env).CHANNEL.get((E as Env).CHANNEL.idFromName(ch)).revoke("takedown");
+    await installList([
+      { id: "r-ev", kind: "channel", ref: ch, action: "off_air", reason: "notice" },
+    ]);
     points.length = 0;
     const tok = await viewerToken({ ch });
-    expect((await call(`${LIVE}/${tok}/${ch}/master.m3u8`, {}, { AE })).status).toBe(403);
+    expect((await call(`${LIVE}/${tok}/${ch}/master.m3u8`, {}, { AE })).status).toBe(503);
     expect(named(points[0]!)).toMatchObject({ event: "blocked", code: "revoked" });
     // the media playlists of the same session add no second blocked
     points.length = 0;
     await call(`${LIVE}/${tok}/${ch}/src/index.m3u8`, {}, { AE });
     expect(points).toEqual([]);
+    await installList([]);
   });
 
   it("a segment made visible writes ingest, glass-to-glass only for the canary", async () => {
