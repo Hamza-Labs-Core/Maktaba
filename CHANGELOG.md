@@ -2709,6 +2709,18 @@ build fails when the two differ.
   pages; Back from Home asks before leaving. The store listing, the review scenario and the
   real-device checklist are in English and Arabic; the submission is made by a person.
 
+- **Maktaba for Samsung TVs (Epic 58, story 58.10).** The Samsung launcher plays with the TV's
+  own player, AVPlay: 4K, HDR10 and HLG where the TV has them, Dolby Digital and Dolby Digital
+  Plus passed through to a soundbar that takes them, audio track choice and seeking. It tells
+  the home what the TV plays (the decoder, the panel, HDR and the audio output), never Dolby
+  Vision, so the home sends files as they are when it can. Subtitles are drawn by Maktaba, so
+  Arabic is joined and right to left at the chosen size; a file the TV cannot play says so and
+  plays converted. The media and colour keys reach the TV screens, and Back on the top screen
+  asks before leaving. A tag whose launcher changed builds `maktaba-tizen-<version>.wgt`,
+  signed with the project's Samsung certificates; every pull request builds and lints the
+  unsigned package. The store listing and the checklist on real TVs are in
+  `docs/stores/samsung.md`.
+
 ### Changed
 
 - **A machine that loses its home stays usable** under a notice instead of the whole app being

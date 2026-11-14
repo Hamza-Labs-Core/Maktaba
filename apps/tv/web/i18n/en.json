@@ -34,5 +34,6 @@
   "compat.updateApp.why": "%1$s no longer works with this version of the app.",
   "compat.updateApp.tizen": "On this Samsung TV, open Apps, find Maktaba and choose Update.",
   "compat.updateApp.webos": "On this LG TV, open the LG Content Store, find Maktaba and choose Update.",
-  "compat.updateApp.browser": "Update Maktaba from your TV's app store, then open it again."
+  "compat.updateApp.browser": "Update Maktaba from your TV's app store, then open it again.",
+  "tizen.error.playback": "The TV couldn't play this. Trying a converted version…"
 }

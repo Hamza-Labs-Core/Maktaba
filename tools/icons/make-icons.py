@@ -32,6 +32,8 @@ WEB = ROOT / "web/public/icons"
 WEB_ROOT = ROOT / "web/public"
 TV_ANDROID = ROOT / "apps/tv/android/app/src/main/res"
 TV_OS = ROOT / "apps/tv/tvos/MaktabaTV/Resources/Assets.xcassets/AppIcon.brandassets"
+# the Samsung TV package (story 58.10): config.xml's icon, 512 x 423 as Seller Office takes it
+TV_SAMSUNG = ROOT / "apps/tv/web/tizen/icon.png"
 MOBILE = ROOT / "apps/mobile/icons"
 ANDROID_NATIVE = ROOT / "apps/android/core/src/main/res"
 LIBRARY_ART = ROOT / "web/public/art/library/dark-wide-1.jpg"
@@ -209,6 +211,11 @@ def webos(master: Image.Image, mark: Image.Image) -> None:
     )
 
 
+def tv_samsung(mark: Image.Image) -> None:
+    TV_SAMSUNG.parent.mkdir(parents=True, exist_ok=True)
+    on_ground(mark, 512, 423, 1.0).convert("RGB").save(TV_SAMSUNG, optimize=True)
+
+
 def imageset(path: pathlib.Path, images: dict[str, Image.Image]) -> None:
     """Write an .imageset with one image per scale (keys are '1x' / '2x')."""
     path.mkdir(parents=True, exist_ok=True)
@@ -376,6 +383,7 @@ def main() -> None:
     tv_android(master, mark)
     tv_os(mark)
     webos(master, mark)
+    tv_samsung(mark)
     mobile(master, mark)
     android_native()
     print("icons written from", SOURCE.relative_to(ROOT))
