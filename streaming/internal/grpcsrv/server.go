@@ -18,8 +18,10 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -47,6 +49,9 @@ type OpenSessionRequest struct {
 	ForceTranscode bool
 	BurnSubs       bool
 	AcceptQueue    bool
+	// DeviceCaps is what the device reports it plays (Epic 58 story 58.02);
+	// nil: the profile's baseline.
+	DeviceCaps *capability.DeviceCaps
 }
 
 // Rendition mirrors the proto Rendition message.
@@ -157,9 +162,84 @@ type Server struct {
 	// main.go refuses one with too little free on the cache's disk.
 	TranscodeRoom func() error
 
+	// MaxRemux caps the remux sessions open at once (story 58.02): a remux
+	// copies the video and takes no transcode slot, yet each is an ffmpeg
+	// process. 0: DefaultMaxRemux.
+	MaxRemux int
+	// remuxOpening is the remux opens past the cap's check whose row is not
+	// in the store yet (reserveRemux), guarded by remuxMu.
+	remuxMu      sync.Mutex
+	remuxOpening int
+
 	// Logger receives the session lifecycle (opened, reused, closed, refused);
 	// nil: slog's default.
 	Logger *slog.Logger
+}
+
+// DefaultMaxRemux is MaxRemux's default: a remux reads and writes at the
+// source's bitrate, a few times a 4K film's on any disk the home runs on.
+const DefaultMaxRemux = 16
+
+// MaxFits is how many sessions of one video a user keeps open for different
+// device reports (two TVs of a household); one more closes the oldest, so a
+// report that keeps changing never stacks processes.
+const MaxFits = 2
+
+// reserveRemux takes a remux place, counting the open remux sessions and the
+// opens between this check and their row's insert (each starts an ffmpeg
+// first) under one lock, so concurrent opens never pass the cap together. It
+// fails closed: a store that cannot count starts no ffmpeg. The count it saw
+// comes back for the log.
+func (s *Server) reserveRemux(ctx context.Context) (int, bool) {
+	s.remuxMu.Lock()
+	defer s.remuxMu.Unlock()
+	n, err := s.Sessions.CountActive(ctx, session.ModeRemux)
+	n += s.remuxOpening
+	if err != nil || n >= s.maxRemux() {
+		return n, false
+	}
+	s.remuxOpening++
+	return n, true
+}
+
+func (s *Server) unreserveRemux() {
+	s.remuxMu.Lock()
+	s.remuxOpening--
+	s.remuxMu.Unlock()
+}
+
+func (s *Server) maxRemux() int {
+	if s.MaxRemux > 0 {
+		return s.MaxRemux
+	}
+	return DefaultMaxRemux
+}
+
+// supersede closes the user's oldest sessions of the video made for other
+// device reports, keeping MaxFits-1 of them beside the one about to open.
+func (s *Server) supersede(ctx context.Context, open []*session.Row, fit, videoID string) {
+	others := []*session.Row{}
+	for _, r := range open {
+		if r.Fit != "" && r.Fit != fit && r.ClosedAt == nil {
+			others = append(others, r)
+		}
+	}
+	if len(others) < MaxFits {
+		return
+	}
+	sort.SliceStable(others, func(i, j int) bool { return others[i].StartedAt.After(others[j].StartedAt) })
+	for _, r := range others[MaxFits-1:] {
+		s.log().Info("vod session closed: the video was opened for another device report",
+			"session_id", r.ID.String(), "video_id", videoID,
+			"reason", string(session.ReasonSuperseded), "event", "vod_session_closed")
+		if cerr := s.Sessions.Close(ctx, r.ID, session.ReasonSuperseded, s.Now().UTC()); cerr != nil {
+			s.log().Warn("vod session not closed", "session_id", r.ID.String(),
+				"err", cerr.Error(), "event", "vod_session_close_failed")
+		}
+		if r.SlotHold != "" {
+			_ = s.Allocator.Release(r.SlotHold) // as CloseSession: its transcode's end gives it back too
+		}
+	}
 }
 
 func (s *Server) log() *slog.Logger {
@@ -228,6 +308,16 @@ func (s *Server) OpenSession(ctx context.Context, req OpenSessionRequest) (OpenS
 	// latest to start before it). None: a new one starts there, beside the
 	// others — the user's other device plays on in its own, which the reaper
 	// closes once nothing fetches from it.
+	//
+	// A session fits one profile and device report (story 58.02): a TV whose
+	// report changed (its HDMI switched to a receiver without HDR) opens a new
+	// session, never one made for what it reported before. The older profiles
+	// without a report keep sharing theirs.
+	profile, _ := s.Profiles.Get(req.ClientProfile)
+	fit := ""
+	if profile.Detailed || req.DeviceCaps != nil {
+		fit = profile.Name + "/" + req.DeviceCaps.Key()
+	}
 	open, err := s.Sessions.OpenByUserVideo(ctx, userUUID, videoUUID)
 	if err != nil {
 		s.log().Warn("vod sessions of the video not listed: opening a new one",
@@ -245,7 +335,8 @@ func (s *Server) OpenSession(ctx context.Context, req OpenSessionRequest) (OpenS
 				s.log().Warn("vod session not closed", "session_id", existing.ID.String(),
 					"err", cerr.Error(), "event", "vod_session_close_failed")
 			}
-		case s.reaches(existing, req.StartSec) && (reuse == nil || existing.StartSec >= reuse.StartSec):
+		case existing.Fit == fit && s.reaches(existing, req.StartSec) &&
+			(reuse == nil || existing.StartSec >= reuse.StartSec):
 			reuse = existing
 		}
 	}
@@ -259,25 +350,39 @@ func (s *Server) OpenSession(ctx context.Context, req OpenSessionRequest) (OpenS
 		return s.respFor(reuse, ladder), nil
 	}
 
-	profile, _ := s.Profiles.Get(req.ClientProfile)
-	src := capability.Source{
-		Container: row.Container, VideoCodec: row.VideoCodec, AudioCodec: row.AudioCodec,
-		Height: row.Height, BitrateKbps: row.BitrateKbps, AudioChannels: row.AudioChannels,
-		HDR: row.HDR,
+	if fit != "" {
+		s.supersede(ctx, open, fit, req.VideoID)
 	}
-	verdict := s.Profiles.Decide(profile, src, capability.Override{
+
+	verdict := s.Profiles.DecideFor(profile, req.DeviceCaps, SourceOf(row), capability.Override{
 		ForceTranscode: req.ForceTranscode,
 		MaxBitrateKbps: req.MaxBitrateKbps,
+		Format:         req.Format,
 	})
 
 	mode := session.Mode(verdict.Mode)
-	if mode == session.ModeRemux {
-		// Nothing serves a remux yet (Story 8.4's cache-then-stream Remuxer has no
-		// runtime caller), so a remux session's playlist would never be written: the
-		// player waits on a 404 for ever. An HLS transcode plays it.
+	if mode == session.ModeRemux && !profile.Detailed {
+		// The older profiles' remux verdict (a container they do not play) is an
+		// HLS transcode, as it always was: only the TV profiles (story 58.02) are
+		// remuxed, their video copied into HLS or DASH.
 		mode = session.ModeTranscode
 	}
 	state := session.StateActive
+	if mode == session.ModeRemux && s.TranscodeRoom != nil && s.TranscodeRoom() != nil {
+		// a remux keeps its segments until the session closes too
+		return OpenSessionResponse{}, ErrNoDiskSpace
+	}
+	if mode == session.ModeRemux {
+		n, ok := s.reserveRemux(ctx)
+		if !ok {
+			s.log().Warn("vod session refused: every remux is taken",
+				"video_id", req.VideoID, "remuxes", n, "event", "vod_remux_exhausted")
+			return OpenSessionResponse{}, ErrResourceExhausted
+		}
+		// held until this open returns: by then its row is in the store (and
+		// counted there) or the open failed
+		defer s.unreserveRemux()
+	}
 
 	// the transcode slot taken (""; none), given back when the transcode
 	// ends, the session closes, or the open fails
@@ -312,7 +417,8 @@ func (s *Server) OpenSession(ctx context.Context, req OpenSessionRequest) (OpenS
 	}
 
 	format := session.FormatHLS
-	if strings.EqualFold(req.Format, "dash") {
+	if strings.EqualFold(req.Format, "dash") || verdict.Format == "dash" {
+		// a device that plays the video only by DASH (Roku's AV1) gets DASH
 		format = session.FormatDASH
 	}
 	// an HLS transcode starts where the viewer is (a resume, a reopen)
@@ -335,6 +441,35 @@ func (s *Server) OpenSession(ctx context.Context, req OpenSessionRequest) (OpenS
 	// client a session whose manifest will never materialise.
 	var transcoder session.Transcoder
 	pid := 0
+	if mode == session.ModeRemux && s.Transcode != nil {
+		if s.ResolveDir == nil {
+			return OpenSessionResponse{}, errors.New("transcode configured without ResolveDir")
+		}
+		fmtStr := "hls"
+		if format == session.FormatDASH {
+			fmtStr = "dash"
+		}
+		plan := remuxPlan(row, verdict)
+		ladder = []ffmpeg.Rendition{{Name: "v0", Width: row.Width, Height: row.Height, BitrateKbps: row.BitrateKbps, Codec: row.VideoCodec}}
+		handle, terr := s.Transcode.Start(ctx, ffmpeg.Job{
+			SessionID:   sessID.String(),
+			InputPath:   pathmap.Resolve(row.Path),
+			OutputDir:   s.ResolveDir(sessID.String()),
+			Format:      fmtStr,
+			MasterName:  "master.m3u8",
+			SourceCodec: row.VideoCodec,
+			NoAudio:     row.NoAudio(),
+			Remux:       &plan,
+		})
+		if terr != nil {
+			s.log().Error("vod remux did not start", "session_id", sessID.String(),
+				"video_id", req.VideoID, "input", pathmap.Resolve(row.Path),
+				"err", terr.Error(), "event", "vod_remux_start_failed")
+			return OpenSessionResponse{}, ErrFailedPrecondition
+		}
+		transcoder = handle
+		pid = handle.PID()
+	}
 	if mode == session.ModeTranscode && state == session.StateActive && s.Transcode != nil {
 		if s.ResolveDir == nil {
 			return OpenSessionResponse{}, errors.New("transcode configured without ResolveDir")
@@ -372,6 +507,7 @@ func (s *Server) OpenSession(ctx context.Context, req OpenSessionRequest) (OpenS
 			Colour:       colour,
 			VAAPI:        vaapi,
 			SourcePixFmt: row.PixFmt,
+			Segments:     verdict.Segments,
 		})
 		if terr != nil {
 			release()
@@ -402,6 +538,10 @@ func (s *Server) OpenSession(ctx context.Context, req OpenSessionRequest) (OpenS
 		Transcoder:    transcoder,
 		SlotHold:      holdID,
 		StartSec:      start,
+		Fit:           fit,
+	}
+	if format == session.FormatHLS && (mode == session.ModeRemux || mode == session.ModeTranscode) {
+		sessRow.Segments = verdict.Segments
 	}
 	if err := s.Sessions.Insert(ctx, sessRow); err != nil {
 		// Don't leak the FFmpeg child if the row can't be stored.
@@ -424,9 +564,63 @@ func (s *Server) OpenSession(ctx context.Context, req OpenSessionRequest) (OpenS
 
 	s.log().Info("vod session opened", "session_id", sessID.String(), "video_id", req.VideoID,
 		"mode", string(mode), "state", string(state), "verdict", verdict.Reason,
+		"profile", profile.Name, "device_caps", req.DeviceCaps != nil, "clamped", strings.Join(verdict.Clamped, ","),
 		"source", row.Container+"/"+row.VideoCodec+"/"+row.AudioCodec, "height", row.Height,
 		"start_sec", start, "pid", pid, "event", "vod_session_opened")
 	return s.respFor(sessRow, ladder), nil
+}
+
+// remuxPlan is how a TV profile's remux verdict is made (story 58.02): the
+// video copied, its Dolby Vision layer dropped when the device lacks it, the
+// audio copied or encoded, and the master playlist's codecs and colour range.
+func remuxPlan(row *probe.Row, v capability.Verdict) ffmpeg.RemuxPlan {
+	src := SourceOf(row)
+	seg := v.Segments
+	if seg == "" {
+		seg = ffmpeg.SegmentsTS
+	}
+	p := ffmpeg.RemuxPlan{
+		Segments: seg, VideoCodec: row.VideoCodec,
+		Audio: !row.NoAudio(), AudioCodec: v.AudioCodec, SourceAudio: strings.ToLower(row.AudioCodec),
+		DropDV: v.StripDV, StereoAAC: v.StereoAAC,
+		Width: row.Width, Height: row.Height, BitrateKbps: row.BitrateKbps,
+		TenBit: src.BitDepth >= 10,
+	}
+	switch {
+	case src.DVProfile == 8 && src.DVCompat == 4, src.DVProfile == 0 && src.HDR == "hlg":
+		p.VideoRange = "HLG"
+	case src.DVProfile == 8 && src.DVCompat == 2:
+		// an SDR base layer
+	case src.DVProfile > 0, src.HDR == "hdr10":
+		p.VideoRange = "PQ"
+	}
+	return p
+}
+
+// SourceOf is the capability matrix's view of a probed video: its HDR kind
+// from its transfer (the probe has no HDR column: PQ is HDR10, HLG is HLG),
+// its Dolby Vision record, bit depth and frame rate.
+func SourceOf(row *probe.Row) capability.Source {
+	src := capability.Source{
+		Container: row.Container, VideoCodec: row.VideoCodec, AudioCodec: row.AudioCodec,
+		Height: row.Height, BitrateKbps: row.BitrateKbps, AudioChannels: row.AudioChannels,
+		HDR: row.HDR, DVProfile: row.DVProfile, DVCompat: row.DVCompat, FPS: row.FPS,
+	}
+	if src.HDR == "" {
+		switch row.ColorTransfer {
+		case "smpte2084":
+			src.HDR = "hdr10"
+		case "arib-std-b67":
+			src.HDR = "hlg"
+		}
+	}
+	if row.PixFmt != "" {
+		src.BitDepth = 8
+		if ffmpeg.TenBit(row.PixFmt) {
+			src.BitDepth = 10
+		}
+	}
+	return src
 }
 
 func (s *Server) respFor(row *session.Row, ladder []ffmpeg.Rendition) OpenSessionResponse {

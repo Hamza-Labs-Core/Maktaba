@@ -3452,6 +3452,8 @@ operations:
           type: string
         start_sec:
           type: number
+        stream_sig:
+          type: string
         user_id:
           type: string
         video_id:
