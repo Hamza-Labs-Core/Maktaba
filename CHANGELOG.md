@@ -813,13 +813,15 @@ build fails when the two differ.
 
 ### Added
 
-- **Maktaba on a Samsung or LG TV's browser engine: `/tv/` (story 58.08).** The home now serves
-  a TV build of the big screen at `/tv/`, made for the older Chromium of a 2020 Samsung or LG TV
-  and checked for it on every build. It is the screen the coming Samsung and LG apps load: the
-  library tabs, series, collections and playlists of the big screen, driven by the remote (Back,
-  Play/Pause and the media keys of both makers' remotes; the red key opens a card's actions), in
-  English and Arabic, with its own fonts. Back on Home asks Leave Maktaba? before it closes.
-  Signed out, it sends the TV to the home's sign-in and back.
+- **Apps can tell when they and the home are too far apart (story 58.01).** The home now
+  publishes its API level, the oldest level it still serves, and the oldest build of each app it
+  signs in, with no sign-in needed (`GET /api/discovery/home`: `api_level`, `api_level_oldest`,
+  `client_floor`). A home keeps serving every level from the last 12 months, so a TV app a year
+  behind still works. An app build below the floor gets `426 client_too_old` at sign-in, refresh
+  and pairing, and the home logs each refused app and platform once a day in Logs. A CI check
+  fails any response change an older app would get wrong until the level is raised
+  (`docs/api/levels.md`). The `X-Maktaba-Client` header names the smart TV platforms (`tizen`,
+  `webos`, `firetv`, `roku`, `vega`, `cast`) and the Samsung and LG launcher (`tv-web`).
 
 - **Choose Maktaba's ports on a NAS (story 59.08).** Another app on the NAS, such as Plex or the
   NAS's own UI, may already use one of Maktaba's ports. Each one can now be set in the container's
@@ -2567,6 +2569,23 @@ build fails when the two differ.
   the home restarting, its database or safe mode opens it. The app signs in with a recovery
   pass the API now also returns in the body to native apps, so the screen works while the API
   is down; a refusal says only admins can open it and never signs the app out.
+
+- **A pool of relays (story 50.16).** The cloud can run several relay machines in one pool:
+  each home keeps its tunnel on one relay and an idle standby tunnel on another, chosen by
+  weighted rendezvous hashing, so a relay lost costs a home seconds, and adding one moves only
+  the homes it wins. Any relay answers for any home. Apps get a `relay_hint` connection that
+  goes straight to the home's relay. The witness keeps `relay.maktaba.tv` round robin over the
+  healthy relays (`maktaba-cloud relay-dns`); staff take a relay out with `maktaba-cloud relay
+  drain|down|activate`. Off until `[relay.pool] enabled = true`; proven in the cloud rehearsal
+  (relay loss, relay added).
+
+- **Maktaba on a Samsung or LG TV's browser engine: `/tv/` (story 58.08).** The home now serves
+  a TV build of the big screen at `/tv/`, made for the older Chromium of a 2020 Samsung or LG TV
+  and checked for it on every build. It is the screen the coming Samsung and LG apps load: the
+  library tabs, series, collections and playlists of the big screen, driven by the remote (Back,
+  Play/Pause and the media keys of both makers' remotes; the red key opens a card's actions), in
+  English and Arabic, with its own fonts. Back on Home asks Leave Maktaba? before it closes.
+  Signed out, it sends the TV to the home's sign-in and back.
 
 ### Changed
 

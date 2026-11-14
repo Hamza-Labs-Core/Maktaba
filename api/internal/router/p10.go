@@ -25,6 +25,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/refresh"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/securityaudit"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/users"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/compat"
 	discoverypkg "github.com/Hamza-Labs-Core/Maktaba/api/internal/discovery"
 	discoveryh "github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/discovery"
 	perfh "github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/perf"
@@ -39,6 +40,10 @@ import (
 // have zero-value-safe defaults so callers can opt out by leaving a
 // field unset.
 type P10Deps struct {
+	// ClientFloor is published on GET /api/discovery/home (Epic 58 story 58.01); nil:
+	// compat.ReleaseFloor.
+	ClientFloor compat.Floor
+
 	// DB enables the entitlement and pairing handlers to persist state.
 	// Nil DB is permitted; handlers fall back to in-memory stores.
 	DB *sql.DB
@@ -227,6 +232,7 @@ func MountP10(r chi.Router, d P10Deps) discoverypkg.PairingStore {
 	}
 	ph.Mount(r)
 	ph.MountDevice(r, 0)
+	ph.ClientFloor = d.ClientFloor
 	ph.MountHome(r, 0)
 
 	// Security disclosure + SBOM.
