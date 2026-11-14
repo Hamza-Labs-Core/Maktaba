@@ -58,6 +58,10 @@ type Tier struct {
 	ExtraStreamPriceCents *int
 	// MaxServers is how many homes an account links (values set with the prices).
 	MaxServers int
+	// Broadcast is what a home on this plan may publish to people outside it (story 50.20):
+	// nil on Free and Basic, Pro's guest sharing on Pro. The Broadcaster add-on replaces it on
+	// a Pro home that bought it (BroadcastFor).
+	Broadcast *BroadcastTier
 }
 
 func intp(v int) *int { return &v }
@@ -78,6 +82,7 @@ var Tiers = map[string]Tier{
 		ID: PlanPro, Name: "Pro", Relay: true,
 		RelayCapKbps: 0, RelaySlowCapKbps: 1500,
 		FairUseBytesPerMo: 500 * GB, PayAsYouGo: true, ExtraStreamsAddOn: true, MaxServers: 5,
+		Broadcast: &GuestSharing,
 	},
 }
 

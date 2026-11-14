@@ -61,6 +61,7 @@ const (
 	FlagCloudMetadataBackup = "cloud_metadata_backup"
 	FlagAdvancedAnalytics   = "advanced_analytics"
 	FlagFederation          = "federation"
+	FlagBroadcast           = "broadcast"
 	FlagFlagsAdmin          = "flags_admin"
 	FlagEarlyAccess         = "early_access"
 )
@@ -75,6 +76,7 @@ var Declarations = []Declaration{
 	{Key: FlagCloudMetadataBackup, Feature: subscriptions.FeatureCloudBackup, Description: "Cloud backup of library metadata"},
 	{Key: FlagAdvancedAnalytics, Feature: subscriptions.FeatureAdvancedMetric, Description: "Advanced watch analytics"},
 	{Key: FlagFederation, Feature: subscriptions.FeatureFederation, Description: "Federation with other servers"},
+	{Key: FlagBroadcast, Feature: subscriptions.FeatureBroadcast, Description: "Publishing channels to people outside the home (Epic 50.20)"},
 	{Key: FlagFlagsAdmin, Default: true, AdminOnly: true, Description: "Feature-flag administration"},
 	{Key: FlagEarlyAccess, Cohorts: []string{CohortEarlyAccess}, Description: "Features still being finished (unstable)"},
 }

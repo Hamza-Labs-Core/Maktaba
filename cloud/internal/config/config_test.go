@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/base64"
 	"errors"
 	"os"
 	"path/filepath"
@@ -293,29 +294,50 @@ func TestParsePrefixesCIDRsOnly(t *testing.T) {
 	}
 }
 
-// Story 50.21: the broadcast edge's settings parse, the ingest host has a default, and the api
-// role never issues ingest tokens without their key.
-func TestBroadcastConfig(t *testing.T) {
+// Story 50.21: the ingest host has a default, its keys parse, and broadcasting on without the
+// ingest-token key is refused.
+func TestBroadcastIngestConfig(t *testing.T) {
 	c := defaultConfig()
-	if c.Broadcast.Enabled || c.Broadcast.IngestURL != "https://ingest.maktaba.tv" {
+	if c.Broadcast.IngestURL != "https://ingest.maktaba.tv" || c.Broadcast.KeyPath != "" {
 		t.Fatalf("defaults: %+v", c.Broadcast)
 	}
-	if err := parseTOML("[broadcast]\nenabled = true\nedge_public_key = \"abc\"\ningest_url = \"https://ingest-staging.maktaba.tv\"\n", &c); err != nil {
+	if err := parseTOML("[broadcast]\nkey_path = \"/opt/maktaba-cloud/secrets/broadcast.key\"\ningest_url = \"https://ingest-staging.maktaba.tv\"\n", &c); err != nil {
 		t.Fatal(err)
 	}
-	if !c.Broadcast.Enabled || c.Broadcast.EdgePublicKey != "abc" || c.Broadcast.IngestURL != "https://ingest-staging.maktaba.tv" {
-		t.Fatalf("%+v", c.Broadcast)
+	if c.Broadcast.KeyPath != "/opt/maktaba-cloud/secrets/broadcast.key" || c.Broadcast.IngestURL != "https://ingest-staging.maktaba.tv" {
+		t.Fatalf("parsed: %+v", c.Broadcast)
 	}
 	c.Database.URL = "postgres://x"
 	c.Server.ListenAddr = "127.0.0.1:8090"
+	c.Broadcast.Enabled, c.Broadcast.KeyPath = true, ""
 	if err := Validate(c, RoleAPI); err == nil || !strings.Contains(err.Error(), "broadcast.key_path") {
 		t.Fatalf("on without a key: %v", err)
 	}
-	if err := parseTOML("[broadcast]\nkey_path = \"/opt/maktaba-cloud/secrets/broadcast.key\"\n", &c); err != nil {
+}
+
+// Story 50.20: the broadcast keys, their defaults, and the broadcasting gate (T07).
+func TestBroadcastConfig(t *testing.T) {
+	c := defaultConfig()
+	if c.Broadcast.Enabled || !c.Broadcast.PlansEnforce || !c.Broadcast.PAYGReports {
+		t.Fatalf("defaults: %+v", c.Broadcast)
+	}
+	key := base64.StdEncoding.EncodeToString(make([]byte, 32))
+	if err := parseTOML("[broadcast]\nenabled = true\nedge_public_key = \""+key+"\"\n[broadcast.plans]\nenforce = false\n[billing.broadcast_payg]\nenabled = false\n", &c); err != nil {
 		t.Fatal(err)
 	}
-	if err := Validate(c, RoleAPI); err != nil {
-		t.Fatalf("with the key: %v", err)
+	if !c.Broadcast.Enabled || c.Broadcast.PlansEnforce || c.Broadcast.PAYGReports || c.Broadcast.EdgePublicKey != key {
+		t.Fatalf("parsed: %+v", c.Broadcast)
+	}
+	// every broadcast price is TBD: switching broadcasting on is refused, naming the fields
+	err := ValidateBroadcast(c.Broadcast)
+	if err == nil || !strings.Contains(err.Error(), "broadcaster.price") || !strings.Contains(err.Error(), "broadcaster.payg_price_per_100h") {
+		t.Fatalf("the gate with TBD prices: %v", err)
+	}
+	if err := ValidateBroadcast(BroadcastConfig{EdgePublicKey: "c2hvcnQ="}); err == nil {
+		t.Fatal("a short edge key was accepted")
+	}
+	if err := ValidateBroadcast(BroadcastConfig{EdgePublicKey: key}); err != nil {
+		t.Fatalf("a good key, gate shut: %v", err)
 	}
 }
 
