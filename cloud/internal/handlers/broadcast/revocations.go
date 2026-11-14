@@ -175,14 +175,15 @@ type addReq struct {
 	Until  *time.Time `json:"until"`
 }
 
-func actor(r *http.Request) (bc.Actor, bool) {
+// adminActor is the service admin making a kill-switch change, for its audit.
+func adminActor(r *http.Request) (bc.Actor, bool) {
 	o, ok := authmw.ServiceAdmin(r.Context())
 	return bc.Actor{ID: o.ID, Email: o.Email}, ok && o.ID != ""
 }
 
 // AdminAdd adds an entry; 201 with it and the list's new version.
 func (d *RevocationDeps) AdminAdd(w http.ResponseWriter, r *http.Request) {
-	by, ok := actor(r)
+	by, ok := adminActor(r)
 	if !ok {
 		writeErr(w, http.StatusForbidden, "admin_access_denied", "")
 		return
@@ -219,7 +220,7 @@ func (d *RevocationDeps) AdminAdd(w http.ResponseWriter, r *http.Request) {
 
 // AdminLift lifts an entry; 200 with the list's new version.
 func (d *RevocationDeps) AdminLift(w http.ResponseWriter, r *http.Request) {
-	by, ok := actor(r)
+	by, ok := adminActor(r)
 	if !ok {
 		writeErr(w, http.StatusForbidden, "admin_access_denied", "")
 		return
