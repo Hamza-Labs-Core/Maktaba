@@ -87,6 +87,13 @@ The processing pipeline's search port, used for searching by meaning. When it do
 
 A process maktaba-server runs (the API, streaming, the pipeline): **Running**, restarting, failed or in a crash loop. See [Processes](#process-states).
 
+### This machine's load {#item-host-load}
+
+How busy the computer that runs Maktaba is: its load (how much work wants the processor, averaged over the last minute) beside its number of cores. Shown on a Mac or Linux server; Windows keeps no such figure.
+
+- **Load … on … cores**: fine.
+- **This machine is overloaded**: the load has been more than twice the cores for both the last minute and the last five minutes. Everything on the machine is slow while this lasts: jobs take longer, pages open slowly, and the database may stop answering in time. The line names the programs **using the most CPU** when Maktaba could list them. If one of them is not part of Maktaba (another app, a build, a backup), close it or find out why it runs; if it is Maktaba's own work, pause the queues on [Processing](/queue) until the machine recovers. Maktaba stops no program by itself. The notice clears a minute or so after the load goes. On Linux a share or disk that stopped answering can raise the load too, with the processor idle.
+
 ### Components {#item-components}
 
 The parts of Maktaba you can turn on and off (transcription, Live TV, YouTube and the rest), on every machine. Only a part that **failed**, or stayed **degraded** for more than 10 minutes, needs a look. A part you turned off or stopped, or one waiting for a part you turned off, is your choice and never counts. Open [Components](/settings/components) to see why a part failed and to start it again.
@@ -128,7 +135,7 @@ Whether the server can read each library folder, tried every time the page refre
 
 ### Queues {#item-queues}
 
-The processing queues' health: how many are failing, how many wait on a dependency and how many items need you. **Learn more** on a failing queue: [Queue tile turns Failing](/help/failures#tile-failing); the items: [Failing items](/queue/failures).
+The processing queues' health: how many are failing, how many wait on a dependency and how many items need you. **Learn more** on a failing queue: [Queue tile turns Failing](/help/failures#tile-failing); the items: [Failing items](/queue/failures). If workers are up but do not run their jobs, the tile says **… workers are not running their jobs** (or **no worker is running**): open [Processing](/queue) to see which and restart them; see [Some workers are not running their jobs](/help/processing#workers-stalled).
 
 ### Channels on air {#item-tv-channels}
 

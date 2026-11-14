@@ -559,8 +559,9 @@ server-dev:  ## Build maktaba-server WITHOUT the embedded web UI (fast dev compi
 	@echo "==> built (no embed) cmd/maktaba-server/bin/$(BIN_SUBDIR)maktaba-server"
 
 .PHONY: build-web
-build-web: build-tokens
+build-web: build-tokens  ## The web app (web/dist) and its TV build (web/dist/tv, story 58.08: the home serves it at /tv/).
 	pnpm -C $(WEB_DIR) run build
+	pnpm -C $(WEB_DIR) run build:tv
 
 .PHONY: build-tokens
 build-tokens:  ## Stories 17.1 + 48.2 — generate dist/ CSS/TS/JSON and the apps' Tokens.swift / Tokens.kt from web/design-system/tokens/.

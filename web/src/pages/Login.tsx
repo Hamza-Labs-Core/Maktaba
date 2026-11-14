@@ -50,6 +50,11 @@ export function Login() {
   const leave = useCallback(() => {
     if (left.current) return;
     left.current = true;
+    // the TV build (story 58.08) is its own page, not a route of this app
+    if (dest === "/tv/" || dest.startsWith("/tv/")) {
+      window.location.assign(dest);
+      return;
+    }
     nav(dest, { replace: true });
   }, [dest, nav]);
 

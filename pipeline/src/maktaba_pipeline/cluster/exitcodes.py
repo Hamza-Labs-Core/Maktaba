@@ -6,6 +6,10 @@
   WebSocket close (``4003``, ``4010``) is not authenticated and never leads here.
   Restarting will not help; a service unit should stop restarting.
 - ``EX_CONFIG`` (78): ``run --node`` on a machine that has not joined a home.
+- ``EX_TEMPFAIL`` (75): the worker cannot go on as it is and a new process can: one of
+  its core loops ended, or it could not get back to work within a bounded time (the
+  database stopped answering it, the claim loop stopped passing). Restart it; the same
+  code the plugin runner and ``maktaba-server`` exit with to be started again.
 
 The worker marks the refusal (:func:`mark_refused`) where it sees it and stops gracefully;
 ``runtime.run`` then returns :func:`exit_code`.
@@ -16,6 +20,7 @@ from __future__ import annotations
 __all__ = [
     "EX_CONFIG",
     "EX_NOPERM",
+    "EX_TEMPFAIL",
     "exit_code",
     "is_auth_error",
     "login_revoked",
@@ -24,6 +29,7 @@ __all__ = [
     "reset",
 ]
 
+EX_TEMPFAIL = 75
 EX_NOPERM = 77
 EX_CONFIG = 78
 

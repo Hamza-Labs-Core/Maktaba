@@ -25,6 +25,7 @@ from .codec import decode, encode
 from .records import Record
 
 __all__ = [
+    "DatabaseUnavailable",
     "EngineRelay",
     "PluginRefused",
     "StatementDB",
@@ -40,6 +41,18 @@ class PluginRefused(Exception):
         super().__init__(f"{status} {code}: {detail}" if detail else f"{status} {code}")
         self.status = status
         self.code = code
+        self.detail = detail
+
+
+class DatabaseUnavailable(Exception):
+    """The plugin API could not reach the database (``503 plugin_database``): it is
+    stopping, starting, or closed the connection. Not a :class:`PluginRefused`: nothing was
+    refused, and the job that meets it fails as retryable (an exception of the stage's code),
+    where a refusal fails it for good."""
+
+    def __init__(self, detail: str = "") -> None:
+        why = "the database did not answer"
+        super().__init__(f"{why}: {detail}" if detail else why)
         self.detail = detail
 
 

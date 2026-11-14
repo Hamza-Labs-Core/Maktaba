@@ -1,0 +1,17 @@
+# The api role in the broadcast-plans scenario (Epic 50 story 50.20 T10; compose-broadcast.yml):
+# api-rehearsal.toml's listeners, with home broadcasting on and enforced. The edge key is a
+# rehearsal-only key (the public half of a fixed seed in cloud/rehearsal/broadcast_test.go),
+# never a real one.
+[server]
+listen_addr = "0.0.0.0:8090"
+admin_listen_addr = "0.0.0.0:8091"
+admin_host = "admin.test"
+admin_origin = "http://admin.test"
+user_hosts = ["api.test"]
+
+[broadcast]
+enabled = true
+edge_public_key = "PvCJWQMwKMj8b8bUkaElSOeN9q77LXwsGQw/eM7z9Qs="
+
+[broadcast.plans]
+enforce = true

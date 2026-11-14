@@ -8557,6 +8557,33 @@
       }
     },
     {
+      "id": "ep-post-queues-workers-restart",
+      "type": "endpoint",
+      "title": "POST /queues/workers/restart",
+      "content": "إعادة تشغيل عمّال المعالجة",
+      "tags": [
+        "api",
+        "Queue",
+        "post"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/queues/workers/restart",
+        "tag": "Queue",
+        "operationId": "restartQueueWorkers"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "a88dfdc31ac82681"
+        }
+      }
+    },
+    {
       "id": "ep-get-queues-stage",
       "type": "endpoint",
       "title": "GET /queues/{stage}",

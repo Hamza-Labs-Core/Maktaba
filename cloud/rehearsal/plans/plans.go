@@ -14,6 +14,12 @@ const (
 	ProStreams       = 4
 	PAYGCentsPerGB   = 10
 	ExtraStreamCents = 300
+	// story 50.20 (scenario broadcast-plans): the Broadcaster add-on's prices, so the
+	// broadcasting gate (broadcast.enabled) can open in the rehearsal
+	BroadcasterCents     = 5000
+	BroadcastPAYGPer100H = 600
+	ExtraChannelCents    = 1000
+	ExtraViewers100Cents = 1500
 )
 
 // Apply fills the catalog's TBD values with the rehearsal's numbers.
@@ -34,6 +40,12 @@ func Apply() {
 	pro.ExtraStreamPriceCents = intp(ExtraStreamCents)
 	tiers[billing.PlanPro] = pro
 	billing.Tiers = tiers
+	b := billing.Broadcaster
+	b.PriceCents = intp(BroadcasterCents)
+	b.PAYGPricePer100HCents = intp(BroadcastPAYGPer100H)
+	b.ExtraChannelPriceCents = intp(ExtraChannelCents)
+	b.ExtraViewers100Cents = intp(ExtraViewers100Cents)
+	billing.Broadcaster = b
 }
 
 func intp(v int) *int { return &v }

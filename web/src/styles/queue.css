@@ -1550,6 +1550,34 @@ summary.mkt-q-lane__title {
   border-color: var(--q-failing);
   background: color-mix(in srgb, var(--color-error) 10%, var(--color-bg));
 }
+.mkt-q-stall {
+  flex: 1;
+  min-inline-size: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.mkt-q-stall p {
+  margin: 0;
+}
+.mkt-q-stall__list {
+  margin: 0;
+  padding-inline-start: var(--space-4);
+}
+.mkt-q-overload {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.mkt-q-overload p {
+  margin: 0;
+}
+.mkt-q-stall__act {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+}
 .mkt-q-pulse__stuck {
   flex-basis: 100%;
   display: flex;

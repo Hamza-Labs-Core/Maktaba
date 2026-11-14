@@ -22,7 +22,8 @@ struct MaktabaTVApp: App {
         }
         // Epic 57: the TV asks the home for the account's parental limit and watching time
         // (`session.parental`) and tells it the Screen Time limits set on this Apple TV
-        let session = AppSession(app: Bundle.main.bundleIdentifier ?? "com.hamzalabs.maktaba.tv", parental: true)
+        let session = AppSession(app: Bundle.main.bundleIdentifier ?? "com.hamzalabs.maktaba.tv", parental: true,
+                                 compat: .current) // story 58.01
         session.ageSignal.use(TVAgeSignal.source())
         _session = State(initialValue: session)
     }
@@ -47,6 +48,10 @@ struct RootView: View {
 
     var body: some View {
         ZStack {
+            if let block = session.compatBlock {
+                // story 58.01: this app and the home are too far apart: the page, instead of signing in
+                TVCompatView(block: block, tryAgain: { session.recheckCompat() }, otherHome: { session.switchHome() })
+            } else {
             switch session.phase {
             case .choosingHome:
                 TVHomePicker(session: session)
@@ -65,6 +70,7 @@ struct RootView: View {
                         .crashReports(session: session)
                         .reportsProblems(session: session)
                 }
+            }
             }
         }
         .onOpenURL { session.open($0) }
