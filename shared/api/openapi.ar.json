@@ -5888,6 +5888,42 @@
     "/components/schemas/CastGrant/properties/queue_id/description": {
       "en": "The play queue the grant names, when it names one.",
       "ar": "قائمة التشغيل التي يسمّيها التصريح، إن سمّى قائمة."
+    },
+    "/paths/~1pairing~1cloud-assertion/post/summary": {
+      "en": "Approve a TV's code for a person on maktaba.tv",
+      "ar": "الموافقة على رمز تلفاز لشخص على maktaba.tv"
+    },
+    "/paths/~1pairing~1cloud-assertion/post/description": {
+      "en": "Called by Maktaba Cloud through the relay, with no sign-in on the home. A person signed in to Maktaba Cloud on maktaba.tv approved a TV's code for this home; the cloud sends a one-use assertion it signed with its key (pinned at claim) naming that cloud account, this home and the code. The home finds the user it linked to that account and approves the code as them, as `POST /api/pairing/cloud-approve` would; the TV gets that user's libraries and parental policy and, like every cloud code's TV, never acts as an admin and mints no credential of its own. An assertion that is not this cloud's, not for this home or this code, already used, or for an account no longer linked approves nothing.",
+      "ar": "تستدعيه سحابة مكتبة عبر المُرحِّل، دون تسجيل دخول على المنزل. وافق شخص سجّل دخوله إلى سحابة مكتبة على maktaba.tv على رمز تلفاز لهذا المنزل؛ فترسل السحابة تأكيدًا يُستعمل مرة واحدة وقّعته بمفتاحها (المثبّت عند المطالبة) يسمّي ذلك الحساب السحابي وهذا المنزل والرمز. يجد المنزل المستخدم الذي ربطه بذلك الحساب ويوافق على الرمز باسمه، كما يفعل `POST /api/pairing/cloud-approve`؛ فينال التلفاز مكتبات ذلك المستخدم وسياسة الرقابة الأبوية الخاصة به، ولا يتصرف أبدًا كمدير ولا يصدر بيانات اعتماد خاصة به، كأي تلفاز برمز سحابي. ولا يوافق على شيء تأكيدٌ ليس من هذه السحابة، أو ليس لهذا المنزل أو لهذا الرمز، أو استُعمل من قبل، أو لحساب لم يعد مربوطًا."
+    },
+    "/paths/~1pairing~1cloud-assertion/post/requestBody/content/application~1json/schema/properties/code/description": {
+      "en": "The code the TV shows.",
+      "ar": "الرمز الذي يعرضه التلفاز."
+    },
+    "/paths/~1pairing~1cloud-assertion/post/requestBody/content/application~1json/schema/properties/assertion/description": {
+      "en": "The cloud's one-use assertion (purpose `tvcode`, its nonce the code).",
+      "ar": "تأكيد السحابة الذي يُستعمل مرة واحدة (غرضه `tvcode`، وقيمته الفريدة هي الرمز)."
+    },
+    "/paths/~1pairing~1cloud-assertion/post/responses/200/description": {
+      "en": "Approved; the TV signs in on its next poll of the cloud.",
+      "ar": "تمّت الموافقة؛ يسجّل التلفاز دخوله عند سؤاله التالي للسحابة."
+    },
+    "/paths/~1pairing~1cloud-assertion/post/responses/403/description": {
+      "en": "The assertion approves nothing here.",
+      "ar": "التأكيد لا يوافق على شيء هنا."
+    },
+    "/paths/~1pairing~1cloud-assertion/post/responses/404/description": {
+      "en": "The cloud holds no open code by that name.",
+      "ar": "لا تحمل السحابة رمزًا مفتوحًا بهذا الاسم."
+    },
+    "/paths/~1pairing~1cloud-assertion/post/responses/409/description": {
+      "en": "Someone approved the code first, or this home holds no Maktaba Cloud identity (`code`: `cloud_not_linked`).",
+      "ar": "وافق أحد على الرمز أولًا، أو لا يحمل هذا المنزل هوية في سحابة مكتبة (`code`: `cloud_not_linked`)."
+    },
+    "/paths/~1pairing~1cloud-assertion/post/responses/502/description": {
+      "en": "Maktaba Cloud is out of reach; nothing was approved.",
+      "ar": "سحابة مكتبة بعيدة المنال؛ لم تتمّ الموافقة على شيء."
     }
   }
 }

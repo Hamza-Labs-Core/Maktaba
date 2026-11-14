@@ -40,6 +40,11 @@ import (
 // have zero-value-safe defaults so callers can opt out by leaving a
 // field unset.
 type P10Deps struct {
+	// CloudTVCodes finds the home user a cloud tvcode assertion approves a TV's code as (a code
+	// approved on maktaba.tv, Epic 58 story 58.03): the auth handler. nil: only a sign-in on the
+	// home approves a cloud code.
+	CloudTVCodes discoveryh.CloudAsserter
+
 	// ClientFloor is published on GET /api/discovery/home (Epic 58 story 58.01); nil:
 	// compat.ReleaseFloor.
 	ClientFloor compat.Floor
@@ -234,6 +239,9 @@ func MountP10(r chi.Router, d P10Deps) discoverypkg.PairingStore {
 	ph.Mount(r)
 	ph.MountDevice(r, 0)
 	ph.ClientFloor = d.ClientFloor
+	if d.CloudTVCodes != nil {
+		ph.CloudAssertions = d.CloudTVCodes
+	}
 	ph.MountCloudCode(r)
 	ph.MountHome(r, 0)
 

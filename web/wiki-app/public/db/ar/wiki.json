@@ -13,7 +13,7 @@
   ],
   "counts": {
     "diagram": 14,
-    "endpoint": 258,
+    "endpoint": 259,
     "entity": 42,
     "epic": 60,
     "feature": 3,
@@ -14038,6 +14038,33 @@
         "lang": "ar",
         "source": {
           "content": "f48ce5b099226ad9"
+        }
+      }
+    },
+    {
+      "id": "ep-post-pairing-cloud-assertion",
+      "type": "endpoint",
+      "title": "POST /pairing/cloud-assertion",
+      "content": "الموافقة على رمز تلفاز لشخص على maktaba.tv",
+      "tags": [
+        "api",
+        "Devices",
+        "post"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/pairing/cloud-assertion",
+        "tag": "Devices",
+        "operationId": "approveCloudTvCodeByAssertion"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "ed8b18e59061d207"
         }
       }
     },
