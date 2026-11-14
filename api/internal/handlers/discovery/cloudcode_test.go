@@ -219,33 +219,39 @@ func TestARestrictedSignInApprovesNothing(t *testing.T) {
 	}
 }
 
-// fakeAsserter is CloudAsserter: the assertion "ok-<user>" stands for <user>, for wantCode only.
+// fakeAsserter is CloudAsserter: the assertion "ok-<user>" stands for <user>, linked to the cloud
+// account "cloud-<user>", for wantCode only. linkedNow, when set, is the account <user> is linked
+// to when the TV redeems ("-" for none).
 type fakeAsserter struct {
 	err       error
 	wantCode  string
 	codes     []string
 	recordErr error
-	recorded  []string // "<family> <user>"
+	linkedNow string
+	recorded  []string // "<family> <user> <cloud account>"
 }
 
-func (f *fakeAsserter) RecordTVCodeSignIn(_ context.Context, familyID, userID string) error {
+func (f *fakeAsserter) RecordTVCodeSignIn(_ context.Context, familyID, userID, cloudUserID string) error {
 	if f.recordErr != nil {
 		return f.recordErr
 	}
-	f.recorded = append(f.recorded, familyID+" "+userID)
+	if f.linkedNow != "" && f.linkedNow != cloudUserID {
+		return ErrCloudLinkChanged
+	}
+	f.recorded = append(f.recorded, familyID+" "+userID+" "+cloudUserID)
 	return nil
 }
 
-func (f *fakeAsserter) TVCodeApprover(_ context.Context, assertion, code string) (string, error) {
+func (f *fakeAsserter) TVCodeApprover(_ context.Context, assertion, code string) (string, string, error) {
 	f.codes = append(f.codes, code)
 	if f.err != nil {
-		return "", f.err
+		return "", "", f.err
 	}
 	user, ok := strings.CutPrefix(assertion, "ok-")
 	if !ok || code != f.wantCode {
-		return "", ErrCloudAssertionRefused
+		return "", "", ErrCloudAssertionRefused
 	}
-	return user, nil
+	return user, "cloud-" + user, nil
 }
 
 // A code approved on maktaba.tv: the cloud's assertion names the linked home user, and the TV
@@ -272,7 +278,7 @@ func TestCloudAssertionApprovesAsTheLinkedUser(t *testing.T) {
 		t.Fatalf("minted for %q kind %q via %q", fm.lastUID, fm.lastKnd, fm.lastVia)
 	}
 	// its sign-in is a cloud sign-in of the link: unlinking the account ends it
-	if len(as.recorded) != 1 || as.recorded[0] != "fam.viewer-1 viewer-1" {
+	if len(as.recorded) != 1 || as.recorded[0] != "fam.viewer-1 viewer-1 cloud-viewer-1" {
 		t.Fatalf("recorded %v", as.recorded)
 	}
 }
@@ -355,5 +361,31 @@ func TestCloudAssertionRollsBackAFailedClaim(t *testing.T) {
 	h.requests.mu.Unlock()
 	if left != 0 {
 		t.Fatalf("%d device codes left", left)
+	}
+}
+
+// A TV approved on maktaba.tv whose cloud account was unlinked, or the user linked to another
+// account, before it redeemed gets no tokens: the same 410 as an expired approval, with the
+// reason, and the grant is spent.
+func TestCloudAssertionLinkChangedBeforeRedeemHandsOutNothing(t *testing.T) {
+	for name, linkedNow := range map[string]string{"unlinked": "-", "linked to another account": "cloud-someone-else"} {
+		cloud := &fakeCloud{open: "WEBS2345"}
+		h, _, r := newCloudHandler(t, cloud)
+		as := &fakeAsserter{wantCode: "WEBS2345", linkedNow: linkedNow}
+		h.CloudAssertions = as
+		if rec := do(r, http.MethodPost, "/api/pairing/cloud-assertion", `{"code":"WEBS2345","assertion":"ok-viewer-1"}`, ""); rec.Code != http.StatusOK {
+			t.Fatalf("%s: approve = %d %s", name, rec.Code, rec.Body.String())
+		}
+		rec := poll(r, cloud.grants[0])
+		if rec.Code != http.StatusGone || strings.Contains(rec.Body.String(), "access_token") ||
+			!strings.Contains(rec.Body.String(), `"reason":"cloud_link_changed"`) {
+			t.Fatalf("%s: redeem = %d %s", name, rec.Code, rec.Body.String())
+		}
+		if len(as.recorded) != 0 {
+			t.Fatalf("%s: recorded %v", name, as.recorded)
+		}
+		if again := poll(r, cloud.grants[0]); again.Code == http.StatusOK || strings.Contains(again.Body.String(), "access_token") {
+			t.Fatalf("%s: redeemed again = %d %s", name, again.Code, again.Body.String())
+		}
 	}
 }

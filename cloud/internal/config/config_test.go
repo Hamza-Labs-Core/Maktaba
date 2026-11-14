@@ -341,6 +341,22 @@ func TestBroadcastConfig(t *testing.T) {
 	}
 }
 
+// The edge's key reads as base64url (how the docs and the shared vectors print it) or standard
+// base64, padded or not.
+func TestEdgeKeyEncodings(t *testing.T) {
+	raw := make([]byte, 32)
+	raw[0], raw[1] = 0xfb, 0xff // '-' and '_' in base64url, '+' and '/' in standard base64
+	for _, s := range []string{base64.RawURLEncoding.EncodeToString(raw), base64.URLEncoding.EncodeToString(raw),
+		base64.StdEncoding.EncodeToString(raw), base64.RawStdEncoding.EncodeToString(raw)} {
+		if k, err := EdgeKey(s); err != nil || k[0] != 0xfb {
+			t.Fatalf("EdgeKey(%q) = %v", s, err)
+		}
+	}
+	if _, err := EdgeKey("c2hvcnQ"); err == nil {
+		t.Fatal("a short edge key was accepted")
+	}
+}
+
 // Story 50.16: the pool is off by default; its keys from the file and the per-machine env; on,
 // the relay role needs the directory, the member's addresses and a host template with {id}.
 func TestRelayPoolConfig(t *testing.T) {
