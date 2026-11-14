@@ -5564,6 +5564,74 @@
     "/paths/~1auth~1refresh/post/responses/426/description": {
       "en": "This app build is below the home's client floor (`code: client_too_old`, with `floor`, the oldest build this home serves, and `client`, the `<app>/<platform>` it read from `X-Maktaba-Client`). The app shows Update this app. A request without the header (the web) is never refused.",
       "ar": "إصدار هذا التطبيق أدنى من الحد الأدنى الذي يخدمه المنزل (`code: client_too_old`، مع `floor` وهو أقدم إصدار يخدمه هذا المنزل، و`client` وهو `<app>/<platform>` كما قرأه من `X-Maktaba-Client`). يعرض التطبيق صفحة «حدِّث هذا التطبيق». أما الطلب الذي لا يحمل هذا الترويسة (الويب) فلا يُرفض أبدًا."
+    },
+    "/paths/~1cast~1grants/post/summary": {
+      "en": "Mint a cast grant for a Cast receiver",
+      "ar": "إصدار تصريح بثّ لجهاز استقبال Cast"
+    },
+    "/paths/~1cast~1grants/post/description": {
+      "en": "A signed-in sender (the Android Player, the Apple Player, the web) mints a cast grant for Maktaba's Cast receiver at cast.maktaba.tv, naming exactly one video (`video_id`) or one of the caller's own play queues (`queue_id`). The sender passes the grant to the receiver in the Cast load request's custom data, never the person's own token. The grant lasts at most six hours. With it, and only for the items it names, the receiver opens and keeps stream sessions (`POST /api/stream/sessions` and its `{id}` routes, progress and errors included), reads the video (`GET /api/videos/{id}`, its chapters, subtitles and poster) and walks the queue (`GET /api/me/play-queues/{id}`, `PUT /api/me/play-queues/{id}/current`); every other route and item answers 403 with `code` `cast_scope`. The grant acts as its user, read again on each request: the user's libraries now, and a restricted account's parental limit (with the minting sign-in's device age limit), so an item hidden since the mint answers 404. Send it as `Authorization: Bearer <grant>`. A home without this route (404) is older than the cast grant: a sender casts to Google's Default Media Receiver there. The guide is maktaba.dev's Casting page.",
+      "ar": "يُصدر المُرسِل المسجَّل دخوله (مشغّل Android أو مشغّل Apple أو الويب) تصريح بثّ لجهاز استقبال Cast الخاص بمكتبة على cast.maktaba.tv، يسمّي فيديو واحدًا بالضبط (`video_id`) أو إحدى قوائم التشغيل الخاصة بالمتصل (`queue_id`). يمرّر المُرسِل التصريح إلى جهاز الاستقبال في البيانات المخصّصة لطلب التحميل في Cast، ولا يمرّر أبدًا رمز الشخص نفسه. يدوم التصريح ست ساعات على الأكثر. وبه، وللعناصر التي يسمّيها فقط، يفتح جهاز الاستقبال جلسات البث ويحافظ عليها (`POST /api/stream/sessions` ومسارات `{id}` التابعة لها، بما فيها التقدّم والأخطاء)، ويقرأ الفيديو (`GET /api/videos/{id}` وفصوله وترجماته وملصقه)، ويتنقّل في القائمة (`GET /api/me/play-queues/{id}` و`PUT /api/me/play-queues/{id}/current`)؛ وكل مسار أو عنصر آخر يُجاب بـ 403 مع `code` بقيمة `cast_scope`. يعمل التصريح باسم مستخدمه، ويُقرأ من جديد مع كل طلب: مكتبات المستخدم الحالية، وحدّ الرقابة الأبوية للحساب المقيَّد (مع حدّ العمر الذي أعطاه جهاز تسجيل الدخول الذي أصدره)، فيُجاب عن عنصر أُخفي منذ الإصدار بـ 404. أرسله بصيغة `Authorization: Bearer <grant>`. المنزل الذي لا يملك هذا المسار (404) أقدم من تصريح البث: يبثّ المُرسِل هناك إلى جهاز الاستقبال الافتراضي من Google. الدليل هو صفحة البث على maktaba.dev."
+    },
+    "/paths/~1cast~1grants/post/responses/201/description": {
+      "en": "The grant.",
+      "ar": "التصريح."
+    },
+    "/paths/~1cast~1grants/post/responses/400/description": {
+      "en": "`video_id` is not an id.",
+      "ar": "قيمة `video_id` ليست معرّفًا."
+    },
+    "/paths/~1cast~1grants/post/responses/403/description": {
+      "en": "The caller may not mint a grant: a cast grant itself (`cast_scope`), the admin token, which is no person (`cast_needs_person`), or a sign-in through Maktaba Cloud (`cast_via_cloud`). Also a video in a library the caller was not given (`access-denied`).",
+      "ar": "لا يجوز للمتصل إصدار تصريح: تصريح بثّ بنفسه (`cast_scope`)، أو رمز المشرف الذي لا يمثّل شخصًا (`cast_needs_person`)، أو تسجيل دخول عبر Maktaba Cloud (`cast_via_cloud`). وكذلك فيديو في مكتبة لم تُمنح للمتصل (`access-denied`)."
+    },
+    "/paths/~1cast~1grants/post/responses/404/description": {
+      "en": "No such video or queue, a queue that is another person's, or a video the caller's parental limit hides (answered as a missing one).",
+      "ar": "لا يوجد فيديو أو قائمة بهذا المعرّف، أو القائمة لشخص آخر، أو الفيديو يخفيه حدّ الرقابة الأبوية للمتصل (يُجاب عنه كأنه غير موجود)."
+    },
+    "/paths/~1cast~1grants/post/responses/422/description": {
+      "en": "Neither or both of `video_id` and `queue_id`.",
+      "ar": "لم يُذكر `video_id` ولا `queue_id`، أو ذُكر كلاهما."
+    },
+    "/paths/~1cast~1grants/post/responses/503/description": {
+      "en": "The home has no signing key to mint with yet; ask again after `Retry-After`.",
+      "ar": "لا يملك المنزل بعدُ مفتاح توقيع يُصدر به؛ أعد الطلب بعد `Retry-After`."
+    },
+    "/components/schemas/CastGrantRequest/description": {
+      "en": "What is cast: exactly one of the two.",
+      "ar": "ما يُبثّ: واحد فقط من الاثنين."
+    },
+    "/components/schemas/CastGrantRequest/properties/video_id/description": {
+      "en": "The one video cast.",
+      "ar": "الفيديو الواحد الذي يُبثّ."
+    },
+    "/components/schemas/CastGrantRequest/properties/queue_id/description": {
+      "en": "One of the caller's own play queues (Play all, Shuffle): the receiver walks it.",
+      "ar": "إحدى قوائم التشغيل الخاصة بالمتصل (تشغيل الكل، الترتيب العشوائي): يتنقّل فيها جهاز الاستقبال."
+    },
+    "/components/schemas/CastGrant/description": {
+      "en": "A cast grant and what it names.",
+      "ar": "تصريح بثّ وما يسمّيه."
+    },
+    "/components/schemas/CastGrant/properties/grant/description": {
+      "en": "The grant, starting `cast_`: the receiver's bearer. Never logged, never shown.",
+      "ar": "التصريح، ويبدأ بـ `cast_`: رمز حامل لجهاز الاستقبال. لا يُسجَّل ولا يُعرض أبدًا."
+    },
+    "/components/schemas/CastGrant/properties/scope/description": {
+      "en": "Always `cast`.",
+      "ar": "دائمًا `cast`."
+    },
+    "/components/schemas/CastGrant/properties/expires_at/description": {
+      "en": "When the grant ends, at most six hours from the mint. A receiver lets the item playing then finish and shows that the cast has ended.",
+      "ar": "متى ينتهي التصريح، بعد ست ساعات من الإصدار على الأكثر. يترك جهاز الاستقبال العنصر الذي يُعرض حينها ينتهي، ثم يعرض أن البث انتهى."
+    },
+    "/components/schemas/CastGrant/properties/video_id/description": {
+      "en": "The video the grant names, when it names one.",
+      "ar": "الفيديو الذي يسمّيه التصريح، إن سمّى فيديو."
+    },
+    "/components/schemas/CastGrant/properties/queue_id/description": {
+      "en": "The play queue the grant names, when it names one.",
+      "ar": "قائمة التشغيل التي يسمّيها التصريح، إن سمّى قائمة."
     }
   }
 }

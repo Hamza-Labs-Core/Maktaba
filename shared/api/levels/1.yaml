@@ -4595,6 +4595,24 @@ operations:
         - expires_in
         - token_type
         - user
+  POST /cast/grants:
+    "201":
+      type: object
+      properties:
+        expires_at:
+          type: string
+        grant:
+          type: string
+        queue_id:
+          type: string
+        scope:
+          type: string
+        video_id:
+          type: string
+      required:
+        - expires_at
+        - grant
+        - scope
   POST /channels/{id}/play:
     "200":
       type: object

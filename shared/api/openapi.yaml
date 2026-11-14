@@ -1874,6 +1874,65 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
       operationId: createSession
+  /cast/grants:
+    post:
+      tags:
+      - Sessions
+      summary: Mint a cast grant for a Cast receiver
+      description: 'A signed-in sender (the Android Player, the Apple Player, the web) mints a cast grant for Maktaba''s Cast receiver at cast.maktaba.tv, naming exactly one video (`video_id`) or one of the caller''s own play queues (`queue_id`). The sender passes the grant to the receiver in the Cast load request''s custom data, never the person''s own token. The grant lasts at most six hours. With it, and only for the items it names, the receiver opens and keeps stream sessions (`POST /api/stream/sessions` and its `{id}` routes, progress and errors included), reads the video (`GET /api/videos/{id}`, its chapters, subtitles and poster) and walks the queue (`GET /api/me/play-queues/{id}`, `PUT /api/me/play-queues/{id}/current`); every other route and item answers 403 with `code` `cast_scope`. The grant acts as its user, read again on each request: the user''s libraries now, and a restricted account''s parental limit (with the minting sign-in''s device age limit), so an item hidden since the mint answers 404. Send it as `Authorization: Bearer <grant>`. A home without this route (404) is older than the cast grant: a sender casts to Google''s Default Media Receiver there. The guide is maktaba.dev''s Casting page.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CastGrantRequest'
+      responses:
+        '201':
+          description: The grant.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CastGrant'
+        '400':
+          description: '`video_id` is not an id.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: 'The caller may not mint a grant: a cast grant itself (`cast_scope`), the admin token, which is no person (`cast_needs_person`), or a sign-in through Maktaba Cloud (`cast_via_cloud`). Also a video in a library the caller was not given (`access-denied`).'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: No such video or queue, a queue that is another person's, or a video the caller's parental limit hides (answered as a missing one).
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '422':
+          description: Neither or both of `video_id` and `queue_id`.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          description: The home has no signing key to mint with yet; ask again after `Retry-After`.
+          headers:
+            Retry-After:
+              $ref: '#/components/headers/Retry-After'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        default:
+          $ref: '#/components/responses/InternalError'
+      operationId: createCastGrant
   /stream/sessions/{id}:
     parameters:
     - in: path
@@ -11922,6 +11981,46 @@ components:
           schema:
             $ref: '#/components/schemas/ProblemDetails'
   schemas:
+    CastGrantRequest:
+      type: object
+      description: 'What is cast: exactly one of the two.'
+      properties:
+        video_id:
+          type: string
+          format: uuid
+          description: The one video cast.
+        queue_id:
+          type: string
+          format: uuid
+          description: 'One of the caller''s own play queues (Play all, Shuffle): the receiver walks it.'
+    CastGrant:
+      type: object
+      description: A cast grant and what it names.
+      required:
+      - grant
+      - scope
+      - expires_at
+      properties:
+        grant:
+          type: string
+          description: 'The grant, starting `cast_`: the receiver''s bearer. Never logged, never shown.'
+        scope:
+          type: string
+          enum:
+          - cast
+          description: Always `cast`.
+        expires_at:
+          type: string
+          format: date-time
+          description: When the grant ends, at most six hours from the mint. A receiver lets the item playing then finish and shows that the cast has ended.
+        video_id:
+          type: string
+          format: uuid
+          description: The video the grant names, when it names one.
+        queue_id:
+          type: string
+          format: uuid
+          description: The play queue the grant names, when it names one.
     DiscoveryHome:
       type: object
       description: 'A home as the apps see it: its identity, its addresses, how one signs in, and the compatibility contract.'

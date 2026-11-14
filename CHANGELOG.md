@@ -813,6 +813,16 @@ build fails when the two differ.
 
 ### Added
 
+- **A cast grant for Maktaba's Cast receiver (Epic 58, story 58.07).** A signed-in phone or
+  browser can now mint a cast grant on the home (`POST /api/cast/grants`) for the one video or
+  play queue it casts. The TV uses the grant to open its own stream sessions, report where it
+  stopped, renew its links and move through the queue, so the phone can sleep or leave and
+  Continue Watching still shows the TV's place. A grant lasts at most six hours, acts as its
+  person (their libraries and a child's parental limit, read again on every request), is
+  never an admin, and reaches nothing else: any other video or route is refused. The home's
+  API answers Maktaba's receiver page at cast.maktaba.tv without cookies. A sign-in through
+  Maktaba Cloud and the admin token cannot mint one.
+
 - **Apps can tell when they and the home are too far apart (story 58.01).** The home now
   publishes its API level, the oldest level it still serves, and the oldest build of each app it
   signs in, with no sign-in needed (`GET /api/discovery/home`: `api_level`, `api_level_oldest`,
