@@ -301,6 +301,29 @@ final class TVParentalUITests: XCTestCase {
         XCTAssertEqual(count("POST", "/api/stream/sessions"), opened + 1, "opened once more, when the home allowed it")
     }
 
+    /// Time's up on a live channel (the home refuses the channel's access): the time's-up
+    /// screen covers the player, and Menu leaves it in at most two presses.
+    func testMenuLeavesALiveChannelWhoseTimeIsUp() throws {
+        home.parental(Self.child, time: #"{"allowed":false,"limited":true,"reason":"limit_reached","remaining_seconds":0,"slot_ends_at":null,"next_allowed_at":"{{now+3600}}","now":"{{now}}"}"#)
+        home.stub("GET", "/api/channels/ch-1/access", status: 403, body: timeOver("limit_reached"))
+        signIn("en")
+        openTab("Live TV")
+        let first = app.buttons["live.channel.ch-1"]
+        XCTAssertTrue(first.waitForExistence(timeout: 20), "the Now grid; the home saw \(home.seen.suffix(8))")
+        moveFocus(to: first, with: .down)
+        remote.press(.select)
+        let player = element("live.player")
+        XCTAssertTrue(player.waitForExistence(timeout: 10), "the live player")
+        XCTAssertTrue(element("timeUp.title").waitForExistence(timeout: 30), "the time's-up screen; the home saw \(home.seen.suffix(8))")
+        remote.press(.menu)
+        if !player.waitForNonExistence(timeout: 3) {
+            remote.press(.menu)
+            XCTAssertTrue(player.waitForNonExistence(timeout: 5), "two presses of Menu did not leave the player")
+        }
+        XCTAssertTrue(first.waitForExistence(timeout: 10), "back on the Live tab")
+        XCTAssertFalse(home.seen.contains("GET /stream/channel/ch-1/index.m3u8"), "nothing was asked of the stream")
+    }
+
     /// In Arabic, at the start: the home refuses the stream itself. Ask for more time sends
     /// the minutes chosen as a `time` request; a parent's PIN gives them.
     func testTimeUpAtTheStartAsksForMoreTimeInArabic() throws {

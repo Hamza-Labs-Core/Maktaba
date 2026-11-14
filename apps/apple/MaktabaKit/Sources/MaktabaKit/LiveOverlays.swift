@@ -18,7 +18,9 @@ import Foundation
 ///   the last channel change in it, or playback starting, whichever is latest. Its time
 ///   stands still while the channel buffers.
 /// - Back (Menu) closes the mini-guide first, then a banner over a playing channel; only then
-///   does it leave the player.
+///   does it leave the player. Two presses always leave: a Back within `backAgain` of one
+///   that put something away leaves, whatever came back in between (a stall that ended and
+///   brought the banner back, a tune, the mini-guide opened again).
 /// - The overlays sit at the bottom of the picture, unless the home burns the channel's logo
 ///   into a bottom corner: then at the top (`edge(clearing:)`), so they never cover it.
 public struct LiveOverlays: Equatable, Sendable {
@@ -30,6 +32,12 @@ public struct LiveOverlays: Equatable, Sendable {
     public static let miniGuideTime: Duration = .seconds(10)
     /// How long the picture may wait before the wait shows as buffering.
     public static let stallGrace: Duration = .seconds(1)
+
+    /// A second Back this soon after one that put something away leaves the player.
+    public static let backAgain: Duration = .seconds(5)
+
+    /// When Back last put something away (nil: it has not, or the player was told to leave).
+    private var putAwayAt: Instant?
 
     /// Whether the channel is playing now (a buffering stall does not change it).
     public private(set) var playing = false
@@ -109,14 +117,22 @@ public struct LiveOverlays: Equatable, Sendable {
     /// Back (Menu): closes the mini-guide, else puts away a banner over a playing channel.
     /// False when there was nothing to put away (the player then closes).
     public mutating func back(at t: Instant) -> Bool {
+        if let last = putAwayAt, t - last < Self.backAgain {
+            // the second press: out, even when a stall or a tune showed something again
+            putAwayAt = nil
+            return false
+        }
         if miniGuide(at: t) {
             miniGuideFrom = nil
+            putAwayAt = t
             return true
         }
         if playing, !buffering(at: t), banner(at: t) {
             bannerDismissed = true
+            putAwayAt = t
             return true
         }
+        putAwayAt = nil
         return false
     }
 
