@@ -387,13 +387,18 @@ test-integration:  ## Integration tier (Story 20.1, Epic 20.4).
 
 # The Go modules run four at a time (tools/ci/integration-go.sh: their output in order,
 # the tier failing when any fails), with the pipeline's integration tests beside them
-# (their 25 slowest listed, as each Go module's ten slowest are).
+# (their 25 slowest listed, as each Go module's ten slowest are). pytest imports only the
+# test modules that can hold an integration test (--integration-files: tests/integration_scan.py
+# reads their source; tests/test_integration_scan.py, untiered, proves the set equals -m
+# integration over the whole tree). Measured on PR #1303: whole-tree collection took 125s of
+# the 215s session here (the job's first pytest, cold, while the Go modules compile; 3.9s warm
+# with nothing beside it), the tests' setup+call+teardown 86s; its `session time:` line gives both.
 # pytest exits 5 when no tests match the marker: that is no failure (the `|| ...` forms:
 # .SHELLFLAGS has -e).
 .PHONY: test-integration-inner
 test-integration-inner:
 	@py_log="$$(mktemp)"; \
-	( cd $(PIPELINE_DIR) && uv run pytest -m integration --durations=25 ) >"$$py_log" 2>&1 & py=$$!; \
+	( cd $(PIPELINE_DIR) && uv run pytest -m integration --integration-files --durations=25 ) >"$$py_log" 2>&1 & py=$$!; \
 	go_rc=0; $(if $(INTEGRATION_GO_PG_URL),MAKTABA_TEST_PG_URL='$(INTEGRATION_GO_PG_URL)') \
 		bash tools/ci/integration-go.sh $(INTEGRATION_GO_MODULES) || go_rc=$$?; \
 	py_rc=0; wait $$py || py_rc=$$?; \
