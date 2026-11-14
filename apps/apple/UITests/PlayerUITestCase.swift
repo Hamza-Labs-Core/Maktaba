@@ -372,7 +372,21 @@ class PlayerUITestCase: XCTestCase {
         field.typeText("\n")
         let byCode = app.buttons[language == "ar" ? "برمز" : "With a code"]
         XCTAssertTrue(byCode.waitForExistence(timeout: 10 * patience), "the sign-in screen offers a code")
-        byCode.tap()
+        // tapped once it stands still, and checked by the code it asks the home for: on CI's
+        // iPhone (main run 43598615449, attempt 2) the app logged this tap as "touch held 0.17 s
+        // at (286, 500), cancelled", 0.8 s after the button showed and 2.4 s after the connect
+        // began: the system dropped it as the sign-in screen settled, no code was asked for, and
+        // the wait for "signed in" ran out. A dropped tap asks nothing, so it gets one more tap;
+        // a second miss fails naming it
+        let asked = { self.home.seen.filter { $0 == "POST /api/pairing/device" }.count }
+        let before = asked()
+        for attempt in 1 ... 2 {
+            waitUntilStill(byCode, timeout: 5 * patience)
+            byCode.tap()
+            if waitUntil(timeout: 5 * patience, { asked() > before }) { break }
+            XCTAssertTrue(byCode.exists, "no code asked for, and \"With a code\" is gone")
+            XCTAssertLessThan(attempt, 2, "two taps on \"With a code\" asked the home for no code")
+        }
         home.approve()
         XCTAssertTrue(byCode.waitForNonExistence(timeout: 20 * patience), "approved: signed in")
     }
