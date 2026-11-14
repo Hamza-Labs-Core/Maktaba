@@ -10,8 +10,12 @@
 //   /tv/ → launcher   { type: "maktaba:exit" }        after Leave Maktaba?
 //                     { type: "maktaba:ready" }       once /tv/ listens
 //
-// Only the parent window is listened to, and only a known action is taken: a
-// message is a key press, never a command with arguments.
+// Only the parent window is listened to, and only from a launcher's origin: a
+// packaged TV app (Tizen and webOS load theirs from file:// or app://, which a
+// message reports as "null", "file://" or "app://…") or the home itself. A web
+// page that frames /tv/ is not a launcher (and, its session cookie being
+// SameSite=Lax, such a frame is signed out anyway). Only a known action is
+// taken: a message is a key press, never a command with arguments.
 import type { BigAction } from "./actions";
 
 export const BRIDGE_ACTION = "maktaba:action";
@@ -44,6 +48,16 @@ export function bridgeAction(data: unknown): BigAction | null {
   return (ACTIONS as readonly string[]).includes(m.action) ? (m.action as BigAction) : null;
 }
 
+/** Whether a message's origin can be a launcher's (see the header). */
+export function launcherOrigin(origin: string): boolean {
+  if (origin === "null" || origin.startsWith("file:") || origin.startsWith("app:")) return true;
+  try {
+    return origin === window.location.origin;
+  } catch {
+    return false;
+  }
+}
+
 /** Whether /tv/ runs inside a launcher's iframe. */
 export function inLauncher(): boolean {
   try {
@@ -64,6 +78,7 @@ export function tellLauncher(type: typeof BRIDGE_EXIT | typeof BRIDGE_READY) {
 export function listenToLauncher(onAction: (a: BigAction) => void): () => void {
   const onMessage = (e: MessageEvent) => {
     if (e.source !== window.parent || e.source === window) return;
+    if (!launcherOrigin(e.origin)) return;
     const a = bridgeAction(e.data);
     if (a) onAction(a);
   };

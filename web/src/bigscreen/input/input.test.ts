@@ -6,6 +6,7 @@ import {
   BRIDGE_READY,
   bridgeAction,
   inLauncher,
+  launcherOrigin,
   listenToLauncher,
   tellLauncher,
 } from "./bridge";
@@ -194,7 +195,14 @@ describe("TV remotes and the launcher bridge", () => {
       const stop = listenToLauncher((a) => seen.push(a));
       expect(parent.postMessage).toHaveBeenCalledWith({ type: BRIDGE_READY }, "*");
       const msg = { type: BRIDGE_ACTION, action: "down" };
-      window.dispatchEvent(new MessageEvent("message", { data: msg, source: parent as never }));
+      const from = (origin: string) =>
+        window.dispatchEvent(
+          new MessageEvent("message", { data: msg, source: parent as never, origin })
+        );
+      from("null"); // a packaged Tizen or webOS app
+      // a web page framing /tv/ is not a launcher
+      from("https://evil.example");
+      from("http://192.168.1.9:8088");
       // another frame, or the page itself, is not the launcher
       window.dispatchEvent(new MessageEvent("message", { data: msg, source: window }));
       window.dispatchEvent(new MessageEvent("message", { data: msg }));
@@ -202,11 +210,20 @@ describe("TV remotes and the launcher bridge", () => {
       tellLauncher(BRIDGE_EXIT);
       expect(parent.postMessage).toHaveBeenLastCalledWith({ type: BRIDGE_EXIT }, "*");
       stop();
-      window.dispatchEvent(new MessageEvent("message", { data: msg, source: parent as never }));
+      from("null");
       expect(seen).toEqual(["down"]);
     } finally {
       spy.mockRestore();
     }
+  });
+
+  it("a launcher's origin: a packaged app or the home itself", () => {
+    expect(launcherOrigin("null")).toBe(true);
+    expect(launcherOrigin("file://")).toBe(true);
+    expect(launcherOrigin("app://tv.maktaba")).toBe(true);
+    expect(launcherOrigin(window.location.origin)).toBe(true);
+    expect(launcherOrigin("https://evil.example")).toBe(false);
+    expect(launcherOrigin("")).toBe(false);
   });
 
   it("outside a launcher, telling it is a no-op", () => {
