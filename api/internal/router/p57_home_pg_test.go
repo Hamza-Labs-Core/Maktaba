@@ -44,7 +44,11 @@ type p57Home struct {
 	notes  *notify.Hub
 }
 
-func setupHome(t testing.TB) *p57Home {
+func setupHome(t testing.TB) *p57Home { return setupHomeWith(t, nil) }
+
+// setupHomeWith is setupHome with more of the home mounted: extra, when set, mounts on the
+// same router after the rest (Epic 58's table adds the discovery and pairing routes).
+func setupHomeWith(t testing.TB, extra func(r chi.Router, e *pfEnv)) *p57Home {
 	t.Helper()
 	h := &p57Home{}
 	h.pfEnv = setupFilterWith(t, func(r chi.Router, e *pfEnv) {
@@ -64,6 +68,9 @@ func setupHome(t testing.TB) *p57Home {
 		router.MountP29(r, router.P29Deps{DB: e.db}) // watching: start, heartbeat, stop
 		router.MountP51(r, router.P51Deps{DB: e.db, Parental: router.ParentalCapabilities(e.cache)})
 		router.MountCast(r, router.CastDeps{DB: e.db, Keys: castKeys(t), Gate: e.cast}) // Epic 58 story 58.07
+		if extra != nil {
+			extra(r, e)
+		}
 		seen := map[string]bool{}
 		_ = chi.Walk(r, func(method, route string, _ http.Handler, _ ...func(http.Handler) http.Handler) error {
 			if k := method + " " + route; !seen[k] {
