@@ -2944,6 +2944,14 @@ build fails when the two differ.
   can be paired by a QR code that opens a page on the guest's phone; the apps' **Watch a
   broadcast** screens follow.
 
+- **Roku shows a child how much watching time is left, and warns before it ends (Epic 57,
+  story 57.15, on Roku).** On a restricted account, once 15 minutes or fewer are left today the
+  Roku player shows "12 minutes left today" in the top corner over the video, and "Watching
+  ends in 5 minutes." and then "1 minute" for about 10 seconds each, as Android TV does. The
+  number is always the home's own answer, asked every 30 seconds (every 10 in the last six
+  minutes). Arabic uses its plural forms (دقيقة واحدة، دقيقتان، 5 دقائق، 12 دقيقة), and the Roku
+  catalog and its check now carry plural strings in both languages.
+
 ### Changed
 
 - **A machine that loses its home stays usable** under a notice instead of the whole app being
@@ -3896,6 +3904,12 @@ build fails when the two differ.
   by host name (the relay, the home's direct name) its certificate proves the home; at a plain
   HTTP or raw IP address, the home there counts only when it lists one of those names among its
   addresses. Another home there is passed over and never gets the grant.
+
+- **Roku no longer shows yesterday's no to more time (Epic 58, story 58.14).** When a parent
+  said no to a request for more time on an earlier day, Roku's time's-up page still said A
+  parent said no. A no to more time is about its own day: once the request's end has passed,
+  the page offers Ask for more time again, as the web, Android TV and Apple TV already do. A no
+  given the same day still shows, with Ask again.
 
 ## [0.2.0] - 2026-10-19
 
