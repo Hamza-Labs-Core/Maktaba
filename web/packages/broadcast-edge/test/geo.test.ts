@@ -2,9 +2,18 @@
 // into `deny` by the cloud) reach the edge in the channel's ingest token; a viewer outside gets
 // 451 geo_blocked at play and at every playlist.
 import { afterEach, describe, expect, it } from "vitest";
-import { resetClock } from "../src/clock";
+import { now, resetClock } from "../src/clock";
 import { cleanGeo, forgetGeo, geoBlocked } from "../src/geo";
-import { call, ingestToken, LIVE, newChannel, putSegment, viewerToken } from "./helpers";
+import {
+  call,
+  ingestToken,
+  LIVE,
+  newChannel,
+  postState,
+  putSegment,
+  STATE_3,
+  viewerToken,
+} from "./helpers";
 
 afterEach(() => {
   resetClock();
@@ -66,5 +75,29 @@ describe("T06 at the edge", () => {
     expect((await putSegment(ch, "src", 1)).status).toBe(201);
     const viewer = await viewerToken({ ch });
     expect((await call(`${LIVE}/${viewer}/${ch}/src/index.m3u8`, from("DE"))).status).toBe(200);
+  });
+
+  it("takes the rule from a call that appends no segment (the state post)", async () => {
+    const ch = newChannel();
+    const token = await ingestToken({ ch, geo: { deny: ["KP"] } });
+    expect((await postState(ch, STATE_3, token)).status).toBe(200);
+    const viewer = await viewerToken({ ch });
+    expect((await call(`${LIVE}/${viewer}/${ch}/master.m3u8`, from("KP"))).status).toBe(451);
+  });
+
+  it("never lets an older token's rule replace a newer one's", async () => {
+    const ch = newChannel();
+    const t = Math.floor(now() / 1000);
+    const newer = await ingestToken({ ch, geo: { deny: ["KP", "IR"] }, iat: t });
+    const older = await ingestToken({
+      ch,
+      geo: { deny: ["KP"] },
+      iat: t - 600,
+      exp: t - 600 + 24 * 3600,
+    });
+    expect((await putSegment(ch, "src", 1, { token: newer })).status).toBe(201);
+    expect((await putSegment(ch, "src", 2, { token: older })).status).toBe(201);
+    const viewer = await viewerToken({ ch });
+    expect((await call(`${LIVE}/${viewer}/${ch}/src/index.m3u8`, from("IR"))).status).toBe(451);
   });
 });
