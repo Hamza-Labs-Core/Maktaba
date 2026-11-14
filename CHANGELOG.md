@@ -864,6 +864,17 @@ build fails when the two differ.
 
 ### Added
 
+- **Playing on Roku (Epic 58, story 58.13).** The Roku channel's player: it tells the home
+  what this Roku plays (H.264, HEVC, AV1 inside DASH, HDR10, HLG, Dolby Vision 5, the Dolby
+  passthroughs), so a 4K HDR file plays directly where the Roku can and is converted only where
+  it cannot. Maktaba's own controls replace Roku's bar: title, series, chapter, position, scrub
+  thumbnails, and audio and subtitle choices. Arabic subtitles are drawn by the channel, joined
+  and right to left; other languages by Roku, following its caption settings. Progress is
+  saved every 10 seconds and on pause and Back; Play all and Shuffle show Up next 15 seconds
+  before the end; a video the Roku cannot play is tried once more as a converted version, then
+  the error shows, with the home's reason when it gives one. A tag whose channel changed attaches the channel's
+  store zip to the release; signing it on a Roku and submitting it to Roku's store stay with
+  the owner (docs/stores/roku.md, with Roku's certification table and the real-device checks).
 - **Maktaba on Roku (Epic 58, story 58.12).** A Roku channel: a household signs in once with a
   code its phone approves (through Maktaba Cloud, or the home's own code after finding it on the
   network, or its address), and each later launch opens that home's Home. Continue watching,

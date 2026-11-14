@@ -20,7 +20,7 @@ import { after, before, test } from "node:test";
 
 import { build } from "../tools/build.mjs";
 import { LOGS, ROKU } from "./brs.mjs";
-import { HIDDEN, SERIES, startCloud, startHome, videos } from "./mockhome.mjs";
+import { HIDDEN, REFUSED, SERIES, startCloud, startHome, videos } from "./mockhome.mjs";
 import { Channel, SCREENS } from "./sg.mjs";
 
 const require = createRequire(import.meta.url);
@@ -61,8 +61,8 @@ async function small(path) {
 }
 
 /** Compares a screen with its reference (written when missing or with UPDATE_SCREENS=1). */
-async function compare(c, name) {
-  const path = await c.shot(name);
+async function compare(c, name, settle) {
+  const path = await c.shot(name, settle);
   const now = await small(path);
   const ref = join(REFS, `${name}.png`);
   if (process.env.UPDATE_SCREENS === "1" || !existsSync(ref)) {
@@ -158,6 +158,16 @@ test("T03: sign in by cloud code, browse in English, deep links, Back, then Arab
     await c.waitFor(/\[screen\] PlayerScreen ready/);
     assert.ok(requests.some((l) => l === "home queue source=library shuffle=true"), "Shuffle sent the library queue");
     assert.ok(requests.some((l) => /home session video=\S+ profile=roku/.test(l)), "the stream session asks for the roku profile");
+    // story 58.13: the queue's first video is 12 s long, so Up next shows at once with the
+    // queue's second; OK plays it, moving the server queue
+    await c.waitFor(new RegExp(`\\[upnext\\] shown ${videos[1].id}`));
+    await compare(c, "player-upnext-en");
+    await c.key("Select");
+    await c.waitFor(/\[player\] next /);
+    await c.waitFor(/\[screen\] PlayerScreen ready/);
+    assert.ok(requests.some((l) => l === "home queue move pos=1 version=1"), "Up next moved the server queue");
+    assert.ok(requests.some((l) => /^home close s\d+$/.test(l)), "the first video's session closed");
+    assert.ok(requests.some((l) => new RegExp(`^home session video=${videos[1].id} profile=roku`).test(l)), "the second video opened");
     await c.key("Back");
     await c.waitFor(/\[nav\] back to LibraryScreen/);
     await c.key("Down");
@@ -212,9 +222,55 @@ test("T03: sign in by cloud code, browse in English, deep links, Back, then Arab
     await c.waitFor(/\[nav\] back to HomeScreen/);
 
     // a deep link while running (voice, Roku search) to a video this viewer can watch plays it
-    await c.input({ contentId: videos[3].id, mediaType: "movie" });
+    await c.input({ contentId: videos[10].id, mediaType: "movie" });
     await c.waitFor(/\[link\] play/);
-    await c.waitFor(/\[screen\] PlayerScreen ready/);
+    await c.waitFor(/\[screen\] PlayerScreen ready mode=direct format=mkv/);
+    // story 58.13: the player, its session carrying the roku profile and device_caps
+    const session = requests.findLast((l) => l.startsWith(`home session video=${videos[10].id}`));
+    assert.match(session, /profile=roku .*caps=/, "the session carries the roku profile and device_caps");
+    // the trickplay index and the subtitle list load beside the session, in any order
+    assert.match(c.out, /\[player\] trickplay\s+25 tiles/);
+    assert.match(c.out, /\[subs\] off/);
+    await compare(c, "player-en");
+    // the subtitle picker: Off, then each track in its own language
+    await c.key("Down");
+    await c.waitFor(/\[focus\] player audio/);
+    await c.key("Right");
+    await c.waitFor(/\[focus\] player subtitles/);
+    await c.key("Select");
+    await c.waitFor(/\[picker\] subtitles\s+3/);
+    await compare(c, "player-picker-en");
+    // Arabic: the sidecar WebVTT, signed with the session's stream_sig, drawn in the channel's
+    // own layer (Roku's renderer off), joined and right to left
+    await c.keys(["Down", "Down", "Select"]);
+    await c.waitFor(/\[picker\] subtitles ar/);
+    await c.waitFor(/\[subs\] own ar/);
+    await c.waitFor(/\[subs\] cues\s+1/);
+    await c.waitFor(/\[subs\] cue at\s+0/);
+    assert.ok(requests.some((l) => l === "home subtitles ar signed"), "the Arabic sidecar was fetched with the stream signature");
+    await c.key("Up");
+    await c.waitFor(/\[focus\] player bar/);
+    await c.waitFor(/\[player\] overlay hidden/, 10000);
+    await compare(c, "player-subtitles-ar");
+    // seeking: the thumbnail from the home's trickplay sheet, then one seek once the keys stop
+    await c.key("Right", 200);
+    await c.waitFor(/\[seek\]\s+10/);
+    await compare(c, "player-seek-en", 100);
+    // English goes to Roku's renderer
+    await c.key("Down");
+    await c.key("Right");
+    await c.key("Select");
+    await c.waitFor(/\[picker\] subtitles\s+3/);
+    await c.keys(["Up", "Select"]); // the list opens on the track showing (Arabic, the last)
+    await c.waitFor(/\[subs\] roku en/);
+    // Back: the position goes to the home and the session closes
+    await c.key("Up");
+    await c.key("Back");
+    await c.waitFor(/\[player\] back/);
+    await c.waitFor(/\[nav\] back to HomeScreen/);
+    await new Promise((r) => setTimeout(r, 1500));
+    assert.ok(requests.some((l) => /^home progress s\d+ pos=10 completed=false$/.test(l)), "progress after the seek");
+    assert.ok(requests.some((l) => /^home close s\d+$/.test(l)), "the session closed on Back");
     // one it cannot (missing, another library, hidden: the home answers 404) opens Home with
     // the not-available line
     await c.input({ contentId: HIDDEN, mediaType: "episode" });
@@ -266,6 +322,18 @@ test("T03: sign in by cloud code, browse in English, deep links, Back, then Arab
     await c.key("Select");
     await c.waitFor(/\[screen\] SeriesScreen ready/);
     await compare(c, "series-ar");
+
+    // story 58.13: the player in Arabic, its overlay mirrored, and its subtitle picker
+    await c.input({ contentId: videos[10].id, mediaType: "movie" });
+    await c.waitFor(/\[screen\] PlayerScreen ready/);
+    await compare(c, "player-ar");
+    await c.key("Down");
+    await c.waitFor(/\[focus\] player audio/);
+    await c.key("Left"); // in Arabic Left moves forward, to Subtitles
+    await c.waitFor(/\[focus\] player subtitles/);
+    await c.key("Select");
+    await c.waitFor(/\[picker\] subtitles\s+3/);
+    await compare(c, "player-picker-ar");
   } finally {
     await c.stop();
   }
@@ -292,6 +360,20 @@ test("T03: the next launch opens the saved home within the budget, and a launch 
   try {
     await c.waitFor(/\[link\] not_available/, 30000);
     await c.waitFor(/\[home\] notice roku\.notAvailable/);
+  } finally {
+    await c.stop();
+  }
+});
+
+test("T03 (58.13): a stream session the home refuses shows the error with its reason, and Back", { timeout: 120000 }, async () => {
+  // the main test left the channel in Arabic: the error is drawn in Arabic
+  const c = await Channel.start("player-refused", zip, data, `contentId=${REFUSED},mediaType=movie`);
+  try {
+    await c.waitFor(/\[player\] failed reason=Every transcode slot is taken\./, 30000);
+    await c.waitFor(/\[screen\] PlayerScreen failed/);
+    await compare(c, "player-failed-ar");
+    await c.key("Select");
+    await c.waitFor(/\[nav\] back to HomeScreen/);
   } finally {
     await c.stop();
   }
