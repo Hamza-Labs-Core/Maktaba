@@ -4,18 +4,15 @@ import SwiftUI
 /// computer signing in by code); a person signed in here types it or scans its QR code, sees
 /// what is asking (app, system, device, the name it gave), and approves it explicitly. The
 /// device is then signed in as this person. The Remote's and the Player's account menus
-/// open it (`AppSession.approvingSignIn`).
+/// open it (`AppSession.approvingSignIn`). A TV's code from Maktaba Cloud (story 58.03) is
+/// confirmed ("Is this your TV?") and approved through the home; `ApproveCode` holds the steps.
 public struct ApproveSignInView: View {
     let client: APIClient
     let user: User
     let homeName: String
     @Environment(\.dismiss) private var dismiss
     @State private var code = ""
-    /// The code looked up, and what the home said of it.
-    @State private var looked: (code: String, lookup: DeviceLookup)?
-    @State private var busy = false
-    @State private var problem: String?
-    @State private var approved: String?
+    @State private var model: ApproveCode
     @State private var scanning = false
     private let words = ConnectStrings.forPreferredLanguages()
 
@@ -23,6 +20,7 @@ public struct ApproveSignInView: View {
         self.client = client
         self.user = user
         self.homeName = homeName
+        _model = State(initialValue: ApproveCode(client: client))
     }
 
     public var body: some View {
@@ -37,21 +35,19 @@ public struct ApproveSignInView: View {
                         #endif
                         .environment(\.layoutDirection, .leftToRight)
                         .onSubmit(lookUp)
-                        .onChange(of: code) { _, _ in
-                            if looked != nil || approved != nil {
-                                looked = nil
-                                approved = nil
-                            }
+                        .onChange(of: code) { _, now in
+                            // the code shown was edited: what was looked up no longer applies
+                            if model.step != .idle, model.step.code != now { model.reset() }
                         }
                         .accessibilityIdentifier("approve.code")
                     Button(action: lookUp) {
-                        if busy && looked == nil {
+                        if model.busy && model.step == .idle {
                             ConnectBusyLabel(ConnectProgress.Busy.lookingUpCode.text(words.locale))
                         } else {
                             Text(words.text(.lookUp))
                         }
                     }
-                    .disabled(busy || code.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .disabled(model.busy || code.trimmingCharacters(in: .whitespaces).isEmpty)
                     .accessibilityIdentifier("approve.lookUp")
                     #if os(iOS)
                     Button(words.text(.scanCode), systemImage: "qrcode.viewfinder") { scanning = true }
@@ -60,16 +56,21 @@ public struct ApproveSignInView: View {
                 } footer: {
                     Text(words.text(.approveIntro))
                 }
-                if let approved {
+                switch model.step {
+                case .idle:
+                    EmptyView()
+                case let .approved(sentence):
                     Section {
-                        Label(words.text(.approved, approved), systemImage: "checkmark.seal.fill")
+                        Label(sentence, systemImage: "checkmark.seal.fill")
                             .foregroundStyle(.green)
                             .accessibilityIdentifier("approve.done")
                     }
-                } else if let looked {
-                    result(looked.code, looked.lookup)
+                case let .home(shown, lookup):
+                    result(shown, lookup)
+                case let .cloud(shown, tv):
+                    cloudResult(shown, tv)
                 }
-                if let problem {
+                if let problem = model.problem {
                     Section {
                         Label(problem, systemImage: "exclamationmark.triangle")
                             .foregroundStyle(.red)
@@ -94,7 +95,7 @@ public struct ApproveSignInView: View {
                     code = c
                     lookUp()
                 } else {
-                    problem = words.text(.notASignInCode)
+                    model.problem = words.text(.notASignInCode)
                 }
             }
         }
@@ -105,9 +106,7 @@ public struct ApproveSignInView: View {
         switch lookup {
         case let .found(d):
             Section(words.text(.asking)) {
-                LabeledContent(words.text(.code)) {
-                    Text(verbatim: shown).monospaced().environment(\.layoutDirection, .leftToRight)
-                }
+                codeRow(shown)
                 if let app = d.clientApp { LabeledContent(words.text(.app), value: words.appName(app)) }
                 if let p = d.platform { LabeledContent(words.text(.platform), value: p) }
                 if let dev = d.device { LabeledContent(words.text(.device), value: dev) }
@@ -117,13 +116,14 @@ public struct ApproveSignInView: View {
                         Text(exp, style: .relative)
                     }
                 }
-                approveButtons(shown, name: d.deviceLabel ?? d.clientApp.map(words.appName) ?? d.device)
+                let name = d.deviceLabel ?? d.clientApp.map(words.appName) ?? d.device
+                approveButtons(confirm: name.map { words.text(.confirmSignIn, $0, user.username) })
             }
             .accessibilityIdentifier("approve.found")
         case .unknownOnThisHome:
             Section {
                 Text(words.text(.unknownOnThisHome))
-                approveButtons(shown, name: nil)
+                approveButtons(confirm: nil)
             }
         case .notFound:
             Section {
@@ -133,10 +133,31 @@ public struct ApproveSignInView: View {
         }
     }
 
-    @ViewBuilder private func approveButtons(_ shown: String, name: String?) -> some View {
+    /// A TV's code from Maktaba Cloud: what the cloud knows of it (its system and country),
+    /// for the person to confirm it is the TV in front of them.
+    @ViewBuilder private func cloudResult(_ shown: String, _ tv: CloudTVCode) -> some View {
+        Section(words.text(.asking)) {
+            codeRow(shown)
+            if let exp = tv.expiresAt {
+                LabeledContent(words.text(.expires)) {
+                    Text(exp, style: .relative)
+                }
+            }
+            approveButtons(confirm: model.confirmation(tv))
+        }
+        .accessibilityIdentifier("approve.cloud")
+    }
+
+    private func codeRow(_ shown: String) -> some View {
+        LabeledContent(words.text(.code)) {
+            Text(verbatim: shown).monospaced().environment(\.layoutDirection, .leftToRight)
+        }
+    }
+
+    @ViewBuilder private func approveButtons(confirm: String?) -> some View {
         // what is asking and as whom, before Approve
-        if let name {
-            Text(words.text(.confirmSignIn, name, user.username))
+        if let confirm {
+            Text(confirm)
                 .font(.headline)
                 .accessibilityIdentifier("approve.confirm")
         }
@@ -144,64 +165,24 @@ public struct ApproveSignInView: View {
             .font(.callout)
             .foregroundStyle(.secondary)
         Button {
-            approve(shown, name: name)
+            Task { await model.approve() }
         } label: {
-            if busy { ConnectBusyLabel(ConnectProgress.Busy.approving.text(words.locale)) } else { Text(words.text(.approve)).bold() }
+            if model.busy { ConnectBusyLabel(ConnectProgress.Busy.approving.text(words.locale)) } else { Text(words.text(.approve)).bold() }
         }
         .buttonStyle(.borderedProminent)
-        .disabled(busy)
+        .disabled(model.busy)
         .accessibilityIdentifier("approve.approve")
         Button(words.text(.notThis), role: .cancel) {
-            looked = nil
+            model.reset()
             code = ""
         }
-        .disabled(busy)
+        .disabled(model.busy)
     }
 
     private func lookUp() {
-        problem = nil
-        approved = nil
-        guard let normalized = DeviceCode.normalize(code) ?? {
-            if case let .signInCode(c) = ScannedCode.parse(code) { return c } else { return nil }
-        }() else {
-            problem = words.text(.notACode)
-            return
-        }
-        code = normalized
-        busy = true
+        let typed = code
         Task {
-            defer { busy = false }
-            do {
-                looked = (normalized, try await client.pendingDevice(code: normalized))
-            } catch APIError.status(403, _, _) {
-                // a sign-in through Maktaba Cloud cannot approve: only one on the home can
-                problem = words.text(.approveFromHome)
-            } catch {
-                problem = HomeFailure(error).message()
-            }
-        }
-    }
-
-    private func approve(_ shown: String, name: String?) {
-        problem = nil
-        busy = true
-        Task {
-            defer { busy = false }
-            do {
-                try await client.approveDevice(code: shown)
-                approved = name ?? words.text(.anotherDevice)
-                looked = nil
-            } catch let e as APIError {
-                switch e {
-                case .status(403, _, _): problem = words.text(.approveFromHome)
-                case .status(409, _, _): problem = words.text(.alreadyApproved)
-                case .status(404, _, _), .status(410, _, _): problem = words.text(.expired)
-                case .status(422, _, _): problem = words.text(.notACode)
-                default: problem = e.message
-                }
-            } catch {
-                problem = HomeFailure(error).message()
-            }
+            if let normalized = await model.lookUp(typed) { code = normalized }
         }
     }
 }

@@ -34,6 +34,8 @@ public final class ProfileModel {
     public private(set) var playlists: Load<[PlaylistSummary]> = .loading
     public private(set) var playlist: Load<Playlist> = .loading
     public private(set) var sessions: Load<[SignInSession]> = .loading
+    /// The apps signed in as the person by a code (a TV, through the home or a cloud code).
+    public private(set) var appSignIns: Load<[AppSignIn]> = .loading
     public private(set) var cloud: CloudLinkState?
     public private(set) var homeVersion: String?
     /// A change that did not go through (a removal, signing a session out), until shown.
@@ -43,6 +45,7 @@ public final class ProfileModel {
     /// back on screen while the home has let it go).
     @ObservationIgnored private let historyOrder = ReadOrder()
     @ObservationIgnored private let sessionsOrder = ReadOrder()
+    @ObservationIgnored private let appSignInsOrder = ReadOrder()
 
     public init(client: APIClient, signedOut: @escaping () -> Void) {
         self.client = client
@@ -128,6 +131,19 @@ public final class ProfileModel {
         }
         guard done, let now = sessions.value else { return }
         sessions = .ready(now.filter { $0.id != session.id })
+    }
+
+    public func loadAppSignIns() async {
+        await load(\.appSignIns, order: appSignInsOrder) { try await self.client.appSignIns() }
+    }
+
+    /// Signs the app out; it leaves the list once the home has done it.
+    public func signOut(_ app: AppSignIn) async {
+        let done = await appSignInsOrder.saving {
+            await self.quietly({ try await self.client.signOutApp(app.id) }) != nil
+        }
+        guard done, let now = appSignIns.value else { return }
+        appSignIns = .ready(now.filter { $0.id != app.id })
     }
 
     /// Fills `list` with `call`'s answer, or why it failed; `then` runs with an answer applied.

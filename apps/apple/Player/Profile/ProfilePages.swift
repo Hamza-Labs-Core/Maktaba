@@ -270,32 +270,85 @@ enum PlaylistWords {
 // MARK: sessions
 
 /// `GET /api/me/sessions`: the browsers signed in as this person; Sign out ends one
-/// (`DELETE /api/me/sessions/{id}`).
+/// (`DELETE /api/me/sessions/{id}`). Beneath them, the apps signed in by a code
+/// (`GET /api/me/app-sign-ins`, story 58.03): a TV approved through a Maktaba Cloud code says
+/// so; Sign out ends one (`DELETE /api/me/app-sign-ins/{id}`).
 struct SessionsPage: View {
     let model: ProfileModel
+    private let words = ConnectStrings.forPreferredLanguages()
 
     var body: some View {
         Loaded(model.sessions, title: Text("Sessions", tableName: "Profile", comment: "The signed-in browsers page"),
                retry: model.loadSessions) { items in
-            if items.isEmpty {
+            let apps = model.appSignIns.value ?? []
+            if items.isEmpty && apps.isEmpty {
                 Empty(Text("No browser is signed in as you", tableName: "Profile", comment: "The sessions, empty"),
                       systemImage: "laptopcomputer")
             } else {
                 List {
-                    Section {
-                        ForEach(items) { s in
-                            SessionRow(session: s) { Task { await model.end(s) } }
+                    if !items.isEmpty {
+                        Section {
+                            ForEach(items) { s in
+                                SessionRow(session: s) { Task { await model.end(s) } }
+                            }
+                        } header: {
+                            Text("Browsers signed in to the home as you. Sign out any you do not recognise.", tableName: "Profile",
+                                 comment: "Above the sessions list")
+                                .textCase(nil)
                         }
-                    } header: {
-                        Text("Browsers signed in to the home as you. Sign out any you do not recognise.", tableName: "Profile",
-                             comment: "Above the sessions list")
-                            .textCase(nil)
+                    }
+                    if !apps.isEmpty {
+                        Section {
+                            ForEach(apps) { app in
+                                AppSignInRow(app: app, words: words) { Task { await model.signOut(app) } }
+                            }
+                        } header: {
+                            Text(verbatim: words.text(.appSignInsTitle))
+                        } footer: {
+                            Text(verbatim: words.text(.appSignInsHint))
+                        }
+                        .accessibilityIdentifier("appSignIns.list")
                     }
                 }
                 .accessibilityIdentifier("sessions.list")
             }
         }
         .task { await model.loadSessions() }
+        .task { await model.loadAppSignIns() }
+    }
+}
+
+/// One app signed in by a code: its name ("tizen TV, via Maktaba Cloud code" for a cloud
+/// code), when it was last used, and Sign out.
+private struct AppSignInRow: View {
+    let app: AppSignIn
+    let words: ConnectStrings
+    let signOut: () -> Void
+
+    var body: some View {
+        HStack(spacing: MaktabaTokens.Spacing.s3) {
+            Label {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(verbatim: app.title(words))
+                    if let seen = app.lastSeenAt {
+                        Text(verbatim: words.text(.appSignInLastUsed, seen.formatted(.relative(presentation: .named).locale(words.locale))))
+                            .font(.footnote)
+                            .foregroundStyle(Color.mktMuted)
+                    }
+                }
+            } icon: {
+                Image(systemName: app.kind == "tv" ? "tv" : "app.badge")
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("appSignIn.\(app.id)")
+            Spacer(minLength: 0)
+            Button(action: signOut) {
+                Text(verbatim: words.text(.appSignOut))
+                    .frame(minHeight: 44)
+            }
+            .buttonStyle(.borderless)
+            .accessibilityIdentifier("appSignIn.signOut.\(app.id)")
+        }
     }
 }
 
