@@ -8305,5 +8305,15 @@
   "tv.exitConfirm.no": "Stay",
   "tv.signIn.title": "Sign in to watch",
   "tv.signIn.body": "This TV is not signed in to your Maktaba home yet.",
-  "tv.signIn.go": "Sign in"
+  "tv.signIn.go": "Sign in",
+  "broadcast.offAir": "This channel is off air.",
+  "broadcast.revoked.channel": "Maktaba took this channel off air: {reason}. See your notices on the Broadcast page.",
+  "broadcast.revoked.suspended": "Broadcasting from this home is suspended: {reason}.",
+  "broadcast.terminated": "Broadcasting from this account has ended: {reason}. Its channels can't be published again.",
+  "broadcast.revocationsStale": "This home couldn't check Maktaba's broadcast list for {days} days. Published channels keep running; new ones wait until it's checked.",
+  "broadcast.reason.notice": "a copyright notice",
+  "broadcast.reason.report": "a report we reviewed",
+  "broadcast.reason.incident": "a service problem on our side",
+  "broadcast.reason.abuse": "misuse of the service",
+  "broadcast.reason.repeat_infringer": "repeated valid copyright notices"
 }
