@@ -132,6 +132,11 @@
     <string name="approve_already">تمت الموافقة على هذا الرمز من قبل.</string>
     <string name="approve_cloud">وافق من المنزل: اتصل بشبكة منزلك أولًا.</string>
     <string name="approve_another">الموافقة على جهاز آخر</string>
+    <string name="approve_cloud_confirm">هل هذا تلفازك؟ %1$s، في %2$s.</string>
+    <string name="approve_cloud_confirm_no_country">هل هذا تلفازك؟ %1$s.</string>
+    <string name="approve_cloud_a_tv">تلفاز</string>
+    <string name="approve_cloud_needs_remote">يحتاج الرمز القادم من Maktaba Cloud إلى تفعيل الوصول عن بُعد لهذا المنزل. استخدم رمز المنزل بدلًا منه.</string>
+    <string name="approve_cloud_done">تمت الموافقة. التلفاز يسجّل الدخول الآن.</string>
     <!-- story 42.7: through Maktaba Cloud -->
     <string name="cloud_title">عبر سحابة مكتبة</string>
     <string name="cloud_intro">بعيدًا عن المنزل، أو منزل على شبكة أخرى: سجّل الدخول بحساب سحابة مكتبة وافتح منزلًا مرتبطًا به. وكل منزل يقرّر ما يمكنك فعله فيه.</string>

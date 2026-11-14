@@ -38,6 +38,30 @@ data class SignInSession(
     val current: Boolean = false,
 )
 
+/**
+ * An app signed in as the person by a code (`GET /api/me/app-sign-ins`, Epic 58 story 58.03):
+ * a TV approved on the home's network or through a Maktaba Cloud code.
+ */
+@Serializable
+data class AppSignIn(
+    val id: String,
+    /** `tv`, `player`, … */
+    val kind: String = "",
+    /** The name it gave, or its platform (`tizen`) for a cloud code. */
+    val label: String = "",
+    /** `cloud_code` when it was approved through a Maktaba Cloud code; empty otherwise. */
+    val via: String = "",
+    @SerialName("created_at") val createdAt: String? = null,
+    @SerialName("last_seen_at") val lastSeenAt: String? = null,
+    @SerialName("expires_at") val expiresAt: String? = null,
+    val current: Boolean = false,
+) {
+    val viaCloudCode: Boolean get() = via == "cloud_code"
+
+    /** What to call it: its label, else its kind (`tv`), else null (say "a device"). */
+    val name: String? get() = label.trim().ifEmpty { kind.trim() }.ifEmpty { null }
+}
+
 /** A playlist of the person (`GET /api/me/playlists`): its visible videos' count and length. */
 @Serializable
 data class PlaylistSummary(
@@ -63,6 +87,9 @@ internal data class HistoryDoc(@Serializable(with = LenientList::class) val item
 
 @Serializable
 internal data class SessionsDoc(@Serializable(with = LenientList::class) val items: List<SignInSession> = emptyList())
+
+@Serializable
+internal data class AppSignInsDoc(@Serializable(with = LenientList::class) val items: List<AppSignIn> = emptyList())
 
 @Serializable
 internal data class PlaylistsDoc(@Serializable(with = LenientList::class) val items: List<PlaylistSummary> = emptyList())
@@ -95,6 +122,21 @@ suspend fun ApiClient.signInSessions(): List<SignInSession> = profile { get<Sess
 /** `DELETE /api/me/sessions/{id}`: signs that session out. */
 suspend fun ApiClient.endSignInSession(id: String) {
     profile { send(request("DELETE", "/api/me/sessions/${segment(id)}")) }
+}
+
+/**
+ * `GET /api/me/app-sign-ins`: the apps signed in as the person by a code, newest first. A home
+ * from before the list (404 or 405) has none to show: an empty list.
+ */
+suspend fun ApiClient.appSignIns(): List<AppSignIn> = try {
+    get<AppSignInsDoc>("/api/me/app-sign-ins").items
+} catch (e: ApiException.Status) {
+    if (e.code == 404 || e.code == 405) emptyList() else throw e
+}
+
+/** `DELETE /api/me/app-sign-ins/{id}`: signs that app out. */
+suspend fun ApiClient.signOutApp(id: String) {
+    profile { send(request("DELETE", "/api/me/app-sign-ins/${segment(id)}")) }
 }
 
 /** `GET /api/me/playlists`: the person's playlists, the latest changed first. */

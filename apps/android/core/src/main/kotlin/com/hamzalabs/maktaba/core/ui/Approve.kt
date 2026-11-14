@@ -22,6 +22,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.outlined.ConnectedTv
 import androidx.compose.material.icons.outlined.Devices
 import androidx.compose.material.icons.outlined.QrCodeScanner
 import androidx.compose.material.icons.outlined.WarningAmber
@@ -45,6 +46,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalLocale
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -60,98 +62,48 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalResources
 import com.hamzalabs.maktaba.core.R
 import com.hamzalabs.maktaba.core.api.ApiClient
-import com.hamzalabs.maktaba.core.api.ApiException
-import com.hamzalabs.maktaba.core.api.errorKind
+import com.hamzalabs.maktaba.core.api.CloudTvCode
 import com.hamzalabs.maktaba.core.api.PairingCode
-import com.hamzalabs.maktaba.core.api.PairingLookup
 import com.hamzalabs.maktaba.core.api.PairingRequest
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
-
-/** Where approving a sign-in stands. */
-private sealed interface ApproveStep {
-    data object Enter : ApproveStep
-    data object Looking : ApproveStep
-
-    /** The code and what asks with it (null: the home cannot say). */
-    data class Confirm(val code: String, val request: PairingRequest?) : ApproveStep
-    data class Done(val who: String) : ApproveStep
-}
 
 /**
  * "Approve a sign-in" (story 42.6): another device shows a code (and a QR of the home's
  * approve page); a person signed in here types or scans it, sees what is asking (the app, the
  * platform, the device's name), and approves it explicitly. That device is then signed in as
- * this person. The home checks every rule (a sign-in through the cloud cannot approve).
+ * this person. The home checks every rule (a sign-in through the cloud cannot approve). A TV's
+ * Maktaba Cloud code (story 58.03) is approved here too, once the person confirms the TV: the
+ * steps are [ApproveCode]'s.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ApproveSignIn(client: ApiClient, username: String, homeName: String, onClose: () -> Unit, onSignedOut: () -> Unit) {
-    var step by remember { mutableStateOf<ApproveStep>(ApproveStep.Enter) }
+    val flow = remember(client) { ApproveCode(client, onSignedOut) }
+    val step = flow.step
+    val busy = flow.busy
     var text by remember { mutableStateOf("") }
-    var problem by remember { mutableStateOf<String?>(null) }
-    var busy by remember { mutableStateOf(false) }
     var scanning by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
-    val invalid = stringResource(R.string.approve_code_invalid)
-    val notCode = stringResource(R.string.not_a_code)
-    val unknown = stringResource(R.string.approve_unknown)
-    val already = stringResource(R.string.approve_already)
-    val cloud = stringResource(R.string.approve_cloud)
-    val unreachable = stringResource(R.string.signin_unreachable, homeName)
-    val someDevice = stringResource(R.string.approve_unknown_device)
     val resources = LocalResources.current
-
-    fun failed(e: Exception): String = when (e) {
-        is ApiException.Transport -> unreachable
-        is ApiException.Status -> when (e.code) {
-            409 -> already
-            403 -> cloud
-            404, 410, 422 -> unknown
-            else -> resources.getString(e.errorKind().sentence())
+    val problem = flow.problem?.let { p ->
+        when (p) {
+            ApproveProblem.Invalid -> stringResource(R.string.approve_code_invalid)
+            ApproveProblem.NotACode -> stringResource(R.string.not_a_code)
+            ApproveProblem.Unknown -> stringResource(R.string.approve_unknown)
+            ApproveProblem.Already -> stringResource(R.string.approve_already)
+            ApproveProblem.FromCloud -> stringResource(R.string.approve_cloud)
+            ApproveProblem.NeedsRemote -> stringResource(R.string.approve_cloud_needs_remote)
+            ApproveProblem.Unreachable -> stringResource(R.string.signin_unreachable, homeName)
+            is ApproveProblem.Other -> resources.getString(p.kind.sentence())
         }
-        else -> resources.getString(e.errorKind().sentence())
     }
 
     fun look(raw: String) {
-        val code = PairingCode.normalize(raw) ?: run { problem = invalid; return }
-        problem = null
-        step = ApproveStep.Looking
-        scope.launch {
-            try {
-                step = when (val found = client.pairingRequest(code)) {
-                    is PairingLookup.Waiting -> ApproveStep.Confirm(code, found.request)
-                    PairingLookup.Unsupported -> ApproveStep.Confirm(code, null)
-                    PairingLookup.Unknown -> { problem = unknown; ApproveStep.Enter }
-                }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: ApiException.SignedOut) {
-                onSignedOut()
-            } catch (e: Exception) {
-                problem = failed(e)
-                step = ApproveStep.Enter
-            }
-        }
+        scope.launch { flow.lookUp(raw) }
     }
 
-    fun approve(confirm: ApproveStep.Confirm) {
-        busy = true
-        problem = null
-        scope.launch {
-            try {
-                client.approvePairing(confirm.code)
-                step = ApproveStep.Done(confirm.request?.deviceLabel?.takeIf { it.isNotBlank() } ?: someDevice)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: ApiException.SignedOut) {
-                onSignedOut()
-            } catch (e: Exception) {
-                problem = failed(e)
-            } finally {
-                busy = false
-            }
-        }
+    fun approve() {
+        scope.launch { flow.approve() }
     }
 
     if (scanning) {
@@ -162,7 +114,7 @@ fun ApproveSignIn(client: ApiClient, username: String, homeName: String, onClose
             onScan = { scanned ->
                 scanning = false
                 val code = PairingCode.fromScan(scanned)
-                if (code == null) problem = notCode else { text = PairingCode.shown(code); look(code) }
+                if (code == null) flow.problem = ApproveProblem.NotACode else { text = PairingCode.shown(code); look(code) }
             },
             onClose = { scanning = false },
         )
@@ -189,7 +141,7 @@ fun ApproveSignIn(client: ApiClient, username: String, homeName: String, onClose
                         CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
                             OutlinedTextField(
                                 value = text,
-                                onValueChange = { text = it.take(16); problem = null },
+                                onValueChange = { text = it.take(16); flow.problem = null },
                                 label = { Text(stringResource(R.string.approve_code_label)) },
                                 singleLine = true,
                                 enabled = s == ApproveStep.Enter,
@@ -206,7 +158,7 @@ fun ApproveSignIn(client: ApiClient, username: String, homeName: String, onClose
                         ) {
                             if (s == ApproveStep.Looking) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp) else Text(stringResource(R.string.approve_look))
                         }
-                        OutlinedButton(onClick = { problem = null; scanning = true }, enabled = s == ApproveStep.Enter, modifier = Modifier.fillMaxWidth()) {
+                        OutlinedButton(onClick = { flow.problem = null; scanning = true }, enabled = s == ApproveStep.Enter, modifier = Modifier.fillMaxWidth()) {
                             Icon(Icons.Outlined.QrCodeScanner, null, Modifier.size(18.dp))
                             Spacer(Modifier.width(8.dp))
                             Text(stringResource(R.string.scan_qr))
@@ -218,20 +170,32 @@ fun ApproveSignIn(client: ApiClient, username: String, homeName: String, onClose
                         username = username,
                         homeName = homeName,
                         busy = busy,
-                        onApprove = { approve(s) },
-                        onCancel = { step = ApproveStep.Enter; problem = null },
+                        onApprove = ::approve,
+                        onCancel = flow::reset,
                     )
-                    is ApproveStep.Done -> {
+                    is ApproveStep.CloudConfirm -> CloudApproveCard(
+                        code = s.code,
+                        tv = s.tv,
+                        username = username,
+                        busy = busy,
+                        onApprove = ::approve,
+                        onCancel = flow::reset,
+                    )
+                    is ApproveStep.Done, ApproveStep.CloudDone -> {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                             Icon(Icons.Filled.CheckCircle, null, tint = MaterialTheme.colorScheme.primary)
                             Text(
-                                stringResource(R.string.approve_done, s.who),
+                                if (s is ApproveStep.Done) {
+                                    stringResource(R.string.approve_done, s.who ?: stringResource(R.string.approve_unknown_device))
+                                } else {
+                                    stringResource(R.string.approve_cloud_done)
+                                },
                                 style = MaterialTheme.typography.titleMedium,
                                 modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }.testTag("approve-done"),
                             )
                         }
                         Button(onClick = onClose, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.close)) }
-                        OutlinedButton(onClick = { text = ""; step = ApproveStep.Enter }, modifier = Modifier.fillMaxWidth()) {
+                        OutlinedButton(onClick = { text = ""; flow.reset() }, modifier = Modifier.fillMaxWidth()) {
                             Text(stringResource(R.string.approve_another))
                         }
                     }
@@ -308,6 +272,65 @@ fun ApproveCard(
                 style = MaterialTheme.typography.bodyMedium,
                 textAlign = TextAlign.Start,
             )
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
+            OutlinedButton(onClick = onCancel, enabled = !busy, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.cancel)) }
+            Button(onClick = onApprove, enabled = !busy, modifier = Modifier.weight(1f).testTag("approve-button")) {
+                if (busy) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp) else Text(stringResource(R.string.approve_button))
+            }
+        }
+    }
+}
+
+/**
+ * A TV asking with a Maktaba Cloud code (story 58.03): "Is this your TV? Tizen, in Jordan." (the
+ * platform alone when the cloud did not say where), the code, when it runs out, what approving
+ * means, and an explicit Approve.
+ */
+@Composable
+fun CloudApproveCard(
+    code: String,
+    tv: CloudTvCode,
+    username: String,
+    busy: Boolean,
+    onApprove: () -> Unit,
+    onCancel: () -> Unit,
+    now: () -> Long = System::currentTimeMillis,
+) {
+    val colors = MaterialTheme.colorScheme
+    val locale = LocalLocale.current.platformLocale
+    val platform = ApproveCode.platformName(tv) ?: stringResource(R.string.approve_cloud_a_tv)
+    val country = ApproveCode.countryName(tv, locale)
+    Column(
+        Modifier.fillMaxWidth().border(1.dp, colors.outlineVariant, RoundedCornerShape(16.dp)).padding(16.dp).testTag("approve-cloud-card"),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Text(stringResource(R.string.approve_asking), style = MaterialTheme.typography.labelLarge, color = colors.primary)
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Icon(Icons.Outlined.ConnectedTv, null, tint = colors.primary)
+            Text(
+                if (country != null) {
+                    stringResource(R.string.approve_cloud_confirm, platform, country)
+                } else {
+                    stringResource(R.string.approve_cloud_confirm_no_country, platform)
+                },
+                style = MaterialTheme.typography.titleLarge,
+                modifier = Modifier.weight(1f).testTag("approve-cloud-confirm"),
+            )
+        }
+        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+            Text(
+                stringResource(R.string.approve_code_line, PairingCode.shown(code)),
+                style = MaterialTheme.typography.titleMedium.copy(fontFamily = FontFamily.Monospace),
+            )
+        }
+        tv.expiresMillis?.let { exp ->
+            val minutes = ((exp - now()) / 60_000L).coerceAtLeast(0L).toInt() + 1
+            Text(stringResource(R.string.approve_expires, minutes), style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.Top) {
+            Icon(Icons.Outlined.WarningAmber, null, tint = colors.error, modifier = Modifier.size(20.dp))
+            Text(stringResource(R.string.approve_warning, username), style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Start)
         }
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
             OutlinedButton(onClick = onCancel, enabled = !busy, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.cancel)) }
