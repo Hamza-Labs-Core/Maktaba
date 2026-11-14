@@ -4,6 +4,9 @@
 ' item by itself, without a restart. Check again asks the home at once. No parent PIN: a
 ' guardian answers from Maktaba on their phone, as the line under the button says.
 '
+' From the player (params start): the video the home refused or ended while it played; the page
+' says so when it was stopped (params stopped), and a yes plays it again from start.
+'
 '   POST /api/me/parental/requests   {subject_kind, subject_id}
 '   GET  /api/me/parental/requests   what became of the account's own requests
 
@@ -41,7 +44,12 @@ sub onParams()
     p = m.global.session.parental
     m.limited = ParentalLimited(p)
     m.restricted = (type(p) = "roAssociativeArray" and p.restricted = true)
-    m.reason.text = ParentalLimitLine(p, m.i18n)
+    reason = ParentalLimitLine(p, m.i18n)
+    if m.top.params.DoesExist("stopped") and m.top.params.stopped then
+        stopped = ui_Tr("parental.player.stopped")
+        if reason <> "" then reason = stopped + Chr(10) + reason else reason = stopped
+    end if
+    m.reason.text = reason
     if m.restricted then
         m.hint.text = ui_Tr("tv.parental.askOnPhone")
         m.action.visible = true
@@ -107,6 +115,8 @@ sub onRequests(ev as Object)
         show()
         if p.kind = "series" then
             ui_Navigate({to: "SeriesScreen", replace: true, params: {id: p.id}})
+        else if p.start <> invalid then
+            ui_Navigate({to: "PlayerScreen", replace: true, params: {videoId: p.id, start: p.start}})
         else
             ui_Navigate({to: "VideoScreen", replace: true, params: {id: p.id}})
         end if

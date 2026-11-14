@@ -363,5 +363,69 @@
         <source>parental.blocked.deviceAll</source>
         <translation>This device is limited to All ages.</translation>
     </message>
+    <message>
+        <source>parental.time.up.title</source>
+        <translation>Time's up for today</translation>
+    </message>
+    <message>
+        <source>parental.time.outside.title</source>
+        <translation>Not watching time yet</translation>
+    </message>
+    <message>
+        <source>parental.time.askMore</source>
+        <translation>Ask for more time</translation>
+    </message>
+    <message>
+        <source>parental.ask.sentTime</source>
+        <translation>You asked for more time. Waiting for a parent.</translation>
+    </message>
+    <message>
+        <source>parental.time.cannotCheck</source>
+        <translation>Your home can't check your watching time right now. Try again in a moment.</translation>
+    </message>
+    <message>
+        <source>parental.player.stopped</source>
+        <translation>This video is no longer available on this account.</translation>
+    </message>
+    <message>
+        <source>roku.parental.ask15</source>
+        <translation>15 minutes</translation>
+    </message>
+    <message>
+        <source>roku.parental.ask30</source>
+        <translation>30 minutes</translation>
+    </message>
+    <message>
+        <source>roku.parental.ask60</source>
+        <translation>1 hour</translation>
+    </message>
+    <message>
+        <source>roku.weekday.0</source>
+        <translation>Sunday</translation>
+    </message>
+    <message>
+        <source>roku.weekday.1</source>
+        <translation>Monday</translation>
+    </message>
+    <message>
+        <source>roku.weekday.2</source>
+        <translation>Tuesday</translation>
+    </message>
+    <message>
+        <source>roku.weekday.3</source>
+        <translation>Wednesday</translation>
+    </message>
+    <message>
+        <source>roku.weekday.4</source>
+        <translation>Thursday</translation>
+    </message>
+    <message>
+        <source>roku.weekday.5</source>
+        <translation>Friday</translation>
+    </message>
+    <message>
+        <source>roku.weekday.6</source>
+        <translation>Saturday</translation>
+    </message>
 </context>
 </TS>

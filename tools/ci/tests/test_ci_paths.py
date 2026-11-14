@@ -133,7 +133,7 @@ CASES: dict[str, tuple[list[str], set[str], dict[str, set[str]]]] = {
         ["api/internal/handlers/browse/browse.go"],
         GO_SERVER,
         # Epic 57 (story 57.13): the parental bypass rehearsal runs for the API's code
-        {"lint": {"go"}, "unit": {"go"}, "integration": {"integration", "compat_prev", "parental_bypass"}},
+        {"lint": {"go"}, "unit": {"go"}, "integration": {"integration", "compat_prev", "parental_bypass", "tv_clients"}},
     ),
     "the affected-tests gate: its Go module, the hook and the map workflow": (
         ["tools/affected-tests/analyze.go", ".githooks/pre-push", ".github/workflows/coverage-map.yml"],
@@ -149,7 +149,7 @@ CASES: dict[str, tuple[list[str], set[str], dict[str, set[str]]]] = {
             # the supervisor captures the logs: its change runs the log benches (53.13)
             "unit": {"go", "log_bench"},
             # Epic 57 review (finding 20): the bypass rehearsal builds the API with cmd
-            "integration": {"integration", "parental_bypass"},
+            "integration": {"integration", "parental_bypass", "tv_clients"},
             "node-packaging": {"release_venv"},
         },
     ),
@@ -242,7 +242,7 @@ CASES: dict[str, tuple[list[str], set[str], dict[str, set[str]]]] = {
         {
             "lint": {"go", "pipeline"},
             "unit": {"go", "pipeline"},
-            "integration": {"integration", "compat_prev", "parental_bypass"},
+            "integration": {"integration", "compat_prev", "parental_bypass", "tv_clients"},
         },
     ),
     # Epic 57 (story 57.13): the streaming service signs the channel URLs and holds a
@@ -251,7 +251,7 @@ CASES: dict[str, tuple[list[str], set[str], dict[str, set[str]]]] = {
     "streaming only: the parental bypass rehearsal": (
         ["streaming/internal/hls/serve.go"],
         {"unit", "integration", "replica", "e2e", "media-e2e", "build-artifacts", "launcher"},
-        {"lint": {"go"}, "unit": {"go"}, "integration": {"integration", "parental_bypass"}},
+        {"lint": {"go"}, "unit": {"go"}, "integration": {"integration", "parental_bypass", "tv_clients"}},
     ),
 }
 
@@ -286,6 +286,30 @@ def test_which_jobs_a_change_runs(name: str) -> None:
 )
 def test_the_parental_bypass_rehearsal_runs_for_what_it_builds_and_reads(path: str) -> None:
     assert "parental_bypass" in parts(run(path), "integration"), path
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "api/internal/router/p58_tvclients_pg_test.go",
+        "streaming/internal/capability/tvprofiles.go",
+        "shared/playback/caps-vectors.json",
+        "shared/api/openapi.yaml",
+        "cmd/maktaba-server/main.go",
+        "tools/ci/tv-clients-tests.txt",
+        "tools/ci/no-pg-skips.sh",
+    ],
+)
+def test_the_tv_clients_rehearsal_runs_for_what_it_builds_and_reads(path: str) -> None:
+    # Epic 58 (story 58.17): the home driven as each TV drives it
+    assert "tv_clients" in parts(run(path), "integration"), path
+
+
+def test_the_tv_clients_rehearsal_does_not_run_for_the_rest() -> None:
+    for path in ("pipeline/src/maktaba_pipeline/classify/content_screen.py", "web/src/App.tsx",
+                 "apps/tv/roku/source/caps.brs"):  # fmt: skip
+        r = run(path).get("integration")
+        assert r is None or r.inputs.get("tv_clients") is not True, path
 
 
 def test_the_parental_bypass_rehearsal_does_not_run_for_the_rest() -> None:

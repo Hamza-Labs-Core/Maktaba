@@ -91,7 +91,23 @@
     "parental.profile.limitAll": "ﺭﺎﻤﻋﻷﺍ ﻞﻜﻟ :ﻯﻮﺘﺤﻤﻟﺍ ﺪﺣ",
     "parental.profile.limitNone": "ﻦﻳﺪﻟﺍﻮﻟﺍ ﺪﺣﺃ ﻪﺑ ﺢﻤﺳ ﺎﻣ :ﻯﻮﺘﺤﻤﻟﺍ ﺪﺣ",
     "tv.parental.askOnPhone": ".ﻪﻔﺗﺎﻫ ﻰﻠﻋ Maktaba ﻦﻣ ﺩﺮﻟﺍ ﻦﻳﺪﻟﺍﻮﻟﺍ ﺪﺣﻷ ﻦﻜﻤﻳ",
-    "parental.blocked.deviceAll": ".ﺭﺎﻤﻋﻷﺍ ﻞﻜﻟ ـﺑ ﺪﻴﻘﻣ ﺯﺎﻬﺠﻟﺍ ﺍﺬﻫ"
+    "parental.blocked.deviceAll": ".ﺭﺎﻤﻋﻷﺍ ﻞﻜﻟ ـﺑ ﺪﻴﻘﻣ ﺯﺎﻬﺠﻟﺍ ﺍﺬﻫ",
+    "parental.time.up.title": "ﻡﻮﻴﻟﺍ ﺖﻗﻭ ﻰﻬﺘﻧﺍ",
+    "parental.time.outside.title": "ﺪﻌﺑ ﺓﺪﻫﺎﺸﻤﻟﺍ ﺖﻗﻭ ﻦﺤﻳ ﻢﻟ",
+    "parental.time.askMore": "ﺎﻴﻓﺎﺿﺇ ﺎﺘﻗﻭ ﺐﻠﻃﺍ",
+    "parental.ask.sentTime": ".ﻦﻳﺪﻟﺍﻮﻟﺍ ﺪﺣﺃ ﺭﺎﻈﺘﻧﺎﺑ .ﺎﻴﻓﺎﺿﺇ ﺎﺘﻗﻭ ﺖﺒﻠﻃ",
+    "parental.time.cannotCheck": "ﺪﻌﺑ ﺔﻟﻭﺎﺤﻤﻟﺍ ﺪﻋﺃ .ﻥﻵﺍ ﻚﺗﺪﻫﺎﺸﻣ ﺖﻗﻭ ﻦﻣ ﻖﻘﺤﺘﻟﺍ ﻚﻟﺰﻨﻣ ﻊﻴﻄﺘﺴﻳ ﻻ\n.ﻞﻴﻠﻗ",
+    "parental.player.stopped": ".ﺏﺎﺴﺤﻟﺍ ﺍﺬﻫ ﻰﻠﻋ ﺎﺣﺎﺘﻣ ﻊﻄﻘﻤﻟﺍ ﺍﺬﻫ ﺪﻌﻳ ﻢﻟ",
+    "roku.parental.ask15": "ﺔﻘﻴﻗﺩ 15",
+    "roku.parental.ask30": "ﺔﻘﻴﻗﺩ 30",
+    "roku.parental.ask60": "ﺓﺪﺣﺍﻭ ﺔﻋﺎﺳ",
+    "roku.weekday.0": "ﺪﺣﻷﺍ",
+    "roku.weekday.1": "ﻦﻴﻨﺛﻻﺍ",
+    "roku.weekday.2": "ﺀﺎﺛﻼﺜﻟﺍ",
+    "roku.weekday.3": "ﺀﺎﻌﺑﺭﻷﺍ",
+    "roku.weekday.4": "ﺲﻴﻤﺨﻟﺍ",
+    "roku.weekday.5": "ﺔﻌﻤﺠﻟﺍ",
+    "roku.weekday.6": "ﺖﺒﺴﻟﺍ"
   },
   "templates": {
     "launcher.connecting": {
@@ -178,6 +194,16 @@
       "text": "حدّ المحتوى: %1$s+",
       "widthChars": 60,
       "lines": 1
+    },
+    "parental.time.next": {
+      "text": "يمكنك المشاهدة مجددًا عند %1$s",
+      "widthChars": 60,
+      "lines": 1
+    },
+    "parental.time.saved": {
+      "text": "حُفظ موضعك في هذا المقطع عند %1$s.",
+      "widthChars": 60,
+      "lines": 2
     }
   }
 }
