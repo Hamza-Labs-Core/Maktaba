@@ -180,6 +180,15 @@ groups:
         annotations:
           summary: "A staff passkey's counter went backwards; the passkey was disabled"
           runbook_url: docs/runbooks/cloud/staff-security.md
+      # an urgent broadcast report or notice (story 50.24 §4): illegal content on a published
+      # channel, written by the api role (cloud/internal/moderation) as an error line with its
+      # code; it pages the on-call admin at once (≤ 1 h to a decision)
+      - alert: broadcast_urgent_report
+        expr: sum by (service) (increase(maktaba_errors_total{code="moderation_urgent_report"}[10m])) > 0
+        labels: {severity: sev2}
+        annotations:
+          summary: "An urgent report about a broadcast channel: decide within the hour"
+          runbook_url: docs/runbooks/cloud/broadcast-urgent-report.md
       - alert: log_forward_lagging
         expr: max by (node) (maktaba_log_forward_lag_seconds) > 60
         for: 5m

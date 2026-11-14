@@ -303,6 +303,26 @@ class SqlRepo:
             out.append(items)
         return out
 
+    async def publishable_ids(self, channel: ChannelDef, ids: set[UUID]) -> set[UUID] | None:
+        """The ids among ``ids`` that may air while the channel is published with
+        ``broadcast.publishable_only`` on (slot 0227's rule); None while it is not limited.
+        Broadcasting runs on Postgres only: on SQLite a channel is never limited."""
+        if not self._pg:
+            return None
+        row = await self._c.fetchrow(
+            "SELECT channel_publishable_only($1::uuid) AS limited", str(channel.id)
+        )
+        if row is None or not row["limited"]:
+            return None
+        if not ids:
+            return set()
+        rows = await self._c.fetch(
+            "SELECT v AS id FROM unnest($1::uuid[]) AS v"
+            " WHERE video_publishable_reason(v) IS NOT NULL",
+            sorted(str(i) for i in ids),
+        )
+        return {UUID(str(r["id"])) for r in rows}
+
     async def _ref_items(self, kind: str, ref_id: str) -> list[ContentItem]:
         """A ``series`` or ``collection`` slot source's playable videos, in order."""
         try:
@@ -673,10 +693,30 @@ class SqlRepo:
 
         cfg: DisplayTitleConfig = (await read_rules(self._c, "display_titles"))[0]
         info = await display_info(self._c, [str(b.video_id) for b in blocks if b.video_id])
-        return [
-            merge_snapshot(b.title_snapshot, info.get(str(b.video_id)) if b.video_id else None, cfg)
-            for b in blocks
-        ]
+        credits = await self._attributions([str(b.video_id) for b in blocks if b.video_id])
+        out = []
+        for b in blocks:
+            snap = merge_snapshot(
+                b.title_snapshot, info.get(str(b.video_id)) if b.video_id else None, cfg
+            )
+            if b.video_id and (credit := credits.get(str(b.video_id))):
+                snap["attribution"] = credit
+            out.append(snap)
+        return out
+
+    async def _attributions(self, ids: list[str]) -> dict[str, dict[str, Any]]:
+        """What each video's guide entry must credit (Epic 50, story 50.23): the CC BY
+        attribution (title, author, link, licence) or a source's credit line. Postgres
+        only (slot 0227's ``video_attribution``)."""
+        want = sorted(set(ids))
+        if not want or not self._pg:
+            return {}
+        rows = await self._c.fetch(
+            "SELECT v AS id, video_attribution(v) AS a FROM unnest($1::uuid[]) AS v"
+            " WHERE video_attribution(v) IS NOT NULL",
+            want,
+        )
+        return {str(r["id"]): _json(r["a"]) for r in rows}
 
     async def save_state(self, state: ScheduleState) -> None:
         await self._c.execute(

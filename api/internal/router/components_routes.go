@@ -49,6 +49,21 @@ var ComponentRoutes = componentTable{
 	// an admin sending a home's problem report to Maktaba (53.16); a new report with the
 	// Maktaba box ticked (POST /api/reports, core) is refused by its handler
 	{Exact: "POST /api/reports/{id}/share", Component: "reports.share", Admin: true},
+	// home broadcasting (Epic 50 story 50.22): the Broadcast page, admins only
+	{Exact: "GET /api/tv/broadcast", Component: "livetv.broadcast", Admin: true},
+	{Exact: "PUT /api/tv/broadcast/channels/{id}", Component: "livetv.broadcast", Admin: true},
+	{Exact: "POST /api/tv/broadcast/channels/{id}/publish", Component: "livetv.broadcast", Admin: true},
+	{Exact: "POST /api/tv/broadcast/channels/{id}/unpublish", Component: "livetv.broadcast", Admin: true},
+	{Exact: "POST /api/tv/broadcast/speedtest", Component: "livetv.broadcast", Admin: true},
+	// publishable sources (story 50.23): the Broadcast page's sources, marks and switch
+	{Exact: "GET /api/tv/broadcast/publishable", Component: "livetv.broadcast", Admin: true},
+	{Exact: "POST /api/tv/broadcast/publishable/sources", Component: "livetv.broadcast", Admin: true},
+	{Exact: "POST /api/tv/broadcast/publishable/sources/{id}/withdraw", Component: "livetv.broadcast", Admin: true},
+	{Exact: "PUT /api/tv/broadcast/publishable/items", Component: "livetv.broadcast", Admin: true},
+	{Exact: "PUT /api/tv/broadcast/publishable/only", Component: "livetv.broadcast", Admin: true},
+	// Maktaba's notices and reports about this home's channels (story 50.24)
+	{Exact: "GET /api/tv/broadcast/moderation", Component: "livetv.broadcast", Admin: true},
+	{Exact: "POST /api/tv/broadcast/moderation/counter-notices", Component: "livetv.broadcast", Admin: true},
 }
 
 // CoreRoutes never answer component_off: every other route family. A route family

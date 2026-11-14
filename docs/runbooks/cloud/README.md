@@ -42,6 +42,9 @@ probe (GitHub Actions) mails on its own, so a broken witness doesn't silence a S
 | [staff-security.md](staff-security.md) | a staff account's security alert |
 | [status-page.md](status-page.md) | posting an incident or a maintenance notice |
 | [capacity.md](capacity.md) | the relay is filling its node: resize, or start Phase 2 |
+| [broadcast-kill.md](broadcast-kill.md) | a broadcast must stop now: the kill switch, its break-glass, a refused list |
+| [broadcast-takedown.md](broadcast-takedown.md) | a copyright notice, a counter-notice, a restore, the third strike |
+| [broadcast-urgent-report.md](broadcast-urgent-report.md) | an urgent report about a broadcast (illegal content): decide within the hour |
 
 The one-click actions (**Cloud switchover**, **Cloud failover**, **Cloud DNS swap**) run
 `deploy/cloud-ha/runbook/`, which the cloud rehearsal runs first against its own pair

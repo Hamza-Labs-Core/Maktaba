@@ -45,6 +45,30 @@ func TestWorkerGroupAsTheMigrationsMadeIt(t *testing.T) {
 	}
 }
 
+// Slot 0226: a broadcast ingest token is a credential: neither the migrated worker group
+// nor one made again may read it.
+func TestWorkerGroupCannotReadIngestTokens(t *testing.T) {
+	db, _ := clustertest.ScratchDB(t)
+	ctx := context.Background()
+	group := "maktaba_wg_" + strings.ReplaceAll(uuid.NewString()[:8], "-", "")
+	if err := ensureGroup(ctx, db, group); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = db.Exec(`DROP OWNED BY ` + group)
+		_, _ = db.Exec(`DROP ROLE IF EXISTS ` + group)
+	})
+	for _, role := range []string{WorkerGroup, group} {
+		var can bool
+		if err := db.QueryRowContext(ctx, `SELECT has_table_privilege($1, 'broadcast_ingest_tokens', 'SELECT')`, role).Scan(&can); err != nil {
+			t.Fatal(err)
+		}
+		if can {
+			t.Errorf("%s may read broadcast_ingest_tokens", role)
+		}
+	}
+}
+
 // groupRights are role's rights on the scratch database's public objects, by a key naming
 // the object and the right.
 func groupRights(t *testing.T, db *sql.DB, role string) map[string]bool {

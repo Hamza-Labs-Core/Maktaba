@@ -2669,6 +2669,67 @@ build fails when the two differ.
   carries `stream_sig`, which signs its subtitle and chapter URLs, so a TV player that sends no
   header fetches every URL it needs. The older profiles decide as before.
 
+- **A published channel airs only what may be shared online (Epic 50, story 50.23).** While a
+  Live TV channel is broadcast, it airs only publishable items: the household's own recordings,
+  items cleared with a proof link, Creative Commons Attribution videos (read from YouTube at
+  intake and at every refresh), and sources the household recorded permission for, with the link
+  where the source allows sharing. The Broadcast page shows how much of each channel's next 7
+  days may air and the sources that would add most, each with Record permission. Turning the
+  limit off takes a typed confirmation. Each channel can play only in chosen countries or
+  everywhere but them, and Maktaba's own deny list applies to every channel; a viewer outside
+  sees that the channel isn't available in their country. An item that loses its permission
+  plays the "Not available online" card until the schedule is rebuilt.
+
+- **Copyright notices and reports about broadcast channels (Epic 50, story 50.24).** Anyone can
+  send Maktaba a copyright notice or report a published channel, through forms that check each
+  required element and stop bots; an urgent report (illegal content) pages the on-call admin. A
+  service admin decides each one on the admin console's new Notices and reports page, always
+  with a reason and, for a takedown or a restore, a fresh MFA check; every decision is audited
+  and only a service admin is answered. A takedown reaches the home as a signed instruction: the
+  home takes the programme (or its whole source) out of its published channels, the edge shows
+  the slate at once if it is on air, and the home answers what it did. The publisher
+  sees a statement of reasons in English and Arabic on the Broadcast page and by email, can file
+  a counter-notice there, and the item can come back 10 business days later unless the claimant
+  goes to court. Three valid notices in 12 months end broadcasting for the account (remote play
+  is not affected). The records can be exported for counsel and are kept 3 years.
+
+- **Maktaba can take a broadcast off air within a minute (Epic 50, story 50.25).** A service
+  admin stops one programme (the channel shows its slate until a time), a channel, a publisher's
+  account, a home or every broadcast from the admin console's new Broadcast kill switch page,
+  with the reason and a note; each change needs a fresh MFA check and is audited, and only a
+  service admin is answered. The cloud signs one revocation list and sends it to the broadcast
+  edge at once, with a pull every minute as the backup: viewers of a stopped channel are
+  refused at their next playlist and the home stops uploading. The home keeps the newest signed
+  copy, refuses an older one, and shows on its Broadcast page why a channel or the whole home
+  was stopped; if it can't check the list for two days its published channels keep running but
+  a new publish waits. With the cloud's API down, two edge variables stop one channel or
+  everything at once (`docs/runbooks/cloud/broadcast-kill.md`). A home's copy carries only its
+  own entries, signed so the edge won't take it as the full list.
+
+- **A home can broadcast chosen Live TV channels to viewers outside it (Epic 50, story 50.22).**
+  An admin sets a channel up on the new Broadcast panel of the Live TV page (its link name,
+  invite-only or open, always on or only while someone watches, its qualities) and publishes it
+  after ticking that the home has the rights to what it airs. Before anything starts the home
+  checks, in order, the Maktaba Cloud plan, the publisher agreement, the schedule, the measured
+  internet upload (suggesting fewer qualities when it is too slow) and the encoder's free slots,
+  and names the first that fails. A published channel's qualities (up to 1080p, three by
+  default) are made at home and each segment is sent once to the broadcast edge, so the upload
+  is the same however many people watch; the channel shows an offline card when the home is
+  away, keeps going for a day without Maktaba Cloud, and is never released while published.
+  Only admins can set up, publish or unpublish, and the API enforces it. Broadcasting is off
+  until an admin turns it on, and nothing reaches viewers until the broadcast edge is deployed.
+
+- **The broadcast edge, built and rehearsed in CI (story 50.21).** Maktaba Cloud now has the
+  Cloudflare Worker a published channel will play from: a home pushes each segment of each
+  rendition once to `ingest.maktaba.tv`, and viewers' players fetch playlists and segments from
+  `live.maktaba.tv` at Cloudflare's edge, so a home's upload is the same for one viewer as for
+  ten thousand. Each home has its own signed ingest token for one channel and its rungs, valid a
+  day and asked for again every hour; a viewer's token lives ten minutes. When a home goes
+  quiet, its channel plays the home's offline slate and returns to live when it is back.
+  Segments are deleted ten minutes after they arrive; nothing is kept for catch-up. Stream is the
+  switchable fallback. The edge stores and delivers what a home sends and never chooses, ranks
+  or recommends anything. It is not deployed yet: broadcasting stays off until its gate opens.
+
 ### Changed
 
 - **A machine that loses its home stays usable** under a notice instead of the whole app being

@@ -24,6 +24,13 @@ const ERROR_KEYS: Record<string, string> = {
   passkey_failed: "staff.passkey.addFailed",
   passkey_exists: "staff.passkey.exists",
   no_passkey: "staff.passkey.none",
+  // the moderation queue's refusals (story 50.24)
+  already_decided: "admin.moderation.error.already_decided",
+  no_target: "admin.moderation.error.no_target",
+  edge_channel_unknown: "admin.moderation.error.edge_channel_unknown",
+  restore_window_closed: "admin.moderation.error.restore_window_closed",
+  notice_incomplete: "admin.moderation.error.notice_incomplete",
+  not_on_maktaba: "admin.moderation.error.not_on_maktaba",
 };
 
 function withErrors(catalog: Record<string, string>): Record<string, string> {

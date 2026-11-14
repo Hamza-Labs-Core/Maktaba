@@ -14,6 +14,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/db"
 	mailpkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/mail"
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/moderation"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/obs"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/privacy"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/ratelimit"
@@ -102,6 +103,9 @@ func workerJobs(ctx context.Context, logger *slog.Logger, cfg config.Config, poo
 	// allowance and cap notices, the daily reconciliation and the usage windows' sweep
 	b := broadcastReporter(cfg, pool, logger)
 	run(func() { b.Run(ctx, time.Hour) })
+	// takedowns and reports (story 50.24): records past broadcast.records_retention_years go,
+	// once a day (an expired strike stops counting by its own expiry)
+	run(func() { (&moderation.Store{DB: pool.DB, Logger: logger}).Run(ctx) })
 	// direct remote access (story 50.15): certificates and the outside checks
 	if j := directJobs(cfg, pool, logger); j != nil {
 		run(func() { j.Run(ctx) })

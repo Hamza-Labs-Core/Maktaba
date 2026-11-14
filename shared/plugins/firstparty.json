@@ -1,5 +1,5 @@
 {
- "digest": "4a098f4a59a03e6767f7fa448568c671746728b55c9891fd3d1d234276e7bea5",
+ "digest": "d7c5fde4ab724c6c3c2331b85c300d1050d1e19fce8db764f11729286c89fd61",
  "plugins": [
   {
    "digest": "90cee3b8a50fbfef9b0b1d9f12fbf0516ee5098ee7913c1d5133714f73b1b1b3",
@@ -1685,7 +1685,7 @@
    }
   },
   {
-   "digest": "0d964b43e29962de06adfbe7861e30dda88c6ed04096409332af896dfa811d48",
+   "digest": "fc7832bbbee6ce1763e6f7eb0045f5f33c0d29cb11d814bf046b29502caae2c9",
    "folder": "core-media",
    "id": "tv.maktaba.core-media",
    "manifest": "# tv.maktaba.core-media: a first-party plugin of Maktaba (Epic 54, README §15.2), wave 9\n# (story 54.36 §1): the stages every home always runs, the stages of core.pipeline (not\n# switchable). The engine's component_catchup stays in the core, and so does categorize (a\n# placeholder stage with no handler, declared in the graph). The filesystem watcher and the\n# manual scans stay in the core and only enqueue scan. What only the queue engine may write\n# (videos.state, a stage queued again, the path conversion's pauses) the worker writes for the\n# plugin's job: the relayed advance, requeue_failed and storage_canonicalize.\nschema     = 1\nid         = \"tv.maktaba.core-media\"\nversion    = \"0.0.0-dev\"\nplugin_api = \"1.0\"\nmaktaba    = \">=0.0.0\"\nlicence    = \"AGPL-3.0-only\"\nruntime    = \"native-python\"\n\n[strings]\nname    = \"fp.core-media.name\"\nsummary = \"fp.core-media.summary\"\n\n[trusted]\nrunner    = \"light\"\ncomponent = \"core.pipeline\"\ndb.read   = [\"app_settings\", \"libraries\", \"media_field_provenance\", \"processing_jobs\", \"transcripts\"]\ndb.write  = [\"audio_tracks\", \"item_checks\", \"media_info\", \"media_metadata_enrichment\", \"series_seasons\", \"video_copies\", \"video_signals\", \"videos\", \"youtube_channel_libraries\", \"youtube_channels\", \"youtube_playlist_items\", \"youtube_playlists\", \"youtube_source_decisions\", \"youtube_sources\", \"youtube_videos\"]\nfiles.read  = [\"library\", \"data.thumbnails\"]\nfiles.write = []\nexec      = [\"ffprobe\", \"ffmpeg\"]\nsettings  = [\"queue_health\"]\n\n[[stage]]\nname         = \"scan\"\nsubject      = \"library\"\nexport       = \"scan\"\nversion      = 1\nlabel        = \"Scan folders\"\nsubject_kinds = [\"library\"]\npool         = \"nas_read\"\nlane         = \"media\"\nlane_order   = 0\nplacement    = \"any\"\nedges        = [{ to = \"probe\", map = \"videos_changed\", when = \"always\" }]\nentry        = \"maktaba_fp_core_media.stages.scan:IMPL\"\n\n[[stage]]\nname         = \"content_hash\"\nsubject      = \"video\"\nexport       = \"content-hash\"\nversion      = 1\nlabel        = \"File identity\"\nsubject_kinds = [\"video\"]\npool         = \"nas_read\"\nlane         = \"episodes\"\nlane_order   = 0\nplacement    = \"any\"\nedges        = [{ to = \"thumb_small\", map = \"same\" }, { to = \"transcribe\", map = \"same\" }, { to = \"thumbnail\", map = \"same\" }]\nentry        = \"maktaba_fp_core_media.stages.content_hash:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"probe\"\nsubject      = \"video\"\nexport       = \"probe\"\nversion      = 1\nlabel        = \"Length\"\nsubject_kinds = [\"video\"]\npool         = \"nas_read\"\nlane         = \"episodes\"\nlane_order   = 1\nplacement    = \"any\"\nedges        = [{ to = \"thumb_hash\", map = \"same\" }, { to = \"link\", map = \"same\" }, { to = \"detect\", map = \"library_of\" }]\nmay_request  = [\"content_hash\"]\nentry        = \"maktaba_fp_core_media.stages.probe:IMPL\"\n\n[[stage]]\nname         = \"thumb_hash\"\nsubject      = \"video\"\nexport       = \"thumb-hash\"\nversion      = 1\nlabel        = \"Thumbnail\"\nsubject_kinds = [\"video\"]\npool         = \"nas_read\"\nlane         = \"episodes\"\nlane_order   = 2\nplacement    = \"any\"\nedges        = [{ to = \"detect\", map = \"library_of\" }, { to = \"thumb_small\", map = \"same\" }]\nentry        = \"maktaba_fp_core_media.stages.thumb_hash:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"link\"\nsubject      = \"video\"\nexport       = \"link\"\nversion      = 1\nlabel        = \"Link\"\nsubject_kinds = [\"video\"]\npool         = \"cpu\"\nlane         = \"episodes\"\nlane_order   = 3\nplacement    = \"any\"\nedges        = [{ to = \"detect\", map = \"library_of\" }]\nentry        = \"maktaba_fp_core_media.stages.link:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"fingerprint\"\nsubject      = \"video\"\nexport       = \"fingerprint\"\nversion      = 101\nlabel        = \"Fingerprint\"\nsubject_kinds = [\"video\"]\npool         = \"nas_read\"\nlane         = \"episodes\"\nlane_order   = 4\nplacement    = \"any\"\nedges        = [{ to = \"detect\", map = \"library_of\" }, { to = \"fp_gate\", map = \"payload_seasons\" }]\nentry        = \"maktaba_fp_core_media.stages.fingerprint:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"style_sample\"\nsubject      = \"video\"\nexport       = \"style-sample\"\nversion      = 1\nlabel        = \"Style sample\"\nsubject_kinds = [\"video\"]\npool         = \"nas_read\"\nlane         = \"episodes\"\nlane_order   = 5\nplacement    = \"any\"\nedges        = [{ to = \"rate_style\", map = \"payload_seasons\" }]\nentry        = \"maktaba_fp_core_media.stages.style_sample:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"fp_gate\"\nsubject      = \"season\"\nexport       = \"fp-gate\"\nversion      = 101\nlabel        = \"Samples to candidates\"\nsubject_kinds = [\"season\"]\npool         = \"cpu\"\nlane         = \"seasons\"\nlane_order   = 1\nplacement    = \"any\"\nmay_request  = [\"fingerprint\"]\ndebounce_sec = 10\ndebounce_max_sec = 120\nhidden       = true\nentry        = \"maktaba_fp_core_media.stages.fp_gate:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"storage_canonicalize\"\nsubject      = \"catalog\"\nexport       = \"storage-canonicalize\"\nversion      = 1\nlabel        = \"Canonical share paths\"\nsubject_kinds = [\"catalog\"]\npool         = \"cpu\"\nlane         = \"media\"\nlane_order   = 11\nplacement    = \"home\"\nmax_attempts = 1\nentry        = \"maktaba_fp_core_media.stages.storage_canonicalize:IMPL\"\n\n[[stage]]\nname         = \"access_check\"\nsubject      = \"video\"\nexport       = \"access-check\"\nversion      = 1\nlabel        = \"Access check\"\nsubject_kinds = [\"video\"]\npool         = \"nas_read\"\nlane         = \"media\"\nlane_order   = 13\nplacement    = \"any\"\nmax_attempts = 1\nentry        = \"maktaba_fp_core_media.stages.access_check:IMPL\"\n",
@@ -2028,6 +2028,24 @@
       }
      ],
      "mode": "write",
+     "name": "link.upsert_youtube_video",
+     "reads": [],
+     "scope": "youtube_video",
+     "scope_arg": 1,
+     "sha256": "8472cb5ae1f888657e2941c9a81308175ee7b087ecc02c3daad1ad92c90a11f4",
+     "text": "INSERT INTO youtube_videos (youtube_id, channel_id, title, upload_date, date_quality, duration_s, description, source, fetched_at, age_limit, license) VALUES ($1,$2,$3,$4,$5,$6,$7,'info_json',$8,$9,$10) ON CONFLICT (youtube_id) DO UPDATE SET title = EXCLUDED.title, age_limit = COALESCE(EXCLUDED.age_limit, youtube_videos.age_limit), license = COALESCE(EXCLUDED.license, youtube_videos.license), upload_date = COALESCE(EXCLUDED.upload_date, youtube_videos.upload_date), date_quality = CASE WHEN EXCLUDED.upload_date IS NOT NULL THEN 'exact'   ELSE youtube_videos.date_quality END, duration_s = COALESCE(EXCLUDED.duration_s, youtube_videos.duration_s), channel_id = COALESCE(EXCLUDED.channel_id, youtube_videos.channel_id), description = COALESCE(EXCLUDED.description, youtube_videos.description)",
+     "writes": [
+      "youtube_videos"
+     ]
+    },
+    {
+     "also": [
+      {
+       "arg": 2,
+       "scope": "youtube_channel"
+      }
+     ],
+     "mode": "write",
      "name": "link.upsert_youtube_video.2",
      "reads": [],
      "scope": "youtube_playlist",
@@ -2048,24 +2066,6 @@
      "text": "INSERT INTO youtube_playlist_items (playlist_id, youtube_id, position) VALUES ($1,$2,$3) ON CONFLICT (playlist_id, youtube_id) DO UPDATE SET position = COALESCE(EXCLUDED.position, youtube_playlist_items.position)",
      "writes": [
       "youtube_playlist_items"
-     ]
-    },
-    {
-     "also": [
-      {
-       "arg": 2,
-       "scope": "youtube_channel"
-      }
-     ],
-     "mode": "write",
-     "name": "link.upsert_youtube_video.4",
-     "reads": [],
-     "scope": "youtube_video",
-     "scope_arg": 1,
-     "sha256": "8a3b65f4f2fa2664ca72235a96f19260e3a6e593fa5b33462bec4b024c095f0d",
-     "text": "INSERT INTO youtube_videos (youtube_id, channel_id, title, upload_date, date_quality, duration_s, description, source, fetched_at, age_limit) VALUES ($1,$2,$3,$4,$5,$6,$7,'info_json',$8,$9) ON CONFLICT (youtube_id) DO UPDATE SET title = EXCLUDED.title, age_limit = COALESCE(EXCLUDED.age_limit, youtube_videos.age_limit), upload_date = COALESCE(EXCLUDED.upload_date, youtube_videos.upload_date), date_quality = CASE WHEN EXCLUDED.upload_date IS NOT NULL THEN 'exact'   ELSE youtube_videos.date_quality END, duration_s = COALESCE(EXCLUDED.duration_s, youtube_videos.duration_s), channel_id = COALESCE(EXCLUDED.channel_id, youtube_videos.channel_id), description = COALESCE(EXCLUDED.description, youtube_videos.description)",
-     "writes": [
-      "youtube_videos"
      ]
     },
     {
@@ -3433,7 +3433,7 @@
    }
   },
   {
-   "digest": "55c0008be3e094bc91bb35365844bb588279a6317ec3b8d19cb24091a21dc448",
+   "digest": "d9d01e489edbc84553deb078c08c32d4c28a67767ecbf4f1a2bf540ca7ef010a",
    "folder": "livetv",
    "id": "tv.maktaba.livetv",
    "manifest": "# tv.maktaba.livetv: a first-party plugin of Maktaba (Epic 54, README §15.2), wave 7\n# (story 54.34): plans the live TV channels and writes them (or stages them as a TV change).\nschema     = 1\nid         = \"tv.maktaba.livetv\"\nversion    = \"0.0.0-dev\"\nplugin_api = \"1.0\"\nmaktaba    = \">=0.0.0\"\nlicence    = \"AGPL-3.0-only\"\nruntime    = \"native-python\"\n\n[strings]\nname    = \"fp.livetv.name\"\nsummary = \"fp.livetv.summary\"\n\n[trusted]\nrunner    = \"light\"\ncomponent = \"livetv\"\ndb.read   = [\"app_settings\", \"channel_art_overrides\", \"clip_group_items\", \"clip_groups\", \"collection_items\", \"episode_tags\", \"job_stages\", \"libraries\", \"media_metadata_enrichment\", \"processing_jobs\", \"promo_links\", \"season_style\", \"season_tags\", \"series\", \"series_episodes\", \"series_seasons\", \"tv_slots\", \"video_topic_tags\", \"videos\", \"youtube_channels\", \"youtube_videos\"]\ndb.write  = [\"channel_plans\", \"channel_programs\", \"channel_schedule_state\", \"channels\", \"external_links\", \"filler_items\", \"filler_pools\", \"tv_change_events\", \"tv_changes\", \"tv_release_channels\", \"tv_releases\", \"tv_routing\", \"tv_sched_gen_seq\"]\nsettings  = [\"planner\", \"detect\", \"tv\", \"tv_output\", \"tv_staging\", \"display_titles\"]\nfiles.read  = [\"data.channels\"]\nfiles.write = [\"data.review\"]\n\n[[stage]]\nname         = \"plan_channels\"\nsubject      = \"catalog\"\nexport       = \"plan-channels\"\nversion      = 5\nlabel        = \"Plan channels\"\nsubject_kinds = [\"catalog\"]\npool         = \"cpu\"\nlane         = \"channels\"\nlane_order   = 1\nentry_for    = [\"catalog\"]\ndebounce_sec = 300\ndebounce_max_sec = 3600\nplacement    = \"home\"\nedges        = [{ to = \"write_channels\", map = \"same\" }]\nentry        = \"maktaba_fp_livetv.stages.plan_channels:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"write_channels\"\nsubject      = \"catalog\"\nexport       = \"write-channels\"\nversion      = 5\nlabel        = \"Write channels\"\nsubject_kinds = [\"catalog\"]\npool         = \"cpu\"\nlane         = \"channels\"\nlane_order   = 2\nplacement    = \"home\"\nentry        = \"maktaba_fp_livetv.stages.write_channels:IMPL\"\nfingerprint  = { input = true, output = false }\n",
@@ -4001,6 +4001,16 @@
     },
     {
      "mode": "read",
+     "name": "repo.attributions",
+     "reads": [],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "e8f16b1112572e61f84fa65a1a9a6a8cc8db27be883239c2df7368000132ece9",
+     "text": "SELECT v AS id, video_attribution(v) AS a FROM unnest($1::uuid[]) AS v WHERE video_attribution(v) IS NOT NULL",
+     "writes": []
+    },
+    {
+     "mode": "read",
      "name": "repo.channels_needing_topup",
      "reads": [
       "channel_schedule_state"
@@ -4168,6 +4178,26 @@
      "scope_arg": 0,
      "sha256": "149247a9c8ef5c3d5c02a7c90fdb0fc6debdabad685c38ce38af3f89cd2c27ce",
      "text": "SELECT max(seq) AS m FROM channel_programs WHERE channel_id = $1 AND sched_gen = $3 AND start_at < $2",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "repo.publishable_ids",
+     "reads": [],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "6f363bcb81336701a6e4e2dde6969965a1eafa2ae61918baef288f8b0996991d",
+     "text": "SELECT channel_publishable_only($1::uuid) AS limited",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "repo.publishable_ids.2",
+     "reads": [],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "9e8d967f6dfe3b813aa6f44640e41633d8b3d9b9edb74c635004c68f33eed733",
+     "text": "SELECT v AS id FROM unnest($1::uuid[]) AS v WHERE video_publishable_reason(v) IS NOT NULL",
      "writes": []
     },
     {
@@ -4921,7 +4951,7 @@
    }
   },
   {
-   "digest": "1aae13e4d004367455216f68abb1db642fe42933838e5269fcafd2344979475e",
+   "digest": "bdd759855527a17c1c7cf44ee2577945c093a8f851d82a7e01671b2679028ba6",
    "folder": "livetv-slots",
    "id": "tv.maktaba.livetv-slots",
    "manifest": "# tv.maktaba.livetv-slots: a first-party plugin of Maktaba (Epic 54, README §15.2), wave 7\n# (story 54.34): stages, swaps, rolls back and cleans up TV changes (Epic 33's slots).\nschema     = 1\nid         = \"tv.maktaba.livetv-slots\"\nversion    = \"0.0.0-dev\"\nplugin_api = \"1.0\"\nmaktaba    = \">=0.0.0\"\nlicence    = \"AGPL-3.0-only\"\nruntime    = \"native-python\"\n\n[strings]\nname    = \"fp.livetv-slots.name\"\nsummary = \"fp.livetv-slots.summary\"\n\n[trusted]\nrunner    = \"light\"\ncomponent = \"livetv.slots\"\ndb.read   = [\"app_settings\", \"channel_art_overrides\", \"channel_plans\", \"collection_items\", \"filler_items\", \"filler_pools\", \"job_stages\", \"series\", \"series_episodes\", \"tv_slots\", \"videos\"]\ndb.write  = [\"channel_programs\", \"channel_schedule_state\", \"channels\", \"external_links\", \"tv_change_events\", \"tv_changes\", \"tv_release_channels\", \"tv_releases\", \"tv_routing\", \"tv_sched_gen_seq\"]\nsettings  = [\"tv\", \"tv_output\", \"tv_staging\", \"display_titles\"]\nfiles.read  = [\"data.channels\"]\nfiles.write = []\n\n[[stage]]\nname         = \"tv_stage\"\nsubject      = \"catalog\"\nexport       = \"tv-stage\"\nversion      = 1\nlabel        = \"Stage TV change\"\nsubject_kinds = [\"catalog\"]\npool         = \"cpu\"\nlane         = \"channels\"\nlane_order   = 3\nplacement    = \"home\"\nmax_attempts = 2\nentry        = \"maktaba_fp_livetv_slots.stages.tv_stage:IMPL\"\n\n[[stage]]\nname         = \"tv_swap\"\nsubject      = \"catalog\"\nexport       = \"tv-swap\"\nversion      = 1\nlabel        = \"Swap TV change\"\nsubject_kinds = [\"catalog\"]\npool         = \"cpu\"\nlane         = \"channels\"\nlane_order   = 4\nplacement    = \"home\"\nmax_attempts = 1\nentry        = \"maktaba_fp_livetv_slots.stages.tv_swap:IMPL\"\n\n[[stage]]\nname         = \"tv_gc\"\nsubject      = \"catalog\"\nexport       = \"tv-gc\"\nversion      = 1\nlabel        = \"TV staging clean-up\"\nsubject_kinds = [\"catalog\"]\npool         = \"cpu\"\nlane         = \"channels\"\nlane_order   = 5\nplacement    = \"home\"\nentry        = \"maktaba_fp_livetv_slots.stages.tv_gc:IMPL\"\n\n[[stage]]\nname         = \"tv_rollback\"\nsubject      = \"catalog\"\nexport       = \"tv-rollback\"\nversion      = 1\nlabel        = \"Roll back TV change\"\nsubject_kinds = [\"catalog\"]\npool         = \"cpu\"\nlane         = \"channels\"\nlane_order   = 6\nplacement    = \"home\"\nmax_attempts = 2\nentry        = \"maktaba_fp_livetv_slots.stages.tv_rollback:IMPL\"\n",
@@ -5537,6 +5567,16 @@
     },
     {
      "mode": "read",
+     "name": "repo.attributions",
+     "reads": [],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "e8f16b1112572e61f84fa65a1a9a6a8cc8db27be883239c2df7368000132ece9",
+     "text": "SELECT v AS id, video_attribution(v) AS a FROM unnest($1::uuid[]) AS v WHERE video_attribution(v) IS NOT NULL",
+     "writes": []
+    },
+    {
+     "mode": "read",
      "name": "repo.channels_needing_topup",
      "reads": [
       "channel_schedule_state"
@@ -5704,6 +5744,26 @@
      "scope_arg": 0,
      "sha256": "149247a9c8ef5c3d5c02a7c90fdb0fc6debdabad685c38ce38af3f89cd2c27ce",
      "text": "SELECT max(seq) AS m FROM channel_programs WHERE channel_id = $1 AND sched_gen = $3 AND start_at < $2",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "repo.publishable_ids",
+     "reads": [],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "6f363bcb81336701a6e4e2dde6969965a1eafa2ae61918baef288f8b0996991d",
+     "text": "SELECT channel_publishable_only($1::uuid) AS limited",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "repo.publishable_ids.2",
+     "reads": [],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "9e8d967f6dfe3b813aa6f44640e41633d8b3d9b9edb74c635004c68f33eed733",
+     "text": "SELECT v AS id FROM unnest($1::uuid[]) AS v WHERE video_publishable_reason(v) IS NOT NULL",
      "writes": []
     },
     {
@@ -7620,7 +7680,7 @@
    }
   },
   {
-   "digest": "8a5b127a0e26b4bf9ef1f8c42729c9fe1af5dfb6c59150f7efc89a9d362ab9ae",
+   "digest": "30744395b761d5614b763082289965f90e704adc15c1e18f708628f029d72010",
    "folder": "youtube",
    "id": "tv.maktaba.youtube",
    "manifest": "# tv.maktaba.youtube: a first-party plugin of Maktaba (Epic 54, README §15.2), wave 6\n# (story 54.33): lists a library's YouTube channels and downloads their videos, newest first, then the back catalogue.\nschema     = 1\nid         = \"tv.maktaba.youtube\"\nversion    = \"0.0.0-dev\"\nplugin_api = \"1.0\"\nmaktaba    = \">=0.0.0\"\nlicence    = \"AGPL-3.0-only\"\nruntime    = \"native-python\"\n\n[strings]\nname    = \"fp.youtube.name\"\nsummary = \"fp.youtube.summary\"\n\n[trusted]\nrunner    = \"net\"\ncomponent = \"youtube\"\ndb.read   = [\"app_settings\", \"job_stages\", \"libraries\", \"media_metadata_enrichment\", \"processing_jobs\", \"series_episodes\"]\ndb.write  = [\"file_actions\", \"video_copies\", \"videos\", \"youtube_channels\", \"youtube_downloads\", \"youtube_playlist_items\", \"youtube_playlists\", \"youtube_sources\", \"youtube_videos\"]\nsettings  = [\"exactdates\"]\nfiles.read  = [\"library\"]\n# the downloads' work folder (MAKTABA_YT_WORK) is the data.cache area\nfiles.write = [\"library\", \"data.cache\"]\nexec      = [\"yt-dlp\", \"ffmpeg\", \"ffprobe\"]\n# the hosts YouTube's API and yt-dlp's YouTube extractor reach (reviewed; the nightly\n# recording run checks no other is contacted, story 54.33 T02)\nnet       = [\"www.youtube.com\", \"youtube.com\", \"*.googlevideo.com\", \"www.googleapis.com\", \"i.ytimg.com\"]\n\n[[stage]]\nname         = \"youtube_sync\"\nsubject      = \"library\"\nexport       = \"youtube-sync\"\nversion      = 1\nlabel        = \"YouTube listing\"\nsubject_kinds = [\"library\"]\npool         = \"network_yt\"\nlane         = \"sources\"\nlane_order   = 0\nmay_request  = [\"youtube_fetch\", \"youtube_backfill\"]\nentry_for    = [\"library\"]\ndebounce_sec = 300\ndebounce_max_sec = 3600\nedges        = [{ to = \"link\", map = \"videos_of\" }, { to = \"detect\", map = \"same\" }, { to = \"exact_dates\", map = \"same\" }]\nentry        = \"maktaba_fp_youtube.stages.youtube_sync:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"youtube_fetch\"\nsubject      = \"library\"\nexport       = \"youtube-fetch\"\nversion      = 1\nlabel        = \"YouTube downloads\"\nsubject_kinds = [\"library\"]\npool         = \"network_yt\"\nlane         = \"sources\"\nlane_order   = 2\nmay_request  = [\"convert_mp4\", \"youtube_fetch\"]\nexternal_write = true\nentry        = \"maktaba_fp_youtube.stages.youtube_fetch:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"youtube_backfill\"\nsubject      = \"library\"\nexport       = \"youtube-backfill\"\nversion      = 1\nlabel        = \"YouTube back catalogue\"\nsubject_kinds = [\"library\"]\npool         = \"network_yt\"\nlane         = \"sources\"\nlane_order   = 3\nmay_request  = [\"convert_mp4\", \"youtube_backfill\"]\nexternal_write = true\nentry        = \"maktaba_fp_youtube.stages.youtube_backfill:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"exact_dates\"\nsubject      = \"library\"\nexport       = \"exact-dates\"\nversion      = 1\nlabel        = \"Exact dates\"\nsubject_kinds = [\"library\"]\npool         = \"network_yt\"\nlane         = \"sources\"\nlane_order   = 1\nentry_for    = [\"library\"]\ndebounce_sec = 300\ndebounce_max_sec = 3600\nedges        = [{ to = \"detect\", map = \"same\" }]\nentry        = \"maktaba_fp_youtube.stages.exact_dates:IMPL\"\nfingerprint  = { input = true, output = false }\n\n",
@@ -7733,6 +7793,18 @@
      "scope_arg": 1,
      "sha256": "966011eaa7fa026a75dc1fca854d2d575eca4da5edf4b84b5aca13ac8746bc47",
      "text": "UPDATE youtube_videos SET age_limit = $2 WHERE youtube_id = $1",
+     "writes": [
+      "youtube_videos"
+     ]
+    },
+    {
+     "mode": "write",
+     "name": "exact_dates.store.4",
+     "reads": [],
+     "scope": "youtube_video",
+     "scope_arg": 1,
+     "sha256": "c0e71db5e3b71ba897f3923ebbb14e3f99f7df24d6d6da9f59949664c52a7736",
+     "text": "UPDATE youtube_videos SET license = $2 WHERE youtube_id = $1",
      "writes": [
       "youtube_videos"
      ]

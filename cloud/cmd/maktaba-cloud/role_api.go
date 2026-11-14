@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/sha256"
 	"fmt"
@@ -23,6 +24,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/auth/sessions"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/auth/token"
 	billingpkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/billing"
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/broadcast"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/db"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/entitlement"
@@ -35,6 +37,7 @@ import (
 	healthh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/health"
 	homesh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/homes"
 	metricsh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/metrics"
+	moderationh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/moderation"
 	pushh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/push"
 	serversh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/servers"
 	staffh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/staff"
@@ -43,6 +46,7 @@ import (
 	mailpkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/mail"
 	metricspkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/metrics"
 	cmw "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/middleware"
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/moderation"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/obs"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/privacy"
 	pushpkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/push"
@@ -194,6 +198,12 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 	}
 	ipSalt := sha256.Sum256([]byte("maktaba-broadcast-agreement-ip\x00" + string(secret)))
 	broadcastDeps := &broadcasth.Deps{DB: pool.DB, Servers: servers, Store: broadcastStore, Logger: logger, IPSalt: ipSalt[:]}
+	// the kill switch (story 50.25): the signed list for the edge and homes, and the console's
+	// add and lift (wired on the admin listener below)
+	revDeps := revocationDeps(cfg, servers, pool, logger, edgeDeps.Key)
+	// takedowns, reports and repeat infringers (50.24): the public forms, a home's instructions
+	// and records, and the console's queue (wired on the admin listener below)
+	modDeps := moderationDeps(cfg, servers, pool, logger, mailer, revDeps, secret, tsGuard, o.Turnstile)
 	serversDeps := serversh.Deps{Servers: servers, Assertions: assertions, Licenses: licenses,
 		ManageURL: strings.TrimRight(cfg.Server.WebURL, "/") + "/billing"}
 	homes := &homesh.Deps{Servers: servers, Users: users, Signer: assertions, RelayHost: cfg.Relay.PublicHost,
@@ -318,13 +328,20 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 		app.Use(blockedIPs(detector, logger))
 		// a claim code is 8 characters: its redeem is limited per IP too
 		app.Use(authRateLimit(ratelimit.NewPG(pool.DB, "claim", 30, 5, logger), []string{"/v1/servers/claims/redeem"}))
+		// the public notice and report forms (50.24): burst 5, then one a minute per IP
+		app.Use(authRateLimit(ratelimit.NewPG(pool.DB, "moderation", 5, 1.0/60, logger), moderationh.PublicPaths))
 
 		// A home's agent: the claim code or the server's own secret is its
 		// credential, never a user token.
 		serversh.MountAgent(app, serversDeps)
 		broadcasth.MountAgent(app, broadcastDeps)
+		broadcasth.MountIngest(app, ingestDeps(cfg, servers, pool, logger))
 		// the broadcast edge: each request signed with its key, no account
 		edgeh.Mount(app, edgeDeps)
+		broadcasth.MountRevocations(app, revDeps)
+		// takedown notices and viewer reports (no account), and a home's instructions and records
+		moderationh.MountPublic(app, modDeps)
+		moderationh.MountHome(app, modDeps)
 		reports.MountAgent(app, &reports.AgentDeps{Store: reportStore, Servers: servers, Logger: logger,
 			Refuse: strings.EqualFold(os.Getenv("MAKTABA_CLOUD_REPORTS"), "off")})
 		// a release's symbol tables: the symbols token, no account
@@ -390,6 +407,14 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 			// the cloud's log index on W (53.17), as the forwarder reaches it
 			Logs: &adminh.LogsSource{URL: os.Getenv(EnvLogsURL), Token: logsToken()},
 		})
+
+		// the broadcast kill switch, for the service admin only (50.25)
+		revDeps.Gate = adminGate
+		broadcasth.MountRevocationsAdmin(g, revDeps)
+
+		// the moderation queue, for the service admin only (50.24)
+		modDeps.Gate = adminGate
+		moderationh.MountAdmin(g, modDeps)
 
 		// the problem reports homes sent, for the service admin only (53.16)
 		reports.MountAdmin(g, &reports.AdminDeps{Store: reportStore, DB: pool.DB, Logger: logger, Gate: adminGate,
@@ -541,4 +566,74 @@ func turnstileGuard(cfg config.Config, fake turnstile.Verifier) (*turnstile.Guar
 	}
 	return &turnstile.Guard{Enabled: true, Verifier: v, WebOrigins: t.WebOrigins,
 		ClientIP: func(r *http.Request) string { return cmw.GetClientIP(r.Context()) }}, nil
+}
+
+// ingestDeps wires the broadcast edge's ingest tokens (story 50.21): on only with
+// broadcast.enabled and its key; otherwise the route answers 503 broadcast_disabled.
+// revocationDeps signs the kill switch's list with the broadcast signing key (broadcast.key_path,
+// the key of the ingest tokens) and pushes it to the edge's control route. Without the key the
+// console still records entries, the pull is 503 and nothing reaches the edge.
+func revocationDeps(cfg config.Config, servers *stores.Servers, pool *db.Pool, logger *slog.Logger, edgeKey ed25519.PublicKey) *broadcasth.RevocationDeps {
+	store := &broadcast.RevocationStore{DB: pool.DB}
+	rev := &broadcast.Revocations{Store: store, Logger: logger}
+	if cfg.Broadcast.IngestURL != "" {
+		rev.ControlURL = strings.TrimRight(cfg.Broadcast.IngestURL, "/") + "/v1/control/revocations"
+	}
+	if cfg.Broadcast.KeyPath != "" {
+		if k, err := broadcast.LoadKey(cfg.Broadcast.KeyPath); err != nil {
+			logger.Warn("broadcast revocation list unsigned", "err", err)
+		} else {
+			rev.Key = &k
+		}
+	}
+	owner := func(ctx context.Context, serverID string) (string, error) {
+		var uid string
+		err := pool.DB.QueryRowContext(ctx, `SELECT owner_user_id::text FROM servers WHERE id::text = $1`, serverID).Scan(&uid)
+		return uid, err
+	}
+	return &broadcasth.RevocationDeps{Rev: rev, Store: store, Agents: servers, Owner: owner, EdgeKey: edgeKey, Logger: logger}
+}
+
+// moderationDeps wires the takedown queue (story 50.24): the kill switch's store for a
+// programme's slate, a channel and a publisher; the broadcast signing key for a home's signed
+// instructions (without it the home's pull answers 503); the forms' bot check on maktaba.tv and
+// watch.maktaba.tv while the auth pages' check is on.
+func moderationDeps(cfg config.Config, servers *stores.Servers, pool *db.Pool, logger *slog.Logger, mailer mailpkg.Mailer,
+	rev *broadcasth.RevocationDeps, secret []byte, user *turnstile.Guard, fake turnstile.Verifier) *moderationh.Deps {
+	store := &moderation.Store{DB: pool.DB, Rev: rev.Store, Mailer: mailer, Logger: logger,
+		Push: func(context.Context) {
+			go func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+				defer cancel()
+				if err := rev.Rev.Push(ctx); err != nil {
+					logger.Warn("moderation: the revocation list was not pushed; the edge's pull carries it", "err", err)
+				}
+			}()
+		}}
+	salt := sha256.Sum256([]byte("maktaba-moderation-ip\x00" + string(secret)))
+	d := &moderationh.Deps{Store: store, Agents: servers, Key: rev.Rev.Key, IPSalt: salt[:], Logger: logger}
+	if user != nil {
+		var v turnstile.Verifier = &turnstile.Client{Secret: cfg.Turnstile.Secret, Hostnames: []string{"maktaba.tv", "watch.maktaba.tv"}}
+		if fake != nil {
+			v = fake
+		}
+		d.Turnstile = v
+	}
+	return d
+}
+
+func ingestDeps(cfg config.Config, servers *stores.Servers, pool *db.Pool, logger *slog.Logger) *broadcasth.IngestDeps {
+	d := &broadcasth.IngestDeps{Agents: servers, Plans: broadcasth.DBPlans{DB: pool.DB}, IngestURL: cfg.Broadcast.IngestURL,
+		GeoDeny: broadcasth.DBGeoDeny(pool.DB), EdgeChannels: broadcasth.DBEdgeChannels(pool.DB)}
+	if !cfg.Broadcast.Enabled {
+		return d
+	}
+	k, err := broadcast.LoadKey(cfg.Broadcast.KeyPath)
+	if err != nil {
+		logger.Warn("broadcast ingest tokens disabled", "err", err)
+		return d
+	}
+	d.Key = &k
+	logger.Info("broadcast ingest tokens on", "kid", k.Kid)
+	return d
 }

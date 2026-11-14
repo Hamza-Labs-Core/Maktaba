@@ -4069,6 +4069,14 @@
       "en": "Age tiers on the home's content (0, 9, 13, 16, 18, or unrated) and the table that maps each country's rating labels to them.",
       "ar": "الفئات العمرية لمحتوى المنزل (0 أو 9 أو 13 أو 16 أو 18 أو غير مصنَّف) والجدول الذي يقابل تصنيفات كل بلد بها."
     },
+    "/tags/24/name": {
+      "en": "Broadcasting",
+      "ar": "البث"
+    },
+    "/tags/24/description": {
+      "en": "Publishing Live TV channels to viewers outside the home (admins only): each published channel's qualities are made at home and each segment is sent once to Maktaba's broadcast edge.",
+      "ar": "نشر قنوات البث المباشر لمشاهدين خارج المنزل (للمشرفين فقط): تُصنع جودات كل قناة منشورة في المنزل، ويُرسل كل مقطع مرة واحدة إلى حافة البث في مكتبة."
+    },
     "/paths/~1parental~1children/get/summary": {
       "en": "The restricted accounts the caller looks after",
       "ar": "الحسابات المقيَّدة التي يتولاها المتصل"
@@ -5661,6 +5669,390 @@
       "en": "This app build is below the home's client floor (`code: client_too_old`, with `floor`, the oldest build this home serves, and `client`, the `<app>/<platform>` it read from `X-Maktaba-Client`). The app shows Update this app. A request without the header (the web) is never refused.",
       "ar": "إصدار هذا التطبيق أدنى من الحد الأدنى الذي يخدمه المنزل (`code: client_too_old`، مع `floor` وهو أقدم إصدار يخدمه هذا المنزل، و`client` وهو `<app>/<platform>` كما قرأه من `X-Maktaba-Client`). يعرض التطبيق صفحة «حدِّث هذا التطبيق». أما الطلب الذي لا يحمل هذا الترويسة (الويب) فلا يُرفض أبدًا."
     },
+    "/paths/~1tv~1broadcast/get/summary": {
+      "en": "The Broadcast page",
+      "ar": "صفحة البث"
+    },
+    "/paths/~1tv~1broadcast/get/description": {
+      "en": "Every Live TV channel with its broadcast setup and state, the last upload measurement, the Maktaba Cloud plan (null when the cloud cannot be asked), the broadcast rules, the upload budget and what published channels use, and the publish checks in the order they run.",
+      "ar": "كل قنوات البث المباشر مع إعداد بثها وحالتها، وآخر قياس للرفع، وخطة سحابة مكتبة (null حين يتعذّر سؤال السحابة)، وقواعد البث، وميزانية الرفع وما تستهلكه القنوات المنشورة، وفحوص النشر بترتيب تنفيذها."
+    },
+    "/paths/~1tv~1broadcast/get/responses/200/description": {
+      "en": "The page.",
+      "ar": "الصفحة."
+    },
+    "/paths/~1tv~1broadcast/get/responses/200/content/application~1json/schema/properties/channels/items/description": {
+      "en": "A Live TV channel and how it is broadcast.",
+      "ar": "قناة من البث المباشر وطريقة بثها."
+    },
+    "/paths/~1tv~1broadcast/get/responses/200/content/application~1json/schema/properties/channels/items/properties/configured/description": {
+      "en": "Whether it has a broadcast setup.",
+      "ar": "هل لها إعداد بث."
+    },
+    "/paths/~1tv~1broadcast/get/responses/200/content/application~1json/schema/properties/channels/items/properties/slug/description": {
+      "en": "The public link's name: `https://watch.maktaba.tv/<slug>`.",
+      "ar": "اسم الرابط العام: `https://watch.maktaba.tv/<slug>`."
+    },
+    "/paths/~1tv~1broadcast/get/responses/200/content/application~1json/schema/properties/channels/items/properties/mode/description": {
+      "en": "`open` channels are always on; invite-only ones may start only when someone watches.",
+      "ar": "القنوات `open` تعمل دائمًا؛ أما القنوات بالدعوة فقد لا تبدأ إلا حين يشاهدها أحد."
+    },
+    "/paths/~1tv~1broadcast/get/responses/200/content/application~1json/schema/properties/channels/items/properties/rungs/description": {
+      "en": "The qualities, top first: `src` is the channel's own encode, copied.",
+      "ar": "الجودات، الأعلى أولًا: `src` هو ترميز القناة نفسها، منسوخًا."
+    },
+    "/paths/~1tv~1broadcast/get/responses/200/content/application~1json/schema/properties/channels/items/properties/countries/description": {
+      "en": "Where it may be watched (ISO 3166 codes); empty: everywhere.",
+      "ar": "أين يمكن مشاهدتها (رموز ISO 3166)؛ فارغة: في كل مكان."
+    },
+    "/paths/~1tv~1broadcast/get/responses/200/content/application~1json/schema/properties/channels/items/properties/detail/description": {
+      "en": "Why it is not live, when it is not: `tokenExpired`, `clockSkew`, `edgeUnavailable`, `rungDropped`, `planOff`, `softwareRungs`.",
+      "ar": "سبب عدم بثها حين لا تكون مباشرة: `tokenExpired`، `clockSkew`، `edgeUnavailable`، `rungDropped`، `planOff`، `softwareRungs`."
+    },
+    "/paths/~1tv~1broadcast/get/responses/200/content/application~1json/schema/properties/channels/items/properties/dropped_rungs/description": {
+      "en": "Top qualities removed because the measured upload fell.",
+      "ar": "الجودات العليا التي أُزيلت لأن سرعة الرفع المقيسة انخفضت."
+    },
+    "/paths/~1tv~1broadcast/get/responses/409/description": {
+      "en": "Broadcasting is off on this home (`code: component_off`, `component: livetv.broadcast`): an admin turns it on in Components.",
+      "ar": "البث متوقف في هذا المنزل (`code: component_off`، `component: livetv.broadcast`): يشغّله المشرف من المكوّنات."
+    },
+    "/paths/~1tv~1broadcast/get/responses/403/description": {
+      "en": "Admin only.",
+      "ar": "للمشرفين فقط."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}/put/summary": {
+      "en": "Set up a channel for broadcasting",
+      "ar": "تجهيز قناة للبث"
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}/put/description": {
+      "en": "Saves a channel's slug, access, mode, qualities and countries. An `open` channel is always on. A published channel's setup waits for an unpublish (`409`, `code: broadcast.unpublishFirst`).",
+      "ar": "يحفظ اسم رابط القناة ونوع الوصول والوضع والجودات والدول. القناة `open` تعمل دائمًا. إعداد القناة المنشورة ينتظر إلغاء نشرها (`409`، `code: broadcast.unpublishFirst`)."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}/put/parameters/0/description": {
+      "en": "The channel.",
+      "ar": "القناة."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}/put/responses/200/description": {
+      "en": "The channel as saved.",
+      "ar": "القناة كما حُفظت."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}/put/responses/200/content/application~1json/schema/description": {
+      "en": "A Live TV channel and how it is broadcast.",
+      "ar": "قناة من البث المباشر وطريقة بثها."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}/put/responses/200/content/application~1json/schema/properties/configured/description": {
+      "en": "Whether it has a broadcast setup.",
+      "ar": "هل لها إعداد بث."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}/put/responses/200/content/application~1json/schema/properties/slug/description": {
+      "en": "The public link's name: `https://watch.maktaba.tv/<slug>`.",
+      "ar": "اسم الرابط العام: `https://watch.maktaba.tv/<slug>`."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}/put/responses/200/content/application~1json/schema/properties/mode/description": {
+      "en": "`open` channels are always on; invite-only ones may start only when someone watches.",
+      "ar": "القنوات `open` تعمل دائمًا؛ أما القنوات بالدعوة فقد لا تبدأ إلا حين يشاهدها أحد."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}/put/responses/200/content/application~1json/schema/properties/rungs/description": {
+      "en": "The qualities, top first: `src` is the channel's own encode, copied.",
+      "ar": "الجودات، الأعلى أولًا: `src` هو ترميز القناة نفسها، منسوخًا."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}/put/responses/200/content/application~1json/schema/properties/countries/description": {
+      "en": "Where it may be watched (ISO 3166 codes); empty: everywhere.",
+      "ar": "أين يمكن مشاهدتها (رموز ISO 3166)؛ فارغة: في كل مكان."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}/put/responses/200/content/application~1json/schema/properties/detail/description": {
+      "en": "Why it is not live, when it is not: `tokenExpired`, `clockSkew`, `edgeUnavailable`, `rungDropped`, `planOff`, `softwareRungs`.",
+      "ar": "سبب عدم بثها حين لا تكون مباشرة: `tokenExpired`، `clockSkew`، `edgeUnavailable`، `rungDropped`، `planOff`، `softwareRungs`."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}/put/responses/200/content/application~1json/schema/properties/dropped_rungs/description": {
+      "en": "Top qualities removed because the measured upload fell.",
+      "ar": "الجودات العليا التي أُزيلت لأن سرعة الرفع المقيسة انخفضت."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}/put/responses/400/description": {
+      "en": "A field is not valid (`code: broadcast.<field>`).",
+      "ar": "حقل غير صالح (`code: broadcast.<field>`)."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}/put/responses/404/description": {
+      "en": "No such channel.",
+      "ar": "لا توجد قناة كهذه."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}/put/responses/409/description": {
+      "en": "The slug is taken, the channel is published, or broadcasting is off.",
+      "ar": "اسم الرابط مستخدم، أو القناة منشورة، أو البث متوقف."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}/put/responses/403/description": {
+      "en": "Admin only.",
+      "ar": "للمشرفين فقط."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1publish/post/summary": {
+      "en": "Publish a channel",
+      "ar": "نشر قناة"
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1publish/post/description": {
+      "en": "Runs the publish checks, stores the admin's rights confirmation on the home, publishes the channel on Maktaba Cloud (only the confirmation's date and the agreement version are sent) and fetches its ingest token. The home's broadcaster starts uploading within seconds.",
+      "ar": "يشغّل فحوص النشر، ويحفظ تأكيد المشرف للحقوق في المنزل، وينشر القناة في سحابة مكتبة (لا يُرسل إلا تاريخ التأكيد ونسخة الاتفاقية)، ويجلب رمز الاستقبال الخاص بها. يبدأ باثّ المنزل الرفع خلال ثوانٍ."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1publish/post/parameters/0/description": {
+      "en": "The channel.",
+      "ar": "القناة."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1publish/post/requestBody/content/application~1json/schema/properties/confirm_rights/description": {
+      "en": "The admin confirms the home has the rights to broadcast what the channel airs.",
+      "ar": "يؤكد المشرف أن للمنزل حق بث ما تعرضه القناة."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1publish/post/responses/200/description": {
+      "en": "Published.",
+      "ar": "نُشرت."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1publish/post/responses/200/content/application~1json/schema/description": {
+      "en": "A Live TV channel and how it is broadcast.",
+      "ar": "قناة من البث المباشر وطريقة بثها."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1publish/post/responses/200/content/application~1json/schema/properties/configured/description": {
+      "en": "Whether it has a broadcast setup.",
+      "ar": "هل لها إعداد بث."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1publish/post/responses/200/content/application~1json/schema/properties/slug/description": {
+      "en": "The public link's name: `https://watch.maktaba.tv/<slug>`.",
+      "ar": "اسم الرابط العام: `https://watch.maktaba.tv/<slug>`."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1publish/post/responses/200/content/application~1json/schema/properties/mode/description": {
+      "en": "`open` channels are always on; invite-only ones may start only when someone watches.",
+      "ar": "القنوات `open` تعمل دائمًا؛ أما القنوات بالدعوة فقد لا تبدأ إلا حين يشاهدها أحد."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1publish/post/responses/200/content/application~1json/schema/properties/rungs/description": {
+      "en": "The qualities, top first: `src` is the channel's own encode, copied.",
+      "ar": "الجودات، الأعلى أولًا: `src` هو ترميز القناة نفسها، منسوخًا."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1publish/post/responses/200/content/application~1json/schema/properties/countries/description": {
+      "en": "Where it may be watched (ISO 3166 codes); empty: everywhere.",
+      "ar": "أين يمكن مشاهدتها (رموز ISO 3166)؛ فارغة: في كل مكان."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1publish/post/responses/200/content/application~1json/schema/properties/detail/description": {
+      "en": "Why it is not live, when it is not: `tokenExpired`, `clockSkew`, `edgeUnavailable`, `rungDropped`, `planOff`, `softwareRungs`.",
+      "ar": "سبب عدم بثها حين لا تكون مباشرة: `tokenExpired`، `clockSkew`، `edgeUnavailable`، `rungDropped`، `planOff`، `softwareRungs`."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1publish/post/responses/200/content/application~1json/schema/properties/dropped_rungs/description": {
+      "en": "Top qualities removed because the measured upload fell.",
+      "ar": "الجودات العليا التي أُزيلت لأن سرعة الرفع المقيسة انخفضت."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1publish/post/responses/409/description": {
+      "en": "Refused by a publish check (`code: broadcast.<check code>`, with `check`, the first failed check of plan, agreement, publishable, uplink, encoder, rights, and `params`, such as `suggestion`, a ladder that fits). Nothing is started and nothing is sent to Maktaba Cloud.",
+      "ar": "رفضه أحد فحوص النشر (`code: broadcast.<check code>`، مع `check`، أول فحص فشل من plan وagreement وpublishable وuplink وencoder وrights، و`params` مثل `suggestion`، مجموعة جودات تناسب). لا يبدأ شيء ولا يُرسل شيء إلى سحابة مكتبة."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1publish/post/responses/502/description": {
+      "en": "Maktaba Cloud refused the channel (`code: broadcast.cloudRefused`); nothing was published.",
+      "ar": "رفضت سحابة مكتبة القناة (`code: broadcast.cloudRefused`)؛ لم يُنشر شيء."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1publish/post/responses/503/description": {
+      "en": "Maktaba Cloud could not be reached (`code: broadcast.cloudUnreachable`); nothing was published.",
+      "ar": "تعذّر الوصول إلى سحابة مكتبة (`code: broadcast.cloudUnreachable`)؛ لم يُنشر شيء."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1publish/post/responses/403/description": {
+      "en": "Admin only.",
+      "ar": "للمشرفين فقط."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1unpublish/post/summary": {
+      "en": "Unpublish a channel",
+      "ar": "إلغاء نشر قناة"
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1unpublish/post/description": {
+      "en": "Stops the channel's broadcast at once and removes its ingest token. When Maktaba Cloud cannot be reached, the unpublish is sent again until it is taken.",
+      "ar": "يوقف بث القناة فورًا ويحذف رمز الاستقبال الخاص بها. حين يتعذّر الوصول إلى سحابة مكتبة، يُعاد إرسال إلغاء النشر حتى يُقبل."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1unpublish/post/parameters/0/description": {
+      "en": "The channel.",
+      "ar": "القناة."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1unpublish/post/responses/200/description": {
+      "en": "Unpublished.",
+      "ar": "أُلغي النشر."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1unpublish/post/responses/200/content/application~1json/schema/description": {
+      "en": "A Live TV channel and how it is broadcast.",
+      "ar": "قناة من البث المباشر وطريقة بثها."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1unpublish/post/responses/200/content/application~1json/schema/properties/configured/description": {
+      "en": "Whether it has a broadcast setup.",
+      "ar": "هل لها إعداد بث."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1unpublish/post/responses/200/content/application~1json/schema/properties/slug/description": {
+      "en": "The public link's name: `https://watch.maktaba.tv/<slug>`.",
+      "ar": "اسم الرابط العام: `https://watch.maktaba.tv/<slug>`."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1unpublish/post/responses/200/content/application~1json/schema/properties/mode/description": {
+      "en": "`open` channels are always on; invite-only ones may start only when someone watches.",
+      "ar": "القنوات `open` تعمل دائمًا؛ أما القنوات بالدعوة فقد لا تبدأ إلا حين يشاهدها أحد."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1unpublish/post/responses/200/content/application~1json/schema/properties/rungs/description": {
+      "en": "The qualities, top first: `src` is the channel's own encode, copied.",
+      "ar": "الجودات، الأعلى أولًا: `src` هو ترميز القناة نفسها، منسوخًا."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1unpublish/post/responses/200/content/application~1json/schema/properties/countries/description": {
+      "en": "Where it may be watched (ISO 3166 codes); empty: everywhere.",
+      "ar": "أين يمكن مشاهدتها (رموز ISO 3166)؛ فارغة: في كل مكان."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1unpublish/post/responses/200/content/application~1json/schema/properties/detail/description": {
+      "en": "Why it is not live, when it is not: `tokenExpired`, `clockSkew`, `edgeUnavailable`, `rungDropped`, `planOff`, `softwareRungs`.",
+      "ar": "سبب عدم بثها حين لا تكون مباشرة: `tokenExpired`، `clockSkew`، `edgeUnavailable`، `rungDropped`، `planOff`، `softwareRungs`."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1unpublish/post/responses/200/content/application~1json/schema/properties/dropped_rungs/description": {
+      "en": "Top qualities removed because the measured upload fell.",
+      "ar": "الجودات العليا التي أُزيلت لأن سرعة الرفع المقيسة انخفضت."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1unpublish/post/responses/404/description": {
+      "en": "No such channel.",
+      "ar": "لا توجد قناة كهذه."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1unpublish/post/responses/409/description": {
+      "en": "Broadcasting is off, or this home is not claimed in Maktaba Cloud.",
+      "ar": "البث متوقف، أو هذا المنزل غير مربوط بسحابة مكتبة."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1unpublish/post/responses/403/description": {
+      "en": "Admin only.",
+      "ar": "للمشرفين فقط."
+    },
+    "/paths/~1tv~1broadcast~1speedtest/post/summary": {
+      "en": "Measure the upload",
+      "ar": "قياس سرعة الرفع"
+    },
+    "/paths/~1tv~1broadcast~1speedtest/post/description": {
+      "en": "Sends test data to the broadcast edge for up to 10 seconds and stores the measured upload. A measurement below what published channels need removes the newest channel's top quality. It also runs every day at night.",
+      "ar": "يرسل بيانات اختبار إلى حافة البث مدة أقصاها 10 ثوانٍ ويحفظ سرعة الرفع المقيسة. القياس الأقل مما تحتاجه القنوات المنشورة يزيل أعلى جودة من أحدث قناة. ويعمل أيضًا كل يوم ليلًا."
+    },
+    "/paths/~1tv~1broadcast~1speedtest/post/responses/200/description": {
+      "en": "The measurement.",
+      "ar": "القياس."
+    },
+    "/paths/~1tv~1broadcast~1speedtest/post/responses/409/description": {
+      "en": "Broadcasting is off, no channel is set up yet, or this home is not claimed in Maktaba Cloud.",
+      "ar": "البث متوقف، أو لم تُجهَّز أي قناة بعد، أو هذا المنزل غير مربوط بسحابة مكتبة."
+    },
+    "/paths/~1tv~1broadcast~1speedtest/post/responses/502/description": {
+      "en": "Maktaba Cloud or the broadcast edge could not be reached.",
+      "ar": "تعذّر الوصول إلى سحابة مكتبة أو إلى حافة البث."
+    },
+    "/paths/~1tv~1broadcast~1speedtest/post/responses/403/description": {
+      "en": "Admin only.",
+      "ar": "للمشرفين فقط."
+    },
+    "/paths/~1tv~1broadcast~1publishable/get/summary": {
+      "en": "Publishable sources and shares",
+      "ar": "المصادر القابلة للنشر ونسبها"
+    },
+    "/paths/~1tv~1broadcast~1publishable/get/description": {
+      "en": "Whether published channels air only publishable items, the source permissions recorded on this home (withdrawn ones too, as the record), and each channel's publishable share of the next 7 days with the sources that would add the most hours if marked. Nothing here is sent to Maktaba Cloud.",
+      "ar": "هل تعرض القنوات المنشورة العناصر القابلة للنشر فقط، وأذونات المصادر المسجلة على هذا المنزل (والمسحوبة أيضًا، للسجل)، ونسبة ما يقبل النشر من الأيام السبعة القادمة في كل قناة مع المصادر التي تضيف أكثر الساعات لو سُجّلت. لا يُرسل شيء من هذا إلى سحابة مكتبة."
+    },
+    "/paths/~1tv~1broadcast~1publishable/get/responses/200/description": {
+      "en": "The switch, the permissions and the shares.",
+      "ar": "المفتاح والأذونات والنسب."
+    },
+    "/paths/~1tv~1broadcast~1publishable/get/responses/403/description": {
+      "en": "Admin only.",
+      "ar": "للمشرفين فقط."
+    },
+    "/paths/~1tv~1broadcast~1publishable/get/responses/409/description": {
+      "en": "Broadcasting is off on this home.",
+      "ar": "البث متوقف على هذا المنزل."
+    },
+    "/paths/~1tv~1broadcast~1publishable~1sources/post/summary": {
+      "en": "Record a source permission",
+      "ar": "تسجيل إذن مصدر"
+    },
+    "/paths/~1tv~1broadcast~1publishable~1sources/post/description": {
+      "en": "Records that a source allows sharing: a YouTube channel id, a playlist id, a speaker (a speaker named on an item, or a reciter's library) or a label, with a link to where the source says so. Every item from that source becomes publishable at once.",
+      "ar": "يسجّل أن مصدرًا يسمح بالمشاركة: معرّف قناة يوتيوب، أو معرّف قائمة تشغيل، أو متحدثًا (متحدثًا مذكورًا في عنصر، أو مكتبة قارئ)، أو جهة إصدار، مع رابط الموضع الذي يقول فيه المصدر ذلك. يصبح كل عنصر من هذا المصدر قابلًا للنشر فورًا."
+    },
+    "/paths/~1tv~1broadcast~1publishable~1sources/post/responses/201/description": {
+      "en": "The permission.",
+      "ar": "الإذن."
+    },
+    "/paths/~1tv~1broadcast~1publishable~1sources/post/responses/400/description": {
+      "en": "A field is missing or not valid; the proof must be a link.",
+      "ar": "حقل ناقص أو غير صالح؛ ويجب أن يكون الإثبات رابطًا."
+    },
+    "/paths/~1tv~1broadcast~1publishable~1sources/post/responses/403/description": {
+      "en": "Admin only.",
+      "ar": "للمشرفين فقط."
+    },
+    "/paths/~1tv~1broadcast~1publishable~1sources/post/responses/409/description": {
+      "en": "Broadcasting is off on this home.",
+      "ar": "البث متوقف على هذا المنزل."
+    },
+    "/paths/~1tv~1broadcast~1publishable~1sources~1{id}~1withdraw/post/summary": {
+      "en": "Withdraw a source permission",
+      "ar": "سحب إذن مصدر"
+    },
+    "/paths/~1tv~1broadcast~1publishable~1sources~1{id}~1withdraw/post/description": {
+      "en": "Withdraws a permission at once. Its items stop being publishable: a published channel plays the slate in a slot already scheduled, and the next top-up replaces it. The permission stays as the record.",
+      "ar": "يسحب الإذن فورًا. تتوقف عناصره عن كونها قابلة للنشر: تعرض القناة المنشورة اللوحة في الفترة المجدولة سلفًا، ويستبدلها التحديث التالي للجدول. يبقى الإذن للسجل."
+    },
+    "/paths/~1tv~1broadcast~1publishable~1sources~1{id}~1withdraw/post/responses/200/description": {
+      "en": "The withdrawn permission.",
+      "ar": "الإذن المسحوب."
+    },
+    "/paths/~1tv~1broadcast~1publishable~1sources~1{id}~1withdraw/post/responses/404/description": {
+      "en": "No standing permission has this id.",
+      "ar": "لا يوجد إذن قائم بهذا المعرّف."
+    },
+    "/paths/~1tv~1broadcast~1publishable~1sources~1{id}~1withdraw/post/responses/403/description": {
+      "en": "Admin only.",
+      "ar": "للمشرفين فقط."
+    },
+    "/paths/~1tv~1broadcast~1publishable~1sources~1{id}~1withdraw/post/responses/409/description": {
+      "en": "Broadcasting is off on this home.",
+      "ar": "البث متوقف على هذا المنزل."
+    },
+    "/paths/~1tv~1broadcast~1publishable~1items/put/summary": {
+      "en": "Mark items publishable",
+      "ar": "تعليم العناصر قابلة للنشر"
+    },
+    "/paths/~1tv~1broadcast~1publishable~1items/put/description": {
+      "en": "Marks items as the admin's own recordings (by id, or every item of a folder, a series or a collection in one action), records a proof link for one item (reason cleared), or removes the mark (reason none).",
+      "ar": "يعلّم العناصر بأنها تسجيلات المشرف الخاصة (بالمعرّف، أو كل عناصر مجلد أو مسلسل أو مجموعة دفعة واحدة)، أو يسجّل رابط إثبات لعنصر واحد (السبب cleared)، أو يزيل العلامة (السبب none)."
+    },
+    "/paths/~1tv~1broadcast~1publishable~1items/put/responses/200/description": {
+      "en": "How many items changed.",
+      "ar": "عدد العناصر التي تغيّرت."
+    },
+    "/paths/~1tv~1broadcast~1publishable~1items/put/responses/400/description": {
+      "en": "No items named, an unknown reason, or a cleared item without its proof link.",
+      "ar": "لم تُذكر عناصر، أو السبب غير معروف، أو عنصر بالسبب cleared بلا رابط إثبات."
+    },
+    "/paths/~1tv~1broadcast~1publishable~1items/put/responses/403/description": {
+      "en": "Admin only.",
+      "ar": "للمشرفين فقط."
+    },
+    "/paths/~1tv~1broadcast~1publishable~1items/put/responses/409/description": {
+      "en": "Broadcasting is off on this home.",
+      "ar": "البث متوقف على هذا المنزل."
+    },
+    "/paths/~1tv~1broadcast~1publishable~1only/put/summary": {
+      "en": "Limit published channels to publishable items",
+      "ar": "قصر القنوات المنشورة على العناصر القابلة للنشر"
+    },
+    "/paths/~1tv~1broadcast~1publishable~1only/put/description": {
+      "en": "Turns broadcast.publishable_only on or off for this home. It is on by default; turning it off takes the typed confirmation (turn off, or إيقاف).",
+      "ar": "يشغّل broadcast.publishable_only أو يوقفه لهذا المنزل. هو مشغّل افتراضيًا، وإيقافه يتطلب كتابة التأكيد (turn off أو إيقاف)."
+    },
+    "/paths/~1tv~1broadcast~1publishable~1only/put/responses/200/description": {
+      "en": "The setting now.",
+      "ar": "الإعداد الآن."
+    },
+    "/paths/~1tv~1broadcast~1publishable~1only/put/responses/400/description": {
+      "en": "Turning it off without the typed confirmation.",
+      "ar": "محاولة إيقافه دون كتابة التأكيد."
+    },
+    "/paths/~1tv~1broadcast~1publishable~1only/put/responses/403/description": {
+      "en": "Admin only.",
+      "ar": "للمشرفين فقط."
+    },
+    "/paths/~1tv~1broadcast~1publishable~1only/put/responses/409/description": {
+      "en": "Broadcasting is off on this home.",
+      "ar": "البث متوقف على هذا المنزل."
+    },
     "/paths/~1cast~1grants/post/summary": {
       "en": "Mint a cast grant for a Cast receiver",
       "ar": "إصدار تصريح بثّ لجهاز استقبال Cast"
@@ -5728,6 +6120,54 @@
     "/components/schemas/CastGrant/properties/queue_id/description": {
       "en": "The play queue the grant names, when it names one.",
       "ar": "قائمة التشغيل التي يسمّيها التصريح، إن سمّى قائمة."
+    },
+    "/paths/~1tv~1broadcast~1moderation/get/summary": {
+      "en": "Notices and reports about this home's channels",
+      "ar": "ملاحظات وبلاغات عن قنوات هذا المنزل"
+    },
+    "/paths/~1tv~1broadcast~1moderation/get/description": {
+      "en": "What Maktaba Cloud told this home about its published channels: each statement of reasons (a programme taken down after a copyright notice, with the claimant unless they asked for privacy, and whether a counter-notice can be filed), the strike warning, the end of broadcasting, a restore; the reports viewers sent about its content, without the reporter's email; and the publisher's active strikes against the limit. It also lists the takedowns this home applied from Maktaba's signed instructions. records is the cloud's answer, absent when the cloud was not reached (cloud says why).",
+      "ar": "ما أبلغت به سحابة مكتبة هذا المنزل عن قنواته المنشورة: كل بيان أسباب (برنامج أُزيل بعد إشعار بشأن حقوق النشر، مع اسم صاحب الشكوى ما لم يطلب الخصوصية، وهل يمكن تقديم إشعار مضاد)، وتحذير المخالفات، وانتهاء البث، والإعادة؛ والبلاغات التي أرسلها المشاهدون عن محتواه، دون بريد المُبلِّغ؛ ومخالفات الناشر السارية مقابل الحد. ويسرد أيضًا عمليات الإزالة التي طبّقها هذا المنزل من تعليمات مكتبة الموقَّعة. records هو جواب السحابة، ويغيب إن تعذّر الوصول إليها (ويبيّن cloud السبب)."
+    },
+    "/paths/~1tv~1broadcast~1moderation/get/responses/200/description": {
+      "en": "The cloud's records and the takedowns applied here.",
+      "ar": "سجلات السحابة وعمليات الإزالة المطبّقة هنا."
+    },
+    "/paths/~1tv~1broadcast~1moderation/get/responses/403/description": {
+      "en": "Admin only.",
+      "ar": "للمشرفين فقط."
+    },
+    "/paths/~1tv~1broadcast~1moderation/get/responses/409/description": {
+      "en": "Broadcasting is off on this home.",
+      "ar": "البث متوقف على هذا المنزل."
+    },
+    "/paths/~1tv~1broadcast~1moderation~1counter-notices/post/summary": {
+      "en": "File a counter-notice",
+      "ar": "تقديم إشعار مضاد"
+    },
+    "/paths/~1tv~1broadcast~1moderation~1counter-notices/post/description": {
+      "en": "Files a counter-notice to one of this home's takedowns, with the statements the law requires: the material was removed by mistake or misidentification, and consent to the jurisdiction of the court for the address. Maktaba sends the claimant a copy; unless the claimant says they went to court, the item can be restored 10 business days later.",
+      "ar": "يقدّم إشعارًا مضادًا لإحدى عمليات الإزالة في هذا المنزل، مع الإقرارات التي يشترطها القانون: أن المادة أُزيلت عن خطأ أو سوء تعرّف، والموافقة على اختصاص محكمة العنوان. ترسل مكتبة نسخة إلى صاحب الشكوى؛ وما لم يُبلغ بأنه لجأ إلى المحكمة، يمكن إعادة العنصر بعد 10 أيام عمل."
+    },
+    "/paths/~1tv~1broadcast~1moderation~1counter-notices/post/responses/201/description": {
+      "en": "Filed: its id and when the restore window opens.",
+      "ar": "قُدّم: معرّفه وموعد فتح نافذة الإعادة."
+    },
+    "/paths/~1tv~1broadcast~1moderation~1counter-notices/post/responses/400/description": {
+      "en": "A required element is missing (broadcast.counterNoticeIncomplete).",
+      "ar": "ينقص عنصر مطلوب (broadcast.counterNoticeIncomplete)."
+    },
+    "/paths/~1tv~1broadcast~1moderation~1counter-notices/post/responses/403/description": {
+      "en": "Admin only.",
+      "ar": "للمشرفين فقط."
+    },
+    "/paths/~1tv~1broadcast~1moderation~1counter-notices/post/responses/409/description": {
+      "en": "Already filed, not this home's takedown, the home is not claimed, or broadcasting is off.",
+      "ar": "قُدّم سابقًا، أو ليست عملية إزالة لهذا المنزل، أو المنزل غير مرتبط، أو البث متوقف."
+    },
+    "/paths/~1tv~1broadcast~1moderation~1counter-notices/post/responses/502/description": {
+      "en": "Maktaba Cloud could not be reached.",
+      "ar": "تعذّر الوصول إلى سحابة مكتبة."
     }
   }
 }

@@ -13,7 +13,7 @@
   ],
   "counts": {
     "diagram": 14,
-    "endpoint": 253,
+    "endpoint": 263,
     "entity": 42,
     "epic": 60,
     "feature": 3,
@@ -11283,6 +11283,220 @@
         "path": "/users",
         "tag": "Auth",
         "operationId": "createUser"
+      }
+    },
+    {
+      "id": "ep-get-tv-broadcast",
+      "type": "endpoint",
+      "title": "GET /tv/broadcast",
+      "content": "The Broadcast page",
+      "tags": [
+        "api",
+        "Broadcasting",
+        "get"
+      ],
+      "related": [
+        "story-50.22"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/tv/broadcast",
+        "tag": "Broadcasting",
+        "operationId": "getBroadcast"
+      }
+    },
+    {
+      "id": "ep-put-tv-broadcast-channels-id",
+      "type": "endpoint",
+      "title": "PUT /tv/broadcast/channels/{id}",
+      "content": "Set up a channel for broadcasting",
+      "tags": [
+        "api",
+        "Broadcasting",
+        "put"
+      ],
+      "related": [
+        "story-50.22"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "PUT",
+        "path": "/tv/broadcast/channels/{id}",
+        "tag": "Broadcasting",
+        "operationId": "setupBroadcastChannel"
+      }
+    },
+    {
+      "id": "ep-post-tv-broadcast-channels-id-publish",
+      "type": "endpoint",
+      "title": "POST /tv/broadcast/channels/{id}/publish",
+      "content": "Publish a channel",
+      "tags": [
+        "api",
+        "Broadcasting",
+        "post"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/tv/broadcast/channels/{id}/publish",
+        "tag": "Broadcasting",
+        "operationId": "publishBroadcastChannel"
+      }
+    },
+    {
+      "id": "ep-post-tv-broadcast-channels-id-unpublish",
+      "type": "endpoint",
+      "title": "POST /tv/broadcast/channels/{id}/unpublish",
+      "content": "Unpublish a channel",
+      "tags": [
+        "api",
+        "Broadcasting",
+        "post"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/tv/broadcast/channels/{id}/unpublish",
+        "tag": "Broadcasting",
+        "operationId": "unpublishBroadcastChannel"
+      }
+    },
+    {
+      "id": "ep-post-tv-broadcast-speedtest",
+      "type": "endpoint",
+      "title": "POST /tv/broadcast/speedtest",
+      "content": "Measure the upload",
+      "tags": [
+        "api",
+        "Broadcasting",
+        "post"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/tv/broadcast/speedtest",
+        "tag": "Broadcasting",
+        "operationId": "measureBroadcastUplink"
+      }
+    },
+    {
+      "id": "ep-get-tv-broadcast-publishable",
+      "type": "endpoint",
+      "title": "GET /tv/broadcast/publishable",
+      "content": "Publishable sources and shares",
+      "tags": [
+        "api",
+        "Broadcasting",
+        "get"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/tv/broadcast/publishable",
+        "tag": "Broadcasting",
+        "operationId": "getBroadcastPublishable"
+      }
+    },
+    {
+      "id": "ep-post-tv-broadcast-publishable-sources",
+      "type": "endpoint",
+      "title": "POST /tv/broadcast/publishable/sources",
+      "content": "Record a source permission",
+      "tags": [
+        "api",
+        "Broadcasting",
+        "post"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/tv/broadcast/publishable/sources",
+        "tag": "Broadcasting",
+        "operationId": "recordBroadcastSource"
+      }
+    },
+    {
+      "id": "ep-post-tv-broadcast-publishable-sources-id-withdraw",
+      "type": "endpoint",
+      "title": "POST /tv/broadcast/publishable/sources/{id}/withdraw",
+      "content": "Withdraw a source permission",
+      "tags": [
+        "api",
+        "Broadcasting",
+        "post"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/tv/broadcast/publishable/sources/{id}/withdraw",
+        "tag": "Broadcasting",
+        "operationId": "withdrawBroadcastSource"
+      }
+    },
+    {
+      "id": "ep-put-tv-broadcast-publishable-items",
+      "type": "endpoint",
+      "title": "PUT /tv/broadcast/publishable/items",
+      "content": "Mark items publishable",
+      "tags": [
+        "api",
+        "Broadcasting",
+        "put"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "PUT",
+        "path": "/tv/broadcast/publishable/items",
+        "tag": "Broadcasting",
+        "operationId": "markBroadcastItems"
+      }
+    },
+    {
+      "id": "ep-put-tv-broadcast-publishable-only",
+      "type": "endpoint",
+      "title": "PUT /tv/broadcast/publishable/only",
+      "content": "Limit published channels to publishable items",
+      "tags": [
+        "api",
+        "Broadcasting",
+        "put"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "PUT",
+        "path": "/tv/broadcast/publishable/only",
+        "tag": "Broadcasting",
+        "operationId": "setBroadcastPublishableOnly"
       }
     },
     {

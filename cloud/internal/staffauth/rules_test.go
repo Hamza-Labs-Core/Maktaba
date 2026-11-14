@@ -74,3 +74,16 @@ func TestSensitiveListsDontOverlap(t *testing.T) {
 		t.Error("the broadcast grant is not sensitive")
 	}
 }
+
+// Story 50.25: taking a broadcast off air and lifting it need a fresh MFA check, like every
+// other action on a customer's service.
+func TestTheBroadcastKillSwitchIsSensitive(t *testing.T) {
+	for _, route := range []string{"/v1/admin/broadcast/revocations", "/v1/admin/broadcast/revocations/{id}/lift"} {
+		if !IsSensitive("POST", route) {
+			t.Errorf("POST %s is not sensitive", route)
+		}
+	}
+	if IsSensitive("GET", "/v1/admin/broadcast/revocations") {
+		t.Error("reading the list needs no re-check")
+	}
+}
