@@ -83,12 +83,18 @@ func serve(r http.Handler, req *http.Request) *httptest.ResponseRecorder {
 // The pull: the edge's signed GET and a home's secret get the signed list; anything else is 401;
 // with no signing key it is 503.
 func TestThePullServesTheEdgeAndHomesOnly(t *testing.T) {
-	r, _, k, edgePriv := revRig(t, true)
+	r, d, k, edgePriv := revRig(t, true)
 	pubs := map[string]ed25519.PublicKey{k.Kid: k.Priv.Public().(ed25519.PublicKey)}
+	var took int
+	d.Rev.Took = func(context.Context, time.Time) error { took++; return nil }
 
 	rec := serve(r, edgeGet(edgePriv, at.UnixMilli()))
 	if rec.Code != http.StatusOK || rec.Header().Get("X-Maktaba-Revocations-Version") != "7" {
 		t.Fatalf("the edge's pull = %d %s", rec.Code, rec.Body)
+	}
+	// the edge's own pull counts as its copy's delivery (story 50.28's stale-list alert)
+	if took != 1 {
+		t.Fatalf("the edge's pull noted %d deliveries", took)
 	}
 	l, err := bc.VerifyRevocations(pubs, rec.Body.String())
 	if err != nil || l.Version != 7 || len(l.Entries) != 6 {
@@ -128,6 +134,11 @@ func TestThePullServesTheEdgeAndHomesOnly(t *testing.T) {
 		if rec := serve(r, req); rec.Code != http.StatusUnauthorized {
 			t.Errorf("%s = %d", name, rec.Code)
 		}
+	}
+
+	// a home's pull, or a refused one, says nothing of the edge's copy
+	if took != 1 {
+		t.Errorf("deliveries noted %d, want only the edge's", took)
 	}
 
 	off, _, _, _ := revRig(t, false)
@@ -190,9 +201,15 @@ func TestThePushSendsTheSignedList(t *testing.T) {
 		w.WriteHeader(int(status.Load()))
 	}))
 	defer edge.Close()
-	rev := &bc.Revocations{Store: fakeSource{version: 3}, Key: &k, ControlURL: edge.URL + "/v1/control/revocations", Now: func() time.Time { return at }}
+	var took []time.Time
+	rev := &bc.Revocations{Store: fakeSource{version: 3}, Key: &k, ControlURL: edge.URL + "/v1/control/revocations", Now: func() time.Time { return at },
+		Took: func(_ context.Context, t time.Time) error { took = append(took, t); return nil }}
 	if err := rev.Push(context.Background()); err != nil {
 		t.Fatal(err)
+	}
+	// the edge took it: the stale-list alert's clock restarts (story 50.28)
+	if len(took) != 1 || !took[0].Equal(at) {
+		t.Fatalf("a taken push noted %v", took)
 	}
 	l, err := bc.VerifyRevocations(map[string]ed25519.PublicKey{k.Kid: k.Priv.Public().(ed25519.PublicKey)}, got.Load().(string))
 	if err != nil || l.Version != 3 {
@@ -206,6 +223,16 @@ func TestThePushSendsTheSignedList(t *testing.T) {
 	calls.Store(0)
 	if err := rev.Push(context.Background()); err == nil || calls.Load() != 3 {
 		t.Errorf("a failing edge: err %v after %d calls", err, calls.Load())
+	}
+	// a 409 counts (the edge holds a newer list); a failing edge never does
+	if len(took) != 2 {
+		t.Errorf("deliveries noted %d, want 2 (200, 409)", len(took))
+	}
+	// a failure to note it is logged, never the push's error
+	rev.Took = func(context.Context, time.Time) error { return errors.New("db down") }
+	status.Store(http.StatusOK)
+	if err := rev.Push(context.Background()); err != nil {
+		t.Errorf("a failed note failed the push: %v", err)
 	}
 	// no control URL or no key: nothing to push, no error
 	if err := (&bc.Revocations{Store: fakeSource{}, Key: &k}).Push(context.Background()); err != nil {

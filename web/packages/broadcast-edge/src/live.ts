@@ -78,7 +78,8 @@ async function route(request: Request, env: Env, url: URL): Promise<Response> {
 
 /**
  * recordRefusal writes `blocked` for a revoked channel (once per session start: on the master)
- * and `error` for a 5xx the edge answered, by its code.
+ * and `error` for a 5xx the edge answered, by its code. A channel the revocation list stopped
+ * answers 503 off_air with the entry's reason (50.25): that is a block, never an edge error.
  */
 async function recordRefusal(
   env: Env,
@@ -87,19 +88,23 @@ async function recordRefusal(
   res: Response
 ): Promise<void> {
   if (res.status < 403) return;
-  const code = await problemCode(res);
-  if (res.status === 403 && code === "revoked" && isMaster)
-    ev.write(env, ev.blocked(claims.pub, claims.ch, "revoked"));
-  else if (res.status >= 500)
+  const { code, reason } = await problemOf(res);
+  const stopped = code === "off_air" && reason !== "";
+  if (stopped) {
+    if (isMaster) ev.write(env, ev.blocked(claims.pub, claims.ch, "revoked"));
+  } else if (res.status >= 500)
     ev.write(env, ev.error(claims.pub, claims.ch, code || `http_${res.status}`));
 }
 
-async function problemCode(res: Response): Promise<string> {
+async function problemOf(res: Response): Promise<{ code: string; reason: string }> {
   try {
-    const body = (await res.clone().json()) as { error?: unknown };
-    return typeof body.error === "string" ? body.error : "";
+    const body = (await res.clone().json()) as { error?: unknown; reason?: unknown };
+    return {
+      code: typeof body.error === "string" ? body.error : "",
+      reason: typeof body.reason === "string" ? body.reason : "",
+    };
   } catch {
-    return "";
+    return { code: "", reason: "" };
   }
 }
 

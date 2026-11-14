@@ -595,7 +595,9 @@ func turnstileGuard(cfg config.Config, fake turnstile.Verifier) (*turnstile.Guar
 // console still records entries, the pull is 503 and nothing reaches the edge.
 func revocationDeps(cfg config.Config, servers *stores.Servers, pool *db.Pool, logger *slog.Logger, edgeKey ed25519.PublicKey) *broadcasth.RevocationDeps {
 	store := &broadcast.RevocationStore{DB: pool.DB}
-	rev := &broadcast.Revocations{Store: store, Logger: logger}
+	rev := &broadcast.Revocations{Store: store, Logger: logger,
+		// the edge's copy's age, for the stale-list alert (story 50.28)
+		Took: func(ctx context.Context, at time.Time) error { return broadcast.RecordRevocations(ctx, pool.DB, at) }}
 	if cfg.Broadcast.IngestURL != "" {
 		rev.ControlURL = strings.TrimRight(cfg.Broadcast.IngestURL, "/") + "/v1/control/revocations"
 	}
