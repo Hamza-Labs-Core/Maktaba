@@ -5,8 +5,6 @@ package devmigrate
 import (
 	"context"
 	"io"
-	"math/rand/v2"
-	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,6 +15,7 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbundle"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/testport"
 )
 
 // pgHome finds a Postgres install: $MAKTABA_TEST_PG_HOME (e.g. a Mac app
@@ -39,42 +38,11 @@ func pgHome(t *testing.T) string {
 	return ""
 }
 
-// idlePort is a port nothing listens on, for the stack's ports the move checks are
-// free: below the ephemeral range (Linux 32768-, macOS 49152-), where no other test's
-// listener on :0 can take it between this choice and that check (freePort's ports are
-// handed out again).
-func idlePort(t *testing.T) int {
-	t.Helper()
-	r := rand.New(rand.NewPCG(uint64(time.Now().UnixNano()), uint64(os.Getpid())))
-	for range 200 {
-		p := 20000 + r.IntN(10000)
-		if len(PortsInUse([]string{strconv.Itoa(p)})) > 0 {
-			continue
-		}
-		if ln, err := net.Listen("tcp", "127.0.0.1:"+strconv.Itoa(p)); err == nil {
-			_ = ln.Close()
-			return p
-		}
-	}
-	t.Fatal("no idle port in 20000-29999")
-	return 0
-}
-
-func freePort(t *testing.T) int {
-	t.Helper()
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = ln.Close() }()
-	return ln.Addr().(*net.TCPAddr).Port
-}
-
 // startCluster prepares a bundle cluster and runs its server for the test.
 func startCluster(t *testing.T, home, root string) pgbundle.Bundle {
 	t.Helper()
 	b := pgbundle.Bundle{Home: home, Data: filepath.Join(root, "pg"), Keys: filepath.Join(root, "keys"),
-		Backups: filepath.Join(root, "backups"), Port: freePort(t)}
+		Backups: filepath.Join(root, "backups"), Port: testport.Free(t)}
 	ctx := context.Background()
 	if err := b.Prepare(ctx, io.Discard); err != nil {
 		t.Fatal(err)
@@ -216,9 +184,9 @@ INSERT INTO streaming_hosts (host_id, host, role) VALUES ('1e943eda-0064-42e9-86
 		t.Fatal(err)
 	}
 	target := pgbundle.Bundle{Home: home, Data: filepath.Join(appRoot, "postgres"), Keys: filepath.Join(appRoot, "keys"),
-		Backups: filepath.Join(appRoot, "backups"), Port: freePort(t)}
+		Backups: filepath.Join(appRoot, "backups"), Port: testport.Free(t)}
 	var out strings.Builder
-	m := &Migration{Sys: sys, Container: DefaultContainer, Repo: repo, Out: &out, Ports: []string{strconv.Itoa(idlePort(t))}, Target: Target{
+	m := &Migration{Sys: sys, Container: DefaultContainer, Repo: repo, Out: &out, Ports: []string{strconv.Itoa(testport.Free(t))}, Target: Target{
 		Config: cfg, ConfigPath: cfgPath, State: appRoot, Keys: target.Keys, Bundle: &target}}
 
 	p := m.MakePlan(ctx)

@@ -36,7 +36,20 @@ const (
 	// principal is the token's owner; library access is resolved from
 	// the DB ACL at request time, same as the cookie path.
 	SourcePAT Source = "pat"
+
+	// SourceCast is a cast grant (Epic 58 story 58.07): the token a signed-in
+	// sender mints for a Cast receiver, scoped to the items cast (Cast names
+	// them). It is never an admin, and api/internal/castgrant's gate lets it
+	// reach only the routes a receiver needs, for those items.
+	SourceCast Source = "cast"
 )
+
+// CastScope is what a cast grant names (Epic 58 story 58.07): one video, or one
+// play queue of the grant's user. Exactly one of the two is set.
+type CastScope struct {
+	VideoID string
+	QueueID string
+}
 
 // Principal is the authenticated identity for a single request.
 type Principal struct {
@@ -91,6 +104,10 @@ type Principal struct {
 	// device gave when the token was minted (nil: none). parental.Cache.For
 	// holds the request to it as well as to the account's policy.
 	AgeCeiling *int
+
+	// Cast is set for a cast grant (SourceCast): the items it names. Nil for
+	// every other credential.
+	Cast *CastScope
 }
 
 // Cloud link scopes (Epic 42 story 42.7).

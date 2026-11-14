@@ -2,6 +2,11 @@
 // its own (MAKTABA_CLOUD_DB_URL names the server): CI's shared database
 // already holds the home api's tables (its users among them), which the
 // cloud's migrations must not meet.
+//
+// With MAKTABA_CLOUD_DB_SESSION_URL also set (relay.yml's PgBouncer run, story
+// 50.18), MAKTABA_CLOUD_DB_URL is PgBouncer's transaction pool and the session
+// URL its session pool: the URL MigratedURL returns, for what holds a session of
+// its own (LISTEN, a session lock), goes through the session pool.
 package dbtest
 
 import (
@@ -26,8 +31,39 @@ func Migrated(t *testing.T) *db.Pool {
 	return pool
 }
 
-// MigratedURL is Migrated, and the scratch database's URL (for a second
-// pool, a listener or a Cut).
+// SessionEnv names the server for sessions of their own (a PgBouncer session pool);
+// empty: MAKTABA_CLOUD_DB_URL's.
+const SessionEnv = "MAKTABA_CLOUD_DB_SESSION_URL"
+
+// SessionURL is url's database on SessionEnv's server, or url when SessionEnv is unset.
+func SessionURL(t *testing.T, url string) string {
+	t.Helper()
+	out, err := sessionURL(url, os.Getenv(SessionEnv))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
+// sessionURL puts dbURL's database (its path) on sessionBase's server and credentials.
+func sessionURL(dbURL, sessionBase string) (string, error) {
+	if sessionBase == "" {
+		return dbURL, nil
+	}
+	d, err := neturl.Parse(dbURL)
+	if err != nil {
+		return "", err
+	}
+	s, err := neturl.Parse(sessionBase)
+	if err != nil {
+		return "", err
+	}
+	s.Path = d.Path
+	return s.String(), nil
+}
+
+// MigratedURL is Migrated, and the scratch database's URL for a session of its
+// own (a second pool, a listener or a Cut; SessionEnv's server when set).
 func MigratedURL(t *testing.T) (*db.Pool, string) {
 	t.Helper()
 	url := os.Getenv("MAKTABA_CLOUD_DB_URL")
@@ -61,5 +97,5 @@ func MigratedURL(t *testing.T) (*db.Pool, string) {
 	if err := db.NewMigrator(pool, migrations.FS, ".").Up(ctx); err != nil {
 		t.Fatal(err)
 	}
-	return pool, u.String()
+	return pool, SessionURL(t, u.String())
 }

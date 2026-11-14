@@ -84,7 +84,8 @@ func repoRoot(t *testing.T) string {
 }
 
 // TestScenario runs every scenario (C01–C10, 50.11's status-feed, 53.16's report-symbolicated,
-// 50.16's relay pool, 50.17's api-pool, 58.03's tv-code);
+// 50.16's relay pool, 50.17's api-pool, 50.18's db-nodes-failover and db-nodes-migrate,
+// 58.03's tv-code);
 // one with -run 'TestScenario/<name>'.
 func TestScenario(t *testing.T) {
 	skip := notBuilt(t)
@@ -117,6 +118,8 @@ func TestScenario(t *testing.T) {
 		{"rebalance-add-relay", rebalanceAddRelay},
 		{"broadcast-plans", broadcastPlans},
 		{"tv-code", tvCode},
+		{"db-nodes-failover", dbNodesFailover},
+		{"db-nodes-migrate", dbNodesMigrate},
 	} {
 		t.Run(s.name, func(t *testing.T) {
 			if why, ok := skip[s.name]; ok || s.run == nil {
@@ -137,7 +140,7 @@ func TestScenario(t *testing.T) {
 				c = upRelayPool(t, s.name, "postgres", "r1", "r2", "edge")
 			case "failover-kill-leader", "failover-network-partition", "switchover", "restore-pitr",
 				"runbook-switchover", "runbook-forced-failover", "runbook-dns-swap",
-				"origin-only-via-edge", "origin-aop":
+				"origin-only-via-edge", "origin-aop", "db-nodes-failover", "db-nodes-migrate":
 				// the pair's own cluster (compose-ha.yml), started by the scenario
 			default:
 				c = up(t, s.name)

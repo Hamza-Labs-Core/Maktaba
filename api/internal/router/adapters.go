@@ -114,6 +114,7 @@ func (a streamingServiceAdapter) Open(ctx context.Context, req streaming.OpenSes
 		BurnSubs:       req.BurnSubs,
 		ForceTranscode: req.ForceTranscode,
 		ForceSoftware:  req.ForceSoftware,
+		DeviceCaps:     req.DeviceCaps,
 	})
 	if err != nil {
 		return streaming.OpenSessionResponse{}, err

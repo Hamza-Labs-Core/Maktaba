@@ -124,6 +124,7 @@ NOT_IN_CI: dict[str, str] = {
     "deploy/cloud-relay/**": "relay.yml",
     "deploy/caddy/**": "relay.yml (the caddy image job) and cloud-rehearsal.yml",
     "deploy/cloud-ha/**": "relay.yml (its checks) and cloud-rehearsal.yml",
+    "tools/ci/pgbouncer-ci.sh": "relay.yml (the cloud tests through PgBouncer, story 50.18)",
     "deploy/github/**": "branch protection as Terraform, applied by hand",
     "deploy/observability/**": "Prometheus config, not built",
     "deploy/server.toml.example": "an example config",
