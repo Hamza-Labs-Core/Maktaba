@@ -100,6 +100,10 @@ Decides which machines encode channels and how the home spreads them. **Other ma
 
 Decides who may watch channels away from home through Cloudflare Stream, and the limits. **Who may watch away from home**: all signed-in users, admins only, or the users listed. **Remote streams per user** (2) and **Remote channels at once** (22) cap use. **Monthly budget (USD)** (10) and **At 100 % of the budget** decide what happens when the money runs out: refuse new remote viewers, or only warn. The tab shows this month's use. See [Watching away from home](/help/remote-tv).
 
+### Broadcasting {#broadcast}
+
+Decides how a home publishes Live TV channels to viewers outside it. **Share of the upload for broadcasting** (0.5) caps what the published channels use together of the measured internet upload; the rest stays free for the home's other traffic. **Slot weight of a lower quality** (0.5) is how much of a channel slot each lower quality counts for when a machine is checked for room. **Encode lower qualities in software** (off): a machine without a hardware encoder publishes only the channel's own quality; on, it encodes the lower ones on the processor, about one core each. See [Live TV administration](/help/live-tv-admin).
+
 ### Simulcast {#tv-simulcast}
 
 Decides whether channels are also sent on to YouTube, Facebook or any RTMP address. **Simulcast to YouTube, Facebook and RTMP** is off by default and needs Cloudflare Stream. **Output-hours a month** (60) caps the cost: one always-on output is about 720 hours a month. You attach destinations to a channel on the Live TV page. See [Simulcast](/help/simulcast).
