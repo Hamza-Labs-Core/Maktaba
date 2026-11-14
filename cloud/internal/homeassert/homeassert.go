@@ -41,10 +41,13 @@ const (
 )
 
 // Purposes. A home accepts each only where it means it: signin at
-// POST /api/auth/cloud, link at its Account page's link step.
+// POST /api/auth/cloud, link at its Account page's link step, tvcode at
+// POST /api/pairing/cloud-assertion (a TV's cloud code approved on maktaba.tv,
+// story 58.03; the nonce is the code).
 const (
 	PurposeSignIn = "signin"
 	PurposeLink   = "link"
+	PurposeTVCode = "tvcode"
 )
 
 // Payload is the signed statement.
@@ -103,7 +106,7 @@ func (s *Signer) PublicKeyB64() string {
 // Issue signs a fresh assertion: purpose, cloud user, home; nonce and
 // label for a link.
 func (s *Signer) Issue(purpose, cloudUserID, serverID, nonce, label string) (string, Payload, error) {
-	if purpose != PurposeSignIn && purpose != PurposeLink {
+	if purpose != PurposeSignIn && purpose != PurposeLink && purpose != PurposeTVCode {
 		return "", Payload{}, errors.New("homeassert: unknown purpose")
 	}
 	if cloudUserID == "" || serverID == "" {
@@ -112,6 +115,9 @@ func (s *Signer) Issue(purpose, cloudUserID, serverID, nonce, label string) (str
 	if purpose == PurposeLink && nonce == "" {
 		return "", Payload{}, errors.New("homeassert: a link needs the home's nonce")
 	}
+	if purpose == PurposeTVCode && nonce == "" {
+		return "", Payload{}, errors.New("homeassert: a TV code approval names the code")
+	}
 	jti := make([]byte, 16)
 	if _, err := rand.Read(jti); err != nil {
 		return "", Payload{}, err
@@ -119,8 +125,11 @@ func (s *Signer) Issue(purpose, cloudUserID, serverID, nonce, label string) (str
 	now := s.now().UTC()
 	p := Payload{Typ: Type, Pur: purpose, Sub: cloudUserID, Aud: serverID,
 		Iat: now.Unix(), Exp: now.Add(TTL).Unix(), Jti: hex.EncodeToString(jti)}
-	if purpose == PurposeLink {
+	switch purpose {
+	case PurposeLink:
 		p.Non, p.Lbl = nonce, label
+	case PurposeTVCode:
+		p.Non = nonce
 	}
 	tok, err := s.Sign(p)
 	return tok, p, err

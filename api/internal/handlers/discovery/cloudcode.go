@@ -6,6 +6,10 @@
 //	                                     (its platform, app version and country), so the person
 //	                                     can say "this is my TV"
 //	POST /api/pairing/cloud-approve      signed in on the home: approve it {code, as_user?}
+//	POST /api/pairing/cloud-assertion    no sign-in: the cloud approves it {code, assertion} for
+//	                                     the cloud account a person used on maktaba.tv, which is
+//	                                     linked to a user of this home (the assertion is signed by
+//	                                     the cloud's pinned key, for this home and this code, once)
 //
 // Approving makes a device code of this home for the approver (as POST /api/pairing/device
 // would for a TV on the LAN), approves it at once, and claims the cloud's code with that device
@@ -69,6 +73,18 @@ var (
 	// ErrCloudCodeClaimed: someone approved the code first.
 	ErrCloudCodeClaimed = errors.New("discovery: cloud code already approved")
 )
+
+// ErrCloudAssertionRefused: the cloud's assertion does not approve a code on this home (bad,
+// replayed, for another home or code, or its cloud account is no longer linked to a usable user).
+var ErrCloudAssertionRefused = errors.New("discovery: the cloud's assertion is refused")
+
+// CloudAsserter finds the home user a cloud tvcode assertion stands for (handlers/auth).
+type CloudAsserter interface {
+	TVCodeApprover(ctx context.Context, assertion, code string) (string, error)
+	// RecordTVCodeSignIn records the refresh family a TV approved this way collected as a cloud
+	// sign-in of userID's link, so unlinking the cloud account ends it.
+	RecordTVCodeSignIn(ctx context.Context, familyID, userID string) error
+}
 
 // CloudCodes reaches the cloud's TV codes as this home.
 type CloudCodes interface {
@@ -156,6 +172,7 @@ func (a AgentCloudCodes) call(ctx context.Context, method, sub string, body []by
 func (h *Handler) MountCloudCode(r chi.Router) {
 	r.Get("/api/pairing/cloud-code/{code}", h.CloudCodeLookup)
 	r.Post("/api/pairing/cloud-approve", h.CloudApprove)
+	r.Post("/api/pairing/cloud-assertion", h.CloudAssertApprove)
 }
 
 // validCloudCode is whether code (normalized) could be a cloud TV code.
@@ -252,19 +269,80 @@ func (h *Handler) CloudApprove(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, e)
 		return
 	}
-	if h.CloudCodes == nil {
+	claimed, e := h.approveCloudCode(r.Context(), code, userID, p.UserID, cloudTicketPrefix)
+	if e != nil {
+		httperror.Write(w, r, e)
+		return
+	}
+	common.WriteJSON(w, r, http.StatusOK, map[string]any{
+		"status": "approved", "user_id": userID,
+		"platform": claimed.Platform, "country": claimed.Country,
+	})
+}
+
+type assertionApproveRequest struct {
+	Code      string `json:"code"`
+	Assertion string `json:"assertion"`
+}
+
+// CloudAssertApprove approves a cloud code for the person who did so on maktaba.tv: the cloud
+// signed a one-use assertion naming their cloud account, this home and the code, and sent it
+// here through the relay. The TV signs in as the home user that account is linked to, restricted
+// as every cloud code's TV is (never an admin, no credential of its own). Without the assertion
+// nothing is approved: no sign-in on the home is involved.
+func (h *Handler) CloudAssertApprove(w http.ResponseWriter, r *http.Request) {
+	var req assertionApproveRequest
+	if e := common.ReadJSON(r, &req, 8<<10); e != nil {
+		httperror.Write(w, r, e)
+		return
+	}
+	code := discovery.NormalizeCode(req.Code)
+	if !validCloudCode(code) || req.Assertion == "" {
+		httperror.Write(w, r, httperror.Unprocessable([]httperror.FieldError{
+			{Field: "code", Message: "a cloud code and the cloud's assertion for it"},
+		}))
+		return
+	}
+	if h.CloudAssertions == nil {
 		httperror.Write(w, r, cloudCodeError(ErrCloudNotLinked))
 		return
 	}
-	if h.Minter == nil {
-		httperror.Write(w, r, httperror.Unavailable(0))
+	userID, err := h.CloudAssertions.TVCodeApprover(r.Context(), req.Assertion, code)
+	switch {
+	case errors.Is(err, ErrCloudAssertionRefused):
+		httperror.Write(w, r, httperror.Forbidden("", "the cloud's approval is refused"))
 		return
-	}
-	// what asked: shown on the TV's session, and checked before anything is made
-	asked, err := h.CloudCodes.Lookup(r.Context(), code)
-	if err != nil {
+	case errors.Is(err, ErrCloudNotLinked):
 		httperror.Write(w, r, cloudCodeError(err))
 		return
+	case err != nil:
+		httperror.Write(w, r, httperror.Internal("cloud assertion").Wrap(err))
+		return
+	}
+	claimed, e := h.approveCloudCode(r.Context(), code, userID, userID, cloudLinkTicketPrefix)
+	if e != nil {
+		httperror.Write(w, r, e)
+		return
+	}
+	common.WriteJSON(w, r, http.StatusOK, map[string]any{
+		"status": "approved", "platform": claimed.Platform, "country": claimed.Country,
+	})
+}
+
+// approveCloudCode signs the TV showing code in as userID: a device code of this home approved at
+// once (its ticket, under prefix, says it came by a cloud code, and whether through a cloud
+// link), handed to the cloud as the TV's grant. actorID is who approved it, for the audit log.
+func (h *Handler) approveCloudCode(ctx context.Context, code, userID, actorID, prefix string) (CloudCode, *httperror.Error) {
+	if h.CloudCodes == nil {
+		return CloudCode{}, cloudCodeError(ErrCloudNotLinked)
+	}
+	if h.Minter == nil {
+		return CloudCode{}, httperror.Unavailable(0)
+	}
+	// what asked: shown on the TV's session, and checked before anything is made
+	asked, err := h.CloudCodes.Lookup(ctx, code)
+	if err != nil {
+		return CloudCode{}, cloudCodeError(err)
 	}
 
 	// a device code of this home, as DeviceStart makes for a TV on the LAN
@@ -274,14 +352,12 @@ func (h *Handler) CloudApprove(w http.ResponseWriter, r *http.Request) {
 	binary.BigEndian.PutUint64(raw, uint64(exp.Unix()))
 	copy(raw[8:12], h.keys().id[:])
 	if _, err := rand.Read(raw[12:]); err != nil {
-		httperror.Write(w, r, httperror.Internal("device code").Wrap(err))
-		return
+		return CloudCode{}, httperror.Internal("device code").Wrap(err)
 	}
 	homeCode := h.deviceCode(raw)
 	id := make([]byte, 9)
 	if _, err := rand.Read(id); err != nil {
-		httperror.Write(w, r, httperror.Internal("device request id").Wrap(err))
-		return
+		return CloudCode{}, httperror.Internal("device request id").Wrap(err)
 	}
 	platform := cleanLabel(asked.Platform)
 	if !h.requests.put(homeCode, deviceRequest{
@@ -293,31 +369,25 @@ func (h *Handler) CloudApprove(w http.ResponseWriter, r *http.Request) {
 		LookedUp: now,
 		approved: true,
 	}, now) {
-		httperror.Write(w, r, httperror.Unavailable(30))
-		return
+		return CloudCode{}, httperror.Unavailable(30)
 	}
-	key := cloudTicketPrefix + homeCode
-	if err := h.Store.Insert(r.Context(), discovery.PairingTicket{
+	key := prefix + homeCode
+	if err := h.Store.Insert(ctx, discovery.PairingTicket{
 		Code: key, UserID: userID, IssuedAt: now, ExpiresAt: exp,
 	}); err != nil {
 		h.requests.drop(homeCode)
-		httperror.Write(w, r, httperror.Internal("store approval").Wrap(err))
-		return
+		return CloudCode{}, httperror.Internal("store approval").Wrap(err)
 	}
 	grant := base64.RawURLEncoding.EncodeToString(raw)
-	claimed, err := h.CloudCodes.Claim(r.Context(), code, grant)
+	claimed, err := h.CloudCodes.Claim(ctx, code, grant)
 	if err != nil {
 		// the grant never reached a TV: take the approval back
-		_, _ = h.Store.Consume(r.Context(), key)
+		_, _ = h.Store.Consume(ctx, key)
 		h.requests.drop(homeCode)
-		httperror.Write(w, r, cloudCodeError(err))
-		return
+		return CloudCode{}, cloudCodeError(err)
 	}
 	if h.Audit != nil {
-		h.Audit.WritePairEvent(r.Context(), false, p.UserID, key)
+		h.Audit.WritePairEvent(ctx, false, actorID, key)
 	}
-	common.WriteJSON(w, r, http.StatusOK, map[string]any{
-		"status": "approved", "user_id": userID,
-		"platform": claimed.Platform, "country": claimed.Country,
-	})
+	return claimed, nil
 }

@@ -490,21 +490,20 @@ func (h *Handler) Refresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// a TV that came by a cloud code stays restricted: it never acts as an admin and mints no
-	// credential of its own (Epic 58 story 58.03)
+	// credential of its own (Epic 58 story 58.03). One approved on maktaba.tv is also a cloud
+	// sign-in (scope play, which caps it already): it stays restricted as well.
 	noAdmin := false
-	if scope == "" {
-		restricted, err := h.cloudCodeFamily(r.Context(), next.FamilyID)
-		if err == nil && restricted {
-			claims.Rst = true
-			if u.IsAdmin {
-				noAdmin, claims.IsAdmin = true, false
-				claims.Lib, err = h.everyLibrary(r.Context())
-			}
+	restricted, err := h.cloudCodeFamily(r.Context(), next.FamilyID)
+	if err == nil && restricted {
+		claims.Rst = true
+		if scope == "" && u.IsAdmin {
+			noAdmin, claims.IsAdmin = true, false
+			claims.Lib, err = h.everyLibrary(r.Context())
 		}
-		if err != nil {
-			httperror.Write(w, r, httperror.Internal("resolve a cloud code's sign-in").Wrap(err))
-			return
-		}
+	}
+	if err != nil {
+		httperror.Write(w, r, httperror.Internal("resolve a cloud code's sign-in").Wrap(err))
+		return
 	}
 	// the sign-in and its device's age limit ride in the token (`fam`, `ac`): a
 	// limit that cannot be read mints no token (Epic 57 story 57.04)

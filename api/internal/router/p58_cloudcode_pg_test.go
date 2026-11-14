@@ -20,6 +20,8 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/cloudlink"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/cloudlink/cloudlinktest"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/keys"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/clustertest"
@@ -69,6 +71,15 @@ func (a *ccAgent) grant(code string) string {
 
 func setupCloudCode(t *testing.T) (http.Handler, *ccAgent, func(q string, args ...any) string) {
 	t.Helper()
+	h, agent, read, _ := setupCloudCodeWith(t, nil)
+	return h, agent, read
+}
+
+// setupCloudCodeWith is setupCloudCode on a home claimed in a (test) Maktaba Cloud when cloud is
+// set: main.go's wiring, the auth handler finding the user a cloud tvcode assertion stands for.
+// exec seeds more rows.
+func setupCloudCodeWith(t *testing.T, cloud *cloudlinktest.Cloud) (http.Handler, *ccAgent, func(q string, args ...any) string, func(q string, args ...any)) {
+	t.Helper()
 	db, _ := clustertest.ScratchDB(t)
 	exec := func(q string, args ...any) {
 		t.Helper()
@@ -104,8 +115,16 @@ func setupCloudCode(t *testing.T) (http.Handler, *ccAgent, func(q string, args .
 	ks := keys.NewSet(0)
 	ks.Rotate(k, keys.RotateImmediate)
 	r := router.New(router.Deps{IdempotencyStore: idempotency.NewMemoryStore()})
-	router.MountP9(r, router.P9Deps{DB: db, Keys: ks})
-	router.MountP10(r, router.P10Deps{DB: db, Keys: ks, Logger: slog.Default()})
+	p9deps := router.P9Deps{DB: db, Keys: ks}
+	if cloud != nil {
+		p9deps.CloudIdentityPath = cloud.IdentityPath
+	}
+	p9 := router.MountP9(r, p9deps)
+	p10deps := router.P10Deps{DB: db, Keys: ks, Logger: slog.Default()}
+	if cloud != nil {
+		p10deps.CloudTVCodes = p9
+	}
+	router.MountP10(r, p10deps)
 	router.MountP11(r, router.P11Deps{DB: db})
 	h := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		var p *principal.Principal
@@ -129,7 +148,7 @@ func setupCloudCode(t *testing.T) (http.Handler, *ccAgent, func(q string, args .
 		}
 		r.ServeHTTP(w, req)
 	})
-	return h, agent, read
+	return h, agent, read, exec
 }
 
 func ccDo(h http.Handler, who, method, path, body string) *httptest.ResponseRecorder {
@@ -374,4 +393,162 @@ func TestPGAppSignInsShowTheCloudCodeTV(t *testing.T) {
 	if rec := ccDo(h, "viewer", http.MethodGet, "/api/me/app-sign-ins", ""); !strings.Contains(rec.Body.String(), `"items":[]`) {
 		t.Fatalf("list after sign-out: %s", rec.Body.String())
 	}
+}
+
+// A code approved on maktaba.tv (the cloud's tvcode assertion, sent through the relay with no
+// sign-in on the home): the TV signs in as the home user the cloud account is linked to,
+// restricted like every cloud code's TV, an admin's included. Role test: an assertion for an
+// unlinked account, another code, another purpose, or a second use approves nothing.
+func TestPGCloudAssertionSignsTheTVInAsTheLinkedUser(t *testing.T) {
+	cloud := cloudlinktest.New(t)
+	h, agent, _, exec := setupCloudCodeWith(t, cloud)
+	exec(`INSERT INTO home_user_links (user_id, cloud_user_id, scope) VALUES ($1,'cloud-viewer','play'), ($2,'cloud-admin','manage')`,
+		ccViewer, ccAdmin)
+	approve := func(assertion, code string) *httptest.ResponseRecorder {
+		return ccDo(h, "", http.MethodPost, "/api/pairing/cloud-assertion", `{"code":"`+code+`","assertion":"`+assertion+`"}`)
+	}
+
+	for _, c := range []struct {
+		cloudUser, code string
+		wantUser        string
+		wantLibs        []string
+	}{
+		{"cloud-viewer", "WEBV2345", ccViewer, []string{ccLibA}},
+		// an admin's own link, manage scope: the TV still never acts as an admin
+		{"cloud-admin", "WEBA2345", ccAdmin, []string{ccLibA, ccLibB}},
+	} {
+		a := cloud.Assertion(cloudlink.PurposeTVCode, c.cloudUser, c.code)
+		rec := approve(a, c.code)
+		if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"platform":"tizen"`) {
+			t.Fatalf("%s: approve = %d %s", c.cloudUser, rec.Code, rec.Body.String())
+		}
+		got := redeem(t, h, agent.grant(c.code))
+		if got.Usr != c.wantUser || got.IsAdmin || !got.Rst || strings.Join(got.Lib, ",") != strings.Join(c.wantLibs, ",") {
+			t.Fatalf("%s: signed in as %+v", c.cloudUser, got)
+		}
+		// one use: the same assertion again approves nothing
+		if again := approve(a, c.code); again.Code != http.StatusForbidden {
+			t.Fatalf("%s: replayed = %d %s", c.cloudUser, again.Code, again.Body.String())
+		}
+	}
+
+	for name, a := range map[string]string{
+		"an account the home never linked": cloud.Assertion(cloudlink.PurposeTVCode, "cloud-stranger", "WEBX2345"),
+		"an assertion for another code":    cloud.Assertion(cloudlink.PurposeTVCode, "cloud-viewer", "WEBY2345"),
+		"a sign-in assertion":              cloud.Assertion(cloudlink.PurposeSignIn, "cloud-viewer", ""),
+		"another cloud's key":              cloudlinktest.New(t).Assertion(cloudlink.PurposeTVCode, "cloud-viewer", "WEBX2345"),
+	} {
+		if rec := approve(a, "WEBX2345"); rec.Code != http.StatusForbidden {
+			t.Fatalf("%s: %d %s", name, rec.Code, rec.Body.String())
+		}
+		if g := agent.grant("WEBX2345"); g != "" {
+			t.Fatalf("%s: claimed", name)
+		}
+	}
+}
+
+// A home never claimed in the cloud holds no cloud key: an assertion approves nothing there.
+func TestPGCloudAssertionWithoutACloudIdentity(t *testing.T) {
+	h, agent, _ := setupCloudCode(t)
+	rec := ccDo(h, "", http.MethodPost, "/api/pairing/cloud-assertion", `{"code":"WEBZ2345","assertion":"mkha1.x.y"}`)
+	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "cloud_not_linked") {
+		t.Fatalf("no identity = %d %s", rec.Code, rec.Body.String())
+	}
+	if agent.grant("WEBZ2345") != "" {
+		t.Fatal("claimed")
+	}
+}
+
+// A TV approved on maktaba.tv is a cloud sign-in of the link it came through: it refreshes as a
+// restricted viewer (an admin's too), and unlinking the cloud account ends it, at once and for
+// every token of its family.
+func TestPGCloudAssertionTVEndsWithItsLink(t *testing.T) {
+	cloud := cloudlinktest.New(t)
+	h, agent, read, exec := setupCloudCodeWith(t, cloud)
+	exec(`INSERT INTO home_user_links (user_id, cloud_user_id, scope) VALUES ($1,'cloud-viewer','play'), ($2,'cloud-admin','manage')`,
+		ccViewer, ccAdmin)
+	signIn := func(cloudUser, code string) (string, ccClaims) {
+		t.Helper()
+		a := cloud.Assertion(cloudlink.PurposeTVCode, cloudUser, code)
+		if rec := ccDo(h, "", http.MethodPost, "/api/pairing/cloud-assertion", `{"code":"`+code+`","assertion":"`+a+`"}`); rec.Code != http.StatusOK {
+			t.Fatalf("%s: approve = %d %s", cloudUser, rec.Code, rec.Body.String())
+		}
+		rec := ccDo(h, "", http.MethodPost, "/api/pairing/device/token", `{"device_code":"`+agent.grant(code)+`"}`)
+		var tok struct {
+			AccessToken  string `json:"access_token"`
+			RefreshToken string `json:"refresh_token"`
+		}
+		if _ = json.Unmarshal(rec.Body.Bytes(), &tok); rec.Code != http.StatusOK || tok.RefreshToken == "" {
+			t.Fatalf("%s: redeem = %d %s", cloudUser, rec.Code, rec.Body.String())
+		}
+		return tok.RefreshToken, ccTokenClaims(t, tok.AccessToken)
+	}
+	refresh := func(rt string) (*httptest.ResponseRecorder, string, ccClaims) {
+		t.Helper()
+		rec := ccDo(h, "", http.MethodPost, "/api/auth/refresh", `{"refresh_token":"`+rt+`"}`)
+		var out struct {
+			AccessToken  string `json:"access_token"`
+			RefreshToken string `json:"refresh_token"`
+		}
+		_ = json.Unmarshal(rec.Body.Bytes(), &out)
+		if rec.Code != http.StatusOK {
+			return rec, "", ccClaims{}
+		}
+		return rec, out.RefreshToken, ccTokenClaims(t, out.AccessToken)
+	}
+
+	viewerRT, viewer := signIn("cloud-viewer", "TVVW2345")
+	adminRT, admin := signIn("cloud-admin", "TVAD2345")
+	// recorded as each link's cloud sign-in, scope play
+	for _, c := range []ccClaims{viewer, admin} {
+		if got := read(`SELECT string_agg(kind||' '||scope, ',') FROM cloud_sign_ins WHERE user_id = $1`, c.Usr); got != "refresh play" {
+			t.Fatalf("%s: cloud sign-in = %q", c.Usr, got)
+		}
+	}
+	// an admin's TV refreshes restricted and never as an admin, twice (a rotation too)
+	for range 2 {
+		rec, next, c := refresh(adminRT)
+		if rec.Code != http.StatusOK || c.Usr != ccAdmin || c.IsAdmin || !c.Rst {
+			t.Fatalf("admin TV refresh = %d %+v %s", rec.Code, c, rec.Body.String())
+		}
+		adminRT = next
+	}
+	rec, next, c := refresh(viewerRT)
+	if rec.Code != http.StatusOK || c.Usr != ccViewer || !c.Rst || strings.Join(c.Lib, ",") != ccLibA {
+		t.Fatalf("viewer TV refresh = %d %+v", rec.Code, c)
+	}
+	viewerRT = next
+
+	// the admin unlinks the viewer's cloud account: the viewer's TV is signed out at once
+	if rec := ccDo(h, "admin", http.MethodDelete, "/api/users/"+ccViewer+"/cloud-link", ""); rec.Code/100 != 2 {
+		t.Fatalf("unlink = %d %s", rec.Code, rec.Body.String())
+	}
+	if live := read(`SELECT count(*)::text FROM refresh_tokens WHERE family_id = $1 AND revoked_at IS NULL`, viewer.Fam); live != "0" {
+		t.Fatalf("live tokens of the unlinked TV = %s", live)
+	}
+	if rec, _, _ := refresh(viewerRT); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("unlinked TV refresh = %d %s", rec.Code, rec.Body.String())
+	}
+	// the admin's TV, another link, is untouched
+	if rec, _, _ := refresh(adminRT); rec.Code != http.StatusOK {
+		t.Fatalf("other TV refresh = %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+// ccTokenClaims reads an access token's claims.
+func ccTokenClaims(t *testing.T, access string) ccClaims {
+	t.Helper()
+	parts := strings.Split(access, ".")
+	if len(parts) != 3 {
+		t.Fatalf("access token %q", access)
+	}
+	b, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var c ccClaims
+	if err := json.Unmarshal(b, &c); err != nil {
+		t.Fatal(err)
+	}
+	return c
 }

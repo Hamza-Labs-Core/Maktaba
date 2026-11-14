@@ -12051,6 +12051,74 @@ paths:
         default:
           $ref: '#/components/responses/InternalError'
       operationId: approveCloudTvCode
+  /pairing/cloud-assertion:
+    post:
+      tags:
+      - Devices
+      summary: Approve a TV's code for a person on maktaba.tv
+      description: Called by Maktaba Cloud through the relay, with no sign-in on the home. A person signed in to Maktaba Cloud on maktaba.tv approved a TV's code for this home; the cloud sends a one-use assertion it signed with its key (pinned at claim) naming that cloud account, this home and the code. The home finds the user it linked to that account and approves the code as them, as `POST /api/pairing/cloud-approve` would; the TV gets that user's libraries and parental policy and, like every cloud code's TV, never acts as an admin and mints no credential of its own. An assertion that is not this cloud's, not for this home or this code, already used, or for an account no longer linked approves nothing.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                code:
+                  type: string
+                  description: The code the TV shows.
+                assertion:
+                  type: string
+                  description: The cloud's one-use assertion (purpose `tvcode`, its nonce the code).
+              required:
+              - code
+              - assertion
+      responses:
+        '200':
+          description: Approved; the TV signs in on its next poll of the cloud.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum:
+                    - approved
+                  platform:
+                    type: string
+                  country:
+                    type: string
+        '403':
+          description: The assertion approves nothing here.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: The cloud holds no open code by that name.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: 'Someone approved the code first, or this home holds no Maktaba Cloud identity (`code`: `cloud_not_linked`).'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '502':
+          description: Maktaba Cloud is out of reach; nothing was approved.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        default:
+          $ref: '#/components/responses/InternalError'
+      operationId: approveCloudTvCodeByAssertion
   /users:
     post:
       tags:
