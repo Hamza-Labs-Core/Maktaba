@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import os
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta, tzinfo
 from pathlib import Path
 from typing import Any
@@ -25,8 +26,8 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from ..log import get_logger
 from . import packer, slate
-from .base import ChannelMode
-from .filler import FillerPicker
+from .base import ChannelDef, ChannelMode, ContentItem, FillerItem
+from .filler import FillerList, FillerPicker, FillerSet
 from .planner import make_planner
 from .repo import ScheduleRepo, ScheduleState
 
@@ -136,6 +137,59 @@ def _seed_for(channel_id: UUID) -> int:
     return int(channel_id.int & 0x7FFFFFFF)
 
 
+Slots = list[list[ContentItem] | None] | None
+
+
+async def publishable_only(
+    repo: Any,
+    channel: ChannelDef,
+    content: list[ContentItem],
+    slot_content: Slots,
+    filler: FillerSet | list[FillerItem],
+) -> tuple[list[ContentItem], Slots, FillerSet | list[FillerItem]]:
+    """While the channel is published with ``broadcast.publishable_only`` on (Epic 50,
+    story 50.23 §3), only its publishable items: programmes, slot queues and filler. A
+    rule that runs dry is filled with what filler is left, then the slate, as any other.
+    A repo that cannot tell (no ``publishable_ids``, or ``None``: not limited) changes
+    nothing, so unpublishing restores the full rules at the next top-up."""
+    ask = getattr(repo, "publishable_ids", None)
+    if ask is None:
+        return content, slot_content, filler
+    flist = filler if isinstance(filler, list) else None
+    fset = filler if isinstance(filler, FillerSet) else FillerSet.of(flist or [])
+    ids = {c.video_id for c in content}
+    ids |= {c.video_id for q in slot_content or [] if q for c in q}
+    for lst in (*fset.lists, *fset.pools.values()):
+        ids |= {f.video_id for f in lst.items if f.video_id is not None}
+    allowed: set[UUID] | None = await ask(channel, ids)
+    if allowed is None:
+        return content, slot_content, filler
+
+    def keep_list(lst: FillerList) -> FillerList:
+        return replace(lst, items=tuple(f for f in lst.items if f.video_id in allowed))
+
+    content = [c for c in content if c.video_id in allowed]
+    if slot_content is not None:
+        slot_content = [
+            None if q is None else [c for c in q if c.video_id in allowed] for q in slot_content
+        ]
+    if flist is not None:
+        filler = [f for f in flist if f.video_id in allowed]
+    else:
+        filler = replace(
+            fset,
+            lists=tuple(keep_list(x) for x in fset.lists),
+            pools={k: keep_list(v) for k, v in fset.pools.items()},
+        )
+    _log.info(
+        "channel.publishable_only",
+        channel_id=str(channel.id),
+        items=len(content),
+        allowed=len(allowed),
+    )
+    return content, slot_content, filler
+
+
 async def run_schedule(
     repo: ScheduleRepo,
     channel_id: UUID,
@@ -187,10 +241,14 @@ async def run_schedule(
         return 0
 
     slot_content = await repo.resolve_slot_content(channel)
+    content = await repo.resolve_content(channel)
+    filler = await repo.load_filler(channel)
+    content, slot_content, filler = await publishable_only(
+        repo, channel, content, slot_content, filler
+    )
     planner = make_planner(
         channel, cursor=state.cursor, seed=_seed_for(channel_id), slot_content=slot_content, tv=tv
     )
-    content = await repo.resolve_content(channel)
     if state.horizon_until is not None and anchor < state.horizon_until:
         # a rewrite of a future already planned (a stale channel): each queue goes on
         # from the first programme the rewrite drops, not from where that plan ended
@@ -198,7 +256,7 @@ async def run_schedule(
         if rewind is not None:
             rewind(await repo.future_programs(channel_id, anchor), content)
     picker = FillerPicker(
-        await repo.load_filler(channel),
+        filler,
         max_per_gap=tv.max_filler_per_gap,
         slot_first=tv.slot_filler_first,
         seed=_seed_for(channel_id) ^ int(anchor.timestamp()),

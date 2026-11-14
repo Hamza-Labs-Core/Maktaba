@@ -11,8 +11,10 @@ from maktaba_pipeline.discovery.ytdlp_sidecars import (
     PlaylistInfo,
     VideoInfo,
     is_real_playlist,
+    parse_api_license,
     parse_archive,
     parse_info_json,
+    parse_license,
 )
 from maktaba_pipeline.text.arabic import fold, light, ytdlp_filename
 from maktaba_pipeline.thumbnail.dhash import dhash_from_gray, hamming, similarity
@@ -117,3 +119,40 @@ def test_dhash() -> None:
     assert similarity(5, 5) == 1.0
     with pytest.raises(ValueError):
         dhash_from_gray(b"short")
+
+
+@pytest.mark.parametrize(
+    ("value", "want"),
+    [
+        ("Creative Commons Attribution license (reuse allowed)", "cc_by"),
+        ("CREATIVE COMMONS ATTRIBUTION LICENSE (REUSE ALLOWED)", "cc_by"),
+        ("creative commons attribution", "cc_by"),
+        ("CC BY 4.0", "cc_by"),
+        ("Creative Commons Attribution-NonCommercial 4.0", "standard"),
+        ("CC BY-SA 3.0", "standard"),
+        ("Standard YouTube License", "standard"),
+        (None, None),
+        ("", None),
+        (17, None),
+    ],
+)
+def test_licence_from_ytdlp(value: object, want: str | None) -> None:
+    """Epic 50 story 50.23 T01: CC BY, standard, missing and odd casing."""
+    assert parse_license(value) == want
+
+
+def test_licence_from_the_data_api() -> None:
+    """Epic 50 story 50.23 T02: ``status.license``."""
+    assert parse_api_license("creativeCommon") == "cc_by"
+    assert parse_api_license("youtube") == "standard"
+    assert parse_api_license(None) is None
+    info = parse_info_json(
+        json.dumps(
+            {
+                "id": "abcdefghijk",
+                "title": "t",
+                "license": "Creative Commons Attribution license (reuse allowed)",
+            }
+        )
+    )
+    assert isinstance(info, VideoInfo) and info.license == "cc_by"
