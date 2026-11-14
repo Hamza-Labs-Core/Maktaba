@@ -4,12 +4,14 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
 
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/capability"
+	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/ffmpeg"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/probe"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/session"
 )
@@ -279,5 +281,64 @@ func TestOpenSession_RemuxCap(t *testing.T) {
 	}
 	if fake.calls != 1 {
 		t.Fatalf("ffmpeg started %d times, want 1", fake.calls)
+	}
+}
+
+// slowOrchestrator starts each job after a pause, as a real ffmpeg spawn takes
+// a moment: the window between the cap's check and the session row's insert.
+type slowOrchestrator struct {
+	mu      sync.Mutex
+	started int
+}
+
+func (f *slowOrchestrator) Start(context.Context, ffmpeg.Job) (*ffmpeg.Handle, error) {
+	time.Sleep(20 * time.Millisecond)
+	f.mu.Lock()
+	f.started++
+	f.mu.Unlock()
+	return ffmpeg.NewHandleForTest(func(context.Context) error { return nil },
+		func() int { return 7777 }, func() bool { return true }), nil
+}
+
+// Concurrent opens never pass the remux cap together: a place is reserved
+// before ffmpeg starts, not counted after the row lands.
+func TestOpenSession_RemuxCapHoldsUnderConcurrentOpens(t *testing.T) {
+	srv, fb, _ := setupServer(t)
+	row := hevcHDR10(fb)
+	slow := &slowOrchestrator{}
+	srv.Transcode = slow
+	dir := t.TempDir()
+	srv.ResolveDir = func(id string) string { return dir + "/" + id }
+	srv.MaxRemux = 2
+	caps := &capability.DeviceCaps{Video: []capability.VideoCap{{Codec: "hevc", MaxHeight: 2160}}, HDR: []string{"hdr10"},
+		Audio: []string{"aac", "eac3"}, HLSSegments: []string{"fmp4"}}
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	ok, refused := 0, 0
+	for range 10 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, err := srv.OpenSession(context.Background(), OpenSessionRequest{
+				VideoID: row.VideoID.String(), UserID: uuid.New().String(), ClientProfile: "cast", DeviceCaps: caps,
+			})
+			mu.Lock()
+			defer mu.Unlock()
+			switch {
+			case err == nil:
+				ok++
+			case errors.Is(err, ErrResourceExhausted):
+				refused++
+			default:
+				t.Errorf("open: %v", err)
+			}
+		}()
+	}
+	wg.Wait()
+	if ok != 2 || refused != 8 || slow.started != 2 {
+		t.Fatalf("%d opened, %d refused, %d ffmpeg started; want 2, 8, 2", ok, refused, slow.started)
+	}
+	if n, _ := srv.Sessions.CountActive(context.Background(), session.ModeRemux); n != 2 {
+		t.Fatalf("%d remux sessions open, want 2", n)
 	}
 }

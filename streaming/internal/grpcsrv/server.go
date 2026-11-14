@@ -21,6 +21,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -165,6 +166,10 @@ type Server struct {
 	// copies the video and takes no transcode slot, yet each is an ffmpeg
 	// process. 0: DefaultMaxRemux.
 	MaxRemux int
+	// remuxOpening is the remux opens past the cap's check whose row is not
+	// in the store yet (reserveRemux), guarded by remuxMu.
+	remuxMu      sync.Mutex
+	remuxOpening int
 
 	// Logger receives the session lifecycle (opened, reused, closed, refused);
 	// nil: slog's default.
@@ -179,6 +184,29 @@ const DefaultMaxRemux = 16
 // device reports (two TVs of a household); one more closes the oldest, so a
 // report that keeps changing never stacks processes.
 const MaxFits = 2
+
+// reserveRemux takes a remux place, counting the open remux sessions and the
+// opens between this check and their row's insert (each starts an ffmpeg
+// first) under one lock, so concurrent opens never pass the cap together. It
+// fails closed: a store that cannot count starts no ffmpeg. The count it saw
+// comes back for the log.
+func (s *Server) reserveRemux(ctx context.Context) (int, bool) {
+	s.remuxMu.Lock()
+	defer s.remuxMu.Unlock()
+	n, err := s.Sessions.CountActive(ctx, session.ModeRemux)
+	n += s.remuxOpening
+	if err != nil || n >= s.maxRemux() {
+		return n, false
+	}
+	s.remuxOpening++
+	return n, true
+}
+
+func (s *Server) unreserveRemux() {
+	s.remuxMu.Lock()
+	s.remuxOpening--
+	s.remuxMu.Unlock()
+}
 
 func (s *Server) maxRemux() int {
 	if s.MaxRemux > 0 {
@@ -345,13 +373,15 @@ func (s *Server) OpenSession(ctx context.Context, req OpenSessionRequest) (OpenS
 		return OpenSessionResponse{}, ErrNoDiskSpace
 	}
 	if mode == session.ModeRemux {
-		n, cerr := s.Sessions.CountActive(ctx, session.ModeRemux)
-		if cerr != nil || n >= s.maxRemux() {
-			// fail closed: an uncounted store starts no ffmpeg either
+		n, ok := s.reserveRemux(ctx)
+		if !ok {
 			s.log().Warn("vod session refused: every remux is taken",
 				"video_id", req.VideoID, "remuxes", n, "event", "vod_remux_exhausted")
 			return OpenSessionResponse{}, ErrResourceExhausted
 		}
+		// held until this open returns: by then its row is in the store (and
+		// counted there) or the open failed
+		defer s.unreserveRemux()
 	}
 
 	// the transcode slot taken (""; none), given back when the transcode
