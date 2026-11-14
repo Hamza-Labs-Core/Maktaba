@@ -16,8 +16,14 @@ import (
 )
 
 // Story 50.28 §3: what a publisher sees. Read from broadcast_usage_hourly only, folded: any
-// country or device with fewer than K sessions in the shown period is "other" (README §14.10
-// Q20). Totals are always shown, so a publisher with one viewer sees totals and "other".
+// country or device with fewer than K sessions in an hour is "other" for that hour (README
+// §14.10 Q20). Totals are always shown, so a publisher with one viewer sees totals and "other".
+//
+// The fold is decided per hour, the rollup's own grain, never over the shown period: a caller
+// chooses a period's edges (today grows each hour, and tz moves a day by whole hours), so two
+// periods one hour apart, each folded as a whole, would differ by exactly the counts of that
+// hour's small groups. Folded per hour, every count named in any period is a sum of hours in
+// which it had at least K sessions, and so is the difference between any two periods.
 
 // DefaultK is broadcast.analytics.k's default.
 const DefaultK = 5
@@ -54,6 +60,42 @@ func Fold(m map[string]float64, k int) []Count {
 	})
 	if other > 0 {
 		out = append(out, Count{Key: OtherKey, Value: round(other)})
+	}
+	return out
+}
+
+// hourFold folds a period hour by hour: each hour's counts are folded on their own (Fold's rule)
+// and the hours' results added, so no period, and no difference of two periods, names a count
+// that had fewer than k sessions in any hour it covers.
+type hourFold struct {
+	k     int
+	named map[string]float64
+	other float64
+}
+
+func newHourFold(k int) *hourFold {
+	if k < 1 {
+		k = DefaultK
+	}
+	return &hourFold{k: k, named: map[string]float64{}}
+}
+
+// add folds one hour's counts (every channel of the publisher in that hour, added first).
+func (h *hourFold) add(hour map[string]float64) {
+	for key, v := range hour {
+		if v < float64(h.k) || key == OtherKey {
+			h.other += v
+			continue
+		}
+		h.named[key] += v
+	}
+}
+
+// counts are the period's: the named entries largest first, then "other" (absent when empty).
+func (h *hourFold) counts() []Count {
+	out := Fold(h.named, h.k) // each named total is at least k: none folds here
+	if h.other > 0 {
+		out = append(out, Count{Key: OtherKey, Value: round(h.other)})
 	}
 	return out
 }
@@ -183,7 +225,17 @@ func Load(ctx context.Context, db *sql.DB, q Query) (Report, error) {
 	}
 	defer func() { _ = rows.Close() }()
 	var minutes, sessions, startup, rebufWeighted float64
-	countries, devices, quality, errs, blocked := map[string]float64{}, map[string]float64{}, map[string]float64{}, map[string]float64{}, map[string]float64{}
+	quality, errs, blocked := map[string]float64{}, map[string]float64{}, map[string]float64{}
+	// countries and devices are folded hour by hour (hourFold): the rows come by hour, each
+	// hour's channels are added into one cell, and a cell is folded when its hour ends
+	countries, devices := newHourFold(q.K), newHourFold(q.K)
+	var cellHour time.Time
+	cellC, cellD := map[string]float64{}, map[string]float64{}
+	flush := func() {
+		countries.add(cellC)
+		devices.add(cellD)
+		cellC, cellD = map[string]float64{}, map[string]float64{}
+	}
 	peakByHour := map[time.Time]float64{}
 	days := map[string]*Day{}
 	for rows.Next() {
@@ -198,10 +250,14 @@ func Load(ctx context.Context, db *sql.DB, q Query) (Report, error) {
 		startup += su
 		rebufWeighted += rr * vm
 		peakByHour[hour] += pk // channels of one hour add up
+		if !hour.Equal(cellHour) {
+			flush()
+			cellHour = hour
+		}
 		for _, m := range []struct {
 			raw []byte
 			dst map[string]float64
-		}{{c, countries}, {d, devices}, {qu, quality}, {ec, errs}, {bl, blocked}} {
+		}{{c, cellC}, {d, cellD}, {qu, quality}, {ec, errs}, {bl, blocked}} {
 			addJSON(m.dst, m.raw)
 		}
 		key := hour.In(q.Loc).Format("2006-01-02")
@@ -218,6 +274,7 @@ func Load(ctx context.Context, db *sql.DB, q Query) (Report, error) {
 	if err := rows.Err(); err != nil {
 		return Report{}, err
 	}
+	flush()
 	r.PeriodHours = round(minutes / 60)
 	if q.Level != LevelFull {
 		return r, nil
@@ -237,7 +294,7 @@ func Load(ctx context.Context, db *sql.DB, q Query) (Report, error) {
 	r.AvgWatchMin, r.AvgStartupMs = f(avg), f(st)
 	rbr := math.Round(rb*10000) / 10000
 	r.RebufferRatio = &rbr
-	r.Countries, r.Devices = Fold(countries, q.K), Fold(devices, q.K)
+	r.Countries, r.Devices = countries.counts(), devices.counts()
 	total := 0.0
 	for _, v := range quality {
 		total += v

@@ -7,8 +7,9 @@ package broadcast
 //	GET /v1/admin/broadcast/analytics?server=<id>&…
 //	    a service admin, behind the console's gate; each view writes an audit row
 //
-// Both answer the same folded report (internal/broadcast.Load): no country or device with fewer
-// than broadcast.analytics_k sessions in the period is named, and nothing personal is stored to
+// Both answer the same folded report (internal/broadcast.Load): no country or device is named for
+// an hour in which it had fewer than broadcast.analytics_k sessions, so neither a period nor the
+// difference of two overlapping periods shows a small group, and nothing personal is stored to
 // begin with. A home that isn't the caller's is 403 whether or not it exists.
 
 import (

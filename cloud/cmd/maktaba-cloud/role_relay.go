@@ -193,11 +193,24 @@ func runRelay(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Mig
 			h(w, req)
 		}
 	}
-	// the broadcast series (story 50.28), from the worker's state, to the witness's scrape only
-	bcMonitor := &broadcast.Monitor{DB: pool.DB, BudgetUSD: cfg.Broadcast.MonthlyBudgetUSD}
-	r.Get("/metrics", relayControl(privateExtras(
-		relayMetrics(collector, relaypkg.WriteMetrics, relayh.WriteMetrics, relayh.WriteCacheMetrics, bus.WriteMetrics, meter.WriteMetrics, obs.WriteMetrics),
-		relayMetrics(collector, relaypkg.WriteMetrics, relayh.WriteMetrics, relayh.WriteCacheMetrics, bus.WriteMetrics, meter.WriteMetrics, obs.WriteMetrics, bcMonitor.WriteMetrics))))
+	r.Get("/metrics", relayControl(
+		relayMetrics(collector, relaypkg.WriteMetrics, relayh.WriteMetrics, relayh.WriteCacheMetrics, bus.WriteMetrics, meter.WriteMetrics, obs.WriteMetrics)))
+	// the broadcast series (story 50.28), from the worker's state, to the witness's scrape only:
+	// on the private listener (server.metrics_listen_addr), never on the public one
+	if cfg.Server.MetricsListenAddr != "" {
+		bcMonitor := &broadcast.Monitor{DB: pool.DB, BudgetUSD: cfg.Broadcast.MonthlyBudgetUSD}
+		private := httpServer(cfg.Server.MetricsListenAddr, privateMetrics(
+			relayMetrics(collector, relaypkg.WriteMetrics, relayh.WriteMetrics, relayh.WriteCacheMetrics, bus.WriteMetrics, meter.WriteMetrics, obs.WriteMetrics, bcMonitor.WriteMetrics), r),
+			cfg.Server.ReadTimeout, cfg.Server.WriteTimeout)
+		go func() {
+			logger.Info("relay: private metrics listener", "addr", cfg.Server.MetricsListenAddr)
+			if err := private.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				logger.Error("relay: the private metrics listener failed", "err", err)
+				os.Exit(1)
+			}
+		}()
+		defer func() { _ = private.Close() }()
+	}
 	r.Get("/privacy", relayControl(privacy.PolicyHandler))
 	// Story 25.23: the edge's on-demand TLS asks here before it requests a
 	// certificate (Caddy `on_demand_tls { ask … }`): 200 only for the bare

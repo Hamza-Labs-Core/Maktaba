@@ -782,6 +782,14 @@ build fails when the two differ.
 
 ### Security
 
+- **Broadcast viewer analytics hide small groups however the period is chosen (Epic 50, story
+  50.28).** A country or device with fewer than 5 viewers was folded into "Other" over the whole
+  period shown, so two overlapping periods one hour apart could be compared to recover the small
+  groups of that hour. The fold is now decided hour by hour and a period adds its hours, so no
+  period, and no difference of two periods, names a group under 5. The cloud's business metrics
+  (viewers, the edge cost estimate and the budget) are served only on a private metrics listener
+  on a loopback or private address, no longer to any request whose Host header is an IP address.
+
 - **A TV approved on maktaba.tv gets no sign-in once its cloud account is unlinked (Epic 58,
   story 58.03).** When the cloud account that approved a TV's code was unlinked from the home, or
   the home user was linked to another cloud account, before the TV collected its sign-in, the
@@ -2953,6 +2961,15 @@ build fails when the two differ.
   number is always the home's own answer, asked every 30 seconds (every 10 in the last six
   minutes). Arabic uses its plural forms (دقيقة واحدة، دقيقتان، 5 دقائق، 12 دقيقة), and the Roku
   catalog and its check now carry plural strings in both languages.
+
+- **Samsung and LG TVs sign in with a code from Maktaba Cloud (Epic 58, story 58.09).** The
+  Samsung and LG app now opens on a code with a QR, which works on any network: scan it, or open
+  maktaba.tv/tv, or in Maktaba on a phone signed in to the home choose Profile → Approve a TV or
+  device, and the TV opens that home, reached by the best address the home gives (on the same
+  network first, through Maktaba's relay from anywhere else). A TV signed in this way can watch,
+  never run the home, whoever approved it. Find on this network and typing the home's address
+  stay under the code as other ways. The app built with the home's UI inside it signs in the
+  same way.
 
 ### Changed
 

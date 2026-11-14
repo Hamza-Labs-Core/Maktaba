@@ -116,6 +116,83 @@ func TestFoldAtK5(t *testing.T) {
 	}
 }
 
+// A caller chooses a period's edges (tz moves a day by whole hours, today grows each hour), so a
+// fold over the whole period would leak: [a,b) and [a,b+1h) each folded as a whole name Germany
+// 15 and 17, and their difference is the 2 sessions from Germany in the added hour, a group under
+// k. Folded hour by hour, no difference of two periods recovers a group under k: for every pair
+// of nested windows over these hours, each country's named count differs by 0 or by at least k,
+// and every named count is at least k.
+func TestHourFoldOverlappingWindowsRecoverNoSmallGroup(t *testing.T) {
+	const k = 5
+	hours := []map[string]float64{
+		{"EG": 12, "DE": 5},
+		{"EG": 12, "DE": 5, "FR": 1},
+		{"EG": 12, "DE": 5},
+		{"EG": 12, "DE": 2}, // the hour the overlapping window adds: Germany 2, under k
+		{"EG": 3, "DE": 7, "FR": 4},
+		{"EG": 12, "FR": 6, "JO": 1},
+	}
+	period := func(from, to int) map[string]float64 {
+		h := newHourFold(k)
+		for _, cell := range hours[from:to] {
+			h.add(cell)
+		}
+		m := map[string]float64{}
+		for _, c := range h.counts() {
+			m[c.Key] = c.Value
+		}
+		return m
+	}
+
+	// the finding's own case: [0,3) and [0,4), one hour apart
+	a, b := period(0, 3), period(0, 4)
+	if d := b["DE"] - a["DE"]; d != 0 {
+		t.Fatalf("[0,4) - [0,3) names Germany %v: the 2 sessions of the added hour leak", d)
+	}
+	if b["DE"] != 15 || b[OtherKey]-a[OtherKey] != 2 {
+		t.Fatalf("Germany %v, other grew by %v; want 15 and the 2 sessions unnamed in other", b["DE"], b[OtherKey]-a[OtherKey])
+	}
+	// the old fold, over the whole window, would have named them
+	whole := func(from, to int) map[string]float64 {
+		sum := map[string]float64{}
+		for _, cell := range hours[from:to] {
+			for key, v := range cell {
+				sum[key] += v
+			}
+		}
+		m := map[string]float64{}
+		for _, c := range Fold(sum, k) {
+			m[c.Key] = c.Value
+		}
+		return m
+	}
+	if d := whole(0, 4)["DE"] - whole(0, 3)["DE"]; d != 2 {
+		t.Fatalf("the whole-window fold's difference = %v; the fixture should show its leak (2)", d)
+	}
+
+	// every pair of nested windows [i,j) ⊂ [i2,j2), every country
+	for i := 0; i < len(hours); i++ {
+		for j := i + 1; j <= len(hours); j++ {
+			inner := period(i, j)
+			for key, v := range inner {
+				if key != OtherKey && v < k {
+					t.Fatalf("[%d,%d) names %s with %v < k", i, j, key, v)
+				}
+			}
+			for i2 := 0; i2 <= i; i2++ {
+				for j2 := j; j2 <= len(hours); j2++ {
+					outer := period(i2, j2)
+					for _, key := range []string{"EG", "DE", "FR", "JO"} {
+						if d := outer[key] - inner[key]; d != 0 && d < k {
+							t.Fatalf("[%d,%d) - [%d,%d) recovers %s = %v, under k", i2, j2, i, j, key, d)
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
 // T03: the daily check is quiet at 1 % and raises at 3 %, and small numbers are noise.
 func TestCompare(t *testing.T) {
 	metered := map[string]float64{"quiet": 10000, "loud": 10000, "tiny": 100, "only-metered": 500}

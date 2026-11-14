@@ -398,3 +398,18 @@ func TestAHomesLookupsAreCapped(t *testing.T) {
 		t.Fatalf("a claim over the cap: %d", w.Code)
 	}
 }
+
+// PublicPaths (the routes server.WithTVOrigins opens to a packaged TV app) are exactly the
+// TV's public routes: the approve and the homes' routes are never among them.
+func TestPublicPathsAreTheTVRoutes(t *testing.T) {
+	if len(PublicPaths) != 2 || PublicPaths[0] != "/v1/tv/codes" || PublicPaths[1] != "/v1/tv/codes/poll" {
+		t.Fatalf("PublicPaths = %v", PublicPaths)
+	}
+	rg := newRig(t)
+	for _, p := range PublicPaths {
+		// mounted for POST only: another method is refused as such, not as an unknown path
+		if rec := rg.do(http.MethodGet, p, "10.0.0.1", nil, false); rec.Code != http.StatusMethodNotAllowed {
+			t.Errorf("%s is not mounted for POST: %d", p, rec.Code)
+		}
+	}
+}

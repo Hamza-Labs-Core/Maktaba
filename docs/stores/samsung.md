@@ -157,7 +157,7 @@ certificate that lists the TV's DUID. Capture `sdb dlog` for the whole run.
 
 | # | Check | Pass when |
 |---|---|---|
-| 1 | Launch, sign in by the cloud code, and find a home on the network | both paths reach Home |
+| 1 | Launch with no saved home: the cloud code is the first screen; approve it on a phone. Then Switch home and Find on this network | both paths reach Home |
 | 2 | The packaged page frames the home's `/tv/`, over HTTPS and over the LAN's HTTP | `/tv/` loads in the frame (the home's `frame-ancestors` accepts the package's origin); the bridge's hello is answered |
 | 3 | Play a 4K HEVC HDR10 MKV with EAC3 (2022 and 2025) | AVPlay plays it in direct play, in HDR at 4K |
 | 4 | Play a Dolby Vision profile 8.1 file | plays as HDR10 (a remux, not a transcode) |
@@ -170,6 +170,10 @@ certificate that lists the TV's DUID. Capture `sdb dlog` for the whole run.
 | 11 | Leave with the app switcher mid-video, come back; sleep the TV mid-video, wake it | AVPlay is suspended and restored; the launcher resumes, still signed in |
 | 12 | The device caps the TV sends (the launcher's log, `tizen caps:`) | the codecs, HDR and passthrough match the model; no Dolby Vision |
 | 13 | The performance budget (58.09 and 58.10) on the 2020 TV | launch to Home and Home to playback within the budget |
+| 14 | The cloud code from another network (the TV on a phone's hotspot, the home on its own network), approved in the Player (Profile → Approve a TV or device) | the TV reaches the home through the relay and opens Home signed in as the approver, within one poll after the approval |
+| 15 | The cloud code approved by an admin of the home | the TV never acts as an admin (no admin screens; the home answers its admin calls 403); the approver's app sign-ins list the TV as signed in via Maktaba Cloud code, and signing it out there signs the TV out |
+| 16 | The cloud's calls from the package, in Tizen Studio's Web Inspector over `sdb` | the code shows; the request's `Origin` is `file://`. Any other origin is recorded here and added to `cloud/internal/middleware/tvcors.go` (and the home's `httpsec/cors.go`) before the release |
+| 17 | The `--bundle-ui` build, when this store gets it | the cloud code signs it in; with no grant, its Get a code button returns to the code screen |
 
 ## Results
 

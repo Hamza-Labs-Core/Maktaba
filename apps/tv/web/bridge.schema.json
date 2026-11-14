@@ -104,7 +104,12 @@
       "properties": {
         "type": { "const": "maktaba:hello" },
         "id": { "type": "integer" },
-        "bridge_level": { "type": "integer" }
+        "bridge_level": { "type": "integer" },
+        "takes": {
+          "type": "array",
+          "description": "Launcher messages beyond the first set this UI takes: signIn (a cloud code's grant, story 58.09's second part).",
+          "items": { "enum": ["signIn"] }
+        }
       }
     },
     "maktaba:exit": {
@@ -215,7 +220,21 @@
         "version": { "type": "string" },
         "device_caps": { "$ref": "#/definitions/deviceCaps" },
         "keys": { "type": "array", "items": { "type": "string" } },
-        "messages": { "type": "array", "items": { "$ref": "#/definitions/uiMessage" } }
+        "messages": { "type": "array", "items": { "$ref": "#/definitions/uiMessage" } },
+        "sign_in": {
+          "type": "boolean",
+          "description": "A maktaba:signIn follows this answer, once (only to a UI whose hello took signIn)."
+        }
+      }
+    },
+    "maktaba:signIn": {
+      "type": "object",
+      "description": "A cloud code's grant (story 58.03): the home's single-use pairing secret, which the UI redeems in its own origin at POST /api/pairing/device/token. Sent once, right after a hello answer with sign_in: true, to the origin the launcher loaded. Never logged.",
+      "required": ["type", "grant"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "const": "maktaba:signIn" },
+        "grant": { "type": "string" }
       }
     },
     "maktaba:action": {

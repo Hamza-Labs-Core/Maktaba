@@ -62,8 +62,9 @@ const (
 type env struct {
 	t       *testing.T
 	h       http.Handler
-	router  *chi.Mux // the user listener's router (story 50.32)
-	admin   *chi.Mux // the operator console's listener's router
+	router  *chi.Mux     // the user listener's router (story 50.32)
+	admin   *chi.Mux     // the operator console's listener's router
+	metrics http.Handler // the private series' listener (server.metrics_listen_addr, 50.28)
 	pool    *db.Pool
 	mail    *mail.Recorder
 	pay     *fakeProvider // nil: the "none" provider
@@ -197,7 +198,7 @@ func newEnvFull(t *testing.T, pay *fakeProvider, ts turnstile.Verifier, adjust f
 		t.Fatal(err)
 	}
 	t.Cleanup(stop)
-	e.router, e.admin = a.User, a.Admin
+	e.router, e.admin, e.metrics = a.User, a.Admin, a.Metrics
 	e.h = consoleOrUser(a)
 	e.cfg, e.o, e.mig, e.logger = cfg, o, mig, logger
 	return e
