@@ -105,20 +105,20 @@ func MountAccessUser(r chi.Router, d *Deps) {
 	d.mountAccess(r, "/v1/broadcast/homes/{server}", d.asOwner)
 }
 
-func (dp *Deps) mountAccess(r chi.Router, base string, as func(scopedFunc) http.HandlerFunc) {
-	r.Get(base+"/access", as(dp.GetAccess))
-	r.Put(base+"/channels/{id}/access", as(dp.SetChannelAccess))
-	r.Put(base+"/viewer-limits", as(dp.SetViewerLimits))
-	r.Get(base+"/invites", as(dp.ListInvites))
-	r.Post(base+"/invites", as(dp.CreateInvite))
-	r.Delete(base+"/invites/{id}", as(dp.RevokeInvite))
-	r.Get(base+"/invites/{id}/devices", as(dp.ListDevices))
-	r.Delete(base+"/invites/{id}/devices/{pass}", as(dp.RevokeDevice))
+func (d *Deps) mountAccess(r chi.Router, base string, as func(scopedFunc) http.HandlerFunc) {
+	r.Get(base+"/access", as(d.GetAccess))
+	r.Put(base+"/channels/{id}/access", as(d.SetChannelAccess))
+	r.Put(base+"/viewer-limits", as(d.SetViewerLimits))
+	r.Get(base+"/invites", as(d.ListInvites))
+	r.Post(base+"/invites", as(d.CreateInvite))
+	r.Delete(base+"/invites/{id}", as(d.RevokeInvite))
+	r.Get(base+"/invites/{id}/devices", as(d.ListDevices))
+	r.Delete(base+"/invites/{id}/devices/{pass}", as(d.RevokeDevice))
 }
 
-func (dp *Deps) now() time.Time {
-	if dp.Now != nil {
-		return dp.Now().UTC()
+func (d *Deps) now() time.Time {
+	if d.Now != nil {
+		return d.Now().UTC()
 	}
 	return time.Now().UTC()
 }
@@ -135,11 +135,11 @@ type Verification struct {
 	FirstPublish *time.Time `json:"first_publish,omitempty"`
 }
 
-func (dp *Deps) verification(ctx context.Context, p billingpkg.Publisher) (Verification, error) {
+func (d *Deps) verification(ctx context.Context, p billingpkg.Publisher) (Verification, error) {
 	var v Verification
 	var email bool
 	var first sql.NullTime
-	err := dp.DB.QueryRowContext(ctx, `
+	err := d.DB.QueryRowContext(ctx, `
         SELECT u.email_verified, (SELECT min(published_at) FROM broadcast_channels WHERE server_id = $1)
           FROM servers s JOIN users u ON u.id = s.owner_user_id WHERE s.id = $1`, p.ServerID).Scan(&email, &first)
 	if err != nil {
@@ -150,22 +150,22 @@ func (dp *Deps) verification(ctx context.Context, p billingpkg.Publisher) (Verif
 	if first.Valid {
 		t := first.Time.UTC()
 		v.FirstPublish = &t
-		v.DaysSince = int(dp.now().Sub(t) / (24 * time.Hour))
+		v.DaysSince = int(d.now().Sub(t) / (24 * time.Hour))
 	}
 	v.Verified = v.PaidPlan && v.Email && first.Valid && v.DaysSince >= VerifyDays
 	return v, nil
 }
 
 // openRefusal says why a publisher may not set a channel to open ("" when it may).
-func (dp *Deps) openRefusal(ctx context.Context, p billingpkg.Publisher) (code string, status int, err error) {
+func (d *Deps) openRefusal(ctx context.Context, p billingpkg.Publisher) (code string, status int, err error) {
 	t := p.Tier()
 	if t == nil || !t.AllowsAccess(billingpkg.AccessOpen) {
 		return "broadcast_limit", http.StatusPaymentRequired, nil
 	}
-	if !dp.OpenAccess {
+	if !d.OpenAccess {
 		return "broadcast_open_not_enabled", http.StatusForbidden, nil
 	}
-	v, err := dp.verification(ctx, p)
+	v, err := d.verification(ctx, p)
 	if err != nil {
 		return "", 0, err
 	}
@@ -209,7 +209,7 @@ type accessView struct {
 	ViewersPay bool `json:"viewers_pay"`
 }
 
-func (dp *Deps) channels(ctx context.Context, q queryer, server string) ([]channelView, error) {
+func (d *Deps) channels(ctx context.Context, q queryer, server string) ([]channelView, error) {
 	rows, err := q.QueryContext(ctx, `
         SELECT id::text, slug, access, max_viewers, indexable FROM broadcast_channels
          WHERE server_id = $1 AND unpublished_at IS NULL ORDER BY published_at`, server)
@@ -236,30 +236,30 @@ type queryer interface {
 }
 
 // GetAccess is the publisher's access page: channels, limits and what open needs.
-func (dp *Deps) GetAccess(w http.ResponseWriter, r *http.Request, a actor) {
+func (d *Deps) GetAccess(w http.ResponseWriter, r *http.Request, a actor) {
 	ctx := r.Context()
-	p, err := dp.Store.Publisher(ctx, a.server)
+	p, err := d.Store.Publisher(ctx, a.server)
 	if err != nil {
-		dp.fail(w, r, "load publisher", err)
+		d.fail(w, r, "load publisher", err)
 		return
 	}
-	v, err := dp.verification(ctx, p)
+	v, err := d.verification(ctx, p)
 	if err != nil {
-		dp.fail(w, r, "verification", err)
+		d.fail(w, r, "verification", err)
 		return
 	}
-	chs, err := dp.channels(ctx, dp.DB, a.server)
+	chs, err := d.channels(ctx, d.DB, a.server)
 	if err != nil {
-		dp.fail(w, r, "channels", err)
+		d.fail(w, r, "channels", err)
 		return
 	}
-	out := accessView{Channels: chs, MaxViewers: p.Limits().MaxConcurrentViewers, OpenAccessEnabled: dp.OpenAccess, Verification: v}
+	out := accessView{Channels: chs, MaxViewers: p.Limits().MaxConcurrentViewers, OpenAccessEnabled: d.OpenAccess, Verification: v}
 	if t := p.Tier(); t != nil {
 		out.OpenInPlan = t.AllowsAccess(billingpkg.AccessOpen)
 	}
-	if err := dp.DB.QueryRowContext(ctx, `SELECT broadcast_max_sessions_per_ip, broadcast_daily_minutes FROM servers WHERE id = $1`, a.server).
+	if err := d.DB.QueryRowContext(ctx, `SELECT broadcast_max_sessions_per_ip, broadcast_daily_minutes FROM servers WHERE id = $1`, a.server).
 		Scan(&out.MaxSessionsPerIP, &out.DailyMinutes); err != nil {
-		dp.fail(w, r, "limits", err)
+		d.fail(w, r, "limits", err)
 		return
 	}
 	writeJSON(w, http.StatusOK, out)
@@ -273,7 +273,7 @@ type channelAccessReq struct {
 
 // SetChannelAccess changes one channel's access, cap and indexing. Open is refused unless the
 // plan allows it, broadcast.open_access.enabled is on and the publisher is verified.
-func (dp *Deps) SetChannelAccess(w http.ResponseWriter, r *http.Request, a actor) {
+func (d *Deps) SetChannelAccess(w http.ResponseWriter, r *http.Request, a actor) {
 	ctx := r.Context()
 	ch := chi.URLParam(r, "id")
 	var req channelAccessReq
@@ -286,15 +286,15 @@ func (dp *Deps) SetChannelAccess(w http.ResponseWriter, r *http.Request, a actor
 		writeErr(w, http.StatusNotFound, "not_found", "")
 		return
 	}
-	p, err := dp.Store.Publisher(ctx, a.server)
+	p, err := d.Store.Publisher(ctx, a.server)
 	if err != nil {
-		dp.fail(w, r, "load publisher", err)
+		d.fail(w, r, "load publisher", err)
 		return
 	}
 	if req.Access == billingpkg.AccessOpen {
-		code, status, err := dp.openRefusal(ctx, p)
+		code, status, err := d.openRefusal(ctx, p)
 		if err != nil {
-			dp.fail(w, r, "open check", err)
+			d.fail(w, r, "open check", err)
 			return
 		}
 		if code != "" {
@@ -306,7 +306,7 @@ func (dp *Deps) SetChannelAccess(w http.ResponseWriter, r *http.Request, a actor
 		limitErr(w, "max_viewers", p.Limits().MaxConcurrentViewers)
 		return
 	}
-	dp.change(w, r, a.server, func(tx *sql.Tx) (int, error) {
+	d.change(w, r, a.server, func(tx *sql.Tx) (int, error) {
 		res, err := tx.ExecContext(ctx, `
             UPDATE broadcast_channels SET access = COALESCE(NULLIF($3, ''), access),
                    max_viewers = COALESCE($4, max_viewers), indexable = COALESCE($5, indexable)
@@ -327,7 +327,7 @@ type limitsReq struct {
 }
 
 // SetViewerLimits changes the publisher's open sessions per network and daily minutes.
-func (dp *Deps) SetViewerLimits(w http.ResponseWriter, r *http.Request, a actor) {
+func (d *Deps) SetViewerLimits(w http.ResponseWriter, r *http.Request, a actor) {
 	var req limitsReq
 	if err := json.NewDecoder(io.LimitReader(r.Body, 4<<10)).Decode(&req); err != nil ||
 		(req.MaxSessionsPerIP != nil && (*req.MaxSessionsPerIP < 1 || *req.MaxSessionsPerIP > 50)) ||
@@ -335,7 +335,7 @@ func (dp *Deps) SetViewerLimits(w http.ResponseWriter, r *http.Request, a actor)
 		writeErr(w, http.StatusBadRequest, "bad_request", "max_sessions_per_ip is 1 to 50; daily_minutes is 0 (none) to 1440")
 		return
 	}
-	dp.change(w, r, a.server, func(tx *sql.Tx) (int, error) {
+	d.change(w, r, a.server, func(tx *sql.Tx) (int, error) {
 		_, err := tx.ExecContext(r.Context(), `
             UPDATE servers SET broadcast_max_sessions_per_ip = COALESCE($2, broadcast_max_sessions_per_ip),
                    broadcast_daily_minutes = COALESCE($3, broadcast_daily_minutes) WHERE id = $1`,
@@ -346,17 +346,17 @@ func (dp *Deps) SetViewerLimits(w http.ResponseWriter, r *http.Request, a actor)
 
 // change runs one access change in a transaction that also bumps the access version, then
 // pushes the new state to the edge. fn answers the status to write (non-2xx: rolled back).
-func (dp *Deps) change(w http.ResponseWriter, r *http.Request, server string, fn func(tx *sql.Tx) (int, error)) {
+func (d *Deps) change(w http.ResponseWriter, r *http.Request, server string, fn func(tx *sql.Tx) (int, error)) {
 	ctx := r.Context()
-	tx, err := dp.DB.BeginTx(ctx, nil)
+	tx, err := d.DB.BeginTx(ctx, nil)
 	if err != nil {
-		dp.fail(w, r, "begin", err)
+		d.fail(w, r, "begin", err)
 		return
 	}
 	defer func() { _ = tx.Rollback() }()
 	status, err := fn(tx)
 	if err != nil {
-		dp.fail(w, r, "change", err)
+		d.fail(w, r, "change", err)
 		return
 	}
 	if status >= 300 {
@@ -364,14 +364,14 @@ func (dp *Deps) change(w http.ResponseWriter, r *http.Request, server string, fn
 		return
 	}
 	if err := BumpAccess(ctx, tx, server); err != nil {
-		dp.fail(w, r, "bump", err)
+		d.fail(w, r, "bump", err)
 		return
 	}
 	if err := tx.Commit(); err != nil {
-		dp.fail(w, r, "commit", err)
+		d.fail(w, r, "commit", err)
 		return
 	}
-	dp.pushOne(ctx, server)
+	d.pushOne(ctx, server)
 	w.WriteHeader(status)
 }
 
@@ -407,9 +407,9 @@ type InviteView struct {
 }
 
 // CreateInvite signs a new invite for one or all of the publisher's channels.
-func (dp *Deps) CreateInvite(w http.ResponseWriter, r *http.Request, a actor) {
+func (d *Deps) CreateInvite(w http.ResponseWriter, r *http.Request, a actor) {
 	ctx := r.Context()
-	if dp.Key == nil {
+	if d.Key == nil {
 		writeErr(w, http.StatusServiceUnavailable, "broadcast_disabled", "")
 		return
 	}
@@ -436,33 +436,33 @@ func (dp *Deps) CreateInvite(w http.ResponseWriter, r *http.Request, a actor) {
 			return
 		}
 	}
-	p, err := dp.Store.Publisher(ctx, a.server)
+	p, err := d.Store.Publisher(ctx, a.server)
 	if err != nil {
-		dp.fail(w, r, "load publisher", err)
+		d.fail(w, r, "load publisher", err)
 		return
 	}
 	if p.Tier() == nil {
 		writeErr(w, http.StatusPaymentRequired, "broadcast_needs_plan", "sharing channels with people outside your home needs the Pro plan")
 		return
 	}
-	if !dp.Store.Gated(p) {
+	if !d.Store.Gated(p) {
 		writeErr(w, http.StatusForbidden, "broadcast_not_enabled", "broadcasting isn't open yet")
 		return
 	}
-	tx, err := dp.DB.BeginTx(ctx, nil)
+	tx, err := d.DB.BeginTx(ctx, nil)
 	if err != nil {
-		dp.fail(w, r, "begin", err)
+		d.fail(w, r, "begin", err)
 		return
 	}
 	defer func() { _ = tx.Rollback() }()
 	// the home's row lock: two creates at once can't both pass the live-invite count
 	var live int
 	if err := tx.QueryRowContext(ctx, `SELECT 1 FROM servers WHERE id = $1 FOR UPDATE`, a.server).Scan(&live); err != nil {
-		dp.fail(w, r, "lock home", err)
+		d.fail(w, r, "lock home", err)
 		return
 	}
 	if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM broadcast_invites WHERE server_id = $1 AND revoked_at IS NULL AND expires_at > now()`, a.server).Scan(&live); err != nil {
-		dp.fail(w, r, "count invites", err)
+		d.fail(w, r, "count invites", err)
 		return
 	}
 	if live >= MaxLiveInvites {
@@ -476,14 +476,14 @@ func (dp *Deps) CreateInvite(w http.ResponseWriter, r *http.Request, a actor) {
 		rows, err := tx.QueryContext(ctx, `SELECT slug FROM broadcast_channels WHERE server_id = $1 AND id = ANY($2::uuid[]) AND unpublished_at IS NULL`,
 			a.server, pq.Array(req.Channels))
 		if err != nil {
-			dp.fail(w, r, "channels", err)
+			d.fail(w, r, "channels", err)
 			return
 		}
 		for rows.Next() {
 			var slug string
 			if err := rows.Scan(&slug); err != nil {
 				_ = rows.Close()
-				dp.fail(w, r, "channels", err)
+				d.fail(w, r, "channels", err)
 				return
 			}
 			edge = append(edge, bc.ChannelID(a.server, slug))
@@ -494,16 +494,16 @@ func (dp *Deps) CreateInvite(w http.ResponseWriter, r *http.Request, a actor) {
 			return
 		}
 	}
-	now := dp.now()
+	now := d.now()
 	exp := now.Add(time.Duration(req.ExpiresInDays) * 24 * time.Hour).Truncate(time.Second)
 	var id string
 	if err := tx.QueryRowContext(ctx, `SELECT gen_random_uuid()::text`).Scan(&id); err != nil {
-		dp.fail(w, r, "id", err)
+		d.fail(w, r, "id", err)
 		return
 	}
-	token, err := bc.IssueInvite(*dp.Key, bc.InviteClaims{Pub: a.server, Chs: edge, Inv: id, Max: req.MaxUses, Exp: exp.Unix()}, now)
+	token, err := bc.IssueInvite(*d.Key, bc.InviteClaims{Pub: a.server, Chs: edge, Inv: id, Max: req.MaxUses, Exp: exp.Unix()}, now)
 	if err != nil {
-		dp.fail(w, r, "sign invite", err)
+		d.fail(w, r, "sign invite", err)
 		return
 	}
 	var createdBy any
@@ -513,12 +513,12 @@ func (dp *Deps) CreateInvite(w http.ResponseWriter, r *http.Request, a actor) {
 	var code string
 	for try := 0; ; try++ {
 		if code, err = bc.NewShortCode(); err != nil {
-			dp.fail(w, r, "code", err)
+			d.fail(w, r, "code", err)
 			return
 		}
 		// a savepoint, so a code collision doesn't abort the transaction
 		if _, err := tx.ExecContext(ctx, `SAVEPOINT code`); err != nil {
-			dp.fail(w, r, "savepoint", err)
+			d.fail(w, r, "savepoint", err)
 			return
 		}
 		_, err = tx.ExecContext(ctx, `
@@ -529,24 +529,24 @@ func (dp *Deps) CreateInvite(w http.ResponseWriter, r *http.Request, a actor) {
 			break
 		}
 		if !isUnique(err) || try >= 5 {
-			dp.fail(w, r, "insert invite", err)
+			d.fail(w, r, "insert invite", err)
 			return
 		}
 		if _, err := tx.ExecContext(ctx, `ROLLBACK TO SAVEPOINT code`); err != nil {
-			dp.fail(w, r, "rollback savepoint", err)
+			d.fail(w, r, "rollback savepoint", err)
 			return
 		}
 	}
 	if err := BumpAccess(ctx, tx, a.server); err != nil {
-		dp.fail(w, r, "bump", err)
+		d.fail(w, r, "bump", err)
 		return
 	}
 	if err := tx.Commit(); err != nil {
-		dp.fail(w, r, "commit", err)
+		d.fail(w, r, "commit", err)
 		return
 	}
-	dp.pushOne(ctx, a.server)
-	writeJSON(w, http.StatusCreated, InviteView{ID: id, URL: dp.inviteURL(token), ShortCode: code, Label: req.Label,
+	d.pushOne(ctx, a.server)
+	writeJSON(w, http.StatusCreated, InviteView{ID: id, URL: d.inviteURL(token), ShortCode: code, Label: req.Label,
 		Channels: dedupe(req.Channels), MaxUses: req.MaxUses, Uses: ptr(0), CreatedAt: now, ExpiresAt: exp, Status: "active"})
 }
 
@@ -565,8 +565,8 @@ func dedupe(in []string) []string {
 	return out
 }
 
-func (dp *Deps) inviteURL(token string) string {
-	base := strings.TrimRight(dp.WatchURL, "/")
+func (d *Deps) inviteURL(token string) string {
+	base := strings.TrimRight(d.WatchURL, "/")
 	if base == "" {
 		base = "https://watch.maktaba.tv"
 	}
@@ -574,15 +574,15 @@ func (dp *Deps) inviteURL(token string) string {
 }
 
 // ListInvites lists the publisher's invites, newest first, with their uses from the edge.
-func (dp *Deps) ListInvites(w http.ResponseWriter, r *http.Request, a actor) {
-	list, err := ListInvites(r.Context(), dp.DB, a.server, dp.now())
+func (d *Deps) ListInvites(w http.ResponseWriter, r *http.Request, a actor) {
+	list, err := ListInvites(r.Context(), d.DB, a.server, d.now())
 	if err != nil {
-		dp.fail(w, r, "list invites", err)
+		d.fail(w, r, "list invites", err)
 		return
 	}
-	uses := dp.edgeUses(r.Context(), a.server)
+	uses := d.edgeUses(r.Context(), a.server)
 	for i := range list {
-		list[i].URL = dp.inviteURL(list[i].URL)
+		list[i].URL = d.inviteURL(list[i].URL)
 		if uses != nil {
 			list[i].Uses = ptr(uses[list[i].ID])
 		}
@@ -625,13 +625,13 @@ func ListInvites(ctx context.Context, db *sql.DB, server string, now time.Time) 
 }
 
 // RevokeInvite revokes one of the publisher's invites: its passes stop at the next heartbeat.
-func (dp *Deps) RevokeInvite(w http.ResponseWriter, r *http.Request, a actor) {
+func (d *Deps) RevokeInvite(w http.ResponseWriter, r *http.Request, a actor) {
 	id := chi.URLParam(r, "id")
 	if !billingpkg.IsUUID(id) {
 		writeErr(w, http.StatusNotFound, "not_found", "")
 		return
 	}
-	dp.change(w, r, a.server, func(tx *sql.Tx) (int, error) {
+	d.change(w, r, a.server, func(tx *sql.Tx) (int, error) {
 		n, err := RevokeInviteTx(r.Context(), tx, a.server, id, a.String())
 		if err != nil || n == 0 {
 			return http.StatusNotFound, err
@@ -656,16 +656,16 @@ func RevokeInviteTx(ctx context.Context, q interface {
 
 // ListDevices lists one invite's guest passes as the edge holds them (random ids, first and
 // last use; never an identity).
-func (dp *Deps) ListDevices(w http.ResponseWriter, r *http.Request, a actor) {
+func (d *Deps) ListDevices(w http.ResponseWriter, r *http.Request, a actor) {
 	id := chi.URLParam(r, "id")
-	if !dp.ownsInvite(w, r, a.server, id) {
+	if !d.ownsInvite(w, r, a.server, id) {
 		return
 	}
-	if dp.Edge == nil || dp.Key == nil {
+	if d.Edge == nil || d.Key == nil {
 		writeErr(w, http.StatusServiceUnavailable, "edge_unavailable", "")
 		return
 	}
-	passes, err := dp.edgePasses(r.Context(), a.server)
+	passes, err := d.edgePasses(r.Context(), a.server)
 	if err != nil {
 		writeErr(w, http.StatusBadGateway, "edge_unavailable", "")
 		return
@@ -680,16 +680,16 @@ func (dp *Deps) ListDevices(w http.ResponseWriter, r *http.Request, a actor) {
 }
 
 // RevokeDevice revokes one device's guest pass of one of the publisher's invites.
-func (dp *Deps) RevokeDevice(w http.ResponseWriter, r *http.Request, a actor) {
+func (d *Deps) RevokeDevice(w http.ResponseWriter, r *http.Request, a actor) {
 	id, pass := chi.URLParam(r, "id"), chi.URLParam(r, "pass")
 	if len(pass) == 0 || len(pass) > 64 || strings.ContainsAny(pass, " /") {
 		writeErr(w, http.StatusNotFound, "not_found", "")
 		return
 	}
-	if !dp.ownsInvite(w, r, a.server, id) {
+	if !d.ownsInvite(w, r, a.server, id) {
 		return
 	}
-	dp.change(w, r, a.server, func(tx *sql.Tx) (int, error) {
+	d.change(w, r, a.server, func(tx *sql.Tx) (int, error) {
 		_, err := tx.ExecContext(r.Context(), `
             INSERT INTO broadcast_revoked_passes (server_id, pass_id, invite_id) VALUES ($1, $2, $3)
             ON CONFLICT DO NOTHING`, a.server, pass, id)
@@ -698,19 +698,19 @@ func (dp *Deps) RevokeDevice(w http.ResponseWriter, r *http.Request, a actor) {
 }
 
 // ownsInvite writes 404 unless the invite is the publisher's.
-func (dp *Deps) ownsInvite(w http.ResponseWriter, r *http.Request, server, id string) bool {
+func (d *Deps) ownsInvite(w http.ResponseWriter, r *http.Request, server, id string) bool {
 	if !billingpkg.IsUUID(id) {
 		writeErr(w, http.StatusNotFound, "not_found", "")
 		return false
 	}
 	var one int
-	err := dp.DB.QueryRowContext(r.Context(), `SELECT 1 FROM broadcast_invites WHERE id = $1 AND server_id = $2`, id, server).Scan(&one)
+	err := d.DB.QueryRowContext(r.Context(), `SELECT 1 FROM broadcast_invites WHERE id = $1 AND server_id = $2`, id, server).Scan(&one)
 	if errors.Is(err, sql.ErrNoRows) {
 		writeErr(w, http.StatusNotFound, "not_found", "")
 		return false
 	}
 	if err != nil {
-		dp.fail(w, r, "load invite", err)
+		d.fail(w, r, "load invite", err)
 		return false
 	}
 	return true

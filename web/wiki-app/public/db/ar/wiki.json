@@ -13,7 +13,7 @@
   ],
   "counts": {
     "diagram": 14,
-    "endpoint": 251,
+    "endpoint": 259,
     "entity": 42,
     "epic": 60,
     "feature": 3,
@@ -13818,6 +13818,222 @@
         "lang": "ar",
         "source": {
           "content": "86033f75a4c0876a"
+        }
+      }
+    },
+    {
+      "id": "ep-get-broadcast-access",
+      "type": "endpoint",
+      "title": "GET /broadcast/access",
+      "content": "من يمكنه مشاهدة قنوات البث في المنزل",
+      "tags": [
+        "api",
+        "Broadcast",
+        "get"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/broadcast/access",
+        "tag": "Broadcast",
+        "operationId": "getBroadcastAccess"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "e006743e148eb15c"
+        }
+      }
+    },
+    {
+      "id": "ep-put-broadcast-access-channels-id",
+      "type": "endpoint",
+      "title": "PUT /broadcast/access/channels/{id}",
+      "content": "تعيين وصول قناة",
+      "tags": [
+        "api",
+        "Broadcast",
+        "put"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "PUT",
+        "path": "/broadcast/access/channels/{id}",
+        "tag": "Broadcast",
+        "operationId": "setBroadcastChannelAccess"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "442bde8c837c9bea"
+        }
+      }
+    },
+    {
+      "id": "ep-put-broadcast-access-limits",
+      "type": "endpoint",
+      "title": "PUT /broadcast/access/limits",
+      "content": "تعيين حدود المشاهدة",
+      "tags": [
+        "api",
+        "Broadcast",
+        "put"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "PUT",
+        "path": "/broadcast/access/limits",
+        "tag": "Broadcast",
+        "operationId": "setBroadcastViewerLimits"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "0348937206dba1f0"
+        }
+      }
+    },
+    {
+      "id": "ep-get-broadcast-access-invites",
+      "type": "endpoint",
+      "title": "GET /broadcast/access/invites",
+      "content": "دعوات المنزل",
+      "tags": [
+        "api",
+        "Broadcast",
+        "get"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/broadcast/access/invites",
+        "tag": "Broadcast",
+        "operationId": "listBroadcastInvites"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "9cd52b22be5bd274"
+        }
+      }
+    },
+    {
+      "id": "ep-post-broadcast-access-invites",
+      "type": "endpoint",
+      "title": "POST /broadcast/access/invites",
+      "content": "إنشاء رابط دعوة ورمز تلفاز",
+      "tags": [
+        "api",
+        "Broadcast",
+        "post"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/broadcast/access/invites",
+        "tag": "Broadcast",
+        "operationId": "createBroadcastInvite"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "2a692e323c4ed85b"
+        }
+      }
+    },
+    {
+      "id": "ep-delete-broadcast-access-invites-id",
+      "type": "endpoint",
+      "title": "DELETE /broadcast/access/invites/{id}",
+      "content": "سحب دعوة",
+      "tags": [
+        "api",
+        "Broadcast",
+        "delete"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "DELETE",
+        "path": "/broadcast/access/invites/{id}",
+        "tag": "Broadcast",
+        "operationId": "revokeBroadcastInvite"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "085c85eb0e71144a"
+        }
+      }
+    },
+    {
+      "id": "ep-get-broadcast-access-invites-id-devices",
+      "type": "endpoint",
+      "title": "GET /broadcast/access/invites/{id}/devices",
+      "content": "أجهزة الدعوة",
+      "tags": [
+        "api",
+        "Broadcast",
+        "get"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/broadcast/access/invites/{id}/devices",
+        "tag": "Broadcast",
+        "operationId": "listBroadcastInviteDevices"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "f59ab113d16a115e"
+        }
+      }
+    },
+    {
+      "id": "ep-delete-broadcast-access-invites-id-devices-pass",
+      "type": "endpoint",
+      "title": "DELETE /broadcast/access/invites/{id}/devices/{pass}",
+      "content": "إزالة جهاز واحد من دعوة",
+      "tags": [
+        "api",
+        "Broadcast",
+        "delete"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "DELETE",
+        "path": "/broadcast/access/invites/{id}/devices/{pass}",
+        "tag": "Broadcast",
+        "operationId": "revokeBroadcastInviteDevice"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "417e937d4d0e2463"
         }
       }
     },

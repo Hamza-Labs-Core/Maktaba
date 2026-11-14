@@ -30,6 +30,7 @@ import (
 
 	authmw "github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/middleware"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/broadcastaccess"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/placement"
 	pluginsh "github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/plugins"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/plugins"
@@ -50,6 +51,8 @@ func apiSurface(t *testing.T) chi.Router {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 	(&pluginsh.Admin{L: &plugins.Lifecycle{DB: db}}).Mount(r)
+	// story 50.26: the home's broadcast viewer access (main.go mounts it beside the logs)
+	(&broadcastaccess.Handler{}).Mount(r)
 	return r
 }
 
