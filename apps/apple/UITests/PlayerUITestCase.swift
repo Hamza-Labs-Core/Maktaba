@@ -158,8 +158,9 @@ class PlayerUITestCase: XCTestCase {
     /// the touch, so the app never sees the tap (about once in a few hundred taps). The test
     /// then fails on what the tap should have done, which reads as an app bug. When a test
     /// fails, the running app is asked how many touches the system cancelled since launch
-    /// (`TouchHook`); if any, the failure starts with that. Retrying is not an option: the
-    /// failure stays a failure, with its real cause named.
+    /// (`TouchHook`); if any, the failure starts with that. The failure stays a failure, with
+    /// its real cause named; only a tap that opens a page gets a second try, and only when the
+    /// app counted a cancelled touch during it and the page did not open (`open(_:shows:_:)`).
     override nonisolated func record(_ issue: XCTIssue) {
         guard Thread.isMainThread else { return super.record(issue) }
         // on the main thread, so on the main actor, where `app` lives: XCTest records a UI
@@ -190,6 +191,44 @@ class PlayerUITestCase: XCTestCase {
         let count = cancelled > TouchHook.most ? "more than \(TouchHook.most) touches" : cancelled == 1 ? "1 touch" : "\(cancelled) touches"
         return "[the simulator may have dropped a tap: the system cancelled \(count) of this test before the app saw it end; "
             + "see #639 (backboardd's digitizer race) and the app's log before reading the failure as the app's] "
+    }
+
+    /// Taps `row` and waits (at most `timeout`) for `destination`, the page it opens. When the
+    /// page did not open and the app counted a touch cancelled by the system during the tap
+    /// (#639's backboardd race, `TouchHook`), the tap never reached the app: it is tapped once
+    /// more, in an activity named "Retrying a cancelled tap" so the result bundle shows each
+    /// retry. A tap that landed (no touch cancelled, or the page open) is never repeated; a
+    /// page that still does not open fails naming `what`. In run 43599999810 (`-test-iterations
+    /// 20` on the 12 Player UI shards) the one failure of 237 was such a cancelled tap on
+    /// Profile's Playback row (iphone 5/6, iteration 18), and the runner crashed after it.
+    @discardableResult
+    func open(_ row: XCUIElement, shows destination: XCUIElement, _ what: String, timeout: TimeInterval = 10,
+              file: StaticString = #filePath, line: UInt = #line) -> Bool {
+        let before = Self.cancelledTouches(in: app)
+        row.tap()
+        if destination.waitForExistence(timeout: timeout) { return true }
+        let after = Self.cancelledTouches(in: app)
+        guard Self.retriesTap(cancelledBefore: before, cancelledAfter: after, arrived: destination.exists) else {
+            XCTFail("\(what): not open after the tap", file: file, line: line)
+            return false
+        }
+        let lost = (after ?? 0) - (before ?? 0)
+        return XCTContext.runActivity(named: "Retrying a cancelled tap: \(what) (the system cancelled \(lost) touch\(lost == 1 ? "" : "es"), #639)") { _ in
+            waitUntilStill(row, timeout: 5)
+            row.tap()
+            let opened = destination.waitForExistence(timeout: timeout)
+            XCTAssertTrue(opened, "\(what): not open after a second tap (the first was cancelled by the system)",
+                          file: file, line: line)
+            return opened
+        }
+    }
+
+    /// Whether a tap that should have opened a page gets a second try: only when the page is
+    /// not open and the app's count of cancelled touches rose during the tap. With no count
+    /// (the app did not answer) the tap is not repeated: it may have landed.
+    nonisolated static func retriesTap(cancelledBefore: Int?, cancelledAfter: Int?, arrived: Bool) -> Bool {
+        guard !arrived, let before = cancelledBefore, let after = cancelledAfter else { return false }
+        return after > before
     }
 
     /// Closes the app if it is running.
