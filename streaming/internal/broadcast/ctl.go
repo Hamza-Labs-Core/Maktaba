@@ -72,8 +72,9 @@ type Ctl struct {
 	Logger *slog.Logger
 	Now    func() time.Time
 	// Poll (default 5 s), StatePeriod (default 10 s) and SleepGrace (default 5 min);
-	// RestartDelay is the wait before a crashed ffmpeg starts again (default 500 ms).
-	Poll, StateEvery, Grace, RestartDelay time.Duration
+	// RestartDelay is the wait before a crashed ffmpeg starts again (default 500 ms);
+	// WatchPoll is how often each rung's playlist is read (RungWatcher's default, 500 ms).
+	Poll, StateEvery, Grace, RestartDelay, WatchPoll time.Duration
 
 	mu       sync.Mutex
 	jobs     map[uuid.UUID]Job
@@ -503,7 +504,7 @@ func (c *Ctl) runLadder(ctx context.Context, j Job, s *session, dir string) erro
 	defer cancel()
 	var wg sync.WaitGroup
 	for _, r := range j.Rungs {
-		w := &RungWatcher{Dir: filepath.Join(dir, r), Rung: r, Up: s.up}
+		w := &RungWatcher{Dir: filepath.Join(dir, r), Rung: r, Up: s.up, Poll: c.WatchPoll}
 		wg.Add(1)
 		go func() { defer wg.Done(); w.Run(lctx) }()
 	}
