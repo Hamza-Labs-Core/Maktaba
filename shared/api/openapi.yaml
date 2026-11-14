@@ -2876,9 +2876,30 @@ paths:
       tags:
       - Queue
       summary: Restart the pipeline workers
-      description: "Asks this machine's supervisor to restart the pipeline's worker processes: the action of the Queues page while GET /queues/pulse answers `workers.state` = `not_responding` (jobs wait and no worker runs them). Waiting jobs stay queued; a job that was running is picked up again."
+      description: "Asks this machine's supervisor to restart the pipeline's worker processes: the action of the Queues page while GET /queues/pulse answers `workers.state` = `not_responding` (jobs wait and the workers listed in `workers.stalled` do not run them). The optional body names the catalog components whose workers restart (`core.pipeline`, `transcription`, `search.semantic`); with none, every worker restarts. Waiting jobs stay queued; a job that was running is picked up again."
       x-maktaba-role: admin
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                components:
+                  type: array
+                  items:
+                    type: string
+                    enum:
+                    - core.pipeline
+                    - transcription
+                    - search.semantic
       responses:
+        '400':
+          description: A component named has no worker, or the body is not JSON.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '200':
           description: 'Restarted: how many worker processes the supervisor restarted.'
           content:

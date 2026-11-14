@@ -45,6 +45,7 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/ws"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/hostload"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/secrets"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/components"
@@ -81,10 +82,14 @@ type Handler struct {
 	// LocalPath turns a path in the database's form into this machine's
 	// (libpaths.ToLocal, which this package cannot import); nil: as it is.
 	LocalPath func(string) string
-	// RestartWorkers asks this machine's supervisor to restart the pipeline's workers
-	// and answers how many it restarted (POST /api/queues/workers/restart); nil: this
-	// server runs under no supervisor, and the route answers 503.
-	RestartWorkers func(ctx context.Context) (int, error)
+	// RestartWorkers asks this machine's supervisor to restart the pipeline's workers,
+	// those of the catalog components named or of all of them when none is, and answers
+	// how many it restarted (POST /api/queues/workers/restart); nil: this server runs
+	// under no supervisor, and the route answers 503.
+	RestartWorkers func(ctx context.Context, components []string) (int, error)
+	// HostLoad is the load of the machine this server runs on (false: not readable
+	// here); nil: the pulse carries none.
+	HostLoad func(ctx context.Context) (hostload.State, bool)
 
 	libMu sync.Mutex
 	// actCache keeps GET /api/queues/libraries/activity (one scan of the finished

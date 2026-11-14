@@ -402,13 +402,23 @@
   2. Check names and live regions.
 - **Expected:** visible focus on every control; tab order follows the visual order; each card has one link (the title); the status pill, polling note and dialog result are `role="status"`; errors are `role="alert"`; table checkboxes have names "Select all libraries" / "Select <name>"; the pool and progress bars have text names; axe has no violations, also in the error state (QOV-03).
 
-### QOV-31 — The workers are not running jobs: notice, admin restart
+### QOV-31 — Workers that do not run their jobs: notice, restart
 
 - **Priority:** P1
-- **Category:** State / role
+- **Category:** State
 - **Covered by existing test?** Yes (`src/components/queue/WorkersStalled.test.tsx`)
-- **Preconditions / data:** `GET /api/queues/pulse` → `state: "stalled"`, `workers: { state: "not_responding", reason: "no_heartbeat" | "no_dispatch", since, waiting: 12, can_restart: true }`; then `workers.state: "running"`; then `can_restart: false`. Once as an admin, once as a user who is not one; in English and Arabic.
+- **Preconditions / data:** `GET /api/queues/pulse` → `state: "stalled"`, `workers: { state: "not_responding", since, waiting: 40, can_restart: true, stalled: [{ kind: "transcription", component: "transcription", reason: "no_dispatch" | "no_heartbeat", host, node_name, since, last_seen_at, restartable }] }`; then `stalled: []` (no worker registered); `can_restart: false`; a worker with `restartable: false` and a `node_name`; `workers.state: "running"`. In English and Arabic.
 - **Steps:**
-  1. Open `/queue` with the workers not responding.
-  2. As an admin, press **Restart the workers**.
-- **Expected:** an alert in place of the pulse line: "The workers are not running jobs.", since when, the reason, how many jobs wait and that they stay queued. An admin sees **Restart the workers**; pressing it calls `POST /api/queues/workers/restart` once and shows "Restarting the workers…"; a refusal shows why and keeps the button; with `can_restart: false` there is no button and the text says to restart Maktaba on its computer. A user who is not an admin sees no button and "Ask an admin to restart the workers." With `workers.state: "running"` (or no `workers` block) the pulse line shows as before. Every string is Arabic in Arabic.
+  1. Open `/queue` with stalled workers while other jobs run.
+  2. Press **Restart these workers**; in another run, **Restart all workers**.
+- **Expected:** an alert in place of the pulse line: "Some workers are not running their jobs.", since when, one line per worker (kind, machine, reason and for how long), how many jobs wait and that they stay queued, and a pointer to Needs attention with a link to Failing items. **Restart these workers** posts `{ components: [...] }` with each restartable stalled worker's component once; **Restart all workers** posts no body; then "Restarting the workers…" replaces the buttons. A refusal shows why and keeps the buttons. With `can_restart: false` there is no button and the text says to restart Maktaba on its computer; a joined machine's worker adds "A worker on another machine is restarted on that machine." With `stalled: []` the title is "No worker is running." With `workers.state: "running"` (or no `workers` block) the pulse line shows as before. Every string is Arabic in Arabic.
+
+### QOV-32 — The machine is overloaded: notice
+
+- **Priority:** P2
+- **Category:** State
+- **Covered by existing test?** Yes (`src/components/queue/WorkersStalled.test.tsx`)
+- **Preconditions / data:** `GET /api/queues/pulse` → `host: { overloaded: true, load1: 512.3, load5: 498, cores: 28, bound: 56, top: [{ pid, name, cpu_pct }] }`; then `top: null`; `overloaded: false`; no `host` block.
+- **Steps:**
+  1. Open `/queue`.
+- **Expected:** a yellow alert above the pulse line: "This machine is overloaded.", the load and cores, that jobs and the database are slow, the programs using the most CPU when listed, and that Maktaba stops no program by itself. No button. Nothing when the machine is within its cores or the block is missing. Arabic in Arabic.

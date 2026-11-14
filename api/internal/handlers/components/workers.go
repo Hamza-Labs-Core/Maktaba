@@ -2,6 +2,7 @@ package components
 
 import (
 	"context"
+	"slices"
 	"strings"
 
 	"github.com/Hamza-Labs-Core/Maktaba/shared/components"
@@ -27,13 +28,17 @@ func WorkerComponents(cat *components.Catalog) []string {
 }
 
 // RestartWorkers restarts this machine's pipeline workers (the Queues page's notice that
-// the workers do not run jobs): the supervisor's restart of each component that has one,
-// the core pipeline included, which an admin cannot restart as a component (it is not
-// switchable). It answers how many processes restarted (0: none runs now); the first
-// refusal or failed call ends it.
-func (p *Packs) RestartWorkers(ctx context.Context) (int, error) {
+// workers do not run their jobs): the supervisor's restart of each worker component in
+// ids, or of every one when ids is empty. The core pipeline is among them, which an admin
+// cannot restart as a component (it is not switchable). An id that is not a worker
+// component is left out. It answers how many processes restarted (0: none runs now); the
+// first refusal or failed call ends it.
+func (p *Packs) RestartWorkers(ctx context.Context, ids []string) (int, error) {
 	n := 0
 	for _, id := range WorkerComponents(components.Default()) {
+		if len(ids) > 0 && !slices.Contains(ids, id) {
+			continue
+		}
 		m, err := p.Restart(ctx, id)
 		if err != nil {
 			return n, err

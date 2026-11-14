@@ -442,6 +442,7 @@ func MountP6(r chi.Router, d P6Deps) {
 	queuesHandler.Secrets = d.Secrets
 	queuesHandler.Sources = ytdlp
 	queuesHandler.LocalPath = libpaths.ToLocal
+	queuesHandler.HostLoad = HostLoad.State
 	if pk := componentsh.PacksFromEnv(); pk != nil {
 		// the admin's "restart the workers" of the Queues page: the components' restart
 		queuesHandler.RestartWorkers = pk.RestartWorkers

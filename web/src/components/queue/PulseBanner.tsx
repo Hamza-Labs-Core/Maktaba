@@ -1,14 +1,16 @@
 // The heartbeat line under the header: "Last activity 12 s ago", or "No activity
 // for 14 min: it may be stuck", with the jobs that stopped beating
 // (GET /api/queues/pulse, polled; the stand-alone centre's stuck detection). While the
-// workers run no job at all, the line gives way to the notice that says so
-// (WorkersStalled).
+// workers do not run their jobs, the line gives way to the notice that says so
+// (WorkersStalled); while the machine is overloaded, a notice above it says that
+// (HostOverloaded).
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { bidiIsolate, useI18n } from "../../lib/i18n";
 import { queueApi } from "../../lib/queueApi";
 import type { Pulse } from "../../lib/queueApi";
 import { jobHref } from "./RunningJobs";
+import { HostOverloaded } from "./HostOverloaded";
 import { WorkersStalled } from "./WorkersStalled";
 import { useFmt } from "./format";
 
@@ -46,27 +48,30 @@ export function PulseBanner({ pollMs = POLL_MS }: { pollMs?: number }) {
   else text = t("queue.pulse.last", { time: fmt.dur(age) });
 
   return (
-    <div
-      className={`mkt-q-pulse mkt-q-pulse--${pulse.state}`}
-      role={pulse.state === "stalled" ? "alert" : undefined}
-    >
-      <span className="mkt-q-pulse__dot" aria-hidden="true" />
-      {stalledWorkers ? <WorkersStalled workers={stalledWorkers} /> : <span>{text}</span>}
-      {(pulse.stuck ?? []).length > 0 && (
-        <ul className="mkt-q-pulse__stuck">
-          {(pulse.stuck ?? []).map((j) => (
-            <li key={j.job_id}>
-              <Link to={jobHref(j)}>{bidiIsolate(j.label)}</Link>{" "}
-              <span className="mkt-q-muted">
-                {t("queue.pulse.stuckJob", {
-                  stage: j.stage,
-                  time: fmt.dur(j.heartbeat_age_sec),
-                })}
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
+    <>
+      {pulse.host?.overloaded && <HostOverloaded host={pulse.host} />}
+      <div
+        className={`mkt-q-pulse mkt-q-pulse--${pulse.state}`}
+        role={pulse.state === "stalled" ? "alert" : undefined}
+      >
+        <span className="mkt-q-pulse__dot" aria-hidden="true" />
+        {stalledWorkers ? <WorkersStalled workers={stalledWorkers} /> : <span>{text}</span>}
+        {(pulse.stuck ?? []).length > 0 && (
+          <ul className="mkt-q-pulse__stuck">
+            {(pulse.stuck ?? []).map((j) => (
+              <li key={j.job_id}>
+                <Link to={jobHref(j)}>{bidiIsolate(j.label)}</Link>{" "}
+                <span className="mkt-q-muted">
+                  {t("queue.pulse.stuckJob", {
+                    stage: j.stage,
+                    time: fmt.dur(j.heartbeat_age_sec),
+                  })}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </>
   );
 }

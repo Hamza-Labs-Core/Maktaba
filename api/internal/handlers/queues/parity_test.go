@@ -421,14 +421,14 @@ func TestInsights(t *testing.T) {
 }
 
 func pulseFixture(running, waiting int64, beat, done any, paused bool, stuck ...[]driver.Value) *fixture {
-	return newFixture(
+	// the workers beat and no runnable job waits (workerstate_test.go has the rule)
+	rules := append(workersRule(),
 		&queuestest.Rule{Match: "max(j.last_heartbeat_at)", Cols: []string{"r", "w", "hb"}, Rows: [][]driver.Value{{running, waiting, beat}}},
 		&queuestest.Rule{Match: "select max(finished_at)", Cols: []string{"m"}, Rows: [][]driver.Value{{done}}},
 		&queuestest.Rule{Match: "from queue_control", Cols: []string{"p"}, Rows: [][]driver.Value{{paused}}},
 		&queuestest.Rule{Match: "j.claimed_by", Cols: []string{"id", "stage", "label", "kind", "sid", "hb", "by", "run"}, Rows: stuck},
-		// the workers beat and no runnable job waits (workerstate_test.go has the rule)
-		workersRule(t0.Add(-5*time.Second), 0, 0, nil, nil),
 	)
+	return newFixture(rules...)
 }
 
 func TestPulse_States(t *testing.T) {

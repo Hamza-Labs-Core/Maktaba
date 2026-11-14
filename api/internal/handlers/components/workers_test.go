@@ -71,7 +71,7 @@ func workersSupervisor(t *testing.T, refuse string) (*Packs, func() []string) {
 // component, and answers the processes restarted in all.
 func TestRestartWorkers_AsksTheSupervisorForEachWorkerComponent(t *testing.T) {
 	pk, calls := workersSupervisor(t, "")
-	n, err := pk.RestartWorkers(context.Background())
+	n, err := pk.RestartWorkers(context.Background(), nil)
 	ids := WorkerComponents(components.Default())
 	if err != nil || n != len(ids) {
 		t.Fatalf("restarted %d, %v; want %d", n, err, len(ids))
@@ -89,7 +89,19 @@ func TestRestartWorkers_AsksTheSupervisorForEachWorkerComponent(t *testing.T) {
 
 func TestRestartWorkers_ASupervisorFailureIsAnError(t *testing.T) {
 	pk, _ := workersSupervisor(t, "core.pipeline")
-	if _, err := pk.RestartWorkers(context.Background()); err == nil {
+	if _, err := pk.RestartWorkers(context.Background(), nil); err == nil {
 		t.Fatal("a failed restart answered no error")
+	}
+}
+
+// Named components only: the transcription workers restart, the main worker is left alone.
+func TestRestartWorkers_OnlyTheComponentsNamed(t *testing.T) {
+	pk, calls := workersSupervisor(t, "")
+	n, err := pk.RestartWorkers(context.Background(), []string{"transcription", "not.a.worker"})
+	if err != nil || n != 1 {
+		t.Fatalf("restarted %d, %v", n, err)
+	}
+	if got := calls(); !slices.Equal(got, []string{"POST /components/transcription/restart"}) {
+		t.Fatalf("calls %v", got)
 	}
 }

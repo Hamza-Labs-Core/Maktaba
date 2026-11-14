@@ -1560,6 +1560,18 @@ summary.mkt-q-lane__title {
 .mkt-q-stall p {
   margin: 0;
 }
+.mkt-q-stall__list {
+  margin: 0;
+  padding-inline-start: var(--space-4);
+}
+.mkt-q-overload {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.mkt-q-overload p {
+  margin: 0;
+}
 .mkt-q-stall__act {
   display: flex;
   flex-wrap: wrap;

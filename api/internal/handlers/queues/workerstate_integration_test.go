@@ -73,60 +73,109 @@ func TestWorkersState_AgainstPostgres(t *testing.T) {
 		t.Fatalf("empty home: %+v", p.Workers)
 	}
 
-	// a job waits and no worker ever registered
+	// a job waits and no worker ever registered: not_responding, no worker to name
 	job(stage, "pending", "45 minutes", "")
 	if p := pulse(); p.State != PulseStalled || p.Workers.State != WorkersNotResponding ||
-		p.Workers.Reason != WorkersNoHeartbeat || p.Workers.Waiting != 1 || !near(p.Workers.Since, 45*time.Minute) {
+		p.Workers.Reason != WorkersNoHeartbeat || p.Workers.Waiting != 1 || len(p.Workers.Stalled) != 0 ||
+		!near(p.Workers.Since, 45*time.Minute) {
 		t.Fatalf("no worker: %s %+v", p.State, p.Workers)
 	}
 
-	// its worker last beat 20 minutes ago: silent since then
+	// its worker last beat 20 minutes ago: that worker is silent since then
 	worker("home/1", "20 minutes", stage)
-	if p := pulse(); p.Workers.State != WorkersNotResponding || p.Workers.Reason != WorkersNoHeartbeat ||
-		!near(p.Workers.Since, 20*time.Minute) || !near(p.Workers.LastSeenAt, 20*time.Minute) {
+	mustExec(t, db, `UPDATE workers SET started_at = now() - interval '1 day'`)
+	p := pulse()
+	if p.Workers.State != WorkersNotResponding || len(p.Workers.Stalled) != 1 ||
+		p.Workers.Stalled[0].Reason != WorkersNoHeartbeat || p.Workers.Stalled[0].WorkerID != "home/1" ||
+		!near(&p.Workers.Stalled[0].Since, 20*time.Minute) || !near(p.Workers.LastSeenAt, 20*time.Minute) {
 		t.Fatalf("silent worker: %+v", p.Workers)
 	}
 
-	// the worker beats and serves the stage, and nothing was dispatched: no_dispatch
+	// the worker beats and serves the stage, and has started nothing: no_dispatch
 	worker("home/1", "5 seconds", stage)
-	if p := pulse(); p.State != PulseStalled || p.Workers.State != WorkersNotResponding ||
-		p.Workers.Reason != WorkersNoDispatch || !near(p.Workers.Since, 45*time.Minute) {
+	p = pulse()
+	if p.State != PulseStalled || len(p.Workers.Stalled) != 1 || p.Workers.Stalled[0].Reason != WorkersNoDispatch ||
+		!near(&p.Workers.Stalled[0].Since, 45*time.Minute) || p.Workers.Stalled[0].Kind != WorkerMain {
 		t.Fatalf("no dispatch: %s %+v", p.State, p.Workers)
 	}
 
-	// the beating worker serves another stage only: the job waits for a machine, not a stall
-	worker("home/1", "5 seconds", other)
-	if p := pulse(); p.Workers.State != WorkersRunning || p.Workers.Waiting != 1 {
-		t.Fatalf("unserved stage: %+v", p.Workers)
+	// another worker runs a job of another stage and beats: the first is stalled all the
+	// same (the home after its restart: the main worker worked, transcription did not)
+	worker("home/2", "3 seconds", other)
+	mustExec(t, db, `UPDATE workers SET started_at = now() - interval '1 day'`)
+	job(other, "running", "2 minutes", `claimed_at = now() - interval '2 minutes', started_at = now() - interval '2 minutes',
+		last_heartbeat_at = now() - interval '3 seconds', claimed_by = 'home/2'`)
+	p = pulse()
+	if p.State != PulseStalled || p.Running != 1 || len(p.Workers.Stalled) != 1 || p.Workers.Stalled[0].WorkerID != "home/1" {
+		t.Fatalf("one of two stalled: %s %+v", p.State, p.Workers)
 	}
-	worker("home/1", "5 seconds", stage)
+
+	// the engine's event of a start by that worker within the bound: it is between jobs
+	mustExec(t, db, `INSERT INTO job_events (job_id, subject_kind, subject_id, stage, level, kind, message)
+		VALUES (1, 'library', $1::uuid, $2, 'debug', 'claimed', 'started by home/1')`, lib, stage)
+	if p := pulse(); p.Workers.State != WorkersRunning || len(p.Workers.Stalled) != 0 {
+		t.Fatalf("started a job 0 s ago: %+v", p.Workers)
+	}
+	mustExec(t, db, `UPDATE job_events SET at = now() - interval '11 minutes' WHERE kind = 'claimed'`)
+	if p := pulse(); len(p.Workers.Stalled) != 1 {
+		t.Fatalf("started a job 11 min ago: %+v", p.Workers)
+	}
+
+	// a worker restarted a minute ago has the bound to start
+	mustExec(t, db, `UPDATE workers SET started_at = now() - interval '1 minute' WHERE id = 'home/1'`)
+	if p := pulse(); len(p.Workers.Stalled) != 0 {
+		t.Fatalf("just restarted: %+v", p.Workers)
+	}
+	mustExec(t, db, `UPDATE workers SET started_at = now() - interval '1 day' WHERE id = 'home/1'`)
+
+	// the stage's pool: size 0 holds its jobs back, and a shared pool that is full does too
+	mustExec(t, db, `INSERT INTO worker_pools (pool, label, scope, size, default_size) VALUES ('stall_pool', 'Stall', 'global', 0, 1)
+		ON CONFLICT (pool) DO UPDATE SET size = 0, scope = 'global'`)
+	mustExec(t, db, `UPDATE job_stages SET pool = 'stall_pool' WHERE stage = $1`, stage)
+	if p := pulse(); len(p.Workers.Stalled) != 0 {
+		t.Fatalf("pool of size 0: %+v", p.Workers)
+	}
+	mustExec(t, db, `UPDATE worker_pools SET size = 1 WHERE pool = 'stall_pool'`)
+	if p := pulse(); len(p.Workers.Stalled) != 1 {
+		t.Fatalf("pool of size 1, free: %+v", p.Workers)
+	}
+	mustExec(t, db, `INSERT INTO compute_leases (pool, plugin_id, expires_at) VALUES ('stall_pool', 'tv.maktaba.x', now() + interval '1 minute')`)
+	if p := pulse(); len(p.Workers.Stalled) != 0 {
+		t.Fatalf("pool held by a lease: %+v", p.Workers)
+	}
+	mustExec(t, db, `DELETE FROM compute_leases WHERE pool = 'stall_pool'`)
+
+	// the System health page reads the same state
+	if ws, err := h.WorkersNow(context.Background()); err != nil || len(ws.Stalled) != 1 {
+		t.Fatalf("WorkersNow: %+v %v", ws, err)
+	}
 
 	// jobs that are not runnable never count: parked, not due, a paused stage, a stage off
-	mustExec(t, db, `UPDATE processing_jobs SET parked_on = 'disk_space'`)
-	if p := pulse(); p.Workers.State != WorkersRunning || p.Workers.Waiting != 0 {
+	mustExec(t, db, `UPDATE processing_jobs SET parked_on = 'disk_space' WHERE state = 'pending'`)
+	if p := pulse(); p.Workers.State != WorkersRunning {
 		t.Fatalf("parked: %+v", p.Workers)
 	}
-	mustExec(t, db, `UPDATE processing_jobs SET parked_on = NULL, not_before = now() + interval '1 hour'`)
-	if p := pulse(); p.Workers.State != WorkersRunning || p.Workers.Waiting != 0 {
+	mustExec(t, db, `UPDATE processing_jobs SET parked_on = NULL, not_before = now() + interval '1 hour' WHERE state = 'pending'`)
+	if p := pulse(); p.Workers.State != WorkersRunning {
 		t.Fatalf("not due: %+v", p.Workers)
 	}
-	mustExec(t, db, `UPDATE processing_jobs SET not_before = NULL`)
+	mustExec(t, db, `UPDATE processing_jobs SET not_before = NULL WHERE state = 'pending'`)
 	mustExec(t, db, `UPDATE job_stages SET paused = true, paused_at = now(), paused_by = 'test' WHERE stage = $1`, stage)
-	if p := pulse(); p.Workers.State != WorkersRunning || p.Workers.Waiting != 0 {
+	if p := pulse(); p.Workers.State != WorkersRunning {
 		t.Fatalf("paused stage: %+v", p.Workers)
 	}
 	mustExec(t, db, `UPDATE job_stages SET paused = false, paused_at = NULL, paused_by = NULL, enabled = false WHERE stage = $1`, stage)
-	if p := pulse(); p.Workers.State != WorkersRunning || p.Workers.Waiting != 0 {
+	if p := pulse(); p.Workers.State != WorkersRunning {
 		t.Fatalf("stage off: %+v", p.Workers)
 	}
 	mustExec(t, db, `UPDATE job_stages SET enabled = true WHERE stage = $1`, stage)
 
 	// a retry that came due a minute ago has waited a minute, however old the job is
-	mustExec(t, db, `UPDATE processing_jobs SET not_before = now() - interval '1 minute'`)
-	if p := pulse(); p.Workers.State != WorkersRunning || p.Workers.Waiting != 1 {
+	mustExec(t, db, `UPDATE processing_jobs SET not_before = now() - interval '1 minute' WHERE state = 'pending'`)
+	if p := pulse(); p.Workers.State != WorkersRunning {
 		t.Fatalf("just due: %+v", p.Workers)
 	}
-	mustExec(t, db, `UPDATE processing_jobs SET not_before = NULL`)
+	mustExec(t, db, `UPDATE processing_jobs SET not_before = NULL WHERE state = 'pending'`)
 
 	// every queue paused: paused, not stalled
 	mustExec(t, db, `UPDATE queue_control SET paused = true WHERE id = 1`)
@@ -135,17 +184,12 @@ func TestWorkersState_AgainstPostgres(t *testing.T) {
 	}
 	mustExec(t, db, `UPDATE queue_control SET paused = false WHERE id = 1`)
 
-	// a job runs and beats: the workers dispatch
-	job(other, "running", "2 minutes", `claimed_at = now() - interval '2 minutes', started_at = now() - interval '2 minutes',
-		last_heartbeat_at = now() - interval '3 seconds', claimed_by = 'home/1'`)
-	if p := pulse(); p.State != PulseWorking || p.Workers.State != WorkersRunning || p.Workers.Waiting != 1 {
-		t.Fatalf("running: %s %+v", p.State, p.Workers)
-	}
-
-	// the admin's restart is audited (the supervisor is the handler's RestartWorkers)
-	h.RestartWorkers = func(context.Context) (int, error) { return 2, nil }
-	if rec := f.do("POST", "/api/queues/workers/restart", "", admin()); rec.Code != http.StatusOK {
-		t.Fatalf("restart %d %s", rec.Code, rec.Body.String())
+	// the admin's restart of the stalled worker's component is audited
+	var asked []string
+	h.RestartWorkers = func(_ context.Context, ids []string) (int, error) { asked = ids; return 2, nil }
+	if rec := f.do("POST", "/api/queues/workers/restart", `{"components":["core.pipeline"]}`, admin()); rec.Code != http.StatusOK ||
+		len(asked) != 1 || asked[0] != "core.pipeline" {
+		t.Fatalf("restart %d %s %v", rec.Code, rec.Body.String(), asked)
 	}
 	var payload sql.NullString
 	if err := db.QueryRow(`SELECT payload::text FROM audit_log WHERE action = 'queue.workers.restart'
