@@ -231,6 +231,18 @@ edge_public_key = ""
 key_path = ""
 ingest_url = "https://ingest.maktaba.tv"
 
+# Viewer analytics and broadcast monitoring (Epic 50 story 50.28). With an account id and a token
+# the worker role polls Workers Analytics Engine (the edge's broadcast_events) each minute and
+# rolls it hourly into broadcast_usage_hourly; without them it does neither. The token (Account
+# Analytics: Read) is a file or the env MAKTABA_CLOUD_BROADCAST_ANALYTICS_TOKEN, never this file.
+analytics_account_id = ""
+analytics_token_path = ""
+# analytics_url = "https://api.cloudflare.com/client/v4"
+# Counts below this fold into "Other" for publishers (default 5).
+analytics_k          = 5
+# The edge's monthly budget in USD: broadcast_cost_80pct fires at 80 %. 0 leaves it unset.
+monthly_budget_usd   = 0
+
 [broadcast.plans]
 # true: new viewer sessions get full, lowest or wait as the publisher's plan and usage say;
 # false (the rollback): full up to the concurrent-viewer limit, viewer-minutes still counted.

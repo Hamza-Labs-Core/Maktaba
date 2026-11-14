@@ -35,39 +35,44 @@ function VisualText(s as String, maxWidthChars as Integer) as String
 end function
 
 function VisualTextDir(s as String, maxWidthChars as Integer, base as String) as String
-    t = vt_Prepare(s)
+    tb = vt_Tables()
+    if base <> "rtl" and not tb.nonAscii.IsMatch(s) then return vt_AsciiCut(s, maxWidthChars)
+    t = vt_Prepare(s, false)
     if t.gated then
         vt_LogLogical(t.gatedCode)
+        if t.harakat then t = vt_Prepare(s, true)
         return vt_JoinAll(vt_Ellipsize(t, maxWidthChars).chars)
     end if
-    if t.harakat then t = vt_StripHarakat(t)
     t = vt_Ellipsize(t, maxWidthChars)
-    return vt_Order(vt_Shape(t), base)
+    return vt_Order(vt_Shape(t, [[0, t.chars.Count()]], false), base)
 end function
 
 function VisualLines(s as String, widthChars as Integer, maxLines as Integer, base as String) as Object
-    t = vt_Prepare(s)
+    tb = vt_Tables()
+    if base <> "rtl" and not tb.nonAscii.IsMatch(s) then return vt_AsciiLines(s, widthChars, maxLines)
+    t = vt_Prepare(s, false)
     out = []
     if t.gated then
         vt_LogLogical(t.gatedCode)
+        if t.harakat then t = vt_Prepare(s, true)
         for each line in vt_FitLines(vt_Wrap(t, widthChars), widthChars, maxLines)
-            out.Push(vt_JoinAll(line.chars))
+            out.Push(vt_LineText(t, line))
         end for
         return out
     end if
-    if t.harakat then t = vt_StripHarakat(t)
     direction = base
     if direction = "auto" then
         if vt_FirstStrongRtl(t.cls) then direction = "rtl" else direction = "ltr"
     end if
     for each line in vt_FitLines(vt_Wrap(t, widthChars), widthChars, maxLines)
-        out.Push(vt_Order(vt_Shape(line), direction))
+        out.Push(vt_Order(vt_Shape(t, line.words, line.ellipsis), direction))
     end for
     return out
 end function
 
 function VisualIsRtl(s as String) as Boolean
-    return vt_FirstStrongRtl(vt_Prepare(s).cls)
+    if not vt_Tables().nonAscii.IsMatch(s) then return false
+    return vt_FirstStrongRtl(vt_Prepare(s, false).cls)
 end function
 
 ' ---- the steps ----------------------------------------------------------------------------
@@ -96,6 +101,7 @@ function vt_Tables() as Object
             mirror: vt_TableMirror()
             closeOf: closeOf
             closing: closing
+            nonAscii: CreateObject("roRegex", "[^ -~]", "")
         }
     end if
     return g.vtTables
@@ -121,14 +127,17 @@ function vt_Class(c as Integer, tb as Object) as String
     return "L"
 end function
 
-' The string as characters, codes and classes: tab, CR and LF as spaces, BN removed. A UTF-16
-' surrogate pair (brs-engine's strings) is kept together as one character, as on Roku. Flags
-' say which later steps the string needs: harakat (H present), arabic (letters to shape), rtl
-' (anything right-to-left), brackets (a paired bracket).
+' The string as characters, codes and classes: tab, CR and LF as spaces, BN removed, and tashkeel
+' removed (Roku has no mark positioning) unless keepHarakat. A UTF-16 surrogate pair
+' (brs-engine's strings) is kept together as one character, as on Roku. Flags say which later
+' steps the string needs: harakat (tashkeel seen), arabic (letters to shape), rtl (anything
+' right-to-left), brackets (a paired bracket), gated (a character outside the shaping table:
+' the caller prepares the string again with keepHarakat, as it is shown in logical order).
 '
-' The hot loops below make no function call per character: a call costs as much as ten
-' statements on brs-engine and on the device.
-function vt_Prepare(s as String) as Object
+' The hot loops below make no function call per character: a call costs as much as five to ten
+' statements on brs-engine and on the device. Arabic letters are tested first: they are most of
+' what reaches this code (printable ASCII takes vt_AsciiCut and vt_AsciiLines).
+function vt_Prepare(s as String, keepHarakat as Boolean) as Object
     tb = vt_Tables()
     latin = tb.latin
     arabic = tb.arabic
@@ -149,33 +158,42 @@ function vt_Prepare(s as String) as Object
     while i < n
         ch = units[i]
         c = Asc(ch)
-        if c >= &hD800 and c <= &hDBFF and i + 1 < n then
-            lowUnit = Asc(units[i + 1])
-            if lowUnit >= &hDC00 and lowUnit <= &hDFFF then
-                ch = ch + units[i + 1]
-                c = &h10000 + (c - &hD800) * 1024 + (lowUnit - &hDC00)
-                i = i + 1
-            end if
-        end if
         if c < 256 then
             k = latin[c]
         else if c >= &h600 and c <= &h6FF then
             k = arabic[c - &h600]
         else
+            if c >= &hD800 and c <= &hDBFF and i + 1 < n then
+                lowUnit = Asc(units[i + 1])
+                if lowUnit >= &hDC00 and lowUnit <= &hDFFF then
+                    ch = ch + units[i + 1]
+                    c = &h10000 + (c - &hD800) * 1024 + (lowUnit - &hDC00)
+                    i = i + 1
+                end if
+            end if
             k = vt_Class(c, tb)
         end if
-        if k = "P" then
+        if k = "A" then
+            chars.Push(ch)
+            codes.Push(c)
+            cls.Push(k)
+            hasArabic = true
+        else if k = "P" then
             chars.Push(" ")
             codes.Push(32)
             cls.Push("W")
+        else if k = "H" then
+            harakat = true
+            if keepHarakat then
+                chars.Push(ch)
+                codes.Push(c)
+                cls.Push(k)
+            end if
         else if k <> "B" then
             chars.Push(ch)
             codes.Push(c)
             cls.Push(k)
-            if k = "A" then
-                hasArabic = true
-                rtl = true
-            else if k = "R" or k = "N" or k = "2" or k = "3" then
+            if k = "R" or k = "N" or k = "2" or k = "3" then
                 rtl = true
             else if k = "O" then
                 if c = 40 or c = 41 or c = 91 or c = 93 or c = 123 or c = 125 then
@@ -184,8 +202,6 @@ function vt_Prepare(s as String) as Object
                     key = c.ToStr()
                     if closeOf.DoesExist(key) or closing.DoesExist(key) then brackets = true
                 end if
-            else if k = "H" then
-                harakat = true
             else if k = "X" and not gated then
                 gated = true
                 gatedCode = c
@@ -193,6 +209,7 @@ function vt_Prepare(s as String) as Object
         end if
         i = i + 1
     end while
+    if hasArabic then rtl = true
     return {chars: chars, codes: codes, cls: cls, gated: gated, gatedCode: gatedCode, harakat: harakat, arabic: hasArabic, rtl: rtl, brackets: brackets}
 end function
 
@@ -204,25 +221,6 @@ end function
 sub vt_LogLogical(c as Integer)
     print "[visualtext] shown in logical order: U+"; UCase(StrI(c, 16)); " is outside the shaping table"
 end sub
-
-function vt_StripHarakat(t as Object) as Object
-    chars = []
-    codes = []
-    cls = []
-    tc = t.chars
-    tk = t.codes
-    tl = t.cls
-    for i = 0 to tc.Count() - 1
-        if tl[i] <> "H" then
-            chars.Push(tc[i])
-            codes.Push(tk[i])
-            cls.Push(tl[i])
-        end if
-    end for
-    out = vt_Piece(t, chars, codes, cls)
-    out.harakat = false
-    return out
-end function
 
 function vt_Slice(t as Object, first as Integer, count as Integer) as Object
     chars = []
@@ -265,13 +263,72 @@ function vt_FirstStrongRtl(cls as Object) as Boolean
     return false
 end function
 
+' Printable ASCII (nothing outside space to tilde) on a line that is not forced right to left
+' needs none of the steps: each character is its own glyph and the order is the logical one.
+' These two give what the full steps give for it, a word at a time instead of a character.
+function vt_AsciiCut(s as String, width as Integer) as String
+    n = Len(s)
+    if width <= 0 or n <= width then return s
+    keep = 0
+    if width > 1 then
+        keep = width - 1
+        while keep > 0 and Mid(s, keep, 1) = " "
+            keep = keep - 1
+        end while
+    end if
+    return Left(s, keep) + Chr(&h2026)
+end function
+
+function vt_AsciiLines(s as String, width as Integer, maxLines as Integer) as Object
+    lines = []
+    cur = ""
+    curLen = -1 ' no line started
+    for each w in s.Tokenize(" ")
+        ws = w
+        while width > 0 and Len(ws) > width
+            if curLen >= 0 then
+                lines.Push(cur)
+                curLen = -1
+            end if
+            lines.Push(Left(ws, width))
+            ws = Mid(ws, width + 1)
+        end while
+        wl = Len(ws)
+        if wl > 0 then
+            if curLen < 0 then
+                cur = ws
+                curLen = wl
+            else if width <= 0 or curLen + 1 + wl <= width then
+                cur = cur + " " + ws
+                curLen = curLen + 1 + wl
+            else
+                lines.Push(cur)
+                cur = ws
+                curLen = wl
+            end if
+        end if
+    end for
+    if curLen >= 0 then lines.Push(cur)
+    if maxLines <= 0 or lines.Count() <= maxLines then return lines
+    out = []
+    for i = 0 to maxLines - 2
+        out.Push(lines[i])
+    end for
+    rest = lines[maxLines - 1]
+    for i = maxLines to lines.Count() - 1
+        rest = rest + " " + lines[i]
+    end for
+    out.Push(vt_AsciiCut(rest, width))
+    return out
+end function
+
 ' Greedy word wrap in logical order (words split on spaces; a word longer than the width is
-' split; no width: one line), as visual.wrap. Lines are found as ranges of words, then
-' copied once.
+' split; no width: one line), as visual.wrap. Each line is a list of [start, end) word ranges
+' of t, joined by one space: nothing is copied here (vt_Shape copies each line once).
 function vt_Wrap(t as Object, width as Integer) as Object
     codes = t.codes
     n = codes.Count()
-    lines = [] ' each: a list of [start, end) word ranges
+    lines = []
     cur = invalid
     curLen = 0
     i = 0
@@ -310,123 +367,180 @@ function vt_Wrap(t as Object, width as Integer) as Object
         end if
     end while
     if cur <> invalid then lines.Push(cur)
-    out = []
-    tc = t.chars
-    tl = t.cls
-    for each words in lines
-        chars = []
-        lcodes = []
-        cls = []
-        first = true
-        for each w in words
-            if not first then
-                chars.Push(" ")
-                lcodes.Push(32)
-                cls.Push("W")
-            end if
-            first = false
-            for k = w[0] to w[1] - 1
-                chars.Push(tc[k])
-                lcodes.Push(codes[k])
-                cls.Push(tl[k])
-            end for
-        end for
-        out.Push(vt_Piece(t, chars, lcodes, cls))
-    end for
-    return out
+    return lines
 end function
 
-' At most maxLines lines; the rest goes on the last line, cut with an ellipsis.
+' At most maxLines lines, each {words, ellipsis}; the rest goes on the last line, cut with an
+' ellipsis.
 function vt_FitLines(lines as Object, width as Integer, maxLines as Integer) as Object
-    if maxLines <= 0 or lines.Count() <= maxLines then return lines
     out = []
+    if maxLines <= 0 or lines.Count() <= maxLines then
+        for each words in lines
+            out.Push({words: words, ellipsis: false})
+        end for
+        return out
+    end if
     for i = 0 to maxLines - 2
-        out.Push(lines[i])
+        out.Push({words: lines[i], ellipsis: false})
     end for
-    rest = lines[maxLines - 1]
-    for i = maxLines to lines.Count() - 1
-        more = lines[i]
-        rest.chars.Push(" ")
-        rest.codes.Push(32)
-        rest.cls.Push("W")
-        rest.chars.Append(more.chars)
-        rest.codes.Append(more.codes)
-        rest.cls.Append(more.cls)
+    rest = []
+    for i = maxLines - 1 to lines.Count() - 1
+        rest.Append(lines[i])
     end for
-    out.Push(vt_Ellipsize(rest, width))
+    out.Push(vt_EllipsizeWords(rest, width))
     return out
 end function
 
-' Arabic joining and lam-alef ligatures, in logical order (arabic-reshaper's algorithm).
+' vt_Ellipsize on a line of words: at most width characters, the space before the cut dropped,
+' then the ellipsis.
+function vt_EllipsizeWords(words as Object, width as Integer) as Object
+    total = words.Count() - 1
+    for each w in words
+        total = total + w[1] - w[0]
+    end for
+    if width <= 0 or total <= width then return {words: words, ellipsis: false}
+    keep = 0
+    if width > 1 then keep = width - 1
+    kept = []
+    used = 0
+    for each w in words
+        if kept.Count() > 0 then
+            if used + 1 >= keep then exit for ' the space would end the cut: dropped
+            used = used + 1
+        end if
+        l = w[1] - w[0]
+        if used + l >= keep then
+            if keep > used then kept.Push([w[0], w[0] + keep - used])
+            exit for
+        end if
+        kept.Push(w)
+        used = used + l
+    end for
+    return {words: kept, ellipsis: true}
+end function
+
+' A line in logical order, as it is shown when the string is gated.
+function vt_LineText(t as Object, line as Object) as String
+    tc = t.chars
+    out = []
+    for each w in line.words
+        if out.Count() > 0 then out.Push(" ")
+        for k = w[0] to w[1] - 1
+            out.Push(tc[k])
+        end for
+    end for
+    if line.ellipsis then out.Push(Chr(&h2026))
+    return out.Join("")
+end function
+
+' One line copied out of t (its [start, end) word ranges joined by one space, then the
+' ellipsis), with Arabic joining and the lam-alef ligatures in logical order (arabic-reshaper's
+' algorithm). A word is shaped on its own: what is around it (a space, the cut) joins nothing.
 ' Forms: -1 not a letter of the table, 0 isolated, 1 initial, 2 medial, 3 final.
-function vt_Shape(t as Object) as Object
-    if not t.arabic then return t
-    tb = vt_Tables()
-    forms = tb.forms
+function vt_Shape(t as Object, words as Object, ellipsis as Boolean) as Object
     tc = t.chars
     tk = t.codes
     tl = t.cls
-    n = tk.Count()
-    form = []
-    letter = []
-    p = -1 ' the form of the character before
-    pf = invalid ' its table entry
-    for i = 0 to n - 1
-        c = tk[i]
-        f = invalid
-        if c >= &h621 and c <= &h64A then f = forms[c - &h600]
-        letter.Push(f)
-        if f = invalid then
-            p = -1
-        else if p = -1 then
-            p = 0
-        else if f[3] = 0 and f[2] = 0 then
-            p = 0 ' does not join the letter before
-        else if pf[1] = 0 and pf[2] = 0 then
-            p = 0 ' the letter before joins nothing after it
-        else if p = 3 and pf[2] = 0 then
-            p = 0 ' the letter before is final and has no medial form
-        else
-            if p = 0 then form[i - 1] = 1 else form[i - 1] = 2
-            p = 3
-        end if
-        form.Push(p)
-        pf = f
-    end for
-
-    lamAlef = tb.lamAlef
     chars = []
     codes = []
     cls = []
-    i = 0
-    while i < n
-        c = tk[i]
-        lig = invalid
-        if c = &h644 and i + 1 < n then
-            a = tk[i + 1]
-            if a = &h627 or a = &h623 or a = &h625 or a = &h622 then lig = lamAlef[a.ToStr()]
-        end if
-        if lig <> invalid then
-            ' the ligature's form: isolated or final by whether the lam joins the letter before
-            if form[i] = 0 or form[i] = 1 then g = lig[0] else g = lig[1]
-            chars.Push(Chr(g))
-            codes.Push(g)
-            cls.Push("A")
-            i = i + 2
-        else
-            fm = form[i]
-            if fm = -1 then
-                chars.Push(tc[i])
-                codes.Push(c)
+    first = true
+    if not t.arabic then
+        for each w in words
+            if first then
+                first = false
             else
-                g = letter[i][fm]
-                chars.Push(Chr(g))
-                codes.Push(g)
+                chars.Push(" ")
+                codes.Push(32)
+                cls.Push("W")
             end if
-            cls.Push(tl[i])
-            i = i + 1
-        end if
-    end while
+            for i = w[0] to w[1] - 1
+                chars.Push(tc[i])
+                codes.Push(tk[i])
+                cls.Push(tl[i])
+            end for
+        end for
+    else
+        tb = vt_Tables()
+        forms = tb.forms
+        lamAlef = tb.lamAlef
+        for each w in words
+            if first then
+                first = false
+            else
+                chars.Push(" ")
+                codes.Push(32)
+                cls.Push("W")
+            end if
+            ' one pass: a character's form is final once the next one is seen, so each is
+            ' copied out one step behind (pend), a lam with the alef after it as their ligature
+            p = -1 ' the form of the character before
+            pf = invalid ' its table entry
+            pend = -1 ' the character before, not yet copied out
+            for i = w[0] to w[1] - 1
+                c = tk[i]
+                f = invalid
+                if c >= &h621 and c <= &h64A then f = forms[c - &h600]
+                if f = invalid then
+                    np = -1
+                else if p = -1 then
+                    np = 0
+                else if f[3] = 0 and f[2] = 0 then
+                    np = 0 ' does not join the letter before
+                else if pf[1] = 0 and pf[2] = 0 then
+                    np = 0 ' the letter before joins nothing after it
+                else if p = 3 and pf[2] = 0 then
+                    np = 0 ' the letter before is final and has no medial form
+                else
+                    if p = 0 then p = 1 else p = 2
+                    np = 3
+                end if
+                nxt = i
+                if pend >= 0 then
+                    if p = -1 then
+                        chars.Push(tc[pend])
+                        codes.Push(tk[pend])
+                        cls.Push(tl[pend])
+                    else
+                        g = invalid
+                        if tk[pend] = &h644 then
+                            if c = &h627 or c = &h623 or c = &h625 or c = &h622 then
+                                ' the ligature's form: isolated or final by whether the lam
+                                ' joins the letter before
+                                lig = lamAlef[c.ToStr()]
+                                if p = 0 or p = 1 then g = lig[0] else g = lig[1]
+                                nxt = -1 ' the alef is in the ligature
+                            end if
+                        end if
+                        if g = invalid then g = pf[p]
+                        chars.Push(Chr(g))
+                        codes.Push(g)
+                        cls.Push("A")
+                    end if
+                end if
+                pend = nxt
+                p = np
+                pf = f
+            end for
+            if pend >= 0 then
+                if p = -1 then
+                    chars.Push(tc[pend])
+                    codes.Push(tk[pend])
+                    cls.Push(tl[pend])
+                else
+                    g = pf[p]
+                    chars.Push(Chr(g))
+                    codes.Push(g)
+                    cls.Push("A")
+                end if
+            end if
+        end for
+    end if
+    if ellipsis then
+        chars.Push(Chr(&h2026))
+        codes.Push(&h2026)
+        cls.Push("O")
+    end if
     return vt_Piece(t, chars, codes, cls)
 end function
 
@@ -466,53 +580,75 @@ function vt_Order(t as Object, base as String) as String
     seps = false
     terms = false
     nums = false
+    marks = false
+    wIdx = [] ' where W4 to W7 may change a type: digits, separators, terminators
+    wStrong = [] ' the strong type before each (W7)
     for i = 0 to n - 1
         k = tl[i]
-        if k = "1" then
-            k = "L"
-        else if k = "2" then
-            k = "R"
-        else if k = "3" then
-            k = "A"
-        else if k = "M" then
-            k = prev
-        end if
-        prev = k
-        if k = "L" or k = "R" then
-            last = k
-        else if k = "A" then
+        if k = "A" then
+            prev = "A"
             last = "A"
-            k = "R"
-        else if k = "E" then
-            if last = "A" then k = "N"
-            nums = true
-        else if k = "S" or k = "C" then
-            seps = true
-        else if k = "T" then
-            terms = true
+            ty.Push("R")
+        else
+            if k = "1" then
+                k = "L"
+                marks = true
+            else if k = "2" then
+                k = "R"
+                marks = true
+            else if k = "3" then
+                k = "A"
+                marks = true
+            else if k = "M" then
+                k = prev
+            end if
+            prev = k
+            if k = "L" or k = "R" then
+                last = k
+            else if k = "A" then
+                last = "A"
+                k = "R"
+            else if k = "E" then
+                wIdx.Push(i)
+                wStrong.Push(last)
+                if last = "A" then k = "N"
+                nums = true
+            else if k = "S" or k = "C" then
+                wIdx.Push(i)
+                wStrong.Push(last)
+                seps = true
+            else if k = "T" then
+                wIdx.Push(i)
+                wStrong.Push(last)
+                terms = true
+            end if
+            ty.Push(k)
         end if
-        ty.Push(k)
     end for
+    ' W4 to W7 change only the types at wIdx (or a run of terminators starting at one), so they
+    ' visit those, in order, instead of the whole line
     ' W4: one separator between two numbers of the same kind
     if seps then
-        for i = 1 to n - 2
-            k = ty[i]
-            if k = "S" then
-                if ty[i - 1] = "E" and ty[i + 1] = "E" then ty[i] = "E"
-            else if k = "C" then
-                if ty[i - 1] = "E" and ty[i + 1] = "E" then
-                    ty[i] = "E"
-                else if ty[i - 1] = "N" and ty[i + 1] = "N" then
-                    ty[i] = "N"
+        for each i in wIdx
+            if i > 0 and i < n - 1 then
+                k = ty[i]
+                if k = "S" then
+                    if ty[i - 1] = "E" and ty[i + 1] = "E" then ty[i] = "E"
+                else if k = "C" then
+                    if ty[i - 1] = "E" and ty[i + 1] = "E" then
+                        ty[i] = "E"
+                    else if ty[i - 1] = "N" and ty[i + 1] = "N" then
+                        ty[i] = "N"
+                    end if
                 end if
             end if
         end for
     end if
     ' W5: terminators next to European digits
     if terms and nums then
-        i = 0
-        while i < n
-            if ty[i] = "T" then
+        done = -1 ' the end of the last run of terminators seen
+        for each i in wIdx
+            if i > done and ty[i] = "T" then
                 j = i
                 while j < n and ty[j] = "T"
                     j = j + 1
@@ -522,26 +658,20 @@ function vt_Order(t as Object, base as String) as String
                         ty[k] = "E"
                     end for
                 end if
-                i = j
-            else
-                i = i + 1
-            end if
-        end while
-    end if
-    ' W6 (the remaining separators and terminators are neutral), W7 (digits after L are L)
-    if seps or terms or nums then
-        last = e
-        for i = 0 to n - 1
-            k = ty[i]
-            if k = "S" or k = "T" or k = "C" then
-                ty[i] = "O"
-            else if k = "L" or k = "R" then
-                last = k
-            else if k = "E" then
-                if last = "L" then ty[i] = "L"
+                done = j - 1
             end if
         end for
     end if
+    ' W6 (the remaining separators and terminators are neutral), W7 (digits after L are L)
+    for x = 0 to wIdx.Count() - 1
+        i = wIdx[x]
+        k = ty[i]
+        if k = "S" or k = "T" or k = "C" then
+            ty[i] = "O"
+        else if k = "E" and wStrong[x] = "L" then
+            ty[i] = "L"
+        end if
+    end for
 
     if t.brackets then vt_BracketPairs(t, ty, e, tb)
 
@@ -551,7 +681,10 @@ function vt_Order(t as Object, base as String) as String
     i = 0
     while i < n
         k = ty[i]
-        if k = "O" or k = "W" then
+        if k = "R" then
+            lv.Push(1)
+            i = i + 1
+        else if k = "O" or k = "W" then
             j = i
             while j < n and (ty[j] = "O" or ty[j] = "W")
                 j = j + 1
@@ -578,17 +711,7 @@ function vt_Order(t as Object, base as String) as String
             end for
             i = j
         else
-            if para = 0 then
-                if k = "R" then
-                    lv.Push(1)
-                else if k = "L" then
-                    lv.Push(0)
-                else
-                    lv.Push(2)
-                end if
-            else
-                if k = "R" then lv.Push(1) else lv.Push(2)
-            end if
+            if para = 0 and k = "L" then lv.Push(0) else lv.Push(2)
             i = i + 1
         end if
     end while
@@ -598,54 +721,57 @@ function vt_Order(t as Object, base as String) as String
         lv[i] = para
         i = i - 1
     end while
-    ' L2: reverse each run at or above each level, from the highest to the lowest odd level
-    order = []
-    top = 0
-    low = 99
-    for i = 0 to n - 1
-        order.Push(i)
-        x = lv[i]
-        if x > top then top = x
-        if x mod 2 = 1 and x < low then low = x
-    end for
-    level = top
-    while level >= low
-        i = 0
-        while i < n
-            if lv[order[i]] >= level then
-                j = i + 1
-                while j < n and lv[order[j]] >= level
-                    j = j + 1
-                end while
-                a = i
-                b = j - 1
-                while a < b
-                    x = order[a]
-                    order[a] = order[b]
-                    order[b] = x
-                    a = a + 1
-                    b = b - 1
-                end while
-                i = j
-            else
-                i = i + 1
-            end if
-        end while
-        level = level - 1
-    end while
-    ' L4 (only neutrals have mirrored glyphs) and the output without the steering marks
+    ' L2 and L4: levels are 0, 1 and 2 (there are no embeddings), so the display order is each run
+    ' at level 1 or above reversed, with each run at level 2 inside it reversed back; a neutral
+    ' at level 1 takes its mirrored glyph; the steering marks are not drawn
     mirror = tb.mirror
     tk = t.codes
     out = []
-    for each idx in order
-        k = tl[idx]
-        if k = "O" and lv[idx] mod 2 = 1 then
-            m = mirror[tk[idx].ToStr()]
-            if m = invalid then out.Push(tc[idx]) else out.Push(Chr(m))
-        else if k <> "1" and k <> "2" and k <> "3" then
-            out.Push(tc[idx])
+    i = 0
+    while i < n
+        if lv[i] = 0 then
+            if marks then
+                k = tl[i]
+                if k <> "1" and k <> "2" and k <> "3" then out.Push(tc[i])
+            else
+                out.Push(tc[i])
+            end if
+            i = i + 1
+        else
+            j = i + 1
+            while j < n and lv[j] > 0
+                j = j + 1
+            end while
+            q = j - 1
+            while q >= i
+                if lv[q] = 2 then
+                    r = q
+                    while r > i and lv[r - 1] = 2
+                        r = r - 1
+                    end while
+                    for x = r to q
+                        if marks then
+                            k = tl[x]
+                            if k <> "1" and k <> "2" and k <> "3" then out.Push(tc[x])
+                        else
+                            out.Push(tc[x])
+                        end if
+                    end for
+                    q = r - 1
+                else
+                    k = tl[q]
+                    if k = "O" then
+                        m = mirror[tk[q].ToStr()]
+                        if m = invalid then out.Push(tc[q]) else out.Push(Chr(m))
+                    else if not marks or (k <> "1" and k <> "2" and k <> "3") then
+                        out.Push(tc[q])
+                    end if
+                    q = q - 1
+                end if
+            end while
+            i = j
         end if
-    end for
+    end while
     return out.Join("")
 end function
 
