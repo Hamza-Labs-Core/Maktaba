@@ -31,7 +31,6 @@ CREATE TABLE IF NOT EXISTS broadcast_uplink (
     kbps         INTEGER  NOT NULL CHECK (kbps > 0),
     source       TEXT     NOT NULL DEFAULT 'publish'
 );
-CREATE INDEX IF NOT EXISTS broadcast_uplink_measured_idx ON broadcast_uplink (measured_at DESC);
 
 CREATE TABLE IF NOT EXISTS broadcast_confirmations (
     id                 TEXT     PRIMARY KEY,
@@ -41,7 +40,6 @@ CREATE TABLE IF NOT EXISTS broadcast_confirmations (
     confirmed_by_user  TEXT     REFERENCES users(id) ON DELETE SET NULL,
     confirmed_at       TEXT     NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
-CREATE INDEX IF NOT EXISTS broadcast_confirmations_channel_idx ON broadcast_confirmations (channel_id, confirmed_at DESC);
 
 CREATE TABLE IF NOT EXISTS broadcast_ingest_tokens (
     channel_id    TEXT     PRIMARY KEY REFERENCES broadcast_channels(channel_id) ON DELETE CASCADE,

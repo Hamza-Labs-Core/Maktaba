@@ -52,7 +52,6 @@ CREATE TABLE IF NOT EXISTS broadcast_uplink (
     kbps         integer      NOT NULL CONSTRAINT broadcast_uplink_kbps_positive CHECK (kbps > 0),
     source       text         NOT NULL DEFAULT 'publish'
 );
-CREATE INDEX IF NOT EXISTS broadcast_uplink_measured_idx ON broadcast_uplink (measured_at DESC);
 
 CREATE TABLE IF NOT EXISTS broadcast_confirmations (
     id                 uuid         PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -62,7 +61,6 @@ CREATE TABLE IF NOT EXISTS broadcast_confirmations (
     confirmed_by_user  uuid         REFERENCES users(id) ON DELETE SET NULL,
     confirmed_at       timestamptz  NOT NULL DEFAULT now()
 );
-CREATE INDEX IF NOT EXISTS broadcast_confirmations_channel_idx ON broadcast_confirmations (channel_id, confirmed_at DESC);
 
 CREATE TABLE IF NOT EXISTS broadcast_ingest_tokens (
     channel_id    uuid         PRIMARY KEY REFERENCES broadcast_channels(channel_id) ON DELETE CASCADE,
