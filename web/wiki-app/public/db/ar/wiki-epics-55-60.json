@@ -2237,6 +2237,7 @@
       ],
       "related": [
         "epic-58-smart-tv-platforms",
+        "ep-post-auth-refresh",
         "ep-get-home",
         "ep-get-discovery-home"
       ],
@@ -2246,6 +2247,7 @@
         "mockups": []
       },
       "api_endpoints": [
+        "POST /auth/refresh",
         "GET /home",
         "GET /discovery/home"
       ],

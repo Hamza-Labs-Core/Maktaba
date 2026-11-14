@@ -38,8 +38,13 @@ Why an iframe over the home's origin, and not the UI inside the package:
 - **The UI matches the home.** It always speaks the home's API at the home's version, so a store
   review (Samsung about 1–2 weeks a round, LG 2 to 12 weeks; research.md §3.4, §4.4) is needed
   only when the launcher or the bridge changes.
-- **Sign-in stays where it is.** The UI's sign-in lives in the home's origin: the existing web
-  cookies and CSRF (story 10.2), with no tokens handed through postMessage.
+- **Sign-in stays in the home's origin.** The browser never sends the home's SameSite=Lax session
+  cookie to an iframe inside a `file://` page (checked in Chromium), so in the launcher `/tv/`
+  signs in by the home's own code (`POST /api/pairing/device`, then its token poll) and keeps
+  the tokens it gets in the home's origin (`localStorage`), never in the launcher's and never
+  through postMessage. Every call then carries `Authorization: Bearer`, and an expired access
+  token is renewed with `POST /api/auth/refresh`. The TV is a device signed in as the person who
+  approved it: the home's rules decide its role, libraries and parental policy.
 
 **Fallback if a store refuses remotely loaded UI.** A Samsung forum answer says a hosted web
 app needs a partnership (research.md §3.4). The launcher then has a build flag, `--bundle-ui`,
@@ -58,8 +63,12 @@ owner question Q3 records the default.
      `luna://com.webos.service.connectionmanager` on webOS.
    - It sends `GET http://<ip>:8088/api/discovery/home` to each of the 254 addresses, 32 at a
      time, with a 700 ms timeout. That is about 6 seconds worst case.
-   - A home that answers is then reached by its HTTPS name from `urls` (story 50.15). If that name
-     does not resolve (a router blocking DNS rebinding), it falls back to plain HTTP on the LAN.
+   - A home that answers is then reached by its HTTPS name from `urls` (story 50.15). The
+     launcher takes a name only when its first label is the address the home answered from
+     (`1-2-3-4.`) and its second the home's id, so a device on the LAN cannot send the TV to
+     another site. If that name does not answer as the same home (a router blocking DNS
+     rebinding), it falls back to plain HTTP on the LAN; a plain fallback never replaces a
+     saved HTTPS address.
    - It then shows the home's own code (`POST /api/pairing/device`) to approve on a phone.
 
 A typed address (`Enter the home's address`) is the last option, under More ways.
@@ -70,30 +79,42 @@ A typed address (`Enter the home's address`) is the last option, under More ways
 - The home answers `/api/discovery/home` with `Access-Control-Allow-Origin: *` and no
   credentials, since that answer is public.
 - The cloud answers `/v1/tv/*` the same way.
-- Nothing else in the home's CORS policy (`httpsec/cors.go`, an allow-list) changes. The UI in the
-  iframe is same-origin with the home, so it needs none.
+- A packaged app's origin (`null`, `file://`, `app://…`) gets its own origin back and the headers
+  a bearer call needs (the `--bundle-ui` copy of the UI calls the home cross-origin), never
+  `Access-Control-Allow-Credentials`: no cookie rides cross-site, and every role rule stays the
+  API's. The allow-list for web origins (`httpsec/cors.go`) is unchanged. The UI in the iframe
+  is same-origin with the home, so it needs none.
+- `/tv/`'s page carries `Content-Security-Policy: frame-ancestors 'self' file: app:`: only a
+  packaged app or the home itself may frame it.
 
 **Compat check.** The launcher reads `api_level`, `api_level_oldest` and `client_floor` (58.01)
 before loading the iframe. It shows Update the home or Update this app itself, so an old home
 never loads a broken UI.
 
 **The bridge.** It uses `postMessage` between the launcher and the iframe:
-- **Checked origin.** Each message is checked against the home origin the launcher loaded.
-  Anything else is dropped.
-- **Versioned.** A `bridge_level` integer, starting at 1. The UI asks `hello` and gets
-  `{bridge_level, platform, model, year, engine, device_caps, keys}`.
-- **Messages:**
+- **Checked origin.** The launcher takes a message only from its iframe's window at the home
+  origin it loaded. The UI takes one only from its parent at a packaged app's origin (`null`,
+  `file://`, `app://…`) or its own. Anything else is dropped.
+- **Hello first.** Until a launcher has answered `hello`, the UI sends nothing but `ready` and
+  `hello` (no play address, no command). A packaged app's origin is opaque, which postMessage
+  cannot name, so the UI's messages go to `*`; a launcher at an http(s) origin is sent to by it.
+- **Versioned.** A `bridge_level` integer, starting at 1. The UI asks `hello {id}` and gets
+  `{re, bridge_level, platform, model, year, engine, version, device_caps, keys, messages}`. The
+  UI names the TV in its client header from it.
+- **Messages** (each `maktaba:`-prefixed; the contract is `apps/tv/web/bridge.schema.json`):
 
 | UI → launcher | launcher → UI |
 |---|---|
-| `play {url, start_sec, subtitles[], audio, mode}` · `pause` · `seek {sec}` · `stop` · `audioTrack {i}` · `subtitle {id \| null}` | `state {position, duration, buffering, ended, error}` every 500 ms while playing |
-| `exit` (after the UI's confirm) | `key {action}` for keys the iframe cannot receive (color keys, media keys registered by the launcher) |
+| `ready` (the UI listens) · `hello {id, bridge_level}` | `hello {…}` (above) |
+| `play {url, start_sec, subtitles[], audio, mode}` · `pause` · `resume` · `seek {sec}` · `stop` · `audioTrack {i}` · `subtitle {id \| null}` | `state {position, duration, buffering, ended, error}` every 500 ms while playing |
+| `exit` (after the UI's confirm) | `action {action}` for keys the iframe cannot receive (color keys, media keys registered by the launcher), as a big-screen action |
 | `setLanguage {lang}` (so launcher screens match) | `visibility {hidden}` (the TV's app switcher) |
-| `openHomePicker` (Account → Switch home) | |
+| `openHomePicker` (Settings → Switch home) | |
+| `logs {id}` | `logs {re, lines}` · `error {re_type, error}` |
 
 - **Owned by the launcher:** video playback, subtitles drawn over the video (Tizen's AVPlay hands
   text cues to the app; research.md §3.2), and the app's lifecycle. A message the launcher does
-  not know gets `{error: "unknown"}`, so the UI can hide a feature. The UI never assumes a
+  not know gets `error {re_type, error: "unknown"}`, so the UI can hide a feature. The UI never assumes a
   message exists without `hello` listing it.
 
 **Logs.** The launcher keeps the last 500 lines of its own log and of the bridge traffic. URLs
@@ -114,8 +135,8 @@ from `/tv/` set `client_profile` to `tizen` or `webos`, with the launcher's `dev
 - **Given** a home at a level the launcher cannot use, **then** the launcher's own Update the home
   screen shows and the iframe is never loaded.
 - **Given** a router blocking DNS rebinding, **then** the launcher falls back to the LAN's plain
-  HTTP address, says so on the Account screen ("Connected without encryption on your network"),
-  and never sends a password over it. Sign-in goes by code.
+  HTTP address, says so on the code sign-in and in Settings → Connection ("Connected without
+  encryption on your network"), and never sends a password over it. Sign-in goes by code.
 
 ## Test cases
 
@@ -125,7 +146,7 @@ from `/tv/` set `client_profile` to `tizen` or `webos`, with the launcher's `dev
 | T02 | Vitest | the bridge with a fake iframe | messages from the home origin and another origin | handled / dropped |
 | T03 | Vitest | the compat check with the 58.01 vectors | each case | the right screen |
 | T04 | Playwright (Chromium, 1920×1080), the launcher with a fake `webapis`/webOS shim and a mock home and cloud | cloud code, find on network, typed address, iframe load, play via the bridge | D-pad only | screenshots dark, en and ar; launcher log and bridge trace in the CI report |
-| T05 | Go unit | `/api/discovery/home` | preflight and GET with `Origin: file://` | `*`, no credentials; other routes unchanged |
+| T05 | Go unit | `/api/discovery/home`, a packaged app's origin, `/tv/`'s page | preflight and GET with `Origin: file://` or `null`; a viewer's and an admin's bearer | `*` on discovery; the packaged origin echoed, never credentials; roles unchanged (401, 403, 200); `/tv/` framed only by `'self' file: app:` |
 | T06 | Contract test | `bridge_level` 1 schema `apps/tv/web/bridge.schema.json` | UI and launcher messages | both sides validate against it |
 
 ## Strings
@@ -160,6 +181,9 @@ The launcher's catalogs are `apps/tv/web/i18n/{en,ar}.json`, plus 58.01's `compa
 |---|---|
 | `apps/tv/web/` (new) | launcher, bridge, i18n, platform shims (`platform/tizen.ts`, `platform/webos.ts`, `platform/browser.ts` for tests) |
 | `apps/tv/web/bridge.schema.json` | the bridge contract |
-| `web/src/bigscreen/bridge.ts` (new) | the UI side of the bridge |
-| `api/internal/handlers/discovery/home.go` | the public CORS answer |
+| `web/src/bigscreen/input/bridge.ts` | the UI side of the bridge |
+| `web/src/tv/session.ts`, `web/src/tv/CodeSignIn.tsx`, `web/src/lib/api.ts` (new, changed) | the code sign-in and bearer tokens in the launcher |
+| `api/internal/httpsec/cors.go` | the public CORS answer, and a packaged app's origin |
+| `cmd/maktaba-server/internal/webui/serve.go` | `/tv/`'s `frame-ancestors` |
+| `web/vite.launcher.config.ts`, `web/vite.config.ts` (`tv-bundled`) | the launcher build and `--bundle-ui` |
 | `cloud/internal/handlers/tvcodes/` | the same on `/v1/tv/*` |

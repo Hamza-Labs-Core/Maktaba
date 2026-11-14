@@ -90,16 +90,28 @@ export function lrm(text: string): string {
  * 58.09) an <img> sends no token and no cookie reaches it, so the home's own pictures are
  * fetched with the token and shown from a blob URL (revoked when the picture goes).
  */
+/** The URL of a home's own picture (same origin as the API), or null for any other address. */
+export function ownPictureUrl(src: string | null): string | null {
+  if (!src || !src.startsWith("/")) return null;
+  try {
+    const api = new URL(apiUrl("/"), window.location.href);
+    // parsed, not matched: "/\t/host" and "/\\host" are another site to the URL parser
+    const u = new URL(apiUrl(src), window.location.href);
+    return u.origin === api.origin ? u.href : null;
+  } catch {
+    return null;
+  }
+}
+
 export function useImageSrc(src: string | null): { src: string | null; failed: boolean } {
   const bearer = !!bearerAuth()?.token();
-  // the home's own path only: "//host/x" (or "/\\host") is another site, never sent the token
-  const own = !!src && /^\/(?![/\\])/.test(src);
+  const own = bearer ? ownPictureUrl(src) : null;
   const [blob, setBlob] = useState<{ for: string; url: string | null } | null>(null);
   useEffect(() => {
-    if (!bearer || !own || !src) return;
+    if (!own || !src) return;
     let url: string | null = null;
     let live = true;
-    void fetch(apiUrl(src), { credentials: "omit", headers: authHeaders() })
+    void fetch(own, { credentials: "omit", headers: authHeaders() })
       .then((r) => (r.ok ? r.blob() : Promise.reject(new Error(String(r.status)))))
       .then((b) => {
         if (!live) return;
@@ -111,8 +123,8 @@ export function useImageSrc(src: string | null): { src: string | null; failed: b
       live = false;
       if (url) URL.revokeObjectURL(url);
     };
-  }, [bearer, own, src]);
-  if (!bearer || !own) return { src, failed: false };
+  }, [own, src]);
+  if (!own) return { src, failed: false };
   if (!blob || blob.for !== src) return { src: null, failed: false };
   return { src: blob.url, failed: blob.url === null };
 }

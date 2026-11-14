@@ -4811,7 +4811,8 @@
         "story-10.12",
         "story-11.10",
         "story-23.6",
-        "story-25.2"
+        "story-25.2",
+        "story-58.9"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"

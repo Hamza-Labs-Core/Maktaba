@@ -844,6 +844,15 @@ build fails when the two differ.
 
 ### Added
 
+- **The Samsung and LG app's launcher (story 58.09).** The app a Samsung (Tizen) or LG (webOS)
+  TV will install finds the home (the last one used opens at once; Find on this network tries
+  every address of the TV's network; or the home's address typed), checks that the home and the
+  app can work together, and shows the home's own TV interface full screen. Inside it the TV
+  signs in by the home's code, approved on a phone or a computer, and never asks for a password;
+  on the home's network without HTTPS the code screen and Settings → Connection say the
+  connection is not encrypted, and Settings → Switch home picks another home. English and
+  Arabic, right to left in Arabic. The store packages come with stories 58.10 and 58.11.
+
 - **Apps can tell when they and the home are too far apart (story 58.01).** The home now
   publishes its API level, the oldest level it still serves, and the oldest build of each app it
   signs in, with no sign-in needed (`GET /api/discovery/home`: `api_level`, `api_level_oldest`,
