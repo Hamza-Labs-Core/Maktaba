@@ -131,6 +131,12 @@ fun SessionGate(
     content: @Composable (user: User, client: ApiClient) -> Unit,
 ) {
     KeepDiscovering(session)
+    // story 58.01: this app and the home are too far apart: the page, instead of signing in
+    val block = session.compatBlock.collectAsState().value
+    if (block != null) {
+        CompatPage(block, onTryAgain = session::recheckCompat, onOtherHome = session::switchHome)
+        return
+    }
     when (val phase = session.phase.collectAsState().value) {
         AppSession.Phase.ChoosingHome -> HomePicker(session, app)
         AppSession.Phase.SigningIn -> SignIn(session, app)

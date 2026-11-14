@@ -13,7 +13,7 @@
   ],
   "counts": {
     "diagram": 14,
-    "endpoint": 251,
+    "endpoint": 252,
     "entity": 42,
     "epic": 60,
     "feature": 3,
@@ -8542,6 +8542,33 @@
         "lang": "ar",
         "source": {
           "content": "c159ed72a7643f7e"
+        }
+      }
+    },
+    {
+      "id": "ep-post-queues-workers-restart",
+      "type": "endpoint",
+      "title": "POST /queues/workers/restart",
+      "content": "إعادة تشغيل عمّال المعالجة",
+      "tags": [
+        "api",
+        "Queue",
+        "post"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/queues/workers/restart",
+        "tag": "Queue",
+        "operationId": "restartQueueWorkers"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "a88dfdc31ac82681"
         }
       }
     },
