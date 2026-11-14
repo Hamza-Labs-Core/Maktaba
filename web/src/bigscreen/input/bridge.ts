@@ -86,6 +86,8 @@ export interface LauncherPlayerState {
   buffering: boolean;
   ended: boolean;
   error: string | null;
+  /** The stream's audio tracks, when the launcher's player lists them. */
+  audio_tracks?: { enabled: boolean; lang?: string; label?: string }[];
 }
 
 /** /tv/ → launcher messages (bridge.schema.json's uiToLauncher). */
