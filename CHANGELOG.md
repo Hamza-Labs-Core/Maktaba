@@ -880,6 +880,15 @@ build fails when the two differ.
 
 ### Added
 
+- **Approve a TV's code on maktaba.tv (story 58.03).** The QR code a TV shows beside its cloud
+  code opens maktaba.tv/tv, which forwards to Maktaba Cloud: a person signed in there sees the
+  TV's platform and country, asks themselves **Is this your TV?**, picks one of the homes that
+  linked their cloud account, and approves (`GET /v1/tv/codes/{code}`,
+  `POST /v1/tv/codes/{code}/approve`). The cloud asks that home through the relay, with a one-use
+  assertion for that account, home and code (`POST /api/pairing/cloud-assertion` on the home),
+  and the home signs the TV in as the user it linked, restricted like every cloud code's TV. A
+  home the account is not linked to, or one that is offline or out of reach, approves nothing.
+
 - **Playing on Roku (Epic 58, story 58.13).** The Roku channel's player: it tells the home
   what this Roku plays (H.264, HEVC, AV1 inside DASH, HDR10, HLG, Dolby Vision 5, the Dolby
   passthroughs), so a 4K HDR file plays directly where the Roku can and is converted only where
@@ -2231,15 +2240,6 @@ build fails when the two differ.
 
 ### Added
 
-- **Approve a TV's code on maktaba.tv (story 58.03).** The QR code a TV shows beside its cloud
-  code opens maktaba.tv/tv, which forwards to Maktaba Cloud: a person signed in there sees the
-  TV's platform and country, asks themselves **Is this your TV?**, picks one of the homes that
-  linked their cloud account, and approves (`GET /v1/tv/codes/{code}`,
-  `POST /v1/tv/codes/{code}/approve`). The cloud asks that home through the relay, with a one-use
-  assertion for that account, home and code (`POST /api/pairing/cloud-assertion` on the home),
-  and the home signs the TV in as the user it linked, restricted like every cloud code's TV. A
-  home the account is not linked to, or one that is offline or out of reach, approves nothing.
-
 - **A library's Series and Collections tabs (Epic 45 story 45.24).** A library's page is now
   Overview | Browse | Series | Collections, each tab its own address (Back returns to the tab
   before). **Series**: every series of the library as a poster grid with its episodes and your
@@ -2760,43 +2760,6 @@ build fails when the two differ.
   carries `stream_sig`, which signs its subtitle and chapter URLs, so a TV player that sends no
   header fetches every URL it needs. The older profiles decide as before.
 
-- **A published channel airs only what may be shared online (Epic 50, story 50.23).** While a
-  Live TV channel is broadcast, it airs only publishable items: the household's own recordings,
-  items cleared with a proof link, Creative Commons Attribution videos (read from YouTube at
-  intake and at every refresh), and sources the household recorded permission for, with the link
-  where the source allows sharing. The Broadcast page shows how much of each channel's next 7
-  days may air and the sources that would add most, each with Record permission. Turning the
-  limit off takes a typed confirmation. Each channel can play only in chosen countries or
-  everywhere but them, and Maktaba's own deny list applies to every channel; a viewer outside
-  sees that the channel isn't available in their country. An item that loses its permission
-  plays the "Not available online" card until the schedule is rebuilt.
-
-- **Copyright notices and reports about broadcast channels (Epic 50, story 50.24).** Anyone can
-  send Maktaba a copyright notice or report a published channel, through forms that check each
-  required element and stop bots; an urgent report (illegal content) pages the on-call admin. A
-  service admin decides each one on the admin console's new Notices and reports page, always
-  with a reason and, for a takedown or a restore, a fresh MFA check; every decision is audited
-  and only a service admin is answered. A takedown reaches the home as a signed instruction: the
-  home takes the programme (or its whole source) out of its published channels, the edge shows
-  the slate at once if it is on air, and the home answers what it did. The publisher
-  sees a statement of reasons in English and Arabic on the Broadcast page and by email, can file
-  a counter-notice there, and the item can come back 10 business days later unless the claimant
-  goes to court. Three valid notices in 12 months end broadcasting for the account (remote play
-  is not affected). The records can be exported for counsel and are kept 3 years.
-
-- **Maktaba can take a broadcast off air within a minute (Epic 50, story 50.25).** A service
-  admin stops one programme (the channel shows its slate until a time), a channel, a publisher's
-  account, a home or every broadcast from the admin console's new Broadcast kill switch page,
-  with the reason and a note; each change needs a fresh MFA check and is audited, and only a
-  service admin is answered. The cloud signs one revocation list and sends it to the broadcast
-  edge at once, with a pull every minute as the backup: viewers of a stopped channel are
-  refused at their next playlist and the home stops uploading. The home keeps the newest signed
-  copy, refuses an older one, and shows on its Broadcast page why a channel or the whole home
-  was stopped; if it can't check the list for two days its published channels keep running but
-  a new publish waits. With the cloud's API down, two edge variables stop one channel or
-  everything at once (`docs/runbooks/cloud/broadcast-kill.md`). A home's copy carries only its
-  own entries, signed so the edge won't take it as the full list.
-
 - **The Samsung and LG app's launcher (story 58.09).** The app a Samsung (Tizen) or LG (webOS)
   TV will install finds the home (the last one used opens at once; Find on this network tries
   every address of the TV's network; or the home's address typed), checks that the home and the
@@ -2915,6 +2878,43 @@ build fails when the two differ.
   away, keeps going for a day without Maktaba Cloud, and is never released while published.
   Only admins can set up, publish or unpublish, and the API enforces it. Broadcasting is off
   until an admin turns it on, and nothing reaches viewers until the broadcast edge is deployed.
+
+- **A published channel airs only what may be shared online (Epic 50, story 50.23).** While a
+  Live TV channel is broadcast, it airs only publishable items: the household's own recordings,
+  items cleared with a proof link, Creative Commons Attribution videos (read from YouTube at
+  intake and at every refresh), and sources the household recorded permission for, with the link
+  where the source allows sharing. The Broadcast page shows how much of each channel's next 7
+  days may air and the sources that would add most, each with Record permission. Turning the
+  limit off takes a typed confirmation. Each channel can play only in chosen countries or
+  everywhere but them, and Maktaba's own deny list applies to every channel; a viewer outside
+  sees that the channel isn't available in their country. An item that loses its permission
+  plays the "Not available online" card until the schedule is rebuilt.
+
+- **Copyright notices and reports about broadcast channels (Epic 50, story 50.24).** Anyone can
+  send Maktaba a copyright notice or report a published channel, through forms that check each
+  required element and stop bots; an urgent report (illegal content) pages the on-call admin. A
+  service admin decides each one on the admin console's new Notices and reports page, always
+  with a reason and, for a takedown or a restore, a fresh MFA check; every decision is audited
+  and only a service admin is answered. A takedown reaches the home as a signed instruction: the
+  home takes the programme (or its whole source) out of its published channels, the edge shows
+  the slate at once if it is on air, and the home answers what it did. The publisher
+  sees a statement of reasons in English and Arabic on the Broadcast page and by email, can file
+  a counter-notice there, and the item can come back 10 business days later unless the claimant
+  goes to court. Three valid notices in 12 months end broadcasting for the account (remote play
+  is not affected). The records can be exported for counsel and are kept 3 years.
+
+- **Maktaba can take a broadcast off air within a minute (Epic 50, story 50.25).** A service
+  admin stops one programme (the channel shows its slate until a time), a channel, a publisher's
+  account, a home or every broadcast from the admin console's new Broadcast kill switch page,
+  with the reason and a note; each change needs a fresh MFA check and is audited, and only a
+  service admin is answered. The cloud signs one revocation list and sends it to the broadcast
+  edge at once, with a pull every minute as the backup: viewers of a stopped channel are
+  refused at their next playlist and the home stops uploading. The home keeps the newest signed
+  copy, refuses an older one, and shows on its Broadcast page why a channel or the whole home
+  was stopped; if it can't check the list for two days its published channels keep running but
+  a new publish waits. With the cloud's API down, two edge variables stop one channel or
+  everything at once (`docs/runbooks/cloud/broadcast-kill.md`). A home's copy carries only its
+  own entries, signed so the edge won't take it as the full list.
 
 ### Changed
 
