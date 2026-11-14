@@ -3272,6 +3272,7 @@
     "/ar/help/rules/index.html": [
       "announce",
       "books",
+      "broadcast",
       "cluster",
       "color-scheme",
       "description",
@@ -13104,6 +13105,7 @@
     "/help/rules/index.html": [
       "announce",
       "books",
+      "broadcast",
       "cluster",
       "color-scheme",
       "description",
