@@ -7,6 +7,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import com.hamzalabs.maktaba.core.session.AppSession
 import com.hamzalabs.maktaba.tv.MaktabaTVApp
+import com.hamzalabs.maktaba.tv.ui.screens.CompatScreen
 import com.hamzalabs.maktaba.tv.ui.screens.ConnectLinkDialog
 import com.hamzalabs.maktaba.tv.ui.screens.HomePickerScreen
 import com.hamzalabs.maktaba.tv.ui.screens.SignInScreen
@@ -22,6 +23,11 @@ fun Root(app: MaktabaTVApp) {
     val phase by session.phase.collectAsState()
     val home by session.current.collectAsState()
     val link by session.link.collectAsState()
+    // story 58.01: this app and the home are too far apart: the page, instead of signing in
+    session.compatBlock.collectAsState().value?.let {
+        CompatScreen(it, onTryAgain = session::recheckCompat, onOtherHome = session::switchHome)
+        return
+    }
     when (val p = phase) {
         AppSession.Phase.ChoosingHome -> HomePickerScreen(app)
         AppSession.Phase.SigningIn -> home?.let { SignInScreen(app, it) } ?: HomePickerScreen(app)

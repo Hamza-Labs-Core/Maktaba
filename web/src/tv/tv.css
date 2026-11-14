@@ -1,0 +1,49 @@
+/* Epic 58 story 58.08 — the TV build's page around the big screen: always dark
+   (Ink & Brass), the whole picture, no scroll bars; the signed-out page. */
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #0b111c;
+  color: #e8ecf3;
+  font-family: var(--font-family);
+}
+.tv-boot {
+  height: 100%;
+  background: #0b111c;
+}
+.tv-signin {
+  box-sizing: border-box;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 5vh 5vw;
+  font-size: 28px;
+}
+.tv-signin h1 {
+  font-family: var(--font-heading);
+  font-size: 56px;
+  margin: 0 0 24px;
+}
+.tv-signin p {
+  margin: 0 0 40px;
+  color: #a9b3c4;
+}
+.tv-signin button {
+  font: inherit;
+  color: #1a1408;
+  background: #e3b252;
+  border: 0;
+  border-radius: 999px;
+  padding: 14px 48px;
+}
+.tv-signin button:focus {
+  outline: none;
+  box-shadow: 0 0 0 5px #f2cb7a;
+  transform: scale(1.08);
+}

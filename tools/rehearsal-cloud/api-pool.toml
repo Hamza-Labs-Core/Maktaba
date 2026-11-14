@@ -1,0 +1,10 @@
+# The api pool's nodes in the rehearsal (compose-pool.yml, Epic 50 story 50.17): the user and
+# console listeners on the node's address, CF-Connecting-IP believed only from the load
+# balancer (10.52.0.30, standing in for LB11's private address).
+[server]
+listen_addr = "0.0.0.0:8090"
+admin_listen_addr = "0.0.0.0:8091"
+admin_host = "admin.test"
+admin_origin = "http://admin.test"
+user_hosts = ["api.test"]
+trusted_proxies = ["10.52.0.30/32"]

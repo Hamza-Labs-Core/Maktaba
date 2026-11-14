@@ -111,6 +111,14 @@ jobs:
           - origin-aop
           # 53.16 T07: a canary home's reports through its agent, symbolicated with tables made in the job
           - report-symbolicated
+          # 50.17: three api nodes behind HAProxy (LB11): the worker's lock, the shared sign-in
+          # limit, a change reaching every cache, a rolling deploy with no failed request
+          - api-pool
+          # 50.16 T08, T09: the relay pool loses a relay, then gains one
+          - relay-pool-kill-one
+          - rebalance-add-relay
+          # 50.20 T10: a Broadcaster publisher across every mode, an API outage, a repeated window
+          - broadcast-plans
           # 58.03 T04: a TV signs in through the relay with a cloud code the canary home claims
           - tv-code
     steps:
@@ -182,8 +190,9 @@ jobs:
       # CPU-seconds per Mbit across runners, #832). The base is the commit this one is compared
       # with: the pull request's base, or main before this push. Its relay image is built here,
       # and both run this commit's scenario (3 one-minute rounds each); more than 20 % worse
-      # CPU per Mbit, or memory per tunnel, fails. A base that can't run fails too: a gate that
-      # can't measure doesn't pass.
+      # CPU per Mbit, or memory per tunnel (the relay's Go live heap, maktaba_go_heap_live_bytes;
+      # a base whose relay predates it is reported, not compared, on memory), fails. A base that
+      # can't run fails too: a gate that can't measure doesn't pass.
       - name: Build the base commit's relay (load-small)
         if: matrix.scenario == 'load-small'
         env:

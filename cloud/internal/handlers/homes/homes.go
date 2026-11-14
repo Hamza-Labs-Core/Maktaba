@@ -32,6 +32,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/direct"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/homeassert"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/middleware"
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/relay"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/stores"
 )
 
@@ -51,6 +52,11 @@ type Deps struct {
 	// Direct lists a home's HTTPS direct name once its outside check passed (story 50.15);
 	// nil: direct access off.
 	Direct *stores.Direct
+	// Pool gives each home's relay hint (story 50.16): the address of its primary relay in the
+	// pool, https://<slug>.<member host>, PoolHosts naming the member ("{id}.relay.maktaba.tv").
+	// Nil: the pool is off, no hint.
+	Pool      *relay.Pool
+	PoolHosts string
 }
 
 // MountUser registers the routes behind the user auth group.
@@ -126,9 +132,9 @@ type homeView struct {
 	RelayURL  string `json:"relay_url"`
 	DirectURL string `json:"direct_url,omitempty"`
 	// Connections is every way to reach the home, in the order apps try them (story 50.13):
-	// local, local_ip (50.15 §3), direct, relay hint, relay. Apps save it and use it while the cloud is down. Until
-	// 50.15 and 50.16 it holds the direct address and the relay; a home whose plan has no relay
-	// lists no relay (50.19). DirectURL and RelayURL stay for apps from before it.
+	// local, local_ip (50.15 §3), direct, relay hint (50.16: its primary relay in the pool),
+	// relay. Apps save it and use it while the cloud is down. A home whose plan has no relay
+	// lists no relay and no hint (50.19). DirectURL and RelayURL stay for apps from before it.
 	Connections []connection `json:"connections"`
 	Online      bool         `json:"online"`
 	// Linked: the home linked this account to one of its users (sign-in
@@ -182,6 +188,36 @@ func connectionsFor(directURL, relayURL string, relay bool, secure ...string) []
 	return out
 }
 
+// withRelayHint puts the relay hint (story 50.16) just before the stable relay address: an app
+// tries the home's own relay first, and a stale hint costs one hop at the relays, never a
+// failure. A home listing no relay (its plan has none) gets no hint.
+func withRelayHint(conns []connection, hint string) []connection {
+	if hint == "" {
+		return conns
+	}
+	for i, c := range conns {
+		if c.Kind == "relay" {
+			out := make([]connection, 0, len(conns)+1)
+			out = append(out, conns[:i]...)
+			out = append(out, connection{URL: hint, Kind: "relay_hint"})
+			return append(out, conns[i:]...)
+		}
+	}
+	return conns
+}
+
+// relayHint is home id's relay hint, or "" (no pool, or no healthy relay).
+func (d *Deps) relayHint(ctx context.Context, id, slug string) string {
+	if d.Pool == nil || d.RelayHost == "" {
+		return ""
+	}
+	a, ok := d.Pool.Assign(ctx, id)
+	if !ok {
+		return ""
+	}
+	return "https://" + slug + "." + relay.TunnelHost(d.PoolHosts, a.Primary)
+}
+
 // Connection is one way to reach a home, as apps (and a TV given a cloud code, story 58.03)
 // receive it.
 type Connection = connection
@@ -230,7 +266,8 @@ func (d *Deps) ReachFor(ctx context.Context, hs []stores.Server) map[string]Reac
 		if rc, ok := reach[h.ID]; ok {
 			secure = "https://" + net.JoinHostPort(direct.Name(rc.IP, rc.HomeID, rc.Domain), strconv.Itoa(rc.Port))
 		}
-		v.Connections = connectionsFor(v.DirectURL, v.RelayURL, billing.RelayIncluded(h.Plan), secure)
+		v.Connections = withRelayHint(connectionsFor(v.DirectURL, v.RelayURL, billing.RelayIncluded(h.Plan), secure),
+			d.relayHint(ctx, h.ID, h.Slug))
 		if l, ok := lan[h.ID]; ok {
 			v.Connections = append(localConnections(l), v.Connections...)
 		}

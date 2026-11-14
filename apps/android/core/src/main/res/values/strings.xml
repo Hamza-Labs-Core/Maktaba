@@ -396,4 +396,14 @@
     <string name="live_parental_not_available">Not available</string>
     <string name="live_parental_slate">Not available right now. This channel comes back when the next programme starts.</string>
     <string name="live_parental_back">Back at %1$s</string>
+    <!-- The compatibility contract (Epic 58 story 58.01): the app and the home are too far apart -->
+    <string name="compat_update_home_title">This home needs an update</string>
+    <string name="compat_update_home_admin">Update Maktaba on %1$s in Admin → Updates, then come back.</string>
+    <string name="compat_update_home_viewer">Ask the person who runs %1$s to update Maktaba.</string>
+    <string name="compat_home_version">%1$s runs Maktaba %2$s.</string>
+    <string name="compat_update_app_title">Update this app</string>
+    <string name="compat_update_app_why">%1$s no longer works with this version of the app.</string>
+    <string name="compat_update_app_android">Open Google Play, find Maktaba and choose Update.</string>
+    <string name="compat_update_app_androidtv">Open Google Play on this TV, find Maktaba and choose Update.</string>
+    <string name="compat_update_app_firetv">Open the Amazon Appstore, find Maktaba and choose Update.</string>
 </resources>

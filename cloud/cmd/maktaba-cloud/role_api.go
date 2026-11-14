@@ -3,12 +3,14 @@ package main
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -28,6 +30,8 @@ import (
 	adminh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/admin"
 	authh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/auth"
 	billingh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/billing"
+	broadcasth "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/broadcast"
+	edgeh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/edge"
 	healthh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/health"
 	homesh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/homes"
 	metricsh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/metrics"
@@ -44,6 +48,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/privacy"
 	pushpkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/push"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/ratelimit"
+	relaypkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/relay"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/reports"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/server"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/staffauth"
@@ -69,7 +74,10 @@ func runAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	if err := server.RunAll(ctx, logger, cfg.Server.ShutdownGrace, srvs...); err != nil {
+	// in a pool behind a load balancer (story 50.17), /readyz fails for server.drain_delay
+	// before the listeners close
+	if err := server.RunAllDraining(ctx, logger, cfg.Server.ShutdownGrace, cfg.Server.DrainDelay,
+		func() { a.Draining.Store(true) }, srvs...); err != nil {
 		logger.Error("server exited with error", "err", err)
 		os.Exit(1)
 	}
@@ -91,6 +99,8 @@ type apiOverrides struct {
 type apiRouters struct {
 	User  *chi.Mux
 	Admin *chi.Mux
+	// Draining set makes both listeners' /readyz answer 503 (shutdown in a pool, story 50.17).
+	Draining *atomic.Bool
 }
 
 // newAPI builds the api role's routers. stop releases its background
@@ -172,14 +182,30 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 	// the home embed its public half); without it, licensing is off.
 	var licenses *license.Issuer
 	if entSigner != nil {
-		licenses = &license.Issuer{DB: pool.DB, Priv: entSigner.Priv}
+		licenses = &license.Issuer{DB: pool.DB, Priv: entSigner.Priv, BroadcastEnabled: cfg.Broadcast.Enabled}
 	}
+	// Home broadcasting (story 50.20): the publishers' plan state and usage, the edge's signed
+	// usage posts (off without broadcast.edge_public_key), and the agreement and publish check.
+	broadcastStore := &billingpkg.BroadcastStore{DB: pool.DB, Enabled: cfg.Broadcast.Enabled, Enforce: cfg.Broadcast.PlansEnforce}
+	edgeDeps := &edgeh.Deps{Store: broadcastStore, Logger: logger}
+	if cfg.Broadcast.EdgePublicKey != "" {
+		if edgeDeps.Key, err = config.EdgeKey(cfg.Broadcast.EdgePublicKey); err != nil {
+			return apiRouters{}, nil, err
+		}
+	}
+	ipSalt := sha256.Sum256([]byte("maktaba-broadcast-agreement-ip\x00" + string(secret)))
+	broadcastDeps := &broadcasth.Deps{DB: pool.DB, Servers: servers, Store: broadcastStore, Logger: logger, IPSalt: ipSalt[:]}
 	serversDeps := serversh.Deps{Servers: servers, Assertions: assertions, Licenses: licenses,
 		ManageURL: strings.TrimRight(cfg.Server.WebURL, "/") + "/billing"}
 	homes := &homesh.Deps{Servers: servers, Users: users, Signer: assertions, RelayHost: cfg.Relay.PublicHost,
 		WebURL: cfg.Server.WebURL}
 	if cfg.Direct.Enabled {
 		homes.Direct = stores.NewDirect(pool.DB) // story 50.15: a direct entry once its check passed
+	}
+	if cfg.Relay.PoolEnabled {
+		// story 50.16: each home's relay hint, its primary relay in the pool (read-only view)
+		homes.Pool = relaypkg.NewPool(relaypkg.PGPoolStore{DB: pool.DB}, "")
+		homes.PoolHosts = cfg.Relay.PoolHostTemplate()
 	}
 
 	// TV codes (Epic 58 story 58.03): a TV signs in from anywhere with a code a home claims. The
@@ -284,10 +310,12 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 	// The client IP is resolved first, the access log included: CF-Connecting-IP only from a
 	// peer in server.trusted_proxies (Epic 50 story 50.31).
 	// The user listener answers server.user_hosts only and has no admin route (story 50.32).
+	draining := &atomic.Bool{}
 	r := server.NewRouter(logger, pool, mig, build, server.DefaultOrigins(cfg),
-		server.WithTrustedProxies(cfg.Server.TrustedProxies), server.WithUserHosts(cfg.Server.UserHosts))
+		server.WithTrustedProxies(cfg.Server.TrustedProxies), server.WithUserHosts(cfg.Server.UserHosts),
+		server.WithDraining(draining.Load))
 	adminR := server.NewAdminRouter(logger, pool, mig, build, cfg.Server.AdminHost,
-		cfg.Server.AdminOriginOrDefault(), cfg.Server.TrustedProxies)
+		cfg.Server.AdminOriginOrDefault(), cfg.Server.TrustedProxies, server.WithDraining(draining.Load))
 	// NewRouter has already registered the health probes, and chi
 	// refuses Use after a route, so the app routes and their middleware
 	// live in a group.
@@ -296,16 +324,20 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 		// refill 5/s — plenty for the sign-in form, harsh for credential
 		// stuffing — and burst 5, one per 12 s for the routes that send mail.
 		// Per-account lockout (10 failures / 15 min) lives in the login
-		// handler.
-		app.Use(authRateLimit(ratelimit.NewLimiter(30, 5), authh.RateLimitedPaths))
-		app.Use(authRateLimit(ratelimit.NewLimiter(5, 1.0/12), authh.MailPaths))
+		// handler. They guard against brute force, so every api node shares
+		// them, in Postgres (story 50.17 §3): three nodes don't triple a limit.
+		app.Use(authRateLimit(ratelimit.NewPG(pool.DB, "auth", 30, 5, logger), authh.RateLimitedPaths))
+		app.Use(authRateLimit(ratelimit.NewPG(pool.DB, "mail", 5, 1.0/12, logger), authh.MailPaths))
 		app.Use(blockedIPs(detector, logger))
 		// a claim code is 8 characters: its redeem is limited per IP too
-		app.Use(authRateLimit(ratelimit.NewLimiter(30, 5), []string{"/v1/servers/claims/redeem"}))
+		app.Use(authRateLimit(ratelimit.NewPG(pool.DB, "claim", 30, 5, logger), []string{"/v1/servers/claims/redeem"}))
 
 		// A home's agent: the claim code or the server's own secret is its
 		// credential, never a user token.
 		serversh.MountAgent(app, serversDeps)
+		broadcasth.MountAgent(app, broadcastDeps)
+		// the broadcast edge: each request signed with its key, no account
+		edgeh.Mount(app, edgeDeps)
 		reports.MountAgent(app, &reports.AgentDeps{Store: reportStore, Servers: servers, Logger: logger,
 			Refuse: strings.EqualFold(os.Getenv("MAKTABA_CLOUD_REPORTS"), "off")})
 		// a release's symbol tables: the symbols token, no account
@@ -324,7 +356,7 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 
 		billing := &billingh.Deps{
 			DB: pool.DB, Provider: payments, Users: users, Sessions: sess, Abuse: detector, Audit: auditLog,
-			Mailer: mailer, Logger: logger, Entitlements: entSigner,
+			Mailer: mailer, Logger: logger, Entitlements: entSigner, Broadcast: broadcastStore,
 			WebURL: cfg.Server.WebURL,
 		}
 		// Public billing routes: the catalog, the entitlement key, and the
@@ -339,6 +371,7 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 			homesh.MountUser(g, homes)
 			(&healthh.Deps{DB: pool.DB}).Mount(g)
 			billingh.Mount(g, billing)
+			broadcasth.MountUser(g, broadcastDeps)
 			pushh.Mount(g, pushh.Deps{DB: pool.DB, Dispatcher: dispatcher})
 		})
 	})
@@ -358,8 +391,8 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 	adminR.Group(func(g chi.Router) {
 		g.Use(middleware.IPAllowList(cfg.Admin.IPAllowlist, auditLog, logger))
 		// §6: sign-in, the second factor and the re-check, burst 5 then 1 per 12 s per IP
-		g.Use(prefixRateLimit(ratelimit.NewLimiter(5, 1.0/12), staffh.RateLimitedPrefixes))
-		g.Use(authRateLimit(ratelimit.NewLimiter(30, 5), []string{"/v1/staff/refresh"}))
+		g.Use(prefixRateLimit(ratelimit.NewPG(pool.DB, "staff", 5, 1.0/12, logger), staffh.RateLimitedPrefixes))
+		g.Use(authRateLimit(ratelimit.NewPG(pool.DB, "staff_refresh", 30, 5, logger), []string{"/v1/staff/refresh"}))
 		staffh.Mount(g, &staffh.Deps{
 			Staff: staffStore, Signer: staffSigner, Box: staffBox, Gate: staffGate, WebAuthn: staffRP,
 			Turnstile: staffTurnstile(cfg, tsGuard, o.Turnstile), TurnstileSiteKey: cfg.Turnstile.SiteKey,
@@ -396,11 +429,17 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 		})
 	})
 
-	return apiRouters{User: r, Admin: adminR}, stopMetrics, nil
+	return apiRouters{User: r, Admin: adminR, Draining: draining}, stopMetrics, nil
+}
+
+// keyedLimiter is a rate limiter as a middleware: ratelimit.Limiter (this process's buckets)
+// or ratelimit.PG (every node's, story 50.17).
+type keyedLimiter interface {
+	Middleware(keyFn func(*http.Request) string) func(http.Handler) http.Handler
 }
 
 // authRateLimit applies l, keyed by client IP, to the given paths only.
-func authRateLimit(l *ratelimit.Limiter, paths []string) func(http.Handler) http.Handler {
+func authRateLimit(l keyedLimiter, paths []string) func(http.Handler) http.Handler {
 	set := map[string]bool{}
 	for _, p := range paths {
 		set[p] = true
@@ -414,7 +453,7 @@ func authRateLimit(l *ratelimit.Limiter, paths []string) func(http.Handler) http
 }
 
 // prefixRateLimit applies l, keyed by client IP, to the paths under the given prefixes.
-func prefixRateLimit(l *ratelimit.Limiter, prefixes []string) func(http.Handler) http.Handler {
+func prefixRateLimit(l keyedLimiter, prefixes []string) func(http.Handler) http.Handler {
 	return l.Middleware(func(req *http.Request) string {
 		for _, p := range prefixes {
 			if strings.HasPrefix(req.URL.Path, p) {

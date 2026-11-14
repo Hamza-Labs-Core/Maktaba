@@ -54,6 +54,8 @@ _go: &go
   - 'apps/apple/MaktabaKit/Tests/Fixtures/**'
   # the problem registry's help links are checked against the help topics (story 60.06)
   - 'web/src/help/content/**'
+  # the API level check reads docs/api/levels.md (Epic 58 story 58.01)
+  - 'docs/api/levels.md'
 
 # the pipeline, and what its tests read outside it
 _pipeline: &pipeline
@@ -118,6 +120,48 @@ _node_packaging: &node_packaging
   - 'tools/release/**'
   - 'shared/go/**'
   - '.github/workflows/_node-packaging.yml'
+
+# ---- the TV platforms (Epic 58, story 58.16) ------------------------------------------
+# Each TV platform's job is a reusable workflow its story adds with a filter of its own that
+# starts from its group here, plus *ci and its workflow file:
+#
+#   tv_web:
+#     - *ci
+#     - *tv_web
+#     - '.github/workflows/_tv-web.yml'
+#
+# Every TV job ends with .github/actions/tv-logs (its app logs, 30 days, linked from the job
+# summary: tools/ci/tests/test_tv_logs.py) and runs the TV catalogs' check, which the lint
+# job's repository checks also run on every pull request (tools/i18n/check_tv_catalogs.py).
+# A group is no job's filter until its job exists: a change there runs no TV job yet.
+
+# /tv/ and its launcher (Samsung, LG; stories 58.08 to 58.11): the TV build of the web's
+# bigscreen code and the launcher packages
+_tv_web: &tv_web
+  - 'apps/tv/web/**'
+  - 'web/src/bigscreen/**'
+  - 'web/vite.config.ts'
+  - '.github/actions/tv-logs/**'
+  - 'tools/i18n/check_tv_catalogs.py'
+
+# the Cast receiver (story 58.07)
+_cast_receiver: &cast_receiver
+  - 'web/packages/castreceiver/**'
+  - '.github/actions/tv-logs/**'
+  - 'tools/i18n/check_tv_catalogs.py'
+
+# the Roku channel (stories 58.12, 58.13) and the shaping vectors its device code is checked
+# against (story 58.15)
+_roku: &roku
+  - 'apps/tv/roku/**'
+  - 'shared/i18n/visual-vectors.json'
+  - '.github/actions/tv-logs/**'
+  - 'tools/i18n/check_tv_catalogs.py'
+
+# Vega OS (story 58.18)
+_vega: &vega
+  - 'apps/tv/vega/**'
+  - '.github/actions/tv-logs/**'
 
 # ---- lint (_lint.yml; its repository checks run on every pull request) ----------------
 
@@ -734,6 +778,8 @@ android_apps:
   - 'tests/fixtures/demo-library/**'
   # the problem types and codes the apps compare are checked against the registry (60.06)
   - 'shared/api/problems.json'
+  # the compatibility vectors the client's CompatTest runs (58.01)
+  - 'shared/compat/**'
   - '.github/workflows/_android-apps.yml'
   # the wrapper's jar check and distribution fetch (tools/ci/gradle-wrapper.sh), through fetch-pinned.sh
   - 'tools/ci/gradle-wrapper.sh'
@@ -757,6 +803,23 @@ android_tv:
   - 'tools/release/fetch-pinned.sh'
   - '.github/workflows/play-bundles.yml'
 
+# The TV build of the big screen, /tv/ (Epic 58 stories 58.08, 58.16): everything its bundle
+# holds (web/src: the big screen and what it imports), its build and its checks (_tv-web.yml)
+tv_web:
+  - *ci
+  # the TV web group (story 58.16): apps/tv/web, the big screen, vite.config.ts, tv-logs
+  - *tv_web
+  - 'web/src/**'
+  - 'web/design-system/**'
+  - 'web/index.tv.html'
+  - 'web/package.json'
+  - 'web/pnpm-lock.yaml'
+  - 'web/tsconfig.json'
+  - 'web/playwright.tv.config.ts'
+  - 'web/e2e/tv/**'
+  - 'web/tv-build/**'
+  - '.github/workflows/_tv-web.yml'
+
 # The desktop Player for Windows and Linux (Epic 42.4): its project, the portable client
 # and the fonts it shares with the Android apps, the catalog.
 desktop_player:
@@ -779,6 +842,8 @@ apple_apps:
   - 'apps/apple/**'
   # the problem types and codes the apps compare are checked against the registry (60.06)
   - 'shared/api/problems.json'
+  # the compatibility vectors MaktabaKit's CompatTests run (58.01)
+  - 'shared/compat/**'
   - 'apps/tv/tvos/**'
   - 'tools/apple/**'
   - '.github/workflows/_apple-apps.yml'

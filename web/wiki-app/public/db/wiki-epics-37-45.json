@@ -371,7 +371,8 @@
       "related": [
         "epic-42-apps-player-remote-server",
         "ep-get-system-version",
-        "ep-get-home"
+        "ep-get-home",
+        "ep-get-discovery-home"
       ],
       "files": {
         "story": "specs/epics/42-apps-player-remote-server/README.md",
@@ -380,7 +381,8 @@
       },
       "api_endpoints": [
         "GET /system/version",
-        "GET /home"
+        "GET /home",
+        "GET /discovery/home"
       ],
       "db_tables": [],
       "metadata": {
@@ -457,7 +459,8 @@
       "related": [
         "epic-42-apps-player-remote-server",
         "ep-get-system-version",
-        "ep-get-home"
+        "ep-get-home",
+        "ep-get-discovery-home"
       ],
       "files": {
         "story": "specs/epics/42-apps-player-remote-server/README.md",
@@ -466,7 +469,8 @@
       },
       "api_endpoints": [
         "GET /system/version",
-        "GET /home"
+        "GET /home",
+        "GET /discovery/home"
       ],
       "db_tables": [],
       "metadata": {
@@ -602,7 +606,8 @@
       ],
       "related": [
         "epic-42-apps-player-remote-server",
-        "ep-get-home"
+        "ep-get-home",
+        "ep-get-discovery-home"
       ],
       "files": {
         "story": "specs/epics/42-apps-player-remote-server/README.md",
@@ -610,7 +615,8 @@
         "mockups": []
       },
       "api_endpoints": [
-        "GET /home"
+        "GET /home",
+        "GET /discovery/home"
       ],
       "db_tables": [],
       "metadata": {

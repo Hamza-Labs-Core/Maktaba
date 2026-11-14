@@ -10,6 +10,12 @@
 // part is lowercased, kept to [a-z0-9._-] and 32 characters; a part that is
 // missing or empty reads `unknown`. Old app builds send `native` alone, which
 // reads as the app `native`.
+//
+// The smart TV platforms (Epic 58 story 58.01) send their own platform names:
+// `tizen` (Samsung), `webos` (LG), `firetv`, `roku`, `vega` (Amazon's Vega OS)
+// and `cast` (the Cast receiver), and the Samsung and LG launcher is the app
+// `tv-web`: `tv-web/1.4.0 (webos; tv)`, `tv/1.0.0 (roku; tv)`. The home's
+// client floor (package compat) is keyed by the app and platform named here.
 package client
 
 import (
@@ -28,9 +34,9 @@ const maxPart = 32
 
 // Info is which app sent a request.
 type Info struct {
-	App      string // web, desktop, mobile, player, remote, tv (native: an old app build)
+	App      string // web, desktop, mobile, player, remote, tv, tv-web (native: an old app build)
 	Version  string // the app's version
-	Platform string // ios, ipados, macos, tvos, android, androidtv, windows, linux, web
+	Platform string // ios, ipados, macos, tvos, android, androidtv, windows, linux, web, tizen, webos, firetv, roku, vega, cast
 	Device   string // phone, tablet, foldable, desktop, tv
 }
 
@@ -90,7 +96,7 @@ func (i Info) IsNative() bool {
 // known are the apps the Prometheus label names; any other is `other`.
 var known = map[string]bool{
 	"web": true, "desktop": true, "mobile": true, "player": true,
-	"remote": true, "tv": true, "native": true, Unknown: true,
+	"remote": true, "tv": true, "tv-web": true, "native": true, Unknown: true,
 }
 
 // MetricLabel is the app as a bounded label: a known app, else `other`.

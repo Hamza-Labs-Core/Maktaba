@@ -198,6 +198,10 @@ export const APPS = [
                 "**حين تتوقف سحابة مكتبة**: تحفظ التطبيقات قائمة الأجهزة الرئيسية لكل حساب على الجهاز (الأسماء والعناوين، لا كلمة مرور)، فإن تعذّر الوصول إلى السحابة تبقى أجهزتك ظاهرة مع وقت حفظ القائمة، ويتصل التطبيق بعنوان محفوظ. والتشغيل على شبكة المنزل لا يسأل السحابة أبدًا، ويبقى تسجيل دخولك إلى جهازك الرئيسي قائمًا، ويستعمل تسجيل الدخول الجديد اسم المستخدم وكلمة المرور الخاصين بالجهاز الرئيسي أو رمزًا. وحين يعيد الجهاز الرئيسي اتصاله عبر المُرحِّل ينتظره التطبيق («جارٍ إعادة الاتصال بالجهاز الرئيسي…») بدل أن يفشل فورًا."
               ),
               t(
+                "**When an app and the home are too far apart**: a TV app updates when its store releases it, the home whenever it updates itself, so each time an app reaches a home it first reads the home's API level (`GET /api/discovery/home`, before any sign-in). When the home is too old for the app, the app shows **This home needs an update**, naming the home and its version: its admin is told to update it in **Admin → Updates**, anyone else to ask the person who runs it. When the app is too old for the home, it shows **Update this app**, with how in the platform's words (Google Play, the Amazon Appstore, the App Store). Both pages have **Try again** and **Choose another home**, and nothing signs in until they match. Homes from before this check let every app carry on. [API levels](/contributing/api-levels/) explains the contract.",
+                "**حين يتباعد التطبيق والجهاز الرئيسي**: يتحدّث تطبيق التلفاز حين يصدره متجره، والجهاز الرئيسي متى حدّث نفسه، لذا يقرأ كل تطبيق مستوى واجهة الجهاز الرئيسي البرمجية أولًا كلما وصل إليه (`GET /api/discovery/home`، قبل أي تسجيل دخول). فإن كان الجهاز الرئيسي أقدم من أن يعمل معه التطبيق، يعرض التطبيق **يحتاج هذا الجهاز الرئيسي إلى تحديث** مع اسم الجهاز وإصداره: يُطلب من مسؤوله تحديثه من **الإدارة ← التحديثات**، ومن غيره أن يطلب ذلك من مسؤوله. وإن كان التطبيق أقدم من أن يعمل مع الجهاز الرئيسي، يعرض **حدِّث هذا التطبيق** مع الطريقة بلغة المنصة (Google Play أو متجر Amazon Appstore أو App Store). وفي الصفحتين **إعادة المحاولة** و**اختيار جهاز رئيسي آخر**، ولا يُسجَّل الدخول حتى يتوافقا. والأجهزة الرئيسية الأقدم من هذا الفحص تترك كل التطبيقات تعمل كالمعتاد. وتشرح صفحة [مستويات الواجهة البرمجية](/contributing/api-levels/) هذا الاتفاق."
+              ),
+              t(
                 '**Signing in to Maktaba Cloud on the web**: the sign-in, create-account and forgot-password pages of app.maktaba.tv show a short check that you\'re a person (Cloudflare Turnstile) before they send; most of the time it passes by itself. The apps on phones, tablets and TVs sign in without it. Too many tries from one network in a minute are paused for a while with "Too many requests. Wait a moment and try again.", in English or Arabic.',
                 "**تسجيل الدخول إلى سحابة مكتبة على الويب**: تعرض صفحات تسجيل الدخول وإنشاء الحساب ونسيان كلمة المرور في app.maktaba.tv فحصًا قصيرًا للتحقق من أنك إنسان (Cloudflare Turnstile) قبل الإرسال، وغالبًا ما يمر وحده. وتسجّل التطبيقات على الهواتف والأجهزة اللوحية والتلفزيونات الدخول دونه. وتُوقَف المحاولات الكثيرة من شبكة واحدة في دقيقة لبعض الوقت مع رسالة «طلبات كثيرة. انتظر قليلًا ثم حاول مجددًا.» بالعربية أو الإنجليزية."
               ),
@@ -226,6 +230,12 @@ export const APPS = [
                 "wide",
                 "The status strip in the web app: playback and Live TV are unavailable right now",
                 "شريط الحالة في تطبيق الويب: التشغيل والبث المباشر غير متاحين الآن"
+              ),
+              shot(
+                "androidtv-update-home",
+                "wide",
+                "Android TV reaching a home too old for it: This home needs an update, naming the home Kitchen and its version",
+                "تلفاز أندرويد يصل إلى جهاز رئيسي أقدم منه: يحتاج هذا الجهاز الرئيسي إلى تحديث، مع اسم الجهاز Kitchen وإصداره"
               ),
             ],
           },
@@ -1244,9 +1254,31 @@ export const APPS = [
         blocks: [
           {
             p: t(
-              "The big screen is a full-screen view for a TV or a big monitor: **Home**, **Libraries**, **Series**, **Search**, **Live TV** and **Settings**, in large type, always in the dark library theme. It shows the same videos, watch progress and permissions as the normal view. On a library, a series and a season, **Play** and **Shuffle** start the play queue. Open it with **Big screen** at the top of any page, or `g` then `b`; in the desktop apps, **View → Big Screen**, and **Start in Big Screen** opens it at launch. Leave it with **Leave big screen** in its top row; in the desktop apps, **View → Leave Big Screen**, or **View → Big Screen** again. In Arabic the screens run right to left and the arrows follow them.",
-              "الشاشة الكبيرة عرض بملء الشاشة لتلفاز أو شاشة كبيرة: **الرئيسية** و**المكتبات** و**السلاسل** و**البحث** و**البث المباشر** و**الإعدادات**، بخط كبير وبمظهر المكتبة الداكن دائمًا. وتعرض المقاطع نفسها وتقدّم المشاهدة نفسه والصلاحيات نفسها التي في العرض العادي. وفي المكتبة والسلسلة والموسم يبدأ زرّا **تشغيل** و**تشغيل عشوائي** قائمة الانتظار. افتحها بزر **الشاشة الكبيرة** أعلى أي صفحة، أو بالضغط على `g` ثم `b`؛ وفي تطبيقات سطح المكتب بالأمر **عرض ← الشاشة الكبيرة**، ويفتحها خيار **البدء بالشاشة الكبيرة** عند التشغيل. واخرج منها بزر **الخروج من الشاشة الكبيرة** في صفها العلوي؛ وفي تطبيقات سطح المكتب بالأمر **عرض ← الخروج من الشاشة الكبيرة**، أو بالأمر **عرض ← الشاشة الكبيرة** مرة أخرى. وبالعربية تسير الشاشات من اليمين إلى اليسار، وتتبعها الأسهم."
+              "The big screen is a full-screen view for a TV or a big monitor: **Home**, **Libraries**, **Series**, **Search**, **Live TV** and **Settings**, in large type, always in the dark library theme. It shows the same videos, watch progress and permissions as the normal view. A library opens on its tabs, as on the TV apps: **Recommended**, **Library** (Show videos or series, **Sort**, **Filter** and a letter rail, A to Z then the Arabic letters, or the other way round in Arabic), **Collections**, **Playlists** and **Categories**. **Play** and **Shuffle** in its header play the Library tab's view in its order, filters included, on the play queue; a series, a season, a collection and a playlist have their own. On a focused card, Play/Pause plays it at once, and holding OK (or the menu key) offers Play next, Add to queue, Add to playlist, Go to series and Mark watched. Back steps out: to the top of the tab, then to its tabs, then out of the library. Each tab remembers where you were. Open it with **Big screen** at the top of any page, or `g` then `b`; in the desktop apps, **View → Big Screen**, and **Start in Big Screen** opens it at launch. Leave it with **Leave big screen** in its top row; in the desktop apps, **View → Leave Big Screen**, or **View → Big Screen** again. In Arabic the screens run right to left and the arrows follow them.",
+              "الشاشة الكبيرة عرض بملء الشاشة لتلفاز أو شاشة كبيرة: **الرئيسية** و**المكتبات** و**السلاسل** و**البحث** و**البث المباشر** و**الإعدادات**، بخط كبير وبمظهر المكتبة الداكن دائمًا. وتعرض المقاطع نفسها وتقدّم المشاهدة نفسه والصلاحيات نفسها التي في العرض العادي. وتُفتح المكتبة على تبويباتها كما في تطبيقات التلفاز: **المقترحات** و**المكتبة** (عرض المقاطع أو السلاسل، و**ترتيب** و**تصفية** وشريط حروف من A إلى Z ثم الحروف العربية، أو بالعكس بالعربية) و**المجموعات** و**قوائم التشغيل** و**الفئات**. ويشغّل زرّا **تشغيل** و**تشغيل عشوائي** في رأسها عرضَ تبويب المكتبة بترتيبه وتصفياته في قائمة الانتظار؛ وللسلسلة والموسم والمجموعة وقائمة التشغيل أزرارها الخاصة. وعلى البطاقة المحددة يشغّلها زر التشغيل/الإيقاف فورًا، ويعرض الضغط المطوّل على OK (أو زر القائمة) خيارات التشغيل التالي والإضافة إلى قائمة الانتظار والإضافة إلى قائمة تشغيل والانتقال إلى السلسلة وتعليمها كمُشاهَدة. ويرجع زر الرجوع خطوة خطوة: إلى أعلى التبويب، ثم إلى التبويبات، ثم إلى خارج المكتبة. ويتذكّر كل تبويب موضعك فيه. افتحها بزر **الشاشة الكبيرة** أعلى أي صفحة، أو بالضغط على `g` ثم `b`؛ وفي تطبيقات سطح المكتب بالأمر **عرض ← الشاشة الكبيرة**، ويفتحها خيار **البدء بالشاشة الكبيرة** عند التشغيل. واخرج منها بزر **الخروج من الشاشة الكبيرة** في صفها العلوي؛ وفي تطبيقات سطح المكتب بالأمر **عرض ← الخروج من الشاشة الكبيرة**، أو بالأمر **عرض ← الشاشة الكبيرة** مرة أخرى. وبالعربية تسير الشاشات من اليمين إلى اليسار، وتتبعها الأسهم."
             ),
+          },
+          {
+            p: t(
+              "**On a Samsung or LG TV.** The home also serves the big screen at `/tv/`, built for the older browser engine of a 2020 Samsung or LG TV: the Samsung and LG apps open it. It has the same screens, driven by the TV's remote: the arrows and OK, **Back**, **Play/Pause** and the media keys, and the red key for a card's actions. There is no **Leave big screen** there: **Back** on Home asks **Leave Maktaba?** first. A TV that is not signed in is sent to the home's sign-in page, then back.",
+              "**على تلفاز Samsung أو LG.** يقدّم المنزل الشاشة الكبيرة أيضًا على `/tv/`، مبنيّة لمحرّك المتصفح الأقدم في تلفاز Samsung أو LG من عام 2020، ويفتحها تطبيقا Samsung وLG. فيها الشاشات نفسها، ويقودها جهاز تحكم التلفاز: الأسهم وزر الموافقة، و**الرجوع**، و**التشغيل/الإيقاف المؤقت** ومفاتيح الوسائط، والمفتاح الأحمر لإجراءات البطاقة. ولا يوجد فيها زر **الخروج من الشاشة الكبيرة**: يسأل **الرجوع** في الرئيسية أولًا **الخروج من Maktaba؟**. وإن لم يكن التلفاز مسجّل الدخول أُرسل إلى صفحة تسجيل الدخول في المنزل ثم أُعيد."
+            ),
+          },
+          {
+            shots: [
+              shot(
+                "tv-library",
+                "wide",
+                "/tv/ on a TV: a library's Library tab, its grid and the letter rail",
+                "‏/tv/ على التلفاز: تبويب المكتبة في مكتبة، بشبكتها وشريط الحروف"
+              ),
+              shot(
+                "tv-series",
+                "wide",
+                "/tv/ on a TV: a series with its season pills and lessons",
+                "‏/tv/ على التلفاز: سلسلة بأزرار مواسمها ودروسها"
+              ),
+            ],
           },
           {
             table: {
@@ -1276,6 +1308,18 @@ export const APPS = [
                   t("Back", "زر الرجوع"),
                 ],
                 [t("Search", "البحث"), t("`/`", "`/`"), t("Y or △", "‏Y أو △"), t("—", "—")],
+                [
+                  t("Play the focused card", "تشغيل البطاقة المحددة"),
+                  t("the Play/Pause media key", "مفتاح التشغيل/الإيقاف"),
+                  t("X or □", "‏X أو □"),
+                  t("Play/Pause", "التشغيل/الإيقاف"),
+                ],
+                [
+                  t("A card's actions", "خيارات البطاقة"),
+                  t("hold `Enter`, or the menu key", "الضغط المطوّل على `Enter`، أو مفتاح القائمة"),
+                  t("Menu or Options", "Menu أو Options"),
+                  t("hold OK", "الضغط المطوّل على OK"),
+                ],
               ],
             },
           },

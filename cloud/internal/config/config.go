@@ -8,6 +8,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"net"
 	"net/netip"
 	"os"
 	"strings"
@@ -36,6 +37,27 @@ type Config struct {
 	Direct      DirectConfig
 	Turnstile   TurnstileConfig
 	Admin       AdminConfig
+	Broadcast   BroadcastConfig
+}
+
+// BroadcastConfig is home broadcasting's (Epic 50 story 50.20).
+type BroadcastConfig struct {
+	// Enabled is broadcast.enabled, the broadcasting gate (default false): off, only the test
+	// publishers a service admin granted may publish, and homes' licences don't carry the
+	// broadcast flag. The api role refuses to start with it on while any broadcast catalog
+	// value is TBD (billing.BroadcastLaunchCheck), naming each.
+	Enabled bool
+	// PlansEnforce is broadcast.plans.enforce (default true). Off is the rollback: every
+	// publisher's new sessions get full quality up to the concurrent-viewer limit, and the
+	// viewer-minutes are still counted.
+	PlansEnforce bool
+	// PAYGReports is billing.broadcast_payg.enabled (default true): off stops new pay-as-you-go
+	// viewer-hour reports; the queued ones still go, so nothing used goes unbilled.
+	PAYGReports bool
+	// EdgePublicKey is broadcast.edge_public_key: the base64 Ed25519 public key the broadcast
+	// edge signs its usage posts with (POST /_edge/usage). Public, so it may sit in the file;
+	// the private half is a Worker secret. Empty: the edge routes answer 503.
+	EdgePublicKey string
 }
 
 // AdminConfig is the operator console's own settings (Epic 50 story 50.33 §7).
@@ -116,6 +138,11 @@ type ServerConfig struct {
 	ReadTimeout   time.Duration
 	WriteTimeout  time.Duration
 	ShutdownGrace time.Duration
+	// DrainDelay is how long the api keeps serving after SIGTERM with /readyz answering 503,
+	// before it closes its listeners (server.drain_delay, Epic 50 story 50.17): long enough for
+	// the load balancer in front of the pool to take the node out (2 failed checks 5 s apart),
+	// so no new request meets a closed port. 0 (the default) closes at once, as on one node.
+	DrainDelay time.Duration
 }
 
 // AuthConfig holds the HMAC secret used to sign short-lived access
@@ -132,7 +159,12 @@ type AuthConfig struct {
 }
 
 type DBConfig struct {
-	URL             string
+	URL string
+	// DirectURL is a direct connection to the primary (database.direct_url, env
+	// MAKTABA_CLOUD_DB_DIRECT_URL) for what needs a session of its own: the change listener's
+	// LISTEN and the worker's leader lock (Epic 50 story 50.17), which PgBouncer's transaction
+	// pool can't hold (50.18). Empty means URL.
+	DirectURL       string
 	MaxOpenConns    int
 	MaxIdleConns    int
 	ConnMaxLifetime time.Duration
@@ -238,6 +270,54 @@ type RelayConfig struct {
 	// does, as the api role's (relay.readyz_strict, default false).
 	CacheEnabled bool
 	ReadyzStrict bool
+
+	// The relay pool (story 50.16), off by default: one relay behaves as Phase 1.
+	// PoolEnabled (relay.pool.enabled): this relay heartbeats its member row, answers each
+	// home's handshake with its assignment, and rebalances; on the api role, GET /v1/homes lists
+	// a relay_hint. PoolMember (relay.pool.member, env MAKTABA_CLOUD_RELAY_POOL_MEMBER) is this
+	// machine's member id ("r1"; both processes of a blue/green pair share it; default relay.id).
+	// PoolHosts (relay.pool.hosts) is the host a member's tunnel is dialled at, "{id}" replaced
+	// (default "{id}.<public_host>"). PoolPublicIP / PoolPrivateIP (relay.pool.public_ip,
+	// relay.pool.private_ip, env MAKTABA_CLOUD_RELAY_POOL_PUBLIC_IP / _PRIVATE_IP) go in the
+	// member's row (the private default: peer_addr's host). PoolCapacityMbps
+	// (relay.pool.capacity_mbps, default 1000: 50.14's measurement) weights the hash.
+	// RebalanceEvery / RebalanceRate (relay.pool.rebalance_every, default 30s;
+	// relay.pool.rebalance_rate, default 20 homes a second).
+	PoolEnabled      bool
+	PoolMember       string
+	PoolHosts        string
+	PoolPublicIP     string
+	PoolPrivateIP    string
+	PoolCapacityMbps int
+	RebalanceEvery   time.Duration
+	RebalanceRate    int
+}
+
+// PoolMemberID is this relay's member id in the pool: relay.pool.member, else relay.id.
+func (r RelayConfig) PoolMemberID() string {
+	if r.PoolMember != "" {
+		return r.PoolMember
+	}
+	return r.ID
+}
+
+// PoolHostTemplate is the host a member's tunnel is dialled at, "{id}" in it.
+func (r RelayConfig) PoolHostTemplate() string {
+	if r.PoolHosts != "" {
+		return r.PoolHosts
+	}
+	return "{id}." + r.PublicHost
+}
+
+// PoolPrivate is the member's private address: relay.pool.private_ip, else peer_addr's host.
+func (r RelayConfig) PoolPrivate() string {
+	if r.PoolPrivateIP != "" {
+		return r.PoolPrivateIP
+	}
+	if host, _, err := net.SplitHostPort(r.PeerAddr); err == nil {
+		return host
+	}
+	return ""
 }
 
 // Default values per the bootstrap plan; the loader fills these for any
@@ -278,7 +358,12 @@ func defaultConfig() Config {
 			HoldRecent:     2 * time.Minute,
 
 			StreamLimitEnabled: true,
+
+			PoolCapacityMbps: 1000,
+			RebalanceEvery:   30 * time.Second,
+			RebalanceRate:    20,
 		},
+		Broadcast: BroadcastConfig{PlansEnforce: true, PAYGReports: true},
 	}
 }
 
@@ -309,6 +394,14 @@ func Load(path string) (Config, error) {
 func applyEnvOverrides(c *Config) {
 	if v := os.Getenv("MAKTABA_CLOUD_DB_URL"); v != "" {
 		c.Database.URL = v
+	}
+	if v := os.Getenv("MAKTABA_CLOUD_DB_DIRECT_URL"); v != "" {
+		c.Database.DirectURL = v
+	}
+	if v := os.Getenv("MAKTABA_CLOUD_DRAIN_DELAY"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			c.Server.DrainDelay = d
+		}
 	}
 	if v := os.Getenv("MAKTABA_CLOUD_REDIS_URL"); v != "" {
 		c.Redis.URL = v
@@ -361,6 +454,16 @@ func applyEnvOverrides(c *Config) {
 	}
 	if v := os.Getenv("MAKTABA_CLOUD_RELAY_PEER_ADDR"); v != "" {
 		c.Relay.PeerAddr = v
+	}
+	// the relay pool's per-machine values (story 50.16), set by the relay node's units
+	if v := os.Getenv("MAKTABA_CLOUD_RELAY_POOL_MEMBER"); v != "" {
+		c.Relay.PoolMember = v
+	}
+	if v := os.Getenv("MAKTABA_CLOUD_RELAY_POOL_PUBLIC_IP"); v != "" {
+		c.Relay.PoolPublicIP = v
+	}
+	if v := os.Getenv("MAKTABA_CLOUD_RELAY_POOL_PRIVATE_IP"); v != "" {
+		c.Relay.PoolPrivateIP = v
 	}
 }
 
@@ -465,6 +568,10 @@ func assign(c *Config, section, key, val string) error {
 		return setDur(&c.Server.WriteTimeout, val)
 	case "server.shutdown_grace":
 		return setDur(&c.Server.ShutdownGrace, val)
+	case "server.drain_delay":
+		return setDur(&c.Server.DrainDelay, val)
+	case "database.direct_url":
+		c.Database.DirectURL = val
 	case "database.url":
 		c.Database.URL = val
 	case "database.max_open_conns":
@@ -584,6 +691,30 @@ func assign(c *Config, section, key, val string) error {
 		return setDur(&c.Relay.ShutdownGrace, val)
 	case "relay.editions_dir":
 		c.Relay.EditionsDir = val
+	case "broadcast.enabled":
+		return setBool(&c.Broadcast.Enabled, val)
+	case "broadcast.plans.enforce":
+		return setBool(&c.Broadcast.PlansEnforce, val)
+	case "billing.broadcast_payg.enabled":
+		return setBool(&c.Broadcast.PAYGReports, val)
+	case "broadcast.edge_public_key":
+		c.Broadcast.EdgePublicKey = val
+	case "relay.pool.enabled":
+		return setBool(&c.Relay.PoolEnabled, val)
+	case "relay.pool.member":
+		c.Relay.PoolMember = val
+	case "relay.pool.hosts":
+		c.Relay.PoolHosts = val
+	case "relay.pool.public_ip":
+		c.Relay.PoolPublicIP = val
+	case "relay.pool.private_ip":
+		c.Relay.PoolPrivateIP = val
+	case "relay.pool.capacity_mbps":
+		return setInt(&c.Relay.PoolCapacityMbps, val)
+	case "relay.pool.rebalance_every":
+		return setDur(&c.Relay.RebalanceEvery, val)
+	case "relay.pool.rebalance_rate":
+		return setInt(&c.Relay.RebalanceRate, val)
 	}
 	return nil
 }
@@ -652,4 +783,13 @@ func (s ServerConfig) AdminOriginOrDefault() string {
 // (shared/go/clientip's ParseCIDRs; the home's list also takes bare addresses).
 func ParsePrefixes(vs []string) ([]netip.Prefix, error) {
 	return clientip.ParseCIDRs(vs)
+}
+
+// ListenURL is the connection for a session of its own (LISTEN, a session advisory lock):
+// DirectURL, or URL without one.
+func (d DBConfig) ListenURL() string {
+	if d.DirectURL != "" {
+		return d.DirectURL
+	}
+	return d.URL
 }

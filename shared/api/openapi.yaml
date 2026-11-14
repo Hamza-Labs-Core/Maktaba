@@ -117,6 +117,12 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '429':
           $ref: '#/components/responses/RateLimited'
+        '426':
+          description: 'This app build is below the home''s client floor (`code: client_too_old`, with `floor`, the oldest build this home serves, and `client`, the `<app>/<platform>` it read from `X-Maktaba-Client`). The app shows Update this app. A request without the header (the web) is never refused.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         default:
           $ref: '#/components/responses/InternalError'
       operationId: login
@@ -195,6 +201,12 @@ paths:
                 $ref: '#/components/schemas/AuthTokenResponse'
         '401':
           description: Refresh token invalid, revoked, or expired.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '426':
+          description: 'This app build is below the home''s client floor (`code: client_too_old`, with `floor`, the oldest build this home serves, and `client`, the `<app>/<platform>` it read from `X-Maktaba-Client`). The app shows Update this app. A request without the header (the web) is never refused.'
           content:
             application/problem+json:
               schema:
@@ -2871,6 +2883,68 @@ paths:
         '429': *id002
         '401': *id003
       operationId: resumeAllQueues
+  /queues/workers/restart:
+    post:
+      tags:
+      - Queue
+      summary: Restart the pipeline workers
+      description: "Asks this machine's supervisor to restart the pipeline's worker processes: the action of the Queues page while GET /queues/pulse answers `workers.state` = `not_responding` (jobs wait and the workers listed in `workers.stalled` do not run them). The optional body names the catalog components whose workers restart (`core.pipeline`, `transcription`, `search.semantic`); with none, every worker restarts. Waiting jobs stay queued; a job that was running is picked up again."
+      x-maktaba-role: admin
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                components:
+                  type: array
+                  items:
+                    type: string
+                    enum:
+                    - core.pipeline
+                    - transcription
+                    - search.semantic
+      responses:
+        '400':
+          description: A component named has no worker, or the body is not JSON.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '200':
+          description: 'Restarted: how many worker processes the supervisor restarted.'
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - restarted
+                properties:
+                  restarted:
+                    type: integer
+        '202':
+          description: 'No worker process runs now: the supervisor starts them.'
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - restarted
+                properties:
+                  restarted:
+                    type: integer
+        '403': *id005
+        '503':
+          description: No supervisor to ask, or it does not answer (code components_unavailable).
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        default: *id001
+        '429': *id002
+        '401': *id003
+      operationId: restartQueueWorkers
   /queues/{stage}:
     parameters:
     - &id008
@@ -11650,6 +11724,25 @@ paths:
         default:
           $ref: '#/components/responses/InternalError'
       operationId: listManagedLibraries
+  /discovery/home:
+    get:
+      tags:
+      - Devices
+      summary: 'Who this home is, and its API level'
+      description: 'Public, no sign-in, limited per IP. What an app needs to list a home it found (mDNS, a QR code, a typed address), to know it again, and to tell whether it and the home can work together: `api_level`, `api_level_oldest` and `client_floor` are the compatibility contract (docs/api/levels.md). An app reads them each time it reaches the home, before signing in. A home older than the contract sends none of them: read both levels as 0 and the floor as empty.'
+      security: []
+      responses:
+        '200':
+          description: 'The home.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DiscoveryHome'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        default:
+          $ref: '#/components/responses/InternalError'
+      operationId: getDiscoveryHome
   /pairing/approve:
     post:
       tags:
@@ -12102,6 +12195,61 @@ components:
           schema:
             $ref: '#/components/schemas/ProblemDetails'
   schemas:
+    DiscoveryHome:
+      type: object
+      description: 'A home as the apps see it: its identity, its addresses, how one signs in, and the compatibility contract.'
+      required:
+      - id
+      - name
+      - version
+      - urls
+      - sign_in
+      - api_level
+      - api_level_oldest
+      - client_floor
+      properties:
+        id:
+          type: string
+          description: 'The home''s instance id, the mDNS TXT `id`.'
+        name:
+          type: string
+          description: 'The home''s display name.'
+        version:
+          type: string
+          description: 'The home''s release.'
+        urls:
+          type: array
+          items:
+            type: string
+            format: uri
+          description: 'The home''s base URLs: the LAN ones first, then the relay one; the request''s own origin when the home knows none.'
+        sign_in:
+          type: object
+          required:
+          - password
+          - code
+          properties:
+            password:
+              type: boolean
+            code:
+              type: boolean
+          description: 'How one signs in here: a password, and a code approved from a phone when the home can hand out tokens.'
+        stream_port:
+          type: integer
+          description: 'The port of the home''s live TV, when the home knows it.'
+        api_level:
+          type: integer
+          minimum: 1
+          description: 'This home''s API level. It rises by one each time a response changes in a way an older app would get wrong; adding fields does not raise it.'
+        api_level_oldest:
+          type: integer
+          minimum: 1
+          description: 'The oldest API level this home still answers correctly. An app built for a lower level must be updated. A home keeps serving every level released in the last 12 months.'
+        client_floor:
+          type: object
+          additionalProperties:
+            type: string
+          description: 'The oldest build of each app this home serves, keyed `<app>/<platform>` as `X-Maktaba-Client` names them. Empty unless a home release must refuse an old build (a security fix); a build below it gets 426 `client_too_old` at sign-in.'
     HomeShare:
       type: object
       required:

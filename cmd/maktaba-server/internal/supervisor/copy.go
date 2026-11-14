@@ -34,11 +34,12 @@ func BuildCopy(c nodecopy.Copy) (Process, error) {
 		StopSignal:  os.Interrupt, // fast shutdown
 		OnDemand:    true,
 		BeforeStart: c.DB.ClearStaleLock,
+		Settle:      c.DB.AwaitShmFree,
 	}
 	if runtime.GOOS == "windows" {
 		p.Stop = func() { _ = c.DB.StopCommand().Run() }
 	}
-	return p, nil
+	return patient(p), nil
 }
 
 // Running reports whether a role's process runs (starting, running or unhealthy).

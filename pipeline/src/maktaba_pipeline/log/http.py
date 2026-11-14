@@ -18,40 +18,45 @@ from __future__ import annotations
 
 import json
 import threading
+from collections.abc import Sequence
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
 from .. import __version__
-from .liveness import LoopHeartbeat, get_heartbeat
+from .liveness import LoopHeartbeat, Progress, get_heartbeat, progress_checks
 from .ring import LogRingBuffer, get_ring
 
 __all__ = ["build_health_response", "build_recent_response", "start_log_server"]
 
 
-def build_health_response(hb: LoopHeartbeat | None) -> tuple[int, str, bytes]:
-    """``/healthz``: 200 while the event loop beats, 503 once it is stale.
+def build_health_response(
+    hb: LoopHeartbeat | None, progress: Sequence[Progress] = ()
+) -> tuple[int, str, bytes]:
+    """``/healthz``: 200 while the event loop beats and everything in ``progress`` keeps
+    moving (the claim loop passes, the database answers), 503 once one is stale: "ok"
+    means jobs can be dispatched, and the supervisor restarts the worker on anything
+    else (any answer outside 2xx).
 
     Without a heartbeat installed (the loop task not started) the process
     is reported alive, like a plain liveness endpoint. Both say the
     pipeline's version: an update's watch checks that the pipeline runs the
     new release (Epic 35 story 35.4 AC7).
     """
-    if hb is None or hb.healthy():
+    failed: dict[str, dict[str, str]] = {}
+    if hb is not None and not hb.healthy():
+        failed["event_loop"] = {
+            "status": "fail",
+            "reason": f"no heartbeat for {hb.age():.0f}s (stale after {hb.stale_sec:.0f}s)",
+        }
+    for p in progress:
+        if not p.healthy():
+            failed[p.name] = {"status": "fail", "reason": p.reason()}
+    if not failed:
         ok = {"status": "ok", "service": "pipeline", "version": __version__}
         return 200, "application/json", json.dumps(ok).encode("utf-8")
     body = json.dumps(
-        {
-            "status": "fail",
-            "service": "pipeline",
-            "version": __version__,
-            "checks": {
-                "event_loop": {
-                    "status": "fail",
-                    "reason": f"no heartbeat for {hb.age():.0f}s (stale after {hb.stale_sec:.0f}s)",
-                }
-            },
-        }
+        {"status": "fail", "service": "pipeline", "version": __version__, "checks": failed}
     )
     return 503, "application/json", body.encode("utf-8")
 
@@ -94,7 +99,7 @@ class _Handler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:  # noqa: N802 — BaseHTTPRequestHandler API
         if urlparse(self.path).path == "/healthz":
-            status, content_type, body = build_health_response(get_heartbeat())
+            status, content_type, body = build_health_response(get_heartbeat(), progress_checks())
         else:
             status, content_type, body = build_recent_response(self.path, get_ring())
         self.send_response(status)

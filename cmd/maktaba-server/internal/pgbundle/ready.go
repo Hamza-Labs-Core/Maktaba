@@ -23,7 +23,8 @@ var ErrRefused = errors.New("postgres refused the connection")
 // pg_isready does: it sends a startup message and reads the first answer. An
 // authentication request means ready (it then hangs up, which the server
 // takes silently); an error message is not ready — ErrStarting for a server
-// starting up or recovering.
+// starting up or recovering. It waits for the answer until ctx's deadline, 5 s
+// when it has none.
 func Ready(ctx context.Context, addr, user, database string) error {
 	var d net.Dialer
 	conn, err := d.DialContext(ctx, "tcp", addr)
@@ -32,7 +33,7 @@ func Ready(ctx context.Context, addr, user, database string) error {
 	}
 	defer func() { _ = conn.Close() }()
 	deadline := time.Now().Add(5 * time.Second)
-	if dl, ok := ctx.Deadline(); ok && dl.Before(deadline) {
+	if dl, ok := ctx.Deadline(); ok {
 		deadline = dl
 	}
 	_ = conn.SetDeadline(deadline)

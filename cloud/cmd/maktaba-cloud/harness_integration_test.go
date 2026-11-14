@@ -72,6 +72,11 @@ type env struct {
 	ipSeq   int
 	// logs is everything the api logged (the usage-data test reads it)
 	logs *syncBuffer
+	// what newAPI was given, for another node on the same database (story 50.17)
+	cfg    config.Config
+	o      apiOverrides
+	mig    *db.Migrator
+	logger *slog.Logger
 }
 
 // syncBuffer is a bytes.Buffer the server's goroutines may write at once.
@@ -194,7 +199,20 @@ func newEnvFull(t *testing.T, pay *fakeProvider, ts turnstile.Verifier, adjust f
 	t.Cleanup(stop)
 	e.router, e.admin = a.User, a.Admin
 	e.h = consoleOrUser(a)
+	e.cfg, e.o, e.mig, e.logger = cfg, o, mig, logger
 	return e
+}
+
+// node is another api process on e's database (the api pool, story 50.17): its own routers,
+// limiters and goroutines, the same rows.
+func (e *env) node() http.Handler {
+	e.t.Helper()
+	a, stop, err := newAPI(e.logger, e.cfg, e.pool, e.mig, server.BuildInfo{Role: "api"}, e.o)
+	if err != nil {
+		e.t.Fatal(err)
+	}
+	e.t.Cleanup(stop)
+	return consoleOrUser(a)
 }
 
 // testAdminHost is the console's name in these tests (server.admin_host).
@@ -522,6 +540,18 @@ func (p *fakeProvider) ReportedUsage(ctx context.Context, sub string, month time
 	return p.billing.ReportedUsage(ctx, sub, month)
 }
 
+func (p *fakeProvider) SetBroadcastItems(ctx context.Context, sub string, it billingpkg.BroadcastItems) error {
+	return p.billing.SetBroadcastItems(ctx, sub, it)
+}
+
+func (p *fakeProvider) ReportBroadcastUsage(ctx context.Context, r billingpkg.BroadcastUsageReport) error {
+	return p.billing.ReportBroadcastUsage(ctx, r)
+}
+
+func (p *fakeProvider) ReportedBroadcastUsage(ctx context.Context, sub, server string, month time.Time) (int64, error) {
+	return p.billing.ReportedBroadcastUsage(ctx, sub, server, month)
+}
+
 func (*fakeProvider) Name() string  { return "testpay" }
 func (*fakeProvider) Enabled() bool { return true }
 func (*fakeProvider) Sells(plan string) bool {
@@ -580,6 +610,8 @@ type testEvent struct {
 	DisputeID      string    `json:"dispute_id,omitempty"`
 	ExtraStreams   int       `json:"extra_streams,omitempty"`
 	PAYG           bool      `json:"payg,omitempty"`
+	// story 50.20: the broadcast items per home
+	Broadcast []billingpkg.BroadcastItems `json:"broadcast,omitempty"`
 }
 
 func (*fakeProvider) ParseWebhook(_ context.Context, payload []byte, h http.Header) (billingpkg.Event, error) {
@@ -595,7 +627,7 @@ func (*fakeProvider) ParseWebhook(_ context.Context, payload []byte, h http.Head
 		UserID: te.UserID, CustomerID: te.CustomerID, SubscriptionID: te.SubscriptionID,
 		Plan: te.Plan, PriceID: "price_" + te.Plan, Interval: te.Interval, Status: te.Status, PeriodEnd: te.PeriodEnd,
 		InvoiceID: te.InvoiceID, AmountCents: te.AmountCents, Currency: te.Currency, DisputeID: te.DisputeID,
-		ExtraStreams: te.ExtraStreams, PAYG: te.PAYG,
+		ExtraStreams: te.ExtraStreams, PAYG: te.PAYG, Broadcast: te.Broadcast,
 		Payload: payload,
 	}, nil
 }

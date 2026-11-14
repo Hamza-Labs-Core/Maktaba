@@ -1,6 +1,6 @@
 # Processing
 
-The **Processing** page shows everything Maktaba does to your videos in the background: what runs now, what waits and why, and what needs you. Viewing is open to every signed-in user; only an admin can pause, retry, re-queue or change settings here.
+The **Processing** page shows everything Maktaba does to your videos in the background: what runs now, what waits and why, and what needs you. The page is for admins: the server shows the queues and their controls (pause, retry, re-queue, settings) only to an admin.
 
 ## What it is {#what-it-is}
 
@@ -141,6 +141,25 @@ Each source also has **Retry gone/skipped** and **Remove** (it stops following t
 - **Off**: the queue is switched off or not set up.
 
 Below the numbers, a tile can also show two small links: **… failed** (failed items of this queue) and **… need you** (items Maktaba will not try again by itself; see [… need you](/help/failures#needs-you)). Both open [Failing items](/help/failures#failing-items) for that queue, where an admin can fix items one by one.
+
+### Some workers are not running their jobs {#workers-stalled}
+
+A red notice under the header, **Some workers are not running their jobs.**, means jobs are waiting and a worker that should run them does not, even while other workers work. It lists each such worker (**Main worker**, **Transcription worker** or **Search worker**, with its machine), since when, and how many jobs wait for them. For each worker it says one of two things:
+
+- **has not reported in for …**: the worker process has not reported in for two minutes or more, while jobs it serves wait.
+- **reports in but has started no job for …**: the worker is up and has a free slot, a job it could take has waited ten minutes or more, and it has started nothing in that time.
+
+**No worker is running.** is the same notice when no worker has reported in at all.
+
+Waiting jobs stay queued and nothing is lost: they start when the workers run again. Paused queues, jobs that wait for the model, a share or disk space, and queues whose pool is full or set to 0 workers never raise this notice. A worker that was just restarted gets ten minutes before it can be called stalled.
+
+**Restart these workers** restarts only the workers listed, on the computer that runs Maktaba; **Restart all workers** restarts every worker there. A job that was running is picked up again, and the notice goes away once the restart is asked for and jobs start, usually within a minute. If the notice says the server cannot restart its workers from here, restart Maktaba on the computer that runs it. A worker on another machine is restarted on that machine.
+
+Jobs that failed while the workers or the database were down are listed under **Needs attention**: press **Retry** there, or fix single items in [Failing items](/queue/failures). A job that lost the database in the middle of its work is tried again by itself.
+
+### This machine is overloaded {#host-overloaded}
+
+A yellow notice, **This machine is overloaded.**, means the computer that runs Maktaba has had more than twice as much work as it has processor cores for five minutes. Jobs and the database are slow until it eases, and the notice names the programs using the most CPU when Maktaba could list them. Maktaba stops no program by itself: close what does not belong, or pause the queues. See [This machine's load](/help/system-health#item-host-load).
 
 ### Overall state {#overall-state}
 

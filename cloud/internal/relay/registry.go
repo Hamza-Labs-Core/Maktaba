@@ -38,6 +38,9 @@ type slugLock struct {
 
 var ErrNoTunnel = errors.New("relay: no live tunnel for slug")
 
+// retireDeadline bounds how long a standby a primary replaced keeps serving its requests.
+const retireDeadline = 2 * time.Minute
+
 func NewRegistry() *Registry {
 	return &Registry{conns: make(map[string]*Tunnel), open: make(map[*Tunnel]struct{}), seen: make(map[string]time.Time), slugLocks: make(map[string]*slugLock)}
 }
@@ -84,6 +87,11 @@ func (r *Registry) Up(slug string, t *Tunnel, record func()) bool {
 	if ok && cur.seq > t.seq {
 		return false
 	}
+	// a standby never displaces the home's live primary here (story 50.16): the home dials its
+	// standby elsewhere once its assignment says where
+	if ok && t.standby && !cur.standby && !cur.Draining() && !cur.closed.Load() {
+		return false
+	}
 	record()
 	r.Register(slug, t)
 	return true
@@ -107,12 +115,19 @@ func (r *Registry) Down(slug string, t *Tunnel, record func()) bool {
 // slug already has a tunnel the new connection wins: the old one is closed
 // (4003 superseded: the agent reconnected after a blip or a restart) unless
 // it is draining, when it keeps serving the streams it has until the home
-// closes it or its deadline (story 50.03).
+// closes it or its deadline (story 50.03), or it is the home's standby and the
+// new one its primary, when it is retired (closed once idle, story 50.16).
 func (r *Registry) Register(slug string, t *Tunnel) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if old, ok := r.conns[slug]; ok && old != t && !old.Draining() {
-		old.Close()
+		if old.standby && !t.standby {
+			// the home made its standby relay its primary (story 50.16): the standby may be
+			// carrying the requests that failed over to it, so it finishes them first
+			old.Retire(retireDeadline)
+		} else {
+			old.Close()
+		}
 	}
 	r.conns[slug] = t
 	r.seen[slug] = time.Now()
