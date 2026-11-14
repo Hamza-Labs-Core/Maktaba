@@ -70,7 +70,8 @@ export interface Plugin {
   stage_names?: string[];
   /** its stages as the queue names them (the failures view's stage filter) */
   queues?: string[];
-  /** why its switch cannot be used (a components.reason.<code>, or "held"); absent when it can */
+  /** why it cannot be turned on from its switch (a components.reason.<code>, or "held");
+   * absent when it can. Turning it off is never locked. */
   switch_locked?: string;
   activity?: PluginActivity;
   resources?: PluginResources;
@@ -139,6 +140,8 @@ export interface SwitchEffect {
   processes: string[] | null;
   loops: string[] | null;
   features: string[] | null;
+  /** stages of other plugins (or of Maktaba itself) its stages hand work to */
+  fed?: { stage: string; label?: string; plugin?: string }[] | null;
   queued_jobs_parked: number;
   drain_s: number;
 }
@@ -203,6 +206,8 @@ export interface TrustStatus {
 
 export interface PluginStage {
   name: string;
+  /** the stage's name for people, from its manifest */
+  label?: string;
   queue: string;
   subject: string;
   version: number;
@@ -414,13 +419,15 @@ export const pluginsApi = {
         after_buy: afterBuy,
       }
     ),
-  list: () =>
+  /** release: also the plugins Maktaba publishes that came with this release (the Plugins
+   * page asks for them; without it the list is the installed plugins, as it always was) */
+  list: (release = false) =>
     api.get<{
       plugins: Plugin[];
       policy: Policy;
       /** parts of Maktaba itself: always on, not plugins */
       core?: { component: string; title_key: string }[];
-    }>("/api/plugins"),
+    }>(release ? "/api/plugins?release=true" : "/api/plugins"),
   graph: () => api.get<{ graph: FlowGraph; findings: FlowFinding[] | null }>("/api/plugins/graph"),
   flow: (id: string) => api.get<PluginFlow>(`/api/plugins/${enc(id)}/flow`),
   downstream: (id: string) => api.get<SwitchEffect>(`/api/plugins/${enc(id)}/downstream`),
@@ -434,7 +441,11 @@ export const pluginsApi = {
   update: (id: string, f: InstallForm, onProgress?: (fraction: number) => void) =>
     uploadWithProgress<InstallResult>(`/api/plugins/${enc(id)}/update`, installBody(f), onProgress),
   grants: (id: string, g: Grants) => api.put<Grants>(`/api/plugins/${enc(id)}/grants`, g),
-  enable: (id: string) => api.post<PluginDetail>(`/api/plugins/${enc(id)}/enable`),
+  /** withConflicts: also turn off what it cannot run with (the answer to component_conflicts) */
+  enable: (id: string, withConflicts = false) =>
+    withConflicts
+      ? api.post<PluginDetail>(`/api/plugins/${enc(id)}/enable`, { with_conflicts: true })
+      : api.post<PluginDetail>(`/api/plugins/${enc(id)}/enable`),
   disable: (id: string) => api.post<PluginDetail>(`/api/plugins/${enc(id)}/disable`),
   start: (id: string) => api.post<PluginDetail>(`/api/plugins/${enc(id)}/start`),
   stop: (id: string) => api.post<PluginDetail>(`/api/plugins/${enc(id)}/stop`),

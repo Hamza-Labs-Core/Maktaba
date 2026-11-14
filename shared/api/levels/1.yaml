@@ -1821,6 +1821,20 @@ operations:
                 type: string
               seconds:
                 type: integer
+  GET /plugins:
+    "200":
+      type: object
+      properties:
+        core:
+          type: array
+          items:
+            type: object
+        plugins:
+          type: array
+          items:
+            type: object
+        policy:
+          type: object
   GET /plugins/isolation:
     "200":
       type: object

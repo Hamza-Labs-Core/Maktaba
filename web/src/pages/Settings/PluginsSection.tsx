@@ -112,7 +112,7 @@ function PluginsInner() {
 
   const reload = useCallback(async () => {
     try {
-      const r = await pluginsApi.list();
+      const r = await pluginsApi.list(true);
       setPlugins(r.plugins ?? []);
       setCore(r.core ?? []);
       setPolicy(r.policy);

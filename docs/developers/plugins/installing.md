@@ -224,9 +224,12 @@ All admin-only (no sign-in 401; a viewer or a cloud-linked play sign-in 403):
 
 ### Every plugin in one list
 
-`GET /api/plugins` answers `{plugins, policy, core}`. `plugins` is one list: the plugins an
-admin installed and the plugins Maktaba publishes, in the same shape. There is no `built_in`
-field. Beside the fields above, each plugin has:
+`GET /api/plugins` answers `{plugins, policy, core}`. By default `plugins` is the plugins an
+admin installed, as it always was: a client that lists them as installed plugins (a rule
+picker, a script) keeps working. `GET /api/plugins?release=true` also lists the plugins
+Maktaba publishes that came with this release, in the same list and the same shape; the
+Plugins page asks for it. There is no `built_in` field. Beside the fields above, each plugin
+has:
 
 | Field | What |
 |---|---|
@@ -234,7 +237,7 @@ field. Beside the fields above, each plugin has:
 | `source` | `release` (it came with this Maktaba release), `store` or `file` |
 | `component` | the component its switch writes: its own for a Maktaba plugin, `plugin.<id>` otherwise |
 | `stage_names`, `queues` | its stages, and their names in the queue (`GET /api/queues/failures?stage=` takes several, joined by commas) |
-| `switch_locked` | why its switch cannot be used (`licence_missing`, `held`, `revoked`, …); absent when it can |
+| `switch_locked` | why it cannot be turned on from its switch (`licence_missing`, `held`, `revoked`, …); absent when it can. Turning a plugin off is never locked |
 | `activity` | `pending`, `running`, `done_24h`, `failed_24h`, `problems`, `avg_ms`, `p95_ms` |
 | `resources` | `processes` (each `{process, group, component, machine, rss_mb, scope, stages, shared_with, shared_core}`), `shared`, and a third-party plugin's `data_rows`, `data_bytes`, `data_mb`, `memory_mb`, `peak_memory_mb` |
 
@@ -246,9 +249,18 @@ splits it per plugin, and CPU is not measured per process.
 not in `plugins`, and `GET /api/plugins/{id}` answers `404 plugin_not_installed` for them.
 
 `GET /api/plugins/{id}/downstream` answers what turning a plugin off does beside stopping it:
-`stages` (other plugins' stages that go idle), `also` (components that wait or run with less,
-each with its `plugin` when it has one), `processes`, `loops`, `features`,
-`queued_jobs_parked` and `drain_s`.
+`stages` (other plugins' stages that go idle: for a Maktaba plugin, the third-party stages
+that start on an event its stages raise), `also` (components that wait or run with less, the
+direct dependants and theirs, each with its `plugin` when it has one), `fed` (the stages of
+other plugins, or of Maktaba itself, that its stages hand work to), `processes`, `loops`,
+`features`, `queued_jobs_parked` and `drain_s`.
+
+`POST /api/plugins/{id}/enable` answers `409 component_conflicts` with `conflicts` (each
+`{component, title_key, plugin}`) when something that is on cannot run beside it. Sending
+`{"with_conflicts": true}` turns those off in the same change.
+
+A plugin's `activity.problems` is counted by the rule of `GET /api/queues/failures`: it equals
+the number of items that list shows for the plugin's stages.
 
 A plugin with `source: "release"` is switched with `enable`, `disable`, `start` and `stop`
 like any other. Its update, rollback, removal, grants, settings and writes routes answer

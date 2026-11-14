@@ -3441,6 +3441,38 @@
       "en": "Admin only.",
       "ar": "للمشرفين وحدهم."
     },
+    "/paths/~1plugins/get/summary": {
+      "en": "List the plugins",
+      "ar": "عرض الإضافات"
+    },
+    "/paths/~1plugins/get/description": {
+      "en": "The installed plugins, each with its state, its jobs and what it uses, the home's plugin policy, and the parts of Maktaba itself that are not plugins. By default `plugins` holds only the plugins an admin installed, as clients that list them as installed plugins expect. With `release=true` it also holds the plugins Maktaba publishes that came with this release (`publisher.id` is `maktaba`, `source` is `release`), in the same shape.",
+      "ar": "الإضافات المثبّتة، ولكل منها حالتها ومهامّها وما تستخدمه، وسياسة الإضافات في الجهاز الرئيسي، وأجزاء مكتبة نفسها التي ليست إضافات. افتراضيًا لا يضم `plugins` إلا الإضافات التي ثبّتها مسؤول، كما تتوقع التطبيقات التي تعرضها على أنها الإضافات المثبّتة. ومع `release=true` يضم أيضًا الإضافات التي تنشرها مكتبة وجاءت مع هذا الإصدار (`publisher.id` هو `maktaba` و`source` هو `release`)، بالشكل نفسه."
+    },
+    "/paths/~1plugins/get/parameters/0/description": {
+      "en": "`true`: also list the plugins Maktaba publishes that came with this release. Left out, the list is the installed plugins only.",
+      "ar": "`true`: تُعرض أيضًا الإضافات التي تنشرها مكتبة وجاءت مع هذا الإصدار. وبدونه تقتصر القائمة على الإضافات المثبّتة."
+    },
+    "/paths/~1plugins/get/responses/200/description": {
+      "en": "The plugins.",
+      "ar": "الإضافات."
+    },
+    "/paths/~1plugins/get/responses/200/content/application~1json/schema/properties/plugins/description": {
+      "en": "The installed plugins by id; with `release=true`, also the plugins Maktaba publishes.",
+      "ar": "الإضافات المثبّتة مرتّبة بمعرّفها؛ ومع `release=true` الإضافات التي تنشرها مكتبة أيضًا."
+    },
+    "/paths/~1plugins/get/responses/200/content/application~1json/schema/properties/policy/description": {
+      "en": "The home's plugin policy (`allow_unreviewed`).",
+      "ar": "سياسة الإضافات في الجهاز الرئيسي (`allow_unreviewed`)."
+    },
+    "/paths/~1plugins/get/responses/200/content/application~1json/schema/properties/core/description": {
+      "en": "The parts of Maktaba itself that must always run. They are not plugins and are never in `plugins`.",
+      "ar": "أجزاء مكتبة نفسها التي يجب أن تعمل دائمًا. وهي ليست إضافات ولا تظهر في `plugins` أبدًا."
+    },
+    "/paths/~1plugins/get/responses/403/description": {
+      "en": "Admin only.",
+      "ar": "للمشرفين وحدهم."
+    },
     "/paths/~1plugins~1isolation/get/summary": {
       "en": "Plugin isolation",
       "ar": "عزل الإضافات"

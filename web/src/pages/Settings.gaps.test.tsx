@@ -80,7 +80,7 @@ describe("Settings", () => {
     get.mockImplementation((url: string) => {
       if (url === "/api/plugins/tv.maktaba.subtitles")
         return Promise.reject(new Error("not this test's"));
-      if (url === "/api/plugins")
+      if (url === "/api/plugins?release=true")
         return Promise.resolve({ plugins: [], policy: { allow_unreviewed: false } });
       return base(url);
     });

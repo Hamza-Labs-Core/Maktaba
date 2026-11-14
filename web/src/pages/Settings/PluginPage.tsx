@@ -9,7 +9,7 @@
 //
 // A plugin's own text (its name, summary, setting labels) is data: shown as text, never as
 // HTML, isolated for bidi.
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { Badge } from "@ds/components/Badge/Badge";
 import { Button } from "@ds/components/Button/Button";
@@ -36,6 +36,8 @@ import {
 } from "../../lib/pluginsApi";
 import { ApiError } from "../../lib/api";
 import { logsPageLink } from "../../lib/logIndex";
+import { rulesApi } from "../../lib/rulesApi";
+import { localizeSections } from "./RulesSection";
 import { phaseTone, phaseWord, reasonText } from "./componentWords";
 import { PluginFlowChart } from "./PluginFlowChart";
 import { ResourcesSection } from "./PluginResources";
@@ -91,21 +93,36 @@ export function PluginPage() {
   const [error, setError] = useState("");
   const [note, setNote] = useState("");
   const [confirm, setConfirm] = useState<"remove" | "purge" | "clear" | null>(null);
+  // the newest read wins: an answer for a plugin the page has left, or older than one
+  // already shown, is dropped
+  const asked = useRef(0);
   const reload = useCallback(async () => {
+    const mine = ++asked.current;
     try {
-      setD(await pluginsApi.show(id));
+      const got = await pluginsApi.show(id);
+      if (mine !== asked.current) return;
+      setD(got);
       setError("");
     } catch (e) {
+      if (mine !== asked.current) return;
       setD(null);
       setError(refusalWords(t, e));
     }
   }, [id, t]);
   useEffect(() => {
+    // another plugin's address: its page starts empty, never with the last one's
+    setD(null);
+    setError("");
+    setNote("");
+    setConfirm(null);
     void reload();
+    return () => {
+      asked.current++;
+    };
   }, [reload]);
   // the other plugins' names, for what shares a process and what a switch touches
   useEffect(() => {
-    void pluginsApi.list().then(
+    void pluginsApi.list(true).then(
       (r) => setAll(r.plugins ?? []),
       () => setAll([])
     );
@@ -238,7 +255,7 @@ export function PluginPage() {
               <tr key={s.queue}>
                 <td>
                   <Link to={`/queue/${encodeURIComponent(s.queue)}`}>
-                    {release ? stageTitle(t, s.name) : <span dir="ltr">{s.name}</span>}
+                    {release ? stageTitle(t, s.name, s.label) : <span dir="ltr">{s.name}</span>}
                   </Link>
                 </td>
                 <td>{n(s.pending)}</td>
@@ -509,15 +526,35 @@ function groupWord(t: T, group: string): string {
  * sections its component owns, the Models tab, and the server's settings file. A plugin
  * with none has no Settings section. */
 function SettingsLinks({ plugin: p }: { plugin: Plugin }) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const all = p.settings ?? [];
   const rules = all.filter((s) => s.startsWith("rules.")).map((s) => s.slice("rules.".length));
   const toml = all.filter((s) => s.startsWith("toml:")).map((s) => s.slice("toml:".length));
+  // each section by its name as the Rules tab shows it: Maktaba's word for it, else the
+  // title the server gives the section (never the section's identifier)
+  const [titles, setTitles] = useState<Record<string, string>>({});
+  const wanted = rules.join(",");
+  useEffect(() => {
+    if (!wanted) return;
+    let live = true;
+    void rulesApi.list().then(
+      (r) => {
+        if (!live) return;
+        const out: Record<string, string> = {};
+        for (const sec of localizeSections(r.sections ?? [], locale)) out[sec.key] = sec.title;
+        setTitles(out);
+      },
+      () => undefined
+    );
+    return () => {
+      live = false;
+    };
+  }, [wanted, locale]);
   if (rules.length + toml.length === 0) return null;
   const title = (section: string) => {
     const key = `rules.${section}.title`;
     const hit = t(key);
-    return hit === key ? section : hit;
+    return hit !== key ? hit : titles[section] || t("plugins.settings.section_unnamed");
   };
   return (
     <section aria-labelledby="pl-settings" id="settings">

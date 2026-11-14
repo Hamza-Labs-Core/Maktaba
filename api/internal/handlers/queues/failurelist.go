@@ -113,12 +113,51 @@ func (f FailureFilter) validate() *httperror.Error {
 
 // openItemsCTE: $1 is the stage+signature pairs (stage || chr(31) ||
 // signature) that make their stage red right now.
-var openItemsCTE = `
+var openItemsCTE = openItems("")
+
+// openItems is the list's rule for what an open item is, with one more condition on the
+// rows it starts from (stagesOnly: the stages in $2).
+func openItems(only string) string {
+	return `
 WITH f AS (
     SELECT DISTINCT subject_kind, subject_id, stage FROM processing_jobs
      WHERE (state = 'failed' OR (state = 'pending' AND (parked_on IS NOT NULL OR error IS NOT NULL)))
        -- a stage a release removed keeps its rows until the cleanup migration
-       AND ` + retiredStagesOut + `
+       AND ` + retiredStagesOut + only + openItemsRest
+}
+
+const stagesOnly = `
+       AND stage = ANY($2::text[])`
+
+// OpenCounts answers, per stage of stages, how many items the failures list shows for it
+// with no filter chosen (open, not ignored): the same rule, so a number computed here
+// equals the list GET /api/queues/failures?stage=… answers (story 54.44: a plugin's
+// problems count). It starts from the stages' failed rows (processing_jobs_failed_cause_idx)
+// and their pending rows (processing_jobs_live_idx), and reads each subject's newest row by
+// processing_jobs_subject_history_idx.
+func OpenCounts(ctx context.Context, db *sql.DB, stages []string) (map[string]int, error) {
+	out := map[string]int{}
+	if len(stages) == 0 {
+		return out, nil
+	}
+	rows, err := db.QueryContext(ctx, openItems(stagesOnly)+`
+SELECT stage, count(*) FROM items WHERE status <> 'ignored' GROUP BY stage`, pq.Array([]string{}), pq.Array(stages))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var stage string
+		var n int
+		if err := rows.Scan(&stage, &n); err != nil {
+			return nil, err
+		}
+		out[stage] = n
+	}
+	return out, rows.Err()
+}
+
+const openItemsRest = `
 ), latest AS (
     -- each subject's newest row: one backward step of the subject history index
     SELECT l.*

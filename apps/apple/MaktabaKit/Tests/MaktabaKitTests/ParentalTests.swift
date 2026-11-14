@@ -1348,7 +1348,7 @@ final class HeldWaits: @unchecked Sendable {
                         #"{"items":[{"id":"y1","library_id":"l1","kind":"channel","url":"https://youtube.example/@seerah","folder":"Seerah channel"},{"id":"y2","library_id":"l1","kind":"playlist","url":"https://youtube.example/playlist?list=PL1","folder":null}]}"#)
         ParentalStub.on("GET /api/libraries/l2/youtube/sources", 200, #"{"items":[]}"#)
         ParentalStub.on("GET /api/plugins", 200,
-                        #"{"plugins":[{"id":"com.example.intro","names":{"name":{"en":"Intro skipper","ar":"متخطي المقدمة"}}},{"id":"com.example.bare","names":{"name":{}}}],"policy":{},"built_in":[]}"#)
+                        #"{"plugins":[{"id":"com.example.intro","names":{"name":{"en":"Intro skipper","ar":"متخطي المقدمة"}}},{"id":"com.example.bare","names":{"name":{}},"source":"file"},{"id":"tv.maktaba.subtitles","names":{"name":{"en":"Subtitle files"}},"source":"release"}],"policy":{},"core":[]}"#)
         let client = ParentalStub.client()
 
         let collections = try await RuleChoices.load(client, kind: "collection", en)
@@ -1364,6 +1364,7 @@ final class HeldWaits: @unchecked Sendable {
         #expect(plugins.first { $0.id == "com.example.intro" }?.title == "متخطي المقدمة", "a plugin by its name in the app's language")
         #expect(plugins.first { $0.id == "com.example.bare" }?.title == "com.example.bare", "one with no name by its id")
         #expect(try await RuleChoices.load(client, kind: "plugin", en).map(\.title) == ["com.example.bare", "Intro skipper"])
+        #expect(!plugins.contains { $0.id == "tv.maktaba.subtitles" }, "a plugin that came with Maktaba is not installed, so no rule can name it")
 
         #expect(try await RuleChoices.load(client, kind: "video", query: "a", en).isEmpty, "a video is searched for from two characters")
         #expect(RuleChoices.kinds == ParentalSubject.kinds, "every kind a rule may name can be added")

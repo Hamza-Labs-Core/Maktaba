@@ -38,7 +38,11 @@ When turning a plugin off touches anything else, a dialog names it first:
 
 Press **Cancel** and nothing changes.
 
-A switch that cannot be used is greyed out, and the reason is written beside it, for example **This home's plan does not include this plugin** or **Stopped. Press Start to let it run again.**
+A plugin that cannot be turned on has its switch greyed out while it is off, and the reason is written beside it, for example **This home's plan does not include this plugin** or **Stopped. Press Start to let it run again.** A plugin that is on can always be turned off.
+
+If Maktaba cannot read what else turning a plugin off would stop, it turns nothing off: the dialog says so, and you can **Try again** or **Turn off anyway**.
+
+When you turn on a plugin that cannot run beside something that is on, a dialog names what it would turn off. Press **Turn on** to switch, or **Cancel**.
 
 ### Install a plugin {#install}
 
@@ -104,7 +108,7 @@ They run inside the same program. The number is the whole program's.
 
 ### The switch is greyed out {#locked}
 
-Read the reason beside it. A stopped plugin has a **Start** button. A plugin your plan does not include needs a different plan. A plugin the store withdrew stays off.
+A greyed switch means the plugin is off and cannot be turned on right now. Read the reason beside it. A stopped plugin has a **Start** button. A plugin your plan does not include needs a different plan. A plugin the store withdrew stays off.
 
 ### The memory says "Not measured yet" {#not-measured}
 

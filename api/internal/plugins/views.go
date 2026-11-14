@@ -65,7 +65,9 @@ type Health struct {
 
 // StageView is one of a plugin's stages and its queue.
 type StageView struct {
-	Name    string `json:"name"`
+	Name string `json:"name"`
+	// Label is the stage's name for people as its manifest gives it ("" when it has none).
+	Label   string `json:"label,omitempty"`
 	Queue   string `json:"queue"`
 	Subject string `json:"subject"`
 	Version int    `json:"version"`
@@ -299,8 +301,10 @@ func (l *Lifecycle) Show(ctx context.Context, id string) (*Detail, error) {
 	}
 	_ = l.DB.QueryRowContext(ctx, `SELECT count(*), COALESCE(sum(bytes), 0) FROM plugin_data WHERE plugin_id = $1`, id).
 		Scan(&d.DataRows, &d.DataBytes)
-	// the other plugins the host runs: every enabled one
-	_ = l.each(ctx, `SELECT trim(leading $1 from id) FROM components WHERE id LIKE $1 || '%' AND want = 'enabled'`,
+	// the other plugins the host runs: every enabled one. The id is what follows the
+	// "plugin." prefix (never trim(): that takes a set of characters, not a prefix)
+	if err := l.each(ctx, `SELECT substr(id, length($1) + 1) FROM components
+		WHERE left(id, length($1)) = $1 AND want = 'enabled'`,
 		components.PluginPrefix, func(scan func(...any) error) error {
 			var other string
 			if err := scan(&other); err != nil {
@@ -308,7 +312,9 @@ func (l *Lifecycle) Show(ctx context.Context, id string) (*Detail, error) {
 			}
 			enabled = append(enabled, other)
 			return nil
-		})
+		}); err != nil {
+		return nil, err
+	}
 	d.Activity = page.activityOf(queues)
 	d.Resources = l.thirdPartyResources(&d.View, page, enabled)
 	d.Resources.DataRows, d.Resources.DataBytes = d.DataRows, d.DataBytes

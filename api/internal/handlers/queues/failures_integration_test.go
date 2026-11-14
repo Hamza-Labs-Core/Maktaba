@@ -87,6 +87,16 @@ func TestQueueHealth_AgainstPostgres(t *testing.T) {
 	if len(all.Items) != 2 || len(all.Facets["stage"]) != 2 {
 		t.Fatalf("all %+v", all)
 	}
+	// story 54.44: a plugin's problems count is this list's own count, stage by stage
+	counts, err := OpenCounts(context.Background(), db, []string{"content_hash", "fingerprint", "thumbnail"})
+	if err != nil || counts["content_hash"] != 1 || counts["fingerprint"] != 1 || counts["thumbnail"] != 0 {
+		t.Fatalf("open counts %v %v", counts, err)
+	}
+	for stage, n := range counts {
+		if got := get("?stage=" + stage); len(got.Items) != n {
+			t.Fatalf("%s: the list has %d items, the count says %d", stage, len(got.Items), n)
+		}
+	}
 	// story 54.44: a plugin's page links here with its stages joined by commas
 	if got := get("?stage=content_hash"); len(got.Items) != 1 || got.Items[0].Stage != "content_hash" {
 		t.Fatalf("one stage %+v", got.Items)

@@ -2940,9 +2940,10 @@ build fails when the two differ.
   a page at its own address. A plugin by Maktaba still comes with Maktaba and is updated with
   it; its page says so instead of offering Remove. The parts that must always run are part of
   Maktaba itself and are no longer shown as plugins. The Components page links to each
-  plugin's page. For scripts: `GET /api/plugins` has no `built_in` field any more; Maktaba's
-  plugins are in `plugins` with `publisher` and `source`, and `GET /api/queues/failures`
-  takes several stages in `stage`.
+  plugin's page. For scripts: `GET /api/plugins` has no `built_in` field any more. Its
+  `plugins` list is the installed plugins, as before; `GET /api/plugins?release=true` adds
+  Maktaba's plugins with `publisher` and `source`. `GET /api/queues/failures` takes several
+  stages in `stage`.
 
 ### Fixed
 

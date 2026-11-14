@@ -2,8 +2,8 @@ package plugins
 
 // The admin routes of Epic 54 Phase 1 (stories 54.07, 54.08 §3, 54.10, 54.11):
 //
-//	GET    /api/plugins                      every plugin: the installed ones and the ones Maktaba
-//	                                         publishes, in one list (story 54.44), and core
+//	GET    /api/plugins                      the installed plugins, and core; ?release=true: also the
+//	                                         plugins Maktaba publishes, in the same list (story 54.44)
 //	GET    /api/plugins/policy               the home's policy (allow_unreviewed)
 //	GET    /api/plugins/graph                the home's plugin graph and its findings (54.39, 54.41)
 //	GET    /api/plugins/{id}/downstream      what turning it off does: other plugins' stages that go
@@ -15,7 +15,8 @@ package plugins
 //	POST   /api/plugins/install              multipart: file, grants, libraries, all_libraries, enable, confirm_name
 //	GET    /api/plugins/{id}                 one plugin's detail
 //	PUT    /api/plugins/{id}/grants          {capabilities, libraries, all_libraries}
-//	POST   /api/plugins/{id}/enable          want enabled (clears keep-off)
+//	POST   /api/plugins/{id}/enable          want enabled (clears keep-off); {with_conflicts: true}
+//	                                         also turns off what it cannot run with
 //	POST   /api/plugins/{id}/disable         want installed (sets keep-off)
 //	POST   /api/plugins/{id}/start, /stop    the Epic 51 hold
 //	POST   /api/plugins/{id}/update          multipart: a new version of this plugin
@@ -177,11 +178,24 @@ func (h *Admin) fail(w http.ResponseWriter, r *http.Request, err error) {
 		if ref.ID != "" {
 			e = e.With("id", ref.ID)
 		}
+		if len(ref.Conflicts) > 0 {
+			e = e.With("conflicts", h.conflicts(ref.Conflicts))
+		}
 		httperror.Write(w, r, e)
 		return
 	}
 	h.log().ErrorContext(r.Context(), "plugins: request failed", "err", err, "event", "plugins_error")
 	httperror.Write(w, r, httperror.Internal("plugins"))
+}
+
+// conflicts names each component in the way of an enable: its id, its title's key and the
+// plugin whose component it is, when it has one.
+func (h *Admin) conflicts(ids []string) []pl.AlsoOff {
+	out := make([]pl.AlsoOff, 0, len(ids))
+	for _, id := range ids {
+		out = append(out, pl.NameComponent(id, ""))
+	}
+	return out
 }
 
 // actor is who asks, as the components routes name them.
@@ -206,7 +220,10 @@ func (h *Admin) actor(r *http.Request) svc.Actor {
 }
 
 func (h *Admin) list(w http.ResponseWriter, r *http.Request) {
-	v, core, err := h.L.ListAll(r.Context())
+	// ?release=true: also the plugins Maktaba publishes that came with this release (the
+	// Plugins page sends it). Without it the list is the installed plugins only, as every
+	// earlier client reads it (the parental rule pickers of shipped apps among them).
+	v, core, err := h.L.ListAll(r.Context(), r.URL.Query().Get("release") == "true")
 	if err != nil {
 		h.fail(w, r, err)
 		return
@@ -501,11 +518,23 @@ func (h *Admin) apply(w http.ResponseWriter, r *http.Request, ch svc.Change) {
 	id := chi.URLParam(r, "id")
 	// a Maktaba-published plugin's switch is its component's desired row (story 54.44)
 	ch.ID = pl.ComponentOf(id)
-	if _, err := h.L.Show(r.Context(), id); err != nil {
+	if err := h.L.Exists(r.Context(), id); err != nil {
 		h.fail(w, r, err)
 		return
 	}
-	if _, err := h.L.Components.Apply(r.Context(), svc.Request{Changes: []svc.Change{ch}}, h.actor(r)); err != nil {
+	// {"with_conflicts": true}: turning it on also turns off what it cannot run with, in
+	// the same transaction (the answer to a 409 component_conflicts, which names them)
+	var body struct {
+		WithConflicts bool `json:"with_conflicts"`
+	}
+	if r.ContentLength != 0 {
+		if e := common.ReadJSON(r, &body, 1<<10); e != nil {
+			httperror.Write(w, r, e)
+			return
+		}
+	}
+	req := svc.Request{Changes: []svc.Change{ch}, WithConflicts: body.WithConflicts}
+	if _, err := h.L.Components.Apply(r.Context(), req, h.actor(r)); err != nil {
 		h.fail(w, r, err)
 		return
 	}

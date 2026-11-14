@@ -199,8 +199,10 @@ outcome}` (`ok` و`failed`)، و`maktaba_plugin_job_seconds{plugin, quantile}` (
 
 ### كل الإضافات في قائمة واحدة
 
-يجيب `GET /api/plugins` بـ`{plugins, policy, core}`. و`plugins` قائمة واحدة: الإضافات التي ثبّتها
-مسؤول والإضافات التي تنشرها مكتبة، بالشكل نفسه. لا يوجد حقل `built_in`. وبجانب الحقول أعلاه، لكل إضافة:
+يجيب `GET /api/plugins` بـ`{plugins, policy, core}`. افتراضيًا `plugins` هي الإضافات التي ثبّتها
+مسؤول، كما كانت دائمًا: فالعميل الذي يعرضها على أنها الإضافات المثبّتة (منتقي القواعد، أو سكربت) يظل
+يعمل. ويعرض `GET /api/plugins?release=true` أيضًا الإضافات التي تنشرها مكتبة وجاءت مع هذا الإصدار، في
+القائمة نفسها وبالشكل نفسه؛ وصفحة الإضافات تطلبه. لا يوجد حقل `built_in`. وبجانب الحقول أعلاه، لكل إضافة:
 
 | الحقل | معناه |
 |---|---|
@@ -208,7 +210,7 @@ outcome}` (`ok` و`failed`)، و`maktaba_plugin_job_seconds{plugin, quantile}` (
 | `source` | `release` (جاءت مع إصدار مكتبة هذا)، أو `store`، أو `file` |
 | `component` | المكوّن الذي يكتب فيه مفتاحها: مكوّنها لإضافة من مكتبة، و`plugin.<id>` لغيرها |
 | `stage_names`، `queues` | مراحلها، وأسماؤها في قائمة الانتظار (يقبل `GET /api/queues/failures?stage=` عدة مراحل تفصل بينها فواصل) |
-| `switch_locked` | سبب تعذّر استخدام مفتاحها (`licence_missing`، `held`، `revoked`، …)؛ ويغيب حين يمكن استخدامه |
+| `switch_locked` | سبب تعذّر تشغيلها من مفتاحها (`licence_missing`، `held`، `revoked`، …)؛ ويغيب حين يمكن. وإيقاف الإضافة لا يُقفل أبدًا |
 | `activity` | `pending`، `running`، `done_24h`، `failed_24h`، `problems`، `avg_ms`، `p95_ms` |
 | `resources` | `processes` (كل واحدة `{process, group, component, machine, rss_mb, scope, stages, shared_with, shared_core}`)، و`shared`، ولإضافة الطرف الثالث `data_rows` و`data_bytes` و`data_mb` و`memory_mb` و`peak_memory_mb` |
 
@@ -220,8 +222,17 @@ outcome}` (`ok` و`failed`)، و`maktaba_plugin_job_seconds{plugin, quantile}` (
 `GET /api/plugins/{id}` عنها بـ`404 plugin_not_installed`.
 
 يجيب `GET /api/plugins/{id}/downstream` بما يفعله إيقاف الإضافة غير إيقافها هي: `stages` (مراحل إضافات
-أخرى تتعطّل)، و`also` (مكوّنات تنتظر أو تعمل بأقل، مع `plugin` لكل منها حين يكون له إضافة)،
-و`processes`، و`loops`، و`features`، و`queued_jobs_parked`، و`drain_s`.
+أخرى تتعطّل: ولإضافة من مكتبة، مراحل الأطراف الثالثة التي تبدأ عند حدث تطلقه مراحلها)، و`also`
+(مكوّنات تنتظر أو تعمل بأقل، التابعة لها مباشرة وتوابعها، مع `plugin` لكل منها حين يكون له إضافة)،
+و`fed` (مراحل إضافات أخرى، أو مراحل مكتبة نفسها، التي تسلّمها مراحلها العمل)، و`processes`، و`loops`،
+و`features`، و`queued_jobs_parked`، و`drain_s`.
+
+يجيب `POST /api/plugins/{id}/enable` بـ`409 component_conflicts` مع `conflicts` (كل واحد
+`{component, title_key, plugin}`) حين يعمل شيء لا يمكن أن تعمل بجانبه. وإرسال
+`{"with_conflicts": true}` يوقف تلك الأشياء في التغيير نفسه.
+
+يُحسب `activity.problems` للإضافة بقاعدة `GET /api/queues/failures`: فهو يساوي عدد العناصر التي تعرضها
+تلك القائمة لمراحل الإضافة.
 
 الإضافة التي `source` فيها `"release"` تُشغَّل وتُوقَف بـ`enable` و`disable` و`start` و`stop` مثل غيرها.
 أما مسارات تحديثها وإرجاعها وإزالتها ومنحها وإعداداتها وكتاباتها فتجيب بـ`409 plugin_with_release`:

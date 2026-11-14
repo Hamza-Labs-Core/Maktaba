@@ -63,7 +63,7 @@ export function statusWords(t: T, locale: "en" | "ar", p: Plugin): string {
   return why || phaseWord(t, p.phase || "off");
 }
 
-/** Why a plugin's switch cannot be used, in words ("" when it can). */
+/** Why a plugin cannot be turned on from its switch, in words ("" when it can). */
 export function lockWords(t: T, locale: "en" | "ar", p: Plugin): string {
   const code = p.switch_locked;
   if (!code) return "";
@@ -89,10 +89,10 @@ export function failuresLink(queues: string[]): string {
     : "/queue/failures";
 }
 
-/** A plugin's stage as the queue names it: a Maktaba stage by its name, a third-party
- * plugin's by its queue (p_<hash>_<stage>), which GET /api/plugins/{id} gives. */
-export function stageTitle(t: T, name: string): string {
+/** A stage's name for people: Maktaba's own word for it, else the name its manifest gives
+ * it, and its identifier only when it has neither. */
+export function stageTitle(t: T, name: string, label?: string): string {
   const key = `queue.stage.${name}.title`;
   const hit = t(key);
-  return hit === key ? name : hit;
+  return hit === key ? label || name : hit;
 }

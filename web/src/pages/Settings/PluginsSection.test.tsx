@@ -102,7 +102,8 @@ let trust: unknown = {
 
 function routes(d: PluginDetail = detail(), list: Plugin[] = [plugin()]) {
   get.mockImplementation(async (path: string) => {
-    if (path === "/api/plugins") return { plugins: list, policy: { allow_unreviewed: false } };
+    if (path === "/api/plugins?release=true")
+      return { plugins: list, policy: { allow_unreviewed: false } };
     if (path === `/api/plugins/${d.id}`) return d;
     if (path.startsWith(`/api/plugins/${d.id}/writes`))
       return {
@@ -649,12 +650,18 @@ describe("Settings → Plugins: one page for every plugin (Epic 54, story 54.44)
   /** The page's reads: the list, one Maktaba plugin's page and one third-party plugin's. */
   function page(
     list: Plugin[],
-    opts: { detail?: PluginDetail; effect?: Record<string, unknown>; core?: boolean } = {}
+    opts: {
+      detail?: PluginDetail;
+      effect?: Record<string, unknown>;
+      core?: boolean;
+      rules?: { key: string; title: string; what: string; fields: never[] }[];
+    } = {}
   ) {
     const d = opts.detail ?? maktabaDetail();
     const tp = detail({ ...third(), resources: thirdResources });
     get.mockImplementation(async (path: string) => {
-      if (path === "/api/plugins")
+      if (path === "/api/rules") return { sections: opts.rules ?? [] };
+      if (path === "/api/plugins?release=true")
         return {
           plugins: list,
           policy: { allow_unreviewed: false },
@@ -704,7 +711,8 @@ describe("Settings → Plugins: one page for every plugin (Epic 54, story 54.44)
   // Epic 54: a first-party runner that failed is named above the list, with its stages
   it("names a failed plugin runner, its machine and its stages", async () => {
     get.mockImplementation(async (path: string) => {
-      if (path === "/api/plugins") return { plugins: [], policy: { allow_unreviewed: false } };
+      if (path === "/api/plugins?release=true")
+        return { plugins: [], policy: { allow_unreviewed: false } };
       if (path === "/api/admin/system/status")
         return {
           status: "degraded",
@@ -906,24 +914,284 @@ describe("Settings → Plugins: one page for every plugin (Epic 54, story 54.44)
     expect(within(sub).getByRole("switch", { name: /Subtitles/ })).not.toBeChecked();
   });
 
-  it.each([
+  const LOCKS = [
     ["licence_missing", "plugins.lock.licence_missing"],
     ["held", "plugins.lock.held"],
     ["revoked", "plugins.lock.revoked"],
     ["platform_unsupported", "components.reason.platform_unsupported"],
-  ])("T05: a switch that cannot be used (%s) is disabled, with why in words", async (code, key) => {
-    page([maktaba({ switch_locked: code, held_by: code === "held" ? "owner" : undefined })]);
+    ["incompatible", "components.reason.incompatible"],
+    ["unreviewed_disallowed", "components.reason.unreviewed_disallowed"],
+    ["isolation_held", "components.reason.isolation_held"],
+  ] as const;
+
+  it.each(LOCKS)(
+    "T05: a plugin that is off and locked (%s) cannot be turned on, with why in words",
+    async (code, key) => {
+      page([
+        maktaba({
+          want: "installed",
+          phase: "off",
+          switch_locked: code,
+          held_by: code === "held" ? "owner" : undefined,
+        }),
+      ]);
+      open();
+      const sub = await card(/Subtitles/);
+      const sw = within(sub).getByRole("switch", { name: /Subtitles/ });
+      expect(sw).not.toBeChecked();
+      expect(sw).toBeDisabled();
+      const why = within(sub).getByTestId("switch-locked");
+      expect(EN[key], key).toBeTruthy();
+      expect(AR[key], key).toBeTruthy();
+      expect(why.textContent).toBeTruthy();
+      expect(sw).toHaveAttribute("aria-describedby", why.id);
+      // a stopped plugin can be started from the same place
+      expect(
+        within(sub).queryAllByRole("button", { name: EN["plugins.action.start"] })
+      ).toHaveLength(code === "held" ? 1 : 0);
+      await userEvent.click(sw);
+      expect(post).not.toHaveBeenCalled();
+    }
+  );
+
+  it.each(LOCKS)(
+    "T05: a plugin that is on and locked (%s) can still be turned off",
+    async (code) => {
+      page([maktaba({ switch_locked: code, held_by: code === "held" ? "owner" : undefined })]);
+      post.mockResolvedValue(maktabaDetail({ want: "installed" }));
+      open();
+      const sub = await card(/Subtitles/);
+      const sw = within(sub).getByRole("switch", { name: /Subtitles/ });
+      expect(sw).toBeChecked();
+      expect(sw).toBeEnabled();
+      // the reason is still said
+      expect(within(sub).getByTestId("switch-locked").textContent).toBeTruthy();
+      await userEvent.click(sw);
+      await waitFor(() =>
+        expect(post).toHaveBeenCalledWith("/api/plugins/tv.maktaba.subtitles/disable")
+      );
+    }
+  );
+
+  it("T04: when what else stops cannot be read, nothing is turned off until the admin says so", async () => {
+    page([maktaba()]);
+    const base = get.getMockImplementation()!;
+    let fails = 2;
+    let asked = 0;
+    get.mockImplementation(async (path: string) => {
+      if (path.endsWith("/downstream")) {
+        asked++;
+        if (fails-- > 0) throw new Error("network");
+        return quiet;
+      }
+      return base(path);
+    });
+    post.mockResolvedValue(maktabaDetail({ want: "installed" }));
     open();
     const sub = await card(/Subtitles/);
     const sw = within(sub).getByRole("switch", { name: /Subtitles/ });
-    expect(sw).toBeDisabled();
-    const why = within(sub).getByTestId("switch-locked");
-    expect(why).toHaveTextContent(EN[key]);
-    expect(sw).toHaveAttribute("aria-describedby", why.id);
-    // a stopped plugin can be started from the same place
-    expect(within(sub).queryAllByRole("button", { name: EN["plugins.action.start"] })).toHaveLength(
-      code === "held" ? 1 : 0
+    await userEvent.click(sw);
+    let dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByTestId("effect-unread")).toHaveTextContent(
+      EN["plugins.switch.unread"]
     );
+    expect(post).not.toHaveBeenCalled();
+    // Try again reads it again; it fails again, and still nothing is turned off
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: EN["plugins.switch.unread_retry"] })
+    );
+    dialog = await screen.findByRole("dialog");
+    expect(asked).toBe(2);
+    expect(post).not.toHaveBeenCalled();
+    // Cancel leaves it on
+    await userEvent.click(within(dialog).getByRole("button", { name: EN["common.cancel"] }));
+    expect(post).not.toHaveBeenCalled();
+    expect(sw).toBeChecked();
+    // the third read answers: nothing else stops, so it applies
+    await userEvent.click(sw);
+    await waitFor(() =>
+      expect(post).toHaveBeenCalledWith("/api/plugins/tv.maktaba.subtitles/disable")
+    );
+    expect(asked).toBe(3);
+  });
+
+  it("T04: Turn off anyway turns it off without the list, once", async () => {
+    page([maktaba()]);
+    const base = get.getMockImplementation()!;
+    get.mockImplementation(async (path: string) => {
+      if (path.endsWith("/downstream")) throw new Error("network");
+      return base(path);
+    });
+    post.mockResolvedValue(maktabaDetail({ want: "installed" }));
+    open();
+    const sub = await card(/Subtitles/);
+    await userEvent.click(within(sub).getByRole("switch", { name: /Subtitles/ }));
+    await userEvent.click(
+      within(await screen.findByRole("dialog")).getByRole("button", {
+        name: EN["plugins.switch.unread_anyway"],
+      })
+    );
+    await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
+    expect(post).toHaveBeenCalledWith("/api/plugins/tv.maktaba.subtitles/disable");
+    expect(AR["plugins.switch.unread"]).toBeTruthy();
+    expect(AR["plugins.switch.unread_anyway"]).toBeTruthy();
+    expect(AR["plugins.switch.unread_retry"]).toBeTruthy();
+  });
+
+  it("T04: a second click while the switch works does nothing", async () => {
+    page([maktaba()]);
+    const base = get.getMockImplementation()!;
+    let release: (v: unknown) => void = () => undefined;
+    let asked = 0;
+    get.mockImplementation(async (path: string) => {
+      if (path.endsWith("/downstream")) {
+        asked++;
+        return new Promise((r) => (release = r));
+      }
+      return base(path);
+    });
+    post.mockResolvedValue(maktabaDetail({ want: "installed" }));
+    open();
+    const sub = await card(/Subtitles/);
+    const sw = within(sub).getByRole("switch", { name: /Subtitles/ });
+    await userEvent.click(sw);
+    await waitFor(() => expect(sw).toBeDisabled());
+    await userEvent.click(sw);
+    expect(asked).toBe(1);
+    release(quiet);
+    await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
+  });
+
+  it("T04: the stages it feeds are named with the plugin each belongs to", async () => {
+    page([maktaba(), thumbs()], {
+      effect: {
+        ...quiet,
+        fed: [
+          { stage: "review_pages", label: "Review pages", plugin: "tv.maktaba.thumbnails" },
+          { stage: "plan_channels", label: "Plan channels" },
+        ],
+      },
+    });
+    open();
+    const sub = await card(/Subtitles/);
+    await userEvent.click(within(sub).getByRole("switch", { name: /Subtitles/ }));
+    const fed = within(await screen.findByRole("dialog")).getByTestId("effect-fed");
+    expect(fed).toHaveTextContent(/in .?Thumbnails/);
+    // a stage by its name, never its identifier
+    expect(fed.textContent).not.toContain("review_pages");
+    expect(fed.textContent).not.toContain("plan_channels");
+    expect(post).not.toHaveBeenCalled();
+  });
+
+  it("T04: turning on what cannot run with something that is on names it and offers to switch", async () => {
+    page([
+      maktaba({
+        id: "tv.maktaba.livetv-slots",
+        component: "livetv.slots",
+        names: { name: { en: "Live TV changes", ar: "تغييرات البث" }, summary: { en: "", ar: "" } },
+        want: "installed",
+        phase: "off",
+      }),
+    ]);
+    post.mockRejectedValueOnce(
+      problem(409, "component_conflicts", {
+        conflicts: [
+          { component: "livetv.inprocess", title_key: "components.livetv.inprocess.title" },
+        ],
+      })
+    );
+    post.mockResolvedValue(maktabaDetail());
+    open();
+    const slots = await card(/Live TV changes/);
+    await userEvent.click(within(slots).getByRole("switch", { name: /Live TV changes/ }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByTestId("switch-conflicts")).toHaveTextContent(
+      EN["components.livetv.inprocess.title"]
+    );
+    // the server's English detail is not what the admin reads
+    expect(screen.queryByText("component_conflicts")).toBeNull();
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: EN["components.confirm.do.on"] })
+    );
+    await waitFor(() =>
+      expect(post).toHaveBeenLastCalledWith("/api/plugins/tv.maktaba.livetv-slots/enable", {
+        with_conflicts: true,
+      })
+    );
+    expect(AR["components.confirm.conflicts"]).toBeTruthy();
+  });
+
+  it("T07: settings links and stages are named, never shown as identifiers", async () => {
+    page([maktaba()], {
+      detail: maktabaDetail({
+        settings: ["rules.detect", "rules.nameless"],
+        stages: [
+          {
+            name: "brand_new_stage",
+            label: "Brand new step",
+            queue: "brand_new_stage",
+            subject: "video",
+            version: 1,
+            pending: 0,
+            running: 0,
+            done_24h: 0,
+            failed_24h: 0,
+            runs_in: "fp",
+          },
+        ],
+      }),
+      rules: [{ key: "detect", title: "Series detection", what: "", fields: [] }],
+    });
+    open("/settings/plugins/tv.maktaba.subtitles");
+    const links = await screen.findByTestId("plugin-settings-links");
+    // the server's title for a section Maktaba has no word for
+    expect(await within(links).findByRole("link", { name: "Series detection" })).toHaveAttribute(
+      "href",
+      "/settings/rules#detect"
+    );
+    expect(links.textContent).not.toMatch(/\bdetect\b/);
+    // a section with no title anywhere is still not its identifier
+    expect(
+      within(links).getByRole("link", { name: EN["plugins.settings.section_unnamed"] })
+    ).toHaveAttribute("href", "/settings/rules#nameless");
+    expect(links.textContent).not.toContain("nameless");
+    // a stage Maktaba has no word for takes its manifest's name, and its runner has a name
+    const stages = screen.getByTestId("plugin-stages");
+    expect(within(stages).getByRole("link", { name: "Brand new step" })).toBeInTheDocument();
+    expect(stages.textContent).not.toContain("brand_new_stage");
+    expect(stages).toHaveTextContent(EN["plugins.group.fp"]);
+    expect(AR["plugins.group.fp"]).toBeTruthy();
+  });
+
+  it("T07: a slow answer for the plugin just left does not overwrite the one now open", async () => {
+    page([maktaba(), thumbs()]);
+    const base = get.getMockImplementation()!;
+    let late: (v: unknown) => void = () => undefined;
+    get.mockImplementation(async (path: string) => {
+      if (path === "/api/plugins/tv.maktaba.slow") return new Promise((r) => (late = r));
+      return base(path);
+    });
+    renderPage(<PluginsSection />, {
+      path: "/settings/plugins/tv.maktaba.slow",
+      route: "/settings/plugins/*",
+      extraRoutes: undefined,
+    });
+    // the slow page is still loading; the admin goes to another plugin
+    expect(await screen.findByText(EN["plugins.page.loading"])).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("link", { name: EN["plugins.page.back"] }));
+    const sub = await card(/Subtitles/);
+    await userEvent.click(within(sub).getByRole("link", { name: EN["plugins.action.open"] }));
+    expect(await screen.findByRole("heading", { level: 2, name: /Subtitles/ })).toBeInTheDocument();
+    // the late answer arrives now: the page stays the one that is open
+    late(
+      maktabaDetail({
+        id: "tv.maktaba.slow",
+        names: { name: { en: "Slowpoke", ar: "" }, summary: { en: "", ar: "" } },
+      })
+    );
+    await new Promise((r) => setTimeout(r, 20));
+    expect(screen.getByRole("heading", { level: 2, name: /Subtitles/ })).toBeInTheDocument();
+    expect(screen.queryByText(/Slowpoke/)).toBeNull();
   });
 
   it("T06: a card's problems count links to the failures view filtered to its stages", async () => {
@@ -1011,7 +1279,8 @@ describe("Settings → Plugins: one page for every plugin (Epic 54, story 54.44)
     page([maktaba()]);
     get.mockImplementation(async (path: string) => {
       if (path === "/api/plugins/tv.maktaba.core-media") throw problem(404, "plugin_not_installed");
-      if (path === "/api/plugins") return { plugins: [], policy: { allow_unreviewed: false } };
+      if (path === "/api/plugins?release=true")
+        return { plugins: [], policy: { allow_unreviewed: false } };
       throw new Error("unexpected " + path);
     });
     open("/settings/plugins/tv.maktaba.core-media");
@@ -1103,7 +1372,10 @@ describe("Settings → Plugins: one page for every plugin (Epic 54, story 54.44)
 
   it("T10: Arabic: the list, the filter, the lock reason and the page, right to left", async () => {
     localStorage.setItem("mkt:locale", "ar");
-    page([maktaba({ switch_locked: "licence_missing" }), thumbs()]);
+    page([
+      maktaba({ switch_locked: "licence_missing", want: "installed", phase: "off" }),
+      thumbs(),
+    ]);
     open();
     const sub = await card(/الترجمات/);
     expect(document.documentElement.dir).toBe("rtl");

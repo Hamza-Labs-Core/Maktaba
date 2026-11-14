@@ -3,10 +3,14 @@ package plugins
 import (
 	"bytes"
 	"context"
+	"slices"
+	"sort"
 	"testing"
 
+	svc "github.com/Hamza-Labs-Core/Maktaba/api/internal/components"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/plugins/firstparty"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/components"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/components/store"
 )
 
 // Story 54.44: one list of every plugin. A plugin an admin installed and the plugins
@@ -19,7 +23,7 @@ func TestListAllIsOneListAndCoreIsNoPlugin(t *testing.T) {
 		Package: bytes.NewReader(lcManifest("1.0.0", nil, nil, 1))}, admin); err != nil {
 		t.Fatal(err)
 	}
-	list, core, err := f.l.ListAll(context.Background())
+	list, core, err := f.l.ListAll(context.Background(), true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -46,6 +50,12 @@ func TestListAllIsOneListAndCoreIsNoPlugin(t *testing.T) {
 	}
 	if len(core) != 1 || core[0].Component != "core.pipeline" || core[0].TitleKey == "" {
 		t.Fatalf("core: %+v", core)
+	}
+	// asked without the release's plugins (every client before story 54.44, the parental
+	// rule pickers among them): the installed plugins only
+	plain, _, err := f.l.ListAll(context.Background(), false)
+	if err != nil || len(plain) != 1 || plain[0].ID != lcPlugin {
+		t.Fatalf("the default list: %+v %v", plain, err)
 	}
 	// every published plugin's component is switchable and names it back
 	for _, fp := range published() {
@@ -81,26 +91,43 @@ func TestEffectAndFlowOfAPublishedPlugin(t *testing.T) {
 	if !slots || len(e.Loops) == 0 || len(e.Features) != 1 || e.Features[0] != "live_tv" {
 		t.Fatalf("livetv's effect: %+v", e)
 	}
-	if _, err := f.l.Effect(ctx, "dev.example.none"); asProblem(err) == nil || asProblem(err).Code != CodeNotInstalled {
-		t.Fatalf("an unknown plugin's effect: %v", err)
-	}
-	fl, err := f.l.Flow(ctx, "tv.maktaba.thumbnails")
+	// the stages its stages hand work to, each with the plugin it belongs to: thumbnails'
+	// small thumbnail feeds the review pages, which are Classify's
+	th, err := f.l.Effect(ctx, "tv.maktaba.thumbnails")
 	if err != nil {
 		t.Fatal(err)
 	}
-	mine, core := 0, 0
-	for _, n := range fl.Graph.Nodes {
-		switch {
-		case n.Plugin == "tv.maktaba.thumbnails" && n.Kind == "stage":
-			mine++
-		case n.Kind == "core" && n.Plugin == "":
-			core++
-		case n.Plugin == "tv.maktaba.core-media":
-			t.Fatalf("a core stage is drawn as a plugin's: %+v", n)
+	fed := false
+	for _, x := range th.Fed {
+		if x.Stage == "review_pages" && x.Plugin == "tv.maktaba.classify" && x.Label != "" {
+			fed = true
+		}
+		if firstparty.ByStage(x.Stage) == nil || firstparty.ByStage(x.Stage).ID == "tv.maktaba.thumbnails" {
+			t.Fatalf("thumbnails feeds %q, which is not another plugin's stage", x.Stage)
 		}
 	}
-	if mine != len(firstparty.ByID("tv.maktaba.thumbnails").Stages) || len(fl.Graph.Edges) == 0 {
-		t.Fatalf("thumbnails' flow: %d of its stages, %d edges, %d core", mine, len(fl.Graph.Edges), core)
+	if !fed {
+		t.Fatalf("thumbnails' effect names no stage it feeds: %+v", th)
+	}
+	// a third-party stage that starts on an event one of its stages raises goes idle with
+	// it (events.toml: transcript.ready is transcribe's): named once that plugin is on
+	f.allowUnreviewed(t)
+	follower := append(lcManifest("1.0.0", nil, nil, 1), []byte("  [[stage.trigger]]\n  event = \"transcript.ready\"\n")...)
+	if _, err := f.l.Install(ctx, InstallRequest{ConfirmName: "Lifecycle", Package: bytes.NewReader(follower)}, admin); err != nil {
+		t.Fatal(err)
+	}
+	if e, _ := f.l.Effect(ctx, "tv.maktaba.transcription"); len(e.Stages) != 0 {
+		t.Fatalf("a plugin that is off is named as going idle: %+v", e.Stages)
+	}
+	if _, err := f.l.Components.Apply(ctx, svc.Request{Changes: []svc.Change{{ID: "plugin." + lcPlugin, Want: components.WantEnabled}}}, admin); err != nil {
+		t.Fatal(err)
+	}
+	if e, _ := f.l.Effect(ctx, "tv.maktaba.transcription"); len(e.Stages) != 1 || e.Stages[0] != lcPlugin+"/work" {
+		t.Fatalf("the stage that follows transcription is not named: %+v", e)
+	}
+	// a plugin whose stages raise none of its events names none
+	if e, _ := f.l.Effect(ctx, "tv.maktaba.subtitles"); len(e.Stages) != 0 {
+		t.Fatalf("subtitles raises no event it follows: %+v", e.Stages)
 	}
 }
 
@@ -131,5 +158,69 @@ func TestLockAndActivity(t *testing.T) {
 	if RefuseWithRelease("tv.maktaba.subtitles") == nil || RefuseWithRelease("dev.example.x") != nil ||
 		RefuseWithRelease("tv.maktaba.core-media") != nil {
 		t.Fatal("only a plugin of the release is refused its own update and removal")
+	}
+}
+
+// Story 54.44 (review): the other plugins the host runs are named by their own ids. An id
+// is what follows "plugin."; stripping the characters of the prefix instead mangled every
+// id that starts with p, l, u, g, i, n or a dot (plugin.io.example.x became o.example.x),
+// so a plugin was listed as sharing the host with itself under a name no plugin has.
+func TestHostSharersKeepTheirIDs(t *testing.T) {
+	f := newLC(t)
+	f.allowUnreviewed(t)
+	ctx := context.Background()
+	ids := []string{"io.example.x", "net.foo.bar", "plugin.example.p", "gui.lun.g", "lu.nip.u", "un.gil.n"}
+	for _, id := range ids {
+		pkg := bytes.ReplaceAll(lcManifest("1.0.0", nil, nil, 1), []byte(lcPlugin), []byte(id))
+		if _, err := f.l.Install(ctx, InstallRequest{ConfirmName: "Lifecycle", Package: bytes.NewReader(pkg)}, admin); err != nil {
+			t.Fatalf("%s: %v", id, err)
+		}
+	}
+	if err := f.l.Components.Store.ReportStatus(ctx, store.Home, "supervisor", []store.Status{{ID: "plugins.host", Phase: "running",
+		Detail: map[string]any{"rss_mb": 120}}}); err != nil {
+		t.Fatal(err)
+	}
+	enable := func(id string) {
+		t.Helper()
+		if _, err := f.l.Components.Apply(ctx, svc.Request{Changes: []svc.Change{{ID: "plugin." + id, Want: components.WantEnabled}}}, admin); err != nil {
+			t.Fatalf("enable %s: %v", id, err)
+		}
+	}
+	// alone in the host: it shares with no one
+	enable(ids[0])
+	d, err := f.l.Show(ctx, ids[0])
+	if err != nil || len(d.Resources.Processes) != 1 || len(d.Resources.Processes[0].SharedWith) != 0 || d.Resources.Shared {
+		t.Fatalf("a plugin alone in the host: %+v %v", d.Resources, err)
+	}
+	for _, id := range ids[1:] {
+		enable(id)
+	}
+	for _, id := range ids {
+		d, err := f.l.Show(ctx, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var want []string
+		for _, o := range ids {
+			if o != id {
+				want = append(want, o)
+			}
+		}
+		got := append([]string{}, d.Resources.Processes[0].SharedWith...)
+		sort.Strings(got)
+		sort.Strings(want)
+		if !slices.Equal(got, want) || !d.Resources.Shared {
+			t.Errorf("%s shares the host with %v, want %v", id, got, want)
+		}
+	}
+	// the list says the same
+	list, _, err := f.l.ListAll(ctx, false)
+	if err != nil || len(list) != len(ids) {
+		t.Fatalf("list: %d %v", len(list), err)
+	}
+	for _, v := range list {
+		if slices.Contains(v.Resources.Processes[0].SharedWith, v.ID) || len(v.Resources.Processes[0].SharedWith) != len(ids)-1 {
+			t.Errorf("%s in the list shares with %v", v.ID, v.Resources.Processes[0].SharedWith)
+		}
 	}
 }

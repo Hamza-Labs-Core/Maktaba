@@ -16,8 +16,11 @@ package plugins
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"net/http"
+	"slices"
 	"sort"
 	"strings"
 
@@ -28,6 +31,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/shared/components"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/components/store"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/plugins/pluginflow"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/plugins/pluginmanifest"
 )
 
 // Who publishes a plugin, and where this home got it.
@@ -44,7 +48,8 @@ const (
 // update or roll back on its own, grants, schema settings, reverting writes (409).
 const CodeWithRelease = "plugin_with_release"
 
-// Switch locks: why a plugin's switch cannot be used (the reason's words are Epic 51's).
+// Switch locks: why a plugin's switch cannot turn it on (the reason's words are Epic 51's).
+// Turning a plugin off is never locked.
 var switchLocks = map[string]bool{
 	"licence_missing": true, "platform_unsupported": true, "env_override": true, "boot_flag": true,
 	"reconcile_off": true, "incompatible": true, "revoked": true, "isolation_held": true,
@@ -235,7 +240,10 @@ type stageActivity struct {
 	done int
 }
 
-// loadPage reads the components, their status rows and the jobs of stages.
+// loadPage reads the components, their status rows, the jobs of stages (the stages whose
+// numbers the caller shows: a list's every plugin, a detail's one plugin) and where every
+// first-party stage runs (job_stages.impl, a few dozen rows: what shares a process needs
+// every plugin's).
 func (l *Lifecycle) loadPage(ctx context.Context, stages []string) (*pageData, error) {
 	d := &pageData{comps: map[string]svc.View{}, status: map[string][]store.Status{},
 		activity: map[string]stageActivity{}, impl: map[string]string{}}
@@ -257,67 +265,10 @@ func (l *Lifecycle) loadPage(ctx context.Context, stages []string) (*pageData, e
 			}
 		}
 	}
-	if len(stages) == 0 || l.DB == nil {
+	if l.DB == nil {
 		return d, nil
 	}
-	arg := pq.Array(stages)
-	// three reads, each on its own index (0183's live and done indexes, the failed one)
-	if err := l.each(ctx, `SELECT stage, count(*) FILTER (WHERE state = 'pending'),
-		count(*) FILTER (WHERE state IN ('claimed', 'running', 'resuming'))
-		FROM processing_jobs WHERE stage = ANY($1) AND state IN ('pending', 'claimed', 'running', 'resuming', 'paused')
-		GROUP BY stage`, arg, func(scan func(...any) error) error {
-		var stage string
-		var p, r int
-		if err := scan(&stage, &p, &r); err != nil {
-			return err
-		}
-		a := d.activity[stage]
-		a.Pending, a.Running = p, r
-		d.activity[stage] = a
-		return nil
-	}); err != nil {
-		return nil, err
-	}
-	if err := l.each(ctx, `SELECT stage, count(*),
-		avg(extract(epoch FROM finished_at - COALESCE(started_at, claimed_at)) * 1000)
-			FILTER (WHERE COALESCE(started_at, claimed_at) IS NOT NULL),
-		percentile_cont(0.95) WITHIN GROUP (ORDER BY extract(epoch FROM finished_at - COALESCE(started_at, claimed_at)) * 1000)
-			FILTER (WHERE COALESCE(started_at, claimed_at) IS NOT NULL)
-		FROM processing_jobs WHERE stage = ANY($1) AND state = 'done' AND finished_at > now() - interval '1 day'
-		GROUP BY stage`, arg, func(scan func(...any) error) error {
-		var stage string
-		var n int
-		var avg, p95 *float64
-		if err := scan(&stage, &n, &avg, &p95); err != nil {
-			return err
-		}
-		a := d.activity[stage]
-		a.Done24h, a.done = n, n
-		a.AvgMS, a.P95MS = roundMS(avg), roundMS(p95)
-		d.activity[stage] = a
-		return nil
-	}); err != nil {
-		return nil, err
-	}
-	// a failed job is a problem while it is the subject's newest job of the stage (what the
-	// failures view lists); one a later run replaced is only a failure of its day
-	if err := l.each(ctx, `SELECT f.stage, count(*) FILTER (WHERE NOT EXISTS (SELECT 1 FROM processing_jobs n
-			WHERE n.subject_kind = f.subject_kind AND n.subject_id = f.subject_id AND n.stage = f.stage AND n.id > f.id)),
-		count(*) FILTER (WHERE f.finished_at > now() - interval '1 day')
-		FROM processing_jobs f WHERE f.stage = ANY($1) AND f.state = 'failed' GROUP BY f.stage`, arg, func(scan func(...any) error) error {
-		var stage string
-		var open, day int
-		if err := scan(&stage, &open, &day); err != nil {
-			return err
-		}
-		a := d.activity[stage]
-		a.Problems, a.Failed24h = open, day
-		d.activity[stage] = a
-		return nil
-	}); err != nil {
-		return nil, err
-	}
-	if err := l.each(ctx, `SELECT stage, impl FROM job_stages WHERE stage = ANY($1)`, arg, func(scan func(...any) error) error {
+	if err := l.each(ctx, `SELECT stage, impl FROM job_stages WHERE stage = ANY($1)`, pq.Array(publishedStages()), func(scan func(...any) error) error {
 		var stage, impl string
 		if err := scan(&stage, &impl); err != nil {
 			return err
@@ -327,8 +278,60 @@ func (l *Lifecycle) loadPage(ctx context.Context, stages []string) (*pageData, e
 	}); err != nil {
 		return nil, err
 	}
+	if len(stages) == 0 {
+		return d, nil
+	}
+	if err := l.each(ctx, activitySQL, pq.Array(stages), func(scan func(...any) error) error {
+		var stage string
+		var a stageActivity
+		var avg, p95 *float64
+		if err := scan(&stage, &a.Pending, &a.Running, &a.done, &avg, &p95, &a.Failed24h); err != nil {
+			return err
+		}
+		a.Done24h, a.AvgMS, a.P95MS = a.done, roundMS(avg), roundMS(p95)
+		d.activity[stage] = a
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	if l.Problems != nil {
+		open, err := l.Problems(ctx, stages)
+		if err != nil {
+			return nil, err
+		}
+		for stage, n := range open {
+			a := d.activity[stage]
+			a.Problems = n
+			d.activity[stage] = a
+		}
+	}
 	return d, nil
 }
+
+// activitySQL is one grouped read of the jobs of the stages in $1, over three bounded
+// branches, each with its own index (migrations 0183 and 0088): the live states
+// (processing_jobs_live_idx: stage, state), the last day's done rows
+// (processing_jobs_done_finished_idx: stage, finished_at WHERE done) and the day's failed
+// rows (processing_jobs_finished_idx: stage, finished_at). Checked on 240,000 rows: no
+// row older than a day that is done or failed is read, however long the home has run.
+const activitySQL = `SELECT stage,
+	count(*) FILTER (WHERE state = 'pending'),
+	count(*) FILTER (WHERE state IN ('claimed', 'running', 'resuming')),
+	count(*) FILTER (WHERE state = 'done'),
+	avg(ms) FILTER (WHERE state = 'done' AND ms IS NOT NULL),
+	percentile_cont(0.95) WITHIN GROUP (ORDER BY ms) FILTER (WHERE state = 'done' AND ms IS NOT NULL),
+	count(*) FILTER (WHERE state = 'failed')
+	FROM (
+		SELECT stage, state, NULL::float8 AS ms FROM processing_jobs
+		 WHERE stage = ANY($1) AND state IN ('pending', 'claimed', 'running', 'resuming', 'paused')
+		UNION ALL
+		SELECT stage, state, extract(epoch FROM finished_at - COALESCE(started_at, claimed_at)) * 1000 FROM processing_jobs
+		 WHERE stage = ANY($1) AND state = 'done' AND finished_at > now() - interval '1 day'
+		UNION ALL
+		SELECT stage, state, NULL::float8 FROM processing_jobs
+		 WHERE stage = ANY($1) AND state = 'failed' AND finished_at > now() - interval '1 day'
+	) j
+	GROUP BY stage`
 
 func roundMS(f *float64) *int64 {
 	if f == nil || *f < 0 {
@@ -453,7 +456,8 @@ func (l *Lifecycle) publishedView(fp *firstparty.FirstParty, d *pageData) View {
 	return v
 }
 
-// lockOf is why a switch cannot be used: a gate no switch opens, or a stop (Start lifts it).
+// lockOf is why a plugin cannot be turned on from its switch: a gate no switch opens, or
+// a stop (Start lifts it). It never stops a plugin being turned off: off is always allowed.
 func lockOf(reason, heldBy string) string {
 	if heldBy != "" {
 		return "held"
@@ -572,22 +576,27 @@ func (l *Lifecycle) thirdPartyResources(v *View, d *pageData, enabled []string) 
 	return res
 }
 
-// ListAll is every plugin of the home the Plugins page lists: the installed ones and the
-// ones Maktaba publishes, in one list by id, and what is part of Maktaba itself.
-func (l *Lifecycle) ListAll(ctx context.Context) ([]View, []CoreView, error) {
+// ListAll is the home's plugins and what is part of Maktaba itself. The installed plugins
+// always; with release, also the plugins Maktaba publishes that came with this release, in
+// the same list by id. Without it the list is what it was before story 54.44, which every
+// client that reads it as "installed plugins" relies on (the parental rule pickers of the
+// web and the shipped apps: a rule's plugin subject is looked up in plugin_installs).
+func (l *Lifecycle) ListAll(ctx context.Context, release bool) ([]View, []CoreView, error) {
 	installed, err := l.List(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
 	queues := map[string][]string{}
-	stages := publishedStages()
-	var enabled []string
+	var stages, enabled []string
+	if release {
+		for _, fp := range published() {
+			stages = append(stages, fp.Stages...)
+		}
+	}
 	for i := range installed {
 		v := &installed[i]
-		for _, s := range v.StageNames {
-			queues[v.ID] = append(queues[v.ID], components.PluginQueueName(v.ID, s))
-		}
-		stages = append(stages, queues[v.ID]...)
+		queues[v.ID] = v.Queues
+		stages = append(stages, v.Queues...)
 		if v.Want == components.WantEnabled {
 			enabled = append(enabled, v.ID)
 		}
@@ -596,23 +605,40 @@ func (l *Lifecycle) ListAll(ctx context.Context) ([]View, []CoreView, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	out := make([]View, 0, len(installed)+8)
+	out := make([]View, 0, len(installed)+16)
 	for i := range installed {
 		v := installed[i]
 		v.Activity = d.activityOf(queues[v.ID])
 		v.Resources = l.thirdPartyResources(&v, d, enabled)
 		out = append(out, v)
 	}
-	for _, fp := range published() {
-		out = append(out, l.publishedView(fp, d))
+	if release {
+		for _, fp := range published() {
+			out = append(out, l.publishedView(fp, d))
+		}
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].ID < out[j].ID })
 	return out, Core(), nil
 }
 
+// Exists reports whether id is a plugin of this home: one Maktaba publishes, or an
+// installed one (404 plugin_not_installed otherwise). One row read, no jobs.
+func (l *Lifecycle) Exists(ctx context.Context, id string) error {
+	if IsPublished(id) {
+		return nil
+	}
+	var one int
+	err := l.DB.QueryRowContext(ctx, `SELECT 1 FROM plugin_installs WHERE plugin_id = $1`, id).Scan(&one)
+	if errors.Is(err, sql.ErrNoRows) {
+		return problem(http.StatusNotFound, CodeNotInstalled, "%s is not installed", id)
+	}
+	return err
+}
+
 // showPublished is GET /api/plugins/{id} for a plugin Maktaba publishes.
 func (l *Lifecycle) showPublished(ctx context.Context, fp *firstparty.FirstParty) (*Detail, error) {
-	d, err := l.loadPage(ctx, publishedStages())
+	// its own stages' jobs only: the other plugins' numbers are not on its page
+	d, err := l.loadPage(ctx, fp.Stages)
 	if err != nil {
 		return nil, err
 	}
@@ -621,12 +647,14 @@ func (l *Lifecycle) showPublished(ctx context.Context, fp *firstparty.FirstParty
 	out := &Detail{View: v, Manifest: raw, Stages: []StageView{}, Capabilities: []TrustedCapability{}, Machines: []MachineState{}}
 	groups := stageGroups(fp)
 	subjects := map[string]string{}
+	labels := map[string]string{}
 	versions := map[string]int{}
 	stages, _ := fp.Manifest["stage"].([]any)
 	for _, s := range stages {
 		st, _ := s.(map[string]any)
 		name, _ := st["name"].(string)
 		subjects[name], _ = st["subject"].(string)
+		labels[name], _ = st["label"].(string)
 		if n, ok := num(st["version"]); ok {
 			versions[name] = int(n)
 		}
@@ -637,7 +665,7 @@ func (l *Lifecycle) showPublished(ctx context.Context, fp *firstparty.FirstParty
 		if d.impl[s] == "plugin" {
 			runs = groups[s]
 		}
-		out.Stages = append(out.Stages, StageView{Name: s, Queue: s, Subject: subjects[s], Version: versions[s],
+		out.Stages = append(out.Stages, StageView{Name: s, Label: labels[s], Queue: s, Subject: subjects[s], Version: versions[s],
 			Pending: a.Pending, Running: a.Running, Done24h: a.Done24h, Fail24h: a.Failed24h, Problems: a.Problems,
 			AvgMS: a.AvgMS, P95MS: a.P95MS, RunsIn: runs})
 	}
@@ -676,7 +704,9 @@ func machinesOf(c svc.View) []MachineState {
 // SwitchEffect is what turning a plugin off does beside stopping the plugin itself
 // (GET /api/plugins/{id}/downstream): the confirm dialog names each.
 type SwitchEffect struct {
-	// Stages are other plugins' stages that go idle (story 54.39 §6).
+	// Stages are other plugins' stages that go idle, each "<plugin>/<stage>": for a
+	// third-party plugin the stages its events start (story 54.39 §6); for a Maktaba plugin
+	// the third-party stages that start on an event its stages raise.
 	Stages []string `json:"stages"`
 	// Also are the other components the switch moves, each with the phase it moves to
 	// (waiting: it needs this one; degraded: it runs with less) and the plugin it belongs to
@@ -686,9 +716,95 @@ type SwitchEffect struct {
 	Processes []string `json:"processes"`
 	Loops     []string `json:"loops"`
 	// Features are the user-facing features that go with it (live_tv, transcripts …).
-	Features         []string `json:"features"`
-	QueuedJobsParked int      `json:"queued_jobs_parked"`
-	DrainS           int      `json:"drain_s"`
+	Features []string `json:"features"`
+	// Fed are the stages of other plugins (or of Maktaba itself) that a Maktaba plugin's
+	// stages hand work to (its manifest's edges): they get no new work from it while it is off.
+	Fed              []FedStage `json:"fed"`
+	QueuedJobsParked int        `json:"queued_jobs_parked"`
+	DrainS           int        `json:"drain_s"`
+}
+
+// FedStage is one stage a plugin's stages hand work to: its name, and the plugin it
+// belongs to ("" for a stage of Maktaba itself).
+type FedStage struct {
+	Stage  string `json:"stage"`
+	Label  string `json:"label,omitempty"`
+	Plugin string `json:"plugin,omitempty"`
+}
+
+// fedBy answers the stages outside fp that fp's stages hand work to, by the manifests' edges.
+func fedBy(fp *firstparty.FirstParty) []FedStage {
+	owner := map[string]*firstparty.FirstParty{}
+	label := map[string]string{}
+	list, _ := firstparty.Plugins()
+	for _, o := range list {
+		stages, _ := o.Manifest["stage"].([]any)
+		for _, s := range stages {
+			st, _ := s.(map[string]any)
+			name, _ := st["name"].(string)
+			owner[name] = o
+			label[name], _ = st["label"].(string)
+		}
+	}
+	out := []FedStage{}
+	seen := map[string]bool{}
+	stages, _ := fp.Manifest["stage"].([]any)
+	for _, s := range stages {
+		st, _ := s.(map[string]any)
+		edges, _ := st["edges"].([]any)
+		for _, e := range edges {
+			em, _ := e.(map[string]any)
+			to, _ := em["to"].(string)
+			o := owner[to]
+			if o == nil || o.ID == fp.ID || seen[to] {
+				continue
+			}
+			seen[to] = true
+			f := FedStage{Stage: to, Label: label[to]}
+			if IsPublished(o.ID) {
+				f.Plugin = o.ID
+			}
+			out = append(out, f)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Stage < out[j].Stage })
+	return out
+}
+
+// idleFollowers are the enabled third-party plugins' stages that start on an event one of
+// fp's stages raises (shared/plugins/events.toml maps each of Maktaba's events to the stage
+// whose output means it): with fp off the event is not raised, so they get no new work.
+// Each is "<plugin>/<stage>", as the stages a third-party plugin's switch names.
+func (l *Lifecycle) idleFollowers(ctx context.Context, fp *firstparty.FirstParty) ([]string, error) {
+	raised := map[string]bool{}
+	for _, e := range pluginmanifest.Events() {
+		if slices.Contains(fp.Stages, e.Stage) {
+			raised[e.Name] = true
+		}
+	}
+	out := []string{}
+	if len(raised) == 0 {
+		return out, nil
+	}
+	members, err := l.homeMembers(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, m := range members {
+		if m.State != pluginflow.StateEnabled {
+			continue
+		}
+		for _, st := range m.Stages {
+			for _, t := range st.Triggers {
+				if raised[t] {
+					out = append(out, m.ID+"/"+st.Name)
+					break
+				}
+			}
+		}
+	}
+	sort.Strings(out)
+	return out, nil
 }
 
 // AlsoOff is one component a switch touches.
@@ -700,7 +816,11 @@ type AlsoOff struct {
 	To     string `json:"to,omitempty"`
 }
 
-func (l *Lifecycle) alsoOf(id, to string) AlsoOff {
+func (l *Lifecycle) alsoOf(id, to string) AlsoOff { return NameComponent(id, to) }
+
+// NameComponent is component id as a switch's effect names it: its title's key, and the
+// plugin whose component it is when it has one.
+func NameComponent(id, to string) AlsoOff {
 	a := AlsoOff{Component: id, To: to}
 	if c, ok := components.Default().Get(id); ok {
 		a.TitleKey = c.TitleKey
@@ -716,7 +836,8 @@ func (l *Lifecycle) alsoOf(id, to string) AlsoOff {
 
 // Effect answers what turning plugin id off does (404 plugin_not_installed).
 func (l *Lifecycle) Effect(ctx context.Context, id string) (*SwitchEffect, error) {
-	out := &SwitchEffect{Stages: []string{}, Also: []AlsoOff{}, Processes: []string{}, Loops: []string{}, Features: []string{}}
+	out := &SwitchEffect{Stages: []string{}, Also: []AlsoOff{}, Processes: []string{}, Loops: []string{}, Features: []string{},
+		Fed: []FedStage{}}
 	cid := ComponentOf(id)
 	if !IsPublished(id) {
 		in, err := loadInstall(ctx, l.DB, id, false)
@@ -750,21 +871,42 @@ func (l *Lifecycle) Effect(ctx context.Context, id string) (*SwitchEffect, error
 		}
 	}
 	// what needs it and is on waits, whatever its phase is now (a dependant already waiting
-	// on something else is no effect of the preview, and still stops being able to run)
-	named := map[string]bool{}
+	// on something else is no effect of the preview, and still stops being able to run):
+	// the direct dependants and theirs, to the end
+	named := map[string]bool{cid: true}
 	for _, a := range out.Also {
 		named[a.Component] = true
 	}
-	if lv, err := l.Components.List(ctx); err == nil {
-		want := map[string]string{}
-		for _, c := range lv.Components {
-			want[c.ID] = c.Want
-		}
-		for _, dep := range components.Default().Dependents(cid) {
-			if !named[dep] && want[dep] == components.WantEnabled {
+	lv, err := l.Components.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	want := map[string]string{}
+	for _, c := range lv.Components {
+		want[c.ID] = c.Want
+	}
+	queue := []string{cid}
+	for len(queue) > 0 {
+		at := queue[0]
+		queue = queue[1:]
+		for _, dep := range components.Default().Dependents(at) {
+			if want[dep] != components.WantEnabled {
+				continue // off already: nothing of it stops, and nothing behind it runs through it
+			}
+			if !named[dep] {
+				named[dep] = true
 				out.Also = append(out.Also, l.alsoOf(dep, components.PhaseWaiting))
 			}
+			queue = append(queue, dep)
 		}
+	}
+	if fp := firstparty.ByID(id); fp != nil && IsPublished(id) {
+		out.Fed = fedBy(fp)
+		idle, err := l.idleFollowers(ctx, fp)
+		if err != nil {
+			return nil, err
+		}
+		out.Stages = idle
 	}
 	out.QueuedJobsParked, out.DrainS = p.QueuedJobsParked, p.DrainS
 	return out, nil

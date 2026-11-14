@@ -18,7 +18,7 @@ As built, the page lists twelve plugins as published by Maktaba (component in br
 
 ### 2. The API: the same shape for every plugin
 
-No route is added. `GET /api/plugins` answers `{plugins, policy, core}`; `plugins` is one list by id. `GET /api/plugins/{id}` answers one plugin of either origin. Beside the fields of 54.13, every plugin has:
+No route is added. `GET /api/plugins` answers `{plugins, policy, core}`. By default `plugins` is the installed plugins only, as before this story: clients that read it as "installed plugins" depend on that (the parental rule pickers of the web and of shipped apps, where a rule's plugin subject is looked up in `plugin_installs`). `GET /api/plugins?release=true` also lists the plugins Maktaba publishes, in the same list by id and the same shape; the Plugins page sends it. `GET /api/plugins/{id}` answers one plugin of either origin. Beside the fields of 54.13, every plugin has:
 
 | Field | Meaning |
 |---|---|
@@ -26,22 +26,33 @@ No route is added. `GET /api/plugins` answers `{plugins, policy, core}`; `plugin
 | `source` | `release` (came with this Maktaba release), `store` or `file` |
 | `component` | the Epic 51 component its switch writes: its own component for a Maktaba plugin, `plugin.<id>` otherwise |
 | `stage_names`, `queues` | its stages, and their names in the queue (a Maktaba plugin's are the stage names) |
-| `switch_locked` | why the switch cannot be used (`licence_missing`, `held`, `revoked`, `platform_unsupported`, `incompatible`, …), absent when it can |
+| `switch_locked` | why the plugin cannot be turned on from its switch (`licence_missing`, `held`, `revoked`, `platform_unsupported`, `incompatible`, …), absent when it can. It never locks turning a plugin off |
 | `activity` | `pending`, `running`, `done_24h`, `failed_24h`, `problems`, `avg_ms`, `p95_ms` over its stages |
 | `resources` | the processes that run it (§5) and, for a third-party plugin, its data and memory limits |
 | `settings` | the settings its component owns (`rules.<section>`, `toml:<key>`) |
 
 The detail adds `stages` (each with its queue, counts, usual time and `runs_in`), `capabilities` (a Maktaba plugin's, as `fp.trusted.<capability>` words) and `machines` (its status on each machine).
 
-`problems` counts failed jobs that are still the newest job of their subject and stage, which is what the failures view lists; `failed_24h` counts every job that failed in the last day.
+`problems` is counted by the failures list's own rule (`queues.OpenCounts`, the same SQL the list runs): a subject whose newest job of the stage failed, is parked or is pending with an error, leaving out ignored items, videos that are gone and retired stages. The number on a card equals the number of items the link opens. `failed_24h` counts every job that failed in the last day.
+
+The jobs are read in one grouped query over three bounded branches, each on its own index (live states, the last day's done rows, the last day's failed rows), and a plugin's page reads its own stages only.
 
 ### 3. The switch: one source of truth
 
 `POST /api/plugins/{id}/enable`, `/disable`, `/start` and `/stop` work for every plugin. For a Maktaba plugin they apply the change to the desired row of the component whose stages it implements, through the components service (51.08), so the checks, the licence gate, the audit rows and the per-machine overrides are Epic 51's and the Components page shows the same switch. Nothing else stores on or off.
 
-`GET /api/plugins/{id}/downstream` answers what turning the plugin off does beside stopping it: other plugins' stages that go idle (54.39 §6), the components that wait or run with less (from the components preview, plus every dependant that is on), each with the plugin it belongs to when it has one, the component's own processes and loops, the user-facing features it serves, the queued jobs that will wait and the drain time. The page shows a dialog naming each of these before anything changes, and applies at once when there is nothing to name.
+`GET /api/plugins/{id}/downstream` answers what turning the plugin off does beside stopping it:
 
-A switch that cannot be used is disabled with the reason in words; a stopped plugin has Start beside it.
+- other plugins' stages that go idle: for a third-party plugin the stages its events start (54.39 §6); for a Maktaba plugin the enabled third-party stages that start on an event one of its stages raises (`shared/plugins/events.toml` maps each event to its stage);
+- the components that wait or run with less: the components preview's effects, plus every dependant that is on and its dependants, each with the plugin it belongs to when it has one;
+- the stages of other plugins, or of Maktaba itself, that its stages hand work to (the manifests' edges);
+- the component's own processes and loops, the user-facing features it serves, the queued jobs that will wait and the drain time.
+
+The page shows a dialog naming each of these before anything changes, and applies at once when there is nothing to name. When the effect cannot be read, nothing is turned off: the dialog says so and offers to try again or to turn it off anyway. The switch is busy while it works, so a second click does nothing.
+
+A lock stops turning a plugin on, with the reason in words; a stopped plugin has Start beside it. Turning a plugin off always works, whatever locks it.
+
+Turning on a plugin that cannot run with something that is on answers `409 component_conflicts` naming each (`conflicts`); the page names them and offers to switch, which sends `{"with_conflicts": true}` (as the Components page does).
 
 ### 4. What a plugin of the release cannot do yet
 
@@ -70,7 +81,11 @@ Every string is in English and Arabic, and Help has a Plugins topic in both.
 ## Tests
 
 - T01 the list has Maktaba's plugins in the same shape, no `built_in`, and no core; core has no page and no switch.
-- T02 a Maktaba plugin's switch on the plugin routes writes its component's row; a viewer is 403, no one 401, and nothing changes for them.
+- T02 a Maktaba plugin's switch on the plugin routes writes its component's row and its audit rows; a viewer is 403, no one 401, and nothing changes for them; a stopped plugin can still be turned off.
+- The default list has no plugin of the release; a release plugin is no parental rule subject.
+- The problems count equals the failures list's count on a fixture with a replaced failure, a parked job, a retried job and an ignored item.
+- Enabling against a conflict is refused naming it, and switches with `with_conflicts`.
+- Third-party ids that start with the letters of "plugin." keep their ids in what shares the host.
 - T03 the effect names dependants with their plugin, parts of Maktaba that run with less, and the component's processes, loops and features.
 - T04 activity and resources: counts, times, a shared runner group's own memory with who shares it, and the worker for stages not flipped.
 - T05 every with-release refusal is `409 plugin_with_release` and changes nothing.

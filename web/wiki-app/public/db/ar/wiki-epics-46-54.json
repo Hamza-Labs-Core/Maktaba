@@ -2808,14 +2808,17 @@
         "phase-5"
       ],
       "related": [
-        "epic-50-cloud-no-downtime"
+        "epic-50-cloud-no-downtime",
+        "ep-get-plugins"
       ],
       "files": {
         "story": "specs/epics/50-cloud-no-downtime/story-50-11-status-page.md",
         "plan": null,
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /plugins"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "status-page"
@@ -5870,7 +5873,8 @@
       ],
       "related": [
         "epic-54-plugins",
-        "ep-get-capabilities"
+        "ep-get-capabilities",
+        "ep-get-plugins"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-01-manifest-package.md",
@@ -5878,7 +5882,8 @@
         "mockups": []
       },
       "api_endpoints": [
-        "GET /capabilities"
+        "GET /capabilities",
+        "GET /plugins"
       ],
       "db_tables": [],
       "metadata": {
@@ -5906,7 +5911,8 @@
       ],
       "related": [
         "epic-54-plugins",
-        "ep-get-components"
+        "ep-get-components",
+        "ep-get-plugins"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-02-plugin-host.md",
@@ -5914,7 +5920,8 @@
         "mockups": []
       },
       "api_endpoints": [
-        "GET /components"
+        "GET /components",
+        "GET /plugins"
       ],
       "db_tables": [],
       "metadata": {
@@ -5941,14 +5948,17 @@
         "phase-5"
       ],
       "related": [
-        "epic-54-plugins"
+        "epic-54-plugins",
+        "ep-get-plugins"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-03-os-sandbox.md",
         "plan": null,
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /plugins"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "os-sandbox"
@@ -5976,7 +5986,8 @@
       "related": [
         "epic-54-plugins",
         "ep-get-settings",
-        "ep-put-settings"
+        "ep-put-settings",
+        "ep-get-plugins"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-04-plugin-api.md",
@@ -5985,7 +5996,8 @@
       },
       "api_endpoints": [
         "GET /settings",
-        "PUT /settings"
+        "PUT /settings",
+        "GET /plugins"
       ],
       "db_tables": [],
       "metadata": {
@@ -6012,14 +6024,17 @@
         "phase-5"
       ],
       "related": [
-        "epic-54-plugins"
+        "epic-54-plugins",
+        "ep-get-plugins"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-05-media-handles.md",
         "plan": null,
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /plugins"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "media-handles"
@@ -6047,7 +6062,8 @@
       "related": [
         "epic-54-plugins",
         "ep-get-extensions",
-        "ep-get-components"
+        "ep-get-components",
+        "ep-get-plugins"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-06-queue-stages.md",
@@ -6056,7 +6072,8 @@
       },
       "api_endpoints": [
         "GET /extensions",
-        "GET /components"
+        "GET /components",
+        "GET /plugins"
       ],
       "db_tables": [],
       "metadata": {
@@ -6090,7 +6107,8 @@
         "ep-get-components",
         "ep-get-components-id",
         "ep-put-components-id",
-        "ep-delete-components-id"
+        "ep-delete-components-id",
+        "ep-get-plugins"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-07-lifecycle.md",
@@ -6103,7 +6121,8 @@
         "GET /components",
         "GET /components/{id}",
         "PUT /components/{id}",
-        "DELETE /components/{id}"
+        "DELETE /components/{id}",
+        "GET /plugins"
       ],
       "db_tables": [
         "audit_log"
@@ -6145,7 +6164,8 @@
         "ep-put-components-id",
         "ep-delete-components-id",
         "ep-post-components-id-install",
-        "ep-post-components-id-restart"
+        "ep-post-components-id-restart",
+        "ep-get-plugins"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-08-grants-roles.md",
@@ -6163,7 +6183,8 @@
         "PUT /components/{id}",
         "DELETE /components/{id}",
         "POST /components/{id}/install",
-        "POST /components/{id}/restart"
+        "POST /components/{id}/restart",
+        "GET /plugins"
       ],
       "db_tables": [
         "audit_log",
@@ -6194,7 +6215,8 @@
       ],
       "related": [
         "epic-54-plugins",
-        "ep-get-components"
+        "ep-get-components",
+        "ep-get-plugins"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-09-isolation-health.md",
@@ -6202,7 +6224,8 @@
         "mockups": []
       },
       "api_endpoints": [
-        "GET /components"
+        "GET /components",
+        "GET /plugins"
       ],
       "db_tables": [],
       "metadata": {
@@ -6230,7 +6253,8 @@
       ],
       "related": [
         "epic-54-plugins",
-        "ep-get-components"
+        "ep-get-components",
+        "ep-get-plugins"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-10-file-install.md",
@@ -6238,7 +6262,8 @@
         "mockups": []
       },
       "api_endpoints": [
-        "GET /components"
+        "GET /components",
+        "GET /plugins"
       ],
       "db_tables": [],
       "metadata": {
@@ -6268,7 +6293,8 @@
         "epic-54-plugins",
         "ep-get-settings",
         "ep-put-settings",
-        "ep-get-components"
+        "ep-get-components",
+        "ep-get-plugins"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-11-settings.md",
@@ -6278,7 +6304,8 @@
       "api_endpoints": [
         "GET /settings",
         "PUT /settings",
-        "GET /components"
+        "GET /components",
+        "GET /plugins"
       ],
       "db_tables": [],
       "metadata": {
@@ -6305,14 +6332,17 @@
         "phase-5"
       ],
       "related": [
-        "epic-54-plugins"
+        "epic-54-plugins",
+        "ep-get-plugins"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-12-sdk-harness.md",
         "plan": null,
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /plugins"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "sdk-harness"
@@ -6340,7 +6370,8 @@
       "related": [
         "epic-54-plugins",
         "ep-get-settings",
-        "ep-put-settings"
+        "ep-put-settings",
+        "ep-get-plugins"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-13-plugins-page.md",
@@ -6349,7 +6380,8 @@
       },
       "api_endpoints": [
         "GET /settings",
-        "PUT /settings"
+        "PUT /settings",
+        "GET /plugins"
       ],
       "db_tables": [],
       "metadata": {
@@ -6377,7 +6409,8 @@
       ],
       "related": [
         "epic-54-plugins",
-        "ep-get-components"
+        "ep-get-components",
+        "ep-get-plugins"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-14-signing-trust.md",
@@ -6385,7 +6418,8 @@
         "mockups": []
       },
       "api_endpoints": [
-        "GET /components"
+        "GET /components",
+        "GET /plugins"
       ],
       "db_tables": [],
       "metadata": {
@@ -6414,7 +6448,8 @@
       "related": [
         "epic-54-plugins",
         "ep-get-workers",
-        "ep-get-home"
+        "ep-get-home",
+        "ep-get-plugins"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-15-store-service.md",
@@ -6423,7 +6458,8 @@
       },
       "api_endpoints": [
         "GET /workers",
-        "GET /home"
+        "GET /home",
+        "GET /plugins"
       ],
       "db_tables": [],
       "metadata": {
@@ -6450,14 +6486,17 @@
         "phase-5"
       ],
       "related": [
-        "epic-54-plugins"
+        "epic-54-plugins",
+        "ep-get-plugins"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-16-review.md",
         "plan": null,
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /plugins"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "review"
@@ -6484,7 +6523,8 @@
       ],
       "related": [
         "epic-54-plugins",
-        "ep-get-components"
+        "ep-get-components",
+        "ep-get-plugins"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-17-catalog-kill-switch.md",
@@ -6492,7 +6532,8 @@
         "mockups": []
       },
       "api_endpoints": [
-        "GET /components"
+        "GET /components",
+        "GET /plugins"
       ],
       "db_tables": [],
       "metadata": {
@@ -6519,14 +6560,17 @@
         "phase-5"
       ],
       "related": [
-        "epic-54-plugins"
+        "epic-54-plugins",
+        "ep-get-plugins"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-18-store-browser.md",
         "plan": null,
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /plugins"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "store-browser"
@@ -6554,7 +6598,8 @@
       "related": [
         "epic-54-plugins",
         "ep-get-components",
-        "ep-get-home"
+        "ep-get-home",
+        "ep-get-plugins"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-19-paid-plugins.md",
@@ -6563,7 +6608,8 @@
       },
       "api_endpoints": [
         "GET /components",
-        "GET /home"
+        "GET /home",
+        "GET /plugins"
       ],
       "db_tables": [],
       "metadata": {
@@ -6594,7 +6640,8 @@
         "ep-get-ws",
         "ep-get-capabilities",
         "ep-get-components",
-        "ep-get-home"
+        "ep-get-home",
+        "ep-get-plugins"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-20-panels.md",
@@ -6605,7 +6652,8 @@
         "GET /ws",
         "GET /capabilities",
         "GET /components",
-        "GET /home"
+        "GET /home",
+        "GET /plugins"
       ],
       "db_tables": [],
       "metadata": {
@@ -6634,7 +6682,8 @@
       "related": [
         "epic-54-plugins",
         "ep-get-capabilities",
-        "ep-get-components"
+        "ep-get-components",
+        "ep-get-plugins"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-21-local-compute.md",
@@ -6643,7 +6692,8 @@
       },
       "api_endpoints": [
         "GET /capabilities",
-        "GET /components"
+        "GET /components",
+        "GET /plugins"
       ],
       "db_tables": [],
       "metadata": {
@@ -6671,7 +6721,8 @@
       ],
       "related": [
         "epic-54-plugins",
-        "ep-get-components"
+        "ep-get-components",
+        "ep-get-plugins"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-22-trusted-manifest.md",
@@ -6679,7 +6730,8 @@
         "mockups": []
       },
       "api_endpoints": [
-        "GET /components"
+        "GET /components",
+        "GET /plugins"
       ],
       "db_tables": [],
       "metadata": {
@@ -6707,7 +6759,8 @@
       ],
       "related": [
         "epic-54-plugins",
-        "ep-get-components"
+        "ep-get-components",
+        "ep-get-plugins"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-23-native-runner.md",
@@ -6715,7 +6768,8 @@
         "mockups": []
       },
       "api_endpoints": [
-        "GET /components"
+        "GET /components",
+        "GET /plugins"
       ],
       "db_tables": [],
       "metadata": {
@@ -6742,14 +6796,17 @@
         "phase-5"
       ],
       "related": [
-        "epic-54-plugins"
+        "epic-54-plugins",
+        "ep-get-plugins"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-24-statement-registry.md",
         "plan": null,
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /plugins"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "statement-registry"
@@ -6785,7 +6842,8 @@
         "ep-get-queues-graph",
         "ep-get-queues-stage",
         "ep-patch-queues-stage",
-        "ep-post-libraries-id-convert"
+        "ep-post-libraries-id-convert",
+        "ep-get-plugins"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-25-graph-and-switch.md",
@@ -6802,7 +6860,8 @@
         "GET /queues/graph",
         "GET /queues/{stage}",
         "PATCH /queues/{stage}",
-        "POST /libraries/{id}/convert"
+        "POST /libraries/{id}/convert",
+        "GET /plugins"
       ],
       "db_tables": [],
       "metadata": {
@@ -6829,14 +6888,17 @@
         "phase-5"
       ],
       "related": [
-        "epic-54-plugins"
+        "epic-54-plugins",
+        "ep-get-plugins"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-26-parity.md",
         "plan": null,
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /plugins"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "parity"
@@ -6865,7 +6927,8 @@
         "epic-54-plugins",
         "ep-get-components",
         "ep-get-components-bundles",
-        "ep-post-components-bundle"
+        "ep-post-components-bundle",
+        "ep-get-plugins"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-27-layout-packaging.md",
@@ -6875,7 +6938,8 @@
       "api_endpoints": [
         "GET /components",
         "GET /components/bundles",
-        "POST /components/bundle"
+        "POST /components/bundle",
+        "GET /plugins"
       ],
       "db_tables": [],
       "metadata": {
@@ -7004,14 +7068,17 @@
         "phase-5"
       ],
       "related": [
-        "epic-54-plugins"
+        "epic-54-plugins",
+        "ep-get-plugins"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-31-wave4-classify-enrich.md",
         "plan": null,
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /plugins"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "wave4-classify-enrich"
@@ -7162,7 +7229,8 @@
       "related": [
         "epic-54-plugins",
         "ep-get-extensions",
-        "ep-get-components"
+        "ep-get-components",
+        "ep-get-plugins"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-35-wave8-plex-dizquetv.md",
@@ -7171,7 +7239,8 @@
       },
       "api_endpoints": [
         "GET /extensions",
-        "GET /components"
+        "GET /components",
+        "GET /plugins"
       ],
       "db_tables": [],
       "metadata": {
@@ -7252,7 +7321,8 @@
         "ep-get-components-id",
         "ep-put-components-id",
         "ep-delete-components-id",
-        "ep-post-components-id-install"
+        "ep-post-components-id-install",
+        "ep-get-plugins"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-37-catalog-plugin-entries.md",
@@ -7266,7 +7336,8 @@
         "GET /components/{id}",
         "PUT /components/{id}",
         "DELETE /components/{id}",
-        "POST /components/{id}/install"
+        "POST /components/{id}/install",
+        "GET /plugins"
       ],
       "db_tables": [],
       "metadata": {
@@ -7298,7 +7369,8 @@
         "ep-post-components-offline",
         "ep-get-components-id",
         "ep-put-components-id",
-        "ep-delete-components-id"
+        "ep-delete-components-id",
+        "ep-get-plugins"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-38-plugin-files.md",
@@ -7310,7 +7382,8 @@
         "POST /components/offline",
         "GET /components/{id}",
         "PUT /components/{id}",
-        "DELETE /components/{id}"
+        "DELETE /components/{id}",
+        "GET /plugins"
       ],
       "db_tables": [],
       "metadata": {
@@ -7337,14 +7410,17 @@
         "phase-5"
       ],
       "related": [
-        "epic-54-plugins"
+        "epic-54-plugins",
+        "ep-get-plugins"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-39-flows.md",
         "plan": null,
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /plugins"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "flows"
@@ -7373,7 +7449,8 @@
         "epic-54-plugins",
         "entity-events",
         "ep-get-queues",
-        "ep-get-capabilities"
+        "ep-get-capabilities",
+        "ep-get-plugins"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-40-events-lineage.md",
@@ -7382,7 +7459,8 @@
       },
       "api_endpoints": [
         "GET /queues",
-        "GET /capabilities"
+        "GET /capabilities",
+        "GET /plugins"
       ],
       "db_tables": [
         "events"
@@ -7413,7 +7491,8 @@
       "related": [
         "epic-54-plugins",
         "ep-get-settings",
-        "ep-put-settings"
+        "ep-put-settings",
+        "ep-get-plugins"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-41-flow-chart.md",
@@ -7422,7 +7501,8 @@
       },
       "api_endpoints": [
         "GET /settings",
-        "PUT /settings"
+        "PUT /settings",
+        "GET /plugins"
       ],
       "db_tables": [],
       "metadata": {
@@ -7450,7 +7530,8 @@
       ],
       "related": [
         "epic-54-plugins",
-        "ep-get-components"
+        "ep-get-components",
+        "ep-get-plugins"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-42-joined-machines.md",
@@ -7458,7 +7539,8 @@
         "mockups": []
       },
       "api_endpoints": [
-        "GET /components"
+        "GET /components",
+        "GET /plugins"
       ],
       "db_tables": [],
       "metadata": {
@@ -7486,7 +7568,8 @@
       ],
       "related": [
         "epic-54-plugins",
-        "ep-get-queues"
+        "ep-get-queues",
+        "ep-get-plugins"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-43-fallback-counts.md",
@@ -7494,7 +7577,8 @@
         "mockups": []
       },
       "api_endpoints": [
-        "GET /queues"
+        "GET /queues",
+        "GET /plugins"
       ],
       "db_tables": [],
       "metadata": {
@@ -7523,7 +7607,8 @@
       "related": [
         "epic-54-plugins",
         "ep-get-settings",
-        "ep-put-settings"
+        "ep-put-settings",
+        "ep-get-plugins"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-44-one-plugins-page.md",
@@ -7532,7 +7617,8 @@
       },
       "api_endpoints": [
         "GET /settings",
-        "PUT /settings"
+        "PUT /settings",
+        "GET /plugins"
       ],
       "db_tables": [],
       "metadata": {
@@ -7559,14 +7645,17 @@
         "phase-5"
       ],
       "related": [
-        "epic-54-plugins"
+        "epic-54-plugins",
+        "ep-get-plugins"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-45-maktaba-store-packages.md",
         "plan": null,
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /plugins"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "maktaba-store-packages"
@@ -7592,14 +7681,17 @@
         "phase-5"
       ],
       "related": [
-        "epic-54-plugins"
+        "epic-54-plugins",
+        "ep-get-plugins"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-46-maktaba-plugin-lifecycle.md",
         "plan": null,
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /plugins"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "maktaba-plugin-lifecycle"
@@ -7803,14 +7895,17 @@
         "phase-5"
       ],
       "related": [
-        "epic-54-plugins"
+        "epic-54-plugins",
+        "ep-get-plugins"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-52-process-cpu.md",
         "plan": null,
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /plugins"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "process-cpu"
