@@ -144,8 +144,12 @@ sub onGridPage(ev as Object)
     if m.next = "" then m.next = invalid
     page = m.pages.Count()
     m.pages.Push(page)
+    focused = m.grid.itemFocused
     ui_GridItems(m.grid.content, items, "video", 6, (m.next = invalid))
     m.gridItems = m.grid.content.GetChildCount()
+    ' a page that lands while focus waits on the last row must not move it (seen on brs-engine:
+    ' focus went back to the first card)
+    if page > 0 and focused > 0 and m.grid.itemFocused <> focused then m.grid.jumpToItem = focused
     if m.gridItems = 0 then
         showEmpty()
         return

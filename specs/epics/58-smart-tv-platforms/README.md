@@ -324,7 +324,7 @@ nothing runs against the live home. Story 58.16 has the full table. In short:
 | Home, cloud | Go unit and Postgres tests; role tables; the `tv-clients` and parental-bypass rehearsals; the cloud rehearsal | — |
 | Fire TV | Robolectric screenshots; Google's Android TV emulator without Google APIs; no-Play-Services check | codecs, HDR, Dolby, Amazon's remote |
 | Cast | receiver in Playwright with a CAF stub; senders with SDK fakes | everything involving Google's SDK on a device; LAN fetch rules |
-| Samsung, LG | Vitest; `build:tv` M68 checks; Playwright with platform shims; emulator and simulator smoke runs (not required) | AVPlay and native HLS playback, HDR, keys, performance |
+| Samsung, LG | Vitest; `build:tv` M68 checks; Playwright with platform shims; no emulator or simulator run (no headless mode, no media pipeline; 58.16) | AVPlay and native HLS playback, HDR, keys, performance |
 | Roku | brs-engine logic, focus and layout tests; BrighterScript build and lint; shaping vectors | the Video node, rendering, fonts, timing, certification |
 | Vega | Jest; the Vega Virtual Device where KVM exists | playback |
 

@@ -25,6 +25,7 @@ not-available line. Nothing is sold in the channel.
 | `components/tasks/` | `ApiTask` (one thread for the API), `HomeTask` (connect, probe, read an address), `CodeTask` (the cloud code and the home's own code) |
 | `components/screens/`, `components/widgets/` | the screens and their parts (`PosterCard`, `PillRow`, `TvButton`, the dialogs) |
 | `components/common.brs` | what the screens share: labels in the bundled font, mirrored placement, rows and grids in reading order |
+| `components/theme.brs` | the dark colours, generated from `web/design-system/tokens/` by `make build-tokens` (never edited by hand) |
 | `tools/build.mjs` | the build (T02): BrighterScript with bslint, fonts and images, the zip under 4 MB; `--test` for the screen tests, `--device-tests` for checklist row 1 |
 
 ## The player (story 58.13)

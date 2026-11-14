@@ -9,6 +9,7 @@
   </interface>
   <script type="text/brightscript" uri="MainScene.brs" />
   <script type="text/brightscript" uri="common.brs" />
+  <script type="text/brightscript" uri="theme.brs" />
   <script type="text/brightscript" uri="pkg:/source/config.brs" />
   <script type="text/brightscript" uri="pkg:/source/net.brs" />
   <script type="text/brightscript" uri="pkg:/source/nav.brs" />
