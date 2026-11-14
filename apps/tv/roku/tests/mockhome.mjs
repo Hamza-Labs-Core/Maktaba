@@ -22,7 +22,13 @@ const require = createRequire(import.meta.url);
 const { createCanvas } = require("canvas");
 
 const uuid = (n) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
+// The home's instance id, as /api/discovery/home answers it, and its server id in Maktaba
+// Cloud, as the cloud's poll answers it (home_id): two different ids, as on a real home, so the
+// channel must know the approving home by its address (NetIsApprovedHome), not by an id.
 export const HOME_ID = "h1test";
+export const CLOUD_HOME_ID = "7c9e6679-7425-40de-944b-e07fc1f90ae7";
+// The relay name Maktaba Cloud gives the home; the home lists it among its own urls.
+export const RELAY_URL = "https://h1test.relay.example";
 export const LIB = uuid(900);
 export const SERIES = uuid(800);
 export const HIDDEN = uuid(999);
@@ -151,7 +157,7 @@ export function startHome(log) {
     const body = req.method === "POST" || req.method === "PUT" ? await readBody(req) : {};
     if (p === "/api/discovery/home") {
       const port = server.address().port;
-      return json(res, 200, { id: HOME_ID, name: "Test home", version: "0.3.150", urls: [`http://127.0.0.1:${port}`], sign_in: { password: true, code: true }, api_level: 1, api_level_oldest: 1, client_floor: {} });
+      return json(res, 200, { id: HOME_ID, name: "Test home", version: "0.3.150", urls: [`http://127.0.0.1:${port}`, RELAY_URL], sign_in: { password: true, code: true }, api_level: 1, api_level_oldest: 1, client_floor: {} });
     }
     if (p === "/api/pairing/device" && req.method === "POST") return json(res, 201, { code: "HKMN-4567", device_code: state.deviceCode, expires_at: new Date(Date.now() + 6e5).toISOString(), verify_path: "/pair?code=HKMN-4567", verify_url: `http://127.0.0.1:${server.address().port}/pair?code=HKMN-4567`, interval: 1 });
     if (p === "/api/pairing/device/token" && req.method === "POST") {
@@ -328,11 +334,11 @@ export function startCloud(log, homePort) {
       if (state.polls < 3) return json(res, 202, { status: "pending", interval: 1 });
       state.delivered = true;
       return json(res, 200, {
-        status: "approved", home_id: HOME_ID, home_name: "Test home", grant: "G1",
+        status: "approved", home_id: CLOUD_HOME_ID, home_name: "Test home", grant: "G1",
         connections: [
           { kind: "local_ip", url: "https://127.0.0.1:8443", tls_name: "127-0-0-1.h1test.direct.example" },
           { kind: "local", url: `http://127.0.0.1:${homePort}` },
-          { kind: "relay", url: "https://relay.example/h1test" },
+          { kind: "relay", url: RELAY_URL },
         ],
       });
     }

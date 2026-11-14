@@ -3840,6 +3840,14 @@ build fails when the two differ.
   `X-Maktaba-Client: native` instead of the app's name and version, so the home could not tell a
   TV too old for it on those calls; they now send the same header as sign-in does.
 
+- **Roku signs in with a cloud code on a real home.** After a phone approved the code, the
+  channel took a connection only when the home there answered with the cloud's id for it, which
+  a home's discovery never gives (it answers with its instance id), so every sign-in ended
+  unreachable. The channel now knows the approving home by its address: at an HTTPS connection
+  by host name (the relay, the home's direct name) its certificate proves the home; at a plain
+  HTTP or raw IP address, the home there counts only when it lists one of those names among its
+  addresses. Another home there is passed over and never gets the grant.
+
 ## [0.2.0] - 2026-10-19
 
 Closes the stub audit: features that were half built, settings that were
