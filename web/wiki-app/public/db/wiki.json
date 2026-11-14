@@ -8199,6 +8199,7 @@
         "story-54.51",
         "story-55.2",
         "story-56.13",
+        "story-58.6",
         "story-58.13",
         "story-58.14",
         "story-59.16"
@@ -11434,7 +11435,9 @@
         "Devices",
         "post"
       ],
-      "related": [],
+      "related": [
+        "story-58.3"
+      ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
       },

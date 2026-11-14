@@ -115,6 +115,7 @@ func runServe(args []string) {
 		logger.Error("migrate up failed", "err", err)
 		os.Exit(1)
 	}
+	releaseStartupMemory() // goose's pooled parse buffers (story 50.14's heap per tunnel)
 
 	build := server.BuildInfo{
 		Version: Version, Commit: Commit, BuiltAt: BuiltAt,

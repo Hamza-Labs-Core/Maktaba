@@ -51,14 +51,15 @@ func (s *SQLPairingStore) clock() time.Time {
 // in-memory store's map-replace semantics.
 func (s *SQLPairingStore) Put(ctx context.Context, t PairingTicket) error {
 	const q = `
-		INSERT INTO pairing_tickets (code, user_id, issued_at, expires_at, consumed_at)
-		VALUES ($1, $2, $3, $4, NULL)
+		INSERT INTO pairing_tickets (code, user_id, issued_at, expires_at, consumed_at, cloud_user_id)
+		VALUES ($1, $2, $3, $4, NULL, $5)
 		ON CONFLICT (code) DO UPDATE
-		SET user_id    = EXCLUDED.user_id,
-		    issued_at   = EXCLUDED.issued_at,
-		    expires_at  = EXCLUDED.expires_at,
-		    consumed_at = NULL`
-	_, err := s.DB.ExecContext(ctx, q, t.Code, t.UserID, t.IssuedAt, t.ExpiresAt)
+		SET user_id       = EXCLUDED.user_id,
+		    issued_at     = EXCLUDED.issued_at,
+		    expires_at    = EXCLUDED.expires_at,
+		    consumed_at   = NULL,
+		    cloud_user_id = EXCLUDED.cloud_user_id`
+	_, err := s.DB.ExecContext(ctx, q, t.Code, t.UserID, t.IssuedAt, t.ExpiresAt, nullString(t.CloudUserID))
 	return err
 }
 
@@ -66,10 +67,10 @@ func (s *SQLPairingStore) Put(ctx context.Context, t PairingTicket) error {
 // code, one wins and the other gets ErrCodeExists.
 func (s *SQLPairingStore) Insert(ctx context.Context, t PairingTicket) error {
 	const q = `
-		INSERT INTO pairing_tickets (code, user_id, issued_at, expires_at, consumed_at)
-		VALUES ($1, $2, $3, $4, NULL)
+		INSERT INTO pairing_tickets (code, user_id, issued_at, expires_at, consumed_at, cloud_user_id)
+		VALUES ($1, $2, $3, $4, NULL, $5)
 		ON CONFLICT (code) DO NOTHING`
-	res, err := s.DB.ExecContext(ctx, q, t.Code, t.UserID, t.IssuedAt, t.ExpiresAt)
+	res, err := s.DB.ExecContext(ctx, q, t.Code, t.UserID, t.IssuedAt, t.ExpiresAt, nullString(t.CloudUserID))
 	if err != nil {
 		return err
 	}
@@ -85,14 +86,16 @@ func (s *SQLPairingStore) Insert(ctx context.Context, t PairingTicket) error {
 // against the store clock so behaviour matches MemoryPairingStore.
 func (s *SQLPairingStore) Get(ctx context.Context, code string) (PairingTicket, error) {
 	const q = `
-		SELECT code, user_id, issued_at, expires_at, consumed_at
+		SELECT code, user_id, issued_at, expires_at, consumed_at, cloud_user_id
 		FROM pairing_tickets WHERE code = $1`
 	var (
-		t   PairingTicket
-		con sql.NullTime
+		t     PairingTicket
+		con   sql.NullTime
+		cloud sql.NullString
 	)
 	err := s.DB.QueryRowContext(ctx, q, code).
-		Scan(&t.Code, &t.UserID, &t.IssuedAt, &t.ExpiresAt, &con)
+		Scan(&t.Code, &t.UserID, &t.IssuedAt, &t.ExpiresAt, &con, &cloud)
+	t.CloudUserID = cloud.String
 	if errors.Is(err, sql.ErrNoRows) {
 		return PairingTicket{}, ErrCodeNotFound
 	}
@@ -121,11 +124,15 @@ func (s *SQLPairingStore) Consume(ctx context.Context, code string) (PairingTick
 		UPDATE pairing_tickets
 		SET consumed_at = $2
 		WHERE code = $1 AND consumed_at IS NULL AND expires_at > $3
-		RETURNING code, user_id, issued_at, expires_at`
-	var t PairingTicket
+		RETURNING code, user_id, issued_at, expires_at, cloud_user_id`
+	var (
+		t     PairingTicket
+		cloud sql.NullString
+	)
 	err := s.DB.QueryRowContext(ctx, upd, code, now, now).
-		Scan(&t.Code, &t.UserID, &t.IssuedAt, &t.ExpiresAt)
+		Scan(&t.Code, &t.UserID, &t.IssuedAt, &t.ExpiresAt, &cloud)
 	if err == nil {
+		t.CloudUserID = cloud.String
 		v := now
 		t.ConsumedAt = &v
 		return t, nil
@@ -159,6 +166,14 @@ func (s *SQLPairingStore) Consume(ctx context.Context, code string) (PairingTick
 	// a concurrent consumer won the race between our UPDATE and SELECT.
 	// Treat as already-consumed (the one-time guarantee held).
 	return PairingTicket{}, ErrCodeConsumed
+}
+
+// nullString stores "" as NULL: a ticket no cloud account approved names none.
+func nullString(v string) any {
+	if v == "" {
+		return nil
+	}
+	return v
 }
 
 // Sweep hard-deletes tickets whose expiry is older than `before`.

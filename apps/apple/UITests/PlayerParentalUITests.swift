@@ -57,6 +57,39 @@ final class PlayerParentalUITests: PlayerUITestCase {
         return yes
     }
 
+    /// How many digits the pad holds, from its dots' label ("3 of 6 digits entered", in
+    /// Arabic with Arabic-Indic digits); nil once the pad is gone.
+    private func digitsEntered() -> Int? {
+        let dots = element("pin.dots")
+        guard dots.exists else { return nil }
+        let western = dots.label.unicodeScalars.map { u -> Character in
+            switch u.value {
+            case 0x0660 ... 0x0669: Character(UnicodeScalar(u.value - 0x0660 + 0x30)!)
+            case 0x06F0 ... 0x06F9: Character(UnicodeScalar(u.value - 0x06F0 + 0x30)!)
+            default: Character(u)
+            }
+        }
+        return Int(String(western.drop { !$0.isASCII || !$0.isNumber }.prefix { $0.isASCII && $0.isNumber }))
+    }
+
+    /// Types `digits` on the PIN pad, each key checked by the pad's count. On a loaded CI
+    /// simulator the system can cancel a key's touch before the app sees it end (#639; #1309's
+    /// run 43614149749, iPad: "touch held 0.18 s at (417, 560), cancelled" on the 2 of the
+    /// right PIN), and the pad then holds five digits and sends nothing. A tap that lands moves
+    /// the count (the sixth sends, and the pad clears or goes); one that leaves it where it
+    /// was is made once more, and a second loss fails here, naming the key.
+    private func typePIN(_ digits: [Int], file: StaticString = #filePath, line: UInt = #line) {
+        for d in digits {
+            for attempt in 1 ... 2 {
+                let before = digitsEntered()
+                element("pin.key.\(d)").tap()
+                if met(5, { digitsEntered() != before }) || digitsEntered() != before { break }
+                XCTAssertLessThan(attempt, 2, "two taps on the PIN key \(d) left the pad at \(before.map(String.init) ?? "-") digits",
+                                  file: file, line: line)
+            }
+        }
+    }
+
     /// `waitForExistence` that looks at once (XCTest's own first look comes a second in).
     private func shows(_ e: XCUIElement, within timeout: TimeInterval = 10) -> Bool {
         met(timeout) { e.exists }
@@ -274,7 +307,7 @@ final class PlayerParentalUITests: PlayerUITestCase {
         // 1 2 3 left to right, in Arabic too
         XCTAssertLessThan(element("pin.key.1").frame.minX, element("pin.key.2").frame.minX)
         XCTAssertLessThan(element("pin.key.2").frame.minX, element("pin.key.3").frame.minX)
-        for d in [1, 2, 3, 4, 5, 6] { element("pin.key.\(d)").tap() }
+        typePIN([1, 2, 3, 4, 5, 6])
         XCTAssertTrue(element("pin.line").waitForExistence(timeout: 10), "the wrong PIN's line")
         XCTAssertEqual(element("pin.line").label, "هذا الرمز غير صحيح.")
         let sent = body("POST", "/api/me/parental/unlock")
@@ -289,7 +322,7 @@ final class PlayerParentalUITests: PlayerUITestCase {
         home.stub("GET", "/api/videos/v2", body: try XCTUnwrap(home.fixture(named: "video-v2")))
         home.stub("GET", "/api/me/videos/v2", body: try XCTUnwrap(home.fixture(named: "me-video-v2")))
         home.stub("GET", "/api/me/parental", body: #"{"restricted":true,"max_tier":9,"unrated":"hide","version":5}"#)
-        for d in [6, 5, 4, 3, 2, 1] { element("pin.key.\(d)").tap() }
+        typePIN([6, 5, 4, 3, 2, 1])
         waitUntil("the video's page after the PIN", timeout: 20) { !self.element("blocked.title").exists && self.app.buttons["video.favorite"].exists }
     }
 
@@ -327,7 +360,7 @@ final class PlayerParentalUITests: PlayerUITestCase {
         shot("parental-pin-ax3")
         setTextSize(.standard)
 
-        for d in [1, 2, 3, 4, 5, 6] { element("pin.key.\(d)").tap() }
+        typePIN([1, 2, 3, 4, 5, 6])
         XCTAssertTrue(element("pin.line").waitForExistence(timeout: 10), "the lock's line")
         XCTAssertTrue(element("pin.line").label.hasPrefix("محاولات كثيرة. أعد المحاولة بعد"), element("pin.line").label)
         XCTAssertEqual(count("POST", "/api/me/parental/unlock"), 1)
@@ -347,7 +380,7 @@ final class PlayerParentalUITests: PlayerUITestCase {
         waitUntil("the keys open again when the lock ends", timeout: 50) { self.element("pin.key.1").isEnabled }
         XCTAssertTrue(element("pin.pad").exists, "the sheet was not closed")
         XCTAssertFalse(element("pin.line").exists && element("pin.line").label.hasPrefix("محاولات كثيرة"), "the lock's line is gone")
-        for d in [6, 5, 4, 3, 2, 1] { element("pin.key.\(d)").tap() }
+        typePIN([6, 5, 4, 3, 2, 1])
         waitUntil("the video's page after the PIN", timeout: 20) { !self.element("blocked.title").exists && self.app.buttons["video.favorite"].exists }
         XCTAssertEqual(count("POST", "/api/me/parental/unlock"), 2)
     }

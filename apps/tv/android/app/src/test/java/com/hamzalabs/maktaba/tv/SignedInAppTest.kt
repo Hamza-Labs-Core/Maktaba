@@ -251,6 +251,21 @@ class SignedInAppTest {
         assertEquals(1, homeReads())
     }
 
+    /**
+     * Story 58.14: Account says a parent manages a limited sign-in, and its limit, from the
+     * same `GET /api/me/parental` answer the rest of the app holds.
+     */
+    @Test
+    fun aLimitedSignInsAccountSaysAParentManagesIt() {
+        aLimitedSignIn(java.util.concurrent.atomic.AtomicInteger(1))
+        signedIn()
+        compose.waitUntil(STALL_MS) { compose.waitForIdle(); limitReads() >= 1 && shows("Account") }
+        compose.onNodeWithText("Account").performSemanticsAction(SemanticsActions.RequestFocus)
+        compose.waitUntil(STALL_MS) { compose.waitForIdle(); shows("A parent manages this account.") }
+        compose.onNodeWithTag("parental-managed", useUnmergedTree = true).assertExists()
+        compose.onNodeWithTag("parental-managed-limit", useUnmergedTree = true).assertExists()
+    }
+
     @Test
     fun droppingWhatIsKeptForgetsTheQueuesWindow() {
         val queue = com.hamzalabs.maktaba.core.queue.PlayQueueModel({ _, _, _ -> 200 to "{}" }, "tv-test")

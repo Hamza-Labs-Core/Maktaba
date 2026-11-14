@@ -109,8 +109,10 @@ Checked on `main` at 0770a41db (2026-11-08). Details and file paths are in resea
 - **Store search and voice integrations that publish titles off the home:** Alexa video skills,
   Roku's search feed, Google TV's catalog. A self-hosted home's titles stay in the home.
 - **DLNA.** Kept as the TVs' own last fallback; nothing is built for it.
-- **A TV-side parent PIN or device age signal.** No TV platform here offers an app an age signal.
-  A PIN on a remote is slow, and a guardian answers from the Player (58.14).
+- **A new TV-side parent PIN, or a device age signal.** No TV platform here offers an app an age
+  signal. Samsung, LG and Roku get no PIN: a PIN on a remote is slow, and a guardian answers from
+  the Player. Fire TV, as the Android TV app, keeps the PIN Epic 57 built for it, as the Apple TV
+  does (57.11; 58.14).
 
 ## 5. Platform by platform: the decisions
 
@@ -167,9 +169,9 @@ Checked on `main` at 0770a41db (2026-11-08). Details and file paths are in resea
 | Way | Fire TV | Samsung, LG | Roku | Vega | Cast receiver |
 |---|---|---|---|---|---|
 | Saved home | yes | yes | yes | yes | n/a |
-| **Cloud code** (any network; a phone approves) | yes (shared core) | **default** | **default** | **default** | n/a |
+| **Cloud code** (any network; a phone approves) | planned in the shared core; not built yet (58.05) | planned as the default; not built yet (58.09's second part) | **default** | **default** | n/a |
 | mDNS | yes | no API | no API | — | n/a |
-| Subnet probe of the TV's /24, then the home's own code | — | yes | yes | yes | n/a |
+| Subnet probe of the TV's /24, then the home's own code | — | yes (the code shown by `/tv/` in the frame) | yes | yes | n/a |
 | Typed address | yes | yes | yes | yes | n/a |
 | The sender's address and a cast grant | n/a | n/a | n/a | n/a | yes |
 
@@ -181,7 +183,8 @@ Checked on `main` at 0770a41db (2026-11-08). Details and file paths are in resea
 - **HTTPS everywhere it can be.** The per-home certificates of story 50.15 give LAN addresses valid
   HTTPS, which web TVs and Cast receivers need (no certificate pinning in a web runtime, and no
   mixed content). Where a router blocks those names, web TVs and Roku fall back to plain HTTP on
-  the LAN, say so on the Account screen, and sign in only by code there, never by password.
+  the LAN, say so on the code screen and in Settings → Connection (58.09), and sign in only by
+  code there, never by password.
 
 ### 6.3 Playback (58.02)
 
@@ -257,7 +260,9 @@ The styling is dark Ink & Brass (Epic 48's tokens), with a 1.08 focus scale and 
 
 - **No TV work needed for the filter.** Epic 57's filter is on the home, so every TV here is
   covered the moment it signs in.
-- **What each TV adds:** the blocked page with Ask a parent, and the "Managed by" line.
+- **What each TV adds:** the blocked page with Ask a parent, and the "Managed by" line. No PIN on
+  Samsung, LG or Roku; Fire TV and Android TV keep the PIN Epic 57 built, as the Apple TV does
+  (57.11).
 - **New paths, closed and tested in the bypass rehearsal (A23–A27):**
   - the cast grant;
   - the cloud code;
@@ -267,7 +272,7 @@ The styling is dark Ink & Brass (Epic 48's tokens), with a 1.08 focus scale and 
 ### 6.8 Store reviewers (58.04)
 
 - **The review home.** `review.maktaba.tv` is a home run by the project, with public-domain and
-  openly licensed content, a viewer account and the full cloud path.
+  openly licensed content, a viewer account, a child account under it, and the full cloud path.
 - **Every store's submission notes** point to it. Its password lives in the release secrets, never
   in the repo.
 
@@ -289,7 +294,7 @@ The styling is dark Ink & Brass (Epic 48's tokens), with a 1.08 focus scale and 
 | 3. Samsung and LG | 58.08 `/tv/`, 58.09 launcher, then 58.10 Tizen and 58.11 webOS | 58.10 and 58.11 in parallel; LG submits first (no partner contract, worldwide) |
 | 4. Roku | 58.15 Roku shaping, 58.12 channel, 58.13 player and certification | 58.15's shaping first |
 | 5. Parental and roles | 58.14, 58.17 (each route's role rows land with its story; the rehearsal last) | — |
-| 6. Vega | 58.18, when its start condition is met | — |
+| 6. Vega | 58.18, when its start condition is met (§12 Q8); waiting, not started | — |
 
 ## 8. Stories
 
@@ -312,7 +317,7 @@ The styling is dark Ink & Brass (Epic 48's tokens), with a 1.08 focus scale and 
 | 58.15 | [English and Arabic on every TV: catalogs, mirroring, fonts and Roku's visual text](story-58-15-strings-arabic-rtl.md) | every TV |
 | 58.16 | [CI for each TV: emulators where they exist, real-device checklists where they don't, logs kept](story-58-16-ci-per-platform.md) | CI |
 | 58.17 | [OpenAPI, role tests and the new-clients rehearsal](story-58-17-openapi-roles-rehearsal.md) | API, cloud, CI |
-| 58.18 | [Amazon Vega OS: a React Native app, built when Vega devices are a real share](story-58-18-vega-os.md) | Vega |
+| 58.18 | [Amazon Vega OS: a React Native app, built when Vega devices are a real share](story-58-18-vega-os.md) | Vega; **waiting** on its start condition (§12 Q8), not started |
 
 ## 9. Test and rehearsal plan
 

@@ -27,7 +27,7 @@ the TV. This story covers what the TV must still do:
 | Piece | Fire TV / Android TV | Samsung, LG (`/tv/`) | Roku | Cast receiver |
 |---|---|---|---|---|
 | Blocked page with **Ask a parent** (57.06's request API) | yes | yes (in `bigscreen`, so `/big` gets it too) | yes | no: the sender shows it (the receiver never opens what the sender could not) |
-| Parent PIN on the TV | no (slow on a remote; a guardian answers from the Player) | no | no | no |
+| Parent PIN on the TV | yes: the PIN Epic 57 built for it stays, as on the Apple TV (57.11) | no (slow on a remote; a guardian answers from the Player) | no (same) | no |
 | "Managed by" line and the limit, in Account | yes | yes | yes | no |
 | Device age signal | none: no TV platform here gives an app an age or rating limit (research.md §1.3) | none | none | none |
 
@@ -69,10 +69,10 @@ the TV. This story covers what the TV must still do:
 
 | ID | Type | Setup | Action | Expected |
 |---|---|---|---|---|
-| T01 | Go Postgres (`parental-bypass` target of 57.13) | A23–A27 | run directly and through the relay | each refused as listed |
-| T02 | Robolectric (Fire TV / Android TV) | restricted fixture | open a blocked item | blocked page, Ask a parent focused; en and ar |
-| T03 | Playwright `/tv/` | restricted fixture | same | same |
-| T04 | brs-engine (Roku) | restricted fixture | deep link to a blocked ID; open blocked | not-available line; blocked page |
+| T01 | Go Postgres (`parental-bypass` target of 57.13) | A23–A27, with each TV's user agent | run against the home's router | each refused as listed; hidden and missing answered alike |
+| T02 | Robolectric (Fire TV / Android TV) | restricted fixture | open a blocked item; open Account | blocked page, Ask a parent focused; the managed line and limit; en and ar |
+| T03 | Playwright `/tv/` and Vitest | restricted fixture | same, by remote keys | same; no PIN; the player's blocked and time's-up screens are the big screen's |
+| T04 | brs-engine (Roku) | restricted fixture | deep link to a blocked ID; open blocked; ask; a parent's yes | not-available line, nothing asked; blocked page, Ask a parent focused; the request names the item; the item opens with no restart; Account's managed lines; en and ar |
 | T05 | Go Postgres | cast grant minted, then policy tightened | open next queue item | 404 |
 
 ## Strings
@@ -98,7 +98,7 @@ alike, so the line says "phone".)
 
 | File | Change |
 |---|---|
-| `apps/tv/android/…/screens/Blocked*.kt` | blocked page, managed line |
-| `web/src/bigscreen/screens/Blocked.tsx` | same, for `/tv/` and `/big` |
-| `apps/tv/roku/components/Blocked/` | same |
-| `api/internal/parental/` tests | A23–A27 in the bypass target |
+| `apps/tv/android/…/ui/screens/Parental.kt`, `AccountScreen.kt` | blocked page's Ask a parent focused and the phone line; `TvManaged` in Account |
+| `web/src/bigscreen/screens/Blocked.tsx`, `web/src/components/parental/screens.ts` | the 10-foot blocked page, time's up and Settings' managed lines, for `/tv/` and `/big`; the player's `BlockedOr` and `TimesUp` draw them inside the big screen |
+| `apps/tv/roku/components/screens/BlockedScreen.*`, `apps/tv/roku/source/parental.brs` | the blocked page, the request followed, Account's managed lines |
+| `api/internal/router/p58_parental_tv_pg_test.go` | A23–A27 in the bypass target (`tools/ci/parental-bypass-tests.txt`) |

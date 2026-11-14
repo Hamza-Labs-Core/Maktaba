@@ -16,7 +16,7 @@ import {
   vectorInput,
   visualOrder,
 } from "../../../shared/i18n/visual_order.mjs";
-import { mockHome, type MockHome } from "./mockHome";
+import { BLOCKED_VIDEO, mockHome, type MockHome } from "./mockHome";
 
 const SHOTS = path.resolve(process.cwd(), "test-results/tv/shots");
 
@@ -277,3 +277,49 @@ test("Home → Library → Series within the budget, CPU throttled ×6 (T04)", a
   expect(toLibrary).toBeLessThan(3_000);
   expect(toSeries).toBeLessThan(3_000);
 });
+
+// Epic 58 story 58.14 T03: a child's account at 9+ on a Samsung or LG TV. A hidden video
+// opened by a link shows the blocked page with Ask a parent focused (D-pad only); OK asks
+// the home with the id the page had; Settings says a parent manages the account.
+for (const locale of ["en", "ar"] as const) {
+  test(`a restricted child: the blocked page and the managed line, ${locale}`, async ({
+    page,
+  }, info) => {
+    const log = record(page);
+    const home = await mockHome(page, { restricted: true });
+    await start(page, locale);
+    await page.goto(`/tv/big/video/${BLOCKED_VIDEO}`);
+    const blocked = page.getByTestId("parental-blocked");
+    await expect(blocked).toBeVisible();
+    await expect(page.locator("html")).toHaveAttribute("dir", locale === "ar" ? "rtl" : "ltr");
+    await expect(blocked).toContainText(locale === "ar" ? "هذا غير متاح" : "This isn't available");
+    await expect(page.getByTestId("parental-ask-on-phone")).toContainText(
+      locale === "ar"
+        ? "يمكن لأحد الوالدين الرد من Maktaba على هاتفه."
+        : "A parent can answer from Maktaba on their phone."
+    );
+    // nothing of the video: no title, no picture
+    await expect(blocked.locator("img")).toHaveCount(0);
+    await expect.poll(() => focused(page)).toBe("parental:ask");
+    await shot(page, `parental-blocked-${locale}`);
+
+    await page.keyboard.press("Enter");
+    await expect(page.getByTestId("parental-ask-waiting")).toBeVisible();
+    expect(home.asked).toEqual([{ subject_kind: "video", subject_id: BLOCKED_VIDEO }]);
+    await expect.poll(() => focused(page)).toBe("parental:check");
+    await shot(page, `parental-asked-${locale}`);
+
+    await page.goto("/tv/big/settings");
+    await expect(page.getByTestId("big-parental-managed-line")).toContainText(
+      locale === "ar" ? "يدير أحد الوالدين هذا الحساب." : "A parent manages this account."
+    );
+    // the catalog's own words for the tier (Arabic writes it +9 behind a mark)
+    await expect(page.getByTestId("big-parental-limit")).toContainText(
+      locale === "ar" ? "+9" : "Content limit: 9+"
+    );
+    await shot(page, `parental-settings-${locale}`);
+
+    await log.attach(info, home);
+    expect(log.consoleLines.filter((l) => l.startsWith("[pageerror]"))).toEqual([]);
+  });
+}
