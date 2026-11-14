@@ -59,6 +59,7 @@
 		09D8F02A486C333813EC00FC /* me-playlists.json in Resources */ = {isa = PBXBuildFile; fileRef = 37E5377E1A68AD45AE2A777E /* me-playlists.json */; };
 		0A3E588C25882A6BE5C15450 /* channel-ch-2.json in Resources */ = {isa = PBXBuildFile; fileRef = A191553C5553CBCD35BDA7E8 /* channel-ch-2.json */; };
 		0A994255D08907B6C6FB8A84 /* me-sessions.json in Resources */ = {isa = PBXBuildFile; fileRef = 1C9AFB96C1B7B76E48217886 /* me-sessions.json */; };
+		0AA9833BFFBDE0134601A1DA /* HomeScreenTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17E21C0F3A3E398E5AB8EA22 /* HomeScreenTests.swift */; };
 		0ABEB297A476BC136D674E26 /* picture-1.ts in Resources */ = {isa = PBXBuildFile; fileRef = 79346C140CC8552FC36E366E /* picture-1.ts */; };
 		0AE5E60E6CAC2680A5261923 /* channels-now.json in Resources */ = {isa = PBXBuildFile; fileRef = F2AAF6514EB46D3CBD9DCA24 /* channels-now.json */; };
 		0AED0FDE404D6219AA303CAC /* me-history.json in Resources */ = {isa = PBXBuildFile; fileRef = BCCBC8D96DFA281D25BD1CA8 /* me-history.json */; };
@@ -1123,6 +1124,7 @@
 		136F5B08E9086201B88A8B60 /* tv-remote-heartbeat.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "tv-remote-heartbeat.json"; sourceTree = "<group>"; };
 		15376060DE47516866176397 /* library-series-docs.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "library-series-docs.json"; sourceTree = "<group>"; };
 		16B822BB23E29B870CFE42F5 /* PlaybackSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackSettings.swift; sourceTree = "<group>"; };
+		17E21C0F3A3E398E5AB8EA22 /* HomeScreenTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeScreenTests.swift; sourceTree = "<group>"; };
 		18F6EE54A66EE892FE4E3C6B /* demo-picture-1.ts */ = {isa = PBXFileReference; path = "demo-picture-1.ts"; sourceTree = "<group>"; };
 		1A7D87B7DF1E612F19C81268 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
 		1AB8DED5864DCE439AEB8ADA /* Info-iPhone.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = "Info-iPhone.plist"; sourceTree = "<group>"; };
@@ -1625,6 +1627,7 @@
 			isa = PBXGroup;
 			children = (
 				DBC4D522881166FE73E94BA1 /* UI */,
+				17E21C0F3A3E398E5AB8EA22 /* HomeScreenTests.swift */,
 				4A77E2E5208591C8EF02AE1D /* KeychainTests.swift */,
 				4430BD923175592436B44A65 /* PageLocaleTests.swift */,
 				CAA1815F933BFB3F631165D9 /* PageSnapshotTests.swift */,
@@ -3397,6 +3400,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				0AA9833BFFBDE0134601A1DA /* HomeScreenTests.swift in Sources */,
 				7DFA2B5C4FAFA9F7ED3A279A /* KeychainTests.swift in Sources */,
 				D7AFC0AACABE6FC51AB76D9D /* MockHome.swift in Sources */,
 				D19F72760C95BF3E7E27E678 /* PageLocaleTests.swift in Sources */,

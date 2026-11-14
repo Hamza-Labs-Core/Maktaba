@@ -14,6 +14,11 @@ build fails when the two differ.
 
 ### Changed
 
+- **VoiceOver reaches a Home card's menu without the long press (Apple Player).** On iPhone,
+  iPad and the Mac, each Home card offers its context menu's items as VoiceOver actions:
+  Resume on a Continue Watching card, Not interested on a recommendation, named as the menu
+  names them in English and Arabic. Each does what its menu item does.
+
 - **The cloud's database can run on machines of its own (Epic 50, story 50.18).** Three
   database nodes (a primary, a replica that confirms every commit, and a second replica) sit
   behind PgBouncer and a Floating IP of their own; losing the primary promotes the replica that
