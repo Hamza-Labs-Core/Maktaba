@@ -8,6 +8,8 @@
     <field id="body" type="assocarray" />
     <field id="hasBody" type="boolean" value="false" />
     <field id="tag" type="string" />
+    <!-- raw: the response also carries the body as text (a WebVTT file, story 58.13) -->
+    <field id="raw" type="boolean" value="false" />
     <field id="response" type="assocarray" />
   </interface>
 </component>

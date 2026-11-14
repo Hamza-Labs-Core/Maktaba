@@ -1,5 +1,8 @@
 <?xml version="1.0" encoding="utf-8" ?>
-<!-- Playback (Epic 58 story 58.12): a stream session (client_profile roku) in a Video node. Story 58.13 builds the player proper on it: overlay, subtitles, progress, Up next. -->
+<!-- The player (Epic 58 story 58.13): a stream session (client_profile roku with this Roku's
+     device_caps) in a Video node whose own trick-play bar is replaced by Maktaba's overlay:
+     title, series and episode, position, chapter, scrub thumbnails, Up next, the audio and
+     subtitle pickers, and a subtitle layer that draws Arabic cues in visual order. -->
 <component name="PlayerScreen" extends="Screen">
   <script type="text/brightscript" uri="PlayerScreen.brs" />
   <script type="text/brightscript" uri="pkg:/components/common.brs" />
@@ -11,8 +14,41 @@
   <script type="text/brightscript" uri="pkg:/source/layout.brs" />
   <script type="text/brightscript" uri="pkg:/source/visualtext.brs" />
   <script type="text/brightscript" uri="pkg:/source/visualtext_tables.brs" />
+  <script type="text/brightscript" uri="pkg:/source/caps.brs" />
+  <script type="text/brightscript" uri="pkg:/source/player.brs" />
   <children>
-    <Video id="video" width="1920" height="1080" />
-    <Label id="error" translation="[120,480]" width="1680" height="160" wrap="true" visible="false" />
+    <Video id="video" width="1920" height="1080" enableUI="false" />
+    <!-- the channel's subtitle layer: Arabic cues, shaped and in display order -->
+    <Label id="subs" translation="[160,860]" width="1600" height="160" horizAlign="center" vertAlign="bottom" wrap="true" maxLines="3" visible="false" />
+    <Group id="overlay" visible="false">
+      <Rectangle id="shade" translation="[0,700]" width="1920" height="380" color="0x0B111CD8" />
+      <Label id="title" translation="[120,730]" width="1680" height="60" />
+      <Label id="meta" translation="[120,795]" width="1680" height="44" />
+      <Group id="thumb" translation="[120,520]" visible="false">
+        <Rectangle id="thumbFrame" translation="[-4,-4]" width="328" height="188" color="0xE3B252FF" />
+        <Group id="thumbClip" clippingRect="[0,0,320,180]">
+          <Poster id="sheet" loadDisplayMode="noScale" />
+        </Group>
+      </Group>
+      <Rectangle id="track" translation="[120,870]" width="1680" height="10" color="0x22304AFF" />
+      <Rectangle id="fill" translation="[120,870]" width="0" height="10" color="0xE3B252FF" />
+      <Label id="pos" translation="[120,895]" width="400" height="44" />
+      <Label id="dur" translation="[1400,895]" width="400" height="44" />
+      <TvButton id="audio" translation="[120,965]" width="280" />
+      <TvButton id="subtitles" translation="[430,965]" width="280" />
+    </Group>
+    <Group id="upNext" translation="[1340,80]" visible="false">
+      <Rectangle id="upNextBox" width="460" height="330" color="0x131D2EFF" />
+      <Rectangle id="upNextRing" translation="[-4,-4]" width="468" height="338" color="0xE3B252FF" visible="false" />
+      <Rectangle width="460" height="330" color="0x131D2EFF" />
+      <Poster id="upNextPoster" translation="[20,20]" width="420" height="200" loadDisplayMode="scaleToZoom" />
+      <Label id="upNextLabel" translation="[20,232]" width="420" height="40" />
+      <Label id="upNextTitle" translation="[20,272]" width="420" height="44" />
+    </Group>
+    <Label id="status" translation="[160,440]" width="1600" height="200" horizAlign="center" wrap="true" visible="false" />
+    <TvButton id="back" translation="[800,680]" width="320" visible="false" />
+    <ChoiceDialog id="picker" visible="false" />
+    <!-- holds the focus while no picker is open: the remote's keys bubble from it to the screen -->
+    <Group id="keys" focusable="true" />
   </children>
 </component>

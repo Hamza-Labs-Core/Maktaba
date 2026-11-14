@@ -11,7 +11,7 @@ import { test } from "node:test";
 
 import JSZip from "jszip";
 
-import { DEVICE_TESTS, MAX_ZIP_BYTES, build } from "../tools/build.mjs";
+import { DEVICE_TESTS, MAX_ZIP_BYTES, build, buildVersion } from "../tools/build.mjs";
 import { LOGS, ROKU } from "./brs.mjs";
 
 const CLI = join(ROKU, "node_modules", "brs-node", "bin", "brs.cli.js");
@@ -42,6 +42,19 @@ test("T02: the store build compiles clean, holds the channel and stays under Rok
   assert.match(manifest, /^bs_const=TEST=false$/m);
   assert.doesNotMatch(manifest, /maktaba_(cloud|probe)/, "no test endpoint in a store build");
   assert.match(manifest, /^splash_color=#0B111C$/m);
+});
+
+test("58.13: a release's zip carries the tag's version as Roku's build_version", async () => {
+  assert.equal(buildVersion("0.3.150"), 3150);
+  assert.equal(buildVersion("0.4.0"), 4000, "a minor release is above every patch of the last");
+  assert.throws(() => buildVersion("v0.3.1"), /X\.Y\.Z/);
+  assert.throws(() => buildVersion("0.3.1000"), /does not fit/);
+  const zip = await build(["--version", "0.3.150", "--out", join(ROKU, "build", "maktaba-roku-0.3.150.zip")]);
+  const manifest = await (await JSZip.loadAsync(readFileSync(zip))).file("manifest").async("string");
+  assert.match(manifest, /^major_version=1$/m);
+  assert.match(manifest, /^minor_version=0$/m);
+  assert.match(manifest, /^build_version=3150$/m);
+  assert.match(manifest, /^bs_const=TEST=false$/m);
 });
 
 test("T04's package: the logic tests side-load as one channel and pass on brs-engine", async () => {

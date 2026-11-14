@@ -69,7 +69,13 @@
     "library.onDeck": "ﺓﺪﻫﺎﺸﻤﻠﻟ ﻲﻟﺎﺘﻟﺍ",
     "library.recentlyWatched": "ﺍﺮﺧﺆﻣ ﺪﻫﻮﺷ",
     "search.noResults": ".ﺞﺋﺎﺘﻧ ﻻ",
-    "player.error": ".ﻥﻵﺍ ﻮﻳﺪﻴﻔﻟﺍ ﺍﺬﻫ ﻞﻴﻐﺸﺗ ﻦﻜﻤﻳ ﻻ"
+    "player.error": ".ﻥﻵﺍ ﻮﻳﺪﻴﻔﻟﺍ ﺍﺬﻫ ﻞﻴﻐﺸﺗ ﻦﻜﻤﻳ ﻻ",
+    "roku.player.upNext": "ﻲﻟﺎﺘﻟﺍ",
+    "roku.player.retrying": "…ﺔﻟﻮﺤﻣ ﺔﺨﺴﻧ ﺔﺑﺮﺠﺗ ﺭﺎﺟ",
+    "roku.player.failed": ".ﺍﺬﻫ Roku ﺯﺎﻬﺟ ﻰﻠﻋ ﻮﻳﺪﻴﻔﻟﺍ ﺍﺬﻫ ﻞﻴﻐﺸﺗ ﻦﻜﻤﻳ ﻻ",
+    "roku.player.audio": "ﺕﻮﺼﻟﺍ",
+    "roku.player.subtitles": "ﺔﻤﺟﺮﺘﻟﺍ",
+    "roku.player.off": "ﻑﺎﻘﻳﺇ"
   },
   "templates": {
     "launcher.connecting": {
@@ -135,6 +141,11 @@
     "account.home": {
       "text": "الجهاز الرئيسي: %1$s",
       "widthChars": 60,
+      "lines": 1
+    },
+    "roku.player.track": {
+      "text": "المسار %1$s",
+      "widthChars": 30,
       "lines": 1
     }
   }

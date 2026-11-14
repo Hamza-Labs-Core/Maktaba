@@ -376,8 +376,8 @@ export const APPS = [
                 "**الملف الشخصي**: سجل المشاهدة والمفضلة وقوائم التشغيل والجلسات، و**الموافقة على تلفاز أو جهاز**، وتبديل الجهاز الرئيسي، وإعدادات المظهر واللغة والتشغيل على هذا الجهاز."
               ),
               t(
-                "**Watching**: subtitles and audio tracks, the next lesson, AirPlay and Picture in Picture on Apple devices, picture in picture and sound with the screen off on Android. On the Mac the video fills the window and the **Playback** menu has the keys. On Windows and Linux: the **Audio**, **Subtitles** and **Quality** menus, Up next, and the keys below.",
-                "**المشاهدة**: الترجمات ومسارات الصوت، والدرس التالي، وAirPlay وصورة داخل صورة على أجهزة آبل، وصورة داخل صورة واستمرار الصوت مع إطفاء الشاشة على أندرويد. وعلى الماك يملأ المقطع النافذة، وفي قائمة **التشغيل** اختصارات لوحة المفاتيح. وعلى ويندوز ولينكس: قوائم **الصوت** و**الترجمة** و**الجودة**، و«التالي»، والمفاتيح المبيّنة أدناه."
+                "**Watching**: subtitles and audio tracks, the next lesson, AirPlay and Picture in Picture on Apple devices, picture in picture, sound with the screen off and **Cast** to a Chromecast or a Google TV on Android (the TV plays and reports where it is by itself, so the phone can lock). On the Mac the video fills the window and the **Playback** menu has the keys. On Windows and Linux: the **Audio**, **Subtitles** and **Quality** menus, Up next, and the keys below.",
+                "**المشاهدة**: الترجمات ومسارات الصوت، والدرس التالي، وAirPlay وصورة داخل صورة على أجهزة آبل، وصورة داخل صورة واستمرار الصوت مع إطفاء الشاشة و**البث** إلى Chromecast أو Google TV على أندرويد (يشغّل التلفاز ويبلّغ عن موضعه بنفسه، فيمكن قفل الهاتف). وعلى الماك يملأ المقطع النافذة، وفي قائمة **التشغيل** اختصارات لوحة المفاتيح. وعلى ويندوز ولينكس: قوائم **الصوت** و**الترجمة** و**الجودة**، و«التالي»، والمفاتيح المبيّنة أدناه."
               ),
               t(
                 "**The status strip**: when the home's streaming is down, the Player says so before you press play.",
@@ -932,8 +932,8 @@ export const APPS = [
                     "روكو (نظام Roku OS، كل أجهزة روكو الحالية)"
                   ),
                   t(
-                    `Not in Roku's store yet. A Roku in developer mode installs the channel built from [\`apps/tv/roku/\`](${SRC}/apps/tv/roku) (\`node tools/build.mjs\`) from its developer page. The channel is in English and Arabic, the whole of it mirrored in Arabic with the text joined and in reading order, and it opens straight to a video from a deep link`,
-                    `ليست في متجر روكو بعد. يثبّت جهاز روكو في وضع المطوّر القناةَ المبنية من [\`apps/tv/roku/\`](${SRC}/apps/tv/roku) (\`node tools/build.mjs\`) من صفحة المطوّر فيه. القناة بالعربية والإنجليزية، وهي كلها معكوسة الاتجاه بالعربية والنص فيها موصول الحروف وبترتيب القراءة، وتفتح الفيديو مباشرة من رابط عميق`
+                    `Not in Roku's store yet. A Roku in developer mode installs the channel from its developer page: the \`maktaba-roku-<version>.zip\` a release carries when the channel changed, or one built from [\`apps/tv/roku/\`](${SRC}/apps/tv/roku) (\`node tools/build.mjs\`). The channel is in English and Arabic, the whole of it mirrored in Arabic with the text joined and in reading order, and it opens straight to a video from a deep link. Its player tells the home what the Roku plays (HEVC and HDR where it can, AV1 by DASH), has Maktaba's own controls with scrub thumbnails and audio and subtitle choices, draws Arabic subtitles itself, joined and right to left, saves your place, and shows Up next in a queue`,
+                    `ليست في متجر روكو بعد. يثبّت جهاز روكو في وضع المطوّر القناةَ من صفحة المطوّر فيه: الملف \`maktaba-roku-<version>.zip\` الذي يحمله الإصدار حين تتغيّر القناة، أو قناة مبنية من [\`apps/tv/roku/\`](${SRC}/apps/tv/roku) (\`node tools/build.mjs\`). القناة بالعربية والإنجليزية، وهي كلها معكوسة الاتجاه بالعربية والنص فيها موصول الحروف وبترتيب القراءة، وتفتح الفيديو مباشرة من رابط عميق. ومشغّلها يُخبر الجهاز الرئيسي بما يشغّله روكو (HEVC وHDR حيث يستطيع، وAV1 عبر DASH)، وله أزرار تحكم من مكتبة نفسها مع صور مصغّرة للتنقل واختيار الصوت والترجمة، ويرسم الترجمة العربية بنفسه موصولة الحروف ومن اليمين إلى اليسار، ويحفظ موضع مشاهدتك، ويُظهر «التالي» في قائمة التشغيل`
                   ),
                 ],
               ],
@@ -1099,12 +1099,24 @@ export const APPS = [
                 "A library on Roku: the five tabs, Play and Shuffle, the grid and its letter rail",
                 "مكتبة على روكو: التبويبات الخمسة، والتشغيل والتشغيل العشوائي، والشبكة وشريط الحروف"
               ),
+              shot(
+                "roku-player",
+                "wide",
+                "Playing on Roku: Maktaba's controls, the chapter, and the audio and subtitle choices",
+                "التشغيل على روكو: أزرار التحكم من مكتبة، والفصل، واختيار الصوت والترجمة"
+              ),
+              shot(
+                "roku-subtitles",
+                "wide",
+                "Arabic subtitles on Roku, drawn by the channel joined and right to left",
+                "ترجمة عربية على روكو، ترسمها القناة موصولة الحروف ومن اليمين إلى اليسار"
+              ),
             ],
           },
           {
             p: t(
-              "The first four screenshots are from the Apple TV app, the sign-in from the Android TV app, the next two from the Fire TV build, the next from the LG app and the next from the Samsung app, each taken in its browser test with a pretend TV (behind the Samsung shot, a frame stands in for the video), and the last two from the Roku channel, drawn by brs-engine (Roku's own renderer differs a little). The Android TV app, its Fire TV build and the Roku channel have the same sections as the Apple TV app, laid out for the TV's remote.",
-              "أول أربع لقطات من تطبيق آبل تي في، ولقطة تسجيل الدخول من تطبيق أندرويد تي في، واللقطتان التاليتان من إصدار فاير تي في، والتالية من تطبيق LG والتي تليها من تطبيق سامسونج، وكلٌّ منهما التُقطت في اختبار تطبيقها في المتصفح مع تلفاز وهمي (وخلف لقطة سامسونج إطار بديل عن الفيديو)، وآخر لقطتين من قناة روكو كما يرسمها brs-engine (ويختلف عنه عارض روكو نفسه قليلًا). ولتطبيق أندرويد تي في وإصداره لفاير تي في وقناة روكو أقسام تطبيق آبل تي في نفسها، مرتبةً لجهاز تحكم التلفاز."
+              "The first four screenshots are from the Apple TV app, the sign-in from the Android TV app, the next two from the Fire TV build, the next from the LG app and the next from the Samsung app, each taken in its browser test with a pretend TV (behind the Samsung shot, a frame stands in for the video), and the last four from the Roku channel, drawn by brs-engine (Roku's own renderer differs a little; behind the player, the video is black). The Android TV app, its Fire TV build and the Roku channel have the same sections as the Apple TV app, laid out for the TV's remote.",
+              "أول أربع لقطات من تطبيق آبل تي في، ولقطة تسجيل الدخول من تطبيق أندرويد تي في، واللقطتان التاليتان من إصدار فاير تي في، والتالية من تطبيق LG والتي تليها من تطبيق سامسونج، وكلٌّ منهما التُقطت في اختبار تطبيقها في المتصفح مع تلفاز وهمي (وخلف لقطة سامسونج إطار بديل عن الفيديو)، وآخر أربع لقطات من قناة روكو كما يرسمها brs-engine (ويختلف عنه عارض روكو نفسه قليلًا، والفيديو خلف المشغّل أسود). ولتطبيق أندرويد تي في وإصداره لفاير تي في وقناة روكو أقسام تطبيق آبل تي في نفسها، مرتبةً لجهاز تحكم التلفاز."
             ),
           },
           { p: SHOTS_NOTE },
@@ -1383,6 +1395,10 @@ export const APPS = [
               t(
                 "A library's **Playlists** tab, **Save as smart playlist** on its filters, **Shuffle** on a series and on each season, and **Continue your queue** on Home. Admins choose how each collection shows: its name, whether it is hidden, and its rows on Recommended and Home.",
                 "تبويب **قوائم التشغيل** في المكتبة، و**الحفظ كقائمة تشغيل ذكية** من مرشّحاتها، و**تشغيل عشوائي** في السلسلة وفي كل موسم، و**تابع قائمة الانتظار** في الرئيسية. ويختار المدراء طريقة عرض كل مجموعة: اسمها، وهل هي مخفية، وصفوفها في المقترحات والرئيسية."
+              ),
+              t(
+                "**Cast to a TV**, in Chrome on the home's secure address (`https://`): the player sends the video, or the whole queue of **Play all** and **Shuffle**, to a Chromecast, a Google TV or a TV with Chromecast built in on the same Wi-Fi network, through Maktaba's own receiver. The TV fetches the video from the home itself with a cast grant (a six-hour pass for that video or queue, never the person's sign-in), so the tab can close and **Continue Watching** still follows the TV; the player shows the TV's name, play, pause and **Stop casting**, and the TV's screens follow the web app's language. There is no Cast button on `http://`, in other browsers, or through Maktaba Cloud. It appears once the build carries the Cast receiver's application ID (`shared/cast/app.json`); the contract is the [casting guide](/contributing/casting/).",
+                "**البث إلى تلفاز**، في Chrome على العنوان الآمن للجهاز الرئيسي (`https://`): يرسل المشغّل المقطع، أو قائمة **تشغيل الكل** و**تشغيل عشوائي** كلها، إلى Chromecast أو Google TV أو تلفاز مدمج فيه Chromecast على شبكة Wi-Fi نفسها، عبر المستقبِل الخاص بمكتبة. يجلب التلفاز المقطع من الجهاز الرئيسي بنفسه بتصريح بث (تصريح مدته ست ساعات لذلك المقطع أو تلك القائمة، وليس تسجيل دخول الشخص أبدًا)، فيمكن إغلاق التبويب وتبقى **تابع المشاهدة** تتبع التلفاز؛ ويعرض المشغّل اسم التلفاز والتشغيل والإيقاف المؤقت و**إيقاف البث**، وتتبع شاشات التلفاز لغة تطبيق الويب. لا يظهر زر البث على `http://` ولا في المتصفحات الأخرى ولا عبر سحابة مكتبة. ويظهر حين تحمل النسخة معرّف تطبيق مستقبِل البث (`shared/cast/app.json`)؛ والعقد في [دليل البث](/contributing/casting/)."
               ),
               t(
                 "**Account**: devices, **Connect an app** (the link and QR code the apps take), sessions, API tokens, history and preferences; and **Sign in a device**, where a code is approved.",
