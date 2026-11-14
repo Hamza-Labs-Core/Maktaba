@@ -20,7 +20,15 @@ export const HELP_CATEGORIES = [
   },
   {
     id: "tv",
-    topics: ["channels", "filler", "live-tv-admin", "tv-changes", "remote-tv", "simulcast"],
+    topics: [
+      "channels",
+      "filler",
+      "live-tv-admin",
+      "tv-changes",
+      "broadcast-access",
+      "remote-tv",
+      "simulcast",
+    ],
   },
   {
     id: "admin",

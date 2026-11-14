@@ -813,6 +813,19 @@ build fails when the two differ.
 
 ### Added
 
+- **Who may watch a home's broadcast channels (Epic 50, story 50.26).** Each published channel is
+  invite only (the default) or open to anyone with the link, open only for a verified account
+  (a paid plan, a confirmed email, 7 days since the first broadcast) with the Broadcaster
+  add-on, and only once Maktaba turns open channels on. The home's owner or an admin creates
+  invite links and short TV codes (`MK-…`) in the web app's **Broadcast access** page or in
+  Maktaba Cloud's **Who can watch**, sees the devices on each, removes one or withdraws the
+  invite (its viewers stop within a minute), and sets the devices per network and minutes a
+  day. The watch edge turns an invite into a 30-day pass for one device, an open channel's
+  visitor into a 12-hour session after a Turnstile check or an app attestation, and each play
+  into a 10-minute viewer token; the plan's concurrent viewers and viewer-hours hold for new
+  viewers, never stopping one already watching. Viewers never pay. Maktaba's staff can list
+  and revoke a home's invites, with a reason, in the audit log.
+
 - **Apps can tell when they and the home are too far apart (story 58.01).** The home now
   publishes its API level, the oldest level it still serves, and the oldest build of each app it
   signs in, with no sign-in needed (`GET /api/discovery/home`: `api_level`, `api_level_oldest`,

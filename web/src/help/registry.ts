@@ -102,6 +102,7 @@ export const PAGE_HELP: ReadonlyArray<readonly [path: string, ref: HelpRef]> = [
   ["/admin/live-tv", { topic: "live-tv-admin" }],
   ["/admin/live-tv/changes", { topic: "tv-changes" }],
   ["/admin/live-tv/changes/:id", { topic: "tv-changes", anchor: "change-page" }],
+  ["/admin/broadcast-access", { topic: "broadcast-access" }],
   ["/admin/analytics", { topic: "analytics" }],
   ["/admin/audit", { topic: "audit-log" }],
   ["/admin/health", { topic: "system-health" }],
