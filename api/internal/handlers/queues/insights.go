@@ -159,8 +159,11 @@ type Pulse struct {
 	PausedAll      bool       `json:"paused_all"`
 	LastActivityAt *time.Time `json:"last_activity_at"`
 	AgeSec         *float64   `json:"age_sec"`
-	// Stuck lists the stalled jobs for admins only (job ids, subjects and
-	// worker names are operator detail); StuckCount is shown to everyone.
+	// Stuck lists the stalled jobs and StuckCount counts them. The whole pulse is
+	// admin-only (Mount puts every queues route behind adminOnly); Stuck is also
+	// emptied below for a caller who is not an admin, as a second guard should
+	// the route ever open to others (job ids, subjects and worker names are
+	// operator detail).
 	Stuck      []StuckJob `json:"stuck"`
 	StuckCount int        `json:"stuck_count"`
 	// Workers says whether the workers run the waiting jobs (workerstate.go): while
@@ -266,6 +269,7 @@ func (h *Handler) Pulse(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	out.StuckCount = len(out.Stuck)
+	// Unreachable today (adminOnly answers 403 first); kept as a second guard.
 	if p := principal.FromContext(ctx); p == nil || !p.IsAdmin {
 		out.Stuck = []StuckJob{}
 	}
