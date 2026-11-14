@@ -35,15 +35,18 @@ export async function newChallenge(env: Env): Promise<{ nonce: string; expires_a
   return { nonce: `${body}.${await challengeMac(env, body)}`, expires_at: exp };
 }
 
-/** useChallenge checks a challenge's mac and expiry and spends it: true only the first time. */
-async function useChallenge(env: Env, nonce: string): Promise<boolean> {
+/** readChallenge checks a challenge's mac and expiry, spending nothing: its random part. */
+async function readChallenge(
+  env: Env,
+  nonce: string
+): Promise<{ rand: string; exp: number } | null> {
   const parts = nonce.split(".");
-  if (parts.length !== 3) return false;
+  if (parts.length !== 3) return null;
   const body = `${parts[0]}.${parts[1]}`;
-  if (!sameText(await challengeMac(env, body), parts[2]!)) return false;
+  if (!sameText(await challengeMac(env, body), parts[2]!)) return null;
   const exp = Number(parts[1]);
-  if (!Number.isFinite(exp) || exp <= now()) return false;
-  return (await spent(env, nonce).spend(parts[0]!, exp)) === true;
+  if (!Number.isFinite(exp) || exp <= now()) return null;
+  return { rand: parts[0]!, exp };
 }
 
 export const PLATFORMS = ["apple", "android"] as const;
@@ -64,8 +67,10 @@ export async function verifyAttestation(
   )
     return { ok: false, status: 400, error: "bad_attestation" };
   if (!env.ATTEST_API) return { ok: false, status: 503, error: "attest_unavailable" };
-  if (!nonce || nonce.length > 128 || !(await useChallenge(env, nonce)))
-    return { ok: false, status: 403, error: "attest_challenge" };
+  // The challenge is checked first (cheap, stateless) and spent only once the attestation holds,
+  // so a caller without one cannot fill the spent set.
+  const challenge = nonce && nonce.length <= 128 ? await readChallenge(env, nonce) : null;
+  if (!challenge) return { ok: false, status: 403, error: "attest_challenge" };
   let res: Response;
   try {
     res = await env.ATTEST_API.fetch("https://attest.internal/verify", {
@@ -78,5 +83,8 @@ export async function verifyAttestation(
   }
   if (!res.ok) return { ok: false, status: 503, error: "attest_unavailable" };
   const body = (await res.json().catch(() => ({}))) as { valid?: boolean };
-  return body.valid === true ? { ok: true } : { ok: false, status: 403, error: "attest_failed" };
+  if (body.valid !== true) return { ok: false, status: 403, error: "attest_failed" };
+  const spend = await spent(env, challenge.rand).spend(challenge.rand, challenge.exp);
+  if (spend === "full") return { ok: false, status: 503, error: "attest_unavailable" };
+  return spend ? { ok: true } : { ok: false, status: 403, error: "attest_challenge" };
 }

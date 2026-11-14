@@ -88,8 +88,6 @@ interface State {
   daily: Record<string, Daily>;
   tries: Record<string, number[]>;
   fails: number[];
-  /** the attestation challenges already used, until they expire: nonce → expiry (ms) */
-  nonces?: Record<string, number>;
 }
 
 export type Cred =
@@ -351,13 +349,15 @@ export class ViewerAccess extends DurableObject<Env> {
    * challenge still live.
    */
   async spend(nonce: string, expMs: number): Promise<boolean | "full"> {
-    const t = now();
-    const n = (this.s.nonces ??= {});
-    if (n[nonce] !== undefined) return false;
-    for (const [k, exp] of Object.entries(n)) if (exp <= t) delete n[k];
-    if (Object.keys(n).length >= MAX_SPENT) return "full";
-    n[nonce] = expMs;
-    await this.save();
+    // One row per challenge in the instance's own SQLite table, never in the state blob, so the
+    // cap is rows, not one value's size.
+    const sql = this.ctx.storage.sql;
+    sql.exec("CREATE TABLE IF NOT EXISTS spent (nonce TEXT PRIMARY KEY, exp INTEGER NOT NULL)");
+    sql.exec("DELETE FROM spent WHERE exp <= ?", now());
+    if (sql.exec("SELECT 1 FROM spent WHERE nonce = ?", nonce).toArray().length > 0) return false;
+    const count = sql.exec<{ n: number }>("SELECT count(*) AS n FROM spent").one().n;
+    if (count >= MAX_SPENT) return "full";
+    sql.exec("INSERT INTO spent (nonce, exp) VALUES (?, ?)", nonce, expMs);
     return true;
   }
 
