@@ -793,6 +793,8 @@ android_apps:
   - 'tests/fixtures/demo-library/**'
   # the problem types and codes the apps compare are checked against the registry (60.06)
   - 'shared/api/problems.json'
+  # the compatibility vectors the client's CompatTest runs (58.01)
+  - 'shared/compat/**'
   - '.github/workflows/_android-apps.yml'
   # the wrapper's jar check and distribution fetch (tools/ci/gradle-wrapper.sh), through fetch-pinned.sh
   - 'tools/ci/gradle-wrapper.sh'
@@ -838,6 +840,8 @@ apple_apps:
   - 'apps/apple/**'
   # the problem types and codes the apps compare are checked against the registry (60.06)
   - 'shared/api/problems.json'
+  # the compatibility vectors MaktabaKit's CompatTests run (58.01)
+  - 'shared/compat/**'
   - 'apps/tv/tvos/**'
   - 'tools/apple/**'
   - '.github/workflows/_apple-apps.yml'

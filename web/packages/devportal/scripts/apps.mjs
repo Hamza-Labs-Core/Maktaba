@@ -192,6 +192,10 @@ export const APPS = [
                 "**حين تتوقف سحابة مكتبة**: تحفظ التطبيقات قائمة الأجهزة الرئيسية لكل حساب على الجهاز (الأسماء والعناوين، لا كلمة مرور)، فإن تعذّر الوصول إلى السحابة تبقى أجهزتك ظاهرة مع وقت حفظ القائمة، ويتصل التطبيق بعنوان محفوظ. والتشغيل على شبكة المنزل لا يسأل السحابة أبدًا، ويبقى تسجيل دخولك إلى جهازك الرئيسي قائمًا، ويستعمل تسجيل الدخول الجديد اسم المستخدم وكلمة المرور الخاصين بالجهاز الرئيسي أو رمزًا. وحين يعيد الجهاز الرئيسي اتصاله عبر المُرحِّل ينتظره التطبيق («جارٍ إعادة الاتصال بالجهاز الرئيسي…») بدل أن يفشل فورًا."
               ),
               t(
+                "**When an app and the home are too far apart**: a TV app updates when its store releases it, the home whenever it updates itself, so each time an app reaches a home it first reads the home's API level (`GET /api/discovery/home`, before any sign-in). When the home is too old for the app, the app shows **This home needs an update**, naming the home and its version: its admin is told to update it in **Admin → Updates**, anyone else to ask the person who runs it. When the app is too old for the home, it shows **Update this app**, with how in the platform's words (Google Play, the Amazon Appstore, the App Store). Both pages have **Try again** and **Choose another home**, and nothing signs in until they match. Homes from before this check let every app carry on. [API levels](/contributing/api-levels/) explains the contract.",
+                "**حين يتباعد التطبيق والجهاز الرئيسي**: يتحدّث تطبيق التلفاز حين يصدره متجره، والجهاز الرئيسي متى حدّث نفسه، لذا يقرأ كل تطبيق مستوى واجهة الجهاز الرئيسي البرمجية أولًا كلما وصل إليه (`GET /api/discovery/home`، قبل أي تسجيل دخول). فإن كان الجهاز الرئيسي أقدم من أن يعمل معه التطبيق، يعرض التطبيق **يحتاج هذا الجهاز الرئيسي إلى تحديث** مع اسم الجهاز وإصداره: يُطلب من مسؤوله تحديثه من **الإدارة ← التحديثات**، ومن غيره أن يطلب ذلك من مسؤوله. وإن كان التطبيق أقدم من أن يعمل مع الجهاز الرئيسي، يعرض **حدِّث هذا التطبيق** مع الطريقة بلغة المنصة (Google Play أو متجر Amazon Appstore أو App Store). وفي الصفحتين **إعادة المحاولة** و**اختيار جهاز رئيسي آخر**، ولا يُسجَّل الدخول حتى يتوافقا. والأجهزة الرئيسية الأقدم من هذا الفحص تترك كل التطبيقات تعمل كالمعتاد. وتشرح صفحة [مستويات الواجهة البرمجية](/contributing/api-levels/) هذا الاتفاق."
+              ),
+              t(
                 '**Signing in to Maktaba Cloud on the web**: the sign-in, create-account and forgot-password pages of app.maktaba.tv show a short check that you\'re a person (Cloudflare Turnstile) before they send; most of the time it passes by itself. The apps on phones, tablets and TVs sign in without it. Too many tries from one network in a minute are paused for a while with "Too many requests. Wait a moment and try again.", in English or Arabic.',
                 "**تسجيل الدخول إلى سحابة مكتبة على الويب**: تعرض صفحات تسجيل الدخول وإنشاء الحساب ونسيان كلمة المرور في app.maktaba.tv فحصًا قصيرًا للتحقق من أنك إنسان (Cloudflare Turnstile) قبل الإرسال، وغالبًا ما يمر وحده. وتسجّل التطبيقات على الهواتف والأجهزة اللوحية والتلفزيونات الدخول دونه. وتُوقَف المحاولات الكثيرة من شبكة واحدة في دقيقة لبعض الوقت مع رسالة «طلبات كثيرة. انتظر قليلًا ثم حاول مجددًا.» بالعربية أو الإنجليزية."
               ),
@@ -220,6 +224,12 @@ export const APPS = [
                 "wide",
                 "The status strip in the web app: playback and Live TV are unavailable right now",
                 "شريط الحالة في تطبيق الويب: التشغيل والبث المباشر غير متاحين الآن"
+              ),
+              shot(
+                "androidtv-update-home",
+                "wide",
+                "Android TV reaching a home too old for it: This home needs an update, naming the home Kitchen and its version",
+                "تلفاز أندرويد يصل إلى جهاز رئيسي أقدم منه: يحتاج هذا الجهاز الرئيسي إلى تحديث، مع اسم الجهاز Kitchen وإصداره"
               ),
             ],
           },
