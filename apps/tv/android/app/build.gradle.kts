@@ -238,6 +238,7 @@ dependencies {
 
     testImplementation(libs.junit)
     testImplementation(libs.okhttp.mockwebserver)
+    testImplementation(libs.okhttp.tls)
     testImplementation(libs.kotlinx.coroutines.test)
     // StringsXml: the tests read the TV's and the phones' English and Arabic as Android does
     testImplementation(testFixtures(project(":client")))

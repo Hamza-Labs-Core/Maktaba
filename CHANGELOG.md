@@ -905,6 +905,14 @@ build fails when the two differ.
 
 ### Added
 
+- **Android TV, Google TV and Fire TV sign in with a cloud code (Epic 58, stories 58.03 and
+  58.05).** The TV app's home picker now opens on a code from Maktaba Cloud with its QR code;
+  a phone signed in to the home approves it from Approve a TV or device, on any network, and
+  the TV opens that home signed in as the approver, restricted (never an admin). The homes on
+  the TV's network and a typed address stay beside it. The grant goes only to an address whose
+  certificate proves the home (never a plain http or raw IP address, where anyone could answer);
+  the poll secret and the grant are never stored, put in a URL or logged.
+
 - **Roku's sign-in shows a QR (Epic 58, story 58.12).** The Roku channel's code screen now shows
   a QR beside the code, as the other TV apps do: a phone's camera opens the approve page with
   the code filled in (maktaba.tv/tv for a cloud code, the home's own page for the home's code).
