@@ -64,11 +64,13 @@ export async function ingestToken(
   label = "cloud-1"
 ): Promise<string> {
   const t = Math.floor(now() / 1000);
+  // a publisher is its home (the server id): pub and home are the same id unless a test sets both
+  const id = over.pub ?? over.home ?? "home-1";
   const claims: IngestClaims = {
     typ: "ingest",
-    pub: "pub-1",
+    pub: id,
     rungs: RUNGS,
-    home: "home-1",
+    home: id,
     kbps: 10000,
     iat: t,
     exp: t + 24 * 3600,
@@ -131,7 +133,7 @@ export async function installList(entries: Record<string, unknown>[]): Promise<R
 
 export async function viewerToken(over: Partial<ViewerClaims> & { ch: string }): Promise<string> {
   return mintViewerToken(E.VIEWER_TOKEN_KEY, {
-    pub: "pub-1",
+    pub: "home-1",
     session: `s-${Math.random().toString(36).slice(2)}`,
     mode: "full",
     exp: Math.floor(now() / 1000) + 600,

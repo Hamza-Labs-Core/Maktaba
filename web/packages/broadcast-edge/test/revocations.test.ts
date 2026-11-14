@@ -166,8 +166,9 @@ describe("T03 each action at the edge", () => {
 
   it("a home's suspension stops its channels within the 10 s check, with no fan-out", async () => {
     const ch = newChannel();
-    const pub = `pub-${ch}`;
+    // a publisher is its home (the server id): the home entry names that same id
     const home = `home-${ch}`;
+    const pub = home;
     const token = await ingestToken({ ch, pub, home });
     expect((await putSegment(ch, "src", 1, { token })).status).toBe(201);
     const r = await installList([

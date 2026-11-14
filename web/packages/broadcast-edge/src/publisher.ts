@@ -1,8 +1,13 @@
-// PublisherControl (story 50.21 §1): one Durable Object per publisher. It holds what the cloud
-// says the publisher's plan allows (pushed by the cloud on every change and every 5 minutes,
-// 50.20 §2), the channels the publisher has published (so a revocation reaches them, 50.25), the
-// viewer sessions' heartbeats (the concurrent count, 50.26) and the metered viewer-minutes,
-// kept in 5-minute windows for 7 days and posted to the API (50.20 §3).
+// PublisherControl (story 50.21 §1): one Durable Object per publisher (the home: the ingest
+// token's pub is its server id, the id the cloud bills). It holds what the cloud says the
+// publisher's plan allows (a signed push to PUT /v1/control/plan, and the same Plan in every
+// usage reply, 50.20 §2), the channels the publisher has published (so a revocation reaches
+// them, 50.25), the viewer sessions' heartbeats (the concurrent count, 50.26) and the metered
+// viewer-minutes, kept in 5-minute windows for 7 days and posted to the API (50.20 §3).
+//
+// The wire shapes here are the cloud's (cloud/internal/broadcast/edge.go: UsageWindow,
+// UsagePost, UsageReply, Plan), locked by the vectors both sides test
+// (cloud/internal/broadcast/testdata/vectors.json).
 //
 // The seams later stories fill:
 //   - setPlan(plan)          50.20: the cloud's plan state; `mode` is what a NEW session gets
@@ -23,8 +28,11 @@ export const SESSION_LIVE_MS = 150_000;
 export const WINDOW_MS = 5 * 60_000;
 export const KEEP_WINDOWS_MS = 7 * 24 * 3600_000;
 export const USAGE_PATH = "/_edge/usage";
+/** The most windows one usage post carries (the cloud refuses more); a longer queue goes in pages. */
+export const USAGE_MAX_WINDOWS = 2000;
 
-/** The plan state the cloud pushes (a cloud-signed control post, typ "plan"). */
+/** The plan state the cloud pushes (a cloud-signed control post, typ "plan") and returns in
+ * every usage reply (its `plans`): broadcast.Plan in Go. */
 export interface PlanState {
   /** the mode a new viewer session gets (50.20 §2) */
   mode: Mode;
@@ -39,7 +47,9 @@ export interface PlanState {
 
 /**
  * One 5-minute window of a publisher's usage: the report shape the edge posts to the API
- * (50.20 §3, `broadcast_usage_monthly`). `key` is the idempotency key `<publisher>:<window>`.
+ * (50.20 §3; broadcast.UsageWindow in Go, the same fields in the same order). `key` is the
+ * idempotency key `<publisher>:<window_start>`, RFC 3339 UTC in whole seconds. The cloud bills
+ * minutes_full and minutes_lowest; the other counters it checks and does not store yet.
  */
 export interface UsageWindow {
   key: string;
@@ -87,20 +97,7 @@ export class PublisherControl extends DurableObject<Env> {
     const id = String(start);
     let w = this.s.windows[id];
     if (!w) {
-      const iso = new Date(start).toISOString();
-      w = {
-        key: `${this.s.pub}:${iso}`,
-        publisher: this.s.pub,
-        window_start: iso,
-        window_end: new Date(start + WINDOW_MS).toISOString(),
-        minutes_full: 0,
-        minutes_lowest: 0,
-        minutes_stream: 0,
-        segments_in: 0,
-        bytes_in: 0,
-        peak_sessions: 0,
-        sent: false,
-      };
+      w = { ...newUsageWindow(this.s.pub, start), sent: false };
       this.s.windows[id] = w;
     }
     return w;
@@ -198,7 +195,8 @@ export class PublisherControl extends DurableObject<Env> {
   }
 
   async ack(keys: string[]): Promise<void> {
-    for (const w of Object.values(this.s.windows)) if (keys.includes(w.key)) w.sent = true;
+    const done = new Set(keys);
+    for (const w of Object.values(this.s.windows)) if (done.has(w.key)) w.sent = true;
     await this.save();
   }
 
@@ -211,8 +209,13 @@ export class PublisherControl extends DurableObject<Env> {
     const closed = (await this.pendingUsage()).filter((w) => Date.parse(w.window_end) <= t);
     if (closed.length > 0 && this.env.API_ORIGIN && this.env.EDGE_SIGNING_KEY) {
       try {
-        await this.post(closed, t);
-        await this.ack(closed.map((w) => w.key));
+        for (let i = 0; i < closed.length; i += USAGE_MAX_WINDOWS) {
+          const reply = readUsageReply(await this.post(closed.slice(i, i + USAGE_MAX_WINDOWS), t));
+          // taken, duplicate and rejected windows are done; any other stays for the next post
+          await this.ack(reply.done);
+          const plan = reply.plans.find((p) => p.pub === this.s.pub);
+          if (plan) await this.setPlan(plan.pub, plan.plan);
+        }
       } catch (err) {
         // kept, and posted again later with the same keys
         log("warn", "usage not posted", { component: "publisher", pub: this.s.pub, err });
@@ -222,8 +225,8 @@ export class PublisherControl extends DurableObject<Env> {
     await this.ctx.storage.setAlarm(Date.now() + WINDOW_MS);
   }
 
-  private async post(windows: UsageWindow[], t: number): Promise<void> {
-    const body = new TextEncoder().encode(JSON.stringify({ edge: "broadcast-edge", windows }));
+  private async post(windows: UsageWindow[], t: number): Promise<unknown> {
+    const body = usageBody(windows);
     const headers = await signEdgeRequest(
       this.env.EDGE_SIGNING_KEY ?? "",
       "POST",
@@ -237,5 +240,85 @@ export class PublisherControl extends DurableObject<Env> {
       body,
     });
     if (!res.ok) throw new Error(`usage post answered ${res.status}`);
+    return res.json();
   }
+}
+
+/** rfc3339 is a time as Go writes it in JSON: UTC, whole seconds, no ".000". */
+export function rfc3339(ms: number): string {
+  return new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");
+}
+
+/** newUsageWindow is the empty window of a publisher that starts at startMs. */
+export function newUsageWindow(pub: string, startMs: number): UsageWindow {
+  const start = rfc3339(startMs);
+  return {
+    key: `${pub}:${start}`,
+    publisher: pub,
+    window_start: start,
+    window_end: rfc3339(startMs + WINDOW_MS),
+    minutes_full: 0,
+    minutes_lowest: 0,
+    minutes_stream: 0,
+    segments_in: 0,
+    bytes_in: 0,
+    peak_sessions: 0,
+  };
+}
+
+/** usageBody is a usage post's bytes (broadcast.UsagePost). */
+export function usageBody(windows: UsageWindow[]): Uint8Array {
+  return new TextEncoder().encode(JSON.stringify({ edge: "broadcast-edge", windows }));
+}
+
+const MODES = ["full", "lowest", "wait", "off"];
+
+/**
+ * parsePlan reads a Plan (broadcast.Plan) from a plan push's payload or a usage reply's `plans`;
+ * null when it isn't one.
+ */
+export function parsePlan(p: unknown): { pub: string; plan: PlanState } | null {
+  if (typeof p !== "object" || p === null) return null;
+  const o = p as Record<string, unknown>;
+  if (
+    typeof o.pub !== "string" ||
+    o.pub === "" ||
+    typeof o.version !== "number" ||
+    typeof o.mode !== "string" ||
+    !MODES.includes(o.mode)
+  )
+    return null;
+  const num = (x: unknown) => (typeof x === "number" && x > 0 ? x : undefined);
+  return {
+    pub: o.pub,
+    plan: {
+      mode: o.mode as Mode,
+      version: o.version,
+      max_rungs: num(o.max_rungs),
+      max_top_kbps: num(o.max_top_kbps),
+      max_viewers: num(o.max_viewers),
+      delivery: o.delivery === "stream" || o.delivery === "r2" ? o.delivery : null,
+    },
+  };
+}
+
+/**
+ * readUsageReply reads the cloud's answer to a usage post (broadcast.UsageReply): the keys that
+ * are done (taken, duplicate or rejected: never posted again) and each publisher's plan.
+ */
+export function readUsageReply(r: unknown): {
+  done: string[];
+  plans: { pub: string; plan: PlanState }[];
+} {
+  const o = (typeof r === "object" && r !== null ? r : {}) as Record<string, unknown>;
+  const keys = (x: unknown) =>
+    Array.isArray(x) ? x.filter((k): k is string => typeof k === "string") : [];
+  const rejected = Array.isArray(o.rejected)
+    ? o.rejected.map((x) => (x as { key?: unknown } | null)?.key)
+    : [];
+  const plans = Array.isArray(o.plans) ? o.plans.map(parsePlan) : [];
+  return {
+    done: [...keys(o.taken), ...keys(o.duplicates), ...keys(rejected)],
+    plans: plans.filter((p): p is { pub: string; plan: PlanState } => p !== null),
+  };
 }
