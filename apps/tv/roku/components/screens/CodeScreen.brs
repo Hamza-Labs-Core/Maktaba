@@ -50,9 +50,8 @@ end sub
 sub onCode(ev as Object)
     c = ev.GetData()
     m.code.text = c.code
-    if c.qr <> invalid and c.qr <> "" then
-        m.qr.uri = c.qr
-        m.qr.visible = true
+    if type(c.qr) = "roArray" then
+        m.qr.modules = c.qr
     else
         m.qr.visible = false
     end if

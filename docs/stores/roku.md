@@ -32,7 +32,9 @@ repository or in CI holds them.
 5. **The dashboard**: the public channel (no ads, no purchases: Roku Pay, RAF and app-ads.txt
    do not apply), a new version with the `.pkg`, the listing (below), the review home's
    credentials (below), the deep-link sample IDs (below), and the checklist's passed result for
-   that version, then **Submit for review**. Roku's certification runs the table below.
+   that version (`tools/release/tv_checklist_guard.py --platform roku --version <X.Y.Z>` prints
+   the line, or stops the submission with the reason when there is none), then **Submit for
+   review**. Roku's certification runs the table below.
 6. **After approval**, Roku updates installed channels on its own; the compatibility contract
    (story 58.01) covers a home released before Roku's approval of the matching channel.
 
@@ -150,6 +152,8 @@ debug console (`telnet <roku-ip> 8085`) for the whole run.
 | 27 | A queue (Play all, Shuffle): Up next | shows 15 s before the end; OK plays the next; the queue moves on its own at the end |
 | 28 | Progress | the home's Continue watching shows the position after 10 s of play, a pause, and Back |
 | 29 | A stream that fails on the Roku (a file the Video node refuses) | one retry with a converted version (Trying a converted version…), then the error with Back |
+| 30 | Sign in by a cloud code that an admin of the home approves, then open every screen, and try to approve another device from the TV | the TV never acts as an admin: no admin-only screen or action appears, it reads only the libraries named for it, approving another device is refused, and it stays so after its token refreshes (the home's `principal.ApplyRestricted`, story 58.03) |
+| 31 | The code screen's QR, for a cloud code and for the home's own code, scanned with a phone's camera from across the room on the Roku Express | the QR shows within 2 s of the code (the 8085 console's `[qr] encoded … in N ms`), and the camera opens the approve page with the code filled in (`maktaba.tv/tv?c=…`, or the home's `/pair?code=…`) |
 
 ## Results
 
