@@ -803,6 +803,18 @@ build fails when the two differ.
 
 ### Added
 
+- **Viewer analytics and broadcast monitoring (story 50.28).** A home that broadcasts through
+  Maktaba Cloud gets a **Viewers** page at app.maktaba.tv (from **Homes**, for the home's owner
+  only): viewers watching now and viewer-hours today, over 7 days and this month against the
+  plan's allowance; with the Broadcaster add-on also the most viewers at once, average watch
+  time, countries, devices, quality watched, playback errors and viewers turned away, with a CSV
+  export. Countries and devices with fewer than 5 viewers are grouped as **Other**, and no names,
+  accounts or addresses are kept. Maktaba's staff can read the same numbers, each read audited.
+  The cloud now also watches its broadcasting: a canary broadcast played every minute from two
+  networks, alerts on its error budget, ingest lag, a stale revocation list, the edge's monthly
+  cost and a mismatch between analytics and billing, and a **Broadcasting** line on the status
+  page once broadcasting opens.
+
 - **The broadcast edge, built and rehearsed in CI (story 50.21).** Maktaba Cloud now has the
   Cloudflare Worker a published channel will play from: a home pushes each segment of each
   rendition once to `ingest.maktaba.tv`, and viewers' players fetch playlists and segments from

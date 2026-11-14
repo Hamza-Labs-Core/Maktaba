@@ -125,7 +125,27 @@ revocations and metering stay the same; Stream's viewer-minutes are counted apar
 | 50.22 | The home's uploader: the ingest endpoints above, the slate, the control socket, the speed test. | `ingest.ts` |
 | 50.25 | The revocation list: `PUT /v1/control/revocations` with a control post `{typ: "revocations", version, pubs[], channels[], homes[]}`; `GET` answers the version held. A newer list revokes what it adds (ingest and playlists refused, the home told) and restores what it drops. `BROADCAST_GLOBAL_OFF = 1` stops everything. | `Revocations.install`, `ChannelLive.revoke` |
 | 50.26 | Viewer tokens (mint with `mintViewerToken`, the same `VIEWER_TOKEN_KEY`), the session's mode, the concurrent count (`PublisherControl.beat` answers `concurrent`), the watch site on `watch.` | `tokens.ts`, `publisher.ts`, `worker.ts` |
-| 50.28 | Analytics Engine `broadcast_events`: per request `[kind, channel, cache status]` (segment, playlist, master), per channel a minute's `[segments_in, bytes_in, playlist_misses]`, per viewer-minute `[channel, mode, delivery]` | `live.ts`, `channel_live.ts`, `publisher.ts` |
+| 50.28 | Analytics Engine `broadcast_events` (filled: see "Viewer analytics" below) | `events.ts` |
+
+## Viewer analytics (story 50.28)
+
+Every point goes to `broadcast_events` through `events.ts`; its positional layout
+(`blob1`…`blob12`, `double1`…`double8`, index = publisher) is fixed in
+`cloud/internal/broadcast/testdata/events_schema.json`, which both this package's tests and the
+cloud's read. Events: `play` (a session's first counted beat), `beat` (each counted beat: minutes,
+rung, bitrate, rebuffer, startup), `switch` and `error` (only with a counted beat, at most 10 of
+each a beat), `blocked` (refused: `full`, `revoked`, `geo`, `ip`), `ingest` (a segment visible in
+the playlist, with its lag). The 50.21 per-request and per-minute points are gone.
+
+The session is kept only as a daily hash: HMAC-SHA256 under `VIEWER_TOKEN_KEY` over
+`maktaba-broadcast-session-v1\0<UTC day>\0<session>`, its first 12 bytes in base64url. No address,
+user agent or account is written; the country is the request's, the device a class
+(`web`, `ios`, `tvos`, `android`, `androidtv`, `desktop`).
+
+The viewer's beat posts a report (`POST` beat body, read up to 4 KB): `{rung?, kbps?, rebuffer_ms?,
+startup_ms?, device?, switches?: [{from, to, ms}], errors?: [code]}`; numbers are clamped (a beat covers
+at most 10 minutes, bitrate at most 100 Mb/s). The cloud's worker role rolls the dataset hourly
+into `broadcast_usage_hourly` and folds counts under 5 into "other" when a publisher reads them.
 
 ## Settings
 
@@ -135,6 +155,7 @@ revocations and metering stay the same; Stream's viewer-minutes are counted apar
 | `GUIDE` | R2 | `maktaba-broadcast-guide-<env>`: guide blobs (50.26) |
 | `CHANNEL`, `PUBLISHER`, `REVOCATIONS` | Durable Objects | `ChannelLive`, `PublisherControl`, `Revocations` |
 | `AE` | Analytics Engine | `broadcast_events` |
+| `CANARY_PUBLISHER` | var | the canary broadcast's publisher id: its `ingest` events carry glass-to-glass (50.28) |
 | `RL` | Rate Limiting | 60 per 10 s per channel and rung, per location |
 | `BROADCAST_ENV` | var | `staging` or `production`: the R2 keys' first part |
 | `BROADCAST_DELIVERY` | var | `r2` (default) or `stream` |
