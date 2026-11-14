@@ -288,6 +288,12 @@ build fails when the two differ.
 
 ### Fixed
 
+- **An Arabic title reads the same on the Cast receiver as on every other TV (story 58.15).**
+  On a TV playing from a sender set to English, a title such as "الحلقة 3 — Intro" showed with
+  the number on the wrong side of the Arabic. The receiver's titles now take their direction
+  from their first letter, as `/tv/` and the Roku channel do. The Roku channel's colours are
+  now generated from the design tokens, like the other apps'.
+
 - **The older playback profiles read HEVC and Dolby audio by ffprobe's names.** A player that
   names one of the older client profiles (`android-native`, `androidtv`) now direct-plays an
   HEVC file it decodes: the profiles spelled HEVC `h265` and the probe says `hevc`, so those

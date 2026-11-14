@@ -32,7 +32,9 @@ repository or in CI holds them.
 5. **The dashboard**: the public channel (no ads, no purchases: Roku Pay, RAF and app-ads.txt
    do not apply), a new version with the `.pkg`, the listing (below), the review home's
    credentials (below), the deep-link sample IDs (below), and the checklist's passed result for
-   that version, then **Submit for review**. Roku's certification runs the table below.
+   that version (`tools/release/tv_checklist_guard.py --platform roku --version <X.Y.Z>` prints
+   the line, or stops the submission with the reason when there is none), then **Submit for
+   review**. Roku's certification runs the table below.
 6. **After approval**, Roku updates installed channels on its own; the compatibility contract
    (story 58.01) covers a home released before Roku's approval of the matching channel.
 

@@ -28,6 +28,20 @@ function el<K extends keyof HTMLElementTagNameMap>(
   return e;
 }
 
+/**
+ * An element for a name from the home (a title), its text in a <bdi> (story 58.15): the name
+ * takes its direction from its first letter, as on /tv/ and Roku, so an Arabic title reads the
+ * same in an English screen ("الحلقة 3 — Intro": Arabic on the right, Intro on the left).
+ * Returns the <bdi>, whose text the screen sets.
+ */
+function named<K extends keyof HTMLElementTagNameMap>(
+  tag: K,
+  cls: string,
+  parent: HTMLElement
+): HTMLElement {
+  return el("bdi", "mk-name", el(tag, cls, parent));
+}
+
 /** How long the overlay stays after the picture starts or moves (ms). */
 export const OVERLAY_MS = 5000;
 
@@ -76,7 +90,7 @@ export class Screens {
     const overlay = el("section", "mk-overlay", this.box);
     this.badge = el("span", "mk-badge", overlay);
     const info = el("div", "mk-info", overlay);
-    this.title = el("h1", "mk-title", info);
+    this.title = named("h1", "mk-title", info);
     this.subtitle = el("p", "mk-subtitle", info);
     this.chapter = el("p", "mk-chapter", info);
     const progress = el("div", "mk-progress", overlay);
@@ -86,14 +100,14 @@ export class Screens {
 
     this.upNext = el("aside", "mk-upnext", this.box);
     this.upNextLabel = el("span", "mk-upnext-label", this.upNext);
-    this.upNextTitle = el("strong", "mk-upnext-title", this.upNext);
+    this.upNextTitle = named("strong", "mk-upnext-title", this.upNext);
 
     const paused = el("section", "mk-paused", this.box);
     this.poster = el("img", "mk-poster", paused);
     this.poster.alt = "";
     const pinfo = el("div", "mk-paused-info", paused);
     this.pausedLabel = el("span", "mk-paused-label", pinfo);
-    this.pausedTitle = el("h1", "mk-paused-title", pinfo);
+    this.pausedTitle = named("h1", "mk-paused-title", pinfo);
     this.pausedText = el("p", "mk-paused-text", pinfo);
 
     const error = el("section", "mk-error", this.box);

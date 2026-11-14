@@ -39,7 +39,7 @@ TV_JOBS = {"android-tv", "apple-apps", "tv-web", "tv-web-emulators", "cast-recei
 GROUPS = {
     "_tv_web": ["apps/tv/web/launcher/src/main.ts", "web/src/bigscreen/focus.ts", "web/vite.config.ts"],
     "_cast_receiver": ["web/packages/castreceiver/src/receiver.ts"],
-    "_roku": ["apps/tv/roku/source/main.bs", "shared/i18n/visual-vectors.json"],
+    "_roku": ["apps/tv/roku/source/main.bs", "apps/tv/roku/components/theme.brs"],
     "_vega": ["apps/tv/vega/src/App.tsx"],
 }
 
@@ -102,3 +102,14 @@ def test_a_tv_area_runs_no_other_tv_job(group: str) -> None:
     ran = {j for j, r in runs.items() if r is not None}
     own = group.strip("_").replace("_", "-")
     assert ran & TV_JOBS <= {own}, f"{group}: {sorted(ran & TV_JOBS)}"
+
+
+def test_the_shaping_vectors_run_every_client_checked_against_them() -> None:
+    """Story 58.15: Roku's VisualText, /tv/ and the Cast receiver are each held against
+    shared/i18n/visual-vectors.json (one reading order on every TV), so a change to it runs the
+    three jobs; the browser tests' helper beside it runs the two web ones."""
+    def ran(paths: list[str]) -> set[str]:
+        return {j for j, r in ci_paths.which(paths).items() if r is not None} & TV_JOBS
+
+    assert ran(["shared/i18n/visual-vectors.json"]) == {"roku", "tv-web", "cast-receiver"}
+    assert ran(["shared/i18n/visual_order.mjs"]) == {"tv-web", "cast-receiver"}
