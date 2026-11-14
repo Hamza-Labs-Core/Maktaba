@@ -218,3 +218,101 @@ func TestARestrictedSignInApprovesNothing(t *testing.T) {
 		t.Fatalf("grants = %v", cloud.grants)
 	}
 }
+
+// fakeAsserter is CloudAsserter: the assertion "ok-<user>" stands for <user>, for wantCode only.
+type fakeAsserter struct {
+	err      error
+	wantCode string
+	codes    []string
+}
+
+func (f *fakeAsserter) TVCodeApprover(_ context.Context, assertion, code string) (string, error) {
+	f.codes = append(f.codes, code)
+	if f.err != nil {
+		return "", f.err
+	}
+	user, ok := strings.CutPrefix(assertion, "ok-")
+	if !ok || code != f.wantCode {
+		return "", ErrCloudAssertionRefused
+	}
+	return user, nil
+}
+
+// A code approved on maktaba.tv: the cloud's assertion names the linked home user, and the TV
+// signs in as them, restricted like every cloud code's TV. No sign-in on the home is involved.
+func TestCloudAssertionApprovesAsTheLinkedUser(t *testing.T) {
+	cloud := &fakeCloud{open: "WEBS2345"}
+	h, fm, r := newCloudHandler(t, cloud)
+	as := &fakeAsserter{wantCode: "WEBS2345"}
+	h.CloudAssertions = as
+	rec := do(r, http.MethodPost, "/api/pairing/cloud-assertion", `{"code":"webs-2345","assertion":"ok-viewer-1"}`, "")
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"country":"AE"`) {
+		t.Fatalf("approve = %d %s", rec.Code, rec.Body.String())
+	}
+	if len(as.codes) != 1 || as.codes[0] != "WEBS2345" {
+		t.Fatalf("asked about %v", as.codes)
+	}
+	if len(cloud.grants) != 1 {
+		t.Fatalf("grants = %v", cloud.grants)
+	}
+	if rec := poll(r, cloud.grants[0]); rec.Code != http.StatusOK {
+		t.Fatalf("redeem = %d %s", rec.Code, rec.Body.String())
+	}
+	if fm.lastUID != "viewer-1" || fm.lastKnd != "tv" || fm.lastVia != ViaCloudCode {
+		t.Fatalf("minted for %q kind %q via %q", fm.lastUID, fm.lastKnd, fm.lastVia)
+	}
+}
+
+// Without an assertion the cloud stands behind, nothing is approved and nothing is claimed.
+func TestCloudAssertionRefusals(t *testing.T) {
+	for _, c := range []struct {
+		name, body string
+		asserter   *fakeAsserter
+		want       int
+		wantCode   string
+	}{
+		{"refused", `{"code":"WEBS2345","assertion":"forged"}`, &fakeAsserter{wantCode: "WEBS2345"}, http.StatusForbidden, ""},
+		{"for another code", `{"code":"WEBS2345","assertion":"ok-viewer-1"}`, &fakeAsserter{wantCode: "WEBS2346"}, http.StatusForbidden, ""},
+		{"no cloud identity", `{"code":"WEBS2345","assertion":"ok-viewer-1"}`, &fakeAsserter{err: ErrCloudNotLinked}, http.StatusConflict, "cloud_not_linked"},
+		{"no assertion", `{"code":"WEBS2345"}`, &fakeAsserter{wantCode: "WEBS2345"}, http.StatusUnprocessableEntity, ""},
+		{"not a cloud code", `{"code":"ABC","assertion":"ok-viewer-1"}`, &fakeAsserter{wantCode: "WEBS2345"}, http.StatusUnprocessableEntity, ""},
+		{"no asserter", `{"code":"WEBS2345","assertion":"ok-viewer-1"}`, nil, http.StatusConflict, "cloud_not_linked"},
+	} {
+		cloud := &fakeCloud{open: "WEBS2345"}
+		h, _, r := newCloudHandler(t, cloud)
+		if c.asserter != nil {
+			h.CloudAssertions = c.asserter
+		}
+		rec := do(r, http.MethodPost, "/api/pairing/cloud-assertion", c.body, "")
+		if rec.Code != c.want {
+			t.Fatalf("%s: %d %s", c.name, rec.Code, rec.Body.String())
+		}
+		if c.wantCode != "" {
+			var body map[string]any
+			_ = json.Unmarshal(rec.Body.Bytes(), &body)
+			if body["code"] != c.wantCode {
+				t.Fatalf("%s: %s", c.name, rec.Body.String())
+			}
+		}
+		if len(cloud.grants) != 0 {
+			t.Fatalf("%s: grants = %v", c.name, cloud.grants)
+		}
+	}
+}
+
+// A claim the cloud refuses after the assertion passed takes the approval back, as for a home
+// sign-in's approval.
+func TestCloudAssertionRollsBackAFailedClaim(t *testing.T) {
+	cloud := &fakeCloud{open: "WEBS2345", claimErr: ErrCloudCodeClaimed}
+	h, _, r := newCloudHandler(t, cloud)
+	h.CloudAssertions = &fakeAsserter{wantCode: "WEBS2345"}
+	if rec := do(r, http.MethodPost, "/api/pairing/cloud-assertion", `{"code":"WEBS2345","assertion":"ok-viewer-1"}`, ""); rec.Code != http.StatusConflict {
+		t.Fatalf("approve = %d %s", rec.Code, rec.Body.String())
+	}
+	h.requests.mu.Lock()
+	left := len(h.requests.m)
+	h.requests.mu.Unlock()
+	if left != 0 {
+		t.Fatalf("%d device codes left", left)
+	}
+}

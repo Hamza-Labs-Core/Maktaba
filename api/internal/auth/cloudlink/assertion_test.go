@@ -3,6 +3,7 @@ package cloudlink
 import (
 	"crypto/ed25519"
 	"encoding/base64"
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -85,5 +86,30 @@ func TestAssertionRefusals(t *testing.T) {
 func TestParsePublicKey(t *testing.T) {
 	if _, err := ParsePublicKey(base64.StdEncoding.EncodeToString([]byte("short"))); err == nil {
 		t.Fatal("a short key parsed")
+	}
+}
+
+// A tvcode assertion (story 58.03) is verified only for that purpose, and only with its code.
+func TestTVCodeAssertion(t *testing.T) {
+	pub, priv, err := ed25519.GenerateKey(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sign := func(non string) string {
+		raw, _ := json.Marshal(Assertion{Typ: assertionType, Pur: PurposeTVCode, Sub: "cu", Aud: "server-1",
+			Iat: 1700000000, Exp: 1700000060, Jti: "j", Non: non})
+		b := base64.RawURLEncoding.EncodeToString(raw)
+		return assertionPrefix + b + "." + base64.RawURLEncoding.EncodeToString(ed25519.Sign(priv, []byte(signingPrefix+"."+b)))
+	}
+	at := time.Unix(1700000010, 0)
+	a, err := VerifyAssertion(sign("ABCD2345"), pub, PurposeTVCode, "server-1", at)
+	if err != nil || a.Non != "ABCD2345" {
+		t.Fatalf("verify = %+v %v", a, err)
+	}
+	if _, err := VerifyAssertion(sign(""), pub, PurposeTVCode, "server-1", at); err == nil {
+		t.Fatal("a tvcode assertion without its code verified")
+	}
+	if _, err := VerifyAssertion(sign("ABCD2345"), pub, PurposeSignIn, "server-1", at); err == nil {
+		t.Fatal("a tvcode assertion signed someone in")
 	}
 }

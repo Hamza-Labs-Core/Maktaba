@@ -210,6 +210,9 @@ func DefaultPublicAllowlist() map[string]struct{} {
 		// rate-limited per IP (handlers/discovery/device.go).
 		"/api/pairing/device":       {},
 		"/api/pairing/device/token": {},
+		// Epic 58 story 58.03 — a TV's cloud code approved on maktaba.tv: the cloud's assertion
+		// (signed by its pinned key, for this home and that code, one use) is the credential.
+		"/api/pairing/cloud-assertion": {},
 		// Epic 42 story 42.2 — the home's identity for the apps' home picker: its id,
 		// name, version and its own addresses, never a user or a library; rate-limited
 		// per IP (handlers/discovery/home.go).

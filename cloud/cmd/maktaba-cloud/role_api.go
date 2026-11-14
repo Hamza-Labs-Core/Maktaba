@@ -217,7 +217,12 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 	}
 	tvStore := &tvcodesh.SQLStore{DB: pool.DB}
 	tvCodes := &tvcodesh.Deps{Store: tvStore, Servers: servers, Reach: homes, Box: tvBox,
-		Trusted: cfg.Server.TrustedProxies, Logger: logger}
+		Trusted: cfg.Server.TrustedProxies, Logger: logger,
+		// approving on maktaba.tv: the cloud asks a linked home over the relay
+		Homes: servers, Caller: tvcodesh.RelayCaller{Host: cfg.Relay.PublicHost}}
+	if assertions != nil {
+		tvCodes.Signer = assertions
+	}
 
 	// Push dispatcher — both drivers may be nil in non-prod; the
 	// dispatcher will log no-driver and skip those rows safely.
@@ -369,6 +374,7 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 			accounth.Mount(g, accountDeps)
 			serversh.MountUser(g, serversDeps)
 			homesh.MountUser(g, homes)
+			tvcodesh.MountUser(g, tvCodes)
 			(&healthh.Deps{DB: pool.DB}).Mount(g)
 			billingh.Mount(g, billing)
 			broadcasth.MountUser(g, broadcastDeps)

@@ -125,6 +125,7 @@ access turned on.
 | Ask for a code | the TV, no account | `POST /v1/tv/codes {platform, app_version}` on the cloud: `{code, poll_secret, expires_in: 600, interval: 5, verify_url}`; at most 10 codes per address |
 | Read it | the person, on the home | `GET /api/pairing/cloud-code/{code}`: the TV's platform and its address's country, for "Is this your TV?" |
 | Approve it | the person, on the home | `POST /api/pairing/cloud-approve {code, as_user?}`: the home makes one of its own device codes for the approver, approves it, and claims the cloud's code with it through its relay agent (`/v1/homes/{id}/tv-codes/{code}/claim`) |
+| Or approve it on maktaba.tv | the person, signed in to Maktaba Cloud | `GET /v1/tv/codes/{code}` (what asked), then `POST /v1/tv/codes/{code}/approve {server_id}` for a home that linked their cloud account: the cloud signs a one-use assertion for that account, home and code (purpose `tvcode`) and sends it through the relay to the home's `POST /api/pairing/cloud-assertion`, which approves the code as the linked user |
 | Poll | the TV | `POST /v1/tv/codes/poll {code, poll_secret}`: `202` pending, `429` `slow_down`, `200` the home's connections and the grant (once), then `410` |
 | Sign in | the TV | `POST /api/pairing/device/token {device_code: grant}` on the first of the home's connections that answers (LAN first, the relay last) |
 
@@ -139,6 +140,16 @@ credential of its own (no API token, no approval of another device), the same re
 sign-in through the cloud gets. The home keeps the approval under its own ticket prefix, so a
 restart between approving and signing in still gives a restricted sign-in. The cloud caps each home's lookups and claims (30, then one every 6 seconds), counted
 after its secret is checked.
+
+The QR code a TV shows opens `https://maktaba.tv/tv?c=<code>`, which forwards to Maktaba Cloud's
+approve page (`https://app.maktaba.tv/tv`). A person signed in there sees the TV's platform and
+country, picks one of the homes that linked their account, and approves. The cloud approves
+nothing itself: only a home that linked the account has a user to approve as, and owning a home's
+registration is not enough. A home that is offline (`409` `home_offline`) or that the relay cannot
+reach (`503` `home_unreachable`) approves nothing, and the TV keeps waiting. The home checks the
+assertion against the cloud key it pinned at claim, uses it once, and gives the TV the same
+restricted sign-in as any cloud code's TV. The cloud caps each account's lookups and approvals (20,
+then one every 3 seconds).
 
 ## The cloud rehearsal
 

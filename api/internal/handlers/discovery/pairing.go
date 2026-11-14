@@ -77,6 +77,9 @@ type Handler struct {
 	// CloudCodes reaches Maktaba Cloud's TV codes as this home (cloudcode.go, story 58.03);
 	// nil: a cloud code cannot be approved here.
 	CloudCodes CloudCodes
+	// CloudAssertions finds the home user a cloud tvcode assertion stands for (a code approved
+	// on maktaba.tv, cloudcode.go); nil: only a sign-in on the home approves a cloud code.
+	CloudAssertions CloudAsserter
 
 	// DeviceKey signs the apps' device codes (device.go); nil: a random key per process.
 	DeviceKey []byte
