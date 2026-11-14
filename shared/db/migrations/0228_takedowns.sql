@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 --
--- Slot 0229 (Epic 50, story 50.24) - takedowns: what Maktaba Cloud's signed instruction took
+-- Slot 0228 (Epic 50, story 50.24) - takedowns: what Maktaba Cloud's signed instruction took
 -- off a published channel after a copyright notice.
 --
 --   broadcast_takedowns   one row per instruction the home applied: the item (a video) or the

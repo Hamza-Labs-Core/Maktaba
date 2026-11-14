@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 --
--- SQLite parity sibling for slot 0229 (Epic 50, story 50.24): the takedowns a home applied.
+-- SQLite parity sibling for slot 0228 (Epic 50, story 50.24): the takedowns a home applied.
 -- Broadcasting runs only against Postgres, so the function that reads it is Postgres only;
 -- the table keeps the schemas alike.
 --

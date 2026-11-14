@@ -17,7 +17,7 @@
 | واجهة المنزل البرمجية | `api/internal/broadcast/` | المسارات، وفحوص النشر، واختبار السرعة، وتجديد رموز الاستقبال (`api:broadcast_tokens`) |
 | رابط السحابة | `cloud/internal/cloudlink/broadcast.go` | يمرّر وكيل الترحيل طلبات البث (النشر، والرموز، وقائمة الإلغاء، والإزالات) إلى سحابة مكتبة باعتماد المنزل؛ ولا تحمله الواجهة البرمجية أبدًا |
 | الباثّ | `streaming/internal/broadcast/` | ffmpeg واحد لسلّم الجودات لكل قناة، والرافع، ومقبس التحكم، وبطاقة الانقطاع (`streaming:broadcast_uploader`، `streaming:broadcast_control`) |
-| قاعدة البيانات | الخانات 0226 و0227 و0229 | `broadcast_channels`، `broadcast_uplink`، `broadcast_confirmations`، `broadcast_ingest_tokens`؛ وقاعدة قابلية النشر (0227)؛ و`broadcast_takedowns` (0229) |
+| قاعدة البيانات | الخانات 0226 و0227 و0228 | `broadcast_channels`، `broadcast_uplink`، `broadcast_confirmations`، `broadcast_ingest_tokens`؛ وقاعدة قابلية النشر (0227)؛ و`broadcast_takedowns` (0228) |
 | الإعدادات | `rules.broadcast` | `uplink_share` (0.5)، `rung_slot_weight` (0.5)، `allow_software_rungs` (متوقف) |
 
 الحلقات الثلاث كلها تابعة للمكوّن `livetv.broadcast`. وهو خارج كل الحزم، فيبقى متوقفًا حتى يشغّله
@@ -139,7 +139,7 @@
   المنزل أيًّا منها.
 - **تطبيق تعليمة.** تسمّي الإزالة العنصر (معرّفه، أو البرنامج المعروض على القناة في وقت الإشعار،
   مقروءًا من `channel_programs`) أو مصدرًا (قناة يوتيوب أو قائمة تشغيل، أو متحدثًا، أو علامة). ويكتب
-  المنزل صفًّا في `broadcast_takedowns`؛ فتجعل الدالة `video_taken_down()` في الخانة 0229 الدالةَ
+  المنزل صفًّا في `broadcast_takedowns`؛ فتجعل الدالة `video_taken_down()` في الخانة 0228 الدالةَ
   `video_publishable_reason()` تجيب `NULL` عنه، فيتركه المجدول، وتعرض الخانة المجدولة من قبل الشاشة
   البديلة. ويجيب المنزل (`POST .../takedowns/{id}/ack`) بـ`applied` مع نهاية الخانة المعروضة الآن،
   أو `not_found` (العنصر محذوف، ويظل الإشعار محسوبًا)، أو `failed`. ويُعرض الجواب على الموظفين ولا

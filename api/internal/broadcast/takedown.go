@@ -8,7 +8,7 @@ package broadcast
 //   - verifies it (a forged, expired or another home's batch is refused);
 //   - takes the item down (the programme that aired at the notice's time on the channel, or the
 //     item named) or the source (a YouTube channel or playlist, a speaker, a label): a row in
-//     broadcast_takedowns, which slot 0229's video_publishable_reason() reads, so the item stops
+//     broadcast_takedowns, which slot 0228's video_publishable_reason() reads, so the item stops
 //     being publishable whatever made it so; the slot plays the slate and the next top-up
 //     replaces it (story 50.23 §3);
 //   - answers the cloud: applied (with the item's slot end when it is on air now, shown to staff;

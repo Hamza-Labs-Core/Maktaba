@@ -18,7 +18,7 @@ caller with no session `401`, before anything is read or sent to Maktaba Cloud.
 | Home API | `api/internal/broadcast/` | the routes, the publish checks, the speed test, the ingest-token refresh (`api:broadcast_tokens`) |
 | Cloud link | `cloud/internal/cloudlink/broadcast.go` | the relay agent forwards the broadcast calls (publish, tokens, the revocation list, takedowns) to Maktaba Cloud with the home's credential; the API never holds it |
 | Broadcaster | `streaming/internal/broadcast/` | one ladder ffmpeg per channel, the uploader, the control socket, the offline slate (`streaming:broadcast_uploader`, `streaming:broadcast_control`) |
-| Database | slots 0226, 0227, 0229 | `broadcast_channels`, `broadcast_uplink`, `broadcast_confirmations`, `broadcast_ingest_tokens`; the publishable rule (0227); `broadcast_takedowns` (0229) |
+| Database | slots 0226, 0227, 0228 | `broadcast_channels`, `broadcast_uplink`, `broadcast_confirmations`, `broadcast_ingest_tokens`; the publishable rule (0227); `broadcast_takedowns` (0228) |
 | Settings | `rules.broadcast` | `uplink_share` (0.5), `rung_slot_weight` (0.5), `allow_software_rungs` (off) |
 
 All three loops belong to the `livetv.broadcast` component. It is in no bundle, so it is off
@@ -147,7 +147,7 @@ signed instruction:
   the keys the home applies none.
 - **Applying one.** A takedown names the item (its id, or the programme on the channel at the
   notice's time, read from `channel_programs`) or a source (a YouTube channel or playlist, a
-  speaker, a label). The home writes a row in `broadcast_takedowns`; slot 0229's
+  speaker, a label). The home writes a row in `broadcast_takedowns`; slot 0228's
   `video_taken_down()` makes `video_publishable_reason()` answer `NULL` for it, so the scheduler
   leaves it out and a slot already scheduled plays the slate. The home answers
   (`POST .../takedowns/{id}/ack`) `applied` with the end of the slot on air now, `not_found` (the
