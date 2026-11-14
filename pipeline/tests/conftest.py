@@ -33,35 +33,6 @@ from maktaba_testtier.netguard import unit_netguard  # noqa: F401,E402
 from maktaba_testtier.softcap import pytest_runtest_protocol  # noqa: F401,E402
 
 
-_INTEGRATION_MODULES = pytest.StashKey[frozenset[Path]]()
-
-
-def pytest_addoption(parser: pytest.Parser) -> None:
-    parser.addoption(
-        "--integration-files",
-        action="store_true",
-        help="collect only the test modules that can hold an integration test"
-        " (tests/integration_scan.py)",
-    )
-
-
-def pytest_ignore_collect(collection_path: Path, config: pytest.Config) -> bool | None:
-    """With ``--integration-files``, a test module that cannot hold an integration test
-    is never imported (the integration tier: ``-m integration`` still selects within the
-    rest). None leaves the decision to pytest."""
-    if not config.getoption("integration_files") or collection_path.suffix != ".py":
-        return None
-    kept = config.stash.get(_INTEGRATION_MODULES, None)
-    if kept is None:
-        from tests.integration_scan import integration_modules
-
-        kept = frozenset(integration_modules(Path(__file__).parent))
-        config.stash[_INTEGRATION_MODULES] = kept
-    if not collection_path.name.startswith("test_"):
-        return None
-    return True if collection_path.resolve() not in kept else None
-
-
 _COLLECTION_START = pytest.StashKey[float]()
 _COLLECTION_SECS = pytest.StashKey[float]()
 

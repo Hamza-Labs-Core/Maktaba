@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import importlib.util
 import os
+import re
 from pathlib import Path
 
 import pytest
@@ -37,6 +38,7 @@ def pytest_sessionfinish(session, exitstatus):
 
 _INNER_TESTS = """
 import os
+import re
 import threading
 
 import conftest
@@ -114,3 +116,48 @@ def test_a_test_past_the_timeout_prints_where_it_waits(pytester: pytest.Pytester
     err = result.stderr.str()
     assert "Timeout" in err
     assert "test_waits_too_long" in err
+
+
+_TIMED_CONFTEST = """
+from tests.conftest import pytest_collection, pytest_collection_finish, pytest_terminal_summary
+"""
+
+_TIMED_TESTS = """
+import time
+
+import pytest
+
+
+@pytest.fixture
+def slow_setup():
+    time.sleep(0.2)
+
+
+def test_sets_up_slowly(slow_setup):
+    pass
+
+
+def test_calls_slowly():
+    time.sleep(0.3)
+"""
+
+
+def test_the_session_says_where_its_time_went(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The ``session time:`` line (tests/conftest.py): collection, and each test phase summed
+    over the tests. It showed the integration tier spending 125 s of a 215 s session on
+    collection (PR #1303), which the 25 slowest tests could not."""
+    monkeypatch.setenv("PYTHONPATH", str(_PIPELINE))
+    pytester.makeconftest(_TIMED_CONFTEST)
+    pytester.makepyfile(test_timed=_TIMED_TESTS)
+    result = pytester.runpytest_subprocess("-p", "no:cacheprovider", "-p", "no:randomly")
+    result.assert_outcomes(passed=2)
+    line = next(s for s in result.stdout.lines if s.startswith("session time: "))
+    secs = {
+        name: float(value)
+        for name, value in re.findall(r"(collection|setup|call|teardown) ([0-9.]+)s", line)
+    }
+    assert set(secs) == {"collection", "setup", "call", "teardown"}, line
+    assert secs["setup"] >= 0.2, line
+    assert secs["call"] >= 0.3, line
