@@ -83,7 +83,11 @@ function api_Send(client as Object, method as String, path as String, body as Dy
     end if
     res = client.transport.Do(req)
     data = invalid
-    if res.body <> invalid and res.body <> "" then data = ParseJson(res.body)
+    ' only a JSON object or array is parsed: a WebVTT file (story 58.13) is read as text
+    if res.body <> invalid and res.body <> "" then
+        first = Left(res.body.Trim(), 1)
+        if first = "{" or first = "[" then data = ParseJson(res.body)
+    end if
     return {status: res.status, data: data, body: res.body}
 end function
 
