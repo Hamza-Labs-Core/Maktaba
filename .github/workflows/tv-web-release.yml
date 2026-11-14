@@ -10,7 +10,22 @@
 #               package when it is submitted, so no key is held. A person uploads it to LG's
 #               Seller Lounge with docs/stores/lg.md (Seller Lounge has no upload API).
 #
-# Samsung's .wgt (story 58.10) joins as its own job with its signing.
+#   tizen-wgt   maktaba-tizen-<version>.wgt: `pnpm build:launcher`, package_wgt.py's stage,
+#               signed by Tizen Studio's CLI (apps/tv/web/tizen/sign_wgt.sh) with the project's
+#               Samsung author and distributor certificates, linted (lint_wgt.py --signed) and
+#               attached to the tag's release. A person uploads it to Samsung's Seller Office
+#               with the notes in docs/stores/samsung.md (Seller Office has no upload API).
+#
+# SIGNING (Samsung)
+# -----------------
+# The certificates are the owner's, from Samsung's Certificate Manager, kept only in the release
+# secrets, never in the repository:
+#   TIZEN_AUTHOR_P12_BASE64 / TIZEN_AUTHOR_PASSWORD
+#   TIZEN_DISTRIBUTOR_P12_BASE64 / TIZEN_DISTRIBUTOR_PASSWORD
+# Without them the run still signs, with a throwaway author certificate and Tizen's own
+# distributor certificate (SIGN_REHEARSAL=1), to prove the path; that package stays a workflow
+# artifact (-rehearsal), is never attached to the release, and the run warns. A signing failure
+# warns and never fails the release (an optional service, gated on its secret).
 name: TV Web Release
 
 on:
@@ -130,3 +145,111 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
         run: tools/release/release-assets.sh upload "${TAG}" out/*.ipk out/*.ipk.sha256
+
+  tizen-wgt:
+    name: Samsung (.wgt)
+    needs: [guard, launcher-changed]
+    if: needs.launcher-changed.outputs.changed == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: write # gh release upload
+    steps:
+      - uses: actions/checkout@v6.0.2
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@0e279bb959325dab635dd2c09392533439d90093 # v6.0.8
+        with:
+          version: 9.15.4
+          run_install: false
+      - uses: actions/setup-node@v6.4.0
+        with:
+          node-version-file: web/.nvmrc
+          package-manager-cache: false
+      - name: Install web deps
+        working-directory: web
+        run: pnpm install --frozen-lockfile
+      - name: Design tokens
+        run: node web/design-system/build/build-tokens.mjs
+      - name: build:launcher, checked for Chromium 68
+        working-directory: web
+        env:
+          TAG: ${{ github.ref_name }}
+        run: VERSION="${TAG#v}" pnpm run build:launcher
+
+      - name: Stage and lint the package
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          python3 apps/tv/web/tizen/package_wgt.py --dist web/dist-launcher --version "${TAG}" --out build/tizen
+          version="${TAG#v}"
+          python3 apps/tv/web/tizen/lint_wgt.py "build/tizen/maktaba-tizen-${version}-unsigned.wgt" --version "${version}"
+
+      - name: Tizen CLI's packages (its keyring)
+        run: |
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq zip unzip gnome-keyring dbus-x11 libsecret-1-0
+
+      # signs with the owner's certificates, or rehearses with a throwaway one (see the header);
+      # the secrets reach this step only, never the install and build steps' package scripts
+      - name: Sign
+        id: sign
+        continue-on-error: true
+        env:
+          TAG: ${{ github.ref_name }}
+          TIZEN_AUTHOR_P12_BASE64: ${{ secrets.TIZEN_AUTHOR_P12_BASE64 }}
+          TIZEN_AUTHOR_PASSWORD: ${{ secrets.TIZEN_AUTHOR_PASSWORD }}
+          TIZEN_DISTRIBUTOR_P12_BASE64: ${{ secrets.TIZEN_DISTRIBUTOR_P12_BASE64 }}
+          TIZEN_DISTRIBUTOR_PASSWORD: ${{ secrets.TIZEN_DISTRIBUTOR_PASSWORD }}
+        run: |
+          set -euo pipefail
+          version="${TAG#v}"
+          if [ -n "${TIZEN_AUTHOR_P12_BASE64}" ]; then
+            out="out/maktaba-tizen-${version}.wgt"; signed=true
+          else
+            out="out/maktaba-tizen-${version}-rehearsal.wgt"; signed=false
+            export SIGN_REHEARSAL=1
+          fi
+          dbus-run-session -- bash apps/tv/web/tizen/sign_wgt.sh build/tizen/stage "${out}"
+          python3 apps/tv/web/tizen/lint_wgt.py "${out}" --version "${version}" --signed
+          ( cd out && sha256sum "$(basename "${out}")" > "$(basename "${out}").sha256" )
+          echo "signed=${signed}" >> "$GITHUB_OUTPUT"
+
+      - name: Say what was built
+        if: always()
+        env:
+          TAG: ${{ github.ref_name }}
+          SIGN: ${{ steps.sign.outcome }}
+          SIGNED: ${{ steps.sign.outputs.signed }}
+        run: |
+          if [ "${SIGN}" != success ]; then
+            msg="Signing the Samsung package failed; the unsigned build is in the maktaba-tizen workflow artifact and nothing is attached to the ${TAG} release."
+            echo "::warning title=Samsung package not signed::${msg}"
+          elif [ "${SIGNED}" != true ]; then
+            msg="TIZEN_AUTHOR_P12_BASE64 is not set: the Samsung package was signed with a throwaway certificate to prove the path (-rehearsal), kept in the maktaba-tizen workflow artifact and not attached to the ${TAG} release."
+            echo "::warning title=Samsung package rehearsed, not released::${msg}"
+          else
+            msg="maktaba-tizen-${TAG#v}.wgt is signed with the project's Samsung certificates and attached to the ${TAG} release, for Seller Office (docs/stores/samsung.md)."
+          fi
+          printf '### Samsung TV package\n\n%s\n' "${msg}" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload CI artifact
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: maktaba-tizen
+          path: |
+            out/*
+            build/tizen/*.wgt
+          if-no-files-found: ignore
+          retention-days: 14
+
+      # signed with the project's certificates only, to the tag's release (a draft until
+      # release.yml's files are in; a published release only gains the files it lacks)
+      - name: Attach to GitHub Release
+        if: steps.sign.outcome == 'success' && steps.sign.outputs.signed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: tools/release/release-assets.sh upload "${TAG}" out/*

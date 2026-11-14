@@ -119,12 +119,12 @@ export const APPS = [
                   t("[Maktaba TV](/apps/tv/)", "[تطبيق التلفاز](/apps/tv/)"),
                   t("watching across the room", "المشاهدة من أنحاء الغرفة"),
                   t(
-                    "Apple TV, Android TV, Google TV, Fire TV, LG TVs (webOS), Roku",
-                    "آبل تي في، أندرويد تي في، جوجل تي في، فاير تي في، تلفزيونات LG ‏(webOS)، روكو"
+                    "Apple TV, Android TV, Google TV, Fire TV, LG TVs (webOS), Samsung TVs from 2020, Roku",
+                    "آبل تي في، أندرويد تي في، جوجل تي في، فاير تي في، تلفزيونات LG ‏(webOS)، تلفزيونات سامسونج من 2020، روكو"
                   ),
                   t(
-                    "TestFlight on the Apple TV; Google Play internal testing, or the signed `.apk` when a release carries one; Amazon's Live App Testing on Fire TV; on an LG TV, the `.ipk` a release carries, until the LG Content Store lists it; on Roku, built from source and side-loaded until the channel is in Roku's store",
-                    "TestFlight على آبل تي في؛ الاختبار الداخلي في Google Play، أو ملف `.apk` الموقَّع حين يتضمنه الإصدار؛ اختبار التطبيق المباشر من أمازون على فاير تي في؛ وعلى تلفاز LG ملف `.ipk` الذي يتضمنه الإصدار، إلى أن يُدرَج في متجر LG Content Store؛ وعلى روكو، يُبنى من المصدر ويُثبَّت يدويًا إلى أن تصل القناة إلى متجر روكو"
+                    "TestFlight on the Apple TV; Google Play internal testing, or the signed `.apk` when a release carries one; Amazon's Live App Testing on Fire TV; on an LG TV, the `.ipk` a release carries, until the LG Content Store lists it; Samsung's app store once Samsung approves it; on Roku, built from source and side-loaded until the channel is in Roku's store",
+                    "TestFlight على آبل تي في؛ الاختبار الداخلي في Google Play، أو ملف `.apk` الموقَّع حين يتضمنه الإصدار؛ اختبار التطبيق المباشر من أمازون على فاير تي في؛ وعلى تلفاز LG ملف `.ipk` الذي يتضمنه الإصدار، إلى أن يُدرَج في متجر LG Content Store؛ ومتجر تطبيقات سامسونج بعد موافقة سامسونج؛ وعلى روكو، يُبنى من المصدر ويُثبَّت يدويًا إلى أن تصل القناة إلى متجر روكو"
                   ),
                 ],
                 [
@@ -917,6 +917,16 @@ export const APPS = [
                   ),
                 ],
                 [
+                  t(
+                    "Samsung TVs from 2020 (Tizen 5.5 or later)",
+                    "تلفزيونات سامسونج من 2020 (Tizen 5.5 أو أحدث)"
+                  ),
+                  t(
+                    "Samsung's app store (Apps on the TV), once Samsung approves it: in the United States first, then in further countries, the Gulf included, after Samsung's partner approval",
+                    "متجر تطبيقات سامسونج (التطبيقات على التلفاز) بعد موافقة سامسونج: في الولايات المتحدة أولًا، ثم في بلدان أخرى منها الخليج بعد موافقة سامسونج على الشراكة"
+                  ),
+                ],
+                [
                   t("Roku (Roku OS, every current Roku)", "روكو (نظام Roku OS، كل أجهزة روكو الحالية)"),
                   t(
                     `Not in Roku's store yet. A Roku in developer mode installs the channel built from [\`apps/tv/roku/\`](${SRC}/apps/tv/roku) (\`node tools/build.mjs\`) from its developer page. The channel is in English and Arabic, the whole of it mirrored in Arabic with the text joined and in reading order, and it opens straight to a video from a deep link`,
@@ -966,6 +976,41 @@ export const APPS = [
               "Developers: [The Samsung and LG launcher](/contributing/tv-launcher/) explains the bridge between the launcher and the home's TV screens, and the LG player, package and store steps.",
               "للمطوّرين: تشرح صفحة [مشغّل سامسونج وLG](/contributing/tv-launcher/) الجسر بين المشغّل وشاشات التلفاز في الجهاز الرئيسي، ومشغّل LG وحزمته وخطوات المتجر."
             ),
+          },
+        ],
+      },
+      {
+        h: t("On a Samsung TV", "على تلفاز سامسونج"),
+        blocks: [
+          {
+            p: t(
+              "The Samsung app is a small launcher: it finds the home, by searching this network or with the home's address, and then shows the home's own TV screens, so they update with the home and not through the store. Signing in is by a code approved from a phone; on the home's network without encryption it is by code only, so no password crosses the network in the clear.",
+              "تطبيق سامسونج مُشغِّل صغير: يعثر على الجهاز الرئيسي بالبحث في هذه الشبكة أو بعنوانه، ثم يعرض شاشات التلفاز الخاصة بالجهاز الرئيسي نفسه، فتتحدّث مع الجهاز الرئيسي لا عبر المتجر. ويكون تسجيل الدخول برمز يُوافَق عليه من الهاتف؛ وعلى شبكة المنزل دون تشفير لا يكون إلا بالرمز، فلا تعبر كلمة مرور الشبكة مكشوفة."
+            ),
+          },
+          {
+            ul: [
+              t(
+                "Plays with the TV's own player: 4K, HDR10 and HLG where the TV has them, and Dolby Digital and Dolby Digital Plus passed through to a soundbar or receiver that takes them. Samsung TVs have no Dolby Vision, so such a file plays as HDR10.",
+                "يشغّل بمشغّل التلفاز نفسه: دقة 4K وHDR10 وHLG حيث يدعمها التلفاز، مع تمرير Dolby Digital وDolby Digital Plus إلى مكبّر الصوت أو جهاز الاستقبال الذي يقبلهما. ولا تدعم تلفزيونات سامسونج Dolby Vision، فيُشغَّل ملفها بصيغة HDR10."
+              ),
+              t(
+                "The TV tells the home what it plays, so the home sends the file as it is when it can and converts only what the TV cannot play. If the TV still cannot play a file, it says **The TV couldn't play this. Trying a converted version…** and plays a converted one.",
+                "يُعلِم التلفاز الجهاز الرئيسي بما يستطيع تشغيله، فيرسل الجهاز الرئيسي الملف كما هو متى أمكن ولا يحوّل إلا ما لا يشغّله التلفاز. وإن تعذّر على التلفاز تشغيل ملف رغم ذلك، يقول **تعذّر على التلفاز تشغيل هذا. جارٍ تجربة نسخة محوّلة…** ويشغّل نسخة محوّلة."
+              ),
+              t(
+                "Subtitles are drawn by Maktaba, not the TV, so Arabic is joined and right to left, at the size chosen in the TV app's settings.",
+                "تُرسم الترجمة بواسطة مكتبة لا بواسطة التلفاز، فتظهر العربية متصلة ومن اليمين إلى اليسار، بالحجم المختار في إعدادات تطبيق التلفاز."
+              ),
+              t(
+                "The remote's play, pause, rewind, fast-forward and colour keys work; Back on the top screen asks before leaving the app.",
+                "تعمل أزرار التشغيل والإيقاف المؤقت والترجيع والتقديم والأزرار الملوّنة في جهاز التحكم؛ ويسأل زر الرجوع في الشاشة العليا قبل مغادرة التطبيق."
+              ),
+              t(
+                "A Samsung TV older than 2020 is told it is too old for the app, and that it can still be cast to from a phone if it supports Google Cast or AirPlay.",
+                "يُخبَر تلفاز سامسونج الأقدم من 2020 بأنه أقدم من أن يعمل عليه التطبيق، وبأنه ما زال يمكن البث إليه من الهاتف إن كان يدعم Google Cast أو AirPlay."
+              ),
+            ],
           },
         ],
       },
@@ -1034,6 +1079,12 @@ export const APPS = [
                 "التشغيل على تلفاز LG: مشغّل التلفاز نفسه تحت أزرار التحكم، وترجمة عربية ترسمها مكتبة"
               ),
               shot(
+                "samsung-error",
+                "wide",
+                "The Samsung app playing: Arabic subtitles drawn right to left, and the notice that a converted version follows",
+                "تطبيق سامسونج أثناء التشغيل: ترجمة عربية مرسومة من اليمين إلى اليسار، وتنبيه بأن نسخة محوّلة ستتبع"
+              ),
+              shot(
                 "roku-home",
                 "wide",
                 "Maktaba's Home on Roku: Continue watching and Recently added",
@@ -1049,8 +1100,8 @@ export const APPS = [
           },
           {
             p: t(
-              "The first four screenshots are from the Apple TV app, the sign-in from the Android TV app, the next two from the Fire TV build, the next from the LG app, taken in its browser test with a pretend LG TV, and the last two from the Roku channel, drawn by brs-engine (Roku's own renderer differs a little). The Android TV app, its Fire TV build and the Roku channel have the same sections as the Apple TV app, laid out for the TV's remote.",
-              "أول أربع لقطات من تطبيق آبل تي في، ولقطة تسجيل الدخول من تطبيق أندرويد تي في، واللقطتان التاليتان من إصدار فاير تي في، والتي تليهما من تطبيق LG، التُقطت في اختباره في المتصفح مع تلفاز LG وهمي، وآخر لقطتين من قناة روكو كما يرسمها brs-engine (ويختلف عنه عارض روكو نفسه قليلًا). ولتطبيق أندرويد تي في وإصداره لفاير تي في وقناة روكو أقسام تطبيق آبل تي في نفسها، مرتبةً لجهاز تحكم التلفاز."
+              "The first four screenshots are from the Apple TV app, the sign-in from the Android TV app, the next two from the Fire TV build, the next from the LG app and the next from the Samsung app, each taken in its browser test with a pretend TV (behind the Samsung shot, a frame stands in for the video), and the last two from the Roku channel, drawn by brs-engine (Roku's own renderer differs a little). The Android TV app, its Fire TV build and the Roku channel have the same sections as the Apple TV app, laid out for the TV's remote.",
+              "أول أربع لقطات من تطبيق آبل تي في، ولقطة تسجيل الدخول من تطبيق أندرويد تي في، واللقطتان التاليتان من إصدار فاير تي في، والتالية من تطبيق LG والتي تليها من تطبيق سامسونج، وكلٌّ منهما التُقطت في اختبار تطبيقها في المتصفح مع تلفاز وهمي (وخلف لقطة سامسونج إطار بديل عن الفيديو)، وآخر لقطتين من قناة روكو كما يرسمها brs-engine (ويختلف عنه عارض روكو نفسه قليلًا). ولتطبيق أندرويد تي في وإصداره لفاير تي في وقناة روكو أقسام تطبيق آبل تي في نفسها، مرتبةً لجهاز تحكم التلفاز."
             ),
           },
           { p: SHOTS_NOTE },

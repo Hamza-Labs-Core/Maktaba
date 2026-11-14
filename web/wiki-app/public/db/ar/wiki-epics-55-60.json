@@ -2287,7 +2287,8 @@
         "phase-5"
       ],
       "related": [
-        "epic-58-smart-tv-platforms"
+        "epic-58-smart-tv-platforms",
+        "entity-audio_tracks"
       ],
       "files": {
         "story": "specs/epics/58-smart-tv-platforms/story-58-10-tizen.md",
@@ -2295,7 +2296,9 @@
         "mockups": []
       },
       "api_endpoints": [],
-      "db_tables": [],
+      "db_tables": [
+        "audio_tracks"
+      ],
       "metadata": {
         "slug": "tizen"
       },
