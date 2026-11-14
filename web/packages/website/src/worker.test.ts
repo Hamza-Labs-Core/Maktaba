@@ -59,12 +59,12 @@ describe("redirects (T01, T04)", () => {
     expect((await get("http://www.maktaba.tv/", env)).status).toBe(200);
   });
 
-  it("T04: /docs goes to the front door until the help pages exist, in each language", async () => {
+  it("T04, 60.12 T06: /docs goes to the help pages with a 301, in each language", async () => {
     for (const [from, to] of [
-      ["/docs", "/"],
-      ["/docs/", "/"],
-      ["/ar/docs", "/ar/"],
-      ["/ar/docs/", "/ar/"],
+      ["/docs", "/help/"],
+      ["/docs/", "/help/"],
+      ["/ar/docs", "/ar/help/"],
+      ["/ar/docs/", "/ar/help/"],
     ]) {
       const res = await get(`https://maktaba.tv${from}`);
       expect(res.status, from).toBe(301);

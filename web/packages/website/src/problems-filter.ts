@@ -1,7 +1,9 @@
-// The problem index's filter (Epic 60 story 60.06, T11): /problems/ and /ar/problems/ list every
-// message, and typing in the box narrows the list in the page. It sends no request: it reads the
-// list that is already there. Without JavaScript the box is hidden (the index's <noscript>
-// stylesheet) and the whole list shows.
+// The index filter (Epic 60 story 60.06, T11; story 60.12, T08): /problems/ lists every message
+// and /help/ every help topic (and their /ar/ twins), and typing in the box narrows the list in
+// the page. It sends no request: it reads the list that is already there, the element marked
+// data-filter-list, whose sections are its groups and whose items are matched on their text and
+// their data-search (a help topic's headings). Without JavaScript the box is hidden (the index's
+// <noscript> stylesheet) and the whole list shows.
 //
 // The build publishes this file with its types stripped, under a content-hashed name
 // (scripts/build.mjs), as the index's one script. It imports nothing, so it runs as it is in the
@@ -46,11 +48,11 @@ export function enhance(doc: Document): void {
   const count = doc.getElementById("count");
   const none = doc.getElementById("no-match");
   if (!input || !count || !none) return;
-  const items = [...doc.querySelectorAll<HTMLLIElement>(".areas li")].map((li) => ({
+  const items = [...doc.querySelectorAll<HTMLLIElement>("[data-filter-list] li")].map((li) => ({
     li,
-    text: li.textContent ?? "",
+    text: `${li.textContent ?? ""} ${li.dataset.search ?? ""}`,
   }));
-  const areas = [...doc.querySelectorAll<HTMLElement>(".areas section")];
+  const areas = [...doc.querySelectorAll<HTMLElement>("[data-filter-list] section")];
   const apply = () => {
     let shown = 0;
     for (const it of items) {

@@ -20,7 +20,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { bLinks, esc, GITHUB, HELP, ICONS, inLang, page } from "./shell.mjs";
+import { bLinks, esc, GITHUB, ICONS, inLang, page, TROUBLESHOOTING } from "./shell.mjs";
 
 export const REGISTRY = "shared/api/problems.json";
 export const BASE = "https://maktaba.tv/problems/";
@@ -271,7 +271,7 @@ function withLinks(sentence, links) {
 export function renderProblem(doc, { known = new Set() } = {}) {
   const t = T[doc.lang];
   const helps = withLinks(t.helps[doc.helps], {
-    troubleshooting: { href: inLang(doc.lang, HELP), text: t.troubleshooting },
+    troubleshooting: { href: inLang(doc.lang, TROUBLESHOOTING), text: t.troubleshooting },
     github: { href: `${GITHUB}/issues`, text: t.github },
   });
   const related = doc.related.length
@@ -354,7 +354,7 @@ export function renderIndex(doc, { script = "" } = {}) {
   <div class="band">
     <div class="frame">
       <p class="no-match" id="no-match" hidden>${esc(t.noMatch)}</p>
-      <div class="areas">${areas}
+      <div class="areas" data-filter-list>${areas}
       </div>
     </div>
   </div>${script ? `\n  <script type="module" src="${esc(script)}"></script>` : ""}`;
