@@ -75,7 +75,23 @@
     "roku.player.failed": ".ﺍﺬﻫ Roku ﺯﺎﻬﺟ ﻰﻠﻋ ﻮﻳﺪﻴﻔﻟﺍ ﺍﺬﻫ ﻞﻴﻐﺸﺗ ﻦﻜﻤﻳ ﻻ",
     "roku.player.audio": "ﺕﻮﺼﻟﺍ",
     "roku.player.subtitles": "ﺔﻤﺟﺮﺘﻟﺍ",
-    "roku.player.off": "ﻑﺎﻘﻳﺇ"
+    "roku.player.off": "ﻑﺎﻘﻳﺇ",
+    "parental.blocked.title": "ﺡﺎﺘﻣ ﺮﻴﻏ ﺍﺬﻫ",
+    "parental.blocked.accountAll": ".ﺭﺎﻤﻋﻷﺍ ﻞﻜﻟ ـﺑ ﺪﻴﻘﻣ ﻚﺑﺎﺴﺣ",
+    "parental.blocked.accountNone": ".ﻦﻳﺪﻟﺍﻮﻟﺍ ﺪﺣﺃ ﻪﺑ ﺢﻤﺳ ﺎﻤﺑ ﺪﻴﻘﻣ ﻚﺑﺎﺴﺣ",
+    "parental.blocked.ask": "ﻦﻳﺪﻟﺍﻮﻟﺍ ﺪﺣﺃ ﻦﻣ ﺐﻠﻃﺍ",
+    "parental.ask.again": "ﻯﺮﺧﺃ ﺓﺮﻣ ﺐﻠﻃﺍ",
+    "parental.ask.sent": ".ﻦﻳﺪﻟﺍﻮﻟﺍ ﺪﺣﺃ ﺭﺎﻈﺘﻧﺎﺑ .ﺐﻠﻄﻟﺍ ﻞﺳﺭﺃ",
+    "parental.ask.denied": ".ﻦﻳﺪﻟﺍﻮﻟﺍ ﺪﺣﺃ ﺾﻓﺭ",
+    "parental.ask.approved": ".ﻦﻳﺪﻟﺍﻮﻟﺍ ﺪﺣﺃ ﻖﻓﺍﻭ",
+    "parental.ask.tooMany": ".ﺩﺮﻟﺍ ﺭﺎﻈﺘﻧﺎﺑ ﺓﺮﻴﺜﻛ ﺕﺎﺒﻠﻃ ﻚﻳﺪﻟ",
+    "parental.ask.failed": ".ﻯﺮﺧﺃ ﺓﺮﻣ ﻝﻭﺎﺣ .ﺐﻠﻄﻟﺍ ﻞﺳﺮﻳ ﻢﻟ",
+    "parental.time.check": "ﺍﺩﺪﺠﻣ ﻖﻘﺤﺗ",
+    "parental.profile.managed": ".ﺏﺎﺴﺤﻟﺍ ﺍﺬﻫ ﻦﻳﺪﻟﺍﻮﻟﺍ ﺪﺣﺃ ﺮﻳﺪﻳ",
+    "parental.profile.limitAll": "ﺭﺎﻤﻋﻷﺍ ﻞﻜﻟ :ﻯﻮﺘﺤﻤﻟﺍ ﺪﺣ",
+    "parental.profile.limitNone": "ﻦﻳﺪﻟﺍﻮﻟﺍ ﺪﺣﺃ ﻪﺑ ﺢﻤﺳ ﺎﻣ :ﻯﻮﺘﺤﻤﻟﺍ ﺪﺣ",
+    "tv.parental.askOnPhone": ".ﻪﻔﺗﺎﻫ ﻰﻠﻋ Maktaba ﻦﻣ ﺩﺮﻟﺍ ﻦﻳﺪﻟﺍﻮﻟﺍ ﺪﺣﻷ ﻦﻜﻤﻳ",
+    "parental.blocked.deviceAll": ".ﺭﺎﻤﻋﻷﺍ ﻞﻜﻟ ـﺑ ﺪﻴﻘﻣ ﺯﺎﻬﺠﻟﺍ ﺍﺬﻫ"
   },
   "templates": {
     "launcher.connecting": {
@@ -146,6 +162,21 @@
     "roku.player.track": {
       "text": "المسار %1$s",
       "widthChars": 30,
+      "lines": 1
+    },
+    "parental.blocked.account": {
+      "text": "حسابك مقيَّد بـ %1$s+.",
+      "widthChars": 60,
+      "lines": 2
+    },
+    "parental.blocked.device": {
+      "text": "هذا الجهاز مقيَّد بـ %1$s+.",
+      "widthChars": 60,
+      "lines": 2
+    },
+    "parental.profile.limit": {
+      "text": "حدّ المحتوى: %1$s+",
+      "widthChars": 60,
       "lines": 1
     }
   }

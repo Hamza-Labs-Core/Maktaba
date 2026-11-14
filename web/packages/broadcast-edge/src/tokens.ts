@@ -28,7 +28,10 @@ const SLACK_S = 60;
 /** The ingest token's claims: one publisher, one channel, its rungs, and the plan's top kbps. */
 export interface IngestClaims {
   typ: "ingest";
-  /** publisher: the cloud account that publishes */
+  /**
+   * publisher: the home's server id, the one key the edge and the cloud share for a publisher
+   * (PublisherControl, usage windows, plans, viewer tokens); always equal to `home`
+   */
   pub: string;
   /** channel: the edge's opaque channel id (the cloud derives it from the home and channel) */
   ch: string;
@@ -154,6 +157,8 @@ export async function verifyIngest(
     typeof p.iat !== "number"
   )
     return { ok: false, status: 401, error: "bad_token" };
+  // a publisher is a home: a token naming another publisher than its home is not the cloud's
+  if (p.pub === "" || p.pub !== p.home) return { ok: false, status: 401, error: "bad_token" };
   const nowS = nowMs / 1000;
   if (p.exp <= nowS) return { ok: false, status: 401, error: "expired" };
   if (p.exp - p.iat > INGEST_MAX_TTL_S + SLACK_S || p.iat > nowS + SLACK_S)

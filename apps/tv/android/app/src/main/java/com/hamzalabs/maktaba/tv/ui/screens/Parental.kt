@@ -60,6 +60,8 @@ import com.hamzalabs.maktaba.core.parental.TimeWarnings
 import androidx.lifecycle.repeatOnLifecycle
 import com.hamzalabs.maktaba.core.ui.ParentHelp
 import com.hamzalabs.maktaba.core.ui.limitLine
+import com.hamzalabs.maktaba.core.ui.tierWords
+import com.hamzalabs.maktaba.tv.R
 import com.hamzalabs.maktaba.core.ui.nextWords
 import com.hamzalabs.maktaba.core.ui.timeWords
 import com.hamzalabs.maktaba.core.ui.timesUpTitle
@@ -149,7 +151,7 @@ fun TvHomeTime(parental: ParentalState, modifier: Modifier = Modifier) {
  * minutes. When the home says there is nothing to ask for (a hidden item is a missing one) both go.
  */
 @Composable
-private fun TvParentHelp(help: ParentHelp, onUnlocked: () -> Unit) {
+private fun TvParentHelp(help: ParentHelp, onUnlocked: () -> Unit, askFocus: FocusRequester? = null) {
     val scope = rememberCoroutineScope()
     val res = LocalContext.current.resources
     val asked by help.ask.state.collectAsState()
@@ -190,7 +192,7 @@ private fun TvParentHelp(help: ParentHelp, onUnlocked: () -> Unit) {
             MaktabaButton(
                 onClick = { if (help.forTime) choosing = !choosing else scope.launch { help.ask.ask() } },
                 enabled = asked != AskState.Sending,
-                modifier = Modifier.testTag("parental-ask"),
+                modifier = (if (askFocus != null) Modifier.focusRequester(askFocus) else Modifier).testTag("parental-ask"),
             ) {
                 Text(
                     stringResource(
@@ -356,7 +358,13 @@ fun TvBlocked(
 ) {
     com.hamzalabs.maktaba.core.ui.OnReturnToFront(onReturn)
     val first = remember { FocusRequester() }
-    LaunchedEffect(Unit) { runCatching { first.requestFocus() } }
+    // Ask a parent takes the focus when it is offered (story 58.14), else Back
+    val ask = remember { FocusRequester() }
+    val asks = help != null && mine.restricted
+    LaunchedEffect(asks) {
+        if (asks) runCatching { ask.requestFocus() }.onFailure { runCatching { first.requestFocus() } }
+        else runCatching { first.requestFocus() }
+    }
     val res = LocalContext.current.resources
     val lock = stringResource(CoreR.string.parental_blocked_a11y)
     Centered {
@@ -380,7 +388,43 @@ fun TvBlocked(
             if (onBack != null) {
                 MaktabaButton(onClick = onBack, modifier = Modifier.focusRequester(first).testTag("parental-back")) { Text(stringResource(CoreR.string.error_back)) }
             }
-            if (help != null) TvParentHelp(help, onUnlocked)
+            if (help != null) TvParentHelp(help, onUnlocked, askFocus = ask)
+            if (help != null && mine.restricted) {
+                // no one answers on the TV: a guardian answers from their phone (story 58.14)
+                Text(
+                    stringResource(R.string.tv_parental_ask_on_phone),
+                    style = MaterialTheme.typography.titleSmall, color = MaktabaPalette.Muted, textAlign = TextAlign.Center,
+                    modifier = Modifier.testTag("parental-ask-on-phone"),
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Account's lines for a sign-in under a limit (story 58.14): that a parent manages the
+ * account and its limit, or the limit this device set. Nothing for anyone else.
+ */
+@Composable
+fun TvManaged(parental: ParentalState, modifier: Modifier = Modifier) {
+    val mine by parental.mine.collectAsState()
+    if (!mine.restricted && mine.deviceLimit == null) return
+    val res = LocalContext.current.resources
+    Column(modifier.testTag("parental-managed"), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        if (mine.restricted) {
+            Text(stringResource(R.string.tv_parental_managed), style = MaterialTheme.typography.titleMedium, color = MaktabaPalette.Text, modifier = Modifier.testTag("parental-managed-line"))
+            mine.maxTier?.let {
+                Text(
+                    stringResource(CoreR.string.parental_profile_limit) + ": " + res.tierWords(it),
+                    style = MaterialTheme.typography.bodyLarge, color = MaktabaPalette.Muted, modifier = Modifier.testTag("parental-managed-limit"),
+                )
+            }
+        }
+        mine.deviceLimit?.takeIf { !mine.restricted || it != mine.maxTier }?.let {
+            Text(stringResource(CoreR.string.parental_blocked_device, res.tierWords(it)), style = MaterialTheme.typography.bodyLarge, color = MaktabaPalette.Muted, modifier = Modifier.testTag("parental-managed-device"))
+        }
+        if (mine.restricted) {
+            Text(stringResource(R.string.tv_parental_ask_on_phone), style = MaterialTheme.typography.bodyMedium, color = MaktabaPalette.Muted)
         }
     }
 }

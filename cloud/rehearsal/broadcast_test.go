@@ -16,7 +16,7 @@ import (
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/billing"
-	edgeh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/edge"
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/broadcast"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/relay/simhome"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/rehearsal/plans"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/rehearsal/seed"
@@ -86,9 +86,17 @@ func (e *fakeEdge) bulk(full, lowest int64) {
 // flush posts the queue; the API down leaves it queued. It applies the state the API answers:
 // off stops every playing session; any other mode applies to new sessions only.
 func (e *fakeEdge) flush() (taken, dups int, ok bool) {
-	body, _ := json.Marshal(edgeh.UsagePost{Edge: "rehearsal-edge", Windows: e.queue})
-	req, _ := http.NewRequest(http.MethodPost, e.api+"/_edge/usage", bytes.NewReader(body))
-	edgeh.Sign(e.priv, req, body, time.Now())
+	post := broadcast.UsagePost{Edge: "rehearsal-edge", Windows: []broadcast.UsageWindow{}}
+	for _, w := range e.queue {
+		post.Windows = append(post.Windows, broadcast.UsageWindow{
+			Key: billing.WindowKey(w.Publisher, w.Window), Publisher: w.Publisher,
+			WindowStart: w.Window, WindowEnd: w.Window.Add(billing.WindowLength),
+			MinutesFull: w.MinutesFull, MinutesLowest: w.MinutesLowest,
+		})
+	}
+	body, _ := json.Marshal(post)
+	req, _ := http.NewRequest(http.MethodPost, e.api+broadcast.UsagePath, bytes.NewReader(body))
+	broadcast.SignEdgeRequest(e.priv, req.Header, req.Method, req.URL.Path, time.Now().UnixMilli(), body)
 	resp, err := e.client.Do(req)
 	if err != nil {
 		return 0, 0, false
@@ -97,7 +105,7 @@ func (e *fakeEdge) flush() (taken, dups int, ok bool) {
 	if resp.StatusCode != http.StatusOK {
 		return 0, 0, false
 	}
-	var out edgeh.UsageReply
+	var out broadcast.UsageReply
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
 		e.t.Fatalf("usage reply: %v", err)
 	}
@@ -108,6 +116,16 @@ func (e *fakeEdge) flush() (taken, dups int, ok bool) {
 	for _, st := range out.States {
 		if st.Publisher == e.publisher {
 			e.apply(st)
+		}
+	}
+	// one publisher key everywhere: the plan the reply carries names the same server id
+	if len(out.States) > 0 {
+		var planned bool
+		for _, p := range out.Plans {
+			planned = planned || p.Pub == e.publisher
+		}
+		if !planned {
+			e.t.Errorf("the usage reply has no plan for publisher %s: %+v", e.publisher, out.Plans)
 		}
 	}
 	return len(out.Taken), len(out.Duplicates), true
@@ -126,7 +144,7 @@ func (e *fakeEdge) apply(st billing.PublisherState) {
 // pull is the edge's 5-minute pull of the publisher's state.
 func (e *fakeEdge) pull() {
 	req, _ := http.NewRequest(http.MethodGet, e.api+"/_edge/publishers/"+e.publisher, nil)
-	edgeh.Sign(e.priv, req, nil, time.Now())
+	broadcast.SignEdgeRequest(e.priv, req.Header, req.Method, req.URL.Path, time.Now().UnixMilli(), nil)
 	resp, err := e.client.Do(req)
 	if err != nil {
 		e.t.Fatalf("pull: %v", err)

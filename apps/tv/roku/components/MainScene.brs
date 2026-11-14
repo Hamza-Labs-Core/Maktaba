@@ -52,7 +52,7 @@ end sub
 ' Opens a saved home: its discovery answer first (the same home, and a level this channel can
 ' use), then Home.
 sub scene_Connect(home as Object)
-    scene_Busy(m.i18n.Format("launcher.connecting", [ui_Vis(home.name, 30)]))
+    scene_Busy(m.i18n.Format("launcher.connecting", [ui_Arg(home.name)]))
     t = CreateObject("roSGNode", "HomeTask")
     t.command = {kind: "connect", home: home}
     t.ObserveField("result", "onConnected")
@@ -78,6 +78,9 @@ sub scene_SignedIn(home as Object)
     StoreSaveHome(home)
     m.global.session = {id: home.id, name: home.name, base: home.base, plain: (home.plain = true), access: home.access, refresh: home.refresh, user: home.user, admin: (home.admin = true)}
     scene_SetAgent()
+    ' the sign-in's parental limit (Epic 57), read once signed in (story 58.14): a 404 is then
+    ' the limit's blocked page, and Account says who manages the account
+    m.parentalReq = ui_Api("GET", "/api/me/parental", invalid, "parental", "onParental")
     link = m.pendingLink
     m.pendingLink = invalid
     if link <> invalid then
@@ -87,6 +90,15 @@ sub scene_SignedIn(home as Object)
         scene_Reset("HomeScreen", {notice: m.notice})
         m.notice = ""
     end if
+end sub
+
+sub onParental(ev as Object)
+    r = ev.GetData()
+    s = m.global.session
+    ' an older home (404) or no answer: no limit known; the home still filters every answer
+    if r.status = 200 then s.parental = ParentalFrom(r.data) else s.parental = ParentalFrom(invalid)
+    m.global.session = s
+    print "[parental] limited="; ParentalLimited(s.parental)
 end sub
 
 ' The scene's HTTP agent: every Poster (and the player's Video node) inherits it, so posters
@@ -186,7 +198,7 @@ sub onNavigate(ev as Object)
     nav = ev.GetData()
     ' a screen asking for the stack to be reset is still inside its own callback: the reset
     ' runs on the next tick, so the screen is never removed while its handler runs
-    if nav.action = "setLang" or nav.action = "signOut" or nav.action = "start" then
+    if nav.action = "setLang" or nav.action = "signOut" or nav.action = "start" or nav.replace = true then
         m.deferred = nav
         m.deferTimer.control = "start"
         return
@@ -202,6 +214,8 @@ end sub
 
 sub scene_Do(nav as Object)
     if nav.to <> invalid then
+        ' replace: the asking screen goes, the new one takes its place (Back skips it)
+        if nav.replace = true and m.stack.GetChildCount() > 1 then m.stack.RemoveChildIndex(m.stack.GetChildCount() - 1)
         scene_Push(nav.to, nav.params)
     else if nav.action = "back" then
         scene_Pop()
