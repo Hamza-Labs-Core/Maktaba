@@ -55,6 +55,10 @@ func NewRouter(logger *slog.Logger, pool *db.Pool, mig *db.Migrator, build Build
 		r.Use(middleware.OnlyHosts(logger, "user", o.hosts))
 		r.Use(middleware.APIHeaders)
 	}
+	if len(o.tvPaths) > 0 {
+		// a packaged TV app's origin on the TV's own routes (58.09), before the web allow-list
+		r.Use(middleware.TVCORS(o.tvPaths))
+	}
 	r.Use(middleware.CORS(allowedOrigins))
 
 	r.Get("/healthz", healthzHandler(build))
@@ -93,6 +97,14 @@ type routerOptions struct {
 	trusted   []netip.Prefix
 	resolveIP func(*http.Request) string
 	hosts     []string // non-nil: the api's user listener (50.32)
+	tvPaths   []string // the TV's public routes a packaged TV app's origin may call (58.09)
+}
+
+// WithTVOrigins answers a packaged TV app's origin (`file://`, `null`, `app://…`) on paths,
+// the TV's public routes (Epic 58 story 58.09, middleware.TVCORS): its origin echoed, never
+// credentials. Every other route keeps the web allow-list alone.
+func WithTVOrigins(paths []string) RouterOption {
+	return func(o *routerOptions) { o.tvPaths = append([]string(nil), paths...) }
 }
 
 // WithClientIPFrom stores resolve(r) as the request's client IP before the access log, for

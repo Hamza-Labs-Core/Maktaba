@@ -13,8 +13,10 @@
 //                     maktaba:state {…}            the launcher's player, every 500 ms
 //                     maktaba:visibility {hidden}  the TV's app switcher
 //                     maktaba:logs {lines} · maktaba:error {re_type, error}
+//                     maktaba:signIn {grant}       a cloud code's grant, once (58.09)
 //   /tv/ → launcher   maktaba:ready                once /tv/ listens
-//                     maktaba:hello {id}           what are you? (bridge_level 1)
+//                     maktaba:hello {id, takes}    what are you? (bridge_level 1); takes
+//                                                  ["signIn"]: /tv/ redeems a grant
 //                     maktaba:exit                 after Leave Maktaba?
 //                     maktaba:setLanguage {lang} · maktaba:openHomePicker (Switch home)
 //                     maktaba:play {url,…} · pause · resume · seek · stop · audioTrack ·
@@ -25,6 +27,12 @@
 // "null", "file://" or "app://…") or the home itself. A web page that frames /tv/ is not a
 // launcher. Only a known action is taken: an action is a key press, never a command with
 // arguments. /tv/ uses a launcher message only when hello listed it.
+//
+// signIn (story 58.09's second part): after a cloud code's approval the launcher's hello
+// answer says `sign_in: true` and a `maktaba:signIn {grant}` follows, once. /tv/ takes it
+// only from the launcher that answered hello, only when that answer announced it, and only
+// once; it redeems the grant in its own origin (POST /api/pairing/device/token), so the
+// tokens never cross the bridge. The grant is the home's own single-use pairing secret.
 //
 // Until such a launcher has answered hello, /tv/ sends nothing but ready and hello (no play
 // address, no command). A packaged app's origin is opaque ("null"), which postMessage cannot
@@ -77,6 +85,8 @@ export interface LauncherHello {
   };
   keys: string[];
   messages: string[];
+  /** A cloud code's grant follows this answer (maktaba:signIn). */
+  sign_in?: boolean;
 }
 
 /** The launcher's player, as its state messages say. */
@@ -93,7 +103,7 @@ export interface LauncherPlayerState {
 /** /tv/ → launcher messages (bridge.schema.json's uiToLauncher). */
 export type UiMessage =
   | { type: "maktaba:ready" }
-  | { type: "maktaba:hello"; id: number; bridge_level: number }
+  | { type: "maktaba:hello"; id: number; bridge_level: number; takes?: string[] }
   | { type: "maktaba:exit" }
   | { type: "maktaba:setLanguage"; lang: "en" | "ar" }
   | { type: "maktaba:openHomePicker" }
@@ -197,6 +207,12 @@ const visibilityListeners = new Set<(hidden: boolean) => void>();
 /** The one log request waiting for its answer (a newer request replaces it). */
 let logsPending: { id: number; done: (lines: string | null) => void } | null = null;
 let started = false;
+/** A grant the hello answer announced: "waiting" until its signIn comes, then the grant. */
+let grantState: null | "waiting" | { grant: string } = null;
+const grantWaiters: ((g: string | null) => void)[] = [];
+
+/** The shape of a grant (the home's pairing secret, as the cloud checks it at claim). */
+const GRANT_SHAPE = /^[A-Za-z0-9_-]{16,128}$/;
 
 function isHello(m: Record<string, unknown>): boolean {
   return (
@@ -213,10 +229,33 @@ function onBridgeMessage(e: MessageEvent): void {
   switch (m.type) {
     case "maktaba:hello":
       if (!isHello(m)) return;
-      hello = m as unknown as LauncherHello;
-      helloOrigin = e.origin;
+      {
+        // only the first answer can announce a grant
+        const first = hello === null;
+        hello = m as unknown as LauncherHello;
+        helloOrigin = e.origin;
+        if (first && m.sign_in === true) grantState = "waiting";
+      }
       helloWaiters.splice(0).forEach((f) => f(hello));
       return;
+    case "maktaba:signIn": {
+      // only the launcher that answered hello, as announced there, and once
+      if (grantState !== "waiting" || e.origin !== helloOrigin) return;
+      const g = m.grant;
+      if (typeof g !== "string" || !GRANT_SHAPE.test(g)) {
+        grantState = null;
+        grantWaiters.splice(0).forEach((f) => f(null));
+        return;
+      }
+      grantState = { grant: g };
+      const waiting = grantWaiters.splice(0);
+      if (waiting.length) {
+        grantState = null;
+        waiting[0]!(g);
+        waiting.slice(1).forEach((f) => f(null));
+      }
+      return;
+    }
     case "maktaba:state":
       stateListeners.forEach((f) => f(m as unknown as LauncherPlayerState));
       return;
@@ -260,7 +299,43 @@ export function startBridge(timeoutMs = 5000): Promise<LauncherHello | null> {
     }
     helloWaiters.push(done);
     postToLauncher({ type: BRIDGE_READY });
-    postToLauncher({ type: "maktaba:hello", id: nextId++, bridge_level: BRIDGE_LEVEL });
+    postToLauncher({
+      type: "maktaba:hello",
+      id: nextId++,
+      bridge_level: BRIDGE_LEVEL,
+      takes: ["signIn"],
+    });
+  });
+}
+
+/** Whether the launcher announced a cloud code's grant that /tv/ has not taken yet. */
+export function launcherGrantExpected(): boolean {
+  return grantState !== null;
+}
+
+/**
+ * Takes the cloud code's grant the launcher hands over (once: a second call gets null).
+ * Resolves with null when none was announced, or none came within timeoutMs.
+ */
+export function takeLauncherGrant(timeoutMs = 10000): Promise<string | null> {
+  if (grantState === null) return Promise.resolve(null);
+  if (grantState !== "waiting") {
+    const g = grantState.grant;
+    grantState = null;
+    return Promise.resolve(g);
+  }
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      const i = grantWaiters.indexOf(done);
+      if (i >= 0) grantWaiters.splice(i, 1);
+      if (grantState === "waiting") grantState = null;
+      resolve(null);
+    }, timeoutMs);
+    function done(g: string | null) {
+      clearTimeout(timer);
+      resolve(g);
+    }
+    grantWaiters.push(done);
   });
 }
 
@@ -311,6 +386,7 @@ export function launcherLogs(timeoutMs = 2000): Promise<string | null> {
 export function setLauncherHelloForTest(h: LauncherHello, origin = "null"): void {
   hello = h;
   helloOrigin = origin;
+  grantState = h.sign_in ? "waiting" : null;
 }
 
 /** Tests: forget the launcher's answer. */
@@ -321,6 +397,8 @@ export function resetBridgeForTest(): void {
   stateListeners.clear();
   visibilityListeners.clear();
   logsPending = null;
+  grantState = null;
+  grantWaiters.length = 0;
   if (started) window.removeEventListener("message", onBridgeMessage);
   started = false;
 }

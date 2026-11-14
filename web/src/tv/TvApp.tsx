@@ -21,8 +21,15 @@ import { CapabilitiesProvider } from "../lib/capabilities";
 import { ParentalProvider } from "../lib/parental";
 import { setApiBase, setBearerAuth } from "../lib/api";
 import { setClientHeaderValue } from "../lib/clientHeader";
-import { inLauncher, launcherHello, postToLauncher, startBridge } from "../bigscreen/input/bridge";
+import {
+  inLauncher,
+  launcherGrantExpected,
+  launcherHello,
+  postToLauncher,
+  startBridge,
+} from "../bigscreen/input/bridge";
 import { CodeSignIn } from "./CodeSignIn";
+import { BundledSignIn, GrantSignIn } from "./GrantSignIn";
 import { TvSession } from "./session";
 import { LauncherContext, useLauncher, type LauncherMode } from "./launcher";
 
@@ -66,14 +73,34 @@ export function TvGate({ session = null }: { session?: TvSession | null }) {
   const { user, loading, refresh } = useAuth();
   const { t, dir, locale } = useI18n();
   const launcher = useLauncher();
+  // a cloud code's grant the launcher announced (58.09's second part): redeemed first
+  const [grant, setGrant] = useState<"none" | "pending" | "failed">(() =>
+    launcherGrantExpected() ? "pending" : "none"
+  );
   if (loading) return <div className="tv-boot" aria-busy="true" />;
   if (session && !user) {
     const h = launcherHello();
+    const label = h ? h.model : "TV";
+    if (grant === "pending")
+      return (
+        <GrantSignIn
+          session={session}
+          deviceLabel={label}
+          onSignedIn={() => {
+            setGrant("none");
+            void refresh();
+          }}
+          onFailed={() => setGrant("failed")}
+        />
+      );
+    // the bundled copy cannot start the home's own code: the launcher's code screen it is
+    if (launcher?.bundled) return <BundledSignIn failed={grant === "failed"} />;
     return (
       <CodeSignIn
         session={session}
-        deviceLabel={h ? h.model : "TV"}
+        deviceLabel={label}
         plain={!!launcher?.plain}
+        notice={grant === "failed" ? t("tv.code.grantFailed") : undefined}
         onSignedIn={() => void refresh()}
       />
     );

@@ -53,9 +53,11 @@ tokens. That uses the same code, a store update per UI change, and the compatibi
 (58.01) to cover the gap. Which mode each store gets is decided at its first submission, and
 owner question Q3 records the default.
 
-**Finding the home.** The first screen (Choose your home) offers, in this order:
-1. **Saved homes.** The last home used is opened at once.
-2. **Find on this network.** The launcher probes the TV's own /24 subnet:
+**Finding the home.** At start the last home used is opened at once. Otherwise the first screen
+offers, in this order:
+1. **The cloud code** (58.03), the default: it works on any network (below).
+2. **Saved homes**, under the code (Settings → Switch home comes back to this screen).
+3. **Find on this network.** The launcher probes the TV's own /24 subnet:
    - The TV's address comes from `webapis.network.getIp()` on Tizen, or
      `luna://com.webos.service.connectionmanager` on webOS.
    - It sends `GET http://<ip>:8088/api/discovery/home` to each of the 254 addresses, 32 at a
@@ -70,24 +72,63 @@ owner question Q3 records the default.
 
 A typed address (`Enter the home's address`) is the last option, under More ways.
 
-**Signing in** is `/tv/`'s, inside the frame, by the home's own code (`web/src/tv/CodeSignIn.tsx`):
-`/tv/` asks the home for a code (`POST /api/pairing/device`), shows it large with a QR of the
-approve page and how long it lasts, and polls `POST /api/pairing/device/token` until a person
-signed in on a phone or computer approves it. A new code is fetched when one expires (410). No
-password is typed on the TV.
+**The cloud code** (`apps/tv/web/src/cloud.ts`):
+- The launcher asks Maktaba Cloud for a code (`POST https://api.maktaba.tv/v1/tv/codes
+  {platform, app_version}`, no sign-in) and shows it large with a QR of its `verify_url`
+  (`maktaba.tv/tv?c=…`), how long it lasts, and where to approve it: the phone's camera, or
+  Profile → Approve a TV or device in a Player signed in to the home.
+- It polls `POST /v1/tv/codes/poll {code, poll_secret}` at the cloud's `interval` (5 s more on
+  `slow_down`), asks for a new code on 410 or 404 or when the code runs out, and stops polling
+  once the screen is left. With no answer from the cloud it says the code is unavailable, keeps
+  the other ways, and asks again after 30 s.
+- The approval names the home, its connections (story 50.13's order) and the grant. The launcher
+  tries the connections in that order with `GET /api/discovery/home`, leaving out a raw address
+  pinned to a certificate name (`local_ip` with `tls_name`: a web runtime cannot check a
+  certificate against another name), and takes the first that answers as that home. The cloud
+  names the home by its own server id, which the home's discovery answer does not give (it
+  gives the home's instance id), so the home is known by address: the grant goes only to an
+  https name the cloud gives for it (its relay, its direct name, a LAN name under its
+  certificate), where the certificate proves the home. A plain http or raw IP address (the
+  cloud also keeps the home's plain public address, for older apps) is never tried: anyone on
+  that network or on the path could answer there as the home. The compat
+  check runs as for any home, the home is saved by that address, and its `/tv/` is loaded with
+  the grant waiting for it (the bridge's `signIn`). When none answers, Cannot reach <home>
+  offers Try again (the same connections) and Back (a new code).
+- The poll secret and the grant stay in the launcher's memory: never stored, never in a URL,
+  never in its log.
 
-**The cloud code is not in the launcher yet.** The cloud code of 58.03 as the default sign-in for
-a new TV, a `signIn {grant}` message on the bridge, and CORS on the cloud's `/v1/tv/*` are the
-story's second part, not built; until then a TV off the home's network has no way in from the
-launcher.
+**Signing in** is `/tv/`'s, inside the frame, in the home's origin, in one of two ways:
+- **A cloud code's grant** (`web/src/tv/GrantSignIn.tsx`). After an approval the launcher's
+  `hello` answer says `sign_in: true` and a `signIn {grant}` follows, once. `/tv/` redeems the
+  grant at `POST /api/pairing/device/token {device_code: grant, device_label}` and keeps the
+  tokens as below; a refused grant (used, expired) falls back to the home's own code with a
+  line saying so. A cloud code's TV is restricted on the home whoever approved it
+  (`principal.ApplyRestricted`): never an admin, no credential of its own, and unlinking an
+  account that approved it from maktaba.tv ends its sign-in.
+- **The home's own code** (`web/src/tv/CodeSignIn.tsx`), for a home found on the network or
+  typed: `/tv/` asks the home for a code (`POST /api/pairing/device`), shows it large with a QR
+  of the approve page and how long it lasts, and polls `POST /api/pairing/device/token` until a
+  person signed in on a phone or computer approves it. A new code is fetched when one expires
+  (410).
+
+No password is typed on the TV.
 
 **CORS for the launcher.**
 - The launcher's own requests run from a `file://` (Tizen) or `file://`/`null` (webOS) origin.
-  They are only `GET /api/discovery/home` on the home (the cloud code calls of 58.03 join them
-  with the second part).
+  They are `GET /api/discovery/home` on the home and the cloud code's two calls on the cloud.
 - The home answers `/api/discovery/home` with `Access-Control-Allow-Origin: *` and no
   credentials, since that answer is public.
-- The cloud is to answer `/v1/tv/*` the same way, with the second part; it does not yet.
+- The cloud answers `POST /v1/tv/codes` and `POST /v1/tv/codes/poll` to a packaged app's
+  origin (`null`, `file://`, `app://…`) only: that origin echoed with `Vary: Origin`, `POST`
+  with `Content-Type` and `X-Maktaba-Client`, never `*` and never
+  `Access-Control-Allow-Credentials` (`cloud/internal/middleware/tvcors.go`, wired by
+  `server.WithTVOrigins(tvcodes.PublicPaths)` on the api's user listener). Any other origin
+  gets nothing from it, and no other cloud route answers those origins (the web allow-list is
+  unchanged). A page claiming `null` reads only what any client reads from these routes by
+  itself: a fresh code and its own poll. Asked from a viewer's browser, such a code carries
+  the viewer's own country to Is this your TV?, as a code asked through a proxy in that country
+  would; a person still has to type or scan a code they were shown, and the TV it signs in is
+  restricted.
 - A packaged app's origin (`null`, `file://`, `app://…`) gets its own origin back and the headers
   a bearer call needs (the `--bundle-ui` copy of the UI calls the home cross-origin), never
   `Access-Control-Allow-Credentials`: no cookie rides cross-site, and every role rule stays the
@@ -96,8 +137,9 @@ launcher.
   and before a token for
   `/api/auth/me`, `/api/auth/refresh` and `/api/pairing/device/token`: a web page can claim
   `null` too. Starting a code is not answered (a fresh code read cross-origin could be phished),
-  so the `--bundle-ui` copy is to sign in by the cloud code, redeeming its grant at the token
-  route, once the second part is built; until then it has no sign-in of its own. The allow-list for web origins (`httpsec/cors.go`) is unchanged. The UI in the iframe
+  so the `--bundle-ui` copy signs in by the cloud code, redeeming its grant at the token route.
+  With no grant it shows Sign in with the code on the start screen and a Get a code button,
+  which opens the launcher's code screen (`openHomePicker`). The allow-list for web origins (`httpsec/cors.go`) is unchanged. The UI in the iframe
   is same-origin with the home, so it needs none.
 - `/tv/`'s page carries `Content-Security-Policy: frame-ancestors 'self' file: app:`: only a
   packaged app or the home itself may frame it.
@@ -113,14 +155,22 @@ never loads a broken UI.
 - **Hello first.** Until a launcher has answered `hello`, the UI sends nothing but `ready` and
   `hello` (no play address, no command). A packaged app's origin is opaque, which postMessage
   cannot name, so the UI's messages go to `*`; a launcher at an http(s) origin is sent to by it.
-- **Versioned.** A `bridge_level` integer, starting at 1. The UI asks `hello {id}` and gets
-  `{re, bridge_level, platform, model, year, engine, version, device_caps, keys, messages}`. The
-  UI names the TV in its client header from it.
+- **Versioned.** A `bridge_level` integer, starting at 1. The UI asks `hello {id, takes}` and
+  gets `{re, bridge_level, platform, model, year, engine, version, device_caps, keys, messages,
+  sign_in}`. The UI names the TV in its client header from it. `takes: ["signIn"]` says the UI
+  redeems a grant; an older home's `/tv/` leaves it out, and the launcher then keeps the grant
+  to itself (the home's own code signs in instead). A new message or field keeps
+  `bridge_level`.
+- **The grant.** `signIn {grant}` goes once, right after a `hello` answer with `sign_in: true`,
+  only to the origin the launcher loaded (for the bundled copy's `file://` frame, `*`, as every
+  message to it) and only to a UI that took it; a second `hello` gets none. The UI takes it only
+  from the launcher that answered `hello`, only when that answer announced it, only once, and
+  only in the grant's shape. The launcher logs that it sent `signIn`, never the grant.
 - **Messages** (each `maktaba:`-prefixed; the contract is `apps/tv/web/bridge.schema.json`):
 
 | UI → launcher | launcher → UI |
 |---|---|
-| `ready` (the UI listens) · `hello {id, bridge_level}` | `hello {…}` (above) |
+| `ready` (the UI listens) · `hello {id, bridge_level, takes}` | `hello {…}` (above) · `signIn {grant}` (once, after an approved cloud code) |
 | `play {url, start_sec, subtitles[], audio, mode}` · `pause` · `resume` · `seek {sec}` · `stop` · `audioTrack {i}` · `subtitle {id \| null}` | `state {position, duration, buffering, ended, error}` every 500 ms while playing |
 | `exit` (after the UI's confirm) | `action {action}` for keys the iframe cannot receive (color keys, media keys registered by the launcher), as a big-screen action |
 | `setLanguage {lang}` (so launcher screens match) | `visibility {hidden}` (the TV's app switcher) |
@@ -143,6 +193,12 @@ from `/tv/` set `client_profile` to `tizen` or `webos`, with the launcher's `dev
 
 - **Given** a new LG TV and a phone signed in to the home, **when** the person approves the TV's
   code, **then** the home's `/tv/` UI loads full screen within 10 seconds.
+- **Given** a Samsung TV at a relative's house, **when** its cloud code is approved in the
+  Player, **then** the launcher reaches the home through the relay and `/tv/` signs in with the
+  grant, never as an admin, and no home code is asked for.
+- **Given** a web page at any origin but a packaged app's, **then** the cloud's `/v1/tv/*`
+  answers it no CORS headers; a packaged app's origin gets its own origin back and never
+  credentials.
 - **Given** a Samsung TV on the home's LAN and no cloud registration, **when** Find on this
   network runs, **then** the home is listed within 8 seconds and the home's own code signs in.
 - **Given** a message posted from any origin other than the loaded home, **then** the launcher
@@ -163,6 +219,10 @@ from `/tv/` set `client_profile` to `tizen` or `webos`, with the launcher's `dev
 | T04 | Playwright (Chromium, 1920×1080, `pnpm e2e:launcher`), the launcher from `file://` with a Tizen and a webOS shim and a mock home on the TV's /24 | find on network, iframe load, the home's code and its approval, the big screen by bearer, play via the bridge, exit, the saved home after a reload, Switch home | D-pad only | screenshots dark, en and ar; launcher log, console, network and bearer log in the CI report |
 | T05 | Go unit | `/api/discovery/home`, a packaged app's origin, `/tv/`'s page | preflight and GET with `Origin: file://` or `null`; a viewer's and an admin's bearer | `*` on discovery; the packaged origin echoed, never credentials; roles unchanged (401, 403, 200); `/tv/` framed only by `'self' file: app:` |
 | T06 | Contract test | `bridge_level` 1 schema `apps/tv/web/bridge.schema.json` | UI and launcher messages | both sides validate against it |
+| T07 | Vitest (`apps/tv/web/src/app.test.ts`, `bridge.test.ts`) | the launcher with a fake cloud and fake connections | no saved home; approve; none answers; cloud down; leave the screen | the code and its QR first; the first usable connection loaded with the grant handed once to the home's origin after a `hello` that takes it; Cannot reach; the other ways; polling stops; no grant or poll secret in a URL, storage or the log |
+| T08 | Vitest (`web/src/tv/GrantSignIn.test.tsx`, `launcherBridge.test.ts`) | `/tv/` with a fake parent | `hello` with and without `sign_in`; `signIn` from other origins and windows, of a bad shape, twice | redeemed at the token route before any home code, the tokens kept; a refused grant falls back to the home's code with its line; the bundled copy redeems at its base and, with no grant, sends the person to the launcher's code |
+| T09 | Go unit (`cloud/internal/server/tvcors_test.go`) | the api's router with `WithTVOrigins` | preflight and POST on `/v1/tv/codes` and `/poll` from `file://`, `null`, `app://…`, another site, a look-alike; a TV origin on other routes | the packaged origin echoed with `Vary: Origin`, never credentials, never `Authorization` allowed; nothing for any other origin or route; nothing without the option |
+| T10 | Playwright (`pnpm e2e:launcher`, `pnpm e2e:tv`) | the launcher from `file://` with a mock cloud, a LAN name that does not answer and a relay that does; `/tv/` framed by a launcher page | the code, approval, sign-in | screenshots dark, en and ar, of the code screen and Home; the grant redeemed once; no home code; the grant and poll secret in no URL, console line or log; the cloud's calls carried the page's own origin |
 
 ## Strings
 
@@ -170,7 +230,17 @@ The launcher's catalogs are `apps/tv/web/i18n/{en,ar}.json`, plus 58.01's `compa
 
 | Key | English | Arabic |
 |---|---|---|
-| `launcher.start.title` | Choose your home | اختر جهازك الرئيسي |
+| `launcher.cloud.title` | Sign in with a code | سجّل الدخول برمز |
+| `launcher.cloud.asking` | Getting a code… | جارٍ الحصول على رمز… |
+| `launcher.cloud.where` | On your phone, scan the code or open %1$s, then approve this TV. | على هاتفك، امسح الرمز أو افتح %1$s، ثم وافق على هذا التلفاز. |
+| `launcher.cloud.app` | Or in Maktaba on a phone signed in to your home: Profile → Approve a TV or device. | أو في مكتبة على هاتف مسجّل الدخول إلى جهازك الرئيسي: الملف الشخصي ← الموافقة على تلفاز أو جهاز. |
+| `launcher.cloud.expires` | This code lasts %1$d minutes. | يبقى هذا الرمز صالحًا %1$d دقائق. |
+| `launcher.cloud.waiting` | Waiting for approval… | في انتظار الموافقة… |
+| `launcher.cloud.new` | Get a new code | احصل على رمز جديد |
+| `launcher.cloud.down` | A code from Maktaba Cloud is unavailable right now. Find the home on this network, or enter its address. | رمز Maktaba Cloud غير متاح الآن. ابحث عن الجهاز الرئيسي في هذه الشبكة، أو أدخل عنوانه. |
+| `launcher.cloud.unreachable` | The home approved this TV, but none of its addresses answered. Check that it is on and that its remote access is turned on. | وافق الجهاز الرئيسي على هذا التلفاز، لكن لم يستجب أيٌّ من عناوينه. تأكّد أنه يعمل وأن الوصول عن بُعد مفعّل فيه. |
+| `launcher.cloud.qr` | QR code of the approve page | رمز QR لصفحة الموافقة |
+| `launcher.other` | Or connect another way | أو اتصل بطريقة أخرى |
 | `launcher.saved.title` | Your homes | أجهزتك الرئيسية |
 | `launcher.find.title` | Find on this network | ابحث في هذه الشبكة |
 | `launcher.find.searching` | Looking for Maktaba homes… | جارٍ البحث عن أجهزة مكتبة الرئيسية… |
@@ -190,12 +260,20 @@ The code screen is `/tv/`'s, so its keys are in `web/src/i18n`:
 | `tv.code.expires` | This code lasts {n} minutes. | يبقى هذا الرمز صالحًا {n} دقائق. |
 | `tv.code.new` | Get a new code | احصل على رمز جديد |
 | `tv.code.onlyCode` | A password is never sent without encryption: sign in with a code. | لا تُرسَل كلمة المرور أبدًا دون تشفير: سجّل الدخول برمز. |
+| `tv.code.signingIn` | Approved. Signing this TV in… | تمت الموافقة. جارٍ تسجيل دخول هذا التلفاز… |
+| `tv.code.grantFailed` | That approval could not be used. Sign in with a new code. | تعذّر استخدام هذه الموافقة. سجّل الدخول برمز جديد. |
+| `tv.code.bundled` | Sign in with the code on the start screen: approve it on a phone signed in to Maktaba. | سجّل الدخول بالرمز الظاهر في شاشة البداية: وافق عليه على هاتف سجّل الدخول إلى Maktaba. |
+| `tv.code.bundledGo` | Get a code | احصل على رمز |
 
 ## Edge cases
 
 - **A home with several addresses on different subnets** (a VLAN for the TV): the probe finds
-  nothing; a typed address works, and so will the cloud code (the second part), because the
-  cloud lists every connection.
+  nothing; a typed address works, and so does the cloud code, because the cloud lists every
+  connection.
+- **The cloud is down** (story 50.13's outage): the code screen says the code is unavailable and
+  asks again every 30 s; Find on this network and a typed address still work.
+- **An older home's `/tv/`** (no `takes` in its `hello`): the grant is not sent and the home's
+  own code signs in.
 - **The TV sleeps mid-video**: on `visibility {hidden}` the UI reports progress and stops the
   session. On wake it offers Resume.
 - **Two homes found**: the picker lists both by name, as the Android TV app does.
@@ -211,4 +289,6 @@ The code screen is `/tv/`'s, so its keys are in `web/src/i18n`:
 | `api/internal/httpsec/cors.go` | the public CORS answer, and a packaged app's origin |
 | `cmd/maktaba-server/internal/webui/serve.go` | `/tv/`'s `frame-ancestors` |
 | `web/vite.launcher.config.ts`, `web/vite.config.ts` (`tv-bundled`) | the launcher build and `--bundle-ui` |
-| `cloud/internal/handlers/tvcodes/` | the same on `/v1/tv/*` (the second part; not built) |
+| `apps/tv/web/src/cloud.ts`, `apps/tv/web/src/app.ts`, `apps/tv/web/src/ui/dom.ts` | the cloud code screen (the code, its QR from `web/src/lib/qr.ts`, the poll) and the connection the approval names |
+| `web/src/tv/GrantSignIn.tsx`, `web/src/tv/TvApp.tsx` | `/tv/` redeeming the launcher's grant; the bundled copy's way back to the code |
+| `cloud/internal/middleware/tvcors.go`, `cloud/internal/server/router.go` (`WithTVOrigins`), `cloud/internal/handlers/tvcodes/handler.go` (`PublicPaths`) | the cloud's answer to a packaged app's origin on `/v1/tv/codes` and `/poll` |

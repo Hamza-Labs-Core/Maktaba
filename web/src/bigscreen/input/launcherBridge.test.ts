@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { checkMessage, messageTypes } from "../../../../apps/tv/web/src/schema";
 import {
   BRIDGE_LEVEL,
+  launcherGrantExpected,
   launcherHello,
   launcherLogs,
   launcherOrigin,
@@ -15,6 +16,7 @@ import {
   postToLauncher,
   resetBridgeForTest,
   startBridge,
+  takeLauncherGrant,
   tellLauncher,
   type UiMessage,
 } from "./bridge";
@@ -198,5 +200,82 @@ describe("the bridge in the launcher", () => {
     postToLauncher({ type: "maktaba:exit" });
     expect(await startBridge(10)).toBeNull();
     expect(sent).toEqual([]);
+  });
+});
+
+// 58.09's second part: a cloud code's grant, handed over once after the hello answer.
+describe("a cloud code's grant (signIn)", () => {
+  const GRANT = "Gr4nt_" + "x".repeat(37);
+  const askHello = () => sent[1] as Extract<UiMessage, { type: "maktaba:hello" }>;
+
+  it("hello says /tv/ takes signIn; the grant announced is taken once", async () => {
+    const started = startBridge(1000);
+    expect(askHello().takes).toEqual(["signIn"]);
+    fromParent({ ...hello(askHello().id), sign_in: true }, "null");
+    await started;
+    expect(launcherGrantExpected()).toBe(true);
+    const taken = takeLauncherGrant(1000);
+    fromParent({ type: "maktaba:signIn", grant: GRANT }, "null");
+    expect(await taken).toBe(GRANT);
+    expect(launcherGrantExpected()).toBe(false);
+    // a second signIn, or a second take, gets nothing
+    fromParent({ type: "maktaba:signIn", grant: "Other_" + "y".repeat(37) }, "null");
+    expect(await takeLauncherGrant(10)).toBeNull();
+  });
+
+  it("a grant that came before it is asked for is kept until it is taken", async () => {
+    const started = startBridge(1000);
+    fromParent({ ...hello(askHello().id), sign_in: true }, "null");
+    await started;
+    fromParent({ type: "maktaba:signIn", grant: GRANT }, "null");
+    expect(await takeLauncherGrant(10)).toBe(GRANT);
+  });
+
+  it("refuses a signIn hello did not announce", async () => {
+    const started = startBridge(1000);
+    fromParent(hello(askHello().id), "null");
+    await started;
+    fromParent({ type: "maktaba:signIn", grant: GRANT }, "null");
+    expect(launcherGrantExpected()).toBe(false);
+    expect(await takeLauncherGrant(10)).toBeNull();
+  });
+
+  it("refuses a signIn from another origin, another window, or of the wrong shape", async () => {
+    const started = startBridge(1000);
+    fromParent({ ...hello(askHello().id), sign_in: true }, "null");
+    await started;
+    fromParent({ type: "maktaba:signIn", grant: GRANT }, "https://evil.example");
+    fromParent({ type: "maktaba:signIn", grant: GRANT }, "file://");
+    fromParent({ type: "maktaba:signIn", grant: GRANT }, "null", window);
+    expect(launcherGrantExpected()).toBe(true);
+    const taken = takeLauncherGrant(1000);
+    fromParent({ type: "maktaba:signIn", grant: "short" }, "null");
+    expect(await taken).toBeNull();
+  });
+
+  it("a later hello cannot announce a grant", async () => {
+    const started = startBridge(1000);
+    fromParent(hello(askHello().id), "null");
+    await started;
+    fromParent({ ...hello(99), sign_in: true }, "null");
+    expect(launcherGrantExpected()).toBe(false);
+  });
+
+  it("gives up when the announced grant never comes", async () => {
+    const started = startBridge(1000);
+    fromParent({ ...hello(askHello().id), sign_in: true }, "null");
+    await started;
+    expect(await takeLauncherGrant(10)).toBeNull();
+    expect(launcherGrantExpected()).toBe(false);
+  });
+
+  it("T06: the launcher's signIn and its hello answer are ones the schema allows", () => {
+    expect(
+      checkMessage("launcherToUi", { ...hello(1), type: "maktaba:hello", sign_in: true })
+    ).toEqual([]);
+    expect(checkMessage("launcherToUi", { type: "maktaba:signIn", grant: GRANT })).toEqual([]);
+    expect(checkMessage("launcherToUi", { type: "maktaba:signIn" })).toEqual([
+      "$.grant: is missing",
+    ]);
   });
 });

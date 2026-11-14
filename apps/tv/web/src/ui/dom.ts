@@ -1,6 +1,8 @@
 // Story 58.09 — a few DOM helpers for the launcher's screens (no framework: the launcher is
 // small, starts fast on a 2020 TV, and changes only through a store review).
 
+import { encodeQR } from "../../../../../web/src/lib/qr";
+
 type Child = Node | string | null | undefined | false;
 
 export interface Props {
@@ -64,4 +66,42 @@ export function button(
 /** A left-to-right run (an address, a version) inside a right-to-left sentence. */
 export function ltr(text: string): HTMLElement {
   return h("bdi", { dir: "ltr", text });
+}
+
+const SVG = "http://www.w3.org/2000/svg";
+
+/**
+ * A QR code of text (the web's own encoder, web/src/lib/qr.ts): dark on white with its quiet
+ * zone, which a phone's camera reads in any theme. Null when the text does not fit.
+ */
+export function qr(text: string, label: string, size = 320): Element | null {
+  const modules = encodeQR(text);
+  if (!modules) return null;
+  const quiet = 4;
+  const n = modules.length + quiet * 2;
+  let d = "";
+  modules.forEach((row, y) =>
+    row.forEach((dark, x) => {
+      if (dark) d += `M${x + quiet} ${y + quiet}h1v1h-1z`;
+    })
+  );
+  const svg = document.createElementNS(SVG, "svg");
+  svg.setAttribute("class", "ml-qr");
+  svg.setAttribute("viewBox", `0 0 ${n} ${n}`);
+  svg.setAttribute("width", String(size));
+  svg.setAttribute("height", String(size));
+  svg.setAttribute("role", "img");
+  svg.setAttribute("aria-label", label);
+  svg.setAttribute("data-testid", "cloud-qr");
+  svg.setAttribute("shape-rendering", "crispEdges");
+  const bg = document.createElementNS(SVG, "rect");
+  bg.setAttribute("width", String(n));
+  bg.setAttribute("height", String(n));
+  bg.setAttribute("fill", "#fff");
+  const path = document.createElementNS(SVG, "path");
+  path.setAttribute("d", d);
+  path.setAttribute("fill", "#000");
+  svg.appendChild(bg);
+  svg.appendChild(path);
+  return svg;
 }
