@@ -361,6 +361,26 @@ describe("the AVPlay adapter (58.10 T01)", () => {
     expect(t.f.calls.slice(-2)).toEqual(["suspend", "restore"]);
   });
 
+  it("suspends the next video too after one stopped while the app was hidden", async () => {
+    const t = setup();
+    const p = t.player.play({ url: "https://h/a.m3u8" });
+    t.f.prepared();
+    await p;
+    const hidden = vi.spyOn(document, "hidden", "get").mockReturnValue(true);
+    document.dispatchEvent(new Event("visibilitychange"));
+    t.player.stop();
+    hidden.mockReturnValue(false);
+    document.dispatchEvent(new Event("visibilitychange"));
+    const q = t.player.play({ url: "https://h/b.m3u8" });
+    t.f.prepared();
+    await q;
+    hidden.mockReturnValue(true);
+    document.dispatchEvent(new Event("visibilitychange"));
+    hidden.mockRestore();
+    expect(t.f.calls.filter((c) => c === "suspend").length).toBe(2);
+    expect(t.f.calls).not.toContain("restore");
+  });
+
   it("lists a track's language and codec, leaving out what AVPlay does not say", () => {
     expect(audioInfo({ index: 1, type: "AUDIO", extra_info: '{"language":"und"}' }, false)).toEqual({
       enabled: false,

@@ -345,6 +345,7 @@ export class AvplayPlayer implements PlayerAdapter {
     const was = this.loaded;
     this.loaded = false;
     this.buffering = false;
+    this.suspended = false;
     this.subToken++;
     this.d.subtitles.clear();
     this.d.plane.hidden = true;
