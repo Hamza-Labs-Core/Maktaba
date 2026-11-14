@@ -75,7 +75,7 @@
             </intent-filter>
         </service>
 
-        <!-- Cast (FR-38): Google's Default Media Receiver (media/Cast.kt). -->
+        <!-- Cast (FR-38, story 58.06): Maktaba's receiver by shared/cast/app.json's ID, Google's Default Media Receiver for an older home (media/Cast.kt). -->
         <meta-data
             android:name="com.google.android.gms.cast.framework.OPTIONS_PROVIDER_CLASS_NAME"
             android:value="com.hamzalabs.maktaba.player.media.CastOptionsProvider" />

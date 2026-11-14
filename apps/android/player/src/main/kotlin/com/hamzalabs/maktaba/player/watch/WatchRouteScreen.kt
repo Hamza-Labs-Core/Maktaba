@@ -4,6 +4,12 @@ import com.hamzalabs.maktaba.core.playback.nextVideo
 import androidx.activity.compose.BackHandler
 import com.hamzalabs.maktaba.core.queue.QueueItem
 import com.hamzalabs.maktaba.player.libraries.PlayerQueues
+import androidx.media3.cast.CastPlayer
+import androidx.media3.common.Player
+import com.hamzalabs.maktaba.core.api.ApiClient
+import com.hamzalabs.maktaba.player.media.CastSender
+import com.hamzalabs.maktaba.player.media.CastSenders
+import com.hamzalabs.maktaba.player.media.castable
 import kotlinx.coroutines.launch
 import androidx.annotation.OptIn
 import androidx.compose.runtime.Composable
@@ -45,12 +51,25 @@ import kotlinx.coroutines.SupervisorJob
 val LocalPlayerBuild = staticCompositionLocalOf<(ExoPlayer.Builder) -> ExoPlayer.Builder> { { it } }
 
 /**
+ * A test's Cast for [WatchRouteScreen] (story 58.06): its receiver in place of Media3's
+ * `CastPlayer`, and its sender; null: the device's.
+ */
+@OptIn(UnstableApi::class)
+data class CastHooks(
+    val player: ((ExoPlayer, CastPlayer.TransferCallback) -> Player)? = null,
+    val sender: ((ApiClient) -> CastSender?)? = null,
+)
+
+val LocalCastHooks = staticCompositionLocalOf { CastHooks() }
+
+/**
  * The player opened as a route (48.32): [videoId] from [startSec], or, when null, where the
  * person left it (`playback_state.position`, FR-32; a finished video starts again). Full screen
  * with the shell's navigation hidden; Close and Back return to the screen that opened it. The
  * series' next episode is looked up for Next and Up next (FR-33), with Settings' "play the next
  * episode automatically" (FR-31).
  */
+@OptIn(UnstableApi::class)
 @Composable
 fun WatchRouteScreen(videoId: String, startSec: Int?, nav: PlayerNavigator) {
     val home = LocalPlayerHome.current
@@ -58,6 +77,7 @@ fun WatchRouteScreen(videoId: String, startSec: Int?, nav: PlayerNavigator) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val build = LocalPlayerBuild.current
+    val castHooks = LocalCastHooks.current
     // the one playback store, which Profile's Settings writes (FR-31)
     val prefs = playbackSettings()
     val settings by prefs.value.collectAsState()
@@ -65,7 +85,12 @@ fun WatchRouteScreen(videoId: String, startSec: Int?, nav: PlayerNavigator) {
         // work that outlives the screen (the last position, the session's close): the app's
         val background = (context.applicationContext as? PlayerApplication)?.background
             ?: home.keep("watch.background") { CoroutineScope(SupervisorJob() + Dispatchers.Default) }
-        Playback(context.applicationContext, client, scope, background, home.session::signedOut, build)
+        val app = context.applicationContext
+        Playback(
+            app, client, scope, background, home.session::signedOut, build,
+            cast = castHooks.player ?: { local, transfer -> castable(app, local, transfer) },
+            castSender = castHooks.sender?.invoke(client) ?: CastSenders.of(app, client),
+        )
     }
     var next by remember { mutableStateOf<Video?>(null) }
 
@@ -99,11 +124,25 @@ fun WatchRouteScreen(videoId: String, startSec: Int?, nav: PlayerNavigator) {
         next = null
         queued = null
         val id = playback.video?.id ?: return@LaunchedEffect
-        if (queue.doc?.current?.id == id) {
+        val doc = queue.doc
+        val current = doc?.current
+        // a cast names the queue, so the TV walks it on its own (story 58.06)
+        playback.castQueue = if (current?.id == id) doc.id to current.pos else null
+        if (current?.id == id) {
             queued = queue.peekNext()
             queued?.let { q -> next = Video(q.id, title = q.title, durationSec = q.durationSec) }
         }
         if (next == null) next = client.nextVideo(id)
+    }
+
+    // the TV moved on in the queue (Maktaba's receiver walks it with its grant): the app's
+    // queue takes the home's current item, so Up next and Next follow the TV
+    LaunchedEffect(playback.receiverItem) {
+        val r = playback.receiverItem ?: return@LaunchedEffect
+        val doc = queue.doc ?: return@LaunchedEffect
+        if (r.queueId == doc.id && r.queuePos != null && r.queuePos != doc.currentPos) {
+            runCatching { queue.fetchCurrent() }.getOrNull()?.takeIf { it.id == doc.id }?.let { queue.resume(it) }
+        }
     }
 
     val close = { playback.stop(); nav.back(); Unit }

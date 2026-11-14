@@ -876,6 +876,18 @@ build fails when the two differ.
   shows Cast. The cast grant's refusals (`cast_via_cloud`, `cast_needs_person`, `cast_scope`)
   now have their problem pages.
 
+- **The Android Player casts to Maktaba's own receiver (Epic 58, story 58.06).** The Player's
+  Cast button now sends the video, or the whole **Play all** or **Shuffle** queue, to Maktaba's
+  receiver with a cast grant the phone mints for it; the TV plays and reports progress by
+  itself, so the phone can lock or leave and Continue Watching follows the TV. While the TV
+  plays, the phone posts no progress of its own and shows the TV's name and what it plays,
+  following the queue as the TV walks it; ending the cast opens the video on the phone where
+  the TV was. A home older than the cast grant still casts to Google's player with the signed
+  address, and the Player says so. With no TV on the network the Player says the TV must be on
+  the same Wi-Fi; a refused grant says why and casts nothing. English and Arabic. Until the
+  receiver's application ID is set in `shared/cast/app.json` (or `-Pmaktaba.castAppId`), the
+  Player shows no Cast button.
+
 - **A cast grant for Maktaba's Cast receiver (Epic 58, story 58.07).** A signed-in phone or
   browser can now mint a cast grant on the home (`POST /api/cast/grants`) for the one video or
   play queue it casts. The TV uses the grant to open its own stream sessions, report where it
