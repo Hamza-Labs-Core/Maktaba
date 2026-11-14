@@ -7,6 +7,7 @@ package queues
 // scripted driver of the unit tests cannot tell whether the SQL is valid).
 
 import (
+	"context"
 	"testing"
 	"time"
 
