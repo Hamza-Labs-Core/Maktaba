@@ -250,7 +250,7 @@ describe("while it plays", () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(progress().at(-1)?.body).toEqual({ position_sec: 45 });
     expect(screen()).toBe("paused");
-    expect(document.querySelector(".mk-paused-title")?.textContent).toBe(fx.video.title);
+    expect(document.querySelector(".mk-paused-title > bdi")?.textContent).toBe(fx.video.title);
     expect(document.querySelector(".mk-paused-text")?.textContent).toBe(fx.video.description);
     void receiver;
   });
@@ -263,6 +263,8 @@ describe("while it plays", () => {
     ctx.player.duration = 5400;
     ctx.player.emit("TIME_UPDATE");
     expect(document.querySelector(".mk-title")?.textContent).toBe(fx.video.title);
+    // story 58.15: a title takes its own direction (a <bdi>), as on /tv/ and Roku
+    expect(document.querySelector(".mk-title > bdi")?.textContent).toBe(fx.video.title);
     expect(document.querySelector(".mk-pos")?.textContent).toBe("‎12:34‎ من ‎1:30:00‎");
     expect(document.querySelector(".mk-chapter")?.textContent).toBe("الفصل: The storm");
   });
@@ -298,7 +300,7 @@ describe("while it plays", () => {
     ctx.player.time = 5390;
     ctx.player.emit("TIME_UPDATE");
     expect((document.querySelector(".mk-upnext") as HTMLElement).hidden).toBe(false);
-    expect(document.querySelector(".mk-upnext-title")?.textContent).toBe("Episode Two");
+    expect(document.querySelector(".mk-upnext-title > bdi")?.textContent).toBe("Episode Two");
     ctx.player.emit("MEDIA_FINISHED");
     await vi.advanceTimersByTimeAsync(0);
     await vi.waitFor(() => expect(sessions(home.calls)).toHaveLength(2));
