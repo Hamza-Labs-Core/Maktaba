@@ -335,7 +335,8 @@ app nodes (relay, api, worker) ── db.internal:6432 = the database's Floating
   replica becomes synchronous, so writes go on.
 - **PgBouncer** on every node next to Postgres (`pgbouncer/`, port 6432, TLS required, its
   certificate signed by the owner's CA for `db.internal`, which the apps check with
-  `sslmode=verify-full`: the Floating IP is a public address): the
+  `sslmode=verify-full`: the Floating IP is a public address; its own hba rules let the
+  superuser in from the node alone and the app role over TLS only): the
   cloud's `database.url` is the transaction pool (`db.internal:6432/maktaba`), and
   `database.direct_url` (the worker's lock, the relay's LISTEN) its session pool
   (`db.internal:6432/cloud_session`). The cloud sends every query with arguments in one round

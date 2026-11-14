@@ -26,7 +26,7 @@ trap 'rm -rf "${work}"' EXIT
 render() { # render <mode> <port>
     local mode=$1 port=$2
     printf '[databases]\n* = host=%s port=%s pool_mode=%s\n' "${pg_host}" "${pg_port}" "${mode}" >"${work}/databases-${mode}.ini"
-    PGB_LISTEN_ADDR='*' PGB_LISTEN_PORT="${port}" PGB_SOCKET_DIR="/tmp/pgb/${mode}" PGB_AUTH_TYPE=scram-sha-256 PGB_CLIENT_TLS_SSLMODE=disable \
+    PGB_LISTEN_ADDR='*' PGB_LISTEN_PORT="${port}" PGB_SOCKET_DIR="/tmp/pgb/${mode}" PGB_AUTH_TYPE=scram-sha-256 PGB_AUTH_HBA_FILE='' PGB_CLIENT_TLS_SSLMODE=disable \
         PGB_AUTH_FILE=/tmp/pgb/userlist.txt PGB_ADMIN_USERS="${user}" PGB_LOGFILE="/tmp/pgb/${mode}.log" \
         PGB_PIDFILE="/tmp/pgb/${mode}.pid" PGB_DATABASES_FILE="/tmp/pgb/databases-${mode}.ini" \
         envsubst <"${here}/deploy/cloud-ha/pgbouncer/pgbouncer.ini" >"${work}/pgbouncer-${mode}.ini"

@@ -501,7 +501,14 @@ for f in tls.crt tls.key; do
 done
 chown postgres:postgres /etc/pgbouncer/tls.crt /etc/pgbouncer/tls.key && chmod 0600 /etc/pgbouncer/tls.key
 (umask 027 && printf '"%s" "%s"\n"postgres" "%s"\n' "${PG_APP_USER:-maktaba}" "${PG_APP_PASSWORD:?}" "${PG_SUPERUSER_PASSWORD:?}" >/etc/pgbouncer/userlist.txt)
-PGB_LISTEN_ADDR='*' PGB_LISTEN_PORT=6432 PGB_SOCKET_DIR=/var/run/postgresql PGB_AUTH_TYPE=scram-sha-256 \
+# PgBouncer's own rules: 6432 is open to DB_CLIENTS on a public address, so the superuser (in the
+# userlist for the admin console only) is let in from this node alone, the app role over TLS
+# only, and nothing else
+cat >/etc/pgbouncer/pg_hba.conf <<HBA
+host    all  postgres             127.0.0.1/32  scram-sha-256
+hostssl all  ${PG_APP_USER:-maktaba}  0.0.0.0/0     scram-sha-256
+HBA
+PGB_LISTEN_ADDR='*' PGB_LISTEN_PORT=6432 PGB_SOCKET_DIR=/var/run/postgresql PGB_AUTH_TYPE=hba PGB_AUTH_HBA_FILE=/etc/pgbouncer/pg_hba.conf \
 	PGB_AUTH_FILE=/etc/pgbouncer/userlist.txt PGB_ADMIN_USERS=postgres PGB_CLIENT_TLS_SSLMODE=require \
 	PGB_TLS_CERT=/etc/pgbouncer/tls.crt PGB_TLS_KEY=/etc/pgbouncer/tls.key PGB_LOGFILE=/var/log/pgbouncer/pgbouncer.log \
 	PGB_PIDFILE=/var/run/postgresql/pgbouncer.pid PGB_DATABASES_FILE=/etc/pgbouncer/databases.ini \

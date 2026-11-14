@@ -5,7 +5,7 @@
 set -euo pipefail
 mkdir -p /etc/pgbouncer /var/log/pgbouncer /run/pgbouncer
 printf '"maktaba" "%s"\n"postgres" "%s"\n' "${PG_APP_PASSWORD:?}" "${PG_SUPERUSER_PASSWORD:?}" >/etc/pgbouncer/userlist.txt
-PGB_LISTEN_ADDR='*' PGB_LISTEN_PORT=6432 PGB_SOCKET_DIR=/run/pgbouncer PGB_AUTH_TYPE=scram-sha-256 \
+PGB_LISTEN_ADDR='*' PGB_LISTEN_PORT=6432 PGB_SOCKET_DIR=/run/pgbouncer PGB_AUTH_TYPE=scram-sha-256 PGB_AUTH_HBA_FILE='' \
     PGB_AUTH_FILE=/etc/pgbouncer/userlist.txt PGB_ADMIN_USERS=postgres PGB_CLIENT_TLS_SSLMODE=disable \
     PGB_TLS_CERT='' PGB_TLS_KEY='' PGB_LOGFILE=/var/log/pgbouncer.log PGB_PIDFILE=/run/pgbouncer/pgbouncer.pid \
     PGB_DATABASES_FILE=/etc/pgbouncer/databases.ini \
