@@ -93,8 +93,9 @@ func BuildIndexWorker(opts Options) ([]Process, error) {
 	wire(cmd)
 	return []Process{{Role: RolePipeline, Instance: IndexInstance, Cmd: cmd,
 		Probe: "http://" + LocalAddr(logs, ports.IndexLogs.PortString()) + "/healthz", ProbeTimeout: PythonProbeTimeout,
-		StopGrace: IndexStopGrace,
-		Binds:     []ports.Bind{{Addr: pipelineSearch(opts.Config), What: "search port"}, {Addr: logs, What: "logs port"}}}}, nil
+		StartupGrace: PythonStartupGrace,
+		StopGrace:    IndexStopGrace,
+		Binds:        []ports.Bind{{Addr: pipelineSearch(opts.Config), What: "search port"}, {Addr: logs, What: "logs port"}}}}, nil
 }
 
 // indexMainEnv is the main worker's side of the index worker: it leaves IndexStages
