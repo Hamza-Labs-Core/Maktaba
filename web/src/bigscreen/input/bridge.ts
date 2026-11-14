@@ -63,7 +63,18 @@ export interface LauncherHello {
   year: number;
   engine: string;
   version: string;
-  device_caps: { video: string[]; audio: string[]; hdr: string[]; max_height: number };
+  /** The API's DeviceCaps (story 58.02): what the TV plays, for session creation. */
+  device_caps: {
+    containers: string[];
+    video: { codec: string; max_height?: number; max_fps?: number; bit_depth?: number }[];
+    hdr: string[];
+    audio: string[];
+    passthrough: string[];
+    max_audio_channels?: number;
+    hls_segments: string[];
+    dash?: boolean;
+    max_bitrate_kbps?: number;
+  };
   keys: string[];
   messages: string[];
 }
@@ -91,13 +102,15 @@ export type UiMessage =
       subtitles?: { id: string; url: string; lang?: string; label?: string }[];
       audio?: number | null;
       mode?: "vod" | "live";
+      height?: number;
+      subtitle_scale?: number;
     }
   | { type: "maktaba:pause" }
   | { type: "maktaba:resume" }
   | { type: "maktaba:seek"; sec: number }
   | { type: "maktaba:stop" }
   | { type: "maktaba:audioTrack"; i: number }
-  | { type: "maktaba:subtitle"; id: string | null }
+  | { type: "maktaba:subtitle"; id: string | null; subtitle_scale?: number }
   | { type: "maktaba:logs"; id: number };
 
 /** The action a bridge message carries, or null for anything else. */

@@ -25,6 +25,10 @@ export interface PlayRequest {
   /** The audio track's index (null: the stream's default). */
   audio?: number | null;
   mode?: "vod" | "live";
+  /** The source's height, when the UI knows it (AVPlay turns on its 4K mode for 2160). */
+  height?: number;
+  /** The person's subtitle size, a factor of the default (/tv/'s SUBTITLE_SCALES). */
+  subtitle_scale?: number;
 }
 
 /** The launcher's `state` message. */
@@ -45,6 +49,8 @@ export interface PlayerAdapter {
   stop(): void;
   audioTrack(index: number): void;
   subtitle(id: string | null): void;
+  /** The person's subtitle size, when the adapter draws subtitles itself. */
+  subtitleScale?(scale: number): void;
   /** Whether something is loaded (state is sent every 500 ms while it is). */
   active(): boolean;
   state(): PlayerState;

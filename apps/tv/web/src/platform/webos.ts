@@ -5,7 +5,7 @@
 // HLS player is 58.11's adapter.
 
 import {
-  DEFAULT_CAPS,
+  capsForPanel,
   chromiumMajor,
   commonKeyAction,
   engineOf,
@@ -104,7 +104,7 @@ export function webosPlatform(w: Window): Platform {
     keyAction: commonKeyAction,
     deviceCaps(): DeviceCaps {
       // the full report (HEVC, AV1, Dolby Vision, passthrough) is story 58.11's
-      return { ...DEFAULT_CAPS, max_height: uhd ? 2160 : 1080 };
+      return capsForPanel(uhd);
     },
     exit() {
       try {
