@@ -614,7 +614,8 @@ describe("a guest pass ends no later than its invite", () => {
     // the same pass re-signed as it is plays: the refusals below are the claims, not the key
     const again = await mintPass(env.VIEWER_TOKEN_KEY, { ...p });
     expect((await playWith(s, s.ch, again)).r.status).toBe(200);
-    const { iexp: _drop, ...noIexp } = p;
+    const noIexp: Partial<PassClaims> = { ...p };
+    delete noIexp.iexp;
     const old = await mintPass(env.VIEWER_TOKEN_KEY, noIexp as PassClaims);
     expect(await readPass(old, env.VIEWER_TOKEN_KEY, now())).toBeNull();
     const o = await playWith(s, s.ch, old);
