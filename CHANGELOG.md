@@ -14,6 +14,17 @@ build fails when the two differ.
 
 ### Changed
 
+- **The big screen gets the TV apps' library (story 58.08).** A library on the big screen
+  (`/big`) now opens on the tabs of the Apple TV and Android TV apps: Recommended, Library (Show
+  videos or series, Sort, Filter and a letter rail, A to Z and the Arabic letters), Collections,
+  Playlists and Categories. Play and Shuffle play the Library tab's view in its order on the play
+  queue; collections and playlists have their own pages with Play and Shuffle; a series gains Mark
+  watched and a season's Mark season watched. On a focused card Play/Pause plays it, and a long OK
+  or the menu key offers Play next, Add to queue, Add to playlist, Go to series and Mark watched.
+  Back steps out to the tab's top, then its tabs, then out; each tab keeps its place. Up next shows
+  in a video's last 30 seconds, and a shuffled queue offers Shuffle again. A focused card grows by
+  1.08 inside the brass ring.
+
 - **Messages in Arabic speak to the whole household (story 60.06).** The Arabic of every
   message the API sends, and of its page on maktaba.tv, now addresses the household in the plural
   and names the product «مكتبة» («برنامج مكتبة» where the bare word reads as a library), as the

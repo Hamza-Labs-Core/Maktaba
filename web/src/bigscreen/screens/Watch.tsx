@@ -8,8 +8,11 @@
 //     player was opened from a series: ?series=);
 //   - hidden after CONTROLS_IDLE_MS of no input while playing; any input
 //     brings them back (playerKeys.ts says what each action does);
-//   - at the end, Up next: the next lesson after a 10 s countdown (Settings →
-//     "Play the next lesson automatically"), or Play now / Cancel.
+//   - Up next (Epic 56 story 56.11): in the last UP_NEXT_LEAD_SECONDS the next
+//     item shows with Play now / Cancel, without pausing; at the end it plays
+//     after a 10 s countdown (Settings → "Play the next lesson automatically").
+//     Cancel dismisses it, and the player then stops at the end;
+//   - Shuffle again, when the queue is shuffled: a new order after this video.
 // Back closes a panel, else leaves the player (the frame's Back).
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
@@ -21,14 +24,16 @@ import { useFocusApi, useLayer } from "../focus/FocusProvider";
 import { ACTION_EVENT, type ActionDetail } from "../input/actions";
 import { bigPath, useBigNav } from "../nav";
 import { readPrefs, SUBTITLE_SCALES } from "../prefs";
-import { Panel, clock } from "../ui";
+import { Ltr, Panel, clock } from "../ui";
 import { fetchEpisodes, lessonsInOrder, resumeAt } from "./Series";
 import { resolveNext } from "../../components/UpNext";
-import { advanceTo } from "../../lib/playQueue";
+import { advanceTo, readServerQueue, reshuffle } from "../../lib/playQueue";
 import { lessonAfter, playerCommand, seekTo, type PlayerCommand } from "./playerKeys";
 
 export const CONTROLS_IDLE_MS = 4000;
 export const UP_NEXT_SECONDS = 10;
+/** How long before the end the Up next card shows (Epic 56 story 56.11). */
+export const UP_NEXT_LEAD_SECONDS = 30;
 
 interface Chapter {
   start_sec: number;
@@ -70,6 +75,10 @@ export function BigWatch() {
   const [shown, setShown] = useState(true);
   const [panel, setPanel] = useState<PanelKind | null>(null);
   const [upNext, setUpNext] = useState<{ left: number | null } | null>(null);
+  // Cancel on the card: no card again for this video, and no autoplay at its end
+  const dismissed = useRef(false);
+  const [nextLoad, setNextLoad] = useState(0);
+  const shuffled = !!readServerQueue()?.shuffle;
   const [paused, setPaused] = useState(true);
   const [time, setTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -87,6 +96,7 @@ export function BigWatch() {
     setChapters([]);
     setNext(null);
     setUpNext(null);
+    dismissed.current = false;
     api
       .get<{ title?: string | null; display_title?: string | null; filename?: string }>(
         `/api/videos/${enc}`
@@ -132,7 +142,7 @@ export function BigWatch() {
     return () => {
       cancelled = true;
     };
-  }, [videoId, series]);
+  }, [videoId, series, nextLoad]);
 
   const tick = useCallback(
     () => setUpNext((u) => (u && u.left !== null ? { left: u.left - 1 } : u)),
@@ -167,6 +177,7 @@ export function BigWatch() {
     };
     const onEnded = () => {
       sync();
+      if (dismissed.current) return;
       setUpNext({ left: readPrefs().autoplayNext ? UP_NEXT_SECONDS : null });
     };
     const events = ["play", "pause", "timeupdate", "durationchange", "loadedmetadata", "seeked"];
@@ -183,6 +194,13 @@ export function BigWatch() {
       el.textTracks?.removeEventListener?.("addtrack", applyPrefs);
     };
   }, [el]);
+
+  // the last seconds: the card shows (no countdown until the end)
+  const nearEnd = duration > 0 && duration - time <= UP_NEXT_LEAD_SECONDS && time > 0;
+  useEffect(() => {
+    if (nearEnd && next && !dismissed.current && !(el?.ended ?? false))
+      setUpNext((u) => u ?? { left: null });
+  }, [nearEnd, next, el]);
 
   // the controls hide while watching
   const wake = useCallback(() => {
@@ -288,7 +306,7 @@ export function BigWatch() {
           </header>
           <div className="bs-watch__bottom">
             <div className="bs-watch__bar">
-              <span className="bs-watch__time">{clock(time)}</span>
+              <Ltr className="bs-watch__time">{clock(time)}</Ltr>
               <div
                 className="bs-watch__track"
                 role="progressbar"
@@ -310,7 +328,7 @@ export function BigWatch() {
                     />
                   ))}
               </div>
-              <span className="bs-watch__time">{clock(duration)}</span>
+              <Ltr className="bs-watch__time">{clock(duration)}</Ltr>
             </div>
             <div
               className="bs-watch__controls"
@@ -375,6 +393,19 @@ export function BigWatch() {
                   {t("big.player.nextLesson")} ⏭
                 </Ctl>
               )}
+              {shuffled && (
+                <Ctl
+                  id="reshuffle"
+                  wide
+                  onClick={() =>
+                    void reshuffle()
+                      .then(() => setNextLoad((x) => x + 1))
+                      .catch(() => undefined)
+                  }
+                >
+                  ⤮ {t("player.shuffleAgain")}
+                </Ctl>
+              )}
             </div>
           </div>
         </div>
@@ -398,7 +429,7 @@ export function BigWatch() {
                   setPanel(null);
                 }}
               >
-                <span className="bs-line__at">{clock(c.start_sec)}</span>
+                <Ltr className="bs-line__at">{clock(c.start_sec)}</Ltr>
                 <bdi>{c.title}</bdi>
               </button>
             );
@@ -472,6 +503,7 @@ export function BigWatch() {
           onTick={tick}
           onPlay={playNext}
           onCancel={() => {
+            dismissed.current = true;
             setUpNext(null);
             focus.focusFirst();
           }}

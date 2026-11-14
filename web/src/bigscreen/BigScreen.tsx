@@ -18,7 +18,11 @@ import { usePads } from "./input/usePads";
 import { backTarget, bigPath, depthOf, useBigNav } from "./nav";
 import { Dialog } from "./ui";
 import { BigHome } from "./screens/Home";
-import { BigLibraries, BigLibrary } from "./screens/Libraries";
+import { BigLibraries } from "./screens/Libraries";
+import { BigLibrary } from "./screens/Library";
+import { BigAutoCollection, BigCollection, BigPlaylist } from "./screens/Collection";
+import { CardMenu } from "./CardMenu";
+import { LongPress, cardOf, hasMenu, type CardActions } from "./cards";
 import { BigSeries, BigSeriesList } from "./screens/Series";
 import { BigVideo } from "./screens/Video";
 import { BigSearch } from "./screens/Search";
@@ -103,6 +107,9 @@ function Frame() {
   const exit = useExitBigScreen();
   const [asking, setAsking] = useState(false);
   const [pad, setPad] = useState<PadLayout | null>(null);
+  // a card's actions (a long OK or the menu key), and what the last one did
+  const [menuFor, setMenuFor] = useState<CardActions | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const player = isPlayerPath(location.pathname);
   const live = isLivePlayerPath(location.pathname);
   const { t } = useI18n();
@@ -132,6 +139,16 @@ function Frame() {
       });
       window.dispatchEvent(ev);
       if (ev.defaultPrevented) return true;
+      // Epic 56 §6.5: Play/Pause plays the focused card; the menu key opens its actions
+      const card = player ? null : cardOf(document.activeElement);
+      if (card && (action === "playPause" || action === "play")) {
+        card.play();
+        return true;
+      }
+      if (hasMenu(card) && action === "menu") {
+        setMenuFor(card);
+        return true;
+      }
       if (action === "back") back();
       else if (isDirection(action)) focus.move(action);
       else if (action === "select") {
@@ -143,8 +160,16 @@ function Frame() {
       else return false;
       return true;
     },
-    [focus, back, go]
+    [focus, back, go, player]
   );
+
+  // a long OK on a card opens its actions; a short one presses it
+  const longPress = useRef<LongPress | null>(null);
+  useEffect(() => {
+    if (!notice) return;
+    const id = setTimeout(() => setNotice(null), 4000);
+    return () => clearTimeout(id);
+  }, [notice]);
 
   // the keyboard (and remotes that present themselves as one)
   useEffect(() => {
@@ -166,10 +191,38 @@ function Frame() {
         ) || !!target?.isContentEditable;
       const action = keyAction(e, { typing, player });
       if (!action) return;
+      if (action === "select" && !player && !focus.topLayer()) {
+        const el = document.activeElement as HTMLElement | null;
+        const card = cardOf(el);
+        if (el && hasMenu(card)) {
+          // held: the actions; released early: the card's own press (on key up)
+          e.preventDefault();
+          if (!longPress.current)
+            longPress.current = new LongPress(
+              () => el.click(),
+              () => setMenuFor(card)
+            );
+          longPress.current.down(e.repeat);
+          return;
+        }
+      }
       if (act(action, "key")) e.preventDefault();
     };
+    const onKeyUp = (e: KeyboardEvent) => {
+      const lp = longPress.current;
+      if (!lp || keyAction(e, { player }) !== "select") return;
+      longPress.current = null;
+      e.preventDefault();
+      lp.up();
+    };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    window.addEventListener("keyup", onKeyUp);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("keyup", onKeyUp);
+      longPress.current?.cancel();
+      longPress.current = null;
+    };
   }, [act, back, focus, live, player]);
 
   // game controllers; on the live player they press its keys
@@ -204,6 +257,9 @@ function Frame() {
           <Route index element={<BigHome />} />
           <Route path="libraries" element={<BigLibraries />} />
           <Route path="library/:id" element={<BigLibrary />} />
+          <Route path="library/:libraryId/collection/:kind/:id" element={<BigAutoCollection />} />
+          <Route path="collection/:id" element={<BigCollection />} />
+          <Route path="playlist/:id" element={<BigPlaylist />} />
           <Route path="series" element={<BigSeriesList />} />
           <Route path="series/:id" element={<BigSeries />} />
           <Route path="video/:id" element={<BigVideo />} />
@@ -235,6 +291,12 @@ function Frame() {
           <Hint k={pad ? glyphs.back : "Esc"}>{t("big.hint.back")}</Hint>
           <Hint k={pad ? "Y" : "/"}>{t("big.hint.search")}</Hint>
         </footer>
+      )}
+      {menuFor && <CardMenu card={menuFor} onClose={() => setMenuFor(null)} onDone={setNotice} />}
+      {notice && (
+        <p className="bs-notice" role="status" data-testid="big-notice">
+          {notice}
+        </p>
       )}
       {asking && (
         <Dialog

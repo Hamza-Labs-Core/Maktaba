@@ -11,7 +11,7 @@ import { videoTitle } from "../../lib/videoTitle";
 import { useI18n } from "../../lib/i18n";
 import { fetchMyVideo, markWatched, setFavorite, type MyVideo } from "../../lib/me";
 import { bigPath, useBigNav } from "../nav";
-import { Failed, Loading, Picture, Progress, Screen, clock, posterOf } from "../ui";
+import { Failed, Loading, Ltr, Picture, Progress, Screen, clock, lrm, posterOf } from "../ui";
 import { errorText } from "../../lib/errorText";
 
 interface Video {
@@ -123,12 +123,12 @@ export function BigVideo() {
             <bdi>{name}</bdi>
           </h1>
           <p className="bs-hero__meta">
-            {dur > 0 && <span>{clock(dur)}</span>}
+            {dur > 0 && <Ltr>{clock(dur)}</Ltr>}
             {ps?.completed && <span>✓ {t("big.watched")}</span>}
             {resume > 0 && dur > 0 && (
               <>
                 <Progress fraction={resume / dur} label={t("home.watched")} />
-                <span>{t("big.leftAt", { at: clock(resume) })}</span>
+                <span>{t("big.leftAt", { at: lrm(clock(resume)) })}</span>
               </>
             )}
           </p>
@@ -208,7 +208,7 @@ export function BigVideo() {
                 data-bs-focus={`chapter:${i}`}
                 onClick={() => watch(c.start_sec)}
               >
-                <span className="bs-tile__meta">{clock(c.start_sec)}</span>
+                <Ltr className="bs-tile__meta">{clock(c.start_sec)}</Ltr>
                 <bdi className="bs-tile__title">{c.title}</bdi>
               </button>
             ))}
@@ -228,7 +228,7 @@ export function BigVideo() {
                 data-bs-focus={`line:${i}`}
                 onClick={() => watch(s.start_sec)}
               >
-                <span className="bs-line__at">{clock(s.start_sec)}</span>
+                <Ltr className="bs-line__at">{clock(s.start_sec)}</Ltr>
                 <span className="bs-line__text" dir="auto">
                   {s.text}
                 </span>
