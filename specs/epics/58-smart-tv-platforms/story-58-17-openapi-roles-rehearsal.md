@@ -24,7 +24,7 @@ Each needs its OpenAPI entry, a role table and a place in a rehearsal that runs 
 | 426 `client_too_old` on sign-in, refresh and pairing token routes | 58.01 |
 | `POST /api/stream/sessions` gains `device_caps` | 58.02 |
 | `POST /api/pairing/cloud-approve` | 58.03 |
-| cloud: `POST /v1/tv/codes`, `POST /v1/tv/codes/poll`, `GET /v1/tv/codes/{code}/qr.png`, `POST /v1/tv/codes/{code}/approve` (signed-in cloud account) | 58.03 |
+| cloud: `POST /v1/tv/codes`, `POST /v1/tv/codes/poll`, `GET /v1/tv/codes/{code}` and `POST /v1/tv/codes/{code}/approve` (signed-in cloud account); the TV draws its QR code from `verify_url` | 58.03 |
 | `POST /api/cast/grants` | 58.06 |
 
 The API level check of 58.01 runs on the result.
@@ -43,21 +43,26 @@ The API level check of 58.01 runs on the result.
 |---|---|---|---|---|---|---|---|---|
 | `GET /api/discovery/home` | 200 | 200 | 200 | 200 | 200 | 200 | 200 | 200 |
 | `POST /api/pairing/cloud-approve` | 401 | 200 (TV is viewer) | 200 | 200 (TV restricted) | 200; `as_user` own child only | 200 | 403 (play scope cannot add sign-ins) | 403 |
-| `POST /api/cast/grants` for A | 401 | 200 | 404 | 200 if A allowed, else 404 | 200 | 200 | 200 if A allowed | 403 (a grant cannot mint grants) |
-| `POST /api/stream/sessions` for A | 401 | 200 | 404 | 200 if allowed, else 404 | 200 | 200 | 200 | 200 |
-| `POST /api/stream/sessions` for B | 401 | 200 | 404 | as above | 200 | 200 | 200 | 403 |
-| `POST …/progress` for A | 401 | 200 | 404 | as above | 200 | 200 | 200 | 200 |
+| `POST /api/cast/grants` for A | 401 | 201 | 403 | 201 if A allowed, else 404 | 201 | 201 | 403 (a sign-in through the cloud mints no grant) | 403 (a grant cannot mint grants) |
+| `POST /api/stream/sessions` for A | 401 | 201 | 403 | 201 if allowed, else 404 | 201 | 201 | 201 | 201 |
+| `POST /api/stream/sessions` for B | 401 | 201 | 403 | as above | 201 | 201 | 201 | 403 |
+| `POST …/progress` for A | 401 | 200 | 404 (another account's session) | as above | 200 | 200 | 200 | 200 |
 | any admin route | 401 | 403 | 403 | 403 | 403 | 200 | 403 | 403 |
 | `GET /api/videos?…` (list) | 401 | 200 | scoped | filtered | 200 | 200 | 200 | 403 (grant reads only its items) |
 
-A role test fails when a route mounted on the router is missing from the table (the 57.13 router
-walk, extended to the `cast` principal).
+A video of a library the caller does not read is refused 403, as everywhere on the home; a
+session that is another account's answers 404. A role test fails when an Epic 58 route mounted on
+the router is missing from the table (the 57.13 router walk). The walk is extended to the `cast`
+principal: every mounted route outside the grant's list answers it 403 `cast_scope` without
+reaching its handler.
 
-**The new-clients rehearsal** (a Go target, `tv-clients`, in the `api` job, on Postgres and
-SQLite, plus a cloud rehearsal case). It drives the server the way each TV does, with recorded
+**The new-clients rehearsal** (the `tv-clients` job of the integration workflow, on Postgres, plus
+a cloud rehearsal case). The handlers of these routes query the home's Postgres (its types and
+functions), so the rehearsal runs there, over the LAN and through the relay path. It drives the server the way each TV does, with recorded
 request shapes from each platform's tests:
-1. **Compat.** Discovery is read, a level outside the range is refused, and a `client_floor`
-   refusal answers 426.
+1. **Compat.** Discovery is read, a level outside the range shows Update the home or Update this
+   app, a `client_floor` refusal answers 426, and a home rolled back to a release from before the
+   contract shows Update the home.
 2. **Cloud code.** Run end to end through the cloud rehearsal's tunnel: create, approve as a
    viewer, poll, then redeem on the home through the relay path and through the LAN path.
 3. **Sessions.** Opened with each platform's recorded `device_caps`. The mode matches 58.02's
@@ -72,8 +77,8 @@ request shapes from each platform's tests:
 - **Given** a new route added without an OpenAPI entry, **then** the existing OpenAPI coverage
   check fails.
 - **Given** a new route without a role table row, **then** the router walk fails.
-- **Given** the rehearsal, **then** all five steps pass on Postgres and SQLite, directly and through
-  the relay path.
+- **Given** the rehearsal, **then** all five steps pass on Postgres, directly and through the relay
+  path.
 
 ## Test cases
 
@@ -81,7 +86,7 @@ request shapes from each platform's tests:
 |---|---|---|---|---|
 | T01 | Go role table | the principals × routes above | each call | the table's status codes |
 | T02 | Go router walk | the mounted router | walk | every route in a table |
-| T03 | Go rehearsal `tv-clients` (Postgres, SQLite) | seeded home | steps 1–5 | pass |
+| T03 | Go rehearsal `tv-clients` (Postgres) | seeded home | steps 1–5 | pass |
 | T04 | Cloud rehearsal | a home over the tunnel | step 2 through the cloud | pass |
 
 ## Strings
@@ -98,6 +103,7 @@ None.
 | File | Change |
 |---|---|
 | `shared/api/openapi.yaml`, `cloud/docs/tv-codes.md` (new) | the routes |
-| `api/internal/…/roles_test.go` (the 57.13 table) | rows and the `cast` principal |
-| `api/internal/rehearsal/tvclients/` (new) | the rehearsal |
-| `cloud/rehearsal/tvcode_test.go` (new) | T04 |
+| `api/internal/router/p58_roles_pg_test.go`, `p58_roles_routes_test.go` (new) | the table, the router walk and the `cast` principal |
+| `api/internal/router/p58_tvclients_pg_test.go` (new), `tools/ci/tv-clients-tests.txt` (new) | the rehearsal and the tests it requires |
+| `.github/workflows/_integration.yml`, `.github/ci-paths.yml` | the `tv-clients` job and its filter |
+| `cloud/rehearsal/tvcode_test.go` | T04 (58.03's `tv-code`) |

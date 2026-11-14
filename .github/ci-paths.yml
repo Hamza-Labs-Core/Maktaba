@@ -527,6 +527,19 @@ parental_bypass:
   - 'tools/ci/parental-bypass-tests.txt'
   - '.github/workflows/_integration.yml'
 
+# Epic 58 (story 58.17): the tv-clients rehearsal, the home driven as each TV drives it, on
+# Postgres behind the production router: the API it builds with cmd and the shared libraries,
+# the playback vectors it reads, the streaming service's verdicts for them, and its test list
+tv_clients:
+  - *ci
+  - 'api/**'
+  - 'streaming/**'
+  - 'cmd/**'
+  - 'shared/**'
+  - 'tools/ci/no-pg-skips.sh'
+  - 'tools/ci/tv-clients-tests.txt'
+  - '.github/workflows/_integration.yml'
+
 # Epic 51 (story 51.06): components-live, real sleepy workers switching components on
 # Postgres: the pipeline's runner and what it drives (the selection, the stage rows, the
 # enqueue, the claims and drains), the components' migrations, the catalog and the drivers
