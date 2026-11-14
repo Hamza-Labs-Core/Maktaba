@@ -598,3 +598,11 @@ func TestObtainMapFromFileAndNone(t *testing.T) {
 		t.Errorf("missing file: %v %q", m, note)
 	}
 }
+
+// The Android TV app has two store builds (story 58.05): its JVM tests run as the Google Play
+// build's task, the one CI runs.
+func TestAndroidTVTestsRunAsTheGooglePlayBuild(t *testing.T) {
+	if got := androidTask("apps/tv/android/app"); got != ":app:testGoogleDebugUnitTest" {
+		t.Errorf("androidTask(tv) = %q", got)
+	}
+}

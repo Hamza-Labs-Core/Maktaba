@@ -606,8 +606,12 @@ tv-build-ios:  ## Build the Apple TV app (scheme "Maktaba TV" in apps/apple/Makt
 	xcodebuild -project apps/apple/Maktaba.xcodeproj -scheme "Maktaba TV" -destination 'generic/platform=tvOS Simulator' CODE_SIGNING_ALLOWED=NO build
 
 .PHONY: tv-build-android
-tv-build-android:  ## Assemble the Android TV debug APK via the Gradle wrapper. Needs the Android SDK.
-	cd $(ANDROID_TV_DIR) && ./gradlew :app:assembleDebug
+tv-build-android:  ## Assemble the Android TV debug APK (Google Play build) via the Gradle wrapper. Needs the Android SDK.
+	cd $(ANDROID_TV_DIR) && ./gradlew :app:assembleGoogleDebug
+
+.PHONY: tv-build-firetv
+tv-build-firetv:  ## Assemble the Fire TV debug APK (the Android TV app's amazon flavor) and check it has no Google Play code. Needs the Android SDK.
+	cd $(ANDROID_TV_DIR) && ./gradlew :app:assembleAmazonDebug :app:checkAmazonDependencies :app:checkAmazonManifest
 
 .PHONY: native-sync
 native-sync: build-web  ## Rebuild web/dist and sync it into the native platforms (Capacitor cap sync).
@@ -685,9 +689,9 @@ package-mobile-ios: native-sync  ## Archive the iOS app (unsigned — see workfl
 	@echo "==> archive at $(MOBILE_DIR)/ios/App/build/Maktaba.xcarchive (a signed .ipa needs Apple certs)"
 
 .PHONY: package-tv-android
-package-tv-android:  ## Assemble the Android TV release APK. Needs the Android SDK + JDK17.
-	@cd $(ANDROID_TV_DIR) && ./gradlew --no-daemon :app:assembleRelease
-	@echo "==> output under $(ANDROID_TV_DIR)/app/build/outputs/apk/release/"
+package-tv-android:  ## Assemble the Android TV and Fire TV release APKs (google and amazon flavors). Needs the Android SDK + JDK17.
+	@cd $(ANDROID_TV_DIR) && ./gradlew --no-daemon :app:assembleGoogleRelease :app:assembleAmazonRelease
+	@echo "==> output under $(ANDROID_TV_DIR)/app/build/outputs/apk/google/release/ and apk/amazon/release/"
 
 .PHONY: package-all
 package-all: package-desktop package-mobile-android package-mobile-ios package-tv-android  ## Build every client package (desktop + mobile iOS/Android + Android TV). tvOS .ipa is distributed manually via Xcode/TestFlight.

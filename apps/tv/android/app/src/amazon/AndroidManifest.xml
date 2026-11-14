@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The Fire TV build (story 58.05, the `amazon` flavor), merged over src/main's manifest.
+     checkAmazonManifest (build.gradle.kts) checks the merged result on every CI run. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- Amazon's Appstore offers an app only to devices that have every feature it requires.
+         Fire OS does not declare Leanback on every device, so it is not required here (the
+         manifest merger would otherwise keep main's required="true"). -->
+    <uses-feature
+        android:name="android.software.leanback"
+        android:required="false"
+        tools:node="replace" />
+    <!-- A Fire TV (a stick, a Cube, a Fire TV Edition set). Not required, so the same APK installs
+         on Google's Android TV emulator for the instrumented tests. -->
+    <uses-feature
+        android:name="amazon.hardware.fire_tv"
+        android:required="false" />
+    <!-- No Fire TV has a touchscreen; said here as well as in main so this file stands alone
+         (lint reads each manifest on its own). -->
+    <uses-feature
+        android:name="android.hardware.touchscreen"
+        android:required="false" />
+
+    <application android:banner="@drawable/app_banner">
+        <activity
+            android:name=".MainActivity"
+            android:exported="true">
+            <!-- Fire OS places an app on its home from LEANBACK_LAUNCHER or LAUNCHER, and
+                 Amazon's pages do not settle which one it reads: both are declared. -->
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+
+</manifest>
