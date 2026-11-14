@@ -25,6 +25,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/relaydns"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/rehearsal/fakecloudflare"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/rehearsal/seed"
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/rehearsal/streamgen"
 )
 
 // The relay pool's scenarios (Epic 50 story 50.16, T08 and T09): three relay machines in a pool
@@ -172,22 +173,47 @@ func (c *cluster) waitPlaced(homes []*simhome.Home, want string, d time.Duration
 	}
 }
 
-// shares checks each relay's share of the primaries is its weight's (equal capacities) ±10 %.
+// shares checks each relay's count of the primaries against its weight (equal capacities).
+// The homes' server ids are random, so with a uniform hash a relay's count is binomial (n homes,
+// p = 1/len(relays)); the bound is shareSigmas of its standard deviations, √(n·p·(1−p)).
 func shares(t *testing.T, homes []*simhome.Home, relays []string) string {
 	t.Helper()
 	count := map[string]int{}
 	for _, h := range homes {
 		count[h.Sup.State().Relay]++
 	}
-	want := float64(len(homes)) / float64(len(relays))
+	want, tol := shareBound(len(homes), len(relays))
 	var parts []string
 	for _, r := range relays {
 		parts = append(parts, fmt.Sprintf("%s %d", r, count[r]))
-		if math.Abs(float64(count[r])-want) > 0.1*want {
-			t.Errorf("%s holds %d primaries, want %.0f ±10 %%", r, count[r], want)
+		if math.Abs(float64(count[r])-want) > tol {
+			t.Errorf("%s holds %d primaries, want %.0f ±%.0f (%.0f σ)", r, count[r], want, tol, shareSigmas)
 		}
 	}
 	return strings.Join(parts, ", ")
+}
+
+// shareSigmas is how many binomial standard deviations a relay's count may stray: 4 fails a
+// uniform hash about once in 5,000 runs (±18 % of a third at 1,000 homes on 3 relays, ±13 % of
+// a half on 2). A flat ±10 % fails a uniform hash in about 7 % of runs at 1,000 homes on 3
+// relays (2.2 σ). The hash's own accuracy is T01's ±2 % over 100,000 ids
+// (cloud/internal/relay/pool_test.go).
+const shareSigmas = 4.0
+
+// shareBound is a relay's expected count of n homes over relays equal relays, and the bound.
+func shareBound(n, relays int) (want, tol float64) {
+	p := 1 / float64(relays)
+	return float64(n) * p, shareSigmas * math.Sqrt(float64(n)*p*(1-p))
+}
+
+// failedAt is when request f failed: its start (Failure.At) plus how long it ran. A stream
+// that started just before the kill and was cut by it failed after the kill, not before.
+func failedAt(f streamgen.Failure) time.Time {
+	took, err := time.ParseDuration(f.Took)
+	if err != nil {
+		return f.At
+	}
+	return f.At.Add(took)
 }
 
 // relayDNS runs relay-dns in the test against the cluster's relays table and a fake Cloudflare
@@ -236,7 +262,7 @@ func (c *cluster) rebalanceDrains(id string) (int64, bool) {
 // T08 relay-pool-kill-one: three relays, 1,000 homes in their places and 100 streams through
 // the round-robin edge; r3 is killed. No request fails 10 s after the kill (p99 of the homes'
 // last failure ≤ 10 s); every home holds a new standby within 60 s; r3's address leaves the
-// round robin within 30 s; the survivors hold their shares ±10 %.
+// round robin within 30 s; the survivors hold their shares (shareSigmas).
 func relayPoolKillOne(t *testing.T, c *cluster) Result {
 	n := envInt("REHEARSAL_HOMES", 1000)
 	homes := c.poolHomes(n)
@@ -287,7 +313,7 @@ func relayPoolKillOne(t *testing.T, c *cluster) Result {
 	lastFail := map[string]time.Duration{}
 	late := 0
 	for _, f := range stats.Failures {
-		d := f.At.Sub(killed)
+		d := failedAt(f).Sub(killed)
 		if d < 0 {
 			t.Errorf("a request failed before the kill: %+v", f)
 			continue
@@ -333,7 +359,7 @@ func relayPoolKillOne(t *testing.T, c *cluster) Result {
 
 // T09 rebalance-add-relay: two relays, 1,000 homes in their places, 100 streams; a third relay
 // starts. Each relay drains at most 20 homes a second; no request fails; only homes whose
-// primary changed move (to r3); the final shares are ±10 %.
+// primary changed move (to r3); the final shares are within shareSigmas.
 func rebalanceAddRelay(t *testing.T, c *cluster) Result {
 	n := envInt("REHEARSAL_HOMES", 1000)
 	homes := c.poolHomes(n)
@@ -441,4 +467,30 @@ func relaysOf3() []relaypkg.PoolRelay {
 		out = append(out, relaypkg.PoolRelay{ID: id, State: relaypkg.RelayActive, CapacityMbps: 1000})
 	}
 	return out
+}
+
+// The two rules relay-pool-kill-one judges by, without a cluster: a stream cut by the kill
+// failed after it, and the share bound is 4 binomial standard deviations.
+func TestRelayPoolJudging(t *testing.T) {
+	killed := time.Date(2026, 11, 14, 5, 43, 23, 700_000_000, time.UTC)
+	cut := streamgen.Failure{At: killed.Add(-180 * time.Millisecond), Took: "290ms"}
+	if d := failedAt(cut).Sub(killed); d != 110*time.Millisecond {
+		t.Errorf("a stream started 180 ms before the kill and cut 290 ms in failed %s after it, want 110ms", d)
+	}
+	before := streamgen.Failure{At: killed.Add(-time.Second), Took: "200ms"}
+	if !failedAt(before).Before(killed) {
+		t.Error("a request that ended 800 ms before the kill counted after it")
+	}
+	if odd := (streamgen.Failure{At: killed, Took: "?"}); !failedAt(odd).Equal(killed) {
+		t.Error("an unreadable Took moved the failure")
+	}
+	for _, c := range []struct {
+		n, relays int
+		want, tol float64
+	}{{1000, 3, 333.3, 59.6}, {1000, 2, 500, 63.2}, {1000, 1, 1000, 0}} {
+		want, tol := shareBound(c.n, c.relays)
+		if math.Abs(want-c.want) > 0.1 || math.Abs(tol-c.tol) > 0.1 {
+			t.Errorf("shareBound(%d, %d) = %.1f ±%.1f, want %.1f ±%.1f", c.n, c.relays, want, tol, c.want, c.tol)
+		}
+	}
 }

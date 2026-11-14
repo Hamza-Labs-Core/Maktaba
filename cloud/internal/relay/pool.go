@@ -213,7 +213,7 @@ func (p *Pool) Start(ctx context.Context, self PoolRelay) error {
 	return nil
 }
 
-// PGPoolStore is the relays table in the cloud database (migration 00500015).
+// PGPoolStore is the relays table in the cloud database (migration 00500018).
 type PGPoolStore struct{ DB *sql.DB }
 
 // Relays reads every member, its heartbeat's age by the database's clock.
