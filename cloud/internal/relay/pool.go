@@ -111,11 +111,12 @@ type Pool struct {
 	readAt  time.Time
 	read    bool
 	since   map[string]time.Time // when each healthy relay was first seen healthy, unbroken
+	known   map[string]bool      // every relay this node has seen healthy
 }
 
 // NewPool is a view of the pool in store, for member self.
 func NewPool(store PoolStore, self string) *Pool {
-	return &Pool{Store: store, Self: self, now: time.Now, since: map[string]time.Time{}}
+	return &Pool{Store: store, Self: self, now: time.Now, since: map[string]time.Time{}, known: map[string]bool{}}
 }
 
 func (p *Pool) clock() time.Time {
@@ -152,7 +153,12 @@ func (p *Pool) Healthy(ctx context.Context) []PoolRelay {
 		out = append(out, r)
 		seen[r.ID] = true
 		if _, ok := p.since[r.ID]; !ok {
-			p.since[r.ID] = now
+			if p.known[r.ID] {
+				p.since[r.ID] = now // back after this node saw it go: it waits to settle
+			} else {
+				p.since[r.ID] = time.Time{} // new to this node: settled
+			}
+			p.known[r.ID] = true
 		}
 	}
 	for id := range p.since {
@@ -175,7 +181,8 @@ func (p *Pool) Assign(ctx context.Context, serverID string) (Assignment, bool) {
 }
 
 // Settled reports whether relay id has been seen healthy, unbroken, for PoolSettleBefore: a
-// relay just back from a blip does not pull its homes back until it has stayed up.
+// relay back from a blip (this node saw it go) does not pull its homes back until it has stayed
+// up. A relay new to this node is settled at once.
 func (p *Pool) Settled(id string) bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
