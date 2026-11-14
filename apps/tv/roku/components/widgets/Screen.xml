@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- What every screen of the channel answers to (Epic 58 story 58.12): params in, a request to
+     the scene out (navigate), and takeFocus when it is shown again. -->
+<component name="Screen" extends="Group">
+  <interface>
+    <field id="params" type="assocarray" />
+    <field id="navigate" type="assocarray" alwaysNotify="true" />
+    <field id="takeFocus" type="boolean" alwaysNotify="true" />
+  </interface>
+</component>

@@ -6,7 +6,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,8 +15,10 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbin"
 	"golang.org/x/sys/windows"
+
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbin"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/testport"
 )
 
 // adminNow is postgres.exe's own test (pgwin32_is_admin): an enabled
@@ -212,12 +213,7 @@ func TestRealPostgresOnWindows(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	port := ln.Addr().(*net.TCPAddr).Port
-	_ = ln.Close()
+	port := testport.Free(t)
 	dir := t.TempDir()
 	b := Bundle{Home: home, Data: filepath.Join(dir, "pg"), Keys: filepath.Join(dir, "keys"),
 		Backups: filepath.Join(dir, "backups"), Port: port}

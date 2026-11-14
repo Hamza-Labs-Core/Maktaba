@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
@@ -191,7 +192,7 @@ func runRelay(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Mig
 			h(w, req)
 		}
 	}
-	r.Get("/metrics", relayControl(metricspkg.PrometheusHandler(collector, relaypkg.WriteMetrics, relayh.WriteMetrics, relayh.WriteCacheMetrics, bus.WriteMetrics, meter.WriteMetrics, obs.WriteMetrics)))
+	r.Get("/metrics", relayControl(relayMetrics(collector, relaypkg.WriteMetrics, relayh.WriteMetrics, relayh.WriteCacheMetrics, bus.WriteMetrics, meter.WriteMetrics, obs.WriteMetrics)))
 	r.Get("/privacy", relayControl(privacy.PolicyHandler))
 	// Story 25.23: the edge's on-demand TLS asks here before it requests a
 	// certificate (Caddy `on_demand_tls { ask … }`): 200 only for the bare
@@ -321,4 +322,11 @@ func relayPlans(cfg config.Config, db *sql.DB, relayID string) *relayh.Plans {
 		StreamLimit: cfg.Relay.StreamLimitEnabled,
 		Streams:     &billingpkg.Streams{DB: db, Relay: relayID},
 	}
+}
+
+// relayMetrics serves the relay's /metrics: the collector's series, then extra's, then the Go
+// live heap (metricspkg.WriteGoHeap), which the cloud rehearsal's load-small reads for the
+// relay's memory per tunnel (story 50.14): steadier than the container's peak RSS.
+func relayMetrics(c *metricspkg.Collector, extra ...func(io.Writer) error) http.HandlerFunc {
+	return metricspkg.PrometheusHandler(c, append(extra, metricspkg.WriteGoHeap)...)
 }

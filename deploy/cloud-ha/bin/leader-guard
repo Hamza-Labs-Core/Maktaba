@@ -6,8 +6,13 @@
 # stops the processes after FAILS answers in a row that are not 200. It never starts them
 # (the callback does).
 #
+# With CLOUD_PROCESSES=off (a database node, or the Phase 1 pair once its cloud stops following
+# the leader, story 50.18) it stops nothing; cloud-ha.env is read again every round, so the
+# move's step takes effect without a restart.
+#
 # Env: PATRONI_URL (http://<this node>:8008), INTERVAL (2), FAILS (3), MAKTABA_ACTIVE_CMD
-# (as on-role-change's), ACTIVE_FILE (the rehearsal: the file whose "start" means running).
+# (as on-role-change's), ACTIVE_FILE (the rehearsal: the file whose "start" means running),
+# CLOUD_PROCESSES (leader: the default).
 set -uo pipefail
 env_file="${CLOUD_HA_ENV:-/etc/maktaba/cloud-ha.env}"
 # shellcheck disable=SC1090
@@ -29,6 +34,14 @@ stop() {
 
 fails=0
 while :; do
+    # shellcheck disable=SC1090
+    [ -r "${env_file}" ] && . "${env_file}"
+    if [ "${CLOUD_PROCESSES:-leader}" != leader ]; then
+        fails=0
+        [ "${ONCE:-}" = 1 ] && exit 0
+        sleep "${interval}"
+        continue
+    fi
     code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 2 "${url}" || echo 000)"
     if [ "${code}" = 200 ]; then
         fails=0

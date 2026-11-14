@@ -187,13 +187,19 @@ func (r *Reconciler) sampleRSS(views []procView) {
 	}
 	got := r.RSS(pids)
 	sum := map[string]int64{}
+	parts := map[string]map[string]int64{}
 	for _, p := range views {
 		if b, ok := got[p.PID]; ok && p.Running && p.PID > 0 {
 			sum[p.Component] += int64(b >> 20)
+			if parts[p.Component] == nil {
+				parts[p.Component] = map[string]int64{}
+			}
+			parts[p.Component][string(p.Role)+"/"+p.Instance] += int64(b >> 20)
 		}
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	r.rssParts = moveParts(r.rssParts, parts)
 	if r.rss == nil {
 		r.rss = map[string]int64{}
 	}
@@ -207,6 +213,39 @@ func (r *Reconciler) sampleRSS(views []procView) {
 			r.rss[id] = mb
 		}
 	}
+}
+
+// moveParts is each component's memory by process ("<role>/<instance>", MB) as last
+// written: a process's number moves only by rssMoved, as the component's does, so an idle
+// machine rewrites no row; a process that is gone has no entry.
+func moveParts(prev, now map[string]map[string]int64) map[string]map[string]int64 {
+	out := map[string]map[string]int64{}
+	for id, procs := range now {
+		out[id] = map[string]int64{}
+		for name, mb := range procs {
+			if was, ok := prev[id][name]; ok && !rssMoved(was, mb) {
+				mb = was
+			}
+			out[id][name] = mb
+		}
+	}
+	return out
+}
+
+// rssPartsOf is component id's memory by process as last sampled, for a component with
+// more than one process running (one process: rss_mb already is its number).
+func (r *Reconciler) rssPartsOf(id string) (map[string]any, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	procs := r.rssParts[id]
+	if len(procs) < 2 {
+		return nil, false
+	}
+	out := make(map[string]any, len(procs))
+	for name, mb := range procs {
+		out[name] = mb
+	}
+	return out, true
 }
 
 // rssMoved: from prev to mb is a change worth a write (rssStep MB, or a tenth).

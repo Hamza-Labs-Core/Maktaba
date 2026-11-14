@@ -30,6 +30,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/users"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/components"
 	pluginsh "github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/plugins"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/queues"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/plugins"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/plugins/catalog"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/plugins/storelink"
@@ -94,6 +95,10 @@ func MountP54(r chi.Router, d P54Deps) *plugins.Server {
 			}
 		}
 		l := &plugins.Lifecycle{DB: d.DB, Components: d.Components, Sup: sup, Version: d.Version, Logger: logger}
+		// a plugin's problems count is the failures list's own rule (story 54.44)
+		l.Problems = func(ctx context.Context, stages []string) (map[string]int, error) {
+			return queues.OpenCounts(ctx, d.DB, stages)
+		}
 		if d.DataDir != "" {
 			l.ArtifactsDir = filepath.Join(d.DataDir, "plugins", "artifacts")
 		}

@@ -12,6 +12,7 @@ import (
 	"sort"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/ffmpeg"
@@ -469,6 +470,9 @@ func (s *Supervisor) loop(ctx context.Context, c *child) {
 		if c.proc.BeforeStart != nil {
 			c.proc.BeforeStart()
 		}
+		if c.proc.Settle != nil {
+			c.proc.Settle(ctx)
+		}
 		var held heldStreaming
 		if c.proc.Role == RoleTVSlot {
 			held = s.heldFor(ctx, c) // once: a database query, outside the lock
@@ -898,12 +902,17 @@ func (s *Supervisor) setState(c *child, st State) {
 
 // probe polls the child's liveness URL until ctx ends. After the
 // startup grace (or once a probe has succeeded) probe_failures failures
-// in a row kill the child; loop then restarts it with reason "hang".
+// in a row (lasting the child's HangAfter, when it has one) stop the child;
+// loop then restarts it with reason "hang". A child already asked to stop
+// (a restart, its component off) is no longer probed: a database that stops
+// answering during its shutdown is not hung, and whoever asked ends it. A
+// check that failed on this side (localProbeError) is not the child's failure.
 func (s *Supervisor) probe(ctx context.Context, c *child, cmd *exec.Cmd, startedAt time.Time) {
 	t := time.NewTicker(s.policy.ProbeInterval)
 	defer t.Stop()
 	seenOK := false
 	failures := 0
+	var failingSince time.Time
 	for {
 		select {
 		case <-ctx.Done():
@@ -917,7 +926,7 @@ func (s *Supervisor) probe(ctx context.Context, c *child, cmd *exec.Cmd, started
 		now := s.now()
 		kill := false
 		s.mu.Lock()
-		if c.cmd != cmd {
+		if c.cmd != cmd || c.killReason != "" {
 			s.mu.Unlock()
 			return
 		}
@@ -929,7 +938,11 @@ func (s *Supervisor) probe(ctx context.Context, c *child, cmd *exec.Cmd, started
 			// up, not ready yet (a database recovering): no failure, not running
 			failures = 0
 			c.status.State = StateStarting
-		} else if seenOK || now.Sub(startedAt) >= s.policy.StartupGrace {
+		} else if !localProbeError(err) && (seenOK || now.Sub(startedAt) >= s.startupGrace(c.proc)) {
+			// (a check that never left this machine's side says nothing of the child: not counted)
+			if failures == 0 {
+				failingSince = now
+			}
 			failures++
 			if c.status.State == StateRunning {
 				c.status.State = StateUnhealthy
@@ -940,7 +953,7 @@ func (s *Supervisor) probe(ctx context.Context, c *child, cmd *exec.Cmd, started
 			pi.Error = err.Error()
 		}
 		c.status.LastProbe = &pi
-		if failures >= s.policy.ProbeFailures {
+		if failures >= s.policy.ProbeFailures && now.Sub(failingSince) >= c.proc.HangAfter {
 			c.killReason = ReasonHang
 			kill = true
 		}
@@ -975,6 +988,20 @@ func (s *Supervisor) probe(ctx context.Context, c *child, cmd *exec.Cmd, started
 // HangGrace is how long a child that failed its liveness probes has to stop once asked,
 // before it is killed (a var: the tests shorten it).
 var HangGrace = 60 * time.Second
+
+// startupGrace is how long after its start p's failed checks are not counted: the
+// policy's, or its own StartupGrace when longer.
+func (s *Supervisor) startupGrace(p Process) time.Duration {
+	if p.StartupGrace > s.policy.StartupGrace {
+		return p.StartupGrace
+	}
+	return s.policy.StartupGrace
+}
+
+// localProbeError: the check failed before it reached the child, for want of a local
+// port to connect from (EADDRNOTAVAIL: this machine's ephemeral ports ran out). Children
+// that ran well were stopped as hung on three of these in a row.
+func localProbeError(err error) bool { return errors.Is(err, syscall.EADDRNOTAVAIL) }
 
 // checkChild runs a child's liveness check: its Check, else a GET of its Probe.
 func (s *Supervisor) checkChild(ctx context.Context, p Process) error {

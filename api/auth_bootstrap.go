@@ -12,6 +12,8 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/keys"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/middleware"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/castgrant"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httpsec"
 	mw "github.com/Hamza-Labs-Core/Maktaba/api/internal/middleware"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/secret"
@@ -68,6 +70,9 @@ func initAuth(logger *slog.Logger) (*authState, error) {
 	// --- CORS (Story 10.15 AC-4) ---
 	st.cors = httpsec.DefaultCORS()
 	st.cors.AllowedOrigins = httpsec.ParseAllowedOrigins(os.Getenv("MAKTABA_CORS_ALLOWED_ORIGINS"))
+	// Epic 58 story 58.07: Maktaba's Cast receiver calls the home with a cast grant (a
+	// bearer, never a cookie)
+	st.cors.BearerOrigins = []string{castgrant.ReceiverOrigin}
 
 	// --- Security headers (Story 10.15 AC-2, AC-5 / Story 23.3 AC-2) ---
 	// HSTS is secure-by-default (DefaultHeaders pre-populates it). An
@@ -153,6 +158,13 @@ func (a *authState) applySecurity(
 		stack = csrf(stack)
 	}
 	stack = middleware.RequireAuthExcept(middleware.DefaultPublicAllowlist())(stack)
+	// Epic 58 story 58.09: a packaged TV app's origin is answered only once its bearer is
+	// verified here, after every credential middleware (httpsec.MarkVerified); a cookie
+	// session never counts (the packaged origin is never sent credentials)
+	stack = httpsec.MarkVerified(func(r *http.Request) bool {
+		p := principal.FromContext(r.Context())
+		return p != nil && p.Source != principal.SourceCookie
+	})(stack)
 	if cookieAuth != nil {
 		stack = cookieAuth(stack)
 	}

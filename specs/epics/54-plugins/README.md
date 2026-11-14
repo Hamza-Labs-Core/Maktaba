@@ -452,9 +452,16 @@ plugin (Epic 51's lifecycle per machine, story 54.42). A home without plugins ru
 
 ### 4.10 UI
 
-- **Web, admin only:** Settings → **Plugins**, with *Installed* (status, grants, libraries,
-  settings, logs, update, roll back, disable, remove, "what it wrote") and *Browse* (the store
-  catalog for this server version, story 54.18), plus *Install from a file*.
+- **Web, admin only:** Settings → **Plugins**: one list of every plugin on the home, the
+  ones Maktaba publishes and the ones installed from the store or a file, each marked with
+  its publisher and where it came from, with a filter (all, by Maktaba, by others, from a
+  file). Each card has the plugin's own switch, its state in words, its jobs, its problems
+  (a link to its failed jobs) and what it uses; each plugin has a page at its own address
+  (`/settings/plugins/<id>`) with status per machine, grants or capabilities, settings, logs,
+  resources, the flow chart, versions, "what it wrote" and the switches (story 54.44). What
+  must always run is part of Maktaba itself and is not listed as a plugin. *Browse* (the
+  store catalog for this server version, story 54.18) and *Install from a file* are on the
+  same page, with the steps and what unreviewed means.
 - **The flow chart** (story 54.41): the install and approve screen draws the plugin's flow,
   the whole set with this plugin highlighted and missing members named, before the admin
   enables it; the Plugins page draws the whole home's plugin graph with the open plugin
@@ -877,6 +884,8 @@ down. The reasons, in short (story 54.15 has them in full):
   (drained, kept).
 - **Developer mode** (`maktaba-server plugins dev <folder>`) loads an unpacked plugin with
   reload on change, only when unreviewed plugins are allowed, and marks it **Development**.
+- **A Maktaba plugin's file** (story 54.49, not built): published beside each Maktaba release,
+  it installs offline as a store-signed file does, and is never unreviewed.
 
 ### 6.5 Free and paid plugins (Phase 3)
 
@@ -937,6 +946,15 @@ records and refunds owned by the store.
   24 hours; others within 2 business days.
 - Moderation is done by store accounts with the store-side `store_reviewer` role (not home
   admins and not cloud accounts), every action audited.
+
+### 6.7 Maktaba as a publisher (2026-11-14)
+
+Maktaba's own plugins are store plugins whose publisher is Maktaba, marked verified. The
+store lists them like any other plugin; only Maktaba's account may submit an id under
+`tv.maktaba.` (story 54.45). Core is not in the store. Every server release comes in two
+variants, **Full** (the `full` bundle: Maktaba's plugins preinstalled, no store visit needed)
+and **Core** (the `core` bundle: the admin adds plugins from the store or from files), stories
+54.50 and 54.51.
 
 ## 7. Requirements
 
@@ -1041,6 +1059,12 @@ records and refunds owned by the store.
   the native runner, the statement registry, the graph from manifests with the per-stage
   switch, the parity proof, the repo layout, then nine waves that move every stage (§15.9).
   It starts after Phase 1 and runs alongside Phases 2 and 3; wave 4 needs 54.21.
+
+- **Phase 5: Maktaba's plugins as store plugins** (54.44–54.52). One Plugins page that shows
+  and switches every plugin the same way (54.44, built); then, specified and not built:
+  Maktaba's plugins as signed store packages with their own install, removal and updates
+  (54.45–54.49), every server release in two variants, Full and Core (54.50, 54.51), and CPU
+  measured per process (54.52).
 
 Each phase ships on its own. Phase 1 is dark until an admin installs a plugin. Each Phase 4
 wave is one release with its stages flipped at update and a per-stage switch back.
@@ -1163,6 +1187,15 @@ wave is one release with its stages flipped at update and a per-stage switch bac
 | 54.41 | [The flow chart](story-54-41-flow-chart.md) | 1 | 54.13, 54.39 |
 | 54.42 | [Third-party plugins on joined machines](story-54-42-joined-machines.md) | 1 | 54.07, 54.09, 54.37, 54.38, 54.40, Epic 35, Epic 53 |
 | 54.43 | [Counting the in-process fallbacks](story-54-43-fallback-counts.md) | 4 | 54.25 |
+| 54.44 | [One Plugins page for every plugin](story-54-44-one-plugins-page.md) | 5 | 54.13, 54.22, 54.27, 54.37, 54.41, Epic 51 (51.08, 51.10, 51.14), Epic 53 |
+| 54.45 | [Maktaba's plugins as store packages](story-54-45-maktaba-store-packages.md) | 5 | 54.14, 54.15, 54.16, 54.22, 54.27, 54.44 |
+| 54.46 | [Install and remove a Maktaba plugin](story-54-46-maktaba-plugin-lifecycle.md) | 5 | 54.44, 54.45, 54.38, Epic 51 (51.15, 51.16) |
+| 54.47 | [Updates of Maktaba plugins through the store](story-54-47-maktaba-plugin-updates.md) | 5 | 54.45, 54.46, 54.17 |
+| 54.48 | [What is preinstalled, licence gates, and moving existing homes](story-54-48-preinstalled-and-migration.md) | 5 | 54.46, 54.47, Epic 51 (51.17, 51.19) |
+| 54.49 | [Maktaba plugins on homes with no internet](story-54-49-offline-homes.md) | 5 | 54.45, 54.46, 54.10, Epic 51 (51.16) |
+| 54.50 | [Two variants of every server release: Full and Core](story-54-50-release-variants.md) | 5 | 54.45, 54.46, 54.48, Epic 51 (51.15, 51.17) |
+| 54.51 | [Updates within a variant, moving between variants, and what CI pays](story-54-51-variant-updates.md) | 5 | 54.50, 54.47, Epic 24, Epic 51 (51.17) |
+| 54.52 | [CPU of each process](story-54-52-process-cpu.md) | 5 | 54.44, Epic 51 (51.14) |
 
 54.37 and 54.38 cover what Epic 51 does not provide: its catalog is fixed per release with no
 run-time entries, and its packs code installs only first-party `asset` packs verified against
@@ -1349,6 +1382,27 @@ Items 1–9 are decided. Open: the email provider (item 10) and the isolated che
 16. **The graph is the configuration**: a signed `flow.toml` per set of plugins, matched
     exactly by each manifest, checked by one algorithm in two places, drawn as a chart on the
     install screen, the Plugins page, the store listing and maktaba.dev (H25).
+
+### Decisions of 2026-11-14: Maktaba's plugins are store plugins, core is not a plugin
+
+17. **No "built into Maktaba" class of plugin.** A plugin made by Maktaba is a store plugin
+    whose publisher is Maktaba (verified): the same card, page and switches as any other
+    plugin. This reverses the parts of §15.6 and §15.7 that kept first-party plugins out of
+    the store and gave them no switch of their own.
+18. **Core is not a plugin.** What must always run for Maktaba to work is core, whatever
+    implements it: it has no plugin card, no plugin switch and no place in the store.
+19. **Each Maktaba plugin has its own switch and state on the Plugins page.** Built in story
+    54.44 on the existing component row (one source of truth); the page says in words what a
+    plugin that still ships with the release cannot do yet.
+20. **Store delivery is specified, not built** (54.45 to 54.49): packages, signing, install
+    and removal, updates, what is preinstalled, licence gates, offline homes, joined machines
+    and the move of existing homes. Release, packaging and update code is unchanged until a
+    story is built with the update rehearsal covering its commit.
+21. **Every server release has two variants, Full and Core** (54.50, 54.51). The small
+    variant is exactly the existing `core` bundle: one definition, kept in the catalog, the
+    same concept as setup's bundle choice. Where today's `core` bundle contains plugins
+    (Thumbnails, Convert to MP4, Duplicates), story 54.50 §2 lists each as an open question
+    and decides none. One name is proposed for it everywhere: Core.
 
 ## 15. Maktaba's own stages as first-party plugins
 
@@ -1591,6 +1645,9 @@ the migration keep working.
 **Settings.** A first-party plugin's settings are the `rules.*` sections it lists; the web's
 existing rules forms keep drawing them, and nothing is copied (§15.10).
 
+> **2026-11-14:** a plugin Maktaba publishes keeps this one manifest. Stories 54.45 and 54.47
+> give each its own package, version and `maktaba` range in place of the lock-step version.
+
 ### 15.6 Versions, release and signing
 
 - **Bundled and lock-step (H18).** Each first-party plugin's version is the server version,
@@ -1603,6 +1660,9 @@ existing rules forms keep drawing them, and nothing is copied (§15.10).
   with the database schema, which moves with the server; a first-party fix ships as a server
   release (every release is tagged and rehearsed). The store never lists, countersigns or
   serves a `tv.maktaba.*` package.
+  **Changed on 2026-11-14 (§14, item 17):** Maktaba's plugins become store plugins published
+  by Maktaba, each with its own version, package and updates (stories 54.45 to 54.49). Until
+  those are built, this paragraph and the two beside it describe what ships.
 - **Signing.** `files.json` of each first-party package is listed in the release's signed
   `checksums.txt`, so the release's Sigstore identity (Epic 51 H6) covers it; that, not the
   store key, is what makes `[trusted]` count. They ride in the payload, so they are not packs
@@ -1620,6 +1680,15 @@ existing rules forms keep drawing them, and nothing is copied (§15.10).
   (`PUT /api/components/{id}/machines/{node}`, 51.12) carry over with no change.
   `core.pipeline` (not switchable) gains `plugin = "tv.maktaba.core-media"` and keeps
   `component_catchup`. The `plugin` kind (54.37) is for third-party plugins only (H21, H23).
+- **The component is the plugin's own switch (2026-11-14, story 54.44).** The model above
+  stays: one plugin, one component, one desired row. What changed is how it is shown: the
+  Plugins page lists each first-party plugin whose component is switchable as a plugin
+  published by Maktaba, and its switch there writes that component's row through the
+  components service, so the two pages show one switch. A first-party plugin whose component
+  is not switchable (`tv.maktaba.core-media` for `core.pipeline`) is **core, not a plugin**:
+  it is an implementation detail the page does not present as one. Install, removal and
+  separate updates of Maktaba's plugins build on the same row (`want: absent | installed |
+  enabled`, story 54.46), not on a second one.
 - Whether a stage runs in-process or in a runner is `job_stages.impl` (§15.9), not a
   component state: the pipeline runner (51.06) gates a component's stages the same way either
   way, and the Components page shows the same switch.

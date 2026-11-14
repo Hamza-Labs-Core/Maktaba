@@ -269,6 +269,10 @@ class ApiClient(
      * the stream (a player's quality choice, FR-35); none is the home's own ceiling.
      * [audioTrack] picks the file's audio track (from 0) and [format] asks for a container
      * ("hls"): a player that plays one audio track only asks for another this way.
+     * [deviceCaps] is what this device reports it plays (story 58.02's `device_caps`,
+     * `DeviceCaps.toJson`). A home from before 58.02 reads the body strictly and refuses a key it
+     * does not know: the session is then asked for again without it, and this client stops
+     * sending it to that home.
      */
     suspend fun openStream(
         video: String,
@@ -277,19 +281,37 @@ class ApiClient(
         maxBitrateKbps: Int? = null,
         audioTrack: Int? = null,
         format: String? = null,
+        deviceCaps: JsonObject? = null,
     ): StreamSession {
-        val body = buildJsonObject {
+        fun body(caps: JsonObject?) = buildJsonObject {
             put("video_id", video)
             if (startSec > 0) put("start_sec", startSec)
             if (profile != null) put("client_profile", profile)
             if (maxBitrateKbps != null && maxBitrateKbps > 0) put("max_bitrate_kbps", maxBitrateKbps)
             if (audioTrack != null && audioTrack >= 0) put("audio_track", audioTrack)
             if (format != null) put("format", format)
+            if (caps != null) put("device_caps", caps)
         }
-        val r = request("POST", "/api/stream/sessions", body = body)
+        val caps = deviceCaps?.takeIf { homeTakesDeviceCaps }
+        var r = request("POST", "/api/stream/sessions", body = body(caps))
+        val answer = try {
+            send(r)
+        } catch (e: ApiException.Status) {
+            if (caps == null || !refusedDeviceCaps(e)) throw e
+            homeTakesDeviceCaps = false
+            r = request("POST", "/api/stream/sessions", body = body(null))
+            send(r)
+        }
         // the playlist carries the open call's id (Epic 53 story 53.08)
-        return decode<StreamSession>(send(r)).copy(requestId = r.header(RequestId.HEADER))
+        return decode<StreamSession>(answer).copy(requestId = r.header(RequestId.HEADER))
     }
+
+    /** False once this home refused `device_caps` (a home from before story 58.02). */
+    @Volatile private var homeTakesDeviceCaps = true
+
+    /** A home's strict body reader refusing `device_caps`: 400, `json: unknown field "device_caps"`. */
+    private fun refusedDeviceCaps(e: ApiException.Status): Boolean =
+        e.code == 400 && "unknown field \"device_caps\"" in (e.problem?.detail ?: e.body)
 
     suspend fun closeStream(session: String) {
         runCatching { send(request("DELETE", "/api/stream/sessions/$session")) }

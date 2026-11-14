@@ -122,7 +122,7 @@ class Reaper:
                             "SELECT pg_advisory_unlock($1) AS released", REAPER_ADVISORY_LOCK_KEY
                         )
                 return
-            async with pool.acquire() as conn:
+            async with self.db.connection() as conn:  # bounded (runtime.Database)
                 got = bool(
                     await conn.fetchval("SELECT pg_try_advisory_lock($1)", REAPER_ADVISORY_LOCK_KEY)
                 )
@@ -189,6 +189,11 @@ class Reaper:
                 return  # _stop set
             except (TimeoutError, asyncio.TimeoutError):  # noqa: UP041
                 continue
+
+    @property
+    def task(self) -> asyncio.Task[None] | None:
+        """The running sweep loop (the worker's watchdog guards it)."""
+        return self._task
 
     def start(self) -> None:
         if self._task is not None:

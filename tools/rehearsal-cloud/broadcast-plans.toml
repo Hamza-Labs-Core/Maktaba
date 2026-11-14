@@ -12,6 +12,8 @@ user_hosts = ["api.test"]
 [broadcast]
 enabled = true
 edge_public_key = "PvCJWQMwKMj8b8bUkaElSOeN9q77LXwsGQw/eM7z9Qs="
+# the ingest-token key broadcasting on needs (50.21): a rehearsal-only seed, compose-broadcast.yml
+key_path = "/etc/maktaba/broadcast-ingest.seed"
 
 [broadcast.plans]
 enforce = true

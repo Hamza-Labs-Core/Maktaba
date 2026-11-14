@@ -25,6 +25,7 @@ var notCalled = map[string]string{
 	"www.apple.com":                       "a plist DTD (the launchd job)",
 	"customer-":                           "a Cloudflare Stream customer subdomain built from the account (api.cloudflare.com listed)",
 	"status.maktaba.tv":                   "the cloud's status page in the web app's CSP: the browser reads it, never a server (Epic 50 story 50.11)",
+	"cast.maktaba.tv":                     "the Cast receiver's origin the home's CORS answers: the TV calls the home, never the reverse (Epic 58 story 58.07)",
 }
 
 var (

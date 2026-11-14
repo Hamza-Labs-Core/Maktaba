@@ -1,0 +1,6 @@
+# The Roku build tools (story 58.15): checked by the Roku CI job (.github/workflows/_roku.yml).
+line-length = 120
+target-version = "py312"
+
+[lint]
+select = ["E", "F", "I", "B", "UP", "SIM"]

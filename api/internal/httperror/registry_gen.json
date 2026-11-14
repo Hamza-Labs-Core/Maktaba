@@ -408,6 +408,75 @@
       "install": null
     },
     {
+      "slug": "cast-needs-person",
+      "status": 403,
+      "area": "playback",
+      "audience": "app",
+      "codes": [
+        "cast_needs_person"
+      ],
+      "title": {
+        "en": "A cast needs a person's sign-in",
+        "ar": "يحتاج البث إلى تسجيل دخول شخص"
+      },
+      "means": {
+        "en": "A cast grant is minted for a person's own sign-in. The admin token belongs to no one, so it cannot cast.",
+        "ar": "يُصدَر تصريح البث لتسجيل دخول شخص بعينه. ورمز المسؤول لا يخصّ أحدًا، فلا يمكنه البث."
+      },
+      "do": {
+        "en": "Sign in as the person who is watching, then cast again.",
+        "ar": "سجّلوا الدخول باسم الشخص الذي يشاهد، ثم ابدؤوا البث من جديد."
+      },
+      "help": "videos#cast",
+      "install": null
+    },
+    {
+      "slug": "cast-scope",
+      "status": 403,
+      "area": "playback",
+      "audience": "app",
+      "codes": [
+        "cast_scope"
+      ],
+      "title": {
+        "en": "The cast grant doesn't cover this",
+        "ar": "تصريح البث لا يشمل هذا"
+      },
+      "means": {
+        "en": "A cast grant lets a TV play only the video or the queue it was made for. This request asked for something else, or a grant tried to make another grant.",
+        "ar": "يسمح تصريح البث للتلفاز بتشغيل المقطع أو القائمة التي صُنع لها فقط. وقد طلب هذا الطلب شيئًا آخر، أو حاول تصريحٌ أن يصنع تصريحًا آخر."
+      },
+      "do": {
+        "en": "Cast the video again from the phone or the browser: a new cast makes a new grant.",
+        "ar": "ابدؤوا بث المقطع من جديد من الهاتف أو المتصفح: فكل بث جديد يصنع تصريحًا جديدًا."
+      },
+      "help": "videos#cast",
+      "install": null
+    },
+    {
+      "slug": "cast-via-cloud",
+      "status": 403,
+      "area": "playback",
+      "audience": "person",
+      "codes": [
+        "cast_via_cloud"
+      ],
+      "title": {
+        "en": "Casting needs a sign-in on the home",
+        "ar": "يحتاج البث إلى تسجيل الدخول على المنزل"
+      },
+      "means": {
+        "en": "A sign-in through Maktaba Cloud cannot start a cast: the TV's pass would outlive the cloud link.",
+        "ar": "لا يمكن لتسجيل دخول عبر Maktaba Cloud أن يبدأ بثًّا: فتصريح التلفاز سيبقى بعد انتهاء رابط السحابة."
+      },
+      "do": {
+        "en": "Open the home at its own secure address (https), sign in there, then cast.",
+        "ar": "افتحوا المنزل بعنوانه الآمن الخاص (https)، وسجّلوا الدخول هناك، ثم ابدؤوا البث."
+      },
+      "help": "videos#cast",
+      "install": null
+    },
+    {
       "slug": "catalog-unavailable",
       "status": 503,
       "area": "store",
@@ -514,6 +583,29 @@
       "do": {
         "en": "Update the app from your TV's or phone's app store, then open it again. Roku and Fire TV update apps by themselves; restarting the device fetches the update sooner.",
         "ar": "حدّثوا التطبيق من متجر التطبيقات على التلفاز أو الهاتف، ثم افتحوه مجددًا. يحدّث Roku وFire TV التطبيقات تلقائيًا، وإعادة تشغيل الجهاز تجلب التحديث أسرع."
+      },
+      "help": null,
+      "install": null
+    },
+    {
+      "slug": "cloud-not-linked",
+      "status": 409,
+      "area": "accounts",
+      "audience": "person",
+      "codes": [
+        "cloud_not_linked"
+      ],
+      "title": {
+        "en": "This home isn't connected to Maktaba Cloud",
+        "ar": "هذا المنزل غير متصل بسحابة مكتبة"
+      },
+      "means": {
+        "en": "The code on the TV came from Maktaba Cloud, and only a home with remote access turned on can approve it.",
+        "ar": "الرمز الظاهر على التلفاز صادر عن سحابة مكتبة، ولا يوافق عليه إلا منزل فُعِّل فيه الوصول عن بُعد."
+      },
+      "do": {
+        "en": "Ask your home's admin to turn on remote access, or have the TV show the home's own code instead and approve that.",
+        "ar": "اطلبوا من مسؤول المنزل تفعيل الوصول عن بُعد، أو اجعلوا التلفاز يعرض رمز المنزل نفسه ووافقوا عليه."
       },
       "help": null,
       "install": null
@@ -5031,6 +5123,29 @@
       "do": {
         "en": "Install a reviewed version from the plugin store instead. Or turn on Allow unreviewed plugins in Settings, Plugins, which asks for your password, and install again.",
         "ar": "ثبّتوا بدلًا منه إصدارًا مراجَعًا من متجر الإضافات. أو فعّلوا «السماح بالإضافات غير المراجَعة» من الإعدادات ثم الإضافات، وسيُطلب منكم إدخال كلمة مروركم، ثم ثبّتوا الملف مجددًا."
+      },
+      "help": null,
+      "install": null
+    },
+    {
+      "slug": "plugin-with-release",
+      "status": 409,
+      "area": "plugins",
+      "audience": "admin",
+      "codes": [
+        "plugin_with_release"
+      ],
+      "title": {
+        "en": "This plugin comes with Maktaba",
+        "ar": "هذه الإضافة تأتي مع مكتبة"
+      },
+      "means": {
+        "en": "This plugin is published by Maktaba and came with the Maktaba release your home runs. It is updated when Maktaba is updated, and it cannot be removed, rolled back or given other permissions on its own yet.",
+        "ar": "هذه الإضافة تنشرها مكتبة وجاءت مع إصدار مكتبة الذي يعمل على جهازكم الرئيسي. تُحدَّث عند تحديث مكتبة، ولا يمكن بعدُ إزالتها أو إرجاعها إلى إصدار سابق أو تغيير صلاحياتها وحدها."
+      },
+      "do": {
+        "en": "Turn the plugin off on the Plugins page if you do not want it to run. Update Maktaba to get its newer version.",
+        "ar": "أوقفوا الإضافة من صفحة الإضافات إن لم تريدوا أن تعمل، وحدّثوا مكتبة للحصول على إصدارها الأحدث."
       },
       "help": null,
       "install": null

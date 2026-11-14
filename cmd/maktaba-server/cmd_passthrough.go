@@ -27,6 +27,12 @@ func newAddUserCmd() *cobra.Command {
 	return delegateCmd("adduser", "Seed the first admin user (delegates to maktaba-api)")
 }
 
+// newReviewHomeCmd is `maktaba-server review-home seed|rotate` (Epic 58 story 58.04): the store
+// reviewers' home's accounts, run on that home (docs/stores/review-home.md).
+func newReviewHomeCmd() *cobra.Command {
+	return delegateCmd("review-home", "Seed the store reviewers' home or rotate its passwords (delegates to maktaba-api)")
+}
+
 func newLicenseCmd() *cobra.Command {
 	return delegateCmd("license", "Apply or show the home's license (delegates to maktaba-api)")
 }

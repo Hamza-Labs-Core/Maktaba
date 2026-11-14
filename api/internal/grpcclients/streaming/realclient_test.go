@@ -227,3 +227,29 @@ func TestStreamingClient_HealthCheck_Unconnected(t *testing.T) {
 		t.Fatal("unconfigured client must be unhealthy")
 	}
 }
+
+// Story 58.02: the device's report rides the request as a device_caps object, and
+// a request without one sends none.
+func TestStreamingClient_OpenSession_DeviceCaps(t *testing.T) {
+	var got []map[string]any
+	c := newFakeStreamingClient(t, map[string]func(map[string]any) map[string]any{
+		"OpenSession": func(req map[string]any) map[string]any {
+			got = append(got, req)
+			return map[string]any{"session_id": "s", "mode": "direct", "manifest_path": "/stream/direct/v"}
+		},
+	})
+	caps := []byte(`{"containers":["mkv"],"video":[{"codec":"hevc","max_height":2160}]}`)
+	if _, err := c.OpenSession(context.Background(), OpenSessionRequest{UserID: "u", VideoID: "v", ClientProfile: "firetv", DeviceCaps: caps}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.OpenSession(context.Background(), OpenSessionRequest{UserID: "u", VideoID: "v"}); err != nil {
+		t.Fatal(err)
+	}
+	dc, ok := got[0]["device_caps"].(map[string]any)
+	if !ok || dc["containers"].([]any)[0] != "mkv" {
+		t.Fatalf("device_caps not sent as an object: %#v", got[0]["device_caps"])
+	}
+	if _, present := got[1]["device_caps"]; present {
+		t.Fatalf("a request without a report sent one: %#v", got[1])
+	}
+}

@@ -36,6 +36,22 @@ const MEDIA: Record<string, BigAction> = {
   MediaRewind: "seekBack",
 };
 
+// Epic 58 story 58.08: a Samsung (Tizen) or LG (webOS) remote, by key code. Their
+// keys arrive with a key name the browser may not know ("Unidentified", "XF86Back"),
+// so the code decides: Back (Tizen 10009, webOS 461), the media keys, and the red
+// key as the menu key (the remotes have no menu key; the launcher registers red).
+const TV_CODES: Record<number, BigAction> = {
+  10009: "back",
+  461: "back",
+  10252: "playPause",
+  415: "play",
+  19: "pause",
+  413: "pause",
+  417: "seekForward",
+  412: "seekBack",
+  403: "menu",
+};
+
 const ARROWS: Record<string, BigAction> = {
   ArrowUp: "up",
   ArrowDown: "down",
@@ -48,6 +64,8 @@ export function keyAction(e: KeyLike, ctx: KeyContext = {}): BigAction | null {
   if (e.ctrlKey || e.metaKey || e.altKey) return null;
   const k = e.key;
   if (k in MEDIA) return MEDIA[k]!;
+  if (k === "XF86Back") return "back";
+  if (typeof e.keyCode === "number" && e.keyCode in TV_CODES) return TV_CODES[e.keyCode]!;
   if (k === "BrowserBack" || k === "GoBack" || k === "Escape") return "back";
   if (ctx.typing) {
     // a text field keeps its keys; up / down still leave it, Enter submits there

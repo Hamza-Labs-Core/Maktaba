@@ -23,6 +23,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/castgrant"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/clustertest"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/ws"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/idempotency"
@@ -84,6 +85,8 @@ type pfEnv struct {
 	as func(req *http.Request, p *principal.Principal) *principal.Principal
 	// cache is the restricted accounts' cache the home's mounts share
 	cache *parental.Cache
+	// cast is the router's cast grant gate (Epic 58 story 58.07)
+	cast *castgrant.Gate
 }
 
 // pfStandIns are the refused routes this test's router has no real mount for.
@@ -114,7 +117,7 @@ func setupFilterOn(t testing.TB, more func(r chi.Router, e *pfEnv), open func(ds
 	if open != nil {
 		served = open(dsn)
 	}
-	e := &pfEnv{t: t, db: db, dsn: dsn, gate: parental.NewGate(), signer: &pfSigner{}, hub: ws.NewHub()}
+	e := &pfEnv{t: t, db: db, dsn: dsn, gate: parental.NewGate(), signer: &pfSigner{}, hub: ws.NewHub(), cast: castgrant.NewGate()}
 	e.exec(`INSERT INTO users (id, username, pw_hash, is_admin) VALUES
 		($1,'pf-admin','x',true), ($2,'pf-guardian','x',false), ($3,'pf-other-guardian','x',false),
 		($4,'pf-child','x',false), ($5,'pf-child-two','x',false), ($6,'pf-viewer','x',false)`,
@@ -141,7 +144,7 @@ func setupFilterOn(t testing.TB, more func(r chi.Router, e *pfEnv), open func(ds
 	// starts them off where nothing is set up)
 	e.exec(`UPDATE app_settings SET value = 'true' WHERE key = 'parental.enabled'`)
 
-	r := router.New(router.Deps{IdempotencyStore: idempotency.NewMemoryStore(), Parental: e.gate})
+	r := router.New(router.Deps{IdempotencyStore: idempotency.NewMemoryStore(), Parental: e.gate, CastGate: e.cast})
 	// a streaming service that keeps time limits (story 57.14): without one a
 	// restricted account's stream is refused
 	router.MountP6(r, router.P6Deps{DB: served, StreamingClient: &tmStreaming{leases: map[string]time.Time{}}, URLSigner: e.signer, ParentalGate: e.gate, EventHub: e.hub})

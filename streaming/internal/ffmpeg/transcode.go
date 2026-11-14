@@ -51,6 +51,12 @@ type Job struct {
 	// the device decodes only what it lists at that bit depth.
 	VAAPI        *VAAPIDevice
 	SourcePixFmt string
+	// Segments is an HLS transcode's segment format ("ts", "fmp4"; "": ts).
+	Segments string
+	// Remux, when set, makes the session a remux (story 58.02): the video
+	// copied into HLS or DASH, never encoded; the ladder, the encoder verdict
+	// and StartSec are not used.
+	Remux *RemuxPlan
 
 	// toneMap: the runner's tone-mapping for an HDR source (toneMapFor)
 	toneMap string
@@ -315,6 +321,9 @@ func (o *Orchestrator) Start(ctx context.Context, job Job) (*Handle, error) {
 	// instead of the manifest itself 404'ing for the whole spin-up.
 	if !strings.EqualFold(job.Format, "dash") {
 		master := BuildMasterPlaylistFor(job.Ladder)
+		if job.Remux != nil {
+			master = BuildRemuxMaster(*job.Remux)
+		}
 		tmp := filepath.Join(job.OutputDir, "."+job.MasterName+".part")
 		if err := os.WriteFile(tmp, master, 0o644); err != nil {
 			return nil, err
@@ -396,6 +405,33 @@ type execRunner struct {
 	toneMapMu  sync.Mutex
 	toneKnown  bool
 	canToneMap bool
+	// bsfs replaces listBSFs (the tests); doviKnown and hasDovi: whether this
+	// ffmpeg has the dovi_rpu bitstream filter, known once a look succeeded
+	bsfs      func(ctx context.Context, ffmpeg string) (map[string]bool, error)
+	doviMu    sync.Mutex
+	doviKnown bool
+	hasDovi   bool
+}
+
+// doviRPU: this ffmpeg has the dovi_rpu bitstream filter (7.1 on); asked again
+// until a look at its filters succeeds (until then the older filter_units).
+func (e *execRunner) doviRPU(ctx context.Context) bool {
+	e.doviMu.Lock()
+	defer e.doviMu.Unlock()
+	if !e.doviKnown {
+		list := e.bsfs
+		if list == nil {
+			list = listBSFs
+		}
+		have, err := list(ctx, e.ffmpeg())
+		if err != nil {
+			e.logger().Warn("remux: listing ffmpeg's bitstream filters failed, using filter_units for Dolby Vision",
+				"err", err.Error(), "event", "vod_bsfs_list_failed")
+			return false
+		}
+		e.doviKnown, e.hasDovi = true, have["dovi_rpu"]
+	}
+	return e.hasDovi
 }
 
 // toneMapFor is the tone-mapping an HDR source gets (ToneMapFilters, at most
@@ -584,6 +620,12 @@ func (e *execRunner) Start(ctx context.Context, job Job) (*Handle, error) {
 	// stays within its deadline); request-scoped validation happens
 	// upstream in Orchestrator.Start.
 	h := &Handle{}
+	if job.Remux != nil {
+		if err := e.runRemux(ctx, h, job); err != nil {
+			return nil, err
+		}
+		return h, nil
+	}
 	job.toneMap = e.toneMapFor(ctx, job)
 	if err := e.run(ctx, h, job, job.HWAccel); err != nil {
 		return nil, err
@@ -628,6 +670,7 @@ func (e *execRunner) run(ctx context.Context, h *Handle, job Job, hw string) err
 	plan := PlanFor(hw, hwRungs, rungs, job.SourceCodec, !job.NoAudio)
 	plan.ToneMap = job.toneMap
 	plan.Start = job.StartSec
+	plan.Segments = job.Segments
 	if hw == string(HWAccelVAAPI) && hwRungs > 0 {
 		plan = plan.WithVAAPI(*job.VAAPI, job.SourceCodec, job.SourcePixFmt)
 	}
@@ -689,6 +732,45 @@ func (e *execRunner) run(ctx context.Context, h *Handle, job Job, hw string) err
 			h.mu.Unlock()
 			h.exited(err)
 		}
+	}()
+	return nil
+}
+
+// runRemux spawns a remux session's ffmpeg (the video copied, story 58.02)
+// into h and watches it: no encoder verdict, gate or tone-mapping, and no run
+// again in software (nothing was encoded on a GPU), so a failed remux ends the
+// session (its playlist answers 410, the player opens it again).
+func (e *execRunner) runRemux(ctx context.Context, h *Handle, job Job) error {
+	plan := *job.Remux
+	if plan.DropDV {
+		plan.StripDV = DVStripFilter(e.doviRPU(ctx))
+	}
+	var args Args
+	if strings.EqualFold(job.Format, "dash") {
+		args = DASHRemuxArgs(job.InputPath, job.OutputDir, plan)
+	} else {
+		args = HLSRemuxArgs(job.InputPath, job.OutputDir, plan)
+	}
+	procCtx, procCancel := context.WithCancel(context.Background())
+	proc, err := Spawn(procCtx, e.Bin, args)
+	if err != nil {
+		procCancel()
+		return err
+	}
+	if !h.set(proc, procCancel) {
+		procCancel()
+		_ = proc.Stop(context.Background())
+		h.exited(errStopped)
+		return nil
+	}
+	started := time.Now()
+	poll, stall := e.stallLimits()
+	go e.watchOutput(proc, job, "remux", e.clock(), poll, stall)
+	go func() {
+		werr := proc.Wait()
+		stderr := proc.stderrAfterExit(2 * time.Second)
+		e.logExit(job, "remux", werr, stderr, time.Since(started), h.isStopped())
+		h.exited(werr)
 	}()
 	return nil
 }

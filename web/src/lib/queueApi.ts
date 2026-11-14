@@ -930,10 +930,60 @@ export interface Pulse {
   paused_all: boolean;
   last_activity_at: string | null;
   age_sec: number | null;
-  /** The stalled jobs: admins only (empty for everyone else). */
+  /** The stalled jobs. GET /api/queues/pulse is admin-only (403 otherwise). */
   stuck: StuckJob[];
-  /** How many jobs stalled (shown to everyone). */
+  /** How many jobs stalled. */
   stuck_count?: number;
+  /** Whether the workers run the waiting jobs (missing from an older server). */
+  workers?: WorkersState;
+  /** The machine's load (missing from an older server, or where it cannot be read). */
+  host?: HostLoad;
+}
+/** `not_responding`: jobs wait and a worker that should run them does not. */
+export interface WorkersState {
+  state: "running" | "not_responding";
+  /** The first stalled worker's reason; no_heartbeat when no worker is registered. */
+  reason?: StalledReason;
+  /** When the first of them stopped running jobs (not_responding only). */
+  since: string | null;
+  last_seen_at: string | null;
+  /** The runnable jobs the stalled workers could claim. */
+  waiting: number;
+  /** The workers that do not run their jobs (none named: no worker is registered). */
+  stalled?: StalledWorker[] | null;
+  /** This server can restart its workers (it runs under a supervisor). */
+  can_restart: boolean;
+}
+/** no_heartbeat: the worker does not report in; no_dispatch: it reports in and starts nothing. */
+export type StalledReason = "no_heartbeat" | "no_dispatch";
+export type WorkerKind = "main" | "transcription" | "search";
+export interface StalledWorker {
+  worker_id: string;
+  host: string;
+  /** The joined machine it runs on (null: the home). */
+  node_name: string | null;
+  kind: WorkerKind;
+  /** The catalog component a restart names. */
+  component: string;
+  reason: StalledReason;
+  since: string;
+  last_seen_at: string;
+  waiting: number;
+  stages: string[];
+  /** It runs on the home, whose supervisor the restart asks. */
+  restartable: boolean;
+}
+/** The load of the machine the server runs on (left out where it cannot be read). */
+export interface HostLoad {
+  overloaded: boolean;
+  load1: number;
+  load5: number;
+  load15: number;
+  cores: number;
+  /** The load both averages must pass to count as overloaded. */
+  bound: number;
+  /** The programs using the most CPU, most first (only while overloaded). */
+  top?: { pid: number; name: string; cpu_pct: number }[] | null;
 }
 
 export interface LibraryCollections {
@@ -994,6 +1044,13 @@ export const queueApi = {
     ),
   pauseAll: () => api.post<void>("/api/queues/pause-all"),
   resumeAll: () => api.post<void>("/api/queues/resume-all"),
+  /** Restart this machine's pipeline workers: those of the components named, or all of
+   *  them when none is (admin; the API refuses anyone else). */
+  restartWorkers: (components?: string[]) =>
+    api.post<{ restarted: number; components: string[] }>(
+      "/api/queues/workers/restart",
+      components && components.length > 0 ? { components } : undefined
+    ),
   patchStage: (stage: string, body: { enabled?: boolean; write_mode?: "auto" | "review" }) =>
     api.patch<StageInfo>(`/api/queues/${q(stage)}`, body),
   retry: (stage: string, body: { cause?: string; job_ids?: number[] }) =>

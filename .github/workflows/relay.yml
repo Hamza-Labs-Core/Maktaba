@@ -42,6 +42,8 @@ on:
       - '.github/workflows/relay.yml'
       # the lint job's pinned golangci-lint and the fetch it goes through
       - 'tools/ci/golangci-lint.sh'
+      # the test job's PgBouncer (story 50.18)
+      - 'tools/ci/pgbouncer-ci.sh'
       - 'tools/release/fetch-pinned.sh'
     tags:
       - 'v*'
@@ -62,6 +64,8 @@ on:
       - '.github/workflows/relay.yml'
       # the lint job's pinned golangci-lint and the fetch it goes through
       - 'tools/ci/golangci-lint.sh'
+      # the test job's PgBouncer (story 50.18)
+      - 'tools/ci/pgbouncer-ci.sh'
       - 'tools/release/fetch-pinned.sh'
   # Manual rollout: pick a tag (or leave blank to deploy `latest`) and
   # run the deploy job against the `production` environment.
@@ -160,7 +164,8 @@ jobs:
   test:
     name: test (cloud + postgres)
     runs-on: ubuntu-22.04
-    timeout-minutes: 15
+    # the integration suite runs twice: direct, and through PgBouncer (story 50.18)
+    timeout-minutes: 25
 
     # The relay persists durable state (server registry, billing meter)
     # in Postgres; its store + migration tests need a live DB. Image and tag
@@ -226,6 +231,22 @@ jobs:
       - name: Integration tests (cloud)
         working-directory: cloud
         run: go test -tags=integration -count=1 ./...
+
+      # Epic 50 story 50.18: the same suite through PgBouncer, from the production template:
+      # database.url on its transaction pool (6432), the session-only parts (the worker's lock,
+      # LISTEN, the scratch databases' setup) on its session pool (6433, database.direct_url's
+      # cloud_session on the database nodes)
+      - name: PgBouncer (transaction and session pools)
+        run: tools/ci/pgbouncer-ci.sh
+      - name: Integration tests through PgBouncer (cloud)
+        working-directory: cloud
+        env:
+          MAKTABA_CLOUD_DB_URL: postgres://maktaba:maktaba@localhost:6432/maktaba?sslmode=disable
+          MAKTABA_CLOUD_DB_SESSION_URL: postgres://maktaba:maktaba@localhost:6433/maktaba?sslmode=disable
+        run: go test -tags=integration -count=1 ./...
+      - name: PgBouncer's logs
+        if: failure()
+        run: tools/ci/pgbouncer-ci.sh logs
 
   build:
     name: build (${{ matrix.goos }}/${{ matrix.goarch }})
@@ -417,6 +438,9 @@ jobs:
         run: |
           shellcheck -x deploy/cloud-ha/setup.sh deploy/cloud-ha/bin/* deploy/cloud-ha/tests/*.sh
           bash deploy/cloud-ha/tests/scripts-test.sh
+      # 50.18: PgBouncer's production authentication against a real PgBouncer and Postgres
+      - name: PgBouncer's authentication (Epic 50 story 50.18)
+        run: bash deploy/cloud-ha/tests/pgbouncer-auth-test.sh
       - name: The monitoring configs, rules and probe (Epic 50 stories 50.09 to 50.11)
         run: |
           bash deploy/cloud-ha/monitoring/check.sh
@@ -461,7 +485,7 @@ jobs:
           tags: |
             ${{ env.CADDY_IMAGE }}:${{ steps.tag.outputs.tag }}
             ${{ env.CADDY_IMAGE }}:sha-${{ github.sha }}
-      - uses: sigstore/cosign-installer@v3.10.0
+      - uses: sigstore/cosign-installer@d7543c93d881b35a8faa02e8e3605f69b7a1ce62 # v3.10.0
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
       - name: Sign
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'

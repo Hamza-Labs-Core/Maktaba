@@ -27,6 +27,7 @@ import (
 	grpcstreaming "github.com/Hamza-Labs-Core/Maktaba/api/internal/grpcclients/streaming"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/browse"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/collections"
+	componentsh "github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/components"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/contextcard"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/devices"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/enrichment"
@@ -441,6 +442,11 @@ func MountP6(r chi.Router, d P6Deps) {
 	queuesHandler.Secrets = d.Secrets
 	queuesHandler.Sources = ytdlp
 	queuesHandler.LocalPath = libpaths.ToLocal
+	queuesHandler.HostLoad = HostLoad.State
+	if pk := componentsh.PacksFromEnv(); pk != nil {
+		// the admin's "restart the workers" of the Queues page: the components' restart
+		queuesHandler.RestartWorkers = pk.RestartWorkers
+	}
 	if d.OnQueues != nil {
 		d.OnQueues(queuesHandler)
 	}

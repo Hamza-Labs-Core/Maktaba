@@ -202,7 +202,12 @@ class ClaimLoop:
         semaphores: dict[Any, asyncio.Semaphore] | None = None,
         shutdown_event: asyncio.Event | None = None,
         wakeup: WakeupSource | None = None,
+        on_pass: Callable[[], None] | None = None,
     ) -> None:
+        #: called when the loop starts and after each pass (a wakeup, then a drain that
+        #: ended, well or not): the worker's health says "stuck" when it stops being
+        #: called (log/liveness.py)
+        self._on_pass = on_pass
         self.db = db
         self.cfg = cfg
         self.dispatch = dispatch
@@ -247,6 +252,7 @@ class ClaimLoop:
         # queue): a shutdown ends that wait at once, not at the next tick
         stopper = asyncio.create_task(self._close_wakeup_on_shutdown(), name="claim-stop")
         try:
+            self._passed()
             async for _ in self._wakeup.signals():
                 if self.shutdown_event.is_set():
                     break
@@ -272,6 +278,7 @@ class ClaimLoop:
                 else:
                     backoff = min(backoff * 2.0, self.cfg.claim_poll_max_sec)
                 self._wakeup.poll_sec = backoff
+                self._passed()
         finally:
             stopper.cancel()
             await self._wakeup.aclose()
@@ -291,6 +298,10 @@ class ClaimLoop:
                     )
                 await asyncio.gather(*in_flight, return_exceptions=True)
             _log.info("claim_loop_stopped", worker_id=self.cfg.worker_id)
+
+    def _passed(self) -> None:
+        if self._on_pass is not None:
+            self._on_pass()
 
     async def _close_wakeup_on_shutdown(self) -> None:
         await self.shutdown_event.wait()

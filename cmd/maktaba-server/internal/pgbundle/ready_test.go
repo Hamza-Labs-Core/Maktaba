@@ -95,3 +95,32 @@ func TestReadyNothingListening(t *testing.T) {
 		t.Fatal("Ready with nothing listening must fail")
 	}
 }
+
+// Ready waits for the answer as long as its context allows, past the 5 s it waits
+// without a deadline: the supervisor's check of a busy postmaster (15 s) hears an
+// answer that takes 6.
+func TestReadyWaitsUntilTheContextsDeadline(t *testing.T) {
+	if testing.Short() {
+		t.Skip("waits 6 s for a slow answer; runs without -short")
+	}
+	t.Parallel()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = ln.Close() })
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer func() { _ = conn.Close() }()
+		time.Sleep(6 * time.Second) // a postmaster slow to fork the backend that answers
+		_, _ = conn.Write(message('R', []byte{0, 0, 0, 10, 'S', 'C', 'R', 'A', 'M', 0, 0}))
+	}()
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	if err := Ready(ctx, ln.Addr().String(), "u", "d"); err != nil {
+		t.Fatalf("Ready gave up on an answer inside its context's deadline: %v", err)
+	}
+}

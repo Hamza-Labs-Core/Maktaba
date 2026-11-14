@@ -41,6 +41,7 @@ func MountStatus(r chi.Router, d StatusDeps) *systemstatus.Handler {
 		PipelineAddr:  d.PipelineAddr,
 		SupervisorURL: d.SupervisorURL,
 		Queues:        &queues.Handler{DB: d.DB},
+		HostLoad:      HostLoad.State,
 		TVCluster:     cluster,
 		TV:            &tv.Handler{DB: d.DB, Secrets: d.Secrets},
 	}

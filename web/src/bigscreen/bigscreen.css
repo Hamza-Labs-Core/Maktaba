@@ -284,6 +284,12 @@
   background: radial-gradient(circle at 30% 30%, rgba(227, 178, 82, 0.16), transparent 60%),
     var(--bs-ink-3);
 }
+/* a name in its own direction (<bdi>, dir=auto) still lines up with the screen's
+   start: an English title on an Arabic screen sits on the right, by its number */
+[dir="rtl"] bdi:not([dir="ltr"]) {
+  text-align: right;
+}
+
 .bs-tile__title {
   display: -webkit-box;
   -webkit-line-clamp: 2;

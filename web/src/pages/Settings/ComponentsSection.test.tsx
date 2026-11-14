@@ -224,6 +224,22 @@ describe("Components page (story 51.10)", () => {
     expect(screen.getByTestId("comp-bundle")).toHaveTextContent("Based on Full, minus YouTube");
   });
 
+  it("54.44: a component a plugin implements links to that plugin's page; core links to none", async () => {
+    setRow("subtitles", { plugin: "tv.maktaba.subtitles" });
+    open();
+    await loaded();
+    const link = within(row("subtitles")).getByTestId("component-plugin-subtitles");
+    expect(link).toHaveAttribute("href", "/settings/plugins/tv.maktaba.subtitles");
+    expect(link).toHaveAccessibleName(
+      EN["components.row.pluginOf"]!.replace("{name}", EN["components.subtitles.title"]!)
+    );
+    expect(AR["components.row.plugin"]).toBeTruthy();
+    expect(AR["components.row.pluginOf"]).toBeTruthy();
+    // a part of Maktaba itself is not a plugin, whatever implements its stages
+    expect(within(row("core.pipeline")).queryByText(EN["components.row.plugin"]!)).toBeNull();
+    expect(within(row("llm")).queryByText(EN["components.row.plugin"]!)).toBeNull();
+  });
+
   it("T02: turning llm off shows what else stops and the parked jobs first; Cancel changes nothing", async () => {
     previewAnswer = () => ({
       effects: [

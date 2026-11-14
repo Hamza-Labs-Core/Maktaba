@@ -1,6 +1,7 @@
 package pgbundle
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -85,6 +86,54 @@ func (b Bundle) clearStaleSocketLock() {
 	}
 }
 
+// AwaitShmFree waits, before a start, while the cluster's postmaster.pid names a
+// postmaster that is gone and the shared memory it made still has a process attached:
+// backends it left when it was killed, which end on their own once they notice (one in
+// the middle of a slow write takes its time). Postgres refuses to start next to them
+// ("pre-existing shared memory block is still in use"), and a server started at once
+// failed four times in a row that way: a crash loop, and five minutes without a database.
+// It returns when the memory is free, after shmWait (the start then says why it fails),
+// or when ctx ends. A lock whose PID still runs is not this case: ClearStaleLock's, or
+// Postgres's own to refuse.
+func (b Bundle) AwaitShmFree(ctx context.Context) {
+	path := filepath.Join(b.Data, "postmaster.pid")
+	start := time.Now()
+	said := false
+	for {
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			return
+		}
+		pid, ok := lockPID(path)
+		if !ok {
+			return
+		}
+		_, alive := lookProcess(pid)
+		if alive || !shmInUse(string(raw)) {
+			if said && !alive {
+				fmt.Fprintf(os.Stderr, "[postgres] the shared memory of postmaster %d is free after %s\n",
+					pid, time.Since(start).Round(time.Millisecond))
+			}
+			return
+		}
+		if !said {
+			said = true
+			fmt.Fprintf(os.Stderr, "[postgres] postmaster %d is gone, but processes it left still hold its shared memory: "+
+				"waiting up to %s for them to end before the start\n", pid, shmWait)
+		}
+		if time.Since(start) >= shmWait {
+			fmt.Fprintf(os.Stderr, "[postgres] the shared memory of postmaster %d is still in use after %s: starting anyway\n",
+				pid, shmWait)
+			return
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
+}
+
 // lockPID is the PID on a lock file's first line (ok false: no file, or no PID).
 func lockPID(path string) (int, bool) {
 	raw, err := os.ReadFile(path)
@@ -113,6 +162,8 @@ var (
 	parentOf     = parentPID
 	signalPID    = signalProcess
 	leftoverWait = 30 * time.Second
+	// shmWait is how long AwaitShmFree waits for a gone postmaster's backends to end.
+	shmWait = 2 * time.Minute
 )
 
 // adopted: the process's parent is the system's first process, so whatever started

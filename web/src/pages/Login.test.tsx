@@ -62,6 +62,19 @@ describe("Login next", () => {
     expect(await screen.findByTestId("where")).toHaveTextContent("/videos/42");
   });
 
+  // story 58.08: the TV build is its own page, loaded fresh (not a route of this app)
+  it("loads the TV build's page for a next under /tv/", async () => {
+    const assign = vi.fn();
+    vi.stubGlobal("location", { ...window.location, assign });
+    try {
+      renderAt(`/login?next=${encodeURIComponent("/tv/")}`);
+      await signIn();
+      await vi.waitFor(() => expect(assign).toHaveBeenCalledWith("/tv/"));
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("goes on at once when already signed in", async () => {
     auth.user = { id: "u1", username: "amal", is_admin: false };
     renderAt(`/login?next=${encodeURIComponent("/videos/42")}`);

@@ -5,6 +5,12 @@
 #
 #   sudo deploy/cloud-ha/setup.sh --role a|b|witness
 #   sudo deploy/cloud-ha/setup.sh --role api     # a node of Phase 2's api pool (story 50.17)
+#   sudo deploy/cloud-ha/setup.sh --role db      # a database node, db-1..3 (story 50.18)
+#
+# A database node runs Postgres 16 with Patroni, etcd and PgBouncer, and nothing of the cloud:
+# its callback moves the database's Floating IP (DB_FLOATING_IP_ID) and starts nothing
+# (CLOUD_PROCESSES=off). With JOIN=later (the move from the Phase 1 pair, bin/migrate-db-nodes)
+# Patroni is installed but not started, and etcd's member is not started: the move adds them.
 #
 # Order: W first, then A (bootstraps the cluster), then B (joins as a replica).
 #
@@ -13,6 +19,8 @@
 #   /etc/maktaba/hcloud-token   the maktaba-prod project's API token (A and B only, 0600)
 #   /etc/maktaba/cloudflare.token  the DNS-edit token for the wildcard certificate (A and B)
 #   /etc/etcd/pki/              ca.crt and this member's <name>.crt/.key (bin/make-etcd-certs)
+#   /etc/pgbouncer/tls.crt, tls.key  PgBouncer's certificate, signed by the same CA (A, B and
+#                               the database nodes; bin/make-pgbouncer-cert)
 # It calls no Hetzner or Cloudflare API itself: only Patroni's callback does, on a role change.
 set -euo pipefail
 
@@ -24,11 +32,11 @@ role=""
 while [ $# -gt 0 ]; do
 	case "$1" in
 		--role) role="$2"; shift ;;
-		*) die "unknown argument $1 (usage: setup.sh --role a|b|witness|api)" ;;
+		*) die "unknown argument $1 (usage: setup.sh --role a|b|witness|api|db)" ;;
 	esac
 	shift
 done
-case "${role}" in a|b|witness|api) ;; *) die "usage: setup.sh --role a|b|witness|api" ;; esac
+case "${role}" in a|b|witness|api|db) ;; *) die "usage: setup.sh --role a|b|witness|api|db" ;; esac
 [ "$(id -u)" -eq 0 ] || die "must run as root (sudo)"
 
 ENV_FILE=/etc/maktaba/cloud-ha.env
@@ -143,7 +151,7 @@ if [ "${role}" != witness ]; then
 			>/etc/apt/sources.list.d/pgdg.list
 		apt-get update -qq
 	fi
-	apt-get install -y -qq postgresql-16 redis-server >/dev/null
+	apt-get install -y -qq postgresql-16 >/dev/null
 	# Patroni runs the cluster, not the distribution's unit
 	systemctl disable --now postgresql >/dev/null 2>&1 || true
 	if [ ! -x /opt/patroni/bin/patroni ] || [[ "$(/opt/patroni/bin/patroni --version)" != *"${PATRONI_VERSION}"* ]]; then
@@ -151,6 +159,9 @@ if [ "${role}" != witness ]; then
 		/opt/patroni/bin/pip install -q "patroni[psycopg3,etcd3]==${PATRONI_VERSION}"
 	fi
 	ln -sf /opt/patroni/bin/patroni /opt/patroni/bin/patronictl /usr/local/bin/
+fi
+if [ "${role}" = a ] || [ "${role}" = b ]; then
+	apt-get install -y -qq redis-server >/dev/null
 	# Redis is a cache: nothing in it may matter after a restart (50.05)
 	sed -i -E 's/^#?\s*appendonly .*/appendonly no/; s/^save .*/save ""/' /etc/redis/redis.conf
 	grep -q '^save ""' /etc/redis/redis.conf || echo 'save ""' >>/etc/redis/redis.conf
@@ -201,7 +212,13 @@ LimitNOFILE=65536
 WantedBy=multi-user.target
 UNIT
 systemctl daemon-reload
-systemctl enable --now etcd
+if [ "${role}" = db ] && [ "${JOIN:-now}" = later ]; then
+	# the move from the Phase 1 pair adds this member to the running cluster first
+	# (bin/migrate-db-nodes etcd: member add, then ETCD_CLUSTER_STATE=existing and a start)
+	systemctl enable etcd
+else
+	systemctl enable --now etcd
+fi
 
 # ---------------------------------------------------------------------------------------
 # 3. The firewall: public 22 (owner and deploy runner addresses), 80 and 443 on A and B; the
@@ -215,15 +232,26 @@ for src in ${SSH_FROM:-}; do ufw allow from "${src}" to any port 22 proto tcp >/
 [ -n "${SSH_FROM:-}" ] || ufw allow 22/tcp >/dev/null
 # 80 and 443 on the witness too: its one site, behind a token (the probe's Pushgateway and
 # network 1's view for the status page, monitoring/Caddyfile.witness)
-ufw allow 80/tcp >/dev/null
-ufw allow 443/tcp >/dev/null
-[ "${role}" = witness ] || ufw allow 443/udp >/dev/null
+if [ "${role}" != db ]; then
+	ufw allow 80/tcp >/dev/null
+	ufw allow 443/tcp >/dev/null
+	[ "${role}" = witness ] || ufw allow 443/udp >/dev/null
+fi
 # 53 on A and B: the direct-name domains' name servers (story 50.15), ns1 and ns2
-if [ "${role}" != witness ]; then
+if [ "${role}" = a ] || [ "${role}" = b ]; then
 	ufw allow 53/udp >/dev/null
 	ufw allow 53/tcp >/dev/null
 fi
-for port in 2379 2380 5432 8008 8081 8444 8454 9100 9187 9443; do
+if [ "${role}" = db ]; then
+	# a database node: no public web; PgBouncer (6432) from the private network and from the
+	# app nodes' public addresses (DB_CLIENTS: the database's Floating IP arrives on the public
+	# interface; the Hetzner Cloud Firewall says the same)
+	for src in ${DB_CLIENTS:-}; do ufw allow from "${src}" to any port 6432 proto tcp >/dev/null; done
+	ports="2379 2380 5432 6432 8008 9100 9127 9187"
+else
+	ports="2379 2380 5432 6432 8008 8081 8444 8454 9100 9127 9187 9443"
+fi
+for port in ${ports}; do
 	ufw allow from "${PRIVATE_NET}" to any port "${port}" proto tcp >/dev/null
 done
 ufw --force enable >/dev/null
@@ -395,6 +423,8 @@ RULE
 # ---------------------------------------------------------------------------------------
 # 5. The Floating IP on the interface (Hetzner routes it to the leader only)
 # ---------------------------------------------------------------------------------------
+# (a database node: the database's Floating IP, story 50.18)
+[ "${role}" != db ] || FLOATING_IP="${DB_FLOATING_IP:-}"
 if [ -n "${FLOATING_IP:-}" ]; then
 	FLOATING_IP="${FLOATING_IP}" envsubst <"${here}/netplan/60-floating-ip.yaml" >/etc/netplan/60-floating-ip.yaml
 	chmod 0600 /etc/netplan/60-floating-ip.yaml
@@ -410,9 +440,15 @@ install -d -o postgres -g postgres -m 0700 /var/lib/postgresql/16/maktaba
 [ -s /etc/maktaba/hcloud-token ] || die "/etc/maktaba/hcloud-token is missing (the maktaba-prod project's API token)"
 chown postgres:postgres /etc/maktaba/hcloud-token && chmod 0600 /etc/maktaba/hcloud-token
 chgrp postgres "${ENV_FILE}" && chmod 0640 "${ENV_FILE}"
-cat >/etc/sudoers.d/maktaba-patroni <<SUDO
-postgres ALL=(root) NOPASSWD: /usr/bin/systemctl start maktaba-cloud-active.target maktaba-cloud-relay@blue.service, /usr/bin/systemctl start maktaba-cloud-active.target maktaba-cloud-relay@green.service, /usr/bin/systemctl stop maktaba-cloud-active.target, /usr/sbin/ip addr add ${FLOATING_IP:-0.0.0.0}/32 dev ${FIP_DEV:-eth0}
+if [ "${role}" = db ]; then
+	cat >/etc/sudoers.d/maktaba-patroni <<SUDO
+postgres ALL=(root) NOPASSWD: /usr/sbin/ip addr add ${FLOATING_IP:-0.0.0.0}/32 dev ${FIP_DEV:-eth0}
 SUDO
+else
+	cat >/etc/sudoers.d/maktaba-patroni <<SUDO
+postgres ALL=(root) NOPASSWD: /usr/bin/systemctl start maktaba-cloud-active.target maktaba-cloud-relay@blue.service, /usr/bin/systemctl start maktaba-cloud-active.target maktaba-cloud-relay@green.service, /usr/bin/systemctl stop maktaba-cloud-active.target, /usr/sbin/ip addr add ${FLOATING_IP:-0.0.0.0}/32 dev ${FIP_DEV:-eth0}${DB_FLOATING_IP:+, /usr/sbin/ip addr add ${DB_FLOATING_IP}/32 dev ${FIP_DEV:-eth0}}
+SUDO
+fi
 chmod 0440 /etc/sudoers.d/maktaba-patroni
 visudo -cf /etc/sudoers.d/maktaba-patroni >/dev/null
 
@@ -449,6 +485,57 @@ Restart=on-failure
 [Install]
 WantedBy=multi-user.target
 UNIT
+
+# ---------------------------------------------------------------------------------------
+# PgBouncer (story 50.18) next to Postgres on every Patroni node: A and B too, so the move to
+# the database nodes can point the cloud at the database's Floating IP before the switchover.
+# The transaction pool for the cloud's database.url and the session pool cloud_session for its
+# database.direct_url, both for the local Postgres; TLS required (bin/make-pgbouncer-cert's certificate).
+# ---------------------------------------------------------------------------------------
+log "PgBouncer"
+apt-get install -y -qq pgbouncer prometheus-pgbouncer-exporter >/dev/null 2>&1 || apt-get install -y -qq pgbouncer >/dev/null
+install -d -o postgres -g postgres -m 0750 /etc/pgbouncer /var/log/pgbouncer
+# the certificate the apps check (sslmode=verify-full): signed by the owner's CA, never made here
+for f in tls.crt tls.key; do
+	[ -s "/etc/pgbouncer/${f}" ] || die "/etc/pgbouncer/${f} is missing (deploy/cloud-ha/bin/make-pgbouncer-cert, on the owner's machine)"
+done
+chown postgres:postgres /etc/pgbouncer/tls.crt /etc/pgbouncer/tls.key && chmod 0600 /etc/pgbouncer/tls.key
+(umask 027 && printf '"%s" "%s"\n"postgres" "%s"\n' "${PG_APP_USER:-maktaba}" "${PG_APP_PASSWORD:?}" "${PG_SUPERUSER_PASSWORD:?}" >/etc/pgbouncer/userlist.txt)
+# PgBouncer's own rules: 6432 is open to DB_CLIENTS on a public address, so the superuser (in the
+# userlist for the admin console only) is let in from this node alone, the app role over TLS
+# only, and nothing else
+cat >/etc/pgbouncer/pg_hba.conf <<HBA
+host    all  postgres             127.0.0.1/32  scram-sha-256
+hostssl all  ${PG_APP_USER:-maktaba}  0.0.0.0/0     scram-sha-256
+HBA
+PGB_LISTEN_ADDR='*' PGB_LISTEN_PORT=6432 PGB_SOCKET_DIR=/var/run/postgresql PGB_AUTH_TYPE=hba PGB_AUTH_HBA_FILE=/etc/pgbouncer/pg_hba.conf \
+	PGB_AUTH_FILE=/etc/pgbouncer/userlist.txt PGB_ADMIN_USERS=postgres PGB_CLIENT_TLS_SSLMODE=require \
+	PGB_TLS_CERT=/etc/pgbouncer/tls.crt PGB_TLS_KEY=/etc/pgbouncer/tls.key PGB_LOGFILE=/var/log/pgbouncer/pgbouncer.log \
+	PGB_PIDFILE=/var/run/postgresql/pgbouncer.pid PGB_DATABASES_FILE=/etc/pgbouncer/databases.ini \
+	envsubst <"${here}/pgbouncer/pgbouncer.ini" >/etc/pgbouncer/pgbouncer.ini
+PG_DB="${PG_APP_DB:-maktaba}" envsubst <"${here}/pgbouncer/databases.ini" >/etc/pgbouncer/databases.ini
+chown -R postgres:postgres /etc/pgbouncer && chmod 0640 /etc/pgbouncer/*
+systemctl enable pgbouncer >/dev/null
+systemctl restart pgbouncer
+grep -q '^PGBOUNCER=' "${ENV_FILE}" || echo "PGBOUNCER=yes" >>"${ENV_FILE}"
+
+if [ "${role}" = db ]; then
+	grep -q '^CLOUD_PROCESSES=' "${ENV_FILE}" || echo "CLOUD_PROCESSES=off" >>"${ENV_FILE}"
+	grep -q '^PATRONI_URL=' "${ENV_FILE}" || echo "PATRONI_URL=http://${NODE_ADDR}:8008" >>"${ENV_FILE}"
+	grep -q '^ALERT_CMD=.' "${ENV_FILE}" || echo "ALERT_CMD=/usr/local/bin/maktaba-alert" >>"${ENV_FILE}"
+	install -m 0644 "${here}/systemd/maktaba-backup.service" "${here}/systemd/maktaba-backup.timer" /etc/systemd/system/
+	systemctl daemon-reload
+	apt-get install -y -qq prometheus-postgres-exporter >/dev/null || true
+	if [ "${JOIN:-now}" = later ]; then
+		systemctl enable patroni
+		log "${NODE_NAME} is a database node, not started: bin/migrate-db-nodes adds it to the cluster"
+	else
+		systemctl enable --now patroni
+		log "${NODE_NAME} is a database node: Patroni decides whether it leads (patronictl -c /etc/patroni/patroni.yml list)"
+	fi
+	if [ -n "${REPO1_ENDPOINT:-}" ]; then systemctl enable --now maktaba-backup.timer; fi
+	exit 0
+fi
 
 # ---------------------------------------------------------------------------------------
 # 7. The cloud's units (started on the leader only) and Caddy (on both, always)

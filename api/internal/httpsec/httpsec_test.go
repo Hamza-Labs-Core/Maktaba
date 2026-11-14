@@ -216,3 +216,44 @@ func TestDefaultHeaders_CSPAllowsOnlyTheStatusFeed(t *testing.T) {
 		t.Fatalf("CSP lost a directive: %s", csp)
 	}
 }
+
+// Epic 58 story 58.07: a bearer origin (Maktaba's Cast receiver) reads answers but is
+// never allowed credentials; an origin on neither list gets nothing.
+func TestCORSBearerOrigins(t *testing.T) {
+	cfg := DefaultCORS()
+	cfg.AllowedOrigins = []string{"https://web.example"}
+	cfg.BearerOrigins = []string{"https://cast.maktaba.tv"}
+	h := CORS(cfg)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }))
+	ask := func(method, origin string, preflight bool) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(method, "/api/stream/sessions", nil)
+		req.Header.Set("Origin", origin)
+		if preflight {
+			req.Header.Set("Access-Control-Request-Method", "POST")
+		}
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec
+	}
+
+	rec := ask(http.MethodPost, "https://cast.maktaba.tv", false)
+	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "https://cast.maktaba.tv" {
+		t.Fatalf("bearer origin: Allow-Origin %q", got)
+	}
+	if got := rec.Header().Get("Access-Control-Allow-Credentials"); got != "" {
+		t.Fatalf("bearer origin allowed credentials: %q", got)
+	}
+	pre := ask(http.MethodOptions, "https://cast.maktaba.tv", true)
+	if pre.Code != http.StatusNoContent || pre.Header().Get("Access-Control-Allow-Credentials") != "" ||
+		!strings.Contains(pre.Header().Get("Access-Control-Allow-Headers"), "Authorization") ||
+		strings.Contains(pre.Header().Get("Access-Control-Allow-Headers"), "CSRF") {
+		t.Fatalf("bearer preflight: %d %v", pre.Code, pre.Header())
+	}
+	// the web's own origin keeps credentials
+	if got := ask(http.MethodPost, "https://web.example", false).Header().Get("Access-Control-Allow-Credentials"); got != "true" {
+		t.Fatalf("allowed origin lost credentials: %q", got)
+	}
+	// an origin on neither list
+	if got := ask(http.MethodPost, "https://evil.example", false).Header().Get("Access-Control-Allow-Origin"); got != "" {
+		t.Fatalf("unknown origin allowed: %q", got)
+	}
+}

@@ -13,13 +13,26 @@
 # replica, standby, demoted: stop the cloud processes. The IP is never moved away: the new
 # leader takes it.
 #
+# The database nodes (story 50.18): CLOUD_PROCESSES=off. As primary the callback moves only the
+# database's Floating IP (DB_FLOATING_IP_ID: db.internal, where the apps reach PgBouncer) and
+# starts nothing; the relay's Floating IP and the cloud processes are not this node's. Any other
+# role drops PgBouncer's clients (KILL, then RESUME, on its admin console): a demoted primary's
+# PgBouncer must not keep an app on a read-only server, and the app's next connection follows
+# the Floating IP to the new primary. The Phase 1 pair sets CLOUD_PROCESSES=off too during the
+# move to the database nodes (bin/migrate-db-nodes), so its cloud keeps running whoever leads.
+#
 # Env (/etc/maktaba/cloud-ha.env): HCLOUD_TOKEN_FILE (/etc/maktaba/hcloud-token), HCLOUD_ENDPOINT
 # (https://api.hetzner.cloud/v1), FLOATING_IP_ID, FLOATING_IP, SERVER_ID (this node's Hetzner
 # server id), FIP_DEV (eth0), MAKTABA_ACTIVE_CMD (how the processes start and stop, given
 # start|stop; default `sudo -n systemctl <start|stop> maktaba-cloud-active.target`),
 # ALERT_CMD (run with the alert's name and text; default: log only), FIP_RETRY_FOR (60),
 # FIP_RETRY_EVERY (30), FIP_ADD_ADDR (1: ip addr add the Floating IP; 0 in the rehearsal),
-# PATRONI_URL (http://<this node>:8008, written to cloud-ha.env by setup.sh, as leader-guard reads it).
+# PATRONI_URL (http://<this node>:8008, written to cloud-ha.env by setup.sh, as leader-guard reads it),
+# CLOUD_PROCESSES (leader, the default: the relay's Floating IP and the cloud processes follow
+# the leader; off: neither), DB_FLOATING_IP_ID (the database's Floating IP; unset: none),
+# DB_FLOATING_IP (its address, put on the interface), DB_HCLOUD_ENDPOINT (HCLOUD_ENDPOINT; the
+# rehearsal's second fake), PGBOUNCER (yes: PgBouncer
+# runs here), PGB_PORT (6432), PG_APP_DB (maktaba), PG_SUPERUSER_PASSWORD (PgBouncer's admin).
 set -uo pipefail
 
 env_file="${CLOUD_HA_ENV:-/etc/maktaba/cloud-ha.env}"
@@ -54,15 +67,16 @@ alert() { # alert <name> <text>
     if [ -n "${ALERT_CMD:-}" ]; then ${ALERT_CMD} "$1" "$2" || true; fi
 }
 
-# assign_once: one assign call; 0 when Hetzner took it (201)
+# assign_once [ip id] [endpoint]: one assign call (default: the relay's Floating IP); 0 when
+# Hetzner took it (201)
 assign_once() {
-    local token code
+    local token code ip="${1:-${FLOATING_IP_ID:-}}" ep="${2:-${endpoint}}"
     token="$(cat "${HCLOUD_TOKEN_FILE:-/etc/maktaba/hcloud-token}" 2>/dev/null)" || token=""
     code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 -X POST \
         -H "Authorization: Bearer ${token}" -H 'Content-Type: application/json' \
         -d "{\"server\": ${SERVER_ID:?SERVER_ID is required}}" \
-        "${endpoint}/floating_ips/${FLOATING_IP_ID:?FLOATING_IP_ID is required}/actions/assign" || echo 000)"
-    log "assign floating ip ${FLOATING_IP_ID} to server ${SERVER_ID}: HTTP ${code}"
+        "${ep}/floating_ips/${ip:?FLOATING_IP_ID is required}/actions/assign" || echo 000)"
+    log "assign floating ip ${ip} to server ${SERVER_ID}: HTTP ${code}"
     [ "${code}" = 201 ] || [ "${code}" = 200 ]
 }
 
@@ -75,11 +89,11 @@ still_leads() {
     [ "${code}" = 200 ] || [ "${code}" = 000 ]
 }
 
-# retry_ip: the background retry after the window, every retry_every s until the IP moves or
-# this node stops leading
+# retry_ip [ip id] [endpoint]: the background retry after the window, every retry_every s until
+# the IP moves or this node stops leading
 retry_ip() {
     while still_leads; do
-        if assign_once; then
+        if assign_once "$@"; then
             log "the Floating IP moved after all"
             return 0
         fi
@@ -88,14 +102,15 @@ retry_ip() {
     log "this node no longer leads: the Floating IP retry stops"
 }
 
+# move_ip [ip id] [endpoint]: the relay's Floating IP by default, or the database's
 move_ip() {
     local waited=0 delay=1
-    while ! assign_once; do
+    while ! assign_once "$@"; do
         if [ "${waited}" -ge "${retry_for}" ]; then
-            alert fip_assign_failed "the Floating IP did not move to ${HOSTNAME:-this node} after ${retry_for} s: see the DNS-swap runbook (docs/runbooks/cloud/hetzner-api-down.md)"
+            alert fip_assign_failed "the Floating IP ${1:-${FLOATING_IP_ID:-}} did not move to ${HOSTNAME:-this node} after ${retry_for} s: see the DNS-swap runbook (docs/runbooks/cloud/hetzner-api-down.md)"
             # keep trying in the background; the cloud processes start anyway (the IP is
             # what reaches them, and the runbook can point DNS at this node meanwhile)
-            retry_ip &
+            retry_ip "$@" &
             # the tests and the rehearsal stop and check it by its pid
             if [ -n "${FIP_RETRY_PIDFILE:-}" ]; then echo $! >"${FIP_RETRY_PIDFILE}"; fi
             return 1
@@ -107,19 +122,51 @@ move_ip() {
     return 0
 }
 
+# pgbouncer_kick: drop this node's PgBouncer clients and servers (KILL), and take new ones again
+# (RESUME); nothing when PgBouncer doesn't run here
+pgbouncer_kick() {
+    [ "${PGBOUNCER:-no}" = yes ] || return 0
+    local db
+    for db in "${PG_APP_DB:-maktaba}" cloud_session; do
+        PGPASSWORD="${PG_SUPERUSER_PASSWORD:-}" PGCONNECT_TIMEOUT=3 psql -h 127.0.0.1 -p "${PGB_PORT:-6432}" -U postgres -d pgbouncer \
+            -c "KILL ${db}" -c "RESUME ${db}" >/dev/null 2>&1 || log "PgBouncer: KILL ${db} did not answer"
+    done
+    log "PgBouncer: clients dropped (this node does not lead)"
+}
+
+# add_addr <ip>: the Floating IP on the interface (Hetzner routes it to the holder only)
+add_addr() {
+    [ "${FIP_ADD_ADDR:-1}" = 1 ] && [ -n "${1:-}" ] || return 0
+    [[ " $(ip -o addr show dev "${FIP_DEV:-eth0}") " == *" ${1}/"* ]] \
+        || sudo -n ip addr add "${1}/32" dev "${FIP_DEV:-eth0}" || log "could not add ${1}"
+}
+
+cloud="${CLOUD_PROCESSES:-leader}"
+db_endpoint="${DB_HCLOUD_ENDPOINT:-${endpoint}}"
 case "${role}" in
     primary|master)
         log "${cluster}: ${action}: this node leads"
-        move_ip
-        if [ "${FIP_ADD_ADDR:-1}" = 1 ] && [ -n "${FLOATING_IP:-}" ]; then
-            [[ " $(ip -o addr show dev "${FIP_DEV:-eth0}") " == *" ${FLOATING_IP}/"* ]] \
-                || sudo -n ip addr add "${FLOATING_IP}/32" dev "${FIP_DEV:-eth0}" || log "could not add ${FLOATING_IP}"
+        if [ -n "${DB_FLOATING_IP_ID:-}" ]; then
+            # the database's Floating IP first: the apps' writes wait on it
+            move_ip "${DB_FLOATING_IP_ID}" "${db_endpoint}" || true
+            add_addr "${DB_FLOATING_IP:-}"
         fi
-        active start
+        if [ "${cloud}" = leader ]; then
+            move_ip
+            add_addr "${FLOATING_IP:-}"
+            active start
+        else
+            log "${cluster}: CLOUD_PROCESSES=${cloud}: no cloud process follows this node"
+        fi
         ;;
     replica|standby|demoted|standby_leader|uninitialized)
-        log "${cluster}: ${action}: this node is ${role}: the cloud processes stop"
-        active stop
+        pgbouncer_kick
+        if [ "${cloud}" = leader ]; then
+            log "${cluster}: ${action}: this node is ${role}: the cloud processes stop"
+            active stop
+        else
+            log "${cluster}: ${action}: this node is ${role}"
+        fi
         ;;
     *)
         log "${cluster}: ${action}: role ${role}: nothing to do"

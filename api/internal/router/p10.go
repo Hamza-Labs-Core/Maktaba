@@ -40,6 +40,11 @@ import (
 // have zero-value-safe defaults so callers can opt out by leaving a
 // field unset.
 type P10Deps struct {
+	// CloudTVCodes finds the home user a cloud tvcode assertion approves a TV's code as (a code
+	// approved on maktaba.tv, Epic 58 story 58.03): the auth handler. nil: only a sign-in on the
+	// home approves a cloud code.
+	CloudTVCodes discoveryh.CloudAsserter
+
 	// ClientFloor is published on GET /api/discovery/home (Epic 58 story 58.01); nil:
 	// compat.ReleaseFloor.
 	ClientFloor compat.Floor
@@ -200,7 +205,8 @@ func MountP10(r chi.Router, d P10Deps) discoverypkg.PairingStore {
 	if ttl <= 0 {
 		ttl = 5 * time.Minute
 	}
-	ph := &discoveryh.Handler{Store: pstore, TTL: ttl, Home: d.Home}
+	// a TV's code from Maktaba Cloud is claimed through the relay agent (story 58.03)
+	ph := &discoveryh.Handler{Store: pstore, TTL: ttl, Home: d.Home, CloudCodes: discoveryh.AgentCloudCodes{}}
 	if d.DB != nil {
 		// Epic 57 story 57.02: a guardian approves a device as their child
 		ph.ApproveAs = approveAs(d.DB)
@@ -233,6 +239,10 @@ func MountP10(r chi.Router, d P10Deps) discoverypkg.PairingStore {
 	ph.Mount(r)
 	ph.MountDevice(r, 0)
 	ph.ClientFloor = d.ClientFloor
+	if d.CloudTVCodes != nil {
+		ph.CloudAssertions = d.CloudTVCodes
+	}
+	ph.MountCloudCode(r)
 	ph.MountHome(r, 0)
 
 	// Security disclosure + SBOM.

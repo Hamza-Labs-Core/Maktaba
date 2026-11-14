@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en" dir="ltr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark" />
+    <title>Maktaba</title>
+  </head>
+  <body>
+    <div id="stage"></div>
+    <main id="app"></main>
+    <!-- A TV too old for the launcher's script (no module support: before Chromium 61) still
+         says why, in both languages (story 58.09, owner question Q10). -->
+    <script nomodule>
+      document.getElementById("app").innerHTML =
+        '<section class="ml-screen"><p class="ml-lead">This TV is too old for the Maktaba app. You can still cast to it from Maktaba on your phone if it supports Google Cast or AirPlay.</p>' +
+        '<p class="ml-lead" dir="rtl" lang="ar">هذا التلفاز أقدم من أن يعمل عليه تطبيق مكتبة. ما زال بإمكانك البث إليه من مكتبة على هاتفك إن كان يدعم Google Cast أو AirPlay.</p></section>';
+    </script>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
