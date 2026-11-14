@@ -387,6 +387,16 @@ describe("T04 app attestation", () => {
         })
       ).status
     ).toBe(403);
+    // a forged attestation spends nothing: the same challenge still serves a real one once,
+    // and one with its mac changed serves none
+    const n2 = await challenge();
+    const attest = (attestation: string, nonce: string) =>
+      post("/api/v1/open/attest", { platform: "android", attestation, nonce });
+    expect((await attest("forged", n2)).status).toBe(403);
+    const tampered = n2.replace(/.$/, (c) => (c === "A" ? "B" : "A"));
+    expect((await attest("valid-abc", tampered)).status).toBe(403);
+    expect((await attest("valid-abc", n2)).status).toBe(200);
+    expect((await attest("valid-abc", n2)).status).toBe(403);
     expect(
       (
         await post("/api/v1/open/attest", {
