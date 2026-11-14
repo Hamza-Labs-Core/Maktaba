@@ -19,7 +19,7 @@
 import { now } from "../clock";
 import { DEFAULT_LIVE_HOST, globallyOff, type Env } from "../env";
 import { getBranding, getGuide, nowNext, today, type Programme } from "../guide";
-import { CODE_RE, PASS_TTL_S, randomId } from "../invites";
+import { CODE_RE, mintOpen, PASS_TTL_S, randomId } from "../invites";
 import { clientIP, ipHash } from "../limits";
 import {
   NONCE_RE,
@@ -314,16 +314,22 @@ async function pairDeliver(
   let handover: Handover;
   if (inp.open) {
     if (!PUB_RE.test(inp.publisher)) return { ok: false, status: 400, error: "bad_request" };
-    const { cred, open, openExp } = await credOf(request, env, inp.publisher);
-    if (cred.kind !== "open" || !open || openExp === undefined)
+    const { cred, openExp } = await credOf(request, env, inp.publisher);
+    if (cred.kind !== "open" || openExp === undefined)
       return { ok: false, status: 403, error: "turnstile_required" };
     const chs = await viewer(env, inp.publisher).openChannels();
     if (chs.length === 0) return { ok: false, status: 403, error: "invite_required" };
-    // the phone's own session, not a new one: the same id (one live session, the same daily
-    // minutes and network limit) and the same expiry, so no check is skipped or extended
+    // a token of the phone's session, not a new session: the same id (one live session, the
+    // same daily minutes and network limit) and the same expiry, so no check is skipped or
+    // extended; the phone's own cookie value never leaves it
+    const tv = await mintOpen(env.VIEWER_TOKEN_KEY, {
+      id: cred.id,
+      via: "pair",
+      exp: openExp,
+    });
     handover = {
       publisher: inp.publisher,
-      credential: open,
+      credential: tv,
       kind: "open",
       channels: chs,
       expires_at: new Date(openExp * 1000).toISOString(),

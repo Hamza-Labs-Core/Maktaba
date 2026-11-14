@@ -6,14 +6,14 @@ import { afterEach, describe, expect, it } from "vitest";
 import { advanceClock, now, resetClock } from "../src/clock";
 import type { Env } from "../src/env";
 import { MAX_GUIDE_BYTES, nowNext, validGuide } from "../src/guide";
-import { INVITE_DOMAIN, INVITE_PREFIX, type InviteClaims } from "../src/invites";
+import { INVITE_DOMAIN, INVITE_PREFIX, readOpen, type InviteClaims } from "../src/invites";
 import { WATCH_ROUTES } from "../src/play";
 import { forgetRevocations } from "../src/revocations";
 import { clientJS } from "../src/site/client";
 import { inviteToken } from "../src/site/routes";
 import { viewerState } from "../src/site/states";
 import { ERROR_KEYS, STRINGS } from "../src/strings";
-import { call, cloudKid, control, INGEST, ingestToken, newChannel, signCloud } from "./helpers";
+import { call, cloudKid, control, E, INGEST, ingestToken, newChannel, signCloud } from "./helpers";
 
 afterEach(() => {
   resetClock();
@@ -561,7 +561,7 @@ describe("TV pairing", () => {
     expect((await poll(p)).status).toBe(200);
   });
 
-  it("the phone's open session goes to the TV as it is: same id, same expiry", async () => {
+  it("the TV gets a token of the phone's open session: same id, same expiry", async () => {
     const s = await setup();
     const ts = await postJSON("/api/v1/open/turnstile", { token: `good-${Math.random()}` });
     expect(ts.status).toBe(200);
@@ -581,8 +581,13 @@ describe("TV pairing", () => {
       channels: string[];
     };
     expect(h.kind).toBe("open");
-    // no new session is minted: the TV shares the phone's limits and Turnstile check
-    expect(h.credential).toBe(session);
+    // the phone's cookie value stays on the phone; the TV's token is of the same session (the
+    // same id and expiry), so it shares the phone's limits and Turnstile check
+    expect(h.credential).not.toBe(session);
+    const tv = await readOpen(h.credential, E.VIEWER_TOKEN_KEY, now());
+    const phone = await readOpen(session, E.VIEWER_TOKEN_KEY, now());
+    expect(tv?.id).toBe(phone?.id);
+    expect(tv?.exp).toBe(phone?.exp);
     expect(h.channels).toEqual([s.ch2]);
   });
 

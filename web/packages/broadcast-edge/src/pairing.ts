@@ -5,8 +5,8 @@
 //   GET  /api/v1/pair/<nonce>    the TV's long-poll, with X-Maktaba-Pair-Key: <poll_key>:
 //                                200 {credential…} once, 204 not yet, 410 gone
 //   POST /api/v1/pair/<nonce>    the phone: {invite} or {publisher, code} (a new device use of
-//                                the invite), or {publisher, open: true}: the phone's own open
-//                                session (the same id and expiry, so the same daily minutes)
+//                                the invite), or {publisher, open: true}: a token of the phone's
+//                                open session (the same id and expiry, so the same limits)
 //
 // One Pairing Durable Object per nonce. The nonce is 128 random bits made by the edge and shown
 // in the QR code. Only the TV holds the poll key (never in the QR code or a URL), so someone who

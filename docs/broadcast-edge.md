@@ -205,8 +205,9 @@ the TV takes it, then forgets it, and deletes everything at the end of its 10 mi
 code carries only the nonce; the poll key stays on the TV, so someone who sees the code cannot
 collect the credential. The TV shows a 4-character code beside the QR code and the phone's page
 shows the same one, to check before sending (RFC 8628 §5.4). An invite sent to a TV counts a new
-device use; the phone's own pass is never reused. An open session is handed over as it is (the
-same id and expiry), so the TV shares the phone's limits and no Turnstile check is skipped.
+device use; the phone's own pass is never reused. For an open session the TV gets its own token
+of the phone's session (the same id and expiry, never the phone's cookie), so it shares the
+phone's limits and no Turnstile check is skipped or extended.
 
 `WATCH_SITE_OFF = 1` turns every page into "temporarily unavailable" while the API and playback
 stay up; `TURNSTILE_SITE_KEY` shows the Turnstile widget on an open channel's page.

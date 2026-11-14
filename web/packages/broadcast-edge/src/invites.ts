@@ -46,7 +46,8 @@ export interface PassClaims {
 
 export interface OpenClaims {
   id: string;
-  via: "turnstile" | "attest";
+  /** how the session began; "pair": a TV's token of a phone's session (50.27) */
+  via: "turnstile" | "attest" | "pair";
   exp: number;
 }
 
