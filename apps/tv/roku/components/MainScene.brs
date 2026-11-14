@@ -52,7 +52,7 @@ end sub
 ' Opens a saved home: its discovery answer first (the same home, and a level this channel can
 ' use), then Home.
 sub scene_Connect(home as Object)
-    scene_Busy(m.i18n.Format("launcher.connecting", [ui_Vis(home.name, 30)]))
+    scene_Busy(m.i18n.Format("launcher.connecting", [ui_Arg(home.name)]))
     t = CreateObject("roSGNode", "HomeTask")
     t.command = {kind: "connect", home: home}
     t.ObserveField("result", "onConnected")
