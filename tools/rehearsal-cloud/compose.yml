@@ -8,8 +8,9 @@
 #   relay-green  the same, process "a-green" (its peer: the tunnel directory, 50.04)
 #   edge         Caddy in front of both (deploy/cloud-ha's edge without TLS)
 #
-# Profile "api" (scenario report-symbolicated, Epic 53 story 53.16 T07): this commit's api role
-# (api-rehearsal.toml), with a symbols token the scenario makes in .work/symbols.token.
+# Profile "api" (scenarios report-symbolicated, Epic 53 story 53.16 T07, and tv-code, Epic 58
+# story 58.03 T04): this commit's api role (api-rehearsal.toml), with a symbols token the
+# scenario makes in .work/symbols.token.
 #
 # Profile "certs" (scenario cert-on-standby, story 50.02): Pebble (Let's Encrypt's test CA),
 # fakeacmedns (the DNS-01 provider Pebble resolves through) and two node edges, cert-a and
@@ -131,6 +132,8 @@ services:
       MAKTABA_CLOUD_STAFF_SECRET_KEY: 72656865617273616c2d73746166662d7365637265742d6b65792d3332627974
       MAKTABA_CLOUD_BILLING_PROVIDER: none
       MAKTABA_CLOUD_SYMBOLS_TOKEN_FILE: /run/maktaba/symbols.token
+      # a home's relay connection, as a TV given a cloud code reaches it (scenario tv-code, 58.03)
+      MAKTABA_CLOUD_RELAY_PUBLIC_HOST: relay.test
     volumes:
       - ./api-rehearsal.toml:/etc/maktaba/cloud.toml:ro
       - ./.work/symbols.token:/run/maktaba/symbols.token:ro
