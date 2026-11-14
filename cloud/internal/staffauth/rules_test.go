@@ -73,4 +73,8 @@ func TestSensitiveListsDontOverlap(t *testing.T) {
 	if !IsSensitive("POST", "/v1/admin/servers/{id}/broadcast") {
 		t.Error("the broadcast grant is not sensitive")
 	}
+	// story 50.26: withdrawing a home's invite cuts its viewers off; a fresh MFA first
+	if !IsSensitive("POST", "/v1/admin/broadcast/invites/{id}/revoke") {
+		t.Error("the staff invite revoke is not sensitive")
+	}
 }

@@ -87,6 +87,8 @@ type pfEnv struct {
 	cache *parental.Cache
 	// cast is the router's cast grant gate (Epic 58 story 58.07)
 	cast *castgrant.Gate
+	// streaming is the streaming service the home's sessions are opened on
+	streaming *tmStreaming
 }
 
 // pfStandIns are the refused routes this test's router has no real mount for.
@@ -147,7 +149,8 @@ func setupFilterOn(t testing.TB, more func(r chi.Router, e *pfEnv), open func(ds
 	r := router.New(router.Deps{IdempotencyStore: idempotency.NewMemoryStore(), Parental: e.gate, CastGate: e.cast})
 	// a streaming service that keeps time limits (story 57.14): without one a
 	// restricted account's stream is refused
-	router.MountP6(r, router.P6Deps{DB: served, StreamingClient: &tmStreaming{leases: map[string]time.Time{}}, URLSigner: e.signer, ParentalGate: e.gate, EventHub: e.hub})
+	e.streaming = &tmStreaming{leases: map[string]time.Time{}}
+	router.MountP6(r, router.P6Deps{DB: served, StreamingClient: e.streaming, URLSigner: e.signer, ParentalGate: e.gate, EventHub: e.hub})
 	if e.gate.Cache() == nil {
 		t.Fatal("MountP6 gave the gate no cache")
 	}

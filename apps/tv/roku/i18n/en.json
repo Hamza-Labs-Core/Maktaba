@@ -438,5 +438,228 @@
     "widthChars": 30,
     "lines": 1
   },
-  "roku.player.track": "Track %1$s"
+  "roku.player.track": "Track %1$s",
+  "@parental.blocked.title": {
+    "widthChars": 40,
+    "lines": 1
+  },
+  "parental.blocked.title": "This isn't available",
+  "@parental.blocked.account": {
+    "widthChars": 60,
+    "lines": 2
+  },
+  "parental.blocked.account": "Your account is limited to %1$s+.",
+  "@parental.blocked.accountAll": {
+    "widthChars": 60,
+    "lines": 2
+  },
+  "parental.blocked.accountAll": "Your account is limited to All ages.",
+  "@parental.blocked.accountNone": {
+    "widthChars": 60,
+    "lines": 2
+  },
+  "parental.blocked.accountNone": "Your account is limited to what a parent allowed.",
+  "@parental.blocked.device": {
+    "widthChars": 60,
+    "lines": 2
+  },
+  "parental.blocked.device": "This device is limited to %1$s+.",
+  "@parental.blocked.ask": {
+    "widthChars": 24,
+    "lines": 1
+  },
+  "parental.blocked.ask": "Ask a parent",
+  "@parental.ask.again": {
+    "widthChars": 24,
+    "lines": 1
+  },
+  "parental.ask.again": "Ask again",
+  "@parental.ask.sent": {
+    "widthChars": 60,
+    "lines": 2
+  },
+  "parental.ask.sent": "Request sent. Waiting for a parent.",
+  "@parental.ask.denied": {
+    "widthChars": 60,
+    "lines": 2
+  },
+  "parental.ask.denied": "A parent said no.",
+  "@parental.ask.approved": {
+    "widthChars": 60,
+    "lines": 2
+  },
+  "parental.ask.approved": "A parent said yes.",
+  "@parental.ask.tooMany": {
+    "widthChars": 60,
+    "lines": 2
+  },
+  "parental.ask.tooMany": "You have too many requests waiting.",
+  "@parental.ask.failed": {
+    "widthChars": 60,
+    "lines": 2
+  },
+  "parental.ask.failed": "The request didn't go out. Try again.",
+  "@parental.time.check": {
+    "widthChars": 24,
+    "lines": 1
+  },
+  "parental.time.check": "Check again",
+  "@parental.profile.managed": {
+    "widthChars": 60,
+    "lines": 1
+  },
+  "parental.profile.managed": "A parent manages this account.",
+  "@parental.profile.limit": {
+    "widthChars": 60,
+    "lines": 1
+  },
+  "parental.profile.limit": "Content limit: %1$s+",
+  "@parental.profile.limitAll": {
+    "widthChars": 60,
+    "lines": 1
+  },
+  "parental.profile.limitAll": "Content limit: All ages",
+  "@parental.profile.limitNone": {
+    "widthChars": 60,
+    "lines": 1
+  },
+  "parental.profile.limitNone": "Content limit: what a parent allowed",
+  "@tv.parental.askOnPhone": {
+    "widthChars": 60,
+    "lines": 2
+  },
+  "tv.parental.askOnPhone": "A parent can answer from Maktaba on their phone.",
+  "@parental.blocked.deviceAll": {
+    "widthChars": 60,
+    "lines": 2
+  },
+  "parental.blocked.deviceAll": "This device is limited to All ages.",
+  "@parental.time.up.title": {
+    "widthChars": 40,
+    "lines": 1
+  },
+  "parental.time.up.title": "Time's up for today",
+  "@parental.time.outside.title": {
+    "widthChars": 40,
+    "lines": 1
+  },
+  "parental.time.outside.title": "Not watching time yet",
+  "@parental.time.next": {
+    "widthChars": 60,
+    "lines": 1
+  },
+  "parental.time.next": "You can watch again at %1$s",
+  "@parental.time.saved": {
+    "widthChars": 60,
+    "lines": 2
+  },
+  "parental.time.saved": "Your place in this video is saved at %1$s.",
+  "@parental.time.askMore": {
+    "widthChars": 40,
+    "lines": 1
+  },
+  "parental.time.askMore": "Ask for more time",
+  "@parental.ask.sentTime": {
+    "widthChars": 60,
+    "lines": 2
+  },
+  "parental.ask.sentTime": "You asked for more time. Waiting for a parent.",
+  "@parental.time.cannotCheck": {
+    "widthChars": 60,
+    "lines": 2
+  },
+  "parental.time.cannotCheck": "Your home can't check your watching time right now. Try again in a moment.",
+  "@parental.player.stopped": {
+    "widthChars": 60,
+    "lines": 2
+  },
+  "parental.player.stopped": "This video is no longer available on this account.",
+  "@roku.parental.ask15": {
+    "widthChars": 16,
+    "lines": 1
+  },
+  "roku.parental.ask15": "15 minutes",
+  "@roku.parental.ask30": {
+    "widthChars": 16,
+    "lines": 1
+  },
+  "roku.parental.ask30": "30 minutes",
+  "@roku.parental.ask60": {
+    "widthChars": 16,
+    "lines": 1
+  },
+  "roku.parental.ask60": "1 hour",
+  "@roku.weekday.0": {
+    "widthChars": 16,
+    "lines": 1
+  },
+  "roku.weekday.0": "Sunday",
+  "@roku.weekday.1": {
+    "widthChars": 16,
+    "lines": 1
+  },
+  "roku.weekday.1": "Monday",
+  "@roku.weekday.2": {
+    "widthChars": 16,
+    "lines": 1
+  },
+  "roku.weekday.2": "Tuesday",
+  "@roku.weekday.3": {
+    "widthChars": 16,
+    "lines": 1
+  },
+  "roku.weekday.3": "Wednesday",
+  "@roku.weekday.4": {
+    "widthChars": 16,
+    "lines": 1
+  },
+  "roku.weekday.4": "Thursday",
+  "@roku.weekday.5": {
+    "widthChars": 16,
+    "lines": 1
+  },
+  "roku.weekday.5": "Friday",
+  "@roku.weekday.6": {
+    "widthChars": 16,
+    "lines": 1
+  },
+  "roku.weekday.6": "Saturday",
+  "@parental.time.left": {
+    "widthChars": 40,
+    "lines": 1
+  },
+  "parental.time.left": "%1$s left today",
+  "@parental.time.warning": {
+    "widthChars": 48,
+    "lines": 1
+  },
+  "parental.time.warning": "Watching ends in %1$s.",
+  "@parental.time.minutes": {
+    "widthChars": 16,
+    "lines": 1
+  },
+  "parental.time.minutes": {
+    "one": "%1$d minute",
+    "other": "%1$d minutes"
+  },
+  "@parental.time.hours": {
+    "widthChars": 16,
+    "lines": 1
+  },
+  "parental.time.hours": {
+    "one": "%1$d hour",
+    "other": "%1$d hours"
+  },
+  "@parental.time.hoursMinutes": {
+    "widthChars": 32,
+    "lines": 1,
+    "value": true
+  },
+  "parental.time.hoursMinutes": "%1$s and %2$s",
+  "@parental.time.underMinute": {
+    "widthChars": 20,
+    "lines": 1,
+    "value": true
+  },
+  "parental.time.underMinute": "less than a minute"
 }

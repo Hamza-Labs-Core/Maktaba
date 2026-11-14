@@ -2,7 +2,10 @@
 <!-- The player (Epic 58 story 58.13): a stream session (client_profile roku with this Roku's
      device_caps) in a Video node whose own trick-play bar is replaced by Maktaba's overlay:
      title, series and episode, position, chapter, scrub thumbnails, Up next, the audio and
-     subtitle pickers, and a subtitle layer that draws Arabic cues in visual order. -->
+     subtitle pickers, and a subtitle layer that draws Arabic cues in visual order. When the
+     home stops the stream for a restricted account's time, the time's-up page takes the screen
+     (Epic 57 story 57.15, on Roku); before that, the time left and its warnings show in the end
+     corner. -->
 <component name="PlayerScreen" extends="Screen">
   <script type="text/brightscript" uri="PlayerScreen.brs" />
   <script type="text/brightscript" uri="pkg:/components/common.brs" />
@@ -17,6 +20,7 @@
   <script type="text/brightscript" uri="pkg:/source/visualtext_tables.brs" />
   <script type="text/brightscript" uri="pkg:/source/caps.brs" />
   <script type="text/brightscript" uri="pkg:/source/player.brs" />
+  <script type="text/brightscript" uri="pkg:/source/parental.brs" />
   <children>
     <Video id="video" width="1920" height="1080" enableUI="false" />
     <!-- the channel's subtitle layer: Arabic cues, shaped and in display order -->
@@ -46,8 +50,40 @@
       <Label id="upNextLabel" translation="[20,232]" width="420" height="40" />
       <Label id="upNextTitle" translation="[20,272]" width="420" height="44" />
     </Group>
+    <!-- a restricted account's time (Epic 57 story 57.15, as Android TV's): the five- and
+         one-minute warnings over the time left once 15 minutes or fewer remain, in the end
+         corner (below Up next while it shows); placed by the code, mirrored in Arabic -->
+    <Group id="time">
+      <Rectangle id="warnBox" width="640" height="64" color="0x000000A0" visible="false" />
+      <Label id="warn" width="640" height="64" horizAlign="center" vertAlign="center" visible="false" />
+      <Rectangle id="leftBox" width="640" height="56" color="0x000000A0" visible="false" />
+      <Label id="leftNote" width="640" height="56" horizAlign="center" vertAlign="center" visible="false" />
+    </Group>
     <Label id="status" translation="[160,440]" width="1600" height="200" horizAlign="center" wrap="true" visible="false" />
     <TvButton id="back" translation="[800,680]" width="320" visible="false" />
+    <!-- time's up: why, when watching opens again, where it stopped, Ask for more time -->
+    <Group id="timesUp" visible="false">
+      <Rectangle id="tuShade" width="1920" height="1080" color="0x0B111CFF" />
+      <!-- a clock: its face and two hands (nothing in it mirrors in RTL) -->
+      <Group id="clock">
+        <Rectangle translation="[920,190]" width="80" height="8" color="0xE3B252FF" />
+        <Rectangle translation="[920,262]" width="80" height="8" color="0xE3B252FF" />
+        <Rectangle translation="[920,190]" width="8" height="80" color="0xE3B252FF" />
+        <Rectangle translation="[992,190]" width="8" height="80" color="0xE3B252FF" />
+        <Rectangle translation="[957,206]" width="6" height="30" color="0xE3B252FF" />
+        <Rectangle translation="[957,230]" width="26" height="6" color="0xE3B252FF" />
+      </Group>
+      <Label id="tuTitle" translation="[160,320]" width="1600" horizAlign="center" />
+      <Label id="tuNext" translation="[160,405]" width="1600" horizAlign="center" />
+      <Label id="tuSaved" translation="[160,460]" width="1600" height="90" wrap="true" horizAlign="center" />
+      <Label id="tuState" translation="[160,530]" width="1600" height="90" wrap="true" horizAlign="center" />
+      <Label id="tuAsk" translation="[160,625]" width="1600" horizAlign="center" />
+      <TvButton id="tuAsk0" translation="[0,690]" width="300" />
+      <TvButton id="tuAsk1" translation="[0,690]" width="300" />
+      <TvButton id="tuAsk2" translation="[0,690]" width="300" />
+      <TvButton id="tuCheck" translation="[0,690]" width="300" />
+      <Label id="tuHint" translation="[160,800]" width="1600" height="90" wrap="true" horizAlign="center" />
+    </Group>
     <ChoiceDialog id="picker" visible="false" />
     <!-- holds the focus while no picker is open: the remote's keys bubble from it to the screen -->
     <Group id="keys" focusable="true" />

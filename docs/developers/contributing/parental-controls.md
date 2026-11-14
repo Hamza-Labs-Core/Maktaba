@@ -208,6 +208,43 @@ child's device. A right PIN answers `{rule}` (the item is allowed until the day 
 home time) or, for the kind `time`, `{grant}`. A wrong PIN is 403 `pin_wrong`. A lock is 429
 `pin_locked` with `Retry-After`. Never keep, log or check a PIN on the device.
 
+## On a TV
+
+A TV app holds no rule of its own: it asks the same routes as any client, and a phone browser
+showing `/tv/` gets the same answers as a TV. What it adds is the screens:
+
+- **The blocked page.** A video, series or collection the home answers 404 for, while
+  `GET /api/me/parental` says the sign-in is limited (`restricted`, or a `max_tier`), shows
+  *This isn't available* with the limit, and nothing of the item. **Ask a parent** is the first
+  control and takes the remote's focus; once asked, **Check again** takes it. A line says a
+  parent can answer from Maktaba on their phone.
+- **No PIN on Samsung, LG or Roku.** Six digits on a remote are slow; the guardian answers from
+  their phone. The Android TV, Fire TV and Apple TV apps keep the PIN Epic 57 built.
+- **Account or Settings** says that a parent manages the account, and its content limit.
+- **The player's stop.** A session open or a progress post refused with 403 `parental_time`
+  stops the video and closes its session; the TV shows the time's-up page (why, when watching
+  opens again, where it stopped) with **Ask for more time** (15, 30 or 60 minutes, the first
+  focused) and **Check again**. A parent's yes, or Check again, opens the session again from
+  where it stopped, and the home decides. A 404 to a progress post (the video is hidden now)
+  shows the blocked page with a line that the video stopped; a yes plays it again. On Roku,
+  `no_heartbeat` (a pause of over a minute) opens the stream again once where it was.
+- **The time left.** While a video plays, the TV asks `GET /api/me/parental/time` (for the
+  video's library) every 30 seconds, every 10 in the last six minutes, and shows its
+  `remaining_seconds`, never a count of its own: once 15 minutes or fewer are left, *12 minutes
+  left today* in the top corner (the left in Arabic); at 5 minutes and at 1 minute, *Watching
+  ends in 5 minutes.* for about 10 seconds, each once, and again only after a parent gave more
+  time. Arabic takes its plural forms (Roku's catalog holds them as CLDR forms, which
+  `tools/i18n/check_tv_catalogs.py` checks in both languages).
+- **An earlier day's no.** A no to more time is about its own day: once the request's
+  `expires_at` (the home's day end) has passed, the time's-up page offers Ask for more time
+  again rather than *A parent said no*, as the web does. A no to a video stays a no.
+- **A deep link** (Roku's launch and voice links, a link by id) to a hidden item shows the
+  not-available line on Home and asks nothing: the id may name nothing at all.
+- **A cast grant** is minted only for what the sender may see, and every session it opens is
+  checked against the live policy: a guardian who tightens a limit stops the next queue item.
+- **A cloud code** approved by a restricted child signs the TV in as that child; it cannot be
+  approved for anyone else.
+
 ## Time: what a player must do
 
 A restricted account with time rules is served a stream only while the home is counting it.
@@ -309,7 +346,7 @@ go test -run 'TestEveryRouteHasParentalSurface|TestParentalSurfaces' ./internal/
 go test -count=1 -run 'TestP57RoleTable' ./internal/router/
 
 # the bypass rehearsal
-go test -tags parental_bypass -count=1 -run 'TestParentalBypass' ./internal/router/
+go test -tags parental_bypass -count=1 -run 'TestParentalBypass|TestP58Bypass' ./internal/router/
 ```
 
 - **The role table** (`p57_roles_pg_test.go`) walks every parental route as no one, a viewer,
@@ -323,6 +360,9 @@ go test -tags parental_bypass -count=1 -run 'TestParentalBypass' ./internal/rout
   when a hidden id is answered differently from an id that names nothing. It proves itself: an
   unrestricted viewer must find the hidden items, and with the filter taken off one surface it
   must fail. It runs on Postgres only.
+- **The TV rows** (`p58_parental_tv_pg_test.go`, `TestP58Bypass…`, A23–A27) ask the cast grant,
+  the cloud code, links by id and the time rules with each TV's user agent (Fire TV, Samsung,
+  LG, Roku) and a phone browser's, and need the same answer from each.
 
 In CI both run in the `parental-bypass` job whenever the API, the streaming service, the
 migrations or the rating tables change. The job fails when a test was skipped for want of

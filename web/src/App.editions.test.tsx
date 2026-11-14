@@ -96,6 +96,14 @@ describe("full edition (the default the server ships)", () => {
     ).toBeVisible();
   });
 
+  // Epic 50 story 50.26: who may watch the home's broadcast channels
+  it("has the Broadcast access page for an admin", async () => {
+    await open("full", "/admin/broadcast-access", admin);
+    expect(
+      await screen.findByRole("heading", { level: 1, name: en["broadcastAccess.title"] })
+    ).toBeVisible();
+  });
+
   it("hides the Manage section from a viewer", async () => {
     await open("full", "/", viewer);
     const side = await sidebar();
@@ -117,15 +125,19 @@ describe("player edition", () => {
     }
   });
 
-  it.each(["/queue", "/transcription", "/settings/privacy", "/admin/users", "/billing"])(
-    "has no route %s, even for an admin",
-    async (path) => {
-      await open("player", path, admin);
-      expect(
-        await screen.findByRole("heading", { level: 1, name: en["notFound.title"] })
-      ).toBeVisible();
-    }
-  );
+  it.each([
+    "/queue",
+    "/transcription",
+    "/settings/privacy",
+    "/admin/users",
+    "/billing",
+    "/admin/broadcast-access",
+  ])("has no route %s, even for an admin", async (path) => {
+    await open("player", path, admin);
+    expect(
+      await screen.findByRole("heading", { level: 1, name: en["notFound.title"] })
+    ).toBeVisible();
+  });
 
   it("keeps the viewer routes", async () => {
     await open("player", "/help", viewer);

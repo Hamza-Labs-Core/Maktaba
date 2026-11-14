@@ -78,30 +78,32 @@ sub code_Cloud()
     end while
 end sub
 
-' The grant goes to the first of the cloud's connections that answers as the approving home
-' (LAN first, the relay last; story 50.13's order), at a level this channel can use.
+' The grant goes to the first of the cloud's proven names that answers as a Maktaba home (the
+' cloud's order: LAN names first, the relay last; story 50.13), at a level this channel can use.
+' Only https connections by host name are tried (NetGrantConnections): the TV's certificate check
+' proves the home there. A plain http or raw IP connection is never contacted for the cloud code,
+' whatever would answer there.
 sub code_Redeem(p as Object)
     m.top.state = "signing_in"
-    for each conn in NetCloudConnections(p.connections)
+    for each conn in NetGrantConnections(p.connections)
         base = conn.url
         while Right(base, 1) = "/"
             base = Left(base, Len(base) - 1)
         end while
         a = code_Discover(base)
-        if a <> invalid and a.id = p.home_id then
+        if a <> invalid then
             verdict = CompatDecide(a, CompatApp())
             if verdict <> "ok" then
                 m.top.result = {ok: false, verdict: verdict, home: {id: a.id, name: a.name, base: base}}
                 return
             end if
-            plain = (LCase(Left(base, 7)) = "http://")
             res = code_Token(base, p.grant)
             if res.ok then
                 res.home.id = a.id
                 res.home.name = a.name
                 if a.name = invalid or a.name = "" then res.home.name = p.home_name
                 res.home.base = base
-                res.home.plain = plain
+                res.home.plain = false
                 print "[code] signed in through "; conn.kind
                 m.top.result = res
                 return
@@ -109,7 +111,7 @@ sub code_Redeem(p as Object)
             m.top.result = {ok: false, error: "redeem"}
             return
         end if
-        print "[code] "; conn.kind; " did not answer as the home"
+        print "[code] "; conn.kind; " did not answer as a home"
     end for
     m.top.result = {ok: false, error: "unreachable"}
 end sub

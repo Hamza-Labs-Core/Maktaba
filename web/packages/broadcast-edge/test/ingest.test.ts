@@ -259,6 +259,21 @@ describe("the cloud's control posts", () => {
     );
   });
 
+  it("refuses a signed plan that isn't a Plan (no publisher, no version, an unknown mode)", async () => {
+    for (const payload of [
+      { mode: "full", version: 1 },
+      { pub: "p", mode: "full" },
+      { pub: "p", mode: "capped", version: 1 },
+    ]) {
+      const r = await call(`${INGEST}/v1/control/plan`, {
+        method: "PUT",
+        body: await control("plan", payload),
+      });
+      expect(r.status).toBe(400);
+      expect(await r.json()).toEqual({ error: "bad_plan" });
+    }
+  });
+
   it("installs a newer revocation list: the channel's ingest and playlists are refused, then restored", async () => {
     const ch = newChannel();
     const pub = `pub-${ch}`;

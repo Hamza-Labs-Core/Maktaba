@@ -6,16 +6,31 @@
 // handlers and OpenAPI): bearer tokens on every route but discovery, pairing and refresh; a 401
 // for an expired access token (the first /api/home of each sign-in, to run the refresh); 404
 // for a video the viewer cannot see. The cloud gives a code and approves it on the third poll.
+// Given a certificate for localhost, the home also answers over https on localhost: the name the
+// mock cloud gives it as its relay, the only kind of connection the cloud code's grant may go to.
+// Epic 57 on Roku (story 58.14): with `state.time` set, a restricted viewer's watching time is
+// over, and every stream open and progress post answers 403 parental_time (the problem body the
+// home's streaming handler writes) until a parent approves a request for more time; a video in
+// `state.hiddenNow` is hidden by the viewer's limit from then on (404 for it, its stream's
+// progress included) until a parent approves a request for it. GET /api/me/parental/time answers
+// as the home's handler does: `state.timeLeft` seconds left under a rule (null: no rule now),
+// not allowed while `state.time` holds.
 // Every request is logged (no tokens) for the CI report.
 
 import { createServer } from "node:http";
+import { createServer as createTlsServer } from "node:https";
+import { createServer as createTcpServer } from "node:net";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
 const { createCanvas } = require("canvas");
 
 const uuid = (n) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
+// The home's instance id, as /api/discovery/home answers it, and its server id in Maktaba
+// Cloud, as the cloud's poll answers it (home_id): two different ids, as on a real home, so the
+// channel cannot know the approving home by an id; it trusts only an https name (its relay).
 export const HOME_ID = "h1test";
+export const CLOUD_HOME_ID = "7c9e6679-7425-40de-944b-e07fc1f90ae7";
 export const LIB = uuid(900);
 export const SERIES = uuid(800);
 export const HIDDEN = uuid(999);
@@ -43,6 +58,14 @@ for (let i = 0; i < 80; i++) {
     playable: true,
   });
 }
+
+/**
+ * Story 58.14: a 16+ video. With `state.restricted` the home holds the viewer to 9+ and answers
+ * 404 for it (as for a missing one) until a parent approves the viewer's request for it; Home's
+ * Continue watching still lists it first (a limit tightened since the row was read).
+ */
+export const LATE = uuid(998);
+const late = { id: LATE, title: "Late Night Film", filename: "late.mkv", library_id: LIB, duration_sec: 5400, position_sec: 900, completed: false, series: null, description: "A film for grown-ups.", playable: true };
 
 /** A video whose stream session the home refuses (every transcode slot taken). */
 export const REFUSED = uuid(8);
@@ -103,8 +126,21 @@ function readBody(req) {
 }
 
 /** Starts the home; log(line) gets each request. */
-export function startHome(log) {
-  const state = { access: new Set(), refresh: new Set(), expired: new Set(), n: 0, grant: "G1", deviceCode: "dc1", clientHeaders: new Set() };
+export function startHome(log, tls) {
+  const state = { access: new Set(), refresh: new Set(), expired: new Set(), n: 0, grant: "G1", deviceCode: "dc1", clientHeaders: new Set(), restricted: false, requests: [] };
+  // story 58.14: the late video is the viewer's to see once not restricted, or once approved
+  const lateShown = () => !state.restricted || state.requests.some((r) => r.subject_id === LATE && r.status === "approved");
+  state.time = null;
+  state.timeLeft = null;
+  state.hiddenNow = new Set();
+  state.sessionVideo = {};
+  // a parent's yes to more time gives time: the home admits the stream again
+  const timeOver = () => state.restricted && state.time && !state.requests.some((r) => r.subject_kind === "time" && r.status === "approved");
+  const hiddenNow = (id) => state.restricted && state.hiddenNow.has(id) && !state.requests.some((r) => r.subject_id === id && r.status === "approved");
+  const notFound = (p) => ({ type: "not-found", title: "Not Found", status: 404, detail: "not found", instance: p, requestId: "req-test" });
+  // streaming.writeTimeOver: 403 parental-time with its code, reason and, when the rules allow
+  // watching again, next_allowed_at
+  const timeProblem = (p) => ({ type: "parental-time", title: "Forbidden", status: 403, detail: "this account's watching time is over for now", instance: p, requestId: "req-test", code: "parental_time", reason: state.time.reason, ...(state.time.next ? { next_allowed_at: state.time.next } : {}) });
   const card = (v) => ({ id: v.id, title: v.title, filename: v.filename, library_id: v.library_id, duration_sec: v.duration_sec, position_sec: v.position_sec, completed: v.completed, series: v.series });
   const mint = () => {
     state.n++;
@@ -114,7 +150,7 @@ export function startHome(log) {
     state.refresh.add(r);
     return { access_token: a, refresh_token: r, access_expires_in: 900, refresh_expires_in: 2592000, user_id: "u-viewer" };
   };
-  const server = createServer(async (req, res) => {
+  const handler = async (req, res) => {
     const url = new URL(req.url, "http://x");
     const p = url.pathname;
     const auth = (req.headers.authorization || "").replace(/^Bearer /, "");
@@ -123,7 +159,7 @@ export function startHome(log) {
     const body = req.method === "POST" || req.method === "PUT" ? await readBody(req) : {};
     if (p === "/api/discovery/home") {
       const port = server.address().port;
-      return json(res, 200, { id: HOME_ID, name: "Test home", version: "0.3.150", urls: [`http://127.0.0.1:${port}`], sign_in: { password: true, code: true }, api_level: 1, api_level_oldest: 1, client_floor: {} });
+      return json(res, 200, { id: HOME_ID, name: "Test home", version: "0.3.150", urls: [`http://127.0.0.1:${port}`, ...(secure ? [`https://localhost:${secure.address().port}`] : [])], sign_in: { password: true, code: true }, api_level: 1, api_level_oldest: 1, client_floor: {} });
     }
     if (p === "/api/pairing/device" && req.method === "POST") return json(res, 201, { code: "HKMN-4567", device_code: state.deviceCode, expires_at: new Date(Date.now() + 6e5).toISOString(), verify_path: "/pair?code=HKMN-4567", verify_url: `http://127.0.0.1:${server.address().port}/pair?code=HKMN-4567`, interval: 1 });
     if (p === "/api/pairing/device/token" && req.method === "POST") {
@@ -168,6 +204,29 @@ export function startHome(log) {
       return json(res, 401, { type: "unauthorized" });
     }
     if (p === "/api/auth/me") return json(res, 200, { id: "u-viewer", username: "viewer", is_admin: false, home_name: "Test home" });
+    if (p === "/api/me/parental") return json(res, 200, state.restricted ? { restricted: true, max_tier: 9, allow_only: false, version: 1 } : { restricted: false });
+    if (p === "/api/me/parental/requests" && req.method === "POST") {
+      log(`home ask kind=${body.subject_kind} id=${body.subject_id}`);
+      const r = { id: `r${state.requests.length + 1}`, subject_kind: body.subject_kind, subject_id: body.subject_id, status: "pending", created_at: new Date().toISOString(), expires_at: new Date(Date.now() + 864e5).toISOString() };
+      state.requests.unshift(r);
+      return json(res, 201, { request: r });
+    }
+    if (p === "/api/me/parental/requests") return json(res, 200, { requests: state.requests });
+    if (p === "/api/me/parental/time") {
+      // handlers/parental/time.go's myTimeResponse; it counts nothing and renews no lease
+      log(`home time library=${url.searchParams.get("library_id") ?? ""} left=${state.timeLeft}`);
+      const now = new Date().toISOString();
+      if (timeOver()) return json(res, 200, { allowed: false, limited: true, reason: state.time.reason, remaining_seconds: 0, slot_ends_at: null, next_allowed_at: state.time.next ?? null, now });
+      if (state.timeLeft === null) return json(res, 200, { allowed: true, limited: false, remaining_seconds: null, slot_ends_at: null, next_allowed_at: null, now });
+      return json(res, 200, { allowed: true, limited: true, remaining_seconds: state.timeLeft, slot_ends_at: null, next_allowed_at: null, now });
+    }
+    if (p.startsWith("/api/videos/") && hiddenNow(p.split("/")[3])) return json(res, 404, notFound(p));
+    if (p === `/api/videos/${LATE}`) {
+      if (!lateShown()) return json(res, 404, { type: "about:blank", title: "Not Found", status: 404, detail: "not found" });
+      return json(res, 200, { ...card(late), display_title: late.title, description: late.description, playable: true, playback_state: { position_sec: late.position_sec, completed: false } });
+    }
+    if (p === "/api/home" && state.restricted)
+      return json(res, 200, { continue_watching: [late, ...videos.filter((v) => v.position_sec > 0).slice(0, 7)].map(card), recently_added: videos.slice(20, 32).map(card), on_deck: [], recently_watched: [], collection_rows: [] });
     if (p === "/api/home") return json(res, 200, { continue_watching: videos.filter((v) => v.position_sec > 0).slice(0, 8).map(card), recently_added: videos.slice(20, 32).map(card), on_deck: [], recently_watched: [], collection_rows: [] });
     if (p === "/api/recommendations") return json(res, 200, { rails: [{ id: "for-you", title: "For you", reason_kind: "for_you", items: videos.slice(40, 48).map((v) => ({ video_id: v.id, poster_url: `/api/videos/${v.id}/poster` })) }] });
     if (p === "/api/libraries") return json(res, 200, { items: [{ id: LIB, name: "Films and series" }, { id: uuid(901), name: "محاضرات" }] });
@@ -220,17 +279,30 @@ export function startHome(log) {
     if (p === "/api/stream/sessions" && req.method === "POST") {
       const caps = body.device_caps || {};
       log(`home session video=${body.video_id} profile=${body.client_profile} start=${body.start_sec ?? 0} caps=${(caps.video || []).map((v) => `${v.codec}@${v.max_height}`).join(",")}/${(caps.hdr || []).join(",")}/${(caps.passthrough || []).join(",")} force=${body.force_transcode === true}`);
-      const v = videos.find((x) => x.id === body.video_id);
-      if (!v) return json(res, 404, { type: "not_found" });
+      if (timeOver()) {
+        log("home time over");
+        return json(res, 403, timeProblem(p));
+      }
+      const v = videos.find((x) => x.id === body.video_id) || (body.video_id === LATE && lateShown() ? late : null);
+      if (!v || hiddenNow(v.id)) return json(res, 404, notFound(p));
       if (v.id === REFUSED) return json(res, 503, { type: "about:blank", title: "Service Unavailable", status: 503, detail: "Every transcode slot is taken." });
       state.sessions = (state.sessions || 0) + 1;
       const id = `s${state.sessions}`;
+      state.sessionVideo[id] = v.id;
       // the first video of the queue is short: its Up next shows at once (15 s before the end)
       const duration = v.id === videos[0].id ? 12 : v.duration_sec;
       return json(res, 201, { session_id: id, mode: "direct", direct_url: `/stream/direct/${v.id}?sig=x`, stream_sig: `sig-${id}`, duration_sec: duration, expires_at: new Date(Date.now() + 36e5).toISOString() });
     }
     if (/^\/api\/stream\/sessions\/s\d+\/progress$/.test(p) && req.method === "POST") {
-      log(`home progress ${p.split("/")[4]} pos=${body.position_sec} completed=${body.completed === true}`);
+      const sid = p.split("/")[4];
+      log(`home progress ${sid} pos=${body.position_sec} completed=${body.completed === true}`);
+      // the heartbeat of a kept account: refused once the time is over (the position is kept)
+      if (timeOver()) {
+        log("home time over");
+        return json(res, 403, timeProblem(p));
+      }
+      // the stream's video is no longer this viewer's
+      if (hiddenNow(state.sessionVideo[sid])) return json(res, 404, notFound(p));
       res.writeHead(204);
       return res.end();
     }
@@ -240,13 +312,36 @@ export function startHome(log) {
       return res.end();
     }
     return json(res, 404, { type: "not_found" });
-  });
-  return new Promise((resolve) => server.listen(0, "127.0.0.1", () => resolve({ server, state, port: server.address().port })));
+  };
+  const server = createServer(handler);
+  const secure = tls ? createTlsServer(tls, handler) : null;
+  if (secure) server.on("close", () => secure.close());
+  const listen = (s) => new Promise((resolve) => s.listen(0, "127.0.0.1", resolve));
+  return Promise.all([listen(server), ...(secure ? [listen(secure)] : [])]).then(() => ({ server, state, port: server.address().port, httpsPort: secure ? secure.address().port : 0 }));
 }
 
-/** Starts the cloud: a code, approved on the third poll with the home's connections. */
-export function startCloud(log, homePort) {
-  const state = { polls: 0, delivered: false, created: 0 };
+/**
+ * Starts the cloud: a code, approved on the third poll with the home's connections. The relay is
+ * the home's https name (localhost, homeHttpsPort). The LAN address is a trap: another machine
+ * answering as a Maktaba home there and listing the home's relay among its urls, as anyone on
+ * the TV's network could. A raw-IP direct address (https and plain) leads to a second trap. The
+ * channel must never contact either: state.trapConnections counts every TCP connection to them.
+ */
+export async function startCloud(log, homeHttpsPort) {
+  const state = { polls: 0, delivered: false, created: 0, trapConnections: 0 };
+  const relay = `https://localhost:${homeHttpsPort}`;
+  const lanTrap = createServer((req, res) => {
+    log(`trap ${req.method} ${new URL(req.url, "http://x").pathname}`);
+    json(res, 200, { id: "intruder", name: "Not the home", version: "0.3.150", urls: [relay], sign_in: { password: true, code: true }, api_level: 1, api_level_oldest: 1, client_floor: {} });
+  });
+  const ipTrap = createTcpServer((sock) => sock.destroy());
+  for (const t of [lanTrap, ipTrap]) {
+    t.on("connection", () => {
+      state.trapConnections++;
+      log("trap connection");
+    });
+    await new Promise((resolve) => t.listen(0, "127.0.0.1", resolve));
+  }
   const server = createServer(async (req, res) => {
     const url = new URL(req.url, "http://x");
     const p = url.pathname;
@@ -264,15 +359,21 @@ export function startCloud(log, homePort) {
       if (state.polls < 3) return json(res, 202, { status: "pending", interval: 1 });
       state.delivered = true;
       return json(res, 200, {
-        status: "approved", home_id: HOME_ID, home_name: "Test home", grant: "G1",
+        status: "approved", home_id: CLOUD_HOME_ID, home_name: "Test home", grant: "G1",
         connections: [
           { kind: "local_ip", url: "https://127.0.0.1:8443", tls_name: "127-0-0-1.h1test.direct.example" },
-          { kind: "local", url: `http://127.0.0.1:${homePort}` },
-          { kind: "relay", url: "https://relay.example/h1test" },
+          { kind: "local", url: `http://127.0.0.1:${lanTrap.address().port}` },
+          { kind: "direct", url: `https://127.0.0.1:${ipTrap.address().port}` },
+          { kind: "direct", url: `http://127.0.0.1:${ipTrap.address().port}` },
+          { kind: "relay", url: relay },
         ],
       });
     }
     return json(res, 404, { error: "not_found" });
+  });
+  server.on("close", () => {
+    lanTrap.close();
+    ipTrap.close();
   });
   return new Promise((resolve) => server.listen(0, "127.0.0.1", () => resolve({ server, state, port: server.address().port })));
 }

@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- This isn't available (Epic 58 story 58.14): a video or series the home answers 404 for while
+     the sign-in is limited, or that the player was refused or stopped for. Ask a parent,
+     focused; the request followed; a yes opens the item (or plays it again). -->
+<component name="BlockedScreen" extends="Screen">
+  <script type="text/brightscript" uri="BlockedScreen.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common.brs" />
+  <script type="text/brightscript" uri="pkg:/components/theme.brs" />
+  <script type="text/brightscript" uri="pkg:/source/config.brs" />
+  <script type="text/brightscript" uri="pkg:/source/net.brs" />
+  <script type="text/brightscript" uri="pkg:/source/nav.brs" />
+  <script type="text/brightscript" uri="pkg:/source/store.brs" />
+  <script type="text/brightscript" uri="pkg:/source/i18n.brs" />
+  <script type="text/brightscript" uri="pkg:/source/layout.brs" />
+  <script type="text/brightscript" uri="pkg:/source/parental.brs" />
+  <script type="text/brightscript" uri="pkg:/source/visualtext.brs" />
+  <script type="text/brightscript" uri="pkg:/source/visualtext_tables.brs" />
+  <children>
+    <!-- a padlock: the body and its shackle (nothing in it mirrors in RTL) -->
+    <Group id="lock">
+      <Rectangle translation="[940,214]" width="10" height="40" color="0xE3B252FF" />
+      <Rectangle translation="[970,214]" width="10" height="40" color="0xE3B252FF" />
+      <Rectangle translation="[940,214]" width="40" height="10" color="0xE3B252FF" />
+      <Rectangle translation="[928,250]" width="64" height="48" color="0xE3B252FF" />
+    </Group>
+    <Label id="title" translation="[160,340]" width="1600" horizAlign="center" />
+    <Label id="reason" translation="[160,430]" width="1600" height="140" wrap="true" horizAlign="center" />
+    <Label id="state" translation="[160,575]" width="1600" height="70" wrap="true" horizAlign="center" />
+    <TvButton id="action" translation="[740,650]" width="440" />
+    <Label id="hint" translation="[160,770]" width="1600" height="100" wrap="true" horizAlign="center" />
+  </children>
+</component>

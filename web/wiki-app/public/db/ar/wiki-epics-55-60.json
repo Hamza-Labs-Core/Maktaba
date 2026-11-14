@@ -2040,7 +2040,8 @@
         "ep-get-home",
         "ep-get-me-app-sign-ins",
         "ep-get-pairing-cloud-code-code",
-        "ep-post-pairing-cloud-approve"
+        "ep-post-pairing-cloud-approve",
+        "ep-post-pairing-cloud-assertion"
       ],
       "files": {
         "story": "specs/epics/58-smart-tv-platforms/story-58-03-cloud-tv-code.md",
@@ -2051,7 +2052,8 @@
         "GET /home",
         "GET /me/app-sign-ins",
         "GET /pairing/cloud-code/{code}",
-        "POST /pairing/cloud-approve"
+        "POST /pairing/cloud-approve",
+        "POST /pairing/cloud-assertion"
       ],
       "db_tables": [],
       "metadata": {
@@ -2145,7 +2147,8 @@
       ],
       "related": [
         "epic-58-smart-tv-platforms",
-        "ep-post-cast-grants"
+        "ep-post-cast-grants",
+        "ep-get-components"
       ],
       "files": {
         "story": "specs/epics/58-smart-tv-platforms/story-58-06-cast-senders.md",
@@ -2153,7 +2156,8 @@
         "mockups": []
       },
       "api_endpoints": [
-        "POST /cast/grants"
+        "POST /cast/grants",
+        "GET /components"
       ],
       "db_tables": [],
       "metadata": {
@@ -2362,14 +2366,19 @@
         "phase-5"
       ],
       "related": [
-        "epic-58-smart-tv-platforms"
+        "epic-58-smart-tv-platforms",
+        "ep-get-home",
+        "ep-get-discovery-home"
       ],
       "files": {
         "story": "specs/epics/58-smart-tv-platforms/story-58-12-roku-channel.md",
         "plan": null,
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /home",
+        "GET /discovery/home"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "roku-channel"
@@ -2574,7 +2583,7 @@
       "title": "أمازون فيغا أو إس: تطبيق React Native، يُبنى حين تصبح أجهزة فيغا حصة حقيقية",
       "epic": "58-smart-tv-platforms",
       "phase": 5,
-      "content": "# القصة 58.18 — أمازون فيغا أو إس: تطبيق React Native، يُبنى حين تصبح أجهزة فيغا حصة حقيقية\n\n> الملحمة 58 · المرحلة 6 · تعتمد على: 58.01، 58.02، 58.03، 58.04، 58.05 · تحتاجها: —\n\n## لماذا\n\nأطلقت أمازون نظام فيغا أو إس، وهو نظام تشغيل لـ فاير تي في مبني على لينكس، على عصا فاير تي في 4K Select في 2025 (research.md §2.2). ومنذ ذلك أضافت أمازون:\n- ‏عصا فاير تي في HD ‏(2026)؛\n- ‏عصا فاير تي في 4K من الجيل الثالث (2026-09-30).\n\nوتقول التقارير إن كل عصا فاير تي في قادمة ستعمل بـ فيغا. ولا تعمل تطبيقات أندرويد على فيغا، ولا يمكن التثبيت الجانبي، لذا لا تصل نسخة فاير أو إس ‏(58.05) إلى هذه العصي. وتطبيق فيغا",
+      "content": "# القصة 58.18 — أمازون فيغا أو إس: تطبيق React Native، يُبنى حين تصبح أجهزة فيغا حصة حقيقية\n\n> الملحمة 58 · المرحلة 6 · تعتمد على: 58.01، 58.02، 58.03، 58.04، 58.05 · تحتاجها: —\n>\n> **الحالة: في الانتظار** حتى يتحقق شرط بدئها (README §12 Q8، وأدناه تحت «متى»)؛ لم تبدأ.\n\n## لماذا\n\nأطلقت أمازون نظام فيغا أو إس، وهو نظام تشغيل لـ فاير تي في مبني على لينكس، على عصا فاير تي في 4K Select في 2025 (research.md §2.2). ومنذ ذلك أضافت أمازون:\n- ‏عصا فاير تي في HD ‏(2026)؛\n- ‏عصا فاير تي في 4K من الجيل الثالث (2026-09-30).\n\nوتقول التقارير إن كل عصا فاير تي في قادمة ستعمل بـ فيغا. ولا تعمل تطبيقات أندرويد على فيغا، ولا يمكن التثبيت الجانبي، لذا لا تصل نسخة فاير أو إس ‏(58.05) إلى هذه العصي. وتطبيق فيغا",
       "tags": [
         "story",
         "58-smart-tv-platforms",
@@ -2597,7 +2606,7 @@
         "lang": "ar",
         "source": {
           "title": "14647c163c79181b",
-          "content": "8cc75fe4e232f34c"
+          "content": "92667e92d3029020"
         }
       }
     },

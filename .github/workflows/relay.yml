@@ -401,6 +401,7 @@ jobs:
           for f in deploy/cloud-relay/Caddyfile deploy/cloud-ha/caddy/Caddyfile; do
             docker run --rm -v "$PWD/$f:/etc/caddy/Caddyfile:ro" -e RELAY_DOMAIN=relay.example.com \
               -e ACME_EMAIL=ops@example.com -e CF_API_TOKEN="$tok" -e NODE_ADDR=10.0.0.2 -e "RELAY_UPSTREAMS=127.0.0.1:8443 127.0.0.1:8453" \
+              -e "RELAY_METRICS_UPSTREAMS=127.0.0.1:8445 127.0.0.1:8455" \
               maktaba-caddy:check caddy validate --config /etc/caddy/Caddyfile
           done
       # Epic 50 story 50.31 T04: the pair's Caddy serves relay names only (no catch-all, no
@@ -427,7 +428,7 @@ jobs:
           grep -q 'remote_ip 173.245.48.0/20' "$dir/origin.d/aop.caddy"
           caddy_env=(-e RELAY_DOMAIN=relay.example.com -e ACME_EMAIL=ops@example.com
             -e CF_API_TOKEN=test0000000000000000000000000000000000ab -e NODE_ADDR=10.0.0.2
-            -e "RELAY_UPSTREAMS=127.0.0.1:8443 127.0.0.1:8453")
+            -e "RELAY_UPSTREAMS=127.0.0.1:8443 127.0.0.1:8453" -e "RELAY_METRICS_UPSTREAMS=127.0.0.1:8445 127.0.0.1:8455")
           docker run --rm -v "$dir:/etc/caddy:ro" "${caddy_env[@]}" \
             maktaba-caddy:check caddy validate --config /etc/caddy/Caddyfile
           # the deny rule for addresses outside Cloudflare's ranges runs before any proxying
@@ -441,10 +442,11 @@ jobs:
       # 50.18: PgBouncer's production authentication against a real PgBouncer and Postgres
       - name: PgBouncer's authentication (Epic 50 story 50.18)
         run: bash deploy/cloud-ha/tests/pgbouncer-auth-test.sh
-      - name: The monitoring configs, rules and probe (Epic 50 stories 50.09 to 50.11)
+      - name: The monitoring configs, rules and probes (Epic 50 stories 50.09 to 50.11, 50.28)
         run: |
           bash deploy/cloud-ha/monitoring/check.sh
           bash deploy/cloud-ha/monitoring/probe-test.sh
+          bash deploy/cloud-ha/monitoring/broadcast-probe-test.sh
           bash deploy/cloud-ha/monitoring/status-export-test.sh
           shellcheck deploy/cloud-ha/monitoring/*.sh
       - name: The one-click runbook actions (Epic 50 story 50.12)

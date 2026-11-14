@@ -16,7 +16,7 @@ import (
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/billing"
-	edgeh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/edge"
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/broadcast"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/relay/simhome"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/rehearsal/plans"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/rehearsal/seed"
@@ -86,9 +86,17 @@ func (e *fakeEdge) bulk(full, lowest int64) {
 // flush posts the queue; the API down leaves it queued. It applies the state the API answers:
 // off stops every playing session; any other mode applies to new sessions only.
 func (e *fakeEdge) flush() (taken, dups int, ok bool) {
-	body, _ := json.Marshal(edgeh.UsagePost{Edge: "rehearsal-edge", Windows: e.queue})
-	req, _ := http.NewRequest(http.MethodPost, e.api+"/_edge/usage", bytes.NewReader(body))
-	edgeh.Sign(e.priv, req, body, time.Now())
+	post := broadcast.UsagePost{Edge: "rehearsal-edge", Windows: []broadcast.UsageWindow{}}
+	for _, w := range e.queue {
+		post.Windows = append(post.Windows, broadcast.UsageWindow{
+			Key: billing.WindowKey(w.Publisher, w.Window), Publisher: w.Publisher,
+			WindowStart: w.Window, WindowEnd: w.Window.Add(billing.WindowLength),
+			MinutesFull: w.MinutesFull, MinutesLowest: w.MinutesLowest,
+		})
+	}
+	body, _ := json.Marshal(post)
+	req, _ := http.NewRequest(http.MethodPost, e.api+broadcast.UsagePath, bytes.NewReader(body))
+	broadcast.SignEdgeRequest(e.priv, req.Header, req.Method, req.URL.Path, time.Now().UnixMilli(), body)
 	resp, err := e.client.Do(req)
 	if err != nil {
 		return 0, 0, false
@@ -97,7 +105,7 @@ func (e *fakeEdge) flush() (taken, dups int, ok bool) {
 	if resp.StatusCode != http.StatusOK {
 		return 0, 0, false
 	}
-	var out edgeh.UsageReply
+	var out broadcast.UsageReply
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
 		e.t.Fatalf("usage reply: %v", err)
 	}
@@ -108,6 +116,16 @@ func (e *fakeEdge) flush() (taken, dups int, ok bool) {
 	for _, st := range out.States {
 		if st.Publisher == e.publisher {
 			e.apply(st)
+		}
+	}
+	// one publisher key everywhere: the plan the reply carries names the same server id
+	if len(out.States) > 0 {
+		var planned bool
+		for _, p := range out.Plans {
+			planned = planned || p.Pub == e.publisher
+		}
+		if !planned {
+			e.t.Errorf("the usage reply has no plan for publisher %s: %+v", e.publisher, out.Plans)
 		}
 	}
 	return len(out.Taken), len(out.Duplicates), true
@@ -126,7 +144,7 @@ func (e *fakeEdge) apply(st billing.PublisherState) {
 // pull is the edge's 5-minute pull of the publisher's state.
 func (e *fakeEdge) pull() {
 	req, _ := http.NewRequest(http.MethodGet, e.api+"/_edge/publishers/"+e.publisher, nil)
-	edgeh.Sign(e.priv, req, nil, time.Now())
+	broadcast.SignEdgeRequest(e.priv, req.Header, req.Method, req.URL.Path, time.Now().UnixMilli(), nil)
 	resp, err := e.client.Do(req)
 	if err != nil {
 		e.t.Fatalf("pull: %v", err)
@@ -199,9 +217,11 @@ func broadcastPlans(t *testing.T, c *cluster) Result {
 		return resp.StatusCode == http.StatusOK
 	})
 
-	// the home publishes: refused until its owner accepts the agreement
-	publish := func(slug string) (int, string) {
-		body := strings.NewReader(`{"slug":"` + slug + `","access":"open","on_demand":false,"rungs":3,"top_kbps":8000}`)
+	// the home publishes: refused until its owner accepts the agreement. Its channel is
+	// invite: open access (story 50.26) is off in this config, and a first publish is never
+	// verified, so an open channel is refused before the agreement is read.
+	publish := func(slug, access string) (int, string) {
+		body := strings.NewReader(`{"slug":"` + slug + `","access":"` + access + `","on_demand":false,"rungs":3,"top_kbps":8000}`)
 		req, _ := http.NewRequest(http.MethodPost, api+"/v1/broadcast/channels", body)
 		req.SetBasicAuth(id, secret)
 		resp, err := client.Do(req)
@@ -215,13 +235,15 @@ func broadcastPlans(t *testing.T, c *cluster) Result {
 		_ = json.NewDecoder(resp.Body).Decode(&e)
 		return resp.StatusCode, e.Error
 	}
-	code, why := publish("news")
+	code, why := publish("news", "open")
+	check("an open channel with open access off", code == http.StatusForbidden && why == "broadcast_open_not_enabled", code, why)
+	code, why = publish("news", "invite")
 	check("publish before the agreement", code == http.StatusConflict && why == "broadcast_agreement_required", code, why)
 	if _, err := c.db.ExecContext(ctx, `INSERT INTO broadcast_agreements (account_id, version) VALUES ($1, $2)`,
 		owner, billing.BroadcastAgreementVersion); err != nil {
 		t.Fatal(err)
 	}
-	code, why = publish("news")
+	code, why = publish("news", "invite")
 	check("publish after the agreement", code == http.StatusCreated, code, why)
 
 	edge := &fakeEdge{t: t, api: api, client: client, priv: rehearsalEdgeKey(), publisher: id,

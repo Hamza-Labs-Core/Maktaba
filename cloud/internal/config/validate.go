@@ -31,6 +31,14 @@ func Validate(c Config, role Role) error {
 	if c.Database.URL == "" {
 		return fmt.Errorf("%w: [database].url", ErrMissing)
 	}
+	// story 50.28: the folding threshold is never off (0 is the default, 5), and a budget is
+	// never negative
+	if c.Broadcast.AnalyticsK < 0 || c.Broadcast.AnalyticsK > 100 {
+		return fmt.Errorf("config: broadcast.analytics_k %d: from 1 to 100", c.Broadcast.AnalyticsK)
+	}
+	if c.Broadcast.MonthlyBudgetUSD < 0 {
+		return fmt.Errorf("config: broadcast.monthly_budget_usd must not be negative")
+	}
 	switch role {
 	case RoleAPI:
 		if c.Server.ListenAddr == "" {
@@ -46,6 +54,9 @@ func Validate(c Config, role Role) error {
 			return err
 		}
 		if err := validateAdminListener(c.Server); err != nil {
+			return err
+		}
+		if err := ValidateMetricsListener(c.Server); err != nil {
 			return err
 		}
 		// the broadcast edge's ingest tokens (story 50.21) are never on without their key
@@ -67,6 +78,9 @@ func Validate(c Config, role Role) error {
 			return fmt.Errorf("%w: [relay].public_host", ErrMissing)
 		}
 		if err := ValidatePeerAddr(c.Relay.PeerAddr); err != nil {
+			return err
+		}
+		if err := ValidateMetricsListener(c.Server); err != nil {
 			return err
 		}
 		if err := validatePool(c.Relay); err != nil {
@@ -212,6 +226,27 @@ func ValidateOriginListen(addr string) error {
 	return nil
 }
 
+// ValidateMetricsListener checks server.metrics_listen_addr (story 50.28): the private series are
+// served only there, so it is a loopback or private address in every environment (the listener
+// is the trust boundary, never a request's Host), and never a listener the public reaches.
+func ValidateMetricsListener(s ServerConfig) error {
+	if s.MetricsListenAddr == "" {
+		return nil
+	}
+	if err := ValidateOriginListen(s.MetricsListenAddr); err != nil {
+		return fmt.Errorf("config: server.metrics_listen_addr %q: %w", s.MetricsListenAddr, err)
+	}
+	if strings.HasSuffix(s.MetricsListenAddr, ":0") {
+		return nil
+	}
+	for _, other := range []string{s.ListenAddr, s.AdminListenAddr} {
+		if s.MetricsListenAddr == other {
+			return fmt.Errorf("config: server.metrics_listen_addr %q is another listener's: the private series need their own", s.MetricsListenAddr)
+		}
+	}
+	return nil
+}
+
 // Warnings are settings that do nothing where they are (logged at start).
 func Warnings(c Config) []string {
 	var w []string
@@ -250,6 +285,10 @@ func ValidateBroadcast(b BroadcastConfig) error {
 		}
 	}
 	if !b.Enabled {
+		// open access (story 50.26) is part of broadcasting: never on behind a shut gate
+		if b.OpenAccess {
+			return errors.New("config: broadcast.open_access.enabled needs broadcast.enabled")
+		}
 		return nil
 	}
 	if err := billing.BroadcastLaunchCheck(billing.Tiers, billing.Broadcaster); err != nil {
@@ -258,11 +297,14 @@ func ValidateBroadcast(b BroadcastConfig) error {
 	return nil
 }
 
-// EdgeKey decodes broadcast.edge_public_key.
+// EdgeKey decodes broadcast.edge_public_key: base64url (how docs/broadcast-edge.md prints the
+// key and the shared test vectors carry it) or standard base64, padded or not.
 func EdgeKey(s string) (ed25519.PublicKey, error) {
-	b, err := base64.StdEncoding.DecodeString(strings.TrimSpace(s))
-	if err != nil || len(b) != ed25519.PublicKeySize {
-		return nil, errors.New("config: broadcast.edge_public_key must be a base64 Ed25519 public key (32 bytes)")
+	s = strings.TrimRight(strings.TrimSpace(s), "=")
+	for _, enc := range []*base64.Encoding{base64.RawURLEncoding, base64.RawStdEncoding} {
+		if b, err := enc.DecodeString(s); err == nil && len(b) == ed25519.PublicKeySize {
+			return ed25519.PublicKey(b), nil
+		}
 	}
-	return ed25519.PublicKey(b), nil
+	return nil, errors.New("config: broadcast.edge_public_key must be a base64url Ed25519 public key (32 bytes)")
 }

@@ -13,16 +13,31 @@ width. A key without metadata fails too: every label has a size.
 
 Arabic lines are broken before reordering (the first line holds the start of the sentence) and
 each line is reordered with the paragraph direction right to left; they are joined with "\\n"
-for a Label with `wrap` on. English is left to the Label's own wrapping.
+for a Label with `wrap` on. English is left to the Label's own wrapping, except a string that
+holds Arabic (a language's own name, as Account's "العربية"): it is shaped the same way with the
+paragraph direction left to right, or Roku would draw its Arabic unjoined and reversed.
 
 A string with a placeholder (`%1$s`, `%1$d`) cannot be shaped before its value is known: it is
 kept in logical order as a template, with its label size, and the channel's `I18n.Format`
-fills it in and shapes it on the device (`VisualLines`, source/visualtext.brs).
+fills it in and shapes it on the device (`VisualLines`, source/visualtext.brs). A string that is
+only ever a value inside another template ("less than a minute" in "%1$s left today") says
+`"value": true` in its metadata and is kept as a template too: shaped once, with the line it
+goes into (`I18n.Fill` gives it in logical order).
+
+A plural is an object of CLDR plural forms (check_tv_catalogs.py checks that each language has
+its own: English one and other, Arabic zero, one, two, few, many and other):
+
+    "@parental.time.minutes": {"widthChars": 16, "lines": 1},
+    "parental.time.minutes": {"one": "%1$d minute", "other": "%1$d minutes"},
+
+Its forms are kept in logical order under "plurals", each checked against the label size (with
+the number at its widest, "000"); `I18n.Plural(key, n)` picks the form for n by the language's
+rule and gives it, filled in, as a value for a template.
 
 It writes, for each language (en_US, ar_SA):
 
     locale/<lang>/strings.json      what source/i18n.brs reads: {"lang", "rtl", "strings",
-                                    "templates"} (the channel's own language switch)
+                                    "templates", "plurals"} (the channel's own language switch)
     locale/<lang>/translations.ts   Roku's catalog format (tr() by key), the static strings
 
     shape_strings.py [--check]      # from the repository root, with requirements.txt
@@ -36,6 +51,7 @@ import argparse
 import json
 import re
 import sys
+import unicodedata
 from pathlib import Path
 from typing import Any
 from xml.sax.saxutils import escape
@@ -51,6 +67,11 @@ PLACEHOLDER = re.compile(r"%(?:\d+\$)?[sd]")
 
 class Unfit(Exception):
     pass
+
+
+def has_rtl(text: str) -> bool:
+    """True when the text holds a right-to-left letter (Arabic or Hebrew): it needs shaping."""
+    return any(unicodedata.bidirectional(ch) in ("R", "AL") for ch in text)
 
 
 def size(meta: dict[str, Any], key: str) -> tuple[int, int]:
@@ -75,30 +96,49 @@ def fit(key: str, lang: str, text: str, width: int, lines: int) -> list[str]:
     return wrapped
 
 
-def shape_catalog(lang: str, catalog: dict[str, str], meta: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
+def is_value(meta: dict[str, Any], key: str) -> bool:
+    """Whether the key is only a value inside another template (`"value": true`)."""
+    m = meta.get("@" + key)
+    return isinstance(m, dict) and m.get("value") is True
+
+
+def shape_plural(key: str, lang: str, forms: dict[str, Any], width: int, lines: int) -> dict[str, Any]:
+    """A plural's entry: its forms in logical order, each fitted with the number at its widest."""
+    for form, text in forms.items():
+        if not isinstance(text, str):
+            raise Unfit(f"{lang}.json: {key!r} form {form!r} is not a string")
+        fit(f"{key}#{form}", lang, PLACEHOLDER.sub("000", text), width, lines)
+    return {"forms": dict(forms), "widthChars": width, "lines": lines}
+
+
+def shape_catalog(lang: str, catalog: dict[str, Any], meta: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
     """(strings.json's object, problems) for one language."""
     _, rtl = LANGS[lang]
     strings: dict[str, str] = {}
     templates: dict[str, dict[str, Any]] = {}
+    plurals: dict[str, dict[str, Any]] = {}
     problems: list[str] = []
     for key, text in catalog.items():
         if key.startswith("@"):
             continue
         try:
             width, lines = size(meta, key)
-            if PLACEHOLDER.search(text):
+            if isinstance(text, dict):
+                plurals[key] = shape_plural(key, lang, text, width, lines)
+                continue
+            if PLACEHOLDER.search(text) or is_value(meta, key):
                 templates[key] = {"text": text, "widthChars": width, "lines": lines}
                 continue
             wrapped = fit(key, lang, text, width, lines)
         except Unfit as e:
             problems.append(str(e))
             continue
-        if rtl:
-            strings[key] = "\n".join(visual.visual_lines(text, width, lines, "rtl"))
+        if rtl or has_rtl(text):
+            strings[key] = "\n".join(visual.visual_lines(text, width, lines, "rtl" if rtl else "ltr"))
             assert len(strings[key].split("\n")) == len(wrapped)
         else:
             strings[key] = text
-    return {"lang": lang, "rtl": rtl, "strings": strings, "templates": templates}, problems
+    return {"lang": lang, "rtl": rtl, "strings": strings, "templates": templates, "plurals": plurals}, problems
 
 
 def translations_ts(locale: str, strings: dict[str, str]) -> str:

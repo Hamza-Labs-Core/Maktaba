@@ -12,7 +12,8 @@
 // UPDATE_SCREENS=1 rewrites the references.
 
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -20,7 +21,7 @@ import { after, before, test } from "node:test";
 
 import { build } from "../tools/build.mjs";
 import { LOGS, ROKU } from "./brs.mjs";
-import { HIDDEN, REFUSED, SERIES, startCloud, startHome, videos } from "./mockhome.mjs";
+import { HIDDEN, LATE, REFUSED, SERIES, startCloud, startHome, videos } from "./mockhome.mjs";
 import { Channel, SCREENS } from "./sg.mjs";
 
 const require = createRequire(import.meta.url);
@@ -36,11 +37,18 @@ let home;
 let cloud;
 let zip;
 let data;
+let tlsDir;
 const compared = [];
 
 before(async () => {
-  home = await startHome((l) => requests.push(l));
-  cloud = await startCloud((l) => requests.push(l), home.port);
+  // a certificate for localhost, made for this run and trusted only by the channel's process
+  // (NODE_EXTRA_CA_CERTS, read by brs-engine's roUrlTransfer): the home's https name, which the
+  // channel's certificate check proves, as a relay's or a home's direct name is on a Roku
+  tlsDir = mkdtempSync(join(tmpdir(), "maktaba-roku-tls-"));
+  execFileSync("openssl", ["req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1", "-subj", "/CN=localhost", "-addext", "subjectAltName=DNS:localhost", "-keyout", join(tlsDir, "key.pem"), "-out", join(tlsDir, "cert.pem")], { stdio: "ignore" });
+  process.env.NODE_EXTRA_CA_CERTS = join(tlsDir, "cert.pem");
+  home = await startHome((l) => requests.push(l), { key: readFileSync(join(tlsDir, "key.pem")), cert: readFileSync(join(tlsDir, "cert.pem")) });
+  cloud = await startCloud((l) => requests.push(l), home.httpsPort);
   zip = await build(["--test", "--cloud", `http://127.0.0.1:${cloud.port}`, "--probe-ip", "127.0.0.9", "--probe-port", String(home.port), "--out", join(ROKU, "build", "maktaba-roku-test.zip")]);
   data = mkdtempSync(join(tmpdir(), "maktaba-roku-"));
 });
@@ -51,6 +59,7 @@ after(() => {
   writeFileSync(join(LOGS, "screens-compared.log"), compared.join("\n") + "\n");
   home?.server.close();
   cloud?.server.close();
+  if (tlsDir) rmSync(tlsDir, { recursive: true, force: true });
 });
 
 async function small(path) {
@@ -95,9 +104,12 @@ test("T03: sign in by cloud code, browse in English, deep links, Back, then Arab
     await c.waitFor(/\[screen\] CodeScreen ready mode=cloud/);
     assert.ok(!requests.some((l) => l.includes("qr.png")), "the QR is drawn, never fetched");
     await compare(c, "code-en");
-    // the phone approves (the mock cloud, on its third poll); the grant goes to the home's LAN
-    // address, never to the pinned local_ip a Roku cannot verify
-    await c.waitFor(/\[code\] signed in through local\b/, 20000);
+    // the phone approves (the mock cloud, on its third poll); the grant goes to the home's relay
+    // (an https name), never to the pinned local_ip a Roku cannot verify, and the plain LAN
+    // address, where another machine answers listing the home's relay, and the raw-IP direct
+    // addresses are never contacted
+    await c.waitFor(/\[code\] signed in through relay\b/, 20000);
+    assert.equal(cloud.state.trapConnections, 0, "the channel contacted a plain or raw-IP address");
     await c.waitFor(/\[screen\] HomeScreen ready rows=\s*2/, 20000);
     // the first call met an expired token: one refresh, one retry, no sign-out
     assert.ok(requests.some((l) => l.startsWith("home POST /api/auth/refresh")), "the 401 took a refresh");
@@ -386,6 +398,293 @@ test("T03 (58.13): a stream session the home refuses shows the error with its re
     await c.waitFor(/\[nav\] back to HomeScreen/);
   } finally {
     await c.stop();
+  }
+});
+
+test("T04 (58.14): a restricted child: the blocked page asks a parent and a yes opens the video; Account; a deep link", { timeout: 180000 }, async () => {
+  // the main test left the channel in Arabic: the blocked page is drawn in Arabic first
+  home.state.restricted = true;
+  home.state.requests = [];
+  const c = await Channel.start("parental", zip, data);
+  try {
+    await c.waitFor(/\[parental\] limited=true/, 30000);
+    await c.waitFor(/\[screen\] HomeScreen ready/, 30000);
+    await c.waitFor(/\[home\] for you/, 20000);
+    // a deep link to the hidden video: the not-available line, nothing more
+    await c.input({ contentId: LATE, mediaType: "movie" });
+    await c.waitFor(/\[link\] not_available/);
+    await c.waitFor(/\[home\] notice roku\.notAvailable/);
+    assert.ok(!requests.some((l) => l.startsWith("home ask")), "a deep link asks nothing");
+    await c.waitFor(/\[home\] for you/, 20000);
+    // Continue watching's first card is the hidden video: * → Open shows the blocked page
+    // (Up and Down: the reset Home's cards take the remote's focus, on its first card)
+    await c.key("Up");
+    await c.waitFor(/\[focus\] home menu/);
+    await c.key("Down");
+    await c.waitFor(/\[focus\] home row\s+0 item/);
+    await c.key("Info");
+    await c.waitFor(/\[actions\] play,over,open,cancel|\[actions\] [a-z,]*open/);
+    await c.keys(["Down", "Down"]);
+    await c.key("Select");
+    await c.waitFor(/\[screen\] BlockedScreen ready kind=video restricted=true/, 20000);
+    await c.waitFor(/\[focus\] blocked none/);
+    await compare(c, "blocked-ar");
+    // OK asks, with the id the screen had
+    await c.key("Select");
+    await c.waitFor(/\[parental\] asked/);
+    assert.ok(requests.some((l) => l === `home ask kind=video id=${LATE}`), "the request names the video");
+    await c.waitFor(/\[focus\] blocked pending/);
+    await compare(c, "blocked-asked-ar");
+    // the parent approves from their phone: the next read opens the video, no restart
+    home.state.requests[0].status = "approved";
+    await c.waitFor(/\[parental\] approved video/, 30000);
+    await c.waitFor(/\[screen\] VideoScreen ready/, 20000);
+    // Back goes to Home: the blocked page is gone from the stack
+    await c.key("Back");
+    await c.waitFor(/\[nav\] back to HomeScreen/);
+
+    // Account: a parent manages this account, its limit
+    await c.key("Up");
+    await c.waitFor(/\[focus\] home menu/);
+    await c.keys(["Left", "Left", "Left"]);
+    await c.key("Select");
+    await c.waitFor(/\[screen\] AccountScreen ready lang=ar managed=true/);
+    await compare(c, "account-managed-ar");
+    // English: the same lines, left to right
+    await c.keys(["Down", "Down"]);
+    await c.key("Select");
+    await c.waitFor(/\[account\] en/);
+    await c.waitFor(/\[screen\] AccountScreen ready lang=en managed=true/);
+    await compare(c, "account-managed-en");
+  } finally {
+    await c.stop();
+    home.state.restricted = false;
+  }
+});
+
+test("T05 (58.14): the player stops for the home's parental answers: time's up, Ask for more time, a title hidden mid-play", { timeout: 300000 }, async () => {
+  // T04 left the channel in English. The mock home answers as the real one: 403 parental_time
+  // on the open and on the heartbeat once the time is over, 404 for a video hidden mid-play
+  home.state.restricted = true;
+  home.state.requests = [];
+  const later = () => new Date(Date.now() + 2 * 3600e3).toISOString();
+  const c = await Channel.start("player-parental", zip, data);
+  try {
+    await c.waitFor(/\[parental\] limited=true/, 30000);
+    await c.waitFor(/\[home\] for you/, 30000);
+
+    // the time is over before the video opens: the open is refused, and the page says why
+    home.state.time = { reason: "limit_reached", next: later() };
+    const v = videos[12];
+    await c.input({ contentId: v.id, mediaType: "movie" });
+    await c.waitFor(/\[link\] play/);
+    await c.waitFor(/\[screen\] PlayerScreen timesup reason=limit_reached/, 20000);
+    assert.ok(requests.some((l) => l.startsWith(`home session video=${v.id} profile=roku start=600`)), "the open asked for the saved place");
+    // the main action has the remote's focus: the first minutes to ask for
+    await c.waitFor(/\[focus\] timesup tuAsk0/);
+    assert.doesNotMatch(c.out, /\[player\] failed/, "never the player's raw error");
+    await compare(c, "player-timesup-en");
+    // Right moves along the row; OK asks for 30 minutes
+    await c.key("Right");
+    await c.waitFor(/\[focus\] timesup tuAsk1/);
+    await c.key("Select");
+    await c.waitFor(/\[parental\] asked time/);
+    assert.ok(requests.some((l) => l === "home ask kind=time id=30"), "the request asks for 30 minutes");
+    // once asked, the minute buttons go and Check again takes the focus
+    await c.waitFor(/\[focus\] timesup tuCheck/);
+    await compare(c, "player-timesup-asked-en");
+    // Check again asks the home, which still says no: the page stays
+    const opens = requests.filter((l) => l.startsWith(`home session video=${v.id}`)).length;
+    await c.key("Select");
+    await c.waitFor(/\[parental\] check again at\s+600/);
+    await c.waitFor(/\[screen\] PlayerScreen timesup reason=limit_reached/, 10000);
+    assert.equal(requests.filter((l) => l.startsWith(`home session video=${v.id}`)).length, opens + 1, "Check again opened once more");
+    // the parent says yes from their phone: the next read opens the video again, where it stopped
+    home.state.requests[0].status = "approved";
+    await c.waitFor(/\[parental\] approved time/, 30000);
+    await c.waitFor(/\[parental\] times up closed/, 10000);
+    await c.waitFor(/\[screen\] PlayerScreen ready/);
+
+    // the home ends the time while it plays (watching hours): the heartbeat after a seek is
+    // refused, the video stops and its session closes (brs-engine's Video node stays at 0, so a
+    // seek of 10 s lands at 10)
+    home.state.requests = [];
+    home.state.time = { reason: "outside_slot", next: later() };
+    await c.key("Right", 200);
+    await c.waitFor(/\[seek\] to\s+10\b/);
+    await c.waitFor(/\[screen\] PlayerScreen timesup reason=outside_slot/, 10000);
+    await c.waitFor(/\[focus\] timesup tuAsk0/);
+    assert.ok(requests.some((l) => /^home progress s\d+ pos=10 completed=false$/.test(l)), "the refused heartbeat carried the position");
+    await new Promise((r) => setTimeout(r, 500));
+    const last = requests.filter((l) => /^home session video=/.test(l)).length;
+    assert.ok(requests.some((l, i) => /^home close s\d+$/.test(l) && i > requests.findLastIndex((x) => x === "home time over")), "the stopped stream's session closed");
+    // nothing asks the home again by itself
+    await new Promise((r) => setTimeout(r, 2000));
+    assert.equal(requests.filter((l) => /^home session video=/.test(l)).length, last, "no open by itself");
+    await c.key("Back");
+    await c.waitFor(/\[nav\] back to HomeScreen/);
+
+    // a video hidden by the limit while it plays: "This isn't available", that it stopped, and
+    // Ask a parent; a yes plays it again from where it stopped
+    home.state.time = null;
+    const w = videos[16];
+    await c.input({ contentId: w.id, mediaType: "movie" });
+    await c.waitFor(/\[screen\] PlayerScreen ready/, 20000);
+    home.state.hiddenNow.add(w.id);
+    await c.key("Right", 200);
+    await c.waitFor(/\[parental\] the home ended the stream/, 10000);
+    await c.waitFor(/\[parental\] blocked stopped=true at=\s*10\b/);
+    await c.waitFor(/\[screen\] BlockedScreen ready kind=video restricted=true/, 10000);
+    await c.waitFor(/\[focus\] blocked none/);
+    await compare(c, "player-blocked-en");
+    await c.key("Select");
+    await c.waitFor(/\[parental\] asked/);
+    assert.ok(requests.some((l) => l === `home ask kind=video id=${w.id}`), "the request names the video");
+    home.state.requests[0].status = "approved";
+    await c.waitFor(/\[parental\] approved video/, 30000);
+    await c.waitFor(/\[screen\] PlayerScreen ready/, 20000);
+    assert.ok(requests.some((l) => l.startsWith(`home session video=${w.id} profile=roku start=10 `)), "the yes played it again from where it stopped");
+    // Back goes Home: neither the blocked page nor the first player is left on the stack
+    await c.key("Back");
+    await c.waitFor(/\[nav\] back to HomeScreen/);
+
+    // Arabic: the same pages, the button row mirrored (the first minutes at the right)
+    await c.key("Up");
+    await c.waitFor(/\[focus\] home menu/);
+    await c.keys(["Right", "Right", "Right"]);
+    await c.key("Select");
+    await c.waitFor(/\[screen\] AccountScreen ready lang=en managed=true/);
+    await c.keys(["Down", "Down", "Down"]);
+    await c.key("Select");
+    await c.waitFor(/\[account\] ar/);
+    await c.waitFor(/\[screen\] AccountScreen ready lang=ar/);
+    await c.key("Back");
+    await c.waitFor(/\[nav\] back to HomeScreen/);
+    await c.waitFor(/\[home\] for you/, 20000);
+    home.state.requests = [];
+    home.state.time = { reason: "limit_reached", next: later() };
+    await c.input({ contentId: v.id, mediaType: "movie" });
+    await c.waitFor(/\[screen\] PlayerScreen timesup reason=limit_reached/, 20000);
+    await c.waitFor(/\[focus\] timesup tuAsk0/);
+    await compare(c, "player-timesup-ar");
+    // in Arabic Left moves forward
+    await c.key("Left");
+    await c.waitFor(/\[focus\] timesup tuAsk1/);
+    await c.key("Back");
+    await c.waitFor(/\[nav\] back to HomeScreen/);
+    home.state.time = null;
+    const x = videos[20];
+    await c.input({ contentId: x.id, mediaType: "movie" });
+    await c.waitFor(/\[screen\] PlayerScreen ready/, 20000);
+    home.state.hiddenNow.add(x.id);
+    await c.key("Left", 200);
+    await c.waitFor(/\[screen\] BlockedScreen ready kind=video restricted=true/, 10000);
+    await c.waitFor(/\[focus\] blocked none/);
+    await compare(c, "player-blocked-ar");
+  } finally {
+    await c.stop();
+    home.state.restricted = false;
+    home.state.time = null;
+    home.state.hiddenNow.clear();
+    home.state.requests = [];
+  }
+});
+
+test("T06 (57.15 on Roku): the time left in the corner, the five- and one-minute warnings, and an earlier day's no", { timeout: 300000 }, async () => {
+  // T05 left the channel in Arabic. The home says how much time is left; the channel only shows it
+  home.state.restricted = true;
+  home.state.requests = [];
+  home.state.time = null;
+  const later = () => new Date(Date.now() + 2 * 3600e3).toISOString();
+  const c = await Channel.start("player-time", zip, data);
+  try {
+    await c.waitFor(/\[parental\] limited=true/, 30000);
+    await c.waitFor(/\[home\] for you/, 30000);
+
+    // 12 minutes left: the note in the end corner (the left in Arabic), no warning
+    home.state.timeLeft = 720;
+    const v = videos[24];
+    await c.input({ contentId: v.id, mediaType: "movie" });
+    await c.waitFor(/\[screen\] PlayerScreen ready/, 20000);
+    await c.waitFor(/\[parental\] time left=\s*720 poll=\s*30/, 10000);
+    assert.doesNotMatch(c.out, /\[parental\] warning/, "no warning above five minutes");
+    await c.waitFor(/\[player\] overlay hidden/, 15000);
+    await compare(c, "player-timeleft-ar");
+    // five minutes: the next answer (30 s later) crosses the line; the warning shows over the note
+    home.state.timeLeft = 300;
+    await c.waitFor(/\[parental\] warning\s+300\b/, 40000);
+    await compare(c, "player-warning5-ar");
+    await c.waitFor(/\[parental\] time left=\s*300 poll=\s*10/);
+    // one minute: asked every 10 s from six minutes left
+    home.state.timeLeft = 60;
+    await c.waitFor(/\[parental\] warning\s+60\b/, 15000);
+    assert.ok(requests.some((l) => l.startsWith(`home time library=${v.library_id} `)), "the time is asked for the video's library");
+    // each warning once: the next answers at one minute show none again
+    home.state.timeLeft = 50;
+    await c.waitFor(/\[parental\] time left=\s*50 poll=\s*10/, 15000);
+    assert.equal((c.out.match(/\[parental\] warning\s+60\b/g) || []).length, 1, "the one-minute warning shows once");
+    await c.key("Back");
+    await c.waitFor(/\[nav\] back to HomeScreen/);
+
+    // English: Account's language, then the same corner on the right
+    await c.key("Up");
+    await c.waitFor(/\[focus\] home menu/);
+    await c.keys(["Left", "Left", "Left"]);
+    await c.key("Select");
+    await c.waitFor(/\[screen\] AccountScreen ready lang=ar managed=true/);
+    await c.keys(["Down", "Down"]);
+    await c.key("Select");
+    await c.waitFor(/\[account\] en/);
+    await c.waitFor(/\[screen\] AccountScreen ready lang=en/);
+    await c.key("Back");
+    await c.waitFor(/\[nav\] back to HomeScreen/);
+    await c.waitFor(/\[home\] for you/, 20000);
+    home.state.timeLeft = 720;
+    const w = videos[28];
+    const from = c.out.length;
+    await c.input({ contentId: w.id, mediaType: "movie" });
+    await c.waitFor(/\[screen\] PlayerScreen ready/, 20000);
+    await c.waitFor(/\[parental\] time left=\s*720 poll=\s*30/, 10000);
+    await c.waitFor(/\[player\] overlay hidden/, 15000);
+    await compare(c, "player-timeleft-en");
+    home.state.timeLeft = 300;
+    await c.waitFor(/\[parental\] warning\s+300\b/, 40000);
+    await compare(c, "player-warning5-en");
+    home.state.timeLeft = 60;
+    await c.waitFor(/\[parental\] warning\s+60\b/, 15000);
+    await compare(c, "player-warning1-en");
+    assert.equal((c.out.slice(from).match(/\[parental\] warning\s+300\b/g) || []).length, 1, "the five-minute warning shows once");
+    await c.key("Back");
+    await c.waitFor(/\[nav\] back to HomeScreen/);
+
+    // a no to more time from an earlier day has expired: the page offers to ask afresh, as the
+    // web and Android do, and says nothing of the old no
+    home.state.timeLeft = null;
+    home.state.time = { reason: "limit_reached", next: later() };
+    const yesterday = new Date(Date.now() - 864e5);
+    home.state.requests = [{ id: "r-old", subject_kind: "time", subject_id: "30", status: "denied", created_at: new Date(yesterday.getTime() - 3600e3).toISOString(), expires_at: yesterday.toISOString() }];
+    let mark = c.out.length;
+    await c.input({ contentId: w.id, mediaType: "movie" });
+    await c.waitFor(/\[screen\] PlayerScreen timesup reason=limit_reached/, 20000);
+    await c.waitFor(/\[parental\] times up ask=none/, 10000);
+    await c.waitFor(/\[focus\] timesup tuAsk0/);
+    assert.doesNotMatch(c.out.slice(mark), /times up ask=denied/, "an earlier day's no is not shown");
+    await c.key("Back");
+    await c.waitFor(/\[nav\] back to HomeScreen/);
+    // today's no still reads as a no, with Ask again
+    home.state.requests[0].expires_at = later();
+    mark = c.out.length;
+    await c.input({ contentId: w.id, mediaType: "movie" });
+    await c.waitFor(/\[screen\] PlayerScreen timesup reason=limit_reached/, 20000);
+    await c.waitFor(/\[parental\] times up ask=denied/, 10000);
+    await c.key("Back");
+    await c.waitFor(/\[nav\] back to HomeScreen/);
+  } finally {
+    await c.stop();
+    home.state.restricted = false;
+    home.state.time = null;
+    home.state.timeLeft = null;
+    home.state.requests = [];
   }
 });
 

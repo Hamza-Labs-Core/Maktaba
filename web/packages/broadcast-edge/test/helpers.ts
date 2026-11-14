@@ -15,7 +15,7 @@ import {
 import worker from "../src/worker";
 import { now } from "../src/clock";
 
-export const E = env as unknown as Env & { TEST_VECTORS: string };
+export const E = env as unknown as Env & { TEST_VECTORS: string; TEST_INVITE_VECTORS: string };
 export const INGEST = "https://ingest.maktaba.tv";
 export const LIVE = "https://live.maktaba.tv";
 
@@ -38,7 +38,7 @@ export async function cloudKid(label = "cloud-1"): Promise<string> {
   return hex(await crypto.subtle.digest("SHA-256", pub)).slice(0, 16);
 }
 
-async function signCloud(
+export async function signCloud(
   prefix: string,
   domain: string,
   payload: unknown,
@@ -64,11 +64,13 @@ export async function ingestToken(
   label = "cloud-1"
 ): Promise<string> {
   const t = Math.floor(now() / 1000);
+  // a publisher is its home (the server id): pub and home are the same id unless a test sets both
+  const id = over.pub ?? over.home ?? "home-1";
   const claims: IngestClaims = {
     typ: "ingest",
-    pub: "pub-1",
+    pub: id,
     rungs: RUNGS,
-    home: "home-1",
+    home: id,
     kbps: 10000,
     iat: t,
     exp: t + 24 * 3600,
@@ -95,7 +97,7 @@ export async function control(
 
 export async function viewerToken(over: Partial<ViewerClaims> & { ch: string }): Promise<string> {
   return mintViewerToken(E.VIEWER_TOKEN_KEY, {
-    pub: "pub-1",
+    pub: "home-1",
     session: `s-${Math.random().toString(36).slice(2)}`,
     mode: "full",
     exp: Math.floor(now() / 1000) + 600,
@@ -109,9 +111,15 @@ export function call(
   init?: RequestInit,
   envOver: Partial<Env> = {}
 ): Promise<Response> {
-  // the coarse per-location limiter is off unless a test brings one: the exact per-rung guard
-  // (ChannelLive) is what the tests measure, on a clock they move
-  return worker.fetch(new Request(input, init), { ...E, RL: undefined, ...envOver } as Env);
+  // the coarse per-location limiters are off unless a test brings one: the exact guards
+  // (ChannelLive's per rung, ViewerAccess's) are what the tests measure, on a clock they move
+  return worker.fetch(new Request(input, init), {
+    ...E,
+    RL: undefined,
+    PLAY_RL: undefined,
+    API_RL: undefined,
+    ...envOver,
+  } as Env);
 }
 
 /** segmentBody is a fake TS segment of `size` bytes, different for each (rung, seq, salt). */

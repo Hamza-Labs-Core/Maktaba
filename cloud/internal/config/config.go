@@ -60,10 +60,33 @@ type BroadcastConfig struct {
 	KeyPath string
 	// IngestURL is broadcast.ingest_url, default https://ingest.maktaba.tv.
 	IngestURL string
-	// EdgePublicKey is broadcast.edge_public_key: the Ed25519 public key the broadcast edge
-	// signs its posts to the API with (POST /_edge/usage). Public, so it may sit in the file;
+	// WatchURL is broadcast.watch_url, the invite links' origin (default https://watch.maktaba.tv).
+	WatchURL string
+	// OpenAccess is broadcast.open_access.enabled (default false; story 50.26): off, no channel
+	// may be set to open access, and the edge treats every open channel as invite-only for new
+	// sessions. It stays off until the broadcasting gate's legal items hold.
+	OpenAccess bool
+	// EdgePublicKey is broadcast.edge_public_key: the Ed25519 public key (base64url or standard
+	// base64) of EDGE_SIGNING_KEY, the key the broadcast edge signs its posts to the API with
+	// (broadcast.VerifyEdgeRequest). Public, so it may sit in the file;
 	// the private half is a Worker secret. Empty: the edge routes answer 503.
 	EdgePublicKey string
+
+	// Story 50.28's analytics: the edge's Analytics Engine events, read through Cloudflare's SQL
+	// API. AnalyticsAccountID is broadcast.analytics_account_id; the API token (Account Analytics:
+	// Read) is the file at broadcast.analytics_token_path or env
+	// MAKTABA_CLOUD_BROADCAST_ANALYTICS_TOKEN, never in the config. Without both, the worker's
+	// rollup is off (the series and the analytics pages show what was rolled up before).
+	AnalyticsAccountID string
+	AnalyticsTokenPath string
+	AnalyticsToken     string
+	// AnalyticsURL is broadcast.analytics_url, default https://api.cloudflare.com/client/v4.
+	AnalyticsURL string
+	// AnalyticsK is broadcast.analytics_k: fewer sessions than this fold into "other" (default 5).
+	AnalyticsK int
+	// MonthlyBudgetUSD is broadcast.monthly_budget_usd: broadcast_cost_80pct fires past 80 %
+	// of it (0, the default: no budget, the alert quiet).
+	MonthlyBudgetUSD float64
 }
 
 // AdminConfig is the operator console's own settings (Epic 50 story 50.33 §7).
@@ -123,6 +146,11 @@ type ServerConfig struct {
 	// Epic 50 story 50.32): /v1/admin/* and /v1/staff/* only. Empty means none, and the
 	// console has no address at all.
 	AdminListenAddr string
+	// MetricsListenAddr is the private series' own listener (server.metrics_listen_addr, env
+	// MAKTABA_CLOUD_METRICS_ADDR; story 50.28): /metrics with the broadcast series, beside
+	// /readyz and /healthz, on a loopback or private address only. The main listener's /metrics
+	// never has them, whatever a request's Host says. Empty: they are not served.
+	MetricsListenAddr string
 	// AdminHost is the one Host the admin listener answers (server.admin_host,
 	// admin.maktaba.tv); any other is 404. Required with AdminListenAddr.
 	AdminHost string
@@ -369,7 +397,8 @@ func defaultConfig() Config {
 			RebalanceEvery:   30 * time.Second,
 			RebalanceRate:    20,
 		},
-		Broadcast: BroadcastConfig{PlansEnforce: true, PAYGReports: true, IngestURL: "https://ingest.maktaba.tv"},
+		Broadcast: BroadcastConfig{PlansEnforce: true, PAYGReports: true, IngestURL: "https://ingest.maktaba.tv", WatchURL: "https://watch.maktaba.tv",
+			AnalyticsURL: "https://api.cloudflare.com/client/v4", AnalyticsK: 5},
 	}
 }
 
@@ -415,6 +444,10 @@ func applyEnvOverrides(c *Config) {
 	if v := os.Getenv("MAKTABA_CLOUD_LISTEN_ADDR"); v != "" {
 		c.Server.ListenAddr = v
 	}
+	// the blue/green relay units (story 50.08) give each colour its own metrics port
+	if v := os.Getenv("MAKTABA_CLOUD_METRICS_ADDR"); v != "" {
+		c.Server.MetricsListenAddr = v
+	}
 	if v := os.Getenv("MAKTABA_CLOUD_PUBLIC_URL"); v != "" {
 		c.Server.PublicURL = v
 	}
@@ -426,6 +459,9 @@ func applyEnvOverrides(c *Config) {
 	}
 	if v := os.Getenv("MAKTABA_CLOUD_WEB_URL"); v != "" {
 		c.Server.WebURL = v
+	}
+	if v := os.Getenv("MAKTABA_CLOUD_BROADCAST_ANALYTICS_TOKEN"); v != "" {
+		c.Broadcast.AnalyticsToken = v
 	}
 	if v := os.Getenv("MAKTABA_CLOUD_TOKEN_SECRET"); v != "" {
 		c.Auth.TokenSecret = v
@@ -554,6 +590,18 @@ func assign(c *Config, section, key, val string) error {
 		c.Broadcast.KeyPath = val
 	case "broadcast.ingest_url":
 		c.Broadcast.IngestURL = val
+	case "broadcast.watch_url":
+		c.Broadcast.WatchURL = val
+	case "broadcast.analytics_account_id":
+		c.Broadcast.AnalyticsAccountID = val
+	case "broadcast.analytics_token_path":
+		c.Broadcast.AnalyticsTokenPath = val
+	case "broadcast.analytics_url":
+		c.Broadcast.AnalyticsURL = val
+	case "broadcast.analytics_k":
+		return setInt(&c.Broadcast.AnalyticsK, val)
+	case "broadcast.monthly_budget_usd":
+		return setFloat(&c.Broadcast.MonthlyBudgetUSD, val)
 	case "direct.enabled":
 		return setBool(&c.Direct.Enabled, val)
 	case "direct.domains":
@@ -628,6 +676,8 @@ func assign(c *Config, section, key, val string) error {
 		c.Server.Env = val
 	case "server.admin_listen_addr":
 		c.Server.AdminListenAddr = val
+	case "server.metrics_listen_addr":
+		c.Server.MetricsListenAddr = val
 	case "server.admin_host":
 		c.Server.AdminHost = strings.ToLower(val)
 	case "server.admin_origin":
@@ -709,6 +759,8 @@ func assign(c *Config, section, key, val string) error {
 		return setBool(&c.Broadcast.PAYGReports, val)
 	case "broadcast.edge_public_key":
 		c.Broadcast.EdgePublicKey = val
+	case "broadcast.open_access.enabled":
+		return setBool(&c.Broadcast.OpenAccess, val)
 	case "relay.pool.enabled":
 		return setBool(&c.Relay.PoolEnabled, val)
 	case "relay.pool.member":

@@ -178,8 +178,11 @@ func (s *Store) CompleteLink(ctx context.Context, userID string, a Assertion) (*
 	case err != nil && !errors.Is(err, sql.ErrNoRows):
 		return nil, err
 	}
+	// the user's link row is locked until the change commits: a TV's sign-in recorded against
+	// the old account (RecordLinkedSignIn) either commits first, and is revoked below, or
+	// waits and finds the new account
 	var prev string
-	err = tx.QueryRowContext(ctx, `SELECT cloud_user_id FROM home_user_links WHERE user_id = $1`, userID).Scan(&prev)
+	err = tx.QueryRowContext(ctx, `SELECT cloud_user_id FROM home_user_links WHERE user_id = $1 FOR UPDATE`, userID).Scan(&prev)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return nil, err
 	}
@@ -422,6 +425,49 @@ func (s *Store) RecordSignIn(ctx context.Context, kind, id, userID, scope string
 		return nil // a database without machine copies (SQLite before slot 0147)
 	}
 	return err
+}
+
+// ErrLinkChanged: the home user's link is gone, or names another cloud account than the one
+// that approved the sign-in being recorded.
+var ErrLinkChanged = errors.New("cloudlink: the link is gone or names another cloud account")
+
+// RecordLinkedSignIn records a refresh family a cloud account's approval made (a TV's cloud
+// code approved on maktaba.tv, story 58.03) as a cloud sign-in of userID's link, only while
+// that link still names cloudUserID: else it revokes the family and returns ErrLinkChanged,
+// and the caller hands out nothing. The link row is locked (FOR SHARE) for the transaction,
+// so an Unlink or a relink to another account either commits first, and this finds it, or
+// waits for this to commit, and then revokes the family with the link's other sign-ins.
+func (s *Store) RecordLinkedSignIn(ctx context.Context, familyID, userID, cloudUserID, scope string) error {
+	now := s.now()
+	tx, err := s.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	var linked string
+	err = tx.QueryRowContext(ctx,
+		`SELECT cloud_user_id FROM home_user_links WHERE user_id = $1 FOR SHARE`, userID).Scan(&linked)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	if cloudUserID == "" || linked != cloudUserID {
+		// tokens were made for the family: none of them is handed out, and none stays usable
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE refresh_tokens SET revoked_at = $1 WHERE CAST(family_id AS TEXT) = $2 AND revoked_at IS NULL`,
+			now, familyID); err != nil {
+			return err
+		}
+		if err := tx.Commit(); err != nil {
+			return err
+		}
+		return ErrLinkChanged
+	}
+	if _, err := tx.ExecContext(ctx,
+		`INSERT INTO cloud_sign_ins (id_sha256, kind, user_id, scope, created_at) VALUES ($1, $2, $3, $4, $5)`,
+		idSum(familyID), KindRefresh, userID, scope, now); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // ScopeOf is the cloud scope a web session or refresh family was signed

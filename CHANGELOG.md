@@ -14,6 +14,12 @@ build fails when the two differ.
 
 ### Changed
 
+- **Roku shapes Arabic text in less time (Epic 58, story 58.15).** A screen of 20 long Arabic
+  descriptions is shaped in about two thirds of the time it took (207 ms instead of 331 ms on
+  brs-engine), with the same output on all 312 shared vectors; English titles and lines skip the
+  shaping steps. CI fails when the cost rises past a ceiling measured against a reference loop,
+  and the device-test package prints the same timing on a Roku Express.
+
 - **VoiceOver reaches a Home card's menu without the long press (Apple Player).** On iPhone,
   iPad and the Mac, each Home card offers its context menu's items as VoiceOver actions:
   Resume on a Continue Watching card, Not interested on a recommendation, named as the menu
@@ -287,6 +293,31 @@ build fails when the two differ.
 - **Big screen has a way out you can see.** Every big screen page has **Leave big screen** in its top row, reachable with a mouse or the arrows, and it leaves at once. The Mac, Windows and Linux apps have **View → Leave Big Screen**, and **View → Big Screen** (`Cmd+Shift+B`, `Ctrl+Shift+B`) now leaves when you are already in it. Before, the only ways out were Settings or Back on Home.
 
 ### Fixed
+
+- **Roku sends the cloud code's grant only to an address its certificate check proves.** After
+  a phone approved the code, a plain HTTP or raw IP address the cloud listed could still get the
+  grant when whatever answered there listed the home's relay among its addresses; anyone on the
+  TV's network could answer that way and then redeem the grant at the real home. The channel now
+  tries only the cloud's HTTPS addresses by host name (the relay, the home's direct name, a LAN
+  name under its certificate), and never contacts a plain HTTP or raw IP address for the cloud
+  code.
+
+- **Roku's player stops cleanly when a child's time is up or a title is hidden (Epic 58, story
+  58.14).** When the home ends a restricted account's watching time, before or during a video,
+  the Roku channel stops the video and shows Time's up for today (or Not watching time yet),
+  when watching opens again and where the video stopped, never the player's error. The child
+  can ask a parent for 15, 30 or 60 more minutes, and the focus starts on the first; a parent's
+  yes from Maktaba on their phone plays the video again from where it stopped, and Check again
+  asks the home. A video hidden by the limit while it plays shows This isn't available, with
+  Ask a parent; a yes plays it again. The home decides every time; the TV cannot add time.
+  English and Arabic, mirrored.
+
+- **Roku shows Arabic inside English lines joined and in the right order.** On the Account
+  screen in English, the language row read "Language: " with the Arabic name's letters unjoined
+  and reversed. The build step now shapes every catalog string that holds Arabic, in the English
+  catalog too, and a line filled with a home's or a person's name is shaped in both languages, so
+  an Arabic home name reads right on Account, Choose your home, Find on this network, the
+  connecting line and the update screen.
 
 - **An Arabic title reads the same on the Cast receiver as on every other TV (story 58.15).**
   On a TV playing from a sender set to English, a title such as "الحلقة 3 — Intro" showed with
@@ -751,6 +782,21 @@ build fails when the two differ.
 
 ### Security
 
+- **Broadcast viewer analytics hide small groups however the period is chosen (Epic 50, story
+  50.28).** A country or device with fewer than 5 viewers was folded into "Other" over the whole
+  period shown, so two overlapping periods one hour apart could be compared to recover the small
+  groups of that hour. The fold is now decided hour by hour and a period adds its hours, so no
+  period, and no difference of two periods, names a group under 5. The cloud's business metrics
+  (viewers, the edge cost estimate and the budget) are served only on a private metrics listener
+  on a loopback or private address, no longer to any request whose Host header is an IP address.
+
+- **A TV approved on maktaba.tv gets no sign-in once its cloud account is unlinked (Epic 58,
+  story 58.03).** When the cloud account that approved a TV's code was unlinked from the home, or
+  the home user was linked to another cloud account, before the TV collected its sign-in, the
+  home still handed the TV its tokens. The home now records the TV's sign-in in one step that
+  checks the link still names the approving account, and otherwise hands out nothing: the TV is
+  told its approval has expired and asks for a new code.
+
 - **Every event a plugin's emit refuses is logged (Epic 54).** A plugin's `events/emit` was
   refused (an undeclared event, a payload its schema refuses or over 16 KB, a subject out of
   the job's scope, a bad token, a request that does not decode, and the rest) with only the
@@ -874,6 +920,14 @@ build fails when the two differ.
   alerted.
 
 ### Added
+
+- **Android TV, Google TV and Fire TV sign in with a cloud code (Epic 58, stories 58.03 and
+  58.05).** The TV app's home picker now opens on a code from Maktaba Cloud with its QR code;
+  a phone signed in to the home approves it from Approve a TV or device, on any network, and
+  the TV opens that home signed in as the approver, restricted (never an admin). The homes on
+  the TV's network and a typed address stay beside it. The grant goes only to an address whose
+  certificate proves the home (never a plain http or raw IP address, where anyone could answer);
+  the poll secret and the grant are never stored, put in a URL or logged.
 
 - **Roku's sign-in shows a QR (Epic 58, story 58.12).** The Roku channel's code screen now shows
   a QR beside the code, as the other TV apps do: a phone's camera opens the approve page with
@@ -2830,6 +2884,58 @@ build fails when the two differ.
   switchable fallback. The edge stores and delivers what a home sends and never chooses, ranks
   or recommends anything. It is not deployed yet: broadcasting stays off until its gate opens.
 
+- **Parental controls on the new TVs (Epic 58, story 58.14).** A child's account signed in on a
+  Samsung or LG TV (`/tv/`), Roku, Fire TV or Android TV sees only what its limits allow, as
+  everywhere else. Something hidden, opened from a link, shows This isn't available with the
+  limit and Ask a parent, which takes the remote's focus; a parent answers from Maktaba on their
+  phone, and a yes opens it on the TV without a restart. The TV's Account or Settings says a
+  parent manages the account, and its content limit. Samsung, LG and Roku ask for no PIN on the
+  remote; Fire TV and Android TV keep the guardian's PIN. A deep link to a hidden item shows the
+  not-available line and asks nothing. English and Arabic, mirrored.
+
+- **Viewer analytics and broadcast monitoring (story 50.28).** A home that broadcasts through
+  Maktaba Cloud gets a **Viewers** page at app.maktaba.tv (from **Homes**, for the home's owner
+  only): viewers watching now and viewer-hours today, over 7 days and this month against the
+  plan's allowance; with the Broadcaster add-on also the most viewers at once, average watch
+  time, countries, devices, quality watched, playback errors and viewers turned away, with a CSV
+  export. Countries and devices with fewer than 5 viewers are grouped as **Other**, and no names,
+  accounts or addresses are kept. Maktaba's staff can read the same numbers, each read audited.
+  The cloud now also watches its broadcasting: a canary broadcast played every minute from two
+  networks, alerts on its error budget, ingest lag, a stale revocation list, the edge's monthly
+  cost and a mismatch between analytics and billing, and a **Broadcasting** line on the status
+  page once broadcasting opens.
+
+- **Who may watch a home's broadcast channels (Epic 50, story 50.26).** Each published channel is
+  invite only (the default) or open to anyone with the link, open only for a verified account
+  (a paid plan, a confirmed email, 7 days since the first broadcast) with the Broadcaster
+  add-on, and only once Maktaba turns open channels on. The home's owner or an admin creates
+  invite links and short TV codes (`MK-…`) in the web app's **Broadcast access** page or in
+  Maktaba Cloud's **Who can watch**, sees the devices on each, removes one or withdraws the
+  invite (its viewers stop within a minute), and sets the devices per network and minutes a
+  day. The watch edge turns an invite into a 30-day pass for one device, an open channel's
+  visitor into a 12-hour session after a Turnstile check or an app attestation, and each play
+  into a 10-minute viewer token; the plan's concurrent viewers and viewer-hours hold for new
+  viewers, never stopping one already watching. Viewers never pay. Maktaba's staff can list
+  and revoke a home's invites, with a reason, in the audit log.
+
+- **Guests watch a home's broadcast on watch.maktaba.tv (Epic 50, story 50.27).** An invite link
+  now opens the publisher's own pages: the channels the guest may watch, with what is on now and
+  next; each channel's player with today's programmes, the credit of a Creative Commons
+  programme and a Report link; and a guide. Pages are Arabic by default, right to left, with
+  English a tap away, and never link to another publisher. Channels switch with up and down, a
+  swipe or the channel's number; when the home goes offline its slate plays with a note instead
+  of an error. The home publishes each channel's guide, name, number and logo to the edge. A TV
+  can be paired by a QR code that opens a page on the guest's phone; the apps' **Watch a
+  broadcast** screens follow.
+
+- **Roku shows a child how much watching time is left, and warns before it ends (Epic 57,
+  story 57.15, on Roku).** On a restricted account, once 15 minutes or fewer are left today the
+  Roku player shows "12 minutes left today" in the top corner over the video, and "Watching
+  ends in 5 minutes." and then "1 minute" for about 10 seconds each, as Android TV does. The
+  number is always the home's own answer, asked every 30 seconds (every 10 in the last six
+  minutes). Arabic uses its plural forms (دقيقة واحدة، دقيقتان، 5 دقائق، 12 دقيقة), and the Roku
+  catalog and its check now carry plural strings in both languages.
+
 ### Changed
 
 - **A machine that loses its home stays usable** under a notice instead of the whole app being
@@ -3774,6 +3880,20 @@ build fails when the two differ.
 - **The Android TV app names itself to the home.** Its library, playlist and play-queue calls sent
   `X-Maktaba-Client: native` instead of the app's name and version, so the home could not tell a
   TV too old for it on those calls; they now send the same header as sign-in does.
+
+- **Roku signs in with a cloud code on a real home.** After a phone approved the code, the
+  channel took a connection only when the home there answered with the cloud's id for it, which
+  a home's discovery never gives (it answers with its instance id), so every sign-in ended
+  unreachable. The channel now knows the approving home by its address: at an HTTPS connection
+  by host name (the relay, the home's direct name) its certificate proves the home; at a plain
+  HTTP or raw IP address, the home there counts only when it lists one of those names among its
+  addresses. Another home there is passed over and never gets the grant.
+
+- **Roku no longer shows yesterday's no to more time (Epic 58, story 58.14).** When a parent
+  said no to a request for more time on an earlier day, Roku's time's-up page still said A
+  parent said no. A no to more time is about its own day: once the request's end has passed,
+  the page offers Ask for more time again, as the web, Android TV and Apple TV already do. A no
+  given the same day still shows, with Ask again.
 
 - **Playing at home costs the Apple apps less, and the Apple TV's live player always lets go.**
   The Apple apps read a home's streams through a small proxy inside the app. It now passes

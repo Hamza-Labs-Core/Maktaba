@@ -75,7 +75,39 @@
     "roku.player.failed": ".ﺍﺬﻫ Roku ﺯﺎﻬﺟ ﻰﻠﻋ ﻮﻳﺪﻴﻔﻟﺍ ﺍﺬﻫ ﻞﻴﻐﺸﺗ ﻦﻜﻤﻳ ﻻ",
     "roku.player.audio": "ﺕﻮﺼﻟﺍ",
     "roku.player.subtitles": "ﺔﻤﺟﺮﺘﻟﺍ",
-    "roku.player.off": "ﻑﺎﻘﻳﺇ"
+    "roku.player.off": "ﻑﺎﻘﻳﺇ",
+    "parental.blocked.title": "ﺡﺎﺘﻣ ﺮﻴﻏ ﺍﺬﻫ",
+    "parental.blocked.accountAll": ".ﺭﺎﻤﻋﻷﺍ ﻞﻜﻟ ـﺑ ﺪﻴﻘﻣ ﻚﺑﺎﺴﺣ",
+    "parental.blocked.accountNone": ".ﻦﻳﺪﻟﺍﻮﻟﺍ ﺪﺣﺃ ﻪﺑ ﺢﻤﺳ ﺎﻤﺑ ﺪﻴﻘﻣ ﻚﺑﺎﺴﺣ",
+    "parental.blocked.ask": "ﻦﻳﺪﻟﺍﻮﻟﺍ ﺪﺣﺃ ﻦﻣ ﺐﻠﻃﺍ",
+    "parental.ask.again": "ﻯﺮﺧﺃ ﺓﺮﻣ ﺐﻠﻃﺍ",
+    "parental.ask.sent": ".ﻦﻳﺪﻟﺍﻮﻟﺍ ﺪﺣﺃ ﺭﺎﻈﺘﻧﺎﺑ .ﺐﻠﻄﻟﺍ ﻞﺳﺭﺃ",
+    "parental.ask.denied": ".ﻦﻳﺪﻟﺍﻮﻟﺍ ﺪﺣﺃ ﺾﻓﺭ",
+    "parental.ask.approved": ".ﻦﻳﺪﻟﺍﻮﻟﺍ ﺪﺣﺃ ﻖﻓﺍﻭ",
+    "parental.ask.tooMany": ".ﺩﺮﻟﺍ ﺭﺎﻈﺘﻧﺎﺑ ﺓﺮﻴﺜﻛ ﺕﺎﺒﻠﻃ ﻚﻳﺪﻟ",
+    "parental.ask.failed": ".ﻯﺮﺧﺃ ﺓﺮﻣ ﻝﻭﺎﺣ .ﺐﻠﻄﻟﺍ ﻞﺳﺮﻳ ﻢﻟ",
+    "parental.time.check": "ﺍﺩﺪﺠﻣ ﻖﻘﺤﺗ",
+    "parental.profile.managed": ".ﺏﺎﺴﺤﻟﺍ ﺍﺬﻫ ﻦﻳﺪﻟﺍﻮﻟﺍ ﺪﺣﺃ ﺮﻳﺪﻳ",
+    "parental.profile.limitAll": "ﺭﺎﻤﻋﻷﺍ ﻞﻜﻟ :ﻯﻮﺘﺤﻤﻟﺍ ﺪﺣ",
+    "parental.profile.limitNone": "ﻦﻳﺪﻟﺍﻮﻟﺍ ﺪﺣﺃ ﻪﺑ ﺢﻤﺳ ﺎﻣ :ﻯﻮﺘﺤﻤﻟﺍ ﺪﺣ",
+    "tv.parental.askOnPhone": ".ﻪﻔﺗﺎﻫ ﻰﻠﻋ Maktaba ﻦﻣ ﺩﺮﻟﺍ ﻦﻳﺪﻟﺍﻮﻟﺍ ﺪﺣﻷ ﻦﻜﻤﻳ",
+    "parental.blocked.deviceAll": ".ﺭﺎﻤﻋﻷﺍ ﻞﻜﻟ ـﺑ ﺪﻴﻘﻣ ﺯﺎﻬﺠﻟﺍ ﺍﺬﻫ",
+    "parental.time.up.title": "ﻡﻮﻴﻟﺍ ﺖﻗﻭ ﻰﻬﺘﻧﺍ",
+    "parental.time.outside.title": "ﺪﻌﺑ ﺓﺪﻫﺎﺸﻤﻟﺍ ﺖﻗﻭ ﻦﺤﻳ ﻢﻟ",
+    "parental.time.askMore": "ﺎﻴﻓﺎﺿﺇ ﺎﺘﻗﻭ ﺐﻠﻃﺍ",
+    "parental.ask.sentTime": ".ﻦﻳﺪﻟﺍﻮﻟﺍ ﺪﺣﺃ ﺭﺎﻈﺘﻧﺎﺑ .ﺎﻴﻓﺎﺿﺇ ﺎﺘﻗﻭ ﺖﺒﻠﻃ",
+    "parental.time.cannotCheck": "ﺪﻌﺑ ﺔﻟﻭﺎﺤﻤﻟﺍ ﺪﻋﺃ .ﻥﻵﺍ ﻚﺗﺪﻫﺎﺸﻣ ﺖﻗﻭ ﻦﻣ ﻖﻘﺤﺘﻟﺍ ﻚﻟﺰﻨﻣ ﻊﻴﻄﺘﺴﻳ ﻻ\n.ﻞﻴﻠﻗ",
+    "parental.player.stopped": ".ﺏﺎﺴﺤﻟﺍ ﺍﺬﻫ ﻰﻠﻋ ﺎﺣﺎﺘﻣ ﻊﻄﻘﻤﻟﺍ ﺍﺬﻫ ﺪﻌﻳ ﻢﻟ",
+    "roku.parental.ask15": "ﺔﻘﻴﻗﺩ 15",
+    "roku.parental.ask30": "ﺔﻘﻴﻗﺩ 30",
+    "roku.parental.ask60": "ﺓﺪﺣﺍﻭ ﺔﻋﺎﺳ",
+    "roku.weekday.0": "ﺪﺣﻷﺍ",
+    "roku.weekday.1": "ﻦﻴﻨﺛﻻﺍ",
+    "roku.weekday.2": "ﺀﺎﺛﻼﺜﻟﺍ",
+    "roku.weekday.3": "ﺀﺎﻌﺑﺭﻷﺍ",
+    "roku.weekday.4": "ﺲﻴﻤﺨﻟﺍ",
+    "roku.weekday.5": "ﺔﻌﻤﺠﻟﺍ",
+    "roku.weekday.6": "ﺖﺒﺴﻟﺍ"
   },
   "templates": {
     "launcher.connecting": {
@@ -146,6 +178,77 @@
     "roku.player.track": {
       "text": "المسار %1$s",
       "widthChars": 30,
+      "lines": 1
+    },
+    "parental.blocked.account": {
+      "text": "حسابك مقيَّد بـ %1$s+.",
+      "widthChars": 60,
+      "lines": 2
+    },
+    "parental.blocked.device": {
+      "text": "هذا الجهاز مقيَّد بـ %1$s+.",
+      "widthChars": 60,
+      "lines": 2
+    },
+    "parental.profile.limit": {
+      "text": "حدّ المحتوى: %1$s+",
+      "widthChars": 60,
+      "lines": 1
+    },
+    "parental.time.next": {
+      "text": "يمكنك المشاهدة مجددًا عند %1$s",
+      "widthChars": 60,
+      "lines": 1
+    },
+    "parental.time.saved": {
+      "text": "حُفظ موضعك في هذا المقطع عند %1$s.",
+      "widthChars": 60,
+      "lines": 2
+    },
+    "parental.time.left": {
+      "text": "بقي %1$s اليوم",
+      "widthChars": 40,
+      "lines": 1
+    },
+    "parental.time.warning": {
+      "text": "تنتهي المشاهدة بعد %1$s.",
+      "widthChars": 48,
+      "lines": 1
+    },
+    "parental.time.hoursMinutes": {
+      "text": "%1$s و%2$s",
+      "widthChars": 32,
+      "lines": 1
+    },
+    "parental.time.underMinute": {
+      "text": "أقل من دقيقة",
+      "widthChars": 20,
+      "lines": 1
+    }
+  },
+  "plurals": {
+    "parental.time.minutes": {
+      "forms": {
+        "zero": "%1$d دقيقة",
+        "one": "دقيقة واحدة",
+        "two": "دقيقتان",
+        "few": "%1$d دقائق",
+        "many": "%1$d دقيقة",
+        "other": "%1$d دقيقة"
+      },
+      "widthChars": 16,
+      "lines": 1
+    },
+    "parental.time.hours": {
+      "forms": {
+        "zero": "%1$d ساعة",
+        "one": "ساعة واحدة",
+        "two": "ساعتان",
+        "few": "%1$d ساعات",
+        "many": "%1$d ساعة",
+        "other": "%1$d ساعة"
+      },
+      "widthChars": 16,
       "lines": 1
     }
   }

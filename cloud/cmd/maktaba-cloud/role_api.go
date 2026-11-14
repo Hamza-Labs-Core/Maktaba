@@ -73,6 +73,10 @@ func runAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 	} else {
 		logger.Warn("server.admin_listen_addr is not set: the operator console is not served")
 	}
+	// the private series' own listener (story 50.28): loopback or a private address only
+	if cfg.Server.MetricsListenAddr != "" {
+		srvs = append(srvs, httpServer(cfg.Server.MetricsListenAddr, a.Metrics, cfg.Server.ReadTimeout, cfg.Server.WriteTimeout))
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	// in a pool behind a load balancer (story 50.17), /readyz fails for server.drain_delay
@@ -100,6 +104,9 @@ type apiOverrides struct {
 type apiRouters struct {
 	User  *chi.Mux
 	Admin *chi.Mux
+	// Metrics is the private series' listener (server.metrics_listen_addr, story 50.28): /metrics
+	// with the broadcast series, and User's /readyz and /healthz.
+	Metrics http.Handler
 	// Draining set makes both listeners' /readyz answer 503 (shutdown in a pool, story 50.17).
 	Draining *atomic.Bool
 }
@@ -195,7 +202,17 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 		}
 	}
 	ipSalt := sha256.Sum256([]byte("maktaba-broadcast-agreement-ip\x00" + string(secret)))
-	broadcastDeps := &broadcasth.Deps{DB: pool.DB, Servers: servers, Store: broadcastStore, Logger: logger, IPSalt: ipSalt[:]}
+	broadcastDeps := &broadcasth.Deps{DB: pool.DB, Servers: servers, Store: broadcastStore, Logger: logger, IPSalt: ipSalt[:],
+		OpenAccess: cfg.Broadcast.OpenAccess, WatchURL: cfg.Broadcast.WatchURL}
+	// viewer access (story 50.26): invites and the access posts need the broadcast key
+	if cfg.Broadcast.KeyPath != "" {
+		if k, err := broadcast.LoadKey(cfg.Broadcast.KeyPath); err == nil {
+			broadcastDeps.Key = &k
+			broadcastDeps.Edge = broadcasth.HTTPEdge{Base: cfg.Broadcast.IngestURL}
+		} else {
+			logger.Warn("broadcast invites disabled", "err", err)
+		}
+	}
 	serversDeps := serversh.Deps{Servers: servers, Assertions: assertions, Licenses: licenses,
 		ManageURL: strings.TrimRight(cfg.Server.WebURL, "/") + "/billing"}
 	homes := &homesh.Deps{Servers: servers, Users: users, Signer: assertions, RelayHost: cfg.Relay.PublicHost,
@@ -325,6 +342,8 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 	// NewRouter has already registered the health probes, and chi
 	// refuses Use after a route, so the app routes and their middleware
 	// live in a group.
+	analyticsDeps := &broadcasth.AnalyticsDeps{DB: pool.DB, Servers: servers, Audit: auditLog, Logger: logger,
+		K: cfg.Broadcast.AnalyticsK}
 	r.Group(func(app chi.Router) {
 		// Per-IP rate limits on the unauthenticated auth routes: burst 30,
 		// refill 5/s — plenty for the sign-in form, harsh for credential
@@ -342,7 +361,8 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 		// credential, never a user token.
 		serversh.MountAgent(app, serversDeps)
 		broadcasth.MountAgent(app, broadcastDeps)
-		broadcasth.MountIngest(app, ingestDeps(cfg, servers, pool, logger))
+		broadcasth.MountAccessAgent(app, broadcastDeps)
+		broadcasth.MountIngest(app, ingestDeps(cfg, servers, broadcastStore, logger))
 		// the broadcast edge: each request signed with its key, no account
 		edgeh.Mount(app, edgeDeps)
 		reports.MountAgent(app, &reports.AgentDeps{Store: reportStore, Servers: servers, Logger: logger,
@@ -380,13 +400,18 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 			(&healthh.Deps{DB: pool.DB}).Mount(g)
 			billingh.Mount(g, billing)
 			broadcasth.MountUser(g, broadcastDeps)
+			broadcasth.MountAccessUser(g, broadcastDeps)
 			pushh.Mount(g, pushh.Deps{DB: pool.DB, Dispatcher: dispatcher})
+			// a publisher's viewer analytics, the home's owner only (story 50.28)
+			broadcasth.MountAnalyticsUser(g, analyticsDeps)
 		})
 	})
 
-	// Prometheus scrape of this role's push counters (aggregate only, like
-	// the relay's /metrics).
+	// Prometheus scrape of this role's push counters (aggregate only, like the relay's /metrics).
+	// The broadcast series (story 50.28) from the worker's state are on the private listener only.
+	bcMonitor := &broadcast.Monitor{DB: pool.DB, BudgetUSD: cfg.Broadcast.MonthlyBudgetUSD}
 	r.Get("/metrics", metricspkg.PrometheusHandler(pushMetrics, obs.WriteMetrics))
+	private := privateMetrics(metricspkg.PrometheusHandler(pushMetrics, obs.WriteMetrics, bcMonitor.WriteMetrics), r)
 
 	// The operator console's listener (stories 50.32, 50.33): the staff sign-in on /v1/staff/*
 	// and every /v1/admin/* route, behind the IP allow-list (when set) and a staff session with
@@ -416,6 +441,10 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 			Logs: &adminh.LogsSource{URL: os.Getenv(EnvLogsURL), Token: logsToken()},
 		})
 
+		// a home's broadcast analytics, for the service admin, audited (story 50.28)
+		analyticsDeps.Gate = adminGate
+		broadcasth.MountAnalyticsAdmin(g, analyticsDeps)
+
 		// the problem reports homes sent, for the service admin only (53.16)
 		reports.MountAdmin(g, &reports.AdminDeps{Store: reportStore, DB: pool.DB, Logger: logger, Gate: adminGate,
 			Symbols: symbolDeps.Store})
@@ -437,7 +466,7 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 		})
 	})
 
-	return apiRouters{User: r, Admin: adminR, Draining: draining}, stopMetrics, nil
+	return apiRouters{User: r, Admin: adminR, Metrics: private, Draining: draining}, stopMetrics, nil
 }
 
 // keyedLimiter is a rate limiter as a middleware: ratelimit.Limiter (this process's buckets)
@@ -568,11 +597,13 @@ func turnstileGuard(cfg config.Config, fake turnstile.Verifier) (*turnstile.Guar
 		ClientIP: func(r *http.Request) string { return cmw.GetClientIP(r.Context()) }}, nil
 }
 
-// ingestDeps wires the broadcast edge's ingest tokens (story 50.21): on only with
-// broadcast.enabled and its key; otherwise the route answers 503 broadcast_disabled.
-func ingestDeps(cfg config.Config, servers *stores.Servers, pool *db.Pool, logger *slog.Logger) *broadcasth.IngestDeps {
-	d := &broadcasth.IngestDeps{Agents: servers, Plans: broadcasth.DBPlans{DB: pool.DB}, IngestURL: cfg.Broadcast.IngestURL}
-	if !cfg.Broadcast.Enabled {
+// ingestDeps wires the broadcast edge's ingest tokens (story 50.21): on whenever
+// broadcast.key_path is set (otherwise the route answers 503 broadcast_disabled). Who gets one
+// is 50.20's entitlement (broadcasth.StorePlans): while broadcast.enabled is off, only the
+// test publishers a service admin granted.
+func ingestDeps(cfg config.Config, servers *stores.Servers, store *billingpkg.BroadcastStore, logger *slog.Logger) *broadcasth.IngestDeps {
+	d := &broadcasth.IngestDeps{Agents: servers, Plans: broadcasth.StorePlans{Store: store}, IngestURL: cfg.Broadcast.IngestURL}
+	if cfg.Broadcast.KeyPath == "" {
 		return d
 	}
 	k, err := broadcast.LoadKey(cfg.Broadcast.KeyPath)

@@ -9,6 +9,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { I18nProvider } from "../lib/i18n";
 import { TestAuth, memberUser } from "../test/pageHarness";
+import { ParentalFixture, type MyParental } from "../lib/parental";
 import en from "../i18n/en.json";
 import ar from "../i18n/ar.json";
 
@@ -754,6 +755,69 @@ describe("Settings", () => {
     fireEvent.click(within(s).getByRole("button", { name: "العربية" }));
     expect(await screen.findByRole("heading", { name: A["big.tab.settings"] })).toBeInTheDocument();
     expect(screen.getByTestId("big-screen")).toHaveAttribute("dir", "rtl");
+  });
+});
+
+describe("A child under a limit (story 58.14)", () => {
+  const child: Partial<MyParental> = { restricted: true, maxTier: 9 };
+
+  async function hidden() {
+    const { ApiError } = await import("../lib/api");
+    return new ApiError({ type: "about:blank", title: "Not Found", status: 404 } as never);
+  }
+
+  function renderLimited(path: string, value: Partial<MyParental> = child) {
+    return render(
+      <I18nProvider>
+        <TestAuth user={memberUser}>
+          <ParentalFixture value={value}>
+            <MemoryRouter initialEntries={[path]}>
+              <Routes>
+                <Route path="/big/*" element={<BigScreen mode="tv" />} />
+              </Routes>
+            </MemoryRouter>
+          </ParentalFixture>
+        </TestAuth>
+      </I18nProvider>
+    );
+  }
+
+  it.each([
+    ["a video", "/big/video/vX", "/api/videos/vX"],
+    ["a series", "/big/series/SX", "/api/series/SX"],
+    ["a collection", "/big/collection/CX", "/api/collections/CX"],
+  ])(
+    "%s the home answers 404 for shows the blocked page, Ask a parent first",
+    async (_, path, api) => {
+      serve({
+        [api]: await hidden(),
+        [`${api}/episodes`]: await hidden(),
+        "/api/me/parental/requests": { requests: [] },
+      });
+      renderLimited(path);
+      const page = await screen.findByTestId("parental-blocked");
+      expect(page).toHaveTextContent(E["parental.blocked.title"]!);
+      expect(within(page).getByRole("button", { name: E["parental.blocked.ask"] })).toHaveAttribute(
+        "data-bs-autofocus"
+      );
+    }
+  );
+
+  it("with no limit, the same 404 is the not-found line", async () => {
+    serve({ "/api/videos/vX": await hidden() });
+    renderLimited("/big/video/vX", {});
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
+    expect(screen.queryByTestId("parental-blocked")).toBeNull();
+  });
+
+  it("Settings says a parent manages the account, and its limit", async () => {
+    serve({ "/api/me/parental/requests": { requests: [] } });
+    renderLimited("/big/settings");
+    await screen.findByTestId("big-settings");
+    expect(screen.getByTestId("big-parental-managed-line")).toHaveTextContent(
+      E["parental.profile.managed"]!
+    );
+    expect(screen.getByTestId("big-parental-limit")).toHaveTextContent("9+");
   });
 });
 

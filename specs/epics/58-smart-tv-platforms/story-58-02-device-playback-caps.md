@@ -124,8 +124,10 @@ None: no user-facing text. Player error text is story 58.15's.
 
 - **A report that changes mid-session** (the TV's HDMI switched to a non-HDR receiver): the app
   opens a new session at the same position. Sessions never change their mode in place.
-- **Transcode capacity** (the home's encoder is busy): unchanged, the session queues
-  (`accept_queue`). The TV shows the queue state it already reads.
+- **Transcode capacity** (the home's encoder is busy): a full home refuses the session with 503.
+  The API leaves `accept_queue` unforwarded on purpose: nothing promotes a queued session yet
+  (`slots.PromoteFromQueue` has no caller), and the answer carries no `state`, so a queued TV
+  would wait for a manifest that never comes. A real transcode queue is later work.
 - **The relay**: bitrate caps from the relay plan (Epic 50 story 50.19) still apply over the
   device's `max_bitrate_kbps`.
 

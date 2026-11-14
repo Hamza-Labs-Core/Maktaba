@@ -35,9 +35,9 @@ def test_arabic_statics_equal_the_reference_line_by_line() -> None:
         meta = en["@" + key]
         want = visual.visual_lines(ar[key], meta["widthChars"], meta["lines"], "rtl")
         assert visual_text.split("\n") == want, key
-    # every key is either a static string or a template
+    # every key is a static string, a template or a plural
     keys = {k for k in ar if not k.startswith("@")}
-    assert keys == set(out["strings"]) | set(out["templates"])
+    assert keys == set(out["strings"]) | set(out["templates"]) | set(out["plurals"])
     assert "video.resumeFrom" in out["templates"]
     assert out["templates"]["video.resumeFrom"]["text"] == "المتابعة من %1$s"
 
@@ -94,3 +94,66 @@ def test_check_finds_a_stale_file(tmp_path: Path) -> None:
     assert shape_strings.main(["--check", "--root", str(tmp_path)]) == 0
     (tmp_path / "locale" / "ar_SA" / "strings.json").write_text("{}", encoding="utf-8")
     assert shape_strings.main(["--check", "--root", str(tmp_path)]) == 1
+
+
+def test_arabic_inside_an_english_string_is_shaped_left_to_right(tmp_path: Path) -> None:
+    # a language's own name in the English catalog: Roku would draw it unjoined and reversed
+    en = {"@k": {"widthChars": 30, "lines": 1}, "k": "Language: العربية", "@p": {"widthChars": 30}, "p": "Plain"}
+    root = _catalog(tmp_path, en, {"k": "اللغة: العربية", "p": "عادي"})
+    files, problems = shape_strings.build(root)
+    assert problems == []
+    out = json.loads(files[root / "locale" / "en_US" / "strings.json"])
+    assert out["strings"]["k"] == "Language: " + visual.visual_text("العربية")
+    assert out["strings"]["k"] == visual.visual_text("Language: العربية", 0, "ltr")
+    assert out["strings"]["p"] == "Plain"  # English alone is left to the Label
+
+
+def test_english_statics_equal_the_reference() -> None:
+    en = json.loads((ROKU / "i18n" / "en.json").read_text(encoding="utf-8"))
+    out = json.loads((ROKU / "locale" / "en_US" / "strings.json").read_text(encoding="utf-8"))
+    assert out["rtl"] is False
+    for key, text in out["strings"].items():
+        if shape_strings.has_rtl(en[key]):
+            meta = en["@" + key]
+            assert text.split("\n") == visual.visual_lines(en[key], meta["widthChars"], meta["lines"], "ltr"), key
+        else:
+            assert text == en[key], key
+    assert out["strings"]["account.language.ar"] == visual.visual_text("العربية")
+
+
+def test_a_plural_keeps_each_languages_forms_in_logical_order(tmp_path: Path) -> None:
+    en = {"@m": {"widthChars": 16, "lines": 1}, "m": {"one": "%1$d minute", "other": "%1$d minutes"}}
+    ar_forms = {
+        "zero": "%1$d دقيقة",
+        "one": "دقيقة واحدة",
+        "two": "دقيقتان",
+        "few": "%1$d دقائق",
+        "many": "%1$d دقيقة",
+        "other": "%1$d دقيقة",
+    }
+    root = _catalog(tmp_path, en, {"m": ar_forms})
+    files, problems = shape_strings.build(root)
+    assert problems == []
+    ar = json.loads(files[root / "locale" / "ar_SA" / "strings.json"])
+    assert ar["plurals"]["m"] == {"forms": ar_forms, "widthChars": 16, "lines": 1}
+    assert "m" not in ar["strings"] and "m" not in ar["templates"]
+    out = json.loads(files[root / "locale" / "en_US" / "strings.json"])
+    assert out["plurals"]["m"]["forms"] == en["m"]
+
+
+def test_a_plural_form_too_long_for_its_label_fails_naming_the_form(tmp_path: Path) -> None:
+    en = {"@m": {"widthChars": 10, "lines": 1}, "m": {"one": "%1$d minute", "other": "%1$d minutes"}}
+    root = _catalog(tmp_path, en, {"m": {"one": "دقيقة", "other": "%1$d دقيقة"}})
+    _, problems = shape_strings.build(root)
+    # "000 minutes" is 11 characters: the number at its widest
+    assert any("'m#other' needs 2 lines of 10" in p for p in problems), problems
+
+
+def test_a_value_string_is_kept_logical_for_the_line_it_goes_into(tmp_path: Path) -> None:
+    en = {"@u": {"widthChars": 20, "lines": 1, "value": True}, "u": "less than a minute"}
+    root = _catalog(tmp_path, en, {"u": "أقل من دقيقة"})
+    files, problems = shape_strings.build(root)
+    assert problems == []
+    ar = json.loads(files[root / "locale" / "ar_SA" / "strings.json"])
+    assert ar["templates"]["u"] == {"text": "أقل من دقيقة", "widthChars": 20, "lines": 1}
+    assert "u" not in ar["strings"]

@@ -13,6 +13,7 @@ import { fetchMyVideo, markWatched, setFavorite, type MyVideo } from "../../lib/
 import { bigPath, useBigNav } from "../nav";
 import { Failed, Loading, Ltr, Picture, Progress, Screen, clock, lrm, posterOf } from "../ui";
 import { errorText } from "../../lib/errorText";
+import { BigBlockedOr } from "./Blocked";
 
 interface Video {
   id: string;
@@ -98,7 +99,17 @@ export function BigVideo() {
   }, [id, reload, t]);
 
   if (err) {
-    const missing = err.status === 404 || err.status === 403;
+    // Epic 58 story 58.14: for a limited sign-in a 404 may be the limit: ask a parent
+    if (err.status === 404)
+      return (
+        <BigBlockedOr
+          kind="video"
+          id={id}
+          onCheck={() => setReload((x) => x + 1)}
+          message={t("video.notFound")}
+        />
+      );
+    const missing = err.status === 403;
     return (
       <Failed
         message={missing ? t("video.notFound") : err.message}

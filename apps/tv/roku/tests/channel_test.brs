@@ -143,6 +143,39 @@ sub t_Net()
     ck_Eq("relay last", got[2].kind, "relay")
     ck_Eq("no connections", NetCloudConnections(invalid).Count(), 0)
 
+    ' the grant goes only to a proven name (https by host name, which the TV's certificate
+    ' check proves); the cloud's home_id is its server id, which discovery never gives, and a
+    ' plain or raw-IP answer (and the urls it lists) proves nothing
+    ck_True("proven name", NetIsProvenName("https://Relay.Maktaba.tv/h/h1"))
+    ck_True("LAN name proven", NetIsProvenName("https://192-168-1-20.h1.d.example:8443"))
+    ck_Eq("plain http not proven", NetIsProvenName("http://h1.d.example"), false)
+    ck_Eq("raw IPv4 not proven", NetIsProvenName("https://10.0.0.2:8443"), false)
+    ck_Eq("bracketed IPv6 not proven", NetIsProvenName("https://[fd00::1]:8443"), false)
+    ck_Eq("all-digit host not proven", NetIsProvenName("https://167772162"), false)
+    approval = [
+        {kind: "local_ip", url: "https://192.168.1.20:8443", tls_name: "192-168-1-20.h1.d.example"}
+        {kind: "local", url: "http://192.168.1.20:8088"}
+        {kind: "local", url: "https://192-168-1-20.h1.d.example:8443"}
+        {kind: "direct", url: "http://203.0.113.5:8088"}
+        {kind: "direct", url: "https://203.0.113.5:8443"}
+        {kind: "direct", url: "https://h1.d.example"}
+        {kind: "relay", url: "https://h1.relay.maktaba.tv"}
+    ]
+    grant = NetGrantConnections(approval)
+    urls = []
+    for each c in grant
+        urls.Push(c.url)
+    end for
+    ck_Eq("only proven names, in the cloud's order", urls, ["https://192-168-1-20.h1.d.example:8443", "https://h1.d.example", "https://h1.relay.maktaba.tv"])
+    ck_Eq("relay last", grant[grant.Count() - 1].kind, "relay")
+    lanAndRelay = [{kind: "local", url: "http://192.168.1.20:8088"}, {kind: "relay", url: "https://h1.relay.maktaba.tv"}]
+    ck_Eq("a plain LAN address is never tried; the relay is", NetGrantConnections(lanAndRelay).Count(), 1)
+    ck_Eq("the relay is used", NetGrantConnections(lanAndRelay)[0].url, "https://h1.relay.maktaba.tv")
+    ck_Eq("an https raw-IP direct is never tried", NetGrantConnections([{kind: "direct", url: "https://203.0.113.5:8443"}]).Count(), 0)
+    ck_Eq("a plain http direct is never tried", NetGrantConnections([{kind: "direct", url: "http://203.0.113.5:8088"}]).Count(), 0)
+    ck_Eq("an https LAN name is taken as it is", NetGrantConnections([{kind: "local", url: "https://192-168-1-20.h1.d.example:8443"}]).Count(), 1)
+    ck_Eq("no connections, none tried", NetGrantConnections(invalid).Count(), 0)
+
     ' the subnet probe
     targets = NetProbeTargets("192.168.1.9")
     ck_Eq("253 addresses", targets.Count(), 253)

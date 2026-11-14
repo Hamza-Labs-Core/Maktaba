@@ -20,7 +20,8 @@ comes after Samsung and LG.
 - BrightScript and SceneGraph, written in **BrighterScript**: a superset that compiles to
   BrightScript, with classes, imports and type checks.
 - Built and side-loaded with `roku-deploy`.
-- Unit tests with **Rooibos** on a device, and with **brs-engine** in Node on CI (58.16).
+- Unit tests: the BrightScript logic tests run on **brs-engine** in Node on CI (58.16) and, as a
+  device-test package (`tools/build.mjs --device-tests`), on a Roku, in place of Rooibos.
 - The code lives at `apps/tv/roku`.
 
 **Screens.** Epic 56's TV layout, as the Apple TV and Android TV apps have it, built from
@@ -47,7 +48,17 @@ SceneGraph components:
 
 **Finding the home.** Roku has no mDNS API (research.md §6.3):
 1. **Saved homes** (`roRegistrySection`).
-2. **Sign in with a code** through Maktaba Cloud (58.03). This is the default.
+2. **Sign in with a code** through Maktaba Cloud (58.03). This is the default. The poll's
+   `home_id` is the cloud's id for the home, which `/api/discovery/home` never gives (it answers
+   with the home's instance id), and on plain HTTP or a raw IP address the discovery answer is
+   whatever answers there says: anyone on the TV's network or on the path can answer and list
+   the home's relay among its `urls` (the relay's name is not secret). So the grant goes only to
+   the cloud's HTTPS connections by host name (`NetGrantConnections`): the relay, the home's
+   direct name, a LAN name under its certificate. The TV's certificate check proves the home
+   there, and the first of them, in the cloud's order, that answers as a Maktaba home is taken. A
+   plain HTTP or raw IP connection (including the home's plain public address the cloud lists as
+   `direct` for older apps) is never contacted for the cloud code, and a home's `urls` never
+   count as proof of which home it is.
 3. **Find on this network**: the same /24 probe as 58.09, using `roUrlTransfer` asynchronously,
    32 at a time, on the address from `roDeviceInfo.GetIPAddrs()`, then the home's HTTPS name and
    the home's own code.

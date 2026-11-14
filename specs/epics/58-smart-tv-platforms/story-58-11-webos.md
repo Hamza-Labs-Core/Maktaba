@@ -34,7 +34,11 @@ iframe:
     tag or refuses the stream. If it refuses, the home omits the tag for the `webos` profile.
 - **Dolby Vision** in web apps is unreliable (research.md §4.2). The `device_caps` reports
   `dv-p8` only when `MediaSource.isTypeSupported` says so *and* the real-device checklist has
-  marked that model year as good. Otherwise the home sends the HDR10 base layer.
+  marked that model year as good (`DV_GOOD_YEARS` in `src/platform/webos-caps.ts`).
+  Otherwise the home sends the HDR10 base layer.
+- **Caps** come from luna `getSystemInfo` / `webOS.deviceInfo` plus `isTypeSupported`, checked
+  against `shared/playback/caps-vectors.json`. Luna is reached through `webOS.service.request` or
+  `PalmServiceBridge`, documented services only.
 
 **Keys.**
 - webOS sends Back as key code 461. The top-level Back, after the UI's confirm, calls
@@ -81,15 +85,15 @@ removes the test app, so the checklist starts with Extend.
 
 | ID | Type | Setup | Action | Expected |
 |---|---|---|---|---|
-| T01 | Vitest | `platform/webos.ts` with a fake `<video>` and `webOS` object | play, tracks, subtitles, Back | the call sequence; speed menu hidden |
+| T01 | Vitest (`src/platform/webos.test.ts`) | `src/platform/webos.ts` with a fake `<video>` and `webOS` object | play, tracks, subtitles, Back | the call sequence; speed menu hidden |
 | T02 | Package lint | built `.ipk` | parse `appinfo.json` | fields as listed |
-| T03 | webOS TV Simulator (LG's desktop simulator, same Chromium as the TV; on a Linux runner under Xvfb, best effort) | the `.ipk` contents | launch, code screen, find on network with a mock home | screenshots en and ar; the simulator's log in the CI report. It cannot test real media, so playback is out of scope |
-| T04 | Playwright (Chromium M120 build, the webOS 25 engine, via Playwright's pinned browser download where available) | launcher + `/tv/` | the T04 flows of 58.09 | as 58.09 T04 |
+| T03 | Not run in CI: the webOS TV Simulator downloads only behind LG's license page, with no fetchable URL, no documented headless run and no media pipeline (`docs/stores/lg.md`) | — | — | — |
+| T04 | Playwright (Playwright's own Chromium), `web/e2e/launcher/webos.ui.spec.ts` on a webOS shim, beside the T04 flows of 58.09 | launcher + `/tv/` through the launcher's `<video>` | caps in the session, the transcode retry, playback, the Arabic RTL cue, Back and exit | as 58.09 T04. Playwright's Chromium decodes no H.264, so CI plays VP9 |
 | T05 | Real-device checklist (`docs/stores/lg.md`) | a webOS 5 (2020), a webOS 23 and a webOS 25 TV, via `ares-install` in Developer Mode | each launcher release candidate | 4K HDR10, HLS fMP4, `INDEPENDENT-SEGMENTS` behaviour, DV p8 per model year, EAC3, Arabic subtitles, Magic Remote, performance budget |
 
-**Honest note:** LG's simulator has no real media pipeline (research.md §4.3), so playback is
-proven only on real TVs (T05). Running the simulator headless in CI is not documented, so T03 is
-best effort and not a required check.
+**Honest note:** LG's simulator has no real media pipeline (research.md §4.3), and running it
+headless in CI is not documented, so it is not run (T03). HLS, HDR, Dolby Vision and passthrough
+are proven only on real TVs (T05).
 
 ## Strings
 
@@ -106,7 +110,7 @@ The launcher's catalogs (58.09); no webOS-only strings.
 
 | File | Change |
 |---|---|
-| `apps/tv/web/platform/webos.ts`, `apps/tv/web/webos/appinfo.json` | player, keys, package |
+| `apps/tv/web/src/platform/webos.ts` (with `webos-caps.ts`, `webos-luna.ts`, `webos-player.ts`), `apps/tv/web/webos/` (`appinfo.json`, `package.mjs`, `lint-ipk.mjs`) | player, caps, keys, package |
 | `.github/workflows/tv-web-release.yml` | `.ipk` build |
-| `.github/workflows/_tv-web.yml` | T01–T02, T04; T03 non-required |
+| `.github/workflows/_tv-web.yml` | T01–T02, T04; the `.ipk` built and linted on every related run; no simulator job |
 | `docs/stores/lg.md` | listing, UX scenario, self-checklist, device checklist |

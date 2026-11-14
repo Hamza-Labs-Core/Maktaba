@@ -251,6 +251,38 @@ function NetCloudConnections(conns as Dynamic) as Object
     return out
 end function
 
+' Whether a connection URL proves the home that answers there: https by host name (not a raw
+' IPv4 address, not a bracketed IPv6 one, and with a letter in it), so the TV's certificate check
+' ties the answer to that name. The relay, the home's direct name and the LAN names under its
+' certificate are such names; a plain http address or a raw IP (the cloud also lists the home's
+' plain public address as kind direct, for older apps) proves nothing: it can change hands, and
+' anyone on the TV's network or on the path can answer there.
+function NetIsProvenName(url as String) as Boolean
+    if LCase(Left(url.Trim(), 8)) <> "https://" then return false
+    host = NetHost(url.Trim())
+    if host = "" or Left(host, 1) = "[" or NetIsIPv4(host) then return false
+    for i = 1 to Len(host)
+        ch = Mid(host, i, 1)
+        if ch >= "a" and ch <= "z" then return true
+    end for
+    return false
+end function
+
+' The cloud's connections the grant may go to, in the cloud's order: only the proven names
+' (NetIsProvenName). The cloud names the home by its own server id, which /api/discovery/home
+' never gives, and on plain http or a raw IP the discovery answer is whatever answers there says
+' (anyone on the TV's network or on the path can answer and list the home's relay among its
+' urls; the relay's name is not secret), so such a connection is never tried for the cloud code.
+' At a proven name the TV's certificate check proves the home, and a Maktaba home answering
+' there is taken as it is.
+function NetGrantConnections(conns as Dynamic) as Object
+    out = []
+    for each c in NetCloudConnections(conns)
+        if NetIsProvenName(c.url) then out.Push(c)
+    end for
+    return out
+end function
+
 ' The addresses of the TV's /24 to probe (story 58.09): every host but the TV's own; [] when the
 ' TV's address is not an IPv4 address.
 function NetProbeTargets(ip as String) as Object

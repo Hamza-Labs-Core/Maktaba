@@ -37,10 +37,15 @@ one kind never passes as another.
 | Ingest token | `mkbi1.<payload>.<Ed25519>`, domain `maktaba-broadcast-ingest-v1` | the cloud (`broadcast.key_path`) | `CLOUD_PUBKEYS` |
 | Control post | `mkbc1.<payload>.<Ed25519>`, domain `maktaba-broadcast-control-v1` | the cloud | `CLOUD_PUBKEYS` |
 | Viewer token | `mkbv1.<payload>.<HMAC-SHA256>`, domain `maktaba-broadcast-viewer-v1` | `watch.maktaba.tv` (50.26) | `VIEWER_TOKEN_KEY` |
-| Edge post | headers `X-Maktaba-Edge-Time`, `X-Maktaba-Edge-Signature` (Ed25519 over `maktaba-broadcast-edge-v1\n<METHOD>\n<path>\n<ms>\n<hex sha256 body>`) | the edge (`EDGE_SIGNING_KEY`) | the cloud (`broadcast.edge_public_key`, `broadcast.VerifyEdgeRequest`) |
+| Edge post | headers `X-Maktaba-Edge-Time` (unix ms), `X-Maktaba-Edge-Signature` (base64url Ed25519 over `maktaba-broadcast-edge-v1\n<METHOD>\n<path>\n<ms>\n<hex sha256 body>`), at most 5 minutes from the cloud's clock | the edge (`EDGE_SIGNING_KEY`) | the cloud (`broadcast.edge_public_key`, `broadcast.VerifyEdgeRequest`) |
 
 - **Ingest token** payload: `{typ: "ingest", pub, ch, rungs[], home, kbps, iat, exp, kid}`.
-  `pub` is the publisher (the home's owner), `ch` the edge's channel id, `rungs` the rung names
+  `pub` is the publisher: the home (its server id, the same as `home`), the id the edge keys
+  `PublisherControl` by and the cloud bills usage to. **One publisher key everywhere:** the
+  token's `pub` and `home`, a usage window's `publisher`, a plan's `pub`, a viewer token's `pub`
+  (50.26) and the cloud's entitlements (50.20, per home) are all the home's server id, never the
+  owner's account id. The cloud refuses to mint a token whose `pub` is not its `home`, and the
+  edge refuses one as `401 bad_token`. `ch` is the edge's channel id, `rungs` the rung names
   the channel may push (top first, at most 4, never `slate`), `kbps` the plan's top bitrate (the
   size guard). It lives 24 h; the home asks again every hour, so a cloud outage stops no
   broadcast for a day. A token for another channel, or a rung it does not list, is `403`; a bad,
@@ -51,10 +56,40 @@ one kind never passes as another.
 - **Key rotation.** Each payload names its key (`kid`, the first 8 bytes of the public key's
   SHA-256 in hex). Add the new public key to `CLOUD_PUBKEYS`, switch `broadcast.key_path` to the
   new key, and remove the old public key 24 h later.
-- **Viewer token** payload: `{pub, ch, session, mode, exp, country?}`, `exp` at most 10 minutes
-  ahead. `mode` is `full`, `lowest`, `wait` (`429 broadcast_full`) or `off` (`403`).
+- **Viewer token** payload: `{pub, ch, session, mode, exp, country?}` (`pub` the home's server
+  id), `exp` at most 10 minutes ahead. `mode` is `full`, `lowest`, `wait` (`429 broadcast_full`) or `off` (`403`).
 - Both sides check the same vectors: `cloud/internal/broadcast/testdata/vectors.json` (TEST keys
-  from public labels; `go test ./internal/broadcast -run TestVectors -update` rewrites them).
+  from public labels; `go test ./internal/broadcast -run TestVectors -update` rewrites them):
+  the ingest token, the control posts, and the whole edge↔cloud contract below (a signed usage
+  post, the cloud's reply to it, a publisher's state and the plan it becomes). The Go tests run
+  the vectors' usage post through the cloud's handler and compare its reply byte for byte; the
+  edge's tests (`test/contract.test.ts`) build the same post and read the same reply and push.
+
+## The edge↔cloud contract
+
+One contract, written once in Go (`cloud/internal/broadcast/edge.go`) and mirrored in
+`src/publisher.ts` and `src/edge_sign.ts`; the vectors keep the two from drifting.
+
+| Call | Direction | Body | Answer |
+|---|---|---|---|
+| `POST /_edge/usage` | edge → `API_ORIGIN`, edge post | `{edge, windows: [UsageWindow]}`, at most 2,000 windows (a longer queue goes in pages) | `200 {taken: [key], duplicates: [key], rejected: [{key, error}], states: [PublisherState], plans: [Plan]}`; `401 bad_edge_signature`, `400` over 2,000, `503 try_again` (resent later) |
+| `GET /_edge/publishers/{id}` | edge → cloud, edge post | none | `200 PublisherState`, `404 unknown_publisher` |
+| `PUT /v1/control/plan` | cloud → edge, control post `typ: "plan"` (15 minutes) | `Plan` | `200 {status: "applied"}`, `409 older_plan` |
+| `PUT /v1/control/revocations` | cloud → edge, control post `typ: "revocations"` | `{version, pubs[], channels[], homes[]}` | `200`; `GET` answers the version held |
+
+- **UsageWindow**: `{key, publisher, window_start, window_end, minutes_full, minutes_lowest,
+  minutes_stream, segments_in, bytes_in, peak_sessions}`, in that order. `key` is
+  `<publisher>:<window_start>`; times are RFC 3339 UTC in whole seconds (`2026-11-13T00:05:00Z`,
+  never `.000Z`), `window_end` 5 minutes after `window_start`. The cloud bills `minutes_full`
+  and `minutes_lowest`; the other counters it checks (not negative) and does not store yet. A
+  window posted again under its key is counted once, so the edge resends freely after an outage.
+- **The reply** names each window by the key the edge sent. Taken, duplicate and rejected
+  (`unknown_publisher`, `bad_window`: never taken) windows are done; any other stays queued.
+- **Plan**: `{pub, version, mode, max_rungs?, max_top_kbps?, max_viewers?, delivery?}`
+  (`broadcast.PlanFromState`: `version` is the state's time in unix ms, `max_viewers` the
+  concurrent-viewer limit). The cloud pushes it signed (`broadcast.SignPlan`) and returns it in
+  every usage reply, so the edge's plan follows the cloud's at least every 5 minutes; an older
+  `version` never replaces a newer one.
 
 ## Ingest (home → edge)
 
@@ -106,6 +141,112 @@ time more than 60 s from the edge's is `400 clock_skew`, with the edge's time in
   sweeps any untracked object of the channel older than that. An R2 lifecycle rule of 1 day is
   the backstop (an owner action).
 
+## Viewer access (50.26)
+
+Who may watch a channel. Viewers have no account and never pay. Each channel is **invite** (the
+default) or **open**; open needs a verified publisher (a paid plan, a confirmed email, 7 days
+since the first broadcast), the Broadcaster add-on, and the cloud's
+`broadcast.open_access.enabled`.
+
+| Credential | Shape | Made by | Lives |
+|---|---|---|---|
+| Invite | `mkbn1.<payload>.<Ed25519>` (domain `maktaba-broadcast-invite-v1`): `{typ, pub, chs, inv, max, iat, exp, kid}` | the cloud (`cloud/internal/broadcast/invites.go`), for the home's owner or admin | up to 365 days, `max` devices |
+| Short code | `MK-` and 4 of A–Z, 0–9 | the cloud, beside each invite | the invite's life |
+| Guest pass | `mkbg1.` HMAC (`VIEWER_TOKEN_KEY`, domain `maktaba-broadcast-guest-v1`): `{pub, inv, id, chs, exp, iexp}`, `iexp` the invite's `exp` | the edge, one per device that redeems | 30 days, renewed past half, never past its invite's expiry; a pass without `iexp`, or whose invite has expired, is refused |
+| Open session | `mkbo1.` HMAC (domain `maktaba-broadcast-open-v1`) | the edge, after Turnstile or an app attestation | 12 h |
+| Viewer token | the 50.21 token | the edge, per play | 10 minutes, refreshed after 5 |
+
+The watch routes (on `WATCH_HOST`, and under `/api/` and `/i/` on any host in dev):
+
+| Route | What |
+|---|---|
+| `GET /i/<invite>` | a server-rendered page (Arabic by default, `noindex`) with one button; `POST` redeems |
+| `POST /api/v1/redeem` | `{invite}` or `{code}`: a guest pass (cookie `mkp_<pub>`, or the body for apps) |
+| `POST /api/v1/open/turnstile` | `{token}`: an open session (cookie `mko`) |
+| `POST /api/v1/open/challenge`, `/api/v1/open/attest` | a stateless 5-minute challenge, then `{platform, attestation, nonce}`: an open session |
+| `POST /api/v1/play` | `{channel}`: `session_id`, `beat_key`, `master_url`, `refresh_after` |
+| `POST /api/v1/play/<session>/beat` | `{beat_key}`: keeps the session (150 s without one ends it) and meters the minute |
+
+`ViewerAccess` (Durable Object `VIEWER`, one per publisher) holds the access post the cloud
+pushes (`PUT /v1/control/access`, a control post `{typ: "access", pub, version, channels, codes,
+revoked_invites, revoked_passes, max_sessions_per_ip, daily_minutes}`; an older version is
+`409`), the passes, the live sessions (one per credential: a new play ends the old one), the
+counts, and the short-code tries (10 a minute per address, 60 failed a minute per publisher).
+`POST /v1/control/passes` answers the passes and each invite's uses for the publisher's page.
+Spent attestation challenges are rows in 16 more instances (`attest-spent-N`), spent only after
+the attestation holds, and refused rather than forgotten when 50,000 are live.
+
+Limits: the plan's concurrent viewers (`max_viewers`), a channel's own cap, the open sessions
+per network (default 3; a guest pass never counts), the daily minutes, and `PLAY_RL` (30 plays)
+and `API_RL` (120 requests) a minute per address. A limit stops a new viewer, never one
+watching: `wait` and a full channel are `429 broadcast_full`, `off` is `403`, no plan yet is
+`503 plan_unknown`. The cloud pushes each change at once and every pending one each minute, and
+refreshes every publisher's post hourly. Addresses are kept only as a salted hash that changes
+every UTC day.
+
+## Guest viewers: the watch pages, guide and TV pairing (50.27)
+
+The home publishes each channel's guide with its ingest token:
+`POST /v1/ingest/<channel>/guide`, at most 256 KB, replaced whole on every post (`guide.ts`):
+
+```json
+{ "schema": 1,
+  "publisher": { "name": "…", "logo": "data:image/png;base64,…" },
+  "channel": { "name": "…", "number": 7 },
+  "programmes": [ { "start": "ISO", "end": "ISO", "title": "…",
+                    "attribution": { "title": "…", "by": "…", "licence": "CC BY 4.0", "url": "https://…" } } ] }
+```
+
+It lands in `GUIDE` at `<env>/guide/<pub>/<channel>.json`, with the publisher's branding (a name
+and an optional PNG, WebP or JPEG logo of at most 64 KB) beside it. The edge checks the shape,
+sorts the programmes by start and keeps those from a day ago to 8 days ahead; it never adds to
+or reorders the schedule.
+
+The pages (server-rendered, Arabic by default; `/ar/` and `/en/` decide, else
+`Accept-Language`; `/<publisher>…` redirects to the guest's language):
+
+| Route | What |
+|---|---|
+| `GET /<lang>/<publisher>` | the channels the guest's pass or open session allows (only open ones without a credential), with now and next |
+| `GET /<lang>/<publisher>/<channel>` | the player, now and next, today, a CC BY programme's credit, Report; `noindex` unless the publisher set the channel indexable |
+| `GET /<lang>/<publisher>/guide` | today's programmes per channel |
+| `GET /<lang>/legal/{copyright,terms,privacy}` | summaries, linking to the full text on `maktaba.tv` |
+| `GET /pair?tv=<nonce>`, `POST` | the phone's side of TV pairing: paste an invite link, type a short code (with `&p=<publisher>`), or send its open session |
+| `GET /s/watch.js`, `/s/watch.css` | the pages' script and stylesheet, served by the edge |
+
+`POST /i/<invite>` now ends with a `303` to the channel (an invite for one) or the grid. A page
+links only to its own publisher's channels and guide, Maktaba's legal pages, the edge's script
+and style, hls.js, Turnstile, and a CC BY programme's source (a test lists every link). The
+player is hls.js on the page (from jsDelivr, as Epic 34's site): it starts on the lowest rung,
+swaps each new viewer token from the beat into the playlist and segment URLs, and switches with
+up/down, PageUp/PageDown, a vertical swipe and number entry. Its states come from
+`site/states.ts` (`viewerState`), whose source the page script embeds, so the page and the
+Worker map answers the same way. `play` and `beat` answers carry `channel_state` (`live`,
+`waiting`, `offline_slate`, `off_air`, `revoked`): the slate plays with the offline note and no
+error.
+
+The apps' reads, with the pass as `Authorization: Bearer`:
+
+| Route | What |
+|---|---|
+| `GET /api/v1/lineup?publisher=` | `{publisher: {id, name, logo?}, channels: [{id, name, number, state, now, next}]}` |
+| `GET /api/v1/guide?publisher=&channel=` | the channel's programmes; `403` for a channel the credential does not open |
+| `POST /api/v1/pair` | a TV's pairing: `{nonce, poll_key, code, url, expires_at, poll}`, 10 minutes |
+| `GET /api/v1/pair/<nonce>?wait=25` | the TV's long-poll, with `X-Maktaba-Pair-Key: <poll_key>`: `200 {publisher, credential, kind, channels, expires_at}` once, `204` not yet, `410 pair_gone` (also a missing or wrong key) |
+| `POST /api/v1/pair/<nonce>` | the phone: `{invite}` (a link or the token), `{publisher, code}`, or `{publisher, open: true}` with its open session |
+
+`Pairing` (Durable Object `PAIRING`, migration `v3`, one per nonce) keeps the credential until
+the TV takes it, then forgets it, and deletes everything at the end of its 10 minutes. The QR
+code carries only the nonce; the poll key stays on the TV, so someone who sees the code cannot
+collect the credential. The TV shows a 4-character code beside the QR code and the phone's page
+shows the same one, to check before sending (RFC 8628 §5.4). An invite sent to a TV counts a new
+device use; the phone's own pass is never reused. For an open session the TV gets its own token
+of the phone's session (the same id and expiry, never the phone's cookie), so it shares the
+phone's limits and no Turnstile check is skipped or extended.
+
+`WATCH_SITE_OFF = 1` turns every page into "temporarily unavailable" while the API and playback
+stay up; `TURNSTILE_SITE_KEY` shows the Turnstile widget on an open channel's page.
+
 ## The Stream fallback
 
 `BROADCAST_DELIVERY = stream`, or a publisher's plan with `delivery: "stream"`. The home asks
@@ -120,51 +261,84 @@ revocations and metering stay the same; Stream's viewer-minutes are counted apar
 
 | Story | Seam | Where |
 |---|---|---|
-| 50.20 | The cloud pushes a publisher's plan: `PUT /v1/control/plan` with a control post `{typ: "plan", pub, mode, version, max_rungs?, max_top_kbps?, max_viewers?, delivery?}`. An older `version` is `409`. `mode` is what a new session gets; `off` stops ingest and play. | `PublisherControl.setPlan`, `ChannelLive.setPlan` |
-| 50.20 | Usage: 5-minute windows `{key: "<pub>:<window start>", publisher, window_start, window_end, minutes_full, minutes_lowest, minutes_stream, segments_in, bytes_in, peak_sessions}`, kept 7 days, posted every 5 minutes to `API_ORIGIN` + `/_edge/usage` as `{edge: "broadcast-edge", windows: [...]}`, signed (edge post). A window is resent until a `2xx`. | `PublisherControl.alarm`, `pendingUsage`, `ack` |
+| 50.20, 50.26 | The cloud pushes a publisher's `Plan` (above) to `PUT /v1/control/plan`; until it does, the plan comes with each usage reply. `mode` is what a new session gets; `off` stops ingest and play. | `PublisherControl.setPlan`, `ChannelLive.setPlan`, `parsePlan` |
+| 50.20 | Usage: 5-minute windows (above), kept 7 days, posted every 5 minutes to `API_ORIGIN` + `/_edge/usage` in pages of 2,000, signed (edge post). A window is resent until the cloud's reply names it. | `PublisherControl.alarm`, `pendingUsage`, `ack`, `readUsageReply` |
 | 50.22 | The home's uploader: the ingest endpoints above, the slate, the control socket, the speed test. | `ingest.ts` |
 | 50.25 | The revocation list: `PUT /v1/control/revocations` with a control post `{typ: "revocations", version, pubs[], channels[], homes[]}`; `GET` answers the version held. A newer list revokes what it adds (ingest and playlists refused, the home told) and restores what it drops. `BROADCAST_GLOBAL_OFF = 1` stops everything. | `Revocations.install`, `ChannelLive.revoke` |
 | 50.26 | Viewer tokens (mint with `mintViewerToken`, the same `VIEWER_TOKEN_KEY`), the session's mode, the concurrent count (`PublisherControl.beat` answers `concurrent`), the watch site on `watch.` | `tokens.ts`, `publisher.ts`, `worker.ts` |
-| 50.28 | Analytics Engine `broadcast_events`: per request `[kind, channel, cache status]` (segment, playlist, master), per channel a minute's `[segments_in, bytes_in, playlist_misses]`, per viewer-minute `[channel, mode, delivery]` | `live.ts`, `channel_live.ts`, `publisher.ts` |
+| 50.28 | Analytics Engine `broadcast_events` (filled: see "Viewer analytics" below) | `events.ts` |
+
+## Viewer analytics (story 50.28)
+
+Every point goes to `broadcast_events` through `events.ts`; its positional layout
+(`blob1`…`blob12`, `double1`…`double8`, index = publisher) is fixed in
+`cloud/internal/broadcast/testdata/events_schema.json`, which both this package's tests and the
+cloud's read. Events: `play` (a session's first counted beat), `beat` (each counted beat: minutes,
+rung, bitrate, rebuffer, startup), `switch` and `error` (only with a counted beat, at most 10 of
+each a beat), `blocked` (refused: `full`, `revoked`, `geo`, `ip`), `ingest` (a segment visible in
+the playlist, with its lag). The 50.21 per-request and per-minute points are gone.
+
+The session is kept only as a daily hash: HMAC-SHA256 under `VIEWER_TOKEN_KEY` over
+`maktaba-broadcast-session-v1\0<UTC day>\0<session>`, its first 12 bytes in base64url. No address,
+user agent or account is written; the country is the request's, the device a class
+(`web`, `ios`, `tvos`, `android`, `androidtv`, `desktop`).
+
+The viewer's beat posts a report (`POST` beat body, read up to 4 KB): `{rung?, kbps?, rebuffer_ms?,
+startup_ms?, device?, switches?: [{from, to, ms}], errors?: [code]}`; numbers are clamped (a beat covers
+at most 10 minutes, bitrate at most 100 Mb/s). The cloud's worker role rolls the dataset hourly
+into `broadcast_usage_hourly` and folds counts under 5 into "other" when a publisher reads them.
 
 ## Settings
 
 | Name | Kind | What |
 |---|---|---|
 | `SEGMENTS` | R2 | `maktaba-broadcast-<env>`: segments and slates |
-| `GUIDE` | R2 | `maktaba-broadcast-guide-<env>`: guide blobs (50.26) |
-| `CHANNEL`, `PUBLISHER`, `REVOCATIONS` | Durable Objects | `ChannelLive`, `PublisherControl`, `Revocations` |
+| `GUIDE` | R2 | `maktaba-broadcast-guide-<env>`: the channels' guides and the publishers' branding (50.27) |
+| `CHANNEL`, `PUBLISHER`, `REVOCATIONS`, `VIEWER`, `PAIRING` | Durable Objects | `ChannelLive`, `PublisherControl`, `Revocations`, `ViewerAccess` (migration `v2`), `Pairing` (migration `v3`, 50.27) |
 | `AE` | Analytics Engine | `broadcast_events` |
+| `CANARY_PUBLISHER` | var | the canary broadcast's publisher id: its `ingest` events carry glass-to-glass (50.28) |
 | `RL` | Rate Limiting | 60 per 10 s per channel and rung, per location |
+| `PLAY_RL`, `API_RL` | Rate Limiting | 30 plays and 120 other watch requests a minute per address (50.26) |
+| `TURNSTILE_API`, `ATTEST_API` | service bindings | optional: Turnstile's siteverify (else the public one) and the app-attestation verifier (50.27; unbound, attestation answers `503`) |
 | `BROADCAST_ENV` | var | `staging` or `production`: the R2 keys' first part |
 | `BROADCAST_DELIVERY` | var | `r2` (default) or `stream` |
 | `BROADCAST_GLOBAL_OFF` | var | `1` stops every broadcast (50.25's break-glass) |
 | `INGEST_HOST`, `LIVE_HOST`, `WATCH_HOST` | var | the hostnames (the cache keys use `LIVE_HOST`) |
 | `API_ORIGIN` | var | where usage is posted; unset, nothing is |
 | `CORS_ORIGINS` | var | comma-separated; unset, the defaults above |
+| `WATCH_SITE_OFF` | var | `1`: the watch pages say "temporarily unavailable" (50.27's rollback) |
+| `TURNSTILE_SITE_KEY` | var | Turnstile's public site key for the open channels' widget (50.27) |
 | `CLOUD_PUBKEYS` | secret | `{"<kid>": "<base64url Ed25519 public key>"}`: `broadcast.PublicKeysJSON` prints it |
 | `VIEWER_TOKEN_KEY` | secret | base64url, 32 bytes; the same on `watch.` |
+| `TURNSTILE_SECRET` | secret | Turnstile's secret for open channels' web visitors (50.26) |
 | `EDGE_SIGNING_KEY` | secret | base64url Ed25519 seed; its public half is the cloud's `broadcast.edge_public_key` |
 | `STREAM_ACCOUNT_ID`, `STREAM_CUSTOMER_CODE`, `STREAM_KEY_ID` | var | the fallback's account and signing key id |
 | `STREAM_API_TOKEN`, `STREAM_KEY_JWK` | secret | the fallback's API token (Stream: Edit) and signing key |
 
-The cloud's side (`cloud.toml`): `[broadcast] enabled`, `key_path` (the Ed25519 seed, 0600;
-the api role refuses to start with `enabled` and no key), `ingest_url` (default
-`https://ingest.maktaba.tv`) and `edge_public_key`. Until 50.20 lands, an active Pro owner's home
-gets Pro's guest sharing (2 rungs, 3,000 kbps) and any other plan none.
+The cloud's side (`cloud.toml`): `[broadcast] enabled` (50.20's broadcasting gate; the api role
+refuses to start with it on and no `key_path`), `key_path` (the Ed25519 seed, 0600; without it
+the ingest-token route answers `503 broadcast_disabled`), `ingest_url` (default
+`https://ingest.maktaba.tv`) and `edge_public_key` (base64url, as printed from the seed; standard
+base64 is read too).
+
+Who gets an ingest token is 50.20's entitlement (`broadcasth.StorePlans`): a home with no plan,
+or whose owner is not active, gets `403 broadcast_not_in_plan`; while `broadcast.enabled` is off,
+only a test publisher a service admin granted gets one (`403 broadcast_not_enabled` for the
+others); otherwise the home's tier from the catalog sets the rungs and the top bitrate (Pro's
+guest sharing, or the Broadcaster add-on), and more rungs than it allows is `403 plan_rungs`.
 
 ## Running it
 
 ```sh
 cd web/packages/broadcast-edge
 npm ci
-npm test                        # typecheck and the tests in Miniflare (T01-T09)
+npm test                        # typecheck and the tests in Miniflare (50.21, 50.26, 50.27)
 node scripts/rehearsal.mjs      # wrangler dev, a fake home, 100 viewers (CI: 1,000)
 npx wrangler deploy --dry-run   # the bundle and bindings, offline
 ```
 
-CI runs all of this in `_broadcast-edge.yml` whenever the package or the cloud's broadcast
-package changes; the rehearsal's report is kept as the `broadcast-edge-rehearsal` artifact.
+CI runs all of this in `_broadcast-edge.yml` whenever the package, the cloud's broadcast package
+or its edge API (`cloud/internal/handlers/edge`) changes; the rehearsal's report is kept as the `broadcast-edge-rehearsal` artifact.
 
 ## Before the first deploy (owner)
 
@@ -175,11 +349,13 @@ Nothing here is deployed. The first deploy needs, on Maktaba's Cloudflare accoun
    or not at all.
 2. The R2 buckets `maktaba-broadcast-staging`, `maktaba-broadcast-guide-staging` (and the
    `-production` pair), each with a lifecycle rule deleting objects after 1 day.
-3. The Rate Limiting namespaces `5021` (staging) and `5022` (production), if the account's
-   numbering differs, changed in `wrangler.toml`.
+3. The Rate Limiting namespaces `5021` (staging) and `5022` (production), and for viewer access
+   `5261`/`5262` (staging) and `5263`/`5264` (production); if the account's numbering differs,
+   changed in `wrangler.toml`.
 4. The secrets, with `wrangler secret put` (`--env production` for production): `CLOUD_PUBKEYS`,
    `VIEWER_TOKEN_KEY`, `EDGE_SIGNING_KEY`, and for the fallback `STREAM_API_TOKEN` and
-   `STREAM_KEY_JWK` (with `STREAM_ACCOUNT_ID`, `STREAM_CUSTOMER_CODE` and `STREAM_KEY_ID` as vars).
+   `STREAM_KEY_JWK` (with `STREAM_ACCOUNT_ID`, `STREAM_CUSTOMER_CODE` and `STREAM_KEY_ID` as vars),
+   and `TURNSTILE_SECRET` (a Turnstile widget for `watch.maktaba.tv`) before any channel is open.
 5. The cloud's key: an Ed25519 seed at `broadcast.key_path` on both nodes, and
    `broadcast.edge_public_key`.
 6. The CI token (or `CLOUDFLARE_API_TOKEN_BROADCAST`) with Account: Workers Scripts Edit, Workers
@@ -195,3 +371,4 @@ Nothing here is deployed. The first deploy needs, on Maktaba's Cloudflare accoun
 - `BROADCAST_DELIVERY = stream`, globally or per publisher (a plan push), if R2 delivery must
   stop.
 - `BROADCAST_GLOBAL_OFF = 1` stops everything.
+- `WATCH_SITE_OFF = 1` takes the watch pages down alone (50.27).

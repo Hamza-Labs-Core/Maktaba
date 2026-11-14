@@ -341,6 +341,46 @@ func TestBroadcastConfig(t *testing.T) {
 	}
 }
 
+// Story 50.28: the analytics keys parse beside 50.20's and 50.21's, with their defaults, and
+// the token comes from the environment.
+func TestBroadcastAnalyticsConfig(t *testing.T) {
+	c := defaultConfig()
+	if c.Broadcast.AnalyticsK != 5 || c.Broadcast.AnalyticsURL != "https://api.cloudflare.com/client/v4" || c.Broadcast.MonthlyBudgetUSD != 0 {
+		t.Fatalf("defaults: %+v", c.Broadcast)
+	}
+	if err := parseTOML("[broadcast]\nenabled = true\nanalytics_account_id = \"acct\"\nanalytics_token_path = \"/x/token\"\nanalytics_k = 7\nmonthly_budget_usd = 120.5\n", &c); err != nil {
+		t.Fatal(err)
+	}
+	if !c.Broadcast.Enabled || c.Broadcast.AnalyticsAccountID != "acct" || c.Broadcast.AnalyticsTokenPath != "/x/token" ||
+		c.Broadcast.AnalyticsK != 7 || c.Broadcast.MonthlyBudgetUSD != 120.5 || c.Broadcast.IngestURL != "https://ingest.maktaba.tv" {
+		t.Fatalf("parsed: %+v", c.Broadcast)
+	}
+	t.Setenv("MAKTABA_CLOUD_BROADCAST_ANALYTICS_TOKEN", "tok")
+	l, err := Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if l.Broadcast.AnalyticsToken != "tok" {
+		t.Fatalf("env token: %+v", l.Broadcast)
+	}
+}
+
+// The edge's key reads as base64url (how the docs and the shared vectors print it) or standard
+// base64, padded or not.
+func TestEdgeKeyEncodings(t *testing.T) {
+	raw := make([]byte, 32)
+	raw[0], raw[1] = 0xfb, 0xff // '-' and '_' in base64url, '+' and '/' in standard base64
+	for _, s := range []string{base64.RawURLEncoding.EncodeToString(raw), base64.URLEncoding.EncodeToString(raw),
+		base64.StdEncoding.EncodeToString(raw), base64.RawStdEncoding.EncodeToString(raw)} {
+		if k, err := EdgeKey(s); err != nil || k[0] != 0xfb {
+			t.Fatalf("EdgeKey(%q) = %v", s, err)
+		}
+	}
+	if _, err := EdgeKey("c2hvcnQ"); err == nil {
+		t.Fatal("a short edge key was accepted")
+	}
+}
+
 // Story 50.16: the pool is off by default; its keys from the file and the per-machine env; on,
 // the relay role needs the directory, the member's addresses and a host template with {id}.
 func TestRelayPoolConfig(t *testing.T) {
@@ -437,5 +477,23 @@ direct_url = "postgres://primary/db"
 	}
 	if cfg.Server.DrainDelay != 15*time.Second || cfg.Database.DirectURL != "postgres://other/db" {
 		t.Fatalf("env: drain %s, direct %q", cfg.Server.DrainDelay, cfg.Database.DirectURL)
+	}
+}
+
+// Story 50.26: broadcast.open_access.enabled and broadcast.watch_url parse; open access is never
+// on behind a shut gate.
+func TestBroadcastOpenAccessConfig(t *testing.T) {
+	c := defaultConfig()
+	if c.Broadcast.OpenAccess || c.Broadcast.WatchURL != "https://watch.maktaba.tv" {
+		t.Fatalf("defaults: %+v", c.Broadcast)
+	}
+	if err := parseTOML("[broadcast]\nwatch_url = \"https://staging-watch.maktaba.dev\"\n[broadcast.open_access]\nenabled = true\n", &c); err != nil {
+		t.Fatal(err)
+	}
+	if !c.Broadcast.OpenAccess || c.Broadcast.WatchURL != "https://staging-watch.maktaba.dev" {
+		t.Fatalf("parsed: %+v", c.Broadcast)
+	}
+	if err := ValidateBroadcast(BroadcastConfig{OpenAccess: true}); err == nil {
+		t.Fatal("open access behind a shut gate was accepted")
 	}
 }

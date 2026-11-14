@@ -30,8 +30,11 @@ The `amazon` flavor:
   intent filters, since Amazon's pages do not settle which one Fire OS reads.
 - **No Google code.** A Gradle check (`:app:checkAmazonDependencies`) fails the build if the
   `amazonRelease` runtime classpath holds any `com.google.android.gms`, `com.google.firebase` or
-  `com.android.billingclient` artifact. It is wired into `check`, so a future library that
-  pulls Play Services in breaks CI, not a Fire TV.
+  `com.android.billingclient` artifact, naming the path to it. CI proves it with a run that adds
+  `play-services-base` (`-Pmaktaba.gmsFixture`) and must fail, so a future library that pulls
+  Play Services in breaks CI, not a Fire TV. `:app:checkAmazonManifest` checks the merged
+  manifest (Leanback and touchscreen not required, `amazon.hardware.fire_tv`, both launcher
+  filters).
 - **Player.** It uses stock Media3, the same version as the Google build.
   - Amazon recommends its patched port (`amzn/media3-external-port`) for device fixes. The story
     starts on stock Media3 and moves to the port only if the real-device checklist (T06) shows a
@@ -48,16 +51,30 @@ The `amazon` flavor:
 - **Client header.** It sends `tv/<version> (firetv; tv)`.
 
 **Release.** A `v*` tag builds `maktaba-tv-<version>-amazon.apk` (signed with a separate Amazon
-upload key held in the release secrets) next to the Play bundle. A script then submits it through
-Amazon's App Submission API as a new version of the live app, with the store listing kept in
-`docs/stores/amazon.md` (58.04). A new version goes first to Live App Testing (Amazon's beta
-channel, invited testers) and is promoted to the store by a person after the real-device
-checklist passes.
+upload key held in the release secrets; without the key it stays an unsigned workflow artifact)
+next to the Play bundle. Amazon's App Submission API cannot create or update a Live App Testing
+version, and a committed edit goes to Amazon's review and then the store. So
+`tools/release/amazon_submit.py stage` puts the APK in the app's open edit as a draft on each
+tag; a person sends it to Live App Testing from the console, runs the real-device checklist in
+`docs/stores/amazon.md`, and then `amazon_submit.py commit` submits it, refused by the
+checklist guard until the checklist's result line is recorded.
 
 **Home reach:** the same as Android TV, from the shared core:
 - mDNS (Android NSD works on Fire OS);
 - saved homes and a typed address;
-- the cloud code of 58.03, added to the shared core so Android TV gains it too.
+- the cloud code of 58.03, in the shared core (`core/session/TvCloudCode.kt`,
+  `AppSession.signInWithTvApproval`), so Android TV has it too. It is the home picker's first
+  panel: a code from Maktaba Cloud (`POST /v1/tv/codes`, platform `firetv` or `androidtv`) with
+  its QR (`maktaba.tv/tv?c=…`) and where to approve it (a phone's Approve a TV or device), the
+  homes on this network and the typed address beside it. The TV polls at the cloud's interval
+  (five seconds more on `slow_down`), takes a new code when one runs out or is gone, and asks
+  again after 30 s when the cloud gives none, saying so while the other ways stay. On approval
+  it tries, in the cloud's order, only the connections where a certificate proves the home (an
+  https name; a raw LAN address pinned to its name), since the cloud's id for the home is not
+  the one it answers with and a plain address could be answered by anyone; it redeems the grant
+  at the first that answers for its own tokens at that address, and opens the home signed
+  in, restricted as every cloud code's TV is. The poll secret and the grant are never stored,
+  put in a URL or logged. Checklist rows 12 to 15 cover it on a device.
 
 ## Acceptance criteria
 
@@ -79,8 +96,10 @@ checklist passes.
 | T01 | Gradle | `amazonRelease` classpath | `checkAmazonDependencies` | passes; a fixture module with `play-services-base` fails it |
 | T02 | Robolectric + Roborazzi (existing `_android-tv.yml`) | `amazon` flavor | screenshots of Home, Library, Player overlay, en and ar, dark | match references |
 | T03 | Kotlin unit | recorded `MediaCodecList` answers of three Fire TV models | build `device_caps` | the vectors of 58.02 T07 |
-| T04 | Instrumented, Android TV emulator API 30 **without Google APIs** (`system-images;android-30;android-tv;x86_64`) | `amazonDebug` APK, mock home | sign in by code, play a clip, Back to launcher | passes; logcat attached to the CI report |
+| T04 | Instrumented, Android TV emulator API 30 **without Google APIs** (`system-images;android-30;android-tv;x86`: the API 30 `android-tv` image exists only as x86); the `firetv-emulator` job | `amazonDebug` APK, mock home | sign in by code, play a clip, Back to launcher | passes; logcat attached to the CI report |
 | T05 | Manifest test | merged `amazonRelease` manifest | parse | both launcher filters; touchscreen and leanback not required |
+| T07 | Kotlin unit (`client`, `TvCloudCodeTest`) | mock cloud and homes, one over https | create, poll, renew, approve | the platform and version sent; slow_down, gone, expiry and no code handled; a plain LAN address never tried; the grant redeemed only where a certificate proves the home, tokens kept for that address; the poll secret and grant in no URL |
+| T08 | Robolectric + Roborazzi (`CloudCodeTvTest`), both flavors | the home picker against a mock cloud | first start | the code, its QR and where to approve it, the other ways beside it, all on screen; en and ar, dark; an approval signs the TV in |
 | T06 | Real-device checklist (written, `docs/stores/amazon.md`) | Fire TV Stick 4K Max (Fire OS 8), one Fire OS 7 device | each release candidate before promotion from Live App Testing | sign-in, 4K HDR10, DV p8, EAC3 passthrough, Arabic, sleep and wake mid-video |
 
 **What is honest about Fire TV testing:**
@@ -91,7 +110,17 @@ checklist passes.
 
 ## Strings
 
-None new: the Amazon build uses the Android TV app's catalogs (English and Arabic) as they are.
+The Amazon build uses the Android TV app's catalogs (English and Arabic) as they are. The cloud
+code panel adds these to both:
+
+| Key | English | Arabic |
+|---|---|---|
+| `cloud_code_title` | Sign in with a code | سجّل الدخول برمز |
+| `cloud_code_where` | On a phone signed in to your home, open Maktaba Player or Maktaba Remote, tap “%1$s” and type this code, or scan the QR code. This TV does not need to be on your home's network. | على هاتف مسجَّل الدخول إلى جهازك الرئيسي، افتح Maktaba Player أو Maktaba Remote، واضغط «%1$s» واكتب هذا الرمز، أو امسح رمز QR. لا يلزم أن يكون هذا التلفاز على شبكة جهازك الرئيسي. |
+| `cloud_code_asking` | Getting a code from Maktaba Cloud… | جارٍ الحصول على رمز من Maktaba Cloud… |
+| `cloud_code_down` | A code from Maktaba Cloud is unavailable right now. Choose a home on this network, or enter its address. | رمز Maktaba Cloud غير متاح الآن. اختر جهازًا رئيسيًا على هذه الشبكة، أو أدخل عنوانه. |
+| `cloud_code_opening` | Approved. Opening %1$s… | تمت الموافقة. جارٍ فتح %1$s… |
+| `cloud_code_unreachable` | Approved, but %1$s cannot be reached from this TV right now. | تمت الموافقة، لكن لا يمكن الوصول إلى %1$s من هذا التلفاز الآن. |
 58.01's `compat.updateApp.firetv` is the only flavor-specific string, chosen by flavor.
 
 ## Edge cases
@@ -108,7 +137,9 @@ None new: the Amazon build uses the Android TV app's catalogs (English and Arabi
 |---|---|
 | `apps/tv/android/app/build.gradle.kts` | `store` flavors; `checkAmazonDependencies` task |
 | `apps/tv/android/app/src/amazon/AndroidManifest.xml` | launcher filters, features |
-| `apps/android/core/…/playback/DeviceCaps.kt` (new) | the report, shared with the phone Player |
-| `.github/workflows/_android-tv.yml` | amazon flavor build, T01, T04 on the no-Google image |
-| `.github/workflows/tv-release.yml` | the Amazon APK; submission script `tools/release/amazon_submit.py` |
+| `apps/android/client/…/core/playback/DeviceCaps.kt` (new) | the report, shared with the phone Player |
+| `.github/workflows/_android-tv.yml` | amazon flavor build, T01 and its must-fail fixture run, T04 (`firetv-emulator`, script `tools/ci/firetv-journey.sh`) on the no-Google image |
+| `.github/workflows/tv-release.yml` | the Amazon APK, staged by `tools/release/amazon_submit.py stage`; `commit` after the checklist |
 | `docs/stores/amazon.md` | listing, checklist, Live App Testing steps |
+| `apps/android/client/…/core/session/TvCloudCode.kt` (new), `AppSession.signInWithTvApproval` | the cloud code's calls and loop; the addresses the grant may go to; the grant redeemed |
+| `apps/tv/android/app/…/ui/screens/CloudCodePanel.kt` (new), `HomePickerScreen.kt` | the code as the picker's first panel |

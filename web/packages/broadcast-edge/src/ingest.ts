@@ -6,6 +6,7 @@
 //   PUT  /v1/ingest/<channel>/slate/<idx>.ts    a segment of the offline slate loop (50.22)
 //   POST /v1/ingest/<channel>/state             the rungs' attributes; {"on_air": false} ends it
 //   POST /v1/ingest/<channel>/stream            the channel's Stream live input (the fallback, §5)
+//   POST /v1/ingest/<channel>/guide             the channel's guide and branding (50.22 §6, guide.ts)
 //   GET  /v1/ingest/ws                          the control WebSocket (ChannelLive)
 //   PUT  /v1/ingest/speedtest                   up to 10 s of body: the measured rate (50.22)
 //
@@ -19,8 +20,9 @@ import { hex } from "./crypto";
 import { globallyOff, type Env } from "./env";
 import { json, problem } from "./http";
 import { log } from "./log";
+import { MAX_GUIDE_BYTES, putGuide, validGuide } from "./guide";
 import { segmentKey } from "./playlist";
-import type { PlanState } from "./publisher";
+import { parsePlan } from "./publisher";
 import { forgetRevocations, isRevoked, revocationsFor } from "./revocations";
 import { createLiveInput, streamConfigured } from "./stream_fallback";
 import { verifyControl, verifyIngest, type IngestClaims } from "./tokens";
@@ -59,7 +61,7 @@ function clockCheck(request: Request, t: number): Response | null {
 }
 
 /** readCapped reads a body, refusing it (null) once it passes `max` bytes. */
-async function readCapped(request: Request, max: number): Promise<Uint8Array | null> {
+export async function readCapped(request: Request, max: number): Promise<Uint8Array | null> {
   const declared = Number(request.headers.get("Content-Length") ?? NaN);
   if (Number.isFinite(declared) && declared > max) return null;
   if (!request.body) return new Uint8Array();
@@ -183,12 +185,13 @@ export async function handleIngest(request: Request, env: Env, url: URL): Promis
   const seg = path.match(/^\/v1\/ingest\/([^/]+)\/([^/]+)\/(\d{1,12})\.ts$/);
   if (seg && request.method === "PUT")
     return putSegment(request, env, t, seg[1]!, seg[2]!, Number(seg[3]));
-  const act = path.match(/^\/v1\/ingest\/([^/]+)\/(state|stream)$/);
+  const act = path.match(/^\/v1\/ingest\/([^/]+)\/(state|stream|guide)$/);
   if (act && request.method === "POST") {
     const ch = act[1]!;
     if (!CH_RE.test(ch)) return problem(400, "bad_channel");
     const a = await authorize(request, env, t, { ch });
     if (!a.ok) return a.res;
+    if (act[2] === "guide") return postGuide(request, env, a.claims.pub, ch, t);
     return act[2] === "state" ? postState(request, env, ch) : postStream(env, ch);
   }
   return problem(404, "not_found");
@@ -265,6 +268,7 @@ async function putSegment(
     key,
     disc: request.headers.get(HEADER_DISCONTINUITY) === "1",
     pdt,
+    recv: t,
   });
   if (v === "new") return json(201, { status: "created", key });
   if (v === "duplicate") return json(200, { status: "duplicate" });
@@ -315,6 +319,28 @@ async function postState(request: Request, env: Env, ch: string): Promise<Respon
   const onAir = typeof post.on_air === "boolean" ? post.on_air : undefined;
   const status = await channel(env, ch).setState({ rungs, on_air: onAir }, ch);
   return json(200, { status });
+}
+
+/** postGuide stores the channel's guide (schema 1, guide.ts): 413 over 256 KB, 400 a bad shape. */
+async function postGuide(
+  request: Request,
+  env: Env,
+  pub: string,
+  ch: string,
+  t: number
+): Promise<Response> {
+  const body = await readCapped(request, MAX_GUIDE_BYTES);
+  if (!body) return problem(413, "too_large");
+  let raw: unknown;
+  try {
+    raw = JSON.parse(new TextDecoder().decode(body));
+  } catch {
+    return problem(400, "bad_json");
+  }
+  const doc = validGuide(raw, t);
+  if (typeof doc === "string") return problem(400, doc);
+  await putGuide(env, pub, ch, doc);
+  return json(200, { status: "stored", programmes: doc.programmes.length });
 }
 
 async function postStream(env: Env, ch: string): Promise<Response> {
@@ -369,25 +395,9 @@ async function handleControl(request: Request, env: Env, path: string): Promise<
   if (path === "/v1/control/plan" && request.method === "PUT") {
     const v = await verifyControl(await request.text(), "plan", env.CLOUD_PUBKEYS, t);
     if (!v.ok) return problem(v.error === "wrong_type" ? 400 : 401, v.error);
-    const p = v.payload;
-    const modes = ["full", "lowest", "wait", "off"];
-    if (
-      typeof p.pub !== "string" ||
-      typeof p.version !== "number" ||
-      typeof p.mode !== "string" ||
-      !modes.includes(p.mode)
-    )
-      return problem(400, "bad_plan");
-    const num = (x: unknown) => (typeof x === "number" && x > 0 ? x : undefined);
-    const plan: PlanState = {
-      mode: p.mode as PlanState["mode"],
-      version: p.version,
-      max_rungs: num(p.max_rungs),
-      max_top_kbps: num(p.max_top_kbps),
-      max_viewers: num(p.max_viewers),
-      delivery: p.delivery === "stream" || p.delivery === "r2" ? p.delivery : null,
-    };
-    const r = await env.PUBLISHER.get(env.PUBLISHER.idFromName(p.pub)).setPlan(p.pub, plan);
+    const p = parsePlan(v.payload);
+    if (!p) return problem(400, "bad_plan");
+    const r = await env.PUBLISHER.get(env.PUBLISHER.idFromName(p.pub)).setPlan(p.pub, p.plan);
     return r === "applied" ? json(200, { status: r }) : problem(409, "older_plan");
   }
   return problem(404, "not_found");
