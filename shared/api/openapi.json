@@ -5150,6 +5150,117 @@
         "operationId": "resumeAllQueues"
       }
     },
+    "/queues/workers/restart": {
+      "post": {
+        "tags": [
+          "Queue"
+        ],
+        "summary": "Restart the pipeline workers",
+        "description": "Asks this machine's supervisor to restart the pipeline's worker processes: the action of the Queues page while GET /queues/pulse answers `workers.state` = `not_responding` (jobs wait and the workers listed in `workers.stalled` do not run them). The optional body names the catalog components whose workers restart (`core.pipeline`, `transcription`, `search.semantic`); with none, every worker restarts. Waiting jobs stay queued; a job that was running is picked up again.",
+        "x-maktaba-role": "admin",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "components": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "core.pipeline",
+                        "transcription",
+                        "search.semantic"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "400": {
+            "description": "A component named has no worker, or the body is not JSON.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Restarted: how many worker processes the supervisor restarted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "restarted"
+                  ],
+                  "properties": {
+                    "restarted": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "No worker process runs now: the supervisor starts them.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "restarted"
+                  ],
+                  "properties": {
+                    "restarted": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin only.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "No supervisor to ask, or it does not answer (code components_unavailable).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "operationId": "restartQueueWorkers"
+      }
+    },
     "/queues/{stage}": {
       "parameters": [
         {

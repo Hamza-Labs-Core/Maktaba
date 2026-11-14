@@ -188,8 +188,9 @@ jobs:
       # CPU-seconds per Mbit across runners, #832). The base is the commit this one is compared
       # with: the pull request's base, or main before this push. Its relay image is built here,
       # and both run this commit's scenario (3 one-minute rounds each); more than 20 % worse
-      # CPU per Mbit, or memory per tunnel, fails. A base that can't run fails too: a gate that
-      # can't measure doesn't pass.
+      # CPU per Mbit, or memory per tunnel (the relay's Go live heap, maktaba_go_heap_live_bytes;
+      # a base whose relay predates it is reported, not compared, on memory), fails. A base that
+      # can't run fails too: a gate that can't measure doesn't pass.
       - name: Build the base commit's relay (load-small)
         if: matrix.scenario == 'load-small'
         env:

@@ -30,6 +30,10 @@ func (h *Handler) checks() []check {
 		{Name: "streaming", Fallback: base("streaming", GroupServices, KindStreaming, "Streaming"), Run: checkStreaming},
 		{Name: "pipeline", Fallback: base("pipeline", GroupServices, KindPipeline, "Pipeline"), Run: checkPipeline},
 	}
+	if h.HostLoad != nil {
+		cs = append(cs, check{Name: "host_load",
+			Fallback: base("host_load", GroupServices, KindHostLoad, "This machine's load"), Run: checkHostLoad})
+	}
 	if h.SupervisorURL != "" {
 		cs = append(cs, check{Name: "processes",
 			Fallback: base("processes", GroupServices, KindProcess, "Processes"), Run: checkProcesses})
@@ -769,6 +773,8 @@ func checkQueues(ctx context.Context, e *env) []Item {
 		"waiting_stages": strings.Join(r.Waiting, ", ")}
 	it.Details = map[string]any{"failing": r.Failing, "waiting": r.Waiting, "off": r.Off, "needs_you": r.NeedsYou}
 	switch {
+	case stalledWorkersItem(ctx, e, &it):
+		// workers that run nothing come before what the queues themselves say
 	case len(r.Failing) > 0:
 		it.Link = "/queue/failures"
 		it.set(StatusDegraded, "queues_failing", p,
