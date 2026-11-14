@@ -9,6 +9,7 @@ view — but they talk to the **same REST API** as every other client.
 |---|---|---|---|
 | [`tvos/`](tvos/) | Apple TV (tvOS 26) | SwiftUI + AVKit, on `apps/apple/MaktabaKit`; the "Maktaba TV" target of `apps/apple/Maktaba.xcodeproj` | `make tv-build-ios` |
 | [`android/`](android/) | Android TV / Google TV (minSdk 28) | Compose-for-TV + Media3 | `make tv-build-android` |
+| [`roku/`](roku/) | Roku (Epic 58) | BrightScript and SceneGraph; so far the Arabic visual text, the layout direction and the catalogs (story 58.15), the channel follows (58.12) | `npm test` in `roku/` |
 
 Bundle / application id: **`com.hamzalabs.maktaba.tv`** on both.
 
