@@ -43,6 +43,12 @@ type Row struct {
 	// audio stream. A track row may have no codec (transcribe records the stream it
 	// decoded before the probe fills it in): the video still has audio.
 	HasAudio bool
+	// FPS is the video's frame rate (0: unknown); DVProfile its Dolby Vision
+	// profile (5, 7, 8; 0: none) and DVCompat that profile's base-layer
+	// signal compatibility id (1 HDR10, 4 HLG, 2 SDR), from the probe's DOVI
+	// configuration record (story 58.02).
+	FPS                 float64
+	DVProfile, DVCompat int
 }
 
 // NoAudio reports that the video has no audio stream at all, so a transcode maps none.

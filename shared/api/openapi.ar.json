@@ -1706,8 +1706,8 @@
       "ar": "`true` عندما يعود الوضع الهجين إلى البحث النصي الكامل وحده."
     },
     "/components/schemas/SessionRequest/properties/client_profile/description": {
-      "en": "Hint for the encoder ladder (e.g. `web`, `ios`, `tv-1080p`).",
-      "ar": "تلميح لسُلّم المرمِّز (مثل `web` و`ios` و`tv-1080p`)."
+      "en": "The client profile the streaming service decides direct play, remux or transcode by: `generic` (also the fallback for a name it does not know), `desktop-player`, `browser-chrome`, `browser-safari`, `ios-native`, `tvos`, `android-native`, `androidtv`, and the TV platforms `firetv`, `tizen`, `webos`, `roku`, `cast` and `vega`. A TV profile alone is a baseline every model of its platform plays (H.264 1080p in HLS); `device_caps` widens it.",
+      "ar": "ملف تعريف العميل الذي تقرّر خدمة البث على أساسه التشغيل المباشر أو إعادة التغليف أو تحويل الترميز: `generic` (وهو أيضًا البديل لأي اسم لا تعرفه)، و`desktop-player` و`browser-chrome` و`browser-safari` و`ios-native` و`tvos` و`android-native` و`androidtv`، ومنصات التلفاز `firetv` و`tizen` و`webos` و`roku` و`cast` و`vega`. وملف التلفاز وحده خطّ أساس يشغّله كل طراز من منصته (H.264 بدقة 1080p عبر HLS)؛ ويوسّعه `device_caps`."
     },
     "/components/schemas/SessionRequest/properties/audio_track/description": {
       "en": "Language tag or stream id.",
@@ -5532,6 +5532,74 @@
     "/components/schemas/ParentalCapabilities/properties/can_manage/description": {
       "en": "The caller is an admin, or the guardian of at least one restricted account: show the Family screens.",
       "ar": "المتصل مشرف، أو وليّ حساب مقيَّد واحد على الأقل: اعرض شاشات العائلة."
+    },
+    "/components/schemas/SessionRequest/properties/device_caps/description": {
+      "en": "What the device reports it plays, from its platform's own query, sent at start and again whenever its output changes (a new session at the same position: a session never changes its mode). Optional.",
+      "ar": "ما يبلّغ الجهاز أنه يشغّله، من استعلام منصته نفسها، ويُرسل عند البدء ثم كلما تغيّر مخرجه (جلسة جديدة عند الموضع نفسه: فالجلسة لا تغيّر نمطها أبدًا). اختياري."
+    },
+    "/components/schemas/DeviceCaps/description": {
+      "en": "A device's report of what it plays. The streaming service merges it into the client profile: the report narrows the profile freely and widens it only up to the platform's ceiling, so a report can never ask for more than its platform plays (Samsung never gets Dolby Vision; Roku gets it only as profile 5, and AV1 only by DASH). A field left out is the profile's. Keys this home does not know are ignored; a value of the wrong type is a 400. Each list holds at most 32 entries.",
+      "ar": "تقرير الجهاز عمّا يشغّله. تدمجه خدمة البث في ملف تعريف العميل: فالتقرير يضيّق الملف بحرية ولا يوسّعه إلا حتى سقف المنصة، فلا يمكن لتقرير أن يطلب أكثر مما تشغّله منصته (لا تنال Samsung رؤية Dolby أبدًا؛ وتنالها Roku بالملف 5 وحده، وAV1 عبر DASH وحده). والحقل المحذوف يبقى على قيمة الملف. والمفاتيح التي لا يعرفها هذا المنزل تُتجاهل؛ والقيمة من نوع خاطئ تعطي 400. وتحمل كل قائمة 32 عنصرًا على الأكثر."
+    },
+    "/components/schemas/DeviceCaps/properties/containers/description": {
+      "en": "Containers it plays directly (`mp4`, `mkv`, `ts`, …).",
+      "ar": "الحاويات التي يشغّلها مباشرة (`mp4` و`mkv` و`ts`، …)."
+    },
+    "/components/schemas/DeviceCaps/properties/video/description": {
+      "en": "Video codecs it decodes, each with its limits.",
+      "ar": "مرمِّزات الفيديو التي يفكّها، ولكلٍّ منها حدوده."
+    },
+    "/components/schemas/DeviceCaps/properties/hdr/description": {
+      "en": "HDR formats it shows: `hdr10`, `hlg`, `dv-p5`, `dv-p7`, `dv-p8`. A Dolby Vision profile 8 or 7 source goes to a device without its `dv-*` as its HDR10 or HLG base layer, by remux.",
+      "ar": "صيغ HDR التي يعرضها: `hdr10` و`hlg` و`dv-p5` و`dv-p7` و`dv-p8`. ومصدر رؤية Dolby بالملف 8 أو 7 يذهب إلى جهاز ليس فيه `dv-*` الخاص به بطبقته الأساسية HDR10 أو HLG، بإعادة التغليف."
+    },
+    "/components/schemas/DeviceCaps/properties/audio/description": {
+      "en": "Audio codecs it decodes (`aac`, `ac3`, `eac3`, …).",
+      "ar": "مرمِّزات الصوت التي يفكّها (`aac` و`ac3` و`eac3`، …)."
+    },
+    "/components/schemas/DeviceCaps/properties/passthrough/description": {
+      "en": "Audio it passes on undecoded to a receiver. TrueHD and DTS go to a device that neither decodes nor passes them as EAC3, the video untouched.",
+      "ar": "الصوت الذي يمرّره دون فكّ إلى جهاز استقبال. ويذهب TrueHD وDTS إلى جهاز لا يفكّهما ولا يمرّرهما بصيغة EAC3، والفيديو على حاله."
+    },
+    "/components/schemas/DeviceCaps/properties/max_audio_channels/description": {
+      "en": "The most audio channels it plays.",
+      "ar": "أكبر عدد من قنوات الصوت يشغّله."
+    },
+    "/components/schemas/DeviceCaps/properties/hls_segments/description": {
+      "en": "HLS segment formats it plays. HEVC and AV1 go in fMP4; everything else stays in TS unless the device lists only `fmp4`.",
+      "ar": "صيغ مقاطع HLS التي يشغّلها. يذهب HEVC وAV1 في fMP4؛ ويبقى كل ما عداهما في TS ما لم يذكر الجهاز `fmp4` وحدها."
+    },
+    "/components/schemas/DeviceCaps/properties/dash/description": {
+      "en": "Whether it plays DASH.",
+      "ar": "هل يشغّل DASH."
+    },
+    "/components/schemas/DeviceCaps/properties/max_bitrate_kbps/description": {
+      "en": "The highest bitrate it plays. A relay plan's cap still applies over it. Left out with `video` given, the platform's ceiling holds.",
+      "ar": "أعلى معدل بتات يشغّله. ويبقى حدّ خطة المرحِّل ساريًا فوقه. وإذا حُذف مع ذكر `video`، يسري سقف المنصة."
+    },
+    "/components/schemas/DeviceVideoCap/description": {
+      "en": "One video codec a device decodes and its limits.",
+      "ar": "مرمِّز فيديو واحد يفكّه الجهاز وحدوده."
+    },
+    "/components/schemas/DeviceVideoCap/properties/codec/description": {
+      "en": "`h264`, `hevc`, `av1` or `vp9`.",
+      "ar": "`h264` أو `hevc` أو `av1` أو `vp9`."
+    },
+    "/components/schemas/DeviceVideoCap/properties/max_height/description": {
+      "en": "The tallest picture it decodes in this codec (clamped to the platform's ceiling).",
+      "ar": "أطول صورة يفكّها بهذا المرمِّز (مقيّدة بسقف المنصة)."
+    },
+    "/components/schemas/DeviceVideoCap/properties/max_fps/description": {
+      "en": "The highest frame rate it decodes in this codec.",
+      "ar": "أعلى معدل إطارات يفكّه بهذا المرمِّز."
+    },
+    "/components/schemas/DeviceVideoCap/properties/bit_depth/description": {
+      "en": "The deepest samples it decodes in this codec.",
+      "ar": "أعمق عيّنات يفكّها بهذا المرمِّز."
+    },
+    "/components/schemas/Session/properties/stream_sig/description": {
+      "en": "The signed-URL token for every path under the session's `/stream/{session_id}/` (its subtitle renditions, `subs/sidecar/{lang}.vtt`, `subs/auto.vtt`, `chapters.json`), in every mode, direct play too. A player that cannot send a header (a TV's media player, a Cast receiver) fetches them with `?sig=` and this token. It expires with the session's URLs.",
+      "ar": "رمز الرابط الموقَّع لكل مسار تحت `/stream/{session_id}/` الخاص بالجلسة (نسخ الترجمة فيها و`subs/sidecar/{lang}.vtt` و`subs/auto.vtt` و`chapters.json`)، في كل نمط، والتشغيل المباشر أيضًا. والمشغّل الذي لا يستطيع إرسال ترويسة (مشغّل وسائط التلفاز، أو مستقبِل Cast) يجلبها بـ`?sig=` وهذا الرمز. وتنتهي صلاحيته مع روابط الجلسة."
     },
     "/paths/~1discovery~1home/get/summary": {
       "en": "Who this home is, and its API level",

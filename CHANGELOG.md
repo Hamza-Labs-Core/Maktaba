@@ -2626,6 +2626,19 @@ build fails when the two differ.
   English and Arabic, with its own fonts. Back on Home asks Leave Maktaba? before it closes.
   Signed out, it sends the TV to the home's sign-in and back.
 
+- **Playback that fits each TV (story 58.02).** A TV app can now report what its device plays
+  (`device_caps` on a stream session: containers, codecs with their height, frame rate and bit
+  depth, HDR formats, audio and passthrough, HLS segment formats, DASH, bitrate), and the home
+  merges it with the new `firetv`, `tizen`, `webos`, `roku`, `cast` and `vega` profiles: the
+  report narrows a profile freely and widens it only up to its platform's ceiling. A file whose
+  picture the TV plays but whose container, audio or Dolby Vision layer it does not is now
+  remuxed, the video copied, never encoded: HEVC and AV1 in fMP4 HLS segments (TS stays the
+  default), Dolby Vision profile 8 as its HDR10 or HLG base layer (Samsung never gets Dolby
+  Vision; Roku gets only profile 5), TrueHD and DTS as EAC3, with a stereo AAC track beside it on
+  Roku, and AV1 on Roku by DASH. Subtitles stay in step in fMP4 sessions. Each session also
+  carries `stream_sig`, which signs its subtitle and chapter URLs, so a TV player that sends no
+  header fetches every URL it needs. The older profiles decide as before.
+
 ### Changed
 
 - **A machine that loses its home stays usable** under a notice instead of the whole app being

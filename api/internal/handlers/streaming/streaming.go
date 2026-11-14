@@ -28,6 +28,7 @@ package streaming
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
@@ -81,6 +82,9 @@ type OpenSessionRequest struct {
 	ForceTranscode bool    `json:"force_transcode,omitempty"`
 	BurnSubs       bool    `json:"burn_subs,omitempty"`
 	AcceptQueue    bool    `json:"accept_queue,omitempty"`
+	// DeviceCaps is the device's report (story 58.02; DeviceCaps): read
+	// leniently (readDeviceCaps), passed on to the streaming service as JSON.
+	DeviceCaps json.RawMessage `json:"device_caps,omitempty"`
 }
 
 // OpenSessionResponse is the AC-1 envelope.
@@ -99,6 +103,13 @@ type OpenSessionResponse struct {
 	// start): a transcode opened at a position (start_sec) starts there, its
 	// times the video's, the part before it gaps a player cannot play.
 	StartSec float64 `json:"start_sec,omitempty"`
+	// StreamSig is the signed-URL token for every path under the session's
+	// /stream/{session_id}/ (its subtitle renditions, /subs/sidecar/{lang}.vtt,
+	// /subs/auto.vtt, chapters.json), in every mode, direct play too: a player
+	// that cannot send a header (Samsung's AVPlay, LG's <video>, Roku, a Cast
+	// receiver) fetches them with ?sig=<stream_sig> (story 58.02). It expires
+	// with the session's URLs.
+	StreamSig string `json:"stream_sig,omitempty"`
 }
 
 // Rendition is a single ABR ladder rung.
@@ -371,6 +382,12 @@ func (h *Handler) OpenSession(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.BadRequest("video_id required"))
 		return
 	}
+	caps, err := readDeviceCaps(req.DeviceCaps)
+	if err != nil {
+		httperror.Write(w, r, httperror.BadRequest("device_caps: "+err.Error()))
+		return
+	}
+	req.DeviceCaps = caps
 
 	// Resolve the library_id so we can authorise + later anchor the
 	// signed URL's lib[] claim.
@@ -517,6 +534,22 @@ func (h *Handler) OpenSession(w http.ResponseWriter, r *http.Request) {
 			}
 			*u = signed
 			resp.ExpiresAt = exp
+		}
+		// the session's own paths (subtitles, chapters), for a player that sends
+		// no header: signed for the session in every mode (story 58.02)
+		if resp.SessionID != "" {
+			signed, _, signErr := h.Signer.SignStreamURL(streamPath(resp.SessionID), resp.SessionID, p.UserID, libraryID, ttl)
+			if signErr != nil {
+				w.Header().Set("Retry-After", "5")
+				httperror.Write(w, r, &httperror.Error{
+					Type:   httperror.Type("signing-unavailable"),
+					Title:  "signing unavailable",
+					Status: http.StatusServiceUnavailable,
+					Detail: signErr.Error(),
+				})
+				return
+			}
+			resp.StreamSig = sigOf(signed)
 		}
 	}
 
