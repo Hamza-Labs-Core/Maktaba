@@ -94,6 +94,11 @@ self.addEventListener("fetch", (event) => {
   if (url.pathname.startsWith("/stream/")) return;
   if (url.pathname === "/xmltv.xml" || url.pathname === "/lineup.m3u") return;
 
+  // The TV build (story 58.08) is its own page under /tv/: never the web app's
+  // shell, and never kept as it (a TV page cached as /index.html would open the
+  // TV screens in the web app offline).
+  if (url.pathname === "/tv" || url.pathname.startsWith("/tv/")) return;
+
   // /api/* is network-only: do not consult or populate any cache.
   if (url.pathname.startsWith("/api/")) return;
 

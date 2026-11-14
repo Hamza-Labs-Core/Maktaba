@@ -8236,5 +8236,11 @@
   "big.letters.all": "كل الحروف",
   "big.list.empty": "لا شيء هنا بعد.",
   "big.menu.markUnwatched": "تعليم كغير مُشاهَد",
-  "big.menu.failed": "لم ينجح ذلك. حاول مرة أخرى."
+  "big.menu.failed": "لم ينجح ذلك. حاول مرة أخرى.",
+  "tv.exitConfirm": "الخروج من Maktaba؟",
+  "tv.exitConfirm.yes": "خروج",
+  "tv.exitConfirm.no": "البقاء",
+  "tv.signIn.title": "سجّل الدخول للمشاهدة",
+  "tv.signIn.body": "هذا التلفاز لم يسجّل الدخول إلى منزل Maktaba بعد.",
+  "tv.signIn.go": "تسجيل الدخول"
 }

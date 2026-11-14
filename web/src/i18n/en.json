@@ -8223,5 +8223,11 @@
   "big.letters.all": "All letters",
   "big.list.empty": "Nothing here yet.",
   "big.menu.markUnwatched": "Mark not watched",
-  "big.menu.failed": "That did not work. Try again."
+  "big.menu.failed": "That did not work. Try again.",
+  "tv.exitConfirm": "Leave Maktaba?",
+  "tv.exitConfirm.yes": "Leave",
+  "tv.exitConfirm.no": "Stay",
+  "tv.signIn.title": "Sign in to watch",
+  "tv.signIn.body": "This TV is not signed in to your Maktaba home yet.",
+  "tv.signIn.go": "Sign in"
 }

@@ -2618,6 +2618,14 @@ build fails when the two differ.
   drain|down|activate`. Off until `[relay.pool] enabled = true`; proven in the cloud rehearsal
   (relay loss, relay added).
 
+- **Maktaba on a Samsung or LG TV's browser engine: `/tv/` (story 58.08).** The home now serves
+  a TV build of the big screen at `/tv/`, made for the older Chromium of a 2020 Samsung or LG TV
+  and checked for it on every build. It is the screen the coming Samsung and LG apps load: the
+  library tabs, series, collections and playlists of the big screen, driven by the remote (Back,
+  Play/Pause and the media keys of both makers' remotes; the red key opens a card's actions), in
+  English and Arabic, with its own fonts. Back on Home asks Leave Maktaba? before it closes.
+  Signed out, it sends the TV to the home's sign-in and back.
+
 ### Changed
 
 - **A machine that loses its home stays usable** under a notice instead of the whole app being
