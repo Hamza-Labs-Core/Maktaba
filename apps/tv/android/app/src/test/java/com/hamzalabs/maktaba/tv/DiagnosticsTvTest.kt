@@ -77,6 +77,8 @@ class DiagnosticsTvTest {
         CrashConsent(app).set(false, home)
         compose.setContent { MaktabaTvTheme { DiagnosticsHost(client, home, tv = true) { AccountScreen(app, User(id = "u1", username = "viewer")) } } }
         compose.waitUntil(5_000) { compose.waitForIdle(); shows("Report a problem") }
+        // story 58.14: an account with no limit has no managed line in Account
+        compose.onNodeWithTag("parental-managed", useUnmergedTree = true).assertDoesNotExist()
         compose.onNodeWithTag("account-report").performSemanticsAction(SemanticsActions.OnClick)
         compose.waitUntil(5_000) { compose.waitForIdle(); shows("What will be sent") }
         compose.onNodeWithTag("report-send", useUnmergedTree = true).assertExists()
