@@ -93,7 +93,6 @@ GET /api/cluster/storage-servers
 GET /api/cluster/storage/canonicalize
 GET /api/cluster/ws
 GET /api/diagnostics/export
-GET /api/discovery/home
 GET /api/enrichment/pending
 GET /api/entitlements
 GET /api/explain
