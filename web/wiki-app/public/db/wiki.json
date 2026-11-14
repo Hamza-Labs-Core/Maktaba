@@ -13,7 +13,7 @@
   ],
   "counts": {
     "diagram": 14,
-    "endpoint": 252,
+    "endpoint": 253,
     "entity": 42,
     "epic": 60,
     "feature": 3,
@@ -4811,7 +4811,8 @@
         "story-10.12",
         "story-11.10",
         "story-23.6",
-        "story-25.2"
+        "story-25.2",
+        "story-58.9"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -4858,7 +4859,9 @@
         "Auth",
         "get"
       ],
-      "related": [],
+      "related": [
+        "story-58.9"
+      ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
       },
@@ -6213,6 +6216,30 @@
         "path": "/stream/sessions",
         "tag": "Sessions",
         "operationId": "createSession"
+      }
+    },
+    {
+      "id": "ep-post-cast-grants",
+      "type": "endpoint",
+      "title": "POST /cast/grants",
+      "content": "Mint a cast grant for a Cast receiver",
+      "tags": [
+        "api",
+        "Sessions",
+        "post"
+      ],
+      "related": [
+        "story-58.6",
+        "story-58.17"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/cast/grants",
+        "tag": "Sessions",
+        "operationId": "createCastGrant"
       }
     },
     {

@@ -8,7 +8,10 @@ import {
   inLauncher,
   launcherOrigin,
   listenToLauncher,
+  resetBridgeForTest,
+  setLauncherHelloForTest,
   tellLauncher,
+  type LauncherHello,
 } from "./bridge";
 import {
   BUTTON_ACTIONS,
@@ -207,8 +210,13 @@ describe("TV remotes and the launcher bridge", () => {
       window.dispatchEvent(new MessageEvent("message", { data: msg, source: window }));
       window.dispatchEvent(new MessageEvent("message", { data: msg }));
       expect(seen).toEqual(["down"]);
+      // before a launcher answered hello (story 58.09): nothing but ready
+      tellLauncher(BRIDGE_EXIT);
+      expect(parent.postMessage).toHaveBeenLastCalledWith({ type: BRIDGE_READY }, "*");
+      setLauncherHelloForTest({ messages: [] } as unknown as LauncherHello);
       tellLauncher(BRIDGE_EXIT);
       expect(parent.postMessage).toHaveBeenLastCalledWith({ type: BRIDGE_EXIT }, "*");
+      resetBridgeForTest();
       stop();
       from("null");
       expect(seen).toEqual(["down"]);
