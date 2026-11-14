@@ -1,0 +1,170 @@
+# promtool test rules broadcast-rules-test.yml (Epic 50 story 50.28 T05): the broadcast alerts
+# in alerts.yml (group maktaba-broadcast), each from synthetic series.
+rule_files:
+  - alerts.yml
+evaluation_interval: 30s
+tests:
+  # both networks fail two probes in a row (60 s apart): broadcast_canary_down pages
+  - interval: 1m
+    input_series:
+      - series: 'broadcast_probe_success{job="broadcast_probe",instance="witness"}'
+        values: '1 1 0 0 0 0'
+      - series: 'broadcast_probe_success{job="broadcast_probe",instance="actions"}'
+        values: '1 1 0 0 0 0'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: broadcast_canary_down
+        exp_alerts: []
+      - eval_time: 3m
+        alertname: broadcast_canary_down
+        exp_alerts:
+          - exp_labels: {severity: sev1}
+            exp_annotations:
+              summary: "Broadcasting is down: the canary broadcast fails from both networks"
+              runbook_url: docs/runbooks/cloud/broadcast.md
+  # one network failing is not a broadcast outage
+  - interval: 1m
+    input_series:
+      - series: 'broadcast_probe_success{job="broadcast_probe",instance="witness"}'
+        values: '0x6'
+      - series: 'broadcast_probe_success{job="broadcast_probe",instance="actions"}'
+        values: '1x6'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: broadcast_canary_down
+        exp_alerts: []
+  # a probe that stops pushing
+  - interval: 1m
+    input_series:
+      - series: 'push_time_seconds{job="broadcast_probe",instance="witness"}'
+        values: '0x10'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: broadcast_probe_silent
+        exp_alerts: []
+      - eval_time: 6m
+        alertname: broadcast_probe_silent
+        exp_alerts:
+          - exp_labels: {severity: sev2}
+            exp_annotations:
+              summary: "The broadcast probe has pushed nothing for 5 minutes"
+              runbook_url: docs/runbooks/cloud/broadcast.md
+  # ingest lag p95 above 3 s for 10 minutes: 90 % of segments take 3 to 5 s
+  - interval: 1m
+    input_series:
+      - series: 'maktaba_broadcast_ingest_lag_seconds_bucket{le="2"}'
+        values: '0+10x30'
+      - series: 'maktaba_broadcast_ingest_lag_seconds_bucket{le="3"}'
+        values: '0+10x30'
+      - series: 'maktaba_broadcast_ingest_lag_seconds_bucket{le="5"}'
+        values: '0+100x30'
+      - series: 'maktaba_broadcast_ingest_lag_seconds_bucket{le="+Inf"}'
+        values: '0+100x30'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: broadcast_ingest_lag_high
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: broadcast_ingest_lag_high
+        exp_alerts:
+          - exp_labels: {severity: sev2}
+            exp_annotations:
+              summary: "Segments take 4.889s (p95) from upload to the playlist"
+              runbook_url: docs/runbooks/cloud/broadcast.md
+  # lag under 3 s stays quiet
+  - interval: 1m
+    input_series:
+      - series: 'maktaba_broadcast_ingest_lag_seconds_bucket{le="2"}'
+        values: '0+100x30'
+      - series: 'maktaba_broadcast_ingest_lag_seconds_bucket{le="+Inf"}'
+        values: '0+100x30'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: broadcast_ingest_lag_high
+        exp_alerts: []
+  # the revocation list over 10 minutes old
+  - interval: 1m
+    input_series:
+      - series: 'maktaba_broadcast_revocation_list_age_seconds{instance="api-a"}'
+        values: '0+60x15'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: broadcast_revocation_list_stale
+        exp_alerts: []
+      - eval_time: 12m
+        alertname: broadcast_revocation_list_stale
+        exp_alerts:
+          - exp_labels: {severity: sev2}
+            exp_annotations:
+              summary: "The edge's revocation list is 12m 0s old: takedowns may not reach it"
+              runbook_url: docs/runbooks/cloud/broadcast.md
+  # the month's estimate passes 80 % of the budget
+  - interval: 1m
+    input_series:
+      - series: 'maktaba_broadcast_edge_cost_estimate_usd{instance="api-a"}'
+        values: '79 81'
+      - series: 'maktaba_broadcast_monthly_budget_usd{instance="api-a"}'
+        values: '100 100'
+    alert_rule_test:
+      - eval_time: 0m
+        alertname: broadcast_cost_80pct
+        exp_alerts: []
+      - eval_time: 1m
+        alertname: broadcast_cost_80pct
+        exp_alerts:
+          - exp_labels: {severity: sev3}
+            exp_annotations:
+              summary: "This month's broadcast edge estimate ($81) passed 80 % of the budget"
+              runbook_url: docs/runbooks/cloud/broadcast.md
+  # the daily check's SEV3 line
+  - interval: 1m
+    input_series:
+      - series: 'maktaba_errors_total{service="cloud.worker",code="broadcast_metering_mismatch"}'
+        values: '0 0 1 1'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: broadcast_metering_mismatch
+        exp_alerts: []
+      - eval_time: 3m
+        alertname: broadcast_metering_mismatch
+        exp_alerts:
+          - exp_labels: {severity: sev3}
+            exp_annotations:
+              summary: "Broadcast analytics and metering disagree by more than 2 % for a day"
+              runbook_url: docs/runbooks/cloud/broadcast.md
+  # glass-to-glass: 12 s all day is within the SLO; 25 s all day is not
+  - interval: 1m
+    input_series:
+      - series: 'broadcast_probe_glass_to_glass_seconds{instance="witness"}'
+        values: '12x1500'
+    alert_rule_test:
+      - eval_time: 1d
+        alertname: broadcast_glass_to_glass_high
+        exp_alerts: []
+  - interval: 1m
+    input_series:
+      - series: 'broadcast_probe_glass_to_glass_seconds{instance="witness"}'
+        values: '25x1500'
+    alert_rule_test:
+      - eval_time: 1d
+        alertname: broadcast_glass_to_glass_high
+        exp_alerts:
+          - exp_labels: {severity: sev3}
+            exp_annotations:
+              summary: "The canary broadcast's glass-to-glass p95 over a day is 25s"
+              runbook_url: docs/runbooks/cloud/broadcast.md
+  # 2 minutes down in an hour, from both networks: the broadcast SLO burns fast
+  - interval: 30s
+    input_series:
+      - series: 'broadcast_probe_success{instance="witness"}'
+        values: '1x112 0x4 1x3'
+      - series: 'broadcast_probe_success{instance="actions"}'
+        values: '1x112 0x4 1x3'
+    alert_rule_test:
+      - eval_time: 59m
+        alertname: broadcast_slo_burn_fast
+        exp_alerts:
+          - exp_labels: {severity: sev1}
+            exp_annotations:
+              summary: "Broadcasting's downtime budget burns fast: 4.202% of the last hour down"
+              runbook_url: docs/runbooks/cloud/broadcast.md

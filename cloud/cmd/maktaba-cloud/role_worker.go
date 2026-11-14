@@ -5,9 +5,11 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	billingpkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/billing"
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/broadcast"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/db"
 	mailpkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/mail"
@@ -54,6 +56,12 @@ func runWorker(logger *slog.Logger, cfg config.Config, pool *db.Pool, _ *db.Migr
 	if r := usageReporter(cfg, pool, logger); r != nil {
 		go r.Run(ctx, time.Hour)
 	}
+	// story 50.28: broadcast analytics (the hourly rollup, the daily check against metering) and
+	// the monitoring state behind the maktaba_broadcast_* series; off without the SQL API's
+	// account and token
+	if j := broadcastJobs(cfg, pool, logger); j != nil {
+		go j.Run(ctx)
+	}
 	// direct remote access (story 50.15): certificates and the outside checks
 	if j := directJobs(cfg, pool, logger); j != nil {
 		go j.Run(ctx)
@@ -64,6 +72,26 @@ func runWorker(logger *slog.Logger, cfg config.Config, pool *db.Pool, _ *db.Migr
 		logger.Error("worker exited", "err", err)
 		os.Exit(1)
 	}
+}
+
+// broadcastJobs wires story 50.28's jobs to the Analytics Engine SQL API, or nil without it.
+func broadcastJobs(cfg config.Config, pool *db.Pool, logger *slog.Logger) *broadcast.Jobs {
+	b := cfg.Broadcast
+	token := b.AnalyticsToken
+	if token == "" && b.AnalyticsTokenPath != "" {
+		raw, err := os.ReadFile(b.AnalyticsTokenPath)
+		if err != nil {
+			logger.Warn("broadcast analytics off: the token file can't be read", "err", err)
+			return nil
+		}
+		token = strings.TrimSpace(string(raw))
+	}
+	if b.AnalyticsAccountID == "" || token == "" {
+		return nil
+	}
+	logger.Info("broadcast analytics on")
+	return &broadcast.Jobs{DB: pool.DB, Logger: logger,
+		AE: &broadcast.SQLClient{BaseURL: b.AnalyticsURL, AccountID: b.AnalyticsAccountID, Token: token}}
 }
 
 // cleanupExpired sweeps stale claim tokens and revoked sessions. Runs

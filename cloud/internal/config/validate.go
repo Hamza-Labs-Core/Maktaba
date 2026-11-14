@@ -27,6 +27,14 @@ func Validate(c Config, role Role) error {
 	if c.Database.URL == "" {
 		return fmt.Errorf("%w: [database].url", ErrMissing)
 	}
+	// story 50.28: the folding threshold is never off (0 is the default, 5), and a budget is
+	// never negative
+	if c.Broadcast.AnalyticsK < 0 || c.Broadcast.AnalyticsK > 100 {
+		return fmt.Errorf("config: broadcast.analytics_k %d: from 1 to 100", c.Broadcast.AnalyticsK)
+	}
+	if c.Broadcast.MonthlyBudgetUSD < 0 {
+		return fmt.Errorf("config: broadcast.monthly_budget_usd must not be negative")
+	}
 	switch role {
 	case RoleAPI:
 		if c.Server.ListenAddr == "" {
