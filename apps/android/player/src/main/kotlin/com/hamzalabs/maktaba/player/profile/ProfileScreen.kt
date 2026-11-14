@@ -93,6 +93,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.net.toUri
+import com.hamzalabs.maktaba.core.api.AppSignIn
 import com.hamzalabs.maktaba.core.api.HistoryEntry
 import com.hamzalabs.maktaba.core.api.SignInSession
 import com.hamzalabs.maktaba.core.diagnostics.CrashLog
@@ -560,22 +561,69 @@ private fun SessionsPage(state: ProfileState) {
     val scope = rememberCoroutineScope()
     LaunchedEffect(Unit) { state.loadSessions() }
     Loaded(state.sessions, R.string.profile_sessions, onRetry = { scope.launch { state.loadSessions() } }, revalidating = state.revalidating) { items ->
-        if (items.isEmpty()) {
+        val apps = state.appSignIns
+        if (items.isEmpty() && apps.isEmpty()) {
             Message(stringResource(R.string.profile_sessions_empty))
             return@Loaded
         }
         LazyColumn(Modifier.fillMaxSize().testTag("sessions-list")) {
-            item {
-                Text(
-                    stringResource(R.string.profile_sessions_about),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(16.dp),
-                )
-            }
+            item { About(stringResource(if (items.isEmpty()) R.string.profile_sessions_empty else R.string.profile_sessions_about)) }
             items(items, key = { it.id }) { s -> SessionRow(s) { scope.launch { state.endSession(s) } } }
+            // the apps signed in by a code (story 58.03), beneath the browsers; an older home lists none
+            if (apps.isNotEmpty()) {
+                item(key = "app-sign-ins") {
+                    Column(Modifier.testTag("app-sign-ins")) {
+                        Text(
+                            stringResource(R.string.profile_app_sign_ins),
+                            style = MaterialTheme.typography.titleMedium,
+                            modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp).semantics { heading() },
+                        )
+                        About(stringResource(R.string.profile_app_sign_ins_about))
+                    }
+                }
+                items(apps, key = { "app-${it.id}" }) { a -> AppSignInRow(a) { scope.launch { state.signOutApp(a) } } }
+            }
         }
     }
+}
+
+@Composable
+private fun About(text: String) {
+    Text(
+        text,
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(16.dp),
+    )
+}
+
+/** "Samsung TV, via Maktaba Cloud code" for a cloud code; else the name the app gave. */
+@Composable
+internal fun appSignInTitle(app: AppSignIn): String {
+    val name = app.name?.let { n -> if (app.viaCloudCode) com.hamzalabs.maktaba.core.ui.tvPlatformMaker(n) else n }
+    return when {
+        app.viaCloudCode -> stringResource(R.string.profile_app_via_cloud_code, name ?: "")
+        else -> name ?: stringResource(R.string.profile_app_unknown)
+    }.trim()
+}
+
+@Composable
+private fun AppSignInRow(app: AppSignIn, onSignOut: () -> Unit) {
+    val details = listOfNotNull(
+        app.lastSeenAt?.let { stringResource(R.string.profile_session_last_seen, ago(it)) },
+        if (app.current) stringResource(R.string.profile_app_current) else null,
+    ).joinToString(" · ")
+    ListItem(
+        headlineContent = { Text(appSignInTitle(app)) },
+        supportingContent = details.takeIf { it.isNotEmpty() }?.let { { Text(it) } },
+        leadingContent = { Icon(Icons.Outlined.ConnectedTv, null) },
+        trailingContent = {
+            TextButton(onClick = onSignOut, modifier = Modifier.heightIn(min = 48.dp).testTag("app-sign-out-${app.id}")) {
+                Text(stringResource(R.string.profile_session_sign_out))
+            }
+        },
+        modifier = Modifier.heightIn(min = 56.dp).testTag("app-sign-in-${app.id}"),
+    )
 }
 
 @Composable

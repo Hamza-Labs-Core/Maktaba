@@ -7,6 +7,14 @@
 //   POST /api/pairing/approve  { code: "ABCD-1234" } → 200 { status: "approved" }
 //     422 a malformed code; 409 the code was already approved; 404 not waiting.
 //
+// A TV that cannot find the home asks Maktaba Cloud for its code instead (Epic 58 story 58.03).
+// Its codes come from a smaller alphabet, so a code the home does not hold may be one:
+//   GET  /api/pairing/cloud-code/{code} → 200 { code, platform, app_version, country,
+//                                         expires_at }; 404 no such code; 409 code
+//                                         cloud_not_linked (this home has no remote access)
+//   POST /api/pairing/cloud-approve { code } → 200 { status, user_id, platform, country }
+// The person confirms the TV by its platform and country first.
+//
 // An app shows the code and a QR code for <home>/pair?code=ABCD-1234, so the code can
 // come prefilled from the URL (and is then looked up at once); the person can also type
 // it. Approving is always an explicit click, after the page shows what is asking. The
@@ -29,6 +37,51 @@ const CODE_RE = /^[0-9A-HJKMNP-TV-Z]{8}$/;
 export function normalizePairCode(raw: string): string | null {
   const c = raw.replace(/[\s-]+/g, "").toUpperCase();
   return CODE_RE.test(c) ? `${c.slice(0, 4)}-${c.slice(4)}` : null;
+}
+
+// A cloud code's alphabet: Crockford base-32 without 0 and 1 (story 58.03).
+const CLOUD_CODE_RE = /^[2-9A-HJKMNP-TV-Z]{8}$/;
+
+/** Whether a code (as normalizePairCode gives it) could be one from Maktaba Cloud. */
+export function isCloudShaped(code: string): boolean {
+  return CLOUD_CODE_RE.test(code.replace("-", ""));
+}
+
+/** A TV asking with a code from Maktaba Cloud (GET /api/pairing/cloud-code/{code}). */
+export interface CloudCodeRequest {
+  code: string;
+  platform: string;
+  app_version?: string;
+  country: string;
+  expires_at: string;
+}
+
+// The TV platforms a cloud code comes from, by the maker's name, as "Samsung TV" reads ("{platform}
+// TV, via Maktaba Cloud code"): product names, the same in every language.
+const TV_PLATFORMS: Record<string, string> = {
+  tizen: "Samsung",
+  webos: "LG",
+  roku: "Roku",
+  firetv: "Fire",
+  androidtv: "Android",
+  tvos: "Apple",
+  cast: "Google",
+  vidaa: "Hisense",
+};
+
+/** A TV platform's maker (tizen → Samsung), or the platform as sent. */
+export function tvPlatformName(platform: string): string {
+  return TV_PLATFORMS[platform] ?? platform;
+}
+
+/** A country code as the reader's language names it (JO → Jordan, الأردن). */
+export function countryName(code: string, locale: string): string {
+  if (!/^[A-Z]{2}$/.test(code)) return "";
+  try {
+    return new Intl.DisplayNames([locale], { type: "region" }).of(code) ?? code;
+  } catch {
+    return code;
+  }
 }
 
 /** What is asking to sign in with a code (GET /api/pairing/device/{code}). */
@@ -54,19 +107,32 @@ const PLATFORMS: Record<string, string> = {
   web: "Web",
 };
 
-type Outcome = "approved" | "used" | "invalid" | "notHeld" | { error: string } | null;
+type Outcome =
+  | "approved"
+  | "cloudApproved"
+  | "used"
+  | "invalid"
+  | "notHeld"
+  | "needsRemote"
+  | { error: string }
+  | null;
+
+function cloudNotLinked(err: unknown): boolean {
+  return err instanceof ApiError && err.status === 409 && err.problem.code === "cloud_not_linked";
+}
 
 function problemText(err: unknown, fallback: string): string {
   return inputDetail(err, { refusals: true }) ?? fallback;
 }
 
 export function Pair() {
-  const { t, formatDate } = useI18n();
+  const { t, formatDate, locale } = useI18n();
   const { user } = useAuth();
   const [params] = useSearchParams();
   const [code, setCode] = useState(() => params.get("code") ?? "");
   const [busy, setBusy] = useState(false);
   const [asking, setAsking] = useState<PairRequest | null>(null);
+  const [cloud, setCloud] = useState<CloudCodeRequest | null>(null);
   const [outcome, setOutcome] = useState<Outcome>(null);
 
   async function lookUp(raw: string) {
@@ -82,11 +148,53 @@ export function Pair() {
         await api.get<PairRequest>(`/api/pairing/device/${encodeURIComponent(normalized)}`)
       );
     } catch (err) {
-      if (err instanceof ApiError && err.status === 404) setOutcome("notHeld");
-      else setOutcome({ error: problemText(err, t("common.error")) });
+      if (err instanceof ApiError && err.status === 404) {
+        // not the home's own code: a TV's code from Maktaba Cloud, maybe
+        if (isCloudShaped(normalized)) await lookUpCloud(normalized);
+        else setOutcome("notHeld");
+      } else setOutcome({ error: problemText(err, t("common.error")) });
     } finally {
       setBusy(false);
     }
+  }
+
+  async function lookUpCloud(normalized: string) {
+    try {
+      setCloud(
+        await api.get<CloudCodeRequest>(`/api/pairing/cloud-code/${encodeURIComponent(normalized)}`)
+      );
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 404) setOutcome("notHeld");
+      else if (cloudNotLinked(err)) setOutcome("needsRemote");
+      else setOutcome({ error: problemText(err, t("common.error")) });
+    }
+  }
+
+  async function approveCloud() {
+    if (busy || !cloud) return;
+    setBusy(true);
+    setOutcome(null);
+    try {
+      await api.post("/api/pairing/cloud-approve", { code: cloud.code });
+      setOutcome("cloudApproved");
+    } catch (err) {
+      if (cloudNotLinked(err)) setOutcome("needsRemote");
+      else if (err instanceof ApiError && err.status === 409) setOutcome("used");
+      else if (err instanceof ApiError && err.status === 404) setOutcome("notHeld");
+      else if (err instanceof ApiError && err.status === 422) setOutcome("invalid");
+      else setOutcome({ error: problemText(err, t("common.error")) });
+      setCloud(null);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function cloudQuestion(c: CloudCodeRequest): string {
+    const platform = bidiIsolate(TV_PLATFORMS[c.platform] ?? (c.platform || t("pair.device.tv")));
+    const country = countryName(c.country, locale);
+    return country
+      ? t("approveTv.cloud.confirm", { platform, country: bidiIsolate(country) })
+      : t("approveTv.cloud.confirmNoCountry", { platform });
   }
 
   // a code from the URL (the app's QR code) is looked up at once; approving still waits
@@ -140,9 +248,11 @@ export function Pair() {
         ? t("pair.used")
         : outcome === "notHeld"
           ? t("pair.notHeld")
-          : outcome && typeof outcome === "object"
-            ? outcome.error
-            : undefined;
+          : outcome === "needsRemote"
+            ? t("approveTv.cloud.needsRemote")
+            : outcome && typeof outcome === "object"
+              ? outcome.error
+              : undefined;
 
   return (
     <section className="mkt-page mkt-pair">
@@ -157,6 +267,38 @@ export function Pair() {
           <p role="status" data-testid="pair-approved">
             {t("pair.approved")}
           </p>
+        ) : outcome === "cloudApproved" ? (
+          <p role="status" data-testid="pair-cloud-approved">
+            {t("approveTv.cloud.done")}
+          </p>
+        ) : cloud ? (
+          <div className="mkt-pair__asking" data-testid="pair-cloud-asking">
+            <p>{cloudQuestion(cloud)}</p>
+            <dl className="mkt-pair__details">
+              <dt>{t("pair.code")}</dt>
+              <dd className="mkt-mono" dir="ltr">
+                {cloud.code}
+              </dd>
+              <dt>{t("pair.details.expires")}</dt>
+              <dd>{formatDate(cloud.expires_at)}</dd>
+            </dl>
+            <p className="mkt-muted">{t("approveTv.cloud.note", { name: who })}</p>
+            <div className="mkt-pair__actions">
+              <Button onClick={() => void approveCloud()} loading={busy}>
+                {t("pair.approve")}
+              </Button>
+              <Button
+                variant="ghost"
+                disabled={busy}
+                onClick={() => {
+                  setCloud(null);
+                  setOutcome(null);
+                }}
+              >
+                {t("common.cancel")}
+              </Button>
+            </div>
+          </div>
         ) : asking ? (
           <div className="mkt-pair__asking" data-testid="pair-asking">
             <p>

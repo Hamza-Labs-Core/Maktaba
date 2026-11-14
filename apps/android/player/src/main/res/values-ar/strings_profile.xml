@@ -54,6 +54,11 @@
     <string name="profile_session_last_seen">آخر استخدام %1$s</string>
     <string name="profile_session_current">هذا المتصفح</string>
     <string name="profile_session_sign_out">تسجيل الخروج</string>
+    <string name="profile_app_sign_ins">تسجيلات دخول التطبيقات</string>
+    <string name="profile_app_sign_ins_about">أجهزة التلفاز والأجهزة المسجَّل دخولها باسمك برمز.</string>
+    <string name="profile_app_via_cloud_code">تلفاز %1$s، عبر رمز Maktaba Cloud</string>
+    <string name="profile_app_unknown">تلفاز أو جهاز</string>
+    <string name="profile_app_current">هذا الجهاز</string>
 
     <string name="profile_autoplay_next">تشغيل الحلقة التالية تلقائيًا</string>
     <string name="profile_resume_without_asking">المتابعة دون سؤال</string>
