@@ -57,6 +57,11 @@ func main() {
 		runStaff(os.Args[2:])
 	case "admin":
 		runAdmin(os.Args[2:])
+	case "relay":
+		runRelayCmd(os.Args[2:])
+	case "relay-dns":
+		// the witness's round robin over the relay pool (story 50.16)
+		runRelayDNS(os.Args[2:])
 	case "license":
 		runLicense(os.Args[2:])
 	case "logs":

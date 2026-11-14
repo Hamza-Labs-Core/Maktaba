@@ -1,0 +1,119 @@
+# The relay pool's cluster (Epic 50 story 50.16): three relay machines r1, r2, r3, each one relay
+# process in the pool (relay-pool.toml), on Postgres, behind an edge that round-robins over them
+# as the stable names relay.maktaba.tv and *.relay.maktaba.tv do by DNS. The scenarios
+# relay-pool-kill-one and rebalance-add-relay (cloud/rehearsal/relaypool_test.go) start it, run the
+# simulated homes and the stream generator on the host, and kill or add a relay. A home dials a
+# member's tunnel host (r2.relay.test) at that relay's published port.
+#
+#   postgres   10.50.0.10
+#   r1 r2 r3   10.50.0.31-33: relay processes "r1"-"r3", pool members "r1"-"r3"
+#   edge       10.50.0.20: Caddy, round robin, a relay out while its /readyz fails
+name: maktaba-rehearsal-relay-pool
+
+networks:
+  private:
+    ipam:
+      config:
+        - subnet: 10.50.0.0/24
+
+x-relay: &relay
+  image: ${CLOUD_IMAGE:-maktaba-cloud:rehearsal}
+  command: ["serve", "--role", "relay", "--config", "/etc/maktaba-cloud/relay-pool.toml"]
+  restart: "no"
+  stop_grace_period: 160s
+  volumes:
+    - ./relay-pool.toml:/etc/maktaba-cloud/relay-pool.toml:ro
+  depends_on:
+    postgres:
+      condition: service_healthy
+  healthcheck:
+    test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8443/healthz"]
+    interval: 2s
+    timeout: 2s
+    retries: 30
+
+x-relay-env: &relay-env
+  MAKTABA_ENV: rehearsal
+  MAKTABA_CLOUD_LISTEN_ADDR: "0.0.0.0:8443"
+  MAKTABA_CLOUD_DB_URL: postgres://maktaba:rehearsal@10.50.0.10:5432/maktaba?sslmode=disable
+  MAKTABA_CLOUD_PUBLIC_URL: http://relay.test
+  MAKTABA_CLOUD_RELAY_PUBLIC_HOST: relay.test
+  MAKTABA_CLOUD_TOKEN_SECRET: rehearsal-token-secret-at-least-32-bytes
+  MAKTABA_CLOUD_BILLING_PROVIDER: none
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: "no"
+    environment:
+      POSTGRES_USER: maktaba
+      POSTGRES_PASSWORD: rehearsal
+      POSTGRES_DB: maktaba
+    networks:
+      private:
+        ipv4_address: 10.50.0.10
+    ports:
+      - "127.0.0.1:${PG_PORT:-15432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U maktaba -d maktaba"]
+      interval: 1s
+      timeout: 2s
+      retries: 60
+
+  r1:
+    <<: *relay
+    ports:
+      - "127.0.0.1:${R1_PORT:-18461}:8443"
+    environment:
+      <<: *relay-env
+      MAKTABA_NODE_ID: r1
+      MAKTABA_CLOUD_RELAY_ID: r1
+      MAKTABA_CLOUD_RELAY_PEER_ADDR: "10.50.0.31:8444"
+      MAKTABA_CLOUD_RELAY_POOL_MEMBER: r1
+      MAKTABA_CLOUD_RELAY_POOL_PUBLIC_IP: 10.50.0.31
+    networks:
+      private:
+        ipv4_address: 10.50.0.31
+
+  r2:
+    <<: *relay
+    ports:
+      - "127.0.0.1:${R2_PORT:-18462}:8443"
+    environment:
+      <<: *relay-env
+      MAKTABA_NODE_ID: r2
+      MAKTABA_CLOUD_RELAY_ID: r2
+      MAKTABA_CLOUD_RELAY_PEER_ADDR: "10.50.0.32:8444"
+      MAKTABA_CLOUD_RELAY_POOL_MEMBER: r2
+      MAKTABA_CLOUD_RELAY_POOL_PUBLIC_IP: 10.50.0.32
+    networks:
+      private:
+        ipv4_address: 10.50.0.32
+
+  r3:
+    <<: *relay
+    ports:
+      - "127.0.0.1:${R3_PORT:-18463}:8443"
+    environment:
+      <<: *relay-env
+      MAKTABA_NODE_ID: r3
+      MAKTABA_CLOUD_RELAY_ID: r3
+      MAKTABA_CLOUD_RELAY_PEER_ADDR: "10.50.0.33:8444"
+      MAKTABA_CLOUD_RELAY_POOL_MEMBER: r3
+      MAKTABA_CLOUD_RELAY_POOL_PUBLIC_IP: 10.50.0.33
+    networks:
+      private:
+        ipv4_address: 10.50.0.33
+
+  edge:
+    image: caddy:2-alpine
+    restart: "no"
+    environment:
+      RELAY_UPSTREAMS: 10.50.0.31:8443 10.50.0.32:8443 10.50.0.33:8443
+    volumes:
+      - ./Caddyfile.pool:/etc/caddy/Caddyfile:ro
+    networks:
+      private:
+        ipv4_address: 10.50.0.20
+    ports:
+      - "127.0.0.1:${EDGE_PORT:-18080}:80"

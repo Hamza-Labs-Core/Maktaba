@@ -45,16 +45,19 @@ const (
 	KindWindowUpdate = relay.KindWindowUpdate
 	KindDrain        = relay.KindDrain
 	KindTicket       = relay.KindTicket
+	KindRelays       = relay.KindRelays
 )
 
-// Tunnel features this agent announces at AUTH (story 50.03): it moves on
-// DRAIN, and it keeps and presents resume tickets.
-var agentFeatures = []string{relay.FeatureDrain, relay.FeatureTicket}
+// Tunnel features this agent announces at AUTH: it moves on DRAIN, and it
+// keeps and presents resume tickets (story 50.03); it follows its place in the
+// relay pool and holds a standby tunnel (story 50.16).
+var agentFeatures = []string{relay.FeatureDrain, relay.FeatureTicket, relay.FeaturePool}
 
-// DrainPayload and TicketPayload are the relay's (protocol.go).
+// DrainPayload, TicketPayload and RelaysPayload are the relay's (protocol.go).
 type (
 	DrainPayload  = relay.DrainPayload
 	TicketPayload = relay.TicketPayload
+	RelaysPayload = relay.RelaysPayload
 )
 
 // InitialWindow and FlowVersion are the relay's flow-control constants

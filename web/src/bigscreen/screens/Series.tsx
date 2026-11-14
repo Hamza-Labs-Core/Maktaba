@@ -9,7 +9,8 @@ import { api, ApiError } from "../../lib/api";
 import { useI18n } from "../../lib/i18n";
 import { seriesPictureUrl } from "../../pages/Library/SeriesBrowser";
 import { bigPath, useBigNav } from "../nav";
-import { Empty, Failed, Grid, Loading, Picture, Progress, Screen, clock } from "../ui";
+import { Empty, Failed, Grid, Loading, Ltr, Picture, Progress, Screen, clock } from "../ui";
+import { markWatched } from "../../lib/me";
 import { errorText } from "../../lib/errorText";
 import { playSource, type QueueSourceRef } from "../../lib/playQueue";
 
@@ -204,6 +205,18 @@ export function BigSeries() {
       /* the screen stays; the button can be pressed again */
     }
   }
+  async function mark(eps: Episode[]) {
+    try {
+      await markWatched(
+        eps.filter((e) => !e.watched).map((e) => e.video_id),
+        true
+      );
+      // in place: the focus stays where it was
+      setData(await fetchEpisodes(id));
+    } catch {
+      /* the screen stays; the button can be pressed again */
+    }
+  }
   const next = data.next_episode;
   const all = lessonsInOrder(data.seasons);
   const watched = all.filter((e) => e.watched).length;
@@ -222,7 +235,7 @@ export function BigSeries() {
             {t("big.lessonsWatched", { done: n(watched), total: n(all.length) })}
           </p>
           <div className="bs-hero__actions" data-bs-group="series-actions">
-            {next && (
+            {next ? (
               <button
                 type="button"
                 className="bs-btn bs-btn--primary"
@@ -233,36 +246,38 @@ export function BigSeries() {
                 ▶ {next.progress_pct > 0 ? t("big.resume") : t("big.series.start")}:{" "}
                 <bdi>{next.title}</bdi>
               </button>
+            ) : (
+              all.length > 0 && (
+                <button
+                  type="button"
+                  className="bs-btn bs-btn--primary"
+                  data-bs-focus="series:play"
+                  data-bs-autofocus
+                  onClick={() => void queue({ kind: "series", id }, false)}
+                >
+                  ▶ {t("big.play")}
+                </button>
+              )
             )}
-            {/* Epic 56 story 56.13: a shuffled series queue, then the selected season's */}
+            {/* Epic 56 story 56.13: a shuffled series queue */}
             <button
               type="button"
               className="bs-btn"
               data-bs-focus="series:shuffle"
-              data-bs-autofocus={!next || undefined}
+              data-bs-autofocus={(!next && all.length === 0) || undefined}
               onClick={() => void queue({ kind: "series", id }, true)}
             >
               ⤮ {t("big.shuffle")}
             </button>
-            {seasonId && (
-              <>
-                <button
-                  type="button"
-                  className="bs-btn"
-                  data-bs-focus="season:play"
-                  onClick={() => void queue({ kind: "season", id: seasonId }, false)}
-                >
-                  ▶ {t("series.season.play")}
-                </button>
-                <button
-                  type="button"
-                  className="bs-btn"
-                  data-bs-focus="season:shuffle"
-                  onClick={() => void queue({ kind: "season", id: seasonId }, true)}
-                >
-                  ⤮ {t("series.season.shuffle")}
-                </button>
-              </>
+            {watched < all.length && (
+              <button
+                type="button"
+                className="bs-btn"
+                data-bs-focus="series:watched"
+                onClick={() => void mark(all)}
+              >
+                ✓ {t("series.markWatched")}
+              </button>
             )}
           </div>
         </div>
@@ -285,6 +300,41 @@ export function BigSeries() {
             ))}
         </nav>
       )}
+      {/* the selected season's own Play, Shuffle and Mark season watched (Epic 56 §6.4) */}
+      {(seasonId || shown.some((e) => !e.watched)) && (
+        <div className="bs-hero__actions bs-season-actions" data-bs-group="season-actions">
+          {seasonId && (
+            <>
+              <button
+                type="button"
+                className="bs-btn"
+                data-bs-focus="season:play"
+                onClick={() => void queue({ kind: "season", id: seasonId }, false)}
+              >
+                ▶ {t("series.season.play")}
+              </button>
+              <button
+                type="button"
+                className="bs-btn"
+                data-bs-focus="season:shuffle"
+                onClick={() => void queue({ kind: "season", id: seasonId }, true)}
+              >
+                ⤮ {t("series.season.shuffle")}
+              </button>
+            </>
+          )}
+          {data.seasons.length > 1 && shown.some((e) => !e.watched) && (
+            <button
+              type="button"
+              className="bs-btn"
+              data-bs-focus="season:watched"
+              onClick={() => void mark(shown)}
+            >
+              ✓ {t("series.markSeasonWatched")}
+            </button>
+          )}
+        </div>
+      )}
       {shown.length === 0 ? (
         <Empty>{t("big.series.noLessons")}</Empty>
       ) : (
@@ -303,7 +353,7 @@ export function BigSeries() {
                   <span className="bs-lesson__no">{no !== undefined ? n(no) : "•"}</span>
                   <bdi className="bs-lesson__title">{ep.title}</bdi>
                   {ep.duration_sec ? (
-                    <span className="bs-lesson__dur">{clock(ep.duration_sec)}</span>
+                    <Ltr className="bs-lesson__dur">{clock(ep.duration_sec)}</Ltr>
                   ) : null}
                   {ep.watched ? (
                     <span className="bs-lesson__done" aria-label={t("big.watched")}>

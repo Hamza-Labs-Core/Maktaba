@@ -2666,17 +2666,36 @@ run with one of three roles:
   (review and admin at `plugins.maktaba.tv/admin`), with its own
   accounts and auth, on Cloudflare (Epic 54).
 - **`--role=relay`** — accepts WSS tunnels from servers and HTTPS
-  from clients on `*.maktaba.tv`. TLS terminates at Hetzner LB
-  (Cloudflare-bypass for cost on streaming bandwidth).
+  from clients on `relay.maktaba.tv` and `*.relay.maktaba.tv`, DNS only
+  (relayed video never goes through Cloudflare). TLS terminates at each
+  relay's own Caddy.
 - **`--role=worker`** — non-request work: payment-provider webhook
   application, push outbox drainer (APNs + FCM), bandwidth
   rollups, ACME renewals, abuse scoring.
 
-All three connect to the same Postgres + Redis. A typical
-deployment is 2× api / 2× relay / 1× worker on Hetzner CCX23,
-auto-scaled by CPU. Failover is server-driven: a relay pod crash
-disconnects its tunnels; servers reconnect to whichever pod the
-LB sends them to. **Tunnel state is node-local; never replicated.**
+All three connect to the same Postgres. **Tunnel state is
+node-local; never replicated**: the tunnel directory (Epic 50 story
+50.04) records which relay process holds each home's tunnel, and a
+relay without it forwards the request there over the private network.
+
+Past one relay, the relays form a **pool** (story 50.16), not a
+load balancer routing by `server_id` (Hetzner's cannot). The `relays`
+table lists the pool's machines, each heartbeat every 5 s; a relay is
+healthy when active with a heartbeat under 15 s old. For each home,
+weighted rendezvous hashing of its server id over the healthy relays
+(weighted by measured capacity) names its **primary** relay and its
+**standby**; every node computes the same answer, and adding or removing
+one relay moves only the homes whose top two change. The home holds its
+tunnel on the primary and an idle standby tunnel on the standby; a
+directory lookup prefers the primary and falls to the standby, so a
+dead relay's homes keep answering through their standbys at once, then
+move their primary there and dial a new standby. Each relay drains the
+homes no longer placed on it at most 20 a second. Apps get a
+`relay_hint` (`https://<slug>.rN.relay.maktaba.tv`) before the stable
+`https://<slug>.relay.maktaba.tv`, which is DNS round robin over the
+healthy relays, kept by the witness's `relay-dns` (TTL 60 s, never the
+last record). A stale hint or a stale view costs one forwarding hop,
+never a failure.
 
 ### 13.4 The wire: HTTP-over-WSS tunnel
 

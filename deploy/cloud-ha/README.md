@@ -333,3 +333,8 @@ no request with each stopping node out of the balancer within 10 s.
   can see it during a partition; the bytes of one flush are the most it costs today.
 - The witness runs etcd only; 50.10 adds monitoring and the canary home as lower-priority
   guests (`CPUWeight`), 50.09 the restore drill.
+
+## The relay pool
+
+Phase 2 (story 50.16): several relay machines in one pool, off until `[relay.pool] enabled =
+true`. Adding a relay, taking one out and the witness's DNS round robin: [`relay-pool/`](relay-pool/README.md).
