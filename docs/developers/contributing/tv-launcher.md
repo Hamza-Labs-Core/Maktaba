@@ -12,11 +12,26 @@ stories 58.10 and 58.11.
 
 On first start the launcher offers, in order:
 
+- **Sign in with a code** (the first screen, story 58.03): a code from Maktaba Cloud
+  (`POST https://api.maktaba.tv/v1/tv/codes`, no sign-in) with a QR code of its approve page,
+  `maktaba.tv/tv?c=…`. It works on any network. Someone approves it on a phone (in the Player,
+  **Profile → Approve a TV or device**, or on maktaba.tv/tv with a cloud account linked to the
+  home), and the launcher's poll (`POST /v1/tv/codes/poll {code, poll_secret}`, at the interval
+  the cloud gives, slower on `slow_down`, a new code on 410) returns the home's id, name,
+  connections and a **grant**. The launcher tries the connections in the cloud's order (the
+  home's LAN names first, the relay last; a raw address pinned to a certificate name is
+  skipped, since a web runtime cannot check it) and opens the first that answers as that home,
+  with the grant for its `/tv/` (below). The cloud names the home by its server id, not the id
+  the home answers with, so the grant goes only to an https name (relay, direct, a LAN name
+  under the home's certificate), which its certificate proves; a plain http or raw IP address
+  is never tried (`grantAddresses` in `cloud.ts`). If the cloud gives no code, the screen says so and the
+  other ways stay.
 - **Find on this network:** it asks the TV for its address (`webapis.network.getIp()` on
   Samsung, the connection manager on LG) and tries `GET /api/discovery/home` on port 8088 of
   every address of that `/24`, 32 at a time, each for 0.7 seconds. Each home found appears once.
 - **Enter the home's address:** an address, a name or a full URL; a bare host gets port 8088.
-- **The home's code:** the sign-in inside `/tv/` (below).
+- **The home's code:** the sign-in inside `/tv/` (below), for a home found on the network or
+  typed.
 
 When a home's discovery answer names an HTTPS address for the address it was found at (the
 direct names of story 50.15, `1-2-3-4.<home id>.<domain>`), the launcher uses it; it takes a
@@ -32,8 +47,18 @@ Switch home** in `/tv/` brings the launcher back.
 ## Signing in
 
 The launcher's page is a packaged `file://` page, and `/tv/` is in its iframe, so the browser
-never sends `/tv/` the home's session cookie there. In the launcher, `/tv/` signs in by the
-home's own code: it asks for one (`POST /api/pairing/device`), shows it large with a QR code of
+never sends `/tv/` the home's session cookie there. In the launcher, `/tv/` signs in in one of
+two ways, both in the home's own origin:
+
+- **A cloud code's grant.** The launcher holds the grant from the cloud's poll (in memory only)
+  and hands it over once: its `hello` answer says `sign_in: true` and a
+  `maktaba:signIn {grant}` follows, sent only to the origin it loaded and only to a `/tv/`
+  whose `hello` said it takes `signIn`. `/tv/` redeems it at
+  `POST /api/pairing/device/token {device_code: grant}`, as it would its own code. A refused
+  grant falls back to the home's code, saying so. The grant is never in a URL, in storage or in
+  a log. A cloud code's TV is restricted on the home: it never acts as an admin, whoever
+  approved it, and mints no credential of its own.
+- **The home's own code.** It asks for one (`POST /api/pairing/device`), shows it large with a QR code of
 the approve page, and polls `POST /api/pairing/device/token` until someone signed in on a phone
 or a computer approves it. The tokens stay in the home's origin (`localStorage`), never in the
 launcher's and never on the bridge; every call carries `Authorization: Bearer`, and an expired
@@ -50,8 +75,9 @@ and both sides' tests check every message against it.
 | From | Message | Meaning |
 |---|---|---|
 | `/tv/` | `maktaba:ready` | `/tv/` is listening; the launcher shows the frame |
-| `/tv/` | `maktaba:hello {id, bridge_level}` | what are you? |
-| launcher | `maktaba:hello {re, platform, model, year, engine, version, device_caps, keys, messages}` | the TV, and the messages it takes |
+| `/tv/` | `maktaba:hello {id, bridge_level, takes}` | what are you? (`takes: ["signIn"]`: it redeems a grant) |
+| launcher | `maktaba:hello {re, platform, model, year, engine, version, device_caps, keys, messages, sign_in}` | the TV, and the messages it takes; `sign_in`: a grant follows |
+| launcher | `maktaba:signIn {grant}` | a cloud code's grant, once, right after that answer |
 | launcher | `maktaba:action {action}` | a key `/tv/` could not receive (a media or colour key), as a big-screen action |
 | launcher | `maktaba:visibility {hidden}` | the TV's app switcher |
 | `/tv/` | `maktaba:play {url, start_sec, subtitles, audio, mode}`, `pause`, `resume`, `seek {sec}`, `stop`, `audioTrack {i}`, `subtitle {id}` | the launcher's player (the TV's own, in 58.10 and 58.11) |
@@ -64,7 +90,13 @@ The launcher takes messages only from its iframe's window at the home's origin; 
 from its parent at a packaged app's origin (`null`, `file://`, `app://…`) or its own. Until a
 launcher has answered `hello`, `/tv/` sends nothing but `ready` and `hello`.
 
-## What the home sends
+## What the cloud and the home send
+
+- The cloud answers `POST /v1/tv/codes` and `POST /v1/tv/codes/poll` to a packaged app's origin
+  (`file://` from Samsung, `null` from LG, `app://…`) with that origin echoed, `POST` with
+  `Content-Type` only and never `Access-Control-Allow-Credentials`
+  (`cloud/internal/middleware/tvcors.go`). No other cloud route answers those origins, and no
+  other origin is answered by this rule.
 
 - `/tv/`'s page carries `Content-Security-Policy: frame-ancestors 'self' file: app:`: only a
   packaged app or the home itself may frame it.

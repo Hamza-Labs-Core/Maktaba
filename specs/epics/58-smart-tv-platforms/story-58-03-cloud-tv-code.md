@@ -66,6 +66,13 @@ TV                        Maktaba Cloud                    Phone (Player, signed
   the order of story 50.13 and redeems G on the first home address that answers
   (`POST /api/pairing/device/token`, which exists). The home's own sign-in rules apply from there,
   including `client_floor` (58.01) and parental controls (58.14).
+- **The TVs that ask for one.** Roku (58.12) and the Samsung and LG launcher (58.09) show the
+  cloud code as their first screen. The launcher calls the cloud from its packaged page, so the
+  cloud answers `/v1/tv/codes` and `/v1/tv/codes/poll` to a packaged app's origin (58.09's
+  CORS), and the home's `/tv/` redeems the grant the launcher hands it over the bridge. The
+  Android TV app and its Fire TV build show it as the home picker's first panel, the homes on
+  this network beside it, asking as `androidtv` or `firetv` and redeeming the grant themselves
+  (58.05).
 
 **Limits and safety:**
 - A code lasts 10 minutes and is used once. A poll faster than `interval` gets `slow_down`.

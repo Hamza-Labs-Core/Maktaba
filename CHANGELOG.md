@@ -2986,6 +2986,15 @@ build fails when the two differ.
   minutes). Arabic uses its plural forms (دقيقة واحدة، دقيقتان، 5 دقائق، 12 دقيقة), and the Roku
   catalog and its check now carry plural strings in both languages.
 
+- **Samsung and LG TVs sign in with a code from Maktaba Cloud (Epic 58, story 58.09).** The
+  Samsung and LG app now opens on a code with a QR, which works on any network: scan it, or open
+  maktaba.tv/tv, or in Maktaba on a phone signed in to the home choose Profile → Approve a TV or
+  device, and the TV opens that home, reached by the best address the home gives (on the same
+  network first, through Maktaba's relay from anywhere else). A TV signed in this way can watch,
+  never run the home, whoever approved it. Find on this network and typing the home's address
+  stay under the code as other ways. The app built with the home's UI inside it signs in the
+  same way.
+
 ### Changed
 
 - **A machine that loses its home stays usable** under a notice instead of the whole app being

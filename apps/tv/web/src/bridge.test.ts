@@ -51,7 +51,7 @@ function fakePlayer() {
   return { p, calls, set: (s: Partial<PlayerState>) => (st = { ...st, ...s }) };
 }
 
-function setup(origins = [HOME]) {
+function setup(origins = [HOME], grant: string | null = null) {
   const sent: { msg: Record<string, unknown>; target: string }[] = [];
   const frameWin = {
     postMessage: (msg: Record<string, unknown>, target: string) => sent.push({ msg, target }),
@@ -67,6 +67,7 @@ function setup(origins = [HOME]) {
     info: INFO,
     player: player.p,
     handlers,
+    grant,
     every: (fn) => {
       tick = fn;
       return 1;
@@ -274,10 +275,65 @@ describe("the launcher's bridge (T02)", () => {
   });
 });
 
+const GRANT = "g".repeat(43);
+
+describe("a cloud code's grant (signIn, 58.09's second part)", () => {
+  it("goes once, after the hello answer, to the home's origin, to a UI that takes it", () => {
+    const s = setup([HOME], GRANT);
+    expect(s.bridge.holdsGrant()).toBe(true);
+    s.fromHome({ type: "maktaba:hello", id: 1, bridge_level: 1, takes: ["signIn"] });
+    expect(s.sent.map((x) => x.msg.type)).toEqual(["maktaba:hello", "maktaba:signIn"]);
+    expect(s.sent[0]!.msg).toMatchObject({ sign_in: true });
+    expect(s.sent[1]).toEqual({ msg: { type: "maktaba:signIn", grant: GRANT }, target: HOME });
+    expect(s.bridge.holdsGrant()).toBe(false);
+    // a second hello (the UI reloaded) gets no grant
+    s.fromHome({ type: "maktaba:hello", id: 2, bridge_level: 1, takes: ["signIn"] });
+    expect(s.sent.map((x) => x.msg.type)).toEqual([
+      "maktaba:hello",
+      "maktaba:signIn",
+      "maktaba:hello",
+    ]);
+    expect(s.sent[2]!.msg.sign_in).toBeUndefined();
+  });
+
+  it("is never logged", () => {
+    const s = setup([HOME], GRANT);
+    s.fromHome({ type: "maktaba:hello", id: 1, takes: ["signIn"] });
+    expect(logText()).toContain("signIn");
+    expect(logText()).not.toContain(GRANT);
+  });
+
+  it("is dropped for a UI that does not take it (an older home's /tv/)", () => {
+    const s = setup([HOME], GRANT);
+    s.fromHome({ type: "maktaba:hello", id: 1 });
+    expect(s.sent.map((x) => x.msg.type)).toEqual(["maktaba:hello"]);
+    expect(s.sent[0]!.msg.sign_in).toBeUndefined();
+    expect(s.bridge.holdsGrant()).toBe(false);
+  });
+
+  it("is never sent to another origin or window", () => {
+    const s = setup([HOME], GRANT);
+    const hello = { type: "maktaba:hello", id: 1, takes: ["signIn"] };
+    expect(
+      s.bridge.handle({ origin: "https://evil.example", source: s.frameWin, data: hello })
+    ).toBe(false);
+    expect(s.bridge.handle({ origin: HOME, source: {}, data: hello })).toBe(false);
+    expect(s.sent).toEqual([]);
+    expect(s.bridge.holdsGrant()).toBe(true);
+  });
+
+  it("is forgotten when the frame goes", () => {
+    const s = setup([HOME], GRANT);
+    s.bridge.dispose();
+    s.fromHome({ type: "maktaba:hello", id: 1, takes: ["signIn"] });
+    expect(s.sent.map((x) => x.msg.type)).toEqual(["maktaba:hello"]);
+  });
+});
+
 describe("the launcher's messages match bridge.schema.json (T06)", () => {
   it("every message it sends validates", async () => {
-    const s = setup();
-    s.fromHome({ type: "maktaba:hello", id: 1 });
+    const s = setup([HOME], GRANT);
+    s.fromHome({ type: "maktaba:hello", id: 1, bridge_level: 1, takes: ["signIn"] });
     s.fromHome({ type: "maktaba:play", url: `${HOME}/m.m3u8` });
     await Promise.resolve();
     s.tick();
