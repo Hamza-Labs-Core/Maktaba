@@ -7,6 +7,7 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/hostload"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/components"
 )
 
@@ -15,7 +16,7 @@ import (
 //
 //	GET /api/queues/insights   the counters (videos, seasons, collections ...)
 //	                           and the "Production style" and "Topics" panels
-//	GET /api/queues/pulse      the heartbeat: is anything moving, is a job stuck
+//	GET /api/queues/pulse      the heartbeat: is anything moving, is a job stuck, do the workers run
 
 const (
 	insightGenres = 12
@@ -162,6 +163,12 @@ type Pulse struct {
 	// worker names are operator detail); StuckCount is shown to everyone.
 	Stuck      []StuckJob `json:"stuck"`
 	StuckCount int        `json:"stuck_count"`
+	// Workers says whether the workers run the waiting jobs (workerstate.go): while
+	// not_responding the state is stalled.
+	Workers WorkersState `json:"workers"`
+	// Host is the load of the machine this server runs on (hostload; left out where it
+	// cannot be read): while overloaded, jobs and the database are slow.
+	Host *hostload.State `json:"host,omitempty"`
 }
 
 var pulseCountsSQL = `
@@ -225,6 +232,17 @@ func (h *Handler) Pulse(w http.ResponseWriter, r *http.Request) {
 		age := now.Sub(last).Seconds()
 		out.LastActivityAt, out.AgeSec = &l, &age
 	}
+	workers, err := h.loadWorkersState(ctx, now, out.PausedAll)
+	if err != nil {
+		writeErr(w, r, "pulse", err)
+		return
+	}
+	out.Workers = workers
+	if h.HostLoad != nil {
+		if st, ok := h.HostLoad(ctx); ok {
+			out.Host = &st
+		}
+	}
 
 	rows, err := h.DB.QueryContext(ctx, pulseStuckQuery(), now, int(pulseStalledAfter.Seconds()))
 	if err != nil {
@@ -255,7 +273,7 @@ func (h *Handler) Pulse(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case out.PausedAll:
 		out.State = PulsePaused
-	case out.StuckCount > 0:
+	case out.StuckCount > 0 || out.Workers.State == WorkersNotResponding:
 		out.State = PulseStalled
 	case out.Running > 0 || out.Waiting > 0:
 		out.State = PulseWorking

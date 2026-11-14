@@ -1,10 +1,14 @@
 package homes
 
 import (
+	"context"
 	"encoding/json"
+	"net/http/httptest"
 	"net/netip"
+	"strings"
 	"testing"
 
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/relay"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/stores"
 )
 
@@ -81,5 +85,39 @@ func TestLANEntriesNamesThenPinnedAddresses(t *testing.T) {
 	b, _ := json.Marshal(got[0])
 	if string(b) != `{"url":"https://192-168-1-20.`+hid+`.direct-a.example:8444","kind":"local"}` {
 		t.Errorf("a local entry has no tls_name: %s", b)
+	}
+}
+
+// T07 (story 50.16): with the pool on, the home's primary relay is listed as relay_hint just
+// before the stable relay address; a home listing no relay gets no hint; no pool, no hint.
+func TestRelayHint(t *testing.T) {
+	store := relay.NewMemPoolStore()
+	for _, id := range []string{"r1", "r2", "r3"} {
+		_ = store.Beat(context.Background(), relay.PoolRelay{ID: id, PublicIP: "203.0.113.1", PrivateIP: "10.0.1.1", CapacityMbps: 1000})
+	}
+	d := &Deps{RelayHost: "relay.maktaba.tv", Pool: relay.NewPool(store, ""), PoolHosts: "{id}.relay.maktaba.tv"}
+	req := httptest.NewRequest("GET", "/v1/homes", nil)
+	const id = "00000000-0000-4000-8000-000000000042"
+	primary := relay.Assign(id, []relay.PoolRelay{{ID: "r1", CapacityMbps: 1000}, {ID: "r2", CapacityMbps: 1000}, {ID: "r3", CapacityMbps: 1000}}).Primary
+	hint := d.relayHint(req, id, "skylark")
+	if hint != "https://skylark."+primary+".relay.maktaba.tv" {
+		t.Fatalf("hint %q, want skylark on %s", hint, primary)
+	}
+	got := withRelayHint(connectionsFor("http://81.2.3.4:32400", "https://skylark.relay.maktaba.tv", true), hint)
+	kinds := []string{}
+	for _, c := range got {
+		kinds = append(kinds, c.Kind)
+	}
+	if strings.Join(kinds, ",") != "direct,relay_hint,relay" || got[1].URL != hint {
+		t.Fatalf("connections %+v", got)
+	}
+	if got := withRelayHint(connectionsFor("http://81.2.3.4:32400", "https://skylark.relay.maktaba.tv", false), hint); len(got) != 1 || got[0].Kind != "direct" {
+		t.Fatalf("no relay on the plan: %+v", got)
+	}
+	if (&Deps{RelayHost: "relay.maktaba.tv"}).relayHint(req, id, "skylark") != "" {
+		t.Fatal("pool off: a hint")
+	}
+	if (&Deps{RelayHost: "relay.maktaba.tv", Pool: relay.NewPool(relay.NewMemPoolStore(), "")}).relayHint(req, id, "skylark") != "" {
+		t.Fatal("no healthy relay: a hint")
 	}
 }

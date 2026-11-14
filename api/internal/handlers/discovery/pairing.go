@@ -25,6 +25,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/compat"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/discovery"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
@@ -76,6 +77,10 @@ type Handler struct {
 	// Home describes this home (GET /api/discovery/home, a device code's verify_url);
 	// nil: only the request's own origin is known.
 	Home HomeFunc
+
+	// ClientFloor is the oldest build of each app this home serves (Epic 58 story 58.01),
+	// published on GET /api/discovery/home; nil: compat.ReleaseFloor.
+	ClientFloor compat.Floor
 
 	// ApproveAs says whose sign-in an approved device code becomes when the caller
 	// names another account in as_user (Epic 57 story 57.02): a restricted account

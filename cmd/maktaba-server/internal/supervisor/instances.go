@@ -59,7 +59,8 @@ func BuildPipelineInstances(opts Options) ([]Process, error) {
 		wire(cmd)
 		out = append(out, Process{Role: RolePipeline, Instance: "stt-" + strconv.Itoa(i), Cmd: cmd,
 			Probe: "http://" + logs + "/healthz", ProbeTimeout: PythonProbeTimeout,
-			Binds: []ports.Bind{{Addr: logs, What: "logs port"}}})
+			StartupGrace: PythonStartupGrace,
+			Binds:        []ports.Bind{{Addr: logs, What: "logs port"}}})
 	}
 	return out, nil
 }

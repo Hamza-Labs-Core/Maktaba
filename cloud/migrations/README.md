@@ -24,6 +24,10 @@ Epic 51's 0051.
 `maktaba-cloud migrate up` simultaneously serialize on this lock — the
 first runs, the second observes `current = head` and exits cleanly.
 
+The worker's jobs run only on the api node holding `pg_try_advisory_lock(8472613)` (Epic 50
+story 50.17, `cloud/internal/db/leader.go`); `cloud_leaders` records the holder and its
+heartbeat.
+
 ## Slot allocation
 
 | Slot | Epic / story | Topic |
@@ -44,6 +48,6 @@ first runs, the second observes `current = head` and exits cleanly.
 | 0014 | 16.4 licenses | licenses_issued, license_revocations (the signed revocation list) |
 | 0015 | 16.7 usage data | telemetry_server_reports, telemetry_app_installs, telemetry_app_events, telemetry_error_groups/occurrences, telemetry_web_vitals (anonymous; docs/usage-data.md) |
 | 0016 | billing provider-neutral | renames the provider-named billing columns and event ledger (`provider_customer_id`, `provider_subscription_id`, `provider_price_id`, `provider_invoice_id`, `provider_events`) and adds a `provider` column; the payment provider is TBD |
-| 0050 | 50 cloud with no downtime | reserved infrastructure slugs (50.01: canary, r1…r99, direct, staging, plugins); staff accounts, their factors and sessions, the `users.role` reset and `audit_log.actor_kind`, passkey records and their WebAuthn challenges (50.33) |
+| 0050 | 50 cloud with no downtime | reserved infrastructure slugs (50.01: canary, r1…r99, direct, staging, plugins); staff accounts, their factors and sessions, the `users.role` reset and `audit_log.actor_kind`, passkey records and their WebAuthn challenges (50.33); the shared rate buckets and the leader locks' holders, `cloud_rate_buckets` and `cloud_leaders` (50.17); the relay pool's members and standby tunnels, `relays` and `relay_standby_tunnels` (50.16) |
 | 0051 | 51.14 usage data components | telemetry_server_reports.bundle and .components (a home's bundle and enabled component ids) |
 | 0053 | 53.16 problem reports | problem_reports (the reports homes chose to send, scrubbed; 90 days); symbol_tables (the symbols of a release's Apple dSYMs, Android R8 mappings and native libraries, for the reports' crashes; each table's kind and a library's whole build id) |

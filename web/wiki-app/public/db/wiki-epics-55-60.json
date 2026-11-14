@@ -1668,7 +1668,8 @@
       "related": [
         "epic-58-smart-tv-platforms",
         "ep-get-capabilities",
-        "ep-get-home"
+        "ep-get-home",
+        "ep-get-discovery-home"
       ],
       "files": {
         "story": "specs/epics/58-smart-tv-platforms/story-58-01-compatibility-contract.md",
@@ -1677,7 +1678,8 @@
       },
       "api_endpoints": [
         "GET /capabilities",
-        "GET /home"
+        "GET /home",
+        "GET /discovery/home"
       ],
       "db_tables": [],
       "metadata": {
@@ -1834,7 +1836,8 @@
       ],
       "related": [
         "epic-58-smart-tv-platforms",
-        "ep-get-home"
+        "ep-get-home",
+        "ep-get-discovery-home"
       ],
       "files": {
         "story": "specs/epics/58-smart-tv-platforms/story-58-07-cast-receiver.md",
@@ -1842,7 +1845,8 @@
         "mockups": []
       },
       "api_endpoints": [
-        "GET /home"
+        "GET /home",
+        "GET /discovery/home"
       ],
       "db_tables": [],
       "metadata": {
@@ -1889,7 +1893,8 @@
       ],
       "related": [
         "epic-58-smart-tv-platforms",
-        "ep-get-home"
+        "ep-get-home",
+        "ep-get-discovery-home"
       ],
       "files": {
         "story": "specs/epics/58-smart-tv-platforms/story-58-09-tv-web-launcher.md",
@@ -1897,7 +1902,8 @@
         "mockups": []
       },
       "api_endpoints": [
-        "GET /home"
+        "GET /home",
+        "GET /discovery/home"
       ],
       "db_tables": [],
       "metadata": {
@@ -2110,7 +2116,8 @@
         "epic-58-smart-tv-platforms",
         "ep-get-videos",
         "ep-post-stream-sessions",
-        "ep-get-home"
+        "ep-get-home",
+        "ep-get-discovery-home"
       ],
       "files": {
         "story": "specs/epics/58-smart-tv-platforms/story-58-17-openapi-roles-rehearsal.md",
@@ -2120,7 +2127,8 @@
       "api_endpoints": [
         "GET /videos",
         "POST /stream/sessions",
-        "GET /home"
+        "GET /home",
+        "GET /discovery/home"
       ],
       "db_tables": [],
       "metadata": {
@@ -2395,7 +2403,8 @@
       "related": [
         "epic-59-nas",
         "ep-get-ws",
-        "ep-get-home"
+        "ep-get-home",
+        "ep-get-discovery-home"
       ],
       "files": {
         "story": "specs/epics/59-nas/story-59-08-networking.md",
@@ -2404,7 +2413,8 @@
       },
       "api_endpoints": [
         "GET /ws",
-        "GET /home"
+        "GET /home",
+        "GET /discovery/home"
       ],
       "db_tables": [],
       "metadata": {

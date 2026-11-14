@@ -388,5 +388,47 @@ env PATH="${work}/appbin:${PATH}" STATE="${work}/appmissing" RELEASES="${work}/a
     bash "${here}/bin/app-update" v9 >/dev/null 2>&1; rc=$?
 if [ "${rc}" = 2 ] && [ ! -e "${work}/appmissing/bin" ]; then ok "app-update: a missing release changes nothing"; else fail "app-update missing: rc=${rc}"; fi
 
+
+# api-rollout (story 50.17): one node at a time, each ready before the next; a node that never
+# gets ready stops the rollout with the nodes after it untouched. curl answers from
+# $STATE/ready-<node> (absent: ready), and the restart command records the order.
+mkdir -p "${work}/rollbin"
+cat >"${work}/rollbin/curl" <<'STUB'
+#!/usr/bin/env bash
+url="${*: -1}"; node="${url#http://}"; node="${node%%:*}"
+echo "${node}" >>"${STATE}/checks"
+[ ! -e "${STATE}/down-${node}" ]
+STUB
+cat >"${work}/rollbin/restart" <<'STUB'
+#!/usr/bin/env bash
+echo "$1 $2" >>"${STATE}/restarts"
+STUB
+printf '#!/usr/bin/env bash\nexit 0\n' >"${work}/rollbin/sleep"
+chmod +x "${work}/rollbin/"*
+rollout() { # rollout <case> [env...]
+    local name=$1; shift
+    rm -rf "${work:?}/${name:?}"; mkdir -p "${work}/${name}"
+    env PATH="${work}/rollbin:${PATH}" STATE="${work}/${name}" API_NODES="api-1 api-2 api-3" \
+        RESTART_CMD="${work}/rollbin/restart" READY_STABLE=0 READY_WITHIN=0 "$@" \
+        bash "${here}/bin/api-rollout" v2 >/dev/null 2>&1
+    echo $?
+}
+rc="$(rollout rollgood)"
+order="$(tr '\n' ' ' <"${work}/rollgood/restarts")"
+if [ "${rc}" = 0 ] && [ "${order}" = "api-1 v2 api-2 v2 api-3 v2 " ]; then
+    ok "api-rollout: every node, one at a time, in order"
+else
+    fail "api-rollout good: rc=${rc} order=${order}"
+fi
+rm -rf "${work:?}/rollbad"; mkdir -p "${work}/rollbad"; touch "${work}/rollbad/down-api-2"
+rc="$(env PATH="${work}/rollbin:${PATH}" STATE="${work}/rollbad" API_NODES="api-1 api-2 api-3" \
+    RESTART_CMD="${work}/rollbin/restart" READY_STABLE=0 READY_WITHIN=0 bash "${here}/bin/api-rollout" v2 >/dev/null 2>&1; echo $?)"
+order="$(tr '\n' ' ' <"${work}/rollbad/restarts")"
+if [ "${rc}" = 1 ] && [ "${order}" = "api-1 v2 api-2 v2 " ]; then
+    ok "api-rollout: a node that never gets ready stops it; the next nodes keep their release"
+else
+    fail "api-rollout bad: rc=${rc} order=${order}"
+fi
+
 if [ "${fails}" -ne 0 ]; then echo "${fails} failed"; exit 1; fi
 echo "all passed"
