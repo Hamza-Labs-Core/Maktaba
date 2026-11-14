@@ -85,7 +85,8 @@ func androidTask(module string) string {
 	case "apps/android/remote":
 		return ":remote:testDebugUnitTest"
 	case "apps/tv/android/app":
-		return ":app:testDebugUnitTest"
+		// the Google Play build (its `google` flavor); the Fire TV build shares the tests (58.05)
+		return ":app:testGoogleDebugUnitTest"
 	case "apps/desktop-player":
 		return "test"
 	}

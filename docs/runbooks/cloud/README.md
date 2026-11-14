@@ -22,6 +22,7 @@ probe (GitHub Actions) mails on its own, so a broken witness doesn't silence a S
 | Runbook | When |
 |---|---|
 | [canary-down.md](canary-down.md) | remote play down: the canary, the API, the error budget |
+| [review-home-down.md](review-home-down.md) | the store reviewers' home fails its scheduled check (Epic 58 story 58.04) |
 | [failover-check.md](failover-check.md) | an automatic failover happened; the replica is missing or lagging |
 | [switchover.md](switchover.md) | planned node work: Actions → **Cloud switchover** |
 | [forced-failover.md](forced-failover.md) | the leader is sick but alive: Actions → **Cloud failover** |

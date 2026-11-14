@@ -84,7 +84,8 @@ func repoRoot(t *testing.T) string {
 }
 
 // TestScenario runs every scenario (C01–C10, 50.11's status-feed, 53.16's report-symbolicated,
-// 50.16's relay pool, 50.17's api-pool, 50.18's db-nodes-failover and db-nodes-migrate);
+// 50.16's relay pool, 50.17's api-pool, 50.18's db-nodes-failover and db-nodes-migrate,
+// 58.03's tv-code);
 // one with -run 'TestScenario/<name>'.
 func TestScenario(t *testing.T) {
 	skip := notBuilt(t)
@@ -116,6 +117,7 @@ func TestScenario(t *testing.T) {
 		{"relay-pool-kill-one", relayPoolKillOne},
 		{"rebalance-add-relay", rebalanceAddRelay},
 		{"broadcast-plans", broadcastPlans},
+		{"tv-code", tvCode},
 		{"db-nodes-failover", dbNodesFailover},
 		{"db-nodes-migrate", dbNodesMigrate},
 	} {

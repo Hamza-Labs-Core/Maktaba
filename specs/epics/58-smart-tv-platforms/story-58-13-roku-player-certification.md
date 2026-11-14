@@ -71,9 +71,11 @@ test or a device-checklist line:
 - The Roku Developer Dashboard account is free.
 - The channel is a public channel with no ads and no purchases.
 - A `v*` tag whose channel changed builds `maktaba-roku-<version>.zip` (`roku-release.yml`) and
-  the package is signed on a Roku device with the project's signing key (`genkey`, kept in the
-  release secrets; Roku packages on a device). A person uploads it to the dashboard with the
-  notes from `docs/stores/roku.md` and the review home's credentials (58.04).
+  attaches it to the tag's release. Its manifest's `build_version` is the tag's minor × 1000 +
+  patch, so each package is above the last. The package is signed on a Roku device with the
+  project's signing key (`genkey`, kept by the owner, never in the repository or CI; Roku
+  packages only on a device). A person uploads it to the dashboard with the notes from
+  `docs/stores/roku.md` and the review home's credentials (58.04).
 - Beta channels (up to 20 testers) carry each release candidate first.
 - Roku updates installed channels on its own. The compatibility contract (58.01) covers the gap
   between a home's release and Roku's.
@@ -102,7 +104,15 @@ test or a device-checklist line:
 
 **Honest note:**
 - brs-engine has no real Video node, so playback itself is tested only on devices (T05, T06).
+  Its Video node never changes state or position. The screen tests on brs-engine still cover
+  the player: the session with `device_caps`, the overlay in English and Arabic, the subtitle
+  picker, an Arabic cue in the channel's layer, a seek with its trickplay thumbnail, progress
+  and the session's close on Back, Up next and the queue's move, and a refused session's error.
+  The retry after a Video error is tested in the logic (T02's file) and on devices (T06).
 - Roku has no emulator. Its WebDriver needs a device on the runner's network.
+- The home already serves the `roku` profile as described (58.02): AV1 by DASH, Dolby Vision 8
+  as its HDR10 base layer, TrueHD as EAC3 with a stereo AAC track beside it. The channel adds
+  no home-side change.
 
 ## Strings
 
@@ -113,6 +123,8 @@ test or a device-checklist line:
 | `roku.player.failed` | This video can't play on this Roku. | لا يمكن تشغيل هذا الفيديو على جهاز Roku هذا. |
 | `roku.player.audio` | Audio | الصوت |
 | `roku.player.subtitles` | Subtitles | الترجمة |
+| `roku.player.off` | Off | إيقاف |
+| `roku.player.track` | Track %1$s | المسار %1$s |
 
 ## Edge cases
 
@@ -125,7 +137,10 @@ test or a device-checklist line:
 
 | File | Change |
 |---|---|
-| `apps/tv/roku/components/Player/` | Video node, overlay, subtitle layer |
-| `apps/tv/roku/source/caps.bs` | the capability report |
+| `apps/tv/roku/components/screens/PlayerScreen.*`, `components/widgets/ChoiceDialog.*` | Video node, overlay, subtitle layer, the audio and subtitle pickers |
+| `apps/tv/roku/source/caps.brs` | the capability report |
+| `apps/tv/roku/source/player.brs` | the player's logic (format, subtitles, WebVTT, Up next, retry, queue, trickplay) |
+| `apps/tv/roku/tests/player*.{brs,mjs}`, `tests/screens.test.mjs`, `tests/mockhome.mjs` | T01–T03 on brs-engine |
 | `.github/workflows/roku-release.yml` (new) | zip build; signing on a device is a release-session step |
 | `docs/stores/roku.md` | listing, certification table, checklist |
+| `web/packages/devportal/scripts/apps.mjs` | the Roku entry of the TV page: the player |

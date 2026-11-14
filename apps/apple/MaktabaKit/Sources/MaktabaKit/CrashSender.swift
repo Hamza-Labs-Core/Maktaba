@@ -21,6 +21,17 @@ public struct CrashConsent: Sendable {
 
     public func set(_ on: Bool, for home: Home) { defaults.set(on, forKey: Self.key(home)) }
 
+    /// Forgets every home's answer, as on a fresh install: a UI test's fresh launch
+    /// (`-maktaba-settings-reset`, `PlaybackPreferences.resetIfAsked`). The mock home has the
+    /// same id in every test, so an answer one test gave hid the question from the next test
+    /// on that simulator (each crash-question test passed once, then failed when run again:
+    /// #1249's run 43565535604 with `-test-iterations 3`).
+    public func forgetAll() {
+        for key in defaults.dictionaryRepresentation().keys where key.hasPrefix("crashReports.") {
+            defaults.removeObject(forKey: key)
+        }
+    }
+
     /// Whether the question may show at this launch: a UI test sees it only when it asks
     /// (`-maktaba-crash-question`), so the other tests' first screens stay as they were.
     public static func questionAllowed(_ args: [String] = ProcessInfo.processInfo.arguments) -> Bool {

@@ -57,3 +57,40 @@ func TestListCarriesHealth(t *testing.T) {
 		}
 	}
 }
+
+// Story 54.44: a component a plugin implements names that plugin (its page shows the same
+// switch); a part of Maktaba itself names none, whatever implements its stages.
+func TestListNamesEachComponentsPlugin(t *testing.T) {
+	db, _ := clustertest.ScratchDB(t)
+	list, err := NewService(db).List(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]string{}
+	for _, c := range list.Components {
+		got[c.ID] = c.Plugin
+	}
+	for id, want := range map[string]string{
+		"subtitles":        "tv.maktaba.subtitles",
+		"media.thumbnails": "tv.maktaba.thumbnails",
+		"core.pipeline":    "", // core is not a plugin
+		"llm":              "",
+	} {
+		if p, ok := got[id]; !ok || p != want {
+			t.Errorf("%s: plugin %q, want %q", id, p, want)
+		}
+	}
+	b, _ := json.Marshal(list.Components)
+	if !json.Valid(b) || !contains(string(b), `"plugin":"tv.maktaba.subtitles"`) {
+		t.Fatalf("the list's JSON has no plugin field")
+	}
+}
+
+func contains(s, sub string) bool {
+	for i := 0; i+len(sub) <= len(s); i++ {
+		if s[i:i+len(sub)] == sub {
+			return true
+		}
+	}
+	return false
+}

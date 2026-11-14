@@ -976,6 +976,7 @@
         "ep-get-series",
         "ep-get-series-id",
         "ep-patch-series-id",
+        "ep-get-plugins",
         "ep-put-videos-id-age-tier",
         "ep-put-libraries-id-age-tier",
         "ep-put-series-id-age-tier",
@@ -1012,6 +1013,7 @@
         "GET /series",
         "GET /series/{id}",
         "PATCH /series/{id}",
+        "GET /plugins",
         "PUT /videos/{id}/age-tier",
         "PUT /libraries/{id}/age-tier",
         "PUT /series/{id}/age-tier",
@@ -1100,7 +1102,8 @@
         "ep-get-stream-sessions-id",
         "ep-delete-stream-sessions-id",
         "ep-post-stream-sessions-id-progress",
-        "ep-get-me-history"
+        "ep-get-me-history",
+        "ep-get-plugins"
       ],
       "files": {
         "story": "specs/epics/57-parental-controls/story-57-03-server-filter.md",
@@ -1115,7 +1118,8 @@
         "GET /stream/sessions/{id}",
         "DELETE /stream/sessions/{id}",
         "POST /stream/sessions/{id}/progress",
-        "GET /me/history"
+        "GET /me/history",
+        "GET /plugins"
       ],
       "db_tables": [
         "collection_items",
@@ -1634,6 +1638,7 @@
       "related": [
         "epic-57-parental-controls",
         "entity-transcript_segments",
+        "ep-get-plugins",
         "ep-get-parental-review",
         "ep-post-parental-review-video-id"
       ],
@@ -1643,6 +1648,7 @@
         "mockups": []
       },
       "api_endpoints": [
+        "GET /plugins",
         "GET /parental/review",
         "POST /parental/review/{video_id}"
       ],
@@ -1729,7 +1735,10 @@
       ],
       "related": [
         "epic-58-smart-tv-platforms",
-        "ep-get-home"
+        "ep-get-home",
+        "ep-get-me-app-sign-ins",
+        "ep-get-pairing-cloud-code-code",
+        "ep-post-pairing-cloud-approve"
       ],
       "files": {
         "story": "specs/epics/58-smart-tv-platforms/story-58-03-cloud-tv-code.md",
@@ -1737,7 +1746,10 @@
         "mockups": []
       },
       "api_endpoints": [
-        "GET /home"
+        "GET /home",
+        "GET /me/app-sign-ins",
+        "GET /pairing/cloud-code/{code}",
+        "POST /pairing/cloud-approve"
       ],
       "db_tables": [],
       "metadata": {
@@ -1896,6 +1908,8 @@
       ],
       "related": [
         "epic-58-smart-tv-platforms",
+        "ep-post-auth-refresh",
+        "ep-get-auth-me",
         "ep-get-home",
         "ep-get-discovery-home"
       ],
@@ -1905,6 +1919,8 @@
         "mockups": []
       },
       "api_endpoints": [
+        "POST /auth/refresh",
+        "GET /auth/me",
         "GET /home",
         "GET /discovery/home"
       ],
@@ -1926,7 +1942,8 @@
         "phase-5"
       ],
       "related": [
-        "epic-58-smart-tv-platforms"
+        "epic-58-smart-tv-platforms",
+        "entity-audio_tracks"
       ],
       "files": {
         "story": "specs/epics/58-smart-tv-platforms/story-58-10-tizen.md",
@@ -1934,7 +1951,9 @@
         "mockups": []
       },
       "api_endpoints": [],
-      "db_tables": [],
+      "db_tables": [
+        "audio_tracks"
+      ],
       "metadata": {
         "slug": "tizen"
       }
@@ -2121,7 +2140,8 @@
         "ep-post-stream-sessions",
         "ep-post-cast-grants",
         "ep-get-home",
-        "ep-get-discovery-home"
+        "ep-get-discovery-home",
+        "ep-post-pairing-cloud-approve"
       ],
       "files": {
         "story": "specs/epics/58-smart-tv-platforms/story-58-17-openapi-roles-rehearsal.md",
@@ -2133,7 +2153,8 @@
         "POST /stream/sessions",
         "POST /cast/grants",
         "GET /home",
-        "GET /discovery/home"
+        "GET /discovery/home",
+        "POST /pairing/cloud-approve"
       ],
       "db_tables": [],
       "metadata": {
@@ -2376,6 +2397,7 @@
       ],
       "related": [
         "epic-59-nas",
+        "ep-get-plugins",
         "ep-get-plugins-isolation",
         "ep-put-plugins-isolation"
       ],
@@ -2385,6 +2407,7 @@
         "mockups": []
       },
       "api_endpoints": [
+        "GET /plugins",
         "GET /plugins/isolation",
         "PUT /plugins/isolation"
       ],
@@ -2665,6 +2688,7 @@
         "ep-post-libraries-id-run-now",
         "ep-post-queues-jobs-id-run-now",
         "ep-post-queues-stage-run-now",
+        "ep-get-plugins",
         "ep-get-plugins-isolation",
         "ep-put-plugins-isolation",
         "ep-get-system-updates"
@@ -2706,6 +2730,7 @@
         "POST /libraries/{id}/run-now",
         "POST /queues/jobs/{id}/run-now",
         "POST /queues/{stage}/run-now",
+        "GET /plugins",
         "GET /plugins/isolation",
         "PUT /plugins/isolation",
         "GET /system/updates"

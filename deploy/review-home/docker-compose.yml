@@ -1,0 +1,50 @@
+# The store reviewers' home (Epic 58 story 58.04): review.maktaba.tv, a Maktaba home the project
+# runs with public-domain and openly licensed content only (content/manifest.json).
+#
+#   maktaba  the Docker install every household uses (cloud/installers/docker), unchanged: one
+#            container that runs the server and its own Postgres and updates itself like any
+#            home (Epic 28; Admin -> Updates). The content set is mounted read-only.
+#   caddy    review.maktaba.tv's certificate (Let's Encrypt, HTTP-01) in front of the home's web
+#            app on the loopback, and /approve -> /pair (a TV's cloud code, story 58.03).
+#
+# Both on the host's network; the host firewall (setup.sh) opens only SSH, 80 and 443, so the
+# home's own ports (8088, 8080, 8081, 54329) are reached only through Caddy or the relay.
+# setup.sh stages this file in /opt/maktaba-review and starts it with the .env beside it.
+
+name: maktaba-review
+
+services:
+  maktaba:
+    image: ghcr.io/hamza-labs-core/maktaba-server:latest
+    container_name: maktaba-review
+    restart: unless-stopped
+    user: "1000:1000"
+    stop_grace_period: 90s
+    network_mode: host
+    environment:
+      MAKTABA_PLATFORM: docker
+      TZ: Etc/UTC
+    volumes:
+      - maktaba:/var/lib/maktaba
+      # the content set, as content.py fetch made it; never written by the home
+      - ${REVIEW_MEDIA:-/srv/review-media}:/srv/review-media:ro
+
+  caddy:
+    image: caddy:2.10.2-alpine
+    container_name: maktaba-review-caddy
+    restart: unless-stopped
+    network_mode: host
+    depends_on:
+      - maktaba
+    environment:
+      REVIEW_DOMAIN: ${REVIEW_DOMAIN:?REVIEW_DOMAIN is required}
+      ACME_EMAIL: ${ACME_EMAIL:?ACME_EMAIL is required}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  maktaba:
+  caddy_data:
+  caddy_config:

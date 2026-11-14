@@ -1,0 +1,127 @@
+# Deploys Maktaba's Cast receiver to cast.maktaba.tv on a release tag (Epic 58 story 58.07).
+#
+# A v* tag builds this level's receiver (/r/<level>/), runs its tests (T01 to T04), keeps every
+# build of the live site the 12-month window still holds (scripts/release.mjs copies their
+# files from https://cast.maktaba.tv), and deploys the Worker when the receiver changed. One
+# registration in the Cast console, https://cast.maktaba.tv/r/, serves every home version: the
+# loader there picks the build for the sender's api_level.
+#
+# It deploys only once the repository variable CAST_RECEIVER_LIVE is `true` (docs/stores/cast.md,
+# "Owner actions": the Cloudflare token and the custom domain). Until then it builds and tests,
+# and says so in the summary. Secrets: the existing CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID,
+# read by wrangler only; nothing here prints them.
+
+name: Cast receiver release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  # A tag's run by hand, when its push run is missing or failed for good: `gh workflow run
+  # <this> --ref vX.Y.Z -f tag=vX.Y.Z` (the release session's tag push starts the push run). The tag
+  # guard refuses a dispatched run whose ref is not that tag.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "The v* tag to deploy (dispatch with --ref set to it)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+# one deploy at a time, never cancelled: the live manifest is read, then replaced
+concurrency:
+  group: cast-receiver-release
+  cancel-in-progress: false
+
+jobs:
+  # the tag-order guard (release.yml's guard opens the release as a draft)
+  guard:
+    uses: ./.github/workflows/_tag-guard.yml
+    permissions:
+      contents: write
+      actions: read
+
+  release:
+    name: Cast receiver release
+    needs: [guard]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    container:
+      image: mcr.microsoft.com/playwright:v1.64.1-noble
+      options: --ipc=host --init
+    defaults:
+      run:
+        working-directory: web/packages/castreceiver
+    steps:
+      - uses: actions/checkout@v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Install
+        run: npm ci --no-audit --no-fund
+
+      - name: Tests (T01, T03, T04)
+        env:
+          CI: 'true'
+        run: npm run typecheck && npm test
+
+      - name: The live site's builds
+        run: node scripts/release.mjs fetch --live-base https://cast.maktaba.tv --out live-builds.json
+
+      - name: Build this level, beside the builds kept
+        run: npm run build -- --live live-builds.json
+
+      - name: The browser tests on this build (T02)
+        env:
+          CI: 'true'
+          CAST_VISUAL: '1'
+        run: npx playwright test
+
+      - name: Copy the kept builds from the live site
+        id: copy
+        run: node scripts/release.mjs copy --live-base https://cast.maktaba.tv --live live-builds.json
+
+      - name: Deploy to cast.maktaba.tv
+        if: steps.copy.outputs.changed == 'true' && vars.CAST_RECEIVER_LIVE == 'true'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx wrangler deploy
+
+      - name: Smoke the live receiver
+        if: steps.copy.outputs.changed == 'true' && vars.CAST_RECEIVER_LIVE == 'true'
+        run: |
+          set -euo pipefail
+          want="$(node -p "JSON.parse(require('fs').readFileSync('dist/r/builds.json','utf8')).builds.map(b=>b.level+':'+b.hash).sort().join(',')")"
+          for _ in 1 2 3 4 5 6; do
+            got="$(curl -fsS -H 'Cache-Control: no-cache' https://cast.maktaba.tv/r/builds.json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s).builds.map(b=>b.level+':'+b.hash).sort().join(',')))")" || got=""
+            [ "$got" = "$want" ] && break
+            sleep 10
+          done
+          [ "$got" = "$want" ] || { echo "::error::cast.maktaba.tv/r/builds.json lists '$got', want '$want'"; exit 1; }
+          curl -fsS -o /dev/null https://cast.maktaba.tv/r/
+          echo "cast.maktaba.tv serves builds $want" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Not deployed
+        if: steps.copy.outputs.changed != 'true' || vars.CAST_RECEIVER_LIVE != 'true'
+        env:
+          CHANGED: ${{ steps.copy.outputs.changed }}
+          LIVE: ${{ vars.CAST_RECEIVER_LIVE }}
+        run: |
+          if [ "$LIVE" != "true" ]; then
+            echo "The Cast receiver was built and tested, not deployed: CAST_RECEIVER_LIVE is not true yet (docs/stores/cast.md, Owner actions)." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "The Cast receiver is unchanged since the live build: nothing to deploy." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: App logs
+        if: always()
+        uses: ./.github/actions/tv-logs
+        with:
+          name: cast-receiver-release-logs
+          what: Playwright's screenshots, console and network logs, traces and report on the release build
+          path: |
+            web/packages/castreceiver/test-results
+            web/packages/castreceiver/dist/r/builds.json

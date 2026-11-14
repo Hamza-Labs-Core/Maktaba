@@ -1,6 +1,8 @@
 package com.hamzalabs.maktaba.player
 
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import androidx.annotation.OptIn
 import androidx.compose.runtime.getValue
@@ -15,6 +17,7 @@ import androidx.media3.common.MimeTypes
 import androidx.media3.common.Player
 import androidx.media3.common.Tracks
 import androidx.media3.common.VideoSize
+import androidx.media3.cast.CastPlayer
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
@@ -33,7 +36,14 @@ import com.hamzalabs.maktaba.core.api.errorDetails
 import com.hamzalabs.maktaba.core.api.Video
 import com.hamzalabs.maktaba.player.media.NowPlaying
 import com.hamzalabs.maktaba.player.media.SEEK_INCREMENT_MS
+import com.hamzalabs.maktaba.player.media.CastLoad
+import com.hamzalabs.maktaba.player.media.CastMode
+import com.hamzalabs.maktaba.player.media.CastSender
+import com.hamzalabs.maktaba.player.media.CastSenders
+import com.hamzalabs.maktaba.player.media.CastTarget
+import com.hamzalabs.maktaba.player.media.ReceiverItem
 import com.hamzalabs.maktaba.player.media.castable
+import com.hamzalabs.maktaba.player.media.receiverItem
 import com.hamzalabs.maktaba.player.media.isRemote
 import com.hamzalabs.maktaba.core.playback.PlaybackValues
 import com.hamzalabs.maktaba.core.playback.TrackChoice
@@ -77,8 +87,13 @@ import kotlinx.coroutines.withContext
  *
  * The player is handed to the system (48.33: [NowPlaying], the media session's service), so the
  * sound goes on with the screen off and the notification and lock screen drive it (FR-39); and
- * a Cast receiver can take it over ([control] then plays there, FR-38): it gets the same signed
- * URL, and the progress still goes out from here, read from the receiver.
+ * a Cast receiver can take it over ([control] then plays there, FR-38). Maktaba's receiver
+ * (story 58.06, [castSender]) is handed a cast grant for the video, or for the play queue it is
+ * played from ([castQueue]), and opens its own session: it reports the progress itself, so the
+ * phone's session is closed and nothing is posted from here while it plays ([receiverReports]);
+ * the phone follows what it plays, and opens the video here again where the TV was when the cast
+ * ends. A home older than the cast grant gets the same signed URL, and the progress still goes
+ * out from here, read from the receiver.
  */
 @OptIn(UnstableApi::class)
 class Playback(
@@ -92,7 +107,9 @@ class Playback(
     /** The player's last touches: a test gives a clock and renderers that run on the JVM. */
     private val build: (ExoPlayer.Builder) -> ExoPlayer.Builder = { it },
     /** The player the controls drive, around this device's: Cast's (a test gives a fake receiver). */
-    private val cast: (ExoPlayer) -> Player = { castable(context, it) },
+    private val cast: (ExoPlayer, CastPlayer.TransferCallback) -> Player = { local, transfer -> castable(context, local, transfer) },
+    /** The phone's side of a cast to Maktaba's receiver (null: no receiver application ID, no Cast). */
+    val castSender: CastSender? = CastSenders.of(context, client),
     /** Hands the player to the system's controls (the notification, the lock screen). */
     private val system: Boolean = true,
     /** The time now, in milliseconds: when the stream was opened and when to renew it (a test gives its own clock). */
@@ -112,6 +129,20 @@ class Playback(
     /** A Cast receiver plays the video (the phone shows that, not the video). */
     var casting by mutableStateOf(false)
         private set
+    /**
+     * Maktaba's receiver plays it with a cast grant: the receiver reports the progress, the
+     * phone posts none (and holds no session) until the cast ends.
+     */
+    var receiverReports by mutableStateOf(false)
+        private set
+    /** What Maktaba's receiver says it plays (its media status): it may walk a queue on its own. */
+    var receiverItem by mutableStateOf<ReceiverItem?>(null)
+        private set
+    /** The server play queue the video plays from, and its place there (Epic 56): a cast names the queue. */
+    var castQueue: Pair<String, Int>? = null
+    /** The grant's mint and the receiver's load, on their way. */
+    private var castLoad: Job? = null
+    private val main by lazy { Handler(Looper.getMainLooper()) }
     /** The video's size as it plays here (the picture-in-picture window takes its shape). */
     var videoSize by mutableStateOf(VideoSize.UNKNOWN)
         private set
@@ -176,6 +207,11 @@ class Playback(
     private var lapseReopened: String? = null
     private var lapseReopenedAt = 0L
     private val streamHttp by lazy { client.streamHttp() }
+
+    init {
+        // how this home casts is asked once, before the first cast (story 58.06)
+        castSender?.start()
+    }
 
     /** Plays [v] from [startSec] (its resume point, or 0 for the start). */
     fun play(v: Video, startSec: Int = 0) {
@@ -255,6 +291,10 @@ class Playback(
         control = null
         player = null
         casting = false
+        receiverReports = false
+        receiverItem = null
+        castLoad?.cancel()
+        castLoad = null
         videoSize = VideoSize.UNKNOWN
     }
 
@@ -266,6 +306,8 @@ class Playback(
         qualityChosen = true
         if (kbps == maxBitrateKbps) return
         maxBitrateKbps = kbps
+        // Maktaba's receiver picks its own stream: the choice is kept for here
+        if (receiverReports) return
         val p = control ?: return
         val at = p.currentPosition
         val wasPlaying = p.playWhenReady
@@ -319,6 +361,10 @@ class Playback(
      */
     private suspend fun open(fromMs: Long) {
         val v = video ?: return
+        // a cast to Maktaba's receiver is on (the next video, a reopen): the receiver opens its own session
+        if (castSender?.mode == CastMode.Grant && (control?.let(::isRemote) ?: castSender.sessionOn)) {
+            if (castOpen(v, fromMs)) return
+        }
         val old = session
         try {
             // a session the home opened is always closed, even when the player stopped meanwhile
@@ -386,6 +432,130 @@ class Playback(
         }
     }
 
+    /**
+     * Hands [v] at [fromMs] to Maktaba's receiver, which plays it with a grant; no session is
+     * opened here. False when the control turned out to play here (the cast had ended).
+     */
+    private suspend fun castOpen(v: Video, fromMs: Long): Boolean {
+        val p = player ?: newPlayer()
+        val c = control ?: newControl(p)
+        player = p
+        control = c
+        if (system) NowPlaying.attach(context, c)
+        if (!isRemote(c)) return false
+        val item = MediaItem.Builder()
+            .setMediaId(v.id)
+            .setMediaMetadata(MediaMetadata.Builder().setTitle(v.displayTitle).build())
+            .build()
+        handToReceiver(c, item, fromMs)
+        return true
+    }
+
+    /** The video's cast target: the queue it plays from when there is one. */
+    private fun target(v: Video): CastTarget {
+        val q = castQueue
+        return CastTarget(v.id, q?.first, q?.second)
+    }
+
+    /**
+     * Mints the grant for [item] and hands it to the receiver at [atMs] ([to]: the receiver's
+     * player). An older home's receiver gets the item as it is; a refused grant ends the cast,
+     * and the phone plays on (the error says why).
+     */
+    private suspend fun handToReceiver(to: Player, item: MediaItem, atMs: Long) {
+        val sender = castSender ?: return
+        val v = video ?: return
+        val load = sender.load(item, target(v), atMs)
+        if (load is CastLoad.Grant) {
+            if (!isRemote(control)) return
+            // the receiver reports from now on: the phone's session is closed
+            closeSessionForReceiver()
+            playOn(to, load.item, atMs)
+        } else if (load == CastLoad.Plain && item.localConfiguration != null) {
+            playOn(to, item, atMs)
+        } else {
+            sender.end()
+        }
+    }
+
+    private fun closeSessionForReceiver() {
+        val s = session
+        if (s != null) background.launch { client.closeStream(s) }
+        session = null
+        receiverReports = true
+    }
+
+    /** Loads [item] on the receiver's player [to] at [atMs], playing. */
+    private fun playOn(to: Player, item: MediaItem, atMs: Long) {
+        to.setMediaItem(item, atMs)
+        to.prepare()
+        to.playWhenReady = true
+    }
+
+    /**
+     * Media3's handover between the phone and the receiver ([CastPlayer]): the item and where it
+     * is go over, and Media3 then stops the player it left. To Maktaba's receiver the grant is
+     * minted first (the receiver waits for it, empty); back from it the video opens here again
+     * where the TV was (the receiver's item has no address for the phone).
+     */
+    private val transfer = CastPlayer.TransferCallback { from, to ->
+        if (isRemote(to)) toReceiver(from, to) else toPhone(from, to)
+    }
+
+    private fun toReceiver(from: Player, to: Player) {
+        val item = from.currentMediaItem ?: return
+        val at = from.currentPosition
+        if (castSender == null || castSender.mode == CastMode.OldHome) {
+            // the signed URL, as the Player always cast; the phone reports from the receiver
+            to.setMediaItem(item, at)
+            to.playWhenReady = true
+            return
+        }
+        castLoad?.cancel()
+        castLoad = scope.launch(Dispatchers.Main.immediate) { handToReceiver(to, item, at) }
+    }
+
+    private fun toPhone(from: Player, to: Player) {
+        castLoad?.cancel()
+        castLoad = null
+        val reported = receiverReports
+        receiverReports = false
+        receiverItem = null
+        val remote = from.currentMediaItem
+        val at = from.currentPosition
+        if (remote == null) {
+            // nothing was handed (the grant was refused): the phone goes on where it was
+            to.playWhenReady = true
+            return
+        }
+        if (!reported) {
+            // the receiver played the signed URL: the phone takes it, where the TV was
+            if (remote.localConfiguration != null) to.setMediaItem(remote, at) else to.seekTo(at)
+            to.playWhenReady = from.playWhenReady
+            return
+        }
+        // Maktaba's receiver: the video it ended on opens here, where the TV was
+        to.clearMediaItems()
+        val id = remote.receiverItem?.videoId ?: remote.mediaId.ifEmpty { video?.id } ?: return
+        val title = remote.mediaMetadata.title?.toString()
+        main.post {
+            val v = video?.takeIf { it.id == id } ?: Video(id, title = title)
+            stop()
+            play(v, (at / 1000).toInt())
+        }
+    }
+
+    /** What the receiver plays now (its media status): the phone shows that video. */
+    private fun followReceiver(p: Player) {
+        if (!receiverReports) return
+        val r = p.currentMediaItem?.receiverItem ?: return
+        receiverItem = r
+        val id = r.videoId ?: return
+        if (r.queueId != null && r.queuePos != null) castQueue = r.queueId to r.queuePos
+        castSender?.follow(CastTarget(id, r.queueId, r.queuePos))
+        if (id != video?.id) video = Video(id, title = p.currentMediaItem?.mediaMetadata?.title?.toString())
+    }
+
     /** The time's-up screen or "ended by the home" shows: nothing may start playing under it. */
     private fun stoppedByHome(): Boolean = timeUp != null || endedByHome
 
@@ -426,10 +596,18 @@ class Playback(
      * and back): playing, paused, the end and where it plays are read here, wherever it plays.
      */
     private fun newControl(local: ExoPlayer): Player {
-        val p = cast(local)
+        val p = cast(local, transfer)
         p.addListener(object : Player.Listener {
             override fun onDeviceInfoChanged(deviceInfo: DeviceInfo) {
                 casting = isRemote(p)
+            }
+
+            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                followReceiver(p)
+            }
+
+            override fun onTimelineChanged(timeline: androidx.media3.common.Timeline, reason: Int) {
+                followReceiver(p)
             }
 
             override fun onIsPlayingChanged(playing: Boolean) {
@@ -455,6 +633,8 @@ class Playback(
     }
 
     private fun report(p: Player, completed: Boolean) {
+        // Maktaba's receiver reports its own progress (it holds the grant)
+        if (receiverReports) return
         val s = session ?: return
         val at = (p.currentPosition / 1000).toInt()
         if (at <= 0 && !completed) return

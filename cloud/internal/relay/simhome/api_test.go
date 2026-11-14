@@ -3,6 +3,7 @@ package simhome
 import (
 	"io"
 	"net/http"
+	"strings"
 	"testing"
 )
 
@@ -40,5 +41,34 @@ func TestTheStreamPathsSayTheCap(t *testing.T) {
 	}
 	if _, b = get("/stream?bytes=10", "1"); len(b) != 10 {
 		t.Fatalf("/stream: %d bytes", len(b))
+	}
+}
+
+// A grant AcceptGrant gave a home redeems once, on that home only (the tv-code rehearsal,
+// story 58.03 T04).
+func TestAGrantRedeemsOnceOnItsHome(t *testing.T) {
+	api := API()
+	defer api.Close()
+	redeem := func(home, grant string) (int, string) {
+		t.Helper()
+		req, _ := http.NewRequest(http.MethodPost, api.URL+"/api/pairing/device/token", strings.NewReader(`{"device_code":"`+grant+`"}`))
+		req.Header.Set("X-Sim-Home", home)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = resp.Body.Close() }()
+		b, _ := io.ReadAll(resp.Body)
+		return resp.StatusCode, string(b)
+	}
+	AcceptGrant("home-0001", "grant-one")
+	if st, _ := redeem("home-0002", "grant-one"); st != http.StatusGone {
+		t.Fatalf("another home: %d", st)
+	}
+	if st, b := redeem("home-0001", "grant-one"); st != http.StatusOK || !strings.Contains(b, "tv-token-home-0001") {
+		t.Fatalf("its home: %d %s", st, b)
+	}
+	if st, _ := redeem("home-0001", "grant-one"); st != http.StatusGone {
+		t.Fatalf("twice: %d", st)
 	}
 }

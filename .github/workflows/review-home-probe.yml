@@ -1,0 +1,40 @@
+# The store reviewers' home's scheduled check (Epic 58 story 58.04, T01 and T03): every 15
+# minutes, from GitHub's runners, tools/review_home/probe.py walks what a store reviewer walks
+# on review.maktaba.tv: discovery, the reviewer's sign-in, the content (both titles and a
+# licence note on every item), one stream session per test file, and a cloud code approved on
+# the home and redeemed by a test client. A failed check fails the run (GitHub mails the owner)
+# and, with the witness's Pushgateway set, review_home_down alerts
+# (docs/runbooks/cloud/review-home-down.md). Off until the review home runs: set the repository
+# variable REVIEW_HOME_PROBE to 'true' and the secret REVIEW_HOME_VIEWER_PASSWORD (rotated with
+# the home's after each submission round, docs/stores/review-home.md).
+name: Review home probe
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: review-home-probe
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    if: vars.REVIEW_HOME_PROBE == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6.0.2
+        with:
+          persist-credentials: false
+      - name: Walk the review home as a store reviewer
+        env:
+          REVIEW_HOME_URL: https://review.maktaba.tv
+          CLOUD_URL: https://api.maktaba.tv
+          REVIEW_HOME_VIEWER_PASSWORD: ${{ secrets.REVIEW_HOME_VIEWER_PASSWORD }}
+          PUSHGATEWAY_URL: ${{ secrets.PUSHGATEWAY_URL }}
+          PUSHGATEWAY_TOKEN: ${{ secrets.PUSHGATEWAY_TOKEN }}
+        run: python3 -I tools/review_home/probe.py

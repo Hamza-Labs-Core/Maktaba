@@ -87,8 +87,9 @@ func main() {
 	}
 
 	// Local admin surface: GET /admin/cloud-link, POST /admin/cloud-link/links,
-	// GET /admin/cloud-link/license, /admin/cloud-link/reports (53.16), and GET and POST
-	// /admin/cloud-link/direct (50.15), /admin/cloud-link/broadcast/ (50.22).
+	// GET /admin/cloud-link/license, /admin/cloud-link/reports (53.16), GET and POST
+	// /admin/cloud-link/direct (50.15), /admin/cloud-link/tv-codes/ (58.03), and
+	// /admin/cloud-link/broadcast/ (50.22).
 	rep := &cloudlink.LinkReporter{CloudAPI: cfg.cloudAPI, Creds: creds}
 	adminSrv := &http.Server{
 		Addr:              cfg.adminAddr,
@@ -128,6 +129,8 @@ func adminMux(sup *cloudlink.Supervisor, rep *cloudlink.LinkReporter) http.Handl
 	mux.Handle(cloudlink.BroadcastPrefix, cloudlink.BroadcastHandler(rep))
 	// who may watch the home's broadcast channels: access, limits, invites (50.26)
 	mux.Handle(cloudlink.BroadcastAccessPrefix, cloudlink.BroadcastAccessHandler(rep))
+	// the TV codes a person approves on the home (58.03)
+	mux.Handle("/admin/cloud-link/tv-codes/", cloudlink.TVCodesHandler(rep))
 	return mux
 }
 
