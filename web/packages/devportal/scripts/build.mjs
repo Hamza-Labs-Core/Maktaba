@@ -85,6 +85,7 @@ const GUIDES = {
     "problem-types.md",
     "api-levels.md",
     "parental-controls.md",
+    "broadcasting.md",
     "ci.md",
     "pull-requests.md",
     "cloud.md",

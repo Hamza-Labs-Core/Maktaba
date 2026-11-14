@@ -24,6 +24,8 @@ and CI. The source lives at
 - [Parental controls](parental-controls.md): for client and API authors: what a player must
   do, the routes and their codes, the route registry, and how to run the role table and the
   bypass rehearsal.
+- [Broadcasting from home](broadcasting.md): the home's side of broadcasting: the publish
+  checks, the ingest tokens, the ladder, the uploader and the control socket.
 - [CI](ci.md): how CI picks the jobs a change needs, and the single merge gate.
 - [Pull requests](pull-requests.md): branch, test, describe, review, merge.
 - [Maktaba Cloud: how it stays up](cloud.md): the two nodes, deploys, backups, and the cloud rehearsal.

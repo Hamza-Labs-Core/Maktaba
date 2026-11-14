@@ -290,10 +290,10 @@ type PublisherState struct {
 	AgreementAccepted bool `json:"agreement_accepted"`
 	// AgreementVersion is the current agreement's version (stored with the home's rights
 	// confirmation).
-	AgreementVersion int `json:"agreement_version"`
-	FairUseMinutes   int64          `json:"fair_use_minutes"`
-	PAYG             BroadcastPAYG  `json:"payg"`
-	At               time.Time      `json:"at"`
+	AgreementVersion int           `json:"agreement_version"`
+	FairUseMinutes   int64         `json:"fair_use_minutes"`
+	PAYG             BroadcastPAYG `json:"payg"`
+	At               time.Time     `json:"at"`
 }
 
 // State is a publisher's state now.

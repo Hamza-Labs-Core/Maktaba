@@ -68,7 +68,7 @@ func TestBroadcastHandlerForwardsOnlyItsRoutes(t *testing.T) {
 // rebound Host, an Origin, a cross-site fetch, a POST that is not JSON.
 func TestBroadcastHandlerRefusesBrowsers(t *testing.T) {
 	reached := 0
-	cloud := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	cloud := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		reached++
 		w.WriteHeader(http.StatusCreated)
 	}))

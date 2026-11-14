@@ -83,6 +83,8 @@ type Ctl struct {
 	limits   map[uuid.UUID][]string
 	wake     chan struct{}
 	slateFor map[uuid.UUID]string // the token a channel's slate was uploaded with
+	// demandAware: the edge has sent a wake or a sleep (it tells demand)
+	demandAware bool
 }
 
 type session struct {
@@ -97,7 +99,6 @@ type stats struct {
 	mu       sync.Mutex
 	sent     map[string]int
 	bytes    int64
-	skipped  int
 	restarts int
 	started  time.Time
 	last     time.Time
@@ -183,7 +184,9 @@ func (c *Ctl) wanted(j Job, now time.Time) bool {
 	if j.State != "live" || j.Creds.Token == "" || (!j.Creds.ExpiresAt.IsZero() && !now.Before(j.Creds.ExpiresAt)) {
 		return false
 	}
-	if j.Mode != "on_demand" {
+	// on demand needs an edge that tells demand: until one has (a wake or a sleep), an
+	// on-demand channel runs as if always on, so a published channel is never dark
+	if j.Mode != "on_demand" || !c.demandAware {
 		return true
 	}
 	if _, ok := c.woken[j.Channel]; !ok {
@@ -317,13 +320,17 @@ func (c *Ctl) Event(ctx context.Context, ch uuid.UUID, ev Event) {
 	switch ev.Type {
 	case "wake":
 		c.mu.Lock()
+		c.demandAware = true
 		c.woken[ch] = c.now()
 		delete(c.sleepAt, ch)
 		c.mu.Unlock()
 		c.log().Info("broadcast: the edge woke the channel", "channel", ch, "event", "broadcast_wake")
 	case "sleep":
 		c.mu.Lock()
-		if _, ok := c.woken[ch]; ok {
+		c.demandAware = true
+		if _, ok := c.woken[ch]; ok || c.running[ch] != nil {
+			// running (woken, or on the fallback before the edge told demand): the grace first
+			c.woken[ch] = c.now()
 			c.sleepAt[ch] = c.now().Add(grace)
 		}
 		c.mu.Unlock()
@@ -531,8 +538,7 @@ func (c *Ctl) runLadder(ctx context.Context, j Job, s *session, dir string) erro
 	case <-ctx.Done():
 		_ = proc.Stdin().Close()
 		proc.Kill()
-		werr = <-exited
-		werr = nil
+		<-exited // stopped on purpose: not an error
 	case werr = <-exited:
 		if werr == nil {
 			werr = errors.New("ffmpeg exited")
@@ -544,8 +550,8 @@ func (c *Ctl) runLadder(ctx context.Context, j Job, s *session, dir string) erro
 	return werr
 }
 
-// rungState is one rung of a state post (the master playlist's attributes).
-type rungState struct {
+// RungState is one rung of a state post (the master playlist's attributes).
+type RungState struct {
 	Name       string  `json:"name"`
 	Bandwidth  int     `json:"bandwidth"`
 	Resolution string  `json:"resolution"`
@@ -554,19 +560,19 @@ type rungState struct {
 }
 
 // States is the rungs' attributes for the edge's master playlist.
-func States(rungs []string, out Output) []rungState {
+func States(rungs []string, out Output) []RungState {
 	fps := out.FPS
 	if fps <= 0 {
 		fps = 30
 	}
-	var res []rungState
+	var res []RungState
 	for _, name := range rungs {
 		w, h, kbps := out.Width, out.Height, out.VideoKbps+out.AudioKbps
 		if r, ok := LowerRung(name); ok {
 			h, kbps = r.Height, r.VideoKbps+r.AudioKbps
 			w = (h*16/9 + 1) &^ 1
 		}
-		res = append(res, rungState{Name: name, Bandwidth: kbps * 1100, Resolution: fmt.Sprintf("%dx%d", w, h),
+		res = append(res, RungState{Name: name, Bandwidth: kbps * 1100, Resolution: fmt.Sprintf("%dx%d", w, h),
 			Codecs: "avc1.640028,mp4a.40.2", FrameRate: float64(fps)})
 	}
 	return res

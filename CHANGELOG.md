@@ -813,6 +813,19 @@ build fails when the two differ.
 
 ### Added
 
+- **A home can broadcast chosen Live TV channels to viewers outside it (Epic 50, story 50.22).**
+  An admin sets a channel up on the new Broadcast panel of the Live TV page (its link name,
+  invite-only or open, always on or only while someone watches, its qualities) and publishes it
+  after ticking that the home has the rights to what it airs. Before anything starts the home
+  checks, in order, the Maktaba Cloud plan, the publisher agreement, the schedule, the measured
+  internet upload (suggesting fewer qualities when it is too slow) and the encoder's free slots,
+  and names the first that fails. A published channel's qualities (up to 1080p, three by
+  default) are made at home and each segment is sent once to the broadcast edge, so the upload
+  is the same however many people watch; the channel shows an offline card when the home is
+  away, keeps going for a day without Maktaba Cloud, and is never released while published.
+  Only admins can set up, publish or unpublish, and the API enforces it. Broadcasting is off
+  until an admin turns it on, and nothing reaches viewers until the broadcast edge is deployed.
+
 - **Apps can tell when they and the home are too far apart (story 58.01).** The home now
   publishes its API level, the oldest level it still serves, and the oldest build of each app it
   signs in, with no sign-in needed (`GET /api/discovery/home`: `api_level`, `api_level_oldest`,

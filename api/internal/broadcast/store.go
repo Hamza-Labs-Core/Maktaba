@@ -403,7 +403,6 @@ func (s *Store) HostLoad(ctx context.Context, channelID string, published []Chan
 			Scan(&override); err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return 0, 0, nil, err
 		}
-		err = nil
 	}
 	inUse, sessions = float64(placed), placed
 	for _, c := range published {

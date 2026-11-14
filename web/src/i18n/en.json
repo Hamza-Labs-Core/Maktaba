@@ -5224,6 +5224,7 @@
   "broadcast.rungDropped": "Your internet upload dropped, so this channel's top quality was removed. It keeps broadcasting.",
   "broadcast.tokenExpired": "Broadcasting paused: this home couldn't reach Maktaba Cloud for a day. It resumes when the connection is back.",
   "broadcast.clockSkew": "This home's clock is off by more than a minute. Fix the time to keep broadcasting.",
+  "broadcast.planOff": "Broadcasting paused: your Maktaba Cloud plan no longer includes it.",
   "subscription.freeHint": "Free is the whole library for one user on your home network. Home and Pro add users and remote access.",
   "subscription.viewerHint": "Your home's admin manages the plan.",
   "subscription.cloud": "Maktaba Cloud",

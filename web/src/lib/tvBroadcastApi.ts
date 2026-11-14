@@ -73,7 +73,11 @@ export interface BroadcastRefusal {
 
 export function broadcastRefusal(e: unknown): BroadcastRefusal | null {
   if (!(e instanceof ApiError)) return null;
-  const p = e.problem as unknown as { code?: string; check?: string; params?: Record<string, unknown> };
+  const p = e.problem as unknown as {
+    code?: string;
+    check?: string;
+    params?: Record<string, unknown>;
+  };
   if (!p.code || !p.code.startsWith("broadcast.")) return null;
   const params: Record<string, string | number> = {};
   for (const [k, v] of Object.entries(p.params ?? {})) {

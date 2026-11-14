@@ -29,10 +29,18 @@ export const BROADCAST_COMPONENT = "livetv.broadcast";
 
 const mbps = (kbps: number) => (kbps / 1000).toFixed(1);
 
-type Load = { kind: "loading" } | { kind: "hidden" } | { kind: "off" } | { kind: "ready"; view: BroadcastView };
+type Load =
+  | { kind: "loading" }
+  | { kind: "hidden" }
+  | { kind: "off" }
+  | { kind: "ready"; view: BroadcastView };
 
 function isComponentOff(e: unknown): boolean {
-  return e instanceof ApiError && e.status === 409 && (e.problem as { code?: string }).code === "component_off";
+  return (
+    e instanceof ApiError &&
+    e.status === 409 &&
+    (e.problem as { code?: string }).code === "component_off"
+  );
 }
 
 export function BroadcastPanel() {
@@ -72,7 +80,8 @@ export function BroadcastPanel() {
     } catch (e) {
       if (!alive.current) return;
       if (isComponentOff(e)) setLoad({ kind: "off" });
-      else if (e instanceof ApiError && (e.status === 403 || e.status === 401)) setLoad({ kind: "hidden" });
+      else if (e instanceof ApiError && (e.status === 403 || e.status === 401))
+        setLoad({ kind: "hidden" });
       else {
         setLoad({ kind: "hidden" });
         show(e);
@@ -171,7 +180,9 @@ export function BroadcastPanel() {
           {view.uplink.kbps > 0
             ? t("broadcast.uplink.measured", {
                 kbps: `${mbps(view.uplink.kbps)} Mbps`,
-                when: view.uplink.measured_at ? new Date(view.uplink.measured_at).toLocaleString() : "—",
+                when: view.uplink.measured_at
+                  ? new Date(view.uplink.measured_at).toLocaleString()
+                  : "—",
               })
             : t("broadcast.uplink.none")}
         </p>
@@ -209,11 +220,17 @@ export function BroadcastPanel() {
                   {c.number} {c.name}
                 </td>
                 <td>{c.configured ? t(`broadcast.access.${c.access}`) : "—"}</td>
-                <td>{c.configured ? describeLadder(c.rungs.slice(c.dropped_rungs), view.source_height) : "—"}</td>
+                <td>
+                  {c.configured
+                    ? describeLadder(c.rungs.slice(c.dropped_rungs), view.source_height)
+                    : "—"}
+                </td>
                 <td>
                   {t(`broadcast.state.${c.state}`)}
                   {c.detail && <div className="mkt-livetv__hint">{t(`broadcast.${c.detail}`)}</div>}
-                  {published && c.slug && <CopyField label={t("broadcast.link")} value={watchLink(c.slug)} />}
+                  {published && c.slug && (
+                    <CopyField label={t("broadcast.link")} value={watchLink(c.slug)} />
+                  )}
                 </td>
                 <td>
                   {!published && (
@@ -324,7 +341,13 @@ function SetupDialog(props: {
   const { t } = useI18n();
   const c = props.channel;
   const [s, setS] = useState<BroadcastSetup>({
-    slug: c.slug || c.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || `channel-${c.number}`,
+    slug:
+      c.slug ||
+      c.name
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "") ||
+      `channel-${c.number}`,
     access: c.access,
     mode: c.access === "open" ? "always_on" : c.mode,
     rungs: c.rungs,
@@ -354,7 +377,11 @@ function SetupDialog(props: {
   };
   return (
     <Modal open onClose={props.onClose} title={`${t("broadcast.setup")}: ${c.name}`}>
-      <Input label={t("broadcast.slug")} value={s.slug} onChange={(e) => setS({ ...s, slug: e.target.value })} />
+      <Input
+        label={t("broadcast.slug")}
+        value={s.slug}
+        onChange={(e) => setS({ ...s, slug: e.target.value })}
+      />
       <fieldset>
         <legend>{t("broadcast.access")}</legend>
         {(["invite", "open"] as const).map((a) => (

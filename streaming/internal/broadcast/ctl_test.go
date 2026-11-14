@@ -228,7 +228,7 @@ func TestCtlAlwaysOn(t *testing.T) {
 }
 
 // T07: an on-demand channel waits for the edge's wake, starts at once, and stops the grace
-// after the edge says no one watches.
+// after the edge says no one watches; until the edge tells demand at all, it runs.
 func TestCtlOnDemand(t *testing.T) {
 	edge := &recEdge{puts: map[string]int{}}
 	srv := httptest.NewServer(edge)
@@ -243,13 +243,19 @@ func TestCtlOnDemand(t *testing.T) {
 	defer cancel()
 	go c.Run(ctx)
 
+	// an edge that has told no demand yet: the channel runs, never dark
+	waitFor(t, "the fallback start", func() bool { return len(c.Running()) == 1 })
+	// the edge tells demand: no one watches; it stops after the grace and waits for a wake
+	c.Event(ctx, ch, Event{Type: "sleep"})
+	waitFor(t, "the stop with no one watching", func() bool { return len(c.Running()) == 0 })
+	before := edge.count("src")
 	time.Sleep(100 * time.Millisecond)
-	if len(c.Running()) != 0 || edge.count("src") != 0 {
+	if len(c.Running()) != 0 {
 		t.Fatal("an on-demand channel started before a wake")
 	}
 	woke := time.Now()
 	c.Event(ctx, ch, Event{Type: "wake"})
-	waitFor(t, "the first segment", func() bool { return edge.count("src") >= 1 })
+	waitFor(t, "the first segment", func() bool { return edge.count("src") > before })
 	if time.Since(woke) > 15*time.Second {
 		t.Fatal("the first segment came after 15 s")
 	}

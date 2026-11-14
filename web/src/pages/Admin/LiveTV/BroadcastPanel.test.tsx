@@ -101,10 +101,14 @@ describe("BroadcastPanel", () => {
   });
 
   it("offers to turn broadcasting on while the component is off", async () => {
-    get.mockRejectedValueOnce(problem(409, { code: "component_off", component: "livetv.broadcast" }));
+    get.mockRejectedValueOnce(
+      problem(409, { code: "component_off", component: "livetv.broadcast" })
+    );
     get.mockResolvedValueOnce(view());
     post.mockImplementation((url: string) =>
-      Promise.resolve(url.endsWith("/preview") ? { effects: [], conflicts: [], refused: [] } : { ok: true })
+      Promise.resolve(
+        url.endsWith("/preview") ? { effects: [], conflicts: [], refused: [] } : { ok: true }
+      )
     );
     renderPanel();
     await userEvent.click(await screen.findByRole("button", { name: "Turn on broadcasting" }));
@@ -132,7 +136,9 @@ describe("BroadcastPanel", () => {
     expect(publish).toBeDisabled();
     await userEvent.click(screen.getByLabelText(/I have the rights to broadcast/));
     await userEvent.click(publish);
-    expect(post).toHaveBeenCalledWith("/api/tv/broadcast/channels/c1/publish", { confirm_rights: true });
+    expect(post).toHaveBeenCalledWith("/api/tv/broadcast/channels/c1/publish", {
+      confirm_rights: true,
+    });
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Upload: Your internet upload (20.0 Mbps) can't carry this. 720p + 480p fits."
     );
@@ -152,7 +158,9 @@ describe("BroadcastPanel", () => {
     get.mockResolvedValue(view({ uplink: { kbps: 0 } }));
     post.mockResolvedValue({ kbps: 30000 });
     renderPanel();
-    expect(await screen.findByText("Not measured yet. Measure it before publishing.")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Not measured yet. Measure it before publishing.")
+    ).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Measure upload" }));
     expect(post).toHaveBeenCalledWith("/api/tv/broadcast/speedtest");
   });

@@ -4041,6 +4041,14 @@
       "en": "Age tiers on the home's content (0, 9, 13, 16, 18, or unrated) and the table that maps each country's rating labels to them.",
       "ar": "الفئات العمرية لمحتوى المنزل (0 أو 9 أو 13 أو 16 أو 18 أو غير مصنَّف) والجدول الذي يقابل تصنيفات كل بلد بها."
     },
+    "/tags/24/name": {
+      "en": "Broadcasting",
+      "ar": "البث"
+    },
+    "/tags/24/description": {
+      "en": "Publishing Live TV channels to viewers outside the home (admins only): each published channel's qualities are made at home and each segment is sent once to Maktaba's broadcast edge.",
+      "ar": "نشر قنوات البث المباشر لمشاهدين خارج المنزل (للمشرفين فقط): تُصنع جودات كل قناة منشورة في المنزل، ويُرسل كل مقطع مرة واحدة إلى حافة البث في مكتبة."
+    },
     "/paths/~1parental~1children/get/summary": {
       "en": "The restricted accounts the caller looks after",
       "ar": "الحسابات المقيَّدة التي يتولاها المتصل"
@@ -5832,10 +5840,6 @@
     "/paths/~1tv~1broadcast~1speedtest/post/responses/403/description": {
       "en": "Admin only.",
       "ar": "للمشرفين فقط."
-    },
-    "/tags/24/description": {
-      "en": "Publishing Live TV channels to viewers outside the home (admins only): each published channel's qualities are made at home and each segment is sent once to Maktaba's broadcast edge.",
-      "ar": "نشر قنوات البث المباشر لمشاهدين خارج المنزل (للمشرفين فقط): تُصنع جودات كل قناة منشورة في المنزل، ويُرسل كل مقطع مرة واحدة إلى حافة البث في مكتبة."
     }
   }
 }
