@@ -403,5 +403,40 @@
     "widthChars": 60,
     "lines": 2
   },
-  "player.error": "This video cannot play right now."
+  "player.error": "This video cannot play right now.",
+  "@roku.player.upNext": {
+    "widthChars": 24,
+    "lines": 1
+  },
+  "roku.player.upNext": "Up next",
+  "@roku.player.retrying": {
+    "widthChars": 48,
+    "lines": 1
+  },
+  "roku.player.retrying": "Trying a converted version…",
+  "@roku.player.failed": {
+    "widthChars": 60,
+    "lines": 2
+  },
+  "roku.player.failed": "This video can't play on this Roku.",
+  "@roku.player.audio": {
+    "widthChars": 20,
+    "lines": 1
+  },
+  "roku.player.audio": "Audio",
+  "@roku.player.subtitles": {
+    "widthChars": 20,
+    "lines": 1
+  },
+  "roku.player.subtitles": "Subtitles",
+  "@roku.player.off": {
+    "widthChars": 20,
+    "lines": 1
+  },
+  "roku.player.off": "Off",
+  "@roku.player.track": {
+    "widthChars": 30,
+    "lines": 1
+  },
+  "roku.player.track": "Track %1$s"
 }

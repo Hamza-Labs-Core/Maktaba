@@ -27,6 +27,30 @@ not-available line. Nothing is sold in the channel.
 | `components/common.brs` | what the screens share: labels in the bundled font, mirrored placement, rows and grids in reading order |
 | `tools/build.mjs` | the build (T02): BrighterScript with bslint, fonts and images, the zip under 4 MB; `--test` for the screen tests, `--device-tests` for checklist row 1 |
 
+## The player (story 58.13)
+
+The player opens a stream session with `client_profile: roku` and this Roku's `device_caps`
+(58.02), built from roDeviceInfo's answers by `source/caps.brs`; the home decides from them what
+plays directly, what it remuxes (AV1 by DASH, the only way Roku plays it) and what it
+transcodes. The Video node's own bar is off (`enableUI="false"`): Maktaba's overlay shows the
+title, series, chapter and position, a thumbnail from the home's trickplay sheet while seeking
+(Left and Right 10 s, mirrored in Arabic; Rewind and Fast forward 30 s), and the Audio and
+Subtitles pickers. An Arabic subtitle is drawn by the channel's own Label (the sidecar WebVTT,
+fetched with the session's `stream_sig`, each cue shaped through VisualText); any other
+language by Roku's renderer, which follows Roku's caption settings. With no subtitle chosen and
+Roku's captions on, the track in the channel's language shows. Progress goes to the home every
+10 s and on pause, seek, the end and Back, and the session is closed on Back. Play all and
+Shuffle walk the server queue; Up next shows 15 s before the end and OK plays it. A Video error
+retries once with `force_transcode`; a second, or a session the home refuses, shows the error
+with the home's reason and Back.
+
+| Path | What |
+|---|---|
+| `source/caps.brs` | `CapsAnswers()` (roDeviceInfo on the device) and `CapsFromAnswers(answers)` (the report, tested against shared/playback/caps-vectors.json) |
+| `source/player.brs` | the player's logic: stream format, subtitle choice and renderer, WebVTT, Up next, the retry, the queue, chapters, trickplay tiles, seeking |
+| `components/screens/PlayerScreen.*`, `components/widgets/ChoiceDialog.*` | the Video node, the overlay, the subtitle layer, the pickers |
+| `.github/workflows/roku-release.yml` | a `v*` tag whose channel changed attaches `maktaba-roku-<version>.zip` to the release (`node tools/build.mjs --version X.Y.Z`); signing it is on a Roku (docs/stores/roku.md) |
+
 **In Arabic** every screen is placed through `ui_Mirror` (x positions from the English layout,
 mirrored), rows and grids get their items in reading order and start on the right-most card,
 row titles are moved to the row's right edge, and a short row is padded at its logical end with
@@ -35,11 +59,15 @@ blank cards that never take the focus.
 **Tests** (`npm test`; CI's Roku job):
 
 - the logic on brs-engine (T01): `tests/channel_test.brs` and the compat vectors;
+- the player's logic (58.13 T01–T03): `tests/player_test.brs`, the capability report against
+  58.02's vectors and Arabic cues against 58.15's (`tests/player.test.mjs`);
 - the build (T02): `tests/build.test.mjs`, also running the device-test package;
 - the screens (T03): `tests/screens.test.mjs` builds a test package (`--test`) pointed at
   `tests/mockhome.mjs` (a mock home with 80 videos, a series, collections and a playlist, and a
   mock cloud that approves a code), runs it on brs-node's SceneGraph with ECP, sends keys,
   follows the focus through the channel's log and compares screenshots with `tests/screens/`
+  (the player's among them: its overlay, pickers, an Arabic cue, a seek, Up next, a refused
+  session)
   (English and Arabic, dark; a mean difference under 12 on a 480×270 copy). After a deliberate
   change: `UPDATE_SCREENS=1 node --test tests/screens.test.mjs`, look at every image, commit.
   Find on this network runs on Linux only (macOS has no 127.0.0.x addresses for the probe; in

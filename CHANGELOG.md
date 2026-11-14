@@ -14,6 +14,11 @@ build fails when the two differ.
 
 ### Changed
 
+- **VoiceOver reaches a Home card's menu without the long press (Apple Player).** On iPhone,
+  iPad and the Mac, each Home card offers its context menu's items as VoiceOver actions:
+  Resume on a Continue Watching card, Not interested on a recommendation, named as the menu
+  names them in English and Arabic. Each does what its menu item does.
+
 - **The cloud's database can run on machines of its own (Epic 50, story 50.18).** Three
   database nodes (a primary, a replica that confirms every commit, and a second replica) sit
   behind PgBouncer and a Floating IP of their own; losing the primary promotes the replica that
@@ -864,6 +869,17 @@ build fails when the two differ.
 
 ### Added
 
+- **Playing on Roku (Epic 58, story 58.13).** The Roku channel's player: it tells the home
+  what this Roku plays (H.264, HEVC, AV1 inside DASH, HDR10, HLG, Dolby Vision 5, the Dolby
+  passthroughs), so a 4K HDR file plays directly where the Roku can and is converted only where
+  it cannot. Maktaba's own controls replace Roku's bar: title, series, chapter, position, scrub
+  thumbnails, and audio and subtitle choices. Arabic subtitles are drawn by the channel, joined
+  and right to left; other languages by Roku, following its caption settings. Progress is
+  saved every 10 seconds and on pause and Back; Play all and Shuffle show Up next 15 seconds
+  before the end; a video the Roku cannot play is tried once more as a converted version, then
+  the error shows, with the home's reason when it gives one. A tag whose channel changed attaches the channel's
+  store zip to the release; signing it on a Roku and submitting it to Roku's store stay with
+  the owner (docs/stores/roku.md, with Roku's certification table and the real-device checks).
 - **Maktaba on Roku (Epic 58, story 58.12).** A Roku channel: a household signs in once with a
   code its phone approves (through Maktaba Cloud, or the home's own code after finding it on the
   network, or its address), and each later launch opens that home's Home. Continue watching,
@@ -883,6 +899,18 @@ build fails when the two differ.
   submission round; the passwords live only in the release secrets, every store's submission
   notes name the secret (`docs/stores/review-home.md`), and a check every 15 minutes walks the
   cloud code and a stream of each test file.
+
+- **The Android Player casts to Maktaba's own receiver (Epic 58, story 58.06).** The Player's
+  Cast button now sends the video, or the whole **Play all** or **Shuffle** queue, to Maktaba's
+  receiver with a cast grant the phone mints for it; the TV plays and reports progress by
+  itself, so the phone can lock or leave and Continue Watching follows the TV. While the TV
+  plays, the phone posts no progress of its own and shows the TV's name and what it plays,
+  following the queue as the TV walks it; ending the cast opens the video on the phone where
+  the TV was. A home older than the cast grant still casts to Google's player with the signed
+  address, and the Player says so. With no TV on the network the Player says the TV must be on
+  the same Wi-Fi; a refused grant says why and casts nothing. English and Arabic. Until the
+  receiver's application ID is set in `shared/cast/app.json` (or `-Pmaktaba.castAppId`), the
+  Player shows no Cast button.
 
 - **A cast grant for Maktaba's Cast receiver (Epic 58, story 58.07).** A signed-in phone or
   browser can now mint a cast grant on the home (`POST /api/cast/grants`) for the one video or
@@ -2741,6 +2769,18 @@ build fails when the two differ.
   convert a file it cannot play. It is a page at cast.maktaba.tv that serves every home version
   (an older home is asked to update); it needs the Cast console registration and the phone
   apps' update (story 58.06) before anyone can cast to it.
+
+- **Cast to a TV from Chrome (Epic 58, story 58.06).** In Chrome, on the home's secure address,
+  the web player's **Cast to a TV** sends the video, or the whole **Play all** or **Shuffle**
+  queue, to a Chromecast, a Google TV or a TV with Chromecast built in, through Maktaba's own
+  receiver. The browser mints a cast grant for the video or queue and hands it to the TV, which
+  then plays and reports progress by itself, so the tab can close and Continue Watching follows
+  the TV; the player shows the TV's name, play, pause and **Stop casting**, and the TV follows
+  the web app's language. No Cast button on `http://`, in other browsers or through Maktaba
+  Cloud. The receiver's application ID lives in `shared/cast/app.json` with the custom-data
+  vectors every sender runs (`shared/cast/load-vectors.json`); until the ID is set, no build
+  shows Cast. The cast grant's refusals (`cast_via_cloud`, `cast_needs_person`, `cast_scope`)
+  now have their problem pages.
 
 - **Sign a TV in from anywhere with a code (story 58.03).** A TV that cannot find its home, or is
   at a relative's house, can ask Maktaba Cloud for a code (`POST /v1/tv/codes`), and a person

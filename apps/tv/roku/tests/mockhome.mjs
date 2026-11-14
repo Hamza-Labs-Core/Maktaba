@@ -44,6 +44,31 @@ for (let i = 0; i < 80; i++) {
   });
 }
 
+/** A video whose stream session the home refuses (every transcode slot taken). */
+export const REFUSED = uuid(8);
+
+/** The sidecar subtitles: an Arabic cue the channel draws itself, an English one for Roku's. */
+const VTT = {
+  ar: "WEBVTT\n\n00:00:00.000 --> 01:00:00.000\nمرحباً بكم في رحلة إلى الأندلس\nالسفينة تبحر عند الفجر\n",
+  en: "WEBVTT\n\n00:00:00.000 --> 01:00:00.000\nWelcome aboard.\n",
+};
+
+/** A trickplay sheet: 5×5 tiles of 320×180, each numbered. */
+function sprite() {
+  const c = createCanvas(1600, 900);
+  const g = c.getContext("2d");
+  for (let i = 0; i < 25; i++) {
+    const x = (i % 5) * 320;
+    const y = Math.floor(i / 5) * 180;
+    g.fillStyle = colours[i % colours.length];
+    g.fillRect(x, y, 320, 180);
+    g.fillStyle = "#E8ECF3";
+    g.font = "bold 48px sans-serif";
+    g.fillText(`${i * 80}s`, x + 20, y + 100);
+  }
+  return c.toBuffer("image/png");
+}
+
 function poster(id) {
   const n = parseInt(id.slice(-4), 10) || 0;
   const c = createCanvas(320, 180);
@@ -105,7 +130,7 @@ export function startHome(log) {
     const auth = (req.headers.authorization || "").replace(/^Bearer /, "");
     state.clientHeaders.add(req.headers["x-maktaba-client"] || "");
     log(`home ${req.method} ${p}${url.search ? " ?" + [...url.searchParams.keys()].join(",") : ""} auth=${auth ? "bearer" : "none"}`);
-    const body = req.method === "POST" ? await readBody(req) : {};
+    const body = req.method === "POST" || req.method === "PUT" ? await readBody(req) : {};
     if (p === "/api/discovery/home") {
       const port = server.address().port;
       return json(res, 200, { id: HOME_ID, name: "Test home", version: "0.3.150", urls: [`http://127.0.0.1:${port}`], sign_in: { password: true, code: true }, api_level: 1, api_level_oldest: 1, client_floor: {} });
@@ -129,7 +154,19 @@ export function startHome(log) {
       res.writeHead(200, { "Content-Type": "image/png" });
       return res.end(poster(p.split("/")[3]));
     }
+    if (p.startsWith("/api/videos/") && p.endsWith("/trickplay/sprite")) {
+      // like the poster: brs-engine's Poster sends no bearer
+      res.writeHead(200, { "Content-Type": "image/png" });
+      return res.end(sprite());
+    }
     if (p.startsWith("/stream/")) {
+      // a session's sidecar subtitles, signed with its stream_sig (Roku sends no header for media)
+      const sub = /^\/stream\/(s\d+)\/subs\/sidecar\/(\w+)\.vtt$/.exec(p);
+      if (sub && url.searchParams.get("sig") === `sig-${sub[1]}` && VTT[sub[2]]) {
+        log(`home subtitles ${sub[2]} signed`);
+        res.writeHead(200, { "Content-Type": "text/vtt" });
+        return res.end(VTT[sub[2]]);
+      }
       res.writeHead(404);
       return res.end();
     }
@@ -158,6 +195,15 @@ export function startHome(log) {
       const page = list.slice(start, start + limit);
       return json(res, 200, { items: page.map(card), next: start + limit < list.length ? String(start + limit) : null });
     }
+    if (p.startsWith("/api/videos/") && p.endsWith("/subtitles")) {
+      return json(res, 200, { items: [{ id: 1, language: "en", format: "vtt", source: "sidecar", is_default: false, url: "" }, { id: 2, language: "ar", format: "vtt", source: "sidecar", is_default: false, url: "" }] });
+    }
+    if (p.startsWith("/api/videos/") && p.endsWith("/chapters")) {
+      return json(res, 200, { items: [{ id: 1, seq: 1, start_sec: 0, end_sec: 600, title: "البداية", source: "auto" }, { id: 2, seq: 2, start_sec: 600, title: "The harbour", source: "auto" }] });
+    }
+    if (p.startsWith("/api/videos/") && p.endsWith("/trickplay")) {
+      return json(res, 200, { sprite_url: `${p}/sprite`, columns: 5, rows: 5, count: 25, interval_sec: 80, tile_width: 320, tile_height: 180, sheet_width: 1600, sheet_height: 900 });
+    }
     if (p.startsWith("/api/videos/")) {
       const v = videos.find((x) => x.id === p.split("/")[3]);
       if (!v) return json(res, 404, { type: "not_found" });
@@ -177,10 +223,31 @@ export function startHome(log) {
       log(`home queue source=${body.source?.kind} shuffle=${body.shuffle}`);
       return json(res, 201, { id: "q1", current_pos: 0, version: 1, items: videos.slice(0, 5).map((v, i) => ({ pos: i, id: v.id, title: v.title })) });
     }
+    if (p.startsWith("/api/me/play-queues/") && p.endsWith("/current") && req.method === "PUT") {
+      log(`home queue move pos=${body.pos} version=${body.version}`);
+      return json(res, 200, { id: "q1", current_pos: body.pos, version: (body.version || 1) + 1, items: videos.slice(0, 5).map((v, i) => ({ pos: i, id: v.id, title: v.title })) });
+    }
     if (p === "/api/stream/sessions" && req.method === "POST") {
-      log(`home session video=${body.video_id} profile=${body.client_profile} start=${body.start_sec ?? 0}`);
-      if (!videos.find((x) => x.id === body.video_id)) return json(res, 404, { type: "not_found" });
-      return json(res, 201, { session_id: "s1", mode: "direct", direct_url: `/stream/s1/direct.mp4?sig=x`, expires_at: new Date(Date.now() + 36e5).toISOString() });
+      const caps = body.device_caps || {};
+      log(`home session video=${body.video_id} profile=${body.client_profile} start=${body.start_sec ?? 0} caps=${(caps.video || []).map((v) => `${v.codec}@${v.max_height}`).join(",")}/${(caps.hdr || []).join(",")}/${(caps.passthrough || []).join(",")} force=${body.force_transcode === true}`);
+      const v = videos.find((x) => x.id === body.video_id);
+      if (!v) return json(res, 404, { type: "not_found" });
+      if (v.id === REFUSED) return json(res, 503, { type: "about:blank", title: "Service Unavailable", status: 503, detail: "Every transcode slot is taken." });
+      state.sessions = (state.sessions || 0) + 1;
+      const id = `s${state.sessions}`;
+      // the first video of the queue is short: its Up next shows at once (15 s before the end)
+      const duration = v.id === videos[0].id ? 12 : v.duration_sec;
+      return json(res, 201, { session_id: id, mode: "direct", direct_url: `/stream/direct/${v.id}?sig=x`, stream_sig: `sig-${id}`, duration_sec: duration, expires_at: new Date(Date.now() + 36e5).toISOString() });
+    }
+    if (/^\/api\/stream\/sessions\/s\d+\/progress$/.test(p) && req.method === "POST") {
+      log(`home progress ${p.split("/")[4]} pos=${body.position_sec} completed=${body.completed === true}`);
+      res.writeHead(204);
+      return res.end();
+    }
+    if (/^\/api\/stream\/sessions\/s\d+$/.test(p) && req.method === "DELETE") {
+      log(`home close ${p.split("/")[4]}`);
+      res.writeHead(204);
+      return res.end();
     }
     return json(res, 404, { type: "not_found" });
   });

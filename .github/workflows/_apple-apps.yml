@@ -520,6 +520,7 @@ jobs:
                 -only-testing "Maktaba Player Mac Tests/SeriesScreenDetails"
                 -only-testing "Maktaba Player Mac Tests/PageSnapshots"
                 -only-testing "Maktaba Player Mac Tests/PlaybackUnderALimit"
+                -only-testing "Maktaba Player Mac Tests/HomeCardActions"
                 -only-testing "Maktaba Player Mac UITests")
           if [ "$SHOTS_ONLY" = true ]; then only=(-only-testing "Maktaba Player Mac UITests/PlayerMacDemoShotsUITests"); fi
           TEST_RUNNER_MAKTABA_SHOTS="$SHOTS" xcodebuild test -project Maktaba.xcodeproj -scheme "Maktaba Player Mac" \

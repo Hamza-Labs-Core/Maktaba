@@ -29,7 +29,9 @@ sub runTask()
                         StoreSaveTokens(homeId, client.session.access, client.session.refresh)
                         m.top.tokens = {id: homeId, access: client.session.access, refresh: client.session.refresh}
                     end if
-                    req.response = {status: r.status, data: r.data}
+                    resp = {status: r.status, data: r.data}
+                    if req.raw then resp.text = r.body
+                    req.response = resp
                     if client.tooOld then
                         client.tooOld = false
                         m.top.tooOld = true
