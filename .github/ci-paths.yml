@@ -786,6 +786,8 @@ android_apps:
   - 'shared/api/problems.json'
   # the compatibility vectors the client's CompatTest runs (58.01)
   - 'shared/compat/**'
+  # the playback vectors the client's DeviceCapsTest runs (58.02, 58.05)
+  - 'shared/playback/**'
   # the Cast sender's app id and load vectors (58.06)
   - 'shared/cast/**'
   - '.github/workflows/_android-apps.yml'
@@ -806,6 +808,10 @@ android_tv:
   - 'apps/android/client/**'
   - 'apps/android/gradle/libs.versions.toml'
   - '.github/workflows/_android-tv.yml'
+  # the Fire TV APK's release lane and its Appstore submission (58.05)
+  - '.github/workflows/tv-release.yml'
+  - 'tools/release/amazon_submit.py'
+  - 'tools/ci/firetv-journey.sh'
   # the wrapper's jar check and distribution fetch (tools/ci/gradle-wrapper.sh), through fetch-pinned.sh
   - 'tools/ci/gradle-wrapper.sh'
   - 'tools/release/fetch-pinned.sh'
