@@ -198,6 +198,16 @@ public final class StreamProxy: @unchecked Sendable {
     /// How many URL sessions wait for the next request (never more than a few).
     var idleSessions: Int { sessions.idleCount }
 
+    /// Where each request being served stands (a failed test says it).
+    var servingStates: [String] {
+        let (peers, bodies) = lock.withLock { (open.values.map(\.peer), asking.compactMap { $0.body }) }
+        return peers.map(\.state) + bodies.map { "home: " + $0.state }
+    }
+
+    /// The requests to the home under way (weakly: only for `servingStates`).
+    private var asking: [Asking] = []
+    private struct Asking { weak var body: UpstreamBody? }
+
     /// How many connections were accepted since the proxy started.
     var acceptedCount: Int { lock.withLock { accepted } }
 
@@ -386,6 +396,10 @@ public final class StreamProxy: @unchecked Sendable {
             // set out of the way, and `UpstreamBody` times the home's silence itself
             r.timeoutInterval = UpstreamSessions.never
             let body = UpstreamBody(r, session: own, silence: homePatience) { [sessions] in sessions.give(own) }
+            lock.withLock {
+                asking.removeAll { $0.body == nil }
+                asking.append(Asking(body: body))
+            }
             let http: HTTPURLResponse?
             do {
                 http = try await body.response()
@@ -455,6 +469,11 @@ final class Peer: @unchecked Sendable {
     /// The player closed its side and nothing of an answer has gone to it yet: nobody may be
     /// waiting for this request any more (or a client that half-closes waits on a slow home).
     var abandoned: Bool { lock.withLock { readEnded && !wrote && !gone } }
+
+    /// Where the request stands, in a few words.
+    var state: String {
+        lock.withLock { "head \(headRead ? "read" : "awaited"), \(wrote ? "answering" : "nothing written")\(writer != nil ? ", a write waits" : "")\(readEnded ? ", read ended" : "")\(gone ? ", gone" : "")" }
+    }
     private let headPatience: Duration
 
     init(_ conn: NWConnection, queue: DispatchQueue, headPatience: Duration) {
@@ -737,6 +756,14 @@ final class UpstreamBody: NSObject, URLSessionDataDelegate, @unchecked Sendable 
         lock.lock()
         defer { lock.unlock() }
         return f()
+    }
+
+    /// Where the request stands, in a few words.
+    var state: String {
+        locked {
+            "\(head == nil ? "head awaited" : "head came"), kept \(kept.count)\(held ? ", callback held" : "")\(bodyWaiter != nil ? ", asked for more" : "")"
+                + "\(ended != nil ? ", ended" : "")\(cancelled ? ", cancelled" : ""), heard \(ContinuousClock.now - heard) ago, task \(task?.state.rawValue ?? -1)"
+        }
     }
 
     /// The most bytes that were ever kept at once, and the biggest single delivery.

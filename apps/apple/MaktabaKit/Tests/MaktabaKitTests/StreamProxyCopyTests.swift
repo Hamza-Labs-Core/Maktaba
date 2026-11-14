@@ -1,5 +1,6 @@
 import Foundation
 import Network
+import os
 import Testing
 @testable import MaktabaKit
 
@@ -218,74 +219,110 @@ final class LoopbackHome: @unchecked Sendable {
     }
 }
 
-/// A player's connection by hand: it can stop reading, or go away, when a test says.
+/// A player's connection by hand: it can stop reading, close its sending side, or go away,
+/// when a test says. A plain socket, not a Network.framework connection: on a Mac where many
+/// loopback connections come and go (this suite beside others, a home running on the same
+/// machine) an `NWConnection` client at times cannot start ("address already in use", for as
+/// long as it is tried again) while a socket's `connect` to the same listener succeeds
+/// (measured: listeners made one after another beside eight loops of short connections).
 final class RawPlayer: @unchecked Sendable {
-    private let conn: NWConnection
-    private let queue = DispatchQueue(label: "test.raw-player")
+    /// What the proxy and the home under test look like (set by the test's setup), for the
+    /// line a player prints when it gave up waiting.
+    static let about = OSAllocatedUnfairLock<(@Sendable () -> String)?>(initialState: nil)
+
     private let lock = NSLock()
+    private var fd: Int32
     private var states: [String] = []
-    /// The connection's states so far (a failed test says them).
+    private let reading = DispatchQueue(label: "test.raw-player")
+    /// What happened to the connection so far (a failed test says it).
     var history: String { lock.withLock { states.joined(separator: ">") } }
 
     init(port: UInt16) {
-        conn = NWConnection(host: "127.0.0.1", port: NWEndpoint.Port(rawValue: port)!, using: .tcp)
-        conn.stateUpdateHandler = { [weak self] s in
-            guard let self else { return }
-            let tries = self.lock.withLock { () -> Int in
-                self.states.append("\(s)")
-                return self.states.count
-            }
-            // a connection that could not start (seen on a busy Mac: the local port it chose
-            // was taken, "address already in use", and it then waits for the network to
-            // change, which never comes on the loopback) is started again
-            if case .waiting = s, tries < 40 {
-                self.queue.asyncAfter(deadline: .now() + 0.05) { self.conn.restart() }
-            }
-        }
-        conn.start(queue: queue)
+        fd = socket(AF_INET, SOCK_STREAM, 0)
+        var on: Int32 = 1
+        setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &on, socklen_t(MemoryLayout<Int32>.size))
+        var a = sockaddr_in()
+        a.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+        a.sin_family = sa_family_t(AF_INET)
+        a.sin_port = port.bigEndian
+        a.sin_addr.s_addr = inet_addr("127.0.0.1")
+        let r = withUnsafePointer(to: &a) { $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) } }
+        states.append(r == 0 ? "connected" : "connect failed (\(errno))")
     }
+
+    deinit { close() }
 
     func ask(_ target: String, method: String = "GET") {
-        conn.send(content: Data("\(method) \(target) HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n".utf8), completion: .idempotent)
-    }
-
-    /// Reads up to `count` bytes (fewer when the other side closed first).
-    func read(_ count: Int) async -> Data {
-        var got = Data()
-        while got.count < count {
-            let more: Data? = await withCheckedContinuation { done in
-                conn.receive(minimumIncompleteLength: 1, maximumLength: count - got.count) { data, _, _, error in
-                    done.resume(returning: error == nil ? data : nil)
-                }
-            }
-            guard let more, !more.isEmpty else { break }
-            got += more
-        }
-        return got
+        let bytes = Array("\(method) \(target) HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n".utf8)
+        let sent = lock.withLock { fd >= 0 ? send(fd, bytes, bytes.count, 0) : -1 }
+        if sent != bytes.count { lock.withLock { states.append("request not sent (\(errno))") } }
     }
 
     /// Closes this side only (a FIN after the request): the answer is still read.
     func finishSending() {
-        conn.send(content: nil, contentContext: .finalMessage, isComplete: true, completion: .idempotent)
+        lock.withLock { if fd >= 0 { shutdown(fd, SHUT_WR) } }
     }
 
-    /// Reads to the end of the connection: what came, and whether it ended in an error
-    /// (a reset) and not an orderly close.
-    func readToEnd() async -> (data: Data, failed: Bool) {
-        var got = Data()
-        while true {
-            let (more, complete, failed): (Data?, Bool, Bool) = await withCheckedContinuation { done in
-                conn.receive(minimumIncompleteLength: 1, maximumLength: 1 << 20) { data, _, complete, error in
-                    done.resume(returning: (data, complete, error != nil))
-                }
+    /// One read of up to `count` bytes, waiting at most `seconds`: the bytes (empty at the
+    /// end of the connection), nil on an error, a reset or when the wait ran out.
+    private func take(_ count: Int, within seconds: Double) -> Data? {
+        let fd = lock.withLock { self.fd }
+        guard fd >= 0 else { return nil }
+        var limit = timeval(tv_sec: Int(seconds), tv_usec: Int32((seconds - Double(Int(seconds))) * 1_000_000))
+        setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &limit, socklen_t(MemoryLayout<timeval>.size))
+        var buf = [UInt8](repeating: 0, count: count)
+        let n = recv(fd, &buf, count, 0)
+        if n < 0 {
+            let why = errno
+            lock.withLock { states.append(why == EAGAIN ? "gave up waiting" : "read failed (\(why))") }
+            if why == EAGAIN {
+                // what everything looked like, in the test's log (a recurrence says where it waited)
+                print("GAVE UP WAITING: player \(history); \(RawPlayer.about.withLock { $0?() ?? "-" })")
             }
-            if let more { got += more }
-            if failed { return (got, true) }
-            if complete || more?.isEmpty != false { return (got, false) }
+            return nil
+        }
+        return Data(buf[0..<n])
+    }
+
+    /// Reads up to `count` bytes (fewer when the other side closed first, or nothing came
+    /// for `seconds`: never for ever).
+    func read(_ count: Int, within seconds: Double = 30) async -> Data {
+        await withCheckedContinuation { done in
+            reading.async {
+                var got = Data()
+                while got.count < count {
+                    guard let more = self.take(count - got.count, within: seconds), !more.isEmpty else { break }
+                    got += more
+                }
+                done.resume(returning: got)
+            }
         }
     }
 
-    func close() { conn.cancel() }
+    /// Reads to the end of the connection: what came, and whether it ended in an error (a
+    /// reset, or nothing for `seconds`) and not an orderly close.
+    func readToEnd(within seconds: Double = 30) async -> (data: Data, failed: Bool) {
+        await withCheckedContinuation { done in
+            reading.async {
+                var got = Data()
+                while true {
+                    guard let more = self.take(1 << 20, within: seconds) else { done.resume(returning: (got, true)); return }
+                    if more.isEmpty { done.resume(returning: (got, false)); return }
+                    got += more
+                }
+            }
+        }
+    }
+
+    /// Lets the connection go (with unread bytes waiting, that is a reset for the other side).
+    func close() {
+        lock.withLock {
+            guard fd >= 0 else { return }
+            Darwin.close(fd)
+            fd = -1
+            states.append("closed")
+        }
+    }
 }
 
 /// Splits a raw HTTP/1.1 response into its head and what follows.
@@ -345,8 +382,14 @@ func eventually(_ seconds: Double = 5, _ ok: @Sendable () -> Bool) async -> Bool
         // the session's own timer, short in a test that proves it is not what times a pause
         if let requestTimeout { config.timeoutIntervalForRequest = requestTimeout }
         let session = URLSession(configuration: config, delegate: PinnedTrust.shared, delegateQueue: nil)
-        return try StreamProxy(client: APIClient(home: home.url, tokens: tokens, session: session), session: session,
-                               reach: reach, headPatience: headPatience, homePatience: homePatience, sleep: sleep)
+        let proxy = try StreamProxy(client: APIClient(home: home.url, tokens: tokens, session: session), session: session,
+                                    reach: reach, headPatience: headPatience, homePatience: homePatience, sleep: sleep)
+        RawPlayer.about.withLock {
+            $0 = { [weak proxy, weak home] in
+                "proxy accepted \(proxy?.acceptedCount ?? -1), serving \(proxy?.servingStates ?? []); home saw \(home?.seen.count ?? -1), wrote \(home?.bytesWritten ?? -1), answered \(home?.answered ?? -1), abandoned \(home?.abandoned ?? -1)"
+            }
+        }
+        return proxy
     }
 
     /// The most connections the proxy's session opens to the home at once.
@@ -552,9 +595,9 @@ func eventually(_ seconds: Double = 5, _ ok: @Sendable () -> Bool) async -> Bool
             defer { player.close() }
             player.ask(Self.target(proxy, "/stream/abc/\(path)"))
             let began = ContinuousClock.now
-            let all = await player.readToEnd()
+            let all = await player.readToEnd(within: 20)
             let (head, body) = split(all.data)
-            #expect(head.hasPrefix("HTTP/1.1 200"))
+            #expect(head.hasPrefix("HTTP/1.1 200"), "\(path): \(all.data.count) bytes came; player \(player.history); proxy accepted \(proxy.acceptedCount), serving \(proxy.servingStates); home saw \(home.seen.count), wrote \(home.bytesWritten)")
             #expect(ContinuousClock.now - began < .seconds(5), "\(path): given up in the proxy's time, not the session's minute")
             if path == "known.ts" {
                 #expect(body.count < 8 << 20, "\(path): short of its length (\(body.count))")
