@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- The channel's scene (Epic 58 story 58.12): the screen stack, signing in and out, the
+     language, deep links, Back out of the channel with one confirmation. -->
+<component name="MainScene" extends="Scene">
+  <interface>
+    <field id="launchArgs" type="assocarray" onChange="onLaunchArgs" />
+    <field id="inputArgs" type="assocarray" onChange="onInputArgs" />
+    <field id="exitChannel" type="boolean" value="false" />
+  </interface>
+  <script type="text/brightscript" uri="MainScene.brs" />
+  <script type="text/brightscript" uri="common.brs" />
+  <script type="text/brightscript" uri="pkg:/source/config.brs" />
+  <script type="text/brightscript" uri="pkg:/source/net.brs" />
+  <script type="text/brightscript" uri="pkg:/source/store.brs" />
+  <script type="text/brightscript" uri="pkg:/source/deeplink.brs" />
+  <script type="text/brightscript" uri="pkg:/source/compat.brs" />
+  <script type="text/brightscript" uri="pkg:/source/i18n.brs" />
+  <script type="text/brightscript" uri="pkg:/source/layout.brs" />
+  <script type="text/brightscript" uri="pkg:/source/visualtext.brs" />
+  <script type="text/brightscript" uri="pkg:/source/visualtext_tables.brs" />
+  <children>
+    <Rectangle id="bg" width="1920" height="1080" color="0x0B111CFF" />
+    <Group id="stack" />
+    <Label id="busy" translation="[0,500]" width="1920" horizAlign="center" visible="false" />
+    <ConfirmDialog id="confirm" visible="false" />
+  </children>
+</component>

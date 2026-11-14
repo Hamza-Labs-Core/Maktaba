@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- One question with two answers: Leave Maktaba? (Back on the first screen). -->
+<component name="ConfirmDialog" extends="Group">
+  <interface>
+    <field id="message" type="string" onChange="onMessage" />
+    <field id="choice" type="string" alwaysNotify="true" />
+  </interface>
+  <script type="text/brightscript" uri="ConfirmDialog.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common.brs" />
+  <script type="text/brightscript" uri="pkg:/source/i18n.brs" />
+  <script type="text/brightscript" uri="pkg:/source/layout.brs" />
+  <script type="text/brightscript" uri="pkg:/source/net.brs" />
+  <script type="text/brightscript" uri="pkg:/source/visualtext.brs" />
+  <script type="text/brightscript" uri="pkg:/source/visualtext_tables.brs" />
+  <children>
+    <Rectangle width="1920" height="1080" color="0x000000B0" />
+    <Rectangle translation="[560,340]" width="800" height="400" color="0x131D2EFF" />
+    <Rectangle translation="[560,340]" width="800" height="4" color="0xE3B252FF" />
+    <Label id="msg" translation="[600,400]" width="720" height="120" wrap="true" />
+    <TvButton id="stay" translation="[600,600]" width="340" />
+    <TvButton id="leave" translation="[980,600]" width="340" />
+  </children>
+</component>

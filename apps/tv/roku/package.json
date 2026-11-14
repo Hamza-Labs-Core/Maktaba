@@ -10,6 +10,10 @@
     "test": "node --test tests/*.test.mjs"
   },
   "devDependencies": {
-    "brs-node": "2.6.2"
+    "@rokucommunity/bslint": "0.8.47",
+    "brighterscript": "0.73.8",
+    "brs-node": "2.6.2",
+    "canvas": "4.0.0-rc3",
+    "roku-deploy": "3.18.4"
   }
 }

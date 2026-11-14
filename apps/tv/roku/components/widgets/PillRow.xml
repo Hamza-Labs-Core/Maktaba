@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- A row of pills, laid out in reading order (mirrored in Arabic): the library's tab bar, a
+     series' season pills, the Home screen's menu. Left and Right move in reading order. -->
+<component name="PillRow" extends="Group">
+  <interface>
+    <field id="items" type="array" onChange="onItems" />
+    <field id="selected" type="integer" value="0" onChange="onSelected" alwaysNotify="true" />
+    <field id="focused" type="boolean" value="false" onChange="onSelected" />
+    <field id="pillWidth" type="integer" value="280" />
+    <field id="rowWidth" type="integer" value="1680" />
+    <field id="activated" type="integer" alwaysNotify="true" />
+  </interface>
+  <script type="text/brightscript" uri="PillRow.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common.brs" />
+  <script type="text/brightscript" uri="pkg:/source/i18n.brs" />
+  <script type="text/brightscript" uri="pkg:/source/layout.brs" />
+  <script type="text/brightscript" uri="pkg:/source/nav.brs" />
+  <script type="text/brightscript" uri="pkg:/source/net.brs" />
+  <script type="text/brightscript" uri="pkg:/source/visualtext.brs" />
+  <script type="text/brightscript" uri="pkg:/source/visualtext_tables.brs" />
+  <children>
+    <Group id="pills" />
+  </children>
+</component>
