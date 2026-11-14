@@ -29,8 +29,9 @@ registration, the test devices, its release and the LAN spike.
    `https://cast.maktaba.tv/r/`. Leave Guest Mode off.
 3. The console shows the **application ID** (8 characters). It is public: it goes in
    `shared/cast/app.json` (story 58.06), which every sender reads.
-4. Leave the application **unpublished** until the checklist below has passed on the test devices,
-   then **Publish**. It never needs republishing: the registered URL never changes, and new
+4. Leave the application **unpublished** until the checklist below has passed on the test devices
+   (`tools/release/tv_checklist_guard.py --platform cast --version <X.Y.Z>` prints the passing
+   line, or stops with the reason when the version has none), then **Publish**. It never needs republishing: the registered URL never changes, and new
    receiver builds deploy behind it.
 
 ## Test devices (unpublished builds)

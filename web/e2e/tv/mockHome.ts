@@ -169,10 +169,21 @@ export interface MockHome {
   calls: string[];
 }
 
-export async function mockHome(page: Page, opts: { signedIn?: boolean } = {}): Promise<MockHome> {
+export interface MockOptions {
+  signedIn?: boolean;
+  /** titles sent in place of the test data's (old title → new), e.g. an Arabic title (58.15) */
+  rename?: Record<string, string>;
+}
+
+export async function mockHome(page: Page, opts: MockOptions = {}): Promise<MockHome> {
   const home: MockHome = { unknown: [], calls: [] };
+  const renamed = (text: string) =>
+    Object.entries(opts.rename ?? {}).reduce(
+      (out, [from, to]) => out.replaceAll(JSON.stringify(from), JSON.stringify(to)),
+      text
+    );
   const json = (route: Route, status: number, body: unknown) =>
-    route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
+    route.fulfill({ status, contentType: "application/json", body: renamed(JSON.stringify(body)) });
   await page.route("**/api/**", (route) => {
     const req = route.request();
     const url = new URL(req.url());

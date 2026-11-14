@@ -21,7 +21,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadTokens, nativeFiles, resolvedThemes, SITE_CSS_PATH } from "./build-tokens.mjs";
 import { contrastPairs, contrastProblems, parity } from "./checks.mjs";
-import { KOTLIN_PATH, SWIFT_PATH } from "./native.mjs";
+import { KOTLIN_PATH, ROKU_PATH, SWIFT_PATH } from "./native.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const builder = join(here, "build-tokens.mjs");
@@ -177,7 +177,7 @@ try {
   if (runBuilder(["--check", "--out-root", scratch]).status !== 0) {
     fail("self-test: --check rejected an up-to-date copy of the native files");
   }
-  for (const rel of [SWIFT_PATH, KOTLIN_PATH, SITE_CSS_PATH]) {
+  for (const rel of [SWIFT_PATH, KOTLIN_PATH, ROKU_PATH, SITE_CSS_PATH]) {
     const path = join(scratch, rel);
     const good = await readFile(path, "utf8");
     await writeFile(path, good.replace("E3B252", "E3B253"), "utf8");

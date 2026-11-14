@@ -117,6 +117,7 @@ _tokens: &tokens
   - 'web/public/icons/icon-192.png'
   - 'apps/apple/MaktabaKit/Sources/MaktabaKit/Tokens.swift'
   - 'apps/android/core/src/main/kotlin/com/hamzalabs/maktaba/core/ui/Tokens.kt'
+  - 'apps/tv/roku/components/theme.brs'
 
 # node-packaging: the release's node assets (the wheel from the pipeline, the installers,
 # the release tooling that writes release.json)
@@ -149,12 +150,16 @@ _tv_web: &tv_web
   - 'web/vite.config.ts'
   - '.github/actions/tv-logs/**'
   - 'tools/i18n/check_tv_catalogs.py'
+  # story 58.15: the reading-order check against Roku's shaping vectors
+  - 'shared/i18n/**'
 
 # the Cast receiver (story 58.07)
 _cast_receiver: &cast_receiver
   - 'web/packages/castreceiver/**'
   - '.github/actions/tv-logs/**'
   - 'tools/i18n/check_tv_catalogs.py'
+  # story 58.15: the reading-order check against Roku's shaping vectors
+  - 'shared/i18n/**'
 
 # the Roku channel (stories 58.12, 58.13) and the shaping vectors its device code is checked
 # against (story 58.15)
