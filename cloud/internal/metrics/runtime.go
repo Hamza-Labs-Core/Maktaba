@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io"
 	"runtime/metrics"
-	"strings"
 )
 
 // liveHeap is the Go runtime's live heap: the bytes of heap objects the last garbage
@@ -31,16 +30,5 @@ func LiveHeapBytes() uint64 {
 func WriteGoHeap(w io.Writer) error {
 	_, err := fmt.Fprintf(w, "# HELP %s Heap bytes the last garbage collection found live.\n# TYPE %s gauge\n%s %d\n",
 		LiveHeapSeries, LiveHeapSeries, LiveHeapSeries, LiveHeapBytes())
-	if err != nil {
-		return err
-	}
-	// TEMP diagnostic (reverted before merge)
-	d := []metrics.Sample{{Name: "/gc/cycles/total:gc-cycles"}, {Name: "/gc/heap/goal:bytes"}, {Name: "/memory/classes/heap/objects:bytes"}, {Name: "/sched/goroutines:goroutines"}, {Name: "/gc/cycles/forced:gc-cycles"}}
-	metrics.Read(d)
-	for _, x := range d {
-		if x.Value.Kind() == metrics.KindUint64 {
-			_, _ = fmt.Fprintf(w, "diag%s %d\n", strings.NewReplacer("/", "_", ":", "_", "-", "_").Replace(x.Name), x.Value.Uint64())
-		}
-	}
-	return nil
+	return err
 }
