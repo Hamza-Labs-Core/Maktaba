@@ -853,6 +853,15 @@ roku:
   - 'apps/apple/MaktabaKit/Sources/MaktabaKit/Resources/Fonts/OFL-IBMPlexSansArabic.txt'
   - 'apps/apple/MaktabaKit/Sources/MaktabaKit/Resources/Art/maktaba-logo.png'
 
+# Maktaba's Cast receiver at cast.maktaba.tv (Epic 58 story 58.07): its package (the receiver,
+# the loader, the Worker, the tests) and its checks (_cast-receiver.yml); the release workflow
+# builds and tests the same package
+cast_receiver:
+  - *ci
+  - *cast_receiver
+  - '.github/workflows/_cast-receiver.yml'
+  - '.github/workflows/cast-receiver-release.yml'
+
 # The desktop Player for Windows and Linux (Epic 42.4): its project, the portable client
 # and the fonts it shares with the Android apps, the catalog.
 desktop_player:
