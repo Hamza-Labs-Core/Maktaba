@@ -111,7 +111,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 	// an API token outlives a cloud link (Epic 42 story 42.7): only a
 	// sign-in on the home makes one
-	if p.ViaCloud() {
+	if p.MintsNoCredential() {
 		httperror.Write(w, r, httperror.Forbidden(httperror.TypeCloudSession,
 			"a sign-in through Maktaba Cloud cannot make an API token; sign in on the home"))
 		return

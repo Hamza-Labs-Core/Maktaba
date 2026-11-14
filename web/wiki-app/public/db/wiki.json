@@ -13,7 +13,7 @@
   ],
   "counts": {
     "diagram": 14,
-    "endpoint": 254,
+    "endpoint": 258,
     "entity": 42,
     "epic": 60,
     "feature": 3,
@@ -11127,6 +11127,50 @@
       }
     },
     {
+      "id": "ep-get-me-app-sign-ins",
+      "type": "endpoint",
+      "title": "GET /me/app-sign-ins",
+      "content": "List the apps signed in by code",
+      "tags": [
+        "api",
+        "Auth",
+        "get"
+      ],
+      "related": [
+        "story-58.3"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/me/app-sign-ins",
+        "tag": "Auth",
+        "operationId": "listAppSignIns"
+      }
+    },
+    {
+      "id": "ep-delete-me-app-sign-ins-id",
+      "type": "endpoint",
+      "title": "DELETE /me/app-sign-ins/{id}",
+      "content": "Sign an app out",
+      "tags": [
+        "api",
+        "Auth",
+        "delete"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "DELETE",
+        "path": "/me/app-sign-ins/{id}",
+        "tag": "Auth",
+        "operationId": "deleteAppSignIn"
+      }
+    },
+    {
       "id": "ep-get-parental-settings",
       "type": "endpoint",
       "title": "GET /parental/settings",
@@ -11331,6 +11375,53 @@
         "path": "/pairing/approve",
         "tag": "Devices",
         "operationId": "approvePairingCode"
+      }
+    },
+    {
+      "id": "ep-get-pairing-cloud-code-code",
+      "type": "endpoint",
+      "title": "GET /pairing/cloud-code/{code}",
+      "content": "Read a TV's code from Maktaba Cloud",
+      "tags": [
+        "api",
+        "Devices",
+        "get"
+      ],
+      "related": [
+        "story-58.3"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/pairing/cloud-code/{code}",
+        "tag": "Devices",
+        "operationId": "getCloudTvCode"
+      }
+    },
+    {
+      "id": "ep-post-pairing-cloud-approve",
+      "type": "endpoint",
+      "title": "POST /pairing/cloud-approve",
+      "content": "Approve a TV's code from Maktaba Cloud",
+      "tags": [
+        "api",
+        "Devices",
+        "post"
+      ],
+      "related": [
+        "story-58.3",
+        "story-58.17"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/pairing/cloud-approve",
+        "tag": "Devices",
+        "operationId": "approveCloudTvCode"
       }
     },
     {

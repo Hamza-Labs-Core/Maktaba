@@ -52,6 +52,10 @@ type Claims struct {
 	// token it was minted beside (Epic 57 story 57.04). Empty for a token
 	// with no refresh token.
 	Fam string `json:"fam,omitempty"`
+	// Rst marks a restricted sign-in: a TV signed in with a code from Maktaba Cloud (Epic 58
+	// story 58.03). Such a code can be read out to anyone anywhere, so the sign-in never acts
+	// as an admin and mints no credential of its own (an API token, another device).
+	Rst bool `json:"rst,omitempty"`
 	// Ac is the age-tier limit the sign-in's device gave (-1 nothing, 0, 9,
 	// 13, 16, 18); absent when the device gave none. The home holds the
 	// request to it as well as to the account's policy.

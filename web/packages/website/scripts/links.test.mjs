@@ -316,6 +316,7 @@ test("the baseline only shrinks: a listed dead link passes, a new one fails, a l
 test("the baseline's stories", () => {
   assert.equal(storyFor("/problems/seat-limit"), "60.06");
   assert.equal(storyFor("/ar/install/nas/"), "60.05");
+  assert.equal(storyFor("/tv"), "58.03");
   assert.equal(storyFor("/"), "60.03");
   assert.equal(storyFor("/docs"), "60.03");
   assert.equal(storyFor("/schema/log-line.json"), "60.03");
