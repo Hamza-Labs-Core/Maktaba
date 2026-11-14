@@ -111,8 +111,9 @@ jobs:
       - name: Fire TV build refuses Google Play code
         run: |
           set -uo pipefail
-          out="$(./gradlew --no-daemon --quiet :app:checkAmazonDependencies -Pmaktaba.gmsFixture 2>&1)"
-          status=$?
+          # the step's shell runs with -e: a failing assignment would end it before the checks
+          status=0
+          out="$(./gradlew --no-daemon --quiet :app:checkAmazonDependencies -Pmaktaba.gmsFixture 2>&1)" || status=$?
           echo "$out" | tail -20
           if [ "$status" -eq 0 ]; then
             echo "::error::checkAmazonDependencies passed with play-services-base in the Fire TV build"
