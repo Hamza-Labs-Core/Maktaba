@@ -10,12 +10,13 @@
 //   - a player error reopens the stream once as a transcode (force_transcode);
 //   - Back on Home, after the confirm, leaves through webOS.platformBack.
 //
-// Playwright's Chromium decodes no H.264, so the file never plays here and its error is what
-// the transcode retry runs on; the TV's real media pipeline is the device checklist's
+// The first stream is a file the browser cannot open, so its error runs the transcode retry;
+// the second is a VP9 still that Playwright's Chromium plays. The TV's real media pipeline
+// (HEVC, HDR, native HLS) is the device checklist's
 // (docs/stores/lg.md, T05). Screenshots dark, English and Arabic; the launcher's log, the
 // console, network and the home's calls are kept in the report.
 import { expect, test, type Page, type Route, type TestInfo } from "@playwright/test";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { mockHome, type MockHome } from "../tv/mockHome";
@@ -27,6 +28,8 @@ const TV_UI = "http://localhost:5177";
 const TOKEN = "tv-access-webos";
 const UA =
   "Mozilla/5.0 (Web0S; Linux/SmartTV) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.270 Safari/537.36 WebAppManager";
+// a 30-second still (VP9, which Playwright's Chromium decodes) for the stream after the retry
+const LESSON = readFileSync(path.resolve(process.cwd(), "e2e/launcher/fixtures/lesson.webm"));
 const VTT_AR = "WEBVTT\n\n00:00:00.000 --> 00:10:00.000\nبسم الله نبدأ الدرس\n";
 
 /** webOS's APIs on the launcher's page, and a saved, signed-in home in each origin. */
@@ -114,8 +117,11 @@ async function home(page: Page): Promise<{ home: MockHome; trail: Trail }> {
     return json(route, 200, {
       session_id: `s${n}`,
       mode: body.force_transcode ? "transcode" : "direct",
-      direct_url: `/stream/s${n}/file.mp4?sig=sig${n}`,
-      manifest_url: `/stream/s${n}/file.mp4?sig=sig${n}`,
+      // the first: a file the TV cannot open; the transcode after it plays
+      direct_url:
+        n === 1 ? `/stream/s1/file.mp4?sig=sig1` : `/stream/s${n}/lesson.webm?sig=sig${n}`,
+      manifest_url:
+        n === 1 ? `/stream/s1/file.mp4?sig=sig1` : `/stream/s${n}/lesson.webm?sig=sig${n}`,
       expires_at: new Date(Date.now() + 3_600_000).toISOString(),
       duration_sec: 600,
       subtitles: [{ lang: "ar", label: "العربية", url: `/stream/s${n}/subs/ar.vtt` }],
@@ -130,6 +136,8 @@ async function home(page: Page): Promise<{ home: MockHome; trail: Trail }> {
         headers: { "Access-Control-Allow-Origin": "*" },
         body: VTT_AR,
       });
+    if (url.includes("/lesson.webm"))
+      return route.fulfill({ status: 200, contentType: "video/webm", body: LESSON });
     return route.fulfill({ status: 404, body: "" });
   });
   return { home: mock, trail };
@@ -221,7 +229,6 @@ for (const lang of ["en", "ar"] as const) {
         .toContain(`${HOME}/stream/s1/file.mp4?sig=sig1`);
       const tv = tvFrame(page)!;
       await expect(tv.locator("html.tv-launcher-video")).toHaveCount(1);
-      await shot(page, `webos-${lang}-watch`);
 
       // the person's error (the file cannot play here): the stream opens again as a transcode
       await expect.poll(() => trail.sessions.length, { timeout: 20_000 }).toBeGreaterThan(1);
@@ -234,7 +241,23 @@ for (const lang of ["en", "ar"] as const) {
         .poll(() =>
           page.evaluate(() => document.querySelector("video.ml-plane")?.getAttribute("src") ?? "")
         )
-        .toContain("/stream/s2/file.mp4?sig=sig2");
+        .toContain("/stream/s2/lesson.webm?sig=sig2");
+      // the transcode plays: the launcher's state moves /tv/'s clock, and no error shows
+      await expect
+        .poll(
+          () =>
+            page.evaluate(
+              () => document.querySelector<HTMLVideoElement>("video.ml-plane")?.currentTime ?? 0
+            ),
+          {
+            timeout: 15_000,
+          }
+        )
+        .toBeGreaterThan(0.5);
+      await expect
+        .poll(() => tv.evaluate(() => document.querySelector("video")?.currentTime ?? 0))
+        .toBeGreaterThan(0.5);
+      await expect(tv.locator(".mkt-player__error")).toHaveCount(0);
 
       // Subtitles → Arabic in Watch: the launcher draws the cue, right to left
       await tv.evaluate(() => {
@@ -245,7 +268,8 @@ for (const lang of ["en", "ar"] as const) {
       const cue = page.locator(".ml-subs .ml-cue");
       await expect(cue).toHaveText("بسم الله نبدأ الدرس");
       await expect(cue).toHaveAttribute("dir", "rtl");
-      await shot(page, `webos-${lang}-subtitles`);
+      await page.keyboard.press("ArrowDown"); // the controls show over the picture
+      await shot(page, `webos-${lang}-watch`);
 
       // leaving the player stops the launcher's; Leave Maktaba exits by platformBack
       await tv.evaluate(() => history.back());
