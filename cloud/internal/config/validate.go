@@ -258,6 +258,10 @@ func ValidateBroadcast(b BroadcastConfig) error {
 		}
 	}
 	if !b.Enabled {
+		// open access (story 50.26) is part of broadcasting: never on behind a shut gate
+		if b.OpenAccess {
+			return errors.New("config: broadcast.open_access.enabled needs broadcast.enabled")
+		}
 		return nil
 	}
 	if err := billing.BroadcastLaunchCheck(billing.Tiers, billing.Broadcaster); err != nil {

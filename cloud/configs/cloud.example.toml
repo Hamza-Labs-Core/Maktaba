@@ -230,6 +230,13 @@ edge_public_key = ""
 # route answers 503.
 key_path = ""
 ingest_url = "https://ingest.maktaba.tv"
+# Where viewers watch (story 50.26): invite links are <watch_url>/i/<invite>.
+watch_url = "https://watch.maktaba.tv"
+
+[broadcast.open_access]
+# Anyone-with-the-link channels (story 50.26). Off until the legal items hold (README §14.10);
+# refused with broadcast.enabled off. Off, every channel is invite only.
+enabled = false
 
 # Viewer analytics and broadcast monitoring (Epic 50 story 50.28). With an account id and a token
 # the worker role polls Workers Analytics Engine (the edge's broadcast_events) each minute and

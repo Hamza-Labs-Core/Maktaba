@@ -27,6 +27,13 @@
     <string name="signin_code_unsupported">لا يستطيع هذا الجهاز الرئيسي تسجيل دخول تلفاز برمز بعد. سجّل الدخول باسم المستخدم وكلمة المرور.</string>
     <string name="tv_label">تلفاز أندرويد</string>
 
+    <string name="cloud_code_title">سجّل الدخول برمز</string>
+    <string name="cloud_code_where">على هاتف مسجَّل الدخول إلى جهازك الرئيسي، افتح Maktaba Player أو Maktaba Remote، واضغط «%1$s» واكتب هذا الرمز، أو امسح رمز QR. لا يلزم أن يكون هذا التلفاز على شبكة جهازك الرئيسي.</string>
+    <string name="cloud_code_asking">جارٍ الحصول على رمز من Maktaba Cloud…</string>
+    <string name="cloud_code_down">رمز Maktaba Cloud غير متاح الآن. اختر جهازًا رئيسيًا على هذه الشبكة، أو أدخل عنوانه.</string>
+    <string name="cloud_code_opening">تمت الموافقة. جارٍ فتح %1$s…</string>
+    <string name="cloud_code_unreachable">تمت الموافقة، لكن لا يمكن الوصول إلى %1$s من هذا التلفاز الآن.</string>
+
     <string name="continue_watching">متابعة المشاهدة</string>
     <string name="recently_added">أُضيف حديثًا</string>
     <string name="for_you">مقترح لك</string>

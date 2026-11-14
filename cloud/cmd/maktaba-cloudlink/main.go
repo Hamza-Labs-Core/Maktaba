@@ -125,8 +125,9 @@ func adminMux(sup *cloudlink.Supervisor, rep *cloudlink.LinkReporter) http.Handl
 	mux.Handle("/admin/cloud-link/reports/replies", cloudlink.ReportsHandler(rep))
 	// direct remote access (50.15)
 	mux.Handle("/admin/cloud-link/direct", cloudlink.DirectHandler(sup.Direct))
-	// home broadcasting (50.22): the publisher state, publish, unpublish, ingest tokens
-	mux.Handle(cloudlink.BroadcastPrefix, cloudlink.BroadcastHandler(rep))
+	// home broadcasting (50.22: the publisher state, publish, unpublish, ingest tokens) and who
+	// may watch its channels (50.26: access, limits, invites) share one loopback prefix
+	mux.Handle(cloudlink.BroadcastPrefix, cloudlink.BroadcastLoopback(rep))
 	// the TV codes a person approves on the home (58.03)
 	mux.Handle("/admin/cloud-link/tv-codes/", cloudlink.TVCodesHandler(rep))
 	return mux
