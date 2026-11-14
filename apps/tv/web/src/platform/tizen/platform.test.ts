@@ -20,11 +20,11 @@ function stub(over: Record<string, unknown> = {}) {
     tizen: {
       tvinputdevice: { registerKeyBatch: (k: string[]) => registered.push(k) },
       application: { getCurrentApplication: () => ({ exit: () => exited++ }) },
+      tvaudiocontrol: { getOutputMode: () => "DOLBY" },
     },
     webapis: {
       productinfo: { getRealModel: () => "QN90B", isUdPanelSupported: () => true },
       avinfo: { isHdrTvSupport: () => true },
-      audiocontrol: { getOutputMode: () => "DOLBY" },
       ...over,
     },
   };

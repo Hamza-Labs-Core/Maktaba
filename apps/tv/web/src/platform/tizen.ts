@@ -28,9 +28,10 @@ interface TizenApi {
     registerKey?: (k: string) => void;
   };
   application?: { getCurrentApplication(): { exit(): void } };
+  tvaudiocontrol?: { getOutputMode?(): string };
 }
 
-interface WebApis extends TizenCapsApis {
+interface WebApis {
   network?: { getIp(): string };
   productinfo?: {
     getModel?(): string;
@@ -38,6 +39,7 @@ interface WebApis extends TizenCapsApis {
     isUdPanelSupported?(): boolean;
     is8KPanelSupported?(): boolean;
   };
+  avinfo?: TizenCapsApis["avinfo"];
   avplay?: Avplay;
 }
 
@@ -103,7 +105,12 @@ export function tizenPlatform(w: Window): Platform {
     keyAction: commonKeyAction,
     deviceCaps(): DeviceCaps {
       const year = yearFromEngine(chromiumMajor(w.navigator.userAgent), "tizen");
-      const caps = tizenCaps(probeTizen(w, w.webapis, year));
+      const apis: TizenCapsApis = {
+        productinfo: w.webapis?.productinfo,
+        avinfo: w.webapis?.avinfo,
+        audiocontrol: w.tizen?.tvaudiocontrol,
+      };
+      const caps = tizenCaps(probeTizen(w, apis, year));
       log(
         "launcher",
         `tizen caps: ${caps.video.map((v) => v.codec).join(",")} ${caps.hdr.join(",") || "sdr"} passthrough ${caps.passthrough.join(",") || "none"}`

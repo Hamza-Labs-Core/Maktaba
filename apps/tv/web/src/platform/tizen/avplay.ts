@@ -2,8 +2,10 @@
 // MSE stops at FHD on Samsung TVs; adaptive streaming, 4K, HDR and passthrough are AVPlay's).
 //
 //   play     open(url) · setListener · setDisplayRect (the whole screen, under the
-//            transparent iframe) · setDisplayMethod letterbox · SET_MODE_4K for a 2160p
-//            source · prepareAsync · seekTo(start) · the audio track · play. AVPlay opens
+//            transparent iframe) · setDisplayMethod letterbox · the 4K mode for a 2160p
+//            source (ADAPTIVE_INFO FIXED_MAX_RESOLUTION=3840X2160, Samsung's replacement since
+//            Tizen 5.0 for SET_MODE_4K, which is tried when it is refused), in IDLE, before
+//            prepare · prepareAsync · seekTo(start) · the audio track · play. AVPlay opens
 //            HLS (TS or fMP4) and MP4, MKV and TS files by URL; the URL is signed (`?sig=`),
 //            since AVPlay cannot set a header per segment.
 //   tracks   audio from getTotalTrackInfo, chosen with setSelectTrack('AUDIO', index)
@@ -19,7 +21,14 @@
 // the video plane lies beneath the whole web layer.
 
 import { log } from "../../log";
-import { IDLE, playableUrl, type PlayRequest, type PlayerAdapter, type PlayerState } from "../../player";
+import {
+  IDLE,
+  playableUrl,
+  type AudioTrackInfo,
+  type PlayRequest,
+  type PlayerAdapter,
+  type PlayerState,
+} from "../../player";
 import type { Cue } from "../../subtitles";
 
 /** One entry of webapis.avplay.getTotalTrackInfo(). */
@@ -105,6 +114,9 @@ export class AvplayPlayer implements PlayerAdapter {
   private sub: string | null = null;
   private subToken = 0;
   private suspended = false;
+  /** The stream's audio tracks (read once prepared) and the chosen one, by position. */
+  private audio: AvplayTrack[] = [];
+  private audioChosen = 0;
   /** Bumped by every play and stop: a late callback of an earlier play is ignored. */
   private generation = 0;
 
@@ -133,13 +145,7 @@ export class AvplayPlayer implements PlayerAdapter {
       av.setListener(this.listener(gen));
       av.setDisplayRect(0, 0, SCREEN.width, SCREEN.height);
       av.setDisplayMethod("PLAYER_DISPLAY_MODE_LETTER_BOX");
-      if (this.wants4k(req)) {
-        try {
-          av.setStreamingProperty("SET_MODE_4K", "TRUE");
-        } catch (e) {
-          log("player", `avplay: SET_MODE_4K refused: ${String(e)}`);
-        }
-      }
+      if (this.wants4k(req)) this.mode4k();
     } catch (e) {
       this.fail(gen, `open: ${errText(e)}`);
       return;
@@ -149,6 +155,8 @@ export class AvplayPlayer implements PlayerAdapter {
         () => {
           if (gen !== this.generation) return resolve();
           this.duration = msToSec(safeNum(() => av.getDuration()));
+          this.audio = this.tracks().filter((t) => t.type === "AUDIO");
+          this.audioChosen = 0;
           if (this.position > 0) av.seekTo(Math.round(this.position * 1000));
           if (typeof req.audio === "number") this.audioTrack(req.audio);
           this.applySubtitle();
@@ -203,13 +211,14 @@ export class AvplayPlayer implements PlayerAdapter {
   /** Index i among the stream's audio tracks (the UI's numbering), as AVPlay's track index. */
   audioTrack(i: number): void {
     if (!this.loaded) return;
-    const audio = this.tracks().filter((t) => t.type === "AUDIO");
+    const audio = this.audio.length ? this.audio : this.tracks().filter((t) => t.type === "AUDIO");
     const t = audio[i];
     if (!t) {
       log("player", `avplay: no audio track ${i} (of ${audio.length})`);
       return;
     }
     this.call("setSelectTrack", () => this.d.avplay.setSelectTrack("AUDIO", t.index));
+    this.audioChosen = i;
   }
 
   subtitle(id: string | null): void {
@@ -233,6 +242,7 @@ export class AvplayPlayer implements PlayerAdapter {
       buffering: this.buffering,
       ended: this.ended,
       error: this.error,
+      audio_tracks: this.audio.map((t, i) => audioInfo(t, i === this.audioChosen)),
     };
   }
 
@@ -268,6 +278,17 @@ export class AvplayPlayer implements PlayerAdapter {
         this.d.subtitles.showText(text ? String(text) : null);
       },
     };
+  }
+
+  private mode4k(): void {
+    const av = this.d.avplay;
+    try {
+      av.setStreamingProperty("ADAPTIVE_INFO", "FIXED_MAX_RESOLUTION=3840X2160");
+      return;
+    } catch (e) {
+      log("player", `avplay: ADAPTIVE_INFO refused: ${errText(e)}`);
+    }
+    this.call("SET_MODE_4K", () => av.setStreamingProperty("SET_MODE_4K", "TRUE"));
   }
 
   /** The 4K mode: a 2160p source, or an adaptive one of unknown height on a UHD panel. */
@@ -361,6 +382,26 @@ export class AvplayPlayer implements PlayerAdapter {
       log("player", `avplay ${what} failed: ${errText(e)}`);
     }
   }
+}
+
+/**
+ * An AVPlay audio track as the UI lists it. Its extra_info is JSON such as
+ * {"language":"ara","channels":"6","fourCC":"EAC3",…}; a field it lacks is left out.
+ */
+export function audioInfo(t: AvplayTrack, enabled: boolean): AudioTrackInfo {
+  const out: AudioTrackInfo = { enabled };
+  let extra: Record<string, unknown> = {};
+  try {
+    extra = t.extra_info ? (JSON.parse(t.extra_info) as Record<string, unknown>) : {};
+  } catch {
+    extra = {};
+  }
+  const lang = typeof extra.language === "string" ? extra.language.trim() : "";
+  if (lang && lang !== "und") out.lang = lang;
+  const codec = typeof extra.fourCC === "string" ? extra.fourCC.trim() : "";
+  const ch = Number(extra.channels);
+  if (codec) out.label = ch > 0 ? `${codec} ${ch}ch` : codec;
+  return out;
 }
 
 function msToSec(ms: number): number {

@@ -6,7 +6,7 @@
 //   probeTizen(w)      asks the TV: webapis.productinfo for the panel (UHD, 8K), the
 //                      decoder through MediaSource.isTypeSupported / canPlayType (AVPlay and
 //                      MSE share the TV's hardware decoder), webapis.avinfo for HDR, and
-//                      webapis.audiocontrol's output mode for what passes through to a
+//                      tizen.tvaudiocontrol's output mode for what passes through to a
 //                      soundbar or receiver;
 //   tizenCaps(answers) maps those answers to the report.
 //
@@ -91,7 +91,10 @@ export function tizenCaps(a: TizenAnswers): DeviceCaps {
   };
 }
 
-/** The Tizen web APIs the probe reads (each may be missing on an older firmware). */
+/**
+ * The TV APIs the probe reads (each may be missing on an older firmware): webapis.productinfo
+ * and webapis.avinfo, and tizen.tvaudiocontrol as `audiocontrol`.
+ */
 export interface TizenCapsApis {
   productinfo?: {
     isUdPanelSupported?(): boolean;
@@ -102,7 +105,7 @@ export interface TizenCapsApis {
 }
 
 /**
- * What the TV's audio output takes, from webapis.audiocontrol.getOutputMode(): "PCM",
+ * What the TV's audio output takes, from tizen.tvaudiocontrol.getOutputMode(): "PCM",
  * "DOLBY" (Dolby Digital: AC3), "DOLBY_DIGITAL_PLUS" (AC3 and EAC3), "DTS", "AAC". Only
  * Dolby passes through to the home's streams (DTS is converted: 58.02).
  */

@@ -1,6 +1,6 @@
 // Story 58.10 T01 — the AVPlay adapter against a fake webapis.avplay: the call sequence for
 // play, tracks, subtitles, seek, the app switcher and errors (as state.error).
-import { AvplayPlayer, type Avplay, type AvplayListener, type SubtitleSink } from "./avplay";
+import { AvplayPlayer, audioInfo, type Avplay, type AvplayListener, type SubtitleSink } from "./avplay";
 import type { Cue } from "../../subtitles";
 import { clearLog, logText } from "../../log";
 
@@ -50,8 +50,8 @@ function fakeAvplay() {
     getCurrentTime: () => 0,
     getTotalTrackInfo: () => [
       { index: 0, type: "VIDEO" },
-      { index: 1, type: "AUDIO", extra_info: '{"language":"en"}' },
-      { index: 2, type: "AUDIO", extra_info: '{"language":"ar"}' },
+      { index: 1, type: "AUDIO", extra_info: '{"language":"eng","channels":"2","fourCC":"AAC"}' },
+      { index: 2, type: "AUDIO", extra_info: '{"language":"ara","channels":"6","fourCC":"EAC3"}' },
       { index: 3, type: "TEXT", extra_info: '{"language":"ar"}' },
     ],
     setSelectTrack: (t, i) => calls.push(`setSelectTrack ${t} ${i}`),
@@ -145,6 +145,10 @@ describe("the AVPlay adapter (58.10 T01)", () => {
       buffering: false,
       ended: false,
       error: null,
+      audio_tracks: [
+        { enabled: true, lang: "eng", label: "AAC 2ch" },
+        { enabled: false, lang: "ara", label: "EAC3 6ch" },
+      ],
     });
     // the signed URL's sig never reaches the log
     expect(logText()).not.toContain("sig=abc");
@@ -155,7 +159,9 @@ describe("the AVPlay adapter (58.10 T01)", () => {
     const p = a.player.play({ url: "https://h/x.mkv?sig=1", height: 2160 });
     a.f.prepared();
     await p;
-    const i4k = a.f.calls.indexOf("setStreamingProperty SET_MODE_4K TRUE");
+    const i4k = a.f.calls.indexOf(
+      "setStreamingProperty ADAPTIVE_INFO FIXED_MAX_RESOLUTION=3840X2160"
+    );
     expect(i4k).toBeGreaterThan(0);
     expect(i4k).toBeLessThan(a.f.calls.indexOf("prepareAsync"));
 
@@ -163,15 +169,27 @@ describe("the AVPlay adapter (58.10 T01)", () => {
     const q = b.player.play({ url: "https://h/x.mkv?sig=1", height: 1080 });
     b.f.prepared();
     await q;
-    expect(b.f.calls.join("\n")).not.toContain("SET_MODE_4K");
+    expect(b.f.calls.join("\n")).not.toContain("3840X2160");
 
     // an adaptive source of unknown height on a UHD panel gets it; a file does not
     const c = setup({ uhd: true });
     void c.player.play({ url: "https://h/master.m3u8?sig=1" });
-    expect(c.f.calls).toContain("setStreamingProperty SET_MODE_4K TRUE");
+    expect(c.f.calls).toContain(
+      "setStreamingProperty ADAPTIVE_INFO FIXED_MAX_RESOLUTION=3840X2160"
+    );
     const d = setup({ uhd: true });
     void d.player.play({ url: "https://h/movie.mp4?sig=1" });
-    expect(d.f.calls.join("\n")).not.toContain("SET_MODE_4K");
+    expect(d.f.calls.join("\n")).not.toContain("3840X2160");
+
+    // a firmware that refuses ADAPTIVE_INFO gets the older SET_MODE_4K
+    const e = setup();
+    const set = e.f.av.setStreamingProperty;
+    e.f.av.setStreamingProperty = (n, v) => {
+      if (n === "ADAPTIVE_INFO") throw { name: "NotSupportedError", message: "no" };
+      set(n, v);
+    };
+    void e.player.play({ url: "https://h/x.mkv?sig=1", height: 2160 });
+    expect(e.f.calls).toContain("setStreamingProperty SET_MODE_4K TRUE");
   });
 
   it("picks the UI's audio track i among the stream's audio tracks", async () => {
@@ -180,6 +198,7 @@ describe("the AVPlay adapter (58.10 T01)", () => {
     t.f.prepared();
     await p;
     expect(t.f.calls).toContain("setSelectTrack AUDIO 2");
+    expect(t.player.state().audio_tracks!.map((a) => a.enabled)).toEqual([false, true]);
     t.player.audioTrack(0);
     expect(t.f.calls[t.f.calls.length - 1]).toBe("setSelectTrack AUDIO 1");
     const n = t.f.calls.length;
@@ -340,6 +359,18 @@ describe("the AVPlay adapter (58.10 T01)", () => {
     document.dispatchEvent(new Event("visibilitychange"));
     hidden.mockRestore();
     expect(t.f.calls.slice(-2)).toEqual(["suspend", "restore"]);
+  });
+
+  it("lists a track's language and codec, leaving out what AVPlay does not say", () => {
+    expect(audioInfo({ index: 1, type: "AUDIO", extra_info: '{"language":"und"}' }, false)).toEqual({
+      enabled: false,
+    });
+    expect(audioInfo({ index: 1, type: "AUDIO", extra_info: "not json" }, true)).toEqual({
+      enabled: true,
+    });
+    expect(
+      audioInfo({ index: 1, type: "AUDIO", extra_info: '{"fourCC":"AC3"}' }, true)
+    ).toEqual({ enabled: true, label: "AC3" });
   });
 
   it("refuses anything but http(s) media", async () => {
