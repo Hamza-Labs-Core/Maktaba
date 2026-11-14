@@ -325,6 +325,32 @@ describe("the built site (dist/)", () => {
     );
   });
 
+  it("58.03: /tv in both languages forwards a TV's code to Maktaba Cloud, and links it without JavaScript", () => {
+    const scripts = new Set<string>();
+    for (const [f, lang] of [
+      ["tv/index.html", "en"],
+      ["ar/tv/index.html", "ar"],
+    ]) {
+      const html = read(f);
+      expect(html, f).toContain(`<html lang="${lang}"`);
+      if (lang === "ar") expect(html, f).toContain('dir="rtl"');
+      expect(html, f).toMatch(/class="wordmark wm-32"/);
+      // the no-script way: Maktaba Cloud's page, where the person types the code
+      expect(html, f).toContain('href="https://app.maktaba.tv/tv"');
+      // the forward is a script of the site's own (the CSP allows no inline code), in the head
+      const head = html.slice(0, html.indexOf("</head>"));
+      const m = head.match(/<script src="(\/assets\/tv-[A-Za-z0-9_-]{10}\.js)"><\/script>/);
+      expect(m, f).not.toBeNull();
+      scripts.add(m![1]);
+      expect(html, f).not.toMatch(/<script>(?!<\/script>)/);
+    }
+    expect(scripts.size).toBe(1);
+    const js = read([...scripts][0].slice(1));
+    expect(js).not.toMatch(/^\s*(import|export)\b/m);
+    expect(js).toContain("https://app.maktaba.tv/tv");
+    expect(js).toContain("location.replace(to)");
+  });
+
   it("60.05 T07: no guide shows a screenshot still to come", () => {
     for (const g of ["truenas", "unraid", "qnap", "ugreen"])
       for (const f of [`install/${g}/index.html`, `ar/install/${g}/index.html`]) {
