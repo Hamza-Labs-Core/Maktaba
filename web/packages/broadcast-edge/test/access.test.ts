@@ -731,6 +731,10 @@ describe("T07 routes", () => {
 });
 
 describe("T08 1,000 sessions", () => {
+  // 12,000 requests to one publisher's objects (1,000 redeems, 1,000 plays, 10,000 beats):
+  // 61 s on #1266's runner (run 43642720432) and past 120 s on a slower one (#1279's run
+  // 43580824223, where fanout.test.ts, unchanged, also ran 1.75 times longer). The counts are
+  // what this test checks, not the speed, so it gets room for a slow runner (the timeout below).
   it("heartbeats for 10 minutes: exact counts; viewer-minutes = beats", async () => {
     const s = await setup();
     await plan(s.pub, { max_viewers: 1000 });
@@ -773,7 +777,7 @@ describe("T08 1,000 sessions", () => {
     const minutes = usage.reduce((n, w) => n + w.minutes_full + w.minutes_lowest, 0);
     expect(beats).toBe(10_000);
     expect(minutes).toBe(beats);
-  });
+  }, 300_000);
 });
 
 describe("T09 strings", () => {
