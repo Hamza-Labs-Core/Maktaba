@@ -12,7 +12,8 @@
 // UPDATE_SCREENS=1 rewrites the references.
 
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -36,11 +37,18 @@ let home;
 let cloud;
 let zip;
 let data;
+let tlsDir;
 const compared = [];
 
 before(async () => {
-  home = await startHome((l) => requests.push(l));
-  cloud = await startCloud((l) => requests.push(l), home.port);
+  // a certificate for localhost, made for this run and trusted only by the channel's process
+  // (NODE_EXTRA_CA_CERTS, read by brs-engine's roUrlTransfer): the home's https name, which the
+  // channel's certificate check proves, as a relay's or a home's direct name is on a Roku
+  tlsDir = mkdtempSync(join(tmpdir(), "maktaba-roku-tls-"));
+  execFileSync("openssl", ["req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1", "-subj", "/CN=localhost", "-addext", "subjectAltName=DNS:localhost", "-keyout", join(tlsDir, "key.pem"), "-out", join(tlsDir, "cert.pem")], { stdio: "ignore" });
+  process.env.NODE_EXTRA_CA_CERTS = join(tlsDir, "cert.pem");
+  home = await startHome((l) => requests.push(l), { key: readFileSync(join(tlsDir, "key.pem")), cert: readFileSync(join(tlsDir, "cert.pem")) });
+  cloud = await startCloud((l) => requests.push(l), home.httpsPort);
   zip = await build(["--test", "--cloud", `http://127.0.0.1:${cloud.port}`, "--probe-ip", "127.0.0.9", "--probe-port", String(home.port), "--out", join(ROKU, "build", "maktaba-roku-test.zip")]);
   data = mkdtempSync(join(tmpdir(), "maktaba-roku-"));
 });
@@ -51,6 +59,7 @@ after(() => {
   writeFileSync(join(LOGS, "screens-compared.log"), compared.join("\n") + "\n");
   home?.server.close();
   cloud?.server.close();
+  if (tlsDir) rmSync(tlsDir, { recursive: true, force: true });
 });
 
 async function small(path) {
@@ -95,9 +104,12 @@ test("T03: sign in by cloud code, browse in English, deep links, Back, then Arab
     await c.waitFor(/\[screen\] CodeScreen ready mode=cloud/);
     assert.ok(!requests.some((l) => l.includes("qr.png")), "the QR is drawn, never fetched");
     await compare(c, "code-en");
-    // the phone approves (the mock cloud, on its third poll); the grant goes to the home's LAN
-    // address, never to the pinned local_ip a Roku cannot verify
-    await c.waitFor(/\[code\] signed in through local\b/, 20000);
+    // the phone approves (the mock cloud, on its third poll); the grant goes to the home's relay
+    // (an https name), never to the pinned local_ip a Roku cannot verify, and the plain LAN
+    // address, where another machine answers listing the home's relay, and the raw-IP direct
+    // addresses are never contacted
+    await c.waitFor(/\[code\] signed in through relay\b/, 20000);
+    assert.equal(cloud.state.trapConnections, 0, "the channel contacted a plain or raw-IP address");
     await c.waitFor(/\[screen\] HomeScreen ready rows=\s*2/, 20000);
     // the first call met an expired token: one refresh, one retry, no sign-out
     assert.ok(requests.some((l) => l.startsWith("home POST /api/auth/refresh")), "the 401 took a refresh");

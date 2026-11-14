@@ -6,6 +6,8 @@
 // handlers and OpenAPI): bearer tokens on every route but discovery, pairing and refresh; a 401
 // for an expired access token (the first /api/home of each sign-in, to run the refresh); 404
 // for a video the viewer cannot see. The cloud gives a code and approves it on the third poll.
+// Given a certificate for localhost, the home also answers over https on localhost: the name the
+// mock cloud gives it as its relay, the only kind of connection the cloud code's grant may go to.
 // Epic 57 on Roku (story 58.14): with `state.time` set, a restricted viewer's watching time is
 // over, and every stream open and progress post answers 403 parental_time (the problem body the
 // home's streaming handler writes) until a parent approves a request for more time; a video in
@@ -14,6 +16,8 @@
 // Every request is logged (no tokens) for the CI report.
 
 import { createServer } from "node:http";
+import { createServer as createTlsServer } from "node:https";
+import { createServer as createTcpServer } from "node:net";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
@@ -22,11 +26,9 @@ const { createCanvas } = require("canvas");
 const uuid = (n) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 // The home's instance id, as /api/discovery/home answers it, and its server id in Maktaba
 // Cloud, as the cloud's poll answers it (home_id): two different ids, as on a real home, so the
-// channel must know the approving home by its address (NetIsApprovedHome), not by an id.
+// channel cannot know the approving home by an id; it trusts only an https name (its relay).
 export const HOME_ID = "h1test";
 export const CLOUD_HOME_ID = "7c9e6679-7425-40de-944b-e07fc1f90ae7";
-// The relay name Maktaba Cloud gives the home; the home lists it among its own urls.
-export const RELAY_URL = "https://h1test.relay.example";
 export const LIB = uuid(900);
 export const SERIES = uuid(800);
 export const HIDDEN = uuid(999);
@@ -122,7 +124,7 @@ function readBody(req) {
 }
 
 /** Starts the home; log(line) gets each request. */
-export function startHome(log) {
+export function startHome(log, tls) {
   const state = { access: new Set(), refresh: new Set(), expired: new Set(), n: 0, grant: "G1", deviceCode: "dc1", clientHeaders: new Set(), restricted: false, requests: [] };
   // story 58.14: the late video is the viewer's to see once not restricted, or once approved
   const lateShown = () => !state.restricted || state.requests.some((r) => r.subject_id === LATE && r.status === "approved");
@@ -145,7 +147,7 @@ export function startHome(log) {
     state.refresh.add(r);
     return { access_token: a, refresh_token: r, access_expires_in: 900, refresh_expires_in: 2592000, user_id: "u-viewer" };
   };
-  const server = createServer(async (req, res) => {
+  const handler = async (req, res) => {
     const url = new URL(req.url, "http://x");
     const p = url.pathname;
     const auth = (req.headers.authorization || "").replace(/^Bearer /, "");
@@ -154,7 +156,7 @@ export function startHome(log) {
     const body = req.method === "POST" || req.method === "PUT" ? await readBody(req) : {};
     if (p === "/api/discovery/home") {
       const port = server.address().port;
-      return json(res, 200, { id: HOME_ID, name: "Test home", version: "0.3.150", urls: [`http://127.0.0.1:${port}`, RELAY_URL], sign_in: { password: true, code: true }, api_level: 1, api_level_oldest: 1, client_floor: {} });
+      return json(res, 200, { id: HOME_ID, name: "Test home", version: "0.3.150", urls: [`http://127.0.0.1:${port}`, ...(secure ? [`https://localhost:${secure.address().port}`] : [])], sign_in: { password: true, code: true }, api_level: 1, api_level_oldest: 1, client_floor: {} });
     }
     if (p === "/api/pairing/device" && req.method === "POST") return json(res, 201, { code: "HKMN-4567", device_code: state.deviceCode, expires_at: new Date(Date.now() + 6e5).toISOString(), verify_path: "/pair?code=HKMN-4567", verify_url: `http://127.0.0.1:${server.address().port}/pair?code=HKMN-4567`, interval: 1 });
     if (p === "/api/pairing/device/token" && req.method === "POST") {
@@ -299,13 +301,36 @@ export function startHome(log) {
       return res.end();
     }
     return json(res, 404, { type: "not_found" });
-  });
-  return new Promise((resolve) => server.listen(0, "127.0.0.1", () => resolve({ server, state, port: server.address().port })));
+  };
+  const server = createServer(handler);
+  const secure = tls ? createTlsServer(tls, handler) : null;
+  if (secure) server.on("close", () => secure.close());
+  const listen = (s) => new Promise((resolve) => s.listen(0, "127.0.0.1", resolve));
+  return Promise.all([listen(server), ...(secure ? [listen(secure)] : [])]).then(() => ({ server, state, port: server.address().port, httpsPort: secure ? secure.address().port : 0 }));
 }
 
-/** Starts the cloud: a code, approved on the third poll with the home's connections. */
-export function startCloud(log, homePort) {
-  const state = { polls: 0, delivered: false, created: 0 };
+/**
+ * Starts the cloud: a code, approved on the third poll with the home's connections. The relay is
+ * the home's https name (localhost, homeHttpsPort). The LAN address is a trap: another machine
+ * answering as a Maktaba home there and listing the home's relay among its urls, as anyone on
+ * the TV's network could. A raw-IP direct address (https and plain) leads to a second trap. The
+ * channel must never contact either: state.trapConnections counts every TCP connection to them.
+ */
+export async function startCloud(log, homeHttpsPort) {
+  const state = { polls: 0, delivered: false, created: 0, trapConnections: 0 };
+  const relay = `https://localhost:${homeHttpsPort}`;
+  const lanTrap = createServer((req, res) => {
+    log(`trap ${req.method} ${new URL(req.url, "http://x").pathname}`);
+    json(res, 200, { id: "intruder", name: "Not the home", version: "0.3.150", urls: [relay], sign_in: { password: true, code: true }, api_level: 1, api_level_oldest: 1, client_floor: {} });
+  });
+  const ipTrap = createTcpServer((sock) => sock.destroy());
+  for (const t of [lanTrap, ipTrap]) {
+    t.on("connection", () => {
+      state.trapConnections++;
+      log("trap connection");
+    });
+    await new Promise((resolve) => t.listen(0, "127.0.0.1", resolve));
+  }
   const server = createServer(async (req, res) => {
     const url = new URL(req.url, "http://x");
     const p = url.pathname;
@@ -326,12 +351,18 @@ export function startCloud(log, homePort) {
         status: "approved", home_id: CLOUD_HOME_ID, home_name: "Test home", grant: "G1",
         connections: [
           { kind: "local_ip", url: "https://127.0.0.1:8443", tls_name: "127-0-0-1.h1test.direct.example" },
-          { kind: "local", url: `http://127.0.0.1:${homePort}` },
-          { kind: "relay", url: RELAY_URL },
+          { kind: "local", url: `http://127.0.0.1:${lanTrap.address().port}` },
+          { kind: "direct", url: `https://127.0.0.1:${ipTrap.address().port}` },
+          { kind: "direct", url: `http://127.0.0.1:${ipTrap.address().port}` },
+          { kind: "relay", url: relay },
         ],
       });
     }
     return json(res, 404, { error: "not_found" });
+  });
+  server.on("close", () => {
+    lanTrap.close();
+    ipTrap.close();
   });
   return new Promise((resolve) => server.listen(0, "127.0.0.1", () => resolve({ server, state, port: server.address().port })));
 }
