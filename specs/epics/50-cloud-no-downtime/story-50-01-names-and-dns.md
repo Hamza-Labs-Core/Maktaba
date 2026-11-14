@@ -26,6 +26,10 @@ back.
 | `admin.maktaba.tv` | the admin web Worker, `/v1/*` passed through the Tunnel (50.32) | proxied | auto | the operator console (staff only, 50.33) | 1 |
 | `plugins.maktaba.tv` | the plugin store's Workers (Epic 54), **on Cloudflare, not on Hetzner** | proxied | auto | the store: catalog API, developer console (`/developers`), review and store admin (`/admin`), with its own accounts and auth | 54 |
 | `plugins-cdn.maktaba.tv` | the store's signed files on Cloudflare (Epic 54), **not on Hetzner** | proxied | auto | homes downloading signed plugin files | 54 |
+| `ingest.maktaba.tv` | the broadcast edge's Worker (50.21), a Workers Custom Domain, **on Cloudflare, not on Hetzner** | proxied | auto | homes pushing broadcast segments (outbound only) | B |
+| `live.maktaba.tv` | the broadcast edge's Worker (50.21): playlists and segments from R2 and the edge cache | proxied | auto | viewers' players | B |
+| `watch.maktaba.tv` | the broadcast edge's Worker (50.21): the watch site and its API (50.26, 50.27), guide blobs | proxied | auto | viewers | B |
+| `staging-ingest.maktaba.dev`, `staging-live.maktaba.dev`, `staging-watch.maktaba.dev` | the broadcast edge's staging Worker (50.21) | proxied | auto | test publishers, never users | B |
 | `relay.maktaba.tv` | Floating IP | **DNS only** | 300 s | homes' tunnel (`/v1/relay/ws`) | 1 |
 | `*.relay.maktaba.tv` | Floating IP | **DNS only** | 300 s | apps reaching a home: `<slug>.relay.maktaba.tv` | 1 |
 | `canary.relay.maktaba.tv` | covered by the wildcard | DNS only | — | the canary home (50.10); a reserved slug | 1 |
@@ -49,7 +53,9 @@ Rules:
 - Phase 2 relay names use **60 s** because the witness removes a dead relay's record.
 - Slugs `canary`, `status`, `api`, `app`, `admin`, `www`, `plugins`, `plugins-cdn`,
   `r1`…`r99`, `direct`, `staging` are added to the reserved list (story 25.22) so no home can
-  take them.
+  take them; 50.21 adds `ingest`, `live` and `watch`.
+- **The broadcast edge is not on Hetzner** (50.21). `ingest`, `live` and `watch` are one Worker
+  on Maktaba's Cloudflare account, with no origin; its staging copy is on `maktaba.dev`.
 - **The plugin store is not on Hetzner.** `plugins` and `plugins-cdn` are Cloudflare-hosted
   (Epic 54); a Hetzner outage doesn't touch them, and nothing in this epic's failover moves
   them. The store's Cloudflare deploy token is its own, separate from the nodes' DNS-edit

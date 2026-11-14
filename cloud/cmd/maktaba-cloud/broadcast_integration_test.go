@@ -209,7 +209,10 @@ func TestBroadcastPublishAndAgreement(t *testing.T) {
 // its channels past one.
 func TestBroadcastBillingRolesAndItems(t *testing.T) {
 	withBroadcastPrices(t)
-	e := newEnvFull(t, &fakeProvider{}, nil, func(c *config.Config) { c.Broadcast.Enabled = true })
+	e := newEnvFull(t, &fakeProvider{}, nil, func(c *config.Config) {
+		c.Broadcast.Enabled = true
+		c.Broadcast.KeyPath = ingestKeyFile(t) // broadcasting on signs ingest tokens (50.21)
+	})
 	owner := e.registerVerified("bowner@example.test")
 	uid := e.userID("bowner@example.test")
 	h := claimHome(e, owner, "bhome")
@@ -352,6 +355,7 @@ func TestBroadcastEdgeUsageAndPAYG(t *testing.T) {
 		c.Broadcast.Enabled = true
 		c.Broadcast.PlansEnforce = true // the harness's config starts from zero values, not the defaults
 		c.Broadcast.EdgePublicKey = base64.StdEncoding.EncodeToString(pub)
+		c.Broadcast.KeyPath = ingestKeyFile(t) // broadcasting on signs ingest tokens (50.21)
 	})
 	edge := edgeClient{e: e, priv: priv}
 	owner := e.registerVerified("caster@example.test")
