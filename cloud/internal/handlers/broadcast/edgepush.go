@@ -1,0 +1,228 @@
+package broadcast
+
+// The cloud's posts to the broadcast edge for viewer access (story 50.26): each is a control post
+// signed with the broadcast key, sent to the ingest host.
+//
+//	PUT  /v1/control/access   a publisher's AccessState (typ "access"); the edge keeps the newest
+//	POST /v1/control/passes   {typ "passes", pub}: the publisher's guest passes and invite uses
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"strings"
+	"time"
+
+	"github.com/lib/pq"
+
+	bc "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/broadcast"
+)
+
+// EdgeClient sends one signed control post to the edge and answers its status and body.
+type EdgeClient interface {
+	Post(ctx context.Context, method, path, body string) (int, []byte, error)
+}
+
+// HTTPEdge is the EdgeClient of a real edge (broadcast.ingest_url).
+type HTTPEdge struct {
+	Base   string
+	Client *http.Client
+}
+
+func (e HTTPEdge) Post(ctx context.Context, method, path, body string) (int, []byte, error) {
+	req, err := http.NewRequestWithContext(ctx, method, strings.TrimRight(e.Base, "/")+path, strings.NewReader(body))
+	if err != nil {
+		return 0, nil, err
+	}
+	req.Header.Set("Content-Type", "text/plain")
+	c := e.Client
+	if c == nil {
+		c = &http.Client{Timeout: 5 * time.Second}
+	}
+	res, err := c.Do(req)
+	if err != nil {
+		return 0, nil, err
+	}
+	defer func() { _ = res.Body.Close() }()
+	b, err := io.ReadAll(io.LimitReader(res.Body, 4<<20))
+	return res.StatusCode, b, err
+}
+
+// AccessState builds a publisher's access state from the database.
+func (dp *Deps) AccessState(ctx context.Context, server string) (bc.AccessState, error) {
+	s := bc.AccessState{Pub: server, Chans: map[string]bc.AccessChannel{}, Codes: map[string]string{},
+		RevokedInvites: []string{}, RevokedPasses: []string{}}
+	if err := dp.DB.QueryRowContext(ctx, `
+        SELECT broadcast_access_version, broadcast_max_sessions_per_ip, broadcast_daily_minutes FROM servers WHERE id = $1`, server).
+		Scan(&s.Version, &s.MaxSessionsPerIP, &s.DailyMinutes); err != nil {
+		return s, err
+	}
+	chs, err := dp.channels(ctx, dp.DB, server)
+	if err != nil {
+		return s, err
+	}
+	p, err := dp.Store.Publisher(ctx, server)
+	if err != nil {
+		return s, err
+	}
+	code, _, err := dp.openRefusal(ctx, p)
+	if err != nil {
+		return s, err
+	}
+	s.OpenAllowed = code == ""
+	for _, c := range chs {
+		s.Chans[c.EdgeID] = bc.AccessChannel{Access: c.Access, MaxViewers: c.MaxViewers, Indexable: c.Indexable}
+	}
+	// revoked invites the edge must still refuse (an expired one refuses itself a day later);
+	// live invites' short codes
+	rows, err := dp.DB.QueryContext(ctx, `
+        SELECT id::text, short_code, token, revoked_at IS NOT NULL FROM broadcast_invites
+         WHERE server_id = $1 AND expires_at > now() - interval '1 day'`, server)
+	if err != nil {
+		return s, err
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var id, code, token string
+		var revoked bool
+		if err := rows.Scan(&id, &code, &token, &revoked); err != nil {
+			return s, err
+		}
+		if revoked {
+			s.RevokedInvites = append(s.RevokedInvites, id)
+		} else {
+			s.Codes[code] = token
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return s, err
+	}
+	var passes []string
+	if err := dp.DB.QueryRowContext(ctx, `SELECT COALESCE(array_agg(pass_id ORDER BY pass_id), '{}') FROM broadcast_revoked_passes WHERE server_id = $1`, server).
+		Scan(pq.Array(&passes)); err != nil {
+		return s, err
+	}
+	if passes != nil {
+		s.RevokedPasses = passes
+	}
+	return s, nil
+}
+
+// pushOne pushes a publisher's access state after a change, with its own short deadline so a
+// slow edge never holds the request; a failure is left for PushPending.
+func (dp *Deps) pushOne(ctx context.Context, server string) {
+	if dp.Edge == nil || dp.Key == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
+	defer cancel()
+	if err := dp.push(ctx, server); err != nil && dp.Logger != nil {
+		dp.Logger.Warn("broadcast: access push failed; retried", "server_id", server, "err", err)
+	}
+}
+
+func (dp *Deps) push(ctx context.Context, server string) error {
+	s, err := dp.AccessState(ctx, server)
+	if err != nil {
+		return err
+	}
+	signed, err := bc.SignAccess(*dp.Key, s, dp.now())
+	if err != nil {
+		return err
+	}
+	status, body, err := dp.Edge.Post(ctx, http.MethodPut, "/v1/control/access", signed)
+	if err != nil {
+		return err
+	}
+	// 409: the edge holds a newer version already (another node pushed it)
+	if status/100 != 2 && status != http.StatusConflict {
+		return fmt.Errorf("edge answered %d: %s", status, bytes.TrimSpace(body))
+	}
+	_, err = dp.DB.ExecContext(ctx, `UPDATE servers SET broadcast_access_pushed = $2 WHERE id = $1 AND broadcast_access_pushed < $2`, server, s.Version)
+	return err
+}
+
+// PushPending pushes every publisher whose access state the edge hasn't taken (the worker runs
+// it every minute). It answers how many were pushed.
+func (dp *Deps) PushPending(ctx context.Context) (int, error) {
+	if dp.Edge == nil || dp.Key == nil {
+		return 0, nil
+	}
+	rows, err := dp.DB.QueryContext(ctx, `SELECT id::text FROM servers WHERE broadcast_access_version > broadcast_access_pushed ORDER BY id LIMIT 200`)
+	if err != nil {
+		return 0, err
+	}
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			_ = rows.Close()
+			return 0, err
+		}
+		ids = append(ids, id)
+	}
+	_ = rows.Close()
+	n := 0
+	for _, id := range ids {
+		if err := dp.push(ctx, id); err != nil {
+			if dp.Logger != nil {
+				dp.Logger.Warn("broadcast: access push failed", "server_id", id, "err", err)
+			}
+			continue
+		}
+		n++
+	}
+	return n, nil
+}
+
+// EdgePass is one device's guest pass as the edge reports it: a random id, its invite, and when
+// it was first and last used. No identity.
+type EdgePass struct {
+	ID       string `json:"id"`
+	Invite   string `json:"inv"`
+	FirstUse int64  `json:"first_use"`
+	LastUse  int64  `json:"last_use"`
+	Revoked  bool   `json:"revoked"`
+}
+
+type edgePasses struct {
+	Passes []EdgePass     `json:"passes"`
+	Uses   map[string]int `json:"uses"`
+}
+
+func (dp *Deps) edgePasses(ctx context.Context, server string) (edgePasses, error) {
+	var out edgePasses
+	signed, err := bc.SignControl(*dp.Key, "passes", map[string]any{"pub": server}, dp.now(), time.Minute)
+	if err != nil {
+		return out, err
+	}
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	status, body, err := dp.Edge.Post(ctx, http.MethodPost, "/v1/control/passes", signed)
+	if err != nil {
+		return out, err
+	}
+	if status != http.StatusOK {
+		return out, fmt.Errorf("edge answered %d", status)
+	}
+	err = json.Unmarshal(body, &out)
+	return out, err
+}
+
+// edgeUses is each invite's uses at the edge (nil when the edge didn't answer).
+func (dp *Deps) edgeUses(ctx context.Context, server string) map[string]int {
+	if dp.Edge == nil || dp.Key == nil {
+		return nil
+	}
+	p, err := dp.edgePasses(ctx, server)
+	if err != nil {
+		return nil
+	}
+	if p.Uses == nil {
+		return map[string]int{}
+	}
+	return p.Uses
+}

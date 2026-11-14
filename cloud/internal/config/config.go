@@ -66,6 +66,8 @@ type BroadcastConfig struct {
 	KeyPath string
 	// IngestURL is broadcast.ingest_url, default https://ingest.maktaba.tv.
 	IngestURL string
+	// WatchURL is broadcast.watch_url, the invite links' origin (default https://watch.maktaba.tv).
+	WatchURL string
 	// EdgePublicKey is broadcast.edge_public_key: the base64 Ed25519 public key the broadcast
 	// edge signs its usage posts with (POST /_edge/usage). Public, so it may sit in the file;
 	// the private half is a Worker secret. Empty: the edge routes answer 503.
@@ -375,7 +377,7 @@ func defaultConfig() Config {
 			RebalanceEvery:   30 * time.Second,
 			RebalanceRate:    20,
 		},
-		Broadcast: BroadcastConfig{PlansEnforce: true, PAYGReports: true, IngestURL: "https://ingest.maktaba.tv"},
+		Broadcast: BroadcastConfig{PlansEnforce: true, PAYGReports: true, IngestURL: "https://ingest.maktaba.tv", WatchURL: "https://watch.maktaba.tv"},
 	}
 }
 
@@ -717,6 +719,8 @@ func assign(c *Config, section, key, val string) error {
 		c.Broadcast.KeyPath = val
 	case "broadcast.ingest_url":
 		c.Broadcast.IngestURL = val
+	case "broadcast.watch_url":
+		c.Broadcast.WatchURL = val
 	case "relay.pool.enabled":
 		return setBool(&c.Relay.PoolEnabled, val)
 	case "relay.pool.member":
