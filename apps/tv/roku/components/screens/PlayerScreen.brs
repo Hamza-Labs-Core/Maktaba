@@ -14,10 +14,11 @@
 ' the player only shows what it answered. While a video plays it asks GET /api/me/parental/time
 ' (every 30 s, every 10 s from 6 minutes left) and shows its remaining_seconds as Android TV
 ' does: "12 minutes left today" in the end corner once 15 minutes or fewer remain, and "Watching
-' ends in 5 minutes." for 10 s as the time crosses five minutes and one minute. A session open or a progress post refused with 403
-' parental_time stops the video and shows the time's-up page (why, when watching opens again,
-' where it stopped, Ask for more time with 15, 30 or 60 minutes, and Check again); a parent's yes,
-' or Check again, opens the session again, and the home decides. no_heartbeat (the lease ran
+' ends in 5 minutes." for 10 s as the time crosses five minutes and one minute. A session open
+' or a progress post refused with 403 parental_time stops the video and shows the time's-up
+' page (why, when watching opens again, where it stopped, Ask for more time with 15, 30 or 60
+' minutes, and Check again); a parent's yes, or Check again, opens the session again, and the
+' home decides. no_heartbeat (the lease ran
 ' out in a long pause) opens the stream again once where it is. A 404 for the stream while it
 ' plays, or for an open under a limit, hands the screen to "This isn't available" (BlockedScreen),
 ' whose yes plays the video again from there. 503 parental_time_unknown: never free time on an
