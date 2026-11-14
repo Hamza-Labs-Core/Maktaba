@@ -15,7 +15,7 @@
 // answer carries X-Server-Time (ms), so a TV with a wrong clock uses the edge's.
 import { now } from "./clock";
 import { globallyOff, type Env } from "./env";
-import { nonces, verifyAttestation } from "./attest";
+import { newChallenge, verifyAttestation } from "./attest";
 import { problem } from "./http";
 import {
   CODE_RE,
@@ -146,7 +146,7 @@ async function route(request: Request, env: Env, url: URL): Promise<Response> {
   if (request.method !== "POST") return problem(404, "not_found");
   if (path === "/api/v1/redeem") return redeem(request, env);
   if (path === "/api/v1/open/turnstile") return openTurnstile(request, env);
-  if (path === "/api/v1/open/challenge") return answer(200, await nonces(env).nonce());
+  if (path === "/api/v1/open/challenge") return answer(200, await newChallenge(env));
   if (path === "/api/v1/open/attest") return openAttest(request, env);
   if (isPlay) return play(request, env);
   const m = /^\/api\/v1\/play\/([^/]+)\/beat$/.exec(path);

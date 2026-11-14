@@ -88,7 +88,7 @@ interface State {
   daily: Record<string, Daily>;
   tries: Record<string, number[]>;
   fails: number[];
-  /** the attestation challenges handed out and not used yet: nonce → expiry (ms) */
+  /** the attestation challenges already used, until they expire: nonce → expiry (ms) */
   nonces?: Record<string, number>;
 }
 
@@ -112,8 +112,8 @@ export interface PlanView {
   max_viewers?: number;
 }
 
-/** An attestation challenge is good for 5 minutes, once. */
-export const NONCE_TTL_MS = 5 * 60_000;
+/** The spent attestation challenges one instance keeps (5 minutes' worth at the rate limits). */
+export const MAX_SPENT = 50_000;
 
 function day(t: number): string {
   return new Date(t).toISOString().slice(0, 10);
@@ -345,26 +345,20 @@ export class ViewerAccess extends DurableObject<Env> {
     };
   }
 
-  /** nonce hands out a single-use attestation challenge, good for 5 minutes. */
-  async nonce(): Promise<{ nonce: string; expires_at: number }> {
+  /**
+   * spend records an attestation challenge as used until it expires (the challenge itself is
+   * stateless, signed by the edge): true the first time. Full, it refuses rather than forget a
+   * challenge still live.
+   */
+  async spend(nonce: string, expMs: number): Promise<boolean | "full"> {
     const t = now();
     const n = (this.s.nonces ??= {});
+    if (n[nonce] !== undefined) return false;
     for (const [k, exp] of Object.entries(n)) if (exp <= t) delete n[k];
-    if (Object.keys(n).length >= 10_000) delete n[Object.keys(n)[0]!];
-    const nonce = randomId();
-    n[nonce] = t + NONCE_TTL_MS;
+    if (Object.keys(n).length >= MAX_SPENT) return "full";
+    n[nonce] = expMs;
     await this.save();
-    return { nonce, expires_at: n[nonce] };
-  }
-
-  /** useNonce spends a challenge: true once, for a nonce handed out and not expired. */
-  async useNonce(nonce: string): Promise<boolean> {
-    const n = this.s.nonces ?? {};
-    const exp = n[nonce];
-    if (exp === undefined) return false;
-    delete n[nonce];
-    await this.save();
-    return exp > now();
+    return true;
   }
 
   /** passes is what the publisher sees: each device's random id and dates, and each invite's uses. */

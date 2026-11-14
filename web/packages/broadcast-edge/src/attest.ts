@@ -4,11 +4,46 @@
 // once, for 5 minutes) and binds it into its attestation; the verifier bound as ATTEST_API checks
 // the attestation against that nonce (50.27 builds the apps' side and the verifier); without one,
 // the exchange answers 503. A nonce the edge didn't hand out, or one already used, is 403.
+import { b64url, sameText, utf8 } from "./crypto";
 import type { Env } from "./env";
+import { now } from "./clock";
 
-/** The challenges live in one ViewerAccess instance of their own. */
-export function nonces(env: Env) {
-  return env.VIEWER.get(env.VIEWER.idFromName("attest-challenges"));
+/** An attestation challenge is good for 5 minutes, once. */
+export const CHALLENGE_TTL_MS = 5 * 60_000;
+const CHALLENGE_DOMAIN = "maktaba-broadcast-attest-challenge-v1";
+
+/** The spent challenges live in ViewerAccess instances of their own, 16 by the nonce's start. */
+function spent(env: Env, nonce: string) {
+  return env.VIEWER.get(env.VIEWER.idFromName(`attest-spent-${nonce.charCodeAt(0) % 16}`));
+}
+
+async function challengeMac(env: Env, body: string): Promise<string> {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    utf8(`${CHALLENGE_DOMAIN}\0${env.VIEWER_TOKEN_KEY}`),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+  return b64url(new Uint8Array(await crypto.subtle.sign("HMAC", key, utf8(body)))).slice(0, 32);
+}
+
+/** newChallenge is a stateless challenge: <random>.<expiry ms>.<mac>, stored nowhere. */
+export async function newChallenge(env: Env): Promise<{ nonce: string; expires_at: number }> {
+  const exp = now() + CHALLENGE_TTL_MS;
+  const body = `${b64url(crypto.getRandomValues(new Uint8Array(16)))}.${exp}`;
+  return { nonce: `${body}.${await challengeMac(env, body)}`, expires_at: exp };
+}
+
+/** useChallenge checks a challenge's mac and expiry and spends it: true only the first time. */
+async function useChallenge(env: Env, nonce: string): Promise<boolean> {
+  const parts = nonce.split(".");
+  if (parts.length !== 3) return false;
+  const body = `${parts[0]}.${parts[1]}`;
+  if (!sameText(await challengeMac(env, body), parts[2]!)) return false;
+  const exp = Number(parts[1]);
+  if (!Number.isFinite(exp) || exp <= now()) return false;
+  return (await spent(env, nonce).spend(parts[0]!, exp)) === true;
 }
 
 export const PLATFORMS = ["apple", "android"] as const;
@@ -29,7 +64,7 @@ export async function verifyAttestation(
   )
     return { ok: false, status: 400, error: "bad_attestation" };
   if (!env.ATTEST_API) return { ok: false, status: 503, error: "attest_unavailable" };
-  if (!nonce || nonce.length > 64 || !(await nonces(env).useNonce(nonce)))
+  if (!nonce || nonce.length > 128 || !(await useChallenge(env, nonce)))
     return { ok: false, status: 403, error: "attest_challenge" };
   let res: Response;
   try {
