@@ -3,15 +3,33 @@
 // PlayerAdapter (player.ts), filled for AVPlay by 58.10 and for webOS's <video> by 58.11.
 
 import type { BridgeAction } from "../bridge";
+import type { PlayerAdapter } from "../player";
 
 export type PlatformName = "tizen" | "webos" | "browser";
 
-/** What the TV decodes, as reported to the home (story 58.02 merges it with a ceiling). */
+/** One video codec the TV decodes and its limits (the API's VideoCap, story 58.02). */
+export interface VideoCap {
+  codec: string;
+  max_height?: number;
+  max_fps?: number;
+  bit_depth?: number;
+}
+
+/**
+ * What the TV decodes, as reported to the home: the API's DeviceCaps (story 58.02,
+ * api/internal/handlers/streaming/devicecaps.go), which the home merges with the platform's
+ * ceiling. Each platform's reader is tested against shared/playback/caps-vectors.json.
+ */
 export interface DeviceCaps {
-  video: string[];
-  audio: string[];
+  containers: string[];
+  video: VideoCap[];
   hdr: string[];
-  max_height: number;
+  audio: string[];
+  passthrough: string[];
+  max_audio_channels?: number;
+  hls_segments: string[];
+  dash?: boolean;
+  max_bitrate_kbps?: number;
 }
 
 export interface DeviceInfo {
@@ -36,6 +54,11 @@ export interface Platform {
   deviceCaps(): DeviceCaps;
   /** Leaves the app (after the UI's own confirm). */
   exit(): void;
+  /**
+   * The platform's own player (Samsung's AVPlay, 58.10; LG's, 58.11), given the launcher's
+   * <video> plane, which stays in the stage; without one the launcher plays in that <video>.
+   */
+  player?(video: HTMLVideoElement): PlayerAdapter;
 }
 
 /** The Chromium major version in a user agent (0 when there is none). */
@@ -127,9 +150,21 @@ export function commonKeyAction(e: KeyboardEvent): BridgeAction | null {
   }
 }
 
+/** What any supported TV plays (Chromium 68, 2020): the report before a platform's own. */
 export const DEFAULT_CAPS: DeviceCaps = {
-  video: ["h264"],
-  audio: ["aac"],
+  containers: ["mp4", "ts"],
+  video: [{ codec: "h264", max_height: 1080, max_fps: 30 }],
   hdr: [],
-  max_height: 1080,
+  audio: ["aac"],
+  passthrough: [],
+  max_audio_channels: 2,
+  hls_segments: ["ts"],
 };
+
+/** The default report with H.264 at the panel's height (a UHD panel: 2160). */
+export function capsForPanel(uhd: boolean): DeviceCaps {
+  return {
+    ...DEFAULT_CAPS,
+    video: [{ codec: "h264", max_height: uhd ? 2160 : 1080, max_fps: 30 }],
+  };
+}

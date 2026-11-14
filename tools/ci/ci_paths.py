@@ -77,6 +77,7 @@ NOT_IN_CI: dict[str, str] = {
     ".github/workflows/release.yml": "runs on a tag",
     ".github/workflows/mobile-release.yml": "runs on a tag",
     ".github/workflows/tv-release.yml": "runs on a tag",
+    ".github/workflows/tv-web-release.yml": "runs on a tag: the Samsung and LG launcher packages (stories 58.10, 58.11)",
     ".github/workflows/web-release.yml": "runs on a tag",
     ".github/workflows/testflight.yml": "runs on a tag",
     ".github/workflows/packages.yml": "runs after a release",
