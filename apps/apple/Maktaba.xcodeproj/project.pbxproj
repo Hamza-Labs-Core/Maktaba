@@ -128,6 +128,7 @@
 		1C7680DB23442B69396C06A1 /* Home.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 2C17944DFD5B9A7EB8F161F4 /* Home.xcstrings */; };
 		1C78423CBD606197697FC1DD /* tv-remote-heartbeat.json in Resources */ = {isa = PBXBuildFile; fileRef = 136F5B08E9086201B88A8B60 /* tv-remote-heartbeat.json */; };
 		1D2AAC984F952F34127EB137 /* PlayerProfileUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43A83E051C97587BB93ACED0 /* PlayerProfileUITests.swift */; };
+		1D466999A271B2446D7BA6ED /* CompatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9B42EAB8CCCB3618D5A3333 /* CompatView.swift */; };
 		1D892552CFF353986DF51EED /* PlayerWatchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E64F621A6128EB4952616DB /* PlayerWatchTests.swift */; };
 		1E0292CBEA85E5F22857E310 /* Hero.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1ECDA7F1B5AF478D50DA5A2 /* Hero.swift */; };
 		1E3C1836BD2694D5C448AAC9 /* HomeScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84D746B956CF705B862C9F1E /* HomeScreen.swift */; };
@@ -1285,6 +1286,7 @@
 		A5D6A3ACB307B21044B81895 /* LibraryScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryScreen.swift; sourceTree = "<group>"; };
 		A66B35B9C56E3162884CE164 /* routes.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = routes.json; sourceTree = "<group>"; };
 		A681F6538C595ADA1BA01CB1 /* PlayerDemoShots.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerDemoShots.swift; sourceTree = "<group>"; };
+		A9B42EAB8CCCB3618D5A3333 /* CompatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompatView.swift; sourceTree = "<group>"; };
 		AB13F57BDEAC4243D3662270 /* PlayerVideoUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerVideoUITests.swift; sourceTree = "<group>"; };
 		ABCBF5747692F36353AED506 /* Maktaba Player UITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = "Maktaba Player UITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		ABCF89194469D01EE34A5BB4 /* PlayerMenuTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerMenuTests.swift; sourceTree = "<group>"; };
@@ -1860,6 +1862,7 @@
 			isa = PBXGroup;
 			children = (
 				AD07EABD391C15886B8A214D /* Library */,
+				A9B42EAB8CCCB3618D5A3333 /* CompatView.swift */,
 				D41DCD8360915712BC0B6FED /* HomeView.swift */,
 				857FEC60E4C11079B4F295FE /* LibraryView.swift */,
 				F19454F5AD097C64274322B1 /* LiveGuide.swift */,
@@ -3189,6 +3192,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				1D466999A271B2446D7BA6ED /* CompatView.swift in Sources */,
 				6A727E03589D0C92DB27EC3A /* ContentView.swift in Sources */,
 				4A1EC6A04911398B2B6F0BCE /* CrashCapture.swift in Sources */,
 				6978F9089679D96F475C6499 /* DetailViews.swift in Sources */,

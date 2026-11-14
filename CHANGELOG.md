@@ -813,6 +813,14 @@ build fails when the two differ.
   (`docs/api/levels.md`). The `X-Maktaba-Client` header names the smart TV platforms (`tizen`,
   `webos`, `firetv`, `roku`, `vega`, `cast`) and the Samsung and LG launcher (`tv-web`).
 
+- **The apps say when they and the home need an update (story 58.01).** The Android phone
+  and TV apps and the iPhone, iPad, Mac and Apple TV apps read the home's API level before they
+  sign in. A home too old for the app shows **This home needs an update**, naming the home and
+  its version, with **Admin → Updates** for its admin and whom to ask for anyone else; an app
+  too old for the home, or below its floor (`426 client_too_old`), shows **Update this app**
+  with the store to open. Both pages have **Try again** and **Choose another home**, in English
+  and Arabic, and a home from before the contract lets every app carry on.
+
 - **Choose Maktaba's ports on a NAS (story 59.08).** Another app on the NAS, such as Plex or the
   NAS's own UI, may already use one of Maktaba's ports. Each one can now be set in the container's
   settings: `MAKTABA_WEB_PORT` (8088), `MAKTABA_API_PORT` (8080), `MAKTABA_STREAM_PORT` (8081, live
