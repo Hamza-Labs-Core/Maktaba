@@ -21,6 +21,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/auth/sessions"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/auth/token"
 	billingpkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/billing"
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/broadcast"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/db"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/entitlement"
@@ -28,6 +29,7 @@ import (
 	adminh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/admin"
 	authh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/auth"
 	billingh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/billing"
+	broadcasth "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/broadcast"
 	healthh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/health"
 	homesh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/homes"
 	metricsh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/metrics"
@@ -293,6 +295,7 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 		// A home's agent: the claim code or the server's own secret is its
 		// credential, never a user token.
 		serversh.MountAgent(app, serversDeps)
+		broadcasth.MountAgent(app, broadcastDeps(cfg, servers, pool, logger))
 		reports.MountAgent(app, &reports.AgentDeps{Store: reportStore, Servers: servers, Logger: logger,
 			Refuse: strings.EqualFold(os.Getenv("MAKTABA_CLOUD_REPORTS"), "off")})
 		// a release's symbol tables: the symbols token, no account
@@ -502,4 +505,21 @@ func turnstileGuard(cfg config.Config, fake turnstile.Verifier) (*turnstile.Guar
 	}
 	return &turnstile.Guard{Enabled: true, Verifier: v, WebOrigins: t.WebOrigins,
 		ClientIP: func(r *http.Request) string { return cmw.GetClientIP(r.Context()) }}, nil
+}
+
+// broadcastDeps wires the broadcast edge's ingest tokens (story 50.21): on only with
+// broadcast.enabled and its key; otherwise the route answers 503 broadcast_disabled.
+func broadcastDeps(cfg config.Config, servers *stores.Servers, pool *db.Pool, logger *slog.Logger) *broadcasth.Deps {
+	d := &broadcasth.Deps{Agents: servers, Plans: broadcasth.DBPlans{DB: pool.DB}, IngestURL: cfg.Broadcast.IngestURL}
+	if !cfg.Broadcast.Enabled {
+		return d
+	}
+	k, err := broadcast.LoadKey(cfg.Broadcast.KeyPath)
+	if err != nil {
+		logger.Warn("broadcast ingest tokens disabled", "err", err)
+		return d
+	}
+	d.Key = &k
+	logger.Info("broadcast ingest tokens on", "kid", k.Kid)
+	return d
 }

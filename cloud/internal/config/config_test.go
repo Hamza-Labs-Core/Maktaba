@@ -291,3 +291,29 @@ func TestParsePrefixesCIDRsOnly(t *testing.T) {
 		}
 	}
 }
+
+// Story 50.21: the broadcast edge's settings parse, the ingest host has a default, and the api
+// role never issues ingest tokens without their key.
+func TestBroadcastConfig(t *testing.T) {
+	c := defaultConfig()
+	if c.Broadcast.Enabled || c.Broadcast.IngestURL != "https://ingest.maktaba.tv" {
+		t.Fatalf("defaults: %+v", c.Broadcast)
+	}
+	if err := parseTOML("[broadcast]\nenabled = true\nedge_public_key = \"abc\"\ningest_url = \"https://ingest-staging.maktaba.tv\"\n", &c); err != nil {
+		t.Fatal(err)
+	}
+	if !c.Broadcast.Enabled || c.Broadcast.EdgePublicKey != "abc" || c.Broadcast.IngestURL != "https://ingest-staging.maktaba.tv" {
+		t.Fatalf("%+v", c.Broadcast)
+	}
+	c.Database.URL = "postgres://x"
+	c.Server.ListenAddr = "127.0.0.1:8090"
+	if err := Validate(c, RoleAPI); err == nil || !strings.Contains(err.Error(), "broadcast.key_path") {
+		t.Fatalf("on without a key: %v", err)
+	}
+	if err := parseTOML("[broadcast]\nkey_path = \"/opt/maktaba-cloud/secrets/broadcast.key\"\n", &c); err != nil {
+		t.Fatal(err)
+	}
+	if err := Validate(c, RoleAPI); err != nil {
+		t.Fatalf("with the key: %v", err)
+	}
+}

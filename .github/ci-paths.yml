@@ -397,6 +397,20 @@ cloudflare:
   - '.github/workflows/cloudflare-ips.yml'
   - '.github/workflows/cloud-web-deploy.yml'
 
+# the broadcast edge (Epic 50 story 50.21): its Worker package, the cloud's token signer and
+# endpoint whose vectors its tests verify, Epic 34's Stream signer it reuses (and its TEST key),
+# the token check its deploy runs, and its workflows (_broadcast-edge.yml)
+broadcast_edge:
+  - *ci
+  - 'web/packages/broadcast-edge/**'
+  - 'web/packages/tvsite/src/sign.ts'
+  - 'web/packages/tvsite/src/testdata/**'
+  - 'cloud/internal/broadcast/**'
+  - 'cloud/internal/handlers/broadcast/**'
+  - 'tools/cloudflare/token-check.mjs'
+  - '.github/workflows/_broadcast-edge.yml'
+  - '.github/workflows/broadcast-edge.yml'
+
 # the plugin store (Epic 54): its own folder, the shared signature and entitlement vectors
 # and the home's verifier that checks them, paid plugins' payment providers and the check
 # that keeps each provider in its module (_store.yml)

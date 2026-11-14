@@ -36,6 +36,20 @@ type Config struct {
 	Direct      DirectConfig
 	Turnstile   TurnstileConfig
 	Admin       AdminConfig
+	Broadcast   BroadcastConfig
+}
+
+// BroadcastConfig is the cloud's side of the broadcast edge (Epic 50 story 50.21): the key that
+// signs ingest tokens and control posts (its public half goes in the edge's CLOUD_PUBKEYS), the
+// ingest host homes push to, and the edge's public key its posts to the API are checked with.
+type BroadcastConfig struct {
+	Enabled bool // broadcast.enabled: issue ingest tokens (default false)
+	// KeyPath is broadcast.key_path: the Ed25519 seed file (base64url or 32 raw bytes, 0600).
+	KeyPath string
+	// IngestURL is broadcast.ingest_url, default https://ingest.maktaba.tv.
+	IngestURL string
+	// EdgePublicKey is broadcast.edge_public_key: base64url Ed25519 (EDGE_SIGNING_KEY's half).
+	EdgePublicKey string
 }
 
 // AdminConfig is the operator console's own settings (Epic 50 story 50.33 §7).
@@ -244,7 +258,8 @@ type RelayConfig struct {
 // keys absent from the TOML file so the file stays minimal.
 func defaultConfig() Config {
 	return Config{
-		Direct: DirectConfig{DNSListen: ":53", Budget: 45, CheckEvery: 15 * time.Minute},
+		Direct:    DirectConfig{DNSListen: ":53", Budget: 45, CheckEvery: 15 * time.Minute},
+		Broadcast: BroadcastConfig{IngestURL: "https://ingest.maktaba.tv"},
 		Server: ServerConfig{
 			ListenAddr:    "0.0.0.0:8080",
 			OriginMode:    OriginTunnel,
@@ -441,6 +456,14 @@ func assign(c *Config, section, key, val string) error {
 		return nil
 	}
 	switch section + "." + key {
+	case "broadcast.enabled":
+		return setBool(&c.Broadcast.Enabled, val)
+	case "broadcast.key_path":
+		c.Broadcast.KeyPath = val
+	case "broadcast.ingest_url":
+		c.Broadcast.IngestURL = val
+	case "broadcast.edge_public_key":
+		c.Broadcast.EdgePublicKey = val
 	case "direct.enabled":
 		return setBool(&c.Direct.Enabled, val)
 	case "direct.domains":

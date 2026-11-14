@@ -33,6 +33,7 @@
     "wiki-app",
     "packages/devportal",
     "packages/website",
+    "packages/broadcast-edge",
     "design-system/build",
     "design-system/storybook",
     "design-system/**/*.stories.tsx"
