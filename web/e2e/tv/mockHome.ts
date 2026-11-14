@@ -177,17 +177,27 @@ export interface MockHome {
   asked: unknown[];
 }
 
+export interface MockOptions {
+  signedIn?: boolean;
+  /** titles sent in place of the test data's (old title → new), e.g. an Arabic title (58.15) */
+  rename?: Record<string, string>;
+  /** a restricted child at 9+ (story 58.14) */
+  restricted?: boolean;
+}
+
 /** A restricted child's problem answer for what its limit hides: exactly the missing one. */
 const MISSING = { type: "about:blank", title: "not found", status: 404, detail: "not found" };
 
-export async function mockHome(
-  page: Page,
-  opts: { signedIn?: boolean; restricted?: boolean } = {}
-): Promise<MockHome> {
+export async function mockHome(page: Page, opts: MockOptions = {}): Promise<MockHome> {
   const home: MockHome = { unknown: [], calls: [], asked: [] };
   const requests: Record<string, unknown>[] = [];
+  const renamed = (text: string) =>
+    Object.entries(opts.rename ?? {}).reduce(
+      (out, [from, to]) => out.replaceAll(JSON.stringify(from), JSON.stringify(to)),
+      text
+    );
   const json = (route: Route, status: number, body: unknown) =>
-    route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
+    route.fulfill({ status, contentType: "application/json", body: renamed(JSON.stringify(body)) });
   await page.route("**/api/**", (route) => {
     const req = route.request();
     const url = new URL(req.url());

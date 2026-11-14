@@ -175,7 +175,12 @@ test("T03: sign in by cloud code, browse in English, deep links, Back, then Arab
     await compare(c, "library-en");
     // down the grid: pages load as focus nears the end (36 a page, 80 in all), and only the
     // focused page and one each side keep their posters
-    for (let i = 0; i < 13; i++) await c.key("Down");
+    // to the last row of two pages (66), then the third page (asked for as focus nears the end)
+    // before going on: keys must not outrun the home's answer
+    for (let i = 0; i < 11; i++) await c.key("Down");
+    await c.waitFor(/\[focus\] library grid\s+66\b/, 10000);
+    await c.waitFor(/\[grid\] posters loaded\s+\d+ of\s+80/, 10000);
+    for (let i = 0; i < 2; i++) await c.key("Down");
     await c.waitFor(/\[focus\] library grid\s+7\d/, 10000);
     const loads = [...c.out.matchAll(/\[grid\] posters loaded\s+(\d+) of\s+(\d+)/g)].map((m) => [Number(m[1]), Number(m[2])]);
     assert.ok(loads.some(([, total]) => total === 80), "the third page loaded");
