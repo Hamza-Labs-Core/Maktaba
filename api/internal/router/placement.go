@@ -125,6 +125,8 @@ func buildPlacement() placement.Table {
 	add(placement.Exact(placement.Home, all,
 		// watch progress is viewing data (revoked from the node role)
 		"/api/stream/sessions/{id}/progress",
+		// a cast grant is signed with the home's keys (Epic 58 story 58.07)
+		"/api/cast/grants",
 		// the home publishes its keys; a node verifies against them
 		"/api/.well-known/jwks.json",
 		// the queue snapshot and the workers list read the machines' registry

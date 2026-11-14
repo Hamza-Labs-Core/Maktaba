@@ -62,6 +62,7 @@ func everyMountWith(t *testing.T, caps *components.Capabilities) chi.Router {
 	MountP57Requests(r, P57RequestsDeps{DB: db})
 	MountP57Review(r, P57ReviewDeps{DB: db, Recompute: rc})
 	MountBroadcast(r, BroadcastDeps{DB: db, AgentAddr: "127.0.0.1:1", NoLoop: true})
+	MountCast(r, CastDeps{DB: db, Keys: ks})
 	return r
 }
 

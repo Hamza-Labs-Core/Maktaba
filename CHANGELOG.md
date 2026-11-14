@@ -844,16 +844,15 @@ build fails when the two differ.
 
 ### Added
 
-- **A published channel airs only what may be shared online (Epic 50, story 50.23).** While a
-  Live TV channel is broadcast, it airs only publishable items: the household's own recordings,
-  items cleared with a proof link, Creative Commons Attribution videos (read from YouTube at
-  intake and at every refresh), and sources the household recorded permission for, with the link
-  where the source allows sharing. The Broadcast page shows how much of each channel's next 7
-  days may air and the sources that would add most, each with Record permission. Turning the
-  limit off takes a typed confirmation. Each channel can play only in chosen countries or
-  everywhere but them, and Maktaba's own deny list applies to every channel; a viewer outside
-  sees that the channel isn't available in their country. An item that loses its permission
-  plays the "Not available online" card until the schedule is rebuilt.
+- **A cast grant for Maktaba's Cast receiver (Epic 58, story 58.07).** A signed-in phone or
+  browser can now mint a cast grant on the home (`POST /api/cast/grants`) for the one video or
+  play queue it casts. The TV uses the grant to open its own stream sessions, report where it
+  stopped, renew its links and move through the queue, so the phone can sleep or leave and
+  Continue Watching still shows the TV's place. A grant lasts at most six hours, acts as its
+  person (their libraries and a child's parental limit, read again on every request), is
+  never an admin, and reaches nothing else: any other video or route is refused. The home's
+  API answers Maktaba's receiver page at cast.maktaba.tv without cookies. A sign-in through
+  Maktaba Cloud and the admin token cannot mint one.
 
 - **Apps can tell when they and the home are too far apart (story 58.01).** The home now
   publishes its API level, the oldest level it still serves, and the oldest build of each app it
@@ -2636,6 +2635,30 @@ build fails when the two differ.
   Play/Pause and the media keys of both makers' remotes; the red key opens a card's actions), in
   English and Arabic, with its own fonts. Back on Home asks Leave Maktaba? before it closes.
   Signed out, it sends the TV to the home's sign-in and back.
+
+- **Playback that fits each TV (story 58.02).** A TV app can now report what its device plays
+  (`device_caps` on a stream session: containers, codecs with their height, frame rate and bit
+  depth, HDR formats, audio and passthrough, HLS segment formats, DASH, bitrate), and the home
+  merges it with the new `firetv`, `tizen`, `webos`, `roku`, `cast` and `vega` profiles: the
+  report narrows a profile freely and widens it only up to its platform's ceiling. A file whose
+  picture the TV plays but whose container, audio or Dolby Vision layer it does not is now
+  remuxed, the video copied, never encoded: HEVC and AV1 in fMP4 HLS segments (TS stays the
+  default), Dolby Vision profile 8 as its HDR10 or HLG base layer (Samsung never gets Dolby
+  Vision; Roku gets only profile 5), TrueHD and DTS as EAC3, with a stereo AAC track beside it on
+  Roku, and AV1 on Roku by DASH. Subtitles stay in step in fMP4 sessions. Each session also
+  carries `stream_sig`, which signs its subtitle and chapter URLs, so a TV player that sends no
+  header fetches every URL it needs. The older profiles decide as before.
+
+- **A published channel airs only what may be shared online (Epic 50, story 50.23).** While a
+  Live TV channel is broadcast, it airs only publishable items: the household's own recordings,
+  items cleared with a proof link, Creative Commons Attribution videos (read from YouTube at
+  intake and at every refresh), and sources the household recorded permission for, with the link
+  where the source allows sharing. The Broadcast page shows how much of each channel's next 7
+  days may air and the sources that would add most, each with Record permission. Turning the
+  limit off takes a typed confirmation. Each channel can play only in chosen countries or
+  everywhere but them, and Maktaba's own deny list applies to every channel; a viewer outside
+  sees that the channel isn't available in their country. An item that loses its permission
+  plays the "Not available online" card until the schedule is rebuilt.
 
 - **A home can broadcast chosen Live TV channels to viewers outside it (Epic 50, story 50.22).**
   An admin sets a channel up on the new Broadcast panel of the Live TV page (its link name,
