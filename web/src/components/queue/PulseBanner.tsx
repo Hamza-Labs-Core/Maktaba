@@ -1,12 +1,15 @@
 // The heartbeat line under the header: "Last activity 12 s ago", or "No activity
 // for 14 min: it may be stuck", with the jobs that stopped beating
-// (GET /api/queues/pulse, polled; the stand-alone centre's stuck detection).
+// (GET /api/queues/pulse, polled; the stand-alone centre's stuck detection). While the
+// workers run no job at all, the line gives way to the notice that says so
+// (WorkersStalled).
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { bidiIsolate, useI18n } from "../../lib/i18n";
 import { queueApi } from "../../lib/queueApi";
 import type { Pulse } from "../../lib/queueApi";
 import { jobHref } from "./RunningJobs";
+import { WorkersStalled } from "./WorkersStalled";
 import { useFmt } from "./format";
 
 const POLL_MS = 5_000;
@@ -32,6 +35,7 @@ export function PulseBanner({ pollMs = POLL_MS }: { pollMs?: number }) {
   }, [pollMs]);
 
   if (!pulse) return null;
+  const stalledWorkers = pulse.workers?.state === "not_responding" ? pulse.workers : null;
   const quiet = pulse.state === "idle";
   const age = pulse.age_sec;
   let text: string;
@@ -47,7 +51,7 @@ export function PulseBanner({ pollMs = POLL_MS }: { pollMs?: number }) {
       role={pulse.state === "stalled" ? "alert" : undefined}
     >
       <span className="mkt-q-pulse__dot" aria-hidden="true" />
-      <span>{text}</span>
+      {stalledWorkers ? <WorkersStalled workers={stalledWorkers} /> : <span>{text}</span>}
       {(pulse.stuck ?? []).length > 0 && (
         <ul className="mkt-q-pulse__stuck">
           {(pulse.stuck ?? []).map((j) => (

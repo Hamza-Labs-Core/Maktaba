@@ -81,6 +81,10 @@ type Handler struct {
 	// LocalPath turns a path in the database's form into this machine's
 	// (libpaths.ToLocal, which this package cannot import); nil: as it is.
 	LocalPath func(string) string
+	// RestartWorkers asks this machine's supervisor to restart the pipeline's workers
+	// and answers how many it restarted (POST /api/queues/workers/restart); nil: this
+	// server runs under no supervisor, and the route answers 503.
+	RestartWorkers func(ctx context.Context) (int, error)
 
 	libMu sync.Mutex
 	// actCache keeps GET /api/queues/libraries/activity (one scan of the finished
@@ -181,6 +185,7 @@ func (h *Handler) mount(r chi.Router) {
 	r.Post("/api/libraries/{id}/run-now", h.RunNowLibrary)
 	r.Post("/api/queues/pause-all", h.PauseAll)
 	r.Post("/api/queues/resume-all", h.ResumeAll)
+	r.Post("/api/queues/workers/restart", h.RestartWorkersNow)
 	r.Get("/api/queues/{stage}", h.Detail)
 	r.Patch("/api/queues/{stage}", h.PatchStage)
 	r.Get("/api/queues/{stage}/rate", h.Rate)

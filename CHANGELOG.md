@@ -263,6 +263,14 @@ build fails when the two differ.
 
 ### Fixed
 
+- **The Queues page says when the workers run no job, and an admin can restart them.** When
+  jobs wait and no worker runs them (no worker has reported in for two minutes, or a worker
+  that serves the waiting queue has started nothing for ten), the page shows a notice with
+  since when and how many jobs wait; they stay queued and nothing is lost. An admin gets
+  **Restart the workers**, which restarts the worker processes of the computer that runs
+  Maktaba; other users read that an admin can. Before, such a stall looked like a calm page,
+  and the only way out was to end a process by hand.
+
 - **Transcription gives its memory back when idle.** On a Mac, each transcription runner kept
   Whisper and the second listen's model loaded (5 to 10 GB each, with two runners on a large
   Mac) for as long as it ran. After ten minutes without transcription work it now lets both go,
