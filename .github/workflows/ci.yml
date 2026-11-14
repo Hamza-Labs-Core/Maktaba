@@ -122,6 +122,7 @@ jobs:
       android_apps: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.android_apps == 'true' }}
       android_tv: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.android_tv == 'true' }}
       tv_web: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.tv_web == 'true' }}
+      roku: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.roku == 'true' }}
       desktop_player: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.desktop_player == 'true' }}
       apple_apps: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.apple_apps == 'true' }}
       devportal: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.devportal == 'true' }}
@@ -368,6 +369,13 @@ jobs:
     if: needs.changes.outputs.tv_web == 'true'
     uses: ./.github/workflows/_tv-web.yml
 
+  roku:
+    # Epic 58 (58.15, 58.16): the Roku channel's BrightScript on brs-engine against the shared
+    # visual-text vectors, and its catalogs shaped at build time (see _roku.yml)
+    needs: [changes]
+    if: needs.changes.outputs.roku == 'true'
+    uses: ./.github/workflows/_roku.yml
+
   desktop-player:
     needs: [changes]
     if: needs.changes.outputs.desktop_player == 'true'
@@ -610,6 +618,7 @@ jobs:
       - android-apps
       - android-tv
       - tv-web
+      - roku
       - desktop-player
       - apple-apps
       - devportal
