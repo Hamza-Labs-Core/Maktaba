@@ -48,7 +48,20 @@ SceneGraph components:
 
 **Finding the home.** Roku has no mDNS API (research.md §6.3):
 1. **Saved homes** (`roRegistrySection`).
-2. **Sign in with a code** through Maktaba Cloud (58.03). This is the default.
+2. **Sign in with a code** through Maktaba Cloud (58.03). This is the default. The grant goes
+   to the first of the cloud's connections that answers as the approving home. The poll's
+   `home_id` is the cloud's id for the home, which `/api/discovery/home` never gives (it answers
+   with the home's instance id), so the home is known by its address (`NetIsApprovedHome`):
+   - at an HTTPS connection by host name (the relay, the home's direct name, a LAN name under
+     its certificate), the TV's certificate check proves the home, and a Maktaba home answering
+     there is taken;
+   - at any other connection (plain HTTP, or a raw IP address, including the home's plain public
+     address the cloud lists as `direct` for older apps), the answering home counts only when
+     its discovery `urls` list one of those HTTPS names (a home with remote access lists its
+     relay). The addresses are compared with the scheme and host lower-cased and no trailing
+     slash;
+   - another home is passed over (`did not answer as the home`) and the grant is never sent to
+     it.
 3. **Find on this network**: the same /24 probe as 58.09, using `roUrlTransfer` asynchronously,
    32 at a time, on the address from `roDeviceInfo.GetIPAddrs()`, then the home's HTTPS name and
    the home's own code.
