@@ -271,7 +271,8 @@ def test_mappings_upload_only_with_the_token_and_never_fail_the_release() -> Non
     assert steps[upload]["env"]["NAME"] == "${{ steps.version.outputs.name }}"
     # the files Collect bundles wrote
     assert 'mapping/maktaba-${app}-${NAME}-mapping.txt' in run
-    assert 'cp "$2/build/outputs/mapping/release/mapping.txt" "mapping/maktaba-$1-${NAME}-mapping.txt"' in (
+    # (the TV app's is its `google` flavor's variant, googleRelease: story 58.05)
+    assert 'cp "$2/build/outputs/mapping/${variant}/mapping.txt" "mapping/maktaba-$1-${NAME}-mapping.txt"' in (
         next(s for s in steps if s.get("name") == "Collect bundles")["run"])
 
 
@@ -290,6 +291,8 @@ def test_native_tables_upload_only_with_the_token_and_never_fail_the_release() -
     for app_dir in ("apps/android/player", "apps/android/remote", "apps/tv/android/app"):
         assert app_dir in run
     assert "build/intermediates/merged_native_libs/release" in run
+    # the TV app's Google Play build is its `google` flavor (story 58.05)
+    assert "apps/tv/android/app/build/intermediates/merged_native_libs/googleRelease" in run
     assert '"$RUNNER_TEMP/maktaba-symbols" extract -o "$tables" "$so" || bare=$((bare + 1))' in run
     assert '"$RUNNER_TEMP/maktaba-symbols" upload -version "$NAME" "${made[@]}"' in run
     assert 'echo "kept=true" >>"$GITHUB_OUTPUT"' in run
