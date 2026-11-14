@@ -3,6 +3,7 @@
 package main
 
 import (
+	"context"
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/base64"
@@ -17,8 +18,10 @@ import (
 	"testing"
 	"time"
 
+	billingpkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/billing"
 	bc "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/broadcast"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/config"
+	broadcasth "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/broadcast"
 )
 
 // Story 50.26 on the api role's real router: invites and channel access, the role rule of each
@@ -82,6 +85,15 @@ func controlPayload(t *testing.T, text string) []byte {
 
 // accessEnv runs the api with a broadcast key and the fake edge as its ingest host.
 func accessEnv(t *testing.T, edge *fakeEdge, adjust func(*config.Config)) (*env, ed25519.PublicKey) {
+	e, k := accessEnvKey(t, edge, adjust)
+	accessKey = &k
+	return e, k.Priv.Public().(ed25519.PublicKey)
+}
+
+// accessKey is the last accessEnv's signing key (the tests' own worker uses it).
+var accessKey *bc.Key
+
+func accessEnvKey(t *testing.T, edge *fakeEdge, adjust func(*config.Config)) (*env, bc.Key) {
 	t.Helper()
 	seed := make([]byte, 32)
 	_, _ = rand.Read(seed)
@@ -97,7 +109,11 @@ func accessEnv(t *testing.T, edge *fakeEdge, adjust func(*config.Config)) (*env,
 			adjust(c)
 		}
 	})
-	return e, ed25519.NewKeyFromSeed(seed).Public().(ed25519.PublicKey)
+	k, err := bc.KeyFromSeed(seed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return e, k
 }
 
 // publisherHome is a Pro home, a test publisher with the agreement accepted, with one channel.
@@ -245,6 +261,20 @@ func TestViewerInvitesAndTheirRoles(t *testing.T) {
 	}
 	if e.count(`SELECT count(*) FROM servers WHERE id = $1 AND broadcast_access_version > broadcast_access_pushed`, h.id) != 1 {
 		t.Fatal("a staff revoke left nothing for the worker to push")
+	}
+	// the worker's push (what PushPending does every minute) and its hourly refresh
+	wd := &broadcasth.Deps{DB: e.pool.DB, Store: &billingpkg.BroadcastStore{DB: e.pool.DB}, Key: accessKey, Edge: broadcasth.HTTPEdge{Base: edge.srv.URL}}
+	if n, err := wd.PushPending(context.Background()); err != nil || n != 1 {
+		t.Fatalf("push pending: %d %v", n, err)
+	}
+	if s := edge.last(t); len(s.RevokedInvites) != 2 {
+		t.Fatalf("staff revoke at the edge: %+v", s)
+	}
+	if n, err := wd.RefreshAll(context.Background()); err != nil || n != 2 {
+		t.Fatalf("refresh: %d %v", n, err)
+	}
+	if n, _ := wd.PushPending(context.Background()); n != 2 {
+		t.Fatalf("refresh pushed %d", n)
 	}
 
 	// limits: the publisher's own, validated

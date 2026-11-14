@@ -293,15 +293,21 @@ func accessPusher(cfg config.Config, pool *db.Pool, logger *slog.Logger) *broadc
 		Edge:  broadcasth.HTTPEdge{Base: cfg.Broadcast.IngestURL}}
 }
 
-// pushAccess retries the access pushes a request couldn't make.
+// pushAccess retries the access pushes a request couldn't make, and every hour re-sends every
+// active publisher's state (RefreshAll).
 func pushAccess(ctx context.Context, logger *slog.Logger, d *broadcasth.Deps, every time.Duration) {
 	t := time.NewTicker(every)
 	defer t.Stop()
-	for {
+	for tick := 0; ; tick++ {
 		select {
 		case <-ctx.Done():
 			return
 		case <-t.C:
+			if tick%60 == 0 {
+				if _, err := d.RefreshAll(ctx); err != nil {
+					logger.Warn("worker: broadcast access refresh", "err", err)
+				}
+			}
 			if _, err := d.PushPending(ctx); err != nil {
 				logger.Warn("worker: broadcast access push", "err", err)
 			}

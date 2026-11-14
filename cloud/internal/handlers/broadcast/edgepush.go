@@ -178,6 +178,22 @@ func (dp *Deps) PushPending(ctx context.Context) (int, error) {
 	return n, nil
 }
 
+// RefreshAll marks every publisher with a live channel or a live invite changed, so the next
+// PushPending re-sends its state. The worker runs it hourly: what the access state derives from
+// outside its own tables (the plan, a confirmed email, the 7 days since the first publish,
+// broadcast.open_access.enabled) reaches the edge within the hour, and the edge never keeps an
+// open channel open past it.
+func (dp *Deps) RefreshAll(ctx context.Context) (int64, error) {
+	res, err := dp.DB.ExecContext(ctx, `
+        UPDATE servers SET broadcast_access_version = broadcast_access_version + 1
+         WHERE id IN (SELECT server_id FROM broadcast_channels WHERE unpublished_at IS NULL
+                      UNION SELECT server_id FROM broadcast_invites WHERE expires_at > now() - interval '1 day')`)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
 // EdgePass is one device's guest pass as the edge reports it: a random id, its invite, and when
 // it was first and last used. No identity.
 type EdgePass struct {

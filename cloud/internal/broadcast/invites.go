@@ -109,7 +109,9 @@ func VerifyInvite(pubkeys map[string]ed25519.PublicKey, token string, now time.T
 }
 
 // codeAlphabet is the short codes' 36 characters: MK- plus 4 of them is about 1.68 M codes per
-// publisher, with brute force bounded by the edge's 10 tries a minute per IP.
+// publisher, with brute force bounded by the edge's 10 tries a minute per IP and its cap on a
+// publisher's failed tries from all addresses together; a code also inherits its invite's use
+// limit, expiry and revocation.
 const codeAlphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
 // NewShortCode makes a TV short code, "MK-" plus 4 characters.
@@ -174,7 +176,7 @@ type AccessState struct {
 }
 
 // AccessTTL is how long the edge accepts one access post; the cloud pushes again on every
-// change and re-pushes what it holds every 5 minutes, so a stale post never outlives a day.
+// change and re-pushes every active publisher hourly (RefreshAll).
 const AccessTTL = 24 * time.Hour
 
 // SignAccess signs a publisher's access state as a control post.
