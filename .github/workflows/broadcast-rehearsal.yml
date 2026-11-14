@@ -67,8 +67,12 @@ jobs:
       - uses: actions/setup-go@v6.4.0
         with:
           go-version-file: tools/broadcast-viewers/go.mod
-          # the viewers' module has no dependency (no go.sum); the home's tests are streaming's
-          cache-dependency-path: streaming/go.sum
+          cache: false
+      # the viewers' module has no dependency (no go.sum); the home's tests are streaming's
+      - name: Go modules
+        uses: ./.github/actions/go-mod-download
+        with:
+          modules: tools/broadcast-viewers streaming
       - name: The viewers and the verdict (T01, T02)
         working-directory: tools/broadcast-viewers
         run: |
@@ -118,22 +122,51 @@ jobs:
         with:
           go-version-file: tools/broadcast-viewers/go.mod
           cache: false # the viewers' module has no dependency
+      - name: Go modules
+        uses: ./.github/actions/go-mod-download
+        with:
+          modules: tools/broadcast-viewers
+      # the artifacts API can be unreachable once: three attempts, then a check
       - name: Download broadcast-images
-        id: dl
+        id: artifact-broadcast-images
         continue-on-error: true
         uses: actions/download-artifact@v8.0.1
         with:
           name: broadcast-images
           path: /tmp
-      - name: Wait 20s to retry the download
-        if: steps.dl.outcome == 'failure'
-        run: sleep 20
+      - name: Wait 15s to retry the download of broadcast-images
+        if: steps.artifact-broadcast-images.outcome == 'failure'
+        shell: bash
+        run: sleep 15
       - name: Download broadcast-images (attempt 2)
-        if: steps.dl.outcome == 'failure'
+        id: artifact-broadcast-images-2
+        if: steps.artifact-broadcast-images.outcome == 'failure'
+        continue-on-error: true
         uses: actions/download-artifact@v8.0.1
         with:
           name: broadcast-images
           path: /tmp
+      - name: Wait 45s to retry the download of broadcast-images
+        if: steps.artifact-broadcast-images-2.outcome == 'failure'
+        shell: bash
+        run: sleep 45
+      - name: Download broadcast-images (attempt 3)
+        id: artifact-broadcast-images-3
+        if: steps.artifact-broadcast-images-2.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: broadcast-images
+          path: /tmp
+      - name: Check broadcast-images downloaded
+        id: artifact-broadcast-images-check
+        if: steps.artifact-broadcast-images-3.outcome == 'failure'
+        shell: bash
+        env:
+          ARTIFACT: broadcast-images
+        run: |
+          echo "::error::the artifact $ARTIFACT never downloaded after 3 attempts (the artifacts API unreachable, or no job uploaded it)"
+          exit 1
       - name: Load the images
         run: gunzip -c /tmp/broadcast-images.tar.gz | docker load
       - name: Run ${{ matrix.scenario }}
@@ -170,11 +203,52 @@ jobs:
         with:
           go-version-file: tools/broadcast-viewers/go.mod
           cache: false # the viewers' module has no dependency
-      - uses: actions/download-artifact@v8.0.1
+      - name: Go modules
+        uses: ./.github/actions/go-mod-download
+        with:
+          modules: tools/broadcast-viewers
+      # the scenarios' records: optional (a scenario that never ran uploads none, and the
+      # verdict names it from the job results)
+      # the artifacts API can be unreachable once: three attempts, then a check
+      - name: Download broadcast-broadcast-*
+        id: artifact-broadcast-results
         continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
         with:
           pattern: broadcast-broadcast-*
           path: ${{ runner.temp }}/results
+      - name: Wait 15s to retry the download of broadcast-broadcast-*
+        if: steps.artifact-broadcast-results.outcome == 'failure'
+        shell: bash
+        run: sleep 15
+      - name: Download broadcast-broadcast-* (attempt 2)
+        id: artifact-broadcast-results-2
+        if: steps.artifact-broadcast-results.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          pattern: broadcast-broadcast-*
+          path: ${{ runner.temp }}/results
+      - name: Wait 45s to retry the download of broadcast-broadcast-*
+        if: steps.artifact-broadcast-results-2.outcome == 'failure'
+        shell: bash
+        run: sleep 45
+      - name: Download broadcast-broadcast-* (attempt 3)
+        id: artifact-broadcast-results-3
+        if: steps.artifact-broadcast-results-2.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          pattern: broadcast-broadcast-*
+          path: ${{ runner.temp }}/results
+      - name: Check broadcast-broadcast-* downloaded
+        id: artifact-broadcast-results-check
+        if: steps.artifact-broadcast-results-3.outcome == 'failure'
+        shell: bash
+        env:
+          ARTIFACT: broadcast-broadcast-*
+        run: |
+          echo "::warning::the artifact $ARTIFACT never downloaded after 3 attempts; the verdict reads the scenarios it has"
       # the scenarios without a body yet: their records (XFAIL, or a failure if one is not listed)
       - name: The unbuilt scenarios
         if: needs.unit.outputs.unbuilt != ''
