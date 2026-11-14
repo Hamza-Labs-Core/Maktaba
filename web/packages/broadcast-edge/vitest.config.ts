@@ -13,6 +13,11 @@ const inviteVectors = readFileSync(
   "../../../cloud/internal/broadcast/testdata/invite_vectors.json",
   "utf8"
 );
+// story 50.28: the analytics events' columns, shared with the cloud's rollup
+const eventsSchema = readFileSync(
+  "../../../cloud/internal/broadcast/testdata/events_schema.json",
+  "utf8"
+);
 const parity = JSON.parse(readFileSync("../tvsite/src/testdata/parity.json", "utf8")) as {
   kid: string;
   jwk: string;
@@ -86,6 +91,7 @@ export default defineConfig({
           STREAM_KEY_JWK: parity.jwk,
           TEST_VECTORS: vectors,
           TEST_INVITE_VECTORS: inviteVectors,
+          TEST_EVENTS_SCHEMA: eventsSchema,
           TURNSTILE_SECRET: "test-turnstile-secret",
         },
         serviceBindings: {
