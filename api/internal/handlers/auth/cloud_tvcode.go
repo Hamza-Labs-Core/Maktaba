@@ -18,21 +18,22 @@ import (
 )
 
 // TVCodeApprover is the home user a tvcode assertion approves code as: the user its cloud account
-// is linked to. Every refusal wraps discoveryh.ErrCloudAssertionRefused (the reason is for the
+// is linked to, and that cloud account (the TV's sign-in is recorded only while the link still
+// names it, RecordTVCodeSignIn). Every refusal wraps discoveryh.ErrCloudAssertionRefused (the reason is for the
 // audit log, never the answer); discoveryh.ErrCloudNotLinked when this home holds no cloud
 // identity.
-func (h *Handler) TVCodeApprover(ctx context.Context, assertion, code string) (string, error) {
+func (h *Handler) TVCodeApprover(ctx context.Context, assertion, code string) (userID, cloudUserID string, err error) {
 	if h.Cloud == nil || h.Cloud.Store == nil || h.Cloud.Identity == nil {
-		return "", discoveryh.ErrCloudNotLinked
+		return "", "", discoveryh.ErrCloudNotLinked
 	}
 	id, pub, err := h.Cloud.Identity.Load()
 	if err != nil {
-		return "", discoveryh.ErrCloudNotLinked
+		return "", "", discoveryh.ErrCloudNotLinked
 	}
-	refuse := func(reason, userID string) (string, error) {
+	refuse := func(reason, userID string) (string, string, error) {
 		h.audit(ctx, securityaudit.Entry{Event: securityaudit.EventLoginFailed, ActorUserID: userID,
 			Payload: map[string]any{"via": "cloud_tv_code", "reason": reason}})
-		return "", fmt.Errorf("%w: %s", discoveryh.ErrCloudAssertionRefused, reason)
+		return "", "", fmt.Errorf("%w: %s", discoveryh.ErrCloudAssertionRefused, reason)
 	}
 	a, err := cloudlink.VerifyAssertion(assertion, pub, cloudlink.PurposeTVCode, id.ServerID, h.now())
 	if err != nil {
@@ -46,21 +47,21 @@ func (h *Handler) TVCodeApprover(ctx context.Context, assertion, code string) (s
 		if errors.Is(err, cloudlink.ErrReplayed) {
 			return refuse("assertion replayed", "")
 		}
-		return "", err
+		return "", "", err
 	}
 	link, err := h.Cloud.Store.LinkByCloudUser(ctx, a.Sub)
 	if errors.Is(err, cloudlink.ErrNotLinked) {
 		return refuse("cloud account not linked", "")
 	}
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	u, err := h.Users.GetByID(ctx, link.UserID)
 	if errors.Is(err, users.ErrNotFound) || (err == nil && u.ID == users.SentinelAdminID) {
 		return refuse("home user gone", link.UserID)
 	}
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	if u.IsLocked(h.now()) {
 		return refuse("home user locked", u.ID)
@@ -68,18 +69,27 @@ func (h *Handler) TVCodeApprover(ctx context.Context, assertion, code string) (s
 	if u.MustChangePassword {
 		return refuse("home user must change their password", u.ID)
 	}
-	return u.ID, nil
+	return u.ID, link.CloudUserID, nil
 }
 
 // RecordTVCodeSignIn records the refresh family of a TV approved on maktaba.tv as a cloud sign-in
 // of userID's link, scope play: unlinking the cloud account revokes it (Unlink), a refresh after
-// the link is gone ends it, and its refreshed tokens are capped as any cloud sign-in's.
-func (h *Handler) RecordTVCodeSignIn(ctx context.Context, familyID, userID string) error {
+// the link is gone ends it, and its refreshed tokens are capped as any cloud sign-in's. It does so
+// only while the link still names cloudUserID, the account that approved the TV, checked in the
+// transaction that records it: a link removed, or changed to another account, since the approval
+// revokes the family and returns discoveryh.ErrCloudLinkChanged (the TV gets no tokens).
+func (h *Handler) RecordTVCodeSignIn(ctx context.Context, familyID, userID, cloudUserID string) error {
 	if h.Cloud == nil || h.Cloud.Store == nil {
 		return discoveryh.ErrCloudNotLinked
 	}
 	if familyID == "" {
 		return errors.New("auth: no refresh family to record")
 	}
-	return h.Cloud.Store.RecordSignIn(ctx, cloudlink.KindRefresh, familyID, userID, principal.CloudScopePlay)
+	err := h.Cloud.Store.RecordLinkedSignIn(ctx, familyID, userID, cloudUserID, principal.CloudScopePlay)
+	if errors.Is(err, cloudlink.ErrLinkChanged) {
+		h.audit(ctx, securityaudit.Entry{Event: securityaudit.EventLoginFailed, ActorUserID: userID,
+			Payload: map[string]any{"via": "cloud_tv_code", "reason": "cloud link removed or changed since the approval"}})
+		return fmt.Errorf("%w: %w", discoveryh.ErrCloudLinkChanged, err)
+	}
+	return err
 }
