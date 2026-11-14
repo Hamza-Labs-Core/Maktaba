@@ -39,6 +39,14 @@ function ui_Vis(s as Dynamic, widthChars as Integer) as String
     return VisualText(s, widthChars)
 end function
 
+' A value from the home for m.i18n.Format, left raw: Format shapes the whole line. A value put
+' through ui_Vis first would keep an Arabic line in logical order (presentation forms are
+' outside the shaping table) and, in English, needs no help.
+function ui_Arg(s as Dynamic) as String
+    if s = invalid then return ""
+    return s
+end function
+
 ' Calls the home: the response arrives in callback (a function name of this component) as an
 ' roSGNodeEvent whose node is the request (its tag tells calls apart).
 function ui_Api(method as String, path as String, body as Dynamic, tag as String, callback as String) as Object

@@ -552,3 +552,62 @@ func ccTokenClaims(t *testing.T, access string) ccClaims {
 	}
 	return c
 }
+
+// The race between a cloud approval and the TV's redeem: the viewer's cloud account approves a
+// code on maktaba.tv, then, before the TV redeems the grant, the account is unlinked, or the
+// viewer's link is changed to another cloud account. The TV gets no tokens (the 410 of an expired
+// approval, saying why), nothing is recorded as a cloud sign-in, and no token of the family it
+// was minted stays usable. An approval with the link unchanged still signs the TV in.
+func TestPGCloudAssertionLinkChangedBeforeRedeem(t *testing.T) {
+	cloud := cloudlinktest.New(t)
+	h, agent, read, exec := setupCloudCodeWith(t, cloud)
+	approve := func(cloudUser, code string) string {
+		t.Helper()
+		a := cloud.Assertion(cloudlink.PurposeTVCode, cloudUser, code)
+		if rec := ccDo(h, "", http.MethodPost, "/api/pairing/cloud-assertion", `{"code":"`+code+`","assertion":"`+a+`"}`); rec.Code != http.StatusOK {
+			t.Fatalf("%s: approve = %d %s", code, rec.Code, rec.Body.String())
+		}
+		return agent.grant(code)
+	}
+	refused := func(grant, what string) {
+		t.Helper()
+		rec := ccDo(h, "", http.MethodPost, "/api/pairing/device/token", `{"device_code":"`+grant+`"}`)
+		if rec.Code != http.StatusGone || strings.Contains(rec.Body.String(), "access_token") ||
+			!strings.Contains(rec.Body.String(), `"reason":"cloud_link_changed"`) {
+			t.Fatalf("%s: redeem = %d %s", what, rec.Code, rec.Body.String())
+		}
+		if again := ccDo(h, "", http.MethodPost, "/api/pairing/device/token", `{"device_code":"`+grant+`"}`); again.Code == http.StatusOK {
+			t.Fatalf("%s: redeemed on a second try", what)
+		}
+		if n := read(`SELECT count(*)::text FROM cloud_sign_ins WHERE user_id = $1`, ccViewer); n != "0" {
+			t.Fatalf("%s: %s cloud sign-ins recorded", what, n)
+		}
+		if live := read(`SELECT count(*)::text FROM refresh_tokens WHERE user_id = $1 AND revoked_at IS NULL`, ccViewer); live != "0" {
+			t.Fatalf("%s: %s live refresh tokens", what, live)
+		}
+	}
+
+	// unlinked between the approval and the redeem (the admin's DELETE, as Sessions does it)
+	exec(`INSERT INTO home_user_links (user_id, cloud_user_id, scope) VALUES ($1,'cloud-viewer','play')`, ccViewer)
+	grant := approve("cloud-viewer", "RACE2345")
+	if rec := ccDo(h, "admin", http.MethodDelete, "/api/users/"+ccViewer+"/cloud-link", ""); rec.Code/100 != 2 {
+		t.Fatalf("unlink = %d %s", rec.Code, rec.Body.String())
+	}
+	refused(grant, "unlinked")
+
+	// linked again, then changed to another cloud account before the redeem
+	exec(`INSERT INTO home_user_links (user_id, cloud_user_id, scope) VALUES ($1,'cloud-viewer','play')`, ccViewer)
+	grant = approve("cloud-viewer", "RENK2345")
+	exec(`UPDATE home_user_links SET cloud_user_id = 'cloud-someone-else' WHERE user_id = $1`, ccViewer)
+	refused(grant, "linked to another account")
+
+	// the link unchanged since the approval: the TV signs in, recorded as the link's
+	grant = approve("cloud-someone-else", "KEPT2345")
+	got := redeem(t, h, grant)
+	if got.Usr != ccViewer || !got.Rst {
+		t.Fatalf("unchanged link: signed in as %+v", got)
+	}
+	if rec := read(`SELECT string_agg(kind||' '||scope, ',') FROM cloud_sign_ins WHERE user_id = $1`, ccViewer); rec != "refresh play" {
+		t.Fatalf("unchanged link: cloud sign-in = %q", rec)
+	}
+}

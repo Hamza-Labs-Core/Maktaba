@@ -51,22 +51,32 @@ inside Arabic text. Tier labels follow Epic 57 (‎+13 with an LRM).
 display order:
 - **Static strings** are shaped at build time. The build step reads `i18n/ar.json` and runs:
   - the Unicode Bidirectional Algorithm (UAX #9, through `python-bidi`);
-  - Arabic shaping to presentation forms (`arabic-reshaper`, or the equivalent table).
+  - Arabic shaping to presentation forms (`arabic-reshaper`, limited to the lam-alef
+    ligatures), then the L4 mirroring that python-bidi leaves to the renderer and Roku's renderer
+    does not do (the reference is `apps/tv/roku/tools/visual.py`).
 
   It writes Roku's `translations` file with the visual strings. Line breaking happens before
   reordering: the build step wraps each string to the label's width in characters, given in the
   key's metadata, then reorders each line.
 - **Text from the home** (titles, descriptions, names, Arabic subtitle cues) is shaped on the
-  device by `VisualText(s, maxWidthChars)`, a BrighterScript port of the same two steps:
+  device by `VisualText(s, maxWidthChars)` in `source/visualtext.brs`, a BrightScript port of the
+  same steps, with tables generated from the reference (`gen_tables.py`), so the data cannot
+  drift:
   - joining-type tables for the Arabic block (U+0600–U+06FF) and the presentation forms B
     (U+FE70–U+FEFF), with lam-alef ligatures;
-  - a reduced bidi pass covering Arabic, Latin, European and Arabic-Indic digits, and neutral
-    punctuation, which is what Maktaba's titles hold.
-- Text outside those scripts (Persian or Urdu letters beyond the table, Hebrew) falls back to the
-  logical order with a log line, never a crash.
+  - a one-line UAX #9 pass (W1–W7, N0 bracket pairs, N1–N2, I1–I2, L1, L2, L4) covering Arabic,
+    Latin, European and Arabic-Indic digits, and neutral punctuation, which is what Maktaba's
+    titles hold.
+  - Tashkeel is dropped: Roku has no mark positioning.
+- Text outside those scripts (Persian or Urdu letters beyond the table, Hebrew, ZWJ/ZWNJ,
+  embedding controls) falls back to the logical order with a log line, never a crash.
 - `VisualText` is checked against the Python reference on a shared vector file
-  (`shared/i18n/visual-vectors.json`, about 500 lines of real titles, mixed text, numbers and
-  punctuation). A difference fails CI.
+  (`shared/i18n/visual-vectors.json`, 312 cases of joining, ligatures, tashkeel, digits, times,
+  episode codes, mixed runs, punctuation mirroring, width cuts, wrapping, the fallback and real
+  titles, written from the reference by `gen_vectors.py`). A difference fails CI.
+- The reading order is also held across clients: `shared/i18n/visual_order.mjs` reads each
+  character's drawn position in `/tv/` and the Cast receiver, en and ar, and compares it with the
+  NFKC fold of Roku's visual string for the same vector.
 - Long descriptions are shaped once per screen and cached. Shaping cost is measured on a Roku
   Express, and the budget is 50 ms per screen.
 
@@ -92,8 +102,8 @@ CI are taken dark. Light theme is not offered on TVs, as on Android TV and Apple
 | T01 | Python unit | `check_tv_catalogs.py` fixtures | missing key, placeholder mismatch | fails, naming the entry |
 | T02 | Python unit | the Roku build step | shape `ar.json` | visual strings equal the reference; wrapped lines reordered per line |
 | T03 | brs-engine unit | `VisualText` on `visual-vectors.json` | each vector | equals the Python reference |
-| T04 | brs-engine timing | 20 long descriptions | shape | ≤ 50 ms per screen on the engine, re-measured on a Roku Express in the checklist |
-| T05 | Playwright (`/tv/`, launcher, receiver) | ar | every screen | `dir=rtl`, focus order mirrored, LRM-wrapped times; screenshots dark |
+| T04 | brs-engine timing | 20 long descriptions | shape | open: about 320 ms for 20 descriptions of 229 characters on brs-engine, against the 50 ms budget, because of the interpreter's per-statement and per-call cost; the test logs the time and asserts a 2 s regression ceiling, and the Roku Express timing in the checklist (`docs/stores/roku.md` row 10) decides it |
+| T05 | Playwright (`/tv/`, launcher, receiver) | ar | every screen | `dir=rtl`, focus order mirrored, LRM-wrapped times; vector `episode.06` in the same reading order as Roku (`visual_order.mjs`); screenshots dark |
 
 ## Strings
 
@@ -113,6 +123,8 @@ This story adds no user-facing strings of its own. It is the checks and the shap
 |---|---|
 | `tools/i18n/check_tv_catalogs.py` (new) | the catalog check |
 | `apps/tv/roku/tools/shape_strings.py` (new) | build-time shaping |
-| `apps/tv/roku/source/visualtext.bs` (new) | device shaping |
+| `apps/tv/roku/tools/visual.py`, `gen_vectors.py`, `gen_tables.py` (new) | the reference, the vectors' expected output, the device tables |
+| `apps/tv/roku/source/visualtext.brs`, `visualtext_tables.brs` (new) | device shaping |
 | `shared/i18n/visual-vectors.json` (new) | vectors |
-| `apps/tv/roku/source/layout.bs` (new) | the mirroring helper |
+| `apps/tv/roku/source/layout.brs` (new) | the mirroring helper, `LayoutNew(rtl, width)` |
+| `shared/i18n/visual_order.mjs` (new) | the cross-client reading-order check |

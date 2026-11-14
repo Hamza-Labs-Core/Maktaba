@@ -94,14 +94,13 @@ final class PlayerHomeUITests: PlayerUITestCase {
         app.navigationBars.buttons.firstMatch.tap()
         // looks, not only seconds: one look took 4.2 s on a loaded iPad, taken mid-pop (#761)
         XCTAssertTrue(waitUntil { card.isHittable }, "v2's card, back on Home")
-        // Home reads itself again as it shows: pressed during that redraw, the touch is lost
-        waitUntilHomeIsQuiet()
 
-        // held long enough for a loaded runner: at 1.2 s the menu had not opened when the touch
-        // lifted, and the lift was a tap that opened v2's page again (CI, iPad)
-        card.press(forDuration: 2.5)
+        // Home reads itself again as it shows: pressed during that redraw, the touch is lost.
+        // A press taken as a tap opens v2's page: back, and pressed once more (`openMenu`)
         let resume = app.buttons["home.menu.resume"].firstMatch
-        XCTAssertTrue(resume.waitForExistence(timeout: 5), "Resume in the context menu")
+        openMenu(on: card, item: resume, page: element("screen.video"), "Resume in the context menu",
+                 settle: { waitUntilStill(card, timeout: 5); waitUntilHomeIsQuiet() },
+                 back: { app.navigationBars.buttons.firstMatch.tap() })
         resume.tap()
         playerOpened("v2", at: 1240, "at the person's position")
     }
@@ -114,19 +113,12 @@ final class PlayerHomeUITests: PlayerUITestCase {
         // the recommendations and each card's title come after Home shows: a press during
         // their redraw opened no menu (#695's iPad, 2026-11-07)
         // and For You is the page's last row: the swipe that brought it may still be coming
-        // to rest. Pressed once the card has stopped and the home has been asked nothing more
-        waitUntilStill(card, timeout: 10)
-        waitUntilHomeIsQuiet()
-        waitUntilStill(card, timeout: 5)
-        // held 4 s: on CI's iPhone a 2.5 s hold ended before the app had taken the touch for
-        // a long press, and the lift was a tap that opened v6's page (2026-11-12; Home did
-        // not move or reload in that run's recording, and no touch was cancelled)
-        card.press(forDuration: 4)
+        // to rest. Pressed once the card has stopped and the home has been asked nothing more;
+        // a press taken as a tap opens v6's page: back, and pressed once more (`openMenu`)
         let item = app.buttons["home.menu.notInterested"].firstMatch
-        let shown = item.waitForExistence(timeout: 10)
-        XCTAssertTrue(shown, "Not interested in the context menu"
-            + (shown ? "" : element("screen.video").exists ? ": the press was taken as a tap (v6's page opened)" : ": no menu and no page"))
-        guard shown else { return }
+        openMenu(on: card, item: item, page: element("screen.video"), "Not interested in the context menu",
+                 settle: { waitUntilStill(card, timeout: 10); waitUntilHomeIsQuiet(); waitUntilStill(card, timeout: 5) },
+                 back: { app.navigationBars.buttons.firstMatch.tap() })
         item.tap()
         XCTAssertTrue(card.waitForNonExistence(timeout: 5), "the card is gone")
         XCTAssertTrue(row("rec-for_you").descendants(matching: .any)["home.card.v11"].exists, "the others stay")

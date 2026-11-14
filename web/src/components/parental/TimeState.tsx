@@ -27,6 +27,7 @@ import {
 import type { MyTime, TimeReason } from "../../lib/parentalApi";
 import { recheckMyRequests } from "../../lib/parentalRequests";
 import { AskTime } from "./AskParent";
+import { useParentalScreens } from "./screens";
 import "../../styles/parental.css";
 
 type Words = Pick<I18nState, "t" | "n" | "locale" | "formatDate">;
@@ -135,7 +136,13 @@ export interface TimesUpProps {
 }
 
 /** The time's-up screen. */
-export function TimesUp({ reason, nextAllowedAt, savedAt, onCheck, action }: TimesUpProps) {
+export function TimesUp(props: TimesUpProps) {
+  // the big screen's own screen, where it gives one (story 58.14)
+  const Own = useParentalScreens().TimesUp;
+  return Own ? <Own {...props} /> : <WebTimesUp {...props} />;
+}
+
+function WebTimesUp({ reason, nextAllowedAt, savedAt, onCheck, action }: TimesUpProps) {
   const words = useI18n();
   const { t } = words;
   const next = nextAllowedAt ? nextWords(nextAllowedAt, words) : "";
