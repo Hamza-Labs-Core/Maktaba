@@ -103,7 +103,7 @@ After the round, the release checklist rotates both ([review-home.md](review-hom
 ## Real-device checklist
 
 Run before each channel release candidate is uploaded to the Roku dashboard (58.12 T04–T05,
-58.13 T05–T06). The rule and the result line are in [README.md](README.md).
+58.13 T05–T06; rows 32–37 the player's parental answers, story 58.14). The rule and the result line are in [README.md](README.md).
 
 **What CI covers instead:** the BrighterScript build and lint, and brs-engine logic, focus,
 layout and render tests (brs-engine screenshots are not Roku's renderer). Roku has no emulator.
@@ -132,7 +132,7 @@ debug console (`telnet <roku-ip> 8085`) for the whole run.
 | 7 | Switch to Arabic | text joined and in reading order, rows start at the right, Left moves forward |
 | 8 | Arabic subtitles and the player overlay | drawn joined, right to left, in the bundled font |
 | 9 | A Persian title with letters outside the shaping table | shown in logical order, logged, no crash |
-| 10 | Shaping 20 long descriptions on the Roku Express: the `TIMING shape=… loop=… units=…` line the device-test package prints (row 1, `tests/timing_test.brs`) | `shape` within 50 ms per screen; the line kept with the result, as `loop` says how much faster the device is than brs-engine (T04's CI ceiling is 3.5 `units` on brs-engine, where the 20 cost about 2.5) |
+| 10 | Shaping 20 long descriptions on the Roku Express: the `TIMING shape=… loop=… units=…` line the device-test package prints (row 1, `tests/timing_test.brs`) | `shape` within 50 ms per screen; the line kept with the result, as `loop` says how much faster the device is than brs-engine (T04's CI ceiling is 2.2 `units` on brs-engine, where the 20 cost about 1.65) |
 | 11 | Voice search | the query reaches the home and results show |
 | 12 | The audio guide | reads every focusable label |
 | 13 | Posters on Home, a library's grid and a series | every poster draws (the scene's HTTP agent carries the bearer; brs-engine fetches posters without it, so only a device shows this) |
@@ -154,6 +154,12 @@ debug console (`telnet <roku-ip> 8085`) for the whole run.
 | 29 | A stream that fails on the Roku (a file the Video node refuses) | one retry with a converted version (Trying a converted version…), then the error with Back |
 | 30 | Sign in by a cloud code that an admin of the home approves, then open every screen, and try to approve another device from the TV | the TV never acts as an admin: no admin-only screen or action appears, it reads only the libraries named for it, approving another device is refused, and it stays so after its token refreshes (the home's `principal.ApplyRestricted`, story 58.03) |
 | 31 | The code screen's QR, for a cloud code and for the home's own code, scanned with a phone's camera from across the room on the Roku Express | the QR shows within 2 s of the code (the 8085 console's `[qr] encoded … in N ms`), and the camera opens the approve page with the code filled in (`maktaba.tv/tv?c=…`, or the home's `/pair?code=…`) |
+| 32 | A restricted child's account with a daily limit almost used: play a video past the limit | the video stops at the next progress post (within about 10 s of the limit), its session closes, and the time's-up page shows Time's up for today, when watching opens again and the saved place; the focus is on 15 minutes; never the player's error or a spinner |
+| 33 | On that page, ask for 30 minutes; a parent approves from Maktaba on their phone | the page says the request waits and Check again has the focus; within 15 s of the yes the video plays again from where it stopped, without restarting the channel |
+| 34 | Outside the account's watching hours, open a video, then press Check again | Not watching time yet, with the time watching opens again; Check again asks the home and the page stays until the hours open |
+| 35 | A guardian hides the playing title from the child (a tighter limit) while it plays | at the next progress post the video stops and This isn't available shows, with the line that the video is no longer available on this account and Ask a parent focused; a parent's yes plays it again from where it stopped, and Back then goes to Home |
+| 36 | Rows 32 and 35 in Arabic | both pages mirrored: the 15-minute button at the right, Left moves forward, every line joined and right to left |
+| 37 | A pause of over a minute on a restricted account with time left, then Play | the stream opens again once where it was (the 8085 console's `[parental] lease lapsed; opening again`) and plays; no time's-up page |
 
 ## Results
 

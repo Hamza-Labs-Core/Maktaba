@@ -294,6 +294,16 @@ build fails when the two differ.
 
 ### Fixed
 
+- **Roku's player stops cleanly when a child's time is up or a title is hidden (Epic 58, story
+  58.14).** When the home ends a restricted account's watching time, before or during a video,
+  the Roku channel stops the video and shows Time's up for today (or Not watching time yet),
+  when watching opens again and where the video stopped, never the player's error. The child
+  can ask a parent for 15, 30 or 60 more minutes, and the focus starts on the first; a parent's
+  yes from Maktaba on their phone plays the video again from where it stopped, and Check again
+  asks the home. A video hidden by the limit while it plays shows This isn't available, with
+  Ask a parent; a yes plays it again. The home decides every time; the TV cannot add time.
+  English and Arabic, mirrored.
+
 - **Roku shows Arabic inside English lines joined and in the right order.** On the Account
   screen in English, the language row read "Language: " with the Arabic name's letters unjoined
   and reversed. The build step now shapes every catalog string that holds Arabic, in the English
@@ -3830,6 +3840,14 @@ build fails when the two differ.
 - **The Android TV app names itself to the home.** Its library, playlist and play-queue calls sent
   `X-Maktaba-Client: native` instead of the app's name and version, so the home could not tell a
   TV too old for it on those calls; they now send the same header as sign-in does.
+
+- **Roku signs in with a cloud code on a real home.** After a phone approved the code, the
+  channel took a connection only when the home there answered with the cloud's id for it, which
+  a home's discovery never gives (it answers with its instance id), so every sign-in ended
+  unreachable. The channel now knows the approving home by its address: at an HTTPS connection
+  by host name (the relay, the home's direct name) its certificate proves the home; at a plain
+  HTTP or raw IP address, the home there counts only when it lists one of those names among its
+  addresses. Another home there is passed over and never gets the grant.
 
 ## [0.2.0] - 2026-10-19
 
