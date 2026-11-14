@@ -46,7 +46,7 @@ the nodes exist (Epic 50 README §12); nothing in the repo calls a DNS API for t
 - **Reserved slugs.** No home can take `canary`, `status`, `api`, `app`, `admin`, `www`,
   `plugins`, `plugins-cdn`, `r1`…`r99`, `direct`, `staging`, `ingest`, `live` or `watch` (and the
   operator names of story 25.22): the cloud answers `409 subdomain_reserved`
-  (`cloud/migrations/00500001_reserved_infra_slugs.sql`, `00500015_reserved_broadcast_slugs.sql`).
+  (`cloud/migrations/00500001_reserved_infra_slugs.sql`, `00500016_reserved_broadcast_slugs.sql`).
 - **The broadcast edge is not on Hetzner** (50.21). `ingest`, `live` and `watch` are one Worker
   with R2 and Durable Objects on Maktaba's Cloudflare account; they have no origin, so their
   custom domains own their records. Broadcast video is served from R2 through the Worker,
