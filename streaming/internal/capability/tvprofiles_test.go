@@ -20,7 +20,7 @@ var tvSources = map[string]Source{
 
 // fullReport is what the platform's newest models report: everything the
 // ceiling allows.
-func fullReport(name string) *DeviceCaps {
+func fullReport() *DeviceCaps {
 	yes := true
 	c := &DeviceCaps{
 		Containers:       []string{"mp4", "mkv", "ts"},
@@ -122,7 +122,7 @@ func TestTVProfiles_VerdictTable(t *testing.T) {
 		}
 		var caps *DeviceCaps
 		if kind == "full" {
-			caps = fullReport(name)
+			caps = fullReport()
 		}
 		for srcName, w := range rows {
 			v := r.DecideFor(p, caps, tvSources[srcName], Override{})
@@ -180,7 +180,7 @@ func TestTVProfiles_ReportNarrows(t *testing.T) {
 	}
 	// an older profile is its own ceiling: a report never widens it
 	g, _ := r.Get("generic")
-	eff, clamped := Apply(g, fullReport("generic"))
+	eff, clamped := Apply(g, fullReport())
 	if eff.MaxHeight != 720 || len(clamped) == 0 {
 		t.Fatalf("generic widened: height %d clamped %v", eff.MaxHeight, clamped)
 	}
@@ -237,7 +237,7 @@ func TestTVProfiles_Acceptance(t *testing.T) {
 		t.Errorf("roku AV1 without DASH: %s (%s)", v.Mode, v.Reason)
 	}
 	// Roku plays Dolby Vision only as profile 5: a DV 8 file goes as its base layer
-	caps = fullReport("roku")
+	caps = fullReport()
 	if v := r.DecideFor(rk, caps, tvSources["hevc-2160-dv81-truehd-mkv"], Override{}); !v.StripDV {
 		t.Errorf("roku DV 8: strip %v (%s)", v.StripDV, v.Reason)
 	}
@@ -245,7 +245,7 @@ func TestTVProfiles_Acceptance(t *testing.T) {
 	if v := r.DecideFor(rk, caps, tvSources["h264-1080-dts-mkv"], Override{}); !v.StereoAAC || v.AudioCodec != "eac3" {
 		t.Errorf("roku stereo: %v audio %q", v.StereoAAC, v.AudioCodec)
 	}
-	if v := r.DecideFor(ft, fullReport("firetv"), tvSources["h264-1080-dts-mkv"], Override{}); v.StereoAAC {
+	if v := r.DecideFor(ft, fullReport(), tvSources["h264-1080-dts-mkv"], Override{}); v.StereoAAC {
 		t.Error("firetv got a stereo track beside its Dolby one")
 	}
 }
@@ -280,7 +280,7 @@ func TestParseDeviceCaps_UnknownKeysIgnored(t *testing.T) {
 	if c, err := ParseDeviceCaps(nil); c != nil || err != nil {
 		t.Fatal("no report should be nil")
 	}
-	a, _ := json.Marshal(fullReport("x"))
+	a, _ := json.Marshal(fullReport())
 	ca, _ := ParseDeviceCaps(a)
 	cb, _ := ParseDeviceCaps(a)
 	if ca.Key() != cb.Key() || ca.Key() == "" || (*DeviceCaps)(nil).Key() != "" {

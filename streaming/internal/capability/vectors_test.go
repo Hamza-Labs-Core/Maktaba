@@ -48,14 +48,14 @@ type capsVectors struct {
 	} `json:"vectors"`
 }
 
-func vectorsPath(t *testing.T) string {
+func vectorsPath() string {
 	_, file, _, _ := runtime.Caller(0)
 	return filepath.Join(filepath.Dir(file), "..", "..", "..", "shared", "playback", "caps-vectors.json")
 }
 
 func loadVectors(t *testing.T) capsVectors {
 	t.Helper()
-	raw, err := os.ReadFile(vectorsPath(t))
+	raw, err := os.ReadFile(vectorsPath())
 	if err != nil {
 		t.Fatal(err)
 	}

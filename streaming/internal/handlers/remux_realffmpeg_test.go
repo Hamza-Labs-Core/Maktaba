@@ -22,7 +22,7 @@ import (
 )
 
 // run runs a tool to its end, failing the test (with its output) when it fails.
-func run(t *testing.T, ctx context.Context, name string, args ...string) []byte {
+func run(ctx context.Context, t *testing.T, name string, args ...string) []byte {
 	t.Helper()
 	out, err := exec.CommandContext(ctx, name, args...).CombinedOutput()
 	if err != nil {
@@ -33,7 +33,7 @@ func run(t *testing.T, ctx context.Context, name string, args ...string) []byte 
 
 // remuxSession runs a remux job through the real orchestrator into a session's
 // folder of layout, to its end.
-func remuxSession(t *testing.T, ctx context.Context, layout *cache.Layout, input string, plan ffmpeg.RemuxPlan) (uuid.UUID, string) {
+func remuxSession(ctx context.Context, t *testing.T, layout *cache.Layout, input string, plan ffmpeg.RemuxPlan) (uuid.UUID, string) {
 	t.Helper()
 	id := uuid.New()
 	dir := layout.HLSDir(id.String())
@@ -55,10 +55,10 @@ func remuxSession(t *testing.T, ctx context.Context, layout *cache.Layout, input
 // hevcHDR10Clip is a 5 s HEVC Main 10 HDR10 clip with AC3 audio, in MKV (no
 // B-frames: a raw stream with Dolby Vision units injected must mux with
 // generated timestamps on ffmpeg 4.4 to 8).
-func hevcHDR10Clip(t *testing.T, ctx context.Context, dir string) string {
+func hevcHDR10Clip(ctx context.Context, t *testing.T, dir string) string {
 	t.Helper()
 	out := filepath.Join(dir, "hdr10.mkv")
-	run(t, ctx, "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+	run(ctx, t, "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
 		"-f", "lavfi", "-i", "testsrc2=size=640x360:rate=24", "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000",
 		"-t", "5", "-c:v", "libx265", "-pix_fmt", "yuv420p10le",
 		"-x265-params", "log-level=error:colorprim=bt2020:transfer=smpte2084:colormatrix=bt2020nc:keyint=48",
@@ -79,10 +79,10 @@ func TestRemuxFMP4_RealFFmpeg(t *testing.T) {
 	mediatest.NeedFFmpeg(t, "ffmpeg", "ffprobe")
 	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
 	defer cancel()
-	src := hevcHDR10Clip(t, ctx, t.TempDir())
+	src := hevcHDR10Clip(ctx, t, t.TempDir())
 	layout := cache.New(t.TempDir())
 	_ = layout.EnsureTiers()
-	id, dir := remuxSession(t, ctx, layout, src, ffmpeg.RemuxPlan{
+	id, dir := remuxSession(ctx, t, layout, src, ffmpeg.RemuxPlan{
 		Segments: ffmpeg.SegmentsFMP4, VideoCodec: "hevc", Audio: true, SourceAudio: "ac3",
 		Width: 640, Height: 360, BitrateKbps: 2000, TenBit: true, VideoRange: "PQ",
 	})
@@ -94,7 +94,7 @@ func TestRemuxFMP4_RealFFmpeg(t *testing.T) {
 	if !bytes.Contains(index, []byte("#EXT-X-MAP:URI=")) || !bytes.Contains(index, []byte(".m4s")) || bytes.Contains(index, []byte(".ts")) {
 		t.Fatalf("variant playlist:\n%s", index)
 	}
-	probe := string(run(t, ctx, "ffprobe", "-v", "error", "-show_entries", "stream=codec_name,codec_tag_string,start_time,color_transfer",
+	probe := string(run(ctx, t, "ffprobe", "-v", "error", "-show_entries", "stream=codec_name,codec_tag_string,start_time,color_transfer",
 		"-of", "default=noprint_wrappers=1", filepath.Join(dir, "master.m3u8")))
 	if !strings.Contains(probe, "codec_name=hevc") || !strings.Contains(probe, "codec_name=ac3") {
 		t.Fatalf("ffprobe of the remux:\n%s", probe)
@@ -200,7 +200,7 @@ func TestDVBaseLayerRemux_RealFFmpeg(t *testing.T) {
 	defer cancel()
 	work := t.TempDir()
 	base := filepath.Join(work, "base.hevc")
-	run(t, ctx, "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+	run(ctx, t, "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
 		"-f", "lavfi", "-i", "testsrc2=size=640x360:rate=24", "-t", "3",
 		"-c:v", "libx265", "-pix_fmt", "yuv420p10le",
 		"-x265-params", "log-level=error:colorprim=bt2020:transfer=smpte2084:colormatrix=bt2020nc:keyint=24:bframes=0",
@@ -214,10 +214,10 @@ func TestDVBaseLayerRemux_RealFFmpeg(t *testing.T) {
 		t.Fatal(err)
 	}
 	src := filepath.Join(work, "dv81.mkv")
-	run(t, ctx, "ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-fflags", "+genpts", "-framerate", "24",
+	run(ctx, t, "ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-fflags", "+genpts", "-framerate", "24",
 		"-f", "hevc", "-i", dvRaw, "-c", "copy", src)
 	annexB := func(in, out string) map[int]int {
-		run(t, ctx, "ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", in, "-map", "0:v:0", "-c", "copy",
+		run(ctx, t, "ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", in, "-map", "0:v:0", "-c", "copy",
 			"-bsf:v", "hevc_mp4toannexb", "-f", "hevc", out)
 		b, err := os.ReadFile(out)
 		if err != nil {
@@ -231,7 +231,7 @@ func TestDVBaseLayerRemux_RealFFmpeg(t *testing.T) {
 
 	layout := cache.New(t.TempDir())
 	_ = layout.EnsureTiers()
-	_, dir := remuxSession(t, ctx, layout, src, ffmpeg.RemuxPlan{
+	_, dir := remuxSession(ctx, t, layout, src, ffmpeg.RemuxPlan{
 		Segments: ffmpeg.SegmentsFMP4, VideoCodec: "hevc", DropDV: true, TenBit: true, VideoRange: "PQ",
 	})
 	out := annexB(filepath.Join(dir, "master.m3u8"), filepath.Join(work, "out.hevc"))
@@ -241,7 +241,7 @@ func TestDVBaseLayerRemux_RealFFmpeg(t *testing.T) {
 	if out[19]+out[20]+out[1] == 0 { // IDR or trailing pictures: the base layer is there
 		t.Fatalf("no picture in the remux: %v", out)
 	}
-	probe := string(run(t, ctx, "ffprobe", "-v", "error", "-select_streams", "v:0",
+	probe := string(run(ctx, t, "ffprobe", "-v", "error", "-select_streams", "v:0",
 		"-show_entries", "stream=codec_name,pix_fmt,color_transfer,color_primaries", "-of", "default=noprint_wrappers=1",
 		filepath.Join(dir, "master.m3u8")))
 	for _, want := range []string{"codec_name=hevc", "pix_fmt=yuv420p10le", "color_transfer=smpte2084", "color_primaries=bt2020"} {
@@ -260,10 +260,10 @@ func TestRemuxStereoBeside_RealFFmpeg(t *testing.T) {
 	mediatest.NeedFFmpeg(t, "ffmpeg", "ffprobe")
 	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
 	defer cancel()
-	src := hevcHDR10Clip(t, ctx, t.TempDir())
+	src := hevcHDR10Clip(ctx, t, t.TempDir())
 	layout := cache.New(t.TempDir())
 	_ = layout.EnsureTiers()
-	_, dir := remuxSession(t, ctx, layout, src, ffmpeg.RemuxPlan{
+	_, dir := remuxSession(ctx, t, layout, src, ffmpeg.RemuxPlan{
 		Segments: ffmpeg.SegmentsFMP4, VideoCodec: "hevc", Audio: true, AudioCodec: "eac3", SourceAudio: "ac3",
 		StereoAAC: true, TenBit: true,
 	})
@@ -274,7 +274,7 @@ func TestRemuxStereoBeside_RealFFmpeg(t *testing.T) {
 		}
 	}
 	for v, codec := range map[string]string{"v0": "hevc", "v1": "eac3", "v2": "aac"} {
-		probe := string(run(t, ctx, "ffprobe", "-v", "error", "-show_entries", "stream=codec_name,channels",
+		probe := string(run(ctx, t, "ffprobe", "-v", "error", "-show_entries", "stream=codec_name,channels",
 			"-of", "default=noprint_wrappers=1", filepath.Join(dir, v, "index.m3u8")))
 		if !strings.Contains(probe, "codec_name="+codec) {
 			t.Errorf("%s is not %s:\n%s", v, codec, probe)
@@ -295,7 +295,7 @@ func TestTranscodeFMP4_RealFFmpeg(t *testing.T) {
 	mediatest.NeedFFmpeg(t, "ffmpeg", "ffprobe")
 	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
 	defer cancel()
-	src := hevcHDR10Clip(t, ctx, t.TempDir())
+	src := hevcHDR10Clip(ctx, t, t.TempDir())
 	dir := t.TempDir()
 	ladder := ffmpeg.FitLadder(ffmpeg.DefaultLadder(0)[1:], 640, 360) // two rungs
 	o := ffmpeg.DefaultOrchestrator(ffmpeg.DefaultBinary(), nil, nil)
@@ -325,7 +325,7 @@ func TestTranscodeFMP4_RealFFmpeg(t *testing.T) {
 			t.Fatalf("v%d's init section %s is not beside its playlist: %v", i, m[1], err)
 		}
 	}
-	probe := string(run(t, ctx, "ffprobe", "-v", "error", "-show_entries", "stream=codec_name", "-of", "csv=p=0",
+	probe := string(run(ctx, t, "ffprobe", "-v", "error", "-show_entries", "stream=codec_name", "-of", "csv=p=0",
 		filepath.Join(dir, "v0", "index.m3u8")))
 	if !strings.Contains(probe, "h264") || !strings.Contains(probe, "aac") {
 		t.Fatalf("ffprobe:\n%s", probe)
