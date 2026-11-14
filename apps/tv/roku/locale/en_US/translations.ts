@@ -201,7 +201,7 @@
     </message>
     <message>
         <source>account.language.ar</source>
-        <translation>العربية</translation>
+        <translation>ﺔﻴﺑﺮﻌﻟﺍ</translation>
     </message>
     <message>
         <source>code.title</source>
