@@ -5,7 +5,9 @@ import (
 	"crypto/rand"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"os"
 	"strings"
@@ -336,7 +338,9 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 	// Prometheus scrape of this role's push counters (aggregate only, like
 	// the relay's /metrics), and the broadcast series (story 50.28) from the worker's state.
 	bcMonitor := &broadcast.Monitor{DB: pool.DB, BudgetUSD: cfg.Broadcast.MonthlyBudgetUSD}
-	r.Get("/metrics", metricspkg.PrometheusHandler(pushMetrics, obs.WriteMetrics, bcMonitor.WriteMetrics))
+	r.Get("/metrics", privateExtras(
+		metricspkg.PrometheusHandler(pushMetrics, obs.WriteMetrics),
+		metricspkg.PrometheusHandler(pushMetrics, obs.WriteMetrics, bcMonitor.WriteMetrics)))
 
 	// The operator console's listener (stories 50.32, 50.33): the staff sign-in on /v1/staff/*
 	// and every /v1/admin/* route, behind the IP allow-list (when set) and a staff session with
@@ -531,4 +535,22 @@ func broadcastDeps(cfg config.Config, servers *stores.Servers, pool *db.Pool, lo
 	d.Key = &k
 	logger.Info("broadcast ingest tokens on", "kid", k.Kid)
 	return d
+}
+
+// privateExtras serves private to a scrape addressed by IP (the witness's Prometheus reaches a
+// node through Caddy's site on its private address, or the loopback) and public to a request
+// for one of the public names. The broadcast series (story 50.28: viewers, the cost estimate,
+// the budget) are business figures, never served on api.maktaba.tv/metrics.
+func privateExtras(public, private http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		host := r.Host
+		if h, _, err := net.SplitHostPort(host); err == nil {
+			host = h
+		}
+		if _, err := netip.ParseAddr(strings.Trim(host, "[]")); err == nil {
+			private(w, r)
+			return
+		}
+		public(w, r)
+	}
 }

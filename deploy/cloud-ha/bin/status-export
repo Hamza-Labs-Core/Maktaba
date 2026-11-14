@@ -9,6 +9,7 @@
 #   api         the API's /readyz, probed from the witness
 #   push_lag    push_outbox_lag_seconds, the oldest unsent notification (Epic 53.17)
 #   held_ratio  the share of relayed requests held in the last 5 minutes (> 5 %: degraded)
+#   broadcast   the canary broadcast played from the witness (story 50.28; 1 or 0)
 #
 # Env: PROMETHEUS (http://127.0.0.1:9090), OUT (/var/lib/maktaba/status/status/network1.json)
 set -uo pipefail
@@ -21,9 +22,10 @@ q() { # q <PromQL>: the first sample's value, or null
 relay="$(q 'max(probe_success{job="canary",instance="witness"})')"
 api="$(q 'max(probe_success{job="api",instance="witness"})')"
 lag="$(q 'max(push_outbox_lag_seconds)')"
+broadcast="$(q 'max(broadcast_probe_success{instance="witness"} and on() (time() - max(push_time_seconds{job="broadcast_probe",instance="witness"}) < 180))')"
 held="$(q 'sum(increase(maktaba_relay_held_total[5m])) / clamp_min(sum(increase(maktaba_relay_requests_total[5m])), 1)')"
 mkdir -p "$(dirname "${out}")"
 jq -n --arg at "$(date -u +%FT%TZ)" --argjson relay "${relay:-null}" --argjson api "${api:-null}" \
-    --argjson push_lag "${lag:-null}" --argjson held_ratio "${held:-null}" \
-    '{at: $at, relay: $relay, api: $api, push_lag: $push_lag, held_ratio: $held_ratio}' >"${out}.tmp" \
+    --argjson push_lag "${lag:-null}" --argjson held_ratio "${held:-null}" --argjson broadcast "${broadcast:-null}" \
+    '{at: $at, relay: $relay, api: $api, push_lag: $push_lag, held_ratio: $held_ratio, broadcast: $broadcast}' >"${out}.tmp" \
     && mv "${out}.tmp" "${out}"

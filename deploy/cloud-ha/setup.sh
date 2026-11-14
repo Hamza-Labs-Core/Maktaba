@@ -262,9 +262,32 @@ CPUWeight=50
 WantedBy=multi-user.target
 UNIT
 	fi
+	# the canary broadcast's viewer probe from network 1 (story 50.28), every minute, once the
+	# canary publisher's pass URL is set
+	install -m 0755 "${here}/monitoring/broadcast-probe.sh" /usr/local/bin/maktaba-broadcast-probe
+	cat >/etc/systemd/system/maktaba-broadcast-probe.service <<'UNIT'
+[Unit]
+Description=Maktaba Cloud: the canary broadcast, played as a viewer (network 1)
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/maktaba/cloud-ha.env
+Environment=NETWORK=witness STATE_FILE=/var/lib/maktaba/broadcast-probe.state PUSHGATEWAY_URL=http://127.0.0.1:9091
+ExecStart=/usr/local/bin/maktaba-broadcast-probe
+SuccessExitStatus=1
+UNIT
+	cat >/etc/systemd/system/maktaba-broadcast-probe.timer <<'UNIT'
+[Unit]
+Description=Maktaba Cloud: the canary broadcast probe, every minute
+[Timer]
+OnCalendar=*-*-* *:*:15
+AccuracySec=1s
+[Install]
+WantedBy=timers.target
+UNIT
 	systemctl daemon-reload
 	systemctl enable --now maktaba-fip-check.timer maktaba-status-export.timer
 	[ ! -s /etc/maktaba/canary.secret ] || systemctl enable --now maktaba-canary
+	[ -z "${BROADCAST_PASS_URL:-}" ] || systemctl enable --now maktaba-broadcast-probe.timer
 }
 
 # ---------------------------------------------------------------------------------------

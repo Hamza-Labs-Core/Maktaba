@@ -174,7 +174,7 @@ func TestBroadcastAnalytics(t *testing.T) {
 		}
 	})
 
-	t.Run("T06: the api's /metrics has the maktaba_broadcast_* series; live viewers reach the owner", func(t *testing.T) {
+	t.Run("T06: the api's /metrics has the maktaba_broadcast_* series for the witness's scrape only; live viewers reach the owner", func(t *testing.T) {
 		if err := jobs.PollMinute(ctx); err != nil {
 			t.Fatal(err)
 		}
@@ -185,9 +185,20 @@ func TestBroadcastAnalytics(t *testing.T) {
 		if err := broadcast.RecordRevocations(ctx, e.pool.DB, time.Now().Add(-time.Minute)); err != nil {
 			t.Fatal(err)
 		}
+		// the witness scrapes a node by its private address: the broadcast series are there
+		req := httptest.NewRequest("GET", "/metrics", nil)
+		req.Host = "10.50.0.2:9443"
 		rec := httptest.NewRecorder()
-		e.router.ServeHTTP(rec, httptest.NewRequest("GET", "/metrics", nil))
+		e.router.ServeHTTP(rec, req)
 		out := rec.Body.String()
+		// and never on a public name
+		pub := httptest.NewRequest("GET", "/metrics", nil)
+		pub.Host = "api.example.test"
+		prec := httptest.NewRecorder()
+		e.router.ServeHTTP(prec, pub)
+		if prec.Code != http.StatusOK || strings.Contains(prec.Body.String(), "maktaba_broadcast_") {
+			t.Fatalf("public /metrics: %d, broadcast series present: %v", prec.Code, strings.Contains(prec.Body.String(), "maktaba_broadcast_"))
+		}
 		for _, want := range []string{
 			"maktaba_broadcast_channels_live 1",
 			"maktaba_broadcast_viewers 7",
