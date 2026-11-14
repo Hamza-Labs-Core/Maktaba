@@ -73,7 +73,12 @@ func TestBroadcastKillSwitchRolesAuditAndPull(t *testing.T) {
 		t.Fatalf("the add is not audited (%d rows)", n)
 	}
 
-	// the home pulls the signed list and finds the entry
+	// another home's suspension: in the edge's list, never in this home's copy
+	other := admin.mustStatus(admin.do("POST", list, map[string]any{"kind": "home", "ref": "00000000-0000-0000-0000-000000000009",
+		"action": "suspend", "reason": "abuse"}), http.StatusCreated).json(t)
+	otherID := other["entry"].(map[string]any)["id"].(string)
+
+	// the home pulls the signed list and finds its channel's entry only
 	text := home.agent.mustStatus(home.agent.do("GET", "/v1/broadcast/revocations", nil), http.StatusOK)
 	k, err := broadcast.LoadKey(key)
 	if err != nil {
@@ -83,7 +88,7 @@ func TestBroadcastKillSwitchRolesAuditAndPull(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Version != 1 || len(got.Entries) != 1 || got.Entries[0].Ref != ch || got.Entries[0].ID != id {
+	if got.Version != 2 || len(got.Entries) != 1 || got.Entries[0].Ref != ch || got.Entries[0].ID != id {
 		t.Fatalf("the pulled list = %+v", got)
 	}
 	if !got.ExpiresAt.After(time.Now().Add(47 * time.Hour)) {
@@ -92,21 +97,23 @@ func TestBroadcastKillSwitchRolesAuditAndPull(t *testing.T) {
 
 	// the console's view: the entry, who added it, the audit
 	view := admin.mustStatus(admin.do("GET", list, nil), http.StatusOK).json(t)
-	if view["version"].(float64) != 1 || len(view["entries"].([]any)) != 1 || len(view["audit"].([]any)) != 1 || view["signing"] != true {
+	if view["version"].(float64) != 2 || len(view["entries"].([]any)) != 2 || len(view["audit"].([]any)) != 2 || view["signing"] != true {
 		t.Fatalf("view = %v", view)
 	}
 
-	// lift: version 2, audited, and the next pull has no entry; a second lift is 404
+	admin.mustStatus(admin.do("POST", list+"/"+otherID+"/lift", nil), http.StatusOK)
+
+	// lift: version 4, audited, and the next pull has no entry; a second lift is 404
 	admin.mustStatus(admin.do("POST", list+"/"+id+"/lift", map[string]string{"note": "notice withdrawn"}), http.StatusOK)
 	if r := admin.do("POST", list+"/"+id+"/lift", nil); r.code != http.StatusNotFound {
 		t.Errorf("a second lift = %d %s", r.code, r.body)
 	}
-	if n := e.count(`SELECT count(*) FROM broadcast_revocation_audit WHERE action = 'lift' AND version = 2 AND note = 'notice withdrawn'`); n != 1 {
+	if n := e.count(`SELECT count(*) FROM broadcast_revocation_audit WHERE action = 'lift' AND version = 4 AND note = 'notice withdrawn'`); n != 1 {
 		t.Fatalf("the lift is not audited (%d rows)", n)
 	}
 	text = home.agent.mustStatus(home.agent.do("GET", "/v1/broadcast/revocations", nil), http.StatusOK)
 	got, _ = broadcast.VerifyRevocations(map[string]ed25519.PublicKey{k.Kid: k.Priv.Public().(ed25519.PublicKey)}, string(text.body))
-	if got.Version != 2 || len(got.Entries) != 0 {
+	if got.Version != 4 || len(got.Entries) != 0 {
 		t.Fatalf("after the lift = %+v", got)
 	}
 	// the gate audits every request it served too

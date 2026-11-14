@@ -572,7 +572,12 @@ func revocationDeps(cfg config.Config, servers *stores.Servers, pool *db.Pool, l
 			rev.Key = &k
 		}
 	}
-	return &broadcasth.RevocationDeps{Rev: rev, Store: store, Agents: servers, EdgeKey: edgeKey, Logger: logger}
+	owner := func(ctx context.Context, serverID string) (string, error) {
+		var uid string
+		err := pool.DB.QueryRowContext(ctx, `SELECT owner_user_id::text FROM servers WHERE id::text = $1`, serverID).Scan(&uid)
+		return uid, err
+	}
+	return &broadcasth.RevocationDeps{Rev: rev, Store: store, Agents: servers, Owner: owner, EdgeKey: edgeKey, Logger: logger}
 }
 
 func ingestDeps(cfg config.Config, servers *stores.Servers, pool *db.Pool, logger *slog.Logger) *broadcasth.IngestDeps {

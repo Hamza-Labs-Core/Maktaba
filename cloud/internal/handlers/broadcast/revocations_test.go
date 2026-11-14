@@ -43,13 +43,23 @@ func revRig(t *testing.T, withKey bool) (*chi.Mux, *RevocationDeps, bc.Key, ed25
 	t.Helper()
 	k := revKey(t, "cloud-1")
 	edge := revKey(t, "edge-1")
-	src := fakeSource{version: 7, entries: []bc.Entry{{ID: "r-3", Kind: bc.KindGlobal, Action: bc.ActionOffAir, Reason: bc.ReasonIncident, Since: at}}}
+	src := fakeSource{version: 7, entries: []bc.Entry{
+		{ID: "r-3", Kind: bc.KindGlobal, Action: bc.ActionOffAir, Reason: bc.ReasonIncident, Since: at},
+		{ID: "r-4", Kind: bc.KindHome, Ref: "home-1", Action: bc.ActionSuspend, Reason: bc.ReasonReport, Since: at},
+		{ID: "r-5", Kind: bc.KindHome, Ref: "home-2", Action: bc.ActionSuspend, Reason: bc.ReasonAbuse, Since: at},
+		{ID: "r-6", Kind: bc.KindPublisher, Ref: "owner-1", Action: bc.ActionSuspend, Reason: bc.ReasonReport, Since: at},
+		{ID: "r-7", Kind: bc.KindPublisher, Ref: "owner-2", Action: bc.ActionTerminate, Reason: bc.ReasonRepeatInfringer, Since: at},
+		{ID: "r-8", Kind: bc.KindChannel, Ref: "0123abcd", Action: bc.ActionOffAir, Reason: bc.ReasonNotice, Since: at},
+	}}
 	rev := &bc.Revocations{Store: src, Now: func() time.Time { return at }}
 	if withKey {
 		rev.Key = &k
 	}
 	d := &RevocationDeps{Rev: rev, Agents: fakeAgents{"home-1": "s3cret"},
-		EdgeKey: edge.Priv.Public().(ed25519.PublicKey), Now: func() time.Time { return at }}
+		EdgeKey: edge.Priv.Public().(ed25519.PublicKey), Now: func() time.Time { return at },
+		Owner: func(_ context.Context, id string) (string, error) {
+			return map[string]string{"home-1": "owner-1"}[id], nil
+		}}
 	r := chi.NewRouter()
 	MountRevocations(r, d)
 	MountRevocationsAdmin(r, d)
@@ -80,14 +90,25 @@ func TestThePullServesTheEdgeAndHomesOnly(t *testing.T) {
 		t.Fatalf("the edge's pull = %d %s", rec.Code, rec.Body)
 	}
 	l, err := bc.VerifyRevocations(pubs, rec.Body.String())
-	if err != nil || l.Version != 7 || len(l.Entries) != 1 {
-		t.Fatalf("the pulled list = %+v %v", l, err)
+	if err != nil || l.Version != 7 || len(l.Entries) != 6 {
+		t.Fatalf("the edge's list = %+v %v", l, err)
 	}
 
+	// a home's copy: the global and channel entries, and its own home and publisher entries;
+	// never another home's server id, another account's id, or the reasons given about them
 	home := httptest.NewRequest("GET", RevocationsPath, nil)
 	home.SetBasicAuth("home-1", "s3cret")
-	if rec := serve(r, home); rec.Code != http.StatusOK {
+	rec = serve(r, home)
+	if rec.Code != http.StatusOK {
 		t.Fatalf("a home's pull = %d", rec.Code)
+	}
+	l, err = bc.VerifyRevocations(pubs, rec.Body.String())
+	var ids []string
+	for _, e := range l.Entries {
+		ids = append(ids, e.ID)
+	}
+	if err != nil || l.Version != 7 || strings.Join(ids, ",") != "r-3,r-4,r-6,r-8" {
+		t.Fatalf("the home's list = %v %v", ids, err)
 	}
 
 	wrongSecret := httptest.NewRequest("GET", RevocationsPath, nil)

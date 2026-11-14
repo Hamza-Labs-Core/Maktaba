@@ -236,8 +236,15 @@ func (r *Revocations) now() time.Time {
 // ErrNoKey is the broadcast signing key missing: the list can't be signed.
 var ErrNoKey = errors.New("broadcast: no broadcast signing key")
 
-// Signed is the current list, signed now.
+// Signed is the current list, signed now (the edge's copy: every entry).
 func (r *Revocations) Signed(ctx context.Context) (string, RevocationList, error) {
+	return r.SignedFor(ctx, nil)
+}
+
+// SignedFor is the current list with only the entries keep allows (nil: all), signed now. A
+// home's copy keeps its own entries and the opaque ones (see ForHome), never another home's
+// server id, another account's id or a reason given about them.
+func (r *Revocations) SignedFor(ctx context.Context, keep func(Entry) bool) (string, RevocationList, error) {
 	if r.Key == nil {
 		return "", RevocationList{}, ErrNoKey
 	}
@@ -245,7 +252,33 @@ func (r *Revocations) Signed(ctx context.Context) (string, RevocationList, error
 	if err != nil {
 		return "", RevocationList{}, err
 	}
+	if keep != nil {
+		kept := entries[:0:0]
+		for _, e := range entries {
+			if keep(e) {
+				kept = append(kept, e)
+			}
+		}
+		entries = kept
+	}
 	return SignRevocations(*r.Key, v, entries, r.now())
+}
+
+// ForHome is what a home's copy keeps: global entries, channel and programme entries (their
+// ref is the edge's opaque channel id, which says nothing of the home), and the home and
+// publisher entries naming this home or its owner.
+func ForHome(serverID, owner string) func(Entry) bool {
+	return func(e Entry) bool {
+		switch e.Kind {
+		case KindGlobal, KindChannel, KindProgramme:
+			return true
+		case KindHome:
+			return e.Ref == serverID
+		case KindPublisher:
+			return owner != "" && e.Ref == owner
+		}
+		return false
+	}
 }
 
 // Push sends the current list to the edge, three tries. A failed push is caught by the edge's

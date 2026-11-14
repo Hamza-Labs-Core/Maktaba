@@ -38,6 +38,9 @@ type RevocationDeps struct {
 	Store *bc.RevocationStore
 	// Agents checks a home's basic auth on the pull.
 	Agents Agents
+	// Owner names a home's owner, the publisher in its ingest tokens (nil: a home's copy
+	// carries no publisher entry).
+	Owner func(ctx context.Context, serverID string) (string, error)
 	// EdgeKey is broadcast.edge_public_key: the edge's signed pull (nil: homes only).
 	EdgeKey ed25519.PublicKey
 	// Gate is the staff gate's service_admin requirement (nil: every admin route is 403).
@@ -87,12 +90,26 @@ func (d *RevocationDeps) Pull(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusServiceUnavailable, "broadcast_disabled", "")
 		return
 	}
-	if !d.pullAllowed(r) {
+	edge, home := d.puller(r)
+	if !edge && home == "" {
 		w.Header().Set("WWW-Authenticate", `Basic realm="maktaba-server"`)
 		writeErr(w, http.StatusUnauthorized, "unauthorized", "")
 		return
 	}
-	text, l, err := d.Rev.Signed(r.Context())
+	// the edge gets every entry; a home only its own and the opaque ones
+	var keep func(bc.Entry) bool
+	if !edge {
+		owner := ""
+		if d.Owner != nil {
+			var err error
+			if owner, err = d.Owner(r.Context(), home); err != nil {
+				d.fail(w, r, "home owner", err)
+				return
+			}
+		}
+		keep = bc.ForHome(home, owner)
+	}
+	text, l, err := d.Rev.SignedFor(r.Context(), keep)
 	if err != nil {
 		d.fail(w, r, "sign revocations", err)
 		return
@@ -103,12 +120,17 @@ func (d *RevocationDeps) Pull(w http.ResponseWriter, r *http.Request) {
 	_, _ = io.WriteString(w, text)
 }
 
-func (d *RevocationDeps) pullAllowed(r *http.Request) bool {
+// puller is who asks: the edge (its signature), or a home (its id, by its secret); neither is
+// (false, "").
+func (d *RevocationDeps) puller(r *http.Request) (edge bool, home string) {
 	if r.Header.Get(bc.HeaderEdgeSignature) != "" {
-		return d.EdgeKey != nil && bc.VerifyEdgeRequest(d.EdgeKey, r.Method, r.URL.Path, r.Header, nil, d.now()) == nil
+		return d.EdgeKey != nil && bc.VerifyEdgeRequest(d.EdgeKey, r.Method, r.URL.Path, r.Header, nil, d.now()) == nil, ""
 	}
 	id, secret, ok := r.BasicAuth()
-	return ok && id != "" && d.Agents != nil && d.Agents.VerifySecret(r.Context(), id, secret) == nil
+	if ok && id != "" && d.Agents != nil && d.Agents.VerifySecret(r.Context(), id, secret) == nil {
+		return false, id
+	}
+	return false, ""
 }
 
 type adminView struct {
