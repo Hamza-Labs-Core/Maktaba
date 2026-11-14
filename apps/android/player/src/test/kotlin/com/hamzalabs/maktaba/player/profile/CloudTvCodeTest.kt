@@ -127,12 +127,21 @@ class CloudTvCodeTest {
 
     @Test
     fun theSessionsPageListsTheAppSignInsAndSignsOneOut() {
+        // the app sign-ins answer after the sessions, as on a loaded runner
+        home.answer("/api/me/app-sign-ins") {
+            Thread.sleep(1_500)
+            json(ProfileHome.APP_SIGN_INS)
+        }
         open()
         compose.onNodeWithTag("profile-root").performScrollToNode(hasTestTag("profile-sessions"))
         compose.onNodeWithTag("profile-sessions").performClick()
         waitForTag("session-s1")
-        // a lazy list holds only the rows on screen: scroll to each before asserting it
-        compose.onNodeWithTag("sessions-list").performScrollToNode(hasTestTag("app-sign-ins"))
+        // the app sign-ins load after the sessions, and a lazy list holds only the rows on
+        // screen: wait until the section can be scrolled to, and scroll to each row before
+        // asserting it
+        compose.settledUntil(5_000) {
+            runCatching { compose.onNodeWithTag("sessions-list").performScrollToNode(hasTestTag("app-sign-ins")) }.isSuccess
+        }
         compose.onNodeWithTag("app-sign-ins").assertExists()
         compose.onNodeWithTag("sessions-list").performScrollToNode(hasTestTag("app-sign-in-a2"))
         compose.onNodeWithText(app.getString(R.string.profile_app_via_cloud_code, "Samsung")).assertExists()
