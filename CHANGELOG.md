@@ -288,6 +288,21 @@ build fails when the two differ.
 
 ### Fixed
 
+- **Playing at home costs the Apple apps less, and the Apple TV's live player always lets go.**
+  The Apple apps read a home's streams through a small proxy inside the app. It now passes
+  each stream on in the pieces it arrives in, where it used to handle every byte on its own
+  (about a quarter of the processor time for the same stream, measured on a Mac), at a lower
+  priority than the remote. It holds the home back while the player reads slowly or is paused,
+  so memory does not grow with the file, and a paused film keeps its connection however long
+  the pause; it ends the home's request when the player drops a connection mid-stream (a
+  channel change, a seek), and serves at most 32 requests at once. A stream the home cuts
+  short reaches the player as an error, never as a whole file. On Apple TV, Menu leaves the
+  live player in at most two presses whatever the channel is doing (starting, buffering,
+  failed, time's up), unless the viewer changed channel, pressed Select or asked for the
+  banner in between; the picture and sound stop at
+  once without waiting for the home, and a picture that keeps stalling writes at most one log
+  line a second.
+
 - **The older playback profiles read HEVC and Dolby audio by ffprobe's names.** A player that
   names one of the older client profiles (`android-native`, `androidtv`) now direct-plays an
   HEVC file it decodes: the profiles spelled HEVC `h265` and the probe says `hevc`, so those
