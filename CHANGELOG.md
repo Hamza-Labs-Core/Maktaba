@@ -294,6 +294,14 @@ build fails when the two differ.
 
 ### Fixed
 
+- **Roku sends the cloud code's grant only to an address its certificate check proves.** After
+  a phone approved the code, a plain HTTP or raw IP address the cloud listed could still get the
+  grant when whatever answered there listed the home's relay among its addresses; anyone on the
+  TV's network could answer that way and then redeem the grant at the real home. The channel now
+  tries only the cloud's HTTPS addresses by host name (the relay, the home's direct name, a LAN
+  name under its certificate), and never contacts a plain HTTP or raw IP address for the cloud
+  code.
+
 - **Roku's player stops cleanly when a child's time is up or a title is hidden (Epic 58, story
   58.14).** When the home ends a restricted account's watching time, before or during a video,
   the Roku channel stops the video and shows Time's up for today (or Not watching time yet),
