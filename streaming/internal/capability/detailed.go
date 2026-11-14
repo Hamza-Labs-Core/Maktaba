@@ -246,3 +246,18 @@ func orUnknown(s string) string {
 	}
 	return s
 }
+
+// showsPicture reports whether the profile shows the source's picture as it
+// is (an older profile's direct play): its HDR kind, or for Dolby Vision the
+// profile itself or the base layer a player without it decodes (none for
+// profile 5).
+func showsPicture(p *Profile, src Source) bool {
+	if src.DVProfile > 0 {
+		if showsHDR(p, "dv-p"+strconv.Itoa(src.DVProfile)) {
+			return true
+		}
+		base := dvBase(src)
+		return base != "" && showsHDR(p, base)
+	}
+	return showsHDR(p, sourceHDR(src))
+}

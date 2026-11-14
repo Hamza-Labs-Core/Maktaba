@@ -81,7 +81,13 @@ type OpenSessionRequest struct {
 	ForceSoftware  bool    `json:"force_software,omitempty"`
 	ForceTranscode bool    `json:"force_transcode,omitempty"`
 	BurnSubs       bool    `json:"burn_subs,omitempty"`
-	AcceptQueue    bool    `json:"accept_queue,omitempty"`
+	// AcceptQueue is read but not passed on to the streaming service: it
+	// queues the session (state "queued") but nothing there promotes a queued
+	// session to a transcode when a slot frees (slots.PromoteFromQueue has no
+	// caller), and this API's answer carries no state, so a queued session's
+	// manifest would never come. Until the streaming service serves its queue,
+	// a full home refuses the open (503) whatever this says.
+	AcceptQueue bool `json:"accept_queue,omitempty"`
 	// DeviceCaps is the device's report (story 58.02; DeviceCaps): read
 	// leniently (readDeviceCaps), passed on to the streaming service as JSON.
 	DeviceCaps json.RawMessage `json:"device_caps,omitempty"`
