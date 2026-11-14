@@ -118,10 +118,13 @@ public struct HomeDiscovery: Decodable, Equatable, Sendable {
     public let version: String?
     public let urls: [String]
     public let signIn: SignInMethods?
+    /// The compatibility contract (story 58.01): level 0, oldest 0 and no floor from a home before it.
+    public let compat: CompatHome
 
     enum CodingKeys: String, CodingKey {
         case id, name, version, urls
         case signIn = "sign_in"
+        case apiLevel = "api_level", apiLevelOldest = "api_level_oldest", clientFloor = "client_floor"
     }
 
     public init(from decoder: Decoder) throws {
@@ -131,6 +134,9 @@ public struct HomeDiscovery: Decodable, Equatable, Sendable {
         version = try c.decodeIfPresent(String.self, forKey: .version)
         urls = try c.decodeIfPresent([String].self, forKey: .urls) ?? []
         signIn = try c.decodeIfPresent(SignInMethods.self, forKey: .signIn)
+        compat = CompatHome(apiLevel: (try? c.decodeIfPresent(Int.self, forKey: .apiLevel)) ?? 0,
+                            apiLevelOldest: (try? c.decodeIfPresent(Int.self, forKey: .apiLevelOldest)) ?? 0,
+                            clientFloor: (try? c.decodeIfPresent([String: String].self, forKey: .clientFloor)) ?? [:])
     }
 }
 
@@ -174,6 +180,8 @@ public struct ReachedHome: Equatable, Sendable {
     public let addresses: [URL]
     /// nil: an older home that does not say (password; a code when it answers one).
     public let signIn: SignInMethods?
+    /// What it said of the compatibility contract (story 58.01).
+    public var compat = CompatHome()
 }
 
 /// Why no address of a home could be used.
@@ -233,7 +241,7 @@ public struct HomeProbe: Sendable {
         if code == 200 {
             guard let d = try? JSONDecoder().decode(HomeDiscovery.self, from: data) else { return .failure(.notAHome) }
             let addresses = d.urls.compactMap(Home.normalizeBase).filter { $0 != url }
-            return .success(ReachedHome(url: url, id: d.id, name: d.name, version: d.version, addresses: addresses, signIn: d.signIn))
+            return .success(ReachedHome(url: url, id: d.id, name: d.name, version: d.version, addresses: addresses, signIn: d.signIn, compat: d.compat))
         }
         guard code == 404 || code == 405 else { return .failure(.notAHome) }
         guard let (vcode, vdata) = try? await get(url, "/api/system/version"), vcode == 200,

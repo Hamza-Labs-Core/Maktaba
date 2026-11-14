@@ -52,8 +52,12 @@ A step fails, and the previous step is the node's capacity, when any of these ho
 | The owner's **staging pair** on `staging.relay.maktaba.dev` | ramp to failure | by hand (`workflow_dispatch` of `loadtest.yml`) before launch, after any relay change that moves CI's numbers > 10 %, and before every Phase 2 resize | the owner creates it (two nodes + a load generator machine, same plans as production) and deletes it after; ~€2–5 per run at hourly prices |
 
 CI can't measure a Hetzner machine's real network, so `load-small` checks **regressions**: CPU
-per Mbit/s relayed and memory per tunnel, against the last main run's numbers; it fails when
-either gets 20 % worse. The staging run gives the **absolute** numbers.
+per Mbit/s relayed and memory per tunnel, the base commit's relay against this commit's on the
+same runner; it fails when either gets 20 % worse. The staging run gives the **absolute** numbers.
+The CPU is the relay's cgroup CPU time per Mbit, the median of rounds. The memory is the relay's
+Go live heap (`maktaba_go_heap_live_bytes` on its `/metrics`), sampled under the load, the
+median of the rounds' medians less the heap before the homes connect, per tunnel: a container's
+peak memory is one sample of the garbage between collections and swung ±25 % on the same code.
 
 The load generator must not run on the relay machine (it would measure itself), and staging
 never uses user-facing names: only `maktaba.dev`.

@@ -122,6 +122,7 @@ jobs:
       linux_app: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.linux_app == 'true' }}
       android_apps: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.android_apps == 'true' }}
       android_tv: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.android_tv == 'true' }}
+      tv_web: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.tv_web == 'true' }}
       desktop_player: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.desktop_player == 'true' }}
       apple_apps: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.apple_apps == 'true' }}
       devportal: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.devportal == 'true' }}
@@ -369,6 +370,13 @@ jobs:
     if: needs.changes.outputs.android_tv == 'true'
     uses: ./.github/workflows/_android-tv.yml
 
+  tv-web:
+    # Epic 58 (58.08, 58.16): the TV build /tv/ — Vitest, build:tv checked for Chromium 68,
+    # Playwright with the D-pad against a mock home (see _tv-web.yml)
+    needs: [changes]
+    if: needs.changes.outputs.tv_web == 'true'
+    uses: ./.github/workflows/_tv-web.yml
+
   desktop-player:
     needs: [changes]
     if: needs.changes.outputs.desktop_player == 'true'
@@ -611,6 +619,7 @@ jobs:
       - linux-app
       - android-apps
       - android-tv
+      - tv-web
       - desktop-player
       - apple-apps
       - devportal

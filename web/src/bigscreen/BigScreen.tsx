@@ -23,6 +23,8 @@ import { BigLibrary } from "./screens/Library";
 import { BigAutoCollection, BigCollection, BigPlaylist } from "./screens/Collection";
 import { CardMenu } from "./CardMenu";
 import { LongPress, cardOf, hasMenu, type CardActions } from "./cards";
+import { BigModeContext, useBigMode, type BigMode } from "./mode";
+import { BRIDGE_EXIT, listenToLauncher, tellLauncher } from "./input/bridge";
 import { BigSeries, BigSeriesList } from "./screens/Series";
 import { BigVideo } from "./screens/Video";
 import { BigSearch } from "./screens/Search";
@@ -54,16 +56,26 @@ function isLivePlayerPath(pathname: string): boolean {
   return /^\/big\/live\/[^/]+/.test(pathname);
 }
 
-/** Leaves big screen: full screen off, back to the page the user came from. */
+/**
+ * Leaves big screen: full screen off, back to the page the user came from. In
+ * the TV build there is no page to go back to: the launcher closes the app
+ * (outside one, the window is asked to close).
+ */
 export function useExitBigScreen() {
   const nav = useNavigate();
+  const mode = useBigMode();
   return useCallback(() => {
+    if (mode === "tv") {
+      tellLauncher(BRIDGE_EXIT);
+      window.close();
+      return;
+    }
     void setFullScreen(false);
     nav(returnPath(), { replace: true });
-  }, [nav]);
+  }, [nav, mode]);
 }
 
-export default function BigScreen() {
+export default function BigScreen({ mode = "desktop" }: { mode?: BigMode }) {
   const { dir } = useI18n();
   const rootRef = useRef<HTMLDivElement | null>(null);
   const [idle, setIdle] = useState(false);
@@ -92,9 +104,11 @@ export default function BigScreen() {
       data-bs-root
       data-testid="big-screen"
     >
-      <FocusProvider rootRef={rootRef}>
-        <Frame />
-      </FocusProvider>
+      <BigModeContext.Provider value={mode}>
+        <FocusProvider rootRef={rootRef}>
+          <Frame />
+        </FocusProvider>
+      </BigModeContext.Provider>
     </div>
   );
 }
@@ -113,6 +127,7 @@ function Frame() {
   const player = isPlayerPath(location.pathname);
   const live = isLivePlayerPath(location.pathname);
   const { t } = useI18n();
+  const mode = useBigMode();
 
   const back = useCallback(() => {
     const where = backTarget(location.pathname, depthOf(location.state));
@@ -232,6 +247,15 @@ function Frame() {
     act(action, "pad");
   });
 
+  // the TV launcher's bridge (story 58.09): keys it saw first, as actions
+  useEffect(() => {
+    if (mode !== "tv") return;
+    return listenToLauncher((action) => {
+      if (live && !focus.topLayer() && action !== "back") return pressLiveKey(action);
+      act(action, "bridge");
+    });
+  }, [mode, act, live, focus]);
+
   // the desktop tray's Play / Pause
   useEffect(() => {
     let off: (() => void) | null = null;
@@ -281,7 +305,10 @@ function Frame() {
               </BigFeatureRoute>
             }
           />
-          <Route path="settings" element={<BigSettings onExit={() => setAsking(true)} />} />
+          <Route
+            path="settings"
+            element={<BigSettings onExit={mode === "tv" ? null : () => setAsking(true)} />}
+          />
           <Route path="*" element={<BigHome />} />
         </Routes>
       </main>
@@ -300,8 +327,8 @@ function Frame() {
       )}
       {asking && (
         <Dialog
-          title={t("big.exit.title")}
-          body={t("big.exit.body")}
+          title={mode === "tv" ? t("tv.exitConfirm") : t("big.exit.title")}
+          body={mode === "tv" ? undefined : t("big.exit.body")}
           onClose={() => setAsking(false)}
           testId="big-exit"
         >
@@ -312,7 +339,7 @@ function Frame() {
             data-bs-autofocus
             onClick={() => setAsking(false)}
           >
-            {t("big.exit.stay")}
+            {mode === "tv" ? t("tv.exitConfirm.no") : t("big.exit.stay")}
           </button>
           <button
             type="button"
@@ -320,7 +347,7 @@ function Frame() {
             data-bs-focus="exit-leave"
             onClick={exit}
           >
-            {t("big.exit.leave")}
+            {mode === "tv" ? t("tv.exitConfirm.yes") : t("big.exit.leave")}
           </button>
         </Dialog>
       )}
@@ -376,6 +403,7 @@ function Tabs() {
   const current = (to: string) =>
     to === bigPath.home ? pathname === to || pathname === `${to}/` : pathname.startsWith(to);
   const exit = useExitBigScreen();
+  const mode = useBigMode();
   return (
     <header className="bs-top">
       <span className="bs-brand" aria-hidden="true">
@@ -395,16 +423,19 @@ function Tabs() {
           </button>
         ))}
       </nav>
-      {/* always in reach, with a mouse or the arrows: the way out is not only Back on Home */}
-      <button
-        type="button"
-        className="bs-tab bs-leave"
-        data-bs-focus="tab:leave"
-        data-testid="big-leave"
-        onClick={exit}
-      >
-        {t("big.exit.leave")}
-      </button>
+      {/* always in reach, with a mouse or the arrows: the way out is not only Back on Home;
+          the TV build has nothing to go back to (Back on Home leaves the app) */}
+      {mode !== "tv" && (
+        <button
+          type="button"
+          className="bs-tab bs-leave"
+          data-bs-focus="tab:leave"
+          data-testid="big-leave"
+          onClick={exit}
+        >
+          {t("big.exit.leave")}
+        </button>
+      )}
       <time className="bs-clock" dateTime={now.toISOString()}>
         {new Intl.DateTimeFormat(locale === "ar" ? "ar-EG" : "en", {
           hour: "numeric",

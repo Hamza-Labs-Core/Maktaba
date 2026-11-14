@@ -3,6 +3,7 @@ package com.hamzalabs.maktaba.tv
 import android.app.Application
 import com.hamzalabs.maktaba.core.api.ClientHeader
 import com.hamzalabs.maktaba.core.api.capabilitiesGate
+import com.hamzalabs.maktaba.core.compat.CompatApp
 import com.hamzalabs.maktaba.core.api.init
 import com.hamzalabs.maktaba.core.diagnostics.AppLog
 import com.hamzalabs.maktaba.core.diagnostics.CrashLog
@@ -32,7 +33,12 @@ class MaktabaTVApp : Application() {
 
     val session: AppSession by lazy {
         // story 51.11's build switch
-        AppSession(PreferencesStore(this, "session"), MainScope(), ::tokens, capabilitiesGate = capabilitiesGate(BuildConfig.CAPABILITIES_GATE))
+        AppSession(
+            PreferencesStore(this, "session"), MainScope(), ::tokens,
+            capabilitiesGate = capabilitiesGate(BuildConfig.CAPABILITIES_GATE),
+            // story 58.01: the compatibility contract, as X-Maktaba-Client names this app
+            compatApp = CompatApp.fromClientHeader(ClientHeader.value),
+        )
     }
 
     /** Work that outlives a screen (a stopped video's last position, its session's close). */
