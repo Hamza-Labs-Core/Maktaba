@@ -88,7 +88,12 @@ test("T03: sign in by cloud code, browse in English, deep links, Back, then Arab
     await c.waitFor(/\[screen\] StartScreen ready homes=\s*0/, 30000);
     await compare(c, "start-en");
     await c.key("Select");
+    // the QR of the cloud's verify_url (maktaba.tv/tv?c=…), encoded in the Task and drawn on
+    // the device: a version 3 symbol, 29 modules a side; no image is asked of anyone
+    await c.waitFor(/\[qr\] encoded\s+32 bytes into\s+29 modules/, 20000);
+    await c.waitFor(/\[qr\] drawn\s+29 modules at\s+11 px/);
     await c.waitFor(/\[screen\] CodeScreen ready mode=cloud/);
+    assert.ok(!requests.some((l) => l.includes("qr.png")), "the QR is drawn, never fetched");
     await compare(c, "code-en");
     // the phone approves (the mock cloud, on its third poll); the grant goes to the home's LAN
     // address, never to the pinned local_ip a Roku cannot verify
@@ -401,6 +406,8 @@ test("T03: Find on this network lists the home and signs in by the home's own co
     await compare(c, "find-en");
     await c.key("Select");
     await c.waitFor(/\[home\] h1test: plain HTTP on the LAN/, 10000);
+    // the home's own code carries its approve page (/pair?code=…) as a QR too
+    await c.waitFor(/\[qr\] encoded\s+\d+ bytes into\s+\d+ modules/, 20000);
     await c.waitFor(/\[screen\] CodeScreen ready mode=home/);
     await c.waitFor(/\[screen\] HomeScreen ready/, 20000);
   } finally {

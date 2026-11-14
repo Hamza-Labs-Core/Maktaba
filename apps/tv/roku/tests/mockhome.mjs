@@ -83,16 +83,6 @@ function poster(id) {
   return c.toBuffer("image/png");
 }
 
-function qr() {
-  const c = createCanvas(420, 420);
-  const g = c.getContext("2d");
-  g.fillStyle = "#fff";
-  g.fillRect(0, 0, 420, 420);
-  g.fillStyle = "#000";
-  for (let y = 0; y < 21; y++) for (let x = 0; x < 21; x++) if ((x * 7 + y * 13) % 5 < 2 || (x < 7 && y < 7)) g.fillRect(x * 20, y * 20, 20, 20);
-  return c.toBuffer("image/png");
-}
-
 function json(res, status, body) {
   res.writeHead(status, { "Content-Type": "application/json" });
   res.end(JSON.stringify(body));
@@ -135,7 +125,7 @@ export function startHome(log) {
       const port = server.address().port;
       return json(res, 200, { id: HOME_ID, name: "Test home", version: "0.3.150", urls: [`http://127.0.0.1:${port}`], sign_in: { password: true, code: true }, api_level: 1, api_level_oldest: 1, client_floor: {} });
     }
-    if (p === "/api/pairing/device" && req.method === "POST") return json(res, 201, { code: "HKMN-4567", device_code: state.deviceCode, expires_at: new Date(Date.now() + 6e5).toISOString(), verify_path: "/pair", interval: 1 });
+    if (p === "/api/pairing/device" && req.method === "POST") return json(res, 201, { code: "HKMN-4567", device_code: state.deviceCode, expires_at: new Date(Date.now() + 6e5).toISOString(), verify_path: "/pair?code=HKMN-4567", verify_url: `http://127.0.0.1:${server.address().port}/pair?code=HKMN-4567`, interval: 1 });
     if (p === "/api/pairing/device/token" && req.method === "POST") {
       if (body.device_code === state.grant || body.device_code === state.deviceCode) {
         const t = mint();
@@ -265,11 +255,7 @@ export function startCloud(log, homePort) {
       const body = await readBody(req);
       state.created++;
       log(`cloud code for platform=${body.platform}`);
-      return json(res, 201, { code: "ABCD-2345", poll_secret: "secret", expires_in: 600, interval: 1, verify_url: `http://127.0.0.1:${server.address().port}/tv?c=ABCD2345` });
-    }
-    if (p === "/v1/tv/codes/ABCD2345/qr.png") {
-      res.writeHead(200, { "Content-Type": "image/png" });
-      return res.end(qr());
+      return json(res, 201, { code: "ABCD-2345", poll_secret: "secret", expires_in: 600, interval: 1, verify_url: "https://maktaba.tv/tv?c=ABCD2345" });
     }
     if (p === "/v1/tv/codes/poll" && req.method === "POST") {
       await readBody(req);
