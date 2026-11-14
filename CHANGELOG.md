@@ -14,6 +14,12 @@ build fails when the two differ.
 
 ### Changed
 
+- **Roku shapes Arabic text in less time (Epic 58, story 58.15).** A screen of 20 long Arabic
+  descriptions is shaped in about two thirds of the time it took (207 ms instead of 331 ms on
+  brs-engine), with the same output on all 312 shared vectors; English titles and lines skip the
+  shaping steps. CI fails when the cost rises past a ceiling measured against a reference loop,
+  and the device-test package prints the same timing on a Roku Express.
+
 - **VoiceOver reaches a Home card's menu without the long press (Apple Player).** On iPhone,
   iPad and the Mac, each Home card offers its context menu's items as VoiceOver actions:
   Resume on a Continue Watching card, Not interested on a recommendation, named as the menu
