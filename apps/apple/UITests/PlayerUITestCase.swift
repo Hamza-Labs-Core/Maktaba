@@ -165,9 +165,29 @@ class PlayerUITestCase: XCTestCase {
         // on the main thread, so on the main actor, where `app` lives: XCTest records a UI
         // test's issues there (any other thread records the issue as it is)
         nonisolated(unsafe) let test = self
-        let cancelled = MainActor.assumeIsolated { Self.cancelledTouches(in: test.app) }
-        super.record(Self.withLostTaps(issue, cancelled: cancelled))
+        let (cancelled, state) = MainActor.assumeIsolated { (Self.cancelledTouches(in: test.app), test.app?.state) }
+        super.record(Self.withOffScreen(Self.withLostTaps(issue, cancelled: cancelled), state: state))
     }
+
+    /// `issue`, its description led by `offScreenNote` when the app was in the background at
+    /// the failure; as it is otherwise.
+    ///
+    /// On CI the system sent the app to the Home Screen in the middle of a tap (main runs
+    /// 43372573155, 43409306425, 43409448093, 43176025371: the recording shows the Home Screen
+    /// from the tap on, and XCTest still terminates the same pid at tear-down). The test then
+    /// read the app's last tree ("the switch still reads 1") and failed as if the tap had done
+    /// nothing. The app's log has a "scene:" line for each time it left the front (`TouchHook`).
+    nonisolated static func withOffScreen(_ issue: XCTIssue, state: XCUIApplication.State?) -> XCTIssue {
+        guard state == .runningBackground || state == .runningBackgroundSuspended else { return issue }
+        var issue = issue
+        issue.compactDescription = offScreenNote + issue.compactDescription
+        return issue
+    }
+
+    /// The words a failure starts with when the app was off the screen at the failure.
+    nonisolated static let offScreenNote = "[the app was in the background at this failure: the Home Screen showed, "
+        + "so what the test read is the app's last screen; see the app's \"scene:\" lines and the system log kept "
+        + "with the results before reading the failure as the app's] "
 
     /// How many touches the system cancelled in `app` since it launched; nil when it is not
     /// running or does not answer (launched without the hook).

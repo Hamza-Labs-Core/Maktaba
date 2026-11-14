@@ -163,6 +163,35 @@ final class PlayerShellTests: XCTestCase {
         XCTAssertNil(PlayerUITestCase.cancelledTouches(in: nil), "no app, no answer")
     }
 
+    /// A failure while the app is in the background starts with that, before a lost tap's
+    /// note; in front, not running, or not known, the failure is left as it is.
+    @MainActor
+    func testAFailureWithTheAppOffTheScreenSaysSo() {
+        let issue = XCTIssue(type: .assertionFailure, compactDescription: "the switch reads 0")
+        for state: XCUIApplication.State in [.runningBackground, .runningBackgroundSuspended] {
+            XCTAssertEqual(PlayerUITestCase.withOffScreen(issue, state: state).compactDescription,
+                           PlayerUITestCase.offScreenNote + "the switch reads 0")
+        }
+        for state: XCUIApplication.State? in [.runningForeground, .notRunning, .unknown, nil] {
+            XCTAssertEqual(PlayerUITestCase.withOffScreen(issue, state: state).compactDescription, "the switch reads 0")
+        }
+        let both = PlayerUITestCase.withOffScreen(PlayerUITestCase.withLostTaps(issue, cancelled: 1), state: .runningBackground)
+        XCTAssertEqual(both.compactDescription,
+                       PlayerUITestCase.offScreenNote + PlayerUITestCase.lostTapsNote(1) + "the switch reads 0")
+        XCTAssertTrue(PlayerUITestCase.offScreenNote.contains("in the background"))
+    }
+
+    /// Each scene change the touch hook watches has its own line in the app's log; another
+    /// notification has none.
+    func testTheTouchHookLogsEachSceneChange() {
+        let lines = TouchHook.scenePhases.compactMap(TouchHook.sceneNote)
+        XCTAssertEqual(lines.count, 4)
+        XCTAssertEqual(Set(lines).count, 4, "one line per change")
+        XCTAssertTrue(lines.allSatisfy { $0.hasPrefix("scene: ") })
+        XCTAssertTrue(TouchHook.sceneNote(UIScene.didEnterBackgroundNotification)?.contains("background") == true)
+        XCTAssertNil(TouchHook.sceneNote(UIWindow.didBecomeVisibleNotification))
+    }
+
     /// A size the hook sets on a scene reaches its views while they show: the trait a view
     /// reads, and a label's Dynamic Type font, smaller at XS and larger at AX3; the default
     /// takes the override off again. A size the tests do not use changes nothing.

@@ -352,6 +352,14 @@ jobs:
           log="$RESULTS/${{ matrix.device }}-${{ matrix.shard }}-app.log"
           xcrun simctl spawn "$UDID" log show --style compact --info --debug \
             --predicate 'subsystem BEGINSWITH "com.hamzalabs.maktaba"' > "$log" || true
+          # the system's side: who took the app off the screen. On CI the system sent the
+          # app to the Home Screen in the middle of a tap (main runs 43372573155,
+          # 43409448093) and only the app's own lines were kept, so nothing said why: the
+          # lines of SpringBoard, FrontBoard, backboardd and RunningBoard about the app or
+          # the touch devices XCTest makes (`TouchHook` logs the app's side, "scene:")
+          xcrun simctl spawn "$UDID" log show --style compact --info \
+            --predicate '(process == "SpringBoard" OR process == "backboardd" OR process == "runningboardd" OR subsystem == "com.apple.FrontBoard") AND (eventMessage CONTAINS[c] "maktaba" OR eventMessage CONTAINS[c] "digitizer" OR eventMessage CONTAINS[c] "home gesture" OR eventMessage CONTAINS[c] "homescreen" OR eventMessage CONTAINS[c] "deactivat")' \
+            > "$RESULTS/${{ matrix.device }}-${{ matrix.shard }}-system.log" || true
           xcrun simctl shutdown "$UDID" || true
           xcrun simctl delete "$UDID" || true
           if [ "$APP_DOWNLOAD" = failure ]; then

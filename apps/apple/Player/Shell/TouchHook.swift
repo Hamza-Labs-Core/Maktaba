@@ -18,6 +18,13 @@ import UIKit
 /// puts the simulator's lost tap at the front of the failure. Each cancelled touch is also
 /// in the app's log (the CI job keeps it). Like `TextSizeHook`: a Debug build's only, and
 /// only with the flag. The Player's UI-test targets compile this file too.
+///
+/// It also logs each time the app's scene leaves or comes back to the front (`sceneNote`).
+/// On CI the system sent the app to the Home Screen in the middle of a test's tap (main runs
+/// 43372573155, 43409306425, 43409448093, 43176025371: the recording shows the Home Screen
+/// from the tap on, XCTest still terminates the same pid at tear-down); the system then
+/// cancels the touch, and the test failed on what the tap should have done ("the switch
+/// still reads 1"). The line puts the app leaving the front next to the cancelled touch.
 enum TouchHook {
     static let flag = "-maktaba-touch-hook"
     static let ask = "com.hamzalabs.maktaba.uitest.touches.ask"
@@ -70,7 +77,30 @@ enum TouchHook {
             guard let window = note.object as? UIWindow else { return }
             MainActor.assumeIsolated { watch(window) }
         }
+        for name in scenePhases {
+            NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { note in
+                guard let line = sceneNote(note.name) else { return }
+                log.notice("\(line, privacy: .public)")
+            }
+        }
         return true
+    }
+
+    /// The scene changes the hook logs: leaving the front and coming back.
+    static let scenePhases: [Notification.Name] = [
+        UIScene.willDeactivateNotification, UIScene.didEnterBackgroundNotification,
+        UIScene.willEnterForegroundNotification, UIScene.didActivateNotification,
+    ]
+
+    /// The app log's line for a scene change, nil for any other notification.
+    static func sceneNote(_ name: Notification.Name) -> String? {
+        switch name {
+        case UIScene.willDeactivateNotification: "scene: no longer active (a system screen or the Home Screen over it)"
+        case UIScene.didEnterBackgroundNotification: "scene: in the background (the app is off the screen; a UI test's tap may be lost)"
+        case UIScene.willEnterForegroundNotification: "scene: coming back to the front"
+        case UIScene.didActivateNotification: "scene: active"
+        default: nil
+        }
     }
 
     /// Adds a `TouchWatcher` to `window` unless it has one. Whether it added one.
