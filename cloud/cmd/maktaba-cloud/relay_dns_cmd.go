@@ -1,4 +1,4 @@
-// Command relay-dns keeps relay.maktaba.tv and *.relay.maktaba.tv a DNS round robin over the
+// maktaba-cloud relay-dns keeps relay.maktaba.tv and *.relay.maktaba.tv a DNS round robin over the
 // relay pool's healthy relays (Epic 50 story 50.16 §4; internal/relaydns). It runs on the
 // witness W: every 15 s it reads the relays table, probes each relay's /readyz on its public IP,
 // and updates the A records through the Cloudflare API (TTL 60 s). It never removes the last
@@ -33,22 +33,22 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/relaydns"
 )
 
-// settings are the command's env, read and checked.
-type settings struct {
+// relayDNSSettings are relay-dns's env, read and checked.
+type relayDNSSettings struct {
 	dbURL, zone, api, token, domain string
 	every                           time.Duration
 	port                            int
 	once                            bool
 }
 
-func load(getenv func(string) string, readFile func(string) ([]byte, error)) (settings, error) {
+func loadRelayDNS(getenv func(string) string, readFile func(string) ([]byte, error)) (relayDNSSettings, error) {
 	get := func(k, def string) string {
 		if v := getenv(k); v != "" {
 			return v
 		}
 		return def
 	}
-	s := settings{dbURL: get("RELAY_DNS_DB_URL", ""), zone: get("CF_ZONE_ID", ""), api: get("CF_API", ""),
+	s := relayDNSSettings{dbURL: get("RELAY_DNS_DB_URL", ""), zone: get("CF_ZONE_ID", ""), api: get("CF_API", ""),
 		domain: get("RELAY_DOMAIN", "relay.maktaba.tv"), once: get("RELAY_DNS_ONCE", "") == "1"}
 	if s.dbURL == "" || s.zone == "" {
 		return s, errors.New("relay-dns: RELAY_DNS_DB_URL and CF_ZONE_ID are required")
@@ -73,7 +73,7 @@ func load(getenv func(string) string, readFile func(string) ([]byte, error)) (se
 	return s, nil
 }
 
-func (s settings) controller(store relay.PoolStore, logger *slog.Logger) *relaydns.Controller {
+func (s relayDNSSettings) controller(store relay.PoolStore, logger *slog.Logger) *relaydns.Controller {
 	return &relaydns.Controller{
 		Relays: store,
 		DNS:    &relaydns.Cloudflare{BaseURL: s.api, ZoneID: s.zone, Token: s.token},
@@ -84,9 +84,9 @@ func (s settings) controller(store relay.PoolStore, logger *slog.Logger) *relayd
 	}
 }
 
-func main() {
+func runRelayDNS(_ []string) {
 	logger := slog.New(slog.NewJSONHandler(os.Stderr, nil))
-	s, err := load(os.Getenv, os.ReadFile)
+	s, err := loadRelayDNS(os.Getenv, os.ReadFile)
 	if err != nil {
 		logger.Error(err.Error())
 		os.Exit(2)

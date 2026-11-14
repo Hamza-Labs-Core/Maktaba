@@ -1,0 +1,26 @@
+# The relay pool's round robin (Epic 50 story 50.16 §4), on the witness W only: every 15 s it
+# reads the relays table, probes each relay's /readyz on its public IP, and keeps
+# relay.maktaba.tv and *.relay.maktaba.tv holding the A records of the healthy relays that
+# answer (Cloudflare API, TTL 60 s). It never removes the last record. It runs once the
+# maktaba-cloud binary is installed on W and /etc/maktaba/relay-dns.env exists
+# (deploy/cloud-ha/relay-pool/README.md); nothing in this repository creates either.
+[Unit]
+Description=Maktaba relay pool DNS round robin (witness)
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=/usr/local/bin/maktaba-cloud
+ConditionPathExists=/etc/maktaba/relay-dns.env
+
+[Service]
+User=maktaba
+EnvironmentFile=/etc/maktaba/relay-dns.env
+ExecStart=/usr/local/bin/maktaba-cloud relay-dns
+Restart=always
+RestartSec=5
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

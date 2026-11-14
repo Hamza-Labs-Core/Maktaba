@@ -1,0 +1,7 @@
+# The relay pool's relay config (story 50.16), for compose-pool.yml: each relay in the pool, its
+# member's tunnel host <id>.relay.test (each relay's own id, addresses: compose-pool.yml's
+# environment).
+[relay]
+pool.enabled = true
+pool.hosts = "{id}.relay.test"
+pool.capacity_mbps = 1000

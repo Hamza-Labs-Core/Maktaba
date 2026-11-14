@@ -803,6 +803,15 @@ build fails when the two differ.
 
 ### Added
 
+- **A pool of relays (story 50.16).** The cloud can run several relay machines in one pool:
+  each home keeps its tunnel on one relay and an idle standby tunnel on another, chosen by
+  weighted rendezvous hashing, so a relay lost costs a home seconds, and adding one moves only
+  the homes it wins. Any relay answers for any home. Apps get a `relay_hint` connection that
+  goes straight to the home's relay. The witness keeps `relay.maktaba.tv` round robin over the
+  healthy relays (`maktaba-cloud relay-dns`); staff take a relay out with `maktaba-cloud relay
+  drain|down|activate`. Off until `[relay.pool] enabled = true`; proven in the cloud rehearsal
+  (relay loss, relay added).
+
 - **Choose Maktaba's ports on a NAS (story 59.08).** Another app on the NAS, such as Plex or the
   NAS's own UI, may already use one of Maktaba's ports. Each one can now be set in the container's
   settings: `MAKTABA_WEB_PORT` (8088), `MAKTABA_API_PORT` (8080), `MAKTABA_STREAM_PORT` (8081, live

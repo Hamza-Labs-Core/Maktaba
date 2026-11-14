@@ -10,8 +10,8 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/relaydns"
 )
 
-// The command's settings: the token only from its file, the domain's two names, the defaults.
-func TestLoad(t *testing.T) {
+// relay-dns's settings (story 50.16): the token only from its file, the domain's two names, the defaults.
+func TestRelayDNSSettings(t *testing.T) {
 	envs := map[string]string{"RELAY_DNS_DB_URL": "postgres://w", "CF_ZONE_ID": "z1", "CF_API_TOKEN_FILE": "/run/cf"}
 	getenv := func(k string) string { return envs[k] }
 	files := map[string]string{"/run/cf": "tok\n"}
@@ -21,7 +21,7 @@ func TestLoad(t *testing.T) {
 		}
 		return nil, errors.New("no file")
 	}
-	s, err := load(getenv, read)
+	s, err := loadRelayDNS(getenv, read)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,7 +52,7 @@ func TestLoad(t *testing.T) {
 			savedFiles[k] = v
 		}
 		mut()
-		if _, err := load(getenv, read); err == nil {
+		if _, err := loadRelayDNS(getenv, read); err == nil {
 			t.Errorf("%s: accepted", name)
 		}
 		envs, files = saved, savedFiles
@@ -60,7 +60,7 @@ func TestLoad(t *testing.T) {
 	// the token in the environment is not read
 	envs["CF_API_TOKEN"] = "leak"
 	delete(envs, "CF_API_TOKEN_FILE")
-	if _, err := load(getenv, read); err == nil {
+	if _, err := loadRelayDNS(getenv, read); err == nil {
 		t.Error("a token from the environment was accepted")
 	}
 }

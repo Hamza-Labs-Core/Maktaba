@@ -130,6 +130,18 @@ within   = "5s"
 deadline = "120s"
 rate     = 100
 
+[relay.pool]
+# Epic 50 story 50.16: a pool of relay machines (deploy/cloud-ha/relay-pool/). Off: one relay,
+# as Phase 1. On (every relay and the api): each relay heartbeats its member row; each home
+# gets a primary and a standby relay by weighted rendezvous hashing; the api gives apps a
+# relay_hint. The member id and addresses are per machine (MAKTABA_CLOUD_RELAY_POOL_MEMBER,
+# _PUBLIC_IP, _PRIVATE_IP; member defaults to relay.id, private_ip to peer_addr's host).
+enabled         = false
+# hosts         = "{id}.relay.maktaba.tv"   # a member's tunnel host; default "{id}.<public_host>"
+capacity_mbps   = 1000                      # weights the hash (50.14's measurement)
+rebalance_every = "30s"
+rebalance_rate  = 20                        # homes moved a second, at most
+
 [relay.ticket]
 # Homes reconnect with a 10-minute resume ticket instead of their secret.
 enabled = true
