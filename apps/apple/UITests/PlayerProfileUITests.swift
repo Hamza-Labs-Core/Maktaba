@@ -184,13 +184,9 @@ final class PlayerProfileUITests: PlayerUITestCase {
         XCTAssertEqual(app.switches["playback.subtitles"].value as? String, "0", "subtitles: off by default")
         XCTAssertEqual(app.switches["playback.resume"].value as? String, "1", "resume without asking: on")
         shot("profile-playback")
-        // the page has just taken the list's place: tapped once it is still, and the switch
-        // read until it shows the change. Read in the same instant as the tap it still said
-        // "1" on a loaded iPad (CI, 2026-11-12), with no touch cancelled and the setting kept
-        waitUntilStill(autoplay, timeout: 5)
-        autoplay.switches.firstMatch.tap()
-        XCTAssertTrue(waitUntil { self.app.switches["playback.autoplay"].firstMatch.value as? String == "0" },
-                      "next episode: off once tapped (it reads \(String(describing: autoplay.value)))")
+        // the page has just taken the list's place: tapped once it is still, read until it
+        // shows the change, tapped once more if a loaded runner's tap left it as it was (`flip`)
+        flip(autoplay, to: "0", "next episode: off once tapped")
 
         // kept on this device: a relaunch without the reset reads it back
         app.terminate()
