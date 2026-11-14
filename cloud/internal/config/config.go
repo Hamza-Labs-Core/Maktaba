@@ -40,16 +40,35 @@ type Config struct {
 	Broadcast   BroadcastConfig
 }
 
-// BroadcastConfig is the cloud's side of the broadcast edge (Epic 50 story 50.21): the key that
-// signs ingest tokens and control posts (its public half goes in the edge's CLOUD_PUBKEYS), the
-// ingest host homes push to, and the edge's public key its posts to the API are checked with.
+// BroadcastConfig is home broadcasting's: the gate and plans (Epic 50 story 50.20) and the
+// cloud's side of the broadcast edge (story 50.21): the key that signs ingest tokens, viewer
+// invites and control posts (its public half goes in the edge's CLOUD_PUBKEYS), and the ingest
+// host homes push to.
 type BroadcastConfig struct {
-	Enabled bool // broadcast.enabled: issue ingest tokens (default false)
+	// Enabled is broadcast.enabled, the broadcasting gate (default false): off, only the test
+	// publishers a service admin granted may publish, and homes' licences don't carry the
+	// broadcast flag. The api role refuses to start with it on while any broadcast catalog
+	// value is TBD (billing.BroadcastLaunchCheck), naming each, or without broadcast.key_path.
+	Enabled bool
+	// PlansEnforce is broadcast.plans.enforce (default true). Off is the rollback: every
+	// publisher's new sessions get full quality up to the concurrent-viewer limit, and the
+	// viewer-minutes are still counted.
+	PlansEnforce bool
+	// PAYGReports is billing.broadcast_payg.enabled (default true): off stops new pay-as-you-go
+	// viewer-hour reports; the queued ones still go, so nothing used goes unbilled.
+	PAYGReports bool
+	// OpenAccess is broadcast.open_access.enabled (default false; story 50.26): off, no channel
+	// may be set to open access, and the edge treats every open channel as invite-only for new
+	// sessions. It stays off until the broadcasting gate's legal items hold.
+	OpenAccess bool
 	// KeyPath is broadcast.key_path: the Ed25519 seed file (base64url or 32 raw bytes, 0600).
+	// Empty: the ingest-token and invite routes answer 503 broadcast_disabled.
 	KeyPath string
 	// IngestURL is broadcast.ingest_url, default https://ingest.maktaba.tv.
 	IngestURL string
-	// EdgePublicKey is broadcast.edge_public_key: base64url Ed25519 (EDGE_SIGNING_KEY's half).
+	// EdgePublicKey is broadcast.edge_public_key: the base64 Ed25519 public key the broadcast
+	// edge signs its usage posts with (POST /_edge/usage). Public, so it may sit in the file;
+	// the private half is a Worker secret. Empty: the edge routes answer 503.
 	EdgePublicKey string
 }
 
@@ -317,8 +336,7 @@ func (r RelayConfig) PoolPrivate() string {
 // keys absent from the TOML file so the file stays minimal.
 func defaultConfig() Config {
 	return Config{
-		Direct:    DirectConfig{DNSListen: ":53", Budget: 45, CheckEvery: 15 * time.Minute},
-		Broadcast: BroadcastConfig{IngestURL: "https://ingest.maktaba.tv"},
+		Direct: DirectConfig{DNSListen: ":53", Budget: 45, CheckEvery: 15 * time.Minute},
 		Server: ServerConfig{
 			ListenAddr:    "0.0.0.0:8080",
 			OriginMode:    OriginTunnel,
@@ -357,6 +375,7 @@ func defaultConfig() Config {
 			RebalanceEvery:   30 * time.Second,
 			RebalanceRate:    20,
 		},
+		Broadcast: BroadcastConfig{PlansEnforce: true, PAYGReports: true, IngestURL: "https://ingest.maktaba.tv"},
 	}
 }
 
@@ -537,14 +556,6 @@ func assign(c *Config, section, key, val string) error {
 		return nil
 	}
 	switch section + "." + key {
-	case "broadcast.enabled":
-		return setBool(&c.Broadcast.Enabled, val)
-	case "broadcast.key_path":
-		c.Broadcast.KeyPath = val
-	case "broadcast.ingest_url":
-		c.Broadcast.IngestURL = val
-	case "broadcast.edge_public_key":
-		c.Broadcast.EdgePublicKey = val
 	case "direct.enabled":
 		return setBool(&c.Direct.Enabled, val)
 	case "direct.domains":
@@ -692,6 +703,20 @@ func assign(c *Config, section, key, val string) error {
 		return setDur(&c.Relay.ShutdownGrace, val)
 	case "relay.editions_dir":
 		c.Relay.EditionsDir = val
+	case "broadcast.enabled":
+		return setBool(&c.Broadcast.Enabled, val)
+	case "broadcast.plans.enforce":
+		return setBool(&c.Broadcast.PlansEnforce, val)
+	case "billing.broadcast_payg.enabled":
+		return setBool(&c.Broadcast.PAYGReports, val)
+	case "broadcast.edge_public_key":
+		c.Broadcast.EdgePublicKey = val
+	case "broadcast.open_access.enabled":
+		return setBool(&c.Broadcast.OpenAccess, val)
+	case "broadcast.key_path":
+		c.Broadcast.KeyPath = val
+	case "broadcast.ingest_url":
+		c.Broadcast.IngestURL = val
 	case "relay.pool.enabled":
 		return setBool(&c.Relay.PoolEnabled, val)
 	case "relay.pool.member":

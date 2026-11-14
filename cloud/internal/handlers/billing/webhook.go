@@ -192,6 +192,9 @@ func (d *Deps) applyEvent(ctx context.Context, tx *sql.Tx, provider string, ev b
 		if err := setExtraStreams(ctx, tx, uid, effective, ev.ExtraStreams); err != nil {
 			return nil, err
 		}
+		if err := setBroadcast(ctx, tx, uid, effective, ev.Broadcast); err != nil {
+			return nil, err
+		}
 		return nil, SetEffectivePlan(ctx, tx, uid, effective)
 
 	case billingpkg.EventPaymentSucceeded, billingpkg.EventPaymentFailed:
@@ -343,4 +346,60 @@ func setExtraStreams(ctx context.Context, tx *sql.Tx, uid, plan string, extra in
 	}
 	_, err := tx.ExecContext(ctx, `UPDATE servers SET extra_streams = $2 WHERE owner_user_id = $1 AND extra_streams <> $2`, uid, extra)
 	return err
+}
+
+// setBroadcast keeps each home's broadcast items (story 50.20 §4) as the subscription carries
+// them: Broadcaster, extra channels and extra 100-viewer blocks. Dropping Pro drops Broadcaster
+// on every home of the account; a home that leaves Broadcaster keeps one channel, invite-only
+// (billingpkg.Downgrade). Nil items: the event says nothing about broadcasting.
+func setBroadcast(ctx context.Context, tx *sql.Tx, uid, plan string, items []billingpkg.BroadcastItems) error {
+	if plan == billingpkg.PlanPro && items == nil {
+		return nil
+	}
+	want := map[string]billingpkg.BroadcastItems{}
+	if plan == billingpkg.PlanPro {
+		for _, it := range items {
+			if it.Broadcaster {
+				want[it.ServerID] = it
+			}
+		}
+	}
+	rows, err := tx.QueryContext(ctx, `SELECT id::text, broadcast_plan IS NOT NULL FROM servers WHERE owner_user_id = $1 FOR UPDATE`, uid)
+	if err != nil {
+		return err
+	}
+	type home struct {
+		id  string
+		had bool
+	}
+	var homes []home
+	for rows.Next() {
+		var h home
+		if err := rows.Scan(&h.id, &h.had); err != nil {
+			_ = rows.Close()
+			return err
+		}
+		homes = append(homes, h)
+	}
+	_ = rows.Close()
+	for _, h := range homes {
+		it, ok := want[h.id]
+		if !ok {
+			if !h.had {
+				continue
+			}
+			if err := billingpkg.Downgrade(ctx, tx, h.id); err != nil {
+				return err
+			}
+			if _, err := tx.ExecContext(ctx, `UPDATE servers SET broadcast_plan = NULL, broadcast_extra_channels = 0, broadcast_extra_viewers = 0 WHERE id = $1`, h.id); err != nil {
+				return err
+			}
+			continue
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE servers SET broadcast_plan = $2, broadcast_extra_channels = $3, broadcast_extra_viewers = $4 WHERE id = $1`,
+			h.id, billingpkg.BroadcastPlanBroadcaster, min(max(it.ExtraChannels, 0), 100), min(max(it.ExtraViewers100, 0), 100)); err != nil {
+			return err
+		}
+	}
+	return nil
 }

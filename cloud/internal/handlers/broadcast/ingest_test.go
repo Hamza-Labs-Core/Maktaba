@@ -14,6 +14,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	billingpkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/billing"
 	bc "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/broadcast"
 )
 
@@ -42,7 +43,7 @@ func setup(t *testing.T, withKey bool) (*chi.Mux, bc.Key) {
 	t.Helper()
 	seed := sha256.Sum256([]byte("maktaba-broadcast TEST KEY, never for production: handler"))
 	k, _ := bc.KeyFromSeed(seed[:])
-	d := &Deps{
+	d := &IngestDeps{
 		Agents:    fakeAgents{"pro-home": "s3cret", "free-home": "s3cret"},
 		Plans:     fakePlans{"pro-home": {Publisher: "user-pro", MaxRungs: 2, MaxTopKbps: 3000}},
 		IngestURL: "https://ingest.maktaba.tv",
@@ -52,7 +53,7 @@ func setup(t *testing.T, withKey bool) (*chi.Mux, bc.Key) {
 		d.Key = &k
 	}
 	r := chi.NewRouter()
-	MountAgent(r, d)
+	MountIngest(r, d)
 	return r, k
 }
 
@@ -152,13 +153,21 @@ func TestIngestTokenOffWithoutAKey(t *testing.T) {
 	}
 }
 
-func TestAllowanceFor(t *testing.T) {
-	if a, err := AllowanceFor("u1", "pro", "active"); err != nil || a.Publisher != "u1" || a.MaxRungs != 2 {
+func TestAllowanceOf(t *testing.T) {
+	pro := billingpkg.Publisher{OwnerID: "u1", Plan: billingpkg.PlanPro, OwnerActive: true}
+	if a, err := allowanceOf(pro, true); err != nil || a.Publisher != "u1" || a.MaxRungs != 2 || a.MaxTopKbps != 3000 {
 		t.Fatalf("pro: %+v %v", a, err)
 	}
-	for _, c := range [][2]string{{"free", "active"}, {"basic", "active"}, {"pro", "suspended"}} {
-		if _, err := AllowanceFor("u1", c[0], c[1]); !errors.Is(err, ErrNotInPlan) {
-			t.Errorf("%v: %v", c, err)
+	if _, err := allowanceOf(pro, false); !errors.Is(err, ErrNotInPlan) {
+		t.Errorf("behind the shut gate: %v", err)
+	}
+	for _, p := range []billingpkg.Publisher{
+		{OwnerID: "u1", Plan: billingpkg.PlanFree, OwnerActive: true},
+		{OwnerID: "u1", Plan: billingpkg.PlanBasic, OwnerActive: true},
+		{OwnerID: "u1", Plan: billingpkg.PlanPro, OwnerActive: false},
+	} {
+		if _, err := allowanceOf(p, true); !errors.Is(err, ErrNotInPlan) {
+			t.Errorf("%+v: %v", p, err)
 		}
 	}
 }

@@ -25,6 +25,10 @@ describe("readBundle", () => {
     ).toEqual({ cloud_relay: true, early_access: false });
   });
 
+  it("keeps broadcast, the licence's broadcasting feature (story 50.20)", () => {
+    expect(readBundle(bundle({ broadcast: true }))).toEqual({ broadcast: true });
+  });
+
   it("refuses an unsigned or malformed answer", () => {
     expect(readBundle({ ...bundle({ cloud_relay: true }), signature: "" })).toBeNull();
     expect(readBundle({ flags: { cloud_relay: true } })).toBeNull();
