@@ -28,7 +28,7 @@ class MaktabaTVApp : Application() {
         AppLog.install(this, tv = true) // its log lines too, in the shared shape (Epic 53 story 53.01)
         // what crashed since the last start (and, on Android 11+, its ANRs and native crashes) is kept (53.14)
         com.hamzalabs.maktaba.core.diagnostics.CrashReports.collect(this)
-        ClientHeader.init(this) // X-Maktaba-Client names this app (Epic 44)
+        ClientHeader.init(this, tvPlatform = BuildConfig.TV_PLATFORM) // X-Maktaba-Client names this app (Epic 44) and its store build (58.05)
     }
 
     val session: AppSession by lazy {

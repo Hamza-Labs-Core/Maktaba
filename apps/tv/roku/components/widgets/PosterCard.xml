@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- A card of a RowList or MarkupGrid: the poster at ?size=small, its title (already shaped
+     where the row was loaded) and a progress line; the brass ring and a 1.08 scale on focus. -->
+<component name="PosterCard" extends="Group">
+  <interface>
+    <field id="itemContent" type="node" onChange="onContent" />
+    <field id="width" type="float" onChange="onSize" />
+    <field id="height" type="float" onChange="onSize" />
+    <field id="focusPercent" type="float" onChange="onFocus" />
+    <field id="rowFocusPercent" type="float" onChange="onFocus" />
+    <field id="itemHasFocus" type="boolean" onChange="onFocus" />
+    <field id="gridHasFocus" type="boolean" onChange="onFocus" />
+    <field id="rowHasFocus" type="boolean" onChange="onFocus" />
+  </interface>
+  <script type="text/brightscript" uri="PosterCard.brs" />
+  <children>
+    <Group id="card">
+      <Rectangle id="ring" color="0xE3B252FF" visible="false" />
+      <Rectangle id="frame" color="0x131D2EFF" />
+      <Poster id="poster" loadDisplayMode="scaleToZoom" />
+      <Rectangle id="track" color="0x22304AFF" visible="false" />
+      <Rectangle id="bar" color="0xE3B252FF" visible="false" />
+    </Group>
+    <Label id="title" color="0xE8ECF3FF" />
+  </children>
+</component>

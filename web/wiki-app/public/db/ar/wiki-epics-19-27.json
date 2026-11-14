@@ -2134,14 +2134,17 @@
       ],
       "related": [
         "epic-25-cloud-relay",
-        "plan-25.10-direct-connection-fallback"
+        "plan-25.10-direct-connection-fallback",
+        "ep-get-plugins"
       ],
       "files": {
         "story": "specs/epics/25-cloud-relay/story-25-10-direct-connection-fallback.md",
         "plan": "specs/epics/25-cloud-relay/plan-25-10-direct-connection-fallback.md",
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /plugins"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "direct-connection-fallback"

@@ -115,6 +115,12 @@ func main() {
 				os.Exit(1)
 			}
 			return
+		case "review-home":
+			if err := runReviewHome(os.Args[2:], os.Stdout); err != nil {
+				fmt.Fprintf(os.Stderr, "review-home: %v\n", err)
+				os.Exit(1)
+			}
+			return
 		case "license":
 			if err := runLicense(os.Args[2:], os.Stdin, os.Stdout); err != nil {
 				fmt.Fprintf(os.Stderr, "license: %v\n", err)
@@ -203,6 +209,9 @@ Commands:
   keys       Generate or rotate RS256 JWT keys (Story 10.6)
   components List, turn on, off, stop or start the components
              (see "components --help"; Epic 51 story 51.08)
+  review-home seed|rotate
+             The store reviewers' home: its accounts, libraries and titles
+             (passwords from the environment; docs/stores/review-home.md)
   cloudflare spike
              Run the Cloudflare Stream spike against a real account
              (credentials from the environment; tools/tv/cf-spike.md)

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- This home needs an update / Update this app (Epic 58 story 58.01, on Roku). -->
+<component name="CompatScreen" extends="Screen">
+  <script type="text/brightscript" uri="CompatScreen.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common.brs" />
+  <script type="text/brightscript" uri="pkg:/source/config.brs" />
+  <script type="text/brightscript" uri="pkg:/source/net.brs" />
+  <script type="text/brightscript" uri="pkg:/source/nav.brs" />
+  <script type="text/brightscript" uri="pkg:/source/store.brs" />
+  <script type="text/brightscript" uri="pkg:/source/i18n.brs" />
+  <script type="text/brightscript" uri="pkg:/source/layout.brs" />
+  <script type="text/brightscript" uri="pkg:/source/visualtext.brs" />
+  <script type="text/brightscript" uri="pkg:/source/visualtext_tables.brs" />
+  <children>
+    <Label id="title" translation="[120,200]" width="1680" />
+    <Label id="body" translation="[120,300]" width="1500" height="300" wrap="true" />
+    <TvButton id="again" translation="[120,700]" width="420" />
+    <TvButton id="other" translation="[580,700]" width="520" />
+  </children>
+</component>

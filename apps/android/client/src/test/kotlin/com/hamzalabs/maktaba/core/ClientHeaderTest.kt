@@ -18,6 +18,19 @@ class ClientHeaderTest {
     }
 
     @Test
+    fun theTvAppNamesItsStoreBuild() {
+        // story 58.05: one package, two store builds; the Amazon one is a Fire TV
+        assertEquals("tv/1.0.2 (firetv; tv)", ClientHeader.make("com.hamzalabs.maktaba.tv", "1.0.2", tvPlatform = ClientHeader.FIRE_TV))
+        assertEquals("tv/1.0.2 (androidtv; tv)", ClientHeader.make("com.hamzalabs.maktaba.tv", "1.0.2", tvPlatform = ClientHeader.ANDROID_TV))
+        assertEquals("tv/1.0.2 (androidtv; tv)", ClientHeader.make("com.hamzalabs.maktaba.tv", "1.0.2", tvPlatform = ""))
+        // the phone apps are not TVs whatever they are told
+        assertEquals("player/1.0.2 (android; phone)", ClientHeader.make("com.hamzalabs.maktaba.player", "1.0.2", tvPlatform = ClientHeader.FIRE_TV))
+        // and the compatibility contract reads the Fire TV build as tv/firetv (Update this app's Appstore words)
+        val app = com.hamzalabs.maktaba.core.compat.CompatApp.fromClientHeader(ClientHeader.make("com.hamzalabs.maktaba.tv", "1.0.2", tvPlatform = ClientHeader.FIRE_TV))
+        assertEquals("tv/firetv", app.key)
+    }
+
+    @Test
     fun oneAppForEveryScreen() {
         assertEquals(ClientHeader.PHONE, ClientHeader.deviceFor(smallestWidthDp = 411, hasHinge = false))
         assertEquals(ClientHeader.PHONE, ClientHeader.deviceFor(smallestWidthDp = 599, hasHinge = false))

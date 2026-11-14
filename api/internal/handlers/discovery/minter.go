@@ -16,6 +16,7 @@ package discovery
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/jwt"
@@ -99,6 +100,12 @@ func (m *tokenMinter) clock() time.Time {
 
 // Mint issues the access JWT + refresh token for a paired device.
 func (m *tokenMinter) Mint(ctx context.Context, userID, deviceKind, deviceLabel string) (MintedTokens, error) {
+	return m.MintVia(ctx, userID, deviceKind, deviceLabel, "")
+}
+
+// MintVia is Mint for a device that came by its code another way (via, e.g. ViaCloudCode),
+// recorded on the sign-in for the person's list of devices.
+func (m *tokenMinter) MintVia(ctx context.Context, userID, deviceKind, deviceLabel, via string) (MintedTokens, error) {
 	now := m.clock()
 
 	isAdmin := false
@@ -108,6 +115,20 @@ func (m *tokenMinter) Mint(ctx context.Context, userID, deviceKind, deviceLabel 
 			return MintedTokens{}, err
 		}
 		isAdmin = a
+	}
+	// a TV that came by a cloud code never acts as an admin, even an admin's: its code can be
+	// read out to anyone anywhere, so an approval hands over watching, never running the home
+	// (Epic 58 story 58.03). It reads every library, named one by one.
+	if isAdmin && via == ViaCloudCode {
+		all, ok := m.libs.(allLibraries)
+		if !ok {
+			return MintedTokens{}, errNoAllLibraries
+		}
+		l, err := all.AllLibraries(ctx)
+		if err != nil {
+			return MintedTokens{}, err
+		}
+		return m.mint(ctx, userID, deviceKind, deviceLabel, via, false, l, now)
 	}
 
 	// Mirror handlers/auth.librariesFor exactly: admins read everything,
@@ -127,6 +148,17 @@ func (m *tokenMinter) Mint(ctx context.Context, userID, deviceKind, deviceLabel 
 		}
 	}
 
+	return m.mint(ctx, userID, deviceKind, deviceLabel, via, isAdmin, libs, now)
+}
+
+// allLibraries lists every library (*authz.ACLStore).
+type allLibraries interface {
+	AllLibraries(ctx context.Context) ([]string, error)
+}
+
+var errNoAllLibraries = errors.New("discovery: no library list for a cloud code's admin sign-in")
+
+func (m *tokenMinter) mint(ctx context.Context, userID, deviceKind, deviceLabel, via string, isAdmin bool, libs []string, now time.Time) (MintedTokens, error) {
 	// the refresh token first: the access token names its family
 	meta := map[string]any{"origin": "pairing"}
 	if deviceKind != "" {
@@ -134,6 +166,9 @@ func (m *tokenMinter) Mint(ctx context.Context, userID, deviceKind, deviceLabel 
 	}
 	if deviceLabel != "" {
 		meta["device_label"] = deviceLabel
+	}
+	if via != "" {
+		meta["via"] = via
 	}
 	rt, err := m.refresh.Issue(ctx, refresh.IssueInput{
 		UserID:     userID,
@@ -155,6 +190,8 @@ func (m *tokenMinter) Mint(ctx context.Context, userID, deviceKind, deviceLabel 
 		IsAdmin: isAdmin,
 		// the sign-in a device's age signal is kept under (Epic 57 story 57.04)
 		Fam: rt.FamilyID,
+		// a cloud code's TV mints nothing of its own and is never an admin (story 58.03)
+		Rst: via == ViaCloudCode,
 	})
 	if err != nil {
 		return MintedTokens{}, err

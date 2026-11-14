@@ -23,6 +23,8 @@ import com.hamzalabs.maktaba.core.api.ProgressAnswer
 import com.hamzalabs.maktaba.core.api.TimeReason
 import com.hamzalabs.maktaba.core.api.TimeRefusal
 import com.hamzalabs.maktaba.core.api.timeRefusal
+import com.hamzalabs.maktaba.tv.BuildConfig
+import kotlinx.serialization.json.JsonObject
 import kotlinx.coroutines.Dispatchers
 import com.hamzalabs.maktaba.core.api.busyRetryMs
 import com.hamzalabs.maktaba.core.api.errorDetails
@@ -74,6 +76,10 @@ class TvPlayback(
     private val signedOut: () -> Unit,
     /** The time now, in milliseconds: when the stream was opened and when to renew it (a test gives its own clock). */
     private val nowMs: () -> Long = System::currentTimeMillis,
+    /** The streaming profile this build asks for: `androidtv` (Google Play) or `firetv` (Amazon), story 58.05. */
+    private val profile: String = BuildConfig.TV_PLATFORM,
+    /** What this TV plays (58.02's `device_caps`), read at each open; null leaves it to the profile. */
+    private val deviceCaps: suspend () -> JsonObject? = { withContext(Dispatchers.Default) { DeviceCapsReader.read(context) } },
 ) {
     var player by mutableStateOf<ExoPlayer?>(null)
         private set
@@ -192,7 +198,8 @@ class TvPlayback(
         opening = player == null
         try {
             // a session the home opened is always closed, even when the screen went away meanwhile
-            val s = withContext(NonCancellable) { client.openStream(video, (fromMs / 1000).toInt()) }
+            val caps = deviceCaps()
+            val s = withContext(NonCancellable) { client.openStream(video, (fromMs / 1000).toInt(), profile = profile, deviceCaps = caps) }
             try {
                 currentCoroutineContext().ensureActive()
                 // the video stopped for time, or the home ended it, while this open was on its

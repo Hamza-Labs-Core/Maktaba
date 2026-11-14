@@ -1,0 +1,314 @@
+#!/usr/bin/env bash
+# The move from the Phase 1 pair to the three database nodes, with no downtime (Epic 50 story
+# 50.18 §4), as guarded steps. Each step checks what it needs first and refuses with the reason;
+# a step already done says so and goes on, so `all` can be run again after a refusal.
+#
+#   migrate-db-nodes <step>|all [--announced|--unannounced]
+#
+#   check       the pair leads with a streaming replica; each database node is set up
+#               (setup.sh --role db with JOIN=later: CLOUD_PROCESSES=off, PgBouncer answers)
+#   join        Patroni on db-1 and db-2: they join the running cluster as replicas, streaming
+#               from the pair's leader
+#   processes   the pair's cloud stops following the leader (CLOUD_PROCESSES=off on A and B):
+#               it keeps running where it runs, whoever leads
+#   db-ip       the database's Floating IP to the pair's leader (its callback, DB_FLOATING_IP_ID
+#               in A's and B's cloud-ha.env), so db.internal reaches its PgBouncer
+#   repoint     the cloud's database.url and direct_url to PgBouncer on db.internal (the
+#               transaction pool and cloud_session), on A and B, and the running cloud
+#               restarted on them (CLOUD_RESTART)
+#   switchover  to db-1 (bin/switchover --db: db-1 streams with no lag and its PgBouncer
+#               answers; the announcement as given); writes pause up to 15 s; the database's
+#               Floating IP follows db-1 and the cloud's next connections with it
+#   db-3        Patroni on db-3
+#   etcd        etcd onto db-1..3, one member at a time: each added (member add, then started
+#               with the cluster as it is), then one of A, B and W removed and stopped
+#   retire      Patroni (and with it Postgres) stopped and disabled on A and B: they leave the
+#               cluster; the cloud keeps running on them as apps
+#   backup      a full backup from the new leader at once (50.09), to both repositories
+#
+# Rollback until `retire`: `switchover --db --candidate <A's member>` and repoint back; after
+# it, the database nodes are the rollback, and restore (50.09) the last resort.
+#
+# Env: RELAY_HOST_A, RELAY_HOST_B (the pair's SSH addresses), DB_HOSTS ("db-1 db-2 db-3", the
+# database nodes' SSH addresses, in that order), RELAY_SSH_USER and RELAY_SSH_KEY or NODE_EXEC
+# (the rehearsal's docker exec), SUDO ("sudo"), SVC (the service command, given start|stop|
+# disable and a unit: "${SUDO} systemctl"), PATRONICTL (patronictl -c /etc/patroni/patroni.yml),
+# DB_HOST (db.internal), CLOUD_RESTART (on the leader of the pair; default: the api and worker
+# restarted, the relay by a blue/green of its own release), DB_SSLMODE (verify-full: PgBouncer's certificate checked against /etc/maktaba/db-ca.crt
+# on A and B, the CA bin/make-pgbouncer-cert signed it with; disable in the rehearsal), WAIT (180),
+# WITNESS_HOST (W's SSH address: its etcd member is the third to go; unset, it stays),
+# WITNESS_MEMBER (its member name when W has no NODE_NAME in a cloud-ha.env: witness),
+# BACKUP_CMD (on the new leader: sudo -u postgres maktaba-backup full).
+set -euo pipefail
+here="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=deploy/cloud-ha/runbook/common.sh
+. "${here}/../runbook/common.sh"
+
+step="${1:-}"
+announce="${2:-}"
+read -r -a db_hosts <<<"${DB_HOSTS:?DB_HOSTS names the three database nodes}"
+[ "${#db_hosts[@]}" = 3 ] || die "DB_HOSTS must name three nodes, got ${#db_hosts[@]}"
+pair=("${RELAY_HOST_A}" "${RELAY_HOST_B}")
+svc="${SVC:-${SUDO} systemctl}"
+ctl="${PATRONICTL:-patronictl -c /etc/patroni/patroni.yml}"
+db_host="${DB_HOST:-db.internal}"
+wait_s="${WAIT:-180}"
+ssl="${DB_SSLMODE:-verify-full}"
+db_ca=/etc/maktaba/db-ca.crt
+# the URL's TLS settings and psql's: the server's name checked unless TLS is off (the rehearsal)
+if [ "${ssl}" = disable ]; then ssl_q="sslmode=disable" ssl_env="PGSSLMODE=disable"
+else ssl_q="sslmode=${ssl}&sslrootcert=${db_ca}" ssl_env="PGSSLMODE=${ssl} PGSSLROOTCERT=${db_ca}"; fi
+refuse() { die "refused: $*"; }
+
+# name <host>: the node's member name (NODE_NAME in its cloud-ha.env)
+name() { on "$1" "sed -n 's/^NODE_NAME=//p' /etc/maktaba/cloud-ha.env" | tail -n1; }
+# envget <host> <key>
+envget() { on "$1" "sed -n 's/^$2=//p' /etc/maktaba/cloud-ha.env" | tail -n1; }
+# envset <host> <key> <value>: in cloud-ha.env, replaced or added
+envset() {
+    on "$1" "${SUDO} sh -c 'f=/etc/maktaba/cloud-ha.env; if grep -q \"^$2=\" \$f; then sed -i \"s|^$2=.*|$2=$3|\" \$f; else echo \"$2=$3\" >>\$f; fi'"
+}
+# members: Patroni's view, from the first host that answers: the database nodes first (once
+# the etcd step has run, the pair's patronictl names etcd members that are gone and retries
+# without end), each asked for 15 s at most
+members() {
+    local h
+    for h in "${db_hosts[@]}" "${pair[@]}"; do
+        if on "${h}" "timeout 15 ${SUDO} ${ctl} list -f json" 2>/dev/null; then return 0; fi
+    done
+    return 1
+}
+member_row() { members | jq -c --arg m "$1" '.[] | select(.Member == $m)'; }
+leader_member() { members | jq -r '.[] | select(.Role == "Leader" or .Role == "leader") | .Member'; }
+# streaming <member>: a replica streaming with no lag
+streaming() {
+    local row lag
+    row="$(member_row "$1")" || return 1
+    [ -n "${row}" ] || return 1
+    [ "$(jq -r '.State' <<<"${row}")" = streaming ] || return 1
+    lag="$(jq -r '[."Lag in MB", ."Receive Lag", ."Replay Lag"] | map(select(. != null and . != "unknown")) | (max // 0)' <<<"${row}")"
+    [ "${lag}" = 0 ]
+}
+wait_for() { # wait_for <what> <command...>
+    local what=$1 _; shift
+    for _ in $(seq 1 "${wait_s}"); do
+        if "$@"; then return 0; fi
+        sleep 1
+    done
+    die "${what}: not within ${wait_s} s"
+}
+# host_of <member>: the SSH address of a member (the pair, then the database nodes)
+host_of() {
+    local h
+    for h in "${pair[@]}" "${db_hosts[@]}"; do
+        if [ "$(name "${h}")" = "$1" ]; then echo "${h}"; return 0; fi
+    done
+    return 1
+}
+# writable_via <host>: from <host>, db.internal's PgBouncer reaches a primary
+writable_via() {
+    local out
+    out="$(on "$1" ". /etc/maktaba/cloud-ha.env; PGPASSWORD=\"\${PG_APP_PASSWORD}\" PGCONNECT_TIMEOUT=3 ${ssl_env} psql -h ${db_host} -p 6432 -U \"\${PG_APP_USER:-maktaba}\" -d \"\${PG_APP_DB:-maktaba}\" -Atqc 'SELECT pg_is_in_recovery()'" 2>/dev/null)" || return 1
+    [ "${out}" = f ]
+}
+# is_sync <member>: Patroni's synchronous standby
+is_sync() { member_row "$1" | jq -e '.Role | test("sync"; "i")' >/dev/null; }
+# nosync <host> true|false: the member's nosync tag in its patroni.yml, and Patroni reloaded
+nosync() {
+    on "$1" "${SUDO} sed -i 's/^  nosync: .*/  nosync: $2/' /etc/patroni/patroni.yml && ${SUDO} ${ctl} reload \"\$(sed -n 's/^scope: *//p' /etc/patroni/patroni.yml)\" \"\$(sed -n 's/^NODE_NAME=//p' /etc/maktaba/cloud-ha.env)\" --force >/dev/null"
+}
+pgbouncer_answers() { on "$1" "pg_isready -q -h 127.0.0.1 -p 6432 -t 3"; }
+pair_leader() { find_pair && echo "${leader}"; }
+
+do_check() {
+    find_pair || refuse "no node of the pair leads"
+    local l s
+    l="$(name "${leader}")" s="$(name "${standby}")"
+    streaming "${s}" || refuse "${s} is not streaming with zero lag behind ${l}"
+    local h
+    for h in "${pair[@]}" "${db_hosts[@]}"; do
+        pgbouncer_answers "${h}" || refuse "PgBouncer does not answer on ${h} (setup.sh: PgBouncer on every Patroni node)"
+    done
+    for h in "${db_hosts[@]}"; do
+        [ "$(envget "${h}" CLOUD_PROCESSES)" = off ] || refuse "${h} is not a database node (CLOUD_PROCESSES=off: setup.sh --role db)"
+    done
+    for h in "${pair[@]}"; do
+        [ -n "$(envget "${h}" DB_FLOATING_IP_ID)" ] || refuse "${h}'s cloud-ha.env has no DB_FLOATING_IP_ID (the database's Floating IP)"
+        [ "${ssl}" = disable ] || on "${h}" "test -s ${db_ca}" \
+            || refuse "${h} has no ${db_ca} (the CA PgBouncer's certificate is signed with: bin/make-pgbouncer-cert)"
+    done
+    log "check: ${l} leads, ${s} streams; PgBouncer answers on all five; the database nodes are set up"
+}
+
+start_patroni() { # start_patroni <host>
+    local m; m="$(name "$1")"
+    if [ -n "$(member_row "${m}")" ]; then log "${m} is already a member"; else on "$1" "${svc} start patroni"; fi
+    wait_for "${m} streaming" streaming "${m}"
+    log "${m} streams with no lag"
+}
+do_join() {
+    [ -n "$(leader_member)" ] || refuse "the cluster has no leader"
+    start_patroni "${db_hosts[0]}"
+    start_patroni "${db_hosts[1]}"
+}
+
+do_processes() {
+    local h
+    for h in "${pair[@]}"; do envset "${h}" CLOUD_PROCESSES off; done
+    log "processes: the pair's cloud no longer follows the leader (it keeps running on $(pair_leader || echo '?'))"
+}
+
+do_db_ip() {
+    local l
+    l="$(pair_leader)" || refuse "no node of the pair leads (after the switchover the database's Floating IP follows the database nodes)"
+    [ "$(envget "${l}" CLOUD_PROCESSES)" = off ] || refuse "run the processes step first: the callback would also move the relay's IP and start processes"
+    if writable_via "${l}"; then log "db-ip: ${db_host} already reaches the primary"; return 0; fi
+    on "${l}" "${SUDO} env CLOUD_HA_ENV=/etc/maktaba/cloud-ha.env on-role-change on_role_change primary maktaba" || true
+    wait_for "${db_host} reaching the primary from ${l}" writable_via "${l}"
+    log "db-ip: the database's Floating IP is on ${l}; ${db_host} reaches its PgBouncer"
+}
+
+do_repoint() {
+    local l h
+    l="$(pair_leader)" || refuse "no node of the pair leads"
+    writable_via "${l}" || refuse "${db_host} does not reach the primary from ${l}: run db-ip first"
+    for h in "${pair[@]}"; do
+        on "${h}" ". /etc/maktaba/cloud-ha.env; ${SUDO} sh -c \"f=/etc/maktaba/cloud.env; touch \\\$f; sed -i '/^MAKTABA_CLOUD_DB_URL=/d; /^MAKTABA_CLOUD_DB_DIRECT_URL=/d' \\\$f; printf 'MAKTABA_CLOUD_DB_URL=postgres://%s:%s@${db_host}:6432/%s?${ssl_q}\\nMAKTABA_CLOUD_DB_DIRECT_URL=postgres://%s:%s@${db_host}:6432/cloud_session?${ssl_q}\\n' \\\"\${PG_APP_USER:-maktaba}\\\" \\\"\${PG_APP_PASSWORD}\\\" \\\"\${PG_APP_DB:-maktaba}\\\" \\\"\${PG_APP_USER:-maktaba}\\\" \\\"\${PG_APP_PASSWORD}\\\" >>\\\$f\""
+    done
+    on "${l}" "${CLOUD_RESTART:-${SUDO} systemctl try-restart maktaba-cloud-api maktaba-cloud-worker && ${SUDO} env WATCH=60 bluegreen \"\$(cat /opt/maktaba-cloud/deployed)\"}" \
+        || die "the cloud's restart on ${l} failed: its database.url is on ${db_host} now; see its logs"
+    log "repoint: the cloud on A and B reaches the database through PgBouncer on ${db_host}"
+}
+
+do_switchover() {
+    local target l
+    target="$(name "${db_hosts[0]}")"
+    if [ "$(leader_member)" = "${target}" ]; then log "switchover: ${target} already leads"; return 0; fi
+    case "${announce}" in --announced|--unannounced) ;; *) refuse "say --announced (posted on the status page 48 h ago, 50.11) or --unannounced" ;; esac
+    l="$(pair_leader)" || refuse "no node of the pair leads"
+    writable_via "${l}" || refuse "${db_host} does not reach the primary from ${l}: run db-ip and repoint first"
+    # Patroni switches only to the synchronous standby: the pair and db-2 are marked nosync until
+    # db-1 is the one (a commit still waits for a replica throughout)
+    local h
+    for h in "${pair[@]}" "${db_hosts[1]}"; do nosync "${h}" true; done
+    wait_for "${target} the synchronous standby" is_sync "${target}"
+    on "${l}" "${SUDO} ${SWITCHOVER:-switchover} ${announce} --db --candidate ${target}" || die "the switchover was refused or failed (its reason is above)"
+    wait_for "${target} leading" leads "${db_hosts[0]}"
+    wait_for "${db_host} reaching ${target}" writable_via "${l}"
+    # db-2 may be synchronous again (the pair stays nosync until it leaves the cluster)
+    nosync "${db_hosts[1]}" false
+    log "switchover: ${target} leads; ${db_host} reaches it"
+}
+
+do_db3() { start_patroni "${db_hosts[2]}"; }
+
+# etcd: the cluster's members as "id name peer-url" lines, asked on <host>
+etcd_on() { # etcd_on <host> <etcdctl args>
+    local h=$1; shift
+    on "${h}" ". /etc/maktaba/cloud-ha.env; ${SUDO} etcdctl --endpoints=https://127.0.0.1:2379 --cacert=/etc/etcd/pki/ca.crt --cert=/etc/etcd/pki/\${NODE_NAME}.crt --key=/etc/etcd/pki/\${NODE_NAME}.key $*"
+}
+# etcd_gone <host> <member>: the member is not in etcd's list, or its removal just went through
+etcd_gone() {
+    local id
+    id="$(etcd_members "$1" | awk -v n="$2" '$2 == n {print $1}')" || return 1
+    [ -z "${id}" ] || etcd_on "$1" member remove "${id}" >/dev/null 2>&1
+}
+etcd_members() { etcd_on "$1" member list -w simple | awk -F', ' '{print $1, $3, $4}'; }
+do_etcd() {
+    local i h new newname addr via old oldhost id cluster
+    local olds=("${RELAY_HOST_A}" "${RELAY_HOST_B}" "${WITNESS_HOST:-}")
+    for i in 0 1 2; do
+        new="${db_hosts[$i]}" newname="$(name "${new}")"
+        addr="$(envget "${new}" NODE_ADDR)"
+        # ask a member that is still in the cluster
+        via=""
+        for h in "${pair[@]}" "${WITNESS_HOST:-}" "${db_hosts[@]}"; do
+            [ -n "${h}" ] || continue
+            if etcd_members "${h}" >/dev/null 2>&1; then via="${h}"; break; fi
+        done
+        [ -n "${via}" ] || refuse "no etcd member answers"
+        if etcd_members "${via}" | awk '{print $2}' | grep -qx "${newname}"; then
+            log "etcd: ${newname} is already a member"
+        else
+            cluster="$(etcd_on "${via}" member add "${newname}" --peer-urls="https://${addr}:2380" | sed -n 's/^ETCD_INITIAL_CLUSTER="\(.*\)"$/\1/p')"
+            [ -n "${cluster}" ] || die "etcd member add ${newname} failed"
+            on "${new}" "${SUDO} sed -i 's|^initial-cluster:.*|initial-cluster: ${cluster}|; s|^initial-cluster-state:.*|initial-cluster-state: existing|' /etc/etcd/etcd.conf.yml"
+            on "${new}" "${svc} start etcd"
+            wait_for "etcd on ${newname} healthy" etcd_on "${new}" endpoint health
+            log "etcd: ${newname} joined"
+        fi
+        oldhost="${olds[$i]}"
+        [ -n "${oldhost}" ] || { log "etcd: no WITNESS_HOST: the witness's member stays"; continue; }
+        old="$(name "${oldhost}" 2>/dev/null || true)"
+        if [ -z "${old}" ]; then
+            [ "${i}" = 2 ] || die "no NODE_NAME in ${oldhost}'s cloud-ha.env"
+            old="${WITNESS_MEMBER:-witness}"   # the witness's member name (no cloud-ha.env there)
+        fi
+        # etcd refuses a removal ("unhealthy cluster") until the new member has been connected
+        # a few seconds: tried again until it goes
+        wait_for "etcd member remove ${old}" etcd_gone "${new}" "${old}"
+        log "etcd: ${old} removed"
+        on "${oldhost}" "${svc} stop etcd; ${svc} disable etcd" >/dev/null 2>&1 || true
+    done
+    # the database nodes' Patroni and etcd clients: the three new members, for their next start
+    # (Patroni follows the cluster's member list meanwhile)
+    local hosts=""
+    for h in "${db_hosts[@]}"; do hosts="${hosts:+${hosts},}$(envget "${h}" NODE_ADDR):2379"; done
+    for h in "${db_hosts[@]}"; do
+        envset "${h}" ETCD_HOSTS "${hosts}"
+        on "${h}" "${SUDO} sed -i 's|^  hosts:.*|  hosts: ${hosts}|' /etc/patroni/patroni.yml"
+    done
+    log "etcd: the members are $(etcd_members "${db_hosts[0]}" | awk '{print $2}' | tr '\n' ' ')"
+}
+
+do_retire() {
+    local m h a b
+    for h in "${db_hosts[@]}"; do
+        m="$(name "${h}")"
+        [ "$(leader_member)" = "${m}" ] || streaming "${m}" || refuse "${m} neither leads nor streams: the database nodes must all serve first"
+    done
+    for h in "${pair[@]}"; do
+        m="$(name "${h}")"
+        [ "$(leader_member)" != "${m}" ] || refuse "${m} still leads: run the switchover first"
+    done
+    for h in "${pair[@]}"; do
+        on "${h}" "${svc} stop patroni; ${svc} disable patroni" >/dev/null 2>&1 || true
+        envset "${h}" PGBOUNCER no
+        log "retire: Patroni and Postgres stopped on $(name "${h}")"
+    done
+    a="$(name "${RELAY_HOST_A}")" b="$(name "${RELAY_HOST_B}")"
+    wait_for "the pair gone from Patroni's list" pair_gone "${a}" "${b}"
+    log "retire: Patroni lists only the database nodes"
+}
+
+pair_gone() { [ -z "$(member_row "$1")" ] && [ -z "$(member_row "$2")" ]; }
+
+do_backup() {
+    local h
+    for h in "${db_hosts[@]}"; do
+        if leads "${h}"; then
+            on "${h}" "${BACKUP_CMD:-sudo -u postgres env CLOUD_HA_ENV=/etc/maktaba/cloud-ha.env maktaba-backup full}" || die "the full backup on $(name "${h}") failed"
+            log "backup: a full backup from $(name "${h}") to both repositories"
+            return 0
+        fi
+    done
+    refuse "no database node leads"
+}
+
+case "${step}" in
+    check) do_check ;;
+    join) do_join ;;
+    processes) do_processes ;;
+    db-ip) do_db_ip ;;
+    repoint) do_repoint ;;
+    switchover) do_switchover ;;
+    db-3) do_db3 ;;
+    etcd) do_etcd ;;
+    retire) do_retire ;;
+    backup) do_backup ;;
+    all)
+        do_check; do_join; do_processes; do_db_ip; do_repoint; do_switchover; do_db3; do_etcd; do_retire; do_backup
+        log "done: the database runs on ${db_hosts[*]}"
+        ;;
+    *) die "usage: migrate-db-nodes check|join|processes|db-ip|repoint|switchover|db-3|etcd|retire|backup|all [--announced|--unannounced]" ;;
+esac

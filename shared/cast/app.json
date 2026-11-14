@@ -1,0 +1,6 @@
+{
+  "$comment": "Maktaba's Cast receiver (Epic 58 stories 58.06 and 58.07). receiver_app_id is the application ID the Google Cast SDK Developer Console shows for the receiver registered at receiver_url (docs/stores/cast.md). It is public, never a secret. Empty: no receiver is registered yet, and every sender hides its Cast button.",
+  "receiver_app_id": "",
+  "receiver_url": "https://cast.maktaba.tv/r/",
+  "namespace": "urn:x-cast:tv.maktaba.cast"
+}

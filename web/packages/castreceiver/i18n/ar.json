@@ -1,0 +1,14 @@
+{
+  "receiver.idle": "جاهز للتشغيل من Maktaba",
+  "receiver.loading": "جارٍ تجهيز %1$s…",
+  "receiver.buffering": "جارٍ التحميل…",
+  "receiver.paused": "متوقف مؤقتًا",
+  "receiver.position": "%1$s من %2$s",
+  "receiver.chapter": "الفصل: %1$s",
+  "receiver.upNext": "التالي",
+  "receiver.remote": "عبر Maktaba Cloud",
+  "receiver.error.home": "لا يستطيع التلفاز الوصول إلى منزلك. تأكد من أن المنزل يعمل، أو فعِّل الوصول عن بُعد.",
+  "receiver.error.format": "لا يستطيع هذا التلفاز تشغيل هذا الفيديو. أعد المحاولة: سيحوّله المنزل.",
+  "receiver.error.grant": "انتهى هذا البث. ابدأ البث مجددًا من هاتفك.",
+  "receiver.updateHome": "منزلك أقدم من مشغّل هذا التلفاز. حدِّث المنزل في Maktaba، ثم ابدأ البث مجددًا."
+}

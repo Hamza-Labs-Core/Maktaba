@@ -18,6 +18,7 @@ var p57Named = map[string]bool{
 	"/api/channels/{id}/play":           true,
 	"/api/tv/hdhr/allowed":              true,
 	"/api/pairing/approve":              true, // `as_user` (57.02)
+	"/api/pairing/cloud-approve":        true, // `as_user` too (58.03)
 	"/api/users/{id}/parental":          true,
 	"/api/me/parental-pin":              true,
 	"/api/parental/library-suggestions": true,

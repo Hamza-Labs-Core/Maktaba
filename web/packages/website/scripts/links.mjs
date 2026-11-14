@@ -371,6 +371,7 @@ export function storyFor(p) {
     [/^\/(ar\/)?download(\/|$)/, "60.11"],
     [/^\/(ar\/)?help(\/|$)/, "60.12"],
     [/^\/(ar\/)?pricing(\/|$)/, "60.13"],
+    [/^\/(ar\/)?tv(\/|$)/, "58.03"],
   ];
   for (const [re, story] of rules) if (re.test(p)) return story;
   return "60.03";

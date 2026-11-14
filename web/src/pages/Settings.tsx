@@ -101,7 +101,7 @@ export function Settings() {
         <Route path="models" element={<ModelsSection />} />
         <Route path="rules" element={<RulesSection />} />
         <Route path="components" element={<ComponentsSection />} />
-        <Route path="plugins" element={<PluginsSection />} />
+        <Route path="plugins/*" element={<PluginsSection />} />
         <Route path="advanced" element={<AdvancedTab />} />
         <Route path="storage" element={<StorageSettings />} />
         <Route path="machine" element={<ThisMachineSection />} />

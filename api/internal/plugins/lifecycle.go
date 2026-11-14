@@ -100,6 +100,10 @@ type Lifecycle struct {
 	// key (story 54.17: the catalog loop's list); nil: no list. An install, update or
 	// rollback to such a version is refused (409 plugin_revoked).
 	Revoked func(id, version, devKey string) (reason string, revoked bool)
+	// Problems counts, per stage, the items the failures list shows by default (open, not
+	// ignored): the queues handler's own rule (queues.OpenCounts), so a plugin's problems
+	// count equals the list its link opens. nil: no count (0).
+	Problems func(ctx context.Context, stages []string) (map[string]int, error)
 }
 
 func (l *Lifecycle) logger() *slog.Logger {

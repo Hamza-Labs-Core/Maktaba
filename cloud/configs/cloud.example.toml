@@ -54,10 +54,19 @@ ip_allowlist = []
 [database]
 url = "postgres://maktaba_cloud@localhost:5432/maktaba_cloud?sslmode=require"
 # Override via MAKTABA_CLOUD_DB_URL.
-# A direct connection to the primary for what holds a session of its own: the relay's change
-# listener (LISTEN) and the worker's leader lock (story 50.17). Needed once url goes through
-# PgBouncer's transaction pool (50.18); empty means url. Override via MAKTABA_CLOUD_DB_DIRECT_URL.
-# direct_url = "postgres://maktaba_cloud@10.0.0.2:5432/maktaba_cloud?sslmode=require"
+# On the database nodes (story 50.18) url is PgBouncer's transaction pool on the database's
+# Floating IP, a public address, so PgBouncer's name is checked against the owner's CA:
+# postgres://maktaba:…@db.internal:6432/maktaba?sslmode=verify-full&sslrootcert=/etc/maktaba/db-ca.crt
+# (deploy/cloud-ha/bin/make-pgbouncer-cert). The cloud sends
+# every query with arguments in one round trip (binary_parameters=yes, added to url when it
+# names none): in two, PgBouncer can give the second half to another server connection.
+#
+# A connection for what holds a session of its own: the relay's change listener (LISTEN) and
+# the worker's leader lock (story 50.17); the migrator's lock is a transaction lock and goes
+# through url. Needed once url goes through PgBouncer's transaction pool; empty means url. On
+# the database nodes it is PgBouncer's session pool, cloud_session, on the same address: it
+# follows the primary as url does. Override via MAKTABA_CLOUD_DB_DIRECT_URL.
+# direct_url = "postgres://maktaba:…@db.internal:6432/cloud_session?sslmode=verify-full&sslrootcert=/etc/maktaba/db-ca.crt"
 max_open_conns    = 25
 max_idle_conns    = 5
 conn_max_lifetime = "30m"

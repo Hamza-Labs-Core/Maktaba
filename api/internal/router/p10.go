@@ -200,7 +200,8 @@ func MountP10(r chi.Router, d P10Deps) discoverypkg.PairingStore {
 	if ttl <= 0 {
 		ttl = 5 * time.Minute
 	}
-	ph := &discoveryh.Handler{Store: pstore, TTL: ttl, Home: d.Home}
+	// a TV's code from Maktaba Cloud is claimed through the relay agent (story 58.03)
+	ph := &discoveryh.Handler{Store: pstore, TTL: ttl, Home: d.Home, CloudCodes: discoveryh.AgentCloudCodes{}}
 	if d.DB != nil {
 		// Epic 57 story 57.02: a guardian approves a device as their child
 		ph.ApproveAs = approveAs(d.DB)
@@ -233,6 +234,7 @@ func MountP10(r chi.Router, d P10Deps) discoverypkg.PairingStore {
 	ph.Mount(r)
 	ph.MountDevice(r, 0)
 	ph.ClientFloor = d.ClientFloor
+	ph.MountCloudCode(r)
 	ph.MountHome(r, 0)
 
 	// Security disclosure + SBOM.
