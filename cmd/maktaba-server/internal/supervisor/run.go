@@ -938,9 +938,8 @@ func (s *Supervisor) probe(ctx context.Context, c *child, cmd *exec.Cmd, started
 			// up, not ready yet (a database recovering): no failure, not running
 			failures = 0
 			c.status.State = StateStarting
-		} else if localProbeError(err) {
-			// the check never left this machine's side: it says nothing of the child
-		} else if seenOK || now.Sub(startedAt) >= s.startupGrace(c.proc) {
+		} else if !localProbeError(err) && (seenOK || now.Sub(startedAt) >= s.startupGrace(c.proc)) {
+			// (a check that never left this machine's side says nothing of the child: not counted)
 			if failures == 0 {
 				failingSince = now
 			}
