@@ -103,6 +103,11 @@ export interface IncomingMessage {
 
 export const STATE_EVERY_MS = 500;
 
+/** A finite positive number, or undefined (an optional field the UI may leave out). */
+function positive(v: unknown): number | undefined {
+  return typeof v === "number" && isFinite(v) && v > 0 ? v : undefined;
+}
+
 /** A short form of a message for the log (the log redacts what it must). */
 function brief(data: Record<string, unknown>): string {
   try {
@@ -188,6 +193,8 @@ export class LauncherBridge {
             ),
             audio: typeof m.audio === "number" ? m.audio : null,
             mode: m.mode === "live" ? "live" : "vod",
+            height: positive(m.height),
+            subtitle_scale: positive(m.subtitle_scale),
           })
           .then(
             () => this.sendState(),
@@ -220,6 +227,8 @@ export class LauncherBridge {
         return;
       case "subtitle":
         if (m.id !== null && typeof m.id !== "string") return this.error(name, "bad_message");
+        const scale = positive(m.subtitle_scale);
+        if (scale && p.subtitleScale) p.subtitleScale(scale);
         p.subtitle(m.id);
         return;
       case "logs":

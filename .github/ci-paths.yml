@@ -840,6 +840,31 @@ tv_web:
   - 'web/e2e/launcher/**'
   - 'web/vitest.config.ts'
   - 'shared/compat/**'
+  # the device caps vectors the Samsung and LG readers are tested against (58.02)
+  - 'shared/playback/caps-vectors.json'
+
+# The Roku channel (Epic 58 stories 58.12, 58.13, 58.15): its BrightScript on brs-engine, the
+# build-time shaping of its Arabic catalogs and the shared vectors both are held to (_roku.yml)
+roku:
+  - *ci
+  # the Roku group (story 58.16): apps/tv/roku, shared/i18n/visual-vectors.json, tv-logs, the catalog check
+  - *roku
+  - '.github/workflows/_roku.yml'
+  # the channel's tests hold it to 58.01's compat vectors; its build bundles the Apple apps'
+  # Arabic font and draws its icons and splash from their Maktaba mark (58.12)
+  - 'shared/compat/vectors.json'
+  - 'apps/apple/MaktabaKit/Sources/MaktabaKit/Resources/Fonts/IBMPlexSansArabic-*'
+  - 'apps/apple/MaktabaKit/Sources/MaktabaKit/Resources/Fonts/OFL-IBMPlexSansArabic.txt'
+  - 'apps/apple/MaktabaKit/Sources/MaktabaKit/Resources/Art/maktaba-logo.png'
+
+# Maktaba's Cast receiver at cast.maktaba.tv (Epic 58 story 58.07): its package (the receiver,
+# the loader, the Worker, the tests) and its checks (_cast-receiver.yml); the release workflow
+# builds and tests the same package
+cast_receiver:
+  - *ci
+  - *cast_receiver
+  - '.github/workflows/_cast-receiver.yml'
+  - '.github/workflows/cast-receiver-release.yml'
 
 # The desktop Player for Windows and Linux (Epic 42.4): its project, the portable client
 # and the fonts it shares with the Android apps, the catalog.

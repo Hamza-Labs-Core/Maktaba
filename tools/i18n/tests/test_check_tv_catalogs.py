@@ -91,6 +91,7 @@ def test_a_latin_word_in_arabic_fails(tmp_path: Path) -> None:
         "افتح `maktaba://code` أو https://maktaba.tv/code",
         "اكتب الرمز {code} على Fire TV",
         "شبكة Wi-Fi ورمز PIN",
+        "عبر Maktaba Cloud",
     ],
 )
 def test_product_names_and_code_in_arabic_pass(tmp_path: Path, ar: str) -> None:

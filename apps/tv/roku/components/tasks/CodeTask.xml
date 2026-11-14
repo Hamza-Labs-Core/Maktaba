@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- Signing in by code (Epic 58 stories 58.03 and 58.12). mode "cloud": a code from Maktaba
+     Cloud, approved on a phone; its grant is redeemed on the home by the best connection the
+     cloud names. mode "home": the home's own code (a home found on the network or typed). -->
+<component name="CodeTask" extends="Task">
+  <interface>
+    <field id="mode" type="string" value="cloud" />
+    <field id="base" type="string" />
+    <field id="plain" type="boolean" value="false" />
+    <field id="stop" type="boolean" value="false" />
+    <field id="code" type="assocarray" />
+    <field id="state" type="string" />
+    <field id="result" type="assocarray" />
+  </interface>
+  <script type="text/brightscript" uri="CodeTask.brs" />
+  <script type="text/brightscript" uri="pkg:/source/config.brs" />
+  <script type="text/brightscript" uri="pkg:/source/net.brs" />
+  <script type="text/brightscript" uri="pkg:/source/http.brs" />
+  <script type="text/brightscript" uri="pkg:/source/compat.brs" />
+</component>

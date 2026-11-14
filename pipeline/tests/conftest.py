@@ -33,13 +33,40 @@ from maktaba_testtier.netguard import unit_netguard  # noqa: F401,E402
 from maktaba_testtier.softcap import pytest_runtest_protocol  # noqa: F401,E402
 
 
+_COLLECTION_START = pytest.StashKey[float]()
+_COLLECTION_SECS = pytest.StashKey[float]()
+
+
+def pytest_collection(session: pytest.Session) -> None:
+    session.config.stash[_COLLECTION_START] = time.monotonic()
+
+
 def pytest_collection_finish(session: pytest.Session) -> None:
     """Freeze what collection left alive (every imported module, every collected test).
     A full GC pass otherwise walks all of it inside whichever test happens to trip it:
     60-85 ms here, more on CI, enough to push a fast test past the unit soft cap (Story
     20.1 AC4). Objects the tests make are still collected as usual."""
+    start = session.config.stash.get(_COLLECTION_START, None)
+    if start is not None:
+        session.config.stash[_COLLECTION_SECS] = time.monotonic() - start
     gc.collect()
     gc.freeze()
+
+
+def pytest_terminal_summary(terminalreporter: pytest.TerminalReporter) -> None:
+    """One line of where the session's time went: collection, and each test phase summed
+    over every test. A session much longer than these sums was spent outside the tests; a
+    sum much longer than the same tests take alone means they shared the CPU (the
+    integration tier runs beside the Go modules)."""
+    phases = {"setup": 0.0, "call": 0.0, "teardown": 0.0}
+    for reports in terminalreporter.stats.values():
+        for report in reports:
+            if isinstance(report, pytest.TestReport) and report.when in phases:
+                phases[report.when] += report.duration
+    collection = terminalreporter.config.stash.get(_COLLECTION_SECS, None)
+    took = f"collection {collection:.2f}s; " if collection is not None else ""
+    summed = ", ".join(f"{k} {v:.2f}s" for k, v in phases.items())
+    terminalreporter.write_line(f"session time: {took}tests' {summed} (summed over the tests)")
 
 
 #: the test run's own process (a forked child still exits for real)
