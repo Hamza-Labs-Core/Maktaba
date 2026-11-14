@@ -12,6 +12,7 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/keys"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/middleware"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/castgrant"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httpsec"
 	mw "github.com/Hamza-Labs-Core/Maktaba/api/internal/middleware"
@@ -157,6 +158,13 @@ func (a *authState) applySecurity(
 		stack = csrf(stack)
 	}
 	stack = middleware.RequireAuthExcept(middleware.DefaultPublicAllowlist())(stack)
+	// Epic 58 story 58.09: a packaged TV app's origin is answered only once its bearer is
+	// verified here, after every credential middleware (httpsec.MarkVerified); a cookie
+	// session never counts (the packaged origin is never sent credentials)
+	stack = httpsec.MarkVerified(func(r *http.Request) bool {
+		p := principal.FromContext(r.Context())
+		return p != nil && p.Source != principal.SourceCookie
+	})(stack)
 	if cookieAuth != nil {
 		stack = cookieAuth(stack)
 	}

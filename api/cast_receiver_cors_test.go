@@ -22,7 +22,8 @@ func TestTheHomeAnswersTheCastReceiver(t *testing.T) {
 	}
 	h := httpsec.CORS(st.cors)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }))
 	for origin, want := range map[string]string{castgrant.ReceiverOrigin: castgrant.ReceiverOrigin, "https://elsewhere.example": ""} {
-		req := httptest.NewRequest(http.MethodGet, "/api/discovery/home", nil)
+		// a private route (/api/discovery/home is public to any origin, story 58.09)
+		req := httptest.NewRequest(http.MethodGet, "/api/libraries", nil)
 		req.Header.Set("Origin", origin)
 		req.Header.Set("Authorization", "Bearer cast_x")
 		rec := httptest.NewRecorder()
@@ -33,5 +34,16 @@ func TestTheHomeAnswersTheCastReceiver(t *testing.T) {
 		if got := rec.Header().Get("Access-Control-Allow-Credentials"); got != "" {
 			t.Errorf("%s: Access-Control-Allow-Credentials %q", origin, got)
 		}
+	}
+	// the home's identity is public (story 58.09): any origin reads it, never with credentials
+	req := httptest.NewRequest(http.MethodGet, "/api/discovery/home", nil)
+	req.Header.Set("Origin", "https://elsewhere.example")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "*" {
+		t.Errorf("discovery: Access-Control-Allow-Origin %q, want *", got)
+	}
+	if got := rec.Header().Get("Access-Control-Allow-Credentials"); got != "" {
+		t.Errorf("discovery: Access-Control-Allow-Credentials %q", got)
 	}
 }
