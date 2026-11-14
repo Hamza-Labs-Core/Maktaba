@@ -826,6 +826,8 @@ tv_web:
   - 'web/e2e/launcher/**'
   - 'web/vitest.config.ts'
   - 'shared/compat/**'
+  # the device caps vectors the Samsung and LG readers are tested against (58.02)
+  - 'shared/playback/caps-vectors.json'
 
 # The desktop Player for Windows and Linux (Epic 42.4): its project, the portable client
 # and the fonts it shares with the Android apps, the catalog.
