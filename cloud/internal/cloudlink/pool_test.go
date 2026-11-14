@@ -8,8 +8,8 @@ import (
 )
 
 func assignment(here string) *RelaysPayload {
-	return &RelaysPayload{Primary: relay.RelayTarget{ID: "r3", Host: "r3.relay.test"},
-		Standby: &relay.RelayTarget{ID: "r5", Host: "r5.relay.test"}, Here: here}
+	return &RelaysPayload{Primary: relay.Target{ID: "r3", Host: "r3.relay.test"},
+		Standby: &relay.Target{ID: "r5", Host: "r5.relay.test"}, Here: here}
 }
 
 // Story 50.16: a home outside a pool dials its endpoint; in one it dials its primary, then its
@@ -53,8 +53,8 @@ func TestStandbyTarget(t *testing.T) {
 	if got := s.standbyTarget(); got.Host != "" {
 		t.Fatalf("primary on r5 (its standby relay): %+v", got)
 	}
-	s.adoptRelays(&RelaysPayload{Primary: relay.RelayTarget{ID: "r5", Host: "r5.relay.test"},
-		Standby: &relay.RelayTarget{ID: "r1", Host: "r1.relay.test"}})
+	s.adoptRelays(&RelaysPayload{Primary: relay.Target{ID: "r5", Host: "r5.relay.test"},
+		Standby: &relay.Target{ID: "r1", Host: "r1.relay.test"}})
 	if got := s.standbyTarget(); got.ID != "r1" {
 		t.Fatalf("after RELAYS: %+v", got)
 	}

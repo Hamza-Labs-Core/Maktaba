@@ -130,12 +130,12 @@ func (s *Supervisor) primaryDial(ctx context.Context) (DialResult, error) {
 
 // standbyTarget is the relay the standby tunnel belongs on: the assignment's standby, unless the
 // primary tunnel is on it (the home moved there when its primary's relay went), or none.
-func (s *Supervisor) standbyTarget() relay.RelayTarget {
+func (s *Supervisor) standbyTarget() relay.Target {
 	p := s.pool()
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.relays == nil || p.relays.Standby == nil || p.relays.Standby.ID == p.here || p.here == "" {
-		return relay.RelayTarget{}
+		return relay.Target{}
 	}
 	return *p.relays.Standby
 }
@@ -211,7 +211,7 @@ var standbyRetire = 2 * time.Minute
 
 // serveStandby runs the standby tunnel until it ends, ctx ends, or it no longer belongs on its
 // relay (a DRAIN, or a new assignment): then it finishes its requests and closes with 4000.
-func (s *Supervisor) serveStandby(ctx context.Context, res DialResult, target relay.RelayTarget) {
+func (s *Supervisor) serveStandby(ctx context.Context, res DialResult, target relay.Target) {
 	moved := make(chan struct{}, 1)
 	control := func(f Frame) {
 		switch f.Kind {

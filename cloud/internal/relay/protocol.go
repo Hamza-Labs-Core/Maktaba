@@ -87,9 +87,9 @@ const (
 	RoleStandby = "standby"
 )
 
-// RelayTarget is one relay of a home's assignment: its member id and the host its tunnel is
+// Target is one relay of a home's assignment: its member id and the host its tunnel is
 // dialled at (r3.relay.maktaba.tv; the path and scheme stay the home's own).
-type RelayTarget struct {
+type Target struct {
 	ID   string `json:"id"`
 	Host string `json:"host"`
 }
@@ -97,9 +97,9 @@ type RelayTarget struct {
 // RelaysPayload is a home's place in the relay pool (story 50.16 §3), in AUTH_OK, DRAIN and
 // RELAYS: its primary relay, its standby (none in a pool of one) and the relay that sent it.
 type RelaysPayload struct {
-	Primary RelayTarget  `json:"primary"`
-	Standby *RelayTarget `json:"standby,omitempty"`
-	Here    string       `json:"here,omitempty"`
+	Primary Target  `json:"primary"`
+	Standby *Target `json:"standby,omitempty"`
+	Here    string  `json:"here,omitempty"`
 }
 
 // Drain reasons (DrainPayload.Reason).

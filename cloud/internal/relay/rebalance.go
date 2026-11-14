@@ -88,9 +88,9 @@ func (b *Rebalancer) tryNow() bool {
 
 // Payload is assignment a as the home is told it.
 func (b *Rebalancer) Payload(a Assignment) RelaysPayload {
-	p := RelaysPayload{Primary: RelayTarget{ID: a.Primary, Host: TunnelHost(b.Hosts, a.Primary)}, Here: b.Pool.Self}
+	p := RelaysPayload{Primary: Target{ID: a.Primary, Host: TunnelHost(b.Hosts, a.Primary)}, Here: b.Pool.Self}
 	if a.Standby != "" {
-		p.Standby = &RelayTarget{ID: a.Standby, Host: TunnelHost(b.Hosts, a.Standby)}
+		p.Standby = &Target{ID: a.Standby, Host: TunnelHost(b.Hosts, a.Standby)}
 	}
 	return p
 }

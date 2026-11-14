@@ -146,18 +146,6 @@ func placed(h *simhome.Home, a relaypkg.Assignment) bool {
 	return st.Status == "online" && st.Relay == a.Primary && st.StandbyRelay == a.Standby
 }
 
-func waitLong(t *testing.T, d time.Duration, what string, ok func() bool) time.Duration {
-	t.Helper()
-	start := time.Now()
-	for !ok() {
-		if time.Since(start) > d {
-			t.Fatalf("timed out after %s waiting for %s", d, what)
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	return time.Since(start)
-}
-
 // startHomes runs n homes, all dialling first (the stable name: any relay), until each holds
 // its primary and its standby where its assignment says.
 func (mp *memPool) startHomes(api string, first *poolRelay, n int) []*simhome.Home {
