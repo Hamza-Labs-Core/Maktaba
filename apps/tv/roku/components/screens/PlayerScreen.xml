@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- Playback (Epic 58 story 58.12): a stream session (client_profile roku) in a Video node. Story 58.13 builds the player proper on it: overlay, subtitles, progress, Up next. -->
+<component name="PlayerScreen" extends="Screen">
+  <script type="text/brightscript" uri="PlayerScreen.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common.brs" />
+  <script type="text/brightscript" uri="pkg:/source/config.brs" />
+  <script type="text/brightscript" uri="pkg:/source/net.brs" />
+  <script type="text/brightscript" uri="pkg:/source/nav.brs" />
+  <script type="text/brightscript" uri="pkg:/source/store.brs" />
+  <script type="text/brightscript" uri="pkg:/source/i18n.brs" />
+  <script type="text/brightscript" uri="pkg:/source/layout.brs" />
+  <script type="text/brightscript" uri="pkg:/source/visualtext.brs" />
+  <script type="text/brightscript" uri="pkg:/source/visualtext_tables.brs" />
+  <children>
+    <Video id="video" width="1920" height="1080" />
+    <Label id="error" translation="[120,480]" width="1680" height="160" wrap="true" visible="false" />
+  </children>
+</component>

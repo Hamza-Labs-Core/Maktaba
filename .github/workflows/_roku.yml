@@ -7,10 +7,17 @@
 #     which fail on a string too long for its label;
 #   - the reference and the build step's own tests (T02);
 #   - BrightScript on brs-engine: VisualText against every vector (T03), its timing (T04),
-#     the layout direction helper and the catalog reader.
+#     the layout direction helper and the catalog reader;
+#   - the channel (58.12): its build with BrighterScript and bslint, held under Roku's size
+#     limit (T02); its logic, also packaged for side-loading on a Roku (T01, T04's package);
+#     its screens drawn by brs-engine's SceneGraph against a mock home and a mock cloud, keys
+#     sent over ECP, focus read from the channel's log and screenshots compared with the
+#     references in tests/screens (T03). Find on this network runs here only: the /24 probe
+#     needs 127.0.0.x to refuse at once, as Linux does.
 #
-# The run keeps brs-engine's stdout and the tests' output for 30 days, passed or failed.
-# No secret, no network call beyond the packages.
+# The run keeps brs-engine's stdout, the channel's log of each screen run, the mock home's
+# requests and the screenshots for 30 days, passed or failed. No secret, no network call beyond
+# the packages (the mock home and cloud listen on 127.0.0.1).
 
 name: Roku channel
 
@@ -28,7 +35,7 @@ jobs:
   roku:
     name: Roku channel
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6.0.2
         with:
@@ -70,7 +77,7 @@ jobs:
         working-directory: apps/tv/roku
         run: npm ci --no-audit --no-fund
 
-      - name: BrightScript on brs-engine (T03, T04, layout, catalogs)
+      - name: BrightScript on brs-engine (58.15 T03, T04; 58.12 T01, T02, T03)
         working-directory: apps/tv/roku
         run: npm test | tee build/logs/node-test.log
 
@@ -81,6 +88,7 @@ jobs:
         uses: ./.github/actions/tv-logs
         with:
           name: roku-logs
-          what: brs-engine stdout of each BrightScript test, and the pytest and node test output
+          what: brs-engine stdout of each BrightScript test, the channel's log of each screen run, its screenshots, and the pytest and node test output
           path: |
             apps/tv/roku/build/logs/
+            apps/tv/roku/build/screens/

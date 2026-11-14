@@ -387,7 +387,13 @@ test-integration:  ## Integration tier (Story 20.1, Epic 20.4).
 
 # The Go modules run four at a time (tools/ci/integration-go.sh: their output in order,
 # the tier failing when any fails), with the pipeline's integration tests beside them
-# (their 25 slowest listed, as each Go module's ten slowest are).
+# (their 25 slowest listed, as each Go module's ten slowest are). The tier's wall is the api
+# module's go test plus ~2s; pytest ends before it. pytest's `session time:` line splits its
+# session (PR #1303): 125s of 215s was collection, the job's first Python run compiling the
+# bytecode of everything the tests import on one core beside the Go builds (15s cold, 4s
+# warm, with the runner to itself). Collecting only the files holding integration tests left
+# it at 119s; a warm-up collection before the tier cut it to 54s, but the tests then took the
+# time back and the tier stayed api-bound, so neither shipped.
 # pytest exits 5 when no tests match the marker: that is no failure (the `|| ...` forms:
 # .SHELLFLAGS has -e).
 .PHONY: test-integration-inner

@@ -864,6 +864,16 @@ build fails when the two differ.
 
 ### Added
 
+- **Maktaba on Roku (Epic 58, story 58.12).** A Roku channel: a household signs in once with a
+  code its phone approves (through Maktaba Cloud, or the home's own code after finding it on the
+  network, or its address), and each later launch opens that home's Home. Continue watching,
+  Recently added and For you; the libraries with their five tabs, Play and Shuffle and the
+  letter rail; series, search, Resume or Start over, and the account page, on Roku's remote
+  (`*` opens a card's actions; Back asks before leaving). Deep links play the video, or open
+  Home saying it isn't available. English and Arabic, every screen mirrored and Arabic joined in
+  reading order with a bundled font. Nothing is sold in the channel. It is not in Roku's store
+  yet: a Roku in developer mode installs it from source; docs/stores/roku.md lists the steps
+  left to the store and the checks a real Roku runs.
 - **A home for TV store reviewers (Epic 58, story 58.04).** review.maktaba.tv is a Maktaba home
   the project runs with public-domain and openly licensed content only (Blender's and Netflix's
   open films, a CC BY lecture series, a LibriVox audiobook, each titled in English and Arabic),
@@ -2708,6 +2718,29 @@ build fails when the two differ.
   sizes, and the Audio panel switches tracks. Back and the Magic Remote work as on the web
   pages; Back from Home asks before leaving. The store listing, the review scenario and the
   real-device checklist are in English and Arabic; the submission is made by a person.
+
+- **Maktaba for Samsung TVs (Epic 58, story 58.10).** The Samsung launcher plays with the TV's
+  own player, AVPlay: 4K, HDR10 and HLG where the TV has them, Dolby Digital and Dolby Digital
+  Plus passed through to a soundbar that takes them, audio track choice and seeking. It tells
+  the home what the TV plays (the decoder, the panel, HDR and the audio output), never Dolby
+  Vision, so the home sends files as they are when it can. Subtitles are drawn by Maktaba, so
+  Arabic is joined and right to left at the chosen size; a file the TV cannot play says so and
+  plays converted. The media and colour keys reach the TV screens, and Back on the top screen
+  asks before leaving. A tag whose launcher changed builds `maktaba-tizen-<version>.wgt`,
+  signed with the project's Samsung certificates; every pull request builds and lints the
+  unsigned package. The store listing and the checklist on real TVs are in
+  `docs/stores/samsung.md`.
+
+- **Maktaba's own Cast receiver (Epic 58, story 58.07).** Casting to a Chromecast, a Google TV
+  Streamer or a TV with Cast built in can now show Maktaba's player on the TV instead of Google's:
+  the title, the series, the position and chapter, an Up next card in a queue, the poster and
+  description when paused, and plain errors with what to do next, dark and in the sender's
+  language (Arabic mirrored, times kept left to right). The TV reaches the home on its own
+  network first and through Maktaba Cloud after 3 seconds, with a Remote badge; it reports
+  where it is every 10 seconds, renews its links, moves through the queue, and asks the home to
+  convert a file it cannot play. It is a page at cast.maktaba.tv that serves every home version
+  (an older home is asked to update); it needs the Cast console registration and the phone
+  apps' update (story 58.06) before anyone can cast to it.
 
 - **Sign a TV in from anywhere with a code (story 58.03).** A TV that cannot find its home, or is
   at a relative's house, can ask Maktaba Cloud for a code (`POST /v1/tv/codes`), and a person

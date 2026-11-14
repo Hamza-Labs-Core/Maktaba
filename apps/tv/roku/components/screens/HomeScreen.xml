@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- Home (Epic 58 story 58.12; Epic 56): a menu (Home, Libraries, Search, Account) over a RowList of Continue watching, Recently added and For you. -->
+<component name="HomeScreen" extends="Screen">
+  <script type="text/brightscript" uri="HomeScreen.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common.brs" />
+  <script type="text/brightscript" uri="pkg:/source/config.brs" />
+  <script type="text/brightscript" uri="pkg:/source/net.brs" />
+  <script type="text/brightscript" uri="pkg:/source/nav.brs" />
+  <script type="text/brightscript" uri="pkg:/source/store.brs" />
+  <script type="text/brightscript" uri="pkg:/source/i18n.brs" />
+  <script type="text/brightscript" uri="pkg:/source/layout.brs" />
+  <script type="text/brightscript" uri="pkg:/source/visualtext.brs" />
+  <script type="text/brightscript" uri="pkg:/source/visualtext_tables.brs" />
+  <children>
+    <Label id="brand" translation="[120,50]" width="1680" />
+    <PillRow id="menu" translation="[120,130]" pillWidth="260" rowWidth="1680" />
+    <Label id="notice" translation="[120,230]" width="1680" visible="false" />
+    <RowList id="rows" translation="[132,290]" itemComponentName="PosterCard" numRows="2" rowItemSize="[[300,230]]" rowItemSpacing="[[28,0]]" itemSize="[1612,330]" itemSpacing="[0,40]" showRowLabel="[true]" rowLabelOffset="[[0,16]]" rowFocusAnimationStyle="fixedFocusWrap" />
+    <Label id="hint" translation="[120,1000]" width="1680" />
+  </children>
+</component>

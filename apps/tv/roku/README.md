@@ -2,8 +2,56 @@
 
 Roku runs neither web nor Android apps: a channel is BrightScript and SceneGraph. Roku also has
 no right-to-left text (research.md §6.4): it draws a Label's characters left to right, unjoined.
-This directory starts with what every Roku screen needs for Arabic (story 58.15); the channel's
-screens (58.12) and player (58.13) build on it.
+What every Roku screen needs for Arabic is story 58.15's; the channel's screens are 58.12's, and
+its player and certification build on them in 58.13.
+
+## The channel (story 58.12)
+
+A household signs in once (a cloud code its phone approves, a home found on the network, or the
+home's address) and the next launch opens that home's Home. Home, the libraries with their five
+tabs, Play and Shuffle, the letter rail, a series, search, a video's Resume or Start over and the
+account page follow the TV layout of Epic 56 §6.5 on Roku's keys: OK opens, Play plays, `*` opens
+a card's actions, Back steps out (a tab's top, then the tabs, then the screen; on the first
+screen it asks before leaving). Deep links (`contentId` with `mediaType` movie, episode, series
+or shortFormVideo) play the video, at launch or while running, or open Home with the
+not-available line. Nothing is sold in the channel.
+
+| Path | What |
+|---|---|
+| `manifest`, `source/main.brs` | the channel; Main forwards launch and input (ECP) deep links to the scene |
+| `source/net.brs`, `source/http.brs` | the home's API client: the client header, one refresh and one retry on 401, sign-out on a refused refresh; reaching a home (direct HTTPS names, plain HTTP on the LAN, the cloud's connections) and the /24 probe |
+| `source/compat.brs`, `source/deeplink.brs`, `source/nav.brs`, `source/store.brs` | the compat check (58.01), the deep-link router, Back's steps, the grid's memory window, the registry (homes, tokens, language) |
+| `components/MainScene.*` | the screen stack, the session (the scene's HTTP agent carries the bearer for posters), deep links, the leave dialog |
+| `components/tasks/` | `ApiTask` (one thread for the API), `HomeTask` (connect, probe, read an address), `CodeTask` (the cloud code and the home's own code) |
+| `components/screens/`, `components/widgets/` | the screens and their parts (`PosterCard`, `PillRow`, `TvButton`, the dialogs) |
+| `components/common.brs` | what the screens share: labels in the bundled font, mirrored placement, rows and grids in reading order |
+| `tools/build.mjs` | the build (T02): BrighterScript with bslint, fonts and images, the zip under 4 MB; `--test` for the screen tests, `--device-tests` for checklist row 1 |
+
+**In Arabic** every screen is placed through `ui_Mirror` (x positions from the English layout,
+mirrored), rows and grids get their items in reading order and start on the right-most card,
+row titles are moved to the row's right edge, and a short row is padded at its logical end with
+blank cards that never take the focus.
+
+**Tests** (`npm test`; CI's Roku job):
+
+- the logic on brs-engine (T01): `tests/channel_test.brs` and the compat vectors;
+- the build (T02): `tests/build.test.mjs`, also running the device-test package;
+- the screens (T03): `tests/screens.test.mjs` builds a test package (`--test`) pointed at
+  `tests/mockhome.mjs` (a mock home with 80 videos, a series, collections and a playlist, and a
+  mock cloud that approves a code), runs it on brs-node's SceneGraph with ECP, sends keys,
+  follows the focus through the channel's log and compares screenshots with `tests/screens/`
+  (English and Arabic, dark; a mean difference under 12 on a 480×270 copy). After a deliberate
+  change: `UPDATE_SCREENS=1 node --test tests/screens.test.mjs`, look at every image, commit.
+  Find on this network runs on Linux only (macOS has no 127.0.0.x addresses for the probe; in
+  Docker: `docker run --rm -v "$PWD":/repo -v /repo/apps/tv/roku/node_modules -w
+  /repo/apps/tv/roku node:24-bookworm bash -c 'npm ci && npm test'` from the repository root).
+
+**What brs-engine is not** (each a row of the real-device checklist in docs/stores/roku.md):
+Roku's renderer, fonts and timing; the Video node; posters fetched with the scene's HTTP agent
+(brs-engine sends no bearer for them, so the mock home serves them openly); a RowList's
+unfocused rows keeping their own position. brs-node draws text with a canvas library that runs
+the bidi algorithm, which a Roku never does; `tests/roku_text.cjs`, preloaded by the tests,
+turns that off so Arabic reads as it will on a Roku.
 
 | Path | What |
 |---|---|
@@ -49,8 +97,9 @@ From the repository root:
     $R python apps/tv/roku/tools/gen_tables.py            # after a reference change
     $R pytest apps/tv/roku/tools/tests -q                 # the reference and the build step
     (cd apps/tv/roku && npm ci && npm test)               # BrightScript on brs-engine
+    (cd apps/tv/roku && node tools/build.mjs)             # the store zip, build/maktaba-roku.zip
 
 CI runs all of it in the Roku job (`.github/workflows/_roku.yml`), keeping brs-engine's output.
 
 The BrightScript is plain `.brs` (valid BrighterScript), so brs-engine runs it without a compile
-step; the channel's BrighterScript build (58.12) takes these files as they are.
+step; the channel's BrighterScript build takes these files as they are.

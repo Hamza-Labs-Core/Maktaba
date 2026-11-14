@@ -1,0 +1,75 @@
+# Reusable gate for Maktaba's Cast receiver at cast.maktaba.tv (Epic 58 story 58.07):
+#
+#   - the TV catalogs' check on its strings (tools/i18n/check_tv_catalogs.py);
+#   - typecheck, and Vitest: the receiver's logic with a fake cast.framework (T01), the relay
+#     fallback (T03), the /r/ loader's pick and the 12-month window (T04), the Worker;
+#   - the build (the loader and this level's receiver);
+#   - Playwright against the built site under `wrangler dev`, with a stub of Google's SDK and a
+#     mock home, at 1920×1080, dark, English and Arabic, compared with the visual references
+#     (T02). It runs in the Playwright image the references were rendered in
+#     (scripts/e2e-update.sh), so the pixels match.
+#
+# No emulator runs a Cast receiver: real devices are docs/stores/cast.md's checklist (T05).
+# The run keeps the screenshots, the console and network logs, the traces and the report for
+# 30 days, passed or failed. No secret, no network call beyond the packages.
+
+name: Cast receiver
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  cast-receiver:
+    name: Cast receiver
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    container:
+      image: mcr.microsoft.com/playwright:v1.64.1-noble
+      options: --ipc=host --init
+    defaults:
+      run:
+        working-directory: web/packages/castreceiver
+    steps:
+      - uses: actions/checkout@v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: The TV catalogs (the receiver's strings, en and ar)
+        working-directory: .
+        run: python3 tools/i18n/check_tv_catalogs.py web/packages/castreceiver/i18n
+
+      - name: Install
+        run: npm ci --no-audit --no-fund
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Vitest (T01, T03, T04)
+        env:
+          CI: 'true'
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      - name: Playwright, en and ar, against the visual references (T02)
+        env:
+          CI: 'true'
+          CAST_VISUAL: '1'
+        run: npx playwright test
+
+      # the screenshots, the console and network logs, the traces, the Worker's log and the
+      # reports, passed or failed (.github/actions/tv-logs: 30 days, linked from the job
+      # summary; story 58.16)
+      - name: App logs
+        if: always()
+        uses: ./.github/actions/tv-logs
+        with:
+          name: cast-receiver-logs
+          what: Playwright's screenshots (dark, en and ar), console and network logs, traces and report; Vitest's results
+          path: |
+            web/packages/castreceiver/test-results
+            web/packages/castreceiver/e2e/__screenshots__
