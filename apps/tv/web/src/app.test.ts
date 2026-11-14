@@ -9,7 +9,10 @@ import type { Platform } from "./platform/types";
 import { browserPlatform } from "./platform/browser";
 import { savedHomes } from "./homes";
 
-function platform(name: "tizen" | "webos" | "browser" = "tizen", ip: string | null = "10.0.0.5"): Platform {
+function platform(
+  name: "tizen" | "webos" | "browser" = "tizen",
+  ip: string | null = "10.0.0.5"
+): Platform {
   const base = browserPlatform(window);
   return { ...base, name, localIp: async () => ip, exit: vi.fn() };
 }
@@ -22,10 +25,23 @@ const flush = async () => {
 function mount(fetch: FetchLike, p = platform()) {
   document.body.innerHTML = '<div id="stage"></div><main id="app"></main>';
   const l = new Launcher({ window, platform: p, fetch });
-  return { l, p, app: () => document.getElementById("app")!, frame: () => document.querySelector("iframe") };
+  return {
+    l,
+    p,
+    app: () => document.getElementById("app")!,
+    frame: () => document.querySelector("iframe"),
+  };
 }
 
-const HOME = { id: "h1", name: "Den", version: "0.3.150", urls: ["http://10.0.0.7:8088"], api_level: 1, api_level_oldest: 1, client_floor: {} };
+const HOME = {
+  id: "h1",
+  name: "Den",
+  version: "0.3.150",
+  urls: ["http://10.0.0.7:8088"],
+  api_level: 1,
+  api_level_oldest: 1,
+  client_floor: {},
+};
 
 beforeEach(() => {
   localStorage.clear();
@@ -35,7 +51,9 @@ beforeEach(() => {
 
 describe("the launcher", () => {
   it("shows Update the home for a home before the contract, and never loads the iframe", async () => {
-    const m = mount(async () => json({ ...HOME, api_level: undefined, api_level_oldest: undefined, client_floor: undefined }));
+    const m = mount(async () =>
+      json({ ...HOME, api_level: undefined, api_level_oldest: undefined, client_floor: undefined })
+    );
     await m.l.start();
     await m.l.connectAddress("http://10.0.0.7:8088");
     await flush();
@@ -47,7 +65,10 @@ describe("the launcher", () => {
   });
 
   it("shows Update this app in the TV store's words when the home no longer serves this build", async () => {
-    const m = mount(async () => json({ ...HOME, api_level: 9, api_level_oldest: 9 }), platform("webos"));
+    const m = mount(
+      async () => json({ ...HOME, api_level: 9, api_level_oldest: 9 }),
+      platform("webos")
+    );
     await m.l.start();
     await m.l.connectAddress("http://10.0.0.7:8088");
     expect(m.app().querySelector('[data-testid="screen-update-app"]')).not.toBeNull();
@@ -67,12 +88,32 @@ describe("the launcher", () => {
   });
 
   it("loads a home by its HTTPS name when it answers", async () => {
-    const answer = { ...HOME, urls: ["https://h1.example:8443", "http://10.0.0.7:8088"] };
+    const name = "https://10-0-0-7.h1.direct-a.example:8443";
+    const answer = { ...HOME, urls: [name, "http://10.0.0.7:8088"] };
     const m = mount(async () => json(answer));
     await m.l.start();
     await m.l.connectAddress("http://10.0.0.7:8088");
-    expect(m.frame()!.src).toBe("https://h1.example:8443/tv/?bridge=1&lang=en");
-    expect(savedHomes()[0]).toMatchObject({ base: "https://h1.example:8443", plain: false });
+    expect(m.frame()!.src).toBe(`${name}/tv/?bridge=1&lang=en`);
+    expect(savedHomes()[0]).toMatchObject({ base: name, plain: false });
+  });
+
+  it("keeps a saved HTTPS address when the name fails and it falls back to plain HTTP", async () => {
+    const name = "https://10-0-0-7.h1.direct-a.example:8443";
+    const answer = { ...HOME, urls: [name, "http://10.0.0.7:8088"] };
+    let nameUp = true;
+    const m = mount(async (url) =>
+      url.startsWith(name) && !nameUp ? Promise.reject(new TypeError("blocked")) : json(answer)
+    );
+    await m.l.start();
+    await m.l.connectAddress("http://10.0.0.7:8088");
+    nameUp = false;
+    await m.l.connectSaved(savedHomes()[0]!);
+    expect(m.l.connection()).toMatchObject({ base: "http://10.0.0.7:8088", plain: true });
+    expect(savedHomes()[0]).toMatchObject({
+      base: name,
+      plain: false,
+      lan: "http://10.0.0.7:8088",
+    });
   });
 
   it("opens the last home at once at the next start, and shows the picker on Switch home", async () => {
@@ -117,7 +158,8 @@ describe("the launcher", () => {
     );
     await m.l.start();
     (m.app().querySelector('[data-testid="find"]') as HTMLButtonElement).click();
-    for (let i = 0; i < 50 && !m.app().querySelector('[data-testid="find-again"]'); i++) await flush();
+    for (let i = 0; i < 50 && !m.app().querySelector('[data-testid="find-again"]'); i++)
+      await flush();
     expect(m.app().querySelectorAll('[data-testid="found-home"]')).toHaveLength(1);
     expect(m.app().textContent).toContain("Den");
   });
@@ -127,7 +169,9 @@ describe("the launcher", () => {
     await m.l.start();
     (m.app().querySelector('[data-testid="find"]') as HTMLButtonElement).click();
     await flush();
-    expect(m.app().querySelector('[data-testid="find-status"]')!.textContent).toContain("did not say its network address");
+    expect(m.app().querySelector('[data-testid="find-status"]')!.textContent).toContain(
+      "did not say its network address"
+    );
   });
 
   it("is mirrored in Arabic", async () => {

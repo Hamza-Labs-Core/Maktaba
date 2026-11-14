@@ -27,7 +27,14 @@ import {
   type ReactNode,
 } from "react";
 import { Navigate, useLocation } from "react-router-dom";
-import { api, ApiError, isHomeTimeout, isHomeUnreachable, SIGNIN_REQUIRED_EVENT } from "./api";
+import {
+  api,
+  ApiError,
+  bearerAuth,
+  isHomeTimeout,
+  isHomeUnreachable,
+  SIGNIN_REQUIRED_EVENT,
+} from "./api";
 import { useI18n } from "./i18n";
 import { purgeApiCacheOnLogout } from "./sw";
 import { forgetAnswers } from "./pageCache";
@@ -177,8 +184,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(signedIn(res));
       },
       async logout() {
+        // a TV in its launcher signs out its bearer sign-in (Epic 58 story 58.09)
+        const bearer = bearerAuth();
         try {
-          await api.post("/api/auth/logout");
+          await api.post("/api/auth/logout", bearer?.logoutBody());
         } catch (e) {
           // refused, or not answered in time: the session (and its HttpOnly
           // cookie) may hold, so the user stays signed in and is told
@@ -187,6 +196,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           // cookie is HttpOnly and will get cleared by the next 401.
           console.warn("auth: logout call failed", e);
         }
+        bearer?.clear();
         // Scrub any cached authenticated API responses so the next
         // user on a shared browser cannot be served this user's data.
         await purgeApiCacheOnLogout();

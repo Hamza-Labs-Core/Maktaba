@@ -46,7 +46,9 @@ function fakePlayer() {
 
 function setup(origins = [HOME]) {
   const sent: { msg: Record<string, unknown>; target: string }[] = [];
-  const frameWin = { postMessage: (msg: Record<string, unknown>, target: string) => sent.push({ msg, target }) };
+  const frameWin = {
+    postMessage: (msg: Record<string, unknown>, target: string) => sent.push({ msg, target }),
+  };
   const other = { postMessage: () => {} };
   const player = fakePlayer();
   const handlers = { exit: vi.fn(), setLanguage: vi.fn(), openHomePicker: vi.fn(), ready: vi.fn() };
@@ -67,7 +69,17 @@ function setup(origins = [HOME]) {
     },
   });
   const fromHome = (data: unknown) => bridge.handle({ origin: HOME, source: frameWin, data });
-  return { bridge, sent, frameWin, other, player, handlers, fromHome, tick: () => tick?.(), ticking: () => tick !== null };
+  return {
+    bridge,
+    sent,
+    frameWin,
+    other,
+    player,
+    handlers,
+    fromHome,
+    tick: () => tick?.(),
+    ticking: () => tick !== null,
+  };
 }
 
 beforeEach(() => clearLog());
@@ -79,7 +91,13 @@ describe("the launcher's bridge (T02)", () => {
     expect(s.sent).toHaveLength(1);
     const { msg, target } = s.sent[0]!;
     expect(target).toBe(HOME);
-    expect(msg).toMatchObject({ type: "maktaba:hello", re: 7, bridge_level: 1, platform: "tizen", year: 2020 });
+    expect(msg).toMatchObject({
+      type: "maktaba:hello",
+      re: 7,
+      bridge_level: 1,
+      platform: "tizen",
+      year: 2020,
+    });
     expect(msg.messages).toEqual(UI_MESSAGES.slice());
   });
 
@@ -90,7 +108,9 @@ describe("the launcher's bridge (T02)", () => {
       { type: "maktaba:play", url: "https://home.example:8443/m.m3u8" },
       { type: "maktaba:hello", id: 1 },
     ]) {
-      expect(s.bridge.handle({ origin: "https://evil.example", source: s.frameWin, data })).toBe(false);
+      expect(s.bridge.handle({ origin: "https://evil.example", source: s.frameWin, data })).toBe(
+        false
+      );
       expect(s.bridge.handle({ origin: "null", source: s.frameWin, data })).toBe(false);
     }
     expect(s.handlers.exit).not.toHaveBeenCalled();
@@ -101,8 +121,12 @@ describe("the launcher's bridge (T02)", () => {
 
   it("drops a message from another window, even with the home's origin", () => {
     const s = setup();
-    expect(s.bridge.handle({ origin: HOME, source: s.other, data: { type: "maktaba:exit" } })).toBe(false);
-    expect(s.bridge.handle({ origin: HOME, source: null, data: { type: "maktaba:exit" } })).toBe(false);
+    expect(s.bridge.handle({ origin: HOME, source: s.other, data: { type: "maktaba:exit" } })).toBe(
+      false
+    );
+    expect(s.bridge.handle({ origin: HOME, source: null, data: { type: "maktaba:exit" } })).toBe(
+      false
+    );
     expect(s.handlers.exit).not.toHaveBeenCalled();
   });
 
@@ -124,7 +148,12 @@ describe("the launcher's bridge (T02)", () => {
   it("plays, reports state every 500 ms while playing, and stops reporting", async () => {
     const s = setup();
     expect(STATE_EVERY_MS).toBe(500);
-    s.fromHome({ type: "maktaba:play", url: `${HOME}/stream/v1/master.m3u8?sig=abc`, start_sec: 30, mode: "vod" });
+    s.fromHome({
+      type: "maktaba:play",
+      url: `${HOME}/stream/v1/master.m3u8?sig=abc`,
+      start_sec: 30,
+      mode: "vod",
+    });
     await Promise.resolve();
     expect(s.player.calls[0]).toBe(`play ${HOME}/stream/v1/master.m3u8?sig=abc 30`);
     expect(s.ticking()).toBe(true);
@@ -138,7 +167,14 @@ describe("the launcher's bridge (T02)", () => {
     s.fromHome({ type: "maktaba:subtitle", id: "ar" });
     s.fromHome({ type: "maktaba:subtitle", id: null });
     s.fromHome({ type: "maktaba:stop" });
-    expect(s.player.calls.slice(1)).toEqual(["pause", "seek 90", "audio 1", "subtitle ar", "subtitle null", "stop"]);
+    expect(s.player.calls.slice(1)).toEqual([
+      "pause",
+      "seek 90",
+      "audio 1",
+      "subtitle ar",
+      "subtitle null",
+      "stop",
+    ]);
     expect(s.ticking()).toBe(false);
     // the media URL's sig never reaches the log
     expect(logText()).not.toContain("sig=abc");
@@ -159,7 +195,11 @@ describe("the launcher's bridge (T02)", () => {
   it("answers a message it does not know with error unknown", () => {
     const s = setup();
     s.fromHome({ type: "maktaba:launchRockets" });
-    expect(s.sent[0]!.msg).toEqual({ type: "maktaba:error", re_type: "launchRockets", error: "unknown" });
+    expect(s.sent[0]!.msg).toEqual({
+      type: "maktaba:error",
+      re_type: "launchRockets",
+      error: "unknown",
+    });
   });
 
   it("passes setLanguage, openHomePicker and ready to the launcher", () => {
@@ -187,8 +227,12 @@ describe("the launcher's bridge (T02)", () => {
 
   it("takes the bundled UI's file:// frame by its own origins", () => {
     const s = setup(["file://", "null"]);
-    expect(s.bridge.handle({ origin: "null", source: s.frameWin, data: { type: "maktaba:ready" } })).toBe(true);
-    expect(s.bridge.handle({ origin: HOME, source: s.frameWin, data: { type: "maktaba:ready" } })).toBe(false);
+    expect(
+      s.bridge.handle({ origin: "null", source: s.frameWin, data: { type: "maktaba:ready" } })
+    ).toBe(true);
+    expect(
+      s.bridge.handle({ origin: HOME, source: s.frameWin, data: { type: "maktaba:ready" } })
+    ).toBe(false);
   });
 });
 
@@ -215,16 +259,23 @@ describe("the launcher's messages match bridge.schema.json (T06)", () => {
   });
 
   it("takes exactly the UI messages and actions the schema names", () => {
-    expect(messageTypes("uiToLauncher").map((t) => t.replace("maktaba:", "")).sort()).toEqual(
-      UI_MESSAGES.slice().sort()
-    );
-    const schemaActions = (checkMessage("launcherToUi", { type: "maktaba:action", action: "nope" }) ?? [])[0];
+    expect(
+      messageTypes("uiToLauncher")
+        .map((t) => t.replace("maktaba:", ""))
+        .sort()
+    ).toEqual(UI_MESSAGES.slice().sort());
+    const schemaActions = (checkMessage("launcherToUi", {
+      type: "maktaba:action",
+      action: "nope",
+    }) ?? [])[0];
     expect(schemaActions).toContain(JSON.stringify(ACTIONS.slice()));
   });
 
   it("refuses a message the schema does not allow", () => {
     expect(checkMessage("launcherToUi", { type: "maktaba:state", position: "1" })).not.toEqual([]);
     expect(checkMessage("uiToLauncher", { type: "maktaba:play" })).toEqual(["$.url: is missing"]);
-    expect(checkMessage("uiToLauncher", { type: "maktaba:exit", extra: 1 })).toEqual(["$.extra: is not in the schema"]);
+    expect(checkMessage("uiToLauncher", { type: "maktaba:exit", extra: 1 })).toEqual([
+      "$.extra: is not in the schema",
+    ]);
   });
 });

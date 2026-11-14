@@ -8242,5 +8242,18 @@
   "tv.exitConfirm.no": "البقاء",
   "tv.signIn.title": "سجّل الدخول للمشاهدة",
   "tv.signIn.body": "هذا التلفاز لم يسجّل الدخول إلى منزل Maktaba بعد.",
-  "tv.signIn.go": "تسجيل الدخول"
+  "tv.signIn.go": "تسجيل الدخول",
+  "tv.code.title": "تسجيل الدخول برمز",
+  "tv.code.where": "على هاتف أو حاسوب سجّل الدخول إلى Maktaba، افتح {url} أو امسح الرمز، ثم وافق على هذا التلفاز.",
+  "tv.code.expires": "يبقى هذا الرمز صالحًا {n} دقائق.",
+  "tv.code.waiting": "في انتظار الموافقة…",
+  "tv.code.lookedUp": "وجد هاتفٌ هذا الرمز: وافق عليه هناك.",
+  "tv.code.new": "احصل على رمز جديد",
+  "tv.code.qr": "صفحة الموافقة على هذا الرمز",
+  "tv.code.failed": "تعذّر الحصول على رمز من المنزل. حاول مرة أخرى.",
+  "tv.code.onlyCode": "لا تُرسَل كلمة المرور أبدًا دون تشفير: سجّل الدخول برمز.",
+  "tv.plainHttp": "متصل دون تشفير على شبكتك",
+  "tv.account.connection": "الاتصال",
+  "tv.account.encrypted": "متصل بتشفير",
+  "tv.account.switchHome": "تبديل المنزل"
 }

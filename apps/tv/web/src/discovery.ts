@@ -3,9 +3,10 @@
 // GET /api/discovery/home is public and answers any origin (`Access-Control-Allow-Origin: *`,
 // no credentials), so the launcher reads it from its file:// page. The answer names the
 // home's base URLs: its HTTPS per-home names on the LAN first (story 50.15), then the relay.
-// The launcher uses the first HTTPS name that answers as the same home; when none does (a
-// router blocking DNS rebinding), it falls back to the plain-HTTP LAN address it found the
-// home at, and the Account screen says so. Over plain HTTP the launcher signs in by code
+// The launcher uses the home's direct HTTPS name for the address it found it at (story 50.15)
+// when that answers as the same home; when it does not (a router blocking DNS rebinding), it
+// falls back to the plain-HTTP LAN address it found the home at, and the Account screen says
+// so. Over plain HTTP the launcher signs in by code
 // only, never by password.
 
 import { log } from "./log";
@@ -85,12 +86,32 @@ export async function readHome(
   }
 }
 
+/**
+ * Whether an HTTPS URL a home named is its direct name for the address it was found at.
+ * Story 50.15's names are `1-2-3-4.<home-id>.<direct-domain>`, resolving to 1.2.3.4: the
+ * launcher takes a name only when its first label is the found address, so an answer on the
+ * LAN cannot send the TV to any other site (it can only name the address it answered from).
+ */
+export function directNameOf(url: string, foundAt: string): boolean {
+  let host: string;
+  let found: string;
+  try {
+    host = new URL(url).hostname.toLowerCase();
+    found = new URL(foundAt).hostname;
+  } catch {
+    return false;
+  }
+  if (!/^\d{1,3}(\.\d{1,3}){3}$/.test(found)) return false;
+  const labels = host.split(".");
+  return labels.length >= 3 && labels[0] === found.replace(/\./g, "-");
+}
+
 /** How long an HTTPS name gets to answer before the next is tried. */
 export const NAME_TIMEOUT_MS = 2500;
 
 /**
- * The connection to use for a home found (or typed) at foundAt: its first HTTPS URL that
- * answers as the same home, else foundAt itself (plain when it is http:).
+ * The connection to use for a home found (or typed) at foundAt: its direct HTTPS name for
+ * that address when it answers as the same home, else foundAt itself (plain when http:).
  */
 export async function chooseConnection(
   foundAt: string,
@@ -101,7 +122,7 @@ export async function chooseConnection(
   if (foundAt.startsWith("https:")) return { base: foundAt, plain: false, home: answer };
   for (const url of answer.urls) {
     const base = url.replace(/\/+$/, "");
-    if (!base.startsWith("https:")) continue;
+    if (!base.startsWith("https:") || !directNameOf(base, foundAt)) continue;
     const again = await readHome(base, fetchFn, timeoutMs);
     if (again && again.id === answer.id) {
       log("launcher", `home ${answer.id}: reached by its HTTPS name ${originOf(base)}`);

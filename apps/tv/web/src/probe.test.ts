@@ -4,7 +4,10 @@ import { probeSubnet, subnetHosts, PROBE_CONCURRENCY, PROBE_TIMEOUT_MS } from ".
 import type { FetchLike } from "./discovery";
 
 function json(body: unknown): Response {
-  return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
+  return new Response(JSON.stringify(body), {
+    status: 200,
+    headers: { "Content-Type": "application/json" },
+  });
 }
 
 describe("subnetHosts", () => {
@@ -34,11 +37,15 @@ describe("probeSubnet (T01)", () => {
       most = Math.max(most, inFlight);
       await new Promise((r) => setTimeout(r, 1));
       inFlight--;
-      if (url.startsWith("http://10.0.0.7:8088/")) return json({ id: "home-a", name: "Den", urls: [] });
-      if (url.startsWith("http://10.0.0.9:8088/")) return json({ id: "home-b", name: "Office", urls: [] });
+      if (url.startsWith("http://10.0.0.7:8088/"))
+        return json({ id: "home-a", name: "Den", urls: [] });
+      if (url.startsWith("http://10.0.0.9:8088/"))
+        return json({ id: "home-b", name: "Office", urls: [] });
       // a second address of home-a (two network cards on one LAN): listed once
-      if (url.startsWith("http://10.0.0.20:8088/")) return json({ id: "home-a", name: "Den", urls: [] });
-      if (url.startsWith("http://10.0.0.30:8088/")) return new Response("not a home", { status: 200 });
+      if (url.startsWith("http://10.0.0.20:8088/"))
+        return json({ id: "home-a", name: "Den", urls: [] });
+      if (url.startsWith("http://10.0.0.30:8088/"))
+        return new Response("not a home", { status: 200 });
       throw new TypeError("connection refused");
     };
     const found: string[] = [];
@@ -46,7 +53,9 @@ describe("probeSubnet (T01)", () => {
     expect(PROBE_CONCURRENCY).toBe(32);
     expect(most).toBe(32);
     expect(asked).toHaveLength(253);
-    expect(asked.every((u) => /^http:\/\/10\.0\.0\.\d+:8088\/api\/discovery\/home$/.test(u))).toBe(true);
+    expect(asked.every((u) => /^http:\/\/10\.0\.0\.\d+:8088\/api\/discovery\/home$/.test(u))).toBe(
+      true
+    );
     expect(homes.map((h) => [h.answer.id, h.base])).toEqual([
       ["home-a", "http://10.0.0.7:8088"],
       ["home-b", "http://10.0.0.9:8088"],
@@ -60,7 +69,8 @@ describe("probeSubnet (T01)", () => {
     const signals: AbortSignal[] = [];
     const fetch: FetchLike = (url, init) => {
       if (init?.signal) signals.push(init.signal);
-      if (url.startsWith("http://10.0.0.2:8088/")) return Promise.resolve(json({ id: "h", name: "H", urls: [] }));
+      if (url.startsWith("http://10.0.0.2:8088/"))
+        return Promise.resolve(json({ id: "h", name: "H", urls: [] }));
       return new Promise<Response>(() => {}); // never answers
     };
     const done = probeSubnet("10.0.0.1", { fetch });
@@ -80,7 +90,9 @@ describe("probeSubnet (T01)", () => {
       throw new TypeError("refused");
     };
     await probeSubnet("10.0.0.1", { fetch, ports: [8088, 80] });
-    expect(asked.filter((u) => u.startsWith("http://10.0.0.3:"))).toEqual(["http://10.0.0.3:8088/api/discovery/home"]);
+    expect(asked.filter((u) => u.startsWith("http://10.0.0.3:"))).toEqual([
+      "http://10.0.0.3:8088/api/discovery/home",
+    ]);
     expect(asked.filter((u) => u.startsWith("http://10.0.0.4:"))).toHaveLength(2);
   });
 });

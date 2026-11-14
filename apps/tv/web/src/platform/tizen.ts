@@ -16,7 +16,10 @@ import {
 import { log } from "../log";
 
 interface TizenApi {
-  tvinputdevice?: { registerKeyBatch?: (keys: string[]) => void; registerKey?: (k: string) => void };
+  tvinputdevice?: {
+    registerKeyBatch?: (keys: string[]) => void;
+    registerKey?: (k: string) => void;
+  };
   application?: { getCurrentApplication(): { exit(): void } };
 }
 

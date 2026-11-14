@@ -40,7 +40,8 @@ function resolve(node: Node): Node {
 export function check(v: unknown, raw: Node, path = "$"): string[] {
   const node = resolve(raw);
   const out: string[] = [];
-  if ("const" in node && v !== node.const) out.push(`${path}: is not ${JSON.stringify(node.const)}`);
+  if ("const" in node && v !== node.const)
+    out.push(`${path}: is not ${JSON.stringify(node.const)}`);
   if (Array.isArray(node.enum) && !(node.enum as unknown[]).includes(v))
     out.push(`${path}: ${JSON.stringify(v)} is not one of ${JSON.stringify(node.enum)}`);
   if (node.type !== undefined) {
@@ -60,7 +61,8 @@ export function check(v: unknown, raw: Node, path = "$"): string[] {
       else if (node.additionalProperties === false) out.push(`${path}.${k}: is not in the schema`);
     }
   }
-  if (Array.isArray(v) && node.items) v.forEach((x, i) => out.push(...check(x, node.items as Node, `${path}[${i}]`)));
+  if (Array.isArray(v) && node.items)
+    v.forEach((x, i) => out.push(...check(x, node.items as Node, `${path}[${i}]`)));
   return out;
 }
 
@@ -68,7 +70,8 @@ export function check(v: unknown, raw: Node, path = "$"): string[] {
 export function checkMessage(direction: Direction, msg: unknown): string[] {
   const type = msg && typeof msg === "object" ? (msg as { type?: unknown }).type : undefined;
   const byType = (schema as unknown as Record<Direction, Record<string, Node>>)[direction];
-  if (typeof type !== "string" || !byType[type]) return [`$.type: ${String(type)} is not a ${direction} message`];
+  if (typeof type !== "string" || !byType[type])
+    return [`$.type: ${String(type)} is not a ${direction} message`];
   return check(msg, byType[type]);
 }
 

@@ -142,9 +142,11 @@ export class VideoElementPlayer implements PlayerAdapter {
   }
 
   audioTrack(index: number): void {
-    const tracks = (this.video as HTMLVideoElement & {
-      audioTracks?: { length: number; [i: number]: { enabled: boolean } };
-    }).audioTracks;
+    const tracks = (
+      this.video as HTMLVideoElement & {
+        audioTracks?: { length: number; [i: number]: { enabled: boolean } };
+      }
+    ).audioTracks;
     if (!tracks) return;
     for (let i = 0; i < tracks.length; i++) tracks[i]!.enabled = i === index;
   }

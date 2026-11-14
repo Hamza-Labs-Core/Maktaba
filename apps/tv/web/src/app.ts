@@ -72,7 +72,12 @@ export class Launcher {
   private frame: HTMLIFrameElement | null = null;
   private bridge: LauncherBridge | null = null;
   private readyTimer: ReturnType<typeof setTimeout> | null = null;
-  private findState: { running: boolean; found: FoundHome[]; noIp: boolean; abort: { aborted: boolean } } = {
+  private findState: {
+    running: boolean;
+    found: FoundHome[];
+    noIp: boolean;
+    abort: { aborted: boolean };
+  } = {
     running: false,
     found: [],
     noIp: false,
@@ -103,7 +108,10 @@ export class Launcher {
 
   /** Starts: the too-old page, the last home, or the start screen. */
   async start(): Promise<void> {
-    log("launcher", `start ${APP_NAME}/${LAUNCHER_VERSION} on ${this.d.platform.name}${BUNDLE_UI ? " (bundled UI)" : ""}`);
+    log(
+      "launcher",
+      `start ${APP_NAME}/${LAUNCHER_VERSION} on ${this.d.platform.name}${BUNDLE_UI ? " (bundled UI)" : ""}`
+    );
     const major = chromiumMajor(this.d.window.navigator.userAgent);
     if (major > 0 && major < OLDEST_CHROMIUM) {
       this.show({ kind: "tooOld" });
@@ -174,12 +182,15 @@ export class Launcher {
       this.show({ kind: "compat", verdict, home: conn.home, at: foundAt });
       return;
     }
+    // a plain-HTTP fallback never replaces a saved HTTPS address (the name may answer again)
+    const before = savedHomes().find((x) => x.id === conn.home.id);
+    const keep = conn.plain && before && !before.plain ? before : null;
     rememberHome({
       id: conn.home.id,
       name: conn.home.name || conn.home.id,
-      base: conn.base,
-      plain: conn.plain,
-      ...(foundAt.startsWith("http:") ? { lan: foundAt } : {}),
+      base: keep ? keep.base : conn.base,
+      plain: keep ? false : conn.plain,
+      ...(foundAt.startsWith("http:") ? { lan: foundAt } : keep?.lan ? { lan: keep.lan } : {}),
     });
     this.loadFrame(conn);
   }
@@ -288,7 +299,13 @@ export class Launcher {
     if (action === "back") {
       const el = e.target as HTMLElement | null;
       // Backspace-like keys stay in a text field
-      if (el && el.tagName === "INPUT" && e.key !== "Escape" && e.keyCode !== 10009 && e.keyCode !== 461)
+      if (
+        el &&
+        el.tagName === "INPUT" &&
+        e.key !== "Escape" &&
+        e.keyCode !== 10009 &&
+        e.keyCode !== 461
+      )
         return;
       e.preventDefault();
       this.back();
@@ -343,7 +360,15 @@ export class Launcher {
       case "typed":
         return this.typedView(s.error);
       case "connecting":
-        return page("connecting", t("launcher.title"), h("p", { class: "ml-lead", attrs: { "aria-live": "polite" } }, t("launcher.connecting", s.label)));
+        return page(
+          "connecting",
+          t("launcher.title"),
+          h(
+            "p",
+            { class: "ml-lead", attrs: { "aria-live": "polite" } },
+            t("launcher.connecting", s.label)
+          )
+        );
       case "unreachable":
         return page(
           "unreachable",
@@ -352,8 +377,13 @@ export class Launcher {
           h(
             "div",
             { class: "ml-actions" },
-            button(t("launcher.tryAgain"), "retry", () => void this.connectSaved(s.home), { primary: true, autofocus: true }),
-            button(t("launcher.chooseAnother"), "picker", () => this.show({ kind: "start", picker: true })),
+            button(t("launcher.tryAgain"), "retry", () => void this.connectSaved(s.home), {
+              primary: true,
+              autofocus: true,
+            }),
+            button(t("launcher.chooseAnother"), "picker", () =>
+              this.show({ kind: "start", picker: true })
+            ),
             button(t("launcher.forget"), "forget", () => {
               forgetHome(s.home.id);
               this.show({ kind: "start", picker: true });
@@ -364,18 +394,29 @@ export class Launcher {
         return page(
           "not-home",
           t("launcher.typed.title"),
-          h("p", { class: "ml-lead" }, ...splitAround(t("launcher.notHome", "\u0000"), ltr(s.address))),
+          h(
+            "p",
+            { class: "ml-lead" },
+            ...splitAround(t("launcher.notHome", "\u0000"), ltr(s.address))
+          ),
           h(
             "div",
             { class: "ml-actions" },
-            button(t("launcher.tryAgain"), "retry", () => void this.connectAddress(s.address), { primary: true, autofocus: true }),
+            button(t("launcher.tryAgain"), "retry", () => void this.connectAddress(s.address), {
+              primary: true,
+              autofocus: true,
+            }),
             button(t("launcher.back"), "back", () => this.show({ kind: "start", picker: true }))
           )
         );
       case "compat":
         return this.compatView(s.verdict, s.home, s.at);
       case "tooOld":
-        return page("too-old", t("launcher.title"), h("p", { class: "ml-lead", text: t("launcher.tooOld") }));
+        return page(
+          "too-old",
+          t("launcher.title"),
+          h("p", { class: "ml-lead", text: t("launcher.tooOld") })
+        );
       case "frame":
         return h("div");
     }
@@ -393,7 +434,11 @@ export class Launcher {
               primary: i === 0,
               autofocus: i === 0,
               testid: `saved-home`,
-              sub: home.plain ? t("launcher.plainHttp") : i === 0 ? t("launcher.saved.last") : undefined,
+              sub: home.plain
+                ? t("launcher.plainHttp")
+                : i === 0
+                  ? t("launcher.saved.last")
+                  : undefined,
             })
           )
         )
@@ -411,7 +456,10 @@ export class Launcher {
       h(
         "div",
         { class: "ml-actions" },
-        button(t("launcher.find.title"), "find", () => this.startFind(), { primary: !homes.length, autofocus: !homes.length })
+        button(t("launcher.find.title"), "find", () => this.startFind(), {
+          primary: !homes.length,
+          autofocus: !homes.length,
+        })
       ),
       more,
       this.footer()
@@ -435,7 +483,11 @@ export class Launcher {
         },
         other === "ar" ? "العربية" : "English"
       ),
-      h("span", { class: "ml-version" }, ...splitAround(t("launcher.version", "\u0000"), ltr(LAUNCHER_VERSION)))
+      h(
+        "span",
+        { class: "ml-version" },
+        ...splitAround(t("launcher.version", "\u0000"), ltr(LAUNCHER_VERSION))
+      )
     );
   }
 
@@ -473,10 +525,20 @@ export class Launcher {
   private findView(): HTMLElement {
     const f = this.findState;
     const rows = f.found.map((home, i) =>
-      button(home.answer.name || home.answer.id, `found:${home.answer.id}`, () => {
-        f.abort.aborted = true;
-        void this.connectAddress(home.base, home.answer);
-      }, { primary: i === 0, autofocus: i === 0, testid: "found-home", sub: home.base.replace(/^http:\/\//, "") })
+      button(
+        home.answer.name || home.answer.id,
+        `found:${home.answer.id}`,
+        () => {
+          f.abort.aborted = true;
+          void this.connectAddress(home.base, home.answer);
+        },
+        {
+          primary: i === 0,
+          autofocus: i === 0,
+          testid: "found-home",
+          sub: home.base.replace(/^http:\/\//, ""),
+        }
+      )
     );
     const status = f.noIp
       ? t("launcher.find.noIp")
@@ -488,12 +550,21 @@ export class Launcher {
     return page(
       "find",
       t("launcher.find.title"),
-      h("p", { class: "ml-lead", testid: "find-status", attrs: { "aria-live": "polite" }, text: status }),
+      h("p", {
+        class: "ml-lead",
+        testid: "find-status",
+        attrs: { "aria-live": "polite" },
+        text: status,
+      }),
       rows.length ? h("div", { class: "ml-list" }, ...rows) : null,
       h(
         "div",
         { class: "ml-actions" },
-        f.running ? null : button(t("launcher.find.again"), "find-again", () => this.startFind(), { autofocus: !rows.length }),
+        f.running
+          ? null
+          : button(t("launcher.find.again"), "find-again", () => this.startFind(), {
+              autofocus: !rows.length,
+            }),
         button(t("launcher.typed.title"), "typed", () => {
           f.abort.aborted = true;
           this.show({ kind: "typed" });
@@ -512,7 +583,12 @@ export class Launcher {
       autofocus: true,
       dir: "ltr",
       type: "text",
-      attrs: { inputmode: "url", autocomplete: "off", spellcheck: "false", "aria-describedby": "address-help" },
+      attrs: {
+        inputmode: "url",
+        autocomplete: "off",
+        spellcheck: "false",
+        "aria-describedby": "address-help",
+      },
     }) as HTMLInputElement;
     const submit = () => {
       const base = normalizeBase(input.value);
@@ -531,7 +607,12 @@ export class Launcher {
     return page(
       "typed",
       t("launcher.typed.title"),
-      h("label", { class: "ml-label", attrs: { for: "address" }, id: "address-help", text: t("launcher.typed.label") }),
+      h("label", {
+        class: "ml-label",
+        attrs: { for: "address" },
+        id: "address-help",
+        text: t("launcher.typed.label"),
+      }),
       input,
       error ? h("p", { class: "ml-error", role: "alert", text: error }) : null,
       h(
@@ -556,7 +637,11 @@ export class Launcher {
             h("p", { text: t(`compat.updateApp.${this.d.platform.name}`) }),
           ];
     const version = home.version
-      ? h("p", { class: "ml-quiet" }, ...splitAround(t("compat.homeVersion", name, "\u0000"), ltr(home.version)))
+      ? h(
+          "p",
+          { class: "ml-quiet" },
+          ...splitAround(t("compat.homeVersion", name, "\u0000"), ltr(home.version))
+        )
       : null;
     return page(
       verdict === "update_home" ? "update-home" : "update-app",
@@ -566,12 +651,19 @@ export class Launcher {
       h(
         "div",
         { class: "ml-actions" },
-        button(t("launcher.tryAgain"), "retry", () => {
-          const saved = savedHomes().find((x) => x.id === home.id);
-          if (saved) void this.connectSaved(saved);
-          else void this.connectAddress(at);
-        }, { primary: true, autofocus: true }),
-        button(t("launcher.chooseAnother"), "picker", () => this.show({ kind: "start", picker: true }))
+        button(
+          t("launcher.tryAgain"),
+          "retry",
+          () => {
+            const saved = savedHomes().find((x) => x.id === home.id);
+            if (saved) void this.connectSaved(saved);
+            else void this.connectAddress(at);
+          },
+          { primary: true, autofocus: true }
+        ),
+        button(t("launcher.chooseAnother"), "picker", () =>
+          this.show({ kind: "start", picker: true })
+        )
       ),
       this.footer()
     );

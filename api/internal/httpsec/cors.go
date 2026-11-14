@@ -30,17 +30,47 @@ type CORSConfig struct {
 
 	// MaxAge is the preflight cache duration, in seconds.
 	MaxAge int
+
+	// PublicPaths are routes whose answer is public (Epic 58 story 58.09: GET
+	// /api/discovery/home): any origin may read them, `Access-Control-Allow-Origin: *`,
+	// never with credentials. The Samsung and LG launcher reads the home's identity and
+	// level there from its packaged file:// page before anything else.
+	PublicPaths []string
+
+	// PackagedApps answers a packaged TV app's origin (story 58.09, the --bundle-ui
+	// build): `null` and `file://` (Tizen's and webOS's packaged pages) and `app://…`.
+	// The answer echoes the origin and NEVER allows credentials, so the browser sends no
+	// cookie and shows no answer to a request that carried one: the app reaches the API
+	// only with a bearer token it holds (Authorization), like a native app, and every
+	// route keeps its own sign-in and role checks. A web page that claims such an origin
+	// (a sandboxed frame says `null`) gains nothing it could not ask without CORS.
+	PackagedApps bool
 }
+
+// packagedOrigin reports whether origin is a packaged TV app's (see PackagedApps).
+func packagedOrigin(origin string) bool {
+	return origin == "null" || origin == "file://" || strings.HasPrefix(origin, "app://")
+}
+
+// packagedHeaders are the request headers a packaged app's calls carry.
+const packagedHeaders = "Authorization, Content-Type, X-Maktaba-Client, X-Request-Id"
+
+// exposedHeaders are the answer headers a cross-origin app reads.
+const exposedHeaders = "Retry-After, X-Request-Id, X-Maktaba-Home"
 
 // DefaultCORS returns the policy used in the default deployment:
 // nothing allowed until the operator names origins. AllowCredentials
-// is on because the web SPA uses cookies (Story 10.2).
+// is on because the web SPA uses cookies (Story 10.2). The home's
+// identity is public, and a packaged TV app's origin gets the
+// credential-less answer (Epic 58 story 58.09).
 func DefaultCORS() CORSConfig {
 	return CORSConfig{
 		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Authorization", "Content-Type", "X-Maktaba-CSRF", "X-Maktaba-Client"},
 		AllowCredentials: true,
 		MaxAge:           300,
+		PublicPaths:      []string{"/api/discovery/home"},
+		PackagedApps:     true,
 	}
 }
 
@@ -59,14 +89,48 @@ func CORS(cfg CORSConfig) func(http.Handler) http.Handler {
 	}
 	methods := strings.Join(cfg.AllowedMethods, ", ")
 	headers := strings.Join(cfg.AllowedHeaders, ", ")
+	public := make(map[string]struct{}, len(cfg.PublicPaths))
+	for _, p := range cfg.PublicPaths {
+		public[p] = struct{}{}
+	}
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			origin := r.Header.Get("Origin")
 			isPreflight := r.Method == http.MethodOptions && r.Header.Get("Access-Control-Request-Method") != ""
 
+			_, isPublic := public[r.URL.Path]
+			_, listed := allowed[origin]
+			switch {
+			case origin != "" && isPublic && !listed:
+				// a public answer: any origin, no credentials
+				h := w.Header()
+				h.Set("Access-Control-Allow-Origin", "*")
+				if isPreflight {
+					h.Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+					h.Set("Access-Control-Allow-Headers", "Content-Type, X-Maktaba-Client, X-Request-Id")
+					if cfg.MaxAge > 0 {
+						h.Set("Access-Control-Max-Age", itoa(cfg.MaxAge))
+					}
+				}
+			case origin != "" && cfg.PackagedApps && packagedOrigin(origin) && !listed:
+				// a packaged TV app: its origin, never credentials (bearer only)
+				h := w.Header()
+				h.Set("Access-Control-Allow-Origin", origin)
+				h.Add("Vary", "Origin")
+				h.Set("Access-Control-Expose-Headers", exposedHeaders)
+				if isPreflight {
+					if methods != "" {
+						h.Set("Access-Control-Allow-Methods", methods)
+					}
+					h.Set("Access-Control-Allow-Headers", packagedHeaders)
+					if cfg.MaxAge > 0 {
+						h.Set("Access-Control-Max-Age", itoa(cfg.MaxAge))
+					}
+				}
+			}
 			if origin != "" {
-				if _, ok := allowed[origin]; ok {
+				if listed {
 					h := w.Header()
 					h.Set("Access-Control-Allow-Origin", origin)
 					h.Add("Vary", "Origin")

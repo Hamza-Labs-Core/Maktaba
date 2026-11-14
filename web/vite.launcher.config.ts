@@ -52,11 +52,15 @@ export default defineConfig(({ mode }) => ({
     __LAUNCHER_VERSION__: JSON.stringify(VERSION),
     __BUNDLE_UI__: JSON.stringify(mode === "bundle-ui"),
   },
-  plugins: [
-    m68Css(), classicScript()],
+  plugins: [m68Css(), classicScript()],
   resolve: {
     // the launcher's source lives outside web/: its packages come from web/node_modules
-    alias: [{ find: /^@fontsource\//, replacement: path.resolve(__dirname, "node_modules/@fontsource") + "/" }],
+    alias: [
+      {
+        find: /^@fontsource\//,
+        replacement: path.resolve(__dirname, "node_modules/@fontsource") + "/",
+      },
+    ],
   },
   css: {
     transformer: "lightningcss",

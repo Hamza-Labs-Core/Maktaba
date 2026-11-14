@@ -25,7 +25,9 @@ interface LunaRequest {
 
 interface WebOSApi {
   service?: { request(uri: string, req: LunaRequest): unknown };
-  deviceInfo?: (cb: (info: { modelName?: string; version?: string; uhd?: boolean }) => void) => void;
+  deviceInfo?: (
+    cb: (info: { modelName?: string; version?: string; uhd?: boolean }) => void
+  ) => void;
   platformBack?: () => void;
 }
 

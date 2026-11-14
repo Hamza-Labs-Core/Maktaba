@@ -11,7 +11,9 @@ import { log } from "./log";
 import { detectPlatform } from "./platform";
 
 window.addEventListener("error", (e) => log("error", `uncaught: ${e.message}`));
-window.addEventListener("unhandledrejection", (e) => log("error", `unhandled: ${String(e.reason)}`));
+window.addEventListener("unhandledrejection", (e) =>
+  log("error", `unhandled: ${String(e.reason)}`)
+);
 
 initLang(navigator.language);
 const launcher = new Launcher({

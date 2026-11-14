@@ -1,7 +1,13 @@
 // Story 58.09 — the launcher's log (500 lines, redacted), discovery (the HTTPS name, the
 // plain-HTTP fallback, a typed address), the saved homes and the catalogs.
 import { LOG_LINES, clearLog, log, logLines, redact } from "./log";
-import { chooseConnection, normalizeBase, readHome, type FetchLike } from "./discovery";
+import {
+  chooseConnection,
+  directNameOf,
+  normalizeBase,
+  readHome,
+  type FetchLike,
+} from "./discovery";
 import { forgetHome, rememberHome, savedHomes } from "./homes";
 import { catalogKeys, setLang, t, dir, langOf } from "./i18n";
 import { step } from "./ui/focus";
@@ -19,8 +25,14 @@ describe("the log", () => {
     expect(lines[0]!.text).toBe("line 20");
   });
   it("redacts signatures, grants, codes and tokens", () => {
-    expect(redact("GET https://h/stream/a.m3u8?sig=abc.def&x=1")).toBe("GET https://h/stream/a.m3u8?sig=[REDACTED]&x=1");
-    expect(redact('{"grant":"g123","device_code":"d","access_token":"a","refresh_token":"r","poll_secret":"p"}')).toBe(
+    expect(redact("GET https://h/stream/a.m3u8?sig=abc.def&x=1")).toBe(
+      "GET https://h/stream/a.m3u8?sig=[REDACTED]&x=1"
+    );
+    expect(
+      redact(
+        '{"grant":"g123","device_code":"d","access_token":"a","refresh_token":"r","poll_secret":"p"}'
+      )
+    ).toBe(
       '{"grant":"[REDACTED]","device_code":"[REDACTED]","access_token":"[REDACTED]","refresh_token":"[REDACTED]","poll_secret":"[REDACTED]"}'
     );
     expect(redact("/pair?code=ABCD-2345")).toBe("/pair?code=[REDACTED]");
@@ -48,13 +60,38 @@ describe("discovery", () => {
   const answer = {
     id: "h1",
     name: "Den",
-    urls: ["https://h1.lan.maktaba.tv:8443", "http://192.168.1.7:8088", "https://h1.relay.maktaba.tv"],
+    urls: [
+      "https://192-168-1-7.h1.direct-a.example:8443",
+      "http://192.168.1.7:8088",
+      "https://h1.relay.maktaba.tv",
+    ],
   };
 
-  it("uses the home's HTTPS name when it answers as the same home", async () => {
-    const f: FetchLike = async (url) => (url.startsWith("https://h1.lan.") ? json(answer) : Promise.reject(new Error("no")));
+  it("uses the home's direct HTTPS name for the found address when it answers", async () => {
+    const f: FetchLike = async (url) =>
+      url.startsWith("https://192-168-1-7.") ? json(answer) : Promise.reject(new Error("no"));
     const c = await chooseConnection("http://192.168.1.7:8088", answer, f);
-    expect(c).toMatchObject({ base: "https://h1.lan.maktaba.tv:8443", plain: false });
+    expect(c).toMatchObject({ base: "https://192-168-1-7.h1.direct-a.example:8443", plain: false });
+  });
+
+  it("takes only a name for the address the home answered from (no other site)", async () => {
+    expect(directNameOf("https://192-168-1-7.h1.direct-a.example", "http://192.168.1.7:8088")).toBe(
+      true
+    );
+    expect(directNameOf("https://192-168-1-8.h1.direct-a.example", "http://192.168.1.7:8088")).toBe(
+      false
+    );
+    expect(directNameOf("https://evil.example", "http://192.168.1.7:8088")).toBe(false);
+    expect(directNameOf("https://h1.relay.maktaba.tv", "http://192.168.1.7:8088")).toBe(false);
+    const f: FetchLike = vi.fn(async () => json({ ...answer, id: "h1" }));
+    const c = await chooseConnection(
+      "http://192.168.1.7:8088",
+      { ...answer, urls: ["https://evil.example"] },
+      f,
+      50
+    );
+    expect(c.plain).toBe(true);
+    expect(f).not.toHaveBeenCalled();
   });
 
   it("falls back to plain HTTP on the LAN when no HTTPS name resolves (DNS rebinding blocked)", async () => {
@@ -90,7 +127,10 @@ describe("the saved homes", () => {
     expect(savedHomes().map((h) => h.id)).toEqual(["b"]);
   });
   it("ignores what is not a saved home", () => {
-    localStorage.setItem("maktaba.launcher.homes", '[{"id":1},{"id":"x","name":"X","base":"javascript:1","lastUsed":1}]');
+    localStorage.setItem(
+      "maktaba.launcher.homes",
+      '[{"id":1},{"id":"x","name":"X","base":"javascript:1","lastUsed":1}]'
+    );
     expect(savedHomes()).toEqual([]);
     localStorage.setItem("maktaba.launcher.homes", "{not json");
     expect(savedHomes()).toEqual([]);
@@ -125,7 +165,8 @@ describe("the remote and the TV", () => {
     expect(step("down", true, true)).toBe(1);
   });
   it("maps the Samsung and LG keys", () => {
-    const k = (keyCode: number, key = "Unidentified") => commonKeyAction({ keyCode, key } as KeyboardEvent);
+    const k = (keyCode: number, key = "Unidentified") =>
+      commonKeyAction({ keyCode, key } as KeyboardEvent);
     expect(k(10009)).toBe("back");
     expect(k(461)).toBe("back");
     expect(k(403)).toBe("menu");
@@ -134,15 +175,26 @@ describe("the remote and the TV", () => {
     expect(k(0, "a")).toBeNull();
   });
   it("reads the engine and the model year", () => {
-    const ua = "Mozilla/5.0 (SMART-TV; Linux; Tizen 5.5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/69.0.3497.106 TV Safari/537.36";
+    const ua =
+      "Mozilla/5.0 (SMART-TV; Linux; Tizen 5.5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/69.0.3497.106 TV Safari/537.36";
     expect(chromiumMajor(ua)).toBe(69);
     expect(yearFromEngine(69, "tizen")).toBe(2020);
     expect(yearFromEngine(87, "webos")).toBe(2022);
     expect(yearFromEngine(53, "webos")).toBe(0);
   });
   it("reads the webOS address, wired first", () => {
-    expect(ipFromStatus({ wired: { state: "connected", ipAddress: "10.0.0.4" }, wifi: { state: "connected", ipAddress: "10.0.0.5" } })).toBe("10.0.0.4");
-    expect(ipFromStatus({ wired: { state: "disconnected" }, wifi: { state: "connected", ipAddress: "10.0.0.5" } })).toBe("10.0.0.5");
+    expect(
+      ipFromStatus({
+        wired: { state: "connected", ipAddress: "10.0.0.4" },
+        wifi: { state: "connected", ipAddress: "10.0.0.5" },
+      })
+    ).toBe("10.0.0.4");
+    expect(
+      ipFromStatus({
+        wired: { state: "disconnected" },
+        wifi: { state: "connected", ipAddress: "10.0.0.5" },
+      })
+    ).toBe("10.0.0.5");
     expect(ipFromStatus({})).toBeNull();
   });
 });
