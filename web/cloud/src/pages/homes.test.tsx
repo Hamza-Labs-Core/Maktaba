@@ -55,6 +55,18 @@ describe("your homes", () => {
     );
   });
 
+  it("links an owned home's broadcast viewers, and only an owned one's (50.28)", async () => {
+    stubFetch({
+      "POST /v1/auth/refresh": session(user()),
+      "GET /v1/homes": [200, { homes: [KITCHEN, { ...CABIN, owned: false }] }],
+    });
+    renderAt("/homes");
+    expect(await screen.findByRole("heading", { name: "Kitchen" })).toBeInTheDocument();
+    const links = screen.getAllByRole("link", { name: "Viewers" });
+    expect(links).toHaveLength(1);
+    expect(links[0]).toHaveAttribute("href", `/homes/${KITCHEN.server_id}/viewers`);
+  });
+
   it("opens the remote for Manage", async () => {
     stubFetch({
       "POST /v1/auth/refresh": session(user()),

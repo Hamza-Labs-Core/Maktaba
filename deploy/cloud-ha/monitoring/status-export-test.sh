@@ -16,6 +16,7 @@ class H(http.server.BaseHTTPRequestHandler):
         if 'job="canary"' in q: v = "0"
         elif 'job="api"' in q: v = "1"
         elif "held_total" in q: v = "0.07"
+        elif "broadcast_probe_success" in q: v = "1"
         res = [] if v is None else [{"metric": {}, "value": [1700000000, v]}]
         b = json.dumps({"status": "success", "data": {"resultType": "vector", "result": res}}).encode()
         self.send_response(200); self.send_header("Content-Type", "application/json"); self.end_headers(); self.wfile.write(b)
@@ -27,13 +28,13 @@ for _ in $(seq 1 50); do curl -fsS -o /dev/null "http://127.0.0.1:${port}/" 2>/d
 fails=0
 PROMETHEUS="http://127.0.0.1:${port}" OUT="${work}/n1.json" bash "${here}/../bin/status-export"
 got="$(jq -c 'del(.at)' "${work}/n1.json")"
-if [ "${got}" = '{"relay":0,"api":1,"push_lag":null,"held_ratio":0.07}' ] && jq -e '.at | fromdateiso8601' "${work}/n1.json" >/dev/null; then
+if [ "${got}" = '{"relay":0,"api":1,"push_lag":null,"held_ratio":0.07,"broadcast":1}' ] && jq -e '.at | fromdateiso8601' "${work}/n1.json" >/dev/null; then
     echo "ok   the witness's view, null for a missing series"
 else
     echo "FAIL view: $(cat "${work}/n1.json")"; fails=1
 fi
 PROMETHEUS="http://127.0.0.1:1" OUT="${work}/n2.json" bash "${here}/../bin/status-export"
-if [ "$(jq -c 'del(.at)' "${work}/n2.json")" = '{"relay":null,"api":null,"push_lag":null,"held_ratio":null}' ]; then
+if [ "$(jq -c 'del(.at)' "${work}/n2.json")" = '{"relay":null,"api":null,"push_lag":null,"held_ratio":null,"broadcast":null}' ]; then
     echo "ok   Prometheus down: all null"
 else
     echo "FAIL down: $(cat "${work}/n2.json")"; fails=1

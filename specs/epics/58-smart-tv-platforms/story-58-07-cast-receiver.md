@@ -36,7 +36,8 @@ Chromium:
   profile `cast`.
 - **Progress and renewal.**
   - It reports progress every 10 seconds (`POST …/progress`, allowed by the grant).
-  - It renews the signed URL before it ends.
+  - It renews the signed URL 2 minutes before it ends, and takes a fresh grant from the sender
+    over the custom namespace (`urn:x-cast:tv.maktaba.cast`).
   - It walks a play queue when given `queue_id`.
 - **Its own screens, 10-foot and dark:**
   - an idle screen with the Maktaba mark;
@@ -128,5 +129,6 @@ web's catalog check:
 | File | Change |
 |---|---|
 | `web/packages/castreceiver/` (new) | the app, i18n, Worker config |
-| `.github/workflows/cast-receiver-release.yml` (new) | build, T01–T04, deploy `/r/<level>/` |
+| `.github/workflows/_cast-receiver.yml` (new) | the CI job (TV catalogs, typecheck, Vitest, build, Playwright), ending with `tv-logs` |
+| `.github/workflows/cast-receiver-release.yml` (new) | build, T01–T04, deploy `/r/<level>/` when the receiver changed and `vars.CAST_RECEIVER_LIVE` is `true` |
 | `docs/stores/cast.md` | console steps, test device registration, T05 checklist |

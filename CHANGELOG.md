@@ -758,6 +758,13 @@ build fails when the two differ.
 
 ### Security
 
+- **A TV approved on maktaba.tv gets no sign-in once its cloud account is unlinked (Epic 58,
+  story 58.03).** When the cloud account that approved a TV's code was unlinked from the home, or
+  the home user was linked to another cloud account, before the TV collected its sign-in, the
+  home still handed the TV its tokens. The home now records the TV's sign-in in one step that
+  checks the link still names the approving account, and otherwise hands out nothing: the TV is
+  told its approval has expired and asks for a new code.
+
 - **Every event a plugin's emit refuses is logged (Epic 54).** A plugin's `events/emit` was
   refused (an undeclared event, a payload its schema refuses or over 16 KB, a subject out of
   the job's scope, a bad token, a request that does not decode, and the rest) with only the
@@ -2845,6 +2852,18 @@ build fails when the two differ.
   parent manages the account, and its content limit. Samsung, LG and Roku ask for no PIN on the
   remote; Fire TV and Android TV keep the guardian's PIN. A deep link to a hidden item shows the
   not-available line and asks nothing. English and Arabic, mirrored.
+
+- **Viewer analytics and broadcast monitoring (story 50.28).** A home that broadcasts through
+  Maktaba Cloud gets a **Viewers** page at app.maktaba.tv (from **Homes**, for the home's owner
+  only): viewers watching now and viewer-hours today, over 7 days and this month against the
+  plan's allowance; with the Broadcaster add-on also the most viewers at once, average watch
+  time, countries, devices, quality watched, playback errors and viewers turned away, with a CSV
+  export. Countries and devices with fewer than 5 viewers are grouped as **Other**, and no names,
+  accounts or addresses are kept. Maktaba's staff can read the same numbers, each read audited.
+  The cloud now also watches its broadcasting: a canary broadcast played every minute from two
+  networks, alerts on its error budget, ingest lag, a stale revocation list, the edge's monthly
+  cost and a mismatch between analytics and billing, and a **Broadcasting** line on the status
+  page once broadcasting opens.
 
 - **Cast to a TV from the iPhone and iPad Player (Epic 58, story 58.06).** Beside AirPlay, the
   player's **Cast** button lists Google Cast TVs (a Chromecast, a Google TV, a TV with

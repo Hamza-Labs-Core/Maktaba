@@ -36,6 +36,8 @@ export interface Env {
   INGEST_HOST?: string;
   LIVE_HOST?: string;
   WATCH_HOST?: string;
+  /** The canary publisher's id (50.28 §5): its ingest events carry glass-to-glass. */
+  CANARY_PUBLISHER?: string;
   /** Comma-separated origins allowed to read playlists and segments (CORS). */
   CORS_ORIGINS?: string;
 

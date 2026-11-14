@@ -1,57 +1,60 @@
 // Package edge (handlers) is what the broadcast edge (story 50.21's multi-tenant Worker) calls
-// on the cloud API (story 50.20 §3). Every request is signed with the edge's Ed25519 key; the
-// cloud holds only the public half (broadcast.edge_public_key). Without it, every route is 503.
+// on the cloud API (story 50.20 §3). The contract, its signature and its wire types are
+// internal/broadcast's (edge.go), shared with the edge through testdata/vectors.json. Every
+// request is signed with the edge's Ed25519 key; the cloud holds only the public half
+// (broadcast.edge_public_key). Without it, every route is 503.
 //
 // Signing: the edge sends
 //
-//	X-Maktaba-Edge-Timestamp: <unix seconds>
-//	X-Maktaba-Edge-Signature: base64(ed25519(<timestamp> "\n" <METHOD> " " <path> "\n" <body>))
+//	X-Maktaba-Edge-Time:      <unix ms>
+//	X-Maktaba-Edge-Signature: base64url(ed25519("maktaba-broadcast-edge-v1\n<METHOD>\n<path>\n<ms>\n<hex sha256 body>"))
 //
-// and the cloud refuses a timestamp more than 5 minutes from its clock (401 bad_edge_signature).
+// and the cloud refuses a time more than 5 minutes from its clock (401 bad_edge_signature).
 //
-//	POST /_edge/usage                 {"edge": "<id>", "windows": [UsageWindow, ...]} (at most 2,000)
-//	                                  → 200 {"taken": [key], "duplicates": [key],
-//	                                         "rejected": [{"key", "error"}], "states": [PublisherState]}
+//	POST /_edge/usage                 broadcast.UsagePost {"edge", "windows": [...]} (at most 2,000)
+//	                                  → 200 broadcast.UsageReply {"taken": [key], "duplicates": [key],
+//	                                         "rejected": [{"key", "error"}], "states": [PublisherState],
+//	                                         "plans": [Plan]}
 //	GET  /_edge/publishers/{id}       → 200 PublisherState
 //
-// A window's key is <publisher>:<window> (RFC 3339 UTC start of its 5 minutes); a window posted
+// A window's key is <publisher>:<window_start> (RFC 3339 UTC, whole seconds); a window posted
 // again is a duplicate and counted once, so the edge retries freely and posts its queue after an
-// outage under the same keys. A rejected window (unknown publisher, bad shape) will never be
-// taken: the edge drops it.
+// outage under the same keys. Every key in a reply is the posted window's own. A rejected window
+// (unknown publisher, a key, end or counter that doesn't match its start) will never be taken:
+// the edge drops it.
 package edge
 
 import (
-	"bytes"
+	"context"
 	"crypto/ed25519"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 
 	billingpkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/billing"
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/broadcast"
 )
-
-// Headers of a signed edge request.
-const (
-	HeaderTimestamp = "X-Maktaba-Edge-Timestamp"
-	HeaderSignature = "X-Maktaba-Edge-Signature"
-)
-
-// MaxSkew is how far an edge request's timestamp may be from the cloud's clock.
-const MaxSkew = 5 * time.Minute
 
 // MaxWindows bounds one post (the edge sends a publisher's queue in pages).
-const MaxWindows = 2000
+const MaxWindows = broadcast.MaxUsageWindows
+
+// MaxBody bounds a usage post's bytes: 2,000 windows with every counter at its largest fit.
+const MaxBody = 2 << 20
+
+// Store is the publishers' usage and plan state (billing.BroadcastStore).
+type Store interface {
+	RecordWindow(ctx context.Context, w billingpkg.UsageWindow) (dup bool, err error)
+	State(ctx context.Context, serverID string) (billingpkg.PublisherState, error)
+}
 
 // Deps are the routes' dependencies.
 type Deps struct {
-	Store  *billingpkg.BroadcastStore
+	Store  Store
 	Key    ed25519.PublicKey // nil: 503
 	Logger *slog.Logger
 	Now    func() time.Time
@@ -70,29 +73,6 @@ func Mount(r chi.Router, d *Deps) {
 	r.Get("/_edge/publishers/{id}", d.Publisher)
 }
 
-// SignedPayload is the bytes an edge request's signature covers.
-func SignedPayload(ts, method, path string, body []byte) []byte {
-	var b bytes.Buffer
-	b.WriteString(ts)
-	b.WriteByte('\n')
-	b.WriteString(method)
-	b.WriteByte(' ')
-	b.WriteString(path)
-	b.WriteByte('\n')
-	b.Write(body)
-	return b.Bytes()
-}
-
-// Sign signs an edge request (the rehearsal's and the tests' fake edge; the Worker does the same
-// with WebCrypto).
-func Sign(priv ed25519.PrivateKey, req *http.Request, body []byte, at time.Time) {
-	ts := strconv.FormatInt(at.Unix(), 10)
-	req.Header.Set(HeaderTimestamp, ts)
-	req.Header.Set(HeaderSignature, base64.StdEncoding.EncodeToString(ed25519.Sign(priv, SignedPayload(ts, req.Method, req.URL.Path, body))))
-}
-
-var errBadSignature = errors.New("edge: bad signature")
-
 // verify reads the body and checks the request's signature and freshness.
 func (d *Deps) verify(w http.ResponseWriter, r *http.Request, limit int64) ([]byte, bool) {
 	if d.Key == nil || d.Store == nil {
@@ -104,80 +84,54 @@ func (d *Deps) verify(w http.ResponseWriter, r *http.Request, limit int64) ([]by
 		writeErr(w, http.StatusRequestEntityTooLarge, "too_large", "")
 		return nil, false
 	}
-	if err := d.check(r, body); err != nil {
+	if err := broadcast.VerifyEdgeRequest(d.Key, r.Method, r.URL.Path, r.Header, body, d.now()); err != nil {
 		writeErr(w, http.StatusUnauthorized, "bad_edge_signature", "")
 		return nil, false
 	}
 	return body, true
 }
 
-func (d *Deps) check(r *http.Request, body []byte) error {
-	ts := r.Header.Get(HeaderTimestamp)
-	sec, err := strconv.ParseInt(ts, 10, 64)
-	if err != nil {
-		return errBadSignature
-	}
-	if skew := d.now().Sub(time.Unix(sec, 0)); skew > MaxSkew || skew < -MaxSkew {
-		return errBadSignature
-	}
-	sig, err := base64.StdEncoding.DecodeString(r.Header.Get(HeaderSignature))
-	if err != nil || !ed25519.Verify(d.Key, SignedPayload(ts, r.Method, r.URL.Path, body), sig) {
-		return errBadSignature
-	}
-	return nil
-}
-
-// UsagePost is the edge's usage post.
-type UsagePost struct {
-	Edge    string                   `json:"edge"`
-	Windows []billingpkg.UsageWindow `json:"windows"`
-}
-
-// Rejected is a window that will never be taken.
-type Rejected struct {
-	Key   string `json:"key"`
-	Error string `json:"error"`
-}
-
-// UsageReply is the cloud's answer.
-type UsageReply struct {
-	Taken      []string                    `json:"taken"`
-	Duplicates []string                    `json:"duplicates"`
-	Rejected   []Rejected                  `json:"rejected"`
-	States     []billingpkg.PublisherState `json:"states"`
-}
+var errDuplicate = errors.New("edge: duplicate window")
 
 // Usage takes the edge's windows, each once, and answers with each publisher's state.
 func (d *Deps) Usage(w http.ResponseWriter, r *http.Request) {
-	body, ok := d.verify(w, r, 1<<20)
+	body, ok := d.verify(w, r, MaxBody)
 	if !ok {
 		return
 	}
-	var post UsagePost
+	var post broadcast.UsagePost
 	if err := json.Unmarshal(body, &post); err != nil || len(post.Windows) > MaxWindows {
 		writeErr(w, http.StatusBadRequest, "bad_request", "body must be {edge, windows[≤2000]}")
 		return
 	}
-	out := UsageReply{Taken: []string{}, Duplicates: []string{}, Rejected: []Rejected{}, States: []billingpkg.PublisherState{}}
+	out := broadcast.UsageReply{Taken: []string{}, Duplicates: []string{}, Rejected: []broadcast.Rejected{},
+		States: []billingpkg.PublisherState{}, Plans: []broadcast.Plan{}}
 	seen := map[string]bool{}
 	var publishers []string
-	for _, win := range post.Windows {
-		key := billingpkg.WindowKey(win.Publisher, win.Window)
-		dup, err := d.Store.RecordWindow(r.Context(), win)
+	for _, posted := range post.Windows {
+		key := posted.Key
+		win, err := posted.Billing()
+		if err == nil {
+			var dup bool
+			dup, err = d.Store.RecordWindow(r.Context(), win)
+			if err == nil && dup {
+				err = errDuplicate
+			}
+		}
 		switch {
 		case errors.Is(err, billingpkg.ErrUnknownPublisher):
-			out.Rejected = append(out.Rejected, Rejected{key, "unknown_publisher"})
+			out.Rejected = append(out.Rejected, broadcast.Rejected{Key: key, Error: "unknown_publisher"})
 			continue
-		case errors.Is(err, billingpkg.ErrBadWindow):
-			out.Rejected = append(out.Rejected, Rejected{key, "bad_window"})
+		case errors.Is(err, billingpkg.ErrBadWindow), errors.Is(err, broadcast.ErrWindowShape):
+			out.Rejected = append(out.Rejected, broadcast.Rejected{Key: key, Error: "bad_window"})
 			continue
+		case errors.Is(err, errDuplicate):
+			out.Duplicates = append(out.Duplicates, key)
 		case err != nil:
 			// the rest stay with the edge, posted again under the same keys (taken ones count once)
 			d.log().Error("edge: usage window", "key", key, "err", err)
 			writeErr(w, http.StatusServiceUnavailable, "try_again", "")
 			return
-		case dup:
-			out.Duplicates = append(out.Duplicates, key)
 		default:
 			out.Taken = append(out.Taken, key)
 		}
@@ -194,6 +148,7 @@ func (d *Deps) Usage(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		out.States = append(out.States, st)
+		out.Plans = append(out.Plans, broadcast.PlanFromState(st))
 	}
 	writeJSON(w, http.StatusOK, out)
 }

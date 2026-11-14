@@ -36,6 +36,8 @@ export interface Entry {
   disc: boolean;
   /** PROGRAM-DATE-TIME in ms: the home's clock (live), the edge's (slate) */
   pdt: number;
+  /** edge time the segment's upload started (live; 50.28's upload-to-visible) */
+  recv?: number;
 }
 
 export interface Pending {
@@ -46,6 +48,7 @@ export interface Pending {
   bytes: number;
   disc: boolean;
   pdt: number;
+  recv?: number;
 }
 
 export interface SlateSegment {
@@ -143,6 +146,7 @@ function publish(rs: RungState, p: Pending, now: number): void {
     bytes: p.bytes,
     disc: p.disc || gap || rs.inSlate,
     pdt: p.pdt,
+    ...(p.recv !== undefined ? { recv: p.recv } : {}),
   });
   rs.inSlate = false;
   rs.lastSeq = p.seq;
