@@ -1,6 +1,9 @@
 package main
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestParseServers(t *testing.T) {
 	names, ips, err := parseServers("1=node-a@10.50.0.11, 2=node-b")
@@ -28,6 +31,17 @@ func TestFipfrontAddrs(t *testing.T) {
 	t.Setenv("FIPFRONT_TARGET", "x:1")
 	if _, tg := fipfrontAddrs(); tg != "x:1" {
 		t.Errorf("target %s", tg)
+	}
+}
+
+// story 50.18: db.internal's front follows the database's Floating IP; unset, it never looks again
+func TestFipfrontFollow(t *testing.T) {
+	if d := fipfrontFollow(); d != 0 {
+		t.Errorf("unset: %s", d)
+	}
+	t.Setenv("FIPFRONT_FOLLOW", "500ms")
+	if d := fipfrontFollow(); d != 500*time.Millisecond {
+		t.Errorf("500ms: %s", d)
 	}
 }
 

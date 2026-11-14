@@ -16,6 +16,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/db/dbtest"
 )
 
 // The roles run for real, each in its own process: `serve --role <role>`
@@ -111,6 +113,11 @@ func startRole(t *testing.T, role, config string) *roleProc {
 
 	p := &roleProc{addr: freeLoopbackAddr(t), exited: make(chan error, 1), out: &syncBuffer{}}
 	env := append(os.Environ(), childRoleEnv+"="+role, childAddrEnv+"="+p.addr, "MAKTABA_CLOUD_DB_URL="+u.String())
+	if os.Getenv(dbtest.SessionEnv) != "" {
+		// through PgBouncer's transaction pool (relay.yml's PgBouncer run, story 50.18) the
+		// leader lock and LISTEN go through its session pool, as database.direct_url on a node
+		env = append(env, "MAKTABA_CLOUD_DB_DIRECT_URL="+dbtest.SessionURL(t, u.String()))
+	}
 	if config != "" {
 		path := filepath.Join(t.TempDir(), "cloud.toml")
 		if err := os.WriteFile(path, []byte(config), 0o600); err != nil {
