@@ -4,6 +4,7 @@ import type { ChannelLive } from "./channel_live";
 import type { PublisherControl } from "./publisher";
 import type { Revocations } from "./revocations";
 import type { ViewerAccess } from "./access";
+import type { Pairing } from "./pairing";
 
 /** A Workers Rate Limiting binding. */
 export type RateLimit = { limit(opts: { key: string }): Promise<{ success: boolean }> };
@@ -18,10 +19,16 @@ export interface Env {
   REVOCATIONS: DurableObjectNamespace<Revocations>;
   /** One per publisher: invites' uses, guest passes, viewer sessions and their limits (50.26). */
   VIEWER: DurableObjectNamespace<ViewerAccess>;
+  /** One per TV pairing nonce: the credential a phone sends a TV, for 10 minutes (50.27). */
+  PAIRING: DurableObjectNamespace<Pairing>;
   /** watch.maktaba.tv's play requests: 30 a minute per address (50.26 §4). */
   PLAY_RL?: RateLimit;
   /** watch.maktaba.tv's other API requests: 120 a minute per address. */
   API_RL?: RateLimit;
+  /** Turnstile's public site key for the watch pages' widget (50.27); unset: no widget. */
+  TURNSTILE_SITE_KEY?: string;
+  /** "1": the watch pages say "temporarily unavailable"; the API and playback stay up. */
+  WATCH_SITE_OFF?: string;
   /** The Turnstile secret (open access, 50.26 §2); unset: open sessions answer 503. */
   TURNSTILE_SECRET?: string;
   /** Turnstile's siteverify (a fake service binding in tests; absent: challenges.cloudflare.com). */
