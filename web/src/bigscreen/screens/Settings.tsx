@@ -7,7 +7,8 @@ import { desktopBigScreenState, setDesktopStartInBigScreen } from "../../lib/big
 import { SUBTITLE_SCALES, usePrefs } from "../prefs";
 import { Screen } from "../ui";
 
-export function BigSettings({ onExit }: { onExit: () => void }) {
+/** onExit null: no Leave big screen (the TV build, story 58.08). */
+export function BigSettings({ onExit }: { onExit: (() => void) | null }) {
   const { t, locale, setLocale, n } = useI18n();
   const [prefs, update] = usePrefs();
   // null: not the desktop app (or its shell does not serve this page)
@@ -79,16 +80,18 @@ export function BigSettings({ onExit }: { onExit: () => void }) {
             />
           </Setting>
         )}
-        <Setting label={t("big.exit.title")}>
-          <button
-            type="button"
-            className="bs-btn bs-btn--primary"
-            data-bs-focus="set:exit"
-            onClick={onExit}
-          >
-            {t("big.exit.leave")}
-          </button>
-        </Setting>
+        {onExit && (
+          <Setting label={t("big.exit.title")}>
+            <button
+              type="button"
+              className="bs-btn bs-btn--primary"
+              data-bs-focus="set:exit"
+              onClick={onExit}
+            >
+              {t("big.exit.leave")}
+            </button>
+          </Setting>
+        )}
       </div>
     </Screen>
   );

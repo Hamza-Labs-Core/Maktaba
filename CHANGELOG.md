@@ -273,9 +273,36 @@ build fails when the two differ.
 
 ### Fixed
 
-- **The Android TV app names itself to the home.** Its library, playlist and play-queue calls sent
-  `X-Maktaba-Client: native` instead of the app's name and version, so the home could not tell a
-  TV too old for it on those calls; they now send the same header as sign-in does.
+- **The Queues page says which workers are not running their jobs, and an admin can restart
+  them.** A worker can stay up and start nothing while the others work (after the database
+  restarts, for one). The page now names each such worker (main, transcription or search, with
+  its machine): one that has not reported in for two minutes, or one with a free slot that has
+  started nothing for ten minutes while a job it could take waited. It says since when and
+  how many jobs wait; they stay queued and nothing is lost. **Restart these workers** restarts
+  only the workers named, **Restart all workers** every worker of the computer that runs
+  Maktaba. Queues that are paused, or whose pool is full or set to 0, raise no notice. System
+  health says the same on its Queues line. Before, such a stall looked like a calm page, and
+  the only way out was to end a process by hand.
+
+- **A database restart no longer fails jobs for good.** A step that runs as one of Maktaba's
+  plugins (the second listen, among others) could meet a connection the database had closed
+  and fail with `plugin_database: driver: bad connection`, never to be tried again. The server
+  now runs such a statement once more on a new connection, and a job that still finds the
+  database away fails as retryable and is tried again by itself.
+
+- **Maktaba says when its machine is overloaded.** When the computer that runs Maktaba has had
+  more than twice as much work as processor cores for five minutes, the Queues page and System
+  health (**This machine's load**) say so: jobs and the database are slow until it eases, and
+  these programs use the most CPU. Maktaba stops no program by itself. On a Mac or Linux
+  server; Windows keeps no load figure.
+- **Processing goes on by itself after the database restarts.** When the home's database was
+  restarted (or stopped answering for a while) under a running worker, the worker could stay up
+  for hours doing nothing: no job started, nothing was logged, and its health check still said
+  "ok", so nothing restarted it and every queue waited for someone to restart it by hand. A
+  worker now picks its work up again as soon as the database answers, and hears about new jobs
+  at once again. Its health check says "ok" only while it can start jobs: it turns not-ok when
+  the worker has not looked at the queue, or the database has not answered it, for five minutes,
+  and a worker that cannot get back to work ends so that it is started again.
 
 - **Transcription gives its memory back when idle.** On a Mac, each transcription runner kept
   Whisper and the second listen's model loaded (5 to 10 GB each, with two runners on a large
@@ -816,16 +843,6 @@ build fails when the two differ.
   alerted.
 
 ### Added
-
-- **Maktaba TV on Fire TV (story 58.05).** The Android TV app now has an Amazon Appstore build
-  for Fire TV sticks, the Cube and Fire TV Edition sets (Fire OS 7 or later): the same screens in
-  English and Arabic, signing in by the home's code, Amazon's remote, and Amazon's launcher. It
-  carries no Google Play code (CI checks its dependencies and manifest on every run), names itself
-  `firetv` to the home, and opens each stream with a report of what the TV plays (its hardware
-  decoders, the screen's HDR and the receiver's surround formats), which an older home is not
-  sent. A tag builds `maktaba-tv-<version>-amazon.apk`, signed and staged as a draft in the
-  Appstore once the Amazon keys are set; it reaches the store only after the real-device
-  checklist in `docs/stores/amazon.md` passed. Nothing is sold in it.
 
 - **Apps can tell when they and the home are too far apart (story 58.01).** The home now
   publishes its API level, the oldest level it still serves, and the oldest build of each app it
@@ -2601,6 +2618,37 @@ build fails when the two differ.
   drain|down|activate`. Off until `[relay.pool] enabled = true`; proven in the cloud rehearsal
   (relay loss, relay added).
 
+- **Maktaba on a Samsung or LG TV's browser engine: `/tv/` (story 58.08).** The home now serves
+  a TV build of the big screen at `/tv/`, made for the older Chromium of a 2020 Samsung or LG TV
+  and checked for it on every build. It is the screen the coming Samsung and LG apps load: the
+  library tabs, series, collections and playlists of the big screen, driven by the remote (Back,
+  Play/Pause and the media keys of both makers' remotes; the red key opens a card's actions), in
+  English and Arabic, with its own fonts. Back on Home asks Leave Maktaba? before it closes.
+  Signed out, it sends the TV to the home's sign-in and back.
+
+- **Playback that fits each TV (story 58.02).** A TV app can now report what its device plays
+  (`device_caps` on a stream session: containers, codecs with their height, frame rate and bit
+  depth, HDR formats, audio and passthrough, HLS segment formats, DASH, bitrate), and the home
+  merges it with the new `firetv`, `tizen`, `webos`, `roku`, `cast` and `vega` profiles: the
+  report narrows a profile freely and widens it only up to its platform's ceiling. A file whose
+  picture the TV plays but whose container, audio or Dolby Vision layer it does not is now
+  remuxed, the video copied, never encoded: HEVC and AV1 in fMP4 HLS segments (TS stays the
+  default), Dolby Vision profile 8 as its HDR10 or HLG base layer (Samsung never gets Dolby
+  Vision; Roku gets only profile 5), TrueHD and DTS as EAC3, with a stereo AAC track beside it on
+  Roku, and AV1 on Roku by DASH. Subtitles stay in step in fMP4 sessions. Each session also
+  carries `stream_sig`, which signs its subtitle and chapter URLs, so a TV player that sends no
+  header fetches every URL it needs. The older profiles decide as before.
+
+- **Maktaba TV on Fire TV (story 58.05).** The Android TV app now has an Amazon Appstore build
+  for Fire TV sticks, the Cube and Fire TV Edition sets (Fire OS 7 or later): the same screens in
+  English and Arabic, signing in by the home's code, Amazon's remote, and Amazon's launcher. It
+  carries no Google Play code (CI checks its dependencies and manifest on every run), names itself
+  `firetv` to the home, and opens each stream with a report of what the TV plays (its hardware
+  decoders, the screen's HDR and the receiver's surround formats), which an older home is not
+  sent. A tag builds `maktaba-tv-<version>-amazon.apk`, signed and staged as a draft in the
+  Appstore once the Amazon keys are set; it reaches the store only after the real-device
+  checklist in `docs/stores/amazon.md` passed. Nothing is sold in it.
+
 ### Changed
 
 - **A machine that loses its home stays usable** under a notice instead of the whole app being
@@ -3528,6 +3576,10 @@ build fails when the two differ.
   they read the video, so a non-admin gets 403 whether or not the video exists. In the web, a
   library's refusal reads "Not available in this library" to anyone who is not an admin; an admin
   keeps the read-only reason and its fix.
+
+- **The Android TV app names itself to the home.** Its library, playlist and play-queue calls sent
+  `X-Maktaba-Client: native` instead of the app's name and version, so the home could not tell a
+  TV too old for it on those calls; they now send the same header as sign-in does.
 
 ## [0.2.0] - 2026-10-19
 
