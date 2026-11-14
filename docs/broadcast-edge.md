@@ -117,7 +117,7 @@ since the first broadcast), the Broadcaster add-on, and the cloud's
 |---|---|---|---|
 | Invite | `mkbn1.<payload>.<Ed25519>` (domain `maktaba-broadcast-invite-v1`): `{typ, pub, chs, inv, max, iat, exp, kid}` | the cloud (`cloud/internal/broadcast/invites.go`), for the home's owner or admin | up to 365 days, `max` devices |
 | Short code | `MK-` and 4 of A–Z, 0–9 | the cloud, beside each invite | the invite's life |
-| Guest pass | `mkbg1.` HMAC (`VIEWER_TOKEN_KEY`, domain `maktaba-broadcast-guest-v1`) | the edge, one per device that redeems | 30 days, renewed past half |
+| Guest pass | `mkbg1.` HMAC (`VIEWER_TOKEN_KEY`, domain `maktaba-broadcast-guest-v1`): `{pub, inv, id, chs, exp, iexp}`, `iexp` the invite's `exp` | the edge, one per device that redeems | 30 days, renewed past half, never past its invite's expiry; a pass without `iexp`, or whose invite has expired, is refused |
 | Open session | `mkbo1.` HMAC (domain `maktaba-broadcast-open-v1`) | the edge, after Turnstile or an app attestation | 12 h |
 | Viewer token | the 50.21 token | the edge, per play | 10 minutes, refreshed after 5 |
 

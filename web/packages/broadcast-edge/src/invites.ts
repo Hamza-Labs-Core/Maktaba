@@ -1,7 +1,8 @@
 // Viewer credentials (story 50.26 §1–§2):
 //
 //   invite        mkbn1.<b64url(payload)>.<b64url(Ed25519 sig)>   cloud → publisher → viewer
-//   guest pass    mkbg1.<b64url(payload)>.<b64url(HMAC-SHA256)>   edge → one device (30 days)
+//   guest pass    mkbg1.<b64url(payload)>.<b64url(HMAC-SHA256)>   edge → one device (30 days,
+//                                                                  never past its invite)
 //   open session  mkbo1.<b64url(payload)>.<b64url(HMAC-SHA256)>   edge → one browser or app (12 h)
 //
 // The invite is checked with CLOUD_PUBKEYS (cloud/internal/broadcast/invites.go signs it). The
@@ -18,8 +19,16 @@ export const PASS_DOMAIN = "maktaba-broadcast-guest-v1";
 export const OPEN_PREFIX = "mkbo1.";
 export const OPEN_DOMAIN = "maktaba-broadcast-open-v1";
 
-/** A guest pass lives 30 days and is renewed when used with less than half left. */
+/**
+ * A guest pass lives 30 days and is renewed when used with less than half left, but never past
+ * its invite's expiry (iexp): once the invite has expired, its passes end too.
+ */
 export const PASS_TTL_S = 30 * 24 * 3600;
+
+/** passExpiry is a pass's exp (unix seconds) minted at nowS: 30 days, capped at its invite's. */
+export function passExpiry(nowS: number, iexp: number): number {
+  return Math.min(nowS + PASS_TTL_S, iexp);
+}
 /** An open session lives 12 h (one Turnstile check or app attestation). */
 export const OPEN_TTL_S = 12 * 3600;
 
@@ -42,6 +51,8 @@ export interface PassClaims {
   id: string;
   chs: string[];
   exp: number;
+  /** the invite's expiry (unix seconds), signed with the pass: the pass ends no later */
+  iexp: number;
 }
 
 export interface OpenClaims {
@@ -144,7 +155,11 @@ export async function readPass(
     typeof p.pub !== "string" ||
     typeof p.inv !== "string" ||
     typeof p.id !== "string" ||
-    !Array.isArray(p.chs)
+    !Array.isArray(p.chs) ||
+    // a pass with no invite expiry, or whose invite has expired, is refused
+    typeof p.iexp !== "number" ||
+    p.iexp * 1000 <= nowMs ||
+    p.exp > p.iexp
   )
     return null;
   return p;

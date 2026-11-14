@@ -25,6 +25,7 @@ import {
   OPEN_TTL_S,
   PASS_PREFIX,
   PASS_TTL_S,
+  passExpiry,
   randomId,
   readOpen,
   readPass,
@@ -157,7 +158,7 @@ async function route(request: Request, env: Env, url: URL): Promise<Response> {
 // ---- invites ------------------------------------------------------------------------------
 
 type Redeemed =
-  | { ok: true; pass: string; claims: InviteClaims; reused: boolean }
+  | { ok: true; pass: string; exp: number; claims: InviteClaims; reused: boolean }
   | { ok: false; status: number; error: string };
 
 async function redeemToken(request: Request, env: Env, token: string): Promise<Redeemed> {
@@ -174,14 +175,21 @@ async function redeemToken(request: Request, env: Env, token: string): Promise<R
   );
   const r = await viewer(env, c.pub).redeem(c, held?.inv === c.inv ? held.id : undefined);
   if (!r.ok) return r;
+  const exp = passExpiry(Math.floor(now() / 1000), c.exp);
   const pass = await mintPass(env.VIEWER_TOKEN_KEY, {
     pub: c.pub,
     inv: c.inv,
     id: r.id,
     chs: c.chs,
-    exp: Math.floor(now() / 1000) + PASS_TTL_S,
+    exp,
+    iexp: c.exp,
   });
-  return { ok: true, pass, claims: c, reused: r.reused };
+  return { ok: true, pass, exp, claims: c, reused: r.reused };
+}
+
+/** maxAge is a cookie's Max-Age (seconds) for a pass ending at exp (unix seconds). */
+function maxAge(exp: number): number {
+  return Math.max(0, exp - Math.floor(now() / 1000));
 }
 
 function bearer(request: Request): string {
@@ -208,10 +216,10 @@ async function redeem(request: Request, env: Env): Promise<Response> {
       pass: r.pass,
       publisher: r.claims.pub,
       channels: r.claims.chs,
-      expires_at: new Date(now() + PASS_TTL_S * 1000).toISOString(),
+      expires_at: new Date(r.exp * 1000).toISOString(),
       reused: r.reused,
     },
-    { "Set-Cookie": setCookie(passCookieName(r.claims.pub), r.pass, PASS_TTL_S) }
+    { "Set-Cookie": setCookie(passCookieName(r.claims.pub), r.pass, maxAge(r.exp)) }
   );
 }
 
@@ -257,7 +265,7 @@ async function invitePost(request: Request, env: Env, token: string): Promise<Re
     lang,
     `<h1>${esc(t("broadcast.invite.ready", lang))}</h1><p class="free">${esc(t("broadcast.free", lang))}</p>`
   );
-  res.headers.set("Set-Cookie", setCookie(passCookieName(r.claims.pub), r.pass, PASS_TTL_S));
+  res.headers.set("Set-Cookie", setCookie(passCookieName(r.claims.pub), r.pass, maxAge(r.exp)));
   return res;
 }
 
@@ -297,7 +305,7 @@ async function credOf(
   request: Request,
   env: Env,
   pub: string
-): Promise<{ cred: Cred; pass?: string; passExp?: number }> {
+): Promise<{ cred: Cred; pass?: string; passExp?: number; inviteExp?: number }> {
   const c = cookies(request);
   const auth = bearer(request);
   const t0 = now();
@@ -309,6 +317,7 @@ async function credOf(
         cred: { kind: "pass", id: p.id, inv: p.inv, chs: p.chs },
         pass: passText,
         passExp: p.exp,
+        inviteExp: p.iexp,
       };
   }
   const openText = c[OPEN_COOKIE] ?? (auth.startsWith(OPEN_PREFIX) ? auth : "");
@@ -350,7 +359,7 @@ async function play(request: Request, env: Env): Promise<Response> {
   if (!UUIDISH.test(pub) || !CH_RE.test(ch)) return refuse(request, 400, "bad_request");
   if (globallyOff(env) || isRevoked(await revocationsFor(env), { pub, ch }))
     return refuse(request, 403, "broadcast_off");
-  const { cred, pass, passExp } = await credOf(request, env, pub);
+  const { cred, pass, passExp, inviteExp } = await credOf(request, env, pub);
   const t0 = now();
   const plan = await planOf(env, pub);
   const ip = cred.kind === "open" ? await ipHash(env, clientIP(request), t0) : "";
@@ -368,11 +377,16 @@ async function play(request: Request, env: Env): Promise<Response> {
       }))
   );
   const headers: Record<string, string> = {};
-  // a guest pass used with less than half its life left is renewed
+  // a guest pass used with less than half its life left is renewed, never past its invite
+  const renewTo =
+    inviteExp !== undefined ? passExpiry(Math.floor(t0 / 1000), inviteExp) : undefined;
   if (
     pass &&
     passExp !== undefined &&
+    inviteExp !== undefined &&
+    renewTo !== undefined &&
     passExp - t0 / 1000 < PASS_TTL_S / 2 &&
+    renewTo > passExp &&
     cred.kind === "pass"
   ) {
     const renewed = await mintPass(env.VIEWER_TOKEN_KEY, {
@@ -380,9 +394,10 @@ async function play(request: Request, env: Env): Promise<Response> {
       inv: cred.inv,
       id: cred.id,
       chs: cred.chs,
-      exp: Math.floor(t0 / 1000) + PASS_TTL_S,
+      exp: renewTo,
+      iexp: inviteExp,
     });
-    headers["Set-Cookie"] = setCookie(passCookieName(pub), renewed, PASS_TTL_S);
+    headers["Set-Cookie"] = setCookie(passCookieName(pub), renewed, maxAge(renewTo));
     headers["X-Maktaba-Pass"] = renewed;
   }
   return answer(

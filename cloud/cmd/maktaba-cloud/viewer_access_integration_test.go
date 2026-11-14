@@ -173,6 +173,11 @@ func TestViewerInvitesAndTheirRoles(t *testing.T) {
 	if exp := time.Unix(claims.Exp, 0); exp.Before(time.Now().Add(29*24*time.Hour)) || exp.After(time.Now().Add(31*24*time.Hour)) {
 		t.Fatalf("default expiry: %v", exp)
 	}
+	// the signed exp is the expiry the page shows: the edge ends every guest pass of this invite
+	// by it (a pass carries it as iexp and is never renewed past it)
+	if shown, err := time.Parse(time.RFC3339, inv["expires_at"].(string)); err != nil || shown.Unix() != claims.Exp {
+		t.Fatalf("the signed exp %d is not the invite's expires_at %v (%v)", claims.Exp, inv["expires_at"], err)
+	}
 	all := h.agent.mustStatus(h.agent.do("POST", "/v1/broadcast/invites", map[string]any{"expires_in_days": 365, "max_uses": 500}), http.StatusCreated).json(t)
 	if s := edge.last(t); s.Pub != h.id || s.Codes[inv["short_code"].(string)] != token || len(s.Codes) != 2 || s.MaxSessionsPerIP != 3 {
 		t.Fatalf("the edge's access state: %+v", s)

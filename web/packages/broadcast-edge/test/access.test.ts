@@ -4,7 +4,16 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { advanceClock, now, resetClock } from "../src/clock";
 import type { Env } from "../src/env";
-import { INVITE_DOMAIN, INVITE_PREFIX, verifyInvite, type InviteClaims } from "../src/invites";
+import {
+  INVITE_DOMAIN,
+  INVITE_PREFIX,
+  mintPass,
+  PASS_TTL_S,
+  readPass,
+  verifyInvite,
+  type InviteClaims,
+  type PassClaims,
+} from "../src/invites";
 import { WATCH_ROUTES } from "../src/play";
 import { forgetRevocations } from "../src/revocations";
 import { ERROR_KEYS, STRINGS } from "../src/strings";
@@ -540,6 +549,79 @@ describe("T05 play and beat", () => {
     const t = await setup();
     const theirs = await guest(t);
     expect((await playWith(s, s.ch, theirs)).j.error).toBe("invite_required");
+  });
+});
+
+describe("a guest pass ends no later than its invite", () => {
+  const DAY = 86_400;
+
+  it("a withdrawn invite past its expiry stays refused, though it left the withdrawn list", async () => {
+    const s = await setup();
+    const inv = `inv-x-${pubN}`;
+    const exp = Math.floor(now() / 1000) + 2 * DAY;
+    const { r, j } = await redeem(await invite({ pub: s.pub, inv, exp }));
+    expect(r.status).toBe(200);
+    // the pass ends with the invite, not 30 days on
+    expect(Date.parse(j.expires_at!)).toBe(exp * 1000);
+    const pass = j.pass!;
+    expect((await playWith(s, s.ch, pass)).r.status).toBe(200);
+    await access(s.pub, {
+      revoked_invites: [inv],
+      channels: { [s.ch]: { access: "invite", max_viewers: 0 } },
+    });
+    expect((await playWith(s, s.ch, pass)).r.status).toBe(403);
+    // a day after the invite's expiry the cloud stops naming it as withdrawn
+    advanceClock((3 * DAY + 60) * 1000);
+    await access(s.pub, {
+      revoked_invites: [],
+      channels: { [s.ch]: { access: "invite", max_viewers: 0 } },
+    });
+    // the pass ended with its invite: the edge reads no credential at all
+    const late = await playWith(s, s.ch, pass);
+    expect(late.r.status).toBe(401);
+    expect(late.j.error).toBe("invite_required");
+  });
+
+  it("a pass is never renewed past its invite's expiry", async () => {
+    const s = await setup();
+    const t = Math.floor(now() / 1000);
+    // an invite ending in 20 days: the pass ends then, and using it with 14 days left renews nothing
+    const short = await guest(s, { exp: t + 20 * DAY });
+    expect((await readPass(short, env.VIEWER_TOKEN_KEY, now()))!.exp).toBe(t + 20 * DAY);
+    // an invite ending in 40 days: the pass is renewed only up to the invite's expiry
+    const iexp = t + 40 * DAY;
+    const long = await guest(s, { exp: iexp });
+    expect((await readPass(long, env.VIEWER_TOKEN_KEY, now()))!.exp).toBe(t + PASS_TTL_S);
+    advanceClock(16 * DAY * 1000);
+    const a = await playWith(s, s.ch, short);
+    expect(a.r.status).toBe(200);
+    expect(a.r.headers.get("X-Maktaba-Pass")).toBeNull();
+    const b = await playWith(s, s.ch, long);
+    expect(b.r.status).toBe(200);
+    const renewed = b.r.headers.get("X-Maktaba-Pass")!;
+    const c = (await readPass(renewed, env.VIEWER_TOKEN_KEY, now()))!;
+    expect(c.exp).toBe(iexp);
+    expect(c.iexp).toBe(iexp);
+    // past the invite's expiry the renewed pass opens nothing
+    advanceClock((24 * DAY + 60) * 1000);
+    expect((await playWith(s, s.ch, renewed)).j.error).toBe("invite_required");
+  });
+
+  it("a pass with no invite expiry, or one running past it, is refused", async () => {
+    const s = await setup();
+    const pass = await guest(s);
+    const p = (await readPass(pass, env.VIEWER_TOKEN_KEY, now()))!;
+    // the same pass re-signed as it is plays: the refusals below are the claims, not the key
+    const again = await mintPass(env.VIEWER_TOKEN_KEY, { ...p });
+    expect((await playWith(s, s.ch, again)).r.status).toBe(200);
+    const { iexp: _drop, ...noIexp } = p;
+    const old = await mintPass(env.VIEWER_TOKEN_KEY, noIexp as PassClaims);
+    expect(await readPass(old, env.VIEWER_TOKEN_KEY, now())).toBeNull();
+    const o = await playWith(s, s.ch, old);
+    expect(o.r.status).toBe(401);
+    expect(o.j.error).toBe("invite_required");
+    const past = await mintPass(env.VIEWER_TOKEN_KEY, { ...p, exp: p.iexp + 60 });
+    expect(await readPass(past, env.VIEWER_TOKEN_KEY, now())).toBeNull();
   });
 });
 
