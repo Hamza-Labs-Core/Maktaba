@@ -590,7 +590,8 @@ Requires=docker.service
 ExecStartPre=-/usr/bin/docker rm -f maktaba-caddy
 ExecStart=/usr/bin/docker run --name maktaba-caddy --network host \\
   -e RELAY_DOMAIN=${RELAY_DOMAIN:?} -e ACME_EMAIL=${ACME_EMAIL:?} \\
-  -e "RELAY_UPSTREAMS=127.0.0.1:8443 127.0.0.1:8453" -e NODE_ADDR=${NODE_ADDR} --env-file /etc/maktaba/caddy.env \\
+  -e "RELAY_UPSTREAMS=127.0.0.1:8443 127.0.0.1:8453" -e "RELAY_METRICS_UPSTREAMS=127.0.0.1:8445 127.0.0.1:8455" \\
+  -e NODE_ADDR=${NODE_ADDR} --env-file /etc/maktaba/caddy.env \\
   -v /etc/caddy:/etc/caddy:ro -v caddy_data:/data \\
   ghcr.io/hamza-labs-core/maktaba-caddy:${MAKTABA_CADDY_TAG:-2.11.7-cf0.2.4}
 ExecStop=/usr/bin/docker stop -t 10 maktaba-caddy
@@ -599,6 +600,13 @@ Restart=always
 [Install]
 WantedBy=multi-user.target
 UNIT
+# each relay colour's private metrics listener (story 50.28), on the loopback, which Caddy's
+# private :9443 site reaches: the broadcast series are served nowhere else
+for colour_port in blue:8445 green:8455; do
+	f="/etc/maktaba/relay-${colour_port%%:*}.env"
+	touch "${f}"
+	grep -q '^MAKTABA_CLOUD_METRICS_ADDR=' "${f}" || echo "MAKTABA_CLOUD_METRICS_ADDR=127.0.0.1:${colour_port##*:}" >>"${f}"
+done
 printf 'CF_API_TOKEN=%s\n' "$(cat /etc/maktaba/cloudflare.token)" >/etc/maktaba/caddy.env
 chmod 0600 /etc/maktaba/caddy.env
 command -v docker >/dev/null || apt-get install -y -qq docker.io >/dev/null

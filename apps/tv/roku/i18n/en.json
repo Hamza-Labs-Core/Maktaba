@@ -623,5 +623,43 @@
     "widthChars": 16,
     "lines": 1
   },
-  "roku.weekday.6": "Saturday"
+  "roku.weekday.6": "Saturday",
+  "@parental.time.left": {
+    "widthChars": 40,
+    "lines": 1
+  },
+  "parental.time.left": "%1$s left today",
+  "@parental.time.warning": {
+    "widthChars": 48,
+    "lines": 1
+  },
+  "parental.time.warning": "Watching ends in %1$s.",
+  "@parental.time.minutes": {
+    "widthChars": 16,
+    "lines": 1
+  },
+  "parental.time.minutes": {
+    "one": "%1$d minute",
+    "other": "%1$d minutes"
+  },
+  "@parental.time.hours": {
+    "widthChars": 16,
+    "lines": 1
+  },
+  "parental.time.hours": {
+    "one": "%1$d hour",
+    "other": "%1$d hours"
+  },
+  "@parental.time.hoursMinutes": {
+    "widthChars": 32,
+    "lines": 1,
+    "value": true
+  },
+  "parental.time.hoursMinutes": "%1$s and %2$s",
+  "@parental.time.underMinute": {
+    "widthChars": 20,
+    "lines": 1,
+    "value": true
+  },
+  "parental.time.underMinute": "less than a minute"
 }

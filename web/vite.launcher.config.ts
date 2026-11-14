@@ -51,6 +51,8 @@ export default defineConfig(({ mode }) => ({
   define: {
     __LAUNCHER_VERSION__: JSON.stringify(VERSION),
     __BUNDLE_UI__: JSON.stringify(mode === "bundle-ui"),
+    // the cloud the code screen asks (story 58.03): Maktaba Cloud unless a build says otherwise
+    __CLOUD_BASE__: JSON.stringify(process.env.MAKTABA_CLOUD || "https://api.maktaba.tv"),
   },
   plugins: [m68Css(), classicScript()],
   resolve: {

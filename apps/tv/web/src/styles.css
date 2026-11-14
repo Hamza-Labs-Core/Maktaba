@@ -200,6 +200,73 @@ p {
   text-align: left;
 }
 
+/* the cloud code (58.09's second part): the code and its text, the QR beside them, the
+   other ways in one row under them, all in one 1080p screen */
+.ml-screen--wide {
+  max-inline-size: 1560px;
+  padding-block: 64px 48px;
+}
+
+.ml-screen--wide h1 {
+  margin-block-end: 24px;
+}
+
+.ml-code {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 64px;
+  margin-block-end: 24px;
+}
+
+.ml-code__text {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.ml-code__code {
+  font-size: 104px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  line-height: 1.1;
+  white-space: nowrap;
+  color: var(--ml-brass);
+  margin-block: 0 12px;
+  unicode-bidi: isolate;
+}
+
+.ml-code__text p {
+  margin-block-end: 12px;
+}
+
+.ml-code__qr {
+  flex: 0 0 auto;
+  padding: 16px;
+  background: #fff;
+  border-radius: 16px;
+  line-height: 0;
+}
+
+.ml-qr {
+  display: block;
+}
+
+.ml-row {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 16px;
+  margin-block-end: 24px;
+}
+
+.ml-row > .ml-more {
+  margin-block-end: 0;
+}
+
 .ml-footer {
   display: flex;
   align-items: center;

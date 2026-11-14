@@ -590,6 +590,104 @@ test("T05 (58.14): the player stops for the home's parental answers: time's up, 
   }
 });
 
+test("T06 (57.15 on Roku): the time left in the corner, the five- and one-minute warnings, and an earlier day's no", { timeout: 300000 }, async () => {
+  // T05 left the channel in Arabic. The home says how much time is left; the channel only shows it
+  home.state.restricted = true;
+  home.state.requests = [];
+  home.state.time = null;
+  const later = () => new Date(Date.now() + 2 * 3600e3).toISOString();
+  const c = await Channel.start("player-time", zip, data);
+  try {
+    await c.waitFor(/\[parental\] limited=true/, 30000);
+    await c.waitFor(/\[home\] for you/, 30000);
+
+    // 12 minutes left: the note in the end corner (the left in Arabic), no warning
+    home.state.timeLeft = 720;
+    const v = videos[24];
+    await c.input({ contentId: v.id, mediaType: "movie" });
+    await c.waitFor(/\[screen\] PlayerScreen ready/, 20000);
+    await c.waitFor(/\[parental\] time left=\s*720 poll=\s*30/, 10000);
+    assert.doesNotMatch(c.out, /\[parental\] warning/, "no warning above five minutes");
+    await c.waitFor(/\[player\] overlay hidden/, 15000);
+    await compare(c, "player-timeleft-ar");
+    // five minutes: the next answer (30 s later) crosses the line; the warning shows over the note
+    home.state.timeLeft = 300;
+    await c.waitFor(/\[parental\] warning\s+300\b/, 40000);
+    await compare(c, "player-warning5-ar");
+    await c.waitFor(/\[parental\] time left=\s*300 poll=\s*10/);
+    // one minute: asked every 10 s from six minutes left
+    home.state.timeLeft = 60;
+    await c.waitFor(/\[parental\] warning\s+60\b/, 15000);
+    assert.ok(requests.some((l) => l.startsWith(`home time library=${v.library_id} `)), "the time is asked for the video's library");
+    // each warning once: the next answers at one minute show none again
+    home.state.timeLeft = 50;
+    await c.waitFor(/\[parental\] time left=\s*50 poll=\s*10/, 15000);
+    assert.equal((c.out.match(/\[parental\] warning\s+60\b/g) || []).length, 1, "the one-minute warning shows once");
+    await c.key("Back");
+    await c.waitFor(/\[nav\] back to HomeScreen/);
+
+    // English: Account's language, then the same corner on the right
+    await c.key("Up");
+    await c.waitFor(/\[focus\] home menu/);
+    await c.keys(["Left", "Left", "Left"]);
+    await c.key("Select");
+    await c.waitFor(/\[screen\] AccountScreen ready lang=ar managed=true/);
+    await c.keys(["Down", "Down"]);
+    await c.key("Select");
+    await c.waitFor(/\[account\] en/);
+    await c.waitFor(/\[screen\] AccountScreen ready lang=en/);
+    await c.key("Back");
+    await c.waitFor(/\[nav\] back to HomeScreen/);
+    await c.waitFor(/\[home\] for you/, 20000);
+    home.state.timeLeft = 720;
+    const w = videos[28];
+    const from = c.out.length;
+    await c.input({ contentId: w.id, mediaType: "movie" });
+    await c.waitFor(/\[screen\] PlayerScreen ready/, 20000);
+    await c.waitFor(/\[parental\] time left=\s*720 poll=\s*30/, 10000);
+    await c.waitFor(/\[player\] overlay hidden/, 15000);
+    await compare(c, "player-timeleft-en");
+    home.state.timeLeft = 300;
+    await c.waitFor(/\[parental\] warning\s+300\b/, 40000);
+    await compare(c, "player-warning5-en");
+    home.state.timeLeft = 60;
+    await c.waitFor(/\[parental\] warning\s+60\b/, 15000);
+    await compare(c, "player-warning1-en");
+    assert.equal((c.out.slice(from).match(/\[parental\] warning\s+300\b/g) || []).length, 1, "the five-minute warning shows once");
+    await c.key("Back");
+    await c.waitFor(/\[nav\] back to HomeScreen/);
+
+    // a no to more time from an earlier day has expired: the page offers to ask afresh, as the
+    // web and Android do, and says nothing of the old no
+    home.state.timeLeft = null;
+    home.state.time = { reason: "limit_reached", next: later() };
+    const yesterday = new Date(Date.now() - 864e5);
+    home.state.requests = [{ id: "r-old", subject_kind: "time", subject_id: "30", status: "denied", created_at: new Date(yesterday.getTime() - 3600e3).toISOString(), expires_at: yesterday.toISOString() }];
+    let mark = c.out.length;
+    await c.input({ contentId: w.id, mediaType: "movie" });
+    await c.waitFor(/\[screen\] PlayerScreen timesup reason=limit_reached/, 20000);
+    await c.waitFor(/\[parental\] times up ask=none/, 10000);
+    await c.waitFor(/\[focus\] timesup tuAsk0/);
+    assert.doesNotMatch(c.out.slice(mark), /times up ask=denied/, "an earlier day's no is not shown");
+    await c.key("Back");
+    await c.waitFor(/\[nav\] back to HomeScreen/);
+    // today's no still reads as a no, with Ask again
+    home.state.requests[0].expires_at = later();
+    mark = c.out.length;
+    await c.input({ contentId: w.id, mediaType: "movie" });
+    await c.waitFor(/\[screen\] PlayerScreen timesup reason=limit_reached/, 20000);
+    await c.waitFor(/\[parental\] times up ask=denied/, 10000);
+    await c.key("Back");
+    await c.waitFor(/\[nav\] back to HomeScreen/);
+  } finally {
+    await c.stop();
+    home.state.restricted = false;
+    home.state.time = null;
+    home.state.timeLeft = null;
+    home.state.requests = [];
+  }
+});
+
 // The probe walks the whole /24; brs-engine's roUrlTransfer is synchronous, so each address
 // that does not answer waits for its connection to fail. Linux refuses loopback addresses
 // (127.0.0.2…) at once; macOS has no such addresses and waits out each one.

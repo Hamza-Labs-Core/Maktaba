@@ -306,7 +306,7 @@
   "broadcast.analytics.countries": "البلدان",
   "broadcast.analytics.other": "أخرى",
   "broadcast.analytics.quality": "الجودة المشاهَدة",
-  "broadcast.analytics.privacy": "تُجمع الأماكن والأجهزة التي يقل مشاهدوها عن 5 تحت \"أخرى\". لا نحتفظ بعناوين المشاهدين أو هوياتهم.",
+  "broadcast.analytics.privacy": "تُجمع الأماكن والأجهزة التي يقل مشاهدوها في ساعة عن 5 تحت \"أخرى\" في تلك الساعة. لا نحتفظ بعناوين المشاهدين أو هوياتهم.",
   "broadcast.analytics.devices": "الأجهزة",
   "broadcast.analytics.errors": "أخطاء التشغيل",
   "broadcast.analytics.blocked": "مشاهدون لم يُسمح لهم",

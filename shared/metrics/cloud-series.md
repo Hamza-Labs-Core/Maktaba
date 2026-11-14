@@ -28,8 +28,10 @@ rules (`deploy/cloud-ha/monitoring/alerts.yml`) and the dashboards.
 The broadcast edge's own numbers, polled from Workers Analytics Engine once a minute by the
 worker role into `broadcast_monitor` and served from that snapshot (`cloud/internal/broadcast`,
 `Monitor.WriteMetrics`). They carry no labels at all: no channel, publisher or viewer. They are
-served only to a scrape addressed by IP (the node's private site that Prometheus scrapes), never
-on a public hostname's `/metrics`.
+served only on the private metrics listener (`server.metrics_listen_addr`, env
+`MAKTABA_CLOUD_METRICS_ADDR`: a loopback or private address, which the node's private `:9443`
+site that Prometheus scrapes reaches), never on the main listener's `/metrics`, whatever a
+request's Host says.
 
 | Series | Type | Labels | Meaning |
 |---|---|---|---|

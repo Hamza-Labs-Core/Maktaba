@@ -102,3 +102,48 @@ func TestTVCodesApprovedOnTheWebOnTheRealRouter(t *testing.T) {
 	}
 	tv.mustStatus(tv.do("POST", "/v1/tv/codes/poll", map[string]string{"code": tvCode, "poll_secret": pollSecret}), http.StatusAccepted)
 }
+
+// The api role wires the TV routes' CORS (role_api.go, WithTVOrigins): a packaged TV app's
+// origin is answered on POST /v1/tv/codes and its poll, and on no other route; a web origin
+// the allow-list does not name is answered nowhere.
+func TestTVCORSOnTheRealRouter(t *testing.T) {
+	e := newEnv(t)
+	send := func(method, path, origin string) *httptest.ResponseRecorder {
+		var body *strings.Reader
+		if method == http.MethodPost {
+			body = strings.NewReader(`{"platform":"tizen"}`)
+		} else {
+			body = strings.NewReader("")
+		}
+		req := httptest.NewRequest(method, path, body)
+		req.RemoteAddr = "198.51.100.251:40000"
+		req.Header.Set("Origin", origin)
+		req.Header.Set("Content-Type", "application/json")
+		if method == http.MethodOptions {
+			req.Header.Set("Access-Control-Request-Method", "POST")
+		}
+		rec := httptest.NewRecorder()
+		e.h.ServeHTTP(rec, req)
+		return rec
+	}
+	for _, origin := range []string{"null", "file://", "app://maktaba"} {
+		for _, path := range []string{"/v1/tv/codes", "/v1/tv/codes/poll"} {
+			rec := send(http.MethodOptions, path, origin)
+			if rec.Code != http.StatusNoContent || rec.Header().Get("Access-Control-Allow-Origin") != origin {
+				t.Fatalf("preflight %s from %s: %d %q", path, origin, rec.Code, rec.Header().Get("Access-Control-Allow-Origin"))
+			}
+			if rec.Header().Get("Access-Control-Allow-Credentials") != "" {
+				t.Fatalf("preflight %s from %s allows credentials", path, origin)
+			}
+		}
+	}
+	if rec := send(http.MethodPost, "/v1/tv/codes", "null"); rec.Code != http.StatusCreated || rec.Header().Get("Access-Control-Allow-Origin") != "null" {
+		t.Fatalf("a TV's code: %d %q", rec.Code, rec.Header().Get("Access-Control-Allow-Origin"))
+	}
+	if rec := send(http.MethodOptions, "/v1/servers/claims", "null"); rec.Header().Get("Access-Control-Allow-Origin") != "" {
+		t.Fatalf("a TV origin answered off the TV routes: %q", rec.Header().Get("Access-Control-Allow-Origin"))
+	}
+	if rec := send(http.MethodOptions, "/v1/tv/codes", "https://evil.example"); rec.Header().Get("Access-Control-Allow-Origin") != "" {
+		t.Fatalf("a foreign web origin answered: %q", rec.Header().Get("Access-Control-Allow-Origin"))
+	}
+}

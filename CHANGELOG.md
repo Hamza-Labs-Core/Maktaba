@@ -782,6 +782,14 @@ build fails when the two differ.
 
 ### Security
 
+- **Broadcast viewer analytics hide small groups however the period is chosen (Epic 50, story
+  50.28).** A country or device with fewer than 5 viewers was folded into "Other" over the whole
+  period shown, so two overlapping periods one hour apart could be compared to recover the small
+  groups of that hour. The fold is now decided hour by hour and a period adds its hours, so no
+  period, and no difference of two periods, names a group under 5. The cloud's business metrics
+  (viewers, the edge cost estimate and the budget) are served only on a private metrics listener
+  on a loopback or private address, no longer to any request whose Host header is an IP address.
+
 - **A TV approved on maktaba.tv gets no sign-in once its cloud account is unlinked (Epic 58,
   story 58.03).** When the cloud account that approved a TV's code was unlinked from the home, or
   the home user was linked to another cloud account, before the TV collected its sign-in, the
@@ -2898,17 +2906,6 @@ build fails when the two differ.
   remote; Fire TV and Android TV keep the guardian's PIN. A deep link to a hidden item shows the
   not-available line and asks nothing. English and Arabic, mirrored.
 
-- **A published channel airs only what may be shared online (Epic 50, story 50.23).** While a
-  Live TV channel is broadcast, it airs only publishable items: the household's own recordings,
-  items cleared with a proof link, Creative Commons Attribution videos (read from YouTube at
-  intake and at every refresh), and sources the household recorded permission for, with the link
-  where the source allows sharing. The Broadcast page shows how much of each channel's next 7
-  days may air and the sources that would add most, each with Record permission. Turning the
-  limit off takes a typed confirmation. Each channel can play only in chosen countries or
-  everywhere but them, and Maktaba's own deny list applies to every channel; a viewer outside
-  sees that the channel isn't available in their country. An item that loses its permission
-  plays the "Not available online" card until the schedule is rebuilt.
-
 - **Viewer analytics and broadcast monitoring (story 50.28).** A home that broadcasts through
   Maktaba Cloud gets a **Viewers** page at app.maktaba.tv (from **Homes**, for the home's owner
   only): viewers watching now and viewer-hours today, over 7 days and this month against the
@@ -2951,6 +2948,26 @@ build fails when the two differ.
   number is always the home's own answer, asked every 30 seconds (every 10 in the last six
   minutes). Arabic uses its plural forms (دقيقة واحدة، دقيقتان، 5 دقائق، 12 دقيقة), and the Roku
   catalog and its check now carry plural strings in both languages.
+
+- **Samsung and LG TVs sign in with a code from Maktaba Cloud (Epic 58, story 58.09).** The
+  Samsung and LG app now opens on a code with a QR, which works on any network: scan it, or open
+  maktaba.tv/tv, or in Maktaba on a phone signed in to the home choose Profile → Approve a TV or
+  device, and the TV opens that home, reached by the best address the home gives (on the same
+  network first, through Maktaba's relay from anywhere else). A TV signed in this way can watch,
+  never run the home, whoever approved it. Find on this network and typing the home's address
+  stay under the code as other ways. The app built with the home's UI inside it signs in the
+  same way.
+
+- **A published channel airs only what may be shared online (Epic 50, story 50.23).** While a
+  Live TV channel is broadcast, it airs only publishable items: the household's own recordings,
+  items cleared with a proof link, Creative Commons Attribution videos (read from YouTube at
+  intake and at every refresh), and sources the household recorded permission for, with the link
+  where the source allows sharing. The Broadcast page shows how much of each channel's next 7
+  days may air and the sources that would add most, each with Record permission. Turning the
+  limit off takes a typed confirmation. Each channel can play only in chosen countries or
+  everywhere but them, and Maktaba's own deny list applies to every channel; a viewer outside
+  sees that the channel isn't available in their country. An item that loses its permission
+  plays the "Not available online" card until the schedule is rebuilt.
 
 ### Changed
 

@@ -16,7 +16,7 @@ import (
 )
 
 // Story 50.28 against Postgres: the hourly rollup from a fake Analytics Engine SQL API (T02), the
-// daily check against metering (T03), the maktaba_broadcast_* series on the api's /metrics (T06),
+// daily check against metering (T03), the maktaba_broadcast_* series on the private metrics listener (T06),
 // and who may read a home's analytics (T07, a test per rule).
 
 // fakeAE answers the rollup's three queries from fixed rows.
@@ -178,7 +178,7 @@ func TestBroadcastAnalytics(t *testing.T) {
 		}
 	})
 
-	t.Run("T06: the api's /metrics has the maktaba_broadcast_* series for the witness's scrape only; live viewers reach the owner", func(t *testing.T) {
+	t.Run("T06: the maktaba_broadcast_* series are on the private metrics listener only, never by Host; live viewers reach the owner", func(t *testing.T) {
 		if err := jobs.PollMinute(ctx); err != nil {
 			t.Fatal(err)
 		}
@@ -189,19 +189,32 @@ func TestBroadcastAnalytics(t *testing.T) {
 		if err := broadcast.RecordRevocations(ctx, e.pool.DB, time.Now().Add(-time.Minute)); err != nil {
 			t.Fatal(err)
 		}
-		// the witness scrapes a node by its private address: the broadcast series are there
+		// the witness scrapes the private listener (server.metrics_listen_addr): the broadcast
+		// series are there
 		req := httptest.NewRequest("GET", "/metrics", nil)
-		req.Host = "10.50.0.2:9443"
 		rec := httptest.NewRecorder()
-		e.router.ServeHTTP(rec, req)
+		e.metrics.ServeHTTP(rec, req)
 		out := rec.Body.String()
-		// and never on a public name
-		pub := httptest.NewRequest("GET", "/metrics", nil)
-		pub.Host = "api.example.test"
-		prec := httptest.NewRecorder()
-		e.router.ServeHTTP(prec, pub)
-		if prec.Code != http.StatusOK || strings.Contains(prec.Body.String(), "maktaba_broadcast_") {
-			t.Fatalf("public /metrics: %d, broadcast series present: %v", prec.Code, strings.Contains(prec.Body.String(), "maktaba_broadcast_"))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("private /metrics: %d", rec.Code)
+		}
+		// and never on the main listener, whatever its Host says: a public name, or a forged
+		// private address, loopback or bare IP (the Host is the client's to write)
+		for _, host := range []string{"api.example.test", "10.50.0.2:9443", "127.0.0.1", "[::1]:8090", "10.50.0.2"} {
+			pub := httptest.NewRequest("GET", "/metrics", nil)
+			pub.Host = host
+			prec := httptest.NewRecorder()
+			e.router.ServeHTTP(prec, pub)
+			if prec.Code != http.StatusOK || strings.Contains(prec.Body.String(), "maktaba_broadcast_") {
+				t.Fatalf("main /metrics with Host %q: %d, broadcast series present: %v", host, prec.Code,
+					strings.Contains(prec.Body.String(), "maktaba_broadcast_"))
+			}
+		}
+		// the private listener answers the role's readiness too (the edge's health check)
+		rz := httptest.NewRecorder()
+		e.metrics.ServeHTTP(rz, httptest.NewRequest("GET", "/readyz", nil))
+		if rz.Code != http.StatusOK {
+			t.Fatalf("private /readyz: %d", rz.Code)
 		}
 		for _, want := range []string{
 			"maktaba_broadcast_channels_live 1",
@@ -292,5 +305,46 @@ func TestBroadcastRollupCatchUp(t *testing.T) {
 	}
 	if n := e.count(`SELECT COUNT(*) FROM broadcast_usage_hourly WHERE publisher_id = 'old'`); n != 0 {
 		t.Fatal("a 14-month-old row was kept")
+	}
+}
+
+// The fold against Postgres, through Load: two overlapping windows one hour apart ([a,b) and
+// [a,b+1h)), where the added hour has 2 sessions from Germany. Their difference names no
+// country under k: Germany's count is the same in both, and the 2 sessions are only in "other".
+func TestBroadcastAnalyticsOverlappingWindows(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	pub := "33333333-3333-4333-8333-333333333333"
+	a := time.Date(2026, 11, 10, 8, 0, 0, 0, time.UTC)
+	for i, c := range []string{`{"EG": 12, "DE": 5}`, `{"EG": 12, "DE": 5}`, `{"EG": 12, "DE": 5}`, `{"EG": 12, "DE": 2}`} {
+		// two channels share the first hour: the hour's cell adds them before it is folded
+		e.exec(`INSERT INTO broadcast_usage_hourly (publisher_id, channel_id, hour, viewer_minutes, sessions, countries, devices)
+            VALUES ($1, 'c1', $2, 60, 17, $3::jsonb, '{"web": 17}'::jsonb)`, pub, a.Add(time.Duration(i)*time.Hour), c)
+	}
+	e.exec(`INSERT INTO broadcast_usage_hourly (publisher_id, channel_id, hour, viewer_minutes, sessions, countries, devices)
+        VALUES ($1, 'c2', $2, 60, 3, '{"FR": 3}'::jsonb, '{"tv": 3}'::jsonb)`, pub, a)
+	load := func(to time.Time) map[string]float64 {
+		r, err := broadcast.Load(ctx, e.pool.DB, broadcast.Query{Publishers: []string{pub}, From: a, To: to,
+			Loc: time.UTC, K: 5, Level: broadcast.LevelFull, Now: to})
+		if err != nil {
+			t.Fatal(err)
+		}
+		m := map[string]float64{}
+		for _, c := range r.Countries {
+			m[c.Key] = c.Value
+		}
+		return m
+	}
+	short, long := load(a.Add(3*time.Hour)), load(a.Add(4*time.Hour))
+	if short["DE"] != 15 || long["DE"] != 15 {
+		t.Fatalf("Germany %v and %v; want 15 in both (the added hour's 2 are under k)", short["DE"], long["DE"])
+	}
+	if long["EG"]-short["EG"] != 12 || long["other"]-short["other"] != 2 || short["other"] != 3 {
+		t.Fatalf("short %v, long %v", short, long)
+	}
+	for key, v := range long {
+		if d := v - short[key]; key != "other" && d != 0 && d < 5 {
+			t.Fatalf("the difference recovers %s = %v, under k", key, d)
+		}
 	}
 }
