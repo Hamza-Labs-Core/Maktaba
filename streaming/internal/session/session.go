@@ -64,6 +64,9 @@ const (
 	// ReasonTranscodeFailed: its transcode ended short of the video's end
 	// while it was open; the player's reopen gets a new one.
 	ReasonTranscodeFailed CloseReason = "transcode-failed"
+	// ReasonSuperseded: the user opened the video for another device report
+	// (story 58.02) past the fits one video may keep open (grpcsrv.MaxFits).
+	ReasonSuperseded CloseReason = "superseded"
 )
 
 // Row is the in-memory shape mirroring the streaming_sessions row.
@@ -94,6 +97,14 @@ type Row struct {
 	// StartSec is where in the video its stream starts (seconds): an HLS
 	// transcode opened at a position; 0 for the others.
 	StartSec int
+
+	// Fit is the profile and device report the session was decided for
+	// ("profile/report key"; "" for an older profile with no report): only an
+	// open with the same fit is handed this session (story 58.02).
+	Fit string
+	// Segments is an HLS session's segment format ("fmp4"; "" or "ts": TS):
+	// its subtitle renditions take that format's timestamp base.
+	Segments string
 }
 
 // Ender is a Transcoder that tells how its transcode ended (the ffmpeg

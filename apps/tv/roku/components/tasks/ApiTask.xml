@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- Every call to the signed-in home, in one Task (Epic 58 story 58.12): one refresh at a time,
+     tokens saved when renewed, a sign-out reported to the scene. -->
+<component name="ApiTask" extends="Task">
+  <interface>
+    <field id="request" type="node" />
+    <field id="signedOut" type="boolean" alwaysNotify="true" />
+    <field id="tooOld" type="boolean" alwaysNotify="true" />
+    <field id="tokens" type="assocarray" />
+  </interface>
+  <script type="text/brightscript" uri="ApiTask.brs" />
+  <script type="text/brightscript" uri="pkg:/source/config.brs" />
+  <script type="text/brightscript" uri="pkg:/source/net.brs" />
+  <script type="text/brightscript" uri="pkg:/source/http.brs" />
+  <script type="text/brightscript" uri="pkg:/source/store.brs" />
+</component>

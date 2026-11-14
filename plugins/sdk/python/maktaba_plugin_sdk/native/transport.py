@@ -13,7 +13,7 @@ import contextlib
 import json
 from typing import Any
 
-from .stmtdb import PluginRefused
+from .stmtdb import DatabaseUnavailable, PluginRefused
 
 __all__ = ["UnixTransport"]
 
@@ -74,6 +74,9 @@ class UnixTransport:
             else:
                 self._give_back(r, w)
             out = json.loads(raw or b"{}")
+            if status == 503 and out.get("code") == "plugin_database":
+                # the API lost the database (a restart): the job is tried again
+                raise DatabaseUnavailable(str(out.get("detail") or ""))
             if status >= 300:
                 raise PluginRefused(
                     status, str(out.get("code") or status), str(out.get("detail") or "")

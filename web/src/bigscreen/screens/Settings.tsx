@@ -6,10 +6,15 @@ import { useI18n } from "../../lib/i18n";
 import { desktopBigScreenState, setDesktopStartInBigScreen } from "../../lib/bigScreen";
 import { SUBTITLE_SCALES, usePrefs } from "../prefs";
 import { Screen } from "../ui";
+import { useLauncher } from "../../tv/launcher";
+import { tellLauncher } from "../input/bridge";
 
-export function BigSettings({ onExit }: { onExit: () => void }) {
+/** onExit null: no Leave big screen (the TV build, story 58.08). */
+export function BigSettings({ onExit }: { onExit: (() => void) | null }) {
   const { t, locale, setLocale, n } = useI18n();
   const [prefs, update] = usePrefs();
+  // in the Samsung or LG launcher (story 58.09): its home picker, and how the home is reached
+  const launcher = useLauncher();
   // null: not the desktop app (or its shell does not serve this page)
   const [start, setStart] = useState<boolean | null>(null);
 
@@ -79,16 +84,34 @@ export function BigSettings({ onExit }: { onExit: () => void }) {
             />
           </Setting>
         )}
-        <Setting label={t("big.exit.title")}>
-          <button
-            type="button"
-            className="bs-btn bs-btn--primary"
-            data-bs-focus="set:exit"
-            onClick={onExit}
+        {launcher && (
+          <Setting
+            label={t("tv.account.connection")}
+            hint={launcher.plain ? t("tv.plainHttp") : t("tv.account.encrypted")}
           >
-            {t("big.exit.leave")}
-          </button>
-        </Setting>
+            <button
+              type="button"
+              className="bs-btn"
+              data-bs-focus="set:switch-home"
+              data-testid="switch-home"
+              onClick={() => tellLauncher("maktaba:openHomePicker")}
+            >
+              {t("tv.account.switchHome")}
+            </button>
+          </Setting>
+        )}
+        {onExit && (
+          <Setting label={t("big.exit.title")}>
+            <button
+              type="button"
+              className="bs-btn bs-btn--primary"
+              data-bs-focus="set:exit"
+              onClick={onExit}
+            >
+              {t("big.exit.leave")}
+            </button>
+          </Setting>
+        )}
       </div>
     </Screen>
   );

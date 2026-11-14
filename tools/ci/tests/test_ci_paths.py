@@ -50,6 +50,13 @@ CASES: dict[str, tuple[list[str], set[str], dict[str, set[str]]]] = {
         {"android-apps", "android-tv"},
         {"lint": set()},
     ),
+    # Epic 58 (58.08): the TV build's checks (vite.config.ts imports its CSS pass) and its
+    # Playwright config run its gate and the web jobs
+    "tv build tools only": (
+        ["web/tv-build/tvcheck.mjs", "web/playwright.tv.config.ts", "web/index.tv.html"],
+        {"tv-web", "unit", "e2e", "build-artifacts"},
+        {"lint": {"web"}, "unit": {"web"}},
+    ),
     "android tv only": (
         ["apps/tv/android/app/src/main/AndroidManifest.xml"],
         {"android-tv"},
@@ -187,17 +194,17 @@ CASES: dict[str, tuple[list[str], set[str], dict[str, set[str]]]] = {
     # and the website: its help pages take each topic's title and summary from the catalog (60.12)
     "the language files run the catalog's words check": (
         ["web/src/i18n/ar.json"],
-        {"unit", "e2e", "build-artifacts", "plugins", "website"},
+        {"unit", "e2e", "build-artifacts", "plugins", "website", "tv-web"},
         {"lint": {"web", "catalog"}, "unit": {"web"}},
     ),
     "web only": (
         ["web/src/pages/Home.tsx"],
-        {"unit", "e2e", "build-artifacts"},
+        {"unit", "e2e", "build-artifacts", "tv-web"},
         {"lint": {"web"}, "unit": {"web"}},
     ),
     "design tokens": (
         ["web/design-system/tokens/color.json"],
-        {"unit", "e2e", "build-artifacts", "website"},
+        {"unit", "e2e", "build-artifacts", "website", "tv-web"},
         {"lint": {"web"}, "unit": {"web", "tokens"}},
     ),
     "desktop shell": (
@@ -403,7 +410,7 @@ def test_a_trail_only_change_runs_nothing() -> None:
 def test_the_trail_with_code_runs_the_codes_jobs() -> None:
     alone = run("web/src/pages/Home.tsx")
     both = run("docs/claude-trail.md", "web/src/pages/Home.tsx")
-    assert ran(both) == ran(alone) == ALWAYS | {"unit", "e2e", "build-artifacts"}
+    assert ran(both) == ran(alone) == ALWAYS | {"unit", "e2e", "build-artifacts", "tv-web"}
     assert parts(both, "lint") == {"web"}
 
 

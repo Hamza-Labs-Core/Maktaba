@@ -57,7 +57,7 @@ func retryFor(status int) int {
 // lets it reload (src/lib/pwa.ts) where the app's page in place of a script would leave
 // it blank.
 func FallsBack(path string, apiPrefixes ...string) bool {
-	if strings.HasPrefix(path, assetsPrefix) {
+	if isAsset(path) {
 		return false
 	}
 	for _, p := range apiPrefixes {

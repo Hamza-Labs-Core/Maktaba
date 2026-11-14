@@ -45,6 +45,9 @@ func TestTheIndexWorker(t *testing.T) {
 	if p.Role != RolePipeline || p.Instance != IndexInstance || p.Name() != "pipeline/index" {
 		t.Errorf("process = %s", p.Name())
 	}
+	if p.StartupGrace != PythonStartupGrace {
+		t.Errorf("startup grace = %v, want the Python workers' %v", p.StartupGrace, PythonStartupGrace)
+	}
 	if p.Probe != "http://127.0.0.1:9104/healthz" || p.ProbeTimeout != PythonProbeTimeout {
 		t.Errorf("probe = %s, %s", p.Probe, p.ProbeTimeout)
 	}

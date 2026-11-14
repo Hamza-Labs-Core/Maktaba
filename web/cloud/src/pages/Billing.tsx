@@ -13,6 +13,7 @@ import { api } from "../shared/api";
 import { useI18n, type I18nState } from "../shared/i18n";
 import { navigateExternal } from "../nav";
 import { ProExtras, UsageByModePanel, type UsageByMode } from "./BillingPayg";
+import { BroadcastHomes, BroadcastOffer, type BroadcastCatalog } from "./BillingBroadcast";
 import {
   Banner,
   LoadError,
@@ -71,11 +72,16 @@ interface BillingData {
   paymentsEnabled: boolean;
   me: BillingMe;
   usage: Usage | null;
+  /** story 50.20: Pro's guest sharing and the Broadcaster add-on (absent from an older API) */
+  broadcast?: BroadcastCatalog;
 }
 
 async function loadBilling(): Promise<BillingData> {
   const [plans, me, usage] = await Promise.all([
-    api.get<{ plans: Plan[]; payments_enabled?: boolean }>("/v1/billing/plans", { auth: false }),
+    api.get<{ plans: Plan[]; payments_enabled?: boolean; broadcast?: BroadcastCatalog }>(
+      "/v1/billing/plans",
+      { auth: false }
+    ),
     api.get<BillingMe>("/v1/billing/me"),
     // usage is a side panel: the page still works without it
     api.get<Usage>("/v1/billing/usage").catch(() => null),
@@ -85,6 +91,7 @@ async function loadBilling(): Promise<BillingData> {
     paymentsEnabled: plans?.payments_enabled === true,
     me,
     usage,
+    broadcast: plans?.broadcast,
   };
 }
 
@@ -121,7 +128,7 @@ function BillingBody({ data }: { data: BillingData }) {
   const message = useErrorMessage();
   const toast = useToast();
   const [busy, setBusy] = useState<string | null>(null);
-  const { me, plans, usage, paymentsEnabled } = data;
+  const { me, plans, usage, paymentsEnabled, broadcast } = data;
   const planName = (id: string) => plans.find((p) => p.id === id)?.name ?? id;
   const proPlan = plans.find((p) => p.id === "pro");
 
@@ -206,12 +213,16 @@ function BillingBody({ data }: { data: BillingData }) {
             onUpgrade={() => upgrade(p.id)}
           />
         ))}
+        {broadcast && <BroadcastOffer catalog={broadcast} />}
       </div>
 
       {usage && <UsagePanel usage={usage} />}
 
       {/* Epic 50 story 50.19: Pro's pay-as-you-go and extra streams */}
       {me.plan === "pro" && paymentsEnabled && proPlan && <ProExtras pro={proPlan} />}
+
+      {/* Epic 50 story 50.20: each home's broadcasting (guest sharing, Broadcaster) */}
+      {broadcast && <BroadcastHomes pro={me.plan === "pro"} />}
 
       {/* Epic 50 story 50.12: the uptime target, a target with no credit (uptime.policy) */}
       <Card header={<h2>{t("billing.uptime.title")}</h2>}>

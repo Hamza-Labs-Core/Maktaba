@@ -269,6 +269,7 @@ export const SYSTEM_HEALTH_KINDS = [
   "host_access",
   "components",
   "plugin_runners",
+  "host_load",
 ] as const;
 
 export function systemHealthHelp(kind: string): HelpRef {

@@ -1,0 +1,14 @@
+{
+  "receiver.idle": "Ready to play from Maktaba",
+  "receiver.loading": "Getting %1$s ready…",
+  "receiver.buffering": "Loading…",
+  "receiver.paused": "Paused",
+  "receiver.position": "%1$s of %2$s",
+  "receiver.chapter": "Chapter: %1$s",
+  "receiver.upNext": "Up next",
+  "receiver.remote": "Through Maktaba Cloud",
+  "receiver.error.home": "The TV can't reach your home. Check that the home is on, or turn on remote access.",
+  "receiver.error.format": "This TV can't play this video. Try again: the home will convert it.",
+  "receiver.error.grant": "This cast has ended. Cast again from your phone.",
+  "receiver.updateHome": "Your home is older than this TV's player. Update the home in Maktaba, then cast again."
+}

@@ -21,6 +21,7 @@ const OFF = {
   cloud_metadata_backup: false,
   advanced_analytics: false,
   federation: false,
+  broadcast: false,
 };
 
 const FREE_OVER: LicenseView = {

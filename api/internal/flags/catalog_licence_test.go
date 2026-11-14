@@ -35,7 +35,8 @@ func TestLicenceFeature(t *testing.T) {
 	}
 	for key, want := range map[string]subscriptions.Feature{FlagCloudRelay: subscriptions.FeatureCloudRelay,
 		FlagMultiUser: subscriptions.FeatureMultiUser, FlagCloudMetadataBackup: subscriptions.FeatureCloudBackup,
-		FlagAdvancedAnalytics: subscriptions.FeatureAdvancedMetric, FlagFederation: subscriptions.FeatureFederation} {
+		FlagAdvancedAnalytics: subscriptions.FeatureAdvancedMetric, FlagFederation: subscriptions.FeatureFederation,
+		FlagBroadcast: subscriptions.FeatureBroadcast} {
 		if f, err := LicenceFeature(key); err != nil || f != want {
 			t.Errorf("%q: %q %v", key, f, err)
 		}

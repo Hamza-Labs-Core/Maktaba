@@ -49,3 +49,22 @@ func TestForPlanStableWithinADay(t *testing.T) {
 		t.Fatalf("%+v / %+v", a, b)
 	}
 }
+
+// Story 50.20: the broadcast flag is a feature the plan adds, for Pro and Pro with Broadcaster.
+func TestBroadcastFeature(t *testing.T) {
+	l, err := ForPlan(goldenKey(), "s1", TierPro, "o@x", goldenAt, FeatureBroadcast)
+	if err != nil || len(l.License.Features) != 1 || l.License.Features[0] != "broadcast" {
+		t.Fatalf("%+v %v", l.License, err)
+	}
+	if l, _ := ForPlan(goldenKey(), "s1", TierPro, "o@x", goldenAt); l.License.Features != nil {
+		t.Fatalf("no features: %+v", l.License.Features)
+	}
+	for _, c := range []struct {
+		plan, bp string
+		want     bool
+	}{{"free", "", false}, {"basic", "", false}, {"basic", "broadcaster", false}, {"pro", "", true}, {"pro", "broadcaster", true}} {
+		if got := BroadcastIncluded(c.plan, c.bp); got != c.want {
+			t.Errorf("%s + %q: %v", c.plan, c.bp, got)
+		}
+	}
+}

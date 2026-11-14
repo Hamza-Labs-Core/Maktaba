@@ -3,6 +3,12 @@
 # against the references (Roborazzi, app/src/test/screenshots), Android lint, a debug build, and the release bundle,
 # unsigned, so a change R8 breaks fails here and not on the release tag (play-bundles.yml). It builds on
 # the phone apps' shared core (apps/android/core), so a change there runs this gate too.
+#
+# The app has two store builds (story 58.05): `google` (Google Play, the tasks above) and `amazon`
+# (Fire TV on the Amazon Appstore). The Fire TV build is checked here too: no Google Play code in
+# it (checkAmazonDependencies, and a run with Play Services added that must fail), its merged
+# manifest (checkAmazonManifest), its screenshots, its release APK through R8, and (the second
+# job) its journey on Google's Android TV emulator: sign in by code, play a clip, Back leaves.
 
 name: Android TV app
 
@@ -16,7 +22,7 @@ jobs:
   android-tv:
     name: Android TV app
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 40
     defaults:
       run:
         working-directory: apps/tv/android
@@ -87,7 +93,34 @@ jobs:
         run: |
           set -euo pipefail
           chmod +x ./gradlew
-          ./gradlew --no-daemon --stacktrace :app:testDebugUnitTest :app:verifyRoborazziDebug :app:lintDebug :app:assembleDebug :app:bundleRelease
+          ./gradlew --no-daemon --stacktrace :app:testGoogleDebugUnitTest :app:verifyRoborazziGoogleDebug :app:lintGoogleDebug :app:assembleGoogleDebug :app:bundleGoogleRelease
+
+      # Story 58.05: the Fire TV build. T01 and T05 (no Google Play code, the manifest), its
+      # screens from the amazon flavor (T02: the demo shots and Update this app, en and ar, dark),
+      # and its release APK (R8 on, unsigned).
+      - name: Fire TV build
+        run: |
+          set -euo pipefail
+          ./gradlew --no-daemon --stacktrace :app:checkAmazonDependencies :app:checkAmazonManifest :app:lintAmazonRelease :app:assembleAmazonRelease
+          ./gradlew --no-daemon --stacktrace :app:testAmazonDebugUnitTest \
+            --tests '*.DemoScreenshotTest' --tests '*.CompatScreenTest' --tests '*.FireTvBuildTest' --tests '*.TvDeviceCapsTest' \
+            -Proborazzi.test.verify=true
+
+      # T01's proof: with Play Services added to the Fire TV build, the check must fail, and for
+      # that reason (not a network error).
+      - name: Fire TV build refuses Google Play code
+        run: |
+          set -uo pipefail
+          # the step's shell runs with -e: a failing assignment would end it before the checks
+          status=0
+          out="$(./gradlew --no-daemon --quiet :app:checkAmazonDependencies -Pmaktaba.gmsFixture 2>&1)" || status=$?
+          echo "$out" | tail -20
+          if [ "$status" -eq 0 ]; then
+            echo "::error::checkAmazonDependencies passed with play-services-base in the Fire TV build"
+            exit 1
+          fi
+          grep -q "must not carry Google Play code" <<<"$out" || { echo "::error::checkAmazonDependencies failed for another reason"; exit 1; }
+          grep -q "com.google.android.gms:play-services-base" <<<"$out" || { echo "::error::the failure does not name play-services-base"; exit 1; }
 
       # Story 58.16: every TV job keeps its app logs, passed or failed, 30 days, linked from
       # the job summary. Robolectric's stdout (robolectric.logging=stdout, build.gradle.kts) is
@@ -102,3 +135,117 @@ jobs:
             apps/tv/android/app/build/reports/
             apps/tv/android/app/build/test-results/
             apps/tv/android/app/build/outputs/roborazzi/
+
+  # Story 58.05 T04: the Fire TV build on Google's Android TV emulator (API 30, the level of
+  # Fire OS 8), with Google Play services taken off the image for the run. A mock home on the
+  # device; sign in by code, a clip played by the app's player, Back leaves the app. Logcat for
+  # the whole run is kept in the report. There is no Fire OS emulator: codecs, HDR and Amazon's
+  # remote are the real-device checklist's (docs/stores/amazon.md).
+  firetv-emulator:
+    name: Fire TV build on the Android TV emulator
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: apps/tv/android
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      # The wrapper's jar runs the build: it must be Gradle's own for the version it names,
+      # checked here so a wrong jar fails the PR and not the release (play-bundles.yml).
+      - name: Gradle wrapper is Gradle's
+        working-directory: .
+        # Gradle's published SHA-256 of the jar, fetched with retries
+        run: tools/ci/gradle-wrapper.sh check apps/tv/android
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        # compileSdk 37, as the core's; AGP fetches its build-tools.
+        with:
+          packages: platform-tools platforms;android-37.0
+
+      # Gradle's own cache action (Enhanced Caching: free on a public repository): the Gradle
+      # User Home's dependencies, plugins, wrapper and compiled scripts, restored before the build
+      # so it resolves nothing it resolved before from the network. Each dependency is its own
+      # entry, shared between runs. The entry's key is the wrapper, the version catalogs and the
+      # build scripts (not the commit), so a run on the same inputs reuses it and writes nothing
+      # new; after a version change it restores the newest entry for this job and fetches only
+      # what changed. Only main writes (the action's default): the repository's Actions cache is
+      # over its 10 GB limit, and entries a pull request writes would push main's out sooner.
+      - name: Gradle caches
+        uses: gradle/actions/setup-gradle@v6.4.0
+        env:
+          GRADLE_BUILD_ACTION_CACHE_KEY_JOB_EXECUTION: ${{ hashFiles('apps/android/gradle/libs.versions.toml', 'apps/tv/android/gradle/*.toml', 'apps/tv/android/gradle/wrapper/gradle-wrapper.properties', 'apps/tv/android/**/*.gradle.kts', 'apps/tv/android/gradle.properties', 'apps/android/client/build.gradle.kts', 'apps/android/core/build.gradle.kts') }}
+        with:
+          add-job-summary: on-failure
+          # the step above checks the wrapper jar
+          validate-wrappers: false
+
+      # The wrapper's distribution before the build, so ./gradlew downloads nothing (its own
+      # download, one try with a 10 s timeout, failed the desktop Player on 2026-11-08): cached
+      # by its pin, saved on a miss on any ref, and on a miss fetched with retries and checked
+      # against distributionSha256Sum, then put where the wrapper looks
+      # (tools/ci/gradle-wrapper.sh). Nothing is fetched when the cache above restored it.
+      - name: Gradle distribution's cache key
+        id: gradle-dist-key
+        working-directory: .
+        run: echo "key=$(tools/ci/gradle-wrapper.sh --key apps/tv/android)" >>"$GITHUB_OUTPUT"
+      - id: gradle-dist-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: build/ci-pinned/gradle
+          key: ${{ steps.gradle-dist-key.outputs.key }}
+      - name: Gradle distribution, retried
+        working-directory: .
+        run: tools/ci/gradle-wrapper.sh dist apps/tv/android build/ci-pinned/gradle
+      - name: Save the Gradle distribution
+        if: steps.gradle-dist-cache.outputs.cache-hit != 'true' && hashFiles('build/ci-pinned/gradle/*.zip') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: build/ci-pinned/gradle
+          key: ${{ steps.gradle-dist-key.outputs.key }}
+
+      - name: Build the Fire TV debug APK and its tests
+        run: |
+          set -euo pipefail
+          chmod +x ./gradlew
+          ./gradlew --no-daemon --stacktrace :app:assembleAmazonDebug :app:assembleAmazonDebugAndroidTest
+
+      # the emulator needs /dev/kvm, which the runner has but does not open to the user
+      - name: Enable KVM
+        working-directory: .
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      # a fresh emulator per run (no snapshot), deleted with the runner
+      - name: Journey on the emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 30
+          target: android-tv
+          arch: x86
+          profile: tv_1080p
+          force-avd-creation: true
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+          disable-animations: true
+          working-directory: apps/tv/android
+          script: ../../../tools/ci/firetv-journey.sh
+
+      - name: App logs
+        if: always()
+        uses: ./.github/actions/tv-logs
+        with:
+          name: firetv-emulator-logs
+          what: the emulator's logcat for the whole run, its packages and properties, the instrumented tests' reports
+          path: |
+            apps/tv/android/app/build/emulator/
+            apps/tv/android/app/build/outputs/androidTest-results/
+            apps/tv/android/app/build/reports/androidTests/

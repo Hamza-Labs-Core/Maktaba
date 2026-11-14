@@ -699,6 +699,10 @@ public extension APIClient {
         struct Plugin: Decodable {
             let id: String
             let names: Names?
+            /// where the home got it; "release" is a plugin that came with Maktaba, which is
+            /// not an installed plugin and so no rule's subject (the home leaves those out of
+            /// this list; an entry that says so is dropped here too)
+            let source: String?
         }
         struct A: Decodable {
             let plugins: [Plugin]
@@ -708,7 +712,7 @@ public extension APIClient {
         }
         let a: A = try await get("/api/plugins")
         let language = locale.language.languageCode?.identifier ?? "en"
-        return a.plugins.map { p in
+        return a.plugins.filter { $0.source != "release" }.map { p in
             let name = p.names?.name?[language] ?? p.names?.name?["en"] ?? ""
             return RuleChoice(id: p.id, title: name.isEmpty ? p.id : name)
         }

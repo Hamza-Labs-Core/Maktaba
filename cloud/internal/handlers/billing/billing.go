@@ -47,8 +47,11 @@ type Deps struct {
 	Mailer       mailpkg.Mailer
 	Logger       *slog.Logger
 	Entitlements *entitlement.Signer // nil: entitlement endpoints answer 503
-	WebURL       string
-	Now          func() time.Time
+	// Broadcast is the publishers' plan state and usage (story 50.20); nil: the broadcast
+	// billing routes answer 503.
+	Broadcast *billingpkg.BroadcastStore
+	WebURL    string
+	Now       func() time.Time
 }
 
 func (d *Deps) provider() billingpkg.Provider {
@@ -82,6 +85,7 @@ func Mount(r chi.Router, d *Deps) {
 	r.Post("/v1/billing/portal", d.Portal)
 	r.Get("/v1/billing/usage", d.Usage)
 	mountPAYG(r, d)
+	mountBroadcast(r, d)
 }
 
 // Plans returns the static catalog from billing.Tiers (story 50.19): free, basic and pro. A
@@ -124,7 +128,8 @@ func (d *Deps) Plans(w http.ResponseWriter, _ *http.Request) {
 		})
 	}
 	// payments_enabled false: paid plans are "coming soon".
-	writeJSON(w, http.StatusOK, map[string]any{"plans": out, "payments_enabled": p.Enabled()})
+	// broadcast: Pro's guest sharing and the Broadcaster add-on (story 50.20), prices null: TBD
+	writeJSON(w, http.StatusOK, map[string]any{"plans": out, "payments_enabled": p.Enabled(), "broadcast": BroadcastTiers()})
 }
 
 type subRow struct {

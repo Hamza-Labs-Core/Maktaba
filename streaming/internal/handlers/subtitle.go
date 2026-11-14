@@ -108,8 +108,13 @@ func (h *SubtitleHandler) ServeSidecar(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.URL.Query().Has(hlsTimestampQuery) {
-		// a subtitle rendition's segment (subtitle_playlist.go)
-		body = WithTimestampMap(body)
+		// a subtitle rendition's segment (subtitle_playlist.go), on its session's
+		// segments' timestamps
+		base := hlsTimestampBase
+		if r.URL.Query().Get(hlsTimestampQuery) == hlsFMP4 {
+			base = hlsFMP4TimestampBase
+		}
+		body = withTimestampMapAt(body, base)
 	}
 	w.Header().Set("Content-Type", "text/vtt; charset=utf-8")
 	w.Header().Set("Cache-Control", "public, max-age=86400")

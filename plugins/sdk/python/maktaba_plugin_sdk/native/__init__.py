@@ -4,10 +4,18 @@ from __future__ import annotations
 
 from .codec import decode, encode
 from .records import Record
-from .stmtdb import EngineRelay, PluginRefused, StatementDB, StatementUnregistered, Transport
+from .stmtdb import (
+    DatabaseUnavailable,
+    EngineRelay,
+    PluginRefused,
+    StatementDB,
+    StatementUnregistered,
+    Transport,
+)
 from .transport import UnixTransport
 
 __all__ = [
+    "DatabaseUnavailable",
     "EngineRelay",
     "PluginRefused",
     "Record",

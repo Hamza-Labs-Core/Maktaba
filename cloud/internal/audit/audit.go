@@ -22,11 +22,14 @@ const (
 	ActionAdminDenied = "admin.access_denied"
 	// ActionAdminRequest is every /v1/admin/* request a staff account makes, reads included
 	// (story 50.33 §8): the method, the route pattern, the target and the status.
-	ActionAdminRequest    = "admin.request"
-	ActionAdminViewUser   = "admin.account.view"
-	ActionAdminSuspend    = "admin.account.suspend"
-	ActionAdminUnsuspend  = "admin.account.unsuspend"
-	ActionAdminSetPlan    = "admin.account.set_plan"
+	ActionAdminRequest   = "admin.request"
+	ActionAdminViewUser  = "admin.account.view"
+	ActionAdminSuspend   = "admin.account.suspend"
+	ActionAdminUnsuspend = "admin.account.unsuspend"
+	ActionAdminSetPlan   = "admin.account.set_plan"
+	// ActionAdminBroadcast is a service admin setting a home's broadcast plan or test
+	// publisher grant (story 50.20).
+	ActionAdminBroadcast  = "admin.server.broadcast"
 	ActionAdminBlock      = "admin.abuse.block"
 	ActionAdminUnblock    = "admin.abuse.unblock"
 	ActionAdminErase      = "admin.privacy.erase"
@@ -90,7 +93,7 @@ func WriteTx(ctx context.Context, x execer, e Entry) error {
 	_, err = x.ExecContext(ctx, `
         INSERT INTO audit_log (actor_kind, actor_id, actor_email, action, target_kind, target_id, detail, ip)
         VALUES (COALESCE(NULLIF($8,''), 'user'), NULLIF($1,'')::uuid, NULLIF($2,''), $3, NULLIF($4,''), NULLIF($5,''), $6, NULLIF($7,''))
-    `, e.ActorID, e.ActorEmail, e.Action, e.TargetKind, e.TargetID, dj, e.IP, e.ActorKind)
+    `, e.ActorID, e.ActorEmail, e.Action, e.TargetKind, e.TargetID, string(dj), e.IP, e.ActorKind) // a json column takes a string (db.WithBinaryParameters)
 	return err
 }
 

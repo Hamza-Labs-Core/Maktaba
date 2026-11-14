@@ -38,6 +38,26 @@ scrape_configs:
         labels: {node: node-a}
       - targets: ["${NODE_B_ADDR}:8008"]
         labels: {node: node-b}
+  # the database nodes (story 50.18): their Patroni (/metrics on 8008), listed by the owner in
+  # /etc/prometheus/targets/db-patroni.json ([{"targets": ["<addr>:8008"], "labels": {"node": "db-1"}}, …]);
+  # with none (Phase 1) nothing is scraped
+  - job_name: patroni-db
+    metrics_path: /metrics
+    file_sd_configs:
+      - files: ["/etc/prometheus/targets/db-patroni.json"]
+    relabel_configs:
+      - target_label: job
+        replacement: patroni
+  # PgBouncer on every Patroni node (its exporter on 9127): A and B, and the database nodes from
+  # /etc/prometheus/targets/db-pgbouncer.json
+  - job_name: pgbouncer
+    static_configs:
+      - targets: ["${NODE_A_ADDR}:9127"]
+        labels: {node: node-a}
+      - targets: ["${NODE_B_ADDR}:9127"]
+        labels: {node: node-b}
+    file_sd_configs:
+      - files: ["/etc/prometheus/targets/db-pgbouncer.json"]
   - job_name: postgres
     static_configs:
       - targets: ["${NODE_A_ADDR}:9187"]

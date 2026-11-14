@@ -248,6 +248,10 @@ type EncodePlan struct {
 	// (a burned-in subtitle's subtitles=…): frames on the device come down for
 	// it and go back up (hwdownload … hwupload).
 	Burn string
+	// Segments is an HLS transcode's segment format ("fmp4": init.mp4 and
+	// seg-N.m4s; else TS, seg-N.ts), story 58.02: fMP4 only for a device that
+	// plays it alone.
+	Segments string
 }
 
 // WithVAAPI is the plan for a VA-API verdict on dev: its rungs on h264_vaapi
@@ -528,8 +532,15 @@ func HLSArgs(input, outputDir, masterName string, ladder []Rendition, p EncodePl
 		"-hls_playlist_type", "event",
 		"-hls_list_size", "0",
 		"-hls_flags", "independent_segments",
+	)
+	ext := "ts"
+	if p.Segments == SegmentsFMP4 {
+		ext = "m4s"
+		args = append(args, "-hls_segment_type", "fmp4", "-hls_fmp4_init_filename", "init.mp4")
+	}
+	args = append(args,
 		"-var_stream_map", strings.Join(variants, " "),
-		"-hls_segment_filename", outputDir+"/v%v/seg-%d.ts",
+		"-hls_segment_filename", outputDir+"/v%v/seg-%d."+ext,
 		"-master_pl_name", masterName,
 		outputDir+"/v%v/index.m3u8",
 	)

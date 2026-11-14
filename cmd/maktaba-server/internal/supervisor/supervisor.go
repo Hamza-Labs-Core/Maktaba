@@ -62,6 +62,15 @@ type Process struct {
 	// this child may take (the Python workers: Chroma's native calls hold the GIL,
 	// so /healthz can wait seconds behind a write without the worker being stuck).
 	ProbeTimeout time.Duration
+	// StartupGrace, when longer than the policy's, is how long after a start this child's
+	// failed checks are not counted before its first good one (the Python workers: a cold
+	// start right after the database's restart opens the health port minutes late). The
+	// bound of a running child is another: probe_failures, and HangAfter.
+	StartupGrace time.Duration
+	// HangAfter, when set, is how long this child's checks must have failed in a row,
+	// besides probe_failures of them, before it is taken for hung (the bundled postgres:
+	// a database slow for a minute is not hung, and stopping it costs every connection).
+	HangAfter time.Duration
 	// Check, when set, is the liveness check in place of an HTTP GET of Probe
 	// (postgres speaks its own protocol); Probe then only labels it.
 	Check func(ctx context.Context) error
@@ -88,6 +97,11 @@ type Process struct {
 	// BeforeStart, when set, runs before each start (the bundled postgres: a lock file a
 	// postmaster that did not end cleanly left, pgbundle.Bundle.ClearStaleLock).
 	BeforeStart func()
+	// Settle, when set, runs before each start, after BeforeStart, and returns once what
+	// the last run left behind is gone, or its own limit passed, or ctx ended (the bundled
+	// postgres: backends of a killed postmaster that still hold its shared memory, next to
+	// which no new one starts: pgbundle.Bundle.AwaitShmFree).
+	Settle func(ctx context.Context)
 	// Survives: a TV process (the front door, a slot) that outlives a supervisor
 	// restart for an update (Epic 35 story 35.7: HandOver, WithHandover).
 	Survives bool
@@ -269,6 +283,7 @@ func Build(role Role, opts Options) (Process, error) {
 		Binds: roleBinds(role, opts.Config)}
 	if role == RolePipeline {
 		p.ProbeTimeout = PythonProbeTimeout
+		p.StartupGrace = PythonStartupGrace
 	}
 	return p, nil
 }
@@ -296,6 +311,14 @@ const EnvWheelhousePython = "MAKTABA_WHEELHOUSE_PYTHON"
 // answers once the GIL is free, which a Chroma write into a large index can hold for
 // tens of seconds. A worker killed then, mid-write, leaves the search index unusable.
 const PythonProbeTimeout = 30 * time.Second
+
+// PythonStartupGrace is how long a pipeline worker has from its start to its first
+// answer on /healthz before a failed check counts: it imports its models' libraries and
+// waits for the database first, which right after the database's restart (every worker
+// starting at once, the disk busy with the recovery) took longer than the policy's 60 s:
+// a worker was stopped as hung 80 s into such a start, and the next one came up. Once
+// it has answered, the steady bound holds (probe_failures checks of PythonProbeTimeout).
+const PythonStartupGrace = 5 * time.Minute
 
 // ProbeURL is the liveness endpoint the supervisor polls for a role:
 // the api and streaming admin ports' /healthz, and the pipeline's

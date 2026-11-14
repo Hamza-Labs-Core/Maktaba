@@ -4,6 +4,7 @@ import com.hamzalabs.maktaba.core.api.ApiClient
 import com.hamzalabs.maktaba.core.api.ApiException
 import com.hamzalabs.maktaba.core.api.ClientHeader
 import com.hamzalabs.maktaba.core.api.exchange
+import com.hamzalabs.maktaba.core.compat.CompatHome
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -94,7 +95,14 @@ data class HomeInfo(
     val urls: List<String> = emptyList(),
     /** How a person can sign in here (null: an older home that does not say). */
     @SerialName("sign_in") val signIn: SignInMethods? = null,
-)
+    /** The compatibility contract (story 58.01): 0, 0 and none from a home before it. */
+    @SerialName("api_level") val apiLevel: Int = 0,
+    @SerialName("api_level_oldest") val apiLevelOldest: Int = 0,
+    @SerialName("client_floor") val clientFloor: Map<String, String> = emptyMap(),
+) {
+    /** What the home said of the compatibility contract. */
+    val compat: CompatHome get() = CompatHome(apiLevel, apiLevelOldest, clientFloor)
+}
 
 @Serializable
 data class SignInMethods(val password: Boolean = true, val code: Boolean = false)

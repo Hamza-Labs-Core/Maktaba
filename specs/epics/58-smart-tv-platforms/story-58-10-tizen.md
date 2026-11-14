@@ -127,3 +127,29 @@ The launcher's catalogs (58.09) and these:
 | `.github/workflows/tv-web-release.yml` (new) | `.wgt` build and signing |
 | `.github/workflows/_tv-web.yml` (new) | T01–T03; T04 as a non-required job |
 | `docs/stores/samsung.md` | listing, notes, checklist |
+
+## As built
+
+- **Files.** The player and caps are `apps/tv/web/src/platform/tizen/` (`avplay.ts`, `caps.ts`)
+  beside `platform/tizen.ts`; the package is `apps/tv/web/tizen/` (`config.xml`, `icon.png`,
+  `package_wgt.py`, `lint_wgt.py`, `sign_wgt.sh`); the subtitle layer is `src/subtitles/`, shared
+  with 58.11.
+- **4K.** Samsung's AVPlay reference deprecates `SET_MODE_4K` from Tizen 5.0. The adapter sets
+  `ADAPTIVE_INFO` to `FIXED_MAX_RESOLUTION=3840X2160` in IDLE, before prepare, and falls back to
+  `SET_MODE_4K` when a firmware refuses it. A 2160p source is known from `play`'s optional
+  `height`; without it, an adaptive source on a UHD panel gets the 4K mode.
+- **Privileges.** `webapis.productinfo` and `webapis.network.getIp()` need Samsung's
+  `productinfo` and `network.public` privileges, so `config.xml` lists them with the five above.
+- **Caps.** The audio output mode is `tizen.tvaudiocontrol.getOutputMode()`: Dolby Digital Plus
+  passes AC3 and EAC3 through, Dolby Digital AC3 only, anything else none.
+- **Subtitles.** The size is the optional `subtitle_scale` of `play` and `subtitle` (/tv/'s own
+  subtitle size setting), so `tizen.subtitles.size` is not needed. An embedded track is chosen
+  as `embedded:<n>`.
+- **Audio tracks.** `state` lists the stream's audio tracks (`audio_tracks`, from
+  `getTotalTrackInfo`).
+- **Signing.** Tizen Studio's CLI is pinned by sha256. On a headless runner it keeps certificate
+  passwords in an unlocked keyring. A tag without the project's certificates rehearses signing
+  with a throwaway one, which is never attached to the release.
+- **T04.** The Samsung TV emulator is not run in CI. It needs the TV extension and a KVM
+  runner, has no documented headless mode, and would show less than the Playwright shim does
+  (no AVPlay, no UHD). `docs/stores/samsung.md` says so.

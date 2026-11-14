@@ -141,6 +141,9 @@ func (c *realClient) OpenSession(ctx context.Context, req OpenSessionRequest) (O
 		"force_transcode":  req.ForceTranscode,
 		"force_software":   req.ForceSoftware,
 	}
+	if len(req.DeviceCaps) > 0 {
+		body["device_caps"] = req.DeviceCaps
+	}
 	var resp map[string]any
 	if err := c.invoke(ctx, methodOpenSession, body, &resp); err != nil {
 		return OpenSessionResponse{}, err

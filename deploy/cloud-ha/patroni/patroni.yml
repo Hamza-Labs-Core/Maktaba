@@ -1,6 +1,9 @@
 # Patroni on node ${NODE_NAME} (Epic 50 story 50.07 §2). setup.sh renders it to
 # /etc/patroni/patroni.yml with envsubst; the rehearsal renders the same file.
 #
+# Story 50.18 runs the same file on the three database nodes (db-1, db-2, db-3, setup.sh --role
+# db), where the callback moves the database's Floating IP only.
+#
 # The rule: everything follows the database leader. Patroni holds a 30 s leader lease in etcd
 # (three members: A, B and the witness W, so two nodes can never both win). The leader is the
 # Postgres primary; Patroni's role-change callback moves the Floating IP and starts the cloud
@@ -27,6 +30,11 @@ bootstrap:
     maximum_lag_on_failover: 1048576  # 1 MB: a replica far behind is never promoted
     synchronous_mode: true          # a commit waits for the replica: RPO 0 while both run
     synchronous_mode_strict: false  # the replica gone: the primary keeps taking writes alone
+    # one replica confirms each commit (story 50.18): on the three database nodes Patroni picks a
+    # healthy, caught-up one as the synchronous standby and the other streams asynchronously,
+    # so a replica down for maintenance still leaves a synchronous one (RPO 0 through planned
+    # work); a replica still catching up after a rebuild joins as asynchronous
+    synchronous_node_count: 1
     postgresql:
       use_pg_rewind: true           # an old leader rejoins as a replica, rewound
       use_slots: true
@@ -48,6 +56,9 @@ bootstrap:
         wal_sender_timeout: 10s
         wal_receiver_timeout: 10s
         password_encryption: scram-sha-256
+        # a transaction left open pins a server connection of PgBouncer's transaction pool
+        # (story 50.18); the migrator's own open transaction turns this off for itself
+        idle_in_transaction_session_timeout: 60s
   initdb:
     - encoding: UTF8
     - data-checksums

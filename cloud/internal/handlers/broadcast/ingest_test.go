@@ -42,7 +42,7 @@ func setup(t *testing.T, withKey bool) (*chi.Mux, bc.Key) {
 	t.Helper()
 	seed := sha256.Sum256([]byte("maktaba-broadcast TEST KEY, never for production: handler"))
 	k, _ := bc.KeyFromSeed(seed[:])
-	d := &Deps{
+	d := &IngestDeps{
 		Agents:    fakeAgents{"pro-home": "s3cret", "free-home": "s3cret"},
 		Plans:     fakePlans{"pro-home": {Publisher: "user-pro", MaxRungs: 2, MaxTopKbps: 3000}},
 		IngestURL: "https://ingest.maktaba.tv",
@@ -52,7 +52,7 @@ func setup(t *testing.T, withKey bool) (*chi.Mux, bc.Key) {
 		d.Key = &k
 	}
 	r := chi.NewRouter()
-	MountAgent(r, d)
+	MountIngest(r, d)
 	return r, k
 }
 

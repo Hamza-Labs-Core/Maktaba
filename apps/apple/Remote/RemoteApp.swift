@@ -7,7 +7,7 @@ import SwiftUI
 /// a sidebar on iPad).
 @main
 struct RemoteApp: App {
-    @State private var session = AppSession(app: Bundle.main.bundleIdentifier ?? "com.hamzalabs.maktaba.remote")
+    @State private var session = AppSession(app: Bundle.main.bundleIdentifier ?? "com.hamzalabs.maktaba.remote", compat: .current) // story 58.01
     @AppStorage(ThemeMode.storageKey) private var theme = ThemeMode.system
 
     init() {

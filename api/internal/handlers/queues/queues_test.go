@@ -141,6 +141,7 @@ func TestEveryRouteIsAdminOnly(t *testing.T) {
 		{"POST", "/api/queues/failures/actions", "/api/queues/failures/actions", `{"action":"retry","job_ids":[1]}`},
 		{"POST", "/api/queues/pause-all", "/api/queues/pause-all", ""},
 		{"POST", "/api/queues/resume-all", "/api/queues/resume-all", ""},
+		{"POST", "/api/queues/workers/restart", "/api/queues/workers/restart", ""},
 		{"GET", "/api/queues/{stage}", "/api/queues/probe", ""},
 		{"PATCH", "/api/queues/{stage}", "/api/queues/probe", `{"enabled":false}`},
 		{"GET", "/api/queues/{stage}/rate", "/api/queues/probe/rate", ""},

@@ -3,6 +3,7 @@ package com.hamzalabs.maktaba.player
 import android.app.Application
 import com.hamzalabs.maktaba.core.api.ClientHeader
 import com.hamzalabs.maktaba.core.api.capabilitiesGate
+import com.hamzalabs.maktaba.core.compat.CompatApp
 import com.hamzalabs.maktaba.core.api.init
 import com.hamzalabs.maktaba.core.diagnostics.AppLog
 import com.hamzalabs.maktaba.core.diagnostics.CrashLog
@@ -30,6 +31,7 @@ class PlayerApplication : Application() {
         AppSession(
             PreferencesStore(this, "session"), MainScope(), { home -> keystoreTokens(this, packageName, home) },
             capabilitiesGate = capabilitiesGate(BuildConfig.CAPABILITIES_GATE), // story 51.11's build switch
+            compatApp = CompatApp.fromClientHeader(ClientHeader.value), // story 58.01
         )
     }
     /** Work that outlives a screen (closing a stream session). */

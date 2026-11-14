@@ -20,13 +20,59 @@ import { noteCloudRequestFailed } from "./cloudStatus";
 import { actionRequestId, noteRequest } from "./requestIds";
 import { routePattern } from "./errorLog";
 
-const BASE = (import.meta.env.VITE_API_BASE ?? "") as string;
+let BASE = (import.meta.env.VITE_API_BASE ?? "") as string;
+
+/**
+ * The home's address, set at run time by the TV build when it is bundled into the
+ * Samsung or LG launcher (Epic 58 story 58.09: the page is the package's, the API the
+ * home's). Elsewhere the base is the build's (same origin).
+ */
+export function setApiBase(base: string): void {
+  BASE = base.replace(/\/+$/, "");
+}
 
 /** The header every call carries its action's id in (Epic 53 story 53.08). */
 export const REQUEST_ID_HEADER = "X-Request-Id";
 
 /** The URL of an API path for something the browser loads itself (an iframe, a link). */
 export const apiUrl = (path: string): string => `${BASE}${path}`;
+
+/**
+ * Bearer sign-in (Epic 58 story 58.09). In the Samsung and LG launcher, /tv/ runs in an
+ * iframe of a file:// page: the browser never sends its SameSite=Lax session cookie
+ * there, so the TV signs in by code and keeps the home's tokens in the home's own origin
+ * (src/tv/session.ts). With a BearerAuth set, every call carries `Authorization: Bearer`,
+ * sends no cookie, and a 401 asks for a new access token once and tries again.
+ */
+export interface BearerAuth {
+  /** The access token (null: not signed in). */
+  token(): string | null;
+  /** A new access token after a 401; true when there is one. */
+  refresh(): Promise<boolean>;
+  /** The body POST /api/auth/logout needs (the refresh token), and forgetting the tokens. */
+  logoutBody(): { refresh_token: string } | undefined;
+  clear(): void;
+}
+
+let bearer: BearerAuth | null = null;
+
+export function setBearerAuth(b: BearerAuth | null): void {
+  bearer = b;
+}
+
+export function bearerAuth(): BearerAuth | null {
+  return bearer;
+}
+
+/** The Authorization header of a hand-rolled fetch, when signed in by bearer. */
+export function authHeaders(): Record<string, string> {
+  const tok = bearer?.token();
+  return tok ? { Authorization: `Bearer ${tok}` } : {};
+}
+
+function credentialsMode(): RequestCredentials {
+  return bearer ? "omit" : "include";
+}
 
 // Must equal the server's `auth.CSRFHeader` and the CORS allow-list.
 const CSRF_HEADER = "X-Maktaba-CSRF";
@@ -258,25 +304,33 @@ export async function request<T>(path: string, opts: RequestOptions = {}): Promi
     }
   }
 
-  if (MUTATING.has(method)) {
+  if (MUTATING.has(method) && !bearer) {
     const tok = csrfToken();
     if (tok) {
       headers.set(CSRF_HEADER, tok);
     }
   }
 
-  let res: Response;
-  try {
+  const send = () => {
+    const tok = bearer?.token();
+    if (tok) headers.set("Authorization", `Bearer ${tok}`);
     // a home reconnecting behind the relay is waited for (Epic 50 story 50.13)
-    res = await rideOutReconnect(() =>
+    return rideOutReconnect(() =>
       fetch(`${BASE}${path}`, {
         ...opts,
         method,
         headers,
         body,
-        credentials: "include",
+        credentials: credentialsMode(),
       })
     );
+  };
+
+  let res: Response;
+  try {
+    res = await send();
+    // a bearer sign-in's access token ran out: a new one, and once more
+    if (res.status === 401 && bearer?.token() && (await bearer.refresh())) res = await send();
   } catch (e) {
     // Network-level failure (offline, DNS, CORS) never reaches the
     // status-based branch below — log it so it isn't swallowed.
@@ -351,8 +405,8 @@ export async function downloadBlob(path: string, fallbackName: string): Promise<
   let res: Response;
   try {
     res = await fetch(`${BASE}${path}`, {
-      credentials: "include",
-      headers: { Accept: "*/*", [CLIENT_HEADER]: clientHeaderValue() },
+      credentials: credentialsMode(),
+      headers: { Accept: "*/*", [CLIENT_HEADER]: clientHeaderValue(), ...authHeaders() },
     });
   } catch (e) {
     logApiError("GET", path, 0, e instanceof Error ? e.message : "network error");
@@ -409,15 +463,16 @@ export function postBeacon(path: string, body: unknown): void {
   const headers = new Headers({
     "Content-Type": "application/json",
     [CLIENT_HEADER]: clientHeaderValue(),
+    ...authHeaders(),
   });
   const tok = csrfToken();
-  if (tok) headers.set(CSRF_HEADER, tok);
+  if (tok && !bearer) headers.set(CSRF_HEADER, tok);
   try {
     void fetch(`${BASE}${path}`, {
       method: "POST",
       headers,
       body: JSON.stringify(body),
-      credentials: "include",
+      credentials: credentialsMode(),
       keepalive: true,
     }).catch(() => {});
   } catch {
@@ -431,14 +486,14 @@ export function postBeacon(path: string, body: unknown): void {
 // (keepalive fetch with the CSRF header; navigator.sendBeacon can do neither
 // DELETE nor headers). Epic 32.9: a remote TV session ends on page unload.
 export function deleteBeacon(path: string): void {
-  const headers = new Headers({ [CLIENT_HEADER]: clientHeaderValue() });
+  const headers = new Headers({ [CLIENT_HEADER]: clientHeaderValue(), ...authHeaders() });
   const tok = csrfToken();
-  if (tok) headers.set(CSRF_HEADER, tok);
+  if (tok && !bearer) headers.set(CSRF_HEADER, tok);
   try {
     void fetch(`${BASE}${path}`, {
       method: "DELETE",
       headers,
-      credentials: "include",
+      credentials: credentialsMode(),
       keepalive: true,
     }).catch(() => {});
   } catch {
@@ -470,8 +525,9 @@ export function uploadWithProgress<T>(
   return new Promise<T>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open("POST", `${BASE}${path}`);
-    xhr.withCredentials = true;
+    xhr.withCredentials = !bearer;
     xhr.setRequestHeader("Accept", "application/json");
+    for (const [k, v] of Object.entries(authHeaders())) xhr.setRequestHeader(k, v);
     if (contentType && !(form instanceof FormData))
       xhr.setRequestHeader("Content-Type", contentType);
     xhr.setRequestHeader(CLIENT_HEADER, clientHeaderValue());

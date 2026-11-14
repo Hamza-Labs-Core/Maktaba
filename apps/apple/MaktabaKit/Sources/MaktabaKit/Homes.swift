@@ -22,6 +22,9 @@ public struct Home: Codable, Hashable, Identifiable, Sendable {
     public var lastUsed: Date?
     /// The home's id in Maktaba Cloud, when it was chosen through the cloud (story 42.7).
     public var cloudServerID: String?
+    /// Whether the last person signed in here from this app runs the home (nil: no one yet):
+    /// Update the home (story 58.01) speaks to an admin or to anyone else before sign-in.
+    public var admin: Bool?
 
     public init(url: URL, name: String, homeID: String? = nil, addresses: [URL]? = nil, cloudServerID: String? = nil) {
         self.url = url
@@ -217,6 +220,46 @@ public final class AppSession {
     private let app: String
     private let defaults: UserDefaults
     private let probe: HomeProbe
+
+    /// This app's build for the compatibility contract (Epic 58 story 58.01): each time the app
+    /// reaches a home it decides, from the home's API level and client floor, whether to carry
+    /// on or show Update the home or Update this app (`compatBlock`). nil: no check.
+    private let compatApp: CompatApp?
+    /// Update the home or Update this app, when this app and the home in use are too far
+    /// apart; nil: carry on.
+    public private(set) var compatBlock: CompatBlock?
+
+    /// Whether this app can carry on at `home`, from what it said of itself; else
+    /// `compatBlock` says why. Always true without `compatApp`.
+    private func admit(_ home: Home, _ reached: ReachedHome) -> Bool {
+        guard let compatApp else { return true }
+        let verdict = Compat.decide(reached.compat, compatApp)
+        if verdict == .ok { return true }
+        block(verdict, home, version: reached.version)
+        return false
+    }
+
+    private func block(_ verdict: CompatVerdict, _ home: Home, version: String?) {
+        compatBlock = CompatBlock(verdict: verdict, homeURL: home.url, homeName: home.name, homeVersion: version,
+                                  admin: home.admin, platform: compatApp?.platform ?? "")
+        restoring = false
+        publish(nil)
+    }
+
+    /// Whether `error` is the home refusing this build (426 `client_too_old`, below its
+    /// client floor): then Update this app shows.
+    private func refusedAsTooOld(_ error: Error) -> Bool {
+        guard case .status(426, _, _)? = error as? APIError, let current else { return false }
+        block(.updateApp, current, version: nil)
+        return true
+    }
+
+    /// Asks the home in use again, after it or the app was updated (the pages' Try again).
+    public func recheckCompat() {
+        guard let current else { return }
+        compatBlock = nil
+        use(current)
+    }
     /// Ask a home picked from a list how it signs in (off in tests without a network).
     private let asksHomes: Bool
     private var connectTask: Task<Void, Never>?
@@ -230,8 +273,10 @@ public final class AppSession {
 
     public init(app: String, defaults: UserDefaults = .standard, probe: HomeProbe = HomeProbe(), asksHomes: Bool = true,
                 homeSession: URLSession = PinnedTrust.session, cloudSession: URLSession? = nil, clock: ConnectClock = .system,
-                discovery: (any HomeDiscovering)? = nil, capabilities: CapabilitiesStore? = nil, parental: Bool = false) {
+                discovery: (any HomeDiscovering)? = nil, capabilities: CapabilitiesStore? = nil, parental: Bool = false,
+                compat: CompatApp? = nil) {
         self.app = app
+        compatApp = compat
         usesParental = parental
         self.capabilities = capabilities ?? CapabilitiesStore()
         self.discovery = discovery ?? BonjourDiscovery.forThisApp()
@@ -266,8 +311,11 @@ public final class AppSession {
 
     /// `quietCloud`: with no tokens here (or none that still work), sign in through Maktaba
     /// Cloud without asking when the cloud vouches for this address (`cloudServer(for:)`).
-    private func use(_ home: Home, ask: Bool, quietCloud: Bool = true) {
+    /// `checked`: the home's compatibility was just decided from its answer (`allowed`: carry
+    /// on), so it is not asked again.
+    private func use(_ home: Home, ask: Bool, quietCloud: Bool = true, checked: Bool = false, allowed: Bool = true) {
         let home = remember(home)
+        if !checked { compatBlock = nil }
         current = home
         defaults.set(home.url, forKey: "home")
         // another home's answer is not this one's
@@ -279,13 +327,31 @@ public final class AppSession {
         signInMethods = nil
         restoreProblem = nil
         // checked at once: no sign-in form flashes while it is
-        restoring = tokens.access != nil
+        restoring = allowed && tokens.access != nil
         attempt = 1
         publish(restoring ? .reconnecting(name: home.name) : nil)
-        if restoring {
-            Task { await restore(thenCloud: quietCloud) }
-        } else if quietCloud {
-            Task { await signInQuietlyThroughCloud() }
+        let signIn = { [weak self] in
+            guard let self else { return }
+            if tokens.access != nil {
+                Task { await self.restore(thenCloud: quietCloud) }
+            } else if quietCloud {
+                Task { await self.signInQuietlyThroughCloud() }
+            }
+        }
+        if !allowed {
+            // the page shows instead: no sign-in is tried
+        } else if compatApp != nil, !checked {
+            // story 58.01: the home's level decides before its kept sign-in is used; a home
+            // that does not answer is not decided here (the restore says why it failed)
+            let client = self.client
+            Task { [probe] in
+                let answer = await probe.check(home.url)
+                guard self.client === client else { return }
+                if case let .success(r) = answer, !self.admit(home, r) { return }
+                signIn()
+            }
+        } else {
+            signIn()
         }
         if ask {
             // how it signs in, and its id when the list did not say
@@ -419,8 +485,12 @@ public final class AppSession {
             for u in r.addresses + candidates where u != r.url && !others.contains(u) { others.append(u) }
             let fallback = r.url.host() ?? r.url.absoluteString
             if let saved, saved != r.url { move(saved, to: r.url) }
-            use(Home(url: r.url, name: r.name ?? name ?? fallback, homeID: r.id ?? homeID,
-                     addresses: others.isEmpty ? nil : others), ask: false)
+            var found = Home(url: r.url, name: r.name ?? name ?? fallback, homeID: r.id ?? homeID,
+                             addresses: others.isEmpty ? nil : others)
+            found.admin = homes.first { $0.url == r.url }?.admin
+            // the home just answered: its level decides here, with no second request
+            let allowed = admit(found, r)
+            use(found, ask: false, checked: true, allowed: allowed)
             signInMethods = r.signIn
             return nil
         case let .failure(f):
@@ -533,6 +603,7 @@ public final class AppSession {
     }
 
     public func switchHome() {
+        compatBlock = nil
         connectTask?.cancel()
         looking = nil
         publish(nil)
@@ -560,6 +631,8 @@ public final class AppSession {
             guard self.client === client else { throw error }
             if Log.isCancellation(error) {
                 publish(nil)
+            } else if refusedAsTooOld(error) {
+                // Update this app shows
             } else if case .status(401, _, _)? = error as? APIError {
                 publish(.failed(reason: .wrongPassword, tried: []))
             } else {
@@ -635,6 +708,7 @@ public final class AppSession {
                     return
                 }
                 guard !Log.isCancellation(error) else { return publish(nil) }
+                if refusedAsTooOld(error) { return }
                 let f = HomeFailure(error)
                 if case let .busy(after?) = f.kind {
                     publish(.homeBusy(retryAt: clock.now().addingTimeInterval(TimeInterval(after))))
@@ -796,6 +870,7 @@ public final class AppSession {
         restoreProblem = nil
         publish(nil)
         named(me.homeName)
+        if let url = current?.url, current?.admin != me.user.isAdmin { update(url) { $0.admin = me.user.isAdmin } }
         cloudScope = me.cloudScope
         phase = .signedIn(me.user)
         // what this home has on, asked at once and every 5 minutes (story 51.11)

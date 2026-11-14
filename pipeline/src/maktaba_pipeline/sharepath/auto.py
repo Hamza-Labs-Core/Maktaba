@@ -221,7 +221,7 @@ async def _exclusive(db: Any) -> AsyncIterator[bool]:
     that dies releases it with its connection)."""
     pool = getattr(db, "_pool", None) if is_pg(db) else None
     if pool is not None:
-        async with pool.acquire() as conn:
+        async with db.connection() as conn:  # bounded (runtime.Database)
             got = bool(await conn.fetchval("SELECT pg_try_advisory_lock(hashtext($1))", LOCK_KEY))
             try:
                 yield got

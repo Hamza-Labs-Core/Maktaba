@@ -66,9 +66,23 @@ public struct ConnectStrings: Sendable {
         // story 50.13: the cloud down
         case cloudHomesSaved, cloudHomesSavedOld, cloudSignInCloudDown
         case homeRefusedCloud, homeLocked, homeMustChangePassword, homeNotInCloud, homeOther
+        // story 58.01: the app and the home too far apart
+        case compatUpdateHomeTitle, compatUpdateHomeAdmin, compatUpdateHomeViewer, compatHomeVersion
+        case compatUpdateAppTitle, compatUpdateAppWhy, compatUpdateAppApple, compatUpdateAppTV
+        // story 58.03: a TV's code from Maktaba Cloud, and the apps signed in by a code
+        case approveCloudConfirm, approveCloudConfirmNoCountry, approveCloudNeedsRemote, approveCloudDone
+        case appSignInsTitle, appSignInsHint, appSignInViaCloudCode, appSignOut, appSignInLastUsed
     }
 
     static let en: [Key: String] = [
+        .compatUpdateHomeTitle: "This home needs an update",
+        .compatUpdateHomeAdmin: "Update Maktaba on %@ in Admin → Updates, then come back.",
+        .compatUpdateHomeViewer: "Ask the person who runs %@ to update Maktaba.",
+        .compatHomeVersion: "%@ runs Maktaba %@.",
+        .compatUpdateAppTitle: "Update this app",
+        .compatUpdateAppWhy: "%@ no longer works with this version of the app.",
+        .compatUpdateAppApple: "Open the App Store, find Maktaba and choose Update.",
+        .compatUpdateAppTV: "Open the App Store on this Apple TV, find Maktaba and choose Update.",
         .onThisNetwork: "On this network",
         .searching: "Looking for homes on this network…",
         .onThisNetworkHint: "A home on this Wi-Fi or Ethernet shows here. Not there? Type its address or scan its QR code.",
@@ -184,9 +198,26 @@ public struct ConnectStrings: Sendable {
         .homeMustChangePassword: "The home asks you to change your password first. Sign in to it in a browser, change it, then try again.",
         .homeNotInCloud: "This home is not connected to Maktaba Cloud.",
         .homeOther: "The home answered %@.",
+        .approveCloudConfirm: "Is this your TV? %@, in %@.",
+        .approveCloudConfirmNoCountry: "Is this your TV? %@.",
+        .approveCloudNeedsRemote: "A code from Maktaba Cloud needs remote access turned on for this home. Use the code from the home instead.",
+        .approveCloudDone: "Approved. The TV is signing in.",
+        .appSignInsTitle: "App sign-ins",
+        .appSignInsHint: "TVs and apps signed in to the home as you with a code. Sign out any you do not recognise.",
+        .appSignInViaCloudCode: "%@ TV, via Maktaba Cloud code",
+        .appSignOut: "Sign out",
+        .appSignInLastUsed: "last used %@",
     ]
 
     static let ar: [Key: String] = [
+        .compatUpdateHomeTitle: "يحتاج هذا الجهاز الرئيسي إلى تحديث",
+        .compatUpdateHomeAdmin: "حدِّث مكتبة على %@ من الإدارة ← التحديثات، ثم عُد.",
+        .compatUpdateHomeViewer: "اطلب من مسؤول %@ تحديث مكتبة.",
+        .compatHomeVersion: "يعمل %@ بإصدار مكتبة %@.",
+        .compatUpdateAppTitle: "حدِّث هذا التطبيق",
+        .compatUpdateAppWhy: "لم يعد %@ يعمل مع هذا الإصدار من التطبيق.",
+        .compatUpdateAppApple: "افتح App Store، وابحث عن مكتبة واختر «تحديث».",
+        .compatUpdateAppTV: "افتح App Store على جهاز Apple TV هذا، وابحث عن مكتبة واختر «تحديث».",
         .onThisNetwork: "على هذه الشبكة",
         .searching: "جارٍ البحث عن أجهزة رئيسية على هذه الشبكة…",
         .onThisNetworkHint: "يظهر هنا الجهاز الرئيسي الموجود على شبكة Wi-Fi أو Ethernet هذه. لا تجده؟ اكتب عنوانه أو امسح رمز QR الخاص به.",
@@ -302,6 +333,15 @@ public struct ConnectStrings: Sendable {
         .homeMustChangePassword: "يطلب الجهاز الرئيسي تغيير كلمة مرورك أولًا. سجّل الدخول إليه في المتصفح وغيّرها، ثم حاول مرة أخرى.",
         .homeNotInCloud: "هذا الجهاز الرئيسي غير متصل بـ Maktaba Cloud.",
         .homeOther: "أجاب الجهاز الرئيسي بـ %@.",
+        .approveCloudConfirm: "هل هذا تلفازك؟ %@، في %@.",
+        .approveCloudConfirmNoCountry: "هل هذا تلفازك؟ %@.",
+        .approveCloudNeedsRemote: "يحتاج الرمز القادم من Maktaba Cloud إلى تفعيل الوصول عن بُعد لهذا المنزل. استخدم رمز المنزل بدلًا منه.",
+        .approveCloudDone: "تمت الموافقة. التلفاز يسجّل الدخول الآن.",
+        .appSignInsTitle: "عمليات تسجيل دخول التطبيقات",
+        .appSignInsHint: "أجهزة التلفاز والتطبيقات التي سجّلت الدخول إلى الجهاز الرئيسي باسمك برمز. سجّل خروج أي منها لا تعرفه.",
+        .appSignInViaCloudCode: "تلفاز %@، عبر رمز Maktaba Cloud",
+        .appSignOut: "تسجيل الخروج",
+        .appSignInLastUsed: "آخر استخدام %@",
     ]
 
     /// Why an address did not lead to a home.

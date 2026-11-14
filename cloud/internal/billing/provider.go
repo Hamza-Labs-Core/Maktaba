@@ -45,6 +45,35 @@ type Provider interface {
 	ReportUsage(ctx context.Context, r UsageReport) error
 	SetItems(ctx context.Context, subscriptionID string, payg bool, extraStreams int) error
 	ReportedUsage(ctx context.Context, subscriptionID string, month time.Time) (int64, error)
+
+	// Story 50.20 §4: the broadcast items of a home on the subscription. SetBroadcastItems sets
+	// item 4 (Broadcaster), adds or removes item 5 (pay-as-you-go viewer-hours) and sets items
+	// 6 and 7's quantities (extra channels, extra 100 viewers; prorated); the webhook then
+	// confirms. ReportBroadcastUsage sends one hour of item 5 (its ID is the idempotency key);
+	// ReportedBroadcastUsage is the viewer-hours the provider recorded for a home in a month.
+	SetBroadcastItems(ctx context.Context, subscriptionID string, items BroadcastItems) error
+	ReportBroadcastUsage(ctx context.Context, r BroadcastUsageReport) error
+	ReportedBroadcastUsage(ctx context.Context, subscriptionID, serverID string, month time.Time) (int64, error)
+}
+
+// BroadcastItems are one home's broadcast items on its owner's subscription (story 50.20 §4).
+type BroadcastItems struct {
+	ServerID        string
+	Broadcaster     bool
+	PAYG            bool
+	ExtraChannels   int
+	ExtraViewers100 int
+}
+
+// BroadcastUsageReport is one hour of a publisher's pay-as-you-go viewer-hours.
+type BroadcastUsageReport struct {
+	// ID is <publisher>:<month>:<hour>: the provider's idempotency key, the same on a retry.
+	ID             string
+	SubscriptionID string
+	CustomerID     string
+	ServerID       string
+	Hours          int64
+	At             time.Time
 }
 
 // UsageReport is one hour of a home's pay-as-you-go GB (story 50.19 §6).
@@ -129,6 +158,9 @@ type Event struct {
 	// quantity (extra streams).
 	PAYG         bool
 	ExtraStreams int
+	// Story 50.20 §4: the subscription's broadcast items, per home. Nil: the event says nothing
+	// about them (the homes keep theirs); a home missing from a non-nil list has none.
+	Broadcast []BroadcastItems
 
 	// Payment events.
 	InvoiceID   string
@@ -184,5 +216,15 @@ func (None) ReportUsage(context.Context, UsageReport) error { return ErrNotConfi
 func (None) SetItems(context.Context, string, bool, int) error { return ErrNotConfigured }
 
 func (None) ReportedUsage(context.Context, string, time.Time) (int64, error) {
+	return 0, ErrNotConfigured
+}
+
+func (None) SetBroadcastItems(context.Context, string, BroadcastItems) error { return ErrNotConfigured }
+
+func (None) ReportBroadcastUsage(context.Context, BroadcastUsageReport) error {
+	return ErrNotConfigured
+}
+
+func (None) ReportedBroadcastUsage(context.Context, string, string, time.Time) (int64, error) {
 	return 0, ErrNotConfigured
 }

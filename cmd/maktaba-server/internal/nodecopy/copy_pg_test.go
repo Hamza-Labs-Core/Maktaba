@@ -17,7 +17,6 @@ import (
 	"database/sql"
 	"fmt"
 	"io"
-	"net"
 	"net/url"
 	"os"
 	"os/exec"
@@ -32,17 +31,8 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbundle"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/testport"
 )
-
-func freePort(t *testing.T) int {
-	t.Helper()
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer l.Close()
-	return l.Addr().(*net.TCPAddr).Port
-}
 
 // server is a postgres the test runs (the home, or the copy as the supervisor would).
 type server struct {
@@ -173,7 +163,7 @@ func TestCopyFollowsTheHome(t *testing.T) {
 
 	// ---- the home: the bundled Postgres's own preparation, on loopback ----
 	b := pgbundle.Bundle{Home: pgHome, Data: filepath.Join(tmp, "home"), Keys: filepath.Join(tmp, "home-keys"),
-		Backups: filepath.Join(tmp, "backups"), Port: freePort(t), TLS: true}
+		Backups: filepath.Join(tmp, "backups"), Port: testport.Free(t), TLS: true}
 	if err := b.Prepare(ctx, io.Discard); err != nil {
 		t.Fatalf("prepare the home: %v", err)
 	}
@@ -245,7 +235,7 @@ func TestCopyFollowsTheHome(t *testing.T) {
 	// ---- this machine's copy, kept by the Manager alone ----
 	c := Copy{NodeID: nodeID, HomeDSN: nodeDSN, Migrate: migrate,
 		DB: pgbundle.Bundle{Data: filepath.Join(tmp, "node-pg"), Keys: filepath.Join(tmp, "node-keys"),
-			Backups: filepath.Join(tmp, "node-backups"), Port: freePort(t)}}
+			Backups: filepath.Join(tmp, "node-backups"), Port: testport.Free(t)}}
 	cp := &server{}
 	var mlog bytes.Buffer
 	var mlogMu sync.Mutex

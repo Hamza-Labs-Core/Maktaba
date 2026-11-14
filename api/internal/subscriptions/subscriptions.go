@@ -112,10 +112,15 @@ const (
 	FeatureMultiUser      Feature = "multi_user"
 	FeatureAdvancedMetric Feature = "advanced_analytics"
 	FeatureCloudBackup    Feature = "cloud_metadata_backup"
+	// FeatureBroadcast lets the home publish channels to people outside it (Epic 50 story
+	// 50.20). No tier grants it: the cloud lists it in a home's licence for Pro (guest
+	// sharing) and for the Broadcaster add-on, once the broadcasting gate lets that home
+	// broadcast. How much it may publish is the cloud's and the edge's to enforce.
+	FeatureBroadcast Feature = "broadcast"
 )
 
 // AllFeatures lists every gated feature, in a stable order.
-var AllFeatures = []Feature{FeatureCloudRelay, FeatureMultiUser, FeatureCloudBackup, FeatureAdvancedMetric, FeatureFederation}
+var AllFeatures = []Feature{FeatureCloudRelay, FeatureMultiUser, FeatureCloudBackup, FeatureAdvancedMetric, FeatureFederation, FeatureBroadcast}
 
 // FreeFeatures are the features the free tier always grants. New
 // features default to premium-only; deliberately copy here to enable

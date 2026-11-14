@@ -8,6 +8,7 @@ package grpcsrv
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -17,6 +18,7 @@ import (
 	"google.golang.org/grpc/metadata"
 
 	mlog "github.com/Hamza-Labs-Core/Maktaba/shared/log/go"
+	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/capability"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/timelimit"
 )
 
@@ -103,6 +105,17 @@ func (s *Server) handleOpenSession(ctx context.Context, m map[string]any) (map[s
 		ForceTranscode: jsonBool(m["force_transcode"]),
 		BurnSubs:       jsonBool(m["burn_subs"]),
 		AcceptQueue:    jsonBool(m["accept_queue"]),
+	}
+	if raw, ok := m["device_caps"]; ok && raw != nil {
+		b, err := json.Marshal(raw)
+		if err != nil {
+			return errResp(err)
+		}
+		caps, err := capability.ParseDeviceCaps(b)
+		if err != nil {
+			return errResp(err)
+		}
+		req.DeviceCaps = caps
 	}
 	resp, err := s.OpenSession(ctx, req)
 	if err != nil {

@@ -1,0 +1,333 @@
+/*
+ * Maktaba's Cast receiver (story 58.07): 10-foot, dark, Ink & Brass (web/src/styles/tokens.css).
+ * Logical properties only (inline/block, start/end), so dir="rtl" mirrors every screen. The
+ * fonts are the web's: "Maktaba Text" (IBM Plex Sans Arabic, subset) and "Maktaba Display"
+ * (Amiri Bold, subset), SIL OFL 1.1 (fonts/OFL.txt, fonts/OFL-Amiri.txt). Laid out for
+ * 1920×1080 with the TV's title-safe margin.
+ */
+
+@font-face {
+  font-family: "Maktaba Text";
+  font-weight: 400;
+  font-display: swap;
+  src: url("/r/fonts/maktaba-text-400-latin.woff2") format("woff2");
+  unicode-range: U+0020-007E, U+00A0-00FF, U+2000-206F, U+2190-2193, U+2212, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Maktaba Text";
+  font-weight: 400;
+  font-display: swap;
+  src: url("/r/fonts/maktaba-text-400-arabic.woff2") format("woff2");
+  unicode-range: U+0600-06FF, U+200C-200F, U+2066-2069, U+FB50-FDFF, U+FE70-FEFF;
+}
+@font-face {
+  font-family: "Maktaba Text";
+  font-weight: 600;
+  font-display: swap;
+  src: url("/r/fonts/maktaba-text-600-latin.woff2") format("woff2");
+  unicode-range: U+0020-007E, U+00A0-00FF, U+2000-206F, U+2190-2193, U+2212, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Maktaba Text";
+  font-weight: 600;
+  font-display: swap;
+  src: url("/r/fonts/maktaba-text-600-arabic.woff2") format("woff2");
+  unicode-range: U+0600-06FF, U+200C-200F, U+2066-2069, U+FB50-FDFF, U+FE70-FEFF;
+}
+@font-face {
+  font-family: "Maktaba Display";
+  font-weight: 700;
+  font-display: swap;
+  src: url("/r/fonts/maktaba-display-700-latin.woff2") format("woff2");
+  unicode-range: U+0020-007E, U+00A0-00FF, U+2000-206F;
+}
+@font-face {
+  font-family: "Maktaba Display";
+  font-weight: 700;
+  font-display: swap;
+  src: url("/r/fonts/maktaba-display-700-arabic.woff2") format("woff2");
+  unicode-range: U+0600-06FF, U+200C-200F, U+2066-2069, U+FB50-FDFF, U+FE70-FEFF;
+}
+
+:root {
+  --bg: #0b111c;
+  --fg: #e8ecf3;
+  --muted: #a9b3c4;
+  --subtle: #131d2e;
+  --accent: #e3b252;
+  --accent-fg: #1a1408;
+  --border: #22304a;
+  --scrim: rgb(11 17 28 / 0.88);
+  --safe-block: 54px;
+  --safe-inline: 96px;
+  color-scheme: dark;
+}
+
+html,
+body {
+  margin: 0;
+  block-size: 100%;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: "Maktaba Text", "Noto Sans Arabic", system-ui, sans-serif;
+  font-size: 28px;
+  line-height: 1.4;
+  overflow: hidden;
+}
+
+cast-media-player {
+  position: fixed;
+  inset: 0;
+  --theme-hue: 40;
+  --progress-color: var(--accent);
+  --splash-image: none;
+  --logo-image: none;
+}
+
+#maktaba {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+}
+
+.mk {
+  position: absolute;
+  inset: 0;
+}
+
+.mk > section,
+.mk > aside {
+  display: none;
+}
+
+h1 {
+  font-family: "Maktaba Display", "Maktaba Text", serif;
+  font-weight: 700;
+  margin: 0;
+}
+
+/* idle: the mark and one line */
+.mk[data-screen="idle"] .mk-idle {
+  display: flex;
+  position: absolute;
+  inset: 0;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 32px;
+  background: radial-gradient(ellipse at 50% 40%, #0a1834, var(--bg) 70%);
+}
+.mk-mark {
+  inline-size: 220px;
+  block-size: 220px;
+}
+.mk-idle-text {
+  margin: 0;
+  font-size: 40px;
+  color: var(--muted);
+}
+
+/* loading, and buffering over the picture */
+.mk[data-screen="loading"] .mk-loading,
+.mk.mk-buffering[data-screen="playing"] .mk-loading {
+  display: flex;
+  position: absolute;
+  inset: 0;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 28px;
+}
+.mk[data-screen="loading"] .mk-loading {
+  background: var(--bg);
+}
+.mk.mk-buffering[data-screen="playing"] .mk-loading-text {
+  display: none;
+}
+.mk-spinner {
+  inline-size: 72px;
+  block-size: 72px;
+  border-radius: 50%;
+  border: 6px solid var(--border);
+  border-block-start-color: var(--accent);
+  animation: mk-spin 1s linear infinite;
+}
+@keyframes mk-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mk-spinner {
+    animation: none;
+  }
+}
+.mk-loading-text {
+  margin: 0;
+  font-size: 36px;
+  max-inline-size: 70%;
+  text-align: center;
+}
+
+/* the overlay: title, series, chapter, the bar and the position, the Remote badge */
+.mk[data-screen="playing"].mk-show .mk-overlay,
+.mk[data-screen="playing"].mk-has-next .mk-overlay {
+  display: grid;
+}
+.mk-overlay {
+  position: absolute;
+  inset-inline: 0;
+  inset-block-end: 0;
+  padding-block: 120px var(--safe-block);
+  padding-inline: var(--safe-inline);
+  grid-template-columns: 1fr;
+  gap: 20px;
+  background: linear-gradient(to top, var(--scrim), transparent);
+}
+.mk-badge {
+  position: fixed;
+  inset-block-start: var(--safe-block);
+  inset-inline-end: var(--safe-inline);
+  padding-block: 8px;
+  padding-inline: 20px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-weight: 600;
+  font-size: 24px;
+}
+.mk-badge[hidden] {
+  display: none;
+}
+.mk-title {
+  font-size: 56px;
+  line-height: 1.2;
+}
+.mk-subtitle,
+.mk-chapter {
+  margin: 0;
+  color: var(--muted);
+  font-size: 30px;
+}
+.mk-progress {
+  display: flex;
+  align-items: center;
+  gap: 28px;
+}
+.mk-track {
+  flex: 1;
+  block-size: 8px;
+  border-radius: 4px;
+  background: var(--border);
+  overflow: hidden;
+}
+.mk-bar {
+  display: block;
+  block-size: 100%;
+  inline-size: 0;
+  background: var(--accent);
+}
+.mk-pos {
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+/* Up next */
+.mk[data-screen="playing"].mk-has-next .mk-upnext {
+  display: flex;
+}
+.mk-upnext {
+  position: absolute;
+  inset-block-end: 220px;
+  inset-inline-end: var(--safe-inline);
+  flex-direction: column;
+  gap: 6px;
+  max-inline-size: 560px;
+  padding-block: 20px;
+  padding-inline: 28px;
+  border-radius: 16px;
+  border-inline-start: 6px solid var(--accent);
+  background: var(--subtle);
+}
+.mk-upnext-label {
+  color: var(--accent);
+  font-weight: 600;
+  font-size: 24px;
+}
+.mk-upnext-title {
+  font-size: 32px;
+}
+
+/* paused: the poster and the description */
+.mk[data-screen="paused"] .mk-paused {
+  display: flex;
+  position: absolute;
+  inset: 0;
+  align-items: center;
+  gap: 64px;
+  padding-block: var(--safe-block);
+  padding-inline: var(--safe-inline);
+  background: var(--scrim);
+}
+.mk-poster {
+  inline-size: 400px;
+  aspect-ratio: 2 / 3;
+  object-fit: cover;
+  border-radius: 16px;
+  background: var(--subtle);
+}
+.mk-poster[hidden] {
+  display: none;
+}
+.mk-paused-info {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  max-inline-size: 1000px;
+}
+.mk-paused-label {
+  color: var(--accent);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.mk-paused-title {
+  font-size: 64px;
+  line-height: 1.15;
+}
+.mk-paused-text {
+  margin: 0;
+  color: var(--muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 6;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* errors and "Update the home" */
+.mk[data-screen="error"] .mk-error,
+.mk[data-screen="update"] .mk-error {
+  display: flex;
+  position: absolute;
+  inset: 0;
+  align-items: center;
+  justify-content: center;
+  padding-inline: var(--safe-inline);
+  background: var(--bg);
+}
+.mk-error-text {
+  margin: 0;
+  max-inline-size: 1300px;
+  padding-block: 40px;
+  padding-inline: 48px;
+  border-radius: 20px;
+  border-inline-start: 8px solid var(--accent);
+  background: var(--subtle);
+  font-size: 40px;
+  text-align: start;
+}
+
+[hidden] {
+  display: none !important;
+}

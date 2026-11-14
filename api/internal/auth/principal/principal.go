@@ -36,7 +36,20 @@ const (
 	// principal is the token's owner; library access is resolved from
 	// the DB ACL at request time, same as the cookie path.
 	SourcePAT Source = "pat"
+
+	// SourceCast is a cast grant (Epic 58 story 58.07): the token a signed-in
+	// sender mints for a Cast receiver, scoped to the items cast (Cast names
+	// them). It is never an admin, and api/internal/castgrant's gate lets it
+	// reach only the routes a receiver needs, for those items.
+	SourceCast Source = "cast"
 )
+
+// CastScope is what a cast grant names (Epic 58 story 58.07): one video, or one
+// play queue of the grant's user. Exactly one of the two is set.
+type CastScope struct {
+	VideoID string
+	QueueID string
+}
 
 // Principal is the authenticated identity for a single request.
 type Principal struct {
@@ -75,6 +88,11 @@ type Principal struct {
 	// credential of its own that would outlive the link (ViaCloud).
 	CloudScope string
 
+	// Restricted is the token's `rst` claim: a TV signed in with a code from Maktaba Cloud
+	// (Epic 58 story 58.03). It is never an admin (the verifier clears IsAdmin) and mints no
+	// credential of its own (MintsNoCredential).
+	Restricted bool
+
 	// RefreshFamily is the sign-in an access token belongs to: the family of
 	// the refresh token it was minted beside (the `fam` claim). "" for a web
 	// session, an API token, the admin token and a token minted before the
@@ -86,6 +104,10 @@ type Principal struct {
 	// device gave when the token was minted (nil: none). parental.Cache.For
 	// holds the request to it as well as to the account's policy.
 	AgeCeiling *int
+
+	// Cast is set for a cast grant (SourceCast): the items it names. Nil for
+	// every other credential.
+	Cast *CastScope
 }
 
 // Cloud link scopes (Epic 42 story 42.7).
@@ -119,6 +141,20 @@ func (p *Principal) ApplyCloudScope(scope string, all []string) {
 		}
 	}
 }
+
+// ApplyRestricted marks a restricted sign-in (the token's `rst` claim): never an admin, whatever
+// is_admin says, and reading only the libraries its token names.
+func (p *Principal) ApplyRestricted(rst bool) {
+	if p == nil || !rst {
+		return
+	}
+	p.Restricted, p.IsAdmin, p.AccessAllLibraries = true, false, false
+}
+
+// MintsNoCredential reports whether the principal may not mint a credential of its own (an API
+// token, a paired or approved device, a new password, a cloud link): a sign-in through Maktaba
+// Cloud (ViaCloud), or a restricted one (a TV signed in with a cloud code, Restricted).
+func (p *Principal) MintsNoCredential() bool { return p.ViaCloud() || (p != nil && p.Restricted) }
 
 // ViaCloud reports whether the principal signed in through Maktaba Cloud.
 // Such a sign-in may not mint a credential that outlives its link (an API

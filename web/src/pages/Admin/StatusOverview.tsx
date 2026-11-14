@@ -45,6 +45,7 @@ const NAMED = new Set([
   "tv_slot",
   "tv_tuner",
   "host_access",
+  "host_load",
   "plugin_runners",
 ]);
 

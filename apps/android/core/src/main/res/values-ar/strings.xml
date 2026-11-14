@@ -132,6 +132,11 @@
     <string name="approve_already">تمت الموافقة على هذا الرمز من قبل.</string>
     <string name="approve_cloud">وافق من المنزل: اتصل بشبكة منزلك أولًا.</string>
     <string name="approve_another">الموافقة على جهاز آخر</string>
+    <string name="approve_cloud_confirm">هل هذا تلفازك؟ %1$s، في %2$s.</string>
+    <string name="approve_cloud_confirm_no_country">هل هذا تلفازك؟ %1$s.</string>
+    <string name="approve_cloud_a_tv">تلفاز</string>
+    <string name="approve_cloud_needs_remote">يحتاج الرمز القادم من Maktaba Cloud إلى تفعيل الوصول عن بُعد لهذا المنزل. استخدم رمز المنزل بدلًا منه.</string>
+    <string name="approve_cloud_done">تمت الموافقة. التلفاز يسجّل الدخول الآن.</string>
     <!-- story 42.7: through Maktaba Cloud -->
     <string name="cloud_title">عبر سحابة مكتبة</string>
     <string name="cloud_intro">بعيدًا عن المنزل، أو منزل على شبكة أخرى: سجّل الدخول بحساب سحابة مكتبة وافتح منزلًا مرتبطًا به. وكل منزل يقرّر ما يمكنك فعله فيه.</string>
@@ -390,4 +395,14 @@
     <string name="live_parental_not_available">غير متاح</string>
     <string name="live_parental_slate">غير متاح الآن. تعود هذه القناة عند بدء البرنامج التالي.</string>
     <string name="live_parental_back">تعود عند %1$s</string>
+    <!-- عقد التوافق (الملحمة 58، القصة 58.01): التطبيق والجهاز الرئيسي متباعدان -->
+    <string name="compat_update_home_title">يحتاج هذا الجهاز الرئيسي إلى تحديث</string>
+    <string name="compat_update_home_admin">حدِّث مكتبة على %1$s من الإدارة ← التحديثات، ثم عُد.</string>
+    <string name="compat_update_home_viewer">اطلب من مسؤول %1$s تحديث مكتبة.</string>
+    <string name="compat_home_version">يعمل %1$s بإصدار مكتبة %2$s.</string>
+    <string name="compat_update_app_title">حدِّث هذا التطبيق</string>
+    <string name="compat_update_app_why">لم يعد %1$s يعمل مع هذا الإصدار من التطبيق.</string>
+    <string name="compat_update_app_android">افتح Google Play، وابحث عن مكتبة واختر «تحديث».</string>
+    <string name="compat_update_app_androidtv">افتح Google Play على هذا التلفاز، وابحث عن مكتبة واختر «تحديث».</string>
+    <string name="compat_update_app_firetv">افتح متجر Amazon Appstore، وابحث عن مكتبة واختر «تحديث».</string>
 </resources>

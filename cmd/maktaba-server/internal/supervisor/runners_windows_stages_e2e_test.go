@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net"
 	"net/http/httptest"
 	"os"
 	"os/exec"
@@ -20,6 +19,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbin"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbundle"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/testport"
 )
 
 // stageE2ECase is one job of the end to end: a first-party stage on the fixture video of
@@ -182,7 +182,7 @@ func TestFirstPartyStagesRunInTheirRunnersOnWindows(t *testing.T) {
 		t.Fatal(err)
 	}
 	b := pgbundle.Bundle{Home: home, Data: filepath.Join(dir, "pg"), Keys: filepath.Join(dir, "keys"),
-		Backups: filepath.Join(dir, "backups"), Port: freePort(t)}
+		Backups: filepath.Join(dir, "backups"), Port: testport.Free(t)}
 	if err := b.Prepare(ctx, io.Discard); err != nil {
 		t.Fatal(err)
 	}
@@ -459,16 +459,6 @@ func makeStageFixture(t *testing.T, ffmpeg, folder string) {
 		"-i", srt, "-map", "0:v", "-map", "1:a", "-map", "2:s", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac",
 		"-c:s", "mov_text", "-metadata:s:s:0", "language=ara", filepath.Join(folder, "moov_end.mp4"))
 	run("-f", "lavfi", "-i", "testsrc=size=1280x720", "-frames:v", "1", "-update", "1", filepath.Join(folder, "moov_end.jpg"))
-}
-
-func freePort(t *testing.T) int {
-	t.Helper()
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer l.Close()
-	return l.Addr().(*net.TCPAddr).Port
 }
 
 func waitReady(t *testing.T, b pgbundle.Bundle) {

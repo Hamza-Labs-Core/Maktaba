@@ -34,6 +34,7 @@ export const KNOWN_FLAGS = [
   "cloud_metadata_backup",
   "advanced_analytics",
   "federation",
+  "broadcast",
   "flags_admin",
   "early_access",
 ] as const;

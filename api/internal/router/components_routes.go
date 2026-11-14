@@ -67,7 +67,7 @@ var CoreRoutes = componentTable{
 	{Prefix: "/api/videos"}, {Prefix: "/api/libraries"}, {Prefix: "/api/collections"}, {Prefix: "/api/items/"},
 	{Prefix: "/api/series"}, {Prefix: "/api/seasons/"}, {Prefix: "/api/tags"}, {Prefix: "/api/speakers"},
 	{Prefix: "/api/thumbnails/"}, {Prefix: "/api/enrichment/"}, {Prefix: "/api/recommendations"},
-	{Prefix: "/api/stream/"},
+	{Prefix: "/api/stream/"}, {Prefix: "/api/cast/"},
 	// processing: the queues show what is parked; settings and models stay reachable
 	{Prefix: "/api/queues"}, {Prefix: "/api/queue/"}, {Prefix: "/api/jobs"}, {Prefix: "/api/pools"},
 	{Prefix: "/api/transcription/"}, {Prefix: "/api/reports"}, {Prefix: "/api/models"},

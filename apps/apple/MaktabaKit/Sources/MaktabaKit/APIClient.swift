@@ -147,11 +147,12 @@ public actor APIClient {
     /// until then). hls.js retries those; AVPlayer gives up, so the player waits here first:
     /// the master, then its first rendition, asked again after 0.5 s, 1 s, then every 2 s
     /// for `timeout` in all (then `APIError.notReady`). Any other answer fails at once.
+    /// The waits and the deadline both use `clock` (tests pass one that never waits, so the
+    /// attempts do not depend on how fast the machine is).
     public func waitUntilPlayable(_ url: URL, headers: [String: String], timeout: Duration = .seconds(30),
-                                  sleep: @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }) async throws {
+                                  clock: some Swift.Clock<Duration> = ContinuousClock()) async throws {
         guard url.path().hasSuffix(".m3u8") else { return }
-        let started = ContinuousClock.now
-        var waited = Duration.zero
+        let deadline = clock.now.advanced(by: timeout)
         var delay = Duration.milliseconds(500)
         func fetch(_ u: URL) async throws -> (Int, Data, Int?) {
             var r = URLRequest(url: u)
@@ -183,11 +184,9 @@ public actor APIClient {
             let answer = APIError.status(code, text, retryAfter: retryAfter)
             // not written yet (or a plain 404 from something in between): ask again
             guard code == 404, answer.kind == .notReady || answer.problem == nil else { throw answer }
-            guard waited + delay <= timeout, ContinuousClock.now - started < timeout else {
-                throw APIError.notReady(text)
-            }
-            try await sleep(delay)
-            waited += delay
+            // a wait that would end past the deadline is not started
+            guard clock.now.advanced(by: delay) <= deadline else { throw APIError.notReady(text) }
+            try await clock.sleep(for: delay)
             delay = min(delay * 2, .seconds(2))
         }
     }

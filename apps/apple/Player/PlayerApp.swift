@@ -17,7 +17,8 @@ struct PlayerApp: App {
         // Epic 57: the Player asks the home for the account's parental limit and tells it
         // what the device says about its user's age (the source is set before any sign-in
         // is restored, so the first sign-in already sends it)
-        let session = AppSession(app: Bundle.main.bundleIdentifier ?? "com.hamzalabs.maktaba.player", parental: true)
+        let session = AppSession(app: Bundle.main.bundleIdentifier ?? "com.hamzalabs.maktaba.player", parental: true,
+                                 compat: .current) // story 58.01
         session.ageSignal.use(DeviceAgeSignal.source())
         // when the account's limit changes, what the Player kept for it on the device goes;
         // set here, before a sign-in is restored, so the first answer's change is heard

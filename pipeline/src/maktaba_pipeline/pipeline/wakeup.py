@@ -11,8 +11,9 @@ Three implementations live here:
 - :class:`PgListenWakeup` — Postgres LISTEN on ``jobs.new`` (the
   channel pinned in :data:`maktaba_pipeline.db.pubsub.JOBS_NEW`) plus
   a poll-tick safety net at :attr:`poll_sec`. The poll catches the
-  rare cases where a notification is dropped or the listener silently
-  reconnects, and bounds the worst-case latency to ``poll_sec``.
+  rare cases where a notification is dropped, and bounds the worst-case
+  latency to ``poll_sec``. A LISTEN connection the server ended (a
+  database restart) is opened again at the next tick.
 - :class:`PubsubWakeup` — for SQLite mode (no NOTIFY) and for tests.
   Subscribes to the in-process :class:`PubsubBus` from Story 6.1's
   ``pipeline.db.pubsub`` and ticks at ``poll_sec``.
@@ -34,6 +35,7 @@ from collections.abc import AsyncIterator
 from typing import Any, Protocol, runtime_checkable
 
 from ..db.pubsub import JOBS_CONTROL, JOBS_NEW, PubsubBus, get_bus
+from ..log import get_logger
 
 __all__ = [
     "PgListenWakeup",
@@ -41,6 +43,12 @@ __all__ = [
     "PubsubWakeup",
     "WakeupSource",
 ]
+
+
+_log = get_logger()
+
+#: how long opening (or closing) the LISTEN connection may hold a tick of the claim loop
+LISTEN_CONNECT_TIMEOUT_SEC = 5.0
 
 
 @runtime_checkable
@@ -164,9 +172,10 @@ class PgListenWakeup:
         #: ``jobs.control`` wakes the loop when a pool size, stage or global pause changed
         self._extra = extra_channels
         self._stop = asyncio.Event()
+        self._listen_failed = False
+        self._listened = False
 
     async def signals(self) -> AsyncIterator[None]:
-        listener = await self._db.acquire_listener()
         events: asyncio.Queue[None] = asyncio.Queue()
 
         def _on_notify(*_args: Any) -> None:
@@ -176,11 +185,19 @@ class PgListenWakeup:
             with contextlib.suppress(asyncio.QueueFull):
                 events.put_nowait(None)
 
-        await listener.add_listener(self._channel, _on_notify)
-        for extra in self._extra:
-            await listener.add_listener(extra, _on_notify)
+        listener: Any = None
         try:
             while not self._stop.is_set():
+                if listener is None or listener.is_closed():
+                    # the server ended the connection (a database restart): a closed
+                    # connection delivers nothing and raises nothing, so the loop would
+                    # run on its poll alone from then on. Listen again; until that works
+                    # the poll is the wakeup
+                    await self._unlisten(listener, _on_notify)
+                    listener = await self._listen(_on_notify)
+                    if listener is not None:
+                        # what was notified while nothing listened: claim now
+                        _on_notify()
                 await _race(
                     events.get(),
                     asyncio.sleep(self.poll_sec),
@@ -192,17 +209,48 @@ class PgListenWakeup:
                     return
                 yield None
         finally:
-            with contextlib.suppress(Exception):
-                # Tear-down is best-effort: the listener may already
-                # have been closed, the connection may have died, or
-                # the wrapper may have removed it under us.
-                await listener.remove_listener(self._channel, _on_notify)
-                for extra in self._extra:
-                    await listener.remove_listener(extra, _on_notify)
-            with contextlib.suppress(Exception):
-                # its own connection, outside the pool: closed here, not whenever the
-                # garbage collector aborts it
-                await listener.close()
+            await self._unlisten(listener, _on_notify)
+
+    async def _listen(self, on_notify: Any) -> Any:
+        """A connection listening on the channels, or None when the database does not
+        take one now (said once per outage; tried again at the next tick)."""
+        conn: Any = None
+        try:
+            conn = await asyncio.wait_for(self._db.acquire_listener(), LISTEN_CONNECT_TIMEOUT_SEC)
+            await conn.add_listener(self._channel, on_notify)
+            for extra in self._extra:
+                await conn.add_listener(extra, on_notify)
+            # a connection the server ends wakes the loop, which listens again at once
+            # (not a poll later, up to claim_poll_max_sec on a quiet queue)
+            conn.add_termination_listener(on_notify)
+        except Exception as exc:  # noqa: BLE001 - the poll still finds every job
+            if conn is not None:
+                with contextlib.suppress(Exception):
+                    await conn.close()
+            if not self._listen_failed:
+                self._listen_failed = True
+                _log.warning("claim_listen_failed", error=f"{type(exc).__name__}: {exc}")
+            return None
+        if self._listen_failed or self._listened:
+            _log.info("claim_listen_restored")
+        self._listen_failed = False
+        self._listened = True
+        return conn
+
+    async def _unlisten(self, listener: Any, on_notify: Any) -> None:
+        if listener is None:
+            return
+        with contextlib.suppress(Exception):
+            # Tear-down is best-effort: the listener may already
+            # have been closed, the connection may have died, or
+            # the wrapper may have removed it under us.
+            await listener.remove_listener(self._channel, on_notify)
+            for extra in self._extra:
+                await listener.remove_listener(extra, on_notify)
+        with contextlib.suppress(Exception):
+            # its own connection, outside the pool: closed here, not whenever the
+            # garbage collector aborts it
+            await asyncio.wait_for(listener.close(), LISTEN_CONNECT_TIMEOUT_SEC)
 
     async def aclose(self) -> None:
         self._stop.set()

@@ -86,7 +86,7 @@ func putServer(ctx context.Context, tx execer, installID string, r *ServerReport
             apps = EXCLUDED.apps, features = EXCLUDED.features, received_at = EXCLUDED.received_at,
             bundle = EXCLUDED.bundle, components = EXCLUDED.components`,
 		installID, r.Day, r.Version, r.OS, r.Arch, r.InstallKind, r.LibrarySize, r.Libraries,
-		r.Users, r.Machines, apps, features, now, r.Bundle, pq.Array(nonNilStrings(r.Components))); err != nil {
+		r.Users, r.Machines, string(apps), string(features), now, r.Bundle, pq.Array(nonNilStrings(r.Components))); err != nil {
 		return err
 	}
 	// The resent day replaces the day's server errors too.
@@ -132,7 +132,7 @@ func putApp(ctx context.Context, tx execer, installID string, a *AppBatch, now t
 		}
 		if _, err := tx.ExecContext(ctx, `
             INSERT INTO telemetry_app_events (install_id, app, app_version, kind, payload, ts)
-            VALUES ($1,$2,$3,$4,$5,$6)`, installID, a.App, a.AppVersion, e.Kind, p, e.TS); err != nil {
+            VALUES ($1,$2,$3,$4,$5,$6)`, installID, a.App, a.AppVersion, e.Kind, string(p), e.TS); err != nil {
 			return err
 		}
 	}

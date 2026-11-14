@@ -3,6 +3,7 @@ package com.hamzalabs.maktaba.tv
 import android.app.Application
 import com.hamzalabs.maktaba.core.api.ClientHeader
 import com.hamzalabs.maktaba.core.api.capabilitiesGate
+import com.hamzalabs.maktaba.core.compat.CompatApp
 import com.hamzalabs.maktaba.core.api.init
 import com.hamzalabs.maktaba.core.diagnostics.AppLog
 import com.hamzalabs.maktaba.core.diagnostics.CrashLog
@@ -27,12 +28,17 @@ class MaktabaTVApp : Application() {
         AppLog.install(this, tv = true) // its log lines too, in the shared shape (Epic 53 story 53.01)
         // what crashed since the last start (and, on Android 11+, its ANRs and native crashes) is kept (53.14)
         com.hamzalabs.maktaba.core.diagnostics.CrashReports.collect(this)
-        ClientHeader.init(this) // X-Maktaba-Client names this app (Epic 44)
+        ClientHeader.init(this, tvPlatform = BuildConfig.TV_PLATFORM) // X-Maktaba-Client names this app (Epic 44) and its store build (58.05)
     }
 
     val session: AppSession by lazy {
         // story 51.11's build switch
-        AppSession(PreferencesStore(this, "session"), MainScope(), ::tokens, capabilitiesGate = capabilitiesGate(BuildConfig.CAPABILITIES_GATE))
+        AppSession(
+            PreferencesStore(this, "session"), MainScope(), ::tokens,
+            capabilitiesGate = capabilitiesGate(BuildConfig.CAPABILITIES_GATE),
+            // story 58.01: the compatibility contract, as X-Maktaba-Client names this app
+            compatApp = CompatApp.fromClientHeader(ClientHeader.value),
+        )
     }
 
     /** Work that outlives a screen (a stopped video's last position, its session's close). */

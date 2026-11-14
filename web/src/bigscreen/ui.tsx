@@ -3,7 +3,8 @@
 // error, empty). Every control is a real <button> carrying data-bs-focus (a
 // stable id, for Back's focus restore) inside a data-bs-group (its row or
 // grid), so the focus engine, the browser's Tab and a screen reader agree.
-import { useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { apiUrl, authHeaders, bearerAuth } from "../lib/api";
 import { useI18n } from "../lib/i18n";
 import { videoTitle } from "../lib/videoTitle";
 import { watchedFraction, type VideoCard } from "../lib/browse";
@@ -84,15 +85,60 @@ export function lrm(text: string): string {
   return `\u200E${text}\u200E`;
 }
 
+/**
+ * The src an <img> can load. Signed in by bearer (a TV in its launcher, Epic 58 story
+ * 58.09) an <img> sends no token and no cookie reaches it, so the home's own pictures are
+ * fetched with the token and shown from a blob URL (revoked when the picture goes).
+ */
+/** The URL of a home's own picture (same origin as the API), or null for any other address. */
+export function ownPictureUrl(src: string | null): string | null {
+  if (!src || !src.startsWith("/")) return null;
+  try {
+    const api = new URL(apiUrl("/"), window.location.href);
+    // parsed, not matched: "/\t/host" and "/\\host" are another site to the URL parser
+    const u = new URL(apiUrl(src), window.location.href);
+    return u.origin === api.origin ? u.href : null;
+  } catch {
+    return null;
+  }
+}
+
+export function useImageSrc(src: string | null): { src: string | null; failed: boolean } {
+  const bearer = !!bearerAuth()?.token();
+  const own = bearer ? ownPictureUrl(src) : null;
+  const [blob, setBlob] = useState<{ for: string; url: string | null } | null>(null);
+  useEffect(() => {
+    if (!own || !src) return;
+    let url: string | null = null;
+    let live = true;
+    void fetch(own, { credentials: "omit", headers: authHeaders() })
+      .then((r) => (r.ok ? r.blob() : Promise.reject(new Error(String(r.status)))))
+      .then((b) => {
+        if (!live) return;
+        url = URL.createObjectURL(b);
+        setBlob({ for: src, url });
+      })
+      .catch(() => live && setBlob({ for: src, url: null }));
+    return () => {
+      live = false;
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, [own, src]);
+  if (!own) return { src, failed: false };
+  if (!blob || blob.for !== src) return { src: null, failed: false };
+  return { src: blob.url, failed: blob.url === null };
+}
+
 /** A picture that leaves a plain panel when it does not load (a video without a thumbnail yet). */
 export function Picture({ src, className }: { src: string | null; className?: string }) {
   const [broken, setBroken] = useState(false);
-  if (!src || broken)
+  const shown = useImageSrc(src);
+  if (!src || broken || shown.failed || !shown.src)
     return <span className={`bs-pic bs-pic--none ${className ?? ""}`} aria-hidden />;
   return (
     <img
       className={`bs-pic ${className ?? ""}`}
-      src={src}
+      src={shown.src}
       alt=""
       loading="lazy"
       onError={() => setBroken(true)}

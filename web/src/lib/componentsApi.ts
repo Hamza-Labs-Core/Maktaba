@@ -153,6 +153,8 @@ export interface ComponentView {
   progress?: InstallProgress | null;
   /** a plugin entry's own name and summary by language (Epic 54) */
   names?: Record<string, Record<string, string>> | null;
+  /** the plugin whose page shows this component (story 54.44); absent for a part of Maktaba */
+  plugin?: string;
 }
 
 export interface AuditRow {

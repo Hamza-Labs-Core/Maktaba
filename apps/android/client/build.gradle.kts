@@ -33,7 +33,9 @@ dependencies {
     testImplementation(libs.kotlinx.coroutines.test)
 }
 
-// DemoLibraryTest reads the demo library (story 60.09) from the repository at test time
+// DemoLibraryTest reads the demo library (story 60.09), DeviceCapsTest the playback vectors (story
+// 58.02) from the repository at test time
 tasks.test {
+    inputs.files(file("../../../shared/playback/caps-vectors.json")).withPathSensitivity(PathSensitivity.RELATIVE).withPropertyName("capsVectors")
     inputs.dir(file("../../../tests/fixtures/demo-library")).withPathSensitivity(PathSensitivity.RELATIVE).withPropertyName("demoLibrary")
 }

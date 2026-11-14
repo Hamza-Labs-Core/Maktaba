@@ -23,6 +23,8 @@ import (
 	"encoding/json"
 	"strings"
 	"time"
+
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/billing"
 )
 
 // Home tiers (Epic 16 story 16.2): free is single-user and LAN-only,
@@ -115,15 +117,23 @@ func sign(priv ed25519.PrivateKey, v any) (string, error) {
 // home, so revoking it revokes that home's plan license for good.
 func PlanLicenseID(serverID string) string { return "cloud-" + serverID }
 
+// FeatureBroadcast is the licence flag that lets a home publish channels to people outside it
+// (story 50.20 §1; the home's subscriptions.FeatureBroadcast). The tier matrix never grants it:
+// the cloud lists it in Features for a Pro home (guest sharing) or a Broadcaster home, once the
+// broadcasting gate lets that home broadcast. How much it may publish stays the cloud's and the
+// edge's to enforce.
+const FeatureBroadcast = "broadcast"
+
 // ForPlan is the license a home's owner's plan grants, issued for the
-// day of now.
-func ForPlan(priv ed25519.PrivateKey, serverID, tier, holder string, now time.Time) (License, error) {
+// day of now, with any features the plan adds beyond its tier.
+func ForPlan(priv ed25519.PrivateKey, serverID, tier, holder string, now time.Time, features ...string) (License, error) {
 	day := now.UTC().Truncate(24 * time.Hour)
 	return Sign(priv, Inner{
 		LicenseID: PlanLicenseID(serverID),
 		Tier:      tier,
 		IssuedAt:  day,
 		ExpiresAt: day.Add(PlanLicenseTTL),
+		Features:  features,
 		ServerID:  serverID,
 		Holder:    holder,
 	})
@@ -137,4 +147,11 @@ func newID() (string, error) {
 		return "", err
 	}
 	return "lic_" + strings.ToLower(base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(b)), nil
+}
+
+// BroadcastIncluded says whether a home on plan with broadcastPlan (servers.broadcast_plan)
+// may publish at all: Pro (guest sharing) and Pro with the Broadcaster add-on; Free and Basic
+// don't (story 50.20 §1).
+func BroadcastIncluded(plan, broadcastPlan string) bool {
+	return billing.BroadcastFor(plan, broadcastPlan) != nil
 }

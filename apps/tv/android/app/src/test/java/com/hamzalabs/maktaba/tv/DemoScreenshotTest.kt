@@ -15,9 +15,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
+import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performSemanticsAction
@@ -74,12 +76,14 @@ import java.util.Collections
 import java.util.TimeZone
 
 /**
- * Android TV's product screenshots for maktaba.tv (story 60.09): Home, the player and the live
- * guide on a 1080p TV, in English and Arabic, on the demo library (`tests/fixtures/demo-library`):
- * every answer and picture comes from its route table, its posters are the films' own art, its
- * times follow the library's pinned clock. Written to
- * `src/test/screenshots/demo/androidtv-<screen>-<lang>.png`; CI's `verifyRoborazziDebug` fails
- * when one no longer matches.
+ * Android TV's product screenshots for maktaba.tv (story 60.09): Home, a library, the player and
+ * the live guide on a 1080p TV, in English and Arabic, on the demo library
+ * (`tests/fixtures/demo-library`): every answer and picture comes from its route table, its
+ * posters are the films' own art, its times follow the library's pinned clock. Written to
+ * `src/test/screenshots/demo/<build>-<screen>-<lang>.png`, `<build>` being `androidtv` for the
+ * Google Play build and `firetv` for the Amazon one (story 58.05 T02: the same screens from the
+ * Fire TV build); CI's `verifyRoborazziGoogleDebug` and `verifyRoborazziAmazonDebug` fail when
+ * one no longer matches.
  *
  * The player: Media3 cannot decode a stream on the JVM, so the shot is the TV player's own
  * transport ([PlayerView], set up as `PlayerScreen` sets it up) paused on Sintel at its resume
@@ -143,7 +147,23 @@ class DemoScreenshotTest {
 
     private fun shoot(screen: String) {
         compose.waitForIdle()
-        compose.onRoot().captureRoboImage("src/test/screenshots/demo/androidtv-$screen-${lang()}.png", roborazziOptions = options)
+        compose.onRoot().captureRoboImage("src/test/screenshots/demo/${BuildConfig.TV_PLATFORM}-$screen-${lang()}.png", roborazziOptions = options)
+    }
+
+    private fun libraryScreen() {
+        val first = Json.parseToJsonElement(String(demo.answer("GET", "/api/libraries")!!.body)).jsonObject["items"]!!.jsonArray.first().jsonObject
+        val name = first["name"]!!.jsonPrimitive.content
+        signedIn()
+        val libraries = compose.activity.getString(R.string.tab_libraries)
+        until("the Libraries tab") { compose.onAllNodes(hasText(libraries), useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+        // a TV tab is chosen when it takes focus (the D-pad)
+        compose.onNode(hasText(libraries)).performSemanticsAction(SemanticsActions.RequestFocus)
+        until("the library $name") { compose.onAllNodes(hasText(name), useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+        compose.onAllNodes(hasText(name) and hasClickAction()).onFirst().performSemanticsAction(SemanticsActions.OnClick)
+        // the library opens on its Recommended shelves (its hub)
+        val hub = "/api/libraries/${first["id"]!!.jsonPrimitive.content}/hub"
+        until("the library's shelves, every poster drawn") { hub in paths && count("poster-shown") >= 4 && count("poster-loading") == 0 }
+        shoot("library")
     }
 
     private fun homeScreen() {
@@ -219,6 +239,12 @@ class DemoScreenshotTest {
 
     @Test @Config(qualifiers = "ar-$TV")
     fun playerArabic() = playerScreen()
+
+    @Test @Config(qualifiers = TV)
+    fun libraryEnglish() = libraryScreen()
+
+    @Test @Config(qualifiers = "ar-$TV")
+    fun libraryArabic() = libraryScreen()
 
     @Test @Config(qualifiers = TV)
     fun guideEnglish() = guideScreen()

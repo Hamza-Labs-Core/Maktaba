@@ -51,6 +51,9 @@ if [ "${start}" = yes ]; then
     for _ in $(seq 1 300); do
         r="$("${bin}/psql" -h /tmp -p "${port}" -U postgres -Atqc 'SELECT pg_is_in_recovery()' postgres 2>/dev/null || true)"
         [ "${r}" = f ] && break
+        # a recovery that cannot reach its target (its WAL not archived) stops the server: say
+        # so at once rather than after the wait
+        "${bin}/pg_ctl" -D "${pgdata}" status >/dev/null 2>&1 || break
         sleep 1
     done
     [ "${r:-}" = f ] || { echo "restore: Postgres did not finish recovery" >&2; tail -20 "${pgdata}/restore.log" >&2; exit 1; }

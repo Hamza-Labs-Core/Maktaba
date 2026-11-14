@@ -40,7 +40,7 @@ import { useBytes } from "../../components/queue/offline";
 import { ComponentConfirm, isSimple, type Action, type Plan } from "./ComponentConfirm";
 import { ComponentDrawer } from "./ComponentDrawer";
 import { BundleDialog } from "./BundleDialog";
-import { ComponentSettingsLink } from "./ComponentSettingsLink";
+import { ComponentPluginLink, ComponentSettingsLink } from "./ComponentSettingsLink";
 import { ComponentResetSettings } from "./ComponentResetSettings";
 import { OfflineDownload, OfflineImport } from "./ComponentOffline";
 import {
@@ -341,6 +341,14 @@ function ComponentsInner({ pollMs }: { pollMs: number }) {
     document.getElementById(rowId(id))?.scrollIntoView?.({ block: "center" });
     setFlash(id);
   }, []);
+
+  // /settings/components#<id> (a plugin's page links here): its row is shown once
+  const loaded = !!list;
+  useEffect(() => {
+    if (!loaded) return;
+    const id = decodeURIComponent(window.location.hash.slice(1));
+    if (id && document.getElementById(rowId(id))) show(id);
+  }, [loaded, show]);
 
   if (!list) {
     return (
@@ -730,6 +738,7 @@ function Row({
           </Button>
         )}
         <ComponentSettingsLink view={v} name={name} />
+        <ComponentPluginLink view={v} name={name} />
         <IconButton
           size="sm"
           variant="ghost"

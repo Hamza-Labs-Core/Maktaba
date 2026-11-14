@@ -11,6 +11,9 @@ import com.hamzalabs.maktaba.core.api.ErrorKind
 import com.hamzalabs.maktaba.core.api.errorKind
 import com.hamzalabs.maktaba.core.api.Me
 import com.hamzalabs.maktaba.core.api.User
+import com.hamzalabs.maktaba.core.compat.Compat
+import com.hamzalabs.maktaba.core.compat.CompatApp
+import com.hamzalabs.maktaba.core.compat.CompatVerdict
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
@@ -54,6 +57,11 @@ data class Home(
      * for its minute.
      */
     val cloudAddresses: List<String> = emptyList(),
+    /**
+     * Whether the last person signed in here from this app was the home's admin (null: no one
+     * yet): Update the home (story 58.01) speaks to an admin or to anyone else before sign-in.
+     */
+    val admin: Boolean? = null,
 ) {
     val httpUrl: HttpUrl get() = url.toHttpUrl()
 
@@ -125,6 +133,12 @@ class AppSession(
      * build; on when the app does not say): off, [capabilities] stays every feature on.
      */
     val capabilitiesGate: Boolean = true,
+    /**
+     * This app's build for the compatibility contract (Epic 58 story 58.01): each time the app
+     * reaches a home it decides, from the home's API level and client floor, whether to carry on
+     * or show Update the home or Update this app ([compatBlock]). null: no check.
+     */
+    val compatApp: CompatApp? = null,
 ) {
     sealed interface Phase {
         data object ChoosingHome : Phase
@@ -204,6 +218,72 @@ class AppSession(
     private fun forgetCapabilities() {
         capabilitiesOf = null
         _capabilities.value = Capabilities.AllOn
+    }
+
+    /** Why this app and the home in use cannot work together (story 58.01), the page shown instead of signing in. */
+    data class CompatBlock(
+        val verdict: CompatVerdict,
+        val homeUrl: String,
+        val homeName: String,
+        val homeVersion: String?,
+        /** Whether the person is known to run the home (null: not known). */
+        val admin: Boolean?,
+        /** This app's platform, as `X-Maktaba-Client` names it: which store's words to use. */
+        val platform: String,
+    )
+
+    private val _compatBlock = MutableStateFlow<CompatBlock?>(null)
+    /** Update the home or Update this app, when the app and the home in use are too far apart; null: carry on. */
+    val compatBlock: StateFlow<CompatBlock?> = _compatBlock.asStateFlow()
+
+    /**
+     * Whether this app can carry on at [home], from what it [said] of itself; else [compatBlock]
+     * says why. Always true without [compatApp].
+     */
+    private fun admit(home: Home, said: HomeInfo): Boolean {
+        val app = compatApp ?: return true
+        val verdict = Compat.decide(said.compat, app)
+        if (verdict == CompatVerdict.Ok) return true
+        block(verdict, home, said.version)
+        return false
+    }
+
+    private fun block(verdict: CompatVerdict, home: Home, version: String?) {
+        _compatBlock.value = CompatBlock(verdict, home.url, home.label, version, home.admin, compatApp?.platform ?: "")
+        _progress.value = null
+    }
+
+    /**
+     * Whether [e] is the home refusing this build (426 `client_too_old`, below its client floor):
+     * then Update this app shows.
+     */
+    private fun refusedAsTooOld(e: Exception, home: Home): Boolean {
+        if (e !is ApiException.Status || e.code != 426) return false
+        block(CompatVerdict.UpdateApp, home, null)
+        return true
+    }
+
+    /** Asks the home in use again, after it or the app was updated (the pages' Try again). */
+    fun recheckCompat() {
+        val home = _current.value ?: return
+        _compatBlock.value = null
+        use(home)
+    }
+
+    /**
+     * Asks the home whether this app can carry on there before its kept sign-in is used. A home
+     * that does not answer is not decided here: the restore says why it failed.
+     */
+    private suspend fun compatAllows(home: Home, c: ApiClient): Boolean {
+        val said = try {
+            probe.probe(home.url)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            return c === client
+        }
+        if (c !== client) return false
+        return admit(home, said)
     }
 
     private val _restoreProblem = MutableStateFlow<ErrorKind?>(null)
@@ -305,7 +385,11 @@ class AppSession(
         val others = r.info.urls.mapNotNull { Home.normalizeWithPath(it) }
         _progress.value = ConnectProgress.Found(name, attempt)
         succeeded()
-        use(Home(r.url, name, r.info.id ?: link.id, addresses = others))
+        val found = Home(r.url, name, r.info.id ?: link.id, addresses = others)
+        // the home just answered: its level decides here, with no second request
+        val known = _homes.value.firstOrNull { it.url == found.url }
+        val allowed = admit(known?.copy(name = name) ?: found, r.info)
+        use(found, checked = true, allowed = allowed)
         if (_link.value == link) _link.value = null
         return _current.value!!
     }
@@ -337,7 +421,13 @@ class AppSession(
      * what it says of itself, unauthenticated, so the same id at another address is another
      * entry and signs in afresh; tokens never move to another address.
      */
-    fun use(home: Home) {
+    fun use(home: Home) = use(home, checked = false)
+
+    /**
+     * [use], [checked]: the home's compatibility was just decided from its answer ([allowed]:
+     * carry on), so it is not asked again.
+     */
+    private fun use(home: Home, checked: Boolean, allowed: Boolean = true) {
         val known = _homes.value
         // the same entry: at this address, or one of its other addresses (then it moves there)
         val previous = known.firstOrNull { it.url == home.url } ?: known.firstOrNull { home.url in it.addresses }
@@ -362,7 +452,15 @@ class AppSession(
         _restoreProblem.value = null
         // the home just found stays said ("Found …") over the sign-in; anything else is over
         _progress.value.let { if (it != null && it !is ConnectProgress.Found) _progress.value = null }
-        if (tokens.access != null) restore(c)
+        if (!checked) _compatBlock.value = null
+        when {
+            !allowed -> {}
+            // story 58.01: the home's level decides before its kept sign-in is used
+            compatApp != null && !checked -> scope.launch {
+                if (compatAllows(chosen, c) && tokens.access != null && c === client) restore(c)
+            }
+            tokens.access != null -> restore(c)
+        }
     }
 
     /** Signs in again with the kept tokens, if the home answers (its attempt number one more). */
@@ -406,6 +504,7 @@ class AppSession(
                 clearIf(ConnectProgress.Reconnecting(home.label, attempt))
                 throw e
             } catch (e: ApiException.Status) {
+                if (c === client && refusedAsTooOld(e, home)) return
                 if ((e.code == 429 || e.code == 503) && waits < BUSY_TRIES && c === client) {
                     waits++
                     val wait = (e.retryAfterSec ?: BUSY_WAIT_SEC).coerceIn(1, MAX_WAIT_SEC) * 1000
@@ -732,6 +831,7 @@ class AppSession(
     }
 
     fun switchHome() {
+        _compatBlock.value = null
         _current.value = null
         client = null
         forgetCapabilities()
@@ -761,7 +861,7 @@ class AppSession(
             clearIf(step)
             throw e
         } catch (e: Exception) {
-            if (c === client) {
+            if (c === client && !refusedAsTooOld(e, home)) {
                 _progress.value = ConnectProgress.Failed(reasonFor(e, password = true), listOf(shown(home.url)), ConnectStage.Password, attempt)
             }
             throw e
@@ -821,7 +921,9 @@ class AppSession(
             if (c === client) _progress.value = null
             throw e
         } catch (e: Exception) {
-            if (c === client) _progress.value = ConnectProgress.Failed(reasonFor(e), listOf(shown(home.url)), ConnectStage.Code, attempt)
+            if (c === client && !refusedAsTooOld(e, home)) {
+                _progress.value = ConnectProgress.Failed(reasonFor(e), listOf(shown(home.url)), ConnectStage.Code, attempt)
+            }
             throw e
         }
     }
@@ -843,9 +945,20 @@ class AppSession(
     private fun signedIn(c: ApiClient, me: Me) {
         if (c !== client) return
         named(me.homeName)
+        rememberAdmin(me.user.isAdmin)
         _phase.value = Phase.SignedIn(me.user, c)
         // what this home has on, at sign-in (the apps then follow it while in front)
         scope.launch { refreshCapabilities() }
+    }
+
+    /** Whether the person signed in at the current home runs it (Update the home's words, 58.01). */
+    private fun rememberAdmin(admin: Boolean) {
+        val home = _current.value ?: return
+        if (home.admin == admin) return
+        val marked = home.copy(admin = admin)
+        _current.value = marked
+        _homes.value = _homes.value.map { if (it.url == home.url) marked else it }
+        saveHomes()
     }
 
     /** The current home's name as the home says it (null: it did not say, so the name stays). */
