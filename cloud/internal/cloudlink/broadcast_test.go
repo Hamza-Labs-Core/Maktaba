@@ -27,7 +27,10 @@ func TestBroadcastHandlerForwardsOnlyItsRoutes(t *testing.T) {
 	h := BroadcastHandler(&LinkReporter{CloudAPI: cloud.URL, Creds: Credentials{ServerID: "srv-1", Secret: "s3cret"}})
 	call := func(method, path, body string) *httptest.ResponseRecorder {
 		rec := httptest.NewRecorder()
-		h(rec, httptest.NewRequest(method, path, strings.NewReader(body)))
+		req := httptest.NewRequest(method, path, strings.NewReader(body))
+		req.Host = "127.0.0.1:9123"
+		req.Header.Set("Content-Type", "application/json")
+		h(rec, req)
 		return rec
 	}
 	for _, c := range []struct{ method, path, body string }{
@@ -58,5 +61,51 @@ func TestBroadcastHandlerForwardsOnlyItsRoutes(t *testing.T) {
 	}
 	if len(seen) != 4 {
 		t.Fatalf("a refused call reached the cloud: %q", seen)
+	}
+}
+
+// What a web page in a browser on the home machine could send never reaches the cloud: a
+// rebound Host, an Origin, a cross-site fetch, a POST that is not JSON.
+func TestBroadcastHandlerRefusesBrowsers(t *testing.T) {
+	reached := 0
+	cloud := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reached++
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer cloud.Close()
+	h := BroadcastHandler(&LinkReporter{CloudAPI: cloud.URL, Creds: Credentials{ServerID: "srv-1", Secret: "s3cret"}})
+	send := func(host string, hdr map[string]string) int {
+		req := httptest.NewRequest("POST", "/admin/cloud-link/broadcast/channels", strings.NewReader(`{}`))
+		req.Host = host
+		for k, v := range hdr {
+			req.Header.Set(k, v)
+		}
+		rec := httptest.NewRecorder()
+		h(rec, req)
+		return rec.Code
+	}
+	json := map[string]string{"Content-Type": "application/json"}
+	for name, c := range map[string]struct {
+		host string
+		hdr  map[string]string
+	}{
+		"rebound host": {"evil.example:9123", json},
+		"origin":       {"127.0.0.1:9123", map[string]string{"Content-Type": "application/json", "Origin": "https://evil.example"}},
+		"cross-site":   {"127.0.0.1:9123", map[string]string{"Content-Type": "application/json", "Sec-Fetch-Site": "cross-site"}},
+		"text/plain":   {"127.0.0.1:9123", map[string]string{"Content-Type": "text/plain"}},
+		"form":         {"localhost:9123", map[string]string{"Content-Type": "application/x-www-form-urlencoded"}},
+	} {
+		if code := send(c.host, c.hdr); code != http.StatusForbidden {
+			t.Errorf("%s: %d, want 403", name, code)
+		}
+	}
+	if reached != 0 {
+		t.Fatalf("%d refused calls reached the cloud", reached)
+	}
+	// the home's API: loopback, JSON, no browser headers (IPv6 loopback too)
+	for _, host := range []string{"127.0.0.1:9123", "[::1]:9123", "localhost:9123"} {
+		if code := send(host, json); code != http.StatusCreated {
+			t.Errorf("%s: %d", host, code)
+		}
 	}
 }

@@ -3,6 +3,8 @@ package cloudlink
 import (
 	"context"
 	"io"
+	"mime"
+	"net"
 	"net/http"
 	"regexp"
 	"strings"
@@ -31,6 +33,10 @@ var broadcastRoutes = []struct {
 // the cloud's status and body back as they came.
 func BroadcastHandler(rep *LinkReporter) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if !fromLocalProgram(r) {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
 		rest := strings.TrimPrefix(r.URL.Path, BroadcastPrefix)
 		allowed := false
 		for _, rt := range broadcastRoutes {
@@ -73,4 +79,33 @@ func BroadcastHandler(rep *LinkReporter) http.HandlerFunc {
 		w.WriteHeader(resp.StatusCode)
 		_, _ = io.Copy(w, io.LimitReader(resp.Body, 64<<10))
 	}
+}
+
+// fromLocalProgram refuses what a web page in a browser on the home machine could send to
+// the loopback port (the agent adds the server's secret): a Host that is not loopback (DNS
+// rebinding), any Origin or a cross-site Sec-Fetch-Site (a browser's request), and a POST
+// that is not application/json (a form or text/plain needs no CORS preflight; JSON does,
+// and the agent never answers one).
+func fromLocalProgram(r *http.Request) bool {
+	host := r.Host
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	host = strings.Trim(host, "[]")
+	if ip := net.ParseIP(host); host != "localhost" && (ip == nil || !ip.IsLoopback()) {
+		return false
+	}
+	if r.Header.Get("Origin") != "" {
+		return false
+	}
+	if site := r.Header.Get("Sec-Fetch-Site"); site != "" && site != "none" {
+		return false
+	}
+	if r.Method == http.MethodPost {
+		mt, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+		if err != nil || mt != "application/json" {
+			return false
+		}
+	}
+	return true
 }

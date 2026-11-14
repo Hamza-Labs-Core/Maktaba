@@ -729,6 +729,9 @@ func runServe() error {
 				Time:          parentalHandles.Time,
 				ChannelSigner: channelSigner(streamSigner),
 			})
+			// Epic 50 story 50.22: the Broadcast page and the ingest-token loop (livetv.broadcast)
+			router.MountBroadcast(r, router.BroadcastDeps{DB: appDB, AgentAddr: os.Getenv("MAKTABA_CLOUDLINK_ADMIN"),
+				Loops: loops, Logger: logger})
 			if mountRemote != nil {
 				mountRemote(r) // Epic 32 story 32.6: /api/tv/remote
 			}

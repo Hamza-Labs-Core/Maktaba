@@ -558,6 +558,26 @@ platforms = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
 bundles   = ["full"]
 since     = "0.3.66"
 
+# Home broadcasting (Epic 50 story 50.22): the published channels' broadcasters (the HLS
+# ladder at home, each segment pushed once to the broadcast edge, the control socket) and the
+# API's ingest-token refresh. In no bundle: off until an admin turns it on, the Broadcast
+# page's first Publish asking for it. Licence-gated by the broadcast flag (50.20).
+[[component]]
+id        = "livetv.broadcast"
+kind      = "loop"
+group     = "livetv"
+title_key = "components.livetv.broadcast.title"
+desc_key  = "components.livetv.broadcast.desc"
+# one broadcaster per published channel runs under these; its ffmpeg children are streaming's
+loops     = ["streaming:broadcast_uploader", "streaming:broadcast_control", "api:broadcast_tokens"]
+requires  = ["livetv", "cloud.link"]
+settings  = ["rules.broadcast"]
+licence   = "broadcast"
+placement = "home"
+platforms = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
+bundles   = []
+since     = "0.3.142"
+
 # ---- remote access and the cluster ---------------------------------------------------
 
 [[component]]
