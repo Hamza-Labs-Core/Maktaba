@@ -87,9 +87,21 @@ func TestBroadcastGeoDenyIsAServiceAdmins(t *testing.T) {
 	}
 }
 
-// ingestRungs asks for a token for rungs and returns the response.
-func ingestRungs(h bhome, rungs ...string) resp {
-	return h.agent.do(http.MethodPost, "/v1/broadcast/ingest-token", map[string]any{"channel": "7", "rungs": rungs})
+// publishedChannel records a live broadcast channel for the home and returns its cloud id: every
+// ingest token names one (story 50.24).
+func publishedChannel(t *testing.T, e *env, h bhome) string {
+	t.Helper()
+	var id string
+	if err := e.pool.DB.QueryRow(`INSERT INTO broadcast_channels (server_id, slug, access, agreement_version)
+		VALUES ($1, 'ingest-'||substr(md5(random()::text), 1, 8), 'open', 1) RETURNING id::text`, h.id).Scan(&id); err != nil {
+		t.Fatal(err)
+	}
+	return id
+}
+
+// ingestRungs asks for a token for rungs, for the published channel cloudID, and returns the response.
+func ingestRungs(h bhome, cloudID string, rungs ...string) resp {
+	return h.agent.do(http.MethodPost, "/v1/broadcast/ingest-token", map[string]any{"channel": "7", "cloud_id": cloudID, "rungs": rungs})
 }
 
 // ingestClaims checks a 200 and reads the token's claims with the test key's public half.
@@ -122,17 +134,18 @@ func TestBroadcastIngestTokenEntitlements(t *testing.T) {
 		owner := e.registerVerified("shut@example.test")
 		uid := e.userID("shut@example.test")
 		h := claimHome(e, owner, "shut")
+		cid := publishedChannel(t, e, h)
 		setPlan(e, uid, billingpkg.PlanFree)
-		if r := ingestRungs(h, "src"); r.code != http.StatusForbidden || r.errCode() != "broadcast_not_in_plan" {
+		if r := ingestRungs(h, cid, "src"); r.code != http.StatusForbidden || r.errCode() != "broadcast_not_in_plan" {
 			t.Fatalf("free: %d %s", r.code, r.body)
 		}
 		setPlan(e, uid, billingpkg.PlanPro)
 		e.exec(`UPDATE servers SET broadcast_plan = 'broadcaster' WHERE id = $1`, h.id)
-		if r := ingestRungs(h, "src"); r.code != http.StatusForbidden || r.errCode() != "broadcast_not_enabled" {
+		if r := ingestRungs(h, cid, "src"); r.code != http.StatusForbidden || r.errCode() != "broadcast_not_enabled" {
 			t.Fatalf("broadcaster, not a test publisher: %d %s", r.code, r.body)
 		}
 		e.exec(`UPDATE servers SET broadcast_test_publisher = true WHERE id = $1`, h.id)
-		c := ingestClaims(t, ingestRungs(h, rungs[:caster.MaxRungs]...))
+		c := ingestClaims(t, ingestRungs(h, cid, rungs[:caster.MaxRungs]...))
 		if c.Pub != h.id || c.Home != h.id || c.Kbps != caster.MaxTopKbps || len(c.Rungs) != caster.MaxRungs {
 			t.Fatalf("a test publisher's token: %+v", c)
 		}
@@ -147,31 +160,32 @@ func TestBroadcastIngestTokenEntitlements(t *testing.T) {
 		owner := e.registerVerified("open@example.test")
 		uid := e.userID("open@example.test")
 		h := claimHome(e, owner, "open")
+		cid := publishedChannel(t, e, h)
 		setPlan(e, uid, billingpkg.PlanBasic)
-		if r := ingestRungs(h, "src"); r.code != http.StatusForbidden || r.errCode() != "broadcast_not_in_plan" {
+		if r := ingestRungs(h, cid, "src"); r.code != http.StatusForbidden || r.errCode() != "broadcast_not_in_plan" {
 			t.Fatalf("basic: %d %s", r.code, r.body)
 		}
 		// Pro's guest sharing: its rungs and bitrate, one rung more is refused
 		setPlan(e, uid, billingpkg.PlanPro)
-		c := ingestClaims(t, ingestRungs(h, rungs[:guest.MaxRungs]...))
+		c := ingestClaims(t, ingestRungs(h, cid, rungs[:guest.MaxRungs]...))
 		if c.Pub != h.id || c.Kbps != guest.MaxTopKbps || len(c.Rungs) != guest.MaxRungs {
 			t.Fatalf("guest sharing: %+v", c)
 		}
-		if r := ingestRungs(h, rungs[:guest.MaxRungs+1]...); r.code != http.StatusForbidden || r.errCode() != "plan_rungs" {
+		if r := ingestRungs(h, cid, rungs[:guest.MaxRungs+1]...); r.code != http.StatusForbidden || r.errCode() != "plan_rungs" {
 			t.Fatalf("guest sharing past its rungs: %d %s", r.code, r.body)
 		}
 		// the Broadcaster add-on: more rungs and a higher top bitrate
 		e.exec(`UPDATE servers SET broadcast_plan = 'broadcaster' WHERE id = $1`, h.id)
-		c = ingestClaims(t, ingestRungs(h, rungs[:caster.MaxRungs]...))
+		c = ingestClaims(t, ingestRungs(h, cid, rungs[:caster.MaxRungs]...))
 		if c.Kbps != caster.MaxTopKbps || len(c.Rungs) != caster.MaxRungs {
 			t.Fatalf("broadcaster: %+v", c)
 		}
-		if r := ingestRungs(h, rungs[:caster.MaxRungs+1]...); r.code != http.StatusForbidden || r.errCode() != "plan_rungs" {
+		if r := ingestRungs(h, cid, rungs[:caster.MaxRungs+1]...); r.code != http.StatusForbidden || r.errCode() != "plan_rungs" {
 			t.Fatalf("broadcaster past its rungs: %d %s", r.code, r.body)
 		}
 		// a suspended owner's home gets none
 		e.exec(`UPDATE users SET status = 'suspended' WHERE id = $1`, uid)
-		if r := ingestRungs(h, "src"); r.code != http.StatusForbidden || r.errCode() != "broadcast_not_in_plan" {
+		if r := ingestRungs(h, cid, "src"); r.code != http.StatusForbidden || r.errCode() != "broadcast_not_in_plan" {
 			t.Fatalf("suspended: %d %s", r.code, r.body)
 		}
 	})
