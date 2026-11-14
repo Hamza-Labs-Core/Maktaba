@@ -23,6 +23,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/auth/sessions"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/auth/token"
 	billingpkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/billing"
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/broadcast"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/db"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/entitlement"
@@ -194,7 +195,17 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 		}
 	}
 	ipSalt := sha256.Sum256([]byte("maktaba-broadcast-agreement-ip\x00" + string(secret)))
-	broadcastDeps := &broadcasth.Deps{DB: pool.DB, Servers: servers, Store: broadcastStore, Logger: logger, IPSalt: ipSalt[:]}
+	broadcastDeps := &broadcasth.Deps{DB: pool.DB, Servers: servers, Store: broadcastStore, Logger: logger, IPSalt: ipSalt[:],
+		OpenAccess: cfg.Broadcast.OpenAccess, WatchURL: cfg.Broadcast.WatchURL}
+	// viewer access (story 50.26): invites and the access posts need the broadcast key
+	if cfg.Broadcast.KeyPath != "" {
+		if k, err := broadcast.LoadKey(cfg.Broadcast.KeyPath); err == nil {
+			broadcastDeps.Key = &k
+			broadcastDeps.Edge = broadcasth.HTTPEdge{Base: cfg.Broadcast.IngestURL}
+		} else {
+			logger.Warn("broadcast invites disabled", "err", err)
+		}
+	}
 	serversDeps := serversh.Deps{Servers: servers, Assertions: assertions, Licenses: licenses,
 		ManageURL: strings.TrimRight(cfg.Server.WebURL, "/") + "/billing"}
 	homes := &homesh.Deps{Servers: servers, Users: users, Signer: assertions, RelayHost: cfg.Relay.PublicHost,
@@ -336,6 +347,8 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 		// credential, never a user token.
 		serversh.MountAgent(app, serversDeps)
 		broadcasth.MountAgent(app, broadcastDeps)
+		broadcasth.MountAccessAgent(app, broadcastDeps)
+		broadcasth.MountIngest(app, ingestDeps(cfg, servers, pool, logger))
 		// the broadcast edge: each request signed with its key, no account
 		edgeh.Mount(app, edgeDeps)
 		reports.MountAgent(app, &reports.AgentDeps{Store: reportStore, Servers: servers, Logger: logger,
@@ -372,6 +385,7 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 			(&healthh.Deps{DB: pool.DB}).Mount(g)
 			billingh.Mount(g, billing)
 			broadcasth.MountUser(g, broadcastDeps)
+			broadcasth.MountAccessUser(g, broadcastDeps)
 			pushh.Mount(g, pushh.Deps{DB: pool.DB, Dispatcher: dispatcher})
 		})
 	})
@@ -558,4 +572,21 @@ func turnstileGuard(cfg config.Config, fake turnstile.Verifier) (*turnstile.Guar
 	}
 	return &turnstile.Guard{Enabled: true, Verifier: v, WebOrigins: t.WebOrigins,
 		ClientIP: func(r *http.Request) string { return cmw.GetClientIP(r.Context()) }}, nil
+}
+
+// ingestDeps wires the broadcast edge's ingest tokens (story 50.21): on only with
+// broadcast.enabled and its key; otherwise the route answers 503 broadcast_disabled.
+func ingestDeps(cfg config.Config, servers *stores.Servers, pool *db.Pool, logger *slog.Logger) *broadcasth.IngestDeps {
+	d := &broadcasth.IngestDeps{Agents: servers, Plans: broadcasth.DBPlans{DB: pool.DB}, IngestURL: cfg.Broadcast.IngestURL}
+	if !cfg.Broadcast.Enabled {
+		return d
+	}
+	k, err := broadcast.LoadKey(cfg.Broadcast.KeyPath)
+	if err != nil {
+		logger.Warn("broadcast ingest tokens disabled", "err", err)
+		return d
+	}
+	d.Key = &k
+	logger.Info("broadcast ingest tokens on", "kid", k.Kid)
+	return d
 }

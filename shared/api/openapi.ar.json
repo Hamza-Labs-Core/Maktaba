@@ -5821,6 +5821,206 @@
       "en": "This app build is below the home's client floor (`code: client_too_old`, with `floor`, the oldest build this home serves, and `client`, the `<app>/<platform>` it read from `X-Maktaba-Client`). The app shows Update this app. A request without the header (the web) is never refused.",
       "ar": "إصدار هذا التطبيق أدنى من الحد الأدنى الذي يخدمه المنزل (`code: client_too_old`، مع `floor` وهو أقدم إصدار يخدمه هذا المنزل، و`client` وهو `<app>/<platform>` كما قرأه من `X-Maktaba-Client`). يعرض التطبيق صفحة «حدِّث هذا التطبيق». أما الطلب الذي لا يحمل هذا الترويسة (الويب) فلا يُرفض أبدًا."
     },
+    "/tags/24/name": {
+      "en": "Broadcast",
+      "ar": "البث"
+    },
+    "/tags/24/description": {
+      "en": "Who may watch the channels the home publishes through Maktaba Cloud: each channel's access, the viewer limits and the invites. Admins only.",
+      "ar": "من يمكنه مشاهدة القنوات التي ينشرها المنزل عبر سحابة مكتبة: وصول كل قناة، وحدود المشاهدة، والدعوات. للمدراء فقط."
+    },
+    "/paths/~1broadcast~1access/get/summary": {
+      "en": "Who may watch the home's broadcast channels",
+      "ar": "من يمكنه مشاهدة قنوات البث في المنزل"
+    },
+    "/paths/~1broadcast~1access/get/description": {
+      "en": "Each published channel's access (`invite` or `open`) and viewer cap, the viewer limits, the plan's viewers, whether open access is on and in the plan, and the account's verification. Admins only (the home's owner or an admin); passed to Maktaba Cloud through the home's relay agent, and the cloud's answer comes back as it is.",
+      "ar": "وصول كل قناة منشورة (`invite` أو `open`) وحدّ مشاهديها، وحدود المشاهدة، ومشاهدو الخطة، وهل الوصول المفتوح مفعّل وضمن الخطة، وتوثيق الحساب. للمدراء فقط (مالك المنزل أو مديره)؛ يمر الطلب إلى سحابة مكتبة عبر وكيل الترحيل في المنزل، ويعود جواب السحابة كما هو."
+    },
+    "/paths/~1broadcast~1access/get/responses/200/description": {
+      "en": "The access view.",
+      "ar": "عرض الوصول."
+    },
+    "/paths/~1broadcast~1access/get/responses/403/description": {
+      "en": "Owner or admin only, or Maktaba Cloud refused the change (its own code, such as `broadcast_open_needs_verification`).",
+      "ar": "للمالك أو المدير فقط، أو رفضت سحابة مكتبة التغيير (برمزها الخاص، مثل `broadcast_open_needs_verification`)."
+    },
+    "/paths/~1broadcast~1access/get/responses/409/description": {
+      "en": "`cloud_not_linked`: the home is not linked to Maktaba Cloud.",
+      "ar": "`cloud_not_linked`: المنزل غير مرتبط بسحابة مكتبة."
+    },
+    "/paths/~1broadcast~1access/get/responses/502/description": {
+      "en": "`cloud_unreachable`: Maktaba Cloud is out of reach.",
+      "ar": "`cloud_unreachable`: تعذّر الوصول إلى سحابة مكتبة."
+    },
+    "/paths/~1broadcast~1access~1channels~1{id}/put/summary": {
+      "en": "Set a channel's access",
+      "ar": "تعيين وصول قناة"
+    },
+    "/paths/~1broadcast~1access~1channels~1{id}/put/description": {
+      "en": "`invite` or `open`, and the channel's own viewer cap (0: the publisher's). Open needs a verified account with the Broadcaster add-on, once open access is on. Admins only (the home's owner or an admin); passed to Maktaba Cloud through the home's relay agent, and the cloud's answer comes back as it is.",
+      "ar": "`invite` أو `open`، وحدّ مشاهدي القناة نفسها (0: حدّ الناشر). يتطلب المفتوح حسابًا موثّقًا لديه إضافة المذيع، بعد تفعيل الوصول المفتوح. للمدراء فقط (مالك المنزل أو مديره)؛ يمر الطلب إلى سحابة مكتبة عبر وكيل الترحيل في المنزل، ويعود جواب السحابة كما هو."
+    },
+    "/paths/~1broadcast~1access~1channels~1{id}/put/responses/204/description": {
+      "en": "Saved.",
+      "ar": "حُفظ."
+    },
+    "/paths/~1broadcast~1access~1channels~1{id}/put/responses/403/description": {
+      "en": "Owner or admin only, or Maktaba Cloud refused the change (its own code, such as `broadcast_open_needs_verification`).",
+      "ar": "للمالك أو المدير فقط، أو رفضت سحابة مكتبة التغيير (برمزها الخاص، مثل `broadcast_open_needs_verification`)."
+    },
+    "/paths/~1broadcast~1access~1channels~1{id}/put/responses/409/description": {
+      "en": "`cloud_not_linked`: the home is not linked to Maktaba Cloud.",
+      "ar": "`cloud_not_linked`: المنزل غير مرتبط بسحابة مكتبة."
+    },
+    "/paths/~1broadcast~1access~1channels~1{id}/put/responses/502/description": {
+      "en": "`cloud_unreachable`: Maktaba Cloud is out of reach.",
+      "ar": "`cloud_unreachable`: تعذّر الوصول إلى سحابة مكتبة."
+    },
+    "/paths/~1broadcast~1access~1limits/put/summary": {
+      "en": "Set the viewer limits",
+      "ar": "تعيين حدود المشاهدة"
+    },
+    "/paths/~1broadcast~1access~1limits/put/description": {
+      "en": "The open sessions one network may hold (1 to 50; invited guests never count) and the minutes a day per viewer (0: none). Admins only (the home's owner or an admin); passed to Maktaba Cloud through the home's relay agent, and the cloud's answer comes back as it is.",
+      "ar": "الجلسات المفتوحة التي تحملها الشبكة الواحدة (من 1 إلى 50؛ لا يُحتسب الضيوف المدعوون) والدقائق في اليوم لكل مشاهد (0: بلا حد). للمدراء فقط (مالك المنزل أو مديره)؛ يمر الطلب إلى سحابة مكتبة عبر وكيل الترحيل في المنزل، ويعود جواب السحابة كما هو."
+    },
+    "/paths/~1broadcast~1access~1limits/put/responses/204/description": {
+      "en": "Saved.",
+      "ar": "حُفظ."
+    },
+    "/paths/~1broadcast~1access~1limits/put/responses/403/description": {
+      "en": "Owner or admin only, or Maktaba Cloud refused the change (its own code, such as `broadcast_open_needs_verification`).",
+      "ar": "للمالك أو المدير فقط، أو رفضت سحابة مكتبة التغيير (برمزها الخاص، مثل `broadcast_open_needs_verification`)."
+    },
+    "/paths/~1broadcast~1access~1limits/put/responses/409/description": {
+      "en": "`cloud_not_linked`: the home is not linked to Maktaba Cloud.",
+      "ar": "`cloud_not_linked`: المنزل غير مرتبط بسحابة مكتبة."
+    },
+    "/paths/~1broadcast~1access~1limits/put/responses/502/description": {
+      "en": "`cloud_unreachable`: Maktaba Cloud is out of reach.",
+      "ar": "`cloud_unreachable`: تعذّر الوصول إلى سحابة مكتبة."
+    },
+    "/paths/~1broadcast~1access~1invites/get/summary": {
+      "en": "The home's invites",
+      "ar": "دعوات المنزل"
+    },
+    "/paths/~1broadcast~1access~1invites/get/description": {
+      "en": "Each invite's link, short TV code, name, channels, devices allowed and used (null while the watch edge cannot be asked), expiry and status. Admins only (the home's owner or an admin); passed to Maktaba Cloud through the home's relay agent, and the cloud's answer comes back as it is.",
+      "ar": "رابط كل دعوة، ورمز التلفاز القصير، والاسم، والقنوات، والأجهزة المسموحة والمستخدمة (null حين يتعذر سؤال حافة المشاهدة)، والانتهاء، والحالة. للمدراء فقط (مالك المنزل أو مديره)؛ يمر الطلب إلى سحابة مكتبة عبر وكيل الترحيل في المنزل، ويعود جواب السحابة كما هو."
+    },
+    "/paths/~1broadcast~1access~1invites/get/responses/200/description": {
+      "en": "The invites.",
+      "ar": "الدعوات."
+    },
+    "/paths/~1broadcast~1access~1invites/get/responses/403/description": {
+      "en": "Owner or admin only, or Maktaba Cloud refused the change (its own code, such as `broadcast_open_needs_verification`).",
+      "ar": "للمالك أو المدير فقط، أو رفضت سحابة مكتبة التغيير (برمزها الخاص، مثل `broadcast_open_needs_verification`)."
+    },
+    "/paths/~1broadcast~1access~1invites/get/responses/409/description": {
+      "en": "`cloud_not_linked`: the home is not linked to Maktaba Cloud.",
+      "ar": "`cloud_not_linked`: المنزل غير مرتبط بسحابة مكتبة."
+    },
+    "/paths/~1broadcast~1access~1invites/get/responses/502/description": {
+      "en": "`cloud_unreachable`: Maktaba Cloud is out of reach.",
+      "ar": "`cloud_unreachable`: تعذّر الوصول إلى سحابة مكتبة."
+    },
+    "/paths/~1broadcast~1access~1invites/post/summary": {
+      "en": "Create an invite link and TV code",
+      "ar": "إنشاء رابط دعوة ورمز تلفاز"
+    },
+    "/paths/~1broadcast~1access~1invites/post/description": {
+      "en": "An invite for some of the home's channels (none named: all), a number of devices (up to 500) and a number of days (up to 365). It opens only this home's channels. Admins only (the home's owner or an admin); passed to Maktaba Cloud through the home's relay agent, and the cloud's answer comes back as it is.",
+      "ar": "دعوة لبعض قنوات المنزل (إن لم تُسمَّ: كلها)، لعدد من الأجهزة (حتى 500) وعدد من الأيام (حتى 365). لا تفتح إلا قنوات هذا المنزل. للمدراء فقط (مالك المنزل أو مديره)؛ يمر الطلب إلى سحابة مكتبة عبر وكيل الترحيل في المنزل، ويعود جواب السحابة كما هو."
+    },
+    "/paths/~1broadcast~1access~1invites/post/responses/201/description": {
+      "en": "The new invite, with its link and code.",
+      "ar": "الدعوة الجديدة، برابطها ورمزها."
+    },
+    "/paths/~1broadcast~1access~1invites/post/responses/403/description": {
+      "en": "Owner or admin only, or Maktaba Cloud refused the change (its own code, such as `broadcast_open_needs_verification`).",
+      "ar": "للمالك أو المدير فقط، أو رفضت سحابة مكتبة التغيير (برمزها الخاص، مثل `broadcast_open_needs_verification`)."
+    },
+    "/paths/~1broadcast~1access~1invites/post/responses/409/description": {
+      "en": "`cloud_not_linked`: the home is not linked to Maktaba Cloud.",
+      "ar": "`cloud_not_linked`: المنزل غير مرتبط بسحابة مكتبة."
+    },
+    "/paths/~1broadcast~1access~1invites/post/responses/502/description": {
+      "en": "`cloud_unreachable`: Maktaba Cloud is out of reach.",
+      "ar": "`cloud_unreachable`: تعذّر الوصول إلى سحابة مكتبة."
+    },
+    "/paths/~1broadcast~1access~1invites~1{id}/delete/summary": {
+      "en": "Withdraw an invite",
+      "ar": "سحب دعوة"
+    },
+    "/paths/~1broadcast~1access~1invites~1{id}/delete/description": {
+      "en": "The invite redeems nothing more, and the devices that used it stop within a minute. Admins only (the home's owner or an admin); passed to Maktaba Cloud through the home's relay agent, and the cloud's answer comes back as it is.",
+      "ar": "لا تُستبدل الدعوة بعد ذلك، وتتوقف الأجهزة التي استخدمتها خلال دقيقة. للمدراء فقط (مالك المنزل أو مديره)؛ يمر الطلب إلى سحابة مكتبة عبر وكيل الترحيل في المنزل، ويعود جواب السحابة كما هو."
+    },
+    "/paths/~1broadcast~1access~1invites~1{id}/delete/responses/204/description": {
+      "en": "Withdrawn.",
+      "ar": "سُحبت."
+    },
+    "/paths/~1broadcast~1access~1invites~1{id}/delete/responses/403/description": {
+      "en": "Owner or admin only, or Maktaba Cloud refused the change (its own code, such as `broadcast_open_needs_verification`).",
+      "ar": "للمالك أو المدير فقط، أو رفضت سحابة مكتبة التغيير (برمزها الخاص، مثل `broadcast_open_needs_verification`)."
+    },
+    "/paths/~1broadcast~1access~1invites~1{id}/delete/responses/409/description": {
+      "en": "`cloud_not_linked`: the home is not linked to Maktaba Cloud.",
+      "ar": "`cloud_not_linked`: المنزل غير مرتبط بسحابة مكتبة."
+    },
+    "/paths/~1broadcast~1access~1invites~1{id}/delete/responses/502/description": {
+      "en": "`cloud_unreachable`: Maktaba Cloud is out of reach.",
+      "ar": "`cloud_unreachable`: تعذّر الوصول إلى سحابة مكتبة."
+    },
+    "/paths/~1broadcast~1access~1invites~1{id}~1devices/get/summary": {
+      "en": "The devices on an invite",
+      "ar": "أجهزة الدعوة"
+    },
+    "/paths/~1broadcast~1access~1invites~1{id}~1devices/get/description": {
+      "en": "Each device's random id and first and last use: never who it is. Admins only (the home's owner or an admin); passed to Maktaba Cloud through the home's relay agent, and the cloud's answer comes back as it is.",
+      "ar": "المعرّف العشوائي لكل جهاز وأول استخدام وآخره: لا هوية صاحبه أبدًا. للمدراء فقط (مالك المنزل أو مديره)؛ يمر الطلب إلى سحابة مكتبة عبر وكيل الترحيل في المنزل، ويعود جواب السحابة كما هو."
+    },
+    "/paths/~1broadcast~1access~1invites~1{id}~1devices/get/responses/200/description": {
+      "en": "The devices.",
+      "ar": "الأجهزة."
+    },
+    "/paths/~1broadcast~1access~1invites~1{id}~1devices/get/responses/403/description": {
+      "en": "Owner or admin only, or Maktaba Cloud refused the change (its own code, such as `broadcast_open_needs_verification`).",
+      "ar": "للمالك أو المدير فقط، أو رفضت سحابة مكتبة التغيير (برمزها الخاص، مثل `broadcast_open_needs_verification`)."
+    },
+    "/paths/~1broadcast~1access~1invites~1{id}~1devices/get/responses/409/description": {
+      "en": "`cloud_not_linked`: the home is not linked to Maktaba Cloud.",
+      "ar": "`cloud_not_linked`: المنزل غير مرتبط بسحابة مكتبة."
+    },
+    "/paths/~1broadcast~1access~1invites~1{id}~1devices/get/responses/502/description": {
+      "en": "`cloud_unreachable`: Maktaba Cloud is out of reach.",
+      "ar": "`cloud_unreachable`: تعذّر الوصول إلى سحابة مكتبة."
+    },
+    "/paths/~1broadcast~1access~1invites~1{id}~1devices~1{pass}/delete/summary": {
+      "en": "Remove one device from an invite",
+      "ar": "إزالة جهاز واحد من دعوة"
+    },
+    "/paths/~1broadcast~1access~1invites~1{id}~1devices~1{pass}/delete/description": {
+      "en": "That device stops within a minute; the invite's other devices keep watching. Admins only (the home's owner or an admin); passed to Maktaba Cloud through the home's relay agent, and the cloud's answer comes back as it is.",
+      "ar": "يتوقف ذلك الجهاز خلال دقيقة؛ وتستمر بقية أجهزة الدعوة في المشاهدة. للمدراء فقط (مالك المنزل أو مديره)؛ يمر الطلب إلى سحابة مكتبة عبر وكيل الترحيل في المنزل، ويعود جواب السحابة كما هو."
+    },
+    "/paths/~1broadcast~1access~1invites~1{id}~1devices~1{pass}/delete/responses/204/description": {
+      "en": "Removed.",
+      "ar": "أُزيل."
+    },
+    "/paths/~1broadcast~1access~1invites~1{id}~1devices~1{pass}/delete/responses/403/description": {
+      "en": "Owner or admin only, or Maktaba Cloud refused the change (its own code, such as `broadcast_open_needs_verification`).",
+      "ar": "للمالك أو المدير فقط، أو رفضت سحابة مكتبة التغيير (برمزها الخاص، مثل `broadcast_open_needs_verification`)."
+    },
+    "/paths/~1broadcast~1access~1invites~1{id}~1devices~1{pass}/delete/responses/409/description": {
+      "en": "`cloud_not_linked`: the home is not linked to Maktaba Cloud.",
+      "ar": "`cloud_not_linked`: المنزل غير مرتبط بسحابة مكتبة."
+    },
+    "/paths/~1broadcast~1access~1invites~1{id}~1devices~1{pass}/delete/responses/502/description": {
+      "en": "`cloud_unreachable`: Maktaba Cloud is out of reach.",
+      "ar": "`cloud_unreachable`: تعذّر الوصول إلى سحابة مكتبة."
+    },
     "/paths/~1cast~1grants/post/summary": {
       "en": "Mint a cast grant for a Cast receiver",
       "ar": "إصدار تصريح بثّ لجهاز استقبال Cast"

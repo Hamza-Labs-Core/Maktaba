@@ -99,6 +99,11 @@ const AdminErrorGroup = /* @__PURE__ */ page(
   "AdminErrorGroup"
 );
 const CloudDevices = /* @__PURE__ */ page(() => import("./pages/Cloud/Devices"), "CloudDevices");
+// Epic 50 story 50.26: who may watch the home's broadcast channels
+const BroadcastAccess = /* @__PURE__ */ page(
+  () => import("./pages/Admin/BroadcastAccess"),
+  "BroadcastAccess"
+);
 
 /** The server routes, children of the signed-in shell (AppShell suspends them). */
 export function serverRoutes() {
@@ -131,6 +136,7 @@ export function serverRoutes() {
       <Route path="/admin/live-tv" element={<AdminLiveTV />} />
       <Route path="/admin/live-tv/changes" element={<AdminTvChanges />} />
       <Route path="/admin/live-tv/changes/:id" element={<AdminTvChangeDetail />} />
+      <Route path="/admin/broadcast-access" element={<BroadcastAccess />} />
       <Route path="/admin/analytics" element={<AdminAnalytics />} />
       <Route path="/admin/audit" element={<AdminAuditLog />} />
       <Route path="/admin/health" element={<SystemHealth />} />

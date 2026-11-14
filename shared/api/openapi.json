@@ -130,6 +130,10 @@
     {
       "name": "Parental controls",
       "description": "Age tiers on the home's content (0, 9, 13, 16, 18, or unrated) and the table that maps each country's rating labels to them."
+    },
+    {
+      "name": "Broadcast",
+      "description": "Who may watch the channels the home publishes through Maktaba Cloud: each channel's access, the viewer limits and the invites. Admins only."
     }
   ],
   "security": [
@@ -18683,6 +18687,641 @@
           }
         },
         "operationId": "createUser"
+      }
+    },
+    "/broadcast/access": {
+      "get": {
+        "tags": [
+          "Broadcast"
+        ],
+        "summary": "Who may watch the home's broadcast channels",
+        "x-maktaba-role": "admin",
+        "description": "Each published channel's access (`invite` or `open`) and viewer cap, the viewer limits, the plan's viewers, whether open access is on and in the plan, and the account's verification. Admins only (the home's owner or an admin); passed to Maktaba Cloud through the home's relay agent, and the cloud's answer comes back as it is.",
+        "responses": {
+          "200": {
+            "description": "The access view.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "channels": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "slug": {
+                            "type": "string"
+                          },
+                          "access": {
+                            "type": "string",
+                            "enum": [
+                              "invite",
+                              "open"
+                            ]
+                          },
+                          "max_viewers": {
+                            "type": "integer"
+                          }
+                        }
+                      }
+                    },
+                    "max_sessions_per_ip": {
+                      "type": "integer"
+                    },
+                    "daily_minutes": {
+                      "type": "integer"
+                    },
+                    "max_viewers": {
+                      "type": "integer"
+                    },
+                    "open_access_enabled": {
+                      "type": "boolean"
+                    },
+                    "open_in_plan": {
+                      "type": "boolean"
+                    },
+                    "verification": {
+                      "type": "object"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "Owner or admin only, or Maktaba Cloud refused the change (its own code, such as `broadcast_open_needs_verification`).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`cloud_not_linked`: the home is not linked to Maktaba Cloud.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`cloud_unreachable`: Maktaba Cloud is out of reach.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "getBroadcastAccess"
+      }
+    },
+    "/broadcast/access/channels/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,64}$"
+          }
+        }
+      ],
+      "put": {
+        "tags": [
+          "Broadcast"
+        ],
+        "summary": "Set a channel's access",
+        "x-maktaba-role": "admin",
+        "description": "`invite` or `open`, and the channel's own viewer cap (0: the publisher's). Open needs a verified account with the Broadcaster add-on, once open access is on. Admins only (the home's owner or an admin); passed to Maktaba Cloud through the home's relay agent, and the cloud's answer comes back as it is.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "access"
+                ],
+                "properties": {
+                  "access": {
+                    "type": "string",
+                    "enum": [
+                      "invite",
+                      "open"
+                    ]
+                  },
+                  "max_viewers": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Saved."
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "Owner or admin only, or Maktaba Cloud refused the change (its own code, such as `broadcast_open_needs_verification`).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`cloud_not_linked`: the home is not linked to Maktaba Cloud.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`cloud_unreachable`: Maktaba Cloud is out of reach.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "setBroadcastChannelAccess"
+      }
+    },
+    "/broadcast/access/limits": {
+      "put": {
+        "tags": [
+          "Broadcast"
+        ],
+        "summary": "Set the viewer limits",
+        "x-maktaba-role": "admin",
+        "description": "The open sessions one network may hold (1 to 50; invited guests never count) and the minutes a day per viewer (0: none). Admins only (the home's owner or an admin); passed to Maktaba Cloud through the home's relay agent, and the cloud's answer comes back as it is.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "max_sessions_per_ip": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 50
+                  },
+                  "daily_minutes": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 1440
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Saved."
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "Owner or admin only, or Maktaba Cloud refused the change (its own code, such as `broadcast_open_needs_verification`).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`cloud_not_linked`: the home is not linked to Maktaba Cloud.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`cloud_unreachable`: Maktaba Cloud is out of reach.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "setBroadcastViewerLimits"
+      }
+    },
+    "/broadcast/access/invites": {
+      "get": {
+        "tags": [
+          "Broadcast"
+        ],
+        "summary": "The home's invites",
+        "x-maktaba-role": "admin",
+        "description": "Each invite's link, short TV code, name, channels, devices allowed and used (null while the watch edge cannot be asked), expiry and status. Admins only (the home's owner or an admin); passed to Maktaba Cloud through the home's relay agent, and the cloud's answer comes back as it is.",
+        "responses": {
+          "200": {
+            "description": "The invites.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "invites": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "Owner or admin only, or Maktaba Cloud refused the change (its own code, such as `broadcast_open_needs_verification`).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`cloud_not_linked`: the home is not linked to Maktaba Cloud.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`cloud_unreachable`: Maktaba Cloud is out of reach.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "listBroadcastInvites"
+      },
+      "post": {
+        "tags": [
+          "Broadcast"
+        ],
+        "summary": "Create an invite link and TV code",
+        "x-maktaba-role": "admin",
+        "description": "An invite for some of the home's channels (none named: all), a number of devices (up to 500) and a number of days (up to 365). It opens only this home's channels. Admins only (the home's owner or an admin); passed to Maktaba Cloud through the home's relay agent, and the cloud's answer comes back as it is.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "channels": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "label": {
+                    "type": "string",
+                    "maxLength": 80
+                  },
+                  "max_uses": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 500
+                  },
+                  "expires_in_days": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 365
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The new invite, with its link and code.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "Owner or admin only, or Maktaba Cloud refused the change (its own code, such as `broadcast_open_needs_verification`).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`cloud_not_linked`: the home is not linked to Maktaba Cloud.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`cloud_unreachable`: Maktaba Cloud is out of reach.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "createBroadcastInvite"
+      }
+    },
+    "/broadcast/access/invites/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,64}$"
+          }
+        }
+      ],
+      "delete": {
+        "tags": [
+          "Broadcast"
+        ],
+        "summary": "Withdraw an invite",
+        "x-maktaba-role": "admin",
+        "description": "The invite redeems nothing more, and the devices that used it stop within a minute. Admins only (the home's owner or an admin); passed to Maktaba Cloud through the home's relay agent, and the cloud's answer comes back as it is.",
+        "responses": {
+          "204": {
+            "description": "Withdrawn."
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "Owner or admin only, or Maktaba Cloud refused the change (its own code, such as `broadcast_open_needs_verification`).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`cloud_not_linked`: the home is not linked to Maktaba Cloud.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`cloud_unreachable`: Maktaba Cloud is out of reach.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "revokeBroadcastInvite"
+      }
+    },
+    "/broadcast/access/invites/{id}/devices": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,64}$"
+          }
+        }
+      ],
+      "get": {
+        "tags": [
+          "Broadcast"
+        ],
+        "summary": "The devices on an invite",
+        "x-maktaba-role": "admin",
+        "description": "Each device's random id and first and last use: never who it is. Admins only (the home's owner or an admin); passed to Maktaba Cloud through the home's relay agent, and the cloud's answer comes back as it is.",
+        "responses": {
+          "200": {
+            "description": "The devices.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "devices": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "Owner or admin only, or Maktaba Cloud refused the change (its own code, such as `broadcast_open_needs_verification`).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`cloud_not_linked`: the home is not linked to Maktaba Cloud.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`cloud_unreachable`: Maktaba Cloud is out of reach.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "listBroadcastInviteDevices"
+      }
+    },
+    "/broadcast/access/invites/{id}/devices/{pass}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,64}$"
+          }
+        },
+        {
+          "name": "pass",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,64}$"
+          }
+        }
+      ],
+      "delete": {
+        "tags": [
+          "Broadcast"
+        ],
+        "summary": "Remove one device from an invite",
+        "x-maktaba-role": "admin",
+        "description": "That device stops within a minute; the invite's other devices keep watching. Admins only (the home's owner or an admin); passed to Maktaba Cloud through the home's relay agent, and the cloud's answer comes back as it is.",
+        "responses": {
+          "204": {
+            "description": "Removed."
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "Owner or admin only, or Maktaba Cloud refused the change (its own code, such as `broadcast_open_needs_verification`).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`cloud_not_linked`: the home is not linked to Maktaba Cloud.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`cloud_unreachable`: Maktaba Cloud is out of reach.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "revokeBroadcastInviteDevice"
       }
     }
   },

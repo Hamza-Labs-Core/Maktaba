@@ -120,6 +120,11 @@ export async function addTotp(cookie: string): Promise<{ codeAt: (offset?: numbe
   if (b.status !== 200) throw new Error(`totp begin ${b.status} ${JSON.stringify(b.body)}`);
   const secret = b32decode(b.body.secret as string);
   const codeAt = (offset = 0) => code(secret, stepAt(new Date()) + offset);
+  // The confirm sends the previous step's code (so a later codeAt(0) is not a reuse). Near the
+  // end of a step the request can land in the next one, where that code is two steps old and
+  // refused: start the confirm at the top of a fresh step instead.
+  const left = 30_000 - (Date.now() % 30_000);
+  if (left < 5_000) await new Promise((r) => setTimeout(r, left + 100));
   const c = await call("POST", "/v1/mfa/totp/confirm", { cookie, body: { setup_id: b.body.setup_id, code: await codeAt(-1) } });
   if (c.status !== 201) throw new Error(`totp confirm ${c.status} ${JSON.stringify(c.body)}`);
   return { codeAt, recovery: c.body.recovery_codes as string[] };

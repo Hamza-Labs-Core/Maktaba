@@ -36,6 +36,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/keys"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/pat"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/users"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/broadcastaccess"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/castgrant"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/delegation"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/link"
@@ -434,6 +435,10 @@ func runServe() error {
 		Switches: loops,
 	})
 	wireReportsForwarder(loops, forwarder, logger)
+
+	// Epic 50 story 50.26: who may watch the home's broadcast channels (owner or admin only),
+	// passed to Maktaba Cloud through the relay agent.
+	(&broadcastaccess.Handler{}).Mount(r)
 	logger.Info("logs: diagnostics export surface mounted", "event", "logs_mounted")
 
 	// Process supervision (Story 22.9): the supervisor's per-process

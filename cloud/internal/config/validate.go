@@ -48,6 +48,10 @@ func Validate(c Config, role Role) error {
 		if err := validateAdminListener(c.Server); err != nil {
 			return err
 		}
+		// the broadcast edge's ingest tokens (story 50.21) are never on without their key
+		if c.Broadcast.Enabled && c.Broadcast.KeyPath == "" {
+			return fmt.Errorf("%w: broadcast.enabled is on but broadcast.key_path is not set", ErrMissing)
+		}
 		// the auth pages' bot check (story 50.30 §4) is never on without its secret
 		if c.Turnstile.Enabled && c.Turnstile.Secret == "" {
 			return fmt.Errorf("%w: turnstile.enabled is on but MAKTABA_CLOUD_TURNSTILE_SECRET is not set", ErrMissing)
@@ -246,6 +250,10 @@ func ValidateBroadcast(b BroadcastConfig) error {
 		}
 	}
 	if !b.Enabled {
+		// open access (story 50.26) is part of broadcasting: never on behind a shut gate
+		if b.OpenAccess {
+			return errors.New("config: broadcast.open_access.enabled needs broadcast.enabled")
+		}
 		return nil
 	}
 	if err := billing.BroadcastLaunchCheck(billing.Tiers, billing.Broadcaster); err != nil {

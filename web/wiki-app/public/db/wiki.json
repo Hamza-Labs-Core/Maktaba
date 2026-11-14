@@ -13,7 +13,7 @@
   ],
   "counts": {
     "diagram": 14,
-    "endpoint": 258,
+    "endpoint": 266,
     "entity": 42,
     "epic": 60,
     "feature": 3,
@@ -11462,6 +11462,174 @@
         "path": "/users",
         "tag": "Auth",
         "operationId": "createUser"
+      }
+    },
+    {
+      "id": "ep-get-broadcast-access",
+      "type": "endpoint",
+      "title": "GET /broadcast/access",
+      "content": "Who may watch the home's broadcast channels",
+      "tags": [
+        "api",
+        "Broadcast",
+        "get"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/broadcast/access",
+        "tag": "Broadcast",
+        "operationId": "getBroadcastAccess"
+      }
+    },
+    {
+      "id": "ep-put-broadcast-access-channels-id",
+      "type": "endpoint",
+      "title": "PUT /broadcast/access/channels/{id}",
+      "content": "Set a channel's access",
+      "tags": [
+        "api",
+        "Broadcast",
+        "put"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "PUT",
+        "path": "/broadcast/access/channels/{id}",
+        "tag": "Broadcast",
+        "operationId": "setBroadcastChannelAccess"
+      }
+    },
+    {
+      "id": "ep-put-broadcast-access-limits",
+      "type": "endpoint",
+      "title": "PUT /broadcast/access/limits",
+      "content": "Set the viewer limits",
+      "tags": [
+        "api",
+        "Broadcast",
+        "put"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "PUT",
+        "path": "/broadcast/access/limits",
+        "tag": "Broadcast",
+        "operationId": "setBroadcastViewerLimits"
+      }
+    },
+    {
+      "id": "ep-get-broadcast-access-invites",
+      "type": "endpoint",
+      "title": "GET /broadcast/access/invites",
+      "content": "The home's invites",
+      "tags": [
+        "api",
+        "Broadcast",
+        "get"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/broadcast/access/invites",
+        "tag": "Broadcast",
+        "operationId": "listBroadcastInvites"
+      }
+    },
+    {
+      "id": "ep-post-broadcast-access-invites",
+      "type": "endpoint",
+      "title": "POST /broadcast/access/invites",
+      "content": "Create an invite link and TV code",
+      "tags": [
+        "api",
+        "Broadcast",
+        "post"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/broadcast/access/invites",
+        "tag": "Broadcast",
+        "operationId": "createBroadcastInvite"
+      }
+    },
+    {
+      "id": "ep-delete-broadcast-access-invites-id",
+      "type": "endpoint",
+      "title": "DELETE /broadcast/access/invites/{id}",
+      "content": "Withdraw an invite",
+      "tags": [
+        "api",
+        "Broadcast",
+        "delete"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "DELETE",
+        "path": "/broadcast/access/invites/{id}",
+        "tag": "Broadcast",
+        "operationId": "revokeBroadcastInvite"
+      }
+    },
+    {
+      "id": "ep-get-broadcast-access-invites-id-devices",
+      "type": "endpoint",
+      "title": "GET /broadcast/access/invites/{id}/devices",
+      "content": "The devices on an invite",
+      "tags": [
+        "api",
+        "Broadcast",
+        "get"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/broadcast/access/invites/{id}/devices",
+        "tag": "Broadcast",
+        "operationId": "listBroadcastInviteDevices"
+      }
+    },
+    {
+      "id": "ep-delete-broadcast-access-invites-id-devices-pass",
+      "type": "endpoint",
+      "title": "DELETE /broadcast/access/invites/{id}/devices/{pass}",
+      "content": "Remove one device from an invite",
+      "tags": [
+        "api",
+        "Broadcast",
+        "delete"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "DELETE",
+        "path": "/broadcast/access/invites/{id}/devices/{pass}",
+        "tag": "Broadcast",
+        "operationId": "revokeBroadcastInviteDevice"
       }
     },
     {

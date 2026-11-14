@@ -464,6 +464,7 @@ func buildSurfaces() SurfaceTable {
 	prefix(Refuse, "", "admin and operator routes; a restricted account is never an admin (57.02)",
 		"/admin/",
 		"/api/admin/",
+		"/api/broadcast/access",
 		"/api/cluster",
 		"/api/components",
 		"/api/extensions",

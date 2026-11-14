@@ -11,8 +11,10 @@ import (
 	"time"
 
 	billingpkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/billing"
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/broadcast"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/db"
+	broadcasth "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/broadcast"
 	mailpkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/mail"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/obs"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/privacy"
@@ -102,6 +104,10 @@ func workerJobs(ctx context.Context, logger *slog.Logger, cfg config.Config, poo
 	// allowance and cap notices, the daily reconciliation and the usage windows' sweep
 	b := broadcastReporter(cfg, pool, logger)
 	run(func() { b.Run(ctx, time.Hour) })
+	// story 50.26: the publishers' access states the edge hasn't taken, every minute
+	if a := accessPusher(cfg, pool, logger); a != nil {
+		run(func() { pushAccess(ctx, logger, a, time.Minute) })
+	}
 	// direct remote access (story 50.15): certificates and the outside checks
 	if j := directJobs(cfg, pool, logger); j != nil {
 		run(func() { j.Run(ctx) })
@@ -270,4 +276,41 @@ func broadcastReporter(cfg config.Config, pool *db.Pool, logger *slog.Logger) *b
 			m := broadcastNotice[kind]
 			return mailer.Send(ctx, mailpkg.Message{To: email, Kind: "broadcast_" + kind, Subject: m[0], Body: m[1]})
 		}}
+}
+
+// accessPusher is the worker's viewer-access pusher (story 50.26): on with broadcast.key_path.
+func accessPusher(cfg config.Config, pool *db.Pool, logger *slog.Logger) *broadcasth.Deps {
+	if cfg.Broadcast.KeyPath == "" {
+		return nil
+	}
+	k, err := broadcast.LoadKey(cfg.Broadcast.KeyPath)
+	if err != nil {
+		logger.Warn("worker: broadcast access pushes off", "err", err)
+		return nil
+	}
+	return &broadcasth.Deps{DB: pool.DB, Logger: logger, Key: &k, OpenAccess: cfg.Broadcast.OpenAccess,
+		Store: &billingpkg.BroadcastStore{DB: pool.DB, Enabled: cfg.Broadcast.Enabled, Enforce: cfg.Broadcast.PlansEnforce},
+		Edge:  broadcasth.HTTPEdge{Base: cfg.Broadcast.IngestURL}}
+}
+
+// pushAccess retries the access pushes a request couldn't make, and every hour re-sends every
+// active publisher's state (RefreshAll).
+func pushAccess(ctx context.Context, logger *slog.Logger, d *broadcasth.Deps, every time.Duration) {
+	t := time.NewTicker(every)
+	defer t.Stop()
+	for tick := 0; ; tick++ {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			if tick%60 == 0 {
+				if _, err := d.RefreshAll(ctx); err != nil {
+					logger.Warn("worker: broadcast access refresh", "err", err)
+				}
+			}
+			if _, err := d.PushPending(ctx); err != nil {
+				logger.Warn("worker: broadcast access push", "err", err)
+			}
+		}
+	}
 }

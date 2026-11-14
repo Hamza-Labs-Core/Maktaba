@@ -205,7 +205,11 @@ func TestBroadcastPublishAndAgreement(t *testing.T) {
 // its channels past one.
 func TestBroadcastBillingRolesAndItems(t *testing.T) {
 	withBroadcastPrices(t)
-	e := newEnvFull(t, &fakeProvider{}, nil, func(c *config.Config) { c.Broadcast.Enabled = true })
+	e := newEnvFull(t, &fakeProvider{}, nil, func(c *config.Config) {
+		c.Broadcast.Enabled = true
+		c.Broadcast.KeyPath = ingestKeyFile(t) // broadcasting on signs ingest tokens (50.21)
+		c.Broadcast.OpenAccess = true          // open channels (50.26)
+	})
 	owner := e.registerVerified("bowner@example.test")
 	uid := e.userID("bowner@example.test")
 	h := claimHome(e, owner, "bhome")
@@ -279,7 +283,10 @@ func TestBroadcastBillingRolesAndItems(t *testing.T) {
 		t.Fatalf("the provider's items after extras: %+v", it)
 	}
 
-	// three channels, one open; then Pro lapses: Broadcaster goes, one channel stays, invite-only
+	// three channels, one open; then Pro lapses: Broadcaster goes, one channel stays, invite-only.
+	// Open needs a verified publisher (50.26): a first publish 8 days ago, long unpublished.
+	e.exec(`INSERT INTO broadcast_channels (server_id, slug, access, agreement_version, published_at, unpublished_at)
+	        VALUES ($1, 'first', 'invite', 1, now() - interval '8 days', now() - interval '7 days')`, h.id)
 	for _, c := range []map[string]any{channel("one", "open", false, 3), channel("two", "invite", true, 1), channel("three", "invite", false, 1)} {
 		h.agent.mustStatus(h.agent.do("POST", "/v1/broadcast/channels", c), http.StatusCreated)
 	}
@@ -348,6 +355,7 @@ func TestBroadcastEdgeUsageAndPAYG(t *testing.T) {
 		c.Broadcast.Enabled = true
 		c.Broadcast.PlansEnforce = true // the harness's config starts from zero values, not the defaults
 		c.Broadcast.EdgePublicKey = base64.StdEncoding.EncodeToString(pub)
+		c.Broadcast.KeyPath = ingestKeyFile(t) // broadcasting on signs ingest tokens (50.21)
 	})
 	edge := edgeClient{e: e, priv: priv}
 	owner := e.registerVerified("caster@example.test")
