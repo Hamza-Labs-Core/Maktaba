@@ -54,6 +54,8 @@ _go: &go
   - 'apps/apple/MaktabaKit/Tests/Fixtures/**'
   # the problem registry's help links are checked against the help topics (story 60.06)
   - 'web/src/help/content/**'
+  # the API level check reads docs/api/levels.md (Epic 58 story 58.01)
+  - 'docs/api/levels.md'
 
 # the pipeline, and what its tests read outside it
 _pipeline: &pipeline

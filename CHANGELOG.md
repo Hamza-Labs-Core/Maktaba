@@ -813,6 +813,16 @@ build fails when the two differ.
 
 ### Added
 
+- **Apps can tell when they and the home are too far apart (story 58.01).** The home now
+  publishes its API level, the oldest level it still serves, and the oldest build of each app it
+  signs in, with no sign-in needed (`GET /api/discovery/home`: `api_level`, `api_level_oldest`,
+  `client_floor`). A home keeps serving every level from the last 12 months, so a TV app a year
+  behind still works. An app build below the floor gets `426 client_too_old` at sign-in, refresh
+  and pairing, and the home logs each refused app and platform once a day in Logs. A CI check
+  fails any response change an older app would get wrong until the level is raised
+  (`docs/api/levels.md`). The `X-Maktaba-Client` header names the smart TV platforms (`tizen`,
+  `webos`, `firetv`, `roku`, `vega`, `cast`) and the Samsung and LG launcher (`tv-web`).
+
 - **Choose Maktaba's ports on a NAS (story 59.08).** Another app on the NAS, such as Plex or the
   NAS's own UI, may already use one of Maktaba's ports. Each one can now be set in the container's
   settings: `MAKTABA_WEB_PORT` (8088), `MAKTABA_API_PORT` (8080), `MAKTABA_STREAM_PORT` (8081, live

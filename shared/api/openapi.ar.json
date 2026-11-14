@@ -5504,6 +5504,66 @@
     "/components/schemas/ParentalCapabilities/properties/can_manage/description": {
       "en": "The caller is an admin, or the guardian of at least one restricted account: show the Family screens.",
       "ar": "المتصل مشرف، أو وليّ حساب مقيَّد واحد على الأقل: اعرض شاشات العائلة."
+    },
+    "/paths/~1discovery~1home/get/summary": {
+      "en": "Who this home is, and its API level",
+      "ar": "من هو هذا المنزل، ومستوى واجهته البرمجية"
+    },
+    "/paths/~1discovery~1home/get/description": {
+      "en": "Public, no sign-in, limited per IP. What an app needs to list a home it found (mDNS, a QR code, a typed address), to know it again, and to tell whether it and the home can work together: `api_level`, `api_level_oldest` and `client_floor` are the compatibility contract (docs/api/levels.md). An app reads them each time it reaches the home, before signing in. A home older than the contract sends none of them: read both levels as 0 and the floor as empty.",
+      "ar": "عام، دون تسجيل دخول، ومحدود لكل عنوان IP. ما يحتاجه التطبيق ليعرض منزلًا وجده (عبر mDNS أو رمز QR أو عنوان مكتوب)، وليتعرّف عليه لاحقًا، وليعرف هل يستطيع العمل معه: الحقول `api_level` و`api_level_oldest` و`client_floor` هي عقد التوافق (docs/api/levels.md). يقرؤها التطبيق في كل مرة يصل فيها إلى المنزل، قبل تسجيل الدخول. المنزل الأقدم من هذا العقد لا يرسل أيًّا منها: اقرأ المستويين على أنهما 0 والحد الأدنى فارغًا."
+    },
+    "/paths/~1discovery~1home/get/responses/200/description": {
+      "en": "The home.",
+      "ar": "المنزل."
+    },
+    "/components/schemas/DiscoveryHome/description": {
+      "en": "A home as the apps see it: its identity, its addresses, how one signs in, and the compatibility contract.",
+      "ar": "المنزل كما تراه التطبيقات: هويته وعناوينه وطريقة تسجيل الدخول إليه، وعقد التوافق."
+    },
+    "/components/schemas/DiscoveryHome/properties/id/description": {
+      "en": "The home's instance id, the mDNS TXT `id`.",
+      "ar": "معرّف نسخة المنزل، وهو `id` في سجل TXT الخاص بـ mDNS."
+    },
+    "/components/schemas/DiscoveryHome/properties/name/description": {
+      "en": "The home's display name.",
+      "ar": "الاسم المعروض للمنزل."
+    },
+    "/components/schemas/DiscoveryHome/properties/version/description": {
+      "en": "The home's release.",
+      "ar": "إصدار المنزل."
+    },
+    "/components/schemas/DiscoveryHome/properties/urls/description": {
+      "en": "The home's base URLs: the LAN ones first, then the relay one; the request's own origin when the home knows none.",
+      "ar": "عناوين المنزل الأساسية: عناوين الشبكة المحلية أولًا ثم عنوان المُرحِّل، وأصل الطلب نفسه حين لا يعرف المنزل أي عنوان."
+    },
+    "/components/schemas/DiscoveryHome/properties/sign_in/description": {
+      "en": "How one signs in here: a password, and a code approved from a phone when the home can hand out tokens.",
+      "ar": "طرق تسجيل الدخول هنا: كلمة مرور، ورمز يُعتمد من هاتف حين يستطيع المنزل إصدار الرموز المميزة."
+    },
+    "/components/schemas/DiscoveryHome/properties/stream_port/description": {
+      "en": "The port of the home's live TV, when the home knows it.",
+      "ar": "منفذ البث التلفزيوني المباشر للمنزل، حين يعرفه المنزل."
+    },
+    "/components/schemas/DiscoveryHome/properties/api_level/description": {
+      "en": "This home's API level. It rises by one each time a response changes in a way an older app would get wrong; adding fields does not raise it.",
+      "ar": "مستوى الواجهة البرمجية لهذا المنزل. يرتفع بمقدار واحد كلما تغيّرت استجابة بطريقة قد يخطئ فيها تطبيق أقدم؛ وإضافة الحقول لا ترفعه."
+    },
+    "/components/schemas/DiscoveryHome/properties/api_level_oldest/description": {
+      "en": "The oldest API level this home still answers correctly. An app built for a lower level must be updated. A home keeps serving every level released in the last 12 months.",
+      "ar": "أقدم مستوى للواجهة البرمجية ما زال هذا المنزل يجيب عنه إجابة صحيحة. التطبيق المبني لمستوى أدنى يجب تحديثه. يظل المنزل يخدم كل مستوى صدر خلال الأشهر الاثني عشر الماضية."
+    },
+    "/components/schemas/DiscoveryHome/properties/client_floor/description": {
+      "en": "The oldest build of each app this home serves, keyed `<app>/<platform>` as `X-Maktaba-Client` names them. Empty unless a home release must refuse an old build (a security fix); a build below it gets 426 `client_too_old` at sign-in.",
+      "ar": "أقدم إصدار من كل تطبيق يخدمه هذا المنزل، بمفتاح `<app>/<platform>` كما يسمّيهما `X-Maktaba-Client`. يكون فارغًا ما لم يضطر إصدار للمنزل إلى رفض إصدار قديم (إصلاح أمني)؛ والإصدار الأدنى منه يتلقى 426 `client_too_old` عند تسجيل الدخول."
+    },
+    "/paths/~1auth~1login/post/responses/426/description": {
+      "en": "This app build is below the home's client floor (`code: client_too_old`, with `floor`, the oldest build this home serves, and `client`, the `<app>/<platform>` it read from `X-Maktaba-Client`). The app shows Update this app. A request without the header (the web) is never refused.",
+      "ar": "إصدار هذا التطبيق أدنى من الحد الأدنى الذي يخدمه المنزل (`code: client_too_old`، مع `floor` وهو أقدم إصدار يخدمه هذا المنزل، و`client` وهو `<app>/<platform>` كما قرأه من `X-Maktaba-Client`). يعرض التطبيق صفحة «حدِّث هذا التطبيق». أما الطلب الذي لا يحمل هذا الترويسة (الويب) فلا يُرفض أبدًا."
+    },
+    "/paths/~1auth~1refresh/post/responses/426/description": {
+      "en": "This app build is below the home's client floor (`code: client_too_old`, with `floor`, the oldest build this home serves, and `client`, the `<app>/<platform>` it read from `X-Maktaba-Client`). The app shows Update this app. A request without the header (the web) is never refused.",
+      "ar": "إصدار هذا التطبيق أدنى من الحد الأدنى الذي يخدمه المنزل (`code: client_too_old`، مع `floor` وهو أقدم إصدار يخدمه هذا المنزل، و`client` وهو `<app>/<platform>` كما قرأه من `X-Maktaba-Client`). يعرض التطبيق صفحة «حدِّث هذا التطبيق». أما الطلب الذي لا يحمل هذا الترويسة (الويب) فلا يُرفض أبدًا."
     }
   }
 }
