@@ -136,6 +136,16 @@ Content-Type: application/json
 دخول عبر Maktaba Cloud، لا تُظهر زرًا. الاختبارات: Vitest مقابل نسخة مزيّفة من الحزمة
 (`web/src/test/fakeCast.ts`). ويقدّم المنزل نفسه تطبيق الويب، فلا يلتقي أبدًا بمنزل أقدم من تصريح البث.
 
+**مشغّل آبل** (آيفون وآيباد؛ ولا تدعم حزمة Cast نظامَي tvOS وmacOS):
+يبني `MaktabaKit/Cast.swift` البيانات المخصّصة ويُصدر التصريح، ويضع `Player/Cast/` حزمة Cast
+لنظام iOS من Google (`google-cast-ios-sdk`، بإصدار مثبّت) خلف بروتوكول، مع AirPlay أولًا في قائمة
+أجهزة التلفاز. وقبل أول بث، تشرح شاشة الشبكة المحلية التي تشترطها Google الطلب الذي يعرضه iOS بعدها.
+ويصل المعرّف إلى النسخة عبر `apps/apple/Config/Cast.xcconfig`، الذي يكتبه `tools/apple/cast-app-id.py`
+من `app.json` (وتفشل مهمة `apple-apps` حين يختلفان)؛ ويضبط أيضًا مدخلَي `NSBonjourServices`
+وهما `_googlecast._tcp` و`_<ID>._googlecast._tcp`. والمنزل الأقدم من تصريح البث (يجيب مساره
+برمز 404 عادي) يتلقى عنوان البث الموقّع العادي، الذي يشغّله جهاز الاستقبال كما وصله. الاختبارات:
+اختبارات وحدة MaktabaKit على المتجهات، واختبارات واجهة مقابل سياق Cast مزيّف.
+
 ## جهاز الاستقبال
 
 ‏`web/packages/castreceiver`، ويُقدَّم على `https://cast.maktaba.tv/r/` (العنوان الوحيد المسجَّل في
