@@ -14,6 +14,16 @@ build fails when the two differ.
 
 ### Changed
 
+- **The cloud's api can run on several machines at once (Epic 50, story 50.17).** The worker's
+  jobs (expired sign-in cleanup, account deletions, the relayed streams' sweep, pay-as-you-go
+  reports) run on exactly one node, the one holding a database lock, and another node takes
+  over within 15 s when it goes; the sign-in, password-reset, mail and claim limits are shared
+  by every node, so more machines don't loosen them; a stopping node leaves its load balancer
+  before it closes, and a plan change reaches every relay's cache within a second. In the cloud
+  rehearsal three nodes behind a stand-in load balancer moved the worker within 15 s of a kill,
+  refused the 31st sign-in across the three, and took a rolling deploy with no failed request.
+  Nothing changes for households until the machines are created.
+
 - **Messages in Arabic speak to the whole household (story 60.06).** The Arabic of every
   message the API sends, and of its page on maktaba.tv, now addresses the household in the plural
   and names the product «مكتبة» («برنامج مكتبة» where the bare word reads as a library), as the

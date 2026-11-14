@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestLoad_Defaults(t *testing.T) {
@@ -289,5 +290,48 @@ func TestParsePrefixesCIDRsOnly(t *testing.T) {
 		if _, err := ParsePrefixes([]string{bad}); err == nil {
 			t.Errorf("%q accepted", bad)
 		}
+	}
+}
+
+// The api pool's settings (Epic 50 story 50.17): the drain before the listeners close and the
+// direct connection for a session of its own, from the file or the environment.
+func TestLoad_APIPool(t *testing.T) {
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Server.DrainDelay != 0 || cfg.Database.DirectURL != "" {
+		t.Fatalf("defaults: drain %s, direct %q", cfg.Server.DrainDelay, cfg.Database.DirectURL)
+	}
+	cfg.Database.URL = "postgres://pgbouncer/db"
+	if cfg.Database.ListenURL() != "postgres://pgbouncer/db" {
+		t.Fatalf("ListenURL without direct_url: %q", cfg.Database.ListenURL())
+	}
+	p := filepath.Join(t.TempDir(), "cloud.toml")
+	if err := os.WriteFile(p, []byte(`
+[server]
+drain_delay = "12s"
+
+[database]
+url = "postgres://pgbouncer/db"
+direct_url = "postgres://primary/db"
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err = Load(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Server.DrainDelay != 12*time.Second || cfg.Database.ListenURL() != "postgres://primary/db" {
+		t.Fatalf("file: drain %s, listen %q", cfg.Server.DrainDelay, cfg.Database.ListenURL())
+	}
+	t.Setenv("MAKTABA_CLOUD_DRAIN_DELAY", "15s")
+	t.Setenv("MAKTABA_CLOUD_DB_DIRECT_URL", "postgres://other/db")
+	cfg, err = Load(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Server.DrainDelay != 15*time.Second || cfg.Database.DirectURL != "postgres://other/db" {
+		t.Fatalf("env: drain %s, direct %q", cfg.Server.DrainDelay, cfg.Database.DirectURL)
 	}
 }
