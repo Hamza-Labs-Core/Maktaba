@@ -6,6 +6,7 @@
 //   PUT  /v1/ingest/<channel>/slate/<idx>.ts    a segment of the offline slate loop (50.22)
 //   POST /v1/ingest/<channel>/state             the rungs' attributes; {"on_air": false} ends it
 //   POST /v1/ingest/<channel>/stream            the channel's Stream live input (the fallback, §5)
+//   POST /v1/ingest/<channel>/guide             the channel's guide and branding (50.22 §6, guide.ts)
 //   GET  /v1/ingest/ws                          the control WebSocket (ChannelLive)
 //   PUT  /v1/ingest/speedtest                   up to 10 s of body: the measured rate (50.22)
 //
@@ -19,6 +20,7 @@ import { hex } from "./crypto";
 import { globallyOff, type Env } from "./env";
 import { json, problem } from "./http";
 import { log } from "./log";
+import { MAX_GUIDE_BYTES, putGuide, validGuide } from "./guide";
 import { segmentKey } from "./playlist";
 import type { PlanState } from "./publisher";
 import { forgetRevocations, isRevoked, revocationsFor } from "./revocations";
@@ -183,12 +185,13 @@ export async function handleIngest(request: Request, env: Env, url: URL): Promis
   const seg = path.match(/^\/v1\/ingest\/([^/]+)\/([^/]+)\/(\d{1,12})\.ts$/);
   if (seg && request.method === "PUT")
     return putSegment(request, env, t, seg[1]!, seg[2]!, Number(seg[3]));
-  const act = path.match(/^\/v1\/ingest\/([^/]+)\/(state|stream)$/);
+  const act = path.match(/^\/v1\/ingest\/([^/]+)\/(state|stream|guide)$/);
   if (act && request.method === "POST") {
     const ch = act[1]!;
     if (!CH_RE.test(ch)) return problem(400, "bad_channel");
     const a = await authorize(request, env, t, { ch });
     if (!a.ok) return a.res;
+    if (act[2] === "guide") return postGuide(request, env, a.claims.pub, ch, t);
     return act[2] === "state" ? postState(request, env, ch) : postStream(env, ch);
   }
   return problem(404, "not_found");
@@ -315,6 +318,28 @@ async function postState(request: Request, env: Env, ch: string): Promise<Respon
   const onAir = typeof post.on_air === "boolean" ? post.on_air : undefined;
   const status = await channel(env, ch).setState({ rungs, on_air: onAir }, ch);
   return json(200, { status });
+}
+
+/** postGuide stores the channel's guide (schema 1, guide.ts): 413 over 256 KB, 400 a bad shape. */
+async function postGuide(
+  request: Request,
+  env: Env,
+  pub: string,
+  ch: string,
+  t: number
+): Promise<Response> {
+  const body = await readCapped(request, MAX_GUIDE_BYTES);
+  if (!body) return problem(413, "too_large");
+  let raw: unknown;
+  try {
+    raw = JSON.parse(new TextDecoder().decode(body));
+  } catch {
+    return problem(400, "bad_json");
+  }
+  const doc = validGuide(raw, t);
+  if (typeof doc === "string") return problem(400, doc);
+  await putGuide(env, pub, ch, doc);
+  return json(200, { status: "stored", programmes: doc.programmes.length });
 }
 
 async function postStream(env: Env, ch: string): Promise<Response> {

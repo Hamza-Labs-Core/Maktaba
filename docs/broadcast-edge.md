@@ -149,6 +149,65 @@ watching: `wait` and a full channel are `429 broadcast_full`, `off` is `403`, no
 refreshes every publisher's post hourly. Addresses are kept only as a salted hash that changes
 every UTC day.
 
+## Guest viewers: the watch pages, guide and TV pairing (50.27)
+
+The home publishes each channel's guide with its ingest token:
+`POST /v1/ingest/<channel>/guide`, at most 256 KB, replaced whole on every post (`guide.ts`):
+
+```json
+{ "schema": 1,
+  "publisher": { "name": "…", "logo": "data:image/png;base64,…" },
+  "channel": { "name": "…", "number": 7 },
+  "programmes": [ { "start": "ISO", "end": "ISO", "title": "…",
+                    "attribution": { "title": "…", "by": "…", "licence": "CC BY 4.0", "url": "https://…" } } ] }
+```
+
+It lands in `GUIDE` at `<env>/guide/<pub>/<channel>.json`, with the publisher's branding (a name
+and an optional PNG, WebP or JPEG logo of at most 64 KB) beside it. The edge checks the shape,
+sorts the programmes by start and keeps those from a day ago to 8 days ahead; it never adds to
+or reorders the schedule.
+
+The pages (server-rendered, Arabic by default; `/ar/` and `/en/` decide, else
+`Accept-Language`; `/<publisher>…` redirects to the guest's language):
+
+| Route | What |
+|---|---|
+| `GET /<lang>/<publisher>` | the channels the guest's pass or open session allows (only open ones without a credential), with now and next |
+| `GET /<lang>/<publisher>/<channel>` | the player, now and next, today, a CC BY programme's credit, Report; `noindex` unless the publisher set the channel indexable |
+| `GET /<lang>/<publisher>/guide` | today's programmes per channel |
+| `GET /<lang>/legal/{copyright,terms,privacy}` | summaries, linking to the full text on `maktaba.tv` |
+| `GET /pair?tv=<nonce>`, `POST` | the phone's side of TV pairing: paste an invite link, type a short code (with `&p=<publisher>`), or send its open session |
+| `GET /s/watch.js`, `/s/watch.css` | the pages' script and stylesheet, served by the edge |
+
+`POST /i/<invite>` now ends with a `303` to the channel (an invite for one) or the grid. A page
+links only to its own publisher's channels and guide, Maktaba's legal pages, the edge's script
+and style, hls.js, Turnstile, and a CC BY programme's source (a test lists every link). The
+player is hls.js on the page (from jsDelivr, as Epic 34's site): it starts on the lowest rung,
+swaps each new viewer token from the beat into the playlist and segment URLs, and switches with
+up/down, PageUp/PageDown, a vertical swipe and number entry. Its states come from
+`site/states.ts` (`viewerState`), whose source the page script embeds, so the page and the
+Worker map answers the same way. `play` and `beat` answers carry `channel_state` (`live`,
+`waiting`, `offline_slate`, `off_air`, `revoked`): the slate plays with the offline note and no
+error.
+
+The apps' reads, with the pass as `Authorization: Bearer`:
+
+| Route | What |
+|---|---|
+| `GET /api/v1/lineup?publisher=` | `{publisher: {id, name, logo?}, channels: [{id, name, number, state, now, next}]}` |
+| `GET /api/v1/guide?publisher=&channel=` | the channel's programmes; `403` for a channel the credential does not open |
+| `POST /api/v1/pair` | a TV's pairing: `{nonce, url, expires_at, poll}`, 10 minutes |
+| `GET /api/v1/pair/<nonce>?wait=25` | the TV's long-poll: `200 {publisher, credential, kind, channels, expires_at}` once, `204` not yet, `410 pair_gone` |
+| `POST /api/v1/pair/<nonce>` | the phone: `{invite}` (a link or the token), `{publisher, code}`, or `{publisher, open: true}` with its open session |
+
+`Pairing` (Durable Object `PAIRING`, migration `v3`, one per nonce) keeps the credential until
+the TV takes it, then forgets it, and deletes everything at the end of its 10 minutes. An invite
+sent to a TV counts a new device use; the phone's own pass is never reused. An open session sent
+to a TV is a fresh one.
+
+`WATCH_SITE_OFF = 1` turns every page into "temporarily unavailable" while the API and playback
+stay up; `TURNSTILE_SITE_KEY` shows the Turnstile widget on an open channel's page.
+
 ## The Stream fallback
 
 `BROADCAST_DELIVERY = stream`, or a publisher's plan with `delivery: "stream"`. The home asks
@@ -175,8 +234,8 @@ revocations and metering stay the same; Stream's viewer-minutes are counted apar
 | Name | Kind | What |
 |---|---|---|
 | `SEGMENTS` | R2 | `maktaba-broadcast-<env>`: segments and slates |
-| `GUIDE` | R2 | `maktaba-broadcast-guide-<env>`: guide blobs (50.26) |
-| `CHANNEL`, `PUBLISHER`, `REVOCATIONS`, `VIEWER` | Durable Objects | `ChannelLive`, `PublisherControl`, `Revocations`, `ViewerAccess` (migration `v2`) |
+| `GUIDE` | R2 | `maktaba-broadcast-guide-<env>`: the channels' guides and the publishers' branding (50.27) |
+| `CHANNEL`, `PUBLISHER`, `REVOCATIONS`, `VIEWER`, `PAIRING` | Durable Objects | `ChannelLive`, `PublisherControl`, `Revocations`, `ViewerAccess` (migration `v2`), `Pairing` (migration `v3`, 50.27) |
 | `AE` | Analytics Engine | `broadcast_events` |
 | `RL` | Rate Limiting | 60 per 10 s per channel and rung, per location |
 | `PLAY_RL`, `API_RL` | Rate Limiting | 30 plays and 120 other watch requests a minute per address (50.26) |
@@ -187,6 +246,8 @@ revocations and metering stay the same; Stream's viewer-minutes are counted apar
 | `INGEST_HOST`, `LIVE_HOST`, `WATCH_HOST` | var | the hostnames (the cache keys use `LIVE_HOST`) |
 | `API_ORIGIN` | var | where usage is posted; unset, nothing is |
 | `CORS_ORIGINS` | var | comma-separated; unset, the defaults above |
+| `WATCH_SITE_OFF` | var | `1`: the watch pages say "temporarily unavailable" (50.27's rollback) |
+| `TURNSTILE_SITE_KEY` | var | Turnstile's public site key for the open channels' widget (50.27) |
 | `CLOUD_PUBKEYS` | secret | `{"<kid>": "<base64url Ed25519 public key>"}`: `broadcast.PublicKeysJSON` prints it |
 | `VIEWER_TOKEN_KEY` | secret | base64url, 32 bytes; the same on `watch.` |
 | `TURNSTILE_SECRET` | secret | Turnstile's secret for open channels' web visitors (50.26) |
@@ -204,7 +265,7 @@ gets Pro's guest sharing (2 rungs, 3,000 kbps) and any other plan none.
 ```sh
 cd web/packages/broadcast-edge
 npm ci
-npm test                        # typecheck and the tests in Miniflare (T01-T09)
+npm test                        # typecheck and the tests in Miniflare (50.21, 50.26, 50.27)
 node scripts/rehearsal.mjs      # wrangler dev, a fake home, 100 viewers (CI: 1,000)
 npx wrangler deploy --dry-run   # the bundle and bindings, offline
 ```
@@ -243,3 +304,4 @@ Nothing here is deployed. The first deploy needs, on Maktaba's Cloudflare accoun
 - `BROADCAST_DELIVERY = stream`, globally or per publisher (a plan push), if R2 delivery must
   stop.
 - `BROADCAST_GLOBAL_OFF = 1` stops everything.
+- `WATCH_SITE_OFF = 1` takes the watch pages down alone (50.27).

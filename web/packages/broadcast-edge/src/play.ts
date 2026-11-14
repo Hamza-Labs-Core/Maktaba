@@ -33,10 +33,12 @@ import {
 } from "./invites";
 import { clientIP, ipHash, rateLimited, REFRESH_AFTER_S, TOKEN_TTL_S } from "./limits";
 import type { Cred, PlanView } from "./access";
+import type { ChannelStatus } from "./channel_live";
 import { isRevoked, revocationsFor } from "./revocations";
 import { ERROR_KEYS, langOf, t, type Lang } from "./strings";
 import { mintViewerToken, type Mode } from "./tokens";
 import { verifyTurnstile } from "./turnstile";
+import { handleSite } from "./site/routes";
 import { DEFAULT_LIVE_HOST } from "./env";
 
 /** Every route watch.maktaba.tv answers (T07: none takes a payment). */
@@ -49,6 +51,22 @@ export const WATCH_ROUTES = [
   "POST /api/v1/open/attest",
   "POST /api/v1/play",
   "POST /api/v1/play/<session>/beat",
+  // 50.27: the pages and the apps' reads and TV pairing (site/routes.ts)
+  "GET /s/watch.js",
+  "GET /s/watch.css",
+  "GET /",
+  "GET /<lang>",
+  "GET /<lang>/<publisher>",
+  "GET /<lang>/<publisher>/<channel>",
+  "GET /<lang>/<publisher>/guide",
+  "GET /<lang>/legal/<page>",
+  "GET /pair",
+  "POST /pair",
+  "GET /api/v1/lineup",
+  "GET /api/v1/guide",
+  "POST /api/v1/pair",
+  "GET /api/v1/pair/<nonce>",
+  "POST /api/v1/pair/<nonce>",
 ] as const;
 
 const UUIDISH = /^[A-Za-z0-9-]{1,64}$/;
@@ -59,13 +77,19 @@ const OPEN_COOKIE = "mko";
 function withServerTime(res: Response): Response {
   const out = new Response(res.body, res);
   out.headers.set("X-Server-Time", String(now()));
-  out.headers.set("Cache-Control", "no-store");
-  out.headers.set("X-Robots-Tag", "noindex");
+  if (!out.headers.has("Cache-Control")) out.headers.set("Cache-Control", "no-store");
+  // a channel the publisher lets search engines index (50.26 §2) says so; nothing else is
+  if (out.headers.get("X-Maktaba-Indexable") === "1") out.headers.delete("X-Maktaba-Indexable");
+  else out.headers.set("X-Robots-Tag", "noindex");
   out.headers.set("X-Content-Type-Options", "nosniff");
   return out;
 }
 
-function answer(status: number, body: unknown, headers: Record<string, string> = {}): Response {
+export function answer(
+  status: number,
+  body: unknown,
+  headers: Record<string, string> = {}
+): Response {
   return new Response(JSON.stringify(body), {
     status,
     headers: { "Content-Type": "application/json", ...headers },
@@ -73,7 +97,7 @@ function answer(status: number, body: unknown, headers: Record<string, string> =
 }
 
 /** refuse answers an error with its viewer message key (and the words in the asked language). */
-function refuse(
+export function refuse(
   request: Request,
   status: number,
   error: string,
@@ -91,7 +115,7 @@ function refuse(
   return answer(status, body, headers);
 }
 
-function cookies(request: Request): Record<string, string> {
+export function cookies(request: Request): Record<string, string> {
   const out: Record<string, string> = {};
   for (const part of (request.headers.get("Cookie") ?? "").split(";")) {
     const i = part.indexOf("=");
@@ -100,15 +124,15 @@ function cookies(request: Request): Record<string, string> {
   return out;
 }
 
-function passCookieName(pub: string): string {
+export function passCookieName(pub: string): string {
   return `mkp_${pub}`;
 }
 
-function setCookie(name: string, value: string, maxAge: number): string {
+export function setCookie(name: string, value: string, maxAge: number): string {
   return `${name}=${value}; Path=/; Max-Age=${maxAge}; HttpOnly; Secure; SameSite=Lax`;
 }
 
-async function body(request: Request): Promise<Record<string, unknown>> {
+export async function body(request: Request): Promise<Record<string, unknown>> {
   try {
     const text = await request.text();
     if (text.length > 16384) return {};
@@ -119,11 +143,11 @@ async function body(request: Request): Promise<Record<string, unknown>> {
   }
 }
 
-function str(v: unknown): string {
+export function str(v: unknown): string {
   return typeof v === "string" ? v : "";
 }
 
-function viewer(env: Env, pub: string) {
+export function viewer(env: Env, pub: string) {
   return env.VIEWER.get(env.VIEWER.idFromName(pub));
 }
 
@@ -143,6 +167,8 @@ async function route(request: Request, env: Env, url: URL): Promise<Response> {
     if (request.method === "POST") return invitePost(request, env, token);
     return problem(405, "method");
   }
+  const site = await handleSite(request, env, url);
+  if (site) return site;
   if (request.method !== "POST") return problem(404, "not_found");
   if (path === "/api/v1/redeem") return redeem(request, env);
   if (path === "/api/v1/open/turnstile") return openTurnstile(request, env);
@@ -156,22 +182,33 @@ async function route(request: Request, env: Env, url: URL): Promise<Response> {
 
 // ---- invites ------------------------------------------------------------------------------
 
-type Redeemed =
+export type Redeemed =
   | { ok: true; pass: string; claims: InviteClaims; reused: boolean }
   | { ok: false; status: number; error: string };
 
-async function redeemToken(request: Request, env: Env, token: string): Promise<Redeemed> {
+/**
+ * redeemToken checks an invite and counts one device's use. `reuse` (the default) lets a device
+ * that already holds a pass of the same invite keep it; pairing a TV never reuses the phone's.
+ */
+export async function redeemToken(
+  request: Request,
+  env: Env,
+  token: string,
+  reuse = true
+): Promise<Redeemed> {
   const v = await verifyInvite(token, env.CLOUD_PUBKEYS, now());
   if (!v.ok) return v;
   const c = v.claims;
   // a revoked publisher (50.25) gets no new viewers
   if (isRevoked(await revocationsFor(env), { pub: c.pub, ch: "" }))
     return { ok: false, status: 410, error: "invite_revoked" };
-  const held = await readPass(
-    (cookies(request)[passCookieName(c.pub)] ?? bearer(request)) || "",
-    env.VIEWER_TOKEN_KEY,
-    now()
-  );
+  const held = reuse
+    ? await readPass(
+        (cookies(request)[passCookieName(c.pub)] ?? bearer(request)) || "",
+        env.VIEWER_TOKEN_KEY,
+        now()
+      )
+    : null;
   const r = await viewer(env, c.pub).redeem(c, held?.inv === c.inv ? held.id : undefined);
   if (!r.ok) return r;
   const pass = await mintPass(env.VIEWER_TOKEN_KEY, {
@@ -184,7 +221,7 @@ async function redeemToken(request: Request, env: Env, token: string): Promise<R
   return { ok: true, pass, claims: c, reused: r.reused };
 }
 
-function bearer(request: Request): string {
+export function bearer(request: Request): string {
   const h = request.headers.get("Authorization") ?? "";
   return h.startsWith("Bearer ") ? h.slice(7).trim() : "";
 }
@@ -253,17 +290,24 @@ async function invitePost(request: Request, env: Env, token: string): Promise<Re
     const key = ERROR_KEYS[r.error] ?? "broadcast.invite.invalid";
     return page(lang, `<h1>${esc(t(key, lang))}</h1>`, r.status);
   }
-  const res = page(
-    lang,
-    `<h1>${esc(t("broadcast.invite.ready", lang))}</h1><p class="free">${esc(t("broadcast.free", lang))}</p>`
-  );
-  res.headers.set("Set-Cookie", setCookie(passCookieName(r.claims.pub), r.pass, PASS_TTL_S));
-  return res;
+  // then to the channel (an invite for one) or the publisher's grid (50.27)
+  const pub = encodeURIComponent(r.claims.pub);
+  const to =
+    r.claims.chs.length === 1
+      ? `/${lang}/${pub}/${encodeURIComponent(r.claims.chs[0]!)}`
+      : `/${lang}/${pub}`;
+  return new Response(null, {
+    status: 303,
+    headers: {
+      Location: to,
+      "Set-Cookie": setCookie(passCookieName(r.claims.pub), r.pass, PASS_TTL_S),
+    },
+  });
 }
 
 // ---- open sessions ------------------------------------------------------------------------
 
-async function openSession(
+export async function openSession(
   via: "turnstile" | "attest",
   env: Env
 ): Promise<{ token: string; exp: number }> {
@@ -293,7 +337,7 @@ async function openAttest(request: Request, env: Env): Promise<Response> {
 
 // ---- play and beat ------------------------------------------------------------------------
 
-async function credOf(
+export async function credOf(
   request: Request,
   env: Env,
   pub: string
@@ -319,7 +363,7 @@ async function credOf(
   return { cred: { kind: "none" } };
 }
 
-function liveOrigin(env: Env): string {
+export function liveOrigin(env: Env): string {
   return `https://${env.LIVE_HOST || DEFAULT_LIVE_HOST}`;
 }
 
@@ -333,6 +377,11 @@ async function masterURL(
 ): Promise<string> {
   const token = await mintViewerToken(env.VIEWER_TOKEN_KEY, { pub, ch, session, mode, exp: expS });
   return `${liveOrigin(env)}/${token}/${ch}/master.m3u8`;
+}
+
+/** channelState is the channel's own state from its ChannelLive (50.21 §3). */
+export async function channelState(env: Env, ch: string): Promise<ChannelStatus> {
+  return env.CHANNEL.get(env.CHANNEL.idFromName(ch)).status();
 }
 
 async function planOf(env: Env, pub: string): Promise<PlanView | null> {
@@ -394,6 +443,8 @@ async function play(request: Request, env: Env): Promise<Response> {
       expires_at: new Date(expS * 1000).toISOString(),
       refresh_after: REFRESH_AFTER_S,
       state: r.mode,
+      // the channel itself: live, waiting (tuning), offline_slate, off_air (50.27 §3)
+      channel_state: await channelState(env, ch),
       neighbours,
     },
     headers
@@ -414,6 +465,7 @@ async function beat(request: Request, env: Env, session: string): Promise<Respon
     state: r.mode,
     concurrent: r.concurrent,
     refresh_after: REFRESH_AFTER_S,
+    channel_state: await channelState(env, r.ch),
   };
   if (r.refresh) {
     const expS = Math.floor(now() / 1000) + TOKEN_TTL_S;

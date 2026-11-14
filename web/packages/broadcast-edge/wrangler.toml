@@ -61,9 +61,18 @@ class_name = "ViewerAccess"
 tag = "v1"
 new_sqlite_classes = ["ChannelLive", "PublisherControl", "Revocations"]
 
+# one per TV pairing nonce, deleted after its 10 minutes (50.27)
+[[durable_objects.bindings]]
+name = "PAIRING"
+class_name = "Pairing"
+
 [[migrations]]
 tag = "v2"
 new_sqlite_classes = ["ViewerAccess"]
+
+[[migrations]]
+tag = "v3"
+new_sqlite_classes = ["Pairing"]
 
 [[analytics_engine_datasets]]
 binding = "AE"
@@ -132,6 +141,10 @@ class_name = "Revocations"
 [[env.production.durable_objects.bindings]]
 name = "VIEWER"
 class_name = "ViewerAccess"
+
+[[env.production.durable_objects.bindings]]
+name = "PAIRING"
+class_name = "Pairing"
 
 [[env.production.analytics_engine_datasets]]
 binding = "AE"

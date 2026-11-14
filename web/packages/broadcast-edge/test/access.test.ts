@@ -227,9 +227,10 @@ describe("T01 invite verify", () => {
       method: "POST",
       headers: { "Accept-Language": "en" },
     });
-    expect(done.status).toBe(200);
+    // redeemed: the pass cookie, then on to the publisher's grid (50.27)
+    expect(done.status).toBe(303);
     expect(done.headers.get("Set-Cookie")).toContain(`mkp_${s.pub}=`);
-    expect(await done.text()).toContain("Open the Maktaba Player");
+    expect(done.headers.get("Location")).toBe(`/en/${s.pub}`);
     const used = await call(`${WATCH}/i/${tok}`, {
       method: "POST",
       headers: { "Accept-Language": "en" },

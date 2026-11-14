@@ -20,12 +20,14 @@ export { ChannelLive } from "./channel_live";
 export { PublisherControl } from "./publisher";
 export { Revocations } from "./revocations";
 export { ViewerAccess } from "./access";
+export { Pairing } from "./pairing";
 
 export type Host = "ingest" | "live" | "watch";
 
 /**
  * hostOf picks the edge's role from the hostname. Any other host (wrangler dev on localhost, the
- * CI rehearsal) is routed by path: /v1/… is ingest, /api/… and /i/… watch, everything else live.
+ * CI rehearsal) is routed by path: /v1/… is ingest; /api/…, /i/…, /s/…, /pair and /ar/… or /en/…
+ * watch (the pages, 50.27); everything else live.
  */
 export function hostOf(env: Env, url: URL): Host {
   const h = url.hostname;
@@ -33,7 +35,8 @@ export function hostOf(env: Env, url: URL): Host {
   if (h === (env.LIVE_HOST || DEFAULT_LIVE_HOST)) return "live";
   if (h === (env.WATCH_HOST || DEFAULT_WATCH_HOST)) return "watch";
   if (url.pathname.startsWith("/v1/")) return "ingest";
-  if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/i/")) return "watch";
+  if (/^\/(api|i|s|ar|en)\//.test(url.pathname) || /^\/(pair|ar|en)?$/.test(url.pathname))
+    return "watch";
   return "live";
 }
 
@@ -50,7 +53,7 @@ export default {
         case "live":
           return await handleLive(request, env, url);
         case "watch":
-          // the viewer API and the invite page (50.26); the site and the guide arrive with 50.27
+          // the viewer API and the invite page (50.26); the pages, guide and pairing (50.27)
           return await handleWatch(request, env, url);
       }
     } catch (err) {
