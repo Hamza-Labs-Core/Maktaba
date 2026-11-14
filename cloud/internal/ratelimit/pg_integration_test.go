@@ -106,7 +106,7 @@ func TestPGFallsBackToTheNodeBucket(t *testing.T) {
 	defer func() { _ = p.Close() }()
 	l := ratelimit.NewPG(p.DB, "mail", 2, 1.0/12, slog.New(slog.DiscardHandler))
 	cut.Down()
-	h := l.Middleware(func(*http.Request) string { return "ip:x" })(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {}))
+	h := l.Middleware(func(*http.Request) string { return "ip:x" })(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
 	codes := []int{}
 	for i := 0; i < 3; i++ {
 		rec := httptest.NewRecorder()

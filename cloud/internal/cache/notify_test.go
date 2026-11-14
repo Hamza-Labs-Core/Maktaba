@@ -52,7 +52,7 @@ func TestDispatch(t *testing.T) {
 	}
 }
 
-func TestFuncsNil(t *testing.T) {
+func TestFuncsNil(_ *testing.T) {
 	Funcs{}.Invalidate("tier", "x")
 	Funcs{}.Reset()
 }
