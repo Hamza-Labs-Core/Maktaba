@@ -2570,6 +2570,15 @@ build fails when the two differ.
   pass the API now also returns in the body to native apps, so the screen works while the API
   is down; a refusal says only admins can open it and never signs the app out.
 
+- **A pool of relays (story 50.16).** The cloud can run several relay machines in one pool:
+  each home keeps its tunnel on one relay and an idle standby tunnel on another, chosen by
+  weighted rendezvous hashing, so a relay lost costs a home seconds, and adding one moves only
+  the homes it wins. Any relay answers for any home. Apps get a `relay_hint` connection that
+  goes straight to the home's relay. The witness keeps `relay.maktaba.tv` round robin over the
+  healthy relays (`maktaba-cloud relay-dns`); staff take a relay out with `maktaba-cloud relay
+  drain|down|activate`. Off until `[relay.pool] enabled = true`; proven in the cloud rehearsal
+  (relay loss, relay added).
+
 ### Changed
 
 - **A machine that loses its home stays usable** under a notice instead of the whole app being
