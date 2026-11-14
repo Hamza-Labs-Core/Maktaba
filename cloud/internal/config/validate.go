@@ -48,6 +48,10 @@ func Validate(c Config, role Role) error {
 		if err := validateAdminListener(c.Server); err != nil {
 			return err
 		}
+		// the broadcast edge's ingest tokens (story 50.21) are never on without their key
+		if c.Broadcast.Enabled && c.Broadcast.KeyPath == "" {
+			return fmt.Errorf("%w: broadcast.enabled is on but broadcast.key_path is not set", ErrMissing)
+		}
 		// the auth pages' bot check (story 50.30 §4) is never on without its secret
 		if c.Turnstile.Enabled && c.Turnstile.Secret == "" {
 			return fmt.Errorf("%w: turnstile.enabled is on but MAKTABA_CLOUD_TURNSTILE_SECRET is not set", ErrMissing)
@@ -254,11 +258,14 @@ func ValidateBroadcast(b BroadcastConfig) error {
 	return nil
 }
 
-// EdgeKey decodes broadcast.edge_public_key.
+// EdgeKey decodes broadcast.edge_public_key: base64url (how docs/broadcast-edge.md prints the
+// key and the shared test vectors carry it) or standard base64, padded or not.
 func EdgeKey(s string) (ed25519.PublicKey, error) {
-	b, err := base64.StdEncoding.DecodeString(strings.TrimSpace(s))
-	if err != nil || len(b) != ed25519.PublicKeySize {
-		return nil, errors.New("config: broadcast.edge_public_key must be a base64 Ed25519 public key (32 bytes)")
+	s = strings.TrimRight(strings.TrimSpace(s), "=")
+	for _, enc := range []*base64.Encoding{base64.RawURLEncoding, base64.RawStdEncoding} {
+		if b, err := enc.DecodeString(s); err == nil && len(b) == ed25519.PublicKeySize {
+			return ed25519.PublicKey(b), nil
+		}
 	}
-	return ed25519.PublicKey(b), nil
+	return nil, errors.New("config: broadcast.edge_public_key must be a base64url Ed25519 public key (32 bytes)")
 }

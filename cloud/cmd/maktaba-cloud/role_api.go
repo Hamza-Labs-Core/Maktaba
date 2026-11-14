@@ -23,6 +23,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/auth/sessions"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/auth/token"
 	billingpkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/billing"
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/broadcast"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/db"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/entitlement"
@@ -323,6 +324,7 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 		// credential, never a user token.
 		serversh.MountAgent(app, serversDeps)
 		broadcasth.MountAgent(app, broadcastDeps)
+		broadcasth.MountIngest(app, ingestDeps(cfg, servers, broadcastStore, logger))
 		// the broadcast edge: each request signed with its key, no account
 		edgeh.Mount(app, edgeDeps)
 		reports.MountAgent(app, &reports.AgentDeps{Store: reportStore, Servers: servers, Logger: logger,
@@ -541,4 +543,23 @@ func turnstileGuard(cfg config.Config, fake turnstile.Verifier) (*turnstile.Guar
 	}
 	return &turnstile.Guard{Enabled: true, Verifier: v, WebOrigins: t.WebOrigins,
 		ClientIP: func(r *http.Request) string { return cmw.GetClientIP(r.Context()) }}, nil
+}
+
+// ingestDeps wires the broadcast edge's ingest tokens (story 50.21): on whenever
+// broadcast.key_path is set (otherwise the route answers 503 broadcast_disabled). Who gets one
+// is 50.20's entitlement (broadcasth.StorePlans): while broadcast.enabled is off, only the
+// test publishers a service admin granted.
+func ingestDeps(cfg config.Config, servers *stores.Servers, store *billingpkg.BroadcastStore, logger *slog.Logger) *broadcasth.IngestDeps {
+	d := &broadcasth.IngestDeps{Agents: servers, Plans: broadcasth.StorePlans{Store: store}, IngestURL: cfg.Broadcast.IngestURL}
+	if cfg.Broadcast.KeyPath == "" {
+		return d
+	}
+	k, err := broadcast.LoadKey(cfg.Broadcast.KeyPath)
+	if err != nil {
+		logger.Warn("broadcast ingest tokens disabled", "err", err)
+		return d
+	}
+	d.Key = &k
+	logger.Info("broadcast ingest tokens on", "kid", k.Kid)
+	return d
 }

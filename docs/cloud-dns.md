@@ -19,6 +19,10 @@ the nodes exist (Epic 50 README §12); nothing in the repo calls a DNS API for t
 | `admin.maktaba.tv` | the admin web Worker; `/v1/*` through the Tunnel (50.32) | proxied | auto | the operator console (staff only, 50.33) | 1 |
 | `plugins.maktaba.tv` | the plugin store's Workers (Epic 54), on Cloudflare | proxied | auto | the plugin store | 54 |
 | `plugins-cdn.maktaba.tv` | the store's signed files (Epic 54), on Cloudflare | proxied | auto | homes downloading plugin files | 54 |
+| `ingest.maktaba.tv` | the broadcast edge's Worker (50.21), a Workers Custom Domain, **on Cloudflare, not on Hetzner** | proxied | auto | homes pushing broadcast segments (outbound only) | B |
+| `live.maktaba.tv` | the broadcast edge's Worker (50.21): playlists and segments from R2 and the edge cache | proxied | auto | viewers' players | B |
+| `watch.maktaba.tv` | the broadcast edge's Worker (50.21): the watch site and its API (50.26, 50.27), guide blobs | proxied | auto | viewers | B |
+| `staging-ingest.maktaba.dev`, `staging-live.maktaba.dev`, `staging-watch.maktaba.dev` | the broadcast edge's staging Worker (50.21) | proxied | auto | test publishers, never users | B |
 | `relay.maktaba.tv` | the Floating IP | **DNS only** | 300 s | homes' tunnel (`/v1/relay/ws`) | 1 |
 | `*.relay.maktaba.tv` | the Floating IP | **DNS only** | 300 s | apps reaching a home: `<slug>.relay.maktaba.tv` | 1 |
 | `canary.relay.maktaba.tv` | covered by the wildcard | DNS only | — | the canary home (50.10); a reserved slug | 1 |
@@ -40,8 +44,13 @@ the nodes exist (Epic 50 README §12); nothing in the repo calls a DNS API for t
   never changes DNS. The 300 s TTL matters only on the manual zone-disaster path (50.09).
 - **Phase 2 relay names use 60 s**, because the witness removes a dead relay's record.
 - **Reserved slugs.** No home can take `canary`, `status`, `api`, `app`, `admin`, `www`,
-  `plugins`, `plugins-cdn`, `r1`…`r99`, `direct` or `staging` (and the operator names of story
-  25.22): the cloud answers `409 subdomain_reserved` (`cloud/migrations/00500001_reserved_infra_slugs.sql`).
+  `plugins`, `plugins-cdn`, `r1`…`r99`, `direct`, `staging`, `ingest`, `live` or `watch` (and the
+  operator names of story 25.22): the cloud answers `409 subdomain_reserved`
+  (`cloud/migrations/00500001_reserved_infra_slugs.sql`, `00500016_reserved_broadcast_slugs.sql`).
+- **The broadcast edge is not on Hetzner** (50.21). `ingest`, `live` and `watch` are one Worker
+  with R2 and Durable Objects on Maktaba's Cloudflare account; they have no origin, so their
+  custom domains own their records. Broadcast video is served from R2 through the Worker,
+  never through the proxy from an origin (README §15.5).
 - **The plugin store is not on Hetzner.** `plugins` and `plugins-cdn` are Cloudflare-hosted
   (Epic 54); a Hetzner outage doesn't touch them and failover never moves them. The store's
   Cloudflare deploy token is its own.

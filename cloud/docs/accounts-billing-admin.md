@@ -198,12 +198,19 @@ mode for **new** sessions (`billing.BroadcastModeFor`). A playing viewer keeps t
 | `wait` | past twice the allowance, or at the viewers-at-once limit: new viewers wait |
 | `off` | no plan, the gate shut (`broadcast.enabled` off and not a test publisher), or the owner suspended |
 
-- **Edge API** (`cloud/internal/handlers/edge`): `POST /_edge/usage` takes up to 2,000 windows
-  `{"publisher","window","minutes_full","minutes_lowest"}` (key `<publisher>:<window>`, a repeat
-  counted once) and answers `taken`, `duplicates`, `rejected` and each publisher's state;
-  `GET /_edge/publishers/{id}` is one state. Each request is signed with the edge's Ed25519 key
-  (`X-Maktaba-Edge-Timestamp`, `X-Maktaba-Edge-Signature` over `<ts>\n<METHOD> <path>\n<body>`,
-  5 minutes of skew); the cloud holds the public half, `broadcast.edge_public_key`.
+- **Edge API** (`cloud/internal/handlers/edge`; the contract is `cloud/internal/broadcast/edge.go`,
+  shared with the edge through `cloud/internal/broadcast/testdata/vectors.json`, see
+  `docs/broadcast-edge.md`): `POST /_edge/usage` takes up to 2,000 windows `{"key","publisher",
+  "window_start","window_end","minutes_full","minutes_lowest","minutes_stream","segments_in",
+  "bytes_in","peak_sessions"}` (key `<publisher>:<window_start>`, RFC 3339 UTC in whole seconds;
+  a repeat counted once; a key or end that does not match the start is `bad_window`; the cloud
+  bills the full and lowest minutes) and answers `taken`, `duplicates`, `rejected` (each by the
+  posted key), each publisher's state and its `plans` (the plan the edge holds,
+  `broadcast.PlanFromState`); `GET /_edge/publishers/{id}` is one state. Each request is signed
+  with the edge's Ed25519 key (`X-Maktaba-Edge-Time` in unix ms, `X-Maktaba-Edge-Signature`:
+  base64url over `maktaba-broadcast-edge-v1\n<METHOD>\n<path>\n<ms>\n<hex sha256 body>`,
+  5 minutes of skew); the cloud holds the public half, `broadcast.edge_public_key` (base64url or
+  standard base64).
 - **Publishing** (`POST /v1/broadcast/channels`, the home's agent): `402 broadcast_needs_plan`,
   `403 broadcast_not_enabled`, `402 broadcast_limit {limit}`, `409 broadcast_agreement_required
   {version}`, then `201`. The owner accepts the agreement at `POST /v1/broadcast/agreement`.

@@ -2587,6 +2587,17 @@ build fails when the two differ.
   drain|down|activate`. Off until `[relay.pool] enabled = true`; proven in the cloud rehearsal
   (relay loss, relay added).
 
+- **The broadcast edge, built and rehearsed in CI (story 50.21).** Maktaba Cloud now has the
+  Cloudflare Worker a published channel will play from: a home pushes each segment of each
+  rendition once to `ingest.maktaba.tv`, and viewers' players fetch playlists and segments from
+  `live.maktaba.tv` at Cloudflare's edge, so a home's upload is the same for one viewer as for
+  ten thousand. Each home has its own signed ingest token for one channel and its rungs, valid a
+  day and asked for again every hour; a viewer's token lives ten minutes. When a home goes
+  quiet, its channel plays the home's offline slate and returns to live when it is back.
+  Segments are deleted ten minutes after they arrive; nothing is kept for catch-up. Stream is the
+  switchable fallback. The edge stores and delivers what a home sends and never chooses, ranks
+  or recommends anything. It is not deployed yet: broadcasting stays off until its gate opens.
+
 ### Changed
 
 - **A machine that loses its home stays usable** under a notice instead of the whole app being

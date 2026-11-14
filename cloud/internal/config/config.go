@@ -40,7 +40,7 @@ type Config struct {
 	Broadcast   BroadcastConfig
 }
 
-// BroadcastConfig is home broadcasting's (Epic 50 story 50.20).
+// BroadcastConfig is home broadcasting's (Epic 50 stories 50.20 and 50.21).
 type BroadcastConfig struct {
 	// Enabled is broadcast.enabled, the broadcasting gate (default false): off, only the test
 	// publishers a service admin granted may publish, and homes' licences don't carry the
@@ -54,8 +54,15 @@ type BroadcastConfig struct {
 	// PAYGReports is billing.broadcast_payg.enabled (default true): off stops new pay-as-you-go
 	// viewer-hour reports; the queued ones still go, so nothing used goes unbilled.
 	PAYGReports bool
-	// EdgePublicKey is broadcast.edge_public_key: the base64 Ed25519 public key the broadcast
-	// edge signs its usage posts with (POST /_edge/usage). Public, so it may sit in the file;
+	// KeyPath is broadcast.key_path: the Ed25519 seed file (base64url or 32 raw bytes, 0600)
+	// that signs ingest tokens and control posts (50.21); its public half goes in the edge's
+	// CLOUD_PUBKEYS. Needed with Enabled; set alone, ingest tokens go to test publishers only.
+	KeyPath string
+	// IngestURL is broadcast.ingest_url, default https://ingest.maktaba.tv.
+	IngestURL string
+	// EdgePublicKey is broadcast.edge_public_key: the Ed25519 public key (base64url or standard
+	// base64) of EDGE_SIGNING_KEY, the key the broadcast edge signs its posts to the API with
+	// (broadcast.VerifyEdgeRequest). Public, so it may sit in the file;
 	// the private half is a Worker secret. Empty: the edge routes answer 503.
 	EdgePublicKey string
 }
@@ -363,7 +370,7 @@ func defaultConfig() Config {
 			RebalanceEvery:   30 * time.Second,
 			RebalanceRate:    20,
 		},
-		Broadcast: BroadcastConfig{PlansEnforce: true, PAYGReports: true},
+		Broadcast: BroadcastConfig{PlansEnforce: true, PAYGReports: true, IngestURL: "https://ingest.maktaba.tv"},
 	}
 }
 
@@ -544,6 +551,10 @@ func assign(c *Config, section, key, val string) error {
 		return nil
 	}
 	switch section + "." + key {
+	case "broadcast.key_path":
+		c.Broadcast.KeyPath = val
+	case "broadcast.ingest_url":
+		c.Broadcast.IngestURL = val
 	case "direct.enabled":
 		return setBool(&c.Direct.Enabled, val)
 	case "direct.domains":
