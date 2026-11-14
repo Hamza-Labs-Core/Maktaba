@@ -49,8 +49,14 @@ export default defineConfig({
       "../apps/tv/web/src/**/*.test.ts",
     ],
     // the developer portal and maktaba.tv have their own vitest (node, over their built site):
-    // packages/devportal, packages/website (_website.yml)
-    exclude: ["**/node_modules/**", "packages/devportal/**", "packages/website/**"],
+    // packages/devportal, packages/website (_website.yml); the broadcast edge runs its own in
+    // Miniflare (packages/broadcast-edge, _broadcast-edge.yml)
+    exclude: [
+      "**/node_modules/**",
+      "packages/devportal/**",
+      "packages/website/**",
+      "packages/broadcast-edge/**",
+    ],
     // Half the cores, 2 to 8 (vitest's own default is every core but one). The run is
     // bound by the main process past about 7 workers: 27 forks on a 28-core Mac took
     // 88 s, 7 took 90 s. More only starve each other, and on a runner or machine that

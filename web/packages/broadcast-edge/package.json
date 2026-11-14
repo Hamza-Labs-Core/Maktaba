@@ -1,0 +1,24 @@
+{
+  "name": "@maktaba/broadcast-edge",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The broadcast edge (Epic 50 story 50.21): a multi-tenant Cloudflare Worker on Maktaba's account. Homes push each HLS segment once to R2 through ingest.maktaba.tv; live.maktaba.tv serves playlists and segments from the edge. Infrastructure only: it never chooses, ranks or recommends content.",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "npm run typecheck && vitest run",
+    "rehearsal": "node scripts/rehearsal.mjs",
+    "dev": "wrangler dev --local"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "0.23.0",
+    "@cloudflare/workers-types": "5.20261001.1",
+    "@types/node": "22.19.1",
+    "typescript": "5.7.3",
+    "vitest": "4.1.12",
+    "wrangler": "4.124.0"
+  }
+}
