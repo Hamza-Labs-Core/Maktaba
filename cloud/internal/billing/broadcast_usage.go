@@ -285,6 +285,12 @@ type PublisherState struct {
 	Month            string         `json:"month"`
 	Usage            BroadcastUsage `json:"usage"`
 	AllowanceMinutes int64          `json:"allowance_minutes"`
+	// AgreementAccepted: the home's owner accepted the current Broadcaster agreement (the
+	// home's publish check 2, story 50.22).
+	AgreementAccepted bool `json:"agreement_accepted"`
+	// AgreementVersion is the current agreement's version (stored with the home's rights
+	// confirmation).
+	AgreementVersion int `json:"agreement_version"`
 	FairUseMinutes   int64          `json:"fair_use_minutes"`
 	PAYG             BroadcastPAYG  `json:"payg"`
 	At               time.Time      `json:"at"`
@@ -304,12 +310,18 @@ func (s *BroadcastStore) State(ctx context.Context, serverID string) (PublisherS
 	if err != nil {
 		return PublisherState{}, err
 	}
-	return s.stateOf(p, u, month, set), nil
+	st := s.stateOf(p, u, month, set)
+	if p.OwnerID != "" {
+		if st.AgreementAccepted, err = s.AgreementAccepted(ctx, p.OwnerID); err != nil {
+			return PublisherState{}, err
+		}
+	}
+	return st, nil
 }
 
 func (s *BroadcastStore) stateOf(p Publisher, u BroadcastUsage, month time.Time, set BroadcastPAYGSettings) PublisherState {
 	st := PublisherState{Publisher: p.ServerID, Enforce: s.Enforce, Month: month.Format("2006-01"), Usage: u,
-		Access: []string{}, At: s.now()}
+		Access: []string{}, At: s.now(), AgreementVersion: BroadcastAgreementVersion}
 	tier := p.Tier()
 	payg := paygFor(tier, set, u)
 	st.PAYG = payg
