@@ -186,6 +186,7 @@ func waitFor(t *testing.T, what string, ok func() bool) {
 func newTestCtl(t *testing.T, store *memStore, src *fakeSource, ff *fakeFFmpeg) *Ctl {
 	return &Ctl{Store: store, Source: src, Runner: ff, Dir: t.TempDir(), Poll: 20 * time.Millisecond,
 		StateEvery: 50 * time.Millisecond, Grace: 100 * time.Millisecond, RestartDelay: 10 * time.Millisecond,
+		RungPoll: 20 * time.Millisecond,
 		Output: func(context.Context) Output {
 			return Output{Encoder: EncVideoToolbox, Width: 1920, Height: 1080, FPS: 25, KeyintSeconds: 2, VideoKbps: 6000, AudioKbps: 192}
 		}}

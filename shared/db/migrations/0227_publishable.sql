@@ -1,3 +1,4 @@
+-- +goose NO TRANSACTION
 -- +goose Up
 -- +goose StatementBegin
 --
@@ -40,6 +41,10 @@
 --   channel_publishable_only(chan)  true while the channel is published and the home keeps
 --                                   app_settings `broadcast.publishable_only` on (default)
 --
+-- The three a plugin's statement calls (video_publishable_reason, video_attribution and
+-- channel_publishable_only) are SECURITY DEFINER: they answer for one item or channel, and
+-- a plugin's role needs no grant on publishable_sources or the tables they read.
+--
 -- Nothing here leaves the home: the cloud learns only a programme's attribution, in the
 -- guide it is sent.
 --
@@ -67,8 +72,9 @@ CREATE TABLE IF NOT EXISTS publishable_sources (
 -- +goose StatementEnd
 
 -- +goose StatementBegin
--- one standing permission per source (a withdrawn one stays as the record)
-CREATE UNIQUE INDEX IF NOT EXISTS publishable_sources_standing_idx
+-- one standing permission per source (a withdrawn one stays as the record). Built
+-- concurrently, so the slot runs outside a transaction; every statement here can run again.
+CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS publishable_sources_standing_idx
     ON publishable_sources (kind, lower(ref)) WHERE revoked_at IS NULL;
 -- +goose StatementEnd
 
@@ -121,7 +127,7 @@ $f$;
 
 -- +goose StatementBegin
 CREATE OR REPLACE FUNCTION video_publishable_reason(vid uuid) RETURNS text
-LANGUAGE sql STABLE AS $f$
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp AS $f$
     SELECT COALESCE(
         (SELECT v.publishable_reason FROM videos v WHERE v.id = vid),
         (SELECT 'cc_by' FROM youtube_videos y WHERE y.youtube_id = video_youtube_id(vid) AND y.license = 'cc_by'),
@@ -132,7 +138,7 @@ $f$;
 
 -- +goose StatementBegin
 CREATE OR REPLACE FUNCTION video_attribution(vid uuid) RETURNS jsonb
-LANGUAGE sql STABLE AS $f$
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp AS $f$
     SELECT COALESCE(
         (SELECT jsonb_build_object(
                     'kind', 'cc_by', 'licence', 'CC BY', 'title', y.title,
@@ -151,7 +157,7 @@ $f$;
 
 -- +goose StatementBegin
 CREATE OR REPLACE FUNCTION channel_publishable_only(chan uuid) RETURNS boolean
-LANGUAGE sql STABLE AS $f$
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp AS $f$
     SELECT EXISTS (SELECT 1 FROM broadcast_channels b WHERE b.channel_id = chan AND b.state IN ('live', 'offline'))
        AND NOT EXISTS (SELECT 1 FROM app_settings s WHERE s.key = 'broadcast.publishable_only'
                                                        AND s.value = 'false'::jsonb)

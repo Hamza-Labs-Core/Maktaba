@@ -94,6 +94,10 @@ var copyReviewed = []string{
 	// a confidence, categories and times, no secret); a promoted copy keeps the
 	// detected tiers and what an admin already reviewed
 	"video_content_signals",
+	// slot 0227 (story 50.23): the source permissions an admin recorded (a kind, a
+	// reference, a proof link, a credit and times, no secret); a promoted copy keeps what
+	// its published channels may air
+	"publishable_sources",
 }
 
 // Every table of a migrated database is either reviewed as copied or left out.
