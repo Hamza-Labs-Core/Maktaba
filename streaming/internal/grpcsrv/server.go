@@ -18,6 +18,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -160,9 +161,57 @@ type Server struct {
 	// main.go refuses one with too little free on the cache's disk.
 	TranscodeRoom func() error
 
+	// MaxRemux caps the remux sessions open at once (story 58.02): a remux
+	// copies the video and takes no transcode slot, yet each is an ffmpeg
+	// process. 0: DefaultMaxRemux.
+	MaxRemux int
+
 	// Logger receives the session lifecycle (opened, reused, closed, refused);
 	// nil: slog's default.
 	Logger *slog.Logger
+}
+
+// DefaultMaxRemux is MaxRemux's default: a remux reads and writes at the
+// source's bitrate, a few times a 4K film's on any disk the home runs on.
+const DefaultMaxRemux = 16
+
+// MaxFits is how many sessions of one video a user keeps open for different
+// device reports (two TVs of a household); one more closes the oldest, so a
+// report that keeps changing never stacks processes.
+const MaxFits = 2
+
+func (s *Server) maxRemux() int {
+	if s.MaxRemux > 0 {
+		return s.MaxRemux
+	}
+	return DefaultMaxRemux
+}
+
+// supersede closes the user's oldest sessions of the video made for other
+// device reports, keeping MaxFits-1 of them beside the one about to open.
+func (s *Server) supersede(ctx context.Context, open []*session.Row, fit, videoID string) {
+	others := []*session.Row{}
+	for _, r := range open {
+		if r.Fit != "" && r.Fit != fit && r.ClosedAt == nil {
+			others = append(others, r)
+		}
+	}
+	if len(others) < MaxFits {
+		return
+	}
+	sort.SliceStable(others, func(i, j int) bool { return others[i].StartedAt.After(others[j].StartedAt) })
+	for _, r := range others[MaxFits-1:] {
+		s.log().Info("vod session closed: the video was opened for another device report",
+			"session_id", r.ID.String(), "video_id", videoID,
+			"reason", string(session.ReasonSuperseded), "event", "vod_session_closed")
+		if cerr := s.Sessions.Close(ctx, r.ID, session.ReasonSuperseded, s.Now().UTC()); cerr != nil {
+			s.log().Warn("vod session not closed", "session_id", r.ID.String(),
+				"err", cerr.Error(), "event", "vod_session_close_failed")
+		}
+		if r.SlotHold != "" {
+			_ = s.Allocator.Release(r.SlotHold) // as CloseSession: its transcode's end gives it back too
+		}
+	}
 }
 
 func (s *Server) log() *slog.Logger {
@@ -273,6 +322,10 @@ func (s *Server) OpenSession(ctx context.Context, req OpenSessionRequest) (OpenS
 		return s.respFor(reuse, ladder), nil
 	}
 
+	if fit != "" {
+		s.supersede(ctx, open, fit, req.VideoID)
+	}
+
 	verdict := s.Profiles.DecideFor(profile, req.DeviceCaps, SourceOf(row), capability.Override{
 		ForceTranscode: req.ForceTranscode,
 		MaxBitrateKbps: req.MaxBitrateKbps,
@@ -290,6 +343,15 @@ func (s *Server) OpenSession(ctx context.Context, req OpenSessionRequest) (OpenS
 	if mode == session.ModeRemux && s.TranscodeRoom != nil && s.TranscodeRoom() != nil {
 		// a remux keeps its segments until the session closes too
 		return OpenSessionResponse{}, ErrNoDiskSpace
+	}
+	if mode == session.ModeRemux {
+		n, cerr := s.Sessions.CountActive(ctx, session.ModeRemux)
+		if cerr != nil || n >= s.maxRemux() {
+			// fail closed: an uncounted store starts no ffmpeg either
+			s.log().Warn("vod session refused: every remux is taken",
+				"video_id", req.VideoID, "remuxes", n, "event", "vod_remux_exhausted")
+			return OpenSessionResponse{}, ErrResourceExhausted
+		}
 	}
 
 	// the transcode slot taken (""; none), given back when the transcode

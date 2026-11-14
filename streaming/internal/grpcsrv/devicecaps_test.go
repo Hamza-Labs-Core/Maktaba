@@ -2,13 +2,16 @@ package grpcsrv
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/capability"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/probe"
+	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/session"
 )
 
 // a 4K HEVC HDR10 MKV, as the pipeline's probe records one
@@ -215,5 +218,66 @@ func TestOpenSession_OlderProfileRemuxStaysATranscode(t *testing.T) {
 	resp, fake, _ := openWith(t, row, "ios-native", nil, "")
 	if resp.Mode != "transcode" || fake.lastJob.Remux != nil || fake.lastJob.Segments != "" {
 		t.Fatalf("mode %s job %+v", resp.Mode, fake.lastJob)
+	}
+}
+
+// A report that keeps changing never stacks sessions (each a process): of one
+// user's sessions of a video, at most MaxFits stay open for different reports,
+// the oldest closed as superseded.
+func TestOpenSession_ChangingReportsKeepMaxFits(t *testing.T) {
+	srv, fb, _ := setupServer(t)
+	row := hevcHDR10(fb)
+	user := uuid.New().String()
+	clock := time.Now()
+	srv.Now = func() time.Time { clock = clock.Add(time.Second); return clock }
+	ids := []string{}
+	for i := 1; i <= 5; i++ {
+		caps := &capability.DeviceCaps{Containers: []string{"mkv"}, Video: []capability.VideoCap{{Codec: "hevc", MaxHeight: 2160}},
+			HDR: []string{"hdr10"}, Audio: []string{"eac3"}, MaxBitrateKbps: 20000 + i}
+		resp, err := srv.OpenSession(context.Background(), OpenSessionRequest{
+			VideoID: row.VideoID.String(), UserID: user, ClientProfile: "firetv", DeviceCaps: caps,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		ids = append(ids, resp.SessionID)
+	}
+	uid, _ := uuid.Parse(user)
+	open, err := srv.Sessions.OpenByUserVideo(context.Background(), uid, row.VideoID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(open) != MaxFits {
+		t.Fatalf("%d sessions open for changing reports, want %d", len(open), MaxFits)
+	}
+	newest := map[string]bool{ids[3]: true, ids[4]: true}
+	for _, r := range open {
+		if !newest[r.ID.String()] {
+			t.Errorf("an older session stayed open: %s", r.ID)
+		}
+	}
+	id0, _ := uuid.Parse(ids[0])
+	if r, _, _ := srv.Sessions.Get(context.Background(), id0); r.ClosedReason != session.ReasonSuperseded {
+		t.Errorf("the oldest closed as %q, want superseded", r.ClosedReason)
+	}
+}
+
+// Remuxes take no transcode slot, so they have their own cap: past MaxRemux
+// an open is refused (resource-exhausted) and no ffmpeg starts.
+func TestOpenSession_RemuxCap(t *testing.T) {
+	_, fb, _ := setupServer(t)
+	row := hevcHDR10(fb)
+	caps := &capability.DeviceCaps{Video: []capability.VideoCap{{Codec: "hevc", MaxHeight: 2160}}, HDR: []string{"hdr10"},
+		Audio: []string{"aac", "eac3"}, HLSSegments: []string{"fmp4"}}
+	_, fake, srv := openWith(t, row, "cast", caps, "")
+	srv.MaxRemux = 1
+	_, err := srv.OpenSession(context.Background(), OpenSessionRequest{
+		VideoID: row.VideoID.String(), UserID: uuid.New().String(), ClientProfile: "cast", DeviceCaps: caps,
+	})
+	if !errors.Is(err, ErrResourceExhausted) {
+		t.Fatalf("err %v, want resource-exhausted", err)
+	}
+	if fake.calls != 1 {
+		t.Fatalf("ffmpeg started %d times, want 1", fake.calls)
 	}
 }
