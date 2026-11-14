@@ -66,6 +66,17 @@ func TestP54MountsTheAdminRoutesWithTheComponentsService(t *testing.T) {
 	}
 	if n < 15 || svc.Plugins == nil {
 		t.Fatalf("%d plugin routes, hooks %v", n, svc.Plugins)
+	} // story 54.44: a plugin's problems count is wired to the failures list's own rule
+	// (queues.OpenCounts): no stage reads nothing, and a stage asks the database
+	l, ok := svc.Plugins.(*plugins.Lifecycle)
+	if !ok || l.Problems == nil {
+		t.Fatalf("the plugins' lifecycle has no problems count: %T", svc.Plugins)
+	}
+	if got, err := l.Problems(ctx, nil); err != nil || len(got) != 0 {
+		t.Fatalf("no stages: %v %v", got, err)
+	}
+	if _, err := l.Problems(ctx, []string{"subtitle_gen"}); err == nil {
+		t.Fatal("the count did not ask the database (this one cannot be reached)")
 	}
 }
 

@@ -184,10 +184,11 @@ type Reconciler struct {
 	updates  chan desiredUpdate
 	passes   int
 	loopsCtx context.Context
-	health   map[string]*compHealth    // story 51.14: transitions and last errors, by component
-	rssAt    time.Time                 // the last RSS sample
-	rss      map[string]int64          // by component, MB, as last written (hysteresis: rssMoved)
-	phases   map[string]ComponentPhase // the last pass's phase of each component (Phases)
+	health   map[string]*compHealth      // story 51.14: transitions and last errors, by component
+	rssAt    time.Time                   // the last RSS sample
+	rss      map[string]int64            // by component, MB, as last written (hysteresis: rssMoved)
+	rssParts map[string]map[string]int64 // by component and process, MB (story 54.44: a shared runner group's own number)
+	phases   map[string]ComponentPhase   // the last pass's phase of each component (Phases)
 }
 
 // Phases is each component's phase and reason as the last pass found them (Epic 53 story
@@ -1111,6 +1112,9 @@ func (r *Reconciler) rows(decs map[string]decision) []store.Status {
 		}
 		if mb, ok := r.rssOf(comp.ID, own); ok {
 			detail["rss_mb"] = mb
+			if parts, ok := r.rssPartsOf(comp.ID); ok {
+				detail["rss_parts"] = parts
+			}
 		}
 		if dec.idle && phase == components.PhaseRunning {
 			detail["idle"] = true

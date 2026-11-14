@@ -3031,6 +3031,19 @@ build fails when the two differ.
   in a video's last 30 seconds, and a shuffled queue offers Shuffle again. A focused card grows by
   1.08 inside the brass ring.
 
+- **One Plugins page for every plugin (story 54.44).** Settings → Plugins lists every plugin
+  in one list, the ones Maktaba publishes and the ones you installed, each marked with who
+  publishes it, with a filter. Every plugin has its own switch on its card, its jobs of the
+  last day, its problems (a link to its failed jobs and its logs) and the memory of the
+  program that runs it, said plainly when several plugins share that program. Each plugin has
+  a page at its own address. A plugin by Maktaba still comes with Maktaba and is updated with
+  it; its page says so instead of offering Remove. The parts that must always run are part of
+  Maktaba itself and are no longer shown as plugins. The Components page links to each
+  plugin's page. For scripts: `GET /api/plugins` has no `built_in` field any more. Its
+  `plugins` list is the installed plugins, as before; `GET /api/plugins?release=true` adds
+  Maktaba's plugins with `publisher` and `source`. `GET /api/queues/failures` takes several
+  stages in `stage`.
+
 ### Fixed
 
 - **A TV held on its old streaming software stays there through schedule and settings
