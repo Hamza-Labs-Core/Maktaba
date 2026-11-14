@@ -5,6 +5,12 @@
 //   POST /api/tv/broadcast/channels/{id}/publish    {confirm_rights} -> BroadcastChannel | 409 broadcast.<code>
 //   POST /api/tv/broadcast/channels/{id}/unpublish  -> BroadcastChannel
 //   POST /api/tv/broadcast/speedtest                -> Uplink
+// Story 50.23 (publishable sources):
+//   GET  /api/tv/broadcast/publishable                      PublishableView
+//   POST /api/tv/broadcast/publishable/sources              PermissionRequest -> Permission | 409 broadcast.sourceRecorded
+//   POST /api/tv/broadcast/publishable/sources/{id}/withdraw {reason} -> Permission
+//   PUT  /api/tv/broadcast/publishable/items                MarkRequest -> {changed}
+//   PUT  /api/tv/broadcast/publishable/only                 {enabled, confirm} -> {publishable_only}
 import { api, ApiError } from "./api";
 
 export type BroadcastState = "draft" | "live" | "offline" | "off_air" | "revoked";
@@ -20,6 +26,7 @@ export interface BroadcastChannel {
   mode: "always_on" | "on_demand";
   rungs: string[];
   countries: string[];
+  geo_mode: GeoMode;
   state: BroadcastState;
   edge_channel?: string;
   dropped_rungs: number;
@@ -62,6 +69,62 @@ export interface BroadcastSetup {
   mode: "always_on" | "on_demand";
   rungs: string[];
   countries: string[];
+  geo_mode: GeoMode;
+}
+
+/** How a channel's countries read: only there (allow) or everywhere but there (deny). */
+export type GeoMode = "allow" | "deny";
+
+export type SourceKind = "channel" | "playlist" | "speaker" | "label";
+
+/** A permission the admin recorded: a source that allows sharing, with its proof. */
+export interface Permission {
+  id: string;
+  kind: SourceKind;
+  ref: string;
+  label: string;
+  proof_url: string;
+  note: string;
+  credit: string;
+  non_commercial: boolean;
+  recorded_by: string;
+  recorded_at: string;
+  revoked_at?: string;
+  revoked_reason?: string;
+}
+
+export interface PermissionRequest {
+  kind: SourceKind;
+  ref: string;
+  label: string;
+  proof_url: string;
+  note: string;
+  credit: string;
+  non_commercial: boolean;
+}
+
+/** A source that fills much of a channel and has no permission yet. */
+export interface Suggestion {
+  kind: SourceKind;
+  ref: string;
+  label: string;
+  seconds: number;
+  url?: string;
+}
+
+/** How much of a channel's next 7 days is publishable. */
+export interface Share {
+  channel_id: string;
+  scheduled_seconds: number;
+  publishable_seconds: number;
+  percent: number;
+  suggestions: Suggestion[];
+}
+
+export interface PublishableView {
+  publishable_only: boolean;
+  sources: Permission[];
+  shares: Share[];
 }
 
 /** A refusal: its i18n key (broadcast.<code>), the check that failed and its values. */
@@ -100,4 +163,17 @@ export const tvBroadcastApi = {
     api.post<BroadcastChannel>(`${ch(id)}/publish`, { confirm_rights: confirmRights }),
   unpublish: (id: string) => api.post<BroadcastChannel>(`${ch(id)}/unpublish`),
   speedtest: () => api.post<Uplink>("/api/tv/broadcast/speedtest"),
+  publishable: () => api.get<PublishableView>("/api/tv/broadcast/publishable"),
+  recordSource: (req: PermissionRequest) =>
+    api.post<Permission>("/api/tv/broadcast/publishable/sources", req),
+  withdrawSource: (id: string, reason: string) =>
+    api.post<Permission>(
+      `/api/tv/broadcast/publishable/sources/${encodeURIComponent(id)}/withdraw`,
+      { reason }
+    ),
+  setPublishableOnly: (enabled: boolean, confirm = "") =>
+    api.put<{ publishable_only: boolean }>("/api/tv/broadcast/publishable/only", {
+      enabled,
+      confirm,
+    }),
 };
