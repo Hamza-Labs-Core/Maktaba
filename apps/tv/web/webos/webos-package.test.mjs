@@ -1,6 +1,6 @@
 // Story 58.11 T02 — the LG package: the version rule, the staged folder (appinfo.json at
 // the version, icons, the Arabic title, no source maps) and the lint, on a good app and on
-// each thing it must refuse. `node --test apps/tv/web/webos/` (the CI job then lints the
+// each thing it must refuse. `node --test apps/tv/web/webos/webos-package.test.mjs` (the CI job then lints the
 // real .ipk that ares-package built).
 import { test } from "node:test";
 import assert from "node:assert/strict";

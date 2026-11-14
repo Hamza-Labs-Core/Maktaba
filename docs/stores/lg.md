@@ -138,7 +138,8 @@ rule and the result line are in [README.md](README.md).
 - Playwright playing a video from `/tv/` through the launcher's `<video>`, with a webOS shim.
 
 Playwright's Chromium is the version Playwright pins, not the TV's M120 engine. It decodes no
-H.264, so the CI flow proves the messages and the transcode retry, not playback. LG's webOS TV
+H.264, so the CI flow plays a VP9 file: it proves the messages, the transcode retry and the
+playback path, not the TV's decoders. LG's webOS TV
 Simulator is not run in CI: its download sits behind LG's license page, with no address a runner
 can fetch, and headless runs are not documented. It also has no media pipeline (research.md
 §4.3). **Only a device shows:** native HLS, HDR, Dolby Vision per model year, passthrough, the
