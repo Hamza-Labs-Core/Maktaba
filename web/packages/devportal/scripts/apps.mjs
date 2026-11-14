@@ -116,7 +116,10 @@ export const APPS = [
                 [
                   t("[Maktaba TV](/apps/tv/)", "[تطبيق التلفاز](/apps/tv/)"),
                   t("watching across the room", "المشاهدة من أنحاء الغرفة"),
-                  t("Apple TV, Android TV, Google TV, Fire TV", "آبل تي في، أندرويد تي في، جوجل تي في، فاير تي في"),
+                  t(
+                    "Apple TV, Android TV, Google TV, Fire TV",
+                    "آبل تي في، أندرويد تي في، جوجل تي في، فاير تي في"
+                  ),
                   t(
                     "TestFlight on the Apple TV; Google Play internal testing, or the signed `.apk` when a release carries one; Amazon's Live App Testing on Fire TV",
                     "TestFlight على آبل تي في؛ الاختبار الداخلي في Google Play، أو ملف `.apk` الموقَّع حين يتضمنه الإصدار؛ اختبار التطبيق المباشر من أمازون على فاير تي في"
