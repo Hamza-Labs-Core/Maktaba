@@ -454,6 +454,20 @@ extension DiagnosticsOverHTTP {
         #expect(!CrashConsent.questionAllowed(["app", "-maktaba-permissions-fake", "granted"]), "other UI tests never see it")
         #expect(CrashConsent.questionAllowed(["app", "-uitest-reset", "-maktaba-crash-question"]))
     }
+
+    /// A fresh launch forgets every home's answer, and nothing else in the defaults.
+    @Test func forgetAllAsksEveryHomeAgain() throws {
+        let d = try #require(UserDefaults(suiteName: "test.crash.\(UUID().uuidString)"))
+        let c = CrashConsent(defaults: d)
+        let home = Home(url: URL(string: "http://192.168.50.177:8088")!, name: "Test Home", homeID: "h1")
+        let other = Home(url: URL(string: "http://192.168.50.178:8088")!, name: "Other")
+        c.set(false, for: home)
+        c.set(true, for: other)
+        d.set("dark", forKey: "theme")
+        c.forgetAll()
+        #expect(c.answer(home) == nil && c.answer(other) == nil, "asked again, as on a fresh install")
+        #expect(d.string(forKey: "theme") == "dark", "other settings stay")
+    }
 }
 
 // MARK: Report a problem (53.15)

@@ -78,3 +78,21 @@ body,
   color: #e3b252;
   margin-block-end: 32px;
 }
+
+/* Epic 58 (stories 58.10, 58.11): the Samsung or LG launcher plays the video in its plane
+   under this page (bigscreen/input/launcherMedia.ts). While it does, the page is transparent
+   down to the player, and the stand-in <video> (no picture of its own, its poster included)
+   is invisible; the controls and panels draw over the TV's picture as usual. */
+html.tv-launcher-video,
+html.tv-launcher-video body,
+html.tv-launcher-video #root,
+html.tv-launcher-video .bs,
+html.tv-launcher-video .bs-watch,
+html.tv-launcher-video .bs-watch .mkt-player,
+html.tv-launcher-video .bs-watch .mkt-player__stage,
+html.tv-launcher-video .bs-watch .mkt-player__video {
+  background: transparent;
+}
+html.tv-launcher-video .bs-watch .mkt-player__video {
+  visibility: hidden;
+}

@@ -226,10 +226,35 @@ final class PlaylistStub: URLProtocol, @unchecked Sendable {
     override func stopLoading() {}
 }
 
-/// The waits it would have slept (none are slept).
-actor Waits {
-    private(set) var all: [Duration] = []
-    func add(_ d: Duration) { all.append(d) }
+/// A clock that never waits: `sleep` notes the wait and moves `now` on at once (by
+/// `stretch` times the wait, a device too busy to wake on time), so the attempts and the
+/// deadline do not depend on how fast the machine running the tests is.
+final class TestClock: Swift.Clock, @unchecked Sendable {
+    struct Instant: InstantProtocol {
+        var offset: Duration
+        func advanced(by d: Duration) -> Instant { Instant(offset: offset + d) }
+        func duration(to other: Instant) -> Duration { other.offset - offset }
+        static func < (a: Instant, b: Instant) -> Bool { a.offset < b.offset }
+    }
+
+    private let lock = NSLock()
+    private var current = Instant(offset: .zero)
+    private var slept: [Duration] = []
+    private let stretch: Int
+
+    init(stretch: Int = 1) { self.stretch = stretch }
+
+    var now: Instant { lock.withLock { current } }
+    var minimumResolution: Duration { .nanoseconds(1) }
+    /// The waits it was asked for (none are slept).
+    var waits: [Duration] { lock.withLock { slept } }
+
+    func sleep(until deadline: Instant, tolerance: Duration?) async throws {
+        lock.withLock {
+            slept.append(current.duration(to: deadline))
+            current = current.advanced(by: current.duration(to: deadline) * stretch)
+        }
+    }
 }
 
 @Suite struct WaitingForAStream {
@@ -249,10 +274,10 @@ actor Waits {
         PlaylistStub.on(host, "/stream/s1/v0/index.m3u8",
                         .init(status: 404, body: renditionNotFound), .init(status: 404, body: renditionNotFound),
                         .init(status: 404, body: renditionNotFound), .init(status: 200, body: Self.rendition))
-        let waits = Waits()
-        try await client(host).waitUntilPlayable(master(host), headers: [:]) { await waits.add($0) }
+        let clock = TestClock()
+        try await client(host).waitUntilPlayable(master(host), headers: [:], clock: clock)
         #expect(PlaylistStub.count(host, "/stream/s1/v0/index.m3u8") == 4)
-        #expect(await waits.all == [.milliseconds(500), .seconds(1), .seconds(2)])
+        #expect(clock.waits == [.milliseconds(500), .seconds(1), .seconds(2)])
     }
 
     /// The master itself 404s while the transcode starts (and a plain 404 from something in
@@ -263,7 +288,7 @@ actor Waits {
                         .init(status: 404, body: #"{"type":"https://maktaba.invalid/problems/manifest-not-found","status":404}"#),
                         .init(status: 404, body: "404 page not found"), .init(status: 200, body: Self.master))
         PlaylistStub.on(host, "/stream/s1/v0/index.m3u8", .init(status: 200, body: Self.rendition))
-        try await client(host).waitUntilPlayable(master(host), headers: [:]) { _ in }
+        try await client(host).waitUntilPlayable(master(host), headers: [:], clock: TestClock())
         #expect(PlaylistStub.count(host, "/stream/s1/master.m3u8") == 3)
     }
 
@@ -271,9 +296,9 @@ actor Waits {
         let host = "never-ready.test"
         PlaylistStub.on(host, "/stream/s1/master.m3u8", .init(status: 200, body: Self.master))
         PlaylistStub.on(host, "/stream/s1/v0/index.m3u8", .init(status: 404, body: renditionNotFound))
-        let waits = Waits()
+        let clock = TestClock()
         do {
-            try await client(host).waitUntilPlayable(master(host), headers: [:], timeout: .seconds(5)) { await waits.add($0) }
+            try await client(host).waitUntilPlayable(master(host), headers: [:], timeout: .seconds(5), clock: clock)
             Issue.record("ready without a rendition")
         } catch let e as APIError {
             #expect(e.kind == .notReady)
@@ -281,21 +306,36 @@ actor Waits {
             #expect(!(e.errorDescription ?? "{").contains("{"))
         }
         // 0.5 + 1 + 2 = 3.5 s waited; another 2 s would pass the 5 s
-        #expect(await waits.all == [.milliseconds(500), .seconds(1), .seconds(2)])
+        #expect(clock.waits == [.milliseconds(500), .seconds(1), .seconds(2)])
         #expect(PlaylistStub.count(host, "/stream/s1/v0/index.m3u8") == 4)
     }
 
     @Test func theWaitsGrowToTwoSeconds() async throws {
         let host = "capped.test"
         PlaylistStub.on(host, "/stream/s1/master.m3u8", .init(status: 404, body: "404 page not found"))
-        let waits = Waits()
+        let clock = TestClock()
         await #expect(throws: APIError.notReady("404 page not found")) {
-            try await client(host).waitUntilPlayable(master(host), headers: [:]) { await waits.add($0) }
+            try await client(host).waitUntilPlayable(master(host), headers: [:], clock: clock)
         }
-        let all = await waits.all
+        let all = clock.waits
         #expect(all.prefix(3) == [.milliseconds(500), .seconds(1), .seconds(2)])
         #expect(all.dropFirst(2).allSatisfy { $0 == .seconds(2) })
         #expect(all.reduce(.zero, +) <= .seconds(30) && all.reduce(.zero, +) > .seconds(28))
+    }
+
+    /// The deadline is kept on the clock it is given, not by adding up the waits: when each
+    /// wait runs twice as long (a busy device), 0.5 s ends at 1 s and 1 s at 3 s, so a 2 s wait
+    /// would pass the 4 s deadline and it stops after two (the waits alone add up to 3.5 s).
+    @Test func theDeadlineIsKeptOnTheGivenClock() async throws {
+        let host = "slow-device.test"
+        PlaylistStub.on(host, "/stream/s1/master.m3u8", .init(status: 404, body: "404 page not found"))
+        let clock = TestClock(stretch: 2)
+        await #expect(throws: APIError.notReady("404 page not found")) {
+            try await client(host).waitUntilPlayable(master(host), headers: [:], timeout: .seconds(4), clock: clock)
+        }
+        #expect(clock.waits == [.milliseconds(500), .seconds(1)])
+        #expect(clock.now.offset == .seconds(3))
+        #expect(PlaylistStub.count(host, "/stream/s1/master.m3u8") == 3)
     }
 
     @Test(arguments: [(403, ErrorKind.noAccess), (401, .signedOut), (500, .server)])
@@ -303,14 +343,14 @@ actor Waits {
         let host = "refused-\(status).test"
         PlaylistStub.on(host, "/stream/s1/master.m3u8", .init(status: 200, body: Self.master))
         PlaylistStub.on(host, "/stream/s1/v0/index.m3u8", .init(status: status, body: #"{"title":"no","status":\#(status)}"#))
-        let waits = Waits()
+        let clock = TestClock()
         do {
-            try await client(host).waitUntilPlayable(master(host), headers: [:]) { await waits.add($0) }
+            try await client(host).waitUntilPlayable(master(host), headers: [:], clock: clock)
             Issue.record("played after a \(status)")
         } catch let e as APIError {
             #expect(e.kind == kind)
         }
-        #expect(await waits.all.isEmpty)
+        #expect(clock.waits.isEmpty)
         #expect(PlaylistStub.count(host, "/stream/s1/v0/index.m3u8") == 1)
     }
 
@@ -319,9 +359,11 @@ actor Waits {
         let host = "gone.test"
         PlaylistStub.on(host, "/stream/s1/master.m3u8",
                         .init(status: 404, body: #"{"type":"https://maktaba.invalid/problems/session-not-found","status":404}"#))
+        let clock = TestClock()
         await #expect(throws: APIError.self) {
-            try await client(host).waitUntilPlayable(master(host), headers: [:]) { _ in Issue.record("waited") }
+            try await client(host).waitUntilPlayable(master(host), headers: [:], clock: clock)
         }
+        #expect(clock.waits.isEmpty)
         #expect(PlaylistStub.count(host, "/stream/s1/master.m3u8") == 1)
     }
 
@@ -329,7 +371,7 @@ actor Waits {
         let host = "busy.test"
         PlaylistStub.on(host, "/stream/s1/master.m3u8", .init(status: 503, body: #"{"title":"busy"}"#, headers: ["Retry-After": "9"]))
         do {
-            try await client(host).waitUntilPlayable(master(host), headers: [:]) { _ in }
+            try await client(host).waitUntilPlayable(master(host), headers: [:], clock: TestClock())
             Issue.record("played while busy")
         } catch let e as APIError {
             #expect(e.kind == .busy(retryAfter: 9))
@@ -338,7 +380,7 @@ actor Waits {
 
     @Test func noAnswerIsUnreachable() async throws {
         do {
-            try await client("nobody.test").waitUntilPlayable(master("nobody.test"), headers: [:]) { _ in }
+            try await client("nobody.test").waitUntilPlayable(master("nobody.test"), headers: [:], clock: TestClock())
             Issue.record("played without a home")
         } catch let e as APIError {
             #expect(e.kind == .unreachable)

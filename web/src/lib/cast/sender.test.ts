@@ -65,9 +65,12 @@ describe("castBlocked: where the button may show (T04)", () => {
     expect(castBlocked("ABCD1234", win("http://192.168.1.20:8088"))).toBe("insecure"));
   it("hides without a registered receiver", () =>
     expect(castBlocked("", win(RELAY))).toBe("no-app"));
-  it("hides on Firefox and Safari", () => {
+  it("hides on Firefox, Safari and Chrome on iOS", () => {
     expect(castBlocked("ABCD1234", win(RELAY, FIREFOX))).toBe("browser");
     expect(castBlocked("ABCD1234", win(RELAY, SAFARI))).toBe("browser");
+    const chromeIOS =
+      "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/130.0.0.0 Mobile/15E148 Safari/604.1";
+    expect(castBlocked("ABCD1234", win(RELAY, chromeIOS))).toBe("browser");
   });
 });
 

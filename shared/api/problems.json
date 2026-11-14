@@ -5105,6 +5105,29 @@
       "install": null
     },
     {
+      "slug": "plugin-with-release",
+      "status": 409,
+      "area": "plugins",
+      "audience": "admin",
+      "codes": [
+        "plugin_with_release"
+      ],
+      "title": {
+        "en": "This plugin comes with Maktaba",
+        "ar": "هذه الإضافة تأتي مع مكتبة"
+      },
+      "means": {
+        "en": "This plugin is published by Maktaba and came with the Maktaba release your home runs. It is updated when Maktaba is updated, and it cannot be removed, rolled back or given other permissions on its own yet.",
+        "ar": "هذه الإضافة تنشرها مكتبة وجاءت مع إصدار مكتبة الذي يعمل على جهازكم الرئيسي. تُحدَّث عند تحديث مكتبة، ولا يمكن بعدُ إزالتها أو إرجاعها إلى إصدار سابق أو تغيير صلاحياتها وحدها."
+      },
+      "do": {
+        "en": "Turn the plugin off on the Plugins page if you do not want it to run. Update Maktaba to get its newer version.",
+        "ar": "أوقفوا الإضافة من صفحة الإضافات إن لم تريدوا أن تعمل، وحدّثوا مكتبة للحصول على إصدارها الأحدث."
+      },
+      "help": null,
+      "install": null
+    },
+    {
       "slug": "plugin-wrong-package",
       "status": 400,
       "area": "plugins",

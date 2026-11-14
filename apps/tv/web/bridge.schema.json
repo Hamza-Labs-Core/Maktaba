@@ -42,13 +42,40 @@
     },
     "deviceCaps": {
       "type": "object",
-      "required": ["video", "audio", "hdr", "max_height"],
+      "description": "The API's DeviceCaps (story 58.02), as session creation takes it.",
+      "required": ["containers", "video", "hdr", "audio", "passthrough", "hls_segments"],
       "additionalProperties": false,
       "properties": {
-        "video": { "type": "array", "items": { "type": "string" } },
-        "audio": { "type": "array", "items": { "type": "string" } },
+        "containers": { "type": "array", "items": { "type": "string" } },
+        "video": { "type": "array", "items": { "$ref": "#/definitions/videoCap" } },
         "hdr": { "type": "array", "items": { "type": "string" } },
-        "max_height": { "type": "integer" }
+        "audio": { "type": "array", "items": { "type": "string" } },
+        "passthrough": { "type": "array", "items": { "type": "string" } },
+        "max_audio_channels": { "type": "integer" },
+        "hls_segments": { "type": "array", "items": { "type": "string" } },
+        "dash": { "type": "boolean" },
+        "max_bitrate_kbps": { "type": "integer" }
+      }
+    },
+    "videoCap": {
+      "type": "object",
+      "required": ["codec"],
+      "additionalProperties": false,
+      "properties": {
+        "codec": { "type": "string" },
+        "max_height": { "type": "integer" },
+        "max_fps": { "type": "integer" },
+        "bit_depth": { "type": "integer" }
+      }
+    },
+    "audioTrack": {
+      "type": "object",
+      "required": ["enabled"],
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "lang": { "type": "string" },
+        "label": { "type": "string" }
       }
     },
     "subtitle": {
@@ -108,7 +135,9 @@
         "start_sec": { "type": "number" },
         "subtitles": { "type": "array", "items": { "$ref": "#/definitions/subtitle" } },
         "audio": { "type": ["integer", "null"] },
-        "mode": { "enum": ["vod", "live"] }
+        "mode": { "enum": ["vod", "live"] },
+        "height": { "type": "integer" },
+        "subtitle_scale": { "type": "number" }
       }
     },
     "maktaba:pause": {
@@ -147,7 +176,8 @@
       "additionalProperties": false,
       "properties": {
         "type": { "const": "maktaba:subtitle" },
-        "id": { "type": ["string", "null"] }
+        "id": { "type": ["string", "null"] },
+        "subtitle_scale": { "type": "number" }
       }
     },
     "maktaba:logs": {
@@ -207,7 +237,8 @@
         "duration": { "type": "number" },
         "buffering": { "type": "boolean" },
         "ended": { "type": "boolean" },
-        "error": { "type": ["string", "null"] }
+        "error": { "type": ["string", "null"] },
+        "audio_tracks": { "type": "array", "items": { "$ref": "#/definitions/audioTrack" } }
       }
     },
     "maktaba:visibility": {

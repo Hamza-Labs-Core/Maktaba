@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- A button in Ink & Brass: brass when focused (the 10-foot focus of Epic 56). -->
+<component name="TvButton" extends="Group">
+  <interface>
+    <field id="text" type="string" onChange="onText" />
+    <field id="width" type="integer" value="320" onChange="onLayout" />
+    <field id="focused" type="boolean" value="false" onChange="onFocused" />
+  </interface>
+  <script type="text/brightscript" uri="TvButton.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common.brs" />
+  <script type="text/brightscript" uri="pkg:/source/i18n.brs" />
+  <script type="text/brightscript" uri="pkg:/source/layout.brs" />
+  <script type="text/brightscript" uri="pkg:/source/config.brs" />
+  <script type="text/brightscript" uri="pkg:/source/net.brs" />
+  <script type="text/brightscript" uri="pkg:/source/nav.brs" />
+  <script type="text/brightscript" uri="pkg:/source/visualtext.brs" />
+  <script type="text/brightscript" uri="pkg:/source/visualtext_tables.brs" />
+  <children>
+    <Rectangle id="ring" width="328" height="80" translation="[-4,-4]" color="0xE3B252FF" visible="false" />
+    <Rectangle id="box" width="320" height="72" color="0x131D2EFF" />
+    <Label id="label" width="320" height="72" vertAlign="center" horizAlign="center" />
+  </children>
+</component>

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- A video (Epic 58 story 58.12): poster, title, description, Resume from / Start over. -->
+<component name="VideoScreen" extends="Screen">
+  <script type="text/brightscript" uri="VideoScreen.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common.brs" />
+  <script type="text/brightscript" uri="pkg:/source/config.brs" />
+  <script type="text/brightscript" uri="pkg:/source/net.brs" />
+  <script type="text/brightscript" uri="pkg:/source/nav.brs" />
+  <script type="text/brightscript" uri="pkg:/source/store.brs" />
+  <script type="text/brightscript" uri="pkg:/source/i18n.brs" />
+  <script type="text/brightscript" uri="pkg:/source/layout.brs" />
+  <script type="text/brightscript" uri="pkg:/source/visualtext.brs" />
+  <script type="text/brightscript" uri="pkg:/source/visualtext_tables.brs" />
+  <children>
+    <Poster id="poster" translation="[120,120]" width="560" height="315" loadDisplayMode="scaleToZoom" />
+    <Label id="title" translation="[740,120]" width="1060" height="120" wrap="true" />
+    <Label id="meta" translation="[740,250]" width="1060" />
+    <Label id="desc" translation="[740,320]" width="1060" height="330" wrap="true" />
+    <TvButton id="resume" translation="[740,700]" width="460" />
+    <TvButton id="over" translation="[1230,700]" width="360" />
+  </children>
+</component>

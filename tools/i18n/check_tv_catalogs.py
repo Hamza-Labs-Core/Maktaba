@@ -50,6 +50,7 @@ CATALOGS: tuple[str, ...] = (
 LATIN_ALLOWED: frozenset[str] = frozenset(
     {
         "Maktaba",
+        "Cloud",  # Maktaba Cloud, the product
         "Roku",
         "Samsung",
         "Tizen",

@@ -1,0 +1,21 @@
+{
+  "name": "maktaba-roku",
+  "private": true,
+  "description": "The Maktaba Roku channel (Epic 58 stories 58.12, 58.13, 58.15): its BrightScript unit tests on brs-engine",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test tests/*.test.mjs",
+    "build": "node tools/build.mjs"
+  },
+  "devDependencies": {
+    "@rokucommunity/bslint": "0.8.47",
+    "brighterscript": "0.73.8",
+    "brs-node": "2.6.2",
+    "canvas": "4.0.0-rc3",
+    "jszip": "3.10.2",
+    "roku-deploy": "3.18.4"
+  }
+}
