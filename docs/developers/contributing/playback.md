@@ -93,7 +93,11 @@ For a TV profile, the streaming service weighs, in order:
 6. A container the device does not play, or any of 3 and 4: a remux into HLS (fMP4 segments for
    HEVC and AV1, TS for H.264). Nothing else to change: direct play.
 
-The older profiles decide on codecs, container, height and bitrate alone, as they always have.
+The older profiles decide on codecs, container, height and bitrate, and transcode (tone-mapped
+to SDR) HDR they do not show: a Dolby Vision source they lack plays as its base layer where they
+show it, and profile 5 is a transcode. Codec names are read as one name each, so a profile's
+`h265` is the probe's `hevc` and `ec-3` is `eac3`. HEVC is on `android-native` and `androidtv`
+only: Chrome decodes it only on some hardware, and Safari and AVPlayer refuse HEVC tagged `hev1`.
 
 ## URLs a player fetches without a header
 
