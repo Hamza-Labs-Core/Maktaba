@@ -294,6 +294,14 @@ build fails when the two differ.
 
 ### Fixed
 
+- **Roku signs in with a cloud code on a real home.** After a phone approved the code, the
+  channel took a connection only when the home there answered with the cloud's id for it, which
+  a home's discovery never gives (it answers with its instance id), so every sign-in ended
+  unreachable. The channel now knows the approving home by its address: at an HTTPS connection
+  by host name (the relay, the home's direct name) its certificate proves the home; at a plain
+  HTTP or raw IP address, the home there counts only when it lists one of those names among its
+  addresses. Another home there is passed over and never gets the grant.
+
 - **Roku shows Arabic inside English lines joined and in the right order.** On the Account
   screen in English, the language row read "Language: " with the Arabic name's letters unjoined
   and reversed. The build step now shapes every catalog string that holds Arabic, in the English
