@@ -60,6 +60,12 @@ type BroadcastConfig struct {
 	KeyPath string
 	// IngestURL is broadcast.ingest_url, default https://ingest.maktaba.tv.
 	IngestURL string
+	// WatchURL is broadcast.watch_url, the invite links' origin (default https://watch.maktaba.tv).
+	WatchURL string
+	// OpenAccess is broadcast.open_access.enabled (default false; story 50.26): off, no channel
+	// may be set to open access, and the edge treats every open channel as invite-only for new
+	// sessions. It stays off until the broadcasting gate's legal items hold.
+	OpenAccess bool
 	// EdgePublicKey is broadcast.edge_public_key: the Ed25519 public key (base64url or standard
 	// base64) of EDGE_SIGNING_KEY, the key the broadcast edge signs its posts to the API with
 	// (broadcast.VerifyEdgeRequest). Public, so it may sit in the file;
@@ -386,7 +392,7 @@ func defaultConfig() Config {
 			RebalanceEvery:   30 * time.Second,
 			RebalanceRate:    20,
 		},
-		Broadcast: BroadcastConfig{PlansEnforce: true, PAYGReports: true, IngestURL: "https://ingest.maktaba.tv",
+		Broadcast: BroadcastConfig{PlansEnforce: true, PAYGReports: true, IngestURL: "https://ingest.maktaba.tv", WatchURL: "https://watch.maktaba.tv",
 			AnalyticsURL: "https://api.cloudflare.com/client/v4", AnalyticsK: 5},
 	}
 }
@@ -575,6 +581,8 @@ func assign(c *Config, section, key, val string) error {
 		c.Broadcast.KeyPath = val
 	case "broadcast.ingest_url":
 		c.Broadcast.IngestURL = val
+	case "broadcast.watch_url":
+		c.Broadcast.WatchURL = val
 	case "broadcast.analytics_account_id":
 		c.Broadcast.AnalyticsAccountID = val
 	case "broadcast.analytics_token_path":
@@ -740,6 +748,8 @@ func assign(c *Config, section, key, val string) error {
 		return setBool(&c.Broadcast.PAYGReports, val)
 	case "broadcast.edge_public_key":
 		c.Broadcast.EdgePublicKey = val
+	case "broadcast.open_access.enabled":
+		return setBool(&c.Broadcast.OpenAccess, val)
 	case "relay.pool.enabled":
 		return setBool(&c.Relay.PoolEnabled, val)
 	case "relay.pool.member":

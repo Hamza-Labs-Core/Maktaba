@@ -152,6 +152,8 @@ const ADMIN = [
   { to: "/admin/filler", key: "nav.admin.filler", icon: "◫" },
   { to: "/admin/live-tv", key: "nav.admin.liveTv", icon: "▶" },
   { to: "/admin/live-tv/changes", key: "nav.admin.tvChanges", icon: "⇄" },
+  // Epic 50 story 50.26: who may watch the home's broadcast channels
+  { to: "/admin/broadcast-access", key: "nav.admin.broadcastAccess", icon: "◈" },
   { to: "/admin/analytics", key: "nav.admin.analytics", icon: "▰" },
   { to: "/admin/audit", key: "nav.admin.audit", icon: "❑" },
   { to: "/admin/health", key: "nav.admin.health", icon: "♥" },
