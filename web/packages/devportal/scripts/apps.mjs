@@ -887,7 +887,10 @@ export const APPS = [
                   ),
                 ],
                 [
-                  t("LG TVs (webOS 5, from 2020, or later)", "تلفزيونات LG ‏(webOS 5، من 2020، أو أحدث)"),
+                  t(
+                    "LG TVs (webOS 5, from 2020, or later)",
+                    "تلفزيونات LG ‏(webOS 5، من 2020، أو أحدث)"
+                  ),
                   t(
                     `the LG Content Store once it lists Maktaba (submitted, in LG's review); until then \`maktaba-webos-<version>.ipk\` from a [release](${RELEASES}) that carries one, installed on a TV in Developer Mode with \`ares-install\``,
                     `متجر LG Content Store حين يُدرج مكتبة (قُدّم وهو قيد مراجعة LG)؛ وحتى ذلك الحين ملف \`maktaba-webos-<version>.ipk\` من [إصدار](${RELEASES}) يتضمنه، يُثبَّت على تلفاز في وضع المطوّر بالأمر \`ares-install\``
