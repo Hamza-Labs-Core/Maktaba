@@ -23,7 +23,8 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-SECRET = "REVIEW_HOME_VIEWER_PASSWORD"
+# the name the submission notes print in place of the value (never the value itself)
+NOTES_VAR = "REVIEW_HOME_VIEWER_PASSWORD"
 STORES = ("amazon", "samsung", "lg", "roku", "cast")
 SCANNED = ("docs/stores/*.md", "deploy/review-home/**/*", "tools/review_home/**/*")
 TEXT = {".md", ".json", ".yml", ".yaml", ".sh", ".py", ".txt", ".example", ".env", "", ".vtt", ".toml"}
@@ -52,7 +53,7 @@ _ALLOWED = re.compile(
 )
 
 
-def password_values(text: str) -> list[tuple[int, str]]:
+def suspect_values(text: str) -> list[tuple[int, str]]:
     """Each (line number, value) that looks like a password written down."""
     found = []
     for n, line in enumerate(text.splitlines(), 1):
@@ -62,6 +63,11 @@ def password_values(text: str) -> list[tuple[int, str]]:
                 continue
             found.append((n, v))
     return found
+
+
+def suspect_lines(text: str) -> list[int]:
+    """The line numbers of suspect_values, without the values."""
+    return sorted({n for n, _ in suspect_values(text)})
 
 
 def files(root: Path = ROOT) -> list[Path]:
@@ -77,13 +83,14 @@ def check(root: Path = ROOT) -> list[str]:
     problems = []
     for p in files(root):
         rel = p.relative_to(root)
-        for n, v in password_values(p.read_text(encoding="utf-8", errors="replace")):
-            problems.append(f"{rel}:{n}: a password-shaped value ({v[:3]}…); name the secret ({SECRET}) instead")
+        # only the line is reported: no part of a found value reaches the log
+        for n in suspect_lines(p.read_text(encoding="utf-8", errors="replace")):
+            problems.append(f"{rel}:{n}: a password-shaped value; write the name {NOTES_VAR} in its place")
     for store in STORES:
         page = root / "docs" / "stores" / f"{store}.md"
         text = page.read_text(encoding="utf-8") if page.is_file() else ""
-        if SECRET not in text:
-            problems.append(f"docs/stores/{store}.md: the submission notes do not name the secret {SECRET}")
+        if NOTES_VAR not in text:
+            problems.append(f"docs/stores/{store}.md: the submission notes do not name the secret {NOTES_VAR}")
         if "review-home.md" not in text:
             problems.append(f"docs/stores/{store}.md: the submission notes do not point to review-home.md")
     return problems
@@ -95,7 +102,7 @@ def main() -> int:
         print(f"::error::{p}")
     if problems:
         return 1
-    print(f"review credentials: {len(files())} files, no password written down; every store names {SECRET}")
+    print(f"review credentials: {len(files())} files, no password written down; every store names {NOTES_VAR}")
     return 0
 
 

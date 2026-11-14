@@ -34,7 +34,7 @@ def test_the_repository_holds_no_review_credential() -> None:
     ],
 )
 def test_a_written_password_is_found(line: str) -> None:
-    assert rc.password_values(line), line
+    assert rc.suspect_values(line), line
 
 
 @pytest.mark.parametrize(
@@ -52,18 +52,20 @@ def test_a_written_password_is_found(line: str) -> None:
     ],
 )
 def test_a_named_secret_or_prose_passes(line: str) -> None:
-    assert rc.password_values(line) == [], line
+    assert rc.suspect_values(line) == [], line
 
 
 def test_a_store_page_without_the_notes_fails(tmp_path: Path) -> None:
     (tmp_path / "docs" / "stores").mkdir(parents=True)
     for store in rc.STORES:
         (tmp_path / "docs" / "stores" / f"{store}.md").write_text(
-            f"# {store}\n\nSee [review-home.md](review-home.md); the secret {rc.SECRET}.\n", encoding="utf-8"
+            f"# {store}\n\nSee [review-home.md](review-home.md); the secret {rc.NOTES_VAR}.\n", encoding="utf-8"
         )
     assert rc.check(tmp_path) == []
     (tmp_path / "docs" / "stores" / "roku.md").write_text("# Roku\n\nPassword: hunter2-roku-pass\n", encoding="utf-8")
     problems = rc.check(tmp_path)
     assert any("roku.md:3: a password-shaped value" in p for p in problems)
+    # the report names the line, never any part of the value
+    assert not any("hun" in p for p in problems), problems
     assert any("roku.md: the submission notes do not name the secret" in p for p in problems)
     assert any("roku.md: the submission notes do not point to review-home.md" in p for p in problems)
