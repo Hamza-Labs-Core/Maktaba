@@ -288,20 +288,11 @@ build fails when the two differ.
 
 ### Fixed
 
-- **Playing at home costs the Apple apps less, and the Apple TV's live player always lets go.**
-  The Apple apps read a home's streams through a small proxy inside the app. It now passes
-  each stream on in the pieces it arrives in, where it used to handle every byte on its own
-  (about a quarter of the processor time for the same stream, measured on a Mac), at a lower
-  priority than the remote. It holds the home back while the player reads slowly or is paused,
-  so memory does not grow with the file, and a paused film keeps its connection however long
-  the pause; it ends the home's request when the player drops a connection mid-stream (a
-  channel change, a seek), and serves at most 32 requests at once. A stream the home cuts
-  short reaches the player as an error, never as a whole file. On Apple TV, Menu leaves the
-  live player in at most two presses whatever the channel is doing (starting, buffering,
-  failed, time's up), unless the viewer changed channel, pressed Select or asked for the
-  banner in between; the picture and sound stop at
-  once without waiting for the home, and a picture that keeps stalling writes at most one log
-  line a second.
+- **An Arabic title reads the same on the Cast receiver as on every other TV (story 58.15).**
+  On a TV playing from a sender set to English, a title such as "الحلقة 3 — Intro" showed with
+  the number on the wrong side of the Arabic. The receiver's titles now take their direction
+  from their first letter, as `/tv/` and the Roku channel do. The Roku channel's colours are
+  now generated from the design tokens, like the other apps'.
 
 - **The older playback profiles read HEVC and Dolby audio by ffprobe's names.** A player that
   names one of the older client profiles (`android-native`, `androidtv`) now direct-plays an
@@ -2212,6 +2203,15 @@ build fails when the two differ.
 
 ### Added
 
+- **Approve a TV's code on maktaba.tv (story 58.03).** The QR code a TV shows beside its cloud
+  code opens maktaba.tv/tv, which forwards to Maktaba Cloud: a person signed in there sees the
+  TV's platform and country, asks themselves **Is this your TV?**, picks one of the homes that
+  linked their cloud account, and approves (`GET /v1/tv/codes/{code}`,
+  `POST /v1/tv/codes/{code}/approve`). The cloud asks that home through the relay, with a one-use
+  assertion for that account, home and code (`POST /api/pairing/cloud-assertion` on the home),
+  and the home signs the TV in as the user it linked, restricted like every cloud code's TV. A
+  home the account is not linked to, or one that is offline or out of reach, approves nothing.
+
 - **A library's Series and Collections tabs (Epic 45 story 45.24).** A library's page is now
   Overview | Browse | Series | Collections, each tab its own address (Back returns to the tab
   before). **Series**: every series of the library as a poster grid with its episodes and your
@@ -2808,8 +2808,23 @@ build fails when the two differ.
   device): a cloud code can be read out to anyone anywhere. No cloud account is needed, only a
   home with remote access. Codes last 10 minutes, at most 10 per address, and the cloud sweeps
   them an hour after they expire. `GET /api/me/app-sign-ins` lists a person's apps signed in by
-  code (a cloud-code TV says so) and `DELETE /api/me/app-sign-ins/{id}` signs one out. The
-  approve screens in the Players and the web follow.
+  code (a cloud-code TV says so) and `DELETE /api/me/app-sign-ins/{id}` signs one out.
+  **Approve a TV** in the Android and Apple Players and the web's **Sign in a device** take
+  these codes: a code the home does not hold is looked up in the cloud, the app asks **Is this
+  your TV?** with its platform and country, and approves it only then; a home without remote
+  access is told to use the home's own code. **Sessions** lists the apps signed in with a code,
+  each signed out there, a cloud-code TV named as one.
+
+- **The broadcast edge, built and rehearsed in CI (story 50.21).** Maktaba Cloud now has the
+  Cloudflare Worker a published channel will play from: a home pushes each segment of each
+  rendition once to `ingest.maktaba.tv`, and viewers' players fetch playlists and segments from
+  `live.maktaba.tv` at Cloudflare's edge, so a home's upload is the same for one viewer as for
+  ten thousand. Each home has its own signed ingest token for one channel and its rungs, valid a
+  day and asked for again every hour; a viewer's token lives ten minutes. When a home goes
+  quiet, its channel plays the home's offline slate and returns to live when it is back.
+  Segments are deleted ten minutes after they arrive; nothing is kept for catch-up. Stream is the
+  switchable fallback. The edge stores and delivers what a home sends and never chooses, ranks
+  or recommends anything. It is not deployed yet: broadcasting stays off until its gate opens.
 
 ### Changed
 
@@ -3755,6 +3770,21 @@ build fails when the two differ.
 - **The Android TV app names itself to the home.** Its library, playlist and play-queue calls sent
   `X-Maktaba-Client: native` instead of the app's name and version, so the home could not tell a
   TV too old for it on those calls; they now send the same header as sign-in does.
+
+- **Playing at home costs the Apple apps less, and the Apple TV's live player always lets go.**
+  The Apple apps read a home's streams through a small proxy inside the app. It now passes
+  each stream on in the pieces it arrives in, where it used to handle every byte on its own
+  (about a quarter of the processor time for the same stream, measured on a Mac), at a lower
+  priority than the remote. It holds the home back while the player reads slowly or is paused,
+  so memory does not grow with the file, and a paused film keeps its connection however long
+  the pause; it ends the home's request when the player drops a connection mid-stream (a
+  channel change, a seek), and serves at most 32 requests at once. A stream the home cuts
+  short reaches the player as an error, never as a whole file. On Apple TV, Menu leaves the
+  live player in at most two presses whatever the channel is doing (starting, buffering,
+  failed, time's up), unless the viewer changed channel, pressed Select or asked for the
+  banner in between; the picture and sound stop at
+  once without waiting for the home, and a picture that keeps stalling writes at most one log
+  line a second.
 
 ## [0.2.0] - 2026-10-19
 

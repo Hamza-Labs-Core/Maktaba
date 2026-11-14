@@ -330,3 +330,14 @@ a:hover {
   margin-block: 0.5rem;
   border: 1px solid var(--mk-border, #ddd);
 }
+
+/* /tv (story 58.03): the TV's code reads as it shows on the TV, left to right in both
+   languages; the actions are at least 44px tall for touch. */
+.mkc-tv__code {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.mkc-tv__actions .mk-btn {
+  min-block-size: 44px;
+}

@@ -124,3 +124,31 @@ test("the website's check passes a token without DNS Write; there is no dns piec
     await g.close();
   }
 });
+
+// Story 50.21: the broadcast edge's deploy also needs R2 (its segment and guide buckets); a token
+// without Workers R2 Storage Write fails naming it, before anything is written.
+test("the broadcast piece needs Workers R2 Storage Write", async () => {
+  assert.deepEqual([...needed(["broadcast"])], [
+    ["Workers Scripts Write", "account"],
+    ["Workers R2 Storage Write", "account"],
+    ["Workers Routes Write", "zone"],
+    ["Zone Read", "zone"],
+  ]);
+  const f = await fakeServer(routes(policy.policies));
+  try {
+    const r = await check({ pieces: ["broadcast"], zoneName: "maktaba.tv", accountId: ACC, token: "t", base: f.url });
+    assert.ok(r.missing.includes("Workers R2 Storage Write"), JSON.stringify(r.missing));
+  } finally {
+    await f.close();
+  }
+  const withR2 = policy.policies.map((p, i) =>
+    i === 0 ? { ...p, permission_groups: [...p.permission_groups, { id: "r2w", name: "Workers R2 Storage Write" }] } : p
+  );
+  const g = await fakeServer(routes(withR2));
+  try {
+    const r = await check({ pieces: ["broadcast"], zoneName: "maktaba.tv", accountId: ACC, token: "t", base: g.url });
+    assert.deepEqual(r.missing, []);
+  } finally {
+    await g.close();
+  }
+});

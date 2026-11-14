@@ -1,6 +1,6 @@
 ' What every screen of the channel shares (Epic 58 story 58.12): its strings and layout in the
-' channel's language, Ink & Brass colours (Epic 48's tokens), the bundled font, and calls to the
-' home through the ApiTask.
+' channel's language, the bundled font, and calls to the home through the ApiTask. Its colours,
+' ui_Colors(), are in theme.brs, generated from Epic 48's tokens (story 58.15).
 
 sub ui_Init()
     ' a child of the scene starts before the scene has set the language
@@ -10,19 +10,6 @@ sub ui_Init()
     m.rtl = m.i18n.rtl
     m.layout = LayoutNew(m.rtl, 1920)
 end sub
-
-function ui_Colors() as Object
-    return {
-        bg: "0x0B111CFF"
-        fg: "0xE8ECF3FF"
-        muted: "0xA9B3C4FF"
-        subtle: "0x131D2EFF"
-        accent: "0xE3B252FF"
-        accentFg: "0x1A1408FF"
-        border: "0x22304AFF"
-        error: "0xF0707FFF"
-    }
-end function
 
 function ui_Font(size as Integer, bold as Boolean) as Object
     f = CreateObject("roSGNode", "Font")
