@@ -20,7 +20,7 @@
       <Poster id="poster" loadDisplayMode="scaleToZoom" />
       <Rectangle id="track" color="0x22304AFF" visible="false" />
       <Rectangle id="bar" color="0xE3B252FF" visible="false" />
-      <Label id="title" color="0xE8ECF3FF" />
     </Group>
+    <Label id="title" color="0xE8ECF3FF" />
   </children>
 </component>

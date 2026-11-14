@@ -1,7 +1,8 @@
 sub init()
     m.top.backgroundColor = "0x0B111CFF"
     m.top.backgroundURI = ""
-    m.global.AddFields({lang: StoreLang(), session: {}, api: invalid, launchedAt: CreateObject("roDateTime").AsSeconds()})
+    m.global.AddFields({lang: StoreLang(), session: {}})
+    m.global.AddField("api", "node", false)
     ui_Init()
     m.clock = CreateObject("roTimespan")
     m.stack = m.top.FindNode("stack")
@@ -13,6 +14,10 @@ sub init()
     m.pendingLink = invalid
     m.notice = ""
     m.beaconSent = false
+    m.deferTimer = CreateObject("roSGNode", "Timer")
+    m.deferTimer.duration = 0.05
+    m.deferTimer.repeat = false
+    m.deferTimer.ObserveField("fire", "onDeferred")
     api = CreateObject("roSGNode", "ApiTask")
     api.ObserveField("signedOut", "onSignedOut")
     api.ObserveField("tooOld", "onTooOld")
@@ -137,7 +142,7 @@ sub onLinkVideo(ev as Object)
     print "[link] "; action
     if action = "play" then
         scene_Reset("HomeScreen", {})
-        scene_Push("PlayerScreen", {video: r.data, start: ResumePosition(r.data)})
+        scene_Push("PlayerScreen", {videoId: r.data.id, start: ResumePosition(r.data)})
     else
         scene_NotAvailable()
     end if
@@ -149,6 +154,7 @@ end sub
 
 ' The stack: Reset leaves one screen, Push adds one, Pop goes back.
 sub scene_Reset(name as String, params as Object)
+    m.confirm.visible = false
     while m.stack.GetChildCount() > 0
         m.stack.RemoveChildIndex(m.stack.GetChildCount() - 1)
     end while
@@ -178,6 +184,23 @@ end sub
 
 sub onNavigate(ev as Object)
     nav = ev.GetData()
+    ' a screen asking for the stack to be reset is still inside its own callback: the reset
+    ' runs on the next tick, so the screen is never removed while its handler runs
+    if nav.action = "setLang" or nav.action = "signOut" or nav.action = "start" then
+        m.deferred = nav
+        m.deferTimer.control = "start"
+        return
+    end if
+    scene_Do(nav)
+end sub
+
+sub onDeferred()
+    nav = m.deferred
+    m.deferred = invalid
+    if nav <> invalid then scene_Do(nav)
+end sub
+
+sub scene_Do(nav as Object)
     if nav.to <> invalid then
         scene_Push(nav.to, nav.params)
     else if nav.action = "back" then

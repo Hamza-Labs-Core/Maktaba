@@ -39,6 +39,9 @@ end sub
 sub onContent()
     c = m.top.itemContent
     if c = invalid then return
+    ' A blank pads a short row in Arabic so its cards start at the right; it draws nothing.
+    m.card.visible = c.kind <> "blank"
+    m.title.visible = m.card.visible
     m.poster.uri = c.HDPosterUrl
     m.title.text = c.title
     if c.rtl = true then

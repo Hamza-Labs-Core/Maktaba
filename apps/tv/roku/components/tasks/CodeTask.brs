@@ -1,5 +1,5 @@
 sub init()
-    m.top.functionName = "run"
+    m.top.functionName = "runTask"
 end sub
 
 function code_Headers() as Object
@@ -24,7 +24,7 @@ function code_Label() as String
     return model
 end function
 
-sub run()
+sub runTask()
     if m.top.mode = "home" then
         code_Home()
     else

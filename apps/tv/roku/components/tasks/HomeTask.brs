@@ -1,8 +1,8 @@
 sub init()
-    m.top.functionName = "run"
+    m.top.functionName = "runTask"
 end sub
 
-sub run()
+sub runTask()
     c = m.top.command
     if c.kind = "connect" then
         m.top.result = home_Connect(c.home)

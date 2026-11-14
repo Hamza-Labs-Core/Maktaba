@@ -208,5 +208,81 @@
         <source>account.language.ar</source>
         <translation>ﺔﻴﺑﺮﻌﻟﺍ</translation>
     </message>
+    <message>
+        <source>code.title</source>
+        <translation>ﺰﻣﺮﺑ ﻝﻮﺧﺪﻟﺍ ﻞﻴﺠﺴﺗ</translation>
+    </message>
+    <message>
+        <source>code.where</source>
+        <translation>ﻰﻠﻋ ﺔﻘﻓﺍﻮﻤﻟﺍ ← ﻲﺼﺨﺸﻟﺍ ﻒﻠﻤﻟﺍ :ﻚﻔﺗﺎﻫ ﻰﻠﻋ ﺔﺒﺘﻜﻣ ﻲﻓ
+maktaba.tv/tv ﻰﻟﺇ ﺐﻫﺫﺍ ﻭﺃ ،ﺯﺎﻔﻠﺗ</translation>
+    </message>
+    <message>
+        <source>code.whereHome</source>
+        <translation>ﻰﻠﻋ ﺔﻘﻓﺍﻮﻤﻟﺍ ← ﻲﺼﺨﺸﻟﺍ ﻒﻠﻤﻟﺍ :ﻚﻔﺗﺎﻫ ﻰﻠﻋ ﺔﺒﺘﻜﻣ ﻲﻓ
+ﺯﺎﻔﻠﺗ</translation>
+    </message>
+    <message>
+        <source>code.waiting</source>
+        <translation>…ﻒﺗﺎﻬﻟﺍ ﻦﻣ ﺔﻘﻓﺍﻮﻤﻟﺍ ﺭﺎﻈﺘﻧﺍ ﻲﻓ</translation>
+    </message>
+    <message>
+        <source>code.signingIn</source>
+        <translation>…ﻝﻮﺧﺪﻟﺍ ﻞﻴﺠﺴﺗ ﺭﺎﺟ .ﺔﻘﻓﺍﻮﻤﻟﺍ ﺖﻤﺗ</translation>
+    </message>
+    <message>
+        <source>code.cloudDown</source>
+        <translation>ﺮﻴﻏ ﺯﺎﻔﻠﺘﻟﺍ ﺍﺬﻫ ﻥﺃ ﻭﺃ ،ﺔﺒﺘﻜﻣ ﺔﺑﺎﺤﺳ ﻰﻟﺇ ﻝﻮﺻﻮﻟﺍ ﺭﺬﻌﺗ
+ﻩﺬﻫ ﻲﻓ ﻲﺴﻴﺋﺮﻟﺍ ﺯﺎﻬﺠﻟﺍ ﻦﻋ ﺚﺤﺑﺍ .ﺪﻌﺑ ﺖﻧﺮﺘﻧﻹﺎﺑ ﻞﺼﺘﻣ
+.ﺎﻘﺣﻻ ﻝﻭﺎﺣ ﻭﺃ ،ﻚﻟﺫ ﻦﻣ ﻻﺪﺑ ﺔﻜﺒﺸﻟﺍ</translation>
+    </message>
+    <message>
+        <source>code.failed</source>
+        <translation>.ﻯﺮﺧﺃ ﺓﺮﻣ ﻝﻭﺎﺣ .ﺯﺎﻔﻠﺘﻟﺍ ﺍﺬﻫ ﻝﻮﺧﺩ ﻞﻴﺠﺴﺗ ﺭﺬﻌﺗ</translation>
+    </message>
+    <message>
+        <source>roku.exit.leave</source>
+        <translation>ﺝﻭﺮﺧ</translation>
+    </message>
+    <message>
+        <source>roku.exit.stay</source>
+        <translation>ﺀﺎﻘﺒﻟﺍ</translation>
+    </message>
+    <message>
+        <source>action.open</source>
+        <translation>ﺢﺘﻓ</translation>
+    </message>
+    <message>
+        <source>action.goToSeries</source>
+        <translation>ﻞﺴﻠﺴﻤﻟﺍ ﻰﻟﺇ ﺐﻫﺫﺍ</translation>
+    </message>
+    <message>
+        <source>action.cancel</source>
+        <translation>ﺀﺎﻐﻟﺇ</translation>
+    </message>
+    <message>
+        <source>library.allLetters</source>
+        <translation>ﻞﻜﻟﺍ</translation>
+    </message>
+    <message>
+        <source>library.empty</source>
+        <translation>.ﺪﻌﺑ ﺎﻨﻫ ﺀﻲﺷ ﻻ</translation>
+    </message>
+    <message>
+        <source>library.onDeck</source>
+        <translation>ﺓﺪﻫﺎﺸﻤﻠﻟ ﻲﻟﺎﺘﻟﺍ</translation>
+    </message>
+    <message>
+        <source>library.recentlyWatched</source>
+        <translation>ﺍﺮﺧﺆﻣ ﺪﻫﻮﺷ</translation>
+    </message>
+    <message>
+        <source>search.noResults</source>
+        <translation>.ﺞﺋﺎﺘﻧ ﻻ</translation>
+    </message>
+    <message>
+        <source>player.error</source>
+        <translation>.ﻥﻵﺍ ﻮﻳﺪﻴﻔﻟﺍ ﺍﺬﻫ ﻞﻴﻐﺸﺗ ﻦﻜﻤﻳ ﻻ</translation>
+    </message>
 </context>
 </TS>

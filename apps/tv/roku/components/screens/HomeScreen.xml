@@ -15,7 +15,7 @@
     <Label id="brand" translation="[120,50]" width="1680" />
     <PillRow id="menu" translation="[120,130]" pillWidth="260" rowWidth="1680" />
     <Label id="notice" translation="[120,230]" width="1680" visible="false" />
-    <RowList id="rows" translation="[120,290]" itemComponentName="PosterCard" numRows="2" rowItemSize="[[300,230]]" rowItemSpacing="[[28,0]]" itemSize="[1680,330]" itemSpacing="[0,40]" showRowLabel="[true]" rowLabelOffset="[[0,16]]" rowFocusAnimationStyle="fixedFocusWrap" />
+    <RowList id="rows" translation="[132,290]" itemComponentName="PosterCard" numRows="2" rowItemSize="[[300,230]]" rowItemSpacing="[[28,0]]" itemSize="[1612,330]" itemSpacing="[0,40]" showRowLabel="[true]" rowLabelOffset="[[0,16]]" rowFocusAnimationStyle="fixedFocusWrap" />
     <Label id="hint" translation="[120,1000]" width="1680" />
   </children>
 </component>

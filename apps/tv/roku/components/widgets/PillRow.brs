@@ -23,7 +23,6 @@ end sub
 
 sub onSelected()
     g = m.top.FindNode("pills")
-    c = ui_Colors()
     for i = 0 to g.GetChildCount() - 1
         b = g.GetChild(i)
         b.focused = (m.top.focused and i = m.top.selected)

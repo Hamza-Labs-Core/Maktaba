@@ -7,13 +7,13 @@
 
 ' What Back does: "top" (focus the tab's first item), "tabs" (focus the tab bar), "leave" (close
 ' the screen) or "confirm_exit" (Home: ask once).
-function NavBack(screen as String, inTabs as Boolean, atTop as Boolean) as String
+function NavBack(screen as String, inTabs as Boolean, onTop as Boolean) as String
     if screen = "home" then
-        if inTabs or atTop then return "confirm_exit"
+        if inTabs or onTop then return "confirm_exit"
         return "top"
     end if
     if inTabs then return "leave"
-    if not atTop then return "top"
+    if not onTop then return "top"
     if screen = "library" then return "tabs"
     return "leave"
 end function

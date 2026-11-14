@@ -19,7 +19,7 @@
     <PosterGrid id="grid" translation="[120,330]" basePosterSize="[240,135]" itemSpacing="[24,70]" numColumns="6" numRows="3" caption1NumLines="1" posterDisplayMode="scaleToZoom" />
     <LabelList id="rail" translation="[1740,330]" itemSize="[80,46]" numRows="14" vertFocusAnimationStyle="floatingFocus" />
     <LabelList id="list" translation="[120,330]" itemSize="[1200,64]" itemSpacing="[0,8]" numRows="10" visible="false" />
-    <RowList id="rows" translation="[120,330]" itemComponentName="PosterCard" numRows="2" rowItemSize="[[300,230]]" rowItemSpacing="[[28,0]]" itemSize="[1680,330]" itemSpacing="[0,40]" showRowLabel="[true]" rowLabelOffset="[[0,16]]" visible="false" rowFocusAnimationStyle="fixedFocusWrap" />
+    <RowList id="rows" translation="[132,330]" itemComponentName="PosterCard" numRows="2" rowItemSize="[[300,230]]" rowItemSpacing="[[28,0]]" itemSize="[1612,330]" itemSpacing="[0,40]" showRowLabel="[true]" rowLabelOffset="[[0,16]]" visible="false" rowFocusAnimationStyle="fixedFocusWrap" />
     <Label id="empty" translation="[120,500]" width="1680" visible="false" />
   </children>
 </component>

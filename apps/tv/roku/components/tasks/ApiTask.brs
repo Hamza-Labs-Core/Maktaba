@@ -1,8 +1,8 @@
 sub init()
-    m.top.functionName = "run"
+    m.top.functionName = "runTask"
 end sub
 
-sub run()
+sub runTask()
     port = CreateObject("roMessagePort")
     m.top.ObserveField("request", port)
     client = invalid

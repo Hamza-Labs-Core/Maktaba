@@ -51,7 +51,25 @@
     "account.signOut": "Sign out",
     "account.language": "Language",
     "account.language.en": "English",
-    "account.language.ar": "العربية"
+    "account.language.ar": "العربية",
+    "code.title": "Sign in with a code",
+    "code.where": "In Maktaba on your phone: Profile → Approve a TV, or go to maktaba.tv/tv",
+    "code.whereHome": "In Maktaba on your phone: Profile → Approve a TV",
+    "code.waiting": "Waiting for a phone to approve it…",
+    "code.signingIn": "Approved. Signing in…",
+    "code.cloudDown": "Maktaba Cloud cannot be reached, or this TV has no internet yet. Find the home on this network instead, or try again later.",
+    "code.failed": "This TV could not sign in. Try again.",
+    "roku.exit.leave": "Leave",
+    "roku.exit.stay": "Stay",
+    "action.open": "Open",
+    "action.goToSeries": "Go to the series",
+    "action.cancel": "Cancel",
+    "library.allLetters": "All",
+    "library.empty": "Nothing here yet.",
+    "library.onDeck": "On deck",
+    "library.recentlyWatched": "Recently watched",
+    "search.noResults": "No results.",
+    "player.error": "This video cannot play right now."
   },
   "templates": {
     "launcher.connecting": {
@@ -97,6 +115,26 @@
     "video.resumeFrom": {
       "text": "Resume from %1$s",
       "widthChars": 32,
+      "lines": 1
+    },
+    "code.expires": {
+      "text": "This code lasts %1$d minutes.",
+      "widthChars": 50,
+      "lines": 1
+    },
+    "series.season": {
+      "text": "Season %1$d",
+      "widthChars": 12,
+      "lines": 1
+    },
+    "account.signedInAs": {
+      "text": "Signed in as %1$s",
+      "widthChars": 60,
+      "lines": 1
+    },
+    "account.home": {
+      "text": "Home: %1$s",
+      "widthChars": 60,
       "lines": 1
     }
   }
