@@ -21,6 +21,8 @@
 //   - apps/apple/MaktabaKit/Sources/MaktabaKit/Tokens.swift
 //   - apps/android/core/src/main/kotlin/com/hamzalabs/maktaba/core/ui/Tokens.kt
 //
+// and story 58.15 the Roku channel's dark colours, apps/tv/roku/components/theme.brs.
+//
 // (see native.mjs). The hand-written `web/src/styles/tokens.css` is what the
 // web ships; `make test-tokens` fails when its semantic colours, palette or
 // scales drift from the JSON (checks.mjs), when a text/background pair is
@@ -32,7 +34,15 @@
 import { readFile, mkdir, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { emitKotlin, emitSwift, KOTLIN_PATH, nativeModel, SWIFT_PATH } from "./native.mjs";
+import {
+  emitBrightScript,
+  emitKotlin,
+  emitSwift,
+  KOTLIN_PATH,
+  nativeModel,
+  ROKU_PATH,
+  SWIFT_PATH,
+} from "./native.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const tokensDir = join(here, "..", "tokens");
@@ -357,6 +367,7 @@ export function nativeFiles(tokens) {
   return {
     [SWIFT_PATH]: emitSwift(model),
     [KOTLIN_PATH]: emitKotlin(model),
+    [ROKU_PATH]: emitBrightScript(model),
     [SITE_CSS_PATH]: emitSiteCss(tokens),
   };
 }
@@ -401,7 +412,7 @@ async function main(argv) {
       `→ ${outDir}/{tokens.css,tokens.ts,tokens.json}` +
       (check
         ? "; committed files checked"
-        : `; wrote ${SWIFT_PATH}, ${KOTLIN_PATH}, ${SITE_CSS_PATH}`)
+        : `; wrote ${SWIFT_PATH}, ${KOTLIN_PATH}, ${ROKU_PATH}, ${SITE_CSS_PATH}`)
   );
   if (stale.length > 0) {
     console.error(
