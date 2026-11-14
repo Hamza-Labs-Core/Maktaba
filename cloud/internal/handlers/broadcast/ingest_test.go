@@ -253,3 +253,27 @@ func TestIngestTokenRecordsTheEdgeChannel(t *testing.T) {
 		t.Fatalf("a rebind = %d %s", w.Code, w.Body)
 	}
 }
+
+// The binding can't be checked (the database away): no token, fail closed.
+func TestIngestTokenFailsClosedWithoutTheBinding(t *testing.T) {
+	seed := sha256.Sum256([]byte("maktaba-broadcast TEST KEY, never for production: handler"))
+	k, _ := bc.KeyFromSeed(seed[:])
+	d := &IngestDeps{
+		Agents: fakeAgents{"pro-home": "s3cret"}, Key: &k,
+		Plans: fakePlans{"pro-home": {Publisher: "user-pro", MaxRungs: 2, MaxTopKbps: 3000}},
+		Now:   func() time.Time { return at },
+		EdgeChannels: func(context.Context, string, string, string) error {
+			return errors.New("database away")
+		},
+	}
+	r := chi.NewRouter()
+	MountIngest(r, d)
+	w := post(r, "pro-home", "s3cret", `{"channel":"7","rungs":["src"],"cloud_id":"0b9a4b5e-5d1c-4a43-9a5e-1c2b3d4e5f60"}`)
+	if w.Code != http.StatusServiceUnavailable || errOf(w) != "edge_channel_unavailable" || strings.Contains(w.Body.String(), "mkbi1.") {
+		t.Fatalf("the bind failed = %d %s", w.Code, w.Body)
+	}
+	// a malformed cloud id is not looked up at all
+	if w := post(r, "pro-home", "s3cret", `{"channel":"7","rungs":["src"],"cloud_id":"------------------------------------"}`); w.Code != http.StatusOK {
+		t.Fatalf("a malformed cloud id = %d", w.Code)
+	}
+}

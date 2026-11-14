@@ -3,9 +3,11 @@
 package main
 
 import (
+	"context"
 	"crypto/ed25519"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -14,6 +16,7 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/broadcast"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/config"
+	broadcasth "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/broadcast"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/moderation"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/stores"
 )
@@ -268,5 +271,58 @@ func TestModerationNoticeTakedownCounterRestore(t *testing.T) {
 	js := admin.mustStatus(admin.do("GET", "/v1/admin/moderation/export", nil), http.StatusOK).json(t)
 	if len(js["records"].([]any)) < 20 {
 		t.Errorf("the JSON export has %d records", len(js["records"].([]any)))
+	}
+}
+
+// Story 50.24: a channel's edge id binds once, under a row lock. The same channel again is fine,
+// whatever the cloud id's case; another local channel is refused; of two concurrent binds naming
+// different channels exactly one wins; another home's cloud id binds nothing.
+func TestEdgeChannelBindsOnce(t *testing.T) {
+	e := newEnv(t)
+	owner := e.registerVerified("owner@example.test")
+	h := claimHome(e, owner, "bind-home")
+	newChannel := func(slug string) string {
+		var id string
+		if err := e.pool.DB.QueryRow(`INSERT INTO broadcast_channels (server_id, slug, access, agreement_version)
+			VALUES ($1, $2, 'open', 1) RETURNING id::text`, h.id, slug).Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	bind := broadcasth.DBEdgeChannels(e.pool.DB)
+	ctx := context.Background()
+	ch := newChannel("news")
+	edge7, edge8 := broadcast.ChannelID(h.id, "7"), broadcast.ChannelID(h.id, "8")
+	if err := bind(ctx, h.id, strings.ToUpper(ch), edge7); err != nil {
+		t.Fatalf("the first bind (upper case): %v", err)
+	}
+	if err := bind(ctx, h.id, ch, edge7); err != nil {
+		t.Fatalf("the same channel again: %v", err)
+	}
+	if err := bind(ctx, h.id, ch, edge8); !errors.Is(err, broadcasth.ErrEdgeMismatch) {
+		t.Fatalf("another channel: %v", err)
+	}
+	if err := bind(ctx, "00000000-0000-0000-0000-000000000000", ch, edge8); err != nil {
+		t.Fatalf("another home's cloud id: %v", err)
+	}
+
+	race := newChannel("quran")
+	errs := make(chan error, 2)
+	for _, edge := range []string{edge7, edge8} {
+		go func(edge string) { errs <- bind(ctx, h.id, race, edge) }(edge)
+	}
+	ok, refused := 0, 0
+	for range 2 {
+		switch err := <-errs; {
+		case err == nil:
+			ok++
+		case errors.Is(err, broadcasth.ErrEdgeMismatch):
+			refused++
+		default:
+			t.Fatal(err)
+		}
+	}
+	if ok != 1 || refused != 1 {
+		t.Fatalf("two concurrent binds: %d bound, %d refused", ok, refused)
 	}
 }

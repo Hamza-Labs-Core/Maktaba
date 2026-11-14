@@ -73,32 +73,35 @@ type IngestDeps struct {
 // ErrEdgeMismatch is a token request naming another local channel for a cloud id already bound.
 var ErrEdgeMismatch = errors.New("broadcast: the cloud id is bound to another channel")
 
-// DBEdgeChannels binds broadcast_channels.edge_channel for the home's own live channel, once.
+// DBEdgeChannels binds broadcast_channels.edge_channel for the home's own live channel, once: in a
+// transaction that locks the row, so two requests naming different channels can't both bind.
 func DBEdgeChannels(db *sql.DB) func(ctx context.Context, serverID, cloudID, edgeChannel string) error {
 	return func(ctx context.Context, serverID, cloudID, edgeChannel string) error {
+		tx, err := db.BeginTx(ctx, nil)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = tx.Rollback() }()
+		var id string
 		var bound sql.NullString
-		err := db.QueryRowContext(ctx, `
-            WITH set AS (
-                UPDATE broadcast_channels SET edge_channel = $3
-                 WHERE id::text = $2 AND server_id::text = $1 AND unpublished_at IS NULL
-                   AND (edge_channel IS NULL OR edge_channel = '')
-                RETURNING edge_channel)
-            SELECT edge_channel FROM set
-            UNION ALL
-            SELECT edge_channel FROM broadcast_channels
-             WHERE id::text = $2 AND server_id::text = $1 AND unpublished_at IS NULL
-               AND edge_channel IS NOT NULL AND edge_channel <> ''
-            LIMIT 1`, serverID, cloudID, edgeChannel).Scan(&bound)
+		err = tx.QueryRowContext(ctx, `SELECT id::text, edge_channel FROM broadcast_channels
+             WHERE id = $2::uuid AND server_id::text = $1 AND unpublished_at IS NULL FOR UPDATE`, serverID, cloudID).Scan(&id, &bound)
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil // not this home's live channel: nothing to bind
 		}
 		if err != nil {
 			return err
 		}
-		if bound.String != edgeChannel {
-			return ErrEdgeMismatch
+		if bound.String != "" {
+			if bound.String != edgeChannel {
+				return ErrEdgeMismatch
+			}
+			return nil
 		}
-		return nil
+		if _, err := tx.ExecContext(ctx, `UPDATE broadcast_channels SET edge_channel = $2 WHERE id::text = $1`, id, edgeChannel); err != nil {
+			return err
+		}
+		return tx.Commit()
 	}
 }
 
@@ -154,7 +157,7 @@ type tokenResp struct {
 
 var (
 	localChannelRE = regexp.MustCompile(`^[A-Za-z0-9_.:-]{1,64}$`)
-	uuidRE         = regexp.MustCompile(`^[0-9a-fA-F-]{36}$`)
+	uuidRE         = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 )
 
 func (d *IngestDeps) now() time.Time {
@@ -223,7 +226,10 @@ func (d *IngestDeps) IngestToken(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err != nil {
-			slog.Warn("broadcast: the channel's edge id was not recorded", "err", err, "server_id", serverID)
+			// fail closed: a token is issued only once its channel's binding is known
+			slog.Warn("broadcast: the channel's edge id could not be checked", "err", err, "server_id", serverID)
+			writeErr(w, 503, "edge_channel_unavailable", "")
+			return
 		}
 	}
 	tok, err := bc.IssueIngest(*d.Key, bc.IngestClaims{
