@@ -198,7 +198,7 @@ export function startCloud(log, homePort) {
       const body = await readBody(req);
       state.created++;
       log(`cloud code for platform=${body.platform}`);
-      return json(res, 201, { code: "ABCD-2345", poll_secret: "secret", expires_in: 600, interval: 1, verify_url: "https://maktaba.tv/tv?c=ABCD2345" });
+      return json(res, 201, { code: "ABCD-2345", poll_secret: "secret", expires_in: 600, interval: 1, verify_url: `http://127.0.0.1:${server.address().port}/tv?c=ABCD2345` });
     }
     if (p === "/v1/tv/codes/ABCD2345/qr.png") {
       res.writeHead(200, { "Content-Type": "image/png" });
