@@ -147,3 +147,22 @@ tests:
             exp_annotations:
               summary: "A staff passkey's counter went backwards; the passkey was disabled"
               runbook_url: docs/runbooks/cloud/staff-security.md
+  # the api pool's worker (story 50.17): the lock moves within a scrape, no alert; no node holds
+  # it for 2 minutes, worker_no_leader
+  - interval: 30s
+    input_series:
+      - series: 'worker_leader{node="api-1"}'
+        values: '1 1 0 0 0 0 0 0 0 0'
+      - series: 'worker_leader{node="api-2"}'
+        values: '0 0 1 1 0 0 0 0 0 0'
+    alert_rule_test:
+      - eval_time: 1m30s
+        alertname: worker_no_leader
+        exp_alerts: []
+      - eval_time: 4m30s
+        alertname: worker_no_leader
+        exp_alerts:
+          - exp_labels: {severity: sev2}
+            exp_annotations:
+              summary: "No api node runs the worker's jobs: no node holds the worker's leader lock"
+              runbook_url: docs/runbooks/cloud/worker-no-leader.md

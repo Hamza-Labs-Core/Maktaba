@@ -1,0 +1,193 @@
+# The api pool's rehearsal (Epic 50 story 50.17, scenario api-pool): Phase 2's api tier on one
+# runner. Three api nodes, each its api and its worker (the worker shares the node's network,
+# as on a machine), behind HAProxy standing in for Hetzner's LB11 (health check GET /readyz
+# every 5 s, out after 2 failures, least connections, no retries), on one Postgres. Two relay
+# processes keep their home caches, to show a change made on one node reach the others.
+#
+#   postgres       the cloud database
+#   api-1..3       this commit's api role (api-pool.toml), MAKTABA_NODE_ID api-<n>
+#   worker-1..3    this commit's worker role, in api-<n>'s network
+#   relay-1, -2    this commit's relay role, its cache on (50.05)
+#   lb             HAProxy (haproxy-pool.cfg); its stats on :8404/stats
+#
+# pool.sh restarts one node on another image for deploy/cloud-ha/bin/api-rollout.
+name: maktaba-rehearsal-pool
+
+networks:
+  private:
+    ipam:
+      config:
+        - subnet: 10.52.0.0/24
+
+x-db-env: &db-env
+  MAKTABA_ENV: rehearsal
+  MAKTABA_CLOUD_DB_URL: postgres://maktaba:rehearsal@10.52.0.10:5432/maktaba?sslmode=disable
+  MAKTABA_CLOUD_TOKEN_SECRET: rehearsal-token-secret-at-least-32-bytes
+  MAKTABA_CLOUD_BILLING_PROVIDER: none
+
+x-api: &api
+  command: ["serve", "--role", "api", "--config", "/etc/maktaba/cloud.toml"]
+  restart: "no"
+  # the drain (12 s) and the shutdown grace (20 s), as the node's unit allows
+  stop_grace_period: 45s
+  depends_on:
+    postgres:
+      condition: service_healthy
+  volumes:
+    - ./api-pool.toml:/etc/maktaba/cloud.toml:ro
+  healthcheck:
+    test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8090/healthz"]
+    interval: 2s
+    timeout: 2s
+    retries: 30
+
+x-api-env: &api-env
+  <<: *db-env
+  MAKTABA_CLOUD_PUBLIC_URL: http://api.test
+  # rehearsal-only values, as in compose.yml's api
+  MAKTABA_CLOUD_STAFF_TOKEN_SECRET: rehearsal-staff-token-secret-at-least-32-bytes
+  MAKTABA_CLOUD_STAFF_SECRET_KEY: 72656865617273616c2d73746166662d7365637265742d6b65792d3332627974
+  MAKTABA_CLOUD_DRAIN_DELAY: 12s
+
+x-worker: &worker
+  command: ["serve", "--role", "worker"]
+  restart: "no"
+  stop_grace_period: 30s
+
+x-relay: &relay
+  image: ${CLOUD_IMAGE:-maktaba-cloud:rehearsal}
+  command: ["serve", "--role", "relay"]
+  restart: "no"
+  depends_on:
+    postgres:
+      condition: service_healthy
+  healthcheck:
+    test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8443/healthz"]
+    interval: 2s
+    timeout: 2s
+    retries: 30
+
+x-relay-env: &relay-env
+  <<: *db-env
+  MAKTABA_CLOUD_LISTEN_ADDR: "0.0.0.0:8443"
+  MAKTABA_CLOUD_PUBLIC_URL: http://relay.test
+  MAKTABA_CLOUD_RELAY_PUBLIC_HOST: relay.test
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: "no"
+    environment:
+      POSTGRES_USER: maktaba
+      POSTGRES_PASSWORD: rehearsal
+      POSTGRES_DB: maktaba
+    networks:
+      private:
+        ipv4_address: 10.52.0.10
+    ports:
+      - "127.0.0.1:${PG_PORT:-15432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U maktaba -d maktaba"]
+      interval: 1s
+      timeout: 2s
+      retries: 60
+
+  api-1:
+    <<: *api
+    image: ${API1_IMAGE:-maktaba-cloud:rehearsal}
+    environment:
+      <<: *api-env
+      MAKTABA_NODE_ID: api-1
+    networks:
+      private:
+        ipv4_address: 10.52.0.21
+    ports:
+      - "127.0.0.1:${API1_PORT:-18601}:8090"
+  worker-1:
+    <<: *worker
+    image: ${API1_IMAGE:-maktaba-cloud:rehearsal}
+    network_mode: "service:api-1"
+    depends_on: [api-1]
+    environment:
+      <<: *db-env
+      MAKTABA_NODE_ID: api-1
+
+  api-2:
+    <<: *api
+    image: ${API2_IMAGE:-maktaba-cloud:rehearsal}
+    environment:
+      <<: *api-env
+      MAKTABA_NODE_ID: api-2
+    networks:
+      private:
+        ipv4_address: 10.52.0.22
+    ports:
+      - "127.0.0.1:${API2_PORT:-18602}:8090"
+  worker-2:
+    <<: *worker
+    image: ${API2_IMAGE:-maktaba-cloud:rehearsal}
+    network_mode: "service:api-2"
+    depends_on: [api-2]
+    environment:
+      <<: *db-env
+      MAKTABA_NODE_ID: api-2
+
+  api-3:
+    <<: *api
+    image: ${API3_IMAGE:-maktaba-cloud:rehearsal}
+    environment:
+      <<: *api-env
+      MAKTABA_NODE_ID: api-3
+    networks:
+      private:
+        ipv4_address: 10.52.0.23
+    ports:
+      - "127.0.0.1:${API3_PORT:-18603}:8090"
+  worker-3:
+    <<: *worker
+    image: ${API3_IMAGE:-maktaba-cloud:rehearsal}
+    network_mode: "service:api-3"
+    depends_on: [api-3]
+    environment:
+      <<: *db-env
+      MAKTABA_NODE_ID: api-3
+
+  relay-1:
+    <<: *relay
+    environment:
+      <<: *relay-env
+      MAKTABA_NODE_ID: relay-1
+    networks:
+      private:
+        ipv4_address: 10.52.0.31
+    ports:
+      - "127.0.0.1:${RELAY1_PORT:-18604}:8443"
+  relay-2:
+    <<: *relay
+    environment:
+      <<: *relay-env
+      MAKTABA_NODE_ID: relay-2
+    networks:
+      private:
+        ipv4_address: 10.52.0.32
+    ports:
+      - "127.0.0.1:${RELAY2_PORT:-18605}:8443"
+
+  lb:
+    image: haproxy:3.0-alpine
+    restart: "no"
+    volumes:
+      - ./haproxy-pool.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    networks:
+      private:
+        ipv4_address: 10.52.0.30
+    ports:
+      - "127.0.0.1:${LB_PORT:-18600}:80"
+      - "127.0.0.1:${LB_STATS_PORT:-18606}:8404"
+    depends_on:
+      api-1:
+        condition: service_healthy
+      api-2:
+        condition: service_healthy
+      api-3:
+        condition: service_healthy

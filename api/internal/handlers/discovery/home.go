@@ -3,7 +3,13 @@
 //
 //	GET /api/discovery/home   public, per IP:
 //	  {"id","name","version","urls":[LAN base URLs…, then the relay URL],
-//	   "sign_in":{"password":true,"code":true}}
+//	   "sign_in":{"password":true,"code":true},
+//	   "api_level":1,"api_level_oldest":1,"client_floor":{"<app>/<platform>":"<version>"}}
+//
+// api_level, api_level_oldest and client_floor are the compatibility contract (Epic 58 story
+// 58.01, package compat): an app reads them each time it reaches the home, before any
+// sign-in, and shows Update the home or Update this app when it and the home are too far
+// apart. The relay forwards this route to the home itself, so the level is the home's.
 //
 // No user data and no address beyond the home's own advertised ones: the same things
 // the mDNS announcement says, plus the base URLs an app can use.
@@ -17,6 +23,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/compat"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	mw "github.com/Hamza-Labs-Core/Maktaba/api/internal/middleware"
 )
@@ -53,6 +60,10 @@ type homeResponse struct {
 	SignIn  homeSignIn `json:"sign_in"`
 	// StreamPort: HomeInfo's, left out when unknown
 	StreamPort int `json:"stream_port,omitempty"`
+	// the compatibility contract (Epic 58 story 58.01)
+	APILevel       int          `json:"api_level"`
+	APILevelOldest int          `json:"api_level_oldest"`
+	ClientFloor    compat.Floor `json:"client_floor"`
 }
 
 // MountHome attaches GET /api/discovery/home. perMin caps it per IP (0: the default,
@@ -78,8 +89,22 @@ func (h *Handler) DiscoveryHome(w http.ResponseWriter, r *http.Request) {
 		URLs:       info.URLs,
 		StreamPort: info.StreamPort,
 		// a code needs tokens to hand out: without a minter only the password signs in
-		SignIn: homeSignIn{Password: true, Code: h.Minter != nil},
+		SignIn:         homeSignIn{Password: true, Code: h.Minter != nil},
+		APILevel:       compat.Level,
+		APILevelOldest: compat.Oldest,
+		ClientFloor:    h.clientFloor(),
 	})
+}
+
+// clientFloor is the floor this home publishes, never nil (an empty object on the wire).
+func (h *Handler) clientFloor() compat.Floor {
+	if h.ClientFloor != nil {
+		return h.ClientFloor
+	}
+	if compat.ReleaseFloor != nil {
+		return compat.ReleaseFloor
+	}
+	return compat.Floor{}
 }
 
 // home is HomeFunc's answer, its URLs never empty (the request's own origin then).
