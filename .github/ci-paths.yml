@@ -833,7 +833,6 @@ roku:
   - *ci
   # the Roku group (story 58.16): apps/tv/roku, shared/i18n/visual-vectors.json, tv-logs, the catalog check
   - *roku
-  - 'web/.nvmrc'
   - '.github/workflows/_roku.yml'
 
 # The desktop Player for Windows and Linux (Epic 42.4): its project, the portable client

@@ -3,6 +3,9 @@
   "private": true,
   "description": "The Maktaba Roku channel (Epic 58 stories 58.12, 58.13, 58.15): its BrightScript unit tests on brs-engine",
   "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "test": "node --test tests/*.test.mjs"
   },

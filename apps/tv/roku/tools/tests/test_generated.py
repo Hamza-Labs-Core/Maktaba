@@ -44,3 +44,9 @@ def test_a_changed_expectation_is_caught(tmp_path) -> None:  # type: ignore[no-u
     f = tmp_path / "v.json"
     f.write_text(gen_vectors.render(doc), encoding="utf-8")
     assert gen_vectors.main(["--check", "--file", str(f)]) == 1
+
+
+def test_no_vector_names_a_maktaba_tv_page() -> None:
+    # every maktaba.tv link in the repository must open a page (web/packages/website/scripts/links.mjs
+    # reads this file too): sample addresses use example.org
+    assert "maktaba.tv" not in gen_vectors.VECTORS.read_text(encoding="utf-8")

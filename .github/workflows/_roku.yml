@@ -35,7 +35,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@v6.4.0
         with:
-          node-version-file: web/.nvmrc
+          node-version-file: apps/tv/roku/.nvmrc
           package-manager-cache: false
       - uses: astral-sh/setup-uv@v8.1.0
         with:
