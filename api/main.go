@@ -37,6 +37,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/pat"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/users"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/broadcastaccess"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/castgrant"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/delegation"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/link"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/relay"
@@ -382,9 +383,13 @@ func runServe() error {
 	// Epic 57 story 57.03: the content filter's gate. It refuses every signed-in user
 	// until MountP6 gives it the policy cache (fail closed).
 	parentalGate := parental.NewGate()
+	// Epic 58 story 58.07: a cast grant reaches only its items; MountCast gives it the
+	// database (until then a grant reaches nothing but the home's identity)
+	castGate := castgrant.NewGate()
 
 	r := router.New(router.Deps{
 		Parental:           parentalGate,
+		CastGate:           castGate,
 		Capabilities:       capabilities,
 		License:            licRef,
 		Usage:              usageCounter,
@@ -718,7 +723,13 @@ func runServe() error {
 			// route handlers, plus the PAT credential middleware wired
 			// into the security chain below.
 			router.MountP11(r, router.P11Deps{DB: appDB})
-			patAuth = pat.Middleware(pat.New(appDB), users.New(appDB), &authz.ACLStore{DB: appDB})
+			patMW := pat.Middleware(pat.New(appDB), users.New(appDB), &authz.ACLStore{DB: appDB})
+			// Epic 58 story 58.07: the cast grant, minted for a Cast receiver, and its
+			// credential middleware, run with the PAT one (each takes only its own prefix,
+			// and none acts once a principal is attached)
+			router.MountCast(r, router.CastDeps{DB: appDB, Keys: auth.keys, Gate: castGate})
+			castMW := castgrant.Bearer(auth.keys, users.New(appDB), &authz.ACLStore{DB: appDB})
+			patAuth = func(next http.Handler) http.Handler { return patMW(castMW(next)) }
 			logger.Info("p11: library-acl + api-token handlers mounted",
 				"event", "p11_mounted")
 

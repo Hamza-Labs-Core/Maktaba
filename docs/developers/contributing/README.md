@@ -21,9 +21,14 @@ and CI. The source lives at
   the checks that keep the API, the apps and maktaba.tv in step.
 - [API levels](api-levels.md): how a home and its apps tell whether they can work together,
   the client floor, the TV platform names, and how to change a response safely.
+- [Casting: the cast grant](casting.md): for sender and receiver authors: minting a grant
+  for Maktaba's Cast receiver, what it may reach, and what the sender hands the receiver.
 - [Parental controls](parental-controls.md): for client and API authors: what a player must
   do, the routes and their codes, the route registry, and how to run the role table and the
   bypass rehearsal.
+- [Playback: profiles, device reports and signed URLs](playback.md): for player and TV app
+  authors: how the home picks direct, remux or transcode, what `device_caps` reports, and the
+  signed URLs a TV fetches.
 - [CI](ci.md): how CI picks the jobs a change needs, and the single merge gate.
 - [Pull requests](pull-requests.md): branch, test, describe, review, merge.
 - [Maktaba Cloud: how it stays up](cloud.md): the two nodes, deploys, backups, and the cloud rehearsal.

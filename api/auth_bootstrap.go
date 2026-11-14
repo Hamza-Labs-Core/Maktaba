@@ -12,6 +12,7 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/keys"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/middleware"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/castgrant"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httpsec"
 	mw "github.com/Hamza-Labs-Core/Maktaba/api/internal/middleware"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/secret"
@@ -68,6 +69,9 @@ func initAuth(logger *slog.Logger) (*authState, error) {
 	// --- CORS (Story 10.15 AC-4) ---
 	st.cors = httpsec.DefaultCORS()
 	st.cors.AllowedOrigins = httpsec.ParseAllowedOrigins(os.Getenv("MAKTABA_CORS_ALLOWED_ORIGINS"))
+	// Epic 58 story 58.07: Maktaba's Cast receiver calls the home with a cast grant (a
+	// bearer, never a cookie)
+	st.cors.BearerOrigins = []string{castgrant.ReceiverOrigin}
 
 	// --- Security headers (Story 10.15 AC-2, AC-5 / Story 23.3 AC-2) ---
 	// HSTS is secure-by-default (DefaultHeaders pre-populates it). An

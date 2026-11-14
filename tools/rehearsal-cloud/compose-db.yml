@@ -1,0 +1,238 @@
+# The database on its own nodes (Epic 50 story 50.18), over compose-ha.yml: db-1, db-2 and
+# db-3 (the node image with ROLE=db: Patroni, etcd, PgBouncer), the database's Floating IP, and
+# Phase 2's app tier reaching the database through it. The scenarios db-nodes-failover and
+# db-nodes-migrate (cloud/rehearsal/db_test.go) run on it.
+#
+#   dbfip          10.62.0.0/16: where the database's Floating IP lives. fakehcloud-db moves the
+#                  alias db-primary.test to the node it is assigned to (Floating IP 8);
+#                  dbfront (db.internal, 10.62.0.40) is that IP as the apps see it: each
+#                  connection to the holder's PgBouncer, and the ones to an old holder closed
+#                  when it moves (fipfront's FIPFRONT_FOLLOW), as a real Floating IP's new
+#                  holder resets them
+#   relay, worker-1, worker-2, api-1
+#                  this commit's cloud, database.url on db.internal's transaction pool and
+#                  database.direct_url on its cloud_session (the worker's lock, the relay's
+#                  LISTEN); relay.test on the fip network is the relay (front dials it)
+#
+# db-nodes-failover starts the database nodes alone (DB_JOIN=now: they make their own cluster
+# with etcd on the three); db-nodes-migrate starts the pair beside them (DB_JOIN=later:
+# bin/migrate-db-nodes adds them to the pair's cluster).
+
+networks:
+  dbfip:
+    ipam:
+      config:
+        - subnet: 10.62.0.0/16
+
+x-db-node-env: &db-node-env
+  ROLE: db
+  CLOUD_PROCESSES: "off"
+  JOIN: ${DB_JOIN:-now}
+  ETCD_INITIAL_CLUSTER: ${DB_ETCD_INITIAL_CLUSTER:-db-1=https://10.60.0.31:2380,db-2=https://10.60.0.32:2380,db-3=https://10.60.0.33:2380}
+  ETCD_HOSTS: ${DB_ETCD_HOSTS:-10.60.0.31:2379,10.60.0.32:2379,10.60.0.33:2379}
+  # the private and Floating IP networks, and dbfip (the test's own connections arrive from
+  # its gateway, 10.62.0.1)
+  PRIVATE_NET: 10.60.0.0/14
+  PG_SUPERUSER_PASSWORD: rehearsal-super
+  PG_REPLICATION_PASSWORD: rehearsal-repl
+  PG_REWIND_PASSWORD: rehearsal-rewind
+  PG_APP_PASSWORD: rehearsal
+  TOKEN_SECRET: rehearsal-token-secret-at-least-32-bytes
+  LOGS_TOKEN: rehearsal-logs-token
+  HCLOUD_ENDPOINT: http://10.62.0.30:8080/v1
+  HCLOUD_TOKEN: rehearsal-hcloud-token
+  FLOATING_IP_ID: "7"
+  DB_FLOATING_IP_ID: "8"
+  DB_HCLOUD_ENDPOINT: http://10.62.0.30:8080/v1
+  FIP_RETRY_FOR: ${FIP_RETRY_FOR:-60}
+  ARCHIVE_COMMAND: ${ARCHIVE_COMMAND:-/bin/true}
+  REPO1_ENDPOINT: ${REPO1_ENDPOINT:-}
+  REPO1_REGION: us-east-1
+  REPO1_BUCKET: maktaba-prod-pg
+  REPO1_KEY: rehearsal
+  REPO1_SECRET: rehearsal-secret
+  REPO1_CIPHER_PASS: rehearsal-cipher-one
+  REPO2_ENDPOINT: ${REPO2_ENDPOINT:-}
+  REPO2_REGION: us-east-1
+  REPO2_BUCKET: maktaba-prod-pg-r2
+  REPO2_KEY: rehearsal
+  REPO2_SECRET: rehearsal-secret
+  REPO2_CIPHER_PASS: rehearsal-cipher-two
+
+x-db-node: &db-node
+  image: ${NODE_IMAGE:-maktaba-node:rehearsal}
+  restart: "no"
+  stop_grace_period: 30s
+  volumes:
+    - ./.work/pki:/pki:ro
+
+x-app-env: &app-env
+  MAKTABA_ENV: rehearsal
+  MAKTABA_CLOUD_DB_URL: postgres://maktaba:rehearsal@db.internal:6432/maktaba?sslmode=disable
+  MAKTABA_CLOUD_DB_DIRECT_URL: postgres://maktaba:rehearsal@db.internal:6432/cloud_session?sslmode=disable
+  MAKTABA_CLOUD_TOKEN_SECRET: rehearsal-token-secret-at-least-32-bytes
+  MAKTABA_CLOUD_BILLING_PROVIDER: none
+
+x-app: &app
+  image: ${CLOUD_IMAGE:-maktaba-cloud:rehearsal}
+  # a start before the database answers fails its migration: the unit's Restart=on-failure
+  restart: on-failure
+
+services:
+  # the pair, in the move: PgBouncer reachable on the database's Floating IP too (A and B are
+  # servers 1 and 2 of the second fake), and the IP's id in their callback's settings
+  node-a:
+    environment:
+      PRIVATE_NET: 10.60.0.0/14
+      DB_FLOATING_IP_ID: ${PAIR_DB_FLOATING_IP_ID:-}
+      DB_HCLOUD_ENDPOINT: http://10.62.0.30:8080/v1
+    networks:
+      dbfip:
+        ipv4_address: 10.62.0.11
+  node-b:
+    environment:
+      PRIVATE_NET: 10.60.0.0/14
+      DB_FLOATING_IP_ID: ${PAIR_DB_FLOATING_IP_ID:-}
+      DB_HCLOUD_ENDPOINT: http://10.62.0.30:8080/v1
+    networks:
+      dbfip:
+        ipv4_address: 10.62.0.12
+
+  # the relay's edge: through relay.test on the pair (port 80, its Caddy), or the app tier's
+  # relay itself (FRONT_TARGET=relay.test:8443)
+  front:
+    environment:
+      FIPFRONT_TARGET: ${FRONT_TARGET:-relay.test:80}
+
+  db-1:
+    <<: *db-node
+    environment:
+      <<: *db-node-env
+      NODE_NAME: db-1
+      NODE_ADDR: 10.60.0.31
+      SERVER_ID: "11"
+    networks:
+      private:
+        ipv4_address: 10.60.0.31
+      dbfip:
+        ipv4_address: 10.62.0.31
+    ports:
+      - "127.0.0.1:${DB1_PG_PORT:-25434}:5432"
+      - "127.0.0.1:${DB1_API_PORT:-28010}:8008"
+
+  db-2:
+    <<: *db-node
+    environment:
+      <<: *db-node-env
+      NODE_NAME: db-2
+      NODE_ADDR: 10.60.0.32
+      SERVER_ID: "12"
+    networks:
+      private:
+        ipv4_address: 10.60.0.32
+      dbfip:
+        ipv4_address: 10.62.0.32
+    ports:
+      - "127.0.0.1:${DB2_PG_PORT:-25435}:5432"
+      - "127.0.0.1:${DB2_API_PORT:-28011}:8008"
+
+  db-3:
+    <<: *db-node
+    environment:
+      <<: *db-node-env
+      NODE_NAME: db-3
+      NODE_ADDR: 10.60.0.33
+      SERVER_ID: "13"
+    networks:
+      private:
+        ipv4_address: 10.60.0.33
+      dbfip:
+        ipv4_address: 10.62.0.33
+    ports:
+      - "127.0.0.1:${DB3_PG_PORT:-25436}:5432"
+      - "127.0.0.1:${DB3_API_PORT:-28012}:8008"
+
+  fakehcloud-db:
+    image: ${CLOUD_IMAGE:-maktaba-cloud:rehearsal}
+    entrypoint: ["/usr/local/bin/maktaba-rehearsal", "fakehcloud"]
+    user: root
+    environment:
+      FAKEHCLOUD_DELAY: ${FAKEHCLOUD_DELAY:-5s}
+      FAKEHCLOUD_TOKEN: rehearsal-hcloud-token
+      FAKEHCLOUD_NETWORK: ${FAKEHCLOUD_DB_NETWORK:?the scenario names this project's dbfip network}
+      FAKEHCLOUD_ALIAS: db-primary.test
+      FAKEHCLOUD_SERVERS: ${FAKEHCLOUD_DB_SERVERS:?the scenario names this project's database containers}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      dbfip:
+        ipv4_address: 10.62.0.30
+    ports:
+      - "127.0.0.1:${FAKEHCLOUD_DB_PORT:-28082}:8080"
+
+  dbfront:
+    image: ${CLOUD_IMAGE:-maktaba-cloud:rehearsal}
+    entrypoint: ["/usr/local/bin/maktaba-rehearsal", "fipfront"]
+    environment:
+      FIPFRONT_LISTEN: ":6432"
+      FIPFRONT_TARGET: db-primary.test:6432
+      FIPFRONT_FOLLOW: 500ms
+    networks:
+      dbfip:
+        ipv4_address: 10.62.0.40
+        aliases: [db.internal]
+
+  relay:
+    <<: *app
+    command: ["serve", "--role", "relay"]
+    environment:
+      <<: *app-env
+      MAKTABA_NODE_ID: relay-1
+      MAKTABA_CLOUD_LISTEN_ADDR: "0.0.0.0:8443"
+      MAKTABA_CLOUD_PUBLIC_URL: http://relay.test
+      MAKTABA_CLOUD_RELAY_PUBLIC_HOST: relay.test
+      MAKTABA_CLOUD_RELAY_ID: relay-1
+      MAKTABA_CLOUD_RELAY_PEER_ADDR: 10.62.0.50:8444
+    networks:
+      dbfip:
+        ipv4_address: 10.62.0.50
+      fip:
+        ipv4_address: 10.61.0.50
+        aliases: [relay.test]
+
+  worker-1:
+    <<: *app
+    command: ["serve", "--role", "worker"]
+    environment:
+      <<: *app-env
+      MAKTABA_NODE_ID: worker-1
+    networks:
+      dbfip:
+        ipv4_address: 10.62.0.51
+
+  worker-2:
+    <<: *app
+    command: ["serve", "--role", "worker"]
+    environment:
+      <<: *app-env
+      MAKTABA_NODE_ID: worker-2
+    networks:
+      dbfip:
+        ipv4_address: 10.62.0.52
+
+  api-1:
+    <<: *app
+    command: ["serve", "--role", "api", "--config", "/etc/maktaba/cloud.toml"]
+    environment:
+      <<: *app-env
+      MAKTABA_NODE_ID: api-1
+      MAKTABA_CLOUD_PUBLIC_URL: http://api.test
+      MAKTABA_CLOUD_STAFF_TOKEN_SECRET: rehearsal-staff-token-secret-at-least-32-bytes
+      MAKTABA_CLOUD_STAFF_SECRET_KEY: 72656865617273616c2d73746166662d7365637265742d6b65792d3332627974
+    volumes:
+      - ./api-pool.toml:/etc/maktaba/cloud.toml:ro
+    networks:
+      dbfip:
+        ipv4_address: 10.62.0.53
+    ports:
+      - "127.0.0.1:${API_POOL_PORT:-28083}:8090"
