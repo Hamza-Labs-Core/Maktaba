@@ -49,15 +49,18 @@ const vectors = JSON.parse(
 if (!JSON.parse(vectors.cloud_pubkeys)[kid])
   throw new Error("the rehearsal's key is not the Go vectors' cloud-1");
 
+// a publisher is its home: the token's pub and home are the same server id, as the cloud mints it
+const HOME = "home-rehearsal";
+
 async function ingestToken(claims) {
   const t = Math.floor(Date.now() / 1000);
   const body = b64url(
     enc.encode(
       JSON.stringify({
         typ: "ingest",
-        pub: "pub-rehearsal",
+        pub: HOME,
         rungs: RUNGS,
-        home: "home-rehearsal",
+        home: HOME,
         kbps: 10000,
         iat: t,
         exp: t + 86400,
@@ -85,7 +88,7 @@ async function viewerToken(ch, session) {
   const body = b64url(
     enc.encode(
       JSON.stringify({
-        pub: "pub-rehearsal",
+        pub: HOME,
         ch,
         session,
         mode: "full",
