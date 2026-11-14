@@ -80,11 +80,11 @@ func surface(t *testing.T, doc string) *Surface {
 	return s
 }
 
-func edit(old, new string) string {
+func edit(old, repl string) string {
 	if !strings.Contains(base, old) {
 		panic("fixture: " + old)
 	}
-	return strings.Replace(base, old, new, 1)
+	return strings.Replace(base, old, repl, 1)
 }
 
 func TestReadInlinesTheSurface(t *testing.T) {

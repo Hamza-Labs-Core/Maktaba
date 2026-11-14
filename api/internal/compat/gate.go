@@ -50,19 +50,19 @@ func gate(floor Floor, log *refusalLog) func(http.Handler) http.Handler {
 				return
 			}
 			info := client.From(r.Context())
-			min, below := floor.Below(info.App, info.Platform, info.Version)
+			oldest, below := floor.Below(info.App, info.Platform, info.Version)
 			if !below {
 				next.ServeHTTP(w, r)
 				return
 			}
-			log.refused(r.Context(), info, min)
+			log.refused(r.Context(), info, oldest)
 			e := &httperror.Error{
 				Type:   TypeClientTooOld,
 				Title:  "This app is too old for this home",
 				Status: http.StatusUpgradeRequired,
-				Detail: "update the app: this home serves " + Key(info.App, info.Platform) + " " + min + " or newer",
+				Detail: "update the app: this home serves " + Key(info.App, info.Platform) + " " + oldest + " or newer",
 			}
-			httperror.Write(w, r, e.With("code", Code).With("floor", min).With("client", Key(info.App, info.Platform)))
+			httperror.Write(w, r, e.With("code", Code).With("floor", oldest).With("client", Key(info.App, info.Platform)))
 		})
 	}
 }

@@ -61,7 +61,7 @@ func run(root string, write bool) error {
 		if err := os.WriteFile(snapPath, b, 0o644); err != nil {
 			return err
 		}
-		fmt.Println("wrote", snapPath)
+		fmt.Fprintln(os.Stdout, "wrote", snapPath)
 		return nil
 	}
 	levels, err := os.ReadFile(filepath.Join(root, "docs", "api", "levels.md"))
@@ -74,6 +74,6 @@ func run(root string, write bool) error {
 		}
 		return errors.New("levelcheck: failed")
 	}
-	fmt.Printf("API level %d: shared/api/openapi.yaml is compatible with its snapshot\n", compat.Level)
+	fmt.Fprintf(os.Stdout, "API level %d: shared/api/openapi.yaml is compatible with its snapshot\n", compat.Level)
 	return nil
 }
