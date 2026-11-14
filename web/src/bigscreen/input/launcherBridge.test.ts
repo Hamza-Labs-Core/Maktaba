@@ -32,7 +32,14 @@ const hello = (re: number) => ({
   year: 2020,
   engine: "Chromium 69",
   version: "1.2.3",
-  device_caps: { video: ["h264"], audio: ["aac"], hdr: [], max_height: 2160 },
+  device_caps: {
+    containers: ["mp4"],
+    video: [{ codec: "h264", max_height: 2160 }],
+    hdr: [],
+    audio: ["aac"],
+    passthrough: [],
+    hls_segments: ["ts"],
+  },
   keys: ["MediaPlayPause"],
   messages: ["play", "pause", "logs"],
 });

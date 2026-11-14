@@ -255,6 +255,36 @@ class PlayerUITestCase: XCTestCase {
         }
     }
 
+    /// Taps the switch `toggle` (a `Toggle`'s element, its switch inside) until it reads
+    /// `value`, as #1000 does for a Home row: once it stands still, then read until it changes.
+    ///
+    /// On a loaded CI runner a tap that lands dead centre on a still switch has left it as it
+    /// was, with no touch cancelled and the app in front: main runs 43372573155, 43344331335
+    /// and 43332124998 (`testPlaybackSettingsAreKept`, "it reads Optional(1)"), 43409306425,
+    /// 43176025371, 43141129651 and 43300055899 (`testAlsoSendToMaktabaWhenTheHomeAllowsIt`,
+    /// the box still 0 in the hierarchy kept at the failure). A tap that did nothing leaves
+    /// nothing behind, so a switch that still reads what it read before the tap gets one more
+    /// tap; a second miss fails naming the switch, and so does any other value. The app's log
+    /// says how long each touch was held (`TouchWatcher`): in #1249's run 43573942988 (iphone
+    /// 6/6) a miss logged "touch held 0.07 s at (341, 194)", a whole quick tap on the still
+    /// switch that the switch ignored (the setting is written only by the switch), and the
+    /// second tap, the same 0.07 s at the same point, turned it off.
+    func flip(_ toggle: XCUIElement, to value: String, _ what: String,
+              file: StaticString = #filePath, line: UInt = #line) {
+        for attempt in 1 ... 2 {
+            waitUntilStill(toggle, timeout: 5)
+            let before = toggle.value as? String
+            toggle.switches.firstMatch.tap()
+            if waitUntil({ toggle.value as? String == value }) { return }
+            let now = toggle.value as? String
+            guard now == before else {
+                return XCTFail("\(what): reads \(now ?? "nothing") after the tap, not \(value)", file: file, line: line)
+            }
+            XCTAssertLessThan(attempt, 2, "\(what): still \(now ?? "nothing") after two taps on a still switch",
+                              file: file, line: line)
+        }
+    }
+
     /// True once `condition` holds, after at least `reads` looks and at least `timeout` seconds
     /// (false when both have passed without it). On a loaded runner one look at the app's tree
     /// took 4.2 s (#761's iPad): a deadline alone ended after a single look, taken while the

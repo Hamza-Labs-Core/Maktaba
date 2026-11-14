@@ -299,9 +299,13 @@ final class PlayerParentalUITests: PlayerUITestCase {
     /// left to right, and grow with the text size without leaving their rows.
     func testALockedPINPadSaysSoAndOpensAgainWhenTheLockEnds() throws {
         childWithHiddenVideo(pinHolders: Self.huda)
+        // a 30 s lock: it must outlast the test's steps while the pad is closed. With 12 s, a
+        // slow iPad on CI (#1249's run 43573942988) tapped "a closed pad" 16.3 s after the
+        // lock began: the pad was open again, the tap typed a 1, the right PIN's keys then
+        // made six digits one key early, and the sheet closed under the last tap
         home.stub("POST", "/api/me/parental/unlock", status: 429,
-                  body: #"{"type":"https://maktaba.tv/problems/parental-pin-locked","status":429,"code":"pin_locked","retry_after":12}"#,
-                  headers: ["Retry-After": "12"])
+                  body: #"{"type":"https://maktaba.tv/problems/parental-pin-locked","status":429,"code":"pin_locked","retry_after":30}"#,
+                  headers: ["Retry-After": "30"])
         launchSignedIn("ar", sections: ["home"], open: "video/v2")
         XCTAssertTrue(element("blocked.pin").waitForExistence(timeout: 20), "Enter parent PIN")
         element("blocked.pin").tap()
@@ -331,6 +335,7 @@ final class PlayerParentalUITests: PlayerUITestCase {
         XCTAssertLessThan(element("pin.key.1").frame.minX, element("pin.key.2").frame.minX, "still 1 2 3 left to right")
         shot("parental-pin-locked")
         element("pin.key.1").tap()
+        XCTAssertFalse(element("pin.key.1").isEnabled, "still closed after that tap: the lock outlasted the test's steps")
         XCTAssertEqual(count("POST", "/api/me/parental/unlock"), 1, "a closed pad sends nothing")
 
         // the lock ends: the keys open again with the sheet still up, and the right PIN opens the video
@@ -339,7 +344,7 @@ final class PlayerParentalUITests: PlayerUITestCase {
         home.stub("GET", "/api/videos/v2", body: try XCTUnwrap(home.fixture(named: "video-v2")))
         home.stub("GET", "/api/me/videos/v2", body: try XCTUnwrap(home.fixture(named: "me-video-v2")))
         home.stub("GET", "/api/me/parental", body: #"{"restricted":true,"max_tier":9,"unrated":"hide","version":5}"#)
-        waitUntil("the keys open again when the lock ends", timeout: 30) { self.element("pin.key.1").isEnabled }
+        waitUntil("the keys open again when the lock ends", timeout: 50) { self.element("pin.key.1").isEnabled }
         XCTAssertTrue(element("pin.pad").exists, "the sheet was not closed")
         XCTAssertFalse(element("pin.line").exists && element("pin.line").label.hasPrefix("محاولات كثيرة"), "the lock's line is gone")
         for d in [6, 5, 4, 3, 2, 1] { element("pin.key.\(d)").tap() }

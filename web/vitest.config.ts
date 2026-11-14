@@ -21,6 +21,8 @@ export default defineConfig({
         // the Samsung and LG launcher (story 58.09) and the shared compat vectors (58.01)
         path.resolve(__dirname, "../apps/tv/web"),
         path.resolve(__dirname, "../shared/compat"),
+        // each TV's device caps reader is tested against the shared vectors (story 58.02)
+        path.resolve(__dirname, "../shared/playback"),
       ],
     },
   },

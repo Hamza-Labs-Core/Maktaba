@@ -25,7 +25,7 @@ export function browserPlatform(w: Window): Platform {
     },
     keyAction: commonKeyAction,
     deviceCaps(): DeviceCaps {
-      return { ...DEFAULT_CAPS };
+      return { ...DEFAULT_CAPS, video: DEFAULT_CAPS.video.slice() };
     },
     exit() {
       w.document.body.dataset.exited = "true";
