@@ -119,6 +119,48 @@ _node_packaging: &node_packaging
   - 'shared/go/**'
   - '.github/workflows/_node-packaging.yml'
 
+# ---- the TV platforms (Epic 58, story 58.16) ------------------------------------------
+# Each TV platform's job is a reusable workflow its story adds with a filter of its own that
+# starts from its group here, plus *ci and its workflow file:
+#
+#   tv_web:
+#     - *ci
+#     - *tv_web
+#     - '.github/workflows/_tv-web.yml'
+#
+# Every TV job ends with .github/actions/tv-logs (its app logs, 30 days, linked from the job
+# summary: tools/ci/tests/test_tv_logs.py) and runs the TV catalogs' check, which the lint
+# job's repository checks also run on every pull request (tools/i18n/check_tv_catalogs.py).
+# A group is no job's filter until its job exists: a change there runs no TV job yet.
+
+# /tv/ and its launcher (Samsung, LG; stories 58.08 to 58.11): the TV build of the web's
+# bigscreen code and the launcher packages
+_tv_web: &tv_web
+  - 'apps/tv/web/**'
+  - 'web/src/bigscreen/**'
+  - 'web/vite.config.ts'
+  - '.github/actions/tv-logs/**'
+  - 'tools/i18n/check_tv_catalogs.py'
+
+# the Cast receiver (story 58.07)
+_cast_receiver: &cast_receiver
+  - 'web/packages/castreceiver/**'
+  - '.github/actions/tv-logs/**'
+  - 'tools/i18n/check_tv_catalogs.py'
+
+# the Roku channel (stories 58.12, 58.13) and the shaping vectors its device code is checked
+# against (story 58.15)
+_roku: &roku
+  - 'apps/tv/roku/**'
+  - 'shared/i18n/visual-vectors.json'
+  - '.github/actions/tv-logs/**'
+  - 'tools/i18n/check_tv_catalogs.py'
+
+# Vega OS (story 58.18)
+_vega: &vega
+  - 'apps/tv/vega/**'
+  - '.github/actions/tv-logs/**'
+
 # ---- lint (_lint.yml; its repository checks run on every pull request) ----------------
 
 lint_go:
