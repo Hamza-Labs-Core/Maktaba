@@ -1,4 +1,4 @@
-# Casting: the cast grant
+# Casting: the cast grant and the receiver
 
 Maktaba casts to Google Cast devices (Chromecast, the Google TV Streamer, TVs with Google TV
 or Cast built in) with a receiver of its own, a web page Google loads on the device. A
@@ -92,8 +92,9 @@ The grant goes in the Cast load request's `MediaInfo.customData`, never in heade
 ```json
 {
   "home": "https://192-168-1-20.<home-id>.<direct-domain>:8444",
+  "urls": ["https://192-168-1-20.<home-id>.<direct-domain>:8444", "https://<home-id>.<relay-domain>"],
   "grant": "cast_…",
-  "video_id": "…", "queue_id": "…", "start_sec": 754,
+  "video_id": "…", "queue_id": "…", "queue_pos": 0, "start_sec": 754,
   "lang": "ar", "api_level": 1
 }
 ```
@@ -102,9 +103,53 @@ The grant goes in the Cast load request's `MediaInfo.customData`, never in heade
   LAN, or the relay. A receiver page is HTTPS, and a browser blocks plain-HTTP media from
   it. Never `localhost`, a `.local` name or a bare IP over HTTPS (its certificate check
   fails).
+- **`urls`** is the home's own list from `GET /api/discovery/home` (the LAN addresses first,
+  the relay last), as the sender read it. The receiver asks `home` first and waits 3 seconds;
+  then it uses the relay from this list. Without it, a TV that cannot reach `home` has nowhere
+  else to go.
+- **`video_id`** or **`queue_id`** names the item, as the grant does. With `queue_id`,
+  `queue_pos` is where to start (default: the queue's `current_pos`).
 - **`lang`** is the sender's language (`en` or `ar`): the receiver's screens follow it.
 - **`api_level`** is the home's level from `GET /api/discovery/home`. The receiver page is
   served per level at `https://cast.maktaba.tv/r/<api_level>/`.
+
+## The receiver
+
+`web/packages/castreceiver`, served at `https://cast.maktaba.tv/r/` (the one URL registered in
+the Cast console, docs/stores/cast.md). Its loader picks the receiver build for the sender's
+`api_level` from `/r/builds.json`: the newest build at or below it. A home older than every
+build gets an "Update the home" screen, and the load fails with `customData.error` `update`.
+A build stays while its level is in the 12-month window.
+
+For each load it:
+
+1. finds the home: `home` within 3 seconds, else the relay from `urls` (the Remote badge);
+2. reads the item (`GET /api/videos/{id}`, or the queue and its item);
+3. opens its own session: `POST /api/stream/sessions` with `client_profile: "cast"` and
+   `device_caps` from the device's `canDisplayType` and its HDR, Dolby Vision and Atmos
+   capabilities (playback.md). A home older than `device_caps` answers 400, and the receiver
+   asks again without it;
+4. plays it: HLS through Shaka, with `hlsSegmentFormat` fMP4 for HEVC and AV1 and TS otherwise;
+   direct play with the sidecar WebVTT tracks signed with the session's `stream_sig`;
+5. reports progress every 10 seconds, renews the URLs two minutes before they end, walks the
+   queue (`PUT …/current`), and retries a stream the TV cannot play once with
+   `force_transcode`.
+
+The media status Google sends every connected sender carries the load's custom data without the
+grant or the address: `video_id`, `queue_id`, `queue_pos`, `lang`.
+
+### The custom namespace
+
+`urn:x-cast:tv.maktaba.cast`, JSON messages.
+
+| Direction | Message | Meaning |
+|---|---|---|
+| sender → receiver | `{"type": "grant", "grant": "cast_…"}` | a fresh grant for the cast that is playing (mint one before the first ends, for a cast longer than six hours) |
+| receiver → senders | `{"type": "state", "state": "loading" \| "ready" \| "playing" \| "paused" \| "idle", …}` | `ready` adds `remote`, `video_id` and `queue_pos` |
+| receiver → senders | `{"type": "error", "error": "home" \| "format" \| "grant" \| "update"}` | the screen the TV shows: the home out of reach, a format the TV cannot play after the transcode retry, the grant over, the home older than every build |
+
+A failed load also answers the sender's load request with `LOAD_FAILED` and the same `error`
+in its `customData`.
 
 ## Cross-origin calls
 
@@ -120,3 +165,8 @@ on the home's web port answer any origin, since the signature is the credential.
 - `api/internal/router/p58_cast_pg_test.go` (Postgres): who may mint, a grant for one video
   used for another (403), the queue walk, the user's limit, a deleted user, an expired grant.
 - The parental bypass rehearsal probes `POST /api/cast/grants` with every hidden video.
+- `web/packages/castreceiver` (`_cast-receiver.yml`): Vitest with a fake `cast.framework` (the
+  load, `device_caps`, TS or fMP4, progress, renewal, the queue, the grant's end, the relay
+  fallback, the loader's pick and window), and Playwright with a stub of Google's SDK and a mock
+  home at 1920×1080, dark, in English and Arabic, against visual references. No emulator runs a
+  Cast receiver: real devices are docs/stores/cast.md's checklist.

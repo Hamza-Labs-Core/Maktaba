@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Story 58.10: the Samsung TV package of the launcher (apps/tv/web). package_wgt.py fills
+     the version from the release tag, adds the launcher's build (web/dist-launcher) and the
+     icon, and lint_wgt.py checks every built .wgt against this list (T03).
+
+     The launcher loads each home's own /tv/ in an iframe. Homes and the relay have per-home
+     names (and a LAN address over plain HTTP as the fallback), which cannot be listed, so
+     access and navigation are open and the CSP allows frames and requests over https: and
+     the LAN's http: only. -->
+<widget xmlns="http://www.w3.org/ns/widgets" xmlns:tizen="http://tizen.org/ns/widgets" id="https://maktaba.tv/apps/samsung" version="@VERSION@" viewmodes="maximized">
+  <tizen:application id="HLMaktaba1.Maktaba" package="HLMaktaba1" required_version="5.5"/>
+  <tizen:profile name="tv-samsung"/>
+  <content src="index.html"/>
+  <icon src="icon.png"/>
+  <name>Maktaba</name>
+  <description>Watch your own Maktaba home's library on your Samsung TV.</description>
+  <author href="https://maktaba.tv">Hamza Labs</author>
+  <feature name="http://tizen.org/feature/screen.size.all"/>
+  <tizen:privilege name="http://tizen.org/privilege/internet"/>
+  <tizen:privilege name="http://tizen.org/privilege/tv.inputdevice"/>
+  <tizen:privilege name="http://tizen.org/privilege/application.launch"/>
+  <tizen:privilege name="http://tizen.org/privilege/network.get"/>
+  <tizen:privilege name="http://tizen.org/privilege/tv.display"/>
+  <tizen:privilege name="http://developer.samsung.com/privilege/productinfo"/>
+  <tizen:privilege name="http://developer.samsung.com/privilege/network.public"/>
+  <access origin="*" subdomains="true"/>
+  <tizen:allow-navigation>*</tizen:allow-navigation>
+  <tizen:content-security-policy>default-src 'self'; script-src 'self' file:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: https: http:; connect-src https: http:; frame-src https: http:; media-src https: http: blob:; object-src 'self'</tizen:content-security-policy>
+  <tizen:setting screen-orientation="landscape" context-menu="disable" background-support="disable" encryption="disable" install-location="auto" hwkey-event="enable" pointing-device-support="disable"/>
+  <tizen:metadata key="http://samsung.com/tv/metadata/prelaunch.support" value="false"/>
+  <tizen:metadata key="http://samsung.com/tv/metadata/use.network" value="true"/>
+</widget>

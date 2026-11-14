@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- A series (Epic 58 story 58.12): its backdrop, Play, the season pills and the episodes. -->
+<component name="SeriesScreen" extends="Screen">
+  <script type="text/brightscript" uri="SeriesScreen.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common.brs" />
+  <script type="text/brightscript" uri="pkg:/source/config.brs" />
+  <script type="text/brightscript" uri="pkg:/source/net.brs" />
+  <script type="text/brightscript" uri="pkg:/source/nav.brs" />
+  <script type="text/brightscript" uri="pkg:/source/store.brs" />
+  <script type="text/brightscript" uri="pkg:/source/i18n.brs" />
+  <script type="text/brightscript" uri="pkg:/source/layout.brs" />
+  <script type="text/brightscript" uri="pkg:/source/visualtext.brs" />
+  <script type="text/brightscript" uri="pkg:/source/visualtext_tables.brs" />
+  <children>
+    <Poster id="backdrop" width="1920" height="1080" opacity="0.25" loadDisplayMode="scaleToZoom" />
+    <Label id="title" translation="[120,80]" width="1680" />
+    <Label id="desc" translation="[120,160]" width="1300" height="110" wrap="true" />
+    <TvButton id="play" translation="[120,300]" width="280" />
+    <TvButton id="shuffle" translation="[420,300]" width="300" />
+    <PillRow id="seasons" translation="[120,410]" pillWidth="220" rowWidth="1680" />
+    <MarkupGrid id="episodes" translation="[120,520]" itemComponentName="PosterCard" itemSize="[380,260]" itemSpacing="[28,30]" numColumns="4" numRows="2" />
+  </children>
+</component>

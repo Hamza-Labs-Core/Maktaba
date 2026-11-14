@@ -1,5 +1,35 @@
 [
   {
+    "file": "apps/tv/roku/i18n/ar.json",
+    "link": "maktaba.tv/tv",
+    "story": "58.03",
+    "reason": "the page a TV shows beside its cloud code, where a person signs in to approve it; story 58.03 ships the page after its cloud API, and the Roku channel's code screen names the address now so the channel built against that API shows the right place to go"
+  },
+  {
+    "file": "apps/tv/roku/i18n/en.json",
+    "link": "maktaba.tv/tv",
+    "story": "58.03",
+    "reason": "the page a TV shows beside its cloud code, where a person signs in to approve it; story 58.03 ships the page after its cloud API, and the Roku channel's code screen names the address now so the channel built against that API shows the right place to go"
+  },
+  {
+    "file": "apps/tv/roku/locale/ar_SA/translations.ts",
+    "link": "maktaba.tv/tv",
+    "story": "58.03",
+    "reason": "the page a TV shows beside its cloud code, where a person signs in to approve it; story 58.03 ships the page after its cloud API, and the Roku channel's code screen names the address now so the channel built against that API shows the right place to go"
+  },
+  {
+    "file": "apps/tv/roku/locale/en_US/strings.json",
+    "link": "maktaba.tv/tv",
+    "story": "58.03",
+    "reason": "the page a TV shows beside its cloud code, where a person signs in to approve it; story 58.03 ships the page after its cloud API, and the Roku channel's code screen names the address now so the channel built against that API shows the right place to go"
+  },
+  {
+    "file": "apps/tv/roku/locale/en_US/translations.ts",
+    "link": "maktaba.tv/tv",
+    "story": "58.03",
+    "reason": "the page a TV shows beside its cloud code, where a person signs in to approve it; story 58.03 ships the page after its cloud API, and the Roku channel's code screen names the address now so the channel built against that API shows the right place to go"
+  },
+  {
     "file": "cloud/internal/handlers/tvcodes/handler.go",
     "link": "https://maktaba.tv/tv",
     "story": "58.03",

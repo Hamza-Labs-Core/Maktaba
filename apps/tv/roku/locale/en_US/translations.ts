@@ -203,5 +203,77 @@
         <source>account.language.ar</source>
         <translation>العربية</translation>
     </message>
+    <message>
+        <source>code.title</source>
+        <translation>Sign in with a code</translation>
+    </message>
+    <message>
+        <source>code.where</source>
+        <translation>In Maktaba on your phone: Profile → Approve a TV, or go to maktaba.tv/tv</translation>
+    </message>
+    <message>
+        <source>code.whereHome</source>
+        <translation>In Maktaba on your phone: Profile → Approve a TV</translation>
+    </message>
+    <message>
+        <source>code.waiting</source>
+        <translation>Waiting for a phone to approve it…</translation>
+    </message>
+    <message>
+        <source>code.signingIn</source>
+        <translation>Approved. Signing in…</translation>
+    </message>
+    <message>
+        <source>code.cloudDown</source>
+        <translation>Maktaba Cloud cannot be reached, or this TV has no internet yet. Find the home on this network instead, or try again later.</translation>
+    </message>
+    <message>
+        <source>code.failed</source>
+        <translation>This TV could not sign in. Try again.</translation>
+    </message>
+    <message>
+        <source>roku.exit.leave</source>
+        <translation>Leave</translation>
+    </message>
+    <message>
+        <source>roku.exit.stay</source>
+        <translation>Stay</translation>
+    </message>
+    <message>
+        <source>action.open</source>
+        <translation>Open</translation>
+    </message>
+    <message>
+        <source>action.goToSeries</source>
+        <translation>Go to the series</translation>
+    </message>
+    <message>
+        <source>action.cancel</source>
+        <translation>Cancel</translation>
+    </message>
+    <message>
+        <source>library.allLetters</source>
+        <translation>All</translation>
+    </message>
+    <message>
+        <source>library.empty</source>
+        <translation>Nothing here yet.</translation>
+    </message>
+    <message>
+        <source>library.onDeck</source>
+        <translation>On deck</translation>
+    </message>
+    <message>
+        <source>library.recentlyWatched</source>
+        <translation>Recently watched</translation>
+    </message>
+    <message>
+        <source>search.noResults</source>
+        <translation>No results.</translation>
+    </message>
+    <message>
+        <source>player.error</source>
+        <translation>This video cannot play right now.</translation>
+    </message>
 </context>
 </TS>

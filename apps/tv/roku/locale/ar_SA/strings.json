@@ -51,7 +51,25 @@
     "account.signOut": "ﺝﻭﺮﺨﻟﺍ ﻞﻴﺠﺴﺗ",
     "account.language": "ﺔﻐﻠﻟﺍ",
     "account.language.en": "ﺔﻳﺰﻴﻠﺠﻧﻹﺍ",
-    "account.language.ar": "ﺔﻴﺑﺮﻌﻟﺍ"
+    "account.language.ar": "ﺔﻴﺑﺮﻌﻟﺍ",
+    "code.title": "ﺰﻣﺮﺑ ﻝﻮﺧﺪﻟﺍ ﻞﻴﺠﺴﺗ",
+    "code.where": "ﻰﻠﻋ ﺔﻘﻓﺍﻮﻤﻟﺍ ← ﻲﺼﺨﺸﻟﺍ ﻒﻠﻤﻟﺍ :ﻚﻔﺗﺎﻫ ﻰﻠﻋ ﺔﺒﺘﻜﻣ ﻲﻓ\nmaktaba.tv/tv ﻰﻟﺇ ﺐﻫﺫﺍ ﻭﺃ ،ﺯﺎﻔﻠﺗ",
+    "code.whereHome": "ﻰﻠﻋ ﺔﻘﻓﺍﻮﻤﻟﺍ ← ﻲﺼﺨﺸﻟﺍ ﻒﻠﻤﻟﺍ :ﻚﻔﺗﺎﻫ ﻰﻠﻋ ﺔﺒﺘﻜﻣ ﻲﻓ\nﺯﺎﻔﻠﺗ",
+    "code.waiting": "…ﻒﺗﺎﻬﻟﺍ ﻦﻣ ﺔﻘﻓﺍﻮﻤﻟﺍ ﺭﺎﻈﺘﻧﺍ ﻲﻓ",
+    "code.signingIn": "…ﻝﻮﺧﺪﻟﺍ ﻞﻴﺠﺴﺗ ﺭﺎﺟ .ﺔﻘﻓﺍﻮﻤﻟﺍ ﺖﻤﺗ",
+    "code.cloudDown": "ﺮﻴﻏ ﺯﺎﻔﻠﺘﻟﺍ ﺍﺬﻫ ﻥﺃ ﻭﺃ ،ﺔﺒﺘﻜﻣ ﺔﺑﺎﺤﺳ ﻰﻟﺇ ﻝﻮﺻﻮﻟﺍ ﺭﺬﻌﺗ\nﻩﺬﻫ ﻲﻓ ﻲﺴﻴﺋﺮﻟﺍ ﺯﺎﻬﺠﻟﺍ ﻦﻋ ﺚﺤﺑﺍ .ﺪﻌﺑ ﺖﻧﺮﺘﻧﻹﺎﺑ ﻞﺼﺘﻣ\n.ﺎﻘﺣﻻ ﻝﻭﺎﺣ ﻭﺃ ،ﻚﻟﺫ ﻦﻣ ﻻﺪﺑ ﺔﻜﺒﺸﻟﺍ",
+    "code.failed": ".ﻯﺮﺧﺃ ﺓﺮﻣ ﻝﻭﺎﺣ .ﺯﺎﻔﻠﺘﻟﺍ ﺍﺬﻫ ﻝﻮﺧﺩ ﻞﻴﺠﺴﺗ ﺭﺬﻌﺗ",
+    "roku.exit.leave": "ﺝﻭﺮﺧ",
+    "roku.exit.stay": "ﺀﺎﻘﺒﻟﺍ",
+    "action.open": "ﺢﺘﻓ",
+    "action.goToSeries": "ﻞﺴﻠﺴﻤﻟﺍ ﻰﻟﺇ ﺐﻫﺫﺍ",
+    "action.cancel": "ﺀﺎﻐﻟﺇ",
+    "library.allLetters": "ﻞﻜﻟﺍ",
+    "library.empty": ".ﺪﻌﺑ ﺎﻨﻫ ﺀﻲﺷ ﻻ",
+    "library.onDeck": "ﺓﺪﻫﺎﺸﻤﻠﻟ ﻲﻟﺎﺘﻟﺍ",
+    "library.recentlyWatched": "ﺍﺮﺧﺆﻣ ﺪﻫﻮﺷ",
+    "search.noResults": ".ﺞﺋﺎﺘﻧ ﻻ",
+    "player.error": ".ﻥﻵﺍ ﻮﻳﺪﻴﻔﻟﺍ ﺍﺬﻫ ﻞﻴﻐﺸﺗ ﻦﻜﻤﻳ ﻻ"
   },
   "templates": {
     "launcher.connecting": {
@@ -97,6 +115,26 @@
     "video.resumeFrom": {
       "text": "المتابعة من %1$s",
       "widthChars": 32,
+      "lines": 1
+    },
+    "code.expires": {
+      "text": "يبقى هذا الرمز صالحًا %1$d دقائق.",
+      "widthChars": 50,
+      "lines": 1
+    },
+    "series.season": {
+      "text": "الموسم %1$d",
+      "widthChars": 12,
+      "lines": 1
+    },
+    "account.signedInAs": {
+      "text": "تم تسجيل الدخول باسم %1$s",
+      "widthChars": 60,
+      "lines": 1
+    },
+    "account.home": {
+      "text": "الجهاز الرئيسي: %1$s",
+      "widthChars": 60,
       "lines": 1
     }
   }
