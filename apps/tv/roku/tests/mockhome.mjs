@@ -44,6 +44,14 @@ for (let i = 0; i < 80; i++) {
   });
 }
 
+/**
+ * Story 58.14: a 16+ video. With `state.restricted` the home holds the viewer to 9+ and answers
+ * 404 for it (as for a missing one) until a parent approves the viewer's request for it; Home's
+ * Continue watching still lists it first (a limit tightened since the row was read).
+ */
+export const LATE = uuid(998);
+const late = { id: LATE, title: "Late Night Film", filename: "late.mkv", library_id: LIB, duration_sec: 5400, position_sec: 900, completed: false, series: null, description: "A film for grown-ups.", playable: true };
+
 /** A video whose stream session the home refuses (every transcode slot taken). */
 export const REFUSED = uuid(8);
 
@@ -104,7 +112,9 @@ function readBody(req) {
 
 /** Starts the home; log(line) gets each request. */
 export function startHome(log) {
-  const state = { access: new Set(), refresh: new Set(), expired: new Set(), n: 0, grant: "G1", deviceCode: "dc1", clientHeaders: new Set() };
+  const state = { access: new Set(), refresh: new Set(), expired: new Set(), n: 0, grant: "G1", deviceCode: "dc1", clientHeaders: new Set(), restricted: false, requests: [] };
+  // story 58.14: the late video is the viewer's to see once not restricted, or once approved
+  const lateShown = () => !state.restricted || state.requests.some((r) => r.subject_id === LATE && r.status === "approved");
   const card = (v) => ({ id: v.id, title: v.title, filename: v.filename, library_id: v.library_id, duration_sec: v.duration_sec, position_sec: v.position_sec, completed: v.completed, series: v.series });
   const mint = () => {
     state.n++;
@@ -168,6 +178,20 @@ export function startHome(log) {
       return json(res, 401, { type: "unauthorized" });
     }
     if (p === "/api/auth/me") return json(res, 200, { id: "u-viewer", username: "viewer", is_admin: false, home_name: "Test home" });
+    if (p === "/api/me/parental") return json(res, 200, state.restricted ? { restricted: true, max_tier: 9, allow_only: false, version: 1 } : { restricted: false });
+    if (p === "/api/me/parental/requests" && req.method === "POST") {
+      log(`home ask kind=${body.subject_kind} id=${body.subject_id}`);
+      const r = { id: `r${state.requests.length + 1}`, subject_kind: body.subject_kind, subject_id: body.subject_id, status: "pending", created_at: new Date().toISOString(), expires_at: new Date(Date.now() + 864e5).toISOString() };
+      state.requests.unshift(r);
+      return json(res, 201, { request: r });
+    }
+    if (p === "/api/me/parental/requests") return json(res, 200, { requests: state.requests });
+    if (p === `/api/videos/${LATE}`) {
+      if (!lateShown()) return json(res, 404, { type: "about:blank", title: "Not Found", status: 404, detail: "not found" });
+      return json(res, 200, { ...card(late), display_title: late.title, description: late.description, playable: true, playback_state: { position_sec: late.position_sec, completed: false } });
+    }
+    if (p === "/api/home" && state.restricted)
+      return json(res, 200, { continue_watching: [late, ...videos.filter((v) => v.position_sec > 0).slice(0, 7)].map(card), recently_added: videos.slice(20, 32).map(card), on_deck: [], recently_watched: [], collection_rows: [] });
     if (p === "/api/home") return json(res, 200, { continue_watching: videos.filter((v) => v.position_sec > 0).slice(0, 8).map(card), recently_added: videos.slice(20, 32).map(card), on_deck: [], recently_watched: [], collection_rows: [] });
     if (p === "/api/recommendations") return json(res, 200, { rails: [{ id: "for-you", title: "For you", reason_kind: "for_you", items: videos.slice(40, 48).map((v) => ({ video_id: v.id, poster_url: `/api/videos/${v.id}/poster` })) }] });
     if (p === "/api/libraries") return json(res, 200, { items: [{ id: LIB, name: "Films and series" }, { id: uuid(901), name: "محاضرات" }] });

@@ -170,4 +170,7 @@
     <string name="device_tv">التلفاز</string>
     <string name="device_phone">هاتف</string>
     <string name="device_web">متصفّح</string>
+    <!-- Epic 58 story 58.14: the blocked page's line under Ask a parent, and Account's managed line -->
+    <string name="tv_parental_ask_on_phone">يمكن لأحد الوالدين الرد من Maktaba على هاتفه.</string>
+    <string name="tv_parental_managed">يدير أحد الوالدين هذا الحساب.</string>
 </resources>

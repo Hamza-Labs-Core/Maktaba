@@ -28,6 +28,11 @@ end sub
 
 sub onVideo(ev as Object)
     r = ev.GetData()
+    ' story 58.14: for a sign-in under a limit a 404 may be the limit: the blocked page asks a parent
+    if r.status = 404 and ParentalLimited(m.global.session.parental) then
+        ui_Navigate({to: "BlockedScreen", replace: true, params: {kind: "video", id: m.top.params.id}})
+        return
+    end if
     if r.status <> 200 or r.data = invalid then
         m.title.text = ui_Tr("roku.notAvailable")
         return

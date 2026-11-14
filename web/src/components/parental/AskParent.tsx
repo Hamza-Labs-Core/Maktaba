@@ -44,6 +44,7 @@ import {
   type SubjectKind,
 } from "../../lib/familyApi";
 import { timeWords } from "./TimeState";
+import { useParentalScreens } from "./screens";
 import "../../styles/parental.css";
 
 /** The words for a refused ask or unlock. */
@@ -329,7 +330,10 @@ export function Blocked({ kind, id, onCheck, action }: BlockedProps) {
  * `fallback` for everyone else.
  */
 export function BlockedOr({ fallback, ...blocked }: BlockedProps & { fallback: ReactNode }) {
-  return useLimited() ? <Blocked {...blocked} /> : <>{fallback}</>;
+  const limited = useLimited();
+  // the big screen's own page, where it gives one (story 58.14)
+  const Page = useParentalScreens().Blocked ?? Blocked;
+  return limited ? <Page {...blocked} /> : <>{fallback}</>;
 }
 
 /** The time's-up screen's asks: more minutes from a parent, or a parent's PIN now. */

@@ -17,7 +17,7 @@ end sub
 sub onParams()
     p = m.top.params
     if p.unreachable <> invalid then
-        m.note.text = m.i18n.Format("launcher.unreachable.title", [ui_Vis(p.unreachable.name, 30)])
+        m.note.text = m.i18n.Format("launcher.unreachable.title", [ui_Arg(p.unreachable.name)])
     end if
     ' the saved homes, then the ways to add one: a code first (the default for a new TV)
     m.homes = StoreHomes()

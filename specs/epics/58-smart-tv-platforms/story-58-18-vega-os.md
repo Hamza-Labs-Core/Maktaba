@@ -1,6 +1,8 @@
 # Story 58.18 — Amazon Vega OS: a React Native app, built when Vega devices are a real share
 
 > Epic 58 · Phase 6 · Depends on: 58.01, 58.02, 58.03, 58.04, 58.05 · Needed by: —
+>
+> **Status: waiting** on its start condition (README §12 Q8, below under When); not started.
 
 ## Why
 
@@ -30,8 +32,8 @@ not offered for it. That is checked again when the story starts.
 **What it is.**
 - `apps/tv/vega`: React Native for Vega (the `@amazon-devices` packages), in TypeScript.
 - It shares with the web TV code:
-  - `apps/tv/web`'s platform-free modules (the home probe, the cloud code client, the compat
-    check, the API client);
+  - `apps/tv/web`'s platform-free modules (the home probe, the compat check, the API client, and
+    the cloud code client once 58.09's second part adds one);
   - the `/tv/` screens' state logic, by moving it into `web/packages/tvcore` (new) when this
     story starts.
 

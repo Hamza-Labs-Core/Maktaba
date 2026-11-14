@@ -19,6 +19,7 @@ import { errorText } from "../../lib/errorText";
 import type { QueueSourceRef } from "../../lib/playQueue";
 import { usePlay } from "../play";
 import { Collage, Empty, Failed, Grid, Loading, Ltr, VideoTile } from "../ui";
+import { BigBlockedOr } from "./Blocked";
 import { collectionBadge } from "./Library";
 
 /** The most videos a smart list shows here (its queue plays all of them). */
@@ -48,10 +49,13 @@ function ListScreen({
   load,
   testId,
   notFound,
+  blocked,
 }: {
   load: () => Promise<ListDoc>;
   testId: string;
   notFound: string;
+  /** what a 404 names when the sign-in is limited: the blocked page asks for it (story 58.14) */
+  blocked?: { kind: "collection"; id: string };
 }) {
   const { t, n } = useI18n();
   const play = usePlay();
@@ -78,6 +82,15 @@ function ListScreen({
     };
     // the loader is the route's; it changes with the route's ids
   }, [testId, reload, t]);
+  if (err?.status === 404 && blocked)
+    return (
+      <BigBlockedOr
+        kind={blocked.kind}
+        id={blocked.id}
+        onCheck={() => setReload((x) => x + 1)}
+        message={notFound}
+      />
+    );
   if (err)
     return (
       <Failed
@@ -174,6 +187,7 @@ export function BigCollection() {
     <ListScreen
       testId={`big-collection:${id}`}
       notFound={t("collections.notFound")}
+      blocked={{ kind: "collection", id }}
       load={async () => {
         const col = await fetchCollection(id);
         let items: VideoCard[];

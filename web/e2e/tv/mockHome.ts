@@ -135,7 +135,13 @@ const TABLE: Record<string, unknown> = {
     next: null,
   },
   "/api/libraries/L1/categories": { topics: [], speakers: [], languages: [] },
+  // Epic 57: the sign-in's limit (none) and the accounts it looks after (none)
+  "/api/me/parental": { restricted: false, max_tier: null },
+  "/api/parental/children": { children: [] },
 };
+
+/** The video a restricted child's limit hides (story 58.14): the home answers 404, as missing. */
+export const BLOCKED_VIDEO = "v-late";
 
 const COLORS = ["#2b3a55", "#4a3b2a", "#2a4a3f", "#4a2a3b", "#3b2a4a", "#2a3f4a"];
 
@@ -167,16 +173,24 @@ export interface MockHome {
   unknown: string[];
   /** the calls the home took, in order (method and path) */
   calls: string[];
+  /** the bodies of the parental requests the TV sent (story 58.14) */
+  asked: unknown[];
 }
 
 export interface MockOptions {
   signedIn?: boolean;
   /** titles sent in place of the test data's (old title → new), e.g. an Arabic title (58.15) */
   rename?: Record<string, string>;
+  /** a restricted child at 9+ (story 58.14) */
+  restricted?: boolean;
 }
 
+/** A restricted child's problem answer for what its limit hides: exactly the missing one. */
+const MISSING = { type: "about:blank", title: "not found", status: 404, detail: "not found" };
+
 export async function mockHome(page: Page, opts: MockOptions = {}): Promise<MockHome> {
-  const home: MockHome = { unknown: [], calls: [] };
+  const home: MockHome = { unknown: [], calls: [], asked: [] };
+  const requests: Record<string, unknown>[] = [];
   const renamed = (text: string) =>
     Object.entries(opts.rename ?? {}).reduce(
       (out, [from, to]) => out.replaceAll(JSON.stringify(from), JSON.stringify(to)),
@@ -190,6 +204,31 @@ export async function mockHome(page: Page, opts: MockOptions = {}): Promise<Mock
     home.calls.push(`${req.method()} ${url.pathname}${url.search}`);
     if (url.pathname === "/api/auth/me" && opts.signedIn === false)
       return json(route, 401, { error: "unauthorized" });
+    if (opts.restricted) {
+      // a child held to 9+ (story 58.14): its limit, its requests, the hidden video
+      if (url.pathname === "/api/me/parental")
+        return json(route, 200, { restricted: true, max_tier: 9 });
+      if (url.pathname === "/api/me/parental/requests" && req.method() === "POST") {
+        const body = req.postDataJSON() as Record<string, unknown>;
+        home.asked.push(body);
+        const r = {
+          id: `q${requests.length + 1}`,
+          ...body,
+          status: "pending",
+          created_at: new Date().toISOString(),
+          expires_at: new Date(Date.now() + 7 * 24 * 3600_000).toISOString(),
+        };
+        requests.unshift(r);
+        return json(route, 201, { request: r });
+      }
+      if (url.pathname === "/api/me/parental/requests") return json(route, 200, { requests });
+      if (url.pathname.startsWith(`/api/videos/${BLOCKED_VIDEO}`))
+        return route.fulfill({
+          status: 404,
+          contentType: "application/problem+json",
+          body: JSON.stringify(MISSING),
+        });
+    }
     if (req.method() !== "GET") return json(route, 200, {});
     if (/\/poster$|\/thumbnail$|\/art\b/.test(url.pathname))
       return route.fulfill({
