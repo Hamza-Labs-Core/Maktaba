@@ -109,6 +109,42 @@ describe("T08 Stream mode", () => {
     ).toBe(429);
   });
 
+  it("refuses a revoked or switched-off channel before any Stream redirect or live input", async () => {
+    const ch = newChannel();
+    const pub = `pub-${ch}`;
+    await putSegment(ch, "src", 1, { token: await ingestToken({ ch, pub }) });
+    expect((await askStream(ch, pub)).status).toBe(200);
+    const tok = await viewerToken({ ch, pub });
+    const off = await control("plan", { pub, mode: "off", version: 1 });
+    expect((await call(`${INGEST}/v1/control/plan`, { method: "PUT", body: off })).status).toBe(
+      200
+    );
+    for (const path of ["master.m3u8", "src/index.m3u8"]) {
+      const r = await call(`${LIVE}/${tok}/${ch}/${path}`, undefined, {
+        BROADCAST_DELIVERY: "stream",
+      });
+      expect(r.status).toBe(403);
+      expect(await r.json()).toEqual({ error: "broadcast_off" });
+    }
+    const again = await askStream(ch, pub);
+    expect(again.status).toBe(403);
+    // revoked the same way
+    const ch2 = newChannel();
+    await askStream(ch2, pub);
+    await runInDurableObject(env.CHANNEL.get(env.CHANNEL.idFromName(ch2)), (o) =>
+      o.revoke("revoked")
+    );
+    const r = await call(
+      `${LIVE}/${await viewerToken({ ch: ch2, pub })}/${ch2}/master.m3u8`,
+      undefined,
+      {
+        BROADCAST_DELIVERY: "stream",
+      }
+    );
+    expect(r.status).toBe(403);
+    expect(await r.json()).toEqual({ error: "revoked" });
+  });
+
   it("answers 503 until the channel has a live input", async () => {
     const ch = newChannel();
     const tok = await viewerToken({ ch });

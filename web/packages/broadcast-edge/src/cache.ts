@@ -15,8 +15,9 @@ export function segmentCacheKey(env: Env, ch: string, rung: string, name: string
   return `https://${host(env)}/c/${ch}/${rung}/${name}`;
 }
 
-export function mediaCacheKey(env: Env, ch: string, rung: string): string {
-  return `https://${host(env)}/c/${ch}/${rung}/index.m3u8`;
+/** A rung's playlist, per mode: a `lowest` session is refused rungs a `full` one may play. */
+export function mediaCacheKey(env: Env, ch: string, rung: string, mode: string): string {
+  return `https://${host(env)}/c/${ch}/${rung}/index-${mode}.m3u8`;
 }
 
 export function masterCacheKey(env: Env, ch: string, mode: string): string {

@@ -278,8 +278,12 @@ export class ChannelLive extends DurableObject<Env> {
     return null;
   }
 
-  /** media answers a rung's playlist (the Worker caches it 1 s per location). */
-  async media(rung: string): Promise<PlaylistAnswer> {
+  /**
+   * media answers a rung's playlist for a session's mode (the Worker caches it 1 s per location,
+   * per rung and mode). A rung the mode or the plan does not allow is 403: a `lowest` session
+   * gets only the rung its master playlist lists, whatever URL it asks for.
+   */
+  async media(rung: string, mode: "full" | "lowest" = "full"): Promise<PlaylistAnswer> {
     const t = now();
     this.s.counters.playlist_misses++;
     const no = this.refusal(t);
@@ -287,6 +291,8 @@ export class ChannelLive extends DurableObject<Env> {
     if (this.delivery() === "stream") return { kind: "stream", uid: this.s.stream?.uid ?? null };
     const r = this.s.rungs[rung];
     if (!r) return { kind: "error", status: 404, error: "no_such_rung" };
+    if (!this.allowedRungs(mode).includes(rung))
+      return { kind: "error", status: 403, error: "rung_not_allowed" };
     if (this.step(rung, r, t)) await this.save();
     const body = renderMedia(r);
     if (!body) return { kind: "error", status: 404, error: "not_live" };
@@ -300,22 +306,58 @@ export class ChannelLive extends DurableObject<Env> {
     const no = this.refusal(t);
     if (no) return no;
     if (this.delivery() === "stream") return { kind: "stream", uid: this.s.stream?.uid ?? null };
-    let info = this.s.info.filter((x) => this.s.rungs[x.name]);
-    if (info.length === 0) {
-      // no state post yet: the rungs seen, top first, with their measured bandwidth
-      const names = [...this.s.order.filter((n) => this.s.rungs[n]), ...Object.keys(this.s.rungs)];
-      info = [...new Set(names)].map((name) => ({
-        name,
-        bandwidth: measuredBandwidth(this.s.rungs[name]!) || 1,
-      }));
-    }
-    const allowed =
-      this.s.plan.max_rungs !== undefined
-        ? this.s.order.slice(0, this.s.plan.max_rungs)
-        : undefined;
-    const list = masterRungs(info, mode, allowed && allowed.length > 0 ? allowed : undefined);
+    // no state post yet: the rungs seen, top first, with their measured bandwidth
+    const info = this.rungInfo();
+    const list = masterRungs(info, mode, this.planRungs());
     if (list.length === 0) return { kind: "error", status: 404, error: "not_live" };
     return { kind: "playlist", body: renderMaster(list) };
+  }
+
+  /** planRungs is the rungs the plan allows (top first), or undefined for all. */
+  private planRungs(): string[] | undefined {
+    if (this.s.plan.max_rungs === undefined) return undefined;
+    const allowed = this.s.order.slice(0, this.s.plan.max_rungs);
+    return allowed.length > 0 ? allowed : undefined;
+  }
+
+  /** rungInfo is the rungs' attributes: the state post's, else measured from the segments. */
+  private rungInfo(): RungInfo[] {
+    const info = this.s.info.filter((x) => this.s.rungs[x.name]);
+    if (info.length > 0) return info;
+    const names = [...this.s.order.filter((n) => this.s.rungs[n]), ...Object.keys(this.s.rungs)];
+    return [...new Set(names)].map((name) => ({
+      name,
+      bandwidth: measuredBandwidth(this.s.rungs[name]!) || 1,
+    }));
+  }
+
+  /** allowedRungs is what a session's mode may play: the rungs its master playlist lists. */
+  private allowedRungs(mode: "full" | "lowest"): string[] {
+    const listed = masterRungs(this.rungInfo(), mode, this.planRungs()).map((r) => r.name);
+    // a rung with segments but no state-post entry yet stays playable in full mode
+    if (mode === "full") {
+      const plan = this.planRungs();
+      for (const name of Object.keys(this.s.rungs))
+        if (!listed.includes(name) && (!plan || plan.includes(name))) listed.push(name);
+    }
+    return listed;
+  }
+
+  /**
+   * streamFor answers a Stream redirect's checks (BROADCAST_DELIVERY = stream): the same refusals
+   * as a playlist (revoked, the plan off, off air), else the channel's live input.
+   */
+  async streamFor(): Promise<PlaylistAnswer> {
+    const no = this.refusal(now());
+    if (no) return no;
+    return { kind: "stream", uid: this.s.stream?.uid ?? null };
+  }
+
+  /** streamRefusal is why the home may not have a Stream live input now, or null. */
+  async streamRefusal(): Promise<string | null> {
+    if (this.s.revoked) return "revoked";
+    if (this.s.plan.off) return "broadcast_off";
+    return null;
   }
 
   /** step advances one rung and tells the home when it stalls. True when it changed. */

@@ -30,7 +30,7 @@ describe("T03 cache key", () => {
     expect(a).not.toBe(b);
     for (const key of [
       segmentCacheKey(env, ch, "src", "100-0123abcd.ts"),
-      mediaCacheKey(env, ch, "src"),
+      mediaCacheKey(env, ch, "src", "full"),
       masterCacheKey(env, ch, "full"),
     ]) {
       expect(key).not.toContain(a);
@@ -117,6 +117,16 @@ describe("modes and the offline slate over HTTP", () => {
       await call(`${LIVE}/${await viewerToken({ ch, mode: "lowest" })}/${ch}/master.m3u8`)
     ).text();
     expect(uris(lowest)).toEqual(["480p/index.m3u8"]);
+    // a lowest session asking for another rung's playlist directly is refused
+    const low = await viewerToken({ ch, mode: "lowest" });
+    expect((await call(`${LIVE}/${low}/${ch}/480p/index.m3u8`)).status).toBe(200);
+    const up = await call(`${LIVE}/${low}/${ch}/src/index.m3u8`);
+    expect(up.status).toBe(403);
+    expect(await up.json()).toEqual({ error: "rung_not_allowed" });
+    // a full session still plays it (the cache keeps the modes apart)
+    expect((await call(`${LIVE}/${await viewerToken({ ch })}/${ch}/src/index.m3u8`)).status).toBe(
+      200
+    );
   });
 
   it("continues with the slate 12 s after the home stops, and returns to live when it resumes", async () => {

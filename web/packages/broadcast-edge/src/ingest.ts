@@ -320,6 +320,8 @@ async function postState(request: Request, env: Env, ch: string): Promise<Respon
 async function postStream(env: Env, ch: string): Promise<Response> {
   if (!streamConfigured(env)) return problem(503, "stream_not_configured");
   const stub = channel(env, ch);
+  const refused = await stub.streamRefusal();
+  if (refused) return problem(403, refused);
   let input = await stub.streamInput();
   if (!input) {
     try {

@@ -86,12 +86,12 @@ time more than 60 s from the edge's is `400 clock_skew`, with the edge's time in
 | Request | What it does |
 |---|---|
 | `GET /<token>/<channel>/master.m3u8` | the rungs the session's mode allows (`full`: all; `lowest`: the lowest bandwidth), cached 1 s per mode |
-| `GET /<token>/<channel>/<rung>/index.m3u8` | HLS v6: TARGETDURATION, a window of 6, DISCONTINUITY, PROGRAM-DATE-TIME; cached 1 s per rung |
+| `GET /<token>/<channel>/<rung>/index.m3u8` | HLS v6: TARGETDURATION, a window of 6, DISCONTINUITY, PROGRAM-DATE-TIME; cached 1 s per rung and mode; a rung the session's mode or the plan does not allow is `403 rung_not_allowed` |
 | `GET /<token>/<channel>/<rung>/<seq>-<hash8>.ts` | a segment: token check only, then the cache, then R2 on a miss (`immutable`, a day) |
 | `POST /<token>/<channel>/beat` | the session's 60 s heartbeat: one viewer-minute in `full` or `lowest` |
 
 - **Cache keys have no token:** `https://live.maktaba.tv/c/<channel>/<rung>/<file>` and
-  `…/c/<channel>/master-<mode>.m3u8`. Every viewer in a location shares one copy, and
+  `…/c/<channel>/master-<mode>.m3u8`, `…/c/<channel>/<rung>/index-<mode>.m3u8`. A segment needs only a token for its channel: its name is known only from a playlist the session was allowed, and the plan's rungs are refused at ingest. Every viewer in a location shares one copy, and
   Cloudflare's cache lock collapses simultaneous misses to one R2 read per location.
   `X-Maktaba-Cache: hit|miss` says which.
 - **Headers:** CORS for `CORS_ORIGINS` (default the watch, app and site origins and the apps'
@@ -111,7 +111,7 @@ time more than 60 s from the edge's is `400 clock_skew`, with the edge's time in
 `BROADCAST_DELIVERY = stream`, or a publisher's plan with `delivery: "stream"`. The home asks
 `POST /v1/ingest/<channel>/stream` for its live input (one per channel, on Maktaba's account,
 signed URLs required, recording automatic) and pushes one rendition by RTMPS through Epic 34's
-push relay. Players asking `live.` for a playlist get a `302` to the Stream manifest with a signed
+push relay. The channel's refusals come first (revoked, the plan off, off air), for the redirect and for the live input alike; then players asking `live.` for a playlist get a `302` to the Stream manifest with a signed
 token (Epic 34's `sign.ts`, valid until the viewer token expires). Tokens, modes, limits,
 revocations and metering stay the same; Stream's viewer-minutes are counted apart
 (`minutes_stream`).

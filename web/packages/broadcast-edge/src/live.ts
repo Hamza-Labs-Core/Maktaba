@@ -114,11 +114,16 @@ async function toStream(env: Env, claims: ViewerClaims, uid: string | null): Pro
   });
 }
 
+/** viaStream is the global Stream delivery: the channel's refusals first, then the redirect. */
+async function viaStream(env: Env, claims: ViewerClaims): Promise<Response> {
+  const a = await channel(env, claims.ch).streamFor();
+  if (a.kind === "error") return problem(a.status, a.error);
+  return toStream(env, claims, a.kind === "stream" ? a.uid : null);
+}
+
 async function master(env: Env, claims: ViewerClaims): Promise<Response> {
   const mode = claims.mode === "lowest" ? "lowest" : "full";
-  if (globalDelivery(env) === "stream") {
-    return toStream(env, claims, (await channel(env, claims.ch).streamInput())?.uid ?? null);
-  }
+  if (globalDelivery(env) === "stream") return viaStream(env, claims);
   let redirect: PlaylistAnswer | null = null;
   const { res, status } = await cached(masterCacheKey(env, claims.ch, mode), async () => {
     const a = await channel(env, claims.ch).master(mode);
@@ -134,12 +139,11 @@ async function master(env: Env, claims: ViewerClaims): Promise<Response> {
 }
 
 async function media(env: Env, claims: ViewerClaims, rung: string): Promise<Response> {
-  if (globalDelivery(env) === "stream") {
-    return toStream(env, claims, (await channel(env, claims.ch).streamInput())?.uid ?? null);
-  }
+  if (globalDelivery(env) === "stream") return viaStream(env, claims);
   let redirect: PlaylistAnswer | null = null;
-  const { res, status } = await cached(mediaCacheKey(env, claims.ch, rung), async () => {
-    const a = await channel(env, claims.ch).media(rung);
+  const mode = claims.mode === "lowest" ? "lowest" : "full";
+  const { res, status } = await cached(mediaCacheKey(env, claims.ch, rung, mode), async () => {
+    const a = await channel(env, claims.ch).media(rung, mode);
     if (a.kind === "stream") redirect = a;
     return playlistResponse(a);
   });
