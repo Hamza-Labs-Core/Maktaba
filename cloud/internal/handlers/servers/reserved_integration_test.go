@@ -61,7 +61,7 @@ func TestReservedInfraSlugs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, slug := range []string{"canary", "r12", "r1", "r99", "direct", "plugins", "plugins-cdn", "staging", "status", "api"} {
+	for _, slug := range []string{"canary", "r12", "r1", "r99", "direct", "plugins", "plugins-cdn", "staging", "status", "api", "ingest", "live", "watch"} {
 		st, out := post("/v1/servers/claims/redeem", map[string]any{"code": code, "name": "box", "slug": slug, "version": "1"})
 		if st != http.StatusConflict || out["error"] != "subdomain_reserved" {
 			t.Errorf("redeem slug %q: %d %v, want 409 subdomain_reserved", slug, st, out)

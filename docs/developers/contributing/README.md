@@ -26,6 +26,8 @@ and CI. The source lives at
 - [Parental controls](parental-controls.md): for client and API authors: what a player must
   do, the routes and their codes, the route registry, and how to run the role table and the
   bypass rehearsal.
+- [Broadcasting from home](broadcasting.md): the home's side of broadcasting: the publish
+  checks, the ingest tokens, the ladder, the uploader and the control socket.
 - [Playback: profiles, device reports and signed URLs](playback.md): for player and TV app
   authors: how the home picks direct, remux or transcode, what `device_caps` reports, and the
   signed URLs a TV fetches.

@@ -190,11 +190,13 @@ async def input_fingerprint(db: Any, subject: Subject) -> str | None:
 async def _upsert_youtube_video(db: Any, info: VideoInfo) -> None:
     await db.execute(
         "INSERT INTO youtube_videos (youtube_id, channel_id, title, upload_date, date_quality,"
-        " duration_s, description, source, fetched_at, age_limit)"
-        " VALUES ($1,$2,$3,$4,$5,$6,$7,'info_json',$8,$9)"
+        " duration_s, description, source, fetched_at, age_limit, license)"
+        " VALUES ($1,$2,$3,$4,$5,$6,$7,'info_json',$8,$9,$10)"
         " ON CONFLICT (youtube_id) DO UPDATE SET title = EXCLUDED.title,"
         # the age tiers read it (story 57.01); a file that does not say keeps what is known
         " age_limit = COALESCE(EXCLUDED.age_limit, youtube_videos.age_limit),"
+        # publishable sources read it (story 50.23): CC BY makes an item publishable
+        " license = COALESCE(EXCLUDED.license, youtube_videos.license),"
         " upload_date = COALESCE(EXCLUDED.upload_date, youtube_videos.upload_date),"
         " date_quality = CASE WHEN EXCLUDED.upload_date IS NOT NULL THEN 'exact'"
         "   ELSE youtube_videos.date_quality END,"
@@ -210,6 +212,7 @@ async def _upsert_youtube_video(db: Any, info: VideoInfo) -> None:
         info.description,
         to_ts(db, now()),
         info.age_limit,
+        info.license,
     )
     if info.playlist_id and info.playlist_title:
         await db.execute(

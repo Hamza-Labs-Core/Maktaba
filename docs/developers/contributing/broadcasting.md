@@ -1,0 +1,128 @@
+# Broadcasting from home: the home's side
+
+A home can publish chosen Live TV channels to viewers outside it. The home makes each channel's
+qualities and sends every segment once to Maktaba's broadcast edge. The edge serves every
+viewer from its cache, so the home's upload is the same for one viewer as for ten thousand.
+This guide is for contributors who work on the home's side: the Broadcast page, the publish
+checks, and the broadcaster in the front door. The edge itself is in `docs/broadcast-edge.md`.
+
+Every route here is described in the [API reference](https://maktaba.dev/api/), under
+**Broadcasting**. All of them are admin only, and the API enforces that: a viewer gets `403`, a
+caller with no session `401`, before anything is read or sent to Maktaba Cloud.
+
+## The parts
+
+| Part | Where | What it does |
+|---|---|---|
+| Broadcast page | `web/src/pages/Admin/LiveTV/BroadcastPanel.tsx` | set up a channel, publish it, see its state, measure the upload |
+| Home API | `api/internal/broadcast/` | the routes, the publish checks, the speed test, the ingest-token refresh (`api:broadcast_tokens`) |
+| Cloud link | `cloud/internal/cloudlink/broadcast.go` | the relay agent forwards four calls to Maktaba Cloud with the home's credential; the API never holds it |
+| Broadcaster | `streaming/internal/broadcast/` | one ladder ffmpeg per channel, the uploader, the control socket, the offline slate (`streaming:broadcast_uploader`, `streaming:broadcast_control`) |
+| Database | slot 0226 | `broadcast_channels`, `broadcast_uplink`, `broadcast_confirmations`, `broadcast_ingest_tokens` |
+| Settings | `rules.broadcast` | `uplink_share` (0.5), `rung_slot_weight` (0.5), `allow_software_rungs` (off) |
+
+All three loops belong to the `livetv.broadcast` component. It is in no bundle, so it is off
+until an admin turns it on; the Broadcast page offers to.
+
+## Publishing
+
+`POST /api/tv/broadcast/channels/{id}/publish` runs the checks in this order and stops at the
+first failure. The answer is `409` with `code: broadcast.<code>`, `check` and `params`, and
+nothing is started.
+
+1. **plan**: the Maktaba Cloud plan allows another channel, its access, its mode, its number of
+   qualities and its top bitrate.
+2. **agreement**: the publisher agreement is accepted.
+3. **publishable**: at least 6 of the next 24 hours are scheduled with publishable items (see
+   "What can I broadcast?" below).
+4. **uplink**: the measured upload, times `uplink_share`, carries this channel and the published
+   ones (each ladder's total, plus 10 %). A refusal suggests a smaller ladder that fits.
+5. **encoder**: the channel's host keeps `reserve_slots` free. A channel counts 1 slot, each
+   encoded quality `rung_slot_weight` more, and the copied top quality none. Without a hardware
+   encoder the lower qualities need `allow_software_rungs`.
+6. **rights**: the admin ticked that the home has the rights to what the channel airs. The
+   confirmation stays on the home; only its date and the agreement version go to the cloud.
+
+Then the API publishes on the cloud and fetches the channel's ingest token through the agent.
+Tokens are stored in `broadcast_ingest_tokens`, which a machine's database login cannot read.
+The API refreshes them hourly; with the cloud away, the current token keeps the channel live
+until it expires (24 h), then the channel waits at its slate with `broadcast.tokenExpired`.
+
+## What can I broadcast?
+
+Free to watch isn't a licence to re-broadcast. While a channel is published, it airs only
+**publishable** items, and the home records why each one may air. This is a guide to what the
+code does, not legal advice.
+
+An item is publishable for one of four reasons, in this order (`video_publishable_reason`, slot
+0227; the scheduler, the streaming player and the API all call the same SQL):
+
+| Reason | Where it comes from |
+|---|---|
+| `own` | the admin marked it their own recording (one item, a folder, a series or a collection) |
+| `cleared` | the admin marked one item cleared, with a proof link |
+| `cc_by` | yt-dlp or the YouTube API says Creative Commons Attribution; stored in `youtube_videos.license`, read at intake and at every refresh |
+| `source_permission` | a standing permission in `publishable_sources` covers its YouTube channel, playlist, speaker (or reciter) or label |
+
+- **Permissions.** `POST /api/tv/broadcast/publishable/sources` records one with the link where
+  the source allows sharing (`http` or `https`), an optional credit and a non-commercial flag.
+  Withdrawing keeps the row with its reason. Nothing of it goes to Maktaba Cloud.
+- **The schedule.** While `broadcast.publishable_only` is on (the default), the scheduler builds a
+  published channel from publishable items only (`publishable_only` in the pipeline's
+  `channels/pass_.py`). Turning it off takes a typed confirmation, and the Broadcast page marks
+  each published channel "Not limited to publishable items".
+- **A lost mark.** Withdrawing, marking, the switch, publishing and unpublishing mark the
+  published channels' schedules stale, so the next top-up rewrites them. Until then the
+  streaming player plays the slate ("Not available online") in place of an item that lost its
+  mark.
+- **Attribution.** A CC BY item carries "title by author, CC BY" in the guide, and a permission's
+  credit when it has one.
+- **The page.** Per channel, the publishable share of the next 7 days and the sources that would
+  add most, each with **Record permission** (pre-filled, its About page opened).
+
+## Countries
+
+A channel may name an **allow** list (only these countries) or a **deny** list (everywhere
+except these). Maktaba's own deny list (`broadcast_geo_deny` in the cloud, set by service
+admins with a reason and audited) applies to every channel. The home sends its channel's rule
+with each ingest-token request; the cloud merges in its list and signs both into the token, so a
+home can't leave it out. The edge checks `CF-IPCountry` at every playlist and answers a viewer
+outside with `451 geo_blocked`.
+
+## The broadcaster
+
+- **Source.** It reads the channel's TS through the front door's relay source and holds the
+  channel while it runs, so the warm grace never releases a published channel.
+- **Ladder.** One ffmpeg reads the TS on stdin. The top quality (`src`) is copied; `720p`,
+  `480p` and `360p` are encoded with the channel's encoder family (VideoToolbox, NVENC, QSV,
+  VA-API, or libx264 when allowed) on the channel's keyframe grid. Segments are 4 s, numbered
+  from the start time in 4 s slots, so a restarted ladder never reuses a number.
+- **Uploader.** It reads each quality's playlist and PUTs each new segment once, with its hash,
+  duration and program date time. It retries with jitter for two segment durations, then skips
+  the segment and marks the next one as a discontinuity. At most 8 segments per quality stay on
+  disk.
+- **State.** Every 10 s it posts the qualities' attributes for the master playlist, and writes
+  its report (segments sent, restarts) to `broadcast_channels.report`.
+- **Control socket.** One outbound WebSocket per channel, reconnected with jitter. `wake` starts
+  an on-demand channel; `sleep` stops it 5 minutes later. Until the edge has sent either, an
+  on-demand channel runs as if always on, so a published channel is never dark. `revoked`, `plan_off` and `restored`
+  change the channel's state; `limits` removes qualities the plan no longer allows.
+- **Slate.** Once per token it makes a 4 s offline card (the channel's name and the offline
+  words in English and Arabic) and uploads it. The texts are read from files, never put in the
+  filter graph.
+
+## Tests
+
+- `api/internal/broadcast`: the checks (T01, T04, T05), the role test (T09), and the database
+  tests for publishing, tokens with the cloud away (T08) and the speed test.
+- `streaming/internal/broadcast`: the ladder's arguments (T02), the uploader (T03), and the
+  broadcaster against a fake edge (always on, on demand, a revoked channel, an expired token).
+- `api/internal/broadcast/publishable_pg_test.go`: permissions and marks (T07), a reciter as a
+  source (T05), the share and its suggestions, the switch.
+- `pipeline/tests/channels/test_publishable_only.py`: a published channel builds from
+  publishable items only (T03); the licence at intake and refresh (T01, T02).
+- `streaming/internal/channel/publishable_pg_test.go`: an item that lost its mark plays the
+  slate (T04).
+- `web/packages/broadcast-edge/test/geo.test.ts` and the cloud's ingest tests: the country rule
+  (T06).
+- `web/src/pages/Admin/LiveTV/BroadcastPanel.test.tsx`: the page, in English and Arabic.

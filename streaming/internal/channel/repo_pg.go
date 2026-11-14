@@ -37,6 +37,9 @@ type PGRepo struct {
 
 	hasRTStats     bool
 	checkedRTStats time.Time
+
+	hasPublishable     bool
+	checkedPublishable time.Time
 }
 
 // NewPGRepo builds a PGRepo. `host` is the pinned host written to
@@ -68,14 +71,41 @@ func (r *PGRepo) sourceURLColumn(ctx context.Context) bool {
 	return r.hasSourceURL
 }
 
+// publishableFuncs reports whether slot 0227's publishable rule exists (story 50.23).
+func (r *PGRepo) publishableFuncs(ctx context.Context) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.hasPublishable || (!r.checkedPublishable.IsZero() && time.Since(r.checkedPublishable) < sourceURLRecheck) {
+		return r.hasPublishable
+	}
+	var ok bool
+	if err := r.pool.QueryRow(ctx, `SELECT to_regprocedure('channel_publishable_only(uuid)') IS NOT NULL`).Scan(&ok); err == nil {
+		r.hasPublishable = ok
+		r.checkedPublishable = time.Now()
+	}
+	return r.hasPublishable
+}
+
+// notPublishableCol is the select expression of ProgramBlock.NotPublishable: a published
+// channel's block whose item may no longer air (story 50.23 §3). The item is read only
+// when the channel is limited; before slot 0227 it is false.
+func (r *PGRepo) notPublishableCol(ctx context.Context) string {
+	if !r.publishableFuncs(ctx) {
+		return "false"
+	}
+	return "(cp.video_id IS NOT NULL AND cp.kind IN ('program', 'filler', 'bumper')" +
+		" AND channel_publishable_only(cp.channel_id) AND video_publishable_reason(cp.video_id) IS NULL)"
+}
+
 func (r *PGRepo) ProgramsFrom(ctx context.Context, channelID uuid.UUID, from time.Time, limit int) ([]ProgramBlock, error) {
 	srcCol := "NULL::text"
 	if r.sourceURLColumn(ctx) {
 		srcCol = "cp.source_url"
 	}
+	notPub := r.notPublishableCol(ctx)
 	rows, err := r.pool.Query(ctx, `
 		SELECT cp.seq, cp.kind, cp.video_id, cp.start_at, cp.end_at,
-		       cp.source_offset, cp.source_duration, v.path, `+srcCol+`, cp.title_snapshot
+		       cp.source_offset, cp.source_duration, v.path, `+srcCol+`, cp.title_snapshot, `+notPub+`
 		FROM channel_programs_live cp
 		LEFT JOIN videos v ON v.id = cp.video_id
 		WHERE cp.channel_id = $1 AND cp.end_at > $2
@@ -93,7 +123,7 @@ func (r *PGRepo) ProgramsFrom(ctx context.Context, channelID uuid.UUID, from tim
 		var path, src *string
 		var snap []byte
 		if err := rows.Scan(&b.Seq, &b.Kind, &vid, &b.StartAt, &b.EndAt,
-			&b.SourceOffsetMS, &b.SourceDurationMS, &path, &src, &snap); err != nil {
+			&b.SourceOffsetMS, &b.SourceDurationMS, &path, &src, &snap, &b.NotPublishable); err != nil {
 			return nil, err
 		}
 		if vid != nil {

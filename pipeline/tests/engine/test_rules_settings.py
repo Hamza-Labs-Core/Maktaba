@@ -130,3 +130,17 @@ def test_direct_is_a_section_of_cloud_direct() -> None:
     schema = {s["key"]: s for s in rules.schema()["sections"]}
     fields = {f["name"]: f for f in schema["direct"]["fields"]}
     assert fields["manual_port"]["maximum"] == 65535
+
+
+def test_broadcast_is_a_section_of_livetv_broadcast() -> None:
+    """Story 50.22: the upload share, the lower qualities' slot weight and software encoding
+    are the rules section ``broadcast``, with the API's defaults and bounds."""
+    from maktaba_pipeline.broadcast_settings import BroadcastConfig
+
+    assert rules.SECTIONS["broadcast"][0] is BroadcastConfig
+    b = BroadcastConfig()
+    assert (b.uplink_share, b.rung_slot_weight, b.allow_software_rungs) == (0.5, 0.5, False)
+    schema = {s["key"]: s for s in rules.schema()["sections"]}
+    fields = {f["name"]: f for f in schema["broadcast"]["fields"]}
+    assert (fields["uplink_share"]["minimum"], fields["uplink_share"]["maximum"]) == (0.2, 0.8)
+    assert fields["rung_slot_weight"]["maximum"] == 1.0

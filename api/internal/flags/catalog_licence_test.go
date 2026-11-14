@@ -8,8 +8,9 @@ import (
 )
 
 // Story 51.19 (run by the catalog job, make catalog-check): every licence a catalog
-// component names is a declared flag with a licence feature, and today only cloud.relay
-// names one, cloud_relay. No other component is gated (no new paid gate).
+// component names is a declared flag with a licence feature, and only two components name
+// one: cloud.relay (cloud_relay) and livetv.broadcast (broadcast, story 50.22). No other
+// component is gated (no new paid gate).
 func TestCatalogLicence(t *testing.T) {
 	gated := map[string]string{}
 	for _, c := range components.Default().Components() {
@@ -21,8 +22,8 @@ func TestCatalogLicence(t *testing.T) {
 		}
 		gated[c.ID] = c.Licence
 	}
-	if len(gated) != 1 || gated["cloud.relay"] != FlagCloudRelay {
-		t.Fatalf("gated components %v, want only cloud.relay by cloud_relay", gated)
+	if len(gated) != 2 || gated["cloud.relay"] != FlagCloudRelay || gated["livetv.broadcast"] != FlagBroadcast {
+		t.Fatalf("gated components %v, want cloud.relay by cloud_relay and livetv.broadcast by broadcast", gated)
 	}
 }
 

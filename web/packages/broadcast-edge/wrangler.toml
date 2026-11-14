@@ -1,0 +1,121 @@
+# The broadcast edge (Epic 50 story 50.21) on Maktaba's Cloudflare account: ingest, live and watch
+# on maktaba.tv (staging on maktaba.dev). Deployed from CI only (.github/workflows/broadcast-edge.yml, by hand, the
+# `production` environment); a pull request only builds and tests it. Every name below is
+# created by the owner before the first deploy (docs/broadcast-edge.md, "Before the first
+# deploy"); secrets are never in this file:
+#   wrangler secret put CLOUD_PUBKEYS       (JSON {kid: base64url Ed25519 public key})
+#   wrangler secret put VIEWER_TOKEN_KEY    (base64url, 32 bytes; the same on watch.maktaba.tv)
+#   wrangler secret put EDGE_SIGNING_KEY    (base64url Ed25519 seed; its public half in the cloud)
+#   wrangler secret put STREAM_API_TOKEN    (the Stream fallback only)
+#   wrangler secret put STREAM_KEY_JWK      (the Stream fallback only)
+name = "maktaba-broadcast-staging"
+main = "src/worker.ts"
+compatibility_date = "2026-08-15"
+# no *.workers.dev copy of the edge exists
+workers_dev = false
+
+# Three proxied Workers Custom Domains: these names have no other DNS record (no origin, no
+# Tunnel), so the Worker owns them (README §15.5; 50.01's names table). Staging is on
+# maktaba.dev, as the staging pair is (staging-api.maktaba.dev); production is on maktaba.tv.
+routes = [
+  { pattern = "staging-ingest.maktaba.dev", custom_domain = true },
+  { pattern = "staging-live.maktaba.dev", custom_domain = true },
+  { pattern = "staging-watch.maktaba.dev", custom_domain = true },
+]
+
+[vars]
+BROADCAST_ENV = "staging"
+BROADCAST_DELIVERY = "r2"
+BROADCAST_GLOBAL_OFF = "0"
+INGEST_HOST = "staging-ingest.maktaba.dev"
+LIVE_HOST = "staging-live.maktaba.dev"
+WATCH_HOST = "staging-watch.maktaba.dev"
+
+[[r2_buckets]]
+binding = "SEGMENTS"
+bucket_name = "maktaba-broadcast-staging"
+
+[[r2_buckets]]
+binding = "GUIDE"
+bucket_name = "maktaba-broadcast-guide-staging"
+
+[[durable_objects.bindings]]
+name = "CHANNEL"
+class_name = "ChannelLive"
+
+[[durable_objects.bindings]]
+name = "PUBLISHER"
+class_name = "PublisherControl"
+
+[[durable_objects.bindings]]
+name = "REVOCATIONS"
+class_name = "Revocations"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["ChannelLive", "PublisherControl", "Revocations"]
+
+[[analytics_engine_datasets]]
+binding = "AE"
+dataset = "broadcast_events"
+
+# A coarse per-location guard on ingest PUTs (per channel and rung), in front of ChannelLive's
+# exact 4 a second; namespace ids are the account's own numbers, one per environment
+[[ratelimits]]
+name = "RL"
+namespace_id = "5021"
+simple = { limit = 60, period = 10 }
+
+[observability]
+enabled = true
+
+# Production: the same Worker under its own name, buckets and hosts (`wrangler deploy --env production`)
+[env.production]
+name = "maktaba-broadcast-production"
+workers_dev = false
+routes = [
+  { pattern = "ingest.maktaba.tv", custom_domain = true },
+  { pattern = "live.maktaba.tv", custom_domain = true },
+  { pattern = "watch.maktaba.tv", custom_domain = true },
+]
+
+[env.production.vars]
+BROADCAST_ENV = "production"
+BROADCAST_DELIVERY = "r2"
+BROADCAST_GLOBAL_OFF = "0"
+INGEST_HOST = "ingest.maktaba.tv"
+LIVE_HOST = "live.maktaba.tv"
+WATCH_HOST = "watch.maktaba.tv"
+API_ORIGIN = "https://api.maktaba.tv"
+
+[[env.production.r2_buckets]]
+binding = "SEGMENTS"
+bucket_name = "maktaba-broadcast-production"
+
+[[env.production.r2_buckets]]
+binding = "GUIDE"
+bucket_name = "maktaba-broadcast-guide-production"
+
+[[env.production.durable_objects.bindings]]
+name = "CHANNEL"
+class_name = "ChannelLive"
+
+[[env.production.durable_objects.bindings]]
+name = "PUBLISHER"
+class_name = "PublisherControl"
+
+[[env.production.durable_objects.bindings]]
+name = "REVOCATIONS"
+class_name = "Revocations"
+
+[[env.production.analytics_engine_datasets]]
+binding = "AE"
+dataset = "broadcast_events"
+
+[[env.production.ratelimits]]
+name = "RL"
+namespace_id = "5022"
+simple = { limit = 60, period = 10 }
+
+[env.production.observability]
+enabled = true
