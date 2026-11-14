@@ -87,6 +87,10 @@ describe("the launcher mode", () => {
     expect(
       launcherMode(loc("file:///app/ui/index.html?bridge=1&home=javascript%3Aalert(1)"))
     ).toMatchObject({ bundled: false, base: null });
+    // the home-served /tv/ ignores ?home=: its tokens stay with its own origin
+    expect(
+      launcherMode(loc("https://h.example/tv/?bridge=1&home=https%3A%2F%2Fevil.example"))
+    ).toEqual({ bundled: false, base: null, plain: false, lang: null });
   });
 
   it("signs in by bearer: the session is the API client's", () => {

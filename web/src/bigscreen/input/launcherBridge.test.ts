@@ -135,8 +135,32 @@ describe("the bridge in the launcher", () => {
     expect(await lines).toBe("boot\nready");
   });
 
-  it("T06: every message /tv/ sends is one the schema allows, and each kind is covered", async () => {
+  it("sends nothing but ready and hello before a launcher answered", () => {
     void startBridge(10);
+    postToLauncher({ type: "maktaba:play", url: "https://h.example/stream/1/master.m3u8?sig=x" });
+    tellLauncher("maktaba:exit");
+    expect(sent.map((m) => m.type)).toEqual(["maktaba:ready", "maktaba:hello"]);
+  });
+
+  it("a launcher at the home's own origin is sent to by its origin, a packaged one by *", async () => {
+    const spy = vi.mocked(parent.postMessage);
+    const started = startBridge(1000);
+    fromParent(hello(1), window.location.origin);
+    await started;
+    tellLauncher("maktaba:stop");
+    expect(spy.mock.calls.at(-1)?.[1]).toBe(window.location.origin);
+    resetBridgeForTest();
+    const again = startBridge(1000);
+    fromParent(hello(2), "null");
+    await again;
+    tellLauncher("maktaba:stop");
+    expect(spy.mock.calls.at(-1)?.[1]).toBe("*");
+  });
+
+  it("T06: every message /tv/ sends is one the schema allows, and each kind is covered", async () => {
+    const started = startBridge(1000);
+    fromParent(hello(1));
+    await started;
     tellLauncher("maktaba:exit");
     tellLauncher("maktaba:openHomePicker");
     tellLauncher("maktaba:pause");

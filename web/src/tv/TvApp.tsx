@@ -34,7 +34,10 @@ export const TV_SIGN_IN = `/login?next=${encodeURIComponent("/tv/")}`;
 export function launcherMode(loc: Location = window.location): LauncherMode | null {
   const q = new URLSearchParams(loc.search);
   if (q.get("bridge") !== "1" || !inLauncher()) return null;
-  const home = q.get("home");
+  // ?home= counts only on the packaged copy (file:// or app://): the home-served /tv/ always
+  // talks to its own origin, so no link can point its tokens at another site
+  const packaged = loc.protocol !== "https:" && loc.protocol !== "http:";
+  const home = packaged ? q.get("home") : null;
   let base: string | null = null;
   if (home) {
     try {

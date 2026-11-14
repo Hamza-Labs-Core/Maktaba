@@ -62,9 +62,19 @@ describe("Picture", () => {
     expect(container.querySelector("img")).toBeNull();
   });
 
-  it("another origin's picture is left to the browser", () => {
+  it("another origin's picture is left to the browser, never sent the token", () => {
     setBearerAuth(bearer);
-    const { container } = render(<Picture src="https://img.example/p.jpg" />);
-    expect(container.querySelector("img")).toHaveAttribute("src", "https://img.example/p.jpg");
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    for (const src of [
+      "https://img.example/p.jpg",
+      "//evil.example/p.jpg",
+      "/\\evil.example/p.jpg",
+    ]) {
+      const { container, unmount } = render(<Picture src={src} />);
+      expect(container.querySelector("img")).toHaveAttribute("src", src);
+      unmount();
+    }
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

@@ -92,7 +92,8 @@ export function lrm(text: string): string {
  */
 export function useImageSrc(src: string | null): { src: string | null; failed: boolean } {
   const bearer = !!bearerAuth()?.token();
-  const own = !!src && src.startsWith("/");
+  // the home's own path only: "//host/x" (or "/\\host") is another site, never sent the token
+  const own = !!src && /^\/(?![/\\])/.test(src);
   const [blob, setBlob] = useState<{ for: string; url: string | null } | null>(null);
   useEffect(() => {
     if (!bearer || !own || !src) return;

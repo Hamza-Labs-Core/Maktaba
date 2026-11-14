@@ -41,7 +41,11 @@ export interface Platform {
 /** The Chromium major version in a user agent (0 when there is none). */
 export function chromiumMajor(ua: string): number {
   const m = /Chrom(?:e|ium)\/(\d+)/.exec(ua);
-  return m ? Number(m[1]) : 0;
+  if (m) return Number(m[1]);
+  // a Samsung TV's web runtime names its engine without "Chrome/": "… (KHTML, like Gecko)
+  // 69.0.3497.106.1/5.5 TV Safari/537.36" (the Chromium version, then the Tizen version)
+  const t = /\)\s(\d{2,3})\.\d+\.\d+\.\d+(?:\.\d+)?\/[\d.]+\s+TV\b/.exec(ua);
+  return t ? Number(t[1]) : 0;
 }
 
 /** The oldest engine the launcher supports: Chromium 68, a 2020 Samsung or LG (Q10). */

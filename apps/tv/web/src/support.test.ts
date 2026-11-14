@@ -75,14 +75,16 @@ describe("discovery", () => {
   });
 
   it("takes only a name for the address the home answered from (no other site)", async () => {
-    expect(directNameOf("https://192-168-1-7.h1.direct-a.example", "http://192.168.1.7:8088")).toBe(
-      true
-    );
-    expect(directNameOf("https://192-168-1-8.h1.direct-a.example", "http://192.168.1.7:8088")).toBe(
-      false
-    );
-    expect(directNameOf("https://evil.example", "http://192.168.1.7:8088")).toBe(false);
-    expect(directNameOf("https://h1.relay.maktaba.tv", "http://192.168.1.7:8088")).toBe(false);
+    const at = "http://192.168.1.7:8088";
+    expect(directNameOf("https://192-168-1-7.h1.direct-a.example", at, "h1")).toBe(true);
+    expect(directNameOf("https://192-168-1-7.H1.direct-a.example", at, "H1")).toBe(true);
+    expect(directNameOf("https://192-168-1-8.h1.direct-a.example", at, "h1")).toBe(false);
+    // another home's name, or a look-alike, for the same address
+    expect(directNameOf("https://192-168-1-7.h2.direct-a.example", at, "h1")).toBe(false);
+    expect(directNameOf("https://192-168-1-7.evil.example", at, "h1")).toBe(false);
+    expect(directNameOf("https://192-168-1-7.h1.direct-a.example", at, "")).toBe(false);
+    expect(directNameOf("https://evil.example", at, "h1")).toBe(false);
+    expect(directNameOf("https://h1.relay.maktaba.tv", at, "h1")).toBe(false);
     const f: FetchLike = vi.fn(async () => json({ ...answer, id: "h1" }));
     const c = await chooseConnection(
       "http://192.168.1.7:8088",
@@ -178,6 +180,24 @@ describe("the remote and the TV", () => {
     const ua =
       "Mozilla/5.0 (SMART-TV; Linux; Tizen 5.5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/69.0.3497.106 TV Safari/537.36";
     expect(chromiumMajor(ua)).toBe(69);
+    // Samsung's own runtimes: the engine without "Chrome/" (2020 Tizen 5.5, 2022 Tizen 6.5)
+    expect(
+      chromiumMajor(
+        "Mozilla/5.0 (SMART-TV; LINUX; Tizen 5.5) AppleWebKit/537.36 (KHTML, like Gecko) 69.0.3497.106.1/5.5 TV Safari/537.36"
+      )
+    ).toBe(69);
+    expect(
+      chromiumMajor(
+        "Mozilla/5.0 (SMART-TV; LINUX; Tizen 6.5) AppleWebKit/537.36 (KHTML, like Gecko) 85.0.4183.93/6.5 TV Safari/537.36"
+      )
+    ).toBe(85);
+    // LG webOS 5 (2020)
+    expect(
+      chromiumMajor(
+        "Mozilla/5.0 (Web0S; Linux/SmartTV) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/68.0.3440.106 Safari/537.36 WebAppManager"
+      )
+    ).toBe(68);
+    expect(chromiumMajor("Mozilla/5.0 (X11; Linux) AppleWebKit/537.36 Safari/537.36")).toBe(0);
     expect(yearFromEngine(69, "tizen")).toBe(2020);
     expect(yearFromEngine(87, "webos")).toBe(2022);
     expect(yearFromEngine(53, "webos")).toBe(0);

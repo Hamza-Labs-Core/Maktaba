@@ -89,10 +89,11 @@ export async function readHome(
 /**
  * Whether an HTTPS URL a home named is its direct name for the address it was found at.
  * Story 50.15's names are `1-2-3-4.<home-id>.<direct-domain>`, resolving to 1.2.3.4: the
- * launcher takes a name only when its first label is the found address, so an answer on the
- * LAN cannot send the TV to any other site (it can only name the address it answered from).
+ * launcher takes a name only when its first label is the found address and its second the
+ * home's id, so an answer on the LAN cannot send the TV to any other site (it can only name
+ * the address it answered from, for the home it says it is).
  */
-export function directNameOf(url: string, foundAt: string): boolean {
+export function directNameOf(url: string, foundAt: string, homeId: string): boolean {
   let host: string;
   let found: string;
   try {
@@ -103,7 +104,12 @@ export function directNameOf(url: string, foundAt: string): boolean {
   }
   if (!/^\d{1,3}(\.\d{1,3}){3}$/.test(found)) return false;
   const labels = host.split(".");
-  return labels.length >= 3 && labels[0] === found.replace(/\./g, "-");
+  return (
+    labels.length >= 3 &&
+    labels[0] === found.replace(/\./g, "-") &&
+    !!homeId &&
+    labels[1] === homeId.toLowerCase()
+  );
 }
 
 /** How long an HTTPS name gets to answer before the next is tried. */
@@ -122,7 +128,7 @@ export async function chooseConnection(
   if (foundAt.startsWith("https:")) return { base: foundAt, plain: false, home: answer };
   for (const url of answer.urls) {
     const base = url.replace(/\/+$/, "");
-    if (!base.startsWith("https:") || !directNameOf(base, foundAt)) continue;
+    if (!base.startsWith("https:") || !directNameOf(base, foundAt, answer.id)) continue;
     const again = await readHome(base, fetchFn, timeoutMs);
     if (again && again.id === answer.id) {
       log("launcher", `home ${answer.id}: reached by its HTTPS name ${originOf(base)}`);

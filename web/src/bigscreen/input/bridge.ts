@@ -25,6 +25,11 @@
 // "null", "file://" or "app://…") or the home itself. A web page that frames /tv/ is not a
 // launcher. Only a known action is taken: an action is a key press, never a command with
 // arguments. /tv/ uses a launcher message only when hello listed it.
+//
+// Until such a launcher has answered hello, /tv/ sends nothing but ready and hello (no play
+// address, no command). A packaged app's origin is opaque ("null"), which postMessage cannot
+// name, so those messages go to "*"; a launcher at an http(s) origin (the home itself, in a
+// test) is sent to by its origin.
 import type { BigAction } from "./actions";
 
 export const BRIDGE_LEVEL = 1;
@@ -122,11 +127,13 @@ export function inLauncher(): boolean {
   }
 }
 
-/** Sends a message to the launcher (no-op outside one). */
+/** Sends a message to the launcher (no-op outside one, or before its hello: see the header). */
 export function postToLauncher(msg: UiMessage): void {
   if (!inLauncher()) return;
-  // the launcher is a packaged app (its origin is the TV's own): any target
-  window.parent.postMessage(msg, "*");
+  if (!hello && msg.type !== BRIDGE_READY && msg.type !== "maktaba:hello") return;
+  const target =
+    helloOrigin.startsWith("http:") || helloOrigin.startsWith("https:") ? helloOrigin : "*";
+  window.parent.postMessage(msg, target);
 }
 
 /** Tells the launcher something without arguments (no-op outside one). */
@@ -166,6 +173,8 @@ export function listenToLauncher(onAction: (a: BigAction) => void): () => void {
 // ---- hello, state and visibility (story 58.09) ------------------------------------------
 
 let hello: LauncherHello | null = null;
+/** The origin hello came from ("null", "file://", "app://…" or the home's own). */
+let helloOrigin = "";
 let nextId = 1;
 const helloWaiters: ((h: LauncherHello | null) => void)[] = [];
 const stateListeners = new Set<(s: LauncherPlayerState) => void>();
@@ -189,6 +198,7 @@ function onBridgeMessage(e: MessageEvent): void {
     case "maktaba:hello":
       if (!isHello(m)) return;
       hello = m as unknown as LauncherHello;
+      helloOrigin = e.origin;
       helloWaiters.splice(0).forEach((f) => f(hello));
       return;
     case "maktaba:state":
@@ -276,9 +286,16 @@ export function launcherLogs(timeoutMs = 2000): Promise<string | null> {
   });
 }
 
+/** Tests: as if a launcher at `origin` had answered hello. */
+export function setLauncherHelloForTest(h: LauncherHello, origin = "null"): void {
+  hello = h;
+  helloOrigin = origin;
+}
+
 /** Tests: forget the launcher's answer. */
 export function resetBridgeForTest(): void {
   hello = null;
+  helloOrigin = "";
   helloWaiters.length = 0;
   stateListeners.clear();
   visibilityListeners.clear();
