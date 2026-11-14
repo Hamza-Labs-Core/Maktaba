@@ -51,6 +51,12 @@ type TokenMinter interface {
 	Mint(ctx context.Context, userID, deviceKind, deviceLabel string) (MintedTokens, error)
 }
 
+// ViaMinter is a TokenMinter that also records how the device came by its code (a TV given a
+// cloud code, story 58.03): its session says so.
+type ViaMinter interface {
+	MintVia(ctx context.Context, userID, deviceKind, deviceLabel, via string) (MintedTokens, error)
+}
+
 // Handler bundles deps. Store is the persistence interface from the
 // discovery package; main wires a Postgres-backed implementation,
 // tests use discovery.MemoryPairingStore. Minter is required for
@@ -66,6 +72,10 @@ type Handler struct {
 	// Audit, when set, records pair.code-issued / pair.code-claimed.
 	// Optional: nil disables audit (the no-DB dev path).
 	Audit AuditSink
+
+	// CloudCodes reaches Maktaba Cloud's TV codes as this home (cloudcode.go, story 58.03);
+	// nil: a cloud code cannot be approved here.
+	CloudCodes CloudCodes
 
 	// DeviceKey signs the apps' device codes (device.go); nil: a random key per process.
 	DeviceKey []byte

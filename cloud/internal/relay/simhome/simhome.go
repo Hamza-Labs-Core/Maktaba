@@ -10,6 +10,9 @@
 //	GET /stream/…?bytes=N&ms=D  the same, as a player's segment (story 50.19's rehearsal);
 //	                       a path ending .m3u8 is a small playlist
 //	GET /hang              headers, then nothing until the client leaves
+//	POST /api/pairing/device/token  {"device_code": G}: 200 and a token naming the home, once,
+//	                       for a grant AcceptGrant gave it (a TV redeeming a cloud code's
+//	                       grant, story 58.03); 410 otherwise
 //
 // A /stream/ answer says the cap the relay asked it to fit (X-Sim-Cap, from
 // X-Maktaba-Relay-Cap-Kbps), as a home that fits its renditions to the cap would.
@@ -17,7 +20,9 @@ package simhome
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -37,11 +42,31 @@ const capHeader = "X-Maktaba-Relay-Cap-Kbps"
 // Pattern is byte i of every /stream body, so a client can check each byte.
 func Pattern(i int) byte { return byte('a' + i%26) }
 
+// grants are the single-use pairing grants each home accepts, by home then grant.
+var grants sync.Map
+
+// AcceptGrant makes home accept grant once at POST /api/pairing/device/token, as a real home
+// accepts the device code it handed the cloud for a TV.
+func AcceptGrant(home, grant string) { grants.Store(home+"\x00"+grant, true) }
+
 // API is the loopback API every simulated home serves (one server for all).
 func API() *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		home := r.Header.Get("X-Sim-Home")
 		path := r.URL.Path
+		if path == "/api/pairing/device/token" && r.Method == http.MethodPost {
+			var body struct {
+				DeviceCode string `json:"device_code"`
+			}
+			_ = json.NewDecoder(io.LimitReader(r.Body, 4<<10)).Decode(&body)
+			if _, ok := grants.LoadAndDelete(home + "\x00" + body.DeviceCode); !ok {
+				w.WriteHeader(http.StatusGone)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = fmt.Fprintf(w, `{"access_token":"tv-token-%s"}`, home)
+			return
+		}
 		if strings.HasPrefix(path, "/stream/") {
 			w.Header().Set("X-Sim-Cap", r.Header.Get(capHeader))
 			if strings.HasSuffix(path, ".m3u8") {

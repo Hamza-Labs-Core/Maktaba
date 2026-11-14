@@ -496,6 +496,29 @@
       "install": null
     },
     {
+      "slug": "cloud-not-linked",
+      "status": 409,
+      "area": "accounts",
+      "audience": "person",
+      "codes": [
+        "cloud_not_linked"
+      ],
+      "title": {
+        "en": "This home isn't connected to Maktaba Cloud",
+        "ar": "هذا المنزل غير متصل بسحابة مكتبة"
+      },
+      "means": {
+        "en": "The code on the TV came from Maktaba Cloud, and only a home with remote access turned on can approve it.",
+        "ar": "الرمز الظاهر على التلفاز صادر عن سحابة مكتبة، ولا يوافق عليه إلا منزل فُعِّل فيه الوصول عن بُعد."
+      },
+      "do": {
+        "en": "Ask your home's admin to turn on remote access, or have the TV show the home's own code instead and approve that.",
+        "ar": "اطلبوا من مسؤول المنزل تفعيل الوصول عن بُعد، أو اجعلوا التلفاز يعرض رمز المنزل نفسه ووافقوا عليه."
+      },
+      "help": null,
+      "install": null
+    },
+    {
       "slug": "cloud-session",
       "status": 403,
       "area": "accounts",

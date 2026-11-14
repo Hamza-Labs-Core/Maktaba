@@ -83,7 +83,8 @@ func repoRoot(t *testing.T) string {
 	return strings.TrimSpace(string(out))
 }
 
-// TestScenario runs every scenario (C01–C10, 50.11's status-feed, 53.16's report-symbolicated);
+// TestScenario runs every scenario (C01–C10, 50.11's status-feed, 53.16's report-symbolicated,
+// 58.03's tv-code);
 // one with -run 'TestScenario/<name>'.
 func TestScenario(t *testing.T) {
 	skip := notBuilt(t)
@@ -111,6 +112,7 @@ func TestScenario(t *testing.T) {
 		{"origin-only-via-edge", originOnlyViaEdge},
 		{"origin-aop", originAOP},
 		{"report-symbolicated", reportSymbolicated},
+		{"tv-code", tvCode},
 	} {
 		t.Run(s.name, func(t *testing.T) {
 			if why, ok := skip[s.name]; ok || s.run == nil {

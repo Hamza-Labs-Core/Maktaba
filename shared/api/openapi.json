@@ -17384,6 +17384,115 @@
         "operationId": "getMyParentalTime"
       }
     },
+    "/me/app-sign-ins": {
+      "get": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "List the apps signed in by code",
+        "description": "The caller's own apps signed in by a code a phone or the web approved (TVs, phones, remotes), newest use first. A TV that signed in with a Maktaba Cloud code says so (`via`).",
+        "responses": {
+          "200": {
+            "description": "The caller's app sign-ins.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "The sign-in (its refresh family)."
+                          },
+                          "kind": {
+                            "type": "string",
+                            "description": "What signed in: the app (tv, player, remote and so on)."
+                          },
+                          "label": {
+                            "type": "string",
+                            "description": "What the device called itself, or its platform."
+                          },
+                          "via": {
+                            "type": "string",
+                            "enum": [
+                              "cloud_code"
+                            ],
+                            "description": "Present when a TV signed in with a code from Maktaba Cloud."
+                          },
+                          "created_at": {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          "last_seen_at": {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          "expires_at": {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          "current": {
+                            "type": "boolean",
+                            "description": "The sign-in this request came with."
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "listAppSignIns"
+      }
+    },
+    "/me/app-sign-ins/{id}": {
+      "delete": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Sign an app out",
+        "description": "Ends one of the caller's app sign-ins: the app must sign in again. Another person's sign-in answers 404.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Signed out."
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "deleteAppSignIn"
+      }
+    },
     "/parental/settings": {
       "get": {
         "tags": [
@@ -17887,6 +17996,220 @@
           }
         },
         "operationId": "approvePairingCode"
+      }
+    },
+    "/pairing/cloud-code/{code}": {
+      "get": {
+        "tags": [
+          "Devices"
+        ],
+        "summary": "Read a TV's code from Maktaba Cloud",
+        "description": "A TV that cannot find the home asks Maktaba Cloud for a code and shows it. A person signed in on the home reads it here first: what the TV is and the country of its address, so they can say it is their TV. The home asks the cloud through its relay agent; it needs remote access turned on. A sign-in through Maktaba Cloud cannot approve a device, so it is refused here too.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Eight characters, with or without the dash."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The code is open: what asked with it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "description": "The code as the TV shows it (ABCD-2345)."
+                    },
+                    "platform": {
+                      "type": "string",
+                      "description": "What the TV said it is (tizen, webos, roku and so on)."
+                    },
+                    "app_version": {
+                      "type": "string"
+                    },
+                    "country": {
+                      "type": "string",
+                      "description": "The country of the TV's public address, as two letters; empty when the cloud could not tell."
+                    },
+                    "expires_at": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A sign-in through Maktaba Cloud.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The cloud holds no open code by that name: unknown, expired or already approved.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "This home is not registered with Maktaba Cloud (`code`: `cloud_not_linked`): approve the home's own code instead.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Maktaba Cloud is out of reach.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "getCloudTvCode"
+      }
+    },
+    "/pairing/cloud-approve": {
+      "post": {
+        "tags": [
+          "Devices"
+        ],
+        "summary": "Approve a TV's code from Maktaba Cloud",
+        "description": "Signs the TV showing a Maktaba Cloud code in as the caller, or, with `as_user`, as a restricted account the caller looks after (a guardian or an admin). The home makes one of its own device codes for that person, approves it at once and hands it to the cloud as the TV's single-use grant, with the home's connections; the TV redeems the grant with `POST /api/pairing/device/token`. The TV gets the approver's role, libraries and parental policy. No cloud account is needed: the home's registration with the cloud is enough. A sign-in through Maktaba Cloud cannot approve.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "description": "The code the TV shows."
+                  },
+                  "as_user": {
+                    "type": "string",
+                    "format": "uuid",
+                    "description": "The restricted account to sign the TV in as; absent: the caller."
+                  }
+                },
+                "required": [
+                  "code"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Approved; the TV signs in on its next poll of the cloud.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "approved"
+                      ]
+                    },
+                    "user_id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "description": "Whose sign-in the TV gets."
+                    },
+                    "platform": {
+                      "type": "string"
+                    },
+                    "country": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A sign-in through Maktaba Cloud, or a restricted account naming another account (`code`: `restricted`).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The cloud holds no open code by that name, or `as_user` is not a restricted account the caller looks after.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Someone approved the code first, or this home is not registered with Maktaba Cloud (`code`: `cloud_not_linked`).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Maktaba Cloud is out of reach; nothing was approved.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "approveCloudTvCode"
       }
     },
     "/users": {

@@ -99,6 +99,12 @@ func (m *tokenMinter) clock() time.Time {
 
 // Mint issues the access JWT + refresh token for a paired device.
 func (m *tokenMinter) Mint(ctx context.Context, userID, deviceKind, deviceLabel string) (MintedTokens, error) {
+	return m.MintVia(ctx, userID, deviceKind, deviceLabel, "")
+}
+
+// MintVia is Mint for a device that came by its code another way (via, e.g. ViaCloudCode),
+// recorded on the sign-in for the person's list of devices.
+func (m *tokenMinter) MintVia(ctx context.Context, userID, deviceKind, deviceLabel, via string) (MintedTokens, error) {
 	now := m.clock()
 
 	isAdmin := false
@@ -134,6 +140,9 @@ func (m *tokenMinter) Mint(ctx context.Context, userID, deviceKind, deviceLabel 
 	}
 	if deviceLabel != "" {
 		meta["device_label"] = deviceLabel
+	}
+	if via != "" {
+		meta["via"] = via
 	}
 	rt, err := m.refresh.Issue(ctx, refresh.IssueInput{
 		UserID:     userID,

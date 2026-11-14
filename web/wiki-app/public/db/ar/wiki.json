@@ -13,7 +13,7 @@
   ],
   "counts": {
     "diagram": 14,
-    "endpoint": 250,
+    "endpoint": 254,
     "entity": 42,
     "epic": 60,
     "feature": 3,
@@ -13521,6 +13521,62 @@
       }
     },
     {
+      "id": "ep-get-me-app-sign-ins",
+      "type": "endpoint",
+      "title": "GET /me/app-sign-ins",
+      "content": "عرض التطبيقات المسجّل دخولها برمز",
+      "tags": [
+        "api",
+        "Auth",
+        "get"
+      ],
+      "related": [
+        "story-58.3"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/me/app-sign-ins",
+        "tag": "Auth",
+        "operationId": "listAppSignIns"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "27df401b687a8788"
+        }
+      }
+    },
+    {
+      "id": "ep-delete-me-app-sign-ins-id",
+      "type": "endpoint",
+      "title": "DELETE /me/app-sign-ins/{id}",
+      "content": "تسجيل خروج تطبيق",
+      "tags": [
+        "api",
+        "Auth",
+        "delete"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "DELETE",
+        "path": "/me/app-sign-ins/{id}",
+        "tag": "Auth",
+        "operationId": "deleteAppSignIn"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "0fb67aef40a83de7"
+        }
+      }
+    },
+    {
       "id": "ep-get-parental-settings",
       "type": "endpoint",
       "title": "GET /parental/settings",
@@ -13736,6 +13792,65 @@
         "lang": "ar",
         "source": {
           "content": "072c8f3ea9a3a737"
+        }
+      }
+    },
+    {
+      "id": "ep-get-pairing-cloud-code-code",
+      "type": "endpoint",
+      "title": "GET /pairing/cloud-code/{code}",
+      "content": "قراءة رمز تلفاز من سحابة مكتبة",
+      "tags": [
+        "api",
+        "Devices",
+        "get"
+      ],
+      "related": [
+        "story-58.3"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/pairing/cloud-code/{code}",
+        "tag": "Devices",
+        "operationId": "getCloudTvCode"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "e05ce4b39079a5bf"
+        }
+      }
+    },
+    {
+      "id": "ep-post-pairing-cloud-approve",
+      "type": "endpoint",
+      "title": "POST /pairing/cloud-approve",
+      "content": "الموافقة على رمز تلفاز من سحابة مكتبة",
+      "tags": [
+        "api",
+        "Devices",
+        "post"
+      ],
+      "related": [
+        "story-58.3",
+        "story-58.17"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/pairing/cloud-approve",
+        "tag": "Devices",
+        "operationId": "approveCloudTvCode"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "f48ce5b099226ad9"
         }
       }
     },

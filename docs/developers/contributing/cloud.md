@@ -112,6 +112,26 @@ monitoring) and [cloud/](https://github.com/Hamza-Labs-Core/Maktaba/tree/main/cl
 and the API). The public names and what they point at are in
 [docs/cloud-dns.md](https://github.com/Hamza-Labs-Core/Maktaba/blob/main/docs/cloud-dns.md).
 
+## Signing a TV in with a cloud code
+
+A TV that cannot find its home (a Samsung or LG web app has no mDNS; a TV at a relative's house
+is on another network) signs in with a code from Maktaba Cloud. A person signed in on the home
+approves it on their phone or the web; they need no cloud account, only a home with remote
+access turned on.
+
+| Step | Who | Call |
+|---|---|---|
+| Ask for a code | the TV, no account | `POST /v1/tv/codes {platform, app_version}` on the cloud: `{code, poll_secret, expires_in: 600, interval: 5, verify_url}`; at most 10 codes per address |
+| Read it | the person, on the home | `GET /api/pairing/cloud-code/{code}`: the TV's platform and its address's country, for "Is this your TV?" |
+| Approve it | the person, on the home | `POST /api/pairing/cloud-approve {code, as_user?}`: the home makes one of its own device codes for the approver, approves it, and claims the cloud's code with it through its relay agent (`/v1/homes/{id}/tv-codes/{code}/claim`) |
+| Poll | the TV | `POST /v1/tv/codes/poll {code, poll_secret}`: `202` pending, `429` `slow_down`, `200` the home's connections and the grant (once), then `410` |
+| Sign in | the TV | `POST /api/pairing/device/token {device_code: grant}` on the first of the home's connections that answers (LAN first, the relay last) |
+
+The cloud keeps a code's poll secret as a hash and its payload sealed, deletes the payload on the
+poll that delivers it, and sweeps the rows an hour after they expire. The TV is signed in as the
+approver, with their role, libraries and parental policy, and shows in their list of app
+sign-ins (`GET /api/me/app-sign-ins`) as a TV via a cloud code, where it can be signed out.
+
 ## The cloud rehearsal
 
 Every failure path is proven in CI before it reaches a machine with users on it. The cloud
@@ -135,6 +155,7 @@ breaks them on purpose:
 | `runbook-switchover`, `runbook-forced-failover`, `runbook-dns-swap` | runs the one-click recovery workflows' scripts; for the DNS swap, with the Hetzner API down | each does what its runbook says against the real pair: a new leader, the old one fenced, the relay's names on the new leader |
 | `load-small` | 1,000 homes and 50 players at 5 Mbit/s, with the base commit's relay and then this commit's, on one runner | the relay's CPU per Mbit (its own CPU time, the median of three rounds) and memory per tunnel no more than 20 % worse than the base's |
 | `relay-plans` | homes on Free, Basic and Pro behind the relay with the plans enforced; a test build sets the plans' numbers not chosen yet, and the payment provider is a fake | Free is refused with its tunnel kept; Basic is asked to fit 3 Mbit/s, paced to it, and a third stream is refused while two play on; Pro past its allowance plays at Basic's quality; pay-as-you-go plays in full and its gigabyte reaches the provider once, through an outage |
+| `tv-code` | a TV away from home asks the api role for a code; the canary home claims it through its relay agent | the TV's next poll gets the payload once (then `410`, with no secret in it) and signs in on the home through the relay |
 
 A cloud deploy is refused unless the rehearsal passed on that exact commit. No Hetzner,
 Cloudflare or Let's Encrypt host is ever contacted: a fake Hetzner API moves the address,

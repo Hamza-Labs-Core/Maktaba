@@ -98,6 +98,11 @@ type deviceRequest struct {
 	// LookedUp is when a signed-in person first read this code (DeviceLookup): the app
 	// showing it says "your phone found this TV".
 	LookedUp time.Time
+	// Via is how the device came to hold its code: "" asked here, ViaCloudCode a TV given it by
+	// Maktaba Cloud (story 58.03). Its session says so.
+	Via string
+	// approved: made already approved (a cloud code), so no phone is told it is waiting.
+	approved bool
 }
 
 // deviceRequests are the codes waiting for an approval, by code (eight characters, no
@@ -155,7 +160,7 @@ func (d *deviceRequests) pending(now time.Time) []deviceRequest {
 	defer d.mu.Unlock()
 	out := make([]deviceRequest, 0, len(d.m))
 	for _, r := range d.m {
-		if !now.After(r.Expires) {
+		if !now.After(r.Expires) && !r.approved {
 			out = append(out, r)
 		}
 	}
@@ -392,26 +397,10 @@ func (h *Handler) Approve(w http.ResponseWriter, r *http.Request) {
 		}))
 		return
 	}
-	userID := p.UserID
-	if req.AsUser != "" && req.AsUser != p.UserID {
-		if h.ApproveAs == nil {
-			httperror.Write(w, r, httperror.NotFound("restricted account"))
-			return
-		}
-		switch id, err := h.ApproveAs(r.Context(), p, req.AsUser); {
-		case errors.Is(err, ErrApproveAsRestricted):
-			httperror.Write(w, r, httperror.Forbidden(httperror.Type("restricted"),
-				"a restricted account can sign in only itself").With("code", "restricted"))
-			return
-		case errors.Is(err, ErrApproveAsNotFound):
-			httperror.Write(w, r, httperror.NotFound("restricted account"))
-			return
-		case err != nil:
-			httperror.Write(w, r, httperror.Internal("approve as").Wrap(err))
-			return
-		default:
-			userID = id
-		}
+	userID, e := h.approver(r, p, req.AsUser)
+	if e != nil {
+		httperror.Write(w, r, e)
+		return
 	}
 	now := h.now()
 	if _, ok := h.requests.get(code, now); !ok {
@@ -435,6 +424,28 @@ func (h *Handler) Approve(w http.ResponseWriter, r *http.Request) {
 		h.Audit.WritePairEvent(r.Context(), false, p.UserID, key)
 	}
 	common.WriteJSON(w, r, http.StatusOK, map[string]any{"status": "approved"})
+}
+
+// approver is whose sign-in an approval becomes: the caller, or the restricted account named in
+// asUser when the caller is its guardian or an admin (Epic 57 story 57.02).
+func (h *Handler) approver(r *http.Request, p *principal.Principal, asUser string) (string, *httperror.Error) {
+	if asUser == "" || asUser == p.UserID {
+		return p.UserID, nil
+	}
+	if h.ApproveAs == nil {
+		return "", httperror.NotFound("restricted account")
+	}
+	id, err := h.ApproveAs(r.Context(), p, asUser)
+	switch {
+	case errors.Is(err, ErrApproveAsRestricted):
+		return "", httperror.Forbidden(httperror.Type("restricted"),
+			"a restricted account can sign in only itself").With("code", "restricted")
+	case errors.Is(err, ErrApproveAsNotFound):
+		return "", httperror.NotFound("restricted account")
+	case err != nil:
+		return "", httperror.Internal("approve as").Wrap(err)
+	}
+	return id, nil
 }
 
 type deviceTokenRequest struct {
@@ -511,7 +522,12 @@ func (h *Handler) DeviceToken(w http.ResponseWriter, r *http.Request) {
 			label = describeClient(who)
 		}
 	}
-	tok, err := h.Minter.Mint(r.Context(), t.UserID, kind, label)
+	var tok MintedTokens
+	if vm, ok := h.Minter.(ViaMinter); ok && held && asked.Via != "" {
+		tok, err = vm.MintVia(r.Context(), t.UserID, kind, label, asked.Via)
+	} else {
+		tok, err = h.Minter.Mint(r.Context(), t.UserID, kind, label)
+	}
 	if err != nil {
 		httperror.Write(w, r, httperror.Internal("mint device tokens").Wrap(err))
 		return

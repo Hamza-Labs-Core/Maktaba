@@ -803,6 +803,18 @@ build fails when the two differ.
 
 ### Added
 
+- **Sign a TV in from anywhere with a code (story 58.03).** A TV that cannot find its home, or is
+  at a relative's house, can ask Maktaba Cloud for a code (`POST /v1/tv/codes`), and a person
+  signed in on the home approves it (`POST /api/pairing/cloud-approve`, after
+  `GET /api/pairing/cloud-code/{code}` shows the TV's platform and country). The home claims the
+  code through its relay agent with a single-use grant of its own; the TV collects the home's
+  connections and the grant once and signs in on the home, LAN first and the relay last, as the
+  approver, with their role, libraries and parental policy. No cloud account is needed, only a
+  home with remote access. Codes last 10 minutes, at most 10 per address, and the cloud sweeps
+  them an hour after they expire. `GET /api/me/app-sign-ins` lists a person's apps signed in by
+  code (a cloud-code TV says so) and `DELETE /api/me/app-sign-ins/{id}` signs one out. The
+  approve screens in the Players and the web follow.
+
 - **Choose Maktaba's ports on a NAS (story 59.08).** Another app on the NAS, such as Plex or the
   NAS's own UI, may already use one of Maktaba's ports. Each one can now be set in the container's
   settings: `MAKTABA_WEB_PORT` (8088), `MAKTABA_API_PORT` (8080), `MAKTABA_STREAM_PORT` (8081, live

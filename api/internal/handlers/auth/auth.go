@@ -172,6 +172,8 @@ func (h *Handler) Mount(r chi.Router) {
 	r.Get("/api/me", h.GetMe)
 	r.Get("/api/me/sessions", h.MeSessions)
 	r.Delete("/api/me/sessions/{id}", h.RevokeMeSession)
+	r.Get("/api/me/app-sign-ins", h.MeAppSignIns)
+	r.Delete("/api/me/app-sign-ins/{id}", h.RevokeMeAppSignIn)
 	r.Patch("/api/me", h.UpdateMe)
 	r.Post("/api/me/change-password", h.ChangePassword)
 	// /api/auth/me is NOT in the public allowlist, so the global

@@ -5504,6 +5504,134 @@
     "/components/schemas/ParentalCapabilities/properties/can_manage/description": {
       "en": "The caller is an admin, or the guardian of at least one restricted account: show the Family screens.",
       "ar": "المتصل مشرف، أو وليّ حساب مقيَّد واحد على الأقل: اعرض شاشات العائلة."
+    },
+    "/paths/~1pairing~1cloud-code~1{code}/get/summary": {
+      "en": "Read a TV's code from Maktaba Cloud",
+      "ar": "قراءة رمز تلفاز من سحابة مكتبة"
+    },
+    "/paths/~1pairing~1cloud-code~1{code}/get/description": {
+      "en": "A TV that cannot find the home asks Maktaba Cloud for a code and shows it. A person signed in on the home reads it here first: what the TV is and the country of its address, so they can say it is their TV. The home asks the cloud through its relay agent; it needs remote access turned on. A sign-in through Maktaba Cloud cannot approve a device, so it is refused here too.",
+      "ar": "يطلب التلفاز الذي لا يجد المنزل رمزًا من سحابة مكتبة ويعرضه. ويقرؤه هنا أولًا شخص مسجّل الدخول على المنزل: ما هذا التلفاز وبلد عنوانه، ليؤكّد أنه تلفازه. يسأل المنزل السحابة عبر وكيل الترحيل لديه، ولا بد من تفعيل الوصول عن بُعد. ولا يستطيع تسجيل الدخول عبر سحابة مكتبة الموافقة على جهاز، فيُرفض هنا أيضًا."
+    },
+    "/paths/~1pairing~1cloud-code~1{code}/get/parameters/0/description": {
+      "en": "Eight characters, with or without the dash.",
+      "ar": "ثمانية أحرف، بالشرطة أو بدونها."
+    },
+    "/paths/~1pairing~1cloud-code~1{code}/get/responses/200/description": {
+      "en": "The code is open: what asked with it.",
+      "ar": "الرمز مفتوح: ما الذي طلبه."
+    },
+    "/paths/~1pairing~1cloud-code~1{code}/get/responses/200/content/application~1json/schema/properties/code/description": {
+      "en": "The code as the TV shows it (ABCD-2345).",
+      "ar": "الرمز كما يعرضه التلفاز (ABCD-2345)."
+    },
+    "/paths/~1pairing~1cloud-code~1{code}/get/responses/200/content/application~1json/schema/properties/platform/description": {
+      "en": "What the TV said it is (tizen, webos, roku and so on).",
+      "ar": "ما قاله التلفاز عن نفسه (tizen وwebos وroku وغيرها)."
+    },
+    "/paths/~1pairing~1cloud-code~1{code}/get/responses/200/content/application~1json/schema/properties/country/description": {
+      "en": "The country of the TV's public address, as two letters; empty when the cloud could not tell.",
+      "ar": "بلد العنوان العام للتلفاز بحرفين؛ فارغ إن لم تعرفه السحابة."
+    },
+    "/paths/~1pairing~1cloud-code~1{code}/get/responses/403/description": {
+      "en": "A sign-in through Maktaba Cloud.",
+      "ar": "تسجيل دخول عبر سحابة مكتبة."
+    },
+    "/paths/~1pairing~1cloud-code~1{code}/get/responses/404/description": {
+      "en": "The cloud holds no open code by that name: unknown, expired or already approved.",
+      "ar": "لا تحمل السحابة رمزًا مفتوحًا بهذا الاسم: مجهول أو منتهٍ أو تمّت الموافقة عليه."
+    },
+    "/paths/~1pairing~1cloud-code~1{code}/get/responses/409/description": {
+      "en": "This home is not registered with Maktaba Cloud (`code`: `cloud_not_linked`): approve the home's own code instead.",
+      "ar": "هذا المنزل غير مسجّل في سحابة مكتبة (`code`: `cloud_not_linked`): وافقوا على رمز المنزل نفسه بدلًا منه."
+    },
+    "/paths/~1pairing~1cloud-code~1{code}/get/responses/502/description": {
+      "en": "Maktaba Cloud is out of reach.",
+      "ar": "سحابة مكتبة بعيدة المنال."
+    },
+    "/paths/~1pairing~1cloud-approve/post/summary": {
+      "en": "Approve a TV's code from Maktaba Cloud",
+      "ar": "الموافقة على رمز تلفاز من سحابة مكتبة"
+    },
+    "/paths/~1pairing~1cloud-approve/post/description": {
+      "en": "Signs the TV showing a Maktaba Cloud code in as the caller, or, with `as_user`, as a restricted account the caller looks after (a guardian or an admin). The home makes one of its own device codes for that person, approves it at once and hands it to the cloud as the TV's single-use grant, with the home's connections; the TV redeems the grant with `POST /api/pairing/device/token`. The TV gets the approver's role, libraries and parental policy. No cloud account is needed: the home's registration with the cloud is enough. A sign-in through Maktaba Cloud cannot approve.",
+      "ar": "يسجّل دخول التلفاز الذي يعرض رمزًا من سحابة مكتبة باسم المتصل، أو باسم حساب مقيّد يرعاه المتصل عند تمرير `as_user` (وليّ أمر أو مشرف). يُنشئ المنزل رمز جهاز من رموزه لذلك الشخص، ويوافق عليه فورًا، ويسلّمه للسحابة منحةً لمرة واحدة للتلفاز مع طرق الوصول إلى المنزل؛ ويصرف التلفاز المنحة بـ`POST /api/pairing/device/token`. ينال التلفاز دور الموافِق ومكتباته وسياسته الأبوية. لا حاجة إلى حساب سحابي: يكفي تسجيل المنزل في السحابة. ولا يستطيع تسجيل الدخول عبر سحابة مكتبة الموافقة."
+    },
+    "/paths/~1pairing~1cloud-approve/post/requestBody/content/application~1json/schema/properties/code/description": {
+      "en": "The code the TV shows.",
+      "ar": "الرمز الذي يعرضه التلفاز."
+    },
+    "/paths/~1pairing~1cloud-approve/post/requestBody/content/application~1json/schema/properties/as_user/description": {
+      "en": "The restricted account to sign the TV in as; absent: the caller.",
+      "ar": "الحساب المقيّد الذي يُسجَّل دخول التلفاز باسمه؛ إن غاب: المتصل."
+    },
+    "/paths/~1pairing~1cloud-approve/post/responses/200/description": {
+      "en": "Approved; the TV signs in on its next poll of the cloud.",
+      "ar": "تمّت الموافقة؛ يسجّل التلفاز دخوله عند سؤاله التالي للسحابة."
+    },
+    "/paths/~1pairing~1cloud-approve/post/responses/200/content/application~1json/schema/properties/user_id/description": {
+      "en": "Whose sign-in the TV gets.",
+      "ar": "صاحب تسجيل الدخول الذي يناله التلفاز."
+    },
+    "/paths/~1pairing~1cloud-approve/post/responses/403/description": {
+      "en": "A sign-in through Maktaba Cloud, or a restricted account naming another account (`code`: `restricted`).",
+      "ar": "تسجيل دخول عبر سحابة مكتبة، أو حساب مقيّد يسمّي حسابًا آخر (`code`: `restricted`)."
+    },
+    "/paths/~1pairing~1cloud-approve/post/responses/404/description": {
+      "en": "The cloud holds no open code by that name, or `as_user` is not a restricted account the caller looks after.",
+      "ar": "لا تحمل السحابة رمزًا مفتوحًا بهذا الاسم، أو `as_user` ليس حسابًا مقيّدًا يرعاه المتصل."
+    },
+    "/paths/~1pairing~1cloud-approve/post/responses/409/description": {
+      "en": "Someone approved the code first, or this home is not registered with Maktaba Cloud (`code`: `cloud_not_linked`).",
+      "ar": "وافق أحد على الرمز أولًا، أو هذا المنزل غير مسجّل في سحابة مكتبة (`code`: `cloud_not_linked`)."
+    },
+    "/paths/~1pairing~1cloud-approve/post/responses/502/description": {
+      "en": "Maktaba Cloud is out of reach; nothing was approved.",
+      "ar": "سحابة مكتبة بعيدة المنال؛ لم تتمّ الموافقة على شيء."
+    },
+    "/paths/~1me~1app-sign-ins/get/summary": {
+      "en": "List the apps signed in by code",
+      "ar": "عرض التطبيقات المسجّل دخولها برمز"
+    },
+    "/paths/~1me~1app-sign-ins/get/description": {
+      "en": "The caller's own apps signed in by a code a phone or the web approved (TVs, phones, remotes), newest use first. A TV that signed in with a Maktaba Cloud code says so (`via`).",
+      "ar": "تطبيقات المتصل نفسه التي سجّلت دخولها برمز وافق عليه هاتف أو الويب (أجهزة تلفاز وهواتف وأجهزة تحكّم)، الأحدث استخدامًا أولًا. ويذكر التلفاز الذي سجّل دخوله برمز من سحابة مكتبة ذلك (`via`)."
+    },
+    "/paths/~1me~1app-sign-ins/get/responses/200/description": {
+      "en": "The caller's app sign-ins.",
+      "ar": "تسجيلات دخول تطبيقات المتصل."
+    },
+    "/paths/~1me~1app-sign-ins/get/responses/200/content/application~1json/schema/properties/items/items/properties/id/description": {
+      "en": "The sign-in (its refresh family).",
+      "ar": "تسجيل الدخول (عائلة رموز التحديث الخاصة به)."
+    },
+    "/paths/~1me~1app-sign-ins/get/responses/200/content/application~1json/schema/properties/items/items/properties/kind/description": {
+      "en": "What signed in: the app (tv, player, remote and so on).",
+      "ar": "ما الذي سجّل دخوله: التطبيق (tv وplayer وremote وغيرها)."
+    },
+    "/paths/~1me~1app-sign-ins/get/responses/200/content/application~1json/schema/properties/items/items/properties/label/description": {
+      "en": "What the device called itself, or its platform.",
+      "ar": "الاسم الذي أطلقه الجهاز على نفسه، أو منصته."
+    },
+    "/paths/~1me~1app-sign-ins/get/responses/200/content/application~1json/schema/properties/items/items/properties/via/description": {
+      "en": "Present when a TV signed in with a code from Maktaba Cloud.",
+      "ar": "يظهر حين يسجّل تلفاز دخوله برمز من سحابة مكتبة."
+    },
+    "/paths/~1me~1app-sign-ins/get/responses/200/content/application~1json/schema/properties/items/items/properties/current/description": {
+      "en": "The sign-in this request came with.",
+      "ar": "تسجيل الدخول الذي جاء به هذا الطلب."
+    },
+    "/paths/~1me~1app-sign-ins~1{id}/delete/summary": {
+      "en": "Sign an app out",
+      "ar": "تسجيل خروج تطبيق"
+    },
+    "/paths/~1me~1app-sign-ins~1{id}/delete/description": {
+      "en": "Ends one of the caller's app sign-ins: the app must sign in again. Another person's sign-in answers 404.",
+      "ar": "ينهي أحد تسجيلات دخول تطبيقات المتصل: على التطبيق أن يسجّل دخوله من جديد. وتسجيل دخول شخص آخر يُجاب عنه بـ404."
+    },
+    "/paths/~1me~1app-sign-ins~1{id}/delete/responses/204/description": {
+      "en": "Signed out.",
+      "ar": "تمّ تسجيل الخروج."
     }
   }
 }

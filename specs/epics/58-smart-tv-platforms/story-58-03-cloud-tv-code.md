@@ -37,12 +37,14 @@ TV                        Maktaba Cloud                    Phone (Player, signed
 
 - **The TV asks the cloud for a code.** It sends `POST /v1/tv/codes {platform, app_version}`
   with no sign-in. The answer is `{code, poll_secret, expires_in: 600, interval: 5}`. The code is
-  8 characters from the pairing alphabet of story 15.06 (no `I L 0 1`), shown as `ABCD-1234`. The
+  8 characters from the pairing alphabet of story 15.06 (Crockford's, with no `I L O U`) without
+  `0` and `1`, shown as `ABCD-1234`. The
   QR holds `https://maktaba.tv/tv?c=ABCD1234`.
 - **A person approves it on a device already signed in to the home.** There are two ways:
   - **The Player.** In the Android or Apple Player (and the web's `/pair`), Profile → **Approve a
     TV** (the existing `approve_tv` entry) takes either code shape. A home pairing code is
-    approved on the home as today. A cloud code goes to `POST /api/pairing/cloud-approve {code}`.
+    approved on the home as today. A cloud code is read first (`GET /api/pairing/cloud-code/{code}`: the TV's platform and
+    country) and then goes to `POST /api/pairing/cloud-approve {code}`.
     The home then creates a pairing code for the approver (`device_kind: tv`), approves it at
     once, and tells the cloud over its link (`cloudlink`): "code X is mine, here are my
     connections and grant G" (G is that pairing code's redeem secret). The approver needs no
@@ -64,8 +66,8 @@ TV                        Maktaba Cloud                    Phone (Player, signed
   `/v1/auth/*`, extended to `/v1/tv/*`.
 - G is the home's own single-use pairing secret, valid 10 minutes. The cloud stores it sealed
   (the cloud's existing secret box) and deletes it on the first poll that returns it.
-- The approver's Devices list (Profile → Devices) shows the new sign-in as "<platform> TV, via
-  Maktaba Cloud code", where it can be signed out.
+- The approver's list of app sign-ins (Profile, `GET /api/me/app-sign-ins`) shows the new
+  sign-in as "<platform> TV, via Maktaba Cloud code", where it can be signed out.
 - **Threat:** someone who learns a code before it is approved can only get a person to approve
   *their* TV. So the approve screen shows the TV's platform and its public IP's country (from the
   cloud) and asks "Is this your TV?" before approving.
@@ -84,6 +86,7 @@ own code are the way. Typing the home's address and a password stays as the last
 | `server_id` uuid null | the home that claimed it |
 | `payload_sealed` bytea null | connections, home id and name, G |
 | `created_at`, `expires_at`, `claimed_at`, `delivered_at` timestamptz | |
+| `last_poll_at` timestamptz null | the last poll, for `slow_down` |
 
 Rows are swept an hour after expiry.
 
