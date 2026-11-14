@@ -33,7 +33,13 @@ import com.hamzalabs.maktaba.tv.ui.screens.library.PlaybackPrefs
 
 /** Who is signed in where; switch home, sign out; the app's language (Android 13 and later). */
 @Composable
-fun AccountScreen(app: MaktabaTVApp, user: User, onPlaylists: () -> Unit = {}) {
+fun AccountScreen(
+    app: MaktabaTVApp,
+    user: User,
+    onPlaylists: () -> Unit = {},
+    /** the sign-in's parental limit (Epic 57): its managed lines (story 58.14) */
+    parental: com.hamzalabs.maktaba.core.parental.ParentalState? = null,
+) {
     val home by app.session.current.collectAsState()
     val context = LocalContext.current
     Column(Modifier.fillMaxSize().padding(horizontal = Gutter, vertical = 32.dp)) {
@@ -41,6 +47,7 @@ fun AccountScreen(app: MaktabaTVApp, user: User, onPlaylists: () -> Unit = {}) {
             SectionTitle(stringResource(R.string.tab_account))
             Text(stringResource(R.string.signed_in_as, user.username), style = MaterialTheme.typography.titleMedium, color = MaktabaPalette.Text, modifier = Modifier.padding(top = 16.dp))
             home?.let { Text(stringResource(R.string.home_label, it.name), style = MaterialTheme.typography.bodyLarge, color = MaktabaPalette.Muted) }
+            parental?.let { TvManaged(it, Modifier.padding(top = 16.dp)) }
             Row(Modifier.padding(top = 24.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 MaktabaButton(onClick = { app.session.switchHome() }) { Text(stringResource(R.string.switch_home)) }
                 MaktabaButton(onClick = { app.session.signOut() }) { Text(stringResource(R.string.sign_out)) }

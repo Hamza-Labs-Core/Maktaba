@@ -8,6 +8,7 @@ import { SUBTITLE_SCALES, usePrefs } from "../prefs";
 import { Screen } from "../ui";
 import { useLauncher } from "../../tv/launcher";
 import { tellLauncher } from "../input/bridge";
+import { BigManaged } from "./Blocked";
 
 /** onExit null: no Leave big screen (the TV build, story 58.08). */
 export function BigSettings({ onExit }: { onExit: (() => void) | null }) {
@@ -31,6 +32,8 @@ export function BigSettings({ onExit }: { onExit: (() => void) | null }) {
 
   return (
     <Screen title={t("big.tab.settings")} testId="big-settings">
+      {/* Epic 58 story 58.14: a parent manages this account, and its limit */}
+      <BigManaged />
       <div className="bs-settings" data-bs-group="settings">
         <Setting label={t("settings.language")}>
           <button

@@ -9,12 +9,14 @@
   <script type="text/brightscript" uri="pkg:/source/store.brs" />
   <script type="text/brightscript" uri="pkg:/source/i18n.brs" />
   <script type="text/brightscript" uri="pkg:/source/layout.brs" />
+  <script type="text/brightscript" uri="pkg:/source/parental.brs" />
   <script type="text/brightscript" uri="pkg:/source/visualtext.brs" />
   <script type="text/brightscript" uri="pkg:/source/visualtext_tables.brs" />
   <children>
     <Label id="title" translation="[120,90]" width="1680" />
     <Label id="who" translation="[120,190]" width="1680" />
     <Label id="home" translation="[120,250]" width="1680" />
+    <Label id="managed" translation="[120,310]" width="1680" height="160" wrap="true" visible="false" />
     <Label id="plain" translation="[120,310]" width="1680" height="100" wrap="true" />
     <LabelList id="list" translation="[120,430]" itemSize="[900,72]" itemSpacing="[0,12]" />
     <Label id="version" translation="[120,960]" width="1680" />

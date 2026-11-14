@@ -18,6 +18,7 @@ import { BrowserRouter, MemoryRouter, Navigate, Route, Routes } from "react-rout
 import { I18nProvider, useI18n } from "../lib/i18n";
 import { AuthProvider, useAuth } from "../lib/auth";
 import { CapabilitiesProvider } from "../lib/capabilities";
+import { ParentalProvider } from "../lib/parental";
 import { setApiBase, setBearerAuth } from "../lib/api";
 import { setClientHeaderValue } from "../lib/clientHeader";
 import { inLauncher, launcherHello, postToLauncher, startBridge } from "../bigscreen/input/bridge";
@@ -94,7 +95,10 @@ export function TvGate({ session = null }: { session?: TvSession | null }) {
     );
   return (
     <Suspense fallback={<div className="tv-boot" aria-busy="true" />}>
-      <BigScreen mode="tv" />
+      {/* the sign-in's parental limit (Epic 57), read as the web app reads it (story 58.14) */}
+      <ParentalProvider>
+        <BigScreen mode="tv" />
+      </ParentalProvider>
     </Suspense>
   );
 }

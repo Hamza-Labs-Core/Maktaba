@@ -299,5 +299,69 @@
         <source>roku.player.off</source>
         <translation>Off</translation>
     </message>
+    <message>
+        <source>parental.blocked.title</source>
+        <translation>This isn't available</translation>
+    </message>
+    <message>
+        <source>parental.blocked.accountAll</source>
+        <translation>Your account is limited to All ages.</translation>
+    </message>
+    <message>
+        <source>parental.blocked.accountNone</source>
+        <translation>Your account is limited to what a parent allowed.</translation>
+    </message>
+    <message>
+        <source>parental.blocked.ask</source>
+        <translation>Ask a parent</translation>
+    </message>
+    <message>
+        <source>parental.ask.again</source>
+        <translation>Ask again</translation>
+    </message>
+    <message>
+        <source>parental.ask.sent</source>
+        <translation>Request sent. Waiting for a parent.</translation>
+    </message>
+    <message>
+        <source>parental.ask.denied</source>
+        <translation>A parent said no.</translation>
+    </message>
+    <message>
+        <source>parental.ask.approved</source>
+        <translation>A parent said yes.</translation>
+    </message>
+    <message>
+        <source>parental.ask.tooMany</source>
+        <translation>You have too many requests waiting.</translation>
+    </message>
+    <message>
+        <source>parental.ask.failed</source>
+        <translation>The request didn't go out. Try again.</translation>
+    </message>
+    <message>
+        <source>parental.time.check</source>
+        <translation>Check again</translation>
+    </message>
+    <message>
+        <source>parental.profile.managed</source>
+        <translation>A parent manages this account.</translation>
+    </message>
+    <message>
+        <source>parental.profile.limitAll</source>
+        <translation>Content limit: All ages</translation>
+    </message>
+    <message>
+        <source>parental.profile.limitNone</source>
+        <translation>Content limit: what a parent allowed</translation>
+    </message>
+    <message>
+        <source>tv.parental.askOnPhone</source>
+        <translation>A parent can answer from Maktaba on their phone.</translation>
+    </message>
+    <message>
+        <source>parental.blocked.deviceAll</source>
+        <translation>This device is limited to All ages.</translation>
+    </message>
 </context>
 </TS>

@@ -20,7 +20,7 @@ import { after, before, test } from "node:test";
 
 import { build } from "../tools/build.mjs";
 import { LOGS, ROKU } from "./brs.mjs";
-import { HIDDEN, REFUSED, SERIES, startCloud, startHome, videos } from "./mockhome.mjs";
+import { HIDDEN, LATE, REFUSED, SERIES, startCloud, startHome, videos } from "./mockhome.mjs";
 import { Channel, SCREENS } from "./sg.mjs";
 
 const require = createRequire(import.meta.url);
@@ -376,6 +376,67 @@ test("T03 (58.13): a stream session the home refuses shows the error with its re
     await c.waitFor(/\[nav\] back to HomeScreen/);
   } finally {
     await c.stop();
+  }
+});
+
+test("T04 (58.14): a restricted child: the blocked page asks a parent and a yes opens the video; Account; a deep link", { timeout: 180000 }, async () => {
+  // the main test left the channel in Arabic: the blocked page is drawn in Arabic first
+  home.state.restricted = true;
+  home.state.requests = [];
+  const c = await Channel.start("parental", zip, data);
+  try {
+    await c.waitFor(/\[parental\] limited=true/, 30000);
+    await c.waitFor(/\[screen\] HomeScreen ready/, 30000);
+    await c.waitFor(/\[home\] for you/, 20000);
+    // a deep link to the hidden video: the not-available line, nothing more
+    await c.input({ contentId: LATE, mediaType: "movie" });
+    await c.waitFor(/\[link\] not_available/);
+    await c.waitFor(/\[home\] notice roku\.notAvailable/);
+    assert.ok(!requests.some((l) => l.startsWith("home ask")), "a deep link asks nothing");
+    await c.waitFor(/\[home\] for you/, 20000);
+    // Continue watching's first card is the hidden video: * → Open shows the blocked page
+    // (Up and Down: the reset Home's cards take the remote's focus, on its first card)
+    await c.key("Up");
+    await c.waitFor(/\[focus\] home menu/);
+    await c.key("Down");
+    await c.waitFor(/\[focus\] home row\s+0 item/);
+    await c.key("Info");
+    await c.waitFor(/\[actions\] play,over,open,cancel|\[actions\] [a-z,]*open/);
+    await c.keys(["Down", "Down"]);
+    await c.key("Select");
+    await c.waitFor(/\[screen\] BlockedScreen ready kind=video restricted=true/, 20000);
+    await c.waitFor(/\[focus\] blocked none/);
+    await compare(c, "blocked-ar");
+    // OK asks, with the id the screen had
+    await c.key("Select");
+    await c.waitFor(/\[parental\] asked/);
+    assert.ok(requests.some((l) => l === `home ask kind=video id=${LATE}`), "the request names the video");
+    await c.waitFor(/\[focus\] blocked pending/);
+    await compare(c, "blocked-asked-ar");
+    // the parent approves from their phone: the next read opens the video, no restart
+    home.state.requests[0].status = "approved";
+    await c.waitFor(/\[parental\] approved video/, 30000);
+    await c.waitFor(/\[screen\] VideoScreen ready/, 20000);
+    // Back goes to Home: the blocked page is gone from the stack
+    await c.key("Back");
+    await c.waitFor(/\[nav\] back to HomeScreen/);
+
+    // Account: a parent manages this account, its limit
+    await c.key("Up");
+    await c.waitFor(/\[focus\] home menu/);
+    await c.keys(["Left", "Left", "Left"]);
+    await c.key("Select");
+    await c.waitFor(/\[screen\] AccountScreen ready lang=ar managed=true/);
+    await compare(c, "account-managed-ar");
+    // English: the same lines, left to right
+    await c.keys(["Down", "Down"]);
+    await c.key("Select");
+    await c.waitFor(/\[account\] en/);
+    await c.waitFor(/\[screen\] AccountScreen ready lang=en managed=true/);
+    await compare(c, "account-managed-en");
+  } finally {
+    await c.stop();
+    home.state.restricted = false;
   }
 });
 
