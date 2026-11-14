@@ -15,7 +15,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { I18nProvider } from "../lib/i18n";
-import { TestAuth, memberUser } from "../test/pageHarness";
+import { TestAuth, adminUser, memberUser } from "../test/pageHarness";
 import en from "../i18n/en.json";
 import ar from "../i18n/ar.json";
 
@@ -229,10 +229,10 @@ function Where() {
   return null;
 }
 
-function renderBig(path: string, history: string[] = []) {
+function renderBig(path: string, history: string[] = [], user = memberUser) {
   return render(
     <I18nProvider>
-      <TestAuth user={memberUser}>
+      <TestAuth user={user}>
         <MemoryRouter initialEntries={[...history, path]}>
           <Where />
           <Routes>
@@ -492,6 +492,24 @@ describe("the remote on a library (Epic 56 §6.5)", () => {
     ).toBeInTheDocument();
     fireEvent.click(within(tab).getByText("Sheikh A"));
     await waitFor(() => expect(where).toBe("/big/library/L1?tab=library&speaker=Sheikh+A"));
+  });
+});
+
+describe("kept answers", () => {
+  it("are another sign-in's never: the next user reads the library again", async () => {
+    const first = renderBig("/big/library/L1");
+    await screen.findByTestId("big-library");
+    const reads = () => get.mock.calls.filter(([u]) => u === "/api/libraries/L1/hub").length;
+    expect(reads()).toBe(1);
+    first.unmount();
+    // the same user coming back within a minute: kept
+    const again = renderBig("/big/library/L1");
+    await screen.findByTestId("big-library");
+    expect(reads()).toBe(1);
+    again.unmount();
+    renderBig("/big/library/L1", [], adminUser);
+    await screen.findByTestId("big-library");
+    await waitFor(() => expect(reads()).toBe(2));
   });
 });
 

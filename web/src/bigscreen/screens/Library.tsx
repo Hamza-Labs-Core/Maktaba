@@ -28,6 +28,7 @@ import { fetchHub, type LibraryHub, type VideoCard } from "../../lib/browse";
 import { fetchFacets, fetchPlaylists, type Facets, type PlaylistSummary } from "../../lib/me";
 import { fetchLibraryCollections, type LibraryCollection } from "../../lib/libraryTabs";
 import { useFeature } from "../../lib/capabilities";
+import { useAuth } from "../../lib/auth";
 import { errorText } from "../../lib/errorText";
 import { seriesPictureUrl } from "../../pages/Library/SeriesBrowser";
 import { useFocusApi } from "../focus/FocusProvider";
@@ -90,10 +91,23 @@ interface TabMemory {
 const tabMemory = new Map<string, TabMemory>();
 const answers = new Map<string, { at: number; value: unknown }>();
 
+// whose answers they are: another sign-in (a household member, a child's
+// profile) never sees the last one's watch state or playlists
+let owner: string | null = null;
+
 /** Test seam: forgets every tab's focus, scroll and kept answers. */
 export function resetLibraryMemory() {
   tabMemory.clear();
   answers.clear();
+  owner = null;
+}
+
+/** Keeps the answers only for the user they were read for. */
+function keepFor(userId: string | null) {
+  if (owner === userId) return;
+  tabMemory.clear();
+  answers.clear();
+  owner = userId;
 }
 
 async function kept<T>(key: string, load: () => Promise<T>): Promise<T> {
@@ -117,6 +131,9 @@ function scroller(): HTMLElement | null {
 
 export function BigLibrary() {
   const { id = "" } = useParams();
+  const { user } = useAuth();
+  // before any kept answer is read below
+  keepFor(user?.id ?? null);
   const [params] = useSearchParams();
   const view = useMemo(() => readView(params), [params]);
   const location = useLocation();
