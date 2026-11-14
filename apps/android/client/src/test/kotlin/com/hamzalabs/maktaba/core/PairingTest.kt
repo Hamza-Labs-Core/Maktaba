@@ -25,7 +25,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Before
 import org.junit.Test
-import java.util.Collections
+import java.util.concurrent.CopyOnWriteArrayList
 
 class PairingTest {
     // ---------- the code ----------
@@ -198,7 +198,14 @@ class PairingTest {
     // ---------- the approver and the session, against a home on MockWebServer ----------
 
     private lateinit var server: MockWebServer
-    private val seen: MutableList<RecordedRequest> = Collections.synchronizedList(mutableListOf())
+
+    // The server records and routes on its own thread while the test reads and swaps on this one.
+    // A copy-on-write list is safe to iterate (first, last, filter, a message) even while a late
+    // request is being added, so no read needs a lock; the route is volatile so a swap mid-test
+    // is seen by the server's thread.
+    private val seen: MutableList<RecordedRequest> = CopyOnWriteArrayList()
+
+    @Volatile
     private var route: (RecordedRequest) -> MockResponse = { MockResponse.Builder().code(404).build() }
 
     private fun json(code: Int, body: String) =
@@ -292,9 +299,8 @@ class PairingTest {
         val phase = s.phase.value as AppSession.Phase.SignedIn
         assertEquals("amina", phase.user.username)
         assertEquals("a1", tokens.getValue(base).access)
-        // The server records on its own thread, and the session may still be talking to it:
-        // iterate a copy taken under the list's lock, never the live synchronized list.
-        val log = synchronized(seen) { seen.toList() }
+        // The session may still be talking to the server: read one fixed copy of the log.
+        val log = seen.toList()
         assertNull("asking for a code carries no token", log.first { it.url.encodedPath.endsWith("/api/pairing/device") }.headers["Authorization"])
         assertEquals("native", log.first().headers["X-Maktaba-Client"])
         assertEquals("Bearer a1", log.first { it.url.encodedPath.endsWith("/api/auth/me") }.headers["Authorization"])

@@ -117,12 +117,12 @@ export const APPS = [
                   t("[Maktaba TV](/apps/tv/)", "[تطبيق التلفاز](/apps/tv/)"),
                   t("watching across the room", "المشاهدة من أنحاء الغرفة"),
                   t(
-                    "Apple TV, Android TV, Google TV, Fire TV",
-                    "آبل تي في، أندرويد تي في، جوجل تي في، فاير تي في"
+                    "Apple TV, Android TV, Google TV, Fire TV, LG TVs (webOS)",
+                    "آبل تي في، أندرويد تي في، جوجل تي في، فاير تي في، تلفزيونات LG ‏(webOS)"
                   ),
                   t(
-                    "TestFlight on the Apple TV; Google Play internal testing, or the signed `.apk` when a release carries one; Amazon's Live App Testing on Fire TV",
-                    "TestFlight على آبل تي في؛ الاختبار الداخلي في Google Play، أو ملف `.apk` الموقَّع حين يتضمنه الإصدار؛ اختبار التطبيق المباشر من أمازون على فاير تي في"
+                    "TestFlight on the Apple TV; Google Play internal testing, or the signed `.apk` when a release carries one; Amazon's Live App Testing on Fire TV; on an LG TV, the `.ipk` a release carries, until the LG Content Store lists it",
+                    "TestFlight على آبل تي في؛ الاختبار الداخلي في Google Play، أو ملف `.apk` الموقَّع حين يتضمنه الإصدار؛ اختبار التطبيق المباشر من أمازون على فاير تي في؛ وعلى تلفاز LG ملف `.ipk` الذي يتضمنه الإصدار، إلى أن يُدرَج في متجر LG Content Store"
                   ),
                 ],
                 [
@@ -896,8 +896,59 @@ export const APPS = [
                     `اختبار التطبيق المباشر من أمازون، من متجر التطبيقات على فاير تي في، أو تثبيت \`maktaba-tv-<version>-amazon.apk\` يدويًا حين يتضمنه [أحدث إصدار](${RELEASES}). لا يحمل إصدار فاير تي في أي شيفرة من Google Play، ويعرّف نفسه للجهاز الرئيسي باسم \`firetv\`، ويخبره بالصيغ والـHDR والصوت المحيطي التي يشغّلها الجهاز وشاشته`
                   ),
                 ],
+                [
+                  t(
+                    "LG TVs (webOS 5, from 2020, or later)",
+                    "تلفزيونات LG ‏(webOS 5، من 2020، أو أحدث)"
+                  ),
+                  t(
+                    `the LG Content Store once it lists Maktaba; until then \`maktaba-webos-<version>.ipk\` from a [release](${RELEASES}) that carries one, installed on a TV in Developer Mode with \`ares-install\``,
+                    `متجر LG Content Store حين يُدرج مكتبة؛ وحتى ذلك الحين ملف \`maktaba-webos-<version>.ipk\` من [إصدار](${RELEASES}) يتضمنه، يُثبَّت على تلفاز في وضع المطوّر بالأمر \`ares-install\``
+                  ),
+                ],
               ],
             },
+          },
+        ],
+      },
+      {
+        h: t("On an LG TV", "على تلفاز LG"),
+        blocks: [
+          {
+            p: t(
+              "The LG app is a small launcher that opens your home's own TV screens, the same ones a browser shows at `/tv/`, so they update with the home and the app itself changes rarely.",
+              "تطبيق LG مشغّل صغير يفتح شاشات التلفاز الخاصة بجهازك الرئيسي، وهي نفسها التي يعرضها المتصفح في `/tv/`، فتتحدّث مع الجهاز الرئيسي ولا يتغيّر التطبيق نفسه إلا نادرًا."
+            ),
+          },
+          {
+            ul: [
+              t(
+                "**Sign in with a code**: the TV shows a code and a QR code; approve it in Maktaba on your phone (**Profile → Approve a TV**) or computer. **Find on this network** looks for homes on the TV's network and shows that home's own code. The last home used opens at once next time.",
+                "**تسجيل الدخول برمز**: يعرض التلفاز رمزًا ورمز QR؛ وافق عليه في مكتبة على هاتفك (**الملف الشخصي ← الموافقة على تلفاز**) أو حاسوبك. ويبحث خيار **ابحث في هذه الشبكة** عن الأجهزة الرئيسية في شبكة التلفاز ويعرض رمز الجهاز الذي اخترته. وفي المرة التالية يُفتح آخر جهاز رئيسي استُخدم مباشرة."
+              ),
+              t(
+                "**Playback on the TV's own player**: 4K, HDR10 and HLG, and Dolby audio passed to a soundbar, where the TV supports them. The app tells the home what this TV decodes, so the home plays a file as it is when it can and converts it only when it must. If the TV cannot play a stream, the app asks the home once more for a converted one.",
+                "**التشغيل بمشغّل التلفاز نفسه**: دقة 4K وHDR10 وHLG، وتمرير صوت Dolby إلى مكبّر الصوت، حيث يدعمها التلفاز. ويخبر التطبيق الجهاز الرئيسي بما يستطيع هذا التلفاز تشغيله، فيشغّل الجهاز الملف كما هو حين يمكنه، ولا يحوّله إلا عند الحاجة. وإن تعذّر على التلفاز تشغيل البث، يطلب التطبيق من الجهاز الرئيسي مرة أخرى نسخة محوّلة."
+              ),
+              t(
+                "**Subtitles drawn by Maktaba**: Arabic joined and right to left, above the controls, at the size chosen in the player. The audio tracks of the file are listed in **Audio**.",
+                "**ترجمات ترسمها مكتبة**: العربية متصلة الحروف ومن اليمين إلى اليسار، فوق أزرار التحكم، بالحجم المختار في المشغّل. وتُعرض مسارات صوت الملف في **الصوت**."
+              ),
+              t(
+                "**The Magic Remote**: the pointer focuses what it hovers, the arrows and OK move as on any remote, and the media keys play, pause and seek. Back goes up a screen; on Home it asks whether to leave, and **Leave** returns to the TV's launcher.",
+                "**جهاز Magic Remote**: يحدّد المؤشر ما يمر فوقه، وتعمل الأسهم وزر OK كما في أي جهاز تحكم، وتشغّل مفاتيح الوسائط وتوقف وتتنقل. ويرجع زر الرجوع شاشة واحدة؛ وفي الرئيسية يسأل هل تريد المغادرة، ويعيدك **مغادرة** إلى مشغّل تطبيقات التلفاز."
+              ),
+              t(
+                "An LG TV older than webOS 5 (2019 and before) is told it is too old, and that it can still be cast to from Maktaba on a phone if it supports Google Cast or AirPlay.",
+                "ويُبلَّغ تلفاز LG الأقدم من webOS 5 (من 2019 وما قبلها) بأنه أقدم من أن يعمل عليه التطبيق، وبأنه ما زال يمكن البث إليه من مكتبة على الهاتف إن كان يدعم Google Cast أو AirPlay."
+              ),
+            ],
+          },
+          {
+            p: t(
+              "Developers: [The Samsung and LG launcher](/contributing/tv-launcher/) explains the bridge between the launcher and the home's TV screens, and the LG player, package and store steps.",
+              "للمطوّرين: تشرح صفحة [مشغّل سامسونج وLG](/contributing/tv-launcher/) الجسر بين المشغّل وشاشات التلفاز في الجهاز الرئيسي، ومشغّل LG وحزمته وخطوات المتجر."
+            ),
           },
         ],
       },
@@ -959,12 +1010,18 @@ export const APPS = [
                 "A library on a Fire TV: its tabs and Recommended",
                 "مكتبة على فاير تي في: تبويباتها والمقترحات"
               ),
+              shot(
+                "lgtv-watch",
+                "wide",
+                "Playing on an LG TV: the TV's own player under the controls, and Arabic subtitles drawn by Maktaba",
+                "التشغيل على تلفاز LG: مشغّل التلفاز نفسه تحت أزرار التحكم، وترجمة عربية ترسمها مكتبة"
+              ),
             ],
           },
           {
             p: t(
-              "The first four screenshots are from the Apple TV app, the sign-in from the Android TV app, the last two from the Fire TV build. The Android TV app, and its Fire TV build, have the same sections as the Apple TV app, laid out for the TV's remote.",
-              "أول أربع لقطات من تطبيق آبل تي في، ولقطة تسجيل الدخول من تطبيق أندرويد تي في، وآخر لقطتين من إصدار فاير تي في. ولتطبيق أندرويد تي في وإصداره لفاير تي في أقسام تطبيق آبل تي في نفسها، مرتبةً لجهاز تحكم التلفاز."
+              "The first four screenshots are from the Apple TV app, the sign-in from the Android TV app, the next two from the Fire TV build, and the last from the LG app, taken in its browser test with a pretend LG TV. The Android TV app, and its Fire TV build, have the same sections as the Apple TV app, laid out for the TV's remote.",
+              "أول أربع لقطات من تطبيق آبل تي في، ولقطة تسجيل الدخول من تطبيق أندرويد تي في، واللقطتان التاليتان من إصدار فاير تي في، والأخيرة من تطبيق LG، التُقطت في اختباره في المتصفح مع تلفاز LG وهمي. ولتطبيق أندرويد تي في وإصداره لفاير تي في أقسام تطبيق آبل تي في نفسها، مرتبةً لجهاز تحكم التلفاز."
             ),
           },
           { p: SHOTS_NOTE },
