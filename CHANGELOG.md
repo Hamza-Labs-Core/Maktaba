@@ -263,6 +263,15 @@ build fails when the two differ.
 
 ### Fixed
 
+- **Processing goes on by itself after the database restarts.** When the home's database was
+  restarted (or stopped answering for a while) under a running worker, the worker could stay up
+  for hours doing nothing: no job started, nothing was logged, and its health check still said
+  "ok", so nothing restarted it and every queue waited for someone to restart it by hand. A
+  worker now picks its work up again as soon as the database answers, and hears about new jobs
+  at once again. Its health check says "ok" only while it can start jobs: it turns not-ok when
+  the worker has not looked at the queue, or the database has not answered it, for five minutes,
+  and a worker that cannot get back to work ends so that it is started again.
+
 - **Transcription gives its memory back when idle.** On a Mac, each transcription runner kept
   Whisper and the second listen's model loaded (5 to 10 GB each, with two runners on a large
   Mac) for as long as it ran. After ten minutes without transcription work it now lets both go,
