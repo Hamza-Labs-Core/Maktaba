@@ -3,7 +3,7 @@
   "generated_for": "Maktaba",
   "totals": {
     "epics": 60,
-    "stories": 733,
+    "stories": 742,
     "plans": 372,
     "diagrams": 14,
     "mockups": 63
@@ -6972,6 +6972,87 @@
       "slug": "fallback-counts",
       "title": "Counting the in-process fallbacks",
       "story_file": "specs/epics/54-plugins/story-54-43-fallback-counts.md",
+      "plan_files": []
+    },
+    {
+      "id": "54.44",
+      "epic": 54,
+      "num": "44",
+      "slug": "one-plugins-page",
+      "title": "One Plugins page for every plugin",
+      "story_file": "specs/epics/54-plugins/story-54-44-one-plugins-page.md",
+      "plan_files": []
+    },
+    {
+      "id": "54.45",
+      "epic": 54,
+      "num": "45",
+      "slug": "maktaba-store-packages",
+      "title": "Maktaba's plugins as store packages",
+      "story_file": "specs/epics/54-plugins/story-54-45-maktaba-store-packages.md",
+      "plan_files": []
+    },
+    {
+      "id": "54.46",
+      "epic": 54,
+      "num": "46",
+      "slug": "maktaba-plugin-lifecycle",
+      "title": "Install and remove a Maktaba plugin",
+      "story_file": "specs/epics/54-plugins/story-54-46-maktaba-plugin-lifecycle.md",
+      "plan_files": []
+    },
+    {
+      "id": "54.47",
+      "epic": 54,
+      "num": "47",
+      "slug": "maktaba-plugin-updates",
+      "title": "Updates of Maktaba plugins through the store",
+      "story_file": "specs/epics/54-plugins/story-54-47-maktaba-plugin-updates.md",
+      "plan_files": []
+    },
+    {
+      "id": "54.48",
+      "epic": 54,
+      "num": "48",
+      "slug": "preinstalled-and-migration",
+      "title": "What is preinstalled, licence gates, and moving existing homes",
+      "story_file": "specs/epics/54-plugins/story-54-48-preinstalled-and-migration.md",
+      "plan_files": []
+    },
+    {
+      "id": "54.49",
+      "epic": 54,
+      "num": "49",
+      "slug": "offline-homes",
+      "title": "Maktaba plugins on homes with no internet",
+      "story_file": "specs/epics/54-plugins/story-54-49-offline-homes.md",
+      "plan_files": []
+    },
+    {
+      "id": "54.50",
+      "epic": 54,
+      "num": "50",
+      "slug": "release-variants",
+      "title": "Two variants of every server release: Full and Core",
+      "story_file": "specs/epics/54-plugins/story-54-50-release-variants.md",
+      "plan_files": []
+    },
+    {
+      "id": "54.51",
+      "epic": 54,
+      "num": "51",
+      "slug": "variant-updates",
+      "title": "Updates within a variant, moving between variants, and what CI pays",
+      "story_file": "specs/epics/54-plugins/story-54-51-variant-updates.md",
+      "plan_files": []
+    },
+    {
+      "id": "54.52",
+      "epic": 54,
+      "num": "52",
+      "slug": "process-cpu",
+      "title": "CPU of each process",
+      "story_file": "specs/epics/54-plugins/story-54-52-process-cpu.md",
       "plan_files": []
     },
     {

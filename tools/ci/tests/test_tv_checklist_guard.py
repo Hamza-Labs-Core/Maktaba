@@ -91,7 +91,8 @@ def test_a_version_that_is_not_x_y_z_is_refused(tmp_path: Path) -> None:
 
 def test_every_platform_has_its_checklist_page_with_a_results_section() -> None:
     stores = ROOT / "docs" / "stores"
-    pages = {p.stem for p in stores.glob("*.md")} - {"README"}
+    # review-home.md is the store reviewers' home (story 58.04), not a platform's checklist
+    pages = {p.stem for p in stores.glob("*.md")} - {"README", "review-home"}
     assert pages == set(guard.PLATFORMS)
     for key in guard.PLATFORMS:
         text = (stores / f"{key}.md").read_text(encoding="utf-8")

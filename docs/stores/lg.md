@@ -3,6 +3,15 @@
 The LG launcher, an `.ipk` hosting the home's `/tv/` UI (story 58.11). Story 58.04 adds the
 listing, the UX scenario document and the self-checklist here.
 
+## Submission notes
+
+The store's reviewers sign in to the project's review home, review.maktaba.tv (story 58.04).
+The notes, what reviewers get and how a submission round goes are in
+[review-home.md](review-home.md): its text goes in LG Seller Lounge's notes for the QA stage, beside the UX scenario document. The password is never written
+here: the notes name the release secret `REVIEW_HOME_VIEWER_PASSWORD` (and, for the parental
+checks, `REVIEW_HOME_CHILD_PASSWORD`), and the release session fills each in when it submits.
+After the round, the release checklist rotates both ([review-home.md](review-home.md#a-submission-round)).
+
 ## Real-device checklist
 
 Run before each launcher release candidate is submitted in LG's Seller Lounge (58.11 T05). The

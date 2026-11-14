@@ -275,6 +275,12 @@ func TestRules(t *testing.T) {
 	if _, err := e.store.AddRule(ctx, uAdmin, uViewer, parental.RuleInput{Effect: parental.EffectBlock, SubjectKind: parental.SubjectPlugin, SubjectID: "tv.maktaba.x"}); !errors.Is(err, parental.ErrNotRestricted) {
 		t.Fatalf("rule on an unrestricted user: %v, want ErrNotRestricted", err)
 	}
+	// story 54.44: a plugin Maktaba publishes that came with the release is not an installed
+	// plugin, so it is no rule subject: it is not there to pick (GET /api/plugins lists the
+	// installed ones only) and reads as gone, where a rule on it would do nothing
+	if sub, err := e.store.Subject(ctx, parental.SubjectPlugin, "tv.maktaba.subtitles"); err != nil || !sub.Removed {
+		t.Fatalf("a release plugin as a rule subject = %+v, %v; want removed", sub, err)
+	}
 	rules, err := e.store.Rules(ctx, uChild)
 	if err != nil || len(rules) != 2 {
 		t.Fatalf("rules = %+v, %v", rules, err)

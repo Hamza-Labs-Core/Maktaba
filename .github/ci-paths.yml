@@ -56,6 +56,10 @@ _go: &go
   - 'web/src/help/content/**'
   # the API level check reads docs/api/levels.md (Epic 58 story 58.01)
   - 'docs/api/levels.md'
+  # the review home's manifest and plan (Epic 58 story 58.04): api/internal/reviewhome and
+  # cloud/internal/billing's tests read them
+  - 'deploy/review-home/content/manifest.json'
+  - 'deploy/review-home/review-home.env.example'
 
 # the pipeline, and what its tests read outside it
 _pipeline: &pipeline
