@@ -84,7 +84,12 @@ A typed address (`Enter the home's address`) is the last option, under More ways
 - The approval names the home, its connections (story 50.13's order) and the grant. The launcher
   tries the connections in that order with `GET /api/discovery/home`, leaving out a raw address
   pinned to a certificate name (`local_ip` with `tls_name`: a web runtime cannot check a
-  certificate against another name), and takes the first that answers as that home. The compat
+  certificate against another name), and takes the first that answers as that home. The cloud
+  names the home by its own server id, which the home's discovery answer does not give (it
+  gives the home's instance id), so the check is by address: a name the cloud gives the home
+  (its relay, its direct name) is taken as it is; a LAN address only when the home answering
+  there lists one of those names among its own addresses. Another home on the same private
+  address (a TV at a relative's house) is passed over and never sent the grant. The compat
   check runs as for any home, the home is saved by that address, and its `/tv/` is loaded with
   the grant waiting for it (the bridge's `signIn`). When none answers, Cannot reach <home>
   offers Try again (the same connections) and Back (a new code).

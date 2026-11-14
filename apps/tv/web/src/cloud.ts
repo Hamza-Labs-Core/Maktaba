@@ -7,7 +7,7 @@
 // it: in the Player (Profile → Approve a TV) or on maktaba.tv/tv. The answer names the home,
 // its connections (story 50.13's order: LAN first, the relay last) and a grant, the home's
 // own single-use pairing secret. The launcher reaches the home by the first connection that
-// answers as that home and hands the grant to the home's /tv/ over the bridge
+// answers as that home (isApprovedHome) and hands the grant to the home's /tv/ over the bridge
 // (`maktaba:signIn`), which redeems it in the home's origin (POST /api/pairing/device/token):
 // the launcher never holds a token. A cloud code's TV is restricted on the home (never an
 // admin, whoever approved it).
@@ -16,14 +16,16 @@
 // to nothing else (cloud/internal/middleware/tvcors.go). The poll secret and the grant stay
 // in memory: never stored, never in a URL, never in the log (log.ts redacts both fields).
 
-import type { FetchLike } from "./discovery";
+import type { FetchLike, HomeAnswer } from "./discovery";
 import { log } from "./log";
 
 declare const __CLOUD_BASE__: string | undefined;
 
 /** Maktaba Cloud's API (the build can point a test build elsewhere). */
 export const CLOUD_BASE: string =
-  typeof __CLOUD_BASE__ === "string" && __CLOUD_BASE__ ? __CLOUD_BASE__ : "https://api.maktaba.tv";
+  typeof __CLOUD_BASE__ === "string" && __CLOUD_BASE__
+    ? __CLOUD_BASE__
+    : "https://api.maktaba.tv";
 
 /** How long a cloud call gets before it counts as no answer. */
 export const CLOUD_TIMEOUT_MS = 10000;
@@ -70,15 +72,19 @@ async function post(
   fetchFn: FetchLike,
   path: string,
   body: unknown,
-  timeoutMs: number
+  timeoutMs: number,
 ): Promise<{ status: number; data: unknown } | null> {
-  const ctl = typeof AbortController !== "undefined" ? new AbortController() : null;
+  const ctl =
+    typeof AbortController !== "undefined" ? new AbortController() : null;
   let timer: ReturnType<typeof setTimeout> | null = null;
   try {
     const res = await Promise.race([
       fetchFn(`${CLOUD_BASE}${path}`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
         body: JSON.stringify(body),
         ...(ctl ? { signal: ctl.signal } : {}),
       }),
@@ -128,13 +134,13 @@ export async function createCode(
   fetchFn: FetchLike,
   platform: string,
   appVersion: string,
-  timeoutMs = CLOUD_TIMEOUT_MS
+  timeoutMs = CLOUD_TIMEOUT_MS,
 ): Promise<CloudCode | null> {
   const r = await post(
     fetchFn,
     "/v1/tv/codes",
     { platform, app_version: appVersion },
-    timeoutMs
+    timeoutMs,
   );
   if (!r || r.status !== 201 || !isCode(r.data)) {
     log("launcher", `cloud code: none given (${r ? r.status : "no answer"})`);
@@ -147,13 +153,13 @@ export async function createCode(
 export async function pollCode(
   fetchFn: FetchLike,
   code: CloudCode,
-  timeoutMs = CLOUD_TIMEOUT_MS
+  timeoutMs = CLOUD_TIMEOUT_MS,
 ): Promise<PollResult> {
   const r = await post(
     fetchFn,
     "/v1/tv/codes/poll",
     { code: code.code, poll_secret: code.poll_secret },
-    timeoutMs
+    timeoutMs,
   );
   if (!r) return { kind: "error" };
   if (r.status === 202) return { kind: "pending" };
@@ -201,10 +207,58 @@ export function usableConnections(conns: unknown): string[] {
       tls_name.toLowerCase() !== u.hostname.toLowerCase()
     )
       continue;
-    const base = `${u.protocol}//${u.host}${u.pathname.replace(/\/+$/, "")}`;
+    const base = baseOf(u);
     if (out.indexOf(base) < 0) out.push(base);
   }
   return out;
+}
+
+/** A URL as the launcher compares addresses: scheme, host and path, no trailing slash. */
+function baseOf(u: URL): string {
+  return `${u.protocol}//${u.host}${u.pathname.replace(/\/+$/, "")}`;
+}
+
+/** The kinds of connection whose name Maktaba Cloud gives the home: its relay, its own name. */
+const CLOUD_NAMED = ["relay", "relay_hint", "direct"];
+
+/** The cloud's addresses for the home that lead to it alone (CLOUD_NAMED), as bases. */
+function cloudNamed(conns: unknown): string[] {
+  if (!Array.isArray(conns)) return [];
+  return usableConnections(
+    conns.filter(
+      (c) =>
+        !!c &&
+        typeof c === "object" &&
+        CLOUD_NAMED.indexOf(String((c as CloudConnection).kind)) >= 0,
+    ),
+  );
+}
+
+/**
+ * Whether the home that answered at `base` is the one the cloud approved the code for.
+ * The cloud names a home by its own server id, which the home's /api/discovery/home does not
+ * say (it gives the home's instance id), so the check is by address:
+ *  - a name Maktaba Cloud gives the home (its relay, its direct name) leads to that home alone;
+ *  - a LAN address can lead to another machine on another network (a TV at a relative's house,
+ *    on the same private range), so the home answering there counts only when it lists one of
+ *    those names among its own addresses (a home with remote access lists its relay). Another
+ *    home there is passed over, and the grant is never sent to it.
+ */
+export function isApprovedHome(
+  base: string,
+  answer: HomeAnswer,
+  conns: unknown,
+): boolean {
+  if (usableConnections(conns).indexOf(base) < 0) return false;
+  const named = cloudNamed(conns);
+  if (named.indexOf(base) >= 0) return true;
+  return (Array.isArray(answer.urls) ? answer.urls : []).some((raw) => {
+    try {
+      return named.indexOf(baseOf(new URL(String(raw)))) >= 0;
+    } catch {
+      return false;
+    }
+  });
 }
 
 /** What the code screen shows. */
@@ -241,7 +295,8 @@ export class CodeFlow {
 
   constructor(private readonly d: CodeFlowDeps) {
     this.after = d.after ?? ((fn, ms) => setTimeout(fn, ms));
-    this.cancel = d.cancel ?? ((h) => clearTimeout(h as ReturnType<typeof setTimeout>));
+    this.cancel =
+      d.cancel ?? ((h) => clearTimeout(h as ReturnType<typeof setTimeout>));
     this.now = d.now ?? (() => Date.now());
   }
 
@@ -250,7 +305,11 @@ export class CodeFlow {
     this.clear();
     if (this.stopped) return;
     this.d.onState({ phase: "asking" });
-    const code = await createCode(this.d.fetch, this.d.platform, this.d.appVersion);
+    const code = await createCode(
+      this.d.fetch,
+      this.d.platform,
+      this.d.appVersion,
+    );
     if (this.stopped) return;
     if (!code) {
       this.d.onState({ phase: "down" });
@@ -273,11 +332,22 @@ export class CodeFlow {
     this.timer = null;
   }
 
-  private schedule(code: CloudCode, expiresAt: number, intervalSec: number): void {
-    this.timer = this.after(() => void this.poll(code, expiresAt, intervalSec), intervalSec * 1000);
+  private schedule(
+    code: CloudCode,
+    expiresAt: number,
+    intervalSec: number,
+  ): void {
+    this.timer = this.after(
+      () => void this.poll(code, expiresAt, intervalSec),
+      intervalSec * 1000,
+    );
   }
 
-  private async poll(code: CloudCode, expiresAt: number, intervalSec: number): Promise<void> {
+  private async poll(
+    code: CloudCode,
+    expiresAt: number,
+    intervalSec: number,
+  ): Promise<void> {
     this.timer = null;
     if (this.stopped) return;
     if (this.now() >= expiresAt) {

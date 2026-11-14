@@ -6,6 +6,7 @@ import {
   CLOUD_BASE,
   CodeFlow,
   createCode,
+  isApprovedHome,
   pollCode,
   RETRY_DOWN_MS,
   usableConnections,
@@ -23,7 +24,8 @@ const CODE = {
   verify_url: "https://maktaba.tv/tv?c=ABCD2345",
 };
 const GRANT = "Gr4nt_" + "z".repeat(37);
-const res = (status: number, body: unknown) => new Response(JSON.stringify(body), { status });
+const res = (status: number, body: unknown) =>
+  new Response(JSON.stringify(body), { status });
 
 beforeEach(() => clearLog());
 afterEach(() => vi.useRealTimers());
@@ -31,31 +33,55 @@ afterEach(() => vi.useRealTimers());
 describe("the cloud's calls", () => {
   it("asks Maktaba Cloud for a code with the platform and version, by POST with JSON", async () => {
     const calls: { url: string; init?: Parameters<FetchLike>[1] }[] = [];
-    const code = await createCode(async (url, init) => {
-      calls.push({ url, init });
-      return res(201, CODE);
-    }, "webos", "1.2.3");
+    const code = await createCode(
+      async (url, init) => {
+        calls.push({ url, init });
+        return res(201, CODE);
+      },
+      "webos",
+      "1.2.3",
+    );
     expect(code).toEqual(CODE);
     expect(calls[0]!.url).toBe(`${CLOUD_BASE}/v1/tv/codes`);
     expect(CLOUD_BASE).toBe("https://api.maktaba.tv");
     expect(calls[0]!.init?.method).toBe("POST");
     expect(calls[0]!.init?.headers?.["Content-Type"]).toBe("application/json");
-    expect(JSON.parse(calls[0]!.init!.body!)).toEqual({ platform: "webos", app_version: "1.2.3" });
+    expect(JSON.parse(calls[0]!.init!.body!)).toEqual({
+      platform: "webos",
+      app_version: "1.2.3",
+    });
   });
 
   it("gives no code when the cloud refuses, is too busy, or does not answer", async () => {
-    expect(await createCode(async () => res(429, { error: "rate_limited" }), "tizen", "1")).toBeNull();
-    expect(await createCode(async () => res(201, { code: "X" }), "tizen", "1")).toBeNull();
     expect(
-      await createCode(async () => Promise.reject(new TypeError("offline")), "tizen", "1")
+      await createCode(
+        async () => res(429, { error: "rate_limited" }),
+        "tizen",
+        "1",
+      ),
+    ).toBeNull();
+    expect(
+      await createCode(async () => res(201, { code: "X" }), "tizen", "1"),
+    ).toBeNull();
+    expect(
+      await createCode(
+        async () => Promise.reject(new TypeError("offline")),
+        "tizen",
+        "1",
+      ),
     ).toBeNull();
   });
 
   it("reads each poll answer", async () => {
-    const poll = (status: number, body: unknown) => pollCode(async () => res(status, body), CODE);
+    const poll = (status: number, body: unknown) =>
+      pollCode(async () => res(status, body), CODE);
     expect(await poll(202, { status: "pending" })).toEqual({ kind: "pending" });
-    expect(await poll(429, { error: "slow_down" })).toEqual({ kind: "slow_down" });
-    expect(await poll(410, { error: "expired_token" })).toEqual({ kind: "gone" });
+    expect(await poll(429, { error: "slow_down" })).toEqual({
+      kind: "slow_down",
+    });
+    expect(await poll(410, { error: "expired_token" })).toEqual({
+      kind: "gone",
+    });
     expect(await poll(404, { error: "not_found" })).toEqual({ kind: "gone" });
     const approved = {
       status: "approved",
@@ -74,8 +100,12 @@ describe("the cloud's calls", () => {
       },
     });
     // an approval whose grant is not the home's pairing secret's shape is not one
-    expect(await poll(200, { ...approved, grant: "x y" })).toEqual({ kind: "error" });
-    expect(await poll(200, { ...approved, home_id: "" })).toEqual({ kind: "error" });
+    expect(await poll(200, { ...approved, grant: "x y" })).toEqual({
+      kind: "error",
+    });
+    expect(await poll(200, { ...approved, home_id: "" })).toEqual({
+      kind: "error",
+    });
   });
 
   it("sends the poll secret in the body only", async () => {
@@ -88,7 +118,10 @@ describe("the cloud's calls", () => {
     }, CODE);
     expect(seen).toBe(`${CLOUD_BASE}/v1/tv/codes/poll`);
     expect(seen).not.toContain(CODE.poll_secret);
-    expect(JSON.parse(body)).toEqual({ code: "ABCD-2345", poll_secret: CODE.poll_secret });
+    expect(JSON.parse(body)).toEqual({
+      code: "ABCD-2345",
+      poll_secret: CODE.poll_secret,
+    });
   });
 });
 
@@ -97,11 +130,19 @@ describe("the connections a web TV can use", () => {
     expect(
       usableConnections([
         { url: "https://10-0-0-7.h1.direct.example:8443/", kind: "local" },
-        { url: "https://10.0.0.7:8443", kind: "local_ip", tls_name: "10-0-0-7.h1.direct.example" },
-        { url: "https://h1.direct.example", kind: "direct", tls_name: "h1.direct.example" },
+        {
+          url: "https://10.0.0.7:8443",
+          kind: "local_ip",
+          tls_name: "10-0-0-7.h1.direct.example",
+        },
+        {
+          url: "https://h1.direct.example",
+          kind: "direct",
+          tls_name: "h1.direct.example",
+        },
         { url: "https://h1.relay.maktaba.tv", kind: "relay" },
         { url: "https://h1.relay.maktaba.tv", kind: "relay" },
-      ])
+      ]),
     ).toEqual([
       "https://10-0-0-7.h1.direct.example:8443",
       "https://h1.direct.example",
@@ -118,7 +159,7 @@ describe("the connections a web TV can use", () => {
         { kind: "relay" },
         null,
         { url: "http://10.0.0.7:8088", kind: "local" },
-      ])
+      ]),
     ).toEqual(["http://10.0.0.7:8088"]);
     expect(usableConnections("nope")).toEqual([]);
   });
@@ -148,7 +189,14 @@ describe("the code screen's loop", () => {
       onState: (s) => states.push(s),
       onApproved: (a) => approved.push(a),
     });
-    return { f, states, approved, urls, creates: () => creates, polls: () => polls };
+    return {
+      f,
+      states,
+      approved,
+      urls,
+      creates: () => creates,
+      polls: () => polls,
+    };
   }
 
   it("polls at the interval, slower on slow_down, and stops at the approval", async () => {
@@ -217,5 +265,61 @@ describe("the code screen's loop", () => {
     f.stop();
     await vi.advanceTimersByTimeAsync(RETRY_DOWN_MS * 3);
     expect(creates).toBe(2);
+  });
+});
+
+describe("which answering home is the approving one", () => {
+  // the cloud names the home by its server id; the home answers with its instance id
+  const CONNS = [
+    { url: "http://192.168.1.20:8088", kind: "local" },
+    { url: "https://10-0-0-7.h1.direct.example:8443", kind: "local" },
+    { url: "https://h1.direct.example", kind: "direct" },
+    { url: "https://den.relay.maktaba.tv", kind: "relay" },
+  ];
+  const answer = (urls: string[]) => ({ id: "instance-7", name: "Den", urls });
+
+  it("takes a name Maktaba Cloud gives the home, whatever id answers there", () => {
+    expect(
+      isApprovedHome("https://den.relay.maktaba.tv", answer([]), CONNS),
+    ).toBe(true);
+    expect(isApprovedHome("https://h1.direct.example", answer([]), CONNS)).toBe(
+      true,
+    );
+  });
+
+  it("takes a LAN address only from a home that lists the approving home's relay", () => {
+    const den = answer([
+      "http://192.168.1.20:8088/",
+      "https://den.relay.maktaba.tv",
+    ]);
+    expect(isApprovedHome("http://192.168.1.20:8088", den, CONNS)).toBe(true);
+    // another home on the same private address, at a relative's house: passed over
+    const other = answer([
+      "http://192.168.1.20:8088",
+      "https://other.relay.maktaba.tv",
+    ]);
+    expect(isApprovedHome("http://192.168.1.20:8088", other, CONNS)).toBe(
+      false,
+    );
+    expect(
+      isApprovedHome(
+        "http://192.168.1.20:8088",
+        answer(["http://192.168.1.20:8088"]),
+        CONNS,
+      ),
+    ).toBe(false);
+  });
+
+  it("never takes an address the cloud did not give", () => {
+    const den = answer(["https://den.relay.maktaba.tv"]);
+    expect(isApprovedHome("https://evil.example", den, CONNS)).toBe(false);
+    expect(isApprovedHome("https://den.relay.maktaba.tv", den, [])).toBe(false);
+    expect(
+      isApprovedHome(
+        "http://192.168.1.20:8088",
+        { id: "x", name: "", urls: "nope" } as never,
+        CONNS,
+      ),
+    ).toBe(false);
   });
 });

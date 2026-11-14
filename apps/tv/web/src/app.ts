@@ -18,7 +18,7 @@
 // it, or shows the home's own code. The launcher never sees a token.
 
 import { LauncherBridge, type BridgeAction, type HelloInfo } from "./bridge";
-import { CodeFlow, usableConnections, type CloudApproval, type CodeState } from "./cloud";
+import { CodeFlow, isApprovedHome, usableConnections, type CloudApproval, type CodeState } from "./cloud";
 import { decide, type Verdict } from "./compat";
 import {
   chooseConnection,
@@ -404,13 +404,13 @@ export class Launcher {
 
   /**
    * An approved code: the first of the home's connections that answers as that home (LAN
-   * first, the relay last), checked to fit, saved, and loaded with the grant for its /tv/.
+   * first, the relay last; isApprovedHome), checked to fit, saved, and loaded with the grant for its /tv/.
    */
   async connectCloud(a: CloudApproval): Promise<void> {
     this.show({ kind: "connecting", label: a.home_name || a.home_id });
     for (const base of usableConnections(a.connections)) {
       const answer = await readHome(base, this.d.fetch, CONNECT_TIMEOUT_MS);
-      if (!answer || answer.id !== a.home_id) {
+      if (!answer || !isApprovedHome(base, answer, a.connections)) {
         log("launcher", `cloud code: ${originOf(base)} did not answer as the home`);
         continue;
       }

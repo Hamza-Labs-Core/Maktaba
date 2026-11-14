@@ -196,7 +196,8 @@ describe("the cloud code", () => {
   const NAME = "https://10-0-0-7.h1.direct-a.example:8443";
   const APPROVAL = {
     status: "approved",
-    home_id: "h1",
+    // the cloud's server id: not the id the home itself answers with (h1)
+    home_id: "7d0c1e9a-5b2f-4c1e-9a7d-3e2f1b0c4d5a",
     home_name: "Den",
     connections: [
       { url: NAME, kind: "local" },
@@ -209,7 +210,15 @@ describe("the cloud code", () => {
     new Response(JSON.stringify(b), { status: code });
 
   /** The cloud and the home's connections; `answers` are the bases that answer as h1. */
-  function world(opts: { approved?: () => boolean; answers?: string[]; down?: boolean } = {}) {
+  function world(
+    opts: {
+      approved?: () => boolean;
+      answers?: string[];
+      down?: boolean;
+      /** What each answering base lists as the home's own addresses (default: itself). */
+      urls?: (base: string) => string[];
+    } = {}
+  ) {
     const calls: { url: string; init?: Parameters<FetchLike>[1] }[] = [];
     const fetch: FetchLike = async (url, init) => {
       calls.push({ url, init });
@@ -218,7 +227,8 @@ describe("the cloud code", () => {
       if (url === "https://api.maktaba.tv/v1/tv/codes/poll")
         return opts.approved?.() ? status(200, APPROVAL) : status(202, { status: "pending" });
       const base = url.replace(/\/api\/discovery\/home$/, "");
-      if ((opts.answers ?? []).includes(base)) return json({ ...HOME, urls: [base] });
+      if ((opts.answers ?? []).includes(base))
+        return json({ ...HOME, urls: opts.urls ? opts.urls(base) : [base] });
       return Promise.reject(new TypeError("refused"));
     };
     return { fetch, calls };
@@ -283,6 +293,34 @@ describe("the cloud code", () => {
     const polls = w.calls.filter((c) => c.url.endsWith("/poll")).length;
     await vi.advanceTimersByTimeAsync(15_000);
     expect(w.calls.filter((c) => c.url.endsWith("/poll")).length).toBe(polls);
+  });
+
+  it("passes over another home answering on the LAN name", async () => {
+    vi.useFakeTimers();
+    const relay = "https://h1.relay.maktaba.tv";
+    // another home answers on the same LAN name (a relative's network): passed over
+    const w = world({
+      approved: () => true,
+      answers: [NAME, relay],
+      urls: (b) => (b === NAME ? [NAME, "https://other.relay.maktaba.tv"] : [b]),
+    });
+    const m = mount(w.fetch);
+    await m.l.start();
+    await vi.advanceTimersByTimeAsync(5_000);
+    await vi.advanceTimersByTimeAsync(100);
+    expect(m.frame()!.src).toBe(`${relay}/tv/?bridge=1&lang=en`);
+    expect(logText()).toContain("did not answer as the home");
+  });
+
+  it("takes the LAN name first when the approving home answers there (it lists its relay)", async () => {
+    vi.useFakeTimers();
+    const relay = "https://h1.relay.maktaba.tv";
+    const w = world({ approved: () => true, answers: [NAME, relay], urls: () => [NAME, relay] });
+    const m = mount(w.fetch);
+    await m.l.start();
+    await vi.advanceTimersByTimeAsync(5_000);
+    await vi.advanceTimersByTimeAsync(100);
+    expect(m.frame()!.src).toBe(`${NAME}/tv/?bridge=1&lang=en`);
   });
 
   it("says so when none of the home's connections answers", async () => {

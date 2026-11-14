@@ -21,7 +21,9 @@ On first start the launcher offers, in order:
   connections and a **grant**. The launcher tries the connections in the cloud's order (the
   home's LAN names first, the relay last; a raw address pinned to a certificate name is
   skipped, since a web runtime cannot check it) and opens the first that answers as that home,
-  with the grant for its `/tv/` (below). If the cloud gives no code, the screen says so and the
+  with the grant for its `/tv/` (below). The cloud names the home by its server id, not the id
+  the home answers with, so a LAN address counts only when the home there lists the cloud's
+  relay or direct name for it among its own addresses (`isApprovedHome` in `cloud.ts`). If the cloud gives no code, the screen says so and the
   other ways stay.
 - **Find on this network:** it asks the TV for its address (`webapis.network.getIp()` on
   Samsung, the connection manager on LG) and tries `GET /api/discovery/home` on port 8088 of

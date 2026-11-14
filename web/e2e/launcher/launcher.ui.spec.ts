@@ -151,7 +151,8 @@ async function lanHome(page: Page): Promise<{ home: MockHome; trail: Trail }> {
       return trail.cloudApproved
         ? body(200, {
             status: "approved",
-            home_id: "h-test",
+            // the cloud's server id: the home answers with its own instance id (h-test)
+            home_id: "5e1d7c2a-9b3f-4e8d-a6c1-0f2b3d4e5a6b",
             home_name: "Test home",
             // the LAN name answers nothing here (a TV at a relative's house): the relay does
             connections: [
