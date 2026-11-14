@@ -90,7 +90,7 @@ func WriteTx(ctx context.Context, x execer, e Entry) error {
 	_, err = x.ExecContext(ctx, `
         INSERT INTO audit_log (actor_kind, actor_id, actor_email, action, target_kind, target_id, detail, ip)
         VALUES (COALESCE(NULLIF($8,''), 'user'), NULLIF($1,'')::uuid, NULLIF($2,''), $3, NULLIF($4,''), NULLIF($5,''), $6, NULLIF($7,''))
-    `, e.ActorID, e.ActorEmail, e.Action, e.TargetKind, e.TargetID, dj, e.IP, e.ActorKind)
+    `, e.ActorID, e.ActorEmail, e.Action, e.TargetKind, e.TargetID, string(dj), e.IP, e.ActorKind) // a json column takes a string (db.WithBinaryParameters)
 	return err
 }
 

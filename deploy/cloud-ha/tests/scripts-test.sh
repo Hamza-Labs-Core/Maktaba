@@ -128,13 +128,48 @@ for r in replica demoted; do
     fi
 done
 
+# story 50.18: the database nodes (CLOUD_PROCESSES=off) move only the database's Floating IP
+# and start nothing; their replicas drop PgBouncer's clients; the pair in the move moves both
+cat >"${work}/bin/psql" <<'STUB'
+#!/usr/bin/env bash
+echo "$*" >>"${STATE}/psql"
+STUB
+chmod +x "${work}/bin/psql"
+role dbprimary primary CLOUD_PROCESSES=off DB_FLOATING_IP_ID=8 DB_HCLOUD_ENDPOINT=http://fakedb/v1
+if [ "$(count "${work}/dbprimary/calls")" = 1 ] && grep -q 'http://fakedb/v1/floating_ips/8/actions/assign' "${work}/dbprimary/calls" \
+    && [ ! -f "${work}/dbprimary/active" ]; then
+    ok "db primary: the database's Floating IP only, no cloud process started"
+else
+    fail "db primary: calls=$(cat "${work}/dbprimary/calls" 2>/dev/null) active=$(cat "${work}/dbprimary/active" 2>/dev/null)"
+fi
+role both primary DB_FLOATING_IP_ID=8
+if [ "$(count "${work}/both/calls")" = 2 ] && sed -n 1p "${work}/both/calls" | grep -q 'floating_ips/8/' \
+    && sed -n 2p "${work}/both/calls" | grep -q 'floating_ips/7/' && [ "$(cat "${work}/both/active")" = start ]; then
+    ok "pair primary with a database Floating IP: the database's first, then the relay's; processes started"
+else
+    fail "both: calls=$(cat "${work}/both/calls" 2>/dev/null) active=$(cat "${work}/both/active" 2>/dev/null)"
+fi
+role dbreplica replica CLOUD_PROCESSES=off PGBOUNCER=yes
+if [ "$(count "${work}/dbreplica/calls")" = 0 ] && [ ! -f "${work}/dbreplica/active" ] \
+    && grep -q -- '-c KILL maktaba -c RESUME maktaba' "${work}/dbreplica/psql" \
+    && grep -q -- '-c KILL cloud_session -c RESUME cloud_session' "${work}/dbreplica/psql"; then
+    ok "db replica: PgBouncer's clients dropped on both pools, nothing stopped, no assign call"
+else
+    fail "db replica: psql=$(cat "${work}/dbreplica/psql" 2>/dev/null) active=$(cat "${work}/dbreplica/active" 2>/dev/null)"
+fi
+role nopgb replica
+if [ ! -f "${work}/nopgb/psql" ]; then ok "replica without PgBouncer: no admin console call"; else fail "nopgb: $(cat "${work}/nopgb/psql")"; fi
+
 # T03: switchover
 cat >"${work}/bin/patronictl" <<'STUB'
 #!/usr/bin/env bash
 case "$*" in
     *"list -f json"*) cat "${STATE}/members" ;;
     *switchover*) echo "$*" >>"${STATE}/switched"
-        jq '[.[] | if .Member == "node-b" then .Role = "Leader" else .Role = "Replica" end]' "${STATE}/members" >"${STATE}/m2" && mv "${STATE}/m2" "${STATE}/members" ;;
+        # Patroni's refusal: printed, and exit 0
+        if [ -f "${STATE}/refuse412" ]; then echo "Switchover failed, details: 412, candidate name does not match with sync_standby"; exit 0; fi
+        c="$*"; c="${c##*--candidate }"; c="${c%% *}"
+        jq --arg c "${c}" '[.[] | if .Member == $c then .Role = "Leader" else .Role = "Replica" end]' "${STATE}/members" >"${STATE}/m2" && mv "${STATE}/m2" "${STATE}/members" ;;
     *) exit 1 ;;
 esac
 STUB
@@ -163,6 +198,45 @@ else
     fail "good: $(cat "${work}/good/out")"
 fi
 
+# --db (story 50.18): three members, the synchronous standby is the default candidate, and
+# its PgBouncer (not a Caddy) must answer
+cat >"${work}/bin/pg_isready" <<'STUB'
+#!/usr/bin/env bash
+echo "$*" >>"${STATE}/pg_isready"
+exit "${PGREADY:-0}"
+STUB
+chmod +x "${work}/bin/pg_isready"
+members3='[{"Member":"db-1","Host":"10.60.0.31","Role":"Leader","State":"running","Lag in MB":0},{"Member":"db-2","Host":"10.60.0.32","Role":"Replica","State":"streaming","Lag in MB":0},{"Member":"db-3","Host":"10.60.0.33","Role":"Sync Standby","State":"streaming","Lag in MB":0}]'
+sw dbgood "${members3}" HEALTH=7 bash "${here}/bin/switchover" --announced --db
+if grep -q -- "--leader db-1 --candidate db-3 --force" "${work}/dbgood/switched" && grep -q -- "-h 10.60.0.33 -p 6432" "${work}/dbgood/pg_isready" \
+    && grep -q "PgBouncer answers" "${work}/dbgood/out" && grep -q "db-3 leads" "${work}/dbgood/out"; then
+    ok "switchover --db: the synchronous standby is the candidate, its PgBouncer checked, no Caddy needed"
+else
+    fail "dbgood: $(cat "${work}/dbgood/out")"
+fi
+sw dbdown "${members3}" PGREADY=2 bash "${here}/bin/switchover" --announced --db
+if grep -q "db-3's PgBouncer does not answer" "${work}/dbdown/out" && [ ! -f "${work}/dbdown/switched" ]; then
+    ok "switchover --db: refuses when the candidate's PgBouncer is down"
+else
+    fail "dbdown: $(cat "${work}/dbdown/out")"
+fi
+
+sw notsync "${members3}" bash "${here}/bin/switchover" --announced --db --candidate db-2
+if grep -q "db-2 is not the synchronous standby (db-3)" "${work}/notsync/out" && [ ! -f "${work}/notsync/switched" ]; then
+    ok "switchover: refuses a candidate that is not the synchronous standby, before asking Patroni"
+else
+    fail "notsync: $(cat "${work}/notsync/out")"
+fi
+rm -rf "${work:?}/refused412"; mkdir -p "${work}/refused412"; touch "${work}/refused412/refuse412"
+printf '%s' "${members3}" >"${work}/refused412/members"
+env PATH="${work}/bin:${PATH}" STATE="${work}/refused412" PATRONICTL=patronictl WAIT=30 \
+    bash "${here}/bin/switchover" --announced --db >"${work}/refused412/out" 2>&1
+if grep -q "Patroni refused: Switchover failed, details: 412" "${work}/refused412/out" && [ ! -f "${work}/refused412/slept" ]; then
+    ok "switchover: Patroni's refusal (exit 0) fails at once, with its reason"
+else
+    fail "refused412: $(cat "${work}/refused412/out")"
+fi
+
 # the leader guard: stops a running node that Patroni no longer calls the primary, never
 # one that leads, never starts anything
 guard() { # guard <case> <code> <active>
@@ -177,6 +251,86 @@ guard leads 200 start
 if [ ! -f "${work}/leads/active" ]; then ok "leader-guard: the leader keeps its processes"; else fail "guard leads: $(cat "${work}/leads/active")"; fi
 guard idle 503 stop
 if [ ! -f "${work}/idle/active" ]; then ok "leader-guard: a standby with nothing running is left alone"; else fail "guard idle"; fi
+
+# CLOUD_PROCESSES=off (story 50.18), read again from cloud-ha.env each round: no stop
+rm -rf "${work:?}/off"; mkdir -p "${work}/off"; echo start >"${work}/off/state"
+echo CLOUD_PROCESSES=off >"${work}/off/env"
+env PATH="${work}/bin:${PATH}" STATE="${work}/off" CLOUD_HA_ENV="${work}/off/env" GUARD_CODE=503 ONCE=1 FAILS=1 \
+    ACTIVE_FILE="${work}/off/state" MAKTABA_ACTIVE_CMD="${work}/bin/active" bash "${here}/bin/leader-guard" >"${work}/off/out" 2>&1
+if [ ! -f "${work}/off/active" ]; then ok "leader-guard: CLOUD_PROCESSES=off in cloud-ha.env: nothing stopped"; else fail "guard off: $(cat "${work}/off/active")"; fi
+
+# migrate-db-nodes (story 50.18): its guards, against five stand-in hosts (NODE_EXEC): each
+# host's cloud-ha.env is ${STATE}/<host>.env, ${STATE}/leader names the pair's leader,
+# ${STATE}/pgb-down-<host> makes that PgBouncer silent. The whole move runs in the rehearsal
+# (db-nodes-migrate).
+cat >"${work}/bin/dbhost" <<'STUB'
+#!/usr/bin/env bash
+host="$1"; cmd="${2//\/etc\/maktaba\/cloud-ha.env/${STATE}/${1}.env}"; cmd="${cmd//\/etc\/maktaba\/db-ca.crt/${STATE}/${1}-db-ca.crt}"
+case "${cmd}" in
+    *"/primary"*) [ "$(cat "${STATE}/leader")" = "${host}" ] ;;
+    *"list -f json"*) cat "${STATE}/members" ;;
+    *pg_isready*) [ ! -f "${STATE}/pgb-down-${host}" ] ;;
+    *) bash -c "${cmd}" ;;
+esac
+STUB
+chmod +x "${work}/bin/dbhost"
+mig() { # mig <case> [env...] -- args: a fresh set of hosts, every guard satisfied
+    local name=$1 h; shift
+    rm -rf "${work:?}/${name:?}"; mkdir -p "${work}/${name}"
+    for h in node-a node-b db-1 db-2 db-3; do echo "NODE_NAME=${h}" >"${work}/${name}/${h}.env"; done
+    for h in node-a node-b; do echo DB_FLOATING_IP_ID=8 >>"${work}/${name}/${h}.env"; done
+    for h in db-1 db-2 db-3; do echo CLOUD_PROCESSES=off >>"${work}/${name}/${h}.env"; done
+    for h in node-a node-b; do echo ca >"${work}/${name}/${h}-db-ca.crt"; done
+    echo node-a >"${work}/${name}/leader"
+    printf '[{"Member":"node-a","Role":"Leader","State":"running"},{"Member":"node-b","Role":"Sync Standby","State":"streaming","Lag in MB":0}]' >"${work}/${name}/members"
+    MIG_DIR="${work}/${name}"
+}
+mig_run() { # mig_run [env...] -- args
+    env PATH="${work}/bin:${PATH}" STATE="${MIG_DIR}" NODE_EXEC=dbhost SUDO="" PATRONI_URL=http://x:8008 \
+        RELAY_HOST_A=node-a RELAY_HOST_B=node-b "$@" >"${MIG_DIR}/out" 2>&1
+}
+mig nohosts; mig_run bash "${here}/bin/migrate-db-nodes" check
+if grep -q "DB_HOSTS names the three database nodes" "${MIG_DIR}/out"; then ok "migrate-db-nodes: refuses without DB_HOSTS"; else fail "nohosts: $(cat "${MIG_DIR}/out")"; fi
+mig two; mig_run DB_HOSTS="db-1 db-2" bash "${here}/bin/migrate-db-nodes" check
+if grep -q "DB_HOSTS must name three nodes, got 2" "${MIG_DIR}/out"; then ok "migrate-db-nodes: refuses two database nodes"; else fail "two: $(cat "${MIG_DIR}/out")"; fi
+mig good; mig_run DB_HOSTS="db-1 db-2 db-3" bash "${here}/bin/migrate-db-nodes" check
+if grep -q "check: node-a leads, node-b streams" "${MIG_DIR}/out"; then ok "migrate-db-nodes: check passes when every guard holds"; else fail "good: $(cat "${MIG_DIR}/out")"; fi
+mig notdb; sed -i.bak 's/^CLOUD_PROCESSES=off/CLOUD_PROCESSES=leader/' "${MIG_DIR}/db-3.env"
+mig_run DB_HOSTS="db-1 db-2 db-3" bash "${here}/bin/migrate-db-nodes" check
+if grep -q "refused: db-3 is not a database node" "${MIG_DIR}/out"; then ok "migrate-db-nodes: refuses a node not set up as a database node"; else fail "notdb: $(cat "${MIG_DIR}/out")"; fi
+mig pgbdown; touch "${MIG_DIR}/pgb-down-node-b"
+mig_run DB_HOSTS="db-1 db-2 db-3" bash "${here}/bin/migrate-db-nodes" check
+if grep -q "refused: PgBouncer does not answer on node-b" "${MIG_DIR}/out"; then ok "migrate-db-nodes: refuses while a PgBouncer is silent"; else fail "pgbdown: $(cat "${MIG_DIR}/out")"; fi
+mig noip; sed -i.bak '/^DB_FLOATING_IP_ID=/d' "${MIG_DIR}/node-b.env"
+mig_run DB_HOSTS="db-1 db-2 db-3" bash "${here}/bin/migrate-db-nodes" check
+if grep -q "refused: node-b's cloud-ha.env has no DB_FLOATING_IP_ID" "${MIG_DIR}/out"; then ok "migrate-db-nodes: refuses a pair without the database's Floating IP"; else fail "noip: $(cat "${MIG_DIR}/out")"; fi
+mig lagging; printf '[{"Member":"node-a","Role":"Leader","State":"running"},{"Member":"node-b","Role":"Replica","State":"streaming","Lag in MB":4}]' >"${MIG_DIR}/members"
+mig_run DB_HOSTS="db-1 db-2 db-3" bash "${here}/bin/migrate-db-nodes" check
+if grep -q "refused: node-b is not streaming with zero lag" "${MIG_DIR}/out"; then ok "migrate-db-nodes: refuses a lagging replica"; else fail "lagging: $(cat "${MIG_DIR}/out")"; fi
+mig noca; rm "${MIG_DIR}/node-a-db-ca.crt"
+mig_run DB_HOSTS="db-1 db-2 db-3" bash "${here}/bin/migrate-db-nodes" check
+if grep -q "refused: node-a has no /etc/maktaba/db-ca.crt" "${MIG_DIR}/out"; then ok "migrate-db-nodes: refuses an app node that cannot check PgBouncer's certificate"; else fail "noca: $(cat "${MIG_DIR}/out")"; fi
+mig noca-plain; rm "${MIG_DIR}/node-a-db-ca.crt"
+mig_run DB_HOSTS="db-1 db-2 db-3" DB_SSLMODE=disable bash "${here}/bin/migrate-db-nodes" check
+if grep -q "check: node-a leads" "${MIG_DIR}/out"; then ok "migrate-db-nodes: DB_SSLMODE=disable (the rehearsal) needs no CA"; else fail "noca-plain: $(cat "${MIG_DIR}/out")"; fi
+mig badstep; mig_run DB_HOSTS="db-1 db-2 db-3" bash "${here}/bin/migrate-db-nodes" everything
+if grep -q "usage: migrate-db-nodes" "${MIG_DIR}/out"; then ok "migrate-db-nodes: an unknown step prints the usage"; else fail "badstep: $(cat "${MIG_DIR}/out")"; fi
+
+# make-pgbouncer-cert (story 50.18): signed by the etcd CA, db.internal checked by name
+mkdir -p "${work}/pki"
+bash "${here}/bin/make-etcd-certs" "${work}/pki" db-1=10.60.0.31 >/dev/null 2>&1
+bash "${here}/bin/make-pgbouncer-cert" "${work}/pki" >"${work}/pki/out" 2>&1
+if openssl verify -CAfile "${work}/pki/ca.crt" -verify_hostname db.internal "${work}/pki/pgbouncer.crt" >/dev/null 2>&1 \
+    && ! openssl verify -CAfile "${work}/pki/ca.crt" -verify_hostname evil.example "${work}/pki/pgbouncer.crt" >/dev/null 2>&1; then
+    ok "make-pgbouncer-cert: the CA signs it for db.internal and no other name"
+else
+    fail "make-pgbouncer-cert: $(cat "${work}/pki/out")"
+fi
+if ! bash "${here}/bin/make-pgbouncer-cert" "${work}/nopki" >"${work}/pki/out2" 2>&1 && grep -q "make-etcd-certs first" "${work}/pki/out2"; then
+    ok "make-pgbouncer-cert: refuses without the CA"
+else
+    fail "make-pgbouncer-cert without a CA: $(cat "${work}/pki/out2")"
+fi
 
 # bluegreen (story 50.08): a release that fails its readiness soon after it starts is stopped
 # and the old colour is never touched; a good one replaces the old colour, which drains

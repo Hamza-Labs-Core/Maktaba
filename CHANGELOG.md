@@ -14,6 +14,16 @@ build fails when the two differ.
 
 ### Changed
 
+- **The cloud's database can run on machines of its own (Epic 50, story 50.18).** Three
+  database nodes (a primary, a replica that confirms every commit, and a second replica) sit
+  behind PgBouncer and a Floating IP of their own; losing the primary promotes the replica that
+  has every commit, the address follows it, and the cloud's machines reconnect without a
+  restart. The cloud now works through PgBouncer's transaction pool (each query with arguments
+  goes in one round trip), and a script moves the Phase 1 pair's database to the new nodes with
+  one short pause in writes. In the cloud rehearsal the primary was killed under load with no
+  committed write lost, and the move ran end to end. Nothing changes for households until the
+  machines are created.
+
 - **The cloud's api can run on several machines at once (Epic 50, story 50.17).** The worker's
   jobs (expired sign-in cleanup, account deletions, the relayed streams' sweep, pay-as-you-go
   reports) run on exactly one node, the one holding a database lock, and another node takes

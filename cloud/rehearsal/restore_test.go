@@ -3,6 +3,7 @@
 package rehearsal
 
 import (
+	"database/sql"
 	"fmt"
 	"os"
 	"os/exec"
@@ -20,61 +21,10 @@ import (
 // machine to a point T, from repo1 and again from repo2: exactly the rows committed up to T.
 // A wrong passphrase reads nothing.
 func restorePITR(t *testing.T, _ *cluster) Result {
-	extra := &haExtra{
-		profiles: []string{"backup"},
-		env: []string{"ARCHIVE_COMMAND=pgbackrest --stanza=cloud archive-push %p",
-			"REPO1_ENDPOINT=10.60.0.21:9000", "REPO2_ENDPOINT=10.60.0.22:9000"},
-	}
-	extra.before = func(h *ha) {
-		pki := filepath.Join(h.dir, ".work", "s3-pki")
-		_ = os.RemoveAll(pki)
-		if err := os.MkdirAll(pki, 0o755); err != nil {
-			t.Fatal(err)
-		}
-		out, err := exec.Command("openssl", "req", "-x509", "-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:P-256", "-nodes",
-			"-keyout", filepath.Join(pki, "private.key"), "-out", filepath.Join(pki, "public.crt"), "-days", "2",
-			"-subj", "/CN=s3.rehearsal", "-addext", "subjectAltName=IP:10.60.0.21,IP:10.60.0.22,IP:127.0.0.1").CombinedOutput()
-		if err != nil {
-			t.Fatalf("s3 cert: %v %s", err, out)
-		}
-		_ = os.Chmod(filepath.Join(pki, "private.key"), 0o644)
-		s3json := `{"identities":[{"name":"rehearsal","credentials":[{"accessKey":"rehearsal","secretKey":"rehearsal-secret"}],"actions":["Admin","Read","Write","List","Tagging"]}]}`
-		if err := os.WriteFile(filepath.Join(pki, "s3.json"), []byte(s3json), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
+	extra := &haExtra{}
+	s3Backups(t, extra)
 	h := upHAWith(t, "restore-pitr", extra)
-	repoPort := map[int]int{1: 29001, 2: 29002}
-	s3 := func(method, url string, body ...string) int {
-		args := []string{"-sk", "-o", "/dev/null", "-w", "%{http_code}", "--aws-sigv4", "aws:amz:us-east-1:s3",
-			"--user", "rehearsal:rehearsal-secret", "-X", method}
-		if len(body) > 0 {
-			args = append(args, "--data-binary", body[0])
-		}
-		out, _ := exec.Command("curl", append(args, url)...).Output()
-		code := 0
-		_, _ = fmt.Sscan(string(out), &code)
-		return code
-	}
-	for r, bucket := range map[int]string{1: "maktaba-prod-pg", 2: "maktaba-prod-pg-r2"} {
-		base := fmt.Sprintf("https://127.0.0.1:%d", repoPort[r])
-		// SeaweedFS takes a bucket made while its gateway warms up but never serves its
-		// objects: wait for the gateway, then make the bucket and prove a round trip
-		waitFor(t, time.Minute, fmt.Sprintf("repo%d's S3 gateway", r), func() bool { return s3("GET", base+"/") == 200 })
-		time.Sleep(3 * time.Second)
-		waitFor(t, time.Minute, fmt.Sprintf("repo%d's bucket", r), func() bool {
-			if s3("PUT", base+"/"+bucket) >= 300 {
-				return false
-			}
-			if s3("PUT", base+"/"+bucket+"/probe", "ok") != 200 || s3("GET", base+"/"+bucket+"/probe") != 200 {
-				_ = s3("DELETE", base+"/"+bucket+"/probe")
-				_ = s3("DELETE", base+"/"+bucket)
-				time.Sleep(2 * time.Second)
-				return false
-			}
-			return s3("DELETE", base+"/"+bucket+"/probe") < 300
-		})
-	}
+	s3Buckets(t)
 	leader := h.leader()
 	exec1 := func(node string, args ...string) (string, error) {
 		out, err := exec.Command("docker", append([]string{"exec", "-u", "postgres", "-e", "PATRONI_URL=http://127.0.0.1:8008",
@@ -127,14 +77,7 @@ func restorePITR(t *testing.T, _ *cluster) Result {
 	time.Sleep(20 * time.Second)
 	close(stop)
 	<-done
-	// every WAL segment out: switch, then wait for the archiver to catch up
-	_, _ = db.Exec(`SELECT pg_switch_wal()`)
-	waitFor(t, 3*time.Minute, "the WAL archived", func() bool {
-		var failedAfter bool
-		var archived int64
-		err := db.QueryRow(`SELECT archived_count, coalesce(last_failed_time > last_archived_time, false) FROM pg_stat_archiver`).Scan(&archived, &failedAfter)
-		return err == nil && archived > 0 && !failedAfter
-	})
+	h.waitArchived(leader)
 	time.Sleep(5 * time.Second)
 
 	mu.Lock()
@@ -156,19 +99,14 @@ func restorePITR(t *testing.T, _ *cluster) Result {
 	var took time.Duration
 	for _, repo := range []int{1, 2} {
 		start := time.Now()
-		script := fmt.Sprintf(`set -e
-/opt/rehearsal-node/pgbr-conf.sh
-gosu postgres maktaba-restore --pgdata /tmp/restored --repo %d --target '%s' --port 5499
-gosu postgres psql -h /tmp -p 5499 -U postgres -d maktaba -Atqc "SELECT count(*), coalesce(max(id),0), coalesce(min(id),0) FROM rehearsal_pitr"`, repo, target.Format("2006-01-02 15:04:05.000000+00"))
-		out, err := h.composeHA("run", "--rm", "--no-deps", "--entrypoint", "bash", "node-a", "-c", script)
+		got, err := h.restoreAt("node-a", repo, target, "SELECT count(*), coalesce(max(id),0), coalesce(min(id),0) FROM rehearsal_pitr")
 		if err != nil {
-			t.Fatalf("restore from repo%d: %v\n%s", repo, err, out)
+			t.Fatalf("restore from repo%d: %v\n%s", repo, err, got)
 		}
 		if repo == 1 {
 			took = time.Since(start)
 		}
-		lines := strings.Split(strings.TrimSpace(out), "\n")
-		restored[repo] = lines[len(lines)-1]
+		restored[repo] = got
 	}
 	wantLine := fmt.Sprintf("%d|%d|1", want, lastBefore)
 	t.Logf("%d rows written, %d up to the target; restored from repo1 %q, repo2 %q (want %q) in %s", total, want, restored[1], restored[2], wantLine, took)
@@ -185,8 +123,117 @@ gosu postgres psql -h /tmp -p 5499 -U postgres -d maktaba -Atqc "SELECT count(*)
 	}
 	// the raw objects are ciphertext
 	if raw, err := exec.Command("curl", "-fsS", "-k", "--aws-sigv4", "aws:amz:us-east-1:s3", "--user", "rehearsal:rehearsal-secret",
-		fmt.Sprintf("https://127.0.0.1:%d/maktaba-prod-pg/pg/backup/cloud/backup.info", repoPort[1])).Output(); err == nil && strings.Contains(string(raw), "[backup:current]") {
+		fmt.Sprintf("https://127.0.0.1:%d/maktaba-prod-pg/pg/backup/cloud/backup.info", s3Repo1Port)).Output(); err == nil && strings.Contains(string(raw), "[backup:current]") {
 		t.Error("backup.info is readable in the bucket without the passphrase")
 	}
 	return Result{Notes: []string{fmt.Sprintf("restored %d of %d rows (the ones up to T) from both repositories; the restore took %s (RTO 4 h)", want, total, took)}}
+}
+
+// s3Repo1Port, s3Repo2Port: the two repositories' S3 gateways on the host.
+const s3Repo1Port, s3Repo2Port = 29001, 29002
+
+// s3Backups gives a scenario story 50.09's two backup repositories (SeaweedFS's S3 API with
+// TLS, standing in for Hetzner Object Storage and Cloudflare R2): the backup profile, WAL
+// archiving to both, and the test certificate made before the cluster starts.
+func s3Backups(t *testing.T, extra *haExtra) {
+	extra.profiles = append(extra.profiles, "backup")
+	extra.env = append(extra.env, "ARCHIVE_COMMAND=pgbackrest --stanza=cloud archive-push %p",
+		"REPO1_ENDPOINT=10.60.0.21:9000", "REPO2_ENDPOINT=10.60.0.22:9000")
+	prev := extra.before
+	extra.before = func(h *ha) {
+		if prev != nil {
+			prev(h)
+		}
+		pki := filepath.Join(h.dir, ".work", "s3-pki")
+		_ = os.RemoveAll(pki)
+		if err := os.MkdirAll(pki, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		out, err := exec.Command("openssl", "req", "-x509", "-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:P-256", "-nodes",
+			"-keyout", filepath.Join(pki, "private.key"), "-out", filepath.Join(pki, "public.crt"), "-days", "2",
+			"-subj", "/CN=s3.rehearsal", "-addext", "subjectAltName=IP:10.60.0.21,IP:10.60.0.22,IP:127.0.0.1").CombinedOutput()
+		if err != nil {
+			t.Fatalf("s3 cert: %v %s", err, out)
+		}
+		_ = os.Chmod(filepath.Join(pki, "private.key"), 0o644)
+		s3json := `{"identities":[{"name":"rehearsal","credentials":[{"accessKey":"rehearsal","secretKey":"rehearsal-secret"}],"actions":["Admin","Read","Write","List","Tagging"]}]}`
+		if err := os.WriteFile(filepath.Join(pki, "s3.json"), []byte(s3json), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// s3 makes one signed S3 request to a repository's gateway and answers its status.
+func s3(method, url string, body ...string) int {
+	args := []string{"-sk", "-o", "/dev/null", "-w", "%{http_code}", "--aws-sigv4", "aws:amz:us-east-1:s3",
+		"--user", "rehearsal:rehearsal-secret", "-X", method}
+	if len(body) > 0 {
+		args = append(args, "--data-binary", body[0])
+	}
+	out, _ := exec.Command("curl", append(args, url)...).Output()
+	code := 0
+	_, _ = fmt.Sscan(string(out), &code)
+	return code
+}
+
+// s3Buckets makes both repositories' buckets once their gateways serve.
+func s3Buckets(t *testing.T) {
+	for r, bucket := range map[int]string{1: "maktaba-prod-pg", 2: "maktaba-prod-pg-r2"} {
+		base := fmt.Sprintf("https://127.0.0.1:%d", map[int]int{1: s3Repo1Port, 2: s3Repo2Port}[r])
+		// SeaweedFS takes a bucket made while its gateway warms up but never serves its
+		// objects: wait for the gateway, then make the bucket and prove a round trip
+		waitFor(t, time.Minute, fmt.Sprintf("repo%d's S3 gateway", r), func() bool { return s3("GET", base+"/") == 200 })
+		time.Sleep(3 * time.Second)
+		waitFor(t, time.Minute, fmt.Sprintf("repo%d's bucket", r), func() bool {
+			if s3("PUT", base+"/"+bucket) >= 300 {
+				return false
+			}
+			if s3("PUT", base+"/"+bucket+"/probe", "ok") != 200 || s3("GET", base+"/"+bucket+"/probe") != 200 {
+				_ = s3("DELETE", base+"/"+bucket+"/probe")
+				_ = s3("DELETE", base+"/"+bucket)
+				time.Sleep(2 * time.Second)
+				return false
+			}
+			return s3("DELETE", base+"/"+bucket+"/probe") < 300
+		})
+	}
+}
+
+// restoreAt restores the cloud database from repo to target on a fresh machine of service
+// (bin/restore, as the disaster runbook does) and answers query's last line on it.
+func (h *ha) restoreAt(service string, repo int, target time.Time, query string) (string, error) {
+	script := fmt.Sprintf(`set -e
+/opt/rehearsal-node/pgbr-conf.sh
+gosu postgres maktaba-restore --pgdata /tmp/restored --repo %d --target '%s' --port 5499
+gosu postgres psql -h /tmp -p 5499 -U postgres -d maktaba -Atqc "%s"`, repo, target.Format("2006-01-02 15:04:05.000000+00"), query)
+	out, err := h.composeHA("run", "--rm", "--no-deps", "--entrypoint", "bash", service, "-c", script)
+	if err != nil {
+		return out, err
+	}
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	return lines[len(lines)-1], nil
+}
+
+// waitArchived closes the current WAL segment and waits until the archiver has sent it: a
+// restore to a time in it replays from the archive, and stops short of the target (FATAL:
+// recovery ended before configured recovery target was reached) while the segment is not
+// there. Any segment archived before is not enough. pg_switch_wal is the superuser's: the app
+// role's call fails.
+func (h *ha) waitArchived(node string) {
+	t := h.t
+	t.Helper()
+	db, err := sql.Open("postgres", fmt.Sprintf("postgres://postgres:rehearsal-super@127.0.0.1:%d/postgres?sslmode=disable&connect_timeout=2", h.pg[node]))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	var seg string
+	if err := db.QueryRow(`SELECT pg_walfile_name(pg_switch_wal() - 1)`).Scan(&seg); err != nil {
+		t.Fatalf("switching the WAL segment on %s: %v", node, err)
+	}
+	waitFor(t, 3*time.Minute, "WAL segment "+seg+" archived", func() bool {
+		var last string
+		err := db.QueryRow(`SELECT coalesce(last_archived_wal, '') FROM pg_stat_archiver`).Scan(&last)
+		return err == nil && last >= seg
+	})
 }

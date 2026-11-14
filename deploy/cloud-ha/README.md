@@ -315,6 +315,81 @@ LB11) proves it: the lock moves within 15 s of its holder's kill, the sign-in li
 across the nodes, a plan change reaches both relays within a second, and a rolling deploy fails
 no request with each stopping node out of the balancer within 10 s.
 
+## The database on its own nodes (story 50.18, Phase 2)
+
+Phase 2 moves Postgres off the pair onto three machines of its own, so a database node can go
+without taking an app node with it. Nothing here is deployed until the owner creates it.
+
+```
+app nodes (relay, api, worker) ── db.internal:6432 = the database's Floating IP
+                                       │
+              ┌────────────────────────┼────────────────────────┐
+           db-1 (FSN1)              db-2 (NBG1)              db-3 (HEL1)
+      Patroni + PgBouncer      Patroni + PgBouncer      Patroni + PgBouncer
+           primary            synchronous replica        async replica
+              └──────────── etcd on the three ─────────────────┘
+```
+
+- **No committed write lost.** `synchronous_node_count: 1`: a commit returns once one replica
+  has it, and Patroni promotes only that replica. With it down for maintenance the other
+  replica becomes synchronous, so writes go on.
+- **PgBouncer** on every node next to Postgres (`pgbouncer/`, port 6432, TLS required, its
+  certificate signed by the owner's CA for `db.internal`, which the apps check with
+  `sslmode=verify-full`: the Floating IP is a public address): the
+  cloud's `database.url` is the transaction pool (`db.internal:6432/maktaba`), and
+  `database.direct_url` (the worker's lock, the relay's LISTEN) its session pool
+  (`db.internal:6432/cloud_session`). The cloud sends every query with arguments in one round
+  trip (`binary_parameters=yes`, which `db.Open` adds): lib/pq's two round trips can land on two
+  server connections in a transaction pool. The migrator's lock is a transaction lock, so
+  `migrate up` goes through the transaction pool too.
+- **Following the leader.** The new primary's callback moves the database's Floating IP
+  (`DB_FLOATING_IP_ID`) and starts nothing else (`CLOUD_PROCESSES=off`); a demoted node's
+  callback drops its PgBouncer's clients (`KILL` and `RESUME`), so no app stays on a read-only
+  server. The apps' pools reconnect through the Floating IP on their own.
+- **Backups** run from whichever database node leads (`maktaba-backup.timer` on the three, as on
+  the pair: a replica's run does nothing).
+- **Alerts:** `pgbouncer_down` (sev1, the primary's PgBouncer, [runbook](../../docs/runbooks/cloud/pgbouncer-down.md))
+  and `sync_replica_missing` (sev2, [runbook](../../docs/runbooks/cloud/sync-replica-missing.md)).
+- **Planned work:** `sudo switchover --announced --db` picks the synchronous replica and checks
+  its PgBouncer, not a Caddy.
+
+**What the owner creates** (none of it is called from the repository):
+
+1. **db-1, db-2 and db-3** (CCX13 or larger, in FSN1, NBG1 and HEL1) in the private network,
+   each with `/etc/maktaba/cloud-ha.env` (`NODE_NAME`, `NODE_ADDR`, `SERVER_ID`, `PRIVATE_NET`,
+   `SSH_FROM`, the Postgres passwords and backup repositories as on A and B,
+   `DB_FLOATING_IP_ID` and `DB_FLOATING_IP`, `DB_CLIENTS`, `JOIN=later` for the move), etcd
+   certificates from `bin/make-etcd-certs` for the three, and the Hetzner token in
+   `/etc/maktaba/hcloud-token`; then `sudo deploy/cloud-ha/setup.sh --role db` on each.
+   **PgBouncer's certificate:** `bin/make-pgbouncer-cert <the etcd CA's dir>` (one certificate
+   for `db.internal`, signed by the same CA); `pgbouncer.crt` and `pgbouncer.key` to
+   `/etc/pgbouncer/tls.crt` and `tls.key` on A, B and the three database nodes before
+   setup.sh (it refuses without them), and `ca.crt` to `/etc/maktaba/db-ca.crt` on every app
+   node (A and B included: the move's `repoint` refuses without it).
+2. **The database's Floating IP** (in the database nodes' location group), and its id and
+   address in A's and B's `cloud-ha.env` too (`DB_FLOATING_IP_ID`, `DB_FLOATING_IP`).
+3. **The Cloud Firewall** rule letting the app nodes' addresses reach 6432 on the Floating IP
+   (UFW on the nodes allows `DB_CLIENTS` and the private network only).
+4. **`db.internal`** in `/etc/hosts` on every app node, pointing at the Floating IP.
+5. **Prometheus targets** on the witness: `/etc/prometheus/targets/db-patroni.json` (the three
+   on `:8008`) and `db-pgbouncer.json` (the three on `:9127`).
+6. **The move:** `deploy/cloud-ha/bin/migrate-db-nodes all --announced` (after the status page
+   notice, 50.11), with `RELAY_HOST_A`, `RELAY_HOST_B`, `DB_HOSTS="db-1 db-2 db-3"`,
+   `WITNESS_HOST` and the SSH key as for the runbooks. Each step checks first and refuses with
+   the reason; `all` can be run again after a refusal. Rollback until `retire`:
+   `switchover --db --candidate <A's member>` and repoint back.
+
+The rehearsal proves it (`compose-db.yml`, a second stand-in Hetzner moving the database's
+Floating IP). `db-nodes-failover` (three runs): with the synchronous replica stopped the other
+took over in 4 to 11 s (writes held at most 2 to 9 s); the primary killed under load, the
+synchronous replica led in 29 to 38 s and held the Floating IP 6 to 7 s later, no acknowledged
+commit lost (0 of 379 to 482), no relay request failed, the api unready while no primary
+existed (35 to 43 s), the workers' lock back in 40 to 47 s, and a backup from the new leader
+restored exactly to a point in time from the second repository. `db-nodes-migrate`: the whole
+move in 2 min 36 s under 100 homes and a writer, writes held at most 2.5 s, remote play never
+paused (0 of 2,490 requests failed), 0 of 1,601 commits lost; db-1 leads with db-2 synchronous
+and db-3 streaming, the pair gone from Patroni and etcd.
+
 ## Day to day
 
 | What | How |

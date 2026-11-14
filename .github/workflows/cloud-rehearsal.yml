@@ -114,6 +114,11 @@ jobs:
           # 50.17: three api nodes behind HAProxy (LB11): the worker's lock, the shared sign-in
           # limit, a change reaching every cache, a rolling deploy with no failed request
           - api-pool
+          # 50.18: the database on three nodes behind PgBouncer and its Floating IP: the
+          # primary killed under load (no committed write lost, the apps ride it out, backups
+          # from the new layout), and the move from the Phase 1 pair
+          - db-nodes-failover
+          - db-nodes-migrate
     steps:
       - uses: actions/checkout@v6.0.2
       - uses: actions/setup-go@v6.4.0

@@ -20,9 +20,11 @@ Epic 51's 0051.
 
 ## Concurrency
 
-`Migrator.Up` takes `pg_advisory_lock(8472612)`. Two pods running
-`maktaba-cloud migrate up` simultaneously serialize on this lock — the
-first runs, the second observes `current = head` and exits cleanly.
+`Migrator.Up` takes `pg_advisory_xact_lock(8472612)` in a transaction it keeps open for the
+run. Two pods running `maktaba-cloud migrate up` simultaneously serialize on this lock — the
+first runs, the second observes `current = head` and exits cleanly. A transaction lock, not a
+session lock, so it holds through PgBouncer's transaction pool (Epic 50 story 50.18): the open
+transaction keeps its server connection, and the lock ends with it.
 
 The worker's jobs run only on the api node holding `pg_try_advisory_lock(8472613)` (Epic 50
 story 50.17, `cloud/internal/db/leader.go`); `cloud_leaders` records the holder and its
