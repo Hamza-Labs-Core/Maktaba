@@ -497,6 +497,12 @@ func TestReconcileRowsCarryMemoryAndRestartsOfADay(t *testing.T) {
 	if row.Detail["rss_mb"] != int64(500) || row.Detail["restarts_24h"] != 2 || row.Detail["restarts"] != 9 {
 		t.Fatalf("detail %v", row.Detail)
 	}
+	// story 54.44: with more than one process, each one's own number rides beside the sum
+	// (a shared plugin runner group is one of them)
+	parts, _ := row.Detail["rss_parts"].(map[string]any)
+	if len(parts) != 2 || parts[string(tab.procs[0].Role)+"/a1"] != int64(300) || parts[string(tab.procs[1].Role)+"/a2"] != int64(200) {
+		t.Fatalf("rss_parts %v", row.Detail["rss_parts"])
+	}
 	// a minute later: not read again; five minutes later a few MB more: not rewritten
 	mem[101] = 310 << 20
 	now = now.Add(time.Minute)

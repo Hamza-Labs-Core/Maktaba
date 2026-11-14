@@ -864,16 +864,15 @@ build fails when the two differ.
 
 ### Added
 
-- **Maktaba on LG TVs (story 58.11).** An LG TV on webOS 5 or later (2020 on) gets Maktaba as
-  an app: the launcher, packed as an `.ipk` that each release whose launcher changed attaches,
-  ready for the LG Content Store. Videos play on the TV's own player, with no conversion where
-  the TV can play the file: 4K, HDR10 and HLG, Dolby audio passed to a receiver, and Dolby
-  Vision only on the model years proven on a real TV. The app tells the home what the TV plays,
-  so the home converts only what it must; a file the TV refuses is opened again, converted,
-  from where it stopped. Subtitles are drawn by Maktaba, Arabic right to left, at the player's
-  sizes, and the Audio panel switches tracks. Back and the Magic Remote work as on the web
-  pages; Back from Home asks before leaving. The store listing, the review scenario and the
-  real-device checklist are in English and Arabic; the submission is made by a person.
+- **A home for TV store reviewers (Epic 58, story 58.04).** review.maktaba.tv is a Maktaba home
+  the project runs with public-domain and openly licensed content only (Blender's and Netflix's
+  open films, a CC BY lecture series, a LibriVox audiobook, each titled in English and Arabic),
+  test files for 4K HDR10, 1080p, an MKV with EAC3 and Arabic subtitles and a transcode, a
+  viewer account for reviewers and a restricted child for the parental checks.
+  `maktaba-server review-home seed|rotate` sets it up and rotates its passwords after each
+  submission round; the passwords live only in the release secrets, every store's submission
+  notes name the secret (`docs/stores/review-home.md`), and a check every 15 minutes walks the
+  cloud code and a stream of each test file.
 
 - **A cast grant for Maktaba's Cast receiver (Epic 58, story 58.07).** A signed-in phone or
   browser can now mint a cast grant on the home (`POST /api/cast/grants`) for the one video or
@@ -2689,6 +2688,17 @@ build fails when the two differ.
   connection is not encrypted, and Settings → Switch home picks another home. English and
   Arabic, right to left in Arabic. The store packages come with stories 58.10 and 58.11.
 
+- **Maktaba on LG TVs (story 58.11).** An LG TV on webOS 5 or later (2020 on) gets Maktaba as
+  an app: the launcher, packed as an `.ipk` that each release whose launcher changed attaches,
+  ready for the LG Content Store. Videos play on the TV's own player, with no conversion where
+  the TV can play the file: 4K, HDR10 and HLG, Dolby audio passed to a receiver, and Dolby
+  Vision only on the model years proven on a real TV. The app tells the home what the TV plays,
+  so the home converts only what it must; a file the TV refuses is opened again, converted,
+  from where it stopped. Subtitles are drawn by Maktaba, Arabic right to left, at the player's
+  sizes, and the Audio panel switches tracks. Back and the Magic Remote work as on the web
+  pages; Back from Home asks before leaving. The store listing, the review scenario and the
+  real-device checklist are in English and Arabic; the submission is made by a person.
+
 ### Changed
 
 - **A machine that loses its home stays usable** under a notice instead of the whole app being
@@ -3041,6 +3051,19 @@ build fails when the two differ.
   Back steps out to the tab's top, then its tabs, then out; each tab keeps its place. Up next shows
   in a video's last 30 seconds, and a shuffled queue offers Shuffle again. A focused card grows by
   1.08 inside the brass ring.
+
+- **One Plugins page for every plugin (story 54.44).** Settings → Plugins lists every plugin
+  in one list, the ones Maktaba publishes and the ones you installed, each marked with who
+  publishes it, with a filter. Every plugin has its own switch on its card, its jobs of the
+  last day, its problems (a link to its failed jobs and its logs) and the memory of the
+  program that runs it, said plainly when several plugins share that program. Each plugin has
+  a page at its own address. A plugin by Maktaba still comes with Maktaba and is updated with
+  it; its page says so instead of offering Remove. The parts that must always run are part of
+  Maktaba itself and are no longer shown as plugins. The Components page links to each
+  plugin's page. For scripts: `GET /api/plugins` has no `built_in` field any more. Its
+  `plugins` list is the installed plugins, as before; `GET /api/plugins?release=true` adds
+  Maktaba's plugins with `publisher` and `source`. `GET /api/queues/failures` takes several
+  stages in `stage`.
 
 ### Fixed
 

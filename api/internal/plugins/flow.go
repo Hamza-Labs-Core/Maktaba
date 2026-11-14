@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/plugins/firstparty"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/components"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/plugins/pluginflow"
 )
@@ -175,6 +176,9 @@ type FlowMember struct {
 // manifests say, the others as the flow declares them, marked missing. A plugin with no
 // flow.toml is the flow of itself.
 func (l *Lifecycle) Flow(ctx context.Context, id string) (*FlowView, error) {
+	if fp := firstparty.ByID(id); fp != nil && IsPublished(id) {
+		return l.publishedFlow(ctx, fp)
+	}
 	in, err := loadInstall(ctx, l.DB, id, false)
 	if err != nil {
 		return nil, err
