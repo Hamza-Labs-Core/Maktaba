@@ -31,6 +31,8 @@
 	</array>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>MaktabaCastReceiverAppID</key>
+	<string>$(MAKTABA_CAST_APP_ID)</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsArbitraryLoads</key>
@@ -41,6 +43,8 @@
 	<key>NSBonjourServices</key>
 	<array>
 		<string>_maktaba._tcp</string>
+		<string>$(MAKTABA_CAST_BONJOUR)</string>
+		<string>$(MAKTABA_CAST_BONJOUR_APP)</string>
 	</array>
 	<key>UIBackgroundModes</key>
 	<array>

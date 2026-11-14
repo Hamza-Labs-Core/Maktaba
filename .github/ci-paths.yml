@@ -873,6 +873,8 @@ apple_player_ui:
   - *ci
   - 'apps/apple/Player/**'
   - 'apps/apple/Shared/**'
+  # the Player's Cast build settings (58.06: the receiver id, its Bonjour services)
+  - 'apps/apple/Config/**'
   - 'apps/apple/MaktabaKit/Package.swift'
   - 'apps/apple/MaktabaKit/Sources/**'
   - 'apps/apple/UITests/**'

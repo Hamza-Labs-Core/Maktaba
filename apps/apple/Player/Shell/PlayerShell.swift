@@ -48,6 +48,8 @@ struct PlayerShell: View {
     /// simulators answered after `LiveSectionGate.patience`). Settled once both are known
     /// (`settleLaunch`), unless the person chose a section first.
     @State private var liveUnsettled: Bool
+    /// Google Cast for this sign-in (story 58.06): none where the build names no receiver.
+    @State private var cast = CastController.shared
 
     init(context: PlayerContext, playing: Binding<Bool>, link: Binding<PlayerRoute?> = .constant(nil),
          sections: [PlayerSection] = PlayerSection.visible(),
@@ -127,6 +129,15 @@ struct PlayerShell: View {
         .playerMenuTarget(sections: shown, selection: chosen)
         // the components' posters and logos: the image cache, with this home's Bearer token
         .environment(\.imageSource, .home(context.client))
+        // a cast goes on with the watch screen closed: its mini controller over the sections
+        .overlay(alignment: .bottom) {
+            if cast.showsMini {
+                CastMiniController(cast: cast)
+                    .padding(.horizontal, MaktabaTokens.Spacing.s4)
+                    .padding(.bottom, 64)
+            }
+        }
+        .environment(cast)
         #if os(macOS)
         .environment(windowPlayer)
         // under the player, the sidebar and the page are out of sight: out of VoiceOver's reach too
