@@ -5851,6 +5851,21 @@ operations:
     "204": null
   POST /queues/resume-all:
     "204": null
+  POST /queues/workers/restart:
+    "200":
+      type: object
+      properties:
+        restarted:
+          type: integer
+      required:
+        - restarted
+    "202":
+      type: object
+      properties:
+        restarted:
+          type: integer
+      required:
+        - restarted
   POST /queues/youtube-tartube:
     "202":
       type: object
