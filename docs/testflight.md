@@ -232,3 +232,39 @@ refused from then on (401).
 3. Tap **Install**. Each new tag's build arrives as an update in TestFlight.
 
 Nothing here submits the apps for App Store review or adds external testers.
+
+## When Install fails though the build is listed
+
+Open as of 2026-11-14, from about 0.3.100: TestFlight lists the new build for an internal
+tester, and Install or Update answers
+
+> Could not install Maktaba Player. The requested app is not available or doesn't exist.
+
+What is known:
+
+- It is not the build. The uploads were all green, and nothing in what is built or uploaded
+  changed around when it began (the same Xcode, export and app settings before and after).
+- Apple's developer forums have many threads with this exact message and no answer from Apple.
+  The one cause posters name is the app record's sale state: an app listed as "Removed from
+  Sale", after which no build installs
+  ([778597](https://developer.apple.com/forums/thread/778597),
+  [837048](https://developer.apple.com/forums/thread/837048),
+  [826537](https://developer.apple.com/forums/thread/826537)).
+- A Stack Overflow question on this message
+  ([66172052](https://stackoverflow.com/questions/66172052/how-to-fix-the-requested-app-is-not-available-or-doesnt-exist-in-testflight))
+  has the same cause in every answer: the app record is "Removed from Sale" (not on sale).
+  What its posters did, none of it tried here yet:
+  - released the app on the App Store again, and TestFlight came back (the accepted answer);
+  - with a version approved and waiting for developer release: released it for sale for a few
+    minutes, then removed it from sale again;
+  - were told by Apple to submit a new build for review;
+  - pressed "Notify testers" on a build shown as approved with a yellow mark;
+  - gave up on the record and made a new app.
+  The asker's began after renewing the developer programme membership.
+- So the first thing to read is each app's status on its App Store page in App Store Connect.
+  Putting an app on sale for a few minutes needs a version Apple has approved; an app never
+  submitted has none.
+
+App Store Connect is the owner's: the record's sale state, the workaround and a report to
+Apple (Feedback Assistant, or a Developer Support case) are done there, by hand. When it is
+settled, write here what the record's state was and what cleared it.
