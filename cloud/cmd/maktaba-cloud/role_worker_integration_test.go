@@ -58,6 +58,25 @@ func TestWorkerRoleStaysUp(t *testing.T) {
 	p.staysUpThenStops(t)
 }
 
+// The worker takes its leader lock at start (story 50.17 §2) and says so on /metrics:
+// worker_leader{node} 1, with the node's name from MAKTABA_NODE_ID.
+func TestWorkerRoleLeads(t *testing.T) {
+	t.Setenv("MAKTABA_NODE_ID", "api-test-1")
+	p := startRole(t, "worker", "")
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		body, _ := httpGet("http://" + p.addr + "/metrics")
+		if strings.Contains(body, `worker_leader{node="api-test-1"} 1`) {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the worker never led; /metrics:\n%s\noutput:\n%s", body, p.out.String())
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	p.staysUpThenStops(t)
+}
+
 // roleProc is a role's process started by startRole.
 type roleProc struct {
 	cmd    *exec.Cmd

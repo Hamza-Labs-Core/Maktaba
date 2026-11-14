@@ -89,13 +89,16 @@ jobs:
           chmod +x ./gradlew
           ./gradlew --no-daemon --stacktrace :app:testDebugUnitTest :app:verifyRoborazziDebug :app:lintDebug :app:assembleDebug :app:bundleRelease
 
-      - name: Reports
-        if: failure()
-        uses: actions/upload-artifact@v7.0.1
+      # Story 58.16: every TV job keeps its app logs, passed or failed, 30 days, linked from
+      # the job summary. Robolectric's stdout (robolectric.logging=stdout, build.gradle.kts) is
+      # in the test results; the screenshots compared against the references are Roborazzi's.
+      - name: App logs
+        if: always()
+        uses: ./.github/actions/tv-logs
         with:
-          name: android-tv-reports
+          name: android-tv-logs
+          what: Robolectric stdout in the test results, lint and test reports, Roborazzi screenshots
           path: |
             apps/tv/android/app/build/reports/
             apps/tv/android/app/build/test-results/
             apps/tv/android/app/build/outputs/roborazzi/
-          retention-days: 7
