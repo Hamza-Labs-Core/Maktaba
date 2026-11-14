@@ -112,7 +112,7 @@ function BroadcastAccessInner() {
         <p role="alert">{accessErrorText(access.err, t)}</p>
       ) : !v ? (
         <p>{t("broadcastAccess.loading")}</p>
-      ) : v.channels.length === 0 ? (
+      ) : !v.channels?.length ? (
         <p>{t("broadcastAccess.noChannels")}</p>
       ) : (
         <Card>
