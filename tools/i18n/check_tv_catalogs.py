@@ -93,7 +93,7 @@ _PLACEHOLDER = re.compile(r"\{\{\s*[\w.]+\s*\}\}|\{[\w.]+\}|%(?:\d+\$)?[sdif@]")
 _CODE = re.compile(
     r"`[^`]*`"  # backticked code
     r"|\b[a-z][a-z0-9+.-]*://\S+"  # a URL
-    r"|\b[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)+\b(?:/\S*)?"  # a host or file name (maktaba.tv/code, en.json)
+    r"|\b[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)+\b(?:/\S*)?"  # a host or file name (example.org/path, en.json)
 )
 _LATIN_WORD = re.compile(r"[A-Za-z0-9][A-Za-z0-9'-]*")
 
