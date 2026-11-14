@@ -1,0 +1,103 @@
+{
+  "lang": "en",
+  "rtl": false,
+  "strings": {
+    "launcher.title": "Maktaba",
+    "launcher.start.title": "Choose your home",
+    "launcher.saved.title": "Your homes",
+    "launcher.saved.last": "Last used",
+    "launcher.find.title": "Find on this network",
+    "launcher.find.searching": "Looking for Maktaba homes…",
+    "launcher.find.found": "Homes on this network",
+    "launcher.find.none": "No home found on this network.",
+    "launcher.find.noIp": "This TV did not say its network address. Enter the home's address instead.",
+    "launcher.find.again": "Search again",
+    "launcher.typed.title": "Enter the home's address",
+    "launcher.typed.label": "Address, for example 192.168.1.20",
+    "launcher.typed.connect": "Connect",
+    "launcher.typed.invalid": "That is not an address. Try something like 192.168.1.20.",
+    "launcher.more": "More ways",
+    "launcher.back": "Back",
+    "launcher.unreachable.body": "Check that the home is on and on the same network as this TV.",
+    "launcher.tryAgain": "Try again",
+    "launcher.chooseAnother": "Choose another home",
+    "launcher.forget": "Forget this home",
+    "launcher.plainHttp": "Connected without encryption on your network",
+    "launcher.plainHttpCode": "Sign in with a code: a password is never sent without encryption.",
+    "launcher.tooOld": "This TV is too old for the Maktaba app. You can still cast to it from Maktaba on your phone if it supports Google Cast or AirPlay.",
+    "compat.updateHome.title": "This home needs an update",
+    "compat.updateApp.title": "Update this app",
+    "compat.updateApp.roku": "Roku updates channels by itself. Restart the Roku to get the update now.",
+    "roku.notAvailable": "That video isn't available.",
+    "roku.exitConfirm": "Leave Maktaba?",
+    "roku.options": "Press * for more",
+    "nav.home": "Home",
+    "nav.libraries": "Libraries",
+    "nav.search": "Search",
+    "nav.account": "Account",
+    "home.continueWatching": "Continue watching",
+    "home.recentlyAdded": "Recently added",
+    "home.forYou": "For you",
+    "library.tab.recommended": "Recommended",
+    "library.tab.library": "Library",
+    "library.tab.collections": "Collections",
+    "library.tab.playlists": "Playlists",
+    "library.tab.categories": "Categories",
+    "action.play": "Play",
+    "action.shuffle": "Shuffle",
+    "video.startOver": "Start over",
+    "search.hint": "Search your library",
+    "account.switchHome": "Switch home",
+    "account.signOut": "Sign out",
+    "account.language": "Language",
+    "account.language.en": "English",
+    "account.language.ar": "العربية"
+  },
+  "templates": {
+    "launcher.connecting": {
+      "text": "Connecting to %1$s…",
+      "widthChars": 48,
+      "lines": 1
+    },
+    "launcher.notHome": {
+      "text": "No Maktaba home answered at %1$s.",
+      "widthChars": 60,
+      "lines": 2
+    },
+    "launcher.unreachable.title": {
+      "text": "Cannot reach %1$s",
+      "widthChars": 48,
+      "lines": 1
+    },
+    "launcher.version": {
+      "text": "Version %1$s",
+      "widthChars": 32,
+      "lines": 1
+    },
+    "compat.updateHome.admin": {
+      "text": "Update Maktaba on %1$s in Admin → Updates, then come back.",
+      "widthChars": 60,
+      "lines": 3
+    },
+    "compat.updateHome.viewer": {
+      "text": "Ask the person who runs %1$s to update Maktaba.",
+      "widthChars": 60,
+      "lines": 2
+    },
+    "compat.homeVersion": {
+      "text": "%1$s runs Maktaba %2$s.",
+      "widthChars": 60,
+      "lines": 1
+    },
+    "compat.updateApp.why": {
+      "text": "%1$s no longer works with this version of the app.",
+      "widthChars": 60,
+      "lines": 2
+    },
+    "video.resumeFrom": {
+      "text": "Resume from %1$s",
+      "widthChars": 32,
+      "lines": 1
+    }
+  }
+}
