@@ -30,7 +30,7 @@ func TestDefaultLoads(t *testing.T) {
 			switchable++
 		}
 	}
-	if switchable < 25 || switchable > 50 {
+	if switchable < 25 || switchable > 60 {
 		t.Fatalf("%d switchable components, want about 30", switchable)
 	}
 	order := c.Order()

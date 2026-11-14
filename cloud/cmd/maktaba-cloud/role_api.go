@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/sha256"
 	"fmt"
@@ -23,6 +24,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/auth/sessions"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/auth/token"
 	billingpkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/billing"
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/broadcast"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/db"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/entitlement"
@@ -194,6 +196,9 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 	}
 	ipSalt := sha256.Sum256([]byte("maktaba-broadcast-agreement-ip\x00" + string(secret)))
 	broadcastDeps := &broadcasth.Deps{DB: pool.DB, Servers: servers, Store: broadcastStore, Logger: logger, IPSalt: ipSalt[:]}
+	// the kill switch (story 50.25): the signed list for the edge and homes, and the console's
+	// add and lift (wired on the admin listener below)
+	revDeps := revocationDeps(cfg, servers, pool, logger, edgeDeps.Key)
 	serversDeps := serversh.Deps{Servers: servers, Assertions: assertions, Licenses: licenses,
 		ManageURL: strings.TrimRight(cfg.Server.WebURL, "/") + "/billing"}
 	homes := &homesh.Deps{Servers: servers, Users: users, Signer: assertions, RelayHost: cfg.Relay.PublicHost,
@@ -323,8 +328,10 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 		// credential, never a user token.
 		serversh.MountAgent(app, serversDeps)
 		broadcasth.MountAgent(app, broadcastDeps)
+		broadcasth.MountIngest(app, ingestDeps(cfg, servers, pool, logger))
 		// the broadcast edge: each request signed with its key, no account
 		edgeh.Mount(app, edgeDeps)
+		broadcasth.MountRevocations(app, revDeps)
 		reports.MountAgent(app, &reports.AgentDeps{Store: reportStore, Servers: servers, Logger: logger,
 			Refuse: strings.EqualFold(os.Getenv("MAKTABA_CLOUD_REPORTS"), "off")})
 		// a release's symbol tables: the symbols token, no account
@@ -390,6 +397,10 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 			// the cloud's log index on W (53.17), as the forwarder reaches it
 			Logs: &adminh.LogsSource{URL: os.Getenv(EnvLogsURL), Token: logsToken()},
 		})
+
+		// the broadcast kill switch, for the service admin only (50.25)
+		revDeps.Gate = adminGate
+		broadcasth.MountRevocationsAdmin(g, revDeps)
 
 		// the problem reports homes sent, for the service admin only (53.16)
 		reports.MountAdmin(g, &reports.AdminDeps{Store: reportStore, DB: pool.DB, Logger: logger, Gate: adminGate,
@@ -541,4 +552,45 @@ func turnstileGuard(cfg config.Config, fake turnstile.Verifier) (*turnstile.Guar
 	}
 	return &turnstile.Guard{Enabled: true, Verifier: v, WebOrigins: t.WebOrigins,
 		ClientIP: func(r *http.Request) string { return cmw.GetClientIP(r.Context()) }}, nil
+}
+
+// ingestDeps wires the broadcast edge's ingest tokens (story 50.21): on only with
+// broadcast.enabled and its key; otherwise the route answers 503 broadcast_disabled.
+// revocationDeps signs the kill switch's list with the broadcast signing key (broadcast.key_path,
+// the key of the ingest tokens) and pushes it to the edge's control route. Without the key the
+// console still records entries, the pull is 503 and nothing reaches the edge.
+func revocationDeps(cfg config.Config, servers *stores.Servers, pool *db.Pool, logger *slog.Logger, edgeKey ed25519.PublicKey) *broadcasth.RevocationDeps {
+	store := &broadcast.RevocationStore{DB: pool.DB}
+	rev := &broadcast.Revocations{Store: store, Logger: logger}
+	if cfg.Broadcast.IngestURL != "" {
+		rev.ControlURL = strings.TrimRight(cfg.Broadcast.IngestURL, "/") + "/v1/control/revocations"
+	}
+	if cfg.Broadcast.KeyPath != "" {
+		if k, err := broadcast.LoadKey(cfg.Broadcast.KeyPath); err != nil {
+			logger.Warn("broadcast revocation list unsigned", "err", err)
+		} else {
+			rev.Key = &k
+		}
+	}
+	owner := func(ctx context.Context, serverID string) (string, error) {
+		var uid string
+		err := pool.DB.QueryRowContext(ctx, `SELECT owner_user_id::text FROM servers WHERE id::text = $1`, serverID).Scan(&uid)
+		return uid, err
+	}
+	return &broadcasth.RevocationDeps{Rev: rev, Store: store, Agents: servers, Owner: owner, EdgeKey: edgeKey, Logger: logger}
+}
+
+func ingestDeps(cfg config.Config, servers *stores.Servers, pool *db.Pool, logger *slog.Logger) *broadcasth.IngestDeps {
+	d := &broadcasth.IngestDeps{Agents: servers, Plans: broadcasth.DBPlans{DB: pool.DB}, IngestURL: cfg.Broadcast.IngestURL}
+	if !cfg.Broadcast.Enabled {
+		return d
+	}
+	k, err := broadcast.LoadKey(cfg.Broadcast.KeyPath)
+	if err != nil {
+		logger.Warn("broadcast ingest tokens disabled", "err", err)
+		return d
+	}
+	d.Key = &k
+	logger.Info("broadcast ingest tokens on", "kid", k.Kid)
+	return d
 }

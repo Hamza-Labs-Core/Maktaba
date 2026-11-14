@@ -1,0 +1,37 @@
+{
+  "note": "TEST keys from public labels (tokens_test.go), never for production. go test ./internal/broadcast -run TestVectors -update rewrites this file.",
+  "at_ms": 1794528000000,
+  "cloud_pubkeys": "{\"dfe1ac1be191ee86\":\"NGtWXcDWUxv71tr-dzeEf3pKouK9Jq3Z4uLHcQheSRU\",\"fa449d63be7d92cd\":\"hbUjRfdrFqJl7wdeSaNXGBbDN8qenoWV3sIFa7mtasw\"}",
+  "ingest": "mkbi1.eyJ0eXAiOiJpbmdlc3QiLCJwdWIiOiJwdWItMSIsImNoIjoiNjZiNTRmZmM0MDEyMDBkYmIwNDk4ZmQ4NmEzN2Q3ZGEiLCJydW5ncyI6WyJzcmMiLCI3MjBwIiwiNDgwcCJdLCJob21lIjoic3J2LTEiLCJrYnBzIjoxMDAwMCwiaWF0IjoxNzk0NTI4MDAwLCJleHAiOjE3OTQ2MTQ0MDAsImtpZCI6ImZhNDQ5ZDYzYmU3ZDkyY2QifQ.wyF5rnj2NkRNvgSXJdS3HLryneTlCphjNxJHMEtne5q8HlvR-yrH8q8-Ea_WpwxLUXomphrieY7P4pDxsUreCA",
+  "ingest_claims": {
+    "typ": "ingest",
+    "pub": "pub-1",
+    "ch": "66b54ffc401200dbb0498fd86a37d7da",
+    "rungs": [
+      "src",
+      "720p",
+      "480p"
+    ],
+    "home": "srv-1",
+    "kbps": 10000,
+    "iat": 1794528000,
+    "exp": 1794614400,
+    "kid": "fa449d63be7d92cd"
+  },
+  "plan": "mkbc1.eyJleHAiOjE3OTQ1Mjg5MDAsImlhdCI6MTc5NDUyODAwMCwia2lkIjoiZmE0NDlkNjNiZTdkOTJjZCIsIm1heF9ydW5ncyI6MiwibWF4X3RvcF9rYnBzIjozMDAwLCJtb2RlIjoibG93ZXN0IiwicHViIjoicHViLTEiLCJ0eXAiOiJwbGFuIiwidmVyc2lvbiI6M30.viJvd6PPLOLoXVt7VEmwrot2288A0FgxzqakL41ExTa6ZS31ppSHY4WaFGE58-astcbnwE8PC5IJVlxTG7_vBw",
+  "revocations": "mkbc1.eyJlbnRyaWVzIjpbeyJhY3Rpb24iOiJvZmZfYWlyIiwiaWQiOiJyLTkxIiwia2luZCI6ImNoYW5uZWwiLCJyZWFzb24iOiJub3RpY2UiLCJyZWYiOiI2NmI1NGZmYzQwMTIwMGRiYjA0OThmZDg2YTM3ZDdkYSIsInNpbmNlIjoiMjAyNi0xMS0xM1QwMDowMDowMFoifSx7ImFjdGlvbiI6InRlcm1pbmF0ZSIsImlkIjoici05MiIsImtpbmQiOiJwdWJsaXNoZXIiLCJyZWFzb24iOiJyZXBlYXRfaW5mcmluZ2VyIiwicmVmIjoicHViLTQyIiwic2luY2UiOiIyMDI2LTExLTEzVDAwOjAwOjAwWiJ9LHsiYWN0aW9uIjoic2xhdGUiLCJpZCI6InItOTMiLCJraW5kIjoicHJvZ3JhbW1lIiwicmVhc29uIjoibm90aWNlIiwicmVmIjoiNjZiNTRmZmM0MDEyMDBkYmIwNDk4ZmQ4NmEzN2Q3ZGEiLCJzaW5jZSI6IjIwMjYtMTEtMTNUMDA6MDA6MDBaIiwidW50aWwiOiIyMDI2LTExLTEzVDA5OjAwOjAwWiJ9LHsiYWN0aW9uIjoic3VzcGVuZCIsImlkIjoici05NCIsImtpbmQiOiJob21lIiwicmVhc29uIjoiYWJ1c2UiLCJyZWYiOiJzcnYtOSIsInNpbmNlIjoiMjAyNi0xMS0xM1QwMDowMDowMFoifV0sImV4cCI6MTc5NDcwMDgwMCwiZXhwaXJlc19hdCI6IjIwMjYtMTEtMTVUMDA6MDA6MDBaIiwiaWF0IjoxNzk0NTI4MDAwLCJpc3N1ZWRfYXQiOiIyMDI2LTExLTEzVDAwOjAwOjAwWiIsImtpZCI6ImZhNDQ5ZDYzYmU3ZDkyY2QiLCJzY2hlbWEiOjEsInR5cCI6InJldm9jYXRpb25zIiwidmVyc2lvbiI6MTg0Mn0.3-MjpCQTvxD12znWO4Un-rhs7Tbb3dB2GjWo2hYyPPsuYCDtb64Ehrqugx5EKU9o_J5Yod5yLv_18oN_FWC-Cg",
+  "edge": {
+    "seed": "PTIESADJNgSD0U7khi8PQi-ynUPPndL7UPRToOzx4GY",
+    "public": "RFzkDxom0fr6y7_YTJu5OnDERuHKWSszIxHUlL-hjpI",
+    "method": "POST",
+    "path": "/_edge/usage",
+    "ms": 1794528000000,
+    "body": "{\"edge\":\"broadcast-edge\",\"windows\":[]}",
+    "signature": "-r0P_d6FPwWTjYd8N0GSsf50Zlj9X5D3y5O-ywdo50Wib4zmi4TmEhTeJNv8-E1ig2yt3g8zQaoEMhjwD_LKCA"
+  },
+  "channel": {
+    "server": "srv-1",
+    "local": "7",
+    "id": "66b54ffc401200dbb0498fd86a37d7da"
+  }
+}

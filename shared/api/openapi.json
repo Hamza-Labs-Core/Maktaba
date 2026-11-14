@@ -130,6 +130,10 @@
     {
       "name": "Parental controls",
       "description": "Age tiers on the home's content (0, 9, 13, 16, 18, or unrated) and the table that maps each country's rating labels to them."
+    },
+    {
+      "name": "Broadcasting",
+      "description": "Publishing Live TV channels to viewers outside the home (admins only): each published channel's qualities are made at home and each segment is sent once to Maktaba's broadcast edge."
     }
   ],
   "security": [
@@ -18283,6 +18287,801 @@
           }
         },
         "operationId": "createUser"
+      }
+    },
+    "/tv/broadcast": {
+      "get": {
+        "tags": [
+          "Broadcasting"
+        ],
+        "summary": "The Broadcast page",
+        "description": "Every Live TV channel with its broadcast setup and state, the last upload measurement, the Maktaba Cloud plan (null when the cloud cannot be asked), the broadcast rules, the upload budget and what published channels use, and the publish checks in the order they run.",
+        "x-maktaba-role": "admin",
+        "operationId": "getBroadcast",
+        "responses": {
+          "200": {
+            "description": "The page.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "channels": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "description": "A Live TV channel and how it is broadcast.",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "number": {
+                            "type": "integer"
+                          },
+                          "configured": {
+                            "type": "boolean",
+                            "description": "Whether it has a broadcast setup."
+                          },
+                          "slug": {
+                            "type": "string",
+                            "description": "The public link's name: `https://watch.maktaba.tv/<slug>`."
+                          },
+                          "access": {
+                            "type": "string",
+                            "enum": [
+                              "invite",
+                              "open"
+                            ]
+                          },
+                          "mode": {
+                            "type": "string",
+                            "enum": [
+                              "always_on",
+                              "on_demand"
+                            ],
+                            "description": "`open` channels are always on; invite-only ones may start only when someone watches."
+                          },
+                          "rungs": {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "enum": [
+                                "src",
+                                "720p",
+                                "480p",
+                                "360p"
+                              ]
+                            },
+                            "description": "The qualities, top first: `src` is the channel's own encode, copied."
+                          },
+                          "countries": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            },
+                            "description": "Where it may be watched (ISO 3166 codes); empty: everywhere."
+                          },
+                          "state": {
+                            "type": "string",
+                            "enum": [
+                              "draft",
+                              "live",
+                              "offline",
+                              "off_air",
+                              "revoked"
+                            ]
+                          },
+                          "detail": {
+                            "type": "string",
+                            "description": "Why it is not live, when it is not: `tokenExpired`, `clockSkew`, `edgeUnavailable`, `rungDropped`, `planOff`, `softwareRungs`."
+                          },
+                          "dropped_rungs": {
+                            "type": "integer",
+                            "description": "Top qualities removed because the measured upload fell."
+                          },
+                          "published_at": {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          "published_by": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "uplink": {
+                      "type": "object",
+                      "properties": {
+                        "kbps": {
+                          "type": "integer"
+                        },
+                        "measured_at": {
+                          "type": "string",
+                          "format": "date-time"
+                        }
+                      }
+                    },
+                    "plan": {
+                      "type": [
+                        "object",
+                        "null"
+                      ]
+                    },
+                    "cloud": {
+                      "type": "string",
+                      "enum": [
+                        "ok",
+                        "unreachable",
+                        "unclaimed"
+                      ]
+                    },
+                    "uplink_budget_kbps": {
+                      "type": "integer"
+                    },
+                    "uplink_used_kbps": {
+                      "type": "integer"
+                    },
+                    "checks": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Broadcasting is off on this home (`code: component_off`, `component: livetv.broadcast`): an admin turns it on in Components.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "Admin only.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/tv/broadcast/channels/{id}": {
+      "put": {
+        "tags": [
+          "Broadcasting"
+        ],
+        "summary": "Set up a channel for broadcasting",
+        "description": "Saves a channel's slug, access, mode, qualities and countries. An `open` channel is always on. A published channel's setup waits for an unpublish (`409`, `code: broadcast.unpublishFirst`).",
+        "x-maktaba-role": "admin",
+        "operationId": "setupBroadcastChannel",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "The channel."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "slug": {
+                    "type": "string"
+                  },
+                  "access": {
+                    "type": "string",
+                    "enum": [
+                      "invite",
+                      "open"
+                    ]
+                  },
+                  "mode": {
+                    "type": "string",
+                    "enum": [
+                      "always_on",
+                      "on_demand"
+                    ]
+                  },
+                  "rungs": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "countries": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The channel as saved.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "A Live TV channel and how it is broadcast.",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "number": {
+                      "type": "integer"
+                    },
+                    "configured": {
+                      "type": "boolean",
+                      "description": "Whether it has a broadcast setup."
+                    },
+                    "slug": {
+                      "type": "string",
+                      "description": "The public link's name: `https://watch.maktaba.tv/<slug>`."
+                    },
+                    "access": {
+                      "type": "string",
+                      "enum": [
+                        "invite",
+                        "open"
+                      ]
+                    },
+                    "mode": {
+                      "type": "string",
+                      "enum": [
+                        "always_on",
+                        "on_demand"
+                      ],
+                      "description": "`open` channels are always on; invite-only ones may start only when someone watches."
+                    },
+                    "rungs": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "src",
+                          "720p",
+                          "480p",
+                          "360p"
+                        ]
+                      },
+                      "description": "The qualities, top first: `src` is the channel's own encode, copied."
+                    },
+                    "countries": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "Where it may be watched (ISO 3166 codes); empty: everywhere."
+                    },
+                    "state": {
+                      "type": "string",
+                      "enum": [
+                        "draft",
+                        "live",
+                        "offline",
+                        "off_air",
+                        "revoked"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "Why it is not live, when it is not: `tokenExpired`, `clockSkew`, `edgeUnavailable`, `rungDropped`, `planOff`, `softwareRungs`."
+                    },
+                    "dropped_rungs": {
+                      "type": "integer",
+                      "description": "Top qualities removed because the measured upload fell."
+                    },
+                    "published_at": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "published_by": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A field is not valid (`code: broadcast.<field>`).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such channel.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The slug is taken, the channel is published, or broadcasting is off.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "Admin only.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/tv/broadcast/channels/{id}/publish": {
+      "post": {
+        "tags": [
+          "Broadcasting"
+        ],
+        "summary": "Publish a channel",
+        "description": "Runs the publish checks, stores the admin's rights confirmation on the home, publishes the channel on Maktaba Cloud (only the confirmation's date and the agreement version are sent) and fetches its ingest token. The home's broadcaster starts uploading within seconds.",
+        "x-maktaba-role": "admin",
+        "operationId": "publishBroadcastChannel",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "The channel."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "confirm_rights"
+                ],
+                "properties": {
+                  "confirm_rights": {
+                    "type": "boolean",
+                    "description": "The admin confirms the home has the rights to broadcast what the channel airs."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Published.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "A Live TV channel and how it is broadcast.",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "number": {
+                      "type": "integer"
+                    },
+                    "configured": {
+                      "type": "boolean",
+                      "description": "Whether it has a broadcast setup."
+                    },
+                    "slug": {
+                      "type": "string",
+                      "description": "The public link's name: `https://watch.maktaba.tv/<slug>`."
+                    },
+                    "access": {
+                      "type": "string",
+                      "enum": [
+                        "invite",
+                        "open"
+                      ]
+                    },
+                    "mode": {
+                      "type": "string",
+                      "enum": [
+                        "always_on",
+                        "on_demand"
+                      ],
+                      "description": "`open` channels are always on; invite-only ones may start only when someone watches."
+                    },
+                    "rungs": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "src",
+                          "720p",
+                          "480p",
+                          "360p"
+                        ]
+                      },
+                      "description": "The qualities, top first: `src` is the channel's own encode, copied."
+                    },
+                    "countries": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "Where it may be watched (ISO 3166 codes); empty: everywhere."
+                    },
+                    "state": {
+                      "type": "string",
+                      "enum": [
+                        "draft",
+                        "live",
+                        "offline",
+                        "off_air",
+                        "revoked"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "Why it is not live, when it is not: `tokenExpired`, `clockSkew`, `edgeUnavailable`, `rungDropped`, `planOff`, `softwareRungs`."
+                    },
+                    "dropped_rungs": {
+                      "type": "integer",
+                      "description": "Top qualities removed because the measured upload fell."
+                    },
+                    "published_at": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "published_by": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Refused by a publish check (`code: broadcast.<check code>`, with `check`, the first failed check of plan, agreement, publishable, uplink, encoder, rights, and `params`, such as `suggestion`, a ladder that fits). Nothing is started and nothing is sent to Maktaba Cloud.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Maktaba Cloud refused the channel (`code: broadcast.cloudRefused`); nothing was published.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Maktaba Cloud could not be reached (`code: broadcast.cloudUnreachable`); nothing was published.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "Admin only.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/tv/broadcast/channels/{id}/unpublish": {
+      "post": {
+        "tags": [
+          "Broadcasting"
+        ],
+        "summary": "Unpublish a channel",
+        "description": "Stops the channel's broadcast at once and removes its ingest token. When Maktaba Cloud cannot be reached, the unpublish is sent again until it is taken.",
+        "x-maktaba-role": "admin",
+        "operationId": "unpublishBroadcastChannel",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "The channel."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Unpublished.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "A Live TV channel and how it is broadcast.",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "number": {
+                      "type": "integer"
+                    },
+                    "configured": {
+                      "type": "boolean",
+                      "description": "Whether it has a broadcast setup."
+                    },
+                    "slug": {
+                      "type": "string",
+                      "description": "The public link's name: `https://watch.maktaba.tv/<slug>`."
+                    },
+                    "access": {
+                      "type": "string",
+                      "enum": [
+                        "invite",
+                        "open"
+                      ]
+                    },
+                    "mode": {
+                      "type": "string",
+                      "enum": [
+                        "always_on",
+                        "on_demand"
+                      ],
+                      "description": "`open` channels are always on; invite-only ones may start only when someone watches."
+                    },
+                    "rungs": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "src",
+                          "720p",
+                          "480p",
+                          "360p"
+                        ]
+                      },
+                      "description": "The qualities, top first: `src` is the channel's own encode, copied."
+                    },
+                    "countries": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "Where it may be watched (ISO 3166 codes); empty: everywhere."
+                    },
+                    "state": {
+                      "type": "string",
+                      "enum": [
+                        "draft",
+                        "live",
+                        "offline",
+                        "off_air",
+                        "revoked"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "Why it is not live, when it is not: `tokenExpired`, `clockSkew`, `edgeUnavailable`, `rungDropped`, `planOff`, `softwareRungs`."
+                    },
+                    "dropped_rungs": {
+                      "type": "integer",
+                      "description": "Top qualities removed because the measured upload fell."
+                    },
+                    "published_at": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "published_by": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such channel.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Broadcasting is off, or this home is not claimed in Maktaba Cloud.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "Admin only.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/tv/broadcast/speedtest": {
+      "post": {
+        "tags": [
+          "Broadcasting"
+        ],
+        "summary": "Measure the upload",
+        "description": "Sends test data to the broadcast edge for up to 10 seconds and stores the measured upload. A measurement below what published channels need removes the newest channel's top quality. It also runs every day at night.",
+        "x-maktaba-role": "admin",
+        "operationId": "measureBroadcastUplink",
+        "responses": {
+          "200": {
+            "description": "The measurement.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "kbps": {
+                      "type": "integer"
+                    },
+                    "measured_at": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Broadcasting is off, no channel is set up yet, or this home is not claimed in Maktaba Cloud.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Maktaba Cloud or the broadcast edge could not be reached.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "Admin only.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
       }
     }
   },

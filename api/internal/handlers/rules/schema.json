@@ -3815,6 +3815,45 @@
    ]
   },
   {
+   "key": "broadcast",
+   "title": "Broadcasting",
+   "what": "publishing Live TV channels to viewers outside the home: how much of the upload they may use, how lower qualities count against a machine, software encoding",
+   "version": [
+    1,
+    0
+   ],
+   "fields": [
+    {
+     "name": "uplink_share",
+     "kind": "float",
+     "group": "Broadcasting",
+     "label": "Share of the upload for broadcasting",
+     "help": "Published channels together may use at most this share of the measured internet upload; the rest stays free for the home's other traffic.",
+     "default": 0.5,
+     "minimum": 0.2,
+     "maximum": 0.8
+    },
+    {
+     "name": "rung_slot_weight",
+     "kind": "float",
+     "group": "Broadcasting",
+     "label": "Slot weight of a lower quality",
+     "help": "Each lower quality a published channel encodes counts as this much of a channel slot when checking whether the machine has room.",
+     "default": 0.5,
+     "minimum": 0.1,
+     "maximum": 1.0
+    },
+    {
+     "name": "allow_software_rungs",
+     "kind": "bool",
+     "group": "Broadcasting",
+     "label": "Encode lower qualities in software",
+     "help": "Without a hardware encoder, the lower qualities are encoded on the processor, about one core each. Off: a machine without one publishes only the channel's own quality.",
+     "default": false
+    }
+   ]
+  },
+  {
    "key": "tv_simulcast",
    "title": "Simulcast",
    "what": "sending channels on to YouTube, Facebook or any RTMP destination through Cloudflare: on or off, destinations per channel, the monthly output-hours, the margins around a scheduled window",

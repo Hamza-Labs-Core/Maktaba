@@ -4069,6 +4069,14 @@
       "en": "Age tiers on the home's content (0, 9, 13, 16, 18, or unrated) and the table that maps each country's rating labels to them.",
       "ar": "الفئات العمرية لمحتوى المنزل (0 أو 9 أو 13 أو 16 أو 18 أو غير مصنَّف) والجدول الذي يقابل تصنيفات كل بلد بها."
     },
+    "/tags/24/name": {
+      "en": "Broadcasting",
+      "ar": "البث"
+    },
+    "/tags/24/description": {
+      "en": "Publishing Live TV channels to viewers outside the home (admins only): each published channel's qualities are made at home and each segment is sent once to Maktaba's broadcast edge.",
+      "ar": "نشر قنوات البث المباشر لمشاهدين خارج المنزل (للمشرفين فقط): تُصنع جودات كل قناة منشورة في المنزل، ويُرسل كل مقطع مرة واحدة إلى حافة البث في مكتبة."
+    },
     "/paths/~1parental~1children/get/summary": {
       "en": "The restricted accounts the caller looks after",
       "ar": "الحسابات المقيَّدة التي يتولاها المتصل"
@@ -5660,6 +5668,274 @@
     "/paths/~1auth~1refresh/post/responses/426/description": {
       "en": "This app build is below the home's client floor (`code: client_too_old`, with `floor`, the oldest build this home serves, and `client`, the `<app>/<platform>` it read from `X-Maktaba-Client`). The app shows Update this app. A request without the header (the web) is never refused.",
       "ar": "إصدار هذا التطبيق أدنى من الحد الأدنى الذي يخدمه المنزل (`code: client_too_old`، مع `floor` وهو أقدم إصدار يخدمه هذا المنزل، و`client` وهو `<app>/<platform>` كما قرأه من `X-Maktaba-Client`). يعرض التطبيق صفحة «حدِّث هذا التطبيق». أما الطلب الذي لا يحمل هذا الترويسة (الويب) فلا يُرفض أبدًا."
+    },
+    "/paths/~1tv~1broadcast/get/summary": {
+      "en": "The Broadcast page",
+      "ar": "صفحة البث"
+    },
+    "/paths/~1tv~1broadcast/get/description": {
+      "en": "Every Live TV channel with its broadcast setup and state, the last upload measurement, the Maktaba Cloud plan (null when the cloud cannot be asked), the broadcast rules, the upload budget and what published channels use, and the publish checks in the order they run.",
+      "ar": "كل قنوات البث المباشر مع إعداد بثها وحالتها، وآخر قياس للرفع، وخطة سحابة مكتبة (null حين يتعذّر سؤال السحابة)، وقواعد البث، وميزانية الرفع وما تستهلكه القنوات المنشورة، وفحوص النشر بترتيب تنفيذها."
+    },
+    "/paths/~1tv~1broadcast/get/responses/200/description": {
+      "en": "The page.",
+      "ar": "الصفحة."
+    },
+    "/paths/~1tv~1broadcast/get/responses/200/content/application~1json/schema/properties/channels/items/description": {
+      "en": "A Live TV channel and how it is broadcast.",
+      "ar": "قناة من البث المباشر وطريقة بثها."
+    },
+    "/paths/~1tv~1broadcast/get/responses/200/content/application~1json/schema/properties/channels/items/properties/configured/description": {
+      "en": "Whether it has a broadcast setup.",
+      "ar": "هل لها إعداد بث."
+    },
+    "/paths/~1tv~1broadcast/get/responses/200/content/application~1json/schema/properties/channels/items/properties/slug/description": {
+      "en": "The public link's name: `https://watch.maktaba.tv/<slug>`.",
+      "ar": "اسم الرابط العام: `https://watch.maktaba.tv/<slug>`."
+    },
+    "/paths/~1tv~1broadcast/get/responses/200/content/application~1json/schema/properties/channels/items/properties/mode/description": {
+      "en": "`open` channels are always on; invite-only ones may start only when someone watches.",
+      "ar": "القنوات `open` تعمل دائمًا؛ أما القنوات بالدعوة فقد لا تبدأ إلا حين يشاهدها أحد."
+    },
+    "/paths/~1tv~1broadcast/get/responses/200/content/application~1json/schema/properties/channels/items/properties/rungs/description": {
+      "en": "The qualities, top first: `src` is the channel's own encode, copied.",
+      "ar": "الجودات، الأعلى أولًا: `src` هو ترميز القناة نفسها، منسوخًا."
+    },
+    "/paths/~1tv~1broadcast/get/responses/200/content/application~1json/schema/properties/channels/items/properties/countries/description": {
+      "en": "Where it may be watched (ISO 3166 codes); empty: everywhere.",
+      "ar": "أين يمكن مشاهدتها (رموز ISO 3166)؛ فارغة: في كل مكان."
+    },
+    "/paths/~1tv~1broadcast/get/responses/200/content/application~1json/schema/properties/channels/items/properties/detail/description": {
+      "en": "Why it is not live, when it is not: `tokenExpired`, `clockSkew`, `edgeUnavailable`, `rungDropped`, `planOff`, `softwareRungs`.",
+      "ar": "سبب عدم بثها حين لا تكون مباشرة: `tokenExpired`، `clockSkew`، `edgeUnavailable`، `rungDropped`، `planOff`، `softwareRungs`."
+    },
+    "/paths/~1tv~1broadcast/get/responses/200/content/application~1json/schema/properties/channels/items/properties/dropped_rungs/description": {
+      "en": "Top qualities removed because the measured upload fell.",
+      "ar": "الجودات العليا التي أُزيلت لأن سرعة الرفع المقيسة انخفضت."
+    },
+    "/paths/~1tv~1broadcast/get/responses/409/description": {
+      "en": "Broadcasting is off on this home (`code: component_off`, `component: livetv.broadcast`): an admin turns it on in Components.",
+      "ar": "البث متوقف في هذا المنزل (`code: component_off`، `component: livetv.broadcast`): يشغّله المشرف من المكوّنات."
+    },
+    "/paths/~1tv~1broadcast/get/responses/403/description": {
+      "en": "Admin only.",
+      "ar": "للمشرفين فقط."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}/put/summary": {
+      "en": "Set up a channel for broadcasting",
+      "ar": "تجهيز قناة للبث"
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}/put/description": {
+      "en": "Saves a channel's slug, access, mode, qualities and countries. An `open` channel is always on. A published channel's setup waits for an unpublish (`409`, `code: broadcast.unpublishFirst`).",
+      "ar": "يحفظ اسم رابط القناة ونوع الوصول والوضع والجودات والدول. القناة `open` تعمل دائمًا. إعداد القناة المنشورة ينتظر إلغاء نشرها (`409`، `code: broadcast.unpublishFirst`)."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}/put/parameters/0/description": {
+      "en": "The channel.",
+      "ar": "القناة."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}/put/responses/200/description": {
+      "en": "The channel as saved.",
+      "ar": "القناة كما حُفظت."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}/put/responses/200/content/application~1json/schema/description": {
+      "en": "A Live TV channel and how it is broadcast.",
+      "ar": "قناة من البث المباشر وطريقة بثها."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}/put/responses/200/content/application~1json/schema/properties/configured/description": {
+      "en": "Whether it has a broadcast setup.",
+      "ar": "هل لها إعداد بث."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}/put/responses/200/content/application~1json/schema/properties/slug/description": {
+      "en": "The public link's name: `https://watch.maktaba.tv/<slug>`.",
+      "ar": "اسم الرابط العام: `https://watch.maktaba.tv/<slug>`."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}/put/responses/200/content/application~1json/schema/properties/mode/description": {
+      "en": "`open` channels are always on; invite-only ones may start only when someone watches.",
+      "ar": "القنوات `open` تعمل دائمًا؛ أما القنوات بالدعوة فقد لا تبدأ إلا حين يشاهدها أحد."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}/put/responses/200/content/application~1json/schema/properties/rungs/description": {
+      "en": "The qualities, top first: `src` is the channel's own encode, copied.",
+      "ar": "الجودات، الأعلى أولًا: `src` هو ترميز القناة نفسها، منسوخًا."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}/put/responses/200/content/application~1json/schema/properties/countries/description": {
+      "en": "Where it may be watched (ISO 3166 codes); empty: everywhere.",
+      "ar": "أين يمكن مشاهدتها (رموز ISO 3166)؛ فارغة: في كل مكان."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}/put/responses/200/content/application~1json/schema/properties/detail/description": {
+      "en": "Why it is not live, when it is not: `tokenExpired`, `clockSkew`, `edgeUnavailable`, `rungDropped`, `planOff`, `softwareRungs`.",
+      "ar": "سبب عدم بثها حين لا تكون مباشرة: `tokenExpired`، `clockSkew`، `edgeUnavailable`، `rungDropped`، `planOff`، `softwareRungs`."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}/put/responses/200/content/application~1json/schema/properties/dropped_rungs/description": {
+      "en": "Top qualities removed because the measured upload fell.",
+      "ar": "الجودات العليا التي أُزيلت لأن سرعة الرفع المقيسة انخفضت."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}/put/responses/400/description": {
+      "en": "A field is not valid (`code: broadcast.<field>`).",
+      "ar": "حقل غير صالح (`code: broadcast.<field>`)."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}/put/responses/404/description": {
+      "en": "No such channel.",
+      "ar": "لا توجد قناة كهذه."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}/put/responses/409/description": {
+      "en": "The slug is taken, the channel is published, or broadcasting is off.",
+      "ar": "اسم الرابط مستخدم، أو القناة منشورة، أو البث متوقف."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}/put/responses/403/description": {
+      "en": "Admin only.",
+      "ar": "للمشرفين فقط."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1publish/post/summary": {
+      "en": "Publish a channel",
+      "ar": "نشر قناة"
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1publish/post/description": {
+      "en": "Runs the publish checks, stores the admin's rights confirmation on the home, publishes the channel on Maktaba Cloud (only the confirmation's date and the agreement version are sent) and fetches its ingest token. The home's broadcaster starts uploading within seconds.",
+      "ar": "يشغّل فحوص النشر، ويحفظ تأكيد المشرف للحقوق في المنزل، وينشر القناة في سحابة مكتبة (لا يُرسل إلا تاريخ التأكيد ونسخة الاتفاقية)، ويجلب رمز الاستقبال الخاص بها. يبدأ باثّ المنزل الرفع خلال ثوانٍ."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1publish/post/parameters/0/description": {
+      "en": "The channel.",
+      "ar": "القناة."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1publish/post/requestBody/content/application~1json/schema/properties/confirm_rights/description": {
+      "en": "The admin confirms the home has the rights to broadcast what the channel airs.",
+      "ar": "يؤكد المشرف أن للمنزل حق بث ما تعرضه القناة."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1publish/post/responses/200/description": {
+      "en": "Published.",
+      "ar": "نُشرت."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1publish/post/responses/200/content/application~1json/schema/description": {
+      "en": "A Live TV channel and how it is broadcast.",
+      "ar": "قناة من البث المباشر وطريقة بثها."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1publish/post/responses/200/content/application~1json/schema/properties/configured/description": {
+      "en": "Whether it has a broadcast setup.",
+      "ar": "هل لها إعداد بث."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1publish/post/responses/200/content/application~1json/schema/properties/slug/description": {
+      "en": "The public link's name: `https://watch.maktaba.tv/<slug>`.",
+      "ar": "اسم الرابط العام: `https://watch.maktaba.tv/<slug>`."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1publish/post/responses/200/content/application~1json/schema/properties/mode/description": {
+      "en": "`open` channels are always on; invite-only ones may start only when someone watches.",
+      "ar": "القنوات `open` تعمل دائمًا؛ أما القنوات بالدعوة فقد لا تبدأ إلا حين يشاهدها أحد."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1publish/post/responses/200/content/application~1json/schema/properties/rungs/description": {
+      "en": "The qualities, top first: `src` is the channel's own encode, copied.",
+      "ar": "الجودات، الأعلى أولًا: `src` هو ترميز القناة نفسها، منسوخًا."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1publish/post/responses/200/content/application~1json/schema/properties/countries/description": {
+      "en": "Where it may be watched (ISO 3166 codes); empty: everywhere.",
+      "ar": "أين يمكن مشاهدتها (رموز ISO 3166)؛ فارغة: في كل مكان."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1publish/post/responses/200/content/application~1json/schema/properties/detail/description": {
+      "en": "Why it is not live, when it is not: `tokenExpired`, `clockSkew`, `edgeUnavailable`, `rungDropped`, `planOff`, `softwareRungs`.",
+      "ar": "سبب عدم بثها حين لا تكون مباشرة: `tokenExpired`، `clockSkew`، `edgeUnavailable`، `rungDropped`، `planOff`، `softwareRungs`."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1publish/post/responses/200/content/application~1json/schema/properties/dropped_rungs/description": {
+      "en": "Top qualities removed because the measured upload fell.",
+      "ar": "الجودات العليا التي أُزيلت لأن سرعة الرفع المقيسة انخفضت."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1publish/post/responses/409/description": {
+      "en": "Refused by a publish check (`code: broadcast.<check code>`, with `check`, the first failed check of plan, agreement, publishable, uplink, encoder, rights, and `params`, such as `suggestion`, a ladder that fits). Nothing is started and nothing is sent to Maktaba Cloud.",
+      "ar": "رفضه أحد فحوص النشر (`code: broadcast.<check code>`، مع `check`، أول فحص فشل من plan وagreement وpublishable وuplink وencoder وrights، و`params` مثل `suggestion`، مجموعة جودات تناسب). لا يبدأ شيء ولا يُرسل شيء إلى سحابة مكتبة."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1publish/post/responses/502/description": {
+      "en": "Maktaba Cloud refused the channel (`code: broadcast.cloudRefused`); nothing was published.",
+      "ar": "رفضت سحابة مكتبة القناة (`code: broadcast.cloudRefused`)؛ لم يُنشر شيء."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1publish/post/responses/503/description": {
+      "en": "Maktaba Cloud could not be reached (`code: broadcast.cloudUnreachable`); nothing was published.",
+      "ar": "تعذّر الوصول إلى سحابة مكتبة (`code: broadcast.cloudUnreachable`)؛ لم يُنشر شيء."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1publish/post/responses/403/description": {
+      "en": "Admin only.",
+      "ar": "للمشرفين فقط."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1unpublish/post/summary": {
+      "en": "Unpublish a channel",
+      "ar": "إلغاء نشر قناة"
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1unpublish/post/description": {
+      "en": "Stops the channel's broadcast at once and removes its ingest token. When Maktaba Cloud cannot be reached, the unpublish is sent again until it is taken.",
+      "ar": "يوقف بث القناة فورًا ويحذف رمز الاستقبال الخاص بها. حين يتعذّر الوصول إلى سحابة مكتبة، يُعاد إرسال إلغاء النشر حتى يُقبل."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1unpublish/post/parameters/0/description": {
+      "en": "The channel.",
+      "ar": "القناة."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1unpublish/post/responses/200/description": {
+      "en": "Unpublished.",
+      "ar": "أُلغي النشر."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1unpublish/post/responses/200/content/application~1json/schema/description": {
+      "en": "A Live TV channel and how it is broadcast.",
+      "ar": "قناة من البث المباشر وطريقة بثها."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1unpublish/post/responses/200/content/application~1json/schema/properties/configured/description": {
+      "en": "Whether it has a broadcast setup.",
+      "ar": "هل لها إعداد بث."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1unpublish/post/responses/200/content/application~1json/schema/properties/slug/description": {
+      "en": "The public link's name: `https://watch.maktaba.tv/<slug>`.",
+      "ar": "اسم الرابط العام: `https://watch.maktaba.tv/<slug>`."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1unpublish/post/responses/200/content/application~1json/schema/properties/mode/description": {
+      "en": "`open` channels are always on; invite-only ones may start only when someone watches.",
+      "ar": "القنوات `open` تعمل دائمًا؛ أما القنوات بالدعوة فقد لا تبدأ إلا حين يشاهدها أحد."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1unpublish/post/responses/200/content/application~1json/schema/properties/rungs/description": {
+      "en": "The qualities, top first: `src` is the channel's own encode, copied.",
+      "ar": "الجودات، الأعلى أولًا: `src` هو ترميز القناة نفسها، منسوخًا."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1unpublish/post/responses/200/content/application~1json/schema/properties/countries/description": {
+      "en": "Where it may be watched (ISO 3166 codes); empty: everywhere.",
+      "ar": "أين يمكن مشاهدتها (رموز ISO 3166)؛ فارغة: في كل مكان."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1unpublish/post/responses/200/content/application~1json/schema/properties/detail/description": {
+      "en": "Why it is not live, when it is not: `tokenExpired`, `clockSkew`, `edgeUnavailable`, `rungDropped`, `planOff`, `softwareRungs`.",
+      "ar": "سبب عدم بثها حين لا تكون مباشرة: `tokenExpired`، `clockSkew`، `edgeUnavailable`، `rungDropped`، `planOff`، `softwareRungs`."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1unpublish/post/responses/200/content/application~1json/schema/properties/dropped_rungs/description": {
+      "en": "Top qualities removed because the measured upload fell.",
+      "ar": "الجودات العليا التي أُزيلت لأن سرعة الرفع المقيسة انخفضت."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1unpublish/post/responses/404/description": {
+      "en": "No such channel.",
+      "ar": "لا توجد قناة كهذه."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1unpublish/post/responses/409/description": {
+      "en": "Broadcasting is off, or this home is not claimed in Maktaba Cloud.",
+      "ar": "البث متوقف، أو هذا المنزل غير مربوط بسحابة مكتبة."
+    },
+    "/paths/~1tv~1broadcast~1channels~1{id}~1unpublish/post/responses/403/description": {
+      "en": "Admin only.",
+      "ar": "للمشرفين فقط."
+    },
+    "/paths/~1tv~1broadcast~1speedtest/post/summary": {
+      "en": "Measure the upload",
+      "ar": "قياس سرعة الرفع"
+    },
+    "/paths/~1tv~1broadcast~1speedtest/post/description": {
+      "en": "Sends test data to the broadcast edge for up to 10 seconds and stores the measured upload. A measurement below what published channels need removes the newest channel's top quality. It also runs every day at night.",
+      "ar": "يرسل بيانات اختبار إلى حافة البث مدة أقصاها 10 ثوانٍ ويحفظ سرعة الرفع المقيسة. القياس الأقل مما تحتاجه القنوات المنشورة يزيل أعلى جودة من أحدث قناة. ويعمل أيضًا كل يوم ليلًا."
+    },
+    "/paths/~1tv~1broadcast~1speedtest/post/responses/200/description": {
+      "en": "The measurement.",
+      "ar": "القياس."
+    },
+    "/paths/~1tv~1broadcast~1speedtest/post/responses/409/description": {
+      "en": "Broadcasting is off, no channel is set up yet, or this home is not claimed in Maktaba Cloud.",
+      "ar": "البث متوقف، أو لم تُجهَّز أي قناة بعد، أو هذا المنزل غير مربوط بسحابة مكتبة."
+    },
+    "/paths/~1tv~1broadcast~1speedtest/post/responses/502/description": {
+      "en": "Maktaba Cloud or the broadcast edge could not be reached.",
+      "ar": "تعذّر الوصول إلى سحابة مكتبة أو إلى حافة البث."
+    },
+    "/paths/~1tv~1broadcast~1speedtest/post/responses/403/description": {
+      "en": "Admin only.",
+      "ar": "للمشرفين فقط."
     },
     "/paths/~1cast~1grants/post/summary": {
       "en": "Mint a cast grant for a Cast receiver",

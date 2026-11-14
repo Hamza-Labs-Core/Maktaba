@@ -86,6 +86,7 @@ const GUIDES = {
     "api-levels.md",
     "casting.md",
     "parental-controls.md",
+    "broadcasting.md",
     "playback.md",
     "ci.md",
     "pull-requests.md",
