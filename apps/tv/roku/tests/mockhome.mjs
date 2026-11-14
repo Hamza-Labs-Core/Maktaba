@@ -12,7 +12,9 @@
 // over, and every stream open and progress post answers 403 parental_time (the problem body the
 // home's streaming handler writes) until a parent approves a request for more time; a video in
 // `state.hiddenNow` is hidden by the viewer's limit from then on (404 for it, its stream's
-// progress included) until a parent approves a request for it.
+// progress included) until a parent approves a request for it. GET /api/me/parental/time answers
+// as the home's handler does: `state.timeLeft` seconds left under a rule (null: no rule now),
+// not allowed while `state.time` holds.
 // Every request is logged (no tokens) for the CI report.
 
 import { createServer } from "node:http";
@@ -129,6 +131,7 @@ export function startHome(log, tls) {
   // story 58.14: the late video is the viewer's to see once not restricted, or once approved
   const lateShown = () => !state.restricted || state.requests.some((r) => r.subject_id === LATE && r.status === "approved");
   state.time = null;
+  state.timeLeft = null;
   state.hiddenNow = new Set();
   state.sessionVideo = {};
   // a parent's yes to more time gives time: the home admits the stream again
@@ -209,6 +212,14 @@ export function startHome(log, tls) {
       return json(res, 201, { request: r });
     }
     if (p === "/api/me/parental/requests") return json(res, 200, { requests: state.requests });
+    if (p === "/api/me/parental/time") {
+      // handlers/parental/time.go's myTimeResponse; it counts nothing and renews no lease
+      log(`home time library=${url.searchParams.get("library_id") ?? ""} left=${state.timeLeft}`);
+      const now = new Date().toISOString();
+      if (timeOver()) return json(res, 200, { allowed: false, limited: true, reason: state.time.reason, remaining_seconds: 0, slot_ends_at: null, next_allowed_at: state.time.next ?? null, now });
+      if (state.timeLeft === null) return json(res, 200, { allowed: true, limited: false, remaining_seconds: null, slot_ends_at: null, next_allowed_at: null, now });
+      return json(res, 200, { allowed: true, limited: true, remaining_seconds: state.timeLeft, slot_ends_at: null, next_allowed_at: null, now });
+    }
     if (p.startsWith("/api/videos/") && hiddenNow(p.split("/")[3])) return json(res, 404, notFound(p));
     if (p === `/api/videos/${LATE}`) {
       if (!lateShown()) return json(res, 404, { type: "about:blank", title: "Not Found", status: 404, detail: "not found" });

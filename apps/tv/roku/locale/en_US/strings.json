@@ -204,6 +204,44 @@
       "text": "Your place in this video is saved at %1$s.",
       "widthChars": 60,
       "lines": 2
+    },
+    "parental.time.left": {
+      "text": "%1$s left today",
+      "widthChars": 40,
+      "lines": 1
+    },
+    "parental.time.warning": {
+      "text": "Watching ends in %1$s.",
+      "widthChars": 48,
+      "lines": 1
+    },
+    "parental.time.hoursMinutes": {
+      "text": "%1$s and %2$s",
+      "widthChars": 32,
+      "lines": 1
+    },
+    "parental.time.underMinute": {
+      "text": "less than a minute",
+      "widthChars": 20,
+      "lines": 1
+    }
+  },
+  "plurals": {
+    "parental.time.minutes": {
+      "forms": {
+        "one": "%1$d minute",
+        "other": "%1$d minutes"
+      },
+      "widthChars": 16,
+      "lines": 1
+    },
+    "parental.time.hours": {
+      "forms": {
+        "one": "%1$d hour",
+        "other": "%1$d hours"
+      },
+      "widthChars": 16,
+      "lines": 1
     }
   }
 }
