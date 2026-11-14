@@ -31,6 +31,8 @@
 // the problem's type, title and detail under a Details disclosure only — the
 // server's words (which can name files on the home's disk) never in the
 // message itself.
+// Epic 58 story 58.06: in Chrome on the home's HTTPS address, Cast sends the video (or the
+// server queue it plays) to a TV through Maktaba's receiver (components/CastControl).
 // Epic 45 Phase 2: at the end, Up next (components/UpNext) offers the play
 // queue's next video or the series' next lesson, and starts it after 10 s.
 import { useHomeStatus } from "../lib/homeStatus";
@@ -65,6 +67,7 @@ import { useMyParental, useMyTime } from "../lib/parental";
 import { timeRefusal, type TimeRefusal } from "../lib/parentalApi";
 import { TimeLeft, TimesUp, TimeWarning } from "../components/parental/TimeState";
 import { BlockedOr } from "../components/parental/AskParent";
+import { CastControl } from "../components/CastControl";
 
 interface OpenSessionResponse {
   session_id: string;
@@ -860,6 +863,7 @@ export function VideoPlayer({
             <Button variant="secondary" onClick={togglePip}>
               {t("player.pip")}
             </Button>
+            {videoId && <CastControl videoId={videoId} el={videoEl} />}
           </div>
         </div>
       )}

@@ -35,6 +35,8 @@ RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store \
 # the plugin flow chart's drawing (story 54.41) is the SDK's own, imported from source as
 # @maktaba/flowchart (web/tsconfig.json, vite.config.ts): it keeps its repo-relative place
 COPY tools/plugin-sdk/js/src/flowchart.ts /src/tools/plugin-sdk/js/src/flowchart.ts
+# the Cast receiver's application ID (story 58.06), which vite.config.ts reads into the player
+COPY shared/cast/app.json /src/shared/cast/app.json
 COPY web ./
 RUN pnpm run build
 
