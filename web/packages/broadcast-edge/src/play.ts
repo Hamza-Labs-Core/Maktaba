@@ -5,16 +5,17 @@
 //   POST /i/<invite>                 the page's form: redeem, set the pass cookie, say so
 //   POST /api/v1/redeem              {invite} or {publisher, code}: a guest pass (cookie and body)
 //   POST /api/v1/open/turnstile      {token}: an open session after Turnstile (cookie and body)
-//   POST /api/v1/open/attest         {platform, attestation}: an app's open session (body)
+//   POST /api/v1/open/challenge      an attestation challenge (a nonce, once, 5 minutes)
+//   POST /api/v1/open/attest         {platform, attestation, nonce}: an app's open session
 //   POST /api/v1/play                {publisher, channel}: a session and its viewer token
-//   POST /api/v1/play/<session>/beat {publisher, rung, stats}: the 60 s heartbeat
+//   POST /api/v1/play/<session>/beat {publisher, beat_key, rung, stats}: the 60 s heartbeat
 //
 // A credential comes as a cookie (the web: mkp_<publisher> for a guest pass, mko for an open
 // session) or as Authorization: Bearer (the apps keep it in the keychain or keystore). Every
 // answer carries X-Server-Time (ms), so a TV with a wrong clock uses the edge's.
 import { now } from "./clock";
 import { globallyOff, type Env } from "./env";
-import { verifyAttestation } from "./attest";
+import { nonces, verifyAttestation } from "./attest";
 import { problem } from "./http";
 import {
   CODE_RE,
@@ -44,6 +45,7 @@ export const WATCH_ROUTES = [
   "POST /i/<invite>",
   "POST /api/v1/redeem",
   "POST /api/v1/open/turnstile",
+  "POST /api/v1/open/challenge",
   "POST /api/v1/open/attest",
   "POST /api/v1/play",
   "POST /api/v1/play/<session>/beat",
@@ -144,6 +146,7 @@ async function route(request: Request, env: Env, url: URL): Promise<Response> {
   if (request.method !== "POST") return problem(404, "not_found");
   if (path === "/api/v1/redeem") return redeem(request, env);
   if (path === "/api/v1/open/turnstile") return openTurnstile(request, env);
+  if (path === "/api/v1/open/challenge") return answer(200, await nonces(env).nonce());
   if (path === "/api/v1/open/attest") return openAttest(request, env);
   if (isPlay) return play(request, env);
   const m = /^\/api\/v1\/play\/([^/]+)\/beat$/.exec(path);
@@ -282,7 +285,7 @@ async function openTurnstile(request: Request, env: Env): Promise<Response> {
 
 async function openAttest(request: Request, env: Env): Promise<Response> {
   const b = await body(request);
-  const v = await verifyAttestation(env, str(b.platform), str(b.attestation));
+  const v = await verifyAttestation(env, str(b.platform), str(b.attestation), str(b.nonce));
   if (!v.ok) return refuse(request, v.status, v.error);
   const s = await openSession("attest", env);
   return answer(200, { session: s.token, expires_at: new Date(s.exp * 1000).toISOString() });
@@ -386,6 +389,7 @@ async function play(request: Request, env: Env): Promise<Response> {
     200,
     {
       session_id: r.session,
+      beat_key: r.key,
       master_url: await masterURL(env, pub, ch, r.session, r.mode, expS),
       expires_at: new Date(expS * 1000).toISOString(),
       refresh_after: REFRESH_AFTER_S,
@@ -401,7 +405,7 @@ async function beat(request: Request, env: Env, session: string): Promise<Respon
   const b = await body(request);
   const pub = str(b.publisher);
   if (!UUIDISH.test(pub)) return refuse(request, 400, "bad_request");
-  const r = await viewer(env, pub).beat(session, REFRESH_AFTER_S * 1000);
+  const r = await viewer(env, pub).beat(session, str(b.beat_key), REFRESH_AFTER_S * 1000);
   if (!r.ok) return refuse(request, r.status, r.error);
   // a viewer-minute for the meter (PublisherControl keeps its own once-a-minute rule, 50.20 §3)
   await env.PUBLISHER.get(env.PUBLISHER.idFromName(pub)).beat(pub, session, r.ch, r.mode);

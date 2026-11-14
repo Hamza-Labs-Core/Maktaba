@@ -14,6 +14,7 @@ import { DurableObject } from "cloudflare:workers";
 import { now } from "./clock";
 import type { Env } from "./env";
 import { json, problem } from "./http";
+import { sameText } from "./crypto";
 import { randomId, type InviteClaims } from "./invites";
 import {
   CODE_FAILS_PER_PUB,
@@ -67,6 +68,11 @@ interface Session {
   counted: number;
   /** the current viewer token's expiry (ms) */
   tokenExp: number;
+  /**
+   * the beat key: given only in the play answer, never in a URL (the session id is readable in
+   * the viewer token's payload, so it alone must not keep a session alive or mint a token)
+   */
+  key: string;
 }
 
 interface Daily {
@@ -82,6 +88,8 @@ interface State {
   daily: Record<string, Daily>;
   tries: Record<string, number[]>;
   fails: number[];
+  /** the attestation challenges handed out and not used yet: nonce → expiry (ms) */
+  nonces?: Record<string, number>;
 }
 
 export type Cred =
@@ -92,7 +100,9 @@ export type Cred =
 export type Refusal = { ok: false; status: number; error: string };
 
 export type RedeemResult = { ok: true; id: string; reused: boolean } | Refusal;
-export type PlayResult = { ok: true; session: string; mode: Mode; channels: string[] } | Refusal;
+export type PlayResult =
+  | { ok: true; session: string; key: string; mode: Mode; channels: string[] }
+  | Refusal;
 export type BeatResult =
   | { ok: true; ch: string; mode: Mode; refresh: boolean; concurrent: number }
   | Refusal;
@@ -101,6 +111,9 @@ export interface PlanView {
   mode: Mode;
   max_viewers?: number;
 }
+
+/** An attestation challenge is good for 5 minutes, once. */
+export const NONCE_TTL_MS = 5 * 60_000;
 
 function day(t: number): string {
   return new Date(t).toISOString().slice(0, 10);
@@ -248,7 +261,11 @@ export class ViewerAccess extends DurableObject<Env> {
     if (plan.mode === "off") return { ok: false, status: 403, error: "broadcast_off" };
     if (plan.mode === "wait") return { ok: false, status: 429, error: "broadcast_wait" };
     // limits: new sessions only
-    const live = Object.values(this.s.sessions);
+    // one live session per guest pass or open session (one device): a new play from the same
+    // credential replaces its own earlier session, and one credential never holds more
+    const mine = (x: Session) =>
+      cred.kind === "pass" ? x.pass === cred.id : x.open !== undefined && x.open === cred.id;
+    const live = Object.values(this.s.sessions).filter((x) => !mine(x));
     if (plan.max_viewers !== undefined && live.length >= plan.max_viewers)
       return { ok: false, status: 429, error: "broadcast_full" };
     if (c.max_viewers > 0 && live.filter((x) => x.ch === ch).length >= c.max_viewers)
@@ -261,18 +278,21 @@ export class ViewerAccess extends DurableObject<Env> {
     const credId = cred.kind === "pass" ? `p:${cred.id}` : `o:${cred.id}`;
     if (st.daily_minutes > 0 && (this.s.daily[credId]?.minutes ?? 0) >= st.daily_minutes)
       return { ok: false, status: 429, error: "broadcast_daily_limit" };
+    for (const [k, x] of Object.entries(this.s.sessions)) if (mine(x)) delete this.s.sessions[k];
     const session = randomId();
+    const key = randomId();
     this.s.sessions[session] = {
       ch,
       at: t,
       mode: plan.mode,
       counted: 0,
       tokenExp: 0,
+      key,
       ...(cred.kind === "pass" ? { pass: cred.id, inv: cred.inv } : { open: cred.id, ip }),
     };
     if (cred.kind === "pass") this.s.passes[cred.id]!.last = t;
     await this.save();
-    return { ok: true, session, mode: plan.mode, channels: this.channelsFor(cred) };
+    return { ok: true, session, key, mode: plan.mode, channels: this.channelsFor(cred) };
   }
 
   /** minted records the expiry of the token just minted for a session. */
@@ -288,9 +308,11 @@ export class ViewerAccess extends DurableObject<Env> {
    * needs refreshing (past half its life), and ends a session whose invite or pass was revoked
    * or that went 150 s without a beat.
    */
-  async beat(session: string, refreshAfterMs: number): Promise<BeatResult> {
+  async beat(session: string, key: string, refreshAfterMs: number): Promise<BeatResult> {
     const t = now();
     const x = this.s.sessions[session];
+    // a wrong key answers as an ended session, and changes nothing
+    if (x && !sameText(x.key, key)) return { ok: false, status: 410, error: "session_ended" };
     if (!x || t - x.at > SESSION_TTL_MS) {
       if (x) delete this.s.sessions[session];
       this.prune(t);
@@ -321,6 +343,28 @@ export class ViewerAccess extends DurableObject<Env> {
       refresh: x.tokenExp - t <= refreshAfterMs,
       concurrent: Object.keys(this.s.sessions).length,
     };
+  }
+
+  /** nonce hands out a single-use attestation challenge, good for 5 minutes. */
+  async nonce(): Promise<{ nonce: string; expires_at: number }> {
+    const t = now();
+    const n = (this.s.nonces ??= {});
+    for (const [k, exp] of Object.entries(n)) if (exp <= t) delete n[k];
+    if (Object.keys(n).length >= 10_000) delete n[Object.keys(n)[0]!];
+    const nonce = randomId();
+    n[nonce] = t + NONCE_TTL_MS;
+    await this.save();
+    return { nonce, expires_at: n[nonce] };
+  }
+
+  /** useNonce spends a challenge: true once, for a nonce handed out and not expired. */
+  async useNonce(nonce: string): Promise<boolean> {
+    const n = this.s.nonces ?? {};
+    const exp = n[nonce];
+    if (exp === undefined) return false;
+    delete n[nonce];
+    await this.save();
+    return exp > now();
   }
 
   /** passes is what the publisher sees: each device's random id and dates, and each invite's uses. */

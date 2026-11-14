@@ -132,17 +132,26 @@ async function redeem(token: string, headers: Record<string, string> = {}) {
   return { r, j: (await r.json()) as Record<string, string> };
 }
 
+const beatKeys = new Map<string, string>();
+
 async function playWith(s: { pub: string }, ch: string, auth: string, ip = "198.51.100.7") {
   const r = await post(
     "/api/v1/play",
     { publisher: s.pub, channel: ch },
     auth ? { Authorization: `Bearer ${auth}`, "CF-Connecting-IP": ip } : { "CF-Connecting-IP": ip }
   );
-  return { r, j: (await r.json()) as Record<string, unknown> };
+  const j = (await r.json()) as Record<string, unknown>;
+  if (typeof j.session_id === "string") beatKeys.set(j.session_id, j.beat_key as string);
+  return { r, j };
 }
 
-async function beatOf(pub: string, session: string) {
-  const r = await post(`/api/v1/play/${session}/beat`, { publisher: pub, rung: "720p", stats: {} });
+async function beatOf(pub: string, session: string, key = beatKeys.get(session)) {
+  const r = await post(`/api/v1/play/${session}/beat`, {
+    publisher: pub,
+    beat_key: key,
+    rung: "720p",
+    stats: {},
+  });
   return { r, j: (await r.json()) as Record<string, unknown> };
 }
 
@@ -348,21 +357,62 @@ describe("T03 Turnstile", () => {
 });
 
 describe("T04 app attestation", () => {
-  it("a fake verifier: session / 403; none bound: 503", async () => {
-    const ok = await post("/api/v1/open/attest", { platform: "apple", attestation: "valid-abc" });
+  const challenge = async () =>
+    ((await (await post("/api/v1/open/challenge", {})).json()) as { nonce: string }).nonce;
+
+  it("a fake verifier: session / 403; a challenge once; none bound: 503", async () => {
+    const n1 = await challenge();
+    const ok = await post("/api/v1/open/attest", {
+      platform: "apple",
+      attestation: "valid-abc",
+      nonce: n1,
+    });
     expect(ok.status).toBe(200);
     expect(((await ok.json()) as { session: string }).session).toMatch(/^mkbo1\./);
+    // the same challenge again, none, or one the edge never gave: 403
+    for (const nonce of [n1, "", "made-up"]) {
+      const r = await post("/api/v1/open/attest", {
+        platform: "apple",
+        attestation: "valid-abc",
+        nonce,
+      });
+      expect(r.status).toBe(403);
+    }
     expect(
-      (await post("/api/v1/open/attest", { platform: "android", attestation: "forged" })).status
+      (
+        await post("/api/v1/open/attest", {
+          platform: "android",
+          attestation: "forged",
+          nonce: await challenge(),
+        })
+      ).status
     ).toBe(403);
     expect(
-      (await post("/api/v1/open/attest", { platform: "tizen", attestation: "valid-abc" })).status
+      (
+        await post("/api/v1/open/attest", {
+          platform: "tizen",
+          attestation: "valid-abc",
+          nonce: await challenge(),
+        })
+      ).status
     ).toBe(400);
+    // a challenge lives 5 minutes
+    const late = await challenge();
+    advanceClock(5 * 60_000 + 1);
+    expect(
+      (
+        await post("/api/v1/open/attest", {
+          platform: "apple",
+          attestation: "valid-abc",
+          nonce: late,
+        })
+      ).status
+    ).toBe(403);
     expect(
       (
         await post(
           "/api/v1/open/attest",
-          { platform: "apple", attestation: "valid-abc" },
+          { platform: "apple", attestation: "valid-abc", nonce: await challenge() },
           {},
           { ATTEST_API: undefined }
         )
@@ -452,6 +502,25 @@ describe("T05 play and beat", () => {
     expect((await beatOf(s.pub, b.j.session_id as string)).r.status).toBe(410);
   });
 
+  it("a beat needs the session's beat key; one device holds one session", async () => {
+    const s = await setup();
+    const pass = await guest(s);
+    const p = await playWith(s, s.ch, pass);
+    expect(p.j.beat_key).toBeTruthy();
+    expect(JSON.stringify(p.j.master_url)).not.toContain(p.j.beat_key as string);
+    advanceClock(60_000);
+    // the session id is readable in the playback URL; without the key it keeps nothing alive
+    const stolen = await beatOf(s.pub, p.j.session_id as string, "guessed");
+    expect(stolen.r.status).toBe(410);
+    expect(stolen.j.master_url).toBeUndefined();
+    expect((await beatOf(s.pub, p.j.session_id as string)).r.status).toBe(200);
+    // the same pass plays again (the app restarted): its earlier session ends, one is counted
+    const again = await playWith(s, s.ch2, pass);
+    expect(again.r.status).toBe(200);
+    expect((await beatOf(s.pub, p.j.session_id as string)).r.status).toBe(410);
+    expect((await env.VIEWER.get(env.VIEWER.idFromName(s.pub)).concurrent()).total).toBe(1);
+  });
+
   it("an invite for one channel opens only that channel", async () => {
     const s = await setup();
     const pass = await guest(s, { chs: [s.ch] });
@@ -470,8 +539,8 @@ describe("T06 limits", () => {
     await plan(s.pub, { max_viewers: 2 });
     const pass = await guest(s);
     const a = await playWith(s, s.ch, pass);
-    const b = await playWith(s, s.ch2, pass);
-    const c = await playWith(s, s.ch, pass);
+    const b = await playWith(s, s.ch2, await guest(s));
+    const c = await playWith(s, s.ch, await guest(s));
     expect([a.r.status, b.r.status]).toEqual([200, 200]);
     expect(c.r.status).toBe(429);
     expect(c.j.error).toBe("broadcast_full");
@@ -512,7 +581,7 @@ describe("T06 limits", () => {
     });
     const pass = await guest(s);
     expect((await playWith(s, ch, pass)).r.status).toBe(200);
-    expect((await playWith(s, ch, pass)).j.error).toBe("broadcast_full");
+    expect((await playWith(s, ch, await guest(s))).j.error).toBe("broadcast_full");
     // open sessions: 2 per network
     const sess = async (n: number) =>
       (
@@ -571,10 +640,22 @@ describe("T08 1,000 sessions", () => {
   it("heartbeats for 10 minutes: exact counts; viewer-minutes = beats", async () => {
     const s = await setup();
     await plan(s.pub, { max_viewers: 1000 });
+    // 1,000 devices: two invites of 500
+    const invites = [
+      await invite({ pub: s.pub, max: 500 }),
+      await invite({ pub: s.pub, max: 500 }),
+    ];
+    const passes: string[] = [];
+    for (let i = 0; i < 1000; i += 100) {
+      const batch = await Promise.all(
+        Array.from({ length: 100 }, (_, k) => redeem(invites[(i + k) % 2]!))
+      );
+      for (const b of batch) passes.push(b.j.pass!);
+    }
     const pass = await guest(s);
     const sessions: string[] = [];
     for (let i = 0; i < 1000; i += 100) {
-      const batch = await Promise.all(Array.from({ length: 100 }, () => playWith(s, s.ch, pass)));
+      const batch = await Promise.all(passes.slice(i, i + 100).map((p) => playWith(s, s.ch, p)));
       for (const b of batch) {
         expect(b.r.status).toBe(200);
         sessions.push(b.j.session_id as string);
