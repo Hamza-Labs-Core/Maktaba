@@ -199,9 +199,11 @@ func broadcastPlans(t *testing.T, c *cluster) Result {
 		return resp.StatusCode == http.StatusOK
 	})
 
-	// the home publishes: refused until its owner accepts the agreement
-	publish := func(slug string) (int, string) {
-		body := strings.NewReader(`{"slug":"` + slug + `","access":"open","on_demand":false,"rungs":3,"top_kbps":8000}`)
+	// the home publishes: refused until its owner accepts the agreement. Its channel is
+	// invite: open access (story 50.26) is off in this config, and a first publish is never
+	// verified, so an open channel is refused before the agreement is read.
+	publish := func(slug, access string) (int, string) {
+		body := strings.NewReader(`{"slug":"` + slug + `","access":"` + access + `","on_demand":false,"rungs":3,"top_kbps":8000}`)
 		req, _ := http.NewRequest(http.MethodPost, api+"/v1/broadcast/channels", body)
 		req.SetBasicAuth(id, secret)
 		resp, err := client.Do(req)
@@ -215,13 +217,15 @@ func broadcastPlans(t *testing.T, c *cluster) Result {
 		_ = json.NewDecoder(resp.Body).Decode(&e)
 		return resp.StatusCode, e.Error
 	}
-	code, why := publish("news")
+	code, why := publish("news", "open")
+	check("an open channel with open access off", code == http.StatusForbidden && why == "broadcast_open_not_enabled", code, why)
+	code, why = publish("news", "invite")
 	check("publish before the agreement", code == http.StatusConflict && why == "broadcast_agreement_required", code, why)
 	if _, err := c.db.ExecContext(ctx, `INSERT INTO broadcast_agreements (account_id, version) VALUES ($1, $2)`,
 		owner, billing.BroadcastAgreementVersion); err != nil {
 		t.Fatal(err)
 	}
-	code, why = publish("news")
+	code, why = publish("news", "invite")
 	check("publish after the agreement", code == http.StatusCreated, code, why)
 
 	edge := &fakeEdge{t: t, api: api, client: client, priv: rehearsalEdgeKey(), publisher: id,
