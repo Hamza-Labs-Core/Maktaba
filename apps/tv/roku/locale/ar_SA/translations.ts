@@ -372,5 +372,70 @@ maktaba.tv/tv ﻰﻟﺇ ﺐﻫﺫﺍ ﻭﺃ ،ﺯﺎﻔﻠﺗ</translation>
         <source>parental.blocked.deviceAll</source>
         <translation>.ﺭﺎﻤﻋﻷﺍ ﻞﻜﻟ ـﺑ ﺪﻴﻘﻣ ﺯﺎﻬﺠﻟﺍ ﺍﺬﻫ</translation>
     </message>
+    <message>
+        <source>parental.time.up.title</source>
+        <translation>ﻡﻮﻴﻟﺍ ﺖﻗﻭ ﻰﻬﺘﻧﺍ</translation>
+    </message>
+    <message>
+        <source>parental.time.outside.title</source>
+        <translation>ﺪﻌﺑ ﺓﺪﻫﺎﺸﻤﻟﺍ ﺖﻗﻭ ﻦﺤﻳ ﻢﻟ</translation>
+    </message>
+    <message>
+        <source>parental.time.askMore</source>
+        <translation>ﺎﻴﻓﺎﺿﺇ ﺎﺘﻗﻭ ﺐﻠﻃﺍ</translation>
+    </message>
+    <message>
+        <source>parental.ask.sentTime</source>
+        <translation>.ﻦﻳﺪﻟﺍﻮﻟﺍ ﺪﺣﺃ ﺭﺎﻈﺘﻧﺎﺑ .ﺎﻴﻓﺎﺿﺇ ﺎﺘﻗﻭ ﺖﺒﻠﻃ</translation>
+    </message>
+    <message>
+        <source>parental.time.cannotCheck</source>
+        <translation>ﺪﻌﺑ ﺔﻟﻭﺎﺤﻤﻟﺍ ﺪﻋﺃ .ﻥﻵﺍ ﻚﺗﺪﻫﺎﺸﻣ ﺖﻗﻭ ﻦﻣ ﻖﻘﺤﺘﻟﺍ ﻚﻟﺰﻨﻣ ﻊﻴﻄﺘﺴﻳ ﻻ
+.ﻞﻴﻠﻗ</translation>
+    </message>
+    <message>
+        <source>parental.player.stopped</source>
+        <translation>.ﺏﺎﺴﺤﻟﺍ ﺍﺬﻫ ﻰﻠﻋ ﺎﺣﺎﺘﻣ ﻊﻄﻘﻤﻟﺍ ﺍﺬﻫ ﺪﻌﻳ ﻢﻟ</translation>
+    </message>
+    <message>
+        <source>roku.parental.ask15</source>
+        <translation>ﺔﻘﻴﻗﺩ 15</translation>
+    </message>
+    <message>
+        <source>roku.parental.ask30</source>
+        <translation>ﺔﻘﻴﻗﺩ 30</translation>
+    </message>
+    <message>
+        <source>roku.parental.ask60</source>
+        <translation>ﺓﺪﺣﺍﻭ ﺔﻋﺎﺳ</translation>
+    </message>
+    <message>
+        <source>roku.weekday.0</source>
+        <translation>ﺪﺣﻷﺍ</translation>
+    </message>
+    <message>
+        <source>roku.weekday.1</source>
+        <translation>ﻦﻴﻨﺛﻻﺍ</translation>
+    </message>
+    <message>
+        <source>roku.weekday.2</source>
+        <translation>ﺀﺎﺛﻼﺜﻟﺍ</translation>
+    </message>
+    <message>
+        <source>roku.weekday.3</source>
+        <translation>ﺀﺎﻌﺑﺭﻷﺍ</translation>
+    </message>
+    <message>
+        <source>roku.weekday.4</source>
+        <translation>ﺲﻴﻤﺨﻟﺍ</translation>
+    </message>
+    <message>
+        <source>roku.weekday.5</source>
+        <translation>ﺔﻌﻤﺠﻟﺍ</translation>
+    </message>
+    <message>
+        <source>roku.weekday.6</source>
+        <translation>ﺖﺒﺴﻟﺍ</translation>
+    </message>
 </context>
 </TS>

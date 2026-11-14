@@ -6,6 +6,11 @@
 // handlers and OpenAPI): bearer tokens on every route but discovery, pairing and refresh; a 401
 // for an expired access token (the first /api/home of each sign-in, to run the refresh); 404
 // for a video the viewer cannot see. The cloud gives a code and approves it on the third poll.
+// Epic 57 on Roku (story 58.14): with `state.time` set, a restricted viewer's watching time is
+// over, and every stream open and progress post answers 403 parental_time (the problem body the
+// home's streaming handler writes) until a parent approves a request for more time; a video in
+// `state.hiddenNow` is hidden by the viewer's limit from then on (404 for it, its stream's
+// progress included) until a parent approves a request for it.
 // Every request is logged (no tokens) for the CI report.
 
 import { createServer } from "node:http";
@@ -15,7 +20,13 @@ const require = createRequire(import.meta.url);
 const { createCanvas } = require("canvas");
 
 const uuid = (n) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
+// The home's instance id, as /api/discovery/home answers it, and its server id in Maktaba
+// Cloud, as the cloud's poll answers it (home_id): two different ids, as on a real home, so the
+// channel must know the approving home by its address (NetIsApprovedHome), not by an id.
 export const HOME_ID = "h1test";
+export const CLOUD_HOME_ID = "7c9e6679-7425-40de-944b-e07fc1f90ae7";
+// The relay name Maktaba Cloud gives the home; the home lists it among its own urls.
+export const RELAY_URL = "https://h1test.relay.example";
 export const LIB = uuid(900);
 export const SERIES = uuid(800);
 export const HIDDEN = uuid(999);
@@ -115,6 +126,16 @@ export function startHome(log) {
   const state = { access: new Set(), refresh: new Set(), expired: new Set(), n: 0, grant: "G1", deviceCode: "dc1", clientHeaders: new Set(), restricted: false, requests: [] };
   // story 58.14: the late video is the viewer's to see once not restricted, or once approved
   const lateShown = () => !state.restricted || state.requests.some((r) => r.subject_id === LATE && r.status === "approved");
+  state.time = null;
+  state.hiddenNow = new Set();
+  state.sessionVideo = {};
+  // a parent's yes to more time gives time: the home admits the stream again
+  const timeOver = () => state.restricted && state.time && !state.requests.some((r) => r.subject_kind === "time" && r.status === "approved");
+  const hiddenNow = (id) => state.restricted && state.hiddenNow.has(id) && !state.requests.some((r) => r.subject_id === id && r.status === "approved");
+  const notFound = (p) => ({ type: "not-found", title: "Not Found", status: 404, detail: "not found", instance: p, requestId: "req-test" });
+  // streaming.writeTimeOver: 403 parental-time with its code, reason and, when the rules allow
+  // watching again, next_allowed_at
+  const timeProblem = (p) => ({ type: "parental-time", title: "Forbidden", status: 403, detail: "this account's watching time is over for now", instance: p, requestId: "req-test", code: "parental_time", reason: state.time.reason, ...(state.time.next ? { next_allowed_at: state.time.next } : {}) });
   const card = (v) => ({ id: v.id, title: v.title, filename: v.filename, library_id: v.library_id, duration_sec: v.duration_sec, position_sec: v.position_sec, completed: v.completed, series: v.series });
   const mint = () => {
     state.n++;
@@ -133,7 +154,7 @@ export function startHome(log) {
     const body = req.method === "POST" || req.method === "PUT" ? await readBody(req) : {};
     if (p === "/api/discovery/home") {
       const port = server.address().port;
-      return json(res, 200, { id: HOME_ID, name: "Test home", version: "0.3.150", urls: [`http://127.0.0.1:${port}`], sign_in: { password: true, code: true }, api_level: 1, api_level_oldest: 1, client_floor: {} });
+      return json(res, 200, { id: HOME_ID, name: "Test home", version: "0.3.150", urls: [`http://127.0.0.1:${port}`, RELAY_URL], sign_in: { password: true, code: true }, api_level: 1, api_level_oldest: 1, client_floor: {} });
     }
     if (p === "/api/pairing/device" && req.method === "POST") return json(res, 201, { code: "HKMN-4567", device_code: state.deviceCode, expires_at: new Date(Date.now() + 6e5).toISOString(), verify_path: "/pair?code=HKMN-4567", verify_url: `http://127.0.0.1:${server.address().port}/pair?code=HKMN-4567`, interval: 1 });
     if (p === "/api/pairing/device/token" && req.method === "POST") {
@@ -186,6 +207,7 @@ export function startHome(log) {
       return json(res, 201, { request: r });
     }
     if (p === "/api/me/parental/requests") return json(res, 200, { requests: state.requests });
+    if (p.startsWith("/api/videos/") && hiddenNow(p.split("/")[3])) return json(res, 404, notFound(p));
     if (p === `/api/videos/${LATE}`) {
       if (!lateShown()) return json(res, 404, { type: "about:blank", title: "Not Found", status: 404, detail: "not found" });
       return json(res, 200, { ...card(late), display_title: late.title, description: late.description, playable: true, playback_state: { position_sec: late.position_sec, completed: false } });
@@ -244,17 +266,30 @@ export function startHome(log) {
     if (p === "/api/stream/sessions" && req.method === "POST") {
       const caps = body.device_caps || {};
       log(`home session video=${body.video_id} profile=${body.client_profile} start=${body.start_sec ?? 0} caps=${(caps.video || []).map((v) => `${v.codec}@${v.max_height}`).join(",")}/${(caps.hdr || []).join(",")}/${(caps.passthrough || []).join(",")} force=${body.force_transcode === true}`);
-      const v = videos.find((x) => x.id === body.video_id);
-      if (!v) return json(res, 404, { type: "not_found" });
+      if (timeOver()) {
+        log("home time over");
+        return json(res, 403, timeProblem(p));
+      }
+      const v = videos.find((x) => x.id === body.video_id) || (body.video_id === LATE && lateShown() ? late : null);
+      if (!v || hiddenNow(v.id)) return json(res, 404, notFound(p));
       if (v.id === REFUSED) return json(res, 503, { type: "about:blank", title: "Service Unavailable", status: 503, detail: "Every transcode slot is taken." });
       state.sessions = (state.sessions || 0) + 1;
       const id = `s${state.sessions}`;
+      state.sessionVideo[id] = v.id;
       // the first video of the queue is short: its Up next shows at once (15 s before the end)
       const duration = v.id === videos[0].id ? 12 : v.duration_sec;
       return json(res, 201, { session_id: id, mode: "direct", direct_url: `/stream/direct/${v.id}?sig=x`, stream_sig: `sig-${id}`, duration_sec: duration, expires_at: new Date(Date.now() + 36e5).toISOString() });
     }
     if (/^\/api\/stream\/sessions\/s\d+\/progress$/.test(p) && req.method === "POST") {
-      log(`home progress ${p.split("/")[4]} pos=${body.position_sec} completed=${body.completed === true}`);
+      const sid = p.split("/")[4];
+      log(`home progress ${sid} pos=${body.position_sec} completed=${body.completed === true}`);
+      // the heartbeat of a kept account: refused once the time is over (the position is kept)
+      if (timeOver()) {
+        log("home time over");
+        return json(res, 403, timeProblem(p));
+      }
+      // the stream's video is no longer this viewer's
+      if (hiddenNow(state.sessionVideo[sid])) return json(res, 404, notFound(p));
       res.writeHead(204);
       return res.end();
     }
@@ -288,11 +323,11 @@ export function startCloud(log, homePort) {
       if (state.polls < 3) return json(res, 202, { status: "pending", interval: 1 });
       state.delivered = true;
       return json(res, 200, {
-        status: "approved", home_id: HOME_ID, home_name: "Test home", grant: "G1",
+        status: "approved", home_id: CLOUD_HOME_ID, home_name: "Test home", grant: "G1",
         connections: [
           { kind: "local_ip", url: "https://127.0.0.1:8443", tls_name: "127-0-0-1.h1test.direct.example" },
           { kind: "local", url: `http://127.0.0.1:${homePort}` },
-          { kind: "relay", url: "https://relay.example/h1test" },
+          { kind: "relay", url: RELAY_URL },
         ],
       });
     }

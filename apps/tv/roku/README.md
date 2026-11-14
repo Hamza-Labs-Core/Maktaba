@@ -69,7 +69,8 @@ blank cards that never take the focus.
   mock cloud that approves a code), runs it on brs-node's SceneGraph with ECP, sends keys,
   follows the focus through the channel's log and compares screenshots with `tests/screens/`
   (the player's among them: its overlay, pickers, an Arabic cue, a seek, Up next, a refused
-  session)
+  session, and the player's parental answers: time's up with Ask for more time, and a title
+  hidden while it plays, against a mock home that refuses as the real one does)
   (English and Arabic, dark; a mean difference under 12 on a 480×270 copy). After a deliberate
   change: `UPDATE_SCREENS=1 node --test tests/screens.test.mjs`, look at every image, commit.
   Find on this network runs on Linux only (macOS has no 127.0.0.x addresses for the probe; in
@@ -109,8 +110,10 @@ case by case; a difference fails CI.
 - **Text from the home** is shaped on the device. Shape it once, where the data is loaded (the
   Task that fetches a row), and keep the visual string in the ContentNode: item components are
   recycled as a row scrolls, and shaping in them repeats the work. On brs-engine a 229-character
-  description takes about 16 ms; story 58.15's budget, 50 ms a screen, is re-measured on a Roku
-  Express (docs/stores/roku.md, row 10).
+  description takes about 10 ms (`tests/timing_test.brs`, held in CI at 2.2 times a reference
+  loop for 20 of them); story 58.15's budget, 50 ms a screen, is measured on a Roku Express by
+  the same test in the device-test package (docs/stores/roku.md, row 10). Printable ASCII that
+  is not forced right to left skips the steps.
 - Arabic multi-line strings carry their own line breaks (lines are broken before reordering, so
   the first line holds the start of the text): their Label needs `wrap="true"` and enough
   `maxLines`, and must not be wrapped again.

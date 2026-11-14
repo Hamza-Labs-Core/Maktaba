@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <!-- This isn't available (Epic 58 story 58.14): a video or series the home answers 404 for while
-     the sign-in is limited. Ask a parent, focused; the request followed; a yes opens the item. -->
+     the sign-in is limited, or that the player was refused or stopped for. Ask a parent,
+     focused; the request followed; a yes opens the item (or plays it again). -->
 <component name="BlockedScreen" extends="Screen">
   <script type="text/brightscript" uri="BlockedScreen.brs" />
   <script type="text/brightscript" uri="pkg:/components/common.brs" />
@@ -23,8 +24,8 @@
       <Rectangle translation="[928,250]" width="64" height="48" color="0xE3B252FF" />
     </Group>
     <Label id="title" translation="[160,340]" width="1600" horizAlign="center" />
-    <Label id="reason" translation="[160,430]" width="1600" height="100" wrap="true" horizAlign="center" />
-    <Label id="state" translation="[160,530]" width="1600" height="100" wrap="true" horizAlign="center" />
+    <Label id="reason" translation="[160,430]" width="1600" height="140" wrap="true" horizAlign="center" />
+    <Label id="state" translation="[160,575]" width="1600" height="70" wrap="true" horizAlign="center" />
     <TvButton id="action" translation="[740,650]" width="440" />
     <Label id="hint" translation="[160,770]" width="1600" height="100" wrap="true" horizAlign="center" />
   </children>
