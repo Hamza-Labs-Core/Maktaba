@@ -41,6 +41,8 @@ COPY apps/tv/web/src /src/apps/tv/web/src
 COPY apps/tv/web/bridge.schema.json /src/apps/tv/web/bridge.schema.json
 COPY apps/tv/web/i18n /src/apps/tv/web/i18n
 COPY shared/compat /src/shared/compat
+# the device caps vectors the Samsung launcher's caps test reads (story 58.10)
+COPY shared/playback /src/shared/playback
 COPY web ./
 RUN pnpm run build
 

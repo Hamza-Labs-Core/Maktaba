@@ -1,10 +1,11 @@
-// Story 58.09 — Samsung Tizen. The packaged app (58.10) has `tizen` and `webapis`:
-// webapis.network.getIp() for the subnet probe, webapis.productinfo for the model,
-// tizen.tvinputdevice to register the remote's media and color keys (unregistered, they
-// never reach a page), and tizen.application to leave. AVPlay is 58.10's player adapter.
+// Stories 58.09 and 58.10 — Samsung Tizen. The packaged app (apps/tv/web/tizen/config.xml)
+// has `tizen` and `webapis`: webapis.network.getIp() for the subnet probe,
+// webapis.productinfo for the model, tizen.tvinputdevice to register the remote's media and
+// color keys (unregistered, they never reach a page), tizen.application to leave (Back,
+// 10009, after the UI's confirm), the device caps from webapis (tizen/caps.ts) and the
+// player, webapis.avplay (tizen/avplay.ts), with Maktaba's own subtitle layer.
 
 import {
-  capsForPanel,
   chromiumMajor,
   commonKeyAction,
   engineOf,
@@ -14,6 +15,12 @@ import {
   type Platform,
 } from "./types";
 import { log } from "../log";
+import { t } from "../i18n";
+import { VideoElementPlayer, type PlayerAdapter } from "../player";
+import { SubtitleLayer, parseVtt } from "../subtitles";
+import { AvplayPlayer, type Avplay } from "./tizen/avplay";
+import { probeTizen, tizenCaps, type TizenCapsApis } from "./tizen/caps";
+import "./tizen/tizen.css";
 
 interface TizenApi {
   tvinputdevice?: {
@@ -23,13 +30,15 @@ interface TizenApi {
   application?: { getCurrentApplication(): { exit(): void } };
 }
 
-interface WebApis {
+interface WebApis extends TizenCapsApis {
   network?: { getIp(): string };
   productinfo?: {
     getModel?(): string;
     getRealModel?(): string;
     isUdPanelSupported?(): boolean;
+    is8KPanelSupported?(): boolean;
   };
+  avplay?: Avplay;
 }
 
 declare global {
@@ -93,14 +102,16 @@ export function tizenPlatform(w: Window): Platform {
     },
     keyAction: commonKeyAction,
     deviceCaps(): DeviceCaps {
-      let uhd = false;
-      try {
-        uhd = !!w.webapis?.productinfo?.isUdPanelSupported?.();
-      } catch {
-        uhd = false;
-      }
-      // the rest of the report (HEVC, AV1, HDR, passthrough) is AVPlay's, story 58.10
-      return capsForPanel(uhd);
+      const year = yearFromEngine(chromiumMajor(w.navigator.userAgent), "tizen");
+      const caps = tizenCaps(probeTizen(w, w.webapis, year));
+      log(
+        "launcher",
+        `tizen caps: ${caps.video.map((v) => v.codec).join(",")} ${caps.hdr.join(",") || "sdr"} passthrough ${caps.passthrough.join(",") || "none"}`
+      );
+      return caps;
+    },
+    player(video: HTMLVideoElement): PlayerAdapter {
+      return tizenPlayer(w, video);
     },
     exit() {
       try {
@@ -110,4 +121,61 @@ export function tizenPlatform(w: Window): Platform {
       }
     },
   };
+}
+
+/** How long the playback notice stays over the video. */
+export const NOTICE_MS = 5000;
+
+/**
+ * AVPlay with Maktaba's subtitle layer, in the launcher's stage: AVPlay's <object> under
+ * the iframe, the subtitles and the notice above it. Without webapis.avplay (an emulator,
+ * research.md §3.3) the launcher's <video> plays instead.
+ */
+export function tizenPlayer(w: Window, video: HTMLVideoElement): PlayerAdapter {
+  const doc = w.document;
+  const stage = video.parentElement ?? doc.body;
+  const av = w.webapis?.avplay;
+  if (!av) {
+    log("launcher", "tizen: no webapis.avplay, playing in <video>");
+    return new VideoElementPlayer(video);
+  }
+  const plane = doc.createElement("object");
+  plane.setAttribute("type", "application/avplayer");
+  plane.className = "ml-avplay-plane";
+  plane.hidden = true;
+  stage.insertBefore(plane, stage.firstChild);
+  const subtitles = new SubtitleLayer(stage);
+  const notice = doc.createElement("div");
+  notice.className = "ml-notice";
+  notice.setAttribute("role", "status");
+  notice.setAttribute("data-testid", "player-notice");
+  notice.hidden = true;
+  stage.appendChild(notice);
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  let uhd = false;
+  try {
+    uhd = !!w.webapis?.productinfo?.isUdPanelSupported?.();
+  } catch {
+    uhd = false;
+  }
+  return new AvplayPlayer({
+    avplay: av,
+    doc,
+    plane,
+    subtitles,
+    parseVtt,
+    fetchText: async (url) => {
+      const res = await w.fetch(url, { credentials: "omit", cache: "no-store" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return res.text();
+    },
+    uhd,
+    notice: () => {
+      notice.textContent = t("tizen.error.playback");
+      notice.dir = doc.documentElement.dir || "ltr";
+      notice.hidden = false;
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => (notice.hidden = true), NOTICE_MS);
+    },
+  });
 }
