@@ -764,6 +764,13 @@ build fails when the two differ.
 
 ### Security
 
+- **A TV approved on maktaba.tv gets no sign-in once its cloud account is unlinked (Epic 58,
+  story 58.03).** When the cloud account that approved a TV's code was unlinked from the home, or
+  the home user was linked to another cloud account, before the TV collected its sign-in, the
+  home still handed the TV its tokens. The home now records the TV's sign-in in one step that
+  checks the link still names the approving account, and otherwise hands out nothing: the TV is
+  told its approval has expired and asks for a new code.
+
 - **Every event a plugin's emit refuses is logged (Epic 54).** A plugin's `events/emit` was
   refused (an undeclared event, a payload its schema refuses or over 16 KB, a subject out of
   the job's scope, a bad token, a request that does not decode, and the rest) with only the
