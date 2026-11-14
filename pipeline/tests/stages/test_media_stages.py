@@ -154,7 +154,7 @@ async def test_link_reads_the_ytdlp_info_json_sidecar_through_the_path_map(
         json.dumps(
             {"id": "ytSide", "title": "Side title", "upload_date": "20240301", "duration": 1500,
              "channel_id": "UCs", "playlist_id": "PLabc", "playlist_title": "Real list", "playlist_index": 3,
-             "age_limit": 18},
+             "age_limit": 18, "license": "Creative Commons Attribution license (reuse allowed)"},
         ),
         encoding="utf-8",
     )  # fmt: skip
@@ -173,11 +173,20 @@ async def test_link_reads_the_ytdlp_info_json_sidecar_through_the_path_map(
     assert (
         await db.fetchval("SELECT age_limit FROM youtube_videos WHERE youtube_id = 'ytSide'") == 18
     )
+    # Epic 50 story 50.23 (T01): the intake stores the CC BY licence
+    assert (
+        await db.fetchval("SELECT license FROM youtube_videos WHERE youtube_id = 'ytSide'")
+        == "cc_by"
+    )
     again = parse_info_json(json.dumps({"id": "ytSide", "title": "Side title"}))
-    assert isinstance(again, VideoInfo) and again.age_limit is None
+    assert isinstance(again, VideoInfo) and again.age_limit is None and again.license is None
     await link_stage._upsert_youtube_video(db, again)
     assert (
         await db.fetchval("SELECT age_limit FROM youtube_videos WHERE youtube_id = 'ytSide'") == 18
+    )
+    assert (
+        await db.fetchval("SELECT license FROM youtube_videos WHERE youtube_id = 'ytSide'")
+        == "cc_by"
     )
     assert await db.fetchval(
         "SELECT is_real FROM youtube_playlists WHERE playlist_id = 'PLabc'"

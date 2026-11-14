@@ -60,6 +60,17 @@ func TestLockout(t *testing.T) {
 	}
 }
 
+// Story 50.23 §5: changing Maktaba's broadcast country deny list needs a fresh MFA check;
+// reading it needs none.
+func TestTheBroadcastGeoDenyIsSensitive(t *testing.T) {
+	if !IsSensitive("PUT", "/v1/admin/broadcast/geo-deny") {
+		t.Error("setting the deny list is not sensitive")
+	}
+	if IsSensitive("GET", "/v1/admin/broadcast/geo-deny") {
+		t.Error("reading the deny list needs no re-check")
+	}
+}
+
 func TestSensitiveListsDontOverlap(t *testing.T) {
 	for r := range NotSensitive {
 		if Sensitive[r] {

@@ -124,8 +124,18 @@ export const rungSwitch = (
 export const error = (pub: string, ch: string, code: string): DataPoint =>
   point("error", pub, { channel: ch, code });
 
-export const blocked = (pub: string, ch: string, reason: BlockedReason): DataPoint =>
-  point("blocked", pub, { channel: ch, code: reason });
+/** blocked is a viewer kept out; a geo block carries the viewer's country ("XX": not known). */
+export const blocked = (
+  pub: string,
+  ch: string,
+  reason: BlockedReason,
+  country?: string
+): DataPoint =>
+  point("blocked", pub, {
+    channel: ch,
+    code: reason,
+    ...(country === undefined ? {} : { country: country || "XX" }),
+  });
 
 /** ingest is one segment made visible; glass-to-glass only for the canary publisher. */
 export const ingest = (

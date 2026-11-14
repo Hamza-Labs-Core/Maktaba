@@ -14,7 +14,10 @@ from maktaba_pipeline import rules
 from maktaba_pipeline.channels import pass_, run_schedule, topup_all
 from maktaba_pipeline.channels.base import BlockKind, ChannelMode
 from maktaba_pipeline.channels.repo import ScheduleState, SqlRepo
+from maktaba_pipeline.engine.sql import is_pg, loads
+from maktaba_pipeline.runtime import Database
 from maktaba_pipeline.schedule.tv_settings import LiveSlot, MaktabaTvConfig
+from tests.tvrelease.helpers import add_channel, library_with
 
 from .helpers import FakeRepo, dt, mk_channel, mk_content
 
@@ -159,3 +162,80 @@ async def test_a_week_on_22_channels_is_planned_to_the_end() -> None:
         assert end >= now + timedelta(days=7), (mode, end)
         if mode == ChannelMode.SCHEDULE:
             assert sum(b.kind == BlockKind.LIVE for b in repo.blocks) >= 7 * 24 * 4 - 1
+
+
+@pytest.mark.asyncio
+async def test_a_published_channel_s_guide_is_its_publishable_items_with_their_credit(
+    db: Database,
+) -> None:
+    """Story 50.23 on the real migrated database: while a channel is published with
+    ``broadcast.publishable_only`` on (the default), the repo answers which items may air
+    (slot 0228's rule) and the guide it plans holds only those, each programme from a
+    permitted source carrying the source's credit; with the setting off, the full rules.
+    SQLite homes never broadcast: there the channel is never limited."""
+    lib = await library_with(db, 3, tag="p")
+    own, credited, other = [
+        UUID(str(r["id"]))
+        for r in await db.fetch(
+            "SELECT id FROM videos WHERE library_id = $1 ORDER BY title", str(lib)
+        )
+    ]
+    ch = UUID(await add_channel(db, lib, 451, slug="published"))
+    repo = SqlRepo(db, gen=0)
+    if not is_pg(db):
+        assert await repo.publishable_ids(await _channel(repo, ch), {own, other}) is None
+        return
+
+    await db.execute("UPDATE videos SET publishable_reason = 'own' WHERE id = $1", str(own))
+    await db.execute(
+        'UPDATE videos SET metadata = \'{"label": "Nashid Records"}\'::jsonb WHERE id = $1',
+        str(credited),
+    )
+    await db.execute(
+        "INSERT INTO publishable_sources (kind, ref, proof_url, credit, recorded_by)"
+        " VALUES ('label', 'nashid records', 'https://example.test/letter',"
+        " 'Courtesy of Nashid', 'admin')"
+    )
+    channel = await _channel(repo, ch)
+    # a draft (not yet published) channel is not limited
+    await db.execute(
+        "INSERT INTO broadcast_channels (channel_id, slug, state)"
+        " VALUES ($1, 'published', 'draft')",
+        str(ch),
+    )
+    assert await repo.publishable_ids(channel, {own, credited, other}) is None
+
+    await db.execute("UPDATE broadcast_channels SET state = 'live' WHERE channel_id = $1", str(ch))
+    assert await repo.publishable_ids(channel, {own, credited, other}) == {own, credited}
+    assert await repo.publishable_ids(channel, set()) == set()
+
+    now = dt("2026-11-14T00:00:00")
+    assert await run_schedule(repo, ch, now=now, horizon=timedelta(hours=6)) > 0
+    rows = await db.fetch(
+        "SELECT video_id, title_snapshot FROM channel_programs"
+        " WHERE channel_id = $1 AND video_id IS NOT NULL",
+        str(ch),
+    )
+    aired = {UUID(str(r["video_id"])) for r in rows}
+    assert aired == {own, credited}
+    for r in rows:
+        raw = r["title_snapshot"]
+        snap = loads(raw) if isinstance(raw, str) else raw
+        if UUID(str(r["video_id"])) == credited:
+            assert snap["attribution"] == {"kind": "credit", "credit": "Courtesy of Nashid"}
+        else:
+            assert "attribution" not in snap  # the home's own recording credits nobody
+
+    # the home turns publishable_only off: the next plan is the full rules again
+    await db.execute(
+        "INSERT INTO app_settings (key, value)"
+        " VALUES ('broadcast.publishable_only', 'false'::jsonb)"
+        " ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value"
+    )
+    assert await repo.publishable_ids(channel, {own, credited, other}) is None
+
+
+async def _channel(repo: SqlRepo, channel_id: UUID) -> Any:
+    channel = await repo.load_channel(channel_id)
+    assert channel is not None
+    return channel

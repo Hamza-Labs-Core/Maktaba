@@ -39,7 +39,9 @@ __all__ = [
     "find_sidecar_thumbnail",
     "is_real_playlist",
     "parse_archive",
+    "parse_api_license",
     "parse_info_json",
+    "parse_license",
     "parse_upload_date",
 ]
 
@@ -92,6 +94,9 @@ class VideoInfo:
     #: YouTube's age limit for the video (0: none, 18: age-restricted); None when the
     #: file does not say. The age tiers read it (Epic 57, story 57.01).
     age_limit: int | None = None
+    #: the video's licence: ``cc_by`` (Creative Commons Attribution), ``standard``, or None
+    #: when the file does not say. Publishable sources read it (Epic 50, story 50.23).
+    license: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -137,6 +142,53 @@ def parse_age_limit(value: Any) -> int | None:
     not an age."""
     v = _int(value)
     return v if v is not None and 0 <= v <= 99 else None
+
+
+#: words that make a Creative Commons licence something other than plain Attribution
+_CC_NOT_BY = (
+    "noncommercial",
+    "non-commercial",
+    "no derivative",
+    "noderivative",
+    "sharealike",
+    "share alike",
+    "-nc",
+    "-nd",
+    "-sa",
+)
+
+
+def parse_license(value: Any) -> str | None:
+    """yt-dlp's ``license`` → ``cc_by``, ``standard`` or ``None`` (absent).
+
+    YouTube writes "Creative Commons Attribution license (reuse allowed)" for its one
+    Creative Commons licence; any casing is read the same. A Creative Commons licence with
+    a further condition (non-commercial, no derivatives, share-alike) is not CC BY, so it
+    counts as ``standard``: only CC BY makes an item publishable by itself (story 50.23).
+    """
+    v = _str(value)
+    if v is None:
+        return None
+    low = v.strip().lower()
+    if low in ("creativecommon", "creativecommons"):
+        return "cc_by"
+    is_cc = "creative commons" in low or low.startswith("cc by") or low.startswith("cc-by")
+    if (
+        is_cc
+        and ("attribution" in low or "cc by" in low or "cc-by" in low)
+        and not any(w in low for w in _CC_NOT_BY)
+    ):
+        return "cc_by"
+    return "standard"
+
+
+def parse_api_license(value: Any) -> str | None:
+    """The YouTube Data API's ``status.license`` → ``cc_by`` (``creativeCommon``),
+    ``standard`` (``youtube``) or ``None``."""
+    v = _str(value)
+    if v is None:
+        return None
+    return "cc_by" if v.strip().lower() == "creativecommon" else "standard"
 
 
 def parse_info_json(text: str) -> VideoInfo | PlaylistInfo | None:
@@ -185,6 +237,7 @@ def parse_info_json(text: str) -> VideoInfo | PlaylistInfo | None:
         tags=tuple(t for t in tags if isinstance(t, str)),
         webpage_url=_str(j.get("webpage_url")),
         age_limit=parse_age_limit(j.get("age_limit")),
+        license=parse_license(j.get("license")),
     )
 
 

@@ -26,6 +26,7 @@ import type { PlaylistAnswer } from "./channel_live";
 import { now } from "./clock";
 import { globalDelivery, globallyOff, type Env } from "./env";
 import * as ev from "./events";
+import { geoBlocked, geoFor } from "./geo";
 import { json, preflight, problem, withLiveHeaders } from "./http";
 import { readCapped } from "./ingest";
 import { log } from "./log";
@@ -60,27 +61,34 @@ async function route(request: Request, env: Env, url: URL): Promise<Response> {
   let res: Response;
   if (parts.length === 3 && parts[2] === "beat" && request.method === "POST")
     res = await beat(request, env, claims);
-  else if (parts.length === 3 && parts[2] === "master.m3u8" && get) res = await master(env, claims);
+  else if (parts.length === 3 && parts[2] === "master.m3u8" && get)
+    res = (await geoCheck(request, env, ch)) ?? (await master(env, claims));
   else if (parts.length === 4 && RUNG_RE.test(parts[2]!) && get && parts[3] === "index.m3u8")
-    res = await media(env, claims, parts[2]!);
+    res = (await geoCheck(request, env, ch)) ?? (await media(env, claims, parts[2]!));
   else if (parts.length === 4 && RUNG_RE.test(parts[2]!) && get && SEG_RE.test(parts[3]!))
     res = await segment(env, ch, parts[2]!, parts[3]!);
   else return problem(404, "not_found");
-  await recordRefusal(env, claims, parts[2] === "master.m3u8", res);
+  await recordRefusal(env, claims, parts[2] === "master.m3u8", res, request);
   return res;
 }
 
 /**
- * recordRefusal writes `blocked` for a revoked channel (once per session start: on the master)
- * and `error` for a 5xx the edge answered, by its code.
+ * recordRefusal writes `blocked` for a revoked channel and for a viewer outside the channel's
+ * countries (once per session start: on the master; geo with the viewer's country, 50.23 §5) and
+ * `error` for a 5xx the edge answered, by its code.
  */
 async function recordRefusal(
   env: Env,
   claims: ViewerClaims,
   isMaster: boolean,
-  res: Response
+  res: Response,
+  request: Request
 ): Promise<void> {
   if (res.status < 403) return;
+  if (res.status === 451) {
+    if (isMaster) ev.write(env, ev.blocked(claims.pub, claims.ch, "geo", viewerCountry(request)));
+    return;
+  }
   const code = await problemCode(res);
   if (res.status === 403 && code === "revoked" && isMaster)
     ev.write(env, ev.blocked(claims.pub, claims.ch, "revoked"));
@@ -95,6 +103,21 @@ async function problemCode(res: Response): Promise<string> {
   } catch {
     return "";
   }
+}
+
+/** viewerCountry is the viewer's country as Cloudflare tells it ("" when it can't). */
+function viewerCountry(request: Request): string {
+  return request.headers.get("CF-IPCountry") ?? "";
+}
+
+/**
+ * geoCheck (50.23 §5) answers 451 geo_blocked to a viewer outside the channel's countries, at
+ * play (master) and at every playlist; recordRefusal writes the blocked event, by country, for
+ * the publisher's analytics (50.28).
+ */
+async function geoCheck(request: Request, env: Env, ch: string): Promise<Response | null> {
+  if (!geoBlocked(await geoFor(env, ch), viewerCountry(request))) return null;
+  return problem(451, "geo_blocked");
 }
 
 function channel(env: Env, ch: string) {
