@@ -81,8 +81,7 @@ function replaceCalls(value, name, pick) {
   return value;
 }
 
-const viewportTerm = (args) =>
-  args.find((a) => /v(w|h|min|max)\b/.test(a)) ?? args[0];
+const viewportTerm = (args) => args.find((a) => /v(w|h|min|max)\b/.test(a)) ?? args[0];
 
 /** A declaration value with clamp(), min() and max() resolved for a TV's page. */
 export function lowerValue(value) {
@@ -152,7 +151,7 @@ function physical(base, side, suffix) {
 export function lowerDecl(k, v) {
   const m =
     /^(margin|padding|inset|border)-(block|inline)(?:-(start|end))?(-width|-color|-style)?$/.exec(
-      k,
+      k
     );
   if (m) {
     const [, base, axis, side, suffix = ""] = m;
@@ -161,12 +160,7 @@ export function lowerDecl(k, v) {
     const first = parts[0];
     const second = parts[1] ?? parts[0];
     if (axis === "block") {
-      if (side)
-        return [
-          [[physical(base, side === "start" ? "top" : "bottom", suffix), v]],
-          [],
-          [],
-        ];
+      if (side) return [[[physical(base, side === "start" ? "top" : "bottom", suffix), v]], [], []];
       return [
         [
           [physical(base, "top", suffix), first],
@@ -227,9 +221,7 @@ function ratioFallback(selector, value) {
   const sels = splitArgs(selector);
   if (value.trim() === "auto") {
     // a variant turning the ratio off turns its fallback off too
-    const pseudo = sels
-      .flatMap((s) => [`${s}::before`, `${s}::after`])
-      .join(", ");
+    const pseudo = sels.flatMap((s) => [`${s}::before`, `${s}::after`]).join(", ");
     return `@supports not (aspect-ratio: 1 / 1) { ${pseudo} { content: none; padding-top: 0; } }`;
   }
   const m = /^\s*([\d.]+)\s*(?:\/\s*([\d.]+))?\s*$/.exec(value);
@@ -266,7 +258,7 @@ export function lowerForM68(css) {
       if (selector.startsWith("@font-face")) {
         const kept = body.replace(/src\s*:([^;]*)/g, (_, srcs) => {
           const woff2 = splitArgs(srcs).filter(
-            (s) => /format\(\s*["']?woff2/.test(s) || !/url\(/.test(s),
+            (s) => /format\(\s*["']?woff2/.test(s) || !/url\(/.test(s)
           );
           return `src: ${woff2.join(", ")}`;
         });
@@ -280,8 +272,7 @@ export function lowerForM68(css) {
       const rtl = [];
       let ratio = "";
       for (const [k, raw] of list) {
-        if (extra && (k === "gap" || k === "row-gap" || k === "column-gap"))
-          continue;
+        if (extra && (k === "gap" || k === "row-gap" || k === "column-gap")) continue;
         const v = lowerValue(raw);
         if (k === "aspect-ratio") ratio = ratioFallback(selector, v);
         const [o, l, r] = lowerDecl(k, v);
@@ -289,11 +280,8 @@ export function lowerForM68(css) {
         ltr.push(...l);
         rtl.push(...r);
       }
-      const block = (sel, ds) =>
-        `${sel} {\n${ds.map(([k, v]) => `  ${k}: ${v};`).join("\n")}\n}`;
-      const out = [
-        `${rawSel}{\n${own.map(([k, v]) => `  ${k}: ${v};`).join("\n")}\n}`,
-      ];
+      const block = (sel, ds) => `${sel} {\n${ds.map(([k, v]) => `  ${k}: ${v};`).join("\n")}\n}`;
+      const out = [`${rawSel}{\n${own.map(([k, v]) => `  ${k}: ${v};`).join("\n")}\n}`];
       if (ltr.length) out.push(block(underDir(selector, "ltr"), ltr));
       if (rtl.length) out.push(block(underDir(selector, "rtl"), rtl));
       // the gap's margins are logical too: lowered the same way

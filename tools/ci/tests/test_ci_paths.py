@@ -53,7 +53,7 @@ CASES: dict[str, tuple[list[str], set[str], dict[str, set[str]]]] = {
     # Epic 58 (58.08): the TV build's checks (vite.config.ts imports its CSS pass) and its
     # Playwright config run its gate and the web jobs
     "tv build tools only": (
-        ["tools/web/tvcheck.mjs", "web/playwright.tv.config.ts", "web/index.tv.html"],
+        ["web/tv-build/tvcheck.mjs", "web/playwright.tv.config.ts", "web/index.tv.html"],
         {"tv-web", "unit", "e2e", "build-artifacts"},
         {"lint": {"web"}, "unit": {"web"}},
     ),

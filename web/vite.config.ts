@@ -7,7 +7,7 @@ import { createHash } from "node:crypto";
 import { serviceWorkerBuild, stampServiceWorker } from "./src/lib/swStamp";
 import { serverPageModules } from "./src/lib/editionBundle";
 import legacy from "@vitejs/plugin-legacy";
-import { lowerForM68 } from "../tools/web/tvcss.mjs";
+import { lowerForM68 } from "./tv-build/tvcss.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -98,7 +98,7 @@ function playerBundleCheck(): Plugin {
 // /tv/ on the home, for Chromium 68 (a 2020 Samsung or LG TV). Its scripts are
 // lowered to ES2017 with core-js polyfills for what the code uses (plugin-legacy's
 // modern polyfills; no legacy SystemJS bundle); its CSS goes through lowerForM68
-// then Lightning CSS for Chrome 68 (tools/web/tvcss.mjs). tools/web/tvcheck.mjs
+// then Lightning CSS for Chrome 68 (tv-build/tvcss.mjs). tv-build/tvcheck.mjs
 // fails the build when the output would not run there.
 const TV_TARGET = ["es2017", "chrome68"];
 

@@ -7,7 +7,7 @@
 //   - no script uses eval or new Function (a TV's CSP and the store reviews);
 //   - every stylesheet is free of what M68 cannot run (cssProblems below).
 //
-//   node tools/web/tvcheck.mjs [dist/tv]     exit 1 naming each problem
+//   node web/tv-build/tvcheck.mjs [dist/tv]     exit 1 naming each problem
 //
 // Playwright on a pinned M68 Chromium is not available, so this check stands
 // in for running the screens there (story 58.08's acceptance criteria).
@@ -26,7 +26,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const WEB = path.resolve(HERE, "../../web");
+const WEB = path.resolve(HERE, "..");
 
 // [what, a pattern on the output, why M68 cannot]: each breaks a layout or a rule
 const CSS_RULES = [
@@ -73,10 +73,7 @@ export function cssProblems(css) {
   const text = css.replace(/\/\*[\s\S]*?\*\//g, "");
   const out = [];
   // what an @supports fallback guards is fine: it never applies on M68
-  const unguarded = text.replace(
-    /@supports\s*\([^{]*\)\s*\{(?:[^{}]*\{[^{}]*\})*[^{}]*\}/g,
-    "",
-  );
+  const unguarded = text.replace(/@supports\s*\([^{]*\)\s*\{(?:[^{}]*\{[^{}]*\})*[^{}]*\}/g, "");
   for (const [what, re, why] of CSS_RULES) {
     if (re.test(unguarded)) out.push(`${what} (${why})`);
   }
@@ -87,26 +84,16 @@ export function cssProblems(css) {
     const parts = topLevel(sel);
     for (const bad of ALONE_ONLY) {
       if (parts.length > 1 && parts.some((p) => p.includes(bad)))
-        out.push(
-          `${bad} in a selector list (M68 drops the whole rule): ${sel.slice(0, 80)}`,
-        );
+        out.push(`${bad} in a selector list (M68 drops the whole rule): ${sel.slice(0, 80)}`);
     }
     // aspect-ratio needs its fallback: the rule's ::before holding the height
     const ratio = /(^|[;{\s])aspect-ratio\s*:\s*([^;}]+)/.exec(body);
     if (ratio && ratio[2].trim() !== "auto") {
       const first = parts[0];
-      if (
-        !text.includes(`${first}:before`) &&
-        !text.includes(`${first}::before`)
-      )
-        out.push(
-          `aspect-ratio without its fallback (M88): ${sel.slice(0, 80)}`,
-        );
+      if (!text.includes(`${first}:before`) && !text.includes(`${first}::before`))
+        out.push(`aspect-ratio without its fallback (M88): ${sel.slice(0, 80)}`);
     }
-    if (
-      /display\s*:\s*(inline-)?flex/.test(body) &&
-      /(^|[;\s])(row-|column-)?gap\s*:/.test(body)
-    )
+    if (/display\s*:\s*(inline-)?flex/.test(body) && /(^|[;\s])(row-|column-)?gap\s*:/.test(body))
       out.push(`gap on a flex container (M84): ${sel.slice(0, 80)}`);
   }
   return out;
@@ -171,8 +158,7 @@ export function esCheck(scripts) {
 
 export function check(dist) {
   const problems = [];
-  if (!existsSync(path.join(dist, "index.html")))
-    return [`${dist}/index.html is missing`];
+  if (!existsSync(path.join(dist, "index.html"))) return [`${dist}/index.html is missing`];
   const scripts = files(dist, ".js");
   problems.push(...esCheck(scripts));
   for (const f of scripts) {
@@ -186,19 +172,12 @@ export function check(dist) {
   return problems;
 }
 
-if (
-  process.argv[1] &&
-  path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)
-) {
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const dist = path.resolve(process.argv[2] ?? path.join(WEB, "dist", "tv"));
   const problems = check(dist);
   if (problems.length > 0) {
-    console.error(
-      `tvcheck: ${dist} would not run on Chromium 68:\n- ${problems.join("\n- ")}`,
-    );
+    console.error(`tvcheck: ${dist} would not run on Chromium 68:\n- ${problems.join("\n- ")}`);
     process.exit(1);
   }
-  console.log(
-    `tvcheck: ${dist} parses as ES2017 and its CSS runs on Chromium 68`,
-  );
+  console.log(`tvcheck: ${dist} parses as ES2017 and its CSS runs on Chromium 68`);
 }

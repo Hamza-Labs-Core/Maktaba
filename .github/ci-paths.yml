@@ -80,8 +80,6 @@ _pipeline: &pipeline
 # the web app, and what its tests read outside it
 _web: &web
   - 'web/**'
-  # vite.config.ts imports the TV build's CSS pass (story 58.08) in every build
-  - 'tools/web/**'
   - 'shared/testtier/ts/**'
   # the plugin SDK's flow chart, which the Plugins page draws with (54.41)
   - 'tools/plugin-sdk/js/src/flowchart.ts'
@@ -814,7 +812,7 @@ tv_web:
   - 'web/tsconfig.json'
   - 'web/playwright.tv.config.ts'
   - 'web/e2e/tv/**'
-  - 'tools/web/**'
+  - 'web/tv-build/**'
   - 'apps/tv/web/**'
   - '.github/workflows/_tv-web.yml'
 
