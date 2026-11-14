@@ -9,6 +9,7 @@ package streaming
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
 	pipeline "github.com/Hamza-Labs-Core/Maktaba/api/internal/grpcclients/pipeline"
@@ -27,6 +28,9 @@ type OpenSessionRequest struct {
 	BurnSubs       bool
 	ForceTranscode bool
 	ForceSoftware  bool
+	// DeviceCaps is the device's report as JSON (story 58.02; nil: none),
+	// passed on as the request's device_caps object.
+	DeviceCaps json.RawMessage
 }
 
 // OpenSessionResponse mirrors the Streaming proto reply.
