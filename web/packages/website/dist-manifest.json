@@ -380,6 +380,7 @@
     "/ar/problems/version-not-found/index.html",
     "/ar/problems/video-unavailable-offline/index.html",
     "/ar/problems/wrong-code/index.html",
+    "/ar/tv/index.html",
     "/assets/problems-nojs.css",
     "/cards/ar/download.png",
     "/cards/ar/help.png",
@@ -757,6 +758,7 @@
     "/cards/ar/problems/version-not-found.png",
     "/cards/ar/problems/video-unavailable-offline.png",
     "/cards/ar/problems/wrong-code.png",
+    "/cards/ar/tv.png",
     "/cards/download.png",
     "/cards/help.png",
     "/cards/help/account.png",
@@ -1133,6 +1135,7 @@
     "/cards/problems/version-not-found.png",
     "/cards/problems/video-unavailable-offline.png",
     "/cards/problems/wrong-code.png",
+    "/cards/tv.png",
     "/download/index.html",
     "/favicon.ico",
     "/fonts/OFL-Amiri.txt",
@@ -1808,7 +1811,8 @@
     "/shots/webphone-home-en-360.webp",
     "/shots/webphone-home-en-480.avif",
     "/shots/webphone-home-en-480.webp",
-    "/sitemap.xml"
+    "/sitemap.xml",
+    "/tv/index.html"
   ],
   "ids": {
     "/404.html": [
@@ -11658,6 +11662,25 @@
       "viewport",
       "who-helps"
     ],
+    "/ar/tv/index.html": [
+      "announce",
+      "color-scheme",
+      "description",
+      "lang-switch",
+      "main",
+      "maktaba-menu",
+      "maktaba-site",
+      "mk-bg",
+      "mk-brass",
+      "mk-icon",
+      "mk-lamp",
+      "site-nav",
+      "twitter:card",
+      "twitter:description",
+      "twitter:image",
+      "twitter:title",
+      "viewport"
+    ],
     "/download/index.html": [
       "announce",
       "arabic-title",
@@ -21470,6 +21493,25 @@
       "twitter:title",
       "viewport",
       "who-helps"
+    ],
+    "/tv/index.html": [
+      "announce",
+      "color-scheme",
+      "description",
+      "lang-switch",
+      "main",
+      "maktaba-menu",
+      "maktaba-site",
+      "mk-bg",
+      "mk-brass",
+      "mk-icon",
+      "mk-lamp",
+      "site-nav",
+      "twitter:card",
+      "twitter:description",
+      "twitter:image",
+      "twitter:title",
+      "viewport"
     ]
   },
   "redirects": {
