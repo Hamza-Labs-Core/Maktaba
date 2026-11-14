@@ -32,11 +32,16 @@ func TestPGLookup_HasAudio(t *testing.T) {
 		{"codec_type": "audio", "codec_name": "opus", "channels": 2, "sample_rate": "48000",
 		 "tags": {"language": "ara"}, "disposition": {"default": 1}}]}`
 	const silent = `{"format": {"format_name": "mov,mp4"}, "streams": [{"codec_type": "video", "codec_name": "h264"}]}`
+	// story 58.02: a Dolby Vision 8.1 file's configuration record, as ffprobe -show_streams lists it
+	const dovi = `{"format": {"format_name": "matroska,webm"}, "streams": [
+		{"codec_type": "video", "codec_name": "hevc", "side_data_list": [
+			{"side_data_type": "DOVI configuration record", "dv_version_major": 1, "dv_profile": 8,
+			 "dv_level": 6, "rpu_present_flag": 1, "bl_present_flag": 1, "dv_bl_signal_compatibility_id": 1}]}]}`
 
 	lib := uuid.New()
 	exec(`INSERT INTO libraries (id, name, roots) VALUES ($1, 'L', '{/m}')`, lib)
 	vid := map[string]uuid.UUID{}
-	for _, n := range []string{"bare", "untracked", "silent", "known"} {
+	for _, n := range []string{"bare", "untracked", "silent", "known", "dovi"} {
 		vid[n] = uuid.New()
 		exec(`INSERT INTO videos (id, library_id, path, filename, content_hash, size_bytes, mtime, state)
 			VALUES ($1, $2, $3, $3, encode(sha256(convert_to($3, 'UTF8')), 'hex'), 1, now(), 'ready')`, vid[n], lib, "/m/"+n+".mkv")
@@ -49,6 +54,7 @@ func TestPGLookup_HasAudio(t *testing.T) {
 	probed("untracked", withAudio)
 	probed("silent", silent)
 	probed("known", withAudio)
+	probed("dovi", dovi)
 	exec(`INSERT INTO audio_tracks (video_id, track_index, codec, channels, is_default) VALUES ($1, 0, 'aac', 6, true)`, vid["known"])
 
 	look := func(n string) *Row {
@@ -69,6 +75,12 @@ func TestPGLookup_HasAudio(t *testing.T) {
 	}
 	if r := look("known"); r.AudioCodec != "aac" || r.AudioChannels != 6 {
 		t.Errorf("known: %q/%d", r.AudioCodec, r.AudioChannels)
+	}
+	if r := look("dovi"); r.DVProfile != 8 || r.DVCompat != 1 {
+		t.Errorf("dovi: profile %d compat %d, want 8.1", r.DVProfile, r.DVCompat)
+	}
+	if r := look("known"); r.DVProfile != 0 || r.FPS != 0 {
+		t.Errorf("known: profile %d fps %v, want none", r.DVProfile, r.FPS)
 	}
 
 	// slot 0171: the bare row takes its stream's facts; the row with a codec keeps it

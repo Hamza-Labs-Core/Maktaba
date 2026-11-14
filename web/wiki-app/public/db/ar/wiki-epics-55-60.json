@@ -2132,14 +2132,17 @@
         "phase-5"
       ],
       "related": [
-        "epic-58-smart-tv-platforms"
+        "epic-58-smart-tv-platforms",
+        "ep-post-cast-grants"
       ],
       "files": {
         "story": "specs/epics/58-smart-tv-platforms/story-58-06-cast-senders.md",
         "plan": null,
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "POST /cast/grants"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "cast-senders"
@@ -2518,6 +2521,7 @@
         "epic-58-smart-tv-platforms",
         "ep-get-videos",
         "ep-post-stream-sessions",
+        "ep-post-cast-grants",
         "ep-get-home",
         "ep-get-discovery-home"
       ],
@@ -2529,6 +2533,7 @@
       "api_endpoints": [
         "GET /videos",
         "POST /stream/sessions",
+        "POST /cast/grants",
         "GET /home",
         "GET /discovery/home"
       ],

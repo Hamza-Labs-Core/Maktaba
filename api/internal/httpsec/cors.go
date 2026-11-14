@@ -31,6 +31,13 @@ type CORSConfig struct {
 	// MaxAge is the preflight cache duration, in seconds.
 	MaxAge int
 
+	// BearerOrigins are origins answered for bearer requests only (Epic 58 story
+	// 58.07: Maktaba's Cast receiver, which holds a cast grant and no cookie): their
+	// responses carry `Access-Control-Allow-Origin` but never
+	// `Access-Control-Allow-Credentials`, so a browser sends them no cookie and reads no
+	// answer to one. An origin also in AllowedOrigins is answered as one of those.
+	BearerOrigins []string
+
 	// PublicPaths are routes whose answer is public (Epic 58 story 58.09: GET
 	// /api/discovery/home): any origin may read them, `Access-Control-Allow-Origin: *`,
 	// never with credentials. The Samsung and LG launcher reads the home's identity and
@@ -46,6 +53,9 @@ type CORSConfig struct {
 	// (a sandboxed frame says `null`) gains nothing it could not ask without CORS.
 	PackagedApps bool
 }
+
+// bearerHeaders are the request headers a bearer origin may send.
+const bearerHeaders = "Authorization, Content-Type, X-Maktaba-Client"
 
 // packagedOrigin reports whether origin is a packaged TV app's (see PackagedApps).
 func packagedOrigin(origin string) bool {
@@ -86,6 +96,10 @@ func CORS(cfg CORSConfig) func(http.Handler) http.Handler {
 	allowed := make(map[string]struct{}, len(cfg.AllowedOrigins))
 	for _, o := range cfg.AllowedOrigins {
 		allowed[o] = struct{}{}
+	}
+	bearer := make(map[string]struct{}, len(cfg.BearerOrigins))
+	for _, o := range cfg.BearerOrigins {
+		bearer[o] = struct{}{}
 	}
 	methods := strings.Join(cfg.AllowedMethods, ", ")
 	headers := strings.Join(cfg.AllowedHeaders, ", ")
@@ -144,6 +158,20 @@ func CORS(cfg CORSConfig) func(http.Handler) http.Handler {
 						if headers != "" {
 							h.Set("Access-Control-Allow-Headers", headers)
 						}
+						if cfg.MaxAge > 0 {
+							h.Set("Access-Control-Max-Age", itoa(cfg.MaxAge))
+						}
+					}
+				} else if _, ok := bearer[origin]; ok {
+					h := w.Header()
+					h.Set("Access-Control-Allow-Origin", origin)
+					h.Add("Vary", "Origin")
+					h.Set("Access-Control-Expose-Headers", "Retry-After")
+					if isPreflight {
+						if methods != "" {
+							h.Set("Access-Control-Allow-Methods", methods)
+						}
+						h.Set("Access-Control-Allow-Headers", bearerHeaders)
 						if cfg.MaxAge > 0 {
 							h.Set("Access-Control-Max-Age", itoa(cfg.MaxAge))
 						}
