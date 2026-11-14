@@ -45,6 +45,7 @@ export const HELP_CATEGORIES = [
       "cloud",
       "storage",
       "components",
+      "plugins",
     ],
   },
   { id: "connections", topics: ["extensions", "plex"] },

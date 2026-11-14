@@ -44,7 +44,7 @@ func (s *Staff) AddPasskey(ctx context.Context, staffID string, credentialID, pu
 	p := StaffPasskey{StaffID: staffID, CredentialID: credentialID, SignCount: signCount, Name: name, Credential: credential}
 	err := s.DB.QueryRowContext(ctx, `INSERT INTO staff_passkeys (staff_id, credential_id, public_key, sign_count, name, credential)
 		VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, created_at`,
-		staffID, credentialID, publicKey, int64(signCount), name, credential).Scan(&p.ID, &p.CreatedAt)
+		staffID, credentialID, publicKey, int64(signCount), name, string(credential)).Scan(&p.ID, &p.CreatedAt)
 	var pqErr *pq.Error
 	if errors.As(err, &pqErr) && pqErr.Code == "23505" {
 		return p, ErrStaffPasskeyExists
@@ -80,7 +80,7 @@ func (s *Staff) Passkeys(ctx context.Context, staffID string, withDisabled bool)
 func (s *Staff) UsePasskey(ctx context.Context, staffID string, credentialID []byte, signCount uint32, credential []byte, now time.Time) error {
 	return s.exec1(ctx, `UPDATE staff_passkeys SET sign_count = $3, credential = $4, last_used_at = $5
 		WHERE staff_id = $1 AND credential_id = $2 AND disabled_at IS NULL`,
-		staffID, credentialID, int64(signCount), credential, now)
+		staffID, credentialID, int64(signCount), string(credential), now)
 }
 
 // DisablePasskey turns a passkey off (§2: its counter went backwards, so it may be a copy).
@@ -94,7 +94,7 @@ func (s *Staff) PutChallenge(ctx context.Context, staffID, purpose string, sessi
 	_, err := s.DB.ExecContext(ctx, `INSERT INTO staff_webauthn_challenges (staff_id, purpose, session, expires_at)
 		VALUES ($1, $2, $3, $4)
 		ON CONFLICT (staff_id, purpose) DO UPDATE SET session = EXCLUDED.session, expires_at = EXCLUDED.expires_at,
-			created_at = now()`, staffID, purpose, session, expires)
+			created_at = now()`, staffID, purpose, string(session), expires)
 	return err
 }
 

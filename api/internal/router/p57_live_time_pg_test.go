@@ -96,6 +96,23 @@ func (e *liveTimeEnv) reach(seconds int) {
 		e.users["child"], parental.DayKey(time.Now(), loc), parental.NoLibrary, seconds)
 }
 
+// endsIn is when a stream started now must end under the test's rule (60
+// minutes every day) with used already counted today. Today's minutes stop at
+// the home day line (04:00); a stream still allowed there carries on into the
+// next day's 60.
+func (e *liveTimeEnv) endsIn(used time.Duration) time.Duration {
+	e.t.Helper()
+	loc, err := e.cache.Store().HomeZone(context.Background())
+	if err != nil {
+		e.t.Fatal(err)
+	}
+	left := time.Hour - used
+	if toLine := time.Until(parental.DayStart(time.Now(), loc).AddDate(0, 0, 1)); toLine < left {
+		return toLine + time.Hour
+	}
+	return left
+}
+
 // Finding 1: live TV counts like any playback and is refused by the same rules.
 func TestP57LiveTimePG(t *testing.T) {
 	e := setupLiveTime(t)
@@ -108,8 +125,8 @@ func TestP57LiveTimePG(t *testing.T) {
 	if code != 200 || v["time_allowed"] != true || v["allowed"] != true || v["time_reason"] != nil {
 		t.Fatalf("inside the limit: %d %v", code, v)
 	}
-	if at, err := time.Parse(time.RFC3339, v["time_ends_at"].(string)); err != nil || time.Until(at) < 59*time.Minute || time.Until(at) > 61*time.Minute {
-		t.Fatalf("time_ends_at = %v, want an hour from now", v["time_ends_at"])
+	if at, err := time.Parse(time.RFC3339, v["time_ends_at"].(string)); err != nil || (time.Until(at)-e.endsIn(0)).Abs() > time.Minute {
+		t.Fatalf("time_ends_at = %v, want %v from now", v["time_ends_at"], e.endsIn(0).Round(time.Second))
 	}
 	for _, path := range []string{"/access", "/play"} {
 		method := map[string]string{"/access": "GET", "/play": "POST"}[path]
@@ -125,8 +142,8 @@ func TestP57LiveTimePG(t *testing.T) {
 	if got := e.usedSeconds(child); got != 120 {
 		t.Fatalf("120 s of live TV served: %d s counted", got)
 	}
-	if at, _ := time.Parse(time.RFC3339, v["time_ends_at"].(string)); time.Until(at) > 58*time.Minute+30*time.Second {
-		t.Fatalf("after 2 minutes of live TV the stream still ends at %v", at)
+	if at, _ := time.Parse(time.RFC3339, v["time_ends_at"].(string)); (time.Until(at) - e.endsIn(2*time.Minute)).Abs() > time.Minute {
+		t.Fatalf("after 2 minutes of live TV the stream ends at %v, want %v from now", at, e.endsIn(2*time.Minute).Round(time.Second))
 	}
 	// one report never adds more than the keeper's bound, and a viewer is not counted
 	e.verdict(q + "&served=86400")

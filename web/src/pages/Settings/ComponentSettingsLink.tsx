@@ -20,3 +20,20 @@ export function ComponentSettingsLink({ view, name }: { view: ComponentView; nam
     </Link>
   );
 }
+
+/** Story 54.44: a component a plugin implements links to that plugin's page (which links
+ * back here). A part of Maktaba itself has no plugin, so no link. */
+export function ComponentPluginLink({ view, name }: { view: ComponentView; name: string }) {
+  const { t } = useI18n();
+  if (!view.plugin) return null;
+  return (
+    <Link
+      className="mkt-comp-row__settings"
+      to={`/settings/plugins/${encodeURIComponent(view.plugin)}`}
+      aria-label={t("components.row.pluginOf", { name })}
+      data-testid={`component-plugin-${view.id}`}
+    >
+      {t("components.row.plugin")}
+    </Link>
+  );
+}

@@ -613,6 +613,51 @@
   color: #f0707f;
 }
 
+/* parental controls (Epic 58 story 58.14): the blocked page, time's up, the managed lines */
+.bs-parental {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--bs-gap);
+  max-inline-size: 60vw;
+  margin-block: calc(var(--bs-gap) * 3);
+  margin-inline: auto;
+  text-align: center;
+  color: var(--bs-muted);
+}
+.bs-parental p {
+  margin: 0;
+}
+.bs-parental__icon {
+  color: var(--bs-gold);
+}
+.bs-parental__title {
+  margin: 0;
+  color: var(--bs-fg);
+}
+.bs-parental__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--bs-gap);
+  margin-block-start: var(--bs-gap);
+}
+.bs-parental__hint {
+  font-size: 0.9em;
+}
+.bs-parental__error {
+  color: #f0707f;
+}
+.bs-managed {
+  display: grid;
+  gap: calc(var(--bs-gap) * 0.4);
+  margin-block-end: calc(var(--bs-gap) * 1.5);
+  color: var(--bs-fg);
+}
+.bs-managed p {
+  margin: 0;
+}
+
 /* settings */
 .bs-settings {
   display: grid;

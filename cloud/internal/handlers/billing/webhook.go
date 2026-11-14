@@ -70,7 +70,7 @@ func (d *Deps) Webhook(w http.ResponseWriter, r *http.Request) {
 	res, err := tx.ExecContext(r.Context(), `
         INSERT INTO provider_events (provider, provider_event_id, type, payload, applied_at) VALUES ($1,$2,$3,$4, now())
         ON CONFLICT (provider, provider_event_id) DO NOTHING
-    `, p.Name(), ev.ID, firstNonEmpty(ev.Type, string(ev.Kind), "unknown"), payload)
+    `, p.Name(), ev.ID, firstNonEmpty(ev.Type, string(ev.Kind), "unknown"), string(payload))
 	if err != nil {
 		d.fail(w, r, "webhook record", err)
 		return

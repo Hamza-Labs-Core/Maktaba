@@ -28,6 +28,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbundle"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/testport"
 )
 
 // rig is a home's Postgres (as the bundled one, migrated), an approved full machine and
@@ -82,7 +83,7 @@ func newRig(t *testing.T) *rig {
 	}
 
 	r.home = pgbundle.Bundle{Home: pgHome, Data: filepath.Join(tmp, "home"), Keys: filepath.Join(tmp, "home-keys"),
-		Backups: filepath.Join(tmp, "backups"), Port: freePort(t), TLS: true}
+		Backups: filepath.Join(tmp, "backups"), Port: testport.Free(t), TLS: true}
 	if err := r.home.Prepare(ctx, io.Discard); err != nil {
 		t.Fatalf("prepare the home: %v", err)
 	}
@@ -137,7 +138,7 @@ func newRig(t *testing.T) *rig {
 		// node.json as it is now (a re-made access changes it)
 		HomeDSNOf: func() string { return r.dsn.Load().(string) },
 		DB: pgbundle.Bundle{Data: filepath.Join(tmp, "node-pg"), Keys: filepath.Join(tmp, "node-keys"),
-			Backups: filepath.Join(tmp, "node-backups"), Port: freePort(t)}}
+			Backups: filepath.Join(tmp, "node-backups"), Port: testport.Free(t)}}
 	r.cp = &server{}
 	t.Cleanup(func() { r.stopManager(); r.cp.stop(r.db().StopCommand()) })
 	r.startManager()

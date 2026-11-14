@@ -43,6 +43,26 @@ groups:
           summary: "The month's downtime budget burns: {{ $value | humanizePercentage }} of the last 6 h down"
           runbook_url: docs/runbooks/cloud/canary-down.md
 
+  - name: maktaba-review-home
+    rules:
+      # the store reviewers' home (Epic 58 story 58.04): tools/review_home/probe.py pushes each
+      # check's result every 15 minutes (review-home-probe.yml); a store reviewer may be shut out
+      - alert: review_home_down
+        expr: min by (check) (review_home_probe_success{job="review_home"}) == 0
+        for: 1m
+        labels: {severity: sev2}
+        annotations:
+          summary: "The store reviewers' home fails its {{ $labels.check }} check"
+          runbook_url: docs/runbooks/cloud/review-home-down.md
+      # the probe has not reported for an hour (four runs): it is off or failing to run
+      - alert: review_home_probe_stale
+        expr: time() - max(review_home_probe_last_run_seconds{job="review_home"}) > 3600
+        for: 5m
+        labels: {severity: sev3}
+        annotations:
+          summary: "The store reviewers' home has not been checked for over an hour"
+          runbook_url: docs/runbooks/cloud/review-home-down.md
+
   - name: maktaba-api-pool
     rules:
       # the api pool (story 50.17): each node's worker says whether it holds the leader lock;
@@ -91,6 +111,26 @@ groups:
         annotations:
           summary: "The leader could not take the Floating IP"
           runbook_url: docs/runbooks/cloud/hetzner-api-down.md
+
+  - name: maktaba-database
+    rules:
+      # the database nodes (story 50.18): PgBouncer on the primary is where the database's
+      # Floating IP lands; Patroni doesn't watch it, so its exporter does
+      - alert: pgbouncer_down
+        expr: (max by (node) (up{job="pgbouncer"} == 0 or pgbouncer_up == 0)) and on (node) (max by (node) (patroni_primary) == 1)
+        for: 1m
+        labels: {severity: sev1}
+        annotations:
+          summary: "PgBouncer is down on the database primary ({{ $labels.node }}): the apps can't reach the database"
+          runbook_url: docs/runbooks/cloud/pgbouncer-down.md
+      # a commit waits for one synchronous replica; none means commits are on the primary alone
+      - alert: sync_replica_missing
+        expr: sum(patroni_sync_standby or vector(0)) < 1 and sum(patroni_primary or vector(0)) > 0
+        for: 2m
+        labels: {severity: sev2}
+        annotations:
+          summary: "No synchronous replica: commits are on the primary alone (RPO is not 0)"
+          runbook_url: docs/runbooks/cloud/sync-replica-missing.md
 
   - name: maktaba-machines
     rules:
@@ -203,3 +243,77 @@ groups:
         annotations:
           summary: "The relay is above 80 % of one node's measured capacity for an hour: resize the pair now"
           runbook_url: docs/runbooks/cloud/capacity.md
+
+  # Home broadcasting (Epic 50 story 50.28): the canary broadcast, played every 60 s from the two
+  # probing networks (broadcast-probe.sh pushes broadcast_probe_* to the Pushgateway), and the
+  # maktaba_broadcast_* series the api serves from the worker's state (shared/metrics/cloud-series.md).
+  - name: maktaba-broadcast
+    rules:
+      # a minute is down when both networks fail it (README §4.2): the best probe counts
+      - record: broadcast:up
+        expr: max(broadcast_probe_success)
+      - record: broadcast:error_ratio:rate1h
+        expr: 1 - avg_over_time(broadcast:up[1h])
+      - record: broadcast:error_ratio:rate6h
+        expr: 1 - avg_over_time(broadcast:up[6h])
+      - alert: broadcast_canary_down
+        expr: broadcast:up == 0
+        for: 1m   # two failed probes in a row at 60 s
+        labels: {severity: sev1}
+        annotations:
+          summary: "Broadcasting is down: the canary broadcast fails from both networks"
+          runbook_url: docs/runbooks/cloud/broadcast.md
+      - alert: broadcast_probe_silent
+        # a probe that stops pushing is no measurement, not a success
+        expr: time() - max(push_time_seconds{job="broadcast_probe"}) > 300
+        labels: {severity: sev2}
+        annotations:
+          summary: "The broadcast probe has pushed nothing for 5 minutes"
+          runbook_url: docs/runbooks/cloud/broadcast.md
+      - alert: broadcast_slo_burn_fast
+        # the broadcast availability SLO, 99.9 %: as slo_burn_fast
+        expr: broadcast:error_ratio:rate1h > 0.0146
+        labels: {severity: sev1}
+        annotations:
+          summary: "Broadcasting's downtime budget burns fast: {{ $value | humanizePercentage }} of the last hour down"
+          runbook_url: docs/runbooks/cloud/broadcast.md
+      - alert: broadcast_slo_burn_slow
+        expr: broadcast:error_ratio:rate6h > 0.00608
+        labels: {severity: sev2}
+        annotations:
+          summary: "Broadcasting's downtime budget burns: {{ $value | humanizePercentage }} of the last 6 h down"
+          runbook_url: docs/runbooks/cloud/broadcast.md
+      - alert: broadcast_glass_to_glass_high
+        # README §4.2: glass-to-glass p95 over a day at most 20 s
+        expr: quantile_over_time(0.95, max(broadcast_probe_glass_to_glass_seconds)[1d:1m]) > 20
+        labels: {severity: sev3}
+        annotations:
+          summary: "The canary broadcast's glass-to-glass p95 over a day is {{ $value | humanizeDuration }}"
+          runbook_url: docs/runbooks/cloud/broadcast.md
+      - alert: broadcast_ingest_lag_high
+        expr: histogram_quantile(0.95, sum by (le) (rate(maktaba_broadcast_ingest_lag_seconds_bucket[5m]))) > 3
+        for: 10m
+        labels: {severity: sev2}
+        annotations:
+          summary: "Segments take {{ $value | humanizeDuration }} (p95) from upload to the playlist"
+          runbook_url: docs/runbooks/cloud/broadcast.md
+      - alert: broadcast_revocation_list_stale
+        expr: max(maktaba_broadcast_revocation_list_age_seconds) > 600
+        labels: {severity: sev2}
+        annotations:
+          summary: "The edge's revocation list is {{ $value | humanizeDuration }} old: takedowns may not reach it"
+          runbook_url: docs/runbooks/cloud/broadcast.md
+      - alert: broadcast_cost_80pct
+        expr: max(maktaba_broadcast_edge_cost_estimate_usd) > 0.8 * max(maktaba_broadcast_monthly_budget_usd)
+        labels: {severity: sev3}
+        annotations:
+          summary: "This month's broadcast edge estimate (${{ $value }}) passed 80 % of the budget"
+          runbook_url: docs/runbooks/cloud/broadcast.md
+      - alert: broadcast_metering_mismatch
+        # the worker's daily check (cloud/internal/broadcast.CrossCheck): analytics and metering
+        # differ by more than 2 % for a publisher's day
+        expr: sum(increase(maktaba_errors_total{code="broadcast_metering_mismatch"}[1h])) > 0
+        labels: {severity: sev3}
+        annotations:
+          summary: "Broadcast analytics and metering disagree by more than 2 % for a day"
+          runbook_url: docs/runbooks/cloud/broadcast.md

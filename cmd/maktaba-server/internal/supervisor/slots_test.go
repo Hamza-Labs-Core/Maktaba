@@ -181,15 +181,17 @@ func TestSupervisorSlotsOnDemand(t *testing.T) {
 	resp.Body.Close()
 }
 
-// The supervisor reports a slot's exit to the front door at once.
+// The supervisor reports a slot's exit to the front door at once, except one its own
+// shutdown caused (the front door stops too, and would fail over to the standby).
 func TestSlotExitReporter(t *testing.T) {
-	got := make(chan string, 1)
+	got := make(chan string, 2)
 	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		got <- r.Method + " " + r.URL.Path
 	}))
 	defer srv.Close()
 	report := SlotExitReporter(strings.TrimPrefix(srv.URL, "http://127.0.0.1"))
-	report(Process{Role: RoleAPI}, ExitInfo{}) // not a slot: nothing
+	report(Process{Role: RoleAPI}, ExitInfo{})                                             // not a slot: nothing
+	report(Process{Role: RoleTVSlot, Instance: "green"}, ExitInfo{Reason: ReasonShutdown}) // the shutdown's: nothing
 	report(Process{Role: RoleTVSlot, Instance: "blue"}, ExitInfo{Reason: ReasonCrash})
 	select {
 	case g := <-got:
@@ -198,6 +200,11 @@ func TestSlotExitReporter(t *testing.T) {
 		}
 	case <-time.After(3 * time.Second):
 		t.Fatal("no report")
+	}
+	select {
+	case g := <-got:
+		t.Fatalf("a second report %q: the shutdown's exit was reported", g)
+	case <-time.After(300 * time.Millisecond):
 	}
 }
 

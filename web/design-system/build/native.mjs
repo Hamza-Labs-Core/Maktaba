@@ -1,5 +1,6 @@
 // Native token files (Story 48.2): MaktabaKit's `Tokens.swift` and Android core's
-// `Tokens.kt`, generated from the same resolved tokens as the web's CSS.
+// `Tokens.kt`, generated from the same resolved tokens as the web's CSS; and (story 58.15)
+// the Roku channel's `theme.brs`, its dark colours.
 //
 // Both files are committed. `build-tokens.mjs --check` (run by `make test-tokens`,
 // which CI runs) fails when either differs from what these emitters produce, so a
@@ -228,5 +229,34 @@ export function emitKotlin(model) {
     L.push(`        const val ${k.toUpperCase()} = ${JSON.stringify(v)}`);
   }
   L.push("    }", "}", "");
+  return L.join("\n");
+}
+
+// ---------------------------------------------------------------------------
+// BrightScript (Roku, story 58.15)
+// ---------------------------------------------------------------------------
+
+export const ROKU_PATH = "apps/tv/roku/components/theme.brs";
+
+/**
+ * The Roku channel's colours: the dark semantic set only, since every TV is dark and offers
+ * no light theme (story 58.15). Roku's colour strings are 0xRRGGBBAA. Each screen reads them
+ * through `ui_Colors()`; every component that includes components/common.brs includes this
+ * file too.
+ */
+export function emitBrightScript(model) {
+  const L = [];
+  for (const h of HEADER) L.push(`' ${h}`);
+  L.push(
+    "' The Roku channel's Ink & Brass colours (Epic 48's dark tokens; story 58.15): every TV is",
+    "' dark, with no light theme. Roku's colour strings are 0xRRGGBBAA.",
+    "",
+    "function ui_Colors() as Object",
+    "    return {"
+  );
+  for (const c of model.semantic) {
+    L.push(`        ${identifier(c.key)}: "${rgbaHex(c.dark)}"`);
+  }
+  L.push("    }", "end function", "");
   return L.join("\n");
 }

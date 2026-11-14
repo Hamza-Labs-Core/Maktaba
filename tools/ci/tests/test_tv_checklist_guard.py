@@ -91,7 +91,8 @@ def test_a_version_that_is_not_x_y_z_is_refused(tmp_path: Path) -> None:
 
 def test_every_platform_has_its_checklist_page_with_a_results_section() -> None:
     stores = ROOT / "docs" / "stores"
-    pages = {p.stem for p in stores.glob("*.md")} - {"README"}
+    # review-home.md is the store reviewers' home (story 58.04), not a platform's checklist
+    pages = {p.stem for p in stores.glob("*.md")} - {"README", "review-home"}
     assert pages == set(guard.PLATFORMS)
     for key in guard.PLATFORMS:
         text = (stores / f"{key}.md").read_text(encoding="utf-8")
@@ -102,3 +103,15 @@ def test_every_platform_has_its_checklist_page_with_a_results_section() -> None:
     for key, p in guard.PLATFORMS.items():
         assert f"`{p.name}`/`{p.component}`" in readme, key
     assert "tools/release/tv_checklist_guard.py" in readme
+
+
+def test_every_platform_submission_step_runs_the_guard() -> None:
+    # Story 58.16: a release session does not submit a TV build without its checklist's result.
+    # Each page's submission (or publish) step names the guard for its own platform; Fire TV's
+    # amazon_submit.py also runs it before staging the edit.
+    stores = ROOT / "docs" / "stores"
+    for key in guard.PLATFORMS:
+        text = (stores / f"{key}.md").read_text(encoding="utf-8")
+        assert f"tv_checklist_guard.py --platform {key}" in text, f"{key}.md's submission step names the guard"
+    amazon = (ROOT / "tools" / "release" / "amazon_submit.py").read_text(encoding="utf-8")
+    assert "tv_checklist_guard.main(" in amazon

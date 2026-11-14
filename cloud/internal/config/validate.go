@@ -31,6 +31,14 @@ func Validate(c Config, role Role) error {
 	if c.Database.URL == "" {
 		return fmt.Errorf("%w: [database].url", ErrMissing)
 	}
+	// story 50.28: the folding threshold is never off (0 is the default, 5), and a budget is
+	// never negative
+	if c.Broadcast.AnalyticsK < 0 || c.Broadcast.AnalyticsK > 100 {
+		return fmt.Errorf("config: broadcast.analytics_k %d: from 1 to 100", c.Broadcast.AnalyticsK)
+	}
+	if c.Broadcast.MonthlyBudgetUSD < 0 {
+		return fmt.Errorf("config: broadcast.monthly_budget_usd must not be negative")
+	}
 	switch role {
 	case RoleAPI:
 		if c.Server.ListenAddr == "" {
@@ -262,11 +270,14 @@ func ValidateBroadcast(b BroadcastConfig) error {
 	return nil
 }
 
-// EdgeKey decodes broadcast.edge_public_key.
+// EdgeKey decodes broadcast.edge_public_key: base64url (how docs/broadcast-edge.md prints the
+// key and the shared test vectors carry it) or standard base64, padded or not.
 func EdgeKey(s string) (ed25519.PublicKey, error) {
-	b, err := base64.StdEncoding.DecodeString(strings.TrimSpace(s))
-	if err != nil || len(b) != ed25519.PublicKeySize {
-		return nil, errors.New("config: broadcast.edge_public_key must be a base64 Ed25519 public key (32 bytes)")
+	s = strings.TrimRight(strings.TrimSpace(s), "=")
+	for _, enc := range []*base64.Encoding{base64.RawURLEncoding, base64.RawStdEncoding} {
+		if b, err := enc.DecodeString(s); err == nil && len(b) == ed25519.PublicKeySize {
+			return ed25519.PublicKey(b), nil
+		}
 	}
-	return ed25519.PublicKey(b), nil
+	return nil, errors.New("config: broadcast.edge_public_key must be a base64url Ed25519 public key (32 bytes)")
 }

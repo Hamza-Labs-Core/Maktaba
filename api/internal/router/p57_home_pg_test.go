@@ -63,6 +63,7 @@ func setupHome(t testing.TB) *p57Home {
 		router.MountP57Requests(r, router.P57RequestsDeps{DB: e.db, Cache: e.cache, Notifier: h.notes})
 		router.MountP29(r, router.P29Deps{DB: e.db}) // watching: start, heartbeat, stop
 		router.MountP51(r, router.P51Deps{DB: e.db, Parental: router.ParentalCapabilities(e.cache)})
+		router.MountCast(r, router.CastDeps{DB: e.db, Keys: castKeys(t), Gate: e.cast}) // Epic 58 story 58.07
 		seen := map[string]bool{}
 		_ = chi.Walk(r, func(method, route string, _ http.Handler, _ ...func(http.Handler) http.Handler) error {
 			if k := method + " " + route; !seen[k] {

@@ -33,7 +33,7 @@ func Open(url string, maxOpen, maxIdle int, lifetime time.Duration) (*Pool, erro
 	if url == "" {
 		return nil, errors.New("db: empty url")
 	}
-	d, err := sql.Open("postgres", WithConnectTimeout(url, 2))
+	d, err := sql.Open("postgres", WithBinaryParameters(WithConnectTimeout(url, 2)))
 	if err != nil {
 		return nil, fmt.Errorf("db: open: %w", err)
 	}
@@ -60,6 +60,29 @@ func WithConnectTimeout(url string, secs int) string {
 		sep = "&"
 	}
 	return url + sep + "connect_timeout=" + strconv.Itoa(secs)
+}
+
+// WithBinaryParameters adds binary_parameters=yes to a postgres:// URL that has no
+// binary_parameters (story 50.18). Without it lib/pq runs a query with arguments in two
+// round trips (Parse and Describe, then Bind and Execute), each ended by a Sync; PgBouncer's
+// transaction pool may hand the second to another server connection, whose unnamed statement
+// is someone else's ("bind message supplies 2 parameters, but prepared statement \"\" requires
+// 1"). With it lib/pq sends the query in one round trip. The cost: a []byte argument goes in
+// binary, so a json or jsonb column takes a string (jsonArg), never []byte. Direct and pooled
+// connections behave the same, so every test catches a []byte sent to a json column. A
+// key=value DSN is left as it is.
+func WithBinaryParameters(url string) string {
+	if !strings.HasPrefix(url, "postgres://") && !strings.HasPrefix(url, "postgresql://") {
+		return url
+	}
+	if strings.Contains(url, "binary_parameters=") {
+		return url
+	}
+	sep := "?"
+	if strings.Contains(url, "?") {
+		sep = "&"
+	}
+	return url + sep + "binary_parameters=yes"
 }
 
 // Ping verifies that the configured database is reachable. Used by the
@@ -109,20 +132,43 @@ func (m *Migrator) Up(ctx context.Context) error {
 	defer m.mu.Unlock()
 	// two processes migrating at once (blue and green starting together, 50.08)
 	// serialize here, as the README says; the second finds the schema at head
-	conn, err := m.pool.DB.Conn(ctx)
+	unlock, err := m.lock(ctx)
 	if err != nil {
-		return fmt.Errorf("migrator: lock connection: %w", err)
+		return err
 	}
-	defer func() { _ = conn.Close() }()
-	if _, err := conn.ExecContext(ctx, `SELECT pg_advisory_lock(8472612)`); err != nil {
-		return fmt.Errorf("migrator: lock: %w", err)
-	}
-	defer func() { _, _ = conn.ExecContext(context.Background(), `SELECT pg_advisory_unlock(8472612)`) }()
+	defer unlock()
 	goose.SetBaseFS(m.dir)
 	if err := goose.SetDialect("postgres"); err != nil {
 		return fmt.Errorf("migrator: dialect: %w", err)
 	}
 	return goose.UpContext(ctx, m.pool.DB, m.root, goose.WithAllowMissing())
+}
+
+// MigrateLockID is the migrator's advisory lock (cloud/migrations/README.md).
+const MigrateLockID = 8472612
+
+// lock holds the migrator's lock until the returned func runs: a transaction-level advisory
+// lock in a transaction left open for the run. It holds through PgBouncer's transaction pool
+// (story 50.18) as on a direct connection: an open transaction keeps its server connection,
+// and the lock ends with the transaction, however the run ends. A session lock taken through
+// a transaction pool would stay on a pooled server connection, and the next migrator would
+// wait for it.
+func (m *Migrator) lock(ctx context.Context) (func(), error) {
+	tx, err := m.pool.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("migrator: lock transaction: %w", err)
+	}
+	// the transaction idles while goose works on other connections: the database nodes'
+	// idle_in_transaction_session_timeout (60 s) must not end it mid-run
+	if _, err := tx.ExecContext(ctx, `SET LOCAL idle_in_transaction_session_timeout = 0`); err != nil {
+		_ = tx.Rollback()
+		return nil, fmt.Errorf("migrator: lock transaction: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock($1)`, MigrateLockID); err != nil {
+		_ = tx.Rollback()
+		return nil, fmt.Errorf("migrator: lock: %w", err)
+	}
+	return func() { _ = tx.Rollback() }, nil
 }
 
 // Down rolls back the most recent N migrations. Mainly used in dev /

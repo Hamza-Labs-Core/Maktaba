@@ -178,3 +178,45 @@
 .mkt-plugins__runners ul {
   padding-inline-start: var(--space-5);
 }
+
+/* story 54.44: one list of every plugin, each with its own switch */
+.mkt-plugins__filter,
+.mkt-plugins__switch {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+.mkt-plugins__switch .mkt-plugins__hint {
+  flex-basis: 100%;
+}
+.mkt-plugins__name a,
+.mkt-plugins__open,
+.mkt-plugins__back {
+  color: inherit;
+}
+.mkt-plugins__back,
+.mkt-plugins__open {
+  align-self: flex-start;
+  color: var(--color-accent);
+}
+.mkt-plugins__links,
+.mkt-plugins__how ol {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding-inline-start: var(--space-4);
+}
+.mkt-plugins__how {
+  border-block-start: 1px solid var(--color-border);
+  padding-block-start: var(--space-3);
+}
+.mkt-plugins__how p {
+  margin: 0;
+}
+.mkt-plugins__page table {
+  display: block;
+  max-inline-size: 100%;
+  overflow-x: auto;
+}

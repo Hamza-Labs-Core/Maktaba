@@ -1,0 +1,235 @@
+{
+  "devices": [
+    {
+      "architecture": "arm64",
+      "deviceId": "44DB51E9-BF2C-41C3-8871-801263744347",
+      "deviceName": "maktaba-ci-43605618404-ipad-6",
+      "modelName": "iPad Pro 11-inch (M5)",
+      "osBuildNumber": "23F77",
+      "osVersion": "26.5",
+      "platform": "iOS Simulator"
+    }
+  ],
+  "testNodes": [
+    {
+      "children": [
+        {
+          "children": [
+            {
+              "children": [
+                {
+                  "children": [
+                    {
+                      "duration": "3m 17s",
+                      "durationInSeconds": 197.56493890285492,
+                      "name": "Repetition 1",
+                      "nodeIdentifier": "1",
+                      "nodeIdentifierURL": "test://com.apple.xcode/Maktaba/Maktaba%20Player%20iPad%20UITests/PlayerProfileUITests/testPlaybackSettingsAreKept",
+                      "nodeType": "Repetition",
+                      "result": "Passed"
+                    },
+                    {
+                      "duration": "1m 16s",
+                      "durationInSeconds": 76.21863996982574,
+                      "name": "Repetition 2",
+                      "nodeIdentifier": "2",
+                      "nodeIdentifierURL": "test://com.apple.xcode/Maktaba/Maktaba%20Player%20iPad%20UITests/PlayerProfileUITests/testPlaybackSettingsAreKept",
+                      "nodeType": "Repetition",
+                      "result": "Passed"
+                    },
+                    {
+                      "duration": "1m 25s",
+                      "durationInSeconds": 85.257807970047,
+                      "name": "Repetition 3",
+                      "nodeIdentifier": "3",
+                      "nodeIdentifierURL": "test://com.apple.xcode/Maktaba/Maktaba%20Player%20iPad%20UITests/PlayerProfileUITests/testPlaybackSettingsAreKept",
+                      "nodeType": "Repetition",
+                      "result": "Passed"
+                    },
+                    {
+                      "duration": "1m 20s",
+                      "durationInSeconds": 80.31813597679138,
+                      "name": "Repetition 4",
+                      "nodeIdentifier": "4",
+                      "nodeIdentifierURL": "test://com.apple.xcode/Maktaba/Maktaba%20Player%20iPad%20UITests/PlayerProfileUITests/testPlaybackSettingsAreKept",
+                      "nodeType": "Repetition",
+                      "result": "Passed"
+                    },
+                    {
+                      "duration": "1m 32s",
+                      "durationInSeconds": 92.59727096557617,
+                      "name": "Repetition 5",
+                      "nodeIdentifier": "5",
+                      "nodeIdentifierURL": "test://com.apple.xcode/Maktaba/Maktaba%20Player%20iPad%20UITests/PlayerProfileUITests/testPlaybackSettingsAreKept",
+                      "nodeType": "Repetition",
+                      "result": "Passed"
+                    },
+                    {
+                      "duration": "1m 27s",
+                      "durationInSeconds": 87.06013202667236,
+                      "name": "Repetition 6",
+                      "nodeIdentifier": "6",
+                      "nodeIdentifierURL": "test://com.apple.xcode/Maktaba/Maktaba%20Player%20iPad%20UITests/PlayerProfileUITests/testPlaybackSettingsAreKept",
+                      "nodeType": "Repetition",
+                      "result": "Passed"
+                    },
+                    {
+                      "duration": "1m 24s",
+                      "durationInSeconds": 84.37329399585724,
+                      "name": "Repetition 7",
+                      "nodeIdentifier": "7",
+                      "nodeIdentifierURL": "test://com.apple.xcode/Maktaba/Maktaba%20Player%20iPad%20UITests/PlayerProfileUITests/testPlaybackSettingsAreKept",
+                      "nodeType": "Repetition",
+                      "result": "Passed"
+                    },
+                    {
+                      "duration": "1m 23s",
+                      "durationInSeconds": 83.8803859949112,
+                      "name": "Repetition 8",
+                      "nodeIdentifier": "8",
+                      "nodeIdentifierURL": "test://com.apple.xcode/Maktaba/Maktaba%20Player%20iPad%20UITests/PlayerProfileUITests/testPlaybackSettingsAreKept",
+                      "nodeType": "Repetition",
+                      "result": "Passed"
+                    },
+                    {
+                      "duration": "1m 23s",
+                      "durationInSeconds": 83.71369099617004,
+                      "name": "Repetition 9",
+                      "nodeIdentifier": "9",
+                      "nodeIdentifierURL": "test://com.apple.xcode/Maktaba/Maktaba%20Player%20iPad%20UITests/PlayerProfileUITests/testPlaybackSettingsAreKept",
+                      "nodeType": "Repetition",
+                      "result": "Passed"
+                    },
+                    {
+                      "duration": "1m 15s",
+                      "durationInSeconds": 75.14171802997589,
+                      "name": "Repetition 10",
+                      "nodeIdentifier": "10",
+                      "nodeIdentifierURL": "test://com.apple.xcode/Maktaba/Maktaba%20Player%20iPad%20UITests/PlayerProfileUITests/testPlaybackSettingsAreKept",
+                      "nodeType": "Repetition",
+                      "result": "Passed"
+                    },
+                    {
+                      "duration": "1m 22s",
+                      "durationInSeconds": 82.0115659236908,
+                      "name": "Repetition 11",
+                      "nodeIdentifier": "11",
+                      "nodeIdentifierURL": "test://com.apple.xcode/Maktaba/Maktaba%20Player%20iPad%20UITests/PlayerProfileUITests/testPlaybackSettingsAreKept",
+                      "nodeType": "Repetition",
+                      "result": "Passed"
+                    },
+                    {
+                      "duration": "1m 36s",
+                      "durationInSeconds": 96.81217408180237,
+                      "name": "Repetition 12",
+                      "nodeIdentifier": "12",
+                      "nodeIdentifierURL": "test://com.apple.xcode/Maktaba/Maktaba%20Player%20iPad%20UITests/PlayerProfileUITests/testPlaybackSettingsAreKept",
+                      "nodeType": "Repetition",
+                      "result": "Passed"
+                    },
+                    {
+                      "duration": "1m 24s",
+                      "durationInSeconds": 84.39855790138245,
+                      "name": "Repetition 13",
+                      "nodeIdentifier": "13",
+                      "nodeIdentifierURL": "test://com.apple.xcode/Maktaba/Maktaba%20Player%20iPad%20UITests/PlayerProfileUITests/testPlaybackSettingsAreKept",
+                      "nodeType": "Repetition",
+                      "result": "Passed"
+                    },
+                    {
+                      "duration": "1m 10s",
+                      "durationInSeconds": 70.05404090881348,
+                      "name": "Repetition 14",
+                      "nodeIdentifier": "14",
+                      "nodeIdentifierURL": "test://com.apple.xcode/Maktaba/Maktaba%20Player%20iPad%20UITests/PlayerProfileUITests/testPlaybackSettingsAreKept",
+                      "nodeType": "Repetition",
+                      "result": "Passed"
+                    },
+                    {
+                      "duration": "1m 20s",
+                      "durationInSeconds": 80.63920605182648,
+                      "name": "Repetition 15",
+                      "nodeIdentifier": "15",
+                      "nodeIdentifierURL": "test://com.apple.xcode/Maktaba/Maktaba%20Player%20iPad%20UITests/PlayerProfileUITests/testPlaybackSettingsAreKept",
+                      "nodeType": "Repetition",
+                      "result": "Passed"
+                    },
+                    {
+                      "duration": "1m 49s",
+                      "durationInSeconds": 109.15485298633575,
+                      "name": "Repetition 16",
+                      "nodeIdentifier": "16",
+                      "nodeIdentifierURL": "test://com.apple.xcode/Maktaba/Maktaba%20Player%20iPad%20UITests/PlayerProfileUITests/testPlaybackSettingsAreKept",
+                      "nodeType": "Repetition",
+                      "result": "Passed"
+                    },
+                    {
+                      "duration": "1m 34s",
+                      "durationInSeconds": 94.75790894031525,
+                      "name": "Repetition 17",
+                      "nodeIdentifier": "17",
+                      "nodeIdentifierURL": "test://com.apple.xcode/Maktaba/Maktaba%20Player%20iPad%20UITests/PlayerProfileUITests/testPlaybackSettingsAreKept",
+                      "nodeType": "Repetition",
+                      "result": "Passed"
+                    },
+                    {
+                      "duration": "1m 26s",
+                      "durationInSeconds": 86.48449397087097,
+                      "name": "Repetition 18",
+                      "nodeIdentifier": "18",
+                      "nodeIdentifierURL": "test://com.apple.xcode/Maktaba/Maktaba%20Player%20iPad%20UITests/PlayerProfileUITests/testPlaybackSettingsAreKept",
+                      "nodeType": "Repetition",
+                      "result": "Passed"
+                    },
+                    {
+                      "duration": "1m 48s",
+                      "durationInSeconds": 108.76354098320007,
+                      "name": "Repetition 19",
+                      "nodeIdentifier": "19",
+                      "nodeIdentifierURL": "test://com.apple.xcode/Maktaba/Maktaba%20Player%20iPad%20UITests/PlayerProfileUITests/testPlaybackSettingsAreKept",
+                      "nodeType": "Repetition",
+                      "result": "Passed"
+                    },
+                    {
+                      "duration": "1m 15s",
+                      "durationInSeconds": 75.82619905471802,
+                      "name": "Repetition 20",
+                      "nodeIdentifier": "20",
+                      "nodeIdentifierURL": "test://com.apple.xcode/Maktaba/Maktaba%20Player%20iPad%20UITests/PlayerProfileUITests/testPlaybackSettingsAreKept",
+                      "nodeType": "Repetition",
+                      "result": "Passed"
+                    }
+                  ],
+                  "duration": "1m 31s",
+                  "durationInSeconds": 91.75142778158188,
+                  "name": "testPlaybackSettingsAreKept()",
+                  "nodeIdentifier": "PlayerProfileUITests/testPlaybackSettingsAreKept()",
+                  "nodeIdentifierURL": "test://com.apple.xcode/Maktaba/Maktaba%20Player%20iPad%20UITests/PlayerProfileUITests/testPlaybackSettingsAreKept",
+                  "nodeType": "Test Case",
+                  "result": "Passed"
+                }
+              ],
+              "name": "PlayerProfileUITests",
+              "nodeIdentifierURL": "test://com.apple.xcode/Maktaba/Maktaba%20Player%20iPad%20UITests/PlayerProfileUITests",
+              "nodeType": "Test Suite",
+              "result": "Passed"
+            }
+          ],
+          "name": "Maktaba Player iPad UITests",
+          "nodeIdentifierURL": "test://com.apple.xcode/Maktaba/Maktaba%20Player%20iPad%20UITests",
+          "nodeType": "UI test bundle",
+          "result": "Passed"
+        }
+      ],
+      "name": "Maktaba Player iPad",
+      "nodeType": "Test Plan",
+      "result": "Passed"
+    }
+  ],
+  "testPlanConfigurations": [
+    {
+      "configurationId": "1",
+      "configurationName": "Test Scheme Action"
+    }
+  ]
+}

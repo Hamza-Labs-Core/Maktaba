@@ -1,0 +1,18 @@
+{
+  "id": "com.hamzalabs.maktaba.tv",
+  "version": "0.0.0",
+  "vendor": "Hamza Labs",
+  "type": "web",
+  "main": "index.html",
+  "title": "Maktaba",
+  "icon": "icon.png",
+  "largeIcon": "largeIcon.png",
+  "splashBackground": "splash.png",
+  "bgColor": "#0b111c",
+  "iconColor": "#0b111c",
+  "resolution": "1920x1080",
+  "disableBackHistoryAPI": true,
+  "requiredACG": ["network.query", "systemconfig.query"],
+  "transparent": false,
+  "handlesRelaunch": false
+}

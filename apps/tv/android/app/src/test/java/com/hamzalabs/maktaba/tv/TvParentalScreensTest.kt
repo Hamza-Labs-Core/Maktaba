@@ -8,6 +8,7 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
@@ -26,6 +27,7 @@ import com.hamzalabs.maktaba.core.api.TimeRefusal
 import com.hamzalabs.maktaba.core.jwt
 import com.hamzalabs.maktaba.core.ui.ParentHelp
 import com.hamzalabs.maktaba.tv.ui.screens.TvBlocked
+import com.hamzalabs.maktaba.tv.ui.screens.TvManaged
 import com.hamzalabs.maktaba.tv.ui.screens.TvNotNow
 import com.hamzalabs.maktaba.tv.ui.screens.TvTimeOverlay
 import com.hamzalabs.maktaba.tv.ui.screens.TvTimesUp
@@ -338,5 +340,74 @@ class TvParentalScreensTest {
     fun nothingShowsAboveFifteenMinutes() {
         show { TvTimeOverlay(MyTime(allowed = true, limited = true, remainingSeconds = 2000), cannotCheck = false) }
         assertFalse(shown().toString(), shown().any { it.startsWith("parental-") })
+    }
+
+    // ---- Epic 58 story 58.14 (T02): Fire TV and Android TV ----
+
+    @Test
+    fun theBlockedPageFocusesAskAParentAndSaysAParentAnswersFromTheirPhone() {
+        routes["/api/me/parental/requests"] = { json("""{"requests":[]}""") }
+        show { TvBlocked(MyParental(restricted = true, maxTier = 9), remember { ParentHelp(client(), SubjectKind.VIDEO, "v9") }, onUnlocked = {}, onBack = {}) }
+        until("Ask a parent") { "parental-ask" in shown() }
+        compose.onNodeWithTag("parental-ask").assertIsFocused()
+        compose.onNodeWithTag("parental-ask-on-phone").assertTextEquals("A parent can answer from Maktaba on their phone.")
+    }
+
+    @Test
+    fun withNothingToAskBackHasTheFocusAndNoPhoneLineShows() {
+        show { TvBlocked(MyParental(maxTier = 9, deviceLimit = 9), help = null, onUnlocked = {}, onBack = {}) }
+        compose.onNodeWithTag("parental-back").assertIsFocused()
+        assertFalse(shown().toString(), "parental-ask-on-phone" in shown())
+    }
+
+    @Test
+    @Config(qualifiers = "ar-$TV")
+    fun theBlockedPageInArabicFocusesAskAParent() {
+        routes["/api/me/parental/requests"] = { json("""{"requests":[]}""") }
+        show { TvBlocked(MyParental(restricted = true, maxTier = 9), remember { ParentHelp(client(), SubjectKind.VIDEO, "v9") }, onUnlocked = {}, onBack = {}) }
+        assertEquals(LayoutDirection.Rtl, direction)
+        until("Ask a parent") { "parental-ask" in shown() }
+        compose.onNodeWithTag("parental-ask").assertIsFocused()
+        compose.onNodeWithTag("parental-ask-on-phone").assertTextEquals("يمكن لأحد الوالدين الرد من Maktaba على هاتفه.")
+    }
+
+    private fun managed(limit: String): com.hamzalabs.maktaba.core.parental.ParentalState {
+        routes["/api/me/parental"] = { json(limit) }
+        val parental = com.hamzalabs.maktaba.core.parental.ParentalState(client())
+        kotlinx.coroutines.runBlocking { parental.refresh() }
+        return parental
+    }
+
+    @Test
+    fun accountSaysAParentManagesTheAccountAndItsLimit() {
+        val parental = managed("""{"restricted":true,"max_tier":9,"allow_only":false,"version":1}""")
+        show { TvManaged(parental) }
+        compose.onNodeWithTag("parental-managed-line").assertTextEquals("A parent manages this account.")
+        compose.onNodeWithTag("parental-managed-limit").assertTextEquals("Content limit: 9+")
+    }
+
+    @Test
+    @Config(qualifiers = "ar-$TV")
+    fun accountsManagedLinesInArabic() {
+        val parental = managed("""{"restricted":true,"max_tier":9,"allow_only":false,"version":1}""")
+        show { TvManaged(parental) }
+        assertEquals(LayoutDirection.Rtl, direction)
+        compose.onNodeWithTag("parental-managed-line").assertTextEquals("يدير أحد الوالدين هذا الحساب.")
+        compose.onNodeWithTag("parental-managed-limit").assertTextContains("حدّ المحتوى", substring = true)
+    }
+
+    @Test
+    fun aDeviceLimitAloneSaysTheDevicesLimitAndAnUnlimitedAccountNothing() {
+        val device = managed("""{"restricted":false,"max_tier":13,"device_limit":13}""")
+        show { TvManaged(device) }
+        compose.onNodeWithTag("parental-managed-device").assertTextEquals("This device is limited to 13+.")
+        assertFalse(shown().toString(), "parental-managed-line" in shown())
+    }
+
+    @Test
+    fun anUnlimitedAccountShowsNoManagedLines() {
+        val none = managed("""{"restricted":false}""")
+        show { TvManaged(none) }
+        assertFalse(shown().toString(), "parental-managed" in shown())
     }
 }

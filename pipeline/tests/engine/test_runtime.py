@@ -343,3 +343,32 @@ def test_a_closed_sqlite_database_leaves_no_thread(
 
     thread = asyncio.run(go())
     assert not thread.is_alive()
+
+
+@pytest.mark.asyncio
+async def test_sqlite_stores_datetimes_as_before_without_the_deprecated_adapter(
+    tmp_path: Path,
+) -> None:
+    """SQLite: a datetime or date parameter is stored as the text Python's default adapters
+    gave it (``isoformat(" ")``, ``isoformat()``), through adapters the runtime registers:
+    the defaults are deprecated since Python 3.12 and warned on every statement (some
+    40,000 warnings in the integration tier, a third of the tvrelease tests' time)."""
+    import datetime as dt
+    import warnings
+
+    db = await Database.connect(f"sqlite:///{tmp_path / 'c.db'}")
+    try:
+        await db.execute("CREATE TABLE t (at TEXT, day TEXT)")
+        aware = dt.datetime(2026, 11, 14, 10, 5, 7, 123456, tzinfo=dt.UTC)
+        naive = dt.datetime(2026, 11, 14, 10, 5, 7)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", DeprecationWarning)
+            await db.execute("INSERT INTO t VALUES ($1, $2)", aware, dt.date(2026, 11, 14))
+            await db.execute("INSERT INTO t VALUES ($1, $2)", naive, dt.date(2026, 1, 2))
+        rows = await db.fetch("SELECT at, day FROM t ORDER BY rowid")
+        assert [tuple(r) for r in rows] == [
+            ("2026-11-14 10:05:07.123456+00:00", "2026-11-14"),
+            ("2026-11-14 10:05:07", "2026-01-02"),
+        ]
+    finally:
+        await db.close()

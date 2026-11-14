@@ -1,0 +1,13 @@
+# review.maktaba.tv (Epic 58 story 58.04): the store reviewers' home's direct HTTPS name, the
+# fallback a reviewer types as the home's address, and the page where they approve a TV's
+# cloud code. The relay name (<slug>.relay.maktaba.tv) is the cloud's, not this file's.
+{
+	email {$ACME_EMAIL}
+}
+
+{$REVIEW_DOMAIN} {
+	# the submission notes print review.maktaba.tv/approve: the home's own approve page
+	redir /approve /pair 302
+	redir /approve/ /pair 302
+	reverse_proxy 127.0.0.1:8088
+}

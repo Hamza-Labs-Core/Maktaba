@@ -291,6 +291,16 @@ a:hover {
   font-size: var(--font-size-h2);
   font-weight: 700;
 }
+/* label and value pairs (the viewers page's hours, story 50.28) */
+.mkc-dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--space-2) var(--space-4);
+  margin: 0 0 var(--space-3);
+}
+.mkc-dl dd {
+  margin: 0;
+}
 
 @media (max-width: 640px) {
   .mkc-shell__main {
@@ -329,4 +339,15 @@ a:hover {
   max-inline-size: 100%;
   margin-block: 0.5rem;
   border: 1px solid var(--mk-border, #ddd);
+}
+
+/* /tv (story 58.03): the TV's code reads as it shows on the TV, left to right in both
+   languages; the actions are at least 44px tall for touch. */
+.mkc-tv__code {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.mkc-tv__actions .mk-btn {
+  min-block-size: 44px;
 }

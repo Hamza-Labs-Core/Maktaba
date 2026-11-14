@@ -81,14 +81,20 @@ everywhere.
 
 | Key | English | Arabic |
 |---|---|---|
-| `compat.updateHome.title` | This home needs an update | يحتاج هذا المنزل إلى تحديث |
-| `compat.updateHome.admin` | Update Maktaba on %1$s in Admin → Updates, then come back. | حدِّث Maktaba على %1$s من الإدارة ← التحديثات، ثم عُد. |
-| `compat.updateHome.viewer` | Ask the person who runs %1$s to update Maktaba. | اطلب من مسؤول %1$s تحديث Maktaba. |
+| `compat.updateHome.title` | This home needs an update | يحتاج هذا الجهاز الرئيسي إلى تحديث |
+| `compat.updateHome.admin` | Update Maktaba on %1$s in Admin → Updates, then come back. | حدِّث مكتبة على %1$s من الإدارة ← التحديثات، ثم عُد. |
+| `compat.updateHome.viewer` | Ask the person who runs %1$s to update Maktaba. | اطلب من مسؤول %1$s تحديث مكتبة. |
+| `compat.homeVersion` | %1$s runs Maktaba %2$s. | يعمل %1$s بإصدار مكتبة %2$s. |
 | `compat.updateApp.title` | Update this app | حدِّث هذا التطبيق |
-| `compat.updateApp.firetv` | Open the Amazon Appstore, find Maktaba and choose Update. | افتح متجر Amazon Appstore، وابحث عن Maktaba واختر «تحديث». |
+| `compat.updateApp.why` | %1$s no longer works with this version of the app. | لم يعد %1$s يعمل مع هذا الإصدار من التطبيق. |
+| `compat.updateApp.firetv` | Open the Amazon Appstore, find Maktaba and choose Update. | افتح متجر Amazon Appstore، وابحث عن مكتبة واختر «تحديث». |
 | `compat.updateApp.roku` | Roku updates channels by itself. Restart the Roku to get the update now. | يحدّث Roku القنوات تلقائيًا. أعد تشغيل جهاز Roku لتحصل على التحديث الآن. |
-| `compat.updateApp.tizen` | Open Apps on the Samsung TV, find Maktaba and update it. | افتح «التطبيقات» على تلفاز Samsung، وابحث عن Maktaba وحدِّثه. |
-| `compat.updateApp.webos` | Open the LG Content Store, find Maktaba and update it. | افتح متجر LG Content Store، وابحث عن Maktaba وحدِّثه. |
+| `compat.updateApp.tizen` | On this Samsung TV, open Apps, find Maktaba and choose Update. | على تلفاز Samsung هذا، افتح التطبيقات، وابحث عن مكتبة واختر «تحديث». |
+| `compat.updateApp.webos` | On this LG TV, open the LG Content Store, find Maktaba and choose Update. | على تلفاز LG هذا، افتح متجر محتوى LG، وابحث عن مكتبة واختر «تحديث». |
+
+The table is the apps' shipped wording: the Arabic says الجهاز الرئيسي for the home and مكتبة
+for Maktaba, the apps' own vocabulary. The Android and Apple apps add their own store lines
+(Google Play, the App Store) beside these.
 
 ## Edge cases
 
@@ -106,7 +112,7 @@ everywhere.
 |---|---|
 | `api/internal/handlers/discovery/home.go` | the three fields |
 | `api/internal/compat/` (new) | the level constant, `client_floor` check middleware on sign-in routes |
-| `tools/api/levelcheck/` (new) | the OpenAPI diff against `shared/api/levels/<n>.yaml` |
+| `api/internal/compat/levelcheck/`, `api/cmd/levelcheck` (new) | the OpenAPI diff against `shared/api/levels/<n>.yaml`, kept beside the API so the existing Go job runs it; it reduces the document to its success responses |
 | `docs/api/levels.md`, `shared/api/levels/1.yaml` | the first level |
 | `shared/compat/vectors.json` | the shared decision vectors |
 | `api/internal/client/client.go` | the new platform and app names in its doc comment and tests |

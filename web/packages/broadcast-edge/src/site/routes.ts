@@ -19,7 +19,7 @@
 import { now } from "../clock";
 import { DEFAULT_LIVE_HOST, globallyOff, type Env } from "../env";
 import { getBranding, getGuide, nowNext, today, type Programme } from "../guide";
-import { CODE_RE, mintOpen, PASS_TTL_S, randomId } from "../invites";
+import { CODE_RE, mintOpen, randomId } from "../invites";
 import { clientIP, ipHash } from "../limits";
 import {
   NONCE_RE,
@@ -354,7 +354,7 @@ async function pairDeliver(
       credential: r.pass,
       kind: "pass",
       channels: r.claims.chs,
-      expires_at: new Date(now() + PASS_TTL_S * 1000).toISOString(),
+      expires_at: new Date(r.exp * 1000).toISOString(),
     };
   }
   if (!(await p.deliver(handover))) return { ok: false, status: 410, error: "pair_gone" };

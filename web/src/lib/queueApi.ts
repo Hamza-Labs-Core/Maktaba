@@ -930,9 +930,9 @@ export interface Pulse {
   paused_all: boolean;
   last_activity_at: string | null;
   age_sec: number | null;
-  /** The stalled jobs: admins only (empty for everyone else). */
+  /** The stalled jobs. GET /api/queues/pulse is admin-only (403 otherwise). */
   stuck: StuckJob[];
-  /** How many jobs stalled (shown to everyone). */
+  /** How many jobs stalled. */
   stuck_count?: number;
   /** Whether the workers run the waiting jobs (missing from an older server). */
   workers?: WorkersState;

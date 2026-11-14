@@ -54,10 +54,19 @@ ip_allowlist = []
 [database]
 url = "postgres://maktaba_cloud@localhost:5432/maktaba_cloud?sslmode=require"
 # Override via MAKTABA_CLOUD_DB_URL.
-# A direct connection to the primary for what holds a session of its own: the relay's change
-# listener (LISTEN) and the worker's leader lock (story 50.17). Needed once url goes through
-# PgBouncer's transaction pool (50.18); empty means url. Override via MAKTABA_CLOUD_DB_DIRECT_URL.
-# direct_url = "postgres://maktaba_cloud@10.0.0.2:5432/maktaba_cloud?sslmode=require"
+# On the database nodes (story 50.18) url is PgBouncer's transaction pool on the database's
+# Floating IP, a public address, so PgBouncer's name is checked against the owner's CA:
+# postgres://maktaba:…@db.internal:6432/maktaba?sslmode=verify-full&sslrootcert=/etc/maktaba/db-ca.crt
+# (deploy/cloud-ha/bin/make-pgbouncer-cert). The cloud sends
+# every query with arguments in one round trip (binary_parameters=yes, added to url when it
+# names none): in two, PgBouncer can give the second half to another server connection.
+#
+# A connection for what holds a session of its own: the relay's change listener (LISTEN) and
+# the worker's leader lock (story 50.17); the migrator's lock is a transaction lock and goes
+# through url. Needed once url goes through PgBouncer's transaction pool; empty means url. On
+# the database nodes it is PgBouncer's session pool, cloud_session, on the same address: it
+# follows the primary as url does. Override via MAKTABA_CLOUD_DB_DIRECT_URL.
+# direct_url = "postgres://maktaba:…@db.internal:6432/cloud_session?sslmode=verify-full&sslrootcert=/etc/maktaba/db-ca.crt"
 max_open_conns    = 25
 max_idle_conns    = 5
 conn_max_lifetime = "30m"
@@ -212,9 +221,15 @@ web_origins = ["https://app.maktaba.tv"]
 # publishers a service admin granted may publish, and homes' licences don't carry the broadcast
 # flag. The api role refuses to start with it on while any broadcast price is TBD, naming each.
 enabled = false
-# The broadcast edge's Ed25519 public key (base64) for its usage posts (POST /_edge/usage);
-# public, the private half is a Worker secret. Empty: the edge routes answer 503.
+# The broadcast edge's Ed25519 public key (base64url; standard base64 is read too) for its
+# signed posts (POST /_edge/usage, docs/broadcast-edge.md); public, the private half is the
+# Worker's EDGE_SIGNING_KEY. Empty: the edge routes answer 503.
 edge_public_key = ""
+# The Ed25519 seed (0600) that signs ingest tokens and control posts (story 50.21); its public
+# half goes in the edge's CLOUD_PUBKEYS. Required while enabled is on; empty, the ingest-token
+# route answers 503.
+key_path = ""
+ingest_url = "https://ingest.maktaba.tv"
 # Where viewers watch (story 50.26): invite links are <watch_url>/i/<invite>.
 watch_url = "https://watch.maktaba.tv"
 
@@ -222,6 +237,18 @@ watch_url = "https://watch.maktaba.tv"
 # Anyone-with-the-link channels (story 50.26). Off until the legal items hold (README §14.10);
 # refused with broadcast.enabled off. Off, every channel is invite only.
 enabled = false
+
+# Viewer analytics and broadcast monitoring (Epic 50 story 50.28). With an account id and a token
+# the worker role polls Workers Analytics Engine (the edge's broadcast_events) each minute and
+# rolls it hourly into broadcast_usage_hourly; without them it does neither. The token (Account
+# Analytics: Read) is a file or the env MAKTABA_CLOUD_BROADCAST_ANALYTICS_TOKEN, never this file.
+analytics_account_id = ""
+analytics_token_path = ""
+# analytics_url = "https://api.cloudflare.com/client/v4"
+# Counts below this fold into "Other" for publishers (default 5).
+analytics_k          = 5
+# The edge's monthly budget in USD: broadcast_cost_80pct fires at 80 %. 0 leaves it unset.
+monthly_budget_usd   = 0
 
 [broadcast.plans]
 # true: new viewer sessions get full, lowest or wait as the publisher's plan and usage say;

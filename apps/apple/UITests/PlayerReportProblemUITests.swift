@@ -87,7 +87,7 @@ final class PlayerReportProblemUITests: PlayerUITestCase {
         scrollUntil(box)
         XCTAssertTrue(box.waitForExistence(timeout: 10), "the Maktaba box, the home allowing it")
         XCTAssertEqual(box.value as? String, "0", "unticked")
-        box.switches.firstMatch.tap()
+        flip(box, to: "1", "the Maktaba box, ticked")
         XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "keeps it for 90 days")).firstMatch
             .waitForExistence(timeout: 5), "what Maktaba gets")
         shot("report-to-maktaba")

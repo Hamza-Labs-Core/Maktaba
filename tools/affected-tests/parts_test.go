@@ -234,6 +234,11 @@ func TestClassify(t *testing.T) {
 		"apps/android/player/src/test/kotlin/ATest.kt":             {KindTest, PAndroid},
 		"apps/android/core/src/androidTest/k/BTest.kt":             {KindTest, PAndroidInstr},
 		"apps/tv/android/app/src/test/java/CTest.kt":               {KindTest, PAndroidTV},
+		"apps/tv/android/app/src/testAmazon/java/FTest.kt":         {KindTest, PAndroidTV},
+		"apps/tv/android/app/src/testGoogleDebug/java/GTest.kt":    {KindTest, PAndroidTV},
+		"apps/tv/android/app/src/androidTestAmazon/java/JTest.kt":  {KindTest, PAndroidTVInstr},
+		"apps/tv/android/app/src/amazon/java/A.kt":                 {KindSource, PAndroidTV},
+		"apps/tv/android/app/src/testing/java/A.kt":                {KindSource, PAndroidTV},
 		"apps/desktop-player/src/test/kotlin/DTest.kt":             {KindTest, PDesktopPlayer},
 		"apps/apple/MaktabaKit/Sources/MaktabaKit/A.swift":         {KindSource, PSourceApple},
 		"apps/apple/MaktabaKit/Tests/MaktabaKitTests/ATests.swift": {KindTest, PAppleKit},
@@ -596,5 +601,13 @@ func TestObtainMapFromFileAndNone(t *testing.T) {
 	}
 	if m, note := obtainMap(".", file+".missing", true, nil, time.Now()); m != nil || !strings.Contains(note, "searches only") {
 		t.Errorf("missing file: %v %q", m, note)
+	}
+}
+
+// The Android TV app has two store builds (story 58.05): its JVM tests run as the Google Play
+// build's task, the one CI runs.
+func TestAndroidTVTestsRunAsTheGooglePlayBuild(t *testing.T) {
+	if got := androidTask("apps/tv/android/app"); got != ":app:testGoogleDebugUnitTest" {
+		t.Errorf("androidTask(tv) = %q", got)
 	}
 }

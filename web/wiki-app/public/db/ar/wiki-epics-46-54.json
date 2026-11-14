@@ -2808,14 +2808,17 @@
         "phase-5"
       ],
       "related": [
-        "epic-50-cloud-no-downtime"
+        "epic-50-cloud-no-downtime",
+        "ep-get-plugins"
       ],
       "files": {
         "story": "specs/epics/50-cloud-no-downtime/story-50-11-status-page.md",
         "plan": null,
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /plugins"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "status-page"
@@ -5870,7 +5873,8 @@
       ],
       "related": [
         "epic-54-plugins",
-        "ep-get-capabilities"
+        "ep-get-capabilities",
+        "ep-get-plugins"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-01-manifest-package.md",
@@ -5878,7 +5882,8 @@
         "mockups": []
       },
       "api_endpoints": [
-        "GET /capabilities"
+        "GET /capabilities",
+        "GET /plugins"
       ],
       "db_tables": [],
       "metadata": {
@@ -5906,7 +5911,8 @@
       ],
       "related": [
         "epic-54-plugins",
-        "ep-get-components"
+        "ep-get-components",
+        "ep-get-plugins"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-02-plugin-host.md",
@@ -5914,7 +5920,8 @@
         "mockups": []
       },
       "api_endpoints": [
-        "GET /components"
+        "GET /components",
+        "GET /plugins"
       ],
       "db_tables": [],
       "metadata": {
@@ -5941,14 +5948,17 @@
         "phase-5"
       ],
       "related": [
-        "epic-54-plugins"
+        "epic-54-plugins",
+        "ep-get-plugins"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-03-os-sandbox.md",
         "plan": null,
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /plugins"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "os-sandbox"
@@ -5976,7 +5986,8 @@
       "related": [
         "epic-54-plugins",
         "ep-get-settings",
-        "ep-put-settings"
+        "ep-put-settings",
+        "ep-get-plugins"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-04-plugin-api.md",
@@ -5985,7 +5996,8 @@
       },
       "api_endpoints": [
         "GET /settings",
-        "PUT /settings"
+        "PUT /settings",
+        "GET /plugins"
       ],
       "db_tables": [],
       "metadata": {
@@ -6012,14 +6024,17 @@
         "phase-5"
       ],
       "related": [
-        "epic-54-plugins"
+        "epic-54-plugins",
+        "ep-get-plugins"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-05-media-handles.md",
         "plan": null,
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /plugins"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "media-handles"
@@ -6047,7 +6062,8 @@
       "related": [
         "epic-54-plugins",
         "ep-get-extensions",
-        "ep-get-components"
+        "ep-get-components",
+        "ep-get-plugins"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-06-queue-stages.md",
@@ -6056,7 +6072,8 @@
       },
       "api_endpoints": [
         "GET /extensions",
-        "GET /components"
+        "GET /components",
+        "GET /plugins"
       ],
       "db_tables": [],
       "metadata": {
@@ -6090,7 +6107,8 @@
         "ep-get-components",
         "ep-get-components-id",
         "ep-put-components-id",
-        "ep-delete-components-id"
+        "ep-delete-components-id",
+        "ep-get-plugins"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-07-lifecycle.md",
@@ -6103,7 +6121,8 @@
         "GET /components",
         "GET /components/{id}",
         "PUT /components/{id}",
-        "DELETE /components/{id}"
+        "DELETE /components/{id}",
+        "GET /plugins"
       ],
       "db_tables": [
         "audit_log"
@@ -6145,7 +6164,8 @@
         "ep-put-components-id",
         "ep-delete-components-id",
         "ep-post-components-id-install",
-        "ep-post-components-id-restart"
+        "ep-post-components-id-restart",
+        "ep-get-plugins"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-08-grants-roles.md",
@@ -6163,7 +6183,8 @@
         "PUT /components/{id}",
         "DELETE /components/{id}",
         "POST /components/{id}/install",
-        "POST /components/{id}/restart"
+        "POST /components/{id}/restart",
+        "GET /plugins"
       ],
       "db_tables": [
         "audit_log",
@@ -6194,7 +6215,8 @@
       ],
       "related": [
         "epic-54-plugins",
-        "ep-get-components"
+        "ep-get-components",
+        "ep-get-plugins"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-09-isolation-health.md",
@@ -6202,7 +6224,8 @@
         "mockups": []
       },
       "api_endpoints": [
-        "GET /components"
+        "GET /components",
+        "GET /plugins"
       ],
       "db_tables": [],
       "metadata": {
@@ -6230,7 +6253,8 @@
       ],
       "related": [
         "epic-54-plugins",
-        "ep-get-components"
+        "ep-get-components",
+        "ep-get-plugins"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-10-file-install.md",
@@ -6238,7 +6262,8 @@
         "mockups": []
       },
       "api_endpoints": [
-        "GET /components"
+        "GET /components",
+        "GET /plugins"
       ],
       "db_tables": [],
       "metadata": {
@@ -6268,7 +6293,8 @@
         "epic-54-plugins",
         "ep-get-settings",
         "ep-put-settings",
-        "ep-get-components"
+        "ep-get-components",
+        "ep-get-plugins"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-11-settings.md",
@@ -6278,7 +6304,8 @@
       "api_endpoints": [
         "GET /settings",
         "PUT /settings",
-        "GET /components"
+        "GET /components",
+        "GET /plugins"
       ],
       "db_tables": [],
       "metadata": {
@@ -6305,14 +6332,17 @@
         "phase-5"
       ],
       "related": [
-        "epic-54-plugins"
+        "epic-54-plugins",
+        "ep-get-plugins"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-12-sdk-harness.md",
         "plan": null,
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /plugins"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "sdk-harness"
@@ -6340,7 +6370,8 @@
       "related": [
         "epic-54-plugins",
         "ep-get-settings",
-        "ep-put-settings"
+        "ep-put-settings",
+        "ep-get-plugins"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-13-plugins-page.md",
@@ -6349,7 +6380,8 @@
       },
       "api_endpoints": [
         "GET /settings",
-        "PUT /settings"
+        "PUT /settings",
+        "GET /plugins"
       ],
       "db_tables": [],
       "metadata": {
@@ -6377,7 +6409,8 @@
       ],
       "related": [
         "epic-54-plugins",
-        "ep-get-components"
+        "ep-get-components",
+        "ep-get-plugins"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-14-signing-trust.md",
@@ -6385,7 +6418,8 @@
         "mockups": []
       },
       "api_endpoints": [
-        "GET /components"
+        "GET /components",
+        "GET /plugins"
       ],
       "db_tables": [],
       "metadata": {
@@ -6414,7 +6448,8 @@
       "related": [
         "epic-54-plugins",
         "ep-get-workers",
-        "ep-get-home"
+        "ep-get-home",
+        "ep-get-plugins"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-15-store-service.md",
@@ -6423,7 +6458,8 @@
       },
       "api_endpoints": [
         "GET /workers",
-        "GET /home"
+        "GET /home",
+        "GET /plugins"
       ],
       "db_tables": [],
       "metadata": {
@@ -6450,14 +6486,17 @@
         "phase-5"
       ],
       "related": [
-        "epic-54-plugins"
+        "epic-54-plugins",
+        "ep-get-plugins"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-16-review.md",
         "plan": null,
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /plugins"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "review"
@@ -6484,7 +6523,8 @@
       ],
       "related": [
         "epic-54-plugins",
-        "ep-get-components"
+        "ep-get-components",
+        "ep-get-plugins"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-17-catalog-kill-switch.md",
@@ -6492,7 +6532,8 @@
         "mockups": []
       },
       "api_endpoints": [
-        "GET /components"
+        "GET /components",
+        "GET /plugins"
       ],
       "db_tables": [],
       "metadata": {
@@ -6519,14 +6560,17 @@
         "phase-5"
       ],
       "related": [
-        "epic-54-plugins"
+        "epic-54-plugins",
+        "ep-get-plugins"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-18-store-browser.md",
         "plan": null,
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /plugins"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "store-browser"
@@ -6554,7 +6598,8 @@
       "related": [
         "epic-54-plugins",
         "ep-get-components",
-        "ep-get-home"
+        "ep-get-home",
+        "ep-get-plugins"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-19-paid-plugins.md",
@@ -6563,7 +6608,8 @@
       },
       "api_endpoints": [
         "GET /components",
-        "GET /home"
+        "GET /home",
+        "GET /plugins"
       ],
       "db_tables": [],
       "metadata": {
@@ -6594,7 +6640,8 @@
         "ep-get-ws",
         "ep-get-capabilities",
         "ep-get-components",
-        "ep-get-home"
+        "ep-get-home",
+        "ep-get-plugins"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-20-panels.md",
@@ -6605,7 +6652,8 @@
         "GET /ws",
         "GET /capabilities",
         "GET /components",
-        "GET /home"
+        "GET /home",
+        "GET /plugins"
       ],
       "db_tables": [],
       "metadata": {
@@ -6634,7 +6682,8 @@
       "related": [
         "epic-54-plugins",
         "ep-get-capabilities",
-        "ep-get-components"
+        "ep-get-components",
+        "ep-get-plugins"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-21-local-compute.md",
@@ -6643,7 +6692,8 @@
       },
       "api_endpoints": [
         "GET /capabilities",
-        "GET /components"
+        "GET /components",
+        "GET /plugins"
       ],
       "db_tables": [],
       "metadata": {
@@ -6671,7 +6721,8 @@
       ],
       "related": [
         "epic-54-plugins",
-        "ep-get-components"
+        "ep-get-components",
+        "ep-get-plugins"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-22-trusted-manifest.md",
@@ -6679,7 +6730,8 @@
         "mockups": []
       },
       "api_endpoints": [
-        "GET /components"
+        "GET /components",
+        "GET /plugins"
       ],
       "db_tables": [],
       "metadata": {
@@ -6707,7 +6759,8 @@
       ],
       "related": [
         "epic-54-plugins",
-        "ep-get-components"
+        "ep-get-components",
+        "ep-get-plugins"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-23-native-runner.md",
@@ -6715,7 +6768,8 @@
         "mockups": []
       },
       "api_endpoints": [
-        "GET /components"
+        "GET /components",
+        "GET /plugins"
       ],
       "db_tables": [],
       "metadata": {
@@ -6742,14 +6796,17 @@
         "phase-5"
       ],
       "related": [
-        "epic-54-plugins"
+        "epic-54-plugins",
+        "ep-get-plugins"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-24-statement-registry.md",
         "plan": null,
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /plugins"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "statement-registry"
@@ -6785,7 +6842,8 @@
         "ep-get-queues-graph",
         "ep-get-queues-stage",
         "ep-patch-queues-stage",
-        "ep-post-libraries-id-convert"
+        "ep-post-libraries-id-convert",
+        "ep-get-plugins"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-25-graph-and-switch.md",
@@ -6802,7 +6860,8 @@
         "GET /queues/graph",
         "GET /queues/{stage}",
         "PATCH /queues/{stage}",
-        "POST /libraries/{id}/convert"
+        "POST /libraries/{id}/convert",
+        "GET /plugins"
       ],
       "db_tables": [],
       "metadata": {
@@ -6829,14 +6888,17 @@
         "phase-5"
       ],
       "related": [
-        "epic-54-plugins"
+        "epic-54-plugins",
+        "ep-get-plugins"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-26-parity.md",
         "plan": null,
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /plugins"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "parity"
@@ -6865,7 +6927,8 @@
         "epic-54-plugins",
         "ep-get-components",
         "ep-get-components-bundles",
-        "ep-post-components-bundle"
+        "ep-post-components-bundle",
+        "ep-get-plugins"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-27-layout-packaging.md",
@@ -6875,7 +6938,8 @@
       "api_endpoints": [
         "GET /components",
         "GET /components/bundles",
-        "POST /components/bundle"
+        "POST /components/bundle",
+        "GET /plugins"
       ],
       "db_tables": [],
       "metadata": {
@@ -7004,14 +7068,17 @@
         "phase-5"
       ],
       "related": [
-        "epic-54-plugins"
+        "epic-54-plugins",
+        "ep-get-plugins"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-31-wave4-classify-enrich.md",
         "plan": null,
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /plugins"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "wave4-classify-enrich"
@@ -7162,7 +7229,8 @@
       "related": [
         "epic-54-plugins",
         "ep-get-extensions",
-        "ep-get-components"
+        "ep-get-components",
+        "ep-get-plugins"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-35-wave8-plex-dizquetv.md",
@@ -7171,7 +7239,8 @@
       },
       "api_endpoints": [
         "GET /extensions",
-        "GET /components"
+        "GET /components",
+        "GET /plugins"
       ],
       "db_tables": [],
       "metadata": {
@@ -7252,7 +7321,8 @@
         "ep-get-components-id",
         "ep-put-components-id",
         "ep-delete-components-id",
-        "ep-post-components-id-install"
+        "ep-post-components-id-install",
+        "ep-get-plugins"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-37-catalog-plugin-entries.md",
@@ -7266,7 +7336,8 @@
         "GET /components/{id}",
         "PUT /components/{id}",
         "DELETE /components/{id}",
-        "POST /components/{id}/install"
+        "POST /components/{id}/install",
+        "GET /plugins"
       ],
       "db_tables": [],
       "metadata": {
@@ -7298,7 +7369,8 @@
         "ep-post-components-offline",
         "ep-get-components-id",
         "ep-put-components-id",
-        "ep-delete-components-id"
+        "ep-delete-components-id",
+        "ep-get-plugins"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-38-plugin-files.md",
@@ -7310,7 +7382,8 @@
         "POST /components/offline",
         "GET /components/{id}",
         "PUT /components/{id}",
-        "DELETE /components/{id}"
+        "DELETE /components/{id}",
+        "GET /plugins"
       ],
       "db_tables": [],
       "metadata": {
@@ -7337,14 +7410,17 @@
         "phase-5"
       ],
       "related": [
-        "epic-54-plugins"
+        "epic-54-plugins",
+        "ep-get-plugins"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-39-flows.md",
         "plan": null,
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /plugins"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "flows"
@@ -7373,7 +7449,8 @@
         "epic-54-plugins",
         "entity-events",
         "ep-get-queues",
-        "ep-get-capabilities"
+        "ep-get-capabilities",
+        "ep-get-plugins"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-40-events-lineage.md",
@@ -7382,7 +7459,8 @@
       },
       "api_endpoints": [
         "GET /queues",
-        "GET /capabilities"
+        "GET /capabilities",
+        "GET /plugins"
       ],
       "db_tables": [
         "events"
@@ -7413,7 +7491,8 @@
       "related": [
         "epic-54-plugins",
         "ep-get-settings",
-        "ep-put-settings"
+        "ep-put-settings",
+        "ep-get-plugins"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-41-flow-chart.md",
@@ -7422,7 +7501,8 @@
       },
       "api_endpoints": [
         "GET /settings",
-        "PUT /settings"
+        "PUT /settings",
+        "GET /plugins"
       ],
       "db_tables": [],
       "metadata": {
@@ -7450,7 +7530,8 @@
       ],
       "related": [
         "epic-54-plugins",
-        "ep-get-components"
+        "ep-get-components",
+        "ep-get-plugins"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-42-joined-machines.md",
@@ -7458,7 +7539,8 @@
         "mockups": []
       },
       "api_endpoints": [
-        "GET /components"
+        "GET /components",
+        "GET /plugins"
       ],
       "db_tables": [],
       "metadata": {
@@ -7486,7 +7568,8 @@
       ],
       "related": [
         "epic-54-plugins",
-        "ep-get-queues"
+        "ep-get-queues",
+        "ep-get-plugins"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-43-fallback-counts.md",
@@ -7494,7 +7577,8 @@
         "mockups": []
       },
       "api_endpoints": [
-        "GET /queues"
+        "GET /queues",
+        "GET /plugins"
       ],
       "db_tables": [],
       "metadata": {
@@ -7505,6 +7589,332 @@
         "source": {
           "title": "8b5b0359542a8ff6",
           "content": "bab24571b3df132c"
+        }
+      }
+    },
+    {
+      "id": "story-54.44",
+      "type": "story",
+      "title": "صفحة إضافات واحدة لكل إضافة",
+      "epic": "54-plugins",
+      "phase": 5,
+      "content": "# القصة 54.44 — صفحة إضافات واحدة لكل إضافة\n\n> الملحمة 54 · المرحلة 5 · تعتمد على: 54.13، 54.22، 54.27، 54.37، 54.41، الملحمة 51 (51.08، 51.10، 51.14)، الملحمة 53 · تحتاجها: 54.45 إلى 54.52\n\n## لماذا\n\nكانت صفحة الإعدادات ← الإضافات تعرض نوعين من الإضافات. الإضافة المثبّتة من ملف أو من المتجر لها بطاقة وصفحة ومفاتيح. والإضافة التي تصنعها مكتبة كانت سطرًا في قائمة ثانية، «مضمّنة في مكتبة»، بلا مفتاح ولا حالة ولا أخطاء ولا صفحة، مع جملة ترسل المسؤول إلى صفحة أخرى لتشغيلها أو إيقافها. فلم يكن المسؤول يرى، في مكان واحد، ما تفعله كل إضافة وما تكلّفه وما",
+      "tags": [
+        "story",
+        "54-plugins",
+        "phase-5"
+      ],
+      "related": [
+        "epic-54-plugins",
+        "ep-get-settings",
+        "ep-put-settings",
+        "ep-get-plugins"
+      ],
+      "files": {
+        "story": "specs/epics/54-plugins/story-54-44-one-plugins-page.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /settings",
+        "PUT /settings",
+        "GET /plugins"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "one-plugins-page"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "9eb9f26a65102585",
+          "content": "3263f40dbcd37c1c"
+        }
+      }
+    },
+    {
+      "id": "story-54.45",
+      "type": "story",
+      "title": "إضافات مكتبة حزمًا في المتجر",
+      "epic": "54-plugins",
+      "phase": 5,
+      "content": "# القصة 54.45 — إضافات مكتبة حزمًا في المتجر\n\n> الملحمة 54 · المرحلة 5 · تعتمد على: 54.14، 54.15، 54.16، 54.22، 54.27، 54.44 · تحتاجها: 54.46 إلى 54.51 · لم تُبنَ\n\n## لماذا\n\nالإضافة التي تنشرها مكتبة هي إضافة متجر ناشرها مكتبة. وهي اليوم ليست حزمة أصلًا: شيفرتها ضمن عجلة خط المعالجة وبيانها في حزمة مضمّنة في الخادم، فلا يمكن تثبيتها ولا إزالتها ولا تحديثها وحدها. تجعل هذه القصة كل واحدة منها حزمة حقيقية موقّعة يعرضها المتجر تحت الناشر الموثّق مكتبة. وهي تعكس الجزء من README §15.6 الذي قال إن المتجر لا",
+      "tags": [
+        "story",
+        "54-plugins",
+        "phase-5"
+      ],
+      "related": [
+        "epic-54-plugins",
+        "ep-get-plugins"
+      ],
+      "files": {
+        "story": "specs/epics/54-plugins/story-54-45-maktaba-store-packages.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /plugins"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "maktaba-store-packages"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "634a700c172385e0",
+          "content": "1984e6aec8de5e72"
+        }
+      }
+    },
+    {
+      "id": "story-54.46",
+      "type": "story",
+      "title": "تثبيت إضافة من مكتبة وإزالتها",
+      "epic": "54-plugins",
+      "phase": 5,
+      "content": "# القصة 54.46 — تثبيت إضافة من مكتبة وإزالتها\n\n> الملحمة 54 · المرحلة 5 · تعتمد على: 54.44، 54.45، 54.38، الملحمة 51 (51.15، 51.16) · تحتاجها: 54.47، 54.48، 54.50 · لم تُبنَ\n\n## لماذا\n\nبعد 54.44 يمكن تشغيل إضافة مكتبة وإيقافها من صفحتها، لكن ملفاتها دائمًا على القرص وزر الإزالة غائب مع ذكر السبب بالكلمات. تتيح هذه القصة للمسؤول تثبيت كل إضافة من مكتبة وإزالتها مثل أي إضافة متجر، مع مصدر واحد للحقيقة لحالتها ودون ضياع أي مهمة.\n\n## الوصف\n\n### 1. مصدر واحد للحقيقة\n\nتحتفظ إضافة مكتبة بمكوّن الملحمة 51 الذي تنفّذ مراحله",
+      "tags": [
+        "story",
+        "54-plugins",
+        "phase-5"
+      ],
+      "related": [
+        "epic-54-plugins",
+        "ep-get-plugins"
+      ],
+      "files": {
+        "story": "specs/epics/54-plugins/story-54-46-maktaba-plugin-lifecycle.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /plugins"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "maktaba-plugin-lifecycle"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "20cc0ca9811b9ab6",
+          "content": "2b18ab408a9aba63"
+        }
+      }
+    },
+    {
+      "id": "story-54.47",
+      "type": "story",
+      "title": "تحديثات إضافات مكتبة عبر المتجر",
+      "epic": "54-plugins",
+      "phase": 5,
+      "content": "# القصة 54.47 — تحديثات إضافات مكتبة عبر المتجر\n\n> الملحمة 54 · المرحلة 5 · تعتمد على: 54.45، 54.46، 54.17 · تحتاجها: 54.48 · لم تُبنَ\n\n## لماذا\n\nإصدار إضافة مكتبة اليوم هو إصدار الخادم، وإصلاح إضافة واحدة يحتاج إلى إصدار للخادم. حين تصير كل واحدة حزمة متجر يكون لها إصدارها، ويحدّث المسؤول إضافة واحدة أو يرجعها دون أن يمسّ البقية.\n\n## الوصف\n\n- **الإصدارات.** لكل إضافة من مكتبة إصدارها الدلالي ونطاق `maktaba` يسمّي إصدارات الخادم التي تعمل عليها. تنتهي قاعدة التطابق في README §15.6 (`maktaba = \"=<version>\"`).\n- **التوافق",
+      "tags": [
+        "story",
+        "54-plugins",
+        "phase-5"
+      ],
+      "related": [
+        "epic-54-plugins"
+      ],
+      "files": {
+        "story": "specs/epics/54-plugins/story-54-47-maktaba-plugin-updates.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "maktaba-plugin-updates"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "31f85812e86fd86a",
+          "content": "c7b13d065627eb17"
+        }
+      }
+    },
+    {
+      "id": "story-54.48",
+      "type": "story",
+      "title": "ما يُثبَّت مسبقًا، وبوابات الترخيص، ونقل الأجهزة الرئيسية القائمة",
+      "epic": "54-plugins",
+      "phase": 5,
+      "content": "# القصة 54.48 — ما يُثبَّت مسبقًا، وبوابات الترخيص، ونقل الأجهزة الرئيسية القائمة\n\n> الملحمة 54 · المرحلة 5 · تعتمد على: 54.46، 54.47، الملحمة 51 (51.17، 51.19) · تحتاجها: 54.50 · لم تُبنَ\n\n## لماذا\n\nحين تصير إضافات مكتبة إضافات متجر، يجب أن يعمل الجهاز الرئيسي الجديد فورًا، وأن يبقى للحزمة معنى، وأن يبقى الترخيص يحجب ما يحجبه، وأن يستمر الجهاز الرئيسي الذي يعمل اليوم في العمل خلال التغيير دون توقف ودون ضياع أي مهمة.\n\n## الوصف\n\n### 1. الحزم مجموعات من الإضافات المثبّتة مسبقًا\n\nيبقى حقل `bundles` في الفهرس هو التعريف الوحيد (README §15.7). الحزمة",
+      "tags": [
+        "story",
+        "54-plugins",
+        "phase-5"
+      ],
+      "related": [
+        "epic-54-plugins",
+        "ep-get-components",
+        "ep-post-components-bundle"
+      ],
+      "files": {
+        "story": "specs/epics/54-plugins/story-54-48-preinstalled-and-migration.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /components",
+        "POST /components/bundle"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "preinstalled-and-migration"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "de357906c0333616",
+          "content": "ed05f0d2514a4793"
+        }
+      }
+    },
+    {
+      "id": "story-54.49",
+      "type": "story",
+      "title": "إضافات مكتبة على الأجهزة الرئيسية التي لا إنترنت لها",
+      "epic": "54-plugins",
+      "phase": 5,
+      "content": "# القصة 54.49 — إضافات مكتبة على الأجهزة الرئيسية التي لا إنترنت لها\n\n> الملحمة 54 · المرحلة 5 · تعتمد على: 54.45، 54.46، 54.10، الملحمة 51 (51.16) · لم تُبنَ\n\n## لماذا\n\nالجهاز الرئيسي الذي لا يصل إلى المتجر أبدًا يجب أن يستطيع مع ذلك إضافة إضافات مكتبة وتحديثها وإزالتها.\n\n## الوصف\n\n- **الملفات.** ينشر كل إصدار من مكتبة حزم إضافاته ملفاتٍ بجانب المثبّتات، وملفًا واحدًا للعمل دون اتصال لكل منصة يضمّها كلها مع الأصول التي تحتاج إليها، تبنيه شيفرة ملف العمل دون اتصال في 51.16.\n- **التثبيت.** يقبل التثبيت من ملف حزمة مكتبة كما يقبل ملفًا موقّعًا من المتجر (README §6.",
+      "tags": [
+        "story",
+        "54-plugins",
+        "phase-5"
+      ],
+      "related": [
+        "epic-54-plugins"
+      ],
+      "files": {
+        "story": "specs/epics/54-plugins/story-54-49-offline-homes.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "offline-homes"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "98f11bdc1ce0153b",
+          "content": "09cafdd04d0a421d"
+        }
+      }
+    },
+    {
+      "id": "story-54.50",
+      "type": "story",
+      "title": "نسختان من كل إصدار للخادم: الكامل والأساسي",
+      "epic": "54-plugins",
+      "phase": 5,
+      "content": "# القصة 54.50 — نسختان من كل إصدار للخادم: الكامل والأساسي\n\n> الملحمة 54 · المرحلة 5 · تعتمد على: 54.45، 54.46، 54.48، الملحمة 51 (51.15، 51.17) · تحتاجها: 54.51 · لم تُبنَ\n\n## لماذا\n\nمن يريد جهازًا رئيسيًا للوسائط فقط لا ينبغي أن ينزّل نماذج الكلام وعجلات تعلّم الآلة، ومن يريد كل شيء لا ينبغي أن يزور متجرًا قبل أن يعمل جهازه. لذلك يأتي كل إصدار للخادم في نسختين على كل منصة. والنسخة الصغيرة ليست فكرة جديدة: هي حزمة `core` الموجودة أصلًا في الفهرس والإعداد، فلا يوجد إلا مفهوم واحد لـ«الصغير»، بقائمة واحدة.\n\n## الوصف\n\n### 1. تعريف واحد",
+      "tags": [
+        "story",
+        "54-plugins",
+        "phase-5"
+      ],
+      "related": [
+        "epic-54-plugins",
+        "ep-get-components"
+      ],
+      "files": {
+        "story": "specs/epics/54-plugins/story-54-50-release-variants.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /components"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "release-variants"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "7eef3221659eb3e4",
+          "content": "273e4423555fc1cd"
+        }
+      }
+    },
+    {
+      "id": "story-54.51",
+      "type": "story",
+      "title": "التحديث ضمن النسخة، والانتقال بين النسختين، وما يكلّفه التكامل المستمر",
+      "epic": "54-plugins",
+      "phase": 5,
+      "content": "# القصة 54.51 — التحديث ضمن النسخة، والانتقال بين النسختين، وما يكلّفه التكامل المستمر\n\n> الملحمة 54 · المرحلة 5 · تعتمد على: 54.50، 54.47، الملحمة 24، الملحمة 51 (51.17) · لم تُبنَ\n\n## لماذا\n\nيجب ألا تصير النسختان منتجين. يبقى الجهاز الرئيسي على نسخته خلال التحديثات، وينتقل إلى الأخرى دون إعادة تثبيت ودون ضياع مهام أو بيانات، ويثبت التكامل المستمر كلتيهما دون بناء كل شيء في كل طلب دمج.\n\n## الوصف\n\n### 1. التحديثات تبقى ضمن النسخة\n\nلكل نسخة مفتاح قناة تحديث خاص بها لكل منصة، كما لتطبيق ماك الأساسي اليوم (`darwin-aarch64-core`). يتحدّث الجهاز الرئيسي من قناة",
+      "tags": [
+        "story",
+        "54-plugins",
+        "phase-5"
+      ],
+      "related": [
+        "epic-54-plugins",
+        "ep-get-components",
+        "ep-post-components-bundle"
+      ],
+      "files": {
+        "story": "specs/epics/54-plugins/story-54-51-variant-updates.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /components",
+        "POST /components/bundle"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "variant-updates"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "c4efafd14a0e4a1e",
+          "content": "a4c451f381b51996"
+        }
+      }
+    },
+    {
+      "id": "story-54.52",
+      "type": "story",
+      "title": "استخدام المعالج لكل عملية",
+      "epic": "54-plugins",
+      "phase": 5,
+      "content": "# القصة 54.52 — استخدام المعالج لكل عملية\n\n> الملحمة 54 · المرحلة 5 · تعتمد على: 54.44، الملحمة 51 (51.14) · لم تُبنَ\n\n## لماذا\n\nتعرض صفحة الإضافات ذاكرة كل عملية تشغّل إضافة وتقول إن استخدام المعالج لا يُقاس. فالمشرف يقيس الذاكرة فقط. والمسؤول الذي يقرّر أي إضافة يوقفها على جهاز بطيء يحتاج إلى الاثنين.\n\n## الوصف\n\n- يقيس المشرف وقت المعالج لكل عملية عاملة مع ذاكرتها، كل خمس دقائق، على macOS ولينكس وويندوز، ويبلّغ عن نصيب النواة الواحدة المستخدم منذ القياس السابق في `cpu_pct` بجانب `rss_mb`، ولكل عملية في `cpu_parts`",
+      "tags": [
+        "story",
+        "54-plugins",
+        "phase-5"
+      ],
+      "related": [
+        "epic-54-plugins",
+        "ep-get-plugins"
+      ],
+      "files": {
+        "story": "specs/epics/54-plugins/story-54-52-process-cpu.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /plugins"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "process-cpu"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "c8f19bf3b60efffc",
+          "content": "ce4e65fb7195ff37"
         }
       }
     }

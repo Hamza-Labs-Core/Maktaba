@@ -1,5 +1,6 @@
 package com.hamzalabs.maktaba.tv.data
 
+import com.hamzalabs.maktaba.core.api.ClientHeader
 import com.hamzalabs.maktaba.core.api.ApiClient
 import com.hamzalabs.maktaba.core.api.ApiException
 import com.hamzalabs.maktaba.core.api.BODY_KEPT
@@ -136,7 +137,7 @@ class TvApi(
         val token = client.playbackToken(30)
         fun req(t: String) = Request.Builder().url(url)
             .header("Accept", "application/json")
-            .header("X-Maktaba-Client", "native")
+            .header(ClientHeader.NAME, ClientHeader.value)
             .header("Authorization", "Bearer $t")
             .method(method, body?.toRequestBody(JSON) ?: if (method == "POST" || method == "PUT") "".toRequestBody(JSON) else null)
             .build()
@@ -172,7 +173,7 @@ class TvApi(
 
     private fun request(url: HttpUrl, token: String) = Request.Builder().url(url)
         .header("Accept", "application/json")
-        .header("X-Maktaba-Client", "native")
+        .header(ClientHeader.NAME, ClientHeader.value)
         .header("Authorization", "Bearer $token")
         .build()
 
@@ -209,7 +210,7 @@ class TvApi(
 
         fun post(url: HttpUrl, body: String): Request = Request.Builder().url(url)
             .header("Accept", "application/json")
-            .header("X-Maktaba-Client", "native")
+            .header(ClientHeader.NAME, ClientHeader.value)
             .post(body.toRequestBody(JSON))
             .build()
     }

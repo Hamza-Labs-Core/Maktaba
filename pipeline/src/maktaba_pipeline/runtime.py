@@ -1204,10 +1204,22 @@ def _import_asyncpg() -> Any:
         ) from exc
 
 
+def _register_sqlite_date_adapters() -> None:
+    """Store datetimes and dates in SQLite as Python's default adapters did
+    (``isoformat(" ")`` and ``isoformat()``), through explicit adapters: the defaults are
+    deprecated since Python 3.12 and warn on every statement that binds one."""
+    import datetime as dt  # noqa: PLC0415
+    import sqlite3  # noqa: PLC0415
+
+    sqlite3.register_adapter(dt.datetime, lambda v: v.isoformat(" "))
+    sqlite3.register_adapter(dt.date, lambda v: v.isoformat())
+
+
 def _import_aiosqlite() -> Any:
     try:
         import aiosqlite  # noqa: PLC0415
 
+        _register_sqlite_date_adapters()
         return aiosqlite
     except ImportError as exc:  # pragma: no cover — covered by pyproject
         raise RuntimeError(

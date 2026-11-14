@@ -564,6 +564,20 @@ final class HeldWaits: @unchecked Sendable {
         #expect(ParentalStub.seen.isEmpty, "the home is not asked for what it would refuse")
     }
 
+    /// A page made before the limit was read is made again once the home says the account
+    /// is restricted (#1309: the time's-up screen never showed Ask for more time); one made
+    /// with a read limit is kept, and nothing is made again for a looser or device-only one.
+    @MainActor @Test func aPageMadeBeforeTheLimitWasReadIsOutdatedOnceItIs() {
+        let restricted = ParentalLimit(restricted: true, maxTier: 9, version: 1)
+        let unread = BlockedPage(client: ParentalStub.client(), subject: .time(minutes: 15), limit: .none)
+        #expect(unread.outdated(by: restricted))
+        #expect(!unread.outdated(by: .none))
+        #expect(!unread.outdated(by: ParentalLimit(maxTier: 9, deviceLimit: 9)), "a device limit gives no Ask")
+        let read = BlockedPage(client: ParentalStub.client(), subject: .time(minutes: 15), limit: restricted)
+        #expect(!read.outdated(by: restricted))
+        #expect(!read.outdated(by: ParentalLimit(restricted: true, maxTier: 12, version: 2)))
+    }
+
     // MARK: 57.06
 
     @MainActor @Test func askingAParentSendsTheIdTheChildHadAndWaits() async {
@@ -1348,7 +1362,7 @@ final class HeldWaits: @unchecked Sendable {
                         #"{"items":[{"id":"y1","library_id":"l1","kind":"channel","url":"https://youtube.example/@seerah","folder":"Seerah channel"},{"id":"y2","library_id":"l1","kind":"playlist","url":"https://youtube.example/playlist?list=PL1","folder":null}]}"#)
         ParentalStub.on("GET /api/libraries/l2/youtube/sources", 200, #"{"items":[]}"#)
         ParentalStub.on("GET /api/plugins", 200,
-                        #"{"plugins":[{"id":"com.example.intro","names":{"name":{"en":"Intro skipper","ar":"متخطي المقدمة"}}},{"id":"com.example.bare","names":{"name":{}}}],"policy":{},"built_in":[]}"#)
+                        #"{"plugins":[{"id":"com.example.intro","names":{"name":{"en":"Intro skipper","ar":"متخطي المقدمة"}}},{"id":"com.example.bare","names":{"name":{}},"source":"file"},{"id":"tv.maktaba.subtitles","names":{"name":{"en":"Subtitle files"}},"source":"release"}],"policy":{},"core":[]}"#)
         let client = ParentalStub.client()
 
         let collections = try await RuleChoices.load(client, kind: "collection", en)
@@ -1364,6 +1378,7 @@ final class HeldWaits: @unchecked Sendable {
         #expect(plugins.first { $0.id == "com.example.intro" }?.title == "متخطي المقدمة", "a plugin by its name in the app's language")
         #expect(plugins.first { $0.id == "com.example.bare" }?.title == "com.example.bare", "one with no name by its id")
         #expect(try await RuleChoices.load(client, kind: "plugin", en).map(\.title) == ["com.example.bare", "Intro skipper"])
+        #expect(!plugins.contains { $0.id == "tv.maktaba.subtitles" }, "a plugin that came with Maktaba is not installed, so no rule can name it")
 
         #expect(try await RuleChoices.load(client, kind: "video", query: "a", en).isEmpty, "a video is searched for from two characters")
         #expect(RuleChoices.kinds == ParentalSubject.kinds, "every kind a rule may name can be added")

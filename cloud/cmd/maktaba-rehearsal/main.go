@@ -4,7 +4,8 @@
 //	maktaba-rehearsal fakehcloud   the fake Hetzner Floating IP API (fakehcloud)
 //	maktaba-rehearsal fakeacmedns  the DNS-01 provider for Pebble (fakeacmedns)
 //	maktaba-rehearsal fipfront     the internet's side of the Floating IP (fipfront):
-//	                               FIPFRONT_LISTEN (:80) -> FIPFRONT_TARGET (relay.test:80)
+//	                               FIPFRONT_LISTEN (:80) -> FIPFRONT_TARGET (relay.test:80);
+//	                               FIPFRONT_FOLLOW (a duration): close connections to an old holder
 //	maktaba-rehearsal fakegateway  a home's router (fakegateway): NAT for FAKEGW_LAN and NAT-PMP
 //	                               on FAKEGW_LISTEN (:5351), its ports opened on FAKEGW_WAN
 //
@@ -59,6 +60,9 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
+		if every := fipfrontFollow(); every > 0 {
+			log.Fatal(fipfront.Follow(ln, target, every, nil))
+		}
 		log.Fatal(fipfront.Serve(ln, target))
 	default:
 		fmt.Fprintln(os.Stderr, "usage: maktaba-rehearsal fakehcloud|fakeacmedns")
@@ -69,6 +73,13 @@ func main() {
 // fipfrontAddrs: where fipfront listens and the name it dials for each connection.
 func fipfrontAddrs() (listen, target string) {
 	return env("FIPFRONT_LISTEN", ":80"), env("FIPFRONT_TARGET", "relay.test:80")
+}
+
+// fipfrontFollow is FIPFRONT_FOLLOW (story 50.18's db.internal: "500ms"): how often the target
+// is looked up again to close connections to an old holder; zero (unset) never.
+func fipfrontFollow() time.Duration {
+	d, _ := time.ParseDuration(os.Getenv("FIPFRONT_FOLLOW"))
+	return d
 }
 
 // newFakeACMEDNS is the server the env describes.

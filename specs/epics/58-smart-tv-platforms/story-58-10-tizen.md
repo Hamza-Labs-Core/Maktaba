@@ -90,16 +90,16 @@ with the notes from `docs/stores/samsung.md`; Seller Office has no public upload
 
 | ID | Type | Setup | Action | Expected |
 |---|---|---|---|---|
-| T01 | Vitest | `platform/tizen.ts` with a fake `webapis.avplay` | play, tracks, subtitles, seek, error | the AVPlay call sequence; errors as `state.error` |
+| T01 | Vitest | `src/platform/tizen/avplay.ts` with a fake `webapis.avplay` | play, tracks, subtitles, seek, error | the AVPlay call sequence; errors as `state.error` |
 | T02 | Vitest | the subtitle layer | Arabic and English cues | `dir=rtl` for Arabic; sizes |
 | T03 | Package lint | built `.wgt` | parse `config.xml` | privileges, CSP, access exactly as listed |
-| T04 | Samsung TV emulator (Tizen Studio, KVM, Linux runner; best effort) | the `.wgt` with the launcher | launch, cloud code screen, find on network against a mock home | screenshots en and ar; the emulator's log in the CI report. AVPlay and UHD do not exist on the emulator, so playback is out of scope here |
+| T04 | Not run in CI (see As built): Playwright `web/e2e/launcher/tizen-avplay.ui.spec.ts` on a `webapis`/AVPlay shim stands in | the launcher and `/tv/` | hello caps, the AVPlay call sequence, Arabic subtitles, the error notice, the keys, exit | screenshots en and ar; the launcher log in the CI report |
 | T05 | Real-device checklist (`docs/stores/samsung.md`) | a 2020 (Tizen 5.5), a 2022 and a 2025 Samsung TV, by `sdb` in Developer Mode | each launcher release candidate | 4K HDR10, DV p8 as HDR10, EAC3 passthrough, Arabic subtitles, keys, sleep/wake, performance budget |
 
 **Honest note:**
 - The Samsung emulator runs the launcher and the UI, but it has no AVPlay, no UHD and no secure
-  WebSockets (research.md §3.3). Whether it runs headless on a CI runner is not documented, so
-  T04 is best effort and not a required check.
+  WebSockets (research.md §3.3), and has no documented headless mode, so it is not run in CI
+  (As built, T04).
 - Player behaviour is proven by T01's fake and by T05 on real TVs only.
 
 ## Strings
@@ -110,6 +110,8 @@ The launcher's catalogs (58.09) and these:
 |---|---|---|
 | `tizen.error.playback` | The TV couldn't play this. Trying a converted version… | تعذّر على التلفاز تشغيل هذا. جارٍ تجربة نسخة محوّلة… |
 | `tizen.subtitles.size` | Subtitle size | حجم الترجمة |
+
+`tizen.subtitles.size` did not ship: the size comes from `/tv/`'s own setting (As built).
 
 ## Edge cases
 
@@ -122,8 +124,34 @@ The launcher's catalogs (58.09) and these:
 
 | File | Change |
 |---|---|
-| `apps/tv/web/platform/tizen.ts`, `apps/tv/web/tizen/config.xml` | player, keys, package |
-| `apps/tv/web/subtitles/` | the shared subtitle layer (webOS uses it for sidecar files) |
+| `apps/tv/web/src/platform/tizen.ts`, `src/platform/tizen/` (`avplay.ts`, `caps.ts`), `apps/tv/web/tizen/` (`config.xml`, `package_wgt.py`, `lint_wgt.py`, `sign_wgt.sh`) | player, caps, keys, package |
+| `apps/tv/web/src/subtitles/` | the shared subtitle layer (webOS uses it for sidecar files) |
 | `.github/workflows/tv-web-release.yml` (new) | `.wgt` build and signing |
-| `.github/workflows/_tv-web.yml` (new) | T01–T03; T04 as a non-required job |
+| `.github/workflows/_tv-web.yml` (new) | T01–T03 and the AVPlay Playwright run; no emulator job |
 | `docs/stores/samsung.md` | listing, notes, checklist |
+
+## As built
+
+- **Files.** The player and caps are `apps/tv/web/src/platform/tizen/` (`avplay.ts`, `caps.ts`)
+  beside `platform/tizen.ts`; the package is `apps/tv/web/tizen/` (`config.xml`, `icon.png`,
+  `package_wgt.py`, `lint_wgt.py`, `sign_wgt.sh`); the subtitle layer is `src/subtitles/`, shared
+  with 58.11.
+- **4K.** Samsung's AVPlay reference deprecates `SET_MODE_4K` from Tizen 5.0. The adapter sets
+  `ADAPTIVE_INFO` to `FIXED_MAX_RESOLUTION=3840X2160` in IDLE, before prepare, and falls back to
+  `SET_MODE_4K` when a firmware refuses it. A 2160p source is known from `play`'s optional
+  `height`; without it, an adaptive source on a UHD panel gets the 4K mode.
+- **Privileges.** `webapis.productinfo` and `webapis.network.getIp()` need Samsung's
+  `productinfo` and `network.public` privileges, so `config.xml` lists them with the five above.
+- **Caps.** The audio output mode is `tizen.tvaudiocontrol.getOutputMode()`: Dolby Digital Plus
+  passes AC3 and EAC3 through, Dolby Digital AC3 only, anything else none.
+- **Subtitles.** The size is the optional `subtitle_scale` of `play` and `subtitle` (/tv/'s own
+  subtitle size setting), so `tizen.subtitles.size` is not needed. An embedded track is chosen
+  as `embedded:<n>`.
+- **Audio tracks.** `state` lists the stream's audio tracks (`audio_tracks`, from
+  `getTotalTrackInfo`).
+- **Signing.** Tizen Studio's CLI is pinned by sha256. On a headless runner it keeps certificate
+  passwords in an unlocked keyring. A tag without the project's certificates rehearses signing
+  with a throwaway one, which is never attached to the release.
+- **T04.** The Samsung TV emulator is not run in CI. It needs the TV extension and a KVM
+  runner, has no documented headless mode, and would show less than the Playwright shim does
+  (no AVPlay, no UHD). `docs/stores/samsung.md` says so.

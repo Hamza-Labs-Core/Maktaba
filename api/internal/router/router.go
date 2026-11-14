@@ -46,6 +46,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/castgrant"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/compat"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/components"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
@@ -130,6 +131,11 @@ type Deps struct {
 	// MountP6 gives it the policy cache (P6Deps.ParentalGate); until then it refuses
 	// every signed-in user. Nil leaves the gate off (bare-Deps unit tests).
 	Parental *parental.Gate
+
+	// CastGate holds a cast grant (Epic 58 story 58.07) to the routes and items a Cast
+	// receiver needs; MountCast gives it the database. Nil leaves it off (bare-Deps unit
+	// tests: no cast grant is a principal there).
+	CastGate *castgrant.Gate
 }
 
 // New builds the API's chi.Mux with the canonical middleware stack and
@@ -190,6 +196,12 @@ func New(d Deps) chi.Router {
 	// Epic 51 story 51.09: a route whose component is off is 409 component_off
 	r.Use(ComponentOff(d.Capabilities))
 
+	// Epic 58 story 58.07: a cast grant reaches only its items. Before the content
+	// filter's gate, which answers a hidden item through a stand-in id: the grant's own
+	// video, hidden since the mint, is then missing (404), as it is to its user.
+	if d.CastGate != nil {
+		r.Use(d.CastGate.Middleware(r))
+	}
 	// Epic 57 story 57.03: the content filter's gate, before any handler
 	if d.Parental != nil {
 		r.Use(d.Parental.Middleware(r))

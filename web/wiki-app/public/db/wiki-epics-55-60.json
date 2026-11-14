@@ -976,6 +976,7 @@
         "ep-get-series",
         "ep-get-series-id",
         "ep-patch-series-id",
+        "ep-get-plugins",
         "ep-put-videos-id-age-tier",
         "ep-put-libraries-id-age-tier",
         "ep-put-series-id-age-tier",
@@ -1012,6 +1013,7 @@
         "GET /series",
         "GET /series/{id}",
         "PATCH /series/{id}",
+        "GET /plugins",
         "PUT /videos/{id}/age-tier",
         "PUT /libraries/{id}/age-tier",
         "PUT /series/{id}/age-tier",
@@ -1100,7 +1102,8 @@
         "ep-get-stream-sessions-id",
         "ep-delete-stream-sessions-id",
         "ep-post-stream-sessions-id-progress",
-        "ep-get-me-history"
+        "ep-get-me-history",
+        "ep-get-plugins"
       ],
       "files": {
         "story": "specs/epics/57-parental-controls/story-57-03-server-filter.md",
@@ -1115,7 +1118,8 @@
         "GET /stream/sessions/{id}",
         "DELETE /stream/sessions/{id}",
         "POST /stream/sessions/{id}/progress",
-        "GET /me/history"
+        "GET /me/history",
+        "GET /plugins"
       ],
       "db_tables": [
         "collection_items",
@@ -1634,6 +1638,7 @@
       "related": [
         "epic-57-parental-controls",
         "entity-transcript_segments",
+        "ep-get-plugins",
         "ep-get-parental-review",
         "ep-post-parental-review-video-id"
       ],
@@ -1643,6 +1648,7 @@
         "mockups": []
       },
       "api_endpoints": [
+        "GET /plugins",
         "GET /parental/review",
         "POST /parental/review/{video_id}"
       ],
@@ -1729,7 +1735,11 @@
       ],
       "related": [
         "epic-58-smart-tv-platforms",
-        "ep-get-home"
+        "ep-get-home",
+        "ep-get-me-app-sign-ins",
+        "ep-get-pairing-cloud-code-code",
+        "ep-post-pairing-cloud-approve",
+        "ep-post-pairing-cloud-assertion"
       ],
       "files": {
         "story": "specs/epics/58-smart-tv-platforms/story-58-03-cloud-tv-code.md",
@@ -1737,7 +1747,11 @@
         "mockups": []
       },
       "api_endpoints": [
-        "GET /home"
+        "GET /home",
+        "GET /me/app-sign-ins",
+        "GET /pairing/cloud-code/{code}",
+        "POST /pairing/cloud-approve",
+        "POST /pairing/cloud-assertion"
       ],
       "db_tables": [],
       "metadata": {
@@ -1809,14 +1823,19 @@
         "phase-5"
       ],
       "related": [
-        "epic-58-smart-tv-platforms"
+        "epic-58-smart-tv-platforms",
+        "ep-post-cast-grants",
+        "ep-get-components"
       ],
       "files": {
         "story": "specs/epics/58-smart-tv-platforms/story-58-06-cast-senders.md",
         "plan": null,
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "POST /cast/grants",
+        "GET /components"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "cast-senders"
@@ -1893,6 +1912,8 @@
       ],
       "related": [
         "epic-58-smart-tv-platforms",
+        "ep-post-auth-refresh",
+        "ep-get-auth-me",
         "ep-get-home",
         "ep-get-discovery-home"
       ],
@@ -1902,6 +1923,8 @@
         "mockups": []
       },
       "api_endpoints": [
+        "POST /auth/refresh",
+        "GET /auth/me",
         "GET /home",
         "GET /discovery/home"
       ],
@@ -1923,7 +1946,8 @@
         "phase-5"
       ],
       "related": [
-        "epic-58-smart-tv-platforms"
+        "epic-58-smart-tv-platforms",
+        "entity-audio_tracks"
       ],
       "files": {
         "story": "specs/epics/58-smart-tv-platforms/story-58-10-tizen.md",
@@ -1931,7 +1955,9 @@
         "mockups": []
       },
       "api_endpoints": [],
-      "db_tables": [],
+      "db_tables": [
+        "audio_tracks"
+      ],
       "metadata": {
         "slug": "tizen"
       }
@@ -2116,8 +2142,10 @@
         "epic-58-smart-tv-platforms",
         "ep-get-videos",
         "ep-post-stream-sessions",
+        "ep-post-cast-grants",
         "ep-get-home",
-        "ep-get-discovery-home"
+        "ep-get-discovery-home",
+        "ep-post-pairing-cloud-approve"
       ],
       "files": {
         "story": "specs/epics/58-smart-tv-platforms/story-58-17-openapi-roles-rehearsal.md",
@@ -2127,8 +2155,10 @@
       "api_endpoints": [
         "GET /videos",
         "POST /stream/sessions",
+        "POST /cast/grants",
         "GET /home",
-        "GET /discovery/home"
+        "GET /discovery/home",
+        "POST /pairing/cloud-approve"
       ],
       "db_tables": [],
       "metadata": {
@@ -2141,7 +2171,7 @@
       "title": "Amazon Vega OS: a React Native app, built when Vega devices are a real share",
       "epic": "58-smart-tv-platforms",
       "phase": 5,
-      "content": "# Story 58.18 — Amazon Vega OS: a React Native app, built when Vega devices are a real share\n\n> Epic 58 · Phase 6 · Depends on: 58.01, 58.02, 58.03, 58.04, 58.05 · Needed by: —\n\n## Why\n\nAmazon launched Vega OS, a Linux-based Fire TV operating system, on the Fire TV Stick 4K Select\nin 2025 (research.md §2.2). Since then Amazon has added:\n- the Fire TV Stick HD (2026);\n- the Fire TV Stick 4K 3rd gen (2026-09-30).\n\nReports say every future Fire TV Stick will run Vega. Android apps do not run on Vega, and there\nis no sideloading, so the Fire OS build (58.05) does not reach these sticks. A Vega app",
+      "content": "# Story 58.18 — Amazon Vega OS: a React Native app, built when Vega devices are a real share\n\n> Epic 58 · Phase 6 · Depends on: 58.01, 58.02, 58.03, 58.04, 58.05 · Needed by: —\n>\n> **Status: waiting** on its start condition (README §12 Q8, below under When); not started.\n\n## Why\n\nAmazon launched Vega OS, a Linux-based Fire TV operating system, on the Fire TV Stick 4K Select\nin 2025 (research.md §2.2). Since then Amazon has added:\n- the Fire TV Stick HD (2026);\n- the Fire TV Stick 4K 3rd gen (2026-09-30).\n\nReports say every future Fire TV Stick will run Vega. Android apps do not run on Vega, an",
       "tags": [
         "story",
         "58-smart-tv-platforms",
@@ -2371,6 +2401,7 @@
       ],
       "related": [
         "epic-59-nas",
+        "ep-get-plugins",
         "ep-get-plugins-isolation",
         "ep-put-plugins-isolation"
       ],
@@ -2380,6 +2411,7 @@
         "mockups": []
       },
       "api_endpoints": [
+        "GET /plugins",
         "GET /plugins/isolation",
         "PUT /plugins/isolation"
       ],
@@ -2660,6 +2692,7 @@
         "ep-post-libraries-id-run-now",
         "ep-post-queues-jobs-id-run-now",
         "ep-post-queues-stage-run-now",
+        "ep-get-plugins",
         "ep-get-plugins-isolation",
         "ep-put-plugins-isolation",
         "ep-get-system-updates"
@@ -2701,6 +2734,7 @@
         "POST /libraries/{id}/run-now",
         "POST /queues/jobs/{id}/run-now",
         "POST /queues/{stage}/run-now",
+        "GET /plugins",
         "GET /plugins/isolation",
         "PUT /plugins/isolation",
         "GET /system/updates"

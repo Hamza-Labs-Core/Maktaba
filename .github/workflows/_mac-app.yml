@@ -48,7 +48,7 @@ jobs:
           # restore main's uv cache; only a push to main saves it
           save-cache: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
 
-      - uses: pnpm/action-setup@v6.0.8
+      - uses: pnpm/action-setup@0e279bb959325dab635dd2c09392533439d90093 # v6.0.8
         with:
           version: 9.15.4
           run_install: false
@@ -253,7 +253,7 @@ jobs:
           enable-cache: true
           cache-dependency-glob: pipeline/uv.lock
 
-      - uses: pnpm/action-setup@v6.0.8
+      - uses: pnpm/action-setup@0e279bb959325dab635dd2c09392533439d90093 # v6.0.8
         with:
           version: 9.15.4
           run_install: false

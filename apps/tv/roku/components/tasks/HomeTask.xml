@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- Finding and reading a home (Epic 58 story 58.12): a saved home's check at launch, the /24
+     probe of Find on this network, a typed address. One command per run. -->
+<component name="HomeTask" extends="Task">
+  <interface>
+    <field id="command" type="assocarray" />
+    <field id="progress" type="assocarray" />
+    <field id="result" type="assocarray" />
+  </interface>
+  <script type="text/brightscript" uri="HomeTask.brs" />
+  <script type="text/brightscript" uri="pkg:/source/config.brs" />
+  <script type="text/brightscript" uri="pkg:/source/net.brs" />
+  <script type="text/brightscript" uri="pkg:/source/http.brs" />
+  <script type="text/brightscript" uri="pkg:/source/compat.brs" />
+</component>

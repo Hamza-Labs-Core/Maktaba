@@ -86,6 +86,9 @@ func okCols(vid, lib uuid.UUID, probed bool) []any {
 		"tv",                           // color_range
 		"yuv420p10le",                  // pix_fmt
 		true,                           // has_audio
+		23.976,                         // fps
+		"8",                            // dv_profile
+		"1",                            // dv_bl_signal_compatibility_id
 	}
 }
 
@@ -115,6 +118,9 @@ func TestPGBackend_LookupSuccess(t *testing.T) {
 	if row.ColorTransfer != "smpte2084" || row.ColorMatrix != "bt2020nc" || row.ColorPrimaries != "bt2020" ||
 		row.ColorRange != "tv" || row.PixFmt != "yuv420p10le" {
 		t.Fatalf("the video stream's colour not scanned: %+v", row)
+	}
+	if row.FPS != 23.976 || row.DVProfile != 8 || row.DVCompat != 1 {
+		t.Fatalf("fps / Dolby Vision not scanned: %v %d.%d", row.FPS, row.DVProfile, row.DVCompat)
 	}
 	// The single bound arg must be the video id.
 	if len(q.gotArgs) != 1 || q.gotArgs[0] != vid {

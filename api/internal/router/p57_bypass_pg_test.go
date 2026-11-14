@@ -424,6 +424,14 @@ func init() {
 				r.ask(key, http.MethodPut, "/api/me/play-queues/"+r.queue+"/current", `{"pos":0,"version":`+v+`}`)
 			}
 		},
+		// a cast grant (Epic 58 story 58.07): a hidden video mints none, and answers as a
+		// missing one; the caller's own queue mints one
+		"POST /api/cast/grants": func(r *pbRun, key string) {
+			r.ask(key, http.MethodPost, "/api/cast/grants", `{"queue_id":"`+r.queue+`"}`)
+			for _, id := range r.fx.hidden[parental.SubjectVideo] {
+				r.alike(key, http.MethodPost, "/api/cast/grants", `{"video_id":"{id}"}`, id)
+			}
+		},
 		"DELETE /api/me/play-queues/{id}": func(r *pbRun, key string) {
 			r.ask(key, http.MethodDelete, "/api/me/play-queues/"+r.queue, "")
 		},

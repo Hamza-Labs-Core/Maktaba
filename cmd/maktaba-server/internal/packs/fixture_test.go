@@ -259,6 +259,18 @@ func (f *fixture) serve(w http.ResponseWriter, r *http.Request) {
 	http.ServeContent(w, r, "", time.Time{}, bytes.NewReader(b))
 }
 
+// waitReqs waits until at least n requests contain sub (10 s at most).
+func (f *fixture) waitReqs(t *testing.T, sub string, n int) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for len(f.reqs(sub)) < n {
+		if time.Now().After(deadline) {
+			t.Fatalf("%d requests with %q, want %d", len(f.reqs(sub)), sub, n)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
 func (f *fixture) reqs(sub string) []string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
