@@ -21,8 +21,11 @@ and CI. The source lives at
   the checks that keep the API, the apps and maktaba.tv in step.
 - [API levels](api-levels.md): how a home and its apps tell whether they can work together,
   the client floor, the TV platform names, and how to change a response safely.
-- [Casting: the cast grant](casting.md): for sender and receiver authors: minting a grant
-  for Maktaba's Cast receiver, what it may reach, and what the sender hands the receiver.
+- [The Samsung and LG launcher](tv-launcher.md): how the TV app finds a home, signs in by
+  code inside `/tv/`, and talks to it over the bridge.
+- [Casting: the cast grant and the receiver](casting.md): for sender and receiver authors:
+  minting a grant for Maktaba's Cast receiver, what it may reach, what the sender hands the
+  receiver, what the receiver does, and its custom message namespace.
 - [Parental controls](parental-controls.md): for client and API authors: what a player must
   do, the routes and their codes, the route registry, and how to run the role table and the
   bypass rehearsal.

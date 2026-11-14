@@ -63,6 +63,9 @@ const (
 	deviceTicketPrefix = "device."
 	// legacyTicketPrefix is a TV approval written before story 42.6 (still collected).
 	legacyTicketPrefix = "tv."
+	// cloudTicketPrefix is an approval of a TV's cloud code (story 58.03): the ticket itself
+	// says so, so the sign-in is restricted even when the home restarted in between.
+	cloudTicketPrefix = "device-cc."
 	// legacyDeviceKind is the device kind of an app that does not say what it is (the
 	// TVs from before X-Maktaba-Client).
 	legacyDeviceKind = "tv"
@@ -98,6 +101,8 @@ type deviceRequest struct {
 	// LookedUp is when a signed-in person first read this code (DeviceLookup): the app
 	// showing it says "your phone found this TV".
 	LookedUp time.Time
+	// approved: made already approved (a cloud code), so no phone is told it is waiting.
+	approved bool
 }
 
 // deviceRequests are the codes waiting for an approval, by code (eight characters, no
@@ -155,7 +160,7 @@ func (d *deviceRequests) pending(now time.Time) []deviceRequest {
 	defer d.mu.Unlock()
 	out := make([]deviceRequest, 0, len(d.m))
 	for _, r := range d.m {
-		if !now.After(r.Expires) {
+		if !now.After(r.Expires) && !r.approved {
 			out = append(out, r)
 		}
 	}
@@ -288,7 +293,7 @@ func (h *Handler) DeviceLookup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// a cloud sign-in may read a code but cannot approve it: the device is not told
-	if !principal.FromContext(r.Context()).ViaCloud() {
+	if !principal.FromContext(r.Context()).MintsNoCredential() {
 		h.requests.lookedUp(code, now)
 	}
 	common.WriteJSON(w, r, http.StatusOK, deviceLookupResponse{
@@ -329,7 +334,7 @@ func (h *Handler) DevicePending(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	out := pendingResponse{Requests: []pendingRequest{}}
-	if !p.ViaCloud() {
+	if !p.MintsNoCredential() {
 		for _, req := range h.requests.pending(h.now()) {
 			out.Requests = append(out.Requests, pendingRequest{
 				ID:          req.ID,
@@ -375,7 +380,7 @@ func (h *Handler) Approve(w http.ResponseWriter, r *http.Request) {
 	}
 	// an app's tokens outlive a cloud link and carry the person's full role (Epic 42 story
 	// 42.7, as for a phone's pairing): only a sign-in on the home approves one
-	if p.ViaCloud() {
+	if p.MintsNoCredential() {
 		httperror.Write(w, r, httperror.Forbidden(httperror.TypeCloudSession,
 			"a sign-in through Maktaba Cloud cannot sign in a device; sign in on the home"))
 		return
@@ -392,26 +397,10 @@ func (h *Handler) Approve(w http.ResponseWriter, r *http.Request) {
 		}))
 		return
 	}
-	userID := p.UserID
-	if req.AsUser != "" && req.AsUser != p.UserID {
-		if h.ApproveAs == nil {
-			httperror.Write(w, r, httperror.NotFound("restricted account"))
-			return
-		}
-		switch id, err := h.ApproveAs(r.Context(), p, req.AsUser); {
-		case errors.Is(err, ErrApproveAsRestricted):
-			httperror.Write(w, r, httperror.Forbidden(httperror.Type("restricted"),
-				"a restricted account can sign in only itself").With("code", "restricted"))
-			return
-		case errors.Is(err, ErrApproveAsNotFound):
-			httperror.Write(w, r, httperror.NotFound("restricted account"))
-			return
-		case err != nil:
-			httperror.Write(w, r, httperror.Internal("approve as").Wrap(err))
-			return
-		default:
-			userID = id
-		}
+	userID, e := h.approver(r, p, req.AsUser)
+	if e != nil {
+		httperror.Write(w, r, e)
+		return
 	}
 	now := h.now()
 	if _, ok := h.requests.get(code, now); !ok {
@@ -435,6 +424,28 @@ func (h *Handler) Approve(w http.ResponseWriter, r *http.Request) {
 		h.Audit.WritePairEvent(r.Context(), false, p.UserID, key)
 	}
 	common.WriteJSON(w, r, http.StatusOK, map[string]any{"status": "approved"})
+}
+
+// approver is whose sign-in an approval becomes: the caller, or the restricted account named in
+// asUser when the caller is its guardian or an admin (Epic 57 story 57.02).
+func (h *Handler) approver(r *http.Request, p *principal.Principal, asUser string) (string, *httperror.Error) {
+	if asUser == "" || asUser == p.UserID {
+		return p.UserID, nil
+	}
+	if h.ApproveAs == nil {
+		return "", httperror.NotFound("restricted account")
+	}
+	id, err := h.ApproveAs(r.Context(), p, asUser)
+	switch {
+	case errors.Is(err, ErrApproveAsRestricted):
+		return "", httperror.Forbidden(httperror.Type("restricted"),
+			"a restricted account can sign in only itself").With("code", "restricted")
+	case errors.Is(err, ErrApproveAsNotFound):
+		return "", httperror.NotFound("restricted account")
+	case err != nil:
+		return "", httperror.Internal("approve as").Wrap(err)
+	}
+	return id, nil
 }
 
 type deviceTokenRequest struct {
@@ -469,7 +480,13 @@ func (h *Handler) DeviceToken(w http.ResponseWriter, r *http.Request) {
 	}
 	code := h.deviceCode(raw)
 	asked, held := h.requests.get(code, now)
+	via := ""
 	t, err := h.Store.Consume(r.Context(), deviceTicketPrefix+code)
+	if errors.Is(err, discovery.ErrCodeNotFound) {
+		if t, err = h.Store.Consume(r.Context(), cloudTicketPrefix+code); err == nil {
+			via = ViaCloudCode
+		}
+	}
 	if errors.Is(err, discovery.ErrCodeNotFound) {
 		t, err = h.Store.Consume(r.Context(), legacyTicketPrefix+code)
 	}
@@ -511,7 +528,18 @@ func (h *Handler) DeviceToken(w http.ResponseWriter, r *http.Request) {
 			label = describeClient(who)
 		}
 	}
-	tok, err := h.Minter.Mint(r.Context(), t.UserID, kind, label)
+	var tok MintedTokens
+	if via != "" {
+		// a cloud code's sign-in is restricted: a minter that cannot say so mints nothing
+		vm, ok := h.Minter.(ViaMinter)
+		if !ok {
+			httperror.Write(w, r, httperror.Unavailable(0))
+			return
+		}
+		tok, err = vm.MintVia(r.Context(), t.UserID, kind, label, via)
+	} else {
+		tok, err = h.Minter.Mint(r.Context(), t.UserID, kind, label)
+	}
 	if err != nil {
 		httperror.Write(w, r, httperror.Internal("mint device tokens").Wrap(err))
 		return

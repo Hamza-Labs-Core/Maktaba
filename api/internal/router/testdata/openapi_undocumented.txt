@@ -119,7 +119,6 @@ GET /api/notifications
 GET /api/pairing/device/{code}
 GET /api/pairing/pending
 GET /api/pairing/status
-GET /api/plugins
 GET /api/plugins/catalog
 GET /api/plugins/graph
 GET /api/plugins/panel-order

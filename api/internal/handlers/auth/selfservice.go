@@ -20,6 +20,7 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/securityaudit"
@@ -228,6 +229,77 @@ func (h *Handler) RevokeMeSession(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := h.Sessions.Revoke(r.Context(), id); err != nil {
 		httperror.Write(w, r, httperror.Internal("revoke session").Wrap(err))
+		return
+	}
+	common.WriteNoContent(w)
+}
+
+// appSignInView is one app the person signed in by code (a TV, a phone app), for their list of
+// devices: what it said it was, and via "cloud_code" when a TV collected a Maktaba Cloud code
+// (story 58.03).
+type appSignInView struct {
+	ID         string `json:"id"`
+	Kind       string `json:"kind"`
+	Label      string `json:"label"`
+	Via        string `json:"via,omitempty"`
+	CreatedAt  string `json:"created_at"`
+	LastSeenAt string `json:"last_seen_at"`
+	ExpiresAt  string `json:"expires_at"`
+	Current    bool   `json:"current"`
+}
+
+// MeAppSignIns implements GET /api/me/app-sign-ins: the caller's apps signed in by code, newest
+// use first; the one the request came from is `current`.
+func (h *Handler) MeAppSignIns(w http.ResponseWriter, r *http.Request) {
+	p := principal.FromContext(r.Context())
+	if p == nil {
+		writeUnauthorized(w, r)
+		return
+	}
+	if h.RefreshTokens == nil {
+		httperror.Write(w, r, httperror.Unavailable(0))
+		return
+	}
+	rows, err := h.RefreshTokens.ListAppSignIns(r.Context(), p.UserID)
+	if err != nil {
+		httperror.Write(w, r, httperror.Internal("list app sign-ins").Wrap(err))
+		return
+	}
+	const ts = "2006-01-02T15:04:05Z07:00"
+	items := make([]appSignInView, 0, len(rows))
+	for _, a := range rows {
+		items = append(items, appSignInView{ID: a.FamilyID, Kind: a.Kind, Label: a.Label, Via: a.Via,
+			CreatedAt: a.CreatedAt.UTC().Format(ts), LastSeenAt: a.LastSeenAt.UTC().Format(ts),
+			ExpiresAt: a.ExpiresAt.UTC().Format(ts), Current: p.RefreshFamily != "" && p.RefreshFamily == a.FamilyID})
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	common.WriteJSON(w, r, http.StatusOK, map[string]any{"items": items})
+}
+
+// RevokeMeAppSignIn implements DELETE /api/me/app-sign-ins/{id}: signs that app out (its whole
+// refresh family). Owner-scoped: another person's sign-in is a 404.
+func (h *Handler) RevokeMeAppSignIn(w http.ResponseWriter, r *http.Request) {
+	p := principal.FromContext(r.Context())
+	if p == nil {
+		writeUnauthorized(w, r)
+		return
+	}
+	if h.RefreshTokens == nil {
+		httperror.Write(w, r, httperror.Unavailable(0))
+		return
+	}
+	id := chi.URLParam(r, "id")
+	if _, err := uuid.Parse(id); err != nil {
+		httperror.Write(w, r, httperror.NotFound("sign-in"))
+		return
+	}
+	ok, err := h.RefreshTokens.RevokeFamilyOf(r.Context(), p.UserID, id)
+	if err != nil {
+		httperror.Write(w, r, httperror.Internal("revoke app sign-in").Wrap(err))
+		return
+	}
+	if !ok {
+		httperror.Write(w, r, httperror.NotFound("sign-in"))
 		return
 	}
 	common.WriteNoContent(w)

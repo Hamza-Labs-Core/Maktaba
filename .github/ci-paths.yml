@@ -56,6 +56,10 @@ _go: &go
   - 'web/src/help/content/**'
   # the API level check reads docs/api/levels.md (Epic 58 story 58.01)
   - 'docs/api/levels.md'
+  # the review home's manifest and plan (Epic 58 story 58.04): api/internal/reviewhome and
+  # cloud/internal/billing's tests read them
+  - 'deploy/review-home/content/manifest.json'
+  - 'deploy/review-home/review-home.env.example'
 
 # the pipeline, and what its tests read outside it
 _pipeline: &pipeline
@@ -95,6 +99,8 @@ _web: &web
   - 'docs/nas/checklists/synology.md'
   # the problem types the web compares are checked against the registry (story 60.06)
   - 'shared/api/problems.json'
+  # the Cast sender: the receiver's app id (vite.config.ts) and the load vectors (58.06)
+  - 'shared/cast/**'
   # Epic 59's strings check reads the stories' Strings tables and the container's texts (59.14)
   - 'specs/epics/59-nas/story-*.md'
   - 'cmd/maktaba-server/container_preflight.go'
@@ -794,6 +800,10 @@ android_apps:
   - 'shared/api/problems.json'
   # the compatibility vectors the client's CompatTest runs (58.01)
   - 'shared/compat/**'
+  # the playback vectors the client's DeviceCapsTest runs (58.02, 58.05)
+  - 'shared/playback/**'
+  # the Cast sender's app id and load vectors (58.06)
+  - 'shared/cast/**'
   - '.github/workflows/_android-apps.yml'
   # the wrapper's jar check and distribution fetch (tools/ci/gradle-wrapper.sh), through fetch-pinned.sh
   - 'tools/ci/gradle-wrapper.sh'
@@ -812,6 +822,10 @@ android_tv:
   - 'apps/android/client/**'
   - 'apps/android/gradle/libs.versions.toml'
   - '.github/workflows/_android-tv.yml'
+  # the Fire TV APK's release lane and its Appstore submission (58.05)
+  - '.github/workflows/tv-release.yml'
+  - 'tools/release/amazon_submit.py'
+  - 'tools/ci/firetv-journey.sh'
   # the wrapper's jar check and distribution fetch (tools/ci/gradle-wrapper.sh), through fetch-pinned.sh
   - 'tools/ci/gradle-wrapper.sh'
   - 'tools/release/fetch-pinned.sh'
@@ -833,6 +847,42 @@ tv_web:
   - 'web/e2e/tv/**'
   - 'web/tv-build/**'
   - '.github/workflows/_tv-web.yml'
+  # the Samsung and LG launcher (story 58.09): its build, its Playwright, its Vitest (the
+  # vitest config names its tests) and the compatibility vectors its tests run (58.01)
+  - 'web/vite.launcher.config.ts'
+  - 'web/playwright.launcher.config.ts'
+  - 'web/e2e/launcher/**'
+  - 'web/vitest.config.ts'
+  - 'shared/compat/**'
+  # the device caps vectors the Samsung and LG readers are tested against (58.02)
+  - 'shared/playback/caps-vectors.json'
+
+# The Roku channel (Epic 58 stories 58.12, 58.13, 58.15): its BrightScript on brs-engine, the
+# build-time shaping of its Arabic catalogs and the shared vectors both are held to (_roku.yml)
+roku:
+  - *ci
+  # the Roku group (story 58.16): apps/tv/roku, shared/i18n/visual-vectors.json, tv-logs, the catalog check
+  - *roku
+  - '.github/workflows/_roku.yml'
+  # the release workflow builds and tests the same channel (58.13)
+  - '.github/workflows/roku-release.yml'
+  # the player's capability report is held to 58.02's device_caps vectors (58.13)
+  - 'shared/playback/caps-vectors.json'
+  # the channel's tests hold it to 58.01's compat vectors; its build bundles the Apple apps'
+  # Arabic font and draws its icons and splash from their Maktaba mark (58.12)
+  - 'shared/compat/vectors.json'
+  - 'apps/apple/MaktabaKit/Sources/MaktabaKit/Resources/Fonts/IBMPlexSansArabic-*'
+  - 'apps/apple/MaktabaKit/Sources/MaktabaKit/Resources/Fonts/OFL-IBMPlexSansArabic.txt'
+  - 'apps/apple/MaktabaKit/Sources/MaktabaKit/Resources/Art/maktaba-logo.png'
+
+# Maktaba's Cast receiver at cast.maktaba.tv (Epic 58 story 58.07): its package (the receiver,
+# the loader, the Worker, the tests) and its checks (_cast-receiver.yml); the release workflow
+# builds and tests the same package
+cast_receiver:
+  - *ci
+  - *cast_receiver
+  - '.github/workflows/_cast-receiver.yml'
+  - '.github/workflows/cast-receiver-release.yml'
 
 # The desktop Player for Windows and Linux (Epic 42.4): its project, the portable client
 # and the fonts it shares with the Android apps, the catalog.
@@ -858,8 +908,12 @@ apple_apps:
   - 'shared/api/problems.json'
   # the compatibility vectors MaktabaKit's CompatTests run (58.01)
   - 'shared/compat/**'
+  # the Cast sender's app id and load vectors (58.06)
+  - 'shared/cast/**'
   - 'apps/tv/tvos/**'
   - 'tools/apple/**'
+  # the check that each UI job's result bundle ran its selected tests
+  - 'tools/ci/xcresult_ran.py'
   - '.github/workflows/_apple-apps.yml'
   # the demo library the product screenshots' UI tests bundle and serve (story 60.09)
   - 'tests/fixtures/demo-library/**'
@@ -885,6 +939,7 @@ apple_player_ui:
   - 'tools/apple/check-app-log.py'
   - 'tools/apple/sim-settle.py'
   - 'tools/apple/export-shots.py'
+  - 'tools/ci/xcresult_ran.py'
   - '.github/workflows/_apple-apps.yml'
   # its on-demand caller for the shots alone (60.09)
   - '.github/workflows/product-shots.yml'

@@ -98,18 +98,22 @@ func TestEveryPluginRouteIsAdminOnly(t *testing.T) {
 	}
 }
 
-// Story 54.22 §4: GET /api/plugins lists Maktaba's own plugins under built_in, with their
-// names in both languages, their component and what each can do.
-func TestBuiltInListsTheFirstPartyPlugins(t *testing.T) {
+// Story 54.44: a plugin Maktaba publishes is a plugin as any other (IsPublished), and its
+// switch is the component whose stages it implements; anything else switches plugin.<id>.
+func TestAPublishedPluginSwitchesItsComponent(t *testing.T) {
 	raw, err := os.ReadFile("../../plugins/firstparty/testdata/toy.json")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer firstparty.UseBundle(raw)()
-	got := builtIn()
-	if len(got) != 1 || got[0].ID != "tv.maktaba.toy" || got[0].Name != "Toy" || got[0].NameAr != "لعبة" ||
-		got[0].Component != "classify" || len(got[0].Stages) != 1 || len(got[0].Capabilities) == 0 {
-		t.Fatalf("built_in %+v", got)
+	if !pl.IsPublished("tv.maktaba.toy") || pl.ComponentOf("tv.maktaba.toy") != "classify" {
+		t.Fatalf("toy: published %v, component %q", pl.IsPublished("tv.maktaba.toy"), pl.ComponentOf("tv.maktaba.toy"))
+	}
+	if pl.IsPublished("dev.example.x") || pl.ComponentOf("dev.example.x") != "plugin.dev.example.x" {
+		t.Fatalf("a third-party id: published %v, component %q", pl.IsPublished("dev.example.x"), pl.ComponentOf("dev.example.x"))
+	}
+	if pl.RefuseWithRelease("tv.maktaba.toy") == nil || pl.RefuseWithRelease("dev.example.x") != nil {
+		t.Fatal("only a plugin that comes with the release is refused its own update and removal")
 	}
 }
 

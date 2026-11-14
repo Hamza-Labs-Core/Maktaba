@@ -43,6 +43,26 @@ groups:
           summary: "The month's downtime budget burns: {{ $value | humanizePercentage }} of the last 6 h down"
           runbook_url: docs/runbooks/cloud/canary-down.md
 
+  - name: maktaba-review-home
+    rules:
+      # the store reviewers' home (Epic 58 story 58.04): tools/review_home/probe.py pushes each
+      # check's result every 15 minutes (review-home-probe.yml); a store reviewer may be shut out
+      - alert: review_home_down
+        expr: min by (check) (review_home_probe_success{job="review_home"}) == 0
+        for: 1m
+        labels: {severity: sev2}
+        annotations:
+          summary: "The store reviewers' home fails its {{ $labels.check }} check"
+          runbook_url: docs/runbooks/cloud/review-home-down.md
+      # the probe has not reported for an hour (four runs): it is off or failing to run
+      - alert: review_home_probe_stale
+        expr: time() - max(review_home_probe_last_run_seconds{job="review_home"}) > 3600
+        for: 5m
+        labels: {severity: sev3}
+        annotations:
+          summary: "The store reviewers' home has not been checked for over an hour"
+          runbook_url: docs/runbooks/cloud/review-home-down.md
+
   - name: maktaba-api-pool
     rules:
       # the api pool (story 50.17): each node's worker says whether it holds the leader lock;
@@ -91,6 +111,26 @@ groups:
         annotations:
           summary: "The leader could not take the Floating IP"
           runbook_url: docs/runbooks/cloud/hetzner-api-down.md
+
+  - name: maktaba-database
+    rules:
+      # the database nodes (story 50.18): PgBouncer on the primary is where the database's
+      # Floating IP lands; Patroni doesn't watch it, so its exporter does
+      - alert: pgbouncer_down
+        expr: (max by (node) (up{job="pgbouncer"} == 0 or pgbouncer_up == 0)) and on (node) (max by (node) (patroni_primary) == 1)
+        for: 1m
+        labels: {severity: sev1}
+        annotations:
+          summary: "PgBouncer is down on the database primary ({{ $labels.node }}): the apps can't reach the database"
+          runbook_url: docs/runbooks/cloud/pgbouncer-down.md
+      # a commit waits for one synchronous replica; none means commits are on the primary alone
+      - alert: sync_replica_missing
+        expr: sum(patroni_sync_standby or vector(0)) < 1 and sum(patroni_primary or vector(0)) > 0
+        for: 2m
+        labels: {severity: sev2}
+        annotations:
+          summary: "No synchronous replica: commits are on the primary alone (RPO is not 0)"
+          runbook_url: docs/runbooks/cloud/sync-replica-missing.md
 
   - name: maktaba-machines
     rules:

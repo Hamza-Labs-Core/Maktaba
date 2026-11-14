@@ -1,0 +1,144 @@
+{
+  "$comment": "What a Maktaba sender puts in the Cast load's MediaInfo.customData (story 58.06, docs/developers/contributing/casting.md). Each case: the sender's own base URL, the home's discovery urls (LAN first, the relay last), the grant, the item and the sender's language; expect is the custom data, or null when no address the TV can reach is known (then the sender hides Cast). The Kotlin, Swift and TypeScript senders each run every case. Rules: home is the first HTTPS address that is not localhost, a .local name or a bare IP, taken from urls, then the sender's own base; urls keeps those same qualifying addresses, in order, each once, without a trailing slash; lang is en or ar (anything else en); start_sec is whole seconds, never negative; queue_pos only with a queue.",
+  "cases": [
+    {
+      "name": "video on the LAN name",
+      "sender_base": "https://192-168-1-20.h1.direct.maktaba.tv:8444",
+      "discovery_urls": [
+        "http://192.168.1.20:8088",
+        "https://192-168-1-20.h1.direct.maktaba.tv:8444",
+        "https://h1.relay.maktaba.tv"
+      ],
+      "api_level": 1,
+      "lang": "ar",
+      "video_id": "8f0c2b1e-0000-4000-8000-000000000001",
+      "start_sec": 754.6,
+      "grant": "cast_GRANT",
+      "expect": {
+        "home": "https://192-168-1-20.h1.direct.maktaba.tv:8444",
+        "urls": [
+          "https://192-168-1-20.h1.direct.maktaba.tv:8444",
+          "https://h1.relay.maktaba.tv"
+        ],
+        "grant": "cast_GRANT",
+        "video_id": "8f0c2b1e-0000-4000-8000-000000000001",
+        "start_sec": 754,
+        "lang": "ar",
+        "api_level": 1
+      }
+    },
+    {
+      "name": "sender on the relay, the LAN name listed first",
+      "sender_base": "https://h1.relay.maktaba.tv",
+      "discovery_urls": [
+        "https://192-168-1-20.h1.direct.maktaba.tv:8444",
+        "https://h1.relay.maktaba.tv"
+      ],
+      "api_level": 1,
+      "lang": "en",
+      "queue_id": "5a1d0c3e-0000-4000-8000-000000000002",
+      "queue_pos": 3,
+      "start_sec": 0,
+      "grant": "cast_GRANT",
+      "expect": {
+        "home": "https://192-168-1-20.h1.direct.maktaba.tv:8444",
+        "urls": [
+          "https://192-168-1-20.h1.direct.maktaba.tv:8444",
+          "https://h1.relay.maktaba.tv"
+        ],
+        "grant": "cast_GRANT",
+        "queue_id": "5a1d0c3e-0000-4000-8000-000000000002",
+        "queue_pos": 3,
+        "start_sec": 0,
+        "lang": "en",
+        "api_level": 1
+      }
+    },
+    {
+      "name": "plain-HTTP, .local, localhost and bare IPs are never the home",
+      "sender_base": "http://maktaba.local:8088",
+      "discovery_urls": [
+        "http://192.168.1.20:8088",
+        "https://192.168.1.20:8444",
+        "https://maktaba.local:8444",
+        "https://localhost:8444",
+        "https://[fd00::20]:8444",
+        "https://h1.relay.maktaba.tv"
+      ],
+      "api_level": 2,
+      "lang": "fr",
+      "video_id": "8f0c2b1e-0000-4000-8000-000000000001",
+      "start_sec": -5,
+      "grant": "cast_GRANT",
+      "expect": {
+        "home": "https://h1.relay.maktaba.tv",
+        "urls": [
+          "https://h1.relay.maktaba.tv"
+        ],
+        "grant": "cast_GRANT",
+        "video_id": "8f0c2b1e-0000-4000-8000-000000000001",
+        "start_sec": 0,
+        "lang": "en",
+        "api_level": 2
+      }
+    },
+    {
+      "name": "no discovery urls: the sender's own HTTPS name",
+      "sender_base": "https://home.example.org/",
+      "discovery_urls": [],
+      "api_level": 1,
+      "lang": "ar",
+      "video_id": "8f0c2b1e-0000-4000-8000-000000000001",
+      "start_sec": 12,
+      "grant": "cast_GRANT",
+      "expect": {
+        "home": "https://home.example.org",
+        "urls": [
+          "https://home.example.org"
+        ],
+        "grant": "cast_GRANT",
+        "video_id": "8f0c2b1e-0000-4000-8000-000000000001",
+        "start_sec": 12,
+        "lang": "ar",
+        "api_level": 1
+      }
+    },
+    {
+      "name": "a queue position without a queue is dropped",
+      "sender_base": "https://h1.relay.maktaba.tv",
+      "discovery_urls": [
+        "https://h1.relay.maktaba.tv"
+      ],
+      "api_level": 1,
+      "lang": "en",
+      "video_id": "8f0c2b1e-0000-4000-8000-000000000001",
+      "queue_pos": 2,
+      "start_sec": 1,
+      "grant": "cast_GRANT",
+      "expect": {
+        "home": "https://h1.relay.maktaba.tv",
+        "urls": [
+          "https://h1.relay.maktaba.tv"
+        ],
+        "grant": "cast_GRANT",
+        "video_id": "8f0c2b1e-0000-4000-8000-000000000001",
+        "start_sec": 1,
+        "lang": "en",
+        "api_level": 1
+      }
+    },
+    {
+      "name": "only a LAN IP over plain HTTP: no address the TV can use",
+      "sender_base": "http://192.168.1.20:8088",
+      "discovery_urls": [
+        "http://192.168.1.20:8088"
+      ],
+      "api_level": 1,
+      "lang": "en",
+      "video_id": "8f0c2b1e-0000-4000-8000-000000000001",
+      "start_sec": 0,
+      "grant": "cast_GRANT",
+      "expect": null
+    }
+  ]
+}

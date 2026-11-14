@@ -1,0 +1,247 @@
+/* Story 58.09 — the launcher's screens: dark Ink & Brass (Epic 48's tokens), a 10-foot
+   layout at 1920×1080, the brass focus ring with a 1.08 scale. Logical properties only:
+   the build lowers them for Chromium 68 under [dir] (web/tv-build/tvcss.mjs). */
+
+:root {
+  --ml-ink: #0b111c;
+  --ml-ink-2: #141c2b;
+  --ml-ink-3: #1d2738;
+  --ml-paper: #f3eee2;
+  --ml-muted: #b9b2a3;
+  --ml-brass: #e3b252;
+  --ml-brass-deep: #b98a2e;
+  --ml-danger: #f08a7e;
+  --ml-sans: "IBM Plex Sans Arabic", system-ui, sans-serif;
+  --ml-serif: "Amiri", "IBM Plex Sans Arabic", serif;
+}
+
+html,
+body {
+  margin: 0;
+  block-size: 100%;
+  background: var(--ml-ink);
+  color: var(--ml-paper);
+  font-family: var(--ml-sans);
+  font-size: 30px;
+  overflow: hidden;
+}
+
+#stage {
+  position: fixed;
+  inset: 0;
+  background: #000;
+}
+
+.ml-plane {
+  position: absolute;
+  inset: 0;
+  inline-size: 100%;
+  block-size: 100%;
+  background: #000;
+}
+
+.ml-frame {
+  position: absolute;
+  inset: 0;
+  inline-size: 100%;
+  block-size: 100%;
+  border: 0;
+  /* transparent where /tv/ is: the video plane shows through while playing */
+  background: transparent;
+}
+
+#app {
+  position: fixed;
+  inset: 0;
+  overflow-y: auto;
+  background: radial-gradient(ellipse at top, var(--ml-ink-3), var(--ml-ink) 60%);
+  z-index: 1;
+}
+
+#app[hidden] {
+  display: none;
+}
+
+.ml-screen {
+  max-inline-size: 1100px;
+  margin-block: 0;
+  margin-inline: auto;
+  padding-block: 96px 64px;
+  padding-inline: 80px;
+}
+
+.ml-brand {
+  font-family: var(--ml-serif);
+  font-weight: 700;
+  font-size: 40px;
+  color: var(--ml-brass);
+  margin-block-end: 24px;
+}
+
+h1 {
+  font-family: var(--ml-serif);
+  font-weight: 700;
+  font-size: 64px;
+  line-height: 1.2;
+  margin-block: 0 32px;
+}
+
+h2 {
+  font-size: 30px;
+  font-weight: 600;
+  color: var(--ml-muted);
+  margin-block: 0 16px;
+}
+
+p {
+  margin-block: 0 20px;
+  line-height: 1.5;
+}
+
+.ml-lead {
+  font-size: 36px;
+}
+
+.ml-quiet,
+.ml-version {
+  color: var(--ml-muted);
+  font-size: 24px;
+}
+
+.ml-error {
+  color: var(--ml-danger);
+}
+
+.ml-section,
+.ml-list,
+.ml-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 16px;
+  margin-block-end: 32px;
+}
+
+.ml-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  box-sizing: border-box;
+  min-block-size: 88px;
+  padding-block: 18px;
+  padding-inline: 36px;
+  border: 3px solid transparent;
+  border-radius: 16px;
+  background: var(--ml-ink-2);
+  color: var(--ml-paper);
+  font: inherit;
+  font-size: 34px;
+  text-align: start;
+  cursor: pointer;
+  transition: transform 120ms ease-out;
+  list-style: none;
+}
+
+.ml-btn::-webkit-details-marker {
+  display: none;
+}
+
+.ml-btn--primary {
+  background: var(--ml-ink-3);
+}
+
+.ml-btn--quiet {
+  min-block-size: 64px;
+  padding-block: 10px;
+  font-size: 28px;
+}
+
+.ml-btn__sub {
+  margin-block-start: 6px;
+  font-size: 24px;
+  color: var(--ml-muted);
+}
+
+.ml-btn:focus,
+.ml-input:focus {
+  outline: none;
+  border-color: var(--ml-brass);
+  transform: scale(1.08);
+  box-shadow: 0 0 0 6px rgba(227, 178, 82, 0.25);
+}
+
+.ml-more {
+  margin-block-end: 32px;
+}
+
+.ml-more[open] > .ml-btn + .ml-btn {
+  margin-block-start: 16px;
+}
+
+.ml-label {
+  display: block;
+  color: var(--ml-muted);
+  margin-block-end: 12px;
+}
+
+.ml-input {
+  display: block;
+  box-sizing: border-box;
+  inline-size: 100%;
+  min-block-size: 88px;
+  padding-inline: 28px;
+  margin-block-end: 24px;
+  border: 3px solid var(--ml-ink-3);
+  border-radius: 16px;
+  background: var(--ml-ink-2);
+  color: var(--ml-paper);
+  font: inherit;
+  font-size: 36px;
+  text-align: left;
+}
+
+.ml-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-block-start: 48px;
+}
+
+bdi {
+  unicode-bidi: isolate;
+}
+
+/* Epic 58 (stories 58.10, 58.11) — Maktaba's own subtitles, over the video and over the
+   transparent iframe, never catching the pointer; under the launcher's own screens. */
+.ml-subs {
+  position: absolute;
+  inset-inline: 0;
+  /* above /tv/'s progress bar and buttons, which show over the picture on any key */
+  inset-block-end: 20%;
+  z-index: 1;
+  padding-inline: 8%;
+  text-align: center;
+  pointer-events: none;
+  line-height: 1.3;
+  font-family: var(--ml-sans);
+}
+
+.ml-subs[hidden] {
+  display: none;
+}
+
+.ml-cue {
+  margin-block-start: 0.2em;
+  unicode-bidi: plaintext;
+}
+
+.ml-cue > span {
+  display: inline-block;
+  white-space: pre-line;
+  padding-block: 0.08em;
+  padding-inline: 0.35em;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.72);
+  color: #fff;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.9);
+}

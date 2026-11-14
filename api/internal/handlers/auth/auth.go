@@ -172,6 +172,8 @@ func (h *Handler) Mount(r chi.Router) {
 	r.Get("/api/me", h.GetMe)
 	r.Get("/api/me/sessions", h.MeSessions)
 	r.Delete("/api/me/sessions/{id}", h.RevokeMeSession)
+	r.Get("/api/me/app-sign-ins", h.MeAppSignIns)
+	r.Delete("/api/me/app-sign-ins/{id}", h.RevokeMeAppSignIn)
 	r.Patch("/api/me", h.UpdateMe)
 	r.Post("/api/me/change-password", h.ChangePassword)
 	// /api/auth/me is NOT in the public allowlist, so the global
@@ -487,6 +489,23 @@ func (h *Handler) Refresh(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.Internal("resolve library acl").Wrap(err))
 		return
 	}
+	// a TV that came by a cloud code stays restricted: it never acts as an admin and mints no
+	// credential of its own (Epic 58 story 58.03)
+	noAdmin := false
+	if scope == "" {
+		restricted, err := h.cloudCodeFamily(r.Context(), next.FamilyID)
+		if err == nil && restricted {
+			claims.Rst = true
+			if u.IsAdmin {
+				noAdmin, claims.IsAdmin = true, false
+				claims.Lib, err = h.everyLibrary(r.Context())
+			}
+		}
+		if err != nil {
+			httperror.Write(w, r, httperror.Internal("resolve a cloud code's sign-in").Wrap(err))
+			return
+		}
+	}
 	// the sign-in and its device's age limit ride in the token (`fam`, `ac`): a
 	// limit that cannot be read mints no token (Epic 57 story 57.04)
 	claims.Fam = next.FamilyID
@@ -504,6 +523,9 @@ func (h *Handler) Refresh(w http.ResponseWriter, r *http.Request) {
 	user := toUserResponse(u)
 	if scope != "" {
 		user = cloudUser(u, scope)
+	}
+	if noAdmin {
+		user.IsAdmin = false
 	}
 	common.WriteJSON(w, r, http.StatusOK, nativeLoginResponse{
 		AccessToken:      access,
@@ -867,6 +889,27 @@ func (h *Handler) CookieAuth(next http.Handler) http.Handler {
 }
 
 // ---------- internal helpers ----------
+
+// cloudCodeFamily reports whether a refresh family is a TV that came by a cloud code
+// (discovery.ViaCloudCode on its first token): such a sign-in never acts as an admin.
+func (h *Handler) cloudCodeFamily(ctx context.Context, familyID string) (bool, error) {
+	via, err := h.RefreshTokens.FamilyVia(ctx, familyID)
+	return via == viaCloudCode, err
+}
+
+// viaCloudCode is discovery.ViaCloudCode (this package cannot import the handler's).
+const viaCloudCode = "cloud_code"
+
+// everyLibrary names every library: what an admin's sign-in that may not act as an admin reads.
+func (h *Handler) everyLibrary(ctx context.Context) ([]string, error) {
+	all, ok := h.ACL.(interface {
+		AllLibraries(ctx context.Context) ([]string, error)
+	})
+	if !ok {
+		return nil, errors.New("auth: no library list")
+	}
+	return all.AllLibraries(ctx)
+}
 
 // librariesFor snapshots the libraries this user can read for the JWT
 // `lib[]` claim. Admins read everything, so we skip the ACL lookup and

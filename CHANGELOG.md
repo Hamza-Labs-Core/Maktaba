@@ -14,6 +14,21 @@ build fails when the two differ.
 
 ### Changed
 
+- **VoiceOver reaches a Home card's menu without the long press (Apple Player).** On iPhone,
+  iPad and the Mac, each Home card offers its context menu's items as VoiceOver actions:
+  Resume on a Continue Watching card, Not interested on a recommendation, named as the menu
+  names them in English and Arabic. Each does what its menu item does.
+
+- **The cloud's database can run on machines of its own (Epic 50, story 50.18).** Three
+  database nodes (a primary, a replica that confirms every commit, and a second replica) sit
+  behind PgBouncer and a Floating IP of their own; losing the primary promotes the replica that
+  has every commit, the address follows it, and the cloud's machines reconnect without a
+  restart. The cloud now works through PgBouncer's transaction pool (each query with arguments
+  goes in one round trip), and a script moves the Phase 1 pair's database to the new nodes with
+  one short pause in writes. In the cloud rehearsal the primary was killed under load with no
+  committed write lost, and the move ran end to end. Nothing changes for households until the
+  machines are created.
+
 - **The cloud's api can run on several machines at once (Epic 50, story 50.17).** The worker's
   jobs (expired sign-in cleanup, account deletions, the relayed streams' sweep, pay-as-you-go
   reports) run on exactly one node, the one holding a database lock, and another node takes
@@ -272,6 +287,16 @@ build fails when the two differ.
 - **Big screen has a way out you can see.** Every big screen page has **Leave big screen** in its top row, reachable with a mouse or the arrows, and it leaves at once. The Mac, Windows and Linux apps have **View → Leave Big Screen**, and **View → Big Screen** (`Cmd+Shift+B`, `Ctrl+Shift+B`) now leaves when you are already in it. Before, the only ways out were Settings or Back on Home.
 
 ### Fixed
+
+- **The older playback profiles read HEVC and Dolby audio by ffprobe's names.** A player that
+  names one of the older client profiles (`android-native`, `androidtv`) now direct-plays an
+  HEVC file it decodes: the profiles spelled HEVC `h265` and the probe says `hevc`, so those
+  files were transcoded. Those profiles also stop direct-playing HDR or Dolby Vision they do not
+  show (a Dolby Vision profile 5 file on an Android phone, HDR10 AV1 in Chrome): it is
+  transcoded to SDR instead. `browser-chrome`, `browser-safari`, `ios-native` and `tvos` no
+  longer list HEVC (Chrome decodes it only on some hardware; Safari and AVPlayer refuse HEVC
+  tagged `hev1`), so they keep transcoding it as before. The apps that ship today send no such
+  profile, so nothing they play changes.
 
 - **The Queues page says which workers are not running their jobs, and an admin can restart
   them.** A worker can stay up and start nothing while the others work (after the database
@@ -843,6 +868,49 @@ build fails when the two differ.
   alerted.
 
 ### Added
+
+- **Playing on Roku (Epic 58, story 58.13).** The Roku channel's player: it tells the home
+  what this Roku plays (H.264, HEVC, AV1 inside DASH, HDR10, HLG, Dolby Vision 5, the Dolby
+  passthroughs), so a 4K HDR file plays directly where the Roku can and is converted only where
+  it cannot. Maktaba's own controls replace Roku's bar: title, series, chapter, position, scrub
+  thumbnails, and audio and subtitle choices. Arabic subtitles are drawn by the channel, joined
+  and right to left; other languages by Roku, following its caption settings. Progress is
+  saved every 10 seconds and on pause and Back; Play all and Shuffle show Up next 15 seconds
+  before the end; a video the Roku cannot play is tried once more as a converted version, then
+  the error shows, with the home's reason when it gives one. A tag whose channel changed attaches the channel's
+  store zip to the release; signing it on a Roku and submitting it to Roku's store stay with
+  the owner (docs/stores/roku.md, with Roku's certification table and the real-device checks).
+- **Maktaba on Roku (Epic 58, story 58.12).** A Roku channel: a household signs in once with a
+  code its phone approves (through Maktaba Cloud, or the home's own code after finding it on the
+  network, or its address), and each later launch opens that home's Home. Continue watching,
+  Recently added and For you; the libraries with their five tabs, Play and Shuffle and the
+  letter rail; series, search, Resume or Start over, and the account page, on Roku's remote
+  (`*` opens a card's actions; Back asks before leaving). Deep links play the video, or open
+  Home saying it isn't available. English and Arabic, every screen mirrored and Arabic joined in
+  reading order with a bundled font. Nothing is sold in the channel. It is not in Roku's store
+  yet: a Roku in developer mode installs it from source; docs/stores/roku.md lists the steps
+  left to the store and the checks a real Roku runs.
+- **A home for TV store reviewers (Epic 58, story 58.04).** review.maktaba.tv is a Maktaba home
+  the project runs with public-domain and openly licensed content only (Blender's and Netflix's
+  open films, a CC BY lecture series, a LibriVox audiobook, each titled in English and Arabic),
+  test files for 4K HDR10, 1080p, an MKV with EAC3 and Arabic subtitles and a transcode, a
+  viewer account for reviewers and a restricted child for the parental checks.
+  `maktaba-server review-home seed|rotate` sets it up and rotates its passwords after each
+  submission round; the passwords live only in the release secrets, every store's submission
+  notes name the secret (`docs/stores/review-home.md`), and a check every 15 minutes walks the
+  cloud code and a stream of each test file.
+
+- **The Android Player casts to Maktaba's own receiver (Epic 58, story 58.06).** The Player's
+  Cast button now sends the video, or the whole **Play all** or **Shuffle** queue, to Maktaba's
+  receiver with a cast grant the phone mints for it; the TV plays and reports progress by
+  itself, so the phone can lock or leave and Continue Watching follows the TV. While the TV
+  plays, the phone posts no progress of its own and shows the TV's name and what it plays,
+  following the queue as the TV walks it; ending the cast opens the video on the phone where
+  the TV was. A home older than the cast grant still casts to Google's player with the signed
+  address, and the Player says so. With no TV on the network the Player says the TV must be on
+  the same Wi-Fi; a refused grant says why and casts nothing. English and Arabic. Until the
+  receiver's application ID is set in `shared/cast/app.json` (or `-Pmaktaba.castAppId`), the
+  Player shows no Cast button.
 
 - **A cast grant for Maktaba's Cast receiver (Epic 58, story 58.07).** A signed-in phone or
   browser can now mint a cast grant on the home (`POST /api/cast/grants`) for the one video or
@@ -2649,16 +2717,95 @@ build fails when the two differ.
   carries `stream_sig`, which signs its subtitle and chapter URLs, so a TV player that sends no
   header fetches every URL it needs. The older profiles decide as before.
 
-- **A published channel airs only what may be shared online (Epic 50, story 50.23).** While a
-  Live TV channel is broadcast, it airs only publishable items: the household's own recordings,
-  items cleared with a proof link, Creative Commons Attribution videos (read from YouTube at
-  intake and at every refresh), and sources the household recorded permission for, with the link
-  where the source allows sharing. The Broadcast page shows how much of each channel's next 7
-  days may air and the sources that would add most, each with Record permission. Turning the
-  limit off takes a typed confirmation. Each channel can play only in chosen countries or
-  everywhere but them, and Maktaba's own deny list applies to every channel; a viewer outside
-  sees that the channel isn't available in their country. An item that loses its permission
-  plays the "Not available online" card until the schedule is rebuilt.
+- **The Samsung and LG app's launcher (story 58.09).** The app a Samsung (Tizen) or LG (webOS)
+  TV will install finds the home (the last one used opens at once; Find on this network tries
+  every address of the TV's network; or the home's address typed), checks that the home and the
+  app can work together, and shows the home's own TV interface full screen. Inside it the TV
+  signs in by the home's code, approved on a phone or a computer, and never asks for a password;
+  on the home's network without HTTPS the code screen and Settings → Connection say the
+  connection is not encrypted, and Settings → Switch home picks another home. English and
+  Arabic, right to left in Arabic. The store packages come with stories 58.10 and 58.11.
+
+- **Maktaba TV on Fire TV (story 58.05).** The Android TV app now has an Amazon Appstore build
+  for Fire TV sticks, the Cube and Fire TV Edition sets (Fire OS 7 or later): the same screens in
+  English and Arabic, signing in by the home's code, Amazon's remote, and Amazon's launcher. It
+  carries no Google Play code (CI checks its dependencies and manifest on every run), names itself
+  `firetv` to the home, and opens each stream with a report of what the TV plays (its hardware
+  decoders, the screen's HDR and the receiver's surround formats), which an older home is not
+  sent. A tag builds `maktaba-tv-<version>-amazon.apk`, signed and staged as a draft in the
+  Appstore once the Amazon keys are set; it reaches the store only after the real-device
+  checklist in `docs/stores/amazon.md` passed. Nothing is sold in it.
+
+- **Maktaba on LG TVs (story 58.11).** An LG TV on webOS 5 or later (2020 on) gets Maktaba as
+  an app: the launcher, packed as an `.ipk` that each release whose launcher changed attaches,
+  ready for the LG Content Store. Videos play on the TV's own player, with no conversion where
+  the TV can play the file: 4K, HDR10 and HLG, Dolby audio passed to a receiver, and Dolby
+  Vision only on the model years proven on a real TV. The app tells the home what the TV plays,
+  so the home converts only what it must; a file the TV refuses is opened again, converted,
+  from where it stopped. Subtitles are drawn by Maktaba, Arabic right to left, at the player's
+  sizes, and the Audio panel switches tracks. Back and the Magic Remote work as on the web
+  pages; Back from Home asks before leaving. The store listing, the review scenario and the
+  real-device checklist are in English and Arabic; the submission is made by a person.
+
+- **Maktaba for Samsung TVs (Epic 58, story 58.10).** The Samsung launcher plays with the TV's
+  own player, AVPlay: 4K, HDR10 and HLG where the TV has them, Dolby Digital and Dolby Digital
+  Plus passed through to a soundbar that takes them, audio track choice and seeking. It tells
+  the home what the TV plays (the decoder, the panel, HDR and the audio output), never Dolby
+  Vision, so the home sends files as they are when it can. Subtitles are drawn by Maktaba, so
+  Arabic is joined and right to left at the chosen size; a file the TV cannot play says so and
+  plays converted. The media and colour keys reach the TV screens, and Back on the top screen
+  asks before leaving. A tag whose launcher changed builds `maktaba-tizen-<version>.wgt`,
+  signed with the project's Samsung certificates; every pull request builds and lints the
+  unsigned package. The store listing and the checklist on real TVs are in
+  `docs/stores/samsung.md`.
+
+- **Maktaba's own Cast receiver (Epic 58, story 58.07).** Casting to a Chromecast, a Google TV
+  Streamer or a TV with Cast built in can now show Maktaba's player on the TV instead of Google's:
+  the title, the series, the position and chapter, an Up next card in a queue, the poster and
+  description when paused, and plain errors with what to do next, dark and in the sender's
+  language (Arabic mirrored, times kept left to right). The TV reaches the home on its own
+  network first and through Maktaba Cloud after 3 seconds, with a Remote badge; it reports
+  where it is every 10 seconds, renews its links, moves through the queue, and asks the home to
+  convert a file it cannot play. It is a page at cast.maktaba.tv that serves every home version
+  (an older home is asked to update); it needs the Cast console registration and the phone
+  apps' update (story 58.06) before anyone can cast to it.
+
+- **Cast to a TV from Chrome (Epic 58, story 58.06).** In Chrome, on the home's secure address,
+  the web player's **Cast to a TV** sends the video, or the whole **Play all** or **Shuffle**
+  queue, to a Chromecast, a Google TV or a TV with Chromecast built in, through Maktaba's own
+  receiver. The browser mints a cast grant for the video or queue and hands it to the TV, which
+  then plays and reports progress by itself, so the tab can close and Continue Watching follows
+  the TV; the player shows the TV's name, play, pause and **Stop casting**, and the TV follows
+  the web app's language. No Cast button on `http://`, in other browsers or through Maktaba
+  Cloud. The receiver's application ID lives in `shared/cast/app.json` with the custom-data
+  vectors every sender runs (`shared/cast/load-vectors.json`); until the ID is set, no build
+  shows Cast. The cast grant's refusals (`cast_via_cloud`, `cast_needs_person`, `cast_scope`)
+  now have their problem pages.
+
+- **Sign a TV in from anywhere with a code (story 58.03).** A TV that cannot find its home, or is
+  at a relative's house, can ask Maktaba Cloud for a code (`POST /v1/tv/codes`), and a person
+  signed in on the home approves it (`POST /api/pairing/cloud-approve`, after
+  `GET /api/pairing/cloud-code/{code}` shows the TV's platform and country). The home claims the
+  code through its relay agent with a single-use grant of its own; the TV collects the home's
+  connections and the grant once and signs in on the home, LAN first and the relay last, as the
+  approver, with their libraries and parental policy. Such a TV never acts as an admin, even
+  an admin's, and makes no credential of its own (no API token, no approval of another
+  device): a cloud code can be read out to anyone anywhere. No cloud account is needed, only a
+  home with remote access. Codes last 10 minutes, at most 10 per address, and the cloud sweeps
+  them an hour after they expire. `GET /api/me/app-sign-ins` lists a person's apps signed in by
+  code (a cloud-code TV says so) and `DELETE /api/me/app-sign-ins/{id}` signs one out. The
+  approve screens in the Players and the web follow.
+
+- **The broadcast edge, built and rehearsed in CI (story 50.21).** Maktaba Cloud now has the
+  Cloudflare Worker a published channel will play from: a home pushes each segment of each
+  rendition once to `ingest.maktaba.tv`, and viewers' players fetch playlists and segments from
+  `live.maktaba.tv` at Cloudflare's edge, so a home's upload is the same for one viewer as for
+  ten thousand. Each home has its own signed ingest token for one channel and its rungs, valid a
+  day and asked for again every hour; a viewer's token lives ten minutes. When a home goes
+  quiet, its channel plays the home's offline slate and returns to live when it is back.
+  Segments are deleted ten minutes after they arrive; nothing is kept for catch-up. Stream is the
+  switchable fallback. The edge stores and delivers what a home sends and never chooses, ranks
+  or recommends anything. It is not deployed yet: broadcasting stays off until its gate opens.
 
 - **A home can broadcast chosen Live TV channels to viewers outside it (Epic 50, story 50.22).**
   An admin sets a channel up on the new Broadcast panel of the Live TV page (its link name,
@@ -2673,16 +2820,16 @@ build fails when the two differ.
   Only admins can set up, publish or unpublish, and the API enforces it. Broadcasting is off
   until an admin turns it on, and nothing reaches viewers until the broadcast edge is deployed.
 
-- **The broadcast edge, built and rehearsed in CI (story 50.21).** Maktaba Cloud now has the
-  Cloudflare Worker a published channel will play from: a home pushes each segment of each
-  rendition once to `ingest.maktaba.tv`, and viewers' players fetch playlists and segments from
-  `live.maktaba.tv` at Cloudflare's edge, so a home's upload is the same for one viewer as for
-  ten thousand. Each home has its own signed ingest token for one channel and its rungs, valid a
-  day and asked for again every hour; a viewer's token lives ten minutes. When a home goes
-  quiet, its channel plays the home's offline slate and returns to live when it is back.
-  Segments are deleted ten minutes after they arrive; nothing is kept for catch-up. Stream is the
-  switchable fallback. The edge stores and delivers what a home sends and never chooses, ranks
-  or recommends anything. It is not deployed yet: broadcasting stays off until its gate opens.
+- **A published channel airs only what may be shared online (Epic 50, story 50.23).** While a
+  Live TV channel is broadcast, it airs only publishable items: the household's own recordings,
+  items cleared with a proof link, Creative Commons Attribution videos (read from YouTube at
+  intake and at every refresh), and sources the household recorded permission for, with the link
+  where the source allows sharing. The Broadcast page shows how much of each channel's next 7
+  days may air and the sources that would add most, each with Record permission. Turning the
+  limit off takes a typed confirmation. Each channel can play only in chosen countries or
+  everywhere but them, and Maktaba's own deny list applies to every channel; a viewer outside
+  sees that the channel isn't available in their country. An item that loses its permission
+  plays the "Not available online" card until the schedule is rebuilt.
 
 ### Changed
 
@@ -3036,6 +3183,19 @@ build fails when the two differ.
   Back steps out to the tab's top, then its tabs, then out; each tab keeps its place. Up next shows
   in a video's last 30 seconds, and a shuffled queue offers Shuffle again. A focused card grows by
   1.08 inside the brass ring.
+
+- **One Plugins page for every plugin (story 54.44).** Settings → Plugins lists every plugin
+  in one list, the ones Maktaba publishes and the ones you installed, each marked with who
+  publishes it, with a filter. Every plugin has its own switch on its card, its jobs of the
+  last day, its problems (a link to its failed jobs and its logs) and the memory of the
+  program that runs it, said plainly when several plugins share that program. Each plugin has
+  a page at its own address. A plugin by Maktaba still comes with Maktaba and is updated with
+  it; its page says so instead of offering Remove. The parts that must always run are part of
+  Maktaba itself and are no longer shown as plugins. The Components page links to each
+  plugin's page. For scripts: `GET /api/plugins` has no `built_in` field any more. Its
+  `plugins` list is the installed plugins, as before; `GET /api/plugins?release=true` adds
+  Maktaba's plugins with `publisher` and `source`. `GET /api/queues/failures` takes several
+  stages in `stage`.
 
 ### Fixed
 
@@ -3611,6 +3771,10 @@ build fails when the two differ.
   they read the video, so a non-admin gets 403 whether or not the video exists. In the web, a
   library's refusal reads "Not available in this library" to anyone who is not an admin; an admin
   keeps the read-only reason and its fix.
+
+- **The Android TV app names itself to the home.** Its library, playlist and play-queue calls sent
+  `X-Maktaba-Client: native` instead of the app's name and version, so the home could not tell a
+  TV too old for it on those calls; they now send the same header as sign-in does.
 
 ## [0.2.0] - 2026-10-19
 

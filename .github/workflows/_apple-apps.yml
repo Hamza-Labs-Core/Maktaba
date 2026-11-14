@@ -332,9 +332,17 @@ jobs:
               < <(python3 ../../tools/apple/ui-shard.py "$device" "$shard" "$shards" UITests/Player*Tests.swift)
           fi
           echo "shard $shard/$shards: ${#only[@]} arguments for $((${#only[@]} / 2)) tests"
+          printf '%s\n' "${only[@]}" > "$RESULTS/$device-$shard.selection"
           xctestrun=$(ls "$PRODUCTS/Products/${scheme}_iphonesimulator"*.xctestrun)
           TEST_RUNNER_MAKTABA_SHOTS="$SHOTS" xcodebuild test-without-building -xctestrun "$xctestrun" \
             -destination "id=$UDID" -resultBundlePath "$RESULTS/$device-$shard.xcresult" "${only[@]}"
+
+      # xcodebuild can say TEST EXECUTE SUCCEEDED for a run that ran none, or not all, of its
+      # tests: a runner restarted after an unexpected exit may run nothing (CI run 43605618404,
+      # #1312: 1 iteration of 20, the job green). Reads the result bundle and fails on no test
+      # run, a selected test missing from it, or fewer iterations than asked.
+      - name: Check every selected test ran
+        run: python3 tools/ci/xcresult_ran.py "${{ matrix.device }} ${{ matrix.shard }}/${{ matrix.shards }}" "$RESULTS/${{ matrix.device }}-${{ matrix.shard }}.xcresult" "$RESULTS/${{ matrix.device }}-${{ matrix.shard }}.selection"
 
       # the app's own log (MaktabaKit's `Log`: the requests to the mock home, connects,
       # sign-ins), kept with the results, read once the tests are done: a failed wait
@@ -439,9 +447,14 @@ jobs:
           if [ "$SHOTS_ONLY" != true ]; then
             only+=(-only-testing "Maktaba TV UITests/TVLiveUITests" -only-testing "Maktaba TV UITests/TVParentalUITests")
           fi
+          printf '%s\n' "${only[@]}" > "$RESULTS/tv.selection"
           TEST_RUNNER_MAKTABA_SHOTS="$SHOTS" xcodebuild test -project Maktaba.xcodeproj -scheme "Maktaba TV" \
             -destination "id=$UDID" -derivedDataPath "$DERIVED" -resultBundlePath "$RESULTS/tv.xcresult" \
             CODE_SIGNING_ALLOWED=NO "${only[@]}"
+
+      # the result bundle ran every selected test (as the Player's shards check theirs)
+      - name: Check every selected test ran
+        run: python3 tools/ci/xcresult_ran.py "tv" "$RESULTS/tv.xcresult" "$RESULTS/tv.selection"
 
       - name: Keep the app's log, delete the simulator
         if: always() && env.UDID != ''
@@ -520,8 +533,10 @@ jobs:
                 -only-testing "Maktaba Player Mac Tests/SeriesScreenDetails"
                 -only-testing "Maktaba Player Mac Tests/PageSnapshots"
                 -only-testing "Maktaba Player Mac Tests/PlaybackUnderALimit"
+                -only-testing "Maktaba Player Mac Tests/HomeCardActions"
                 -only-testing "Maktaba Player Mac UITests")
           if [ "$SHOTS_ONLY" = true ]; then only=(-only-testing "Maktaba Player Mac UITests/PlayerMacDemoShotsUITests"); fi
+          printf '%s\n' "${only[@]}" > "$RESULTS/mac.selection"
           TEST_RUNNER_MAKTABA_SHOTS="$SHOTS" xcodebuild test -project Maktaba.xcodeproj -scheme "Maktaba Player Mac" \
             -destination platform=macOS -derivedDataPath "$DERIVED-mac" ${cover[@]+"${cover[@]}"} \
             CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= PROVISIONING_PROFILE_SPECIFIER= \
@@ -531,6 +546,10 @@ jobs:
             --predicate 'subsystem BEGINSWITH "com.hamzalabs.maktaba"' > "$RESULTS/mac-app.log" || true
           python3 ../../tools/apple/check-app-log.py "$RESULTS/mac-app.log" || status=1
           exit $status
+
+      # the result bundle ran every selected test (as the Player's shards check theirs)
+      - name: Check every selected test ran
+        run: python3 tools/ci/xcresult_ran.py "mac" "$RESULTS/mac.xcresult" "$RESULTS/mac.selection"
 
       # tools/affected-tests: which source files the Mac Player's tests execute. The iPhone and
       # iPad runs are not measured (they take most of an hour as it is): their tests are
@@ -632,9 +651,14 @@ jobs:
             || echo "::warning::the status bar override failed: the shots keep the simulator's own"
           only=(-only-testing "Maktaba Remote UITests/RemoteDemoShotsUITests")
           if [ "$SHOTS_ONLY" != true ]; then only+=(-only-testing "Maktaba Remote UITests/RemoteDiagnosticsUITests"); fi
+          printf '%s\n' "${only[@]}" > "$RESULTS/remote.selection"
           TEST_RUNNER_MAKTABA_SHOTS="$SHOTS" xcodebuild test -project Maktaba.xcodeproj -scheme "Maktaba Remote" \
             -destination "id=$UDID" -derivedDataPath "$DERIVED" -resultBundlePath "$RESULTS/remote.xcresult" \
             CODE_SIGNING_ALLOWED=NO "${only[@]}"
+
+      # the result bundle ran every selected test (as the Player's shards check theirs)
+      - name: Check every selected test ran
+        run: python3 tools/ci/xcresult_ran.py "remote" "$RESULTS/remote.xcresult" "$RESULTS/remote.selection"
 
       - name: Keep the app's log, delete the simulator
         if: always() && env.UDID != ''

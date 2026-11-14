@@ -1,0 +1,240 @@
+{
+  "schema": 1,
+  "media_root": "/srv/review-media",
+  "libraries": [
+    {"id": "films", "dir": "films", "name_en": "Films", "name_ar": "أفلام", "age_tier": 0},
+    {"id": "films-older", "dir": "films-older", "name_en": "Films for older viewers", "name_ar": "أفلام للكبار", "age_tier": 13},
+    {"id": "lectures", "dir": "lectures", "name_en": "Lectures", "name_ar": "محاضرات", "age_tier": 0},
+    {"id": "audiobooks", "dir": "audiobooks", "name_en": "Audiobooks", "name_ar": "كتب مسموعة", "age_tier": 0}
+  ],
+  "channel": {"name_en": "Review TV", "name_ar": "قناة المراجعة", "library": "films", "number": 1},
+  "items": [
+    {
+      "id": "spring",
+      "library": "films",
+      "file": "spring.mp4",
+      "title_en": "Spring",
+      "title_ar": "الربيع",
+      "licence": "CC-BY-4.0",
+      "licence_url": "https://creativecommons.org/licenses/by/4.0/",
+      "attribution": "Spring, Blender Animation Studio (2019)",
+      "covers": ["1080p-h264"],
+      "sources": [
+        {
+          "url": "https://archive.org/download/springopenmovie/springopenmovie.mp4",
+          "page": "https://archive.org/details/springopenmovie",
+          "size": 90190341,
+          "sha1": "13cd5e46194a7c0e6e772824dce8cd565afb8822"
+        }
+      ]
+    },
+    {
+      "id": "meridian",
+      "library": "films",
+      "file": "meridian-4k-hdr10.mp4",
+      "title_en": "Meridian",
+      "title_ar": "ميريديان",
+      "licence": "CC-BY-4.0",
+      "licence_url": "https://creativecommons.org/licenses/by/4.0/",
+      "attribution": "Meridian, Netflix (2016); re-encoded as 4K HEVC Main 10 with HDR10 metadata for the review home",
+      "covers": ["4k-hevc-hdr10"],
+      "sources": [
+        {
+          "url": "https://archive.org/download/meridian-netflix-2016/Meridian_UHD4k5994_HDR_P3PQ.mp4",
+          "page": "https://archive.org/details/meridian-netflix-2016",
+          "size": 850587087,
+          "sha1": "4908929d3f23d8b797c472f5b157a4289f607f31"
+        }
+      ],
+      "derive": [
+        "-i", "{src0}", "-map", "0:v:0", "-an",
+        "-vf", "format=yuv420p10le",
+        "-c:v", "libx265", "-preset", "medium", "-crf", "20",
+        "-x265-params", "hdr10=1:repeat-headers=1:colorprim=bt2020:transfer=smpte2084:colormatrix=bt2020nc:master-display=G(13250,34500)B(7500,3000)R(34000,16000)WP(15635,16450)L(10000000,1):max-cll=1000,400",
+        "-color_primaries", "bt2020", "-color_trc", "smpte2084", "-colorspace", "bt2020nc",
+        "-tag:v", "hvc1", "-movflags", "+faststart",
+        "{out}"
+      ]
+    },
+    {
+      "id": "big-buck-bunny",
+      "library": "films",
+      "file": "big-buck-bunny-theora.mkv",
+      "title_en": "Big Buck Bunny",
+      "title_ar": "الأرنب الكبير باك",
+      "licence": "CC-BY-3.0",
+      "licence_url": "https://creativecommons.org/licenses/by/3.0/",
+      "attribution": "Big Buck Bunny, Blender Foundation (2008), peach.blender.org; Theora and Vorbis kept, so every TV needs a transcode",
+      "covers": ["transcode"],
+      "sources": [
+        {
+          "url": "https://archive.org/download/BigBuckBunny_124/Content/big_buck_bunny_720p_surround.ogv",
+          "page": "https://archive.org/details/BigBuckBunny_124",
+          "size": 46935223,
+          "sha1": "a4b16adc157716943ef76181651896ee24636178"
+        }
+      ],
+      "derive": ["-i", "{src0}", "-map", "0", "-c", "copy", "{out}"]
+    },
+    {
+      "id": "sintel",
+      "library": "films-older",
+      "file": "sintel.mp4",
+      "title_en": "Sintel",
+      "title_ar": "سينتل",
+      "licence": "CC-BY-3.0",
+      "licence_url": "https://creativecommons.org/licenses/by/3.0/",
+      "attribution": "Sintel, Blender Foundation (2010), durian.blender.org",
+      "covers": [],
+      "sources": [
+        {
+          "url": "https://archive.org/download/Sintel/sintel-2048-surround.mp4",
+          "page": "https://archive.org/details/Sintel",
+          "size": 310674005,
+          "sha1": "8a2b4622859894b18748a764a8cd064b9b6eebce"
+        }
+      ]
+    },
+    {
+      "id": "cosmos-laundromat",
+      "library": "films-older",
+      "file": "cosmos-laundromat.mkv",
+      "title_en": "Cosmos Laundromat: First Cycle",
+      "title_ar": "مغسلة الكون: الدورة الأولى",
+      "licence": "CC-BY-4.0",
+      "licence_url": "https://creativecommons.org/licenses/by/4.0/",
+      "attribution": "Cosmos Laundromat: First Cycle, Blender Institute (2015); audio as EAC3, English and Arabic WebVTT subtitles (the Arabic translated for the review home)",
+      "covers": ["mkv-eac3-webvtt"],
+      "sources": [
+        {
+          "url": "https://archive.org/download/CosmosLaundromatFirstCycle/Cosmos%20Laundromat%20-%20First%20Cycle%20(1080p).mp4",
+          "page": "https://archive.org/details/CosmosLaundromatFirstCycle",
+          "size": 220087570,
+          "sha1": "25c14461f067643515e93f1b89558c8aa78a74c1"
+        }
+      ],
+      "subtitles": [
+        {"lang": "en", "path": "subtitles/cosmos-laundromat.en.vtt"},
+        {"lang": "ar", "path": "subtitles/cosmos-laundromat.ar.vtt"}
+      ],
+      "derive": [
+        "-i", "{src0}", "-i", "{sub0}", "-i", "{sub1}",
+        "-map", "0:v:0", "-map", "0:a:0", "-map", "1:0", "-map", "2:0",
+        "-c:v", "copy", "-c:a", "eac3", "-b:a", "448k", "-c:s", "webvtt",
+        "-metadata:s:a:0", "language=eng",
+        "-metadata:s:s:0", "language=eng", "-metadata:s:s:0", "title=English",
+        "-metadata:s:s:1", "language=ara", "-metadata:s:s:1", "title=العربية",
+        "{out}"
+      ]
+    },
+    {
+      "id": "math-logic",
+      "library": "lectures",
+      "file": "math-for-teens-01-logic.mp4",
+      "title_en": "Math for Teens 1: Logic",
+      "title_ar": "الرياضيات لليافعين ١: المنطق",
+      "licence": "CC-BY-3.0",
+      "licence_url": "https://creativecommons.org/licenses/by/3.0/",
+      "attribution": "Unizor: Math 4 Teens, Zor Shekhtman",
+      "covers": [],
+      "sources": [
+        {
+          "url": "https://archive.org/download/Unizor_Math4Teens_Logic/zor_math_teen_logic_512kb.mp4",
+          "page": "https://archive.org/details/Unizor_Math4Teens_Logic",
+          "size": 150270235,
+          "sha1": "f7435a120e65ac24941f8df6a550aa82f05f9251"
+        }
+      ]
+    },
+    {
+      "id": "math-sets",
+      "library": "lectures",
+      "file": "math-for-teens-02-sets.mp4",
+      "title_en": "Math for Teens 2: Sets",
+      "title_ar": "الرياضيات لليافعين ٢: المجموعات",
+      "licence": "CC-BY-3.0",
+      "licence_url": "https://creativecommons.org/licenses/by/3.0/",
+      "attribution": "Unizor: Math 4 Teens, Zor Shekhtman",
+      "covers": [],
+      "sources": [
+        {
+          "url": "https://archive.org/download/Unizor_Math4Teens_Sets/zor_math_teen_sets_512kb.mp4",
+          "page": "https://archive.org/details/Unizor_Math4Teens_Sets",
+          "size": 144779605,
+          "sha1": "af7f0ffc29196b4f51d338d296d904f58ca961cb"
+        }
+      ]
+    },
+    {
+      "id": "math-induction",
+      "library": "lectures",
+      "file": "math-for-teens-03-induction.mp4",
+      "title_en": "Math for Teens 3: Induction",
+      "title_ar": "الرياضيات لليافعين ٣: الاستقراء الرياضي",
+      "licence": "CC-BY-3.0",
+      "licence_url": "https://creativecommons.org/licenses/by/3.0/",
+      "attribution": "Unizor: Math 4 Teens, Zor Shekhtman",
+      "covers": [],
+      "sources": [
+        {
+          "url": "https://archive.org/download/Unizor_Math4Teens_Induction/zor_math_teen_induction_512kb.mp4",
+          "page": "https://archive.org/details/Unizor_Math4Teens_Induction",
+          "size": 98494934,
+          "sha1": "07ac8af6ec2bfc33ff36e927fe29ca346844b036"
+        }
+      ]
+    },
+    {
+      "id": "arabian-nights-1",
+      "library": "audiobooks",
+      "file": "stories-from-the-arabian-nights-01.mp4",
+      "title_en": "Stories from the Arabian Nights, part 1",
+      "title_ar": "حكايات من ألف ليلة وليلة، الجزء ١",
+      "licence": "public-domain",
+      "licence_url": "https://creativecommons.org/publicdomain/mark/1.0/",
+      "attribution": "Stories from the Arabian Nights, Laurence Housman, read for LibriVox; the audio on a still frame, as the home plays videos",
+      "covers": [],
+      "sources": [
+        {
+          "url": "https://archive.org/download/storiesfromthearabiannights_1610_librivox/storiesfromthearabiannights_01_housman_64kb.mp3",
+          "page": "https://archive.org/details/storiesfromthearabiannights_1610_librivox",
+          "size": 11616768,
+          "sha1": "f3c9f13f828862acf310cb938952c9e776606033"
+        }
+      ],
+      "derive": [
+        "-f", "lavfi", "-i", "color=c=0x14181d:s=1280x720:r=1", "-i", "{src0}",
+        "-map", "0:v", "-map", "1:a", "-shortest",
+        "-c:v", "libx264", "-tune", "stillimage", "-pix_fmt", "yuv420p",
+        "-c:a", "aac", "-b:a", "96k", "-movflags", "+faststart",
+        "{out}"
+      ]
+    },
+    {
+      "id": "arabian-nights-2",
+      "library": "audiobooks",
+      "file": "stories-from-the-arabian-nights-02.mp4",
+      "title_en": "Stories from the Arabian Nights, part 2",
+      "title_ar": "حكايات من ألف ليلة وليلة، الجزء ٢",
+      "licence": "public-domain",
+      "licence_url": "https://creativecommons.org/publicdomain/mark/1.0/",
+      "attribution": "Stories from the Arabian Nights, Laurence Housman, read for LibriVox; the audio on a still frame, as the home plays videos",
+      "covers": [],
+      "sources": [
+        {
+          "url": "https://archive.org/download/storiesfromthearabiannights_1610_librivox/storiesfromthearabiannights_02_housman_64kb.mp3",
+          "page": "https://archive.org/details/storiesfromthearabiannights_1610_librivox",
+          "size": 8673792,
+          "sha1": "8636f55770f299718efc934e2eb0104ff6a6d4c1"
+        }
+      ],
+      "derive": [
+        "-f", "lavfi", "-i", "color=c=0x14181d:s=1280x720:r=1", "-i", "{src0}",
+        "-map", "0:v", "-map", "1:a", "-shortest",
+        "-c:v", "libx264", "-tune", "stillimage", "-pix_fmt", "yuv420p",
+        "-c:a", "aac", "-b:a", "96k", "-movflags", "+faststart",
+        "{out}"
+      ]
+    }
+  ]
+}

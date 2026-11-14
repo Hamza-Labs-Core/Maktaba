@@ -43,6 +43,75 @@ struct HomeCard: Hashable, Identifiable, Sendable {
     }
 }
 
+/// What a card's context menu offers, in its order. VoiceOver offers the same list as the
+/// card's custom actions (its Actions rotor), so each is reachable without the long press;
+/// the menu item and the custom action both call `run`, so they do the same thing.
+enum HomeCardAction: Hashable, Sendable {
+    /// A Continue Watching card: the player at the person's position.
+    case resume(at: Double)
+    /// A recommendation: show it no more.
+    case notInterested
+
+    /// The card's actions: Resume when it has a position, Not interested on a recommendation.
+    static func of(_ card: HomeCard) -> [HomeCardAction] {
+        var actions: [HomeCardAction] = []
+        if let at = card.resumeAt { actions.append(.resume(at: at)) }
+        if card.recommended { actions.append(.notInterested) }
+        return actions
+    }
+
+    /// The menu item's words, which are also the custom action's name.
+    var title: LocalizedStringResource {
+        switch self {
+        case .resume:
+            LocalizedStringResource("Resume", table: "Components", comment: "The hero's button: go on from where it stopped")
+        case .notInterested:
+            LocalizedStringResource("Not interested", table: "Home", comment: "A recommendation's menu: show it no more")
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .resume: "play.fill"
+        case .notInterested: "hand.thumbsdown"
+        }
+    }
+
+    /// The menu item's accessibility identifier.
+    var identifier: String {
+        switch self {
+        case .resume: "home.menu.resume"
+        case .notInterested: "home.menu.notInterested"
+        }
+    }
+
+    var isDestructive: Bool { self == .notInterested }
+
+    /// What Home does for an action: open a route, hide a recommendation (false: the home
+    /// could not be reached), say that hiding failed.
+    struct Handlers {
+        var open: @MainActor (PlayerRoute) -> Void
+        var dismiss: @MainActor (String) async -> Bool
+        var dismissFailed: @MainActor () -> Void
+    }
+
+    /// Does the action for `card`. Resume opens the player at once; Not interested runs in
+    /// the returned task (a test awaits it).
+    @MainActor @discardableResult
+    func run(on card: HomeCard, _ handlers: Handlers) -> Task<Void, Never>? {
+        switch self {
+        case let .resume(at):
+            handlers.open(.watch(videoID: card.videoID, at: at))
+            return nil
+        case .notInterested:
+            let video = card.videoID
+            return Task { @MainActor in
+                if !(await handlers.dismiss(video)) { handlers.dismissFailed() }
+            }
+        }
+    }
+}
+
 /// One row of video (or series) cards under the hero. `key` is the shelf's: the list's id and
 /// the row's accessibility identifier (`home.row.<key>`).
 struct HomeRow: Hashable, Identifiable, Sendable {

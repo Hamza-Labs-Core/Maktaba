@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- A collection or a playlist (Epic 58 story 58.12): its header, Play, Shuffle and its items. -->
+<component name="ItemsScreen" extends="Screen">
+  <script type="text/brightscript" uri="ItemsScreen.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common.brs" />
+  <script type="text/brightscript" uri="pkg:/source/config.brs" />
+  <script type="text/brightscript" uri="pkg:/source/net.brs" />
+  <script type="text/brightscript" uri="pkg:/source/nav.brs" />
+  <script type="text/brightscript" uri="pkg:/source/store.brs" />
+  <script type="text/brightscript" uri="pkg:/source/i18n.brs" />
+  <script type="text/brightscript" uri="pkg:/source/layout.brs" />
+  <script type="text/brightscript" uri="pkg:/source/visualtext.brs" />
+  <script type="text/brightscript" uri="pkg:/source/visualtext_tables.brs" />
+  <children>
+    <Label id="title" translation="[120,80]" width="1680" />
+    <TvButton id="play" translation="[120,180]" width="280" />
+    <TvButton id="shuffle" translation="[420,180]" width="300" />
+    <MarkupGrid id="items" translation="[120,300]" itemComponentName="PosterCard" itemSize="[300,230]" itemSpacing="[28,40]" numColumns="5" numRows="3" />
+    <Label id="empty" translation="[120,500]" width="1680" visible="false" />
+  </children>
+</component>
