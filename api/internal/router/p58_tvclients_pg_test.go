@@ -256,11 +256,11 @@ func TestTVClientsSessions(t *testing.T) {
 	h := setupHome(t)
 	with := tvGrantFront(t, h)
 	var via tvPath
-	var cap string
+	var relayCap string
 	h.as = func(req *http.Request, p *principal.Principal) *principal.Principal {
 		via.via(req)
-		if cap != "" {
-			req.Header.Set("X-Maktaba-Relay-Cap-Kbps", cap)
+		if relayCap != "" {
+			req.Header.Set("X-Maktaba-Relay-Cap-Kbps", relayCap)
 		}
 		return p
 	}
@@ -317,7 +317,7 @@ func TestTVClientsSessions(t *testing.T) {
 	}
 
 	// a relay that caps the plan's bitrate: the session asks for what fits, with the report
-	via, cap = tvPaths[1], "8000"
+	via, relayCap = tvPaths[1], "8000"
 	v := vectors[0]
 	open("capped relay", "viewer", `{"video_id":"`+pfKid+`","client_profile":"`+v.Profile+`","device_caps":`+string(v.DeviceCaps)+`}`)
 	if _, caps, _, kbps := last(); kbps != 8000*100/110 || !sameJSON(caps, v.DeviceCaps) {
