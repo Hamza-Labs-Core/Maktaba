@@ -365,7 +365,7 @@ func (s *Service) quietHour() int {
 }
 
 func (s *Service) notice(ctx context.Context, channelID, code string) {
-	s.log().Warn("broadcast: "+code, "channel_id", channelID, "code", code, "event", "broadcast_notice")
+	s.log().Warn("broadcast: a channel notice", "channel_id", channelID, "code", code, "event", "broadcast_notice")
 	if s.Notice != nil {
 		s.Notice(ctx, channelID, code)
 	}
