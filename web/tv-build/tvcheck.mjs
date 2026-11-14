@@ -24,6 +24,7 @@ import {
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { createRequire } from "node:module";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const WEB = path.resolve(HERE, "..");
@@ -131,7 +132,10 @@ export function forEsCheck(js) {
 /** Runs es-check es2017 on the scripts; the failures as lines. */
 export function esCheck(scripts) {
   if (scripts.length === 0) return [];
-  const bin = path.join(WEB, "node_modules", ".bin", "es-check");
+  // es-check's own script run by this node: node_modules/.bin holds a .cmd shim on
+  // Windows (make build-web runs there for the Windows app), which execFile cannot start
+  const pkg = createRequire(path.join(WEB, "package.json")).resolve("es-check/package.json");
+  const bin = path.join(path.dirname(pkg), "index.js");
   const tmp = mkdtempSync(path.join(os.tmpdir(), "tvcheck-"));
   try {
     const copies = scripts.map((f, i) => {
@@ -139,7 +143,10 @@ export function esCheck(scripts) {
       writeFileSync(out, forEsCheck(readFileSync(f, "utf8")));
       return out;
     });
-    execFileSync(bin, ["es2017", ...copies, "--module", "--noColor"], {
+    // es-check globs its arguments: forward slashes, whatever the system (a glob reads
+    // Windows' backslashes as escapes)
+    const globs = copies.map((f) => f.split(path.sep).join("/"));
+    execFileSync(process.execPath, [bin, "es2017", ...globs, "--module", "--noColor"], {
       stdio: "pipe",
     });
     return [];
