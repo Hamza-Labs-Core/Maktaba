@@ -682,8 +682,10 @@ final class UpstreamSessions: @unchecked Sendable {
 ///
 /// While a callback is held the session reads nothing, so its own idle timer would fail the
 /// request about a minute into a pause: the proxy sets that timer out of the way and counts
-/// the home's silence here instead (`silence`), only while it is the home that is waited on
-/// (for the answer's head, or for more of the body while nothing is held). Silence that
+/// the home's silence here instead (`silence`), only while it is the home that is waited on:
+/// for the answer's head, or for more of the body once `next()` has asked and found nothing
+/// kept. While bytes are kept, a callback is held or the player's write is in flight, nothing
+/// is counted. Silence that
 /// long fails the request (`URLError.timedOut`): the player gets an error, never a body
 /// that looks whole.
 final class UpstreamBody: NSObject, URLSessionDataDelegate, @unchecked Sendable {
@@ -703,7 +705,7 @@ final class UpstreamBody: NSObject, URLSessionDataDelegate, @unchecked Sendable 
     private let done: (@Sendable () -> Void)?
     /// A data callback is held (the proxy has the bytes: the home is not being waited on).
     private var held = false
-    /// When the home last gave something, or a held callback was let go.
+    /// When the home last gave something, or `next()` began to wait for more.
     private var heard = ContinuousClock.now
     private let silence: Duration
 
@@ -729,7 +731,14 @@ final class UpstreamBody: NSObject, URLSessionDataDelegate, @unchecked Sendable 
         let seconds = Double(step.components.seconds) + Double(step.components.attoseconds) / 1e18
         DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + seconds) { [weak self] in
             guard let self else { return }
-            let (over, silent) = self.locked { (self.ended != nil || self.cancelled, !self.held && ContinuousClock.now - self.heard >= self.silence) }
+            // waited on: for the answer's head, or for more of the body by a `next()` that
+            // found nothing kept. Not while bytes are kept, a callback is held, or the player's
+            // write is in flight (nobody has asked for more): then the proxy is not waiting on
+            // the home, however long that lasts
+            let (over, silent) = self.locked {
+                (self.ended != nil || self.cancelled,
+                 (self.head == nil || self.bodyWaiter != nil) && ContinuousClock.now - self.heard >= self.silence)
+            }
             if over { return }
             if silent { self.fail(URLError(.timedOut)) } else { self.listen() }
         }
@@ -798,7 +807,9 @@ final class UpstreamBody: NSObject, URLSessionDataDelegate, @unchecked Sendable 
                         return .success(data)
                     }
                     if let ended { return ended.map { nil } }
+                    // from now the home is waited on: its silence counts from here
                     bodyWaiter = c
+                    heard = .now
                     return nil
                 }
                 if let now { c.resume(with: now) }

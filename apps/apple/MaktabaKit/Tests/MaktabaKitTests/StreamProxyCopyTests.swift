@@ -21,7 +21,8 @@ final class LoopbackHome: @unchecked Sendable {
         var holds = false
         /// The connection is dropped after this many body bytes (the home failing mid-body).
         var cutAfter: Int?
-        /// At `cutAfter` the home goes silent (the connection stays open), not away.
+        /// At `cutAfter` the home goes silent (the connection stays open), not away, until
+        /// `goOn` (it then writes the rest).
         var silentThen = false
     }
 
@@ -41,6 +42,7 @@ final class LoopbackHome: @unchecked Sendable {
     private var whole = 0
     private var conns: [NWConnection] = []
     private var held: [NWConnection] = []
+    private var silenced: [@Sendable () -> Void] = []
     private(set) var port: UInt16 = 0
 
     init() async throws {
@@ -67,6 +69,15 @@ final class LoopbackHome: @unchecked Sendable {
     func stop() {
         listener.cancel()
         lock.withLock { conns }.forEach { $0.cancel() }
+    }
+
+    /// Every answer that went silent (`silentThen`) goes on: the rest of its body is written.
+    func goOn() {
+        let all = lock.withLock { () -> [@Sendable () -> Void] in
+            defer { silenced = [] }
+            return silenced
+        }
+        all.forEach { $0() }
     }
 
     /// Answers every request the home is holding (`holds`), late: a short 200.
@@ -192,7 +203,9 @@ final class LoopbackHome: @unchecked Sendable {
         }
         if let cutAt, rest.lowerBound >= cutAt {
             // the home fails here: no orderly end (or says nothing more, the connection open)
-            if !silent {
+            if silent {
+                lock.withLock { silenced.append { [weak self] in self?.write(conn, rest, done, chunked: chunked) } }
+            } else {
                 done.run {}
                 conn.forceCancel()
             }
@@ -607,6 +620,61 @@ func eventually(_ seconds: Double = 5, _ ok: @Sendable () -> Bool) async -> Bool
             #expect(await eventually { proxy.serving == 0 }, "\(path): serving \(proxy.serving)")
         }
         #expect(await eventually { home.abandoned == 2 }, "the home's requests were ended: \(home.abandoned)")
+    }
+
+    /// The home's silence is counted only while the home is what is waited on. With the
+    /// player not taking (nobody asks for more), fewer bytes kept than the mark that holds a
+    /// callback, and the home silent for several times its patience, the request lives; it
+    /// completes when the player takes again and the home goes on.
+    @Test func silenceIsNotCountedWhileThePlayerIsNotTaking() async throws {
+        let home = try await LoopbackHome()
+        defer { home.stop() }
+        let size = 2 << 20, first = 100_000
+        #expect(first < UpstreamBody.highWater)
+        home.on("/stream/abc/film.mp4", .init(length: size, cutAfter: first, silentThen: true))
+        let body = UpstreamBody(URLRequest(url: home.url.appending(path: "stream/abc/film.mp4")),
+                                session: URLSession(configuration: .ephemeral), silence: .milliseconds(300))
+        #expect(try await body.response()?.statusCode == 200)
+        // the player's write is in flight (nobody asks for more), the home has said all it
+        // will for now: five times the patience passes
+        #expect(await eventually { home.bytesWritten == first })
+        try await Task.sleep(for: .milliseconds(1500))
+        #expect(!body.state.contains("ended"), "\(body.state)")
+        // the player takes again and the home goes on: every byte, in order
+        home.goOn()
+        var offset = 0
+        while let chunk = try await body.next() {
+            #expect(LoopbackHome.matches(chunk, from: offset))
+            offset += chunk.count
+        }
+        #expect(offset == size, "\(offset) of \(size)")
+    }
+
+    /// A stream the home redirects (within itself) is paused like any other: the redirected
+    /// request is not timed by the session either.
+    @Test func aRedirectedStreamIsNotTimedWhilePaused() async throws {
+        let home = try await LoopbackHome()
+        defer { home.stop() }
+        let size = 48 << 20
+        home.on("/stream/abc/moved.mp4", .init(status: 302, headers: ["Location": "/stream/abc/there.mp4"]))
+        home.on("/stream/abc/there.mp4", .init(length: size))
+        // the URL session's own request timeout is 1 s: the pause lasts 2.5 s. (Checked: the
+        // request URLSession builds for the redirect keeps the first one's long timeout, so
+        // the redirect rule sets nothing; this test is what keeps that true.)
+        let proxy = try Self.proxy(home, requestTimeout: 1)
+        try await proxy.start()
+        defer { proxy.stop() }
+        let player = RawPlayer(port: try #require(proxy.port))
+        defer { player.close() }
+        player.ask(Self.target(proxy, "/stream/abc/moved.mp4"))
+        var got = await player.read(100_000)
+        _ = try #require(await settled { home.bytesWritten }, "the home never stopped writing")
+        try await Task.sleep(for: .milliseconds(2500))
+        let (rest, failed) = await player.readToEnd()
+        got += rest
+        let (head, body) = split(got)
+        #expect(!failed && head.hasPrefix("HTTP/1.1 200"), "\(head.prefix(40)); player \(player.history)")
+        #expect(body.count == size && LoopbackHome.matches(body, from: 0), "\(body.count) of \(size) bytes")
     }
 
     /// A home that never sends an answer's head is given up: the player gets a 502.
