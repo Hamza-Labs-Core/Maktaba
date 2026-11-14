@@ -33,6 +33,7 @@
     "wiki-app",
     "packages/devportal",
     "packages/website",
+    "packages/castreceiver",
     "design-system/build",
     "design-system/storybook",
     "design-system/**/*.stories.tsx"

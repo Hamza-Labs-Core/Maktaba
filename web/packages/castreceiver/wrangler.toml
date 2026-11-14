@@ -1,0 +1,25 @@
+# cast.maktaba.tv, Maktaba's Cast receiver (Epic 58 story 58.07): a Worker in front of static
+# assets. Build first (npm run build writes ./dist), then:
+#   npm run dev             local preview on http://localhost:8787
+# Deploys run only from .github/workflows/cast-receiver-release.yml (a v* tag), never by hand
+# with this file: it carries the custom domain. No backend, no KV, no secrets.
+name = "maktaba-cast-receiver"
+main = "src/worker/worker.ts"
+compatibility_date = "2026-09-01"
+# no workers.dev URL: the receiver lives on cast.maktaba.tv only
+workers_dev = false
+preview_urls = true
+
+# The custom domain (a top-level key: before the [assets] table). Cloudflare creates its DNS
+# record and certificate itself when the token may (docs/stores/cast.md, Owner actions).
+routes = [
+  { pattern = "cast.maktaba.tv", custom_domain = true },
+]
+
+[assets]
+directory = "./dist"
+binding = "ASSETS"
+not_found_handling = "none"
+html_handling = "auto-trailing-slash"
+# every request goes through the Worker: the security and cache headers
+run_worker_first = true

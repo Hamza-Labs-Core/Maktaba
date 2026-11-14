@@ -844,6 +844,17 @@ build fails when the two differ.
 
 ### Added
 
+- **Maktaba's own Cast receiver (Epic 58, story 58.07).** Casting to a Chromecast, a Google TV
+  Streamer or a TV with Cast built in can now show Maktaba's player on the TV instead of Google's:
+  the title, the series, the position and chapter, an Up next card in a queue, the poster and
+  description when paused, and plain errors with what to do next, dark and in the sender's
+  language (Arabic mirrored, times kept left to right). The TV reaches the home on its own
+  network first and through Maktaba Cloud after 3 seconds, with a Remote badge; it reports
+  where it is every 10 seconds, renews its links, moves through the queue, and asks the home to
+  convert a file it cannot play. It is a page at cast.maktaba.tv that serves every home version
+  (an older home is asked to update); it needs the Cast console registration and the phone
+  apps' update (story 58.06) before anyone can cast to it.
+
 - **A cast grant for Maktaba's Cast receiver (Epic 58, story 58.07).** A signed-in phone or
   browser can now mint a cast grant on the home (`POST /api/cast/grants`) for the one video or
   play queue it casts. The TV uses the grant to open its own stream sessions, report where it
