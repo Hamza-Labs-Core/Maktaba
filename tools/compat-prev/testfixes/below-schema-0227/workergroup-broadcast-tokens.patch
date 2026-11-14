@@ -6,7 +6,7 @@ index 62f3e30..f267a62 100644
  		t.Fatalf("a group that exists: %v", err)
  	}
  	want, got := groupRights(t, db, WorkerGroup), groupRights(t, db, group)
-+	// broadcast_ingest_tokens (slot 0226) is newer than this release: its group code cannot
++	// broadcast_ingest_tokens (slot 0227) is newer than this release: its group code cannot
 +	// know the revoke of that credential, and a home runs it only when its group is missing.
 +	for k := range want {
 +		if strings.HasPrefix(k, "table broadcast_ingest_tokens ") {

@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// States of a broadcast channel (slot 0226).
+// States of a broadcast channel (slot 0227).
 const (
 	StateDraft   = "draft"
 	StateLive    = "live"

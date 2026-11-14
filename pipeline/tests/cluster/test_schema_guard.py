@@ -71,7 +71,7 @@ def test_schema_rev_is_the_highest_migration_this_code_ships() -> None:
 
 
 def test_schema_rev_is_the_same_in_every_service() -> None:
-    """The API's and the streaming node's SchemaRev are raised with this one (slot 0226:
+    """The API's and the streaming node's SchemaRev are raised with this one (slot 0227:
     home broadcasting)."""
     root = MIGRATIONS_DIR.parents[2]
     for go in ("api/internal/cluster/schemaguard/guard.go", "streaming/internal/cluster/schema.go"):

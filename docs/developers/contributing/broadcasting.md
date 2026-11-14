@@ -18,7 +18,7 @@ caller with no session `401`, before anything is read or sent to Maktaba Cloud.
 | Home API | `api/internal/broadcast/` | the routes, the publish checks, the speed test, the ingest-token refresh (`api:broadcast_tokens`) |
 | Cloud link | `cloud/internal/cloudlink/broadcast.go` | the relay agent forwards four calls to Maktaba Cloud with the home's credential; the API never holds it |
 | Broadcaster | `streaming/internal/broadcast/` | one ladder ffmpeg per channel, the uploader, the control socket, the offline slate (`streaming:broadcast_uploader`, `streaming:broadcast_control`) |
-| Database | slot 0226 | `broadcast_channels`, `broadcast_uplink`, `broadcast_confirmations`, `broadcast_ingest_tokens` |
+| Database | slot 0227 | `broadcast_channels`, `broadcast_uplink`, `broadcast_confirmations`, `broadcast_ingest_tokens` |
 | Settings | `rules.broadcast` | `uplink_share` (0.5), `rung_slot_weight` (0.5), `allow_software_rungs` (off) |
 
 All three loops belong to the `livetv.broadcast` component. It is in no bundle, so it is off

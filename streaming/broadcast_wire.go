@@ -13,7 +13,7 @@ import (
 
 // startBroadcast declares the home's broadcaster loops (Epic 50 story 50.22): one ladder
 // and uploader per published channel (streaming:broadcast_uploader) and its control socket
-// to the edge (streaming:broadcast_control). Both wait for slot 0226 and follow the
+// to the edge (streaming:broadcast_control). Both wait for slot 0227 and follow the
 // livetv.broadcast component. Only the home's front door runs them, never a node.
 func (b *tvBase) startBroadcast(fd *frontdoor.Handler) {
 	var once sync.Once
