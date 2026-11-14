@@ -137,6 +137,11 @@ type ServerConfig struct {
 	ReadTimeout   time.Duration
 	WriteTimeout  time.Duration
 	ShutdownGrace time.Duration
+	// DrainDelay is how long the api keeps serving after SIGTERM with /readyz answering 503,
+	// before it closes its listeners (server.drain_delay, Epic 50 story 50.17): long enough for
+	// the load balancer in front of the pool to take the node out (2 failed checks 5 s apart),
+	// so no new request meets a closed port. 0 (the default) closes at once, as on one node.
+	DrainDelay time.Duration
 }
 
 // AuthConfig holds the HMAC secret used to sign short-lived access
@@ -153,7 +158,12 @@ type AuthConfig struct {
 }
 
 type DBConfig struct {
-	URL             string
+	URL string
+	// DirectURL is a direct connection to the primary (database.direct_url, env
+	// MAKTABA_CLOUD_DB_DIRECT_URL) for what needs a session of its own: the change listener's
+	// LISTEN and the worker's leader lock (Epic 50 story 50.17), which PgBouncer's transaction
+	// pool can't hold (50.18). Empty means URL.
+	DirectURL       string
 	MaxOpenConns    int
 	MaxIdleConns    int
 	ConnMaxLifetime time.Duration
@@ -332,6 +342,14 @@ func applyEnvOverrides(c *Config) {
 	if v := os.Getenv("MAKTABA_CLOUD_DB_URL"); v != "" {
 		c.Database.URL = v
 	}
+	if v := os.Getenv("MAKTABA_CLOUD_DB_DIRECT_URL"); v != "" {
+		c.Database.DirectURL = v
+	}
+	if v := os.Getenv("MAKTABA_CLOUD_DRAIN_DELAY"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			c.Server.DrainDelay = d
+		}
+	}
 	if v := os.Getenv("MAKTABA_CLOUD_REDIS_URL"); v != "" {
 		c.Redis.URL = v
 	}
@@ -487,6 +505,10 @@ func assign(c *Config, section, key, val string) error {
 		return setDur(&c.Server.WriteTimeout, val)
 	case "server.shutdown_grace":
 		return setDur(&c.Server.ShutdownGrace, val)
+	case "server.drain_delay":
+		return setDur(&c.Server.DrainDelay, val)
+	case "database.direct_url":
+		c.Database.DirectURL = val
 	case "database.url":
 		c.Database.URL = val
 	case "database.max_open_conns":
@@ -682,4 +704,13 @@ func (s ServerConfig) AdminOriginOrDefault() string {
 // (shared/go/clientip's ParseCIDRs; the home's list also takes bare addresses).
 func ParsePrefixes(vs []string) ([]netip.Prefix, error) {
 	return clientip.ParseCIDRs(vs)
+}
+
+// ListenURL is the connection for a session of its own (LISTEN, a session advisory lock):
+// DirectURL, or URL without one.
+func (d DBConfig) ListenURL() string {
+	if d.DirectURL != "" {
+		return d.DirectURL
+	}
+	return d.URL
 }

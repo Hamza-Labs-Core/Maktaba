@@ -139,7 +139,7 @@ func (e *fakeEdge) pull() {
 	e.apply(st)
 }
 
-// C17 broadcast-plans (story 50.20 T10): a Broadcaster publisher driven across every mode by the
+// C18 broadcast-plans (story 50.20 T10): a Broadcaster publisher driven across every mode by the
 // edge's usage posts to this commit's api role (the plans build, broadcasting on and enforced).
 // The modes come in order (full, lowest at the allowance, wait at twice it, off when the account
 // is suspended); a new session gets the mode of its moment, nobody playing is stopped except on

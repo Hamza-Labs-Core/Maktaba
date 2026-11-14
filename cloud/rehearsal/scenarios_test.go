@@ -83,7 +83,8 @@ func repoRoot(t *testing.T) string {
 	return strings.TrimSpace(string(out))
 }
 
-// TestScenario runs every scenario (C01–C10, 50.11's status-feed, 53.16's report-symbolicated);
+// TestScenario runs every scenario (C01–C10, 50.11's status-feed, 53.16's report-symbolicated,
+// 50.17's api-pool);
 // one with -run 'TestScenario/<name>'.
 func TestScenario(t *testing.T) {
 	skip := notBuilt(t)
@@ -111,6 +112,7 @@ func TestScenario(t *testing.T) {
 		{"origin-only-via-edge", originOnlyViaEdge},
 		{"origin-aop", originAOP},
 		{"report-symbolicated", reportSymbolicated},
+		{"api-pool", apiPool},
 		{"broadcast-plans", broadcastPlans},
 	} {
 		t.Run(s.name, func(t *testing.T) {
@@ -124,6 +126,8 @@ func TestScenario(t *testing.T) {
 				c = upOnly(t, s.name)
 			case "direct-remote":
 				c = upDirect(t, s.name)
+			case "api-pool":
+				c = upPool(t, s.name)
 			case "failover-kill-leader", "failover-network-partition", "switchover", "restore-pitr",
 				"runbook-switchover", "runbook-forced-failover", "runbook-dns-swap",
 				"origin-only-via-edge", "origin-aop":

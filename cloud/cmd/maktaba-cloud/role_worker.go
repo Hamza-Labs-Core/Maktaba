@@ -2,9 +2,12 @@ package main
 
 import (
 	"context"
+	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
+	"sync"
 	"time"
 
 	billingpkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/billing"
@@ -13,6 +16,7 @@ import (
 	mailpkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/mail"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/obs"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/privacy"
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/ratelimit"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/server"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/stores"
 )
@@ -26,10 +30,20 @@ var workerControlAddr = "127.0.0.1:9090"
 // LB health checks, and run periodic tasks (bandwidth roll-ups,
 // expired-token cleanup, account-deletion purges).
 //
+// Every api node runs a worker (Epic 50 story 50.17 §2), and the jobs run only on the one
+// holding the worker's leader lock (db.WorkerLockID): another node takes it within 15 s when
+// the holder goes. worker_leader{node} on /metrics is 1 on the holder.
+//
 // server.Run is the only listener: a second ListenAndServe on the same
 // address made the worker exit 1 at start (c15649f76 until this fix), so
 // none of its jobs ever ran.
 func runWorker(logger *slog.Logger, cfg config.Config, pool *db.Pool, _ *db.Migrator, _ server.BuildInfo) {
+	leader, closeLock, err := workerLeader(cfg, pool, logger)
+	if err != nil {
+		logger.Error("worker: the leader lock's connection", "err", err)
+		os.Exit(2)
+	}
+	defer closeLock()
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -39,34 +53,92 @@ func runWorker(logger *slog.Logger, cfg config.Config, pool *db.Pool, _ *db.Migr
 	mux.HandleFunc("/metrics", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
 		_ = obs.WriteMetrics(w)
+		_ = writeLeaderMetric(w, leader)
 	})
-	srv := &http.Server{Addr: workerControlAddr, Handler: mux, ReadTimeout: 5 * time.Second, WriteTimeout: 5 * time.Second}
+	// in the api pool (story 50.17) the witness's Prometheus scrapes worker_leader over the
+	// private network: MAKTABA_CLOUD_WORKER_CONTROL_ADDR puts the port on the node's private
+	// address (never a public one or a wildcard)
+	addr := workerControlAddr
+	if v := os.Getenv("MAKTABA_CLOUD_WORKER_CONTROL_ADDR"); v != "" {
+		if err := config.ValidateOriginListen(v); err != nil {
+			logger.Error("worker: MAKTABA_CLOUD_WORKER_CONTROL_ADDR", "addr", v, "err", err)
+			os.Exit(2)
+		}
+		addr = v
+	}
+	srv := &http.Server{Addr: addr, Handler: mux, ReadTimeout: 5 * time.Second, WriteTimeout: 5 * time.Second}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	go cleanupExpired(ctx, logger, pool)
-	go purgeDeletedAccounts(ctx, logger, pool)
-	// story 50.19: relayed streams silent for 2 minutes stop counting against their plan
-	go sweepStreams(ctx, logger, &billingpkg.Streams{DB: pool.DB}, time.Minute)
-	// story 50.19 §6: the hourly pay-as-you-go usage reports, with a payment provider that
-	// takes payments
-	if r := usageReporter(cfg, pool, logger); r != nil {
-		go r.Run(ctx, time.Hour)
-	}
-	// story 50.20: the hourly pay-as-you-go viewer-hour reports (with a payment provider), the
-	// allowance and cap notices, the daily reconciliation and the usage windows' sweep
-	go broadcastReporter(cfg, pool, logger).Run(ctx, time.Hour)
-	// direct remote access (story 50.15): certificates and the outside checks
-	if j := directJobs(cfg, pool, logger); j != nil {
-		go j.Run(ctx)
-	}
+	go leader.Run(ctx, func(ctx context.Context) { workerJobs(ctx, logger, cfg, pool) })
 
 	// Block until SIGTERM.
 	if err := server.Run(ctx, logger, srv, cfg.Server.ShutdownGrace); err != nil {
 		logger.Error("worker exited", "err", err)
 		os.Exit(1)
 	}
+}
+
+// workerJobs runs the worker's periodic jobs until ctx ends (the node stopped leading, or it
+// stops). Each is idempotent: a node that loses the lock part way leaves its job for the next
+// holder to run again.
+func workerJobs(ctx context.Context, logger *slog.Logger, cfg config.Config, pool *db.Pool) {
+	var wg sync.WaitGroup
+	run := func(f func()) {
+		wg.Add(1)
+		go func() { defer wg.Done(); f() }()
+	}
+	run(func() { cleanupExpired(ctx, logger, pool) })
+	run(func() { purgeDeletedAccounts(ctx, logger, pool) })
+	// story 50.19: relayed streams silent for 2 minutes stop counting against their plan
+	run(func() { sweepStreams(ctx, logger, &billingpkg.Streams{DB: pool.DB}, time.Minute) })
+	// story 50.19 §6: the hourly pay-as-you-go usage reports, with a payment provider that
+	// takes payments
+	if r := usageReporter(cfg, pool, logger); r != nil {
+		run(func() { r.Run(ctx, time.Hour) })
+	}
+	// story 50.20: the hourly pay-as-you-go viewer-hour reports (with a payment provider), the
+	// allowance and cap notices, the daily reconciliation and the usage windows' sweep
+	b := broadcastReporter(cfg, pool, logger)
+	run(func() { b.Run(ctx, time.Hour) })
+	// direct remote access (story 50.15): certificates and the outside checks
+	if j := directJobs(cfg, pool, logger); j != nil {
+		run(func() { j.Run(ctx) })
+	}
+	wg.Wait()
+}
+
+// workerLeader is the worker's leader lock, on database.direct_url when set (a session lock
+// can't go through PgBouncer's transaction pool, story 50.18), else on the pool. The node's
+// name is MAKTABA_NODE_ID, or the host's name.
+func workerLeader(cfg config.Config, pool *db.Pool, logger *slog.Logger) (*db.Leader, func(), error) {
+	node := os.Getenv("MAKTABA_NODE_ID")
+	if node == "" {
+		node, _ = os.Hostname()
+	}
+	l := &db.Leader{DB: pool.DB, LockID: db.WorkerLockID, Node: node, Logger: logger}
+	if cfg.Database.DirectURL == "" {
+		return l, func() {}, nil
+	}
+	direct, err := db.Open(cfg.Database.DirectURL, 2, 1, 0)
+	if err != nil {
+		return nil, nil, err
+	}
+	l.DB = direct.DB
+	return l, func() { _ = direct.Close() }, nil
+}
+
+// writeLeaderMetric writes worker_leader{node}: 1 while this node runs the jobs. The alert
+// fires when no node reports 1 for 2 minutes (deploy/cloud-ha/monitoring).
+func writeLeaderMetric(w io.Writer, l *db.Leader) error {
+	v := 0
+	if l.Leading() {
+		v = 1
+	}
+	_, err := fmt.Fprintf(w, "# HELP worker_leader 1 on the node that runs the worker's jobs (story 50.17).\n"+
+		"# TYPE worker_leader gauge\nworker_leader{node=%q} %d\n", l.Node, v)
+	return err
 }
 
 // cleanupExpired sweeps stale claim tokens and revoked sessions. Runs
@@ -85,6 +157,10 @@ func cleanupExpired(ctx context.Context, logger *slog.Logger, pool *db.Pool) {
 			}
 			if _, err := pool.DB.ExecContext(ctx, `DELETE FROM sessions WHERE expires_at < now() - INTERVAL '1 day'`); err != nil {
 				logger.Warn("worker: session cleanup", "err", err)
+			}
+			// the shared rate buckets (story 50.17 §3) idle for a day have refilled long ago
+			if _, err := ratelimit.SweepPG(ctx, pool.DB, 24*time.Hour); err != nil {
+				logger.Warn("worker: rate bucket cleanup", "err", err)
 			}
 		}
 	}

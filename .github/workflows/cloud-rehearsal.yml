@@ -111,6 +111,9 @@ jobs:
           - origin-aop
           # 53.16 T07: a canary home's reports through its agent, symbolicated with tables made in the job
           - report-symbolicated
+          # 50.17: three api nodes behind HAProxy (LB11): the worker's lock, the shared sign-in
+          # limit, a change reaching every cache, a rolling deploy with no failed request
+          - api-pool
           # 50.20 T10: a Broadcaster publisher across every mode, an API outage, a repeated window
           - broadcast-plans
     steps:

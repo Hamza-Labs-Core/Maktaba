@@ -14,6 +14,16 @@ build fails when the two differ.
 
 ### Changed
 
+- **The cloud's api can run on several machines at once (Epic 50, story 50.17).** The worker's
+  jobs (expired sign-in cleanup, account deletions, the relayed streams' sweep, pay-as-you-go
+  reports) run on exactly one node, the one holding a database lock, and another node takes
+  over within 15 s when it goes; the sign-in, password-reset, mail and claim limits are shared
+  by every node, so more machines don't loosen them; a stopping node leaves its load balancer
+  before it closes, and a plan change reaches every relay's cache within a second. In the cloud
+  rehearsal three nodes behind a stand-in load balancer moved the worker within 15 s of a kill,
+  refused the 31st sign-in across the three, and took a rolling deploy with no failed request.
+  Nothing changes for households until the machines are created.
+
 - **Messages in Arabic speak to the whole household (story 60.06).** The Arabic of every
   message the API sends, and of its page on maktaba.tv, now addresses the household in the plural
   and names the product «مكتبة» («برنامج مكتبة» where the bare word reads as a library), as the
@@ -802,6 +812,16 @@ build fails when the two differ.
   alerted.
 
 ### Added
+
+- **Apps can tell when they and the home are too far apart (story 58.01).** The home now
+  publishes its API level, the oldest level it still serves, and the oldest build of each app it
+  signs in, with no sign-in needed (`GET /api/discovery/home`: `api_level`, `api_level_oldest`,
+  `client_floor`). A home keeps serving every level from the last 12 months, so a TV app a year
+  behind still works. An app build below the floor gets `426 client_too_old` at sign-in, refresh
+  and pairing, and the home logs each refused app and platform once a day in Logs. A CI check
+  fails any response change an older app would get wrong until the level is raised
+  (`docs/api/levels.md`). The `X-Maktaba-Client` header names the smart TV platforms (`tizen`,
+  `webos`, `firetv`, `roku`, `vega`, `cast`) and the Samsung and LG launcher (`tv-web`).
 
 - **Choose Maktaba's ports on a NAS (story 59.08).** Another app on the NAS, such as Plex or the
   NAS's own UI, may already use one of Maktaba's ports. Each one can now be set in the container's

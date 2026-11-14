@@ -72,6 +72,11 @@ type env struct {
 	ipSeq   int
 	// logs is everything the api logged (the usage-data test reads it)
 	logs *syncBuffer
+	// what newAPI was given, for another node on the same database (story 50.17)
+	cfg    config.Config
+	o      apiOverrides
+	mig    *db.Migrator
+	logger *slog.Logger
 }
 
 // syncBuffer is a bytes.Buffer the server's goroutines may write at once.
@@ -194,7 +199,20 @@ func newEnvFull(t *testing.T, pay *fakeProvider, ts turnstile.Verifier, adjust f
 	t.Cleanup(stop)
 	e.router, e.admin = a.User, a.Admin
 	e.h = consoleOrUser(a)
+	e.cfg, e.o, e.mig, e.logger = cfg, o, mig, logger
 	return e
+}
+
+// node is another api process on e's database (the api pool, story 50.17): its own routers,
+// limiters and goroutines, the same rows.
+func (e *env) node() http.Handler {
+	e.t.Helper()
+	a, stop, err := newAPI(e.logger, e.cfg, e.pool, e.mig, server.BuildInfo{Role: "api"}, e.o)
+	if err != nil {
+		e.t.Fatal(err)
+	}
+	e.t.Cleanup(stop)
+	return consoleOrUser(a)
 }
 
 // testAdminHost is the console's name in these tests (server.admin_host).
