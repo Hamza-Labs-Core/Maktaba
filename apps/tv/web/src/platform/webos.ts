@@ -1,11 +1,12 @@
-// Story 58.09 — LG webOS. The packaged app (58.11) loads webOSTV.js, which gives
-// `webOS.service.request` (luna services: the connection manager names the TV's address
-// for the subnet probe), `webOS.deviceInfo` for the model, and `webOS.platformBack` to
-// leave. webOS delivers the color and media keys without registration. The native <video>
-// HLS player is 58.11's adapter.
+// Stories 58.09 and 58.11 — LG webOS. The packaged app speaks to luna (webos-luna.ts): the
+// connection manager names the TV's address for the subnet probe, the system properties and
+// config describe the model (webOS.deviceInfo when webOSTV.js is loaded). webOS delivers the
+// color and media keys without registration; Back is key code 461, and leaving goes back to
+// the webOS launcher through platformBack (appinfo.json's disableBackHistoryAPI hands Back
+// to the app). The player is the TV's own <video> (webos-player.ts), and what it plays is
+// reported as the API's DeviceCaps (webos-caps.ts).
 
 import {
-  capsForPanel,
   chromiumMajor,
   commonKeyAction,
   engineOf,
@@ -15,28 +16,9 @@ import {
   type Platform,
 } from "./types";
 import { log } from "../log";
-
-interface LunaRequest {
-  method: string;
-  parameters?: Record<string, unknown>;
-  onSuccess?: (res: Record<string, unknown>) => void;
-  onFailure?: (err: Record<string, unknown>) => void;
-}
-
-interface WebOSApi {
-  service?: { request(uri: string, req: LunaRequest): unknown };
-  deviceInfo?: (
-    cb: (info: { modelName?: string; version?: string; uhd?: boolean }) => void
-  ) => void;
-  platformBack?: () => void;
-}
-
-declare global {
-  interface Window {
-    webOS?: WebOSApi;
-    PalmSystem?: unknown;
-  }
-}
+import { luna, readDeviceInfo } from "./webos-luna";
+import { nativeHls, probeTypes, webosCaps, yearFromSdk, type WebOSDeviceInfo } from "./webos-caps";
+import { WebOSPlayer } from "./webos-player";
 
 export function isWebOS(w: Window): boolean {
   return !!w.webOS || !!w.PalmSystem;
@@ -51,64 +33,62 @@ export function ipFromStatus(res: Record<string, unknown>): string | null {
   return null;
 }
 
+/** The keys webOS sends the page without registration (their names, for hello). */
+export const WEBOS_KEYS = [
+  "MediaPlayPause",
+  "MediaPlay",
+  "MediaPause",
+  "MediaStop",
+  "MediaFastForward",
+  "MediaRewind",
+  "ColorF0Red",
+  "ColorF1Green",
+  "ColorF2Yellow",
+  "ColorF3Blue",
+];
+
 export function webosPlatform(w: Window): Platform {
-  let uhd = false;
+  let info: WebOSDeviceInfo = {};
   return {
     name: "webos",
-    device(): Promise<DeviceInfo> {
+    async device(): Promise<DeviceInfo> {
       const ua = w.navigator.userAgent;
-      const base = { year: yearFromEngine(chromiumMajor(ua), "webos"), engine: engineOf(ua) };
-      return new Promise((resolve) => {
-        const info = w.webOS?.deviceInfo;
-        if (!info) {
-          resolve({ model: "LG TV", ...base });
-          return;
-        }
-        try {
-          info((d) => {
-            uhd = !!d.uhd;
-            resolve({ model: d.modelName || "LG TV", ...base });
-          });
-        } catch (e) {
-          log("error", `webos: deviceInfo failed: ${String(e)}`);
-          resolve({ model: "LG TV", ...base });
-        }
-      });
+      info = await readDeviceInfo(w);
+      const year = yearFromSdk(info.sdkVersion) || yearFromEngine(chromiumMajor(ua), "webos");
+      log(
+        "launcher",
+        `webos: sdk ${info.sdkVersion ?? "?"} uhd ${!!info.uhd} hdr10 ${!!info.hdr10} dv ${!!info.dolbyVision}`
+      );
+      return { model: info.modelName || "LG TV", year, engine: engineOf(ua) };
     },
-    localIp(): Promise<string | null> {
-      return new Promise((resolve) => {
-        const svc = w.webOS?.service;
-        if (!svc) {
-          resolve(null);
-          return;
-        }
-        try {
-          svc.request("luna://com.webos.service.connectionmanager", {
-            method: "getStatus",
-            onSuccess: (res) => resolve(ipFromStatus(res)),
-            onFailure: (err) => {
-              log("error", `webos: connectionmanager failed: ${JSON.stringify(err)}`);
-              resolve(null);
-            },
-          });
-        } catch (e) {
-          log("error", `webos: connectionmanager failed: ${String(e)}`);
-          resolve(null);
-        }
-      });
+    async localIp(): Promise<string | null> {
+      const res = await luna(w, "luna://com.webos.service.connectionmanager", "getStatus");
+      return res ? ipFromStatus(res) : null;
     },
     registerKeys(): string[] {
       // webOS sends the color and media keys to the page as they are
-      return ["MediaPlayPause", "MediaPlay", "MediaPause", "MediaStop", "ColorF0Red"];
+      return WEBOS_KEYS.slice();
     },
     keyAction: commonKeyAction,
     deviceCaps(): DeviceCaps {
-      // the full report (HEVC, AV1, Dolby Vision, passthrough) is story 58.11's
-      return capsForPanel(uhd);
+      // the SDK version names the native HLS player; a TV that does not say is webOS 5+
+      // (older ones are refused before this, by their engine)
+      const sdk = info.sdkVersion ?? "5";
+      return webosCaps({
+        device_info: info,
+        is_type_supported: probeTypes(w),
+        native_hls: nativeHls(sdk),
+      });
+    },
+    player(video: HTMLVideoElement) {
+      return new WebOSPlayer(video, (url) =>
+        w.fetch(url, { credentials: "omit", cache: "no-store" })
+      );
     },
     exit() {
       try {
         if (w.webOS?.platformBack) w.webOS.platformBack();
+        else if (w.PalmSystem?.platformBack) w.PalmSystem.platformBack();
         else w.close();
       } catch (e) {
         log("error", `webos: exit failed: ${String(e)}`);
