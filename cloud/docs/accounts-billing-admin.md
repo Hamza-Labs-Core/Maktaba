@@ -216,9 +216,22 @@ mode for **new** sessions (`billing.BroadcastModeFor`). A playing viewer keeps t
 - **Staff**: `POST /v1/admin/servers/{id}/broadcast {plan, test_publisher, reason}` (service
   admin, a fresh MFA, audited `admin.server.broadcast`). A test publisher broadcasts with the gate
   shut.
+- **Viewer access** (story 50.26): the home's agent (`/v1/broadcast/access`, `…/channels/{id}/access`,
+  `…/viewer-limits`, `…/invites[/{id}[/devices[/{pass}]]]`, passed by the relay agent for the
+  home's owner or admin) and the owner's account (the same under `/v1/broadcast/homes/{server}`,
+  `404` for anyone but the owner). An invite names only the home's own channels (`400
+  bad_channel`), at most 200 live a home; open access is `403 broadcast_open_not_enabled` while
+  `broadcast.open_access.enabled` is off and `403 broadcast_open_needs_verification` until the
+  publisher is verified; a channel cap over the plan's viewers is `402 broadcast_limit`. Each
+  change bumps `servers.broadcast_access_version` in its transaction and is pushed to the edge;
+  the worker pushes the rest each minute and refreshes every publisher hourly.
+- **Staff, invites**: `GET /v1/admin/servers/{id}/broadcast/invites` (no link or code shown) and
+  `POST /v1/admin/broadcast/invites/{id}/revoke {reason}` (service admin, audited
+  `admin.broadcast.invite.revoke`); a revoked invite redeems nothing new.
 - **Licence**: the `broadcast` feature is in a home's licence when its plan includes
   broadcasting and the gate is open (or it is a test publisher).
-- **Switches.** `broadcast.enabled` (default false), `broadcast.plans.enforce` (default true;
+- **Switches.** `broadcast.enabled` (default false), `broadcast.open_access.enabled` (default
+  false, refused without `broadcast.enabled`), `broadcast.plans.enforce` (default true;
   false is the rollback: full up to the viewer limit), `billing.broadcast_payg.enabled` (default
   true: the hourly reports).
 - **Rehearsal**: `broadcast-plans` (`cloud/rehearsal/broadcast_test.go`) drives a publisher

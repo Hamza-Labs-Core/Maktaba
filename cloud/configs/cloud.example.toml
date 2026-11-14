@@ -215,6 +215,13 @@ enabled = false
 # The broadcast edge's Ed25519 public key (base64) for its usage posts (POST /_edge/usage);
 # public, the private half is a Worker secret. Empty: the edge routes answer 503.
 edge_public_key = ""
+# Where viewers watch (story 50.26): invite links are <watch_url>/i/<invite>.
+watch_url = "https://watch.maktaba.tv"
+
+[broadcast.open_access]
+# Anyone-with-the-link channels (story 50.26). Off until the legal items hold (README §14.10);
+# refused with broadcast.enabled off. Off, every channel is invite only.
+enabled = false
 
 [broadcast.plans]
 # true: new viewer sessions get full, lowest or wait as the publisher's plan and usage say;

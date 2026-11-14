@@ -106,6 +106,49 @@ time more than 60 s from the edge's is `400 clock_skew`, with the edge's time in
   sweeps any untracked object of the channel older than that. An R2 lifecycle rule of 1 day is
   the backstop (an owner action).
 
+## Viewer access (50.26)
+
+Who may watch a channel. Viewers have no account and never pay. Each channel is **invite** (the
+default) or **open**; open needs a verified publisher (a paid plan, a confirmed email, 7 days
+since the first broadcast), the Broadcaster add-on, and the cloud's
+`broadcast.open_access.enabled`.
+
+| Credential | Shape | Made by | Lives |
+|---|---|---|---|
+| Invite | `mkbn1.<payload>.<Ed25519>` (domain `maktaba-broadcast-invite-v1`): `{typ, pub, chs, inv, max, iat, exp, kid}` | the cloud (`cloud/internal/broadcast/invites.go`), for the home's owner or admin | up to 365 days, `max` devices |
+| Short code | `MK-` and 4 of A–Z, 0–9 | the cloud, beside each invite | the invite's life |
+| Guest pass | `mkbg1.` HMAC (`VIEWER_TOKEN_KEY`, domain `maktaba-broadcast-guest-v1`) | the edge, one per device that redeems | 30 days, renewed past half |
+| Open session | `mkbo1.` HMAC (domain `maktaba-broadcast-open-v1`) | the edge, after Turnstile or an app attestation | 12 h |
+| Viewer token | the 50.21 token | the edge, per play | 10 minutes, refreshed after 5 |
+
+The watch routes (on `WATCH_HOST`, and under `/api/` and `/i/` on any host in dev):
+
+| Route | What |
+|---|---|
+| `GET /i/<invite>` | a server-rendered page (Arabic by default, `noindex`) with one button; `POST` redeems |
+| `POST /api/v1/redeem` | `{invite}` or `{code}`: a guest pass (cookie `mkp_<pub>`, or the body for apps) |
+| `POST /api/v1/open/turnstile` | `{token}`: an open session (cookie `mko`) |
+| `POST /api/v1/open/challenge`, `/api/v1/open/attest` | a stateless 5-minute challenge, then `{platform, attestation, nonce}`: an open session |
+| `POST /api/v1/play` | `{channel}`: `session_id`, `beat_key`, `master_url`, `refresh_after` |
+| `POST /api/v1/play/<session>/beat` | `{beat_key}`: keeps the session (150 s without one ends it) and meters the minute |
+
+`ViewerAccess` (Durable Object `VIEWER`, one per publisher) holds the access post the cloud
+pushes (`PUT /v1/control/access`, a control post `{typ: "access", pub, version, channels, codes,
+revoked_invites, revoked_passes, max_sessions_per_ip, daily_minutes}`; an older version is
+`409`), the passes, the live sessions (one per credential: a new play ends the old one), the
+counts, and the short-code tries (10 a minute per address, 60 failed a minute per publisher).
+`POST /v1/control/passes` answers the passes and each invite's uses for the publisher's page.
+Spent attestation challenges are rows in 16 more instances (`attest-spent-N`), spent only after
+the attestation holds, and refused rather than forgotten when 50,000 are live.
+
+Limits: the plan's concurrent viewers (`max_viewers`), a channel's own cap, the open sessions
+per network (default 3; a guest pass never counts), the daily minutes, and `PLAY_RL` (30 plays)
+and `API_RL` (120 requests) a minute per address. A limit stops a new viewer, never one
+watching: `wait` and a full channel are `429 broadcast_full`, `off` is `403`, no plan yet is
+`503 plan_unknown`. The cloud pushes each change at once and every pending one each minute, and
+refreshes every publisher's post hourly. Addresses are kept only as a salted hash that changes
+every UTC day.
+
 ## The Stream fallback
 
 `BROADCAST_DELIVERY = stream`, or a publisher's plan with `delivery: "stream"`. The home asks
@@ -133,9 +176,11 @@ revocations and metering stay the same; Stream's viewer-minutes are counted apar
 |---|---|---|
 | `SEGMENTS` | R2 | `maktaba-broadcast-<env>`: segments and slates |
 | `GUIDE` | R2 | `maktaba-broadcast-guide-<env>`: guide blobs (50.26) |
-| `CHANNEL`, `PUBLISHER`, `REVOCATIONS` | Durable Objects | `ChannelLive`, `PublisherControl`, `Revocations` |
+| `CHANNEL`, `PUBLISHER`, `REVOCATIONS`, `VIEWER` | Durable Objects | `ChannelLive`, `PublisherControl`, `Revocations`, `ViewerAccess` (migration `v2`) |
 | `AE` | Analytics Engine | `broadcast_events` |
 | `RL` | Rate Limiting | 60 per 10 s per channel and rung, per location |
+| `PLAY_RL`, `API_RL` | Rate Limiting | 30 plays and 120 other watch requests a minute per address (50.26) |
+| `TURNSTILE_API`, `ATTEST_API` | service bindings | optional: Turnstile's siteverify (else the public one) and the app-attestation verifier (50.27; unbound, attestation answers `503`) |
 | `BROADCAST_ENV` | var | `staging` or `production`: the R2 keys' first part |
 | `BROADCAST_DELIVERY` | var | `r2` (default) or `stream` |
 | `BROADCAST_GLOBAL_OFF` | var | `1` stops every broadcast (50.25's break-glass) |
@@ -144,6 +189,7 @@ revocations and metering stay the same; Stream's viewer-minutes are counted apar
 | `CORS_ORIGINS` | var | comma-separated; unset, the defaults above |
 | `CLOUD_PUBKEYS` | secret | `{"<kid>": "<base64url Ed25519 public key>"}`: `broadcast.PublicKeysJSON` prints it |
 | `VIEWER_TOKEN_KEY` | secret | base64url, 32 bytes; the same on `watch.` |
+| `TURNSTILE_SECRET` | secret | Turnstile's secret for open channels' web visitors (50.26) |
 | `EDGE_SIGNING_KEY` | secret | base64url Ed25519 seed; its public half is the cloud's `broadcast.edge_public_key` |
 | `STREAM_ACCOUNT_ID`, `STREAM_CUSTOMER_CODE`, `STREAM_KEY_ID` | var | the fallback's account and signing key id |
 | `STREAM_API_TOKEN`, `STREAM_KEY_JWK` | secret | the fallback's API token (Stream: Edit) and signing key |
@@ -175,11 +221,13 @@ Nothing here is deployed. The first deploy needs, on Maktaba's Cloudflare accoun
    or not at all.
 2. The R2 buckets `maktaba-broadcast-staging`, `maktaba-broadcast-guide-staging` (and the
    `-production` pair), each with a lifecycle rule deleting objects after 1 day.
-3. The Rate Limiting namespaces `5021` (staging) and `5022` (production), if the account's
-   numbering differs, changed in `wrangler.toml`.
+3. The Rate Limiting namespaces `5021` (staging) and `5022` (production), and for viewer access
+   `5261`/`5262` (staging) and `5263`/`5264` (production); if the account's numbering differs,
+   changed in `wrangler.toml`.
 4. The secrets, with `wrangler secret put` (`--env production` for production): `CLOUD_PUBKEYS`,
    `VIEWER_TOKEN_KEY`, `EDGE_SIGNING_KEY`, and for the fallback `STREAM_API_TOKEN` and
-   `STREAM_KEY_JWK` (with `STREAM_ACCOUNT_ID`, `STREAM_CUSTOMER_CODE` and `STREAM_KEY_ID` as vars).
+   `STREAM_KEY_JWK` (with `STREAM_ACCOUNT_ID`, `STREAM_CUSTOMER_CODE` and `STREAM_KEY_ID` as vars),
+   and `TURNSTILE_SECRET` (a Turnstile widget for `watch.maktaba.tv`) before any channel is open.
 5. The cloud's key: an Ed25519 seed at `broadcast.key_path` on both nodes, and
    `broadcast.edge_public_key`.
 6. The CI token (or `CLOUDFLARE_API_TOKEN_BROADCAST`) with Account: Workers Scripts Edit, Workers
