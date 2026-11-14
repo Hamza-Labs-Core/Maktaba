@@ -30,6 +30,9 @@ type PublishRequest struct {
 	// RightsConfirmedAt and AgreementVersion are all the cloud learns of the confirmation.
 	RightsConfirmedAt time.Time `json:"rights_confirmed_at"`
 	AgreementVersion  int       `json:"agreement_version"`
+	// Geo is the channel's country rule (story 50.23 §5): the cloud puts it in the
+	// channel's ingest token, so the edge checks it at every play and playlist.
+	Geo *Geo `json:"geo,omitempty"`
 }
 
 // CloudChannel is the cloud's answer to a publish.

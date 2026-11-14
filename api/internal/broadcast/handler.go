@@ -21,6 +21,14 @@ import (
 //	POST /api/tv/broadcast/channels/{id}/unpublish    stop it
 //	POST /api/tv/broadcast/speedtest                  measure the upload now
 //
+// and the publishable sources (story 50.23):
+//
+//	GET  /api/tv/broadcast/publishable                         the switch, the permissions, each channel's share
+//	POST /api/tv/broadcast/publishable/sources                 record a permission {kind, ref, proof_url, …}
+//	POST /api/tv/broadcast/publishable/sources/{id}/withdraw   withdraw one {reason}
+//	PUT  /api/tv/broadcast/publishable/items                   mark items own or cleared (or clear the mark)
+//	PUT  /api/tv/broadcast/publishable/only                    {enabled, confirm}: off takes a typed confirmation
+//
 // Every route answers 403 to anyone but an admin, whatever livetv.broadcast's state (the
 // router's ComponentRoutes answer 409 component_off to an admin while it is off).
 type Routes struct {
@@ -36,6 +44,11 @@ var Paths = []string{
 	"POST /api/tv/broadcast/channels/{id}/publish",
 	"POST /api/tv/broadcast/channels/{id}/unpublish",
 	"POST /api/tv/broadcast/speedtest",
+	"GET /api/tv/broadcast/publishable",
+	"POST /api/tv/broadcast/publishable/sources",
+	"POST /api/tv/broadcast/publishable/sources/{id}/withdraw",
+	"PUT /api/tv/broadcast/publishable/items",
+	"PUT /api/tv/broadcast/publishable/only",
 }
 
 // Mount wires the routes.
@@ -45,6 +58,11 @@ func (h *Routes) Mount(r chi.Router) {
 	r.Post("/api/tv/broadcast/channels/{id}/publish", h.publish)
 	r.Post("/api/tv/broadcast/channels/{id}/unpublish", h.unpublish)
 	r.Post("/api/tv/broadcast/speedtest", h.speedtest)
+	r.Get("/api/tv/broadcast/publishable", h.publishable)
+	r.Post("/api/tv/broadcast/publishable/sources", h.recordSource)
+	r.Post("/api/tv/broadcast/publishable/sources/{id}/withdraw", h.withdrawSource)
+	r.Put("/api/tv/broadcast/publishable/items", h.markItems)
+	r.Put("/api/tv/broadcast/publishable/only", h.publishableOnly)
 }
 
 func admin(w http.ResponseWriter, r *http.Request) *principal.Principal {
@@ -95,6 +113,8 @@ func fail(w http.ResponseWriter, r *http.Request, err error) {
 		httperror.Write(w, r, e)
 	case errors.Is(err, ErrNotFound):
 		httperror.Write(w, r, httperror.NotFound("channel"))
+	case errors.Is(err, ErrNoSource):
+		httperror.Write(w, r, httperror.NotFound("permission"))
 	default:
 		httperror.Write(w, r, httperror.Internal("broadcast").Wrap(err))
 	}
@@ -227,4 +247,98 @@ func (h *Routes) speedtest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, up)
+}
+
+func (h *Routes) adminName(r *http.Request, p *principal.Principal) Admin {
+	name := p.UserID
+	if h.Names != nil {
+		if n := h.Names(r.Context(), p.UserID); n != "" {
+			name = n
+		}
+	}
+	return Admin{UserID: p.UserID, Name: name}
+}
+
+func (h *Routes) publishable(w http.ResponseWriter, r *http.Request) {
+	if admin(w, r) == nil {
+		return
+	}
+	v, err := h.Service.PublishableView(r.Context())
+	if err != nil {
+		fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, v)
+}
+
+func (h *Routes) recordSource(w http.ResponseWriter, r *http.Request) {
+	p := admin(w, r)
+	if p == nil {
+		return
+	}
+	var req PermissionRequest
+	if err := json.NewDecoder(io.LimitReader(r.Body, 16<<10)).Decode(&req); err != nil {
+		httperror.Write(w, r, httperror.BadRequest("body must be {kind, ref, proof_url, label, note, credit, non_commercial}"))
+		return
+	}
+	src, err := h.Service.RecordSource(r.Context(), req, h.adminName(r, p))
+	if err != nil {
+		fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, src)
+}
+
+func (h *Routes) withdrawSource(w http.ResponseWriter, r *http.Request) {
+	if admin(w, r) == nil {
+		return
+	}
+	var req struct {
+		Reason string `json:"reason"`
+	}
+	_ = json.NewDecoder(io.LimitReader(r.Body, 4<<10)).Decode(&req)
+	src, err := h.Service.WithdrawSource(r.Context(), chi.URLParam(r, "id"), req.Reason)
+	if err != nil {
+		fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, src)
+}
+
+func (h *Routes) markItems(w http.ResponseWriter, r *http.Request) {
+	p := admin(w, r)
+	if p == nil {
+		return
+	}
+	var req MarkRequest
+	if err := json.NewDecoder(io.LimitReader(r.Body, 256<<10)).Decode(&req); err != nil {
+		httperror.Write(w, r, httperror.BadRequest("body must be {reason, video_ids | library_id+folder | series_id | collection_id}"))
+		return
+	}
+	n, err := h.Service.MarkItems(r.Context(), req, h.adminName(r, p))
+	if err != nil {
+		fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]int{"changed": n})
+}
+
+func (h *Routes) publishableOnly(w http.ResponseWriter, r *http.Request) {
+	if admin(w, r) == nil {
+		return
+	}
+	var req struct {
+		Enabled *bool  `json:"enabled"`
+		Confirm string `json:"confirm"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 4<<10)).Decode(&req); err != nil || req.Enabled == nil {
+		httperror.Write(w, r, httperror.BadRequest("body must be {enabled, confirm}"))
+		return
+	}
+	on, err := h.Service.SetPublishableOnly(r.Context(), *req.Enabled, req.Confirm)
+	if err != nil {
+		fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"publishable_only": on})
 }

@@ -51,7 +51,7 @@ func (s *Service) publishable() Publishable {
 	if s.Publishable != nil {
 		return s.Publishable
 	}
-	return ScheduledPublishable{}
+	return MarkedPublishable{}
 }
 
 // Problem is an error the page shows with its code (broadcast.<code>) and values.
@@ -76,6 +76,9 @@ type SetupRequest struct {
 	Mode      string   `json:"mode"`
 	Rungs     []string `json:"rungs"`
 	Countries []string `json:"countries"`
+	// GeoMode is how Countries read (story 50.23 §5): allow (only there, the default) or
+	// deny (everywhere but there).
+	GeoMode string `json:"geo_mode"`
 }
 
 // SaveSetup checks and stores a channel's setup. A published channel's setup is changed
@@ -100,6 +103,9 @@ func (s *Service) SaveSetup(ctx context.Context, id string, req SetupRequest) (C
 	if len(req.Rungs) == 0 {
 		req.Rungs = append([]string(nil), DefaultLadder...)
 	}
+	if req.GeoMode == "" {
+		req.GeoMode = GeoAllow
+	}
 	out := s.Store.Output(ctx)
 	switch {
 	case !slugRE.MatchString(req.Slug):
@@ -111,6 +117,8 @@ func (s *Service) SaveSetup(ctx context.Context, id string, req SetupRequest) (C
 	case req.Access == "open" && req.Mode != "always_on":
 		// open channels are always on (§2); on demand is for invite-only ones
 		return ch, problem(http.StatusBadRequest, "", "openIsAlwaysOn", nil)
+	case req.GeoMode != GeoAllow && req.GeoMode != GeoDeny:
+		return ch, problem(http.StatusBadRequest, "", "badGeoMode", nil)
 	}
 	if err := ValidLadder(req.Rungs, out.Source); err != nil {
 		return ch, problem(http.StatusBadRequest, "", "badLadder", map[string]any{"detail": err.Error()})
@@ -130,7 +138,8 @@ func (s *Service) SaveSetup(ctx context.Context, id string, req SetupRequest) (C
 	if taken {
 		return ch, problem(http.StatusConflict, "", "slugTaken", nil)
 	}
-	if err := s.Store.SaveSetup(ctx, id, req.Slug, Setup{Access: req.Access, Mode: req.Mode, Rungs: req.Rungs}, countries); err != nil {
+	if err := s.Store.SaveSetup(ctx, id, req.Slug, Setup{Access: req.Access, Mode: req.Mode, Rungs: req.Rungs},
+		Geo{Mode: req.GeoMode, Countries: countries}); err != nil {
 		return ch, err
 	}
 	return s.Store.Get(ctx, id)
@@ -251,7 +260,7 @@ func (s *Service) Publish(ctx context.Context, id string, confirmed bool, by Adm
 	}
 	cc, err := s.Cloud.Publish(ctx, PublishRequest{Slug: ch.Slug, Access: ch.Access, OnDemand: ch.Mode == "on_demand",
 		Rungs: len(ch.Rungs), TopKbps: TopKbps(ch.Rungs, in.Source), RightsConfirmedAt: at.UTC(),
-		AgreementVersion: plan.AgreementVersion})
+		AgreementVersion: plan.AgreementVersion, Geo: ch.Geo()})
 	if err != nil {
 		if p := cloudRefusal(err); p != nil {
 			return ch, p

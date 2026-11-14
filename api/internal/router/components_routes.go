@@ -55,6 +55,12 @@ var ComponentRoutes = componentTable{
 	{Exact: "POST /api/tv/broadcast/channels/{id}/publish", Component: "livetv.broadcast", Admin: true},
 	{Exact: "POST /api/tv/broadcast/channels/{id}/unpublish", Component: "livetv.broadcast", Admin: true},
 	{Exact: "POST /api/tv/broadcast/speedtest", Component: "livetv.broadcast", Admin: true},
+	// publishable sources (story 50.23): the Broadcast page's sources, marks and switch
+	{Exact: "GET /api/tv/broadcast/publishable", Component: "livetv.broadcast", Admin: true},
+	{Exact: "POST /api/tv/broadcast/publishable/sources", Component: "livetv.broadcast", Admin: true},
+	{Exact: "POST /api/tv/broadcast/publishable/sources/{id}/withdraw", Component: "livetv.broadcast", Admin: true},
+	{Exact: "PUT /api/tv/broadcast/publishable/items", Component: "livetv.broadcast", Admin: true},
+	{Exact: "PUT /api/tv/broadcast/publishable/only", Component: "livetv.broadcast", Admin: true},
 }
 
 // CoreRoutes never answer component_off: every other route family. A route family

@@ -31,6 +31,7 @@ type Channel struct {
 	Mode        string          `json:"mode"`
 	Rungs       []string        `json:"rungs"`
 	Countries   []string        `json:"countries"`
+	GeoMode     string          `json:"geo_mode"`
 	State       string          `json:"state"`
 	CloudID     string          `json:"-"`
 	EdgeChannel string          `json:"edge_channel,omitempty"`
@@ -58,7 +59,7 @@ const channelCols = `c.id::text, c.name, c.number, c.enabled, b.channel_id IS NO
 	COALESCE(b.rungs::text, '[]'), COALESCE(b.countries::text, '[]'), COALESCE(b.state, 'draft'),
 	COALESCE(b.cloud_id, ''), COALESCE(b.edge_channel, ''), COALESCE(b.dropped_rungs, 0),
 	COALESCE(b.detail, ''), COALESCE(b.report::text, '{}'), b.reported_at, b.published_at,
-	COALESCE(b.published_by, '')`
+	COALESCE(b.published_by, ''), COALESCE(b.geo_mode, 'allow')`
 
 type scanner interface{ Scan(...any) error }
 
@@ -67,7 +68,7 @@ func scanChannel(r scanner) (Channel, error) {
 	var rungs, countries, report string
 	if err := r.Scan(&c.ID, &c.Name, &c.Number, &c.Enabled, &c.Configured, &c.Slug, &c.Access, &c.Mode,
 		&rungs, &countries, &c.State, &c.CloudID, &c.EdgeChannel, &c.Dropped, &c.Detail, &report,
-		&c.ReportedAt, &c.PublishedAt, &c.PublishedBy); err != nil {
+		&c.ReportedAt, &c.PublishedAt, &c.PublishedBy, &c.GeoMode); err != nil {
 		return c, err
 	}
 	_ = json.Unmarshal([]byte(rungs), &c.Rungs)
@@ -116,16 +117,47 @@ func (s *Store) Get(ctx context.Context, id string) (Channel, error) {
 }
 
 // SaveSetup writes the channel's setup (a new row is a draft).
-func (s *Store) SaveSetup(ctx context.Context, id, slug string, st Setup, countries []string) error {
+func (s *Store) SaveSetup(ctx context.Context, id, slug string, st Setup, geo Geo) error {
 	rungs, _ := json.Marshal(st.Rungs)
-	cs, _ := json.Marshal(countries)
+	if geo.Countries == nil {
+		geo.Countries = []string{}
+	}
+	if geo.Mode == "" {
+		geo.Mode = GeoAllow
+	}
+	cs, _ := json.Marshal(geo.Countries)
 	_, err := s.DB.ExecContext(ctx, `
-		INSERT INTO broadcast_channels (channel_id, slug, access, mode, rungs, countries)
-		VALUES ($1::uuid, $2, $3, $4, $5::jsonb, $6::jsonb)
+		INSERT INTO broadcast_channels (channel_id, slug, access, mode, rungs, countries, geo_mode)
+		VALUES ($1::uuid, $2, $3, $4, $5::jsonb, $6::jsonb, $7)
 		ON CONFLICT (channel_id) DO UPDATE SET slug = EXCLUDED.slug, access = EXCLUDED.access,
 		       mode = EXCLUDED.mode, rungs = EXCLUDED.rungs, countries = EXCLUDED.countries,
-		       updated_at = now()`, id, slug, st.Access, st.Mode, string(rungs), string(cs))
+		       geo_mode = EXCLUDED.geo_mode, updated_at = now()`, id, slug, st.Access, st.Mode, string(rungs), string(cs), geo.Mode)
 	return err
+}
+
+// Geo modes: how a channel's countries read (story 50.23 §5).
+const (
+	GeoAllow = "allow"
+	GeoDeny  = "deny"
+)
+
+// Geo is a channel's country rule as the cloud gets it with the publish (nil: none).
+type Geo struct {
+	Mode      string   `json:"mode"`
+	Countries []string `json:"countries"`
+}
+
+// Geo is the channel's country rule (nil when it names no country: it plays everywhere
+// but the Maktaba-wide deny list).
+func (c Channel) Geo() *Geo {
+	if len(c.Countries) == 0 {
+		return nil
+	}
+	mode := c.GeoMode
+	if mode != GeoDeny {
+		mode = GeoAllow
+	}
+	return &Geo{Mode: mode, Countries: append([]string(nil), c.Countries...)}
 }
 
 // SlugTaken reports whether another channel has slug.
