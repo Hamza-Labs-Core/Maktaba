@@ -14,6 +14,12 @@ build fails when the two differ.
 
 ### Changed
 
+- **Roku shapes Arabic text in less time (Epic 58, story 58.15).** A screen of 20 long Arabic
+  descriptions is shaped in about two thirds of the time it took (207 ms instead of 331 ms on
+  brs-engine), with the same output on all 312 shared vectors; English titles and lines skip the
+  shaping steps. CI fails when the cost rises past a ceiling measured against a reference loop,
+  and the device-test package prints the same timing on a Roku Express.
+
 - **VoiceOver reaches a Home card's menu without the long press (Apple Player).** On iPhone,
   iPad and the Mac, each Home card offers its context menu's items as VoiceOver actions:
   Resume on a Continue Watching card, Not interested on a recommendation, named as the menu
@@ -2852,6 +2858,18 @@ build fails when the two differ.
   parent manages the account, and its content limit. Samsung, LG and Roku ask for no PIN on the
   remote; Fire TV and Android TV keep the guardian's PIN. A deep link to a hidden item shows the
   not-available line and asks nothing. English and Arabic, mirrored.
+
+- **Viewer analytics and broadcast monitoring (story 50.28).** A home that broadcasts through
+  Maktaba Cloud gets a **Viewers** page at app.maktaba.tv (from **Homes**, for the home's owner
+  only): viewers watching now and viewer-hours today, over 7 days and this month against the
+  plan's allowance; with the Broadcaster add-on also the most viewers at once, average watch
+  time, countries, devices, quality watched, playback errors and viewers turned away, with a CSV
+  export. Countries and devices with fewer than 5 viewers are grouped as **Other**, and no names,
+  accounts or addresses are kept. Maktaba's staff can read the same numbers, each read audited.
+  The cloud now also watches its broadcasting: a canary broadcast played every minute from two
+  networks, alerts on its error budget, ingest lag, a stale revocation list, the edge's monthly
+  cost and a mismatch between analytics and billing, and a **Broadcasting** line on the status
+  page once broadcasting opens.
 
 - **Who may watch a home's broadcast channels (Epic 50, story 50.26).** Each published channel is
   invite only (the default) or open to anyone with the link, open only for a verified account

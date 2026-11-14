@@ -18,6 +18,7 @@ import { LinkHome } from "./pages/LinkHome";
 import { Homes } from "./pages/Homes";
 import { Broadcast } from "./pages/Broadcast";
 import { ApproveTv } from "./pages/ApproveTv";
+import { BroadcastAnalytics } from "./pages/BroadcastAnalytics";
 
 export function Providers({ children }: { children: ReactNode }) {
   return (
@@ -138,6 +139,7 @@ export function AppRoutes() {
           <Route path="broadcast" element={<Broadcast />} />
           {/* a linked home's player and remote, served by the cloud (42.9) */}
           <Route path="homes" element={<Homes />} />
+          <Route path="homes/:id/viewers" element={<BroadcastAnalytics />} />
           {/* a home's Account page sends a person here to link their cloud account (42.7) */}
           <Route path="link-home" element={<LinkHome />} />
           {/* a TV's Maktaba Cloud code, from the QR's maktaba.tv/tv?c= (story 58.03) */}

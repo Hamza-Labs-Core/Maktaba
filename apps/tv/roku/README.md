@@ -109,8 +109,10 @@ case by case; a difference fails CI.
 - **Text from the home** is shaped on the device. Shape it once, where the data is loaded (the
   Task that fetches a row), and keep the visual string in the ContentNode: item components are
   recycled as a row scrolls, and shaping in them repeats the work. On brs-engine a 229-character
-  description takes about 16 ms; story 58.15's budget, 50 ms a screen, is re-measured on a Roku
-  Express (docs/stores/roku.md, row 10).
+  description takes about 10 ms (`tests/timing_test.brs`, held in CI at 3.5 times a reference
+  loop for 20 of them); story 58.15's budget, 50 ms a screen, is measured on a Roku Express by
+  the same test in the device-test package (docs/stores/roku.md, row 10). Printable ASCII that
+  is not forced right to left skips the steps.
 - Arabic multi-line strings carry their own line breaks (lines are broken before reordering, so
   the first line holds the start of the text): their Label needs `wrap="true"` and enough
   `maxLines`, and must not be wrapped again.
