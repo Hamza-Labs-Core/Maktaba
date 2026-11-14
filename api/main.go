@@ -730,8 +730,7 @@ func runServe() error {
 				ChannelSigner: channelSigner(streamSigner),
 			})
 			// Epic 50 story 50.22: the Broadcast page and the ingest-token loop (livetv.broadcast)
-			router.MountBroadcast(r, router.BroadcastDeps{DB: appDB, AgentAddr: os.Getenv("MAKTABA_CLOUDLINK_ADMIN"),
-				Loops: loops, Logger: logger})
+			router.MountBroadcast(r, broadcastDeps(appDB, loops, logger))
 			if mountRemote != nil {
 				mountRemote(r) // Epic 32 story 32.6: /api/tv/remote
 			}
@@ -1369,4 +1368,11 @@ func embedderClient(pipelineClient, searchPipelineClient grpcpipeline.Client) an
 		return pipelineClient
 	}
 	return nil
+}
+
+// broadcastDeps is the Broadcast page's wiring (Epic 50 story 50.22): it reaches Maktaba
+// Cloud only through the relay agent's loopback admin port, which the supervisor sets in
+// MAKTABA_CLOUDLINK_ADMIN (unset: the home is not claimed and nothing can be published).
+func broadcastDeps(db *sql.DB, loops *runner.Runner, logger *slog.Logger) router.BroadcastDeps {
+	return router.BroadcastDeps{DB: db, AgentAddr: os.Getenv("MAKTABA_CLOUDLINK_ADMIN"), Loops: loops, Logger: logger}
 }

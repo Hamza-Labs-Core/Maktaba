@@ -157,6 +157,13 @@ describe("AdminLiveTV", () => {
     Object.defineProperty(document, "execCommand", { value: exec0, configurable: true });
   });
 
+  it("has no Broadcast panel and asks nothing about broadcasting without the broadcast flag (50.22)", async () => {
+    renderPage();
+    await waitFor(() => expect(get).toHaveBeenCalledWith("/api/tv/hdhr"));
+    expect(screen.queryByTestId("broadcast-panel")).not.toBeInTheDocument();
+    expect(get.mock.calls.some(([url]) => String(url).startsWith("/api/tv/broadcast"))).toBe(false);
+  });
+
   it("shows the change in flight and the way to the Changes page (Epic 33)", async () => {
     routes({
       "/api/tv/info": {
