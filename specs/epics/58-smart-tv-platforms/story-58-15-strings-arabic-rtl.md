@@ -78,7 +78,8 @@ display order:
   character's drawn position in `/tv/` and the Cast receiver, en and ar, and compares it with the
   NFKC fold of Roku's visual string for the same vector.
 - Long descriptions are shaped once per screen and cached. Shaping cost is measured on a Roku
-  Express, and the budget is 50 ms per screen.
+  Express, and the budget is 50 ms per screen. Printable ASCII on a line that is not forced right
+  to left skips the steps (each character is its own glyph, in logical order).
 
 **Dark theme.** Every TV is dark by default (Epic 48's Ink & Brass tokens): the web TVs through
 the web's tokens, Roku through a generated `theme.brs` from the same token file. Screenshots in
@@ -102,7 +103,7 @@ CI are taken dark. Light theme is not offered on TVs, as on Android TV and Apple
 | T01 | Python unit | `check_tv_catalogs.py` fixtures | missing key, placeholder mismatch | fails, naming the entry |
 | T02 | Python unit | the Roku build step | shape `ar.json` | visual strings equal the reference; wrapped lines reordered per line |
 | T03 | brs-engine unit | `VisualText` on `visual-vectors.json` | each vector | equals the Python reference |
-| T04 | brs-engine timing | 20 long descriptions | shape | open: about 320 ms for 20 descriptions of 229 characters on brs-engine, against the 50 ms budget, because of the interpreter's per-statement and per-call cost; the test logs the time and asserts a 2 s regression ceiling, and the Roku Express timing in the checklist (`docs/stores/roku.md` row 10) decides it |
+| T04 | brs-engine timing | 20 long descriptions | shape | `tests/timing_test.brs` times the 20 at their best of 5 runs next to a reference loop of the same kinds of statements (100,000 steps of array reads, pushes, string comparisons and additions) timed the same way, and CI (`tests/timing/t04.test.mjs`, run alone after the other tests) fails when they cost more than 2.2 loops. They cost about 1.65 (207 ms against 125 ms in the Linux container, arm64 and x64 alike; 2.7 and 331 ms before the hot paths were reworked): a ratio, because brs-engine's speed changes from one machine to the next. brs-engine's own time stays above 50 ms, so the 50 ms budget is held on the device: the device-test package prints the same line on a Roku Express (`docs/stores/roku.md` row 10) |
 | T05 | Playwright (`/tv/`, launcher, receiver) | ar | every screen | `dir=rtl`, focus order mirrored, LRM-wrapped times; vector `episode.06` in the same reading order as Roku (`visual_order.mjs`); screenshots dark |
 
 ## Strings

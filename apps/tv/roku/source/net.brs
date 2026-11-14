@@ -251,6 +251,79 @@ function NetCloudConnections(conns as Dynamic) as Object
     return out
 end function
 
+' A URL as the channel compares addresses: the scheme and host lower-cased, the path kept, no
+' trailing slash.
+function NetCompareBase(url as String) as String
+    s = url.Trim()
+    i = Instr(1, s, "://")
+    if i > 0 then
+        rest = Mid(s, i + 3)
+        j = Instr(1, rest, "/")
+        if j = 0 then
+            s = LCase(Left(s, i - 1)) + "://" + LCase(rest)
+        else
+            s = LCase(Left(s, i - 1)) + "://" + LCase(Left(rest, j - 1)) + Mid(rest, j)
+        end if
+    end if
+    while Right(s, 1) = "/"
+        s = Left(s, Len(s) - 1)
+    end while
+    return s
+end function
+
+' Whether a connection URL proves the home that answers there: https by host name (not a raw
+' IPv4 address, not a bracketed IPv6 one, and with a letter in it), so the TV's certificate check
+' ties the answer to that name. The relay, the home's direct name and the LAN names under its
+' certificate are such names; a plain http address or a raw IP (the cloud also lists the home's
+' plain public address as kind direct, for older apps) proves nothing: it can change hands, and
+' anyone on the path can answer plain http.
+function NetIsProvenName(url as String) as Boolean
+    if LCase(Left(url.Trim(), 8)) <> "https://" then return false
+    host = NetHost(url.Trim())
+    if host = "" or Left(host, 1) = "[" or NetIsIPv4(host) then return false
+    for i = 1 to Len(host)
+        ch = Mid(host, i, 1)
+        if ch >= "a" and ch <= "z" then return true
+    end for
+    return false
+end function
+
+' Whether the home that answered GET /api/discovery/home at base (answer) is the one Maktaba
+' Cloud approved the code for. The cloud names a home by its own server id, which discovery does
+' not give (it answers with the home's instance id), so the check is by address:
+'  - a connection that is a proven name (NetIsProvenName), whatever its kind, leads to that home
+'    alone, and a Maktaba home answering there is taken as it is;
+'  - any other connection (plain http, or a raw IP: a LAN address can lead to another machine on
+'    another network, such as a TV at a relative's house on the same private range) counts only
+'    when the home answering there lists one of those proven names among its own urls (a home
+'    with remote access lists its relay).
+' An address that is not one of the cloud's connections is never the home.
+function NetIsApprovedHome(base as String, answer as Dynamic, conns as Dynamic) as Boolean
+    if not NetIsHomeAnswer(answer) then return false
+    b = NetCompareBase(base)
+    if b = "" then return false
+    proven = []
+    listed = false
+    for each c in NetCloudConnections(conns)
+        u = NetCompareBase(c.url)
+        if u = b then listed = true
+        if NetIsProvenName(u) then proven.Push(u)
+    end for
+    if not listed then return false
+    for each n in proven
+        if n = b then return true
+    end for
+    for each raw in answer.urls
+        if type(raw) = "roString" or type(raw) = "String" then
+            u = NetCompareBase(raw)
+            for each n in proven
+                if n = u then return true
+            end for
+        end if
+    end for
+    return false
+end function
+
 ' The addresses of the TV's /24 to probe (story 58.09): every host but the TV's own; [] when the
 ' TV's address is not an IPv4 address.
 function NetProbeTargets(ip as String) as Object

@@ -74,6 +74,6 @@ function i18n_Format(key as String, args as Object) as String
     if m.rtl then return VisualLines(text, t.widthChars, t.lines, "rtl").Join(Chr(10))
     ' English: a line with an Arabic value (a home's or a person's name) is shaped left to
     ' right; a plain one is left to the Label's own wrapping
-    if vt_Prepare(text).rtl then return VisualLines(text, t.widthChars, t.lines, "ltr").Join(Chr(10))
+    if vt_Prepare(text, false).rtl then return VisualLines(text, t.widthChars, t.lines, "ltr").Join(Chr(10))
     return text
 end function

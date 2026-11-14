@@ -1,6 +1,7 @@
 // Story 58.15 T03 and T04: VisualText on brs-engine against shared/i18n/visual-vectors.json
-// (the reference's outputs, apps/tv/roku/tools/gen_vectors.py), and its cost on 20 long
-// descriptions. brs-engine's stdout is kept in build/logs.
+// (the reference's outputs, apps/tv/roku/tools/gen_vectors.py), its ASCII fast path against
+// its full steps (T04, its cost, is tests/timing/t04.test.mjs). brs-engine's stdout is kept in
+// build/logs.
 
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -87,35 +88,53 @@ ${BRS_HELPERS}`;
   assert.match(r.out, /\[visualtext\] shown in logical order: U\+67E is outside the shaping table/);
 });
 
-// T04: 20 long descriptions shaped as one screen, timed and logged (build/logs, and the test
-// output). Story 58.15's budget is 50 ms a screen, re-measured on a Roku Express
-// (docs/stores/roku.md, row 10). brs-engine is not that machine: a statement costs about 0.6 µs
-// and a function call about 10 µs there, and 20 descriptions of 229 characters take about
-// 320 ms on a developer Mac. The assertion is a regression ceiling (2 s) that an accidental
-// quadratic step or a per-character call would break; the time itself is in the log.
-test("shaping 20 long descriptions: timed, under the regression ceiling on brs-engine (T04)", () => {
-  const desc =
-    "في الحلقة 3 من الموسم 2 (S2 E5)، يعود المحقق إلى المدينة بعد غياب طويل ليكتشف أن كل شيء قد تغيّر: الأصدقاء، الأعداء، وحتى البيت القديم. تبدأ القصة الساعة 12:34 مساءً، وIntro الحلقة يحمل مفاجأة لم يتوقعها أحد. مدة الحلقة 45 دقيقة.";
+test("printable ASCII takes the fast path and gives what the full steps give", () => {
+  // vt_AsciiCut and vt_AsciiLines against the full steps (vt_Prepare, vt_Wrap, vt_FitLines,
+  // vt_Shape, vt_Order), which VisualText and VisualLines skip for printable ASCII that is not
+  // forced right to left
+  const strings = [
+    "",
+    " ",
+    "Intro",
+    "The Long Night of the Detective",
+    "  two  spaces   between   words  ",
+    "Supercalifragilisticexpialidocious is long",
+    "a b c d e f g h i j k l m n o p",
+    "S2 E5 (12:34) - 45 min, [extra] {cut}",
+    "trailing space at the cut      here and more words",
+  ];
   const code = `
 sub Main()
-    d = ${brsJson(desc)}
-    descs = []
-    for i = 1 to 20
-        descs.Push(d + " " + i.ToStr())
+    strs = ${brsJson(strings)}
+    pass = 0
+    fail = 0
+    for each s in strs
+        for each w in [0, 1, 2, 5, 8, 12, 40]
+            t = vt_Ellipsize(vt_Prepare(s, false), w)
+            want = vt_Order(vt_Shape(t, [[0, t.chars.Count()]], false), "ltr")
+            got = VisualText(s, w)
+            if got = want then pass = pass + 1 else fail = fail + 1 : print "FAIL cut "; w; " ["; s; "]: got ["; got; "], want ["; want; "]"
+            for each lines in [0, 1, 2, 3]
+                t = vt_Prepare(s, false)
+                wantLines = []
+                for each line in vt_FitLines(vt_Wrap(t, w), w, lines)
+                    wantLines.Push(vt_Order(vt_Shape(t, line.words, line.ellipsis), "ltr"))
+                end for
+                gotLines = VisualLines(s, w, lines, "auto")
+                if FormatJson(gotLines) = FormatJson(wantLines) then
+                    pass = pass + 1
+                else
+                    fail = fail + 1
+                    print "FAIL lines "; w; "x"; lines; " ["; s; "]: got "; FormatJson(gotLines); ", want "; FormatJson(wantLines)
+                end if
+            end for
+        end for
     end for
-    VisualLines(d, 60, 4, "auto") ' warm the tables, as the channel does once at start
-    ts = CreateObject("roTimespan")
-    ts.Mark()
-    for each s in descs
-        VisualLines(s, 60, 4, "auto")
-    end for
-    ms = ts.TotalMilliseconds()
-    print "TIMING 20 descriptions of "; Len(d); " characters: "; ms; " ms"
-    if ms <= 2000 then print "RESULT pass=1 fail=0" else print "FAIL "; ms; " ms" : print "RESULT pass=0 fail=1"
+    if VisualIsRtl("Intro 3") then fail = fail + 1 : print "FAIL VisualIsRtl ASCII" else pass = pass + 1
+    print "RESULT pass="; pass; " fail="; fail
 end sub
 ${BRS_HELPERS}`;
-  const r = runBrs("visualtext-timing", [writeTest("visualtext_timing", code)]);
-  console.log(r.out.split("\n").find((l) => l.startsWith("TIMING")));
-  assert.deepEqual(r.failures, []);
-  assert.equal(r.pass, 1);
+  const r = runBrs("visualtext-ascii", [writeTest("visualtext_ascii", code)]);
+  assert.deepEqual(r.failures, [], r.failures.slice(0, 20).join("\n"));
+  assert.equal(r.pass, strings.length * 7 * 5 + 1);
 });
