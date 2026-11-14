@@ -87,7 +87,7 @@ func TestHangAfterWaitsOutASlowSpell(t *testing.T) {
 
 	silent.Store(true)
 	since := time.Now()
-	snap = waitFor(t, s, "taken for hung", func(sn Snapshot) bool { return hasEvent(sn, RoleAPI, EventHung) })
+	waitFor(t, s, "taken for hung", func(sn Snapshot) bool { return hasEvent(sn, RoleAPI, EventHung) })
 	if d := time.Since(since); d < p.HangAfter {
 		t.Fatalf("taken for hung after %s, before its HangAfter of %s", d, p.HangAfter)
 	}
