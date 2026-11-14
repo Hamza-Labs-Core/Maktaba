@@ -82,6 +82,8 @@ func Mount(r chi.Router, d *Deps) {
 		g.Post("/v1/admin/accounts/{id}/unsuspend", d.Unsuspend)
 		g.Post("/v1/admin/accounts/{id}/plan", d.SetPlan)
 		g.Post("/v1/admin/servers/{id}/broadcast", d.SetBroadcast)
+		g.Get("/v1/admin/servers/{id}/broadcast/invites", d.BroadcastInvites)
+		g.Post("/v1/admin/broadcast/invites/{id}/revoke", d.RevokeBroadcastInvite)
 		g.Get("/v1/admin/fleet", d.Fleet)
 		g.Get("/v1/admin/servers", d.Servers)
 		g.Get("/v1/admin/revenue", d.Revenue)
