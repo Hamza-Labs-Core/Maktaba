@@ -5,6 +5,7 @@
 // here too, so the channel can tell the home a rung stalled or the channel was revoked.
 //
 // It never looks inside a segment and never decides what airs: it orders what the home sent.
+import type { Geo } from "./geo";
 import { DurableObject } from "cloudflare:workers";
 import { now } from "./clock";
 import type { Delivery, Env } from "./env";
@@ -59,6 +60,8 @@ interface State {
   revoked: string | null;
   plan: ChannelPlan;
   stream: { uid: string; rtmps_url: string; stream_key: string } | null;
+  /** the country rule of the newest ingest token (50.23 §5); null: none */
+  geo?: Geo | null;
   counters: { segments_in: number; bytes_in: number; playlist_misses: number };
 }
 
@@ -71,6 +74,8 @@ export interface PrecheckInput {
   hash8: string;
   bytes: number;
   dur: number;
+  /** the ingest token's country rule (50.23 §5) */
+  geo?: Geo | null;
 }
 
 export type PrecheckVerdict =
@@ -197,6 +202,7 @@ export class ChannelLive extends DurableObject<Env> {
     this.s.onAir = true;
     this.s.pub ??= inp.pub;
     this.s.home = inp.home;
+    this.s.geo = inp.geo ?? null;
     this.s.counters.segments_in++;
     this.s.counters.bytes_in += inp.bytes;
     const registerWith = this.s.registered ? null : this.s.pub;
@@ -248,6 +254,11 @@ export class ChannelLive extends DurableObject<Env> {
     this.s.plan = plan;
     await this.save();
     if (plan.off) this.notify({ type: "plan_off" });
+  }
+
+  /** geo is the channel's country rule (50.23 §5), as its newest segment's token carried it. */
+  async geo(): Promise<Geo | null> {
+    return this.s.geo ?? null;
   }
 
   async revoke(reason: string): Promise<void> {

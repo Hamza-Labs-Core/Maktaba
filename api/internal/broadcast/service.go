@@ -260,7 +260,7 @@ func (s *Service) Publish(ctx context.Context, id string, confirmed bool, by Adm
 	}
 	cc, err := s.Cloud.Publish(ctx, PublishRequest{Slug: ch.Slug, Access: ch.Access, OnDemand: ch.Mode == "on_demand",
 		Rungs: len(ch.Rungs), TopKbps: TopKbps(ch.Rungs, in.Source), RightsConfirmedAt: at.UTC(),
-		AgreementVersion: plan.AgreementVersion, Geo: ch.Geo()})
+		AgreementVersion: plan.AgreementVersion})
 	if err != nil {
 		if p := cloudRefusal(err); p != nil {
 			return ch, p
@@ -311,7 +311,7 @@ func (s *Service) Unpublish(ctx context.Context, id string) (Channel, error) {
 }
 
 func (s *Service) refreshToken(ctx context.Context, ch Channel) error {
-	tok, err := s.Cloud.IngestToken(ctx, ch.ID, Effective(ch.Rungs, ch.Dropped))
+	tok, err := s.Cloud.IngestToken(ctx, ch.ID, Effective(ch.Rungs, ch.Dropped), ch.Geo())
 	if err != nil {
 		return err
 	}
@@ -413,7 +413,7 @@ func (s *Service) SpeedTest(ctx context.Context, source string) (Uplink, error) 
 		}
 		for _, c := range chs {
 			if c.Configured {
-				tok, terr := s.Cloud.IngestToken(ctx, c.ID, c.Rungs)
+				tok, terr := s.Cloud.IngestToken(ctx, c.ID, c.Rungs, c.Geo())
 				if terr != nil {
 					if p := cloudRefusal(terr); p != nil {
 						return Uplink{}, p

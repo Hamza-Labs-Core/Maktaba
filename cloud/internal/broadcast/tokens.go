@@ -27,6 +27,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 )
@@ -55,9 +56,50 @@ type IngestClaims struct {
 	Rungs []string `json:"rungs"`
 	Home  string   `json:"home"`
 	Kbps  int      `json:"kbps"`
-	Iat   int64    `json:"iat"`
-	Exp   int64    `json:"exp"`
-	Kid   string   `json:"kid"`
+	// Geo is the channel's country rule with Maktaba's deny list merged in (story 50.23 §5);
+	// nil: none. The edge answers 451 geo_blocked to a viewer it keeps out.
+	Geo *Geo   `json:"geo,omitempty"`
+	Iat int64  `json:"iat"`
+	Exp int64  `json:"exp"`
+	Kid string `json:"kid"`
+}
+
+// Geo is an ingest token's country rule: when Allow is set only those countries may watch;
+// Deny never may (it wins).
+type Geo struct {
+	Allow []string `json:"allow,omitempty"`
+	Deny  []string `json:"deny,omitempty"`
+}
+
+var isoRE = regexp.MustCompile(`^[A-Z]{2}$`)
+
+// MergeGeo is the rule a token carries: the channel's own (mode allow or deny, its
+// countries) and Maktaba's deny list, which a home can never leave out. nil: no rule.
+func MergeGeo(mode string, countries, maktabaDeny []string) *Geo {
+	clean := func(in []string) []string {
+		seen := map[string]bool{}
+		var out []string
+		for _, c := range in {
+			c = strings.ToUpper(strings.TrimSpace(c))
+			if isoRE.MatchString(c) && !seen[c] {
+				seen[c] = true
+				out = append(out, c)
+			}
+		}
+		sort.Strings(out)
+		return out
+	}
+	g := &Geo{}
+	if mode == "deny" {
+		g.Deny = clean(append(append([]string(nil), countries...), maktabaDeny...))
+	} else {
+		g.Allow = clean(countries)
+		g.Deny = clean(maktabaDeny)
+	}
+	if len(g.Allow) == 0 && len(g.Deny) == 0 {
+		return nil
+	}
+	return g
 }
 
 // Key is one of the cloud's broadcast signing keys.

@@ -9,6 +9,7 @@
 // posts (cloud/internal/broadcast); the edge checks them with CLOUD_PUBKEYS, picking the key by
 // the payload's kid, so a key rotates by adding the new key, issuing with it, then dropping the
 // old one. Both sides check the same vectors (cloud/internal/broadcast/testdata/vectors.json).
+import { cleanGeo, type Geo } from "./geo";
 import { b64url, fromB64url, sameText, utf8 } from "./crypto";
 
 export const INGEST_PREFIX = "mkbi1.";
@@ -38,6 +39,8 @@ export interface IngestClaims {
   home: string;
   /** the plan's top bitrate in kbps: the size guard (§2) */
   kbps: number;
+  /** the channel's country rule, Maktaba's deny list merged in (50.23 §5); absent: none */
+  geo?: Geo;
   iat: number;
   exp: number;
   kid: string;
@@ -162,7 +165,11 @@ export async function verifyIngest(
     return { ok: false, status: 403, error: "wrong_channel" };
   if (want.rung !== undefined && !p.rungs.includes(want.rung))
     return { ok: false, status: 403, error: "wrong_rung" };
-  return { ok: true, claims: p as unknown as IngestClaims };
+  const claims = p as unknown as IngestClaims;
+  const geo = cleanGeo(p.geo);
+  if (geo) claims.geo = geo;
+  else delete claims.geo;
+  return { ok: true, claims };
 }
 
 /** A control post's payload: what the cloud tells the edge (a plan state, a revocation list). */

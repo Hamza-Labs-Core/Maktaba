@@ -20,6 +20,7 @@ import {
 import type { PlaylistAnswer } from "./channel_live";
 import { now } from "./clock";
 import { globalDelivery, globallyOff, type Env } from "./env";
+import { geoBlocked, geoFor } from "./geo";
 import { json, preflight, problem, withLiveHeaders } from "./http";
 import { log } from "./log";
 import { manifestURL, streamConfigured } from "./stream_fallback";
@@ -49,12 +50,33 @@ async function route(request: Request, env: Env, url: URL): Promise<Response> {
   const get = request.method === "GET" || request.method === "HEAD";
   if (parts.length === 3 && parts[2] === "beat" && request.method === "POST")
     return beat(env, claims);
-  if (parts.length === 3 && parts[2] === "master.m3u8" && get) return master(env, claims);
+  if (parts.length === 3 && parts[2] === "master.m3u8" && get) {
+    const blocked = await geoCheck(request, env, ch);
+    return blocked ?? master(env, claims);
+  }
   if (parts.length === 4 && RUNG_RE.test(parts[2]!) && get) {
-    if (parts[3] === "index.m3u8") return media(env, claims, parts[2]!);
+    if (parts[3] === "index.m3u8") {
+      const blocked = await geoCheck(request, env, ch);
+      return blocked ?? media(env, claims, parts[2]!);
+    }
     if (SEG_RE.test(parts[3]!)) return segment(env, ch, parts[2]!, parts[3]!);
   }
   return problem(404, "not_found");
+}
+
+/**
+ * geoCheck (50.23 §5) answers 451 geo_blocked to a viewer outside the channel's countries, at
+ * play (master) and at every playlist; the publisher sees blocked attempts by country (50.28).
+ */
+async function geoCheck(request: Request, env: Env, ch: string): Promise<Response | null> {
+  const country = request.headers.get("CF-IPCountry") ?? "";
+  if (!geoBlocked(await geoFor(env, ch), country)) return null;
+  env.AE?.writeDataPoint({
+    blobs: ["geo_blocked", ch, country || "XX"],
+    doubles: [1, 0],
+    indexes: [ch],
+  });
+  return problem(451, "geo_blocked");
 }
 
 function channel(env: Env, ch: string) {

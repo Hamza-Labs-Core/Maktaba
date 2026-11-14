@@ -82,6 +82,8 @@ func Mount(r chi.Router, d *Deps) {
 		g.Post("/v1/admin/accounts/{id}/unsuspend", d.Unsuspend)
 		g.Post("/v1/admin/accounts/{id}/plan", d.SetPlan)
 		g.Post("/v1/admin/servers/{id}/broadcast", d.SetBroadcast)
+		g.Get("/v1/admin/broadcast/geo-deny", d.GeoDeny)
+		g.Put("/v1/admin/broadcast/geo-deny", d.SetGeoDeny)
 		g.Get("/v1/admin/fleet", d.Fleet)
 		g.Get("/v1/admin/servers", d.Servers)
 		g.Get("/v1/admin/revenue", d.Revenue)
@@ -738,6 +740,9 @@ func (d *Deps) entry(r *http.Request, action, target string, detail map[string]a
 	e := audit.Entry{Action: action, TargetKind: "user", TargetID: target, Detail: detail, IP: middleware.GetClientIP(r.Context())}
 	if strings.HasPrefix(action, "admin.license.") {
 		e.TargetKind = "license"
+	}
+	if strings.HasPrefix(action, "admin.broadcast.") {
+		e.TargetKind = "broadcast"
 	}
 	if strings.HasPrefix(action, "admin.abuse.") {
 		if k, _ := detail["subject_kind"].(string); k != "" {

@@ -548,7 +548,8 @@ func turnstileGuard(cfg config.Config, fake turnstile.Verifier) (*turnstile.Guar
 // ingestDeps wires the broadcast edge's ingest tokens (story 50.21): on only with
 // broadcast.enabled and its key; otherwise the route answers 503 broadcast_disabled.
 func ingestDeps(cfg config.Config, servers *stores.Servers, pool *db.Pool, logger *slog.Logger) *broadcasth.IngestDeps {
-	d := &broadcasth.IngestDeps{Agents: servers, Plans: broadcasth.DBPlans{DB: pool.DB}, IngestURL: cfg.Broadcast.IngestURL}
+	d := &broadcasth.IngestDeps{Agents: servers, Plans: broadcasth.DBPlans{DB: pool.DB}, IngestURL: cfg.Broadcast.IngestURL,
+		GeoDeny: broadcasth.DBGeoDeny(pool.DB)}
 	if !cfg.Broadcast.Enabled {
 		return d
 	}

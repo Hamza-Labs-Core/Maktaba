@@ -59,6 +59,29 @@ type IngestDeps struct {
 	Key       *bc.Key
 	IngestURL string
 	Now       func() time.Time
+	// GeoDeny is Maktaba's broadcast country deny list (story 50.23 §5), merged into every
+	// token; nil: none. A failure to read it refuses the token (never a token without it).
+	GeoDeny func(ctx context.Context) ([]string, error)
+}
+
+// DBGeoDeny reads broadcast_geo_deny.
+func DBGeoDeny(db *sql.DB) func(ctx context.Context) ([]string, error) {
+	return func(ctx context.Context) ([]string, error) {
+		rows, err := db.QueryContext(ctx, `SELECT country FROM broadcast_geo_deny ORDER BY country`)
+		if err != nil {
+			return nil, err
+		}
+		defer func() { _ = rows.Close() }()
+		var out []string
+		for rows.Next() {
+			var c string
+			if err := rows.Scan(&c); err != nil {
+				return nil, err
+			}
+			out = append(out, c)
+		}
+		return out, rows.Err()
+	}
 }
 
 // MountIngest registers the home agent's broadcast routes, outside the user auth group.
@@ -70,6 +93,12 @@ type tokenReq struct {
 	// Channel is the home's own channel id; the edge sees an opaque id derived from it.
 	Channel string   `json:"channel"`
 	Rungs   []string `json:"rungs"`
+	// Geo is the channel's own country rule (story 50.23 §5): the publisher's restriction on
+	// their own channel.
+	Geo *struct {
+		Mode      string   `json:"mode"`
+		Countries []string `json:"countries"`
+	} `json:"geo"`
 }
 
 type tokenResp struct {
@@ -124,10 +153,26 @@ func (d *IngestDeps) IngestToken(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 403, "plan_rungs", "")
 		return
 	}
+	var deny []string
+	if d.GeoDeny != nil {
+		if deny, err = d.GeoDeny(r.Context()); err != nil {
+			writeErr(w, 500, "geo_lookup_failed", "")
+			return
+		}
+	}
+	mode, countries := "", []string(nil)
+	if req.Geo != nil {
+		if len(req.Geo.Countries) > 250 || (req.Geo.Mode != "" && req.Geo.Mode != "allow" && req.Geo.Mode != "deny") {
+			writeErr(w, 400, "invalid_geo", "")
+			return
+		}
+		mode, countries = req.Geo.Mode, req.Geo.Countries
+	}
 	now := d.now()
 	ch := bc.ChannelID(serverID, req.Channel)
 	tok, err := bc.IssueIngest(*d.Key, bc.IngestClaims{
 		Pub: allow.Publisher, Ch: ch, Rungs: req.Rungs, Home: serverID, Kbps: allow.MaxTopKbps,
+		Geo: bc.MergeGeo(mode, countries, deny),
 	}, now)
 	if errors.Is(err, bc.ErrBadClaims) {
 		writeErr(w, 400, "invalid_rungs", "")

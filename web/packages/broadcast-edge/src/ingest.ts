@@ -221,7 +221,16 @@ async function putSegment(
   const declared = Number(request.headers.get("Content-Length") ?? NaN);
   const stub = channel(env, ch, request);
   const hash8 = wantHash.slice(0, 8);
-  const base = { pub: claims.pub, home: claims.home, rung, rungs: claims.rungs, seq, hash8, dur };
+  const base = {
+    pub: claims.pub,
+    home: claims.home,
+    rung,
+    rungs: claims.rungs,
+    seq,
+    hash8,
+    dur,
+    geo: claims.geo ?? null,
+  };
 
   // the cheap checks first: a retry or a stale segment is answered before its body is read
   if (!isSlate) {

@@ -162,3 +162,52 @@ func TestAllowanceFor(t *testing.T) {
 		}
 	}
 }
+
+// Story 50.23 §5: the token carries the channel's rule with Maktaba's deny list merged in.
+func TestIngestTokenCarriesGeo(t *testing.T) {
+	seed := sha256.Sum256([]byte("maktaba-broadcast TEST KEY, never for production: handler"))
+	k, _ := bc.KeyFromSeed(seed[:])
+	var denyErr error
+	d := &IngestDeps{
+		Agents:    fakeAgents{"pro-home": "s3cret"},
+		Plans:     fakePlans{"pro-home": {Publisher: "user-pro", MaxRungs: 2, MaxTopKbps: 3000}},
+		IngestURL: "https://ingest.maktaba.tv",
+		Now:       func() time.Time { return at },
+		Key:       &k,
+		GeoDeny:   func(context.Context) ([]string, error) { return []string{"KP"}, denyErr },
+	}
+	r := chi.NewRouter()
+	MountIngest(r, d)
+
+	w := post(r, "pro-home", "s3cret", `{"channel":"7","rungs":["src"],"geo":{"mode":"allow","countries":["SA","EG"]}}`)
+	if w.Code != 200 {
+		t.Fatalf("%d %s", w.Code, w.Body)
+	}
+	var resp tokenResp
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+	c, err := bc.VerifyIngest(map[string]ed25519.PublicKey{k.Kid: k.Priv.Public().(ed25519.PublicKey)}, resp.Token, at)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Geo == nil || strings.Join(c.Geo.Allow, ",") != "EG,SA" || strings.Join(c.Geo.Deny, ",") != "KP" {
+		t.Fatalf("geo %+v", c.Geo)
+	}
+
+	// no channel rule: Maktaba's list still goes in
+	w = post(r, "pro-home", "s3cret", `{"channel":"7","rungs":["src"]}`)
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+	c, _ = bc.VerifyIngest(map[string]ed25519.PublicKey{k.Kid: k.Priv.Public().(ed25519.PublicKey)}, resp.Token, at)
+	if c.Geo == nil || strings.Join(c.Geo.Deny, ",") != "KP" {
+		t.Fatalf("maktaba list dropped: %+v", c.Geo)
+	}
+
+	if w := post(r, "pro-home", "s3cret", `{"channel":"7","rungs":["src"],"geo":{"mode":"everywhere"}}`); w.Code != 400 || errOf(w) != "invalid_geo" {
+		t.Fatalf("bad mode: %d %s", w.Code, w.Body)
+	}
+
+	// never a token without Maktaba's list
+	denyErr = errors.New("db down")
+	if w := post(r, "pro-home", "s3cret", `{"channel":"7","rungs":["src"]}`); w.Code != 500 || errOf(w) != "geo_lookup_failed" {
+		t.Fatalf("lookup failure: %d %s", w.Code, w.Body)
+	}
+}

@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -23,6 +24,7 @@ type fakeCloud struct {
 	published   []PublishRequest
 	unpublished []string
 	tokens      int
+	geos        []*Geo
 	ingestURL   string
 	n           int
 }
@@ -61,10 +63,11 @@ func (f *fakeCloud) Unpublish(_ context.Context, id string) error {
 	return nil
 }
 
-func (f *fakeCloud) IngestToken(_ context.Context, ch string, rungs []string) (IngestToken, error) {
+func (f *fakeCloud) IngestToken(_ context.Context, ch string, rungs []string, geo *Geo) (IngestToken, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.n++
+	f.geos = append(f.geos, geo)
 	if f.down {
 		return IngestToken{}, ErrUnreachable
 	}
@@ -127,7 +130,8 @@ func TestPublishOnTheHome(t *testing.T) {
 	ctx := context.Background()
 	cloud := &fakeCloud{plan: broadcasterPlan}
 	svc := &Service{Store: &Store{DB: db}, Cloud: cloud}
-	if _, err := svc.SaveSetup(ctx, ch, SetupRequest{Slug: "seerah", Access: "invite", Mode: "on_demand"}); err != nil {
+	if _, err := svc.SaveSetup(ctx, ch, SetupRequest{Slug: "seerah", Access: "invite", Mode: "on_demand",
+		Countries: []string{"sa", "EG"}, GeoMode: "allow"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -174,6 +178,14 @@ func TestPublishOnTheHome(t *testing.T) {
 	var token string
 	if err := db.QueryRowContext(ctx, `SELECT token FROM broadcast_ingest_tokens WHERE channel_id::text = $1`, ch).Scan(&token); err != nil || token != "mkbi1.tok" {
 		t.Fatalf("token %q %v", token, err)
+	}
+	// story 50.23 §5: the token is asked for with the channel's country rule
+	if len(cloud.geos) != 1 || cloud.geos[0] == nil || cloud.geos[0].Mode != GeoAllow ||
+		strings.Join(cloud.geos[0].Countries, ",") != "SA,EG" {
+		t.Fatalf("geo with the token: %+v", cloud.geos)
+	}
+	if _, err := svc.SaveSetup(ctx, ch, SetupRequest{GeoMode: "both"}); !errors.As(err, &p) {
+		t.Fatalf("bad geo mode accepted while live: %v", err)
 	}
 	// a published channel's setup waits for an unpublish
 	if _, err := svc.SaveSetup(ctx, ch, SetupRequest{Slug: "other"}); !errors.As(err, &p) || p.Refusal.Code != "unpublishFirst" {

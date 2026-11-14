@@ -17,7 +17,7 @@ type Cloud interface {
 	State(ctx context.Context) (Plan, error)
 	Publish(ctx context.Context, req PublishRequest) (CloudChannel, error)
 	Unpublish(ctx context.Context, cloudID string) error
-	IngestToken(ctx context.Context, channel string, rungs []string) (IngestToken, error)
+	IngestToken(ctx context.Context, channel string, rungs []string, geo *Geo) (IngestToken, error)
 }
 
 // PublishRequest is POST /v1/broadcast/channels (story 50.20's handler).
@@ -30,9 +30,6 @@ type PublishRequest struct {
 	// RightsConfirmedAt and AgreementVersion are all the cloud learns of the confirmation.
 	RightsConfirmedAt time.Time `json:"rights_confirmed_at"`
 	AgreementVersion  int       `json:"agreement_version"`
-	// Geo is the channel's country rule (story 50.23 §5): the cloud puts it in the
-	// channel's ingest token, so the edge checks it at every play and playlist.
-	Geo *Geo `json:"geo,omitempty"`
 }
 
 // CloudChannel is the cloud's answer to a publish.
@@ -142,9 +139,15 @@ func (a *Agent) Unpublish(ctx context.Context, cloudID string) error {
 	return err
 }
 
-// IngestToken asks for the channel's ingest token (valid 24 h, asked again hourly).
-func (a *Agent) IngestToken(ctx context.Context, channel string, rungs []string) (IngestToken, error) {
+// IngestToken asks for the channel's ingest token (valid 24 h, asked again hourly). geo is
+// the channel's country rule (story 50.23 §5, nil: none): the cloud signs it into the token
+// with Maktaba's deny list, and the edge checks it at play and at every playlist.
+func (a *Agent) IngestToken(ctx context.Context, channel string, rungs []string, geo *Geo) (IngestToken, error) {
 	var t IngestToken
-	err := a.do(ctx, http.MethodPost, "ingest-token", map[string]any{"channel": channel, "rungs": rungs}, &t)
+	body := map[string]any{"channel": channel, "rungs": rungs}
+	if geo != nil {
+		body["geo"] = geo
+	}
+	err := a.do(ctx, http.MethodPost, "ingest-token", body, &t)
 	return t, err
 }

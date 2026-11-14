@@ -209,3 +209,21 @@ func TestVectors(t *testing.T) {
 		t.Fatal("testdata/vectors.json is stale: go test ./internal/broadcast -run TestVectors -update")
 	}
 }
+
+// Story 50.23 §5: the channel's rule and Maktaba's deny list merge; a home can't drop the latter.
+func TestMergeGeo(t *testing.T) {
+	g := MergeGeo("allow", []string{"sa", "EG", "EG", "bad", ""}, []string{"KP"})
+	if g == nil || strings.Join(g.Allow, ",") != "EG,SA" || strings.Join(g.Deny, ",") != "KP" {
+		t.Fatalf("allow: %+v", g)
+	}
+	g = MergeGeo("deny", []string{"FR"}, []string{"KP"})
+	if g == nil || len(g.Allow) != 0 || strings.Join(g.Deny, ",") != "FR,KP" {
+		t.Fatalf("deny: %+v", g)
+	}
+	if g := MergeGeo("", nil, []string{"KP"}); g == nil || strings.Join(g.Deny, ",") != "KP" || len(g.Allow) != 0 {
+		t.Fatalf("maktaba only: %+v", g)
+	}
+	if g := MergeGeo("allow", nil, nil); g != nil {
+		t.Fatalf("no rule: %+v", g)
+	}
+}
