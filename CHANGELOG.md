@@ -14,16 +14,11 @@ build fails when the two differ.
 
 ### Changed
 
-- **Broadcasting is rehearsed in CI (Epic 50, story 50.29).** Every pull request that touches
-  the broadcast edge or the broadcast code of the cloud, the streaming service or the API now runs
-  the broadcast rehearsal. The edge runs in Miniflare as five simulated locations, a home runs
-  the real broadcaster on a test pattern, and up to 100 simulated viewers watch (1,000 nightly).
-  The run checks that the home uploads each segment once per rung however many people watch,
-  that the edge reads R2 at most twice per object per location, and that viewers see no error.
-  It also covers the slate when the home's encoder dies, `off_air` after a day offline, the kill
-  switch and break-glass stopping every viewer within a minute, and an edge rollout mid-stream.
-  A self-test with the edge cache planted off must fail on the R2 counter. Scenarios not built
-  yet are reported as expected failures.
+- **Roku shapes Arabic text in less time (Epic 58, story 58.15).** A screen of 20 long Arabic
+  descriptions is shaped in about two thirds of the time it took (207 ms instead of 331 ms on
+  brs-engine), with the same output on all 312 shared vectors; English titles and lines skip the
+  shaping steps. CI fails when the cost rises past a ceiling measured against a reference loop,
+  and the device-test package prints the same timing on a Roku Express.
 
 - **VoiceOver reaches a Home card's menu without the long press (Apple Player).** On iPhone,
   iPad and the Mac, each Home card offers its context menu's items as VoiceOver actions:
@@ -297,7 +292,25 @@ build fails when the two differ.
   days and opens an issue when a cost grows by more than 20 % (Epic 53 story 53.13).
 - **Big screen has a way out you can see.** Every big screen page has **Leave big screen** in its top row, reachable with a mouse or the arrows, and it leaves at once. The Mac, Windows and Linux apps have **View → Leave Big Screen**, and **View → Big Screen** (`Cmd+Shift+B`, `Ctrl+Shift+B`) now leaves when you are already in it. Before, the only ways out were Settings or Back on Home.
 
+- **Broadcasting is rehearsed in CI (Epic 50, story 50.29).** Every pull request that touches
+  the broadcast edge or the broadcast code of the cloud, the streaming service or the API now runs
+  the broadcast rehearsal. The edge runs in Miniflare as five simulated locations, a home runs
+  the real broadcaster on a test pattern, and up to 100 simulated viewers watch (1,000 nightly).
+  The run checks that the home uploads each segment once per rung however many people watch,
+  that the edge reads R2 at most twice per object per location, and that viewers see no error.
+  It also covers the slate when the home's encoder dies, `off_air` after a day offline, the kill
+  switch and break-glass stopping every viewer within a minute, and an edge rollout mid-stream.
+  A self-test with the edge cache planted off must fail on the R2 counter. Scenarios not built
+  yet are reported as expected failures.
+
 ### Fixed
+
+- **Roku shows Arabic inside English lines joined and in the right order.** On the Account
+  screen in English, the language row read "Language: " with the Arabic name's letters unjoined
+  and reversed. The build step now shapes every catalog string that holds Arabic, in the English
+  catalog too, and a line filled with a home's or a person's name is shaped in both languages, so
+  an Arabic home name reads right on Account, Choose your home, Find on this network, the
+  connecting line and the update screen.
 
 - **An Arabic title reads the same on the Cast receiver as on every other TV (story 58.15).**
   On a TV playing from a sender set to English, a title such as "الحلقة 3 — Intro" showed with
@@ -762,6 +775,13 @@ build fails when the two differ.
 
 ### Security
 
+- **A TV approved on maktaba.tv gets no sign-in once its cloud account is unlinked (Epic 58,
+  story 58.03).** When the cloud account that approved a TV's code was unlinked from the home, or
+  the home user was linked to another cloud account, before the TV collected its sign-in, the
+  home still handed the TV its tokens. The home now records the TV's sign-in in one step that
+  checks the link still names the approving account, and otherwise hands out nothing: the TV is
+  told its approval has expired and asks for a new code.
+
 - **Every event a plugin's emit refuses is logged (Epic 54).** A plugin's `events/emit` was
   refused (an undeclared event, a payload its schema refuses or over 16 KB, a subject out of
   the job's scope, a bad token, a request that does not decode, and the rest) with only the
@@ -886,15 +906,10 @@ build fails when the two differ.
 
 ### Added
 
-- **Approve a TV's code on maktaba.tv (story 58.03).** The QR code a TV shows beside its cloud
-  code opens maktaba.tv/tv, which forwards to Maktaba Cloud: a person signed in there sees the
-  TV's platform and country, asks themselves **Is this your TV?**, picks one of the homes that
-  linked their cloud account, and approves (`GET /v1/tv/codes/{code}`,
-  `POST /v1/tv/codes/{code}/approve`). The cloud asks that home through the relay, with a one-use
-  assertion for that account, home and code (`POST /api/pairing/cloud-assertion` on the home),
-  and the home signs the TV in as the user it linked, restricted like every cloud code's TV. A
-  home the account is not linked to, or one that is offline or out of reach, approves nothing.
-
+- **Roku's sign-in shows a QR (Epic 58, story 58.12).** The Roku channel's code screen now shows
+  a QR beside the code, as the other TV apps do: a phone's camera opens the approve page with
+  the code filled in (maktaba.tv/tv for a cloud code, the home's own page for the home's code).
+  The channel draws the QR itself, so no image is fetched from the home or the cloud.
 - **Playing on Roku (Epic 58, story 58.13).** The Roku channel's player: it tells the home
   what this Roku plays (H.264, HEVC, AV1 inside DASH, HDR10, HLG, Dolby Vision 5, the Dolby
   passthroughs), so a 4K HDR file plays directly where the Roku can and is converted only where
@@ -947,16 +962,6 @@ build fails when the two differ.
   never an admin, and reaches nothing else: any other video or route is refused. The home's
   API answers Maktaba's receiver page at cast.maktaba.tv without cookies. A sign-in through
   Maktaba Cloud and the admin token cannot mint one.
-
-- **Guests watch a home's broadcast on watch.maktaba.tv (Epic 50, story 50.27).** An invite link
-  now opens the publisher's own pages: the channels the guest may watch, with what is on now and
-  next; each channel's player with today's programmes, the credit of a Creative Commons
-  programme and a Report link; and a guide. Pages are Arabic by default, right to left, with
-  English a tap away, and never link to another publisher. Channels switch with up and down, a
-  swipe or the channel's number; when the home goes offline its slate plays with a note instead
-  of an error. The home publishes each channel's guide, name, number and logo to the edge. A TV
-  can be paired by a QR code that opens a page on the guest's phone; the apps' **Watch a
-  broadcast** screens follow.
 
 - **Apps can tell when they and the home are too far apart (story 58.01).** The home now
   publishes its API level, the oldest level it still serves, and the oldest build of each app it
@@ -2856,18 +2861,6 @@ build fails when the two differ.
   switchable fallback. The edge stores and delivers what a home sends and never chooses, ranks
   or recommends anything. It is not deployed yet: broadcasting stays off until its gate opens.
 
-- **Viewer analytics and broadcast monitoring (story 50.28).** A home that broadcasts through
-  Maktaba Cloud gets a **Viewers** page at app.maktaba.tv (from **Homes**, for the home's owner
-  only): viewers watching now and viewer-hours today, over 7 days and this month against the
-  plan's allowance; with the Broadcaster add-on also the most viewers at once, average watch
-  time, countries, devices, quality watched, playback errors and viewers turned away, with a CSV
-  export. Countries and devices with fewer than 5 viewers are grouped as **Other**, and no names,
-  accounts or addresses are kept. Maktaba's staff can read the same numbers, each read audited.
-  The cloud now also watches its broadcasting: a canary broadcast played every minute from two
-  networks, alerts on its error budget, ingest lag, a stale revocation list, the edge's monthly
-  cost and a mismatch between analytics and billing, and a **Broadcasting** line on the status
-  page once broadcasting opens.
-
 - **A home can broadcast chosen Live TV channels to viewers outside it (Epic 50, story 50.22).**
   An admin sets a channel up on the new Broadcast panel of the Live TV page (its link name,
   invite-only or open, always on or only while someone watches, its qualities) and publishes it
@@ -2880,6 +2873,15 @@ build fails when the two differ.
   away, keeps going for a day without Maktaba Cloud, and is never released while published.
   Only admins can set up, publish or unpublish, and the API enforces it. Broadcasting is off
   until an admin turns it on, and nothing reaches viewers until the broadcast edge is deployed.
+
+- **Parental controls on the new TVs (Epic 58, story 58.14).** A child's account signed in on a
+  Samsung or LG TV (`/tv/`), Roku, Fire TV or Android TV sees only what its limits allow, as
+  everywhere else. Something hidden, opened from a link, shows This isn't available with the
+  limit and Ask a parent, which takes the remote's focus; a parent answers from Maktaba on their
+  phone, and a yes opens it on the TV without a restart. The TV's Account or Settings says a
+  parent manages the account, and its content limit. Samsung, LG and Roku ask for no PIN on the
+  remote; Fire TV and Android TV keep the guardian's PIN. A deep link to a hidden item shows the
+  not-available line and asks nothing. English and Arabic, mirrored.
 
 - **A published channel airs only what may be shared online (Epic 50, story 50.23).** While a
   Live TV channel is broadcast, it airs only publishable items: the household's own recordings,
@@ -2918,6 +2920,18 @@ build fails when the two differ.
   everything at once (`docs/runbooks/cloud/broadcast-kill.md`). A home's copy carries only its
   own entries, signed so the edge won't take it as the full list.
 
+- **Viewer analytics and broadcast monitoring (story 50.28).** A home that broadcasts through
+  Maktaba Cloud gets a **Viewers** page at app.maktaba.tv (from **Homes**, for the home's owner
+  only): viewers watching now and viewer-hours today, over 7 days and this month against the
+  plan's allowance; with the Broadcaster add-on also the most viewers at once, average watch
+  time, countries, devices, quality watched, playback errors and viewers turned away, with a CSV
+  export. Countries and devices with fewer than 5 viewers are grouped as **Other**, and no names,
+  accounts or addresses are kept. Maktaba's staff can read the same numbers, each read audited.
+  The cloud now also watches its broadcasting: a canary broadcast played every minute from two
+  networks, alerts on its error budget, ingest lag, a stale revocation list, the edge's monthly
+  cost and a mismatch between analytics and billing, and a **Broadcasting** line on the status
+  page once broadcasting opens.
+
 - **Who may watch a home's broadcast channels (Epic 50, story 50.26).** Each published channel is
   invite only (the default) or open to anyone with the link, open only for a verified account
   (a paid plan, a confirmed email, 7 days since the first broadcast) with the Broadcaster
@@ -2930,6 +2944,16 @@ build fails when the two differ.
   into a 10-minute viewer token; the plan's concurrent viewers and viewer-hours hold for new
   viewers, never stopping one already watching. Viewers never pay. Maktaba's staff can list
   and revoke a home's invites, with a reason, in the audit log.
+
+- **Guests watch a home's broadcast on watch.maktaba.tv (Epic 50, story 50.27).** An invite link
+  now opens the publisher's own pages: the channels the guest may watch, with what is on now and
+  next; each channel's player with today's programmes, the credit of a Creative Commons
+  programme and a Report link; and a guide. Pages are Arabic by default, right to left, with
+  English a tap away, and never link to another publisher. Channels switch with up and down, a
+  swipe or the channel's number; when the home goes offline its slate plays with a note instead
+  of an error. The home publishes each channel's guide, name, number and logo to the edge. A TV
+  can be paired by a QR code that opens a page on the guest's phone; the apps' **Watch a
+  broadcast** screens follow.
 
 ### Changed
 

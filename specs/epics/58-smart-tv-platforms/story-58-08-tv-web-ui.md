@@ -24,12 +24,19 @@ Two things stop it running on a TV:
 **One UI, two builds.**
 - `/big` stays as it is, for desktops and browsers.
 - A second Vite build, `build:tv`, outputs the same `bigscreen` code at `/tv/`:
-  - target `chrome68`, with the needed polyfills (`core-js` usage-based, `whatwg-fetch` not
-    needed at M68);
+  - target `chrome68`, with plugin-legacy's modern polyfills (`whatwg-fetch` not needed at
+    M68);
+  - CSS lowered for Chrome 68 by Lightning CSS and `web/tv-build/tvcss.mjs` (clamp/min/max,
+    flex gap, logical properties mirrored under `[dir]`, `aspect-ratio` with a `@supports not`
+    fallback, WOFF2-only fonts);
   - no `eval`, no top-level `await`, and CSS without `:has()` or container queries;
-  - a check (`es-check es2017` plus a CSS feature lint) fails the build when the output uses
-    something M68 cannot run.
-- The home serves `/tv/` like `/big`, from the same release. The UI on a TV is therefore always
+  - a check, `web/tv-build/tvcheck.mjs` (`es-check es2017` plus a CSS feature lint), fails the
+    build when the output uses something M68 cannot run.
+  - The tools live under `web/` because `web/vite.config.ts` imports them and the web and cloud
+    images copy `web/` alone.
+- The home serves `/tv/` like `/big`, from the same release (the page `no-cache`, hashed files
+  immutable, client routes falling back to the TV page, a missing asset a 404), and `make
+  build-web` builds it. The web app's service worker leaves `/tv/` alone. The UI on a TV is therefore always
   the home's own version: a new home brings a new TV UI with no store review. Story 58.09 says
   how the packaged TV app loads it.
 
@@ -72,7 +79,8 @@ onto `bigscreen/input/actions.ts`'s actions. The browser's own keys keep working
 - first screen in under 4 seconds from launch on the LAN;
 - under 3 seconds between screens;
 - posters at `?size=small` (story 48.5);
-- grids virtualized;
+- long grids read 48 cards at a time and fetch the next page as focus nears the end, rather
+  than a virtualized list;
 - no animation longer than 200 ms.
 
 Measured on the low end of the real-device checklist (58.16).
@@ -114,6 +122,12 @@ stories (56.13). TV-only keys:
 | `tv.exitConfirm` | Leave Maktaba? | الخروج من Maktaba؟ |
 | `tv.exitConfirm.yes` | Leave | خروج |
 | `tv.exitConfirm.no` | Stay | البقاء |
+| `tv.signIn.title` | Sign in to watch | سجّل الدخول للمشاهدة |
+| `tv.signIn.body` | This TV is not signed in to your Maktaba home yet. | هذا التلفاز لم يسجّل الدخول إلى منزل Maktaba بعد. |
+| `tv.signIn.go` | Sign in | تسجيل الدخول |
+
+The `tv.signIn.*` page is `/tv/` signed out in a browser: it sends the TV to the home's sign-in
+and back. In a launcher, `/tv/` signs in by code instead (58.09).
 
 ## Edge cases
 
@@ -128,6 +142,7 @@ stories (56.13). TV-only keys:
 |---|---|
 | `web/vite.config.ts` | `tv` mode: target, polyfills, base `/tv/` |
 | `web/src/bigscreen/screens/` | Library tabs, Series, Collection, Playlist, letter rail |
-| `web/src/bigscreen/input/` | `bridge` input source (58.09) |
-| `cmd/maktaba-server/` static routes | `/tv/` |
-| `tools/web/tvcheck.mjs` (new) | T01 |
+| `web/src/bigscreen/input/` | `bridge` input source (58.09), Tizen and webOS key codes |
+| `cmd/maktaba-server/internal/webui/serve.go` | `/tv/` |
+| `web/tv-build/tvcss.mjs`, `web/tv-build/tvcheck.mjs` (new) | the CSS pass; T01 |
+| `.github/workflows/_tv-web.yml` (new) | Vitest, `build:tv` with T01, Playwright on `/tv/` against a mock home (`web/e2e/tv`), ending with `tv-logs` |

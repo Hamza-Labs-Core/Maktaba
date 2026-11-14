@@ -82,10 +82,10 @@ func (d *AnalyticsDeps) now() time.Time {
 
 var serverIDRE = regexp.MustCompile(`^[0-9a-fA-F-]{8,64}$`)
 
-// PublisherIDs are the publisher ids a home's broadcast events carry. 50.21's ingest token names
-// the home's owner as the publisher and 50.20 names the home itself; both are read until those
-// two settle on one, so neither order of their merges loses a home's history.
-func PublisherIDs(s stores.Server) []string { return []string{s.ID, s.OwnerUserID} }
+// PublisherIDs are the publisher ids a home's broadcast events carry: the home's server id, the
+// one publisher key the edge's ingest tokens, usage windows, plans and viewer tokens share
+// (docs/broadcast-edge.md). Never the owner's account id, which all of an owner's homes share.
+func PublisherIDs(s stores.Server) []string { return []string{s.ID} }
 
 // UserAnalytics is the publisher's view: the home's owner only.
 func (d *AnalyticsDeps) UserAnalytics(w http.ResponseWriter, r *http.Request) {

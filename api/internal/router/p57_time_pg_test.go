@@ -46,12 +46,14 @@ type tmStreaming struct {
 	leases map[string]time.Time // by stream session id
 	end    *time.Time           // the end streaming holds for the account, as last told
 	fail   error
-	kept   []string // the SetTimeKept calls, "user=true|false"
+	kept   []string                           // the SetTimeKept calls, "user=true|false"
+	reqs   []grpcstreaming.OpenSessionRequest // every session asked for, in order (Epic 58's tv-clients)
 }
 
 func (s *tmStreaming) OpenSession(ctx context.Context, req grpcstreaming.OpenSessionRequest) (grpcstreaming.OpenSessionResponse, error) {
 	s.mu.Lock()
 	s.opened++
+	s.reqs = append(s.reqs, req)
 	s.mu.Unlock()
 	return s.acStreaming.OpenSession(ctx, req)
 }

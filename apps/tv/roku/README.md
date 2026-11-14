@@ -24,6 +24,7 @@ not-available line. Nothing is sold in the channel.
 | `components/MainScene.*` | the screen stack, the session (the scene's HTTP agent carries the bearer for posters), deep links, the leave dialog |
 | `components/tasks/` | `ApiTask` (one thread for the API), `HomeTask` (connect, probe, read an address), `CodeTask` (the cloud code and the home's own code) |
 | `components/screens/`, `components/widgets/` | the screens and their parts (`PosterCard`, `PillRow`, `TvButton`, the dialogs) |
+| `source/qr.brs`, `components/widgets/QrCode.*` | the code screen's QR: the web app's encoder (`web/src/lib/qr.ts`) in BrightScript, run in `CodeTask` on the code's `verify_url`, drawn as one Rectangle per run of dark modules; `tests/qr.test.mjs` asks both encoders for the same modules |
 | `components/common.brs` | what the screens share: labels in the bundled font, mirrored placement, rows and grids in reading order |
 | `components/theme.brs` | the dark colours, generated from `web/design-system/tokens/` by `make build-tokens` (never edited by hand) |
 | `tools/build.mjs` | the build (T02): BrighterScript with bslint, fonts and images, the zip under 4 MB; `--test` for the screen tests, `--device-tests` for checklist row 1 |
@@ -108,8 +109,10 @@ case by case; a difference fails CI.
 - **Text from the home** is shaped on the device. Shape it once, where the data is loaded (the
   Task that fetches a row), and keep the visual string in the ContentNode: item components are
   recycled as a row scrolls, and shaping in them repeats the work. On brs-engine a 229-character
-  description takes about 16 ms; story 58.15's budget, 50 ms a screen, is re-measured on a Roku
-  Express (docs/stores/roku.md, row 10).
+  description takes about 10 ms (`tests/timing_test.brs`, held in CI at 3.5 times a reference
+  loop for 20 of them); story 58.15's budget, 50 ms a screen, is measured on a Roku Express by
+  the same test in the device-test package (docs/stores/roku.md, row 10). Printable ASCII that
+  is not forced right to left skips the steps.
 - Arabic multi-line strings carry their own line breaks (lines are broken before reordering, so
   the first line holds the start of the text): their Label needs `wrap="true"` and enough
   `maxLines`, and must not be wrapped again.

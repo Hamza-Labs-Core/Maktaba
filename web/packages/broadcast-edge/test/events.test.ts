@@ -6,7 +6,18 @@ import { runInDurableObject } from "cloudflare:test";
 import { resetClock } from "../src/clock";
 import type { Env } from "../src/env";
 import * as ev from "../src/events";
-import { call, E, installList, LIVE, newChannel, putSegment, viewerToken } from "./helpers";
+import { forgetGeo } from "../src/geo";
+import { forgetRevocations } from "../src/revocations";
+import {
+  call,
+  E,
+  ingestToken,
+  installList,
+  LIVE,
+  newChannel,
+  putSegment,
+  viewerToken,
+} from "./helpers";
 
 afterEach(() => resetClock());
 
@@ -151,7 +162,7 @@ describe("T01 the events a viewer's requests write", () => {
     expect(kinds).toEqual(["play", "beat", "switch", "error"]);
     const play = named(points[0]!);
     expect(play).toMatchObject({
-      publisher: "pub-1",
+      publisher: "home-1",
       channel: ch,
       country: "EG",
       device: "tvos",
@@ -183,6 +194,29 @@ describe("T01 the events a viewer's requests write", () => {
     expect(named(points[1]!).rung).toBe("");
   });
 
+  it("a viewer outside the channel's countries writes blocked geo, by country, once", async () => {
+    forgetGeo();
+    const ch = newChannel();
+    const token = await ingestToken({ ch, geo: { allow: ["SA"] } });
+    expect((await putSegment(ch, "src", 1, { token })).status).toBe(201);
+    const { points, AE } = fakeAE();
+    const tok = await viewerToken({ ch });
+    const from = (c: string) => ({ headers: { "CF-IPCountry": c } });
+    expect((await call(`${LIVE}/${tok}/${ch}/master.m3u8`, from("DE"), { AE })).status).toBe(451);
+    expect(points.map(named)).toMatchObject([
+      { event: "blocked", code: "geo", channel: ch, country: "DE", publisher: "home-1" },
+    ]);
+    // the playlists of the same session add none; a country Cloudflare can't tell is XX
+    points.length = 0;
+    expect((await call(`${LIVE}/${tok}/${ch}/src/index.m3u8`, from("DE"), { AE })).status).toBe(
+      451
+    );
+    expect(points).toEqual([]);
+    expect((await call(`${LIVE}/${tok}/${ch}/master.m3u8`, {}, { AE })).status).toBe(451);
+    expect(named(points[0]!)).toMatchObject({ code: "geo", country: "XX" });
+    forgetGeo();
+  });
+
   it("a full channel writes blocked full; a revoked one blocked revoked", async () => {
     const ch = newChannel();
     const { points, AE } = fakeAE();
@@ -191,18 +225,24 @@ describe("T01 the events a viewer's requests write", () => {
     expect(named(points[0]!)).toMatchObject({ event: "blocked", code: "full", channel: ch });
 
     await putSegment(ch, "src", 1);
+    // the kill switch (50.25): a signed list entry takes the channel off air
     await installList([
-      { id: "r-ev", kind: "channel", ref: ch, action: "off_air", reason: "notice" },
+      { id: "ev-1", kind: "channel", ref: ch, action: "off_air", reason: "takedown" },
     ]);
-    points.length = 0;
-    const tok = await viewerToken({ ch });
-    expect((await call(`${LIVE}/${tok}/${ch}/master.m3u8`, {}, { AE })).status).toBe(503);
-    expect(named(points[0]!)).toMatchObject({ event: "blocked", code: "revoked" });
-    // the media playlists of the same session add no second blocked
-    points.length = 0;
-    await call(`${LIVE}/${tok}/${ch}/src/index.m3u8`, {}, { AE });
-    expect(points).toEqual([]);
-    await installList([]);
+    forgetRevocations();
+    try {
+      points.length = 0;
+      const tok = await viewerToken({ ch });
+      expect((await call(`${LIVE}/${tok}/${ch}/master.m3u8`, {}, { AE })).status).toBe(503);
+      expect(points.map(named)).toMatchObject([{ event: "blocked", code: "revoked" }]);
+      // the media playlists of the same session add no second blocked, and no error
+      points.length = 0;
+      expect((await call(`${LIVE}/${tok}/${ch}/src/index.m3u8`, {}, { AE })).status).toBe(503);
+      expect(points).toEqual([]);
+    } finally {
+      await installList([]);
+      forgetRevocations();
+    }
   });
 
   it("a segment made visible writes ingest, glass-to-glass only for the canary", async () => {
@@ -212,7 +252,7 @@ describe("T01 the events a viewer's requests write", () => {
     await runInDurableObject(stub, (instance) => {
       const env = (instance as unknown as { env: Env }).env;
       env.AE = AE;
-      env.CANARY_PUBLISHER = "pub-1";
+      env.CANARY_PUBLISHER = "home-1";
     });
     expect((await putSegment(ch, "src", 1)).status).toBe(201);
     // seq 3 waits for 2: visible only when 2 arrives, then both are written
@@ -222,7 +262,7 @@ describe("T01 the events a viewer's requests write", () => {
     expect(points.map((p) => named(p).event)).toEqual(["ingest", "ingest", "ingest"]);
     const first = named(points[0]!);
     expect(first).toMatchObject({
-      publisher: "pub-1",
+      publisher: "home-1",
       channel: ch,
       rung: "src",
       segment_bytes: 2048,

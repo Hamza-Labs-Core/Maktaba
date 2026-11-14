@@ -564,6 +564,20 @@ final class HeldWaits: @unchecked Sendable {
         #expect(ParentalStub.seen.isEmpty, "the home is not asked for what it would refuse")
     }
 
+    /// A page made before the limit was read is made again once the home says the account
+    /// is restricted (#1309: the time's-up screen never showed Ask for more time); one made
+    /// with a read limit is kept, and nothing is made again for a looser or device-only one.
+    @MainActor @Test func aPageMadeBeforeTheLimitWasReadIsOutdatedOnceItIs() {
+        let restricted = ParentalLimit(restricted: true, maxTier: 9, version: 1)
+        let unread = BlockedPage(client: ParentalStub.client(), subject: .time(minutes: 15), limit: .none)
+        #expect(unread.outdated(by: restricted))
+        #expect(!unread.outdated(by: .none))
+        #expect(!unread.outdated(by: ParentalLimit(maxTier: 9, deviceLimit: 9)), "a device limit gives no Ask")
+        let read = BlockedPage(client: ParentalStub.client(), subject: .time(minutes: 15), limit: restricted)
+        #expect(!read.outdated(by: restricted))
+        #expect(!read.outdated(by: ParentalLimit(restricted: true, maxTier: 12, version: 2)))
+    }
+
     // MARK: 57.06
 
     @MainActor @Test func askingAParentSendsTheIdTheChildHadAndWaits() async {

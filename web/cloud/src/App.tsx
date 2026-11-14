@@ -17,8 +17,8 @@ import { Billing } from "./pages/Billing";
 import { LinkHome } from "./pages/LinkHome";
 import { Homes } from "./pages/Homes";
 import { Broadcast } from "./pages/Broadcast";
-import { BroadcastAnalytics } from "./pages/BroadcastAnalytics";
 import { ApproveTv } from "./pages/ApproveTv";
+import { BroadcastAnalytics } from "./pages/BroadcastAnalytics";
 
 export function Providers({ children }: { children: ReactNode }) {
   return (

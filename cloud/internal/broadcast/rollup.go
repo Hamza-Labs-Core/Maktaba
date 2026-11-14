@@ -212,12 +212,14 @@ func (j *Jobs) RollHour(ctx context.Context, hour time.Time) (int, error) {
 	return len(hs), tx.Commit()
 }
 
-func jsonMap(m map[string]float64) []byte {
+// jsonMap is a jsonb argument: a string, never []byte, which lib/pq sends in binary under the
+// pool's binary_parameters=yes (db.WithBinaryParameters) and Postgres refuses as jsonb.
+func jsonMap(m map[string]float64) string {
 	if m == nil {
 		m = map[string]float64{}
 	}
 	b, _ := json.Marshal(m)
-	return b
+	return string(b)
 }
 
 // CatchUp rolls up every finished hour after the last one rolled (at most maxCatchUp), stopping

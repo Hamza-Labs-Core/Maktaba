@@ -305,7 +305,7 @@ class SqlRepo:
 
     async def publishable_ids(self, channel: ChannelDef, ids: set[UUID]) -> set[UUID] | None:
         """The ids among ``ids`` that may air while the channel is published with
-        ``broadcast.publishable_only`` on (slot 0227's rule); None while it is not limited.
+        ``broadcast.publishable_only`` on (slot 0228's rule); None while it is not limited.
         Broadcasting runs on Postgres only: on SQLite a channel is never limited."""
         if not self._pg:
             return None
@@ -707,7 +707,7 @@ class SqlRepo:
     async def _attributions(self, ids: list[str]) -> dict[str, dict[str, Any]]:
         """What each video's guide entry must credit (Epic 50, story 50.23): the CC BY
         attribution (title, author, link, licence) or a source's credit line. Postgres
-        only (slot 0227's ``video_attribution``)."""
+        only (slot 0228's ``video_attribution``)."""
         want = sorted(set(ids))
         if not want or not self._pg:
             return {}

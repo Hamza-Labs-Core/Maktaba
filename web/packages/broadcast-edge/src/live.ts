@@ -68,63 +68,66 @@ async function route(request: Request, env: Env, url: URL): Promise<Response> {
   if (parts.length === 3 && parts[2] === "beat" && request.method === "POST")
     res = await beat(request, env, claims);
   else if (parts.length === 3 && parts[2] === "master.m3u8" && get)
-    res = (await geoCheck(request, env, claims, true)) ?? (await master(env, claims));
+    res = (await geoCheck(request, env, ch)) ?? (await master(env, claims));
   else if (parts.length === 4 && RUNG_RE.test(parts[2]!) && get && parts[3] === "index.m3u8")
-    res = (await geoCheck(request, env, claims, false)) ?? (await media(env, claims, parts[2]!));
+    res = (await geoCheck(request, env, ch)) ?? (await media(env, claims, parts[2]!));
   else if (parts.length === 4 && RUNG_RE.test(parts[2]!) && get && SEG_RE.test(parts[3]!))
     res = await segment(env, ch, parts[2]!, parts[3]!);
   else return problem(404, "not_found");
-  await recordRefusal(env, claims, parts[2] === "master.m3u8", res);
+  await recordRefusal(env, claims, parts[2] === "master.m3u8", res, request);
   return res;
 }
 
 /**
- * recordRefusal writes `blocked` for a revoked or stopped channel (once per session start: on the
- * master) and `error` for a 5xx the edge answered, by its code.
+ * recordRefusal writes `blocked` for a revoked channel and for a viewer outside the channel's
+ * countries (once per session start: on the master; geo with the viewer's country, 50.23 §5) and
+ * `error` for a 5xx the edge answered, by its code. A channel the revocation list stopped
+ * answers 503 off_air with the entry's reason (50.25): that is a block, never an edge error.
  */
 async function recordRefusal(
   env: Env,
   claims: ViewerClaims,
   isMaster: boolean,
-  res: Response
+  res: Response,
+  request: Request
 ): Promise<void> {
   if (res.status < 403) return;
-  const code = await problemCode(res);
-  // a kill-switch stop (50.25) answers 503 off_air: a refusal, not an edge error
-  const revoked = (res.status === 403 && code === "revoked") || code === "off_air";
-  if (revoked) {
+  if (res.status === 451) {
+    if (isMaster) ev.write(env, ev.blocked(claims.pub, claims.ch, "geo", viewerCountry(request)));
+    return;
+  }
+  const { code, reason } = await problemOf(res);
+  const stopped = code === "off_air" && reason !== "";
+  if (stopped) {
     if (isMaster) ev.write(env, ev.blocked(claims.pub, claims.ch, "revoked"));
   } else if (res.status >= 500)
     ev.write(env, ev.error(claims.pub, claims.ch, code || `http_${res.status}`));
 }
 
-async function problemCode(res: Response): Promise<string> {
+async function problemOf(res: Response): Promise<{ code: string; reason: string }> {
   try {
-    const body = (await res.clone().json()) as { error?: unknown };
-    return typeof body.error === "string" ? body.error : "";
+    const body = (await res.clone().json()) as { error?: unknown; reason?: unknown };
+    return {
+      code: typeof body.error === "string" ? body.error : "",
+      reason: typeof body.reason === "string" ? body.reason : "",
+    };
   } catch {
-    return "";
+    return { code: "", reason: "" };
   }
+}
+
+/** viewerCountry is the viewer's country as Cloudflare tells it ("" when it can't). */
+function viewerCountry(request: Request): string {
+  return request.headers.get("CF-IPCountry") ?? "";
 }
 
 /**
  * geoCheck (50.23 §5) answers 451 geo_blocked to a viewer outside the channel's countries, at
- * play (master) and at every playlist; the publisher sees blocked attempts by country (50.28),
- * one `blocked` event per session start (the master).
+ * play (master) and at every playlist; recordRefusal writes the blocked event, by country, for
+ * the publisher's analytics (50.28).
  */
-async function geoCheck(
-  request: Request,
-  env: Env,
-  claims: ViewerClaims,
-  isMaster: boolean
-): Promise<Response | null> {
-  const country = request.headers.get("CF-IPCountry") ?? "";
-  if (!geoBlocked(await geoFor(env, claims.ch), country)) return null;
-  if (isMaster)
-    ev.write(
-      env,
-      ev.point("blocked", claims.pub, { channel: claims.ch, code: "geo", country: country || "XX" })
-    );
+async function geoCheck(request: Request, env: Env, ch: string): Promise<Response | null> {
+  if (!geoBlocked(await geoFor(env, ch), viewerCountry(request))) return null;
   return problem(451, "geo_blocked");
 }
 

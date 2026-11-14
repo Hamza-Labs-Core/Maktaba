@@ -8,6 +8,7 @@
     <field id="base" type="string" />
     <field id="plain" type="boolean" value="false" />
     <field id="stop" type="boolean" value="false" />
+    <!-- {code, qr (the QR's modules, rows of booleans, or invalid), expiresIn, verifyUrl} -->
     <field id="code" type="assocarray" />
     <field id="state" type="string" />
     <field id="result" type="assocarray" />
@@ -17,4 +18,5 @@
   <script type="text/brightscript" uri="pkg:/source/net.brs" />
   <script type="text/brightscript" uri="pkg:/source/http.brs" />
   <script type="text/brightscript" uri="pkg:/source/compat.brs" />
+  <script type="text/brightscript" uri="pkg:/source/qr.brs" />
 </component>

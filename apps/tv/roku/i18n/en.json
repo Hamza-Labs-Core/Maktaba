@@ -438,5 +438,100 @@
     "widthChars": 30,
     "lines": 1
   },
-  "roku.player.track": "Track %1$s"
+  "roku.player.track": "Track %1$s",
+  "@parental.blocked.title": {
+    "widthChars": 40,
+    "lines": 1
+  },
+  "parental.blocked.title": "This isn't available",
+  "@parental.blocked.account": {
+    "widthChars": 60,
+    "lines": 2
+  },
+  "parental.blocked.account": "Your account is limited to %1$s+.",
+  "@parental.blocked.accountAll": {
+    "widthChars": 60,
+    "lines": 2
+  },
+  "parental.blocked.accountAll": "Your account is limited to All ages.",
+  "@parental.blocked.accountNone": {
+    "widthChars": 60,
+    "lines": 2
+  },
+  "parental.blocked.accountNone": "Your account is limited to what a parent allowed.",
+  "@parental.blocked.device": {
+    "widthChars": 60,
+    "lines": 2
+  },
+  "parental.blocked.device": "This device is limited to %1$s+.",
+  "@parental.blocked.ask": {
+    "widthChars": 24,
+    "lines": 1
+  },
+  "parental.blocked.ask": "Ask a parent",
+  "@parental.ask.again": {
+    "widthChars": 24,
+    "lines": 1
+  },
+  "parental.ask.again": "Ask again",
+  "@parental.ask.sent": {
+    "widthChars": 60,
+    "lines": 2
+  },
+  "parental.ask.sent": "Request sent. Waiting for a parent.",
+  "@parental.ask.denied": {
+    "widthChars": 60,
+    "lines": 2
+  },
+  "parental.ask.denied": "A parent said no.",
+  "@parental.ask.approved": {
+    "widthChars": 60,
+    "lines": 2
+  },
+  "parental.ask.approved": "A parent said yes.",
+  "@parental.ask.tooMany": {
+    "widthChars": 60,
+    "lines": 2
+  },
+  "parental.ask.tooMany": "You have too many requests waiting.",
+  "@parental.ask.failed": {
+    "widthChars": 60,
+    "lines": 2
+  },
+  "parental.ask.failed": "The request didn't go out. Try again.",
+  "@parental.time.check": {
+    "widthChars": 24,
+    "lines": 1
+  },
+  "parental.time.check": "Check again",
+  "@parental.profile.managed": {
+    "widthChars": 60,
+    "lines": 1
+  },
+  "parental.profile.managed": "A parent manages this account.",
+  "@parental.profile.limit": {
+    "widthChars": 60,
+    "lines": 1
+  },
+  "parental.profile.limit": "Content limit: %1$s+",
+  "@parental.profile.limitAll": {
+    "widthChars": 60,
+    "lines": 1
+  },
+  "parental.profile.limitAll": "Content limit: All ages",
+  "@parental.profile.limitNone": {
+    "widthChars": 60,
+    "lines": 1
+  },
+  "parental.profile.limitNone": "Content limit: what a parent allowed",
+  "@tv.parental.askOnPhone": {
+    "widthChars": 60,
+    "lines": 2
+  },
+  "tv.parental.askOnPhone": "A parent can answer from Maktaba on their phone.",
+  "@parental.blocked.deviceAll": {
+    "widthChars": 60,
+    "lines": 2
+  },
+  "parental.blocked.deviceAll": "This device is limited to All ages."
 }

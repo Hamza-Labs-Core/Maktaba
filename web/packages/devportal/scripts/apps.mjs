@@ -503,6 +503,17 @@ export const APPS = [
       },
       { h: t("Signing in", "تسجيل الدخول"), blocks: SIGN_IN.slice(0, 2) },
       {
+        h: t("A child's account on a TV", "حساب طفل على التلفاز"),
+        blocks: [
+          {
+            p: t(
+              "Sign the TV in with the child's own account: the home then shows it only what the child's limits allow, on every TV, through the cloud and on a cast, and the TV cannot get around them. Something hidden, opened from a link, shows **This isn't available** with the limit and **Ask a parent**, which takes the remote's focus; a parent answers from Maktaba on their phone, and a yes opens it on the TV without a restart. **Account** says that a parent manages the account, and its content limit. On Samsung, LG and Roku there is no parent PIN to type on the remote; the Apple TV, Android TV and Fire TV apps also take the guardian's PIN. Developers: [Parental controls](/contributing/parental-controls/).",
+              "سجّل دخول التلفاز بحساب الطفل نفسه: عندها لا يعرض عليه الجهاز الرئيسي إلا ما تسمح به حدود الطفل، على كل تلفاز، وعبر السحابة وعند البث، ولا يستطيع التلفاز الالتفاف عليها. وما كان مخفيًا وفُتح من رابط يعرض **هذا غير متاح** مع الحد و**اطلب من أحد الوالدين**، الذي يأخذ تركيز جهاز التحكم؛ ويرد أحد الوالدين من مكتبة على هاتفه، والموافقة تفتحه على التلفاز دون إعادة تشغيل. وتقول **الحساب** إن أحد الوالدين يدير الحساب، وحدّ المحتوى فيه. ولا يوجد على سامسونج وإل جي وروكو رمز للوالدين يُكتب بجهاز التحكم؛ وتقبل تطبيقات آبل تي في وأندرويد تي في وفاير تي في رمز الولي أيضًا. للمطورين: [الرقابة الأبوية](/contributing/parental-controls/)."
+            ),
+          },
+        ],
+      },
+      {
         h: t("Screenshots", "لقطات الشاشة"),
         blocks: [
           {

@@ -5,9 +5,15 @@
 //
 // The home's agent authenticates as on every agent route: basic auth with its server id and
 // secret, never a user token. The token is Ed25519-signed (internal/broadcast), bound to the
-// publisher (the home's owner), the channel, the rungs and the plan's top bitrate, and valid 24 h;
-// the home asks again every hour. What a plan allows comes from a Plans source: until the
-// Broadcaster tier lands (story 50.20) the default is Pro's guest sharing.
+// publisher, the channel, the rungs and the plan's top bitrate, and valid 24 h; the home asks
+// again every hour. The publisher is the home (its server id), the id the edge's usage windows
+// name and the cloud bills (story 50.20): the edge keys its PublisherControl by the token's pub,
+// so any other id would post windows the cloud rejects as unknown_publisher.
+//
+// What a home may push is 50.20's entitlement (StorePlans): its tier (the Broadcaster add-on or
+// Pro's guest sharing, from the catalog) for the rungs and the top bitrate, and the
+// broadcasting gate: while broadcast.enabled is off only the test publishers a service admin
+// granted get a token (403 broadcast_not_enabled for the others, as on the publish route).
 
 package broadcast
 
@@ -32,10 +38,8 @@ type Agents interface {
 	VerifySecret(ctx context.Context, serverID, secret string) error
 }
 
-// Allowance is what a home's owner's plan lets it publish.
+// Allowance is what a home's plan lets it push.
 type Allowance struct {
-	// Publisher is the cloud account that publishes (the home's owner).
-	Publisher  string
 	MaxRungs   int
 	MaxTopKbps int
 }
@@ -43,12 +47,13 @@ type Allowance struct {
 var (
 	// ErrNotInPlan is a home whose owner's plan does not include broadcasting.
 	ErrNotInPlan = errors.New("broadcast: not in plan")
+	// ErrGateShut is a home that is not a test publisher while broadcasting is off.
+	ErrGateShut = errors.New("broadcast: broadcasting is not enabled")
 	// ErrUnknownServer is a home the cloud does not know.
 	ErrUnknownServer = errors.New("broadcast: unknown server")
 )
 
-// Plans answers what a home may publish (story 50.20 replaces the default with the
-// Broadcaster tier's catalog, the agreement check and the channel count).
+// Plans answers what a home may push (StorePlans; the tests' fakes).
 type Plans interface {
 	ForServer(ctx context.Context, serverID string) (Allowance, error)
 }
@@ -202,6 +207,9 @@ func (d *IngestDeps) IngestToken(w http.ResponseWriter, r *http.Request) {
 	case errors.Is(err, ErrNotInPlan):
 		writeErr(w, 403, "broadcast_not_in_plan", "")
 		return
+	case errors.Is(err, ErrGateShut):
+		writeErr(w, 403, "broadcast_not_enabled", "")
+		return
 	case errors.Is(err, ErrUnknownServer):
 		writeErr(w, 404, "not_found", "")
 		return
@@ -254,7 +262,7 @@ func (d *IngestDeps) IngestToken(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	tok, err := bc.IssueIngest(*d.Key, bc.IngestClaims{
-		Pub: allow.Publisher, Ch: ch, Rungs: req.Rungs, Home: serverID, Kbps: allow.MaxTopKbps,
+		Pub: serverID, Ch: ch, Rungs: req.Rungs, Home: serverID, Kbps: allow.MaxTopKbps,
 		Geo: bc.MergeGeo(mode, countries, deny),
 	}, now)
 	if errors.Is(err, bc.ErrBadClaims) {
@@ -277,7 +285,7 @@ func (d *IngestDeps) IngestToken(w http.ResponseWriter, r *http.Request) {
 func (d *IngestDeps) speedTest(w http.ResponseWriter, serverID, channel string, allow Allowance) {
 	now := d.now()
 	ch := bc.ChannelID(serverID, channel)
-	tok, err := bc.IssueSpeedTest(*d.Key, bc.IngestClaims{Pub: allow.Publisher, Ch: ch, Home: serverID, Kbps: allow.MaxTopKbps}, now)
+	tok, err := bc.IssueSpeedTest(*d.Key, bc.IngestClaims{Pub: serverID, Ch: ch, Home: serverID, Kbps: allow.MaxTopKbps}, now)
 	if err != nil {
 		writeErr(w, 500, "sign_failed", "")
 		return
@@ -287,34 +295,31 @@ func (d *IngestDeps) speedTest(w http.ResponseWriter, serverID, channel string, 
 		Rungs: []string{}, MaxTopKbps: allow.MaxTopKbps})
 }
 
-// GuestSharing is Pro's guest sharing (README §14.4, 50.20 §1): 2 rungs, up to 3,000 kbps.
-var GuestSharing = Allowance{MaxRungs: 2, MaxTopKbps: 3000}
+// StorePlans is what a home may push, from 50.20's publisher state (billing.BroadcastStore):
+// its tier's rungs and top bitrate, behind the broadcasting gate.
+type StorePlans struct{ Store *billing.BroadcastStore }
 
-// DBPlans is the default Plans: an active Pro owner gets guest sharing; any other plan none.
-// Story 50.20 replaces it with the Broadcaster tier (servers.broadcast_plan) and its catalog.
-type DBPlans struct{ DB *sql.DB }
-
-func (p DBPlans) ForServer(ctx context.Context, serverID string) (Allowance, error) {
-	var userID, plan, status string
-	err := p.DB.QueryRowContext(ctx, `
-        SELECT u.id::text, u.plan, u.status
-          FROM servers s JOIN users u ON u.id = s.owner_user_id
-         WHERE s.id::text = $1`, serverID).Scan(&userID, &plan, &status)
-	if errors.Is(err, sql.ErrNoRows) {
+func (p StorePlans) ForServer(ctx context.Context, serverID string) (Allowance, error) {
+	pub, err := p.Store.Publisher(ctx, serverID)
+	if errors.Is(err, billing.ErrUnknownPublisher) {
 		return Allowance{}, ErrUnknownServer
 	}
 	if err != nil {
 		return Allowance{}, err
 	}
-	return AllowanceFor(userID, plan, status)
+	return AllowanceOf(pub, p.Store.Gated(pub))
 }
 
-// AllowanceFor maps an owner's plan and account status to what the home may publish.
-func AllowanceFor(userID, plan, status string) (Allowance, error) {
-	if status != "active" || plan != billing.PlanPro {
+// AllowanceOf is a publisher's allowance: none without a tier (no plan, or the owner not
+// active), none while the gate is shut for it (broadcast.enabled off and not a test publisher),
+// else its tier's rungs and top bitrate (Broadcaster or guest sharing, from the catalog).
+func AllowanceOf(p billing.Publisher, gated bool) (Allowance, error) {
+	tier := p.Tier()
+	if tier == nil {
 		return Allowance{}, ErrNotInPlan
 	}
-	a := GuestSharing
-	a.Publisher = userID
-	return a, nil
+	if !gated {
+		return Allowance{}, ErrGateShut
+	}
+	return Allowance{MaxRungs: tier.MaxRungs, MaxTopKbps: tier.MaxTopKbps}, nil
 }

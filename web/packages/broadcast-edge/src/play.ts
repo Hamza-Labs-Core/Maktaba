@@ -349,7 +349,13 @@ export async function credOf(
   request: Request,
   env: Env,
   pub: string
-): Promise<{ cred: Cred; pass?: string; passExp?: number; inviteExp?: number; openExp?: number }> {
+): Promise<{
+  cred: Cred;
+  pass?: string;
+  passExp?: number;
+  inviteExp?: number;
+  openExp?: number;
+}> {
   const c = cookies(request);
   const auth = bearer(request);
   const t0 = now();

@@ -88,7 +88,7 @@ func main() {
 
 	// Local admin surface: GET /admin/cloud-link, POST /admin/cloud-link/links,
 	// GET /admin/cloud-link/license, /admin/cloud-link/reports (53.16), GET and POST
-	// /admin/cloud-link/direct (50.15), /admin/cloud-link/tv-codes/ (58.03), and
+	// /admin/cloud-link/direct (50.15), /admin/cloud-link/tv-codes/ (58.03) and
 	// /admin/cloud-link/broadcast/ (50.22).
 	rep := &cloudlink.LinkReporter{CloudAPI: cfg.cloudAPI, Creds: creds}
 	adminSrv := &http.Server{

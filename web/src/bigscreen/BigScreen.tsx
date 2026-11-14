@@ -33,6 +33,8 @@ import { BigSettings } from "./screens/Settings";
 import { BigWatch } from "./screens/Watch";
 import { useFeatureGate } from "../lib/capabilities";
 import { BigFeatureRoute } from "./screens/FeatureOff";
+import { ParentalScreens } from "../components/parental/screens";
+import { BIG_PARENTAL_SCREENS } from "./screens/Blocked";
 import "./bigscreen.css";
 
 /** How long the pointer may rest before it hides. */
@@ -277,40 +279,43 @@ function Frame() {
     <>
       {!player && <Tabs />}
       <main className={`bs-main${player ? " bs-main--player" : ""}`} data-bs-scroll>
-        <Routes>
-          <Route index element={<BigHome />} />
-          <Route path="libraries" element={<BigLibraries />} />
-          <Route path="library/:id" element={<BigLibrary />} />
-          <Route path="library/:libraryId/collection/:kind/:id" element={<BigAutoCollection />} />
-          <Route path="collection/:id" element={<BigCollection />} />
-          <Route path="playlist/:id" element={<BigPlaylist />} />
-          <Route path="series" element={<BigSeriesList />} />
-          <Route path="series/:id" element={<BigSeries />} />
-          <Route path="video/:id" element={<BigVideo />} />
-          <Route path="watch/:videoId" element={<BigWatch />} />
-          <Route path="search" element={<BigSearch />} />
-          <Route
-            path="live"
-            element={
-              <BigFeatureRoute id="live_tv">
-                <BigLive />
-              </BigFeatureRoute>
-            }
-          />
-          <Route
-            path="live/:number"
-            element={
-              <BigFeatureRoute id="live_tv">
-                <BigLivePlayer />
-              </BigFeatureRoute>
-            }
-          />
-          <Route
-            path="settings"
-            element={<BigSettings onExit={mode === "tv" ? null : () => setAsking(true)} />}
-          />
-          <Route path="*" element={<BigHome />} />
-        </Routes>
+        {/* Epic 58 story 58.14: the player's and live TV's blocked and time's-up pages, for a remote */}
+        <ParentalScreens.Provider value={BIG_PARENTAL_SCREENS}>
+          <Routes>
+            <Route index element={<BigHome />} />
+            <Route path="libraries" element={<BigLibraries />} />
+            <Route path="library/:id" element={<BigLibrary />} />
+            <Route path="library/:libraryId/collection/:kind/:id" element={<BigAutoCollection />} />
+            <Route path="collection/:id" element={<BigCollection />} />
+            <Route path="playlist/:id" element={<BigPlaylist />} />
+            <Route path="series" element={<BigSeriesList />} />
+            <Route path="series/:id" element={<BigSeries />} />
+            <Route path="video/:id" element={<BigVideo />} />
+            <Route path="watch/:videoId" element={<BigWatch />} />
+            <Route path="search" element={<BigSearch />} />
+            <Route
+              path="live"
+              element={
+                <BigFeatureRoute id="live_tv">
+                  <BigLive />
+                </BigFeatureRoute>
+              }
+            />
+            <Route
+              path="live/:number"
+              element={
+                <BigFeatureRoute id="live_tv">
+                  <BigLivePlayer />
+                </BigFeatureRoute>
+              }
+            />
+            <Route
+              path="settings"
+              element={<BigSettings onExit={mode === "tv" ? null : () => setAsking(true)} />}
+            />
+            <Route path="*" element={<BigHome />} />
+          </Routes>
+        </ParentalScreens.Provider>
       </main>
       {!player && (
         <footer className="bs-hints" aria-hidden="true">

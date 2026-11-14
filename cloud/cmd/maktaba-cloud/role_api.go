@@ -368,7 +368,7 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 		serversh.MountAgent(app, serversDeps)
 		broadcasth.MountAgent(app, broadcastDeps)
 		broadcasth.MountAccessAgent(app, broadcastDeps)
-		broadcasth.MountIngest(app, ingestDeps(cfg, servers, pool, logger))
+		broadcasth.MountIngest(app, ingestDeps(cfg, servers, broadcastStore, pool, logger))
 		// the broadcast edge: each request signed with its key, no account
 		edgeh.Mount(app, edgeDeps)
 		broadcasth.MountRevocations(app, revDeps)
@@ -459,7 +459,6 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 		// the moderation queue, for the service admin only (50.24)
 		modDeps.Gate = adminGate
 		moderationh.MountAdmin(g, modDeps)
-
 		// a home's broadcast analytics, for the service admin, audited (story 50.28)
 		analyticsDeps.Gate = adminGate
 		broadcasth.MountAnalyticsAdmin(g, analyticsDeps)
@@ -616,14 +615,14 @@ func turnstileGuard(cfg config.Config, fake turnstile.Verifier) (*turnstile.Guar
 		ClientIP: func(r *http.Request) string { return cmw.GetClientIP(r.Context()) }}, nil
 }
 
-// ingestDeps wires the broadcast edge's ingest tokens (story 50.21): on only with
-// broadcast.enabled and its key; otherwise the route answers 503 broadcast_disabled.
 // revocationDeps signs the kill switch's list with the broadcast signing key (broadcast.key_path,
 // the key of the ingest tokens) and pushes it to the edge's control route. Without the key the
 // console still records entries, the pull is 503 and nothing reaches the edge.
 func revocationDeps(cfg config.Config, servers *stores.Servers, pool *db.Pool, logger *slog.Logger, edgeKey ed25519.PublicKey) *broadcasth.RevocationDeps {
 	store := &broadcast.RevocationStore{DB: pool.DB}
-	rev := &broadcast.Revocations{Store: store, Logger: logger}
+	rev := &broadcast.Revocations{Store: store, Logger: logger,
+		// the edge's copy's age, for the stale-list alert (story 50.28)
+		Took: func(ctx context.Context, at time.Time) error { return broadcast.RecordRevocations(ctx, pool.DB, at) }}
 	if cfg.Broadcast.IngestURL != "" {
 		rev.ControlURL = strings.TrimRight(cfg.Broadcast.IngestURL, "/") + "/v1/control/revocations"
 	}
@@ -670,10 +669,15 @@ func moderationDeps(cfg config.Config, servers *stores.Servers, pool *db.Pool, l
 	return d
 }
 
-func ingestDeps(cfg config.Config, servers *stores.Servers, pool *db.Pool, logger *slog.Logger) *broadcasth.IngestDeps {
-	d := &broadcasth.IngestDeps{Agents: servers, Plans: broadcasth.DBPlans{DB: pool.DB}, IngestURL: cfg.Broadcast.IngestURL,
+// ingestDeps wires the broadcast edge's ingest tokens (story 50.21): on whenever
+// broadcast.key_path is set (otherwise the route answers 503 broadcast_disabled). Who gets one
+// is 50.20's entitlement (broadcasth.StorePlans): while broadcast.enabled is off, only the
+// test publishers a service admin granted. Maktaba's country deny list (story 50.23) rides
+// every token.
+func ingestDeps(cfg config.Config, servers *stores.Servers, store *billingpkg.BroadcastStore, pool *db.Pool, logger *slog.Logger) *broadcasth.IngestDeps {
+	d := &broadcasth.IngestDeps{Agents: servers, Plans: broadcasth.StorePlans{Store: store}, IngestURL: cfg.Broadcast.IngestURL,
 		GeoDeny: broadcasth.DBGeoDeny(pool.DB), EdgeChannels: broadcasth.DBEdgeChannels(pool.DB)}
-	if !cfg.Broadcast.Enabled {
+	if cfg.Broadcast.KeyPath == "" {
 		return d
 	}
 	k, err := broadcast.LoadKey(cfg.Broadcast.KeyPath)

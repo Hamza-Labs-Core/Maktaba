@@ -15,6 +15,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/billing"
+
 	bc "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/broadcast"
 )
 
@@ -30,6 +32,9 @@ func (f fakeAgents) VerifySecret(_ context.Context, id, secret string) error {
 type fakePlans map[string]Allowance
 
 func (f fakePlans) ForServer(_ context.Context, id string) (Allowance, error) {
+	if id == "gated-home" {
+		return Allowance{}, ErrGateShut
+	}
 	a, ok := f[id]
 	if !ok {
 		return Allowance{}, ErrNotInPlan
@@ -44,8 +49,8 @@ func setup(t *testing.T, withKey bool) (*chi.Mux, bc.Key) {
 	seed := sha256.Sum256([]byte("maktaba-broadcast TEST KEY, never for production: handler"))
 	k, _ := bc.KeyFromSeed(seed[:])
 	d := &IngestDeps{
-		Agents:    fakeAgents{"pro-home": "s3cret", "free-home": "s3cret"},
-		Plans:     fakePlans{"pro-home": {Publisher: "user-pro", MaxRungs: 2, MaxTopKbps: 3000}},
+		Agents:    fakeAgents{"pro-home": "s3cret", "free-home": "s3cret", "gated-home": "s3cret"},
+		Plans:     fakePlans{"pro-home": {MaxRungs: 2, MaxTopKbps: 3000}},
 		IngestURL: "https://ingest.maktaba.tv",
 		Now:       func() time.Time { return at },
 	}
@@ -138,7 +143,8 @@ func TestIngestTokenIssued(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.Pub != "user-pro" || c.Home != "pro-home" || c.Ch != bc.ChannelID("pro-home", "7") || c.Kbps != 3000 || len(c.Rungs) != 2 {
+	// the publisher is the home: the id the edge's usage windows name and the cloud bills
+	if c.Pub != "pro-home" || c.Home != "pro-home" || c.Ch != bc.ChannelID("pro-home", "7") || c.Kbps != 3000 || len(c.Rungs) != 2 {
 		t.Fatalf("claims %+v", c)
 	}
 	if resp.Channel != c.Ch || !resp.ExpiresAt.Equal(at.Add(24*time.Hour)) || resp.RefreshAfter != 3600 {
@@ -153,14 +159,39 @@ func TestIngestTokenOffWithoutAKey(t *testing.T) {
 	}
 }
 
-func TestAllowanceFor(t *testing.T) {
-	if a, err := AllowanceFor("u1", "pro", "active"); err != nil || a.Publisher != "u1" || a.MaxRungs != 2 {
-		t.Fatalf("pro: %+v %v", a, err)
+// Role rule: while broadcasting is off, a home that is not a test publisher gets 403.
+func TestIngestTokenBehindTheGate(t *testing.T) {
+	r, _ := setup(t, true)
+	if w := post(r, "gated-home", "s3cret", twoRungs); w.Code != 403 || errOf(w) != "broadcast_not_enabled" {
+		t.Fatalf("%d %s", w.Code, w.Body)
 	}
-	for _, c := range [][2]string{{"free", "active"}, {"basic", "active"}, {"pro", "suspended"}} {
-		if _, err := AllowanceFor("u1", c[0], c[1]); !errors.Is(err, ErrNotInPlan) {
-			t.Errorf("%v: %v", c, err)
+}
+
+// The allowance is 50.20's entitlement: the tier's rungs and top bitrate from the catalog,
+// none without a plan or an active owner, none while the gate is shut for the home.
+func TestAllowanceOf(t *testing.T) {
+	guest := billing.Publisher{Plan: billing.PlanPro, OwnerActive: true}
+	caster := billing.Publisher{Plan: billing.PlanPro, BroadcastPlan: billing.BroadcastPlanBroadcaster, OwnerActive: true}
+	for name, c := range map[string]struct {
+		p     billing.Publisher
+		gated bool
+		want  Allowance
+		err   error
+	}{
+		"guest sharing, gate open":     {guest, true, Allowance{MaxRungs: billing.Tiers[billing.PlanPro].Broadcast.MaxRungs, MaxTopKbps: billing.Tiers[billing.PlanPro].Broadcast.MaxTopKbps}, nil},
+		"Broadcaster, gate open":       {caster, true, Allowance{MaxRungs: billing.Broadcaster.MaxRungs, MaxTopKbps: billing.Broadcaster.MaxTopKbps}, nil},
+		"Broadcaster, gate shut":       {caster, false, Allowance{}, ErrGateShut},
+		"guest sharing, gate shut":     {guest, false, Allowance{}, ErrGateShut},
+		"no plan, a test publisher":    {billing.Publisher{Plan: billing.PlanFree, OwnerActive: true, TestPublisher: true}, true, Allowance{}, ErrNotInPlan},
+		"Broadcaster, owner suspended": {billing.Publisher{Plan: billing.PlanPro, BroadcastPlan: billing.BroadcastPlanBroadcaster}, true, Allowance{}, ErrNotInPlan},
+	} {
+		got, err := AllowanceOf(c.p, c.gated)
+		if !errors.Is(err, c.err) || got != c.want {
+			t.Errorf("%s: %+v %v", name, got, err)
 		}
+	}
+	if billing.Broadcaster.MaxRungs <= billing.Tiers[billing.PlanPro].Broadcast.MaxRungs {
+		t.Fatal("the catalog's Broadcaster tier should allow more rungs than guest sharing")
 	}
 }
 
@@ -171,7 +202,7 @@ func TestIngestTokenCarriesGeo(t *testing.T) {
 	var denyErr error
 	d := &IngestDeps{
 		Agents:    fakeAgents{"pro-home": "s3cret"},
-		Plans:     fakePlans{"pro-home": {Publisher: "user-pro", MaxRungs: 2, MaxTopKbps: 3000}},
+		Plans:     fakePlans{"pro-home": {MaxRungs: 2, MaxTopKbps: 3000}},
 		IngestURL: "https://ingest.maktaba.tv",
 		Now:       func() time.Time { return at },
 		Key:       &k,
@@ -221,7 +252,7 @@ func TestIngestTokenRecordsTheEdgeChannel(t *testing.T) {
 	var got []string
 	d := &IngestDeps{
 		Agents: fakeAgents{"pro-home": "s3cret"}, Key: &k,
-		Plans: fakePlans{"pro-home": {Publisher: "user-pro", MaxRungs: 2, MaxTopKbps: 3000}},
+		Plans: fakePlans{"pro-home": {MaxRungs: 2, MaxTopKbps: 3000}},
 		Now:   func() time.Time { return at },
 		EdgeChannels: func(_ context.Context, serverID, cloudID, edge string) error {
 			got = append(got, serverID+" "+cloudID+" "+edge)
@@ -264,7 +295,7 @@ func TestIngestTokenFailsClosedWithoutTheBinding(t *testing.T) {
 	k, _ := bc.KeyFromSeed(seed[:])
 	d := &IngestDeps{
 		Agents: fakeAgents{"pro-home": "s3cret"}, Key: &k,
-		Plans: fakePlans{"pro-home": {Publisher: "user-pro", MaxRungs: 2, MaxTopKbps: 3000}},
+		Plans: fakePlans{"pro-home": {MaxRungs: 2, MaxTopKbps: 3000}},
 		Now:   func() time.Time { return at },
 		EdgeChannels: func(context.Context, string, string, string) error {
 			return errors.New("database away")
@@ -292,7 +323,7 @@ func TestSpeedTestToken(t *testing.T) {
 	bound := 0
 	d := &IngestDeps{
 		Agents: fakeAgents{"pro-home": "s3cret", "free-home": "s3cret"}, Key: &k,
-		Plans:        fakePlans{"pro-home": {Publisher: "user-pro", MaxRungs: 2, MaxTopKbps: 3000}},
+		Plans:        fakePlans{"pro-home": {MaxRungs: 2, MaxTopKbps: 3000}},
 		Now:          func() time.Time { return at },
 		EdgeChannels: func(context.Context, string, string, string) error { bound++; return nil },
 	}

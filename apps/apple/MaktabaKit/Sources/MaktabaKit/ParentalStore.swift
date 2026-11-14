@@ -467,6 +467,14 @@ public final class BlockedPage {
     }
 
     public var canAsk: Bool { limit.restricted }
+
+    /// Whether this page, made with `limit`, should be made again now that the store says
+    /// `now`: it was made before the store had read the limit (unrestricted, so no Ask and
+    /// no PIN), and the home has since said the account is restricted. A screen that opens
+    /// as soon as the home refuses (a deep link straight after sign-in) can be made in that
+    /// window; on CI the time's-up screen then never showed Ask for more time (#1309's run
+    /// 43606583050, iphone 1/6).
+    public func outdated(by now: ParentalLimit) -> Bool { !limit.restricted && now.restricted }
     public var canEnterPIN: Bool { limit.restricted && !unlockers.isEmpty }
 
     /// A request for this waits for a parent (just made, or made before: the home's list says).

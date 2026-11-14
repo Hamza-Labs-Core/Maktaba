@@ -51,9 +51,16 @@ TV                        Maktaba Cloud                    Phone (Player, signed
     cloud account. The home only needs to be registered with the cloud, which any home with
     remote access already is.
   - **maktaba.tv/tv in a browser**, signed in to a Maktaba Cloud account that is linked to a user
-    of the home (Epic 50). The person picks the home, and the cloud asks that home over its link
-    to approve the code as the linked user. Linked sign-ins stay play-scoped (`ApplyCloudScope`),
-    so the TV is play-scoped too, as they already are.
+    of the home (Epic 50). `maktaba.tv/tv?c=<code>` forwards a valid code to
+    `app.maktaba.tv/tv`, which shows the TV's platform and country and the account's linked homes
+    (an offline home shown but disabled). **Approve this TV** sends
+    `POST /v1/tv/codes/{code}/approve {server_id}`. The cloud approves nothing itself: it signs a
+    one-use assertion for the account, the home and the code (purpose `tvcode`) and sends it
+    through the relay to the home's `POST /api/pairing/cloud-assertion`. The home checks it
+    against the cloud key it pinned at claim, uses it once, and approves the code as the user
+    linked to that account; owning a home's registration is not enough. The TV's sign-in is
+    restricted, as every cloud code's TV is, and is recorded as a cloud sign-in of that link
+    (scope `play`), so unlinking the account ends it at once.
 - **The TV polls the cloud.** `POST /v1/tv/codes/poll {code, poll_secret}` answers `pending`
   until the code is approved, then the payload once, then `410`. The TV tries the connections in
   the order of story 50.13 and redeems G on the first home address that answers
@@ -150,5 +157,6 @@ The TV side's strings are in 58.09 and 58.12.
 | `cloud/migrations/00580001_tv_codes.sql` | table |
 | `cloud/internal/cloudlink/` | the home → cloud "claim code" message |
 | `api/internal/handlers/discovery/device.go` (the pairing routes) | `POST /api/pairing/cloud-approve` |
-| `apps/android/player/…/ApproveTv*.kt`, `apps/apple/MaktabaKit/…/ApproveTV*.swift`, `web/src/pages/Pair.tsx` | cloud-shaped codes |
-| `web/packages/cloud-web/` | `maktaba.tv/tv` page |
+| `apps/android/core/…/ui/ApproveCode.kt`, `apps/android/client/…/api/CloudCode.kt`, `apps/apple/MaktabaKit/Sources/MaktabaKit/CloudTVCode.swift`, `web/src/pages/Pair.tsx` | cloud-shaped codes, decided in a testable `ApproveCode` model on each platform |
+| `web/packages/website/src/pages/tv/` (and `/ar/tv/`), `web/cloud/src/pages/ApproveTv.tsx` | `maktaba.tv/tv`, forwarding to the cloud app's approve page at `app.maktaba.tv/tv` |
+| `api/internal/handlers/discovery/cloudcode.go`, `cloud/internal/homeassert/` | the home's `POST /api/pairing/cloud-assertion` and the cloud's signed assertion |

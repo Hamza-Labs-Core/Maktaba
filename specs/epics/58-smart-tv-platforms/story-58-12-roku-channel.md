@@ -20,7 +20,8 @@ comes after Samsung and LG.
 - BrightScript and SceneGraph, written in **BrighterScript**: a superset that compiles to
   BrightScript, with classes, imports and type checks.
 - Built and side-loaded with `roku-deploy`.
-- Unit tests with **Rooibos** on a device, and with **brs-engine** in Node on CI (58.16).
+- Unit tests: the BrightScript logic tests run on **brs-engine** in Node on CI (58.16) and, as a
+  device-test package (`tools/build.mjs --device-tests`), on a Roku, in place of Rooibos.
 - The code lives at `apps/tv/roku`.
 
 **Screens.** Epic 56's TV layout, as the Apple TV and Android TV apps have it, built from
@@ -28,7 +29,7 @@ SceneGraph components:
 
 | Screen | Components |
 |---|---|
-| Choose a home, Sign in with a code, Find on this network | `HomeScene` with a `Label` code, a `Poster` QR (rendered by the home or cloud as PNG: `GET /v1/tv/codes/{code}/qr.png`), a `LabelList` of homes |
+| Choose a home, Sign in with a code, Find on this network | `HomeScene` with a `Label` code, a QR of the code's `verify_url`, encoded on the device (`source/qr.brs`, the web app's encoder in BrightScript) and drawn as rectangles, as the other TV apps draw theirs, a `LabelList` of homes |
 | Home | `RowList` of Continue Watching, Recently added, For you |
 | A library | a tab bar (custom `Group` of `Label`s, focus-managed) over the five tabs; Play and Shuffle buttons; `PosterGrid` for the Library tab; the letter rail as a narrow `LabelList` |
 | A series | backdrop `Poster`, buttons, season pills, episodes `MarkupGrid` |
@@ -145,4 +146,4 @@ words) and:
 | `.github/workflows/_roku.yml` | T01–T03, the screenshots kept with the logs |
 | `docs/stores/roku.md` | what the owner does (account, key, package, dashboard), the build, the real-device checklist |
 | `web/packages/devportal/scripts/apps.mjs` | Roku on the TV page, with screenshots |
-| `cloud/internal/handlers/tvcodes/` | `qr.png` |
+| `apps/tv/roku/source/qr.brs`, `components/widgets/QrCode.*` | the code screen's QR, held to `web/src/lib/qr.ts` module by module |
