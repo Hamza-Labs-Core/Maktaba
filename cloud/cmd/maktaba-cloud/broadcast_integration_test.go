@@ -192,6 +192,10 @@ func TestBroadcastPublishAndAgreement(t *testing.T) {
 	if st["plan"] != "guest" || st["max_channels"].(float64) != 1 || st["max_concurrent_viewers"].(float64) != 5 || st["mode"] != "full" {
 		t.Fatalf("the home's state: %v", st)
 	}
+	// story 50.22: the home's publish check 2 reads the owner's acceptance here
+	if st["agreement_accepted"] != true {
+		t.Fatalf("the owner accepted the agreement: %v", st)
+	}
 	// the catalog shows both tiers, prices TBD
 	cat := e.client().mustStatus(e.client().do("GET", "/v1/billing/plans", nil), http.StatusOK).json(t)
 	b := cat["broadcast"].(map[string]any)["broadcaster"].(map[string]any)

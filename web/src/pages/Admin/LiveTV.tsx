@@ -34,6 +34,7 @@ import { docLink } from "./LiveTV/docs";
 import { OnAir } from "./LiveTV/OnAir";
 import { RemotePanel } from "./LiveTV/RemotePanel";
 import { PublicPanel } from "./LiveTV/PublicPanel";
+import { BroadcastPanel } from "./LiveTV/BroadcastPanel";
 import { SimulcastPanel } from "./LiveTV/Simulcast";
 import { StreamingHosts } from "./LiveTV/StreamingHosts";
 import { TunerAllowed } from "./LiveTV/TunerAllowed";
@@ -186,6 +187,8 @@ function LiveTVInner() {
       <SimulcastPanel />
 
       <PublicPanel />
+
+      <BroadcastPanel />
 
       <PlexPanel info={info} device={device} />
 

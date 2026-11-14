@@ -179,6 +179,7 @@ func (b *tvBase) buildHomeSlots(ctx context.Context, addrs map[string]string, id
 			relayMu.Unlock()
 		})
 	})
+	b.startBroadcast(fd) // story 50.22: the home's broadcaster
 
 	assets := &cluster.AssetHandler{Looks: chRepo, PathMap: pathmap.FromEnv(), Keyring: keyring}
 	logger.Info("tv: front door ready with TV slots", "host_id", ident.ID, "slots", slot.FormatAddrs(addrs),

@@ -6,7 +6,8 @@ import { runInDurableObject } from "cloudflare:test";
 import { resetClock } from "../src/clock";
 import type { Env } from "../src/env";
 import * as ev from "../src/events";
-import { call, E, LIVE, newChannel, putSegment, viewerToken } from "./helpers";
+import { forgetGeo } from "../src/geo";
+import { call, E, ingestToken, LIVE, newChannel, putSegment, viewerToken } from "./helpers";
 
 afterEach(() => resetClock());
 
@@ -181,6 +182,29 @@ describe("T01 the events a viewer's requests write", () => {
     );
     expect(big.status).toBe(200);
     expect(named(points[1]!).rung).toBe("");
+  });
+
+  it("a viewer outside the channel's countries writes blocked geo, by country, once", async () => {
+    forgetGeo();
+    const ch = newChannel();
+    const token = await ingestToken({ ch, geo: { allow: ["SA"] } });
+    expect((await putSegment(ch, "src", 1, { token })).status).toBe(201);
+    const { points, AE } = fakeAE();
+    const tok = await viewerToken({ ch });
+    const from = (c: string) => ({ headers: { "CF-IPCountry": c } });
+    expect((await call(`${LIVE}/${tok}/${ch}/master.m3u8`, from("DE"), { AE })).status).toBe(451);
+    expect(points.map(named)).toMatchObject([
+      { event: "blocked", code: "geo", channel: ch, country: "DE", publisher: "home-1" },
+    ]);
+    // the playlists of the same session add none; a country Cloudflare can't tell is XX
+    points.length = 0;
+    expect((await call(`${LIVE}/${tok}/${ch}/src/index.m3u8`, from("DE"), { AE })).status).toBe(
+      451
+    );
+    expect(points).toEqual([]);
+    expect((await call(`${LIVE}/${tok}/${ch}/master.m3u8`, {}, { AE })).status).toBe(451);
+    expect(named(points[0]!)).toMatchObject({ code: "geo", country: "XX" });
+    forgetGeo();
   });
 
   it("a full channel writes blocked full; a revoked one blocked revoked", async () => {

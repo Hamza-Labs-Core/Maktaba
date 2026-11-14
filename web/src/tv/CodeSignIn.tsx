@@ -32,11 +32,14 @@ export function CodeSignIn({
   deviceLabel,
   onSignedIn,
   plain,
+  notice,
 }: {
   session: TvSession;
   deviceLabel: string;
   onSignedIn: () => void;
   plain: boolean;
+  /** A line above the code (a cloud code's approval that could not be used). */
+  notice?: string;
 }) {
   const { t, dir, locale, n } = useI18n();
   const [start, setStart] = useState<DeviceStart | null>(null);
@@ -108,6 +111,11 @@ export function CodeSignIn({
   return (
     <main className="tv-signin tv-code" dir={dir} lang={locale} data-testid="tv-code-signin">
       <h1>{t("tv.code.title")}</h1>
+      {notice && (
+        <p role="alert" data-testid="tv-code-notice">
+          {notice}
+        </p>
+      )}
       {phase === "error" && <p role="alert">{t("tv.code.failed")}</p>}
       {start && phase === "showing" && (
         <div className="tv-code__body">

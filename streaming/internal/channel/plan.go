@@ -45,6 +45,8 @@ const (
 // Slate captions.
 const (
 	MsgLiveUnavailable = "Live stream unavailable"
+	// MsgNotOnline covers a published channel's item that may no longer air (story 50.23).
+	MsgNotOnline = "Not available online · غير متاح عبر الإنترنت"
 )
 
 // PlanNext decides what airs from timeline position `pos`, given blocks
@@ -80,7 +82,10 @@ func PlanNext(blocks []ProgramBlock, pos time.Time) Segment {
 		Next: nextProgramme(live, 1)}
 	switch b.Kind {
 	case KindProgram, KindFiller, KindBumper:
-		if b.Path == "" {
+		if b.NotPublishable {
+			seg.Kind = KindSlate // lost its publishable mark → keep time
+			seg.Message = MsgNotOnline
+		} else if b.Path == "" {
 			seg.Kind = KindSlate // video deleted / unresolved → keep time
 		}
 	case KindLive:

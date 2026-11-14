@@ -136,7 +136,7 @@ func TestSnapshotBodies(t *testing.T) {
 	c := NewCapabilities(CapabilitiesOptions{})
 	c.Apply(setWant(allEnabled(), "search.semantic", components.WantInstalled, false), 1842)
 	s := c.Snapshot()
-	if s.ETag() != "c-1842-1" {
+	if s.ETag() != "c-1842-3" { // licence mask: broadcast, cloud_relay
 		t.Fatalf("etag %s", s.ETag())
 	}
 	var viewer, admin map[string]json.RawMessage
@@ -214,7 +214,7 @@ func TestCapabilitiesCoalesce(t *testing.T) {
 	}
 	select {
 	case e := <-got:
-		if e != "c-105-1" {
+		if e != "c-105-3" {
 			t.Fatalf("pushed %s", e)
 		}
 	case <-time.After(3 * time.Second):

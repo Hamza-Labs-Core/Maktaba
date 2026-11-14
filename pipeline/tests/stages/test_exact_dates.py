@@ -27,7 +27,12 @@ A, B, C = "AAAAAAAAAAA", "BBBBBBBBBBB", "CCCCCCCCCCC"
 class FakeFetcher:
     def __init__(self) -> None:
         self.pages: dict[str, dict[str, Any] | None] = {
-            A: {"upload_date": "20240315", "description": "about A", "age_limit": 18},
+            A: {
+                "upload_date": "20240315",
+                "description": "about A",
+                "age_limit": 18,
+                "license": "Creative Commons Attribution license (reuse allowed)",
+            },
             B: {"upload_date": "20230102", "description": "about B"},
             C: {"upload_date": "20220101"},
         }
@@ -104,7 +109,7 @@ async def world(db: Any) -> UUID:
 
 async def row(db: Any, yid: str) -> Any:
     return await db.fetchrow(
-        "SELECT CAST(upload_date AS TEXT) AS d, date_quality, description, age_limit"
+        "SELECT CAST(upload_date AS TEXT) AS d, date_quality, description, age_limit, license"
         " FROM youtube_videos"
         " WHERE youtube_id = $1",
         yid,
@@ -149,6 +154,7 @@ async def test_series_members_get_their_exact_date_politely(
     assert str(a["d"])[:10] == "2024-03-15" and a["date_quality"] == "exact"
     assert a["description"] == "about A"
     assert a["age_limit"] == 18  # Epic 57 story 57.01 (T06): kept for the age tiers
+    assert a["license"] == "cc_by"  # Epic 50 story 50.23 (T02): rechecked at the refresh
     assert (await row(db, B))["date_quality"] == "approximate"
     assert (await row(db, B))["age_limit"] is None
     assert len(delays) == 1 and 1.5 <= delays[0] <= 4.5  # delay_s x (0.5 .. 1.5)
@@ -210,3 +216,25 @@ async def test_nothing_new_is_not_asked_again(
     assert again["outcome"] in ("skipped_unchanged", "unchanged") and len(fetcher.calls) == 1
     fp = exact_dates.IMPL.input_fingerprint
     assert fp is not None and await fp(db, Subject("library", lib)) is not None
+
+
+@pytest.mark.asyncio
+async def test_a_refresh_follows_the_licence(db: Database) -> None:
+    """Epic 50 story 50.23 T02: the Data API's ``creativeCommon`` stores ``cc_by``; a later
+    change to ``youtube`` (the standard licence) clears it; a page that does not say
+    keeps what is known."""
+    from maktaba_pipeline.integrations.youtube import exact_info
+
+    _store = exact_dates._store
+    await db.execute(
+        "INSERT INTO youtube_videos (youtube_id, channel_id, title) VALUES ($1, 'UCx', 't')", A
+    )
+    await _store(
+        db, A, None, None, None, exact_info({"status": {"license": "creativeCommon"}}).license
+    )
+    assert (await row(db, A))["license"] == "cc_by"
+    await _store(db, A, None, None, None, exact_info({}).license)
+    assert (await row(db, A))["license"] == "cc_by"
+    std = exact_info({"status": {"license": "youtube"}}).license
+    await _store(db, A, None, None, None, std)
+    assert (await row(db, A))["license"] == "standard"

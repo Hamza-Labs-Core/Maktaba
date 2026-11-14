@@ -28,6 +28,7 @@ from pathlib import Path
 from typing import Any
 
 from . import settings
+from .broadcast_settings import BroadcastConfig
 from .classify import settings_help as _detect_help  # noqa: F401 — registers the help
 from .classify.books import BooksConfig
 from .classify.clip_groups import GroupConfig
@@ -172,6 +173,9 @@ SECTIONS: dict[str, tuple[type, str, str]] = {
     "tv_remote": (MaktabaTvRemoteConfig, "Maktaba TV away from home", "who may watch "
                   "channels away from home through Cloudflare Stream, how many at once, the "
                   "monthly budget and the storage guard"),
+    "broadcast": (BroadcastConfig, "Broadcasting", "publishing Live TV channels to viewers "
+                  "outside the home: how much of the upload they may use, how lower "
+                  "qualities count against a machine, software encoding"),
     "tv_simulcast": (MaktabaTvSimulcastConfig, "Simulcast", "sending channels on to YouTube, "
                      "Facebook or any RTMP destination through Cloudflare: on or off, "
                      "destinations per channel, the monthly output-hours, the margins around "

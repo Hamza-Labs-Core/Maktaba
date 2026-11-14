@@ -1614,6 +1614,61 @@
       "wants": []
     },
     {
+      "bundles": [],
+      "conflicts": [],
+      "desc_key": "components.livetv.broadcast.desc",
+      "drain": {
+        "checkpoint": false,
+        "grace_s": 30
+      },
+      "features": [],
+      "gated": false,
+      "group": "livetv",
+      "id": "livetv.broadcast",
+      "in_payload": false,
+      "kind": "loop",
+      "licence": "broadcast",
+      "loops": [
+        "streaming:broadcast_uploader",
+        "streaming:broadcast_control",
+        "api:broadcast_tokens"
+      ],
+      "on_demand": false,
+      "placement": "home",
+      "platforms": [
+        "darwin-arm64",
+        "windows-amd64",
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "plugin": "",
+      "processes": [],
+      "requires": [
+        [
+          "livetv"
+        ],
+        [
+          "cloud.link"
+        ]
+      ],
+      "resources": {
+        "disk_mb": 0,
+        "gpu": "",
+        "ram_mb": 0
+      },
+      "settings": [
+        "rules.broadcast"
+      ],
+      "since": "0.3.142",
+      "source": "",
+      "sources": {},
+      "stages": [],
+      "stop_grace_s": 5,
+      "switchable": true,
+      "title_key": "components.livetv.broadcast.title",
+      "wants": []
+    },
+    {
       "bundles": [
         "full",
         "worker"
@@ -3577,8 +3632,9 @@
     "livetv.slots",
     "livetv.inprocess",
     "livetv.hdhomerun",
-    "logs.index",
     "cloud.link",
+    "livetv.broadcast",
+    "logs.index",
     "cloud.relay",
     "cloud.direct",
     "cluster",

@@ -91,7 +91,7 @@ func TestLicences(t *testing.T) {
 	lic := subscriptions.NewStore()
 	lic.SetClock(func() time.Time { return now })
 	got := Licences(cat, lic)
-	if len(got) != 1 || got["cloud.relay"].Licensed || got["cloud.relay"].Until != nil {
+	if len(got) != 2 || got["cloud.relay"].Licensed || got["cloud.relay"].Until != nil || got["livetv.broadcast"].Licensed {
 		t.Fatalf("free: %+v", got)
 	}
 	exp := now.Add(31 * 24 * time.Hour)
