@@ -382,6 +382,7 @@ func (b *tvBase) wireHomeCluster(ctx context.Context, engine *channel.Engine, lo
 	// Epic 32.7 / 33.8: the push relay to Cloudflare Stream runs here, in the
 	// home's front door (never on a node), once slot 0125 exists.
 	b.bg.Loop("push_relay", func(ctx context.Context) { b.runPushRelay(ctx, fd, nil) })
+	b.startBroadcast(fd) // story 50.22: the home's broadcaster
 
 	// channel art for the stations on nodes
 	assets := &cluster.AssetHandler{Looks: chRepo, PathMap: pathmap.FromEnv(), Keyring: keyring}
