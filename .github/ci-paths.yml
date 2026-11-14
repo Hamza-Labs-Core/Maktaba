@@ -80,6 +80,8 @@ _pipeline: &pipeline
 # the web app, and what its tests read outside it
 _web: &web
   - 'web/**'
+  # vite.config.ts imports the TV build's CSS pass (story 58.08) in every build
+  - 'tools/web/**'
   - 'shared/testtier/ts/**'
   # the plugin SDK's flow chart, which the Plugins page draws with (54.41)
   - 'tools/plugin-sdk/js/src/flowchart.ts'
@@ -756,6 +758,23 @@ android_tv:
   - 'tools/ci/gradle-wrapper.sh'
   - 'tools/release/fetch-pinned.sh'
   - '.github/workflows/play-bundles.yml'
+
+# The TV build of the big screen, /tv/ (Epic 58 stories 58.08, 58.16): everything its bundle
+# holds (web/src: the big screen and what it imports), its build and its checks (_tv-web.yml)
+tv_web:
+  - *ci
+  - 'web/src/**'
+  - 'web/design-system/**'
+  - 'web/index.tv.html'
+  - 'web/vite.config.ts'
+  - 'web/package.json'
+  - 'web/pnpm-lock.yaml'
+  - 'web/tsconfig.json'
+  - 'web/playwright.tv.config.ts'
+  - 'web/e2e/tv/**'
+  - 'tools/web/**'
+  - 'apps/tv/web/**'
+  - '.github/workflows/_tv-web.yml'
 
 # The desktop Player for Windows and Linux (Epic 42.4): its project, the portable client
 # and the fonts it shares with the Android apps, the catalog.

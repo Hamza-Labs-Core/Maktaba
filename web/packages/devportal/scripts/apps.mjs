@@ -1243,6 +1243,28 @@ export const APPS = [
             ),
           },
           {
+            p: t(
+              "**On a Samsung or LG TV.** The home also serves the big screen at `/tv/`, built for the older browser engine of a 2020 Samsung or LG TV: the Samsung and LG apps open it. It has the same screens, driven by the TV's remote: the arrows and OK, **Back**, **Play/Pause** and the media keys, and the red key for a card's actions. There is no **Leave big screen** there: **Back** on Home asks **Leave Maktaba?** first. A TV that is not signed in is sent to the home's sign-in page, then back.",
+              "**على تلفاز Samsung أو LG.** يقدّم المنزل الشاشة الكبيرة أيضًا على `/tv/`، مبنيّة لمحرّك المتصفح الأقدم في تلفاز Samsung أو LG من عام 2020، ويفتحها تطبيقا Samsung وLG. فيها الشاشات نفسها، ويقودها جهاز تحكم التلفاز: الأسهم وزر الموافقة، و**الرجوع**، و**التشغيل/الإيقاف المؤقت** ومفاتيح الوسائط، والمفتاح الأحمر لإجراءات البطاقة. ولا يوجد فيها زر **الخروج من الشاشة الكبيرة**: يسأل **الرجوع** في الرئيسية أولًا **الخروج من Maktaba؟**. وإن لم يكن التلفاز مسجّل الدخول أُرسل إلى صفحة تسجيل الدخول في المنزل ثم أُعيد."
+            ),
+          },
+          {
+            shots: [
+              shot(
+                "tv-library",
+                "wide",
+                "/tv/ on a TV: a library's Library tab, its grid and the letter rail",
+                "‏/tv/ على التلفاز: تبويب المكتبة في مكتبة، بشبكتها وشريط الحروف"
+              ),
+              shot(
+                "tv-series",
+                "wide",
+                "/tv/ on a TV: a series with its season pills and lessons",
+                "‏/tv/ على التلفاز: سلسلة بأزرار مواسمها ودروسها"
+              ),
+            ],
+          },
+          {
             table: {
               head: [
                 t("To", "لـ"),

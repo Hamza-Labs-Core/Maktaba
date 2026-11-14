@@ -187,14 +187,14 @@ function Where() {
   return null;
 }
 
-function renderBig(path = "/big", history: string[] = []) {
+function renderBig(path = "/big", history: string[] = [], mode: "desktop" | "tv" = "desktop") {
   return render(
     <I18nProvider>
       <TestAuth user={memberUser}>
         <MemoryRouter initialEntries={[...history, path]}>
           <Where />
           <Routes>
-            <Route path="/big/*" element={<BigScreen />} />
+            <Route path="/big/*" element={<BigScreen mode={mode} />} />
             <Route path="*" element={<p>desk page</p>} />
           </Routes>
         </MemoryRouter>
@@ -398,6 +398,42 @@ describe("Back and leaving", () => {
     expect(screen.getByText("desk page")).toBeInTheDocument();
     // no question on the way: the button says what it does
     expect(screen.queryByTestId("big-exit")).toBeNull();
+  });
+
+  it("the TV build has no Leave button; Back on Home asks Leave Maktaba? and Leave closes the app", async () => {
+    const close = vi.spyOn(window, "close").mockImplementation(() => {});
+    try {
+      renderBig("/big", [], "tv");
+      await screen.findByTestId("big-hero");
+      expect(screen.queryByTestId("big-leave")).toBeNull();
+      key("Escape");
+      const dialog = await screen.findByTestId("big-exit");
+      expect(within(dialog).getByText(E["tv.exitConfirm"]!)).toBeInTheDocument();
+      await waitFor(() =>
+        expect(document.activeElement).toBe(
+          within(dialog).getByRole("button", { name: E["tv.exitConfirm.no"] })
+        )
+      );
+      fireEvent.click(within(dialog).getByRole("button", { name: E["tv.exitConfirm.yes"] }));
+      expect(close).toHaveBeenCalled();
+      // no desktop page to go back to
+      expect(screen.queryByText("desk page")).toBeNull();
+    } finally {
+      close.mockRestore();
+    }
+  });
+
+  it("the TV build's leave question in Arabic", async () => {
+    localStorage.setItem("mkt:locale", "ar");
+    renderBig("/big", [], "tv");
+    await screen.findByTestId("big-hero");
+    key("Escape");
+    const dialog = await screen.findByTestId("big-exit");
+    expect(within(dialog).getByText(A["tv.exitConfirm"]!)).toBeInTheDocument();
+    expect(
+      within(dialog).getByRole("button", { name: A["tv.exitConfirm.yes"] })
+    ).toBeInTheDocument();
+    expect(document.documentElement.dir).toBe("rtl");
   });
 
   it("Back on a top screen opened directly goes Home, not out", async () => {

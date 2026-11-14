@@ -1,0 +1,79 @@
+# Reusable gate for the TV build of the big screen (Epic 58 stories 58.08 and 58.16): /tv/,
+# the web UI the Samsung and LG launchers load, served by the home (`pnpm build:tv`).
+#
+#   - the big screen's Vitest (focus, tabs, letter rail, queue actions, the TV mode: T02);
+#   - the build checks' own tests and `build:tv`, which fails on what Chromium 68 cannot run
+#     (tools/web/tvcheck.mjs: es-check es2017 and the CSS lint, T01);
+#   - Playwright on /tv/ against the mock home, D-pad keys only, 1920×1080, dark, English and
+#     Arabic, with the CPU throttled ×6 for the timing (T03, T04).
+#
+# The run keeps the screenshots, the console and network logs, the traces and the report for
+# 30 days, passed or failed. No secret, no network call beyond the packages.
+
+name: TV web UI
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  tv-web:
+    name: TV web UI
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6.0.2
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v6.0.8
+        with:
+          version: 9.15.4
+          run_install: false
+      - uses: actions/setup-node@v6.4.0
+        with:
+          node-version-file: web/.nvmrc
+          package-manager-cache: false
+      # restore only: main's entries (.github/actions/node-cache); only a push to main saves
+      - name: pnpm store
+        uses: ./.github/actions/node-cache
+        with:
+          package-manager: pnpm
+          lock-hash: ${{ hashFiles('web/pnpm-lock.yaml') }}
+      - name: Install web deps
+        working-directory: web
+        run: pnpm install --frozen-lockfile
+      - name: Design tokens
+        run: node web/design-system/build/build-tokens.mjs
+
+      - name: The big screen's tests (T02)
+        working-directory: web
+        run: pnpm exec vitest run src/bigscreen src/tv src/pages/Login.test.tsx src/lib/swRuntime.test.ts
+
+      - name: The build checks' tests (T01)
+        run: node --test tools/web/tv.test.mjs
+
+      - name: build:tv, checked for Chromium 68 (T01)
+        working-directory: web
+        run: pnpm run build:tv
+
+      - name: Chromium for Playwright
+        working-directory: web
+        run: pnpm exec playwright install --with-deps chromium
+      - name: /tv/ with the D-pad, en and ar, and its timing (T03, T04)
+        working-directory: web
+        env:
+          CI: 'true'
+        run: pnpm e2e:tv
+
+      - name: Screenshots, console and network logs, traces and report
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: tv-web-ui
+          path: |
+            web/test-results/tv
+            web/test-results/tv-report
+          retention-days: 30
+          if-no-files-found: warn

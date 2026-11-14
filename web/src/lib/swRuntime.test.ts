@@ -186,6 +186,21 @@ describe("sw.js", () => {
     }
   });
 
+  it("leaves the TV build's pages alone, never keeping one as the web app's page", async () => {
+    let online = true;
+    const w = loadWorker(async (path) => {
+      if (!online) throw new TypeError("offline");
+      return path.startsWith("/tv") ? page("index.tv-1.js") : page("index-new.js");
+    });
+    await dispatchFetch(w, "/", "navigate");
+    for (const p of ["/tv", "/tv/", "/tv/big/library/42"]) {
+      expect(await dispatchFetch(w, p, "navigate")).toBeUndefined();
+    }
+    online = false;
+    const res = await dispatchFetch(w, "/library/42", "navigate");
+    expect(await res!.text()).toContain("index-new.js");
+  });
+
   it("on activate deletes every cache but this build's shell, then takes the pages", async () => {
     // the worker as a build stamps it (vite.config.ts): each release its own shell
     const w = loadWorker(
