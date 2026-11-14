@@ -715,6 +715,10 @@ func runServe() error {
 			// Phase 10 — subscriptions, pairing, security disclosure, perf
 			// admin. All four packages had a working Mount() but no caller
 			// (specs/FULL_IMPLEMENTATION_AUDIT.md §A.4).
+			if p9 != nil {
+				// Epic 58 story 58.03: a TV's cloud code approved on maktaba.tv, as the linked user
+				p10Deps.CloudTVCodes = p9
+			}
 			pairingStore := router.MountP10(r, p10Deps)
 			// Epic 16 story 16.8 — feature flags over the same entitlement store,
 			// signed with the server's Ed25519 identity (story 10.18)

@@ -232,6 +232,9 @@ func buildSurfaces() SurfaceTable {
 		"/api/pairing/request",
 		"/api/pairing/status",
 	)
+	exact(Open, all, "a TV's cloud code approved on maktaba.tv (58.03): the cloud's assertion is the credential, no sign-in; the TV it signs in carries its own user's policy; no content",
+		"/api/pairing/cloud-assertion",
+	)
 	exact(Guarded, all, "approving a device as another user is an admin's or a guardian's (57.02): the handler reads the caller's role",
 		"/api/pairing/approve",
 		"/api/pairing/cloud-approve",
@@ -696,6 +699,7 @@ var DatabaseDown = []DownRoute{
 	{"/api/auth/register", "registering, before any credential; no content"},
 	{"/api/pairing/device", "a TV asking for a sign-in code, before any credential; no content"},
 	{"/api/pairing/device/token", "the TV's poll for its approval; no content"},
+	{"/api/pairing/cloud-assertion", "a TV's cloud code approved with the cloud's assertion (58.03); no content"},
 	{"/api/discovery/home", "the home's identity for the apps' home picker; no user and no library"},
 	{"/api/stream/capabilities", "what this machine's streaming can do; no content"},
 	{"/api/tv/parental/verdict", "the streaming service's question, answered to the local token only"},

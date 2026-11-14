@@ -4,6 +4,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.hamzalabs.maktaba.core.api.ApiClient
+import com.hamzalabs.maktaba.core.api.AppSignIn
 import com.hamzalabs.maktaba.core.api.ApiException
 import com.hamzalabs.maktaba.core.api.Failure
 import com.hamzalabs.maktaba.core.api.HistoryEntry
@@ -11,6 +12,7 @@ import com.hamzalabs.maktaba.core.api.PlaylistDoc
 import com.hamzalabs.maktaba.core.api.PlaylistSummary
 import com.hamzalabs.maktaba.core.api.SignInSession
 import com.hamzalabs.maktaba.core.api.VideoDetail
+import com.hamzalabs.maktaba.core.api.appSignIns
 import com.hamzalabs.maktaba.core.api.endSignInSession
 import com.hamzalabs.maktaba.core.api.favorites
 import com.hamzalabs.maktaba.core.api.forgetHistory
@@ -18,6 +20,7 @@ import com.hamzalabs.maktaba.core.api.homeVersion
 import com.hamzalabs.maktaba.core.api.playlist
 import com.hamzalabs.maktaba.core.api.playlists
 import com.hamzalabs.maktaba.core.api.signInSessions
+import com.hamzalabs.maktaba.core.api.signOutApp
 import com.hamzalabs.maktaba.core.api.watchHistory
 import com.hamzalabs.maktaba.core.session.ReadOrder
 import kotlinx.coroutines.CancellationException
@@ -58,6 +61,12 @@ class ProfileState(private val client: ApiClient, private val signedOut: () -> U
         private set
     var sessions: Load<List<SignInSession>> by mutableStateOf(Load.Loading)
         private set
+    /**
+     * The apps signed in as the person by a code (story 58.03), beneath the browsers: empty
+     * until read, and on a home from before the list (no section is shown then).
+     */
+    var appSignIns: List<AppSignIn> by mutableStateOf(emptyList())
+        private set
     var playlists: Load<List<PlaylistSummary>> by mutableStateOf(Load.Loading)
         private set
     var playlist: Load<PlaylistDoc> by mutableStateOf(Load.Loading)
@@ -84,6 +93,8 @@ class ProfileState(private val client: ApiClient, private val signedOut: () -> U
     private val historyOrder = ReadOrder()
     /** The order of the sessions' reads and their sign-outs. */
     private val sessionsOrder = ReadOrder()
+    /** The order of the app sign-ins' reads and their sign-outs. */
+    private val appsOrder = ReadOrder()
 
     /**
      * Reads [current]'s list with [block]: its answer, or null when it is dropped (a newer
@@ -151,6 +162,25 @@ class ProfileState(private val client: ApiClient, private val signedOut: () -> U
 
     suspend fun loadSessions() {
         reread(sessions, sessionsOrder) { client.signInSessions() }?.let { sessions = it }
+        loadAppSignIns()
+    }
+
+    /** The apps' list, read beside the sessions; a read that fails keeps the rows shown ([problem] says why). */
+    private suspend fun loadAppSignIns() {
+        val ticket = appsOrder.begin()
+        val r = attempt { client.appSignIns() }
+        if (!appsOrder.fresh(ticket)) return
+        when (r) {
+            is Load.Ready -> appSignIns = r.value
+            is Load.Failed -> problem = r.failure
+            Load.Loading -> Unit
+        }
+    }
+
+    /** Signs [app] out; it leaves the list once the home has done it. */
+    suspend fun signOutApp(app: AppSignIn) {
+        appsOrder.saving { runCatchingApi { client.signOutApp(app.id) } } ?: return
+        appSignIns = appSignIns.filterNot { it.id == app.id }
     }
 
     /** Signs [session] out; it leaves the list once the home has done it. */
