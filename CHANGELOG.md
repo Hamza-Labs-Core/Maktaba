@@ -869,6 +869,10 @@ build fails when the two differ.
 
 ### Added
 
+- **Roku's sign-in shows a QR (Epic 58, story 58.12).** The Roku channel's code screen now shows
+  a QR beside the code, as the other TV apps do: a phone's camera opens the approve page with
+  the code filled in (maktaba.tv/tv for a cloud code, the home's own page for the home's code).
+  The channel draws the QR itself, so no image is fetched from the home or the cloud.
 - **Playing on Roku (Epic 58, story 58.13).** The Roku channel's player: it tells the home
   what this Roku plays (H.264, HEVC, AV1 inside DASH, HDR10, HLG, Dolby Vision 5, the Dolby
   passthroughs), so a 4K HDR file plays directly where the Roku can and is converted only where

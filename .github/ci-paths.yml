@@ -860,6 +860,8 @@ roku:
   - 'apps/apple/MaktabaKit/Sources/MaktabaKit/Resources/Fonts/IBMPlexSansArabic-*'
   - 'apps/apple/MaktabaKit/Sources/MaktabaKit/Resources/Fonts/OFL-IBMPlexSansArabic.txt'
   - 'apps/apple/MaktabaKit/Sources/MaktabaKit/Resources/Art/maktaba-logo.png'
+  # the code screen's QR is held to the web app's encoder (58.12)
+  - 'web/src/lib/qr.ts'
 
 # Maktaba's Cast receiver at cast.maktaba.tv (Epic 58 story 58.07): its package (the receiver,
 # the loader, the Worker, the tests) and its checks (_cast-receiver.yml); the release workflow
