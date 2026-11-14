@@ -77,6 +77,7 @@ var phRows = []phRow{
 	{method: http.MethodPost, pattern: "/api/me/parental/requests", path: "/api/me/parental/requests", body: `{"subject_kind":"video","subject_id":"{teen2}"}`, want: [8]int{401, 403, 201, 403, 403, 403, 403, 201}},
 	{method: http.MethodPost, pattern: "/api/me/parental/unlock", path: "/api/me/parental/unlock", want: [8]int{401, 403, 422, 403, 403, 403, 403, 422}},
 	{method: http.MethodPost, pattern: "/api/pairing/approve", elsewhere: "internal/handlers/discovery TestDeviceApprovedAsTheChild, TestDeviceApproveAsRefusals and TestDeviceApproveAsFromACloudSession (57.02 T06): the pairing routes need the sign-in service, which this home does not start"},
+	{method: http.MethodPost, pattern: "/api/pairing/cloud-approve", elsewhere: "internal/router TestPGCloudCodeSignsTheTVInAsTheApprover and TestPGCloudCodeRefusals (58.03 T03): a viewer, an admin, a restricted child and a guardian as the child, behind MountP10 with the sign-in service"},
 	{method: http.MethodPost, pattern: "/api/parental/requests/{id}/approve", path: "/api/parental/requests/{req}/approve", want: [8]int{401, 403, 403, 200, 404, 200, 200, 403}},
 	{method: http.MethodPost, pattern: "/api/parental/requests/{id}/deny", path: "/api/parental/requests/{req}/deny", want: [8]int{401, 403, 403, 200, 404, 200, 200, 403}},
 	{method: http.MethodPost, pattern: "/api/parental/review/{video_id}", path: "/api/parental/review/{video}", body: `{"tier":9}`, want: [8]int{401, 403, 403, 403, 403, 404, 404, 403}},

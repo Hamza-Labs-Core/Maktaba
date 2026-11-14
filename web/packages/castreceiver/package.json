@@ -1,0 +1,30 @@
+{
+  "name": "maktaba-castreceiver",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Maktaba's Cast receiver at cast.maktaba.tv (Epic 58 story 58.07): a CAF Web Receiver page served by a Cloudflare Worker's static assets, one build per API level under /r/<level>/, picked by the loader at /r/.",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "build:debug": "node scripts/build.mjs --debug",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "dev": "wrangler dev",
+    "e2e": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.64.1",
+    "@types/node": "25.9.9",
+    "esbuild": "0.28.2",
+    "jsdom": "25.0.1",
+    "typescript": "5.7.3",
+    "vitest": "4.1.12",
+    "wrangler": "4.151.0"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "overrides": {
+    "playwright-core": "1.64.1"
+  }
+}

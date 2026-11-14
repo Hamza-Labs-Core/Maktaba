@@ -1,0 +1,144 @@
+# The Roku channel's store zip (Epic 58 story 58.13), on `v*` tags.
+#
+# The channel (apps/tv/roku) changes less often than the home: a tag builds it only when the
+# channel changed since the previous tag (or on a run by hand), because each Roku certification
+# round takes days.
+#
+#   maktaba-roku-<version>.zip   `node tools/build.mjs --version <version>`: BrighterScript and
+#                                bslint, the bundled font and images, the manifest's
+#                                build_version from the tag (minor * 1000 + patch), held under
+#                                Roku's 4 MB. The logic tests run on brs-engine first. The zip
+#                                and its .sha256 are attached to the tag's release.
+#
+# SIGNING happens on a Roku, never here: Roku packages a channel only on a device in developer
+# mode that holds the project's key (`genkey`). The release session side-loads this zip on that
+# Roku, runs the Packager with the key's password and uploads the signed .pkg to the Roku
+# Developer Dashboard with the notes in docs/stores/roku.md. No key, DevID or password is held
+# in the repository or in CI, so this workflow reads no secret.
+name: Roku Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  # A tag's run by hand: `gh workflow run <this> --ref vX.Y.Z -f tag=vX.Y.Z`. It builds even when
+  # the channel did not change. The tag guard refuses a dispatched run whose ref is not that tag.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "The v* tag to release (dispatch with --ref set to it)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+# One run per tag at a time, never cancelled.
+concurrency:
+  group: release-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # the tag-order guard (release.yml's guard opens the release as a draft)
+  guard:
+    uses: ./.github/workflows/_tag-guard.yml
+    permissions:
+      contents: write
+      actions: read
+
+  # whether the channel changed since the previous tag (a run by hand always builds)
+  channel-changed:
+    name: channel changed?
+    needs: [guard]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      changed: ${{ steps.diff.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - id: diff
+        env:
+          TAG: ${{ github.ref_name }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          prev="$(git describe --tags --abbrev=0 --match 'v*' "${TAG}^" 2>/dev/null || true)"
+          if [ "${EVENT}" = workflow_dispatch ] || [ -z "${prev}" ]; then
+            changed=true
+          elif git diff --quiet "${prev}" "${TAG}" -- apps/tv/roku shared/playback/caps-vectors.json apps/apple/MaktabaKit/Sources/MaktabaKit/Resources/Fonts; then
+            changed=false
+          else
+            changed=true
+          fi
+          echo "changed=${changed}" >> "$GITHUB_OUTPUT"
+          echo "the channel since ${prev:-the first tag}: changed=${changed}"
+
+  roku-zip:
+    name: Roku (.zip)
+    needs: [guard, channel-changed]
+    if: needs.channel-changed.outputs.changed == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write # gh release upload
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v6.0.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6.4.0
+        with:
+          node-version-file: apps/tv/roku/.nvmrc
+          package-manager-cache: false
+      - name: Install
+        working-directory: apps/tv/roku
+        run: |
+          mkdir -p build/logs
+          npm ci --no-audit --no-fund
+
+      - name: The logic and build tests on brs-engine
+        working-directory: apps/tv/roku
+        run: node --test tests/channel.test.mjs tests/player.test.mjs tests/build.test.mjs | tee build/logs/node-test.log
+
+      - name: Build the store zip
+        working-directory: apps/tv/roku
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          version="${TAG#v}"
+          mkdir -p out
+          node tools/build.mjs --version "${version}" --out "out/maktaba-roku-${version}.zip"
+          ( cd out && sha256sum "maktaba-roku-${version}.zip" > "maktaba-roku-${version}.zip.sha256" )
+          printf '### Roku channel\n\nmaktaba-roku-%s.zip is built and attached to the %s release. It is signed on the project'"'"'s keyed Roku and uploaded to the Roku Developer Dashboard by the release session (docs/stores/roku.md, What the owner does).\n' "${version}" "${TAG}" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload CI artifact
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: maktaba-roku
+          path: apps/tv/roku/out/*.zip*
+          if-no-files-found: ignore
+          retention-days: 14
+
+      # to the tag's release (a draft until release.yml's files are in; a published release
+      # only gains the files it lacks)
+      - name: Attach to GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: tools/release/release-assets.sh upload "${TAG}" apps/tv/roku/out/*.zip apps/tv/roku/out/*.zip.sha256
+
+      - name: App logs
+        if: always()
+        uses: ./.github/actions/tv-logs
+        with:
+          name: roku-release-logs
+          what: brs-engine stdout of each BrightScript test and the node test output of the release build
+          path: |
+            apps/tv/roku/build/logs/

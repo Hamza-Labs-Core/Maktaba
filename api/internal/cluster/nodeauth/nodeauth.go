@@ -618,6 +618,7 @@ func (r *Resolver) verifyJWT(ctx context.Context, tok string) *principal.Princip
 		AccessAllLibraries: c.IsAdmin, Source: principal.SourceJWT,
 		RefreshFamily: c.Fam, AgeCeiling: c.Ac}
 	p.ApplyCloudScope(c.Scp, nil) // a cloud play token is no admin on a node either
+	p.ApplyRestricted(c.Rst)      // nor a cloud code's TV
 	return p
 }
 

@@ -21,7 +21,14 @@
       "@cloud-shared/*": ["cloud/src/shared/*"]
     }
   },
-  "include": ["src", "cloud/src", "admin/src", "design-system/components", "packages"],
+  "include": [
+    "src",
+    "cloud/src",
+    "admin/src",
+    "design-system/components",
+    "packages",
+    "../apps/tv/web/src"
+  ],
   "exclude": [
     "dist",
     "dist-cloud",
@@ -34,6 +41,7 @@
     "packages/devportal",
     "packages/website",
     "packages/broadcast-edge",
+    "packages/castreceiver",
     "design-system/build",
     "design-system/storybook",
     "design-system/**/*.stories.tsx"

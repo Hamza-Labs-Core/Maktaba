@@ -125,6 +125,27 @@ class PlaybackTest {
         runUntil { streams.progress().any { it.second["completed"] != null } }
     }
 
+    /**
+     * Story 58.06: with no Cast receiver registered (the build's application ID is empty, as in
+     * this test build) there is no cast sender: the phone plays and reports its own progress, and
+     * never asks the home for a cast grant.
+     */
+    @Test
+    fun withNoCastReceiverThePhonePlaysAndReportsItself() {
+        assertNull("no receiver application ID: no cast sender", playback.castSender)
+        playback.play(v1, startSec = 1)
+        val p = playing()
+        runUntil { p.currentPosition > 1_500 }
+        p.pause()
+        runUntil { streams.progress().isNotEmpty() }
+        assertFalse(playback.receiverReports)
+        assertFalse(playback.casting)
+        assertTrue(
+            "no cast grant asked",
+            home.requests.none { it.url.encodedPath == "/api/cast/grants" },
+        )
+    }
+
     /** Story 59.05: no transcode slot free is no error: the sentence shows, and it asks again in 10 s. */
     @Test
     fun aHomeWithNoTranscodeSlotFreeIsAskedAgainEveryTenSeconds() {

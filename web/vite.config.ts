@@ -19,6 +19,19 @@ const BUILD_VERSION = process.env.VERSION || "dev";
 const BUILD_COMMIT = process.env.COMMIT || "unknown";
 const BUILD_DATE = process.env.SOURCE_DATE_EPOCH || "unknown";
 
+// Maktaba's Cast receiver application ID (Epic 58 story 58.06): shared/cast/app.json, which
+// every sender reads; MAKTABA_CAST_APP_ID overrides it for a build. It is public, never a
+// secret. Empty (no receiver registered yet): the player shows no Cast button.
+function castAppId(): string {
+  if (process.env.MAKTABA_CAST_APP_ID !== undefined) return process.env.MAKTABA_CAST_APP_ID.trim();
+  const file = path.resolve(__dirname, "../shared/cast/app.json");
+  if (!existsSync(file)) return "";
+  const id = (JSON.parse(readFileSync(file, "utf8")) as { receiver_app_id?: unknown })
+    .receiver_app_id;
+  return typeof id === "string" ? id.trim() : "";
+}
+const CAST_APP_ID = castAppId();
+
 // writeVersionJson emits dist/version.json after the bundle is written so
 // the web client (and the mobile update check) can read the build it was
 // shipped as without an API round-trip.
@@ -173,62 +186,108 @@ function tvConfig() {
   });
 }
 
+// The --bundle-ui copy of /tv/ (Epic 58 story 58.09, `pnpm build:launcher:bundled`): the same
+// TV build, packaged with the Samsung and LG launcher in dist-launcher/ui/ and opened from
+// file://. Its paths are relative, and it is one classic deferred script (an IIFE, the lazy
+// screens inlined): a file:// page's origin is "null", and a module script there is a
+// cross-origin fetch the browser refuses. The launcher passes ?home=<address>; the page
+// reaches the home's API there with bearer tokens (src/tv/TvApp.tsx).
+function tvBundledConfig() {
+  const base = tvConfig();
+  return defineConfig({
+    ...base,
+    base: "./",
+    plugins: [
+      tvCss(),
+      react(),
+      legacy({
+        renderLegacyChunks: false,
+        modernPolyfills: true,
+        modernTargets: "chrome >= 68",
+      }),
+      tvPage(),
+      {
+        name: "maktaba-tv-bundled-classic",
+        enforce: "post",
+        transformIndexHtml(html: string) {
+          return html
+            .replace(/<script type="module" crossorigin src=/g, "<script defer src=")
+            .replace(/<link rel="stylesheet" crossorigin /g, '<link rel="stylesheet" ');
+        },
+      },
+    ],
+    build: {
+      ...base.build,
+      outDir: "dist-launcher/ui",
+      modulePreload: false,
+      cssCodeSplit: false,
+      rollupOptions: {
+        input: path.resolve(__dirname, "index.tv.html"),
+        output: { format: "iife", inlineDynamicImports: true },
+      },
+    },
+  });
+}
+
 export default defineConfig(({ mode }) =>
   mode === "tv"
     ? tvConfig()
-    : {
-        define: {
-          "import.meta.env.VITE_APP_VERSION": JSON.stringify(BUILD_VERSION),
-        },
-        plugins: [
-          react(),
-          writeVersionJson(),
-          stampServiceWorkerPlugin(),
-          ...(editionOf(mode) === "player" ? [playerBundleCheck()] : []),
-        ],
-        resolve: {
-          alias: {
-            "@": path.resolve(__dirname, "src"),
-            "@ds": path.resolve(__dirname, "design-system"),
-            // Epic 34.6: the shared TV player (channel switching), used by the live
-            // player here and later the public TV site
-            "@maktaba/tvplayer": path.resolve(__dirname, "packages/tvplayer/src"),
-            // Epic 54 (story 54.41): the plugin SDK's flow chart, one layout for every place
-            // that draws a flow; it imports nothing
-            "@maktaba/flowchart": path.resolve(
-              __dirname,
-              "../tools/plugin-sdk/js/src/flowchart.ts"
-            ),
+    : mode === "tv-bundled"
+      ? tvBundledConfig()
+      : {
+          define: {
+            "import.meta.env.VITE_APP_VERSION": JSON.stringify(BUILD_VERSION),
+            "import.meta.env.VITE_CAST_APP_ID": JSON.stringify(CAST_APP_ID),
           },
-        },
-        server: {
-          port: 5173,
-          host: true,
-          // reachable from phones and other machines while developing: Bonjour names on
-          // the LAN and Tailscale (MagicDNS) names; Vite refuses unknown hosts otherwise
-          allowedHosts: [".local", ".ts.net"],
-          proxy: {
-            // In dev, point /api/* and /ws/* at the local Go API, and the live TV
-            // paths (/stream, /xmltv.xml, /lineup.m3u) at the streaming service.
-            "/stream": { target: "http://localhost:8081", changeOrigin: false },
-            "/xmltv.xml": { target: "http://localhost:8081", changeOrigin: false },
-            "/lineup.m3u": { target: "http://localhost:8081", changeOrigin: false },
-            "/api": {
-              target: "http://localhost:8080",
-              changeOrigin: false,
-              // the cluster hub's browser socket (/api/cluster/ws) upgrades here
-              ws: true,
-            },
-            "/ws": {
-              target: "ws://localhost:8080",
-              ws: true,
+          plugins: [
+            react(),
+            writeVersionJson(),
+            stampServiceWorkerPlugin(),
+            ...(editionOf(mode) === "player" ? [playerBundleCheck()] : []),
+          ],
+          resolve: {
+            alias: {
+              "@": path.resolve(__dirname, "src"),
+              "@ds": path.resolve(__dirname, "design-system"),
+              // Epic 34.6: the shared TV player (channel switching), used by the live
+              // player here and later the public TV site
+              "@maktaba/tvplayer": path.resolve(__dirname, "packages/tvplayer/src"),
+              // Epic 54 (story 54.41): the plugin SDK's flow chart, one layout for every place
+              // that draws a flow; it imports nothing
+              "@maktaba/flowchart": path.resolve(
+                __dirname,
+                "../tools/plugin-sdk/js/src/flowchart.ts"
+              ),
             },
           },
-        },
-        build: {
-          target: "es2022",
-          outDir: "dist",
-          sourcemap: true,
-        },
-      }
+          server: {
+            port: 5173,
+            host: true,
+            // reachable from phones and other machines while developing: Bonjour names on
+            // the LAN and Tailscale (MagicDNS) names; Vite refuses unknown hosts otherwise
+            allowedHosts: [".local", ".ts.net"],
+            proxy: {
+              // In dev, point /api/* and /ws/* at the local Go API, and the live TV
+              // paths (/stream, /xmltv.xml, /lineup.m3u) at the streaming service.
+              "/stream": { target: "http://localhost:8081", changeOrigin: false },
+              "/xmltv.xml": { target: "http://localhost:8081", changeOrigin: false },
+              "/lineup.m3u": { target: "http://localhost:8081", changeOrigin: false },
+              "/api": {
+                target: "http://localhost:8080",
+                changeOrigin: false,
+                // the cluster hub's browser socket (/api/cluster/ws) upgrades here
+                ws: true,
+              },
+              "/ws": {
+                target: "ws://localhost:8080",
+                ws: true,
+              },
+            },
+          },
+          build: {
+            target: "es2022",
+            outDir: "dist",
+            sourcemap: true,
+          },
+        }
 );

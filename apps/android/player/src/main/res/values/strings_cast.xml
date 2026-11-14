@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Cast (Epic 58 story 58.06): the shared table of the senders (Android, Apple, web).
+     Its Arabic is in values-ar/strings_cast.xml: PlayerTranslationsTest and lint fail without it. -->
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <!-- the shared table's local-network screen is the Apple Player's: Google Play services finds the TVs for Android -->
+    <string name="cast_local_network_title" tools:ignore="UnusedResources">Find TVs on your network</string>
+    <string name="cast_local_network_body" tools:ignore="UnusedResources">To cast, Maktaba needs to see devices on your Wi-Fi. You\'ll be asked next.</string>
+    <string name="cast_casting_to">Playing on %1$s</string>
+    <string name="cast_old_home">This home is older, so the TV shows Google\'s player.</string>
+    <string name="cast_button">Cast to a TV</string>
+    <string name="cast_no_devices">No TV found. The TV must be on the same Wi-Fi network as this phone. On a TV that has Maktaba\'s own app, open it there.</string>
+    <string name="cast_error_refused">This video can\'t be cast from your account.</string>
+    <string name="cast_error_cloud">Casting needs a sign-in on the home itself, not through Maktaba Cloud.</string>
+    <string name="cast_error_failed">The TV didn\'t start the video. Try again.</string>
+    <string name="cast_error_home">The TV can\'t reach your home. Check that it\'s on the same network, or use the home\'s secure address.</string>
+    <string name="cast_error_format">The TV can\'t play this video\'s format.</string>
+    <string name="cast_error_grant_ended">The cast has ended. Cast again to keep watching on the TV.</string>
+    <string name="cast_error_update">The TV needs a newer home. Update Maktaba on the home, then cast again.</string>
+    <string name="cast_ok">OK</string>
+</resources>

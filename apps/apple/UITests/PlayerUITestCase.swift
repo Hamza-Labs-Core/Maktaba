@@ -158,8 +158,9 @@ class PlayerUITestCase: XCTestCase {
     /// the touch, so the app never sees the tap (about once in a few hundred taps). The test
     /// then fails on what the tap should have done, which reads as an app bug. When a test
     /// fails, the running app is asked how many touches the system cancelled since launch
-    /// (`TouchHook`); if any, the failure starts with that. Retrying is not an option: the
-    /// failure stays a failure, with its real cause named.
+    /// (`TouchHook`); if any, the failure starts with that. The failure stays a failure, with
+    /// its real cause named; only a tap that opens a page gets a second try, and only when the
+    /// app counted a cancelled touch during it and the page did not open (`open(_:shows:_:)`).
     override nonisolated func record(_ issue: XCTIssue) {
         guard Thread.isMainThread else { return super.record(issue) }
         // on the main thread, so on the main actor, where `app` lives: XCTest records a UI
@@ -190,6 +191,44 @@ class PlayerUITestCase: XCTestCase {
         let count = cancelled > TouchHook.most ? "more than \(TouchHook.most) touches" : cancelled == 1 ? "1 touch" : "\(cancelled) touches"
         return "[the simulator may have dropped a tap: the system cancelled \(count) of this test before the app saw it end; "
             + "see #639 (backboardd's digitizer race) and the app's log before reading the failure as the app's] "
+    }
+
+    /// Taps `row` and waits (at most `timeout`) for `destination`, the page it opens. When the
+    /// page did not open and the app counted a touch cancelled by the system during the tap
+    /// (#639's backboardd race, `TouchHook`), the tap never reached the app: it is tapped once
+    /// more, in an activity named "Retrying a cancelled tap" so the result bundle shows each
+    /// retry. A tap that landed (no touch cancelled, or the page open) is never repeated; a
+    /// page that still does not open fails naming `what`. In run 43599999810 (`-test-iterations
+    /// 20` on the 12 Player UI shards) the one failure of 237 was such a cancelled tap on
+    /// Profile's Playback row (iphone 5/6, iteration 18), and the runner crashed after it.
+    @discardableResult
+    func open(_ row: XCUIElement, shows destination: XCUIElement, _ what: String, timeout: TimeInterval = 10,
+              file: StaticString = #filePath, line: UInt = #line) -> Bool {
+        let before = Self.cancelledTouches(in: app)
+        row.tap()
+        if destination.waitForExistence(timeout: timeout) { return true }
+        let after = Self.cancelledTouches(in: app)
+        guard Self.retriesTap(cancelledBefore: before, cancelledAfter: after, arrived: destination.exists) else {
+            XCTFail("\(what): not open after the tap", file: file, line: line)
+            return false
+        }
+        let lost = (after ?? 0) - (before ?? 0)
+        return XCTContext.runActivity(named: "Retrying a cancelled tap: \(what) (the system cancelled \(lost) touch\(lost == 1 ? "" : "es"), #639)") { _ in
+            waitUntilStill(row, timeout: 5)
+            row.tap()
+            let opened = destination.waitForExistence(timeout: timeout)
+            XCTAssertTrue(opened, "\(what): not open after a second tap (the first was cancelled by the system)",
+                          file: file, line: line)
+            return opened
+        }
+    }
+
+    /// Whether a tap that should have opened a page gets a second try: only when the page is
+    /// not open and the app's count of cancelled touches rose during the tap. With no count
+    /// (the app did not answer) the tap is not repeated: it may have landed.
+    nonisolated static func retriesTap(cancelledBefore: Int?, cancelledAfter: Int?, arrived: Bool) -> Bool {
+        guard !arrived, let before = cancelledBefore, let after = cancelledAfter else { return false }
+        return after > before
     }
 
     /// Closes the app if it is running.
@@ -252,6 +291,36 @@ class PlayerUITestCase: XCTestCase {
                 last = now
             }
             RunLoop.current.run(until: Date().addingTimeInterval(0.25))
+        }
+    }
+
+    /// Taps the switch `toggle` (a `Toggle`'s element, its switch inside) until it reads
+    /// `value`, as #1000 does for a Home row: once it stands still, then read until it changes.
+    ///
+    /// On a loaded CI runner a tap that lands dead centre on a still switch has left it as it
+    /// was, with no touch cancelled and the app in front: main runs 43372573155, 43344331335
+    /// and 43332124998 (`testPlaybackSettingsAreKept`, "it reads Optional(1)"), 43409306425,
+    /// 43176025371, 43141129651 and 43300055899 (`testAlsoSendToMaktabaWhenTheHomeAllowsIt`,
+    /// the box still 0 in the hierarchy kept at the failure). A tap that did nothing leaves
+    /// nothing behind, so a switch that still reads what it read before the tap gets one more
+    /// tap; a second miss fails naming the switch, and so does any other value. The app's log
+    /// says how long each touch was held (`TouchWatcher`): in #1249's run 43573942988 (iphone
+    /// 6/6) a miss logged "touch held 0.07 s at (341, 194)", a whole quick tap on the still
+    /// switch that the switch ignored (the setting is written only by the switch), and the
+    /// second tap, the same 0.07 s at the same point, turned it off.
+    func flip(_ toggle: XCUIElement, to value: String, _ what: String,
+              file: StaticString = #filePath, line: UInt = #line) {
+        for attempt in 1 ... 2 {
+            waitUntilStill(toggle, timeout: 5)
+            let before = toggle.value as? String
+            toggle.switches.firstMatch.tap()
+            if waitUntil({ toggle.value as? String == value }) { return }
+            let now = toggle.value as? String
+            guard now == before else {
+                return XCTFail("\(what): reads \(now ?? "nothing") after the tap, not \(value)", file: file, line: line)
+            }
+            XCTAssertLessThan(attempt, 2, "\(what): still \(now ?? "nothing") after two taps on a still switch",
+                              file: file, line: line)
         }
     }
 

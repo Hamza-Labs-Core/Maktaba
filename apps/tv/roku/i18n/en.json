@@ -1,0 +1,442 @@
+{
+  "@launcher.title": {
+    "widthChars": 24,
+    "lines": 1
+  },
+  "launcher.title": "Maktaba",
+  "@launcher.start.title": {
+    "widthChars": 40,
+    "lines": 1
+  },
+  "launcher.start.title": "Choose your home",
+  "@launcher.saved.title": {
+    "widthChars": 40,
+    "lines": 1
+  },
+  "launcher.saved.title": "Your homes",
+  "@launcher.saved.last": {
+    "widthChars": 24,
+    "lines": 1
+  },
+  "launcher.saved.last": "Last used",
+  "@launcher.find.title": {
+    "widthChars": 40,
+    "lines": 1
+  },
+  "launcher.find.title": "Find on this network",
+  "@launcher.find.searching": {
+    "widthChars": 48,
+    "lines": 1
+  },
+  "launcher.find.searching": "Looking for Maktaba homes…",
+  "@launcher.find.found": {
+    "widthChars": 40,
+    "lines": 1
+  },
+  "launcher.find.found": "Homes on this network",
+  "@launcher.find.none": {
+    "widthChars": 48,
+    "lines": 2
+  },
+  "launcher.find.none": "No home found on this network.",
+  "@launcher.find.noIp": {
+    "widthChars": 60,
+    "lines": 3
+  },
+  "launcher.find.noIp": "This TV did not say its network address. Enter the home's address instead.",
+  "@launcher.find.again": {
+    "widthChars": 24,
+    "lines": 1
+  },
+  "launcher.find.again": "Search again",
+  "@launcher.typed.title": {
+    "widthChars": 40,
+    "lines": 1
+  },
+  "launcher.typed.title": "Enter the home's address",
+  "@launcher.typed.label": {
+    "widthChars": 48,
+    "lines": 1
+  },
+  "launcher.typed.label": "Address, for example 192.168.1.20",
+  "@launcher.typed.connect": {
+    "widthChars": 20,
+    "lines": 1
+  },
+  "launcher.typed.connect": "Connect",
+  "@launcher.typed.invalid": {
+    "widthChars": 60,
+    "lines": 2
+  },
+  "launcher.typed.invalid": "That is not an address. Try something like 192.168.1.20.",
+  "@launcher.more": {
+    "widthChars": 20,
+    "lines": 1
+  },
+  "launcher.more": "More ways",
+  "@launcher.back": {
+    "widthChars": 20,
+    "lines": 1
+  },
+  "launcher.back": "Back",
+  "@launcher.connecting": {
+    "widthChars": 48,
+    "lines": 1
+  },
+  "launcher.connecting": "Connecting to %1$s…",
+  "@launcher.notHome": {
+    "widthChars": 60,
+    "lines": 2
+  },
+  "launcher.notHome": "No Maktaba home answered at %1$s.",
+  "@launcher.unreachable.title": {
+    "widthChars": 48,
+    "lines": 1
+  },
+  "launcher.unreachable.title": "Cannot reach %1$s",
+  "@launcher.unreachable.body": {
+    "widthChars": 60,
+    "lines": 3
+  },
+  "launcher.unreachable.body": "Check that the home is on and on the same network as this TV.",
+  "@launcher.tryAgain": {
+    "widthChars": 24,
+    "lines": 1
+  },
+  "launcher.tryAgain": "Try again",
+  "@launcher.chooseAnother": {
+    "widthChars": 32,
+    "lines": 1
+  },
+  "launcher.chooseAnother": "Choose another home",
+  "@launcher.forget": {
+    "widthChars": 32,
+    "lines": 1
+  },
+  "launcher.forget": "Forget this home",
+  "@launcher.plainHttp": {
+    "widthChars": 60,
+    "lines": 2
+  },
+  "launcher.plainHttp": "Connected without encryption on your network",
+  "@launcher.plainHttpCode": {
+    "widthChars": 60,
+    "lines": 3
+  },
+  "launcher.plainHttpCode": "Sign in with a code: a password is never sent without encryption.",
+  "@launcher.tooOld": {
+    "widthChars": 60,
+    "lines": 4
+  },
+  "launcher.tooOld": "This TV is too old for the Maktaba app. You can still cast to it from Maktaba on your phone if it supports Google Cast or AirPlay.",
+  "@launcher.version": {
+    "widthChars": 32,
+    "lines": 1
+  },
+  "launcher.version": "Version %1$s",
+  "@compat.updateHome.title": {
+    "widthChars": 48,
+    "lines": 1
+  },
+  "compat.updateHome.title": "This home needs an update",
+  "@compat.updateHome.admin": {
+    "widthChars": 60,
+    "lines": 3
+  },
+  "compat.updateHome.admin": "Update Maktaba on %1$s in Admin → Updates, then come back.",
+  "@compat.updateHome.viewer": {
+    "widthChars": 60,
+    "lines": 2
+  },
+  "compat.updateHome.viewer": "Ask the person who runs %1$s to update Maktaba.",
+  "@compat.homeVersion": {
+    "widthChars": 60,
+    "lines": 1
+  },
+  "compat.homeVersion": "%1$s runs Maktaba %2$s.",
+  "@compat.updateApp.title": {
+    "widthChars": 48,
+    "lines": 1
+  },
+  "compat.updateApp.title": "Update this app",
+  "@compat.updateApp.why": {
+    "widthChars": 60,
+    "lines": 2
+  },
+  "compat.updateApp.why": "%1$s no longer works with this version of the app.",
+  "@compat.updateApp.roku": {
+    "widthChars": 60,
+    "lines": 3
+  },
+  "compat.updateApp.roku": "Roku updates channels by itself. Restart the Roku to get the update now.",
+  "@roku.notAvailable": {
+    "widthChars": 60,
+    "lines": 2
+  },
+  "roku.notAvailable": "That video isn't available.",
+  "@roku.exitConfirm": {
+    "widthChars": 40,
+    "lines": 1
+  },
+  "roku.exitConfirm": "Leave Maktaba?",
+  "@roku.options": {
+    "widthChars": 32,
+    "lines": 1
+  },
+  "roku.options": "Press * for more",
+  "@nav.home": {
+    "widthChars": 16,
+    "lines": 1
+  },
+  "nav.home": "Home",
+  "@nav.libraries": {
+    "widthChars": 16,
+    "lines": 1
+  },
+  "nav.libraries": "Libraries",
+  "@nav.search": {
+    "widthChars": 16,
+    "lines": 1
+  },
+  "nav.search": "Search",
+  "@nav.account": {
+    "widthChars": 16,
+    "lines": 1
+  },
+  "nav.account": "Account",
+  "@home.continueWatching": {
+    "widthChars": 40,
+    "lines": 1
+  },
+  "home.continueWatching": "Continue watching",
+  "@home.recentlyAdded": {
+    "widthChars": 40,
+    "lines": 1
+  },
+  "home.recentlyAdded": "Recently added",
+  "@home.forYou": {
+    "widthChars": 40,
+    "lines": 1
+  },
+  "home.forYou": "For you",
+  "@library.tab.recommended": {
+    "widthChars": 20,
+    "lines": 1
+  },
+  "library.tab.recommended": "Recommended",
+  "@library.tab.library": {
+    "widthChars": 20,
+    "lines": 1
+  },
+  "library.tab.library": "Library",
+  "@library.tab.collections": {
+    "widthChars": 20,
+    "lines": 1
+  },
+  "library.tab.collections": "Collections",
+  "@library.tab.playlists": {
+    "widthChars": 20,
+    "lines": 1
+  },
+  "library.tab.playlists": "Playlists",
+  "@library.tab.categories": {
+    "widthChars": 20,
+    "lines": 1
+  },
+  "library.tab.categories": "Categories",
+  "@action.play": {
+    "widthChars": 20,
+    "lines": 1
+  },
+  "action.play": "Play",
+  "@action.shuffle": {
+    "widthChars": 20,
+    "lines": 1
+  },
+  "action.shuffle": "Shuffle",
+  "@video.resumeFrom": {
+    "widthChars": 32,
+    "lines": 1
+  },
+  "video.resumeFrom": "Resume from %1$s",
+  "@video.startOver": {
+    "widthChars": 20,
+    "lines": 1
+  },
+  "video.startOver": "Start over",
+  "@search.hint": {
+    "widthChars": 40,
+    "lines": 1
+  },
+  "search.hint": "Search your library",
+  "@account.switchHome": {
+    "widthChars": 32,
+    "lines": 1
+  },
+  "account.switchHome": "Switch home",
+  "@account.signOut": {
+    "widthChars": 32,
+    "lines": 1
+  },
+  "account.signOut": "Sign out",
+  "@account.language": {
+    "widthChars": 32,
+    "lines": 1
+  },
+  "account.language": "Language",
+  "@account.language.en": {
+    "widthChars": 20,
+    "lines": 1
+  },
+  "account.language.en": "English",
+  "@account.language.ar": {
+    "widthChars": 20,
+    "lines": 1
+  },
+  "account.language.ar": "العربية",
+  "@code.title": {
+    "widthChars": 40,
+    "lines": 1
+  },
+  "code.title": "Sign in with a code",
+  "@code.where": {
+    "widthChars": 50,
+    "lines": 3
+  },
+  "code.where": "In Maktaba on your phone: Profile → Approve a TV, or go to maktaba.tv/tv",
+  "@code.whereHome": {
+    "widthChars": 50,
+    "lines": 2
+  },
+  "code.whereHome": "In Maktaba on your phone: Profile → Approve a TV",
+  "@code.expires": {
+    "widthChars": 50,
+    "lines": 1
+  },
+  "code.expires": "This code lasts %1$d minutes.",
+  "@code.waiting": {
+    "widthChars": 50,
+    "lines": 1
+  },
+  "code.waiting": "Waiting for a phone to approve it…",
+  "@code.signingIn": {
+    "widthChars": 50,
+    "lines": 1
+  },
+  "code.signingIn": "Approved. Signing in…",
+  "@code.cloudDown": {
+    "widthChars": 50,
+    "lines": 3
+  },
+  "code.cloudDown": "Maktaba Cloud cannot be reached, or this TV has no internet yet. Find the home on this network instead, or try again later.",
+  "@code.failed": {
+    "widthChars": 50,
+    "lines": 2
+  },
+  "code.failed": "This TV could not sign in. Try again.",
+  "@roku.exit.leave": {
+    "widthChars": 16,
+    "lines": 1
+  },
+  "roku.exit.leave": "Leave",
+  "@roku.exit.stay": {
+    "widthChars": 16,
+    "lines": 1
+  },
+  "roku.exit.stay": "Stay",
+  "@action.open": {
+    "widthChars": 24,
+    "lines": 1
+  },
+  "action.open": "Open",
+  "@action.goToSeries": {
+    "widthChars": 24,
+    "lines": 1
+  },
+  "action.goToSeries": "Go to the series",
+  "@action.cancel": {
+    "widthChars": 24,
+    "lines": 1
+  },
+  "action.cancel": "Cancel",
+  "@library.allLetters": {
+    "widthChars": 4,
+    "lines": 1
+  },
+  "library.allLetters": "All",
+  "@library.empty": {
+    "widthChars": 48,
+    "lines": 1
+  },
+  "library.empty": "Nothing here yet.",
+  "@library.onDeck": {
+    "widthChars": 40,
+    "lines": 1
+  },
+  "library.onDeck": "On deck",
+  "@library.recentlyWatched": {
+    "widthChars": 40,
+    "lines": 1
+  },
+  "library.recentlyWatched": "Recently watched",
+  "@series.season": {
+    "widthChars": 12,
+    "lines": 1
+  },
+  "series.season": "Season %1$d",
+  "@search.noResults": {
+    "widthChars": 40,
+    "lines": 1
+  },
+  "search.noResults": "No results.",
+  "@account.signedInAs": {
+    "widthChars": 60,
+    "lines": 1
+  },
+  "account.signedInAs": "Signed in as %1$s",
+  "@account.home": {
+    "widthChars": 60,
+    "lines": 1
+  },
+  "account.home": "Home: %1$s",
+  "@player.error": {
+    "widthChars": 60,
+    "lines": 2
+  },
+  "player.error": "This video cannot play right now.",
+  "@roku.player.upNext": {
+    "widthChars": 24,
+    "lines": 1
+  },
+  "roku.player.upNext": "Up next",
+  "@roku.player.retrying": {
+    "widthChars": 48,
+    "lines": 1
+  },
+  "roku.player.retrying": "Trying a converted version…",
+  "@roku.player.failed": {
+    "widthChars": 60,
+    "lines": 2
+  },
+  "roku.player.failed": "This video can't play on this Roku.",
+  "@roku.player.audio": {
+    "widthChars": 20,
+    "lines": 1
+  },
+  "roku.player.audio": "Audio",
+  "@roku.player.subtitles": {
+    "widthChars": 20,
+    "lines": 1
+  },
+  "roku.player.subtitles": "Subtitles",
+  "@roku.player.off": {
+    "widthChars": 20,
+    "lines": 1
+  },
+  "roku.player.off": "Off",
+  "@roku.player.track": {
+    "widthChars": 30,
+    "lines": 1
+  },
+  "roku.player.track": "Track %1$s"
+}
