@@ -22,8 +22,12 @@ import (
 )
 
 const (
-	// RevocationsType is the control post's typ.
+	// RevocationsType is the control post's typ for the full list, the one the edge installs.
 	RevocationsType = "revocations"
+	// RevocationsHomeType is the typ of a home's filtered copy (ForHome). The edge installs only
+	// RevocationsType, so a home cannot replay its own copy, which lacks the other homes'
+	// entries, to the edge's control route as if it were the cloud's list.
+	RevocationsHomeType = "revocations-home"
 	// RevocationsSchema is the payload's schema number.
 	RevocationsSchema = 1
 	// RevocationsTTL is how long a signed copy is current (Epic 54 §6.3's 48 h).
@@ -126,6 +130,15 @@ func (l RevocationList) Expired(t time.Time) bool { return !t.Before(l.ExpiresAt
 // SignRevocations signs the list as of now: issued now, expiring RevocationsTTL later. Entries
 // that ended (a programme past its until) are left out; the version is the caller's.
 func SignRevocations(k Key, version int64, entries []Entry, now time.Time) (string, RevocationList, error) {
+	return signRevocations(k, RevocationsType, version, entries, now)
+}
+
+// SignHomeRevocations signs a home's copy: as SignRevocations, under RevocationsHomeType.
+func SignHomeRevocations(k Key, version int64, entries []Entry, now time.Time) (string, RevocationList, error) {
+	return signRevocations(k, RevocationsHomeType, version, entries, now)
+}
+
+func signRevocations(k Key, typ string, version int64, entries []Entry, now time.Time) (string, RevocationList, error) {
 	if version < 0 {
 		return "", RevocationList{}, fmt.Errorf("broadcast: negative list version")
 	}
@@ -147,13 +160,23 @@ func SignRevocations(k Key, version int64, entries []Entry, now time.Time) (stri
 	if err := json.Unmarshal(raw, &payload); err != nil {
 		return "", RevocationList{}, err
 	}
-	text, err := SignControl(k, RevocationsType, payload, now, RevocationsTTL)
+	text, err := SignControl(k, typ, payload, now, RevocationsTTL)
 	return text, l, err
 }
 
-// VerifyRevocations checks a signed list with the reader's keys (by kid) and returns it. An
-// expired copy verifies: the reader decides what expiry means (a home keeps enforcing it).
+// VerifyRevocations checks a signed full list (RevocationsType) with the reader's keys (by kid)
+// and returns it. An expired copy verifies: the reader decides what expiry means (a home keeps
+// enforcing it). A home's copy (RevocationsHomeType) is ErrNotRevocations here.
 func VerifyRevocations(pubkeys map[string]ed25519.PublicKey, text string) (RevocationList, error) {
+	return verifyRevocations(pubkeys, text, RevocationsType)
+}
+
+// VerifyHomeRevocations checks a home's copy (RevocationsHomeType) as a home reads it.
+func VerifyHomeRevocations(pubkeys map[string]ed25519.PublicKey, text string) (RevocationList, error) {
+	return verifyRevocations(pubkeys, text, RevocationsHomeType)
+}
+
+func verifyRevocations(pubkeys map[string]ed25519.PublicKey, text, typ string) (RevocationList, error) {
 	rest, ok := strings.CutPrefix(strings.TrimSpace(text), ControlPrefix)
 	if !ok {
 		return RevocationList{}, ErrNotRevocations
@@ -181,7 +204,7 @@ func VerifyRevocations(pubkeys map[string]ed25519.PublicKey, text string) (Revoc
 	if err != nil || len(pub) != ed25519.PublicKeySize || !ed25519.Verify(pub, []byte(ControlDomain+"."+body), sig) {
 		return RevocationList{}, ErrBadSignature
 	}
-	if head.Typ != RevocationsType {
+	if head.Typ != typ {
 		return RevocationList{}, ErrNotRevocations
 	}
 	var l RevocationList

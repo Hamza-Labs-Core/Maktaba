@@ -306,13 +306,18 @@ export function measuredBandwidth(rs: RungState): number {
   return Math.max(...live.map((e) => (e.bytes * 8) / Math.max(0.1, e.dur)));
 }
 
+/** The shortest slate segment the loop plays, in seconds. */
+export const MIN_LOOP_SEG_S = 0.1;
+
 /**
  * renderSlateLoop writes a media playlist that loops the channel's slate from `since` (a
  * programme entry's slate, 50.25): the newest WINDOW entries of the loop at `now`, a
  * discontinuity at each wrap. Null with no slate.
  */
 export function renderSlateLoop(slate: SlateSegment[], since: number, now: number): string | null {
-  const segs = [...slate].sort((a, b) => a.idx - b.idx).filter((x) => x.dur > 0);
+  // a segment under MIN_LOOP_SEG_S is no real slate segment; leaving it out keeps the loop's
+  // length (and the arithmetic below) sane
+  const segs = [...slate].sort((a, b) => a.idx - b.idx).filter((x) => x.dur >= MIN_LOOP_SEG_S);
   if (segs.length === 0) return null;
   const len = segs.length;
   const prefix: number[] = [];
@@ -323,8 +328,12 @@ export function renderSlateLoop(slate: SlateSegment[], since: number, now: numbe
   }
   const startOf = (k: number) => since + Math.floor(k / len) * loopMs + prefix[k % len]!;
   const elapsed = Math.max(0, now - since);
-  let k = Math.floor(elapsed / loopMs) * len;
-  while (startOf(k + 1) <= since + elapsed) k++;
+  // the loop we are in, then the segment within it: a walk of at most len steps
+  const q = Math.floor(elapsed / loopMs);
+  const off = elapsed - q * loopMs;
+  let j = 0;
+  while (j + 1 < len && prefix[j + 1]! <= off) j++;
+  const k = q * len + j;
   const first = Math.max(0, k - WINDOW + 1);
   const wrapsBefore = first > 0 ? Math.floor((first - 1) / len) : 0;
   const lines = [

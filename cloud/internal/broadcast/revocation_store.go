@@ -238,13 +238,6 @@ var ErrNoKey = errors.New("broadcast: no broadcast signing key")
 
 // Signed is the current list, signed now (the edge's copy: every entry).
 func (r *Revocations) Signed(ctx context.Context) (string, RevocationList, error) {
-	return r.SignedFor(ctx, nil)
-}
-
-// SignedFor is the current list with only the entries keep allows (nil: all), signed now. A
-// home's copy keeps its own entries and the opaque ones (see ForHome), never another home's
-// server id, another account's id or a reason given about them.
-func (r *Revocations) SignedFor(ctx context.Context, keep func(Entry) bool) (string, RevocationList, error) {
 	if r.Key == nil {
 		return "", RevocationList{}, ErrNoKey
 	}
@@ -252,16 +245,28 @@ func (r *Revocations) SignedFor(ctx context.Context, keep func(Entry) bool) (str
 	if err != nil {
 		return "", RevocationList{}, err
 	}
-	if keep != nil {
-		kept := entries[:0:0]
-		for _, e := range entries {
-			if keep(e) {
-				kept = append(kept, e)
-			}
-		}
-		entries = kept
-	}
 	return SignRevocations(*r.Key, v, entries, r.now())
+}
+
+// SignedForHome is a home's copy of the current list, signed now under RevocationsHomeType:
+// its own entries and the opaque ones (ForHome), never another home's server id, another
+// account's id or a reason given about them.
+func (r *Revocations) SignedForHome(ctx context.Context, serverID, owner string) (string, RevocationList, error) {
+	if r.Key == nil {
+		return "", RevocationList{}, ErrNoKey
+	}
+	v, entries, err := r.Store.Current(ctx)
+	if err != nil {
+		return "", RevocationList{}, err
+	}
+	keep := ForHome(serverID, owner)
+	kept := entries[:0:0]
+	for _, e := range entries {
+		if keep(e) {
+			kept = append(kept, e)
+		}
+	}
+	return SignHomeRevocations(*r.Key, v, kept, r.now())
 }
 
 // ForHome is what a home's copy keeps: global entries, channel and programme entries (their

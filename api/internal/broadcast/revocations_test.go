@@ -43,10 +43,14 @@ func (s revSigner) keys() map[string]ed25519.PublicKey {
 }
 
 func (s revSigner) sign(version int64, issued time.Time, entries ...RevEntry) string {
+	return s.signAs("revocations-home", version, issued, entries...)
+}
+
+func (s revSigner) signAs(typ string, version int64, issued time.Time, entries ...RevEntry) string {
 	if entries == nil {
 		entries = []RevEntry{}
 	}
-	payload := map[string]any{"typ": "revocations", "kid": s.kid, "iat": issued.Unix(), "exp": issued.Add(48 * time.Hour).Unix(),
+	payload := map[string]any{"typ": typ, "kid": s.kid, "iat": issued.Unix(), "exp": issued.Add(48 * time.Hour).Unix(),
 		"schema": 1, "version": version, "issued_at": issued.UTC(), "expires_at": issued.Add(48 * time.Hour).UTC(), "entries": entries}
 	j, _ := json.Marshal(payload)
 	body := base64.RawURLEncoding.EncodeToString(j)
@@ -128,6 +132,13 @@ func TestVerifyAndStopFor(t *testing.T) {
 	}
 	if _, err := VerifyRevocations(s.keys(), text[:len(text)-3]+"AAA"); !errors.Is(err, ErrRevocationSignature) {
 		t.Errorf("a bad signature: %v", err)
+	}
+	// the full list (the edge's typ) reads too; another control post does not
+	if l, err := VerifyRevocations(s.keys(), s.signAs("revocations", 7, at)); err != nil || l.Version != 7 {
+		t.Errorf("the full list: %+v %v", l, err)
+	}
+	if _, err := VerifyRevocations(s.keys(), s.signAs("plan", 7, at)); err == nil {
+		t.Error("a plan read as a list")
 	}
 	if _, err := ParseRevocationKeys(`{"k":"short"}`); err == nil {
 		t.Error("a short key parsed")

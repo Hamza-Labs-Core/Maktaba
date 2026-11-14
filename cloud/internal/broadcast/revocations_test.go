@@ -57,6 +57,20 @@ func TestRevocationListSignsAndVerifies(t *testing.T) {
 	if _, err := VerifyRevocations(pubkeys(k), plan); !errors.Is(err, ErrNotRevocations) {
 		t.Errorf("a plan post: %v", err)
 	}
+	// a home's copy is another typ: each verifier takes only its own
+	home, _, err := SignHomeRevocations(k, 1842, vectorEntries(), vectorAt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := VerifyRevocations(pubkeys(k), home); !errors.Is(err, ErrNotRevocations) {
+		t.Errorf("a home's copy as the full list: %v", err)
+	}
+	if _, err := VerifyHomeRevocations(pubkeys(k), text); !errors.Is(err, ErrNotRevocations) {
+		t.Errorf("the full list as a home's copy: %v", err)
+	}
+	if l, err := VerifyHomeRevocations(pubkeys(k), home); err != nil || l.Version != 1842 {
+		t.Errorf("a home's copy: %+v %v", l, err)
+	}
 	if _, err := VerifyRevocations(pubkeys(k), "nonsense"); !errors.Is(err, ErrNotRevocations) {
 		t.Errorf("nonsense: %v", err)
 	}

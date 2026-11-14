@@ -84,7 +84,7 @@ func TestBroadcastKillSwitchRolesAuditAndPull(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := broadcast.VerifyRevocations(map[string]ed25519.PublicKey{k.Kid: k.Priv.Public().(ed25519.PublicKey)}, string(text.body))
+	got, err := broadcast.VerifyHomeRevocations(map[string]ed25519.PublicKey{k.Kid: k.Priv.Public().(ed25519.PublicKey)}, string(text.body))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,7 +112,7 @@ func TestBroadcastKillSwitchRolesAuditAndPull(t *testing.T) {
 		t.Fatalf("the lift is not audited (%d rows)", n)
 	}
 	text = home.agent.mustStatus(home.agent.do("GET", "/v1/broadcast/revocations", nil), http.StatusOK)
-	got, _ = broadcast.VerifyRevocations(map[string]ed25519.PublicKey{k.Kid: k.Priv.Public().(ed25519.PublicKey)}, string(text.body))
+	got, _ = broadcast.VerifyHomeRevocations(map[string]ed25519.PublicKey{k.Kid: k.Priv.Public().(ed25519.PublicKey)}, string(text.body))
 	if got.Version != 4 || len(got.Entries) != 0 {
 		t.Fatalf("after the lift = %+v", got)
 	}

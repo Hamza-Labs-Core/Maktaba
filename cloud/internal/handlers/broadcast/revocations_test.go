@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/base64"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -102,7 +103,12 @@ func TestThePullServesTheEdgeAndHomesOnly(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("a home's pull = %d", rec.Code)
 	}
-	l, err = bc.VerifyRevocations(pubs, rec.Body.String())
+	// a home's copy carries its own typ: the edge's verifier (and the edge) refuses it, so a
+	// home cannot replay it to the edge as the cloud's list
+	if _, err := bc.VerifyRevocations(pubs, rec.Body.String()); !errors.Is(err, bc.ErrNotRevocations) {
+		t.Fatalf("a home's copy verified as the full list: %v", err)
+	}
+	l, err = bc.VerifyHomeRevocations(pubs, rec.Body.String())
 	var ids []string
 	for _, e := range l.Entries {
 		ids = append(ids, e.ID)

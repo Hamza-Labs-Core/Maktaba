@@ -96,20 +96,24 @@ func (d *RevocationDeps) Pull(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusUnauthorized, "unauthorized", "")
 		return
 	}
-	// the edge gets every entry; a home only its own and the opaque ones
-	var keep func(bc.Entry) bool
-	if !edge {
+	// the edge gets every entry; a home only its own and the opaque ones, under another typ
+	var (
+		text string
+		l    bc.RevocationList
+		err  error
+	)
+	if edge {
+		text, l, err = d.Rev.Signed(r.Context())
+	} else {
 		owner := ""
 		if d.Owner != nil {
-			var err error
 			if owner, err = d.Owner(r.Context(), home); err != nil {
 				d.fail(w, r, "home owner", err)
 				return
 			}
 		}
-		keep = bc.ForHome(home, owner)
+		text, l, err = d.Rev.SignedForHome(r.Context(), home, owner)
 	}
-	text, l, err := d.Rev.SignedFor(r.Context(), keep)
 	if err != nil {
 		d.fail(w, r, "sign revocations", err)
 		return

@@ -83,6 +83,20 @@ describe("T02 the Revocations object", () => {
     expect(alerts).toHaveLength(2);
   });
 
+  it("refuses a home's copy (typ revocations-home) replayed to its control route", async () => {
+    const v = (await revs().current()).version;
+    const ch = newChannel();
+    await installList([
+      { id: "r-1", kind: "channel", ref: ch, action: "off_air", reason: "notice" },
+    ]);
+    // a home's copy of the next version lacks the other homes' entries; the edge must not take it
+    const homeCopy = await revocationList(v + 2, [], "cloud-1", "revocations-home");
+    const r = await call(`${INGEST}/v1/control/revocations`, { method: "PUT", body: homeCopy });
+    expect(r.status).toBeGreaterThanOrEqual(400);
+    expect((await revs().current()).version).toBe(v + 1);
+    expect((await revs().current()).entries).toHaveLength(1);
+  });
+
   it("refuses a list carrying an entry it may not (a slate with no end)", async () => {
     const v = (await revs().current()).version;
     const bad = await revocationList(v + 1, [

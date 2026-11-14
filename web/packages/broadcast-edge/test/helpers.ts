@@ -97,7 +97,8 @@ export async function control(
 export async function revocationList(
   version: number,
   entries: Record<string, unknown>[],
-  label = "cloud-1"
+  label = "cloud-1",
+  typ = "revocations"
 ): Promise<string> {
   const t = Math.floor(now() / 1000);
   return signCloud(
@@ -109,7 +110,7 @@ export async function revocationList(
       issued_at: new Date(t * 1000).toISOString(),
       expires_at: new Date((t + 48 * 3600) * 1000).toISOString(),
       entries,
-      typ: "revocations",
+      typ,
       kid: await cloudKid(label),
       iat: t,
       exp: t + 48 * 3600,

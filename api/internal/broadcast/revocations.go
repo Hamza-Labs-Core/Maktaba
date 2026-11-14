@@ -140,7 +140,9 @@ func VerifyRevocations(keys map[string]ed25519.PublicKey, text string) (RevList,
 		return RevList{}, ErrRevocationSignature
 	}
 	var l RevList
-	if head.Typ != "revocations" || json.Unmarshal(raw, &l) != nil || l.Schema != 1 {
+	// the cloud sends a home its filtered copy under "revocations-home" (the edge takes only the
+	// full "revocations"); a home reads either
+	if (head.Typ != "revocations" && head.Typ != "revocations-home") || json.Unmarshal(raw, &l) != nil || l.Schema != 1 {
 		return RevList{}, errNotRevocations
 	}
 	return l, nil
