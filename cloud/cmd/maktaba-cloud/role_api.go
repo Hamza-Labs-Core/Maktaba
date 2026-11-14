@@ -7,7 +7,9 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"os"
 	"strings"
@@ -329,6 +331,8 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 	// NewRouter has already registered the health probes, and chi
 	// refuses Use after a route, so the app routes and their middleware
 	// live in a group.
+	analyticsDeps := &broadcasth.AnalyticsDeps{DB: pool.DB, Servers: servers, Audit: auditLog, Logger: logger,
+		K: cfg.Broadcast.AnalyticsK}
 	r.Group(func(app chi.Router) {
 		// Per-IP rate limits on the unauthenticated auth routes: burst 30,
 		// refill 5/s — plenty for the sign-in form, harsh for credential
@@ -386,12 +390,17 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 			billingh.Mount(g, billing)
 			broadcasth.MountUser(g, broadcastDeps)
 			pushh.Mount(g, pushh.Deps{DB: pool.DB, Dispatcher: dispatcher})
+			// a publisher's viewer analytics, the home's owner only (story 50.28)
+			broadcasth.MountAnalyticsUser(g, analyticsDeps)
 		})
 	})
 
 	// Prometheus scrape of this role's push counters (aggregate only, like
-	// the relay's /metrics).
-	r.Get("/metrics", metricspkg.PrometheusHandler(pushMetrics, obs.WriteMetrics))
+	// the relay's /metrics), and the broadcast series (story 50.28) from the worker's state.
+	bcMonitor := &broadcast.Monitor{DB: pool.DB, BudgetUSD: cfg.Broadcast.MonthlyBudgetUSD}
+	r.Get("/metrics", privateExtras(
+		metricspkg.PrometheusHandler(pushMetrics, obs.WriteMetrics),
+		metricspkg.PrometheusHandler(pushMetrics, obs.WriteMetrics, bcMonitor.WriteMetrics)))
 
 	// The operator console's listener (stories 50.32, 50.33): the staff sign-in on /v1/staff/*
 	// and every /v1/admin/* route, behind the IP allow-list (when set) and a staff session with
@@ -424,6 +433,10 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 		// the broadcast kill switch, for the service admin only (50.25)
 		revDeps.Gate = adminGate
 		broadcasth.MountRevocationsAdmin(g, revDeps)
+
+		// a home's broadcast analytics, for the service admin, audited (story 50.28)
+		analyticsDeps.Gate = adminGate
+		broadcasth.MountAnalyticsAdmin(g, analyticsDeps)
 
 		// the problem reports homes sent, for the service admin only (53.16)
 		reports.MountAdmin(g, &reports.AdminDeps{Store: reportStore, DB: pool.DB, Logger: logger, Gate: adminGate,
@@ -618,4 +631,22 @@ func ingestDeps(cfg config.Config, servers *stores.Servers, store *billingpkg.Br
 	d.Key = &k
 	logger.Info("broadcast ingest tokens on", "kid", k.Kid)
 	return d
+}
+
+// privateExtras serves private to a scrape addressed by IP (the witness's Prometheus reaches a
+// node through Caddy's site on its private address, or the loopback) and public to a request
+// for one of the public names. The broadcast series (story 50.28: viewers, the cost estimate,
+// the budget) are business figures, never served on api.maktaba.tv/metrics.
+func privateExtras(public, private http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		host := r.Host
+		if h, _, err := net.SplitHostPort(host); err == nil {
+			host = h
+		}
+		if _, err := netip.ParseAddr(strings.Trim(host, "[]")); err == nil {
+			private(w, r)
+			return
+		}
+		public(w, r)
+	}
 }
