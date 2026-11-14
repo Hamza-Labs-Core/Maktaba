@@ -559,8 +559,16 @@ func (h *Handler) DeviceToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if linked {
-		// recorded before it is handed out: unlinking the cloud account ends it
-		if err := h.CloudAssertions.RecordTVCodeSignIn(r.Context(), tok.FamilyID, t.UserID); err != nil {
+		// recorded before it is handed out: unlinking the cloud account ends it. The record
+		// checks, in its own transaction, that the link still names the account that approved
+		// the TV: one unlinked or changed since then hands out nothing, as an expired approval.
+		err := h.CloudAssertions.RecordTVCodeSignIn(r.Context(), tok.FamilyID, t.UserID, t.CloudUserID)
+		if errors.Is(err, ErrCloudLinkChanged) {
+			h.requests.drop(code)
+			httperror.Write(w, r, gone("approval expired: ask for a new code").With("reason", "cloud_link_changed"))
+			return
+		}
+		if err != nil {
 			httperror.Write(w, r, httperror.Internal("record the cloud sign-in").Wrap(err))
 			return
 		}
