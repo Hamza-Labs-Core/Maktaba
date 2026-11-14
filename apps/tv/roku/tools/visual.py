@@ -244,6 +244,9 @@ def visual_text(s: str, max_width: int = 0, base: str = "auto") -> str:
 
 def wrap(s: str, width: int) -> list[str]:
     """Greedy word wrap to `width` characters, in logical order; a longer word is split."""
+    if width <= 0:  # no width: one line
+        words = [w for w in s.split(" ") if w]
+        return [" ".join(words)] if words else []
     lines: list[str] = []
     cur = ""
     for word in (w for w in s.split(" ") if w):

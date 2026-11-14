@@ -312,6 +312,7 @@
     {"id": "title.66", "input": "Grey's Anatomy", "visual": "Grey's Anatomy"},
     {"id": "title.67", "input": "M*A*S*H", "visual": "M*A*S*H"},
     {"id": "title.68", "input": "Love, Death & Robots", "visual": "Love, Death & Robots"},
-    {"id": "title.69", "input": "Narcos: México", "visual": "Narcos: México"}
+    {"id": "title.69", "input": "Narcos: México", "visual": "Narcos: México"},
+    {"id": "wrap.11", "input": "عربي abc  عربي", "widthChars": 0, "maxLines": 0, "note": "no width: one line", "lines": ["ﻲﺑﺮﻋ abc ﻲﺑﺮﻋ"]}
   ]
 }

@@ -86,6 +86,7 @@ def test_wrap_before_reorder() -> None:
     assert visual.wrap("aaaa bb cc", 5) == ["aaaa", "bb cc"]
     assert visual.wrap("abcdefghij", 4) == ["abcd", "efgh", "ij"]
     assert visual.fit_lines(["a", "b", "c"], 5, 2) == ["a", "b c"]
+    assert visual.wrap("a  b c", 0) == ["a b c"]
 
 
 def test_levels_follow_python_bidi() -> None:

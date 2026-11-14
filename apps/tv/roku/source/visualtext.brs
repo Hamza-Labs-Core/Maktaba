@@ -266,7 +266,8 @@ function vt_FirstStrongRtl(cls as Object) as Boolean
 end function
 
 ' Greedy word wrap in logical order (words split on spaces; a word longer than the width is
-' split), as visual.wrap. Lines are found as ranges of words, then copied once.
+' split; no width: one line), as visual.wrap. Lines are found as ranges of words, then
+' copied once.
 function vt_Wrap(t as Object, width as Integer) as Object
     codes = t.codes
     n = codes.Count()
@@ -298,7 +299,7 @@ function vt_Wrap(t as Object, width as Integer) as Object
             if cur = invalid then
                 cur = [[ws, j]]
                 curLen = wl
-            else if curLen + 1 + wl <= width then
+            else if width <= 0 or curLen + 1 + wl <= width then
                 cur.Push([ws, j])
                 curLen = curLen + 1 + wl
             else
