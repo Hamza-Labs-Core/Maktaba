@@ -313,6 +313,15 @@ build fails when the two differ.
   A self-test with the edge cache planted off must fail on the R2 counter. Scenarios not built
   yet are reported as expected failures.
 
+- **The broadcast rehearsal covers plans, viewer access, takedowns and a cloud outage (Epic 50,
+  story 50.29).** Five more scenarios run against the real edge and home: the plan modes in order
+  with no playing viewer stopped, invites, short codes, Turnstile and the viewer limits, a
+  takedown of the programme airing now through to the third strike, a guide that holds only
+  publishable items, and (nightly) 15 minutes with the cloud down, after which every viewer-minute
+  the edge counted reaches the cloud exactly once. A sixth, the monitoring scenario, checks the
+  edge's analytics events and stays an expected failure until the cloud's alerts and status page
+  join the stack.
+
 ### Fixed
 
 - **Roku sends the cloud code's grant only to an address its certificate check proves.** After

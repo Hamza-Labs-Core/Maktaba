@@ -2,8 +2,9 @@
 # rehearsal"): this commit's broadcast edge in Miniflare (several simulated locations, each with
 # its own cache) and a home running the streaming service's broadcaster on a test pattern
 # (tools/rehearsal-cloud/broadcast/compose.yml), watched by simulated viewers
-# (tools/broadcast-viewers). No Cloudflare account, no DNS, no secret: the cloud's part is signed
-# with its TEST key in the test.
+# (tools/broadcast-viewers). No Cloudflare account, no DNS, no secret: the cloud's part (ingest
+# tokens, revocation lists, plan pushes, access posts, invites) is signed with its TEST key in the
+# test, and the edge's calls out (Turnstile, the usage posts) reach fakes in its own container.
 #
 # Jobs: unit (T01–T03 without Docker: the viewers, the verdict, the home's control port), images,
 # one job per scenario with a body (the matrix is the catalog's, tools/broadcast-viewers/rehearsal/
