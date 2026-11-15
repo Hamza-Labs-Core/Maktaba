@@ -166,6 +166,25 @@
 و`cloud/internal/handlers/moderation/`؛ وأدلة التشغيل هي `docs/runbooks/cloud/broadcast-takedown.md`
 و`broadcast-urgent-report.md`.
 
+## من يشاهد
+
+تعرض لوحة البث لمدراء المنزل من يشاهد قنواته (القصة 50.28):
+يجيب `GET /api/tv/broadcast/analytics?period=today|7d|month&tz=<IANA>` بـ `{cloud, report}`،
+و`report` هو تقرير سحابة مكتبة كما وصل.
+
+- **الطريق إليه.** لا يحمل المنزل أبدًا تسجيل دخول المالك إلى السحابة. تسأل الواجهة المنفذ المحلي
+  لوكيل الترحيل (`/admin/cloud-link/broadcast/home/analytics`)، فلا يمرّر إلا `period` و`date`
+  و`tz`، ويضيف معرّف خادم المنزل وسرّه. وباب المنزل في السحابة، `GET /v1/broadcast/home/analytics`،
+  لا يجيب إلا عن المنزل الذي تسمّيه بيانات الاعتماد تلك: فإن سمّى `server=` منزلًا آخر كان الجواب
+  `403`، ولا يجيب إلا بـ JSON.
+- **ما فيه.** المشاهدون الآن، وساعات المشاهدة اليوم وخلال 7 أيام وهذا الشهر مقابل حصة الخطة؛ وفي
+  فئة المذيع أيضًا ذروة الفترة ومتوسط مدة المشاهدة والبلدان والأجهزة. تجمع السحابة كل ساعة على
+  حدة: البلد أو الجهاز الذي له أقل من 5 جلسات في ساعة يصير `other` في تلك الساعة. ويعرض المنزل ما
+  وصله، ولا شيء أدق منه أبدًا.
+- **من يحق له السؤال.** مدراء المنزل وحدهم، وتفرض الواجهة ذلك (`401` لمن لم يسجّل دخوله، و`403`
+  لغيره) قبل سؤال الوكيل. ومن دون ارتباط بالسحابة يكون الجواب `{"cloud":"unclaimed"}`، ومع غياب
+  السحابة `{"cloud":"unreachable"}`.
+
 ## الاختبارات
 
 - `api/internal/broadcast`: الفحوص (T01 وT04 وT05)، واختبار الدور (T09)، واختبارات قاعدة البيانات
@@ -185,5 +204,8 @@
   ولهذا المنزل؛ وإزالة بالوقت وبالمعرّف وبالمصدر، وجوابها مع نهاية الخانة، والإعادة، ودفعة مزوّرة.
 - `cloud/cmd/maktaba-cloud/moderation_integration_test.go`: الإشعار والإزالة والإشعار المضاد والإعادة؛
   وثلاث مخالفات تنهي البث؛ والأدوار (العميل `401`، ودور الموظف الخاطئ `403`).
-- `web/src/pages/Admin/LiveTV/BroadcastPanel.test.tsx` و`BroadcastNotices.test.tsx`: الصفحة
-  وإشعاراتها، بالإنجليزية والعربية.
+- `api/internal/broadcast/analytics_test.go` و`cloud/internal/handlers/broadcast/analytics_home_test.go`
+  و`analytics_home_integration_test.go`: تقرير المشاهدين للمدراء وحدهم، وباب المنزل في السحابة لا
+  يجيب إلا عن المنزل الذي تسمّيه بيانات اعتماده (معرّف منزل آخر `403`).
+- `web/src/pages/Admin/LiveTV/BroadcastPanel.test.tsx` و`BroadcastNotices.test.tsx`
+  و`BroadcastViewers.test.tsx`: الصفحة وإشعاراتها ومشاهدوها، بالإنجليزية والعربية.

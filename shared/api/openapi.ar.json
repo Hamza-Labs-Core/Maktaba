@@ -6564,6 +6564,38 @@
     "/paths/~1broadcast~1access~1invites~1{id}~1devices~1{pass}/delete/responses/502/description": {
       "en": "`cloud_unreachable`: Maktaba Cloud is out of reach.",
       "ar": "`cloud_unreachable`: تعذّر الوصول إلى سحابة مكتبة."
+    },
+    "/paths/~1tv~1broadcast~1analytics/get/summary": {
+      "en": "Who watches this home's channels",
+      "ar": "من يشاهد قنوات هذا المنزل"
+    },
+    "/paths/~1tv~1broadcast~1analytics/get/description": {
+      "en": "The home's own viewer analytics from Maktaba Cloud, asked by the relay agent with the home's credential (the cloud answers for that home only; the home never holds the owner's cloud sign-in): viewers now, viewer-hours today, over 7 days and this month against the plan's allowance, and on the Broadcaster tier the period's peak, countries, devices, quality, errors and blocked attempts. Folded in the cloud: a country or device with fewer than 5 sessions in an hour is counted under other for that hour, and nothing finer reaches the home. report is the cloud's answer, absent when the cloud was not reached (cloud says why).",
+      "ar": "تحليلات مشاهدي المنزل نفسه من سحابة مكتبة، يطلبها وكيل الترحيل ببيانات اعتماد المنزل (تجيب السحابة عن ذلك المنزل وحده، ولا يحمل المنزل أبدًا تسجيل دخول المالك إلى السحابة): المشاهدون الآن، وساعات المشاهدة اليوم وخلال 7 أيام وهذا الشهر مقابل حصة الخطة، وفي فئة المذيع ذروة الفترة والبلدان والأجهزة والجودة والأخطاء ومحاولات الحظر. يُجمع في السحابة: كل بلد أو جهاز له أقل من 5 جلسات في ساعة يُحسب تحت other في تلك الساعة، ولا يصل إلى المنزل ما هو أدق من ذلك. report هو جواب السحابة، ويغيب حين لا يُوصل إلى السحابة (ويقول cloud السبب)."
+    },
+    "/paths/~1tv~1broadcast~1analytics/get/parameters/0/description": {
+      "en": "today (the default), 7d (today and the 6 days before) or month.",
+      "ar": "today (الافتراضي)، أو 7d (اليوم والأيام الستة قبله)، أو month."
+    },
+    "/paths/~1tv~1broadcast~1analytics/get/parameters/1/description": {
+      "en": "The IANA time zone the days are counted in (default UTC).",
+      "ar": "منطقة IANA الزمنية التي تُحسب بها الأيام (الافتراضي UTC)."
+    },
+    "/paths/~1tv~1broadcast~1analytics/get/responses/200/description": {
+      "en": "The cloud's folded report.",
+      "ar": "تقرير السحابة المجمَّع."
+    },
+    "/paths/~1tv~1broadcast~1analytics/get/responses/400/description": {
+      "en": "The period or the time zone is not one the route takes.",
+      "ar": "الفترة أو المنطقة الزمنية ليست مما يقبله المسار."
+    },
+    "/paths/~1tv~1broadcast~1analytics/get/responses/403/description": {
+      "en": "Admin only.",
+      "ar": "للمشرفين فقط."
+    },
+    "/paths/~1tv~1broadcast~1analytics/get/responses/409/description": {
+      "en": "Broadcasting is off on this home.",
+      "ar": "البث متوقف على هذا المنزل."
     }
   }
 }

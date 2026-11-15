@@ -34,6 +34,10 @@ import (
 //	GET  /api/tv/broadcast/moderation                   Maktaba's statements, the reports, the strikes, the takedowns applied
 //	POST /api/tv/broadcast/moderation/counter-notices   a counter-notice to a takedown
 //
+// and who watches (story 50.28):
+//
+//	GET  /api/tv/broadcast/analytics?period=today|7d|month&tz=<IANA>   the cloud's folded viewer report
+//
 // Every route answers 403 to anyone but an admin, whatever livetv.broadcast's state (the
 // router's ComponentRoutes answer 409 component_off to an admin while it is off).
 type Routes struct {
@@ -56,6 +60,7 @@ var Paths = []string{
 	"PUT /api/tv/broadcast/publishable/only",
 	"GET /api/tv/broadcast/moderation",
 	"POST /api/tv/broadcast/moderation/counter-notices",
+	"GET /api/tv/broadcast/analytics",
 }
 
 // Mount wires the routes.
@@ -72,6 +77,7 @@ func (h *Routes) Mount(r chi.Router) {
 	r.Put("/api/tv/broadcast/publishable/only", h.publishableOnly)
 	r.Get("/api/tv/broadcast/moderation", h.moderation)
 	r.Post("/api/tv/broadcast/moderation/counter-notices", h.counterNotice)
+	r.Get("/api/tv/broadcast/analytics", h.analytics)
 }
 
 func admin(w http.ResponseWriter, r *http.Request) *principal.Principal {

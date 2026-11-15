@@ -203,6 +203,38 @@ export interface ModerationView {
   takedowns?: AppliedTakedown[];
 }
 
+/** One named count of the viewer report; key "other" is the folded rest. */
+export interface ViewerCount {
+  key: string;
+  value: number;
+}
+
+/**
+ * Maktaba Cloud's viewer report for this home (story 50.28), folded there: a country or device
+ * with fewer than 5 sessions in an hour is counted under "other" for that hour. Pro's guest
+ * sharing ("hours") has live viewers and hours only; the Broadcaster tier ("full") the rest too.
+ */
+export interface ViewerReport {
+  level: "hours" | "full";
+  time_zone: string;
+  k: number;
+  live_viewers: number;
+  hours: { today: number; week: number; month: number; allowance: number | null };
+  period_hours: number;
+  peak?: number;
+  sessions?: number;
+  avg_watch_minutes?: number;
+  countries?: ViewerCount[];
+  devices?: ViewerCount[];
+}
+
+export type ViewerPeriod = "today" | "7d" | "month";
+
+export interface ViewersView {
+  cloud: "ok" | "unreachable" | "unclaimed";
+  report?: ViewerReport;
+}
+
 /** A counter-notice to one takedown: the elements the law requires. */
 export interface CounterNoticeRequest {
   action_id: string;
@@ -266,6 +298,10 @@ export const tvBroadcastApi = {
       confirm,
     }),
   moderation: () => api.get<ModerationView>("/api/tv/broadcast/moderation"),
+  viewers: (period: ViewerPeriod, tz: string) =>
+    api.get<ViewersView>(
+      `/api/tv/broadcast/analytics?period=${encodeURIComponent(period)}&tz=${encodeURIComponent(tz)}`
+    ),
   counterNotice: (req: CounterNoticeRequest) =>
     api.post<{ id: string; restore_after: string }>(
       "/api/tv/broadcast/moderation/counter-notices",

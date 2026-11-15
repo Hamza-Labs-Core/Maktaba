@@ -921,6 +921,14 @@ build fails when the two differ.
 
 ### Added
 
+- **The home's Broadcast panel shows who watches (Epic 50, story 50.28).** Admins see, under
+  Live TV → Broadcast, the viewers watching now and the viewer-hours of today, the last 7 days
+  and this month against the plan's allowance; with the Broadcaster add-on also the most at once,
+  the average watch time, countries and devices. The numbers are Maktaba Cloud's report, folded
+  there (a country or device with fewer than 5 viewers in an hour is Other for that hour). The
+  home asks through its relay agent with its own credential, so it never holds the owner's cloud
+  sign-in, and the cloud answers that home only; the home's API answers admins only.
+
 - **Android TV, Google TV and Fire TV sign in with a cloud code (Epic 58, stories 58.03 and
   58.05).** The TV app's home picker now opens on a code from Maktaba Cloud with its QR code;
   a phone signed in to the home approves it from Approve a TV or device, on any network, and

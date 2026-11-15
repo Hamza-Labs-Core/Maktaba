@@ -4,10 +4,13 @@ package broadcast
 //
 //	GET /v1/broadcast/analytics?server=<id>&period=today|7d|month|day[&date=YYYY-MM-DD][&tz=<IANA>][&format=csv]
 //	    the account that owns the home (its cloud registration); anyone else 403
+//	GET /v1/broadcast/home/analytics?period=today|7d|month|day[&date=YYYY-MM-DD][&tz=<IANA>][&server=<id>]
+//	    a home's agent (basic auth server_id:secret), for the home's Broadcast panel: only that
+//	    home's own report, JSON only; a server= naming another home is 403
 //	GET /v1/admin/broadcast/analytics?server=<id>&…
 //	    a service admin, behind the console's gate; each view writes an audit row
 //
-// Both answer the same folded report (internal/broadcast.Load): no country or device is named for
+// All three answer the same folded report (internal/broadcast.Load): no country or device is named for
 // an hour in which it had fewer than broadcast.analytics_k sessions, so neither a period nor the
 // difference of two overlapping periods shows a small group, and nothing personal is stored to
 // begin with. A home that isn't the caller's is 403 whether or not it exists.
@@ -44,6 +47,8 @@ type ServerLookup interface {
 type AnalyticsDeps struct {
 	DB      *sql.DB
 	Servers ServerLookup
+	// Agents checks a home's credential on the home door (nil: the home door is 401).
+	Agents Agents
 	// Gate admits service admins (auth/middleware.RequireServiceAdmin). Nil refuses everyone.
 	Gate   func(http.Handler) http.Handler
 	Audit  *audit.Log
@@ -56,6 +61,14 @@ type AnalyticsDeps struct {
 // MountAnalyticsUser registers the publisher's route inside the bearer-token group.
 func MountAnalyticsUser(r chi.Router, d *AnalyticsDeps) {
 	r.Get("/v1/broadcast/analytics", d.UserAnalytics)
+}
+
+// HomeAnalyticsPath is the home door: the agent asks it with the home's own credential.
+const HomeAnalyticsPath = "/v1/broadcast/home/analytics"
+
+// MountAnalyticsHome registers the home door (no user token: a home sends its secret).
+func MountAnalyticsHome(r chi.Router, d *AnalyticsDeps) {
+	r.Get(HomeAnalyticsPath, d.HomeAnalytics)
 }
 
 // MountAnalyticsAdmin registers the console's route behind the service-admin gate.
@@ -102,6 +115,43 @@ func (d *AnalyticsDeps) UserAnalytics(w http.ResponseWriter, r *http.Request) {
 	}
 	s, err := d.Servers.ByID(r.Context(), id)
 	if errors.Is(err, stores.ErrServerNotFound) || (err == nil && s.OwnerUserID != uid) {
+		analyticsErr(w, http.StatusForbidden, "broadcast_analytics_forbidden")
+		return
+	}
+	if err != nil {
+		d.fail(w, r, "load home", err)
+		return
+	}
+	level, allowance, err := d.levelOf(r.Context(), s)
+	if err != nil {
+		d.fail(w, r, "load plan", err)
+		return
+	}
+	d.answer(w, r, s, level, allowance)
+}
+
+// HomeAnalytics is the home's own view, for its Broadcast panel: the home its credential names,
+// never another. The household's admins see it there without the owner's cloud account; the
+// home's API decides who in the household may ask (its admins only). The report is the owner's,
+// folded the same way, at the plan's level.
+func (d *AnalyticsDeps) HomeAnalytics(w http.ResponseWriter, r *http.Request) {
+	id, secret, ok := r.BasicAuth()
+	if !ok || id == "" || d.Agents == nil || d.Agents.VerifySecret(r.Context(), id, secret) != nil {
+		w.Header().Set("WWW-Authenticate", `Basic realm="maktaba-server"`)
+		analyticsErr(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	q := r.URL.Query()
+	if s := q.Get("server"); s != "" && !strings.EqualFold(s, id) {
+		analyticsErr(w, http.StatusForbidden, "broadcast_analytics_forbidden")
+		return
+	}
+	if f := q.Get("format"); f != "" && f != "json" {
+		analyticsErr(w, http.StatusBadRequest, "bad_format")
+		return
+	}
+	s, err := d.Servers.ByID(r.Context(), id)
+	if errors.Is(err, stores.ErrServerNotFound) {
 		analyticsErr(w, http.StatusForbidden, "broadcast_analytics_forbidden")
 		return
 	}
