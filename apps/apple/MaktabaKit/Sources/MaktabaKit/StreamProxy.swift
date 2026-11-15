@@ -15,8 +15,7 @@ import Network
 /// app on the device cannot borrow the user's token), and only `/stream/` paths of this home.
 ///
 /// A stream is copied for as long as it plays, so the copy is kept cheap and bounded:
-/// - the body goes on in the chunks it arrives in (`UpstreamBody`), never byte by byte, in
-///   tasks below the interface's priority;
+/// - the body goes on in the chunks it arrives in (`UpstreamBody`), never byte by byte;
 /// - one chunk is written before the next is taken, and a body is kept only up to a mark
 ///   (256 KB and one delivery of the URL session, measured at 4 MB at most):
 ///   a player that reads slowly or is paused holds the home back, memory does not grow;
@@ -30,6 +29,15 @@ import Network
 ///   oldest closed first to make room and each closed after `headPatience`, so sockets that
 ///   connect and say nothing, or ask with a wrong secret, never keep a player out;
 /// - a home that says nothing for `homePatience` while it is waited on fails the request.
+///
+/// A request goes on to the home the moment it comes (`Latency`): AVPlayer gives a segment
+/// about one target duration (2 s for a 2 s segment) and then drops the stream's variant,
+/// and the playback stops until the app reopens the stream. So nothing on the way waits on
+/// anything else: every request is served at user-initiated priority (above the copying,
+/// downloads and indexing a device does in the background, still below the interface), and
+/// the token is the one held now (`heldPlaybackHeaders`), refreshed apart from any request
+/// once it nears its end (`Token`).
+///
 /// A player that is connected and takes nothing (a paused film, a full buffer) is not
 /// dropped for it, however long: it holds its place and the home is held back, and neither
 /// the proxy nor the URL session times the pause. What can still end a paused request is the
@@ -75,7 +83,7 @@ public final class StreamProxy: @unchecked Sendable {
     }
     private let sessions: UpstreamSessions
     private let listener: NWListener
-    private let queue = DispatchQueue(label: "com.hamzalabs.maktaba.stream-proxy", qos: .utility)
+    private let queue = DispatchQueue(label: "com.hamzalabs.maktaba.stream-proxy", qos: Latency.qos)
     /// The path prefix a request must carry: a per-proxy secret.
     let secret = UUID().uuidString.lowercased()
     private let lock = NSLock()
@@ -92,6 +100,14 @@ public final class StreamProxy: @unchecked Sendable {
     }
     private var accepted = 0
     private var stopped = false
+    /// A token refresh started ahead of the token's end is under way (`Token`).
+    private var refreshingAhead = false
+    /// The priority the last request was passed on at (a test reads it).
+    private(set) var lastForwardPriority: TaskPriority? {
+        get { lock.withLock { forwardPriority } }
+        set { lock.withLock { forwardPriority = newValue } }
+    }
+    private var forwardPriority: TaskPriority?
     public let reach: Reach
     /// The only home paths served (`/stream/channel/{id}/`), nil: any `/stream/` path.
     public let onlyUnder: String?
@@ -123,6 +139,26 @@ public final class StreamProxy: @unchecked Sendable {
     /// probed every `interval` seconds, and is gone after `count` unanswered probes (a
     /// minute in all); unacknowledged data gives up after `drop` seconds.
     static let lanKeepalive = (idle: 30, interval: 10, count: 3, drop: 120)
+
+    /// How soon a request goes on: at once, whatever else is under way. Its stages (accepted,
+    /// head read, token, passed on, the home's answer) are debug lines in `Log.network`,
+    /// with the milliseconds since the connection was accepted.
+    enum Latency {
+        /// Every connection's callbacks, its task and its session's callbacks: above
+        /// background work, below the interface (user-interactive).
+        static let qos: DispatchQoS = .userInitiated
+        static let priority: TaskPriority = .userInitiated
+        static let operationQoS: QualityOfService = .userInitiated
+    }
+
+    /// The token a request carries: the one held now, when it is good for `floor` more
+    /// (the home checks it when the request comes, not while the body goes). Once it is good
+    /// for less than `ahead`, a refresh starts apart from the request (one at a time); only
+    /// a request whose token has less than `floor` left (the app slept past it) waits for one.
+    enum Token {
+        static let floor: TimeInterval = 10
+        static let ahead: TimeInterval = 60
+    }
 
     /// How the proxy waits before asking the home again (a test's own).
     private let sleep: @Sendable (Duration) async throws -> Void
@@ -264,32 +300,36 @@ public final class StreamProxy: @unchecked Sendable {
     /// How many connections wait for their request's head (or for a refusal to be read).
     var waitingForHead: Int { lock.withLock { open.values.filter { !$0.admitted }.count } }
 
-    /// A new connection: served in a task of its own, below the app's interface in priority
-    /// (copying a stream must never compete with the remote), and cancelled the moment the
+    /// A new connection: served in a task of its own at `Latency.priority` (below the app's
+    /// interface; above background work, so a busy device never holds a segment back past
+    /// the player's patience), and cancelled the moment the
     /// player lets the connection go. It waits for its head apart from the requests being
     /// served (`admit` gives it a place once the head names a path under the secret); with
     /// `mostWaiting` already waiting, the oldest of them is closed to make room.
     private func accept(_ conn: NWConnection) {
         let peer = Peer(conn, queue: queue, headPatience: headPatience)
         let id = ObjectIdentifier(peer)
-        let (taken, pushedOut) = lock.withLock { () -> (Bool, Held?) in
-            if stopped { return (false, nil) }
+        let since = ContinuousClock.now
+        let (taken, pushedOut, number) = lock.withLock { () -> (Bool, Held?, Int) in
+            if stopped { return (false, nil, 0) }
             accepted += 1
             open[id] = Held(peer: peer, order: accepted)
             let waiting = open.filter { !$0.value.admitted }
             guard waiting.count > Self.mostWaiting,
-                  let oldest = waiting.filter({ $0.key != id }).min(by: { $0.value.order < $1.value.order }) else { return (true, nil) }
+                  let oldest = waiting.filter({ $0.key != id }).min(by: { $0.value.order < $1.value.order }) else { return (true, nil, accepted) }
             open.removeValue(forKey: oldest.key)
-            return (true, oldest.value)
+            return (true, oldest.value, accepted)
         }
         if let pushedOut {
             pushedOut.task?.cancel()
             pushedOut.peer.close()
         }
         guard taken else { conn.cancel(); return }
+        Log.network.debug("stream proxy #\(number, privacy: .public): accepted")
         peer.start()
-        let task = Task(priority: .utility) { [self] in
-            await serve(peer, id)
+        let trace = Trace(number: number, since: since)
+        let task = Task(priority: Latency.priority) { [self] in
+            await serve(peer, id, trace)
             lock.withLock { _ = open.removeValue(forKey: id) }
         }
         lock.withLock { if open[id] != nil { open[id]?.task = task } }
@@ -379,10 +419,12 @@ public final class StreamProxy: @unchecked Sendable {
 
     /// Reads the request's head, refuses what is not ours while the connection still waits
     /// (it takes no place), and serves the rest once `admit` gives it a place.
-    private func serve(_ peer: Peer, _ id: ObjectIdentifier) async {
+    private func serve(_ peer: Peer, _ id: ObjectIdentifier, _ trace: Trace) async {
         guard let (head, ended) = try? await receiveHead(peer.conn), let req = Request(head) else {
+            trace.log("no request head")
             return await answer(peer, Self.status(400, "Bad Request"))
         }
+        trace.log("\(req.method) \(route(req.target)) head read")
         // from here on nothing more is expected from the player; its connection failing is it
         // leaving (its side closing in order is only "no more requests": the answer still goes)
         peer.watch(ended: ended)
@@ -393,9 +435,10 @@ public final class StreamProxy: @unchecked Sendable {
         case .gone:
             peer.close()
         case .full:
+            trace.log("refused: every place delivering")
             await answer(peer, Self.status(503, "Service Unavailable"))
         case .served:
-            await conclude(peer, await handle(peer, req, url))
+            await conclude(peer, await handle(peer, req, url, trace))
         }
     }
 
@@ -434,13 +477,15 @@ public final class StreamProxy: @unchecked Sendable {
     }
 
     /// Answers one admitted request for the home's `url`. False when the response was cut short.
-    private func handle(_ peer: Peer, _ req: Request, _ url: URL) async -> Bool {
+    private func handle(_ peer: Peer, _ req: Request, _ url: URL, _ trace: Trace) async -> Bool {
         let body: UpstreamBody, http: HTTPURLResponse?
         do {
-            (body, http) = try await fetch(req, from: url)
+            (body, http) = try await fetch(req, from: url, trace)
         } catch {
+            trace.log("no answer from the home: \(type(of: error))")
             return (try? await send(peer, Self.status(502, "Bad Gateway"))) != nil
         }
+        trace.log("the home answered \(http?.statusCode ?? 0)")
         // whatever happens next, the request to the home ends with this one
         defer { body.cancel() }
         do {
@@ -506,14 +551,15 @@ public final class StreamProxy: @unchecked Sendable {
     /// Asks the home for `url` with the token as it is now. A 429 (the home paces a
     /// restricted account's media, `Pace`) is waited out as its `Retry-After` says and asked
     /// again, with a fresh token each time; after `Pace.tries` the player gets the 429.
-    private func fetch(_ req: Request, from url: URL) async throws -> (UpstreamBody, HTTPURLResponse?) {
+    private func fetch(_ req: Request, from url: URL, _ trace: Trace) async throws -> (UpstreamBody, HTTPURLResponse?) {
         var asked = 0
         while true {
             var r = URLRequest(url: url)
             r.httpMethod = req.method
             for name in ["Range", "If-Range", "Accept"] { if let v = req.headers[name.lowercased()] { r.setValue(v, forHTTPHeaderField: name) } }
             if case let .home(client) = upstream {
-                for (k, v) in try await client.playbackHeaders(minLife: 60).headers { r.setValue(v, forHTTPHeaderField: k) }
+                for (k, v) in try await token(client) { r.setValue(v, forHTTPHeaderField: k) }
+                trace.log("token held")
             }
             // a session of this request's own: its callbacks are held while the player reads slowly
             let own = sessions.take()
@@ -522,6 +568,8 @@ public final class StreamProxy: @unchecked Sendable {
             // set out of the way, and `UpstreamBody` times the home's silence itself
             r.timeoutInterval = UpstreamSessions.never
             let body = UpstreamBody(r, session: own, silence: homePatience) { [sessions] in sessions.give(own) }
+            lastForwardPriority = Task.currentPriority
+            trace.log("passed on")
             lock.withLock {
                 asking.removeAll { $0.body == nil }
                 asking.append(Asking(body: body))
@@ -537,6 +585,51 @@ public final class StreamProxy: @unchecked Sendable {
             guard http?.statusCode == 429, asked < Pace.tries else { return (body, http) }
             body.cancel()
             try await sleep(.seconds(Pace.wait(retryAfter: http.flatMap(APIClient.retryAfter))))
+        }
+    }
+
+    /// The header a request to the home carries (`Token`): the token held now, at once.
+    private func token(_ client: APIClient) async throws -> [String: String] {
+        guard let held = client.heldPlaybackHeaders(minLife: Token.floor) else {
+            return try await client.playbackHeaders(minLife: Token.ahead).headers
+        }
+        if held.until.timeIntervalSinceNow < Token.ahead { refreshAhead(client) }
+        return held.headers
+    }
+
+    /// Refreshes the token apart from any request (one refresh at a time).
+    private func refreshAhead(_ client: APIClient) {
+        let first = lock.withLock { () -> Bool in
+            defer { refreshingAhead = true }
+            return !refreshingAhead
+        }
+        guard first else { return }
+        Task(priority: .utility) { [weak self] in
+            do {
+                _ = try await client.playbackHeaders(minLife: Token.ahead)
+            } catch {
+                Log.network.error("stream proxy: refreshing the token ahead failed: \(String(describing: type(of: error)), privacy: .public)")
+            }
+            self?.lock.withLock { self?.refreshingAhead = false }
+        }
+    }
+
+    /// A request's target as a route for the log: the secret and the query left out, the ids
+    /// taken out (`Log.route`).
+    func route(_ target: String) -> String {
+        var path = String(target.split(separator: "?").first ?? "")
+        if path.hasPrefix("/" + secret) { path.removeFirst(secret.count + 1) } else { return "(not under the secret)" }
+        return Log.route(path)
+    }
+
+    /// One request's stages in the log: its number and the milliseconds since it was accepted.
+    struct Trace: Sendable {
+        let number: Int
+        let since: ContinuousClock.Instant
+        func log(_ what: String) {
+            let d = ContinuousClock.now - since
+            let ms = d.components.seconds * 1000 + d.components.attoseconds / 1_000_000_000_000_000
+            Log.network.debug("stream proxy #\(number, privacy: .public): \(what, privacy: .public) after \(ms, privacy: .public) ms")
         }
     }
 
@@ -727,7 +820,7 @@ final class Peer: @unchecked Sendable {
 /// The URL sessions the proxy asks the home through: one for each request under way, so that
 /// holding one request's callbacks back (`UpstreamBody`) holds nothing else back. Each is the
 /// home session over again (its configuration, its delegate: the pinned trust), with a
-/// callback queue of its own at utility priority. A session whose request ended is used
+/// callback queue of its own at the proxy's priority (`StreamProxy.Latency`). A session whose request ended is used
 /// again by the next one, with the connection it kept open; a few idle ones are kept.
 final class UpstreamSessions: @unchecked Sendable {
     /// How many idle sessions are kept for the next requests.
@@ -753,7 +846,7 @@ final class UpstreamSessions: @unchecked Sendable {
         let callbacks = OperationQueue()
         callbacks.name = Self.queueName
         callbacks.maxConcurrentOperationCount = 1
-        callbacks.qualityOfService = .utility
+        callbacks.qualityOfService = StreamProxy.Latency.operationQoS
         let config = base.configuration
         config.timeoutIntervalForResource = max(config.timeoutIntervalForResource, Self.never)
         return URLSession(configuration: config, delegate: base.delegate, delegateQueue: callbacks)
@@ -803,8 +896,8 @@ final class UpstreamSessions: @unchecked Sendable {
 /// A held callback parks one thread of its session's queue (URLSession has no asynchronous
 /// data callback to hold instead): one for each request whose player reads slowly or is
 /// paused, at most `StreamProxy.mostAtOnce` (16) a proxy, 32 with the LAN proxy beside it;
-/// in practice the one or two requests a paused player has open. The queues are utility
-/// priority and named `UpstreamSessions.queueName`.
+/// in practice the one or two requests a paused player has open. The queues are at the
+/// proxy's priority (`StreamProxy.Latency`) and named `UpstreamSessions.queueName`.
 ///
 /// While a callback is held the session reads nothing, so its own idle timer would fail the
 /// request about a minute into a pause: the proxy sets that timer out of the way and counts

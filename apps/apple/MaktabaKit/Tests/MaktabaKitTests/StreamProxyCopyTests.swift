@@ -28,6 +28,8 @@ final class LoopbackHome: @unchecked Sendable {
         let method: String
         let target: String
         let headers: [String: String]
+        /// When the home read the request's head.
+        var at = ContinuousClock.now
     }
 
     private let listener: NWListener
@@ -162,10 +164,13 @@ final class LoopbackHome: @unchecked Sendable {
             return first
         }
         let done = Once()
-        // the caller closing its side before the answer is whole: it gave up
-        conn.receive(minimumIncompleteLength: 1, maximumLength: 1) { [weak self] _, _, _, _ in
-            done.run { self?.lock.withLock { self?.givenUp += 1 } }
-            conn.cancel()
+        // the caller closing its side before the answer is whole: it gave up (a request with
+        // a body, a token refresh, is not watched: its body would read as that)
+        if Int(req.headers["content-length"] ?? "") ?? 0 == 0 {
+            conn.receive(minimumIncompleteLength: 1, maximumLength: 1) { [weak self] _, _, _, _ in
+                done.run { self?.lock.withLock { self?.givenUp += 1 } }
+                conn.cancel()
+            }
         }
         if a.holds {
             lock.withLock { held.append(conn) }
@@ -471,10 +476,10 @@ func eventually(_ seconds: Double = 5, _ ok: @Sendable () -> Bool) async -> Bool
     /// A proxy for `home`, signed in with a token that has not expired.
     static func proxy(_ home: LoopbackHome, headPatience: Duration = StreamProxy.headPatience,
                       homePatience: Duration = StreamProxy.homePatience, requestTimeout: TimeInterval? = nil,
-                      reach: StreamProxy.Reach = .loopback,
+                      reach: StreamProxy.Reach = .loopback, tokenLife: TimeInterval? = nil,
                       sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }) throws -> StreamProxy {
         let proxy = try proxy(at: home.url, headPatience: headPatience, homePatience: homePatience,
-                              requestTimeout: requestTimeout, reach: reach, sleep: sleep)
+                              requestTimeout: requestTimeout, reach: reach, tokenLife: tokenLife, sleep: sleep)
         RawPlayer.about.withLock {
             $0 = { [weak proxy, weak home] in
                 "proxy accepted \(proxy?.acceptedCount ?? -1), serving \(proxy?.servingStates ?? []); home saw \(home?.seen.count ?? -1), wrote \(home?.bytesWritten ?? -1), answered \(home?.answered ?? -1), abandoned \(home?.abandoned ?? -1)"
@@ -483,12 +488,14 @@ func eventually(_ seconds: Double = 5, _ ok: @Sendable () -> Bool) async -> Bool
         return proxy
     }
 
-    /// A proxy in front of a home at `url` (with a token for it).
+    /// A proxy in front of a home at `url` (with a token for it, good until 2100 or for
+    /// `tokenLife` seconds from now).
     static func proxy(at url: URL, headPatience: Duration = StreamProxy.headPatience,
                       homePatience: Duration = StreamProxy.homePatience, requestTimeout: TimeInterval? = nil,
-                      reach: StreamProxy.Reach = .loopback,
+                      reach: StreamProxy.Reach = .loopback, tokenLife: TimeInterval? = nil,
                       sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }) throws -> StreamProxy {
-        let claims = Data(#"{"exp":4102444800}"#.utf8).base64EncodedString()
+        let exp = tokenLife.map { Int(Date().timeIntervalSince1970 + $0) } ?? 4102444800
+        let claims = Data(#"{"exp":\#(exp)}"#.utf8).base64EncodedString()
             .replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
         let base = url.absoluteString
         let secrets = FakeSecrets(["\(base)#access": "h.\(claims).s", "\(base)#refresh": "r1"])
