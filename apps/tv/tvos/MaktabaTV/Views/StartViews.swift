@@ -52,7 +52,7 @@ struct TVHomePicker: View {
                     byAddress
                     // not when this Apple TV's Screen Time limits what plays (Epic 57): a
                     // broadcast is outside any home's ratings
-                    if session.parental.current.deviceLimit == nil { broadcast }
+                    if !session.parental.current.limited { broadcast }
                 }
                 .disabled(session.connecting)
                 .readingPanel(padding: 48)

@@ -20,6 +20,9 @@ public struct GuestSpaceView: View {
     @State private var publisher = ""
     @State private var code = ""
     @State private var scanning = false
+    /// Which way in was tried last ("link", "code"; "" for a link the app was opened with): its
+    /// refusal shows under its own Watch button, where the person is looking.
+    @State private var tried = ""
     private let invite: String?
     @Environment(\.dismiss) private var dismiss
 
@@ -33,11 +36,7 @@ public struct GuestSpaceView: View {
             Form {
                 Section {
                     Text(verbatim: GuestWords.message("guest.intro")).foregroundStyle(.secondary)
-                    if let problem = model.problem {
-                        Label { Text(verbatim: problem) } icon: { Image(systemName: "exclamationmark.triangle") }
-                            .foregroundStyle(.red)
-                            .accessibilityIdentifier("guest.problem")
-                    }
+                    if tried.isEmpty { problemRow }
                     if model.busy { ProgressView() }
                 }
                 saved
@@ -65,6 +64,7 @@ public struct GuestSpaceView: View {
         .sheet(isPresented: $scanning) {
             QRScannerSheet(words: ConnectStrings.forPreferredLanguages()) { text in
                 scanning = false
+                tried = "link"
                 Task { if let p = await model.redeem(invite: text) { path = [p] } }
             }
         }
@@ -72,6 +72,14 @@ public struct GuestSpaceView: View {
         .task {
             guard let invite else { return }
             if let p = await model.redeem(invite: invite) { path = [p] }
+        }
+    }
+
+    @ViewBuilder private var problemRow: some View {
+        if let problem = model.problem {
+            Label { Text(verbatim: problem) } icon: { Image(systemName: "exclamationmark.triangle") }
+                .foregroundStyle(.red)
+                .accessibilityIdentifier("guest.problem")
         }
     }
 
@@ -123,6 +131,7 @@ public struct GuestSpaceView: View {
                 .environment(\.layoutDirection, .leftToRight)
                 .accessibilityIdentifier("guest.link")
             Button(GuestWords.message("guest.watch")) {
+                tried = "link"
                 Task {
                     if let p = await model.redeem(invite: link) {
                         link = ""
@@ -132,6 +141,7 @@ public struct GuestSpaceView: View {
             }
             .disabled(link.trimmingCharacters(in: .whitespaces).isEmpty)
             .accessibilityIdentifier("guest.watchLink")
+            if tried == "link" { problemRow }
             #if os(iOS)
             // an invite's QR code (the broadcast's page shows one)
             Button(ConnectStrings.forPreferredLanguages().text(.scanQR), systemImage: "qrcode.viewfinder") { scanning = true }
@@ -161,6 +171,7 @@ public struct GuestSpaceView: View {
                 .environment(\.layoutDirection, .leftToRight)
                 .accessibilityIdentifier("guest.code")
             Button(GuestWords.message("guest.watch")) {
+                tried = "code"
                 Task {
                     if let p = await model.redeem(publisher: publisher, code: code) {
                         code = ""
@@ -170,6 +181,7 @@ public struct GuestSpaceView: View {
             }
             .disabled(publisher.isEmpty || code.isEmpty)
             .accessibilityIdentifier("guest.watch")
+            if tried == "code" { problemRow }
         } header: {
             Text(verbatim: GuestWords.message("guest.addCode"))
         } footer: {

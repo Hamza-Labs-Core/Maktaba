@@ -121,8 +121,7 @@ extension PlayerApp {
     /// Not under a parental limit (Epic 57), the account's or this device's: a broadcast is
     /// outside any home's ratings.
     var guestAllowed: Bool {
-        let p = session.parental.current
-        return !p.limited && p.deviceLimit == nil
+        !session.parental.current.limited
     }
 }
 

@@ -523,6 +523,18 @@ export const APPS = [
           {
             shots: [
               shot(
+                "player-iphone-guest-channels-en",
+                "phone",
+                "Watch a broadcast on an iPhone: Al-Noor on Maktaba, its channels with now and next, and one whose home is offline",
+                "شاهد بثًا على آيفون: Al-Noor على مكتبة، وقنواته مع ما يُعرض الآن وما يليه، وقناة جهازها الرئيسي غير متصل"
+              ),
+              shot(
+                "player-iphone-guest-code-ar",
+                "phone",
+                "Watch a broadcast on an iPhone, in Arabic: a short code already used on every device its invite allows",
+                "شاهد بثًا على آيفون، بالعربية: رمز قصير استُخدم على كل الأجهزة التي تسمح بها دعوته"
+              ),
+              shot(
                 "player-iphone-home",
                 "phone",
                 "The Player's Home on an iPhone: a new series, Continue Watching and On Deck",

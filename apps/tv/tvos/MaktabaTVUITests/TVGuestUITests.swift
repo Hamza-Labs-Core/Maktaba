@@ -118,6 +118,42 @@ final class TVGuestUITests: XCTestCase {
         shot("tv-guest-player-ar")
     }
 
+    /// Signed in to a home (no limit on the account): Settings opens Watch a broadcast too,
+    /// apart from the home and its account.
+    func testSettingsOpensTheGuestSpace() throws {
+        app.launchArguments = ["-uitest-reset", "-maktaba-secrets-in-file", "-maktaba-session-reset", "-maktaba-guest-edge", home.url,
+                               "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+        app.launch()
+        type(home.url, into: app.textFields["picker.address"])
+        pressIfStillThere(app.buttons["picker.connect"], with: .right)
+        XCTAssertTrue(app.staticTexts["pairing-code"].waitForExistence(timeout: 20), "the code; the home saw \(home.seen)")
+        home.approve()
+        XCTAssertTrue(app.tabBars.firstMatch.waitForExistence(timeout: 20), "approved: signed in")
+        let tab = app.tabBars.buttons["Settings"]
+        XCTAssertTrue(tab.waitForExistence(timeout: 20))
+        for _ in 0..<6 where !app.tabBars.buttons.allElementsBoundByIndex.contains(where: \.hasFocus) {
+            remote.press(.up)
+            usleep(400_000)
+        }
+        moveFocus(to: tab, with: .right)
+        remote.press(.select)
+        let open = app.buttons["settings.watchBroadcast"]
+        XCTAssertTrue(open.waitForExistence(timeout: 20), "Settings offers Watch a broadcast")
+        // the form's first row (in a tvOS form the focused element is the row, not the button
+        // the identifier is on: the row is known by its words)
+        let focused = { self.app.descendants(matching: .any).element(matching: NSPredicate(format: "hasFocus == true")) }
+        for _ in 0..<15 where !(focused().exists && focused().label.contains("Watch a broadcast")) {
+            remote.press(.down)
+            usleep(400_000)
+        }
+        XCTAssertTrue(focused().label.contains("Watch a broadcast"), "Watch a broadcast has the focus: \(focused().label)")
+        remote.press(.select)
+        XCTAssertTrue(app.textFields["guest.publisher"].waitForExistence(timeout: 20), "the guest space opened")
+        XCTAssertTrue(home.seen.contains("POST /api/v1/pair"), "and asked the edge for a pairing, not the home")
+        remote.press(.menu)
+        XCTAssertTrue(open.waitForExistence(timeout: 20), "closed: back in Settings, still signed in")
+    }
+
     // MARK: helpers
 
     /// Types into `field`, reached by pressing `direction` (the code is beside the handle).

@@ -14,6 +14,18 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             Form {
+                // story 50.27: Watch a broadcast, apart from the home and its account; not under a
+                // parental limit (Epic 57): a broadcast is outside the home's ratings
+                if !session.parental.current.limited {
+                    Section {
+                        Button {
+                            watchingBroadcast = true
+                        } label: {
+                            Label { Text(verbatim: GuestWords.message("guest.watchBroadcast")) } icon: { Image(systemName: "dot.radiowaves.left.and.right") }
+                        }
+                        .accessibilityIdentifier("settings.watchBroadcast")
+                    }
+                }
                 Section("Account") {
                     LabeledContent("Signed in as", value: user.username)
                     if let home = session.current {
@@ -53,17 +65,6 @@ struct SettingsView: View {
                         }
                         .accessibilityIdentifier("settings.myReports")
                     }
-                }
-                // not under a parental limit (Epic 57): a broadcast is outside the home's ratings
-                if !session.parental.current.limited {
-                Section {
-                    Button {
-                        watchingBroadcast = true
-                    } label: {
-                        Label { Text(verbatim: GuestWords.message("guest.watchBroadcast")) } icon: { Image(systemName: "dot.radiowaves.left.and.right") }
-                    }
-                    .accessibilityIdentifier("settings.watchBroadcast")
-                }
                 }
                 Section {
                     Button("Choose another home", systemImage: "house") { session.switchHome() }
