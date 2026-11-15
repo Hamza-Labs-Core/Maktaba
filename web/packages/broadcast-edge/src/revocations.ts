@@ -132,14 +132,6 @@ export function verdictFor(list: RevocationList, who: Who, t: number): Verdict |
   return slate;
 }
 
-/**
- * isRevoked says whether the list takes `who` off air at t (a slate is still playable): the
- * watch site's question (50.26, 50.27) of a publisher (`ch: ""`) or of one channel.
- */
-export function isRevoked(list: RevocationList, who: Who, t: number = now()): boolean {
-  return verdictFor(list, who, t)?.stop === "off_air";
-}
-
 /** breakGlass is the owner's Worker variables, checked first on every request (§3). */
 export function breakGlass(env: Env, ch: string): Verdict | null {
   if (globallyOff(env) || channelOff(env, ch))

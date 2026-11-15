@@ -228,6 +228,16 @@ showing `/tv/` gets the same answers as a TV. What it adds is the screens:
   where it stopped, and the home decides. A 404 to a progress post (the video is hidden now)
   shows the blocked page with a line that the video stopped; a yes plays it again. On Roku,
   `no_heartbeat` (a pause of over a minute) opens the stream again once where it was.
+- **The time left.** While a video plays, the TV asks `GET /api/me/parental/time` (for the
+  video's library) every 30 seconds, every 10 in the last six minutes, and shows its
+  `remaining_seconds`, never a count of its own: once 15 minutes or fewer are left, *12 minutes
+  left today* in the top corner (the left in Arabic); at 5 minutes and at 1 minute, *Watching
+  ends in 5 minutes.* for about 10 seconds, each once, and again only after a parent gave more
+  time. Arabic takes its plural forms (Roku's catalog holds them as CLDR forms, which
+  `tools/i18n/check_tv_catalogs.py` checks in both languages).
+- **An earlier day's no.** A no to more time is about its own day: once the request's
+  `expires_at` (the home's day end) has passed, the time's-up page offers Ask for more time
+  again rather than *A parent said no*, as the web does. A no to a video stays a no.
 - **A deep link** (Roku's launch and voice links, a link by id) to a hidden item shows the
   not-available line on Home and asks nothing: the id may name nothing at all.
 - **A cast grant** is minted only for what the sender may see, and every session it opens is

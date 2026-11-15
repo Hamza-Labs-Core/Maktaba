@@ -86,6 +86,111 @@ struct LiveOverlaysTests {
         #expect(o.banner(at: at(3)), "info brings it back")
     }
 
+    /// A second Back leaves when what shows came back by itself between the presses.
+    @Test func aSecondBackLeavesWhenAStallBroughtTheBannerBack() {
+        // a picture that keeps stalling and moving again brings the banner back each time
+        var o = LiveOverlays()
+        o.tuned(at: at(0))
+        o.playback(playing: true, at: at(0))
+        var back = o.back(at: at(1))
+        #expect(back, "the banner goes first")
+        o.stalled(at: at(1.2))
+        o.resumed(at: at(2.5))
+        #expect(o.banner(at: at(2.6)), "a stall that showed brings the banner back")
+        back = o.back(at: at(2.7))
+        #expect(!back, "the second press leaves all the same")
+
+        // long after, Back puts away again before it leaves
+        o = LiveOverlays()
+        o.tuned(at: at(0))
+        o.playback(playing: true, at: at(0))
+        back = o.back(at: at(1))
+        #expect(back)
+        o.stalled(at: at(18))
+        o.resumed(at: at(20))
+        back = o.back(at: at(21))
+        #expect(back, "a press long after the first is a first press again")
+        back = o.back(at: at(22))
+        #expect(!back)
+    }
+
+    /// What the viewer asked for between two presses starts over: Back puts it away, it does
+    /// not throw the viewer out of the player.
+    @Test func backAfterTheViewersOwnActionPutsAwayFirst() {
+        // Up, Back (the banner away), Up again, Back: the new channel's banner goes, the player stays
+        var o = LiveOverlays()
+        o.tuned(at: at(0))
+        o.playback(playing: true, at: at(0))
+        var back = o.back(at: at(1))
+        #expect(back)
+        o.tuned(at: at(1.5))
+        o.playback(playing: true, at: at(2))
+        #expect(o.banner(at: at(2.1)))
+        back = o.back(at: at(2.2))
+        #expect(back, "the new channel's banner is put away; the player stays")
+        #expect(!o.banner(at: at(2.3)))
+        back = o.back(at: at(2.4))
+        #expect(!back, "and the next press leaves")
+
+        // Back (the mini-guide closes), Select (it opens again), Back: it closes again
+        o = LiveOverlays()
+        o.tuned(at: at(0))
+        o.playback(playing: true, at: at(0))
+        o.toggleMiniGuide(at: at(10))
+        back = o.back(at: at(11))
+        #expect(back, "the mini-guide closes first")
+        o.toggleMiniGuide(at: at(11.5))
+        #expect(o.miniGuide(at: at(11.6)))
+        back = o.back(at: at(12))
+        #expect(back, "opened again by Select: Back closes it again")
+        #expect(!o.miniGuide(at: at(12.1)))
+
+        // Back (the banner away), the info press, Back: the banner goes again
+        o = LiveOverlays()
+        o.tuned(at: at(0))
+        o.playback(playing: true, at: at(0))
+        back = o.back(at: at(1))
+        #expect(back)
+        o.showBanner(at: at(2))
+        back = o.back(at: at(3))
+        #expect(back, "asked for again: put away again")
+        back = o.back(at: at(3.5))
+        #expect(!back)
+    }
+
+    /// Back leaves in one or two presses in every state, and never more.
+    @Test func backNeverTakesMoreThanTwoPresses() {
+        typealias Step = (inout LiveOverlays, ContinuousClock.Instant) -> Void
+        let states: [(String, [Step])] = [
+            ("starting", [{ $0.tuned(at: $1) }]),
+            ("starting, mini-guide open", [{ $0.tuned(at: $1) }, { $0.toggleMiniGuide(at: $1) }]),
+            ("playing, banner up", [{ $0.tuned(at: $1) }, { $0.playback(playing: true, at: $1) }]),
+            ("playing, mini-guide open", [{ $0.tuned(at: $1) }, { $0.playback(playing: true, at: $1) }, { $0.toggleMiniGuide(at: $1) }]),
+            ("buffering", [{ $0.tuned(at: $1) }, { $0.playback(playing: true, at: $1) }, { $0.stalled(at: $1) }]),
+            ("buffering, mini-guide open", [{ $0.tuned(at: $1) }, { $0.playback(playing: true, at: $1) }, { $0.toggleMiniGuide(at: $1) }, { $0.stalled(at: $1) }]),
+            ("failed", [{ $0.tuned(at: $1) }, { $0.playback(playing: true, at: $1) }, { $0.playback(playing: false, at: $1) }]),
+            ("failed, mini-guide open", [{ $0.tuned(at: $1) }, { $0.toggleMiniGuide(at: $1) }, { $0.playback(playing: false, at: $1) }]),
+        ]
+        for (name, steps) in states {
+            // the presses come soon after, and late (the stall has shown, the overlays' time has run)
+            for (wait, gap) in [(0.1, 0.1), (0.1, 3.0), (3.0, 0.2), (30.0, 1.0), (30.0, 30.0)] {
+                var o = LiveOverlays()
+                var t = 0.0
+                for step in steps {
+                    step(&o, at(t))
+                    t += 0.05
+                }
+                t += wait
+                let first = o.back(at: at(t))
+                if !first { continue }
+                let second = o.back(at: at(t + gap))
+                let third = second ? o.back(at: at(t + 2 * gap)) : false
+                #expect(!third, "\(name), presses \(gap) s apart from \(wait) s: three presses did not leave")
+                #expect(!second || gap >= 5, "\(name), presses \(gap) s apart from \(wait) s: the second did not leave")
+            }
+        }
+    }
+
     @Test func backLeavesAChannelThatDoesNotPlay() {
         var o = LiveOverlays()
         o.tuned(at: at(0))

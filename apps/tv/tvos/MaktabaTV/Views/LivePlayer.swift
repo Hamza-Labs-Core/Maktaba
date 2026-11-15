@@ -29,7 +29,11 @@ final class LivePlayback {
     }
 
     let client: APIClient
-    let player = AVPlayer()
+    /// Made on first use: the screen's initializer runs again each time the tab behind the
+    /// player redraws (once a minute, when what is on is asked again), and each run makes a
+    /// `LivePlayback` that is thrown away; one of those must cost nothing (no player, no
+    /// observer).
+    @ObservationIgnored private(set) lazy var player = AVPlayer()
     private(set) var channels: [LiveChannel]
     private(set) var index: Int
     private(set) var phase = Phase.starting
@@ -70,6 +74,12 @@ final class LivePlayback {
         self.client = client
         self.channels = channels
         index = channels.firstIndex { $0.id == start } ?? 0
+    }
+
+    /// Watches the player's picture, from the first tune on (never for a `LivePlayback` that
+    /// plays nothing) until `close`.
+    private func observe() {
+        guard statusObservation == nil, !closed else { return }
         statusObservation = Self.observeStatus(player) { [weak self] in self?.timeControl() }
         stallObserver = NotificationCenter.default.addObserver(
             forName: AVPlayerItem.playbackStalledNotification, object: nil, queue: .main
@@ -81,8 +91,7 @@ final class LivePlayback {
                       ObjectIdentifier(item) == stalled else { return }
                 // a notice can come after the picture moved again (it is queued, the status
                 // is not): it counts only while the player still waits
-                Log.ui.info("live picture: stall notice")
-                self.timeControl()
+                self.timeControl(notice: true)
             }
         }
     }
@@ -99,11 +108,10 @@ final class LivePlayback {
     /// The picture moved, waits, or was paused: read as the player is now, on the main actor
     /// (a change that hopped on late, or a stall notice queued behind a resume, never wins
     /// over the player's own state).
-    private func timeControl() {
+    private func timeControl(notice: Bool = false) {
+        guard !closed else { return }
         let status = player.timeControlStatus
-        let reason = player.reasonForWaitingToPlay?.rawValue ?? "-"
-        let item = player.currentItem
-        Log.ui.info("live picture: \(status.rawValue, privacy: .public) waiting for \(reason, privacy: .public), moved \(self.moved, privacy: .public), keep up \(item?.isPlaybackLikelyToKeepUp ?? false, privacy: .public), buffer empty \(item?.isPlaybackBufferEmpty ?? false, privacy: .public)")
+        note(status, notice: notice)
         switch status {
         case .playing:
             moved = true
@@ -115,6 +123,29 @@ final class LivePlayback {
         @unknown default:
             break
         }
+    }
+
+    /// The picture's last logged state, and how many changes went unlogged since.
+    @ObservationIgnored private var logged: (status: AVPlayer.TimeControlStatus, moved: Bool, at: ContinuousClock.Instant)?
+    @ObservationIgnored private var unlogged = 0
+    /// At most one log line a second about the picture, however fast it changes.
+    static let logEvery: Duration = .seconds(1)
+
+    /// One log line for a change of the picture's state: never for a state already logged,
+    /// and at most one a second (a picture that flaps between waiting and playing would
+    /// otherwise write a line each time; the count of the ones left out is in the next).
+    private func note(_ status: AVPlayer.TimeControlStatus, notice: Bool) {
+        if let l = logged, l.status == status, l.moved == moved { return }
+        let now = ContinuousClock.now
+        if let l = logged, now - l.at < Self.logEvery {
+            unlogged += 1
+            return
+        }
+        let reason = player.reasonForWaitingToPlay?.rawValue ?? "-"
+        let item = player.currentItem
+        Log.ui.info("live picture: \(status.rawValue, privacy: .public) waiting for \(reason, privacy: .public), moved \(self.moved, privacy: .public), keep up \(item?.isPlaybackLikelyToKeepUp ?? false, privacy: .public), buffer empty \(item?.isPlaybackBufferEmpty ?? false, privacy: .public), stall notice \(notice, privacy: .public), changes not logged \(self.unlogged, privacy: .public)")
+        logged = (status, moved, now)
+        unlogged = 0
     }
 
     /// A new item plays (a tune, or one opened again): it starts, it does not stall.
@@ -150,18 +181,33 @@ final class LivePlayback {
     /// Plays the current channel again (Try again).
     func retry() { retune(settle: false) }
 
-    /// Stops playing and ends a remote session; returns once the home was told.
-    func close() async {
+    /// The player was closed: nothing is tuned or observed again.
+    @ObservationIgnored private(set) var closed = false
+
+    /// Stops playing, at once: the picture, the sound, the proxy and its requests to the home,
+    /// the observers. Nothing here waits (leaving the player never waits on the network);
+    /// the tune under way is cancelled and ends its remote session on its own.
+    func stop() {
+        guard !closed else { return }
+        closed = true
         running?.cancel()
-        await running?.value
-        running = nil
-        player.pause()
-        replaceItem(nil)
+        if statusObservation != nil {
+            player.pause()
+            replaceItem(nil)
+        }
         proxy?.stop()
         proxy = nil
         statusObservation?.invalidate()
+        statusObservation = nil
         if let stallObserver { NotificationCenter.default.removeObserver(stallObserver) }
         stallObserver = nil
+    }
+
+    /// Stops playing (`stop`) and ends a remote session; returns once the home was told.
+    func close() async {
+        stop()
+        await running?.value
+        running = nil
     }
 
     /// How long the slate stays before the home is asked again, after it refused the
@@ -169,7 +215,8 @@ final class LivePlayback {
     static let afterRefusal: Duration = .seconds(30)
 
     private func retune(settle: Bool) {
-        guard let id = channel?.id else { return }
+        guard !closed, let id = channel?.id else { return }
+        observe()
         tunes += 1
         phase = .starting
         running?.cancel()
@@ -264,6 +311,7 @@ final class LivePlayback {
             try Task.checkCancellation()
             let itemURL = try await playable(url, path: path)
             try Task.checkCancellation()
+            guard !closed else { return false }
             replaceItem(AVPlayerItem(url: itemURL))
             player.play()
             phase = .playing
@@ -271,7 +319,7 @@ final class LivePlayback {
         } catch is CancellationError {
             return false
         } catch {
-            guard !Task.isCancelled else { return false }
+            guard !Task.isCancelled, !closed else { return false }
             replaceItem(nil)
             Log.failure("play live channel", error)
             if ChannelAccess.programmeRefused(error) {
@@ -292,6 +340,8 @@ final class LivePlayback {
     private func playable(_ url: URL, path: LivePath) async throws -> URL {
         guard path == .lan else { return url }
         let auth = try await client.playbackHeaders()
+        try Task.checkCancellation()
+        guard !closed else { throw CancellationError() }
         let proxy = try self.proxy ?? StreamProxy(client: client)
         self.proxy = proxy
         try await proxy.start()
@@ -422,6 +472,8 @@ struct LivePlayerScreen: View {
     @State private var overlays = LiveOverlays()
     /// The moment the overlays are drawn for (moved on each event and at each deadline).
     @State private var now = ContinuousClock.now
+    /// The surface has the remote (it is what Menu, ▲ and ▼ reach the screen through).
+    @FocusState private var onSurface: Bool
     @Environment(\.dismiss) private var dismiss
     @Environment(\.appSession) private var session
 
@@ -445,6 +497,7 @@ struct LivePlayerScreen: View {
             }
             .buttonStyle(LiveSurfaceStyle())
             .disabled(timeUp != nil)
+            .focused($onSurface)
             .accessibilityLabel(Text(playback.channel?.name ?? ""))
             .accessibilityIdentifier("live.player.surface")
             Group {
@@ -478,9 +531,11 @@ struct LivePlayerScreen: View {
         .onExitCommand {
             var handled = false
             change { handled = $0.back(at: $1) }
-            if !handled { dismiss() }
+            if !handled { leave() }
         }
+        .defaultFocus($onSurface, true)
         .onAppear {
+            onSurface = true
             // Epic 57: under a parental limit the home is asked before each tune
             if let parental = session?.parental { playback.limited = { parental.current.limited } }
             playback.tune(playback.index)
@@ -489,6 +544,9 @@ struct LivePlayerScreen: View {
             let p = playback
             Task { await p.close() }
         }
+        // the surface takes the remote back when the time's-up screen goes (while it shows,
+        // its own buttons have it, and its Back leaves)
+        .onChange(of: timeUp == nil) { _, free in if free { onSurface = true } }
         .onChange(of: model.channels.map(\.id)) { _, _ in playback.update(channels: model.channels) }
         .onChange(of: playback.tunes) { _, _ in change { $0.tuned(at: $1) } }
         .onChange(of: playback.phase) { _, phase in change { $0.playback(playing: phase == .playing, at: $1) } }
@@ -504,6 +562,13 @@ struct LivePlayerScreen: View {
         }
     }
 
+    /// Leaves the player: the picture and the sound stop now, then the screen goes. Nothing
+    /// is waited for (a stalled stream, a slow home, a tune under way).
+    private func leave() {
+        playback.stop()
+        dismiss()
+    }
+
     /// The account's watching time is over (57.14): the home said so for this channel.
     private var timeUp: TimeUp? {
         if case let .timeUp(up) = playback.phase { return up }
@@ -514,7 +579,7 @@ struct LivePlayerScreen: View {
     /// channel is tuned again when the home says there is time.
     @ViewBuilder private var timeUpScreen: some View {
         if let timeUp, let session {
-            TVTimeUpView(client: playback.client, session: session, up: timeUp, back: { dismiss() }) { playback.retry() }
+            TVTimeUpView(client: playback.client, session: session, up: timeUp, back: { leave() }) { playback.retry() }
         }
     }
 

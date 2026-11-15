@@ -179,6 +179,182 @@ describe("the launcher", () => {
     const m = mount(async () => json(HOME));
     await m.l.start();
     expect(document.documentElement.dir).toBe("rtl");
-    expect(m.app().textContent).toContain("اختر جهازك الرئيسي");
+    expect(m.app().textContent).toContain("سجّل الدخول برمز");
+  });
+});
+
+// 58.09's second part: the cloud code (story 58.03) is the first screen.
+describe("the cloud code", () => {
+  const CODE = {
+    code: "ABCD-2345",
+    poll_secret: "ps-secret-value-1234567890",
+    expires_in: 600,
+    interval: 5,
+    verify_url: "https://maktaba.tv/tv?c=ABCD2345",
+  };
+  const GRANT = "Gr4nt_" + "x".repeat(37);
+  const NAME = "https://10-0-0-7.h1.direct-a.example:8443";
+  const PLAIN = "http://10.0.0.7:8088";
+  const APPROVAL = {
+    status: "approved",
+    // the cloud's server id: not the id the home itself answers with (h1)
+    home_id: "7d0c1e9a-5b2f-4c1e-9a7d-3e2f1b0c4d5a",
+    home_name: "Den",
+    connections: [
+      { url: NAME, kind: "local" },
+      { url: "https://10.0.0.7:8443", kind: "local_ip", tls_name: "10-0-0-7.h1.direct-a.example" },
+      // a plain LAN address: on another network it can be another machine
+      { url: PLAIN, kind: "local" },
+      { url: "https://h1.relay.maktaba.tv", kind: "relay" },
+    ],
+    grant: GRANT,
+  };
+  const status = (code: number, b: unknown) =>
+    new Response(JSON.stringify(b), { status: code });
+
+  /** The cloud and the home's connections; `answers` are the bases that answer as h1. */
+  function world(
+    opts: {
+      approved?: () => boolean;
+      answers?: string[];
+      down?: boolean;
+      /** What each answering base lists as the home's own addresses (default: itself). */
+      urls?: (base: string) => string[];
+    } = {}
+  ) {
+    const calls: { url: string; init?: Parameters<FetchLike>[1] }[] = [];
+    const fetch: FetchLike = async (url, init) => {
+      calls.push({ url, init });
+      if (url === "https://api.maktaba.tv/v1/tv/codes")
+        return opts.down ? Promise.reject(new TypeError("offline")) : status(201, CODE);
+      if (url === "https://api.maktaba.tv/v1/tv/codes/poll")
+        return opts.approved?.() ? status(200, APPROVAL) : status(202, { status: "pending" });
+      const base = url.replace(/\/api\/discovery\/home$/, "");
+      if ((opts.answers ?? []).includes(base))
+        return json({ ...HOME, urls: opts.urls ? opts.urls(base) : [base] });
+      return Promise.reject(new TypeError("refused"));
+    };
+    return { fetch, calls };
+  }
+
+  afterEach(() => vi.useRealTimers());
+
+  it("shows a code from Maktaba Cloud with its QR, and the other ways under it", async () => {
+    const w = world();
+    const m = mount(w.fetch);
+    await m.l.start();
+    await flush();
+    expect(m.app().querySelector('[data-testid="cloud-code"]')!.textContent).toBe("ABCD-2345");
+    expect(m.app().querySelector('[data-testid="cloud-qr"]')).not.toBeNull();
+    expect(m.app().textContent).toContain("maktaba.tv/tv");
+    expect(m.app().querySelector('[data-testid="find"]')).not.toBeNull();
+    expect(m.app().querySelector('[data-testid="more-ways"]')).not.toBeNull();
+    const create = w.calls.find((c) => c.url.endsWith("/v1/tv/codes"))!;
+    expect(create.init?.method).toBe("POST");
+    expect(JSON.parse(create.init!.body!)).toEqual({ platform: "tizen", app_version: "dev" });
+    // the poll secret is never in a URL or the log
+    expect(w.calls.every((c) => !c.url.includes(CODE.poll_secret))).toBe(true);
+    expect(logText()).not.toContain(CODE.poll_secret);
+  });
+
+  it("reaches the approving home by its first usable connection and hands its /tv/ the grant", async () => {
+    vi.useFakeTimers();
+    let approved = false;
+    const relay = "https://h1.relay.maktaba.tv";
+    const w = world({ approved: () => approved, answers: [relay] });
+    const m = mount(w.fetch);
+    await m.l.start();
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(m.frame()).toBeNull();
+    approved = true;
+    await vi.advanceTimersByTimeAsync(5_000);
+    await vi.advanceTimersByTimeAsync(100);
+    const f = m.frame()!;
+    expect(f.src).toBe(`${relay}/tv/?bridge=1&lang=en`);
+    // the name was tried first; the raw address pinned to a certificate name never
+    const tried = w.calls.map((c) => c.url).filter((u) => u.endsWith("/api/discovery/home"));
+    expect(tried[0]).toBe(`${NAME}/api/discovery/home`);
+    expect(tried.some((u) => u.startsWith("https://10.0.0.7:8443"))).toBe(false);
+    expect(savedHomes()[0]).toMatchObject({ id: "h1", base: relay, plain: false });
+    expect(JSON.stringify(savedHomes())).not.toContain(GRANT);
+    // the UI says hello from the frame: the grant follows, to the home's origin only
+    const sent: { msg: Record<string, unknown>; target: string }[] = [];
+    const win = f.contentWindow!;
+    win.postMessage = ((msg: Record<string, unknown>, target: string) =>
+      sent.push({ msg, target })) as typeof win.postMessage;
+    window.dispatchEvent(
+      new MessageEvent("message", {
+        origin: relay,
+        source: win,
+        data: { type: "maktaba:hello", id: 1, bridge_level: 1, takes: ["signIn"] },
+      })
+    );
+    expect(sent.map((x) => x.msg.type)).toEqual(["maktaba:hello", "maktaba:signIn"]);
+    expect(sent[1]).toEqual({ msg: { type: "maktaba:signIn", grant: GRANT }, target: relay });
+    expect(logText()).not.toContain(GRANT);
+    // polling stopped at the approval
+    const polls = w.calls.filter((c) => c.url.endsWith("/poll")).length;
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(w.calls.filter((c) => c.url.endsWith("/poll")).length).toBe(polls);
+  });
+
+  it("never sends the grant to a plain LAN address, whatever answers there", async () => {
+    vi.useFakeTimers();
+    const relay = "https://h1.relay.maktaba.tv";
+    // something answers on the plain address, even saying it is the home: never tried
+    const w = world({ approved: () => true, answers: [PLAIN, relay], urls: () => [PLAIN, relay] });
+    const m = mount(w.fetch);
+    await m.l.start();
+    await vi.advanceTimersByTimeAsync(5_000);
+    await vi.advanceTimersByTimeAsync(100);
+    expect(m.frame()!.src).toBe(`${relay}/tv/?bridge=1&lang=en`);
+    expect(w.calls.some((c) => c.url.startsWith(PLAIN))).toBe(false);
+  });
+
+  it("takes the home's LAN name first when it answers there (its certificate proves it)", async () => {
+    vi.useFakeTimers();
+    const relay = "https://h1.relay.maktaba.tv";
+    const w = world({ approved: () => true, answers: [NAME, relay] });
+    const m = mount(w.fetch);
+    await m.l.start();
+    await vi.advanceTimersByTimeAsync(5_000);
+    await vi.advanceTimersByTimeAsync(100);
+    expect(m.frame()!.src).toBe(`${NAME}/tv/?bridge=1&lang=en`);
+  });
+
+  it("says so when none of the home's connections answers", async () => {
+    vi.useFakeTimers();
+    const w = world({ approved: () => true, answers: [] });
+    const m = mount(w.fetch);
+    await m.l.start();
+    await vi.advanceTimersByTimeAsync(5_000);
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(m.app().querySelector('[data-testid="screen-cloud-unreachable"]')).not.toBeNull();
+    expect(m.app().textContent).toContain("Cannot reach Den");
+    expect(m.frame()).toBeNull();
+  });
+
+  it("offers the network and the address when the cloud gives no code", async () => {
+    const w = world({ down: true });
+    const m = mount(w.fetch);
+    await m.l.start();
+    await flush();
+    expect(m.app().querySelector('[data-testid="cloud-status"]')!.textContent).toContain(
+      "unavailable right now"
+    );
+    expect(m.app().querySelector('[data-testid="cloud-code"]')).toBeNull();
+    expect(m.app().querySelector('[data-focus="find"]')).not.toBeNull();
+  });
+
+  it("stops polling once the person leaves the code screen", async () => {
+    vi.useFakeTimers();
+    const w = world();
+    const m = mount(w.fetch);
+    await m.l.start();
+    await vi.advanceTimersByTimeAsync(5_000);
+    (m.app().querySelector('[data-testid="typed"]') as HTMLButtonElement).click();
+    const polls = w.calls.filter((c) => c.url.endsWith("/poll")).length;
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(w.calls.filter((c) => c.url.endsWith("/poll")).length).toBe(polls);
   });
 });

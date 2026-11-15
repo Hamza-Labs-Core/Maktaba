@@ -255,7 +255,8 @@ groups:
 
   # Home broadcasting (Epic 50 story 50.28): the canary broadcast, played every 60 s from the two
   # probing networks (broadcast-probe.sh pushes broadcast_probe_* to the Pushgateway), and the
-  # maktaba_broadcast_* series the api serves from the worker's state (shared/metrics/cloud-series.md).
+  # maktaba_broadcast_* series the relays' private metrics listeners serve from the worker's state
+  # (shared/metrics/cloud-series.md).
   - name: maktaba-broadcast
     rules:
       # a minute is down when both networks fail it (README §4.2): the best probe counts

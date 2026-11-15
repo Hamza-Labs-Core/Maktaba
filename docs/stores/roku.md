@@ -160,6 +160,10 @@ debug console (`telnet <roku-ip> 8085`) for the whole run.
 | 35 | A guardian hides the playing title from the child (a tighter limit) while it plays | at the next progress post the video stops and This isn't available shows, with the line that the video is no longer available on this account and Ask a parent focused; a parent's yes plays it again from where it stopped, and Back then goes to Home |
 | 36 | Rows 32 and 35 in Arabic | both pages mirrored: the 15-minute button at the right, Left moves forward, every line joined and right to left |
 | 37 | A pause of over a minute on a restricted account with time left, then Play | the stream opens again once where it was (the 8085 console's `[parental] lease lapsed; opening again`) and plays; no time's-up page |
+| 38 | A restricted child's account with 20 minutes left today: play a video until the end of the day's time | no note at first; from 15 minutes left, "15 minutes left today" (then 14, 13…) in the top right corner over the video, with the controls shown or hidden, the number the home's (the 8085 console's `[parental] time left=…`), never counting on its own between answers |
+| 39 | Go on playing past 5 minutes and 1 minute left | "Watching ends in 5 minutes." in gold over the note for about 10 s, then "Watching ends in 1 minute." the same way, each once and within 10 s of its minute; then the time's-up page of row 32 |
+| 40 | Rows 38 and 39 in Arabic, with Up next showing near a video's end | both notes in the top left corner, joined and right to left, in their plural forms (بقي 12 دقيقة اليوم, تنتهي المشاهدة بعد 5 دقائق., تنتهي المشاهدة بعد دقيقة واحدة.); while Up next shows, the notes sit below its card, never over it |
+| 41 | A parent says no to more time; the next day, after the time is used up again, the time's-up page shows | yesterday's no is not shown: the page offers Ask for more time with 15 minutes focused, not A parent said no; a no given the same day still shows A parent said no with Ask again |
 
 ## Results
 

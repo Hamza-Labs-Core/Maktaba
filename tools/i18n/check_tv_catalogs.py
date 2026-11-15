@@ -6,9 +6,18 @@ be flat (`"home.title"`) or nested objects, read as dotted keys. A key starting 
 metadata about the key after it (ARB's convention, e.g. Roku's label width in characters:
 `"@home.title": {"widthChars": 24}`), not a string, and is skipped.
 
+A plural is an object whose keys are CLDR plural categories, `other` among them (Roku's
+`"parental.time.minutes": {"one": "%1$d minute", "other": "%1$d minutes"}`). Each language holds
+exactly its own categories (PLURAL_FORMS: English one and other; Arabic zero, one, two, few, many
+and other). A form may leave the number out (Arabic's "دقيقة واحدة"), so only `other` must hold
+the same placeholders in both languages, and every other form holds no placeholder that its
+language's `other` lacks.
+
 It fails, naming the catalog and the key, on:
 
 - a key in English and missing (or empty) in Arabic, or the reverse;
+- a plural in one language that is a plain string in the other, or a plural missing one of its
+  language's forms (or holding a form its language does not have);
 - placeholders that differ between the two (`{name}`, `{{name}}`, `%s`, `%d`, `%1$s`,
   compared as multisets, so a placeholder used twice in one must be used twice in the other);
 - an Arabic string with a Latin-only word that is not a product name (LATIN_ALLOWED) or code
@@ -89,6 +98,13 @@ LATIN_ALLOWED: frozenset[str] = frozenset(
     }
 )
 
+# CLDR's plural categories, and the ones each catalog language uses (CLDR's plural rules).
+PLURAL_CATEGORIES: frozenset[str] = frozenset({"zero", "one", "two", "few", "many", "other"})
+PLURAL_FORMS: dict[str, frozenset[str]] = {
+    "en": frozenset({"one", "other"}),
+    "ar": PLURAL_CATEGORIES,
+}
+
 _PLACEHOLDER = re.compile(r"\{\{\s*[\w.]+\s*\}\}|\{[\w.]+\}|%(?:\d+\$)?[sdif@]")
 # Spans that are code, removed before looking for Latin words.
 _CODE = re.compile(
@@ -99,14 +115,19 @@ _CODE = re.compile(
 _LATIN_WORD = re.compile(r"[A-Za-z0-9][A-Za-z0-9'-]*")
 
 
+def is_plural(v: object) -> bool:
+    """Whether a catalog value is a plural: an object of CLDR categories, `other` among them."""
+    return isinstance(v, Mapping) and "other" in v and set(v) <= PLURAL_CATEGORIES
+
+
 def flatten(obj: Mapping[str, object], prefix: str = "") -> dict[str, object]:
-    """A catalog's keys, nested objects read as dotted keys, metadata (`@...`) skipped."""
+    """A catalog's keys, nested objects read as dotted keys (a plural kept whole), metadata (`@...`) skipped."""
     out: dict[str, object] = {}
     for k, v in obj.items():
         if k.startswith("@"):
             continue
         key = f"{prefix}{k}"
-        if isinstance(v, Mapping):
+        if isinstance(v, Mapping) and not is_plural(v):
             out.update(flatten(v, key + "."))
         else:
             out[key] = v
@@ -143,6 +164,34 @@ def _load(path: Path, rel: str) -> tuple[dict[str, object] | None, list[str]]:
     return flatten(raw), []
 
 
+def _plural_problems(label: str, lang: str, key: str, forms: Mapping[str, object]) -> list[str]:
+    """One language's plural: its own forms, each a string, none with a placeholder `other` lacks."""
+    problems: list[str] = []
+    want = PLURAL_FORMS.get(lang, frozenset({"other"}))
+    for form in sorted(want - forms.keys()):
+        problems.append(f"{label}/{lang}.json: {key!r} has no {form!r} form ({lang} needs {', '.join(sorted(want))})")
+    for form in sorted(forms.keys() - want):
+        problems.append(f"{label}/{lang}.json: {key!r} has a {form!r} form, which {lang} does not use")
+    other = forms.get("other")
+    for form, text in forms.items():
+        if not isinstance(text, str):
+            problems.append(f"{label}/{lang}.json: {key!r} form {form!r} is not a string")
+            continue
+        if not text.strip():
+            problems.append(f"{label}/{lang}.json: {key!r} form {form!r} is empty")
+        if isinstance(other, str) and placeholders(text) - placeholders(other):
+            extra = sorted((placeholders(text) - placeholders(other)).elements())
+            problems.append(f"{label}/{lang}.json: {key!r} form {form!r} has placeholders its 'other' lacks: {extra}")
+        if lang == "ar" and form != "other":
+            words = latin_words(text)
+            if words:
+                problems.append(
+                    f"{label}/ar.json: {key!r} form {form!r} has Latin words that are not product names or code: "
+                    + ", ".join(words)
+                )
+    return problems
+
+
 def check_catalog(directory: Path, label: str) -> list[str]:
     """The problems of one catalog directory, each naming the file or key."""
     en, problems = _load(directory / "en.json", f"{label}/en.json")
@@ -152,7 +201,10 @@ def check_catalog(directory: Path, label: str) -> list[str]:
         return problems
     for lang, cat in (("en", en), ("ar", ar)):
         for key, value in cat.items():
-            if not isinstance(value, str):
+            if is_plural(value):
+                assert isinstance(value, Mapping)
+                problems += _plural_problems(label, lang, key, value)
+            elif not isinstance(value, str):
                 problems.append(f"{label}/{lang}.json: {key!r} is not a string")
     for key in sorted(en.keys() - ar.keys()):
         problems.append(f"{label}: {key!r} is in en.json and missing in ar.json")
@@ -160,6 +212,13 @@ def check_catalog(directory: Path, label: str) -> list[str]:
         problems.append(f"{label}: {key!r} is in ar.json and missing in en.json")
     for key in sorted(en.keys() & ar.keys()):
         e, a = en[key], ar[key]
+        if is_plural(e) != is_plural(a):
+            plural, plain = ("en", "ar") if is_plural(e) else ("ar", "en")
+            problems.append(f"{label}: {key!r} is a plural in {plural}.json and not in {plain}.json")
+            continue
+        if is_plural(e) and isinstance(e, Mapping) and isinstance(a, Mapping):
+            # the forms were checked one by one; the two languages' `other` say the same thing
+            e, a = e["other"], a["other"]
         if not isinstance(e, str) or not isinstance(a, str):
             continue
         for lang, value in (("en", e), ("ar", a)):

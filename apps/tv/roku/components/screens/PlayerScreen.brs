@@ -11,10 +11,14 @@
 ' Back. A Video error retries once with force_transcode; a second shows the error and Back.
 '
 ' A restricted account's limits (Epic 57; on Roku, story 58.14): the home is the authority, and
-' the player only shows what it answered. A session open or a progress post refused with 403
-' parental_time stops the video and shows the time's-up page (why, when watching opens again,
-' where it stopped, Ask for more time with 15, 30 or 60 minutes, and Check again); a parent's yes,
-' or Check again, opens the session again, and the home decides. no_heartbeat (the lease ran
+' the player only shows what it answered. While a video plays it asks GET /api/me/parental/time
+' (every 30 s, every 10 s from 6 minutes left) and shows its remaining_seconds as Android TV
+' does: "12 minutes left today" in the end corner once 15 minutes or fewer remain, and "Watching
+' ends in 5 minutes." for 10 s as the time crosses five minutes and one minute. A session open
+' or a progress post refused with 403 parental_time stops the video and shows the time's-up
+' page (why, when watching opens again, where it stopped, Ask for more time with 15, 30 or 60
+' minutes, and Check again); a parent's yes, or Check again, opens the session again, and the
+' home decides. no_heartbeat (the lease ran
 ' out in a long pause) opens the stream again once where it is. A 404 for the stream while it
 ' plays, or for an open under a limit, hands the screen to "This isn't available" (BlockedScreen),
 ' whose yes plays the video again from there. 503 parental_time_unknown: never free time on an
@@ -49,6 +53,10 @@ sub init()
     m.picker = m.top.FindNode("picker")
     m.keys = m.top.FindNode("keys")
     m.timesUp = m.top.FindNode("timesUp")
+    m.warnBox = m.top.FindNode("warnBox")
+    m.warn = m.top.FindNode("warn")
+    m.leftBox = m.top.FindNode("leftBox")
+    m.leftNote = m.top.FindNode("leftNote")
     for each id in ["tuTitle", "tuNext", "tuSaved", "tuState", "tuAsk", "tuHint", "tuAsk0", "tuAsk1", "tuAsk2", "tuCheck"]
         m[id] = m.top.FindNode(id)
     end for
@@ -64,6 +72,10 @@ sub init()
     ui_Label(m.upNextTitle, 32, c.fg, true)
     ui_Label(m.status, 40, c.fg, false)
     m.status.horizAlign = "center"
+    ui_Label(m.warn, 34, c.accent, true)
+    ui_Label(m.leftNote, 30, c.fg, false)
+    m.warn.horizAlign = "center"
+    m.leftNote.horizAlign = "center"
     ' in Arabic the bar fills from the right and the buttons start at the right
     ui_Mirror(["title", "meta", "track", "pos", "dur", "audio", "subtitles", "upNext"])
     m.barX = m.track.translation[0]
@@ -100,6 +112,9 @@ sub init()
     m.seekTimer = player_Timer(0.8, false, "onSeekDone")
     ' a request for more time is followed while the time's-up page shows and it waits
     m.tuPoll = player_Timer(15, true, "onTimePoll")
+    ' the time left: asked again when this fires; a warning shows for 10 s
+    m.timeTimer = player_Timer(30, false, "onTimeTick")
+    m.warnTimer = player_Timer(10, false, "onWarnDone")
     m.clock = CreateObject("roTimespan")
 
     m.queue = invalid
@@ -125,6 +140,10 @@ sub init()
     m.tuFocus = 0
     m.tuCanAsk = false
     m.lapsedAt = -1
+    ' the home's last remaining_seconds (-1: no rule now) and the warnings already shown, kept
+    ' across a queue's videos
+    m.timeLeft = -1
+    m.warnings = ParentalWarningsNew()
 
     m.video.ObserveField("state", "onState")
     m.video.ObserveField("position", "onPosition")
@@ -292,6 +311,7 @@ sub onSession(ev as Object)
     showOverlay()
     drawBar(m.start)
     checkUpNext(m.start)
+    if player_Restricted() then askTimeLeft()
 end sub
 
 sub onChapters(ev as Object)
@@ -477,6 +497,7 @@ sub closeSession()
     ui_Api("DELETE", "/api/stream/sessions/" + m.sessionId, invalid, "close", "onProgressSent")
     m.sessionId = ""
     m.progressTimer.control = "stop"
+    m.timeTimer.control = "stop"
 end sub
 
 sub showUpNext()
@@ -487,12 +508,14 @@ sub showUpNext()
     m.upNextPoster.uri = ui_Poster(it.id)
     m.upNext.visible = true
     m.upNextRing.visible = true
+    placeTime()
     print "[upnext] shown "; it.id
 end sub
 
 sub hideUpNext()
     m.upNext.visible = false
     m.upNextRing.visible = false
+    placeTime()
 end sub
 
 ' --- the Video node's state ----------------------------------------------------------------
@@ -540,6 +563,7 @@ sub showFailure(text as String, reason as String)
     m.progressTimer.control = "stop"
     m.overlay.visible = false
     hideUpNext()
+    hideTime()
     m.status.text = text
     m.status.visible = true
     m.backBtn.visible = true
@@ -685,6 +709,7 @@ sub onVisible()
         m.video.control = "stop"
         m.progressTimer.control = "stop"
         m.tuPoll.control = "stop"
+        m.timeTimer.control = "stop"
     end if
 end sub
 
@@ -823,6 +848,7 @@ sub stopPlayback()
     m.status.visible = false
     m.backBtn.visible = false
     hideUpNext()
+    hideTime()
     m.keys.SetFocus(true)
 end sub
 
@@ -1021,5 +1047,85 @@ sub onTimeRequests(ev as Object)
     end if
     if state = "approved" or state = "expired" then state = "none"
     m.tuAskState = state
+    print "[parental] times up ask="; state
     drawTimesUp()
+end sub
+
+' --- the time left (Epic 57 story 57.15 on Roku, Android TV's TvTimeOverlay) -----------------
+
+sub askTimeLeft()
+    lib = invalid
+    if m.info <> invalid then lib = m.info.library_id
+    ui_Api("GET", ParentalTimePath(lib), invalid, "time:" + m.sessionId, "onTimeLeft")
+end sub
+
+sub onTimeTick()
+    if m.sessionId <> "" and m.timeUp = invalid then askTimeLeft()
+end sub
+
+' The home's answer: the note, a warning newly crossed, and when to ask next. An answer that
+' does not come keeps the last one (the stream itself is refused when the time is over).
+sub onTimeLeft(ev as Object)
+    sid = Mid(ev.GetRoSGNode().tag, Len("time:") + 1)
+    if m.sessionId = "" or sid <> m.sessionId or m.timeUp <> invalid or m.failed then return
+    r = ev.GetData()
+    if r.status = 200 then
+        m.timeLeft = ParentalTimeLeft(r.data)
+        line = ParentalWarningCrossed(m.warnings, m.timeLeft)
+        if line > 0 then showWarning(ParentalWarningSeconds(line, m.timeLeft))
+    else
+        print "[parental] time not read "; r.status
+    end if
+    drawTimeLeft()
+    m.timeTimer.duration = ParentalPollSec(m.timeLeft)
+    m.timeTimer.control = "start"
+    print "[parental] time left="; m.timeLeft; " poll="; m.timeTimer.duration
+end sub
+
+sub drawTimeLeft()
+    shown = ParentalShowsLeft(m.timeLeft)
+    if shown then m.leftNote.text = m.i18n.Format("parental.time.left", [ParentalTimeWords(m.timeLeft, m.i18n)])
+    m.leftNote.visible = shown
+    m.leftBox.visible = shown
+    placeTime()
+end sub
+
+sub showWarning(seconds as Integer)
+    m.warn.text = m.i18n.Format("parental.time.warning", [ParentalTimeWords(seconds, m.i18n)])
+    m.warn.visible = true
+    m.warnBox.visible = true
+    m.warnTimer.control = "stop"
+    m.warnTimer.control = "start"
+    placeTime()
+    print "[parental] warning "; seconds
+end sub
+
+sub onWarnDone()
+    m.warn.visible = false
+    m.warnBox.visible = false
+    placeTime()
+end sub
+
+sub hideTime()
+    m.timeTimer.control = "stop"
+    m.warnTimer.control = "stop"
+    for each n in [m.warn, m.warnBox, m.leftNote, m.leftBox]
+        n.visible = false
+    end for
+end sub
+
+' The end corner (the right in English, the left in Arabic): the warning over the note, both
+' below Up next while it shows.
+sub placeTime()
+    w = 640
+    x = m.layout.X(1920 - 80 - w, w)
+    y = 48
+    if m.upNext.visible then y = 440
+    if m.warn.visible then
+        m.warnBox.translation = [x, y]
+        m.warn.translation = [x, y]
+        y = y + 76
+    end if
+    m.leftBox.translation = [x, y]
+    m.leftNote.translation = [x, y]
 end sub

@@ -15,10 +15,21 @@ import {
   type PassClaims,
 } from "../src/invites";
 import { WATCH_ROUTES } from "../src/play";
+import { lineup } from "../src/site/routes";
 import { forgetRevocations } from "../src/revocations";
 import { ERROR_KEYS, STRINGS } from "../src/strings";
 import { verifyViewer } from "../src/tokens";
-import { call, cloudKid, control, E, INGEST, LIVE, newChannel, signCloud } from "./helpers";
+import {
+  call,
+  cloudKid,
+  control,
+  E,
+  INGEST,
+  installList,
+  LIVE,
+  newChannel,
+  signCloud,
+} from "./helpers";
 
 afterEach(() => {
   resetClock();
@@ -814,6 +825,71 @@ describe("T09 strings", () => {
     expect(((await ar.json()) as { message: string }).message).toBe(
       STRINGS["broadcast.inviteRequired"]!.ar
     );
+  });
+});
+
+describe("the kill switch on watch.maktaba.tv (50.25)", () => {
+  afterEach(async () => {
+    await installList([]);
+    forgetRevocations();
+  });
+
+  it("a stopped channel takes no viewer; a slate still plays; a stopped publisher's invite is refused", async () => {
+    const s = await setup();
+    const g = await guest(s);
+    expect((await playWith(s, s.ch, g)).r.status).toBe(200);
+
+    expect(
+      (
+        await installList([
+          { id: "w-1", kind: "channel", ref: s.ch, action: "off_air", reason: "notice" },
+        ])
+      ).status
+    ).toBe(200);
+    forgetRevocations();
+    const off = await playWith(s, s.ch, g);
+    expect(off.r.status).toBe(403);
+    expect(off.j.error).toBe("broadcast_off");
+
+    const until = new Date(now() + 3600_000).toISOString();
+    expect(
+      (
+        await installList([
+          { id: "w-2", kind: "programme", ref: s.ch, action: "slate", reason: "notice", until },
+        ])
+      ).status
+    ).toBe(200);
+    forgetRevocations();
+    const slate = await playWith(s, s.ch, g);
+    expect(slate.r.status, JSON.stringify(slate.j)).toBe(200);
+
+    expect(
+      (
+        await installList([
+          { id: "w-3", kind: "publisher", ref: s.pub, action: "suspend", reason: "report" },
+        ])
+      ).status
+    ).toBe(200);
+    forgetRevocations();
+    const { r, j } = await redeem(await invite({ pub: s.pub }));
+    expect(r.status).toBe(410);
+    expect(j.error).toBe("invite_revoked");
+  });
+
+  it("the guide page shows a stopped open channel as revoked", async () => {
+    const s = await setup();
+    const state = async () =>
+      (await lineup(env, s.pub, { kind: "none" })).channels.find((c) => c.id === s.ch2)?.state;
+    expect(await state()).not.toBe("revoked");
+    expect(
+      (
+        await installList([
+          { id: "w-4", kind: "channel", ref: s.ch2, action: "off_air", reason: "notice" },
+        ])
+      ).status
+    ).toBe(200);
+    forgetRevocations();
+    expect(await state()).toBe("revoked");
   });
 });
 

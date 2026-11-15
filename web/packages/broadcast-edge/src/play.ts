@@ -14,7 +14,7 @@
 // session) or as Authorization: Bearer (the apps keep it in the keychain or keystore). Every
 // answer carries X-Server-Time (ms), so a TV with a wrong clock uses the edge's.
 import { now } from "./clock";
-import { globallyOff, type Env } from "./env";
+import type { Env } from "./env";
 import { newChallenge, verifyAttestation } from "./attest";
 import { problem } from "./http";
 import {
@@ -35,7 +35,7 @@ import {
 import { clientIP, ipHash, rateLimited, REFRESH_AFTER_S, TOKEN_TTL_S } from "./limits";
 import type { Cred, PlanView } from "./access";
 import type { ChannelStatus } from "./channel_live";
-import { isRevoked, revocationsFor } from "./revocations";
+import { revocationsFor, stopVerdict, verdictFor } from "./revocations";
 import { ERROR_KEYS, langOf, t, type Lang } from "./strings";
 import { mintViewerToken, type Mode } from "./tokens";
 import { verifyTurnstile } from "./turnstile";
@@ -201,7 +201,7 @@ export async function redeemToken(
   if (!v.ok) return v;
   const c = v.claims;
   // a revoked publisher (50.25) gets no new viewers
-  if (isRevoked(await revocationsFor(env), { pub: c.pub, ch: "" }))
+  if (verdictFor(await revocationsFor(env), { pub: c.pub, ch: "" }, now())?.stop === "off_air")
     return { ok: false, status: 410, error: "invite_revoked" };
   const held = reuse
     ? await readPass(
@@ -412,7 +412,8 @@ async function play(request: Request, env: Env): Promise<Response> {
   const pub = str(b.publisher);
   const ch = str(b.channel);
   if (!UUIDISH.test(pub) || !CH_RE.test(ch)) return refuse(request, 400, "bad_request");
-  if (globallyOff(env) || isRevoked(await revocationsFor(env), { pub, ch }))
+  // break-glass, then the signed list (50.25): a stopped channel takes no viewer; a slate plays
+  if ((await stopVerdict(env, { pub, ch }, now()))?.stop === "off_air")
     return refuse(request, 403, "broadcast_off");
   const { cred, pass, passExp, inviteExp } = await credOf(request, env, pub);
   const t0 = now();

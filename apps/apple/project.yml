@@ -21,6 +21,13 @@ packages:
   PLCrashReporter:
     url: https://github.com/microsoft/plcrashreporter
     exactVersion: 1.12.2
+  # Google Cast beside AirPlay (Epic 58 story 58.06): Google's own Swift package, the
+  # Player's iPhone and iPad targets only (the SDK is iOS and iPadOS only: never the Mac or
+  # the Apple TV). The dynamic build carries the SDK's UI resources. Started only when the
+  # build names a receiver (Config/Cast.xcconfig, from shared/cast/app.json).
+  GoogleCast:
+    url: https://github.com/googlecast/google-cast-ios-sdk
+    exactVersion: 4.8.6
 settings:
   base:
     DEVELOPMENT_TEAM: G58UVTKQPB
@@ -107,9 +114,20 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.hamzalabs.maktaba.player
         TARGETED_DEVICE_FAMILY: "1"
         INFOPLIST_KEY_CFBundleDisplayName: Maktaba
+    configFiles:
+      Debug: Config/Cast.xcconfig
+      Release: Config/Cast.xcconfig
+    dependencies:
+      - package: GoogleCast
+        product: GoogleCastDynamic
     info:
       path: Player/Info-iPhone.plist
       properties:
+        # the Cast receiver (story 58.06): Config/Cast.xcconfig, empty when none is registered
+        MaktabaCastReceiverAppID: $(MAKTABA_CAST_APP_ID)
+        # the Cast SDK's two services when a receiver is named, after the template's (with
+        # none, both read `_maktaba._tcp` again: no Cast service declared)
+        NSBonjourServices: ["$(MAKTABA_CAST_BONJOUR)", "$(MAKTABA_CAST_BONJOUR_APP)"]
         # the sound plays on in the background (the screen locked, another app open) and
         # Picture in Picture can start: iOS allows neither without the audio background mode.
         # In the Info.plist itself: Xcode has no INFOPLIST_KEY_ for UIBackgroundModes, so a
@@ -126,9 +144,20 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.hamzalabs.maktaba.player.tablet
         TARGETED_DEVICE_FAMILY: "2"
         INFOPLIST_KEY_CFBundleDisplayName: Maktaba
+    configFiles:
+      Debug: Config/Cast.xcconfig
+      Release: Config/Cast.xcconfig
+    dependencies:
+      - package: GoogleCast
+        product: GoogleCastDynamic
     info:
       path: Player/Info-iPad.plist
       properties:
+        # the Cast receiver (story 58.06): Config/Cast.xcconfig, empty when none is registered
+        MaktabaCastReceiverAppID: $(MAKTABA_CAST_APP_ID)
+        # the Cast SDK's two services when a receiver is named, after the template's (with
+        # none, both read `_maktaba._tcp` again: no Cast service declared)
+        NSBonjourServices: ["$(MAKTABA_CAST_BONJOUR)", "$(MAKTABA_CAST_BONJOUR_APP)"]
         # the sound plays on in the background (the screen locked, another app open) and
         # Picture in Picture can start: iOS allows neither without the audio background mode.
         # In the Info.plist itself: Xcode has no INFOPLIST_KEY_ for UIBackgroundModes, so a

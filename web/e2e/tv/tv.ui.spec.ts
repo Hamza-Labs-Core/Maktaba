@@ -323,3 +323,109 @@ for (const locale of ["en", "ar"] as const) {
     expect(log.consoleLines.filter((l) => l.startsWith("[pageerror]"))).toEqual([]);
   });
 }
+
+// Story 58.09's second part: /tv/ in a launcher's frame takes a cloud code's grant over the
+// bridge (hello says sign_in, then maktaba:signIn) and redeems it at the home's token route,
+// in its own origin; a refused grant falls back to the home's own code, saying why. The
+// launcher here is a page of the same origin (a launcher's origin /tv/ hears), answering
+// hello as apps/tv/web does.
+const GRANT = "Gr4nt_tv_e2e_" + "q".repeat(30);
+const LAUNCHER_HOST = `<!doctype html><html><body style="margin:0;background:#000">
+<iframe id="f" src="/tv/?bridge=1&lang=LANG" style="border:0;width:1920px;height:1080px"></iframe>
+<script>
+  const f = document.getElementById("f");
+  window.addEventListener("message", (e) => {
+    if (e.source !== f.contentWindow || !e.data || e.data.type !== "maktaba:hello") return;
+    const takes = Array.isArray(e.data.takes) && e.data.takes.includes("signIn");
+    f.contentWindow.postMessage({ type: "maktaba:hello", re: e.data.id, bridge_level: 1,
+      platform: "webos", model: "OLED55CX", year: 2020, engine: "Chromium 79", version: "1.0.0",
+      device_caps: { containers: ["mp4"], video: [{ codec: "h264" }], hdr: [], audio: ["aac"],
+        passthrough: [], hls_segments: ["ts"] }, keys: [], messages: ["openHomePicker"],
+      sign_in: takes }, location.origin);
+    if (takes) f.contentWindow.postMessage({ type: "maktaba:signIn", grant: "GRANT" }, location.origin);
+  });
+</script></body></html>`;
+
+for (const locale of ["en", "ar"] as const) {
+  for (const accepted of [true, false]) {
+    test(`in a launcher: a cloud code's grant ${accepted ? "signs in" : "refused falls back to the home's code"}, ${locale}`, async ({
+      page,
+    }, info) => {
+      const log = record(page);
+      const home = await mockHome(page);
+      const redeemed: unknown[] = [];
+      let signedIn = false;
+      await page.route("**/api/pairing/device/token", async (route) => {
+        redeemed.push(route.request().postDataJSON());
+        if (!accepted)
+          return route.fulfill({
+            status: 410,
+            contentType: "application/problem+json",
+            body: JSON.stringify({ title: "Gone", status: 410 }),
+          });
+        signedIn = true;
+        return route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            access_token: "tv-a",
+            access_expires_in: 900,
+            refresh_token: "tv-r",
+            refresh_expires_in: 2592000,
+          }),
+        });
+      });
+      await page.route("**/api/pairing/device", (route) =>
+        route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            code: "KQ7M-4R2P",
+            device_code: "dc-e2e",
+            expires_at: new Date(Date.now() + 600_000).toISOString(),
+            verify_path: "/pair",
+            verify_url: "",
+            interval: 60,
+          }),
+        })
+      );
+      await page.route("**/api/auth/me", async (route) =>
+        signedIn && (await route.request().headerValue("authorization")) === "Bearer tv-a"
+          ? route.fallback()
+          : route.fulfill({
+              status: 401,
+              contentType: "application/json",
+              body: JSON.stringify({ title: "Unauthorized", status: 401 }),
+            })
+      );
+      await page.route("**/launcher-host.html", (route) =>
+        route.fulfill({
+          contentType: "text/html",
+          body: LAUNCHER_HOST.replace("LANG", locale).replace("GRANT", GRANT),
+        })
+      );
+      try {
+        await page.goto("/launcher-host.html");
+        const tv = page.frameLocator("#f");
+        if (accepted) {
+          await expect(tv.locator('[data-testid="big-home"], [data-bs-focus]').first()).toBeVisible(
+            { timeout: 20_000 }
+          );
+          expect(home.calls).not.toContain("POST /api/pairing/device");
+        } else {
+          await expect(tv.getByTestId("tv-code-notice")).toBeVisible();
+          await expect(tv.getByTestId("tv-code")).toHaveText("KQ7M-4R2P");
+          await expect(tv.getByTestId("tv-code-signin")).toHaveAttribute(
+            "dir",
+            locale === "ar" ? "rtl" : "ltr"
+          );
+        }
+        expect(redeemed).toEqual([{ device_code: GRANT, device_label: "OLED55CX" }]);
+        expect(log.consoleLines.some((l) => l.includes(GRANT))).toBe(false);
+        await shot(page, `launcher-grant-${accepted ? "signed-in" : "refused"}-${locale}`);
+      } finally {
+        await log.attach(info, home);
+      }
+    });
+  }
+}

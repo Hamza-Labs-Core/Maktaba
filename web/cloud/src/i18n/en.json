@@ -306,7 +306,7 @@
   "broadcast.analytics.countries": "Countries",
   "broadcast.analytics.other": "Other",
   "broadcast.analytics.quality": "Quality watched",
-  "broadcast.analytics.privacy": "Places and devices with fewer than 5 viewers are grouped as \"Other\". We don't keep viewers' addresses or identities.",
+  "broadcast.analytics.privacy": "Places and devices with fewer than 5 viewers in an hour are grouped as \"Other\" for that hour. We don't keep viewers' addresses or identities.",
   "broadcast.analytics.devices": "Devices",
   "broadcast.analytics.errors": "Playback errors",
   "broadcast.analytics.blocked": "Viewers turned away",

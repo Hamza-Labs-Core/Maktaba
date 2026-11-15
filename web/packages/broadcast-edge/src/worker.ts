@@ -14,8 +14,8 @@ import { handleAccessControl } from "./access";
 import { handleIngest } from "./ingest";
 import { handleLive } from "./live";
 import { log } from "./log";
-import { pullRevocations } from "./revocations";
 import { handleWatch } from "./play";
+import { pullRevocations } from "./revocations";
 
 export { ChannelLive } from "./channel_live";
 export { PublisherControl } from "./publisher";

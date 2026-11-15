@@ -181,8 +181,10 @@ bucket `maktaba-prod-pg-r2`, each with an access key limited to it, and the two 
 
 The witness runs Prometheus (30 days), Alertmanager, Grafana, the blackbox exporter and a
 Pushgateway as Docker guests at a lower CPU and IO weight than etcd ([`monitoring/`](monitoring/)).
-It scrapes each node over the private network: the leading relay's `/metrics` and Caddy's
-through the node's private `:9443` site, Patroni's `/metrics`, postgres_exporter and node_exporter
+It scrapes each node over the private network: the leading relay's `/metrics` (its private
+metrics listener, `MAKTABA_CLOUD_METRICS_ADDR` in `/etc/maktaba/relay-<colour>.env`, which
+`setup.sh` writes: the broadcast series are served nowhere else) and Caddy's through the node's
+private `:9443` site, Patroni's `/metrics`, postgres_exporter and node_exporter
 (with the textfile collector for the backup and the callback's alerts). It probes the
 **canary home** (`maktaba-canary`, a real cloudlink on W, slug `canary`) through the relay and
 the API every 30 s, checks each node's own certificate, and checks every minute that the

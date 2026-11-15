@@ -175,6 +175,7 @@ type addReq struct {
 	Until  *time.Time `json:"until"`
 }
 
+// adminActor is the service admin making a kill-switch change, for its audit.
 func adminActor(r *http.Request) (bc.Actor, bool) {
 	o, ok := authmw.ServiceAdmin(r.Context())
 	return bc.Actor{ID: o.ID, Email: o.Email}, ok && o.ID != ""

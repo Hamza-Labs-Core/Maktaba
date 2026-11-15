@@ -175,7 +175,7 @@ Help → Send a report.
 
 | # | Check | Pass when |
 |---|---|---|
-| 1 | Launch, sign in by the cloud code, and find a home on the network | both paths reach Home; `ares-log` shows `webos: sdk …` with the TV's real SDK version and UHD |
+| 1 | Launch with no saved home: the cloud code is the first screen; approve it on a phone. Then Switch home and Find on this network | both paths reach Home; `ares-log` shows `webos: sdk …` with the TV's real SDK version and UHD |
 | 2 | Play a 4K HEVC HDR10 MKV (direct play) | the TV's `<video>` plays it in HDR at 4K (the TV's info overlay says HDR) |
 | 3 | An HEVC remux (HLS with fMP4 segments) | plays, seeks, and survives a quality switch |
 | 4 | `EXT-X-INDEPENDENT-SEGMENTS` behaviour | webOS ignores the tag: seeking lands on the right segment with no stall. If it refuses the stream, record that, and the home omits the tag for the `webos` profile |
@@ -187,6 +187,10 @@ Help → Send a report.
 | 10 | The Magic Remote: pointer, wheel, arrows, OK, Back, the media and colour keys | the pointer focuses what it hovers; Back from Home shows the confirm, and Leave returns to the webOS launcher |
 | 11 | Launch on the webOS 4.5 TV | the launcher says the TV is too old and names Cast and AirPlay |
 | 12 | The performance budget (58.09 and 58.11) on the webOS 5 TV | launch to Home and Home to playback within the budget |
+| 13 | The cloud code from another network (the TV on a phone's hotspot, the home on its own network), approved in the Player (Profile → Approve a TV or device) | the TV reaches the home through the relay and opens Home signed in as the approver, within one poll after the approval |
+| 14 | The cloud code approved by an admin of the home | the TV never acts as an admin (no admin screens; the home answers its admin calls 403); the approver's app sign-ins list the TV as signed in via Maktaba Cloud code, and signing it out there signs the TV out |
+| 15 | The cloud's calls from the package, in the webOS Web Inspector (`ares-inspect`) | the code shows; the request's `Origin` is `null`. Any other origin is recorded here and added to `cloud/internal/middleware/tvcors.go` (and the home's `httpsec/cors.go`) before the release |
+| 16 | The `--bundle-ui` build, when this store gets it | the cloud code signs it in; with no grant, its Get a code button returns to the code screen |
 
 ## Results
 

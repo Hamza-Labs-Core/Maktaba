@@ -215,8 +215,8 @@ export const APPS = [
                 "**التشغيل عن بُعد والخطط**: التشغيل في المنزل مجاني، وكذلك الوصول إلى الجهاز الرئيسي مباشرة من الإنترنت حين يسمح جهاز التوجيه بذلك. أما التشغيل عبر وسيط سحابة مكتبة (حين لا يتاح الاتصال المباشر) فيتطلب خطة مدفوعة: **الأساسية** تمرّر بجودة تصل إلى نحو 3 ميغابت في الثانية على جهازين في الوقت نفسه، مع 500 غيغابايت شهريًا من الاستخدام العادل تُشغَّل بعدها البثوث بجودة أقل؛ و**الاحترافية** تمرّر بالجودة الكاملة ضمن حصة شهرية، ثم بجودة الأساسية. لا تقطع أي خطة مدفوعة التشغيل عن بُعد أبدًا: في الأساسية يحوّل الجهاز الرئيسي الفيديو المشغَّل عبر الوسيط ليلائم حدّها، وحين يرفض الوسيط (لا خطة فيها الوسيط، أو أجهزة كثيرة، أو الجهاز الرئيسي مشغول جدًا) تقول التطبيقات السبب. تعرض صفحة **الفوترة** في الحساب الخطط، وتأتي أسعارها لاحقًا."
               ),
               t(
-                "**Viewers of a broadcast**: a home that broadcasts its channels through Maktaba Cloud has a **Viewers** page at app.maktaba.tv, from **Homes**, for the home's owner only: viewers watching now and the viewer-hours of today, the last 7 days and this month against the plan's allowance. The Broadcaster add-on also shows the most viewers at once, average watch time, countries, devices, quality watched, playback errors and viewers turned away, with a CSV export. Countries and devices with fewer than 5 viewers are grouped as **Other**, and nothing personal is kept: no names, accounts or addresses.",
-                "**مشاهدو البث**: للجهاز الرئيسي الذي يبث قنواته عبر سحابة مكتبة صفحة **المشاهدون** في app.maktaba.tv، يُوصَل إليها من **الأجهزة الرئيسية**، لمالك الجهاز وحده: من يشاهدون الآن وساعات المشاهدة اليوم وفي آخر 7 أيام وهذا الشهر مقابل حصة الخطة. وتعرض إضافة البث أيضًا أعلى عدد مشاهدين في وقت واحد ومتوسط مدة المشاهدة والبلدان والأجهزة والجودة المشاهَدة وأخطاء التشغيل والمشاهدين المرفوضين، مع تصدير بصيغة CSV. وتُجمع البلدان والأجهزة التي يقل مشاهدوها عن 5 تحت **أخرى**، ولا يُحفظ شيء شخصي: لا أسماء ولا حسابات ولا عناوين."
+                "**Viewers of a broadcast**: a home that broadcasts its channels through Maktaba Cloud has a **Viewers** page at app.maktaba.tv, from **Homes**, for the home's owner only: viewers watching now and the viewer-hours of today, the last 7 days and this month against the plan's allowance. The Broadcaster add-on also shows the most viewers at once, average watch time, countries, devices, quality watched, playback errors and viewers turned away, with a CSV export. Countries and devices with fewer than 5 viewers in an hour are grouped as **Other** for that hour, and nothing personal is kept: no names, accounts or addresses.",
+                "**مشاهدو البث**: للجهاز الرئيسي الذي يبث قنواته عبر سحابة مكتبة صفحة **المشاهدون** في app.maktaba.tv، يُوصَل إليها من **الأجهزة الرئيسية**، لمالك الجهاز وحده: من يشاهدون الآن وساعات المشاهدة اليوم وفي آخر 7 أيام وهذا الشهر مقابل حصة الخطة. وتعرض إضافة البث أيضًا أعلى عدد مشاهدين في وقت واحد ومتوسط مدة المشاهدة والبلدان والأجهزة والجودة المشاهَدة وأخطاء التشغيل والمشاهدين المرفوضين، مع تصدير بصيغة CSV. وتُجمع البلدان والأجهزة التي يقل مشاهدوها في ساعة عن 5 تحت **أخرى** في تلك الساعة، ولا يُحفظ شيء شخصي: لا أسماء ولا حسابات ولا عناوين."
               ),
               t(
                 "**The play queue**: **Play** and **Shuffle** on a library, a series, a season, a collection or a playlist start one queue that the home keeps for each person. **Play next** and **Add to queue** add a video to it, Up next plays from it first, and Home offers **Continue your queue** on every device.",
@@ -386,8 +386,8 @@ export const APPS = [
                 "**الملف الشخصي**: سجل المشاهدة والمفضلة وقوائم التشغيل والجلسات، و**الموافقة على تلفاز أو جهاز**، وتبديل الجهاز الرئيسي، وإعدادات المظهر واللغة والتشغيل على هذا الجهاز."
               ),
               t(
-                "**Watching**: subtitles and audio tracks, the next lesson, AirPlay and Picture in Picture on Apple devices, picture in picture, sound with the screen off and **Cast** to a Chromecast or a Google TV on Android (the TV plays and reports where it is by itself, so the phone can lock). On the Mac the video fills the window and the **Playback** menu has the keys. On Windows and Linux: the **Audio**, **Subtitles** and **Quality** menus, Up next, and the keys below.",
-                "**المشاهدة**: الترجمات ومسارات الصوت، والدرس التالي، وAirPlay وصورة داخل صورة على أجهزة آبل، وصورة داخل صورة واستمرار الصوت مع إطفاء الشاشة و**البث** إلى Chromecast أو Google TV على أندرويد (يشغّل التلفاز ويبلّغ عن موضعه بنفسه، فيمكن قفل الهاتف). وعلى الماك يملأ المقطع النافذة، وفي قائمة **التشغيل** اختصارات لوحة المفاتيح. وعلى ويندوز ولينكس: قوائم **الصوت** و**الترجمة** و**الجودة**، و«التالي»، والمفاتيح المبيّنة أدناه."
+                "**Watching**: subtitles and audio tracks, the next lesson, AirPlay and Picture in Picture on Apple devices, **Cast** to a Chromecast or a Google TV from an iPhone or iPad (the TV list keeps AirPlay first, and the TV plays and reports where it is by itself, so the phone can lock), picture in picture, sound with the screen off and **Cast** to a Chromecast or a Google TV on Android (the TV plays and reports where it is by itself, so the phone can lock). On the Mac the video fills the window and the **Playback** menu has the keys. On Windows and Linux: the **Audio**, **Subtitles** and **Quality** menus, Up next, and the keys below.",
+                "**المشاهدة**: الترجمات ومسارات الصوت، والدرس التالي، وAirPlay وصورة داخل صورة على أجهزة آبل، و**البث** إلى Chromecast أو Google TV من آيفون أو آيباد (تُبقي قائمة أجهزة التلفاز AirPlay أولًا، ويشغّل التلفاز ويبلّغ عن موضعه بنفسه، فيمكن قفل الهاتف)، وصورة داخل صورة واستمرار الصوت مع إطفاء الشاشة و**البث** إلى Chromecast أو Google TV على أندرويد (يشغّل التلفاز ويبلّغ عن موضعه بنفسه، فيمكن قفل الهاتف). وعلى الماك يملأ المقطع النافذة، وفي قائمة **التشغيل** اختصارات لوحة المفاتيح. وعلى ويندوز ولينكس: قوائم **الصوت** و**الترجمة** و**الجودة**، و«التالي»، والمفاتيح المبيّنة أدناه."
               ),
               t(
                 "**The status strip**: when the home's streaming is down, the Player says so before you press play.",
@@ -507,8 +507,8 @@ export const APPS = [
         blocks: [
           {
             p: t(
-              "Sign the TV in with the child's own account: the home then shows it only what the child's limits allow, on every TV, through the cloud and on a cast, and the TV cannot get around them. Something hidden, opened from a link, shows **This isn't available** with the limit and **Ask a parent**, which takes the remote's focus; a parent answers from Maktaba on their phone, and a yes opens it on the TV without a restart. **Account** says that a parent manages the account, and its content limit. On Samsung, LG and Roku there is no parent PIN to type on the remote; the Apple TV, Android TV and Fire TV apps also take the guardian's PIN. When the child's watching time ends, the video stops where it is and the TV says so, with when watching opens again; the child can ask a parent for 15, 30 or 60 more minutes, and a yes plays the video again from where it stopped. Developers: [Parental controls](/contributing/parental-controls/).",
-              "سجّل دخول التلفاز بحساب الطفل نفسه: عندها لا يعرض عليه الجهاز الرئيسي إلا ما تسمح به حدود الطفل، على كل تلفاز، وعبر السحابة وعند البث، ولا يستطيع التلفاز الالتفاف عليها. وما كان مخفيًا وفُتح من رابط يعرض **هذا غير متاح** مع الحد و**اطلب من أحد الوالدين**، الذي يأخذ تركيز جهاز التحكم؛ ويرد أحد الوالدين من مكتبة على هاتفه، والموافقة تفتحه على التلفاز دون إعادة تشغيل. وتقول **الحساب** إن أحد الوالدين يدير الحساب، وحدّ المحتوى فيه. ولا يوجد على سامسونج وإل جي وروكو رمز للوالدين يُكتب بجهاز التحكم؛ وتقبل تطبيقات آبل تي في وأندرويد تي في وفاير تي في رمز الولي أيضًا. وحين ينتهي وقت مشاهدة الطفل يتوقف الفيديو حيث هو ويقول التلفاز ذلك، ومتى تعود المشاهدة؛ ويستطيع الطفل أن يطلب من أحد والديه 15 أو 30 أو 60 دقيقة إضافية، والموافقة تشغّل الفيديو مجددًا من حيث توقف. للمطورين: [الرقابة الأبوية](/contributing/parental-controls/)."
+              "Sign the TV in with the child's own account: the home then shows it only what the child's limits allow, on every TV, through the cloud and on a cast, and the TV cannot get around them. Something hidden, opened from a link, shows **This isn't available** with the limit and **Ask a parent**, which takes the remote's focus; a parent answers from Maktaba on their phone, and a yes opens it on the TV without a restart. **Account** says that a parent manages the account, and its content limit. On Samsung, LG and Roku there is no parent PIN to type on the remote; the Apple TV, Android TV and Fire TV apps also take the guardian's PIN. When the child's watching time ends, the video stops where it is and the TV says so, with when watching opens again; the child can ask a parent for 15, 30 or 60 more minutes, and a yes plays the video again from where it stopped. Before that, once 15 minutes or fewer are left today, the player shows how much is left in a corner and warns at five minutes and at one minute, by the home's own count. Developers: [Parental controls](/contributing/parental-controls/).",
+              "سجّل دخول التلفاز بحساب الطفل نفسه: عندها لا يعرض عليه الجهاز الرئيسي إلا ما تسمح به حدود الطفل، على كل تلفاز، وعبر السحابة وعند البث، ولا يستطيع التلفاز الالتفاف عليها. وما كان مخفيًا وفُتح من رابط يعرض **هذا غير متاح** مع الحد و**اطلب من أحد الوالدين**، الذي يأخذ تركيز جهاز التحكم؛ ويرد أحد الوالدين من مكتبة على هاتفه، والموافقة تفتحه على التلفاز دون إعادة تشغيل. وتقول **الحساب** إن أحد الوالدين يدير الحساب، وحدّ المحتوى فيه. ولا يوجد على سامسونج وإل جي وروكو رمز للوالدين يُكتب بجهاز التحكم؛ وتقبل تطبيقات آبل تي في وأندرويد تي في وفاير تي في رمز الولي أيضًا. وحين ينتهي وقت مشاهدة الطفل يتوقف الفيديو حيث هو ويقول التلفاز ذلك، ومتى تعود المشاهدة؛ ويستطيع الطفل أن يطلب من أحد والديه 15 أو 30 أو 60 دقيقة إضافية، والموافقة تشغّل الفيديو مجددًا من حيث توقف. وقبل ذلك، حين يبقى 15 دقيقة أو أقل من وقت اليوم، يُظهر المشغّل في زاوية كم بقي، وينبّه عند خمس دقائق وعند دقيقة واحدة، بحساب الجهاز الرئيسي نفسه. للمطورين: [الرقابة الأبوية](/contributing/parental-controls/)."
             ),
           },
         ],
@@ -861,6 +861,10 @@ export const APPS = [
           {
             ul: [
               t(
+                "**Signing in** on Android TV, Google TV and Fire TV: the TV opens on a code from Maktaba Cloud and its QR code. On a phone signed in to the home, **Approve a TV or device** takes the code, from any network: the TV does not need to be at home. The homes on the TV's network and a typed address are beside it. A TV signed in by a cloud code watches as the person who approved it, and never runs the home.",
+                "**تسجيل الدخول** على أندرويد تي في وجوجل تي في وفاير تي في: يفتح التلفاز على رمز من Maktaba Cloud ورمز QR الخاص به. وعلى هاتف مسجَّل الدخول إلى الجهاز الرئيسي، يأخذ **الموافقة على تلفاز أو جهاز** الرمز من أي شبكة: لا يلزم أن يكون التلفاز في المنزل. وبجانبه الأجهزة الرئيسية على شبكة التلفاز وعنوان يُكتب. والتلفاز الذي سُجّل دخوله برمز سحابي يشاهد باسم من وافق عليه، ولا يدير الجهاز الرئيسي أبدًا."
+              ),
+              t(
                 "**Home**: the home's rows, continue watching first.",
                 "**الرئيسية**: صفوف الجهاز الرئيسي، وأولها تابع المشاهدة."
               ),
@@ -974,8 +978,8 @@ export const APPS = [
           {
             ul: [
               t(
-                "**Sign in with a code**: the TV shows a code and a QR code; approve it in Maktaba on your phone (**Profile → Approve a TV**) or computer. **Find on this network** looks for homes on the TV's network and shows that home's own code. The last home used opens at once next time.",
-                "**تسجيل الدخول برمز**: يعرض التلفاز رمزًا ورمز QR؛ وافق عليه في مكتبة على هاتفك (**الملف الشخصي ← الموافقة على تلفاز**) أو حاسوبك. ويبحث خيار **ابحث في هذه الشبكة** عن الأجهزة الرئيسية في شبكة التلفاز ويعرض رمز الجهاز الذي اخترته. وفي المرة التالية يُفتح آخر جهاز رئيسي استُخدم مباشرة."
+                "**Sign in with a code**, the first screen: a code from Maktaba Cloud and a QR code, which work on any network. Scan it or open **maktaba.tv/tv** on a phone, or approve it in Maktaba on a phone signed in to the home (**Profile → Approve a TV or device**); the TV then opens that home, on the same network or through Maktaba's relay from anywhere. A TV signed in by this code can watch, never run the home, whoever approved it. Under the code, **Find on this network** looks for homes on the TV's network and shows that home's own code, and **More ways** takes the home's address. The last home used opens at once next time.",
+                "**تسجيل الدخول برمز**، وهي الشاشة الأولى: رمز من Maktaba Cloud ورمز QR، يعملان من أي شبكة. امسحه أو افتح **maktaba.tv/tv** على الهاتف، أو وافق عليه في مكتبة على هاتف مسجّل الدخول إلى الجهاز الرئيسي (**الملف الشخصي ← الموافقة على تلفاز أو جهاز**)؛ فيفتح التلفاز ذلك الجهاز الرئيسي، على الشبكة نفسها أو عبر مُرحِّل مكتبة من أي مكان. والتلفاز الذي يدخل بهذا الرمز يشاهد ولا يدير الجهاز الرئيسي أبدًا، أيًّا كان من وافق عليه. وتحت الرمز يبحث خيار **ابحث في هذه الشبكة** عن الأجهزة الرئيسية في شبكة التلفاز ويعرض رمز الجهاز الذي اخترته، ويقبل خيار **طرق أخرى** عنوان الجهاز الرئيسي. وفي المرة التالية يُفتح آخر جهاز رئيسي استُخدم مباشرة."
               ),
               t(
                 "**Playback on the TV's own player**: 4K, HDR10 and HLG, and Dolby audio passed to a soundbar, where the TV supports them. The app tells the home what this TV decodes, so the home plays a file as it is when it can and converts it only when it must. If the TV cannot play a stream, the app asks the home once more for a converted one.",
@@ -1008,8 +1012,8 @@ export const APPS = [
         blocks: [
           {
             p: t(
-              "The Samsung app is a small launcher: it finds the home, by searching this network or with the home's address, and then shows the home's own TV screens, so they update with the home and not through the store. Signing in is by a code approved from a phone; on the home's network without encryption it is by code only, so no password crosses the network in the clear.",
-              "تطبيق سامسونج مُشغِّل صغير: يعثر على الجهاز الرئيسي بالبحث في هذه الشبكة أو بعنوانه، ثم يعرض شاشات التلفاز الخاصة بالجهاز الرئيسي نفسه، فتتحدّث مع الجهاز الرئيسي لا عبر المتجر. ويكون تسجيل الدخول برمز يُوافَق عليه من الهاتف؛ وعلى شبكة المنزل دون تشفير لا يكون إلا بالرمز، فلا تعبر كلمة مرور الشبكة مكشوفة."
+              "The Samsung app is a small launcher: it opens on a code from Maktaba Cloud, approved from a phone, which reaches the home from any network (or it finds the home by searching this network, or with the home's address), and then shows the home's own TV screens, so they update with the home and not through the store. Signing in is always by a code approved from a phone, so no password is typed on the TV or crosses the network in the clear.",
+              "تطبيق سامسونج مُشغِّل صغير: يفتح على رمز من Maktaba Cloud يُوافَق عليه من الهاتف ويصل إلى الجهاز الرئيسي من أي شبكة (أو يعثر على الجهاز الرئيسي بالبحث في هذه الشبكة أو بعنوانه)، ثم يعرض شاشات التلفاز الخاصة بالجهاز الرئيسي نفسه، فتتحدّث مع الجهاز الرئيسي لا عبر المتجر. ويكون تسجيل الدخول دائمًا برمز يُوافَق عليه من الهاتف، فلا تُكتب كلمة مرور على التلفاز ولا تعبر الشبكة مكشوفة."
             ),
           },
           {
@@ -1097,10 +1101,22 @@ export const APPS = [
                 "مكتبة على فاير تي في: تبويباتها والمقترحات"
               ),
               shot(
+                "firetv-cloud-code",
+                "wide",
+                "Signing in on a Fire TV: a code from Maktaba Cloud and its QR code, the homes on this network and an address beside it",
+                "تسجيل الدخول على فاير تي في: رمز من Maktaba Cloud ورمز QR الخاص به، وبجانبهما الأجهزة الرئيسية على هذه الشبكة وعنوان"
+              ),
+              shot(
                 "lgtv-watch",
                 "wide",
                 "Playing on an LG TV: the TV's own player under the controls, and Arabic subtitles drawn by Maktaba",
                 "التشغيل على تلفاز LG: مشغّل التلفاز نفسه تحت أزرار التحكم، وترجمة عربية ترسمها مكتبة"
+              ),
+              shot(
+                "samsung-code",
+                "wide",
+                "The Samsung app's first screen: a code from Maktaba Cloud and its QR, with the other ways under it",
+                "الشاشة الأولى في تطبيق سامسونج: رمز من Maktaba Cloud ورمز QR الخاص به، والطرق الأخرى تحته"
               ),
               shot(
                 "samsung-error",
@@ -1136,8 +1152,8 @@ export const APPS = [
           },
           {
             p: t(
-              "The first four screenshots are from the Apple TV app, the sign-in from the Android TV app, the next two from the Fire TV build, the next from the LG app and the next from the Samsung app, each taken in its browser test with a pretend TV (behind the Samsung shot, a frame stands in for the video), and the last four from the Roku channel, drawn by brs-engine (Roku's own renderer differs a little; behind the player, the video is black). The Android TV app, its Fire TV build and the Roku channel have the same sections as the Apple TV app, laid out for the TV's remote.",
-              "أول أربع لقطات من تطبيق آبل تي في، ولقطة تسجيل الدخول من تطبيق أندرويد تي في، واللقطتان التاليتان من إصدار فاير تي في، والتالية من تطبيق LG والتي تليها من تطبيق سامسونج، وكلٌّ منهما التُقطت في اختبار تطبيقها في المتصفح مع تلفاز وهمي (وخلف لقطة سامسونج إطار بديل عن الفيديو)، وآخر أربع لقطات من قناة روكو كما يرسمها brs-engine (ويختلف عنه عارض روكو نفسه قليلًا، والفيديو خلف المشغّل أسود). ولتطبيق أندرويد تي في وإصداره لفاير تي في وقناة روكو أقسام تطبيق آبل تي في نفسها، مرتبةً لجهاز تحكم التلفاز."
+              "The first four screenshots are from the Apple TV app, the sign-in from the Android TV app, the next three from the Fire TV build, the next from the LG app and the next two from the Samsung app, each taken in its browser test with a pretend TV (behind the Samsung player, a frame stands in for the video), and the last four from the Roku channel, drawn by brs-engine (Roku's own renderer differs a little; behind the player, the video is black). The Android TV app, its Fire TV build and the Roku channel have the same sections as the Apple TV app, laid out for the TV's remote.",
+              "أول أربع لقطات من تطبيق آبل تي في، ولقطة تسجيل الدخول من تطبيق أندرويد تي في، واللقطات الثلاث التالية من إصدار فاير تي في، والتالية من تطبيق LG واللقطتان اللتان تليانها من تطبيق سامسونج، وكلٌّ منها التُقطت في اختبار تطبيقها في المتصفح مع تلفاز وهمي (وخلف مشغّل سامسونج إطار بديل عن الفيديو)، وآخر أربع لقطات من قناة روكو كما يرسمها brs-engine (ويختلف عنه عارض روكو نفسه قليلًا، والفيديو خلف المشغّل أسود). ولتطبيق أندرويد تي في وإصداره لفاير تي في وقناة روكو أقسام تطبيق آبل تي في نفسها، مرتبةً لجهاز تحكم التلفاز."
             ),
           },
           { p: SHOTS_NOTE },

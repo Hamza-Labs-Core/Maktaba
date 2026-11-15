@@ -40,7 +40,7 @@ import {
   viewer,
 } from "../play";
 import type { Cred } from "../access";
-import { isRevoked, revocationsFor } from "../revocations";
+import { breakGlass, revocationsFor, verdictFor } from "../revocations";
 import { ERROR_KEYS, langOf, type Lang } from "../strings";
 import { CLIENT_CSS, clientJS } from "./client";
 import {
@@ -84,7 +84,10 @@ export async function lineup(env: Env, pub: string, cred: Cred): Promise<Lineup>
         id,
         name: g?.channel.name ?? id,
         number: g?.channel.number ?? 0,
-        state: off || isRevoked(list, { pub, ch: id }) ? "revoked" : state,
+        state:
+          off || breakGlass(env, id) || verdictFor(list, { pub, ch: id }, t0)?.stop === "off_air"
+            ? "revoked"
+            : state,
         now: nn.now,
         next: nn.next,
       };

@@ -11,8 +11,15 @@
 //                   openHomePicker · play{url,…} · pause · resume · seek{sec} · stop ·
 //                   audioTrack{i} · subtitle{id|null} · logs
 //   launcher → UI   hello{bridge_level,platform,model,year,engine,version,device_caps,keys,
-//                   messages} · action{action} · state{…} every 500 ms while playing ·
-//                   visibility{hidden} · logs{lines} · error{re_type,error}
+//                   messages[,sign_in]} · signIn{grant} · action{action} · state{…} every
+//                   500 ms while playing · visibility{hidden} · logs{lines} ·
+//                   error{re_type,error}
+//
+// signIn (story 58.09's second part): after a cloud code's approval the launcher holds the
+// home's single-use grant. It hands it over once, right after its hello answer (which says
+// `sign_in: true`), and only to a UI whose hello said it takes signIn, at the origin it
+// loaded; then it forgets it. The UI redeems it in its own origin, so no token ever crosses
+// the bridge. The grant is never logged.
 
 import { log, logText } from "./log";
 import { playableUrl, type PlayerAdapter } from "./player";
@@ -90,6 +97,8 @@ export interface BridgeOptions {
   info: HelloInfo;
   player: PlayerAdapter;
   handlers: BridgeHandlers;
+  /** A cloud code's grant for the home loaded (handed to the UI once, see the header). */
+  grant?: string | null;
   /** setInterval and clearInterval (tests pass fakes). */
   every?: (fn: () => void, ms: number) => unknown;
   stopEvery?: (h: unknown) => void;
@@ -119,12 +128,19 @@ function brief(data: Record<string, unknown>): string {
 
 export class LauncherBridge {
   private ticking: unknown = null;
+  private grant: string | null;
   private readonly every: (fn: () => void, ms: number) => unknown;
   private readonly stopEvery: (h: unknown) => void;
 
   constructor(private readonly o: BridgeOptions) {
     this.every = o.every ?? ((fn, ms) => setInterval(fn, ms));
     this.stopEvery = o.stopEvery ?? ((h) => clearInterval(h as ReturnType<typeof setInterval>));
+    this.grant = o.grant ?? null;
+  }
+
+  /** Whether a grant is still waiting for the UI's hello. */
+  holdsGrant(): boolean {
+    return this.grant !== null;
   }
 
   /** Takes one message event; true when it was the UI's and handled. */
@@ -155,15 +171,27 @@ export class LauncherBridge {
       case "ready":
         this.o.handlers.ready?.();
         return;
-      case "hello":
+      case "hello": {
+        const grant = this.grant;
+        const takes = Array.isArray(m.takes) && (m.takes as unknown[]).indexOf("signIn") >= 0;
+        if (grant && !takes)
+          log("launcher", "the home's /tv/ does not take a grant: it signs in by its own code");
+        // one hand-over: a second hello (the UI reloaded) gets no grant
+        this.grant = null;
         this.send({
           type: `${PREFIX}hello`,
           re: typeof m.id === "number" ? m.id : 0,
           bridge_level: BRIDGE_LEVEL,
           ...this.o.info,
           messages: UI_MESSAGES.slice(),
+          ...(grant && takes ? { sign_in: true } : {}),
         });
+        if (grant && takes) {
+          log("bridge-out", "signIn (the cloud code's grant)");
+          this.post({ type: `${PREFIX}signIn`, grant });
+        }
         return;
+      }
       case "exit":
         p.stop();
         this.stopTicking();
@@ -260,6 +288,7 @@ export class LauncherBridge {
 
   dispose(): void {
     this.stopTicking();
+    this.grant = null;
   }
 
   private error(name: string, error: "unknown" | "bad_message" | "failed", detail?: string): void {
@@ -285,9 +314,14 @@ export class LauncherBridge {
   }
 
   private send(msg: Record<string, unknown>): void {
+    if (msg.type !== `${PREFIX}state`) log("bridge-out", brief(msg));
+    this.post(msg);
+  }
+
+  /** Posts to the frame at the origin it was loaded from (never logged here). */
+  private post(msg: Record<string, unknown>): void {
     const frame = this.o.frame();
     if (!frame) return;
-    if (msg.type !== `${PREFIX}state`) log("bridge-out", brief(msg));
     frame.postMessage(msg, this.o.targetOrigin);
   }
 }

@@ -4077,6 +4077,14 @@
       "en": "Publishing Live TV channels to viewers outside the home (admins only): each published channel's qualities are made at home and each segment is sent once to Maktaba's broadcast edge.",
       "ar": "نشر قنوات البث المباشر لمشاهدين خارج المنزل (للمشرفين فقط): تُصنع جودات كل قناة منشورة في المنزل، ويُرسل كل مقطع مرة واحدة إلى حافة البث في مكتبة."
     },
+    "/tags/25/name": {
+      "en": "Broadcast",
+      "ar": "البث"
+    },
+    "/tags/25/description": {
+      "en": "Who may watch the channels the home publishes through Maktaba Cloud: each channel's access, the viewer limits and the invites. Admins only.",
+      "ar": "من يمكنه مشاهدة القنوات التي ينشرها المنزل عبر سحابة مكتبة: وصول كل قناة، وحدود المشاهدة، والدعوات. للمدراء فقط."
+    },
     "/paths/~1parental~1children/get/summary": {
       "en": "The restricted accounts the caller looks after",
       "ar": "الحسابات المقيَّدة التي يتولاها المتصل"
@@ -6213,13 +6221,157 @@
       "en": "The signed-URL token for every path under the session's `/stream/{session_id}/` (its subtitle renditions, `subs/sidecar/{lang}.vtt`, `subs/auto.vtt`, `chapters.json`), in every mode, direct play too. A player that cannot send a header (a TV's media player, a Cast receiver) fetches them with `?sig=` and this token. It expires with the session's URLs.",
       "ar": "رمز الرابط الموقَّع لكل مسار تحت `/stream/{session_id}/` الخاص بالجلسة (نسخ الترجمة فيها و`subs/sidecar/{lang}.vtt` و`subs/auto.vtt` و`chapters.json`)، في كل نمط، والتشغيل المباشر أيضًا. والمشغّل الذي لا يستطيع إرسال ترويسة (مشغّل وسائط التلفاز، أو مستقبِل Cast) يجلبها بـ`?sig=` وهذا الرمز. وتنتهي صلاحيته مع روابط الجلسة."
     },
-    "/tags/24/name": {
-      "en": "Broadcast",
-      "ar": "البث"
+    "/paths/~1cast~1grants/post/summary": {
+      "en": "Mint a cast grant for a Cast receiver",
+      "ar": "إصدار تصريح بثّ لجهاز استقبال Cast"
     },
-    "/tags/24/description": {
-      "en": "Who may watch the channels the home publishes through Maktaba Cloud: each channel's access, the viewer limits and the invites. Admins only.",
-      "ar": "من يمكنه مشاهدة القنوات التي ينشرها المنزل عبر سحابة مكتبة: وصول كل قناة، وحدود المشاهدة، والدعوات. للمدراء فقط."
+    "/paths/~1cast~1grants/post/description": {
+      "en": "A signed-in sender (the Android Player, the Apple Player, the web) mints a cast grant for Maktaba's Cast receiver at cast.maktaba.tv, naming exactly one video (`video_id`) or one of the caller's own play queues (`queue_id`). The sender passes the grant to the receiver in the Cast load request's custom data, never the person's own token. The grant lasts at most six hours. With it, and only for the items it names, the receiver opens and keeps stream sessions (`POST /api/stream/sessions` and its `{id}` routes, progress and errors included), reads the video (`GET /api/videos/{id}`, its chapters, subtitles and poster) and walks the queue (`GET /api/me/play-queues/{id}`, `PUT /api/me/play-queues/{id}/current`); every other route and item answers 403 with `code` `cast_scope`. The grant acts as its user, read again on each request: the user's libraries now, and a restricted account's parental limit (with the minting sign-in's device age limit), so an item hidden since the mint answers 404. Send it as `Authorization: Bearer <grant>`. A home without this route (404) is older than the cast grant: a sender casts to Google's Default Media Receiver there. The guide is maktaba.dev's Casting page.",
+      "ar": "يُصدر المُرسِل المسجَّل دخوله (مشغّل Android أو مشغّل Apple أو الويب) تصريح بثّ لجهاز استقبال Cast الخاص بمكتبة على cast.maktaba.tv، يسمّي فيديو واحدًا بالضبط (`video_id`) أو إحدى قوائم التشغيل الخاصة بالمتصل (`queue_id`). يمرّر المُرسِل التصريح إلى جهاز الاستقبال في البيانات المخصّصة لطلب التحميل في Cast، ولا يمرّر أبدًا رمز الشخص نفسه. يدوم التصريح ست ساعات على الأكثر. وبه، وللعناصر التي يسمّيها فقط، يفتح جهاز الاستقبال جلسات البث ويحافظ عليها (`POST /api/stream/sessions` ومسارات `{id}` التابعة لها، بما فيها التقدّم والأخطاء)، ويقرأ الفيديو (`GET /api/videos/{id}` وفصوله وترجماته وملصقه)، ويتنقّل في القائمة (`GET /api/me/play-queues/{id}` و`PUT /api/me/play-queues/{id}/current`)؛ وكل مسار أو عنصر آخر يُجاب بـ 403 مع `code` بقيمة `cast_scope`. يعمل التصريح باسم مستخدمه، ويُقرأ من جديد مع كل طلب: مكتبات المستخدم الحالية، وحدّ الرقابة الأبوية للحساب المقيَّد (مع حدّ العمر الذي أعطاه جهاز تسجيل الدخول الذي أصدره)، فيُجاب عن عنصر أُخفي منذ الإصدار بـ 404. أرسله بصيغة `Authorization: Bearer <grant>`. المنزل الذي لا يملك هذا المسار (404) أقدم من تصريح البث: يبثّ المُرسِل هناك إلى جهاز الاستقبال الافتراضي من Google. الدليل هو صفحة البث على maktaba.dev."
+    },
+    "/paths/~1cast~1grants/post/responses/201/description": {
+      "en": "The grant.",
+      "ar": "التصريح."
+    },
+    "/paths/~1cast~1grants/post/responses/400/description": {
+      "en": "`video_id` is not an id.",
+      "ar": "قيمة `video_id` ليست معرّفًا."
+    },
+    "/paths/~1cast~1grants/post/responses/403/description": {
+      "en": "The caller may not mint a grant: a cast grant itself (`cast_scope`), the admin token, which is no person (`cast_needs_person`), or a sign-in through Maktaba Cloud (`cast_via_cloud`). Also a video in a library the caller was not given (`access-denied`).",
+      "ar": "لا يجوز للمتصل إصدار تصريح: تصريح بثّ بنفسه (`cast_scope`)، أو رمز المشرف الذي لا يمثّل شخصًا (`cast_needs_person`)، أو تسجيل دخول عبر Maktaba Cloud (`cast_via_cloud`). وكذلك فيديو في مكتبة لم تُمنح للمتصل (`access-denied`)."
+    },
+    "/paths/~1cast~1grants/post/responses/404/description": {
+      "en": "No such video or queue, a queue that is another person's, or a video the caller's parental limit hides (answered as a missing one).",
+      "ar": "لا يوجد فيديو أو قائمة بهذا المعرّف، أو القائمة لشخص آخر، أو الفيديو يخفيه حدّ الرقابة الأبوية للمتصل (يُجاب عنه كأنه غير موجود)."
+    },
+    "/paths/~1cast~1grants/post/responses/422/description": {
+      "en": "Neither or both of `video_id` and `queue_id`.",
+      "ar": "لم يُذكر `video_id` ولا `queue_id`، أو ذُكر كلاهما."
+    },
+    "/paths/~1cast~1grants/post/responses/503/description": {
+      "en": "The home has no signing key to mint with yet; ask again after `Retry-After`.",
+      "ar": "لا يملك المنزل بعدُ مفتاح توقيع يُصدر به؛ أعد الطلب بعد `Retry-After`."
+    },
+    "/components/schemas/CastGrantRequest/description": {
+      "en": "What is cast: exactly one of the two.",
+      "ar": "ما يُبثّ: واحد فقط من الاثنين."
+    },
+    "/components/schemas/CastGrantRequest/properties/video_id/description": {
+      "en": "The one video cast.",
+      "ar": "الفيديو الواحد الذي يُبثّ."
+    },
+    "/components/schemas/CastGrantRequest/properties/queue_id/description": {
+      "en": "One of the caller's own play queues (Play all, Shuffle): the receiver walks it.",
+      "ar": "إحدى قوائم التشغيل الخاصة بالمتصل (تشغيل الكل، الترتيب العشوائي): يتنقّل فيها جهاز الاستقبال."
+    },
+    "/components/schemas/CastGrant/description": {
+      "en": "A cast grant and what it names.",
+      "ar": "تصريح بثّ وما يسمّيه."
+    },
+    "/components/schemas/CastGrant/properties/grant/description": {
+      "en": "The grant, starting `cast_`: the receiver's bearer. Never logged, never shown.",
+      "ar": "التصريح، ويبدأ بـ `cast_`: رمز حامل لجهاز الاستقبال. لا يُسجَّل ولا يُعرض أبدًا."
+    },
+    "/components/schemas/CastGrant/properties/scope/description": {
+      "en": "Always `cast`.",
+      "ar": "دائمًا `cast`."
+    },
+    "/components/schemas/CastGrant/properties/expires_at/description": {
+      "en": "When the grant ends, at most six hours from the mint. A receiver lets the item playing then finish and shows that the cast has ended.",
+      "ar": "متى ينتهي التصريح، بعد ست ساعات من الإصدار على الأكثر. يترك جهاز الاستقبال العنصر الذي يُعرض حينها ينتهي، ثم يعرض أن البث انتهى."
+    },
+    "/components/schemas/CastGrant/properties/video_id/description": {
+      "en": "The video the grant names, when it names one.",
+      "ar": "الفيديو الذي يسمّيه التصريح، إن سمّى فيديو."
+    },
+    "/components/schemas/CastGrant/properties/queue_id/description": {
+      "en": "The play queue the grant names, when it names one.",
+      "ar": "قائمة التشغيل التي يسمّيها التصريح، إن سمّى قائمة."
+    },
+    "/paths/~1tv~1broadcast~1moderation/get/summary": {
+      "en": "Notices and reports about this home's channels",
+      "ar": "ملاحظات وبلاغات عن قنوات هذا المنزل"
+    },
+    "/paths/~1tv~1broadcast~1moderation/get/description": {
+      "en": "What Maktaba Cloud told this home about its published channels: each statement of reasons (a programme taken down after a copyright notice, with the claimant unless they asked for privacy, and whether a counter-notice can be filed), the strike warning, the end of broadcasting, a restore; the reports viewers sent about its content, without the reporter's email; and the publisher's active strikes against the limit. It also lists the takedowns this home applied from Maktaba's signed instructions. records is the cloud's answer, absent when the cloud was not reached (cloud says why).",
+      "ar": "ما أبلغت به سحابة مكتبة هذا المنزل عن قنواته المنشورة: كل بيان أسباب (برنامج أُزيل بعد إشعار بشأن حقوق النشر، مع اسم صاحب الشكوى ما لم يطلب الخصوصية، وهل يمكن تقديم إشعار مضاد)، وتحذير المخالفات، وانتهاء البث، والإعادة؛ والبلاغات التي أرسلها المشاهدون عن محتواه، دون بريد المُبلِّغ؛ ومخالفات الناشر السارية مقابل الحد. ويسرد أيضًا عمليات الإزالة التي طبّقها هذا المنزل من تعليمات مكتبة الموقَّعة. records هو جواب السحابة، ويغيب إن تعذّر الوصول إليها (ويبيّن cloud السبب)."
+    },
+    "/paths/~1tv~1broadcast~1moderation/get/responses/200/description": {
+      "en": "The cloud's records and the takedowns applied here.",
+      "ar": "سجلات السحابة وعمليات الإزالة المطبّقة هنا."
+    },
+    "/paths/~1tv~1broadcast~1moderation/get/responses/403/description": {
+      "en": "Admin only.",
+      "ar": "للمشرفين فقط."
+    },
+    "/paths/~1tv~1broadcast~1moderation/get/responses/409/description": {
+      "en": "Broadcasting is off on this home.",
+      "ar": "البث متوقف على هذا المنزل."
+    },
+    "/paths/~1tv~1broadcast~1moderation~1counter-notices/post/summary": {
+      "en": "File a counter-notice",
+      "ar": "تقديم إشعار مضاد"
+    },
+    "/paths/~1tv~1broadcast~1moderation~1counter-notices/post/description": {
+      "en": "Files a counter-notice to one of this home's takedowns, with the statements the law requires: the material was removed by mistake or misidentification, and consent to the jurisdiction of the court for the address. Maktaba sends the claimant a copy; unless the claimant says they went to court, the item can be restored 10 business days later.",
+      "ar": "يقدّم إشعارًا مضادًا لإحدى عمليات الإزالة في هذا المنزل، مع الإقرارات التي يشترطها القانون: أن المادة أُزيلت عن خطأ أو سوء تعرّف، والموافقة على اختصاص محكمة العنوان. ترسل مكتبة نسخة إلى صاحب الشكوى؛ وما لم يُبلغ بأنه لجأ إلى المحكمة، يمكن إعادة العنصر بعد 10 أيام عمل."
+    },
+    "/paths/~1tv~1broadcast~1moderation~1counter-notices/post/responses/201/description": {
+      "en": "Filed: its id and when the restore window opens.",
+      "ar": "قُدّم: معرّفه وموعد فتح نافذة الإعادة."
+    },
+    "/paths/~1tv~1broadcast~1moderation~1counter-notices/post/responses/400/description": {
+      "en": "A required element is missing (broadcast.counterNoticeIncomplete).",
+      "ar": "ينقص عنصر مطلوب (broadcast.counterNoticeIncomplete)."
+    },
+    "/paths/~1tv~1broadcast~1moderation~1counter-notices/post/responses/403/description": {
+      "en": "Admin only.",
+      "ar": "للمشرفين فقط."
+    },
+    "/paths/~1tv~1broadcast~1moderation~1counter-notices/post/responses/409/description": {
+      "en": "Already filed, not this home's takedown, the home is not claimed, or broadcasting is off.",
+      "ar": "قُدّم سابقًا، أو ليست عملية إزالة لهذا المنزل، أو المنزل غير مرتبط، أو البث متوقف."
+    },
+    "/paths/~1tv~1broadcast~1moderation~1counter-notices/post/responses/502/description": {
+      "en": "Maktaba Cloud could not be reached.",
+      "ar": "تعذّر الوصول إلى سحابة مكتبة."
+    },
+    "/paths/~1pairing~1cloud-assertion/post/summary": {
+      "en": "Approve a TV's code for a person on maktaba.tv",
+      "ar": "الموافقة على رمز تلفاز لشخص على maktaba.tv"
+    },
+    "/paths/~1pairing~1cloud-assertion/post/description": {
+      "en": "Called by Maktaba Cloud through the relay, with no sign-in on the home. A person signed in to Maktaba Cloud on maktaba.tv approved a TV's code for this home; the cloud sends a one-use assertion it signed with its key (pinned at claim) naming that cloud account, this home and the code. The home finds the user it linked to that account and approves the code as them, as `POST /api/pairing/cloud-approve` would; the TV gets that user's libraries and parental policy and, like every cloud code's TV, never acts as an admin and mints no credential of its own. An assertion that is not this cloud's, not for this home or this code, already used, or for an account no longer linked approves nothing. If the account is unlinked, or its user is linked to another account, before the TV redeems its grant, the TV gets no tokens; `POST /api/pairing/device/token` answers 410 with `reason` `cloud_link_changed`, as for an expired approval.",
+      "ar": "تستدعيه سحابة مكتبة عبر المُرحِّل، دون تسجيل دخول على المنزل. وافق شخص سجّل دخوله إلى سحابة مكتبة على maktaba.tv على رمز تلفاز لهذا المنزل؛ فترسل السحابة تأكيدًا يُستعمل مرة واحدة وقّعته بمفتاحها (المثبّت عند المطالبة) يسمّي ذلك الحساب السحابي وهذا المنزل والرمز. يجد المنزل المستخدم الذي ربطه بذلك الحساب ويوافق على الرمز باسمه، كما يفعل `POST /api/pairing/cloud-approve`؛ فينال التلفاز مكتبات ذلك المستخدم وسياسة الرقابة الأبوية الخاصة به، ولا يتصرف أبدًا كمدير ولا يصدر بيانات اعتماد خاصة به، كأي تلفاز برمز سحابي. ولا يوافق على شيء تأكيدٌ ليس من هذه السحابة، أو ليس لهذا المنزل أو لهذا الرمز، أو استُعمل من قبل، أو لحساب لم يعد مربوطًا. وإن أُلغي ربط الحساب، أو رُبط مستخدمه بحساب آخر، قبل أن يستعمل التلفاز منحته، فلا يحصل التلفاز على رموز دخول: يجيب `POST /api/pairing/device/token` بالرمز 410 مع `reason` بقيمة `cloud_link_changed`، كما لموافقة انتهت صلاحيتها."
+    },
+    "/paths/~1pairing~1cloud-assertion/post/requestBody/content/application~1json/schema/properties/code/description": {
+      "en": "The code the TV shows.",
+      "ar": "الرمز الذي يعرضه التلفاز."
+    },
+    "/paths/~1pairing~1cloud-assertion/post/requestBody/content/application~1json/schema/properties/assertion/description": {
+      "en": "The cloud's one-use assertion (purpose `tvcode`, its nonce the code).",
+      "ar": "تأكيد السحابة الذي يُستعمل مرة واحدة (غرضه `tvcode`، وقيمته الفريدة هي الرمز)."
+    },
+    "/paths/~1pairing~1cloud-assertion/post/responses/200/description": {
+      "en": "Approved; the TV signs in on its next poll of the cloud.",
+      "ar": "تمّت الموافقة؛ يسجّل التلفاز دخوله عند سؤاله التالي للسحابة."
+    },
+    "/paths/~1pairing~1cloud-assertion/post/responses/403/description": {
+      "en": "The assertion approves nothing here.",
+      "ar": "التأكيد لا يوافق على شيء هنا."
+    },
+    "/paths/~1pairing~1cloud-assertion/post/responses/404/description": {
+      "en": "The cloud holds no open code by that name.",
+      "ar": "لا تحمل السحابة رمزًا مفتوحًا بهذا الاسم."
+    },
+    "/paths/~1pairing~1cloud-assertion/post/responses/409/description": {
+      "en": "Someone approved the code first, or this home holds no Maktaba Cloud identity (`code`: `cloud_not_linked`).",
+      "ar": "وافق أحد على الرمز أولًا، أو لا يحمل هذا المنزل هوية في سحابة مكتبة (`code`: `cloud_not_linked`)."
+    },
+    "/paths/~1pairing~1cloud-assertion/post/responses/502/description": {
+      "en": "Maktaba Cloud is out of reach; nothing was approved.",
+      "ar": "سحابة مكتبة بعيدة المنال؛ لم تتمّ الموافقة على شيء."
     },
     "/paths/~1broadcast~1access/get/summary": {
       "en": "Who may watch the home's broadcast channels",
@@ -6412,158 +6564,6 @@
     "/paths/~1broadcast~1access~1invites~1{id}~1devices~1{pass}/delete/responses/502/description": {
       "en": "`cloud_unreachable`: Maktaba Cloud is out of reach.",
       "ar": "`cloud_unreachable`: تعذّر الوصول إلى سحابة مكتبة."
-    },
-    "/paths/~1cast~1grants/post/summary": {
-      "en": "Mint a cast grant for a Cast receiver",
-      "ar": "إصدار تصريح بثّ لجهاز استقبال Cast"
-    },
-    "/paths/~1cast~1grants/post/description": {
-      "en": "A signed-in sender (the Android Player, the Apple Player, the web) mints a cast grant for Maktaba's Cast receiver at cast.maktaba.tv, naming exactly one video (`video_id`) or one of the caller's own play queues (`queue_id`). The sender passes the grant to the receiver in the Cast load request's custom data, never the person's own token. The grant lasts at most six hours. With it, and only for the items it names, the receiver opens and keeps stream sessions (`POST /api/stream/sessions` and its `{id}` routes, progress and errors included), reads the video (`GET /api/videos/{id}`, its chapters, subtitles and poster) and walks the queue (`GET /api/me/play-queues/{id}`, `PUT /api/me/play-queues/{id}/current`); every other route and item answers 403 with `code` `cast_scope`. The grant acts as its user, read again on each request: the user's libraries now, and a restricted account's parental limit (with the minting sign-in's device age limit), so an item hidden since the mint answers 404. Send it as `Authorization: Bearer <grant>`. A home without this route (404) is older than the cast grant: a sender casts to Google's Default Media Receiver there. The guide is maktaba.dev's Casting page.",
-      "ar": "يُصدر المُرسِل المسجَّل دخوله (مشغّل Android أو مشغّل Apple أو الويب) تصريح بثّ لجهاز استقبال Cast الخاص بمكتبة على cast.maktaba.tv، يسمّي فيديو واحدًا بالضبط (`video_id`) أو إحدى قوائم التشغيل الخاصة بالمتصل (`queue_id`). يمرّر المُرسِل التصريح إلى جهاز الاستقبال في البيانات المخصّصة لطلب التحميل في Cast، ولا يمرّر أبدًا رمز الشخص نفسه. يدوم التصريح ست ساعات على الأكثر. وبه، وللعناصر التي يسمّيها فقط، يفتح جهاز الاستقبال جلسات البث ويحافظ عليها (`POST /api/stream/sessions` ومسارات `{id}` التابعة لها، بما فيها التقدّم والأخطاء)، ويقرأ الفيديو (`GET /api/videos/{id}` وفصوله وترجماته وملصقه)، ويتنقّل في القائمة (`GET /api/me/play-queues/{id}` و`PUT /api/me/play-queues/{id}/current`)؛ وكل مسار أو عنصر آخر يُجاب بـ 403 مع `code` بقيمة `cast_scope`. يعمل التصريح باسم مستخدمه، ويُقرأ من جديد مع كل طلب: مكتبات المستخدم الحالية، وحدّ الرقابة الأبوية للحساب المقيَّد (مع حدّ العمر الذي أعطاه جهاز تسجيل الدخول الذي أصدره)، فيُجاب عن عنصر أُخفي منذ الإصدار بـ 404. أرسله بصيغة `Authorization: Bearer <grant>`. المنزل الذي لا يملك هذا المسار (404) أقدم من تصريح البث: يبثّ المُرسِل هناك إلى جهاز الاستقبال الافتراضي من Google. الدليل هو صفحة البث على maktaba.dev."
-    },
-    "/paths/~1cast~1grants/post/responses/201/description": {
-      "en": "The grant.",
-      "ar": "التصريح."
-    },
-    "/paths/~1cast~1grants/post/responses/400/description": {
-      "en": "`video_id` is not an id.",
-      "ar": "قيمة `video_id` ليست معرّفًا."
-    },
-    "/paths/~1cast~1grants/post/responses/403/description": {
-      "en": "The caller may not mint a grant: a cast grant itself (`cast_scope`), the admin token, which is no person (`cast_needs_person`), or a sign-in through Maktaba Cloud (`cast_via_cloud`). Also a video in a library the caller was not given (`access-denied`).",
-      "ar": "لا يجوز للمتصل إصدار تصريح: تصريح بثّ بنفسه (`cast_scope`)، أو رمز المشرف الذي لا يمثّل شخصًا (`cast_needs_person`)، أو تسجيل دخول عبر Maktaba Cloud (`cast_via_cloud`). وكذلك فيديو في مكتبة لم تُمنح للمتصل (`access-denied`)."
-    },
-    "/paths/~1cast~1grants/post/responses/404/description": {
-      "en": "No such video or queue, a queue that is another person's, or a video the caller's parental limit hides (answered as a missing one).",
-      "ar": "لا يوجد فيديو أو قائمة بهذا المعرّف، أو القائمة لشخص آخر، أو الفيديو يخفيه حدّ الرقابة الأبوية للمتصل (يُجاب عنه كأنه غير موجود)."
-    },
-    "/paths/~1cast~1grants/post/responses/422/description": {
-      "en": "Neither or both of `video_id` and `queue_id`.",
-      "ar": "لم يُذكر `video_id` ولا `queue_id`، أو ذُكر كلاهما."
-    },
-    "/paths/~1cast~1grants/post/responses/503/description": {
-      "en": "The home has no signing key to mint with yet; ask again after `Retry-After`.",
-      "ar": "لا يملك المنزل بعدُ مفتاح توقيع يُصدر به؛ أعد الطلب بعد `Retry-After`."
-    },
-    "/components/schemas/CastGrantRequest/description": {
-      "en": "What is cast: exactly one of the two.",
-      "ar": "ما يُبثّ: واحد فقط من الاثنين."
-    },
-    "/components/schemas/CastGrantRequest/properties/video_id/description": {
-      "en": "The one video cast.",
-      "ar": "الفيديو الواحد الذي يُبثّ."
-    },
-    "/components/schemas/CastGrantRequest/properties/queue_id/description": {
-      "en": "One of the caller's own play queues (Play all, Shuffle): the receiver walks it.",
-      "ar": "إحدى قوائم التشغيل الخاصة بالمتصل (تشغيل الكل، الترتيب العشوائي): يتنقّل فيها جهاز الاستقبال."
-    },
-    "/components/schemas/CastGrant/description": {
-      "en": "A cast grant and what it names.",
-      "ar": "تصريح بثّ وما يسمّيه."
-    },
-    "/components/schemas/CastGrant/properties/grant/description": {
-      "en": "The grant, starting `cast_`: the receiver's bearer. Never logged, never shown.",
-      "ar": "التصريح، ويبدأ بـ `cast_`: رمز حامل لجهاز الاستقبال. لا يُسجَّل ولا يُعرض أبدًا."
-    },
-    "/components/schemas/CastGrant/properties/scope/description": {
-      "en": "Always `cast`.",
-      "ar": "دائمًا `cast`."
-    },
-    "/components/schemas/CastGrant/properties/expires_at/description": {
-      "en": "When the grant ends, at most six hours from the mint. A receiver lets the item playing then finish and shows that the cast has ended.",
-      "ar": "متى ينتهي التصريح، بعد ست ساعات من الإصدار على الأكثر. يترك جهاز الاستقبال العنصر الذي يُعرض حينها ينتهي، ثم يعرض أن البث انتهى."
-    },
-    "/components/schemas/CastGrant/properties/video_id/description": {
-      "en": "The video the grant names, when it names one.",
-      "ar": "الفيديو الذي يسمّيه التصريح، إن سمّى فيديو."
-    },
-    "/components/schemas/CastGrant/properties/queue_id/description": {
-      "en": "The play queue the grant names, when it names one.",
-      "ar": "قائمة التشغيل التي يسمّيها التصريح، إن سمّى قائمة."
-    },
-    "/paths/~1tv~1broadcast~1moderation/get/summary": {
-      "en": "Notices and reports about this home's channels",
-      "ar": "ملاحظات وبلاغات عن قنوات هذا المنزل"
-    },
-    "/paths/~1tv~1broadcast~1moderation/get/description": {
-      "en": "What Maktaba Cloud told this home about its published channels: each statement of reasons (a programme taken down after a copyright notice, with the claimant unless they asked for privacy, and whether a counter-notice can be filed), the strike warning, the end of broadcasting, a restore; the reports viewers sent about its content, without the reporter's email; and the publisher's active strikes against the limit. It also lists the takedowns this home applied from Maktaba's signed instructions. records is the cloud's answer, absent when the cloud was not reached (cloud says why).",
-      "ar": "ما أبلغت به سحابة مكتبة هذا المنزل عن قنواته المنشورة: كل بيان أسباب (برنامج أُزيل بعد إشعار بشأن حقوق النشر، مع اسم صاحب الشكوى ما لم يطلب الخصوصية، وهل يمكن تقديم إشعار مضاد)، وتحذير المخالفات، وانتهاء البث، والإعادة؛ والبلاغات التي أرسلها المشاهدون عن محتواه، دون بريد المُبلِّغ؛ ومخالفات الناشر السارية مقابل الحد. ويسرد أيضًا عمليات الإزالة التي طبّقها هذا المنزل من تعليمات مكتبة الموقَّعة. records هو جواب السحابة، ويغيب إن تعذّر الوصول إليها (ويبيّن cloud السبب)."
-    },
-    "/paths/~1tv~1broadcast~1moderation/get/responses/200/description": {
-      "en": "The cloud's records and the takedowns applied here.",
-      "ar": "سجلات السحابة وعمليات الإزالة المطبّقة هنا."
-    },
-    "/paths/~1tv~1broadcast~1moderation/get/responses/403/description": {
-      "en": "Admin only.",
-      "ar": "للمشرفين فقط."
-    },
-    "/paths/~1tv~1broadcast~1moderation/get/responses/409/description": {
-      "en": "Broadcasting is off on this home.",
-      "ar": "البث متوقف على هذا المنزل."
-    },
-    "/paths/~1tv~1broadcast~1moderation~1counter-notices/post/summary": {
-      "en": "File a counter-notice",
-      "ar": "تقديم إشعار مضاد"
-    },
-    "/paths/~1tv~1broadcast~1moderation~1counter-notices/post/description": {
-      "en": "Files a counter-notice to one of this home's takedowns, with the statements the law requires: the material was removed by mistake or misidentification, and consent to the jurisdiction of the court for the address. Maktaba sends the claimant a copy; unless the claimant says they went to court, the item can be restored 10 business days later.",
-      "ar": "يقدّم إشعارًا مضادًا لإحدى عمليات الإزالة في هذا المنزل، مع الإقرارات التي يشترطها القانون: أن المادة أُزيلت عن خطأ أو سوء تعرّف، والموافقة على اختصاص محكمة العنوان. ترسل مكتبة نسخة إلى صاحب الشكوى؛ وما لم يُبلغ بأنه لجأ إلى المحكمة، يمكن إعادة العنصر بعد 10 أيام عمل."
-    },
-    "/paths/~1tv~1broadcast~1moderation~1counter-notices/post/responses/201/description": {
-      "en": "Filed: its id and when the restore window opens.",
-      "ar": "قُدّم: معرّفه وموعد فتح نافذة الإعادة."
-    },
-    "/paths/~1tv~1broadcast~1moderation~1counter-notices/post/responses/400/description": {
-      "en": "A required element is missing (broadcast.counterNoticeIncomplete).",
-      "ar": "ينقص عنصر مطلوب (broadcast.counterNoticeIncomplete)."
-    },
-    "/paths/~1tv~1broadcast~1moderation~1counter-notices/post/responses/403/description": {
-      "en": "Admin only.",
-      "ar": "للمشرفين فقط."
-    },
-    "/paths/~1tv~1broadcast~1moderation~1counter-notices/post/responses/409/description": {
-      "en": "Already filed, not this home's takedown, the home is not claimed, or broadcasting is off.",
-      "ar": "قُدّم سابقًا، أو ليست عملية إزالة لهذا المنزل، أو المنزل غير مرتبط، أو البث متوقف."
-    },
-    "/paths/~1tv~1broadcast~1moderation~1counter-notices/post/responses/502/description": {
-      "en": "Maktaba Cloud could not be reached.",
-      "ar": "تعذّر الوصول إلى سحابة مكتبة."
-    },
-    "/paths/~1pairing~1cloud-assertion/post/summary": {
-      "en": "Approve a TV's code for a person on maktaba.tv",
-      "ar": "الموافقة على رمز تلفاز لشخص على maktaba.tv"
-    },
-    "/paths/~1pairing~1cloud-assertion/post/description": {
-      "en": "Called by Maktaba Cloud through the relay, with no sign-in on the home. A person signed in to Maktaba Cloud on maktaba.tv approved a TV's code for this home; the cloud sends a one-use assertion it signed with its key (pinned at claim) naming that cloud account, this home and the code. The home finds the user it linked to that account and approves the code as them, as `POST /api/pairing/cloud-approve` would; the TV gets that user's libraries and parental policy and, like every cloud code's TV, never acts as an admin and mints no credential of its own. An assertion that is not this cloud's, not for this home or this code, already used, or for an account no longer linked approves nothing. If the account is unlinked, or its user is linked to another account, before the TV redeems its grant, the TV gets no tokens; `POST /api/pairing/device/token` answers 410 with `reason` `cloud_link_changed`, as for an expired approval.",
-      "ar": "تستدعيه سحابة مكتبة عبر المُرحِّل، دون تسجيل دخول على المنزل. وافق شخص سجّل دخوله إلى سحابة مكتبة على maktaba.tv على رمز تلفاز لهذا المنزل؛ فترسل السحابة تأكيدًا يُستعمل مرة واحدة وقّعته بمفتاحها (المثبّت عند المطالبة) يسمّي ذلك الحساب السحابي وهذا المنزل والرمز. يجد المنزل المستخدم الذي ربطه بذلك الحساب ويوافق على الرمز باسمه، كما يفعل `POST /api/pairing/cloud-approve`؛ فينال التلفاز مكتبات ذلك المستخدم وسياسة الرقابة الأبوية الخاصة به، ولا يتصرف أبدًا كمدير ولا يصدر بيانات اعتماد خاصة به، كأي تلفاز برمز سحابي. ولا يوافق على شيء تأكيدٌ ليس من هذه السحابة، أو ليس لهذا المنزل أو لهذا الرمز، أو استُعمل من قبل، أو لحساب لم يعد مربوطًا. وإن أُلغي ربط الحساب، أو رُبط مستخدمه بحساب آخر، قبل أن يستعمل التلفاز منحته، فلا يحصل التلفاز على رموز دخول: يجيب `POST /api/pairing/device/token` بالرمز 410 مع `reason` بقيمة `cloud_link_changed`، كما لموافقة انتهت صلاحيتها."
-    },
-    "/paths/~1pairing~1cloud-assertion/post/requestBody/content/application~1json/schema/properties/code/description": {
-      "en": "The code the TV shows.",
-      "ar": "الرمز الذي يعرضه التلفاز."
-    },
-    "/paths/~1pairing~1cloud-assertion/post/requestBody/content/application~1json/schema/properties/assertion/description": {
-      "en": "The cloud's one-use assertion (purpose `tvcode`, its nonce the code).",
-      "ar": "تأكيد السحابة الذي يُستعمل مرة واحدة (غرضه `tvcode`، وقيمته الفريدة هي الرمز)."
-    },
-    "/paths/~1pairing~1cloud-assertion/post/responses/200/description": {
-      "en": "Approved; the TV signs in on its next poll of the cloud.",
-      "ar": "تمّت الموافقة؛ يسجّل التلفاز دخوله عند سؤاله التالي للسحابة."
-    },
-    "/paths/~1pairing~1cloud-assertion/post/responses/403/description": {
-      "en": "The assertion approves nothing here.",
-      "ar": "التأكيد لا يوافق على شيء هنا."
-    },
-    "/paths/~1pairing~1cloud-assertion/post/responses/404/description": {
-      "en": "The cloud holds no open code by that name.",
-      "ar": "لا تحمل السحابة رمزًا مفتوحًا بهذا الاسم."
-    },
-    "/paths/~1pairing~1cloud-assertion/post/responses/409/description": {
-      "en": "Someone approved the code first, or this home holds no Maktaba Cloud identity (`code`: `cloud_not_linked`).",
-      "ar": "وافق أحد على الرمز أولًا، أو لا يحمل هذا المنزل هوية في سحابة مكتبة (`code`: `cloud_not_linked`)."
-    },
-    "/paths/~1pairing~1cloud-assertion/post/responses/502/description": {
-      "en": "Maktaba Cloud is out of reach; nothing was approved.",
-      "ar": "سحابة مكتبة بعيدة المنال؛ لم تتمّ الموافقة على شيء."
     }
   }
 }

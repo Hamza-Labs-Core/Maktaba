@@ -305,6 +305,14 @@ build fails when the two differ.
 
 ### Fixed
 
+- **Roku sends the cloud code's grant only to an address its certificate check proves.** After
+  a phone approved the code, a plain HTTP or raw IP address the cloud listed could still get the
+  grant when whatever answered there listed the home's relay among its addresses; anyone on the
+  TV's network could answer that way and then redeem the grant at the real home. The channel now
+  tries only the cloud's HTTPS addresses by host name (the relay, the home's direct name, a LAN
+  name under its certificate), and never contacts a plain HTTP or raw IP address for the cloud
+  code.
+
 - **Roku's player stops cleanly when a child's time is up or a title is hidden (Epic 58, story
   58.14).** When the home ends a restricted account's watching time, before or during a video,
   the Roku channel stops the video and shows Time's up for today (or Not watching time yet),
@@ -785,6 +793,14 @@ build fails when the two differ.
 
 ### Security
 
+- **Broadcast viewer analytics hide small groups however the period is chosen (Epic 50, story
+  50.28).** A country or device with fewer than 5 viewers was folded into "Other" over the whole
+  period shown, so two overlapping periods one hour apart could be compared to recover the small
+  groups of that hour. The fold is now decided hour by hour and a period adds its hours, so no
+  period, and no difference of two periods, names a group under 5. The cloud's business metrics
+  (viewers, the edge cost estimate and the budget) are served only on a private metrics listener
+  on a loopback or private address, no longer to any request whose Host header is an IP address.
+
 - **A TV approved on maktaba.tv gets no sign-in once its cloud account is unlinked (Epic 58,
   story 58.03).** When the cloud account that approved a TV's code was unlinked from the home, or
   the home user was linked to another cloud account, before the TV collected its sign-in, the
@@ -915,6 +931,14 @@ build fails when the two differ.
   alerted.
 
 ### Added
+
+- **Android TV, Google TV and Fire TV sign in with a cloud code (Epic 58, stories 58.03 and
+  58.05).** The TV app's home picker now opens on a code from Maktaba Cloud with its QR code;
+  a phone signed in to the home approves it from Approve a TV or device, on any network, and
+  the TV opens that home signed in as the approver, restricted (never an admin). The homes on
+  the TV's network and a typed address stay beside it. The grant goes only to an address whose
+  certificate proves the home (never a plain http or raw IP address, where anyone could answer);
+  the poll secret and the grant are never stored, put in a URL or logged.
 
 - **Roku's sign-in shows a QR (Epic 58, story 58.12).** The Roku channel's code screen now shows
   a QR beside the code, as the other TV apps do: a phone's camera opens the approve page with
@@ -2248,6 +2272,20 @@ build fails when the two differ.
 
 ### Added
 
+- **Cast to a TV from the iPhone and iPad Player (Epic 58, story 58.06).** Beside AirPlay, the
+  player's **Cast** button lists Google Cast TVs (a Chromecast, a Google TV, a TV with
+  Chromecast built in) next to AirPlay, which stays first. Before the first cast, a screen
+  explains that the app needs to see devices on the Wi-Fi, then iOS asks. The phone mints a
+  cast grant for the video and hands it to Maktaba's receiver, which plays it and reports
+  progress itself: the phone stops posting its own, so with the phone locked Continue Watching
+  follows the TV, and on return the mini controller (play, pause, ±10 s, **Stop casting**)
+  shows where the TV is. A home older than the cast grant gets the plain signed stream and a
+  line saying the TV shows Google's player; a refused grant is shown and nothing is cast; with
+  no TV found, the list says the TV must be on the same Wi-Fi and suggests AirPlay. Cast shows
+  only where the home has an HTTPS address the TV can reach, and only once the receiver's ID is
+  set in `shared/cast/app.json` (the build reads it into `apps/apple/Config/Cast.xcconfig`, and
+  adds the Cast Bonjour services then); the Mac and the Apple TV have no Cast.
+
 - **Approve a TV's code on maktaba.tv (story 58.03).** The QR code a TV shows beside its cloud
   code opens maktaba.tv/tv, which forwards to Maktaba Cloud: a person signed in there sees the
   TV's platform and country, asks themselves **Is this your TV?**, picks one of the homes that
@@ -2893,17 +2931,6 @@ build fails when the two differ.
   remote; Fire TV and Android TV keep the guardian's PIN. A deep link to a hidden item shows the
   not-available line and asks nothing. English and Arabic, mirrored.
 
-- **A published channel airs only what may be shared online (Epic 50, story 50.23).** While a
-  Live TV channel is broadcast, it airs only publishable items: the household's own recordings,
-  items cleared with a proof link, Creative Commons Attribution videos (read from YouTube at
-  intake and at every refresh), and sources the household recorded permission for, with the link
-  where the source allows sharing. The Broadcast page shows how much of each channel's next 7
-  days may air and the sources that would add most, each with Record permission. Turning the
-  limit off takes a typed confirmation. Each channel can play only in chosen countries or
-  everywhere but them, and Maktaba's own deny list applies to every channel; a viewer outside
-  sees that the channel isn't available in their country. An item that loses its permission
-  plays the "Not available online" card until the schedule is rebuilt.
-
 - **Copyright notices and reports about broadcast channels (Epic 50, story 50.24).** Anyone can
   send Maktaba a copyright notice or report a published channel, through forms that check each
   required element and stop bots; an urgent report (illegal content) pages the on-call admin. A
@@ -2964,6 +2991,34 @@ build fails when the two differ.
   of an error. The home publishes each channel's guide, name, number and logo to the edge. A TV
   can be paired by a QR code that opens a page on the guest's phone; the apps' **Watch a
   broadcast** screens follow.
+
+- **Roku shows a child how much watching time is left, and warns before it ends (Epic 57,
+  story 57.15, on Roku).** On a restricted account, once 15 minutes or fewer are left today the
+  Roku player shows "12 minutes left today" in the top corner over the video, and "Watching
+  ends in 5 minutes." and then "1 minute" for about 10 seconds each, as Android TV does. The
+  number is always the home's own answer, asked every 30 seconds (every 10 in the last six
+  minutes). Arabic uses its plural forms (دقيقة واحدة، دقيقتان، 5 دقائق، 12 دقيقة), and the Roku
+  catalog and its check now carry plural strings in both languages.
+
+- **Samsung and LG TVs sign in with a code from Maktaba Cloud (Epic 58, story 58.09).** The
+  Samsung and LG app now opens on a code with a QR, which works on any network: scan it, or open
+  maktaba.tv/tv, or in Maktaba on a phone signed in to the home choose Profile → Approve a TV or
+  device, and the TV opens that home, reached by the best address the home gives (on the same
+  network first, through Maktaba's relay from anywhere else). A TV signed in this way can watch,
+  never run the home, whoever approved it. Find on this network and typing the home's address
+  stay under the code as other ways. The app built with the home's UI inside it signs in the
+  same way.
+
+- **A published channel airs only what may be shared online (Epic 50, story 50.23).** While a
+  Live TV channel is broadcast, it airs only publishable items: the household's own recordings,
+  items cleared with a proof link, Creative Commons Attribution videos (read from YouTube at
+  intake and at every refresh), and sources the household recorded permission for, with the link
+  where the source allows sharing. The Broadcast page shows how much of each channel's next 7
+  days may air and the sources that would add most, each with Record permission. Turning the
+  limit off takes a typed confirmation. Each channel can play only in chosen countries or
+  everywhere but them, and Maktaba's own deny list applies to every channel; a viewer outside
+  sees that the channel isn't available in their country. An item that loses its permission
+  plays the "Not available online" card until the schedule is rebuilt.
 
 ### Changed
 
@@ -3917,6 +3972,27 @@ build fails when the two differ.
   by host name (the relay, the home's direct name) its certificate proves the home; at a plain
   HTTP or raw IP address, the home there counts only when it lists one of those names among its
   addresses. Another home there is passed over and never gets the grant.
+
+- **Roku no longer shows yesterday's no to more time (Epic 58, story 58.14).** When a parent
+  said no to a request for more time on an earlier day, Roku's time's-up page still said A
+  parent said no. A no to more time is about its own day: once the request's end has passed,
+  the page offers Ask for more time again, as the web, Android TV and Apple TV already do. A no
+  given the same day still shows, with Ask again.
+
+- **Playing at home costs the Apple apps less, and the Apple TV's live player always lets go.**
+  The Apple apps read a home's streams through a small proxy inside the app. It now passes
+  each stream on in the pieces it arrives in, where it used to handle every byte on its own
+  (about a quarter of the processor time for the same stream, measured on a Mac), at a lower
+  priority than the remote. It holds the home back while the player reads slowly or is paused,
+  so memory does not grow with the file, and the app does not time a pause: a paused film keeps its
+  connection for as long as the home keeps its own; it ends the home's request when the player drops a connection mid-stream (a
+  channel change, a seek), and serves at most 16 requests at once. A stream the home cuts
+  short reaches the player as an error, never as a whole file. On Apple TV, Menu leaves the
+  live player in at most two presses whatever the channel is doing (starting, buffering,
+  failed, time's up), unless the viewer changed channel, pressed Select or asked for the
+  banner in between; the picture and sound stop at
+  once without waiting for the home, and a picture that keeps stalling writes at most one log
+  line a second.
 
 ## [0.2.0] - 2026-10-19
 
