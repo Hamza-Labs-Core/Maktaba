@@ -162,6 +162,15 @@ run with `set: nightly`) runs the full set. The verdict job writes one report (e
 verdict and timings, the fan-out table, the latency percentiles) to the run's summary and to the
 `broadcast-report` artifact. Every scenario's stack log is kept in its own artifact.
 
+Under the fan-out table, a second table says where a slow fetch's time went at each step: the
+copy rung's time to first byte, the edge Worker's own answer time (the edge counts each segment
+answer in buckets, `/__rehearsal/counters`), how late the viewers' playlist reloads started (the
+load generator's own delay), the CPU the edge, the home and the viewers used (in cores, from the
+containers' cgroups and the test process), and the runner's busy and stolen share. The edge,
+every location and the Durable Objects share one workerd thread in the rehearsal, so anything
+that holds a Durable Object's thread (a heartbeat that rewrote a channel's whole state did, at
+1,000 viewers) shows as slow segment fetches there.
+
 A release tag needs the last nightly run on the tagged commit's broadcast code green
 ([updates.md](updates.md#how-a-release-is-made), "The broadcast rehearsal gates the tag too"). A
 nightly-set run is named `Broadcast rehearsal nightly of <sha>` so the release session can find

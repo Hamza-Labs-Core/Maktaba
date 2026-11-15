@@ -154,6 +154,24 @@ func TestT01PlayersAsRealOnes(t *testing.T) {
 	if sum.Errors != 0 || sum.States[StateLive] != 10 || sum.Fetch.N != sum.Segments || sum.Requests["master"] != 10 {
 		t.Fatalf("summary: %+v", sum)
 	}
+	// where a fetch's time went: each segment's time to its headers, never past its last byte,
+	// and the playlist reloads' delay past their due time (a timer fires after it is due)
+	if sum.FirstByte.N != sum.Fetch.N || sum.FirstByte.Max > sum.Fetch.Max || sum.Late.N == 0 {
+		t.Fatalf("first byte %+v, fetch %+v, reloads late %+v", sum.FirstByte, sum.Fetch, sum.Late)
+	}
+	for _, p := range fl.Players() {
+		st := p.Stats()
+		for i := range st.FirstByte {
+			if st.FirstByte[i] > st.Fetch[i] {
+				t.Fatalf("segment %d: first byte %v after its last %v", i, st.FirstByte[i], st.Fetch[i])
+			}
+		}
+	}
+	// a step's own numbers: what was recorded after the earlier snapshot
+	before := fl.Snapshot()
+	if s := Summarise(fl.Snapshot(), before); s.FirstByte.N != 0 || s.Late.N != 0 {
+		t.Fatalf("nothing new, yet %+v %+v", s.FirstByte, s.Late)
+	}
 }
 
 // An off-air answer is the off-air card, not an error; the slate is a state of its own.

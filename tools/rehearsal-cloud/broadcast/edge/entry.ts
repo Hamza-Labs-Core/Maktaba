@@ -29,7 +29,17 @@ interface Counters {
   /** `blocked` and `error` points by their code ("blocked:revoked", "error:edge_error") */
   ae_by_code: Record<string, number>;
   requests: number;
+  /**
+   * viewers' segment GETs answered 200, by how long this Worker took from the request to its
+   * response (the edge's own answer time: the cache, R2 and the Durable Object, not the body's
+   * transfer nor the client's queue), counted in SEG_ANSWER_BOUNDS_MS buckets (the last is
+   * longer than every bound)
+   */
+  seg_answer_ms: number[];
 }
+
+/** The answer-time buckets' upper bounds, in ms (stack_test.go segAnswerBounds, the same). */
+const SEG_ANSWER_BOUNDS_MS = [5, 10, 25, 50, 100, 250, 500, 1000, 1500, 2500, 5000];
 
 const fresh = (): Counters => ({
   r2_get: 0,
@@ -44,7 +54,15 @@ const fresh = (): Counters => ({
   ae_ingest_glass: 0,
   ae_by_code: {},
   requests: 0,
+  seg_answer_ms: new Array(SEG_ANSWER_BOUNDS_MS.length + 1).fill(0),
 });
+
+/** recordSegAnswer counts one segment answer in its bucket. */
+function recordSegAnswer(ms: number): void {
+  let i = SEG_ANSWER_BOUNDS_MS.findIndex((b) => ms <= b);
+  if (i < 0) i = SEG_ANSWER_BOUNDS_MS.length;
+  counts.seg_answer_ms[i]++;
+}
 let counts = fresh();
 
 /** One Analytics Engine point as written, with when (this isolate's clock) and its order. */
@@ -218,11 +236,15 @@ export default {
     counts.requests++;
     const ingestPut = request.method === "PUT" && url.pathname.startsWith("/v1/ingest/");
     if (ingestPut) counts.ingest_put++;
+    const segGet = request.method === "GET" && url.pathname.endsWith(".ts");
+    // Date.now() moves on I/O in a Worker: this spans the cache, R2 and Durable Object waits
+    const t0 = Date.now();
     const res = await (worker as ExportedHandler<Env>).fetch!(
       request as Request<unknown, IncomingRequestCfProperties>,
       wrapEnv(env),
       ctx
     );
+    if (segGet && res.status === 200) recordSegAnswer(Date.now() - t0);
     if (ingestPut && res.status === 201) {
       counts.ingest_put_created++;
       const rung = url.pathname.split("/")[4] ?? "";
