@@ -295,8 +295,7 @@ func (e *burstEdge) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // A rung catching up after a slow edge (8 segments waiting, the most kept on disk) sends each
-// once: its PUTs are paced under the edge's burst limit, so none draws a 429 and a second PUT
-// (the nightly fan-out's 1,000-viewer failure).
+// once: its PUTs are paced under the edge's burst limit, so none draws a 429 and a second PUT.
 func TestUploaderCatchUpStaysUnderEdgeBurst(t *testing.T) {
 	clock := &lockedClock{t: time.Unix(1_800_000_000, 0)}
 	edge := &burstEdge{clock: clock, at: map[string][]time.Time{}, tries: map[string]int{}}
@@ -429,5 +428,84 @@ func TestUploaderRetriesRealFailures(t *testing.T) {
 				t.Fatalf("retried after %v, before the edge's Retry-After %v", gap, tc.least)
 			}
 		})
+	}
+}
+
+// roundTrips counts the uploader's requests as the rehearsal home's proxy does: around the
+// transport, so a replay inside the transport is one round trip.
+type roundTrips struct {
+	next http.RoundTripper
+	mu   sync.Mutex
+	n    map[string]int
+	errs int
+}
+
+func (c *roundTrips) RoundTrip(req *http.Request) (*http.Response, error) {
+	resp, err := c.next.RoundTrip(req)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.n[req.URL.Path]++
+	if err != nil {
+		c.errs++
+	}
+	return resp, err
+}
+
+// A pooled connection the edge closed before answering (a busy edge resetting idle keep-alive
+// connections) is replayed on a fresh connection inside the transport: the uploader makes one
+// PUT of the segment and the edge stores it once (the nightly fan-out's duplicates at 1,000
+// viewers: each a "connection reset by peer", then a 201).
+func TestUploaderResetConnectionIsOnePut(t *testing.T) {
+	var mu sync.Mutex
+	seen := map[string]int{}
+	stored := map[string]int{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		mu.Lock()
+		seen[r.URL.Path]++
+		first := seen[r.URL.Path] == 1
+		mu.Unlock()
+		// segment 2's first try arrives on the connection segment 1 left idle: the edge drops it
+		// unanswered, as Miniflare did under 1,000 viewers
+		if strings.HasSuffix(r.URL.Path, "/2.ts") && first {
+			conn, _, err := w.(http.Hijacker).Hijack()
+			if err == nil {
+				if tc, ok := conn.(interface{ SetLinger(int) error }); ok {
+					_ = tc.SetLinger(0) // a reset, not a clean close
+				}
+				_ = conn.Close()
+			}
+			return
+		}
+		mu.Lock()
+		stored[r.URL.Path]++
+		mu.Unlock()
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer srv.Close()
+	rt := &roundTrips{next: &http.Transport{}, n: map[string]int{}}
+	clock := &lockedClock{t: time.Unix(1_800_000_000, 0)}
+	up := lockedUploader(srv.URL, clock)
+	up.HTTP = &http.Client{Transport: rt}
+	dir := t.TempDir()
+	for i := 1; i <= 2; i++ {
+		path := filepath.Join(dir, fmt.Sprintf("%d.ts", i))
+		_ = os.WriteFile(path, []byte(fmt.Sprintf("seg-%d", i)), 0o600)
+		if up.Put(context.Background(), Segment{Rung: "src", Seq: int64(i), Path: path, Duration: 4}) != Sent {
+			t.Fatalf("segment %d not sent", i)
+		}
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if seen["/v1/ingest/edge1/src/2.ts"] != 2 {
+		t.Fatalf("the reset never happened: the edge saw segment 2 %d times", seen["/v1/ingest/edge1/src/2.ts"])
+	}
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	if rt.n["/v1/ingest/edge1/src/2.ts"] != 1 || rt.errs != 0 {
+		t.Fatalf("the uploader PUT segment 2 %d times (%d errors)", rt.n["/v1/ingest/edge1/src/2.ts"], rt.errs)
+	}
+	if stored["/v1/ingest/edge1/src/2.ts"] != 1 {
+		t.Fatalf("segment 2 stored %d times", stored["/v1/ingest/edge1/src/2.ts"])
 	}
 }

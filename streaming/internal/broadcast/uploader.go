@@ -233,6 +233,13 @@ func (u *Uploader) try(ctx context.Context, seg Segment, body []byte, hash strin
 	req.Header.Set("Content-Type", "video/mp2t")
 	req.Header.Set("X-Maktaba-Time", strconv.FormatInt(u.now().UnixMilli(), 10))
 	req.Header.Set("X-Maktaba-Body-SHA256", hash)
+	// The edge stores a segment once per rung, seq and body (a replay answers 200 duplicate),
+	// so the PUT is idempotent; saying so lets Go's transport replay it on a fresh connection
+	// when a pooled one turns out closed by the edge before any answer (a busy edge resets idle
+	// keep-alive connections). Without it that reset reached this loop as a failure and the
+	// segment went a second time (the nightly fan-out at 1,000 viewers: 8 PUTs, each a
+	// "connection reset by peer" then a 201).
+	req.Header.Set("Idempotency-Key", fmt.Sprintf("%s/%s/%d/%s", cr.Channel, seg.Rung, seg.Seq, hash[:16]))
 	req.Header.Set("X-Maktaba-Duration", strconv.FormatFloat(seg.Duration, 'f', 3, 64))
 	if !seg.PDT.IsZero() {
 		req.Header.Set("X-Maktaba-Segment-Time", strconv.FormatInt(seg.PDT.UnixMilli(), 10))
