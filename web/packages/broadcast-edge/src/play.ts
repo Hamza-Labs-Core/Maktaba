@@ -399,6 +399,20 @@ export async function channelState(env: Env, ch: string): Promise<ChannelStatus>
   return env.CHANNEL.get(env.CHANNEL.idFromName(ch)).status();
 }
 
+/**
+ * channelViewer counts a session as the channel's viewer (a play or a heartbeat) and answers the
+ * channel's state: an on-demand channel's first viewer wakes the home, and the channel says
+ * `waiting` (tuning) until its first segment (50.22 §2).
+ */
+export async function channelViewer(
+  env: Env,
+  ch: string,
+  session: string,
+  mode: Mode
+): Promise<ChannelStatus> {
+  return env.CHANNEL.get(env.CHANNEL.idFromName(ch)).viewer(session, mode);
+}
+
 async function planOf(env: Env, pub: string): Promise<PlanView | null> {
   const p = await env.PUBLISHER.get(env.PUBLISHER.idFromName(pub)).plan();
   if (!p) return null;
@@ -465,8 +479,9 @@ async function play(request: Request, env: Env): Promise<Response> {
       expires_at: new Date(expS * 1000).toISOString(),
       refresh_after: REFRESH_AFTER_S,
       state: r.mode,
-      // the channel itself: live, waiting (tuning), offline_slate, off_air (50.27 §3)
-      channel_state: await channelState(env, ch),
+      // the channel itself: live, waiting (tuning: an on-demand channel waking), offline_slate,
+      // off_air (50.27 §3)
+      channel_state: await channelViewer(env, ch, r.session, r.mode),
       neighbours,
     },
     headers
@@ -487,7 +502,7 @@ async function beat(request: Request, env: Env, session: string): Promise<Respon
     state: r.mode,
     concurrent: r.concurrent,
     refresh_after: REFRESH_AFTER_S,
-    channel_state: await channelState(env, r.ch),
+    channel_state: await channelViewer(env, r.ch, session, r.mode),
   };
   if (r.refresh) {
     const expS = Math.floor(now() / 1000) + TOKEN_TTL_S;

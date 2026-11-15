@@ -1,7 +1,7 @@
 // Story 50.26: viewer access. T01 invites, T02 short codes, T03 Turnstile, T04 app attestation,
 // T05 play and beat, T06 limits, T07 no payment route, T08 1,000 sessions for 10 minutes,
 // T09 the viewer strings in English and Arabic; and the acceptance criteria.
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { advanceClock, now, resetClock } from "../src/clock";
 import type { Env } from "../src/env";
 import {
@@ -25,6 +25,7 @@ import {
   control,
   E,
   INGEST,
+  ingestToken,
   installList,
   LIVE,
   newChannel,
@@ -904,5 +905,31 @@ describe("the access control posts", () => {
     expect((await access(pub, { version: 50 })).status).toBe(200);
     expect((await access(pub, { version: 49 })).status).toBe(409);
     expect((await access(pub, { channels: "nope" })).status).toBe(400);
+  });
+});
+
+describe("on demand through play (50.22 §2)", () => {
+  it("a play of an asleep on-demand channel wakes the home and answers channel_state waiting", async () => {
+    const s = await setup();
+    const res = await call(`${INGEST}/v1/ingest/ws`, {
+      headers: {
+        Upgrade: "websocket",
+        Authorization: `Bearer ${await ingestToken({ ch: s.ch, pub: s.pub })}`,
+        "X-Maktaba-Time": String(now()),
+        "X-Maktaba-Mode": "on_demand",
+      },
+    });
+    const ws = res.webSocket!;
+    const got: string[] = [];
+    ws.addEventListener("message", (e) => got.push(String(JSON.parse(String(e.data)).type)));
+    ws.accept();
+    const { r, j } = await playWith(s, s.ch, await guest(s));
+    expect(r.status).toBe(200);
+    expect(j.channel_state).toBe("waiting");
+    await vi.waitFor(() => expect(got).toContain("wake"));
+    // its heartbeat answers waiting until the first segment
+    const b = await beatOf(s.pub, j.session_id as string);
+    expect(b.j.channel_state).toBe("waiting");
+    ws.close();
   });
 });

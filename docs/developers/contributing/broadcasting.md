@@ -103,10 +103,15 @@ outside with `451 geo_blocked`.
   disk.
 - **State.** Every 10 s it posts the qualities' attributes for the master playlist, and writes
   its report (segments sent, restarts) to `broadcast_channels.report`.
-- **Control socket.** One outbound WebSocket per channel, reconnected with jitter. `wake` starts
-  an on-demand channel; `sleep` stops it 5 minutes later. Until the edge has sent either, an
-  on-demand channel runs as if always on, so a published channel is never dark. `revoked`, `plan_off` and `restored`
-  change the channel's state; `limits` removes qualities the plan no longer allows.
+- **Control socket.** One outbound WebSocket per channel, reconnected with jitter. Its connect
+  names the channel's mode (`X-Maktaba-Mode: always_on` or `on_demand`). The edge sends an
+  on-demand channel `wake` when its first viewer arrives (a play, a master playlist or a
+  heartbeat), and `sleep` once the last has gone (no heartbeat for 150 s); the channel starts at
+  `wake` and stops 5 minutes after `sleep`. An on-demand channel sends nothing until a `wake`,
+  and an always-on channel never gets `sleep`. A reconnecting home hears `wake` again while
+  viewers watch. `revoked`, `plan_off` and `restored` change the channel's state; `limits` names
+  the qualities to send (the plan's count, and only the lowest in `lowest` mode once no `full`
+  viewer is left; an empty list means all).
 - **Slate.** Once per token it makes a 4 s offline card (the channel's name and the offline
   words in English and Arabic) and uploads it. The texts are read from files, never put in the
   filter graph.

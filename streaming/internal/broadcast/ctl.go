@@ -84,8 +84,6 @@ type Ctl struct {
 	limits   map[uuid.UUID][]string
 	wake     chan struct{}
 	slateFor map[uuid.UUID]string // the token a channel's slate was uploaded with
-	// demandAware: the edge has sent a wake or a sleep (it tells demand)
-	demandAware bool
 }
 
 type session struct {
@@ -185,11 +183,11 @@ func (c *Ctl) wanted(j Job, now time.Time) bool {
 	if j.State != "live" || j.Creds.Token == "" || (!j.Creds.ExpiresAt.IsZero() && !now.Before(j.Creds.ExpiresAt)) {
 		return false
 	}
-	// on demand needs an edge that tells demand: until one has (a wake or a sleep), an
-	// on-demand channel runs as if always on, so a published channel is never dark
-	if j.Mode != "on_demand" || !c.demandAware {
+	if j.Mode != "on_demand" {
 		return true
 	}
+	// on demand: sending from the edge's wake (a first viewer) to the grace after its sleep;
+	// the control socket names the mode, so the edge wakes it whenever a viewer arrives
 	if _, ok := c.woken[j.Channel]; !ok {
 		return false
 	}
@@ -321,16 +319,14 @@ func (c *Ctl) Event(ctx context.Context, ch uuid.UUID, ev Event) {
 	switch ev.Type {
 	case "wake":
 		c.mu.Lock()
-		c.demandAware = true
 		c.woken[ch] = c.now()
 		delete(c.sleepAt, ch)
 		c.mu.Unlock()
 		c.log().Info("broadcast: the edge woke the channel", "channel", ch, "event", "broadcast_wake")
 	case "sleep":
 		c.mu.Lock()
-		c.demandAware = true
 		if _, ok := c.woken[ch]; ok || c.running[ch] != nil {
-			// running (woken, or on the fallback before the edge told demand): the grace first
+			// running: the grace first
 			c.woken[ch] = c.now()
 			c.sleepAt[ch] = c.now().Add(grace)
 		}

@@ -40,7 +40,7 @@ channel's number.
 | State | When | What the page does |
 |---|---|---|
 | live | the channel plays | plays |
-| tuning | the channel is waking (on demand) | plays as soon as it starts; "Starting the channel…" |
+| tuning | the channel is waking (on demand): the first guest woke the home, which sends its first segments within about 15 seconds | plays as soon as it starts; "Starting the channel…" |
 | offline | the home is offline | the slate plays, with "This channel's home is offline…" and no error |
 | off air | the home is not broadcasting it | a note and Try again |
 | full | the channel or publisher is at its viewer limit, or the network has too many devices | a note and Try again |
