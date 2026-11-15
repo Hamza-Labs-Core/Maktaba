@@ -18,6 +18,8 @@ const eventsSchema = readFileSync(
   "../../../cloud/internal/broadcast/testdata/events_schema.json",
   "utf8"
 );
+// story 50.27 §3: the guest states every app maps the same way (shared/broadcast)
+const viewerStates = readFileSync("../../../shared/broadcast/viewer-states.json", "utf8");
 // the pinned hls.js the watch pages load from jsDelivr: the npm package's own file and version
 // (test/hls.test.ts checks the page's integrity hash against these bytes)
 const hlsJS = readFileSync("node_modules/hls.js/dist/hls.min.js", "utf8");
@@ -99,6 +101,7 @@ export default defineConfig({
           TEST_INVITE_VECTORS: inviteVectors,
           TEST_EVENTS_SCHEMA: eventsSchema,
           TEST_HLS_JS: hlsJS,
+          TEST_VIEWER_STATES: viewerStates,
           TEST_HLS_VERSION: hlsVersion ?? "",
           TURNSTILE_SECRET: "test-turnstile-secret",
         },

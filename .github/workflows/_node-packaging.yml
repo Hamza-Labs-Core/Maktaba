@@ -194,7 +194,8 @@ jobs:
             tools/release/pkg-repo.sh tools/release/pkg-repo-test.sh tools/release/homebrew-tap.sh \
             tools/release/homebrew-tap-test.sh tools/release/play-version.sh tools/release/play-version-test.sh \
             tools/release/cloud-guard.sh tools/release/cloud-guard-test.sh \
-            tools/release/postgres-cdn.sh tools/release/postgres-cdn-test.sh
+            tools/release/postgres-cdn.sh tools/release/postgres-cdn-test.sh \
+            tools/release/gh-retry.sh tools/release/gh-retry-test.sh
       - name: install-node.sh dry runs
         run: deploy/packaging/node/tests/install-node-dry-run.sh
       # The home-server install.sh refuses a release missing checksums.txt,
@@ -225,6 +226,11 @@ jobs:
       - name: release assets adopt (a bundle and its signature together)
         if: runner.os == 'Linux'
         run: bash tools/release/release-assets-test.sh
+      # every release upload goes through gh-retry.sh: a transient GitHub error (HTTP 5xx, a
+      # stream CANCEL, a timeout) is tried again with --clobber; a 4xx fails at once
+      - name: release uploads retry transient errors
+        if: runner.os == 'Linux'
+        run: bash tools/release/gh-retry-test.sh
       # The Postgres archives postgres-cdn.yml publishes to Maktaba's CDN: each checked against
       # its pin before it is uploaded, one already there skipped (a scratch CDN, a stub upload)
       - name: Postgres archives to the CDN

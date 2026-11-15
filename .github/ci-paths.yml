@@ -458,6 +458,8 @@ cloudflare:
 broadcast_edge:
   - *ci
   - 'web/packages/broadcast-edge/**'
+  # the guest states every app maps as the watch pages do (story 50.27)
+  - 'shared/broadcast/**'
   - 'web/packages/tvsite/src/sign.ts'
   - 'web/packages/tvsite/src/testdata/**'
   - 'cloud/internal/broadcast/**'
@@ -931,6 +933,8 @@ apple_apps:
   - 'shared/compat/**'
   # the Cast sender's app id and load vectors (58.06)
   - 'shared/cast/**'
+  # the guest states MaktabaKit's GuestTests check (50.27)
+  - 'shared/broadcast/**'
   - 'apps/tv/tvos/**'
   - 'tools/apple/**'
   # the check that each UI job's result bundle ran its selected tests

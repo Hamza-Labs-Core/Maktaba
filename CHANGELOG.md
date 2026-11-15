@@ -1021,6 +1021,17 @@ build fails when the two differ.
 
 ### Added
 
+- **Watch a broadcast on Apple TV, iPhone, iPad and the Mac (Epic 50, story 50.27).** Anyone a
+  home invites can watch its published channels in Maktaba Player or Maktaba TV with no Maktaba
+  or home account: from the home picker, an invite link (pasted, opened as a
+  `maktaba://watch/i/…` link, or scanned on an iPhone), or the publisher's handle and an
+  `MK-` short code. Apple TV also shows a QR code and a code to compare; a phone that opens it
+  sends the TV its pass. The guest sees only that publisher's channels with now and next, the
+  credit of a CC BY programme, and the states the watch pages show (starting, home offline with
+  the slate playing, full, ended, invite used or expired, withdrawn) in English and Arabic.
+  Broadcasts are saved in the Keychain with a Remove button; up and down (a vertical swipe on a
+  phone) change the channel. Not offered under a parental limit.
+
 - **Report a broadcast from its watch page (Epic 50, stories 50.24, 50.27).** Each channel page
   on watch.maktaba.tv has a Report button, in Arabic and English, that needs no account: choose
   copyright, illegal content, abuse or harassment, or something else, and add a description and

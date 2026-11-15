@@ -14,4 +14,14 @@ import Testing
         #expect(wrote == errSecSuccess, "write: \(wrote)")
         #expect(read == "value", "read: \(status)")
     }
+
+    /// A guest pass (story 50.27) is kept `AfterFirstUnlockThisDeviceOnly`: it writes and reads back.
+    @Test func aGuestPassIsKeptOnThisDeviceOnly() {
+        let k = GuestPassStore.keychain(service: "com.hamzalabs.maktaba.player.mac.test.\(UUID().uuidString).guest")
+        defer { k.delete("probe") }
+        let wrote = k.write("probe", "value")
+        let (read, status) = k.read("probe")
+        #expect(wrote == errSecSuccess, "write: \(wrote)")
+        #expect(read == "value", "read: \(status)")
+    }
 }
