@@ -548,10 +548,41 @@ gh run list --workflow update-rehearsal.yml --event workflow_run --status succes
 python3 tools/release/next_tag.py --ci-runs ci.json --rehearsal-runs rehearsal.json
 ```
 
+**The broadcast rehearsal gates the tag too** (story 50.29 §4): a commit is eligible only when
+the last nightly run of [`broadcast-rehearsal.yml`](cloud-rehearsal.md#the-broadcast-rehearsal)
+on its broadcast code passed. Its broadcast code is the files of the workflow's pull-request
+paths (`BROADCAST_CODE` in `next_tag.py`, kept equal to them by `test_next_tag.py`): the edge,
+the broadcast packages of the cloud, the streaming service and the API, the relay, the
+rehearsal itself. Among the nightly runs on main whose commit has the same broadcast code as the
+candidate, the newest one that finished decides: passed, eligible; failed or timed out, not. So
+a commit that changed no broadcast file since a green nightly is eligible, and a commit that
+changed one waits for the next nightly. A commit with no such nightly is not eligible (fail
+closed). `next_tag.py` fetches the broadcast rehearsal's runs itself, with both `--green` and
+the run lists, so the session's command needs nothing new:
+
+```sh
+gh run list --workflow broadcast-rehearsal.yml --branch main --event schedule --limit 60 \
+  --json headSha,headBranch,event,status,conclusion,displayTitle,createdAt
+gh run list --workflow broadcast-rehearsal.yml --branch main --event workflow_dispatch --limit 60 \
+  --json headSha,headBranch,event,status,conclusion,displayTitle,createdAt
+```
+
+If `gh` is missing, fails or prints something that is not a list of runs, nothing is tagged and
+`reason=` says why (fail closed). `--broadcast-runs FILE` (the two lists' runs in one JSON
+array) is optional: it is read instead of fetching, as the tests do. Every status counts (a red
+run counts); a run still going, or one cancelled or skipped, is passed over. A nightly run is the schedule's (03:17 UTC) or a hand run with `set: nightly`
+(`gh workflow run broadcast-rehearsal.yml -f set=nightly`), which proves a fix without waiting
+for the night; it is named `Broadcast rehearsal nightly of <sha>`, and a hand run counts only
+when that commit is its own. The pull-request and push runs (the short set) never count,
+whatever their name: a pull request runs its own copy of the workflow. When the
+newest green commit is not eligible, the newest one that is gets the tag, and `reason=` names
+the commits passed over and why.
+
 A rehearsal run of main is named `Update rehearsal of <sha>`, after the commit it rehearsed:
 its own `headSha` is main's head at the moment it started, so `next_tag.py` reads the commit
 from the name. (`--green FILE`, one SHA a line, still takes the commits directly.) It
-chooses the commit and the tag: the newest commit of main that both passed on, tagged as
+chooses the commit and the tag: the newest commit of main that both passed on and the
+broadcast rehearsal allows, tagged as
 the next patch version (the highest `vX.Y.Z` plus one). The session pushes it as an annotated
 tag whose message is its name. A commit is not tagged when:
 
