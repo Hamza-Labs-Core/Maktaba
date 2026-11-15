@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"database/sql"
 	_ "embed"
 	"encoding/json"
 	"fmt"
@@ -273,35 +274,39 @@ func (ix *Index) Record(ctx context.Context, samples []sample, at time.Time) err
 		rows = append(rows, row(r))
 	}
 	rows = append(rows, row{DroppedSeries, "", st.dropped, false})
-	tx, err := ix.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	// each statement is prepared once per scrape, not once per row: the driver keeps no
-	// statement cache, and parsing the upsert was about half of Record's time
-	set, err := tx.PrepareContext(ctx, `INSERT INTO metric_1m(name, labels, minute, value) VALUES(?, ?, ?, ?)
-		ON CONFLICT(name, labels, minute) DO UPDATE SET value = excluded.value`)
-	if err != nil {
-		_ = tx.Rollback()
-		return err
-	}
-	add, err := tx.PrepareContext(ctx, `INSERT INTO metric_1m(name, labels, minute, value) VALUES(?, ?, ?, ?)
-		ON CONFLICT(name, labels, minute) DO UPDATE SET value = value + excluded.value`)
-	if err != nil {
-		_ = tx.Rollback()
-		return err
-	}
-	for _, r := range rows {
-		stmt := set
-		if r.add {
-			stmt = add
+	// the scraper waits its turn behind ingest and the sweep: a scrape is never lost to
+	// SQLITE_BUSY
+	return ix.write(func() error {
+		tx, err := ix.db.BeginTx(ctx, nil)
+		if err != nil {
+			return err
 		}
-		if _, err := stmt.ExecContext(ctx, r.name, r.labels, minute, r.v); err != nil {
+		// each statement is prepared once per scrape, not once per row: the driver keeps no
+		// statement cache, and parsing the upsert was about half of Record's time
+		set, err := tx.PrepareContext(ctx, `INSERT INTO metric_1m(name, labels, minute, value) VALUES(?, ?, ?, ?)
+			ON CONFLICT(name, labels, minute) DO UPDATE SET value = excluded.value`)
+		if err != nil {
 			_ = tx.Rollback()
 			return err
 		}
-	}
-	return tx.Commit()
+		add, err := tx.PrepareContext(ctx, `INSERT INTO metric_1m(name, labels, minute, value) VALUES(?, ?, ?, ?)
+			ON CONFLICT(name, labels, minute) DO UPDATE SET value = value + excluded.value`)
+		if err != nil {
+			_ = tx.Rollback()
+			return err
+		}
+		for _, r := range rows {
+			stmt := set
+			if r.add {
+				stmt = add
+			}
+			if _, err := stmt.ExecContext(ctx, r.name, r.labels, minute, r.v); err != nil {
+				_ = tx.Rollback()
+				return err
+			}
+		}
+		return tx.Commit()
+	})
 }
 
 // RecordSizes stores the log store's own sizes (the Storage board).
@@ -336,7 +341,7 @@ func (ix *Index) Rollup(ctx context.Context) error {
 	if start == 0 {
 		return nil
 	}
-	_, err := ix.db.ExecContext(ctx, `INSERT INTO metric_1h(name, labels, hour, value, min, max)
+	_, err := ix.exec(ctx, `INSERT INTO metric_1h(name, labels, hour, value, min, max)
 		SELECT name, labels, minute / 60, AVG(value), MIN(value), MAX(value) FROM metric_1m
 		WHERE minute / 60 >= ? AND minute / 60 < ? GROUP BY name, labels, minute / 60
 		ON CONFLICT(name, labels, hour) DO UPDATE SET value = excluded.value, min = excluded.min, max = excluded.max`,
@@ -347,10 +352,10 @@ func (ix *Index) Rollup(ctx context.Context) error {
 // sweepMetrics keeps 7 days of minutes and 30 days of hours.
 func (ix *Index) sweepMetrics(ctx context.Context) error {
 	now := ix.now().Unix()
-	if _, err := ix.db.ExecContext(ctx, `DELETE FROM metric_1m WHERE minute < ?`, (now-7*86400)/60); err != nil {
+	if _, err := ix.exec(ctx, `DELETE FROM metric_1m WHERE minute < ?`, (now-7*86400)/60); err != nil {
 		return err
 	}
-	_, err := ix.db.ExecContext(ctx, `DELETE FROM metric_1h WHERE hour < ?`, (now-30*86400)/3600)
+	_, err := ix.exec(ctx, `DELETE FROM metric_1h WHERE hour < ?`, (now-30*86400)/3600)
 	return err
 }
 
@@ -492,7 +497,9 @@ func (ix *Index) BoardFor(ctx context.Context, board, rng, machine string, offli
 	sort.Strings(names)
 	now := ix.now()
 	w := window{table: "metric_1m", col: "minute", unit: 60}
-	if d > 7*24*time.Hour {
+	if d > 7*24*time.Hour || (d > 24*time.Hour && !ix.minutesSince(ctx, now.Add(-d))) {
+		// past a week, or the minutes no longer reach back (the sweep kept the cap with
+		// them): the hours answer
 		w.table, w.col, w.unit = "metric_1h", "hour", 3600
 	}
 	span := d.Seconds() / float64(w.unit)
@@ -593,6 +600,20 @@ func (ix *Index) seriesOf(ctx context.Context, w window, name, kind string, labe
 	return out, rows.Err()
 }
 
+// minutesSince is whether the metrics' minutes reach back to t, or as far as the hours do
+// (the sweep drops minutes older than a day when logs.db is over its cap; the hours then
+// answer a longer range).
+func (ix *Index) minutesSince(ctx context.Context, t time.Time) bool {
+	var minute, hour sql.NullInt64
+	if err := ix.db.QueryRowContext(ctx, `SELECT (SELECT MIN(minute) FROM metric_1m), (SELECT MIN(hour) FROM metric_1h)`).
+		Scan(&minute, &hour); err != nil || !minute.Valid || !hour.Valid {
+		return true
+	}
+	// two hours' slack: the week's own sweep runs hourly, so a week of minutes may start
+	// that much after the range does
+	return minute.Int64 <= t.Unix()/60+120 || hour.Int64 >= minute.Int64/60
+}
+
 // ScrapeEvery is how often the metrics are read.
 var ScrapeEvery = 15 * time.Second
 
@@ -613,17 +634,19 @@ func (ix *Index) scrapeLoop(ctx context.Context) {
 // ImportHours stores rolled-up hours as they are (value, min and max alike): a series
 // brought from elsewhere, or 30 days for the performance budget (logbench).
 func (ix *Index) ImportHours(ctx context.Context, name, labels string, points [][2]float64) error {
-	tx, err := ix.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	for _, p := range points {
-		if _, err := tx.Exec(`INSERT INTO metric_1h(name, labels, hour, value, min, max) VALUES(?, ?, ?, ?, ?, ?)
-			ON CONFLICT(name, labels, hour) DO UPDATE SET value = excluded.value, min = excluded.min, max = excluded.max`,
-			name, labels, int64(p[0])/3600, p[1], p[1], p[1]); err != nil {
-			_ = tx.Rollback()
+	return ix.write(func() error {
+		tx, err := ix.db.BeginTx(ctx, nil)
+		if err != nil {
 			return err
 		}
-	}
-	return tx.Commit()
+		for _, p := range points {
+			if _, err := tx.Exec(`INSERT INTO metric_1h(name, labels, hour, value, min, max) VALUES(?, ?, ?, ?, ?, ?)
+				ON CONFLICT(name, labels, hour) DO UPDATE SET value = excluded.value, min = excluded.min, max = excluded.max`,
+				name, labels, int64(p[0])/3600, p[1], p[1], p[1]); err != nil {
+				_ = tx.Rollback()
+				return err
+			}
+		}
+		return tx.Commit()
+	})
 }

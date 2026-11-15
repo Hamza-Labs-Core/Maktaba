@@ -2,6 +2,7 @@ package logindex
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,8 +15,8 @@ import (
 )
 
 // Sweep drops rows older than Retention and rows whose segment the keeper deleted, in
-// batches of 10,000; then, while logs.db is over MaxBytes, the oldest debug and info rows
-// go first. The file shrinks by incremental vacuum, never a full one.
+// batches of 10,000; then, while logs.db is over MaxBytes, the oldest debug rows, metric
+// minutes older than a day and info rows go first. The file shrinks by incremental vacuum, never a full one.
 func (ix *Index) Sweep(ctx context.Context) (int, error) {
 	total := 0
 	del := func(where string, args ...any) error {
@@ -37,19 +38,22 @@ func (ix *Index) Sweep(ctx context.Context) (int, error) {
 				return nil
 			}
 			in := strings.TrimSuffix(strings.Repeat("?,", len(ids)), ",")
-			tx, err := ix.db.BeginTx(ctx, nil)
+			err = ix.write(func() error {
+				tx, err := ix.db.BeginTx(ctx, nil)
+				if err != nil {
+					return err
+				}
+				if _, err := tx.Exec(`DELETE FROM lines_fts WHERE rowid IN (`+in+`)`, ids...); err != nil {
+					_ = tx.Rollback()
+					return err
+				}
+				if _, err := tx.Exec(`DELETE FROM lines WHERE id IN (`+in+`)`, ids...); err != nil {
+					_ = tx.Rollback()
+					return err
+				}
+				return tx.Commit()
+			})
 			if err != nil {
-				return err
-			}
-			if _, err := tx.Exec(`DELETE FROM lines_fts WHERE rowid IN (`+in+`)`, ids...); err != nil {
-				_ = tx.Rollback()
-				return err
-			}
-			if _, err := tx.Exec(`DELETE FROM lines WHERE id IN (`+in+`)`, ids...); err != nil {
-				_ = tx.Rollback()
-				return err
-			}
-			if err := tx.Commit(); err != nil {
 				return err
 			}
 			total += len(ids)
@@ -78,21 +82,54 @@ func (ix *Index) Sweep(ctx context.Context) (int, error) {
 		if err := del(`seg = ?`, seg); err != nil {
 			return total, err
 		}
-		_, _ = ix.db.ExecContext(ctx, `DELETE FROM positions WHERE seg = ?`, seg)
+		_, _ = ix.exec(ctx, `DELETE FROM positions WHERE seg = ?`, seg)
 	}
-	for _, lvl := range []int{LevelNum("debug"), LevelNum("info")} {
-		for ix.MaxBytes > 0 && ix.Size() > ix.MaxBytes && ctx.Err() == nil {
-			var oldest int64
-			if err := ix.db.QueryRowContext(ctx, `SELECT MIN(ts) FROM lines WHERE level <= ?`, lvl).Scan(&oldest); err != nil || oldest == 0 {
-				break
+	ix.forget(gone)
+	// Over the cap, the oldest go first: debug lines, then the minutes of metrics older than
+	// a day (their hours stay: Rollup keeps them first), then info lines. Metrics count
+	// against the cap too: v0.3.135's sweep evicted lines only, so a week of minutes (366 MB
+	// of a 560 MB file on the live home) kept it over 350 MB and every info line went.
+	over := func() bool { return ix.MaxBytes > 0 && ix.Size() > ix.MaxBytes && ctx.Err() == nil }
+	shrink := func() {
+		_, _ = ix.exec(ctx, `PRAGMA incremental_vacuum`)
+		_, _ = ix.exec(ctx, `PRAGMA wal_checkpoint(TRUNCATE)`)
+	}
+	lines := func(lvl int) error {
+		for over() {
+			var oldest sql.NullInt64
+			if err := ix.db.QueryRowContext(ctx, `SELECT MIN(ts) FROM lines WHERE level <= ?`, lvl).Scan(&oldest); err != nil || !oldest.Valid {
+				return nil
 			}
 			// an hour at a time, oldest first
-			if err := del(`level <= ? AND ts < ?`, lvl, oldest+int64(time.Hour/time.Millisecond)); err != nil {
+			if err := del(`level <= ? AND ts < ?`, lvl, oldest.Int64+int64(time.Hour/time.Millisecond)); err != nil {
+				return err
+			}
+			shrink()
+		}
+		return nil
+	}
+	if err := lines(LevelNum("debug")); err != nil {
+		return total, err
+	}
+	if over() {
+		if err := ix.Rollup(ctx); err != nil {
+			return total, err
+		}
+		dayAgo := ix.now().Add(-24*time.Hour).Unix() / 60
+		for over() {
+			var oldest sql.NullInt64
+			if err := ix.db.QueryRowContext(ctx, `SELECT MIN(minute) FROM metric_1m`).Scan(&oldest); err != nil ||
+				!oldest.Valid || oldest.Int64 >= dayAgo {
+				break
+			}
+			if _, err := ix.exec(ctx, `DELETE FROM metric_1m WHERE minute < ?`, min(oldest.Int64+60, dayAgo)); err != nil {
 				return total, err
 			}
-			_, _ = ix.db.ExecContext(ctx, `PRAGMA incremental_vacuum(2000)`)
-			_, _ = ix.db.ExecContext(ctx, `PRAGMA wal_checkpoint(TRUNCATE)`)
+			shrink()
 		}
+	}
+	if err := lines(LevelNum("info")); err != nil {
+		return total, err
 	}
 	if err := ix.sweepErrors(ctx, ix.ErrorRetention); err != nil {
 		return total, err
@@ -105,7 +142,7 @@ func (ix *Index) Sweep(ctx context.Context) (int, error) {
 		return total, err
 	}
 	if total > 0 {
-		_, _ = ix.db.ExecContext(ctx, `PRAGMA incremental_vacuum(2000)`)
+		_, _ = ix.exec(ctx, `PRAGMA incremental_vacuum(2000)`)
 	}
 	return total, nil
 }

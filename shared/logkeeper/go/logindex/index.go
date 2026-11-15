@@ -9,6 +9,7 @@
 package logindex
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -91,6 +92,34 @@ type Index struct {
 	// metrics is the dashboards' scraper state (metrics.go); MetricsURLs what it scrapes
 	metrics     *metricsState
 	MetricsURLs []string
+
+	// wmu makes the process logs.db's one writer: ingest, the metrics scraper, the sweep and
+	// the admin's changes take turns here instead of in SQLite, where a writer that waits
+	// past busy_timeout fails with SQLITE_BUSY (v0.3.135 lost metric scrapes to the sweep's
+	// checkpoint that way: metrics_record_failed, "database is locked")
+	wmu sync.Mutex
+	// pos is every segment's position (ingest.go), loaded on the first pass; posMu guards it
+	posMu sync.Mutex
+	pos   map[string]segPos
+	// dirs, listed and listedAt are the segments directories as last listed (ingest.go),
+	// under posMu too
+	dirs     map[string]dirList
+	listed   []seg
+	listedAt time.Time
+}
+
+// exec is one write statement as logs.db's one writer.
+func (ix *Index) exec(ctx context.Context, q string, args ...any) (sql.Result, error) {
+	ix.wmu.Lock()
+	defer ix.wmu.Unlock()
+	return ix.db.ExecContext(ctx, q, args...)
+}
+
+// write runs fn as logs.db's one writer (see wmu).
+func (ix *Index) write(fn func() error) error {
+	ix.wmu.Lock()
+	defer ix.wmu.Unlock()
+	return fn()
 }
 
 // Rebuilt is why Open made the index again (a corrupt file moved aside), "" when it did not.
@@ -131,8 +160,12 @@ func Open(root string, now func() time.Time) (*Index, error) {
 	return ix, nil
 }
 
+// busyTimeout is how long (ms) a connection waits for SQLite's write lock. The process's
+// own writers take turns on wmu first, so only another process could wait it out.
+var busyTimeout = 5000
+
 func openDB(p string) (*sql.DB, error) {
-	db, err := sql.Open("sqlite", "file:"+p+"?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=synchronous(NORMAL)&_pragma=auto_vacuum(INCREMENTAL)")
+	db, err := sql.Open("sqlite", fmt.Sprintf("file:%s?_pragma=journal_mode(WAL)&_pragma=busy_timeout(%d)&_pragma=synchronous(NORMAL)&_pragma=auto_vacuum(INCREMENTAL)", p, busyTimeout))
 	if err != nil {
 		return nil, err
 	}

@@ -338,16 +338,16 @@ func (ix *Index) SetStatus(ctx context.Context, fp, status, version string, mute
 	var err error
 	switch status {
 	case "seen":
-		res, err = ix.db.ExecContext(ctx, `UPDATE error_groups SET status = 'seen' WHERE fp = ?`, fp)
+		res, err = ix.exec(ctx, `UPDATE error_groups SET status = 'seen' WHERE fp = ?`, fp)
 	case "resolved":
-		res, err = ix.db.ExecContext(ctx, `UPDATE error_groups SET status = 'resolved', resolved_in = ?, came_back_in = NULL,
+		res, err = ix.exec(ctx, `UPDATE error_groups SET status = 'resolved', resolved_in = ?, came_back_in = NULL,
 			muted_until = NULL WHERE fp = ?`, version, fp)
 	case "muted":
 		var until any
 		if !mutedUntil.IsZero() {
 			until = mutedUntil.UnixMilli()
 		}
-		res, err = ix.db.ExecContext(ctx, `UPDATE error_groups SET status = 'muted', muted_until = ? WHERE fp = ?`, until, fp)
+		res, err = ix.exec(ctx, `UPDATE error_groups SET status = 'muted', muted_until = ? WHERE fp = ?`, until, fp)
 	default:
 		return ErrStatus
 	}
@@ -403,7 +403,7 @@ func (ix *Index) Notices(ctx context.Context, limit int) ([]Notice, int, error) 
 		send, more = send[:room], len(send)-room
 	}
 	for _, n := range send {
-		_, _ = ix.db.ExecContext(ctx, `UPDATE error_groups SET notified_at = ? WHERE fp = ?`, now, n.FP)
+		_, _ = ix.exec(ctx, `UPDATE error_groups SET notified_at = ? WHERE fp = ?`, now, n.FP)
 	}
 	return send, more, nil
 }
@@ -418,11 +418,11 @@ func (ix *Index) sweepErrors(ctx context.Context, keep time.Duration) error {
 		`DELETE FROM error_users WHERE fp IN (SELECT fp FROM error_groups WHERE last_seen < ?)`,
 		`DELETE FROM error_groups WHERE last_seen < ?`,
 	} {
-		if _, err := ix.db.ExecContext(ctx, q, cut); err != nil {
+		if _, err := ix.exec(ctx, q, cut); err != nil {
 			return err
 		}
 	}
-	_, err := ix.db.ExecContext(ctx, `DELETE FROM error_hours WHERE hour < ?`, cutHour)
+	_, err := ix.exec(ctx, `DELETE FROM error_hours WHERE hour < ?`, cutHour)
 	return err
 }
 
