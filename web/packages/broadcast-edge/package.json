@@ -17,6 +17,7 @@
     "@cloudflare/vitest-pool-workers": "0.23.0",
     "@cloudflare/workers-types": "5.20261001.1",
     "@types/node": "22.19.1",
+    "hls.js": "1.5.20",
     "typescript": "5.7.3",
     "vitest": "4.1.12",
     "wrangler": "4.124.0"

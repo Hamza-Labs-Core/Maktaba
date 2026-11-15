@@ -259,6 +259,57 @@ func TestModerationNoticeTakedownCounterRestore(t *testing.T) {
 		t.Errorf("the home's reports = %s", v.body)
 	}
 
+	// the watch page's Report form (50.27): it posts from watch.maktaba.tv with the page's own URL
+	// (a language, the server id, the edge's channel id); the API answers its origin (CORS, no
+	// credentials), resolves the URL to the channel and pages on an illegal-content report
+	viewerPage := e.client()
+	viewerPage.origin = "https://watch.maktaba.tv"
+	pre := viewerPage.do("OPTIONS", "/v1/moderation/reports", nil)
+	if pre.code != http.StatusNoContent || pre.header.Get("Access-Control-Allow-Origin") != "https://watch.maktaba.tv" ||
+		pre.header.Get("Access-Control-Allow-Credentials") != "" {
+		t.Errorf("the watch page's preflight = %d %v", pre.code, pre.header)
+	}
+	paged := strings.Count(e.logs.String(), "code="+moderation.AlertUrgent)
+	watchURL := "https://watch.maktaba.tv/ar/" + home.id + "/" + edge
+	rep := viewerPage.do("POST", "/v1/moderation/reports", map[string]any{"category": "illegal", "about": "content",
+		"channel": watchURL, "programme": "Film 1", "at": "2026-11-03T20:00:00Z", "text": "seen on the watch page"})
+	if rep.code != http.StatusAccepted || rep.header.Get("Access-Control-Allow-Origin") != "https://watch.maktaba.tv" {
+		t.Fatalf("the watch page's report = %d %s %v", rep.code, rep.body, rep.header)
+	}
+	if e.count(`SELECT count(*) FROM moderation_reports WHERE id = $1 AND channel_id = $2 AND server_id = $3 AND urgent`,
+		rep.json(t)["report_id"], ch, home.id) != 1 {
+		t.Error("the watch page's report did not resolve to its channel as urgent")
+	}
+	if strings.Count(e.logs.String(), "code="+moderation.AlertUrgent) != paged+1 {
+		t.Error("the watch page's illegal-content report paged no one")
+	}
+	// the notice form stays on maktaba.tv: the watch origin gets no CORS answer there
+	if r := viewerPage.do("OPTIONS", "/v1/moderation/notices", nil); r.header.Get("Access-Control-Allow-Origin") != "" {
+		t.Errorf("the watch origin's preflight on the notice form = %v", r.header)
+	}
+	// another site's page is refused, before any row is written
+	evil := e.client()
+	evil.origin = "https://evil.test"
+	if r := evil.do("POST", "/v1/moderation/reports", map[string]any{"category": "abuse", "channel": watchURL}); r.code != http.StatusForbidden ||
+		r.header.Get("Access-Control-Allow-Origin") != "" {
+		t.Errorf("another site's report = %d %v", r.code, r.header)
+	}
+
+	// the per-address limit: a burst of 5 reports, then 429; another address is not limited
+	burst := e.client()
+	for i := 0; i < 5; i++ {
+		if r := burst.do("POST", "/v1/moderation/reports", map[string]any{"category": "other", "channel": watchURL}); r.code != http.StatusAccepted {
+			t.Fatalf("report %d of the burst = %d %s", i+1, r.code, r.body)
+		}
+	}
+	if r := burst.do("POST", "/v1/moderation/reports", map[string]any{"category": "other", "channel": watchURL}); r.code != http.StatusTooManyRequests ||
+		r.header.Get("Retry-After") == "" {
+		t.Errorf("the sixth report from one address = %d %v", r.code, r.header)
+	}
+	if r := e.client().do("POST", "/v1/moderation/reports", map[string]any{"category": "other", "channel": watchURL}); r.code != http.StatusAccepted {
+		t.Errorf("another address = %d", r.code)
+	}
+
 	// every staff action is audited with its reason; the records export for a lawyer
 	if e.count(`SELECT count(*) FROM moderation_audit WHERE actor_email = 'ops@example.test' AND verb IN ('takedown', 'restore', 'reinstate')
 		AND reason <> ''`) != 6 {

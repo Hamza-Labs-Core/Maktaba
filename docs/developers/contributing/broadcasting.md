@@ -176,6 +176,14 @@ signed instruction:
 - **Strikes.** Each accepted notice is a strike on the publisher (one per item per 30 days). Three
   active strikes in 12 months end broadcasting for the account: the cloud adds a publisher
   `terminate` entry to the revocation list, which stops every channel (see **Taken off air**).
+- **Viewers' reports.** Every channel page on `watch.maktaba.tv` has a **Report** button (Arabic
+  and English): copyright, illegal content, abuse or harassment, or something else, with an
+  optional description and email. The page posts it straight to the cloud
+  (`POST /v1/moderation/reports`), which refuses another site's page, an unknown category and any
+  field over its limit, checks Turnstile on each report, allows each address a burst of 5 and
+  then one a minute, and pages the on-call admin for illegal content. A report about the
+  content shows on this page without the reporter's email. `docs/broadcast-edge.md` (**Report**)
+  has the details.
 
 The cloud's side (the public forms, the queue, the strikes, the records) is in
 `cloud/internal/moderation/` and `cloud/internal/handlers/moderation/`; the runbooks are

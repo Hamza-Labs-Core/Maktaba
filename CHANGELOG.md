@@ -824,6 +824,12 @@ build fails when the two differ.
 
 ### Security
 
+- **The watch pages run only the hls.js they were built with (Epic 50, story 50.27).** The
+  watch.maktaba.tv player loads hls.js 1.5.20 by its exact version with a Subresource Integrity
+  hash, and the pages' Content-Security-Policy allows that one file instead of the whole CDN, so
+  a changed or swapped file on the CDN is refused by the browser. A test fails when the hash or
+  the version drifts from the pinned package.
+
 - **Silent connections can no longer keep a video off the Apple apps' stream proxy.** The
   proxy that hands a home's stream to the system player (and, for AirPlay, listens on the local
   network) counted a connection against its 16 places the moment it opened, before its request
@@ -970,6 +976,16 @@ build fails when the two differ.
   alerted.
 
 ### Added
+
+- **Report a broadcast from its watch page (Epic 50, stories 50.24, 50.27).** Each channel page
+  on watch.maktaba.tv has a Report button, in Arabic and English, that needs no account: choose
+  copyright, illegal content, abuse or harassment, or something else, and add a description and
+  an email if you like. The report goes to the service admins' moderation queue, and illegal
+  content pages the admin on call. Maktaba Cloud checks every report itself: the category, each
+  field's length, the Turnstile check, and at most 5 reports at once from one address, then one a
+  minute. The cloud now also reads the watch pages' own channel addresses
+  (`/ar/<home>/<channel>`), which it had stored with no channel, so a report or notice that names
+  one reaches the right publisher.
 
 - **The home's Broadcast panel shows who watches (Epic 50, story 50.28).** Admins see, under
   Live TV → Broadcast, the viewers watching now and the viewer-hours of today, the last 7 days

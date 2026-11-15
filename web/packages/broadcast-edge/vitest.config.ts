@@ -18,6 +18,12 @@ const eventsSchema = readFileSync(
   "../../../cloud/internal/broadcast/testdata/events_schema.json",
   "utf8"
 );
+// the pinned hls.js the watch pages load from jsDelivr: the npm package's own file and version
+// (test/hls.test.ts checks the page's integrity hash against these bytes)
+const hlsJS = readFileSync("node_modules/hls.js/dist/hls.min.js", "utf8");
+const hlsVersion = (
+  JSON.parse(readFileSync("package.json", "utf8")) as { devDependencies: Record<string, string> }
+).devDependencies["hls.js"];
 const parity = JSON.parse(readFileSync("../tvsite/src/testdata/parity.json", "utf8")) as {
   kid: string;
   jwk: string;
@@ -92,6 +98,8 @@ export default defineConfig({
           TEST_VECTORS: vectors,
           TEST_INVITE_VECTORS: inviteVectors,
           TEST_EVENTS_SCHEMA: eventsSchema,
+          TEST_HLS_JS: hlsJS,
+          TEST_HLS_VERSION: hlsVersion ?? "",
           TURNSTILE_SECRET: "test-turnstile-secret",
         },
         serviceBindings: {

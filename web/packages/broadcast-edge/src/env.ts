@@ -59,7 +59,10 @@ export interface Env {
   BROADCAST_OFF_CHANNELS?: string;
   /** "r2" (default) | "stream": the delivery when a publisher has no override (§5, Q8). */
   BROADCAST_DELIVERY?: string;
-  /** The API the edge reports usage to (50.20); unset: nothing is posted. */
+  /**
+   * The API the edge reports usage to (50.20) and the watch pages' Report form posts to (50.24,
+   * https only); unset: nothing is posted and the channel page links to the copyright page.
+   */
   API_ORIGIN?: string;
   INGEST_HOST?: string;
   LIVE_HOST?: string;

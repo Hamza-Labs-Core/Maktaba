@@ -112,6 +112,12 @@ This story builds the first four. They are what that status requires, and they a
   - other.
 - A report carries the channel, the programme at that time (from the guide), the time, an
   optional email, and a free-text box. Turnstile protects it, and it is rate-limited per IP.
+- On `watch.maktaba.tv` the channel page's form posts straight to
+  `POST https://api.maktaba.tv/v1/moderation/reports` with the page's channel URL, which names the
+  home's server id and the edge's channel id (the queue resolves that pair as well as the slugs).
+  CORS allows `https://watch.maktaba.tv` on that route only, with no credentials. The API enforces
+  everything: the four categories, each field's size (text 4,000, email 320, programme 300 and
+  channel URL 2,048 characters), the bot check, and a per-IP burst of 5, then one a minute.
 - Reports go to the moderation queue. A report about content (not about the publisher) is also
   shown to the publisher on their Broadcast page, without the reporter's email.
 - **Urgent categories** (illegal content) page the on-call service admin as **SEV2** through

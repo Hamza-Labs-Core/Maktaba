@@ -28,6 +28,10 @@ string ships in English and Arabic together.
 - **Player:** `@maktaba/tvplayer`, with a resolver over `/api/v1/play` and neighbour tokens (Epic
   34 R6). It switches channels with up/down, swipe, number entry and the guide. The tuning card
   shows while an on-demand channel wakes (50.22).
+- **Scripts from another origin are pinned:** the page loads hls.js from jsDelivr by its exact
+  version with a Subresource Integrity hash, and the page's CSP allows that one file. A test
+  hashes the npm package's file and fails when the hash or the version drifts. Turnstile's loader
+  is the exception: Cloudflare changes it in place.
 - **The page shows the video as it is:** the watermark and strip are burned in, and no logo is
   overlaid.
 - **"Free to watch"** in the footer (50.26). The publisher's display name is "{publisher} on

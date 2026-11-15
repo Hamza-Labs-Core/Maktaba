@@ -55,6 +55,10 @@ func TestParseWatchURL(t *testing.T) {
 		"watch.maktaba.tv/Home-A/News/live?x=1#t":         {"home-a", "news"},
 		"http://WATCH.maktaba.tv/home-a/quran-24/":        {"home-a", "quran-24"},
 		"https://watch.maktaba.tv/home-a/news?t=20:00:00": {"home-a", "news"},
+		// the watch pages (50.27): a language first, the server id and the edge's channel id
+		"https://watch.maktaba.tv/ar/2f0c6a3e-5b1d-4c2a-9e7f-0a1b2c3d4e5f/c1a2b3": {"2f0c6a3e-5b1d-4c2a-9e7f-0a1b2c3d4e5f", "c1a2b3"},
+		"watch.maktaba.tv/EN/2F0C6A3E-5B1D-4C2A-9E7F-0A1B2C3D4E5F/c1a2b3/":        {"2f0c6a3e-5b1d-4c2a-9e7f-0a1b2c3d4e5f", "c1a2b3"},
+		"https://watch.maktaba.tv/2f0c6a3e-5b1d-4c2a-9e7f-0a1b2c3d4e5f/c1a2b3":    {"2f0c6a3e-5b1d-4c2a-9e7f-0a1b2c3d4e5f", "c1a2b3"},
 	}
 	for u, want := range good {
 		if got, ok := ParseWatchURL(u); !ok || got != want {
@@ -63,9 +67,27 @@ func TestParseWatchURL(t *testing.T) {
 	}
 	for _, u := range []string{"", "https://maktaba.tv/home-a/news", "https://watch.maktaba.tv/home-a",
 		"https://watch.maktaba.tv/i/abc", "https://watch.maktaba.tv/pair/x", "https://evil.test/watch.maktaba.tv/a/b",
-		"ftp://watch.maktaba.tv/a/b", "https://watch.maktaba.tv/a_b/c"} {
+		"ftp://watch.maktaba.tv/a/b", "https://watch.maktaba.tv/a_b/c", "https://watch.maktaba.tv/ar/home-a",
+		"https://watch.maktaba.tv/en/legal/copyright", "https://watch.maktaba.tv/ar/i/abc", "https://watch.maktaba.tv/ar/home-a/guide",
+		"https://watch.maktaba.tv/s/watch.js", "https://watch.maktaba.tv/ar/2f0c6a3e-5b1d-4c2a-9e7f-0a1b2c3d4e5f/guide"} {
 		if _, ok := ParseWatchURL(u); ok {
 			t.Errorf("%q reads as a channel", u)
+		}
+	}
+	// a language is read only before a server id: a home slugged ar keeps its own URLs, and its
+	// /ar/news/live never names the home news's channel live
+	for _, u := range []string{"https://watch.maktaba.tv/ar/news/live", "https://watch.maktaba.tv/en/news/live"} {
+		if got, ok := ParseWatchURL(u); ok && got.Publisher != "ar" && got.Publisher != "en" {
+			t.Errorf("%q reads as %v, another publisher's channel", u, got)
+		}
+	}
+	// the two forms never overlap: a server id is resolved only as an id, a slug only as a slug
+	if !(ChannelRef{Publisher: "2f0c6a3e-5b1d-4c2a-9e7f-0a1b2c3d4e5f", Channel: "c1"}).ByServerID() {
+		t.Error("a server id reads as a slug")
+	}
+	for _, p := range []string{"home-a", "2f0c6a3e", "2f0c6a3e-5b1d-4c2a-9e7f-0a1b2c3d4e5f0", "ar"} {
+		if (ChannelRef{Publisher: p, Channel: "c1"}).ByServerID() {
+			t.Errorf("the slug %q reads as a server id", p)
 		}
 	}
 	if _, ok := OnMaktaba([]string{"https://youtube.test/v/1", "https://watch.maktaba.tv/home-a/news"}); !ok {

@@ -1,5 +1,6 @@
 // The watch pages' script and stylesheet (story 50.27 §1), served from the edge itself as
-// /s/watch.js and /s/watch.css (no build step, no other origin but hls.js and Turnstile).
+// /s/watch.js and /s/watch.css (no build step; the other origins are hls.js, pinned with its
+// integrity hash, Turnstile, and the cloud API the Report form posts to).
 //
 // The script reads its page's config (a JSON script tag the Worker writes), then on a channel
 // page: plays through POST /api/v1/play, beats every refresh_after seconds and swaps each new
@@ -252,6 +253,117 @@ function watchMain(viewerStateFn: typeof viewerState): void {
     });
   });
   retry.addEventListener("click", () => void play(current));
+
+  // ---- Report (story 50.24 §4): the form posts to the cloud, which enforces every rule ----
+  const report = cfg.report as { api: string; base: string; programme: string } | null;
+  const form = document.getElementById("report") as Any;
+  const opener = document.getElementById("report-open") as Any;
+  if (report && form && opener) {
+    const link = document.getElementById("report-link") as Any;
+    const status = document.getElementById("report-status") as Any;
+    const send = document.getElementById("report-send") as Any;
+    const tsReport = document.getElementById("report-ts") as Any;
+    const firstChannel = String(cfg.channel);
+    let reportToken = "";
+    let widget: unknown = null;
+    if (link) link.hidden = true;
+    opener.hidden = false;
+
+    const turnstileApi = () =>
+      win.turnstile as
+        | { render(el: Any, o: object): unknown; reset(id: unknown): void }
+        | undefined;
+    const renderWidget = () => {
+      const ts = turnstileApi();
+      if (widget !== null || !ts || !cfg.turnstile) return;
+      widget = ts.render(tsReport, {
+        sitekey: String(cfg.turnstile),
+        language: lang,
+        callback: (tok: string) => {
+          reportToken = tok;
+        },
+        "expired-callback": () => {
+          reportToken = "";
+        },
+      });
+    };
+    const setOpen = (open: boolean) => {
+      form.hidden = !open;
+      opener.setAttribute("aria-expanded", String(open));
+      if (open) {
+        status.textContent = "";
+        renderWidget();
+        const first = form.querySelector("input[name=category]");
+        if (first) first.focus();
+      } else {
+        opener.focus();
+      }
+    };
+    opener.addEventListener("click", () => setOpen(form.hidden));
+    document.getElementById("report-cancel").addEventListener("click", () => setOpen(false));
+    form.addEventListener("keydown", (e: Any) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setOpen(false);
+      }
+    });
+    form.addEventListener("submit", async (e: Any) => {
+      e.preventDefault();
+      const picked = form.querySelector("input[name=category]:checked");
+      if (!picked) {
+        status.textContent = say("report.chooseCategory");
+        const first = form.querySelector("input[name=category]");
+        if (first) first.focus();
+        return;
+      }
+      if (cfg.turnstile && !reportToken) {
+        status.textContent = say("report.verify");
+        renderWidget();
+        return;
+      }
+      send.disabled = true;
+      status.textContent = say("report.sending");
+      const ch = current;
+      let code = 0;
+      try {
+        const r = await fetch(`${report.api}/v1/moderation/reports`, {
+          // the default credentials mode (same-origin) sends the API no cookie of this site's
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            category: String(picked.value),
+            about: "content",
+            channel: `${report.base}/${encodeURIComponent(pub)}/${encodeURIComponent(ch)}`,
+            // the programme the page was opened on; the cloud reads another channel's from its guide
+            programme: ch === firstChannel ? report.programme : "",
+            at: new Date().toISOString(),
+            email: String(form.elements.email.value || "").trim(),
+            text: String(form.elements.text.value || "").trim(),
+            turnstile_token: reportToken,
+          }),
+        });
+        code = r.status;
+      } catch {
+        code = 0;
+      }
+      // a token is good once, whatever the answer
+      reportToken = "";
+      const ts = turnstileApi();
+      if (ts && widget !== null) ts.reset(widget);
+      send.disabled = false;
+      if (code === 202) {
+        form.reset();
+        status.textContent = say("report.thanks");
+      } else if (code === 429) {
+        status.textContent = say("report.tooMany");
+      } else if (code === 403 && cfg.turnstile) {
+        status.textContent = say("report.verify");
+      } else {
+        status.textContent = say("report.failed");
+      }
+    });
+  }
+
   void play(current);
 }
 
@@ -292,5 +404,11 @@ button{font:inherit;min-height:44px;padding:.5rem 1.2rem;border-radius:8px;borde
 .today{list-style:none;padding:0;margin:0}.today li{padding:6px 0;border-bottom:1px solid var(--line)}
 .attr{font-size:.9rem;color:var(--mut)}
 form{display:grid;gap:10px;max-width:32rem}input,textarea{font:inherit;padding:.6rem;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--fg);width:100%}
+button.secondary{background:transparent;color:var(--fg);border:1px solid var(--line)}button:disabled{opacity:.6;cursor:wait}
+.report{margin-top:12px;padding:12px 16px;background:var(--card);border:1px solid var(--line);border-radius:10px}.report[hidden]{display:none}
+.report fieldset{border:0;margin:0;padding:0;display:grid;gap:4px}.report legend{font-weight:600;margin-bottom:4px}
+.report .choice{display:flex;align-items:center;gap:10px;min-height:44px;cursor:pointer}.report .choice input{width:auto;margin:0;accent-color:var(--acc)}
+.report textarea:focus-visible,.report input:focus-visible{outline:3px solid var(--acc);outline-offset:2px}
+.report .actions{display:flex;flex-wrap:wrap;gap:8px}
 @media (max-width:480px){h1{font-size:1.2rem}}
 `;

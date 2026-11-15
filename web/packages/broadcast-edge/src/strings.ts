@@ -72,7 +72,41 @@ export const STRINGS: Record<string, Record<Lang, string>> = {
   "site.next": { en: "Next", ar: "التالي" },
   "site.nothingScheduled": { en: "No programme information", ar: "لا توجد معلومات عن البرامج" },
   "site.attribution": { en: "{title} by {by}, {licence}", ar: "{title} من {by}، {licence}" },
-  "site.report": { en: "Report", ar: "إبلاغ" },
+  // the Report button and form (story 50.24 §4; the keys are the story's)
+  "report.button": { en: "Report", ar: "إبلاغ" },
+  "report.title": { en: "Report this channel", ar: "الإبلاغ عن هذه القناة" },
+  "report.category.legend": { en: "What's the problem?", ar: "ما المشكلة؟" },
+  "report.category.copyright": { en: "Copyright", ar: "حقوق النشر" },
+  "report.category.illegal": { en: "Illegal content", ar: "محتوى غير قانوني" },
+  "report.category.abuse": { en: "Abuse or harassment", ar: "إساءة أو تحرش" },
+  "report.category.other": { en: "Something else", ar: "أمر آخر" },
+  "report.copyrightNote": {
+    en: "If you own the rights to what's shown, you can also send a formal copyright notice.",
+    ar: "إن كنت صاحب حقوق ما يُعرض، يمكنك أيضًا إرسال إشعار رسمي بشأن حقوق النشر.",
+  },
+  "report.copyrightLink": { en: "Send a copyright notice", ar: "أرسل إشعارًا بشأن حقوق النشر" },
+  "report.text": { en: "What did you see? (optional)", ar: "ماذا شاهدت؟ (اختياري)" },
+  "report.email": {
+    en: "Your email, if you'd like a reply (optional)",
+    ar: "بريدك الإلكتروني إن أردت ردًا (اختياري)",
+  },
+  "report.send": { en: "Send report", ar: "أرسل البلاغ" },
+  "report.cancel": { en: "Cancel", ar: "إلغاء" },
+  "report.sending": { en: "Sending…", ar: "جارٍ الإرسال…" },
+  "report.thanks": { en: "Thank you. We review every report.", ar: "شكرًا لك. نراجع كل بلاغ." },
+  "report.chooseCategory": { en: "Choose what the problem is.", ar: "اختر نوع المشكلة." },
+  "report.verify": {
+    en: "Confirm you're a person, then send the report.",
+    ar: "أكّد أنك لست برنامجًا آليًا، ثم أرسل البلاغ.",
+  },
+  "report.tooMany": {
+    en: "You've sent several reports. Wait a minute and try again.",
+    ar: "أرسلت عدة بلاغات. انتظر دقيقة وحاول مجددًا.",
+  },
+  "report.failed": {
+    en: "The report couldn't be sent. Try again, or write to copyright@maktaba.tv.",
+    ar: "تعذّر إرسال البلاغ. حاول مجددًا، أو اكتب إلى copyright@maktaba.tv.",
+  },
   "site.player": { en: "Player", ar: "المشغّل" },
   "site.noChannels": {
     en: "There are no channels for you here. Ask the publisher for an invite.",

@@ -81,13 +81,20 @@ type Target struct {
 	EdgeChannel string
 }
 
-// Resolve finds the channel a watch URL names (the live one, else the newest unpublished).
+// Resolve finds the channel a watch URL names (the live one, else the newest unpublished): by
+// the home's and the channel's slugs, or by the home's server id and the edge's channel id, the
+// pair the edge's watch pages carry (50.27).
 func (s *Store) Resolve(ctx context.Context, ref ChannelRef) (Target, bool, error) {
 	var t Target
+	// one form or the other, never both: a server id is matched only as an id
+	where := `sv.slug = $1 AND bc.slug = $2`
+	if ref.ByServerID() {
+		where = `sv.id::text = $1 AND bc.edge_channel = $2`
+	}
 	err := s.DB.QueryRowContext(ctx, `
         SELECT bc.id::text, bc.server_id::text, COALESCE(sv.owner_user_id::text, ''), COALESCE(bc.edge_channel, '')
           FROM broadcast_channels bc JOIN servers sv ON sv.id = bc.server_id
-         WHERE sv.slug = $1 AND bc.slug = $2
+         WHERE `+where+`
          ORDER BY (bc.unpublished_at IS NULL) DESC, bc.published_at DESC
          LIMIT 1`, ref.Publisher, ref.Channel).Scan(&t.ChannelID, &t.ServerID, &t.PublisherID, &t.EdgeChannel)
 	if errors.Is(err, sql.ErrNoRows) {

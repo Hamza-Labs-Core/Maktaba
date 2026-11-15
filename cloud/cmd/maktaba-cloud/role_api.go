@@ -345,7 +345,8 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 	draining := &atomic.Bool{}
 	r := server.NewRouter(logger, pool, mig, build, server.DefaultOrigins(cfg),
 		server.WithTrustedProxies(cfg.Server.TrustedProxies), server.WithUserHosts(cfg.Server.UserHosts),
-		server.WithDraining(draining.Load), server.WithTVOrigins(tvcodesh.PublicPaths))
+		server.WithDraining(draining.Load), server.WithTVOrigins(tvcodesh.PublicPaths),
+		server.WithFormOrigins(moderationh.ReportPaths, moderationh.WatchOrigins))
 	adminR := server.NewAdminRouter(logger, pool, mig, build, cfg.Server.AdminHost,
 		cfg.Server.AdminOriginOrDefault(), cfg.Server.TrustedProxies, server.WithDraining(draining.Load))
 	// NewRouter has already registered the health probes, and chi
