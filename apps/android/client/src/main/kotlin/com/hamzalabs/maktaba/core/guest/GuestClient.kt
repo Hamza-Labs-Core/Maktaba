@@ -435,3 +435,25 @@ class GuestWatch(
         }
     }
 }
+
+/**
+ * Which of a [GuestWatch]'s plays the player has loaded, so a new play's master loads once and a
+ * refreshed token never restarts the picture. A play starts with nothing to load (the edge has not
+ * answered yet) and gets its address later under the same play number: the address is what is
+ * loaded, never just the number.
+ */
+class GuestLoads {
+    private var loaded: Int = -1
+
+    /** The address to load now for [shown], or null when the player keeps what it has (or nothing plays). */
+    fun take(shown: GuestWatch.Shown): GuestLive? {
+        val live = shown.live
+        if (live == null) {
+            loaded = -1
+            return null
+        }
+        if (shown.play == loaded) return null
+        loaded = shown.play
+        return live
+    }
+}

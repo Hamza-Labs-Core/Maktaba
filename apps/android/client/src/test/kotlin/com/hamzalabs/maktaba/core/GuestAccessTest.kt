@@ -167,4 +167,24 @@ class GuestAccessTest {
         door.update(GuestAccess.Allowed)
         assertEquals(GuestDoor.Shown.Shut, door.shown.value)
     }
+
+    @Test
+    fun aPlaysAddressLoadsOnceItArrivesUnderTheSamePlay() {
+        val loads = com.hamzalabs.maktaba.core.guest.GuestLoads()
+        val live = com.hamzalabs.maktaba.core.guest.GuestLive.of("https://live.maktaba.tv/vt-1/ch1/master.m3u8")!!
+        val starting = com.hamzalabs.maktaba.core.guest.GuestWatch.Shown(channel = "ch1", play = 1)
+        assertEquals("nothing to load while the edge has not answered", null, loads.take(starting))
+        // the edge answered: the same play now has its address, which loads
+        val playing = starting.copy(live = live)
+        assertEquals(live, loads.take(playing))
+        // a heartbeat (a new state, a refreshed token in the same GuestLive) never loads again
+        assertEquals(null, loads.take(playing.copy(state = com.hamzalabs.maktaba.core.guest.GuestViewerState.Live)))
+        // another channel: a new play loads its own address
+        val other = com.hamzalabs.maktaba.core.guest.GuestLive.of("https://live.maktaba.tv/vt-1/ch2/master.m3u8")!!
+        assertEquals(null, loads.take(com.hamzalabs.maktaba.core.guest.GuestWatch.Shown(channel = "ch2", play = 2)))
+        assertEquals(other, loads.take(com.hamzalabs.maktaba.core.guest.GuestWatch.Shown(channel = "ch2", live = other, play = 2)))
+        // Try again on the same channel after a refusal: loads again
+        assertEquals(null, loads.take(com.hamzalabs.maktaba.core.guest.GuestWatch.Shown(channel = "ch2", problem = com.hamzalabs.maktaba.core.guest.GuestError.Offline, play = 2)))
+        assertEquals(other, loads.take(com.hamzalabs.maktaba.core.guest.GuestWatch.Shown(channel = "ch2", live = other, play = 3)))
+    }
 }

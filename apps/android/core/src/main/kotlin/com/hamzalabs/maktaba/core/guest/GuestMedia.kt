@@ -127,7 +127,7 @@ fun guestDataSource(http: OkHttpClient, live: () -> GuestLive?): DataSource.Fact
  */
 class GuestPlayer(context: Context, http: OkHttpClient = GuestClient.defaultHttp) {
     @Volatile private var live: GuestLive? = null
-    private var play = -1
+    private val loads = GuestLoads()
     private var retries = 0
     private val main = Handler(Looper.getMainLooper())
 
@@ -156,19 +156,17 @@ class GuestPlayer(context: Context, http: OkHttpClient = GuestClient.defaultHttp
 
     /** Plays what [shown] says: a new play's master, paused while the state does not play, stopped when nothing does. */
     fun show(shown: GuestWatch.Shown) {
-        val l = shown.live
-        if (l == null) {
+        val next = loads.take(shown)
+        if (shown.live == null) {
             live = null
-            play = shown.play
             player.stop()
             player.clearMediaItems()
             return
         }
-        if (shown.play != play) {
-            play = shown.play
-            live = l
+        if (next != null) {
+            live = next
             retries = 0
-            player.setMediaItem(MediaItem.fromUri(l.master))
+            player.setMediaItem(MediaItem.fromUri(next.master))
             player.prepare()
         }
         player.playWhenReady = shown.plays
