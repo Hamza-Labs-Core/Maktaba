@@ -474,13 +474,13 @@ private fun Modifier.testTagGuest(tag: String) = testTag(tag)
 /** A time of day in the app's language. */
 @Composable
 private fun time(at: Instant): String {
-    val locale = LocalContext.current.resources.configuration.locales[0]
+    val locale = androidx.compose.ui.platform.LocalConfiguration.current.locales[0]
     return DateTimeFormatter.ofLocalizedTime(FormatStyle.SHORT).withLocale(locale).withZone(ZoneId.systemDefault()).format(at)
 }
 
 /** A day in the app's language. */
 @Composable
 private fun day(epochSec: Long): String {
-    val locale = LocalContext.current.resources.configuration.locales[0]
+    val locale = androidx.compose.ui.platform.LocalConfiguration.current.locales[0]
     return DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM).withLocale(locale).withZone(ZoneId.systemDefault()).format(Instant.ofEpochSecond(epochSec))
 }

@@ -59,32 +59,41 @@ Cloudflare processes the requests (Workers, Turnstile, Analytics Engine).
 
 ## In the apps
 
-**Watch a broadcast** in Maktaba TV on the Apple TV (the home picker, and Settings) and in
-Maktaba Player on iPhone, iPad and the Mac (the home picker, or an invite's link) is a space of
-its own: no home is chosen and no one signs in.
+**Watch a broadcast** in Maktaba TV on the Apple TV (the home picker, and Settings) and on
+Android TV, Google TV and Fire TV (the home picker, and Account), and in Maktaba Player on iPhone,
+iPad, the Mac and Android phones, foldables and tablets (the home picker, Profile on Android, or
+an invite's link) is a space of its own: no home is chosen and no one signs in.
 
 - **Ways in:** the publisher's handle (the part of the watch address after `watch.maktaba.tv`)
   and the invite's `MK-` short code; an invite link pasted, opened as `maktaba://watch/i/<invite>`
-  or scanned on an iPhone; on the Apple TV, the QR code and the 4-character code to compare, the
+  or scanned on a phone; on the TVs, the QR code and the 4-character code to compare, the
   TV waiting on `GET /api/v1/pair/<nonce>` with its own poll key until a phone sends a pass.
-- **Saved broadcasts:** each publisher's pass (or a TV's open session) is kept in the Keychain,
-  one item holding the list, newest first, dropped once it expires; **Remove** takes it off the
+- **Saved broadcasts:** each publisher's pass (or a TV's open session) is kept in the Keychain
+  (`…ThisDeviceOnly`) on Apple devices, and on Android sealed with an AES key in the Android
+  Keystore that never leaves the device, in a file the apps' backup rules keep out of backups and
+  device transfers: a pass counts as one of its invite's devices. One entry holds the list,
+  newest first, dropped once it expires; **Remove** takes it off the
   device (the invite's device use stays counted on the edge).
 - **Watching:** the publisher's channels with now and next; the player shows the picture as the
   edge sends it, the channel, the programme and a CC BY programme's credit, and the state's words
   from the same table as the pages (`shared/broadcast/viewer-states.json`). The player reads
-  `live.maktaba.tv` through MaktabaKit's `StreamProxy` on the device's loopback, which puts the
-  newest viewer token in each path, so the 10-minute token is refreshed by the heartbeat without
-  restarting the picture. Up and down on the remote, or a vertical swipe, change the channel.
-- **Not offered** under a parental limit (the account's, or the device's Screen Time limit): a
-  broadcast is outside any home's ratings.
+  `live.maktaba.tv` through MaktabaKit's `StreamProxy` on the device's loopback (on Android, a
+  Media3 data source that rewrites each request's address), which puts the newest viewer token
+  in each path, so the 10-minute token is refreshed by the heartbeat without restarting the
+  picture; only the channel's own paths on its edge are fetched. On Android a segment whose body
+  ends before its declared length (or a transport stream segment that ends partway through a
+  packet) is a load error the player tries again, never a whole segment; the same check guards
+  the Android players' home streams. Up and down on the remote, or a vertical swipe, change the channel.
+- **Not offered** under a parental limit (the account's, or the device's Screen Time limit; on
+  Android, any sign-in on the device the home last said was limited): a broadcast is outside any
+  home's ratings. The edge never learns who watches, so this is the app's convenience, not a
+  server rule; the device's own restrictions are the boundary.
 
 ## Not yet
 
-- The Android and Android TV apps' Watch a broadcast (story 50.27 T04 and T06), and the
-  desktop Player for Windows and Linux.
+- The desktop Player for Windows and Linux.
 - The Report button in the apps' player menu: the cloud's report route checks a Turnstile token
   the native apps cannot show yet.
-- Universal links (`https://watch.maktaba.tv/i/…` opening the app): the edge has to serve the
-  apps' association file; until then the link opens the watch page, which plays in the browser.
+- Universal links and Android app links (`https://watch.maktaba.tv/i/…` opening the app): the
+  edge has to serve the apps' association files; until then the link opens the watch page, which plays in the browser.
 - The remote `guest.enabled` switch that would hide the entry in the apps.

@@ -44,6 +44,17 @@ class MaktabaTVApp : Application() {
     /** Work that outlives a screen (a stopped video's last position, its session's close). */
     val background = CoroutineScope(SupervisorJob() + Dispatchers.Default + AppLog.handler("tv background"))
 
+    /** Watch a broadcast (story 50.27): the saved broadcasts, sealed on this TV, and the edge's guest API. */
+    val guests: com.hamzalabs.maktaba.core.guest.GuestSpace by lazy {
+        com.hamzalabs.maktaba.core.guest.GuestSpace(
+            com.hamzalabs.maktaba.core.guest.Guests.store(this),
+            com.hamzalabs.maktaba.core.guest.Guests.client(this),
+        )
+    }
+
+    /** The guest space is open (from the home picker or Account), over whatever the TV shows. */
+    val guestOpen = kotlinx.coroutines.flow.MutableStateFlow(false)
+
     /** A home's token store: the session's own (the same file and key). */
     fun tokens(home: String): TokenStore = keystoreTokens(this, packageName, home)
 }

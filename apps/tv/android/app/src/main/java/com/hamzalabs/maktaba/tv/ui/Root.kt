@@ -23,6 +23,11 @@ fun Root(app: MaktabaTVApp) {
     val phase by session.phase.collectAsState()
     val home by session.current.collectAsState()
     val link by session.link.collectAsState()
+    // story 50.27: Watch a broadcast, over everything (a guest needs no home and no account)
+    if (app.guestOpen.collectAsState().value) {
+        com.hamzalabs.maktaba.tv.ui.screens.TvGuestSpace(app.guests, onClose = { app.guestOpen.value = false })
+        return
+    }
     // story 58.01: this app and the home are too far apart: the page, instead of signing in
     session.compatBlock.collectAsState().value?.let {
         CompatScreen(it, onTryAgain = session::recheckCompat, onOtherHome = session::switchHome)

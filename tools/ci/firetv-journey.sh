@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Story 58.05 T04, run by _android-tv.yml's firetv-emulator job inside the Android TV emulator
 # (from apps/tv/android): keeps logcat for the whole run, takes Google Play services off the image
-# for this run (Fire OS has none), then runs the Fire TV build's journey test.
+# for this run (Fire OS has none), then runs the Fire TV build's journey test and the guest's
+# (story 50.27 T06: Watch a broadcast with a short code, played by the app's player).
 set -euo pipefail
 
 out=app/build/emulator
@@ -27,4 +28,4 @@ if grep -qx "package:com.google.android.gms" "$out/packages.txt"; then
 fi
 
 ./gradlew --no-daemon --stacktrace :app:connectedAmazonDebugAndroidTest \
-  -Pandroid.testInstrumentationRunnerArguments.class=com.hamzalabs.maktaba.tv.FireTvJourneyTest
+  -Pandroid.testInstrumentationRunnerArguments.class=com.hamzalabs.maktaba.tv.FireTvJourneyTest,com.hamzalabs.maktaba.tv.TvGuestJourneyTest

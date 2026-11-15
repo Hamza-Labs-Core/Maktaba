@@ -78,6 +78,8 @@ fun HomePickerScreen(app: MaktabaTVApp, probe: HomeProbe = remember { HomeProbe(
     val invalid = stringResource(CoreR.string.address_invalid)
     val failed = stringResource(CoreR.string.connect_failed, "%s")
     val nearby = HomeChoices.nearby(found, saved)
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val guestAllowed = remember { com.hamzalabs.maktaba.core.guest.Guests.allowedOnDevice(context) }
 
     // a home in the list takes focus (never the text field: focus there opens the keyboard)
     val anyHome = saved.isNotEmpty() || nearby.isNotEmpty()
@@ -157,6 +159,20 @@ fun HomePickerScreen(app: MaktabaTVApp, probe: HomeProbe = remember { HomeProbe(
                                 stringResource(if (found.isEmpty()) CoreR.string.homes_looking else CoreR.string.homes_all_saved),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaktabaPalette.Faint,
+                            )
+                        }
+                    }
+                    // story 50.27: channels someone shared, watched as a guest (no home needed); not
+                    // when a sign-in on this TV is under a parental limit (Epic 57)
+                    if (guestAllowed) {
+                        item { Heading(stringResource(CoreR.string.guest_watch_broadcast)) }
+                        item {
+                            HomeItem(
+                                name = stringResource(CoreR.string.guest_watch_broadcast),
+                                address = com.hamzalabs.maktaba.core.guest.GuestEdge.HOST,
+                                enabled = !connecting,
+                                onClick = { problem = null; app.guestOpen.value = true },
+                                modifier = Modifier.testTag("picker-watch-broadcast"),
                             )
                         }
                     }

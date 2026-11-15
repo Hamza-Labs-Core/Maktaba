@@ -1021,6 +1021,19 @@ build fails when the two differ.
 
 ### Added
 
+- **Watch a broadcast on Android phones, tablets and TVs (Epic 50, story 50.27).** Maktaba Player
+  on Android and Maktaba TV on Android TV, Google TV and Fire TV now have **Watch a broadcast**, as
+  the Apple apps do: a home's published channels watched as a guest, with no account. It is on the
+  home picker, in the Player's **Profile** and in the TV's **Account**. A guest types the
+  publisher's handle and an `MK-` short code; on a phone also pastes, opens
+  (`maktaba://watch/i/…`) or scans an invite link; on a TV scans a QR code with a phone and checks
+  the 4-character code both show. The publisher's channels show with now and next; a swipe on a
+  phone or up and down on the remote change the channel, and the viewing token refreshes without
+  restarting the picture. Passes are sealed with a key in Android's Keystore, stay out of backups
+  and each have **Remove**. The entry is hidden on a device under a parental limit. A video
+  segment cut short is now loaded again instead of being played as if whole, in every Android
+  player.
+
 - **Watch a broadcast on Apple TV, iPhone, iPad and the Mac (Epic 50, story 50.27).** Anyone a
   home invites can watch its published channels in Maktaba Player or Maktaba TV with no Maktaba
   or home account: from the home picker, an invite link (pasted, opened as a
