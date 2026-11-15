@@ -115,7 +115,13 @@ jobs:
         run: |
           set -euo pipefail
           if gh release view "${TAG}" >/dev/null 2>&1; then
-            gh release upload "${TAG}" out/* --clobber
+            # a transient GitHub error is tried again (tools/release/gh-retry.sh); an older tag's
+            # checkout has no helper, so its upload runs once, as before
+            if [ -x tools/release/gh-retry.sh ]; then
+              tools/release/gh-retry.sh gh release upload "${TAG}" out/* --clobber
+            else
+              gh release upload "${TAG}" out/* --clobber
+            fi
           else
             echo "::error::Release ${TAG} does not exist. Create it first (cut a v* release via release.yml), then re-run." >&2
             exit 1

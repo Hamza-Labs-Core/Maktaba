@@ -32,7 +32,12 @@
 # names the files that may change on a published release (desktop's latest.json and
 # latest-player.json, as late platforms land).
 #
-# Env: GH_TOKEN, GITHUB_REPOSITORY; NOTES (ensure); REQUIRE_FEED (publish).
+# Each upload goes through gh-retry.sh: a transient GitHub error (HTTP 5xx, a stream cancelled,
+# a timeout) is tried again with --clobber, as a manual re-run of the job used to; any other
+# failure fails the step at once.
+#
+# Env: GH_TOKEN, GITHUB_REPOSITORY; NOTES (ensure); REQUIRE_FEED (publish); GH_RETRY_DELAYS
+# (upload, gh-retry.sh).
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -95,7 +100,7 @@ upload() {
     ensure
     id="$(release_id)"
     if is_draft "${id}"; then
-        gh release upload "${tag}" "${files[@]}" --clobber
+        "${here}/gh-retry.sh" gh release upload "${tag}" "${files[@]}" --clobber
         return 0
     fi
     names="$(asset_names "${id}")"
@@ -121,7 +126,7 @@ upload() {
             echo "release ${tag} is published: ${base} kept as it is"
             continue
         fi
-        gh release upload "${tag}" "${f}" --clobber
+        "${here}/gh-retry.sh" gh release upload "${tag}" "${f}" --clobber
     done
 }
 
