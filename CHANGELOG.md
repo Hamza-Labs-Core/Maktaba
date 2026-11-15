@@ -344,6 +344,16 @@ build fails when the two differ.
 
 ### Fixed
 
+- **Sign-in no longer hangs while Maktaba's own plugins are busy with the database.** The
+  first-party plugins ran their database work on the API's own connections. They kept some
+  between calls and could leave transactions open for hours, until no connection was left
+  for anything else: signing in, the queues page and the plugins' own jobs waited forever.
+  The plugins now have a small pool of their own (12 connections), so the API always keeps
+  its connections. A transaction a plugin leaves idle is rolled back within about two
+  minutes on a timer, and Postgres ends one itself a minute after that. The health report
+  an admin reads (`/api/system/health`) now shows what the plugins hold: connections, open
+  transactions and the oldest one's age.
+
 - **Playback no longer freezes for up to 30 seconds when an Apple device is busy.**
   The Apple apps' stream proxy passes each video request on to the home. It ran below other work
   on the device, and it could wait for a token refresh before passing a request on. On a busy
