@@ -10,6 +10,7 @@ import { INVITE_DOMAIN, INVITE_PREFIX, readOpen, type InviteClaims } from "../sr
 import { WATCH_ROUTES } from "../src/play";
 import { forgetRevocations } from "../src/revocations";
 import { clientJS } from "../src/site/client";
+import { HLS_INTEGRITY, HLS_SRC } from "../src/site/pages";
 import { inviteToken } from "../src/site/routes";
 import { viewerState } from "../src/site/states";
 import { ERROR_KEYS, STRINGS } from "../src/strings";
@@ -359,6 +360,98 @@ describe("the watch pages", () => {
     expect(html).toContain('content="noindex"');
   });
 
+  it("Report: a form for the cloud's report API, in English and Arabic, accessible", async () => {
+    const s = await setup();
+    const pass = await passFor(s);
+    const api = { API_ORIGIN: "https://api.maktaba.tv/" };
+    const r = await get(`/en/${s.pub}/${s.ch}`, { Cookie: `mkp_${s.pub}=${pass}` }, api);
+    const html = await r.text();
+    // the form: a labelled group of the four categories, labelled fields within the cloud's
+    // limits, a live status, a button that says what it controls; shown by the page's script
+    expect(html).toContain(
+      '<button id="report-open" type="button" class="secondary" aria-expanded="false" aria-controls="report" hidden>Report</button>'
+    );
+    expect(html).toContain(
+      '<form id="report" class="report" aria-labelledby="report-h" novalidate hidden>'
+    );
+    expect(html).toContain("<legend>What&#39;s the problem?</legend>");
+    for (const c of ["copyright", "illegal", "abuse", "other"])
+      expect(html).toContain(`<input type="radio" name="category" value="${c}" required>`);
+    expect(html.match(/name="category"/g)).toHaveLength(4);
+    expect(html).toContain('<label for="report-text">');
+    expect(html).toContain('maxlength="4000"');
+    expect(html).toContain('<label for="report-email">');
+    expect(html).toContain('type="email" maxlength="320"');
+    expect(html).toContain('id="report-status" role="status" aria-live="polite"');
+    expect(html).toContain('href="https://maktaba.tv/legal/copyright/"');
+    // without the script, the link to the copyright page stays
+    expect(html).toContain(`<p id="report-link"><a href="/en/legal/copyright">Report</a></p>`);
+    // the page's script gets the API, the host the cloud reads a channel from and the programme
+    const cfg = JSON.parse(
+      /<script type="application\/json" id="cfg">(.*?)<\/script>/.exec(html)![1]!
+    );
+    expect(cfg.report).toEqual({
+      api: "https://api.maktaba.tv",
+      base: "https://watch.maktaba.tv",
+      programme: "Family now",
+    });
+    for (const k of ["report.thanks", "report.tooMany", "report.verify", "report.failed"])
+      expect(cfg.strings[k], k).toBeTruthy();
+    // the CSP lets the page post to the API and nowhere else new
+    const policy = r.headers.get("Content-Security-Policy")!;
+    expect(policy).toContain("connect-src 'self' https://live.maktaba.tv https://api.maktaba.tv;");
+
+    const ar = await (
+      await get(`/ar/${s.pub}/${s.ch}`, { Cookie: `mkp_${s.pub}=${pass}` }, api)
+    ).text();
+    expect(ar).toContain('dir="rtl"');
+    for (const w of [
+      "إبلاغ",
+      "ما المشكلة؟",
+      "حقوق النشر",
+      "محتوى غير قانوني",
+      "إساءة أو تحرش",
+      "أمر آخر",
+      "أرسل البلاغ",
+    ])
+      expect(ar, w).toContain(w);
+    expect(ar).toContain('href="https://maktaba.tv/ar/legal/copyright/"');
+    // the email field reads left to right inside the Arabic page
+    expect(ar).toContain('type="email" maxlength="320" autocomplete="email" dir="ltr"');
+  });
+
+  it("Report without API_ORIGIN (or with a plain-http one): the copyright page's link, no form", async () => {
+    const s = await setup();
+    const pass = await passFor(s);
+    for (const over of [{}, { API_ORIGIN: "http://api.maktaba.tv" }]) {
+      const r = await get(`/en/${s.pub}/${s.ch}`, { Cookie: `mkp_${s.pub}=${pass}` }, over);
+      const html = await r.text();
+      expect(html).not.toContain('id="report"');
+      expect(html).toContain('<a href="/en/legal/copyright">Report</a>');
+      expect(r.headers.get("Content-Security-Policy")).toContain(
+        "connect-src 'self' https://live.maktaba.tv;"
+      );
+    }
+  });
+
+  it("hls.js loads by its exact version with its integrity hash", async () => {
+    const s = await setup();
+    const pass = await passFor(s);
+    const html = await (
+      await get(`/en/${s.pub}/${s.ch}`, { Cookie: `mkp_${s.pub}=${pass}` })
+    ).text();
+    expect(html).toContain(
+      `<script src="${HLS_SRC}" integrity="${HLS_INTEGRITY}" crossorigin="anonymous" defer></script>`
+    );
+  });
+
+  it("the page script posts the report to the cloud and resets Turnstile after each post", () => {
+    const js = clientJS();
+    expect(js).toContain("/v1/moderation/reports");
+    expect(js).toContain("turnstile_token");
+    expect(js).toContain(".reset(");
+  });
+
   it("an open channel the publisher lets search engines index drops noindex", async () => {
     const s = await setup();
     const r = await get(`/en/${s.pub}/${s.ch2}`);
@@ -430,6 +523,7 @@ describe("the watch pages", () => {
       /^\/(ar|en)\/legal\/(copyright|terms|privacy)$/,
       /^\/s\/watch\.(js|css)$/,
       /^https:\/\/cdn\.jsdelivr\.net\/npm\/hls\.js@/,
+      /^https:\/\/maktaba\.tv\/(ar\/)?legal\/copyright\/$/, // Maktaba's own notice form
       /^https:\/\/challenges\.cloudflare\.com\//,
       /^https:\/\/example\.org\/film$/, // the CC BY credit's source
       /^data:image\//, // the publisher's own logo

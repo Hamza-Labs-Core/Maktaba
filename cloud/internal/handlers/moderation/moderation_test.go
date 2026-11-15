@@ -111,6 +111,69 @@ func TestPublicReportGuards(t *testing.T) {
 	}
 }
 
+// The server holds every report to the four categories and to each field's size limit, whatever
+// the watch page's form allows: one byte over any limit is 400 before the database is touched
+// (the Store is nil here), and a field at its limit gets past the check.
+func TestPublicReportKindsAndSizes(t *testing.T) {
+	r := router(&Deps{})
+	const ch = "https://watch.maktaba.tv/ar/home-a/news"
+	post := func(fields map[string]any) *httptest.ResponseRecorder {
+		raw, _ := json.Marshal(fields)
+		return send(r, "POST", "/v1/moderation/reports", string(raw), map[string]string{"Origin": "https://watch.maktaba.tv"})
+	}
+	for _, c := range []string{"", "spam", "COPYRIGHT", "illegal ", "urgent"} {
+		if rec := post(map[string]any{"category": c, "channel": ch}); rec.Code != http.StatusBadRequest ||
+			!strings.Contains(rec.Body.String(), "category must be") {
+			t.Errorf("category %q = %d %s", c, rec.Code, rec.Body)
+		}
+	}
+	over := map[string]int{"text": MaxReportText, "email": MaxReportEmail, "programme": MaxReportProgramme}
+	for field, limit := range over {
+		if rec := post(map[string]any{"category": "abuse", "channel": ch, field: strings.Repeat("a", limit+1)}); rec.Code != http.StatusBadRequest ||
+			!strings.Contains(rec.Body.String(), "too long") {
+			t.Errorf("%s at %d bytes = %d %s", field, limit+1, rec.Code, rec.Body)
+		}
+	}
+	long := ch + "?" + strings.Repeat("x", MaxReportChannel)
+	if rec := post(map[string]any{"category": "abuse", "channel": long}); rec.Code != http.StatusBadRequest ||
+		!strings.Contains(rec.Body.String(), "too long") {
+		t.Errorf("a channel URL over %d bytes = %d %s", MaxReportChannel, rec.Code, rec.Body)
+	}
+	// a whole body over the reader's 32 KiB is cut off and is no JSON
+	if rec := post(map[string]any{"category": "abuse", "channel": ch, "x": strings.Repeat("a", 33<<10)}); rec.Code != http.StatusBadRequest {
+		t.Errorf("a body over 32 KiB = %d", rec.Code)
+	}
+	// the limits count characters, as the page's maxlength does: one Arabic letter over is refused
+	if rec := post(map[string]any{"category": "abuse", "channel": ch, "text": strings.Repeat("ب", MaxReportText+1)}); rec.Code != http.StatusBadRequest {
+		t.Errorf("Arabic text one character over = %d", rec.Code)
+	}
+	// at the limits, the check passes and the report goes on to the store (nil here: it panics),
+	// in Arabic (2 bytes a letter) and in 4-byte characters too
+	for _, letter := range []string{"a", "ب", "😀"} {
+		func() {
+			defer func() { _ = recover() }()
+			rec := post(map[string]any{"category": "illegal", "channel": ch, "text": strings.Repeat(letter, MaxReportText),
+				"email": strings.Repeat("a", MaxReportEmail), "programme": strings.Repeat(letter, MaxReportProgramme)})
+			t.Errorf("a report at the limits in %q was refused: %d %s", letter, rec.Code, rec.Body)
+		}()
+	}
+}
+
+// A report's Turnstile token is checked on every post, and another site's page is refused.
+func TestPublicReportFormGuard(t *testing.T) {
+	ts := &fakeTurnstile{err: turnstile.ErrFailed}
+	r := router(&Deps{Turnstile: ts})
+	body := `{"category":"abuse","channel":"https://watch.maktaba.tv/ar/home-a/news","turnstile_token":"tok"}`
+	if rec := send(r, "POST", "/v1/moderation/reports", body, map[string]string{"Origin": "https://evil.test"}); rec.Code != http.StatusForbidden ||
+		!strings.Contains(rec.Body.String(), "origin_not_allowed") || ts.calls != 0 {
+		t.Errorf("another origin = %d %s (turnstile calls %d)", rec.Code, rec.Body, ts.calls)
+	}
+	if rec := send(r, "POST", "/v1/moderation/reports", body, map[string]string{"Origin": "https://watch.maktaba.tv"}); rec.Code != http.StatusForbidden ||
+		!strings.Contains(rec.Body.String(), turnstile.CodeFailed) || ts.calls != 1 {
+		t.Errorf("a failed bot check from the watch page = %d %s", rec.Code, rec.Body)
+	}
+}
+
 // A home's routes need its own credential; the admin routes are 403 without the staff gate.
 func TestHomeAndAdminRoutesAreGuarded(t *testing.T) {
 	r := router(&Deps{Agents: fakeAgents{}})

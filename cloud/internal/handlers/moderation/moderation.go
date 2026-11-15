@@ -43,6 +43,7 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/go-chi/chi/v5"
 
@@ -59,6 +60,14 @@ var FormOrigins = []string{"https://maktaba.tv", "https://watch.maktaba.tv"}
 
 // PublicPaths are the public routes, for the per-IP rate limit (burst 5, then one a minute).
 var PublicPaths = []string{"/v1/moderation/notices", "/v1/moderation/reports"}
+
+// ReportPaths and WatchOrigins are the CORS the watch pages' Report form needs
+// (server.WithFormOrigins: the origin echoed, no credentials): the report route, from
+// watch.maktaba.tv. The notice form is on maktaba.tv, which the web allow-list already answers.
+var (
+	ReportPaths  = []string{"/v1/moderation/reports"}
+	WatchOrigins = []string{"https://watch.maktaba.tv"}
+)
 
 // Agents checks a home's credential.
 type Agents interface {
@@ -267,13 +276,25 @@ type reportBody struct {
 	Turnstile string `json:"turnstile_token"`
 }
 
-// PostReport is a viewer's report: 202 with its id.
+// The longest field values a report may carry, in characters (400 bad_request beyond any of
+// them): the watch page's maxlength counts characters, and an Arabic letter is two bytes.
+const (
+	MaxReportText      = 4000
+	MaxReportEmail     = 320
+	MaxReportProgramme = 300
+	MaxReportChannel   = 2048
+)
+
+// PostReport is a viewer's report: 202 with its id. The category must be one of the four; an
+// illegal-content report pages the on-call admin (mod.Urgent, Store.AddReport).
 func (d *Deps) PostReport(w http.ResponseWriter, r *http.Request) {
 	var b reportBody
-	if !decode(w, r, 16<<10, &b) || !d.formGuard(w, r, b.Turnstile) {
+	// room for every field at its limit in 4-byte characters
+	if !decode(w, r, 32<<10, &b) || !d.formGuard(w, r, b.Turnstile) {
 		return
 	}
 	rep := b.Report
+	chars := utf8.RuneCountInString
 	switch {
 	case !mod.ValidCategory(rep.Category):
 		writeErr(w, http.StatusBadRequest, "bad_request", "category must be copyright, illegal, abuse or other")
@@ -281,7 +302,8 @@ func (d *Deps) PostReport(w http.ResponseWriter, r *http.Request) {
 	case rep.About != "" && rep.About != "content" && rep.About != "publisher":
 		writeErr(w, http.StatusBadRequest, "bad_request", "about must be content or publisher")
 		return
-	case len(rep.Body) > 4000 || len(rep.Email) > 320 || len(rep.Programme) > 300:
+	case chars(rep.Body) > MaxReportText || chars(rep.Email) > MaxReportEmail || chars(rep.Programme) > MaxReportProgramme ||
+		chars(rep.ChannelURL) > MaxReportChannel:
 		writeErr(w, http.StatusBadRequest, "bad_request", "a field is too long")
 		return
 	}

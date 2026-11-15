@@ -144,16 +144,23 @@ func (n Notice) Missing() []string {
 	return out
 }
 
-// ChannelRef is what a watch URL names: the publisher's home slug and the channel's slug.
+// ChannelRef is what a watch URL names: the publisher's home slug and the channel's slug, or, on
+// the watch pages the edge serves (story 50.27), the home's server id and the edge's channel id.
 type ChannelRef struct {
 	Publisher string `json:"publisher"`
 	Channel   string `json:"channel"`
 }
 
+// watchReserved are the first path parts of watch.maktaba.tv that are never a publisher.
+var watchReserved = map[string]bool{"api": true, "i": true, "s": true, "pair": true, "ar": true, "en": true,
+	"legal": true, "guide": true}
+
 var slugRE = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$`)
 
 // ParseWatchURL reads watch.maktaba.tv/<publisher>/<channel> (a scheme is optional; a query, a
-// fragment or a trailing path such as /live is ignored). false: not a channel on Maktaba.
+// fragment or a trailing path such as /live is ignored), and the watch pages' own form with a
+// language first, watch.maktaba.tv/ar/<publisher>/<channel> or /en/…. false: not a channel on
+// Maktaba.
 func ParseWatchURL(raw string) (ChannelRef, bool) {
 	s := strings.TrimSpace(raw)
 	if s == "" {
@@ -167,12 +174,18 @@ func ParseWatchURL(raw string) (ChannelRef, bool) {
 		return ChannelRef{}, false
 	}
 	parts := strings.FieldsFunc(u.Path, func(r rune) bool { return r == '/' })
+	// the watch pages put the language first; the edge reserves ar and en as publishers
+	if len(parts) > 0 && (strings.EqualFold(parts[0], "ar") || strings.EqualFold(parts[0], "en")) {
+		parts = parts[1:]
+	}
 	if len(parts) < 2 {
 		return ChannelRef{}, false
 	}
 	pub, ch := strings.ToLower(parts[0]), strings.ToLower(parts[1])
-	// the watch site's own pages are no channel (invites, pairing, its API)
-	if pub == "i" || pub == "pair" || pub == "api" || !slugRE.MatchString(pub) || !slugRE.MatchString(ch) {
+	// the watch site's own pages are no channel (invites, pairing, its API, static files, legal
+	// pages; the edge's RESERVED in web/packages/broadcast-edge/src/site/routes.ts), and
+	// /<publisher>/guide is the publisher's guide
+	if watchReserved[pub] || ch == "guide" || !slugRE.MatchString(pub) || !slugRE.MatchString(ch) {
 		return ChannelRef{}, false
 	}
 	return ChannelRef{Publisher: pub, Channel: ch}, true

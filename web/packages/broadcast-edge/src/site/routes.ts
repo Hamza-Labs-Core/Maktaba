@@ -4,6 +4,7 @@
 //   GET  /, /ar, /en                     what a watch link is (no directory)
 //   GET  /<lang>/<publisher>             the channel grid the guest's credential allows
 //   GET  /<lang>/<publisher>/<channel>   the player, now and next, today, attribution, Report
+//                                        (the form posts to API_ORIGIN's /v1/moderation/reports)
 //   GET  /<lang>/<publisher>/guide       the guide for the publisher's channels
 //   GET  /<lang>/legal/<page>            copyright, terms, privacy (summaries)
 //   GET  /pair, /<lang>/pair             the phone's side of TV pairing; POST: send to the TV
@@ -63,6 +64,17 @@ const RESERVED = new Set(["api", "i", "s", "pair", "ar", "en", "legal", "guide"]
 
 export function liveOriginOf(env: Env): string {
   return `https://${env.LIVE_HOST || DEFAULT_LIVE_HOST}`;
+}
+
+/** apiOriginOf is API_ORIGIN's origin (the Report form's target), or "" when unset or not https. */
+export function apiOriginOf(env: Env): string {
+  if (!env.API_ORIGIN) return "";
+  try {
+    const u = new URL(env.API_ORIGIN);
+    return u.protocol === "https:" ? u.origin : "";
+  } catch {
+    return "";
+  }
 }
 
 function siteOff(env: Env): boolean {
@@ -218,6 +230,7 @@ export async function handleSite(request: Request, env: Env, url: URL): Promise<
       channel: c,
       today: g ? today(g.programmes, now()) : [],
       ...(env.TURNSTILE_SITE_KEY ? { turnstileSiteKey: env.TURNSTILE_SITE_KEY } : {}),
+      ...(apiOriginOf(env) ? { reportApi: apiOriginOf(env) } : {}),
       indexable: settings?.channels[ch]?.indexable === true,
     },
     live

@@ -223,8 +223,15 @@ The pages (server-rendered, Arabic by default; `/ar/` and `/en/` decide, else
 
 `POST /i/<invite>` now ends with a `303` to the channel (an invite for one) or the grid. A page
 links only to its own publisher's channels and guide, Maktaba's legal pages, the edge's script
-and style, hls.js, Turnstile, and a CC BY programme's source (a test lists every link). The
-player is hls.js on the page (from jsDelivr, as Epic 34's site): it starts on the lowest rung,
+and style, hls.js, Turnstile, the full copyright notice form on `maktaba.tv`, and a CC BY
+programme's source (a test lists every link). The player is hls.js on the page (from jsDelivr,
+as Epic 34's site), pinned: an exact version (`HLS_VERSION` in `site/pages.ts`, the package's
+own `hls.js` devDependency, the same as the web app's) with its Subresource Integrity hash
+(`integrity`, `crossorigin="anonymous"`), and the CSP's `script-src` names that one file, not
+jsDelivr. `test/hls.test.ts` hashes the npm package's file (jsDelivr serves a package's files
+unchanged) and fails when the hash, the version or the CSP drifts; a new hls.js is a version bump
+in `package.json` and `HLS_VERSION` plus the new hash the test prints. Turnstile's loader is not
+hashed: Cloudflare changes it in place. The player starts on the lowest rung,
 swaps each new viewer token from the beat into the playlist and segment URLs, and switches with
 up/down, PageUp/PageDown, a vertical swipe and number entry. Its states come from
 `site/states.ts` (`viewerState`), whose source the page script embeds, so the page and the
@@ -253,6 +260,25 @@ phone's limits and no Turnstile check is skipped or extended.
 
 `WATCH_SITE_OFF = 1` turns every page into "temporarily unavailable" while the API and playback
 stay up; `TURNSTILE_SITE_KEY` shows the Turnstile widget on an open channel's page.
+
+### Report
+
+With `API_ORIGIN` set (https), the channel page has a **Report** button (story 50.24 §4) in
+Arabic and English: a form with the four categories (copyright, illegal content, abuse or
+harassment, something else) as a labelled group, an optional description (4,000 characters) and
+email (320), a link to the full copyright notice form on `maktaba.tv`, the Turnstile widget and
+a live status line. The page's script posts it straight to the cloud,
+`API_ORIGIN/v1/moderation/reports`, with the channel as `https://watch.maktaba.tv/<publisher>/<channel>`
+(the server id and the edge's channel id, which the cloud resolves), the programme on air when
+the page opened and the time; the CSP's `connect-src` adds that origin. The edge enforces
+nothing here: the cloud refuses another site's `Origin`, an unknown category and any field over
+its limit (`400`), checks the Turnstile token on every report, limits each address to a burst of
+5 and then one a minute (`429`), and pages the on-call admin for illegal content (SEV2,
+`docs/runbooks/cloud/broadcast-urgent-report.md`). The API answers `watch.maktaba.tv` on the report
+route only (`server.WithFormOrigins`: the origin echoed, no credentials). Without
+`API_ORIGIN`, or without the script, the page links to the copyright summary instead. The cloud
+checks the token with its own Turnstile secret, so `TURNSTILE_SITE_KEY` here and the cloud's
+Turnstile secret must belong to one widget that lists `watch.maktaba.tv`.
 
 ## The Stream fallback
 
@@ -360,10 +386,10 @@ into `broadcast_usage_hourly` and folds counts under 5 into "other" when a publi
 | `BROADCAST_OFF_CHANNELS` | var | comma-separated edge channel ids stopped at once (50.25's break-glass) |
 | cron `* * * * *` | trigger | pulls the revocation list from `API_ORIGIN` (50.25) |
 | `INGEST_HOST`, `LIVE_HOST`, `WATCH_HOST` | var | the hostnames (the cache keys use `LIVE_HOST`) |
-| `API_ORIGIN` | var | where usage is posted and the revocation list pulled from; unset, neither happens |
+| `API_ORIGIN` | var | where usage is posted, the revocation list pulled from and the Report form posts (https only); unset, none of them happens and the channel page links to the copyright summary |
 | `CORS_ORIGINS` | var | comma-separated; unset, the defaults above |
 | `WATCH_SITE_OFF` | var | `1`: the watch pages say "temporarily unavailable" (50.27's rollback) |
-| `TURNSTILE_SITE_KEY` | var | Turnstile's public site key for the open channels' widget (50.27) |
+| `TURNSTILE_SITE_KEY` | var | Turnstile's public site key for the open channels' widget (50.27) and the Report form's (50.24): the cloud's Turnstile secret must belong to the same widget |
 | `CLOUD_PUBKEYS` | secret | `{"<kid>": "<base64url Ed25519 public key>"}`: `broadcast.PublicKeysJSON` prints it |
 | `VIEWER_TOKEN_KEY` | secret | base64url, 32 bytes; the same on `watch.` |
 | `TURNSTILE_SECRET` | secret | Turnstile's secret for open channels' web visitors (50.26) |
@@ -411,7 +437,8 @@ Nothing here is deployed. The first deploy needs, on Maktaba's Cloudflare accoun
 4. The secrets, with `wrangler secret put` (`--env production` for production): `CLOUD_PUBKEYS`,
    `VIEWER_TOKEN_KEY`, `EDGE_SIGNING_KEY`, and for the fallback `STREAM_API_TOKEN` and
    `STREAM_KEY_JWK` (with `STREAM_ACCOUNT_ID`, `STREAM_CUSTOMER_CODE` and `STREAM_KEY_ID` as vars),
-   and `TURNSTILE_SECRET` (a Turnstile widget for `watch.maktaba.tv`) before any channel is open.
+   and `TURNSTILE_SECRET` (a Turnstile widget for `watch.maktaba.tv`) before any channel is open;
+   the cloud's Turnstile secret is the same widget's, so the Report form's tokens verify there.
 5. The cloud's key: an Ed25519 seed at `broadcast.key_path` on both nodes, and
    `broadcast.edge_public_key`.
 6. The CI token (or `CLOUDFLARE_API_TOKEN_BROADCAST`) with Account: Workers Scripts Edit, Workers

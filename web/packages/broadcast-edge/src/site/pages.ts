@@ -9,8 +9,25 @@ import type { ChannelStatus } from "../channel_live";
 import { fill, t, type Lang } from "../strings";
 import { viewerState } from "./states";
 
-export const HLS_SRC = "https://cdn.jsdelivr.net/npm/hls.js@1.5.20/dist/hls.min.js";
+/**
+ * hls.js, pinned: the exact version (the edge's devDependency, the same as the web app's) and
+ * its Subresource Integrity hash, so the browser runs only those bytes. test/hls.test.ts hashes
+ * the npm package's file (jsDelivr serves the package's files unchanged) and fails if either the
+ * version or the hash drifts from package.json.
+ */
+export const HLS_VERSION = "1.5.20";
+export const HLS_SRC = `https://cdn.jsdelivr.net/npm/hls.js@${HLS_VERSION}/dist/hls.min.js`;
+export const HLS_INTEGRITY =
+  "sha384-V5ruNBgmYcC3SJRUQeNykAAAgde5gOFq/Hu0CZj7bygDP0yRIhkvX8+w0u/7mRvr";
+/** Turnstile's loader: Cloudflare changes it in place and asks that it never be pinned or hashed. */
 export const TURNSTILE_SRC = "https://challenges.cloudflare.com/turnstile/v0/api.js";
+/** The cloud reads a report's channel from a watch URL on this host (cloud/internal/moderation). */
+export const REPORT_WATCH_HOST = "watch.maktaba.tv";
+/** The report categories (cloud/internal/moderation: illegal is the urgent one). */
+export const REPORT_CATEGORIES = ["copyright", "illegal", "abuse", "other"] as const;
+/** The report form's limits in characters, the cloud's own (MaxReportText, MaxReportEmail). */
+export const REPORT_MAX_TEXT = 4000;
+export const REPORT_MAX_EMAIL = 320;
 /** Each language's own name, for the switch to it (the same in both pages). */
 const LANG_NAME: Record<Lang, string> = { ar: "العربية", en: "English" };
 export const LEGAL = ["copyright", "terms", "privacy"] as const;
@@ -48,6 +65,12 @@ const CLIENT_KEYS = [
   "broadcast.inviteRequired",
   "site.verify",
   "site.error",
+  "report.sending",
+  "report.thanks",
+  "report.chooseCategory",
+  "report.verify",
+  "report.tooMany",
+  "report.failed",
 ];
 
 export function esc(s: string): string {
@@ -63,6 +86,18 @@ function enc(s: string): string {
   return encodeURIComponent(s);
 }
 
+/** A script the page loads: its URL, and for another origin's file its integrity hash. */
+export interface ScriptRef {
+  src: string;
+  integrity?: string;
+}
+
+function scriptTag(s: string | ScriptRef): string {
+  const r = typeof s === "string" ? { src: s } : s;
+  const sri = r.integrity ? ` integrity="${esc(r.integrity)}" crossorigin="anonymous"` : "";
+  return `<script src="${esc(r.src)}"${sri} defer></script>`;
+}
+
 export interface PageOpts {
   lang: Lang;
   /** the path after /<lang> (for the language switch), starting with / */
@@ -71,21 +106,28 @@ export interface PageOpts {
   /** the publisher's header; none on Maktaba's own pages */
   brand?: { id: string } & Branding;
   body: string;
-  scripts?: string[];
+  scripts?: (string | ScriptRef)[];
   status?: number;
   /** the live host, for the page's CSP */
   liveOrigin: string;
+  /** the cloud API the page's Report form posts to (the CSP's connect-src); none: no form */
+  apiOrigin?: string;
   indexable?: boolean;
 }
 
-export function csp(liveOrigin: string): string {
+/**
+ * csp is the watch pages' Content-Security-Policy. Scripts: the edge's own, hls.js by its exact
+ * file (a path source, so no other file on jsDelivr runs; the tag's integrity checks its bytes)
+ * and Turnstile. Connections: the edge, the live host and, for the Report form, the cloud API.
+ */
+export function csp(liveOrigin: string, apiOrigin?: string): string {
   return [
     "default-src 'none'",
-    `script-src 'self' https://cdn.jsdelivr.net https://challenges.cloudflare.com`,
+    `script-src 'self' ${HLS_SRC} https://challenges.cloudflare.com`,
     "style-src 'self'",
     "img-src 'self' data:",
     `media-src 'self' blob: ${liveOrigin}`,
-    `connect-src 'self' ${liveOrigin}`,
+    `connect-src 'self' ${liveOrigin}${apiOrigin ? ` ${apiOrigin}` : ""}`,
     "frame-src https://challenges.cloudflare.com",
     "form-action 'self'",
     "base-uri 'none'",
@@ -103,11 +145,11 @@ export function page(o: PageOpts): Response {
   const legal = LEGAL.map(
     (p) => `<a href="/${lang}/legal/${p}">${esc(t(`site.legal.${p}`, lang))}</a>`
   ).join("");
-  const scripts = (o.scripts ?? []).map((s) => `<script src="${esc(s)}" defer></script>`).join("");
+  const scripts = (o.scripts ?? []).map(scriptTag).join("");
   const html = `<!doctype html><html lang="${lang}" dir="${dir}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">${o.indexable ? "" : '<meta name="robots" content="noindex">'}<title>${esc(o.title)}</title><link rel="stylesheet" href="/s/watch.css"></head><body><header>${header}<a href="/${other}${esc(o.path)}" lang="${other}" hreflang="${other}">${LANG_NAME[other]}</a></header><main id="main">${o.body}</main><footer><span>${esc(t("broadcast.free", lang))}</span>${legal}</footer>${scripts}</body></html>`;
   const headers: Record<string, string> = {
     "Content-Type": "text/html; charset=utf-8",
-    "Content-Security-Policy": csp(o.liveOrigin),
+    "Content-Security-Policy": csp(o.liveOrigin, o.apiOrigin),
     "Referrer-Policy": "no-referrer",
   };
   if (o.indexable) headers["X-Maktaba-Indexable"] = "1";
@@ -174,7 +216,45 @@ export interface ChannelPageData {
   channel: LineupChannel;
   today: Programme[];
   turnstileSiteKey?: string;
+  /** the cloud API's origin (API_ORIGIN): the Report form posts there; none: a link instead */
+  reportApi?: string;
   indexable: boolean;
+}
+
+/** copyrightURL is the full notice form on maktaba.tv (Epic 60.07), in the page's language. */
+export function copyrightURL(lang: Lang): string {
+  return `https://maktaba.tv/${lang === "ar" ? "ar/" : ""}legal/copyright/`;
+}
+
+/**
+ * reportForm is the channel page's Report button and form (story 50.24 §4). The page's script
+ * shows the button, opens the form, adds the Turnstile widget and posts the report to the cloud
+ * (POST /v1/moderation/reports), which enforces the categories, the sizes, the bot check and the
+ * per-address limit. Without the script, the copyright page's link stays.
+ */
+function reportForm(lang: Lang): string {
+  const say = (k: string) => esc(t(k, lang));
+  const cats = REPORT_CATEGORIES.map(
+    (c) =>
+      `<label class="choice"><input type="radio" name="category" value="${c}" required> ${say(`report.category.${c}`)}</label>`
+  ).join("");
+  return (
+    `<p id="report-link"><a href="/${lang}/legal/copyright">${say("report.button")}</a></p>` +
+    `<button id="report-open" type="button" class="secondary" aria-expanded="false" aria-controls="report" hidden>${say("report.button")}</button>` +
+    `<form id="report" class="report" aria-labelledby="report-h" novalidate hidden>` +
+    `<h2 id="report-h">${say("report.title")}</h2>` +
+    `<fieldset><legend>${say("report.category.legend")}</legend>${cats}</fieldset>` +
+    `<p class="muted">${say("report.copyrightNote")} <a href="${copyrightURL(lang)}">${say("report.copyrightLink")}</a></p>` +
+    `<label for="report-text">${say("report.text")}</label>` +
+    `<textarea id="report-text" name="text" rows="4" maxlength="${REPORT_MAX_TEXT}"></textarea>` +
+    `<label for="report-email">${say("report.email")}</label>` +
+    `<input id="report-email" name="email" type="email" maxlength="${REPORT_MAX_EMAIL}" autocomplete="email" dir="ltr">` +
+    `<div id="report-ts"></div>` +
+    `<div class="actions"><button type="submit" id="report-send">${say("report.send")}</button>` +
+    `<button type="button" id="report-cancel" class="secondary">${say("report.cancel")}</button></div>` +
+    `<p id="report-status" role="status" aria-live="polite"></p>` +
+    `</form>`
+  );
 }
 
 /** channelPage is the player, now and next, today's guide, the attribution and Report. */
@@ -187,6 +267,13 @@ export function channelPage(lang: Lang, d: ChannelPageData, liveOrigin: string):
     channel: c.id,
     channels: l.channels.map((x) => ({ id: x.id, number: x.number, name: x.name })),
     turnstile: d.turnstileSiteKey ?? "",
+    report: d.reportApi
+      ? {
+          api: d.reportApi,
+          base: `https://${REPORT_WATCH_HOST}`,
+          programme: c.now?.title ?? "",
+        }
+      : null,
     strings: Object.fromEntries(CLIENT_KEYS.map((k) => [k, t(k, lang)])),
   };
   const now = c.now
@@ -204,8 +291,8 @@ export function channelPage(lang: Lang, d: ChannelPageData, liveOrigin: string):
         `<li><a href="/${lang}/${pub}/${enc(x.id)}" data-ch="${esc(x.id)}" aria-current="${x.id === c.id}"><span class="num">${x.number}</span> ${esc(x.name)}</a></li>`
     )
     .join("");
-  const body = `<section class="player" aria-label="${esc(t("site.player", lang))}"><div class="stage"><video id="video" playsinline controls></video><div id="card" class="card over" role="status" aria-live="polite"><p id="msg">${esc(t("broadcast.tuning", lang))}</p><button id="retry" type="button" hidden>${esc(t("guest.tryAgain", lang))}</button><div id="ts"></div></div></div><h1 id="title"><span class="num">${c.number}</span> ${esc(c.name)}</h1>${now}${next}<p><a href="/${lang}/legal/copyright">${esc(t("site.report", lang))}</a></p></section><section aria-labelledby="today-h"><h2 id="today-h">${esc(t("site.today", lang))}</h2>${today}</section><nav aria-labelledby="ch-h"><h2 id="ch-h">${esc(t("site.channels", lang))}</h2><ul class="channels">${chans}</ul><p><a href="/${lang}/${pub}/guide">${esc(t("site.guide", lang))}</a></p></nav><script type="application/json" id="cfg">${jsonScript(cfg)}</script>`;
-  const scripts = [HLS_SRC];
+  const body = `<section class="player" aria-label="${esc(t("site.player", lang))}"><div class="stage"><video id="video" playsinline controls></video><div id="card" class="card over" role="status" aria-live="polite"><p id="msg">${esc(t("broadcast.tuning", lang))}</p><button id="retry" type="button" hidden>${esc(t("guest.tryAgain", lang))}</button><div id="ts"></div></div></div><h1 id="title"><span class="num">${c.number}</span> ${esc(c.name)}</h1>${now}${next}${d.reportApi ? reportForm(lang) : `<p><a href="/${lang}/legal/copyright">${esc(t("report.button", lang))}</a></p>`}</section><section aria-labelledby="today-h"><h2 id="today-h">${esc(t("site.today", lang))}</h2>${today}</section><nav aria-labelledby="ch-h"><h2 id="ch-h">${esc(t("site.channels", lang))}</h2><ul class="channels">${chans}</ul><p><a href="/${lang}/${pub}/guide">${esc(t("site.guide", lang))}</a></p></nav><script type="application/json" id="cfg">${jsonScript(cfg)}</script>`;
+  const scripts: (string | ScriptRef)[] = [{ src: HLS_SRC, integrity: HLS_INTEGRITY }];
   if (d.turnstileSiteKey) scripts.push(TURNSTILE_SRC);
   scripts.push("/s/watch.js");
   return page({
@@ -216,6 +303,7 @@ export function channelPage(lang: Lang, d: ChannelPageData, liveOrigin: string):
     body,
     scripts,
     liveOrigin,
+    ...(d.reportApi ? { apiOrigin: d.reportApi } : {}),
     indexable: d.indexable,
   });
 }

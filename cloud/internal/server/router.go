@@ -59,6 +59,10 @@ func NewRouter(logger *slog.Logger, pool *db.Pool, mig *db.Migrator, build Build
 		// a packaged TV app's origin on the TV's own routes (58.09), before the web allow-list
 		r.Use(middleware.TVCORS(o.tvPaths))
 	}
+	if len(o.formPaths) > 0 {
+		// the public forms' own origins on the forms' routes (50.24), before the web allow-list
+		r.Use(middleware.FormCORS(o.formPaths, o.formOrigins))
+	}
 	r.Use(middleware.CORS(allowedOrigins))
 
 	r.Get("/healthz", healthzHandler(build))
@@ -98,6 +102,18 @@ type routerOptions struct {
 	resolveIP func(*http.Request) string
 	hosts     []string // non-nil: the api's user listener (50.32)
 	tvPaths   []string // the TV's public routes a packaged TV app's origin may call (58.09)
+	// the public forms' routes and the origins that may post to them (50.24)
+	formPaths, formOrigins []string
+}
+
+// WithFormOrigins answers origins on paths, the public forms' routes (Epic 50 story 50.24,
+// middleware.FormCORS): the copyright page on maktaba.tv and the watch pages' Report form on
+// watch.maktaba.tv post there. The origin is echoed, never credentials.
+func WithFormOrigins(paths, origins []string) RouterOption {
+	return func(o *routerOptions) {
+		o.formPaths = append([]string(nil), paths...)
+		o.formOrigins = append([]string(nil), origins...)
+	}
 }
 
 // WithTVOrigins answers a packaged TV app's origin (`file://`, `null`, `app://…`) on paths,
