@@ -31,7 +31,9 @@ const (
 	homePort        = 18090
 	// the home reaches the edge on the compose network, as location 0
 	edgeFromHome = "http://edge:8787"
-	pub          = "pub-rehearsal"
+	// pub is the rehearsal's publisher, which is its home: the edge refuses an ingest token
+	// whose pub is not its home (#1257), as the cloud mints them
+	pub = "home-rehearsal"
 )
 
 // rungs are the test pattern's ladder: the channel's own encode copied, two encoded in software.
@@ -176,7 +178,7 @@ func newChannel(prefix string) string {
 
 // publish gives the home the channel and its ingest token, as the API does after a publish.
 func (s *stack) publish(ch string) {
-	tok, err := viewers.IngestToken(s.key, viewers.IngestClaims{Pub: pub, Channel: ch, Home: "home-rehearsal",
+	tok, err := viewers.IngestToken(s.key, viewers.IngestClaims{Pub: pub, Channel: ch, Home: pub,
 		Rungs: rungs, Kbps: 10000, IssuedAt: time.Now()})
 	s.must("an ingest token signed as the cloud", err == nil, err)
 	body, _ := json.Marshal(map[string]any{"channel": ch, "token": tok, "ingest_url": edgeFromHome, "rungs": rungs, "name": "Rehearsal"})
