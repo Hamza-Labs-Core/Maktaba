@@ -17,6 +17,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/db"
 	broadcasth "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/broadcast"
 	mailpkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/mail"
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/moderation"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/obs"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/privacy"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/ratelimit"
@@ -105,6 +106,9 @@ func workerJobs(ctx context.Context, logger *slog.Logger, cfg config.Config, poo
 	// allowance and cap notices, the daily reconciliation and the usage windows' sweep
 	b := broadcastReporter(cfg, pool, logger)
 	run(func() { b.Run(ctx, time.Hour) })
+	// takedowns and reports (story 50.24): records past broadcast.records_retention_years go,
+	// once a day (an expired strike stops counting by its own expiry)
+	run(func() { (&moderation.Store{DB: pool.DB, Logger: logger}).Run(ctx) })
 	// story 50.26: the publishers' access states the edge hasn't taken, every minute
 	if a := accessPusher(cfg, pool, logger); a != nil {
 		run(func() { pushAccess(ctx, logger, a, time.Minute) })

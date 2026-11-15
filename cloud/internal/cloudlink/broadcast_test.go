@@ -39,6 +39,11 @@ func TestBroadcastHandlerForwardsOnlyItsRoutes(t *testing.T) {
 		{"DELETE", "/admin/cloud-link/broadcast/channels/0b9a4b5e-5d1c-4a43-9a5e-1c2b3d4e5f60", ""},
 		{"POST", "/admin/cloud-link/broadcast/ingest-token", `{"channel":"c"}`},
 		{"GET", "/admin/cloud-link/broadcast/revocations", ""},
+		// story 50.24: the takedown instructions, an ack, the home's records, a counter-notice
+		{"GET", "/admin/cloud-link/broadcast/takedowns", ""},
+		{"POST", "/admin/cloud-link/broadcast/takedowns/0b9a4b5e-5d1c-4a43-9a5e-1c2b3d4e5f60/ack", `{"result":"applied"}`},
+		{"GET", "/admin/cloud-link/broadcast/moderation", ""},
+		{"POST", "/admin/cloud-link/broadcast/moderation/counter-notices", `{"action_id":"a"}`},
 	} {
 		if rec := call(c.method, c.path, c.body); rec.Code != http.StatusCreated || rec.Body.String() != `{"ok":true}` {
 			t.Errorf("%s %s: %d %s", c.method, c.path, rec.Code, rec.Body)
@@ -46,7 +51,9 @@ func TestBroadcastHandlerForwardsOnlyItsRoutes(t *testing.T) {
 	}
 	want := []string{"GET /v1/broadcast/state ", `POST /v1/broadcast/channels {"slug":"a"}`,
 		"DELETE /v1/broadcast/channels/0b9a4b5e-5d1c-4a43-9a5e-1c2b3d4e5f60 ", `POST /v1/broadcast/ingest-token {"channel":"c"}`,
-		"GET /v1/broadcast/revocations "}
+		"GET /v1/broadcast/revocations ", "GET /v1/broadcast/takedowns ",
+		`POST /v1/broadcast/takedowns/0b9a4b5e-5d1c-4a43-9a5e-1c2b3d4e5f60/ack {"result":"applied"}`,
+		"GET /v1/broadcast/moderation ", `POST /v1/broadcast/moderation/counter-notices {"action_id":"a"}`}
 	if strings.Join(seen, "|") != strings.Join(want, "|") {
 		t.Fatalf("cloud saw %q", seen)
 	}
@@ -57,12 +64,15 @@ func TestBroadcastHandlerForwardsOnlyItsRoutes(t *testing.T) {
 		{"GET", "/admin/cloud-link/broadcast/"},
 		{"PUT", "/admin/cloud-link/broadcast/channels"},
 		{"POST", "/admin/cloud-link/broadcast/revocations"},
+		{"POST", "/admin/cloud-link/broadcast/takedowns"},
+		{"POST", "/admin/cloud-link/broadcast/takedowns/../ack"},
+		{"DELETE", "/admin/cloud-link/broadcast/moderation"},
 	} {
 		if rec := call(c.method, c.path, ""); rec.Code != http.StatusNotFound {
 			t.Errorf("%s %s: %d, want 404", c.method, c.path, rec.Code)
 		}
 	}
-	if len(seen) != 5 {
+	if len(seen) != 9 {
 		t.Fatalf("a refused call reached the cloud: %q", seen)
 	}
 }

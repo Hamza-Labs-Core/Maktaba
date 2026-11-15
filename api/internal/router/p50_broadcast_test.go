@@ -27,3 +27,14 @@ func TestMountBroadcastWiresTheRevocationGuard(t *testing.T) {
 		t.Fatal("an unclaimed home has a revocation source")
 	}
 }
+
+// Story 50.24: a claimed home asks Maktaba Cloud for its takedowns and records through the same
+// agent; an unclaimed one has nothing to ask.
+func TestMountBroadcastWiresTheModerationCloud(t *testing.T) {
+	if svc := MountBroadcast(chi.NewRouter(), BroadcastDeps{AgentAddr: "127.0.0.1:1", NoLoop: true}); svc.Moderation == nil {
+		t.Fatal("a claimed home has no moderation cloud")
+	}
+	if svc := MountBroadcast(chi.NewRouter(), BroadcastDeps{NoLoop: true}); svc.Moderation != nil {
+		t.Fatal("an unclaimed home asks for takedowns")
+	}
+}

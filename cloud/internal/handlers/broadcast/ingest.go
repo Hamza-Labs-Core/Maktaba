@@ -22,6 +22,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"regexp"
 	"time"
@@ -67,6 +68,49 @@ type IngestDeps struct {
 	// GeoDeny is Maktaba's broadcast country deny list (story 50.23 §5), merged into every
 	// token; nil: none. A failure to read it refuses the token (never a token without it).
 	GeoDeny func(ctx context.Context) ([]string, error)
+	// EdgeChannels binds a published channel's edge id when the home names its cloud id (story
+	// 50.24: a takedown's programme slate names it); nil: not recorded. The first token binds it:
+	// a later request naming another local channel for the same cloud id answers
+	// ErrEdgeMismatch, and no token is issued (a home cannot move a channel's slate target).
+	EdgeChannels func(ctx context.Context, serverID, cloudID, edgeChannel string) error
+}
+
+// ErrEdgeMismatch is a token request naming another local channel for a cloud id already bound.
+var ErrEdgeMismatch = errors.New("broadcast: the cloud id is bound to another channel")
+
+// ErrNotPublished is a token request whose cloud id is not one of the home's live channels.
+var ErrNotPublished = errors.New("broadcast: the cloud id is not a published channel of this home")
+
+// DBEdgeChannels binds broadcast_channels.edge_channel for the home's own live channel, once: in a
+// transaction that locks the row, so two requests naming different channels can't both bind.
+func DBEdgeChannels(db *sql.DB) func(ctx context.Context, serverID, cloudID, edgeChannel string) error {
+	return func(ctx context.Context, serverID, cloudID, edgeChannel string) error {
+		tx, err := db.BeginTx(ctx, nil)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = tx.Rollback() }()
+		var id string
+		var bound sql.NullString
+		err = tx.QueryRowContext(ctx, `SELECT id::text, edge_channel FROM broadcast_channels
+             WHERE id = $2::uuid AND server_id::text = $1 AND unpublished_at IS NULL FOR UPDATE`, serverID, cloudID).Scan(&id, &bound)
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrNotPublished // not this home's live channel: no token
+		}
+		if err != nil {
+			return err
+		}
+		if bound.String != "" {
+			if bound.String != edgeChannel {
+				return ErrEdgeMismatch
+			}
+			return nil
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE broadcast_channels SET edge_channel = $2 WHERE id::text = $1`, id, edgeChannel); err != nil {
+			return err
+		}
+		return tx.Commit()
+	}
 }
 
 // DBGeoDeny reads broadcast_geo_deny.
@@ -98,6 +142,13 @@ type tokenReq struct {
 	// Channel is the home's own channel id; the edge sees an opaque id derived from it.
 	Channel string   `json:"channel"`
 	Rungs   []string `json:"rungs"`
+	// CloudID is the channel's id in the cloud (the publish answer): required. The first token
+	// binds the channel's edge id to it (story 50.24), so a token is only ever issued for a
+	// published channel, under the edge id a takedown's slate names.
+	CloudID string `json:"cloud_id"`
+	// Purpose "speedtest" asks for a speed-test token instead (no cloud id: the upload is measured
+	// before the first publish), which the edge takes on its speed-test route only.
+	Purpose string `json:"purpose"`
 	// Geo is the channel's own country rule (story 50.23 §5): the publisher's restriction on
 	// their own channel.
 	Geo *struct {
@@ -116,7 +167,10 @@ type tokenResp struct {
 	MaxTopKbps   int       `json:"max_top_kbps"`
 }
 
-var localChannelRE = regexp.MustCompile(`^[A-Za-z0-9_.:-]{1,64}$`)
+var (
+	localChannelRE = regexp.MustCompile(`^[A-Za-z0-9_.:-]{1,64}$`)
+	uuidRE         = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+)
 
 func (d *IngestDeps) now() time.Time {
 	if d.Now != nil {
@@ -142,6 +196,12 @@ func (d *IngestDeps) IngestToken(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 400, "invalid_body", "")
 		return
 	}
+	speedTest := req.Purpose == "speedtest"
+	if !speedTest && !uuidRE.MatchString(req.CloudID) {
+		// every ingest token is for a published channel, named by its cloud id
+		writeErr(w, 400, "bad_request", "cloud_id is required: publish the channel first")
+		return
+	}
 	allow, err := d.Plans.ForServer(r.Context(), serverID)
 	switch {
 	case errors.Is(err, ErrNotInPlan):
@@ -155,6 +215,10 @@ func (d *IngestDeps) IngestToken(w http.ResponseWriter, r *http.Request) {
 		return
 	case err != nil:
 		writeErr(w, 500, "plan_lookup_failed", "")
+		return
+	}
+	if speedTest {
+		d.speedTest(w, serverID, req.Channel, allow)
 		return
 	}
 	if len(req.Rungs) == 0 || len(req.Rungs) > allow.MaxRungs {
@@ -178,6 +242,25 @@ func (d *IngestDeps) IngestToken(w http.ResponseWriter, r *http.Request) {
 	}
 	now := d.now()
 	ch := bc.ChannelID(serverID, req.Channel)
+	if d.EdgeChannels != nil {
+		err := d.EdgeChannels(r.Context(), serverID, req.CloudID, ch)
+		if errors.Is(err, ErrNotPublished) {
+			writeErr(w, 404, "channel_not_published", "")
+			return
+		}
+		if errors.Is(err, ErrEdgeMismatch) {
+			slog.Warn("broadcast: a token asked for another channel under a bound cloud id", "event", "broadcast_edge_mismatch",
+				"server_id", serverID, "cloud_id", req.CloudID)
+			writeErr(w, 409, "edge_channel_mismatch", "this cloud channel is bound to another of the home's channels")
+			return
+		}
+		if err != nil {
+			// fail closed: a token is issued only once its channel's binding is known
+			slog.Warn("broadcast: the channel's edge id could not be checked", "err", err, "server_id", serverID)
+			writeErr(w, 503, "edge_channel_unavailable", "")
+			return
+		}
+	}
 	tok, err := bc.IssueIngest(*d.Key, bc.IngestClaims{
 		Pub: serverID, Ch: ch, Rungs: req.Rungs, Home: serverID, Kbps: allow.MaxTopKbps,
 		Geo: bc.MergeGeo(mode, countries, deny),
@@ -196,6 +279,20 @@ func (d *IngestDeps) IngestToken(w http.ResponseWriter, r *http.Request) {
 		RefreshAfter: int(bc.RefreshEvery / time.Second), IngestURL: d.IngestURL,
 		Rungs: req.Rungs, MaxTopKbps: allow.MaxTopKbps,
 	})
+}
+
+// speedTest answers a speed-test token: the upload measured before the first publish (50.22).
+func (d *IngestDeps) speedTest(w http.ResponseWriter, serverID, channel string, allow Allowance) {
+	now := d.now()
+	ch := bc.ChannelID(serverID, channel)
+	tok, err := bc.IssueSpeedTest(*d.Key, bc.IngestClaims{Pub: serverID, Ch: ch, Home: serverID, Kbps: allow.MaxTopKbps}, now)
+	if err != nil {
+		writeErr(w, 500, "sign_failed", "")
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, 200, tokenResp{Token: tok, Channel: ch, ExpiresAt: now.Add(bc.SpeedTestTTL).UTC(), IngestURL: d.IngestURL,
+		Rungs: []string{}, MaxTopKbps: allow.MaxTopKbps})
 }
 
 // StorePlans is what a home may push, from 50.20's publisher state (billing.BroadcastStore):

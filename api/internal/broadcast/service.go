@@ -34,6 +34,9 @@ type Service struct {
 	// Revocations is the home's copy of Maktaba's broadcast revocation list (50.25); nil or
 	// without keys: not honoured (the edge still refuses a revoked ingest).
 	Revocations *Revocations
+	// Moderation is Maktaba Cloud's takedowns and reports for this home (story 50.24); nil: the
+	// home is not claimed, and no instruction is asked for.
+	Moderation ModerationCloud
 }
 
 func (s *Service) now() time.Time {
@@ -274,6 +277,7 @@ func (s *Service) Publish(ctx context.Context, id string, confirmed bool, by Adm
 		return ch, err
 	}
 	state, detail := StateLive, ""
+	ch.CloudID = cc.ID // the token names the channel's cloud id, before it is stored
 	if err := s.refreshToken(ctx, ch); err != nil {
 		// published on the cloud; the refresher keeps asking, the edge plays the slate
 		s.log().Warn("broadcast: no ingest token yet", "channel_id", id, "err", err, "event", "broadcast_token_failed")
@@ -317,7 +321,7 @@ func (s *Service) Unpublish(ctx context.Context, id string) (Channel, error) {
 }
 
 func (s *Service) refreshToken(ctx context.Context, ch Channel) error {
-	tok, err := s.Cloud.IngestToken(ctx, ch.ID, Effective(ch.Rungs, ch.Dropped), ch.Geo())
+	tok, err := s.Cloud.IngestToken(ctx, ch.ID, ch.CloudID, Effective(ch.Rungs, ch.Dropped), ch.Geo())
 	if err != nil {
 		return err
 	}
@@ -330,10 +334,11 @@ func (s *Service) refreshToken(ctx context.Context, ch Channel) error {
 // RefreshEvery is how often a published channel's token is asked for again (§2).
 const RefreshEvery = time.Hour
 
-// Tick refreshes due tokens, retries pending unpublishes, honours the revocation list and runs
-// the daily speed test.
+// Tick refreshes due tokens, retries pending unpublishes, honours the revocation list, applies
+// Maktaba's takedown instructions and runs the daily speed test.
 func (s *Service) Tick(ctx context.Context) {
 	s.applyRevocations(ctx)
+	s.applyTakedowns(ctx)
 	pending, err := s.Store.PendingUnpublish(ctx)
 	if err == nil {
 		for id, cloud := range pending {
@@ -414,14 +419,14 @@ func (s *Service) SpeedTest(ctx context.Context, source string) (Uplink, error) 
 		return Uplink{}, err
 	}
 	if token == "" {
-		// no channel published yet: a token for the first configured channel
+		// no channel published yet: a speed-test token for the first configured channel
 		chs, err := s.Store.List(ctx)
 		if err != nil {
 			return Uplink{}, err
 		}
 		for _, c := range chs {
 			if c.Configured {
-				tok, terr := s.Cloud.IngestToken(ctx, c.ID, c.Rungs, c.Geo())
+				tok, terr := s.Cloud.SpeedTestToken(ctx, c.ID)
 				if terr != nil {
 					if p := cloudRefusal(terr); p != nil {
 						return Uplink{}, p

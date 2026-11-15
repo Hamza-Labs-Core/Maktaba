@@ -61,6 +61,9 @@ var ComponentRoutes = componentTable{
 	{Exact: "POST /api/tv/broadcast/publishable/sources/{id}/withdraw", Component: "livetv.broadcast", Admin: true},
 	{Exact: "PUT /api/tv/broadcast/publishable/items", Component: "livetv.broadcast", Admin: true},
 	{Exact: "PUT /api/tv/broadcast/publishable/only", Component: "livetv.broadcast", Admin: true},
+	// Maktaba's notices and reports about this home's channels (story 50.24)
+	{Exact: "GET /api/tv/broadcast/moderation", Component: "livetv.broadcast", Admin: true},
+	{Exact: "POST /api/tv/broadcast/moderation/counter-notices", Component: "livetv.broadcast", Admin: true},
 }
 
 // CoreRoutes never answer component_off: every other route family. A route family

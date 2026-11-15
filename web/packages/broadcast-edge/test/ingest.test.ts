@@ -94,6 +94,27 @@ describe("ingest", () => {
     expect((await E.SEGMENTS.list({ prefix: `test/${ch}/` })).objects).toHaveLength(0);
   });
 
+  it("takes a speed-test token on the speed test only, for 10 minutes at most (50.24)", async () => {
+    const ch = newChannel();
+    const t = Math.floor(now() / 1000);
+    const speed = await ingestToken({ ch, typ: "ingest-speedtest", rungs: [], exp: t + 600 });
+    const measure = (token: string) =>
+      call(`${INGEST}/v1/ingest/speedtest`, {
+        method: "PUT",
+        headers: { Authorization: `Bearer ${token}`, "X-Maktaba-Time": String(now()) },
+        body: new Uint8Array(1024),
+      });
+    expect((await measure(speed)).status).toBe(200);
+    // never a segment, nor the state post
+    const seg = await putSegment(ch, "src", 1, { token: speed });
+    expect(seg.status).toBe(403);
+    expect(((await seg.json()) as { error: string }).error).toBe("speedtest_only");
+    expect((await postState(ch, STATE_3, speed)).status).toBe(403);
+    // a speed-test token that claims a day's life is refused
+    const long = await ingestToken({ ch, typ: "ingest-speedtest", rungs: [], exp: t + 24 * 3600 });
+    expect((await measure(long)).status).toBe(401);
+  });
+
   it("writes each segment under <env>/<channel>/<rung>/<seq>-<hash8>.ts and lists it", async () => {
     const ch = newChannel();
     for (const rung of ["src", "720p", "480p"])

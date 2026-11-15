@@ -37,6 +37,7 @@ import (
 	healthh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/health"
 	homesh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/homes"
 	metricsh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/metrics"
+	moderationh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/moderation"
 	pushh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/push"
 	serversh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/servers"
 	staffh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/staff"
@@ -46,6 +47,7 @@ import (
 	mailpkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/mail"
 	metricspkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/metrics"
 	cmw "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/middleware"
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/moderation"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/obs"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/privacy"
 	pushpkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/push"
@@ -217,6 +219,9 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 	// the kill switch (story 50.25): the signed list for the edge and homes, and the console's
 	// add and lift (wired on the admin listener below)
 	revDeps := revocationDeps(cfg, servers, pool, logger, edgeDeps.Key)
+	// takedowns, reports and repeat infringers (50.24): the public forms, a home's instructions
+	// and records, and the console's queue (wired on the admin listener below)
+	modDeps := moderationDeps(cfg, servers, pool, logger, mailer, revDeps, secret, tsGuard, o.Turnstile)
 	serversDeps := serversh.Deps{Servers: servers, Assertions: assertions, Licenses: licenses,
 		ManageURL: strings.TrimRight(cfg.Server.WebURL, "/") + "/billing"}
 	homes := &homesh.Deps{Servers: servers, Users: users, Signer: assertions, RelayHost: cfg.Relay.PublicHost,
@@ -360,6 +365,8 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 		app.Use(blockedIPs(detector, logger))
 		// a claim code is 8 characters: its redeem is limited per IP too
 		app.Use(authRateLimit(ratelimit.NewPG(pool.DB, "claim", 30, 5, logger), []string{"/v1/servers/claims/redeem"}))
+		// the public notice and report forms (50.24): burst 5, then one a minute per IP
+		app.Use(authRateLimit(ratelimit.NewPG(pool.DB, "moderation", 5, 1.0/60, logger), moderationh.PublicPaths))
 
 		// A home's agent: the claim code or the server's own secret is its
 		// credential, never a user token.
@@ -370,6 +377,9 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 		// the broadcast edge: each request signed with its key, no account
 		edgeh.Mount(app, edgeDeps)
 		broadcasth.MountRevocations(app, revDeps)
+		// takedown notices and viewer reports (no account), and a home's instructions and records
+		moderationh.MountPublic(app, modDeps)
+		moderationh.MountHome(app, modDeps)
 		reports.MountAgent(app, &reports.AgentDeps{Store: reportStore, Servers: servers, Logger: logger,
 			Refuse: strings.EqualFold(os.Getenv("MAKTABA_CLOUD_REPORTS"), "off")})
 		// a release's symbol tables: the symbols token, no account
@@ -450,6 +460,9 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 		revDeps.Gate = adminGate
 		broadcasth.MountRevocationsAdmin(g, revDeps)
 
+		// the moderation queue, for the service admin only (50.24)
+		modDeps.Gate = adminGate
+		moderationh.MountAdmin(g, modDeps)
 		// a home's broadcast analytics, for the service admin, audited (story 50.28)
 		analyticsDeps.Gate = adminGate
 		broadcasth.MountAnalyticsAdmin(g, analyticsDeps)
@@ -632,6 +645,34 @@ func revocationDeps(cfg config.Config, servers *stores.Servers, pool *db.Pool, l
 	return &broadcasth.RevocationDeps{Rev: rev, Store: store, Agents: servers, Owner: owner, EdgeKey: edgeKey, Logger: logger}
 }
 
+// moderationDeps wires the takedown queue (story 50.24): the kill switch's store for a
+// programme's slate, a channel and a publisher; the broadcast signing key for a home's signed
+// instructions (without it the home's pull answers 503); the forms' bot check on maktaba.tv and
+// watch.maktaba.tv while the auth pages' check is on.
+func moderationDeps(cfg config.Config, servers *stores.Servers, pool *db.Pool, logger *slog.Logger, mailer mailpkg.Mailer,
+	rev *broadcasth.RevocationDeps, secret []byte, user *turnstile.Guard, fake turnstile.Verifier) *moderationh.Deps {
+	store := &moderation.Store{DB: pool.DB, Rev: rev.Store, Mailer: mailer, Logger: logger,
+		Push: func(context.Context) {
+			go func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+				defer cancel()
+				if err := rev.Rev.Push(ctx); err != nil {
+					logger.Warn("moderation: the revocation list was not pushed; the edge's pull carries it", "err", err)
+				}
+			}()
+		}}
+	salt := sha256.Sum256([]byte("maktaba-moderation-ip\x00" + string(secret)))
+	d := &moderationh.Deps{Store: store, Agents: servers, Key: rev.Rev.Key, IPSalt: salt[:], Logger: logger}
+	if user != nil {
+		var v turnstile.Verifier = &turnstile.Client{Secret: cfg.Turnstile.Secret, Hostnames: []string{"maktaba.tv", "watch.maktaba.tv"}}
+		if fake != nil {
+			v = fake
+		}
+		d.Turnstile = v
+	}
+	return d
+}
+
 // ingestDeps wires the broadcast edge's ingest tokens (story 50.21): on whenever
 // broadcast.key_path is set (otherwise the route answers 503 broadcast_disabled). Who gets one
 // is 50.20's entitlement (broadcasth.StorePlans): while broadcast.enabled is off, only the
@@ -639,7 +680,7 @@ func revocationDeps(cfg config.Config, servers *stores.Servers, pool *db.Pool, l
 // every token.
 func ingestDeps(cfg config.Config, servers *stores.Servers, store *billingpkg.BroadcastStore, pool *db.Pool, logger *slog.Logger) *broadcasth.IngestDeps {
 	d := &broadcasth.IngestDeps{Agents: servers, Plans: broadcasth.StorePlans{Store: store}, IngestURL: cfg.Broadcast.IngestURL,
-		GeoDeny: broadcasth.DBGeoDeny(pool.DB)}
+		GeoDeny: broadcasth.DBGeoDeny(pool.DB), EdgeChannels: broadcasth.DBEdgeChannels(pool.DB)}
 	if cfg.Broadcast.KeyPath == "" {
 		return d
 	}

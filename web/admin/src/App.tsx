@@ -20,6 +20,7 @@ import { AdminAccountDetail } from "./pages/AccountDetail";
 import { AdminServers } from "./pages/Servers";
 import { AdminAbuse } from "./pages/Abuse";
 import { AdminBroadcast } from "./pages/Broadcast";
+import { AdminModeration } from "./pages/Moderation";
 import { AdminAudit, StaffSignins } from "./pages/Audit";
 import { AdminUsage } from "./pages/Usage";
 import { AdminErrors, AdminLogs } from "./pages/Logs";
@@ -103,6 +104,7 @@ export function AppRoutes() {
             <Route path="servers" element={<AdminServers />} />
             <Route path="abuse" element={<AdminAbuse />} />
             <Route path="broadcast" element={<AdminBroadcast />} />
+            <Route path="moderation" element={<AdminModeration />} />
             <Route path="audit" element={<AdminAudit />} />
             <Route path="signins" element={<StaffSignins />} />
             <Route path="sessions" element={<StaffSessions />} />

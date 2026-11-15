@@ -35,6 +35,8 @@ func MountBroadcast(r chi.Router, d BroadcastDeps) *broadcast.Service {
 	if d.AgentAddr != "" {
 		agent := &broadcast.Agent{Addr: d.AgentAddr}
 		svc.Cloud = agent
+		// takedowns and reports (50.24): Maktaba's signed instructions and this home's records
+		svc.Moderation = agent
 		// the revocation list (50.25): honoured once the release or MAKTABA_BROADCAST_PUBKEYS
 		// holds a broadcast signing key
 		if keys, err := broadcast.RevocationKeys(d.RevocationKeys); err != nil {
