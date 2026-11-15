@@ -35,7 +35,9 @@ type Segment struct {
 	Path          string
 	Duration      float64
 	Discontinuity bool
-	PDT           time.Time
+	// PDT is the playlist's program date time. The uploader replaces it with the segment's
+	// start (segmentClock) before sending it as X-Maktaba-Segment-Time.
+	PDT time.Time
 }
 
 // Outcome is what became of a segment.
@@ -69,6 +71,36 @@ type Uploader struct {
 
 	mu   sync.Mutex
 	disc map[string]bool
+	// last is when each rung's latest PUT went (pace)
+	last map[string]time.Time
+}
+
+// PutGap is the least time between two PUTs of one rung. The edge refuses a rung's fifth PUT
+// within a second (ChannelLive's BURST_PER_SECOND, a 429), and a rung catching up after a slow
+// edge sends its backlog back to back: paced at half the edge's limit, each segment of the
+// backlog goes once instead of drawing a 429 and a second PUT. At the live cadence (one segment
+// a target duration) it never waits.
+const PutGap = 500 * time.Millisecond
+
+// pace waits until the rung's last PUT is PutGap old, then marks this one as sent now.
+func (u *Uploader) pace(ctx context.Context, rung string) error {
+	u.mu.Lock()
+	if u.last == nil {
+		u.last = map[string]time.Time{}
+	}
+	prev, ok := u.last[rung]
+	u.mu.Unlock()
+	if ok {
+		if wait := prev.Add(PutGap).Sub(u.now()); wait > 0 {
+			if err := u.sleep(ctx, wait); err != nil {
+				return err
+			}
+		}
+	}
+	u.mu.Lock()
+	u.last[rung] = u.now()
+	u.mu.Unlock()
+	return nil
 }
 
 func (u *Uploader) now() time.Time {
@@ -140,7 +172,11 @@ func (u *Uploader) Put(ctx context.Context, seg Segment) Outcome {
 	deadline := u.now().Add(RetryWindow)
 	backoff := 250 * time.Millisecond
 	for {
-		res := u.try(ctx, seg, body, hash, disc)
+		if u.pace(ctx, seg.Rung) != nil {
+			u.markNext(seg.Rung)
+			return Skipped
+		}
+		res, after := u.try(ctx, seg, body, hash, disc)
 		switch res {
 		case tryDone:
 			if u.Uploaded != nil {
@@ -153,6 +189,8 @@ func (u *Uploader) Put(ctx context.Context, seg Segment) Outcome {
 		}
 		// half to all of the backoff, so a home's rungs never retry in step
 		wait := time.Duration(float64(backoff) * (0.5 + 0.5*u.jitter()))
+		// the edge said when to come back (429, 503): sooner would only be refused again
+		wait = max(wait, after)
 		if ctx.Err() != nil || !u.now().Add(wait).Before(deadline) {
 			u.markNext(seg.Rung)
 			return Skipped
@@ -173,26 +211,37 @@ const (
 	tryGiveUp
 )
 
-func (u *Uploader) try(ctx context.Context, seg Segment, body []byte, hash string, disc bool) tryResult {
+// try sends the segment once: what to do next and, for a retry, the edge's Retry-After.
+// A retry follows only an answer that says the segment was not stored (a refusal to retry, a
+// 5xx, a connection error); the request may take the whole retry window, so a slow edge is
+// waited for rather than raced by a second PUT.
+func (u *Uploader) try(ctx context.Context, seg Segment, body []byte, hash string, disc bool) (tryResult, time.Duration) {
 	cr, ok := u.Creds()
 	if !ok {
-		return tryAgain
+		return tryAgain, 0
 	}
 	if !cr.ExpiresAt.IsZero() && !u.now().Before(cr.ExpiresAt) {
 		u.refused("tokenExpired")
-		return tryGiveUp
+		return tryGiveUp, 0
 	}
 	url := fmt.Sprintf("%s/v1/ingest/%s/%s/%d.ts", strings.TrimRight(cr.IngestURL, "/"), cr.Channel, seg.Rung, seg.Seq)
 	rctx, cancel := context.WithTimeout(ctx, RetryWindow)
 	defer cancel()
 	req, err := http.NewRequestWithContext(rctx, http.MethodPut, url, bytes.NewReader(body))
 	if err != nil {
-		return tryGiveUp
+		return tryGiveUp, 0
 	}
 	req.Header.Set("Authorization", "Bearer "+cr.Token)
 	req.Header.Set("Content-Type", "video/mp2t")
 	req.Header.Set("X-Maktaba-Time", strconv.FormatInt(u.now().UnixMilli(), 10))
 	req.Header.Set("X-Maktaba-Body-SHA256", hash)
+	// The edge stores a segment once per rung, seq and body (a replay answers 200 duplicate),
+	// so the PUT is idempotent; saying so lets Go's transport replay it on a fresh connection
+	// when a pooled one turns out closed by the edge before any answer (a busy edge resets idle
+	// keep-alive connections). Without it that reset reached this loop as a failure and the
+	// segment went a second time (the nightly fan-out at 1,000 viewers: 8 PUTs, each a
+	// "connection reset by peer" then a 201).
+	req.Header.Set("Idempotency-Key", fmt.Sprintf("%s/%s/%d/%s", cr.Channel, seg.Rung, seg.Seq, hash[:16]))
 	req.Header.Set("X-Maktaba-Duration", strconv.FormatFloat(seg.Duration, 'f', 3, 64))
 	if !seg.PDT.IsZero() {
 		req.Header.Set("X-Maktaba-Segment-Time", strconv.FormatInt(seg.PDT.UnixMilli(), 10))
@@ -206,29 +255,38 @@ func (u *Uploader) try(ctx context.Context, seg Segment, body []byte, hash strin
 	}
 	resp, err := cl.Do(req)
 	if err != nil {
-		return tryAgain
+		return tryAgain, 0
 	}
 	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 	_ = resp.Body.Close()
 	code := problemCode(raw)
 	switch {
 	case resp.StatusCode == http.StatusCreated || resp.StatusCode == http.StatusOK:
-		return tryDone // new, a duplicate (a retry that had landed), or stale
+		return tryDone, 0 // new, a duplicate (a retry that had landed), or stale
 	case resp.StatusCode == http.StatusConflict:
-		return tryDone // the same seq with another body: the edge keeps the first
+		return tryDone, 0 // the same seq with another body: the edge keeps the first
 	case resp.StatusCode == http.StatusRequestEntityTooLarge:
-		return tryGiveUp
+		return tryGiveUp, 0
 	case resp.StatusCode == http.StatusForbidden:
 		u.refused(code)
-		return tryGiveUp
+		return tryGiveUp, 0
 	case resp.StatusCode == http.StatusBadRequest && code == "clock_skew":
 		u.refused("clockSkew")
-		return tryAgain
+		return tryAgain, 0
 	case resp.StatusCode == http.StatusBadRequest:
-		return tryGiveUp
+		return tryGiveUp, 0
 	default: // 401 (a token being replaced), 429, 503, 5xx
-		return tryAgain
+		return tryAgain, retryAfter(resp.Header.Get("Retry-After"))
 	}
+}
+
+// retryAfter reads a Retry-After of whole seconds (the edge sends 1); anything else is 0.
+func retryAfter(v string) time.Duration {
+	n, err := strconv.Atoi(strings.TrimSpace(v))
+	if err != nil || n <= 0 {
+		return 0
+	}
+	return time.Duration(min(n, int(RetryWindow/time.Second))) * time.Second
 }
 
 func problemCode(raw []byte) string {
@@ -284,7 +342,51 @@ type RungWatcher struct {
 	// Poll is how often the playlist is read (default 500 ms).
 	Poll time.Duration
 
-	last int64
+	last  int64
+	clock segmentClock
+}
+
+// segmentClock gives each segment its start time: the wall-clock moment its first frame
+// reached the broadcaster, which the edge subtracts from the moment the segment is visible
+// for glass-to-glass (50.28).
+//
+// ffmpeg's EXT-X-PROGRAM-DATE-TIME can't be sent as it is: the hls muxer stamps the first
+// segment with the time the muxer opened, which is after it probed the input (about a
+// segment's worth of the live stream on stdin), then adds each segment's duration. Every
+// date is late by that probe, at or after the segment's own close, so glass-to-glass read 0.
+//
+// A segment is listed when it closes, so its start is at most (listed - duration). Each
+// segment's listed time is seen up to a poll late, and a segment found behind a slow upload
+// later still, so the smallest (seen - duration - PDT) over a run of segments is the truest
+// correction. Adding it to ffmpeg's dates keeps their even spacing and puts every date
+// before its segment's close, within about a poll after its start. A run ends at a break in
+// the numbers (a new ffmpeg starts at a new number) or in the dates; without a date, the
+// start is (seen - duration).
+type segmentClock struct {
+	offset  time.Duration
+	have    bool
+	nextPDT time.Time // the previous segment's PDT plus its duration
+	nextSeq int64
+}
+
+// runGap is how far a segment's PDT may be from the end of the one before it in a run.
+const runGap = time.Second
+
+func (c *segmentClock) start(s Segment, seen time.Time) time.Time {
+	dur := time.Duration(s.Duration * float64(time.Second))
+	closed := seen.Add(-dur)
+	if s.PDT.IsZero() {
+		c.have = false
+		return closed
+	}
+	if c.have && (s.Seq != c.nextSeq || s.PDT.Sub(c.nextPDT) > runGap || c.nextPDT.Sub(s.PDT) > runGap) {
+		c.have = false
+	}
+	if off := closed.Sub(s.PDT); !c.have || off < c.offset {
+		c.offset, c.have = off, true
+	}
+	c.nextPDT, c.nextSeq = s.PDT.Add(dur), s.Seq+1
+	return s.PDT.Add(c.offset)
 }
 
 // Step uploads what is new in the playlist now and prunes the rung's directory.
@@ -293,11 +395,13 @@ func (w *RungWatcher) Step(ctx context.Context) {
 	if err != nil {
 		return
 	}
+	seen := w.Up.now()
 	segs := ParsePlaylist(f, w.Dir, w.Rung)
 	_ = f.Close()
 	var fresh []Segment
 	for _, s := range segs {
 		if s.Seq > w.last {
+			s.PDT = w.clock.start(s, seen)
 			fresh = append(fresh, s)
 		}
 	}

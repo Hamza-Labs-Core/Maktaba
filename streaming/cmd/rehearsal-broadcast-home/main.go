@@ -285,6 +285,10 @@ type putRecord struct {
 	Status int    `json:"status"`
 	Bytes  int64  `json:"bytes"`
 	AtMS   int64  `json:"at_ms"`
+	// TookMS is how long the edge took to answer (to its response headers); Err is the
+	// client's error when there was no answer (status 0)
+	TookMS int64  `json:"took_ms"`
+	Err    string `json:"err,omitempty"`
 }
 
 func (l *putLog) add(r putRecord) {
@@ -308,14 +312,18 @@ type countingTransport struct {
 
 func (t *countingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	m := segPath.FindStringSubmatch(req.URL.Path)
+	start := time.Now()
 	resp, err := t.next.RoundTrip(req)
 	if m == nil || req.Method != http.MethodPut {
 		return resp, err
 	}
 	seq, _ := strconv.ParseInt(m[2], 10, 64)
-	rec := putRecord{Rung: m[1], Seq: seq, Bytes: req.ContentLength, AtMS: time.Now().UnixMilli()}
+	end := time.Now()
+	rec := putRecord{Rung: m[1], Seq: seq, Bytes: req.ContentLength, AtMS: end.UnixMilli(), TookMS: end.Sub(start).Milliseconds()}
 	if err == nil {
 		rec.Status = resp.StatusCode
+	} else {
+		rec.Err = err.Error()
 	}
 	t.log.add(rec)
 	return resp, err

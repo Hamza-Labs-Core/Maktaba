@@ -313,15 +313,28 @@ build fails when the two differ.
   A self-test with the edge cache planted off must fail on the R2 counter. Scenarios not built
   yet are reported as expected failures.
 
+- **The broadcast rehearsal covers plans, viewer access, takedowns and a cloud outage (Epic 50,
+  story 50.29).** Five more scenarios run against the real edge and home: the plan modes in order
+  with no playing viewer stopped, invites, short codes, Turnstile and the viewer limits, a
+  takedown of the programme airing now through to the third strike, a guide that holds only
+  publishable items, and (nightly) 15 minutes with the cloud down, after which every viewer-minute
+  the edge counted reaches the cloud exactly once. A sixth, the monitoring scenario, checks the
+  edge's analytics events and stays an expected failure until the cloud's alerts and status page
+  join the stack.
+
 ### Fixed
 
-- **A TV rollback runs its reverse commit once.** An admin's rollback and the change
-  controller's next check could both queue the reverse commit of the same rollback when the
-  check landed between the rollback being written and its job being queued. The second job then
-  ran after the first had already put the previous release back on the air, found no rollback
-  point left and failed, leaving a failed TV job behind a rollback that had worked. Queueing the
-  reverse commit is now claimed first, in one database statement, so exactly one of them queues
-  it; a claim whose queueing fails is given back and retried on the next check.
+- **A broadcasting home sends each segment once when the edge is busy, and many viewers of a
+  new segment share one storage read (Epic 50, story 50.21).** A busy edge closes idle
+  connections, and an upload that started on one just as it closed failed and was sent again.
+  The home now marks segment uploads as safe to repeat, so a closed connection is retried
+  before the upload counts as failed, and the edge, which keeps one copy per segment, gets it
+  once. The home also spaces a quality's uploads at least half a second apart when it catches up
+  (the edge refuses a fifth upload of one quality within a second) and waits as long as the edge
+  asks before a retry; the live pace of one segment every 4 seconds is unchanged. At the edge,
+  viewers in one place who all ask for a new segment at once now wait for the first one's read
+  instead of each reading storage; each viewer's token is still checked first. The nightly
+  1,000-viewer rehearsal failed on both.
 
 - **Roku sends the cloud code's grant only to an address its certificate check proves.** After
   a phone approved the code, a plain HTTP or raw IP address the cloud listed could still get the
@@ -957,6 +970,14 @@ build fails when the two differ.
   alerted.
 
 ### Added
+
+- **The home's Broadcast panel shows who watches (Epic 50, story 50.28).** Admins see, under
+  Live TV → Broadcast, the viewers watching now and the viewer-hours of today, the last 7 days
+  and this month against the plan's allowance; with the Broadcaster add-on also the most at once,
+  the average watch time, countries and devices. The numbers are Maktaba Cloud's report, folded
+  there (a country or device with fewer than 5 viewers in an hour is Other for that hour). The
+  home asks through its relay agent with its own credential, so it never holds the owner's cloud
+  sign-in, and the cloud answers that home only; the home's API answers admins only.
 
 - **Android TV, Google TV and Fire TV sign in with a cloud code (Epic 58, stories 58.03 and
   58.05).** The TV app's home picker now opens on a code from Maktaba Cloud with its QR code;
@@ -4019,6 +4040,14 @@ build fails when the two differ.
   banner in between; the picture and sound stop at
   once without waiting for the home, and a picture that keeps stalling writes at most one log
   line a second.
+
+- **A TV rollback runs its reverse commit once.** An admin's rollback and the change
+  controller's next check could both queue the reverse commit of the same rollback when the
+  check landed between the rollback being written and its job being queued. The second job then
+  ran after the first had already put the previous release back on the air, found no rollback
+  point left and failed, leaving a failed TV job behind a rollback that had worked. Queueing the
+  reverse commit is now claimed first, in one database statement, so exactly one of them queues
+  it; a claim whose queueing fails is given back and retried on the next check.
 
 ## [0.2.0] - 2026-10-19
 

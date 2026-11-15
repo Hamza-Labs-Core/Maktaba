@@ -22,6 +22,10 @@ interface Counters {
   do_get: number;
   ae_points: number;
   ae_by_event: Record<string, number>;
+  /** `ingest` points that carry glass-to-glass (the canary publisher's, 50.28 §5) */
+  ae_ingest_glass: number;
+  /** `blocked` and `error` points by their code ("blocked:revoked", "error:edge_error") */
+  ae_by_code: Record<string, number>;
   requests: number;
 }
 
@@ -35,6 +39,8 @@ const fresh = (): Counters => ({
   do_get: 0,
   ae_points: 0,
   ae_by_event: {},
+  ae_ingest_glass: 0,
+  ae_by_code: {},
   requests: 0,
 });
 let counts = fresh();
@@ -73,12 +79,20 @@ function wrapNamespace(ns: DurableObjectNamespace): DurableObjectNamespace {
   });
 }
 
-/** The fake Analytics Engine: points counted by event (blob 0 in the 50.28 schema). */
+/**
+ * The fake Analytics Engine: points counted by event (blob 1 in the 50.28 schema), the codes of
+ * `blocked` and `error` points (blob 9) and the `ingest` points with glass-to-glass (double 8).
+ */
 const fakeAE = {
-  writeDataPoint(p: { blobs?: string[] }) {
+  writeDataPoint(p: { blobs?: string[]; doubles?: number[] }) {
     counts.ae_points++;
     const ev = p.blobs?.[0] ?? "";
     counts.ae_by_event[ev] = (counts.ae_by_event[ev] ?? 0) + 1;
+    if (ev === "blocked" || ev === "error") {
+      const k = `${ev}:${p.blobs?.[8] ?? ""}`;
+      counts.ae_by_code[k] = (counts.ae_by_code[k] ?? 0) + 1;
+    }
+    if (ev === "ingest" && (p.doubles?.[7] ?? 0) > 0) counts.ae_ingest_glass++;
   },
 };
 

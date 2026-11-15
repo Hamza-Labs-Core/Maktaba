@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"time"
 )
 
@@ -219,5 +220,18 @@ func (a *Agent) Moderation(ctx context.Context) (json.RawMessage, error) {
 func (a *Agent) CounterNotice(ctx context.Context, body json.RawMessage) (json.RawMessage, error) {
 	var raw json.RawMessage
 	err := a.do(ctx, http.MethodPost, "moderation/counter-notices", body, &raw)
+	return raw, err
+}
+
+// Analytics is the home's own viewer analytics (story 50.28) for a period (today, 7d, month) in a
+// time zone: the cloud's folded report, passed on as it came. The cloud answers for the home the
+// agent's credential names, never another.
+func (a *Agent) Analytics(ctx context.Context, period, tz string) (json.RawMessage, error) {
+	var raw json.RawMessage
+	q := url.Values{"period": {period}}
+	if tz != "" {
+		q.Set("tz", tz)
+	}
+	err := a.do(ctx, http.MethodGet, "home/analytics?"+q.Encode(), nil, &raw)
 	return raw, err
 }

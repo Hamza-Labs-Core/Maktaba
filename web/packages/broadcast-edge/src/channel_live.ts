@@ -705,7 +705,8 @@ export class ChannelLive extends DurableObject<Env> {
   /**
    * recordVisible writes 50.28's `ingest` event for each live segment an append made visible:
    * its bytes, upload-to-visible, and for the canary publisher glass-to-glass (now minus the
-   * segment's PROGRAM-DATE-TIME, the home's clock).
+   * segment's PROGRAM-DATE-TIME: when its first frame reached the home's broadcaster, on the
+   * home's clock).
    */
   private recordVisible(pub: string, rung: string, visible: Entry[], t: number): void {
     const canary = !!this.env.CANARY_PUBLISHER && pub === this.env.CANARY_PUBLISHER;

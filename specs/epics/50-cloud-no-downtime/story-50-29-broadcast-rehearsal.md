@@ -42,7 +42,7 @@ Each scenario is listed as an expected failure until its story turns it on (50.0
 | `broadcast-access` | 50.26 | invite uses, short codes, Turnstile, limits | as 50.26's criteria |
 | `broadcast-kill` | 50.25 | 200 viewers; `off_air`; lift; cloud API down + break-glass | stop ≤ 60 s on both paths; live again after the lift |
 | `broadcast-takedown` | 50.24 | notice → takedown (airing now) → counter → restore; 3 strikes | the timings and states in 50.24 |
-| `broadcast-hetzner-down` | 14.8 | stop the cloud stack for 2 h (fast clock) | channels keep playing; metering arrives exact afterwards |
+| `broadcast-hetzner-down` | 14.8 | stop the cloud stack for 15 minutes mid-broadcast, in real time (the edge refuses a home clock more than 60 s off its own, so a fast clock can't run under a live home) | channels keep playing; metering arrives exact afterwards |
 | `broadcast-edge-deploy` | 50.21 | deploy a new edge version with gradual rollout mid-stream | no viewer error; DO state kept |
 | `broadcast-observe` | 50.28 | break ingest; stale the revocation list; stop the canary | the alerts fire; the status component changes |
 
@@ -60,7 +60,8 @@ logs (the "tests keep logs" rule):
 - **The PR job** runs only for its code: `broadcast-edge`, `cloud/internal/broadcast`,
   `streaming/internal/broadcast` or `api/internal/broadcast` changes. It runs the short versions:
   `broadcast-fanout` to 100 viewers, plus every functional scenario.
-- **Nightly** on main: the full fan-out to 1,000 viewers and the 24 h fast-clock scenarios.
+- **Nightly** on main: the full fan-out to 1,000 viewers, the 24 h fast-clock scenario and the
+  Hetzner outage.
 - **Before a tag:** the tag gate needs the last nightly green on the tagged sha's broadcast code.
 
 ## Acceptance criteria
@@ -105,9 +106,14 @@ logs (the "tests keep logs" rule):
 
 | File | Change |
 |---|---|
-| `tests/cloud-rehearsal/broadcast/` (new, in 50.06's harness) | Scenarios, fixtures, report. |
-| `tools/broadcast-viewers/` (new, Go) | The load generator. |
-| `.github/workflows/broadcast-edge.yml` | PR set (path-filtered); nightly set; artifacts with logs. |
+| `tools/rehearsal-cloud/broadcast/` (`compose.yml`, `Dockerfile.edge`, `Dockerfile.home`, `expected-failures.txt`) | The stack, and the scenarios not yet turned on. |
+| `tools/rehearsal-cloud/broadcast/edge/` (`server.mjs`, `entry.ts`) | The edge in Miniflare as simulated locations: counters, the fast clock, a fake Turnstile and a fake cloud API. |
+| `streaming/cmd/rehearsal-broadcast-home/` (new, Go) | The home: the broadcaster on a test pattern, its control port and the proxy counter. |
+| `tools/broadcast-viewers/` (new, Go) | The load generator, and the cloud's signed posts in its exact format. |
+| `tools/broadcast-viewers/rehearsal/` (build tag `broadcastrehearsal`) | Scenarios, verdict, report. |
+| `tools/broadcast-viewers/cmd/broadcast-report/` | The CI matrix and the report. |
+| `.github/workflows/broadcast-rehearsal.yml` | PR set (path-filtered); nightly set; artifacts with logs. |
+| `tools/ci/ci_paths.py` | The rehearsal's paths. |
 | `docs/cloud-rehearsal.md` (50.06's doc) | The broadcast scenarios. |
 
 ### Tests

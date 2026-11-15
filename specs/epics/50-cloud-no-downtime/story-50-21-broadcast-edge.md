@@ -80,7 +80,8 @@ Three hostnames, all Workers Custom Domains (proxied) on `maktaba.tv`. They are 
   - `#EXT-X-TARGETDURATION` set from the segments;
   - a live window of the last 6 segments;
   - `#EXT-X-DISCONTINUITY` where flagged;
-  - `#EXT-X-PROGRAM-DATE-TIME` from the home's time, for the latency probe (50.28).
+  - `#EXT-X-PROGRAM-DATE-TIME` from the home's time: the segment's start time (50.22 §2),
+    for the latency probe and the canary's glass-to-glass (50.28).
 - **Master playlist:** the rungs the publisher's mode allows for **this session** (50.20 §2),
   with `BANDWIDTH` and `RESOLUTION` from the home's state post.
 - **Offline.** If `last_segment_at` is more than 3 × target duration old, playlists continue with

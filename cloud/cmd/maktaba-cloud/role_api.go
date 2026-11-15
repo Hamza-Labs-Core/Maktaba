@@ -351,8 +351,8 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 	// NewRouter has already registered the health probes, and chi
 	// refuses Use after a route, so the app routes and their middleware
 	// live in a group.
-	analyticsDeps := &broadcasth.AnalyticsDeps{DB: pool.DB, Servers: servers, Audit: auditLog, Logger: logger,
-		K: cfg.Broadcast.AnalyticsK}
+	analyticsDeps := &broadcasth.AnalyticsDeps{DB: pool.DB, Servers: servers, Agents: servers, Audit: auditLog,
+		Logger: logger, K: cfg.Broadcast.AnalyticsK}
 	r.Group(func(app chi.Router) {
 		// Per-IP rate limits on the unauthenticated auth routes: burst 30,
 		// refill 5/s — plenty for the sign-in form, harsh for credential
@@ -377,6 +377,8 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 		// the broadcast edge: each request signed with its key, no account
 		edgeh.Mount(app, edgeDeps)
 		broadcasth.MountRevocations(app, revDeps)
+		// a home's own viewer analytics, for its Broadcast panel (story 50.28)
+		broadcasth.MountAnalyticsHome(app, analyticsDeps)
 		// takedown notices and viewer reports (no account), and a home's instructions and records
 		moderationh.MountPublic(app, modDeps)
 		moderationh.MountHome(app, modDeps)

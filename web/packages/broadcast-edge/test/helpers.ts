@@ -174,6 +174,8 @@ export interface PutOpts {
   sha?: string;
   body?: Uint8Array;
   salt?: string;
+  /** bindings to override for this PUT (a counting R2 bucket) */
+  env?: Partial<Env>;
 }
 
 export async function putSegment(
@@ -192,7 +194,11 @@ export async function putSegment(
     "Content-Length": String(body.byteLength),
   };
   if (o.disc) headers["X-Maktaba-Discontinuity"] = "1";
-  return call(`${INGEST}/v1/ingest/${ch}/${rung}/${seq}.ts`, { method: "PUT", headers, body });
+  return call(
+    `${INGEST}/v1/ingest/${ch}/${rung}/${seq}.ts`,
+    { method: "PUT", headers, body },
+    o.env
+  );
 }
 
 export async function putSlate(ch: string, idx: number, dur = 4): Promise<Response> {

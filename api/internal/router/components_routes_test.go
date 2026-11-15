@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
 
 	"github.com/go-chi/chi/v5"
@@ -136,6 +137,36 @@ func TestComponentOffKillSwitch(t *testing.T) {
 		gated(c, "GET /api/channels/now").ServeHTTP(rec, httptest.NewRequest("GET", "/api/channels/now", nil))
 		if rec.Code != http.StatusOK {
 			t.Fatalf("%d", rec.Code)
+		}
+	}
+}
+
+// Story 50.28: who watches a broadcast is part of livetv.broadcast and only admins may ask, so
+// with broadcasting off a viewer still gets 403 and an admin the 409 naming the component.
+func TestBroadcastAnalyticsRouteIsBroadcastAndAdminOnly(t *testing.T) {
+	const route = "GET /api/tv/broadcast/analytics"
+	if c, ok := ComponentOf("GET", "/api/tv/broadcast/analytics"); !ok || c != "livetv.broadcast" {
+		t.Fatalf("%s: component %q %v, want livetv.broadcast", route, c, ok)
+	}
+	var rule *componentRule
+	for i := range ComponentRoutes {
+		if ComponentRoutes[i].Exact == route {
+			rule = &ComponentRoutes[i]
+		}
+	}
+	if rule == nil || !rule.Admin {
+		t.Fatalf("%s is not an admin-only rule: %+v", route, rule)
+	}
+	r := gated(off("livetv.broadcast"), route)
+	for _, c := range []struct {
+		who  string
+		p    func() *principal.Principal
+		want int
+	}{{"viewer", viewerP, http.StatusForbidden}, {"admin", adminP, http.StatusConflict}} {
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, as(httptest.NewRequest("GET", "/api/tv/broadcast/analytics", nil), c.p()))
+		if rec.Code != c.want {
+			t.Errorf("broadcasting off, %s: %d %s, want %d", c.who, rec.Code, rec.Body, c.want)
 		}
 	}
 }
