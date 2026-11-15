@@ -48,6 +48,17 @@ fun AccountScreen(
             Text(stringResource(R.string.signed_in_as, user.username), style = MaterialTheme.typography.titleMedium, color = MaktabaPalette.Text, modifier = Modifier.padding(top = 16.dp))
             home?.let { Text(stringResource(R.string.home_label, it.name), style = MaterialTheme.typography.bodyLarge, color = MaktabaPalette.Muted) }
             parental?.let { TvManaged(it, Modifier.padding(top = 16.dp)) }
+            // story 50.27: Watch a broadcast, apart from the home and its account; not under a
+            // parental limit (Epic 57): a broadcast is outside the home's ratings. Fails closed: shown
+            // only once the home has said this sign-in has no limit
+            val guestAccess by app.guestGate.access.collectAsState(initial = remember { app.guestGate.now() })
+            val limited = parental?.mine?.collectAsState()?.value?.limited == true
+            val known = parental == null || parental.answers.collectAsState().value > 0
+            if (guestAccess == com.hamzalabs.maktaba.core.guest.GuestAccess.Allowed && known && !limited) {
+                MaktabaButton(onClick = { app.guestDoor.request(null, guestAccess) }, modifier = Modifier.padding(top = 16.dp).testTag("account-watch-broadcast")) {
+                    Text(stringResource(com.hamzalabs.maktaba.core.R.string.guest_watch_broadcast))
+                }
+            }
             Row(Modifier.padding(top = 24.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 MaktabaButton(onClick = { app.session.switchHome() }) { Text(stringResource(R.string.switch_home)) }
                 MaktabaButton(onClick = { app.session.signOut() }) { Text(stringResource(R.string.sign_out)) }

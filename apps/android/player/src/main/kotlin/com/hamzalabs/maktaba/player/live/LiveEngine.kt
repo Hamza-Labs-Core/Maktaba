@@ -82,7 +82,8 @@ class ExoLiveEngine(private val context: Context) : LiveEngine {
         player?.release()
         http = client
         return ExoPlayer.Builder(context)
-            .setMediaSourceFactory(DefaultMediaSourceFactory(context).setDataSourceFactory(OkHttpDataSource.Factory(client)))
+            // a segment cut short is a load error the player tries again, never a whole one (WholeBodyDataSource)
+            .setMediaSourceFactory(DefaultMediaSourceFactory(context).setDataSourceFactory(com.hamzalabs.maktaba.core.guest.WholeBodyDataSource.Factory(OkHttpDataSource.Factory(client))))
             .setAudioAttributes(
                 AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MOVIE).build(),
                 true,

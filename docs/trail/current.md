@@ -1,12 +1,11 @@
 ---
 schema: 1
-tag: v0.3.144
-up_to_commit: c5236bce9
-built_from: v0.3.143
+tag: v0.3.146
+up_to_commit: 62f8be748
+built_from: v0.3.145
 ---
 
-# Trail snapshot: v0.3.144
-
+# Trail snapshot: v0.3.146
 
 ## Keep doing
 
@@ -135,7 +134,7 @@ built_from: v0.3.143
 - Check a guide written before its code against the code (the WIT, `capabilityOf`), not the spec. (#704)
 - A PR that ships user-facing work updates maktaba.dev in the same PR, in English and Arabic (`devportal_follows.py` warns; `No-Portal-Change:` says it needs nothing); run `npm run build`, `npm run scan` and `npm test` in `web/packages/devportal` before pushing. (#703, #723)
 - Before changing a log format or adding a fixed loopback port, grep the e2e tests: they match `key=value` output and template `server.toml` for two machines on one host. (#673, #686)
-- Calibrate a performance budget with work like the work budgeted; a "share of a core" budget is CPU time, not wall time. A timing assertion times only the thing it is about (the runaway-job test counted guest compile time). On a loaded Mac hold the median and log the tail: a p95 assertion is a flake source, and local absolute timings are unusable (profile call counts still are). Measure a calibration constant and report its raw times: a clamp at 1 hid a reference 3.6 times off. Measure with `timeit` before putting a regex in a hot path. A gate on a shared runner needs a counter and a robust statistic: the process's own CPU time (the relay containers' cgroup `cpu.stat` `usage_usec`) as a median of rounds against a baseline measured the same way, and a latency budget judged on the best of three rounds (noise only adds time); `docker stats` samples moved 1.8× on the same code. Before changing a threshold or rerunning, read the gate's spread on unchanged code from main's past artifacts, and watch a gate over several runs on several runners before making it strict. A gate compares on one machine or not at all: build the base commit and measure it beside the change in the same job, rounds alternating (`load-small`, the Python `log-bench`). Before changing a bench gate, sample it across many runners grouped by CPU model (a matrix recording `/proc/cpuinfo`, about 10 minutes); calibrate against the library the code uses, never the code under test; scale a percentile budget by the same percentile of independent work; and dispatch the nightly on the branch to measure a fix on the real runner. (#690, #738, #694, #696, #742, #740, #802, #808, #828, #834, #838, #839, #860, #866, d20261107-test-infra-missteps)
+- Calibrate a performance budget with work like the work budgeted; a "share of a core" budget is CPU time, not wall time. A timing assertion times only the thing it is about (the runaway-job test counted guest compile time). On a loaded Mac hold the median and log the tail: a p95 assertion is a flake source, and local absolute timings are unusable (profile call counts still are). Measure a calibration constant and report its raw times: a clamp at 1 hid a reference 3.6 times off. Measure with `timeit` before putting a regex in a hot path. A gate on a shared runner needs a counter and a robust statistic: the process's own CPU time (the relay containers' cgroup `cpu.stat` `usage_usec`) as a median of rounds against a baseline measured the same way, and a latency budget judged on the best of three rounds (noise only adds time); `docker stats` samples moved 1.8× on the same code. Before changing a threshold or rerunning, read the gate's spread on unchanged code from main's past artifacts, and watch a gate over several runs on several runners before making it strict. A gate compares on one machine or not at all: build the base commit and measure it beside the change in the same job, rounds alternating (`load-small`, the Python `log-bench`). Before changing a bench gate, sample it across many runners grouped by CPU model (a matrix recording `/proc/cpuinfo`, about 10 minutes); calibrate against the library the code uses, never the code under test; scale a percentile budget by the same percentile of independent work; and dispatch the nightly on the branch to measure a fix on the real runner. A p95 that swings 10x between runs on the same code is a hidden stall, not noise: look for work on a hot path that grows with the audience. (#1399, #690, #738, #694, #696, #742, #740, #802, #808, #828, #834, #838, #839, #860, #866, d20261107-test-infra-missteps)
 - Measure a flaky suite under real load before and after (three concurrent full copies on the Mac reproduce CI's web failures every time) and report both counts; profile a slow test (`--pool=forks --execArgv=--cpu-prof`): most of its time was page code. (#746)
 - Web: window key handlers that read render state use `useWindowKeydown`; formatters made in render come from `lib/intl`. (#746, #698)
 - Write a cross-language check once as an algorithm with a deterministic output, and share test vectors across Go, Rust and TypeScript (Ed25519 is deterministic, so a fixed seed suffices). Write the algorithm down to its tie-breaks first, generate the corpus with a script, write the goldens from one language, review them by hand and hold the other languages to them. Run every hostile case through the code a home runs (the loop), not only the verifier. (#751, #733, #743, #759, #778)
@@ -407,6 +406,7 @@ built_from: v0.3.143
 - Broadcast: a TV and the launcher know the approving home only by an address a certificate proves (the cloud's https names, or Android's `local_ip` pinned to its `tls_name`); plain http, raw IPs, the cloud's `direct` kind and discovery `urls` prove nothing. The cloud's `home_id` is its server id, never the home's instance id. (#1348, #1354, #1356, #1360)
 - Broadcast: the publisher is the home (an ingest token's `pub` must be its `home`, fixtures included); the edge refuses a home clock over 60 s off, so outage scenarios run in real time; ffmpeg stamps PROGRAM-DATE-TIME after probing, so the home corrects each segment's start from when it appears. A k-anonymity fold over caller-chosen windows leaks by differencing: fold per hour and sum. A plan check made before a transaction races a plan change: re-check under the home row lock the revoking side takes, in one lock order. A rule in a SQL function is only as wide as the tables a machine's copy holds. (#1338, #1381, #1382, #1358, #1397, #1393)
 - Read the existing transport before adding one: the home's control socket already carried the edge's commands, so on-demand broadcast needed one header. A cloud contract change after the first deploy needs a compatibility window. (#1373, #1284)
+- Broadcast edge Durable Objects write one key per entity (viewer `v:`, session `x:`, usage window `w:`), never the whole map per event: a whole-state write per heartbeat stalled the channel about 9 s at 1,000 viewers. A watching viewer's heartbeat stays in memory and the minute alarm saves it inside the session TTL; new sessions, mode changes and lapses write at once. (#1399)
 - "Stamp after the side effect" de-duplication races: claim first with a compare-and-set in the database, then act (the TV rollback enqueued two reverse commits). An e2e stub stricter than the real job exposed it. (#1383)
 - A TV approved through the cloud ends when the account is unlinked: its refresh family is recorded as a cloud sign-in before any token is handed out. (#1250)
 - In React, a `setState` from a `useEffect` loses to an external store's sync render: keep what the first answer's render saw with a render-phase update; `flushSync` with `IS_REACT_ACT_ENVIRONMENT` off reproduces such races in jsdom. (#1042)
@@ -468,7 +468,7 @@ built_from: v0.3.143
 - lint/repo refuses a new tracked script with no `.github/ci-paths.yml` filter and early-exit readers (`| head -1`, `| grep -q`); run those guards before pushing new shell scripts. (#1260)
 - A secret scanner reports the line, never any part of the value (CodeQL flagged a check printing a found password's first characters); a rotation checks every account before changing any. A code anyone can read out signs in a restricted principal: never an admin, and it mints nothing. (#1293, #1240)
 - The devportal's tests read its built `dist` (`npm run build` first), and its Apps pages take only `<name>-en.webp` and `<name>-ar.webp`. A local `trail check` with git checks can take half an hour; `--no-git` is quick and CI's lint job runs the full check. With `broadcast.enabled` the cloud API needs `broadcast.key_path`, so every rehearsal that enables it mounts a key. A main update rehearsal that has only updated from one release can hide a race a new "from" release shows: note which release a failing run updated from. (#1240, #1313, #1331, #1242, #1332)
-- The release gate: `next_tag.py` also needs the newest nightly broadcast rehearsal for the same broadcast files green, and keeps its own copy of the workflow's path filter, compared by a test (widen both together). The PR-size scenarios (100 viewers) can pass while the nightly 1,000 finds fan-out faults. (#1376, #1390, #1385)
+- The release gate: `next_tag.py` also needs the newest nightly broadcast rehearsal for the same broadcast files green, and keeps its own copy of the workflow's path filter, compared by a test (widen both together). The PR-size scenarios (100 viewers) can pass while the nightly 1,000 finds fan-out faults. Keep the exact-accounting scenarios (`broadcast-hetzner-down`'s metering) in every nightly: they catch storage refactors that drop a field. (#1376, #1390, #1385, #1399)
 - Go's `http.Transport` replays a request on a dead pooled connection only when it is idempotent or carries `Idempotency-Key`; a PUT with a body needs the header. Log each request's latency and client error before theorising. (#1385)
 - `uv sync --no-install-package` keeps the package's dependencies; `uv run --all-extras` syncs excluded packages back, so run `--no-sync` after a partial install. (#1190)
 - `affected-tests` reads main's coverage map and wants a changed test in the changed file's own package directory (a sibling package does not count); extend a test the map already links; a test on the real router beats a trailer for a one-line wiring change. A new OpenAPI route also needs `generate_wiki.py`. (#1274, #1383, #1393, #1348, #1374)
@@ -802,7 +802,8 @@ built_from: v0.3.143
 | #973 | 2026-11-08 | fix(supervisor): plugin runners wait for the venv like the pipeline |
 | #1232 | 2026-11-13 | fix(postgres): a half-answered look no longer restarts the database |
 | #1318 | 2026-11-14 | docs(testflight): the install failure though the build is listed (open) |
-| #1399 | 2026-11-15 | fix(broadcast): a heartbeat writes its viewer, not the whole channel state (50.21, 50.29) |
+| #1400 | 2026-11-15 | Watch a broadcast on Apple TV, iPhone, iPad and the Mac (story 50.27 T03, T05) |
+| #1404 | 2026-11-15 | fix(release): asset uploads retry transient GitHub errors themselves |
 
 ## Index
 
@@ -1541,4 +1542,5 @@ built_from: v0.3.143
 | 1390-broadcast-observe | 2026-11-15 | pr | Broadcast rehearsal: alerts, canary probe and status page proven against the real edge |
 | 1393-guest-sharing-plan-end | 2026-11-15 | pr | Broadcast: guest sharing ends with the plan; machine hosts keep the publishable limit |
 | 1397-plan-change-races | 2026-11-15 | pr | Broadcast: invites and open access can't outlive a plan change; staging watch reports |
+| 1399-beat-writes | 2026-11-15 | pr | Broadcast edge: a heartbeat writes its viewer, not the whole channel state |
 
