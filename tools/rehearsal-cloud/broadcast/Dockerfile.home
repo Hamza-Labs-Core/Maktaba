@@ -1,0 +1,29 @@
+# syntax=docker/dockerfile:1.7
+# The broadcast rehearsal's home (Epic 50 story 50.29): the streaming service's broadcaster
+# (streaming/internal/broadcast) driven by streaming/cmd/rehearsal-broadcast-home, a test-pattern
+# channel and a software encoder (CI only; VideoToolbox is never used), with Debian's ffmpeg.
+# Never published.
+#
+#   docker build -f tools/rehearsal-cloud/broadcast/Dockerfile.home -t maktaba-broadcast-home:rehearsal .
+ARG GO_VERSION=1.25
+FROM golang:${GO_VERSION}-bookworm AS builder
+WORKDIR /src
+ENV CGO_ENABLED=0 GOOS=linux
+COPY streaming/go.mod streaming/go.sum ./streaming/
+COPY shared ./shared
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    --mount=type=cache,target=/go/pkg/mod \
+    cd streaming && go mod download
+COPY streaming ./streaming
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    --mount=type=cache,target=/go/pkg/mod \
+    cd streaming && go build -trimpath -o /out/rehearsal-broadcast-home ./cmd/rehearsal-broadcast-home
+
+FROM debian:bookworm-slim
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ffmpeg fonts-dejavu-core ca-certificates curl \
+ && rm -rf /var/lib/apt/lists/*
+COPY --from=builder /out/rehearsal-broadcast-home /usr/local/bin/rehearsal-broadcast-home
+EXPOSE 8090
+HEALTHCHECK --interval=2s --timeout=3s --retries=30 CMD curl -fsS http://127.0.0.1:8090/healthz || exit 1
+CMD ["rehearsal-broadcast-home", "-addr", ":8090", "-dir", "/tmp/broadcast-home"]

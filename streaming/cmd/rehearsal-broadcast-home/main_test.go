@@ -1,0 +1,117 @@
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"slices"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/google/uuid"
+
+	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/broadcast"
+)
+
+// The test pattern is software only, at real time, with the clock and the frame number burned in.
+func TestPatternArgs(t *testing.T) {
+	a := PatternArgs(output, patternFont)
+	joined := strings.Join(a, " ")
+	for _, want := range []string{"-re", "testsrc2=size=854x480:rate=25", "%{localtime", "%{n}", "libx264", "-g 50", "-f mpegts pipe:1", "fontfile=" + patternFont} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("%q missing from %s", want, joined)
+		}
+	}
+	if strings.Contains(joined, "videotoolbox") {
+		t.Errorf("the rehearsal never uses VideoToolbox: %s", joined)
+	}
+	if strings.Contains(strings.Join(PatternArgs(output, ""), " "), "fontfile") {
+		t.Error("no font: ffmpeg's own")
+	}
+}
+
+// What the broadcaster writes back (a refusal, the kill switch) is what the next sync reads.
+func TestMemStore(t *testing.T) {
+	s := &memStore{}
+	ch := uuid.New()
+	s.publish(broadcast.Job{Channel: ch, State: "live"})
+	if err := s.SetState(context.Background(), ch, "revoked", "notice"); err != nil {
+		t.Fatal(err)
+	}
+	jobs, _ := s.Jobs(context.Background())
+	if len(jobs) != 1 || jobs[0].State != "revoked" {
+		t.Fatalf("jobs: %+v", jobs)
+	}
+	_ = s.Report(context.Background(), ch, map[string]any{"segments": map[string]int{"src": 3}})
+	state, detail, rep := s.snapshot()
+	if state != "revoked" || detail != "notice" || rep == nil {
+		t.Fatalf("snapshot: %s %s %v", state, detail, rep)
+	}
+	s.unpublish()
+	if jobs, _ := s.Jobs(context.Background()); jobs[0].State != "draft" {
+		t.Fatalf("unpublished: %+v", jobs)
+	}
+}
+
+// The proxy counter logs each segment PUT with its answer, and nothing else.
+func TestCountingTransport(t *testing.T) {
+	edge := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPut {
+			w.WriteHeader(http.StatusCreated)
+		}
+	}))
+	defer edge.Close()
+	log := &putLog{}
+	c := &http.Client{Transport: &countingTransport{next: http.DefaultTransport, log: log}}
+	for _, p := range []struct{ method, path string }{
+		{http.MethodPut, "/v1/ingest/abc/src/42.ts"},
+		{http.MethodPut, "/v1/ingest/abc/slate/0.ts"},
+		{http.MethodPost, "/v1/ingest/abc/state"},
+	} {
+		req, _ := http.NewRequest(p.method, edge.URL+p.path, strings.NewReader("x"))
+		resp, err := c.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = resp.Body.Close()
+	}
+	got := log.snapshot()
+	if len(got) != 2 || got[0].Rung != "src" || got[0].Seq != 42 || got[0].Status != 201 || got[1].Rung != "slate" {
+		t.Fatalf("puts: %+v", got)
+	}
+	if time.Since(time.UnixMilli(got[0].AtMS)) > time.Minute {
+		t.Fatalf("time: %d", got[0].AtMS)
+	}
+}
+
+// The control port publishes, reports and refuses a bad body.
+func TestControlPort(t *testing.T) {
+	h := newHome("ffmpeg-not-run", t.TempDir(), nil)
+	srv := httptest.NewServer(h.routes())
+	defer srv.Close()
+	resp, _ := http.Post(srv.URL+"/publish", "application/json", strings.NewReader(`{}`))
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("empty publish: %d", resp.StatusCode)
+	}
+	resp, _ = http.Post(srv.URL+"/publish", "application/json",
+		strings.NewReader(`{"channel":"abc","token":"mkbi1.x.y","ingest_url":"http://edge:8787","rungs":["src","480p","360p"],"name":"Rehearsal"}`))
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("publish: %d", resp.StatusCode)
+	}
+	jobs, _ := h.store.Jobs(context.Background())
+	if len(jobs) != 1 || jobs[0].Creds.Channel != "abc" || !slices.Equal(jobs[0].Rungs, []string{"src", "480p", "360p"}) || jobs[0].State != "live" {
+		t.Fatalf("job: %+v", jobs)
+	}
+	_, _ = http.Post(srv.URL+"/encoder/stop", "", nil)
+	resp, _ = http.Get(srv.URL + "/metrics")
+	var m struct {
+		State     string `json:"state"`
+		EncoderOn bool   `json:"encoder_on"`
+	}
+	_ = json.NewDecoder(resp.Body).Decode(&m)
+	if m.State != "live" || m.EncoderOn {
+		t.Fatalf("metrics: %+v", m)
+	}
+}
