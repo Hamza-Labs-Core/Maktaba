@@ -227,6 +227,8 @@ struct PlayerShell: View {
             NavigationStack(path: path(section)) {
                 root(section).playerDestinations(context)
             }
+            // outside the stack, so its pushed pages have it too
+            .environment(\.playerPush, PlayerPush { paths[section, default: []].append($0) })
         }
     }
 
@@ -258,6 +260,21 @@ extension View {
     func playerDestinations(_ context: PlayerContext) -> some View {
         navigationDestination(for: PlayerRoute.self) { PlayerDestination(context: context, route: $0) }
     }
+}
+
+/// Pushes a route on the stack the screen is in, from code: a screen that must do something
+/// first (`SearchScreen` lets the search field's keyboard go, `LetGoFirst`) pushes with this
+/// rather than a `NavigationLink(value:)`, whose tap it cannot get in front of. Set by each
+/// stack that holds a path of `PlayerRoute`s (the shell's sections, Libraries); nil elsewhere
+/// (a linked page's sheet), where a screen pushes with its own `navigationDestination(item:)`.
+struct PlayerPush {
+    let push: (PlayerRoute) -> Void
+
+    func callAsFunction(_ route: PlayerRoute) { push(route) }
+}
+
+extension EnvironmentValues {
+    @Entry var playerPush: PlayerPush?
 }
 
 /// A route's screen.

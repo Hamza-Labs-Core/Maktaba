@@ -71,6 +71,7 @@ struct LibraryBrowser: View {
                     .toolbar { LibrariesAccountMenu(context: context) }
                     .librariesDestinations(context)
             }
+            .environment(\.playerPush, PlayerPush { path.append($0) })
             .player(playback, session: session)
         } else {
             NavigationSplitView(columnVisibility: .constant(.all)) {
@@ -86,6 +87,7 @@ struct LibraryBrowser: View {
                 NavigationStack(path: $path) {
                     FreshOnLimit(session: session) { page }.librariesDestinations(context)
                 }
+                .environment(\.playerPush, PlayerPush { path.append($0) })
             }
             .navigationSplitViewStyle(.balanced)
             .onChange(of: choice) { old, _ in if old != nil { path = [] } }

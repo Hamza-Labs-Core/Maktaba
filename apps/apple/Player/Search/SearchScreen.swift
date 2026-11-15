@@ -6,13 +6,21 @@ import SwiftUI
 /// the field is empty. Submit asks the home (`POST /api/search`, hybrid) and shows **Titles**
 /// and **In the transcript**: a title opens the video's page, a transcript passage opens the
 /// player at its time. The query goes as typed, Arabic with its diacritics too.
+///
+/// Both a search and a result's page change the screen under the field, so both wait for the
+/// field to let go of the keyboard first (`LetGoFirst`, Trail #1419 and #1425).
 struct SearchScreen: View {
     let context: PlayerContext
 
     @State private var model: SearchModel
     @FocusState private var typing: Bool
-    /// A search held until the field has let go of the keyboard (see `submit`).
-    @State private var letGo = LetGoFirst<String>()
+    /// A search, or a result's page, held until the field has let go of the keyboard (see
+    /// `submit` and `open`).
+    @State private var letGo = LetGoFirst<SearchChange>()
+    /// The stack this screen is in, to push a result's page once the field has let go.
+    @Environment(\.playerPush) private var push
+    /// A result's page, where no stack takes a push (`PlayerPush` is nil: a linked page's sheet).
+    @State private var pushed: PlayerRoute?
 
     /// A query sent as the screen opens (a plugin panel's chip, `PlayerRoute.search`).
     private let initial: String?
@@ -64,10 +72,11 @@ struct SearchScreen: View {
                 }
             }
             .onSubmit(of: .search) { submit(model.query) }
-            // the field let go: the search held for it runs now
+            // the field let go: the search or the page held for it goes now
             .onChange(of: typing) { _, now in
-                if let q = letGo.focusChanged(now) { run(q) }
+                if let change = letGo.focusChanged(now) { perform(change) }
             }
+            .navigationDestination(item: $pushed) { PlayerDestination(context: context, route: $0) }
             // suggestions follow the typing once it rests
             .task(id: model.query) {
                 try? await Task.sleep(for: SearchModel.suggestDelay)
@@ -105,6 +114,7 @@ struct SearchScreen: View {
                 .accessibilityIdentifier("search.none")
             } else {
                 ResultsList(results: results, home: context.client.home, byMeaning: caps.isOn(.semanticSearch), paging: model.paging,
+                            open: open,
                             moreTitles: { Task { await model.moreTitles() } },
                             moreTranscripts: { Task { await model.moreTranscripts() } })
             }
@@ -188,12 +198,37 @@ struct SearchScreen: View {
         // go, then a spinner, then the results). In the same update as the field letting go,
         // the keyboard's hiding could be cut off and never finish, and the app was never idle
         // again: every later XCUITest wait ran its full 60 s.
-        if let now = letGo.begin(q, focused: typing) { run(now) } else { typing = false }
+        hold(.search(q))
     }
 
-    private func run(_ q: String) {
-        Task { await model.submit(q) }
+    /// A result's page (a title, a video of In the transcript, a passage's player). Pushed only
+    /// once the field has let go: someone who went back to the field to refine, then tapped a
+    /// result, would otherwise push the page with the keyboard still up, its hiding cut off. A
+    /// `Button` and not a `NavigationLink(value:)`: nothing can come before a link's own push,
+    /// and a tap gesture beside the link took the link's tap on an iPhone (Trail #1425).
+    private func open(_ route: PlayerRoute) {
+        hold(.open(route))
     }
+
+    /// Runs `change` now when the field holds no keyboard; otherwise drops the focus, and
+    /// `onChange(of: typing)` runs it once the field has let go.
+    private func hold(_ change: SearchChange) {
+        if let now = letGo.begin(change, focused: typing) { perform(now) } else { typing = false }
+    }
+
+    private func perform(_ change: SearchChange) {
+        switch change {
+        case let .search(q): Task { await model.submit(q) }
+        case let .open(route): if let push { push(route) } else { pushed = route }
+        }
+    }
+}
+
+/// What the search screen changes once the field has let go of the keyboard: a search to run,
+/// or a result's page to open. One held at a time, the latest (`LetGoFirst`).
+enum SearchChange: Equatable {
+    case search(String)
+    case open(PlayerRoute)
 }
 
 /// A group's heading: brass, a heading for VoiceOver.
@@ -216,6 +251,8 @@ private struct ResultsList: View {
     /// Search by meaning is on: words-only results while it is off are no failure to report.
     let byMeaning: Bool
     let paging: Bool
+    /// Opens a result's page (`SearchScreen.open`: after the field lets go).
+    let open: (PlayerRoute) -> Void
     let moreTitles: () -> Void
     let moreTranscripts: () -> Void
 
@@ -232,7 +269,7 @@ private struct ResultsList: View {
             if !results.titles.isEmpty {
                 Section {
                     ForEach(results.titles) { hit in
-                        NavigationLink(value: PlayerRoute.video(id: hit.videoID)) {
+                        ResultLink(route: .video(id: hit.videoID), open: open) {
                             TitleRow(hit: hit, poster: poster(hit.videoID))
                         }
                         .accessibilityIdentifier("search.title.\(hit.videoID)")
@@ -249,13 +286,13 @@ private struct ResultsList: View {
             if !results.transcripts.isEmpty {
                 Section {
                     ForEach(results.transcripts) { hit in
-                        NavigationLink(value: PlayerRoute.video(id: hit.videoID)) {
+                        ResultLink(route: .video(id: hit.videoID), open: open) {
                             TranscriptHeader(hit: hit, poster: poster(hit.videoID))
                         }
                         .accessibilityIdentifier("search.transcript.\(hit.videoID)")
                         .listRowBackground(Color.clear)
                         ForEach(Array(hit.passages.enumerated()), id: \.element.id) { i, p in
-                            NavigationLink(value: PlayerRoute.watch(videoID: hit.videoID, at: p.startSec)) {
+                            ResultLink(route: .watch(videoID: hit.videoID, at: p.startSec), open: open) {
                                 PassageRow(passage: p)
                             }
                             .accessibilityIdentifier("search.passage.\(hit.videoID).\(i)")
@@ -279,6 +316,36 @@ private struct ResultsList: View {
     /// `/api/videos/{id}/poster?size=small` on this home (the image source adds the token).
     private func poster(_ id: String) -> URL {
         home.appending(path: "api/videos/\(id)/poster").appending(queryItems: [URLQueryItem(name: "size", value: "small")])
+    }
+}
+
+/// A result's row: a button that opens `route` through `open`, so the screen lets the field go
+/// before the push. It looks as a link's row did: the whole row taps, with the chevron on an
+/// iPhone and an iPad; VoiceOver reads the row's own label and activates it as a button.
+private struct ResultLink<Label: View>: View {
+    let route: PlayerRoute
+    let open: (PlayerRoute) -> Void
+    @ViewBuilder let label: Label
+
+    var body: some View {
+        Button {
+            open(route)
+        } label: {
+            HStack(spacing: MaktabaTokens.Spacing.s2) {
+                label.frame(maxWidth: .infinity, alignment: .leading)
+                #if os(iOS)
+                Image(systemName: "chevron.forward")
+                    .font(.maktabaBody(13, weight: .semibold, relativeTo: .footnote))
+                    .foregroundStyle(Color.mktMuted)
+                    .accessibilityHidden(true)
+                #endif
+            }
+            .contentShape(Rectangle())
+        }
+        #if os(macOS)
+        // a Mac's button style would draw a push button around the row
+        .buttonStyle(.plain)
+        #endif
     }
 }
 
