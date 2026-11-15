@@ -126,6 +126,25 @@ describe("PublisherControl: a counted beat writes its session and its window", (
     });
   });
 
+  it("keeps the publisher it learnt from its first beat across a restart", async () => {
+    const pub = `pub-${newChannel()}`;
+    const stub = E.PUBLISHER.get(E.PUBLISHER.idFromName(pub));
+    await runInDurableObject(stub, async (o: PublisherControl, state) => {
+      const first = await writes(state, () => o.beat(pub, "s-a", "ch", "full"));
+      expect(first.put).toContain("s");
+      expect(await state.storage.get("s")).toMatchObject({ pub });
+      const Ctor = o.constructor as new (s: DurableObjectState, e: unknown) => PublisherControl;
+      const fresh = new Ctor(state, E);
+      await state.blockConcurrencyWhile(async () => {});
+      advanceClock(10 * 60_000); // a later window, made by the restarted object
+      await fresh.beat(pub, "s-a", "ch", "full");
+      for (const w of await fresh.pendingUsage()) expect(w.key.startsWith(`${pub}:`)).toBe(true);
+      // the next beat has nothing new to say about the publisher
+      const next = await writes(state, () => fresh.beat(pub, "s-b", "ch", "full"));
+      expect(next.put).not.toContain("s");
+    });
+  });
+
   it("reads sessions and windows kept in the earlier layout and moves each to its key", async () => {
     const pub = `pub-${newChannel()}`;
     const stub = E.PUBLISHER.get(E.PUBLISHER.idFromName(pub));

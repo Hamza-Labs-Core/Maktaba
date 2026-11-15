@@ -165,9 +165,20 @@ export class PublisherControl extends DurableObject<Env> {
     return w;
   }
 
+  /**
+   * takePub learns the publisher's id from its first call; "s" is then written with the next
+   * save (a beat writes only its session and window otherwise), or a restarted object would key
+   * its usage windows to no publisher.
+   */
+  private takePub(pub: string): void {
+    if (this.s.pub || !pub) return;
+    this.s.pub = pub;
+    this.dirty.add("s");
+  }
+
   /** setPlan takes the cloud's plan state and passes what channels enforce on to them. */
   async setPlan(pub: string, plan: PlanState): Promise<"applied" | "stale"> {
-    this.s.pub ||= pub;
+    this.takePub(pub);
     if (this.s.plan && plan.version < this.s.plan.version) return "stale";
     this.s.plan = plan;
     await this.save();
@@ -217,7 +228,7 @@ export class PublisherControl extends DurableObject<Env> {
 
   /** beat records a session's heartbeat: one viewer-minute per 60 s in `full` or `lowest`. */
   async beat(pub: string, session: string, ch: string, mode: Mode): Promise<BeatResult> {
-    this.s.pub ||= pub;
+    this.takePub(pub);
     const t = now();
     for (const [k, v] of Object.entries(this.s.sessions))
       if (t - v.at > SESSION_LIVE_MS) {
