@@ -35,7 +35,9 @@ type Segment struct {
 	Path          string
 	Duration      float64
 	Discontinuity bool
-	PDT           time.Time
+	// PDT is the playlist's program date time. The uploader replaces it with the segment's
+	// start (segmentClock) before sending it as X-Maktaba-Segment-Time.
+	PDT time.Time
 }
 
 // Outcome is what became of a segment.
@@ -284,7 +286,51 @@ type RungWatcher struct {
 	// Poll is how often the playlist is read (default 500 ms).
 	Poll time.Duration
 
-	last int64
+	last  int64
+	clock segmentClock
+}
+
+// segmentClock gives each segment its start time: the wall-clock moment its first frame
+// reached the broadcaster, which the edge subtracts from the moment the segment is visible
+// for glass-to-glass (50.28).
+//
+// ffmpeg's EXT-X-PROGRAM-DATE-TIME can't be sent as it is: the hls muxer stamps the first
+// segment with the time the muxer opened, which is after it probed the input (about a
+// segment's worth of the live stream on stdin), then adds each segment's duration. Every
+// date is late by that probe, at or after the segment's own close, so glass-to-glass read 0.
+//
+// A segment is listed when it closes, so its start is at most (listed - duration). Each
+// segment's listed time is seen up to a poll late, and a segment found behind a slow upload
+// later still, so the smallest (seen - duration - PDT) over a run of segments is the truest
+// correction. Adding it to ffmpeg's dates keeps their even spacing and puts every date
+// before its segment's close, within about a poll after its start. A run ends at a break in
+// the numbers (a new ffmpeg starts at a new number) or in the dates; without a date, the
+// start is (seen - duration).
+type segmentClock struct {
+	offset  time.Duration
+	have    bool
+	nextPDT time.Time // the previous segment's PDT plus its duration
+	nextSeq int64
+}
+
+// runGap is how far a segment's PDT may be from the end of the one before it in a run.
+const runGap = time.Second
+
+func (c *segmentClock) start(s Segment, seen time.Time) time.Time {
+	dur := time.Duration(s.Duration * float64(time.Second))
+	closed := seen.Add(-dur)
+	if s.PDT.IsZero() {
+		c.have = false
+		return closed
+	}
+	if c.have && (s.Seq != c.nextSeq || s.PDT.Sub(c.nextPDT) > runGap || c.nextPDT.Sub(s.PDT) > runGap) {
+		c.have = false
+	}
+	if off := closed.Sub(s.PDT); !c.have || off < c.offset {
+		c.offset, c.have = off, true
+	}
+	c.nextPDT, c.nextSeq = s.PDT.Add(dur), s.Seq+1
+	return s.PDT.Add(c.offset)
 }
 
 // Step uploads what is new in the playlist now and prunes the rung's directory.
@@ -293,11 +339,13 @@ func (w *RungWatcher) Step(ctx context.Context) {
 	if err != nil {
 		return
 	}
+	seen := w.Up.now()
 	segs := ParsePlaylist(f, w.Dir, w.Rung)
 	_ = f.Close()
 	var fresh []Segment
 	for _, s := range segs {
 		if s.Seq > w.last {
+			s.PDT = w.clock.start(s, seen)
 			fresh = append(fresh, s)
 		}
 	}

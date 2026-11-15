@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -22,6 +23,7 @@ type fakeEdge struct {
 	mu    sync.Mutex
 	got   map[string][]byte
 	disc  map[string]bool
+	at    map[string]int64 // X-Maktaba-Segment-Time, unix ms
 	tries map[string]int
 	fail  map[string]int
 	code  int // when set, every PUT answers this
@@ -29,7 +31,7 @@ type fakeEdge struct {
 }
 
 func newFakeEdge() *fakeEdge {
-	return &fakeEdge{got: map[string][]byte{}, disc: map[string]bool{}, tries: map[string]int{}, fail: map[string]int{}}
+	return &fakeEdge{got: map[string][]byte{}, disc: map[string]bool{}, at: map[string]int64{}, tries: map[string]int{}, fail: map[string]int{}}
 }
 
 func (e *fakeEdge) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -63,6 +65,7 @@ func (e *fakeEdge) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	e.got[key] = b
 	e.disc[key] = r.Header.Get("X-Maktaba-Discontinuity") == "1"
+	e.at[key], _ = strconv.ParseInt(r.Header.Get("X-Maktaba-Segment-Time"), 10, 64)
 	w.WriteHeader(http.StatusCreated)
 }
 
@@ -221,5 +224,107 @@ func TestParsePlaylist(t *testing.T) {
 	if len(segs) != 2 || segs[0].Seq != 7 || segs[0].PDT.IsZero() || segs[0].Discontinuity ||
 		!segs[1].Discontinuity || segs[1].Duration != 3.5 || segs[1].Path != "/d/8.ts" {
 		t.Fatalf("%+v", segs)
+	}
+}
+
+// ffmpegRung plays ffmpeg's hls muxer on a live input: segment i (from 1) holds the input
+// from start+4(i-1) to start+4i and is listed at its close, and its program date time is
+// the muxer's open (start+probe, after probing the input) plus the durations before it.
+type ffmpegRung struct {
+	t     *testing.T
+	dir   string
+	start time.Time
+	probe time.Duration
+	first int // the first segment's number
+}
+
+func (f ffmpegRung) segStart(i int) time.Time {
+	return f.start.Add(time.Duration(i-f.first) * SegmentSeconds * time.Second)
+}
+
+// list writes the playlist and files of the segments closed by now (the last 6).
+func (f ffmpegRung) list(now time.Time) {
+	f.t.Helper()
+	var pl strings.Builder
+	pl.WriteString("#EXTM3U\n#EXT-X-VERSION:6\n#EXT-X-TARGETDURATION:4\n")
+	var listed []int
+	for i := f.first; !f.segStart(i + 1).After(now); i++ {
+		listed = append(listed, i)
+	}
+	if len(listed) > 6 {
+		listed = listed[len(listed)-6:]
+	}
+	for _, i := range listed {
+		p := filepath.Join(f.dir, fmt.Sprintf("%d.ts", i))
+		if _, err := os.Stat(p); err != nil {
+			if err := os.WriteFile(p, []byte(fmt.Sprintf("seg-%d", i)), 0o600); err != nil {
+				f.t.Fatal(err)
+			}
+		}
+		pdt := f.segStart(i).Add(f.probe).UTC().Format("2006-01-02T15:04:05.000-0700")
+		fmt.Fprintf(&pl, "#EXT-X-PROGRAM-DATE-TIME:%s\n#EXTINF:4.000000,\n%d.ts\n", pdt, i)
+	}
+	if err := os.WriteFile(filepath.Join(f.dir, "index.m3u8"), []byte(pl.String()), 0o600); err != nil {
+		f.t.Fatal(err)
+	}
+}
+
+// The segment time sent is the segment's start, not ffmpeg's late program date time: never
+// later than the segment's close, and within a poll of its first frame, so the edge's
+// glass-to-glass (visible minus this) is about a segment plus the upload, never 0.
+func TestUploaderSegmentTimeIsStart(t *testing.T) {
+	edge := newFakeEdge()
+	srv := httptest.NewServer(edge)
+	defer srv.Close()
+	start := time.Unix(1_800_000_000, 0)
+	clock := start
+	up := testUploader(srv.URL, &clock)
+	dir := t.TempDir()
+	w := &RungWatcher{Dir: dir, Rung: "src", Up: up}
+	// ffmpeg 8.1 on a live pipe: the first date is 4.67 s after the input began
+	rung := ffmpegRung{t: t, dir: dir, start: start, probe: 4670 * time.Millisecond, first: 1}
+
+	poll := 500 * time.Millisecond
+	check := func(rung ffmpegRung, from, to int) {
+		t.Helper()
+		for i := from; i <= to; i++ {
+			key := fmt.Sprintf("src/%d.ts", i)
+			at, ok := edge.at[key]
+			if !ok || at == 0 {
+				t.Fatalf("segment %d sent no segment time", i)
+			}
+			got := time.UnixMilli(at)
+			segStart, closed := rung.segStart(i), rung.segStart(i+1)
+			if got.After(closed) {
+				t.Fatalf("segment %d: time %v is after its close %v", i, got.Sub(start), closed.Sub(start))
+			}
+			if d := got.Sub(segStart); d < 0 || d > poll {
+				t.Fatalf("segment %d: time is %v from its start", i, d)
+			}
+		}
+	}
+	// polls 300 ms off the segment grid, as a real watcher's are
+	for clock = start.Add(300 * time.Millisecond); clock.Before(start.Add(41 * time.Second)); clock = clock.Add(poll) {
+		rung.list(clock)
+		w.Step(context.Background())
+	}
+	check(rung, 1, 9)
+
+	// a new ffmpeg (a later first number, its own probe): the old correction is dropped
+	restart := clock.Add(2 * time.Second)
+	rung2 := ffmpegRung{t: t, dir: dir, start: restart, probe: 2 * time.Second, first: 100}
+	for clock = restart.Add(100 * time.Millisecond); clock.Before(restart.Add(25 * time.Second)); clock = clock.Add(poll) {
+		rung2.list(clock)
+		w.Step(context.Background())
+	}
+	check(rung2, 100, 104)
+}
+
+// Without a program date time, a segment's time is when it was listed less its duration.
+func TestSegmentClockWithoutPDT(t *testing.T) {
+	var c segmentClock
+	seen := time.Unix(1_800_000_000, 0)
+	if got := c.start(Segment{Duration: 4}, seen); !got.Equal(seen.Add(-4 * time.Second)) {
+		t.Fatalf("start %v", got)
 	}
 }

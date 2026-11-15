@@ -62,7 +62,11 @@ Everything that decides **what airs** stays here on the home, under the publishe
     default off, because it takes about one core per rung).
 - **Uploader.**
   - It watches each rung's segment directory and PUTs each finished segment to
-    `ingest.maktaba.tv` with its hash and duration.
+    `ingest.maktaba.tv` with its hash, duration and start time.
+  - The start time is the wall-clock moment the segment's first frame reached the
+    broadcaster, never later than the segment's close. ffmpeg's `PROGRAM-DATE-TIME` is not
+    sent as is: it is stamped after ffmpeg probes its input, about a segment late. The
+    uploader corrects it by the time each segment is listed, less its duration.
   - It retries for up to 2 target durations with jitter. After that it skips the segment and
     flags the next one as a discontinuity.
   - It keeps at most 8 segments per rung on disk.
