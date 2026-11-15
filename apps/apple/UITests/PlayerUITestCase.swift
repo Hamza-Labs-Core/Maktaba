@@ -351,6 +351,28 @@ class PlayerUITestCase: XCTestCase {
         }
     }
 
+    /// Leaves the player (or a screen over it) by its Back or Close, checked by `player`, an
+    /// element of the screen being left: gone means left. On a loaded CI simulator the system
+    /// can cancel the tap before the app sees it end (#639; PR #1405's run 43712326838, iphone
+    /// 6/6: `touch held 0.18 s at (201, 480), cancelled` on the time's-up Back), and the
+    /// player then stays with nothing changed. Then Back is tapped once more (`reveal` first
+    /// shows it again, for controls that hide by themselves); a second miss fails naming the
+    /// step. A tap that lands leaves the player, so the second tap never reaches the screen
+    /// under it.
+    func leavePlayer(by button: XCUIElement, player: XCUIElement, _ what: String, reveal: (() -> Void)? = nil,
+                     file: StaticString = #filePath, line: UInt = #line) {
+        for attempt in 1 ... 2 {
+            if let reveal, !button.waitForExistence(timeout: 3) { reveal() }
+            guard button.waitForExistence(timeout: 5) else {
+                if !player.exists { return } // the first tap left it after all
+                return XCTFail("\(what): no Back to tap", file: file, line: line)
+            }
+            button.tap()
+            if player.waitForNonExistence(timeout: 10) { return }
+            XCTAssertLessThan(attempt, 2, "\(what): two taps left the player on screen", file: file, line: line)
+        }
+    }
+
     /// How long a press that opens a context menu holds.
     static let menuHold: TimeInterval = 2.5
 

@@ -27,12 +27,8 @@ final class PlayerVideoUITests: PlayerUITestCase {
 
     /// Close on the player's controls (they show on a tap) back to the page.
     private func closePlayer() {
-        let close = app.buttons["player.close"]
-        if !close.waitForExistence(timeout: 3) {
-            element("screen.watch").coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.15)).tap()
-        }
-        XCTAssertTrue(close.waitForExistence(timeout: 5), "the player's Close")
-        close.tap()
+        leavePlayer(by: app.buttons["player.close"], player: element("player.surface"), "the player's Close",
+                    reveal: { self.element("screen.watch").coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.15)).tap() })
         XCTAssertTrue(element("screen.video").waitForExistence(timeout: 10), "back on the page")
     }
 
