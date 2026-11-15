@@ -263,8 +263,8 @@ public struct GuestError: Error, Sendable, Equatable {
 // MARK: - the edge's answers
 
 /// A programme on a channel's guide; `attribution` for a CC BY one (50.23).
-public struct GuestProgramme: Decodable, Sendable, Equatable, Identifiable {
-    public struct Attribution: Decodable, Sendable, Equatable {
+public struct GuestProgramme: Decodable, Sendable, Hashable, Identifiable {
+    public struct Attribution: Decodable, Sendable, Hashable {
         public let title: String?
         public let by: String?
         public let licence: String?
@@ -301,7 +301,7 @@ public struct GuestLineup: Decodable, Sendable, Equatable {
         public let name: String
     }
 
-    public struct Channel: Decodable, Sendable, Equatable, Identifiable {
+    public struct Channel: Decodable, Sendable, Hashable, Identifiable {
         public let id: String
         public let name: String
         public let number: Int

@@ -100,12 +100,18 @@ struct PlayerApp: App {
         }
         // the home picker's Watch a broadcast: a guest needs no home and no account
         .environment(\.watchBroadcast, guestAllowed ? { guest = GuestLaunch(invite: nil) } : nil)
+        // full screen on iPhone and iPad (a player opened inside an iPad's form sheet never
+        // showed); a sheet on the Mac
+        #if os(iOS)
+        .fullScreenCover(item: $guest) { launch in
+            GuestSpaceView(app: Bundle.main.bundleIdentifier ?? "com.hamzalabs.maktaba.player", invite: launch.invite)
+        }
+        #else
         .sheet(item: $guest) { launch in
             GuestSpaceView(app: Bundle.main.bundleIdentifier ?? "com.hamzalabs.maktaba.player", invite: launch.invite)
-                #if os(macOS)
                 .frame(minWidth: 560, minHeight: 640)
-                #endif
         }
+        #endif
         .maktabaTheme(theme, forceDark: playing)
         .permissionsWalkthrough()
     }

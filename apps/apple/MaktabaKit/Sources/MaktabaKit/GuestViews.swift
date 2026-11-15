@@ -1,5 +1,6 @@
 #if !os(tvOS)
 import AVFoundation
+import os
 import SwiftUI
 #if canImport(UIKit)
 import UIKit
@@ -20,6 +21,9 @@ public struct GuestSpaceView: View {
     @State private var publisher = ""
     @State private var code = ""
     @State private var scanning = false
+    /// The channel playing: the space itself presents the player, over its whole stack (a
+    /// cover or a push from the pushed channels page never showed on an iPad).
+    @State private var watching: GuestWatching?
     /// Which way in was tried last ("link", "code"; "" for a link the app was opened with): its
     /// refusal shows under its own Watch button, where the person is looking.
     @State private var tried = ""
@@ -56,10 +60,20 @@ public struct GuestSpaceView: View {
                 }
             }
             .navigationDestination(for: GuestPass.self) { pass in
-                GuestChannelsView(model: model, pass: pass)
+                GuestChannelsView(model: model, pass: pass) { watching = $0 }
             }
         }
         .environment(\.layoutDirection, GuestWords.isRightToLeft ? .rightToLeft : .leftToRight)
+        #if os(iOS)
+        .fullScreenCover(item: $watching) { w in
+            GuestPlayerView(pass: w.pass, name: w.name, channels: w.channels, start: w.start, model: model)
+        }
+        #else
+        .sheet(item: $watching) { w in
+            GuestPlayerView(pass: w.pass, name: w.name, channels: w.channels, start: w.start, model: model)
+                .frame(minWidth: 800, minHeight: 500)
+        }
+        #endif
         #if os(iOS)
         .sheet(isPresented: $scanning) {
             QRScannerSheet(words: ConnectStrings.forPreferredLanguages()) { text in
@@ -75,10 +89,13 @@ public struct GuestSpaceView: View {
         }
     }
 
+    /// The refusal's words (the icon is not read out: VoiceOver and a test read the words).
     @ViewBuilder private var problemRow: some View {
         if let problem = model.problem {
-            Label { Text(verbatim: problem) } icon: { Image(systemName: "exclamationmark.triangle") }
+            Label { Text(verbatim: problem) } icon: { Image(systemName: "exclamationmark.triangle").accessibilityHidden(true) }
                 .foregroundStyle(.red)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(Text(verbatim: problem))
                 .accessibilityIdentifier("guest.problem")
         }
     }
@@ -190,13 +207,25 @@ public struct GuestSpaceView: View {
     }
 }
 
+let guestLog = Logger(subsystem: "com.hamzalabs.maktaba", category: "guest")
+
+/// A channel to play, opened by the guest space.
+struct GuestWatching: Hashable, Identifiable {
+    let id = UUID()
+    let pass: GuestPass
+    let name: String
+    let channels: [GuestLineup.Channel]
+    let start: Int
+}
+
 /// A publisher's channels with now and next.
 struct GuestChannelsView: View {
     let model: GuestModel
     let pass: GuestPass
+    /// Opens the player (the space presents it).
+    let play: (GuestWatching) -> Void
     @State private var lineup: GuestLineup?
     @State private var problem: GuestError?
-    @State private var playing: Int?
 
     var body: some View {
         List {
@@ -211,7 +240,10 @@ struct GuestChannelsView: View {
                 }
                 Section {
                     ForEach(Array(lineup.channels.enumerated()), id: \.element.id) { i, ch in
-                        Button { playing = i } label: {
+                        Button {
+                            guestLog.notice("guest: channel \(ch.id, privacy: .public) chosen")
+                            play(GuestWatching(pass: pass, name: lineup.publisher.name, channels: lineup.channels, start: i))
+                        } label: {
                             HStack(spacing: 12) {
                                 Text(verbatim: ch.number > 0 ? "\(ch.number)" : "•").font(.title3.monospacedDigit()).frame(minWidth: 32)
                                 VStack(alignment: .leading, spacing: 2) {
@@ -228,9 +260,11 @@ struct GuestChannelsView: View {
                                     }
                                 }
                             }
-                            .contentShape(Rectangle())
+                            // the row's text as text, not the tint of a button
+                            .foregroundStyle(.primary)
                         }
-                        .buttonStyle(.plain)
+                        // the List's own row button: a plain-styled button in an iPad's List
+                        // row highlighted and never ran its action
                         .accessibilityIdentifier("guest.channel.\(ch.id)")
                     }
                 } header: {
@@ -243,19 +277,6 @@ struct GuestChannelsView: View {
         .navigationTitle(Text(verbatim: GuestWords.onMaktaba(lineup?.publisher.name.isEmpty == false ? lineup!.publisher.name
                                                               : (pass.name.isEmpty ? pass.publisher : pass.name))))
         .task { await load() }
-        #if os(iOS)
-        .fullScreenCover(isPresented: Binding(get: { playing != nil }, set: { if !$0 { playing = nil } })) { player }
-        #else
-        .sheet(isPresented: Binding(get: { playing != nil }, set: { if !$0 { playing = nil } })) {
-            player.frame(minWidth: 800, minHeight: 500)
-        }
-        #endif
-    }
-
-    @ViewBuilder private var player: some View {
-        if let lineup, let i = playing {
-            GuestPlayerView(pass: pass, name: lineup.publisher.name, channels: lineup.channels, start: i, model: model)
-        }
     }
 
     private func load() async {
@@ -337,7 +358,10 @@ struct GuestPlayerView: View {
             guard abs(g.translation.height) > abs(g.translation.width) else { return }
             change(by: g.translation.height < 0 ? 1 : -1)
         })
-        .task(id: index) { await playback.play(channel.id) }
+        .task(id: index) {
+            guestLog.notice("guest: player shows \(channel.id, privacy: .public)")
+            await playback.play(channel.id)
+        }
         .onDisappear { playback.stop() }
     }
 

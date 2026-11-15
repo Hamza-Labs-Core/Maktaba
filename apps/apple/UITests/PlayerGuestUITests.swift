@@ -26,7 +26,7 @@ final class PlayerGuestUITests: PlayerUITestCase {
         XCTAssertTrue(home.requests.contains { $0.path == "/api/v1/redeem" && String(decoding: $0.body, as: UTF8.self).contains(MockHome.guestInvite) })
         shot("guest-channels")
         first.tap()
-        XCTAssertTrue(element("guest.playing").waitForExistence(timeout: 20))
+        XCTAssertTrue(element("guest.playing").waitForExistence(timeout: 20), "the player opened")
         XCTAssertTrue(wait(30) { self.home.seen.contains { $0.hasPrefix("GET /vt-1/ch1/low/seg-") } },
                       "the player read the channel's segments; the edge saw \(home.seen)")
         XCTAssertTrue(element("guest.attribution").exists, "the CC BY programme's credit")
@@ -49,7 +49,10 @@ final class PlayerGuestUITests: PlayerUITestCase {
         publisher.typeExactly(MockHome.guestPublisher, in: app)
         let code = app.textFields["guest.code"]
         code.typeExactly("MK-USED", in: app)
-        element("guest.watch").tap()
+        // the form builds its rows as they scroll in (an iPad's sheet is short)
+        let watch = element("guest.watch")
+        for _ in 0..<4 where !(watch.exists && watch.isHittable) { app.swipeUp() }
+        watch.tap()
         let problem = element("guest.problem")
         XCTAssertTrue(problem.waitForExistence(timeout: 20), "the edge's refusal, in words")
         XCTAssertTrue(problem.label.contains("استُخدمت"), problem.label)
