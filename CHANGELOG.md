@@ -350,6 +350,12 @@ build fails when the two differ.
   an invite is refused, or made first and then revoked with the rest. The broadcast edge is also
   told of each home once per payment event, not twice.
 
+- **An open channel can't outlive the plan it was opened under (Epic 50, story 50.26).** A channel
+  switched to open, or published open, at the same moment as a plan change that ends open access
+  could stay open after the plan had set every other channel back to invite only. Maktaba Cloud
+  now checks the plan again under the home's lock, so such a change is refused, or made first and
+  then undone with the rest.
+
 - **Reports from the staging watch page reach the staging cloud (Epic 50, story 50.24).** The
   staging deployment (`server.env = "staging"`) now takes the Report form of the staging broadcast
   edge's watch page (`staging-watch.maktaba.dev`). Production still answers only
