@@ -1,11 +1,11 @@
 ---
 schema: 1
-tag: v0.3.148
-up_to_commit: 0bc7fa841
-built_from: v0.3.147
+tag: v0.3.149
+up_to_commit: b6e482787
+built_from: v0.3.148
 ---
 
-# Trail snapshot: v0.3.148
+# Trail snapshot: v0.3.149
 
 ## Keep doing
 
@@ -172,7 +172,7 @@ built_from: v0.3.147
 - Split a production fix out of a test PR the moment the test finds it, and merge it fail-closed on its own. (#988)
 - When an unrelated PR's check fails, find the cause and fix it in its own PR with a test. A flaky test asserting a status is often a real ordering bug: slow one side at the gap to reproduce it. (#1002)
 - Read the failure's hierarchy before calling a UI failure flaky: an xcresult keeps it (`xcresulttool export attachments --test-id`) and it tells a wrong screen from a slow one. A temporary commit with `-test-iterations N` (for a flake, `-only-testing … -test-iterations 20` on the 12 Player UI shards) proves a UI fix in one CI job; raise the job's `timeout-minutes` with it and drop the commit before merge. Count the evidence from each xcresult's repetitions and retry activities, never from the job's conclusion: a runner restart drops the remaining iterations (`Executed 0 tests`) and the job still ends green. (#1000, #1312)
-- A UI retry is judged by a deterministic signal (a request, a position, a count, a page opened, `TouchHook`'s cancelled count), never repeats a tap that may have landed, and fails naming the step on a second miss. Read that iteration's touch log before deciding: a dropped tap gets the retry, anything else gets its cause found (one was an app bug). (#1309, #1312)
+- A UI retry is judged by a deterministic signal (a request, a position, a count, a page opened, `TouchHook`'s cancelled count), never repeats a tap that may have landed, and fails naming the step on a second miss. Read that iteration's touch log before deciding: a dropped tap gets the retry, anything else gets its cause found (one was an app bug). Leaving a screen re-taps only if the screen stayed (`leavePlayer`); a segment is tapped until selected (`choose`), since a whole quick tap can be ignored. (#1309, #1312, #1412)
 - Profile before trimming a slow test: the time is often in shared fixtures. Build tools and clone databases in a test's setup, since the soft cap judges only the call. Profile the phases first: when a world's fixed cost outweighs the part worth splitting, it has to come down too (starting the dev server while the databases are copied cut it; `FILE_COPY` did not). (#996, #992, #1068)
 - A warm-up's "warm" is when the measure stops improving, not a fixed time that holds on one device: check a threshold on every device in the PR's own run. (#1001)
 - Check a dependency map before removing a feature. A removal is two releases: first the code goes and ignores the leftovers (a lossless migration, so a rollback runs the Down scripts), then a later migration deletes the data once no release that uses it can be rolled back to. (d20261108-remove-plex-sync)
@@ -260,6 +260,8 @@ built_from: v0.3.147
 - Witness a wave's stages with `MAKTABA_REHEARSAL_WITNESS` when they must do real work in the rehearsal. Log the real failure reason in a readiness loop before fixing it (a fake only proves what it models). (#1023, #1380)
 - Prove each refusal of a cross-service approval with a test on both sides (replay, unlinked account, another code, another cloud's key; no account, owner only, offline). (#1250)
 - A green test job proves only the tests in its report: check the report lists the new classes, especially when a runner takes a list (the Fire TV job ran only the first of a comma-separated list). Keep one journey test per platform that plays a stream end to end: screen tests without a player missed a player that never requested its stream. (#1408)
+- Before blaming a change for a red UI test, read the job's ` t = ` lines and its `*-settle.log` (CPU per process, runner idle): idle waits that each take 60 s mean the runner or the app stalled. Hold the blocking thing (a request, a refresh) for the whole test, so the time bound only absorbs a loaded machine. (#1417)
+- A retry wraps every network call in the script, with a guard test that fails on a bare call (gh-retry-test.sh's `bare`); a read that decides a branch fails explicitly (`d="$(...)" || exit 1`), since `set -e` is off inside a function called from an `if`. (#1420)
 
 ## Stop doing
 
@@ -709,6 +711,9 @@ built_from: v0.3.147
 - The download page (60.11) reads the latest stable release from the Releases API at build time (assets by pattern, digests checked against `checksums.txt`, platforms in `src/downloads.json`, one hidden when it has no asset or listing); the visitor's card comes first, so the visual check compares the set of cards; the release workflow dispatches the website deploy after a stable release, gated by `vars.WEBSITE_LIVE`. It wears part B's shell and card since #1219, and `currentOf()` knows `/download/` and `/help/`. The shell's assets are one table read by script (two `display` entries had preloaded `href="undefined"`). (#1209, #1219)
 - A capture that waits for every image needs a deadline and must make lazy images load: at a phone's width the web app's lazy images never loaded and the capture hung (now eager, failing after 15 s naming them). The phone frame shows the web app at 393 × 852 (`webphone-home-<lang>`), since the iPhone app is not publicly installable, and a build test checks each page's screenshots are in its language. (#1215)
 - Help on maktaba.tv (60.12) is generated from the app's own topics and the build refuses a gap in either language; a family declares `paths` it always builds (`withDeclared`) so families order `[HELP, DOWNLOAD, PROBLEMS]`; `.toc` is shared by every contents list. A Help topic changes counts, the manifest and the index's reference images (render with `npm run e2e:update` in CI's image). Two website PRs on one shell conflict: merge in order and rebase the second. (#1223, #1225, #1243)
+- A player reading `playing=true` with a frozen position can have dropped its only HLS variant: AVPlayer gives a segment about one target duration (2 s on the test stream), and `Playback.watch` recovers in up to about 30 s, so a test that checks playback moves waits 40 s. An XCTest recording can end before its test does: check its duration first. The simulator log's `coremedia` and `CFNetwork` lines place a delay inside the app or the home. (#1412)
+- Utility QoS on a saturated CPU waits hundreds of ms to seconds for a thread: the stream proxy now runs at user-initiated and reads its held token nonisolated, never hopping onto an actor for a cached value (a request waited for a whole token refresh in each token's last minute). (#1417)
+- gh-retry.sh buffers stdout and writes only the successful try's (a cut `--paginate` had printed its first page twice). A retried `gh release create` looks the release up first on every try and treats a failed lookup as a failed try. (#1420)
 
 ## Open
 
@@ -795,6 +800,7 @@ built_from: v0.3.147
 - Untested gaps: a relay that loses its pool heartbeat but keeps running; Vite build-time reads outside `web/` (the Docker guard covers `tsc` only); a stalled single-run Apple test recorded as an `Expected Failure`; a web audit for other hooks copying an external store into state from an effect; the pipeline's Postgres parametrisations are skipped in the integration tier, whose time is `api`'s go test. (#1280, #1296, #1317, #1042, #1303)
 - No CI job runs actionlint. The `tv-web` tizen-reload test failed twice on one PR: watch for it. Issue #804 is still open though 16.9's row is on main. (#1233, #1266, #1023)
 - Watch a broadcast (50.27): the desktop Player for Windows and Linux, a Report button in the apps (native apps cannot produce a Turnstile token yet), verified universal and app links (the edge must serve the association files) and a remote switch to turn guest watching off. The StreamProxy cut-body test flake is still open. (#1400, #1408, #1407)
+- `PlayerConnectProgressUITests.testSignInAndRestoreStatesEnglish` can lose its "signing in" check when the runner's idle waits stall for minutes (the held login hits the app's 60 s timeout first); why the app never went idle on the code sign-in screen in run 43724539259 is not known. (#1417)
 
 ## Missing events
 
@@ -807,11 +813,8 @@ built_from: v0.3.147
 | #973 | 2026-11-08 | fix(supervisor): plugin runners wait for the venv like the pipeline |
 | #1232 | 2026-11-13 | fix(postgres): a half-answered look no longer restarts the database |
 | #1318 | 2026-11-14 | docs(testflight): the install failure though the build is listed (open) |
-| #1402 | 2026-11-15 | fix(tv/apple): the Menu UI test raises the live banner instead of racing its 6 s |
-| #1404 | 2026-11-15 | fix(release): asset uploads retry transient GitHub errors themselves |
-| #1405 | 2026-11-15 | fix(apple): a cancelled proxy request ends without its session; the cut-body test outlasts an unheard reset |
 | #1409 | 2026-11-15 | fix(apple): Watch a broadcast fails closed under parental limits |
-| #1412 | 2026-11-15 | Apple UI tests: leaving the player and choosing a segment get one more try; the demo player waits out a stall |
+| #1419 | 2026-11-15 | fix(apple): the sign-in screens go idle (keyboard let go of first, no endless spinner by the code) |
 
 ## Index
 
@@ -1554,4 +1557,7 @@ built_from: v0.3.147
 | 1400-watch-apple | 2026-11-15 | pr | Watch a broadcast on Apple TV, iPhone, iPad and the Mac (50.27 T03, T05) |
 | 1407-truncated-segments | 2026-11-15 | pr | Streaming: a segment cut short is an error, never a whole segment |
 | 1408-watch-android | 2026-11-15 | pr | Watch a broadcast on Android, Android TV and Fire TV (50.27 T04, T06) |
+| 1412-apple-leave-player | 2026-11-15 | pr | Apple UI tests: leaving the player and choosing a segment get one more try; the demo player waits out a stall |
+| 1417-proxy-forward-latency | 2026-11-15 | pr | The Apple stream proxy passes a request on at once: user-initiated priority, the token held now |
+| 1420-release-calls-retry | 2026-11-15 | pr | Every GitHub release call goes through gh-retry.sh, not only the uploads |
 
