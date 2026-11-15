@@ -985,7 +985,7 @@ final class PlayerParentalUITests: PlayerUITestCase {
         RunLoop.current.run(until: Date().addingTimeInterval(12))
         XCTAssertEqual(count("POST", "/api/stream/sessions"), opened, "not tried again")
         XCTAssertTrue(element("timeUp.title").exists)
-        element("timeUp.back").tap()
+        leavePlayer(by: element("timeUp.back"), player: element("timeUp.title"), "Back leaves the player")
         XCTAssertTrue(element("screen.home").waitForExistence(timeout: 10), "Back leaves the player")
     }
 

@@ -60,8 +60,16 @@ final class PlayerDemoShots: PlayerUITestCase {
             XCTAssertTrue(waitUntil(timeout: 30) { self.state["playing"] == "true" && self.state["subtitle"] == "ar" },
                           "playing with the Arabic subtitles: \(state)")
             // a frame of the picture and the cue drawn: the position moves past where it opened
+            // Long enough for the app's own recovery from a stall: on a loaded simulator the
+            // stream proxy (its tasks below the interface's priority) can pass a segment's request
+            // on after the player's budget, about one target duration (2 s for the test stream);
+            // the player then drops its only variant and waits, `playing` still true (#1412's run
+            // 43715426951, iPhone shots: "No response for media file in 2s", "Can not proceed
+            // after removing variants", the position held at 423). `Playback.watch` looks every
+            // 10 s and opens the stream again after `WatchLogic.stuckAfter` (15 s) of waiting:
+            // up to about 30 s after the stall.
             let start = Int(state["position"] ?? "") ?? 0
-            XCTAssertTrue(waitUntil(timeout: 15) { (Int(self.state["position"] ?? "") ?? 0) >= start + 2 }, "it plays on: \(state)")
+            XCTAssertTrue(waitUntil(timeout: 40) { (Int(self.state["position"] ?? "") ?? 0) >= start + 2 }, "it plays on: \(state)")
             // the controls hide 4 s after the last touch (`WatchView.hideAfter`)
             XCTAssertTrue(app.buttons["player.playPause"].waitForNonExistence(timeout: 15), "the controls gone")
             // the line drawn: the test stream starts its timestamps again every 4 s (two segments

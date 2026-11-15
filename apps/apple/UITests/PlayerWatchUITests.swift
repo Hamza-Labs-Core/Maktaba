@@ -213,8 +213,8 @@ final class PlayerWatchUITests: PlayerUITestCase {
         waitFor("it plays on in the window") { state["playing"] == "true" }
         // the floating window sits over the controls' corner: Close (the other corner) ends
         // it with the player
-        tapControl("player.close")
-        XCTAssertTrue(element("player.surface").waitForNonExistence(timeout: 10), "the player closes, the window with it")
+        leavePlayer(by: app.buttons["player.close"], player: element("player.surface"), "the player closes, the window with it",
+                    reveal: { self.element("player.surface").coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3)).tap() })
     }
 
     /// Going home while it plays keeps it playing (a report: leaving the app cut it,

@@ -35,15 +35,13 @@ final class PlayerProfileUITests: PlayerUITestCase {
         XCTAssertLessThan(meanLuminance(), 0.3, "the app is dark")
         shot("profile")
 
-        app.buttons["Light"].tap()
-        expect(app.buttons["Light"].firstMatch, selected: true, "Light is chosen")
+        choose(app.buttons["Light"].firstMatch, "Light is chosen")
         let lit = expectation(for: NSPredicate { [unowned self] _, _ in meanLuminance() > 0.5 }, evaluatedWith: nil)
         wait(for: [lit], timeout: 5)
         shot("profile-light")
 
         // back to dark, so the next test (and the brand test) starts dark
-        app.buttons["Dark"].tap()
-        expect(app.buttons["Dark"].firstMatch, selected: true, "Dark again")
+        choose(app.buttons["Dark"].firstMatch, "Dark again")
     }
 
     // MARK: language (FR-30)

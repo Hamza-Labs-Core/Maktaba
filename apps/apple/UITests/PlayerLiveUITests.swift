@@ -135,11 +135,8 @@ final class PlayerLiveUITests: PlayerUITestCase {
         shot("live-off-open")
 
         // the player covers the tabs: back to the Live TV screen (still in view), then Home
-        let back = app.buttons["live.player.back"]
-        if !back.waitForExistence(timeout: 3) { element("screen.channel").tap() }
-        XCTAssertTrue(back.waitForExistence(timeout: 5), "the player's back button")
-        back.tap()
-        XCTAssertTrue(element("screen.channel").waitForNonExistence(timeout: 10), "out of the player")
+        leavePlayer(by: app.buttons["live.player.back"], player: element("screen.channel"), "out of the player",
+                    reveal: { self.element("screen.channel").tap() })
         XCTAssertTrue(sectionButton("Home").waitForExistence(timeout: 10), "the Home tab")
         sectionButton("Home").tap()
         XCTAssertTrue(element("screen.home").waitForExistence(timeout: 10))
@@ -222,8 +219,7 @@ final class PlayerLiveUITests: PlayerUITestCase {
         XCTAssertTrue(element("live.guide.ch-1.now").waitForExistence(timeout: 10), "the guide")
         XCTAssertFalse(element("live.channel.ch-1").exists, "Now's list gone")
         let now = app.segmentedControls.buttons["Now"].firstMatch
-        now.tap()
-        XCTAssertTrue(wait(timeout: 5) { now.isSelected }, "the tap on Now selected it")
+        choose(now, "the tap on Now selected it")
         XCTAssertTrue(element("live.channel.ch-1").waitForExistence(timeout: 10), "Now's list again")
         XCTAssertFalse(element("live.guide").exists, "the guide gone")
     }
@@ -274,7 +270,7 @@ final class PlayerLiveUITests: PlayerUITestCase {
         back.tap()
         XCTAssertTrue(back.waitForNonExistence(timeout: 5), "back at the live edge")
 
-        app.buttons["live.player.back"].tap()
+        leavePlayer(by: app.buttons["live.player.back"], player: element("screen.channel"), "back on Live TV")
         XCTAssertTrue(element("screen.liveTV").waitForExistence(timeout: 10), "back on Live TV")
     }
 
@@ -324,7 +320,7 @@ final class PlayerLiveUITests: PlayerUITestCase {
                       "the live playlist reloads through the loader")
         shot("live-away")
         XCTAssertFalse(home.seen.contains("DELETE /api/tv/remote/sessions/rs-1"))
-        app.buttons["live.player.back"].tap()
+        leavePlayer(by: app.buttons["live.player.back"], player: element("screen.channel"), "leaving the channel")
         XCTAssertTrue(wait { self.home.seen.contains("DELETE /api/tv/remote/sessions/rs-1") }, "leaving ends the session; the home saw \(home.seen.suffix(12))")
         let beats = home.seen.filter { $0 == "POST /api/tv/remote/sessions/rs-1/heartbeat" }.count
         sleep(5)
@@ -400,8 +396,7 @@ final class PlayerLiveUITests: PlayerUITestCase {
         let seg = app.segmentedControls.buttons[label].firstMatch
         let b = seg.waitForExistence(timeout: 15) ? seg : app.buttons[label].firstMatch
         XCTAssertTrue(b.waitForExistence(timeout: 5), "the Guide segment")
-        b.tap()
-        XCTAssertTrue(wait(timeout: 5) { b.isSelected }, "the tap on the Guide segment selected it")
+        choose(b, "the tap on the Guide segment selected it")
     }
 
     /// Live TV opened on the guide (`-maktaba-live guide`): a guide test starts on it, not on

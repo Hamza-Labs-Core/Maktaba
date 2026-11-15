@@ -324,6 +324,21 @@ class PlayerUITestCase: XCTestCase {
         }
     }
 
+    /// Chooses `segment` of a segmented picker, as `flip` does a switch: a tap that leaves it
+    /// unselected gets one more; a second miss fails naming it. #1412's run 43715426951 (ipad
+    /// 3/6, `testThemeIsDarkOnAFreshInstallAndLightChangesTheAppAtOnce`): the app's log has the
+    /// tap on Light as "touch held 0.07 s at (416, 808)", whole and not cancelled, and Light
+    /// was not chosen: a quick tap the picker ignored, as #1249's switches did. A tap that did
+    /// nothing leaves nothing behind.
+    func choose(_ segment: XCUIElement, _ what: String, file: StaticString = #filePath, line: UInt = #line) {
+        for attempt in 1 ... 2 {
+            waitUntilStill(segment, timeout: 5)
+            segment.tap()
+            if waitUntil({ segment.isSelected }) { return }
+            XCTAssertLessThan(attempt, 2, "\(what): not chosen after two taps", file: file, line: line)
+        }
+    }
+
     /// Opens `target`'s context menu with a long press and waits for `item`, one of its
     /// buttons; when the press was taken as a tap (`page`, the screen a tap opens, showed),
     /// goes `back`, lets the target settle again (`settle`) and presses once more. A second
@@ -348,6 +363,28 @@ class PlayerUITestCase: XCTestCase {
             XCTAssertLessThan(attempt, 2, "\(what): both presses were taken as taps (the page opened)", file: file, line: line)
             back()
             XCTAssertTrue(waitUntil { target.isHittable }, "\(what): back where the press began", file: file, line: line)
+        }
+    }
+
+    /// Leaves the player (or a screen over it) by its Back or Close, checked by `player`, an
+    /// element of the screen being left: gone means left. On a loaded CI simulator the system
+    /// can cancel the tap before the app sees it end (#639; PR #1405's run 43712326838, iphone
+    /// 6/6: `touch held 0.18 s at (201, 480), cancelled` on the time's-up Back), and the
+    /// player then stays with nothing changed. Then Back is tapped once more (`reveal` first
+    /// shows it again, for controls that hide by themselves); a second miss fails naming the
+    /// step. A tap that lands leaves the player, so the second tap never reaches the screen
+    /// under it.
+    func leavePlayer(by button: XCUIElement, player: XCUIElement, _ what: String, reveal: (() -> Void)? = nil,
+                     file: StaticString = #filePath, line: UInt = #line) {
+        for attempt in 1 ... 2 {
+            if let reveal, !button.waitForExistence(timeout: 3) { reveal() }
+            guard button.waitForExistence(timeout: 5) else {
+                if !player.exists { return } // the first tap left it after all
+                return XCTFail("\(what): no Back to tap", file: file, line: line)
+            }
+            button.tap()
+            if player.waitForNonExistence(timeout: 10) { return }
+            XCTAssertLessThan(attempt, 2, "\(what): two taps left the player on screen", file: file, line: line)
         }
     }
 
