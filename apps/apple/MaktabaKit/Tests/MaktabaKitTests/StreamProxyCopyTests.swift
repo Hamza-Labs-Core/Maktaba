@@ -818,8 +818,81 @@ func eventually(_ seconds: Double = 5, _ ok: @Sendable () -> Bool) async -> Bool
         defer { silent.close() }
         // accepted, then closed (looked at by the count: on a busy Mac both can pass between two looks)
         #expect(await eventually { proxy.acceptedCount == 1 }, "the connection: \(silent.history)")
-        #expect(await eventually(3) { proxy.serving == 0 }, "serving \(proxy.serving)")
+        #expect(await eventually(3) { proxy.waitingForHead == 0 }, "waiting \(proxy.waitingForHead)")
+        #expect(proxy.serving == 0, "a connection with no head never took a place")
         #expect(home.seen.isEmpty)
+    }
+
+    /// Sockets that connect and say nothing, more than every place and every waiting room
+    /// together, keep no player out: they take none of `mostAtOnce`'s places, the oldest of
+    /// them is closed to make room, and a request under way is never the one pushed out.
+    @Test func silentSocketsBeyondTheLimitDoNotKeepAPlayerOut() async throws {
+        let home = try await LoopbackHome()
+        defer { home.stop() }
+        home.on("/stream/abc/big.mp4", .init(length: 64 << 20))
+        home.on("/stream/abc/small.ts", .init(length: 1000))
+        // the head's patience as shipped: nothing here waits for a silent socket to time out
+        let proxy = try Self.proxy(home)
+        try await proxy.start()
+        defer { proxy.stop() }
+        let port = try #require(proxy.port)
+        // a request under way, its player reading nothing for now
+        let playing = RawPlayer(port: port)
+        defer { playing.close() }
+        playing.ask(Self.target(proxy, "/stream/abc/big.mp4"))
+        #expect(await eventually { proxy.serving == 1 && home.seen.count == 1 })
+
+        let flood = StreamProxy.mostAtOnce + StreamProxy.mostWaiting + 8
+        let silent = (0..<flood).map { _ in RawPlayer(port: port) }
+        defer { silent.forEach { $0.close() } }
+        #expect(await eventually { proxy.acceptedCount == flood + 1 }, "accepted \(proxy.acceptedCount)")
+        #expect(await eventually { proxy.waitingForHead <= StreamProxy.mostWaiting }, "waiting \(proxy.waitingForHead)")
+        #expect(proxy.serving == 1 && home.abandoned == 0, "the request under way keeps its place: \(proxy.servingStates)")
+
+        // a player's request is served at once, though every silent socket is still open
+        let small = try #require(proxy.local(home.url.appending(path: "stream/abc/small.ts")))
+        let (data, response) = try await URLSession.shared.data(from: small)
+        #expect((response as? HTTPURLResponse)?.statusCode == 200 && data.count == 1000)
+        #expect(home.seen.contains { $0.target.hasSuffix("small.ts") })
+        // and the one under way still delivers
+        #expect(String(decoding: await playing.read(12), as: UTF8.self) == "HTTP/1.1 200")
+    }
+
+    /// A request with a wrong secret is refused before it takes a place: with every place
+    /// delivering it is a 404, not a 503, the home is never asked, and the count of requests
+    /// served never moves.
+    @Test func aWrongSecretNeverHoldsAPlace() async throws {
+        let home = try await LoopbackHome()
+        defer { home.stop() }
+        home.on("/stream/abc/big.mp4", .init(length: 64 << 20))
+        home.on("/stream/abc/small.ts", .init(length: 1000))
+        let proxy = try Self.proxy(home)
+        try await proxy.start()
+        defer { proxy.stop() }
+        let port = try #require(proxy.port)
+
+        // with no place taken: refused, and nothing counted while the refusal is read
+        let wrong = (0..<(StreamProxy.mostAtOnce + 4)).map { _ in RawPlayer(port: port) }
+        defer { wrong.forEach { $0.close() } }
+        for p in wrong { p.ask("/not-the-secret/stream/abc/small.ts") }
+        for p in wrong {
+            #expect(String(decoding: await p.read(12), as: UTF8.self) == "HTTP/1.1 404", "\(p.history)")
+        }
+        #expect(proxy.serving == 0, "serving \(proxy.servingStates)")
+        let (data, response) = try await URLSession.shared.data(from: try #require(proxy.local(home.url.appending(path: "stream/abc/small.ts"))))
+        #expect((response as? HTTPURLResponse)?.statusCode == 200 && data.count == 1000)
+
+        // with every place delivering: still a 404 (it never asked for one), never a 503
+        let held = (0..<StreamProxy.mostAtOnce).map { _ in RawPlayer(port: port) }
+        defer { held.forEach { $0.close() } }
+        held.forEach { $0.ask(Self.target(proxy, "/stream/abc/big.mp4")) }
+        #expect(await eventually { proxy.serving == StreamProxy.mostAtOnce }, "serving \(proxy.serving)")
+        let late = RawPlayer(port: port)
+        defer { late.close() }
+        late.ask("/\(UUID().uuidString.lowercased())/stream/abc/small.ts")
+        #expect(String(decoding: await late.read(12), as: UTF8.self) == "HTTP/1.1 404")
+        #expect(proxy.serving == StreamProxy.mostAtOnce)
+        #expect(home.seen.filter { $0.target.hasSuffix("small.ts") }.count == 1, "the home is asked only for the real request")
     }
 
     /// On the network a receiver can vanish without closing: the LAN proxy's connections use

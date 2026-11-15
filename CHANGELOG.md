@@ -782,6 +782,14 @@ build fails when the two differ.
 
 ### Security
 
+- **Silent connections can no longer keep a video off the Apple apps' stream proxy.** The
+  proxy that hands a home's stream to the system player (and, for AirPlay, listens on the local
+  network) counted a connection against its 16 places the moment it opened, before its request
+  arrived or its secret was checked, so a device on the same network could open sockets, send
+  nothing and refuse playback until they timed out. A connection now takes a place only once
+  its request names a path under the secret; until then it waits apart, at most 32 of them, the
+  oldest closed first, and a request with a wrong secret is refused without taking a place.
+
 - **Broadcast viewer analytics hide small groups however the period is chosen (Epic 50, story
   50.28).** A country or device with fewer than 5 viewers was folded into "Other" over the whole
   period shown, so two overlapping periods one hour apart could be compared to recover the small
