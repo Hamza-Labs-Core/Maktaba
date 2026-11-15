@@ -151,6 +151,14 @@ type ChannelRef struct {
 	Channel   string `json:"channel"`
 }
 
+// serverIDRE is a home's server id, the publisher on the edge's watch pages. A home's slug can
+// never look like one (servers.slugRE: 30 characters at most), so the two forms never overlap.
+var serverIDRE = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
+
+// ByServerID: the publisher is a home's server id and the channel the edge's channel id (the
+// watch pages' form, 50.27), never a pair of slugs.
+func (c ChannelRef) ByServerID() bool { return serverIDRE.MatchString(c.Publisher) }
+
 // watchReserved are the first path parts of watch.maktaba.tv that are never a publisher.
 var watchReserved = map[string]bool{"api": true, "i": true, "s": true, "pair": true, "ar": true, "en": true,
 	"legal": true, "guide": true}
@@ -159,7 +167,9 @@ var slugRE = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$`)
 
 // ParseWatchURL reads watch.maktaba.tv/<publisher>/<channel> (a scheme is optional; a query, a
 // fragment or a trailing path such as /live is ignored), and the watch pages' own form with a
-// language first, watch.maktaba.tv/ar/<publisher>/<channel> or /en/…. false: not a channel on
+// language first, watch.maktaba.tv/ar/<server id>/<edge channel id> or /en/…. The language is
+// read only before a server id: a home whose slug is ar or en keeps its own URLs, and its
+// /ar/<channel>/live never reads as another publisher's channel. false: not a channel on
 // Maktaba.
 func ParseWatchURL(raw string) (ChannelRef, bool) {
 	s := strings.TrimSpace(raw)
@@ -174,8 +184,9 @@ func ParseWatchURL(raw string) (ChannelRef, bool) {
 		return ChannelRef{}, false
 	}
 	parts := strings.FieldsFunc(u.Path, func(r rune) bool { return r == '/' })
-	// the watch pages put the language first; the edge reserves ar and en as publishers
-	if len(parts) > 0 && (strings.EqualFold(parts[0], "ar") || strings.EqualFold(parts[0], "en")) {
+	// the watch pages put the language first, then the server id
+	if len(parts) > 1 && (strings.EqualFold(parts[0], "ar") || strings.EqualFold(parts[0], "en")) &&
+		serverIDRE.MatchString(strings.ToLower(parts[1])) {
 		parts = parts[1:]
 	}
 	if len(parts) < 2 {

@@ -116,7 +116,7 @@ func TestPublicReportGuards(t *testing.T) {
 // (the Store is nil here), and a field at its limit gets past the check.
 func TestPublicReportKindsAndSizes(t *testing.T) {
 	r := router(&Deps{})
-	const ch = "https://watch.maktaba.tv/ar/home-a/news"
+	const ch = "https://watch.maktaba.tv/ar/2f0c6a3e-5b1d-4c2a-9e7f-0a1b2c3d4e5f/c1a2b3"
 	post := func(fields map[string]any) *httptest.ResponseRecorder {
 		raw, _ := json.Marshal(fields)
 		return send(r, "POST", "/v1/moderation/reports", string(raw), map[string]string{"Origin": "https://watch.maktaba.tv"})
@@ -163,7 +163,7 @@ func TestPublicReportKindsAndSizes(t *testing.T) {
 func TestPublicReportFormGuard(t *testing.T) {
 	ts := &fakeTurnstile{err: turnstile.ErrFailed}
 	r := router(&Deps{Turnstile: ts})
-	body := `{"category":"abuse","channel":"https://watch.maktaba.tv/ar/home-a/news","turnstile_token":"tok"}`
+	body := `{"category":"abuse","channel":"https://watch.maktaba.tv/ar/2f0c6a3e-5b1d-4c2a-9e7f-0a1b2c3d4e5f/c1a2b3","turnstile_token":"tok"}`
 	if rec := send(r, "POST", "/v1/moderation/reports", body, map[string]string{"Origin": "https://evil.test"}); rec.Code != http.StatusForbidden ||
 		!strings.Contains(rec.Body.String(), "origin_not_allowed") || ts.calls != 0 {
 		t.Errorf("another origin = %d %s (turnstile calls %d)", rec.Code, rec.Body, ts.calls)
