@@ -103,14 +103,21 @@ from the home per segment per rung, whatever the number of viewers**. It has its
   `edge/entry.ts` wraps the real Worker with counters (R2 gets by key, ingest PUTs by rung,
   Durable Object stubs, Analytics Engine points) at `/__rehearsal/counters`, and a fast clock at
   `/__rehearsal/clock`. A control port (`:8788`) redeploys every location with new variables
-  (break-glass), and a second version of the Workers serves a gradual rollout.
+  (break-glass), and a second version of the Workers serves a gradual rollout. Two fakes keep
+  every call inside the container: Turnstile's siteverify (the edge's `TURNSTILE_API`; a token
+  `pass-…` is good once) and the cloud's API (every Worker's outbound fetch): it takes the edge's
+  signed usage posts as the cloud does, and `/__rehearsal/cloud/down`, `/up` and `/usage` stop it,
+  start it and list what it took.
 - **The home:** the streaming service's broadcaster (`streaming/internal/broadcast`) on a test
   pattern with a burned clock and frame counter, encoded in software
   (`streaming/cmd/rehearsal-broadcast-home`, `Dockerfile.home`). It counts every PUT at its HTTP
   transport (the proxy counter), beside the uploader's own report.
-- **The cloud's part:** the ingest tokens and the revocation list are signed in the test with the
-  cloud's TEST key (`cloud/internal/broadcast/testdata/vectors.json`), and viewer tokens with the
-  rehearsal's viewer key. None of these keys is used in production.
+- **The cloud's part:** the ingest tokens, the revocation lists, the plan pushes, the access
+  posts and the invites are signed in the test with the cloud's TEST key, byte for byte as the
+  cloud signs them (`tools/broadcast-viewers/tokens.go`, tested against
+  `cloud/internal/broadcast/testdata/vectors.json` and `invite_vectors.json`), and viewer tokens
+  with the rehearsal's viewer key. The edge signs its usage posts with a rehearsal key, checked as
+  the cloud checks it. None of these keys is used in production.
 - **Viewers:** `tools/broadcast-viewers`, a Go load generator. Each player fetches the master
   and its rung's playlist every target duration, fetches each new segment, sends heartbeats, and
   records the slate and `off_air`.
@@ -123,11 +130,17 @@ from the home per segment per rung, whatever the number of viewers**. It has its
 | `broadcast-home-offline-24h` | 50.21 | the home stopped: the slate, still the slate at 23 h 50 on the fast clock, `off_air` after 24 h |
 | `broadcast-kill` | 50.25 | 200 viewers: a revocation list stops every one ≤ 60 s and the home stops uploading; a new list lifts it; break-glass (`BROADCAST_OFF_CHANNELS`) does the same with the cloud out of the loop |
 | `broadcast-edge-deploy` | 50.21 | a new edge version rolled out 10 → 50 → 100 % mid-stream, then a redeploy: no viewer error, every viewer live, the channel's Durable Object kept its playlist |
+| `broadcast-plans` | 50.20 | plan pushes full → lowest → wait → full (pay-as-you-go): each new viewer gets the plan's mode in that order (a lowest master lists one rung, wait admits no one); every playing session keeps its mode, heartbeats and segments; an older plan is refused |
+| `broadcast-publishable` | 50.23 | the home's guide from mixed sources holds only publishable items and the edge serves it as sent, attribution kept; a withdrawn permission on the item airing now: the slate ≤ 15 s; the top-up's guide replaces it and every viewer is live again |
+| `broadcast-access` | 50.26 | an invite's uses (a device again reuses its pass), a short code and its 10 tries a minute, Turnstile good once, open sessions per network, viewers per channel, daily minutes, a revoked pass and invite; the limits refuse new sessions only |
+| `broadcast-takedown` | 50.24 | a takedown of the item airing now (a programme entry): every viewer has the slate ≤ 60 s while the home uploads on; the counter-notice restores it; a second strike's slate ends with its slot; the third strike takes every viewer off air ≤ 60 s, stops the home and lets no one new in |
+| `broadcast-hetzner-down` | 14.8 | nightly: the cloud down for 15 minutes mid-broadcast: no viewer error, the home uploads on, the edge's usage posts are refused and kept; once it is back every window arrives once, its viewer-minutes exactly the heartbeats the edge counted, every post signed with the edge's key |
+| `broadcast-observe` | 50.28 | XFAIL: the canary's ingest events carry glass-to-glass (failing today, below), ingest events stop when ingest breaks, a revoked channel's viewers are written as blocked; the alerts and the status component are the cloud's monitoring, not in this stack |
 
-`broadcast-plans`, `broadcast-publishable`, `broadcast-access`, `broadcast-takedown`,
-`broadcast-hetzner-down` and `broadcast-observe` have no body yet. They are listed in
-`tools/rehearsal-cloud/broadcast/expected-failures.txt` and reported XFAIL. A listed scenario that
-passes fails the run (XPASS) until its line goes, and an unlisted scenario without a body fails.
+A scenario is listed in `tools/rehearsal-cloud/broadcast/expected-failures.txt` while it has no
+body, or while some of its checks need what this stack lacks (`broadcast-observe`), and is
+reported XFAIL. A listed scenario that passes fails the run (XPASS) until its line goes, and an
+unlisted scenario without a body fails.
 `tools/broadcast-viewers/rehearsal/catalog.go` is the list of scenarios; the CI matrix is built
 from it.
 
@@ -147,7 +160,9 @@ REHEARSAL_OUT=/tmp/broadcast go test -tags broadcastrehearsal -run 'TestBroadcas
 ```
 
 `BROADCAST_VIEWERS` and `BROADCAST_STEP_SECONDS` scale the fan-out (`BROADCAST_KILL_VIEWERS`,
-`BROADCAST_DEPLOY_VIEWERS` the others). `REHEARSAL_KEEP=1` leaves the stack up
+`BROADCAST_DEPLOY_VIEWERS`, `BROADCAST_TAKEDOWN_VIEWERS`, `BROADCAST_PUBLISHABLE_VIEWERS`,
+`BROADCAST_HETZNER_VIEWERS` the others); `BROADCAST_PLAN_STEP_SECONDS` is each plan's spell and
+`BROADCAST_OUTAGE_SECONDS` the cloud's outage (900). `REHEARSAL_KEEP=1` leaves the stack up
 (`docker compose -p bc-fanout down -v`). Rebuild the images after changing the edge or the home:
 the compose file runs the tagged images and never builds them.
 
@@ -159,3 +174,10 @@ the compose file runs the tagged images and never builds them.
   uploads. The three counts are compared after the test pattern stops.
 - A day on the fast clock expires a viewer token minted on real time. The scenarios mint tokens
   on the edge's clock.
+- The edge refuses a home clock more than 60 s off its own, and the home does not follow the
+  edge's clock, so the fast clock can't run under a live home: the Hetzner outage runs in real
+  time.
+- The canary's ingest events carry glass-to-glass 0 for most segments: the home's
+  PROGRAM-DATE-TIME (ffmpeg's `program_date_time`) is not earlier than the moment the edge
+  receives the segment, so the edge's difference clamps to 0. Open; `broadcast-observe` keeps the
+  check.

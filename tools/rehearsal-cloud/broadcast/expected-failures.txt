@@ -2,9 +2,5 @@
 # "<scenario> <the story that turns it on> <why>". A listed scenario is run when it has a body and
 # reported as an expected failure (XFAIL), never as a pass; if it passes, the run fails until the
 # line goes (XPASS). The story that turns a scenario on removes its line in the same pull request.
-broadcast-plans            50.20  run by the cloud rehearsal as broadcast-plans (C20) against the cloud's own fake edge; the Miniflare edge joins it with the cloud stack here
-broadcast-publishable      50.23  needs the home's API and its catalog (the publishable guide) in the stack
-broadcast-access           50.26  needs watch.maktaba.tv's invite and open flows with the cloud's access push in the stack
-broadcast-takedown         50.24  needs the cloud's moderation queue and a staff session in the stack
-broadcast-hetzner-down     14.8   needs the cloud stack and its metering in the stack
-broadcast-observe          50.28  needs the canary, the alerts and the status component in the stack
+# A scenario with a body is listed here only while some of its checks need what this stack lacks.
+broadcast-observe          50.28  the edge's events run (the canary's glass-to-glass is 0 for most segments: the home's PROGRAM-DATE-TIME is not before the edge receives them); the alerts and the status component need 50.10's Prometheus over the cloud worker's Analytics Engine poll and 50.11's status page, and the canary probe (deploy/cloud-relay/probes/broadcast_probe) is not built; no pull request builds them yet
