@@ -366,6 +366,10 @@ export const APPS = [
                 "**الرئيسية**: ما كنت تشاهده، والدرس التالي من كل سلسلة تتابعها، وما أُضيف حديثًا، والصفوف التي يقترحها الجهاز الرئيسي."
               ),
               t(
+                "**Watch a broadcast** (iPhone, iPad and Mac): a home's published channels, watched as a guest with no account, from the home picker or an invite's link (pasted, opened, or its QR code scanned on an iPhone), or with the publisher's handle and an `MK-` short code. The publisher's channels with now and next, a CC BY programme's credit, and the player, where a vertical swipe changes the channel; a channel whose home is offline plays its slate with a note. Saved broadcasts each have **Remove**. Not shown under a parental limit.",
+                "**شاهد بثًا** (آيفون وآيباد والماك): قنوات منشورة لجهاز رئيسي تُشاهَد كضيف دون حساب، من منتقي الجهاز الرئيسي أو من رابط دعوة (يُلصق أو يُفتح أو يُمسح رمز QR الخاص به على آيفون)، أو بمعرّف الناشر ورمز قصير يبدأ بـ`MK-`. قنوات الناشر مع ما يُعرض الآن وما يليه، ونسبة البرنامج المرخّص بـCC BY، والمشغّل الذي يبدّل فيه السحب العمودي القناة؛ والقناة التي انقطع جهازها الرئيسي تشغّل شريحتها البديلة مع ملاحظة. ولكل بث محفوظ **إزالة**. ولا يظهر تحت قيود الرقابة الأبوية."
+              ),
+              t(
                 "**Libraries**: each library with its series, collections, playlists and videos, filtered and sorted, with **Play** and **Shuffle**; a series shuffles too. Pin the libraries you use most.",
                 "**المكتبات**: كل مكتبة بسلاسلها ومجموعاتها وقوائم تشغيلها ومقاطعها، مع التصفية والترتيب، ومعها **تشغيل** و**تشغيل عشوائي**؛ ويمكن تشغيل السلسلة عشوائيًا أيضًا. وثبّت المكتبات التي تستعملها أكثر."
               ),
@@ -882,6 +886,10 @@ export const APPS = [
                 "**البث المباشر** حين يُسمح للشخص بمشاهدة قناة: قسم **الآن** بكل قناة وما يُعرض عليها، و**الدليل**؛ اختر قناة لتشاهدها مباشرة."
               ),
               t(
+                "**Watch a broadcast** (Apple TV): a home's published channels, watched as a guest with no account and no home chosen, from the home picker or **Settings**. Type the publisher's handle and the invite's `MK-` short code with the remote, or scan the QR code with a phone and check the 4-character code it shows; the phone sends the TV its pass. Then the publisher's channels with now and next, and the player, where up and down change the channel. A CC BY programme shows its credit, and a channel whose home is offline plays its slate with a note, never an error. Broadcasts are saved for next time, each with **Remove**. Not shown under a parental limit.",
+                "**شاهد بثًا** (آبل تي في): قنوات منشورة لجهاز رئيسي تُشاهَد كضيف دون حساب ودون اختيار جهاز رئيسي، من منتقي الجهاز الرئيسي أو **الإعدادات**. اكتب بجهاز التحكم معرّف الناشر ورمز الدعوة القصير الذي يبدأ بـ`MK-`، أو امسح رمز QR بالهاتف وطابق الرمز ذا الأحرف الأربعة الذي يعرضه؛ فيرسل الهاتف إلى التلفاز تصريحه. ثم قنوات الناشر مع ما يُعرض الآن وما يليه، والمشغّل الذي يبدّل فيه الأعلى والأسفل القناة. ويعرض البرنامج المرخّص بـCC BY نسبته، والقناة التي انقطع جهازها الرئيسي تشغّل شريحتها البديلة مع ملاحظة، دون رسالة خطأ أبدًا. وتُحفظ البثوث للمرة القادمة، ولكل منها **إزالة**. ولا يظهر تحت قيود الرقابة الأبوية."
+              ),
+              t(
                 "**Settings** on Apple TV, **Account** on Android TV: who is signed in, switch home, sign out.",
                 "**الإعدادات** على آبل تي في و**الحساب** على أندرويد تي في: من سجّل الدخول، وتبديل الجهاز الرئيسي، وتسجيل الخروج."
               ),
@@ -1081,6 +1089,18 @@ export const APPS = [
                 "wide",
                 "The Live TV guide on an Apple TV: three channels and what is on each",
                 "دليل البث المباشر على آبل تي في: ثلاث قنوات وما يُعرض على كل منها"
+              ),
+              shot(
+                "appletv-guest-space",
+                "wide",
+                "Watch a broadcast on an Apple TV: saved broadcasts, the publisher's handle and short code, and a QR code with the code Q7XZ to pair a phone",
+                "شاهد بثًا على آبل تي في: البثوث المحفوظة، ومعرّف الناشر والرمز القصير، ورمز QR مع الرمز Q7XZ لإقران هاتف"
+              ),
+              shot(
+                "appletv-guest-channels",
+                "wide",
+                "A broadcast's channels on an Apple TV, watched as a guest: Al-Noor on Maktaba, now and next, and a channel whose home is offline",
+                "قنوات بث على آبل تي في يشاهدها ضيف: Al-Noor على مكتبة، وما يُعرض الآن وما يليه، وقناة جهازها الرئيسي غير متصل"
               ),
               shot(
                 "androidtv-code",

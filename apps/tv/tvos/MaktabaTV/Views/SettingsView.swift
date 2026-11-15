@@ -8,6 +8,8 @@ struct SettingsView: View {
     @AppStorage(ThemeMode.storageKey) private var theme = ThemeMode.dark
     @AppStorage("autoplayNext") private var autoplay = true
     @Environment(\.reportProblem) private var reportProblem
+    /// Story 50.27: Watch a broadcast, apart from the home and its account.
+    @State private var watchingBroadcast = false
 
     var body: some View {
         NavigationStack {
@@ -52,6 +54,17 @@ struct SettingsView: View {
                         .accessibilityIdentifier("settings.myReports")
                     }
                 }
+                // not under a parental limit (Epic 57): a broadcast is outside the home's ratings
+                if !session.parental.current.limited {
+                Section {
+                    Button {
+                        watchingBroadcast = true
+                    } label: {
+                        Label { Text(verbatim: GuestWords.message("guest.watchBroadcast")) } icon: { Image(systemName: "dot.radiowaves.left.and.right") }
+                    }
+                    .accessibilityIdentifier("settings.watchBroadcast")
+                }
+                }
                 Section {
                     Button("Choose another home", systemImage: "house") { session.switchHome() }
                     Button("Sign out", systemImage: "rectangle.portrait.and.arrow.right", role: .destructive) {
@@ -63,6 +76,7 @@ struct SettingsView: View {
             .frame(maxWidth: .infinity)
             .background(Theme.background.ignoresSafeArea())
         }
+        .fullScreenCover(isPresented: $watchingBroadcast) { TVGuestSpace() }
     }
 
     /// Epic 57 story 57.11: for a sign-in the home limits, that a parent manages the account

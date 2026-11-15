@@ -12,6 +12,8 @@ struct PlayerApp: App {
     /// A deep link's page (`maktaba://video/{id}`, FR-9), kept until the shell opens it (a link
     /// that arrives before sign-in waits for it).
     @State private var link: PlayerRoute?
+    /// Story 50.27: Watch a broadcast is open (with the invite a link brought, if any).
+    @State private var guest: GuestLaunch?
 
     init() {
         // Epic 57: the Player asks the home for the account's parental limit and tells it
@@ -88,10 +90,39 @@ struct PlayerApp: App {
                             sections: sections, liveTVHidden: liveTVOff)
             }
         }
-        // a video's link; a home's connect link stays SessionGate's
-        .onOpenURL { url in if let route = VideoLink.route(url) { link = route } }
+        // a video's link, or a broadcast's invite (story 50.27); a home's connect link stays SessionGate's
+        .onOpenURL { url in
+            if let route = VideoLink.route(url) {
+                link = route
+            } else if let invite = GuestInput.invite(in: url), guestAllowed {
+                guest = GuestLaunch(invite: invite)
+            }
+        }
+        // the home picker's Watch a broadcast: a guest needs no home and no account
+        .environment(\.watchBroadcast, guestAllowed ? { guest = GuestLaunch(invite: nil) } : nil)
+        .sheet(item: $guest) { launch in
+            GuestSpaceView(app: Bundle.main.bundleIdentifier ?? "com.hamzalabs.maktaba.player", invite: launch.invite)
+                #if os(macOS)
+                .frame(minWidth: 560, minHeight: 640)
+                #endif
+        }
         .maktabaTheme(theme, forceDark: playing)
         .permissionsWalkthrough()
+    }
+}
+
+/// Watch a broadcast, opened from the home picker or by an invite's link.
+struct GuestLaunch: Identifiable {
+    let id = UUID()
+    let invite: String?
+}
+
+extension PlayerApp {
+    /// Not under a parental limit (Epic 57), the account's or this device's: a broadcast is
+    /// outside any home's ratings.
+    var guestAllowed: Bool {
+        let p = session.parental.current
+        return !p.limited && p.deviceLimit == nil
     }
 }
 

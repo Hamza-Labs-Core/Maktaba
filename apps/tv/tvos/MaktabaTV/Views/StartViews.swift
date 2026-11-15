@@ -16,6 +16,8 @@ struct TVHomePicker: View {
     @State private var problem: String?
     @State private var renaming: Home?
     @State private var newName = ""
+    /// Story 50.27: Watch a broadcast, with no home and no account.
+    @State private var watchingBroadcast = false
     private let words = ConnectStrings.forPreferredLanguages()
     private let tv = TVConnectStrings.forPreferredLanguages()
 
@@ -48,6 +50,9 @@ struct TVHomePicker: View {
                     recent
                     nearby
                     byAddress
+                    // not when this Apple TV's Screen Time limits what plays (Epic 57): a
+                    // broadcast is outside any home's ratings
+                    if session.parental.current.deviceLimit == nil { broadcast }
                 }
                 .disabled(session.connecting)
                 .readingPanel(padding: 48)
@@ -57,6 +62,7 @@ struct TVHomePicker: View {
             }
         }
         .environment(\.layoutDirection, words.isRightToLeft ? .rightToLeft : .leftToRight)
+        .fullScreenCover(isPresented: $watchingBroadcast) { TVGuestSpace() }
         .alert(words.text(.renameTitle), isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
             TextField(tv.text(.renamed), text: $newName)
             Button(words.text(.save)) {
@@ -127,6 +133,15 @@ struct TVHomePicker: View {
                     .disabled(address.trimmingCharacters(in: .whitespaces).isEmpty)
                     .accessibilityIdentifier("picker.connect")
             }
+        }
+    }
+
+    /// Story 50.27: a channel someone shared, watched as a guest (no home needed).
+    private var broadcast: some View {
+        TVSection(GuestWords.message("guest.watchBroadcast"), footer: GuestWords.message("guest.intro")) {
+            TVHomeRow(name: GuestWords.message("guest.watchBroadcast"), address: "watch.maktaba.tv",
+                      systemImage: "dot.radiowaves.left.and.right") { watchingBroadcast = true }
+                .accessibilityIdentifier("picker.watchBroadcast")
         }
     }
 
