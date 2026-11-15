@@ -23,6 +23,12 @@ func testsNamed(t *testing.T, dir string, run *regexp.Regexp) []string {
 	if err != nil {
 		t.Fatal(err)
 	}
+	return testsIn(t, sources, run.MatchString)
+}
+
+// testsIn are the Test functions of sources whose names keep accepts, sorted.
+func testsIn(t *testing.T, sources []string, keep func(string) bool) []string {
+	t.Helper()
 	fn := regexp.MustCompile(`(?m)^func (Test\w+)\(t \*testing\.T\)`)
 	var named []string
 	for _, src := range sources {
@@ -31,7 +37,7 @@ func testsNamed(t *testing.T, dir string, run *regexp.Regexp) []string {
 			t.Fatal(err)
 		}
 		for _, f := range fn.FindAllStringSubmatch(string(raw), -1) {
-			if run.MatchString(f[1]) {
+			if keep(f[1]) {
 				named = append(named, f[1])
 			}
 		}
@@ -60,6 +66,18 @@ func TestTVClientsListNamesEveryTest(t *testing.T) {
 	named := testsNamed(t, here, regexp.MustCompile(api[1]))
 	for _, n := range testsNamed(t, filepath.Join(here, "..", "..", "..", "streaming", "internal", "capability"), regexp.MustCompile(streaming[1])) {
 		named = append(named, "streaming:"+n)
+	}
+
+	// every Epic 58 test of this package is the rehearsal's: one in a p58_*_test.go file whose
+	// name the job's -run pattern misses would never run there, and the list would still match
+	// the pattern, so the pattern has to reach it (widen it, and the list follows)
+	apiRun := regexp.MustCompile(api[1])
+	p58, err := filepath.Glob(filepath.Join(here, "p58_*_test.go"))
+	if err != nil || len(p58) == 0 {
+		t.Fatalf("no p58_*_test.go files beside this test (%v)", err)
+	}
+	for _, missed := range testsIn(t, p58, func(name string) bool { return !apiRun.MatchString(name) }) {
+		t.Errorf("%s is an Epic 58 test the tv-clients job's -run pattern does not name", missed)
 	}
 
 	var listed []string
