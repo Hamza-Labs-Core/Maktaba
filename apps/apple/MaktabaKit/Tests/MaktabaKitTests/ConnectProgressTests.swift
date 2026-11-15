@@ -371,6 +371,27 @@ extension AgainstAStubHome {
         #expect(ConnectProgress(.finding).attemptLabel(en) == nil)
     }
 
+    /// A spinner only for a short wait: the code's wait for approval (minutes long, its
+    /// countdown already moving) is still, so the screen does not redraw the whole time
+    /// (Trail #1418). With Reduce Motion, nothing spins.
+    @Test func onlyShortWaitsSpin() {
+        let waiting = ConnectProgress(.awaitingApproval(code: "ABCD-1234", expiresAt: at))
+        #expect(waiting.indicator(reduceMotion: false) == .symbol("hourglass"))
+        #expect(waiting.indicator(reduceMotion: true) == .symbol("hourglass"))
+        let short: [ConnectProgress] = [
+            ConnectProgress(.finding), ConnectProgress(.lookingNearby),
+            ConnectProgress(.trying(address: "http://192.0.2.20:8088", index: 1, count: 3)),
+            ConnectProgress(.signingIn(home: "Living room")), ConnectProgress(.reconnecting(name: "Living room")),
+        ]
+        for p in short {
+            #expect(p.indicator(reduceMotion: false) == .spinner, "\(p.stepName)")
+            #expect(p.indicator(reduceMotion: true) == .symbol("hourglass"), "\(p.stepName)")
+        }
+        for p in every where !p.isWorking || p.stepName == "homeBusy" || p.stepName == "found" {
+            #expect(p.indicator(reduceMotion: false) != .spinner, "\(p.stepName)")
+        }
+    }
+
     /// Every step in Arabic, never the English words (the catalog's «الجهاز الرئيسي»).
     @Test func everyStepInArabic() {
         for p in every {
