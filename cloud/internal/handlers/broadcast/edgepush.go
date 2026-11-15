@@ -111,6 +111,10 @@ func (d *Deps) AccessState(ctx context.Context, server string) (bc.AccessState, 
 	return s, nil
 }
 
+// PushAccess pushes a publisher's access state now (a plan change elsewhere ended its guest
+// sharing); as pushOne, a failure is left for PushPending.
+func (d *Deps) PushAccess(ctx context.Context, server string) { d.pushOne(ctx, server) }
+
 // pushOne pushes a publisher's access state after a change, with its own short deadline so a
 // slow edge never holds the request; a failure is left for PushPending.
 func (d *Deps) pushOne(ctx context.Context, server string) {

@@ -55,6 +55,9 @@ type Deps struct {
 	// Logs is the cloud's log index on W (53.17). Nil or unset: the log
 	// routes answer 503 and the Errors view has the homes' groups only.
 	Logs *LogsSource
+	// AccessPush sends a home's viewer access to the broadcast edge after a plan change ended
+	// its guest sharing; nil leaves it to the worker's PushPending.
+	AccessPush func(ctx context.Context, serverID string)
 }
 
 func (d *Deps) now() time.Time {
@@ -457,7 +460,8 @@ func (d *Deps) SetPlan(w http.ResponseWriter, r *http.Request) {
 		d.fail(w, r, "set subscription", err)
 		return
 	}
-	if err := billingh.SetEffectivePlan(ctx, tx, id, req.Plan); err != nil {
+	ended, err := billingh.SetEffectivePlan(ctx, tx, id, req.Plan)
+	if err != nil {
 		d.fail(w, r, "set plan", err)
 		return
 	}
@@ -469,6 +473,12 @@ func (d *Deps) SetPlan(w http.ResponseWriter, r *http.Request) {
 	if err := tx.Commit(); err != nil {
 		d.fail(w, r, "commit", err)
 		return
+	}
+	// a plan without broadcasting revoked the homes' invites: the edge learns of it now
+	if d.AccessPush != nil {
+		for _, s := range ended {
+			d.AccessPush(ctx, s)
+		}
 	}
 	w.WriteHeader(http.StatusNoContent)
 }

@@ -221,3 +221,13 @@ func TestPublisherStateCarriesTheAgreement(t *testing.T) {
 		t.Fatalf("%s %v", b, err)
 	}
 }
+
+// Story 50.20's edge cases: an account moving to a plan without broadcasting (Free, Basic, an
+// unknown or empty plan, which is no live plan) ends its homes' guest sharing; Pro keeps it.
+func TestEndsGuestSharing(t *testing.T) {
+	for plan, want := range map[string]bool{PlanFree: true, PlanBasic: true, "": true, "gold": true, PlanPro: false} {
+		if got := EndsGuestSharing(plan); got != want {
+			t.Errorf("EndsGuestSharing(%q) = %v, want %v", plan, got, want)
+		}
+	}
+}

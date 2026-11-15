@@ -402,7 +402,7 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 		billing := &billingh.Deps{
 			DB: pool.DB, Provider: payments, Users: users, Sessions: sess, Abuse: detector, Audit: auditLog,
 			Mailer: mailer, Logger: logger, Entitlements: entSigner, Broadcast: broadcastStore,
-			WebURL: cfg.Server.WebURL,
+			WebURL: cfg.Server.WebURL, AccessPush: broadcastDeps.PushAccess,
 		}
 		// Public billing routes: the catalog, the entitlement key, and the
 		// payment-provider webhook (verified by the provider, not our token).
@@ -457,6 +457,8 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 			Logger: logger, Gate: adminGate, LiveTunnels: live, Licenses: licenses,
 			// the cloud's log index on W (53.17), as the forwarder reaches it
 			Logs: &adminh.LogsSource{URL: os.Getenv(EnvLogsURL), Token: logsToken()},
+			// a plan without broadcasting ends a home's guest sharing (story 50.20)
+			AccessPush: broadcastDeps.PushAccess,
 		})
 
 		// the broadcast kill switch, for the service admin only (50.25)
