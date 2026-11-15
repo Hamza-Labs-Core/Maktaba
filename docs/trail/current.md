@@ -1,11 +1,11 @@
 ---
 schema: 1
-tag: v0.3.150
-up_to_commit: a49616163
-built_from: v0.3.149
+tag: v0.3.151
+up_to_commit: a4074b59d
+built_from: v0.3.150
 ---
 
-# Trail snapshot: v0.3.150
+# Trail snapshot: v0.3.151
 
 ## Keep doing
 
@@ -813,6 +813,7 @@ built_from: v0.3.149
 | #1232 | 2026-11-13 | fix(postgres): a half-answered look no longer restarts the database |
 | #1318 | 2026-11-14 | docs(testflight): the install failure though the build is listed (open) |
 | #1409 | 2026-11-15 | fix(apple): Watch a broadcast fails closed under parental limits |
+| #1425 | 2026-11-15 | fix(apple): the search field lets go of the keyboard before the screen changes |
 | #1426 | 2026-11-15 | logindex: an idle log index stays idle (286% -> 0.8% CPU); one writer; metrics count against the cap |
 
 ## Index
