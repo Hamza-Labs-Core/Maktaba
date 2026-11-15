@@ -147,6 +147,11 @@ struct KeychainSecrets: SecretStore {
     let service: String
     /// macOS: the data-protection keychain (iOS's kind) instead of the login keychain.
     let dataProtection: Bool
+    /// The item is read after the first unlock (a TV plays with no one at it). A device-bound
+    /// credential (a guest pass, story 50.27) is also `…ThisDeviceOnly`: it stays out of
+    /// backups and never moves to another device.
+    var thisDeviceOnly = false
+    var accessible: CFString { thisDeviceOnly ? kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly : kSecAttrAccessibleAfterFirstUnlock }
 
     private func key(_ account: String) -> [String: Any] {
         var k: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
@@ -170,7 +175,7 @@ struct KeychainSecrets: SecretStore {
         SecItemDelete(key(account) as CFDictionary)
         var add = key(account)
         add[kSecValueData as String] = Data(value.utf8)
-        add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
+        add[kSecAttrAccessible as String] = accessible
         return SecItemAdd(add as CFDictionary, nil)
     }
 

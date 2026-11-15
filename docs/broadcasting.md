@@ -57,8 +57,34 @@ No viewer account and no email. One functional cookie holds the guest pass or th
 An IP address is used only as a salted hash, for at most 24 hours, to apply the limits.
 Cloudflare processes the requests (Workers, Turnstile, Analytics Engine).
 
+## In the apps
+
+**Watch a broadcast** in Maktaba TV on the Apple TV (the home picker, and Settings) and in
+Maktaba Player on iPhone, iPad and the Mac (the home picker, or an invite's link) is a space of
+its own: no home is chosen and no one signs in.
+
+- **Ways in:** the publisher's handle (the part of the watch address after `watch.maktaba.tv`)
+  and the invite's `MK-` short code; an invite link pasted, opened as `maktaba://watch/i/<invite>`
+  or scanned on an iPhone; on the Apple TV, the QR code and the 4-character code to compare, the
+  TV waiting on `GET /api/v1/pair/<nonce>` with its own poll key until a phone sends a pass.
+- **Saved broadcasts:** each publisher's pass (or a TV's open session) is kept in the Keychain,
+  one item holding the list, newest first, dropped once it expires; **Remove** takes it off the
+  device (the invite's device use stays counted on the edge).
+- **Watching:** the publisher's channels with now and next; the player shows the picture as the
+  edge sends it, the channel, the programme and a CC BY programme's credit, and the state's words
+  from the same table as the pages (`shared/broadcast/viewer-states.json`). The player reads
+  `live.maktaba.tv` through MaktabaKit's `StreamProxy` on the device's loopback, which puts the
+  newest viewer token in each path, so the 10-minute token is refreshed by the heartbeat without
+  restarting the picture. Up and down on the remote, or a vertical swipe, change the channel.
+- **Not offered** under a parental limit (the account's, or the device's Screen Time limit): a
+  broadcast is outside any home's ratings.
+
 ## Not yet
 
-The **Watch a broadcast** entry in the Apple TV, iOS, Android and Android TV apps (the short code,
-the QR pairing screen and Saved broadcasts) follows in its own change; the pairing API it uses is
-already on the edge.
+- The Android and Android TV apps' Watch a broadcast (story 50.27 T04 and T06), and the
+  desktop Player for Windows and Linux.
+- The Report button in the apps' player menu: the cloud's report route checks a Turnstile token
+  the native apps cannot show yet.
+- Universal links (`https://watch.maktaba.tv/i/…` opening the app): the edge has to serve the
+  apps' association file; until then the link opens the watch page, which plays in the browser.
+- The remote `guest.enabled` switch that would hide the entry in the apps.

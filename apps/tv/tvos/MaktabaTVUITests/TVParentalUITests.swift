@@ -405,6 +405,8 @@ final class TVParentalUITests: XCTestCase {
         XCTAssertTrue(element("settings.parental.limit").label.contains("13+"), element("settings.parental.limit").label)
         XCTAssertEqual(element("settings.parental.device").label, "This device is limited to 9+.")
         XCTAssertEqual(count("POST", "/api/me/age-signal"), 1, "sent once: nothing changed since")
+        // story 50.27: no Watch a broadcast under a limit (a broadcast is outside the home's ratings)
+        XCTAssertFalse(element("settings.watchBroadcast").exists, "no Watch a broadcast for a restricted account")
         shot("tv-parental-settings-en")
     }
 
