@@ -1,11 +1,11 @@
 ---
 schema: 1
-tag: v0.3.149
-up_to_commit: b6e482787
-built_from: v0.3.148
+tag: v0.3.150
+up_to_commit: a49616163
+built_from: v0.3.149
 ---
 
-# Trail snapshot: v0.3.149
+# Trail snapshot: v0.3.150
 
 ## Keep doing
 
@@ -71,7 +71,7 @@ built_from: v0.3.148
 - One owner per branch: stop the author when a watcher takes over a PR, check a stopped child's branch head before briefing a replacement, and start worktree children from a checkout of main, not the parent's trail branch. (#1390, #1385, #1389)
 - A stack's order is decided by content, not by the PR description: check `git log origin/main..<branch> -- shared/db/migrations/` (home goose migrations have no allow-missing, so a stack sharing the 02NN range merges in number order). Merge each stack PR the moment it is green: every sibling merge re-conflicts the rest (CHANGELOGs, string tables, the edge Worker, mocks). Resolve a string table as the other side's file plus only this side's keys. A long-lived branch's CHANGELOG entry goes at the top of its section, where no other PR appends. (#1263, #1270, #1274, #1338, #1287)
 - Ask for an independent security review of any code that hands a secret or token to an address before merging, and run it again after each redesign: each round on the stream proxy and the TV grant found a real defect green checks missed. A finding in code the branch only carried in from main is fixed on main in its own PR. (#1348, #1360, #1319, #1370)
-- Measure a suspect before calling it the cause, and how often a CI hole was hit before sizing its fix; never name a cause for a device problem from reading alone, nor tie a long-standing problem to the newest change without asking how long it has lasted. For another company's error message, search its exact words first; pasted text may be someone else's report, so ask before recording it as done. (#1319, #1317)
+- Measure a suspect before calling it the cause, and how often a CI hole was hit before sizing its fix; never name a cause for a device problem from reading alone, nor tie a long-standing problem to the newest change without asking how long it has lasted. Count how often a CI failure's signature appears across recent jobs before calling it a flake or a regression. For another company's error message, search its exact words first; pasted text may be someone else's report, so ask before recording it as done. (#1319, #1317, #1419)
 
 **Releases and live**
 - Prove update, rollback, restore and migration paths in CI first: nothing touching update, restore, migration, supervisor, launcher, front door or TV-staging code ships unless `update-rehearsal` passed on that exact commit. One release at a time on the live install. (d20261031-standing-rules, #435, #433, #460, #461)
@@ -94,7 +94,7 @@ built_from: v0.3.148
 
 **Tests and CI**
 - A code change ships with its tests changed in the same push (affected-tests gate; `No-Test-Change: <reason>` only when the mapped tests cannot run locally). (#516, d20261031-standing-rules, #685)
-- Fix flaky tests at the root; read the log first, a flaky-looking test is often a real bug (in Epic 53's series as many failures were real as were flakes; a flaky TempDir cleanup was a shutdown bug). A UI failure is the change's only if the same code fails the shard elsewhere and the failing test does not move between runs. Before calling a UI test a flake, read what it waits for: a self-dismissing element checked after slower queries races a loaded simulator; fix the order, not the timeout. Read the xcresult's activity times (`xcresulttool get test-results activities`) and the job log's `t = …` lines before touching a timeout: they tell a slow runner from a state that never came. Meet test budgets at the cause, never by raising caps or splitting tests: read the slowest-tests list in the integration job's log first. A test that waits for one asynchronous effect waits again for each other thing it reads, even ones sent in order; a race that never reproduces locally (300 `-race` runs) is fixed by reading the code, and checked with `-race -count=50` or more. A test reads a writer's dated folders by glob or the writer's own clock. (d20261031-standing-rules, #364, #635, #271, #716, d20261106-epic53-ci-flakes, #673, #803, #858, #870, #881)
+- Fix flaky tests at the root; read the log first, a flaky-looking test is often a real bug (in Epic 53's series as many failures were real as were flakes; a flaky TempDir cleanup was a shutdown bug). A UI failure is the change's only if the same code fails the shard elsewhere and the failing test does not move between runs. Before calling a UI test a flake, read what it waits for: a self-dismissing element checked after slower queries races a loaded simulator; fix the order, not the timeout. Read the xcresult's activity times (`xcresulttool get test-results activities`) and the job log's `t = …` lines before touching a timeout: they tell a slow runner from a state that never came. Meet test budgets at the cause, never by raising caps or splitting tests: read the slowest-tests list in the integration job's log first. A test that waits for one asynchronous effect waits again for each other thing it reads, even ones sent in order; a race that never reproduces locally (300 `-race` runs) is fixed by reading the code and tested by recreating the interleaving directly (look up, then act), not with sleeps; with `done`/`doomed` flags under a lock, every path that takes the lock checks both, and checked with `-race -count=50` or more. A test reads a writer's dated folders by glob or the writer's own clock. (d20261031-standing-rules, #364, #635, #271, #716, d20261106-epic53-ci-flakes, #673, #803, #858, #870, #881, #1424)
 - Turn a "should never happen" rule into a test-time error and run the whole suite under it. (#662)
 - NAS shapes (`nas.yml`, `tests/nas/cells.json`): imitate a NAS shape in a container before any device is bought, and keep every cell's logs, pass or fail. A cell job whose cell is still pending passes, so read each cell's `report.json` (artifact `nas-cell-<cell>-<arch>`) to see that it ran; checks waiting for a fix carry `needs` and turn on in the pull request after the fix merges, by adding it to `landed`. Read a sibling story's merged code before writing the assertion that targets it. A fix's pull request may leave out its own `landed` entry; the next harness pull request adds it. A `CLEAN` merge state does not mean the cells ran against the main a pull request lands on: when a sibling story merges while a NAS pull request waits, merge main in and run the cells again. A story that changes when work runs (quiet hours, tiers) runs nas-shapes and ships its harness change in the same pull request. When the product's behaviour is the decided one, fix the harness, then prove the behaviour in a cell of its own (`quiet-hours-hold`). (#1091, #1100, #1103, #1104)
 - Run a wave's full pipeline suite on a freshly initialised Postgres cluster (`initdb -E UTF8`; SQL_ASCII fails the Unicode tests) before opening its PR: roles are cluster-wide, so a reused cluster hides order bugs, and CI's `unit` job runs only the affected tests. (#847, #902)
@@ -489,7 +489,7 @@ built_from: v0.3.148
 - A rollback is targeted: when every migration since the previous release has a Down script and loses no data on the way up (no DROP of a table, column or sequence; no DELETE, UPDATE, TRUNCATE or type change outside dollar-quoted function bodies), the new release runs `migrate down-to <previous schema>` and marks the record the previous release's own; the dump returns only when an Up lost data or a Down fails. 0.3.90's 14 Down scripts ran in about 5 s where the dump restore of 73 GB needed about a day. (d20261107-rollback-down-scripts)
 - Retention runs in the loop that runs every 15 minutes, never only at a rare event; count-only retention never empties a kind that rarely gets members, so one-event dumps (a failed update) need an age limit, while the newest pre-update dump, the way back, has none. (d20261108-backups-tidy)
 - Lock-order comparisons are row comparisons, not joined strings (collation ignores punctuation); enqueue after commit to avoid deadlocks. (#662, #678)
-- Add up every program's pool maximum against `max_connections`. (#627)
+- Add up every program's pool maximum against `max_connections`; a component that borrows from a shared pool gets its own pool or its own cap (kept connections are invisible in the pool's stats until it is empty): the plugins' statements executor kept about 40 of the API's 50 and sign-in hung. Cleanup that runs only on the next request never runs when requests stop: idle state needs a timer, with a database-side `idle_in_transaction_session_timeout` as a backstop. Report a starved resource's holders (held, kept, waiting, oldest transaction) to admins. (#627, #1424)
 - Postgres frees an advisory lock only when its backend exits: a lock connection whose ping fails because the context was cancelled must not be discarded, or the lock outlives `stop()`. (#740)
 - CI's test URL has no query, so a harness rebuilding URLs by hand passes CI and fails where the scratch server's URL has one (asyncpg's `sslmode=prefer` hides it, lib/pq's `require` shows it). A test binary cached at one fixed temp path is shared by every worktree on the machine. (#769)
 - lib/pq bounds only the dial; older lib/pq ignores the passfile on Windows. (#608, #362)
@@ -575,6 +575,7 @@ built_from: v0.3.148
 - SwiftUI can fold a `.contain` stack into its parent's accessibility container, hiding its identifier though it is drawn. On a Windows Desktop Player run, mockwebserver request logs need a copy-on-write list. esbuild's `es2019` target silently drops `import.meta` (the Cast receiver targets `es2020`); a Mac-made `package-lock.json` fails `npm ci` in the Playwright container. (#1287, #1302, #1267)
 
 **Apps and UI tests**
+- Let go of focus before an action disables or replaces the form holding it: a focused field removed with the keyboard up leaves UIKit's animation tracking stuck for the rest of the process, and every idle wait times out. "App animations complete notification not received" with a still recording (it records only on change) means a stuck animation, not a visible one; a SwiftUI `ProgressView` does not block XCUITest's idle check but still costs redraws, so long waits show a still indicator. (#1419)
 - In Arabic text a path is reordered at its slashes: wrap each path, command or URL in U+2066/U+2069, and measure positions with a Range before judging a bidi screenshot. Prettier rewrites escaped isolates as literal characters, so later replacements that search for the escape match nothing; a Vite dev server can serve a stale module until restarted with `--force`. Build an image `src` only from a fixed list (CodeQL flags one built from the page's language). (#1120)
 - Under Robolectric a bare `waitUntil` only polls; the v1 compose rule runs effects unconfined. Use settling waits and v2 rules. (#508)
 - The desktop shell's menu ids are kept by hand in Rust and in TypeScript; `apps/desktop/src-tauri/tests/menu_contract.rs` reads both and fails on an id the shell never declares. A file with no inline tests gets no affected-tests mapping: move the logic into a tested module (`bigscreen.rs`). (#1228)
@@ -715,6 +716,7 @@ built_from: v0.3.148
 
 ## Open
 
+- `PlayerSearchUITests.testATitleOpensItsPage` stalled once the same way (the search field submits and the screen changes with it focused); not changed in #1419. A web panel for `plugin_relay` (English and Arabic) is still to build; the data is in health and `/metrics`. The live home stays on 0.3.135 until it updates to a release with #1424. (#1419, #1424)
 - Not verified on real hardware: Apple TV playback and AirPlay, background audio on device, foldables and tablets, the desktop Player against a live home. (#512, #579, #523, #667)
 - Remove the tag guard's `IGNORED_CI_JOBS` once the iPhone/iPad shards are fixed. (#577)
 - Player UI shards left in progress after their run completed (issue #649). (#632)
@@ -811,7 +813,7 @@ built_from: v0.3.148
 | #1232 | 2026-11-13 | fix(postgres): a half-answered look no longer restarts the database |
 | #1318 | 2026-11-14 | docs(testflight): the install failure though the build is listed (open) |
 | #1409 | 2026-11-15 | fix(apple): Watch a broadcast fails closed under parental limits |
-| #1419 | 2026-11-15 | fix(apple): the sign-in screens go idle (keyboard let go of first, no endless spinner by the code) |
+| #1426 | 2026-11-15 | logindex: an idle log index stays idle (286% -> 0.8% CPU); one writer; metrics count against the cap |
 
 ## Index
 
@@ -1556,5 +1558,7 @@ built_from: v0.3.148
 | 1408-watch-android | 2026-11-15 | pr | Watch a broadcast on Android, Android TV and Fire TV (50.27 T04, T06) |
 | 1412-apple-leave-player | 2026-11-15 | pr | Apple UI tests: leaving the player and choosing a segment get one more try; the demo player waits out a stall |
 | 1417-proxy-forward-latency | 2026-11-15 | pr | The Apple stream proxy passes a request on at once: user-initiated priority, the token held now |
+| 1419-signin-idle | 2026-11-15 | pr | The sign-in screens go idle: the keyboard let go of before Connect, no endless spinner by the code |
 | 1420-release-calls-retry | 2026-11-15 | pr | Every GitHub release call goes through gh-retry.sh, not only the uploads |
+| 1424-plugin-relay-pool | 2026-11-15 | pr | Plugins can no longer starve the API's database pool: a pool of their own, a timer reaper, a Postgres backstop |
 
