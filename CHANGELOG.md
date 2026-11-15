@@ -2920,6 +2920,19 @@ build fails when the two differ.
   remote; Fire TV and Android TV keep the guardian's PIN. A deep link to a hidden item shows the
   not-available line and asks nothing. English and Arabic, mirrored.
 
+- **Maktaba can take a broadcast off air within a minute (Epic 50, story 50.25).** A service
+  admin stops one programme (the channel shows its slate until a time), a channel, a publisher's
+  account, a home or every broadcast from the admin console's new Broadcast kill switch page,
+  with the reason and a note; each change needs a fresh MFA check and is audited, and only a
+  service admin is answered. The cloud signs one revocation list and sends it to the broadcast
+  edge at once, with a pull every minute as the backup: viewers of a stopped channel are
+  refused at their next playlist and the home stops uploading. The home keeps the newest signed
+  copy, refuses an older one, and shows on its Broadcast page why a channel or the whole home
+  was stopped; if it can't check the list for two days its published channels keep running but
+  a new publish waits. With the cloud's API down, two edge variables stop one channel or
+  everything at once (`docs/runbooks/cloud/broadcast-kill.md`). A home's copy carries only its
+  own entries, signed so the edge won't take it as the full list.
+
 - **Viewer analytics and broadcast monitoring (story 50.28).** A home that broadcasts through
   Maktaba Cloud gets a **Viewers** page at app.maktaba.tv (from **Homes**, for the home's owner
   only): viewers watching now and viewer-hours today, over 7 days and this month against the

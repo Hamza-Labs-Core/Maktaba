@@ -15,6 +15,7 @@ import { handleIngest } from "./ingest";
 import { handleLive } from "./live";
 import { log } from "./log";
 import { handleWatch } from "./play";
+import { pullRevocations } from "./revocations";
 
 export { ChannelLive } from "./channel_live";
 export { PublisherControl } from "./publisher";
@@ -64,5 +65,19 @@ export default {
       });
       return problem(500, "edge_error");
     }
+  },
+
+  /** The cron (every minute): the revocation list's pull, the backup to the cloud's push (50.25). */
+  async scheduled(
+    _controller: ScheduledController,
+    env: Env,
+    ctx: ExecutionContext
+  ): Promise<void> {
+    ctx.waitUntil(
+      pullRevocations(env).then(
+        () => undefined,
+        (err: unknown) => log("warn", "revocation pull failed", { component: "revocations", err })
+      )
+    );
   },
 } satisfies ExportedHandler<Env>;

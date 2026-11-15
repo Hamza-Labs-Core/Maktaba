@@ -133,6 +133,8 @@ type overview struct {
 	Rungs            []string `json:"rungs"`
 	SourceHeight     int      `json:"source_height"`
 	Checks           []string `json:"checks"`
+	// Revocations is the home's copy of the broadcast revocation list (50.25; nil: not honoured).
+	Revocations *RevocationStatus `json:"revocations,omitempty"`
 }
 
 func (h *Routes) overview(w http.ResponseWriter, r *http.Request) {
@@ -167,6 +169,11 @@ func (h *Routes) overview(w http.ResponseWriter, r *http.Request) {
 		if c.Published() {
 			pub = append(pub, Published{ChannelID: c.ID, Rungs: c.Rungs, Source: out.Source, Dropped: c.Dropped})
 		}
+	}
+	if rv := h.Service.Revocations; rv.Enabled() {
+		pubID, home := h.Service.identity(ctx)
+		st := rv.Status(ctx, pubID, home)
+		o.Revocations = &st
 	}
 	o.UplinkBudgetKbps = UplinkBudget(up.Kbps, set.UplinkShare)
 	o.UplinkUsedKbps = UsedKbps(pub)

@@ -24,6 +24,8 @@ type BroadcastDeps struct {
 	Logger    *slog.Logger
 	// NoLoop: do not start the token loop (tests).
 	NoLoop bool
+	// RevocationKeys is MAKTABA_BROADCAST_PUBKEYS: broadcast signing keys beyond the release's.
+	RevocationKeys string
 }
 
 // MountBroadcast mounts /api/tv/broadcast and declares the api:broadcast_tokens loop
@@ -31,7 +33,15 @@ type BroadcastDeps struct {
 func MountBroadcast(r chi.Router, d BroadcastDeps) *broadcast.Service {
 	svc := &broadcast.Service{Store: &broadcast.Store{DB: d.DB}, Logger: d.Logger}
 	if d.AgentAddr != "" {
-		svc.Cloud = &broadcast.Agent{Addr: d.AgentAddr}
+		agent := &broadcast.Agent{Addr: d.AgentAddr}
+		svc.Cloud = agent
+		// the revocation list (50.25): honoured once the release or MAKTABA_BROADCAST_PUBKEYS
+		// holds a broadcast signing key
+		if keys, err := broadcast.RevocationKeys(d.RevocationKeys); err != nil {
+			slogOr(d.Logger).Warn("broadcast: the revocation keys are unreadable; the list is not honoured", "err", err)
+		} else {
+			svc.Revocations = &broadcast.Revocations{Store: svc.Store, Source: agent, Keys: keys, Logger: d.Logger}
+		}
 	}
 	if d.DB != nil && !d.NoLoop && svc.Cloud != nil {
 		d.Loops.Declare("broadcast_tokens", runner.Func(svc.Run))
@@ -53,4 +63,11 @@ func userNames(db *sql.DB) func(ctx context.Context, id string) string {
 		}
 		return strings.TrimSpace(name)
 	}
+}
+
+func slogOr(l *slog.Logger) *slog.Logger {
+	if l != nil {
+		return l
+	}
+	return slog.Default()
 }

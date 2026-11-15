@@ -194,7 +194,10 @@ func makeVectors(t *testing.T) []byte {
 	if v.Plan, err = SignPlan(k, v.PlanState, vectorAt); err != nil {
 		t.Fatal(err)
 	}
-	v.Revocations, _ = SignControl(k, "revocations", map[string]any{"version": 1, "pubs": []string{}, "channels": []string{ChannelID(vectorPublisher, "7")}, "homes": []string{}}, vectorAt, 24*time.Hour)
+	v.Revocations, _, err = SignRevocations(k, 1842, vectorEntries(), vectorAt)
+	if err != nil {
+		t.Fatal(err)
+	}
 	e := testKey(t, "edge-1")
 	v.Edge.Seed = b64.EncodeToString(e.Priv.Seed())
 	v.Edge.Public = b64.EncodeToString(e.Priv.Public().(ed25519.PublicKey))

@@ -14,6 +14,10 @@
 // A segment costs a token check (no Durable Object, no R2), then the edge cache under a key with
 // no token; only a miss reads R2. A playlist miss asks ChannelLive, which also answers whether
 // the channel is revoked or off air. The home is never fetched.
+//
+// The kill switch (50.25): break-glass (BROADCAST_GLOBAL_OFF, BROADCAST_OFF_CHANNELS) is checked
+// first, before the token; a revoked channel answers 503 off_air with the reason on play, on the
+// heartbeat and at the next playlist, so a playing viewer gets the off-air card within a reload.
 import {
   cached,
   masterCacheKey,
@@ -24,12 +28,13 @@ import {
 } from "./cache";
 import type { PlaylistAnswer } from "./channel_live";
 import { now } from "./clock";
-import { globalDelivery, globallyOff, type Env } from "./env";
+import { globalDelivery, type Env } from "./env";
 import * as ev from "./events";
 import { geoBlocked, geoFor } from "./geo";
 import { json, preflight, problem, withLiveHeaders } from "./http";
 import { readCapped } from "./ingest";
 import { log } from "./log";
+import { breakGlass, stopVerdict } from "./revocations";
 import { manifestURL, streamConfigured } from "./stream_fallback";
 import { verifyViewer, type ViewerClaims } from "./tokens";
 
@@ -47,9 +52,10 @@ async function route(request: Request, env: Env, url: URL): Promise<Response> {
   const parts = url.pathname.split("/").filter(Boolean);
   if (parts.length < 3) return problem(404, "not_found");
   const [token, ch] = [parts[0]!, parts[1]!];
+  const glass = breakGlass(env, ch);
+  if (glass) return offAir(glass.reason);
   const v = await verifyViewer(token, env.VIEWER_TOKEN_KEY, now(), ch);
   if (!v.ok) return problem(v.status, v.error);
-  if (globallyOff(env)) return problem(503, "broadcast_off");
   const claims = v.claims;
   if (claims.mode === "off") return problem(403, "broadcast_off");
   if (claims.mode === "wait") {
@@ -75,7 +81,8 @@ async function route(request: Request, env: Env, url: URL): Promise<Response> {
 /**
  * recordRefusal writes `blocked` for a revoked channel and for a viewer outside the channel's
  * countries (once per session start: on the master; geo with the viewer's country, 50.23 §5) and
- * `error` for a 5xx the edge answered, by its code.
+ * `error` for a 5xx the edge answered, by its code. A channel the revocation list stopped
+ * answers 503 off_air with the entry's reason (50.25): that is a block, never an edge error.
  */
 async function recordRefusal(
   env: Env,
@@ -89,19 +96,23 @@ async function recordRefusal(
     if (isMaster) ev.write(env, ev.blocked(claims.pub, claims.ch, "geo", viewerCountry(request)));
     return;
   }
-  const code = await problemCode(res);
-  if (res.status === 403 && code === "revoked" && isMaster)
-    ev.write(env, ev.blocked(claims.pub, claims.ch, "revoked"));
-  else if (res.status >= 500)
+  const { code, reason } = await problemOf(res);
+  const stopped = code === "off_air" && reason !== "";
+  if (stopped) {
+    if (isMaster) ev.write(env, ev.blocked(claims.pub, claims.ch, "revoked"));
+  } else if (res.status >= 500)
     ev.write(env, ev.error(claims.pub, claims.ch, code || `http_${res.status}`));
 }
 
-async function problemCode(res: Response): Promise<string> {
+async function problemOf(res: Response): Promise<{ code: string; reason: string }> {
   try {
-    const body = (await res.clone().json()) as { error?: unknown };
-    return typeof body.error === "string" ? body.error : "";
+    const body = (await res.clone().json()) as { error?: unknown; reason?: unknown };
+    return {
+      code: typeof body.error === "string" ? body.error : "",
+      reason: typeof body.reason === "string" ? body.reason : "",
+    };
   } catch {
-    return "";
+    return { code: "", reason: "" };
   }
 }
 
@@ -118,6 +129,11 @@ function viewerCountry(request: Request): string {
 async function geoCheck(request: Request, env: Env, ch: string): Promise<Response | null> {
   if (!geoBlocked(await geoFor(env, ch), viewerCountry(request))) return null;
   return problem(451, "geo_blocked");
+}
+
+/** offAir is a stopped channel's answer: the player shows the off-air card. */
+function offAir(reason: string): Response {
+  return json(503, { error: "off_air", reason });
 }
 
 function channel(env: Env, ch: string) {
@@ -156,7 +172,10 @@ function playlistResponse(answer: PlaylistAnswer): Response {
       headers: { "Content-Type": HLS, "Cache-Control": PLAYLIST_CACHE_CONTROL },
     });
   }
-  if (answer.kind === "error") return problem(answer.status, answer.error);
+  if (answer.kind === "error")
+    return answer.reason
+      ? json(answer.status, { error: answer.error, reason: answer.reason })
+      : problem(answer.status, answer.error);
   return problem(500, "unexpected");
 }
 
@@ -175,7 +194,7 @@ async function toStream(env: Env, claims: ViewerClaims, uid: string | null): Pro
 /** viaStream is the global Stream delivery: the channel's refusals first, then the redirect. */
 async function viaStream(env: Env, claims: ViewerClaims): Promise<Response> {
   const a = await channel(env, claims.ch).streamFor();
-  if (a.kind === "error") return problem(a.status, a.error);
+  if (a.kind === "error") return playlistResponse(a);
   return toStream(env, claims, a.kind === "stream" ? a.uid : null);
 }
 
@@ -249,6 +268,8 @@ const rungName = (r: unknown): string => (typeof r === "string" && RUNG_RE.test(
 
 async function beat(request: Request, env: Env, claims: ViewerClaims): Promise<Response> {
   const report = await readReport(request);
+  const stop = await stopVerdict(env, { pub: claims.pub, ch: claims.ch }, now());
+  if (stop?.stop === "off_air") return offAir(stop.reason);
   const r = await env.PUBLISHER.get(env.PUBLISHER.idFromName(claims.pub)).beat(
     claims.pub,
     claims.session,

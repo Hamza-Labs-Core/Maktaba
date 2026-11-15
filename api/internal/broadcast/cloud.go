@@ -139,6 +139,28 @@ func (a *Agent) Unpublish(ctx context.Context, cloudID string) error {
 	return err
 }
 
+// Revocations is the signed broadcast revocation list (50.25), as the cloud sent it.
+func (a *Agent) Revocations(ctx context.Context) (string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+a.Addr+"/admin/cloud-link/broadcast/revocations", nil)
+	if err != nil {
+		return "", err
+	}
+	cl := a.Client
+	if cl == nil {
+		cl = &http.Client{Timeout: 25 * time.Second}
+	}
+	resp, err := cl.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("%w: %v", ErrUnreachable, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 256<<10))
+	if resp.StatusCode != http.StatusOK {
+		return "", &CloudError{Status: resp.StatusCode, Code: "revocations"}
+	}
+	return string(raw), nil
+}
+
 // IngestToken asks for the channel's ingest token (valid 24 h, asked again hourly). geo is
 // the channel's country rule (story 50.23 §5, nil: none): the cloud signs it into the token
 // with Maktaba's deny list, and the edge checks it at play and at every playlist.

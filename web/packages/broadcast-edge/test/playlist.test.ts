@@ -10,6 +10,7 @@ import {
   newRung,
   renderMaster,
   renderMedia,
+  renderSlateLoop,
   rungStatus,
   WINDOW,
   type Pending,
@@ -163,5 +164,36 @@ describe("T04 master playlist", () => {
   it("leaves out rungs the plan no longer allows", () => {
     expect(masterRungs(info, "full", ["src", "720p"]).map((r) => r.name)).toEqual(["src", "720p"]);
     expect(masterRungs(info, "lowest", ["src", "720p"]).map((r) => r.name)).toEqual(["720p"]);
+  });
+});
+
+describe("50.25 a programme's slate loop", () => {
+  const slate = (durs: number[]): SlateSegment[] =>
+    durs.map((dur, idx) => ({
+      idx,
+      dur,
+      hash8: (0x20000000 + idx).toString(16),
+      key: `test/c/slate/${idx}.ts`,
+      bytes: 1,
+      at: T0,
+    }));
+
+  it("plays the loop's newest window at now, a discontinuity at each wrap", () => {
+    const text = renderSlateLoop(slate([4, 4, 2]), T0, T0 + 3 * 10_000 + 5_000)!;
+    // 3 loops of 10 s and 5 s into the fourth: its second segment, k = 3 * 3 + 1 = 10
+    const first = Math.max(0, 10 - WINDOW + 1);
+    expect(text).toContain(`#EXT-X-MEDIA-SEQUENCE:${first}`);
+    expect(text.trim().split("\n").at(-1)).toBe("../slate/1-20000001.ts");
+    expect(text).toContain(`#EXT-X-PROGRAM-DATE-TIME:${new Date(T0 + 34_000).toISOString()}`);
+    const wraps = [3, 6, 9].filter((i) => i >= first && i > 0).length;
+    expect(text.match(/#EXT-X-DISCONTINUITY\n/g) ?? []).toHaveLength(wraps);
+  });
+
+  it("answers at once for a slate of tiny segments or a long time since", () => {
+    const started = Date.now();
+    expect(renderSlateLoop(slate([1e-9, 1e-12]), T0, T0 + 86_400_000)).toBeNull();
+    const text = renderSlateLoop(slate([0.1, 1e-9, 6]), T0, T0 + 365 * 86_400_000);
+    expect(text).toContain("#EXTINF:");
+    expect(Date.now() - started).toBeLessThan(1000);
   });
 });
