@@ -125,6 +125,14 @@ func (s *BroadcastStore) Publisher(ctx context.Context, serverID string) (Publis
 	return loadPublisher(ctx, s.DB, serverID)
 }
 
+// PublisherTx loads a home as a publisher inside tx. Read after the home's row lock (SELECT ...
+// FOR UPDATE on servers), it sees any plan change that committed before the lock was granted:
+// SetEffectivePlan updates the same row, so a plan change and a write that checks the plan
+// under that lock are serialised.
+func PublisherTx(ctx context.Context, tx *sql.Tx, serverID string) (Publisher, error) {
+	return loadPublisher(ctx, tx, serverID)
+}
+
 func loadPublisher(ctx context.Context, q queryer, serverID string) (Publisher, error) {
 	if !IsUUID(serverID) {
 		return Publisher{}, ErrUnknownPublisher

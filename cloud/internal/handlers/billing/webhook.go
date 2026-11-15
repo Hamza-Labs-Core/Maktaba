@@ -370,7 +370,13 @@ func (d *Deps) pushAccess(servers []string) notice {
 		if d.AccessPush == nil {
 			return
 		}
+		// a home both setBroadcast and SetEffectivePlan changed is pushed once
+		seen := make(map[string]bool, len(servers))
 		for _, s := range servers {
+			if seen[s] {
+				continue
+			}
+			seen[s] = true
 			d.AccessPush(ctx, s)
 		}
 	}
