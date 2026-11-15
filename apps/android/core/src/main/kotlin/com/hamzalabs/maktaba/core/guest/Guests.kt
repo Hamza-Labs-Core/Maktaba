@@ -60,16 +60,22 @@ object Guests {
         if (context.resources.configuration.locales[0]?.language == "ar") "ar" else "en"
 
     /**
-     * Whether Watch a broadcast shows on this device before anyone signs in (the home picker): not
-     * when a sign-in on this device was under a parental limit when its home last said (Epic 57's
-     * kept marks, `files/parental/`). A broadcast is outside any home's ratings, and the edge never
-     * learns who watches, so this cannot be a server rule: hiding the entry is a convenience, and
-     * the device's own restrictions are the boundary (as on Apple, #1400).
+     * The parental limit marks kept on this device (Epic 57's, `files/parental/`, one per home and
+     * sign-in): each one read, null for a mark that is there but cannot be read. A broadcast is
+     * outside any home's ratings and the edge never learns who watches, so this cannot be a server
+     * rule: the app keeps a device under a limit out of Watch a broadcast, failing closed
+     * ([GuestGate]), and the device's own restrictions are the boundary (as on Apple, #1400).
      */
-    fun allowedOnDevice(context: Context): Boolean = allowedOnDevice(File(context.filesDir, KeptLimit.InFile.FOLDER))
+    fun marks(context: Context): List<KeptLimit.Mark?> = marks(File(context.filesDir, KeptLimit.InFile.FOLDER))
 
-    internal fun allowedOnDevice(marks: File): Boolean =
-        marks.listFiles { f -> f.name.endsWith(".limit") }.orEmpty().none { KeptLimit.InFile(it).read()?.limited == true }
+    internal fun marks(dir: File): List<KeptLimit.Mark?> =
+        dir.listFiles { f -> f.name.endsWith(".limit") }.orEmpty().map { KeptLimit.InFile(it).read() }
+
+    /** The app's gate for Watch a broadcast, reading [context]'s kept marks. */
+    fun gate(context: Context): GuestGate {
+        val app = context.applicationContext
+        return GuestGate { marks(app) }
+    }
 
     /** The words of a state or refusal key (`broadcast.tuning`, `guest.badCode`); "site.error"'s for a key the app does not know. */
     @StringRes
@@ -93,6 +99,8 @@ object Guests {
         "guest.network" -> R.string.guest_network
         "guest.badCode" -> R.string.guest_bad_code
         "guest.badInvite" -> R.string.guest_bad_invite
+        "guest.limited" -> R.string.guest_limited
+        "guest.held" -> R.string.guest_held
         else -> R.string.guest_error
     }
 
@@ -101,7 +109,7 @@ object Guests {
         "broadcast.tuning", "broadcast.homeOffline", "broadcast.off", "broadcast.ended", "broadcast.geoBlocked", "broadcast.full",
         "broadcast.waiting", "broadcast.ipLimit", "broadcast.tooManyTries", "broadcast.dailyLimit", "broadcast.invite.used",
         "broadcast.invite.expired", "broadcast.invite.invalid", "broadcast.revoked", "broadcast.inviteRequired", "site.verify",
-        "site.error", "guest.network", "guest.badCode", "guest.badInvite",
+        "site.error", "guest.network", "guest.badCode", "guest.badInvite", "guest.limited", "guest.held",
     )
 }
 
@@ -111,6 +119,7 @@ fun guestWords(key: String): String = stringResource(Guests.words(key))
 
 /**
  * Opens the app's Watch a broadcast from the home picker; null in an app without it (the Remote)
- * or where it is hidden (a parental limit on this device). The Player provides it.
+ * or where it is shut ([GuestGate]: a parental limit, or the signed-in home has not said yet).
+ * The Player provides it.
  */
 val LocalWatchBroadcast = staticCompositionLocalOf<(() -> Unit)?> { null }

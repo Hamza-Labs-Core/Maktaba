@@ -58,7 +58,8 @@ import java.util.Collections
  * short code open the publisher's channels with now and next, a channel plays, a swipe changes the
  * channel, an offline home's slate says so; a used code says why in Arabic; an invite's link opens
  * straight on the channels; Remove forgets a saved broadcast; the home picker shows the entry only
- * where the app provides it. The screenshots (dark, test data) are the maktaba.dev Apps page's.
+ * where the app provides it; an invite waits for the home's word on a parental limit, a limit
+ * refuses it (in English and Arabic) and closes an open guest space. The screenshots (dark, test data) are the maktaba.dev Apps page's.
  */
 @RunWith(AndroidJUnit4::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
@@ -77,6 +78,9 @@ class GuestScreensTest {
 
     private val store = GuestPassStore(MapStore(), Box) { clock }
 
+    /** The signed-in home's `GET /api/me/parental` answer (no answer until a test sets one). */
+    @Volatile private var parental: MockResponse = MockResponse.Builder().code(503).build()
+
     private fun json(code: Int, body: String) = MockResponse.Builder().code(code).setHeader("Content-Type", "application/json").body(body).build()
 
     @Before
@@ -90,6 +94,7 @@ class GuestScreensTest {
                 val body = request.body?.utf8().orEmpty()
                 val bearer = request.headers["Authorization"]?.startsWith("Bearer mkbg1.") == true
                 return when (path) {
+                    "/api/me/parental" -> parental
                     "/api/v1/redeem" -> when {
                         "MK-UI42" in body || INVITE in body -> json(200, PASS)
                         "MK-USED" in body -> json(410, """{"error":"invite_used"}""")
@@ -228,6 +233,60 @@ class GuestScreensTest {
         } finally {
             scope.cancel()
         }
+    }
+
+    @Test
+    @Config(qualifiers = PHONE)
+    fun anInviteWaitsForTheHomesWordAndALimitClosesTheGuestSpace() {
+        // signed in at a home that has not said its limit yet: Watch a broadcast fails closed
+        val limit = com.hamzalabs.maktaba.core.parental.ParentalState(ApiClient(server.url("/"), MemoryTokens()))
+        val gate = com.hamzalabs.maktaba.core.guest.GuestGate { emptyList() }.also { it.follow(limit) }
+        val door = com.hamzalabs.maktaba.core.guest.GuestDoor()
+        val space = space()
+        compose.setContent {
+            MaktabaTheme(ThemeMode.Dark) {
+                Surface {
+                    GuestDoorHost(door, gate, space, open = { invite, close -> GuestSpaceScreen(space, invite, close, scanner = { _, _ -> }, playerFor = { null }) })
+                }
+            }
+        }
+        compose.runOnIdle { door.request(INVITE, gate.now()) }
+        compose.settledUntil(5_000) { shown("guest-held") }
+        assertTrue(compose.onAllNodes(hasText("Your invite opens once your home confirms this account’s limits.")).fetchSemanticsNodes().isNotEmpty())
+        assertTrue("nothing is redeemed while held", asked.none { it.endsWith("/api/v1/redeem") })
+
+        // the home says there is no limit: the held invite opens on its channels
+        parental = json(200, """{"restricted":false,"allow_only":false,"version":1}""")
+        kotlinx.coroutines.runBlocking { limit.refresh() }
+        compose.settledUntil(10_000) { shown("guest-channel-ch1") }
+        assertEquals(1, asked.count { it.endsWith("/api/v1/redeem") })
+        assertTrue(!shown("guest-held"))
+
+        // a guardian puts the sign-in under a limit: the guest space closes and says why
+        parental = json(200, """{"restricted":true,"max_tier":9,"allow_only":false,"version":2}""")
+        kotlinx.coroutines.runBlocking { limit.refresh() }
+        compose.settledUntil(5_000) { shown("guest-refused") && !shown("guest-channel-ch1") }
+        assertTrue(compose.onAllNodes(hasText("A parental limit is on for this device, so broadcasts can’t be watched here.")).fetchSemanticsNodes().isNotEmpty())
+        compose.onNodeWithTag("guest-refused-close").performClick()
+        compose.settledUntil(5_000) { !shown("guest-refused") }
+        assertEquals(com.hamzalabs.maktaba.core.guest.GuestDoor.Shown.Shut, door.shown.value)
+
+        // a link opened under the limit is refused at once, never redeemed
+        compose.runOnIdle { door.request(INVITE, gate.now()) }
+        compose.settledUntil(5_000) { shown("guest-refused") }
+        assertEquals(1, asked.count { it.endsWith("/api/v1/redeem") })
+    }
+
+    @Test
+    @Config(qualifiers = "ar-$PHONE")
+    fun theRefusalReadsInArabic() {
+        val door = com.hamzalabs.maktaba.core.guest.GuestDoor()
+        val gate = com.hamzalabs.maktaba.core.guest.GuestGate { listOf(com.hamzalabs.maktaba.core.parental.KeptLimit.Mark("sig", limited = true)) }
+        compose.setContent { MaktabaTheme(ThemeMode.Dark) { Surface { GuestDoorHost(door, gate, space(), open = { _, _ -> }) } } }
+        compose.runOnIdle { door.request(INVITE, gate.now()) }
+        compose.settledUntil(5_000) { shown("guest-refused") }
+        assertTrue(compose.onAllNodes(hasText("تقييد أبوي مفعّل على هذا الجهاز، لذا لا يمكن مشاهدة البثوث هنا.")).fetchSemanticsNodes().isNotEmpty())
+        assertTrue(asked.isEmpty())
     }
 
     private companion object {

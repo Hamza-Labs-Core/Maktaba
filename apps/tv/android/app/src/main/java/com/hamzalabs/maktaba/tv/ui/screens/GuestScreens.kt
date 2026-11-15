@@ -393,3 +393,25 @@ private fun day(epochSec: Long): String {
     val locale = androidx.compose.ui.platform.LocalConfiguration.current.locales[0]
     return DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM).withLocale(locale).withZone(ZoneId.systemDefault()).format(Instant.ofEpochSecond(epochSec))
 }
+
+/**
+ * Watch a broadcast is shut by a parental limit (story 50.27): opened under one, or closed because
+ * one turned on while the guest space was open. One button, which has focus.
+ */
+@Composable
+fun TvGuestNotice(key: String, onClose: () -> Unit) {
+    val close = remember { FocusRequester() }
+    LaunchedEffect(Unit) { runCatching { close.requestFocus() } }
+    androidx.compose.ui.window.Dialog(onDismissRequest = onClose) {
+        ReadingPanel(Modifier.width(640.dp), contentPadding = 32.dp) {
+            SectionTitle(stringResource(CoreR.string.guest_watch_broadcast))
+            Text(
+                guestWords(key), style = MaterialTheme.typography.bodyLarge,
+                color = MaktabaPalette.Text, modifier = Modifier.padding(top = 12.dp).testTag("guest-refused"),
+            )
+            MaktabaButton(onClick = onClose, modifier = Modifier.padding(top = 16.dp).focusRequester(close).testTag("guest-refused-close")) {
+                Text(stringResource(CoreR.string.guest_close))
+            }
+        }
+    }
+}

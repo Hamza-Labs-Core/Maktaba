@@ -30,6 +30,7 @@ import androidx.compose.material.icons.outlined.QrCodeScanner
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -71,6 +72,9 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.hamzalabs.maktaba.core.R as CoreR
+import com.hamzalabs.maktaba.core.guest.GuestAccess
+import com.hamzalabs.maktaba.core.guest.GuestDoor
+import com.hamzalabs.maktaba.core.guest.GuestGate
 import com.hamzalabs.maktaba.core.guest.GuestLineup
 import com.hamzalabs.maktaba.core.guest.GuestPass
 import com.hamzalabs.maktaba.core.guest.GuestPlayer
@@ -99,6 +103,44 @@ private sealed interface GuestPage {
     data class Channels(val pass: GuestPass) : GuestPage
     data class Watching(val pass: GuestPass, val channels: List<GuestLineup.Channel>, val index: Int) : GuestPage
 }
+
+/**
+ * The guest space as [door] says, over the app: open, an invite's link held while the signed-in
+ * home has not said its limit, or refused under a parental limit. It follows [gate], so an open
+ * guest space (and its player) closes the moment a limit turns on.
+ */
+@Composable
+fun GuestDoorHost(
+    door: GuestDoor,
+    gate: GuestGate,
+    space: GuestSpace,
+    open: @Composable (invite: String?, onClose: () -> Unit) -> Unit = { invite, close -> GuestSpaceScreen(space, invite, close) },
+) {
+    val access by gate.access.collectAsState(initial = remember(gate) { gate.now() })
+    val shown by door.shown.collectAsState()
+    // whenever the answer or what is shown changes: nothing stays open that the answer shuts
+    LaunchedEffect(door, access, shown) { door.update(access) }
+    when (val shown = shown) {
+        GuestDoor.Shown.Shut -> Unit
+        is GuestDoor.Shown.Open -> open(shown.invite, door::close)
+        is GuestDoor.Shown.Held -> GuestDoorNotice("guest.held", "guest-held", door::close)
+        GuestDoor.Shown.Refused -> GuestDoorNotice("guest.limited", "guest-refused", door::close)
+    }
+}
+
+@Composable
+private fun GuestDoorNotice(key: String, tag: String, onClose: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onClose,
+        title = { Text(stringResource(CoreR.string.guest_watch_broadcast)) },
+        text = { Text(guestWords(key), Modifier.testTag(tag)) },
+        confirmButton = { TextButton(onClick = onClose, modifier = Modifier.testTag("$tag-close")) { Text(stringResource(CoreR.string.guest_close)) } },
+    )
+}
+
+/** Watch a broadcast for the entry (the home picker, Profile): null while [access] keeps it shut. */
+fun guestEntry(door: GuestDoor, access: GuestAccess): (() -> Unit)? =
+    if (access == GuestAccess.Allowed) ({ door.request(null, GuestAccess.Allowed) }) else null
 
 /**
  * The guest space, full screen: from the home picker, Profile, or an invite's link ([invite], the

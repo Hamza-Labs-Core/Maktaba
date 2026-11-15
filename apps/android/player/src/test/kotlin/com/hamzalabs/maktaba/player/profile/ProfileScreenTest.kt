@@ -374,6 +374,12 @@ class ProfileScreenTest {
         var opened = 0
         open(watchBroadcast = { opened++ })
         waitForTag("profile-root")
+        // fails closed: nothing until the home has said this sign-in's limit
+        row("theme-Dark")
+        gone("profile-watch-broadcast")
+        home.answer("/api/me/parental") { json("""{"restricted":false,"allow_only":false,"version":1}""") }
+        runBlocking { home.home.parental.refresh() }
+        compose.settledUntil(5_000) { home.home.parental.known }
         val label = app.getString(com.hamzalabs.maktaba.core.R.string.guest_watch_broadcast)
         row("profile-watch-broadcast")
         compose.onNode(hasText(label) and hasAnyAncestor(hasTestTag("profile-watch-broadcast")), useUnmergedTree = true).assertExists()
@@ -382,7 +388,7 @@ class ProfileScreenTest {
         assertEquals(1, opened)
 
         // a guardian puts the sign-in under a limit: a broadcast is outside the home's ratings
-        home.answer("/api/me/parental") { json("""{"restricted":true,"max_tier":9,"allow_only":false,"version":1}""") }
+        home.answer("/api/me/parental") { json("""{"restricted":true,"max_tier":9,"allow_only":false,"version":2}""") }
         runBlocking { home.home.parental.refresh() }
         compose.settledUntil(5_000) { home.home.parental.mine.value.limited }
         // the row sat just above the theme's choices: with them in view it would be drawn

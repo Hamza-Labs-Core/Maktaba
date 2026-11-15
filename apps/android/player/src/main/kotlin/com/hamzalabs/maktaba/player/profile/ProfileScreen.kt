@@ -208,6 +208,8 @@ private fun RootPage(home: PlayerHome, state: ProfileState) {
     val mine by home.parental.mine.collectAsState()
     val limit = (mine.maxTier ?: mine.deviceLimit)?.takeIf { mine.limited }
     val watchBroadcast = com.hamzalabs.maktaba.core.guest.LocalWatchBroadcast.current
+    // story 50.27: fails closed, so Watch a broadcast waits for the home to say this sign-in's limit
+    val limitKnown = home.parental.answers.collectAsState().value > 0
     val resources = androidx.compose.ui.platform.LocalContext.current.resources
 
     LazyColumn(Modifier.fillMaxSize().testTag("profile-root"), contentPadding = PaddingValues(bottom = 24.dp)) {
@@ -244,9 +246,9 @@ private fun RootPage(home: PlayerHome, state: ProfileState) {
         item { LinkRow(Icons.AutoMirrored.Outlined.Logout, CoreR.string.sign_out, tag = "profile-sign-out") { confirmSignOut = true } }
 
         group(R.string.profile_settings)
-        // story 50.27: Watch a broadcast, apart from the home and its account; not under a
-        // parental limit (Epic 57): a broadcast is outside the home's ratings
-        watchBroadcast?.takeIf { !mine.limited }?.let { watch ->
+        // story 50.27: Watch a broadcast, apart from the home and its account; only once the home
+        // has said there is no parental limit (Epic 57): a broadcast is outside the home's ratings
+        watchBroadcast?.takeIf { limitKnown && !mine.limited }?.let { watch ->
             item { LinkRow(Icons.Outlined.LiveTv, CoreR.string.guest_watch_broadcast, tag = "profile-watch-broadcast") { watch() } }
         }
         item {

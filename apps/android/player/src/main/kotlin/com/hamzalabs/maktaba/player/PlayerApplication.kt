@@ -45,4 +45,10 @@ class PlayerApplication : Application() {
             com.hamzalabs.maktaba.core.guest.Guests.client(this),
         )
     }
+
+    /** Whether Watch a broadcast may open (story 50.27): shut unless no parental limit is known to be on. */
+    val guestGate: com.hamzalabs.maktaba.core.guest.GuestGate by lazy { com.hamzalabs.maktaba.core.guest.Guests.gate(this) }
+
+    /** What the guest space shows: open, an invite held, or refused under a limit. */
+    val guestDoor = com.hamzalabs.maktaba.core.guest.GuestDoor()
 }

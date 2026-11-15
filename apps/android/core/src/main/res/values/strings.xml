@@ -463,4 +463,6 @@
     <string name="guest_scan">Scan an invite\'s QR code</string>
     <string name="guest_scan_hint">Point the camera at the QR code on the broadcast\'s page.</string>
     <string name="guest_back">Back</string>
+    <string name="guest_limited">A parental limit is on for this device, so broadcasts can’t be watched here.</string>
+    <string name="guest_held">Your invite opens once your home confirms this account’s limits.</string>
 </resources>

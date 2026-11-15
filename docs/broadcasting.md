@@ -88,6 +88,11 @@ an invite's link) is a space of its own: no home is chosen and no one signs in.
   Android, any sign-in on the device the home last said was limited): a broadcast is outside any
   home's ratings. The edge never learns who watches, so this is the app's convenience, not a
   server rule; the device's own restrictions are the boundary.
+- **Fails closed** on Android, Android TV and Fire TV: while signed in, Watch a broadcast opens
+  only once the home has answered that the sign-in has no limit; signed out, the limit last kept
+  for each sign-in on the device decides, and a kept mark that cannot be read counts as a limit.
+  An invite link opened before the home answers waits (and says so); under a limit it is refused
+  with a message, and an open guest space closes the moment a limit turns on.
 
 ## Not yet
 

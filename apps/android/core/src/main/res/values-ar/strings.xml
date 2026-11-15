@@ -462,4 +462,6 @@
     <string name="guest_scan">امسح رمز QR لدعوة</string>
     <string name="guest_scan_hint">وجّه الكاميرا إلى رمز QR في صفحة البث.</string>
     <string name="guest_back">رجوع</string>
+    <string name="guest_limited">تقييد أبوي مفعّل على هذا الجهاز، لذا لا يمكن مشاهدة البثوث هنا.</string>
+    <string name="guest_held">ستُفتح دعوتك بعد أن يؤكد جهازك الرئيسي قيود هذا الحساب.</string>
 </resources>

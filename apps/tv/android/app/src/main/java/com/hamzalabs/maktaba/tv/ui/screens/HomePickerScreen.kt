@@ -78,8 +78,9 @@ fun HomePickerScreen(app: MaktabaTVApp, probe: HomeProbe = remember { HomeProbe(
     val invalid = stringResource(CoreR.string.address_invalid)
     val failed = stringResource(CoreR.string.connect_failed, "%s")
     val nearby = HomeChoices.nearby(found, saved)
-    val context = androidx.compose.ui.platform.LocalContext.current
-    val guestAllowed = remember { com.hamzalabs.maktaba.core.guest.Guests.allowedOnDevice(context) }
+    // story 50.27: nobody is signed in here, so the limits kept on this TV decide (failing closed)
+    val guestAccess by app.guestGate.access.collectAsState(initial = remember { app.guestGate.now() })
+    val guestAllowed = guestAccess == com.hamzalabs.maktaba.core.guest.GuestAccess.Allowed
 
     // a home in the list takes focus (never the text field: focus there opens the keyboard)
     val anyHome = saved.isNotEmpty() || nearby.isNotEmpty()
@@ -171,7 +172,7 @@ fun HomePickerScreen(app: MaktabaTVApp, probe: HomeProbe = remember { HomeProbe(
                                 name = stringResource(CoreR.string.guest_watch_broadcast),
                                 address = com.hamzalabs.maktaba.core.guest.GuestEdge.HOST,
                                 enabled = !connecting,
-                                onClick = { problem = null; app.guestOpen.value = true },
+                                onClick = { problem = null; app.guestDoor.request(null, guestAccess) },
                                 modifier = Modifier.testTag("picker-watch-broadcast"),
                             )
                         }

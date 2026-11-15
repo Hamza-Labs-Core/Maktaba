@@ -122,6 +122,9 @@ fun SignedInApp(
             client, com.hamzalabs.maktaba.core.parental.KeptLimit.InFile.of(context.filesDir, client.home, user.id),
         )
     }
+    // story 50.27: Watch a broadcast follows this sign-in's limit (Root lets go of it at sign-out:
+    // the guest space, drawn instead of these screens, still follows it)
+    LaunchedEffect(parental) { app.guestGate.follow(parental) }
     // Epic 56: one server play queue behind every Play and Shuffle
     val queue = remember(client) { PlayQueueModel(ApiQueueTransport(client), "tv-${android.os.Build.MODEL ?: "android"}") }
     // story 57.05: when the limit changes, what was read under the one before goes (the queue's

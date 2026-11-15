@@ -26,10 +26,10 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
+import com.hamzalabs.maktaba.core.guest.GuestAccess
+import com.hamzalabs.maktaba.core.guest.GuestDoor
 import com.hamzalabs.maktaba.core.parental.ParentalState
 import kotlinx.coroutines.runBlocking
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
 import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
 
@@ -37,7 +37,8 @@ import mockwebserver3.MockWebServer
  * Epic 53 on the Android TV (stories 53.14 T10/T12, 53.15 §3): the crash-report question once
  * per home, its answer kept, and Report a problem from Account, a form a remote can send
  * (categories and Send; no time to pick on a TV). Account's Watch a broadcast (story 50.27), not
- * under a parental limit.
+ * under a parental limit and only once the home has said; a limit that turns on closes the guest
+ * space and says why.
  */
 @RunWith(AndroidJUnit4::class)
 @Config(qualifiers = "w960dp-h540dp-xhdpi")
@@ -93,35 +94,73 @@ class DiagnosticsTvTest {
     }
 
     @Test
-    fun watchABroadcastIsInAccountAndNotUnderAParentalLimit() {
+    fun watchABroadcastIsInAccountOnlyOnceTheHomeSaysThereIsNoLimit() {
         val app = ApplicationProvider.getApplicationContext<MaktabaTVApp>()
         CrashConsent(app).set(false, home)
         val server = MockWebServer()
-        server.enqueue(
-            MockResponse.Builder().code(200).addHeader("Content-Type", "application/json")
-                .body("""{"restricted":true,"max_tier":9,"allow_only":false,"version":1}""").build(),
-        )
+        fun answer(body: String) = MockResponse.Builder().code(200).addHeader("Content-Type", "application/json").body(body).build()
+        server.enqueue(answer("""{"restricted":false,"allow_only":false,"version":1}"""))
+        server.enqueue(answer("""{"restricted":true,"max_tier":9,"allow_only":false,"version":2}"""))
         server.start()
         try {
-            val free = ParentalState(client)
-            val limited = ParentalState(ApiClient(server.url("/"), Tokens()))
-            runBlocking { limited.refresh() }
-            assertEquals(true, limited.mine.value.limited)
-            var parental by androidx.compose.runtime.mutableStateOf(free)
+            val parental = ParentalState(ApiClient(server.url("/"), Tokens()))
             compose.setContent {
                 MaktabaTvTheme { DiagnosticsHost(client, home, tv = true) { AccountScreen(app, User(id = "u1", username = "viewer"), parental = parental) } }
             }
+            compose.waitUntil(5_000) { compose.waitForIdle(); shows("Report a problem") }
+            // fails closed: nothing until the home has said this sign-in's limit
+            compose.onNodeWithTag("account-watch-broadcast").assertDoesNotExist()
+            runBlocking { parental.refresh() }
             compose.waitUntil(5_000) { compose.waitForIdle(); shows("Watch a broadcast") }
             compose.onNodeWithTag("account-watch-broadcast").performSemanticsAction(SemanticsActions.OnClick)
             compose.waitForIdle()
-            assertEquals(true, app.guestOpen.value)
-            app.guestOpen.value = false
+            assertEquals(GuestDoor.Shown.Open(null), app.guestDoor.shown.value)
+            app.guestDoor.close()
             // a broadcast is outside the home's ratings: a limited sign-in has no way in
-            parental = limited
+            runBlocking { parental.refresh() }
+            assertEquals(true, parental.mine.value.limited)
             compose.waitUntil(5_000) { compose.waitForIdle(); !shows("Watch a broadcast") }
             compose.onNodeWithTag("account-watch-broadcast").assertDoesNotExist()
         } finally {
-            app.guestOpen.value = false
+            app.guestDoor.close()
+            server.close()
+        }
+    }
+
+    @Test
+    fun aLimitThatTurnsOnClosesTheGuestSpaceAndSaysWhy() {
+        val app = ApplicationProvider.getApplicationContext<MaktabaTVApp>()
+        val server = MockWebServer()
+        var answer: MockResponse = MockResponse.Builder().code(503).build()
+        server.dispatcher = object : mockwebserver3.Dispatcher() {
+            override fun dispatch(request: mockwebserver3.RecordedRequest): MockResponse =
+                if (request.url.encodedPath == "/api/me/parental") answer else MockResponse.Builder().code(404).build()
+        }
+        server.start()
+        try {
+            val parental = ParentalState(ApiClient(server.url("/"), Tokens()))
+            app.guestDoor.request(null, GuestAccess.Allowed)
+            app.guestGate.follow(parental)
+            compose.setContent { MaktabaTvTheme { com.hamzalabs.maktaba.tv.ui.TvGuestDoor(app) } }
+            compose.waitForIdle()
+            // a sign-in whose limit is not known yet: the open guest space shuts
+            compose.waitUntil(5_000) { compose.waitForIdle(); app.guestDoor.shown.value == GuestDoor.Shown.Shut }
+            // the home says there is no limit: the guest space opens and stays open
+            answer = MockResponse.Builder().code(200).addHeader("Content-Type", "application/json").body("""{"restricted":false,"allow_only":false,"version":1}""").build()
+            runBlocking { parental.refresh() }
+            compose.runOnIdle { app.guestDoor.request(null, app.guestGate.now()) }
+            compose.waitForIdle()
+            assertEquals(GuestDoor.Shown.Open(null), app.guestDoor.shown.value)
+            // a guardian puts the sign-in under a limit: it closes and says why
+            answer = MockResponse.Builder().code(200).addHeader("Content-Type", "application/json").body("""{"restricted":true,"max_tier":9,"allow_only":false,"version":2}""").build()
+            runBlocking { parental.refresh() }
+            compose.waitUntil(5_000) { compose.waitForIdle(); shows("A parental limit is on for this device, so broadcasts can’t be watched here.") }
+            assertEquals(GuestDoor.Shown.Refused, app.guestDoor.shown.value)
+            compose.onNodeWithTag("guest-refused-close", useUnmergedTree = true).performSemanticsAction(SemanticsActions.OnClick)
+            compose.waitUntil(5_000) { compose.waitForIdle(); app.guestDoor.shown.value == GuestDoor.Shown.Shut }
+        } finally {
+            app.guestDoor.close()
+            app.guestGate.follow(null)
             server.close()
         }
     }

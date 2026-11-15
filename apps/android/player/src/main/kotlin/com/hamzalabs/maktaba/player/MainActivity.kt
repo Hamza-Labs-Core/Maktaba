@@ -8,15 +8,16 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import com.hamzalabs.maktaba.core.guest.GuestInput
-import com.hamzalabs.maktaba.core.guest.Guests
 import com.hamzalabs.maktaba.core.guest.LocalWatchBroadcast
 import com.hamzalabs.maktaba.core.permissions.PermissionsGate
-import com.hamzalabs.maktaba.player.guest.GuestSpaceScreen
+import com.hamzalabs.maktaba.player.guest.GuestDoorHost
+import com.hamzalabs.maktaba.player.guest.guestEntry
 import com.hamzalabs.maktaba.core.permissions.permissionsHelpUrl
 import com.hamzalabs.maktaba.core.ui.ApproveRequests
 import com.hamzalabs.maktaba.core.ui.HomeStatusHost
@@ -39,13 +40,15 @@ class MainActivity : ComponentActivity() {
     /** A screen a deep link asked for (`maktaba://video/{id}`), until the shell opens it (after sign-in, if need be). */
     private val link = mutableStateOf<Route?>(null)
 
-    /** Story 50.27: Watch a broadcast is open, with the invite a link brought (or none). */
-    private val guest = mutableStateOf<GuestLaunch?>(null)
-
-    /** An invite's link (`maktaba://watch/i/…`, or the watch address's) opens Watch a broadcast, unless a parental limit is on this device. */
+    /**
+     * An invite's link (`maktaba://watch/i/…`, or the watch address's) opens Watch a broadcast
+     * (story 50.27): at once when no parental limit is known to be on, held while the signed-in
+     * home has not said, refused (with a message) under a limit.
+     */
     private fun openInvite(data: String?) {
         val invite = GuestInput.inviteInLink(data) ?: return
-        if (Guests.allowedOnDevice(this)) guest.value = GuestLaunch(invite)
+        val app = application as PlayerApplication
+        app.guestDoor.request(invite, app.guestGate.now())
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -67,11 +70,10 @@ class MainActivity : ComponentActivity() {
             MaktabaTheme(mode, forceDark = playing) {
                 // before Android 13, the in-app language (48.31); 13+ uses per-app locales
                 AppLanguageScope { Surface {
-                  // story 50.27: Watch a broadcast from the home picker or Profile; not on a device
-                  // under a parental limit (a broadcast is outside any home's ratings)
-                  val phase by app.session.phase.collectAsState()
-                  val guestAllowed = remember(phase) { Guests.allowedOnDevice(applicationContext) }
-                  CompositionLocalProvider(LocalWatchBroadcast provides (if (guestAllowed) ({ guest.value = GuestLaunch(null) }) else null)) {
+                  // story 50.27: Watch a broadcast from the home picker or Profile, only while no
+                  // parental limit is known to be on (a broadcast is outside any home's ratings)
+                  val guestAccess by app.guestGate.access.collectAsState(initial = remember { app.guestGate.now() })
+                  CompositionLocalProvider(LocalWatchBroadcast provides guestEntry(app.guestDoor, guestAccess)) {
                     // first run, and whenever a required permission is missing (checked on resume)
                     PermissionsGate(MaktabaApp.Player, helpUrl = { app.session.current.value?.url?.let(::permissionsHelpUrl) }) {
                         SessionGate(app.session, MaktabaApp.Player) { user, client ->
@@ -82,6 +84,11 @@ class MainActivity : ComponentActivity() {
                                     limitKept = com.hamzalabs.maktaba.core.parental.KeptLimit.InFile.of(filesDir, client.home, user.id),
                                     dropKept = { dropKeptFor(applicationContext, client.home, user.id) },
                                 )
+                            }
+                            // story 50.27: Watch a broadcast follows this sign-in's limit; signed out, the kept marks
+                            DisposableEffect(home) {
+                                app.guestGate.follow(home.parental)
+                                onDispose { if (app.guestGate.following === home.parental) app.guestGate.follow(null) }
                             }
                             // this home's pictures, with its token, in the app's shared caches (NFR-4)
                             val images = remember(client) { ImageCache.loader(applicationContext, client) }
@@ -102,10 +109,9 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     }
-                    // the guest space, over the app (a guest needs no home, no account, no permission)
-                    guest.value?.let { launch ->
-                        GuestSpaceScreen(app.guests, launch.invite, onClose = { guest.value = null })
-                    }
+                    // the guest space, over the app (a guest needs no home, no account, no permission);
+                    // shut, held or refused as the parental limit says
+                    GuestDoorHost(app.guestDoor, app.guestGate, app.guests)
                   }
                 } }
             }
@@ -120,9 +126,6 @@ class MainActivity : ComponentActivity() {
         ApproveRequests.handle(intent)
     }
 }
-
-/** Watch a broadcast, opened from the home picker or Profile ([invite] null) or by an invite's link. */
-data class GuestLaunch(val invite: String?)
 
 /**
  * What the device keeps for [userId] on [home] outside the screens' own states (Epic 57 story
