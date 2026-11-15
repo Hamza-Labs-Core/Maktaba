@@ -1,4 +1,5 @@
 import Foundation
+import Security
 import Testing
 @testable import MaktabaKit
 
@@ -44,6 +45,16 @@ func credential(_ prefix: String = "mkbg1.", exp: Int) -> String {
         #expect(json.map { $0["publisher"] as? String } == ["pub-b", "pub-a"])
         #expect(json.map { $0["credential"] as? String } == ["mkbg1.pub-b.sig", "mkbg1.pub-a.sig"])
         #expect(json[1]["name"] as? String == "Al-Noor")
+    }
+
+    @Test func aPassStaysOnThisDevice() {
+        // a pass is one of its invite's devices: out of backups, never restored onto another
+        let k = GuestPassStore.keychain(service: "com.example.app.guest")
+        #expect(k.service == "com.example.app.guest")
+        #expect(k.accessible == kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly)
+        #if os(macOS)
+        #expect(k.dataProtection)
+        #endif
     }
 
     @Test func savingAPublisherAgainReplacesItAndKeepsItsName() {
@@ -170,6 +181,21 @@ func credential(_ prefix: String = "mkbg1.", exp: Int) -> String {
         #expect(GuestInput.invite(in: URL(string: "maktaba://watch/i/mkbn1.a.b")!) == "mkbn1.a.b")
         #expect(GuestInput.invite(in: URL(string: "https://evil.example/i/mkbn1.a.b")!) == nil)
         #expect(GuestInput.invite(in: URL(string: "maktaba://connect?id=x")!) == nil)
+        // strict: a pasted link from another host, a path that is not /i/<token>, a malformed token
+        #expect(GuestInput.invite("https://evil.example/i/mkbn1.a.b") == nil)
+        #expect(GuestInput.invite("https://watch.maktaba.tv.evil.example/i/mkbn1.a.b") == nil)
+        #expect(GuestInput.invite("https://user@watch.maktaba.tv/i/mkbn1.a.b") == nil)
+        #expect(GuestInput.invite("http://watch.maktaba.tv/i/mkbn1.a.b") == nil)
+        #expect(GuestInput.invite("https://watch.maktaba.tv/x/i/mkbn1.a.b") == nil)
+        #expect(GuestInput.invite("maktaba://watch/i/mkbn1.a.b") == "mkbn1.a.b")
+        #expect(GuestInput.invite("mkbn1.a.b.c") == nil)
+        #expect(GuestInput.invite("mkbn1..b") == nil)
+        #expect(GuestInput.invite("mkbn1.a\nx.b") == nil)
+        #expect(GuestInput.invite("mkbn1.a%2Fb.c") == nil)
+        #expect(GuestInput.invite("https://watch.maktaba.tv/i/mkbn1.a%2F..%2Fb.c") == nil)
+        #expect(GuestInput.invite("mkbn1." + String(repeating: "a", count: 5000) + ".b") == nil)
+        #expect(GuestInput.invite("https://watch.maktaba.tv/i/") == nil)
+        #expect(GuestInput.invite("://") == nil)
     }
 
     @Test func shortCodesAsTheEdgeWantsThem() {

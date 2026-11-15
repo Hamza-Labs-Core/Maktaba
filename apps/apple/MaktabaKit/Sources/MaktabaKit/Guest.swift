@@ -92,10 +92,16 @@ public final class GuestPassStore: @unchecked Sendable {
             return
         }
         #endif
+        self.init(secrets: Self.keychain(service: service))
+    }
+
+    /// The Keychain item's settings: a pass counts as one of its invite's devices, so it is
+    /// `AfterFirstUnlockThisDeviceOnly` (never in a backup, never restored onto another device).
+    static func keychain(service: String) -> KeychainSecrets {
         #if os(macOS)
-        self.init(secrets: KeychainSecrets(service: service, dataProtection: true))
+        KeychainSecrets(service: service, dataProtection: true, thisDeviceOnly: true)
         #else
-        self.init(secrets: KeychainSecrets(service: service, dataProtection: false))
+        KeychainSecrets(service: service, dataProtection: false, thisDeviceOnly: true)
         #endif
     }
 
@@ -376,22 +382,36 @@ public enum GuestPairPoll: Sendable, Equatable {
 
 /// What a guest typed or opened: an invite link (`…/i/<token>`), a bare invite, or nothing.
 public enum GuestInput {
-    /// The invite token in a link or as typed; nil when it is not one.
+    /// The invite token in a link or as typed; nil when it is not one. A pasted link is read
+    /// as `invite(in:)` reads an opened one: only the watch address's (or `maktaba://watch`'s)
+    /// `/i/<token>`.
     public static func invite(_ text: String) -> String? {
         let v = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let r = v.range(of: "/i/") {
-            let rest = v[r.upperBound...].prefix { !"/?#".contains($0) && !$0.isWhitespace }
-            return String(rest).removingPercentEncoding.flatMap { $0.hasPrefix("mkbn1.") ? $0 : nil }
+        if v.contains("://") {
+            guard let u = URL(string: v) else { return nil }
+            return invite(in: u)
         }
-        return v.hasPrefix("mkbn1.") && !v.contains(" ") ? v : nil
+        return token(v)
     }
 
     /// The invite in a link the app was opened with (`https://watch.maktaba.tv/i/<token>`, or
     /// `maktaba://watch/i/<token>`), nil for any other link.
     public static func invite(in url: URL) -> String? {
-        let isWatch = (url.scheme == "https" && url.host() == GuestEdge.production.host())
+        let isWatch = (url.scheme == "https" && url.host() == GuestEdge.production.host() && url.port == nil)
             || (url.scheme == "maktaba" && url.host() == "watch")
-        return isWatch ? invite(url.absoluteString) : nil
+        guard isWatch, url.user() == nil, url.password() == nil else { return nil }
+        let parts = url.path(percentEncoded: false).split(separator: "/", omittingEmptySubsequences: false)
+        // "", "i", "<token>"
+        guard parts.count == 3, parts[0].isEmpty, parts[1] == "i" else { return nil }
+        return token(String(parts[2]))
+    }
+
+    /// An invite token as the edge mints it: `mkbn1.<base64url payload>.<base64url signature>`.
+    static func token(_ v: String) -> String? {
+        let parts = v.split(separator: ".", omittingEmptySubsequences: false)
+        let b64url = { (s: Substring) in !s.isEmpty && s.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-" || $0 == "_") } }
+        guard v.utf8.count <= 4096, parts.count == 3, parts[0] == "mkbn1", b64url(parts[1]), b64url(parts[2]) else { return nil }
+        return v
     }
 
     /// A short code as the edge wants it (`MK-` and four letters or digits), from what was
