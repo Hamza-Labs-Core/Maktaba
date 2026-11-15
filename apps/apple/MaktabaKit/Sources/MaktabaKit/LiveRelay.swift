@@ -62,7 +62,11 @@ public final class LiveRelayLoader: NSObject, AVAssetResourceLoaderDelegate, @un
     /// The newest token, nil when the URL carries none.
     public var token: String? { lock.withLock { newestToken } }
 
-    /// The newest signed URL and every real URL the player's playlists were fetched from, in order.
+    /// How many fetched URLs are remembered (`fetched`).
+    static let remembered = 32
+
+    /// The newest signed URL, and the real URLs the player's playlists were last fetched from
+    /// (the newest `remembered`), in order.
     public var current: URL { lock.withLock { newest } }
     public var fetched: [URL] { lock.withLock { asked } }
 
@@ -105,7 +109,12 @@ public final class LiveRelayLoader: NSObject, AVAssetResourceLoaderDelegate, @un
     /// One playlist as the player gets it: fetched with the newest token and rewritten.
     public func playlist(for asked: URL) async throws -> Data {
         guard let url = real(for: asked) else { throw URLError(.unsupportedURL) }
-        lock.withLock { self.asked.append(url) }
+        lock.withLock {
+            // a live playlist is asked again every few seconds for as long as the channel
+            // plays: only the newest are remembered
+            self.asked.append(url)
+            if self.asked.count > Self.remembered { self.asked.removeFirst(self.asked.count - Self.remembered) }
+        }
         let (data, status) = try await fetch(url)
         guard status == 200 else {
             throw APIError.status(status, String(decoding: data.prefix(2048), as: UTF8.self), retryAfter: nil)
