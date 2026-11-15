@@ -84,10 +84,20 @@ class GuestDataSourceTest {
         assertEquals(1000, readAll(1000, ByteArray(1000)))
     }
 
+    /** [size] bytes of clear transport stream: each 188-byte packet starts with the sync byte. */
+    private fun ts(size: Int) = ByteArray(size) { if (it % 188 == 0) 0x47 else 0 }
+
     @Test
     fun aTransportStreamWithNoLengthMustEndOnAPacket() {
-        assertCut { readAll(C.LENGTH_UNSET.toLong(), ByteArray(188 * 3 + 50)) }
-        assertEquals(188 * 3, readAll(C.LENGTH_UNSET.toLong(), ByteArray(188 * 3)))
+        assertCut { readAll(C.LENGTH_UNSET.toLong(), ts(188 * 3 + 50)) }
+        assertCut { readAll(C.LENGTH_UNSET.toLong(), ts(188 * 6 + 1)) }
+        assertEquals(188 * 3, readAll(C.LENGTH_UNSET.toLong(), ts(188 * 3)))
+        // an AES-128 segment reaches the source still encrypted (padded to 16 bytes, no sync bytes): whole
+        val encrypted = ByteArray(1136) { (it * 31 + 7).toByte() }.also { it[0] = 0x12 }
+        assertEquals(1136, readAll(C.LENGTH_UNSET.toLong(), encrypted))
+        // even when its first byte happens to be the sync byte
+        encrypted[0] = 0x47
+        assertEquals(1136, readAll(C.LENGTH_UNSET.toLong(), encrypted))
         // a playlist has no packets: any length is whole
         assertEquals(77, readAll(C.LENGTH_UNSET.toLong(), ByteArray(77), "/vt/ch1/low/index.m3u8"))
     }

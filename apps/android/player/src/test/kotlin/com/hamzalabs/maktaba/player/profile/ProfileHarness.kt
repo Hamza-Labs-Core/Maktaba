@@ -70,6 +70,8 @@ fun ComposeContentTestRule.setProfileShell(
     sections: List<PlayerSection> = PlayerSection.entries,
     screens: PlayerScreens = AppScreens,
     images: ImageLoader? = null,
+    /** Watch a broadcast, as MainActivity provides it (story 50.27); null where it is hidden. */
+    watchBroadcast: (() -> Unit)? = null,
 ) {
     setContent {
         val mode by home.home.themes.mode.collectAsState()
@@ -78,7 +80,7 @@ fun ComposeContentTestRule.setProfileShell(
                 AppLanguageScope {
                     Probe(drawn)
                     Surface {
-                        CompositionLocalProvider(LocalPlayerHome provides home.home, LocalHomeImages provides images) {
+                        CompositionLocalProvider(LocalPlayerHome provides home.home, LocalHomeImages provides images, com.hamzalabs.maktaba.core.guest.LocalWatchBroadcast provides watchBroadcast) {
                             PlayerShell(sections = sections, adaptiveInfo = window.info(), screens = screens)
                         }
                     }

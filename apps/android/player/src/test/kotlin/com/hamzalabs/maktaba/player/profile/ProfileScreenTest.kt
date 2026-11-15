@@ -93,8 +93,12 @@ class ProfileScreenTest {
     @Before
     fun routes() = ProfileHome.install(home)
 
-    private fun open(languages: AppLanguages = this.languages, screens: com.hamzalabs.maktaba.player.shell.PlayerScreens = AppScreens) {
-        compose.setProfileShell(home, languages, playback, drawn, screens = screens)
+    private fun open(
+        languages: AppLanguages = this.languages,
+        screens: com.hamzalabs.maktaba.player.shell.PlayerScreens = AppScreens,
+        watchBroadcast: (() -> Unit)? = null,
+    ) {
+        compose.setProfileShell(home, languages, playback, drawn, screens = screens, watchBroadcast = watchBroadcast)
         compose.onNodeWithTag("section-Profile").performClick()
         compose.waitForIdle()
     }
@@ -361,6 +365,38 @@ class ProfileScreenTest {
         compose.onNode(hasText(label) and hasAnyAncestor(hasTestTag("profile-approve")), useUnmergedTree = true).assertExists()
         compose.onNodeWithTag("profile-approve").performClick()
         waitForTag("approve-code")
+    }
+
+    // ---------- Watch a broadcast (story 50.27) ----------
+
+    @Test
+    fun watchABroadcastOpensFromSettingsAndHidesUnderAParentalLimit() {
+        var opened = 0
+        open(watchBroadcast = { opened++ })
+        waitForTag("profile-root")
+        val label = app.getString(com.hamzalabs.maktaba.core.R.string.guest_watch_broadcast)
+        row("profile-watch-broadcast")
+        compose.onNode(hasText(label) and hasAnyAncestor(hasTestTag("profile-watch-broadcast")), useUnmergedTree = true).assertExists()
+        compose.onNodeWithTag("profile-watch-broadcast").performClick()
+        compose.waitForIdle()
+        assertEquals(1, opened)
+
+        // a guardian puts the sign-in under a limit: a broadcast is outside the home's ratings
+        home.answer("/api/me/parental") { json("""{"restricted":true,"max_tier":9,"allow_only":false,"version":1}""") }
+        runBlocking { home.home.parental.refresh() }
+        compose.settledUntil(5_000) { home.home.parental.mine.value.limited }
+        // the row sat just above the theme's choices: with them in view it would be drawn
+        row("theme-Dark")
+        gone("profile-watch-broadcast")
+        assertEquals(1, opened)
+    }
+
+    @Test
+    fun watchABroadcastIsNotInSettingsWhereTheAppHidesIt() {
+        open(watchBroadcast = null)
+        waitForTag("profile-root")
+        row("theme-Dark")
+        gone("profile-watch-broadcast")
     }
 
     // ---------- accessibility ----------

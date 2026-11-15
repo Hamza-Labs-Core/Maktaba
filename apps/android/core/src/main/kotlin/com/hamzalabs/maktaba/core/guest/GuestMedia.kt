@@ -37,7 +37,9 @@ import java.io.IOException
  * A data source that never takes a cut-short body for a whole one. A segment whose connection
  * ends before the length its answer declared (`Content-Length`, or a range's), or a transport
  * stream segment (`.ts`) with no declared length that ends partway through a 188-byte packet, is
- * a load error, so the player loads it again instead of playing a broken picture. OkHttp already
+ * a load error, so the player loads it again instead of playing a broken picture. The packet rule
+ * holds only for a body whose first packets start with the sync byte (0x47): an AES-128 segment
+ * (`EXT-X-KEY`) reaches this source still encrypted, padded to 16 bytes, not to packets. OkHttp already
  * fails a body shorter than its `Content-Length`; this keeps the rule whatever the stack below
  * does, and covers a body that ends with its connection.
  */
@@ -62,9 +64,24 @@ class WholeBodyDataSource(private val upstream: DataSource) : DataSource {
             if (expected != C.LENGTH_UNSET.toLong() && read < expected) throw cut("ended after $read of $expected bytes")
             if (packets && read % TS_PACKET != 0L) throw cut("ended partway through a transport stream packet ($read bytes)")
         } else if (n > 0) {
+            if (packets) checkSync(buffer, offset, n)
             read += n
         }
         return n
+    }
+
+    /** Clear transport stream starts each packet with 0x47; anything else (an encrypted segment) has no packets to end on. */
+    private fun checkSync(buffer: ByteArray, offset: Int, n: Int) {
+        val limit = SYNC_PACKETS * TS_PACKET
+        if (read >= limit) return
+        var at = (read + TS_PACKET - 1) / TS_PACKET * TS_PACKET
+        while (at < read + n && at < limit) {
+            if (buffer[offset + (at - read).toInt()] != SYNC) {
+                packets = false
+                return
+            }
+            at += TS_PACKET
+        }
     }
 
     private fun cut(why: String): DataSourceException {
@@ -82,6 +99,10 @@ class WholeBodyDataSource(private val upstream: DataSource) : DataSource {
 
     companion object {
         const val TS_PACKET = 188L
+        private const val SYNC: Byte = 0x47
+
+        /** How many leading packets must start with [SYNC] for the body to count as clear transport stream. */
+        private const val SYNC_PACKETS = 4
     }
 }
 
