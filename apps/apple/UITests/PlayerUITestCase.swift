@@ -324,6 +324,21 @@ class PlayerUITestCase: XCTestCase {
         }
     }
 
+    /// Chooses `segment` of a segmented picker, as `flip` does a switch: a tap that leaves it
+    /// unselected gets one more; a second miss fails naming it. #1412's run 43715426951 (ipad
+    /// 3/6, `testThemeIsDarkOnAFreshInstallAndLightChangesTheAppAtOnce`): the app's log has the
+    /// tap on Light as "touch held 0.07 s at (416, 808)", whole and not cancelled, and Light
+    /// was not chosen: a quick tap the picker ignored, as #1249's switches did. A tap that did
+    /// nothing leaves nothing behind.
+    func choose(_ segment: XCUIElement, _ what: String, file: StaticString = #filePath, line: UInt = #line) {
+        for attempt in 1 ... 2 {
+            waitUntilStill(segment, timeout: 5)
+            segment.tap()
+            if waitUntil({ segment.isSelected }) { return }
+            XCTAssertLessThan(attempt, 2, "\(what): not chosen after two taps", file: file, line: line)
+        }
+    }
+
     /// Opens `target`'s context menu with a long press and waits for `item`, one of its
     /// buttons; when the press was taken as a tap (`page`, the screen a tap opens, showed),
     /// goes `back`, lets the target settle again (`settle`) and presses once more. A second

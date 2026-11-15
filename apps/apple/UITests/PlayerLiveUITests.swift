@@ -219,8 +219,7 @@ final class PlayerLiveUITests: PlayerUITestCase {
         XCTAssertTrue(element("live.guide.ch-1.now").waitForExistence(timeout: 10), "the guide")
         XCTAssertFalse(element("live.channel.ch-1").exists, "Now's list gone")
         let now = app.segmentedControls.buttons["Now"].firstMatch
-        now.tap()
-        XCTAssertTrue(wait(timeout: 5) { now.isSelected }, "the tap on Now selected it")
+        choose(now, "the tap on Now selected it")
         XCTAssertTrue(element("live.channel.ch-1").waitForExistence(timeout: 10), "Now's list again")
         XCTAssertFalse(element("live.guide").exists, "the guide gone")
     }
@@ -397,8 +396,7 @@ final class PlayerLiveUITests: PlayerUITestCase {
         let seg = app.segmentedControls.buttons[label].firstMatch
         let b = seg.waitForExistence(timeout: 15) ? seg : app.buttons[label].firstMatch
         XCTAssertTrue(b.waitForExistence(timeout: 5), "the Guide segment")
-        b.tap()
-        XCTAssertTrue(wait(timeout: 5) { b.isSelected }, "the tap on the Guide segment selected it")
+        choose(b, "the tap on the Guide segment selected it")
     }
 
     /// Live TV opened on the guide (`-maktaba-live guide`): a guide test starts on it, not on
