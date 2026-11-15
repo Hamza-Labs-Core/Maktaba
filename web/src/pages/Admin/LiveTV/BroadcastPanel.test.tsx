@@ -463,4 +463,37 @@ describe("BroadcastPanel", () => {
     expect(await screen.findByRole("heading", { name: "ما الذي يمكنني بثه؟" })).toBeInTheDocument();
     expect(screen.getByText(/لا يعني أنه مسموح بإعادة بثه/)).toBeInTheDocument();
   });
+  it("shows who watches, from the cloud's report (story 50.28)", async () => {
+    const v = view({ channels: [channel({ state: "live" })] });
+    get.mockImplementation((url: string) =>
+      Promise.resolve(
+        url === "/api/tv/broadcast/publishable"
+          ? pubView()
+          : url.startsWith("/api/tv/broadcast/analytics")
+            ? {
+                cloud: "ok",
+                report: {
+                  level: "full",
+                  time_zone: "UTC",
+                  k: 5,
+                  live_viewers: 4,
+                  hours: { today: 1, week: 2, month: 3, allowance: 5000 },
+                  period_hours: 1,
+                  countries: [{ key: "other", value: 4 }],
+                  devices: [],
+                },
+              }
+            : url === "/api/tv/broadcast/moderation"
+              ? { cloud: "ok", records: {}, takedowns: [] }
+              : v
+      )
+    );
+    renderPanel();
+    const viewers = await screen.findByTestId("broadcast-viewers");
+    expect(within(viewers).getByText("Watching now").nextElementSibling).toHaveTextContent("4");
+    expect(within(viewers).getByRole("row")).toHaveTextContent("Other4");
+    expect(get).toHaveBeenCalledWith(
+      expect.stringMatching(/^\/api\/tv\/broadcast\/analytics\?period=today/)
+    );
+  });
 });

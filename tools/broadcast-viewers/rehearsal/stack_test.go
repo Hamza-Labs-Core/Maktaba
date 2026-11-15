@@ -275,6 +275,8 @@ type edgeCounters struct {
 		IngestPutByRung map[string]int `json:"ingest_put_by_rung"`
 		DOGet           int            `json:"do_get"`
 		AEByEvent       map[string]int `json:"ae_by_event"`
+		AEIngestGlass   int            `json:"ae_ingest_glass"`
+		AEByCode        map[string]int `json:"ae_by_code"`
 		Requests        int            `json:"requests"`
 	} `json:"workers"`
 }

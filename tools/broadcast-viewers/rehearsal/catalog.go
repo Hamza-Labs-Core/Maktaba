@@ -13,21 +13,21 @@ type Scenario struct {
 	Built   bool
 }
 
-// Scenarios is §2's table, plus the fan-out's self-test (T03). A scenario with no body is listed
-// in expected-failures.txt until its story turns it on.
+// Scenarios is §2's table, plus the fan-out's self-test (T03). A scenario with no body, or one
+// whose checks can't all pass in this stack yet, is listed in expected-failures.txt.
 var Scenarios = []Scenario{
 	{"broadcast-fanout", "50.21", true, true, true},
 	{"broadcast-fanout-planted", "50.29 T03", true, true, true},
 	{"broadcast-home", "50.22", true, true, true},
 	{"broadcast-home-offline-24h", "50.21", false, true, true},
-	{"broadcast-plans", "50.20", true, true, false},
-	{"broadcast-publishable", "50.23", true, true, false},
-	{"broadcast-access", "50.26", true, true, false},
+	{"broadcast-plans", "50.20", true, true, true},
+	{"broadcast-publishable", "50.23", true, true, true},
+	{"broadcast-access", "50.26", true, true, true},
 	{"broadcast-kill", "50.25", true, true, true},
-	{"broadcast-takedown", "50.24", true, true, false},
-	{"broadcast-hetzner-down", "14.8", false, true, false},
+	{"broadcast-takedown", "50.24", true, true, true},
+	{"broadcast-hetzner-down", "14.8", false, true, true},
 	{"broadcast-edge-deploy", "50.21", true, true, true},
-	{"broadcast-observe", "50.28", true, true, false},
+	{"broadcast-observe", "50.28", true, true, true},
 }
 
 // InSet is the scenarios of a set ("pr" or "nightly") that have (built) or lack (!built) a body:

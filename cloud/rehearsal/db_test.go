@@ -199,7 +199,7 @@ func dbNodesFailover(t *testing.T, _ *cluster) Result {
 	}
 	s3Backups(t, extra)
 	h := upHAWith(t, "db-nodes-failover", extra)
-	s3Buckets(t)
+	s3Buckets(h)
 	h.mustHA("up", "-d", "relay", "worker-1", "worker-2", "api-1")
 	waitFor(t, 2*time.Minute, "the relay through the edge", func() bool {
 		resp, err := http.Get(h.edge + "/readyz")
@@ -371,7 +371,7 @@ func dbNodesMigrate(t *testing.T, _ *cluster) Result {
 	}
 	s3Backups(t, extra)
 	h := upHAWith(t, "db-nodes-migrate", extra)
-	s3Buckets(t)
+	s3Buckets(h)
 	old := h.leader()
 	n := envInt("REHEARSAL_HOMES", 100)
 	slugs := h.homesOnHA(n)

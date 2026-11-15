@@ -313,6 +313,15 @@ build fails when the two differ.
   A self-test with the edge cache planted off must fail on the R2 counter. Scenarios not built
   yet are reported as expected failures.
 
+- **The broadcast rehearsal covers plans, viewer access, takedowns and a cloud outage (Epic 50,
+  story 50.29).** Five more scenarios run against the real edge and home: the plan modes in order
+  with no playing viewer stopped, invites, short codes, Turnstile and the viewer limits, a
+  takedown of the programme airing now through to the third strike, a guide that holds only
+  publishable items, and (nightly) 15 minutes with the cloud down, after which every viewer-minute
+  the edge counted reaches the cloud exactly once. A sixth, the monitoring scenario, checks the
+  edge's analytics events and stays an expected failure until the cloud's alerts and status page
+  join the stack.
+
 ### Fixed
 
 - **A broadcasting home sends each segment once when the edge is busy, and many viewers of a
@@ -961,6 +970,14 @@ build fails when the two differ.
   alerted.
 
 ### Added
+
+- **The home's Broadcast panel shows who watches (Epic 50, story 50.28).** Admins see, under
+  Live TV → Broadcast, the viewers watching now and the viewer-hours of today, the last 7 days
+  and this month against the plan's allowance; with the Broadcaster add-on also the most at once,
+  the average watch time, countries and devices. The numbers are Maktaba Cloud's report, folded
+  there (a country or device with fewer than 5 viewers in an hour is Other for that hour). The
+  home asks through its relay agent with its own credential, so it never holds the owner's cloud
+  sign-in, and the cloud answers that home only; the home's API answers admins only.
 
 - **Android TV, Google TV and Fire TV sign in with a cloud code (Epic 58, stories 58.03 and
   58.05).** The TV app's home picker now opens on a code from Maktaba Cloud with its QR code;

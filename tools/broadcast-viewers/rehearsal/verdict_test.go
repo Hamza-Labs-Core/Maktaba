@@ -91,8 +91,9 @@ func TestTheListingParses(t *testing.T) {
 	}
 }
 
-// The CI matrix: the pull request's set has the fan-out and its self-test with a stack, and
-// reports the unbuilt scenarios without one; the nightly set adds the 24 h and Hetzner ones.
+// The CI matrix: the pull request's set has the fan-out, its self-test and every functional
+// scenario with a stack, and reports any unbuilt one without; the nightly set adds the 24 h and
+// Hetzner ones.
 func TestTheSets(t *testing.T) {
 	has := func(xs []string, x string) bool {
 		for _, v := range xs {
@@ -107,8 +108,13 @@ func TestTheSets(t *testing.T) {
 	if !has(pr, "broadcast-fanout") || !has(pr, "broadcast-fanout-planted") || has(pr, "broadcast-home-offline-24h") {
 		t.Fatalf("pr set: %v", pr)
 	}
-	if !has(night, "broadcast-home-offline-24h") || !has(nightOff, "broadcast-hetzner-down") || has(prOff, "broadcast-hetzner-down") {
-		t.Fatalf("nightly: %v / %v; pr unbuilt %v", night, nightOff, prOff)
+	if !has(night, "broadcast-home-offline-24h") || !has(night, "broadcast-hetzner-down") || has(pr, "broadcast-hetzner-down") || has(prOff, "broadcast-hetzner-down") {
+		t.Fatalf("nightly: %v / %v; pr %v, unbuilt %v", night, nightOff, pr, prOff)
+	}
+	for _, n := range []string{"broadcast-plans", "broadcast-publishable", "broadcast-access", "broadcast-takedown", "broadcast-observe"} {
+		if !has(pr, n) || !has(night, n) {
+			t.Errorf("%s runs in both sets with a stack: pr %v, nightly %v", n, pr, night)
+		}
 	}
 	if len(night)+len(nightOff) != len(Scenarios) {
 		t.Fatalf("the nightly set is every scenario: %d + %d of %d", len(night), len(nightOff), len(Scenarios))

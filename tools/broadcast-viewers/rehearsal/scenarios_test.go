@@ -17,13 +17,20 @@ import (
 	viewers "github.com/Hamza-Labs-Core/Maktaba/tools/broadcast-viewers"
 )
 
-// The scenarios with a body. Every other one in Scenarios is listed in expected-failures.txt.
+// The scenarios with a body (scenarios_cloud_test.go has the ones driven by the cloud's posts). A
+// scenario listed in expected-failures.txt runs and is reported XFAIL, never as a pass.
 var bodies = map[string]func(*stack){
 	"broadcast-fanout":           fanout,
 	"broadcast-home":             homeOffline,
 	"broadcast-home-offline-24h": offline24h,
+	"broadcast-plans":            plans,
+	"broadcast-publishable":      publishable,
+	"broadcast-access":           access,
 	"broadcast-kill":             kill,
+	"broadcast-takedown":         takedown,
+	"broadcast-hetzner-down":     hetznerDown,
 	"broadcast-edge-deploy":      edgeDeploy,
+	"broadcast-observe":          observe,
 }
 
 // TestBroadcast runs the scenarios (one with -run 'TestBroadcast/<name>$'):

@@ -13,8 +13,17 @@
 //          Worker with those variables (the break-glass variables of 50.25, a new version),
 //          keeping the Durable Objects' state on disk.
 //
+// Two fakes stand in for what the edge calls out to, so nothing leaves the container:
+//   - Turnstile's siteverify (the edge's TURNSTILE_API binding, 50.26): a token "pass-…" is good
+//     once (a replay answers timeout-or-duplicate, as Turnstile does); any other fails.
+//   - the cloud's API (API_ORIGIN, every Worker's outbound fetch): it takes the edge's signed
+//     usage posts (50.20 §3) and answers as the cloud does (taken, duplicates). /__rehearsal/cloud/
+//     down and /up stop and start it (the Hetzner pair down, 14.8); /__rehearsal/cloud/usage is
+//     every post it saw, with the edge's signature headers, and every window it took.
+//
 // REHEARSAL_PLANT=per-viewer-fetch turns every location's cache off (entry.ts): each viewer's segment is then
 // an R2 read. It is the planted regression the fan-out self-test must fail on (story 50.29 T03).
+import { createHash } from "node:crypto";
 import { createServer } from "node:http";
 import { mkdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -32,6 +41,13 @@ const PLANT = process.env.REHEARSAL_PLANT ?? "";
 // Rehearsal-only keys: the cloud's TEST key "cloud-1" (cloud/internal/broadcast/testdata) and a
 // viewer key whose name says what it is. Never a real key.
 const VIEWER_KEY = "cmVoZWFyc2FsLXZpZXdlci1rZXktbmV2ZXItcHJvZHVjdGlvbg";
+// The edge's EDGE_SIGNING_KEY: the SHA-256 of a label that says what it is (tools/broadcast-viewers
+// RehearsalEdgeSeed), and a Turnstile secret no Turnstile knows.
+const EDGE_SEED = createHash("sha256")
+  .update("maktaba-broadcast rehearsal edge key, never for production")
+  .digest("base64url");
+const TURNSTILE_SECRET = "rehearsal-turnstile-secret-not-real";
+const CLOUD_ORIGIN = "http://cloud.rehearsal.invalid";
 const vectors = JSON.parse(
   readFileSync(join(EDGE, "../../../cloud/internal/broadcast/testdata/vectors.json"), "utf8")
 );
@@ -63,6 +79,7 @@ export default {
       pct = p;
       return Response.json({ pct });
     }
+    if (url.pathname.startsWith("/__rehearsal/cloud/")) return env.CLOUD.fetch(req);
     if (url.pathname.startsWith("/__rehearsal/")) {
       const workers = [];
       for (const [name, svc] of Object.entries(env)) {
@@ -76,6 +93,47 @@ export default {
     const key = req.headers.get("X-Rehearsal-Session") ?? url.pathname;
     const v2 = pct > 0 && hash(key) % 100 < pct;
     return env["L" + loc + (v2 ? "_V2" : "")].fetch(req);
+  },
+};`;
+
+// siteverify: "pass-…" is good once; a replay or anything else fails (50.26 §2)
+const TURNSTILE = `
+const seen = new Set();
+export default {
+  async fetch(req) {
+    const form = await req.formData();
+    const token = String(form.get("response") ?? "");
+    const ok = form.get("secret") === ${JSON.stringify(TURNSTILE_SECRET)} && token.startsWith("pass-") && !seen.has(token);
+    const codes = seen.has(token) ? ["timeout-or-duplicate"] : ok ? [] : ["invalid-input-response"];
+    seen.add(token);
+    return Response.json({ success: ok, "error-codes": codes });
+  },
+};`;
+
+// the cloud's API as the edge sees it: usage posts (cloud/internal/broadcast.UsageReply)
+const CLOUD = `
+let down = false;
+const posts = [];
+const windows = {};
+let refused = 0;
+export default {
+  async fetch(req) {
+    const url = new URL(req.url);
+    if (url.pathname === "/__rehearsal/cloud/down" && req.method === "POST") { down = true; return Response.json({ down }); }
+    if (url.pathname === "/__rehearsal/cloud/up" && req.method === "POST") { down = false; return Response.json({ down }); }
+    if (url.pathname === "/__rehearsal/cloud/usage") return Response.json({ down, refused, posts, windows });
+    if (down) { refused++; return new Response("the cloud is down", { status: 503 }); }
+    if (url.pathname === "/_edge/usage" && req.method === "POST") {
+      const body = await req.text();
+      posts.push({ method: req.method, path: url.pathname, body,
+        time: req.headers.get("X-Maktaba-Edge-Time") ?? "", signature: req.headers.get("X-Maktaba-Edge-Signature") ?? "" });
+      const taken = [], duplicates = [];
+      for (const w of JSON.parse(body).windows ?? []) {
+        if (windows[w.key]) duplicates.push(w.key); else { windows[w.key] = w; taken.push(w.key); }
+      }
+      return Response.json({ taken, duplicates, rejected: [], states: [], plans: [] });
+    }
+    return new Response("not the cloud's", { status: 404 });
   },
 };`;
 
@@ -95,6 +153,9 @@ let vars = {
   BROADCAST_GLOBAL_OFF: "0",
   BROADCAST_OFF_CHANNELS: "",
   EDGE_VERSION: "1",
+  TURNSTILE_SECRET,
+  API_ORIGIN: CLOUD_ORIGIN,
+  EDGE_SIGNING_KEY: EDGE_SEED,
 };
 
 function workerName(loc, v2) {
@@ -108,13 +169,18 @@ function options() {
       modules: true,
       script: ROUTER,
       compatibilityDate: "2026-08-15",
-      serviceBindings: Object.fromEntries(
-        Array.from({ length: LOCATIONS }, (_, l) => [
-          [`L${l}`, workerName(l, false)],
-          [`L${l}_V2`, workerName(l, true)],
-        ]).flat()
-      ),
+      serviceBindings: {
+        CLOUD: "cloud",
+        ...Object.fromEntries(
+          Array.from({ length: LOCATIONS }, (_, l) => [
+            [`L${l}`, workerName(l, false)],
+            [`L${l}_V2`, workerName(l, true)],
+          ]).flat()
+        ),
+      },
     },
+    { name: "turnstile", modules: true, script: TURNSTILE, compatibilityDate: "2026-08-15" },
+    { name: "cloud", modules: true, script: CLOUD, compatibilityDate: "2026-08-15" },
   ];
   for (const v2 of [false, true]) {
     for (let l = 0; l < LOCATIONS; l++) {
@@ -125,6 +191,9 @@ function options() {
         compatibilityDate: "2026-08-15",
         bindings: { ...vars, ...(PLANT ? { REHEARSAL_PLANT: PLANT } : {}), EDGE_VERSION: v2 ? String(Number(vars.EDGE_VERSION) + 1) : vars.EDGE_VERSION },
         r2Buckets: { SEGMENTS: "segments", GUIDE: "guide" },
+        serviceBindings: { TURNSTILE_API: "turnstile" },
+        // every fetch out (the usage posts to API_ORIGIN) reaches the fake cloud
+        outboundService: "cloud",
         // the Durable Objects live in location 0's first version; every other Worker binds them
         durableObjects: Object.fromEntries(
           Object.entries(DO_CLASSES).map(([b, cls]) => [
