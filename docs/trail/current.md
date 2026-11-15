@@ -1,11 +1,11 @@
 ---
 schema: 1
-tag: v0.3.145
-up_to_commit: b60f4152e
-built_from: v0.3.144
+tag: v0.3.146
+up_to_commit: 62f8be748
+built_from: v0.3.145
 ---
 
-# Trail snapshot: v0.3.145
+# Trail snapshot: v0.3.146
 
 ## Keep doing
 
@@ -803,6 +803,7 @@ built_from: v0.3.144
 | #1232 | 2026-11-13 | fix(postgres): a half-answered look no longer restarts the database |
 | #1318 | 2026-11-14 | docs(testflight): the install failure though the build is listed (open) |
 | #1400 | 2026-11-15 | Watch a broadcast on Apple TV, iPhone, iPad and the Mac (story 50.27 T03, T05) |
+| #1404 | 2026-11-15 | fix(release): asset uploads retry transient GitHub errors themselves |
 
 ## Index
 
@@ -1542,3 +1543,4 @@ built_from: v0.3.144
 | 1393-guest-sharing-plan-end | 2026-11-15 | pr | Broadcast: guest sharing ends with the plan; machine hosts keep the publishable limit |
 | 1397-plan-change-races | 2026-11-15 | pr | Broadcast: invites and open access can't outlive a plan change; staging watch reports |
 | 1399-beat-writes | 2026-11-15 | pr | Broadcast edge: a heartbeat writes its viewer, not the whole channel state |
+
