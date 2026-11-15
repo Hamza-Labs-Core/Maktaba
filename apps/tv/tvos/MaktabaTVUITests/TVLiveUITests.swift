@@ -414,10 +414,15 @@ final class TVLiveUITests: XCTestCase {
         leave("starting")
         home.release()
 
-        // playing, the banner up
+        // playing, the banner up. A playing channel's banner goes 6 s after the start, and a
+        // loaded runner's accessibility queries outlast that (the check that the channel plays
+        // took 5 s): Play/Pause raises it for its full time and Menu follows at once, with no
+        // query in between. That Menu puts the banner away and keeps the player; the next leaves.
         tune()
         playing()
-        XCTAssertTrue(element("live.player.banner").exists, "the banner is up")
+        remote.press(.playPause)
+        remote.press(.menu)
+        XCTAssertTrue(player.exists, "the first Menu put the banner away, the player stays")
         leave("playing")
         // the player stopped: nothing more is asked of the stream
         sleep(2)
