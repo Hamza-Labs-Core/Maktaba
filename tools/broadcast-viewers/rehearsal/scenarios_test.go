@@ -5,9 +5,11 @@ package rehearsal
 import (
 	"context"
 	"fmt"
+	"math"
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -125,6 +127,8 @@ func fanout(s *stack) {
 	top := envInt("BROADCAST_VIEWERS", 100)
 	stepFor := time.Duration(envInt("BROADCAST_STEP_SECONDS", 60)) * time.Second
 	const locations = 5
+	// the runner's CPU, with each step's load (FanoutRow.Load): a slow step can be read against it
+	s.note("runner: %s, %d CPUs", runnerCPU(), runtime.NumCPU())
 	ch := newChannel("fanout")
 	s.publish(ch)
 	s.waitLive(ch)
@@ -142,11 +146,12 @@ func fanout(s *stack) {
 		fl.Add(ctx, n-total)
 		total = n
 		time.Sleep(8 * time.Second) // the new players start (spread over a target duration)
-		c0, p0, t0 := s.counters(), fl.Snapshot(), time.Now()
+		c0, p0, t0, l0 := s.counters(), fl.Snapshot(), time.Now(), s.loadMark()
 		time.Sleep(stepFor)
-		c1, p1, t1 := s.counters(), fl.Snapshot(), time.Now()
+		c1, p1, t1, l1 := s.counters(), fl.Snapshot(), time.Now(), s.loadMark()
 		time.Sleep(6 * time.Second) // the step's last segments reach every rung and the log
 		row, checks := fanoutStep(s, ch, n, locations, t0, t1, c0, c1, p0, p1)
+		row.Load = load(l0, l1)
 		s.r.Fanout = append(s.r.Fanout, row)
 		for _, c := range checks {
 			s.check(fmt.Sprintf("%d viewers: %s", n, c.Name), c.OK, c.Counter, c.Detail)
@@ -278,9 +283,25 @@ func fanoutStep(s *stack, ch string, n, locations int, t0, t1 time.Time, c0, c1 
 		}
 	}
 	src := viewers.Summarise(c1src, c0src)
+	segAnswers := make([]int, len(SegAnswerBoundsMS)+1)
+	for i, w := range c1.Workers {
+		for b, k := range w.SegAnswerMS {
+			if b < len(segAnswers) {
+				segAnswers[b] += k
+				if i < len(c0.Workers) && b < len(c0.Workers[i].SegAnswerMS) {
+					segAnswers[b] -= c0.Workers[i].SegAnswerMS[b]
+				}
+			}
+		}
+	}
+	edgeAnswer := BucketQuantile(segAnswers, SegAnswerBoundsMS, 0.95)
+	if math.IsInf(edgeAnswer, 1) {
+		edgeAnswer = -1
+	}
 	row := FanoutRow{Viewers: n, Seconds: int(t1.Sub(t0).Seconds()), Segments: len(seqs), Rungs: len(rungs),
 		HomePuts: puts, HomeBytes: bytes, EdgePuts: edgePuts, R2Reads: r2, R2MaxPerLoc: maxPer, DOGets: doGets,
-		ViewerSegs: all.Segments, ViewerErrors: all.Errors, FetchP95: src.Fetch.P95, AfterHomeP95: src.AfterHome.P95}
+		ViewerSegs: all.Segments, ViewerErrors: all.Errors, FetchP95: src.Fetch.P95, AfterHomeP95: src.AfterHome.P95,
+		FirstByteP95: src.FirstByte.P95, EdgeAnswerP95: edgeAnswer, ReloadLateP95: all.Late.P95}
 	// a viewer finds a segment at its next playlist (a target duration at most, the playlist's
 	// 1 s cache) and then has 1.5 s to fetch it
 	afterHomeMax := 4000.0 + 1000 + 1500

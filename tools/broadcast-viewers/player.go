@@ -55,11 +55,15 @@ type PlayerStats struct {
 	// Fetch is each segment's request to its last byte; AfterHome is its last byte after the
 	// home finished uploading it (live segments of a known upload only).
 	Fetch, AfterHome []time.Duration
-	Errors           []string
-	State            State
-	FirstSlate       time.Time
-	FirstOffAir      time.Time
-	LastLive         time.Time
+	// FirstByte is each segment's request to its response headers (the edge's answer, before
+	// the body streams); Late is how far past its due time each playlist reload started (the
+	// load generator's own scheduling delay: a starved runner shows here, not at the edge).
+	FirstByte, Late []time.Duration
+	Errors          []string
+	State           State
+	FirstSlate      time.Time
+	FirstOffAir     time.Time
+	LastLive        time.Time
 	// LiveAgain is the first live segment after an off-air or a slate spell.
 	LiveAgain time.Time
 }
@@ -99,6 +103,8 @@ func (p *Player) Stats() PlayerStats {
 	}
 	s.Fetch = append([]time.Duration(nil), p.st.Fetch...)
 	s.AfterHome = append([]time.Duration(nil), p.st.AfterHome...)
+	s.FirstByte = append([]time.Duration(nil), p.st.FirstByte...)
+	s.Late = append([]time.Duration(nil), p.st.Late...)
 	s.Errors = append([]string(nil), p.st.Errors...)
 	return s
 }
@@ -159,6 +165,8 @@ type answer struct {
 	code   string
 	body   []byte
 	retry  time.Duration
+	// headers is how long the request took to its response headers
+	headers time.Duration
 }
 
 func (p *Player) do(ctx context.Context, kind, method, u string, body io.Reader) (answer, error) {
@@ -174,16 +182,18 @@ func (p *Player) do(ctx context.Context, kind, method, u string, body io.Reader)
 	p.mu.Lock()
 	p.st.Requests[kind]++
 	p.mu.Unlock()
+	t0 := time.Now()
 	resp, err := p.cfg.HTTP.Do(req)
 	if err != nil {
 		return answer{}, err
 	}
+	headers := time.Since(t0)
 	defer func() { _ = resp.Body.Close() }()
 	raw, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return answer{}, err
 	}
-	a := answer{status: resp.StatusCode, body: raw}
+	a := answer{status: resp.StatusCode, body: raw, headers: headers}
 	if resp.StatusCode >= 400 {
 		var e struct {
 			Error string `json:"error"`
@@ -356,8 +366,14 @@ func (p *Player) play(ctx context.Context, rung string) {
 		} else if p.state() == StateStarting {
 			p.setState(StateWaiting)
 		}
-		if !sleep(ctx, time.Duration(target*float64(time.Second))-time.Since(started)) {
+		due := started.Add(time.Duration(target * float64(time.Second)))
+		if !sleep(ctx, time.Until(due)) {
 			return
+		}
+		if late := time.Since(due); late > 0 {
+			p.mu.Lock()
+			p.st.Late = append(p.st.Late, late)
+			p.mu.Unlock()
 		}
 	}
 }
@@ -377,6 +393,7 @@ func (p *Player) segment(ctx context.Context, rung string, s MediaSegment, u str
 			p.st.Segments++
 			p.st.SegmentBytes += int64(len(a.body))
 			p.st.Fetch = append(p.st.Fetch, done.Sub(t0))
+			p.st.FirstByte = append(p.st.FirstByte, a.headers)
 			p.mu.Unlock()
 			if !s.Slate && p.cfg.Published != nil {
 				if seq, ok := SegmentSeq(s.URI); ok {

@@ -11,13 +11,16 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -288,6 +291,7 @@ type edgeCounters struct {
 		AEIngestGlass   int            `json:"ae_ingest_glass"`
 		AEByCode        map[string]int `json:"ae_by_code"`
 		Requests        int            `json:"requests"`
+		SegAnswerMS     []int          `json:"seg_answer_ms"`
 	} `json:"workers"`
 }
 
@@ -392,4 +396,78 @@ func (s *stack) deploy(vars map[string]string) time.Duration {
 	code, raw, err := s.do(http.MethodPost, s.control+"/deploy", body, nil)
 	s.must("the edge redeploys", err == nil && code == http.StatusOK, code, string(raw), err)
 	return time.Since(t0)
+}
+
+// loadMark is the runner's CPU counters at one moment: the edge's and the home's containers
+// (cgroup v2), this process (the viewers, the load generator) and the host (/proc/stat, Linux).
+type loadMark struct {
+	at         time.Time
+	edge, home int64 // container CPU µs; -1 unknown
+	self       int64 // this process's user+system µs
+	host       HostCPU
+	hostOK     bool
+}
+
+func (s *stack) containerCPU(service string) int64 {
+	out, err := exec.Command("docker", "exec", s.project+"-"+service+"-1", "cat", "/sys/fs/cgroup/cpu.stat").Output()
+	if err != nil {
+		return -1
+	}
+	n, ok := CgroupCPUUsec(string(out))
+	if !ok {
+		return -1
+	}
+	return n
+}
+
+func (s *stack) loadMark() loadMark {
+	m := loadMark{at: time.Now(), edge: s.containerCPU("edge"), home: s.containerCPU("home"), self: selfCPUUsec()}
+	if raw, err := os.ReadFile("/proc/stat"); err == nil {
+		m.host, m.hostOK = ParseProcStat(string(raw))
+	}
+	return m
+}
+
+// load is what each part used of the runner between two marks.
+func load(a, b loadMark) StepLoad {
+	wall := b.at.Sub(a.at).Seconds()
+	l := StepLoad{CPUs: runtime.NumCPU(), EdgeCores: -1, HomeCores: -1, ViewerCores: Cores(b.self-a.self, wall)}
+	if a.edge >= 0 && b.edge >= 0 {
+		l.EdgeCores = Cores(b.edge-a.edge, wall)
+	}
+	if a.home >= 0 && b.home >= 0 {
+		l.HomeCores = Cores(b.home-a.home, wall)
+	}
+	if a.hostOK && b.hostOK {
+		busy, steal := HostShare(a.host, b.host)
+		l.HostBusyPct, l.HostStealPct = math.Round(busy*10)/10, math.Round(steal*10)/10
+	}
+	if raw, err := os.ReadFile("/proc/loadavg"); err == nil {
+		if f := strings.Fields(string(raw)); len(f) > 0 {
+			l.Load1, _ = strconv.ParseFloat(f[0], 64)
+		}
+	}
+	return l
+}
+
+func selfCPUUsec() int64 {
+	var ru syscall.Rusage
+	if syscall.Getrusage(syscall.RUSAGE_SELF, &ru) != nil {
+		return 0
+	}
+	return ru.Utime.Sec*1e6 + int64(ru.Utime.Usec) + ru.Stime.Sec*1e6 + int64(ru.Stime.Usec)
+}
+
+// runnerCPU is the runner's CPU model (/proc/cpuinfo), for the record.
+func runnerCPU() string {
+	raw, err := os.ReadFile("/proc/cpuinfo")
+	if err != nil {
+		return runtime.GOOS + "/" + runtime.GOARCH
+	}
+	for _, line := range strings.Split(string(raw), "\n") {
+		if k, v, ok := strings.Cut(line, ":"); ok && strings.TrimSpace(k) == "model name" {
+			return strings.TrimSpace(v)
+		}
+	}
+	return runtime.GOARCH
 }

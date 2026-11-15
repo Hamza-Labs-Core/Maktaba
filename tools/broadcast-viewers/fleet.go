@@ -80,6 +80,10 @@ type Summary struct {
 	States      map[State]int `json:"states"`
 	Fetch       Percentiles   `json:"fetch_ms"`
 	AfterHome   Percentiles   `json:"after_home_ms"`
+	// FirstByte is the segments' time to response headers; Late the playlist reloads' delay
+	// past their due time (the load generator's scheduling, not the edge).
+	FirstByte Percentiles `json:"first_byte_ms"`
+	Late      Percentiles `json:"reload_late_ms"`
 }
 
 // Percentiles of a set of durations, in milliseconds.
@@ -113,7 +117,7 @@ func PercentilesOf(ds []time.Duration) Percentiles {
 // after its own record at that earlier Summarise (a step's own numbers).
 func Summarise(stats []PlayerStats, from []PlayerStats) Summary {
 	s := Summary{Viewers: len(stats), Requests: map[string]int{}, States: map[State]int{}}
-	var fetch, after []time.Duration
+	var fetch, after, first, late []time.Duration
 	for i, p := range stats {
 		var b PlayerStats
 		if i < len(from) {
@@ -134,9 +138,13 @@ func Summarise(stats []PlayerStats, from []PlayerStats) Summary {
 		s.States[p.State]++
 		fetch = append(fetch, p.Fetch[min(len(b.Fetch), len(p.Fetch)):]...)
 		after = append(after, p.AfterHome[min(len(b.AfterHome), len(p.AfterHome)):]...)
+		first = append(first, p.FirstByte[min(len(b.FirstByte), len(p.FirstByte)):]...)
+		late = append(late, p.Late[min(len(b.Late), len(p.Late)):]...)
 	}
 	s.Fetch = PercentilesOf(fetch)
 	s.AfterHome = PercentilesOf(after)
+	s.FirstByte = PercentilesOf(first)
+	s.Late = PercentilesOf(late)
 	return s
 }
 
