@@ -32,12 +32,16 @@
 # names the files that may change on a published release (desktop's latest.json and
 # latest-player.json, as late platforms land).
 #
-# Each upload goes through gh-retry.sh: a transient GitHub error (HTTP 5xx, a stream cancelled,
-# a timeout) is tried again with --clobber, as a manual re-run of the job used to; any other
-# failure fails the step at once.
+# Every GitHub call goes through gh-retry.sh (gh_ below): a transient GitHub error (HTTP 5xx, a
+# stream cancelled, a timeout) is tried again, as a manual re-run of the job used to; any other
+# failure fails the step at once. v0.3.147's run failed on a stream CANCEL in ensure's lookups,
+# after only the uploads were retried. Each call is safe to repeat: the lookups and `release
+# edit` set or read the same thing again, uploads and downloads --clobber, and the release is
+# created by create-once, which looks it up before each try (a create whose answer was lost is
+# found on the next try, never made twice). gh-retry-test.sh fails on a bare gh call here.
 #
 # Env: GH_TOKEN, GITHUB_REPOSITORY; NOTES (ensure); REQUIRE_FEED (publish); GH_RETRY_DELAYS
-# (upload, gh-retry.sh).
+# (gh-retry.sh).
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -45,21 +49,36 @@ cmd="${1:?ensure|upload|publish}"
 tag="${2:?TAG}"
 shift 2
 
+# gh_ ARG...: gh ARG..., through gh-retry.sh; inside a try of its own (create-once, which
+# gh-retry.sh runs) gh is called once, so a try is never retried within another
+gh_() {
+    if [ "${RELEASE_ASSETS_IN_TRY:-}" = 1 ]; then
+        gh "$@" # raw: already inside a gh-retry.sh try
+    else
+        "${here}/gh-retry.sh" gh "$@"
+    fi
+}
+
 prerelease() { case "${tag}" in *-*) return 0 ;; esac; return 1; }
 
 # The release's id, drafts included ("" when there is none): gh's own lookup by tag misses a
 # draft whose tag the API has not resolved, so the list is read.
 release_id() {
-    gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=100" --paginate \
+    gh_ api "repos/${GITHUB_REPOSITORY}/releases?per_page=100" --paginate \
         --jq ".[] | select(.tag_name == \"${tag}\") | .id" | sed -n 1p
 }
 
+# is_draft ID: a lookup that failed fails the step (it is called in an if, where set -e is off:
+# a failed read must never pass for "published")
 is_draft() {
-    [ "$(gh api "repos/${GITHUB_REPOSITORY}/releases/$1" --jq .draft)" = true ]
+    local d
+    d="$(gh_ api "repos/${GITHUB_REPOSITORY}/releases/$1" --jq .draft)" ||
+        { echo "::error::release ${tag}: could not read whether it is a draft" >&2; exit 1; }
+    [ "${d}" = true ]
 }
 
 asset_names() {
-    gh api "repos/${GITHUB_REPOSITORY}/releases/$1/assets?per_page=100" --paginate --jq '.[].name'
+    gh_ api "repos/${GITHUB_REPOSITORY}/releases/$1/assets?per_page=100" --paginate --jq '.[].name'
 }
 
 ensure() {
@@ -70,9 +89,9 @@ ensure() {
             # the notes and the pre-release flag on the draft (a published release keeps its own)
             if [ -n "${NOTES:-}" ]; then
                 if prerelease; then
-                    gh release edit "${tag}" --title "${tag}" --notes "${NOTES}" --prerelease --latest=false
+                    gh_ release edit "${tag}" --title "${tag}" --notes "${NOTES}" --prerelease --latest=false
                 else
-                    gh release edit "${tag}" --title "${tag}" --notes "${NOTES}" --prerelease=false --latest=false
+                    gh_ release edit "${tag}" --title "${tag}" --notes "${NOTES}" --prerelease=false --latest=false
                 fi
             fi
             echo "release ${tag}: there already (draft)"
@@ -81,10 +100,24 @@ ensure() {
         fi
         return 0
     fi
-    local kind=(--draft --latest=false)
+    RELEASE_ASSETS_IN_TRY=1 "${here}/gh-retry.sh" bash "${here}/release-assets.sh" create-once "${tag}" ||
+        [ -n "$(release_id)" ] || # made meanwhile by another workflow (its create raced ours)
+        { echo "::error::release ${tag}: could not be created" >&2; exit 1; }
+}
+
+# create-once: one try of ensure's create, run by gh-retry.sh: the release is looked up first,
+# so a try after a create whose answer was lost (a stream CANCEL) finds it and is done
+create_once() {
+    local id kind=(--draft --latest=false)
+    # a lookup that failed fails this try (set -e), its error for gh-retry.sh to judge: never
+    # taken for "no release", which would create it twice
+    id="$(release_id)"
+    if [ -n "${id}" ]; then
+        echo "release ${tag}: there already (made by an earlier try or another workflow)"
+        return 0
+    fi
     prerelease && kind+=(--prerelease)
-    gh release create "${tag}" --verify-tag --title "${tag}" --notes "${NOTES:-Release ${tag}: in the making.}" "${kind[@]}" \
-        || [ -n "$(release_id)" ] # made meanwhile by another workflow
+    gh_ release create "${tag}" --verify-tag --title "${tag}" --notes "${NOTES:-Release ${tag}: in the making.}" "${kind[@]}"
     echo "release ${tag}: created as a draft"
 }
 
@@ -100,7 +133,7 @@ upload() {
     ensure
     id="$(release_id)"
     if is_draft "${id}"; then
-        "${here}/gh-retry.sh" gh release upload "${tag}" "${files[@]}" --clobber
+        gh_ release upload "${tag}" "${files[@]}" --clobber
         return 0
     fi
     names="$(asset_names "${id}")"
@@ -109,7 +142,7 @@ upload() {
         if [ "$(basename "${f}")" = checksums.txt ] && grep -qx checksums.txt <<<"${names}"; then
             local tmp
             tmp="$(mktemp -d)"
-            gh release download "${tag}" --pattern checksums.txt --dir "${tmp}"
+            gh_ release download "${tag}" --pattern checksums.txt --dir "${tmp}" --clobber
             if ! cmp -s "${tmp}/checksums.txt" "${f}"; then
                 echo "::error::${tag} is published and this run's files differ from it (checksums.txt):" \
                     "a published release is never rewritten. Tag a new version." >&2
@@ -126,7 +159,7 @@ upload() {
             echo "release ${tag} is published: ${base} kept as it is"
             continue
         fi
-        "${here}/gh-retry.sh" gh release upload "${tag}" "${f}" --clobber
+        gh_ release upload "${tag}" "${f}" --clobber
     done
 }
 
@@ -141,7 +174,7 @@ publish() {
     done
     tmp="$(mktemp -d)"
     if grep -qx latest.json <<<"${names}"; then
-        gh release download "${tag}" --pattern latest.json --dir "${tmp}"
+        gh_ release download "${tag}" --pattern latest.json --dir "${tmp}" --clobber
         if [ "${REQUIRE_FEED:-false}" = true ] &&
             ! (cd "${here}" && go run ./cmd/updater-feed --check "${tmp}/latest.json" --require server-apps); then
             missing+=("the server apps in latest.json (desktop-release.yml)")
@@ -157,7 +190,7 @@ publish() {
     if [ "${all}" = true ] && [ "${REQUIRE_FEED:-false}" = true ]; then
         all=false
         if grep -qx latest-player.json <<<"${names}"; then
-            gh release download "${tag}" --pattern latest-player.json --dir "${tmp}"
+            gh_ release download "${tag}" --pattern latest-player.json --dir "${tmp}" --clobber
             if (cd "${here}" && go run ./cmd/updater-feed --check "${tmp}/latest-player.json" --require player) >/dev/null 2>&1; then
                 all=true
             fi
@@ -171,9 +204,9 @@ publish() {
             return 0
         fi
         if prerelease; then
-            gh release edit "${tag}" --draft=false --prerelease --latest=false
+            gh_ release edit "${tag}" --draft=false --prerelease --latest=false
         else
-            gh release edit "${tag}" --draft=false --prerelease=false --latest=false
+            gh_ release edit "${tag}" --draft=false --prerelease=false --latest=false
         fi
         echo "release ${tag}: published"
     fi
@@ -181,10 +214,10 @@ publish() {
         return 0
     fi
     local published latest
-    published="$(gh release list --exclude-drafts --limit 1000 --json tagName --jq '.[].tagName')"
+    published="$(gh_ release list --exclude-drafts --limit 1000 --json tagName --jq '.[].tagName')"
     latest="$(printf '%s\n' "${published}" | (cd "${here}" && go run ./cmd/release-order latest --tag "${tag}"))"
     if [ "${latest}" = true ] && { [ "${all}" = true ] || [ "${REQUIRE_FEED:-false}" != true ]; }; then
-        gh release edit "${tag}" --latest
+        gh_ release edit "${tag}" --latest
         echo "release ${tag}: the latest release"
     else
         echo "release ${tag}: not the latest (highest stable: ${latest}; every desktop and player platform in its feeds: ${all})"
@@ -210,7 +243,7 @@ adopt() {
     published() { grep -qxF "$1" <<<"${names}"; }
     # fetch NAME: the published copy, into tmp
     fetch() {
-        gh release download "${tag}" --pattern "$1" --dir "${tmp}" --clobber
+        gh_ release download "${tag}" --pattern "$1" --dir "${tmp}" --clobber
         [ -f "${tmp}/$1" ] || { echo "::error::${tag}: $1 is listed but could not be downloaded" >&2; exit 1; }
     }
     # take NAME: the fetched copy replaces this run's
@@ -267,5 +300,6 @@ case "${cmd}" in
     upload) upload "$@" ;;
     publish) publish ;;
     adopt) adopt "$@" ;;
+    create-once) create_once ;;
     *) echo "release-assets.sh: unknown command ${cmd} (ensure|upload|publish|adopt)" >&2; exit 2 ;;
 esac
