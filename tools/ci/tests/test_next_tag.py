@@ -220,6 +220,11 @@ def test_nightly_runs_are_the_nightly_set_on_main_only() -> None:
         {"headSha": SHA_C, "headBranch": "main", "event": "push", "status": "completed", "conclusion": "success", "displayTitle": "Broadcast rehearsal"},
         {"headSha": SHA_C, "headBranch": "feat/x", "event": "pull_request", "status": "completed", "conclusion": "success", "displayTitle": "Broadcast rehearsal"},
         nightly(SHA_D, headBranch="feat/x"),  # a nightly-set hand run on another branch
+        # a pull request's run (a fork's branch called main) can name itself anything
+        nightly(SHA_C, event="pull_request"),
+        nightly(SHA_C, event="push"),
+        # a hand run whose name is not its own commit
+        {**nightly(SHA_D), "displayTitle": nt.BROADCAST_NIGHTLY_TITLE + SHA_C},
     ]
     assert [c for c, _ in nt.nightly_results(runs)] == [SHA_A, SHA_B]
 

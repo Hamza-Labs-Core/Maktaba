@@ -151,13 +151,19 @@ def nightly_commit(run: Mapping[str, Any]) -> str | None:
     name, or a scheduled run's headSha (a schedule runs on main's head; runs before the
     run-name have no name). Any other run (a pull request's or a push's short set, or a hand
     run on another branch) is none."""
+    # Only a schedule's run or a hand run counts: a pull request's run (a fork's too, whose
+    # branch may be called main) runs the PR's own workflow file and so can carry any name. A
+    # dispatch needs write access, and its name must be its own headSha (both run on the ref's
+    # head, github.sha).
     if run.get("headBranch", "main") != "main":
         return None
-    m = _NIGHTLY_TITLED.match(str(run.get("displayTitle", "")))
-    if m:
-        return m[1]
-    if run.get("event") == "schedule":
-        return str(run["headSha"])
+    event = run.get("event")
+    head = str(run.get("headSha", ""))
+    if event == "schedule":
+        return head
+    if event == "workflow_dispatch":
+        m = _NIGHTLY_TITLED.match(str(run.get("displayTitle", "")))
+        return m[1] if m and m[1] == head else None
     return None
 
 
