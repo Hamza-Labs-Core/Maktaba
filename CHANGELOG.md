@@ -344,6 +344,18 @@ build fails when the two differ.
 
 ### Fixed
 
+- **The log index no longer keeps two CPU cores busy.** Every 200 ms, the home's log search
+  service (`maktaba-server logs`) re-read every closed hour of logs it had already indexed:
+  a week of compressed files, decompressed from the start each time to find nothing new. On a
+  home with about 3,500 closed hours it used 150–300% CPU nonstop. A closed hour is now read
+  once and never opened again, even after a restart. A pass with nothing new only checks the
+  log folders and the open hours' files. On a home of that size, an idle pass went from 286%
+  of a CPU core to under 1%. Metric scrapes no longer fail with "database is locked": the
+  service now writes its database one writer at a time. When the index is over its size cap,
+  it now drops dashboard minutes older than a day before any info log line. Before, a week
+  of metric minutes kept the file over the cap, and every info line was deleted. Week-long
+  dashboards then read the hourly figures, which are always kept.
+
 - **Playback no longer freezes for up to 30 seconds when an Apple device is busy.**
   The Apple apps' stream proxy passes each video request on to the home. It ran below other work
   on the device, and it could wait for a token refresh before passing a request on. On a busy
