@@ -74,11 +74,11 @@ func closedHours(t testing.TB, root string, services, hours, n int) []string {
 // never opened again, across a restart too, and an idle pass does bounded work.
 func TestIdlePassOpensNoClosedHour(t *testing.T) {
 	root, now := t.TempDir(), t0
-	zsts := closedHours(t, root, 4, 24, 20)
+	zsts := closedHours(t, root, 2, 12, 3)
 	ix := open(t, root, &now)
 	logTo(t, ix)
 	ctx := context.Background()
-	if n, err := ix.Ingest(ctx); err != nil || n != 4*25*20 {
+	if n, err := ix.Ingest(ctx); err != nil || n != 2*13*3 {
 		t.Fatalf("first pass: %d %v", n, err)
 	}
 	// were a closed hour read again, it would not decode: the pass would log it
@@ -221,7 +221,7 @@ func TestRecordWaitsForAnotherWriter(t *testing.T) {
 // a week of minutes kept the file over the cap and every info line went.
 func TestCapTrimsOldMinutesBeforeInfoLines(t *testing.T) {
 	root, now := t.TempDir(), t0
-	closedHours(t, root, 2, 3, 50)
+	closedHours(t, root, 1, 2, 10)
 	ix := open(t, root, &now)
 	logTo(t, ix)
 	ctx := context.Background()
@@ -230,7 +230,8 @@ func TestCapTrimsOldMinutesBeforeInfoLines(t *testing.T) {
 	}
 	var lines int
 	_ = ix.db.QueryRow(`SELECT COUNT(*) FROM lines`).Scan(&lines)
-	// three days of minutes, 100 series: the bulk of the file
+	// a day and a half of minutes (one in thirty written), two series with long labels: the bulk of
+	// the file, in few rows (the unit tier runs under -race)
 	err := ix.write(func() error {
 		tx, err := ix.db.Begin()
 		if err != nil {
@@ -240,10 +241,11 @@ func TestCapTrimsOldMinutesBeforeInfoLines(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		from := now.Add(-72*time.Hour).Unix() / 60
-		for m := from; m < now.Unix()/60; m++ {
-			for s := 0; s < 100; s++ {
-				if _, err := st.Exec("maktaba_component_up", fmt.Sprintf(`component="c%03d"`, s), m, 1); err != nil {
+		from := now.Add(-36*time.Hour).Unix() / 60
+		pad := strings.Repeat("x", 8000)
+		for m := from; m < now.Unix()/60; m += 30 {
+			for s := 0; s < 2; s++ {
+				if _, err := st.Exec("maktaba_component_up", fmt.Sprintf(`component="c%d",pad="%s"`, s, pad), m, 1); err != nil {
 					return err
 				}
 			}
@@ -253,8 +255,13 @@ func TestCapTrimsOldMinutesBeforeInfoLines(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := ix.Rollup(ctx); err != nil { // the hours are in the file before it is measured
+		t.Fatal(err)
+	}
 	_, _ = ix.db.Exec(`PRAGMA wal_checkpoint(TRUNCATE)`)
-	ix.MaxBytes = ix.Size() / 2 // a day of minutes and the lines fit; three days do not
+	// minutes older than a day are about a fifth of the file: dropping them fits, the info
+	// lines (a sliver) would not be enough
+	ix.MaxBytes = ix.Size() * 90 / 100
 	if _, err := ix.Sweep(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -268,7 +275,7 @@ func TestCapTrimsOldMinutesBeforeInfoLines(t *testing.T) {
 	}
 	_ = ix.db.QueryRow(`SELECT MIN(minute) FROM metric_1m`).Scan(&oldest)
 	// the oldest minutes went, an hour at a time, until the file fit; none of the last day
-	from := now.Add(-72*time.Hour).Unix() / 60
+	from := now.Add(-36*time.Hour).Unix() / 60
 	if dayAgo := now.Add(-24*time.Hour).Unix() / 60; oldest <= from+60 || oldest > dayAgo {
 		t.Fatalf("minutes kept from %d (written from %d, a day ago %d)", oldest, from, dayAgo)
 	}
