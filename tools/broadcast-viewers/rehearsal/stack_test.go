@@ -115,10 +115,20 @@ func (s *stack) note(format string, a ...any) {
 	s.t.Logf("note %s", fmt.Sprintf(format, a...))
 }
 
+// overlays are the compose files a scenario's project adds to compose.yml.
+var overlays = map[string][]string{
+	// the witness's monitoring and the cloud's broadcast series (50.28)
+	"bc-observe": {"compose.observe.yml"},
+}
+
 // compose runs docker compose on the scenario's project.
 func compose(t *testing.T, project string, env []string, args ...string) (string, error) {
-	file := filepath.Join(repoRoot(t), "tools/rehearsal-cloud/broadcast/compose.yml")
-	cmd := exec.Command("docker", append([]string{"compose", "-p", project, "-f", file}, args...)...)
+	dir := filepath.Join(repoRoot(t), "tools/rehearsal-cloud/broadcast")
+	files := []string{"-f", filepath.Join(dir, "compose.yml")}
+	for _, o := range overlays[project] {
+		files = append(files, "-f", filepath.Join(dir, o))
+	}
+	cmd := exec.Command("docker", append(append([]string{"compose", "-p", project}, files...), args...)...)
 	cmd.Env = append(os.Environ(), env...)
 	out, err := cmd.CombinedOutput()
 	return string(out), err

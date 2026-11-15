@@ -1,0 +1,33 @@
+# syntax=docker/dockerfile:1.7
+# The broadcast rehearsal's cloud monitoring (Epic 50 stories 50.28 and 50.29, broadcast-observe):
+# cloud/cmd/rehearsal-broadcast-monitor, the maktaba_broadcast_* series made by the cloud's own
+# code from the rehearsal edge's Analytics Engine points, and the stand-in for the owner's ntfy
+# topic that Alertmanager pages. Never published.
+#
+#   docker build -f tools/rehearsal-cloud/broadcast/Dockerfile.monitor -t maktaba-broadcast-monitor:rehearsal .
+ARG GO_VERSION=1.26
+FROM golang:${GO_VERSION}-bookworm AS builder
+WORKDIR /src
+ENV CGO_ENABLED=0 GOOS=linux
+COPY cloud/go.mod cloud/go.sum ./cloud/
+# cloud/go.mod's replace directives
+COPY shared/log/go ./shared/log/go
+COPY shared/logkeeper/go ./shared/logkeeper/go
+COPY shared/go/clientip ./shared/go/clientip
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    --mount=type=cache,target=/go/pkg/mod \
+    cd cloud && go mod download
+COPY cloud ./cloud
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    --mount=type=cache,target=/go/pkg/mod \
+    cd cloud && go build -trimpath -o /out/rehearsal-broadcast-monitor ./cmd/rehearsal-broadcast-monitor
+
+FROM debian:bookworm-slim
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends curl ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+COPY --from=builder /out/rehearsal-broadcast-monitor /usr/local/bin/rehearsal-broadcast-monitor
+EXPOSE 9090
+HEALTHCHECK --interval=2s --timeout=3s --retries=30 CMD curl -fsS http://127.0.0.1:9090/healthz || exit 1
+ENTRYPOINT ["rehearsal-broadcast-monitor"]
+CMD ["-addr", ":9090", "-edge", "http://edge:8787"]

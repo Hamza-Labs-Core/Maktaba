@@ -68,26 +68,6 @@ func (j *Jobs) PollMinute(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	type live struct{ pub, ch string }
-	viewers := map[live]float64{}
-	channels := map[live]bool{}
-	lag := make([]float64, len(LagBuckets))
-	var lagN, lagMs, beats float64
-	for _, r := range rows {
-		k := live{r.Str("publisher"), r.Str("channel")}
-		switch r.Str("event") {
-		case "beat":
-			viewers[k] += r.Num("n")
-			beats += r.Num("n")
-		case "ingest":
-			channels[k] = true
-			lagN += r.Num("n")
-			lagMs += r.Num("lag_ms")
-			for i := range LagBuckets {
-				lag[i] += r.Num(fmt.Sprintf("le_%d", i))
-			}
-		}
-	}
 	cost, err := j.monthCost(ctx)
 	if err != nil {
 		return err
@@ -106,20 +86,9 @@ func (j *Jobs) PollMinute(ctx context.Context) error {
 	if polled.Valid && !polled.Time.Before(minute) {
 		return nil // another worker took this minute
 	}
-	var s Snapshot
-	_ = json.Unmarshal(raw, &s)
-	if len(s.LagBuckets) != len(LagBuckets) {
-		s.LagBuckets = make([]float64, len(LagBuckets))
-	}
-	s.Minute = minute
-	s.ChannelsLive = float64(len(channels))
-	s.Viewers = beats
-	s.ViewerMinutesTotal += beats
-	for i := range lag {
-		s.LagBuckets[i] += lag[i]
-	}
-	s.LagCount += lagN
-	s.LagSumSeconds += lagMs / 1000
+	var prev Snapshot
+	_ = json.Unmarshal(raw, &prev)
+	s, viewers := FoldMinute(prev, rows, minute)
 	s.CostUSD = cost
 	out, err := json.Marshal(s)
 	if err != nil {
@@ -132,15 +101,61 @@ func (j *Jobs) PollMinute(ctx context.Context) error {
 		return err
 	}
 	for k, n := range viewers {
-		if k.pub == "" || k.ch == "" {
+		if k.Publisher == "" || k.Channel == "" {
 			continue
 		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO broadcast_live (publisher_id, channel_id, viewers, updated_at) VALUES ($1, $2, $3, $4)`,
-			k.pub, k.ch, n, minute.Add(time.Minute)); err != nil {
+			k.Publisher, k.Channel, n, minute.Add(time.Minute)); err != nil {
 			return err
 		}
 	}
 	return tx.Commit()
+}
+
+// LiveChannel is a publisher's channel, as the minute's rows name it.
+type LiveChannel struct{ Publisher, Channel string }
+
+// FoldMinute folds one minute's rows (minuteQuery's answer: beats and ingest per channel, with
+// the ingest lag's buckets) into the snapshot before it: the minute's channels live and viewers,
+// and the counters that only grow. It returns the new snapshot (its CostUSD the caller's to set)
+// and the minute's viewers per channel. The worker's PollMinute and the broadcast rehearsal's
+// monitor (cloud/cmd/rehearsal-broadcast-monitor) both fold with it.
+func FoldMinute(prev Snapshot, rows []Row, minute time.Time) (Snapshot, map[LiveChannel]float64) {
+	viewers := map[LiveChannel]float64{}
+	channels := map[LiveChannel]bool{}
+	lag := make([]float64, len(LagBuckets))
+	var lagN, lagMs, beats float64
+	for _, r := range rows {
+		k := LiveChannel{r.Str("publisher"), r.Str("channel")}
+		switch r.Str("event") {
+		case "beat":
+			viewers[k] += r.Num("n")
+			beats += r.Num("n")
+		case "ingest":
+			channels[k] = true
+			lagN += r.Num("n")
+			lagMs += r.Num("lag_ms")
+			for i := range LagBuckets {
+				lag[i] += r.Num(LagColumn(i))
+			}
+		}
+	}
+	s := prev
+	buckets := make([]float64, len(LagBuckets))
+	if len(prev.LagBuckets) == len(LagBuckets) {
+		copy(buckets, prev.LagBuckets)
+	}
+	s.LagBuckets = buckets
+	s.Minute = minute
+	s.ChannelsLive = float64(len(channels))
+	s.Viewers = beats
+	s.ViewerMinutesTotal += beats
+	for i := range lag {
+		s.LagBuckets[i] += lag[i]
+	}
+	s.LagCount += lagN
+	s.LagSumSeconds += lagMs / 1000
+	return s, viewers
 }
 
 // monthCost is CostEstimate over this UTC month's hourly rows.

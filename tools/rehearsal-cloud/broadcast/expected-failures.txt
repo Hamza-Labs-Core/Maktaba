@@ -3,4 +3,3 @@
 # reported as an expected failure (XFAIL), never as a pass; if it passes, the run fails until the
 # line goes (XPASS). The story that turns a scenario on removes its line in the same pull request.
 # A scenario with a body is listed here only while some of its checks need what this stack lacks.
-broadcast-observe          50.28  the edge's events run (the canary's glass-to-glass is 0 for most segments: the home's PROGRAM-DATE-TIME is not before the edge receives them); the alerts and the status component need 50.10's Prometheus over the cloud worker's Analytics Engine poll and 50.11's status page, and the canary probe (deploy/cloud-relay/probes/broadcast_probe) is not built; no pull request builds them yet

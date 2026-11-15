@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -136,5 +138,57 @@ func TestControlPort(t *testing.T) {
 	_ = json.NewDecoder(resp.Body).Decode(&m)
 	if m.State != "live" || m.EncoderOn {
 		t.Fatalf("metrics: %+v", m)
+	}
+}
+
+// A slowed uplink: every 2nd segment PUT's body takes its time to arrive (the edge's clock starts
+// at the request, so its upload-to-visible grows); the rest go at once, and {} restores the link.
+func TestUplinkSlowsEveryNthPut(t *testing.T) {
+	var arrived []time.Duration
+	edge := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t0 := time.Now()
+		_, _ = io.Copy(io.Discard, r.Body)
+		arrived = append(arrived, time.Since(t0))
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer edge.Close()
+	h := newHome("ffmpeg-not-run", t.TempDir(), nil)
+	ctl := httptest.NewServer(h.routes())
+	defer ctl.Close()
+	for _, bad := range []string{`{"every":-1}`, `{"every":2,"body_ms":30000}`, `nope`} {
+		resp, _ := http.Post(ctl.URL+"/uplink", "application/json", strings.NewReader(bad))
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Errorf("uplink %s: %d", bad, resp.StatusCode)
+		}
+	}
+	resp, _ := http.Post(ctl.URL+"/uplink", "application/json", strings.NewReader(`{"every":2,"body_ms":400}`))
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("uplink: %d", resp.StatusCode)
+	}
+	put := func(seq int) {
+		body := strings.Repeat("x", 64<<10)
+		req, _ := http.NewRequest(http.MethodPut, fmt.Sprintf("%s/v1/ingest/abc/480p/%d.ts", edge.URL, seq), strings.NewReader(body))
+		res, err := h.client.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = res.Body.Close()
+	}
+	for i := 1; i <= 4; i++ {
+		put(i)
+	}
+	_, _ = http.Post(ctl.URL+"/uplink", "application/json", strings.NewReader(`{}`))
+	put(5)
+	if len(arrived) != 5 {
+		t.Fatalf("PUTs: %v", arrived)
+	}
+	for i, d := range arrived {
+		slow := i == 1 || i == 3
+		if slow && d < 300*time.Millisecond || !slow && d > 200*time.Millisecond {
+			t.Errorf("PUT %d's body took %s (slow: %v)", i+1, d, slow)
+		}
+	}
+	if puts := h.puts.snapshot(); len(puts) != 5 || puts[1].TookMS < 300 {
+		t.Errorf("the PUT log: %+v", puts)
 	}
 }

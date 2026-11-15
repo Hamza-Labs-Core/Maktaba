@@ -69,11 +69,13 @@ Times are in the publisher's time zone. Export as CSV.
   - `maktaba_broadcast_revocation_list_age_seconds`;
   - `maktaba_broadcast_edge_cost_estimate_usd` (from the cost model in README §14.4, checked
     against the Cloudflare bill monthly).
-- **Alerts in 50.10:**
-  - `broadcast_canary_down` (2 failed probes in a row, pages);
-  - `broadcast_ingest_lag_high` (p95 > 3 s for 10 min);
-  - `broadcast_revocation_list_stale` (> 10 min);
-  - `broadcast_cost_80pct` (the month's estimate passes 80 % of `broadcast.monthly_budget_usd`).
+- **Alerts in 50.10** (SEV1 and SEV2 page the owner's phone, SEV3 is the daily email digest):
+  - `broadcast_canary_down` (2 failed probes in a row, SEV1, pages);
+  - `broadcast_ingest_lag_high` (p95 > 3 s for 10 min, SEV2);
+  - `broadcast_revocation_list_stale` (> 10 min, SEV2);
+  - `broadcast_glass_to_glass_high` (the canary's glass-to-glass p95 over a day > 20 s, SEV3);
+  - `broadcast_cost_80pct` (the month's estimate passes 80 % of `broadcast.monthly_budget_usd`,
+    SEV3).
 
 ### 5. The canary broadcast
 
@@ -100,7 +102,8 @@ Times are in the publisher's time zone. Export as CSV.
   **then** a SEV3 is raised.
 - **Given** the canary edge path fails from both networks twice in a row,
   **when** the alert evaluates,
-  **then** the owner is paged within 90 s, and the status page shows Broadcasting degraded.
+  **then** the owner is paged within 90 s, and the status page shows Broadcasting in outage (every
+  network failing is an outage, 50.11's rule).
 - **Given** the canary plays normally,
   **when** the probe reads the burned clock,
   **then** glass-to-glass is recorded, and its p95 over a day is ≤ 20 s.
@@ -120,7 +123,7 @@ Times are in the publisher's time zone. Export as CSV.
 | T06 | integration | cloud API + fake edge | metrics endpoint | the `maktaba_broadcast_*` series present |
 | T07 | role test | home and cloud APIs | non-admin | `403` |
 | T08 | Arabic | analytics strings | check | present |
-| T09 | rehearsal (CI, 50.29 `broadcast-observe`) | home + edge + probe | break ingest, stale the list | the alerts fire; the status component changes |
+| T09 | rehearsal (CI, 50.29 `broadcast-observe`) | home + edge + probe + 50.10's Prometheus and Alertmanager | congest the uplink, a late clock, stale the list, stop the canary | each alert fires and is routed as specified; the status component changes |
 
 ## Edge cases
 
@@ -155,9 +158,9 @@ Times are in the publisher's time zone. Export as CSV.
 | `web/packages/broadcast-edge/src/events.ts` | AE events. |
 | `cloud/internal/broadcast/rollup.go` (new), `metrics.go` | Rollups, cross-check, metrics (with 53.17's names). |
 | `cloud/migrations/` (new) | `broadcast_usage_hourly`. |
-| `deploy/cloud-relay/monitoring/` (50.10's Prometheus and Alertmanager rules) | Broadcast alerts. |
-| `deploy/cloud-relay/probes/broadcast_probe` (new, 50.10's probe set) | The canary viewer probe. |
-| 50.11's status component config | Broadcasting. |
+| `deploy/cloud-ha/monitoring/alerts.yml` (50.10's Prometheus rules), `broadcast-rules-test.yml` | Broadcast alerts. |
+| `deploy/cloud-ha/monitoring/broadcast-probe.sh` (new, 50.10's probe set), `probe.sh` | The canary viewer probe. |
+| `status/config.json`, `status/lib.mjs`, `deploy/cloud-ha/bin/status-export` (50.11) | Broadcasting. |
 | `web/src/pages/LiveTv/BroadcastAnalytics.tsx`, `web/cloud/src/pages/BroadcastAnalytics.tsx`, i18n | The publisher's analytics. |
 
 ### Tests

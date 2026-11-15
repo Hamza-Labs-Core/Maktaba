@@ -108,6 +108,8 @@ logs (the "tests keep logs" rule):
 |---|---|
 | `tools/rehearsal-cloud/broadcast/` (`compose.yml`, `Dockerfile.edge`, `Dockerfile.home`, `expected-failures.txt`) | The stack, and the scenarios not yet turned on. |
 | `tools/rehearsal-cloud/broadcast/edge/` (`server.mjs`, `entry.ts`) | The edge in Miniflare as simulated locations: counters, the fast clock, a fake Turnstile and a fake cloud API. |
+| `tools/rehearsal-cloud/broadcast/` (`compose.observe.yml`, `observe/prometheus.yml`, `Dockerfile.monitor`) | `broadcast-observe`'s monitoring: the witness's Prometheus, Alertmanager and Pushgateway with 50.10's alert rules and routes, and the cloud's broadcast series. |
+| `cloud/cmd/rehearsal-broadcast-monitor/` (new, Go) | The cloud's `maktaba_broadcast_*` series from the edge's Analytics Engine points, by the cloud's own fold, and a stand-in for the owner's ntfy topic. |
 | `streaming/cmd/rehearsal-broadcast-home/` (new, Go) | The home: the broadcaster on a test pattern, its control port and the proxy counter. |
 | `tools/broadcast-viewers/` (new, Go) | The load generator, and the cloud's signed posts in its exact format. |
 | `tools/broadcast-viewers/rehearsal/` (build tag `broadcastrehearsal`) | Scenarios, verdict, report. |

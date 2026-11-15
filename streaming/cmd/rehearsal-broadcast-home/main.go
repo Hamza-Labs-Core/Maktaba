@@ -10,6 +10,8 @@
 //	POST /unpublish      takes it down (the broadcaster stops, posting on_air false)
 //	POST /encoder/stop   stops the test pattern (the channel's own encoder dies; the ladder starves)
 //	POST /encoder/start  starts it again
+//	POST /uplink         {"every": N, "body_ms": D} slows the uplink: every Nth segment PUT's body
+//	                     takes D ms to send (a congested upload; {} or every 0 restores it)
 //	GET  /metrics        what the home sent: the uploader's own counts (the broadcaster's report)
 //	                     and every PUT the home's HTTP client saw (the proxy counter), with times
 //	GET  /healthz
@@ -73,6 +75,7 @@ type home struct {
 	pattern *testPattern
 	client  *http.Client
 	puts    *putLog
+	uplink  *uplink
 }
 
 // The test-pattern channel's own encode: 480p at 25 fps on a 2 s keyframe grid (the ladder
@@ -82,12 +85,13 @@ var output = broadcast.Output{Encoder: broadcast.EncSoftware, AllowSoftware: tru
 
 func newHome(ffmpeg, dir string, logger *slog.Logger) *home {
 	puts := &putLog{}
-	client := &http.Client{Timeout: 30 * time.Second, Transport: &countingTransport{next: http.DefaultTransport, log: puts}}
+	up := &uplink{}
+	client := &http.Client{Timeout: 30 * time.Second, Transport: &countingTransport{next: http.DefaultTransport, log: puts, uplink: up}}
 	store := &memStore{}
 	pattern := &testPattern{ffmpeg: ffmpeg, logger: logger, on: true}
 	ctl := &broadcast.Ctl{Store: store, Source: pattern, FFmpeg: ffmpeg, Dir: dir, HTTP: client, Logger: logger,
 		Output: func(context.Context) broadcast.Output { return output }, Poll: time.Second}
-	return &home{ctl: ctl, store: store, pattern: pattern, client: client, puts: puts}
+	return &home{ctl: ctl, store: store, pattern: pattern, client: client, puts: puts, uplink: up}
 }
 
 type publishReq struct {
@@ -125,6 +129,18 @@ func (h *home) routes() http.Handler {
 	mux.HandleFunc("POST /encoder/start", func(w http.ResponseWriter, _ *http.Request) {
 		h.pattern.set(true)
 		writeJSON(w, map[string]bool{"ok": true})
+	})
+	mux.HandleFunc("POST /uplink", func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Every  int   `json:"every"`
+			BodyMS int64 `json:"body_ms"`
+		}
+		if err := json.NewDecoder(io.LimitReader(r.Body, 4<<10)).Decode(&req); err != nil || req.Every < 0 || req.BodyMS < 0 || req.BodyMS > 20000 {
+			http.Error(w, `body must be {"every": N >= 0, "body_ms": 0..20000}`, http.StatusBadRequest)
+			return
+		}
+		h.uplink.set(req.Every, time.Duration(req.BodyMS)*time.Millisecond)
+		writeJSON(w, map[string]any{"every": req.Every, "body_ms": req.BodyMS})
 	})
 	mux.HandleFunc("GET /metrics", func(w http.ResponseWriter, _ *http.Request) {
 		state, detail, report := h.store.snapshot()
@@ -306,13 +322,23 @@ func (l *putLog) snapshot() []putRecord {
 var segPath = regexp.MustCompile(`^/v1/ingest/[^/]+/([^/]+)/(\d+)\.ts$`)
 
 type countingTransport struct {
-	next http.RoundTripper
-	log  *putLog
+	next   http.RoundTripper
+	log    *putLog
+	uplink *uplink
 }
 
 func (t *countingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	m := segPath.FindStringSubmatch(req.URL.Path)
 	start := time.Now()
+	if m != nil && req.Method == http.MethodPut && req.Body != nil && t.uplink != nil {
+		if d := t.uplink.next(); d > 0 {
+			// a RoundTripper leaves its request alone: the slow body goes on a copy (a replay on
+			// a fresh connection reads GetBody's, at full speed)
+			slow := req.Clone(req.Context())
+			slow.Body = &dripReader{r: req.Body, total: req.ContentLength, over: d}
+			req = slow
+		}
+	}
 	resp, err := t.next.RoundTrip(req)
 	if m == nil || req.Method != http.MethodPut {
 		return resp, err
@@ -328,3 +354,61 @@ func (t *countingTransport) RoundTrip(req *http.Request) (*http.Response, error)
 	t.log.add(rec)
 	return resp, err
 }
+
+// uplink is the home's upload link as the scenario sets it: every Nth segment PUT is slow.
+type uplink struct {
+	mu    sync.Mutex
+	every int
+	body  time.Duration
+	n     int
+}
+
+func (u *uplink) set(every int, body time.Duration) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	u.every, u.body, u.n = every, body, 0
+}
+
+// next is how long this PUT's body takes to send (0: as fast as the link goes).
+func (u *uplink) next() time.Duration {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	if u.every <= 0 || u.body <= 0 {
+		return 0
+	}
+	u.n++
+	if u.n%u.every != 0 {
+		return 0
+	}
+	return u.body
+}
+
+// dripReader sends a body evenly over a duration, a few KB at a time: the edge has the request
+// (and starts its upload-to-visible clock) at once, and the last byte comes `over` later.
+type dripReader struct {
+	r     io.ReadCloser
+	total int64
+	over  time.Duration
+	start time.Time
+	sent  int64
+}
+
+func (d *dripReader) Read(p []byte) (int, error) {
+	if d.start.IsZero() {
+		d.start = time.Now()
+	}
+	if len(p) > 4<<10 {
+		p = p[:4<<10]
+	}
+	n, err := d.r.Read(p)
+	d.sent += int64(n)
+	if d.total > 0 {
+		due := time.Duration(float64(d.over) * float64(d.sent) / float64(d.total))
+		if wait := due - time.Since(d.start); wait > 0 {
+			time.Sleep(wait)
+		}
+	}
+	return n, err
+}
+
+func (d *dripReader) Close() error { return d.r.Close() }

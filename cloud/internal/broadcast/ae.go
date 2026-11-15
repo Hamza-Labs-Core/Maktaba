@@ -42,6 +42,25 @@ func col(name string) string {
 	panic("broadcast: no event column " + name)
 }
 
+// BlobIndex is a schema name's place (0-based) in an event's blobs, and DoubleIndex in its
+// doubles, as the edge writes them; -1 when the schema has no such column.
+func BlobIndex(name string) int { return index(blobColumns, name) }
+
+// DoubleIndex: see BlobIndex.
+func DoubleIndex(name string) int { return index(doubleColumns, name) }
+
+func index(cols []string, name string) int {
+	for i, n := range cols {
+		if n == name {
+			return i
+		}
+	}
+	return -1
+}
+
+// LagColumn is the alias of minuteQuery's count of ingest events at or under LagBuckets[i].
+func LagColumn(i int) string { return "le_" + strconv.Itoa(i) }
+
 // ErrAnalyticsUnavailable is the SQL API failing or not configured: the rollup tries again later.
 var ErrAnalyticsUnavailable = errors.New("broadcast: Analytics Engine SQL API unavailable")
 
@@ -178,7 +197,7 @@ var LagBuckets = []float64{0.25, 0.5, 1, 2, 3, 5, 10, 30}
 func minuteQuery(from, to time.Time) string {
 	var b strings.Builder
 	for i, le := range LagBuckets {
-		fmt.Fprintf(&b, "  SUM(IF(%s <= %g, _sample_interval, 0)) AS le_%d,\n", col("upload_to_visible_ms"), le*1000, i)
+		fmt.Fprintf(&b, "  SUM(IF(%s <= %g, _sample_interval, 0)) AS %s,\n", col("upload_to_visible_ms"), le*1000, LagColumn(i))
 	}
 	return fmt.Sprintf(`SELECT %s AS event, %s AS publisher, %s AS channel,
   SUM(_sample_interval) AS n,

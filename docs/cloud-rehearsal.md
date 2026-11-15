@@ -111,13 +111,25 @@ from the home per segment per rung, whatever the number of viewers**. It has its
 - **The home:** the streaming service's broadcaster (`streaming/internal/broadcast`) on a test
   pattern with a burned clock and frame counter, encoded in software
   (`streaming/cmd/rehearsal-broadcast-home`, `Dockerfile.home`). It counts every PUT at its HTTP
-  transport (the proxy counter), beside the uploader's own report.
+  transport (the proxy counter), beside the uploader's own report. `POST /uplink {"every": N,
+  "body_ms": D}` congests its upload: every Nth segment PUT's body takes D ms to send.
 - **The cloud's part:** the ingest tokens, the revocation lists, the plan pushes, the access
   posts and the invites are signed in the test with the cloud's TEST key, byte for byte as the
   cloud signs them (`tools/broadcast-viewers/tokens.go`, tested against
   `cloud/internal/broadcast/testdata/vectors.json` and `invite_vectors.json`), and viewer tokens
   with the rehearsal's viewer key. The edge signs its usage posts with a rehearsal key, checked as
   the cloud checks it. None of these keys is used in production.
+- **The monitoring (`broadcast-observe` only, `compose.observe.yml`):** the witness's Prometheus,
+  Alertmanager and Pushgateway, at the images of `deploy/cloud-ha/monitoring/compose.yml`, with
+  the production alert rules (`alerts.yml`, mounted unchanged) and routes (`alertmanager.yml`,
+  rendered with stand-in receivers: the phone receiver pages the monitor's ntfy stand-in). The
+  cloud's `maktaba_broadcast_*` series come from `cloud/cmd/rehearsal-broadcast-monitor`
+  (`Dockerfile.monitor`): the cloud's own fold, cost model and series writer
+  (`broadcast.FoldMinute`, `CostEstimate`, `WriteSeries`) over the edge's Analytics Engine points
+  (`/__rehearsal/ae`), with the worker's timing (the minute before last). On the runner, every
+  60 s: `broadcast-probe.sh` plays the canary as the witness, `status-export` writes the witness's
+  view, `probe.sh` plays it as GitHub's runners and records the status page's round, and
+  `status/update.mjs` folds it in.
 - **Viewers:** `tools/broadcast-viewers`, a Go load generator. Each player fetches the master
   and its rung's playlist every target duration, fetches each new segment, sends heartbeats, and
   records the slate and `off_air`.
@@ -135,11 +147,11 @@ from the home per segment per rung, whatever the number of viewers**. It has its
 | `broadcast-access` | 50.26 | an invite's uses (a device again reuses its pass), a short code and its 10 tries a minute, Turnstile good once, open sessions per network, viewers per channel, daily minutes, a revoked pass and invite; the limits refuse new sessions only |
 | `broadcast-takedown` | 50.24 | a takedown of the item airing now (a programme entry): every viewer has the slate ≤ 60 s while the home uploads on; the counter-notice restores it; a second strike's slate ends with its slot; the third strike takes every viewer off air ≤ 60 s, stops the home and lets no one new in |
 | `broadcast-hetzner-down` | 14.8 | nightly: the cloud down for 15 minutes mid-broadcast: no viewer error, the home uploads on, the edge's usage posts are refused and kept; once it is back every window arrives once, its viewer-minutes exactly the heartbeats the edge counted, every post signed with the edge's key |
-| `broadcast-observe` | 50.28 | XFAIL: the canary's ingest events carry glass-to-glass (failing today, below), ingest events stop when ingest breaks, a revoked channel's viewers are written as blocked; the alerts and the status component are the cloud's monitoring, not in this stack |
+| `broadcast-observe` | 50.28 | the canary's ingest events carry glass-to-glass; while the canary plays, the status page's Broadcasting is operational, the probe records glass-to-glass from both networks at ≤ 20 s and the canary and glass-to-glass alerts are quiet; each alert fires on the production rules and Alertmanager routes it by the production routes: `broadcast_cost_80pct` (email), `broadcast_glass_to_glass_high` when the burned clock reads 45 s late (email), `broadcast_revocation_list_stale` after 10 minutes without a list (phone), `broadcast_ingest_lag_high` with a congested uplink (every 4th segment's body takes 4.5 s; phone); the encoder killed: ingest events stop, the slate, `broadcast_canary_down` pages the phone ≤ 90 s after the second failed probe round and Broadcasting goes to outage; a revoked channel's viewers are written as blocked, and the stale alert clears once the edge takes a list |
 
 A scenario is listed in `tools/rehearsal-cloud/broadcast/expected-failures.txt` while it has no
-body, or while some of its checks need what this stack lacks (`broadcast-observe`), and is
-reported XFAIL. A listed scenario that passes fails the run (XPASS) until its line goes, and an
+body, or while some of its checks need what this stack lacks, and is reported XFAIL (none is
+listed now). A listed scenario that passes fails the run (XPASS) until its line goes, and an
 unlisted scenario without a body fails.
 `tools/broadcast-viewers/rehearsal/catalog.go` is the list of scenarios; the CI matrix is built
 from it.
@@ -160,6 +172,8 @@ its commit.
 ```bash
 docker build -f tools/rehearsal-cloud/broadcast/Dockerfile.edge -t maktaba-broadcast-edge:rehearsal .
 docker build -f tools/rehearsal-cloud/broadcast/Dockerfile.home -t maktaba-broadcast-home:rehearsal .
+# broadcast-observe only: the cloud's monitor (it also needs bash, curl, jq, python3 and node)
+docker build -f tools/rehearsal-cloud/broadcast/Dockerfile.monitor -t maktaba-broadcast-monitor:rehearsal .
 cd tools/broadcast-viewers
 REHEARSAL_OUT=/tmp/broadcast go test -tags broadcastrehearsal -run 'TestBroadcast/broadcast-fanout$' -timeout 40m -v ./rehearsal/
 ```
@@ -182,7 +196,7 @@ the compose file runs the tagged images and never builds them.
 - The edge refuses a home clock more than 60 s off its own, and the home does not follow the
   edge's clock, so the fast clock can't run under a live home: the Hetzner outage runs in real
   time.
-- The canary's ingest events carry glass-to-glass 0 for most segments: the home's
-  PROGRAM-DATE-TIME (ffmpeg's `program_date_time`) is not earlier than the moment the edge
-  receives the segment, so the edge's difference clamps to 0. Open; `broadcast-observe` keeps the
-  check.
+- The canary's ingest events carried glass-to-glass 0 for most segments: the home's
+  PROGRAM-DATE-TIME (ffmpeg's `program_date_time`) was not earlier than the moment the edge
+  received the segment, so the edge's difference clamped to 0. Fixed in #1382 (the home sends
+  each segment's start time); `broadcast-observe` checks it.
