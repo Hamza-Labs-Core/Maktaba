@@ -50,9 +50,10 @@ struct TVHomePicker: View {
                     recent
                     nearby
                     byAddress
-                    // not when this Apple TV's Screen Time limits what plays (Epic 57): a
-                    // broadcast is outside any home's ratings
-                    if !session.parental.current.limited { broadcast }
+                    // only once the parental limit is known and is none (Epic 57; with no home,
+                    // the limit this TV last kept): a broadcast is outside any home's ratings,
+                    // and a guest has no account to check, so the entry fails closed
+                    if session.guestGate.allowed { broadcast }
                 }
                 .disabled(session.connecting)
                 .readingPanel(padding: 48)
@@ -62,7 +63,7 @@ struct TVHomePicker: View {
             }
         }
         .environment(\.layoutDirection, words.isRightToLeft ? .rightToLeft : .leftToRight)
-        .fullScreenCover(isPresented: $watchingBroadcast) { TVGuestSpace() }
+        .guestCover(session, isPresented: $watchingBroadcast)
         .alert(words.text(.renameTitle), isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
             TextField(tv.text(.renamed), text: $newName)
             Button(words.text(.save)) {

@@ -12321,6 +12321,57 @@
         }
       }
     },
+    "guest.gate.checking" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "سيُفتح هذا البث بعد التحقق من القيود الأبوية لهذا الجهاز."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This broadcast opens once this device's parental limits are checked."
+          }
+        }
+      }
+    },
+    "guest.gate.closed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أُغلقت مشاهدة البث: ينطبق الآن قيد أبوي."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watch a broadcast closed: a parental limit now applies."
+          }
+        }
+      }
+    },
+    "guest.gate.limited" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا يمكن مشاهدة البث على حساب أو جهاز عليه قيد أبوي."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Broadcasts can't be watched on an account or device with a parental limit."
+          }
+        }
+      }
+    },
     "guest.watchBroadcast" : {
       "extractionState" : "manual",
       "localizations" : {

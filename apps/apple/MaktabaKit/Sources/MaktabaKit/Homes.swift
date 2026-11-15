@@ -293,6 +293,11 @@ public final class AppSession {
         if CommandLine.arguments.contains("-maktaba-session-reset") {
             defaults.removeObject(forKey: "homes")
             defaults.removeObject(forKey: "home")
+            // and no parental limit kept from an earlier test's sign-in (Watch a broadcast
+            // reads it with no home signed in); a test sets one with `-parental.limited.device YES`
+            for key in defaults.dictionaryRepresentation().keys where key.hasPrefix("parental.limited.") {
+                defaults.removeObject(forKey: key)
+            }
             UITestSecrets.reset()
         }
         #endif
