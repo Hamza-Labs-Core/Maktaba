@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/httpx"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 )
@@ -67,7 +68,7 @@ func (h *HTTPHandler) servePlaylist(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
 		w.Header().Set("Cache-Control", "no-cache, no-store")
 		w.Header().Set("Access-Control-Allow-Origin", "*")
-		_, _ = w.Write(b)
+		httpx.WriteBody(w, http.StatusOK, b)
 		return
 	}
 	serveShared(w, r, p.Dir(), name)
@@ -156,7 +157,7 @@ func serveShared(w http.ResponseWriter, r *http.Request, base, name string) {
 		w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
 		w.Header().Set("Cache-Control", "no-cache, no-store")
 		w.Header().Set("Access-Control-Allow-Origin", "*")
-		_, _ = w.Write(b)
+		httpx.WriteBody(w, http.StatusOK, b)
 		return
 	}
 	f, err := openShared(full)

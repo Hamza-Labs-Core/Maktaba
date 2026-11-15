@@ -16,6 +16,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/frontdoor/relay"
+	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/httpx"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/slot"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/tvmetrics"
 )
@@ -200,7 +201,7 @@ func writePlaylist(w http.ResponseWriter, b []byte) {
 	w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
 	w.Header().Set("Cache-Control", "no-cache, no-store")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
-	_, _ = w.Write(b)
+	httpx.WriteBody(w, http.StatusOK, b)
 }
 
 // serveSlotSegment serves /stream/channel/{id}/s/{slot}/seg-N.ts from that slot
@@ -241,11 +242,17 @@ func (h *Handler) serveSlotSegment(w http.ResponseWriter, r *http.Request) {
 	if p, ok := h.slotSegmentFile(name, id, seg); ok {
 		if f, ferr := os.Open(p); ferr == nil { //nolint:gosec // built from validated parts only (slotSegmentFile)
 			defer f.Close()
-			w.Header().Set("Content-Type", "video/mp2t")
-			w.Header().Set("Access-Control-Allow-Origin", "*")
-			n, _ := io.Copy(w, f)
-			tvmetrics.Bytes.Add(float64(n), "hls", "slot-disk:"+name)
-			return
+			fi, serr := f.Stat()
+			if serr == nil && fi.Mode().IsRegular() {
+				w.Header().Set("Content-Type", "video/mp2t")
+				w.Header().Set("Access-Control-Allow-Origin", "*")
+				// with its length: a copy cut short is short of it, never a whole segment
+				w.Header().Set("Content-Length", strconv.FormatInt(fi.Size(), 10))
+				n, cerr := io.CopyN(w, f, fi.Size())
+				tvmetrics.Bytes.Add(float64(n), "hls", "slot-disk:"+name)
+				httpx.AbortIfCut(cerr)
+				return
+			}
 		}
 	}
 	http.NotFound(w, r)

@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -10,6 +11,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/httpx"
 )
 
 // TranscriptSegment is the rows we render into VTT for the
@@ -44,17 +47,13 @@ type SubtitleHandler struct {
 
 // ServeAuto handles GET /stream/{session_id}/subs/auto.vtt.
 //
-// Streams VTT cues out of transcript_segments. Cue text is
+// Builds VTT cues out of transcript_segments. Cue text is
 // HTML-escaped so untrusted SRT/LLM output can't smuggle markup
-// through the player.
+// through the player. The file is built whole first and sent with its
+// length (httpx.WriteBody): one cut short is short of it, never whole.
 func (h *SubtitleHandler) ServeAuto(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/vtt; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache, must-revalidate")
-	w.WriteHeader(http.StatusOK)
-
-	bw := bufio.NewWriter(w)
-	defer bw.Flush()
-	_, _ = bw.WriteString("WEBVTT\n\n")
 
 	// We need a video id to stream against — story 8.11 derives it
 	// from the session lookup; for the unit-testable surface we
@@ -64,14 +63,19 @@ func (h *SubtitleHandler) ServeAuto(w http.ResponseWriter, r *http.Request) {
 	if videoID == "" {
 		videoID = r.Context().Value(ctxKeyVideoID).(string)
 	}
+	var bw bytes.Buffer
+	_, _ = bw.WriteString("WEBVTT\n\n")
+	h.autoCues(r.Context(), videoID, &bw)
+	httpx.WriteBody(w, http.StatusOK, bw.Bytes())
+}
 
+// autoCues writes the video's transcript cues to bw, page by page. A read
+// error part way keeps the cues already written and ends with a comment.
+func (h *SubtitleHandler) autoCues(ctx context.Context, videoID string, bw *bytes.Buffer) {
 	const pageSize = 200
 	for page := 0; ; page++ {
-		segs, err := h.Transcripts.Stream(r.Context(), videoID, page, pageSize)
+		segs, err := h.Transcripts.Stream(ctx, videoID, page, pageSize)
 		if err != nil {
-			// Mid-stream error — we already wrote 200, can't change
-			// status. Append a comment so the player keeps any cues
-			// already emitted.
 			_, _ = fmt.Fprintf(bw, "NOTE error: %s\n", err.Error())
 			return
 		}
@@ -118,8 +122,7 @@ func (h *SubtitleHandler) ServeSidecar(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/vtt; charset=utf-8")
 	w.Header().Set("Cache-Control", "public, max-age=86400")
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(body)
+	httpx.WriteBody(w, http.StatusOK, body)
 }
 
 // writeCue emits one VTT cue. Cue identifiers are 1-based for

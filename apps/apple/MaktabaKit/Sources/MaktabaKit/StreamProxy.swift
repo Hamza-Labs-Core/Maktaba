@@ -40,6 +40,13 @@ import Network
 /// proxy's connections use TCP keepalive (`lanKeepalive`) and the stack finds it gone.
 /// A body the home gives no length for goes to the player in chunks (`Transfer-Encoding:
 /// chunked`), so one cut short is an error for the player and never a whole body.
+/// The proxy can only pass on what the URL session tells it, and the URL session takes a
+/// chunked body that the home's side closed in order before its last chunk (the home's
+/// process exiting mid-answer) for a whole one: it reports success with what came. So the
+/// home sends every segment, playlist and subtitle with its length (the streaming service's
+/// `httpx.WriteBody`), and here a body is whole only when the bytes that came are the
+/// length the home said (`declaredLength`): fewer (or more) and the player's answer is cut
+/// off, never completed, so the player asks again instead of decoding a truncated segment.
 /// Every response says `Connection: close`: on the loopback a new connection costs a few
 /// milliseconds a playlist or segment (measured, `ProxyCopyCost`), the requests to the home
 /// reuse the URL session's connections all the same, and one request a connection needs no
@@ -412,10 +419,13 @@ public final class StreamProxy: @unchecked Sendable {
             out += "Connection: close\r\n\r\n"
             try await send(peer, Data(out.utf8))
             guard req.method == "GET" else { return true }
+            let declared = Self.declaredLength(http)
+            var came = 0
             // the body as it arrives, written a slice at a time: each slice is taken by the
             // connection before the next goes, and a chunk is written out before the next is
             // asked for, so a slow player slows the home's answer, not grows memory
             while let chunk = try await body.next() {
+                came += chunk.count
                 var at = chunk.startIndex
                 while at < chunk.endIndex {
                     let end = min(at + Self.slice, chunk.endIndex)
@@ -430,11 +440,28 @@ public final class StreamProxy: @unchecked Sendable {
                     at = end
                 }
             }
+            // the home said a length and the session ended well with another: the answer was
+            // cut (the session does not always say so); it is not finished as a whole one
+            if let declared, came != declared {
+                Log.network.error("stream proxy: the home's answer ended at \(came, privacy: .public) of \(declared, privacy: .public) bytes")
+                return false
+            }
             if chunked { try await send(peer, Data("0\r\n\r\n".utf8)) }
             return true
         } catch {
             return false
         }
+    }
+
+    /// The body's length as the home said it (`Content-Length`), nil when it said none or
+    /// the session decoded the body (a `Content-Encoding`: the length is the encoded one's)
+    /// or the answer carries no body (204, 304).
+    static func declaredLength(_ http: HTTPURLResponse?) -> Int? {
+        guard let http, http.statusCode != 204, http.statusCode != 304,
+              http.value(forHTTPHeaderField: "Content-Encoding").map({ $0.lowercased() == "identity" }) ?? true,
+              let text = http.value(forHTTPHeaderField: "Content-Length")?.trimmingCharacters(in: .whitespaces),
+              let n = Int(text), n >= 0 else { return nil }
+        return n
     }
 
     /// Asks the home for `url` with the token as it is now. A 429 (the home paces a

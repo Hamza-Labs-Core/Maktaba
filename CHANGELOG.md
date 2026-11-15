@@ -344,6 +344,16 @@ build fails when the two differ.
 
 ### Fixed
 
+- **A segment cut short when the home's streaming service stops mid-answer is retried, not
+  played broken.** The home sent a video's segments, playlists and subtitles without a length,
+  in chunks. When the streaming service exited or restarted part way through one, the Apple
+  apps (and Safari, AirPlay and anything using Apple's loading system) took the segment that had
+  arrived for a whole one, and the picture broke up or froze. The home now sends each of them
+  with its length, a channel segment forwarded from a TV slot or another machine is cut off
+  rather than completed when its source goes away, and the Apple apps' stream proxy checks that
+  the bytes it received match the length the home sent. A segment cut short is now an error the
+  player recovers from by asking for it again.
+
 - **A guest invite can't outlive the plan it was made under (Epic 50, story 50.20).** An invite
   created at the same moment as a plan change that ends guest sharing could stay live after every
   other invite was revoked. Maktaba Cloud now checks the plan again under the home's lock, so such
