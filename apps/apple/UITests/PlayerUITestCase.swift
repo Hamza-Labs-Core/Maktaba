@@ -477,6 +477,17 @@ class PlayerUITestCase: XCTestCase {
 
     func element(_ id: String) -> XCUIElement { app.descendants(matching: .any)[id].firstMatch }
 
+    /// Taps `element` and checks the app was idle for it: a tap first waits for the app to
+    /// idle (up to 60 s, then it goes on anyway), so a screen that never stops animating or
+    /// redrawing makes each tap take a minute (Trail #1418; a keyboard's hiding cut off by a
+    /// screen change, Trail #1419). A healthy tap takes a second or two.
+    func tapWhenIdle(_ element: XCUIElement, _ screen: String) {
+        let start = Date()
+        element.tap()
+        let took = Date().timeIntervalSince(start)
+        XCTAssertLessThan(took, 30, "\(screen) never went idle: the tap waited \(Int(took)) s")
+    }
+
     /// A section's button: a tab in the tab bar or the top tabs, or a row of the sidebar.
     func sectionButton(_ label: String) -> XCUIElement {
         let tab = app.tabBars.buttons[label].firstMatch

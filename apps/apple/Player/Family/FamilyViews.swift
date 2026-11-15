@@ -442,6 +442,10 @@ struct PinView: View {
     @State private var saving = false
     @State private var saved = false
     @State private var invalid = false
+    /// The field holding the keyboard (let go of when saving).
+    @FocusState private var focus: Field?
+
+    enum Field: Hashable { case pin, password }
 
     var body: some View {
         Form {
@@ -454,12 +458,14 @@ struct PinView: View {
                     #endif
                     // the digits read left to right in Arabic too
                     .environment(\.layoutDirection, .leftToRight)
+                    .focused($focus, equals: .pin)
                     .accessibilityIdentifier("family.pin.new")
                     .familyChange()
                 SecureField(text: $password) { Text(verbatim: word("family.pin.password")) }
                     #if os(iOS)
                     .textContentType(.password)
                     #endif
+                    .focused($focus, equals: .password)
                     .accessibilityIdentifier("family.pin.password")
                     .familyChange()
             } footer: {
@@ -491,6 +497,8 @@ struct PinView: View {
         saved = false
         invalid = PinPad.normalize(pin) == nil
         guard !invalid else { return }
+        // the keyboard let go of first: saving disables the form, then empties it
+        focus = nil
         saving = true
         defer { saving = false }
         if await model.setPIN(pin, password: password) {

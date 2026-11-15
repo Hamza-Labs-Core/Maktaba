@@ -25,7 +25,8 @@ final class PlayerGuestUITests: PlayerUITestCase {
         XCTAssertTrue(first.waitForExistence(timeout: 20), "the publisher's channels; the edge saw \(home.seen)")
         XCTAssertTrue(home.requests.contains { $0.path == "/api/v1/redeem" && String(decoding: $0.body, as: UTF8.self).contains(MockHome.guestInvite) })
         shot("guest-channels")
-        first.tap()
+        // Watch let go of the link field's keyboard before the channels were pushed: idle
+        tapWhenIdle(first, "the channels after Watch")
         XCTAssertTrue(element("guest.playing").waitForExistence(timeout: 20), "the player opened")
         XCTAssertTrue(wait(30) { self.home.seen.contains { $0.hasPrefix("GET /vt-1/ch1/low/seg-") } },
                       "the player read the channel's segments; the edge saw \(home.seen)")

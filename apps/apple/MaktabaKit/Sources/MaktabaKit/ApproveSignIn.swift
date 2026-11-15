@@ -14,6 +14,8 @@ public struct ApproveSignInView: View {
     @State private var code = ""
     @State private var model: ApproveCode
     @State private var scanning = false
+    /// The code field holds the keyboard (let go of when the code is looked up).
+    @FocusState private var codeFocused: Bool
     private let words = ConnectStrings.forPreferredLanguages()
 
     public init(client: APIClient, user: User, homeName: String) {
@@ -34,6 +36,7 @@ public struct ApproveSignInView: View {
                         .textInputAutocapitalization(.characters)
                         #endif
                         .environment(\.layoutDirection, .leftToRight)
+                        .focused($codeFocused)
                         .onSubmit(lookUp)
                         .onChange(of: code) { _, now in
                             // the code shown was edited: what was looked up no longer applies
@@ -180,6 +183,9 @@ public struct ApproveSignInView: View {
     }
 
     private func lookUp() {
+        // the keyboard let go of first: what is asking comes in under the field, with the
+        // buttons to approve it (see `HomePickerView.endEditing`)
+        codeFocused = false
         let typed = code
         Task {
             if let normalized = await model.lookUp(typed) { code = normalized }

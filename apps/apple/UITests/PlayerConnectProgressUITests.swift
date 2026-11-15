@@ -123,16 +123,6 @@ final class PlayerConnectProgressUITests: PlayerUITestCase {
         XCTAssertTrue(app.buttons["signin.homes"].waitForNonExistence(timeout: 30), "asked again by itself: signed in")
     }
 
-    /// Taps `element` and checks the app was idle for it: a tap first waits for the app to
-    /// idle (up to 60 s, then it goes on anyway), so a screen that never stops animating or
-    /// redrawing makes each tap take a minute (Trail #1418). A healthy tap takes a second or two.
-    private func tapWhenIdle(_ element: XCUIElement, _ screen: String) {
-        let start = Date()
-        element.tap()
-        let took = Date().timeIntervalSince(start)
-        XCTAssertLessThan(took, 30, "\(screen) never went idle: the tap waited \(Int(took)) s")
-    }
-
     /// Replaces a text field's contents (read back: see `typeExactly`).
     private func type(_ field: XCUIElement, _ text: String) {
         field.typeExactly(text, in: app)
