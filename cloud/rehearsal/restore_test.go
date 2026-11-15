@@ -165,7 +165,8 @@ func s3Backups(t *testing.T, extra *haExtra) {
 
 // s3 makes one signed S3 request to a repository's gateway and answers its status.
 func s3(method, url string, body ...string) int {
-	args := []string{"-sk", "-o", "/dev/null", "-w", "%{http_code}", "--aws-sigv4", "aws:amz:us-east-1:s3",
+	// a bound per request: one that hangs must not use up the caller's whole wait
+	args := []string{"-sk", "-m", "10", "-o", "/dev/null", "-w", "%{http_code}", "--aws-sigv4", "aws:amz:us-east-1:s3",
 		"--user", "rehearsal:rehearsal-secret", "-X", method}
 	if len(body) > 0 {
 		args = append(args, "--data-binary", body[0])
@@ -180,22 +181,13 @@ func s3(method, url string, body ...string) int {
 func s3Buckets(t *testing.T) {
 	for r, bucket := range map[int]string{1: "maktaba-prod-pg", 2: "maktaba-prod-pg-r2"} {
 		base := fmt.Sprintf("https://127.0.0.1:%d", map[int]int{1: s3Repo1Port, 2: s3Repo2Port}[r])
+		do := func(method, path string, body ...string) int { return s3(method, base+path, body...) }
 		// SeaweedFS takes a bucket made while its gateway warms up but never serves its
 		// objects: wait for the gateway, then make the bucket and prove a round trip
-		waitFor(t, time.Minute, fmt.Sprintf("repo%d's S3 gateway", r), func() bool { return s3("GET", base+"/") == 200 })
+		// (bucketReady, which retries the probe and never deletes the bucket)
+		waitFor(t, time.Minute, fmt.Sprintf("repo%d's S3 gateway", r), func() bool { return do("GET", "/") == 200 })
 		time.Sleep(3 * time.Second)
-		waitFor(t, time.Minute, fmt.Sprintf("repo%d's bucket", r), func() bool {
-			if s3("PUT", base+"/"+bucket) >= 300 {
-				return false
-			}
-			if s3("PUT", base+"/"+bucket+"/probe", "ok") != 200 || s3("GET", base+"/"+bucket+"/probe") != 200 {
-				_ = s3("DELETE", base+"/"+bucket+"/probe")
-				_ = s3("DELETE", base+"/"+bucket)
-				time.Sleep(2 * time.Second)
-				return false
-			}
-			return s3("DELETE", base+"/"+bucket+"/probe") < 300
-		})
+		waitFor(t, time.Minute, fmt.Sprintf("repo%d's bucket", r), func() bool { return bucketReady(do, bucket) })
 	}
 }
 
