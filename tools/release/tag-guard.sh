@@ -36,7 +36,7 @@ wait_s="${CI_WAIT_SECONDS:-3600}"
 err() { echo "::error::tag guard: $*" >&2; exit 1; }
 
 # 1. its place among the published releases
-published="$(gh release list --exclude-drafts --limit 1000 --json tagName --jq '.[].tagName')"
+published="$("${here}/gh-retry.sh" gh release list --exclude-drafts --limit 1000 --json tagName --jq '.[].tagName')"
 if ! out="$(printf '%s\n' "${published}" | (cd "${here}" && go run ./cmd/release-order guard --tag "${TAG}" \
     --allow "${ALLOW_TAG:-}") 2>&1)"; then
     err "${out#release-order: refused: }"

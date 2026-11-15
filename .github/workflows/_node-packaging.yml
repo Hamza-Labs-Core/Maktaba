@@ -226,9 +226,11 @@ jobs:
       - name: release assets adopt (a bundle and its signature together)
         if: runner.os == 'Linux'
         run: bash tools/release/release-assets-test.sh
-      # every release upload goes through gh-retry.sh: a transient GitHub error (HTTP 5xx, a
-      # stream CANCEL, a timeout) is tried again with --clobber; a 4xx fails at once
-      - name: release uploads retry transient errors
+      # every GitHub release call goes through gh-retry.sh: a transient GitHub error (HTTP 5xx,
+      # a stream CANCEL, a timeout) is tried again (reads, release edit, create-once, uploads
+      # and downloads with --clobber); a 4xx fails at once; a bare gh call in release-assets.sh
+      # fails the test
+      - name: release calls retry transient errors
         if: runner.os == 'Linux'
         run: bash tools/release/gh-retry-test.sh
       # The Postgres archives postgres-cdn.yml publishes to Maktaba's CDN: each checked against

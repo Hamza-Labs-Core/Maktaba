@@ -1929,12 +1929,13 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
-          published="$(gh release list --exclude-drafts --limit 1000 --json tagName --jq '.[].tagName')"
+          # each gh call: a transient GitHub error is tried again (tools/release/gh-retry.sh)
+          published="$(tools/release/gh-retry.sh gh release list --exclude-drafts --limit 1000 --json tagName --jq '.[].tagName')"
           prev=""
           while :; do
             cand="$(printf '%s\n' "${published}" | (cd tools/release && go run ./cmd/release-order previous --tag "${TAG}"))"
             [ -n "${cand}" ] || break
-            if gh release download "${cand}" --pattern release.json --output prev-release.json --clobber 2>/dev/null; then
+            if tools/release/gh-retry.sh gh release download "${cand}" --pattern release.json --output prev-release.json --clobber 2>/dev/null; then
               prev="${cand}"; break
             fi
             published="$(printf '%s\n' "${published}" | grep -vx "${cand}")"
@@ -2171,10 +2172,11 @@ jobs:
           set -euo pipefail
           ver="${TAG#v}"
           mkdir -p rel/packs
-          gh release download "${TAG}" --dir rel \
+          # a transient GitHub error is tried again (tools/release/gh-retry.sh), each try --clobber
+          tools/release/gh-retry.sh gh release download "${TAG}" --dir rel --clobber \
             --pattern checksums.txt --pattern checksums.txt.sigstore.json --pattern release.json \
             --pattern "components-${ver}.json"
-          gh release download "${TAG}" --dir rel/packs \
+          tools/release/gh-retry.sh gh release download "${TAG}" --dir rel/packs --clobber \
             --pattern "runtime.ml-${ver}-${PLATFORM}.tar.zst*" --pattern "tool.yt-dlp-${ver}-${PLATFORM}.tar.zst*"
           ls -l rel rel/packs
 
