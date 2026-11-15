@@ -106,8 +106,7 @@ struct SearchScreen: View {
             } else {
                 ResultsList(results: results, home: context.client.home, byMeaning: caps.isOn(.semanticSearch), paging: model.paging,
                             moreTitles: { Task { await model.moreTitles() } },
-                            moreTranscripts: { Task { await model.moreTranscripts() } },
-                            leaving: { typing = false })
+                            moreTranscripts: { Task { await model.moreTranscripts() } })
             }
         } else {
             recentList
@@ -219,9 +218,6 @@ private struct ResultsList: View {
     let paging: Bool
     let moreTitles: () -> Void
     let moreTranscripts: () -> Void
-    /// A result opens its page: the field lets go of the keyboard (typing again to refine
-    /// the search keeps it until then).
-    let leaving: () -> Void
 
     var body: some View {
         List {
@@ -239,7 +235,6 @@ private struct ResultsList: View {
                         NavigationLink(value: PlayerRoute.video(id: hit.videoID)) {
                             TitleRow(hit: hit, poster: poster(hit.videoID))
                         }
-                        .simultaneousGesture(TapGesture().onEnded(leaving))
                         .accessibilityIdentifier("search.title.\(hit.videoID)")
                         .listRowBackground(Color.clear)
                     }
@@ -257,14 +252,12 @@ private struct ResultsList: View {
                         NavigationLink(value: PlayerRoute.video(id: hit.videoID)) {
                             TranscriptHeader(hit: hit, poster: poster(hit.videoID))
                         }
-                        .simultaneousGesture(TapGesture().onEnded(leaving))
                         .accessibilityIdentifier("search.transcript.\(hit.videoID)")
                         .listRowBackground(Color.clear)
                         ForEach(Array(hit.passages.enumerated()), id: \.element.id) { i, p in
                             NavigationLink(value: PlayerRoute.watch(videoID: hit.videoID, at: p.startSec)) {
                                 PassageRow(passage: p)
                             }
-                            .simultaneousGesture(TapGesture().onEnded(leaving))
                             .accessibilityIdentifier("search.passage.\(hit.videoID).\(i)")
                             .listRowBackground(Color.clear)
                         }
