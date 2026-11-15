@@ -37,4 +37,12 @@ class PlayerApplication : Application() {
     /** Work that outlives a screen (closing a stream session). */
     val background = CoroutineScope(SupervisorJob() + Dispatchers.Default + AppLog.handler("player background"))
     val themes: ThemeStore by lazy { ThemeStore(PreferencesStore(this, "settings")) }
+
+    /** Watch a broadcast (story 50.27): the saved broadcasts, sealed on this device, and the edge's guest API. */
+    val guests: com.hamzalabs.maktaba.core.guest.GuestSpace by lazy {
+        com.hamzalabs.maktaba.core.guest.GuestSpace(
+            com.hamzalabs.maktaba.core.guest.Guests.store(this),
+            com.hamzalabs.maktaba.core.guest.Guests.client(this),
+        )
+    }
 }

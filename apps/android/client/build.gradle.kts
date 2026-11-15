@@ -34,8 +34,10 @@ dependencies {
 }
 
 // DemoLibraryTest reads the demo library (story 60.09), DeviceCapsTest the playback vectors (story
-// 58.02) from the repository at test time
+// 58.02), GuestTest the guest states shared with the edge and the Apple apps (story 50.27) from the
+// repository at test time
 tasks.test {
+    inputs.files(file("../../../shared/broadcast/viewer-states.json")).withPathSensitivity(PathSensitivity.RELATIVE).withPropertyName("viewerStates")
     inputs.files(file("../../../shared/playback/caps-vectors.json")).withPathSensitivity(PathSensitivity.RELATIVE).withPropertyName("capsVectors")
     inputs.dir(file("../../../tests/fixtures/demo-library")).withPathSensitivity(PathSensitivity.RELATIVE).withPropertyName("demoLibrary")
 }

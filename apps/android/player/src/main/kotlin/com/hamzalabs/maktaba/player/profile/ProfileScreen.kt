@@ -73,6 +73,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.material.icons.outlined.LiveTv
 import androidx.compose.material.icons.outlined.Lock
 import com.hamzalabs.maktaba.core.ui.tierWords
 import androidx.compose.runtime.mutableStateOf
@@ -206,6 +207,7 @@ private fun RootPage(home: PlayerHome, state: ProfileState) {
     // the sign-in's content limit, when it has one (Epic 57 story 57.05)
     val mine by home.parental.mine.collectAsState()
     val limit = (mine.maxTier ?: mine.deviceLimit)?.takeIf { mine.limited }
+    val watchBroadcast = com.hamzalabs.maktaba.core.guest.LocalWatchBroadcast.current
     val resources = androidx.compose.ui.platform.LocalContext.current.resources
 
     LazyColumn(Modifier.fillMaxSize().testTag("profile-root"), contentPadding = PaddingValues(bottom = 24.dp)) {
@@ -242,6 +244,11 @@ private fun RootPage(home: PlayerHome, state: ProfileState) {
         item { LinkRow(Icons.AutoMirrored.Outlined.Logout, CoreR.string.sign_out, tag = "profile-sign-out") { confirmSignOut = true } }
 
         group(R.string.profile_settings)
+        // story 50.27: Watch a broadcast, apart from the home and its account; not under a
+        // parental limit (Epic 57): a broadcast is outside the home's ratings
+        watchBroadcast?.takeIf { !mine.limited }?.let { watch ->
+            item { LinkRow(Icons.Outlined.LiveTv, CoreR.string.guest_watch_broadcast, tag = "profile-watch-broadcast") { watch() } }
+        }
         item {
             Choices(
                 title = stringResource(R.string.profile_theme),
