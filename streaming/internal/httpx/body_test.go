@@ -46,10 +46,17 @@ func get(t *testing.T, h http.HandlerFunc) (*http.Response, []byte, error) {
 
 const segment = 1 << 20
 
+// writeBody is how a handler sends a body held in memory: its length, then the body.
+func writeBody(w http.ResponseWriter, body []byte) {
+	SetLength(w, len(body))
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(body)
+}
+
 // A body sent whole goes out with its length, never chunked.
-func TestWriteBodySendsTheLength(t *testing.T) {
+func TestSetLengthSendsTheLength(t *testing.T) {
 	body := bytes.Repeat([]byte{0x47}, segment)
-	resp, got, err := get(t, func(w http.ResponseWriter, _ *http.Request) { WriteBody(w, http.StatusOK, body) })
+	resp, got, err := get(t, func(w http.ResponseWriter, _ *http.Request) { writeBody(w, body) })
 	if err != nil || !bytes.Equal(got, body) {
 		t.Fatalf("read %d bytes, %v", len(got), err)
 	}
@@ -63,7 +70,7 @@ func TestWriteBodySendsTheLength(t *testing.T) {
 func TestATruncatedSegmentIsNotDeliveredWhole(t *testing.T) {
 	body := bytes.Repeat([]byte{0x47}, segment)
 	_, got, err := get(t, func(w http.ResponseWriter, _ *http.Request) {
-		WriteBody(&cutWriter{ResponseWriter: w, left: segment / 8}, http.StatusOK, body)
+		writeBody(&cutWriter{ResponseWriter: w, left: segment / 8}, body)
 	})
 	if !errors.Is(err, io.ErrUnexpectedEOF) {
 		t.Fatalf("a cut segment read as %d bytes with %v: want io.ErrUnexpectedEOF", len(got), err)

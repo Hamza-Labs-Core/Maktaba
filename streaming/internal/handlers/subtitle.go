@@ -50,7 +50,7 @@ type SubtitleHandler struct {
 // Builds VTT cues out of transcript_segments. Cue text is
 // HTML-escaped so untrusted SRT/LLM output can't smuggle markup
 // through the player. The file is built whole first and sent with its
-// length (httpx.WriteBody): one cut short is short of it, never whole.
+// length (httpx.SetLength): one cut short is short of it, never whole.
 func (h *SubtitleHandler) ServeAuto(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/vtt; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache, must-revalidate")
@@ -66,7 +66,9 @@ func (h *SubtitleHandler) ServeAuto(w http.ResponseWriter, r *http.Request) {
 	var bw bytes.Buffer
 	_, _ = bw.WriteString("WEBVTT\n\n")
 	h.autoCues(r.Context(), videoID, &bw)
-	httpx.WriteBody(w, http.StatusOK, bw.Bytes())
+	httpx.SetLength(w, len(bw.Bytes()))
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(bw.Bytes())
 }
 
 // autoCues writes the video's transcript cues to bw, page by page. A read
@@ -122,7 +124,9 @@ func (h *SubtitleHandler) ServeSidecar(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/vtt; charset=utf-8")
 	w.Header().Set("Cache-Control", "public, max-age=86400")
-	httpx.WriteBody(w, http.StatusOK, body)
+	httpx.SetLength(w, len(body))
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(body)
 }
 
 // writeCue emits one VTT cue. Cue identifiers are 1-based for

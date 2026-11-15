@@ -44,7 +44,7 @@ import Network
 /// chunked body that the home's side closed in order before its last chunk (the home's
 /// process exiting mid-answer) for a whole one: it reports success with what came. So the
 /// home sends every segment, playlist and subtitle with its length (the streaming service's
-/// `httpx.WriteBody`), and here a body is whole only when the bytes that came are the
+/// `httpx.SetLength`), and here a body is whole only when the bytes that came are the
 /// length the home said (`declaredLength`): fewer (or more) and the player's answer is cut
 /// off, never completed, so the player asks again instead of decoding a truncated segment.
 /// Every response says `Connection: close`: on the loopback a new connection costs a few

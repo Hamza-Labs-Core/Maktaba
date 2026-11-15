@@ -5,18 +5,19 @@ import (
 	"strconv"
 )
 
-// WriteBody sends a whole body held in memory with its Content-Length. A body the
-// server sends without one goes out in chunks once it is larger than the server's
-// buffer (2 KB), and a chunked body cut short by an orderly close (the streaming
-// service exiting or restarting mid-answer, a hop that stops forwarding) reads as
-// whole to Apple's URL loading system: a player then decodes a truncated segment
-// instead of asking for it again. With its length, a body cut short is short of it,
-// and every client takes it as the error it is. Every segment, playlist and
-// subtitle a player loads goes out through here or with a length set beforehand.
-func WriteBody(w http.ResponseWriter, status int, body []byte) {
-	w.Header().Set("Content-Length", strconv.Itoa(len(body)))
-	w.WriteHeader(status)
-	_, _ = w.Write(body)
+// SetLength says the length of a whole body held in memory (Content-Length), set
+// before the handler's WriteHeader and Write. A body the server sends without one
+// goes out in chunks once it is larger than the server's buffer (2 KB), and a
+// chunked body cut short by an orderly close (the streaming service exiting or
+// restarting mid-answer, a hop that stops forwarding) reads as whole to Apple's URL
+// loading system: a player then decodes a truncated segment instead of asking for
+// it again. With its length, a body cut short is short of it, and every client
+// takes it as the error it is. Every segment, playlist and subtitle a player loads
+// goes out with its length. The handler writes the body itself, next to the
+// Content-Type it sets, so the two are read together (code scanning's reflected
+// XSS check sees a non-HTML type on the same response).
+func SetLength(w http.ResponseWriter, n int) {
+	w.Header().Set("Content-Length", strconv.Itoa(n))
 }
 
 // AbortIfCut ends the response without completing it when the copy of its body

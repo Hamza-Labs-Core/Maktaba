@@ -201,7 +201,9 @@ func writePlaylist(w http.ResponseWriter, b []byte) {
 	w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
 	w.Header().Set("Cache-Control", "no-cache, no-store")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
-	httpx.WriteBody(w, http.StatusOK, b)
+	httpx.SetLength(w, len(b))
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(b)
 }
 
 // serveSlotSegment serves /stream/channel/{id}/s/{slot}/seg-N.ts from that slot

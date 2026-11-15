@@ -195,7 +195,9 @@ func (h *ManifestHandler) ServeMaster(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", manifestContentType(wantDASH))
 	w.Header().Set("Cache-Control", "no-store")
-	httpx.WriteBody(w, http.StatusOK, data)
+	httpx.SetLength(w, len(data))
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(data)
 }
 
 // ServeRenditionIndex handles /stream/{session_id}/{rendition}/index.m3u8.
@@ -267,7 +269,9 @@ func (h *ManifestHandler) ServeRenditionIndex(w http.ResponseWriter, r *http.Req
 	}
 	w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
 	w.Header().Set("Cache-Control", "no-store")
-	httpx.WriteBody(w, http.StatusOK, data)
+	httpx.SetLength(w, len(data))
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(data)
 }
 
 // ServeSegment handles /stream/{session_id}/{rendition}/seg-{n}.ts, and a
@@ -349,7 +353,9 @@ func (h *ManifestHandler) ServeSegment(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", segmentContentType(segment))
 	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
-	httpx.WriteBody(w, http.StatusOK, data)
+	httpx.SetLength(w, len(data))
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(data)
 }
 
 // startAt has an EVENT playlist (a transcode's, every segment listed) start at
