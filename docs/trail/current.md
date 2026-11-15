@@ -1,11 +1,11 @@
 ---
 schema: 1
-tag: v0.3.148
-up_to_commit: 0bc7fa841
-built_from: v0.3.147
+tag: v0.3.149
+up_to_commit: b6e482787
+built_from: v0.3.148
 ---
 
-# Trail snapshot: v0.3.148
+# Trail snapshot: v0.3.149
 
 ## Keep doing
 
@@ -172,7 +172,7 @@ built_from: v0.3.147
 - Split a production fix out of a test PR the moment the test finds it, and merge it fail-closed on its own. (#988)
 - When an unrelated PR's check fails, find the cause and fix it in its own PR with a test. A flaky test asserting a status is often a real ordering bug: slow one side at the gap to reproduce it. (#1002)
 - Read the failure's hierarchy before calling a UI failure flaky: an xcresult keeps it (`xcresulttool export attachments --test-id`) and it tells a wrong screen from a slow one. A temporary commit with `-test-iterations N` (for a flake, `-only-testing … -test-iterations 20` on the 12 Player UI shards) proves a UI fix in one CI job; raise the job's `timeout-minutes` with it and drop the commit before merge. Count the evidence from each xcresult's repetitions and retry activities, never from the job's conclusion: a runner restart drops the remaining iterations (`Executed 0 tests`) and the job still ends green. (#1000, #1312)
-- A UI retry is judged by a deterministic signal (a request, a position, a count, a page opened, `TouchHook`'s cancelled count), never repeats a tap that may have landed, and fails naming the step on a second miss. Read that iteration's touch log before deciding: a dropped tap gets the retry, anything else gets its cause found (one was an app bug). (#1309, #1312)
+- A UI retry is judged by a deterministic signal (a request, a position, a count, a page opened, `TouchHook`'s cancelled count), never repeats a tap that may have landed, and fails naming the step on a second miss. Read that iteration's touch log before deciding: a dropped tap gets the retry, anything else gets its cause found (one was an app bug), and a changed wait cites the app behaviour it waits for. Leaving the player (`leavePlayer`) and choosing a segment (`choose`) now retry the same way. Before blaming a change for a red UI test, read the job's ` t = ` lines: idle waits that each take their full 60 s mean the runner or the app stalled. (#1309, #1312, #1412, #1417)
 - Profile before trimming a slow test: the time is often in shared fixtures. Build tools and clone databases in a test's setup, since the soft cap judges only the call. Profile the phases first: when a world's fixed cost outweighs the part worth splitting, it has to come down too (starting the dev server while the databases are copied cut it; `FILE_COPY` did not). (#996, #992, #1068)
 - A warm-up's "warm" is when the measure stops improving, not a fixed time that holds on one device: check a threshold on every device in the PR's own run. (#1001)
 - Check a dependency map before removing a feature. A removal is two releases: first the code goes and ignores the leftovers (a lossless migration, so a rollback runs the Down scripts), then a later migration deletes the data once no release that uses it can be rolled back to. (d20261108-remove-plex-sync)
@@ -663,6 +663,9 @@ built_from: v0.3.147
 - XCTest recordings keep a frame only on change: list frame times (`ffprobe -show_entries frame=pts_time`) before reading timing. The digitizer line appears on every synthesized tap; `TouchHook`'s cancelled count includes UIKit's own cancels. A timed-state UI test must outlast its own steps and re-assert after acting; `-test-iterations N` also finds state leaking between launches. (#1249)
 - A long press that ends normally (not cancelled) means the context menu never began, and a longer hold cannot fix it; the touch log's held time and `cancelled` flag tell a lost press from a short one. An ignored switch tap leaves no trace (read the value), while a cancelled touch is counted by `TouchHook` (read the count). (#1309, #1312)
 - A `@State` built from a store's value in `init` is a snapshot for the view's life: a screen that can open before the store loads rebuilds when the value arrives (the time's-up and blocked pages kept `.none` for good). "Timed out while evaluating UI query" can be a slow but answering app: the simulator log in the xcresult's diagnostics (`xcresulttool export diagnostics`, `/usr/bin/log show`, `--start` with `+0000`) showed XCTest's fixed 30 s limit passing first; `apsd`'s retry loop is background load. (#1309)
+- A player reading `playing=true` with a frozen position can have dropped its only HLS variant: AVPlayer gives a segment request about one target duration (2 s for the test stream), and `Playback.watch` recovers only after up to about 30 s, so a test that checks playback moves waits longer than that. An XCTest recording can end before its test does: check its duration first. The simulator log filtered to `coremedia` and `CFNetwork` task lines places a delay inside the app or in the home. (#1412)
+- Utility QoS is not "a little lower": on a saturated CPU a utility task waits hundreds of ms to seconds for a thread, so work on a deadline the player sets (the stream proxy's request path) runs at user-initiated, and a value already cached (the playback token) is read nonisolated, not through an actor hop. The CI settle log (`*-settle.log`, CPU per process, runner idle) tells a loaded host from a slow app. (#1417)
+- Release scripts: a retry wrapper that passes stdout straight through duplicates a page when a paginated call fails midway, so gh-retry.sh buffers stdout for the try that succeeds. A `[ "$(gh ...)" = true ]` inside a function called from an `if` hides a failed read (`set -e` is off there): a read that decides a branch fails explicitly. A retried `gh release create` looks the release up first on each try, a failed lookup counting as a failed try. When adding a retry, wrap every network call in the script and keep a guard test that fails on a bare call. (#1420)
 - The Mac Player's app-hosted unit tests run from an explicit `-only-testing` list in `_apple-apps.yml`: a new `PlayerMacTests` suite passes CI without running until it is listed, so check the log for the suite's name. VoiceOver custom actions are built from the same list as the context menu so they cannot drift; XCUITest cannot trigger them (`No-Test-Change:`). (#1310)
 - `document.fonts.check` cannot tell whether the Arabic font is in use (true with no face, false with an unloaded duplicate): check that a loaded face of the element's family covers each letter. A reading-order test needs no pixels: sort each character's Range by x and compare with the NFKC fold of the visual string. Titles in a mixed-direction line go in `<bdi>`. (#1322)
 - "Wait until not busy" is safe only after something was seen busy or done: wait for the effect itself. A test that injects the sleep but not the time source is still a wall-clock test. (#1278, #1304)
@@ -715,7 +718,7 @@ built_from: v0.3.147
 - Not verified on real hardware: Apple TV playback and AirPlay, background audio on device, foldables and tablets, the desktop Player against a live home. (#512, #579, #523, #667)
 - Remove the tag guard's `IGNORED_CI_JOBS` once the iPhone/iPad shards are fixed. (#577)
 - Player UI shards left in progress after their run completed (issue #649). (#632)
-- The cancelled-tap retry in Player UI tests has not fired in CI yet (0 in 240); its first firing shows as a `Retrying a cancelled tap` activity. A starved simulator can still outrun XCTest's 30 s query limit: look at the runner's load first. (#1312, #1309)
+- A starved simulator can still outrun XCTest's 30 s query limit: look at the runner's load first. `PlayerConnectProgressUITests.testSignInAndRestoreStatesEnglish` can lose its "signing in" check when the runner's idle waits stall for minutes; why the app never went idle on the code sign-in screen is not recorded in an event (PR 1419 made the sign-in screens go idle, and has no event). (#1312, #1309, #1417)
 - Docker Postgres on the home Mac was stopped, never removed. (#148)
 - The VPS kernel patch for CVE-2026-98432, and a `SECURITY.md`. (#518)
 - Epic 52: the real gold set and calibration curves; the rehearsal's "one component more" step. (#672)
@@ -807,11 +810,8 @@ built_from: v0.3.147
 | #973 | 2026-11-08 | fix(supervisor): plugin runners wait for the venv like the pipeline |
 | #1232 | 2026-11-13 | fix(postgres): a half-answered look no longer restarts the database |
 | #1318 | 2026-11-14 | docs(testflight): the install failure though the build is listed (open) |
-| #1402 | 2026-11-15 | fix(tv/apple): the Menu UI test raises the live banner instead of racing its 6 s |
-| #1404 | 2026-11-15 | fix(release): asset uploads retry transient GitHub errors themselves |
-| #1405 | 2026-11-15 | fix(apple): a cancelled proxy request ends without its session; the cut-body test outlasts an unheard reset |
 | #1409 | 2026-11-15 | fix(apple): Watch a broadcast fails closed under parental limits |
-| #1412 | 2026-11-15 | Apple UI tests: leaving the player and choosing a segment get one more try; the demo player waits out a stall |
+| #1419 | 2026-11-15 | fix(apple): the sign-in screens go idle (keyboard let go of first, no endless spinner by the code) |
 
 ## Index
 
@@ -1554,4 +1554,7 @@ built_from: v0.3.147
 | 1400-watch-apple | 2026-11-15 | pr | Watch a broadcast on Apple TV, iPhone, iPad and the Mac (50.27 T03, T05) |
 | 1407-truncated-segments | 2026-11-15 | pr | Streaming: a segment cut short is an error, never a whole segment |
 | 1408-watch-android | 2026-11-15 | pr | Watch a broadcast on Android, Android TV and Fire TV (50.27 T04, T06) |
+| 1412-apple-leave-player | 2026-11-15 | pr | Apple UI tests: leaving the player and choosing a segment get one more try; the demo player waits out a stall |
+| 1417-proxy-forward-latency | 2026-11-15 | pr | The Apple stream proxy passes a request on at once: user-initiated priority, the token held now |
+| 1420-release-calls-retry | 2026-11-15 | pr | Every GitHub release call goes through gh-retry.sh, not only the uploads |
 
