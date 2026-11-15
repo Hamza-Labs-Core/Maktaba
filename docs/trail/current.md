@@ -1,11 +1,11 @@
 ---
 schema: 1
-tag: v0.3.146
-up_to_commit: 62f8be748
-built_from: v0.3.145
+tag: v0.3.148
+up_to_commit: 0bc7fa841
+built_from: v0.3.147
 ---
 
-# Trail snapshot: v0.3.146
+# Trail snapshot: v0.3.148
 
 ## Keep doing
 
@@ -259,6 +259,7 @@ built_from: v0.3.145
 - A file the web typecheck reaches outside `web/` gets a COPY line in both `web/Dockerfile` and `cloud/Dockerfile` (the guard names it); TV jobs end with `.github/actions/tv-logs` under `if: always()`; render visual references and generate lockfiles in the CI image, never on the Mac. (#1296, #1233, #1267)
 - Witness a wave's stages with `MAKTABA_REHEARSAL_WITNESS` when they must do real work in the rehearsal. Log the real failure reason in a readiness loop before fixing it (a fake only proves what it models). (#1023, #1380)
 - Prove each refusal of a cross-service approval with a test on both sides (replay, unlinked account, another code, another cloud's key; no account, owner only, offline). (#1250)
+- A green test job proves only the tests in its report: check the report lists the new classes, especially when a runner takes a list (the Fire TV job ran only the first of a comma-separated list). Keep one journey test per platform that plays a stream end to end: screen tests without a player missed a player that never requested its stream. (#1408)
 
 ## Stop doing
 
@@ -407,6 +408,7 @@ built_from: v0.3.145
 - Broadcast: the publisher is the home (an ingest token's `pub` must be its `home`, fixtures included); the edge refuses a home clock over 60 s off, so outage scenarios run in real time; ffmpeg stamps PROGRAM-DATE-TIME after probing, so the home corrects each segment's start from when it appears. A k-anonymity fold over caller-chosen windows leaks by differencing: fold per hour and sum. A plan check made before a transaction races a plan change: re-check under the home row lock the revoking side takes, in one lock order. A rule in a SQL function is only as wide as the tables a machine's copy holds. (#1338, #1381, #1382, #1358, #1397, #1393)
 - Read the existing transport before adding one: the home's control socket already carried the edge's commands, so on-demand broadcast needed one header. A cloud contract change after the first deploy needs a compatibility window. (#1373, #1284)
 - Broadcast edge Durable Objects write one key per entity (viewer `v:`, session `x:`, usage window `w:`), never the whole map per event: a whole-state write per heartbeat stalled the channel about 9 s at 1,000 viewers. A watching viewer's heartbeat stays in memory and the minute alarm saves it inside the session TTL; new sessions, mode changes and lapses write at once. (#1399)
+- Broadcast guest watching: parental limits cannot be an edge rule (a guest has no home account and the edge never learns who watches), so the apps hide the entry and fail closed: it opens only once the home has answered and the account is not limited, an unreadable flag counts as limited, and an open guest screen and its player close when the state turns limited. The device's own restrictions are the boundary; a real rule needs rated channels the edge can refuse. Guest passes never leave the device (Keychain `AfterFirstUnlockThisDeviceOnly`; Keystore, out of backups): a pass counts as one of its invite's devices. Invite links are parsed strictly. (#1400, #1408)
 - "Stamp after the side effect" de-duplication races: claim first with a compare-and-set in the database, then act (the TV rollback enqueued two reverse commits). An e2e stub stricter than the real job exposed it. (#1383)
 - A TV approved through the cloud ends when the account is unlinked: its refresh family is recorded as a cloud sign-in before any token is handed out. (#1250)
 - In React, a `setState` from a `useEffect` loses to an external store's sync render: keep what the first answer's render saw with a render-phase update; `flushSync` with `IS_REACT_ACT_ENVIRONMENT` off reproduces such races in jsdom. (#1042)
@@ -517,6 +519,7 @@ built_from: v0.3.145
 - Relay tunnel directory: a tunnel's seq must be its creation time (a per-process counter ordered tunnels wrongly across blue and green); a home closing its drained tunnel the instant streams end races the relay (the home waits a quiet second, the relay retries idempotent requests); a fixed reconnect window makes a 1,000-home drain take the whole 15 s budget. (#705)
 - The shared log redactor rewrites IP addresses (`10.50.0.11` shows as `10.50.0.0`) and the home folder as `~`: read container and test logs with that in mind: two addresses in one /24 look the same, a test reading a client IP from a Go service's log compares redacted values, and a `strings.Contains` on the raw address can never fail. (#705, #707, #922)
 - CodeQL's go/reflected-xss flags a header value reaching a page even when only fixed values can match: return constants. (#705)
+- CodeQL reads a body writer split from its Content-Type as reflected XSS: keep the write next to the type. (#1407) The affected-tests coverage map links a new UI test to its app file only after it runs on main, so a `No-Test-Change` trailer is right for that push. (#1400)
 - A health check must not do the work it reports on: check in the background, answer from the last result. A meter that swaps its map before a flush must keep the snapshot when the flush fails. (#714)
 - Caddy: one certificate per name (`relay.test, *.relay.test` is two); DNS-01 needs the test DNS to answer the zone's SOA; the cloudflare module needs a token-shaped test value. Reloading Caddy's config cuts streams in flight, so blue/green moves by readiness (draining colour answers `/readyz` 503) after a stability window, with no edge change. (#720, #722)
 - Docker: moving a network alias reconnects the container (the Floating IP gets its own network); `docker compose down` needs the same variables as `up`; read effective config with `docker compose config`, since logs redact IPs. Go's `flag` stops at the first non-flag argument. (#721, #715, #722)
@@ -567,6 +570,7 @@ built_from: v0.3.145
 - Packaged TV launchers: Chromium sends no SameSite=Lax cookie to an iframe in a `file://` page (sign in by code with bearer tokens), module scripts from `file://` are cross-origin (use a classic deferred IIFE), Samsung's user agent has no `Chrome/` token, and a second CSP header intersects with the first. Playwright tries the newest route first. (#1277)
 - Roku/brs-engine: a statement costs about 0.85 µs and a call 5.5 µs, so fusing passes pays; names are case-insensitive; `roTimespan` is whole milliseconds; it verifies TLS for real and reads `NODE_EXTRA_CA_CERTS`. Plurals are CLDR form objects: pick, fill without shaping, and shape the finished line once (`I18n.Format`). The screens test's pixel tolerance cannot see one wrong word; exact string tests guard shaping. (#1347, #1360, #1357, #1340)
 - Apple `StreamProxy`: `URLSessionTask.suspend()` is not backpressure (hold the delegate callback, and time the upstream's silence yourself while holding); admit a connection to a counted place only after its secret checks, with the waiting set bounded apart. The Apple TV app is `apps/tv/tvos/MaktabaTV`, not the Player. (#1319, #1370)
+- URLSession takes a chunked body ended by an orderly close as complete (1 MB of 8 MB came back 200): the home sends a `Content-Length` on segments, playlists and subtitles, the front door aborts a copy that fails partway (`panic(http.ErrAbortHandler)`), and the Apple StreamProxy cuts the player when the byte count differs. OkHttp, Chrome and Firefox already rejected a cut body. Fix framing where the bytes are written. The 188-byte TS packet rule holds for clear segments only (AES-128 segments break it). (#1407, #1408)
 - Android Cast: Media3's `TransferCallback` mints the grant before the handover; an older home is found by `POST /api/cast/grants {}` (422 vs 404). Apple can't switch Cast app ids after setup. Android lint's BidiSpoofing rejects literal isolates (use escapes); `HeldCertificate` fails under an Arabic locale; Roborazzi `resizeScale = 0.5` keeps TV references small. (#1292, #1356)
 - SwiftUI can fold a `.contain` stack into its parent's accessibility container, hiding its identifier though it is drawn. On a Windows Desktop Player run, mockwebserver request logs need a copy-on-write list. esbuild's `es2019` target silently drops `import.meta` (the Cast receiver targets `es2020`); a Mac-made `package-lock.json` fails `npm ci` in the Playwright container. (#1287, #1302, #1267)
 
@@ -790,6 +794,7 @@ built_from: v0.3.145
 - Security leftovers: a library the caller does not read answers 403, not 404, across the home (an Epic's decision); cast grants on a cluster node have no test against the node's copy; a machine at a home's LAN address on another network that knows the relay name can still be listed (binding the LAN answer to the certificate would close it). (#1342, #1354)
 - Untested gaps: a relay that loses its pool heartbeat but keeps running; Vite build-time reads outside `web/` (the Docker guard covers `tsc` only); a stalled single-run Apple test recorded as an `Expected Failure`; a web audit for other hooks copying an external store into state from an effect; the pipeline's Postgres parametrisations are skipped in the integration tier, whose time is `api`'s go test. (#1280, #1296, #1317, #1042, #1303)
 - No CI job runs actionlint. The `tv-web` tizen-reload test failed twice on one PR: watch for it. Issue #804 is still open though 16.9's row is on main. (#1233, #1266, #1023)
+- Watch a broadcast (50.27): the desktop Player for Windows and Linux, a Report button in the apps (native apps cannot produce a Turnstile token yet), verified universal and app links (the edge must serve the association files) and a remote switch to turn guest watching off. The StreamProxy cut-body test flake is still open. (#1400, #1408, #1407)
 
 ## Missing events
 
@@ -802,8 +807,11 @@ built_from: v0.3.145
 | #973 | 2026-11-08 | fix(supervisor): plugin runners wait for the venv like the pipeline |
 | #1232 | 2026-11-13 | fix(postgres): a half-answered look no longer restarts the database |
 | #1318 | 2026-11-14 | docs(testflight): the install failure though the build is listed (open) |
-| #1400 | 2026-11-15 | Watch a broadcast on Apple TV, iPhone, iPad and the Mac (story 50.27 T03, T05) |
+| #1402 | 2026-11-15 | fix(tv/apple): the Menu UI test raises the live banner instead of racing its 6 s |
 | #1404 | 2026-11-15 | fix(release): asset uploads retry transient GitHub errors themselves |
+| #1405 | 2026-11-15 | fix(apple): a cancelled proxy request ends without its session; the cut-body test outlasts an unheard reset |
+| #1409 | 2026-11-15 | fix(apple): Watch a broadcast fails closed under parental limits |
+| #1412 | 2026-11-15 | Apple UI tests: leaving the player and choosing a segment get one more try; the demo player waits out a stall |
 
 ## Index
 
@@ -1543,4 +1551,7 @@ built_from: v0.3.145
 | 1393-guest-sharing-plan-end | 2026-11-15 | pr | Broadcast: guest sharing ends with the plan; machine hosts keep the publishable limit |
 | 1397-plan-change-races | 2026-11-15 | pr | Broadcast: invites and open access can't outlive a plan change; staging watch reports |
 | 1399-beat-writes | 2026-11-15 | pr | Broadcast edge: a heartbeat writes its viewer, not the whole channel state |
+| 1400-watch-apple | 2026-11-15 | pr | Watch a broadcast on Apple TV, iPhone, iPad and the Mac (50.27 T03, T05) |
+| 1407-truncated-segments | 2026-11-15 | pr | Streaming: a segment cut short is an error, never a whole segment |
+| 1408-watch-android | 2026-11-15 | pr | Watch a broadcast on Android, Android TV and Fire TV (50.27 T04, T06) |
 
