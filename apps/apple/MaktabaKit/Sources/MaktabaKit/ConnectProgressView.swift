@@ -78,7 +78,7 @@ extension ConnectProgress {
     /// What stands beside the headline: a spinner only for a short wait. The wait for
     /// approval lasts as long as the code (minutes), and its countdown already moves each
     /// second, so it has a still hourglass: an endless spinner there kept the screen
-    /// redrawing (and the app never idle) the whole time. With Reduce Motion, no spinner.
+    /// redrawing for minutes (battery on a device). With Reduce Motion, no spinner.
     public enum Indicator: Equatable, Sendable {
         case spinner
         case symbol(String)

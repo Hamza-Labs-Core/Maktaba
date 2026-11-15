@@ -373,7 +373,7 @@ extension AgainstAStubHome {
 
     /// A spinner only for a short wait: the code's wait for approval (minutes long, its
     /// countdown already moving) is still, so the screen does not redraw the whole time
-    /// (Trail #1418: the app never went idle there). With Reduce Motion, nothing spins.
+    /// (Trail #1418). With Reduce Motion, nothing spins.
     @Test func onlyShortWaitsSpin() {
         let waiting = ConnectProgress(.awaitingApproval(code: "ABCD-1234", expiresAt: at))
         #expect(waiting.indicator(reduceMotion: false) == .symbol("hourglass"))
