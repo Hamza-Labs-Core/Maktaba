@@ -142,6 +142,8 @@ public struct HomePickerView: View {
     @State private var scanning = false
     @State private var renaming: Home?
     @State private var newName = ""
+    /// The address field holds the keyboard (let go before connecting: see `endEditing`).
+    @FocusState private var addressFocused: Bool
     /// Story 50.27: the app's Watch a broadcast (the Player's), nil in an app without it.
     @Environment(\.watchBroadcast) private var watchBroadcast
     private let words = ConnectStrings.forPreferredLanguages()
@@ -302,6 +304,7 @@ public struct HomePickerView: View {
                 .environment(\.layoutDirection, .leftToRight)
                 .submitLabel(.go)
                 .onSubmit(add)
+                .focused($addressFocused)
                 .accessibilityIdentifier("picker.address")
             Button(words.text(.connect), action: add)
                 .disabled(address.trimmingCharacters(in: .whitespaces).isEmpty)
@@ -332,8 +335,17 @@ public struct HomePickerView: View {
         renaming = home
     }
 
+    /// The keyboard let go of while its field is still there and enabled. Connecting disables
+    /// the form, then swaps it for the sign-in screen: with the field still focused, the
+    /// keyboard's hiding could be cut off mid-animation and never finish, the app never idle
+    /// again (Trail #1418: every later XCUITest wait ran its full 60 s).
+    private func endEditing() {
+        addressFocused = false
+    }
+
     /// A typed address (or a pasted connect link: the Mac's way to "scan").
     private func add() {
+        endEditing()
         problem = nil
         session.connectProblem = nil
         if let link = ConnectLink(string: address) {
@@ -349,6 +361,7 @@ public struct HomePickerView: View {
     }
 
     private func scanned(_ text: String) {
+        endEditing()
         problem = nil
         session.connectProblem = nil
         switch ScannedCode.parse(text) {
@@ -511,6 +524,8 @@ public struct SignInView: View {
     }
 
     private func signIn() {
+        // the keyboard let go of first (the form is disabled, then replaced: see `endEditing`)
+        focus = nil
         busy = true
         problem = nil
         Task {

@@ -61,7 +61,8 @@ final class PlayerConnectProgressUITests: PlayerUITestCase {
 
         // asking the home for a code
         home.hold("POST", "/api/pairing/device")
-        byCode.tap()
+        // the sign-in screen came in while the address field held the keyboard: it is idle
+        tapWhenIdle(byCode, "the sign-in screen after Connect")
         XCTAssertTrue(element("connect.progress.signingIn").waitForExistence(timeout: 10), "asking for a code")
         shot("signin-code-asking")
         home.release()
@@ -76,7 +77,9 @@ final class PlayerConnectProgressUITests: PlayerUITestCase {
         shot("signin-code-new-attempt")
 
         // a wrong password, then signing in (held, so its words stay up)
-        app.buttons[language == "ar" ? "اسم المستخدم وكلمة المرور" : "Username & password"].tap()
+        // the code on screen, waiting for approval with its countdown: nothing endless runs
+        tapWhenIdle(app.buttons[language == "ar" ? "اسم المستخدم وكلمة المرور" : "Username & password"],
+                    "the code waiting for approval")
         home.stub("POST", "/api/auth/login", status: 401, body: #"{"title":"invalid credentials"}"#)
         let user = app.textFields["signin.username"]
         XCTAssertTrue(user.waitForExistence(timeout: 5))
@@ -118,6 +121,16 @@ final class PlayerConnectProgressUITests: PlayerUITestCase {
         shot("restore-busy")
         home.reset()
         XCTAssertTrue(app.buttons["signin.homes"].waitForNonExistence(timeout: 30), "asked again by itself: signed in")
+    }
+
+    /// Taps `element` and checks the app was idle for it: a tap first waits for the app to
+    /// idle (up to 60 s, then it goes on anyway), so a screen that never stops animating or
+    /// redrawing makes each tap take a minute (Trail #1418). A healthy tap takes a second or two.
+    private func tapWhenIdle(_ element: XCUIElement, _ screen: String) {
+        let start = Date()
+        element.tap()
+        let took = Date().timeIntervalSince(start)
+        XCTAssertLessThan(took, 30, "\(screen) never went idle: the tap waited \(Int(took)) s")
     }
 
     /// Replaces a text field's contents (read back: see `typeExactly`).

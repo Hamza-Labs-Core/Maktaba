@@ -75,6 +75,25 @@ extension ConnectProgress {
         }
     }
 
+    /// What stands beside the headline: a spinner only for a short wait. The wait for
+    /// approval lasts as long as the code (minutes), and its countdown already moves each
+    /// second, so it has a still hourglass: an endless spinner there kept the screen
+    /// redrawing (and the app never idle) the whole time. With Reduce Motion, no spinner.
+    public enum Indicator: Equatable, Sendable {
+        case spinner
+        case symbol(String)
+    }
+
+    public func indicator(reduceMotion: Bool) -> Indicator {
+        switch step {
+        case .failed: .symbol("exclamationmark.triangle.fill")
+        case .found: .symbol("checkmark.circle.fill")
+        case .homeBusy: .symbol("clock")
+        case .awaitingApproval: .symbol("hourglass")
+        default: reduceMotion ? .symbol("hourglass") : .spinner
+        }
+    }
+
     /// An address, a name or a code kept in its own direction inside an Arabic sentence.
     static func isolated(_ s: String) -> String { "\u{2068}\(s)\u{2069}" }
 }
@@ -86,6 +105,7 @@ public struct ConnectProgressView: View {
     let locale: Locale
     let retry: (() -> Void)?
     let retryID: String
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// - `retry`: what Retry does (nil: no Retry button, as when the form itself is the retry).
     public init(_ progress: ConnectProgress, locale: Locale = AppLanguage.locale,
@@ -130,16 +150,20 @@ public struct ConnectProgressView: View {
     private var failed: Bool { !progress.isWorking }
 
     @ViewBuilder private var indicator: some View {
-        switch progress.step {
-        case .failed:
-            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.red)
-        case .found:
-            Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
-        case .homeBusy:
-            Image(systemName: "clock").foregroundStyle(Color.mktBrassText)
-        default:
+        switch progress.indicator(reduceMotion: reduceMotion) {
+        case .spinner:
             // a spinner beside the words, never alone (the words say what it waits for)
             ProgressView().controlSize(.small).accessibilityHidden(true)
+        case let .symbol(name):
+            Image(systemName: name).foregroundStyle(symbolColor)
+        }
+    }
+
+    private var symbolColor: Color {
+        switch progress.step {
+        case .failed: .red
+        case .found: .green
+        default: Color.mktBrassText
         }
     }
 
