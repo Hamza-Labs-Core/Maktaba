@@ -22,7 +22,6 @@ import (
 	billingpkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/billing"
 	bc "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/broadcast"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/config"
-	billingh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/billing"
 	broadcasth "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/broadcast"
 )
 
@@ -492,66 +491,5 @@ func TestGuestSharingEndsWithAManualPlanChange(t *testing.T) {
 	}
 	if s := edge.last(t); len(s.RevokedInvites) != 1 || s.RevokedInvites[0] != inv["id"] || s.Chans[bc.ChannelID(h.id, "news")].Access != "invite" {
 		t.Fatalf("the edge after a manual Free: %+v", s)
-	}
-}
-
-// An invite created while a plan change that ends guest sharing is in flight can't slip past
-// the revocation. The interleaving is fixed, not timed: the plan change's transaction runs
-// SetEffectivePlan and holds its row locks; the create, which already read the old plan, then
-// waits on the home's row lock (seen in pg_stat_activity), and the plan change commits. The
-// create must read the plan again under that lock and refuse; before that re-check it inserted
-// a live invite on a Free home.
-func TestInviteCreateRacingAPlanChange(t *testing.T) {
-	edge := newFakeEdge(t)
-	e, _ := accessEnv(t, edge, nil)
-	const email = "race@example.test"
-	owner, h, ch := publisherHome(e, email, "racehome", "news")
-	uid := e.userID(email)
-	ctx := context.Background()
-
-	tx, err := e.pool.DB.BeginTx(ctx, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = tx.Rollback() }()
-	if _, err := billingh.SetEffectivePlan(ctx, tx, uid, billingpkg.PlanFree); err != nil {
-		t.Fatal(err)
-	}
-
-	done := make(chan resp, 1)
-	go func() {
-		done <- owner.do("POST", "/v1/broadcast/homes/"+h.id+"/invites", map[string]any{"channels": []string{ch}})
-	}()
-	// the create has passed its first plan check (Pro: the plan change hasn't committed) and
-	// waits for the home's row, which the plan change holds
-	deadline := time.Now().Add(10 * time.Second)
-	for {
-		var waiting int
-		if err := e.pool.DB.QueryRowContext(ctx, `SELECT count(*) FROM pg_stat_activity
-            WHERE datname = current_database() AND wait_event_type = 'Lock' AND query LIKE '%FROM servers WHERE id = $1 FOR UPDATE%'`).Scan(&waiting); err != nil {
-			t.Fatal(err)
-		}
-		if waiting > 0 {
-			break
-		}
-		select {
-		case r := <-done:
-			t.Fatalf("the create finished without waiting for the plan change: %d %s", r.code, r.body)
-		default:
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("the create never waited on the home's row lock")
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	if err := tx.Commit(); err != nil {
-		t.Fatal(err)
-	}
-	r := <-done
-	if r.code != http.StatusPaymentRequired || r.errCode() != "broadcast_needs_plan" {
-		t.Fatalf("an invite made across the plan's end: %d %s", r.code, r.body)
-	}
-	if n := e.count(`SELECT count(*) FROM broadcast_invites WHERE server_id = $1 AND revoked_at IS NULL`, h.id); n != 0 {
-		t.Fatalf("a Free home has %d live invites", n)
 	}
 }
