@@ -25,6 +25,10 @@ import Network
 ///   the proxy is stopped; at most `mostAtOnce` requests are served at once, and when
 ///   every place is taken a request whose player closed its side before any answer went
 ///   gives its place to a new one (503 only when every place is delivering);
+/// - a connection takes one of those places only once its request's head has come and named
+///   a path under the secret: until then it waits apart, at most `mostWaiting` of them, the
+///   oldest closed first to make room and each closed after `headPatience`, so sockets that
+///   connect and say nothing, or ask with a wrong secret, never keep a player out;
 /// - a home that says nothing for `homePatience` while it is waited on fails the request.
 /// A player that is connected and takes nothing (a paused film, a full buffer) is not
 /// dropped for it, however long: it holds its place and the home is held back, and neither
@@ -63,8 +67,16 @@ public final class StreamProxy: @unchecked Sendable {
     let secret = UUID().uuidString.lowercased()
     private let lock = NSLock()
     private var boundPort: UInt16?
-    /// The requests being served now, each with its task (cancelled by `stop`).
-    private var open: [ObjectIdentifier: (peer: Peer, task: Task<Void, Never>?, order: Int)] = [:]
+    /// Every connection the proxy holds, each with its task (cancelled by `stop`): `admitted`
+    /// once its head named a path under the secret (it then counts against `mostAtOnce`),
+    /// waiting for its head before (counted against `mostWaiting` instead).
+    private var open: [ObjectIdentifier: Held] = [:]
+    private struct Held {
+        let peer: Peer
+        var task: Task<Void, Never>?
+        let order: Int
+        var admitted = false
+    }
     private var accepted = 0
     private var stopped = false
     public let reach: Reach
@@ -75,6 +87,11 @@ public final class StreamProxy: @unchecked Sendable {
     /// two, a rendition switch); one that opens more without closing any is answered 503, so
     /// connections, tasks and requests to the home cannot pile up.
     static let mostAtOnce = 16
+    /// The most connections kept while their request's head is awaited (or a refusal of one
+    /// that asked for nothing of ours is delivered). They take none of `mostAtOnce`'s places;
+    /// one more closes the oldest of them, so a client that opens sockets and sends nothing
+    /// pushes out its own, not a player's request (whose head comes the moment it connects).
+    static let mostWaiting = 32
     /// How long a connection may take to send its request's head before it is closed (a
     /// client that connects and says nothing). Nothing else is timed: a player that reads
     /// slowly, or not at all for a while, keeps its connection.
@@ -211,46 +228,68 @@ public final class StreamProxy: @unchecked Sendable {
     /// How many connections were accepted since the proxy started.
     var acceptedCount: Int { lock.withLock { accepted } }
 
-    /// How many requests are being served now.
-    var serving: Int { lock.withLock { open.count } }
+    /// How many requests are being served now (admitted: a head under the secret came).
+    var serving: Int { lock.withLock { open.values.filter(\.admitted).count } }
+
+    /// How many connections wait for their request's head (or for a refusal to be read).
+    var waitingForHead: Int { lock.withLock { open.values.filter { !$0.admitted }.count } }
 
     /// A new connection: served in a task of its own, below the app's interface in priority
     /// (copying a stream must never compete with the remote), and cancelled the moment the
-    /// player lets the connection go.
+    /// player lets the connection go. It waits for its head apart from the requests being
+    /// served (`admit` gives it a place once the head names a path under the secret); with
+    /// `mostWaiting` already waiting, the oldest of them is closed to make room.
     private func accept(_ conn: NWConnection) {
         let peer = Peer(conn, queue: queue, headPatience: headPatience)
         let id = ObjectIdentifier(peer)
-        // every place taken: the oldest request nobody waits for any more (its player closed
-        // its side before a byte of the answer went: a tune or a seek that moved on while the
-        // home was slow) gives its place up; only when every place is delivering is the new
-        // request refused
-        let (full, evicted) = lock.withLock { () -> (Bool?, (peer: Peer, task: Task<Void, Never>?, order: Int)?) in
-            if stopped { return (nil, nil) }
+        let (taken, pushedOut) = lock.withLock { () -> (Bool, Held?) in
+            if stopped { return (false, nil) }
             accepted += 1
-            open[id] = (peer, nil, accepted)
-            guard open.count > Self.mostAtOnce else { return (false, nil) }
-            let victim = open.filter { $0.key != id && $0.value.peer.abandoned }.min { $0.value.order < $1.value.order }
-            guard let victim else { return (true, nil) }
-            open.removeValue(forKey: victim.key)
-            return (false, victim.value)
+            open[id] = Held(peer: peer, order: accepted)
+            let waiting = open.filter { !$0.value.admitted }
+            guard waiting.count > Self.mostWaiting,
+                  let oldest = waiting.filter({ $0.key != id }).min(by: { $0.value.order < $1.value.order }) else { return (true, nil) }
+            open.removeValue(forKey: oldest.key)
+            return (true, oldest.value)
+        }
+        if let pushedOut {
+            pushedOut.task?.cancel()
+            pushedOut.peer.close()
+        }
+        guard taken else { conn.cancel(); return }
+        peer.start()
+        let task = Task(priority: .utility) { [self] in
+            await serve(peer, id)
+            lock.withLock { _ = open.removeValue(forKey: id) }
+        }
+        lock.withLock { if open[id] != nil { open[id]?.task = task } }
+        peer.whenGone { task.cancel() }
+    }
+
+    private enum Admission { case served, full, gone }
+
+    /// Gives the waiting connection `id` a place among the requests served. Every place
+    /// taken: the oldest request nobody waits for any more (its player closed its side before
+    /// a byte of the answer went: a tune or a seek that moved on while the home was slow)
+    /// gives its place up; only when every place is delivering is the new request refused.
+    private func admit(_ id: ObjectIdentifier) -> Admission {
+        let (admission, evicted) = lock.withLock { () -> (Admission, Held?) in
+            guard !stopped, open[id] != nil else { return (.gone, nil) }
+            let served = open.filter { $0.value.admitted }
+            var victim: Held?
+            if served.count >= Self.mostAtOnce {
+                guard let v = served.filter({ $0.value.peer.abandoned }).min(by: { $0.value.order < $1.value.order }) else { return (.full, nil) }
+                open.removeValue(forKey: v.key)
+                victim = v.value
+            }
+            open[id]?.admitted = true
+            return (.served, victim)
         }
         if let evicted {
             evicted.task?.cancel()
             evicted.peer.close()
         }
-        guard let full else { conn.cancel(); return }
-        peer.start()
-        let task = Task(priority: .utility) { [self] in
-            if full {
-                try? await send(peer, Self.status(503, "Service Unavailable"))
-                await finish(peer)
-            } else {
-                await serve(peer)
-            }
-            lock.withLock { _ = open.removeValue(forKey: id) }
-        }
-        lock.withLock { if open[id] != nil { open[id]?.task = task } }
-        peer.whenGone { task.cancel() }
+        return admission
     }
 
     /// The TCP options of the connections being served (a test reads the keepalive off them).
@@ -292,8 +331,36 @@ public final class StreamProxy: @unchecked Sendable {
 
     // MARK: one request
 
-    private func serve(_ peer: Peer) async {
-        if await handle(peer) {
+    /// Reads the request's head, refuses what is not ours while the connection still waits
+    /// (it takes no place), and serves the rest once `admit` gives it a place.
+    private func serve(_ peer: Peer, _ id: ObjectIdentifier) async {
+        guard let (head, ended) = try? await receiveHead(peer.conn), let req = Request(head) else {
+            return await answer(peer, Self.status(400, "Bad Request"))
+        }
+        // from here on nothing more is expected from the player; its connection failing is it
+        // leaving (its side closing in order is only "no more requests": the answer still goes)
+        peer.watch(ended: ended)
+        guard req.method == "GET" || req.method == "HEAD", let url = remote(forTarget: req.target) else {
+            return await answer(peer, Self.status(404, "Not Found"))
+        }
+        switch admit(id) {
+        case .gone:
+            peer.close()
+        case .full:
+            await answer(peer, Self.status(503, "Service Unavailable"))
+        case .served:
+            await conclude(peer, await handle(peer, req, url))
+        }
+    }
+
+    /// Sends a whole short answer (a refusal) and ends the connection.
+    private func answer(_ peer: Peer, _ data: Data) async {
+        await conclude(peer, (try? await send(peer, data)) != nil)
+    }
+
+    /// Ends the connection: in order when the answer went whole, at once when it was cut short.
+    private func conclude(_ peer: Peer, _ whole: Bool) async {
+        if whole {
             await finish(peer)
         } else {
             // cut short (the player left, the home failed mid-body): closed at once. The
@@ -320,17 +387,8 @@ public final class StreamProxy: @unchecked Sendable {
         peer.close()
     }
 
-    /// Answers one request. False when the response was cut short.
-    private func handle(_ peer: Peer) async -> Bool {
-        guard let (head, ended) = try? await receiveHead(peer.conn), let req = Request(head) else {
-            return (try? await send(peer, Self.status(400, "Bad Request"))) != nil
-        }
-        // from here on nothing more is expected from the player; its connection failing is it
-        // leaving (its side closing in order is only "no more requests": the answer still goes)
-        peer.watch(ended: ended)
-        guard req.method == "GET" || req.method == "HEAD", let url = remote(forTarget: req.target) else {
-            return (try? await send(peer, Self.status(404, "Not Found"))) != nil
-        }
+    /// Answers one admitted request for the home's `url`. False when the response was cut short.
+    private func handle(_ peer: Peer, _ req: Request, _ url: URL) async -> Bool {
         let body: UpstreamBody, http: HTTPURLResponse?
         do {
             (body, http) = try await fetch(req, from: url)
