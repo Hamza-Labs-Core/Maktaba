@@ -17,6 +17,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/broadcast"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/config"
 	broadcasth "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/broadcast"
+	moderationh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/moderation"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/moderation"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/stores"
 )
@@ -287,6 +288,18 @@ func TestModerationNoticeTakedownCounterRestore(t *testing.T) {
 	if r := viewerPage.do("OPTIONS", "/v1/moderation/notices", nil); r.header.Get("Access-Control-Allow-Origin") != "" {
 		t.Errorf("the watch origin's preflight on the notice form = %v", r.header)
 	}
+	// the staging edge's watch page is another site to production (server.env unset here, as
+	// "production" is): no CORS answer, and its report is refused
+	stagingPage := e.client()
+	stagingPage.origin = moderationh.StagingWatchOrigin
+	if r := stagingPage.do("OPTIONS", "/v1/moderation/reports", nil); r.header.Get("Access-Control-Allow-Origin") != "" {
+		t.Errorf("the staging watch page's preflight outside staging = %d %v", r.code, r.header)
+	}
+	if r := stagingPage.do("POST", "/v1/moderation/reports", map[string]any{"category": "abuse",
+		"channel": watchURL}); r.code != http.StatusForbidden ||
+		r.header.Get("Access-Control-Allow-Origin") != "" {
+		t.Errorf("the staging watch page's report outside staging = %d %v", r.code, r.header)
+	}
 	// another site's page is refused, before any row is written
 	evil := e.client()
 	evil.origin = "https://evil.test"
@@ -379,5 +392,39 @@ func TestEdgeChannelBindsOnce(t *testing.T) {
 	}
 	if ok != 1 || refused != 1 {
 		t.Fatalf("two concurrent binds: %d bound, %d refused", ok, refused)
+	}
+}
+
+// The staging deployment (server.env = "staging") takes the staging edge's watch page's reports:
+// its preflight is answered (no credentials), and its report (which names the channel on
+// watch.maktaba.tv, as the edge's REPORT_WATCH_HOST does) lands on the home's channel. watch.maktaba.tv still works there; any other site is still refused.
+func TestStagingTakesTheStagingWatchPagesReports(t *testing.T) {
+	e := newEnvCfg(t, nil, func(c *config.Config) { c.Server.Env = "staging" })
+	h, ch, edge := modHome(t, e, e.registerVerified("stagingpub@example.test"), "staginghome")
+	page := e.client()
+	page.origin = moderationh.StagingWatchOrigin
+	pre := page.do("OPTIONS", "/v1/moderation/reports", nil)
+	if pre.code != http.StatusNoContent || pre.header.Get("Access-Control-Allow-Origin") != moderationh.StagingWatchOrigin ||
+		pre.header.Get("Access-Control-Allow-Credentials") != "" {
+		t.Fatalf("the staging watch page's preflight on staging = %d %v", pre.code, pre.header)
+	}
+	url := "https://" + moderation.WatchHost + "/en/" + h.id + "/" + edge
+	rep := page.do("POST", "/v1/moderation/reports", map[string]any{"category": "abuse", "channel": url, "text": "seen on staging"})
+	if rep.code != http.StatusAccepted || rep.header.Get("Access-Control-Allow-Origin") != moderationh.StagingWatchOrigin {
+		t.Fatalf("the staging watch page's report on staging = %d %s %v", rep.code, rep.body, rep.header)
+	}
+	if e.count(`SELECT count(*) FROM moderation_reports WHERE id = $1 AND server_id = $2 AND channel_id = $3`,
+		rep.json(t)["report_id"], h.id, ch) != 1 {
+		t.Error("the staging report did not resolve to its channel")
+	}
+	prod := e.client()
+	prod.origin = "https://watch.maktaba.tv"
+	if r := prod.do("OPTIONS", "/v1/moderation/reports", nil); r.header.Get("Access-Control-Allow-Origin") != "https://watch.maktaba.tv" {
+		t.Errorf("watch.maktaba.tv's preflight on staging = %v", r.header)
+	}
+	evil := e.client()
+	evil.origin = "https://evil.test"
+	if r := evil.do("POST", "/v1/moderation/reports", map[string]any{"category": "abuse", "channel": url}); r.code != http.StatusForbidden {
+		t.Errorf("another site's report on staging = %d", r.code)
 	}
 }

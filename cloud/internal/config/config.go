@@ -139,8 +139,10 @@ type ServerConfig struct {
 	// WebURL is the cloud web app's origin (mail links and OAuth
 	// landings point there). Defaults to PublicURL.
 	WebURL string
-	// Env is "production" on the cloud's nodes (server.env); anything else is a development
-	// or CI run. Production refuses a public listener and an empty TrustedProxies (50.31).
+	// Env is "production" on the cloud's nodes (server.env) and "staging" on the staging
+	// deployment; anything else is a development or CI run. Production refuses a public
+	// listener and an empty TrustedProxies (50.31); staging also answers the staging edge's
+	// watch page (Staging).
 	Env string
 	// AdminListenAddr is the operator console's own listener (server.admin_listen_addr,
 	// Epic 50 story 50.32): /v1/admin/* and /v1/staff/* only. Empty means none, and the

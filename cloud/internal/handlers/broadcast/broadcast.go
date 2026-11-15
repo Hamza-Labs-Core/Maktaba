@@ -189,6 +189,22 @@ func (d *Deps) Publish(w http.ResponseWriter, r *http.Request) {
 		d.fail(w, r, "lock home", err)
 		return
 	}
+	// the plan again under the lock: a plan change that committed after the read above (and
+	// before the lock was granted) is seen here; one still in flight waits for this commit and
+	// then sets the new channel to invite (SetEffectivePlan)
+	if p, err = billingpkg.PublisherTx(ctx, tx, id); err != nil {
+		d.fail(w, r, "load publisher", err)
+		return
+	}
+	if tier = p.Tier(); tier == nil {
+		writeErr(w, http.StatusPaymentRequired, "broadcast_needs_plan", "sharing channels with people outside your home needs the Pro plan")
+		return
+	}
+	if !d.Store.Gated(p) {
+		writeErr(w, http.StatusForbidden, "broadcast_not_enabled", "broadcasting isn't open yet")
+		return
+	}
+	limits = p.Limits()
 	if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM broadcast_channels WHERE server_id = $1 AND unpublished_at IS NULL`, id).Scan(&live); err != nil {
 		d.fail(w, r, "count channels", err)
 		return
