@@ -1,7 +1,10 @@
 // The release's two steps around the build (cast-receiver-release.yml, story 58.07):
 //
 //   node scripts/release.mjs fetch --live-base https://cast.maktaba.tv --out live-builds.json
-//       the live site's builds.json, or an empty list on a first deploy (404)
+//       the live site's builds.json, or an empty list when nothing is deployed yet: the name
+//       does not resolve (ENOTFOUND) or the manifest answers 404. Anything else (a 5xx, a refused
+//       or reset connection, a TLS error, a manifest that is not {builds: [...]}) fails the
+//       release, so a broken live site is never taken for an empty one and overwritten.
 //   node scripts/release.mjs copy --live-base https://cast.maktaba.tv [--live live-builds.json]
 //       after `npm run build -- --live live-builds.json`: copies each kept build of another level
 //       from the live site into dist/r/<level>/, and writes `changed=true|false` to
@@ -26,6 +29,52 @@ async function get(url) {
   return res;
 }
 
+/** DNS answers for a name with no record: nothing is deployed there. A temporary resolver
+ * failure (EAI_AGAIN) is not one of them: it says nothing about the site. */
+const NOT_DEPLOYED_CODES = new Set(["ENOTFOUND"]);
+
+function errorCode(e) {
+  // undici's "fetch failed" TypeError carries the socket or DNS error as its cause
+  for (let c = e; c; c = c.cause) if (typeof c.code === "string") return c.code;
+  return "";
+}
+
+/** The live site's manifest, or none when nothing is deployed yet. Returns
+ * `{ builds, reason }`; throws on any answer that could be a broken live site. */
+export async function fetchLive(base, fetchImpl = fetch) {
+  const url = `${base}/r/builds.json`;
+  let res;
+  try {
+    res = await fetchImpl(url, { cache: "no-store", redirect: "follow" });
+  } catch (e) {
+    const code = errorCode(e);
+    if (NOT_DEPLOYED_CODES.has(code)) {
+      return {
+        builds: [],
+        reason: `${new URL(base).hostname} does not resolve (${code}): nothing deployed yet`,
+      };
+    }
+    throw new Error(`${url}: ${e?.message ?? e}${code ? ` (${code})` : ""}`);
+  }
+  if (res.status === 404)
+    return { builds: [], reason: `${url} answered 404: nothing deployed yet` };
+  if (!res.ok) throw new Error(`${url} answered ${res.status}`);
+  let body;
+  try {
+    body = await res.json();
+  } catch (e) {
+    throw new Error(`${url} is not JSON: ${e?.message ?? e}`);
+  }
+  if (
+    !body ||
+    !Array.isArray(body.builds) ||
+    body.builds.some((b) => !b || typeof b.level !== "number" || typeof b.path !== "string")
+  ) {
+    throw new Error(`${url} is not a builds manifest ({builds: [{level, path, ...}]})`);
+  }
+  return { builds: body.builds, reason: "" };
+}
+
 /** The deploy is needed unless the fresh manifest lists exactly the live builds, by level and
  * hash. */
 export function changed(liveBuilds, freshBuilds) {
@@ -42,12 +91,10 @@ async function main() {
   const base = arg("--live-base", "https://cast.maktaba.tv").replace(/\/+$/, "");
   if (cmd === "fetch") {
     const out = arg("--out", "live-builds.json");
-    const res = await get(`${base}/r/builds.json`);
-    let body = { builds: [] };
-    if (res.ok) body = await res.json();
-    else if (res.status !== 404) throw new Error(`${base}/r/builds.json answered ${res.status}`);
-    fs.writeFileSync(out, `${JSON.stringify(body, null, 2)}\n`);
-    console.log(`live builds: ${(body.builds ?? []).map((b) => b.level).join(", ") || "none"}`);
+    const { builds, reason } = await fetchLive(base);
+    if (reason) console.log(reason);
+    fs.writeFileSync(out, `${JSON.stringify({ builds }, null, 2)}\n`);
+    console.log(`live builds: ${builds.map((b) => b.level).join(", ") || "none"}`);
     return;
   }
   if (cmd === "copy") {
