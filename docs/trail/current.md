@@ -1,11 +1,11 @@
 ---
 schema: 1
-tag: v0.3.150
-up_to_commit: a49616163
-built_from: v0.3.149
+tag: v0.3.151
+up_to_commit: a4074b59d
+built_from: v0.3.150
 ---
 
-# Trail snapshot: v0.3.150
+# Trail snapshot: v0.3.151
 
 ## Keep doing
 
@@ -716,11 +716,11 @@ built_from: v0.3.149
 
 ## Open
 
-- `PlayerSearchUITests.testATitleOpensItsPage` stalled once the same way (the search field submits and the screen changes with it focused); not changed in #1419. A web panel for `plugin_relay` (English and Arabic) is still to build; the data is in health and `/metrics`. The live home stays on 0.3.135 until it updates to a release with #1424. (#1419, #1424)
+- `PlayerSearchUITests.testATitleOpensItsPage` stalled once the same way (the search field submits and the screen changes with it focused); not changed in #1419, and PR 1425 makes the search field let go of the keyboard first (no event at this tag). A web panel for `plugin_relay` (English and Arabic) is still to build; the data is in health and `/metrics`. The live home stays on 0.3.135 until it updates to a release with #1424. (#1419, #1424)
 - Not verified on real hardware: Apple TV playback and AirPlay, background audio on device, foldables and tablets, the desktop Player against a live home. (#512, #579, #523, #667)
 - Remove the tag guard's `IGNORED_CI_JOBS` once the iPhone/iPad shards are fixed. (#577)
 - Player UI shards left in progress after their run completed (issue #649). (#632)
-- A starved simulator can still outrun XCTest's 30 s query limit: look at the runner's load first. `PlayerConnectProgressUITests.testSignInAndRestoreStatesEnglish` can lose its "signing in" check when the runner's idle waits stall for minutes; why the app never went idle on the code sign-in screen is not recorded in an event (PR 1419 made the sign-in screens go idle, and has no event). (#1312, #1309, #1417)
+- A starved simulator can still outrun XCTest's 30 s query limit: look at the runner's load first. `PlayerConnectProgressUITests.testSignInAndRestoreStatesEnglish` can lose its "signing in" check when the runner's idle waits stall for minutes; the code sign-in screen's stall was a keyboard animation cut off by Connect, fixed in #1419. (#1419, #1312, #1309, #1417)
 - Docker Postgres on the home Mac was stopped, never removed. (#148)
 - The VPS kernel patch for CVE-2026-98432, and a `SECURITY.md`. (#518)
 - Epic 52: the real gold set and calibration curves; the rehearsal's "one component more" step. (#672)
@@ -813,6 +813,7 @@ built_from: v0.3.149
 | #1232 | 2026-11-13 | fix(postgres): a half-answered look no longer restarts the database |
 | #1318 | 2026-11-14 | docs(testflight): the install failure though the build is listed (open) |
 | #1409 | 2026-11-15 | fix(apple): Watch a broadcast fails closed under parental limits |
+| #1425 | 2026-11-15 | fix(apple): the search field lets go of the keyboard before the screen changes |
 | #1426 | 2026-11-15 | logindex: an idle log index stays idle (286% -> 0.8% CPU); one writer; metrics count against the cap |
 
 ## Index
