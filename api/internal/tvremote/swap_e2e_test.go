@@ -710,6 +710,19 @@ func TestSwapRollbackEndToEnd(t *testing.T) {
 	}
 	t.Logf("warm rollback: blue on the air again, the HLS viewer on blue %v after the request; TS %s",
 		rbAfter.Round(100*time.Millisecond), lastField(splices()))
+	// one reverse commit for the admin's rollback: the controller's tick, racing the
+	// request, does not enqueue a second one
+	qmu.Lock()
+	rbJobs := 0
+	for _, j := range jobs {
+		if j == tvchange.StageTVRollback+":"+c1 {
+			rbJobs++
+		}
+	}
+	qmu.Unlock()
+	if rbJobs != 1 {
+		t.Errorf("warm rollback: %d reverse commits enqueued, want 1", rbJobs)
+	}
 
 	// ---- 3. a crash of the new live slot inside the grace: automatic rollback ---
 	restart("green", "") // the supervisor's restarts: the standby, and amber on the staged release
