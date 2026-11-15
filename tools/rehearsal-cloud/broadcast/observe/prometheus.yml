@@ -1,0 +1,27 @@
+# The broadcast rehearsal's Prometheus (broadcast-observe, compose.observe.yml): the witness's
+# (deploy/cloud-ha/monitoring/prometheus.yml) intervals and alert rules, scraping the rehearsal's
+# cloud series (the monitor, standing in for each node's private metrics listener) and the
+# Pushgateway the canary probes push to.
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: maktaba-rehearsal
+
+rule_files:
+  - /etc/prometheus/alerts.yml
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]
+
+scrape_configs:
+  - job_name: cloud
+    static_configs:
+      - targets: ["monitor:9090"]
+        labels: {node: node-a}
+  - job_name: pushgateway
+    honor_labels: true
+    static_configs:
+      - targets: ["pushgateway:9091"]

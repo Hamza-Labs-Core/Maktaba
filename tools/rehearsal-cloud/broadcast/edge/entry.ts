@@ -6,7 +6,9 @@
 // The counters are the edge's side of the fan-out rule (one upload per segment per rung, R2 read
 // at most once per object per location): every R2 get by key, every ingest PUT the edge took, and
 // every Durable Object stub the Worker asked for. They are read at /__rehearsal/counters, which
-// only this entry answers.
+// only this entry answers. The fake Analytics Engine also keeps its points (the newest
+// AE_KEEP), read at /__rehearsal/ae?since_ms=N by the rehearsal's cloud monitor
+// (cloud/cmd/rehearsal-broadcast-monitor), as the cloud reads the dataset through the SQL API.
 import worker, * as edge from "@edge/worker";
 import { advanceClock } from "@edge/clock";
 import type { Env } from "@edge/env";
@@ -45,6 +47,22 @@ const fresh = (): Counters => ({
 });
 let counts = fresh();
 
+/** One Analytics Engine point as written, with when (this isolate's clock) and its order. */
+interface AEPoint {
+  seq: number;
+  at_ms: number;
+  blobs: string[];
+  doubles: number[];
+}
+const AE_KEEP = 20000;
+let aePoints: AEPoint[] = [];
+let aeSeq = 0;
+/**
+ * this isolate's points: a redeploy starts a new epoch, and the monitor reads it from its start
+ * (made on first use: Workers allow no random values at global scope)
+ */
+let aeEpoch = "";
+
 function wrapBucket(b: R2Bucket): R2Bucket {
   return {
     get: (key: string, opts?: R2GetOptions) => {
@@ -81,11 +99,19 @@ function wrapNamespace(ns: DurableObjectNamespace): DurableObjectNamespace {
 
 /**
  * The fake Analytics Engine: points counted by event (blob 1 in the 50.28 schema), the codes of
- * `blocked` and `error` points (blob 9) and the `ingest` points with glass-to-glass (double 8).
+ * `blocked` and `error` points (blob 9) and the `ingest` points with glass-to-glass (double 8),
+ * and every point kept (aePoints) for the cloud monitor.
  */
 const fakeAE = {
   writeDataPoint(p: { blobs?: string[]; doubles?: number[] }) {
     counts.ae_points++;
+    aePoints.push({
+      seq: ++aeSeq,
+      at_ms: Date.now(),
+      blobs: [...(p.blobs ?? [])],
+      doubles: [...(p.doubles ?? [])],
+    });
+    if (aePoints.length > AE_KEEP) aePoints = aePoints.slice(aePoints.length - AE_KEEP);
     const ev = p.blobs?.[0] ?? "";
     counts.ae_by_event[ev] = (counts.ae_by_event[ev] ?? 0) + 1;
     if (ev === "blocked" || ev === "error") {
@@ -129,10 +155,21 @@ export const Pairing = wrapClass(edge.Pairing);
 
 async function control(request: Request, url: URL): Promise<Response> {
   const json = (v: unknown) =>
-    new Response(JSON.stringify(v), { headers: { "Content-Type": "application/json" } });
+    new Response(JSON.stringify(v), {
+      headers: { "Content-Type": "application/json" },
+    });
   switch (url.pathname) {
     case "/__rehearsal/counters":
       return json(counts);
+    case "/__rehearsal/ae": {
+      // kept across /__rehearsal/reset: the counters are a scenario's, the points the cloud's
+      const since = Number(url.searchParams.get("since_ms") ?? "0") || 0;
+      aeEpoch ||= crypto.randomUUID();
+      return json({
+        ae_epoch: aeEpoch,
+        ae_points: aePoints.filter((p) => p.at_ms >= since),
+      });
+    }
     case "/__rehearsal/reset":
       if (request.method !== "POST") break;
       counts = fresh();
@@ -155,7 +192,10 @@ async function control(request: Request, url: URL): Promise<Response> {
 // so it holds whatever the simulator's options do.
 let planted = false;
 function plant(env: Env): void {
-  if (planted || (env as unknown as { REHEARSAL_PLANT?: string }).REHEARSAL_PLANT !== "per-viewer-fetch")
+  if (
+    planted ||
+    (env as unknown as { REHEARSAL_PLANT?: string }).REHEARSAL_PLANT !== "per-viewer-fetch"
+  )
     return;
   planted = true;
   const real = (caches as unknown as { default: Cache }).default;

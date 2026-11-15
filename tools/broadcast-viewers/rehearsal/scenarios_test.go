@@ -109,6 +109,9 @@ func run(t *testing.T, r *Result, body func(*stack)) {
 	if r.Scenario == "broadcast-fanout-planted" {
 		env = append(env, "REHEARSAL_PLANT=per-viewer-fetch")
 	}
+	if r.Scenario == "broadcast-observe" {
+		env = append(env, observeEnv(t)...)
+	}
 	body(up(t, r, r.Scenario, env...))
 }
 

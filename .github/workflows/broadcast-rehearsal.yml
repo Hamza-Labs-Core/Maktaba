@@ -2,7 +2,10 @@
 # rehearsal"): this commit's broadcast edge in Miniflare (several simulated locations, each with
 # its own cache) and a home running the streaming service's broadcaster on a test pattern
 # (tools/rehearsal-cloud/broadcast/compose.yml), watched by simulated viewers
-# (tools/broadcast-viewers). No Cloudflare account, no DNS, no secret: the cloud's part (ingest
+# (tools/broadcast-viewers). broadcast-observe adds the witness's monitoring
+# (compose.observe.yml: Prometheus with the production alert rules, Alertmanager with the
+# production routes, the Pushgateway, the cloud's broadcast series) and runs the canary probes,
+# status-export and the status page's fold on the runner (bash, curl, jq, python3, node). No Cloudflare account, no DNS, no secret: the cloud's part (ingest
 # tokens, revocation lists, plan pushes, access posts, invites) is signed with its TEST key in the
 # test, and the edge's calls out (Turnstile, the usage posts) reach fakes in its own container.
 #
@@ -35,6 +38,17 @@ on:
       - 'streaming/go.sum'
       - 'tools/broadcast-viewers/**'
       - 'tools/rehearsal-cloud/broadcast/**'
+      # broadcast-observe (50.28): the cloud's monitor, the production alert rules and routes,
+      # the canary probes, status-export and the status page's fold
+      - 'cloud/cmd/rehearsal-broadcast-monitor/**'
+      - 'deploy/cloud-ha/monitoring/alerts.yml'
+      - 'deploy/cloud-ha/monitoring/alertmanager.yml'
+      - 'deploy/cloud-ha/monitoring/broadcast-probe.sh'
+      - 'deploy/cloud-ha/monitoring/probe.sh'
+      - 'deploy/cloud-ha/bin/status-export'
+      - 'status/lib.mjs'
+      - 'status/update.mjs'
+      - 'status/config.json'
       - '.github/workflows/broadcast-rehearsal.yml'
   push:
     branches: [main, 'release/**']
@@ -95,7 +109,7 @@ jobs:
           echo "unbuilt=$(go run ./cmd/broadcast-report -unbuilt "$SET")" >> "$GITHUB_OUTPUT"
 
   images:
-    name: images (this commit's edge and home)
+    name: images (this commit's edge, home and cloud monitor)
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
@@ -104,8 +118,9 @@ jobs:
         run: |
           docker build -f tools/rehearsal-cloud/broadcast/Dockerfile.edge -t maktaba-broadcast-edge:rehearsal .
           docker build -f tools/rehearsal-cloud/broadcast/Dockerfile.home -t maktaba-broadcast-home:rehearsal .
+          docker build -f tools/rehearsal-cloud/broadcast/Dockerfile.monitor -t maktaba-broadcast-monitor:rehearsal .
       - name: Save
-        run: docker save maktaba-broadcast-edge:rehearsal maktaba-broadcast-home:rehearsal | gzip -1 > /tmp/broadcast-images.tar.gz
+        run: docker save maktaba-broadcast-edge:rehearsal maktaba-broadcast-home:rehearsal maktaba-broadcast-monitor:rehearsal | gzip -1 > /tmp/broadcast-images.tar.gz
       - uses: actions/upload-artifact@v7.0.1
         with:
           name: broadcast-images

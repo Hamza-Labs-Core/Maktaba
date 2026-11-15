@@ -401,7 +401,6 @@ func access(s *stack) {
 	// Turnstile: a bad token fails; a good one is good once
 	bad := s.watch(http.MethodPost, "/api/v1/open/turnstile", map[string]string{"token": "robot"}, "")
 	s.check("a failed Turnstile check opens nothing", bad.Code == http.StatusForbidden && bad.Error == "turnstile_failed", "turnstile", bad.Code, bad.Error)
-	opens := make([]watchAnswer, 0, 5)
 	turnstile := func() watchAnswer {
 		return s.watch(http.MethodPost, "/api/v1/open/turnstile", map[string]string{"token": "pass-" + newChannel("t")}, "")
 	}
@@ -409,7 +408,6 @@ func access(s *stack) {
 	replay := s.watch(http.MethodPost, "/api/v1/open/turnstile", map[string]string{"token": "pass-replayed"}, "")
 	s.check("a Turnstile token opens a session once", first.Code == http.StatusOK && first.Session != "" &&
 		replay.Code == http.StatusForbidden && replay.Error == "turnstile_failed", "turnstile", first.Code, first.Error, replay.Code, replay.Error)
-	opens = append(opens, first)
 
 	// open sessions: 2 per network, then 4 per channel; the playing ones play on
 	ctx, cancel := context.WithCancel(context.Background())
@@ -423,7 +421,6 @@ func access(s *stack) {
 		return a
 	}
 	o2 := turnstile()
-	opens = append(opens, o2)
 	a1, a2 := admit(first, "open-1"), admit(o2, "open-2")
 	o3 := turnstile()
 	a3 := admit(o3, "open-3")
@@ -843,11 +840,17 @@ func hetznerDown(s *stack) {
 
 // ---- broadcast-observe (50.28) -----------------------------------------------------------
 
-// observe: the edge's part of 50.28 runs here: the canary publisher's ingest events carry
-// glass-to-glass, ingest events stop when ingest breaks, and a revoked channel's viewers are
-// written as blocked. The alerts (Prometheus over the cloud worker's Analytics Engine poll) and
-// the status component are the cloud's monitoring, not in this stack, and the canary viewer probe
-// is not built: those checks fail, so the scenario stays an expected failure until they are.
+// observe: 50.28 end to end. The edge's events: the canary publisher's ingest events carry
+// glass-to-glass, ingest events stop when ingest breaks, a revoked channel's viewers are written
+// as blocked. The cloud's monitoring (compose.observe.yml): the canary viewer probe
+// (broadcast-probe.sh as the witness, probe.sh as GitHub's runners) plays the canary every 60 s;
+// the witness's Prometheus evaluates the production alert rules over the probes' pushes and the
+// cloud's maktaba_broadcast_* series (made by the cloud's code from the edge's points), and
+// Alertmanager routes them by the production routes; status-export and the status page's fold
+// (status/update.mjs) drive its Broadcasting component. Faults, each a real one where it can be:
+// the home's uplink congests (every 4th segment's body takes 4.5 s: ingest lag), the canary's
+// burned clock reads 45 s late (glass-to-glass), the cloud stops pushing the revocation list
+// (stale), and the canary's encoder dies (down).
 func observe(s *stack) {
 	s.deploy(map[string]string{"CANARY_PUBLISHER": pub})
 	ch := newChannel("observe")
@@ -855,6 +858,12 @@ func observe(s *stack) {
 	s.waitLive(ch)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	// the cloud pushes a list; the edge takes it, and the cloud notes when (RecordRevocations)
+	s.installList(1, nil)
+	o := s.observer(ch)
+	o.took()
+	tookAt := time.Now()
+	o.run(ctx)
 	fl := s.fleet(ch, 5)
 	fl.Add(ctx, 10)
 	time.Sleep(10 * time.Second)
@@ -872,13 +881,48 @@ func observe(s *stack) {
 	in := aeTotal(c1, "ingest") - aeTotal(c0, "ingest")
 	g := glass(c1) - glass(c0)
 	s.check("ingest events while the home sends", in > 0, "ae_ingest", in)
-	// fails today: the home's PROGRAM-DATE-TIME (ffmpeg's program_date_time) is at or after the
-	// edge's receive time for most segments, so glass-to-glass clamps to 0 (an open finding)
 	s.check("the canary's ingest events carry glass-to-glass", g > 0 && g == in, "ae_glass_to_glass", fmt.Sprintf("%d of %d", g, in))
 	plays := aeTotal(c1, "play")
 	s.check("each viewer's first heartbeat is a play event", plays >= 10, "ae_play", plays)
 
-	// ingest breaks: the events stop
+	// the canary plays normally: Broadcasting operational, glass-to-glass recorded and low, quiet
+	d, ok := waitFor(5*time.Minute, func() bool {
+		return o.statusState() == "operational" && len(o.query("broadcast_probe_glass_to_glass_seconds")) == 2 &&
+			len(o.query("maktaba_broadcast_viewers > 0")) == 1
+	})
+	s.check("the status page's Broadcasting is operational while the canary plays", o.statusState() == "operational",
+		"status_component", "after", d.Round(time.Second), "state:", o.statusState())
+	g2g := o.query("broadcast_probe_glass_to_glass_seconds")
+	low := len(g2g) == 2
+	for _, v := range g2g {
+		low = low && v > 0 && v <= 20
+	}
+	s.check("the probe records glass-to-glass from both networks, at most 20 s", low, "probe_glass_to_glass", g2g)
+	series := o.query(`{__name__=~"maktaba_broadcast_(channels_live|viewers|viewer_minutes_total|ingest_lag_seconds_count|edge_cost_estimate_usd|revocation_list_age_seconds)"}`)
+	s.check("the cloud's maktaba_broadcast_* series are scraped", ok && len(series) >= 1, "cloud_series",
+		fmt.Sprint(o.query("maktaba_broadcast_channels_live")), fmt.Sprint(o.query("maktaba_broadcast_viewers")))
+	quiet := o.alerts()
+	s.check("broadcast_canary_down and broadcast_glass_to_glass_high are quiet while the canary plays",
+		quiet["broadcast_canary_down"].State == "" && quiet["broadcast_glass_to_glass_high"].State == "", "alerts_quiet",
+		quiet["broadcast_canary_down"].State, quiet["broadcast_glass_to_glass_high"].State)
+
+	// the month's estimate passes 80 % of the budget (SEV3, the email digest)
+	o.fires("broadcast_cost_80pct", "email", 3*time.Minute, fmt.Sprintf("the estimate passed 80 %% of $%g", observeBudgetUSD))
+
+	// faults: the home's uplink congests, the canary's clock reads late, the list goes unpushed
+	uplinkAt := time.Now()
+	s.uplink(4, 4500)
+	o.late.Store(true)
+	o.fires("broadcast_glass_to_glass_high", "email", 5*time.Minute, "the canary's burned clock reads 45 s late")
+	o.fires("broadcast_revocation_list_stale", "phone", time.Until(tookAt.Add(14*time.Minute)), "no list taken for 10 minutes")
+	age := o.query("max(maktaba_broadcast_revocation_list_age_seconds)")
+	s.check("the revocation list's age is over 10 minutes", age[""] > 600, "revocation_list_age", age)
+	o.fires("broadcast_ingest_lag_high", "phone", time.Until(uplinkAt.Add(19*time.Minute)), "a quarter of the segments take 4.5 s to upload")
+	s.check("the canary stays up through the congested uplink", !o.firing("broadcast_canary_down"), "canary_through_lag", "")
+	s.uplink(0, 0)
+	o.late.Store(false)
+
+	// ingest breaks (the canary's encoder dies): the events stop, the viewers have the slate
 	_, _, _ = s.do(http.MethodPost, s.home+"/encoder/stop", nil, nil)
 	time.Sleep(15 * time.Second)
 	c2 := s.counters()
@@ -888,7 +932,22 @@ func observe(s *stack) {
 	s.check("ingest events stop when ingest breaks", stalled == 0, "ae_ingest_broken", stalled)
 	s.check("the viewers have the slate", s.slateNow(ch), "slate", "")
 
-	// a revoked channel: its viewers are written as blocked
+	// the canary is down from both networks: the owner is paged within 90 s of the second failed
+	// probe, and the status page shows Broadcasting out
+	o.fires("broadcast_canary_down", "phone", 5*time.Minute, "the canary fails from both networks")
+	var p page
+	_, paged := waitFor(90*time.Second, func() bool { p, ok = o.paged("broadcast_canary_down"); return ok })
+	second := secondDownRound(o.history())
+	late := p.At.Sub(second)
+	s.check("the owner's phone is paged within 90 s of the second failed probe", paged && !second.IsZero() && late <= 90*time.Second,
+		"page", fmt.Sprintf("paged %v, %s after the second failed probe round", paged, late.Round(time.Second)))
+	s.check("the page carries the phone receiver's token", paged && p.AuthOK, "page_auth", "")
+	s.timing("page_after_second_failed_probe", late)
+	d, ok = waitFor(4*time.Minute, func() bool { return o.statusState() == "outage" })
+	s.check("the status page's Broadcasting component changes to outage", ok, "status_component_down", "after", d.Round(time.Second), "state:", o.statusState())
+
+	// a revoked channel: its viewers are written as blocked; the cloud's push of the list is
+	// taken, and the stale alert clears
 	blocked := func(c edgeCounters) int {
 		n := 0
 		for _, w := range c.Workers {
@@ -897,14 +956,33 @@ func observe(s *stack) {
 		return n
 	}
 	b0 := blocked(s.counters())
-	s.installList(1, []viewers.RevocationEntry{{ID: "obs-1", Kind: "channel", Ref: ch, Action: "off_air", Reason: "notice"}})
+	s.installList(2, []viewers.RevocationEntry{{ID: "obs-1", Kind: "channel", Ref: ch, Action: "off_air", Reason: "notice"}})
+	o.took()
 	time.Sleep(30 * time.Second)
 	s.check("a revoked channel's viewers are written as blocked", blocked(s.counters()) > b0, "ae_blocked", blocked(s.counters())-b0)
-
-	// the cloud's monitoring: not in this stack
-	s.check("the alerts fire (broadcast_canary_down, broadcast_ingest_lag_high, broadcast_revocation_list_stale)", false, "alerts",
-		"not in this stack: 50.10's Prometheus over the cloud worker's Analytics Engine poll, and the canary probe (deploy/cloud-relay/probes/broadcast_probe) is not built")
-	s.check("the status component changes", false, "status_component", "not in this stack: 50.11's status component")
+	d, ok = waitFor(90*time.Second, func() bool { return !o.firing("broadcast_revocation_list_stale") })
+	s.check("broadcast_revocation_list_stale clears once the edge takes a list", ok, "alert_stale_clears", "after", d.Round(time.Second))
 	cancel()
 	fl.Wait()
+	var lines []string
+	for _, r := range o.history() {
+		lines = append(lines, fmt.Sprintf("%s witness %v actions %v g2g %s status %s", r.At.UTC().Format("15:04:05"), r.Witness, r.Actions, r.Glass, r.Status))
+	}
+	s.note("canary rounds: %s", strings.Join(lines, "; "))
+}
+
+// secondDownRound is when the second of two rounds in a row failed from both networks.
+func secondDownRound(rs []round) time.Time {
+	run := 0
+	for _, r := range rs {
+		if !r.Witness && !r.Actions {
+			run++
+			if run == 2 {
+				return r.At
+			}
+		} else {
+			run = 0
+		}
+	}
+	return time.Time{}
 }

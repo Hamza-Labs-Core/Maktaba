@@ -322,6 +322,18 @@ build fails when the two differ.
   edge's analytics events and stays an expected failure until the cloud's alerts and status page
   join the stack.
 
+- **The broadcast rehearsal proves the monitoring end to end (Epic 50, stories 50.28, 50.29).**
+  The monitoring scenario now runs the witness's Prometheus, Alertmanager and Pushgateway with the
+  production alert rules and routes, the cloud's broadcast series made by the cloud's own code
+  from the edge's analytics events, the canary viewer probe from both networks every 60 seconds,
+  and the status page's Broadcasting component. It checks that, while the canary plays, its
+  glass-to-glass is recorded at 20 seconds or less and the status page shows Broadcasting
+  operational; that each broadcast alert fires on a real fault and reaches the right receiver (a
+  congested home uplink raises the ingest lag, the revocation list left unpushed for 10 minutes
+  goes stale, a late canary clock raises glass-to-glass, and the month's estimate passes 80 % of
+  the budget); and that when the canary's encoder dies the owner is paged within 90 seconds of the
+  second failed probe and Broadcasting shows an outage. It is no longer an expected failure.
+
 ### Fixed
 
 - **A broadcasting home sends each segment once when the edge is busy, and many viewers of a

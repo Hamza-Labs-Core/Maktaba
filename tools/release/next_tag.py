@@ -78,6 +78,17 @@ BROADCAST_CODE: tuple[str, ...] = (
     "streaming/go.sum",
     "tools/broadcast-viewers/**",
     "tools/rehearsal-cloud/broadcast/**",
+    # broadcast-observe (50.28): the cloud's monitor, the alert rules and routes, the canary
+    # probes, status-export and the status page's fold
+    "cloud/cmd/rehearsal-broadcast-monitor/**",
+    "deploy/cloud-ha/monitoring/alerts.yml",
+    "deploy/cloud-ha/monitoring/alertmanager.yml",
+    "deploy/cloud-ha/monitoring/broadcast-probe.sh",
+    "deploy/cloud-ha/monitoring/probe.sh",
+    "deploy/cloud-ha/bin/status-export",
+    "status/lib.mjs",
+    "status/update.mjs",
+    "status/config.json",
     ".github/workflows/broadcast-rehearsal.yml",
 )
 

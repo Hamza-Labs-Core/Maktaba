@@ -365,3 +365,36 @@ func TestHashIDMatchesTheEdge(t *testing.T) {
 		t.Fatal("not a 16-digit hash")
 	}
 }
+
+// FoldMinute: a minute's rows into the snapshot before it; the counters only grow, the gauges are
+// the minute's, and a snapshot without buckets (the first poll) starts them.
+func TestFoldMinute(t *testing.T) {
+	m := time.Date(2026, 11, 14, 10, 0, 0, 0, time.UTC)
+	ingest := Row{"event": "ingest", "publisher": "p", "channel": "c", "n": 4.0, "lag_ms": 9000.0}
+	for i, le := range LagBuckets {
+		v := 3.0
+		if le >= 5 {
+			v = 4
+		}
+		ingest[LagColumn(i)] = v
+	}
+	rows := []Row{ingest, {"event": "beat", "publisher": "p", "channel": "c", "n": "7"}, {"event": "beat", "publisher": "p", "channel": "d", "n": 2.0}}
+	s, viewers := FoldMinute(Snapshot{ViewerMinutesTotal: 10, CostUSD: 3}, rows, m)
+	if s.Minute != m || s.ChannelsLive != 1 || s.Viewers != 9 || s.ViewerMinutesTotal != 19 || s.LagCount != 4 || s.LagSumSeconds != 9 {
+		t.Errorf("snapshot = %+v", s)
+	}
+	if s.CostUSD != 3 {
+		t.Errorf("FoldMinute set the cost (the caller's): %g", s.CostUSD)
+	}
+	if viewers[LiveChannel{"p", "c"}] != 7 || viewers[LiveChannel{"p", "d"}] != 2 {
+		t.Errorf("viewers = %v", viewers)
+	}
+	prev := s
+	s, _ = FoldMinute(prev, []Row{ingest}, m.Add(time.Minute))
+	if s.Viewers != 0 || s.ViewerMinutesTotal != 19 || s.LagCount != 8 || s.LagBuckets[len(LagBuckets)-1] != 8 || s.LagBuckets[0] != 6 {
+		t.Errorf("second minute = %+v", s)
+	}
+	if prev.LagBuckets[0] != 3 {
+		t.Errorf("FoldMinute changed the snapshot it was given: %v", prev.LagBuckets)
+	}
+}

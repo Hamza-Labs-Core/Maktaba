@@ -1,0 +1,55 @@
+# The broadcast rehearsal's monitoring (Epic 50 stories 50.28 and 50.29, broadcast-observe), over
+# compose.yml: the witness's Prometheus, Alertmanager and Pushgateway (the images and versions of
+# deploy/cloud-ha/monitoring/compose.yml) with the production alert rules (alerts.yml, mounted
+# unchanged) and Alertmanager's routes (alertmanager.yml, rendered by the scenario with stand-in
+# receivers into OBSERVE_DIR), and the cloud's broadcast series (Dockerfile.monitor). The canary
+# probes (broadcast-probe.sh, probe.sh), status-export and the status page's fold run on the
+# runner, as they run on the witness and on GitHub's runners.
+services:
+  monitor:
+    image: ${MONITOR_IMAGE:-maktaba-broadcast-monitor:rehearsal}
+    command: ["-addr", ":9090", "-edge", "http://edge:8787", "-budget-usd", "${OBSERVE_BUDGET_USD:-0}",
+              "-ntfy-token", "${OBSERVE_NTFY_TOKEN:-}"]
+    depends_on:
+      edge:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${MONITOR_PORT:-19095}:9090"
+  pushgateway:
+    image: prom/pushgateway:v1.11.1
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:9091/-/ready"]
+      interval: 2s
+      retries: 30
+    ports:
+      - "127.0.0.1:${PUSHGATEWAY_PORT:-19091}:9091"
+  alertmanager:
+    image: prom/alertmanager:v0.28.1
+    command: ["--config.file=/etc/alertmanager/alertmanager.yml", "--web.listen-address=:9093"]
+    volumes:
+      - ${OBSERVE_DIR:?the scenario renders alertmanager.yml here}/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:9093/-/ready"]
+      interval: 2s
+      retries: 30
+    ports:
+      - "127.0.0.1:${ALERTMANAGER_PORT:-19093}:9093"
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    command: ["--config.file=/etc/prometheus/prometheus.yml", "--web.listen-address=:9090"]
+    volumes:
+      - ./observe/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ../../../deploy/cloud-ha/monitoring/alerts.yml:/etc/prometheus/alerts.yml:ro
+    depends_on:
+      monitor:
+        condition: service_healthy
+      pushgateway:
+        condition: service_healthy
+      alertmanager:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:9090/-/ready"]
+      interval: 2s
+      retries: 30
+    ports:
+      - "127.0.0.1:${PROMETHEUS_PORT:-19090}:9090"
