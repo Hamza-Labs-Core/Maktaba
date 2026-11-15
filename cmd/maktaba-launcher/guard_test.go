@@ -27,6 +27,24 @@ func mkPayload(t *testing.T, dir, version, behavior, label string) {
 	}
 }
 
+// stubPayload makes dir an app payload of version whose maktaba-server is a few bytes,
+// not the test binary: for a test that only chooses a payload and never starts one.
+// Copying the race-built test binary (tens of MB, synced) per payload made such a test
+// slow on a CI runner (#1428).
+func stubPayload(t *testing.T, dir, version string) {
+	t.Helper()
+	bin := filepath.Join(dir, "bin")
+	if err := os.MkdirAll(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for name, body := range map[string]string{filepath.Join(bin, layout.Exe("maktaba-server")): "stub",
+		filepath.Join(dir, payloadJSON): `{"schema": 1, "platform": "` + payloadPlatform() + `", "version": "` + version + `"}`} {
+		if err := os.WriteFile(name, []byte(body), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
 // writeRecord writes a database record saying version's migrations ran over from's
 // database, dumped first.
 func writeRecord(t *testing.T, path, version, from string) {
@@ -234,13 +252,17 @@ func TestPendingDeadlineExtendsTheTimeout(t *testing.T) {
 // override with no record of what failed keep the kept copy.
 func TestANewerAppTakesOverFromTheKeptCopy(t *testing.T) {
 	t.Parallel()
-	bundle, root := mkBundle(t, "run")
+	// The launcher only chooses a payload here, it starts none: stub servers.
+	bundle, root := filepath.Join(t.TempDir(), "Maktaba.app", "Contents", "Resources", "server"), t.TempDir()
+	if err := os.MkdirAll(layout.New(root).UpdatesDir(), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	kept := filepath.Join(root, "updates", "payloads", "0.3.35")
-	mkPayload(t, kept, "0.3.35", "run", "old")
+	stubPayload(t, kept, "0.3.35")
 	ln := &launcher{cfg: Config{Root: root, Bundle: bundle}, l: layout.New(root), log: newEventLog(layout.New(root).LauncherLog(), nil, time.Now)}
 	defer ln.log.Close()
 	runs := func(app string) string {
-		mkPayload(t, bundle, app, "run", "app")
+		stubPayload(t, bundle, app)
 		return ln.bundlePayload()
 	}
 
