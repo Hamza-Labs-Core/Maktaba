@@ -344,6 +344,16 @@ build fails when the two differ.
 
 ### Fixed
 
+- **A segment cut short when the home's streaming service stops mid-answer is retried, not
+  played broken.** The home sent a video's segments, playlists and subtitles without a length,
+  in chunks. When the streaming service exited or restarted part way through one, the Apple
+  apps (and Safari, AirPlay and anything using Apple's loading system) took the segment that had
+  arrived for a whole one, and the picture broke up or froze. The home now sends each of them
+  with its length, a channel segment forwarded from a TV slot or another machine is cut off
+  rather than completed when its source goes away, and the Apple apps' stream proxy checks that
+  the bytes it received match the length the home sent. A segment cut short is now an error the
+  player recovers from by asking for it again.
+
 - **A guest invite can't outlive the plan it was made under (Epic 50, story 50.20).** An invite
   created at the same moment as a plan change that ends guest sharing could stay live after every
   other invite was revoked. Maktaba Cloud now checks the plan again under the home's lock, so such
@@ -1020,6 +1030,32 @@ build fails when the two differ.
   alerted.
 
 ### Added
+
+- **Watch a broadcast on Android phones, tablets and TVs (Epic 50, story 50.27).** Maktaba
+  Player on Android and Maktaba TV on Android TV, Google TV and Fire TV now have **Watch a
+  broadcast**, as the Apple apps do: a home's published channels watched as a guest, with no
+  account. It is on the home picker, in the Player's **Profile** and in the TV's **Account**. A
+  guest types the publisher's handle and an `MK-` short code; on a phone also pastes, opens
+  (`maktaba://watch/i/…`) or scans an invite link; on a TV scans a QR code with a phone and
+  checks the 4-character code both show. The publisher's channels show with now and next; a
+  swipe on a phone or up and down on the remote change the channel, and the viewing token
+  refreshes without restarting the picture. Passes are sealed with a key in Android's Keystore,
+  stay out of backups and each have **Remove**. The entry is shut under a parental limit and
+  fails closed: it opens only once the home has said the sign-in has no limit (signed out, the
+  limits kept on the device decide); an invite link waits for that answer or is refused with a
+  message, and an open guest space closes when a limit turns on. A video segment cut short is
+  now loaded again instead of being played as if whole, in every Android player.
+
+- **Watch a broadcast on Apple TV, iPhone, iPad and the Mac (Epic 50, story 50.27).** Anyone a
+  home invites can watch its published channels in Maktaba Player or Maktaba TV with no Maktaba
+  or home account: from the home picker, an invite link (pasted, opened as a
+  `maktaba://watch/i/…` link, or scanned on an iPhone), or the publisher's handle and an
+  `MK-` short code. Apple TV also shows a QR code and a code to compare; a phone that opens it
+  sends the TV its pass. The guest sees only that publisher's channels with now and next, the
+  credit of a CC BY programme, and the states the watch pages show (starting, home offline with
+  the slate playing, full, ended, invite used or expired, withdrawn) in English and Arabic.
+  Broadcasts are saved in the Keychain with a Remove button; up and down (a vertical swipe on a
+  phone) change the channel. Not offered under a parental limit.
 
 - **Report a broadcast from its watch page (Epic 50, stories 50.24, 50.27).** Each channel page
   on watch.maktaba.tv has a Report button, in Arabic and English, that needs no account: choose

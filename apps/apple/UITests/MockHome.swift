@@ -34,6 +34,8 @@ final class MockHome: @unchecked Sendable {
         /// The query string, without "?" ("library=lib-docs&cursor=c2"), or "".
         let query: String
         let body: Data
+        /// The request's headers, their names in lower case.
+        var headers: [String: String] = [:]
 
         /// One query parameter's value.
         func value(_ name: String) -> String? {
@@ -300,8 +302,13 @@ final class MockHome: @unchecked Sendable {
                     let parts = (lines.first ?? "").split(separator: " ")
                     let method = parts.first.map(String.init) ?? ""
                     let target = parts.count > 1 ? parts[1].split(separator: "?", maxSplits: 1).map(String.init) : ["/"]
+                    var headers: [String: String] = [:]
+                    for line in lines.dropFirst() {
+                        guard let colon = line.firstIndex(of: ":") else { continue }
+                        headers[line[..<colon].lowercased()] = line[line.index(after: colon)...].trimmingCharacters(in: .whitespaces)
+                    }
                     let request = Request(method: method, path: target[0], query: target.count > 1 ? target[1] : "",
-                                          body: Data(buf[end.upperBound...].prefix(length)))
+                                          body: Data(buf[end.upperBound...].prefix(length)), headers: headers)
                     let a = answer(request)
                     var response = Data("HTTP/1.1 \(a.status) \(a.status < 400 ? "OK" : "Error")\r\nContent-Type: \(a.contentType)\r\n\(a.headers.map { "\($0): \($1)\r\n" }.joined())Content-Length: \(a.body.count)\r\nConnection: close\r\n\r\n".utf8)
                     response.append(a.body)
@@ -351,6 +358,7 @@ final class MockHome: @unchecked Sendable {
             return Answer(status: fixed.0, body: Data(fixed.1.utf8))
         }
         if let streamed = stream(r.method, r.path) { return streamed }
+        if let edge = guestEdge(r) { return edge }
         if r.method == "GET", Self.isImage(r.path) {
             return Answer(status: 200, body: Self.png, contentType: "image/png")
         }
@@ -478,6 +486,85 @@ final class MockHome: @unchecked Sendable {
         "GET /api/me/play-queues/current", "DELETE /api/search/recent",
         "DELETE /api/recommendations/items/{video_id}", "DELETE /api/recommendations/rows/{reason_kind}",
     ]
+
+    // MARK: the broadcast edge (story 50.27)
+
+    /// The publisher the mock edge publishes, its invite, short code and pairing.
+    static let guestPublisher = "ui-pub"
+    static let guestInvite = "mkbn1.ui-invite.sig"
+    static let guestCode = "MK-UI42"
+    static let guestPairCode = "Q7XZ"
+    private var guestPairDelivered = false
+    private var guestPairTaken = false
+
+    /// The phone sent a pass to the TV's pairing (its next poll gets it).
+    func guestPair() { lock.withLock { guestPairDelivered = true } }
+
+    /// The edge's guest API and live playback, as `docs/broadcast-edge.md` describes them:
+    /// `/api/v1/redeem` (`guestInvite`, or `guestPublisher` with `guestCode`; `MK-USED` is an
+    /// invite used up), `/api/v1/lineup` (two channels; the second's home is offline), `play`
+    /// and `beat`, a TV's pairing (`guestPair` delivers), and the channel's HLS under
+    /// `/vt-1/<channel>/` (the brand's ink, 2 s segments). Lineup, guide and play want a pass
+    /// as a Bearer, as the edge does.
+    private func guestEdge(_ r: Request) -> Answer? {
+        func json(_ status: Int, _ body: String) -> Answer { Answer(status: status, body: Data(body.utf8)) }
+        let body = (try? JSONSerialization.jsonObject(with: r.body) as? [String: Any]) ?? [:]
+        let pass = #"{"pass":"mkbg1.ui-pass.sig","publisher":"ui-pub","channels":["ch1","ch2"],"expires_at":"2030-01-01T00:00:00Z","reused":false}"#
+        let bearer = r.headers["authorization"]?.hasPrefix("Bearer mkbg1.") == true
+        switch (r.method, r.path) {
+        case ("POST", "/api/v1/redeem"):
+            if body["invite"] as? String == Self.guestInvite { return json(200, pass) }
+            if body["publisher"] as? String == Self.guestPublisher {
+                if body["code"] as? String == Self.guestCode { return json(200, pass) }
+                if body["code"] as? String == "MK-USED" { return json(410, #"{"error":"invite_used"}"#) }
+            }
+            return json(404, #"{"error":"code_unknown"}"#)
+        case ("GET", "/api/v1/lineup"):
+            guard bearer else { return json(403, #"{"error":"invite_required"}"#) }
+            guard r.value("publisher") == Self.guestPublisher else { return json(400, #"{"error":"bad_request"}"#) }
+            return json(200, Self.fillTimes(#"{"publisher":{"id":"ui-pub","name":"Al-Noor"},"channels":[{"id":"ch1","name":"Quran","number":1,"state":"live","now":{"start":"{{now-600}}","end":"{{now+1200}}","title":"Morning recitation","attribution":{"title":"Recitation","by":"Example Reciter","licence":"CC BY 4.0","url":"https://example.org/r"}},"next":{"start":"{{now+1200}}","end":"{{now+3000}}","title":"Tafsir"}},{"id":"ch2","name":"Lectures","number":2,"state":"offline_slate","now":{"start":"{{now-600}}","end":"{{now+1200}}","title":"Seerah"},"next":null}]}"#))
+        case ("POST", "/api/v1/play"):
+            guard bearer else { return json(403, #"{"error":"invite_required"}"#) }
+            let ch = body["channel"] as? String ?? ""
+            guard ["ch1", "ch2"].contains(ch) else { return json(404, #"{"error":"channel_unknown"}"#) }
+            let state = ch == "ch2" ? "offline_slate" : "live"
+            return json(200, #"{"session_id":"s-ui","beat_key":"k-ui","master_url":"\#(url)/vt-1/\#(ch)/master.m3u8","refresh_after":300,"state":"full","channel_state":"\#(state)","neighbours":[]}"#)
+        case ("POST", "/api/v1/pair"):
+            return json(201, #"{"nonce":"n-ui","poll_key":"pk-ui","code":"\#(Self.guestPairCode)","url":"\#(url)/pair?tv=n-ui","expires_at":"2030-01-01T00:00:00Z","poll":"/api/v1/pair/n-ui"}"#)
+        case ("GET", "/api/v1/pair/n-ui"):
+            guard r.headers["x-maktaba-pair-key"] == "pk-ui" else { return json(410, #"{"error":"pair_gone"}"#) }
+            let ready = lock.withLock { () -> Bool in
+                guard guestPairDelivered, !guestPairTaken else { return false }
+                guestPairTaken = true
+                return true
+            }
+            if ready {
+                return json(200, #"{"publisher":"ui-pub","credential":"mkbg1.ui-tv.sig","kind":"pass","channels":["ch1","ch2"],"expires_at":"2030-01-01T00:00:00Z"}"#)
+            }
+            // the edge holds a poll up to 25 s; a second here
+            var a = Answer(status: 204, body: Data())
+            a.delay = 1
+            return a
+        default:
+            break
+        }
+        if r.method == "POST", Self.matches("/api/v1/play/{session}/beat", r.path) {
+            return json(200, #"{"ok":true,"state":"full","refresh_after":300,"channel_state":"live"}"#)
+        }
+        let playlist = "application/vnd.apple.mpegurl"
+        if r.method == "GET", Self.matches("/vt-1/{channel}/master.m3u8", r.path) {
+            let text = "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-STREAM-INF:BANDWIDTH=80000,RESOLUTION=64x36\nlow/index.m3u8\n"
+            return Answer(status: 200, body: Data(text.utf8), contentType: playlist)
+        }
+        if r.method == "GET", Self.matches("/vt-1/{channel}/low/index.m3u8", r.path) {
+            return Answer(status: 200, body: Data(Self.segments("seg", seconds: 600).utf8), contentType: playlist)
+        }
+        if r.method == "GET", Self.matches("/vt-1/{channel}/low/{file}", r.path), r.path.hasSuffix(".ts"),
+           let seg = resource("live-segment", "ts") {
+            return Answer(status: 200, body: seg, contentType: "video/mp2t")
+        }
+        return nil
+    }
 
     /// The test stream, its progress reports and its closing.
     private func stream(_ method: String, _ path: String) -> Answer? {

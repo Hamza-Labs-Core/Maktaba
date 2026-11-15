@@ -44,6 +44,20 @@ class MaktabaTVApp : Application() {
     /** Work that outlives a screen (a stopped video's last position, its session's close). */
     val background = CoroutineScope(SupervisorJob() + Dispatchers.Default + AppLog.handler("tv background"))
 
+    /** Watch a broadcast (story 50.27): the saved broadcasts, sealed on this TV, and the edge's guest API. */
+    val guests: com.hamzalabs.maktaba.core.guest.GuestSpace by lazy {
+        com.hamzalabs.maktaba.core.guest.GuestSpace(
+            com.hamzalabs.maktaba.core.guest.Guests.store(this),
+            com.hamzalabs.maktaba.core.guest.Guests.client(this),
+        )
+    }
+
+    /** Whether Watch a broadcast may open (story 50.27): shut unless no parental limit is known to be on. */
+    val guestGate: com.hamzalabs.maktaba.core.guest.GuestGate by lazy { com.hamzalabs.maktaba.core.guest.Guests.gate(this) }
+
+    /** The guest space (from the home picker or Account), over whatever the TV shows; refused under a limit. */
+    val guestDoor = com.hamzalabs.maktaba.core.guest.GuestDoor()
+
     /** A home's token store: the session's own (the same file and key). */
     fun tokens(home: String): TokenStore = keystoreTokens(this, packageName, home)
 }

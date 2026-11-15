@@ -40,6 +40,13 @@ import Network
 /// proxy's connections use TCP keepalive (`lanKeepalive`) and the stack finds it gone.
 /// A body the home gives no length for goes to the player in chunks (`Transfer-Encoding:
 /// chunked`), so one cut short is an error for the player and never a whole body.
+/// The proxy can only pass on what the URL session tells it, and the URL session takes a
+/// chunked body that the home's side closed in order before its last chunk (the home's
+/// process exiting mid-answer) for a whole one: it reports success with what came. So the
+/// home sends every segment, playlist and subtitle with its length (the streaming service's
+/// `httpx.SetLength`), and here a body is whole only when the bytes that came are the
+/// length the home said (`declaredLength`): fewer (or more) and the player's answer is cut
+/// off, never completed, so the player asks again instead of decoding a truncated segment.
 /// Every response says `Connection: close`: on the loopback a new connection costs a few
 /// milliseconds a playlist or segment (measured, `ProxyCopyCost`), the requests to the home
 /// reuse the URL session's connections all the same, and one request a connection needs no
@@ -59,7 +66,13 @@ public final class StreamProxy: @unchecked Sendable {
         case lan(host: String)
     }
 
-    private let client: APIClient
+    /// Where requests go on to: a home (with the user's token), or a broadcast's edge (the
+    /// viewer token in the path, swapped for the newest at each request: `GuestLive`).
+    private let upstream: Upstream
+    enum Upstream: Sendable {
+        case home(APIClient)
+        case live(GuestLive)
+    }
     private let sessions: UpstreamSessions
     private let listener: NWListener
     private let queue = DispatchQueue(label: "com.hamzalabs.maktaba.stream-proxy", qos: .utility)
@@ -132,16 +145,33 @@ public final class StreamProxy: @unchecked Sendable {
 
     public convenience init(client: APIClient, session: URLSession = PinnedTrust.session, reach: Reach = .loopback,
                             onlyUnder: String? = nil) throws {
-        try self.init(client: client, session: session, reach: reach, onlyUnder: onlyUnder, headPatience: Self.headPatience, homePatience: Self.homePatience) { try await Task.sleep(for: $0) }
+        try self.init(upstream: .home(client), session: session, reach: reach, onlyUnder: onlyUnder, headPatience: Self.headPatience, homePatience: Self.homePatience) { try await Task.sleep(for: $0) }
     }
 
-    init(client: APIClient, session: URLSession, reach: Reach = .loopback, onlyUnder: String? = nil,
+    /// Story 50.27: a guest's broadcast. The edge (`live.maktaba.tv`) wants the viewer token in
+    /// every playlist and segment path, and the token lasts 10 minutes: AVPlayer would keep
+    /// the first one in every relative address it resolves. The player reads
+    /// `http://127.0.0.1:<port>/<secret>/live/<channel>/…` (`localLive`) and each request goes
+    /// on with the token `live` holds now (the heartbeat brings each new one).
+    public convenience init(live: GuestLive, session: URLSession = .shared) throws {
+        try self.init(upstream: .live(live), session: session, reach: .loopback, onlyUnder: nil, headPatience: Self.headPatience, homePatience: Self.homePatience) { try await Task.sleep(for: $0) }
+    }
+
+    convenience init(client: APIClient, session: URLSession, reach: Reach = .loopback, onlyUnder: String? = nil,
+                     headPatience: Duration = StreamProxy.headPatience,
+                     homePatience: Duration = StreamProxy.homePatience,
+                     sleep: @escaping @Sendable (Duration) async throws -> Void) throws {
+        try self.init(upstream: .home(client), session: session, reach: reach, onlyUnder: onlyUnder,
+                      headPatience: headPatience, homePatience: homePatience, sleep: sleep)
+    }
+
+    init(upstream: Upstream, session: URLSession, reach: Reach = .loopback, onlyUnder: String? = nil,
          headPatience: Duration = StreamProxy.headPatience,
          homePatience: Duration = StreamProxy.homePatience,
          sleep: @escaping @Sendable (Duration) async throws -> Void) throws {
         self.headPatience = headPatience
         self.homePatience = homePatience
-        self.client = client
+        self.upstream = upstream
         sessions = UpstreamSessions(like: session)
         self.sleep = sleep
         self.reach = reach
@@ -319,14 +349,30 @@ public final class StreamProxy: @unchecked Sendable {
         return c.url
     }
 
-    /// The home's address for a request line's target, nil when it is not ours to serve.
+    /// Where the player reads a guest's channel (`StreamProxy(live:)`): its master playlist.
+    public func localLive() -> URL? {
+        guard let port, case let .live(live) = upstream else { return nil }
+        return URL(string: "http://127.0.0.1:\(port)/\(secret)/live/\(live.channel)/master.m3u8")
+    }
+
+    /// The home's (or the edge's) address for a request line's target, nil when it is not ours
+    /// to serve.
     func remote(forTarget target: String) -> URL? {
-        let prefix = "/" + secret + "/stream/"
         let lower = target.lowercased()
-        guard target.hasPrefix(prefix), !lower.contains("/.."), !lower.contains("%2e") else { return nil }
-        let rest = String(target.dropFirst(secret.count + 1))
-        if let onlyUnder, !rest.hasPrefix(onlyUnder) { return nil }
-        return URL(string: rest, relativeTo: client.home)?.absoluteURL
+        guard !lower.contains("/.."), !lower.contains("%2e") else { return nil }
+        switch upstream {
+        case let .home(client):
+            let prefix = "/" + secret + "/stream/"
+            guard target.hasPrefix(prefix) else { return nil }
+            let rest = String(target.dropFirst(secret.count + 1))
+            if let onlyUnder, !rest.hasPrefix(onlyUnder) { return nil }
+            return URL(string: rest, relativeTo: client.home)?.absoluteURL
+        case let .live(live):
+            // only this channel's files, under the token held now
+            let prefix = "/" + secret + "/live/" + live.channel + "/"
+            guard target.hasPrefix(prefix) else { return nil }
+            return live.remote(String(target.dropFirst(prefix.count)))
+        }
     }
 
     // MARK: one request
@@ -412,10 +458,13 @@ public final class StreamProxy: @unchecked Sendable {
             out += "Connection: close\r\n\r\n"
             try await send(peer, Data(out.utf8))
             guard req.method == "GET" else { return true }
+            let declared = Self.declaredLength(http)
+            var came = 0
             // the body as it arrives, written a slice at a time: each slice is taken by the
             // connection before the next goes, and a chunk is written out before the next is
             // asked for, so a slow player slows the home's answer, not grows memory
             while let chunk = try await body.next() {
+                came += chunk.count
                 var at = chunk.startIndex
                 while at < chunk.endIndex {
                     let end = min(at + Self.slice, chunk.endIndex)
@@ -430,11 +479,28 @@ public final class StreamProxy: @unchecked Sendable {
                     at = end
                 }
             }
+            // the home said a length and the session ended well with another: the answer was
+            // cut (the session does not always say so); it is not finished as a whole one
+            if let declared, came != declared {
+                Log.network.error("stream proxy: the home's answer ended at \(came, privacy: .public) of \(declared, privacy: .public) bytes")
+                return false
+            }
             if chunked { try await send(peer, Data("0\r\n\r\n".utf8)) }
             return true
         } catch {
             return false
         }
+    }
+
+    /// The body's length as the home said it (`Content-Length`), nil when it said none or
+    /// the session decoded the body (a `Content-Encoding`: the length is the encoded one's)
+    /// or the answer carries no body (204, 304).
+    static func declaredLength(_ http: HTTPURLResponse?) -> Int? {
+        guard let http, http.statusCode != 204, http.statusCode != 304,
+              http.value(forHTTPHeaderField: "Content-Encoding").map({ $0.lowercased() == "identity" }) ?? true,
+              let text = http.value(forHTTPHeaderField: "Content-Length")?.trimmingCharacters(in: .whitespaces),
+              let n = Int(text), n >= 0 else { return nil }
+        return n
     }
 
     /// Asks the home for `url` with the token as it is now. A 429 (the home paces a
@@ -446,7 +512,9 @@ public final class StreamProxy: @unchecked Sendable {
             var r = URLRequest(url: url)
             r.httpMethod = req.method
             for name in ["Range", "If-Range", "Accept"] { if let v = req.headers[name.lowercased()] { r.setValue(v, forHTTPHeaderField: name) } }
-            for (k, v) in try await client.playbackHeaders(minLife: 60).headers { r.setValue(v, forHTTPHeaderField: k) }
+            if case let .home(client) = upstream {
+                for (k, v) in try await client.playbackHeaders(minLife: 60).headers { r.setValue(v, forHTTPHeaderField: k) }
+            }
             // a session of this request's own: its callbacks are held while the player reads slowly
             let own = sessions.take()
             // the session's own idle timer must not run while a player's pause holds the home's
@@ -877,13 +945,22 @@ final class UpstreamBody: NSObject, URLSessionDataDelegate, @unchecked Sendable 
         }
     }
 
-    /// Ends the request to the home (nothing happens when it already ended).
+    /// Ends the request to the home (nothing happens when it already ended). Whoever waits
+    /// for the head or the body hears at once: not when the session says the task ended. That
+    /// word comes on the session's callback queue and is not waited for, so a request whose
+    /// word is late or never comes still ends (once cancelled, the silence is not counted,
+    /// so nothing else would end it, and its place would be held for good).
     func cancel() {
-        let t = locked { () -> URLSessionDataTask? in
+        let (h, b, t) = locked { () -> (CheckedContinuation<HTTPURLResponse?, Error>?, CheckedContinuation<Data?, Error>?, URLSessionDataTask?) in
             cancelled = true
             lock.broadcast()
-            return task
+            if ended == nil { ended = .failure(CancellationError()) }
+            if head == nil { head = .failure(CancellationError()) }
+            defer { headWaiter = nil; bodyWaiter = nil }
+            return (headWaiter, bodyWaiter, task)
         }
+        h?.resume(throwing: CancellationError())
+        b?.resume(throwing: CancellationError())
         t?.cancel()
     }
 

@@ -58,6 +58,18 @@ class ParentalState(private val client: ApiClient, private val kept: KeptLimit? 
     /** The home answered in this launch (a home too old to have the route counts). */
     @Volatile private var answered = false
 
+    private val _answers = MutableStateFlow(0)
+
+    /**
+     * How many of the home's answers have been taken in this launch, moved once each one is wholly
+     * taken (the kept things dropped and the device's mark written). Above 0, [mine] is the home's
+     * word and not the default: what must fail closed (Watch a broadcast, story 50.27) waits for it.
+     */
+    val answers: StateFlow<Int> = _answers.asStateFlow()
+
+    /** The home has answered in this launch ([answers]). */
+    val known: Boolean get() = _answers.value > 0
+
     /**
      * Whether nothing kept on the device may show yet: the sign-in is under a limit, or was when
      * the home last said and has not answered in this launch (the limit may have tightened).
@@ -115,13 +127,17 @@ class ParentalState(private val client: ApiClient, private val kept: KeptLimit? 
         val before = if (answered) KeptLimit.Mark(_mine.value.signature(), _mine.value.limited) else kept?.read()
         answered = true
         _mine.value = next
-        if (before == now) return
-        // never asked on this device and no limit now: nothing was kept under one
-        if (before != null || next.limited) {
-            onChange?.invoke()
-            _epoch.value++
+        try {
+            if (before == now) return
+            // never asked on this device and no limit now: nothing was kept under one
+            if (before != null || next.limited) {
+                onChange?.invoke()
+                _epoch.value++
+            }
+            kept?.write(now)
+        } finally {
+            _answers.value++
         }
-        kept?.write(now)
     }
 
     /** Asks the home for the time now; the last answer stays when it does not say. */

@@ -52,6 +52,14 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="maktaba" android:host="connect" />
             </intent-filter>
+            <!-- A broadcast's invite: maktaba://watch/i/<invite> (story 50.27) opens Watch a
+                 broadcast, which redeems it (GuestInput reads the link strictly). -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="maktaba" android:host="watch" android:pathPrefix="/i/" />
+            </intent-filter>
             <!-- A video's page: maktaba://video/{id} (FR-9, story 48.28). The page asks the home,
                  so a video this person may not see says "not available". -->
             <intent-filter>

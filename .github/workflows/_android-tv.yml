@@ -8,7 +8,8 @@
 # (Fire TV on the Amazon Appstore). The Fire TV build is checked here too: no Google Play code in
 # it (checkAmazonDependencies, and a run with Play Services added that must fail), its merged
 # manifest (checkAmazonManifest), its screenshots, its release APK through R8, and (the second
-# job) its journey on Google's Android TV emulator: sign in by code, play a clip, Back leaves.
+# job) its journey on Google's Android TV emulator: sign in by code, play a clip, Back leaves; and
+# Watch a broadcast (story 50.27 T06): a short code typed with the remote, the channel played.
 
 name: Android TV app
 

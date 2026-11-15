@@ -23,6 +23,7 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/channel"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/cluster"
+	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/httpx"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/placement"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/tvmetrics"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/viewing"
@@ -370,7 +371,12 @@ func kindOf(path string) string {
 	return "segment"
 }
 
-// copyResponse passes the upstream answer through, flushing as it goes.
+// copyResponse passes the upstream answer through, flushing as it goes. An answer
+// whose copy fails part way (the node or slot went away, its process exited) is
+// aborted, not completed: a chunked one would otherwise end with its last chunk and
+// a truncated segment would look whole to the player (httpx.AbortIfCut). One with a
+// length is short of it either way. A client that left ends the copy the same way:
+// nobody reads the answer any more.
 func copyResponse(w http.ResponseWriter, resp *http.Response, count func(int64)) {
 	defer resp.Body.Close()
 	for _, k := range []string{"Content-Type", "Content-Length", "Content-Range", "Accept-Ranges",
@@ -380,10 +386,11 @@ func copyResponse(w http.ResponseWriter, resp *http.Response, count func(int64))
 		}
 	}
 	w.WriteHeader(resp.StatusCode)
-	n, _ := copyFlush(w, resp.Body)
+	n, err := copyFlush(w, resp.Body)
 	if count != nil {
 		count(n)
 	}
+	httpx.AbortIfCut(err)
 }
 
 // copyFlush copies with a flush after every write (no buffering, R3.4).

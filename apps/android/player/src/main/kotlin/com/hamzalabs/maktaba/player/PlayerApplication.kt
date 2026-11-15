@@ -37,4 +37,18 @@ class PlayerApplication : Application() {
     /** Work that outlives a screen (closing a stream session). */
     val background = CoroutineScope(SupervisorJob() + Dispatchers.Default + AppLog.handler("player background"))
     val themes: ThemeStore by lazy { ThemeStore(PreferencesStore(this, "settings")) }
+
+    /** Watch a broadcast (story 50.27): the saved broadcasts, sealed on this device, and the edge's guest API. */
+    val guests: com.hamzalabs.maktaba.core.guest.GuestSpace by lazy {
+        com.hamzalabs.maktaba.core.guest.GuestSpace(
+            com.hamzalabs.maktaba.core.guest.Guests.store(this),
+            com.hamzalabs.maktaba.core.guest.Guests.client(this),
+        )
+    }
+
+    /** Whether Watch a broadcast may open (story 50.27): shut unless no parental limit is known to be on. */
+    val guestGate: com.hamzalabs.maktaba.core.guest.GuestGate by lazy { com.hamzalabs.maktaba.core.guest.Guests.gate(this) }
+
+    /** What the guest space shows: open, an invite held, or refused under a limit. */
+    val guestDoor = com.hamzalabs.maktaba.core.guest.GuestDoor()
 }

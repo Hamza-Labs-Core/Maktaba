@@ -1,18 +1,18 @@
 ---
 schema: 1
-tag: v0.3.143
-up_to_commit: 9a9bae7de
-built_from: v0.3.142
+tag: v0.3.145
+up_to_commit: b60f4152e
+built_from: v0.3.144
 ---
 
-# Trail snapshot: v0.3.143
+# Trail snapshot: v0.3.145
 
 ## Keep doing
 
 **Working**
 - Run the PR flow to the merge without asking; ask only for real product decisions (costly backfill, deleting data). Follow-ups start at once as parallel worktree agents. (d20261031-standing-rules, d20261102-coordinator-rules)
 - Verify every claim yourself before acting on it, and check a spec's claims against the code: read the code a spec section describes before relying on it (the code was right and the spec stale, twice). Before writing a fix for an issue, or its options, check that it is not already fixed or decided, and before carrying an open item forward or taking a trail line as work look for it in the code (native TV crash capture stayed open after it shipped); before blaming one PR, check the PRs merged around it; before splitting out a fix for a failure that breaks every PR, check main's latest merges; recount a brief's numbers against main before relying on them (link counts, pages that exist only in specs). (#1158, d20261014-pc-dizquetv-origin-and-rules, d20261031-standing-rules, #587, #795, #879, #888, d20261107-test-infra-missteps, d20261107-correction-0685-player-sentence, #952, d20261108-snapshot-fixture-clock)
-- Before saying a feature or behaviour does not exist, search `origin/main` (`git grep <text> origin/main` or a fresh worktree): the main checkout can be thousands of commits behind. In zsh a glob that matches nothing aborts the command (`no matches found`), so read an empty result as a failed search until it is shown to have run; grep for the behaviour itself (`ReconcilePorts`, `port_moved`) before accepting a task's premise that something is missing. (#1228, #1224)
+- Before saying a feature or behaviour does not exist, search `origin/main` (`git grep <text> origin/main` or a fresh worktree): the main checkout can be thousands of commits behind. In zsh a glob that matches nothing aborts the command (`no matches found`), so read an empty result as a failed search until it is shown to have run; grep for the behaviour itself (`ReconcilePorts`, `port_moved`) before accepting a task's premise that something is missing. Check `git rev-list --count HEAD..origin/main` before the first edit: one task worktree started 4,222 commits behind. (#1228, #1224, #1190)
 - When a check can't be made directly, look for what the context already proves: a page reached over the LAN address already proves the raw IP works. (#906)
 - Build tools for the work instead of doing it by hand; a recurring manual step becomes a feature; rules are settings with a UI, not code. (d20261014-pc-dizquetv-origin-and-rules, d20261020-pc-coordinator-merge-rules)
 - No placeholder features: a feature is built or it is not shown. (#128, d20261014-pc-dizquetv-origin-and-rules)
@@ -67,6 +67,11 @@ built_from: v0.3.142
 - Read a session's or agent's report as a claim: read the pull request's state, not the memory of having pushed. A child that finds a brief's premise false and stops with evidence is doing its job. (#1237, #1271)
 - One independent review, by a reader given the code and not the conclusions, before merging an agent's large change; findings go back to the agent that has the context. (#1243)
 - Read a suite's per-test timings before accepting a brief's premise that it is slow or sleeps for real. (#1304)
+- Audit a story against main before building it (most of 58.17's OpenAPI half had shipped); before fixing a flake reported on a PR, find the failing job's head sha and check `git merge-base --is-ancestor FIX HEAD`: the failure can predate a fix already merged. A "missing rows" report can concern tests outside the job's scope. (#1342, #1302, #1379)
+- One owner per branch: stop the author when a watcher takes over a PR, check a stopped child's branch head before briefing a replacement, and start worktree children from a checkout of main, not the parent's trail branch. (#1390, #1385, #1389)
+- A stack's order is decided by content, not by the PR description: check `git log origin/main..<branch> -- shared/db/migrations/` (home goose migrations have no allow-missing, so a stack sharing the 02NN range merges in number order). Merge each stack PR the moment it is green: every sibling merge re-conflicts the rest (CHANGELOGs, string tables, the edge Worker, mocks). Resolve a string table as the other side's file plus only this side's keys. A long-lived branch's CHANGELOG entry goes at the top of its section, where no other PR appends. (#1263, #1270, #1274, #1338, #1287)
+- Ask for an independent security review of any code that hands a secret or token to an address before merging, and run it again after each redesign: each round on the stream proxy and the TV grant found a real defect green checks missed. A finding in code the branch only carried in from main is fixed on main in its own PR. (#1348, #1360, #1319, #1370)
+- Measure a suspect before calling it the cause, and how often a CI hole was hit before sizing its fix; never name a cause for a device problem from reading alone, nor tie a long-standing problem to the newest change without asking how long it has lasted. For another company's error message, search its exact words first; pasted text may be someone else's report, so ask before recording it as done. (#1319, #1317)
 
 **Releases and live**
 - Prove update, rollback, restore and migration paths in CI first: nothing touching update, restore, migration, supervisor, launcher, front door or TV-staging code ships unless `update-rehearsal` passed on that exact commit. One release at a time on the live install. (d20261031-standing-rules, #435, #433, #460, #461)
@@ -83,6 +88,9 @@ built_from: v0.3.142
 - No Stripe or Stripe-owned services for any payment, in specs or code; payment providers are pluggable (`PaymentProvider`, each in its own folder), Adyen for Platforms the first real one. Check a brief's suggestion against the trail before building it. (#591, #593, #735)
 - A release step that talks to an optional service gates on its secret being non-empty and warns on failure, so neither a missing secret nor an outage can fail a release. (#957, #961, #967)
 - Check every secret the api reads against both deploy paths (`tools/ci/deploy_secrets.py`) when a secret is added, and test deploy scripts against a fake `ssh` that runs the remote command locally. (#1010)
+- A new required input to a tool the scheduled release session runs breaks that session: make it optional with a fail-closed default. A gate reading workflow run names ignores runs whose workflow file a PR controls; start the first run of a newly gating nightly by hand so a block shows at once. (#1376)
+- When a tag workflow depends on an owner action not yet done, its not-yet-live path ends in a summary line. Treat as "nothing deployed" only answers that prove it (NXDOMAIN read from undici's `cause.code`, a 404); `EAI_AGAIN`, resets and 5xx fail. This Mac's command sandbox resolves every unknown name as `ENOTFOUND`: check with `dig @1.1.1.1`. (#1368)
+- Deploy the broadcast edge before any home release that relies on it: a home with #1373 on an old edge is never woken. (#1373)
 
 **Tests and CI**
 - A code change ships with its tests changed in the same push (affected-tests gate; `No-Test-Change: <reason>` only when the mapped tests cannot run locally). (#516, d20261031-standing-rules, #685)
@@ -115,7 +123,7 @@ built_from: v0.3.142
 - A test of waiting proves it waits: make the awaited work slower than the old window or fixed sleep, so the test fails every time without the fix. A test that signals a child waits for the child to say its handler is set (`ready` after the `trap`), never a fixed time. (#792, #793)
 - Run the affected-tests gate locally before every push, follow-up commits included (commit, then `cd tools/affected-tests && go run . gate -C ../.. --range origin/main...HEAD`); a new test file is in no map yet and links to its source only by name, and a test of a module's change goes in a file that imports the module at the top; a router file's hook needs a router test of its own; the gate maps a source to the tests main's coverage links to it, not to imports, so put a module's unit test in its own test file. Wiring files (`main.go`, adapters, config) each need a test changed: run the gate before the first push of such a change. (#791, #795, #833, #865, d20261107-test-infra-missteps, #948, #956, #962, #1110)
 - Every environment variable a worker writes under gets an autouse test fixture pointing it at a temporary folder (a default relative to the data folder lands in the checkout). Never write a literal `/tmp` in a test (Windows has none): use `tmp_path`, or `tempfile`'s default folder where a unix socket path must stay short. (#821)
-- Run CI's own checks for what changed before pushing, not a subset: `gofmt -l` and `golangci-lint run ./...` in each touched Go module (golangci-lint passing does not mean `make lint-go` passes); `make lint-py` for the pipeline, whose mypy covers `tests/` too (the 3 `stt/cohere_cuda.py` errors are expected without the ML extras); `npm run typecheck` (all three configs) and `npm test` in `store/`; `pytest tools/ci/tests` for any change under `tools/ci`, `tools/dev` or `.github`, and new workflow shell against the repo's lint rules (no `| head`, no `grep -q` pipes). Before pushing a catalog change, run the tests of every module whose `go.mod` requires `shared/components`. Commit before `make catalog-check`, or it reports the change as drift. (#825, #845, #858, #861, #883, #886, d20261107-relay-test-failed-mypy, d20261107-test-infra-missteps)
+- Run CI's own checks for what changed before pushing, not a subset: `gofmt -l` and `golangci-lint run ./...` in each touched Go module (golangci-lint passing does not mean `make lint-go` passes); `make lint-py` for the pipeline, whose mypy covers `tests/` too (the 3 `stt/cohere_cuda.py` errors are expected without the ML extras); `npm run typecheck` (all three configs) and `npm test` in `store/`; `pytest tools/ci/tests` for any change under `tools/ci`, `tools/dev` or `.github`, and new workflow shell against the repo's lint rules (no `| head`, no `grep -q` pipes). Before pushing a catalog change, run the tests of every module whose `go.mod` requires `shared/components`. Commit before `make catalog-check`, or it reports the change as drift. Android TV: compile every source set CI builds (`compileAmazonDebugAndroidTestKotlin`) and run Android lint; revive (`golangci-lint run`) on each changed Go package. (#825, #845, #858, #861, #883, #886, d20261107-relay-test-failed-mypy, d20261107-test-infra-missteps, #1342, #1356)
 - Apple UI screenshots have no goldens: a layout change there needs a test asserting what is absent. A test of a committed placeholder (an empty plugin root) uses its own copy of the placeholder's form. (#813, #819)
 - Before fixing a wall-clock test that fails near the 33-bit PTS wrap, check whether the product is wrong: shift the station's clock with `ptsShiftTicks` to reproduce on demand. (#797)
 - Before each first-party wave, list every `maktaba_pipeline` module the moved code imports, at any depth, that runs SQL (`grep -n "from maktaba_pipeline" stages/*.py`), before writing `statements.toml`. (#789)
@@ -126,7 +134,7 @@ built_from: v0.3.142
 - Check a guide written before its code against the code (the WIT, `capabilityOf`), not the spec. (#704)
 - A PR that ships user-facing work updates maktaba.dev in the same PR, in English and Arabic (`devportal_follows.py` warns; `No-Portal-Change:` says it needs nothing); run `npm run build`, `npm run scan` and `npm test` in `web/packages/devportal` before pushing. (#703, #723)
 - Before changing a log format or adding a fixed loopback port, grep the e2e tests: they match `key=value` output and template `server.toml` for two machines on one host. (#673, #686)
-- Calibrate a performance budget with work like the work budgeted; a "share of a core" budget is CPU time, not wall time. A timing assertion times only the thing it is about (the runaway-job test counted guest compile time). On a loaded Mac hold the median and log the tail: a p95 assertion is a flake source, and local absolute timings are unusable (profile call counts still are). Measure a calibration constant and report its raw times: a clamp at 1 hid a reference 3.6 times off. Measure with `timeit` before putting a regex in a hot path. A gate on a shared runner needs a counter and a robust statistic: the process's own CPU time (the relay containers' cgroup `cpu.stat` `usage_usec`) as a median of rounds against a baseline measured the same way, and a latency budget judged on the best of three rounds (noise only adds time); `docker stats` samples moved 1.8× on the same code. Before changing a threshold or rerunning, read the gate's spread on unchanged code from main's past artifacts, and watch a gate over several runs on several runners before making it strict. A gate compares on one machine or not at all: build the base commit and measure it beside the change in the same job, rounds alternating (`load-small`, the Python `log-bench`). Before changing a bench gate, sample it across many runners grouped by CPU model (a matrix recording `/proc/cpuinfo`, about 10 minutes); calibrate against the library the code uses, never the code under test; scale a percentile budget by the same percentile of independent work; and dispatch the nightly on the branch to measure a fix on the real runner. (#690, #738, #694, #696, #742, #740, #802, #808, #828, #834, #838, #839, #860, #866, d20261107-test-infra-missteps)
+- Calibrate a performance budget with work like the work budgeted; a "share of a core" budget is CPU time, not wall time. A timing assertion times only the thing it is about (the runaway-job test counted guest compile time). On a loaded Mac hold the median and log the tail: a p95 assertion is a flake source, and local absolute timings are unusable (profile call counts still are). Measure a calibration constant and report its raw times: a clamp at 1 hid a reference 3.6 times off. Measure with `timeit` before putting a regex in a hot path. A gate on a shared runner needs a counter and a robust statistic: the process's own CPU time (the relay containers' cgroup `cpu.stat` `usage_usec`) as a median of rounds against a baseline measured the same way, and a latency budget judged on the best of three rounds (noise only adds time); `docker stats` samples moved 1.8× on the same code. Before changing a threshold or rerunning, read the gate's spread on unchanged code from main's past artifacts, and watch a gate over several runs on several runners before making it strict. A gate compares on one machine or not at all: build the base commit and measure it beside the change in the same job, rounds alternating (`load-small`, the Python `log-bench`). Before changing a bench gate, sample it across many runners grouped by CPU model (a matrix recording `/proc/cpuinfo`, about 10 minutes); calibrate against the library the code uses, never the code under test; scale a percentile budget by the same percentile of independent work; and dispatch the nightly on the branch to measure a fix on the real runner. A p95 that swings 10x between runs on the same code is a hidden stall, not noise: look for work on a hot path that grows with the audience. (#1399, #690, #738, #694, #696, #742, #740, #802, #808, #828, #834, #838, #839, #860, #866, d20261107-test-infra-missteps)
 - Measure a flaky suite under real load before and after (three concurrent full copies on the Mac reproduce CI's web failures every time) and report both counts; profile a slow test (`--pool=forks --execArgv=--cpu-prof`): most of its time was page code. (#746)
 - Web: window key handlers that read render state use `useWindowKeydown`; formatters made in render come from `lib/intl`. (#746, #698)
 - Write a cross-language check once as an algorithm with a deterministic output, and share test vectors across Go, Rust and TypeScript (Ed25519 is deterministic, so a fixed seed suffices). Write the algorithm down to its tie-breaks first, generate the corpus with a script, write the goldens from one language, review them by hand and hold the other languages to them. Run every hostile case through the code a home runs (the loop), not only the verifier. (#751, #733, #743, #759, #778)
@@ -241,6 +249,16 @@ built_from: v0.3.142
 - Look at every new screenshot reference, both languages, before committing it (Arabic drawn reversed, a grid off screen and a cut two-line label all passed their tests). Name references by their exact file names (a brace glob in `rm` removed tracked ones), and after regenerating a set in a container restore every image the change does not touch. (#1307, #1350, #1335)
 - Run new rehearsal scenarios, integration suites (through the real pooler) and instrumented journeys locally before pushing, and lint the integration and rehearsal build tags locally: CI's golangci-lint covers default tags only. (#1236, #1260, #1268)
 - Fix a time-dependent test the day it is seen, reproducing the window by choosing the zone (`TZ=`), not by waiting; read the Playwright screenshots in both languages before calling RTL done. (#1265, #1247)
+- Reproduce a CI race by forcing the interleaving (run the competing step inside the first one's call, or hold one transaction and assert the other waits in `pg_locks`), never by looping the test. (#1383, #1397)
+- Before blaming the product for a failover flake, prove the dead side is dead (no listener, no socket) and that the test fails on a deliberately broken product; print every party's state in an intermittent failure before choosing between code and test. Prove "never contacted" with a trap server counting TCP connections. (#1280, #1319, #1360)
+- Give distinct ids distinct values in mocks and fixtures: a mock home using one id for the cloud's `home_id` and its own instance id hid a bug that broke every real Roku and launcher cloud sign-in. (#1354, #1348)
+- Profile each step before optimising and compare old and new as a best of N in one run beside a like-for-like reference loop; read a timing test's number from its first CI run before settling the ceiling, and run timing tests alone (`node --test` runs files side by side). Read the `session time:` line of a pytest tier, measured inside the tier, and find the critical path before cutting a parallel side. (#1347, #1351, #1303)
+- A cache that hits is not a cache that helps: read its restored size (setup-uv's default `prune-cache: true` keeps nothing from an index). Measure downloads from the lock's wheel sizes and the job's own `Prepared N packages` line. (#1190)
+- Read the failing xcresult's element hierarchy before changing a UI test's waits; an Apple UI job counts its tests from the result bundle, never xcodebuild's exit (`tools/ci/xcresult_ran.py`). (#1287, #1317)
+- A list-must-match-the-code check is pinned by file as well as by test name; when such a check and a new test break main together, fix it once on main in its own PR and have branches re-merge main. (#1379, #1353)
+- A file the web typecheck reaches outside `web/` gets a COPY line in both `web/Dockerfile` and `cloud/Dockerfile` (the guard names it); TV jobs end with `.github/actions/tv-logs` under `if: always()`; render visual references and generate lockfiles in the CI image, never on the Mac. (#1296, #1233, #1267)
+- Witness a wave's stages with `MAKTABA_REHEARSAL_WITNESS` when they must do real work in the rehearsal. Log the real failure reason in a readiness loop before fixing it (a fake only proves what it models). (#1023, #1380)
+- Prove each refusal of a cross-service approval with a test on both sides (replay, unlinked account, another code, another cloud's key; no account, owner only, offline). (#1250)
 
 ## Stop doing
 
@@ -315,6 +333,14 @@ built_from: v0.3.142
 - Naming Go locals `min`, `max` or `new` (revive fails lint); `git checkout origin/main -- .` to compare trees (it overwrites the working tree). (#1235, #1261)
 - Injecting a sleep while the loop still reads the real clock; asserting the default value a change should replace; writing capability test sources in a profile's spelling instead of ffprobe's. (#1304, #1268, #1269)
 - Creating an epic's shared review file from two branches at once; merging main into a long branch after every change on main (merge once, last). (#1223, #1243)
+- Installing every extra in CI by reflex: install what the tests import (torch's CUDA tree was 3.6 GB of the pipeline's 4 GB). (#1190)
+- Timing one whole write as "no progress", or reading a read-side FIN as "the client left". (#1319)
+- Pre-shaping a value with `ui_Vis` or `VisualText` before Roku's `I18n.Format`, or deciding shaping per catalog: decide per string. (#1340)
+- Treating a path starting with `/` as same-origin before sending credentials, deciding CORS from an Authorization header, or accepting a server-supplied list (discovery `urls`) as identity proof on an unauthenticated channel. (#1277, #1360)
+- Deciding trust from a client-set header, Host included: a separate listener on a private address is the boundary. (#1358)
+- Removing conflict markers by deleting marker lines: it dropped main's CHANGELOG entries. After a CHANGELOG fix, `git diff origin/main...HEAD -- CHANGELOG.md CHANGELOG.ar.md | grep '^-[^-]'` prints nothing. (#1263)
+- Clamping a metric with `max(0, …)`: a zero latency is a bug signal. Dismissing CodeQL's `len(x)+k` capacity hint: drop the hint. (#1382, #1381)
+- Putting an English note inside a spec table's Arabic column. (#1344)
 
 ## What we learned
 
@@ -377,6 +403,13 @@ built_from: v0.3.142
 - A role finding read from a handler is confirmed only after reading the route's mount: group middleware decides who reaches it. (#1271)
 - Health "ok" means "can start a job", measured by the claim loop's progress; a liveness probe stops when its child is asked to stop; asyncpg waits forever for a cancelled statement's acknowledgement on a dropped connection, so bound the release and never roll back on it. A postmaster killed with SIGKILL leaves its shared memory held: wait for the segment. (#1237)
 - Only the desktop Player sends a `client_profile`; web, Apple and Android get `generic`, so the older profiles matter only to API callers that name one. (#1269)
+- Broadcast: a TV and the launcher know the approving home only by an address a certificate proves (the cloud's https names, or Android's `local_ip` pinned to its `tls_name`); plain http, raw IPs, the cloud's `direct` kind and discovery `urls` prove nothing. The cloud's `home_id` is its server id, never the home's instance id. (#1348, #1354, #1356, #1360)
+- Broadcast: the publisher is the home (an ingest token's `pub` must be its `home`, fixtures included); the edge refuses a home clock over 60 s off, so outage scenarios run in real time; ffmpeg stamps PROGRAM-DATE-TIME after probing, so the home corrects each segment's start from when it appears. A k-anonymity fold over caller-chosen windows leaks by differencing: fold per hour and sum. A plan check made before a transaction races a plan change: re-check under the home row lock the revoking side takes, in one lock order. A rule in a SQL function is only as wide as the tables a machine's copy holds. (#1338, #1381, #1382, #1358, #1397, #1393)
+- Read the existing transport before adding one: the home's control socket already carried the edge's commands, so on-demand broadcast needed one header. A cloud contract change after the first deploy needs a compatibility window. (#1373, #1284)
+- Broadcast edge Durable Objects write one key per entity (viewer `v:`, session `x:`, usage window `w:`), never the whole map per event: a whole-state write per heartbeat stalled the channel about 9 s at 1,000 viewers. A watching viewer's heartbeat stays in memory and the minute alarm saves it inside the session TTL; new sessions, mode changes and lapses write at once. (#1399)
+- "Stamp after the side effect" de-duplication races: claim first with a compare-and-set in the database, then act (the TV rollback enqueued two reverse commits). An e2e stub stricter than the real job exposed it. (#1383)
+- A TV approved through the cloud ends when the account is unlinked: its refresh family is recorded as a cloud sign-in before any token is handed out. (#1250)
+- In React, a `setState` from a `useEffect` loses to an external store's sync render: keep what the first answer's render saw with a render-phase update; `flushSync` with `IS_REACT_ACT_ENVIRONMENT` off reproduces such races in jsdom. (#1042)
 
 **CI and releases**
 - Homes' `releaseverify` accepts only a release whose Sigstore certificate's trigger (OID 1.3.6.1.4.1.57264.1.20) is `push`; a dispatched release differs in that claim alone and is refused, and a re-run of a dispatched run stays `workflow_dispatch`. A tag pushed with `GITHUB_TOKEN` starts no run, so tags come from a session's push; v0.3.83 to v0.3.85 have no release, so v0.3.86 is the first published release of their components (`since` says 0.3.86). (#725, #730, #748)
@@ -435,6 +468,12 @@ built_from: v0.3.142
 - lint/repo refuses a new tracked script with no `.github/ci-paths.yml` filter and early-exit readers (`| head -1`, `| grep -q`); run those guards before pushing new shell scripts. (#1260)
 - A secret scanner reports the line, never any part of the value (CodeQL flagged a check printing a found password's first characters); a rotation checks every account before changing any. A code anyone can read out signs in a restricted principal: never an admin, and it mints nothing. (#1293, #1240)
 - The devportal's tests read its built `dist` (`npm run build` first), and its Apps pages take only `<name>-en.webp` and `<name>-ar.webp`. A local `trail check` with git checks can take half an hour; `--no-git` is quick and CI's lint job runs the full check. With `broadcast.enabled` the cloud API needs `broadcast.key_path`, so every rehearsal that enables it mounts a key. A main update rehearsal that has only updated from one release can hide a race a new "from" release shows: note which release a failing run updated from. (#1240, #1313, #1331, #1242, #1332)
+- The release gate: `next_tag.py` also needs the newest nightly broadcast rehearsal for the same broadcast files green, and keeps its own copy of the workflow's path filter, compared by a test (widen both together). The PR-size scenarios (100 viewers) can pass while the nightly 1,000 finds fan-out faults. Keep the exact-accounting scenarios (`broadcast-hetzner-down`'s metering) in every nightly: they catch storage refactors that drop a field. (#1376, #1390, #1385, #1399)
+- Go's `http.Transport` replays a request on a dead pooled connection only when it is idempotent or carries `Idempotency-Key`; a PUT with a body needs the header. Log each request's latency and client error before theorising. (#1385)
+- `uv sync --no-install-package` keeps the package's dependencies; `uv run --all-extras` syncs excluded packages back, so run `--no-sync` after a partial install. (#1190)
+- `affected-tests` reads main's coverage map and wants a changed test in the changed file's own package directory (a sibling package does not count); extend a test the map already links; a test on the real router beats a trailer for a one-line wiring change. A new OpenAPI route also needs `generate_wiki.py`. (#1274, #1383, #1393, #1348, #1374)
+- `.github/actions/**` is in the `_ci` group, so a new composite action runs every job; the website link check reads comments too, so examples use a neutral host. `gh pr diff --name-only` fails past GitHub's 20,000-line limit: use `git diff --name-only origin/main...<head>`. GitHub won't rerun one job while its run is going; re-running an older run in a concurrency group cancels the newer one. CodeQL treats any custom `http.ResponseWriter` wrapper's `Write` as an XSS sink: use request-context flags. A cloud rehearsal SeaweedFS bucket read too early is cached missing for 15 minutes: restart the container, never delete the bucket. (#1233, #1284, #1379, #1267, #1389, #1380)
+- The integration tier's pytest spends most of its time compiling cold bytecode beside four Go builds; the tier's wall is `api`'s go test. (#1303)
 
 **Database and migrations**
 - Number a migration slot only when merging main (slots are taken while a PR builds); a slot above a gap fails migration-lint; `SchemaRev` lives in three places. Check `git ls-tree origin/main shared/db/migrations/` right before each push, not only at the start; at each renumber rebuild `cluster_copy_excluded()` on the newest definition (Up adds, Down restores that one) and raise the three SchemaRev constants together. Slots moved three and four times while a PR waited; a moved migration is written again from its generator (`roles.py sql`, which `roles.py check` compares against every manifest), never sliced from the old file (a slice that kept `--` lines opened `StatementBegin` twice; migration-lint's `goose-annotations` now refuses it). Prove a migration parses with `go run . migrate up` from `api/` on a new database. The home's goose runs without allow-missing, so an open PR's home slot is a claim the whole stack respects; a migration without its `SchemaRev` raise crash-loops the update replica's API ("knows migrations up to 0225"). Cloud goose allows missing, but give each open PR its own cloud slot when it starts. The store's D1 migrations number separately but still collide within one series. (#1336, #1242, #669, #692, #678, #672, #657, #693, #762, #767, #778, #781, #815, d20261107-paid-plugins-merge-problems, #925, #949)
@@ -464,6 +503,8 @@ built_from: v0.3.142
 - A cap that counts open rows misses opens in flight (10 concurrent stream opens passed a cap of 2): reserve the place under a lock between check and insert, and refuse when the store cannot count. A gate decides on the body it parsed, never on a later decoder's behaviour (trailing bytes, a second JSON value). Re-check inside the write's transaction every condition an earlier approval relied on (a cloud TV code sign-in locks the link row and checks it still names the approving account). (#1239, #1283, #1336)
 - A `sync.Pool` frees only over two GCs and an idle process goes minutes without one: goose's pooled parser buffers made the relay's live-heap baseline read 0, 13.6 or 22 MB, until two collections run after the migrations. (#1341)
 - Through a transaction pool (PgBouncer): lib/pq's two round trips per argumented query can split across server connections, so use `binary_parameters=yes` (jsonb arguments as strings: a `[]byte` is refused as "unsupported jsonb version number 123"), and hold the migrator's lock as `pg_advisory_xact_lock` in one transaction. `patronictl switchover` reports a refusal with exit 0; wait for the WAL segment rather than calling `pg_switch_wal()` as the app role. Cloud migrations have no gap check, but two open PRs can claim one slot. Postgres `trim(leading X from s)` treats X as a set of characters. After a switchover a Patroni replica shows `running` on the old timeline until it restarts to follow the leader, so any check after a cluster change asks repeatedly with a bound, never once. (#1260, #1241, #1243, #1251, #1324)
+- `httptest.Server.Close` and `CloseClientConnections` skip hijacked connections (every websocket): a test powering off a server tracks and closes its own accepted connections and listener first. Over about 6 parallel race-built pool tests exhaust a Mac's ephemeral ports. (#1280)
+- The home has no SQLite path for Epic 58's routes; the `.sqlite.sql` migrations keep schema parity only. A role table's anonymous column goes through `RequireAuthExcept`. (#1342)
 
 **Platforms**
 - Windows: services cannot see mapped drives (sign-in task instead); `postgres.exe` needs a non-admin token; `os.Rename` cannot cross drives; CTRL_BREAK quirks; PowerShell's cold start on runners is 20-50 s. (#175, #196, #165, #205, #573)
@@ -523,6 +564,11 @@ built_from: v0.3.142
 - Roku: a Label draws characters left to right with no joining, bidi or L4 mirroring, so Arabic arrives shaped and in display order (`visualtext.brs`, catalogs shaped at build time) and every screen is mirrored by hand (`layout.brs`); `i18n.Format` shapes once per fill, so a translated word goes in a whole-string key; tashkeel is dropped. brs-node needs Node 22+ (`apps/tv/roku/.nvmrc`), draws text through Pango's bidi (tests preload `roku_text.cjs` to wrap strings in LRO…PDF), has a synchronous roUrlTransfer (the /24 Find test runs only on Linux; use `node:24-bookworm` in Docker, which also frees ECP port 8060), a RowList that never draws row titles and ignores `jumpToRowItem` off focus, grids that report one item's width (`ui_Mirror` needs columns × item + spacing), and a Video node that never plays (position 0; drive progress with a seek). Its statements cost about 0.6 µs and calls 10 µs, so hot loops make no per-character calls. `stop` and `next` are statements, not names. Screens tests wait for the page's log line before keys pass loaded rows, and a deep link waits for `[home] for you`. bsconfig's `stagingDir` beats the command line, so parallel builds each extend a config. Real playback, HDR and timing are real-device rows. (#1288, #1307, #1313, #1322, #1331, #1335, #1350)
 - LG webOS and Samsung Tizen play through the TV's own player (native `<video>`; AVPlay, whose suspended flag resets on stop). Neither the webOS simulator nor the Samsung emulator can run usefully in CI (license-gated, no headless mode, no media pipeline), so Playwright shims stand in; Playwright's Chromium decodes no H.264 (the CI flow plays VP9). In Chromium a `disabled` button drops the remote's focus to `body`: use `aria-disabled` and move focus by ref. Release secrets belong to the one step that uses them; signing is rehearsed with a throwaway certificate and a rehearsal build is never attached. (#1290, #1291, #1331)
 - Playback: the colour matrix says nothing about HDR (derive it from the transfer); fMP4 sessions start subtitles at timestamp base 0, not TS's 126000; a remux takes no transcode slot, so it needs its own cap. A field added to a protected message needs the API levels snapshot in the same PR. The Cast receiver plays a load with no Maktaba custom data as it came, the Apple sender's fallback for an older home; the web is served by the home, so only native senders meet an older home. (#1239, #1286)
+- Packaged TV launchers: Chromium sends no SameSite=Lax cookie to an iframe in a `file://` page (sign in by code with bearer tokens), module scripts from `file://` are cross-origin (use a classic deferred IIFE), Samsung's user agent has no `Chrome/` token, and a second CSP header intersects with the first. Playwright tries the newest route first. (#1277)
+- Roku/brs-engine: a statement costs about 0.85 µs and a call 5.5 µs, so fusing passes pays; names are case-insensitive; `roTimespan` is whole milliseconds; it verifies TLS for real and reads `NODE_EXTRA_CA_CERTS`. Plurals are CLDR form objects: pick, fill without shaping, and shape the finished line once (`I18n.Format`). The screens test's pixel tolerance cannot see one wrong word; exact string tests guard shaping. (#1347, #1360, #1357, #1340)
+- Apple `StreamProxy`: `URLSessionTask.suspend()` is not backpressure (hold the delegate callback, and time the upstream's silence yourself while holding); admit a connection to a counted place only after its secret checks, with the waiting set bounded apart. The Apple TV app is `apps/tv/tvos/MaktabaTV`, not the Player. (#1319, #1370)
+- Android Cast: Media3's `TransferCallback` mints the grant before the handover; an older home is found by `POST /api/cast/grants {}` (422 vs 404). Apple can't switch Cast app ids after setup. Android lint's BidiSpoofing rejects literal isolates (use escapes); `HeldCertificate` fails under an Arabic locale; Roborazzi `resizeScale = 0.5` keeps TV references small. (#1292, #1356)
+- SwiftUI can fold a `.contain` stack into its parent's accessibility container, hiding its identifier though it is drawn. On a Windows Desktop Player run, mockwebserver request logs need a copy-on-write list. esbuild's `es2019` target silently drops `import.meta` (the Cast receiver targets `es2020`); a Mac-made `package-lock.json` fails `npm ci` in the Playwright container. (#1287, #1302, #1267)
 
 **Apps and UI tests**
 - In Arabic text a path is reordered at its slashes: wrap each path, command or URL in U+2066/U+2069, and measure positions with a Range before judging a bidi screenshot. Prettier rewrites escaped isolates as literal characters, so later replacements that search for the escape match nothing; a Vite dev server can serve a stale module until restarted with `--force`. Build an image `src` only from a fixed list (CodeQL flags one built from the page's language). (#1120)
@@ -701,8 +747,8 @@ built_from: v0.3.142
 - Plugin scope: the worker's `publish` relay op still takes any payload. The `job` kind lets any job read a catalog job's row (no library's; flags and hashes only, harmless today). (#1005, #1025)
 - Runtime downloads: move the updater and the update catalog to the API route, with an update-rehearsal T-row; the store CDN's bucket (`maktaba-plugins`) and domain do not exist yet, so the publish step warns and skips, and homes go on to the API route (an owner decision, with the release token's write access); CI's WiX download could get the same fallback or be cached. (#1007)
 - Add an option in `.trail.toml` for trail-only events, so AGENTS.md needs no override note. (#1020)
-- Epic 58 (TV platforms): the stories are built; Apple's Cast sender (PR 1287) is still open, and grants on full nodes and the Local Network Access spike for Cast receivers remain. No build shows Cast until the receiver's application ID is registered in the Cast console and written to `shared/cast/app.json`. Owner actions per store, each in `docs/stores/`: Fire TV (Amazon account, upload key, App Submission API, then `amazon_submit.py commit`), LG (Seller Lounge, register `com.hamzalabs.maktaba.tv`, submit the `.ipk`, then `DV_GOOD_YEARS`), Samsung (Seller Office, Partner status for the Gulf, the four `TIZEN_*` release secrets, the package ID), Roku (signing on the keyed device, beta channel, submission), and the review home (VM, DNS, its release secrets, `REVIEW_HOME_PROBE=true`, a `basic` cloud account). Every real-device checklist (amazon, samsung, lg, roku rows 1–37, cast rows 1–21) runs on its release candidate; the guard refuses a submission without the result line. Roku lacks the time-left chip and warnings (Arabic plural time words) and reads an expired denied request as denied; Persian/Urdu letters, Hebrew and ZWJ/ZWNJ fall back to logical order. The receiver declares its font faces twice. (#1038, #1235, #1244, #1247, #1261, #1268, #1286, #1290, #1291, #1293, #1313, #1322, #1335, #1350, #1288)
-- Broadcast edge (50.21, 50.28): nothing is deployed; owner actions are Cloudflare's confirmation of R2 + Worker delivery, R2 buckets with a 1-day lifecycle, rate-limit namespaces, Worker secrets, `broadcast.key_path` and `edge_public_key`, ingest/live/watch DNS and the first deploy, then the Analytics Engine token, `monthly_budget_usd`, `CANARY_PUBLISHER` and `BROADCAST_PASS_URL`. The home-side analytics page follows 50.22's Broadcast page, and 50.25's revocation list should call `broadcast.RecordRevocations`. Each integration run now costs two more runners. (#1242, #1251, #1326)
+- Epic 58 (TV platforms): the stories are built, both Cast senders included; grants on full nodes and the Local Network Access spike for Cast receivers remain. No build shows Cast until the receiver's application ID is registered in the Cast console and written to `shared/cast/app.json`. Owner actions per store, each in `docs/stores/`: Fire TV (Amazon account, upload key, App Submission API, then `amazon_submit.py commit`), LG (Seller Lounge, register `com.hamzalabs.maktaba.tv`, submit the `.ipk`, then `DV_GOOD_YEARS`), Samsung (Seller Office, Partner status for the Gulf, the four `TIZEN_*` release secrets, the package ID), Roku (signing on the keyed device, beta channel, submission), and the review home (VM, DNS, its release secrets, `REVIEW_HOME_PROBE=true`, a `basic` cloud account). Every real-device checklist (amazon, samsung, lg, roku rows 1–37, cast rows 1–21) runs on its release candidate; the guard refuses a submission without the result line; the new rows (samsung 14–17, lg 13–16, amazon 12–15, roku 10 and 38–41, the T06 cast rows) need a device, roku row 10 asking whether a Roku Express meets T04's 50 ms (brs-engine takes about 210 ms). Persian/Urdu letters, Hebrew and ZWJ/ZWNJ fall back to logical order. The receiver declares its font faces twice. (#1038, #1235, #1244, #1247, #1261, #1268, #1286, #1290, #1291, #1293, #1313, #1322, #1335, #1350, #1288, #1287, #1292, #1348, #1356, #1357, #1347)
+- Broadcast edge (50.21, 50.28): nothing is deployed; owner actions are Cloudflare's confirmation of R2 + Worker delivery, R2 buckets with a 1-day lifecycle, rate-limit namespaces, Worker secrets, `broadcast.key_path` and `edge_public_key`, ingest/live/watch DNS and the first deploy, then the Analytics Engine token, `monthly_budget_usd`, `CANARY_PUBLISHER` and `BROADCAST_PASS_URL`. Further owner actions from 50.22–50.29: Turnstile keys and hostnames, `ATTEST_API`, `CLOUD_PUBKEYS`/`MAKTABA_BROADCAST_PUBKEYS` and the edge's kill variables, the geo deny list and its legal review, the DMCA agent, counsel review, the copyright@ mailbox, the `broadcast_urgent_report` route, `MAKTABA_CLOUD_METRICS_ADDR` on the api hosts, the edge's `API_ORIGIN`, ntfy and SMTP in `cloud-ha.env`, staging's `server.env`, a required `broadcast-rehearsal` check and a larger nightly runner; `broadcast.open_access.enabled` stays off until the legal items hold. The 2 % unanswered-PUT tally allowance has not been exercised; golangci-lint with the rehearsal tag flags two issues in `scenarios_cloud_test.go`; an invite made at the moment of a console plan change could still slip past (theoretical). Each integration run now costs two more runners. (#1242, #1251, #1326, #1266, #1270, #1274, #1284, #1338, #1358, #1385, #1389, #1390, #1393, #1397)
 - Caches: compare job times on main's second run after the new entries exist (unit near 8.7 min) and re-measure usage; whether the rehearsal's `full` seed (2.7 GB) needs a cache is a question for its job's time. (#1036)
 - Plugin event emits: the `unavailable` and `home_unreachable` refusals are logged but have no test. (#1048)
 - Parity tests still over the 5 s soft cap on CI: classify's waves 1 and 4, repair, the N16 self-test and livetv staging; core-media's now fits. (#1049, #1068)
@@ -740,6 +786,10 @@ built_from: v0.3.142
 - Flaky on CI: `TestReplaceSelf` (Windows); `waitIdle`'s other callers keep a 20 ms head start. (#1243, #1278)
 - A merge queue, or a scheduled `--check` of generated outputs on main, would catch a stale generated count when it happens. (#1300)
 - Epic 60 reads: the lead's signature on `design/review-phase-3.md`, the help index's 44 topics against the mockup's 40, and the Arabic copy's read; install guides are still in part A's shell; pricing (60.13) waits for Epic 50's plans. (#1223, #1225)
+- Apple TV live freeze: #1319's hardening never ran on a real Apple TV or for hours, so whether the freeze is gone is unknown; the iPhone, iPad and Mac Player's own live code was not audited. TestFlight still refuses to install builds it lists (the app record's sale state is the lead, an owner setting). (#1319)
+- Security leftovers: a library the caller does not read answers 403, not 404, across the home (an Epic's decision); cast grants on a cluster node have no test against the node's copy; a machine at a home's LAN address on another network that knows the relay name can still be listed (binding the LAN answer to the certificate would close it). (#1342, #1354)
+- Untested gaps: a relay that loses its pool heartbeat but keeps running; Vite build-time reads outside `web/` (the Docker guard covers `tsc` only); a stalled single-run Apple test recorded as an `Expected Failure`; a web audit for other hooks copying an external store into state from an effect; the pipeline's Postgres parametrisations are skipped in the integration tier, whose time is `api`'s go test. (#1280, #1296, #1317, #1042, #1303)
+- No CI job runs actionlint. The `tv-web` tizen-reload test failed twice on one PR: watch for it. Issue #804 is still open though 16.9's row is on main. (#1233, #1266, #1023)
 
 ## Missing events
 
@@ -750,27 +800,9 @@ built_from: v0.3.142
 | #946 | 2026-11-07 | fix(backups): old backups go on their own |
 | #969 | 2026-11-08 | feat: remove Plex sync and dizqueTV; Plex Live TV stays |
 | #973 | 2026-11-08 | fix(supervisor): plugin runners wait for the venv like the pipeline |
-| #1023 | 2026-11-08 | test(rehearsal): scenario 16.7, wave 7's TV change across an update |
-| #1042 | 2026-11-08 | fix(web): an open screen keeps its feature gate when the feature goes off right after the first answer |
-| #1190 | 2026-11-11 | ci: install the pipeline without torch's CUDA tree, and keep its wheels cached |
 | #1232 | 2026-11-13 | fix(postgres): a half-answered look no longer restarts the database |
-| #1233 | 2026-11-14 | ci(tv): TV catalog check, shared app-log upload, TV path groups, store checklists (58.15, 58.16 phase 1) |
-| #1250 | 2026-11-14 | feat(58.03): approve a TV's Maktaba Cloud code in the web, Android and Apple apps |
-| #1277 | 2026-11-14 | feat(tv): the Samsung and LG launcher, /tv/'s bridge and bearer sign-in (story 58.09, part 1) |
-| #1280 | 2026-11-14 | test(relay): a killed pool relay drops every connection (T04 flake) |
-| #1292 | 2026-11-14 | feat(cast): Android Player casts to Maktaba's receiver with a grant (58.06) |
-| #1296 | 2026-11-14 | ci: fail fast when an image misses a file the web typecheck reads |
-| #1302 | 2026-11-14 | test(android): PairingTest keeps its request log in a copy-on-write list |
-| #1303 | 2026-11-14 | test(pipeline): a session time line; why pytest is not the integration tier's long pole |
-| #1317 | 2026-11-14 | ci(apple): fail a UI job whose result bundle ran none, or not all, of its tests |
-| #1325 | 2026-11-14 | 58.03: approve a TV's cloud code on maktaba.tv |
-| #1340 | 2026-11-14 | fix(roku): shape Arabic inside English lines (Account's language row) |
-| #1342 | 2026-11-14 | Epic 58 story 58.17: role table, cast-grant router walk, tv-clients rehearsal |
-| #1344 | 2026-11-14 | docs(spec): Epic 58 says what shipped |
-| #1347 | 2026-11-14 | perf(roku): shape Arabic text in less time; T04 enforced in CI (story 58.15) |
-| #1351 | 2026-11-14 | test(roku): run T04 alone against a like-for-like reference loop (story 58.15) |
-| #1353 | 2026-11-14 | ci(tv-clients): list the link-recheck test (main is red) |
-| #1354 | 2026-11-14 | fix(roku): know the approving home by its address, not by the cloud's id |
+| #1318 | 2026-11-14 | docs(testflight): the install failure though the build is listed (open) |
+| #1400 | 2026-11-15 | Watch a broadcast on Apple TV, iPhone, iPad and the Mac (story 50.27 T03, T05) |
 
 ## Index
 
@@ -1312,12 +1344,14 @@ built_from: v0.3.142
 | 1019-share-runners | 2026-11-08 | pr | Thumbnails, chapter frames and subtitles run in their runner on a Windows share; the broker serves full-write shares read-only (story 54.23) |
 | 1020-trail-events-own-prs | 2026-11-08 | pr | Trail events go in their own trail-only pull requests (CLAUDE.md rule 2, AGENTS.md) |
 | 1021-publish-rules | 2026-11-08 | pr | The worker checks each event a plugin's runner asks it to publish |
+| 1023-rehearsal-16-7-wave7 | 2026-11-08 | pr | Update rehearsal scenario 16.7: wave 7's TV change across an update |
 | 1025-read-scope-every-id | 2026-11-08 | pr | Every plugin-API read by id is checked against the job (README §15.12) |
 | 1032-rehearsal-12-retired | 2026-11-08 | pr | Update rehearsal scenario 12 expects a retired component to have no row |
 | 1034-appimage-runtime-pin | 2026-11-08 | pr | The AppImage runtime pinned and handed to appimagetool; linuxdeploy's and appimagetool's output in the log |
 | 1036-cache-budget | 2026-11-08 | pr | One Go cache entry per runner and Go version, free cache cuts, and a prune of stale entries |
 | 1038-epic58-smart-tv-platforms | 2026-11-08 | decision | Epic 58 spec: apps for the TVs Maktaba does not reach yet (Fire TV, Google Cast, Samsung, LG, Roku) |
 | 1041-rehearsal-16-9-core-stages | 2026-11-08 | pr | Rehearsal 16.9 takes wave 9's core stages through a rollback and an update |
+| 1042-open-gate-render-phase | 2026-11-08 | pr | An open screen keeps its feature gate in the render that sees the first answer |
 | 1047-restore-tests-disk-room | 2026-11-08 | pr | The restore's tests no longer depend on the disk's free space |
 | 1048-emit-refusal-log | 2026-11-08 | pr | Every refused plugin event emit is logged with its plugin, kind, size and reason |
 | 1049-dev-api-per-session | 2026-11-08 | pr | Each test session builds and runs its own plugin-API dev server |
@@ -1395,6 +1429,7 @@ built_from: v0.3.142
 | 1186-product-shots | 2026-11-12 | pr | maktaba.tv product screenshots of every app on an openly licensed demo library (60.09) |
 | 1187-website-part-b | 2026-11-12 | pr | Epic 60 stories 60.01 part B and 60.02 part B: the full design direction, approved, with the chosen tagline |
 | 1188-lighthouse-runtime-retry | 2026-11-12 | pr | maktaba.tv's Lighthouse gate measures again a run Lighthouse could not finish, never a low score |
+| 1190-ci-cpu-torch | 2026-11-12 | pr | ci: install the pipeline without torch's CUDA tree, and keep its wheels cached |
 | 1191-ml-runner-memory | 2026-11-12 | pr | ml runners let idle models go and keep MLX's cache capped |
 | 1192-website-shell | 2026-11-12 | pr | maktaba.tv: the part A shell on every page the site builds |
 | 1200-website-token-no-dns | 2026-11-12 | correction | maktaba.tv's token check no longer requires DNS Write: Cloudflare creates a custom domain's record itself |
@@ -1410,6 +1445,7 @@ built_from: v0.3.142
 | 1223-website-phase3-part-b | 2026-11-13 | pr | maktaba.tv Phase 3: the problem, legal, chooser and 404 pages in part B's shell |
 | 1225-website-help-pages | 2026-11-13 | pr | Help on maktaba.tv, published from the app's own topics (60.12) |
 | 1228-leave-big-screen | 2026-11-13 | pr | Big screen: a visible way out, in the top row and in the View menu |
+| 1233-tv-ci-groundwork | 2026-11-14 | pr | ci(tv): TV catalog check, shared app-log upload, TV path groups, store checklists (58.15, 58.16 phase 1) |
 | 1234-big-screen-library | 2026-11-14 | pr | Epic 58 story 58.08, part 1: the Epic 56 screens on the big screen |
 | 1235-compat-contract | 2026-11-14 | pr | The compatibility contract: API levels, the client floor and the level check (58.01, home side) |
 | 1236-api-pool | 2026-11-14 | pr | Epic 50 story 50.17: a stateless api pool |
@@ -1423,33 +1459,48 @@ built_from: v0.3.142
 | 1244-compat-apps | 2026-11-14 | pr | The apps say when they and the home need an update (58.01, app side) |
 | 1247-tv-build | 2026-11-14 | pr | Epic 58 story 58.08, part 2: the big screen's TV build at /tv/ |
 | 1249-apple-ui-switch-taps | 2026-11-14 | pr | Apple UI tests: switch taps re-checked, Remote sign-in by Return, crash answers and PIN lock fixed |
+| 1250-cloud-tv-code-approve | 2026-11-14 | pr | A TV's Maktaba Cloud code is approved in the home apps and on maktaba.tv (58.03) |
 | 1251-broadcast-analytics | 2026-11-14 | pr | Viewer analytics and broadcast monitoring (story 50.28) |
 | 1252-load-small-heap | 2026-11-14 | pr | load-small gates the relay's memory on its Go live heap |
 | 1257-edge-cloud-contract | 2026-11-14 | pr | The broadcast edge's v1 cloud contract; one publisher key |
 | 1260-db-nodes | 2026-11-14 | pr | The cloud database on its own nodes, behind PgBouncer (story 50.18) |
 | 1261-cast-grant | 2026-11-14 | pr | Epic 58 story 58.07, part 1: the cast grant |
 | 1262-testport-real-pg | 2026-11-14 | pr | Real-Postgres tests take their ports from testport |
+| 1263-home-broadcaster | 2026-11-14 | pr | The home's broadcaster and Broadcast page (story 50.22) |
 | 1265-live-time-day-line | 2026-11-14 | pr | The live TV time test holds in the hour before the home day line |
+| 1266-broadcast-viewer-access | 2026-11-14 | pr | Viewer access: invites, open channels, limits and tokens (story 50.26) |
 | 1268-fire-tv | 2026-11-14 | pr | Epic 58 story 58.05: Fire TV as the Amazon build of the Android TV app |
 | 1269-hevc-names-hdr | 2026-11-14 | pr | The older playback profiles read ffprobe's codec names and weigh HDR |
+| 1270-broadcast-kill-switch | 2026-11-14 | pr | The broadcast kill switch (story 50.25) |
 | 1271-queue-pulse-admin-comments | 2026-11-14 | pr | The queue pulse's comments say it is admin-only |
+| 1274-publishable-sources | 2026-11-14 | pr | Publishable sources and geo rules (story 50.23) |
 | 1276-pairing-test-log-copy | 2026-11-14 | pr | The pairing sign-in test reads a copy of the request log |
+| 1277-tv-launcher | 2026-11-14 | pr | Epic 58 story 58.09, part 1: the Samsung and LG launcher |
 | 1278-packs-runner-race | 2026-11-14 | pr | TestRunnerRules waits for the pack's try before waitIdle |
+| 1279-broadcast-guest-watch | 2026-11-14 | pr | Guest viewers on watch.maktaba.tv: watch pages, guide and TV pairing (story 50.27) |
+| 1280-relay-pool-kill-harness | 2026-11-14 | pr | A killed pool relay drops every connection (T04 flake) |
 | 1283-cast-gate-fail-closed | 2026-11-14 | pr | The cast-grant gate refuses a body it cannot read |
+| 1284-broadcast-takedowns | 2026-11-14 | pr | Copyright notices, reports and takedowns for broadcast channels (story 50.24) |
 | 1286-cast-web-sender | 2026-11-14 | pr | Epic 58 story 58.06, part 1: the shared Cast sender contract and the web sender |
 | 1288-roku-shaping | 2026-11-14 | pr | Epic 58 story 58.15 (Roku part): Arabic visual text, layout direction and catalogs |
 | 1290-lg-webos | 2026-11-14 | pr | Epic 58 story 58.11: the LG webOS app, the .ipk, native playback and subtitles |
 | 1291-samsung-tizen | 2026-11-14 | pr | Epic 58 story 58.10: Maktaba for Samsung TVs (AVPlay, the .wgt, the Samsung store) |
+| 1292-cast-android-sender | 2026-11-14 | pr | The Android Player casts to Maktaba's receiver with a grant (story 58.06) |
 | 1293-review-home | 2026-11-14 | pr | Epic 58 story 58.04: a home for TV store reviewers at review.maktaba.tv |
 | 1294-action-pins | 2026-11-14 | pr | pnpm/action-setup and cosign-installer are pinned to commits, not tags |
 | 1295-integration-tier-time | 2026-11-14 | pr | Integration tier budget 6m30s; SQLite datetime warnings gone |
+| 1296-docker-typecheck-inputs | 2026-11-14 | pr | tools/ci/tests fails when an image misses a file the web typecheck reads |
 | 1300-stale-generated-after-1243 | 2026-11-14 | pr | Main's wiki database and help mockups regenerated after #1243 |
+| 1302-pairing-test-cow-log | 2026-11-14 | pr | PairingTest keeps its request log in a copy-on-write list |
+| 1303-integration-pytest-time | 2026-11-14 | pr | The integration tier's pytest time measured; a session time line |
 | 1304-maktabakit-ready-clock | 2026-11-14 | pr | MaktabaKit stream-ready waits keep their deadline on an injected clock |
 | 1307-roku-channel | 2026-11-14 | pr | Epic 58 story 58.12: the Roku SceneGraph channel |
 | 1309-apple-long-press-and-limit | 2026-11-14 | pr | Apple: a long press taken as a tap, dropped taps and split double taps get one more try; blocked pages read the limit |
 | 1310-home-card-voiceover-actions | 2026-11-14 | pr | VoiceOver reaches a Home card's menu items as custom actions |
 | 1312-profile-row-tap-cancelled | 2026-11-14 | pr | A Profile page's row tap gets one retry when the system cancelled it (#639) |
 | 1313-roku-player | 2026-11-14 | pr | Epic 58 story 58.13: the Roku player, certification and release |
+| 1317-apple-ui-ran-no-tests | 2026-11-14 | pr | CI fails an Apple UI job whose result bundle ran none, or not all, of its tests |
+| 1319-stream-proxy-and-tv-back | 2026-11-14 | pr | The apps' stream proxy copies in chunks and bounds what it keeps; Back always leaves the Apple TV live player |
 | 1321-parental-tv-bypass | 2026-11-14 | pr | The new TVs cannot route around parental controls: bypass rows A23–A27 (58.14, the API half) |
 | 1322-tv-58-15-16-gaps | 2026-11-14 | pr | TV: close the 58.15 and 58.16 gaps (one reading order, Roku theme from tokens, checklist guard on every page) |
 | 1324-db-nodes-migrate-wait | 2026-11-14 | pr | The database-node move waits for each node to serve after a change |
@@ -1458,6 +1509,36 @@ built_from: v0.3.142
 | 1332-supervisor-shutdown-slot-exit | 2026-11-14 | pr | The supervisor's own shutdown no longer fails the TV over |
 | 1335-roku-qr | 2026-11-14 | pr | Epic 58 story 58.12: the Roku code screen's QR, drawn on the device |
 | 1336-tvcode-link-recheck | 2026-11-14 | pr | A cloud TV code sign-in re-checks the cloud link (story 58.03) |
+| 1338-broadcast-rehearsal | 2026-11-14 | pr | The broadcast rehearsal and fan-out load test in CI (story 50.29) |
+| 1340-roku-arabic-in-english | 2026-11-14 | pr | Roku: shape Arabic inside English lines (Account's language row) |
 | 1341-load-small-heap-levels | 2026-11-14 | pr | load-small's live heap no longer counts goose's start-up buffers |
+| 1342-tv-clients-rehearsal | 2026-11-14 | pr | Epic 58's role table, the cast grant's router walk and the tv-clients rehearsal (58.17) |
+| 1344-epic58-spec-fixups | 2026-11-14 | pr | Epic 58's spec says what shipped |
+| 1347-roku-visualtext-speed | 2026-11-14 | pr | Roku: shape Arabic text in less time; T04 enforced in CI (story 58.15) |
+| 1348-samsung-lg-cloud-code | 2026-11-14 | pr | The cloud code on Samsung and LG (58.09 part 2) |
 | 1350-roku-player-parental | 2026-11-14 | pr | Roku player: time's up and a title hidden mid-play (58.14) |
-
+| 1351-roku-t04-alone | 2026-11-14 | pr | Roku: run T04 alone against a like-for-like reference loop (story 58.15) |
+| 1353-tv-clients-list-collision | 2026-11-14 | pr | List the link-recheck test in the tv-clients rehearsal (main was red) |
+| 1354-roku-cloud-home-by-address | 2026-11-14 | pr | Roku knows the approving home by its address, not by the cloud's id |
+| 1356-androidtv-cloud-code | 2026-11-14 | pr | The cloud code on Android TV and Fire TV (58.03's TV side, 58.05) |
+| 1357-roku-time-left | 2026-11-14 | pr | Roku: the time left, its warnings, and an earlier day's no (57.15, 58.14) |
+| 1358-broadcast-analytics-security | 2026-11-14 | pr | Private metrics on their own listener; analytics fold per hour (50.28 security) |
+| 1360-roku-grant-proven-names | 2026-11-14 | pr | Roku sends the cloud code's grant only to an address the certificate proves |
+| 1370-streamproxy-slots | 2026-11-14 | pr | Apple stream proxy: a connection takes a place only after its secret checks (security) |
+| 1373-broadcast-on-demand | 2026-11-14 | pr | On-demand broadcast channels: the edge sends wake, sleep and limits |
+| 1374-home-broadcast-viewers | 2026-11-14 | pr | Broadcast viewers on the home's own Broadcast panel |
+| 1376-release-broadcast-gate | 2026-11-14 | pr | Release gate: tag only commits whose nightly broadcast rehearsal passed |
+| 1380-seaweed-bucket-flake | 2026-11-14 | pr | Cloud rehearsal: recover a SeaweedFS bucket cached as missing |
+| 1381-broadcast-rehearsal-scenarios | 2026-11-14 | pr | The six remaining broadcast rehearsal scenarios (story 50.29 follow-up) |
+| 1382-segment-start-time | 2026-11-14 | pr | Broadcast: send each segment's start time, not ffmpeg's late date |
+| 1267-cast-receiver | 2026-11-15 | pr | Maktaba's Cast receiver at cast.maktaba.tv (story 58.07) |
+| 1287-cast-apple-sender | 2026-11-15 | pr | The Apple Player casts to Maktaba's receiver (story 58.06) |
+| 1368-cast-release-first-deploy | 2026-11-15 | pr | The Cast receiver's first release works before cast.maktaba.tv exists |
+| 1379-tv-clients-list-coverage | 2026-11-15 | pr | The tv-clients list check also requires every p58 router test |
+| 1383-tv-rollback-claim | 2026-11-15 | pr | A TV rollback's reverse commit is enqueued once, by whoever claims it first |
+| 1385-broadcast-fanout-1000 | 2026-11-15 | pr | Broadcast: one PUT per segment and one R2 read per location at 1,000 viewers |
+| 1389-watch-report-sri | 2026-11-15 | pr | Broadcast watch page: a Report button and a pinned, hash-checked hls.js |
+| 1390-broadcast-observe | 2026-11-15 | pr | Broadcast rehearsal: alerts, canary probe and status page proven against the real edge |
+| 1393-guest-sharing-plan-end | 2026-11-15 | pr | Broadcast: guest sharing ends with the plan; machine hosts keep the publishable limit |
+| 1397-plan-change-races | 2026-11-15 | pr | Broadcast: invites and open access can't outlive a plan change; staging watch reports |
+| 1399-beat-writes | 2026-11-15 | pr | Broadcast edge: a heartbeat writes its viewer, not the whole channel state |

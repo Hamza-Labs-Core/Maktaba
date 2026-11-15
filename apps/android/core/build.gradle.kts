@@ -62,6 +62,13 @@ dependencies {
     implementation(libs.camerax.view)
     implementation(libs.zxing.core)
 
+    // Watch a broadcast (story 50.27): the guest player the Player and the TV app share, and the
+    // data source that puts the newest viewer token in each request and refuses a cut-short body
+    implementation(libs.media3.exoplayer)
+    implementation(libs.media3.exoplayer.hls)
+    api(libs.media3.datasource.okhttp)
+    implementation(libs.media3.ui)
+
     // the API client, sign-in and the home picker's rules, shared with the desktop player
     api(project(":client"))
     api(libs.kotlinx.coroutines.android)
