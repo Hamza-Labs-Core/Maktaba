@@ -18,8 +18,7 @@ final class PlayerGuestUITests: PlayerUITestCase {
         openGuestSpace("en")
         shot("guest-space")
         let field = app.textFields["guest.link"]
-        field.tap()
-        field.typeText("https://watch.maktaba.tv/i/\(MockHome.guestInvite)")
+        field.typeExactly("https://watch.maktaba.tv/i/\(MockHome.guestInvite)", in: app)
         element("guest.watchLink").tap()
 
         let first = element("guest.channel.ch1")
@@ -47,11 +46,9 @@ final class PlayerGuestUITests: PlayerUITestCase {
         XCTAssertTrue(app.staticTexts["البثوث المحفوظة"].waitForExistence(timeout: 10), "in Arabic")
         let publisher = app.textFields["guest.publisher"]
         for _ in 0..<4 where !publisher.isHittable { app.swipeUp() }
-        publisher.tap()
-        publisher.typeText(MockHome.guestPublisher)
+        publisher.typeExactly(MockHome.guestPublisher, in: app)
         let code = app.textFields["guest.code"]
-        code.tap()
-        code.typeText("MK-USED")
+        code.typeExactly("MK-USED", in: app)
         element("guest.watch").tap()
         let problem = element("guest.problem")
         XCTAssertTrue(problem.waitForExistence(timeout: 20), "the edge's refusal, in words")
