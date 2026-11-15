@@ -137,6 +137,11 @@ run with `set: nightly`) runs the full set. The verdict job writes one report (e
 verdict and timings, the fan-out table, the latency percentiles) to the run's summary and to the
 `broadcast-report` artifact. Every scenario's stack log is kept in its own artifact.
 
+A release tag needs the last nightly run on the tagged commit's broadcast code green
+([updates.md](updates.md#how-a-release-is-made), "The broadcast rehearsal gates the tag too"). A
+nightly-set run is named `Broadcast rehearsal nightly of <sha>` so the release session can find
+its commit.
+
 ### Run one broadcast scenario locally
 
 ```bash

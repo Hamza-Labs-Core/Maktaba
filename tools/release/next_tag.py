@@ -4,7 +4,8 @@
 The release session (a scheduled agent session, not a workflow: docs/updates.md, "How a release
 is made") runs this. It hands this script main's green runs of both workflows, as `gh run list
 --json headSha,event,displayTitle` writes them (`--ci-runs FILE --rehearsal-runs FILE`), or the
-commits both passed on (`--green FILE`, one SHA a line), and it prints (key=value lines, as for
+commits both passed on (`--green FILE`, one SHA a line), with broadcast-rehearsal.yml's runs
+(`--broadcast-runs FILE`, always), and it prints (key=value lines, as for
 $GITHUB_OUTPUT):
 
     tag=vX.Y.Z      the next patch tag ('' when nothing is tagged)
@@ -17,8 +18,15 @@ run, and such a run's headSha is main's head when it started, not the commit it 
 is named "Update rehearsal of <sha>" (REHEARSAL_TITLE), and that sha is its commit. A rehearsal
 push run (main's before 2026-11-07) counts for its headSha.
 
-The commit is the newest green one on main (first-parent order: main's own commits, newest
-first). It is tagged only when:
+A green commit is tag-eligible only when the broadcast rehearsal's nightly passed on its
+broadcast code (story 50.29 §4, `--broadcast-runs FILE`, broadcast_verdict): among the nightly
+runs of broadcast-rehearsal.yml on a commit whose broadcast code (BROADCAST_CODE, the workflow's
+pull-request paths) is the same as this commit's, the newest one that finished passed. A commit
+with no such run is not eligible (fail closed); one whose broadcast code has not changed since a
+green nightly is.
+
+The commit is the newest green and eligible one on main (first-parent order: main's own
+commits, newest first). It is tagged only when:
   - it has no v* tag of its own (a session, or another run, tagged it already);
   - no newer commit has a v* tag (an older commit is never tagged after a newer one: a tag
     below a released one would be refused by the tag guard, and would skip nothing anyway);
@@ -52,6 +60,32 @@ STABLE = re.compile(r"^v(\d+)\.(\d+)\.(\d+)$")
 # headSha is main's head when it started). test_next_tag.py keeps the workflow's the same.
 REHEARSAL_TITLE = "Update rehearsal of "
 _TITLED = re.compile("^" + re.escape(REHEARSAL_TITLE) + r"([0-9a-f]{40})$")
+
+
+# broadcast-rehearsal.yml's pull-request paths: the broadcast code a nightly run rehearses
+# (test_next_tag.py keeps the two the same). A trailing /** is the folder and everything in it.
+BROADCAST_CODE: tuple[str, ...] = (
+    "web/packages/broadcast-edge/**",
+    "web/packages/tvsite/src/sign.ts",
+    "cloud/internal/broadcast/**",
+    "streaming/internal/broadcast/**",
+    "api/internal/broadcast/**",
+    "streaming/internal/relay/**",
+    "streaming/cmd/rehearsal-broadcast-home/**",
+    "streaming/go.mod",
+    "streaming/go.sum",
+    "tools/broadcast-viewers/**",
+    "tools/rehearsal-cloud/broadcast/**",
+    ".github/workflows/broadcast-rehearsal.yml",
+)
+
+# broadcast-rehearsal.yml's run-name for a nightly-set run (the schedule's, or a hand run with
+# `set: nightly`): the commit it rehearsed. test_next_tag.py keeps the workflow's the same.
+BROADCAST_NIGHTLY_TITLE = "Broadcast rehearsal nightly of "
+_NIGHTLY_TITLED = re.compile("^" + re.escape(BROADCAST_NIGHTLY_TITLE) + r"([0-9a-f]{40})$")
+
+# A run that ended so is no result either way (stopped, or never ran): it is passed over.
+NO_RESULT = frozenset({"cancelled", "skipped", "neutral", "stale", ""})
 
 
 def trail_only(path: str) -> bool:
@@ -110,6 +144,74 @@ def green_commits(ci_runs: Iterable[Mapping[str, Any]], rehearsal_runs: Iterable
     ci = {str(r["headSha"]) for r in ci_runs if passed(r) and r.get("event", "push") == "push"}
     rehearsed = {c for r in rehearsal_runs if passed(r) and (c := rehearsed_commit(r))}
     return ci & rehearsed
+
+
+def nightly_commit(run: Mapping[str, Any]) -> str | None:
+    """The commit a broadcast-rehearsal.yml run rehearsed with the nightly set: the one in its
+    name, or a scheduled run's headSha (a schedule runs on main's head; runs before the
+    run-name have no name). Any other run (a pull request's or a push's short set, or a hand
+    run on another branch) is none."""
+    if run.get("headBranch", "main") != "main":
+        return None
+    m = _NIGHTLY_TITLED.match(str(run.get("displayTitle", "")))
+    if m:
+        return m[1]
+    if run.get("event") == "schedule":
+        return str(run["headSha"])
+    return None
+
+
+def nightly_results(runs: Iterable[Mapping[str, Any]]) -> list[tuple[str, bool]]:
+    """The nightly runs that finished with a result, newest first, as (commit, passed). runs is
+    `gh run list --json headSha,headBranch,event,status,conclusion,displayTitle,createdAt` (every status:
+    a red run counts). A run still going, or one cancelled or skipped, is passed over."""
+    done: list[tuple[str, str, bool]] = []
+    for r in runs:
+        commit = nightly_commit(r)
+        if commit is None or r.get("status", "completed") != "completed":
+            continue
+        conclusion = str(r.get("conclusion") or "")
+        if conclusion in NO_RESULT:
+            continue
+        done.append((str(r.get("createdAt", "")), commit, conclusion == "success"))
+    # newest first; sorted() is stable, so runs without createdAt keep gh's own (newest-first) order
+    done = sorted(done, key=lambda d: d[0], reverse=True)
+    return [(c, ok) for _, c, ok in done]
+
+
+def broadcast_verdict(sha: str, nightlies: Sequence[tuple[str, bool]], code: Callable[[str], str | None]) -> str | None:
+    """Why sha is not tag-eligible on the broadcast rehearsal, or None when it is.
+
+    nightlies: nightly_results(), newest first. code(c): c's broadcast code (any value equal for
+    two commits whose BROADCAST_CODE files are the same), None when c is not in the checkout.
+    The verdict is the newest nightly on a commit with sha's broadcast code: passed, eligible;
+    failed, not. No such nightly: not eligible.
+    """
+    mine = code(sha)
+    if mine is None:
+        return f"{sha}'s broadcast code is not in the checkout"
+    for commit, passed in nightlies:
+        if code(commit) != mine:
+            continue
+        if passed:
+            return None
+        return f"the newest broadcast rehearsal nightly on {sha}'s broadcast code (run on {commit}) failed"
+    return f"no broadcast rehearsal nightly ran on {sha}'s broadcast code"
+
+
+def newest_eligible(main_order: Sequence[str], green: Iterable[str], verdict: Callable[[str], str | None]) -> tuple[str | None, list[str]]:
+    """The first commit of main_order (newest first) that is green and whose verdict is None,
+    and why each newer green commit was passed over."""
+    ok = set(green)
+    passed_over: list[str] = []
+    for c in main_order:
+        if c not in ok:
+            continue
+        why = verdict(c)
+        if why is None:
+            return c, passed_over
+        passed_over.append(why)
+    return None, passed_over
 
 
 def newest_green(main_order: Sequence[str], green: Iterable[str]) -> str | None:
@@ -177,11 +279,26 @@ def git_changed(a: str, b: str) -> list[str]:
     return [p for p in git("diff", "--name-only", "--no-renames", a, b).splitlines() if p]
 
 
+def _broadcast_pathspecs() -> list[str]:
+    return [p[:-2] if p.endswith("/**") else p for p in BROADCAST_CODE]
+
+
+def git_broadcast_code(sha: str) -> str | None:
+    """sha's BROADCAST_CODE files and their blobs (equal for two commits with the same code)."""
+    r = subprocess.run(["git", "ls-tree", "-r", sha, "--", *_broadcast_pathspecs()], check=False, capture_output=True, text=True)
+    return r.stdout if r.returncode == 0 else None
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--green", help="a file: the commits CI and the rehearsal both passed on")
     ap.add_argument("--ci-runs", help="a file: ci.yml's passed push runs on main (gh run list --json)")
     ap.add_argument("--rehearsal-runs", help="a file: update-rehearsal.yml's passed runs of main (gh run list --json)")
+    ap.add_argument(
+        "--broadcast-runs",
+        required=True,
+        help="a file: broadcast-rehearsal.yml's runs, every status (gh run list --json); a commit is eligible only on a green nightly",
+    )
     ap.add_argument("--main", default="origin/main", help="main's ref (default origin/main)")
     ap.add_argument("--depth", type=int, default=200, help="how many of main's commits to look through")
     args = ap.parse_args(argv)
@@ -198,11 +315,23 @@ def main(argv: Sequence[str] | None = None) -> int:
     else:
         ap.error("give --green, or both --ci-runs and --rehearsal-runs")
     order = git("rev-list", "--first-parent", f"--max-count={args.depth}", args.main).split()
-    sha = newest_green(order, green)
+    with open(args.broadcast_runs, encoding="utf-8") as f:
+        nightlies = nightly_results(json.load(f))
+    codes: dict[str, str | None] = {}
+
+    def code(c: str) -> str | None:
+        if c not in codes:
+            codes[c] = git_broadcast_code(c)
+        return codes[c]
+
+    sha, passed_over = newest_eligible(order, green, lambda c: broadcast_verdict(c, nightlies, code))
     if sha is None:
-        d = Decision("", "", f"no commit of {args.main}'s newest {args.depth} passed both CI and the rehearsal")
+        why = f"no commit of {args.main}'s newest {args.depth} passed CI, the update rehearsal and the broadcast rehearsal"
+        d = Decision("", "", "; ".join([why, *passed_over]))
     else:
         d = decide(sha, git_tags(), git_is_ancestor, git_changed)
+        if passed_over:
+            d = Decision(d.tag, d.sha, f"{d.reason} (newer green commits passed over: {'; '.join(passed_over)})")
     print(f"tag={d.tag}")
     print(f"sha={d.sha}")
     print(f"reason={d.reason}")

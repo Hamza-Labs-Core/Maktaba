@@ -16,8 +16,9 @@
    a second event, also trail-only. Events are append-only; real PR numbers and shas only.
    The plugin's hook reminds a session that merged a PR with no event.
 3. **A session pushes each tag**: a scheduled release session (every 30 minutes, on the
-   owner's machine) tags the newest commit of main whose CI and update rehearsal both passed as
-   the next patch version (`tools/release/next_tag.py --green FILE`), and its tag push starts the
+   owner's machine) tags the newest commit of main whose CI and update rehearsal both passed, and
+   whose broadcast code's last broadcast rehearsal nightly passed, as the next patch version
+   (`tools/release/next_tag.py --green FILE --broadcast-runs FILE`), and its tag push starts the
    release workflows (`docs/updates.md`, "How a release is made"); no workflow pushes tags. Do
    not tag by hand unless a release needs it. The same session then builds each new tag's
    snapshot (`/trail:snapshot`, or `trail skeleton --tag vX.Y.Z`), as the skill says, in a

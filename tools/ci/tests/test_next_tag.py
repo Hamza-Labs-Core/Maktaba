@@ -190,6 +190,103 @@ def test_the_rehearsal_names_its_main_run_after_the_commit_it_rehearsed() -> Non
     assert load("ci.yml")["name"] == "CI"
 
 
+# --- the broadcast rehearsal's nightly (story 50.29 §4) -----------------------------------------
+
+
+def nightly(sha: str, conclusion: str = "success", event: str = "workflow_dispatch", created: str = "", **extra: str) -> dict[str, str]:
+    run = {"headSha": sha, "headBranch": "main", "event": event, "status": "completed", "conclusion": conclusion, "createdAt": created}
+    run["displayTitle"] = nt.BROADCAST_NIGHTLY_TITLE + sha if event != "schedule" else "Broadcast rehearsal"
+    return {**run, **extra}
+
+
+def test_the_broadcast_code_is_the_rehearsals_pull_request_paths() -> None:
+    assert tuple(on(load("broadcast-rehearsal.yml"))["pull_request"]["paths"]) == nt.BROADCAST_CODE
+
+
+def test_the_broadcast_rehearsal_names_a_nightly_run_after_its_commit() -> None:
+    doc = load("broadcast-rehearsal.yml")
+    name = doc["run-name"]
+    assert f"format('{nt.BROADCAST_NIGHTLY_TITLE}{{0}}', github.sha)" in name
+    assert "github.event_name == 'schedule'" in name and "inputs.set == 'nightly'" in name
+    # the run-name's nightly is the set the jobs run
+    assert "github.event_name == 'schedule' && 'nightly'" in doc["env"]["SET"]
+    assert "schedule" in on(doc)
+
+
+def test_nightly_runs_are_the_nightly_set_on_main_only() -> None:
+    runs = [
+        nightly(SHA_A, event="schedule"),  # a scheduled run before the run-name: its headSha
+        nightly(SHA_B),  # a hand run with set: nightly
+        {"headSha": SHA_C, "headBranch": "main", "event": "push", "status": "completed", "conclusion": "success", "displayTitle": "Broadcast rehearsal"},
+        {"headSha": SHA_C, "headBranch": "feat/x", "event": "pull_request", "status": "completed", "conclusion": "success", "displayTitle": "Broadcast rehearsal"},
+        nightly(SHA_D, headBranch="feat/x"),  # a nightly-set hand run on another branch
+    ]
+    assert [c for c, _ in nt.nightly_results(runs)] == [SHA_A, SHA_B]
+
+
+def test_nightly_results_skip_runs_with_no_result_and_sort_newest_first() -> None:
+    runs = [
+        nightly(SHA_A, "failure", created="2026-11-12T03:17:00Z"),
+        nightly(SHA_B, "success", created="2026-11-14T03:17:00Z"),
+        nightly(SHA_C, "cancelled", created="2026-11-15T03:17:00Z"),
+        {**nightly(SHA_D, created="2026-11-16T03:17:00Z"), "status": "in_progress", "conclusion": ""},
+        nightly(SHA_D, "timed_out", created="2026-11-13T03:17:00Z"),
+    ]
+    assert nt.nightly_results(runs) == [(SHA_B, True), (SHA_D, False), (SHA_A, False)]
+
+
+# a linear main a <- b <- c <- d; the broadcast code changed in c (b and a share theirs)
+CODE = {"a": "edge-1", "b": "edge-1", "c": "edge-2", "d": "edge-2"}
+
+
+def verdict(sha: str, nightlies: list[tuple[str, bool]]) -> str | None:
+    return nt.broadcast_verdict(sha, nightlies, CODE.get)
+
+
+def test_eligible_on_a_green_nightly_of_its_own_commit() -> None:
+    assert verdict("d", [("d", True)]) is None
+
+
+def test_eligible_when_its_broadcast_code_has_not_changed_since_a_green_nightly() -> None:
+    assert verdict("d", [("c", True)]) is None  # d changed no broadcast file since c
+    assert verdict("b", [("d", True), ("a", True)]) is None  # a newer nightly on other code is not b's
+
+
+def test_not_eligible_when_the_newest_nightly_on_its_code_failed() -> None:
+    why = verdict("d", [("d", False), ("c", True)])
+    assert why is not None and "failed" in why
+
+
+def test_not_eligible_without_a_nightly_on_its_code() -> None:
+    why = verdict("c", [("b", True), ("a", True)])  # c changed the broadcast code: no nightly since
+    assert why is not None and "no broadcast rehearsal nightly" in why
+    assert verdict("c", []) is not None
+
+
+def test_not_eligible_when_its_code_is_not_in_the_checkout() -> None:
+    assert verdict("z", [("z", True)]) is not None
+
+
+def test_the_newest_eligible_commit_when_the_newest_green_one_is_not() -> None:
+    newest_first = list(reversed(ORDER))
+    nightlies = [("d", False), ("b", True)]  # d's code (c's too) failed its nightly; a and b's passed
+    sha, passed_over = nt.newest_eligible(newest_first, {"a", "b", "c", "d"}, lambda c: verdict(c, nightlies))
+    assert sha == "b"
+    assert len(passed_over) == 2 and all("failed" in w for w in passed_over)
+
+
+def test_everything_green_chooses_the_newest() -> None:
+    newest_first = list(reversed(ORDER))
+    sha, passed_over = nt.newest_eligible(newest_first, {"a", "b", "c", "d"}, lambda c: verdict(c, [("d", True)]))
+    assert (sha, passed_over) == ("d", [])
+
+
+def test_no_eligible_commit() -> None:
+    newest_first = list(reversed(ORDER))
+    sha, passed_over = nt.newest_eligible(newest_first, {"c", "d"}, lambda c: verdict(c, []))
+    assert sha is None and len(passed_over) == 2
+
+
 # --- against a real repository ----------------------------------------------------------------
 
 
@@ -215,10 +312,21 @@ def commit(repo: Path, path: str) -> str:
     return run(repo, "rev-parse", "HEAD")
 
 
-def choose(repo: Path, green: list[str], monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> dict[str, str]:
+def choose(
+    repo: Path,
+    green: list[str],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    nightlies: list[dict[str, str]] | None = None,
+) -> dict[str, str]:
+    import json
+
     (repo / ".green").write_text("\n".join(green) + "\n")
+    # by default a green nightly on every green commit: these cases are about the other rules
+    runs = [nightly(c) for c in green] if nightlies is None else nightlies
+    (repo / ".bc.json").write_text(json.dumps(runs))
     monkeypatch.chdir(repo)
-    assert nt.main(["--green", str(repo / ".green"), "--main", "HEAD"]) == 0
+    assert nt.main(["--green", str(repo / ".green"), "--broadcast-runs", str(repo / ".bc.json"), "--main", "HEAD"]) == 0
     return dict(line.split("=", 1) for line in capsys.readouterr().out.splitlines())
 
 
@@ -241,6 +349,37 @@ def test_in_a_repository(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
     assert choose(repo, [], monkeypatch, capsys)["tag"] == ""
 
 
+def test_in_a_repository_the_broadcast_rehearsal_gates_the_tag(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = tmp_path / "r"
+    repo.mkdir()
+    run(repo, "init", "-q", "-b", "main")
+    a = commit(repo, "api/main.go")
+    run(repo, "tag", "-a", "v0.3.82", "-m", "v0.3.82", a)
+    b = commit(repo, "web/packages/broadcast-edge/src/index.ts")  # the nightly ran here
+    c = commit(repo, "web/app.ts")  # no broadcast file changed since b
+    d = commit(repo, "streaming/internal/broadcast/up.go")  # a broadcast change, no nightly since
+
+    # everything green: d has no nightly on its code, so c (b's code, green nightly) is tagged
+    out = choose(repo, [b, c, d], monkeypatch, capsys, nightlies=[nightly(b)])
+    assert (out["tag"], out["sha"]) == ("v0.3.83", c)
+    assert "passed over" in out["reason"] and d in out["reason"]
+
+    # a green nightly on d: d is tagged
+    out = choose(repo, [b, c, d], monkeypatch, capsys, nightlies=[nightly(d, created="2"), nightly(b, created="1")])
+    assert (out["tag"], out["sha"]) == ("v0.3.83", d)
+
+    # the newest nightly on b's code failed: neither b nor c is eligible
+    red = [nightly(b, "failure", created="2"), nightly(b, created="1")]
+    out = choose(repo, [b, c], monkeypatch, capsys, nightlies=red)
+    assert (out["tag"], out["sha"]) == ("", "")
+    assert "failed" in out["reason"]
+
+    # no nightly at all: nothing is tagged (fail closed)
+    assert choose(repo, [b, c, d], monkeypatch, capsys, nightlies=[])["tag"] == ""
+
+
 def test_in_a_repository_from_both_run_lists(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
     import json
 
@@ -254,12 +393,15 @@ def test_in_a_repository_from_both_run_lists(tmp_path: Path, monkeypatch: pytest
     # CI passed on b and c; the rehearsal CI's run on b started (its headSha: c, main's head) passed
     (repo / ".ci.json").write_text(json.dumps([ci_run(c), ci_run(b)]))
     (repo / ".rh.json").write_text(json.dumps([main_rehearsal(b, head=c)]))
+    (repo / ".bc.json").write_text(json.dumps([nightly(c, event="schedule")]))
     monkeypatch.chdir(repo)
-    assert nt.main(["--ci-runs", ".ci.json", "--rehearsal-runs", ".rh.json", "--main", "HEAD"]) == 0
+    assert nt.main(["--ci-runs", ".ci.json", "--rehearsal-runs", ".rh.json", "--broadcast-runs", ".bc.json", "--main", "HEAD"]) == 0
     out = dict(line.split("=", 1) for line in capsys.readouterr().out.splitlines())
     assert (out["tag"], out["sha"]) == ("v0.3.83", b)
     with pytest.raises(SystemExit):
-        nt.main(["--ci-runs", ".ci.json", "--main", "HEAD"])
+        nt.main(["--ci-runs", ".ci.json", "--broadcast-runs", ".bc.json", "--main", "HEAD"])
+    with pytest.raises(SystemExit):  # the broadcast rehearsal's runs are never optional
+        nt.main(["--ci-runs", ".ci.json", "--rehearsal-runs", ".rh.json", "--main", "HEAD"])
 
 
 # --- the workflows its tag push starts -----------------------------------------------------------
