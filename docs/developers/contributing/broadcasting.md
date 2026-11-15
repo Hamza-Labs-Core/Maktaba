@@ -79,6 +79,10 @@ An item is publishable for one of four reasons, in this order (`video_publishabl
   credit when it has one.
 - **The page.** Per channel, the publishable share of the next 7 days and the sources that would
   add most, each with **Record permission** (pre-filled, its About page opened).
+- **On a machine.** A machine running on its copy while the home is away applies the same rule:
+  every table it reads travels in the copy (`broadcast_channels` since slot 0230; the ingest
+  tokens stay out). `TestThePublishableRuleTravelsToTheCopy` fails when one of the rule's
+  functions reads a table the copy leaves out.
 
 ## Countries
 
@@ -188,6 +192,23 @@ signed instruction:
 The cloud's side (the public forms, the queue, the strikes, the records) is in
 `cloud/internal/moderation/` and `cloud/internal/handlers/moderation/`; the runbooks are
 `docs/runbooks/cloud/broadcast-takedown.md` and `broadcast-urgent-report.md`.
+
+## When the plan ends
+
+Guest sharing and the Broadcaster tier come with Pro. When an account's plan stops carrying
+broadcasting (Pro cancelled or lapsed, a change to Basic or Free through the payment provider or
+the operator console), Maktaba Cloud ends each of its homes' guest sharing in the same
+transaction (`EndGuestSharing` in `cloud/internal/billing`):
+
+- every invite is revoked (`revoked_by = plan_ended`), so its guest passes and the TVs paired from
+  them stop at their next heartbeat, and its short code stops working;
+- an open channel goes back to invite only;
+- the edge gets the home's access state at once, and the worker's minute push retries a push that
+  failed.
+
+Subscribing again revives none of it: the old invites stay revoked and the home makes new ones.
+A failed payment keeps Pro while the provider retries (`past_due`), so nothing ends then. Without
+a plan that carries broadcasting, creating an invite answers `402 broadcast_needs_plan`.
 
 ## Who watches
 

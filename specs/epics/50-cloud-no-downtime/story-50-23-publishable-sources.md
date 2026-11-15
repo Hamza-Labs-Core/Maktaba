@@ -57,6 +57,11 @@ Everything is on the publisher's home, in the library database:
 The cloud receives none of it. When the channel's guide is published, each programme carries
 only its attribution, if it needs one. A takedown arrives as an instruction to the home (50.24).
 
+A machine running on its copy of the library database while the home is away (Epic 37) applies
+the same rule: every table the rule reads travels in the copy, `broadcast_channels` included (it
+holds no credential; the ingest tokens stay out of the copy), so a published channel stays
+limited to publishable items there too.
+
 ### 3. The scheduler, while a channel is published
 
 - **The default (`broadcast.publishable_only = true`).** When a channel is published, the

@@ -192,10 +192,16 @@ func (d *Deps) applyEvent(ctx context.Context, tx *sql.Tx, provider string, ev b
 		if err := setExtraStreams(ctx, tx, uid, effective, ev.ExtraStreams); err != nil {
 			return nil, err
 		}
-		if err := setBroadcast(ctx, tx, uid, effective, ev.Broadcast); err != nil {
+		changed, err := setBroadcast(ctx, tx, uid, effective, ev.Broadcast)
+		if err != nil {
 			return nil, err
 		}
-		return nil, SetEffectivePlan(ctx, tx, uid, effective)
+		ended, err := SetEffectivePlan(ctx, tx, uid, effective)
+		if err != nil {
+			return nil, err
+		}
+		// the edge learns of the homes whose viewer access changed once this commits
+		return []notice{d.pushAccess(append(changed, ended...))}, nil
 
 	case billingpkg.EventPaymentSucceeded, billingpkg.EventPaymentFailed:
 		uid, err := d.resolveUser(ctx, tx, ev.UserID, ev.CustomerID)
@@ -312,13 +318,68 @@ func userExists(ctx context.Context, tx *sql.Tx, uid string) (bool, error) {
 // SetEffectivePlan mirrors the plan onto the account (the access
 // token's plan claim) and onto every server it owns, which is what the
 // relay's bandwidth gate reads. The admin console's manual plan change
-// uses it too.
-func SetEffectivePlan(ctx context.Context, tx *sql.Tx, uid, plan string) error {
+// uses it too. A plan without broadcasting ends each home's guest
+// sharing (billingpkg.EndGuestSharing): it answers the homes whose
+// viewer access changed, for the caller to push to the edge after its
+// commit.
+func SetEffectivePlan(ctx context.Context, tx *sql.Tx, uid, plan string) ([]string, error) {
 	if _, err := tx.ExecContext(ctx, `UPDATE users SET plan = $2, updated_at = now() WHERE id = $1`, uid, plan); err != nil {
-		return err
+		return nil, err
 	}
-	_, err := tx.ExecContext(ctx, `UPDATE servers SET plan = $2 WHERE owner_user_id = $1`, uid, plan)
-	return err
+	if _, err := tx.ExecContext(ctx, `UPDATE servers SET plan = $2 WHERE owner_user_id = $1`, uid, plan); err != nil {
+		return nil, err
+	}
+	if !billingpkg.EndsGuestSharing(plan) {
+		return nil, nil
+	}
+	rows, err := tx.QueryContext(ctx, `SELECT id::text FROM servers WHERE owner_user_id = $1 ORDER BY id`, uid)
+	if err != nil {
+		return nil, err
+	}
+	var homes []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			_ = rows.Close()
+			return nil, err
+		}
+		homes = append(homes, id)
+	}
+	_ = rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	var ended []string
+	for _, h := range homes {
+		changed, err := billingpkg.EndGuestSharing(ctx, tx, h)
+		if err != nil {
+			return nil, err
+		}
+		if changed {
+			ended = append(ended, h)
+		}
+	}
+	return ended, nil
+}
+
+// pushAccess is the post-commit push of the homes' viewer access to the
+// broadcast edge (nil AccessPush: the worker's PushPending sends it
+// within the minute, as it does for a push that fails).
+func (d *Deps) pushAccess(servers []string) notice {
+	return func(ctx context.Context) {
+		if d.AccessPush == nil {
+			return
+		}
+		// a home both setBroadcast and SetEffectivePlan changed is pushed once
+		seen := make(map[string]bool, len(servers))
+		for _, s := range servers {
+			if seen[s] {
+				continue
+			}
+			seen[s] = true
+			d.AccessPush(ctx, s)
+		}
+	}
 }
 
 func firstNonEmpty(xs ...string) string {
@@ -351,10 +412,11 @@ func setExtraStreams(ctx context.Context, tx *sql.Tx, uid, plan string, extra in
 // setBroadcast keeps each home's broadcast items (story 50.20 §4) as the subscription carries
 // them: Broadcaster, extra channels and extra 100-viewer blocks. Dropping Pro drops Broadcaster
 // on every home of the account; a home that leaves Broadcaster keeps one channel, invite-only
-// (billingpkg.Downgrade). Nil items: the event says nothing about broadcasting.
-func setBroadcast(ctx context.Context, tx *sql.Tx, uid, plan string, items []billingpkg.BroadcastItems) error {
+// (billingpkg.Downgrade). Nil items: the event says nothing about broadcasting. It answers the
+// homes whose viewer access changed (those that left Broadcaster).
+func setBroadcast(ctx context.Context, tx *sql.Tx, uid, plan string, items []billingpkg.BroadcastItems) ([]string, error) {
 	if plan == billingpkg.PlanPro && items == nil {
-		return nil
+		return nil, nil
 	}
 	want := map[string]billingpkg.BroadcastItems{}
 	if plan == billingpkg.PlanPro {
@@ -366,7 +428,7 @@ func setBroadcast(ctx context.Context, tx *sql.Tx, uid, plan string, items []bil
 	}
 	rows, err := tx.QueryContext(ctx, `SELECT id::text, broadcast_plan IS NOT NULL FROM servers WHERE owner_user_id = $1 FOR UPDATE`, uid)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	type home struct {
 		id  string
@@ -377,11 +439,12 @@ func setBroadcast(ctx context.Context, tx *sql.Tx, uid, plan string, items []bil
 		var h home
 		if err := rows.Scan(&h.id, &h.had); err != nil {
 			_ = rows.Close()
-			return err
+			return nil, err
 		}
 		homes = append(homes, h)
 	}
 	_ = rows.Close()
+	var changed []string
 	for _, h := range homes {
 		it, ok := want[h.id]
 		if !ok {
@@ -389,17 +452,18 @@ func setBroadcast(ctx context.Context, tx *sql.Tx, uid, plan string, items []bil
 				continue
 			}
 			if err := billingpkg.Downgrade(ctx, tx, h.id); err != nil {
-				return err
+				return nil, err
 			}
 			if _, err := tx.ExecContext(ctx, `UPDATE servers SET broadcast_plan = NULL, broadcast_extra_channels = 0, broadcast_extra_viewers = 0 WHERE id = $1`, h.id); err != nil {
-				return err
+				return nil, err
 			}
+			changed = append(changed, h.id)
 			continue
 		}
 		if _, err := tx.ExecContext(ctx, `UPDATE servers SET broadcast_plan = $2, broadcast_extra_channels = $3, broadcast_extra_viewers = $4 WHERE id = $1`,
 			h.id, billingpkg.BroadcastPlanBroadcaster, min(max(it.ExtraChannels, 0), 100), min(max(it.ExtraViewers100, 0), 100)); err != nil {
-			return err
+			return nil, err
 		}
 	}
-	return nil
+	return changed, nil
 }

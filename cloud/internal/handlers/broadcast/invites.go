@@ -286,39 +286,83 @@ func (d *Deps) SetChannelAccess(w http.ResponseWriter, r *http.Request, a actor)
 		writeErr(w, http.StatusNotFound, "not_found", "")
 		return
 	}
+	// a cheap refusal before the transaction, then the same checks again under the home's row
+	// lock (accessRefused)
 	p, err := d.Store.Publisher(ctx, a.server)
 	if err != nil {
 		d.fail(w, r, "load publisher", err)
 		return
 	}
+	if d.accessRefused(w, r, p, req) {
+		return
+	}
+	tx, err := d.DB.BeginTx(ctx, nil)
+	if err != nil {
+		d.fail(w, r, "begin", err)
+		return
+	}
+	defer func() { _ = tx.Rollback() }()
+	// the home's row lock, then the plan again: a plan change that ends open access updates this
+	// row before it sets the home's channels back to invite, so either it committed before the
+	// lock was granted and the plan read here refuses open, or it waits for this change to
+	// commit and then sets the channel opened here back to invite. The lock comes before the
+	// channel's row, the order the plan change takes them in.
+	var locked int
+	if err := tx.QueryRowContext(ctx, `SELECT 1 FROM servers WHERE id = $1 FOR UPDATE`, a.server).Scan(&locked); err != nil {
+		d.fail(w, r, "lock home", err)
+		return
+	}
+	if p, err = billingpkg.PublisherTx(ctx, tx, a.server); err != nil {
+		d.fail(w, r, "load publisher", err)
+		return
+	}
+	if d.accessRefused(w, r, p, req) {
+		return
+	}
+	res, err := tx.ExecContext(ctx, `
+        UPDATE broadcast_channels SET access = COALESCE(NULLIF($3, ''), access),
+               max_viewers = COALESCE($4, max_viewers), indexable = COALESCE($5, indexable)
+         WHERE id = $1 AND server_id = $2 AND unpublished_at IS NULL`, ch, a.server, req.Access, req.MaxViewers, req.Indexable)
+	if err != nil {
+		d.fail(w, r, "change", err)
+		return
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		writeErr(w, http.StatusNotFound, "not_found", "")
+		return
+	}
+	if err := BumpAccess(ctx, tx, a.server); err != nil {
+		d.fail(w, r, "bump", err)
+		return
+	}
+	if err := tx.Commit(); err != nil {
+		d.fail(w, r, "commit", err)
+		return
+	}
+	d.pushOne(ctx, a.server)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// accessRefused runs SetChannelAccess's plan checks for p, writing the refusal (true) when one
+// fails: open needs a plan that allows it, the switch and a verified publisher; the viewer cap
+// is within the plan's.
+func (d *Deps) accessRefused(w http.ResponseWriter, r *http.Request, p billingpkg.Publisher, req channelAccessReq) bool {
 	if req.Access == billingpkg.AccessOpen {
-		code, status, err := d.openRefusal(ctx, p)
+		code, status, err := d.openRefusal(r.Context(), p)
 		if err != nil {
 			d.fail(w, r, "open check", err)
-			return
+			return true
 		}
 		if code != "" {
 			writeOpenRefusal(w, code, status)
-			return
+			return true
 		}
 	}
 	if req.MaxViewers != nil && (*req.MaxViewers < 0 || *req.MaxViewers > p.Limits().MaxConcurrentViewers) {
 		limitErr(w, "max_viewers", p.Limits().MaxConcurrentViewers)
-		return
+		return true
 	}
-	d.change(w, r, a.server, func(tx *sql.Tx) (int, error) {
-		res, err := tx.ExecContext(ctx, `
-            UPDATE broadcast_channels SET access = COALESCE(NULLIF($3, ''), access),
-                   max_viewers = COALESCE($4, max_viewers), indexable = COALESCE($5, indexable)
-             WHERE id = $1 AND server_id = $2 AND unpublished_at IS NULL`, ch, a.server, req.Access, req.MaxViewers, req.Indexable)
-		if err != nil {
-			return 0, err
-		}
-		if n, _ := res.RowsAffected(); n == 0 {
-			return http.StatusNotFound, nil
-		}
-		return http.StatusNoContent, nil
-	})
+	return false
 }
 
 type limitsReq struct {
@@ -455,10 +499,26 @@ func (d *Deps) CreateInvite(w http.ResponseWriter, r *http.Request, a actor) {
 		return
 	}
 	defer func() { _ = tx.Rollback() }()
-	// the home's row lock: two creates at once can't both pass the live-invite count
+	// the home's row lock: two creates at once can't both pass the live-invite count, and a plan
+	// change can't slip between the plan check and the insert. SetEffectivePlan updates this row
+	// before it revokes the home's invites, so either it committed before the lock was granted
+	// and the plan read again below sees it, or it waits for this create to commit and then
+	// revokes the invite made here.
 	var live int
 	if err := tx.QueryRowContext(ctx, `SELECT 1 FROM servers WHERE id = $1 FOR UPDATE`, a.server).Scan(&live); err != nil {
 		d.fail(w, r, "lock home", err)
+		return
+	}
+	if p, err = billingpkg.PublisherTx(ctx, tx, a.server); err != nil {
+		d.fail(w, r, "load publisher", err)
+		return
+	}
+	if p.Tier() == nil {
+		writeErr(w, http.StatusPaymentRequired, "broadcast_needs_plan", "sharing channels with people outside your home needs the Pro plan")
+		return
+	}
+	if !d.Store.Gated(p) {
+		writeErr(w, http.StatusForbidden, "broadcast_not_enabled", "broadcasting isn't open yet")
 		return
 	}
 	if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM broadcast_invites WHERE server_id = $1 AND revoked_at IS NULL AND expires_at > now()`, a.server).Scan(&live); err != nil {

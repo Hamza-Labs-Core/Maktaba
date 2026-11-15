@@ -12,6 +12,8 @@ web_url       = "https://app.maktaba.tv"
 # "production" on the cloud's nodes: the api's listeners must then be loopback (or
 # private) and trusted_proxies set (Epic 50 story 50.31). Production uses
 # listen_addr = "127.0.0.1:8090" and admin_listen_addr = "127.0.0.1:8091" (50.32).
+# "staging" on the staging deployment: it also answers the staging broadcast edge's
+# watch page (staging-watch.maktaba.dev) on the report route; production never does.
 # env = "production"
 # The peers whose CF-Connecting-IP is believed (CIDRs): the local cloudflared in
 # production, ["127.0.0.1/32", "::1/128"]. Empty: the client IP is the TCP peer.

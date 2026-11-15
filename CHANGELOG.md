@@ -14,6 +14,14 @@ build fails when the two differ.
 
 ### Changed
 
+- **Guest sharing ends when the plan does (Epic 50, story 50.20).** When an account's Pro or
+  Broadcaster plan ends (cancelled, lapsed, or changed to Basic or Free by the payment provider or
+  a service admin), Maktaba Cloud revokes every guest invite of its homes at that moment and
+  turns any open channel back to invite only. Guests' passes and the TVs paired from them stop at
+  their next heartbeat, and the broadcast edge is told at once. Subscribing again doesn't bring
+  the old invites back: the home makes new ones. A failed payment ends nothing while the provider
+  retries.
+
 
 - **On-demand broadcast channels send only while someone watches (Epic 50, stories 50.21,
   50.22).** The broadcast edge wakes an on-demand channel's home when its first viewer arrives,
@@ -335,6 +343,30 @@ build fails when the two differ.
   second failed probe and Broadcasting shows an outage. It is no longer an expected failure.
 
 ### Fixed
+
+- **A guest invite can't outlive the plan it was made under (Epic 50, story 50.20).** An invite
+  created at the same moment as a plan change that ends guest sharing could stay live after every
+  other invite was revoked. Maktaba Cloud now checks the plan again under the home's lock, so such
+  an invite is refused, or made first and then revoked with the rest. The broadcast edge is also
+  told of each home once per payment event, not twice.
+
+- **An open channel can't outlive the plan it was opened under (Epic 50, story 50.26).** A channel
+  switched to open, or published open, at the same moment as a plan change that ends open access
+  could stay open after the plan had set every other channel back to invite only. Maktaba Cloud
+  now checks the plan again under the home's lock, so such a change is refused, or made first and
+  then undone with the rest.
+
+- **Reports from the staging watch page reach the staging cloud (Epic 50, story 50.24).** The
+  staging deployment (`server.env = "staging"`) now takes the Report form of the staging broadcast
+  edge's watch page (`staging-watch.maktaba.dev`). Production still answers only
+  `watch.maktaba.tv`.
+
+- **A published channel stays limited to publishable items on a machine (Epic 50, story 50.23).**
+  A machine running on its copy of the library while the home was away didn't know which
+  channels were published, so it could build a published channel from its full rules, items that
+  may not be shared included. The channel's broadcast settings now travel in the machine's copy
+  (they hold no credential; the ingest tokens still don't), and the machine applies the same rule
+  as the home.
 
 - **A broadcasting home sends each segment once when the edge is busy, and many viewers of a
   new segment share one storage read (Epic 50, story 50.21).** A busy edge closes idle
@@ -4079,6 +4111,14 @@ build fails when the two differ.
   banner in between; the picture and sound stop at
   once without waiting for the home, and a picture that keeps stalling writes at most one log
   line a second.
+
+- **A TV rollback runs its reverse commit once.** An admin's rollback and the change
+  controller's next check could both queue the reverse commit of the same rollback when the
+  check landed between the rollback being written and its job being queued. The second job then
+  ran after the first had already put the previous release back on the air, found no rollback
+  point left and failed, leaving a failed TV job behind a rollback that had worked. Queueing the
+  reverse commit is now claimed first, in one database statement, so exactly one of them queues
+  it; a claim whose queueing fails is given back and retried on the next check.
 
 ## [0.2.0] - 2026-10-19
 

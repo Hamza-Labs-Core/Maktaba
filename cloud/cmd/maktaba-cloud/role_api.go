@@ -346,7 +346,7 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 	r := server.NewRouter(logger, pool, mig, build, server.DefaultOrigins(cfg),
 		server.WithTrustedProxies(cfg.Server.TrustedProxies), server.WithUserHosts(cfg.Server.UserHosts),
 		server.WithDraining(draining.Load), server.WithTVOrigins(tvcodesh.PublicPaths),
-		server.WithFormOrigins(moderationh.ReportPaths, moderationh.WatchOrigins))
+		server.WithFormOrigins(moderationh.ReportPaths, moderationh.WatchOriginsFor(cfg.Server.Staging())))
 	adminR := server.NewAdminRouter(logger, pool, mig, build, cfg.Server.AdminHost,
 		cfg.Server.AdminOriginOrDefault(), cfg.Server.TrustedProxies, server.WithDraining(draining.Load))
 	// NewRouter has already registered the health probes, and chi
@@ -402,7 +402,7 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 		billing := &billingh.Deps{
 			DB: pool.DB, Provider: payments, Users: users, Sessions: sess, Abuse: detector, Audit: auditLog,
 			Mailer: mailer, Logger: logger, Entitlements: entSigner, Broadcast: broadcastStore,
-			WebURL: cfg.Server.WebURL,
+			WebURL: cfg.Server.WebURL, AccessPush: broadcastDeps.PushAccess,
 		}
 		// Public billing routes: the catalog, the entitlement key, and the
 		// payment-provider webhook (verified by the provider, not our token).
@@ -457,6 +457,8 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 			Logger: logger, Gate: adminGate, LiveTunnels: live, Licenses: licenses,
 			// the cloud's log index on W (53.17), as the forwarder reaches it
 			Logs: &adminh.LogsSource{URL: os.Getenv(EnvLogsURL), Token: logsToken()},
+			// a plan without broadcasting ends a home's guest sharing (story 50.20)
+			AccessPush: broadcastDeps.PushAccess,
 		})
 
 		// the broadcast kill switch, for the service admin only (50.25)
@@ -651,7 +653,8 @@ func revocationDeps(cfg config.Config, servers *stores.Servers, pool *db.Pool, l
 // moderationDeps wires the takedown queue (story 50.24): the kill switch's store for a
 // programme's slate, a channel and a publisher; the broadcast signing key for a home's signed
 // instructions (without it the home's pull answers 503); the forms' bot check on maktaba.tv and
-// watch.maktaba.tv while the auth pages' check is on.
+// watch.maktaba.tv while the auth pages' check is on. The staging deployment (server.env =
+// "staging") also takes reports from the staging edge's watch page.
 func moderationDeps(cfg config.Config, servers *stores.Servers, pool *db.Pool, logger *slog.Logger, mailer mailpkg.Mailer,
 	rev *broadcasth.RevocationDeps, secret []byte, user *turnstile.Guard, fake turnstile.Verifier) *moderationh.Deps {
 	store := &moderation.Store{DB: pool.DB, Rev: rev.Store, Mailer: mailer, Logger: logger,
@@ -665,9 +668,14 @@ func moderationDeps(cfg config.Config, servers *stores.Servers, pool *db.Pool, l
 			}()
 		}}
 	salt := sha256.Sum256([]byte("maktaba-moderation-ip\x00" + string(secret)))
-	d := &moderationh.Deps{Store: store, Agents: servers, Key: rev.Rev.Key, IPSalt: salt[:], Logger: logger}
+	d := &moderationh.Deps{Store: store, Agents: servers, Key: rev.Rev.Key, IPSalt: salt[:], Logger: logger,
+		Staging: cfg.Server.Staging()}
 	if user != nil {
-		var v turnstile.Verifier = &turnstile.Client{Secret: cfg.Turnstile.Secret, Hostnames: []string{"maktaba.tv", "watch.maktaba.tv"}}
+		hosts := []string{"maktaba.tv", moderation.WatchHost}
+		if cfg.Server.Staging() {
+			hosts = append(hosts, moderationh.StagingWatchHost)
+		}
+		var v turnstile.Verifier = &turnstile.Client{Secret: cfg.Turnstile.Secret, Hostnames: hosts}
 		if fake != nil {
 			v = fake
 		}

@@ -125,6 +125,14 @@ func (s *BroadcastStore) Publisher(ctx context.Context, serverID string) (Publis
 	return loadPublisher(ctx, s.DB, serverID)
 }
 
+// PublisherTx loads a home as a publisher inside tx. Read after the home's row lock (SELECT ...
+// FOR UPDATE on servers), it sees any plan change that committed before the lock was granted:
+// SetEffectivePlan updates the same row, so a plan change and a write that checks the plan
+// under that lock are serialised.
+func PublisherTx(ctx context.Context, tx *sql.Tx, serverID string) (Publisher, error) {
+	return loadPublisher(ctx, tx, serverID)
+}
+
 func loadPublisher(ctx context.Context, q queryer, serverID string) (Publisher, error) {
 	if !IsUUID(serverID) {
 		return Publisher{}, ErrUnknownPublisher
@@ -660,7 +668,8 @@ func (s *BroadcastStore) AgreementAccepted(ctx context.Context, uid string) (boo
 
 // Downgrade is a home leaving Broadcaster for guest sharing (story 50.20, edge cases): the
 // channels past guest sharing's one are unpublished (the oldest stays), and the one left
-// becomes invite-only and on demand, so its old open links ask for an invite.
+// becomes invite-only and on demand, so its old open links ask for an invite. It bumps the
+// home's access version, so the edge learns of the change.
 func Downgrade(ctx context.Context, tx *sql.Tx, serverID string) error {
 	if _, err := tx.ExecContext(ctx, `
         UPDATE broadcast_channels SET unpublished_at = now()
@@ -669,8 +678,49 @@ func Downgrade(ctx context.Context, tx *sql.Tx, serverID string) error {
                        ORDER BY published_at, id LIMIT 1)`, serverID); err != nil {
 		return err
 	}
-	_, err := tx.ExecContext(ctx, `
+	if _, err := tx.ExecContext(ctx, `
         UPDATE broadcast_channels SET access = $2, on_demand = true
-         WHERE server_id = $1 AND unpublished_at IS NULL`, serverID, AccessInvite)
+         WHERE server_id = $1 AND unpublished_at IS NULL`, serverID, AccessInvite); err != nil {
+		return err
+	}
+	// the edge needs the channel's new access (the caller pushes after its commit)
+	_, err := tx.ExecContext(ctx, `UPDATE servers SET broadcast_access_version = broadcast_access_version + 1 WHERE id = $1`, serverID)
 	return err
+}
+
+// PlanEndedBy is the revoked_by of the invites a plan's end revoked (EndGuestSharing).
+const PlanEndedBy = "plan_ended"
+
+// EndsGuestSharing says whether an account moving to plan loses broadcasting: the plan carries
+// no broadcast tier (Free, Basic, or no live plan at all).
+func EndsGuestSharing(plan string) bool { return BroadcastFor(plan, "") == nil }
+
+// EndGuestSharing ends a home's guest sharing when its plan no longer carries broadcasting (Pro
+// or Broadcaster cancelled, lapsed or changed to a plan without it; story 50.20's edge cases):
+// every invite not yet revoked is revoked, which stops its guest passes and the TVs paired from
+// them at their next heartbeat (the edge refuses a revoked invite's passes, story 50.26), and an
+// open channel goes back to invite only. A later subscription revives none of it: the
+// publisher makes new invites. When anything changed it bumps the home's access version, so
+// the edge gets the revocations (the caller pushes after its commit; PushPending retries a
+// push that fails). It answers whether anything changed.
+func EndGuestSharing(ctx context.Context, tx *sql.Tx, serverID string) (bool, error) {
+	res, err := tx.ExecContext(ctx, `
+        UPDATE broadcast_invites SET revoked_at = now(), revoked_by = $2
+         WHERE server_id = $1 AND revoked_at IS NULL`, serverID, PlanEndedBy)
+	if err != nil {
+		return false, err
+	}
+	invites, _ := res.RowsAffected()
+	res, err = tx.ExecContext(ctx, `
+        UPDATE broadcast_channels SET access = $2
+         WHERE server_id = $1 AND unpublished_at IS NULL AND access <> $2`, serverID, AccessInvite)
+	if err != nil {
+		return false, err
+	}
+	opened, _ := res.RowsAffected()
+	if invites+opened == 0 {
+		return false, nil
+	}
+	_, err = tx.ExecContext(ctx, `UPDATE servers SET broadcast_access_version = broadcast_access_version + 1 WHERE id = $1`, serverID)
+	return err == nil, err
 }

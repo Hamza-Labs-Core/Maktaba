@@ -50,8 +50,12 @@ type Deps struct {
 	// Broadcast is the publishers' plan state and usage (story 50.20); nil: the broadcast
 	// billing routes answer 503.
 	Broadcast *billingpkg.BroadcastStore
-	WebURL    string
-	Now       func() time.Time
+	// AccessPush sends a home's viewer access to the broadcast edge after a plan change
+	// revoked its invites or changed its channels (story 50.26's push); nil leaves it to the
+	// worker's PushPending.
+	AccessPush func(ctx context.Context, serverID string)
+	WebURL     string
+	Now        func() time.Time
 }
 
 func (d *Deps) provider() billingpkg.Provider {
