@@ -1458,6 +1458,10 @@ export const APPS = [
                 "**الوصول إلى البث** (`/admin/broadcast-access`)، لمالك الجهاز الرئيسي ومدرائه: من يمكنه مشاهدة القنوات التي ينشرها الجهاز الرئيسي عبر سحابة مكتبة. كل قناة إما **بالدعوة فقط** أو، لحساب موثّق لديه إضافة المذيع، **أي شخص لديه الرابط**. أنشئ روابط دعوة ورموز تلفاز قصيرة (`MK-…`)، لكل منها بعض القنوات أو كلها، وعدد من الأجهزة وعدد من الأيام؛ واطّلع على أجهزة كل دعوة، وأزل جهازًا منها، أو اسحب الدعوة فيتوقف مشاهدوها خلال دقيقة. وتحدد حدود المشاهدة عدد الأجهزة على الشبكة الواحدة والدقائق في اليوم. لا يدفع المشاهدون شيئًا ولا يحتاجون إلى حساب. والصفحة نفسها هي **من يمكنه المشاهدة** في تطبيق سحابة مكتبة على الويب."
               ),
               t(
+                "**Viewers** on the **Broadcast** panel (**Live TV** → **Broadcast**), for the home's admins only: who watches the channels the home publishes through Maktaba Cloud. Viewers watching now and the viewer-hours of today, the last 7 days and this month against the plan's allowance; with the Broadcaster add-on, also the most viewers at once, average watch time, countries and devices. The numbers come from Maktaba Cloud, which the home asks with its own link, so no one needs the owner's cloud account. Countries and devices with fewer than 5 viewers in an hour are grouped as **Other** for that hour, and nothing personal is kept: no names, accounts or addresses.",
+                "**المشاهدون** في لوحة **البث** (**البث المباشر** ← **البث**)، لمدراء الجهاز الرئيسي فقط: من يشاهد القنوات التي ينشرها الجهاز الرئيسي عبر سحابة مكتبة. المشاهدون الآن وساعات المشاهدة اليوم وفي آخر 7 أيام وهذا الشهر مقابل حصة الخطة؛ ومع إضافة المذيع أيضًا أعلى عدد من المشاهدين في وقت واحد ومتوسط مدة المشاهدة والبلدان والأجهزة. تأتي الأرقام من سحابة مكتبة، ويطلبها الجهاز الرئيسي بارتباطه الخاص، فلا يحتاج أحد إلى حساب المالك في السحابة. تُجمع البلدان والأجهزة التي يقل مشاهدوها في ساعة عن 5 تحت **أخرى** في تلك الساعة، ولا يُحفظ شيء شخصي: لا أسماء ولا حسابات ولا عناوين."
+              ),
+              t(
                 "**Guests watch in a browser** at `watch.maktaba.tv`, with no account: an invite link opens the publisher's channels, each with its player, what is on now and next, today's programmes, the credit of a Creative Commons programme and a Report link, and a guide for all of them. Arabic is the default and English is a tap away. Channels switch with up and down, a swipe or the channel's number; when the home is offline its slate plays with a note. A page links only to the same publisher's channels. A TV without a keyboard shows a QR code that opens the pairing page on a phone, where the guest pastes the invite and the TV starts.",
                 "**يشاهد الضيوف في المتصفح** على `watch.maktaba.tv` من دون حساب: يفتح رابط الدعوة قنوات الناشر، ولكل قناة مشغّلها وما يُعرض الآن وما يليه وبرامج اليوم ونسبة البرنامج المرخّص بالمشاع الإبداعي إلى صاحبه ورابط للإبلاغ، ومعها دليل برامج لكل القنوات. العربية هي الأساس والإنجليزية على بُعد نقرة. وتتبدّل القنوات بالأعلى والأسفل أو بالسحب أو برقم القناة؛ وإن انقطع اتصال الجهاز الرئيسي عُرضت شريحته مع ملاحظة. ولا تربط الصفحة إلا بقنوات الناشر نفسه. أما التلفاز الذي لا لوحة مفاتيح له فيعرض رمز QR يفتح صفحة الربط على الهاتف، فيلصق الضيف الدعوة ويبدأ التلفاز."
               ),
@@ -1585,6 +1589,12 @@ export const APPS = [
                 "wide",
                 "The Logs page: the filters, and the lines of every part with their request ids",
                 "صفحة السجلات: المرشّحات، وأسطر كل جزء مع معرّفات طلباتها"
+              ),
+              shot(
+                "web-broadcast-viewers",
+                "wide",
+                "Viewers on the Broadcast panel: watching now, viewer-hours against the allowance, and countries and devices with Other",
+                "المشاهدون في لوحة البث: من يشاهد الآن، وساعات المشاهدة مقابل الحصة، والبلدان والأجهزة مع أخرى"
               ),
               shot(
                 "big-home",

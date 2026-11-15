@@ -6,6 +6,7 @@ import (
 	"mime"
 	"net"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strings"
 	"time"
@@ -18,28 +19,50 @@ const BroadcastPrefix = "/admin/cloud-link/broadcast/"
 // broadcasting, each with the server's own credential: the publisher's state (plan,
 // agreement), publishing and unpublishing a channel, a channel's ingest token (story 50.21)
 // the revocation list (story 50.25), and the takedown instructions, their acks, the home's
-// moderation records and a counter-notice (story 50.24). Anything else is 404: the loopback port
-// is no general proxy.
+// moderation records and a counter-notice (story 50.24), and the home's own viewer analytics
+// (story 50.28). Anything else is 404: the loopback port is no general proxy. A route's query
+// names the query keys passed on (any other key is dropped); without it no query is.
 var broadcastRoutes = []struct {
 	method string
 	path   *regexp.Regexp
+	query  []string
 }{
-	{http.MethodGet, regexp.MustCompile(`^state$`)},
-	{http.MethodPost, regexp.MustCompile(`^channels$`)},
-	{http.MethodDelete, regexp.MustCompile(`^channels/[0-9a-fA-F-]{36}$`)},
-	{http.MethodPost, regexp.MustCompile(`^ingest-token$`)},
+	{http.MethodGet, regexp.MustCompile(`^state$`), nil},
+	{http.MethodPost, regexp.MustCompile(`^channels$`), nil},
+	{http.MethodDelete, regexp.MustCompile(`^channels/[0-9a-fA-F-]{36}$`), nil},
+	{http.MethodPost, regexp.MustCompile(`^ingest-token$`), nil},
 	// the signed broadcast revocation list (story 50.25), only this home's entries
-	{http.MethodGet, regexp.MustCompile(`^revocations$`)},
+	{http.MethodGet, regexp.MustCompile(`^revocations$`), nil},
 	// takedowns and reports (story 50.24): only this home's
-	{http.MethodGet, regexp.MustCompile(`^takedowns$`)},
-	{http.MethodPost, regexp.MustCompile(`^takedowns/[0-9a-fA-F-]{36}/ack$`)},
-	{http.MethodGet, regexp.MustCompile(`^moderation$`)},
-	{http.MethodPost, regexp.MustCompile(`^moderation/counter-notices$`)},
+	{http.MethodGet, regexp.MustCompile(`^takedowns$`), nil},
+	{http.MethodPost, regexp.MustCompile(`^takedowns/[0-9a-fA-F-]{36}/ack$`), nil},
+	{http.MethodGet, regexp.MustCompile(`^moderation$`), nil},
+	{http.MethodPost, regexp.MustCompile(`^moderation/counter-notices$`), nil},
+	// the home's own viewer analytics (story 50.28): the cloud answers the credential's home only
+	{http.MethodGet, regexp.MustCompile(`^home/analytics$`), []string{"period", "date", "tz"}},
 }
 
 // BroadcastHandler serves BroadcastPrefix on loopback: the home's API asks the cloud's
 // /v1/broadcast/<path> and the agent adds the server id and secret only it holds, passing
 // the cloud's status and body back as they came.
+//
+// passQuery keeps only the route's named query keys (each one value, at most 64 bytes).
+func passQuery(r *http.Request, keys []string) string {
+	if len(keys) == 0 {
+		return ""
+	}
+	in, out := r.URL.Query(), url.Values{}
+	for _, k := range keys {
+		if v := in.Get(k); v != "" && len(v) <= 64 {
+			out.Set(k, v)
+		}
+	}
+	if len(out) == 0 {
+		return ""
+	}
+	return "?" + out.Encode()
+}
+
 func BroadcastHandler(rep *LinkReporter) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if !fromLocalProgram(r) {
@@ -47,10 +70,10 @@ func BroadcastHandler(rep *LinkReporter) http.HandlerFunc {
 			return
 		}
 		rest := strings.TrimPrefix(r.URL.Path, BroadcastPrefix)
-		allowed := false
+		allowed, query := false, ""
 		for _, rt := range broadcastRoutes {
 			if rt.method == r.Method && rt.path.MatchString(rest) {
-				allowed = true
+				allowed, query = true, passQuery(r, rt.query)
 				break
 			}
 		}
@@ -64,7 +87,7 @@ func BroadcastHandler(rep *LinkReporter) http.HandlerFunc {
 		if r.Method != http.MethodGet && r.Method != http.MethodDelete {
 			body = io.LimitReader(r.Body, 16<<10)
 		}
-		req, err := http.NewRequestWithContext(ctx, r.Method, rep.CloudAPI+"/v1/broadcast/"+rest, body)
+		req, err := http.NewRequestWithContext(ctx, r.Method, rep.CloudAPI+"/v1/broadcast/"+rest+query, body)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return

@@ -37,6 +37,9 @@ type Service struct {
 	// Moderation is Maktaba Cloud's takedowns and reports for this home (story 50.24); nil: the
 	// home is not claimed, and no instruction is asked for.
 	Moderation ModerationCloud
+	// Analytics is the home's own viewer analytics from Maktaba Cloud (story 50.28); nil: the
+	// home is not claimed.
+	Analytics AnalyticsCloud
 }
 
 func (s *Service) now() time.Time {

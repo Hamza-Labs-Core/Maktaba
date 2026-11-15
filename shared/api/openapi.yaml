@@ -13409,6 +13409,110 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
+  /tv/broadcast/analytics:
+    get:
+      tags:
+      - Broadcasting
+      summary: Who watches this home's channels
+      description: 'The home''s own viewer analytics from Maktaba Cloud, asked by the relay agent with the home''s credential (the cloud answers for that home only; the home never holds the owner''s cloud sign-in): viewers now, viewer-hours today, over 7 days and this month against the plan''s allowance, and on the Broadcaster tier the period''s peak, countries, devices, quality, errors and blocked attempts. Folded in the cloud: a country or device with fewer than 5 sessions in an hour is counted under other for that hour, and nothing finer reaches the home. report is the cloud''s answer, absent when the cloud was not reached (cloud says why).'
+      x-maktaba-role: admin
+      operationId: getBroadcastAnalytics
+      parameters:
+      - name: period
+        in: query
+        required: false
+        description: today (the default), 7d (today and the 6 days before) or month.
+        schema:
+          type: string
+          enum:
+          - today
+          - 7d
+          - month
+      - name: tz
+        in: query
+        required: false
+        description: The IANA time zone the days are counted in (default UTC).
+        schema:
+          type: string
+          maxLength: 64
+      responses:
+        '200':
+          description: The cloud's folded report.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  cloud:
+                    type: string
+                    enum:
+                    - ok
+                    - unreachable
+                    - unclaimed
+                  report:
+                    type: object
+                    properties:
+                      level:
+                        type: string
+                        enum:
+                        - hours
+                        - full
+                      time_zone:
+                        type: string
+                      k:
+                        type: integer
+                      live_viewers:
+                        type: number
+                      hours:
+                        type: object
+                        properties:
+                          today:
+                            type: number
+                          week:
+                            type: number
+                          month:
+                            type: number
+                          allowance:
+                            type:
+                            - number
+                            - 'null'
+                      period_hours:
+                        type: number
+                      peak:
+                        type: number
+                      sessions:
+                        type: number
+                      avg_watch_minutes:
+                        type: number
+                      rebuffer_ratio:
+                        type: number
+                      countries: &id001
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            key:
+                              type: string
+                            value:
+                              type: number
+                      devices: *id001
+                      quality: *id001
+                      errors: *id001
+                      blocked: *id001
+        '400':
+          description: The period or the time zone is not one the route takes.
+          content: &id002
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Admin only.
+          content: *id002
+        '409':
+          description: Broadcasting is off on this home.
+          content: *id002
   /broadcast/access:
     get:
       tags:

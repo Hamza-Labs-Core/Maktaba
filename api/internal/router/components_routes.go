@@ -64,6 +64,8 @@ var ComponentRoutes = componentTable{
 	// Maktaba's notices and reports about this home's channels (story 50.24)
 	{Exact: "GET /api/tv/broadcast/moderation", Component: "livetv.broadcast", Admin: true},
 	{Exact: "POST /api/tv/broadcast/moderation/counter-notices", Component: "livetv.broadcast", Admin: true},
+	// who watches this home's channels, from the cloud's folded report (story 50.28)
+	{Exact: "GET /api/tv/broadcast/analytics", Component: "livetv.broadcast", Admin: true},
 }
 
 // CoreRoutes never answer component_off: every other route family. A route family

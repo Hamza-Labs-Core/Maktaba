@@ -181,6 +181,25 @@ The cloud's side (the public forms, the queue, the strikes, the records) is in
 `cloud/internal/moderation/` and `cloud/internal/handlers/moderation/`; the runbooks are
 `docs/runbooks/cloud/broadcast-takedown.md` and `broadcast-urgent-report.md`.
 
+## Who watches
+
+The Broadcast panel shows the home's admins who watches its channels (story 50.28):
+`GET /api/tv/broadcast/analytics?period=today|7d|month&tz=<IANA>` answers `{cloud, report}`,
+where `report` is Maktaba Cloud's report passed on as it came.
+
+- **The way there.** The home never holds the owner's cloud sign-in. The API asks the relay agent's
+  loopback port (`/admin/cloud-link/broadcast/home/analytics`), which passes only `period`, `date`
+  and `tz` on and adds the home's own server id and secret. The cloud's home door,
+  `GET /v1/broadcast/home/analytics`, answers the home that credential names and no other: a
+  `server=` naming another home is `403`, and it answers JSON only.
+- **What it holds.** Viewers now, viewer-hours today, over 7 days and this month against the
+  plan's allowance; on the Broadcaster tier also the period's peak, average watch time, countries
+  and devices. The cloud folds per hour: a country or device with fewer than 5 sessions in an hour
+  is `other` for that hour. The home shows what it got and never anything finer.
+- **Who may ask.** The home's admins only, enforced by the API (`401` signed out, `403` for
+  anyone else) before the agent is asked. Without the cloud link the answer is
+  `{"cloud":"unclaimed"}`; with the cloud away, `{"cloud":"unreachable"}`.
+
 ## Tests
 
 - `api/internal/broadcast`: the checks (T01, T04, T05), the role test (T09), and the database
@@ -203,5 +222,8 @@ The cloud's side (the public forms, the queue, the strikes, the records) is in
 - `cloud/cmd/maktaba-cloud/moderation_integration_test.go`: notice, takedown, counter-notice and
   restore; three strikes end broadcasting; the roles (a customer `401`, the wrong staff role
   `403`).
-- `web/src/pages/Admin/LiveTV/BroadcastPanel.test.tsx` and `BroadcastNotices.test.tsx`: the page
-  and its notices, in English and Arabic.
+- `api/internal/broadcast/analytics_test.go`, `cloud/internal/handlers/broadcast/analytics_home_test.go`
+  and `analytics_home_integration_test.go`: the viewer report for admins only, and the cloud's home
+  door answering only the home its credential names (another home's id is `403`).
+- `web/src/pages/Admin/LiveTV/BroadcastPanel.test.tsx`, `BroadcastNotices.test.tsx` and
+  `BroadcastViewers.test.tsx`: the page, its notices and its viewers, in English and Arabic.

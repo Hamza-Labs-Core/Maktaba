@@ -2783,6 +2783,57 @@ a.mkt-guide__chanhead:hover {
   margin: 0;
   overflow-wrap: anywhere;
 }
+/* Broadcast panel: who watches (story 50.28, BroadcastViewers.tsx) */
+.mkt-viewers {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.mkt-viewers__period {
+  max-inline-size: 16rem;
+}
+.mkt-viewers__stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: var(--space-2);
+  margin: 0;
+}
+.mkt-viewers__stat {
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm, 4px);
+}
+.mkt-viewers__stat dt {
+  color: var(--color-muted);
+  font-size: var(--font-size-sm);
+}
+.mkt-viewers__stat dd {
+  margin: 0;
+  font-size: var(--font-size-lg, 1.25rem);
+  font-weight: 600;
+}
+.mkt-viewers__cols {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: var(--space-4);
+}
+.mkt-viewers__counts table {
+  inline-size: 100%;
+  border-collapse: collapse;
+}
+.mkt-viewers__counts th,
+.mkt-viewers__counts td {
+  padding-block: var(--space-1);
+  border-block-end: 1px solid var(--color-border);
+}
+.mkt-viewers__counts th {
+  font-weight: 400;
+  text-align: start;
+}
+.mkt-viewers__counts td {
+  text-align: end;
+  font-variant-numeric: tabular-nums;
+}
 .mkt-livetv__dvrs {
   margin: 0;
   padding-inline-start: var(--space-5);

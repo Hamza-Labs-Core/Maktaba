@@ -83,3 +83,22 @@ func TestAgentModerationRoutes(t *testing.T) {
 		t.Fatalf("the relay away: %v", err)
 	}
 }
+
+// The relay agent's analytics route (story 50.28): the period and zone go in the query, the
+// cloud's JSON comes back as it came.
+func TestAgentAnalytics(t *testing.T) {
+	var asked string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		asked = r.Method + " " + r.URL.Path + "?" + r.URL.RawQuery
+		_, _ = io.WriteString(w, `{"live_viewers":2}`)
+	}))
+	defer srv.Close()
+	a := &Agent{Addr: strings.TrimPrefix(srv.URL, "http://")}
+	raw, err := a.Analytics(context.Background(), "month", "Africa/Cairo")
+	if err != nil || string(raw) != `{"live_viewers":2}` {
+		t.Fatalf("analytics %s %v", raw, err)
+	}
+	if asked != "GET /admin/cloud-link/broadcast/home/analytics?period=month&tz=Africa%2FCairo" {
+		t.Fatalf("asked %q", asked)
+	}
+}
