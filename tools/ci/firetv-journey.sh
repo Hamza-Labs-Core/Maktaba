@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Story 58.05 T04, run by _android-tv.yml's firetv-emulator job inside the Android TV emulator
 # (from apps/tv/android): keeps logcat for the whole run, takes Google Play services off the image
-# for this run (Fire OS has none), then runs the Fire TV build's journey test.
+# for this run (Fire OS has none), then runs the Fire TV build's journey test and the guest's
+# (story 50.27 T06: Watch a broadcast with a short code, played by the app's player).
 set -euo pipefail
 
 out=app/build/emulator
@@ -26,5 +27,22 @@ if grep -qx "package:com.google.android.gms" "$out/packages.txt"; then
   exit 1
 fi
 
-./gradlew --no-daemon --stacktrace :app:connectedAmazonDebugAndroidTest \
-  -Pandroid.testInstrumentationRunnerArguments.class=com.hamzalabs.maktaba.tv.FireTvJourneyTest
+# One run per class: the test platform takes only the first of a comma-separated `class`, and a
+# filter that matches nothing passes green, so each run must show its class in the results, which
+# are kept with the logs (each run replaces the one before's).
+results=app/build/outputs/androidTest-results/connected/debug/flavors/amazon
+journey() {
+  local class="$1"
+  rm -rf "$results"
+  ./gradlew --no-daemon --stacktrace :app:connectedAmazonDebugAndroidTest \
+    -Pandroid.testInstrumentationRunnerArguments.class="$class"
+  if ! grep -qs "classname=\"$class\"" "$results"/*.xml; then
+    echo "::error::$class did not run on the emulator"
+    exit 1
+  fi
+  cp "$results"/*.xml "$out/TEST-${class##*.}.xml"
+}
+
+journey com.hamzalabs.maktaba.tv.FireTvJourneyTest
+# story 50.27 T06: Watch a broadcast with a short code, played by the app's own player
+journey com.hamzalabs.maktaba.tv.TvGuestJourneyTest

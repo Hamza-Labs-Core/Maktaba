@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Cloud
+import androidx.compose.material.icons.outlined.LiveTv
 import androidx.compose.material.icons.outlined.QrCodeScanner
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
@@ -458,6 +459,18 @@ fun HomePicker(session: AppSession, app: MaktabaApp, probe: HomeProbe = remember
             Icon(Icons.Outlined.Cloud, null, Modifier.size(18.dp))
             Spacer(Modifier.width(8.dp))
             Text(stringResource(R.string.cloud_title))
+        }
+        // story 50.27: channels someone shared, watched as a guest (no home, no account); the
+        // Player provides it, and not on a device under a parental limit
+        com.hamzalabs.maktaba.core.guest.LocalWatchBroadcast.current?.let { watch ->
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            SectionTitle(stringResource(R.string.guest_watch_broadcast))
+            Text(stringResource(R.string.guest_intro), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            OutlinedButton(onClick = { problem = null; watch() }, enabled = !connecting, modifier = Modifier.fillMaxWidth().testTag("picker-watch-broadcast")) {
+                Icon(Icons.Outlined.LiveTv, null, Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(stringResource(R.string.guest_watch_broadcast))
+            }
         }
         // adding a home: finding it, each address tried, or why none answered (Retry, attempt n)
         progress?.takeIf { it.showsOnPicker() }?.let { ConnectStatus(it, session.now, onRetry = session::retry) }

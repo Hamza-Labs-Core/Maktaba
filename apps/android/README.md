@@ -52,6 +52,14 @@ reaches a home on the Mac's network by its address (`192.0.2.20:8088`).
 
 ## How it works
 
+- **Watch a broadcast (story 50.27):** a home's published channels watched as a guest, with no
+  home and no account, in the Player (the home picker, Profile, or a `maktaba://watch/i/<invite>`
+  link). The client's `core/guest` package (`GuestClient`, `GuestPassStore`, `GuestInput`,
+  `GuestWatch`, `GuestPairingRun`) talks to `watch.maktaba.tv` and is shared with the TV app; the
+  core's `Guests` seals passes with a Keystore key (`<app>.guest`) and `GuestPlayer` plays the
+  channel through a data source that puts the newest viewer token in each request's path and
+  refuses a body cut short (`WholeBodyDataSource`, also on the home players). The states come
+  from `shared/broadcast/viewer-states.json`, as on the edge and the Apple apps.
 - **Finding a home:** a home announces itself over mDNS as `_maktaba._tcp`
   (`cmd/maktaba-server/internal/mdns`). The home picker lists every `role=home` announcement
   (a cluster's worker machines say `role=node` and are left out) at its web port (`web=` in

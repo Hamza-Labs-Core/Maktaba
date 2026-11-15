@@ -262,7 +262,8 @@ class TvPlayback(
     private fun stoppedByHome(): Boolean = timeUp != null || endedByHome
 
     private fun newPlayer(): ExoPlayer {
-        val data = OkHttpDataSource.Factory(streamHttp)
+        // a segment cut short is a load error the player tries again, never a whole one (WholeBodyDataSource)
+        val data = com.hamzalabs.maktaba.core.guest.WholeBodyDataSource.Factory(OkHttpDataSource.Factory(streamHttp))
         return ExoPlayer.Builder(context)
             .setMediaSourceFactory(DefaultMediaSourceFactory(context).setDataSourceFactory(data))
             .setAudioAttributes(
