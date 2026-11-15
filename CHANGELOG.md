@@ -315,6 +315,15 @@ build fails when the two differ.
 
 ### Fixed
 
+- **A broadcasting home sends each segment once after the edge was slow, and many viewers of a
+  new segment share one storage read (Epic 50, story 50.21).** When the edge was slow for a few
+  seconds, the home sent its waiting segments back to back; the edge refuses a fifth upload of
+  one quality within a second, so some segments went twice. The home now spaces a quality's
+  uploads at least half a second apart (the live pace of one every 4 seconds is unchanged) and
+  waits as long as the edge asks before a retry. At the edge, viewers in one place who all ask
+  for a new segment at once now wait for the first one's read instead of each reading storage;
+  each viewer's token is still checked first. The nightly 1,000-viewer rehearsal failed on both.
+
 - **Roku sends the cloud code's grant only to an address its certificate check proves.** After
   a phone approved the code, a plain HTTP or raw IP address the cloud listed could still get the
   grant when whatever answered there listed the home's relay among its addresses; anyone on the
