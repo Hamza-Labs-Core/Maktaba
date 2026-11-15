@@ -455,10 +455,26 @@ func (d *Deps) CreateInvite(w http.ResponseWriter, r *http.Request, a actor) {
 		return
 	}
 	defer func() { _ = tx.Rollback() }()
-	// the home's row lock: two creates at once can't both pass the live-invite count
+	// the home's row lock: two creates at once can't both pass the live-invite count, and a plan
+	// change can't slip between the plan check and the insert. SetEffectivePlan updates this row
+	// before it revokes the home's invites, so either it committed before the lock was granted
+	// and the plan read again below sees it, or it waits for this create to commit and then
+	// revokes the invite made here.
 	var live int
 	if err := tx.QueryRowContext(ctx, `SELECT 1 FROM servers WHERE id = $1 FOR UPDATE`, a.server).Scan(&live); err != nil {
 		d.fail(w, r, "lock home", err)
+		return
+	}
+	if p, err = billingpkg.PublisherTx(ctx, tx, a.server); err != nil {
+		d.fail(w, r, "load publisher", err)
+		return
+	}
+	if p.Tier() == nil {
+		writeErr(w, http.StatusPaymentRequired, "broadcast_needs_plan", "sharing channels with people outside your home needs the Pro plan")
+		return
+	}
+	if !d.Store.Gated(p) {
+		writeErr(w, http.StatusForbidden, "broadcast_not_enabled", "broadcasting isn't open yet")
 		return
 	}
 	if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM broadcast_invites WHERE server_id = $1 AND revoked_at IS NULL AND expires_at > now()`, a.server).Scan(&live); err != nil {

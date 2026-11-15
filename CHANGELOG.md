@@ -344,6 +344,17 @@ build fails when the two differ.
 
 ### Fixed
 
+- **A guest invite can't outlive the plan it was made under (Epic 50, story 50.20).** An invite
+  created at the same moment as a plan change that ends guest sharing could stay live after every
+  other invite was revoked. Maktaba Cloud now checks the plan again under the home's lock, so such
+  an invite is refused, or made first and then revoked with the rest. The broadcast edge is also
+  told of each home once per payment event, not twice.
+
+- **Reports from the staging watch page reach the staging cloud (Epic 50, story 50.24).** The
+  staging deployment (`server.env = "staging"`) now takes the Report form of the staging broadcast
+  edge's watch page (`staging-watch.maktaba.dev`). Production still answers only
+  `watch.maktaba.tv`.
+
 - **A published channel stays limited to publishable items on a machine (Epic 50, story 50.23).**
   A machine running on its copy of the library while the home was away didn't know which
   channels were published, so it could build a published channel from its full rules, items that

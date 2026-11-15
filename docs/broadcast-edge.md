@@ -275,7 +275,11 @@ nothing here: the cloud refuses another site's `Origin`, an unknown category and
 its limit (`400`), checks the Turnstile token on every report, limits each address to a burst of
 5 and then one a minute (`429`), and pages the on-call admin for illegal content (SEV2,
 `docs/runbooks/cloud/broadcast-urgent-report.md`). The API answers `watch.maktaba.tv` on the report
-route only (`server.WithFormOrigins`: the origin echoed, no credentials). Without
+route only (`server.WithFormOrigins`: the origin echoed, no credentials). The staging deployment
+(`server.env = "staging"` in the cloud's config) also answers `staging-watch.maktaba.dev` there,
+in its origin check and in its Turnstile hostnames, so the staging edge's page can report to it;
+production never answers that origin. The staging edge needs its own `API_ORIGIN` (the staging
+cloud) for its button to show. Without
 `API_ORIGIN`, or without the script, the page links to the copyright summary instead. The cloud
 checks the token with its own Turnstile secret, so `TURNSTILE_SITE_KEY` here and the cloud's
 Turnstile secret must belong to one widget that lists `watch.maktaba.tv`.

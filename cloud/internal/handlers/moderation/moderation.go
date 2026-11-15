@@ -41,6 +41,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -69,6 +70,25 @@ var (
 	WatchOrigins = []string{"https://watch.maktaba.tv"}
 )
 
+// StagingWatchHost is the staging broadcast edge's watch page (story 50.21), whose Report form
+// only the staging deployment answers (WatchOriginsFor). The form names the channel on
+// watch.maktaba.tv either way (the edge's REPORT_WATCH_HOST), so a report's URL rules are the
+// same on both.
+const (
+	StagingWatchHost   = "staging-watch.maktaba.dev"
+	StagingWatchOrigin = "https://" + StagingWatchHost
+)
+
+// WatchOriginsFor are the watch pages whose Report form this cloud answers: watch.maktaba.tv,
+// and on the staging deployment (server.env = "staging") the staging edge's too. Production
+// never answers the staging origin.
+func WatchOriginsFor(staging bool) []string {
+	if staging {
+		return append(slices.Clone(WatchOrigins), StagingWatchOrigin)
+	}
+	return slices.Clone(WatchOrigins)
+}
+
 // Agents checks a home's credential.
 type Agents interface {
 	VerifySecret(ctx context.Context, serverID, secret string) error
@@ -89,6 +109,9 @@ type Deps struct {
 	Gate   func(http.Handler) http.Handler
 	Logger *slog.Logger
 	Now    func() time.Time
+	// Staging answers the staging edge's watch page too (StagingWatchOrigin; server.env =
+	// "staging"). Off everywhere else, production included.
+	Staging bool
 }
 
 func (d *Deps) now() time.Time {
@@ -201,10 +224,7 @@ func (d *Deps) ipHash(r *http.Request) string {
 // formGuard refuses another site's page (any Origin but the forms' own) and checks the bot token.
 func (d *Deps) formGuard(w http.ResponseWriter, r *http.Request, token string) bool {
 	if o := strings.TrimSuffix(r.Header.Get("Origin"), "/"); o != "" {
-		ok := false
-		for _, f := range FormOrigins {
-			ok = ok || o == f
-		}
+		ok := slices.Contains(FormOrigins, o) || (d.Staging && o == StagingWatchOrigin)
 		if !ok {
 			writeErr(w, http.StatusForbidden, "origin_not_allowed", "")
 			return false

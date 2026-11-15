@@ -160,3 +160,20 @@ func TestAdminIPAllowlistAndStaffSecrets(t *testing.T) {
 		t.Fatalf("env: %+v", d.Auth)
 	}
 }
+
+// server.env = "staging" is the staging deployment: not production, and the only value that
+// answers Staging (production, a development run and anything else are not).
+func TestServerEnvStaging(t *testing.T) {
+	c, err := loadTOML(t, "[server]\nenv = \"staging\"\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !c.Server.Staging() || c.Server.Production() {
+		t.Fatalf("staging: Staging %v Production %v", c.Server.Staging(), c.Server.Production())
+	}
+	for _, env := range []string{"production", "", "development", "Staging"} {
+		if (ServerConfig{Env: env}).Staging() {
+			t.Errorf("server.env %q answers Staging", env)
+		}
+	}
+}

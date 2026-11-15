@@ -174,6 +174,33 @@ func TestPublicReportFormGuard(t *testing.T) {
 	}
 }
 
+// The staging edge's watch page is answered only by the staging deployment: its CORS origins
+// list it, and the handler's own origin check lets it through, only with Staging on. Production
+// (Staging off) refuses it like any other site, before the bot check.
+func TestStagingWatchOriginOnlyOnStaging(t *testing.T) {
+	if got := WatchOriginsFor(false); len(got) != 1 || got[0] != "https://watch.maktaba.tv" {
+		t.Fatalf("production's watch origins = %v", got)
+	}
+	if got := WatchOriginsFor(true); len(got) != 2 || got[0] != "https://watch.maktaba.tv" || got[1] != "https://staging-watch.maktaba.dev" {
+		t.Fatalf("staging's watch origins = %v", got)
+	}
+	if len(WatchOrigins) != 1 {
+		t.Fatalf("WatchOriginsFor changed the shared list: %v", WatchOrigins)
+	}
+	body := `{"category":"abuse","channel":"https://watch.maktaba.tv/ar/2f0c6a3e-5b1d-4c2a-9e7f-0a1b2c3d4e5f/c1a2b3","turnstile_token":"tok"}`
+	hdr := map[string]string{"Origin": StagingWatchOrigin}
+	prod := &fakeTurnstile{err: turnstile.ErrFailed}
+	if rec := send(router(&Deps{Turnstile: prod}), "POST", "/v1/moderation/reports", body, hdr); rec.Code != http.StatusForbidden ||
+		!strings.Contains(rec.Body.String(), "origin_not_allowed") || prod.calls != 0 {
+		t.Errorf("the staging origin on production = %d %s (turnstile calls %d)", rec.Code, rec.Body, prod.calls)
+	}
+	staging := &fakeTurnstile{err: turnstile.ErrFailed}
+	if rec := send(router(&Deps{Turnstile: staging, Staging: true}), "POST", "/v1/moderation/reports", body, hdr); rec.Code != http.StatusForbidden ||
+		!strings.Contains(rec.Body.String(), turnstile.CodeFailed) || staging.calls != 1 {
+		t.Errorf("the staging origin on staging did not reach the bot check: %d %s", rec.Code, rec.Body)
+	}
+}
+
 // A home's routes need its own credential; the admin routes are 403 without the staff gate.
 func TestHomeAndAdminRoutesAreGuarded(t *testing.T) {
 	r := router(&Deps{Agents: fakeAgents{}})

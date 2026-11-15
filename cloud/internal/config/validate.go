@@ -175,6 +175,11 @@ func ValidatePeerAddr(addr string) error {
 // Production is server.env = "production": the cloud's nodes.
 func (s ServerConfig) Production() bool { return s.Env == "production" }
 
+// Staging is server.env = "staging": the staging deployment, which the staging broadcast edge
+// (staging-watch.maktaba.dev) talks to. It only widens the watch page's Report form to that
+// edge's origin (moderation.StagingWatchHost); production never answers it.
+func (s ServerConfig) Staging() bool { return s.Env == "staging" }
+
 // validateOrigin is the api's side of Epic 50 story 50.31: in production its listeners are
 // on loopback (or a private address, Phase 2's load balancer) and only Cloudflare reaches
 // them, so it needs the peers whose CF-Connecting-IP it believes; the aop fallback needs its
