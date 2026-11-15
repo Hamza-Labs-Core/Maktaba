@@ -225,12 +225,15 @@ func TestServerLogEcho(t *testing.T) {
 // T04: an hour's file rolls at MaxSegment; a closed hour is compressed and still read.
 func TestRollAndCompress(t *testing.T) {
 	k, c, _ := newKeeper(t, -1)
-	k.segs.maxSize = 1 << 20 // MaxSegment (64 MB), scaled down
+	// MaxSegment (64 MB), scaled down. Kept small: the test is about the roll, not
+	// volume, and 1 MB through spool, zstd and read took over 1.2 s under -race on a CI
+	// runner (#1428).
+	k.segs.maxSize = 64 << 10
 	pad := strings.Repeat("x", 1000)
 	f, _ := k.Spool("api", "")
-	for i := 0; i < 1100; i++ { // ~1.1 MB
+	for i := 0; i < 110; i++ { // ~115 KB: one full part, the rest in part 1
 		fmt.Fprintf(f, `{"level":"info","msg":"big","n":%d,"pad":%q}`+"\n", i, pad)
-		if i%200 == 0 {
+		if i%20 == 0 {
 			k.Flush()
 		}
 	}
@@ -250,8 +253,8 @@ func TestRollAndCompress(t *testing.T) {
 		t.Fatalf("a new hour, a new file: %v", err)
 	}
 	got := k.Read(Query{Services: []string{"api"}, Since: time.Date(2026, 11, 6, 0, 0, 0, 0, time.UTC), Limit: 2000})
-	if len(got.Lines) != 1101 || got.Truncated {
-		t.Fatalf("read %d lines (truncated %v), want 1101", len(got.Lines), got.Truncated)
+	if len(got.Lines) != 111 || got.Truncated {
+		t.Fatalf("read %d lines (truncated %v), want 111", len(got.Lines), got.Truncated)
 	}
 }
 
