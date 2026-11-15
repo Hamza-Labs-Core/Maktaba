@@ -3,7 +3,9 @@ package cluster
 import (
 	"database/sql"
 	"os"
+	"regexp"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/clustertest"
@@ -102,6 +104,11 @@ var copyReviewed = []string{
 	// source, times, no secret); a promoted copy keeps them standing, so it never airs an
 	// item Maktaba took down
 	"broadcast_takedowns",
+	// slot 0230 (story 50.23): each channel's broadcast settings and state (a slug, access,
+	// mode, rungs, countries, the edge's opaque channel id, the uplink's report, no
+	// credential); copied so channel_publishable_only() limits a published channel on a
+	// machine running on its copy as it does on the home
+	"broadcast_channels",
 }
 
 // Every table of a migrated database is either reviewed as copied or left out.
@@ -116,6 +123,56 @@ func TestEveryTableIsDecidedForTheCopy(t *testing.T) {
 	if missing, extra := diff(want, got); len(missing)+len(extra) > 0 {
 		t.Fatalf("the copy's tables changed: copied and not reviewed %v (review them: copyReviewed, or "+
 			"cluster_copy_excluded() for a secret or a machine's own); reviewed and not copied %v", extra, missing)
+	}
+}
+
+// The publishable rule (slots 0228, 0229) reads only tables a machine's copy holds: a machine
+// running on its copy while the home is away limits a published channel to publishable items
+// exactly as the home does. Slot 0227 left broadcast_channels out, and channel_publishable_only
+// then answered false on every copy (slot 0230 copies it).
+func TestThePublishableRuleTravelsToTheCopy(t *testing.T) {
+	if os.Getenv("MAKTABA_TEST_PG_URL") == "" {
+		t.Skip("MAKTABA_TEST_PG_URL unset")
+	}
+	db, _ := clustertest.ScratchDB(t)
+	excluded := tablesOf(t, db, `SELECT unnest(cluster_copy_excluded())`)
+	rule := []string{"channel_publishable_only", "video_publishable_reason", "video_permission_source",
+		"video_youtube_id", "video_attribution", "video_taken_down"}
+	rows, err := db.Query(`SELECT proname, prosrc FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+	                        WHERE n.nspname = 'public' AND proname = ANY($1::text[])`, "{"+strings.Join(rule, ",")+"}")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	seen := map[string]bool{}
+	for rows.Next() {
+		var name, src string
+		if err := rows.Scan(&name, &src); err != nil {
+			t.Fatal(err)
+		}
+		seen[name] = true
+		for _, table := range excluded {
+			if regexp.MustCompile(`\b` + table + `\b`).MatchString(src) {
+				t.Errorf("%s reads %s, which a machine's copy leaves out: on a copy it answers otherwise", name, table)
+			}
+		}
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range rule {
+		if !seen[name] {
+			t.Errorf("the rule's function %s is gone: update this test", name)
+		}
+	}
+	// the channel's state, the input that was missing, is in the copy
+	var copied bool
+	if err := db.QueryRow(`SELECT EXISTS (SELECT 1 FROM cluster_copy_tables() c WHERE c::text = 'broadcast_channels')`).Scan(&copied); err != nil || !copied {
+		t.Fatalf("broadcast_channels in cluster_copy_tables() = %v (%v)", copied, err)
+	}
+	// the ingest tokens, a credential, still are not
+	if err := db.QueryRow(`SELECT EXISTS (SELECT 1 FROM cluster_copy_tables() c WHERE c::text = 'broadcast_ingest_tokens')`).Scan(&copied); err != nil || copied {
+		t.Fatalf("broadcast_ingest_tokens in cluster_copy_tables() = %v (%v)", copied, err)
 	}
 }
 

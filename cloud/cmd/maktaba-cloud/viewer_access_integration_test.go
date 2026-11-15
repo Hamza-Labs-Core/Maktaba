@@ -13,6 +13,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -95,13 +96,19 @@ var accessKey *bc.Key
 
 func accessEnvKey(t *testing.T, edge *fakeEdge, adjust func(*config.Config)) (*env, bc.Key) {
 	t.Helper()
+	return accessEnvPay(t, edge, nil, adjust)
+}
+
+// accessEnvPay is accessEnvKey with a payment provider (nil: none).
+func accessEnvPay(t *testing.T, edge *fakeEdge, pay *fakeProvider, adjust func(*config.Config)) (*env, bc.Key) {
+	t.Helper()
 	seed := make([]byte, 32)
 	_, _ = rand.Read(seed)
 	key := filepath.Join(t.TempDir(), "broadcast.key")
 	if err := os.WriteFile(key, seed, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	e := newEnvCfg(t, nil, func(c *config.Config) {
+	e := newEnvCfg(t, pay, func(c *config.Config) {
 		c.Broadcast.KeyPath = key
 		c.Broadcast.IngestURL = edge.srv.URL
 		c.Broadcast.WatchURL = "https://watch.example.test"
@@ -351,5 +358,138 @@ func TestViewerInvitesOffWithoutAKey(t *testing.T) {
 	owner, h, _ := publisherHome(e, "c@example.test", "chome", "news")
 	if r := owner.do("POST", "/v1/broadcast/homes/"+h.id+"/invites", map[string]any{}); r.code != http.StatusServiceUnavailable || r.errCode() != "broadcast_disabled" {
 		t.Fatalf("no key: %d %s", r.code, r.body)
+	}
+}
+
+// Story 50.20's edge cases on the api role's real router: when a home's plan stops carrying
+// broadcasting (Pro cancelled or changed to Basic through the provider's webhook, or a service
+// admin's manual change), its guest sharing ends at once: every invite is revoked, so its guest
+// passes and paired TVs stop at their next heartbeat, an open channel goes back to invite only,
+// and the edge is told in the same request. Subscribing again revives none of it, and a home
+// with no broadcasting plan can make no new invite.
+func TestGuestSharingEndsWithThePlan(t *testing.T) {
+	withPrices(t)
+	edge := newFakeEdge(t)
+	e, _ := accessEnvPay(t, edge, &fakeProvider{}, nil)
+	const email = "plan@example.test"
+	owner, h, ch := publisherHome(e, email, "planhome", "news")
+	uid := e.userID(email)
+	base := "/v1/broadcast/homes/" + h.id
+	hook := e.client()
+	at := time.Now().Add(-time.Hour)
+	send := func(id, kind, status, plan string) {
+		t.Helper()
+		at = at.Add(time.Minute)
+		body, sig := signedEvent(subEvent(id, kind, "sub_g", "cus_g", uid, status, plan, at, at.Add(720*time.Hour)))
+		hook.mustStatus(hook.webhook("testpay", body, sig), http.StatusOK)
+	}
+	send("evt_g1", "subscription_started", "active", "pro")
+	inv := owner.mustStatus(owner.do("POST", base+"/invites", map[string]any{"channels": []string{ch}, "max_uses": 3}), http.StatusCreated).json(t)
+	tv := h.agent.mustStatus(h.agent.do("POST", "/v1/broadcast/invites", map[string]any{"max_uses": 2}), http.StatusCreated).json(t)
+	// a second home of another account keeps its invites whatever this account does
+	other, h2, ch2 := publisherHome(e, "keep@example.test", "keephome", "sport")
+	keep := other.mustStatus(other.do("POST", "/v1/broadcast/homes/"+h2.id+"/invites", map[string]any{"channels": []string{ch2}}), http.StatusCreated).json(t)
+
+	// a failed payment keeps Pro in force (past_due): nothing ends
+	send("evt_g2", "subscription_changed", "past_due", "pro")
+	if n := e.count(`SELECT count(*) FROM broadcast_invites WHERE server_id = $1 AND revoked_at IS NULL`, h.id); n != 2 {
+		t.Fatalf("past_due revoked invites: %d live", n)
+	}
+
+	// the provider gives up: Pro lapses, and with it the guest sharing
+	before := edge.last(t).Version
+	send("evt_g3", "subscription_cancelled", "canceled", "pro")
+	if n := e.count(`SELECT count(*) FROM broadcast_invites WHERE server_id = $1 AND revoked_at IS NULL`, h.id); n != 0 {
+		t.Fatalf("a lapsed Pro left %d live invites", n)
+	}
+	if n := e.count(`SELECT count(*) FROM broadcast_invites WHERE server_id = $1 AND revoked_by = $2`, h.id, billingpkg.PlanEndedBy); n != 2 {
+		t.Fatalf("invites revoked by the plan's end: %d", n)
+	}
+	s := edge.last(t)
+	if s.Pub != h.id || s.Version <= before || len(s.RevokedInvites) != 2 || len(s.Codes) != 0 || s.OpenAllowed {
+		t.Fatalf("the edge after the plan ended: %+v", s)
+	}
+	for _, id := range []any{inv["id"], tv["id"]} {
+		if !slices.Contains(s.RevokedInvites, id.(string)) {
+			t.Fatalf("invite %v not revoked at the edge: %v", id, s.RevokedInvites)
+		}
+	}
+	if e.count(`SELECT count(*) FROM servers WHERE id = $1 AND broadcast_access_version > broadcast_access_pushed`, h.id) != 0 {
+		t.Fatal("the plan's end was left for the worker; it is pushed at once")
+	}
+	if e.count(`SELECT count(*) FROM broadcast_invites WHERE id = $1 AND revoked_at IS NULL`, keep["id"]) != 1 {
+		t.Fatal("another account's invite was revoked")
+	}
+	list := owner.mustStatus(owner.do("GET", base+"/invites", nil), http.StatusOK).json(t)["invites"].([]any)
+	for _, x := range list {
+		if m := x.(map[string]any); m["status"] != "revoked" {
+			t.Fatalf("an invite after the plan ended: %v", m)
+		}
+	}
+	// no plan, no new invite (the role rule holds on both doors)
+	if r := owner.do("POST", base+"/invites", map[string]any{}); r.code != http.StatusPaymentRequired || r.errCode() != "broadcast_needs_plan" {
+		t.Fatalf("an invite with no plan: %d %s", r.code, r.body)
+	}
+	if r := h.agent.do("POST", "/v1/broadcast/invites", map[string]any{}); r.code != http.StatusPaymentRequired {
+		t.Fatalf("the home's invite with no plan: %d", r.code)
+	}
+
+	// Pro again: the old invites stay revoked; new ones work
+	send("evt_g4", "subscription_started", "active", "pro")
+	if n := e.count(`SELECT count(*) FROM broadcast_invites WHERE server_id = $1 AND revoked_at IS NULL`, h.id); n != 0 {
+		t.Fatalf("subscribing again revived %d invites", n)
+	}
+	if s := edge.last(t); len(s.RevokedInvites) != 2 {
+		t.Fatalf("subscribing again: %+v", s)
+	}
+	fresh := owner.mustStatus(owner.do("POST", base+"/invites", map[string]any{"channels": []string{ch}}), http.StatusCreated).json(t)
+
+	// a change to Basic (no broadcasting) ends it the same way
+	send("evt_g5", "subscription_changed", "active", "basic")
+	if e.count(`SELECT count(*) FROM broadcast_invites WHERE id = $1 AND revoked_by = $2`, fresh["id"], billingpkg.PlanEndedBy) != 1 {
+		t.Fatal("Basic kept guest sharing")
+	}
+	if s := edge.last(t); len(s.RevokedInvites) != 3 {
+		t.Fatalf("Basic at the edge: %+v", s)
+	}
+	// an event that changes nothing about broadcasting pushes nothing more
+	pushes := len(edge.posts)
+	send("evt_g6", "subscription_changed", "active", "basic")
+	if len(edge.posts) != pushes {
+		t.Fatalf("a repeated Basic pushed again: %d → %d", pushes, len(edge.posts))
+	}
+}
+
+// The same rule through the operator console's manual plan change (no payment provider billing
+// the plan): a Broadcaster home with an open channel set to Free loses its invites and its open
+// channel, and the edge is told; a manual change between plans that both carry broadcasting
+// ends nothing.
+func TestGuestSharingEndsWithAManualPlanChange(t *testing.T) {
+	edge := newFakeEdge(t)
+	e, _ := accessEnv(t, edge, nil)
+	const email = "manual@example.test"
+	owner, h, ch := publisherHome(e, email, "manualhome", "news")
+	uid := e.userID(email)
+	inv := owner.mustStatus(owner.do("POST", "/v1/broadcast/homes/"+h.id+"/invites", map[string]any{"channels": []string{ch}}), http.StatusCreated).json(t)
+	e.exec(`UPDATE broadcast_channels SET access = 'open' WHERE id = $1`, ch)
+	ops := e.serviceAdmin("ops@example.test")
+	path := "/v1/admin/accounts/" + uid + "/plan"
+	// Role rule: the owner can't change their own plan on the console
+	if r := owner.do("POST", path, map[string]string{"plan": "free", "reason": "x"}); r.code != http.StatusUnauthorized {
+		t.Fatalf("the owner on the console: %d", r.code)
+	}
+	ops.mustStatus(ops.do("POST", path, map[string]string{"plan": "pro", "reason": "goodwill"}), http.StatusNoContent)
+	if e.count(`SELECT count(*) FROM broadcast_invites WHERE id = $1 AND revoked_at IS NULL`, inv["id"]) != 1 {
+		t.Fatal("Pro to Pro ended guest sharing")
+	}
+	ops.mustStatus(ops.do("POST", path, map[string]string{"plan": "free", "reason": "refund"}), http.StatusNoContent)
+	if e.count(`SELECT count(*) FROM broadcast_invites WHERE id = $1 AND revoked_by = $2`, inv["id"], billingpkg.PlanEndedBy) != 1 {
+		t.Fatal("Free kept the invite")
+	}
+	if e.count(`SELECT count(*) FROM broadcast_channels WHERE id = $1 AND access = 'invite'`, ch) != 1 {
+		t.Fatal("Free kept an open channel")
+	}
+	if s := edge.last(t); len(s.RevokedInvites) != 1 || s.RevokedInvites[0] != inv["id"] || s.Chans[bc.ChannelID(h.id, "news")].Access != "invite" {
+		t.Fatalf("the edge after a manual Free: %+v", s)
 	}
 }

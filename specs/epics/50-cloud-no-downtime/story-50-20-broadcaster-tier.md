@@ -203,6 +203,13 @@ notice.
   - An `open` channel becomes `invite` at the same time, and the old links ask for an invite.
 - **Pro lapses** (the provider gave up retrying). Broadcasting goes `off` with Pro, the same rule
   as 50.19: no plan, no relay and no broadcast. Viewers see `broadcast.offAir`.
+- **Guest sharing ends with the plan.** When an account's plan stops carrying broadcasting (Pro
+  cancelled or lapsed, or changed to Basic or Free, by the provider or by a service admin), the
+  cloud revokes every invite of each of its homes in the same transaction, and an open channel
+  becomes `invite`. The invites' guest passes and paired TVs stop at their next heartbeat (50.26),
+  and the home's access state is pushed to the edge at once. Subscribing again revives none of
+  it: the publisher makes new invites. `past_due` keeps Pro in force, so a failed payment ends
+  nothing while the provider retries.
 - **Two homes on one account.** Plans are per home (`servers.broadcast_plan`), as 50.19's are, and
   the publisher handle is per account. A second home needs its own Broadcaster.
 - **Month rollover during a session.** The session stays in its mode. New sessions start in
