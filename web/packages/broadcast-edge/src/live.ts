@@ -200,6 +200,8 @@ async function viaStream(env: Env, claims: ViewerClaims): Promise<Response> {
 
 async function master(env: Env, claims: ViewerClaims): Promise<Response> {
   const mode = claims.mode === "lowest" ? "lowest" : "full";
+  // a player starting: the session is a viewer (an on-demand channel's first wakes the home)
+  await channel(env, claims.ch).viewer(claims.session, claims.mode);
   if (globalDelivery(env) === "stream") return viaStream(env, claims);
   let redirect: PlaylistAnswer | null = null;
   const { res, status } = await cached(masterCacheKey(env, claims.ch, mode), async () => {
@@ -270,6 +272,7 @@ async function beat(request: Request, env: Env, claims: ViewerClaims): Promise<R
   const report = await readReport(request);
   const stop = await stopVerdict(env, { pub: claims.pub, ch: claims.ch }, now());
   if (stop?.stop === "off_air") return offAir(stop.reason);
+  await channel(env, claims.ch).viewer(claims.session, claims.mode);
   const r = await env.PUBLISHER.get(env.PUBLISHER.idFromName(claims.pub)).beat(
     claims.pub,
     claims.session,

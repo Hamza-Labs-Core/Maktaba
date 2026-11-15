@@ -11,8 +11,18 @@
 // playlist); a slate verdict loops the slate in every rung's playlist until it ends. The home
 // hears each change on its control socket: revoked, slate, restored.
 //
+// On demand (50.22 §2): the home names its channel's mode when its control socket connects. The
+// channel keeps its viewers (each play, master playlist and heartbeat, by session), sends an
+// on-demand home `wake` at the first one, and `sleep` once the last has gone (no heartbeat for
+// SESSION_TTL_MS; the home then stops after its own 5-minute grace). An always-on channel never
+// gets either. It sends `limits` (the rungs the home should send, top first; [] for all) when the
+// plan's rung count or mode leaves a rung no viewer can play: in `lowest` with no `full` viewer
+// left, only the lowest rung.
+//
 // It never looks inside a segment and never decides what airs: it orders what the home sent.
 import type { Geo } from "./geo";
+import { SESSION_TTL_MS } from "./limits";
+import type { Mode } from "./tokens";
 import { DurableObject } from "cloudflare:workers";
 import { now } from "./clock";
 import type { Delivery, Env } from "./env";
@@ -52,12 +62,19 @@ export const MAX_SLATE = 8;
 const ALARM_EVERY_MS = 60_000;
 /** A channel re-reads the revocation list at most this often (a missed fan-out, a home entry). */
 export const REVOCATION_CHECK_MS = 10_000;
+/**
+ * A woken on-demand channel shows `waiting` (tuning) until its first segment, for at most this
+ * long (the target is 15 s); then its status is what its segments say.
+ */
+export const WAKE_WAIT_MS = 60_000;
 
 export type ChannelStatus = "waiting" | "live" | "offline_slate" | "off_air" | "revoked";
 
 /** The plan as the publisher's PublisherControl pushes it to its channels (50.20). */
 export interface ChannelPlan {
   off: boolean;
+  /** the mode a new viewer session gets (50.20 §2): `lowest` lets the home drop its top rungs */
+  mode?: Mode;
   max_rungs?: number;
   max_top_kbps?: number;
   delivery?: Delivery | null;
@@ -85,6 +102,14 @@ interface State {
   /** that token's iat: an older token never replaces a newer one's rule */
   geoIat?: number;
   counters: { segments_in: number; bytes_in: number; playlist_misses: number };
+  /** the home's mode, named on its control socket's connect: on demand wakes and sleeps */
+  onDemand?: boolean;
+  /** the channel's viewers: session → last seen (play, master, heartbeat) and its mode */
+  viewers?: Record<string, { at: number; mode: "full" | "lowest" }>;
+  /** on demand: when `wake` was sent; null or absent: asleep */
+  wokeAt?: number | null;
+  /** the rungs last sent in `limits` ([] or absent: all) */
+  limits?: string[];
 }
 
 export interface PrecheckInput {
@@ -179,6 +204,8 @@ export class ChannelLive extends DurableObject<Env> {
 
   status(at: number = now()): ChannelStatus {
     if (this.s.verdict?.stop === "off_air") return "revoked";
+    // on demand: asleep, or woken and tuning, until the first segment (or WAKE_WAIT_MS)
+    if (this.s.onDemand && (this.s.wokeAt == null || this.tuning(at))) return "waiting";
     if (!this.s.onAir) return "off_air";
     const all = Object.values(this.s.rungs).map((r) => rungStatus(r, at));
     if (all.length === 0) return "waiting";
@@ -187,6 +214,91 @@ export class ChannelLive extends DurableObject<Env> {
     if (has("offline_slate")) return "offline_slate";
     if (all.every((x) => x === "off_air")) return "off_air";
     return "waiting";
+  }
+
+  /** tuning: woken, no segment since, and not yet WAKE_WAIT_MS ago. */
+  private tuning(at: number): boolean {
+    const w = this.s.wokeAt;
+    if (w == null || at - w >= WAKE_WAIT_MS) return false;
+    return !Object.values(this.s.rungs).some((r) => r.lastSeq !== null && r.lastAt >= w);
+  }
+
+  // ---- demand: viewers, wake, sleep, limits (50.22 §2, 50.26) -------------------------------
+
+  /**
+   * viewer records a session's play, master playlist or heartbeat; the first viewer of an
+   * asleep on-demand channel wakes the home. It answers the channel's status (`waiting` while
+   * the home starts).
+   */
+  async viewer(session: string, mode: Mode): Promise<ChannelStatus> {
+    const t = now();
+    if (session && (mode === "full" || mode === "lowest")) {
+      this.s.viewers = { ...this.liveViewers(t), [session]: { at: t, mode } };
+      this.demand(t);
+      await this.save();
+      await this.ensureAlarm();
+    }
+    return this.status(t);
+  }
+
+  /** liveViewers is the viewers with a heartbeat younger than SESSION_TTL_MS. */
+  private liveViewers(t: number): NonNullable<State["viewers"]> {
+    const out: NonNullable<State["viewers"]> = {};
+    for (const [k, v] of Object.entries(this.s.viewers ?? {}))
+      if (t - v.at <= SESSION_TTL_MS) out[k] = v;
+    return out;
+  }
+
+  /**
+   * demand settles what the home is told: an on-demand channel with a viewer is woken, one with
+   * none is put to sleep, and the limits follow the plan and the viewers. True when it changed.
+   */
+  private demand(t: number): boolean {
+    const before = JSON.stringify([this.s.viewers ?? {}, this.s.wokeAt ?? null, this.s.limits]);
+    this.s.viewers = this.liveViewers(t);
+    const watched = Object.keys(this.s.viewers).length > 0;
+    if (!this.s.onDemand) {
+      this.s.wokeAt = null;
+    } else if (watched && this.s.wokeAt == null) {
+      this.s.wokeAt = t;
+      this.notify({ type: "wake" });
+    } else if (!watched && this.s.wokeAt != null) {
+      this.s.wokeAt = null;
+      this.notify({ type: "sleep" });
+    }
+    const want = this.wantLimits();
+    if (JSON.stringify(want) !== JSON.stringify(this.s.limits ?? [])) {
+      this.s.limits = want;
+      this.notify({ type: "limits", rungs: want });
+    }
+    return before !== JSON.stringify([this.s.viewers, this.s.wokeAt ?? null, this.s.limits]);
+  }
+
+  /**
+   * wantLimits is the rungs the home should send, top first, or [] for all: the plan's rung
+   * count, and in `lowest` with no `full` viewer left (a session keeps its mode, 50.26), only
+   * the lowest of those.
+   */
+  private wantLimits(): string[] {
+    const order = this.s.order;
+    if (order.length === 0) return [];
+    const max = this.s.plan.max_rungs;
+    let allowed = max !== undefined ? order.slice(0, Math.max(1, max)) : order.slice();
+    const full = Object.values(this.s.viewers ?? {}).some((v) => v.mode === "full");
+    if (this.s.plan.mode === "lowest" && !full) allowed = allowed.slice(-1);
+    return allowed.length < order.length ? allowed : [];
+  }
+
+  /**
+   * noteControl takes what the home's control socket connect says: its mode (X-Maktaba-Mode)
+   * and the ingest token's rungs, top first.
+   */
+  async noteControl(mode: string, rungs: string[]): Promise<void> {
+    const onDemand = mode === "on_demand";
+    if (!onDemand) this.s.wokeAt = null;
+    this.s.onDemand = onDemand;
+    if (rungs.length > 0) this.s.order = rungs;
+    await this.save();
   }
 
   /** precheck answers before the Worker writes anything to R2 (§2's guards and retries). */
@@ -290,6 +402,7 @@ export class ChannelLive extends DurableObject<Env> {
 
   async setPlan(plan: ChannelPlan): Promise<void> {
     this.s.plan = plan;
+    this.demand(now());
     await this.save();
     if (plan.off) this.notify({ type: "plan_off" });
   }
@@ -526,10 +639,14 @@ export class ChannelLive extends DurableObject<Env> {
   override async alarm(): Promise<void> {
     const t = now();
     for (const [name, r] of Object.entries(this.s.rungs)) this.step(name, r, t);
+    // the last viewer gone: an on-demand home is put to sleep; the limits follow the viewers
+    this.demand(t);
     await this.sweep(t);
     await this.report();
     await this.save();
     const busy =
+      Object.keys(this.s.viewers ?? {}).length > 0 ||
+      this.s.wokeAt != null ||
       Object.values(this.s.rungs).some((r) => Object.keys(r.written).length > 0) ||
       Object.keys(this.s.retired).length > 0 ||
       this.status(t) === "live" ||
@@ -638,7 +755,21 @@ export class ChannelLive extends DurableObject<Env> {
     const pair = new WebSocketPair();
     const [client, server] = [pair[0], pair[1]];
     this.ctx.acceptWebSocket(server);
-    server.send(JSON.stringify({ type: "hello", status: this.status(), at: now() }));
+    const t = now();
+    server.send(JSON.stringify({ type: "hello", status: this.status(t), at: t }));
+    // a (re)connected home hears what it should be doing now: woken while viewers watch, and
+    // the current limits (it may have restarted and forgotten both)
+    const wokeBefore = this.s.wokeAt ?? null;
+    const limitsBefore = JSON.stringify(this.s.limits ?? []);
+    const changed = this.demand(t); // a wake or limits it sends reaches this socket too
+    if (this.s.onDemand && this.s.wokeAt != null && wokeBefore != null)
+      server.send(JSON.stringify({ type: "wake", at: t }));
+    const lim = this.s.limits ?? [];
+    if (lim.length > 0 && JSON.stringify(lim) === limitsBefore)
+      server.send(JSON.stringify({ type: "limits", rungs: lim, at: t }));
+    if (changed) await this.save();
+    if (this.s.wokeAt != null || Object.keys(this.s.viewers ?? {}).length > 0)
+      await this.ensureAlarm();
     return new Response(null, { status: 101, webSocket: client });
   }
 

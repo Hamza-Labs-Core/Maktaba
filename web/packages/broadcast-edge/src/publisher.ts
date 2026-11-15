@@ -119,6 +119,7 @@ export class PublisherControl extends DurableObject<Env> {
       this.s.channels.map((ch) =>
         this.env.CHANNEL.get(this.env.CHANNEL.idFromName(ch)).setPlan({
           off: plan.mode === "off",
+          mode: plan.mode,
           max_rungs: plan.max_rungs,
           max_top_kbps: plan.max_top_kbps,
           delivery: plan.delivery ?? null,
@@ -140,6 +141,7 @@ export class PublisherControl extends DurableObject<Env> {
     if (p) {
       await this.env.CHANNEL.get(this.env.CHANNEL.idFromName(ch)).setPlan({
         off: p.mode === "off",
+        mode: p.mode,
         max_rungs: p.max_rungs,
         max_top_kbps: p.max_top_kbps,
         delivery: p.delivery ?? null,

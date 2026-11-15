@@ -228,8 +228,8 @@ func TestCtlAlwaysOn(t *testing.T) {
 	<-done
 }
 
-// T07: an on-demand channel waits for the edge's wake, starts at once, and stops the grace
-// after the edge says no one watches; until the edge tells demand at all, it runs.
+// T07: an on-demand channel waits for the edge's wake (never runs before it, even before the
+// edge has said anything), starts at once, and stops the grace after the edge's sleep.
 func TestCtlOnDemand(t *testing.T) {
 	edge := &recEdge{puts: map[string]int{}}
 	srv := httptest.NewServer(edge)
@@ -244,19 +244,20 @@ func TestCtlOnDemand(t *testing.T) {
 	defer cancel()
 	go c.Run(ctx)
 
-	// an edge that has told no demand yet: the channel runs, never dark
-	waitFor(t, "the fallback start", func() bool { return len(c.Running()) == 1 })
-	// the edge tells demand: no one watches; it stops after the grace and waits for a wake
+	// published, nobody watching, the edge silent: nothing is sent
+	time.Sleep(150 * time.Millisecond)
+	if len(c.Running()) != 0 || edge.count("src") != 0 {
+		t.Fatal("an on-demand channel ran before a wake")
+	}
+	// a sleep with nothing running changes nothing
 	c.Event(ctx, ch, Event{Type: "sleep"})
-	waitFor(t, "the stop with no one watching", func() bool { return len(c.Running()) == 0 })
-	before := edge.count("src")
 	time.Sleep(100 * time.Millisecond)
 	if len(c.Running()) != 0 {
-		t.Fatal("an on-demand channel started before a wake")
+		t.Fatal("a sleep started an on-demand channel")
 	}
 	woke := time.Now()
 	c.Event(ctx, ch, Event{Type: "wake"})
-	waitFor(t, "the first segment", func() bool { return edge.count("src") > before })
+	waitFor(t, "the first segment", func() bool { return edge.count("src") > 0 })
 	if time.Since(woke) > 15*time.Second {
 		t.Fatal("the first segment came after 15 s")
 	}
@@ -265,6 +266,36 @@ func TestCtlOnDemand(t *testing.T) {
 		t.Fatal("stopped before the grace")
 	}
 	waitFor(t, "the stop after the grace", func() bool { return len(c.Running()) == 0 })
+	// a viewer within the grace: a wake keeps it running
+	c.Event(ctx, ch, Event{Type: "wake"})
+	waitFor(t, "the restart", func() bool { return len(c.Running()) == 1 })
+	c.Event(ctx, ch, Event{Type: "sleep"})
+	c.Event(ctx, ch, Event{Type: "wake"})
+	time.Sleep(c.Grace + 150*time.Millisecond)
+	if len(c.Running()) != 1 {
+		t.Fatal("a wake within the grace did not keep the channel running")
+	}
+}
+
+// An always-on channel ignores the edge's sleep.
+func TestCtlAlwaysOnIgnoresSleep(t *testing.T) {
+	edge := &recEdge{puts: map[string]int{}}
+	srv := httptest.NewServer(edge)
+	defer srv.Close()
+	ch := uuid.New()
+	store := &memStore{states: map[uuid.UUID]string{}, report: map[uuid.UUID]map[string]any{}, jobs: []Job{{
+		Channel: ch, Name: "Seerah", Rungs: []string{"src"}, Mode: "always_on", State: "live",
+		Creds: Creds{Token: "tok", IngestURL: srv.URL, Channel: "edge1", ExpiresAt: time.Now().Add(time.Hour)}}}}
+	c := newTestCtl(t, store, &fakeSource{}, &fakeFFmpeg{})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go c.Run(ctx)
+	waitFor(t, "the start", func() bool { return len(c.Running()) == 1 })
+	c.Event(ctx, ch, Event{Type: "sleep"})
+	time.Sleep(c.Grace + 150*time.Millisecond)
+	if len(c.Running()) != 1 {
+		t.Fatal("an always-on channel stopped on a sleep")
+	}
 }
 
 // T08 at the broadcaster, and the edge's refusals: an expired token stops the channel with

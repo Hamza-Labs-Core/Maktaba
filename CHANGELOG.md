@@ -14,6 +14,16 @@ build fails when the two differ.
 
 ### Changed
 
+
+- **On-demand broadcast channels send only while someone watches (Epic 50, stories 50.21,
+  50.22).** The broadcast edge wakes an on-demand channel's home when its first viewer arrives,
+  and guests see the channel tuning until its first segments, about 15 seconds later. Once the
+  last viewer has gone (no heartbeat for 150 s) the edge tells the home to sleep, and the home
+  stops uploading 5 minutes later. Before, an on-demand channel uploaded all the time, using
+  the household's upload with nobody watching. Always-on channels are unchanged. The edge also
+  tells the home which qualities to send when the plan's limits change: only the lowest while
+  every viewer is on the lowest quality.
+
 - **Roku shapes Arabic text in less time (Epic 58, story 58.15).** A screen of 20 long Arabic
   descriptions is shaped in about two thirds of the time it took (207 ms instead of 331 ms on
   brs-engine), with the same output on all 312 shared vectors; English titles and lines skip the

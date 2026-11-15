@@ -32,13 +32,20 @@ type Event struct {
 // jitter (1 s doubling to 30 s), pinged every 20 s.
 type Control struct {
 	Creds func() (Creds, bool)
-	HTTP  *http.Client
-	Now   func() time.Time
+	// Mode is the channel's mode (always_on or on_demand), named on each connect
+	// (X-Maktaba-Mode): the edge wakes an on-demand channel at its first viewer and puts it to
+	// sleep after its last, and never sends an always-on channel sleep.
+	Mode string
+	HTTP *http.Client
+	Now  func() time.Time
 	// On hears each event; a closed socket is no event.
 	On func(Event)
 	// Ping is the ping period (default 20 s).
 	Ping time.Duration
 }
+
+// ModeHeader names a channel's mode on the control socket's connect.
+const ModeHeader = "X-Maktaba-Mode"
 
 func wsURL(ingest string) string {
 	u := strings.TrimRight(ingest, "/") + "/v1/ingest/ws"
@@ -81,6 +88,9 @@ func (c *Control) session(ctx context.Context) bool {
 	h := http.Header{}
 	h.Set("Authorization", "Bearer "+cr.Token)
 	h.Set("X-Maktaba-Time", strconv.FormatInt(now().UnixMilli(), 10))
+	if c.Mode != "" {
+		h.Set(ModeHeader, c.Mode)
+	}
 	dctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	conn, _, err := websocket.Dial(dctx, wsURL(cr.IngestURL), &websocket.DialOptions{HTTPHeader: h, HTTPClient: c.HTTP})
 	cancel()
@@ -141,7 +151,8 @@ type Controls struct {
 // Run follows the Ctl's channels until ctx ends.
 func (s *Controls) Run(ctx context.Context) {
 	type conn struct {
-		token  string
+		// key is the token and the mode: a new token or a changed mode reconnects
+		key    string
 		cancel context.CancelFunc
 	}
 	open := map[uuid.UUID]conn{}
@@ -163,18 +174,19 @@ func (s *Controls) Run(ctx context.Context) {
 				continue
 			}
 			seen[j.Channel] = true
-			if c, ok := open[j.Channel]; ok && c.token == j.Creds.Token {
+			key := j.Creds.Token + "|" + j.Mode
+			if c, ok := open[j.Channel]; ok && c.key == key {
 				continue
 			} else if ok {
-				c.cancel() // a new token: reconnect with it
+				c.cancel() // a new token or mode: reconnect with it
 			}
 			cctx, cancel := context.WithCancel(ctx)
 			ch := j.Channel
-			ctl := &Control{HTTP: s.HTTP, Now: s.Ctl.Now,
+			ctl := &Control{HTTP: s.HTTP, Now: s.Ctl.Now, Mode: j.Mode,
 				Creds: func() (Creds, bool) { return s.Ctl.creds(ch) },
 				On:    func(ev Event) { s.Ctl.Event(cctx, ch, ev) }}
 			go ctl.Run(cctx)
-			open[ch] = conn{token: j.Creds.Token, cancel: cancel}
+			open[ch] = conn{key: key, cancel: cancel}
 		}
 		for ch, c := range open {
 			if !seen[ch] {

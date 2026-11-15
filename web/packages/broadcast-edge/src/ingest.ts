@@ -7,7 +7,8 @@
 //   POST /v1/ingest/<channel>/state             the rungs' attributes; {"on_air": false} ends it
 //   POST /v1/ingest/<channel>/stream            the channel's Stream live input (the fallback, §5)
 //   POST /v1/ingest/<channel>/guide             the channel's guide and branding (50.22 §6, guide.ts)
-//   GET  /v1/ingest/ws                          the control WebSocket (ChannelLive)
+//   GET  /v1/ingest/ws                          the control WebSocket (ChannelLive); X-Maktaba-Mode
+//                                               names the channel's mode (on_demand: wake, sleep)
 //   PUT  /v1/ingest/speedtest                   up to 10 s of body: the measured rate (50.22)
 //
 // And the cloud's control posts, signed with a CLOUD_PUBKEYS key (no token):
@@ -33,6 +34,8 @@ export const HEADER_DURATION = "X-Maktaba-Duration";
 export const HEADER_DISCONTINUITY = "X-Maktaba-Discontinuity";
 export const HEADER_SEGMENT_TIME = "X-Maktaba-Segment-Time";
 export const HEADER_EDGE_NOW = "X-Maktaba-Edge-Now";
+/** The control socket's connect names the channel's mode: always_on or on_demand. */
+export const HEADER_MODE = "X-Maktaba-Mode";
 /** The edge refuses a home clock more than this far off (broadcast.clockSkew in 50.22). */
 export const MAX_SKEW_MS = 60_000;
 /** The longest segment the edge takes, in seconds. */
@@ -186,6 +189,8 @@ export async function handleIngest(request: Request, env: Env, url: URL): Promis
     if (request.headers.get("Upgrade") !== "websocket") return problem(426, "websocket_required");
     const stub = channel(env, a.claims.ch);
     await stub.noteGeo(a.claims.geo ?? null, a.claims.iat);
+    // the home names the channel's mode (50.22 §2): on demand is woken and put to sleep
+    await stub.noteControl(request.headers.get(HEADER_MODE) ?? "", a.claims.rungs);
     return stub.fetch(request);
   }
 

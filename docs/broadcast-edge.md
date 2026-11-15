@@ -104,7 +104,7 @@ time more than 60 s from the edge's is `400 clock_skew`, with the edge's time in
 | `PUT /v1/ingest/<channel>/slate/<0-7>.ts` (same headers) | a segment of the offline slate loop, uploaded once per publish |
 | `POST /v1/ingest/<channel>/state` `{"rungs": [{"name", "bandwidth", "resolution", "codecs", "frame_rate"}], "on_air": bool}` | the master playlist's attributes; `on_air: false` ends the broadcast (`503 off_air` until segments come again) |
 | `POST /v1/ingest/<channel>/stream` | the channel's Stream live input (the fallback): `{rtmps: {url, stream_key}}` |
-| `GET /v1/ingest/ws` (WebSocket) | the control socket: `hello`, `rung_stalled`, `on_air`, `off_air`, `revoked`, `restored`, `plan_off`; `ping` answers `pong` |
+| `GET /v1/ingest/ws` (WebSocket) | the control socket: `hello`, `rung_stalled`, `on_air`, `off_air`, `revoked`, `restored`, `plan_off`, `wake`, `sleep`, `limits`; `ping` answers `pong`. The connect names the channel's mode (`X-Maktaba-Mode: always_on` or `on_demand`) |
 | `PUT /v1/ingest/speedtest` | up to 10 s of body; `{bytes, ms, kbps}`, nothing written |
 
 - **Guards.** A segment is at most `duration × kbps × 1.5` bytes (`kbps` from the token, or the
@@ -289,6 +289,26 @@ admin console (each change audited, each a fresh MFA check).
 - **Break-glass**, with the cloud API down: `BROADCAST_OFF_CHANNELS` (comma-separated channel
   ids) or `BROADCAST_GLOBAL_OFF = 1`, checked before anything else, reason `incident`. The
   runbook is `docs/runbooks/cloud/broadcast-kill.md`.
+
+## On demand: wake, sleep and limits
+
+The home names each channel's mode when its control socket connects (`X-Maktaba-Mode:
+always_on` or `on_demand`, story 50.22 §2). `ChannelLive` keeps the channel's viewers, by
+session: each `POST /api/v1/play`, master playlist and heartbeat (watch's and live's) counts one.
+
+- **`wake`**: the first viewer of an on-demand channel. The channel answers `channel_state:
+  waiting` (tuning) from then until its first segment arrives, for at most 60 s; an asleep
+  on-demand channel also says `waiting`.
+- **`sleep`**: no viewer has beaten for 150 s (a session's life, 50.26 §3). The alarm checks
+  every 60 s, so `sleep` goes 150–210 s after the last heartbeat; the home stops 5 minutes later
+  and a viewer in between sends `wake` again, which keeps it running.
+- **Always-on** channels never get `wake` or `sleep`. A home that names no mode is always-on
+  here.
+- **`limits`** `{rungs}`: the rungs the home should send, top first (`[]`: all). The plan's
+  `max_rungs` cuts the token's list; in `lowest` mode, once no `full` session is left (a session
+  keeps the mode it started with), only the lowest of those. It is sent when the plan or the
+  viewers change it.
+- **A reconnecting home** hears `wake` again while viewers watch, and the current `limits`.
 
 ## The seams later stories fill
 
