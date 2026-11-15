@@ -23,6 +23,8 @@ type world struct {
 	other    string
 	library  string
 	otherLib string
+	dsn      string
+	reg      []Statement // A's statements
 }
 
 func raw(v any) json.RawMessage {
@@ -40,9 +42,10 @@ func args(v ...any) []json.RawMessage {
 
 func newWorld(t *testing.T) *world {
 	t.Helper()
-	db, _ := clustertest.ScratchDB(t)
+	db, dsn := clustertest.ScratchDB(t)
 	suffix := fmt.Sprintf("%d", time.Now().UnixNano()%1_000_000_000)
-	w := &world{db: db, e: New(db), a: "tv.maktaba.ta" + suffix, b: "tv.maktaba.tb" + suffix}
+	w := &world{db: db, dsn: dsn, e: New(db), a: "tv.maktaba.ta" + suffix, b: "tv.maktaba.tb" + suffix}
+	t.Cleanup(w.e.Close)
 	mustExec := func(q string, a ...any) {
 		t.Helper()
 		if _, err := db.Exec(q, a...); err != nil {
@@ -91,6 +94,7 @@ func newWorld(t *testing.T) *world {
 		{Name: "a.origin", Mode: "read", Scope: "catalog", Text: `SELECT current_setting('maktaba.origin') AS origin, current_user AS who`},
 		{Name: "a.fail", Mode: "write", Scope: "catalog", Writes: []string{"fp_a"}, Text: `INSERT INTO fp_a (id) VALUES (999)`},
 	}
+	w.reg = reg
 	if err := w.e.Register(w.a, reg); err != nil {
 		t.Fatal(err)
 	}

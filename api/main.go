@@ -804,7 +804,9 @@ func runServe() error {
 			// Epic 54 (stories 54.04-54.09): the plugins' admin routes on the components
 			// service, the plugin API's invocation and breaker routes, and the plugin API
 			// on its unix socket when the supervisor names one
-			router.MountP54(r, router.P54Deps{DB: appDB, Logger: logger, DataDir: statsDataDir, Components: componentsSvc,
+			// the plugin API's statements executor has a pool and a reaper of its own: closed
+			// as the API stops
+			p54 := router.MountP54(r, router.P54Deps{DB: appDB, Logger: logger, DataDir: statsDataDir, Components: componentsSvc,
 				DSN: pgdsn.ForLibPQ(context.Background(), dsn, pgdsn.Ping), Version: version.Version, Secrets: homeSecrets, Loops: loops,
 				Capabilities: capabilities, Embedder: embedderClient(pipelineClient, searchPipelineClient),
 				// story 54.35: the first-party Plex plugin reaches Plex through the home's
@@ -812,6 +814,7 @@ func runServe() error {
 				Service: relay.New(relay.Config{Settings: relay.DBSettings(appDB),
 					Upstream: relay.DBUpstream(appDB, homeSecrets, os.Getenv),
 					Logger:   logger})})
+			defer p54.Close()
 			reaper := &watch.Reaper{
 				DB:            appDB,
 				RetentionDays: envIntDefault("MAKTABA_ANALYTICS_RETENTION_DAYS", 365),

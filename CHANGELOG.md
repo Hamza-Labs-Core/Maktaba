@@ -344,17 +344,15 @@ build fails when the two differ.
 
 ### Fixed
 
-- **The log index no longer keeps two CPU cores busy.** Every 200 ms, the home's log search
-  service (`maktaba-server logs`) re-read every closed hour of logs it had already indexed:
-  a week of compressed files, decompressed from the start each time to find nothing new. On a
-  home with about 3,500 closed hours it used 150–300% CPU nonstop. A closed hour is now read
-  once and never opened again, even after a restart. A pass with nothing new only checks the
-  log folders and the open hours' files. On a home of that size, an idle pass went from 286%
-  of a CPU core to under 1%. Metric scrapes no longer fail with "database is locked": the
-  service now writes its database one writer at a time. When the index is over its size cap,
-  it now drops dashboard minutes older than a day before any info log line. Before, a week
-  of metric minutes kept the file over the cap, and every info line was deleted. Week-long
-  dashboards then read the hourly figures, which are always kept.
+- **Sign-in no longer hangs while Maktaba's own plugins are busy with the database.** The
+  first-party plugins ran their database work on the API's own connections. They kept some
+  between calls and could leave transactions open for hours, until no connection was left
+  for anything else: signing in, the queues page and the plugins' own jobs waited forever.
+  The plugins now have a small pool of their own (12 connections), so the API always keeps
+  its connections. A transaction a plugin leaves idle is rolled back within about two
+  minutes on a timer, and Postgres ends one itself a minute after that. The health report
+  an admin reads (`/api/system/health`) now shows what the plugins hold: connections, open
+  transactions and the oldest one's age.
 
 - **Playback no longer freezes for up to 30 seconds when an Apple device is busy.**
   The Apple apps' stream proxy passes each video request on to the home. It ran below other work
@@ -4176,6 +4174,18 @@ build fails when the two differ.
   point left and failed, leaving a failed TV job behind a rollback that had worked. Queueing the
   reverse commit is now claimed first, in one database statement, so exactly one of them queues
   it; a claim whose queueing fails is given back and retried on the next check.
+
+- **The log index no longer keeps two CPU cores busy.** Every 200 ms, the home's log search
+  service (`maktaba-server logs`) re-read every closed hour of logs it had already indexed:
+  a week of compressed files, decompressed from the start each time to find nothing new. On a
+  home with about 3,500 closed hours it used 150–300% CPU nonstop. A closed hour is now read
+  once and never opened again, even after a restart. A pass with nothing new only checks the
+  log folders and the open hours' files. On a home of that size, an idle pass went from 286%
+  of a CPU core to under 1%. Metric scrapes no longer fail with "database is locked": the
+  service now writes its database one writer at a time. When the index is over its size cap,
+  it now drops dashboard minutes older than a day before any info log line. Before, a week
+  of metric minutes kept the file over the cap, and every info line was deleted. Week-long
+  dashboards then read the hourly figures, which are always kept.
 
 ## [0.2.0] - 2026-10-19
 

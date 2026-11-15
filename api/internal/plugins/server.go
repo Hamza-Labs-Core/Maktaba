@@ -46,7 +46,8 @@ type Server struct {
 	// mapping, story 54.42 §3); nil: paths are the home's.
 	ToLocal func(string) string
 	// Statements runs Maktaba's own plugins' named statements (story 54.24); nil: the
-	// embedded first-party bundle's, on DB.
+	// embedded first-party bundle's, on DB (holding at most statements.MaxConns of it). The
+	// home gives it a pool of its own (statements.Open), so plugins never starve the API's.
 	Statements *statements.Executor
 	// Compute answers compute.embed and compute.llm (54.21; nil: unavailable).
 	Compute *Compute

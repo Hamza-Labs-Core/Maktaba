@@ -42,6 +42,15 @@ func (s *Server) executor() *statements.Executor {
 	return s.Statements
 }
 
+// Close stops the statements executor: its reaper, its open transactions, its connections
+// (and its own pool, when it has one). Safe on a nil server or an unused executor.
+func (s *Server) Close() {
+	if s == nil || s.Statements == nil {
+		return
+	}
+	s.Statements.Close()
+}
+
 func scopeOf(inv *Invocation) statements.Scope {
 	sc := statements.Scope{Invocation: inv.ID, PluginID: inv.PluginID, Version: inv.Version,
 		SubjectKind: inv.SubjectKind, SubjectID: inv.SubjectID, LibraryID: inv.LibraryID, ReadOnly: inv.ReadOnly}

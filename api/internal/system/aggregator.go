@@ -18,6 +18,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
@@ -58,6 +59,22 @@ type Health struct {
 	DiskFreeBytes uint64              `json:"disk_free_bytes,omitempty"`
 	QueueDepth    int                 `json:"queue_depth,omitempty"`
 	BudgetUSDLeft string              `json:"transcribe_budget_usd_left,omitempty"`
+	// PluginRelay is what the first-party plugins' statements hold now: connections, open
+	// transactions, the oldest one's age (statements.Stats; admins only, like the rest)
+	PluginRelay any `json:"plugin_relay,omitempty"`
+}
+
+// pluginRelay answers PluginRelay (nil: no plugin API on this server).
+var pluginRelay atomic.Pointer[func() any]
+
+// SetPluginRelay sets what /api/system/health reports as plugin_relay (the plugin API
+// is mounted after the aggregator is built).
+func SetPluginRelay(f func() any) {
+	if f == nil {
+		pluginRelay.Store(nil)
+		return
+	}
+	pluginRelay.Store(&f)
 }
 
 // Aggregator probes a fixed set of services. It is safe to share
@@ -178,6 +195,9 @@ func (a *Aggregator) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			res.QueueDepth = depth
 		}
 		cancel()
+	}
+	if f := pluginRelay.Load(); f != nil {
+		res.PluginRelay = (*f)()
 	}
 
 	w.Header().Set("Content-Type", "application/json")

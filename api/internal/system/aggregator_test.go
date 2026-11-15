@@ -341,3 +341,33 @@ func TestAggregator_WhatEachCallerReads(t *testing.T) {
 		t.Errorf("an admin reads everything: %s", admin)
 	}
 }
+
+// The plugin API's relay state (open transactions, connections held) is an admin's only:
+// what an admin reads to see the plugins holding the database.
+func TestAggregator_PluginRelayIsTheAdminsOnly(t *testing.T) {
+	SetPluginRelay(func() any { return map[string]any{"open_transactions": 6, "connections_held": 12} })
+	defer SetPluginRelay(nil)
+	agg := NewAggregator(nil)
+	ask := func(p *principal.Principal) string {
+		r := httptest.NewRequest(http.MethodGet, "/api/system/health", nil)
+		if p != nil {
+			r = r.WithContext(principal.WithPrincipal(r.Context(), p))
+		}
+		rr := httptest.NewRecorder()
+		agg.ServeHTTP(rr, r)
+		return rr.Body.String()
+	}
+	for name, p := range map[string]*principal.Principal{"no one": nil, "a viewer": {UserID: "v"}} {
+		if body := ask(p); strings.Contains(body, "plugin_relay") {
+			t.Errorf("%s reads the plugin relay: %s", name, body)
+		}
+	}
+	admin := ask(&principal.Principal{UserID: "a", IsAdmin: true})
+	if !strings.Contains(admin, `"plugin_relay":{"connections_held":12,"open_transactions":6}`) {
+		t.Errorf("an admin reads the plugin relay: %s", admin)
+	}
+	SetPluginRelay(nil)
+	if body := ask(&principal.Principal{UserID: "a", IsAdmin: true}); strings.Contains(body, "plugin_relay") {
+		t.Errorf("no plugin API, no plugin_relay: %s", body)
+	}
+}

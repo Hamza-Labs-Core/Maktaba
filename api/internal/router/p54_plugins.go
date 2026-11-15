@@ -33,7 +33,9 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/queues"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/plugins"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/plugins/catalog"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/plugins/statements"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/plugins/storelink"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/system"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/components/runner"
 )
 
@@ -204,6 +206,22 @@ func MountP54(r chi.Router, d P54Deps) *plugins.Server {
 	}
 	inv.Mount(r)
 	s := &plugins.Server{DB: d.DB, Tokens: tokens, Logger: logger, Media: &plugins.Media{FFmpeg: os.Getenv("MAKTABA_FFMPEG")}}
+	// the first-party plugins' statements on a pool of their own: they never take the API's
+	// connections (2026-11-15: their kept connections and idle transactions held all of
+	// them, and every login waited); without a DSN, at most statements.MaxConns of the API's
+	if d.DSN != "" {
+		if ex, err := statements.Open(d.DSN, statements.Config{}); err != nil {
+			logger.Error("plugin_relay_pool_failed", "err", err)
+		} else {
+			s.Statements = ex
+		}
+	}
+	if s.Statements == nil {
+		s.Statements = statements.New(d.DB)
+	}
+	ex := s.Statements
+	ex.Publish()
+	system.SetPluginRelay(func() any { return ex.Stats() })
 	if d.DataDir != "" {
 		s.ArtifactsDir = filepath.Join(d.DataDir, "plugins", "artifacts")
 	}

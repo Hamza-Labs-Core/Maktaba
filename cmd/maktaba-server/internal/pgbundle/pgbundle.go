@@ -225,7 +225,8 @@ func (b Bundle) ServerArgs() []string { return b.serverArgs(b.listensOut()) }
 // of its machines has its own pools on it, each with a cap:
 //
 //   - the home's API: 32 for its handlers, 4 idempotency, 2 health, 1 readiness, its
-//     LISTEN connections: about 42
+//     LISTEN connections: about 42, and its plugin API's statements pool 16 (12 for the
+//     plugins' roles, 4 for their scope lookups): about 58
 //   - the home's streaming service 10, each TV slot 6 (two or three slots): about 28
 //   - each pipeline worker 10 and its 2 LISTEN connections (four or five workers): about 60
 //   - each other machine: its API 16 + 4, its streaming service and slots, its pipeline
