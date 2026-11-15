@@ -19,11 +19,9 @@ final class LoopbackHome: @unchecked Sendable {
         var saysLength = true
         /// Never answers: the request stays open until the caller lets go (or `dropHeld`).
         var holds = false
-        /// The connection is dropped after this many body bytes (the home failing mid-body).
-        var cutAfter: Int?
-        /// At `cutAfter` the home goes silent (the connection stays open), not away, until
-        /// `goOn` (it then writes the rest).
-        var silentThen = false
+        /// After this many body bytes the home goes silent (the connection stays open) until
+        /// `goOn` (it then writes the rest). A home that goes away mid-body is `DroppingHome`.
+        var silentAfter: Int?
     }
 
     struct Seen: Sendable {
@@ -188,27 +186,22 @@ final class LoopbackHome: @unchecked Sendable {
         head += a.saysLength ? "Content-Length: \(range.count)\r\n" : "Transfer-Encoding: chunked\r\n"
         for (k, v) in a.headers { head += "\(k): \(v)\r\n" }
         head += "Connection: close\r\n\r\n"
-        let whole = range, cutAt = a.cutAfter.map { range.lowerBound + $0 }, chunked = !a.saysLength, silent = a.silentThen
+        let whole = range, cutAt = a.silentAfter.map { range.lowerBound + $0 }, chunked = !a.saysLength
         conn.send(content: Data(head.utf8), completion: .contentProcessed { [weak self] error in
             guard let self, error == nil else { return }
-            if req.method == "HEAD" { self.end(conn, done) } else { self.write(conn, whole, done, cutAt: cutAt, chunked: chunked, silent: silent) }
+            if req.method == "HEAD" { self.end(conn, done) } else { self.write(conn, whole, done, cutAt: cutAt, chunked: chunked) }
         })
     }
 
-    private func write(_ conn: NWConnection, _ rest: Range<Int>, _ done: Once, cutAt: Int? = nil, chunked: Bool = false, silent: Bool = false) {
+    private func write(_ conn: NWConnection, _ rest: Range<Int>, _ done: Once, cutAt: Int? = nil, chunked: Bool = false) {
         guard !rest.isEmpty else {
             if chunked { conn.send(content: Data("0\r\n\r\n".utf8), completion: .idempotent) }
             end(conn, done)
             return
         }
         if let cutAt, rest.lowerBound >= cutAt {
-            // the home fails here: no orderly end (or says nothing more, the connection open)
-            if silent {
-                lock.withLock { silenced.append { [weak self] in self?.write(conn, rest, done, chunked: chunked) } }
-            } else {
-                done.run {}
-                conn.forceCancel()
-            }
+            // the home says nothing more, the connection open, until `goOn`
+            lock.withLock { silenced.append { [weak self] in self?.write(conn, rest, done, chunked: chunked) } }
             return
         }
         let n = min(64 << 10, rest.count, cutAt.map { $0 - rest.lowerBound } ?? Int.max)
@@ -222,13 +215,108 @@ final class LoopbackHome: @unchecked Sendable {
                 return
             }
             self.lock.withLock { self.written += n }
-            self.write(conn, piece.upperBound..<rest.upperBound, done, cutAt: cutAt, chunked: chunked, silent: silent)
+            self.write(conn, piece.upperBound..<rest.upperBound, done, cutAt: cutAt, chunked: chunked)
         })
     }
 
     private func end(_ conn: NWConnection, _ done: Once) {
         done.run { lock.withLock { whole += 1 } }
         conn.send(content: nil, contentContext: .finalMessage, isComplete: true, completion: .idempotent)
+    }
+}
+
+/// A home that goes away mid-body: each request gets its head and `cutAfter` bytes of the
+/// body (`LoopbackHome.byte(at:)`), then the connection is reset. A plain socket closed with
+/// `SO_LINGER` 0: the reset leaves in `close()` itself. (`LoopbackHome` cut a body with
+/// `NWConnection.forceCancel()`, which is no close the other side is sure to see: on a CI
+/// runner the socket stayed open 35 s after it, until the home stopped, and the proxy waited
+/// on what looked like a home gone silent. An orderly close, a FIN, is no failure here: a URL
+/// session takes a chunked body that ends with the connection as whole.)
+/// A path ending `/known.ts` says its length; any other goes in chunks.
+final class DroppingHome: @unchecked Sendable {
+    let port: UInt16
+    private let fd: Int32
+    private let length: Int
+    private let cutAfter: Int
+    private let accepting: DispatchSourceRead
+    private let serving = DispatchQueue(label: "test.dropping-home", attributes: .concurrent)
+    private let lock = NSLock()
+    private var dropped = 0
+
+    init(length: Int, cutAfter: Int) throws {
+        self.length = length
+        self.cutAfter = cutAfter
+        fd = socket(AF_INET, SOCK_STREAM, 0)
+        var on: Int32 = 1
+        setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &on, socklen_t(MemoryLayout<Int32>.size))
+        var a = sockaddr_in()
+        a.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+        a.sin_family = sa_family_t(AF_INET)
+        a.sin_port = 0
+        a.sin_addr.s_addr = inet_addr("127.0.0.1")
+        let fd = fd
+        let bound = withUnsafePointer(to: &a) { $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) } }
+        guard bound == 0, listen(fd, 16) == 0 else { Darwin.close(fd); throw POSIXError(.EADDRNOTAVAIL) }
+        var len = socklen_t(MemoryLayout<sockaddr_in>.size)
+        _ = withUnsafeMutablePointer(to: &a) { $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { getsockname(fd, $0, &len) } }
+        port = UInt16(bigEndian: a.sin_port)
+        _ = fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK)
+        accepting = DispatchSource.makeReadSource(fileDescriptor: fd, queue: DispatchQueue(label: "test.dropping-home.accept"))
+        accepting.setEventHandler { [weak self] in self?.acceptAll() }
+        accepting.setCancelHandler { Darwin.close(fd) }
+        accepting.resume()
+    }
+
+    var url: URL { URL(string: "http://127.0.0.1:\(port)")! }
+    /// Connections reset mid-body so far.
+    var drops: Int { lock.withLock { dropped } }
+
+    func stop() { accepting.cancel() }
+
+    private func acceptAll() {
+        while true {
+            let c = accept(fd, nil, nil)
+            guard c >= 0 else { return }
+            var on: Int32 = 1
+            setsockopt(c, SOL_SOCKET, SO_NOSIGPIPE, &on, socklen_t(MemoryLayout<Int32>.size))
+            serving.async { [self] in serve(c) }
+        }
+    }
+
+    private func serve(_ c: Int32) {
+        _ = fcntl(c, F_SETFL, fcntl(c, F_GETFL) & ~O_NONBLOCK)
+        var head = Data()
+        var buf = [UInt8](repeating: 0, count: 4096)
+        while head.range(of: Data("\r\n\r\n".utf8)) == nil {
+            let n = recv(c, &buf, buf.count, 0)
+            guard n > 0 else { Darwin.close(c); return }
+            head.append(contentsOf: buf[0..<n])
+        }
+        let saysLength = String(decoding: head, as: UTF8.self).contains("/known.ts ")
+        var out = Data("HTTP/1.1 200 OK\r\nContent-Type: video/mp2t\r\n".utf8)
+        out += Data((saysLength ? "Content-Length: \(length)\r\n" : "Transfer-Encoding: chunked\r\n").utf8)
+        out += Data("Connection: close\r\n\r\n".utf8)
+        var at = 0
+        while at < cutAfter {
+            let n = min(64 << 10, cutAfter - at)
+            let piece = LoopbackHome.body(at..<at + n)
+            out += saysLength ? piece : Data("\(String(n, radix: 16))\r\n".utf8) + piece + Data("\r\n".utf8)
+            at += n
+        }
+        _ = out.withUnsafeBytes { raw -> Bool in
+            var sent = 0
+            while sent < raw.count {
+                let n = send(c, raw.baseAddress! + sent, raw.count - sent, 0)
+                if n <= 0 { return false }
+                sent += n
+            }
+            return true
+        }
+        // gone, mid-body: a reset, at once
+        var reset = linger(l_onoff: 1, l_linger: 0)
+        setsockopt(c, SOL_SOCKET, SO_LINGER, &reset, socklen_t(MemoryLayout<linger>.size))
+        Darwin.close(c)
+        lock.withLock { dropped += 1 }
     }
 }
 
@@ -384,25 +472,34 @@ func eventually(_ seconds: Double = 5, _ ok: @Sendable () -> Bool) async -> Bool
                       homePatience: Duration = StreamProxy.homePatience, requestTimeout: TimeInterval? = nil,
                       reach: StreamProxy.Reach = .loopback,
                       sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }) throws -> StreamProxy {
-        let claims = Data(#"{"exp":4102444800}"#.utf8).base64EncodedString()
-            .replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
-        let base = home.url.absoluteString
-        let secrets = FakeSecrets(["\(base)#access": "h.\(claims).s", "\(base)#refresh": "r1"])
-        let tokens = TokenStore(service: "test.\(UUID().uuidString)", home: home.url, primary: secrets, legacy: nil)
-        // a session with a delegate of its own, as the app's (`PinnedTrust.session`) has
-        let config = URLSessionConfiguration.ephemeral
-        config.httpMaximumConnectionsPerHost = perHost
-        // the session's own timer, short in a test that proves it is not what times a pause
-        if let requestTimeout { config.timeoutIntervalForRequest = requestTimeout }
-        let session = URLSession(configuration: config, delegate: PinnedTrust.shared, delegateQueue: nil)
-        let proxy = try StreamProxy(client: APIClient(home: home.url, tokens: tokens, session: session), session: session,
-                                    reach: reach, headPatience: headPatience, homePatience: homePatience, sleep: sleep)
+        let proxy = try proxy(at: home.url, headPatience: headPatience, homePatience: homePatience,
+                              requestTimeout: requestTimeout, reach: reach, sleep: sleep)
         RawPlayer.about.withLock {
             $0 = { [weak proxy, weak home] in
                 "proxy accepted \(proxy?.acceptedCount ?? -1), serving \(proxy?.servingStates ?? []); home saw \(home?.seen.count ?? -1), wrote \(home?.bytesWritten ?? -1), answered \(home?.answered ?? -1), abandoned \(home?.abandoned ?? -1)"
             }
         }
         return proxy
+    }
+
+    /// A proxy in front of a home at `url` (with a token for it).
+    static func proxy(at url: URL, headPatience: Duration = StreamProxy.headPatience,
+                      homePatience: Duration = StreamProxy.homePatience, requestTimeout: TimeInterval? = nil,
+                      reach: StreamProxy.Reach = .loopback,
+                      sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }) throws -> StreamProxy {
+        let claims = Data(#"{"exp":4102444800}"#.utf8).base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
+        let base = url.absoluteString
+        let secrets = FakeSecrets(["\(base)#access": "h.\(claims).s", "\(base)#refresh": "r1"])
+        let tokens = TokenStore(service: "test.\(UUID().uuidString)", home: url, primary: secrets, legacy: nil)
+        // a session with a delegate of its own, as the app's (`PinnedTrust.session`) has
+        let config = URLSessionConfiguration.ephemeral
+        config.httpMaximumConnectionsPerHost = perHost
+        // the session's own timer, short in a test that proves it is not what times a pause
+        if let requestTimeout { config.timeoutIntervalForRequest = requestTimeout }
+        let session = URLSession(configuration: config, delegate: PinnedTrust.shared, delegateQueue: nil)
+        return try StreamProxy(client: APIClient(home: url, tokens: tokens, session: session), session: session,
+                               reach: reach, headPatience: headPatience, homePatience: homePatience, sleep: sleep)
     }
 
     /// The most connections the proxy's session opens to the home at once.
@@ -597,8 +694,8 @@ func eventually(_ seconds: Double = 5, _ ok: @Sendable () -> Bool) async -> Bool
     @Test func aHomeThatGoesSilentMidBodyIsGivenUp() async throws {
         let home = try await LoopbackHome()
         defer { home.stop() }
-        home.on("/stream/abc/known.ts", .init(length: 8 << 20, cutAfter: 1 << 20, silentThen: true))
-        home.on("/stream/abc/unknown.ts", .init(length: 8 << 20, saysLength: false, cutAfter: 1 << 20, silentThen: true))
+        home.on("/stream/abc/known.ts", .init(length: 8 << 20, silentAfter: 1 << 20))
+        home.on("/stream/abc/unknown.ts", .init(length: 8 << 20, saysLength: false, silentAfter: 1 << 20))
         let proxy = try Self.proxy(home, homePatience: .milliseconds(500))
         try await proxy.start()
         defer { proxy.stop() }
@@ -631,7 +728,7 @@ func eventually(_ seconds: Double = 5, _ ok: @Sendable () -> Bool) async -> Bool
         defer { home.stop() }
         let size = 2 << 20, first = 100_000
         #expect(first < UpstreamBody.highWater)
-        home.on("/stream/abc/film.mp4", .init(length: size, cutAfter: first, silentThen: true))
+        home.on("/stream/abc/film.mp4", .init(length: size, silentAfter: first))
         let body = UpstreamBody(URLRequest(url: home.url.appending(path: "stream/abc/film.mp4")),
                                 session: URLSession(configuration: .ephemeral), silence: .milliseconds(300))
         #expect(try await body.response()?.statusCode == 200)
@@ -1059,13 +1156,12 @@ func eventually(_ seconds: Double = 5, _ ok: @Sendable () -> Bool) async -> Bool
 
     /// The home failing mid-body is an error for the player, never a body that looks whole:
     /// with a length the body is short of it; with none it goes in chunks and its last chunk
-    /// never comes.
+    /// never comes. The home goes away with a reset (`DroppingHome`), so its going is seen at
+    /// once and the request's place is given back.
     @Test func aBodyCutShortIsAnErrorForThePlayer() async throws {
-        let home = try await LoopbackHome()
+        let home = try DroppingHome(length: 8 << 20, cutAfter: 1 << 20)
         defer { home.stop() }
-        home.on("/stream/abc/known.ts", .init(length: 8 << 20, cutAfter: 1 << 20))
-        home.on("/stream/abc/unknown.ts", .init(length: 8 << 20, saysLength: false, cutAfter: 1 << 20))
-        let proxy = try Self.proxy(home)
+        let proxy = try Self.proxy(at: home.url)
         try await proxy.start()
         defer { proxy.stop() }
         let port = try #require(proxy.port)
@@ -1085,7 +1181,8 @@ func eventually(_ seconds: Double = 5, _ ok: @Sendable () -> Bool) async -> Bool
         let second = split(b.data)
         #expect(!second.head.contains("Content-Length") && second.head.contains("Transfer-Encoding: chunked"))
         #expect(b.data.suffix(5) != Data("0\r\n\r\n".utf8), "a body that was cut short must not end with the last chunk")
-        #expect(await eventually { proxy.serving == 0 })
+        #expect(await eventually { proxy.serving == 0 }, "serving \(proxy.servingStates)")
+        #expect(home.drops == 2)
 
         // and URLSession, as a player would read it, fails
         await #expect(throws: (any Error).self) {
