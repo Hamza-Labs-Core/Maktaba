@@ -84,17 +84,17 @@ func (c *clock) steps(restarts int) bucketSteps {
 		sleep: func(d time.Duration) { c.t = c.t.Add(d) }}
 }
 
-func make1(t *testing.T, f *fakeSeaweed, restarts int) (error, []string) {
+func make1(t *testing.T, f *fakeSeaweed, restarts int) ([]string, error) {
 	t.Helper()
 	var logs []string
 	c := &clock{t: time.Unix(0, 0)}
 	err := makeBucket(f.do, "b", f.restart, func(format string, a ...any) { logs = append(logs, fmt.Sprintf(format, a...)) }, c.steps(restarts))
-	return err, logs
+	return logs, err
 }
 
 func TestMakeBucketFirstTry(t *testing.T) {
 	f := &fakeSeaweed{}
-	if err, logs := make1(t, f, 2); err != nil || len(logs) != 0 || f.restarts != 0 {
+	if logs, err := make1(t, f, 2); err != nil || len(logs) != 0 || f.restarts != 0 {
 		t.Fatalf("err %v, logs %q, restarts %d; want a quiet first try", err, logs, f.restarts)
 	}
 	if f.object {
@@ -105,7 +105,7 @@ func TestMakeBucketFirstTry(t *testing.T) {
 // The failure on PR 1374 and PR 1380: the bucket comes out cached as missing.
 func TestMakeBucketRestartsAGatewayThatCachedTheBucketAsMissing(t *testing.T) {
 	f := &fakeSeaweed{poisonNext: 1}
-	err, logs := make1(t, f, 2)
+	logs, err := make1(t, f, 2)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -137,21 +137,21 @@ func TestDeletingAndRemakingTheBucketWedgesIt(t *testing.T) {
 
 func TestMakeBucketWaitsForTheGateway(t *testing.T) {
 	f := &fakeSeaweed{down: 3}
-	if err, _ := make1(t, f, 2); err != nil || f.restarts != 0 {
+	if _, err := make1(t, f, 2); err != nil || f.restarts != 0 {
 		t.Fatalf("err %v, restarts %d", err, f.restarts)
 	}
 }
 
 func TestMakeBucketTakesABucketThatIsThere(t *testing.T) {
 	f := &fakeSeaweed{bucket: true}
-	if err, _ := make1(t, f, 2); err != nil {
+	if _, err := make1(t, f, 2); err != nil {
 		t.Fatal(err)
 	}
 }
 
 func TestMakeBucketGivesUpAfterItsRestarts(t *testing.T) {
 	f := &fakeSeaweed{wedged: true}
-	err, _ := make1(t, f, 2)
+	_, err := make1(t, f, 2)
 	if err == nil || f.restarts != 2 {
 		t.Fatalf("err %v, restarts %d; want a failure after two restarts", err, f.restarts)
 	}
