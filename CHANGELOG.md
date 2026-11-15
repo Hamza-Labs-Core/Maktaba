@@ -344,6 +344,14 @@ build fails when the two differ.
 
 ### Fixed
 
+- **Playback no longer freezes for up to 30 seconds when an Apple device is busy.**
+  The Apple apps' stream proxy passes each video request on to the home. It ran below other work
+  on the device, and it could wait for a token refresh before passing a request on. On a busy
+  device a segment then reached the home seconds late. The player gives a segment about
+  2 seconds before it drops the stream, so the picture froze until the app reopened the stream.
+  The proxy now passes each request on as soon as it arrives. It refreshes the token separately,
+  before the token runs out.
+
 - **A segment cut short when the home's streaming service stops mid-answer is retried, not
   played broken.** The home sent a video's segments, playlists and subtitles without a length,
   in chunks. When the streaming service exited or restarted part way through one, the Apple

@@ -142,6 +142,15 @@ public actor APIClient {
         return (["Authorization": "Bearer \(access)"], until)
     }
 
+    /// The header from the token held now, at once: no refresh and no turn on this actor
+    /// (which other requests' work may hold), so the stream proxy can pass a request on the
+    /// moment it comes. nil when that token is good for less than `minLife` (or there is none):
+    /// then `playbackHeaders` refreshes it.
+    public nonisolated func heldPlaybackHeaders(minLife: TimeInterval) -> (headers: [String: String], until: Date)? {
+        guard let access = tokens.access, let until = Self.expiry(of: access), until.timeIntervalSinceNow >= minLife else { return nil }
+        return (["Authorization": "Bearer \(access)"], until)
+    }
+
     /// Waits until an HLS stream can start: a transcode writes its playlists a moment after
     /// the session opens (the home answers 404 `manifest-not-found` / `rendition-not-found`
     /// until then). hls.js retries those; AVPlayer gives up, so the player waits here first:
