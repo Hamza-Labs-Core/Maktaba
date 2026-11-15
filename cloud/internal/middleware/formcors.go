@@ -1,6 +1,9 @@
 package middleware
 
-import "net/http"
+import (
+	"context"
+	"net/http"
+)
 
 // formHeaders are the request headers the public forms' posts carry.
 const formHeaders = "Content-Type"
@@ -44,21 +47,17 @@ func FormCORS(paths, origins []string) func(http.Handler) http.Handler {
 				w.WriteHeader(http.StatusNoContent)
 				return
 			}
-			// the web allow-list must not add credentials to this answer
-			next.ServeHTTP(noCredentials{w}, r)
+			// the web allow-list behind leaves this answer alone, so it never adds credentials
+			next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), formCORSKey{}, true)))
 		})
 	}
 }
 
-// noCredentials drops Access-Control-Allow-Credentials from what a later middleware sets.
-type noCredentials struct{ http.ResponseWriter }
+// formCORSKey marks a request FormCORS has answered: CORS (the web allow-list) skips it.
+type formCORSKey struct{}
 
-func (n noCredentials) WriteHeader(code int) {
-	n.Header().Del("Access-Control-Allow-Credentials")
-	n.ResponseWriter.WriteHeader(code)
-}
-
-func (n noCredentials) Write(b []byte) (int, error) {
-	n.Header().Del("Access-Control-Allow-Credentials")
-	return n.ResponseWriter.Write(b)
+// answeredByForm reports whether FormCORS has answered r's origin.
+func answeredByForm(r *http.Request) bool {
+	v, _ := r.Context().Value(formCORSKey{}).(bool)
+	return v
 }

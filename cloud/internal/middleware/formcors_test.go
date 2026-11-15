@@ -56,3 +56,21 @@ func TestFormCORS(t *testing.T) {
 		t.Errorf("the web allow-list lost its credentials elsewhere: %v", rec.Header())
 	}
 }
+
+// A form's answer has no credentials however the handler writes it (a body with no WriteHeader,
+// or an outer middleware's own answer): the web allow-list behind never adds them.
+func TestFormCORSNoCredentialsOnAnyWrite(t *testing.T) {
+	inner := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	})
+	h := FormCORS([]string{"/v1/moderation/reports"}, []string{"https://watch.maktaba.tv"})(
+		CORS([]string{"https://watch.maktaba.tv"})(inner))
+	req := httptest.NewRequest(http.MethodPost, "/v1/moderation/reports", nil)
+	req.Header.Set("Origin", "https://watch.maktaba.tv")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || rec.Header().Get("Access-Control-Allow-Origin") != "https://watch.maktaba.tv" ||
+		rec.Header().Get("Access-Control-Allow-Credentials") != "" || rec.Header().Get("Access-Control-Allow-Methods") != "" {
+		t.Errorf("a body-only answer = %d %v", rec.Code, rec.Header())
+	}
+}
