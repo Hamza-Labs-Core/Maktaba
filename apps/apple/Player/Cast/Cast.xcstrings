@@ -1,0 +1,492 @@
+{
+  "sourceLanguage": "en",
+  "strings": {
+    "cast.back": {
+      "comment": "Seeks the cast 10 seconds back",
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "رجوع ١٠ ثوانٍ"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Back 10 seconds"
+          }
+        }
+      }
+    },
+    "cast.button": {
+      "comment": "The Cast button: plays the video on a Google Cast TV",
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "بث"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cast"
+          }
+        }
+      }
+    },
+    "cast.castingTo": {
+      "comment": "The cast's line: the TV's name",
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "يُعرض على %@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Playing on %@"
+          }
+        }
+      }
+    },
+    "cast.close": {
+      "comment": "Closes the TV list",
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "إغلاق"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Close"
+          }
+        }
+      }
+    },
+    "cast.error.connect": {
+      "comment": "The Cast session did not start",
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "تعذّر الاتصال بالتلفاز. حاول مرة أخرى."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn't connect to the TV. Try again."
+          }
+        }
+      }
+    },
+    "cast.error.failed": {
+      "comment": "Casting failed for another reason",
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "لم يبدأ البث. حاول مرة أخرى."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The cast didn't start. Try again."
+          }
+        }
+      }
+    },
+    "cast.error.format": {
+      "comment": "The receiver cannot play the video's format",
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "لا يستطيع التلفاز تشغيل هذا الفيديو."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The TV can't play this video."
+          }
+        }
+      }
+    },
+    "cast.error.grant": {
+      "comment": "The receiver's grant is over",
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "انتهى البث. ابدأ البث مرة أخرى من هذا الجهاز."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The cast has ended. Cast again from this device."
+          }
+        }
+      }
+    },
+    "cast.error.home": {
+      "comment": "The receiver could not reach the home",
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "لا يستطيع التلفاز الوصول إلى هذا المنزل."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The TV can't reach this home."
+          }
+        }
+      }
+    },
+    "cast.error.refused": {
+      "comment": "The home refused the cast grant: nothing is cast",
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "لم يسمح هذا المنزل ببث هذا الفيديو."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This home did not allow casting this video."
+          }
+        }
+      }
+    },
+    "cast.error.update": {
+      "comment": "The home is older than every receiver build",
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "يحتاج هذا المنزل إلى تحديث قبل أن يتمكن من البث."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This home needs an update before it can cast."
+          }
+        }
+      }
+    },
+    "cast.error.viaCloud": {
+      "comment": "The home refused the cast grant to a sign-in through Maktaba Cloud",
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "يحتاج البث إلى تسجيل الدخول على المنزل نفسه، لا عبر Maktaba Cloud."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Casting needs a sign-in on the home itself, not through Maktaba Cloud."
+          }
+        }
+      }
+    },
+    "cast.forward": {
+      "comment": "Seeks the cast 10 seconds forward",
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "تقدّم ١٠ ثوانٍ"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Forward 10 seconds"
+          }
+        }
+      }
+    },
+    "cast.localNetwork.body": {
+      "comment": "Google's local network screen before the first cast: why iOS asks next",
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "لكي تبثّ، يحتاج Maktaba إلى رؤية الأجهزة على شبكة Wi-Fi لديك. سيُطلب منك ذلك الآن."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "To cast, Maktaba needs to see devices on your Wi-Fi. You'll be asked next."
+          }
+        }
+      }
+    },
+    "cast.localNetwork.continue": {
+      "comment": "The local network screen's button: iOS asks for local network access next",
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "متابعة"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Continue"
+          }
+        }
+      }
+    },
+    "cast.localNetwork.notNow": {
+      "comment": "The local network screen's button: no cast now",
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ليس الآن"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not now"
+          }
+        }
+      }
+    },
+    "cast.localNetwork.title": {
+      "comment": "Google's local network screen before the first cast: its title",
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ابحث عن أجهزة التلفاز على شبكتك"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Find TVs on your network"
+          }
+        }
+      }
+    },
+    "cast.oldHome": {
+      "comment": "A home older than the cast grant: the TV plays a plain stream",
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "هذا المنزل أقدم، لذا يعرض التلفاز مشغّل Google."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This home is older, so the TV shows Google's player."
+          }
+        }
+      }
+    },
+    "cast.pause": {
+      "comment": "Pauses the cast on the TV",
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "إيقاف مؤقت"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pause"
+          }
+        }
+      }
+    },
+    "cast.picker.airplay": {
+      "comment": "The TV list's AirPlay section: an Apple TV or an AirPlay TV",
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AirPlay"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AirPlay"
+          }
+        }
+      }
+    },
+    "cast.picker.airplayHint": {
+      "comment": "Under the AirPlay row: what AirPlay reaches",
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple TV وأجهزة التلفاز التي تدعم AirPlay"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple TV and AirPlay TVs"
+          }
+        }
+      }
+    },
+    "cast.picker.cast": {
+      "comment": "The TV list's Google Cast section: Chromecast and TVs with Cast",
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Google Cast"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Google Cast"
+          }
+        }
+      }
+    },
+    "cast.picker.empty": {
+      "comment": "No Google Cast device found (a guest network can hide them)",
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "لم يُعثر على تلفاز. يجب أن يكون التلفاز على شبكة Wi-Fi نفسها التي يتصل بها هذا الجهاز. لجهاز Apple TV أو تلفاز يدعم AirPlay، استخدم AirPlay."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No TV found. The TV must be on the same Wi-Fi network as this device. For an Apple TV or an AirPlay TV, use AirPlay."
+          }
+        }
+      }
+    },
+    "cast.picker.searching": {
+      "comment": "While the Google Cast devices are looked for",
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "جارٍ البحث عن أجهزة التلفاز…"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Looking for TVs…"
+          }
+        }
+      }
+    },
+    "cast.picker.title": {
+      "comment": "The TV list's title: AirPlay and Google Cast devices",
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "التشغيل على تلفاز"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Play on a TV"
+          }
+        }
+      }
+    },
+    "cast.play": {
+      "comment": "Plays the cast on the TV",
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "تشغيل"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Play"
+          }
+        }
+      }
+    },
+    "cast.stop": {
+      "comment": "Ends the cast: the video comes back to this device",
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "إيقاف البث"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stop casting"
+          }
+        }
+      }
+    }
+  },
+  "version": "1.0"
+}

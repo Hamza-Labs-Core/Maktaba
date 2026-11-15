@@ -142,6 +142,17 @@ or a sign-in through Maktaba Cloud shows no button. Tests: Vitest against a fake
 (`web/src/test/fakeCast.ts`). The web is served by the home itself, so it never meets a home
 older than the cast grant.
 
+**The Apple Player** (iPhone and iPad; the Cast SDK has no tvOS or macOS):
+`MaktabaKit/Cast.swift` builds the custom data and mints the grant; `Player/Cast/` puts
+Google's Cast iOS SDK (`google-cast-ios-sdk`, pinned) behind a protocol, with AirPlay first
+in the TV list. Before the first cast, Google's required local network screen explains the
+prompt iOS shows next. The ID reaches the build through `apps/apple/Config/Cast.xcconfig`,
+written from `app.json` by `tools/apple/cast-app-id.py` (the `apple-apps` job fails when the
+two differ); it also sets the `NSBonjourServices` entries `_googlecast._tcp` and
+`_<ID>._googlecast._tcp`. A home older than the cast grant (its route answers a plain 404)
+gets the plain signed stream URL, which the receiver plays as it came. Tests: MaktabaKit unit
+tests over the vectors, and UI tests against a fake Cast context.
+
 **The Android Player** (`apps/android/player/…/media/`): `Cast.kt` keeps Media3's handover
 between the phone and the TV, and `CastSender.kt` mints the grant before an item reaches the
 TV (and when the next one starts), builds the custom data and follows the receiver. Gradle

@@ -13,6 +13,9 @@ struct WatchControls: View {
 
     /// The scrubber's place while it is dragged (nil: the playing position).
     @State private var scrubbing: Double?
+    /// Google Cast beside AirPlay (story 58.06): nil or no button where this build or this
+    /// home cannot cast.
+    @Environment(CastController.self) private var cast: CastController?
 
     var body: some View {
         ZStack {
@@ -47,6 +50,10 @@ struct WatchControls: View {
                     .frame(width: 44, height: 44)
                     .padding(2)
                     .background(.ultraThinMaterial, in: .circle)
+            }
+            if let cast, cast.showsButton {
+                CastButton(cast: cast)
+                    .simultaneousGesture(TapGesture().onEnded { touched() })
             }
             if PictureInPicture.isSupported {
                 round(playback.pip.isActive ? "pip.exit" : "pip.enter", id: "player.pip") { playback.pip.toggle() } label: {

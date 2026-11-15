@@ -46,6 +46,12 @@ jobs:
           python3 tools/apple/check-ui-typing.py --self-test
           python3 tools/apple/check-ui-typing.py
 
+      # the Player's Cast receiver id is shared/cast/app.json's (story 58.06)
+      - name: The Cast receiver id matches shared/cast/app.json
+        run: |
+          python3 tools/apple/cast-app-id.py --self-test
+          python3 tools/apple/cast-app-id.py --check
+
       # the Player UI tests' split over shards (by measured time; every test in one shard)
       - name: UI test shards split every test once
         run: python3 tools/apple/ui-shard.py --self-test
