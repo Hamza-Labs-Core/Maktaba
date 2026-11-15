@@ -130,10 +130,8 @@ export class PublisherControl extends DurableObject<Env> {
     const gone: string[] = [];
     for (const key of this.dirty) {
       let v: unknown;
-      if (key === "s") {
-        const { sessions: _s, windows: _w, ...meta } = this.s;
-        v = meta;
-      } else if (key.startsWith(SESSION_KEY)) v = this.s.sessions[key.slice(SESSION_KEY.length)];
+      if (key === "s") v = { pub: this.s.pub, plan: this.s.plan, channels: this.s.channels };
+      else if (key.startsWith(SESSION_KEY)) v = this.s.sessions[key.slice(SESSION_KEY.length)];
       else v = this.s.windows[key.slice(WINDOW_KEY.length)];
       if (v === undefined) gone.push(key);
       else put.push([key, v]);

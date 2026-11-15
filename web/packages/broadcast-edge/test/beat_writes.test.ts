@@ -13,7 +13,7 @@ import { E, newChannel } from "./helpers";
 afterEach(() => resetClock());
 
 /** writes records every key the object's storage puts or deletes while fn runs. */
-async function writes<T extends object>(
+async function writes(
   ctx: DurableObjectState,
   fn: () => Promise<unknown>
 ): Promise<{ put: string[]; deleted: string[] }> {
@@ -132,7 +132,8 @@ describe("PublisherControl: a counted beat writes its session and its window", (
     await runInDurableObject(stub, async (o: PublisherControl, state) => {
       await o.beat(pub, "s-a", "ch", "full");
       const windows = await o.pendingUsage();
-      await state.storage.delete(await state.storage.list().then((m) => [...m.keys()]));
+      const keys = [...(await state.storage.list()).keys()];
+      await state.storage.delete(keys);
       await state.storage.put("s", {
         pub,
         plan: null,
