@@ -228,10 +228,11 @@ final class LoopbackHome: @unchecked Sendable {
 /// A home that goes away mid-body: each request gets its head and `cutAfter` bytes of the
 /// body (`LoopbackHome.byte(at:)`), then the connection is reset. A plain socket closed with
 /// `SO_LINGER` 0: the reset leaves in `close()` itself. (`LoopbackHome` cut a body with
-/// `NWConnection.forceCancel()`, which is no close the other side is sure to see: on a CI
-/// runner the socket stayed open 35 s after it, until the home stopped, and the proxy waited
-/// on what looked like a home gone silent. An orderly close, a FIN, is no failure here: a URL
-/// session takes a chunked body that ends with the connection as whole.)
+/// `NWConnection.forceCancel()`, which is no close the other side is sure to see. An orderly
+/// close, a FIN, is no failure here: a URL session takes a chunked body that ends with the
+/// connection as whole.) Even a reset is not always heard at once: on a CI runner the proxy's
+/// URL session went on waiting after it, reading nothing from the socket, until the proxy's
+/// patience with a silent home ran out and cancelled the request.
 /// A path ending `/known.ts` says its length; any other goes in chunks.
 final class DroppingHome: @unchecked Sendable {
     let port: UInt16
@@ -572,6 +573,51 @@ func eventually(_ seconds: Double = 5, _ ok: @Sendable () -> Bool) async -> Bool
         #expect(answered.value(forHTTPHeaderField: "Content-Length") == "\(5 << 20)")
         #expect(answered.value(forHTTPHeaderField: "Last-Modified") == "Sat, 14 Nov 2026 10:00:00 GMT")
         #expect(await eventually { proxy.serving == 0 })
+    }
+
+    /// Cancelling ends the wait for the head or the body at once, on its own: it does not
+    /// wait for the session to say the request ended. That word comes on the session's
+    /// callback queue, and if it never comes (here the queue is stopped) a waiter left to it
+    /// would hold its request's place for good, with the silence no longer counted.
+    @Test(arguments: [false, true]) func cancellingEndsTheWaitWithoutTheSession(_ headCame: Bool) async throws {
+        let home = try await LoopbackHome()
+        defer { home.stop() }
+        // a head and a little of the body, then nothing more; or nothing at all
+        home.on("/stream/abc/x.ts", .init(length: 1 << 20, silentAfter: 4 << 10))
+        home.on("/stream/abc/never.ts", .init(length: 1, holds: true))
+        let callbacks = OperationQueue()
+        callbacks.maxConcurrentOperationCount = 1
+        let session = URLSession(configuration: .ephemeral, delegate: nil, delegateQueue: callbacks)
+        defer { callbacks.isSuspended = false; session.invalidateAndCancel() }
+        let path = headCame ? "stream/abc/x.ts" : "stream/abc/never.ts"
+        let body = UpstreamBody(URLRequest(url: home.url.appending(path: path)), session: session, silence: .seconds(3600))
+        if headCame {
+            #expect(try await body.response()?.statusCode == 200)
+            var got = 0
+            while got < 4 << 10, let more = try await body.next() { got += more.count }
+        }
+        // from now the session tells nothing
+        callbacks.isSuspended = true
+        let waiter = Task { () -> String in
+            do {
+                if headCame { _ = try await body.next() } else { _ = try await body.response() }
+                return "returned"
+            } catch {
+                return "threw"
+            }
+        }
+        try await Task.sleep(for: .milliseconds(100))
+        waiter.cancel()
+        // whichever comes first (a waiter that never ends must not hold the test up)
+        let outcome = await withCheckedContinuation { (first: CheckedContinuation<String, Never>) in
+            let once = Once()
+            Task { let v = await waiter.value; once.run { first.resume(returning: v) } }
+            Task { try? await Task.sleep(for: .seconds(5)); once.run { first.resume(returning: "still waiting") } }
+        }
+        #expect(outcome == "threw", "\(headCame ? "next()" : "response()"): \(outcome); \(body.state)")
+        // a second cancel, and the session's word when it does come, change nothing
+        body.cancel()
+        callbacks.isSuspended = false
     }
 
     /// What is kept of a body is its mark and one delivery, whoever reads and however slowly:
@@ -1156,33 +1202,40 @@ func eventually(_ seconds: Double = 5, _ ok: @Sendable () -> Bool) async -> Bool
 
     /// The home failing mid-body is an error for the player, never a body that looks whole:
     /// with a length the body is short of it; with none it goes in chunks and its last chunk
-    /// never comes. The home goes away with a reset (`DroppingHome`), so its going is seen at
-    /// once and the request's place is given back.
+    /// never comes. The home goes away with a reset (`DroppingHome`), and the request's place
+    /// is given back. A URL session does not always hear the reset (on a CI runner it waited
+    /// on, reading nothing, for the whole minute of the proxy's patience): the proxy here is
+    /// given 5 s of patience with a home gone silent, so either way the request ends within
+    /// this test's wait.
     @Test func aBodyCutShortIsAnErrorForThePlayer() async throws {
         let home = try DroppingHome(length: 8 << 20, cutAfter: 1 << 20)
         defer { home.stop() }
-        let proxy = try Self.proxy(at: home.url)
+        let proxy = try Self.proxy(at: home.url, homePatience: .seconds(5))
         try await proxy.start()
         defer { proxy.stop() }
         let port = try #require(proxy.port)
 
         let known = RawPlayer(port: port)
         defer { known.close() }
+        var began = ContinuousClock.now
         known.ask(Self.target(proxy, "/stream/abc/known.ts"))
         let a = await known.readToEnd()
+        let tookKnown = ContinuousClock.now - began
         let first = split(a.data)
         #expect(first.head.contains("Content-Length: \(8 << 20)") && first.body.count < 8 << 20, "short of its length: \(first.body.count)")
         #expect(!first.body.contains(Data("HTTP/1.1".utf8)), "no second status line inside the body")
 
         let unknown = RawPlayer(port: port)
         defer { unknown.close() }
+        began = ContinuousClock.now
         unknown.ask(Self.target(proxy, "/stream/abc/unknown.ts"))
         let b = await unknown.readToEnd()
+        let tookUnknown = ContinuousClock.now - began
         let second = split(b.data)
         #expect(!second.head.contains("Content-Length") && second.head.contains("Transfer-Encoding: chunked"))
         #expect(b.data.suffix(5) != Data("0\r\n\r\n".utf8), "a body that was cut short must not end with the last chunk")
-        #expect(await eventually { proxy.serving == 0 }, "serving \(proxy.servingStates)")
-        #expect(home.drops == 2)
+        #expect(await eventually { proxy.serving == 0 }, "serving \(proxy.servingStates); home dropped \(home.drops); read in \(tookKnown) and \(tookUnknown)")
+        #expect(home.drops == 2, "home dropped \(home.drops); read in \(tookKnown) and \(tookUnknown)")
 
         // and URLSession, as a player would read it, fails
         await #expect(throws: (any Error).self) {
