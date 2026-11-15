@@ -142,7 +142,7 @@ func ViewerToken(secret string, c ViewerClaims) (string, error) {
 // ControlPost signs a cloud control post of type typ (cloud/internal/broadcast.SignControl): the
 // payload's fields plus typ, kid, iat and exp, valid ttl from at.
 func ControlPost(key ed25519.PrivateKey, typ string, payload map[string]any, at time.Time, ttl time.Duration) (string, error) {
-	p := make(map[string]any, len(payload)+4)
+	p := make(map[string]any)
 	for k, v := range payload {
 		p[k] = v
 	}
