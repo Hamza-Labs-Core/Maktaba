@@ -331,6 +331,7 @@ func (h *ManifestHandler) ServeSubtitlePlaylist(w http.ResponseWriter, r *http.R
 	}
 	w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
 	w.Header().Set("Cache-Control", "no-store")
+	httpx.SetLength(w, len(data))
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(data)
 }

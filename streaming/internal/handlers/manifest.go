@@ -195,6 +195,7 @@ func (h *ManifestHandler) ServeMaster(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", manifestContentType(wantDASH))
 	w.Header().Set("Cache-Control", "no-store")
+	httpx.SetLength(w, len(data))
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(data)
 }
@@ -268,6 +269,7 @@ func (h *ManifestHandler) ServeRenditionIndex(w http.ResponseWriter, r *http.Req
 	}
 	w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
 	w.Header().Set("Cache-Control", "no-store")
+	httpx.SetLength(w, len(data))
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(data)
 }
@@ -351,6 +353,7 @@ func (h *ManifestHandler) ServeSegment(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", segmentContentType(segment))
 	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	httpx.SetLength(w, len(data))
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(data)
 }
