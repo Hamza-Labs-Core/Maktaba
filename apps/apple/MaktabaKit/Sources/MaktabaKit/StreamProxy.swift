@@ -945,13 +945,22 @@ final class UpstreamBody: NSObject, URLSessionDataDelegate, @unchecked Sendable 
         }
     }
 
-    /// Ends the request to the home (nothing happens when it already ended).
+    /// Ends the request to the home (nothing happens when it already ended). Whoever waits
+    /// for the head or the body hears at once: not when the session says the task ended. That
+    /// word comes on the session's callback queue and is not waited for, so a request whose
+    /// word is late or never comes still ends (once cancelled, the silence is not counted,
+    /// so nothing else would end it, and its place would be held for good).
     func cancel() {
-        let t = locked { () -> URLSessionDataTask? in
+        let (h, b, t) = locked { () -> (CheckedContinuation<HTTPURLResponse?, Error>?, CheckedContinuation<Data?, Error>?, URLSessionDataTask?) in
             cancelled = true
             lock.broadcast()
-            return task
+            if ended == nil { ended = .failure(CancellationError()) }
+            if head == nil { head = .failure(CancellationError()) }
+            defer { headWaiter = nil; bodyWaiter = nil }
+            return (headWaiter, bodyWaiter, task)
         }
+        h?.resume(throwing: CancellationError())
+        b?.resume(throwing: CancellationError())
         t?.cancel()
     }
 

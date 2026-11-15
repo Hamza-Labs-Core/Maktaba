@@ -284,7 +284,8 @@ class LivePlayback(
     }
 
     private fun newPlayer(): ExoPlayer {
-        val data = OkHttpDataSource.Factory(http)
+        // a segment cut short is a load error the player tries again, never a whole one (WholeBodyDataSource)
+        val data = com.hamzalabs.maktaba.core.guest.WholeBodyDataSource.Factory(OkHttpDataSource.Factory(http))
         return ExoPlayer.Builder(context)
             .setMediaSourceFactory(DefaultMediaSourceFactory(context).setDataSourceFactory(data))
             .setAudioAttributes(

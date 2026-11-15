@@ -34,6 +34,14 @@ so a two-hour film outlives many access tokens. A fresh transcode's rendition pl
 resumed video opens its session at the position (`start_sec`; the stream keeps the video's
 times) and the player seeks there.
 
+**Watch a broadcast (story 50.27).** From the home picker or Account, a guest watches a home's
+published channels with no home and no account: the publisher's handle and an `MK-` short code
+typed with the remote, or a QR code a phone opens, with the 4-character code both screens show
+while the TV long-polls for the phone's pass. Then the channels with now and next, and the player,
+where up and down (and the channel keys) change the channel (`ui/screens/GuestScreens.kt`, on the
+phone apps' `core/guest`; passes sealed with a Keystore key). `TvGuestJourneyTest` plays a channel
+by short code on the Android TV emulator in CI.
+
 **Parental controls (Epic 57).** The home enforces every rule; the TV says what it answered, as
 the phone Player does (`apps/android/README.md`, "Parental controls"). For a restricted account:
 the time left on Home and over the player, the five- and one-minute warnings, the time's-up
