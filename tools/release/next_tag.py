@@ -5,7 +5,8 @@ The release session (a scheduled agent session, not a workflow: docs/updates.md,
 is made") runs this. It hands this script main's green runs of both workflows, as `gh run list
 --json headSha,event,displayTitle` writes them (`--ci-runs FILE --rehearsal-runs FILE`), or the
 commits both passed on (`--green FILE`, one SHA a line), with broadcast-rehearsal.yml's runs
-(`--broadcast-runs FILE`, always), and it prints (key=value lines, as for
+(`--broadcast-runs FILE`; without it, it fetches them itself with gh: fetch_broadcast_runs),
+and it prints (key=value lines, as for
 $GITHUB_OUTPUT):
 
     tag=vX.Y.Z      the next patch tag ('' when nothing is tagged)
@@ -19,7 +20,8 @@ is named "Update rehearsal of <sha>" (REHEARSAL_TITLE), and that sha is its comm
 push run (main's before 2026-11-07) counts for its headSha.
 
 A green commit is tag-eligible only when the broadcast rehearsal's nightly passed on its
-broadcast code (story 50.29 §4, `--broadcast-runs FILE`, broadcast_verdict): among the nightly
+broadcast code (story 50.29 §4, broadcast_verdict; the runs from `--broadcast-runs FILE`, or
+fetched with gh: fetch_broadcast_runs, no tag when that fails): among the nightly
 runs of broadcast-rehearsal.yml on a commit whose broadcast code (BROADCAST_CODE, the workflow's
 pull-request paths) is the same as this commit's, the newest one that finished passed. A commit
 with no such run is not eligible (fail closed); one whose broadcast code has not changed since a
@@ -295,15 +297,71 @@ def git_broadcast_code(sha: str) -> str | None:
     return r.stdout if r.returncode == 0 else None
 
 
-def main(argv: Sequence[str] | None = None) -> int:
+# The broadcast rehearsal's runs the gate reads, when no --broadcast-runs file is given: only a
+# schedule's or a hand run counts (nightly_commit), so those two events are asked for, each
+# with a month and more of history (a push run on every merge would crowd a mixed list out).
+BROADCAST_EVENTS = ("schedule", "workflow_dispatch")
+BROADCAST_LIMIT = 60
+BROADCAST_FIELDS = "headSha,headBranch,event,status,conclusion,displayTitle,createdAt"
+
+
+class FetchError(Exception):
+    """The broadcast rehearsal's runs could not be had: no tag (fail closed)."""
+
+
+Runner = Callable[[list[str]], "subprocess.CompletedProcess[str]"]
+
+
+def _run(cmd: list[str]) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(cmd, check=False, capture_output=True, text=True, timeout=120)
+
+
+def fetch_broadcast_runs(run: Runner = _run) -> list[dict[str, Any]]:
+    """broadcast-rehearsal.yml's runs on main, every status, as `gh run list --json` gives
+    them. Raises FetchError when gh is missing, fails, or prints something that is not a list."""
+    runs: list[dict[str, Any]] = []
+    for event in BROADCAST_EVENTS:
+        cmd = [
+            "gh", "run", "list", "--workflow", "broadcast-rehearsal.yml", "--branch", "main",
+            "--event", event, "--limit", str(BROADCAST_LIMIT), "--json", BROADCAST_FIELDS,
+        ]  # fmt: skip
+        try:
+            r = run(cmd)
+        except (OSError, subprocess.SubprocessError) as e:
+            raise FetchError(f"gh could not run ({e})") from e
+        if r.returncode != 0:
+            detail = (r.stderr or r.stdout or "").strip().splitlines()
+            raise FetchError(f"gh run list failed (exit {r.returncode}{': ' + detail[-1] if detail else ''})")
+        try:
+            got = json.loads(r.stdout)
+        except ValueError as e:
+            raise FetchError(f"gh run list printed no JSON ({e})") from e
+        if not isinstance(got, list) or not all(isinstance(x, dict) for x in got):
+            raise FetchError("gh run list printed JSON that is not a list of runs")
+        runs.extend(got)
+    return runs
+
+
+def load_broadcast_runs(path: str) -> list[dict[str, Any]]:
+    try:
+        with open(path, encoding="utf-8") as f:
+            got = json.load(f)
+    except (OSError, ValueError) as e:
+        raise FetchError(f"{path}: {e}") from e
+    if not isinstance(got, list) or not all(isinstance(x, dict) for x in got):
+        raise FetchError(f"{path}: not a list of runs")
+    return got
+
+
+def main(argv: Sequence[str] | None = None, run: Runner = _run) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--green", help="a file: the commits CI and the rehearsal both passed on")
     ap.add_argument("--ci-runs", help="a file: ci.yml's passed push runs on main (gh run list --json)")
     ap.add_argument("--rehearsal-runs", help="a file: update-rehearsal.yml's passed runs of main (gh run list --json)")
     ap.add_argument(
         "--broadcast-runs",
-        required=True,
-        help="a file: broadcast-rehearsal.yml's runs, every status (gh run list --json); a commit is eligible only on a green nightly",
+        help="a file: broadcast-rehearsal.yml's runs, every status (gh run list --json); "
+        "without it they are fetched with gh. A commit is eligible only on a green nightly",
     )
     ap.add_argument("--main", default="origin/main", help="main's ref (default origin/main)")
     ap.add_argument("--depth", type=int, default=200, help="how many of main's commits to look through")
@@ -321,8 +379,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     else:
         ap.error("give --green, or both --ci-runs and --rehearsal-runs")
     order = git("rev-list", "--first-parent", f"--max-count={args.depth}", args.main).split()
-    with open(args.broadcast_runs, encoding="utf-8") as f:
-        nightlies = nightly_results(json.load(f))
+    try:
+        runs = load_broadcast_runs(args.broadcast_runs) if args.broadcast_runs else fetch_broadcast_runs(run)
+    except FetchError as e:
+        print("tag=")
+        print("sha=")
+        print(f"reason=no tag: the broadcast rehearsal's runs could not be read: {e}")
+        return 0
+    nightlies = nightly_results(runs)
     codes: dict[str, str | None] = {}
 
     def code(c: str) -> str | None:

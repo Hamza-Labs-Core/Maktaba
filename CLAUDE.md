@@ -18,8 +18,8 @@
 3. **A session pushes each tag**: a scheduled release session (every 30 minutes, on the
    owner's machine) tags the newest commit of main whose CI and update rehearsal both passed, and
    whose broadcast code's last broadcast rehearsal nightly passed, as the next patch version
-   (`tools/release/next_tag.py --green FILE --broadcast-runs FILE`), and its tag push starts the
-   release workflows (`docs/updates.md`, "How a release is made"); no workflow pushes tags. Do
+   (`tools/release/next_tag.py --green FILE`, which reads the nightly runs itself with `gh`),
+   and its tag push starts the release workflows (`docs/updates.md`, "How a release is made"); no workflow pushes tags. Do
    not tag by hand unless a release needs it. The same session then builds each new tag's
    snapshot (`/trail:snapshot`, or `trail skeleton --tag vX.Y.Z`), as the skill says, in a
    trail-only pull request; a session that finds a tag without one builds it. `trail check`

@@ -385,6 +385,134 @@ def test_in_a_repository_the_broadcast_rehearsal_gates_the_tag(
     assert choose(repo, [b, c, d], monkeypatch, capsys, nightlies=[])["tag"] == ""
 
 
+# --- without --broadcast-runs: the runs fetched with gh ------------------------------------------
+
+
+def broadcast_repo(tmp_path: Path) -> tuple[Path, str, str]:
+    repo = tmp_path / "r"
+    repo.mkdir()
+    run(repo, "init", "-q", "-b", "main")
+    a = commit(repo, "api/main.go")
+    run(repo, "tag", "-a", "v0.3.82", "-m", "v0.3.82", a)
+    b = commit(repo, "web/packages/broadcast-edge/src/index.ts")
+    (repo / ".green").write_text(b + "\n")
+    return repo, a, b
+
+
+def outcome(capsys: pytest.CaptureFixture[str]) -> dict[str, str]:
+    return dict(line.split("=", 1) for line in capsys.readouterr().out.splitlines())
+
+
+def fake_gh(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, script: str) -> Path:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    gh = bin_dir / "gh"
+    gh.write_text("#!/bin/sh\n" + script)
+    gh.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
+    return bin_dir
+
+
+def test_the_runs_are_fetched_with_gh_when_no_file_is_given(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import json
+
+    repo, _, b = broadcast_repo(tmp_path)
+    (tmp_path / "schedule.json").write_text(json.dumps([nightly(b, event="schedule")]))
+    calls = tmp_path / "calls"
+    # the fake gh answers the schedule list with b's green nightly, the dispatch list with none
+    fake_gh(
+        tmp_path,
+        monkeypatch,
+        f'echo "$@" >> "{calls}"\n'
+        f'case "$*" in *"--event schedule"*) cat "{tmp_path / "schedule.json"}";; *) echo "[]";; esac\n',
+    )
+    monkeypatch.chdir(repo)
+    assert nt.main(["--green", ".green", "--main", "HEAD"]) == 0
+    out = outcome(capsys)
+    assert (out["tag"], out["sha"]) == ("v0.3.83", b)
+    asked = calls.read_text().splitlines()
+    assert len(asked) == 2
+    for line, event in zip(asked, nt.BROADCAST_EVENTS):
+        assert "run list --workflow broadcast-rehearsal.yml --branch main" in line
+        assert f"--event {event}" in line and f"--json {nt.BROADCAST_FIELDS}" in line
+
+
+def test_the_fetch_counts_a_red_nightly(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    import json
+
+    repo, _, b = broadcast_repo(tmp_path)
+    red = json.dumps([nightly(b, "failure", event="schedule")])
+
+    def runner(cmd: list[str]) -> subprocess.CompletedProcess[str]:
+        assert cmd[:3] == ["gh", "run", "list"]
+        return subprocess.CompletedProcess(cmd, 0, red if "schedule" in cmd else "[]", "")
+
+    monkeypatch.chdir(repo)
+    assert nt.main(["--green", ".green", "--main", "HEAD"], run=runner) == 0
+    out = outcome(capsys)
+    assert out["tag"] == "" and "failed" in out["reason"]
+
+
+@pytest.mark.parametrize(
+    ("result", "why"),
+    [
+        (subprocess.CompletedProcess([], 1, "", "HTTP 401: Bad credentials\n"), "exit 1: HTTP 401"),
+        (subprocess.CompletedProcess([], 0, "not json", ""), "no JSON"),
+        (subprocess.CompletedProcess([], 0, '{"runs": []}', ""), "not a list"),
+        (FileNotFoundError(2, "No such file or directory: 'gh'"), "could not run"),
+        (subprocess.TimeoutExpired(["gh"], 120), "could not run"),
+    ],
+)
+def test_a_failed_fetch_gives_no_tag(
+    result: object, why: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo, _, _ = broadcast_repo(tmp_path)
+
+    def runner(cmd: list[str]) -> subprocess.CompletedProcess[str]:
+        if isinstance(result, BaseException):
+            raise result
+        assert isinstance(result, subprocess.CompletedProcess)
+        return result
+
+    monkeypatch.chdir(repo)
+    assert nt.main(["--green", ".green", "--main", "HEAD"], run=runner) == 0
+    out = outcome(capsys)
+    assert (out["tag"], out["sha"]) == ("", "")
+    assert "broadcast rehearsal's runs could not be read" in out["reason"] and why in out["reason"]
+
+
+def test_no_gh_on_path_gives_no_tag(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    repo, _, _ = broadcast_repo(tmp_path)
+    git_dir = Path(subprocess.run(["sh", "-c", "command -v git"], capture_output=True, text=True, check=True).stdout.strip()).parent
+    empty = tmp_path / "nogh"
+    empty.mkdir()
+    (empty / "git").symlink_to(git_dir / "git")  # git only: no gh
+    monkeypatch.setenv("PATH", str(empty))
+    monkeypatch.chdir(repo)
+    assert nt.main(["--green", ".green", "--main", "HEAD"]) == 0
+    out = outcome(capsys)
+    assert out["tag"] == "" and "could not run" in out["reason"]
+
+
+def test_a_failing_gh_on_path_gives_no_tag(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    repo, _, _ = broadcast_repo(tmp_path)
+    fake_gh(tmp_path, monkeypatch, 'echo "gh: not logged in" >&2\nexit 4\n')
+    monkeypatch.chdir(repo)
+    assert nt.main(["--green", ".green", "--main", "HEAD"]) == 0
+    out = outcome(capsys)
+    assert out["tag"] == "" and "exit 4: gh: not logged in" in out["reason"]
+
+
+def test_an_unreadable_runs_file_gives_no_tag(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    repo, _, _ = broadcast_repo(tmp_path)
+    (repo / ".bc.json").write_text("{")
+    monkeypatch.chdir(repo)
+    assert nt.main(["--green", ".green", "--broadcast-runs", ".bc.json", "--main", "HEAD"]) == 0
+    assert outcome(capsys)["tag"] == ""
+
+
 def test_in_a_repository_from_both_run_lists(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
     import json
 
@@ -405,8 +533,6 @@ def test_in_a_repository_from_both_run_lists(tmp_path: Path, monkeypatch: pytest
     assert (out["tag"], out["sha"]) == ("v0.3.83", b)
     with pytest.raises(SystemExit):
         nt.main(["--ci-runs", ".ci.json", "--broadcast-runs", ".bc.json", "--main", "HEAD"])
-    with pytest.raises(SystemExit):  # the broadcast rehearsal's runs are never optional
-        nt.main(["--ci-runs", ".ci.json", "--rehearsal-runs", ".rh.json", "--main", "HEAD"])
 
 
 # --- the workflows its tag push starts -----------------------------------------------------------
