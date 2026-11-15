@@ -37,6 +37,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -141,40 +142,50 @@ type TxRequest struct {
 }
 
 type openTx struct {
-	tx       *sql.Tx
-	conn     *sql.Conn
-	inv      string
-	mu       sync.Mutex
-	lastUsed time.Time
+	tx    *sql.Tx
+	conn  *sql.Conn
+	inv   string
+	begun time.Time
+	// mu is held by the call using the transaction; done (under mu) once it is rolled back
+	// or committed and its connection given back
+	mu   sync.Mutex
+	done bool
+	// doomed: ended (its invocation, the reaper, Close) while possibly held; busy: a call
+	// holds it; lastUsed: unix nanoseconds of the last call's start or end
+	doomed   atomic.Bool
+	busy     atomic.Bool
+	lastUsed atomic.Int64
 	readOnly bool
 }
 
-// Executor runs registered statements for the plugin API.
-type Executor struct {
-	DB  *sql.DB
-	Now func() time.Time
+func (ot *openTx) touch(t time.Time)     { ot.lastUsed.Store(t.UnixNano()) }
+func (ot *openTx) lastUsedAt() time.Time { return time.Unix(0, ot.lastUsed.Load()) }
 
-	mu    sync.Mutex
-	reg   map[string]map[string]*Statement
-	txs   map[string]*openTx
-	vlibs map[string]map[string]string // invocation -> video -> library
+// Executor runs registered statements for the plugin API. Its connections: pool.go.
+type Executor struct {
+	DB *sql.DB
+
+	cfg       Config
+	owned     bool          // DB is the executor's own (Open): Close closes it
+	slots     chan struct{} // one per connection held (kept, in a call, or in a transaction)
+	waiting   atomic.Int32
+	stop      chan struct{}
+	reaped    chan struct{}
+	closeOnce sync.Once
+
+	mu     sync.Mutex
+	closed bool
+	reg    map[string]map[string]*Statement
+	txs    map[string]*openTx
+	vlibs  map[string]map[string]string // invocation -> video -> library
 	// idle holds connections already SET ROLE to a plugin's role with its origin, by
 	// plugin@version: a statement on one is one round trip (story 54.24 N18)
-	idle map[string][]*sql.Conn
+	idle map[string][]parked
 }
-
-// IdlePerPlugin is how many role connections a plugin keeps between calls.
-const IdlePerPlugin = 4
 
 type querier interface {
 	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
 	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
-}
-
-// New answers an executor with no statements registered.
-func New(db *sql.DB) *Executor {
-	return &Executor{DB: db, Now: time.Now, reg: map[string]map[string]*Statement{},
-		txs: map[string]*openTx{}, vlibs: map[string]map[string]string{}, idle: map[string][]*sql.Conn{}}
 }
 
 var (
@@ -275,7 +286,7 @@ func (e *Executor) Stmt(ctx context.Context, sc Scope, req Request) (*Response, 
 		}
 		decoded[i] = args
 	}
-	start := e.Now()
+	start := time.Now()
 	defer func() {
 		callsTotal.WithLabelValues(sc.PluginID, st.Name).Inc()
 		callSeconds.WithLabelValues(sc.PluginID).Observe(time.Since(start).Seconds())
@@ -285,13 +296,17 @@ func (e *Executor) Stmt(ctx context.Context, sc Scope, req Request) (*Response, 
 		if ref != nil {
 			return nil, ref
 		}
-		ot.mu.Lock()
-		defer ot.mu.Unlock()
-		ot.lastUsed = e.Now()
+		if ref := e.lockTx(ot, req.Tx); ref != nil {
+			return nil, ref
+		}
+		defer e.unlockTx(ot)
 		if ot.readOnly && st.Mode != "read" {
 			return nil, refuse(403, CodeCapability, "a write in a read-only transaction")
 		}
-		return run(ctx, ot.tx, st, req, decoded)
+		// bounded: a call that never returns would hold the transaction from the reaper
+		sctx, cancel := context.WithTimeout(ctx, e.cfg.TxStmtTimeout)
+		defer cancel()
+		return run(sctx, ot.tx, st, req, decoded)
 	}
 	conn, err := e.acquire(ctx, sc)
 	if err != nil {
@@ -313,85 +328,6 @@ func (e *Executor) Stmt(ctx context.Context, sc Scope, req Request) (*Response, 
 	// a statement's own failure leaves the connection as it was; a lost one is not reused
 	e.release(sc, conn, ref != nil && ref.Status == 503)
 	return out, ref
-}
-
-// dropIdle closes the plugin's kept connections.
-func (e *Executor) dropIdle(sc Scope) {
-	key := roleKey(sc)
-	e.mu.Lock()
-	idle := e.idle[key]
-	delete(e.idle, key)
-	e.mu.Unlock()
-	for _, c := range idle {
-		discard(c)
-	}
-}
-
-func roleKey(sc Scope) string { return sc.PluginID + "@" + sc.Version }
-
-// acquire answers a connection that runs as the plugin's role with its origin (step 4),
-// set once per connection: SET ROLE and maktaba.origin at the session's level.
-func (e *Executor) acquire(ctx context.Context, sc Scope) (*sql.Conn, error) {
-	key := roleKey(sc)
-	e.mu.Lock()
-	if l := e.idle[key]; len(l) > 0 {
-		c := l[len(l)-1]
-		e.idle[key] = l[:len(l)-1]
-		e.mu.Unlock()
-		return c, nil
-	}
-	e.mu.Unlock()
-	c, err := e.DB.Conn(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if _, err := c.ExecContext(ctx, "SET ROLE "+pq.QuoteIdentifier(Role(sc.PluginID))+
-		"; SET maktaba.origin = "+pq.QuoteLiteral("plugin:"+sc.PluginID+"@"+sc.Version)); err != nil {
-		discard(c)
-		return nil, err
-	}
-	return c, nil
-}
-
-// release keeps a role connection for the plugin's next call, or gives it back to the
-// API's pool as the API's own (RESET ROLE first; one that cannot be reset is closed, never
-// reused: it would run the API's queries as the plugin).
-func (e *Executor) release(sc Scope, c *sql.Conn, broken bool) {
-	key := roleKey(sc)
-	if !broken {
-		e.mu.Lock()
-		if len(e.idle[key]) < IdlePerPlugin {
-			e.idle[key] = append(e.idle[key], c)
-			e.mu.Unlock()
-			return
-		}
-		e.mu.Unlock()
-	}
-	discard(c)
-}
-
-// discard ends a role connection: reset to the API's own role and returned to the pool,
-// or marked bad (closed) when the reset fails.
-func discard(c *sql.Conn) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	if _, err := c.ExecContext(ctx, "RESET ROLE; RESET maktaba.origin"); err != nil {
-		_ = c.Raw(func(any) error { return driver.ErrBadConn })
-	}
-	_ = c.Close()
-}
-
-// Close gives back every idle role connection (the API stopping, tests).
-func (e *Executor) Close() {
-	e.mu.Lock()
-	all := e.idle
-	e.idle = map[string][]*sql.Conn{}
-	e.mu.Unlock()
-	for _, l := range all {
-		for _, c := range l {
-			discard(c)
-		}
-	}
 }
 
 func run(ctx context.Context, tx querier, st *Statement, req Request, sets [][]any) (*Response, *Error) {
@@ -527,22 +463,35 @@ func (e *Executor) Tx(ctx context.Context, sc Scope, req TxRequest) (map[string]
 		}
 		tx, err := conn.BeginTx(context.WithoutCancel(ctx), &sql.TxOptions{ReadOnly: sc.ReadOnly})
 		if err != nil {
-			discard(conn)
+			e.discard(conn)
 			return nil, refuse(503, CodeDatabase, err.Error())
 		}
 		id := newID()
+		now := e.cfg.Now()
+		ot := &openTx{tx: tx, conn: conn, inv: sc.Invocation, begun: now, readOnly: sc.ReadOnly}
+		ot.touch(now)
 		e.mu.Lock()
-		e.txs[id] = &openTx{tx: tx, conn: conn, inv: sc.Invocation, lastUsed: e.Now(), readOnly: sc.ReadOnly}
+		closed := e.closed
+		if !closed {
+			e.txs[id] = ot
+		}
 		e.mu.Unlock()
+		if closed {
+			e.end(ot)
+			return nil, refuse(503, CodeDatabase, "the plugin API is stopping")
+		}
 		return map[string]string{"tx": id}, nil
 	}
 	ot, ref := e.tx(sc, req.Tx)
 	if ref != nil {
 		return nil, ref
 	}
-	ot.mu.Lock()
-	defer ot.mu.Unlock()
-	ot.lastUsed = e.Now()
+	if ref := e.lockTx(ot, req.Tx); ref != nil {
+		return nil, ref
+	}
+	defer e.unlockTx(ot)
+	sctx, cancel := context.WithTimeout(ctx, e.cfg.TxStmtTimeout)
+	defer cancel()
 	sp := pq.QuoteIdentifier(req.SP)
 	var err error
 	switch req.Op {
@@ -555,13 +504,19 @@ func (e *Executor) Tx(ctx context.Context, sc Scope, req TxRequest) (map[string]
 		} else {
 			err = ot.tx.Rollback()
 		}
+		ot.done = true
 		e.release(sc, ot.conn, err != nil)
+		if req.Op == "rollback" {
+			// a rollback that fails left nothing committed either (a statement that ran past
+			// TxStmtTimeout, say, whose cancel closed the connection): it is done
+			err = nil
+		}
 	case "savepoint":
-		_, err = ot.tx.ExecContext(ctx, "SAVEPOINT "+sp)
+		_, err = ot.tx.ExecContext(sctx, "SAVEPOINT "+sp)
 	case "release":
-		_, err = ot.tx.ExecContext(ctx, "RELEASE SAVEPOINT "+sp)
+		_, err = ot.tx.ExecContext(sctx, "RELEASE SAVEPOINT "+sp)
 	case "rollback_to":
-		_, err = ot.tx.ExecContext(ctx, "ROLLBACK TO SAVEPOINT "+sp)
+		_, err = ot.tx.ExecContext(sctx, "ROLLBACK TO SAVEPOINT "+sp)
 	default:
 		return nil, refuse(400, CodeInvalid, "op "+req.Op)
 	}
@@ -571,7 +526,8 @@ func (e *Executor) Tx(ctx context.Context, sc Scope, req TxRequest) (map[string]
 	return map[string]string{"tx": req.Tx}, nil
 }
 
-// EndInvocation rolls back what an ended invocation left open.
+// EndInvocation rolls back what an ended invocation left open. It never waits for a call
+// that holds one of its transactions: that call rolls it back as it returns (end).
 func (e *Executor) EndInvocation(id string) {
 	e.mu.Lock()
 	var open []*openTx
@@ -584,29 +540,7 @@ func (e *Executor) EndInvocation(id string) {
 	delete(e.vlibs, id)
 	e.mu.Unlock()
 	for _, ot := range open {
-		ot.mu.Lock()
-		_ = ot.tx.Rollback()
-		discard(ot.conn)
-		ot.mu.Unlock()
-	}
-}
-
-// reap rolls back transactions idle past TxIdle.
-func (e *Executor) reap() {
-	now := e.Now()
-	e.mu.Lock()
-	var old []*openTx
-	for k, ot := range e.txs {
-		if now.Sub(ot.lastUsed) > TxIdle && ot.mu.TryLock() {
-			old = append(old, ot)
-			delete(e.txs, k)
-		}
-	}
-	e.mu.Unlock()
-	for _, ot := range old {
-		_ = ot.tx.Rollback()
-		discard(ot.conn)
-		ot.mu.Unlock()
+		e.end(ot)
 	}
 }
 
