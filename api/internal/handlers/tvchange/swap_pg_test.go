@@ -2,6 +2,7 @@ package tvchange
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 	"sync"
@@ -381,6 +382,78 @@ func TestWarmRollbackWithoutALiveSlotIsDegraded(t *testing.T) {
 // A rollback operation whose reverse commit found nothing to roll back (the
 // tv_rollback job's LookupError, recorded as commit_error) is resolved: the
 // controller does not enqueue it again, and tells the admins once.
+// The controller ticks while an admin's warm rollback is being asked for: its
+// operation is written, its reverse commit is being enqueued, and the tick sees the
+// operation uncommitted. The tick must not enqueue a second reverse commit: the
+// second one would run after the first had already flipped tv_routing back (no
+// rollback point left) and fail. The queue hook runs the tick inside the API's
+// enqueue, the window between the operation's write and its stamp.
+func TestWarmRollbackRacingATickEnqueuesOneReverseCommit(t *testing.T) {
+	w := newWorld(t)
+	w.now = time.Now().UTC()
+	prev, cur := w.release(0), w.release(1)
+	c1 := w.channel(101)
+	w.exec(`INSERT INTO tv_release_channels (release_id, channel_id, def, art, sched_changed) VALUES
+		($1, $3, '{"number": 101, "name": "One"}', '{}', false), ($2, $3, '{"number": 101, "name": "One"}', '{}', true)`,
+		prev, cur, c1)
+	live := w.change(core.StateLive, "editor", nil, "")
+	w.exec(`UPDATE tv_changes SET release_id = $2, base_release_id = $3, swapped_at = now() WHERE id = $1`, live, cur, prev)
+	w.exec(`INSERT INTO tv_routing (scope, live_release_id, live_gen, previous_release_id, previous_gen, epoch, switched_at, previous_until)
+		VALUES ('cluster', $1, 1, $2, 0, 5, now(), now() + interval '15 minutes')`, cur, prev)
+	w.exec(`INSERT INTO tv_slots (host_id, slot, role, role_epoch, state, beat_at) VALUES
+		('home', 'amber', 'live', 4, 'healthy', now()), ('home', 'blue', 'previous', 4, 'healthy', now())`)
+	ticked := false
+	w.ctl.Enqueue = func(ctx context.Context, stage string, payload map[string]any, why string) error {
+		if err := w.q.enqueue(ctx, stage, payload, why); err != nil {
+			return err
+		}
+		if stage == core.StageTVRollback && !ticked {
+			ticked = true
+			if err := w.ctl.Tick(ctx); err != nil {
+				t.Errorf("tick inside the enqueue: %v", err)
+			}
+		}
+		return nil
+	}
+	if code, out := w.do("POST", "/api/tv/rollback", "{}", "u1"); code != http.StatusAccepted || out["op_id"] == nil {
+		t.Fatalf("warm rollback: %d %v", code, out)
+	}
+	if !ticked {
+		t.Fatal("the tick never ran inside the enqueue")
+	}
+	w.tick()
+	if j := w.jobs("tv_rollback:" + live); j != 1 {
+		t.Fatalf("%d reverse commits enqueued, want 1: %v", j, w.q.list())
+	}
+}
+
+// A reverse commit whose enqueue failed gives its claim back: the next tick enqueues
+// it, without waiting out the re-ask window.
+func TestRollbackCommitEnqueueFailureIsRetriedNextTick(t *testing.T) {
+	w := newWorld(t)
+	w.now = time.Now().UTC()
+	id := w.change(core.StateLive, "editor", nil, "")
+	op := w.op(id, "rollback", "done", false, `{}`)
+	down := true
+	w.ctl.Enqueue = func(ctx context.Context, stage string, payload map[string]any, why string) error {
+		if down {
+			return errors.New("queue down")
+		}
+		return w.q.enqueue(ctx, stage, payload, why)
+	}
+	w.tick()
+	var stamped bool
+	if err := w.db.QueryRow(`SELECT detail ? 'enqueued_at' FROM tv_swap_ops WHERE id = $1`, op).Scan(&stamped); err != nil || stamped {
+		t.Fatalf("the failed enqueue kept its claim (%v)", err)
+	}
+	down = false
+	w.tick()
+	w.tick()
+	if j := w.jobs("tv_rollback:" + id); j != 1 {
+		t.Fatalf("%d reverse commits enqueued after the queue came back, want 1: %v", j, w.q.list())
+	}
+}
+
 func TestRollbackThatCannotCommitIsNotReenqueued(t *testing.T) {
 	w := newWorld(t)
 	w.now = time.Now().UTC()

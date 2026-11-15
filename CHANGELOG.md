@@ -315,6 +315,14 @@ build fails when the two differ.
 
 ### Fixed
 
+- **A TV rollback runs its reverse commit once.** An admin's rollback and the change
+  controller's next check could both queue the reverse commit of the same rollback when the
+  check landed between the rollback being written and its job being queued. The second job then
+  ran after the first had already put the previous release back on the air, found no rollback
+  point left and failed, leaving a failed TV job behind a rollback that had worked. Queueing the
+  reverse commit is now claimed first, in one database statement, so exactly one of them queues
+  it; a claim whose queueing fails is given back and retried on the next check.
+
 - **Roku sends the cloud code's grant only to an address its certificate check proves.** After
   a phone approved the code, a plain HTTP or raw IP address the cloud listed could still get the
   grant when whatever answered there listed the home's relay among its addresses; anyone on the

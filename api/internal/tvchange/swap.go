@@ -259,21 +259,48 @@ func (c *Controller) enqueueRollbackCommit(ctx context.Context, ch *Change, o sw
 			Link:   ChangeLink(ch.ID), Subject: fmt.Sprintf("tv_swap_op:%d", o.ID), Every: 30 * 24 * time.Hour})
 		return nil
 	}
-	if c.stampedSince(o.Detail, "enqueued_at") {
-		return nil
-	}
 	if c.Enqueue == nil {
 		return errors.New("no queue")
+	}
+	claimed, err := c.claimEnqueue(ctx, o.ID)
+	if err != nil || !claimed {
+		return err
 	}
 	payload := map[string]any{"change_id": ch.ID, "op_id": o.ID, "reason": o.Reason}
 	if a, _ := o.Detail["actor"].(string); a != "" {
 		payload["actor"] = a
 	}
 	if err := c.Enqueue(ctx, StageTVRollback, payload, "roll back TV change"); err != nil {
+		c.releaseEnqueue(ctx, o.ID)
 		return err
 	}
-	c.stampOp(ctx, o.ID, "enqueued_at")
 	return nil
+}
+
+// claimEnqueue claims the enqueueing of a rollback operation's reverse commit: it
+// stamps enqueued_at only when the operation is uncommitted and not stamped within
+// reaskAfter, in one statement, and reports whether this caller won. The API's
+// rollback request and the controller's tick both enqueue the reverse commit of the
+// same operation; stamping after the enqueue left a window in which both did, and
+// the second job ran after the first had flipped tv_routing back (no rollback point
+// left). The claim comes first, so exactly one of them enqueues.
+func (c *Controller) claimEnqueue(ctx context.Context, id int64) (bool, error) {
+	now := c.now()
+	stamp, _ := json.Marshal(map[string]any{"enqueued_at": now.Format(time.RFC3339)})
+	var got int64
+	err := c.DB.QueryRowContext(ctx, `UPDATE tv_swap_ops SET detail = detail || $2::jsonb
+		WHERE id = $1 AND NOT committed
+		  AND (COALESCE(detail->>'enqueued_at', '') = '' OR (detail->>'enqueued_at')::timestamptz <= $3)
+		RETURNING id`, id, string(stamp), now.Add(-reaskAfter)).Scan(&got)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	return err == nil, err
+}
+
+// releaseEnqueue drops a claim whose enqueue failed, so the next tick tries again.
+func (c *Controller) releaseEnqueue(ctx context.Context, id int64) {
+	_, _ = c.DB.ExecContext(ctx, `UPDATE tv_swap_ops SET detail = detail - 'enqueued_at' WHERE id = $1`, id)
 }
 
 // RollbackPoint is what a rollback would do now (story 33.9 AC7).
@@ -460,18 +487,31 @@ func (c *Controller) requestRollback(ctx context.Context, ch *Change, reason str
 	if c.Enqueue == nil {
 		return res, errors.New("no queue")
 	}
-	payload := map[string]any{"change_id": ch.ID, "reason": reason}
+	// with an operation, the reverse commit is enqueued by whoever claims it first:
+	// this request or the controller's tick (claimEnqueue); a lost claim means it is
+	// enqueued already
+	enqueue := true
 	if res.OpID != 0 {
-		payload["op_id"] = res.OpID
+		claimed, err := c.claimEnqueue(ctx, res.OpID)
+		if err != nil {
+			return res, err
+		}
+		enqueue = claimed
 	}
-	if actor != nil {
-		payload["actor"] = *actor
-	}
-	if err := c.Enqueue(ctx, StageTVRollback, payload, "roll back TV change"); err != nil {
-		return res, err
-	}
-	if res.OpID != 0 {
-		c.stampOp(ctx, res.OpID, "enqueued_at")
+	if enqueue {
+		payload := map[string]any{"change_id": ch.ID, "reason": reason}
+		if res.OpID != 0 {
+			payload["op_id"] = res.OpID
+		}
+		if actor != nil {
+			payload["actor"] = *actor
+		}
+		if err := c.Enqueue(ctx, StageTVRollback, payload, "roll back TV change"); err != nil {
+			if res.OpID != 0 {
+				c.releaseEnqueue(ctx, res.OpID)
+			}
+			return res, err
+		}
 	}
 	c.Logger.Info("tv rollback requested", "event", "tv_rollback_requested", "change_id", ch.ID, "reason", reason,
 		"op_id", res.OpID)
