@@ -206,6 +206,8 @@ type homeMetrics struct {
 		Status int    `json:"status"`
 		Bytes  int64  `json:"bytes"`
 		AtMS   int64  `json:"at_ms"`
+		TookMS int64  `json:"took_ms"`
+		Err    string `json:"err"`
 	} `json:"puts"`
 }
 

@@ -59,6 +59,7 @@ func TestMemStore(t *testing.T) {
 func TestCountingTransport(t *testing.T) {
 	edge := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPut {
+			time.Sleep(30 * time.Millisecond) // a busy edge: the log keeps how long it took
 			w.WriteHeader(http.StatusCreated)
 		}
 	}))
@@ -83,6 +84,28 @@ func TestCountingTransport(t *testing.T) {
 	}
 	if time.Since(time.UnixMilli(got[0].AtMS)) > time.Minute {
 		t.Fatalf("time: %d", got[0].AtMS)
+	}
+	if got[0].TookMS < 30 || got[0].Err != "" {
+		t.Fatalf("took %d ms, err %q", got[0].TookMS, got[0].Err)
+	}
+}
+
+// A PUT with no answer (the edge gone) is logged with status 0 and the client's error, so the
+// fan-out can tell an unanswered PUT from a refusal.
+func TestCountingTransportNoAnswer(t *testing.T) {
+	edge := httptest.NewServer(http.NotFoundHandler())
+	url := edge.URL
+	edge.Close()
+	log := &putLog{}
+	c := &http.Client{Transport: &countingTransport{next: http.DefaultTransport, log: log}}
+	req, _ := http.NewRequest(http.MethodPut, url+"/v1/ingest/abc/480p/7.ts", strings.NewReader("x"))
+	if resp, err := c.Do(req); err == nil {
+		_ = resp.Body.Close()
+		t.Fatal("a closed edge answered")
+	}
+	got := log.snapshot()
+	if len(got) != 1 || got[0].Rung != "480p" || got[0].Seq != 7 || got[0].Status != 0 || got[0].Err == "" {
+		t.Fatalf("puts: %+v", got)
 	}
 }
 

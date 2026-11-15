@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -153,28 +154,27 @@ func fanout(s *stack) {
 	fl.Wait()
 	s.r.Latency = Latency(last)
 
-	// the three counts of the home's upload agree: the uploader's own report, the home's HTTP
-	// client (the proxy) and the edge
+	// the three counts of the home's upload agree: the uploader's own report, the edge's answers
+	// as the home's HTTP client (the proxy) saw them, and the edge's own count of stored segments
 	// the test pattern stopped, nothing new is made; the broadcaster's next report (every 10 s)
 	// then counts all it sent
 	_, _, _ = s.do(http.MethodPost, s.home+"/encoder/stop", nil, nil)
 	time.Sleep(22 * time.Second)
 	m := s.homeMetrics()
 	c := s.counters()
+	puts := make([]HomePut, 0, len(m.Puts))
+	for _, p := range m.Puts {
+		puts = append(puts, HomePut{Rung: p.Rung, Seq: p.Seq, Status: p.Status, TookMS: p.TookMS, Err: p.Err})
+	}
 	for _, r := range rungs {
-		proxy := 0
-		for _, p := range m.Puts {
-			if p.Rung == r && p.Status == http.StatusCreated {
-				proxy++
-			}
-		}
 		edge := 0
 		for _, w := range c.Workers {
 			edge += w.IngestPutByRung[r]
 		}
-		own := reportCount(m.Report, r)
-		s.check("the home's counts agree ("+r+")", own == proxy && proxy == edge, "home_puts",
-			fmt.Sprintf("uploader %d, proxy %d, edge %d", own, proxy, edge))
+		// each segment stored once; an extra stored segment only where the home's PUT ended
+		// with no answer (TallyRung)
+		t := TallyRung(puts, r, reportCount(m.Report, r), edge)
+		s.check("the home's counts agree ("+r+")", t.OK(), "home_puts", t.String())
 	}
 }
 
@@ -201,6 +201,9 @@ func fanoutStep(s *stack, ch string, n, locations int, t0, t1 time.Time, c0, c1 
 		}
 	}
 	perRung := map[string]map[int64]int{}
+	// each segment's answers in order (a PUT sent twice names why: 429, 503, a client error)
+	answers := map[string][]string{}
+	var took []time.Duration
 	var bytes int64
 	puts := 0
 	for _, p := range m.Puts {
@@ -208,6 +211,13 @@ func fanoutStep(s *stack, ch string, n, locations int, t0, t1 time.Time, c0, c1 
 			continue
 		}
 		puts++
+		took = append(took, time.Duration(p.TookMS)*time.Millisecond)
+		a := strconv.Itoa(p.Status)
+		if p.Err != "" {
+			a = p.Err
+		}
+		k := fmt.Sprintf("%s/%d", p.Rung, p.Seq)
+		answers[k] = append(answers[k], a)
 		bytes += p.Bytes
 		if perRung[p.Rung] == nil {
 			perRung[p.Rung] = map[int64]int{}
@@ -220,7 +230,7 @@ func fanoutStep(s *stack, ch string, n, locations int, t0, t1 time.Time, c0, c1 
 		for seq := range seqs {
 			if perRung[r][seq] != 1 {
 				exact = false
-				odd = append(odd, fmt.Sprintf("%s/%d×%d", r, seq, perRung[r][seq]))
+				odd = append(odd, fmt.Sprintf("%s/%d×%d %v", r, seq, perRung[r][seq], answers[fmt.Sprintf("%s/%d", r, seq)]))
 			}
 		}
 	}
@@ -271,9 +281,11 @@ func fanoutStep(s *stack, ch string, n, locations int, t0, t1 time.Time, c0, c1 
 	// a viewer finds a segment at its next playlist (a target duration at most, the playlist's
 	// 1 s cache) and then has 1.5 s to fetch it
 	afterHomeMax := 4000.0 + 1000 + 1500
+	putTook := viewers.PercentilesOf(took)
 	checks := []Check{
 		{Name: "home PUTs = segments × rungs", OK: exact && puts == len(seqs)*len(rungs), Counter: "home_puts",
-			Detail: fmt.Sprintf("%d PUTs for %d segments × %d rungs %s", puts, len(seqs), len(rungs), strings.Join(odd, " "))},
+			Detail: fmt.Sprintf("%d PUTs for %d segments × %d rungs; the edge answered a PUT in p95 %.0f ms, max %.0f ms %s",
+				puts, len(seqs), len(rungs), putTook.P95, putTook.Max, strings.Join(odd, " "))},
 		{Name: "R2 reads ≤ 2 per object per location", OK: maxPer <= 2, Counter: "r2_reads",
 			Detail: fmt.Sprintf("%d reads of %d objects, at most %d (%s); bound %d locations × %d rungs per segment", r2, len(reads), maxPer, worst, locations, len(rungs))},
 		{Name: "no viewer error", OK: all.Errors == 0, Counter: "viewer_errors",

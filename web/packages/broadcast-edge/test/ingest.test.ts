@@ -115,6 +115,41 @@ describe("ingest", () => {
     expect((await measure(long)).status).toBe(401);
   });
 
+  it("answers a re-PUT of a stored segment (same rung, seq, body) as a duplicate, writing R2 once", async () => {
+    // the home replays a PUT whose answer a reset connection lost: the edge must not store it
+    // twice, whether the replay finds the segment published or still waiting for its slot
+    const ch = newChannel();
+    const token = await ingestToken({ ch });
+    const puts: string[] = [];
+    const counting = {
+      ...E.SEGMENTS,
+      put: (key: string, value: unknown, opts?: R2PutOptions) => {
+        puts.push(key);
+        return E.SEGMENTS.put(key, value as ArrayBuffer, opts);
+      },
+    } as unknown as R2Bucket;
+    const env = { SEGMENTS: counting };
+    const body = segmentBody("src", 7, 4096);
+    const first = await putSegment(ch, "src", 7, { token, body, env });
+    expect(first.status).toBe(201);
+    for (let i = 0; i < 3; i++) {
+      const again = await putSegment(ch, "src", 7, { token, body, env });
+      expect(again.status).toBe(200);
+      expect(await again.json()).toEqual({ status: "duplicate" });
+    }
+    expect(puts).toHaveLength(1);
+    expect((await E.SEGMENTS.list({ prefix: `test/${ch}/src/7-` })).objects).toHaveLength(1);
+    // the same seq with another body is a conflict, also never written
+    advanceClock(1_100); // past the burst guard's second (4 PUTs above)
+    const other = await putSegment(ch, "src", 7, {
+      token,
+      body: segmentBody("src", 7, 4096, "x"),
+      env,
+    });
+    expect(other.status).toBe(409);
+    expect(puts).toHaveLength(1);
+  });
+
   it("writes each segment under <env>/<channel>/<rung>/<seq>-<hash8>.ts and lists it", async () => {
     const ch = newChannel();
     for (const rung of ["src", "720p", "480p"])
