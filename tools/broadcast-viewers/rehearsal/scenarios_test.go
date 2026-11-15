@@ -154,28 +154,27 @@ func fanout(s *stack) {
 	fl.Wait()
 	s.r.Latency = Latency(last)
 
-	// the three counts of the home's upload agree: the uploader's own report, the home's HTTP
-	// client (the proxy) and the edge
+	// the three counts of the home's upload agree: the uploader's own report, the edge's answers
+	// as the home's HTTP client (the proxy) saw them, and the edge's own count of stored segments
 	// the test pattern stopped, nothing new is made; the broadcaster's next report (every 10 s)
 	// then counts all it sent
 	_, _, _ = s.do(http.MethodPost, s.home+"/encoder/stop", nil, nil)
 	time.Sleep(22 * time.Second)
 	m := s.homeMetrics()
 	c := s.counters()
+	puts := make([]HomePut, 0, len(m.Puts))
+	for _, p := range m.Puts {
+		puts = append(puts, HomePut{Rung: p.Rung, Seq: p.Seq, Status: p.Status, TookMS: p.TookMS, Err: p.Err})
+	}
 	for _, r := range rungs {
-		proxy := 0
-		for _, p := range m.Puts {
-			if p.Rung == r && p.Status == http.StatusCreated {
-				proxy++
-			}
-		}
 		edge := 0
 		for _, w := range c.Workers {
 			edge += w.IngestPutByRung[r]
 		}
-		own := reportCount(m.Report, r)
-		s.check("the home's counts agree ("+r+")", own == proxy && proxy == edge, "home_puts",
-			fmt.Sprintf("uploader %d, proxy %d, edge %d", own, proxy, edge))
+		// each segment stored once; an extra stored segment only where the home's PUT ended
+		// with no answer (TallyRung)
+		t := TallyRung(puts, r, reportCount(m.Report, r), edge)
+		s.check("the home's counts agree ("+r+")", t.OK(), "home_puts", t.String())
 	}
 }
 
