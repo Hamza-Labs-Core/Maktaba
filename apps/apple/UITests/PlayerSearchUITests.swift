@@ -115,6 +115,32 @@ final class PlayerSearchUITests: PlayerUITestCase {
         XCTAssertTrue(app.staticTexts["السيرة النبوية، الدرس ١٢"].waitForExistence(timeout: 10), "v3's title")
     }
 
+    /// Back in the field to refine, then a result: the field lets go of the keyboard before the
+    /// page is pushed (Trail #1425's open gap). Pushed with the keyboard up, its hiding could be
+    /// cut off and the app never idle again: the tap after it would wait its full 60 s.
+    func testATitleTappedWhileRefiningLetsTheKeyboardGoAndOpensItsPage() {
+        // no suggestions over the results while the field is back in use
+        home.stub("GET", "/api/search/suggest", body: #"{"suggestions": []}"#)
+        openSearch()
+        type("seerah\n")
+        let title = element("search.title.v3")
+        XCTAssertTrue(title.waitForExistence(timeout: 10))
+        // back in the field: the same words typed again, the results still under it
+        type("seerah")
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5), "the keyboard is up again")
+        XCTAssertTrue(title.waitForExistence(timeout: 10), "the results under the field")
+        tapWhenIdle(title, "the results while refining")
+        // the first tap opens the page (a gesture on the row once took the tap on an iPhone)
+        XCTAssertTrue(element("screen.video").waitForExistence(timeout: 10), "the video's page")
+        XCTAssertTrue(app.staticTexts["السيرة النبوية، الدرس ١٢"].waitForExistence(timeout: 10), "v3's title")
+        XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5), "the keyboard let go")
+        // and the app went idle after the push: the next tap does not wait out the stall
+        let back = app.navigationBars.buttons.firstMatch
+        XCTAssertTrue(back.waitForExistence(timeout: 5), "the page's back button")
+        tapWhenIdle(back, "the video's page after the push")
+        XCTAssertTrue(element("screen.search").waitForExistence(timeout: 10), "back on Search")
+    }
+
     /// Arabic: the query goes to the home as typed, its diacritics too (the home ranks it;
     /// the app normalises nothing), and the screen speaks Arabic.
     func testAnArabicQueryIsSentUnchanged() {

@@ -53,6 +53,8 @@ struct LinkedRouteSheet: View {
                     }
                 }
         }
+        // the sheet's own stack holds no path: its pages push on their own
+        .environment(\.playerPush, nil)
         #if os(macOS)
         .frame(minWidth: 640, minHeight: 560)
         #endif
