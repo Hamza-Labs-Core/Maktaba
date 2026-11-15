@@ -14,9 +14,10 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             Form {
-                // story 50.27: Watch a broadcast, apart from the home and its account; not under a
-                // parental limit (Epic 57): a broadcast is outside the home's ratings
-                if !session.parental.current.limited {
+                // story 50.27: Watch a broadcast, apart from the home and its account; only once
+                // the home said there is no parental limit (Epic 57): a broadcast is outside the
+                // home's ratings, and the entry fails closed
+                if session.guestGate.allowed {
                     Section {
                         Button {
                             watchingBroadcast = true
@@ -77,7 +78,7 @@ struct SettingsView: View {
             .frame(maxWidth: .infinity)
             .background(Theme.background.ignoresSafeArea())
         }
-        .fullScreenCover(isPresented: $watchingBroadcast) { TVGuestSpace() }
+        .guestCover(session, isPresented: $watchingBroadcast)
     }
 
     /// Epic 57 story 57.11: for a sign-in the home limits, that a parent manages the account

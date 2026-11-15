@@ -59,6 +59,36 @@ final class PlayerGuestUITests: PlayerUITestCase {
         shot("guest-used")
     }
 
+    /// An invite link opened with no home and no limit kept on the device: the guest space
+    /// opens on that invite (a guest needs no home).
+    func testOpenedInviteLinkOpensTheGuestSpace() throws {
+        launch("en", extra: ["-maktaba-guest-edge", home.url])
+        XCTAssertTrue(element("picker.address").waitForExistence(timeout: 20), "the home picker")
+        app.open(URL(string: "maktaba://watch/i/\(MockHome.guestInvite)")!)
+        XCTAssertTrue(element("guest.channel.ch1").waitForExistence(timeout: 30), "the invite's channels; the edge saw \(home.seen)")
+    }
+
+    /// A device where a sign-in was limited when its home last said (Epic 57; the kept flag,
+    /// set here as a launch argument): with no home signed in the picker has no Watch a
+    /// broadcast, and an invite link is refused in words, never opened.
+    func testALimitedDeviceRefusesGuestWatching() throws {
+        launch("en", extra: ["-maktaba-guest-edge", home.url, "-parental.limited.device", "YES"])
+        XCTAssertTrue(element("picker.address").waitForExistence(timeout: 20), "the home picker")
+        for _ in 0..<4 { app.swipeUp() }
+        XCTAssertFalse(element("picker.watchBroadcast").exists, "no Watch a broadcast on a limited device")
+
+        app.open(URL(string: "maktaba://watch/i/\(MockHome.guestInvite)")!)
+        let alert = app.alerts.firstMatch
+        XCTAssertTrue(alert.waitForExistence(timeout: 20), "the link says why it did not open")
+        let refusal = alert.staticTexts.containing(NSPredicate(format: "label CONTAINS[c] 'parental limit'")).firstMatch
+        XCTAssertTrue(refusal.exists, "the refusal: \(alert.debugDescription)")
+        shot("guest-refused")
+        XCTAssertFalse(element("guest.link").exists, "the guest space did not open")
+        XCTAssertFalse(home.requests.contains { $0.path == "/api/v1/redeem" }, "nothing was asked of the edge")
+        alert.buttons.firstMatch.tap()
+        XCTAssertTrue(element("picker.address").waitForExistence(timeout: 10), "back at the picker")
+    }
+
     private func wait(_ timeout: TimeInterval, _ condition: @escaping () -> Bool) -> Bool {
         let end = Date().addingTimeInterval(timeout)
         while Date() < end {

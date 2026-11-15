@@ -32,6 +32,14 @@ public final class ParentalStore {
     public private(set) var epoch = 0
     /// The home answered once (a 404 counts).
     public private(set) var answered = false
+    /// The home itself said what the limit is (its answer, or a 404 from a home from before
+    /// Epic 57): unlike `answered`, a failed read does not count, since `current` is then
+    /// only the empty default. What fails closed (Watch a broadcast, story 50.27) waits for it.
+    public private(set) var confirmed = false
+    /// The home answered 404: it predates Epic 57, so it says nothing of a limit. Watch a
+    /// broadcast then goes by what this device kept (`deviceWasLimited`): a host that only
+    /// answers 404 must not make a limited device look unlimited.
+    public private(set) var predatesLimits = false
     public private(set) var time: TimeReading?
 
     /// The home's time answer and when this device got it. The countdown shown between two
@@ -90,6 +98,30 @@ public final class ParentalStore {
         defaults.bool(forKey: key(home: home, user: user))
     }
 
+    /// Where "a sign-in on this device was limited when last asked" is kept: true while any
+    /// sign-in's own key (`key`) is true. With no home signed in, it is all the device knows
+    /// of a limit (Watch a broadcast, story 50.27, reads it).
+    public nonisolated static let deviceKey = "parental.limited.device"
+
+    /// Whether a sign-in on this device was limited when its home last said: the device key,
+    /// or, on a device whose keys predate it, any sign-in's own key. False when no home ever
+    /// answered on this device.
+    public nonisolated static func deviceWasLimited(defaults: UserDefaults = .standard) -> Bool {
+        // `bool(forKey:)` reads a launch argument's "YES" too (the UI tests set it so)
+        if defaults.object(forKey: deviceKey) != nil { return defaults.bool(forKey: deviceKey) }
+        return anySignInLimited(defaults)
+    }
+
+    /// Any sign-in's own key (`parental.limited.<home>#<user>`) is true.
+    nonisolated static func anySignInLimited(_ defaults: UserDefaults) -> Bool {
+        defaults.dictionaryRepresentation().keys.contains { key in
+            key.hasPrefix("parental.limited.") && key != deviceKey && defaults.bool(forKey: key)
+        }
+    }
+
+    /// This store's `deviceWasLimited`.
+    public var deviceWasLimited: Bool { Self.deviceWasLimited(defaults: defaults) }
+
     /// A home was signed in to: forget the last account's answer and ask this one. `key`
     /// (`ParentalStore.key`) keeps whether the sign-in is limited for the next launch.
     public func use(_ source: any ParentalSource, isAdmin: Bool, key: String? = nil) {
@@ -117,6 +149,8 @@ public final class ParentalStore {
         if current != .none { current = .none }
         if canManage { canManage = false }
         if answered { answered = false }
+        if confirmed { confirmed = false }
+        if predatesLimits { predatesLimits = false }
         if time != nil { time = nil }
     }
 
@@ -168,14 +202,25 @@ public final class ParentalStore {
             let limit = try await source.myParental()
             guard mine == generation else { return }
             guard let limit else {
+                // this sign-in was limited when this home last answered: a home does not lose
+                // Epic 57, so a 404 now (a proxy, a host standing in for the home) is not "no
+                // limit". Nothing is applied or kept, and it is asked again as after a failure.
+                if let kept, defaults.bool(forKey: kept) {
+                    Log.failure("parental limit", APIError.decoding("404 from a home that answered a limit"), logger: Log.network)
+                    if !answered { answered = true }
+                    return
+                }
                 // a home from before Epic 57: no limit, no Family, nothing more asked
                 unsupported = true
+                predatesLimits = true
                 apply(.none)
                 if canManage { canManage = false }
+                confirmed = true
                 answered = true
                 return
             }
             apply(limit)
+            if !confirmed { confirmed = true }
             if limit.restricted {
                 if canManage { canManage = false }
             } else if !isAdmin {
@@ -224,6 +269,9 @@ public final class ParentalStore {
         if let kept {
             newlyLimited = first && limit.limited && !defaults.bool(forKey: kept)
             if defaults.bool(forKey: kept) != limit.limited { defaults.set(limit.limited, forKey: kept) }
+            // the device's flag follows every sign-in's: true while any of them is limited
+            let device = limit.limited || Self.anySignInLimited(defaults)
+            if defaults.object(forKey: Self.deviceKey) as? Bool != device { defaults.set(device, forKey: Self.deviceKey) }
         }
         guard limit != current || newlyLimited else { return }
         current = limit

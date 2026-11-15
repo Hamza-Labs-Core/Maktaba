@@ -14,6 +14,10 @@ struct PlayerApp: App {
     @State private var link: PlayerRoute?
     /// Story 50.27: Watch a broadcast is open (with the invite a link brought, if any).
     @State private var guest: GuestLaunch?
+    /// An invite link that came before the parental limit was known (`GuestGate.checking`).
+    @State private var held = HeldInvite()
+    /// Why an invite link did not open, or why Watch a broadcast closed (an alert).
+    @State private var guestNotice: String?
 
     init() {
         // Epic 57: the Player asks the home for the account's parental limit and tells it
@@ -94,12 +98,21 @@ struct PlayerApp: App {
         .onOpenURL { url in
             if let route = VideoLink.route(url) {
                 link = route
-            } else if let invite = GuestInput.invite(in: url), guestAllowed {
-                guest = GuestLaunch(invite: invite)
+            } else if let invite = GuestInput.invite(in: url) {
+                arrived(invite)
             }
         }
-        // the home picker's Watch a broadcast: a guest needs no home and no account
-        .environment(\.watchBroadcast, guestAllowed ? { guest = GuestLaunch(invite: nil) } : nil)
+        // the home picker's Watch a broadcast: a guest needs no home and no account, and the
+        // entry shows only once the parental limit is known and is none (fails closed)
+        .environment(\.watchBroadcast, session.guestGate.allowed ? { guest = GuestLaunch(invite: nil) } : nil)
+        // the gate moved: a held invite opens or goes; under a limit an open guest space closes
+        .onChange(of: session.guestGate) { _, gate in gateMoved(gate) }
+        .alert(Text(verbatim: GuestWords.message("guest.watchBroadcast")),
+               isPresented: Binding(get: { guestNotice != nil }, set: { if !$0 { guestNotice = nil } })) {
+            Button(GuestWords.message("guest.close")) { guestNotice = nil }
+        } message: {
+            Text(verbatim: guestNotice ?? "")
+        }
         // full screen on iPhone and iPad (a player opened inside an iPad's form sheet never
         // showed); a sheet on the Mac
         #if os(iOS)
@@ -124,10 +137,32 @@ struct GuestLaunch: Identifiable {
 }
 
 extension PlayerApp {
-    /// Not under a parental limit (Epic 57), the account's or this device's: a broadcast is
-    /// outside any home's ratings.
-    var guestAllowed: Bool {
-        !session.parental.current.limited
+    /// An invite link was opened: it opens only when the gate allows (`GuestGate`); while the
+    /// limit is not known it waits, under a limit it is refused, and either way it says so.
+    func arrived(_ invite: String) {
+        let gate = session.guestGate
+        if let open = held.arrive(invite, gate: gate) {
+            guest = GuestLaunch(invite: open)
+        } else {
+            guestNotice = gate.inviteMessage
+        }
+    }
+
+    /// The gate moved: a held invite opens once allowed; under a limit, or while the limit is
+    /// not known again (another sign-in), an open guest space closes.
+    func gateMoved(_ gate: GuestGate) {
+        if let open = held.gateChanged(gate) {
+            guestNotice = nil
+            guest = GuestLaunch(invite: open)
+            return
+        }
+        guard !gate.allowed else { return }
+        if guest != nil {
+            guest = nil
+            guestNotice = GuestWords.message(gate == .limited ? "guest.gate.closed" : "guest.gate.checking")
+        } else if gate == .limited, guestNotice == GuestGate.checking.inviteMessage {
+            guestNotice = GuestGate.limited.inviteMessage
+        }
     }
 }
 

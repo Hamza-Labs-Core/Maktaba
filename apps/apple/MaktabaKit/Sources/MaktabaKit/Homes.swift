@@ -293,6 +293,11 @@ public final class AppSession {
         if CommandLine.arguments.contains("-maktaba-session-reset") {
             defaults.removeObject(forKey: "homes")
             defaults.removeObject(forKey: "home")
+            // and no parental limit kept from an earlier test's sign-in (Watch a broadcast
+            // reads it with no home signed in); a test sets one with `-parental.limited.device YES`
+            for key in defaults.dictionaryRepresentation().keys where key.hasPrefix("parental.limited.") {
+                defaults.removeObject(forKey: key)
+            }
             UITestSecrets.reset()
         }
         #endif
@@ -367,7 +372,13 @@ public final class AppSession {
     /// answers (the entry moves there), each step in `progress`.
     public func open(_ home: Home) {
         connectTask?.cancel()
-        connectTask = Task { await reconnect(home) }
+        // connecting from now, not from when the task first runs: the last home reopened at
+        // launch keeps Watch a broadcast closed (`GuestGate`) before a link can come in
+        connects += 1
+        connectTask = Task {
+            defer { connects -= 1 }
+            await reconnect(home)
+        }
     }
 
     /// `home`'s addresses (`first` before them: where it was just announced), asked in order.

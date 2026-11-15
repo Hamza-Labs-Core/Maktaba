@@ -27,6 +27,37 @@ struct TVGuestSpace: View {
     }
 }
 
+/// Watch a broadcast over a screen, open only while `session.guestGate` allows (story 50.27):
+/// when a parental limit applies, or is not known again, the guest space closes and says why.
+struct TVGuestCover: ViewModifier {
+    let session: AppSession
+    @Binding var isPresented: Bool
+    @State private var notice: String?
+
+    func body(content: Content) -> some View {
+        content
+            .fullScreenCover(isPresented: $isPresented) { TVGuestSpace() }
+            .onChange(of: session.guestGate) { _, gate in
+                guard !gate.allowed, isPresented else { return }
+                isPresented = false
+                notice = GuestWords.message(gate == .limited ? "guest.gate.closed" : "guest.gate.checking")
+            }
+            .alert(Text(verbatim: GuestWords.message("guest.watchBroadcast")),
+                   isPresented: Binding(get: { notice != nil }, set: { if !$0 { notice = nil } })) {
+                Button(GuestWords.message("guest.close")) { notice = nil }
+            } message: {
+                Text(verbatim: notice ?? "")
+            }
+    }
+}
+
+extension View {
+    /// The guest space over this screen, closed under a parental limit (`TVGuestCover`).
+    func guestCover(_ session: AppSession, isPresented: Binding<Bool>) -> some View {
+        modifier(TVGuestCover(session: session, isPresented: isPresented))
+    }
+}
+
 /// A heading, its rows and a line under them (the home picker's look).
 private struct GuestSection<Content: View>: View {
     let title: String

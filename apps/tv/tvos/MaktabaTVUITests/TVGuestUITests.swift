@@ -154,6 +154,22 @@ final class TVGuestUITests: XCTestCase {
         XCTAssertTrue(open.waitForExistence(timeout: 20), "closed: back in Settings, still signed in")
     }
 
+    /// A TV where a sign-in was limited when its home last said (Epic 57; the kept flag, set
+    /// here as a launch argument): with no home signed in the picker has no Watch a broadcast.
+    /// Watch a broadcast fails closed: a guest has no account the edge could check.
+    func testALimitedTVHasNoWatchABroadcast() throws {
+        app.launchArguments = ["-uitest-reset", "-maktaba-secrets-in-file", "-maktaba-session-reset", "-maktaba-guest-edge", home.url,
+                               "-parental.limited.device", "YES", "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+        app.launch()
+        XCTAssertTrue(app.textFields["picker.address"].waitForExistence(timeout: 20), "the home picker")
+        // the picker's last section would be Watch a broadcast: focus walks down to the end
+        for _ in 0..<12 {
+            remote.press(.down)
+            usleep(300_000)
+        }
+        XCTAssertFalse(app.buttons["picker.watchBroadcast"].exists, "no Watch a broadcast on a limited TV")
+    }
+
     // MARK: helpers
 
     /// Types into `field`, reached by pressing `direction` (the code is beside the handle).
