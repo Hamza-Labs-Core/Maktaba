@@ -280,3 +280,34 @@ func TestRelayKeptConnectionsAreGivenBack(t *testing.T) {
 	}
 	eventually(t, "kept connections outlived IdleKeep", func() bool { return e.Stats().ConnectionsHeld == 0 })
 }
+
+// A call that found the transaction before another call committed it is refused once it
+// gets it, and never ends it again: the committed connection is already given back (kept
+// for the plugin's next call), so a second commit would free a slot twice and reset a
+// connection another call may be using.
+func TestRelayACallAfterTheCommitIsRefused(t *testing.T) {
+	w := newWorld(t)
+	e := w.executor(t, false, Config{})
+	sc := w.catalog()
+	id := begin(t, e, sc)
+	ot, ref := e.tx(sc, id) // the second call's lookup, made before the commit
+	if ref != nil {
+		t.Fatalf("lookup: %v", ref)
+	}
+	if _, ref := e.Tx(context.Background(), sc, TxRequest{Op: "commit", Tx: id}); ref != nil {
+		t.Fatalf("commit: %v", ref)
+	}
+	before := e.Stats()
+	if before.ConnectionsHeld != before.ConnectionsKept {
+		t.Fatalf("after the commit: %+v", before)
+	}
+	if ref := e.lockTx(ot, id); ref == nil || ref.Status != 409 {
+		if ref == nil {
+			e.unlockTx(ot)
+		}
+		t.Fatalf("a call on the committed transaction: %v, want 409", ref)
+	}
+	if after := e.Stats(); after != before {
+		t.Fatalf("the refused call changed the connections: %+v, was %+v", after, before)
+	}
+}

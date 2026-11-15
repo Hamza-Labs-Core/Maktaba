@@ -330,9 +330,15 @@ func (e *Executor) Close() {
 }
 
 // lockTx takes a transaction for one call. One ended meanwhile (its invocation ended, the
-// reaper) is refused, and rolled back as the call lets go of it.
+// reaper) is refused, and rolled back as the call lets go of it. One committed or rolled
+// back meanwhile (another call that found it first) is refused as it is: its connection
+// is already given back, kept for the plugin's next call or the pool's, never this call's.
 func (e *Executor) lockTx(ot *openTx, id string) *Error {
 	ot.mu.Lock()
+	if ot.done {
+		ot.mu.Unlock()
+		return refuse(409, CodeTx, "no open transaction "+id)
+	}
 	ot.busy.Store(true)
 	ot.touch(e.cfg.Now())
 	if ot.doomed.Load() {
