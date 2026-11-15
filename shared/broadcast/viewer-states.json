@@ -1,0 +1,31 @@
+{
+  "about": "Story 50.27 §3: the state a guest sees for an edge answer (an HTTP status and the JSON body's channel_state or error). The edge's viewerState (web/packages/broadcast-edge/src/site/states.ts) and every app's mapping (MaktabaKit GuestViewerState, Android's) are tested against these cases. key is the message's string key; plays: the player keeps playing; retry: a Try again action helps.",
+  "cases": [
+    { "status": 200, "body": { "channel_state": "live" }, "state": "live", "key": "", "plays": true, "retry": false },
+    { "status": 200, "body": {}, "state": "live", "key": "", "plays": true, "retry": false },
+    { "status": 200, "body": { "channel_state": "waiting" }, "state": "tuning", "key": "broadcast.tuning", "plays": true, "retry": false },
+    { "status": 200, "body": { "channel_state": "offline_slate" }, "state": "offline", "key": "broadcast.homeOffline", "plays": true, "retry": false },
+    { "status": 200, "body": { "channel_state": "off_air" }, "state": "off_air", "key": "broadcast.off", "plays": false, "retry": true },
+    { "status": 200, "body": { "channel_state": "revoked" }, "state": "ended", "key": "broadcast.ended", "plays": false, "retry": false },
+    { "status": 451, "body": { "error": "geo_blocked" }, "state": "geoBlocked", "key": "broadcast.geoBlocked", "plays": false, "retry": false },
+    { "status": 451, "body": null, "state": "geoBlocked", "key": "broadcast.geoBlocked", "plays": false, "retry": false },
+    { "status": 429, "body": { "error": "broadcast_full" }, "state": "full", "key": "broadcast.full", "plays": false, "retry": true },
+    { "status": 429, "body": { "error": "broadcast_wait" }, "state": "full", "key": "broadcast.waiting", "plays": false, "retry": true },
+    { "status": 429, "body": { "error": "broadcast_ip_limit" }, "state": "full", "key": "broadcast.ipLimit", "plays": false, "retry": true },
+    { "status": 429, "body": { "error": "rate_limited" }, "state": "busy", "key": "broadcast.tooManyTries", "plays": false, "retry": true },
+    { "status": 403, "body": { "error": "broadcast_daily_limit" }, "state": "dailyLimit", "key": "broadcast.dailyLimit", "plays": false, "retry": false },
+    { "status": 410, "body": { "error": "invite_used" }, "state": "inviteUsed", "key": "broadcast.invite.used", "plays": false, "retry": false },
+    { "status": 410, "body": { "error": "invite_expired" }, "state": "inviteExpired", "key": "broadcast.invite.expired", "plays": false, "retry": false },
+    { "status": 410, "body": { "error": "invite_revoked" }, "state": "revoked", "key": "broadcast.revoked", "plays": false, "retry": true },
+    { "status": 403, "body": { "error": "pass_revoked" }, "state": "revoked", "key": "broadcast.revoked", "plays": false, "retry": true },
+    { "status": 404, "body": { "error": "session_ended" }, "state": "revoked", "key": "broadcast.revoked", "plays": false, "retry": true },
+    { "status": 401, "body": { "error": "invite_required" }, "state": "inviteRequired", "key": "broadcast.inviteRequired", "plays": false, "retry": false },
+    { "status": 403, "body": { "error": "invite_required" }, "state": "inviteRequired", "key": "broadcast.inviteRequired", "plays": false, "retry": false },
+    { "status": 403, "body": { "error": "not_invited" }, "state": "inviteRequired", "key": "broadcast.inviteRequired", "plays": false, "retry": false },
+    { "status": 403, "body": { "error": "turnstile_required" }, "state": "verify", "key": "site.verify", "plays": false, "retry": false },
+    { "status": 403, "body": { "error": "broadcast_off" }, "state": "ended", "key": "broadcast.ended", "plays": false, "retry": false },
+    { "status": 404, "body": { "error": "channel_unknown" }, "state": "ended", "key": "broadcast.ended", "plays": false, "retry": false },
+    { "status": 500, "body": { "error": "internal" }, "state": "error", "key": "site.error", "plays": false, "retry": true },
+    { "status": 503, "body": null, "state": "error", "key": "site.error", "plays": false, "retry": true }
+  ]
+}

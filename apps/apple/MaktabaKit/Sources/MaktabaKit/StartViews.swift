@@ -128,6 +128,12 @@ struct LinkPrompt: View {
 /// The home picker (Epic 42 story 42.2): the homes on this network (Bonjour), the recent
 /// ones (rename, remove), a home through Maktaba Cloud (story 42.7), a home by its address or
 /// connect link, and (iPhone, iPad) a home's QR code. A typed or scanned address is asked whether it is a Maktaba home first.
+public extension EnvironmentValues {
+    /// Story 50.27: opens the app's Watch a broadcast (set by the Player; the home picker then
+    /// shows its button).
+    @Entry var watchBroadcast: (() -> Void)?
+}
+
 public struct HomePickerView: View {
     @Bindable var session: AppSession
     let title: String
@@ -136,6 +142,8 @@ public struct HomePickerView: View {
     @State private var scanning = false
     @State private var renaming: Home?
     @State private var newName = ""
+    /// Story 50.27: the app's Watch a broadcast (the Player's), nil in an app without it.
+    @Environment(\.watchBroadcast) private var watchBroadcast
     private let words = ConnectStrings.forPreferredLanguages()
 
     public init(session: AppSession, title: String) {
@@ -211,6 +219,14 @@ public struct HomePickerView: View {
             Text(words.text(.scanHint))
         }
         #endif
+        if let watchBroadcast {
+            Section {
+                Button(GuestWords.message("guest.watchBroadcast"), systemImage: "dot.radiowaves.left.and.right", action: watchBroadcast)
+                    .accessibilityIdentifier("picker.watchBroadcast")
+            } footer: {
+                Text(verbatim: GuestWords.message("guest.intro"))
+            }
+        }
     }
 
     private var nearby: some View {

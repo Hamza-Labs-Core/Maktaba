@@ -66,7 +66,13 @@ public final class StreamProxy: @unchecked Sendable {
         case lan(host: String)
     }
 
-    private let client: APIClient
+    /// Where requests go on to: a home (with the user's token), or a broadcast's edge (the
+    /// viewer token in the path, swapped for the newest at each request: `GuestLive`).
+    private let upstream: Upstream
+    enum Upstream: Sendable {
+        case home(APIClient)
+        case live(GuestLive)
+    }
     private let sessions: UpstreamSessions
     private let listener: NWListener
     private let queue = DispatchQueue(label: "com.hamzalabs.maktaba.stream-proxy", qos: .utility)
@@ -139,16 +145,33 @@ public final class StreamProxy: @unchecked Sendable {
 
     public convenience init(client: APIClient, session: URLSession = PinnedTrust.session, reach: Reach = .loopback,
                             onlyUnder: String? = nil) throws {
-        try self.init(client: client, session: session, reach: reach, onlyUnder: onlyUnder, headPatience: Self.headPatience, homePatience: Self.homePatience) { try await Task.sleep(for: $0) }
+        try self.init(upstream: .home(client), session: session, reach: reach, onlyUnder: onlyUnder, headPatience: Self.headPatience, homePatience: Self.homePatience) { try await Task.sleep(for: $0) }
     }
 
-    init(client: APIClient, session: URLSession, reach: Reach = .loopback, onlyUnder: String? = nil,
+    /// Story 50.27: a guest's broadcast. The edge (`live.maktaba.tv`) wants the viewer token in
+    /// every playlist and segment path, and the token lasts 10 minutes: AVPlayer would keep
+    /// the first one in every relative address it resolves. The player reads
+    /// `http://127.0.0.1:<port>/<secret>/live/<channel>/…` (`localLive`) and each request goes
+    /// on with the token `live` holds now (the heartbeat brings each new one).
+    public convenience init(live: GuestLive, session: URLSession = .shared) throws {
+        try self.init(upstream: .live(live), session: session, reach: .loopback, onlyUnder: nil, headPatience: Self.headPatience, homePatience: Self.homePatience) { try await Task.sleep(for: $0) }
+    }
+
+    convenience init(client: APIClient, session: URLSession, reach: Reach = .loopback, onlyUnder: String? = nil,
+                     headPatience: Duration = StreamProxy.headPatience,
+                     homePatience: Duration = StreamProxy.homePatience,
+                     sleep: @escaping @Sendable (Duration) async throws -> Void) throws {
+        try self.init(upstream: .home(client), session: session, reach: reach, onlyUnder: onlyUnder,
+                      headPatience: headPatience, homePatience: homePatience, sleep: sleep)
+    }
+
+    init(upstream: Upstream, session: URLSession, reach: Reach = .loopback, onlyUnder: String? = nil,
          headPatience: Duration = StreamProxy.headPatience,
          homePatience: Duration = StreamProxy.homePatience,
          sleep: @escaping @Sendable (Duration) async throws -> Void) throws {
         self.headPatience = headPatience
         self.homePatience = homePatience
-        self.client = client
+        self.upstream = upstream
         sessions = UpstreamSessions(like: session)
         self.sleep = sleep
         self.reach = reach
@@ -326,14 +349,30 @@ public final class StreamProxy: @unchecked Sendable {
         return c.url
     }
 
-    /// The home's address for a request line's target, nil when it is not ours to serve.
+    /// Where the player reads a guest's channel (`StreamProxy(live:)`): its master playlist.
+    public func localLive() -> URL? {
+        guard let port, case let .live(live) = upstream else { return nil }
+        return URL(string: "http://127.0.0.1:\(port)/\(secret)/live/\(live.channel)/master.m3u8")
+    }
+
+    /// The home's (or the edge's) address for a request line's target, nil when it is not ours
+    /// to serve.
     func remote(forTarget target: String) -> URL? {
-        let prefix = "/" + secret + "/stream/"
         let lower = target.lowercased()
-        guard target.hasPrefix(prefix), !lower.contains("/.."), !lower.contains("%2e") else { return nil }
-        let rest = String(target.dropFirst(secret.count + 1))
-        if let onlyUnder, !rest.hasPrefix(onlyUnder) { return nil }
-        return URL(string: rest, relativeTo: client.home)?.absoluteURL
+        guard !lower.contains("/.."), !lower.contains("%2e") else { return nil }
+        switch upstream {
+        case let .home(client):
+            let prefix = "/" + secret + "/stream/"
+            guard target.hasPrefix(prefix) else { return nil }
+            let rest = String(target.dropFirst(secret.count + 1))
+            if let onlyUnder, !rest.hasPrefix(onlyUnder) { return nil }
+            return URL(string: rest, relativeTo: client.home)?.absoluteURL
+        case let .live(live):
+            // only this channel's files, under the token held now
+            let prefix = "/" + secret + "/live/" + live.channel + "/"
+            guard target.hasPrefix(prefix) else { return nil }
+            return live.remote(String(target.dropFirst(prefix.count)))
+        }
     }
 
     // MARK: one request
@@ -473,7 +512,9 @@ public final class StreamProxy: @unchecked Sendable {
             var r = URLRequest(url: url)
             r.httpMethod = req.method
             for name in ["Range", "If-Range", "Accept"] { if let v = req.headers[name.lowercased()] { r.setValue(v, forHTTPHeaderField: name) } }
-            for (k, v) in try await client.playbackHeaders(minLife: 60).headers { r.setValue(v, forHTTPHeaderField: k) }
+            if case let .home(client) = upstream {
+                for (k, v) in try await client.playbackHeaders(minLife: 60).headers { r.setValue(v, forHTTPHeaderField: k) }
+            }
             // a session of this request's own: its callbacks are held while the player reads slowly
             let own = sessions.take()
             // the session's own idle timer must not run while a player's pause holds the home's

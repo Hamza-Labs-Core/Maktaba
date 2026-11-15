@@ -570,6 +570,37 @@ describe("the apps' reads", () => {
     expect((await get(`/api/v1/guide?publisher=${s.pub}&channel=${s.ch2}`, auth)).status).toBe(403);
   });
 
+  // story 50.27, the apps' Watch a broadcast: the edge alone decides what a credential opens;
+  // the app shows what it answers
+  it("a pass opens its own publisher's invite channels and nothing of another's", async () => {
+    const a = await setup();
+    const b = await setup();
+    const pass = await passFor(a, { chs: [a.ch] });
+    const auth = { Authorization: `Bearer ${pass}` };
+    // another publisher's lineup with this pass: its open channel only, none of its invite ones
+    const other = (await (await get(`/api/v1/lineup?publisher=${b.pub}`, auth)).json()) as {
+      channels: { id: string }[];
+    };
+    expect(other.channels.map((c) => c.id)).toEqual([b.ch2]);
+    expect((await get(`/api/v1/guide?publisher=${b.pub}&channel=${b.ch}`, auth)).status).toBe(403);
+    const play = await postJSON("/api/v1/play", { publisher: b.pub, channel: b.ch }, auth);
+    expect(play.status).toBe(401);
+    // no credential at all: the open channel, nothing of an invite one
+    const none = (await (await get(`/api/v1/lineup?publisher=${a.pub}`)).json()) as {
+      channels: { id: string }[];
+    };
+    expect(none.channels.map((c) => c.id)).toEqual([a.ch2]);
+    expect((await postJSON("/api/v1/play", { publisher: a.pub, channel: a.ch })).status).toBe(401);
+    // a forged pass (another key) is no pass
+    const forged = `${pass.slice(0, -4)}AAAA`;
+    const f = await postJSON(
+      "/api/v1/play",
+      { publisher: a.pub, channel: a.ch },
+      { Authorization: `Bearer ${forged}` }
+    );
+    expect(f.status).toBe(401);
+  });
+
   it("the play answer carries the channel's own state", async () => {
     const s = await setup();
     const pass = await passFor(s);
