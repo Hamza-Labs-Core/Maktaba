@@ -8,10 +8,13 @@ import Foundation
 ///
 /// - Signed in to a home: the home must have said (`ParentalStore.confirmed`; a failed read
 ///   is not an answer), and the sign-in must not be limited, by its account or its device.
-/// - Restoring the last home: not known yet.
+/// - Connecting to a home or restoring its sign-in (the last home, reopened at launch, from
+///   the moment the app starts): not known yet.
 /// - No home signed in: the device's kept flag (`ParentalStore.deviceWasLimited`), true while
 ///   any sign-in on this device was limited when its home last said. A device no home ever
 ///   answered on may watch: the spec makes Watch a broadcast need no home and no account.
+///   A home that answers 404 (from before Epic 57) says nothing of a limit, so the kept
+///   flag counts while signed in to it too.
 public enum GuestGate: Equatable, Sendable {
     /// The entry shows; an invite link opens.
     case allowed
@@ -23,11 +26,14 @@ public enum GuestGate: Equatable, Sendable {
     public var allowed: Bool { self == .allowed }
 
     /// The decision from what the session knows.
+    /// `predatesLimits`: the signed-in home answered 404 (from before Epic 57), so it says
+    /// nothing of a limit and the device's kept flag still counts. `restoring` covers any
+    /// connect under way to a home, the last one reopened at launch among them.
     public static func decide(signedIn: Bool, restoring: Bool, confirmed: Bool, limited: Bool,
-                              deviceWasLimited: Bool) -> GuestGate {
+                              deviceWasLimited: Bool, predatesLimits: Bool = false) -> GuestGate {
         if signedIn {
             guard confirmed else { return .checking }
-            return limited ? .limited : .allowed
+            return limited || (predatesLimits && deviceWasLimited) ? .limited : .allowed
         }
         if restoring { return .checking }
         return deviceWasLimited ? .limited : .allowed
@@ -47,8 +53,9 @@ public enum GuestGate: Equatable, Sendable {
 public extension AppSession {
     /// Watch a broadcast's gate now (`GuestGate`).
     var guestGate: GuestGate {
-        GuestGate.decide(signedIn: signedIn, restoring: restoring, confirmed: parental.confirmed,
-                         limited: parental.current.limited, deviceWasLimited: parental.deviceWasLimited)
+        GuestGate.decide(signedIn: signedIn, restoring: restoring || connecting, confirmed: parental.confirmed,
+                         limited: parental.current.limited, deviceWasLimited: parental.deviceWasLimited,
+                         predatesLimits: parental.predatesLimits)
     }
 }
 

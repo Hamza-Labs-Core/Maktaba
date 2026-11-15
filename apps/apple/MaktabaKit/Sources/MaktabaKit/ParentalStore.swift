@@ -36,6 +36,10 @@ public final class ParentalStore {
     /// Epic 57): unlike `answered`, a failed read does not count, since `current` is then
     /// only the empty default. What fails closed (Watch a broadcast, story 50.27) waits for it.
     public private(set) var confirmed = false
+    /// The home answered 404: it predates Epic 57, so it says nothing of a limit. Watch a
+    /// broadcast then goes by what this device kept (`deviceWasLimited`): a host that only
+    /// answers 404 must not make a limited device look unlimited.
+    public private(set) var predatesLimits = false
     public private(set) var time: TimeReading?
 
     /// The home's time answer and when this device got it. The countdown shown between two
@@ -146,6 +150,7 @@ public final class ParentalStore {
         if canManage { canManage = false }
         if answered { answered = false }
         if confirmed { confirmed = false }
+        if predatesLimits { predatesLimits = false }
         if time != nil { time = nil }
     }
 
@@ -197,8 +202,17 @@ public final class ParentalStore {
             let limit = try await source.myParental()
             guard mine == generation else { return }
             guard let limit else {
+                // this sign-in was limited when this home last answered: a home does not lose
+                // Epic 57, so a 404 now (a proxy, a host standing in for the home) is not "no
+                // limit". Nothing is applied or kept, and it is asked again as after a failure.
+                if let kept, defaults.bool(forKey: kept) {
+                    Log.failure("parental limit", APIError.decoding("404 from a home that answered a limit"), logger: Log.network)
+                    if !answered { answered = true }
+                    return
+                }
                 // a home from before Epic 57: no limit, no Family, nothing more asked
                 unsupported = true
+                predatesLimits = true
                 apply(.none)
                 if canManage { canManage = false }
                 confirmed = true

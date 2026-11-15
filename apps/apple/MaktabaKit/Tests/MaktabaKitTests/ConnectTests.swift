@@ -503,6 +503,17 @@ extension RouteStub.Answer {
             #expect(s.homes.map(\.url) == [lan] && s.homes.first?.addresses == [studio])
         }
 
+        /// Story 50.27: the last home reopened at launch keeps Watch a broadcast closed from
+        /// the first moment, before its connect task has run, so an invite link handled at
+        /// launch cannot open on what this device kept from before.
+        @Test func aHomeReopenedAtLaunchKeepsTheGuestGateClosed() throws {
+            RouteStub.reset()
+            let lan = URL(string: "http://lan.test:8088")!
+            let s = launched("test.homes.gate", try saved(Home(url: lan, name: "Living room", homeID: "home-1")))
+            #expect(s.connecting && !s.signedIn)
+            #expect(s.guestGate == .checking)
+        }
+
         private func saved(_ home: Home, renamed: Bool = false) throws -> UserDefaults {
             let defaults = try #require(UserDefaults(suiteName: "maktabakit.test.\(UUID().uuidString)"))
             var h = home

@@ -15,11 +15,14 @@ struct MaktabaTVApp: App {
         Theme.registerFonts()
         // a crash at the last launch is read and kept on the TV (Epic 53 story 53.14)
         CrashCapture.start()
-        // the UI tests start from a TV that knows no home and holds no tokens
+        // the UI tests start from a TV that knows no home and holds no tokens; a Debug build
+        // only, so a release build never loses what it kept (the parental flag among it)
+        #if DEBUG
         if CommandLine.arguments.contains("-uitest-reset") {
             UserDefaults.standard.removePersistentDomain(forName: Bundle.main.bundleIdentifier ?? "")
             SecItemDelete([kSecClass as String: kSecClassGenericPassword] as CFDictionary)
         }
+        #endif
         // Epic 57: the TV asks the home for the account's parental limit and watching time
         // (`session.parental`) and tells it the Screen Time limits set on this Apple TV
         let session = AppSession(app: Bundle.main.bundleIdentifier ?? "com.hamzalabs.maktaba.tv", parental: true,

@@ -21,7 +21,8 @@ import Testing
     private func gate(_ s: ParentalStore, signedIn: Bool = true, restoring: Bool = false) -> GuestGate {
         MainActor.assumeIsolated {
             GuestGate.decide(signedIn: signedIn, restoring: restoring, confirmed: s.confirmed,
-                             limited: s.current.limited, deviceWasLimited: s.deviceWasLimited)
+                             limited: s.current.limited, deviceWasLimited: s.deviceWasLimited,
+                             predatesLimits: s.predatesLimits)
         }
     }
 
@@ -102,6 +103,46 @@ import Testing
 
         // restoring the last home: not known yet, whatever was kept
         #expect(gate(lifted, signedIn: false, restoring: true) == .checking)
+    }
+
+    /// A 404 after this sign-in was answered limited is not "no limit": a home does not lose
+    /// Epic 57, so it is a host standing in for the home (or a proxy). Nothing is cleared,
+    /// and the gate waits as after a failed read.
+    @MainActor @Test func a404AfterALimitIsNotAnAnswer() async {
+        let d = defaults()
+        let source = FakeParentalSource()
+        source.set(ParentalFixtures.child)
+        let s = store(source, defaults: d)
+        await s.refresh()
+        #expect(gate(s) == .limited)
+        s.reset()
+        source.set(missing: ())
+        let again = store(source, defaults: d)
+        await again.refresh()
+        #expect(again.answered && !again.confirmed && !again.predatesLimits)
+        #expect(gate(again) == .checking)
+        #expect(d.bool(forKey: ParentalStore.key(home: URL(string: "http://gate.test")!, user: "u1")), "the sign-in's limit is kept")
+        #expect(again.deviceWasLimited)
+        // asked again, not given up on as a home from before Epic 57
+        source.set(ParentalFixtures.unrestricted)
+        await again.refresh()
+        #expect(again.confirmed && gate(again) == .allowed)
+    }
+
+    /// A home from before Epic 57 says nothing of a limit, so signed in to it the device's
+    /// kept flag still counts: a host answering 404 does not open a limited device.
+    @MainActor @Test func aHomeFromBeforeLimitsKeepsTheDeviceFlag() async {
+        let d = defaults()
+        let source = FakeParentalSource()
+        source.set(missing: ())
+        let s = store(source, defaults: d, user: "other")
+        await s.refresh()
+        #expect(s.confirmed && s.predatesLimits)
+        #expect(gate(s) == .allowed, "nothing kept on this device: open")
+        d.set(true, forKey: ParentalStore.deviceKey)
+        #expect(gate(s) == .limited, "a sign-in on this device was limited")
+        s.reset()
+        #expect(!s.predatesLimits)
     }
 
     /// A device whose sign-in keys predate the device flag: any limited sign-in counts.

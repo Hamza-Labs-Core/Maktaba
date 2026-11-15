@@ -372,7 +372,13 @@ public final class AppSession {
     /// answers (the entry moves there), each step in `progress`.
     public func open(_ home: Home) {
         connectTask?.cancel()
-        connectTask = Task { await reconnect(home) }
+        // connecting from now, not from when the task first runs: the last home reopened at
+        // launch keeps Watch a broadcast closed (`GuestGate`) before a link can come in
+        connects += 1
+        connectTask = Task {
+            defer { connects -= 1 }
+            await reconnect(home)
+        }
     }
 
     /// `home`'s addresses (`first` before them: where it was just announced), asked in order.

@@ -875,7 +875,10 @@ build fails when the two differ.
   in. They now open only once the signed-in home has said there is no limit; with no home signed
   in, a device where any sign-in was limited when its home last said keeps them closed. An invite
   link that arrives before the home answers waits and opens once it may; one opened under a limit
-  is refused with a message, and a limit that starts during a broadcast closes it.
+  is refused with a message, and a limit that starts during a broadcast closes it. They also stay
+  closed while the app reconnects to the last home at launch; a home that says nothing of limits
+  (one from before Epic 57) does not open them on such a device; and a sign-in its home once
+  limited stays closed if that home later answers as though it had no limits.
 
 - **The watch pages run only the hls.js they were built with (Epic 50, story 50.27).** The
   watch.maktaba.tv player loads hls.js 1.5.20 by its exact version with a Subresource Integrity
