@@ -30,6 +30,11 @@ export const KEEP_WINDOWS_MS = 7 * 24 * 3600_000;
 export const USAGE_PATH = "/_edge/usage";
 /** The most windows one usage post carries (the cloud refuses more); a longer queue goes in pages. */
 export const USAGE_MAX_WINDOWS = 2000;
+/** Each session and each window is stored under its own key (PublisherControl.flush). */
+const SESSION_KEY = "x:";
+const WINDOW_KEY = "w:";
+/** The most keys one storage put or delete takes. */
+const STORAGE_BATCH = 128;
 
 /** The plan state the cloud pushes (a cloud-signed control post, typ "plan") and returns in
  * every usage reply (its `plans`): broadcast.Plan in Go. */
@@ -84,16 +89,68 @@ export type BeatResult = {
 export class PublisherControl extends DurableObject<Env> {
   private s: State = { pub: "", plan: null, channels: [], sessions: {}, windows: {} };
 
+  /**
+   * The storage keys the next save writes (or deletes, once gone): "s" (the publisher, plan and
+   * channels), a session (SESSION_KEY) or a window (WINDOW_KEY). Each session and window is its
+   * own key, so a counted beat writes its session and its window, never every session and seven
+   * days of windows (that was O(sessions + windows) a beat).
+   */
+  private dirty = new Set<string>();
+
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
     ctx.blockConcurrencyWhile(async () => {
       const saved = await ctx.storage.get<State>("s");
-      if (saved) this.s = saved;
+      if (saved) this.s = { ...this.s, ...saved, sessions: {}, windows: {} };
+      for (const [k, v] of await ctx.storage.list<State["sessions"][string]>({
+        prefix: SESSION_KEY,
+      }))
+        this.s.sessions[k.slice(SESSION_KEY.length)] = v;
+      for (const [k, v] of await ctx.storage.list<State["windows"][string]>({ prefix: WINDOW_KEY }))
+        this.s.windows[k.slice(WINDOW_KEY.length)] = v;
+      // the earlier layout kept them inside "s": each moves to its own key once
+      if (saved?.sessions || saved?.windows) {
+        for (const [id, v] of Object.entries(saved.sessions ?? {})) {
+          this.s.sessions[id] ??= v;
+          this.dirty.add(SESSION_KEY + id);
+        }
+        for (const [id, w] of Object.entries(saved.windows ?? {})) {
+          this.s.windows[id] ??= w;
+          this.dirty.add(WINDOW_KEY + id);
+        }
+        this.dirty.add("s");
+        await this.flush();
+      }
     });
   }
 
-  private async save(): Promise<void> {
-    await this.ctx.storage.put("s", this.s);
+  /** flush writes the dirty keys; a session or window no longer held is deleted. */
+  private async flush(): Promise<void> {
+    const put: [string, unknown][] = [];
+    const gone: string[] = [];
+    for (const key of this.dirty) {
+      let v: unknown;
+      if (key === "s") {
+        const { sessions: _s, windows: _w, ...meta } = this.s;
+        v = meta;
+      } else if (key.startsWith(SESSION_KEY)) v = this.s.sessions[key.slice(SESSION_KEY.length)];
+      else v = this.s.windows[key.slice(WINDOW_KEY.length)];
+      if (v === undefined) gone.push(key);
+      else put.push([key, v]);
+    }
+    this.dirty.clear();
+    const writes: Promise<unknown>[] = [];
+    for (let i = 0; i < put.length; i += STORAGE_BATCH)
+      writes.push(this.ctx.storage.put(Object.fromEntries(put.slice(i, i + STORAGE_BATCH))));
+    for (let i = 0; i < gone.length; i += STORAGE_BATCH)
+      writes.push(this.ctx.storage.delete(gone.slice(i, i + STORAGE_BATCH)));
+    await Promise.all(writes);
+  }
+
+  /** save writes what changed (the state "s" when `state`) and makes sure the alarm is set. */
+  private async save(state = true): Promise<void> {
+    if (state) this.dirty.add("s");
+    await this.flush();
     if ((await this.ctx.storage.getAlarm()) === null)
       await this.ctx.storage.setAlarm(Date.now() + WINDOW_MS);
   }
@@ -106,6 +163,7 @@ export class PublisherControl extends DurableObject<Env> {
       w = { ...newUsageWindow(this.s.pub, start), sent: false };
       this.s.windows[id] = w;
     }
+    this.dirty.add(WINDOW_KEY + id); // the caller changes it
     return w;
   }
 
@@ -164,19 +222,24 @@ export class PublisherControl extends DurableObject<Env> {
     this.s.pub ||= pub;
     const t = now();
     for (const [k, v] of Object.entries(this.s.sessions))
-      if (t - v.at > SESSION_LIVE_MS) delete this.s.sessions[k];
+      if (t - v.at > SESSION_LIVE_MS) {
+        delete this.s.sessions[k];
+        this.dirty.add(SESSION_KEY + k);
+      }
     const last = this.s.sessions[session];
     const delivery = this.delivery();
     let counted = false;
     if ((mode === "full" || mode === "lowest") && (!last || t - last.at >= BEAT_MIN_GAP_MS)) {
       this.s.sessions[session] = { at: t, ch };
+      this.dirty.add(SESSION_KEY + session);
       const w = this.window(t);
       if (mode === "full") w.minutes_full++;
       else w.minutes_lowest++;
       if (delivery === "stream") w.minutes_stream++;
       w.peak_sessions = Math.max(w.peak_sessions, Object.keys(this.s.sessions).length);
       counted = true;
-      await this.save();
+      // the session, its window and any lapsed sessions; "s" is unchanged
+      await this.save(false);
     }
     // first: the session's first counted beat (the Worker writes 50.28's play event)
     return {
@@ -191,7 +254,7 @@ export class PublisherControl extends DurableObject<Env> {
     const w = this.window(now());
     w.segments_in += segments;
     w.bytes_in += bytes;
-    await this.save();
+    await this.save(false);
   }
 
   /** pendingUsage is every window the API has not accepted yet, oldest first. */
@@ -205,15 +268,22 @@ export class PublisherControl extends DurableObject<Env> {
 
   async ack(keys: string[]): Promise<void> {
     const done = new Set(keys);
-    for (const w of Object.values(this.s.windows)) if (done.has(w.key)) w.sent = true;
-    await this.save();
+    for (const [id, w] of Object.entries(this.s.windows))
+      if (done.has(w.key) && !w.sent) {
+        w.sent = true;
+        this.dirty.add(WINDOW_KEY + id);
+      }
+    await this.save(false);
   }
 
   /** Every 5 minutes: post the closed windows to the API (when one is set), drop old ones. */
   override async alarm(): Promise<void> {
     const t = now();
     for (const [k, w] of Object.entries(this.s.windows)) {
-      if (t - Date.parse(w.window_end) > KEEP_WINDOWS_MS) delete this.s.windows[k];
+      if (t - Date.parse(w.window_end) > KEEP_WINDOWS_MS) {
+        delete this.s.windows[k];
+        this.dirty.add(WINDOW_KEY + k);
+      }
     }
     const closed = (await this.pendingUsage()).filter((w) => Date.parse(w.window_end) <= t);
     if (closed.length > 0 && this.env.API_ORIGIN && this.env.EDGE_SIGNING_KEY) {
@@ -230,7 +300,8 @@ export class PublisherControl extends DurableObject<Env> {
         log("warn", "usage not posted", { component: "publisher", pub: this.s.pub, err });
       }
     }
-    await this.ctx.storage.put("s", this.s);
+    this.dirty.add("s");
+    await this.flush();
     await this.ctx.storage.setAlarm(Date.now() + WINDOW_MS);
   }
 

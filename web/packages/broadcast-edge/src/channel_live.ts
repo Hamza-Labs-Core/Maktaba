@@ -60,6 +60,10 @@ export const BURST_PER_SECOND = 4;
 /** Slate segments a channel may hold (a short loop). */
 export const MAX_SLATE = 8;
 const ALARM_EVERY_MS = 60_000;
+/** Each viewer is stored under this prefix and its session (ChannelLive.save). */
+const VIEWER_KEY = "v:";
+/** The most keys one storage put or delete takes. */
+const STORAGE_BATCH = 128;
 /** A channel re-reads the revocation list at most this often (a missed fan-out, a home entry). */
 export const REVOCATION_CHECK_MS = 10_000;
 /**
@@ -78,6 +82,12 @@ export interface ChannelPlan {
   max_rungs?: number;
   max_top_kbps?: number;
   delivery?: Delivery | null;
+}
+
+/** A viewer as the channel keeps it: its last play, master or heartbeat, and its mode. */
+interface Viewer {
+  at: number;
+  mode: "full" | "lowest";
 }
 
 interface State {
@@ -105,7 +115,7 @@ interface State {
   /** the home's mode, named on its control socket's connect: on demand wakes and sleeps */
   onDemand?: boolean;
   /** the channel's viewers: session → last seen (play, master, heartbeat) and its mode */
-  viewers?: Record<string, { at: number; mode: "full" | "lowest" }>;
+  viewers?: Record<string, Viewer>;
   /** on demand: when `wake` was sent; null or absent: asleep */
   wokeAt?: number | null;
   /** the rungs last sent in `limits` ([] or absent: all) */
@@ -174,17 +184,48 @@ export class ChannelLive extends DurableObject<Env> {
   private burst = new Map<string, number[]>();
   /** the revocation list as last handed over or read (memory only: re-read after an eviction) */
   private revs: { at: number; list: RevocationList } | null = null;
+  /** the sessions whose viewer key is to be written (or deleted, once gone) by the next save */
+  private viewersDirty = new Set<string>();
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
     ctx.blockConcurrencyWhile(async () => {
       const saved = await ctx.storage.get<State>("s");
       if (saved) this.s = { ...initial(), ...saved, verdict: saved.verdict ?? null };
+      const viewers: NonNullable<State["viewers"]> = { ...(saved?.viewers ?? {}) };
+      for (const [k, v] of await ctx.storage.list<Viewer>({ prefix: VIEWER_KEY }))
+        viewers[k.slice(VIEWER_KEY.length)] = v;
+      this.s.viewers = viewers;
+      // the earlier layout kept the viewers inside "s": each moves to its own key once
+      if (saved?.viewers) {
+        for (const k of Object.keys(saved.viewers)) this.viewersDirty.add(k);
+        await this.save();
+      }
     });
   }
 
-  private async save(): Promise<void> {
-    await this.ctx.storage.put("s", this.s);
+  /**
+   * save writes the channel's state ("s", unless only the viewers changed) and the viewers
+   * written or gone since the last save, each under its own key: a heartbeat never rewrites
+   * every viewer and every segment (one write per beat over the whole state was O(viewers) a
+   * beat, and stalled the channel's ingest at 1,000 viewers).
+   */
+  private async save(state = true): Promise<void> {
+    const { viewers, ...rest } = this.s;
+    const put: [string, unknown][] = state ? [["s", rest]] : [];
+    const gone: string[] = [];
+    for (const id of this.viewersDirty) {
+      const v = viewers?.[id];
+      if (v) put.push([VIEWER_KEY + id, v]);
+      else gone.push(VIEWER_KEY + id);
+    }
+    this.viewersDirty.clear();
+    const writes: Promise<unknown>[] = [];
+    for (let i = 0; i < put.length; i += STORAGE_BATCH)
+      writes.push(this.ctx.storage.put(Object.fromEntries(put.slice(i, i + STORAGE_BATCH))));
+    for (let i = 0; i < gone.length; i += STORAGE_BATCH)
+      writes.push(this.ctx.storage.delete(gone.slice(i, i + STORAGE_BATCH)));
+    await Promise.all(writes);
   }
 
   private async ensureAlarm(): Promise<void> {
@@ -233,20 +274,30 @@ export class ChannelLive extends DurableObject<Env> {
   async viewer(session: string, mode: Mode): Promise<ChannelStatus> {
     const t = now();
     if (session && (mode === "full" || mode === "lowest")) {
-      this.s.viewers = { ...this.liveViewers(t), [session]: { at: t, mode } };
-      this.demand(t);
-      await this.save();
-      await this.ensureAlarm();
+      const viewers = (this.s.viewers ??= {});
+      const known = viewers[session];
+      viewers[session] = { at: t, mode };
+      this.viewersDirty.add(session);
+      // a watching session's next heartbeat changes nothing the home hears: it is written with
+      // the next save (the alarm saves every ALARM_EVERY_MS, well inside SESSION_TTL_MS). A new
+      // session, a changed mode or a lapsed one may wake the home or change its limits.
+      if (!known || known.mode !== mode || t - known.at > SESSION_TTL_MS) {
+        await this.save(this.demand(t));
+        await this.ensureAlarm();
+      }
     }
     return this.status(t);
   }
 
-  /** liveViewers is the viewers with a heartbeat younger than SESSION_TTL_MS. */
-  private liveViewers(t: number): NonNullable<State["viewers"]> {
-    const out: NonNullable<State["viewers"]> = {};
-    for (const [k, v] of Object.entries(this.s.viewers ?? {}))
-      if (t - v.at <= SESSION_TTL_MS) out[k] = v;
-    return out;
+  /** pruneViewers drops the viewers with no heartbeat for SESSION_TTL_MS. */
+  private pruneViewers(t: number): void {
+    const viewers = this.s.viewers;
+    if (!viewers) return;
+    for (const [k, v] of Object.entries(viewers))
+      if (t - v.at > SESSION_TTL_MS) {
+        delete viewers[k];
+        this.viewersDirty.add(k);
+      }
   }
 
   /**
@@ -254,9 +305,9 @@ export class ChannelLive extends DurableObject<Env> {
    * none is put to sleep, and the limits follow the plan and the viewers. True when it changed.
    */
   private demand(t: number): boolean {
-    const before = JSON.stringify([this.s.viewers ?? {}, this.s.wokeAt ?? null, this.s.limits]);
-    this.s.viewers = this.liveViewers(t);
-    const watched = Object.keys(this.s.viewers).length > 0;
+    const before = JSON.stringify([this.s.wokeAt ?? null, this.s.limits]);
+    this.pruneViewers(t);
+    const watched = Object.keys(this.s.viewers ?? {}).length > 0;
     if (!this.s.onDemand) {
       this.s.wokeAt = null;
     } else if (watched && this.s.wokeAt == null) {
@@ -271,7 +322,8 @@ export class ChannelLive extends DurableObject<Env> {
       this.s.limits = want;
       this.notify({ type: "limits", rungs: want });
     }
-    return before !== JSON.stringify([this.s.viewers, this.s.wokeAt ?? null, this.s.limits]);
+    // the viewers are their own keys (save writes the dirty ones); this is what "s" holds
+    return before !== JSON.stringify([this.s.wokeAt ?? null, this.s.limits]);
   }
 
   /**
@@ -768,7 +820,7 @@ export class ChannelLive extends DurableObject<Env> {
     const lim = this.s.limits ?? [];
     if (lim.length > 0 && JSON.stringify(lim) === limitsBefore)
       server.send(JSON.stringify({ type: "limits", rungs: lim, at: t }));
-    if (changed) await this.save();
+    if (changed || this.viewersDirty.size > 0) await this.save(changed);
     if (this.s.wokeAt != null || Object.keys(this.s.viewers ?? {}).length > 0)
       await this.ensureAlarm();
     return new Response(null, { status: 101, webSocket: client });

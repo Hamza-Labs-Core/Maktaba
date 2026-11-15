@@ -60,6 +60,25 @@ type FanoutRow struct {
 	ViewerErrors int     `json:"viewer_errors"`
 	FetchP95     float64 `json:"fetch_p95_ms"`
 	AfterHomeP95 float64 `json:"after_home_p95_ms"`
+	// FirstByteP95 is the copy rung's request to response headers; EdgeAnswerP95 the edge's own
+	// answer time for every segment (its buckets' upper bound; -1: past the last); ReloadLateP95
+	// the viewers' playlist reloads past their due time (the load generator's delay).
+	FirstByteP95  float64  `json:"first_byte_p95_ms"`
+	EdgeAnswerP95 float64  `json:"edge_answer_p95_ms"`
+	ReloadLateP95 float64  `json:"reload_late_p95_ms"`
+	Load          StepLoad `json:"load"`
+}
+
+// StepLoad is what each part of the rehearsal used of the runner over a step, in cores (-1:
+// unread), and the runner's own share: busy and stolen by its host, in percent of every CPU.
+type StepLoad struct {
+	CPUs         int     `json:"cpus"`
+	EdgeCores    float64 `json:"edge_cores"`
+	HomeCores    float64 `json:"home_cores"`
+	ViewerCores  float64 `json:"viewer_cores"`
+	HostBusyPct  float64 `json:"host_busy_pct"`
+	HostStealPct float64 `json:"host_steal_pct"`
+	Load1        float64 `json:"load1"`
 }
 
 // Result is one scenario's record (results/<scenario>.json), in the cloud rehearsal's spirit.
@@ -202,6 +221,13 @@ func Report(results []Result) string {
 				f.Viewers, f.Seconds, f.Segments, f.Rungs, f.HomePuts, f.EdgePuts, f.HomeBytes, f.R2Reads, f.R2MaxPerLoc,
 				f.DOGets, f.ViewerSegs, f.ViewerErrors, f.FetchP95, f.AfterHomeP95)
 		}
+		fmt.Fprintf(&b, "\n%s: where a fetch's time went, and the runner\n\n| Viewers | Fetch p95 | First byte p95 | Edge answer p95 | Reload late p95 | Edge cores | Home cores | Viewer cores | Runner busy | Steal | Load 1 m | CPUs |\n|---|---|---|---|---|---|---|---|---|---|---|---|\n", r.Scenario)
+		for _, f := range r.Fanout {
+			l := f.Load
+			fmt.Fprintf(&b, "| %d | %.0f ms | %.0f ms | %s | %.0f ms | %s | %s | %.2f | %.1f %% | %.1f %% | %.2f | %d |\n",
+				f.Viewers, f.FetchP95, f.FirstByteP95, answerCell(f.EdgeAnswerP95), f.ReloadLateP95,
+				coresCell(l.EdgeCores), coresCell(l.HomeCores), l.ViewerCores, l.HostBusyPct, l.HostStealPct, l.Load1, l.CPUs)
+		}
 	}
 	for _, r := range results {
 		if len(r.Latency) == 0 {
@@ -223,4 +249,18 @@ func cell(s string) string {
 // Latency is a fleet summary's percentiles for the report.
 func Latency(s viewers.Summary) map[string]any {
 	return map[string]any{"fetch": s.Fetch, "after_home": s.AfterHome}
+}
+
+func answerCell(ms float64) string {
+	if ms < 0 {
+		return fmt.Sprintf("> %.0f ms", SegAnswerBoundsMS[len(SegAnswerBoundsMS)-1])
+	}
+	return fmt.Sprintf("≤ %.0f ms", ms)
+}
+
+func coresCell(c float64) string {
+	if c < 0 {
+		return "?"
+	}
+	return fmt.Sprintf("%.2f", c)
 }
