@@ -100,7 +100,7 @@ final class PlayerSearchUITests: PlayerUITestCase {
         if !passage.isHittable { app.swipeUp() }
         XCTAssertTrue(passage.waitForExistence(timeout: 5), "a passage")
         XCTAssertTrue(passage.label.hasPrefix("Play from"), "a passage says what it does: \(passage.label)")
-        passage.tap()
+        tapWhenIdle(passage, "the results after Return")
         playerOpened("v1", at: 1622, "at the passage's time")
     }
 
@@ -109,7 +109,8 @@ final class PlayerSearchUITests: PlayerUITestCase {
         type("seerah\n")
         let title = element("search.title.v3")
         XCTAssertTrue(title.waitForExistence(timeout: 10))
-        title.tap()
+        // Return let go of the keyboard before the results came in under the field: idle
+        tapWhenIdle(title, "the results after Return")
         XCTAssertTrue(element("screen.video").waitForExistence(timeout: 10), "the video's page")
         XCTAssertTrue(app.staticTexts["السيرة النبوية، الدرس ١٢"].waitForExistence(timeout: 10), "v3's title")
     }

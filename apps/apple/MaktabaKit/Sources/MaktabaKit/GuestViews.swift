@@ -27,6 +27,9 @@ public struct GuestSpaceView: View {
     /// Which way in was tried last ("link", "code"; "" for a link the app was opened with): its
     /// refusal shows under its own Watch button, where the person is looking.
     @State private var tried = ""
+    /// The field holding the keyboard: let go of before Watch opens the channels (a push
+    /// with the field still focused could cut off the keyboard's hiding: Trail #1419).
+    @FocusState private var typing: Bool
     private let invite: String?
     @Environment(\.dismiss) private var dismiss
 
@@ -146,8 +149,10 @@ public struct GuestSpaceView: View {
                 .keyboardType(.URL)
                 #endif
                 .environment(\.layoutDirection, .leftToRight)
+                .focused($typing)
                 .accessibilityIdentifier("guest.link")
             Button(GuestWords.message("guest.watch")) {
+                typing = false
                 tried = "link"
                 Task {
                     if let p = await model.redeem(invite: link) {
@@ -179,6 +184,7 @@ public struct GuestSpaceView: View {
                 .textInputAutocapitalization(.never)
                 #endif
                 .environment(\.layoutDirection, .leftToRight)
+                .focused($typing)
                 .accessibilityIdentifier("guest.publisher")
             TextField(GuestWords.message("guest.code"), text: $code)
                 .autocorrectionDisabled()
@@ -186,8 +192,10 @@ public struct GuestSpaceView: View {
                 .textInputAutocapitalization(.characters)
                 #endif
                 .environment(\.layoutDirection, .leftToRight)
+                .focused($typing)
                 .accessibilityIdentifier("guest.code")
             Button(GuestWords.message("guest.watch")) {
+                typing = false
                 tried = "code"
                 Task {
                     if let p = await model.redeem(publisher: publisher, code: code) {

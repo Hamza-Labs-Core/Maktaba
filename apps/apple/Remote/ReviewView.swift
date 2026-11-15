@@ -120,6 +120,10 @@ struct ReviewWordView: View {
     @State private var busy = false
     @State private var player: AVPlayer?
     @State private var noAudio = false
+    /// Spelling holds the keyboard. It lets go before this word is replaced by the next one
+    /// (resolved, or Previous/Next word): a focused field taken away with the keyboard up
+    /// could cut off the keyboard's hiding (Trail #1419).
+    @FocusState private var spelling: Bool
     @Environment(\.layoutDirection) private var ui
 
     private var f: ReviewFlag { detail ?? flag }
@@ -144,14 +148,15 @@ struct ReviewWordView: View {
                 candidates
                 TextField("Spelling", text: $edit)
                     .textFieldStyle(.roundedBorder)
+                    .focused($spelling)
                 actions
                 if f.sameKeyOpen > 0 {
                     Toggle("Apply to all \(f.sameKeyOpen + 1) places", isOn: $applyAll)
                         .keyboardShortcut("a", modifiers: [])
                 }
                 HStack {
-                    Button("Previous word") { move(-1) }.keyboardShortcut("k", modifiers: [])
-                    Button("Next word") { move(1) }.keyboardShortcut("j", modifiers: [])
+                    Button("Previous word") { step(-1) }.keyboardShortcut("k", modifiers: [])
+                    Button("Next word") { step(1) }.keyboardShortcut("j", modifiers: [])
                 }
                 .buttonStyle(.borderless)
             }
@@ -161,8 +166,8 @@ struct ReviewWordView: View {
         .gesture(DragGesture(minimumDistance: 40).onEnded { g in
             let leftwards = g.translation.width < -80
             let rightwards = g.translation.width > 80
-            if ui == .rightToLeft ? rightwards : leftwards { move(1) }
-            if ui == .rightToLeft ? leftwards : rightwards { move(-1) }
+            if ui == .rightToLeft ? rightwards : leftwards { step(1) }
+            if ui == .rightToLeft ? leftwards : rightwards { step(-1) }
         })
         .task {
             if let d = try? await model.client.reviewFlag(flag.id) { detail = d }
@@ -246,8 +251,15 @@ struct ReviewWordView: View {
         player?.play()
     }
 
+    /// The word before or after: the keyboard let go of first.
+    private func step(_ by: Int) {
+        spelling = false
+        move(by)
+    }
+
     private func resolve(_ action: ReviewAction, _ text: String? = nil) {
         guard !busy else { return }
+        spelling = false
         busy = true
         Task {
             defer { busy = false }

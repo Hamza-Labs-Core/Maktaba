@@ -140,6 +140,9 @@ struct CloudSheet: View {
             problem = words.text(.notACloudAddress)
             return
         }
+        // the keyboard let go of first: signing in replaces this form with the account's
+        // homes (see `HomePickerView.endEditing`)
+        focus = nil
         busy = true
         Task {
             defer { busy = false }

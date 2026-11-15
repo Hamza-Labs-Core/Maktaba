@@ -11,6 +11,8 @@ struct SearchScreen: View {
 
     @State private var model: SearchModel
     @FocusState private var typing: Bool
+    /// A search held until the field has let go of the keyboard (see `submit`).
+    @State private var letGo = LetGoFirst<String>()
 
     /// A query sent as the screen opens (a plugin panel's chip, `PlayerRoute.search`).
     private let initial: String?
@@ -62,6 +64,10 @@ struct SearchScreen: View {
                 }
             }
             .onSubmit(of: .search) { submit(model.query) }
+            // the field let go: the search held for it runs now
+            .onChange(of: typing) { _, now in
+                if let q = letGo.focusChanged(now) { run(q) }
+            }
             // suggestions follow the typing once it rests
             .task(id: model.query) {
                 try? await Task.sleep(for: SearchModel.suggestDelay)
@@ -100,7 +106,8 @@ struct SearchScreen: View {
             } else {
                 ResultsList(results: results, home: context.client.home, byMeaning: caps.isOn(.semanticSearch), paging: model.paging,
                             moreTitles: { Task { await model.moreTitles() } },
-                            moreTranscripts: { Task { await model.moreTranscripts() } })
+                            moreTranscripts: { Task { await model.moreTranscripts() } },
+                            leaving: { typing = false })
             }
         } else {
             recentList
@@ -177,7 +184,15 @@ struct SearchScreen: View {
         // the field holds the chosen text at once: the field's own submit, which can follow
         // a suggestion's tap, then sends that too rather than what was typed so far
         model.query = q
-        typing = false
+        // The keyboard is let go of first, and the search runs once the field has let go
+        // (`onChange(of: typing)`). Searching swaps the screen under the field (the suggestions
+        // go, then a spinner, then the results). In the same update as the field letting go,
+        // the keyboard's hiding could be cut off and never finish, and the app was never idle
+        // again: every later XCUITest wait ran its full 60 s.
+        if let now = letGo.begin(q, focused: typing) { run(now) } else { typing = false }
+    }
+
+    private func run(_ q: String) {
         Task { await model.submit(q) }
     }
 }
@@ -204,6 +219,9 @@ private struct ResultsList: View {
     let paging: Bool
     let moreTitles: () -> Void
     let moreTranscripts: () -> Void
+    /// A result opens its page: the field lets go of the keyboard (typing again to refine
+    /// the search keeps it until then).
+    let leaving: () -> Void
 
     var body: some View {
         List {
@@ -221,6 +239,7 @@ private struct ResultsList: View {
                         NavigationLink(value: PlayerRoute.video(id: hit.videoID)) {
                             TitleRow(hit: hit, poster: poster(hit.videoID))
                         }
+                        .simultaneousGesture(TapGesture().onEnded(leaving))
                         .accessibilityIdentifier("search.title.\(hit.videoID)")
                         .listRowBackground(Color.clear)
                     }
@@ -238,12 +257,14 @@ private struct ResultsList: View {
                         NavigationLink(value: PlayerRoute.video(id: hit.videoID)) {
                             TranscriptHeader(hit: hit, poster: poster(hit.videoID))
                         }
+                        .simultaneousGesture(TapGesture().onEnded(leaving))
                         .accessibilityIdentifier("search.transcript.\(hit.videoID)")
                         .listRowBackground(Color.clear)
                         ForEach(Array(hit.passages.enumerated()), id: \.element.id) { i, p in
                             NavigationLink(value: PlayerRoute.watch(videoID: hit.videoID, at: p.startSec)) {
                                 PassageRow(passage: p)
                             }
+                            .simultaneousGesture(TapGesture().onEnded(leaving))
                             .accessibilityIdentifier("search.passage.\(hit.videoID).\(i)")
                             .listRowBackground(Color.clear)
                         }

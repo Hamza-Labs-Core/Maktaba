@@ -198,6 +198,8 @@ struct ApproveSheet: View {
 
     private func approve() {
         guard let digits = PairingCode.normalize(code), !busy else { return }
+        // the keyboard let go of first: an approved machine closes this sheet
+        focused = false
         busy = true
         Task {
             defer { busy = false }

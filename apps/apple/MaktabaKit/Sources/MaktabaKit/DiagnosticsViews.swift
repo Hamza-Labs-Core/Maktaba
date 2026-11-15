@@ -247,6 +247,8 @@ public struct ReportProblemView: View {
     @State private var problem: String?
     @State private var showLog = false
     @State private var maktabaOn = false
+    /// What happened holds the keyboard (let go of before sending: the form is then replaced).
+    @FocusState private var describing: Bool
     @Environment(\.dismiss) private var dismiss
 
     public init(client: APIClient, home: String, reference: String? = nil, screenshot: Data? = nil) {
@@ -294,6 +296,7 @@ public struct ReportProblemView: View {
                     Text(verbatim: kit("Describe it (optional)"))
                 }
                 .lineLimit(3...8)
+                .focused($describing)
                 .accessibilityIdentifier("report.text")
             } header: {
                 Text(verbatim: kit("What happened?"))
@@ -445,6 +448,8 @@ public struct ReportProblemView: View {
     }
 
     private func send() async {
+        // the keyboard let go of first: a sent report replaces this form with its number
+        describing = false
         sending = true
         problem = nil
         defer { sending = false }

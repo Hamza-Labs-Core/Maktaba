@@ -13,6 +13,11 @@ struct LogsView: View {
     @State private var more: [(id: Int64?, line: LogLine)] = []
     @State private var problem: String?
     @State private var following: String?
+    /// The search field holds the keyboard: it lets go on submit, before a followed request
+    /// opens or the lines change under it (Trail #1419: a push or swap with the keyboard up
+    /// could cut off its hiding).
+    @FocusState private var typing: Bool
+    @State private var letGo = LetGoFirst<String>()
 
     var body: some View {
         List {
@@ -60,7 +65,11 @@ struct LogsView: View {
         .overlay { if result == nil, problem == nil { ProgressView() } }
         .navigationTitle("Logs")
         .searchable(text: $text, prompt: Text("Search logs"))
+        .searchFocused($typing)
         .onSubmit(of: .search) { submit() }
+        .onChange(of: typing) { _, now in
+            if let t = letGo.focusChanged(now) { run(t) }
+        }
         .navigationDestination(item: $following) { FollowRequestView(requestID: $0) }
         .refreshable { await load() }
         .task(id: query) { await load() }
@@ -71,6 +80,10 @@ struct LogsView: View {
     private var nextCursor: String? { lastCursor }
 
     private func submit() {
+        if let now = letGo.begin(text, focused: typing) { run(now) } else { typing = false }
+    }
+
+    private func run(_ text: String) {
         if let ref = LogQuery.requestReference(text) {
             following = ref
         } else {
