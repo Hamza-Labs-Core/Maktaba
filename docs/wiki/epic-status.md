@@ -3,7 +3,7 @@
 > Story-by-story status of every epic, read from the code and history on `main` at `f43b0d3ed` (2026-11-19).
 > The specs and epic pages don't record a status; this page does. Update the row when a story changes.
 
-**Not every epic is done.** Of 773 stories across all 60 epics, 698 are done, 41 are partial, 24 are not started, and 10 were deferred or removed on purpose. The largest open pieces are Epic 49 (Search, one story of fourteen done), Epic 34 (the TV public site, a first slice only) and Epic 54 Phase 5 (Plugins).
+**Not every epic is done.** Of 773 stories across all 60 epics, 700 are done, 39 are partial, 24 are not started, and 10 were deferred or removed on purpose. The largest open pieces are Epic 49 (Search, one story of fourteen done), Epic 34 (the TV public site, a first slice only) and Epic 54 Phase 5 (Plugins).
 
 ## How this was checked
 
@@ -83,7 +83,7 @@
 | 58 Smart TV platforms | 17 | 0 | 0 | 1 | Done (58.18 Vega OS deferred) |
 | 59 NAS | 16 | 0 | 0 | 0 | Done (device results not checked) |
 | 60 Website | 11 | 1 | 0 | 1 | **Partial** |
-| **Total** | **698** | **41** | **24** | **10** | **Not all done** |
+| **Total** | **700** | **39** | **24** | **10** | **Not all done** |
 
 `*` sampled, see [How this was checked](#how-this-was-checked).
 
@@ -464,7 +464,7 @@ Each epic below has an evidence key naming current implementation and test files
 | Story | Status | Evidence / missing work |
 |---|---|---|
 | 16.01 Free tier | Done (sampled) | E16 |
-| 16.02 Premium features | **partial** | E16; merged implementation is visible in `subscriptions.go`, but its spec explicitly says downgrade visibility/read-only-for-30-days is **not built**; backup/federation TCs also waited on those surfaces. Current backup/federation code exists, but the downgrade AC remains absent. |
+| 16.02 Premium features | **Done** | E16; #1453: the expiry and downgrade grace as the owner decided (2026-11-19): the plan keeps working fully for 30 days from the license's expiry, then locks (`subscriptions.Grace`, `api/internal/subscriptions/store.go`, `grace_test.go`); the admin sees the days left (`grace_until`/`grace_days_left`, `SubscriptionSettings.tsx`). Backup and federation mount behind `RequireFeature` when their routes ship. |
 | 16.03 Subscription management | Done (sampled) | E16 |
 | 16.04 License validation | **Done** | E16; signed offline validation, refresh and tests; #1454: past the seats, the newest non-admin accounts are read-only as the owner decided (2026-11-19): they watch and keep their progress, history, playlists and favourites; uploads, metadata edits and managing the home are refused (`subscriptions.SeatGuard`, `seats.go`, `seats_test.go`, `seats_pg_test.go`, `403 seat-read-only`); the admin sees them, the account is told (`SubscriptionSettings.tsx`). |
 | 16.05 Telemetry opt-in | Done (sampled) | E16; `api/internal/router/telemetry.go`, `web/src/components/TelemetryPrompt.tsx` |
