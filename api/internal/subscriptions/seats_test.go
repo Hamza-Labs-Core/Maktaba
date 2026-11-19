@@ -165,6 +165,12 @@ func TestTheGateLetsAReadOnlyAccountWatchOnly(t *testing.T) {
 		{http.MethodDelete, "/api/me/playlists/p1/items/v1"},
 		{http.MethodPut, "/api/me/playlists/p1/order"},
 		{http.MethodPost, "/api/me/favorites"},
+		{http.MethodPost, "/api/tv/remote/tune"},
+		{http.MethodDelete, "/api/me/app-sign-ins/a1"},
+		{http.MethodPut, "/api/me/pinned-libraries"},
+		{http.MethodPatch, "/api/me"},
+		{http.MethodPost, "/api/devices/register"},
+		{http.MethodDelete, "/api/search/recent"},
 	}
 	refused := [][2]string{
 		{http.MethodPost, "/api/libraries/l1/scan"},
@@ -175,7 +181,9 @@ func TestTheGateLetsAReadOnlyAccountWatchOnly(t *testing.T) {
 		{http.MethodPatch, "/api/settings"},
 		{http.MethodPost, "/api/channels"},
 		{http.MethodPost, "/api/channels/c1/regenerate"},
-		{http.MethodPost, "/api/search/save"},
+		{http.MethodPost, "/api/tv/remote/integration"},
+		{http.MethodPost, "/api/tv/remote/signing-key/rotate"},
+		{http.MethodPost, "/api/videos/v1/enrichment/accept"},
 	}
 	for _, c := range allowed {
 		if code := call("new", false, c[0], c[1]); code != http.StatusNoContent {

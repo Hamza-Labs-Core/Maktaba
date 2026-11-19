@@ -96,11 +96,12 @@ func (g *SeatGuard) ReadOnly(ctx context.Context, userID string) (bool, error) {
 }
 
 // AllowedWhileSeatReadOnly lists the writes a read-only account may still make:
-// watching (playback sessions, the watch log, live TV, casting, a play queue, a TV
-// remote's session), its own progress and history, its own playlists and favourites,
-// signing in and out, its own password and sessions, searching, its notifications and
-// the parental requests a child makes to keep watching. Every read is allowed (it is not
-// a write).
+// watching (playback sessions, the watch log, live TV at home and away, casting, a TV
+// remote's session), everything that is its own (/api/me/: progress, history, play
+// queues, playlists, favourites, profile, password, sessions and app sign-ins, pinned
+// libraries, its parental requests), its searches, its devices, its notifications, and
+// signing in and out. Every read is allowed (it is not a write). What is left is
+// uploading, editing metadata and managing the home.
 func AllowedWhileSeatReadOnly(r *http.Request) bool {
 	switch r.Method {
 	case http.MethodGet, http.MethodHead, http.MethodOptions:
@@ -115,18 +116,15 @@ func AllowedWhileSeatReadOnly(r *http.Request) bool {
 		strings.HasPrefix(p, "/api/.well-known/"),
 		strings.HasPrefix(p, "/api/stream/sessions"),
 		strings.HasPrefix(p, "/api/watch/"),
-		strings.HasPrefix(p, "/api/me/history/"),
-		strings.HasPrefix(p, "/api/me/play-queues"),
-		strings.HasPrefix(p, "/api/me/playlists"),
-		strings.HasPrefix(p, "/api/me/favorites"),
-		strings.HasPrefix(p, "/api/me/sessions/"),
-		strings.HasPrefix(p, "/api/me/parental/"),
+		strings.HasPrefix(p, "/api/me/"),
+		strings.HasPrefix(p, "/api/search/"),
+		strings.HasPrefix(p, "/api/devices/"),
 		strings.HasPrefix(p, "/api/notifications/"),
 		strings.HasPrefix(p, "/api/tv/remote/sessions/"),
 		strings.HasPrefix(p, "/api/cast/grants"):
 		return true
-	case p == "/api/me/watched", p == "/api/me/change-password", p == "/api/me/age-signal",
-		p == "/api/search", p == "/api/direct/check", p == "/api/telemetry/app":
+	case p == "/api/me", p == "/api/search", p == "/api/direct/check", p == "/api/telemetry/app",
+		p == "/api/tv/remote/tune":
 		return true
 	case strings.HasPrefix(p, "/api/channels/") && strings.HasSuffix(p, "/play") && r.Method == http.MethodPost:
 		return true
@@ -148,7 +146,7 @@ func (g *SeatGuard) Gate(next http.Handler) http.Handler {
 			return
 		}
 		p := principal.FromContext(r.Context())
-		if p == nil || p.UserID == "" || p.Source == principal.SourceAdminToken {
+		if p == nil || p.UserID == "" || p.IsAdmin || p.Source == principal.SourceAdminToken {
 			next.ServeHTTP(w, r)
 			return
 		}

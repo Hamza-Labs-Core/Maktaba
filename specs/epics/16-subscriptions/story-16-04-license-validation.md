@@ -86,18 +86,23 @@ read-only blocks only uploads, metadata edits and managing the home.
 - **The gate** (`SeatGuard.Gate`, in front of the API's router in `main.go`):
   - **Reads are never refused.** Every GET, HEAD and OPTIONS goes through.
   - **Writes that stay open** to a read-only account (`AllowedWhileSeatReadOnly`):
-    - signing in and out, its own password and sessions;
-    - playback (`/api/stream/sessions*`, `/api/watch/*`, live TV's
-      `/api/channels/{id}/play`, casting, play queues, a TV remote's session, a video
-      kept for offline watching);
-    - its own progress and history (`/api/me/watched`, `/api/me/history/*`);
-    - its own playlists and favourites (`/api/me/playlists*`, `/api/me/favorites`);
-    - searching, notifications, and the parental unlock requests a child needs to keep
-      watching.
+    - signing in and out;
+    - playback (`/api/stream/sessions*`, `/api/watch/*`, live TV at home
+      (`/api/channels/{id}/play`) and away (`/api/tv/remote/tune` and its session),
+      casting, a video kept for offline watching);
+    - everything that is the account's own, under `/api/me`: progress and history,
+      play queues, playlists, favourites, profile, password, sessions and app sign-ins,
+      pinned libraries, API tokens, its cloud link, the parental requests a child needs
+      to keep watching;
+    - its searches (`/api/search*`), its devices (`/api/devices/*`), its
+      notifications.
+  - **GraphQL too.** Each GraphQL field runs its REST route on the router; the bridge
+    runs those sub-requests under the same gate (`graphql.SubRequestGate`), so a
+    mutation is refused where its route is.
   - **Everything else is refused** with `403 seat-read-only` (in the problem
     registry, English and Arabic), saying to ask the admin: uploads, metadata edits,
     collections, settings, and every management route.
-  - **What it never refuses.** An admin, a request with no account, or the admin token
+  - **What it never refuses.** An admin (without a query), a request with no account, or the admin token
     always goes through. A database error lets the request through, logged.
 - **The admin's view.** `GET /api/admin/license` lists `read_only_users` (newest
   first), and its message names them. Settings → Subscription shows them under the

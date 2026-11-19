@@ -45,6 +45,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/components"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/directaccess"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/discovery"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/graphql"
 	grpcpipeline "github.com/Hamza-Labs-Core/Maktaba/api/internal/grpcclients/pipeline"
 	grpcstreaming "github.com/Hamza-Labs-Core/Maktaba/api/internal/grpcclients/streaming"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/logs"
@@ -888,6 +889,9 @@ func runServe() error {
 	publicMux.Handle("/healthz", health.NewLive("api"))
 	publicMux.Handle("/api/.well-known/jwks.json", &keys.JWKSHandler{Set: auth.keys})
 	publicMux.Handle("/", seatGuard.Gate(r))
+	// a GraphQL field runs its REST route on the router, under the same seat gate
+	seatGate := seatGuard.Gate
+	graphql.SubRequestGate.Store(&seatGate)
 
 	// The home verifies the nodes' signed requests before anything else (story
 	// 35.9); a full node serves every route by its placement class (story 35.10).

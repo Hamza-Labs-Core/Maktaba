@@ -2351,14 +2351,12 @@
       "related": [
         "epic-16-subscriptions",
         "plan-16.04-license-validation",
+        "ep-get-search",
+        "ep-post-search",
         "ep-post-stream-sessions",
         "ep-get-settings",
         "ep-put-settings",
-        "ep-get-me-playlists",
-        "ep-post-me-playlists",
-        "ep-post-me-watched",
-        "ep-post-me-favorites",
-        "ep-get-me-history",
+        "ep-get-devices",
         "ep-post-channels-id-play",
         "ep-get-channels"
       ],
@@ -2368,14 +2366,12 @@
         "mockups": []
       },
       "api_endpoints": [
+        "GET /search",
+        "POST /search",
         "POST /stream/sessions",
         "GET /settings",
         "PUT /settings",
-        "GET /me/playlists",
-        "POST /me/playlists",
-        "POST /me/watched",
-        "POST /me/favorites",
-        "GET /me/history",
+        "GET /devices",
         "POST /channels/{id}/play",
         "GET /channels"
       ],
