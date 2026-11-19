@@ -39,8 +39,9 @@ VC_RUNTIME = re.compile(r"^(msvcp1\d\d|vcruntime1\d\d|concrt1\d\d|vccorlib1\d\d|
 #: ("." is the file's own folder; the loader searches the program's folder first). Postgres
 #: loads its extensions (lib\*.dll) by path, and their imports resolve from bin\, beside
 #: postgres.exe; Python loads extension modules (DLLs\*.pyd) with their own folder and
-#: python.exe's. Elsewhere (bin\, ffmpeg\) a program's own folder.
-SEARCH = {"postgres": ("postgres/bin",), "python": (".", "python")}
+#: python.exe's. Elsewhere (bin\, ffmpeg\) a program's own folder. postgres-18\ (Epic 49) is
+#: a Postgres of its own: its extensions' imports resolve from its own bin\.
+SEARCH = {"postgres": ("postgres/bin",), "postgres-18": ("postgres-18/bin",), "python": (".", "python")}
 DEFAULT_SEARCH = (".",)
 
 #: PE files under these folders are never loaded on this machine: pip's launcher templates

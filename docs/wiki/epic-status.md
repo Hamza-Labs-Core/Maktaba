@@ -3,7 +3,7 @@
 > Story-by-story status of every epic, read from the code and history on `main` at `f43b0d3ed` (2026-11-19).
 > The specs and epic pages don't record a status; this page does. Update the row when a story changes.
 
-**Not every epic is done.** Of 773 stories across all 60 epics, 696 are done, 40 are partial, 27 are not started, and 10 were deferred or removed on purpose. The largest open pieces are Epic 49 (Search, not started), Epic 34 (the TV public site, a first slice only) and Epic 54 Phase 5 (Plugins).
+**Not every epic is done.** Of 773 stories across all 60 epics, 697 are done, 40 are partial, 26 are not started, and 10 were deferred or removed on purpose. The largest open pieces are Epic 49 (Search, one story of fourteen done), Epic 34 (the TV public site, a first slice only) and Epic 54 Phase 5 (Plugins).
 
 ## How this was checked
 
@@ -71,7 +71,7 @@
 | 46 Big screen | 7 | 0 | 0 | 0 | Done |
 | 47 Offline convert / dedup | 11 | 3 | 0 | 0 | **Partial** |
 | 48 Native players | 36 | 1 | 0 | 0 | **Partial** |
-| 49 Search | 0 | 0 | 14 | 0 | **Not started** |
+| 49 Search | 1 | 0 | 13 | 0 | **Partial** |
 | 50 Cloud with no downtime | 35 | 0 | 0 | 0 | Done (live SLOs not checked) |
 | 51 Configurable components | 19 | 0 | 0 | 0 | Done |
 | 52 Transcript word review | 13 | 3 | 0 | 1 | **Partial** |
@@ -83,7 +83,7 @@
 | 58 Smart TV platforms | 17 | 0 | 0 | 1 | Done (58.18 Vega OS deferred) |
 | 59 NAS | 16 | 0 | 0 | 0 | Done (device results not checked) |
 | 60 Website | 11 | 1 | 0 | 1 | **Partial** |
-| **Total** | **696** | **40** | **27** | **10** | **Not all done** |
+| **Total** | **697** | **40** | **26** | **10** | **Not all done** |
 
 `*` sampled, see [How this was checked](#how-this-was-checked).
 
@@ -96,7 +96,6 @@
 - **34.9 Budget, abuse controls and analytics** — no public budget, viewer/session limits, rate-limit wiring, Analytics Engine sink, or Stream reconciliation.
 - **34.10 Deployment pipeline** — manual `wrangler.toml` exists, but no release artifact pipeline or home-driven deploy/promote/rollback implementation.
 - **43.6 Measured on the home Mac** — PR #319 explicitly excludes the 13.9M-row p50/p95, disk and recall measurement; no later merged measurement was found.
-- **49.1 PostgreSQL 18 + pg_textsearch** — current bundles still describe PostgreSQL 16; no `pg_textsearch` packaging or checks.
 - **49.2 Major updater upgrade 16 → 18** — no such update-rehearsal path or rollback evidence.
 - **49.3 Cluster major-version rollout** — no home-18/node-16 two-machine test.
 - **49.4 Arabic normalisation and word forms** — no `maktaba_search` v2 / `maktaba_stem` implementation or migration.
@@ -1068,7 +1067,7 @@ Stories are the fourteen numbered rows in `specs/epics/49-search/README.md` §6 
 
 | Story | Status | Evidence |
 |---|---|---|
-| 49.1 PostgreSQL 18 / pg_textsearch bundles | **Not started** | Only `specs/epics/49-search/README.md`; current `tools/release/mac-app/payload.sh`, `tools/release/linux-app/payload.sh`, and `tools/release/win-app/payload.sh` still describe PostgreSQL 16 and no pg_textsearch. |
+| 49.1 PostgreSQL 18 / pg_textsearch bundles | **Done** (#1441) | Every app payload carries PostgreSQL 18.7 in `postgres-18/` with pgvector and pg_textsearch, beside the 16 the server still runs until 49.2; `tools/release/pg18-check.sh` in each payload's `check.sh`, `TestRealPgTextsearchPreloaded`; README §9 "As built". |
 | 49.2 Major updater upgrade | **Not started** | Only `specs/epics/49-search/README.md`; `.github/workflows/update-rehearsal.yml` has no 16→18 scenario evidence. |
 | 49.3 Cluster major-version rollout | **Not started** | Only `specs/epics/49-search/README.md`; `api/twomachine_e2e_test.go` has no home-18/node-16 scenario. |
 | 49.4 Arabic normalisation / word forms | **Not started** | Only `specs/epics/49-search/README.md`; no `maktaba_search` v2 or `maktaba_stem` code/migration found. |
