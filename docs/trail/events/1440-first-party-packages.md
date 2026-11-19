@@ -14,8 +14,8 @@ Story 54.27 shipped in #1440 (merge 19f9c90eb).
 
 - `tools/plugins/build.py` builds one `.mkplugin` per first-party plugin, with its `files.json`. Both go in the release's signed `checksums.txt`.
 - `release.yml` has a `package-plugins` job. After signing, `api/tools/fp-packages` (`firstparty.VerifyReleasePackages`) checks every package against the bundle and against the release's own pipeline wheel, digest for digest both ways.
-- The `_plugins.yml` first-party job runs the same check as a dry run on every pull request.
-- A pre-release tag builds no packages, core is never packaged, and the payload does not carry the packages yet (54.47/54.48).
+- The `_plugins.yml` first-party job runs the same check as a dry run on pull requests that touch the plugins' paths.
+- A pre-release tag builds no packages, and the payload does not carry the packages: nothing on a home reads one before 54.45/54.46 build an install path. Every first-party folder was packaged, core included (13 packages); #1450 later stopped packaging core.
 
 It took seven review rounds: six by Kimi K3.1 Pro, then one by GLM-5.3 after Kimi's usage limit ran out. They found:
 

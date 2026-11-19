@@ -14,7 +14,7 @@ agent: claude-code
 
 There were four Kimi K3.1 Pro review rounds. Rounds one to three found byte-level gaps between the shell reader and `releaseverify.ParseChecksums`: NUL, CR, blank lines, `*name` lines, the scanner limit. Each fix found another. Round three's answer changed approach: the gate accepts only what `release.yml`'s `sha256sum` writes, a strict subset of what the Go parser reads, and anything else keeps the draft with a notice. Round four found nothing.
 
-Tests are in `tools/release/release-assets-test.sh` (a `CHECKSUMS_FILE` fixture for NUL bytes) and `gh-retry-test.sh`. They now also run on the macOS installer-tests leg, so BSD tools are covered.
+Tests are in `tools/release/release-assets-test.sh` (a `CHECKSUMS_FILE` fixture for NUL bytes) and `gh-retry-test.sh`. `release-assets-test.sh` now also runs on the macOS installer-tests leg, so BSD tools are covered; `gh-retry-test.sh` stays Linux-only.
 
 ## What we learned
 

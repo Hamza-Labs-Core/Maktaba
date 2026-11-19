@@ -17,6 +17,7 @@ Story 54.45 shipped partially in #1450 (merge 9e4fdcfbf), on the decision that a
   - its developer key is pinned in `shared/plugins/maktaba-keys.json` (empty until the key is made);
   - its manifest, strings and statements are exactly the server's;
   - its wheel is the plugin's code in the server's own pipeline wheel.
+- Core (`tv.maktaba.core-media`) is not a plugin (54.44) and is no longer packaged, so a release carries 12 packages.
 - `build.py --developer-key` and `fp-sign` sign without changing `files.json`.
 - The store gained a Maktaba publisher (`tv.maktaba`, kind `maktaba`), `prefixCovers`, trusted-manifest checks in Rust and native-package checks.
 
