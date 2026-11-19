@@ -585,6 +585,21 @@ func TestAnotherReleasesPipelineWheelIsRefused(t *testing.T) {
 	if _, err := VerifyReleasePackages(dir, relVersion, checksums(t, dir), name); codeOf(err) != CodeTrustedVersion {
 		t.Fatalf("an older pipeline wheel under this release's name: %v", err)
 	}
+	// the version on a line after the headers, or a header given twice: not this release's
+	for what, meta := range map[string]string{
+		"in the body":      "Metadata-Version: 2.1\nName: maktaba-pipeline\nVersion: 0.8.9\n\nVersion: " + relVersion + "\n",
+		"only in the body": "Metadata-Version: 2.1\nName: maktaba-pipeline\n\nVersion: " + relVersion + "\n",
+		"given twice":      "Metadata-Version: 2.1\nName: maktaba-pipeline\nVersion: " + relVersion + "\nVersion: 0.8.9\n",
+		"two versions":     "Metadata-Version: 2.1\nName: maktaba-pipeline\nVersion: " + relVersion + "\nVersion: " + relVersion + "\n",
+		"another name":     "Metadata-Version: 2.1\nName: maktaba-pipeline\nName: evil\nVersion: " + relVersion + "\n",
+	} {
+		name := pipelineWheel(t, dir, func(f map[string][]byte) {
+			f["maktaba_pipeline-"+relVersion+".dist-info/METADATA"] = []byte(meta)
+		})
+		if _, err := VerifyReleasePackages(dir, relVersion, checksums(t, dir), name); codeOf(err) != CodeTrustedVersion {
+			t.Fatalf("a pipeline wheel's version %s: %v", what, err)
+		}
+	}
 	// and a pipeline wheel named for another version
 	name = pipelineWheel(t, dir, nil)
 	other := "maktaba_pipeline-0.8.9-py3-none-any.whl"
@@ -640,5 +655,23 @@ func TestAnOversizedWheelMemberIsRefused(t *testing.T) {
 	}
 	if _, _, _, err := readWheel(buf.Bytes()); err == nil || !strings.Contains(err.Error(), "over") {
 		t.Fatalf("a member over the limit: %v", err)
+	}
+	// RECORD itself over the limit (its self-row skipped by the digest check): refused too
+	buf.Reset()
+	z = zip.NewWriter(&buf)
+	w, err = z.CreateHeader(&zip.FileHeader{Name: "x-1.dist-info/RECORD", Method: zip.Deflate})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = w.Write([]byte("x-1.dist-info/RECORD,,\n"))
+	blank := bytes.Repeat([]byte("\n"), 1<<20)
+	for i := 0; i <= componentpack.PluginMaxUnpackedBytes>>20; i++ {
+		_, _ = w.Write(blank)
+	}
+	if err := z.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, err := readWheel(buf.Bytes()); err == nil || !strings.Contains(err.Error(), "over") {
+		t.Fatalf("a RECORD over the limit: %v", err)
 	}
 }

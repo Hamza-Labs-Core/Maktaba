@@ -256,12 +256,23 @@ func readWheel(b []byte) (map[string]string, map[string][]byte, string, error) {
 	if record == nil {
 		return nil, nil, "", fmt.Errorf("no RECORD")
 	}
+	// RECORD is a member too: over the unpacked limit, declared or read, it is refused
+	if record.UncompressedSize64 > componentpack.PluginMaxUnpackedBytes {
+		return nil, nil, "", fmt.Errorf("%s is over %d bytes", record.Name, componentpack.PluginMaxUnpackedBytes)
+	}
 	rc, err := record.Open()
 	if err != nil {
 		return nil, nil, "", err
 	}
-	rows, err := csv.NewReader(rc).ReadAll()
+	recBytes, err := io.ReadAll(io.LimitReader(rc, componentpack.PluginMaxUnpackedBytes+1))
 	_ = rc.Close()
+	if err != nil {
+		return nil, nil, "", err
+	}
+	if len(recBytes) > componentpack.PluginMaxUnpackedBytes {
+		return nil, nil, "", fmt.Errorf("%s is over %d bytes", record.Name, componentpack.PluginMaxUnpackedBytes)
+	}
+	rows, err := csv.NewReader(bytes.NewReader(recBytes)).ReadAll()
 	if err != nil {
 		return nil, nil, "", fmt.Errorf("RECORD: %w", err)
 	}
@@ -412,10 +423,20 @@ func checkHeaders(b []byte, exact map[string]string, free ...string) error {
 
 // hasHeader: a "Key: value" line of b has that value.
 func hasHeader(b []byte, key, value string) bool {
+	// the metadata's headers only: they end at the first blank line (the description's body
+	// follows), and a header given twice names nothing
+	seen := 0
 	for _, line := range strings.Split(string(b), "\n") {
-		if k, v, ok := strings.Cut(strings.TrimRight(line, "\r"), ": "); ok && k == key && v == value {
-			return true
+		line = strings.TrimRight(line, "\r")
+		if line == "" {
+			break
+		}
+		if k, v, ok := strings.Cut(line, ": "); ok && k == key {
+			if v != value {
+				return false
+			}
+			seen++
 		}
 	}
-	return false
+	return seen == 1
 }
