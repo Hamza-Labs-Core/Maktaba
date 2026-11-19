@@ -79,7 +79,7 @@ plan.
 
 The API is the one writer of desired state (H13), so it publishes what the licence allows on
 each desired row: `licensed bool` and `licensed_until timestamptz` (the licence's
-`expires_at + SkewGrace`, null when not granted). It rewrites them when the licence changes:
+the end of its grant: `expires_at + Grace`, or a replaced licence's end + Grace, story 16.2; null when not granted). It rewrites them when the licence changes:
 the refresher's apply (`subscriptions/refresh.go`), `license apply`, a revocation, and the
 `license_reload` loop (`api/main.go`), each followed by `NOTIFY components_changed`.
 
@@ -92,7 +92,7 @@ touching it.
 
 Because `licensed_until` is on the row, a runner whose API is down still stops a component at
 the right time, and a home offline from the cloud keeps the grace the licence store already
-gives (`subscriptions.SkewGrace`, 72 h past a licence that lives 31 days and is refreshed
+gives (`subscriptions.Grace`, 30 days past a licence that lives 31 days and is refreshed
 daily). **This story adds no grace and changes none.**
 
 For `cloud.relay` the API's own runner (51.05) does it: `RelayGate` asks the component's
@@ -126,7 +126,7 @@ Words (English + Arabic, same PR; web, Android and Apple admin screens):
   **then** the API answers `403` with `code = licence_missing`, `feature = cloud_relay`,
   `required_tier = home`, and the desired row is unchanged.
 - **Given** a Home-tier home with `cloud.relay` Running,
-  **when** the licence expires past `SkewGrace`,
+  **when** the licence expires past `Grace`,
   **then** `cloud.relay` goes to Waiting (`licence_missing`), relayed requests get today's
   `403 license-required`, `want` stays `enabled`, and `cloud.link` keeps running.
 - **Given** that Waiting component,

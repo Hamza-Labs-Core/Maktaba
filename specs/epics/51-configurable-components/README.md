@@ -380,7 +380,7 @@ A component can name **one existing licence flag** (`licence = "cloud_relay"`). 
 refuses to enable it without the flag (`403 licence_missing`). The runners treat a missing
 flag as a *Waiting* condition, so a lapsed licence stops the component and keeps the wish.
 When the licence comes back, so does the component. The licence store's grace applies
-unchanged (a 31-day licence refreshed daily, plus `SkewGrace`, 72 h). Today only
+unchanged (a 31-day licence refreshed daily, plus `Grace`, 30 days: story 16.2). Today only
 `cloud.relay` (relayed traffic and the reporter) is gated, by `cloud_relay`. The relay agent
 itself is `cloud.link`, never gated: it does the claim and writes the identity the licence
 refresher needs, so gating it would lock a home out of the licence that unlocks it

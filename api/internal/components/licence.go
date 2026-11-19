@@ -15,18 +15,19 @@ import (
 // licence makes it wait, its want kept. The licence store's grace is the only grace.
 
 // Licences is what lic allows now of every component of cat that names a licence flag:
-// licensed when the effective licence grants the flag, until the licence's expires_at +
-// SkewGrace (none for a licence that does not expire, or one not granted).
+// licensed when the effective licence grants the flag, until the latest end of its grant
+// (an applied licence's expires_at + Grace, a replaced one's end + Grace: story 16.2);
+// none for a licence that does not expire, or one not granted.
 func Licences(cat *components.Catalog, lic *subscriptions.Store) map[string]store.Licence {
-	eff := lic.Current()
 	out := map[string]store.Licence{}
 	for _, c := range cat.Components() {
 		if c.Licence == "" {
 			continue
 		}
-		l := store.Licence{Licensed: eff.Allows(subscriptions.Feature(c.Licence))}
-		if l.Licensed && eff != nil && !eff.ExpiresAt.IsZero() {
-			u := eff.ExpiresAt.Add(subscriptions.SkewGrace).UTC()
+		until, ok := lic.Until(subscriptions.Feature(c.Licence))
+		l := store.Licence{Licensed: ok}
+		if ok && !until.IsZero() {
+			u := until.UTC()
 			l.Until = &u
 		}
 		out[c.ID] = l

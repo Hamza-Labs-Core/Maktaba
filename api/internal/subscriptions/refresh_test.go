@@ -123,14 +123,14 @@ func TestRefresher_PlanLicenseLifecycle(t *testing.T) {
 		t.Fatalf("resolved dispute: tier %s status %q", s.TierName(), s.State().Status)
 	}
 
-	// the plan ends: free, the license gone
+	// the plan ends: the license gone, its plan working for Grace (story 16.2)
 	f.mu.Lock()
 	f.planCode, f.planBody = 404, map[string]string{"error": "no_license"}
 	f.mu.Unlock()
 	if err := r.RefreshNow(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if st := s.State(); st.License != nil || st.Status != StatusNone {
+	if st := s.State(); st.License != nil || st.Status != StatusGrace || s.TierName() != "pro" || st.GraceUntil.IsZero() {
 		t.Fatalf("plan ended: %+v", st)
 	}
 }
@@ -256,11 +256,11 @@ func TestRefresher_OfflineClockRatchets(t *testing.T) {
 	s.SetClock(func() time.Time { return now })
 	applyLicense(t, s, v, priv, LicenseInner{LicenseID: "air", Tier: TierPro, IssuedAt: now, ExpiresAt: now.Add(10 * 24 * time.Hour)})
 	r := &Refresher{Store: s, Verifier: v, ServerURL: func() string { return "" }}
-	now = now.Add(20 * 24 * time.Hour)
+	now = now.Add(50 * 24 * time.Hour) // past its expiry (10 d) + Grace (30 d)
 	if err := r.refresh(context.Background(), false); err != nil {
 		t.Fatal(err)
 	}
-	now = now.Add(-15 * 24 * time.Hour)
+	now = now.Add(-45 * 24 * time.Hour)
 	s2, _ := NewPersistentStore(context.Background(), db, v)
 	s2.SetClock(func() time.Time { return now })
 	if s2.Current() != nil {
