@@ -46,5 +46,7 @@ func statCPU(line string) (time.Duration, bool) {
 	if err1 != nil || err2 != nil {
 		return 0, false
 	}
-	return time.Duration(u+s) * time.Second / clockTick, true
+	// a tick is 10 ms exactly: multiplying by it, not by a second, cannot overflow for any
+	// time a process can have used (a second first overflows after about 2.9 years of it)
+	return time.Duration(u+s) * (time.Second / clockTick), true
 }

@@ -13,6 +13,11 @@ func TestStatCPU(t *testing.T) {
 	if d, ok := statCPU(line); !ok || d != 3*time.Second {
 		t.Fatalf("%v %v", d, ok)
 	}
+	// four years of one core's time: past where ticks*time.Second overflowed
+	big := "1 (x) S 1 1 1 0 -1 0 0 0 0 0 12623040000 0 0 0 20 0 1 0 1 1 1"
+	if d, ok := statCPU(big); !ok || d != 12623040000*10*time.Millisecond {
+		t.Fatalf("a long-lived process: %v %v", d, ok)
+	}
 	if _, ok := statCPU("42 (x) S 1"); ok {
 		t.Fatal("a short line was read")
 	}

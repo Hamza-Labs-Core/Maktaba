@@ -77,12 +77,83 @@ func TestReconcileRowsCarryProcessorUse(t *testing.T) {
 	if st.reports != reports {
 		t.Fatalf("an idle machine rewrote its row %d times", st.reports-reports)
 	}
-	// a pid used again by a new process (its time went back): no number for it this sample
+	// a pid used again by a new process (its time went back): no share for it this sample,
+	// so the component keeps the numbers it last had rather than a sum of the other one
 	used[101] = time.Second
+	used[102] += 3 * time.Minute // 60% of a core, which alone would be written
 	now = now.Add(5 * time.Minute)
 	passWith(r, d)
-	if parts, _ := mustRow(t, st, "a").Detail["cpu_parts"].(map[string]any); parts != nil {
-		t.Fatalf("a reused pid has a share: %v", parts)
+	if row := mustRow(t, st, "a"); row.Detail["cpu_pct"] != int64(0) {
+		t.Fatalf("a partial sample was written as the component's: %v", row.Detail)
+	}
+	// the next sample is whole again
+	used[101] += 30 * time.Second
+	used[102] += 30 * time.Second
+	now = now.Add(5 * time.Minute)
+	passWith(r, d)
+	if row := mustRow(t, st, "a"); row.Detail["cpu_pct"] != int64(20) {
+		t.Fatalf("the next whole sample: %v", row.Detail)
+	}
+}
+
+// Review of #1443: a restart that got its pid back, or another process on the same pid, is a
+// new baseline even when its time is above the old one's; meanwhile the component keeps the
+// numbers it last had (a peer's share alone is not the component's).
+func TestProcessorUseAfterARestart(t *testing.T) {
+	cat := testCatalog(t, procComp("a", "fake/a*", "", ""))
+	tab := &fakeTable{}
+	tab.add("a", "a1", false)
+	tab.add("a", "a2", false)
+	tab.procs[0].PID, tab.procs[1].PID = 101, 102
+	st := &fakeStore{}
+	r, _ := newTestReconciler(cat, tab, st)
+	now := time.Date(2026, 11, 3, 9, 0, 0, 0, time.UTC)
+	r.Now = func() time.Time { return now }
+	used := map[int]time.Duration{101: 10 * time.Second, 102: 0}
+	r.CPU = func([]int) map[int]time.Duration {
+		out := map[int]time.Duration{}
+		for k, v := range used {
+			out[k] = v
+		}
+		return out
+	}
+	d := map[string]store.Desired{"a": want("a", "enabled", 1)}
+	passWith(r, d)
+	used[101] += 150 * time.Second // 50%
+	used[102] += 30 * time.Second  // 10%
+	now = now.Add(5 * time.Minute)
+	passWith(r, d)
+	if v := mustRow(t, st, "a").Detail["cpu_pct"]; v != int64(60) {
+		t.Fatalf("before the restart: %v", v)
+	}
+	// a1 restarts and gets pid 101 back; the new process has more time than the old had
+	tab.procs[0].Restarts++
+	used[101] = 20 * time.Minute
+	used[102] += 30 * time.Second
+	now = now.Add(5 * time.Minute)
+	passWith(r, d)
+	row := mustRow(t, st, "a")
+	parts, _ := row.Detail["cpu_parts"].(map[string]any)
+	role := string(tab.procs[0].Role)
+	if row.Detail["cpu_pct"] != int64(60) || parts[role+"/a1"] != int64(50) || parts[role+"/a2"] != int64(10) {
+		t.Fatalf("the restart's sample mixed two processes or wrote a partial sum: %v", row.Detail)
+	}
+	// the sample after: the new process's own share
+	used[101] += 3 * time.Minute // 60%
+	used[102] += 30 * time.Second
+	now = now.Add(5 * time.Minute)
+	passWith(r, d)
+	if v := mustRow(t, st, "a").Detail["cpu_pct"]; v != int64(70) {
+		t.Fatalf("after the restart: %v", v)
+	}
+	// another supervised process now holds pid 102 (a2 gone, a3 started on it)
+	tab.procs[1].Instance = "a3"
+	used[102] += time.Hour
+	used[101] += 3 * time.Minute
+	now = now.Add(5 * time.Minute)
+	passWith(r, d)
+	if v := mustRow(t, st, "a").Detail["cpu_pct"]; v != int64(70) {
+		t.Fatalf("a pid another process took: %v", v)
 	}
 }
 

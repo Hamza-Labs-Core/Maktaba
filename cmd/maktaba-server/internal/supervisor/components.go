@@ -329,16 +329,25 @@ func procPhase(p procView) (phase, reason string, ok bool) {
 // writes nothing (story 54.52, the same rule as rss_mb).
 const cpuStep = 5
 
-// cpuSample is a process's processor time as last read, and when.
+// cpuSample is a process's processor time as last read, when, and which process it was: its
+// component, role, instance and restart count, so a pid another process took (or a restart
+// that got the same pid back) starts a new baseline whatever its time.
 type cpuSample struct {
 	used time.Duration
 	at   time.Time
+	who  string
+}
+
+func cpuWho(p procView) string {
+	return fmt.Sprintf("%s|%s/%s|%d", p.Component, p.Role, p.Instance, p.Restarts)
 }
 
 // sampleCPU turns each running process's processor time into the share of one core it used
 // since the last sample (cpu_pct, 100 is one whole core), by component and by process
-// ("<role>/<instance>"), into r.cpu and r.cpuParts. A process first seen, or whose time
-// went back (a pid used again), has no number until the next sample.
+// ("<role>/<instance>"), into r.cpu and r.cpuParts. A process first seen, another process on
+// the same pid, or a time that went back has no number until the next sample, and while any
+// running process of a component has none the component keeps the numbers it last had (or
+// none): a sum of only some of its processes would read as the whole component's.
 func (r *Reconciler) sampleCPU(views []procView, used map[int]time.Duration, now time.Time) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -346,15 +355,24 @@ func (r *Reconciler) sampleCPU(views []procView, used map[int]time.Duration, now
 	r.cpuPrev = map[int]cpuSample{}
 	sum := map[string]int64{}
 	parts := map[string]map[string]int64{}
+	incomplete := map[string]bool{}
+	running := map[string]bool{}
 	for _, p := range views {
-		u, ok := used[p.PID]
-		if !ok || !p.Running || p.PID <= 0 {
+		if !p.Running || p.PID <= 0 {
 			continue
 		}
-		r.cpuPrev[p.PID] = cpuSample{used: u, at: now}
+		running[p.Component] = true
+		u, ok := used[p.PID]
+		if !ok {
+			incomplete[p.Component] = true
+			continue
+		}
+		who := cpuWho(p)
+		r.cpuPrev[p.PID] = cpuSample{used: u, at: now, who: who}
 		was, ok := prev[p.PID]
 		wall := now.Sub(was.at)
-		if !ok || u < was.used || wall <= 0 {
+		if !ok || was.who != who || u < was.used || wall <= 0 {
+			incomplete[p.Component] = true
 			continue
 		}
 		pct := int64((u - was.used) * 100 / wall)
@@ -364,29 +382,35 @@ func (r *Reconciler) sampleCPU(views []procView, used map[int]time.Duration, now
 		}
 		parts[p.Component][string(p.Role)+"/"+p.Instance] += pct
 	}
-	// each process's number moves only by cpuMoved, as the component's does
+	if r.cpu == nil {
+		r.cpu = map[string]int64{}
+	}
 	out := map[string]map[string]int64{}
-	for id, procs := range parts {
+	for id := range running {
+		if incomplete[id] {
+			// keep what it last had, whole
+			if was, ok := r.cpuParts[id]; ok {
+				out[id] = was
+			}
+			continue
+		}
+		// each process's number moves only by cpuMoved, as the component's does
 		out[id] = map[string]int64{}
-		for name, pct := range procs {
+		for name, pct := range parts[id] {
 			if was, ok := r.cpuParts[id][name]; ok && !cpuMoved(was, pct) {
 				pct = was
 			}
 			out[id][name] = pct
 		}
-	}
-	r.cpuParts = out
-	if r.cpu == nil {
-		r.cpu = map[string]int64{}
-	}
-	for id := range r.cpu {
-		if _, ok := sum[id]; !ok {
-			delete(r.cpu, id)
+		if was, ok := r.cpu[id]; !ok || cpuMoved(was, sum[id]) {
+			r.cpu[id] = sum[id]
 		}
 	}
-	for id, pct := range sum {
-		if was, ok := r.cpu[id]; !ok || cpuMoved(was, pct) {
-			r.cpu[id] = pct
+	r.cpuParts = out
+	// a component with nothing running has no number
+	for id := range r.cpu {
+		if !running[id] {
+			delete(r.cpu, id)
 		}
 	}
 }

@@ -29,9 +29,15 @@ The Plugins page shows the memory of each process that runs a plugin and says th
   two, times 100, so 100 is one whole core and a busy multi-threaded process can pass it.
   It is written beside `rss_mb` as the component's sum, and per `<role>/<instance>` in
   `cpu_parts` when more than one process runs, as `rss_parts` is.
-- **When there is no number.** A process seen for the first time, or a pid whose time went back
-  because a new process took it, has no share until the next sample. A component with nothing
-  running has no `cpu_pct`.
+- **When there is no number.** Each baseline is a pid together with its component, role,
+  instance and restart count. A process seen for the first time has no share until the next
+  sample. So does a restart that got its pid back, another supervised process on the same pid,
+  or a time that went back, whatever the new time is. While any running process of a component
+  has no share, the component keeps the numbers it last had, or none: a sum of only some of its
+  processes would read as the whole component's. A component with nothing running has no
+  `cpu_pct`.
+- **Linux units.** Linux ticks are converted as ticks × 10 ms, which cannot overflow; ticks ×
+  1 s ÷ 100 overflowed after about 2.9 years of processor time.
 - **Hysteresis.** A number is rewritten only when it moves by 5 points and by a tenth of the
   last written number (`cpuMoved`). Rows equal to the last written ones are never sent, so an
   idle machine writes nothing.
@@ -41,15 +47,18 @@ The Plugins page shows the memory of each process that runs a plugin and says th
   number is the whole process's, shown with `shared_with`.
 - **The Plugins page.** The page shows a **Processor** column beside **Memory**: "25% of one
   core", or "…, with the other programs of the same part" for a component's total. The
-  sentence saying processor use is not measured is gone, and the shared note covers both
-  numbers. Words are in English and Arabic.
+  sentence saying processor use is not measured is gone, here and in the Plugins help topic,
+  which now explains the number. The shared note covers both numbers. Words are in English and
+  Arabic; `help.coverage.test.ts` refuses the old sentence in either language.
 - **Tests.**
   - `internal/supervisor/cpu_test.go` (fake sampler): the shares and parts, no share from one
     sample, no rewrite for the same use, an idle machine writing nothing, a reused pid, a
-    stopped component, and `cpuMoved`.
+    stopped component, and `cpuMoved`. From the review: a restart that got its pid back with
+    more time than before, another process on the same pid, and a partial sample that keeps
+    the component's last numbers.
   - `internal/hostinfo/cpu_test.go`: the real reader grows while the test works, and ps's time
     forms. `cpu_linux_test.go` reads a stat line whose command name holds spaces and
-    parentheses.
+    parentheses, and four years of processor time.
   - `api/internal/plugins/measure_test.go`, and `published_pg_test.go` for the shared group's
     `cpu_pct` through the API.
   - `PluginsSection.test.tsx` T08: the shared group's processor use with who shares it, and no
