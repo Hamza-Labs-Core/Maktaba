@@ -470,7 +470,7 @@ jobs:
       - name: Go modules
         uses: ./.github/actions/go-mod-download
         with:
-          modules: api
+          modules: api shared/go/componentpack
 
       - uses: astral-sh/setup-uv@v8.1.0
         with:

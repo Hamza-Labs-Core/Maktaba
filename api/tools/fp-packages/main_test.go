@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -29,7 +30,7 @@ func TestARelease(t *testing.T) {
 		t.Skip("builds every first-party package")
 	}
 	dir := t.TempDir()
-	cmd := exec.Command("python3", filepath.Join("..", "..", "..", "tools", "plugins", "build.py"), "--version", "v1.0.0", "--out", dir)
+	cmd := exec.Command("python3", filepath.Join("..", "..", "..", "tools", "plugins", "build.py"), "--mkplugin", packer(t), "--version", "v1.0.0", "--out", dir)
 	if b, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("build.py: %v: %s", err, b)
 	}
@@ -57,4 +58,19 @@ func TestARelease(t *testing.T) {
 	if code := run([]string{"-dir", dir, "-version", "1.0.0"}); code != 1 {
 		t.Fatalf("a changed files.json: exit %d", code)
 	}
+}
+
+// packer builds the home's .mkplugin writer from this module's own graph (api requires
+// componentpack), so the test needs no module beyond api's.
+func packer(t *testing.T) string {
+	t.Helper()
+	exe := filepath.Join(t.TempDir(), "mkplugin")
+	if runtime.GOOS == "windows" {
+		exe += ".exe"
+	}
+	cmd := exec.Command("go", "build", "-o", exe, "github.com/Hamza-Labs-Core/Maktaba/shared/go/componentpack/cmd/mkplugin")
+	if b, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("go build mkplugin: %v: %s", err, b)
+	}
+	return exe
 }

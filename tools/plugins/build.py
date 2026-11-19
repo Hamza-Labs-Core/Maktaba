@@ -185,14 +185,14 @@ def mkplugin_binary(work: Path) -> Path:
     return exe
 
 
-def build(folders: list[Path], version: str, out: Path) -> list[Path]:
+def build(folders: list[Path], version: str, out: Path, mkplugin: Path | None = None) -> list[Path]:
     """Every package, written to out; answers the .mkplugin paths."""
     pep440(version)  # a bad version fails before anything is written
     out.mkdir(parents=True, exist_ok=True)
     built: list[Path] = []
     with tempfile.TemporaryDirectory(prefix="fp-build-") as tmp:
         work = Path(tmp)
-        exe = mkplugin_binary(work)
+        exe = mkplugin or mkplugin_binary(work)
         for folder in folders:
             plugin_id, files = contents(folder, version)
             stage = work / folder.name
@@ -230,9 +230,16 @@ def main(argv: list[str] | None = None) -> int:
     )
     ap.add_argument("--version", required=True, help="the release version (a tag without its v)")
     ap.add_argument("--out", required=True, type=Path)
+    ap.add_argument(
+        "--mkplugin",
+        type=Path,
+        help="a built shared/go/componentpack/cmd/mkplugin (default: go build it here)",
+    )
     args = ap.parse_args(argv)
     try:
-        built = build(folders_of(args.plugins), args.version.removeprefix("v"), args.out)
+        built = build(
+            folders_of(args.plugins), args.version.removeprefix("v"), args.out, args.mkplugin
+        )
     except BuildError as e:
         print(f"build.py: {e}", file=sys.stderr)  # noqa: T201
         return 1

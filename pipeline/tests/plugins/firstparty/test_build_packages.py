@@ -7,7 +7,9 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import os
 import shutil
+import subprocess
 import sys
 import tomllib
 import zipfile
@@ -121,11 +123,24 @@ def test_the_wheel_is_reproducible_and_its_record_holds(tmp_path: Path) -> None:
             assert (digest, int(size)) == (f"sha256={want}", len(data))
 
 
-def test_build_writes_each_package_and_its_files_json(tmp_path: Path) -> None:
+def _packer(tmp_path: Path) -> Path:
+    """The home's Go writer, built once for the test. A job that set GOPROXY=off without
+    componentpack's modules cannot build it (the first-party job downloads them)."""
     if shutil.which("go") is None:
         pytest.skip("the packer is the home's Go writer")
+    try:
+        return Path(build.mkplugin_binary(tmp_path))
+    except subprocess.CalledProcessError:
+        if os.environ.get("GOPROXY") == "off":
+            pytest.skip("componentpack's Go modules are not in this job's offline cache")
+        raise
+
+
+def test_build_writes_each_package_and_its_files_json(tmp_path: Path) -> None:
+    exe = _packer(tmp_path)
     out = tmp_path / "out"
-    assert build.main(["convert", "dedup", "--version", "1.0.0", "--out", str(out)]) == 0
+    args = ["convert", "dedup", "--version", "1.0.0", "--out", str(out), "--mkplugin", str(exe)]
+    assert build.main(args) == 0
     assert sorted(p.name for p in out.iterdir()) == [
         "tv.maktaba.convert-1.0.0.files.json",
         "tv.maktaba.convert-1.0.0.mkplugin",
