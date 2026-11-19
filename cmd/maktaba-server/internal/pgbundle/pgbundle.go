@@ -259,9 +259,20 @@ func (b Bundle) serverArgs(lan bool) []string {
 		"-c", "max_logical_replication_workers=12", "-c", "max_sync_workers_per_subscription=8",
 		"-c", "log_timezone=UTC"}
 	// Epic 59 story 59.02: the tier's memory and the disk's values, the household's last
-	// (as -c arguments, so postgresql.auto.conf cannot override them)
+	// (as -c arguments, so postgresql.auto.conf cannot override them). Epic 49 story 49.1:
+	// pg_textsearch (BM25) loads only at the server's start, so an install that has it
+	// preloads it, also into a household's own shared_preload_libraries
+	preload := strings.Join(b.Preload(), ",")
 	for _, kv := range b.Tuning {
+		if name, val, ok := strings.Cut(kv, "="); ok && strings.TrimSpace(name) == "shared_preload_libraries" && preload != "" {
+			// the household's value as it wrote it, ours after it
+			preload = mergePreload(val, b.Preload())
+			continue
+		}
 		args = append(args, "-c", kv)
+	}
+	if preload != "" {
+		args = append(args, "-c", "shared_preload_libraries="+preload)
 	}
 	if b.TLS && b.TLSReady() {
 		args = append(args, "-c", "ssl=on", "-c", "ssl_cert_file="+b.serverCert(), "-c", "ssl_key_file="+b.serverKey())
@@ -274,6 +285,81 @@ func (b Bundle) serverArgs(lan bool) []string {
 		}
 	}
 	return args
+}
+
+// preloadModules are the libraries the bundled server preloads when its install has them:
+// pg_textsearch (BM25 ranked search, Epic 49) refuses to work unless it is in
+// shared_preload_libraries. An install without it (PostgreSQL 16, a machine's fetched
+// Postgres) preloads nothing.
+var preloadModules = []string{"pg_textsearch"}
+
+// Preload is what of preloadModules this install's lib/ holds (pg_textsearch.so,
+// .dylib or .dll).
+func (b Bundle) Preload() []string {
+	var out []string
+	for _, m := range preloadModules {
+		for _, ext := range []string{".so", ".dylib", ".dll"} {
+			if st, err := os.Stat(filepath.Join(b.Home, "lib", m+ext)); err == nil && !st.IsDir() {
+				out = append(out, m)
+				break
+			}
+		}
+	}
+	return out
+}
+
+// mergePreload is a household's shared_preload_libraries value, kept as it wrote it, with
+// each of ours it does not name added after it. Its entries are read as Postgres reads the
+// list (SplitDirectoriesString): commas outside double quotes separate them, and a quoted
+// entry is taken without its quotes.
+func mergePreload(theirs string, ours []string) string {
+	theirs = strings.TrimSpace(theirs)
+	named := map[string]bool{}
+	for _, e := range splitPreload(theirs) {
+		named[e] = true
+	}
+	out := theirs
+	for _, l := range ours {
+		if named[l] {
+			continue
+		}
+		if strings.TrimSpace(strings.Trim(out, ",")) == "" {
+			out = l
+		} else {
+			out = strings.TrimRight(out, ", ") + "," + l
+		}
+	}
+	return out
+}
+
+// splitPreload is a shared_preload_libraries value's entries.
+func splitPreload(v string) []string {
+	var out []string
+	var cur strings.Builder
+	quoted := false
+	flush := func() {
+		if e := strings.TrimSpace(cur.String()); e != "" {
+			out = append(out, e)
+		}
+		cur.Reset()
+	}
+	for i := 0; i < len(v); i++ {
+		switch c := v[i]; {
+		case c == '"':
+			if quoted && i+1 < len(v) && v[i+1] == '"' {
+				cur.WriteByte('"')
+				i++
+				continue
+			}
+			quoted = !quoted
+		case c == ',' && !quoted:
+			flush()
+		default:
+			cur.WriteByte(c)
+		}
+	}
+	flush()
+	return out
 }
 
 // ServerCommand is the foreground `postgres` of this cluster (ServerArgs). On
