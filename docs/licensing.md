@@ -15,7 +15,7 @@ The home enforces every gate in its API, whatever the client:
 | Feature | Gate | Refusal |
 |---|---|---|
 | more than one user | `POST /api/users` and open registration (`POST /api/auth/register` after the first user) | `403 https://maktaba.tv/problems/seat-limit`, e.g. _This home's Free plan allows 1 user and it has 1. Adding users needs the Home plan (4 users) or Pro (unlimited): apply a license in Settings → Subscription._ |
-| over the seats (a license with fewer seats than the home has users) | every write of the newest non-admin accounts beyond the seat count, but watching, their own progress and history, signing in and out (story 16.4) | `403 https://maktaba.tv/problems/seat-read-only`; admins are never limited; removing users or adding seats restores them at once |
+| over the seats (a license with fewer seats than the home has users) | every write of the newest non-admin accounts beyond the seat count, but watching, their own progress, history, playlists and favourites, signing in and out (story 16.4) | `403 https://maktaba.tv/problems/seat-read-only`; admins are never limited; removing users or adding seats restores them at once |
 | remote access | every request the cloud relay forwards (`X-Maktaba-Via`), health probes excepted | `403 https://maktaba.tv/problems/license-required` (`feature: cloud_relay`) |
 | analytics | `/api/admin/analytics/*` with a range beyond 30 days, `/users`, `/export` | `403 license-required` (`feature: advanced_analytics`) |
 | cloud backup, federation | `subscriptions.RequireFeature` (the routes do not exist yet: stories 24.5 / 15.3 mount behind it) | `403 license-required` |

@@ -32,8 +32,9 @@ server periodically.
   license server's `expires_at` over local time when reachable.
 - License covers seats=4 but server has 5 users (owner's decision, 2026-11-19): admins
   are exempt, and only the most recently created accounts beyond the seat count go
-  read-only. A read-only account can still sign in, watch, and save its own progress
-  and history, but cannot upload, edit metadata or manage anything. Removing users or
+  read-only. A read-only account can still sign in, watch, save its own progress
+  and history and keep its own playlists and favourites, but cannot upload, edit
+  metadata or manage the home. Removing users or
   adding seats restores them at once. No new account can be added meanwhile. Admin
   warned, with the read-only accounts named.
 - Revocation reaches the server while offline: we use the last-known
@@ -71,7 +72,9 @@ The owner decided that when a home has more users than its license's seats, admi
 exempt and only the most recently created accounts beyond the seat count go read-only.
 A read-only account can watch and save its own progress and history, but cannot
 upload, edit metadata or manage anything. Removing users or adding seats restores them
-at once. This replaces "they keep full access, by decision".
+at once. This replaces "they keep full access, by decision". A later decision the same
+day: its own playlists and favourites stay open too (they are personal, like progress);
+read-only blocks only uploads, metadata edits and managing the home.
 
 - **Which accounts** (`subscriptions.SeatGuard`, `api/internal/subscriptions/seats.go`):
   - with N real accounts and S seats, the read-only ones are the N − S newest non-admin
@@ -88,12 +91,12 @@ at once. This replaces "they keep full access, by decision".
       `/api/channels/{id}/play`, casting, play queues, a TV remote's session, a video
       kept for offline watching);
     - its own progress and history (`/api/me/watched`, `/api/me/history/*`);
+    - its own playlists and favourites (`/api/me/playlists*`, `/api/me/favorites`);
     - searching, notifications, and the parental unlock requests a child needs to keep
       watching.
   - **Everything else is refused** with `403 seat-read-only` (in the problem
     registry, English and Arabic), saying to ask the admin: uploads, metadata edits,
-    collections, the account's own playlists and favourites, settings, and every
-    management route.
+    collections, settings, and every management route.
   - **What it never refuses.** An admin, a request with no account, or the admin token
     always goes through. A database error lets the request through, logged.
 - **The admin's view.** `GET /api/admin/license` lists `read_only_users` (newest

@@ -14,7 +14,9 @@ import (
 // Story 16.4, the owner's decision of 2026-11-19: when a home has more users than its
 // license's seats, admins are exempt and only the most recently created accounts beyond
 // the seat count go read-only. A read-only account can still watch and save its own
-// progress and history, but cannot upload, edit metadata or manage anything. Removing
+// progress and history, and keep its own playlists and favourites (the owner's decision
+// of 2026-11-19: they are personal, like progress), but cannot upload, edit metadata or
+// manage the home. Removing
 // users or adding seats restores them at once: nothing is cached, each write asks.
 
 // TypeSeatReadOnly is the problem type of a write a read-only account makes.
@@ -22,7 +24,7 @@ var TypeSeatReadOnly = httperror.Type("seat-read-only")
 
 // SeatReadOnlyText is what a read-only account reads when a change is refused.
 const SeatReadOnlyText = "This home has more users than its plan allows, so this account can watch " +
-	"and keep its progress but not change anything. Ask the home's admin to add seats or remove a user."
+	"and keep its progress, playlists and favourites but not change anything else. Ask the home's admin to add seats or remove a user."
 
 // disabledHash is the pw_hash of the sentinel rows that are no seat (users.CountUsers).
 const disabledHash = "<unsalted-disabled>"
@@ -95,9 +97,10 @@ func (g *SeatGuard) ReadOnly(ctx context.Context, userID string) (bool, error) {
 
 // AllowedWhileSeatReadOnly lists the writes a read-only account may still make:
 // watching (playback sessions, the watch log, live TV, casting, a play queue, a TV
-// remote's session), its own progress and history, signing in and out, its own
-// password and sessions, searching, its notifications and the parental requests a
-// child makes to keep watching. Every read is allowed (it is not a write).
+// remote's session), its own progress and history, its own playlists and favourites,
+// signing in and out, its own password and sessions, searching, its notifications and
+// the parental requests a child makes to keep watching. Every read is allowed (it is not
+// a write).
 func AllowedWhileSeatReadOnly(r *http.Request) bool {
 	switch r.Method {
 	case http.MethodGet, http.MethodHead, http.MethodOptions:
@@ -114,6 +117,8 @@ func AllowedWhileSeatReadOnly(r *http.Request) bool {
 		strings.HasPrefix(p, "/api/watch/"),
 		strings.HasPrefix(p, "/api/me/history/"),
 		strings.HasPrefix(p, "/api/me/play-queues"),
+		strings.HasPrefix(p, "/api/me/playlists"),
+		strings.HasPrefix(p, "/api/me/favorites"),
 		strings.HasPrefix(p, "/api/me/sessions/"),
 		strings.HasPrefix(p, "/api/me/parental/"),
 		strings.HasPrefix(p, "/api/notifications/"),

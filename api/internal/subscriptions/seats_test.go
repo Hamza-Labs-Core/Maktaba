@@ -159,14 +159,18 @@ func TestTheGateLetsAReadOnlyAccountWatchOnly(t *testing.T) {
 		{http.MethodPost, "/api/search"},
 		{http.MethodPost, "/api/channels/c1/play"},
 		{http.MethodPost, "/api/me/parental/requests"},
+		{http.MethodPost, "/api/me/playlists"},
+		{http.MethodPost, "/api/me/playlists/p1/items"},
+		{http.MethodPatch, "/api/me/playlists/p1"},
+		{http.MethodDelete, "/api/me/playlists/p1/items/v1"},
+		{http.MethodPut, "/api/me/playlists/p1/order"},
+		{http.MethodPost, "/api/me/favorites"},
 	}
 	refused := [][2]string{
 		{http.MethodPost, "/api/libraries/l1/scan"},
 		{http.MethodPatch, "/api/videos/v1"},
 		{http.MethodPost, "/api/videos/v1/transcript/words"},
 		{http.MethodPost, "/api/collections"},
-		{http.MethodPost, "/api/me/playlists"},
-		{http.MethodPost, "/api/me/favorites"},
 		{http.MethodPost, "/api/users"},
 		{http.MethodPatch, "/api/settings"},
 		{http.MethodPost, "/api/channels"},
@@ -192,7 +196,7 @@ func TestTheGateLetsAReadOnlyAccountWatchOnly(t *testing.T) {
 	}
 	// a seat added (Home: 4) and both work again at once
 	g.Store = homeStore(t, 0)
-	if code := call("new", false, http.MethodPost, "/api/me/playlists"); code != http.StatusNoContent {
+	if code := call("new", false, http.MethodPost, "/api/collections"); code != http.StatusNoContent {
 		t.Errorf("after seats were added: %d", code)
 	}
 	// the body names the problem

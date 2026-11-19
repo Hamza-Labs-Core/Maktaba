@@ -80,7 +80,7 @@ type Response struct {
 	SeatsAllowed int                            `json:"seats_allowed"`
 	Features     map[subscriptions.Feature]bool `json:"features"`
 	// ReadOnly is true when the signed-in account is read-only for want of seats (story
-	// 16.4): it can watch and keep its progress, nothing else.
+	// 16.4): it can watch and keep its progress, playlists and favourites, nothing else.
 	ReadOnly bool `json:"read_only,omitempty"`
 }
 
@@ -218,7 +218,7 @@ func message(v LicenseView, st subscriptions.State) string {
 				names = append(names, u.Username)
 			}
 			return fmt.Sprintf("This home has more users than its plan allows, so its newest %s read-only "+
-				"(they can watch and keep their progress, but not change anything): %s. Admins are never limited. "+
+				"(they can watch and keep their progress, playlists and favourites, but not change anything else): %s. Admins are never limited. "+
 				"Add seats or remove users and they can change things again at once; no new user can be added meanwhile.",
 				plural(n, "account is", "accounts are"), strings.Join(names, ", "))
 		}

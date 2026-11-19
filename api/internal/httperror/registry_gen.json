@@ -2401,8 +2401,8 @@
         "ar": "يمكن لهذا الحساب المشاهدة لا التغيير"
       },
       "means": {
-        "en": "Your home has more users than its plan allows. Its newest accounts beyond the plan's seats, this one among them, can still watch and keep their progress and history, but cannot upload, edit or manage anything. Admins are never limited.",
-        "ar": "لدى جهازكم الرئيسي مستخدمون أكثر مما تسمح به خطته. وأحدث الحسابات بعد عدد المقاعد، وهذا الحساب منها، ما زال بوسعها المشاهدة وحفظ تقدّمها وسجلّها، لكنها لا تستطيع رفع شيء أو تعديله أو إدارته. ولا يُقيَّد المسؤولون أبدًا."
+        "en": "Your home has more users than its plan allows. Its newest accounts beyond the plan's seats, this one among them, can still watch, keep their progress and history and keep their own playlists and favourites, but cannot upload, edit or manage the home. Admins are never limited.",
+        "ar": "لدى جهازكم الرئيسي مستخدمون أكثر مما تسمح به خطته. وأحدث الحسابات بعد عدد المقاعد، وهذا الحساب منها، ما زال بوسعها المشاهدة وحفظ تقدّمها وسجلّها وقوائم تشغيلها ومفضّلاتها، لكنها لا تستطيع رفع شيء أو تعديله أو إدارة الجهاز الرئيسي. ولا يُقيَّد المسؤولون أبدًا."
       },
       "do": {
         "en": "Ask your home's admin to add seats to the plan or remove a user. The account can change things again at once.",

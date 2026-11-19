@@ -265,7 +265,7 @@ describe("Settings → Subscription (test-cases/subscription.md)", () => {
     routeGet(get, { "/api/entitlements": { tier: "home", features: OFF, read_only: true } });
     open(memberUser);
     expect(await screen.findByTestId("subscription-read-only")).toHaveTextContent(
-      "this account can watch and keep its progress, but not change anything"
+      "this account can watch and keep its progress, playlists and favourites, but not change anything else"
     );
   });
 
