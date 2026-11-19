@@ -379,25 +379,40 @@ runs only when the person opens that tab or submits from it; Results never waits
 
 ### 49.3 Cluster: machines upgrade after the home; a 16 machine keeps serving
 
-- **A machine on 16 follows a home on 18.** A machine's copy is a logical subscription:
-  schema from its own migrations, rows from the home's publication. That works from an 18
-  publisher to a 16 subscriber. The home's `pg_upgrade` from 16 carries no replication slots, so
-  each machine's copy finds its slot gone. The copy manager already makes such a copy anew
-  (`nodecopy.Manager.resubscribeReason`: "the home gave up on this copy"), which costs one full
-  first copy per machine.
-- **The machine upgrades with its release.** A copy runs on a Postgres the machine has of either
-  major its payloads carry, 16 or 18 (`serve_copy.go` `copyMajors`). A payload with
-  `postgres-18/` runs the copy on 18. Before that release, only 16 was taken and any other
-  install fetched 16. A copy made by the other major is set aside (`<copy>.pg16-<time>`, never
-  deleted) and made again from the home (`setAsideOtherMajor`). Its marker goes with it, so the
-  copy manager subscribes anew.
-- **Proof.** The replica job builds PostgreSQL 18 from the Linux payload's pins. It runs
-  `TestTwoMachinesOnePC` with the home's database on 18, twice: the machine's copy on 16 (a
-  machine on a release before the upgrade), then on 18 (the machine updated). Both times the
-  copy follows the home, and the machine plays and reads from it with the home and its database
-  gone, through a restart. `TestCopyOfTheOtherMajorIsSetAside` covers the set-aside. Both runs
-  also passed locally on macOS arm64 against theseus-rs 16.15 and 18.7.
-- **How it differs from the spec.** The e2e's machine starts each run on its major rather than
-  moving from 16 to 18 inside one run. The move is the set-aside followed by a fresh copy, the
-  same path as a copy the home gave up on. `pgbin` (the copy's fetched Postgres) still pins 16;
-  a machine whose payload has `postgres-18/` doesn't fetch.
+- **A machine on 16 follows a home on 18.** A machine's copy is a logical subscription: schema
+  from its own migrations, rows from the home's publication. That works from an 18 publisher to
+  a 16 subscriber, and the other way round: a home held on 16 with machines already on 18. The
+  home's `pg_upgrade` from 16 carries no replication slots, so each machine's copy finds its slot
+  gone. The copy manager makes such a copy anew (`nodecopy.Manager.resubscribeReason`), at the
+  cost of one full first copy per machine. The home's grant drops the machine's old slot when
+  the copy asks afresh.
+- **The machine upgrades with its release** (`serve_copy.go`). A copy runs on a Postgres the
+  machine has of either major its payloads carry, 16 or 18 (`copyMajors`). A payload with
+  `postgres-18/` runs the copy on 18; before, anything but 16 made it fetch 16.
+  - **Where the copy lives.** It is kept where a home of its major keeps its cluster
+    (`pgbundle.DataDirFor`: `<state>/postgres` for 16, `<state>/postgres-18` for 18). A switch
+    that makes the machine the home therefore finds its cluster where an 18 home looks for it.
+  - **The other major's directory.** A cluster there is set aside (`<dir>.pg<major>-<time>`,
+    never deleted) and the copy is made again from the home. That covers the copy made before
+    the machine's payload moved to 18, and the machine's own database from before it joined. A
+    promotion can never find a stale one.
+  - **When the set-aside fails** (a server left holding the directory on Windows), that start
+    keeps no copy and says so, rather than not starting.
+  - **What a machine serves meanwhile.** Until its new first copy is complete, a machine whose
+    copy is remade serves its home's reads through the home, as any machine whose copy is
+    rebuilding does. With the home away, it serves only its own routes.
+- **Proof (the replica job).** PostgreSQL 18 is built from the Linux payload's pins. Every run
+  checks the major its copy started in the machine's log.
+  - `TestTwoMachinesOnePC` with the home's database on 18 and the machine's copy on 16. Part way
+    through, the machine moves to 18 (`MAKTABA_TEST_PG18_BIN`): it restarts on 18 programs, its
+    16 copy is set aside, a fresh copy in `postgres-18` follows the home, and the home-gone
+    checks then run on that copy.
+  - The same with the copy on 18 from the start.
+  - The home on 16 with the machine on 18.
+  - `TestSwitchTheHome` with every machine on 18: a machine whose copy runs on 18 is promoted
+    and starts as the home.
+  - Unit tests: `TestCopyOfTheOtherMajorIsSetAside`, `TestTheOtherDirectorysClusterIsSetAside`.
+- **How it differs from the spec.** `pgbin` (the copy's fetched Postgres) still pins 16. A
+  machine whose payload has `postgres-18/` doesn't fetch, and a fetched 16 copy follows an 18
+  home. A home promoted from a fetched 16 copy runs on 16, the `[postgres] home` the switch
+  pins, until a person moves it.

@@ -17,7 +17,7 @@ func TestCopyOfTheOtherMajorIsSetAside(t *testing.T) {
 		}
 	}
 	data := filepath.Join(t.TempDir(), "postgres")
-	if aside, err := setAsideOtherMajor(data, "18", time.Now()); err != nil || aside != "" {
+	if aside, err := setAsideCluster(data, "18", false, time.Now()); err != nil || aside != "" {
 		t.Fatalf("no copy: %q %v", aside, err)
 	}
 	if err := os.MkdirAll(data, 0o700); err != nil {
@@ -29,11 +29,11 @@ func TestCopyOfTheOtherMajorIsSetAside(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(data, "maktaba-copy.json"), []byte("{}"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if aside, err := setAsideOtherMajor(data, "16", time.Now()); err != nil || aside != "" {
+	if aside, err := setAsideCluster(data, "16", false, time.Now()); err != nil || aside != "" {
 		t.Fatalf("a copy of its own major: %q %v", aside, err)
 	}
 	now := time.Date(2026, 11, 19, 16, 0, 0, 0, time.UTC)
-	aside, err := setAsideOtherMajor(data, "18", now)
+	aside, err := setAsideCluster(data, "18", false, now)
 	if err != nil || aside != data+".pg16-20261119-160000" {
 		t.Fatalf("a 16 copy under 18's programs: %q %v", aside, err)
 	}
@@ -42,5 +42,21 @@ func TestCopyOfTheOtherMajorIsSetAside(t *testing.T) {
 	}
 	if _, err := os.Stat(data); !os.IsNotExist(err) {
 		t.Errorf("the copy's directory is still there: %v", err)
+	}
+}
+
+// The other major's directory: any cluster there is set aside (a promotion would find it),
+// whatever its major.
+func TestTheOtherDirectorysClusterIsSetAside(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "postgres")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "PG_VERSION"), []byte("18\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	aside, err := setAsideCluster(dir, "18", true, time.Date(2026, 11, 19, 20, 0, 0, 0, time.UTC))
+	if err != nil || aside != dir+".pg18-20261119-200000" {
+		t.Fatalf("set aside: %q %v", aside, err)
 	}
 }
