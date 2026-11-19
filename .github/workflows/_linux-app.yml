@@ -225,6 +225,18 @@ jobs:
             echo "::endgroup::"
           done
 
+      # Epic 49 story 49.1: the bundled server's own first start (pgbundle: initdb, the
+      # bootstrap, its start flags) on this payload's PostgreSQL 18, which preload
+      # pg_textsearch; a BM25 index answers (check.sh checked the payload's programs above)
+      - name: pgbundle on the payload's PostgreSQL 18 (pg_textsearch preloaded)
+        working-directory: cmd/maktaba-server
+        env:
+          MAKTABA_TEST_PG18_HOME: ${{ github.workspace }}/build/linux-app/server/postgres-18
+        run: |
+          set -o pipefail
+          go test -tags integration -count=1 -run '^TestRealPgTextsearchPreloaded$' -v ./internal/pgbundle/ 2>&1 | tee "$RUNNER_TEMP/pg18.out"
+          grep -q -- '--- PASS: TestRealPgTextsearchPreloaded' "$RUNNER_TEMP/pg18.out"
+
       # The Docker install's image (deploy/docker/server), built from this payload as
       # release.yml builds it from the release's: a command runs after the entrypoint put the
       # payload on a fresh volume's runtime (owned by the machine: the server updates it);
