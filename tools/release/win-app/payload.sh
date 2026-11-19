@@ -360,7 +360,9 @@ log "pgvector $PGVECTOR_VERSION and pg_textsearch $PGTEXTSEARCH_VERSION for Post
 mkdir -p "$WORK/pgv18"
 tar -xzf "$(fetch "$PGVECTOR_URL" "$PGVECTOR_SHA256" "pgvector-$PGVECTOR_VERSION.tar.gz")" -C "$WORK/pgv18"
 pgv18="$WORK/pgv18/pgvector-$PGVECTOR_VERSION"
-tar -xzf "$(fetch "$PGTEXTSEARCH_URL" "$PGTEXTSEARCH_SHA256" "pg_textsearch-$PGTEXTSEARCH_VERSION.tar.gz")" -C "$WORK"
+# (its AGENTS.md is a symlink, which MSYS's tar cannot make; nothing builds from it)
+tar -xzf "$(fetch "$PGTEXTSEARCH_URL" "$PGTEXTSEARCH_SHA256" "pg_textsearch-$PGTEXTSEARCH_VERSION.tar.gz")" -C "$WORK" \
+    --exclude="pg_textsearch-$PGTEXTSEARCH_VERSION/AGENTS.md"
 pgts="$WORK/pg_textsearch-$PGTEXTSEARCH_VERSION"
 if ! { [ -f "$pgts/Makefile.win" ] && [ -f "$pgts/Makefile" ]; }; then die "unexpected pg_textsearch archive layout"; fi
 # pg_textsearch 1.5.1's Makefile.win lacks objects its Makefile builds (boolean, build_merge,

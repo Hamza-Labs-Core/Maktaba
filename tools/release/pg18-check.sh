@@ -91,7 +91,8 @@ fi
 if [ -n "$pg16" ] && [ -n "$old" ] && [ -f "$old/PG_VERSION" ]; then
     new="$scratch/upgraded"
     sums=--no-data-checksums
-    if "$pg16/pg_controldata$x" "$old" 2>/dev/null | grep -Eq 'Data page checksum version: *[1-9]'; then sums=--data-checksums; fi
+    control="$("$pg16/pg_controldata$x" "$old" 2>/dev/null || true)"
+    if grep -Eq 'Data page checksum version: *[1-9]' <<<"$control"; then sums=--data-checksums; fi
     work="$scratch/upgrade-work"
     mkdir -p "$work"
     # its servers' socket: a short directory (a unix socket path has at most 103 bytes);
