@@ -606,6 +606,38 @@ func TestAnotherReleasesPipelineWheelIsRefused(t *testing.T) {
 	if _, err := VerifyReleasePackages(dir, relVersion, checksums(t, dir), name); codeOf(err) != CodeTrustedVersion {
 		t.Fatalf("an older pipeline wheel under this release's name: %v", err)
 	}
+	// the version on a line after the headers, or a header given twice: not this release's
+	for what, meta := range map[string]string{
+		"in the body":           "Metadata-Version: 2.1\nName: maktaba-pipeline\nVersion: 0.8.9\n\nVersion: " + relVersion + "\n",
+		"only in the body":      "Metadata-Version: 2.1\nName: maktaba-pipeline\n\nVersion: " + relVersion + "\n",
+		"given twice":           "Metadata-Version: 2.1\nName: maktaba-pipeline\nVersion: " + relVersion + "\nVersion: 0.8.9\n",
+		"two versions":          "Metadata-Version: 2.1\nName: maktaba-pipeline\nVersion: " + relVersion + "\nVersion: " + relVersion + "\n",
+		"another name":          "Metadata-Version: 2.1\nName: maktaba-pipeline\nName: evil\nVersion: " + relVersion + "\n",
+		"names in two cases":    "Metadata-Version: 2.1\nname: not-maktaba-pipeline\nName: maktaba-pipeline\nVersion: " + relVersion + "\n",
+		"versions in two cases": "Metadata-Version: 2.1\nName: maktaba-pipeline\nversion: 0.8.9\nVersion: " + relVersion + "\n",
+		"a folded version":      "Metadata-Version: 2.1\nName: maktaba-pipeline\nVersion: " + relVersion + "\n 0.8.9\n",
+		// Python reads a lone CR as a line end: "Version: 0.8.9" is a header to it
+		"a version behind a CR": "Metadata-Version: 2.1\nName: maktaba-pipeline\nX-Note: x\rVersion: 0.8.9\nVersion: " + relVersion + "\n",
+		"CRLF lines":            "Metadata-Version: 2.1\r\nName: maktaba-pipeline\r\nVersion: " + relVersion + "\r\n",
+		"a line not a header":   "Metadata-Version: 2.1\nName: maktaba-pipeline\nnot a header\nVersion: " + relVersion + "\n",
+		"a name with a space":   "Metadata-Version: 2.1\nName: maktaba-pipeline\nX Note: x\nVersion: " + relVersion + "\n",
+		// Python reads "0.9.0 " here, not this release's version
+		"a trailing blank": "Metadata-Version: 2.1\nName: maktaba-pipeline\nVersion: " + relVersion + " \n",
+	} {
+		name := pipelineWheel(t, dir, func(f map[string][]byte) {
+			f["maktaba_pipeline-"+relVersion+".dist-info/METADATA"] = []byte(meta)
+		})
+		if _, err := VerifyReleasePackages(dir, relVersion, checksums(t, dir), name); codeOf(err) != CodeTrustedVersion {
+			t.Fatalf("a pipeline wheel's version %s: %v", what, err)
+		}
+	}
+	// a CR in the description's body, after the headers, is any text's: this release's wheel
+	name = pipelineWheel(t, dir, func(f map[string][]byte) {
+		f["maktaba_pipeline-"+relVersion+".dist-info/METADATA"] = []byte("Metadata-Version: 2.1\nName: maktaba-pipeline\nVersion: " + relVersion + "\n\nA line\r\nand a CR\r")
+	})
+	if _, err := VerifyReleasePackages(dir, relVersion, checksums(t, dir), name); err != nil {
+		t.Fatalf("a CR in the description refused this release's wheel: %v", err)
+	}
 	// and a pipeline wheel named for another version
 	name = pipelineWheel(t, dir, nil)
 	other := "maktaba_pipeline-0.8.9-py3-none-any.whl"
@@ -661,6 +693,82 @@ func TestAnOversizedWheelMemberIsRefused(t *testing.T) {
 	}
 	if _, _, _, err := fppackage.ReadWheel(buf.Bytes()); err == nil || !strings.Contains(err.Error(), "over") {
 		t.Fatalf("a member over the limit: %v", err)
+	}
+	// RECORD itself over the limit (its self-row skipped by the digest check): refused too
+	buf.Reset()
+	z = zip.NewWriter(&buf)
+	w, err = z.CreateHeader(&zip.FileHeader{Name: "x-1.dist-info/RECORD", Method: zip.Deflate})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = w.Write([]byte("x-1.dist-info/RECORD,,\n"))
+	blank := bytes.Repeat([]byte("\n"), 1<<20)
+	for i := 0; i <= componentpack.PluginMaxUnpackedBytes>>20; i++ {
+		_, _ = w.Write(blank)
+	}
+	if err := z.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, err := fppackage.ReadWheel(buf.Bytes()); err == nil || !strings.Contains(err.Error(), "over") {
+		t.Fatalf("a RECORD over the limit: %v", err)
+	}
+}
+
+// Fifth review of #1440: bytecode under a plugin's package is refused in either wheel (Python
+// can run bytecode that is not its source). A wheel's limits in members and in total are
+// fppackage's tests (TestAWheelsMembersAndTotalAreLimited).
+func TestBytecodeAndAWheelsTotalAreRefused(t *testing.T) {
+	dir := buildRelease(t, relVersion)
+	fp := firstPlugin(t)
+	dist := "maktaba_fp_" + strings.ReplaceAll(fp.Folder, "-", "_")
+	for _, p := range []string{dist + "/__pycache__/__init__.cpython-312.pyc", dist + "/old.pyc"} {
+		name := pipelineWheel(t, dir, func(f map[string][]byte) { f[p] = []byte("bytecode") })
+		if _, err := VerifyReleasePackages(dir, relVersion, checksums(t, dir), name); err == nil || !strings.Contains(err.Error(), "bytecode") {
+			t.Fatalf("%s in the pipeline wheel: %v", p, err)
+		}
+	}
+	// the same in the package's own wheel
+	wheel, members := packageWheel(t, dir, fp.ID)
+	info := strings.TrimSuffix(strings.TrimPrefix(wheel, "wheels/"), "-py3-none-any.whl") + ".dist-info"
+	files := map[string][]byte{}
+	for n, b := range members {
+		if n != info+"/RECORD" {
+			files[n] = b
+		}
+	}
+	files[dist+"/__pycache__/x.cpython-312.pyc"] = []byte("bytecode")
+	repack(t, dir, fp.ID, wheel, func([]byte) []byte { return wheelBytes(t, info, files) })
+	if _, err := VerifyReleasePackages(dir, relVersion, checksums(t, dir), ""); err == nil || !strings.Contains(err.Error(), "bytecode") {
+		t.Fatalf("bytecode in the package's wheel: %v", err)
+	}
+}
+
+// A member whose zip entry declares fewer bytes than it holds is refused (the reader stops at
+// the declared size and the entry fails), never read past its limit.
+func TestAnUnderDeclaredMemberIsRefused(t *testing.T) {
+	data := bytes.Repeat([]byte("z"), 4096)
+	b := wheelBytes(t, "x-1.dist-info", map[string][]byte{"x/a.py": data})
+	sig := []byte("PK\x01\x02") // a central directory entry
+	patched := false
+	for off := 0; ; {
+		i := bytes.Index(b[off:], sig)
+		if i < 0 {
+			break
+		}
+		i += off
+		nameLen := int(b[i+28]) | int(b[i+29])<<8
+		if string(b[i+46:i+46+nameLen]) == "x/a.py" {
+			b[i+24], b[i+25], b[i+26], b[i+27] = 10, 0, 0, 0 // its uncompressed size: 10
+			patched = true
+			break
+		}
+		off = i + 4
+	}
+	if !patched {
+		t.Fatal("no central directory entry for x/a.py")
+	}
+	if _, _, _, err := fppackage.ReadWheel(b); err == nil {
+		t.Fatal("a member holding more than it declares was read")
 	}
 }
 
@@ -752,13 +860,28 @@ func TestASignedPackageIsTrustedFromTheStore(t *testing.T) {
 	u := fppackage.Unpacked{Dir: dir, Manifest: pkg.Manifest, Files: files}
 	switchable := func(c string) bool { cc, ok := components.Default().Get(c); return ok && cc.Switchable }
 	sig := fppackage.Signed{FilesJSON: pkg.FilesJSON, DeveloperSig: pkg.DeveloperSig, StoreSig: ss}
+	// the plugin's code as the release's pipeline wheel holds it: here, the package's own
+	// wheel's RECORD (the release's check compares the two, TestAPackagesWheelIsThePipelineWheelsCode)
+	var whl []byte
+	for _, p := range files {
+		if strings.HasPrefix(p, "wheels/") {
+			whl, err = os.ReadFile(filepath.Join(dir, filepath.FromSlash(p)))
+		}
+	}
+	if err != nil || whl == nil {
+		t.Fatalf("the package's wheel: %v", err)
+	}
+	pipe, _, _, err := fppackage.ReadWheel(whl)
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer fppackage.UseMaktabaKeys(dev.ID)()
-	if _, err := fppackage.CheckStore(u, sig, keys, relVersion, switchable); err != nil {
+	if _, err := fppackage.CheckStore(u, sig, keys, relVersion, switchable, pipe); err != nil {
 		t.Fatalf("a Maktaba-signed, store-countersigned package: %v", err)
 	}
 	// the same package under this build's real list (empty): refused
 	restore := fppackage.UseMaktabaKeys()
-	_, err = fppackage.CheckStore(u, sig, keys, relVersion, switchable)
+	_, err = fppackage.CheckStore(u, sig, keys, relVersion, switchable, pipe)
 	restore()
 	if codeOf(err) != CodeTrustedUnsigned {
 		t.Fatalf("no pinned key: %v", err)

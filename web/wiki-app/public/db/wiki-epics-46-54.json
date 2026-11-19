@@ -6412,7 +6412,7 @@
       "title": "CPU of each process",
       "epic": "54-plugins",
       "phase": 5,
-      "content": "# Story 54.52 — CPU of each process\n\n> Epic 54 · Phase 5 · Depends on: 54.44, Epic 51 (51.14) · Not built\n\n## Why\n\nThe Plugins page shows the memory of each process that runs a plugin and says that processor use is not measured. The supervisor samples memory only. An admin deciding which plugin to turn off on a slow machine needs both.\n\n## Description\n\n- The supervisor samples each running process's CPU time with its memory, every five minutes, on macOS, Linux and Windows, and reports the share of one core used since the last sample as `cpu_pct` beside `rss_mb`, and per process in `cpu_parts` ",
+      "content": "# Story 54.52 — CPU of each process\n\n> Epic 54 · Phase 5 · Depends on: 54.44, Epic 51 (51.14) · Built\n\n## Why\n\nThe Plugins page shows the memory of each process that runs a plugin and says that processor use is not measured. The supervisor samples memory only. An admin deciding which plugin to turn off on a slow machine needs both.\n\n## Description\n\n- The supervisor samples each running process's CPU time with its memory, every five minutes, on macOS, Linux and Windows, and reports the share of one core used since the last sample as `cpu_pct` beside `rss_mb`, and per process in `cpu_parts` besi",
       "tags": [
         "story",
         "54-plugins",

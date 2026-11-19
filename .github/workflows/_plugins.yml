@@ -536,7 +536,10 @@ jobs:
           FP_OUT: ${{ runner.temp }}/fp-packages
         run: |
           set -euo pipefail
-          # the pipeline wheel first: the packages are built at its version, as a release's are
+          # the pipeline wheel first: the packages are built at its version, as a release's are.
+          # Without the bytecode the tests above left (the release's build removes it too:
+          # deploy/packaging/node/build-release.sh); fp-packages refuses bytecode in a wheel
+          find plugins pipeline/src -name __pycache__ -type d -prune -exec rm -rf {} +
           uv build --wheel --project pipeline --out-dir "$FP_OUT" --quiet
           wheels=("$FP_OUT"/maktaba_pipeline-*-py3-none-any.whl)
           [ "${#wheels[@]}" -eq 1 ] && [ -f "${wheels[0]}" ] || { echo "::error::expected one pipeline wheel, got: ${wheels[*]}"; exit 1; }

@@ -224,6 +224,25 @@ func (k kit) signed(t *testing.T, f pkgFiles, id, version string, dev pluginsig.
 	return out
 }
 
+// testPipeline is the pipeline wheel's RECORD for subtitles' code, as the kit's packages
+// carry it.
+func testPipeline(t *testing.T) map[string]string {
+	t.Helper()
+	f := plugin(t, subtitles, serverVersion)
+	e := ByID(subtitles)
+	rec, _, _, err := ReadWheel(f["wheels/"+e.Dist()+"-"+serverVersion+"-py3-none-any.whl"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := map[string]string{}
+	for p, d := range rec {
+		if strings.HasPrefix(p, e.Dist()+"/") {
+			out[p] = d
+		}
+	}
+	return out
+}
+
 func switchable(component string) bool { return !strings.HasPrefix(component, "core.") }
 
 func codeOf(err error) string {
@@ -241,7 +260,7 @@ func TestAStorePackageOfAMaktabaPluginIsTrusted(t *testing.T) {
 	defer UseMaktabaKeys(k.maktaba.ID)()
 	f := plugin(t, subtitles, serverVersion)
 	for _, level := range []string{pluginsig.LevelAutomated, pluginsig.LevelReviewed} {
-		res, err := CheckStore(f.unpacked(t), k.signed(t, f, subtitles, serverVersion, k.maktaba, true, level), k.storeKeys(t), serverVersion, switchable)
+		res, err := CheckStore(f.unpacked(t), k.signed(t, f, subtitles, serverVersion, k.maktaba, true, level), k.storeKeys(t), serverVersion, switchable, testPipeline(t))
 		if err != nil || res.DeveloperKeyID != k.maktaba.ID || res.Level != level {
 			t.Fatalf("level %s: %+v %v", level, res, err)
 		}
@@ -260,21 +279,21 @@ func TestEveryRefusalOfTheStoreRule(t *testing.T) {
 		code string
 	}{
 		{"no store signature", func() error {
-			_, err := CheckStore(good.unpacked(t), k.signed(t, good, subtitles, serverVersion, k.maktaba, false, ""), keys, serverVersion, switchable)
+			_, err := CheckStore(good.unpacked(t), k.signed(t, good, subtitles, serverVersion, k.maktaba, false, ""), keys, serverVersion, switchable, testPipeline(t))
 			return err
 		}, CodeTrustedUnsigned},
 		{"no store-keys.json at the home", func() error {
-			_, err := CheckStore(good.unpacked(t), k.signed(t, good, subtitles, serverVersion, k.maktaba, true, pluginsig.LevelReviewed), nil, serverVersion, switchable)
+			_, err := CheckStore(good.unpacked(t), k.signed(t, good, subtitles, serverVersion, k.maktaba, true, pluginsig.LevelReviewed), nil, serverVersion, switchable, testPipeline(t))
 			return err
 		}, CodeTrustedUnsigned},
 		{"another developer's key", func() error {
-			_, err := CheckStore(good.unpacked(t), k.signed(t, good, subtitles, serverVersion, k.other, true, pluginsig.LevelReviewed), keys, serverVersion, switchable)
+			_, err := CheckStore(good.unpacked(t), k.signed(t, good, subtitles, serverVersion, k.other, true, pluginsig.LevelReviewed), keys, serverVersion, switchable, testPipeline(t))
 			return err
 		}, CodeTrustedUnsigned},
 		{"no pinned key (this build's list is empty)", func() error {
 			restore := UseMaktabaKeys()
 			defer restore()
-			_, err := CheckStore(good.unpacked(t), k.signed(t, good, subtitles, serverVersion, k.maktaba, true, pluginsig.LevelReviewed), keys, serverVersion, switchable)
+			_, err := CheckStore(good.unpacked(t), k.signed(t, good, subtitles, serverVersion, k.maktaba, true, pluginsig.LevelReviewed), keys, serverVersion, switchable, testPipeline(t))
 			return err
 		}, CodeTrustedUnsigned},
 		{"other statements, signed by Maktaba and the store", func() error {
@@ -285,13 +304,13 @@ func TestEveryRefusalOfTheStoreRule(t *testing.T) {
 			}
 			sts[0]["text"] = "/* more */ " + fmt.Sprint(sts[0]["text"])
 			f["statements.json"], _ = json.Marshal(sts)
-			_, err := CheckStore(f.unpacked(t), k.signed(t, f, subtitles, serverVersion, k.maktaba, true, pluginsig.LevelReviewed), keys, serverVersion, switchable)
+			_, err := CheckStore(f.unpacked(t), k.signed(t, f, subtitles, serverVersion, k.maktaba, true, pluginsig.LevelReviewed), keys, serverVersion, switchable, testPipeline(t))
 			return err
 		}, CodeTrustedUnsigned},
 		{"a wider manifest, signed by Maktaba and the store", func() error {
 			f := plugin(t, subtitles, serverVersion)
 			f["manifest.toml"] = []byte(strings.Replace(string(f["manifest.toml"]), "[trusted]\n", "[trusted]\nnet = [\"example.com\"]\n", 1))
-			_, err := CheckStore(f.unpacked(t), k.signed(t, f, subtitles, serverVersion, k.maktaba, true, pluginsig.LevelReviewed), keys, serverVersion, switchable)
+			_, err := CheckStore(f.unpacked(t), k.signed(t, f, subtitles, serverVersion, k.maktaba, true, pluginsig.LevelReviewed), keys, serverVersion, switchable, testPipeline(t))
 			return err
 		}, CodeTrustedUnsigned},
 		{"a file signed after it changed", func() error {
@@ -299,17 +318,54 @@ func TestEveryRefusalOfTheStoreRule(t *testing.T) {
 			sig := k.signed(t, f, subtitles, serverVersion, k.maktaba, true, pluginsig.LevelReviewed)
 			sig.FilesJSON = append([]byte(nil), sig.FilesJSON...)
 			sig.FilesJSON[5] ^= 1
-			_, err := CheckStore(f.unpacked(t), sig, keys, serverVersion, switchable)
+			_, err := CheckStore(f.unpacked(t), sig, keys, serverVersion, switchable, testPipeline(t))
+			return err
+		}, CodeTrustedUnsigned},
+		{"no pipeline wheel RECORD at the home", func() error {
+			_, err := CheckStore(good.unpacked(t), k.signed(t, good, subtitles, serverVersion, k.maktaba, true, pluginsig.LevelReviewed), keys, serverVersion, switchable, nil)
+			return err
+		}, CodeTrustedUnsigned},
+		{"code rebuilt from other source, signed by Maktaba and the store", func() error {
+			f := plugin(t, subtitles, serverVersion)
+			e := ByID(subtitles)
+			f["wheels/"+e.Dist()+"-"+serverVersion+"-py3-none-any.whl"] = wheel(t, e.Dist(), serverVersion,
+				map[string][]byte{e.Dist() + "/__init__.py": []byte("import os\n")})
+			_, err := CheckStore(f.unpacked(t), k.signed(t, f, subtitles, serverVersion, k.maktaba, true, pluginsig.LevelReviewed), keys, serverVersion, switchable, testPipeline(t))
+			return err
+		}, CodeTrustedUnsigned},
+		{"other strings, signed by Maktaba and the store", func() error {
+			f := plugin(t, subtitles, serverVersion)
+			var words map[string]string
+			if err := json.Unmarshal(f["i18n/ar.json"], &words); err != nil || len(words) == 0 {
+				t.Fatalf("strings: %v", err)
+			}
+			for w := range words {
+				words[w] = "!" + words[w]
+				break
+			}
+			f["i18n/ar.json"], _ = json.Marshal(words)
+			_, err := CheckStore(f.unpacked(t), k.signed(t, f, subtitles, serverVersion, k.maktaba, true, pluginsig.LevelReviewed), keys, serverVersion, switchable, testPipeline(t))
+			return err
+		}, CodeTrustedUnsigned},
+		{"a file on disk other than the signed one", func() error {
+			// the same words with other bytes: equal to the bundle's, but not what was signed
+			f := plugin(t, subtitles, serverVersion)
+			sig := k.signed(t, f, subtitles, serverVersion, k.maktaba, true, pluginsig.LevelReviewed)
+			u := f.unpacked(t)
+			if err := os.WriteFile(filepath.Join(u.Dir, "i18n", "en.json"), append([]byte(" "), f["i18n/en.json"]...), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			_, err := CheckStore(u, sig, keys, serverVersion, switchable, testPipeline(t))
 			return err
 		}, CodeTrustedUnsigned},
 		{"core's plugin", func() error {
 			f := plugin(t, "tv.maktaba.core-media", serverVersion)
-			_, err := CheckStore(f.unpacked(t), k.signed(t, f, "tv.maktaba.core-media", serverVersion, k.maktaba, true, pluginsig.LevelReviewed), keys, serverVersion, switchable)
+			_, err := CheckStore(f.unpacked(t), k.signed(t, f, "tv.maktaba.core-media", serverVersion, k.maktaba, true, pluginsig.LevelReviewed), keys, serverVersion, switchable, testPipeline(t))
 			return err
 		}, CodeTrustedUnsigned},
 		{"another server's version", func() error {
 			f := plugin(t, subtitles, "0.8.9")
-			_, err := CheckStore(f.unpacked(t), k.signed(t, f, subtitles, "0.8.9", k.maktaba, true, pluginsig.LevelReviewed), keys, serverVersion, switchable)
+			_, err := CheckStore(f.unpacked(t), k.signed(t, f, subtitles, "0.8.9", k.maktaba, true, pluginsig.LevelReviewed), keys, serverVersion, switchable, testPipeline(t))
 			return err
 		}, CodeTrustedVersion},
 	} {
@@ -322,7 +378,7 @@ func TestEveryRefusalOfTheStoreRule(t *testing.T) {
 	for _, id := range []string{"dev.example.subtitles", "tv.maktaba.unknown"} {
 		f := plugin(t, subtitles, serverVersion)
 		f["manifest.toml"] = []byte(strings.Replace(string(f["manifest.toml"]), `"`+subtitles+`"`, `"`+id+`"`, 1))
-		if _, err := CheckStore(f.unpacked(t), k.signed(t, f, id, serverVersion, k.maktaba, true, pluginsig.LevelReviewed), keys, serverVersion, switchable); codeOf(err) != CodeTrustedUnsigned {
+		if _, err := CheckStore(f.unpacked(t), k.signed(t, f, id, serverVersion, k.maktaba, true, pluginsig.LevelReviewed), keys, serverVersion, switchable, testPipeline(t)); codeOf(err) != CodeTrustedUnsigned {
 			t.Errorf("%s: %v", id, err)
 		}
 	}

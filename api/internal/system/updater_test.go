@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -83,7 +84,12 @@ func TestSelectLatestSuffixPrerelease(t *testing.T) {
 func ghStub(t *testing.T, rels []ghRelease) (*httptest.Server, *int32) {
 	t.Helper()
 	var hits int32
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// the advisory list the check reads beside the releases (story 23.8): none here
+		if strings.HasSuffix(r.URL.Path, "/security-advisories") {
+			_, _ = w.Write([]byte("[]"))
+			return
+		}
 		atomic.AddInt32(&hits, 1)
 		_ = json.NewEncoder(w).Encode(rels)
 	}))

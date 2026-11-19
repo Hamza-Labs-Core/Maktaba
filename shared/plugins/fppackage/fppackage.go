@@ -12,6 +12,7 @@ package fppackage
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -141,6 +142,16 @@ type Unpacked struct {
 	Dir      string
 	Manifest []byte
 	Files    []string
+}
+
+// open is a file of the package by its files.json path, for pluginsig's digest check; a
+// path that is not local to the package is refused.
+func (u Unpacked) open(rel string) (io.ReadCloser, error) {
+	p := filepath.FromSlash(rel)
+	if !filepath.IsLocal(p) {
+		return nil, fmt.Errorf("%s is not a path in the package", rel)
+	}
+	return os.Open(filepath.Join(u.Dir, p))
 }
 
 func (u Unpacked) read(rel string) ([]byte, bool) {
