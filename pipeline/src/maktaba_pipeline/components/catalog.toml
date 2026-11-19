@@ -146,7 +146,7 @@ desc_key   = "components.core.pipeline.desc"
 stages     = ["scan", "probe", "content_hash", "thumb_hash", "link", "fingerprint",
               "style_sample", "fp_gate", "access_check", "storage_canonicalize", "categorize",
               "component_catchup"]
-processes  = ["pipeline/"]
+processes  = ["pipeline/", "pipeline/chroma-copy"]
 loops      = ["pipeline:worker-hb", "pipeline:stage-selection", "pipeline:reconciler",
               "pipeline:pruner", "pipeline:audio-cache-sweep", "pipeline:claim-lease",
               "pipeline:index-close"]

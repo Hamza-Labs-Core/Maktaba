@@ -422,9 +422,15 @@ func runServe(cfg config.Config, opts serveOptions) (err error) {
 				return err
 			}
 			procs = append(procs, index...)
-			// Epic 43 story 43.5: the search index is in Postgres; what is left of
-			// Chroma is deleted (a folder never copied is kept one start, for a rollback)
+			// Epic 43 story 43.5: the search index is in Postgres. A copy of the
+			// Chroma vectors not done is finished now (nothing is embedded again), and
+			// Chroma's files go only the start after it is done
 			supervisor.RetireChroma(cfg, os.Stderr)
+			copyChroma, err := supervisor.BuildChromaCopy(sopts)
+			if err != nil {
+				return err
+			}
+			procs = append(procs, copyChroma...)
 		}
 		// Epic 33 story 33.1: the streaming role is the front door; the channel
 		// engine runs in the TV slots next to it (live + hot standby; the third

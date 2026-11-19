@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -15,19 +16,22 @@ import (
 )
 
 // Epic 43 story 43.5: Chroma is retired. Semantic search reads and writes Postgres
-// (segment_embeddings, pgvector) only, and nothing opens the Chroma folder
-// (<StateDir>/chroma, or the MAKTABA_CHROMA_DIR an operator set) any more. The releases
+// (segment_embeddings, pgvector) only, and nothing opens Chroma any more. The releases
 // before 43.5 copied its vectors into Postgres once (story 43.3: `copy-chroma`, which
-// wrote ChromaCopyDone) and deleted the folder at the start after. This release deletes
-// what is left:
+// wrote ChromaCopyDone) and deleted the folder at the start after. This release keeps
+// that order, and finishes what they left:
 //
-//   - a folder whose copy is done (ChromaCopyDone names it): at this start;
-//   - a folder never copied (or copied in part): the first start that finds it keeps it
-//     and marks it (ChromaRetired), so a rollback to the release before finds it as it
-//     left it (that release searches it and goes on copying it). A start ChromaKeep or
-//     more after the mark deletes it: past the update's watch and any rollback, however
-//     many times the release started meanwhile. Its videos have no vectors in Postgres,
-//     count as not indexed, and are indexed again (the reconciler queues them).
+//   - a home on Postgres whose Chroma folder (<StateDir>/chroma, or the
+//     MAKTABA_CHROMA_DIR an operator set) is there and not copied runs the copy at its
+//     start (BuildChromaCopy: `copy-chroma`, which reads Chroma's files, never Chroma),
+//     from where an earlier start left it; every child is told so
+//     (MAKTABA_CHROMA_COPY=pending), and nothing indexes a video again meanwhile: no
+//     vector is embedded twice. The folder stays until the copy is done;
+//   - a folder whose copy is done (ChromaCopyDone names it) loses Chroma's files at the
+//     start after the copy (kept that one start for a rollback, as before);
+//   - a home with no Postgres (SQLite: Chroma was its store, and there is no pgvector to
+//     copy into) keeps the folder for a day after the first start of this release that
+//     kept it (ChromaRetired marks it, ChromaKeep), for a rollback, then deletes it.
 //
 // Only Chroma's own entries are deleted (chroma.sqlite3 and its -wal/-shm/-journal, and
 // the segment folders Chroma names by UUID), then the folder if that left it empty: a
@@ -35,16 +39,28 @@ import (
 // itself) loses nothing else. Nothing here can stop a start: a folder that cannot be
 // read or deleted is said in the log and left.
 
+// ChromaCopyInstance is the copy's instance name (pipeline/chroma-copy).
+const ChromaCopyInstance = "chroma-copy"
+
+// ChromaCopyTries is how many failed runs in a row the copy gets at one start: it
+// continues where it stopped each time, so a failure that repeats is not a passing one.
+const ChromaCopyTries = 5
+
+// EnvChromaCopy tells every child that this start runs the copy ("pending"): the
+// pipeline then indexes nothing again for want of vectors (search/pgstore.py).
+const EnvChromaCopy = "MAKTABA_CHROMA_COPY"
+
 const (
-	// ChromaCopyDone is what the copy of the releases before 43.5 wrote (in the state dir)
-	// once it was checked; it names the folder copied.
+	// ChromaCopyDone is written (in the state dir) once the copy is checked and the
+	// state row switched; it names the folder copied (the releases before 43.5 wrote it
+	// too).
 	ChromaCopyDone = "chroma-copy.done"
-	// ChromaCopyProgress was the copy's progress, for /processes.
+	// ChromaCopyProgress is the copy's progress, for /processes.
 	ChromaCopyProgress = "chroma-copy.json"
-	// ChromaRetired marks the start that kept a folder never copied (JSON: the folder,
+	// ChromaRetired marks the start that kept a SQLite home's folder (JSON: the folder,
 	// when).
 	ChromaRetired = "chroma-retired"
-	// ChromaKeep is how long a folder never copied is kept after its mark
+	// ChromaKeep is how long a SQLite home's folder is kept after its mark
 	// (MAKTABA_CHROMA_KEEP_SECONDS changes it: the rehearsal's).
 	ChromaKeep = 24 * time.Hour
 )
@@ -95,6 +111,10 @@ func RetireChroma(cfg config.Config, w io.Writer) string {
 	switch {
 	case ok && (copied == "" || filepath.Clean(copied) == filepath.Clean(dir)):
 		// the copy was checked (a done file that cannot be read is a done copy all the same)
+	case copyHome(cfg):
+		fmt.Fprintf(w, "[supervisor] %s (Chroma) is not copied into the database yet: the copy runs now; "+
+			"the folder goes at the start after it is done\n", dir)
+		return ""
 	case marked && time.Since(keptAt) >= chromaKeep():
 	case marked:
 		fmt.Fprintf(w, "[supervisor] %s (Chroma, not copied) is no longer used; kept since %s for a rollback, "+
@@ -112,6 +132,60 @@ func RetireChroma(cfg config.Config, w io.Writer) string {
 	}
 	go removeChroma(dir, state, w)
 	return dir
+}
+
+// copyHome: this machine is a home on Postgres (where the copy runs; a machine's index is
+// the home's, and SQLite has no pgvector to copy into).
+func copyHome(cfg config.Config) bool {
+	n, err := NodeOf(cfg)
+	if err != nil || NodeMode(cfg, n) {
+		return false
+	}
+	url := strings.TrimSpace(os.Getenv("MAKTABA_DATABASE_URL"))
+	if url == "" {
+		url = cfg.Database.URL
+	}
+	return strings.HasPrefix(url, "postgres://") || strings.HasPrefix(url, "postgresql://")
+}
+
+// ChromaCopyPending reports whether this start runs the copy: a home on Postgres whose
+// Chroma folder has Chroma's database and is not the one ChromaCopyDone names.
+func ChromaCopyPending(cfg config.Config) bool {
+	dir := ChromaDir(cfg)
+	if _, err := os.Stat(filepath.Join(dir, "chroma.sqlite3")); err != nil {
+		return false
+	}
+	if copied, ok := chromaCopied(filepath.Join(cfg.StateDir(), ChromaCopyDone)); ok &&
+		(copied == "" || filepath.Clean(copied) == filepath.Clean(dir)) {
+		return false
+	}
+	return copyHome(cfg)
+}
+
+// BuildChromaCopy is the copy's process when ChromaCopyPending: `copy-chroma` with the
+// pipeline's environment, the folder, the done file and the progress file.
+func BuildChromaCopy(opts Options) ([]Process, error) {
+	if !ChromaCopyPending(opts.Config) {
+		return nil, nil
+	}
+	base, err := ChildEnv(RolePipeline, opts.Config)
+	if err != nil {
+		return nil, err
+	}
+	state := opts.Config.StateDir()
+	done := filepath.Join(state, ChromaCopyDone)
+	progress := filepath.Join(state, ChromaCopyProgress)
+	env := append(os.Environ(), base...)
+	env = setEnv(env, "MAKTABA_CHROMA_DIR", ChromaDir(opts.Config))
+	env = setEnv(env, "MAKTABA_PIPELINE_SHARE", "off")
+	env = setEnv(env, "MAKTABA_COPY_CHROMA_PROGRESS", progress)
+	env = setEnv(env, "MAKTABA_COPY_CHROMA_DONE", done)
+	cmd := exec.Command(pythonFor(opts), "-m", "maktaba_pipeline", "copy-chroma")
+	cmd.Env = env
+	wire(cmd)
+	return []Process{{Role: RolePipeline, Instance: ChromaCopyInstance, Cmd: cmd,
+		Once: true, Tries: ChromaCopyTries,
+		Progress: func() Detail { return chromaCopyDetail(progress) }}}, nil
 }
 
 // isChromaFolder: Chroma's own database is there, or the folder is empty (Chroma made it
@@ -202,4 +276,42 @@ func removeChroma(dir, state string, w io.Writer) {
 	_ = os.Remove(filepath.Join(state, ChromaRetired))
 	fmt.Fprintf(w, "[supervisor] the search index is in the database: deleted %s (Chroma) in %s\n",
 		dir, time.Since(start).Round(time.Millisecond))
+}
+
+// chromaCopyDetail is the copy's progress as /processes says it.
+func chromaCopyDetail(path string) Detail {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return Detail{}
+	}
+	var p struct {
+		Phase    string  `json:"phase"`
+		Elements int64   `json:"elements"`
+		Total    int64   `json:"total"`
+		Copied   int64   `json:"copied"`
+		Rate     float64 `json:"rows_per_sec"`
+		ETA      *int64  `json:"eta_sec"`
+		Reason   string  `json:"reason"`
+	}
+	if json.Unmarshal(raw, &p) != nil {
+		return Detail{}
+	}
+	switch p.Phase {
+	case "load":
+		text := fmt.Sprintf("Copying the search index into the database: %d of %d", p.Elements, p.Total)
+		if p.Total > 0 {
+			text += fmt.Sprintf(" (%d%%)", p.Elements*100/p.Total)
+		}
+		if p.ETA != nil {
+			text += ", about " + (time.Duration(*p.ETA) * time.Second).Round(time.Minute).String() + " left"
+		}
+		return Detail{Text: text}
+	case "index":
+		return Detail{Text: fmt.Sprintf("Building the search index in the database (%d vectors copied)", p.Copied)}
+	case "verify":
+		return Detail{Text: "Checking the copied search index"}
+	case "failed":
+		return Detail{Text: "The copied search index failed its check: " + p.Reason}
+	}
+	return Detail{}
 }

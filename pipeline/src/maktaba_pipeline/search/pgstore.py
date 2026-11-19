@@ -9,15 +9,18 @@ Search, the index stage and ``chapter_infer`` read and write only this table (Ch
 retired in story 43.5). Without pgvector the semantic leg is off: the API falls back to
 full-text search, as on SQLite, which has no ``segment_embeddings``.
 
-``semantic_store_state`` is still read (whether pgvector is ready) but its ``store``
-column is no longer acted on, nor written: a release from before 43.5 that a rollback
-starts again finds the row as it left it (``chroma`` while its copy of the Chroma
-vectors was not done), and goes on from there. A video whose vectors were only in Chroma
-has none here, counts as not indexed, and is indexed again.
+``semantic_store_state`` says whether the one-time copy of the Chroma vectors (story
+43.3) is done: ``chroma`` while it is not. A home that updates with it not done finishes
+it (``search/chroma_copy.py``, run by the supervisor, which then gives every worker
+``MAKTABA_CHROMA_COPY=pending``): while both hold, :attr:`StoreState.copying` is true and
+nothing indexes a video again for want of its vectors (they are on their way). The copy
+writes ``postgres`` when it is done, as the release before did. A home with no Chroma
+folder left (the supervisor runs no copy) indexes again what has no vectors.
 """
 
 from __future__ import annotations
 
+import os
 import time
 import weakref
 from collections.abc import Sequence
@@ -54,11 +57,18 @@ _log = get_logger()
 _clock = time.monotonic
 
 
+#: the supervisor's word that this start runs the Chroma copy (story 43.5)
+COPY_ENV = "MAKTABA_CHROMA_COPY"
+
+
 @dataclass(frozen=True, slots=True)
 class StoreState:
-    """Whether ``segment_embeddings`` can be used (pgvector installed, the table made)."""
+    """Whether ``segment_embeddings`` can be used (pgvector installed, the table made),
+    and whether the copy of the Chroma vectors is under way here (``copying``: nothing is
+    indexed again for want of vectors meanwhile)."""
 
     ready: bool = False
+    copying: bool = False
 
 
 _STATE: weakref.WeakKeyDictionary[Any, tuple[float, StoreState]] = weakref.WeakKeyDictionary()
@@ -88,7 +98,11 @@ async def store_state(db: Any, *, fresh: bool = False) -> StoreState:
         _log.debug("semantic_store_state_unread", error=f"{type(exc).__name__}: {exc}")
         state = StoreState()
     else:
-        state = StoreState(ready=bool(row["ready"]) if row is not None else False)
+        store = str(row["store"] or "") if row is not None else ""
+        state = StoreState(
+            ready=bool(row["ready"]) if row is not None else False,
+            copying=store == "chroma" and os.environ.get(COPY_ENV, "") == "pending",
+        )
     _STATE[db] = (now, state)
     return state
 

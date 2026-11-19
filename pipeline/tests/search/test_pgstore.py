@@ -612,3 +612,51 @@ async def test_a_video_copied_in_part_is_indexed_again(pg: Database, emb: FakeEm
     res = await stage.run(pg, _job(part, lib), cast(StageContext, _Ctx()))
     assert res.input_hash != before and await _count(pg, part) == 3
     assert await stage.input_fingerprint(pg, subject) == res.input_hash
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_while_the_chroma_copy_runs_nothing_is_indexed_again(
+    pg: Database, emb: FakeEmbedder, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Story 43.5: a home whose copy is not done finishes it at its update; meanwhile
+    (MAKTABA_CHROMA_COPY=pending and the row on chroma) no sweep queues an index and no
+    fingerprint says "not stored": the vectors are on their way, never embedded again.
+    Once the copy writes postgres, a copied video's fingerprint is the plain one."""
+    import maktaba_pipeline.engine.reconcile as rec
+
+    graph = {s.name: s for s in GRAPH}
+    lib = await make_library(pg)
+    v = await make_video(pg, lib)
+    tid = await _transcript(pg, v, ["أ", "ب"])
+    res = await enqueue_job(pg, subject_kind="video", subject_id=v, stage="index")
+    await pg.execute(
+        "UPDATE processing_jobs SET state = 'done', outcome = 'changed', finished_at = now()"
+        " WHERE id = $1",
+        res.job_id,
+    )
+    await pg.execute("UPDATE semantic_store_state SET store = 'chroma', copied_rows = 1")
+    subject = Subject(kind="video", id=v, library_id=lib)
+    monkeypatch.setenv(pgstore.COPY_ENV, "pending")
+    pgstore.forget_state()
+    assert (await store_state(pg, fresh=True)).copying
+    plain = await stage.input_fingerprint(pg, subject)
+    assert await _semantic_sweep(pg, graph) == 0
+    rec._partial_cursor = ""
+    try:
+        assert await rec._partial_copy_sweep(pg, graph) == 0
+    finally:
+        rec._partial_cursor = ""
+    # the copy brings the vectors and switches, as the release before did
+    await _write(pg, v, lib, tid)
+    await pg.execute("UPDATE semantic_store_state SET store = 'postgres', copy_done_at = now()")
+    pgstore.forget_state()
+    assert not (await store_state(pg, fresh=True)).copying
+    assert await stage.input_fingerprint(pg, subject) == plain  # nothing to do
+    assert await _semantic_sweep(pg, graph) == 0
+    # without the supervisor's word (no Chroma folder: no copy runs) the row alone holds
+    # nothing back
+    monkeypatch.delenv(pgstore.COPY_ENV)
+    await pg.execute("UPDATE semantic_store_state SET store = 'chroma', copy_done_at = NULL")
+    pgstore.forget_state()
+    assert not (await store_state(pg, fresh=True)).copying

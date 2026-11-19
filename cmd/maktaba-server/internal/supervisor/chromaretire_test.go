@@ -15,8 +15,17 @@ func chromaConfig(t *testing.T) (config.Config, string) {
 	t.Helper()
 	cfg := indexConfig(t)
 	t.Setenv("MAKTABA_CHROMA_DIR", "")
+	t.Setenv("MAKTABA_DATABASE_URL", "")
 	cfg.Database.URL = "postgres://maktaba@127.0.0.1:54329/maktaba"
 	return cfg, filepath.Join(cfg.StateDir(), "chroma")
+}
+
+// sqliteChromaConfig: a home on SQLite (Chroma was its store; no pgvector to copy into).
+func sqliteChromaConfig(t *testing.T) (config.Config, string) {
+	t.Helper()
+	cfg, dir := chromaConfig(t)
+	cfg.Database.URL = "sqlite:///" + filepath.Join(cfg.StateDir(), "maktaba.db")
+	return cfg, dir
 }
 
 // copyMarker is the done marker the copy of the releases before 43.5 wrote (JSON: a
@@ -92,9 +101,9 @@ func TestACopiedChromaFolderIsDeletedAtTheStart(t *testing.T) {
 // ChromaKeep of the mark keeps it still (an update may start the release more than once
 // before its watch ends), a later one deletes it. A done file naming another folder does
 // not count.
-func TestAChromaFolderNeverCopiedIsKeptADay(t *testing.T) {
+func TestASQLiteHomesChromaFolderIsKeptADay(t *testing.T) {
 	t.Setenv("MAKTABA_CHROMA_KEEP_SECONDS", "")
-	cfg, dir := chromaConfig(t)
+	cfg, dir := sqliteChromaConfig(t)
 	state := cfg.StateDir()
 	makeChroma(t, dir)
 	other := filepath.Join(t.TempDir(), "chroma")
@@ -199,7 +208,7 @@ func waitChromaLog(t *testing.T, log *syncBuffer, want string) {
 // TestTheKeepIsSetByTheEnvironment: MAKTABA_CHROMA_KEEP_SECONDS (the rehearsal's) makes the
 // wait shorter.
 func TestTheKeepIsSetByTheEnvironment(t *testing.T) {
-	cfg, dir := chromaConfig(t)
+	cfg, dir := sqliteChromaConfig(t)
 	t.Setenv("MAKTABA_CHROMA_KEEP_SECONDS", "0")
 	makeChroma(t, dir)
 	var log syncBuffer
@@ -284,5 +293,111 @@ func TestAChromaDirUnderHomeIsExpanded(t *testing.T) {
 	t.Setenv("MAKTABA_CHROMA_DIR", "~/vec")
 	if got, want := ChromaDir(cfg), filepath.Join(home, "vec"); got != want {
 		t.Fatalf("ChromaDir = %q, want %q", got, want)
+	}
+}
+
+// TestAPostgresHomeFinishesTheCopyBeforeChromaGoes: a home on Postgres whose Chroma
+// folder is not copied runs the copy at this start (every child told so, so nothing is
+// indexed again), keeps the folder meanwhile, and loses Chroma's files only at the start
+// after the copy is done; then no child is told a copy runs.
+func TestAPostgresHomeFinishesTheCopyBeforeChromaGoes(t *testing.T) {
+	t.Setenv("MAKTABA_CHROMA_KEEP_SECONDS", "0") // the SQLite rule must not apply here
+	cfg, dir := chromaConfig(t)
+	state := cfg.StateDir()
+	if ChromaCopyPending(cfg) {
+		t.Fatal("no Chroma folder: no copy")
+	}
+	makeChroma(t, dir)
+	if !ChromaCopyPending(cfg) {
+		t.Fatal("a Chroma folder not copied: the copy runs")
+	}
+	var log syncBuffer
+	for i := 0; i < 3; i++ { // however often it starts before the copy is done
+		if got := RetireChroma(cfg, &log); got != "" {
+			t.Fatalf("start %d: RetireChroma = %q before the copy is done", i, got)
+		}
+	}
+	time.Sleep(50 * time.Millisecond)
+	if !exists(filepath.Join(dir, "chroma.sqlite3")) || exists(filepath.Join(state, ChromaRetired)) {
+		t.Fatal("the folder went, or was marked, before the copy was done")
+	}
+	if !strings.Contains(log.String(), "the copy runs now") {
+		t.Errorf("log: %q", log.String())
+	}
+	procs, err := BuildChromaCopy(Options{Config: cfg})
+	if err != nil || len(procs) != 1 {
+		t.Fatalf("copy = %d, %v", len(procs), err)
+	}
+	p := procs[0]
+	if p.Name() != "pipeline/chroma-copy" || !p.Once || p.Tries != ChromaCopyTries {
+		t.Errorf("process = %s once=%v tries=%d", p.Name(), p.Once, p.Tries)
+	}
+	if args := strings.Join(p.Cmd.Args[1:], " "); args != "-m maktaba_pipeline copy-chroma" {
+		t.Errorf("args = %q", args)
+	}
+	m := envMap(p.Cmd.Env)
+	for k, want := range map[string]string{
+		"MAKTABA_CHROMA_DIR":           dir,
+		"MAKTABA_COPY_CHROMA_DONE":     filepath.Join(state, ChromaCopyDone),
+		"MAKTABA_COPY_CHROMA_PROGRESS": filepath.Join(state, ChromaCopyProgress),
+		"MAKTABA_PIPELINE_SHARE":       "off",
+		EnvChromaCopy:                  "pending",
+	} {
+		if m[k] != want {
+			t.Errorf("%s = %q, want %q", k, m[k], want)
+		}
+	}
+	if envMap(childEnvOK(RolePipeline, cfg))[EnvChromaCopy] != "pending" {
+		t.Error("the workers are not told the copy runs")
+	}
+	// the copy is done
+	if err := os.WriteFile(filepath.Join(state, ChromaCopyDone), copyMarker(t, dir), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if ChromaCopyPending(cfg) {
+		t.Fatal("a done copy runs again")
+	}
+	if procs, _ := BuildChromaCopy(Options{Config: cfg}); len(procs) != 0 {
+		t.Fatal("a done copy is built again")
+	}
+	if _, set := envMap(childEnvOK(RolePipeline, cfg))[EnvChromaCopy]; set {
+		t.Error("the workers are told a copy runs after it is done")
+	}
+	if got := RetireChroma(cfg, &log); got != dir {
+		t.Fatalf("the start after the copy: RetireChroma = %q", got)
+	}
+	waitFileGone(t, dir, "the folder after the copy")
+}
+
+// TestNoCopyOnSQLiteOrAMachine: a SQLite home and a machine run no copy.
+func TestNoCopyOnSQLiteOrAMachine(t *testing.T) {
+	cfg, dir := sqliteChromaConfig(t)
+	makeChroma(t, dir)
+	if ChromaCopyPending(cfg) {
+		t.Fatal("SQLite has no pgvector to copy into")
+	}
+	if procs, _ := BuildChromaCopy(Options{Config: cfg}); len(procs) != 0 {
+		t.Fatal("a copy built on SQLite")
+	}
+}
+
+func TestTheChromaCopyProgress(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "p.json")
+	if d := chromaCopyDetail(path); d.Text != "" {
+		t.Errorf("no file: %q", d.Text)
+	}
+	for raw, want := range map[string]string{
+		`{"phase":"load","elements":250,"total":1000,"eta_sec":600}`: "Copying the search index into the database: 250 of 1000 (25%), about 10m0s left",
+		`{"phase":"index","copied":990}`:                             "Building the search index in the database (990 vectors copied)",
+		`{"phase":"verify"}`:                                         "Checking the copied search index",
+		`{"phase":"failed","reason":"recall@10 0.8 below 0.95"}`:     "The copied search index failed its check: recall@10 0.8 below 0.95",
+		`{"phase":"done"}`:                                           "",
+	} {
+		if err := os.WriteFile(path, []byte(raw), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if d := chromaCopyDetail(path); d.Text != want {
+			t.Errorf("%s: %q, want %q", raw, d.Text, want)
+		}
 	}
 }

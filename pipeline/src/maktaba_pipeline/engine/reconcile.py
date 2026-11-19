@@ -649,8 +649,9 @@ async def _semantic_sweep(db: Any, graph: Mapping[str, StageDef]) -> int:
         return 0
     from ..search.pgstore import store_state
 
-    if not (await store_state(db)).ready:
-        return 0
+    state = await store_state(db)
+    if not state.ready or state.copying:
+        return 0  # the Chroma copy is bringing the vectors (story 43.5)
     rows = await db.fetch(
         "SELECT j.subject_id AS sid FROM processing_jobs j"
         " WHERE j.stage = 'index' AND j.subject_kind = 'video' AND j.state = 'done'"
@@ -688,9 +689,11 @@ _partial_cursor: str | None = ""
 
 async def _partial_copy_sweep(db: Any, graph: Mapping[str, StageDef]) -> int:
     """Story 43.5: a home whose Chroma copy (story 43.3, a release before) stopped part
-    way has videos with some of their vectors only: the copy committed page by page.
-    While ``semantic_store_state`` says such a copy was under way (rows copied, never
-    done), each pass looks at the next :data:`PARTIAL_SWEEP_BATCH` videos by id and queues
+    way and whose Chroma folder is gone (so no copy runs to finish it) has videos with
+    some of their vectors only: the copy committed page by page. While
+    ``semantic_store_state`` says such a copy was under way (rows copied, never done)
+    and no copy is running here, each pass looks at the next :data:`PARTIAL_SWEEP_BATCH`
+    videos by id and queues
     an ``index`` for each whose latest index job succeeded and whose active transcript
     has more non-blank segments than vectors. Once a whole pass is done it stops (until
     the process starts again): bounded work each minute, nothing written but the jobs."""
@@ -699,8 +702,9 @@ async def _partial_copy_sweep(db: Any, graph: Mapping[str, StageDef]) -> int:
         return 0
     from ..search.pgstore import store_state
 
-    if not (await store_state(db)).ready:
-        return 0
+    state = await store_state(db)
+    if not state.ready or state.copying:
+        return 0  # the copy itself finishes what it began
     try:
         partial = await db.fetchval(
             "SELECT EXISTS (SELECT 1 FROM semantic_store_state"

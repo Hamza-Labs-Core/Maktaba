@@ -148,8 +148,9 @@ async def _missing_vectors(db: Any, video_id: UUID | str, active: tuple[str, int
     video whose vectors were only in Chroma, or that its copy moved in part)."""
     if active is None or active[1] == 0:
         return False
-    if not (await store_state(db)).ready:
-        return False
+    state = await store_state(db)
+    if not state.ready or state.copying:
+        return False  # the Chroma copy is bringing them: never embedded again (43.5)
     return not await PgVectorStore(db, embed_model()).has_vectors(video_id, active[0])
 
 

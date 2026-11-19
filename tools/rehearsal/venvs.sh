@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # The update rehearsal's pipeline environments (docs/update-rehearsal.md, scenarios 16.x):
 # one per release of the kit (tools/rehearsal/build.sh), from the release's own pipeline
-# wheel and its tree's runtime pins, with no extra (no ML), plus the rehearsal's sleepy
+# wheel and its tree's runtime pins, with no extra (no ML) but numpy, plus the rehearsal's sleepy
 # stages (tools/rehearsal/sleepy: inert unless a scenario names stages).
 #
 #   venvs.sh --kit DIR [--out DIR] [--python PYTHON]
@@ -45,7 +45,9 @@ venv() {
     echo "venvs.sh: $version: $(basename "${whl[0]}")"
     rm -rf "$dir"
     uv venv --quiet --python "$python" "$dir"
-    uv pip install --quiet --python "$dir/bin/python" -c "$kit/$rel/pipeline/constraints.txt" "${whl[0]}"
+    # numpy: the Chroma copy's (scenario 17; every home that had Chroma has it, with the
+    # search extra)
+    uv pip install --quiet --python "$dir/bin/python" -c "$kit/$rel/pipeline/constraints.txt" "${whl[0]}" numpy
     site="$("$dir/bin/python" -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')"
     cp "$here/sleepy/maktaba_rehearsal_sleepy.py" "$site/"
     echo "import maktaba_rehearsal_sleepy" >"$site/maktaba_rehearsal_sleepy.pth"
