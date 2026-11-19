@@ -6,6 +6,12 @@
 // Updates get one line here, from the same source and in the same words as the Updates
 // page (lib/updatesView): "up to date", "update available", "updating" or "behind", and a
 // link to the Updates page, where everything else about updates is.
+//
+// Story 23.8: beside the version, the published security advisories that affect it (GET
+// /api/system/updates' `advisories`, read by the home from the repository's GitHub
+// Security Advisories), each with its severity and the release that fixes it, a prompt to
+// update to that release, and a link to every advisory. An unreadable list says so and
+// never "none".
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Badge } from "@ds/components/Badge/Badge";
@@ -17,7 +23,12 @@ import { useI18n } from "../../lib/i18n";
 import { BASE } from "../../lib/basePath";
 import { EDITION } from "../../lib/edition";
 import { copyText } from "../../lib/clipboard";
-import { updateAvailable, useUpdateStatus } from "../../lib/updates";
+import {
+  updateAvailable,
+  useUpdateStatus,
+  type SecurityAdvisory,
+  type UpdateStatus,
+} from "../../lib/updates";
 import { updatesApi, type UpdatesOverview } from "../../lib/updatesApi";
 import { homeOf, machineStatus, statusTone, type UpdateStatusWord } from "../../lib/updatesView";
 import "../../styles/updates.css";
@@ -36,6 +47,115 @@ export interface VersionInfo {
 
 /** The project's home on the web. */
 export const PROJECT_URL = "https://github.com/Hamza-Labs-Core/Maktaba";
+
+/** Every published security advisory, when the server does not say where (story 23.8). */
+export const ADVISORIES_URL = `${PROJECT_URL}/security/advisories`;
+
+const SEVERITY_TONE: Record<SecurityAdvisory["severity"], "error" | "warn" | "neutral"> = {
+  critical: "error",
+  high: "error",
+  medium: "warn",
+  low: "neutral",
+  unknown: "neutral",
+};
+
+/** The release that fixes every advisory listed: the highest of their fixes ("" when one
+ * has none yet). Versions as the Updates page writes them, without the "v". */
+export function fixingRelease(advisories: SecurityAdvisory[]): string {
+  let best = "";
+  for (const a of advisories) {
+    if (!a.fixed_in) return "";
+    const v = a.fixed_in.replace(/^v(?=\d)/, "");
+    if (!best || compareVersions(v, best) > 0) best = v;
+  }
+  return best;
+}
+
+function compareVersions(a: string, b: string): number {
+  const pa = a.split(/[.-]/).map((x) => Number.parseInt(x, 10) || 0);
+  const pb = b.split(/[.-]/).map((x) => Number.parseInt(x, 10) || 0);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const d = (pa[i] ?? 0) - (pb[i] ?? 0);
+    if (d !== 0) return d;
+  }
+  return 0;
+}
+
+/** Story 23.8 AC4 / TC2: the advisories that affect this version, and what to do. */
+function AdvisoriesSection({
+  status,
+  version,
+  isAdmin,
+}: {
+  status: UpdateStatus | null;
+  version: string;
+  isAdmin: boolean;
+}) {
+  const { t } = useI18n();
+  const list = status?.advisories ?? [];
+  const checked = Boolean(status?.advisories_checked);
+  const all = status?.advisories_url || ADVISORIES_URL;
+  const fix = checked && list.length > 0 ? fixingRelease(list) : "";
+  return (
+    <section
+      aria-labelledby="about-advisories"
+      className="mkt-about__block"
+      data-testid="about-advisories"
+    >
+      <h3 id="about-advisories">{t("about.advisories")}</h3>
+      {!checked ? (
+        <p className="mkt-muted" data-testid="about-advisories-unknown">
+          {t("about.advisories.unknown", { version })}
+        </p>
+      ) : list.length === 0 ? (
+        <p data-testid="about-advisories-none">{t("about.advisories.none", { version })}</p>
+      ) : (
+        <>
+          <p data-testid="about-advisories-affected">
+            {t("about.advisories.affected", { version })}
+          </p>
+          <ul className="mkt-about__advisories">
+            {list.map((a) => (
+              <li key={a.id} data-testid="about-advisory">
+                <Badge tone={SEVERITY_TONE[a.severity] ?? "neutral"}>
+                  {t(
+                    `about.advisories.severity.${a.severity in SEVERITY_TONE ? a.severity : "unknown"}`
+                  )}
+                </Badge>{" "}
+                <a href={a.url} target="_blank" rel="noreferrer" dir="auto">
+                  {a.summary || a.id}
+                </a>{" "}
+                <span className="mkt-muted mkt-about__aside">
+                  <span dir="ltr">{a.cve || a.id}</span>
+                  {" · "}
+                  {a.fixed_in
+                    ? t("about.advisories.fixedIn", { version: a.fixed_in.replace(/^v(?=\d)/, "") })
+                    : t("about.advisories.noFix")}
+                </span>
+              </li>
+            ))}
+          </ul>
+          {fix && (
+            <p className="mkt-about__status" data-testid="about-advisories-update">
+              <Badge tone="warn">{t("updates.status.update_available")}</Badge>
+              <span>
+                {t(isAdmin ? "about.advisories.update" : "about.advisories.askAdmin", {
+                  version: fix,
+                })}
+              </span>
+              {isAdmin && <Link to="/admin/updates">{t("about.openUpdates")}</Link>}
+            </p>
+          )}
+        </>
+      )}
+      <p>
+        <a href={all} target="_blank" rel="noreferrer" data-testid="about-advisories-all">
+          {t("about.advisories.all")}
+        </a>
+      </p>
+    </section>
+  );
+}
 
 /** The open-source software Maktaba is built on, with its license (names stay as they are). */
 export const CREDITS: { name: string; license: string; url: string }[] = [
@@ -114,6 +234,7 @@ export function AboutPanel() {
   const [tier, setTier] = useState("");
   const isAdmin = Boolean(user?.is_admin);
   const line = useStatusLine(isAdmin, ver);
+  const sys = useUpdateStatus();
 
   useEffect(() => {
     api
@@ -245,6 +366,8 @@ export function AboutPanel() {
           {t("about.copy")}
         </Button>
       </div>
+
+      <AdvisoriesSection status={sys} version={version} isAdmin={isAdmin} />
 
       <section aria-labelledby="about-links" className="mkt-about__block">
         <h3 id="about-links">{t("about.links")}</h3>

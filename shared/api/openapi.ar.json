@@ -3562,8 +3562,8 @@
       "ar": "إصدار هذا الخادم وأحدث إصدار"
     },
     "/paths/~1system~1updates/get/description": {
-      "en": "Every signed-in user: the release running (`current_version`), the newest on the channel (`latest_version`, `available`), its notes and when it was checked; how this server updates (`install`, and for a container that cannot update itself the `instructions` and `image`); `rolled_back` when the last update was undone. To an admin only, on the Docker image: `container`, the release on the volume (`runtime`) beside the image's (`image`), which one runs (`running`: `runtime` or `image`) and why (`reason`: `same`, `image_older`, `image_refused` or `image_pending`).",
-      "ar": "كل مستخدم مسجّل الدخول: الإصدار الذي يعمل (`current_version`)، وأحدث إصدار في القناة (`latest_version` و`available`)، وملاحظاته ووقت التحقق منه؛ وطريقة تحديث هذا الخادم (`install`، وللحاوية التي لا تستطيع تحديث نفسها `instructions` و`image`)؛ و`rolled_back` إن تراجع التحديث الأخير. وللمسؤول وحده، على صورة Docker: `container`، أي الإصدار على وحدة التخزين (`runtime`) بجانب إصدار الصورة (`image`)، وأيهما يعمل (`running`: `runtime` أو `image`) ولماذا (`reason`: `same` أو `image_older` أو `image_refused` أو `image_pending`)."
+      "en": "Every signed-in user: the release running (`current_version`), the newest on the channel (`latest_version`, `available`), its notes and when it was checked; how this server updates (`install`, and for a container that cannot update itself the `instructions` and `image`); `rolled_back` when the last update was undone. To an admin only, on the Docker image: `container`, the release on the volume (`runtime`) beside the image's (`image`), which one runs (`running`: `runtime` or `image`) and why (`reason`: `same`, `image_older`, `image_refused` or `image_pending`). The published security advisories that affect the running release (`advisories`: each its GHSA `id`, `cve`, `severity`, `summary`, `url`, the `affected` range that matched and the release that fixes it, `fixed_in`), whether the list could be read (`advisories_checked`: when false the list is unknown, not empty) and the repository's list of every advisory (`advisories_url`).",
+      "ar": "كل مستخدم مسجّل الدخول: الإصدار الذي يعمل (`current_version`)، وأحدث إصدار في القناة (`latest_version` و`available`)، وملاحظاته ووقت التحقق منه؛ وطريقة تحديث هذا الخادم (`install`، وللحاوية التي لا تستطيع تحديث نفسها `instructions` و`image`)؛ و`rolled_back` إن تراجع التحديث الأخير. وللمسؤول وحده، على صورة Docker: `container`، أي الإصدار على وحدة التخزين (`runtime`) بجانب إصدار الصورة (`image`)، وأيهما يعمل (`running`: `runtime` أو `image`) ولماذا (`reason`: `same` أو `image_older` أو `image_refused` أو `image_pending`). والتنبيهات الأمنية المنشورة التي تمسّ الإصدار الذي يعمل (`advisories`: لكلٍّ منها معرّف GHSA ‏`id` و`cve` و`severity` و`summary` و`url` والنطاق المتأثر الذي طابقه `affected` والإصدار الذي يصلحه `fixed_in`)، وهل أمكن قراءة القائمة (`advisories_checked`: إن كانت false فالقائمة مجهولة لا فارغة)، وقائمة المستودع بكل التنبيهات (`advisories_url`)."
     },
     "/paths/~1system~1updates/get/responses/200/description": {
       "en": "The release.",
@@ -6596,6 +6596,14 @@
     "/paths/~1tv~1broadcast~1analytics/get/responses/409/description": {
       "en": "Broadcasting is off on this home.",
       "ar": "البث متوقف على هذا المنزل."
+    },
+    "/paths/~1system~1updates/get/responses/200/content/application~1json/schema/properties/advisories/description": {
+      "en": "The published security advisories that affect the running release, most severe first.",
+      "ar": "التنبيهات الأمنية المنشورة التي تمسّ الإصدار الذي يعمل، الأخطر أولًا."
+    },
+    "/paths/~1system~1updates/get/responses/200/content/application~1json/schema/properties/advisories_checked/description": {
+      "en": "False when the advisory list could not be read: the list is unknown, not empty.",
+      "ar": "تكون false إن تعذّرت قراءة قائمة التنبيهات: فالقائمة مجهولة لا فارغة."
     }
   }
 }

@@ -355,3 +355,12 @@
   margin-block: var(--space-2);
   padding-inline-start: var(--space-4);
 }
+/* Story 23.8: the security advisories that affect this version */
+.mkt-about__advisories {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
