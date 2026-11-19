@@ -54,6 +54,8 @@ var adminRoutes = []string{
 	"POST /api/plugins/dev.example.x/writes/revert",
 	"GET /api/plugins/dev.example.x/settings",
 	"PUT /api/plugins/dev.example.x/settings",
+	// story 54.46: a Maktaba plugin installed again from the release
+	"POST /api/plugins/dev.example.x/install",
 }
 
 // Story 54.08 T01 (the refusals): every route answers no one 401, a viewer 403 and a

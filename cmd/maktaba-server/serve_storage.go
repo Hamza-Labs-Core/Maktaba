@@ -256,9 +256,25 @@ func (c *configAdmin) storageRoutes(w http.ResponseWriter, r *http.Request) bool
 	return true
 }
 
-// pgbundleAt is the cluster in from's state root (its postmaster.pid says whether it runs).
-func pgbundleAt(from storage.Layout) pgbundle.Bundle {
-	return pgbundle.Bundle{Data: filepath.Join(from.Root, "postgres")}
+// pgbundleAt is the clusters in from's state root: postgres, and postgres-18 once a newer
+// major's upgrade made it (Epic 49 story 49.2); Running says whether either runs (its
+// postmaster.pid).
+func pgbundleAt(from storage.Layout) clustersAt {
+	return clustersAt{pgbundle.Bundle{Data: pgbundle.DataDirFor(from.Root, "16")},
+		pgbundle.Bundle{Data: pgbundle.DataDirFor(from.Root, "18")}}
+}
+
+// clustersAt is a state root's clusters.
+type clustersAt []pgbundle.Bundle
+
+// Running reports whether any of them runs.
+func (cs clustersAt) Running() bool {
+	for _, c := range cs {
+		if c.Running() {
+			return true
+		}
+	}
+	return false
 }
 
 // diskRoots are the mount points of the disks a move may go to (storageDiskList's).

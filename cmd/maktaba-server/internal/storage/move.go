@@ -555,7 +555,10 @@ func Move(ctx context.Context, in Install, target string, o Options) (Result, er
 		if err := verifyAll(j, o); err != nil {
 			return res, err
 		}
-		if o.VerifyPostgres != nil && exists(filepath.Join(j.To.Root, "postgres", "PG_VERSION")) {
+		// a cluster in the copy: postgres, or postgres-18 (Epic 49 story 49.2); the callback
+		// starts the one the install runs on
+		if o.VerifyPostgres != nil && (exists(filepath.Join(j.To.Root, "postgres", "PG_VERSION")) ||
+			exists(filepath.Join(j.To.Root, "postgres-18", "PG_VERSION"))) {
 			o.logf("starting the database on its copy in %s", filepath.Join(j.To.Root, "postgres"))
 			if err := o.VerifyPostgres(ctx, j.To.Root); err != nil {
 				return res, fmt.Errorf("the database does not start on its copy in %s (nothing was changed: "+

@@ -103,9 +103,16 @@ func Resolve(cfg config.Config, exe string) (Bundle, bool, error) {
 	}
 	root := cfg.StateDir()
 	bk := cfg.Backups
+	// Epic 49 story 49.2: a newer major's cluster has a directory of its own (DataDirFor);
+	// while its upgrade is held (no room, a failed pg_upgrade: MajorHold) the payload's
+	// previous major runs on the cluster it has
+	major := dirMajor(home)
+	if old := PreviousHome(home); old != "" && HeldMajor(root) != "" {
+		home, major = old, dirMajor(old)
+	}
 	return Bundle{
 		Home:    home,
-		Data:    filepath.Join(root, "postgres"),
+		Data:    DataDirFor(root, major),
 		Keys:    config.KeysDir(),
 		Backups: cfg.BackupsDir(filepath.Join(root, "backups")),
 		Nightly: &NightlyPolicy{Off: !bk.NightlyOn(), EveryDays: bk.EveryDaysOr(), Hour: bk.HourOr(), Keep: bk.KeepOr()},
@@ -138,8 +145,10 @@ func findHome(cfg config.Config, exe string) string {
 			return ""
 		}
 	}
-	if b := config.AppBundle(); b != "" && hasServer(filepath.Join(b, "postgres")) {
-		return filepath.Join(b, "postgres")
+	if b := config.AppBundle(); b != "" {
+		if h := payloadHome(b); h != "" {
+			return h
+		}
 	}
 	if exe == "" {
 		return ""
@@ -147,9 +156,17 @@ func findHome(cfg config.Config, exe string) string {
 	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
 		exe = resolved
 	}
-	h := filepath.Join(filepath.Dir(filepath.Dir(exe)), "postgres")
-	if hasServer(h) {
-		return h
+	return payloadHome(filepath.Dir(filepath.Dir(exe)))
+}
+
+// payloadHome is the Postgres a payload runs: postgres-18/ when it has one (Epic 49 story
+// 49.2: the newer major, beside the previous one in postgres/, which the upgrade reads),
+// else postgres/; "" for none.
+func payloadHome(payload string) string {
+	for _, d := range []string{"postgres-18", "postgres"} {
+		if h := filepath.Join(payload, d); hasServer(h) {
+			return h
+		}
 	}
 	return ""
 }
@@ -262,6 +279,15 @@ func (b Bundle) serverArgs(lan bool) []string {
 	// (as -c arguments, so postgresql.auto.conf cannot override them). Epic 49 story 49.1:
 	// pg_textsearch (BM25) loads only at the server's start, so an install that has it
 	// preloads it, also into a household's own shared_preload_libraries
+	// PostgreSQL 18's asynchronous I/O runs in worker processes by default (three more, about
+	// 12 MB idle); the bundled server reads as 16 does (io_method=sync), within the home's
+	// idle memory budget (Epic 51 story 51.17). 16 refuses the setting. The cluster's major
+	// is the server's (Postgres starts on no other), read from PG_VERSION, never by running it
+	if m, _ := b.ClusterMajor(); m != "" {
+		if n, err := strconv.Atoi(m); err == nil && n >= 18 {
+			args = append(args, "-c", "io_method=sync")
+		}
+	}
 	preload := strings.Join(b.Preload(), ",")
 	for _, kv := range b.Tuning {
 		if name, val, ok := strings.Cut(kv, "="); ok && strings.TrimSpace(name) == "shared_preload_libraries" && preload != "" {
@@ -431,6 +457,13 @@ func (b Bundle) Prepare(ctx context.Context, log io.Writer) error {
 				"or move the cluster away to start a new one", b.passwordFile(SuperUser), b.Data)
 		}
 	}
+	// never an empty cluster of a newer major beside the previous major's that holds the
+	// library (Epic 49 story 49.2): only the upgrade makes that directory (the server's
+	// start, majorUpgradeStep), and a fresh one there would later be taken for the library
+	if !b.Initialized() && b.HasDatabase() {
+		return fmt.Errorf("bundled postgres: the library database is in the previous major's cluster and %s is not "+
+			"upgraded yet: start the server (`maktaba-server serve`), which upgrades it", b.Data)
+	}
 	superPW, err := ensurePassword(b.passwordFile(SuperUser))
 	if err != nil {
 		return err
@@ -484,6 +517,11 @@ func (b Bundle) Prepare(ctx context.Context, log io.Writer) error {
 }
 
 func (b Bundle) initdb(ctx context.Context, superPW string, log io.Writer) error {
+	return b.initdbWith(ctx, superPW, log)
+}
+
+// initdbWith is initdb with more of initdb's flags (an upgrade's checksums, major.go).
+func (b Bundle) initdbWith(ctx context.Context, superPW string, log io.Writer, extra ...string) error {
 	if err := os.MkdirAll(filepath.Dir(b.Data), 0o700); err != nil {
 		return err
 	}
@@ -506,8 +544,8 @@ func (b Bundle) initdb(ctx context.Context, superPW string, log io.Writer) error
 		return err
 	}
 	fmt.Fprintf(log, "[postgres] creating the database cluster in %s\n", b.Data)
-	cmd := exec.CommandContext(ctx, b.Bin("initdb"), "-D", tmp, "-U", SuperUser, "--pwfile="+pwfile.Name(),
-		"--auth=scram-sha-256", "--encoding=UTF8", "--locale=C")
+	cmd := exec.CommandContext(ctx, b.Bin("initdb"), append([]string{"-D", tmp, "-U", SuperUser, "--pwfile=" + pwfile.Name(),
+		"--auth=scram-sha-256", "--encoding=UTF8", "--locale=C"}, extra...)...)
 	cmd.Stdout, cmd.Stderr = childLog(log), childLog(log)
 	if err := cmd.Run(); err != nil {
 		_ = os.RemoveAll(tmp)

@@ -3235,6 +3235,12 @@ build fails when the two differ.
   account, set by a store admin, may submit a `tv.maktaba.*` plugin, and a person reviews every
   version. Nothing installs a store package of a Maktaba plugin yet.
 
+- **Remove one of Maktaba's plugins, and install it again (Epic 54, story 54.46).** A plugin
+  Maktaba publishes now has Remove on its page. Its queued jobs wait, none lost, and what it
+  wrote stays in your library. A plugin that other parts still need is refused, with what needs
+  it. A removed plugin shows Install, which brings it back from the Maktaba you run, with
+  nothing to download, and its waiting jobs run again.
+
 ### Changed
 
 - **A machine that loses its home stays usable** under a notice instead of the whole app being
@@ -3600,6 +3606,15 @@ build fails when the two differ.
   `plugins` list is the installed plugins, as before; `GET /api/plugins?release=true` adds
   Maktaba's plugins with `publisher` and `source`. `GET /api/queues/failures` takes several
   stages in `stage`.
+
+- **The library database moves to PostgreSQL 18 (Epic 49, story 49.2).** An update to this
+  release upgrades the home's database from PostgreSQL 16 to 18 at its first start, with
+  `pg_upgrade`, into a folder of its own (`postgres-18`, beside `postgres`). The files are cloned
+  where the disk can (APFS on the Mac: no extra room), else copied. The PostgreSQL 16 database is
+  left as it was, so a rollback starts the release before on it at once. When there isn't room
+  for a copy, or the upgrade fails, the home keeps running on PostgreSQL 16, says why in its log,
+  and tries again at its next start. PostgreSQL 18 brings pg_textsearch, which ranked keyword
+  search will use.
 
 ### Fixed
 

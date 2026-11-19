@@ -286,3 +286,93 @@ runs only when the person opens that tab or submits from it; Results never waits
   49.2's upgrade. So do Docker Compose's and CI's `pgvector/pgvector:*-pg18` images: those run
   the server's database, and they move when the server does. A node's fetched Postgres
   (`pgbin`, which the deb and rpm also use) moves in 49.3.
+
+### 49.2 The major upgrade in the updater (16 → 18)
+
+- **Where it runs.** The server's start runs it (`serve_postgres.go`, `majorUpgradeStep`, before
+  the cluster's `Prepare`), on any install that runs the bundled Postgres: the Mac, Windows and
+  Linux apps, the Docker image, an update by hand or by the updater. The payload has run
+  `postgres-18/` since 49.1 (`pgbundle.payloadHome`); its `postgres/` (16) is the old major's
+  programs that the step reads.
+- **A cluster of its own.** The 18 cluster lives in `<state>/postgres-18` (`pgbundle.DataDirFor`),
+  made by `pg_upgrade` from `<state>/postgres`. The files are cloned where the filesystem can
+  (APFS, btrfs, XFS: no extra room), else copied when there is room (the backups' reserve kept
+  free). They are never linked: a linked old cluster cannot start again. The 16 cluster is not
+  changed, so whatever switches back to the release before (the updater's rollback, the
+  launcher's guard, the desktop app) starts it on its own cluster with its own code.
+- **Its own record.** The upgraded cluster's database record is `state/database-pg18.json`
+  (`apppayload.ClusterMajorIn`: the install's directories say which record is in use, in every process), seeded from `state/database.json` at the upgrade. The release
+  before reads its own record exactly as it left it. Its own refusals (a record from a newer
+  release, `db_refused_older`) never meet the newer cluster's.
+- **Stale copies.** The new cluster records what it was made from: the old cluster's system
+  identifier and its last checkpoint (`maktaba-upgraded-from.json`). When the old cluster has
+  moved on (the release before ran on it after a rollback), the next start sets the copy aside
+  (`postgres-18.stale`) and upgrades again, so nothing written meanwhile is lost. A run that
+  stopped part way leaves a marker with no checkpoint and is redone. A different cluster in the
+  old directory is never taken over the upgraded one.
+- **What pg_upgrade needed.**
+  - The old server gets `wal_level=logical` (a machine's replication slots refuse a server
+    without it).
+  - Matching checksums and the same superuser and password.
+  - A short socket directory.
+  - The app role's grants on pg_catalog's replication-slot functions come off the 16 cluster
+    for the upgrade and back on after it. PostgreSQL 17 changed
+    `pg_create_logical_replication_slot`'s signature, and pg_upgrade's restore of that ACL
+    fails. The marker goes first, so the release before re-grants at its next start should the
+    step stop in between. 18 runs the cluster SQL on its own signatures.
+  - An old cluster not shut down cleanly is started and stopped once.
+  - Afterwards every extension is updated (`ALTER EXTENSION … UPDATE`) and
+    `vacuumdb --analyze-in-stages --missing-stats-only` runs.
+- **The last step never stops a start.** After the upgrade, every extension is updated and
+  the missing statistics are made (`FinishUpgrade`). If that fails, the cluster runs as
+  pg_upgrade made it: its extensions at their 16 versions, which work, and some planner
+  statistics missing. The failure is logged at error level and recorded in the cluster
+  (`maktaba-after-upgrade.failed`), and every start retries until it succeeds. A failure that
+  repeats leaves the home running on 18 and saying why, never restarting.
+- **When it cannot run.** On no room or a failed `pg_upgrade`, the home keeps running
+  PostgreSQL 16 on its cluster (`pgbundle.HoldMajor`; every command's `Resolve` honours it), logs
+  why, and tries again at its next start. A home is never left unable to start.
+- **Every command agrees on the cluster in use.** The record and the cluster are read from the
+  install's directories, in every process: the server, the container's entrypoint (its image
+  fallback marks the right record), an offline `restore`, and the updater.
+  `apppayload.ClusterMajorIn` says 18 when `postgres-18` holds a cluster, no hold is recorded,
+  and the 16 cluster hasn't moved on since its upgrade. That last test reads the 16 cluster's
+  `global/pg_control` (system identifier and latest checkpoint) against the upgrade's marker,
+  without running a program. On a home rolled back to a release before the upgrade, 16 is
+  therefore in use, and a restore marks `database.json`, the record that release reads. An 18
+  start's redo of the upgrade carries that mark into `database-pg18.json`.
+  - A restore onto a release that ran on 16 is refused on an 18 home (`restore_other_major`).
+    That release would start on the untouched 16 cluster and never put the dump back.
+  - A storage move carries `postgres-18` (`stateFolders`), checks the cluster in use on its copy,
+    and refuses while either cluster runs.
+  - A home whose 16 cluster waits for its upgrade counts as set up (`Bundle.HasDatabase`), and
+    `Prepare` never makes an empty 18 cluster beside it.
+- **pg_upgrade's own servers** take free ports each try. A stop interrupts pg_upgrade, which
+  then stops the servers it started, rather than killing it (Windows: killed, as before). A
+  server an earlier, hard-stopped try left behind is stopped by the next start, on the half-made
+  directory and on the old cluster alike. The set-aside `.stale` copy goes before a redo's room
+  is counted, so a disk that took one copy takes the next.
+- **The pre-update backup** is the existing database step's dump (`pgbundle`, run by the 18
+  release before its migrations). A failed migration puts it back into the 18 cluster. The 16
+  cluster remains the way back to the release before.
+- **Proof.**
+  - Update-rehearsal scenario 17 (`TestUpdateRehearsal17PostgresMajorUpgrade`): a seeded 16 home,
+    an update to an 18 release that fails its watch and rolls back onto 16 (counts, record and
+    cluster unchanged), then an update to an 18 release that passes (served on 18, every row,
+    pg_textsearch preloaded and created, the 16 cluster still there).
+  - `TestRealMajorUpgrade` on real 16 and 18 programs, in the rehearsal's kit job (Linux, where
+    ext4 takes the copy path) and in the Mac and Windows app jobs on their own payloads (the Mac's
+    APFS takes `--clone`): the
+    upgrade, grants on both majors, the rollback's start on 16, the redo after 16 moved on,
+    recovery of a 16 cluster stopped hard.
+- **How it differs from the spec.**
+  - No `--link`: a linked old cluster could not be rolled back to.
+  - The old binaries are the payload's own `postgres/`, not the old bundle's.
+  - The release keeps advertising PostgreSQL 16 in `payload.json`'s `postgres` and
+    `release.json`'s `app_postgres_major`. The releases on homes refuse an update whose major
+    differs (`pg_major_change`), so a payload that said 18 there could never be installed by
+    them.
+  - Retiring the 16 cluster (its disk space, once a release after the upgrade has committed)
+    is left for later; it is kept meanwhile.
+  - If `<state>/postgres` is ever made anew by hand after an upgrade (another cluster's system
+    identifier), the upgraded cluster is kept, and that new 16 cluster is not taken over it.
