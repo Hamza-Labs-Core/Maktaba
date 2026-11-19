@@ -3,7 +3,7 @@
 > Story-by-story status of every epic, read from the code and history on `main` at `f43b0d3ed` (2026-11-19).
 > The specs and epic pages don't record a status; this page does. Update the row when a story changes.
 
-**Not every epic is done.** Of 773 stories across all 60 epics, 695 are done, 41 are partial, 27 are not started, and 10 were deferred or removed on purpose. The largest open pieces are Epic 49 (Search, not started), Epic 34 (the TV public site, a first slice only) and Epic 54 Phase 5 (Plugins).
+**Not every epic is done.** Of 773 stories across all 60 epics, 696 are done, 40 are partial, 27 are not started, and 10 were deferred or removed on purpose. The largest open pieces are Epic 49 (Search, not started), Epic 34 (the TV public site, a first slice only) and Epic 54 Phase 5 (Plugins).
 
 ## How this was checked
 
@@ -76,14 +76,14 @@
 | 51 Configurable components | 19 | 0 | 0 | 0 | Done |
 | 52 Transcript word review | 13 | 3 | 0 | 1 | **Partial** |
 | 53 Logs, errors and reports | 18 | 0 | 0 | 0 | Done (open issue #1064) |
-| 54 Plugins | 40 | 3 | 8 | 1 | **Not done** |
+| 54 Plugins | 41 | 2 | 8 | 1 | **Not done** |
 | 55 Desktop player parity | 10 | 0 | 0 | 0 | Done |
 | 56 TV library view | 13 | 0 | 0 | 1 | Done (56.07 removed by #969) |
 | 57 Parental controls | 13 | 3 | 0 | 1 | **Partial** |
 | 58 Smart TV platforms | 17 | 0 | 0 | 1 | Done (58.18 Vega OS deferred) |
 | 59 NAS | 16 | 0 | 0 | 0 | Done (device results not checked) |
 | 60 Website | 11 | 1 | 0 | 1 | **Partial** |
-| **Total** | **695** | **41** | **27** | **10** | **Not all done** |
+| **Total** | **696** | **40** | **27** | **10** | **Not all done** |
 
 `*` sampled, see [How this was checked](#how-this-was-checked).
 
@@ -150,7 +150,6 @@
 | 52.02 Evaluation set | The human-corrected gold set and calibration on real data; CI has only synthetic data. |
 | 52.11 Web review queue | The Playwright test of the branch-stack review flow. |
 | 52.13 Native review | The Apple UI tests and Android Compose/Robolectric screen tests. |
-| 54.27 Layout and packaging | `tools/plugins/build.py` and the per-plugin release packages. |
 | 54.31 Wave 4 classify/enrich | `enrich` still runs in-process; the six classify stages moved. |
 | 54.36 Wave 9 core and removal | Removing the in-process path and its switch, which waits on the preconditions the spec names. |
 | 57.03 Server filter | A restricted account's Home is over the 60 ms p95 target. |
@@ -1235,7 +1234,7 @@ The wiki table omits 54.43–54.52; this audit includes all 52 spec files. Open 
 | 54.24 Statement registry/roles | Done | #750; `api/internal/plugins/statements/`; `tools/plugins/statements_build.py`, `roles.py`; Postgres role/scope/rollback tests |
 | 54.25 Graph/stage switch | Done | #750; `pipeline/src/maktaba_pipeline/engine/assemble.py`; `shared/plugins/graph.golden.json`; `api/internal/handlers/queues/impl_pg_test.go` |
 | 54.26 Parity proof | Done | #750; `tools/plugins/parity.py`; `plugins/sdk/python/maktaba_plugin_sdk/parity.py`; first-party `test_*_parity.py` suites and self-tests |
-| 54.27 Layout/packaging | **partial** | #750; repo layout, catalog ownership, CI, embedding and import contracts exist. **`tools/plugins/build.py` is absent**; per-plugin `.mkplugin` outputs and their `files.json` entries in release `checksums.txt` are not produced. #750 explicitly deferred them, and 54.45 still says that builder is not built. T01/package-release AC is missing. |
+| 54.27 Layout/packaging | Done | #750, #1440; `tools/plugins/build.py` builds one `.mkplugin` per first-party plugin with its `files.json`, both in the release's signed `checksums.txt`; `release.yml` `package-plugins` and the `fp-packages` check after signing; `api/internal/plugins/firstparty/release_test.go`, `pipeline/tests/plugins/firstparty/test_build_packages.py`; T01 dry run in `_plugins.yml` `first-party`. The payload does not carry the packages (nothing on a home reads them before 54.45/54.46; the spec's As built says why). |
 | 54.28 Wave 1 classify leaves | Done | #760, #925; `plugins/first-party/classify/manifest.toml`, `plugins/first-party/classify/tests/test_classify_parity.py`; `api/rehearsal_waves_e2e_test.go` scenario 16.1. `display_title` followed in wave 4 as the spec records. |
 | 54.29 Wave 2 thumbnails/subtitles | Done | #773; `plugins/first-party/thumbnails/`, `subtitles/`; parity tests; rehearsal 16.2 |
 | 54.30 Wave 3 transcription/search | Done | #789; `plugins/first-party/transcription/`, `semantic-search/`; parity tests; rehearsal 16.3 |
