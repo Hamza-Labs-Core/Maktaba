@@ -511,12 +511,16 @@ func (s *Store) Lock(ctx context.Context, reason string) error {
 	}
 	s.mu.Unlock()
 	defer s.changed()
+	// the lock first: a restart after a failure below still finds the license locked
+	if err := s.saveState(ctx); err != nil {
+		return err
+	}
 	if ep, ok := s.persist.(EndedPersistence); ok && id != "" {
 		if err := ep.DropGrace(ctx, id); err != nil {
 			return fmt.Errorf("subscriptions: persist the revoked license: %w", err)
 		}
 	}
-	return s.saveState(ctx)
+	return nil
 }
 
 // SetRevocations replaces the revocation list (already verified). A
