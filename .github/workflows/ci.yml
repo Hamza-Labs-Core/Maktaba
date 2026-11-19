@@ -486,6 +486,7 @@ jobs:
 
   # The in-repo wiki app (web/wiki-app): its database matches the specs it is generated
   # from (docs/wiki/db/generate_wiki.py --check, and the generator's tests), and it builds.
+  # docs/wiki/epic-status.md's counts match its story rows (docs/wiki/db/epic_status.py --check).
   wiki:
     needs: [changes]
     if: needs.changes.outputs.wiki == 'true'
@@ -497,6 +498,8 @@ jobs:
       - uses: actions/checkout@v6.0.2
       - name: The wiki database matches the specs
         run: python3 docs/wiki/db/generate_wiki.py --check
+      - name: The epic status page's counts match its story rows
+        run: python3 docs/wiki/db/epic_status.py --check
       - name: The generator's tests
         run: python3 -m unittest discover -s docs/wiki/db -p 'test_*.py' -v
       - uses: actions/setup-node@v6.4.0
