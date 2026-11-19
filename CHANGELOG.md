@@ -20,6 +20,7 @@ build fails when the two differ.
   favourites, but can't upload, edit metadata or manage the home. Admins are never limited.
   Removing users or adding seats restores them at once. Settings → Subscription names them to
   the admin and tells the account itself.
+
 - **Semantic search runs on Postgres only; Chroma is retired (story 43.5).** Search's vectors
   live in the home's Postgres (pgvector), and Chroma is no longer installed or run. A home
   whose one-time copy of its Chroma vectors had not finished completes it at the update,
