@@ -207,3 +207,46 @@ func TestARevokedLicenseReplacedIsNoGraceAfterARestart(t *testing.T) {
 		}
 	}
 }
+
+// A plan removed (the cloud's no_license), then re-issued within its grace on the same
+// id at a lower plan: the removed plan's grace survives the overwrite and a restart.
+func TestARemovalThenASameIDLowerPlanKeepsTheGraceAcrossARestart(t *testing.T) {
+	ctx := context.Background()
+	pub, priv := newKey(t)
+	v := &Verifier{PublicKey: pub}
+	db := &statefulDB{}
+	s, _ := NewPersistentStore(ctx, db, v)
+	now := time.Now().UTC()
+	applyLicense(t, s, v, priv, LicenseInner{LicenseID: "cloud-srv-1", Tier: TierPro, IssuedAt: now.Add(-time.Hour),
+		ExpiresAt: now.Add(31 * 24 * time.Hour), ServerID: "srv-1"})
+	if err := s.Revoke(ctx); err != nil {
+		t.Fatal(err)
+	}
+	applyLicense(t, s, v, priv, LicenseInner{LicenseID: "cloud-srv-1", Tier: TierHome, Seats: 4, IssuedAt: now,
+		ExpiresAt: now.Add(31 * 24 * time.Hour), ServerID: "srv-1"})
+	if !s.Allows(FeatureFederation) {
+		t.Fatal("before a restart: the removed plan's grace is gone")
+	}
+	s2, err := NewPersistentStore(ctx, db, v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !s2.Allows(FeatureFederation) || s2.SeatLimit() != SeatsUnlimited {
+		t.Fatalf("after a restart: %+v", s2.State())
+	}
+}
+
+// A seats-only downgrade (Home 4 → 2 seats) keeps the 4 seats for the grace.
+func TestASeatsOnlyDowngradeKeepsTheSeats(t *testing.T) {
+	now := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
+	s, _, apply := graceStore(t, &now)
+	apply(LicenseInner{LicenseID: "home-4", Tier: TierHome, Seats: 4, IssuedAt: now, ExpiresAt: now.Add(31 * 24 * time.Hour)})
+	apply(LicenseInner{LicenseID: "home-2", Tier: TierHome, Seats: 2, IssuedAt: now, ExpiresAt: now.Add(31 * 24 * time.Hour)})
+	if s.SeatLimit() != 4 || s.State().GraceUntil.IsZero() {
+		t.Fatalf("seats %d grace %s", s.SeatLimit(), s.State().GraceUntil)
+	}
+	now = now.Add(Grace)
+	if s.SeatLimit() != 2 {
+		t.Fatalf("after the grace: seats %d", s.SeatLimit())
+	}
+}

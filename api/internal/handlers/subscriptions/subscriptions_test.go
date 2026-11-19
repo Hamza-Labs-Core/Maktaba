@@ -149,3 +149,43 @@ func TestTheAdminSeesTheGraceDaysLeft(t *testing.T) {
 		t.Fatalf("after the grace: %+v", v)
 	}
 }
+
+// Story 16.2: a downgrade shows the previous plan's days left beside the active plan; a
+// removed license says so.
+func TestTheAdminSeesADowngradesGraceAndARemoval(t *testing.T) {
+	h, r, priv := newHandler(t)
+	now := time.Now().UTC()
+	apply := func(id string, tier subscriptions.Tier) {
+		lic, _ := subscriptions.Sign(priv, subscriptions.LicenseInner{LicenseID: id, Tier: tier, IssuedAt: now,
+			ExpiresAt: now.Add(31 * 24 * time.Hour)})
+		ent, err := h.Verifier.Verify(lic, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := h.Store.SetLicense(context.Background(), lic, ent); err != nil {
+			t.Fatal(err)
+		}
+	}
+	get := func() LicenseView {
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/admin/license", nil).WithContext(adminCtx()))
+		var v LicenseView
+		_ = json.NewDecoder(rec.Body).Decode(&v)
+		return v
+	}
+	apply("pro-1", subscriptions.TierPro)
+	apply("home-1", subscriptions.TierHome)
+	v := get()
+	if v.Status != subscriptions.StatusActive || v.GraceDaysLeft == nil || *v.GraceDaysLeft != 30 ||
+		!bytes.Contains([]byte(v.Message), []byte("This home's plan changed. The previous plan's features keep working for 30 more days")) {
+		t.Fatalf("a downgrade: %+v", v)
+	}
+	if err := h.Store.Revoke(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	v = get()
+	if v.Status != subscriptions.StatusGrace || v.License != nil ||
+		!bytes.Contains([]byte(v.Message), []byte("This home's license was removed. Its paid features keep working for 30 more days")) {
+		t.Fatalf("a removal: %+v", v)
+	}
+}

@@ -379,8 +379,14 @@ func (s *Store) SetLicense(ctx context.Context, lic *License, ent *Entitlements)
 	sameIDDown := old != nil && ent != nil && old.LicenseID == ent.LicenseID && !locked && addsTo(ent, old)
 	ep, _ := s.persist.(EndedPersistence)
 	if sameIDDown && ep != nil && oldRaw != nil {
-		// its row is about to be overwritten: the ended one is kept as a row of its own
-		if err := ep.SaveEnded(ctx, recordOf(oldRaw)); err != nil {
+		// its row is about to be overwritten: the ended one is kept as a row of its own,
+		// ended at the store's time (as the grace in memory counts it)
+		rec := recordOf(oldRaw)
+		s.mu.RLock()
+		end := s.nowLocked()
+		s.mu.RUnlock()
+		rec.RevokedAt = &end
+		if err := ep.SaveEnded(ctx, rec); err != nil {
 			return fmt.Errorf("subscriptions: persist the ended license: %w", err)
 		}
 	}
@@ -454,8 +460,17 @@ func (s *Store) ReloadActive(ctx context.Context, v *Verifier) (bool, error) {
 // persistence backend it is equivalent to Set(nil).
 func (s *Store) Revoke(ctx context.Context) error {
 	s.mu.RLock()
-	old, locked := s.license, s.lockedLocked()
+	old, oldRaw, locked, now := s.license, s.raw, s.lockedLocked(), s.nowLocked()
 	s.mu.RUnlock()
+	if ep, ok := s.persist.(EndedPersistence); ok && old != nil && oldRaw != nil && !locked {
+		// kept as a row of its own: the plan license's next issue (the same id, a lower
+		// plan) overwrites the plain row, and with it this end
+		rec := recordOf(oldRaw)
+		rec.RevokedAt = &now
+		if err := ep.SaveEnded(ctx, rec); err != nil {
+			return fmt.Errorf("subscriptions: persist the ended license: %w", err)
+		}
+	}
 	if s.persist != nil {
 		if err := s.persist.RevokeActive(ctx); err != nil {
 			return fmt.Errorf("subscriptions: persist revoke: %w", err)

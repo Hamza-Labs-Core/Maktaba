@@ -69,10 +69,27 @@ func TestTheSQLStoreKeepsEndedLicenses(t *testing.T) {
 	if !s2.Allows(FeatureFederation) || s2.State().License.Tier != TierHome {
 		t.Fatalf("after a restart: %+v", s2.State())
 	}
+	// removed, then re-issued on the same id at the lower plan: the removed plan's end
+	// is a row of its own, so the overwrite of the plain row keeps it
+	if err := s2.Revoke(ctx); err != nil {
+		t.Fatal(err)
+	}
+	applyLicense(t, s2, v, priv, LicenseInner{LicenseID: "cloud-srv-1", Tier: TierHome, Seats: 2, IssuedAt: now.Add(time.Minute),
+		ExpiresAt: now.Add(31 * 24 * time.Hour), ServerID: "srv-1"})
+	s3, err := NewPersistentStore(ctx, p, v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !s3.Allows(FeatureFederation) || s3.SeatLimit() != SeatsUnlimited {
+		t.Fatalf("a removal then a same-id lower plan, after a restart: %+v", s3.State())
+	}
 	if err := p.(EndedPersistence).DropGrace(ctx, ended[0].LicenseID); err != nil {
 		t.Fatal(err)
 	}
-	if ended, _ := p.(EndedPersistence).LoadEnded(ctx, now.Add(-Grace)); len(ended) != 0 {
-		t.Fatalf("a dropped grace is still read: %+v", ended)
+	left, _ := p.(EndedPersistence).LoadEnded(ctx, now.Add(-Grace))
+	for _, e := range left {
+		if e.LicenseID == ended[0].LicenseID {
+			t.Fatalf("a dropped grace is still read: %+v", e)
+		}
 	}
 }

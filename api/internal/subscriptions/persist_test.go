@@ -196,7 +196,8 @@ type fakeLicenseDB struct {
 }
 
 func (f *fakeLicenseDB) SaveActive(_ context.Context, rec persistedLicense) error {
-	// Revoke any currently-active row (one-active invariant).
+	// Revoke any currently-active row (one-active invariant), then upsert by license_id
+	// as the SQL store does: a row of the same id is replaced and made active again.
 	now := time.Now().UTC()
 	for i := range f.rows {
 		if f.rows[i].RevokedAt == nil {
@@ -204,6 +205,12 @@ func (f *fakeLicenseDB) SaveActive(_ context.Context, rec persistedLicense) erro
 		}
 	}
 	rec.RevokedAt = nil
+	for i := range f.rows {
+		if f.rows[i].LicenseID == rec.LicenseID {
+			f.rows[i] = rec
+			return nil
+		}
+	}
 	f.rows = append(f.rows, rec)
 	return nil
 }
@@ -229,8 +236,10 @@ func (f *fakeLicenseDB) LoadActive(_ context.Context) (*persistedLicense, error)
 }
 
 func (f *fakeLicenseDB) SaveEnded(_ context.Context, rec persistedLicense) error {
-	now := time.Now().UTC()
-	rec.RevokedAt = &now
+	if rec.RevokedAt == nil {
+		now := time.Now().UTC()
+		rec.RevokedAt = &now
+	}
 	rec.LicenseID += "@" + rec.IssuedAt.UTC().Format(time.RFC3339Nano)
 	f.rows = append(f.rows, rec)
 	return nil

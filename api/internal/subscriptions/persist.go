@@ -303,10 +303,14 @@ func (p *sqlLicenseStore) SaveEnded(ctx context.Context, rec persistedLicense) e
 	// a row id of its own (the signed license inside keeps its id): the license and when
 	// it was issued
 	id := rec.LicenseID + "@" + rec.IssuedAt.UTC().Format(time.RFC3339Nano)
+	ended := time.Now().UTC()
+	if rec.RevokedAt != nil {
+		ended = rec.RevokedAt.UTC()
+	}
 	_, err = p.db.ExecContext(ctx,
 		`INSERT INTO licenses (license_id, tier, seats, issued_at, expires_at, revoked_at, raw_jwt, features)
 		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT (license_id) DO NOTHING`,
-		id, string(rec.Tier), rec.Seats, rec.IssuedAt, rec.ExpiresAt, time.Now().UTC(), rec.RawJWT, string(feats))
+		id, string(rec.Tier), rec.Seats, rec.IssuedAt, rec.ExpiresAt, ended, rec.RawJWT, string(feats))
 	return err
 }
 
