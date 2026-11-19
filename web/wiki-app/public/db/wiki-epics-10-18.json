@@ -2342,7 +2342,7 @@
       "title": "License key validation",
       "epic": "16-subscriptions",
       "phase": 3,
-      "content": "# Story 16.4 — License key validation\n\nOffline-tolerant license validation: keys are public-key signed; the\nserver checks the signature locally and refreshes against the license\nserver periodically.\n\n**Anchors:** [`architecture.md` §11.5 (secrets)](../../architecture.md).\n\n## AC\n\n- License keys are Ed25519-signed JSON: `{license_id, tier, seats,\n  expires_at, signature}`.\n- Server bundles the license-server public key at build time.\n- Validation: signature check + expiry check + seat-count check.\n- Daily refresh against the license server; 30 d offline grace before\n  features lock.\n- Revocatio",
+      "content": "# Story 16.4 — License key validation\n\nOffline-tolerant license validation: keys are public-key signed; the\nserver checks the signature locally and refreshes against the license\nserver periodically.\n\n**Anchors:** [`architecture.md` §11.5 (secrets)](../../architecture.md).\n\n## AC\n\n- License keys are Ed25519-signed JSON: `{license_id, tier, seats,\n  expires_at, signature}`.\n- Server bundles the license-server public key at build time.\n- Validation: signature check + expiry check + seat-count check.\n- Daily refresh against the license server. An expired license keeps working fully\n  for 30 d from",
       "tags": [
         "story",
         "16-subscriptions",

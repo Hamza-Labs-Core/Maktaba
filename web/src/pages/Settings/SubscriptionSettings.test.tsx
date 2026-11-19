@@ -276,6 +276,45 @@ describe("Settings → Subscription (test-cases/subscription.md)", () => {
     expect(screen.queryByTestId("subscription-read-only")).toBeNull();
   });
 
+  it("SUB-12 (story 16.2): an expired license shows the days its features keep working", async () => {
+    routeGet(get, {
+      "/api/admin/license": {
+        ...PRO_CLOUD,
+        status: "grace",
+        grace_until: "2026-12-26T00:00:00Z",
+        grace_days_left: 12,
+        message:
+          "This home's license has expired. Its paid features keep working for 12 more days.",
+      },
+    });
+    open();
+    expect(await screen.findByTestId("subscription-grace")).toHaveTextContent(
+      "Keep working fully for 12 more days, until"
+    );
+    expect(screen.getByText("In its grace period")).toBeInTheDocument();
+    // the plan is still the full one: Pro's features on
+    expect(screen.getByTestId("subscription-message")).toHaveTextContent("12 more days");
+  });
+
+  it("SUB-12b: one day left; none when nothing is in its grace", async () => {
+    routeGet(get, {
+      "/api/admin/license": {
+        ...PRO_CLOUD,
+        grace_until: "2026-11-27T00:00:00Z",
+        grace_days_left: 1,
+      },
+    });
+    const { unmount } = open();
+    expect(await screen.findByTestId("subscription-grace")).toHaveTextContent(
+      "Keep working fully for 1 more day"
+    );
+    unmount();
+    routeGet(get, { "/api/admin/license": PRO_CLOUD });
+    open();
+    await screen.findByTestId("subscription-seats");
+    expect(screen.queryByTestId("subscription-grace")).toBeNull();
+  });
+
   it("SUB-11: a load error offers Retry", async () => {
     get.mockRejectedValueOnce(
       new ApiError({ type: "about:blank", status: 500, title: "Server error" })
