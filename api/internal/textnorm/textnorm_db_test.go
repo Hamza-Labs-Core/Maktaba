@@ -67,6 +67,19 @@ func TestArabicSearchOnPostgres(t *testing.T) {
 			t.Errorf("%q lost its first letter", w)
 		}
 	}
+	// an index on each side's function builds (PostgreSQL 17 and later build an index with
+	// search_path set to pg_catalog: a function calling another unqualified fails there)
+	for _, q := range []string{
+		`CREATE TEMP TABLE idx_check (body text)`,
+		`INSERT INTO idx_check VALUES ('الصبر عند المصيبة'), ('إسلام')`,
+		`CREATE INDEX ON idx_check USING gin (maktaba_tsv(body))`,
+		`CREATE INDEX ON idx_check USING gin (maktaba_tsv_stem(body))`,
+		`CREATE INDEX ON idx_check ((maktaba_stem_prepare(body)))`,
+	} {
+		if _, err := db.Exec(q); err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
+	}
 	// the word as typed first: the exact score weighs more than the stemmed one
 	rows, err := db.Query(`
 		SELECT body FROM (VALUES ('الصبر مفتاح الفرج'), ('هو يصبر كثيرا'), ('صبروا وصابروا'), ('قصة اخرى')) d(body)
