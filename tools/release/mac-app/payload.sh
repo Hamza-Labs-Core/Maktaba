@@ -180,7 +180,7 @@ cp "$pgv18/vector.control" "$pgv18"/sql/vector--*.sql "$OUT/postgres-18/share/ex
 log "pg_textsearch $PGTEXTSEARCH_VERSION"
 tar -xzf "$(fetch "$PGTEXTSEARCH_URL" "$PGTEXTSEARCH_SHA256" "pg_textsearch-$PGTEXTSEARCH_VERSION.tar.gz")" -C "$WORK"
 pgts="$WORK/pg_textsearch-$PGTEXTSEARCH_VERSION"
-[ -f "$pgts/Makefile" ] && [ -f "$pgts/pg_textsearch.control" ] || die "unexpected pg_textsearch archive layout"
+if ! { [ -f "$pgts/Makefile" ] && [ -f "$pgts/pg_textsearch.control" ]; }; then die "unexpected pg_textsearch archive layout"; fi
 make -C "$pgts" --no-print-directory -j"$(sysctl -n hw.ncpu)" PG_CONFIG="$pg18/bin/pg_config" \
     PG_SYSROOT="$(xcrun --show-sdk-path)" with_llvm=no \
     >"$WORK/pg_textsearch.log" 2>&1 || { tail -20 "$WORK/pg_textsearch.log" >&2; die "pg_textsearch did not build"; }

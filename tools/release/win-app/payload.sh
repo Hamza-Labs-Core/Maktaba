@@ -315,7 +315,7 @@ log "PostgreSQL $POSTGRES18_VERSION"
 mkdir -p "$WORK/pg18"
 unzip -q "$(fetch "$POSTGRES18_URL" "$POSTGRES18_SHA256" "postgresql-$POSTGRES18_VERSION.zip")" -d "$WORK/pg18"
 pg18="$WORK/pg18/postgresql-$POSTGRES18_VERSION-x86_64-pc-windows-msvc"
-[ -f "$pg18/bin/postgres.exe" ] && [ -f "$pg18/lib/postgres.lib" ] || die "unexpected PostgreSQL $POSTGRES18_VERSION archive layout"
+if ! { [ -f "$pg18/bin/postgres.exe" ] && [ -f "$pg18/lib/postgres.lib" ]; }; then die "unexpected PostgreSQL $POSTGRES18_VERSION archive layout"; fi
 for b in postgres initdb pg_ctl pg_dump pg_dumpall pg_restore psql pg_isready pg_upgrade pg_controldata pg_resetwal pg_basebackup vacuumdb; do
     cp "$pg18/bin/$b.exe" "$OUT/postgres-18/bin/"
 done
@@ -362,7 +362,7 @@ tar -xzf "$(fetch "$PGVECTOR_URL" "$PGVECTOR_SHA256" "pgvector-$PGVECTOR_VERSION
 pgv18="$WORK/pgv18/pgvector-$PGVECTOR_VERSION"
 tar -xzf "$(fetch "$PGTEXTSEARCH_URL" "$PGTEXTSEARCH_SHA256" "pg_textsearch-$PGTEXTSEARCH_VERSION.tar.gz")" -C "$WORK"
 pgts="$WORK/pg_textsearch-$PGTEXTSEARCH_VERSION"
-[ -f "$pgts/Makefile.win" ] && [ -f "$pgts/Makefile" ] || die "unexpected pg_textsearch archive layout"
+if ! { [ -f "$pgts/Makefile.win" ] && [ -f "$pgts/Makefile" ]; }; then die "unexpected pg_textsearch archive layout"; fi
 # pg_textsearch 1.5.1's Makefile.win lacks objects its Makefile builds (boolean, build_merge,
 # rls, ...): the Makefile's list, as .obj with backslashes, overrides it (nmake takes a macro
 # on its command line over the file's)
