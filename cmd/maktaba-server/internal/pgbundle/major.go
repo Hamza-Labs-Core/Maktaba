@@ -143,6 +143,21 @@ func ReleaseMajor(root string) error {
 	return err
 }
 
+// HasDatabase reports whether this install has a library database: its cluster, or the
+// previous major's that its first start upgrades (an update to a payload with a newer
+// major has not run yet). A setup check asks this, not Initialized: before that start the
+// newer major's directory is still empty, and the home is set up all the same.
+func (b Bundle) HasDatabase() bool {
+	if b.Initialized() {
+		return true
+	}
+	old := PreviousHome(b.Home)
+	if old == "" {
+		return false
+	}
+	return Bundle{Data: DataDirFor(filepath.Dir(b.Data), dirMajor(old))}.Initialized()
+}
+
 // afterUpgradeMarker records that AfterUpgrade ran on the cluster.
 const afterUpgradeMarker = "maktaba-after-upgrade.done"
 

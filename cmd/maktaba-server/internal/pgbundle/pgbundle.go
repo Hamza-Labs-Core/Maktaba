@@ -457,6 +457,13 @@ func (b Bundle) Prepare(ctx context.Context, log io.Writer) error {
 				"or move the cluster away to start a new one", b.passwordFile(SuperUser), b.Data)
 		}
 	}
+	// never an empty cluster of a newer major beside the previous major's that holds the
+	// library (Epic 49 story 49.2): only the upgrade makes that directory (the server's
+	// start, majorUpgradeStep), and a fresh one there would later be taken for the library
+	if !b.Initialized() && b.HasDatabase() {
+		return fmt.Errorf("bundled postgres: the library database is in the previous major's cluster and %s is not "+
+			"upgraded yet: start the server (`maktaba-server serve`), which upgrades it", b.Data)
+	}
 	superPW, err := ensurePassword(b.passwordFile(SuperUser))
 	if err != nil {
 		return err

@@ -80,7 +80,7 @@ func bundledPostgres(ctx context.Context, cfg *config.Config, prepare bool) (*pg
 				"Remove them (Maktaba's own builds have none); until then this home drops any slot made with one "+
 				"within 5 s\n", b.Home, strings.Join(found, ", "))
 		}
-	} else if !b.Initialized() {
+	} else if !b.HasDatabase() {
 		// never fall back to SQLite here: the next full serve would then keep it
 		return nil, errors.New("the bundled Postgres has no database yet: start Maktaba (`maktaba-server serve`) once first")
 	}

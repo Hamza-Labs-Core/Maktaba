@@ -291,14 +291,19 @@ cli service start || die "service start"
 wait_running 300
 
 # --- 4. an update ------------------------------------------------------------------------------
-# state/database.json: the release whose migrations the library database holds
+# state/database.json: the release whose migrations the library database holds; a payload
+# that runs PostgreSQL 18 upgrades the cluster into a directory of its own with its own
+# record (Epic 49 story 49.2), database-pg18.json, which is then the one in use
+db_file() {
+    if [ -f "$DATA/state/database-pg18.json" ]; then echo "$DATA/state/database-pg18.json"; else echo "$DATA/state/database.json"; fi
+}
 db_record() {
     "$PY" -I -c 'import json, sys
 d = json.load(open(sys.argv[1]))
-print(d.get(sys.argv[2], ""))' "$DATA/state/database.json" "$1"
+print(d.get(sys.argv[2], ""))' "$(db_file)" "$1"
 }
 before_version="$(db_record version)" || die "no database record (state/database.json) after the first start"
-[ "$(db_record state)" = migrated ] || die "the database is not recorded as migrated: $(cat "$DATA/state/database.json")"
+[ "$(db_record state)" = migrated ] || die "the database is not recorded as migrated: $(cat "$(db_file)")"
 # The venv: every update moves the runtime to a new folder, so the bootstrap repoints the venv
 # at the new runtime's Python (`venv --upgrade`, which rewrites pyvenv.cfg) and keeps its
 # packages when the constraints are the same. A rebuild reinstalls them: a dependency's RECORD
@@ -351,13 +356,13 @@ if [ "$adds_migrations" -eq 0 ]; then
     log "no dump for an update that adds no migration"
     if [ "$(db_record version)" != "$before_version" ] || [ "$(db_record state)" != migrated ] ||
         [ "$(db_record release)" != "$NEXT_VERSION" ]; then
-        die "the database is not recorded as $before_version's, run by $NEXT_VERSION: $(cat "$DATA/state/database.json")"
+        die "the database is not recorded as $before_version's, run by $NEXT_VERSION: $(cat "$(db_file)")"
     fi
 else
     [ -n "$dump" ] || die "no database dump before an update that adds migrations"
     log "the database was dumped before the payload's migrations: ${dump#"$DATA"/}"
     if [ "$(db_record version)" != "$NEXT_VERSION" ] || [ "$(db_record state)" != migrated ]; then
-        die "the database is not recorded as migrated by $NEXT_VERSION: $(cat "$DATA/state/database.json")"
+        die "the database is not recorded as migrated by $NEXT_VERSION: $(cat "$(db_file)")"
     fi
 fi
 if [ "$same_constraints" -eq 1 ]; then

@@ -2,6 +2,7 @@ package pgbundle
 
 import (
 	"context"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -117,5 +118,41 @@ func TestServerArgsIOMethodOn18Only(t *testing.T) {
 		if got := strings.Contains(args, "io_method=sync"); got != want {
 			t.Errorf("PostgreSQL %s: io_method=sync %v, want %v (%s)", major, got, want, args)
 		}
+	}
+}
+
+// A payload with a newer major on a home whose library is in the previous major's cluster:
+// the home has a database (setup is done), and Prepare never makes an empty cluster of the
+// newer major beside it (only the server's upgrade does).
+func TestHasDatabaseAndNoEmptyNewerCluster(t *testing.T) {
+	root, payload := t.TempDir(), t.TempDir()
+	for _, d := range []string{"postgres", "postgres-18"} {
+		if err := os.MkdirAll(filepath.Join(payload, d, "bin"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(payload, d, "bin", exe("postgres")), nil, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	b := Bundle{Home: filepath.Join(payload, "postgres-18"), Data: DataDirFor(root, "18"), Keys: t.TempDir()}
+	if b.HasDatabase() {
+		t.Fatal("no cluster at all, yet a database")
+	}
+	old := DataDirFor(root, "16")
+	if err := os.MkdirAll(old, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(old, "PG_VERSION"), []byte("16\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if !b.HasDatabase() {
+		t.Fatal("the 16 cluster waiting for its upgrade is no database")
+	}
+	err := b.Prepare(context.Background(), io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "not upgraded yet") {
+		t.Fatalf("Prepare = %v", err)
+	}
+	if _, err := os.Stat(b.Data); !os.IsNotExist(err) {
+		t.Fatalf("Prepare made %s: %v", b.Data, err)
 	}
 }
