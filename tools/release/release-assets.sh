@@ -178,12 +178,19 @@ publish() {
     # finished) leaves a draft whose checksums list a file nobody can download
     if grep -qx checksums.txt <<<"${names}"; then
         gh_ release download "${tag}" --pattern checksums.txt --dir "${tmp}" --clobber
-        local listed n
+        # read strictly, as releaseverify.ParseChecksums does: every line "<64 hex>  <name>"
+        # (an optional "*" or "./"), and at least one; anything else is not this release's
+        # checksums, and the draft waits
+        local listed n bad
+        bad="$(grep -cvE '^[0-9a-f]{64} [ *]?(\./)?[^ /]+$' "${tmp}/checksums.txt" || true)"
         listed="$(awk 'NF >= 2 { n = $2; sub(/^\*/, "", n); sub(/^\.\//, "", n); print n }' "${tmp}/checksums.txt")"
-        while IFS= read -r n; do
-            [ -n "${n}" ] || continue
-            grep -qxF -- "${n}" <<<"${names}" || missing+=("${n} (in checksums.txt)")
-        done <<<"${listed}"
+        if [ "${bad}" != 0 ] || [ -z "${listed}" ]; then
+            missing+=("a well-formed checksums.txt (release.yml)")
+        else
+            while IFS= read -r n; do
+                grep -qxF -- "${n}" <<<"${names}" || missing+=("${n} (in checksums.txt)")
+            done <<<"${listed}"
+        fi
     fi
     if grep -qx latest.json <<<"${names}"; then
         gh_ release download "${tag}" --pattern latest.json --dir "${tmp}" --clobber

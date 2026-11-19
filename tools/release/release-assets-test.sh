@@ -39,8 +39,13 @@ case "$1" in
             esac
             shift
         done
-        if [ "${name}" = checksums.txt ] && [ -n "${CHECKSUMS:-}" ]; then
-            printf '%s\n' "${CHECKSUMS}" >"${dir}/${name}"
+        echo "download ${name}" >>"${DOWNLOADS:-/dev/null}"
+        if [ "${name}" = checksums.txt ] && [ -n "${CHECKSUMS+set}" ]; then
+            # as given, an empty value included
+            printf '%s' "${CHECKSUMS}" >"${dir}/${name}"
+        elif [ "${name}" = checksums.txt ]; then
+            # a well-formed checksums.txt naming the release's own files
+            printf '%s\n' "${ASSETS}" | awk 'NF { printf "%064d  ./%s\n", 0, $1 }' >"${dir}/${name}"
         else
             printf 'published %s' "${name}" >"${dir}/${name}"
         fi
@@ -127,8 +132,14 @@ fi
 # among it (story 51.15)
 publish() { # publish ASSETS [CHECKSUMS]: runs publish on the draft v0.3.2-rc.1; its log in ${work}/log
     : >"${work}/edits"
-    PATH="${work}/stubs:${PATH}" GITHUB_REPOSITORY=o/r DRAFT=true ASSETS="$1" CHECKSUMS="${2:-}" EDITS="${work}/edits" \
-        bash "${here}/release-assets.sh" publish v0.3.2-rc.1 >"${work}/log" 2>&1
+    : >"${work}/downloads"
+    if [ $# -ge 2 ]; then
+        PATH="${work}/stubs:${PATH}" GITHUB_REPOSITORY=o/r DRAFT=true ASSETS="$1" CHECKSUMS="$2" EDITS="${work}/edits" \
+            DOWNLOADS="${work}/downloads" bash "${here}/release-assets.sh" publish "${TAG:-v0.3.2-rc.1}" >"${work}/log" 2>&1
+    else
+        PATH="${work}/stubs:${PATH}" GITHUB_REPOSITORY=o/r DRAFT=true ASSETS="$1" EDITS="${work}/edits" \
+            DOWNLOADS="${work}/downloads" bash "${here}/release-assets.sh" publish "${TAG:-v0.3.2-rc.1}" >"${work}/log" 2>&1
+    fi
 }
 signed=$'release.json\nchecksums.txt\nchecksums.txt.sigstore.json'
 if publish "${signed}" && grep -q "components-0.3.2-rc.1.json (release.yml)" "${work}/log" && [ ! -s "${work}/edits" ]; then
@@ -145,7 +156,8 @@ fi
 # every file checksums.txt names must be attached before the draft is published: an upload
 # that stopped part way leaves a signed checksum for a file nobody can download
 full="${signed}"$'\ncomponents-0.3.2-rc.1.json'
-sums=$'aa  ./maktaba-server-0.3.2-rc.1-linux-amd64.tar.gz\nbb  ./tv.maktaba.classify-0.3.2.mkplugin\ncc *release.json'
+z="$(printf '%064d' 0)"
+sums="${z}  ./maktaba-server-0.3.2-rc.1-linux-amd64.tar.gz"$'\n'"${z}  ./tv.maktaba.classify-0.3.2.mkplugin"$'\n'"${z} *release.json"
 if publish "${full}"$'\nmaktaba-server-0.3.2-rc.1-linux-amd64.tar.gz\nrelease.json' "${sums}" &&
     grep -q "tv.maktaba.classify-0.3.2.mkplugin (in checksums.txt)" "${work}/log" && [ ! -s "${work}/edits" ]; then
     ok "a draft missing a file its checksums name stays a draft, naming it"
@@ -159,6 +171,22 @@ else
     fail "not published with every checksummed file: $(cat "${work}/log" "${work}/edits")"
 fi
 
+# a checksums.txt that is empty, or has a line that is not "<sha256>  <name>": the draft waits
+z64="$(printf '%064d' 0)"
+for bad in "" "${z64}  ./release.json"$'\n'"${z64:0:20}" "${z64}  ./release.json"$'\n'"garbage line"; do
+    if publish "${full}"$'\nrelease.json' "${bad}" && grep -q "a well-formed checksums.txt" "${work}/log" && [ ! -s "${work}/edits" ]; then
+        ok "a malformed or empty checksums.txt keeps the draft ($(printf '%s' "${bad}" | wc -l | tr -d ' ') newlines)"
+    else
+        fail "published with a malformed checksums.txt: $(cat "${work}/log" "${work}/edits")"
+    fi
+done
+# no checksums.txt yet: nothing downloaded, the draft waits for release.yml's set
+if publish $'release.json\nchecksums.txt.sigstore.json\ncomponents-0.3.2-rc.1.json' && [ ! -s "${work}/downloads" ] &&
+    grep -q "checksums.txt (release.yml)" "${work}/log" && [ ! -s "${work}/edits" ]; then
+    ok "no checksums.txt yet: nothing downloaded, the draft waits"
+else
+    fail "no checksums.txt: $(cat "${work}/log" "${work}/downloads" "${work}/edits")"
+fi
 if [ "${fails}" -gt 0 ]; then
     echo "release-assets-test: ${fails} failed"
     exit 1
