@@ -151,12 +151,14 @@ def test_sbom_sh_covers_the_four_spec_components_and_requires_its_tools() -> Non
 
 
 # every Go binary a release ships: the archives' and packages' (api, streaming, the server,
-# the cloud relay, the launcher) and the api and streaming images' healthcheck
+# the cloud relay, the launcher), the desktop apps' cloudlink and the api and streaming
+# images' healthcheck
 SHIPPED_GO = {
     "api": "api",
     "streaming": "streaming",
     "server": "cmd/maktaba-server",
     "cloud": "cloud",
+    "cloudlink": "cloud",
     "launcher": "cmd/maktaba-launcher",
     "healthcheck": "tools/healthcheck",
 }
@@ -166,6 +168,9 @@ def test_every_shipped_go_binary_has_an_sbom_and_the_release_downloads_its_modul
     text = (ROOT / "tools" / "sbom.sh").read_text()
     for name, mod in SHIPPED_GO.items():
         assert f"\nemit_go {name} {mod} " in text, name
+    # built with the tags the release sets (release.yml's STREAMING_TAGS, the server's web)
+    assert "\nemit_go streaming streaming . tvstaging\n" in text
+    assert "\nemit_go server cmd/maktaba-server . embed_web\n" in text
     wf = yaml.safe_load((ROOT / ".github/workflows/release.yml").read_text())
     steps = wf["jobs"]["sbom"]["steps"]
     mods = next(s["with"]["modules"].split() for s in steps if str(s.get("uses", "")).endswith("/go-mod-download"))

@@ -6,8 +6,9 @@
 # Writes OUT_DIR/maktaba-sbom-<component>-<VERSION>.cdx.json (default VERSION `dev`,
 # OUT_DIR artifacts/sbom) for:
 #
-#   api, streaming, server (cmd/maktaba-server), cloud,  cyclonedx-gomod app (what each binary links)
-#   launcher (cmd/maktaba-launcher), healthcheck
+#   api, streaming, server (cmd/maktaba-server), cloud,  cyclonedx-gomod app (what each binary links,
+#   cloudlink (in the desktop apps), launcher            with the build tags the release sets)
+#   (cmd/maktaba-launcher), healthcheck
 #   (tools/healthcheck, in the api and streaming images)
 #   pipeline                                             cyclonedx-py over `uv export`
 #   web                                                  tools/security/sbom.py over pnpm-lock.yaml
@@ -92,9 +93,10 @@ emit_web() {
 }
 
 emit_go api api .
-emit_go streaming streaming .
+emit_go streaming streaming . tvstaging
 emit_go server cmd/maktaba-server . embed_web
 emit_go cloud cloud ./cmd/maktaba-cloud
+emit_go cloudlink cloud ./cmd/maktaba-cloudlink
 emit_go launcher cmd/maktaba-launcher .
 emit_go healthcheck tools/healthcheck .
 emit_python
