@@ -34,7 +34,7 @@ func plantChroma(t *testing.T, dir string) {
 		t.Fatal(err)
 	}
 	for path, body := range map[string]string{
-		filepath.Join(dir, "chroma.sqlite3"):   "SQLite format 3\x00 the rehearsal's Chroma",
+		filepath.Join(dir, "chroma.sqlite3"):  "SQLite format 3\x00 the rehearsal's Chroma",
 		filepath.Join(seg, "data_level0.bin"): strings.Repeat("v", 4096),
 		filepath.Join(seg, "header.bin"):      "h",
 	} {
