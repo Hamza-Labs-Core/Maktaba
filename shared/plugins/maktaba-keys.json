@@ -1,0 +1,4 @@
+{
+  "comment": "Maktaba's developer keys (Epic 54, story 54.45 §3): a store package of a Maktaba plugin is trusted only when its developer.sig is by one of these. Empty until the key is made; then each entry is the key's id (ed25519:<hex>, pluginsig.KeyID). The release signs the server binary that embeds this file, which is what pins them.",
+  "developer_keys": []
+}

@@ -1061,6 +1061,14 @@ build fails when the two differ.
 
 ### Added
 
+- **Maktaba's plugins can be trusted as store packages (Epic 54, story 54.45).** Every package
+  of a Maktaba plugin except core's can now carry Maktaba's developer signature. A home trusts
+  one delivered apart from the release only when the store countersigned it, the signature is
+  by Maktaba's key pinned in the server, and its manifest, strings and database statements are
+  exactly the server's own. A Maktaba plugin's statements change only with a server release.
+  Releases no longer package core, which is not a plugin. Nothing installs a store package of
+  a Maktaba plugin yet.
+
 - **Each release carries Maktaba's plugins as signed packages (Epic 54, story 54.27).** Every
   release now has one `tv.maktaba.<name>-<version>.mkplugin` for each of Maktaba's own plugins,
   with its `files.json` beside it, both listed in the signed `checksums.txt`. The release

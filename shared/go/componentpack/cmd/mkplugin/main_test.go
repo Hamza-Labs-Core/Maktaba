@@ -78,3 +78,39 @@ func TestFilesJSONBesideThePackage(t *testing.T) {
 		t.Fatalf("printed %q, files.json is %s", got, pkg.FilesSHA256)
 	}
 }
+
+// -developer-sig puts the signature in the package's head and leaves files.json as it was
+// (story 54.45 §2).
+func TestADeveloperSigLeavesFilesJSON(t *testing.T) {
+	if testing.Short() {
+		t.Skip("builds and runs the command")
+	}
+	dir := t.TempDir()
+	src := filepath.Join(dir, "src")
+	_ = os.MkdirAll(filepath.Join(src, "i18n"), 0o755)
+	_ = os.WriteFile(filepath.Join(src, "manifest.toml"), []byte("schema = 1\n"), 0o644)
+	_ = os.WriteFile(filepath.Join(src, "i18n", "en.json"), []byte("{}"), 0o644)
+	sig := filepath.Join(dir, "developer.sig")
+	_ = os.WriteFile(sig, []byte(`{"key_id":"x","sig":"y","signed":{}}`), 0o644)
+	read := func(args ...string) *componentpack.PluginPackage {
+		out := filepath.Join(t.TempDir(), "x.mkplugin")
+		cmd := exec.Command("go", append(append([]string{"run", "."}, args...), src, out)...)
+		if b, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("%v: %s", err, b)
+		}
+		f, _ := os.Open(out)
+		defer func() { _ = f.Close() }()
+		p, err := componentpack.UnpackPlugin(f, filepath.Join(t.TempDir(), "u"), componentpack.PluginExpect{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	plain, signed := read(), read("-developer-sig", sig)
+	if string(signed.DeveloperSig) != `{"key_id":"x","sig":"y","signed":{}}` || plain.DeveloperSig != nil {
+		t.Fatalf("developer.sig: %q / %q", signed.DeveloperSig, plain.DeveloperSig)
+	}
+	if string(plain.FilesJSON) != string(signed.FilesJSON) {
+		t.Fatal("the signature changed files.json")
+	}
+}
