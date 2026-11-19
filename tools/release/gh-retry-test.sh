@@ -53,6 +53,20 @@ case "$1 $2" in
         o="$(next edit "$@")"
         case "${o}" in "" | ok) exit 0 ;; *) fail "${o}" ;; esac
         ;;
+    "release download")
+        # publish reads the draft's checksums.txt: it names the draft's own files
+        o="$(next download "$@")"
+        case "${o}" in "" | ok) ;; *) fail "${o}" ;; esac
+        name="" dir=""
+        while [ $# -gt 0 ]; do
+            case "$1" in
+                --pattern) name="$2"; shift ;;
+                --dir) dir="$2"; shift ;;
+            esac
+            shift
+        done
+        printf '%s\n' "${ASSETS:-}" | awk 'NF { printf "%064d  ./%s\n", 0, $1 }' >"${dir}/${name}"
+        ;;
     "release create")
         o="$(next create "$@")"
         case "${o}" in
@@ -240,6 +254,25 @@ if [ "${rc}" = 0 ] && [ "$(kcalls assets)" = 2 ] && [ "$(kcalls edit)" = 2 ] &&
     ok "publish: the assets' read and the publishing \`release edit\` are tried again"
 else
     fail "publish retries (rc ${rc}; assets $(kcalls assets), edit $(kcalls edit)): $(cat "${work}/log")"
+fi
+
+# publish reads the draft's checksums.txt: a 504 on that download is tried again and the draft
+# is published; a 404 fails the step with nothing published
+kinds "download=${e504},ok"
+ASSETS="$(printf 'release.json\nchecksums.txt\nchecksums.txt.sigstore.json\ncomponents-0.3.2-rc.1.json')" \
+    assets publish v0.3.2-rc.1
+if [ "${rc}" = 0 ] && [ "$(kcalls download)" = 2 ] && grep -q -- "--draft=false" "${STATE}/edit.calls"; then
+    ok "publish: the checksums' download cut by a 504 is tried again, then published"
+else
+    fail "publish download retry (rc ${rc}; download $(kcalls download)): $(cat "${work}/log")"
+fi
+kinds "download=HTTP 404: Not Found"
+ASSETS="$(printf 'release.json\nchecksums.txt\nchecksums.txt.sigstore.json\ncomponents-0.3.2-rc.1.json')" \
+    assets publish v0.3.2-rc.1
+if [ "${rc}" != 0 ] && [ "$(kcalls download)" = 1 ] && [ "$(kcalls edit)" = 0 ]; then
+    ok "publish: a checksums download failing with a 404 fails the step, nothing published"
+else
+    fail "publish download 404 (rc ${rc}; download $(kcalls download), edit $(kcalls edit)): $(cat "${work}/log")"
 fi
 
 # a draft lookup that keeps failing (a 404) fails the step: never taken for "published"
