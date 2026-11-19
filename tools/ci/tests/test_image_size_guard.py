@@ -152,9 +152,11 @@ def test_unreadable_layer_sizes_fail_rather_than_under_count(tmp_path: Path, mod
 def _copy_sources(dockerfile: Path) -> list[str]:
     """The repository paths a Dockerfile COPYs or ADDs from its build context (the repo root)."""
     out = []
-    for line in dockerfile.read_text().splitlines():
+    # an instruction may run on over `\` continuations, and Dockerfile keywords take any case
+    text = re.sub(r"\\\n", " ", dockerfile.read_text())
+    for line in text.splitlines():
         words = line.split()
-        if not words or words[0] not in ("COPY", "ADD"):
+        if not words or words[0].upper() not in ("COPY", "ADD"):
             continue
         args = [w for w in words[1:] if not w.startswith("--")]
         if any(w.startswith("--from") for w in words[1:]):
@@ -182,3 +184,15 @@ def test_a_change_to_anything_an_image_copies_runs_the_images_job(svc: str) -> N
             missed.append(f"{src} ({probe})")
     assert not missed, f"{svc}/Dockerfile copies from paths the images filter misses: {missed}"
     assert "images" in ci_paths.matched(filters, [f"{svc}/Dockerfile"])
+
+
+def test_the_copy_parser_reads_continued_and_lowercase_instructions(tmp_path: Path) -> None:
+    df = tmp_path / "Dockerfile"
+    df.write_text(
+        "FROM scratch\n"
+        "COPY --chown=1:1 a/one.json \\\n    b/two.bin /dst/\n"
+        "copy c /dst/c\n"
+        "COPY --from=build /out /out\n"
+        "ADD d.tar /\n"
+    )
+    assert _copy_sources(df) == ["a/one.json", "b/two.bin", "c", "d.tar"]
