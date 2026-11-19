@@ -147,6 +147,13 @@ async def run(db: Any, job: Job, ctx: StageContext) -> StageResult:
             summary={"chapters": 0, "reason": "no active transcript"},
         )
     transcript_id, _ = active
+    if not (await store_state(db)).ready:
+        # no pgvector here (SQLite, or the extension missing): no vectors to chapter by
+        return StageResult(
+            output_hash=canonical_hash({"semantic": "off"}),
+            outcome="unchanged",
+            summary={"chapters": 0, "reason": "semantic search needs Postgres with pgvector"},
+        )
     await ctx.progress("read vectors", 0, 1, force=True)
     vectors = [
         vec

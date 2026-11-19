@@ -35,9 +35,11 @@ func TestAJobThatKeepsFailing(t *testing.T) {
 	log := &syncBuffer{}
 	s := New([]Process{p}, pol, WithLog(log))
 	running(t, s)
-	snap := waitFor(t, s, "failed", func(s Snapshot) bool { return proc(s, RolePipeline).State == StateFailed })
+	waitFor(t, s, "failed", func(s Snapshot) bool { return proc(s, RolePipeline).State == StateFailed })
 	time.Sleep(300 * time.Millisecond)
-	c := proc(s.Snapshot(), RolePipeline)
+	// the failed event may follow the state by a moment: read both after the wait
+	snap := s.Snapshot()
+	c := proc(snap, RolePipeline)
 	if c.Restarts != 2 || c.NextRestartAt != nil || !c.CrashLoop {
 		t.Errorf("after 3 failures: %+v", c)
 	}

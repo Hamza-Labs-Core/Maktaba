@@ -115,7 +115,12 @@ async def _revision(db: Any, transcript_id: str) -> int:
 
 
 async def _fingerprint(
-    db: Any, video_id: UUID | str, active: tuple[str, int] | None, *, missing: bool = False
+    db: Any,
+    video_id: UUID | str,
+    active: tuple[str, int] | None,
+    *,
+    missing: bool = False,
+    off: bool = False,
 ) -> str:
     fields: dict[str, Any] = {
         "transcript": active[0] if active else None,
@@ -126,6 +131,10 @@ async def _fingerprint(
     }
     if missing:
         fields["stored"] = False
+    if off:
+        # no pgvector here: the video was not indexed; once there is, this field goes and
+        # the video is indexed (a home with pgvector never has it: its fingerprints stand)
+        fields["semantic"] = "off"
     # Epic 52 (story 52.9): a reviewer's fix bumps the revision; only once there is one, so
     # a transcript nobody edited keeps its fingerprint
     rev = await _revision(db, active[0]) if active else 0
@@ -135,13 +144,13 @@ async def _fingerprint(
 
 
 async def _missing_vectors(db: Any, video_id: UUID | str, active: tuple[str, int] | None) -> bool:
-    """The video has segments but no vectors (a new home after a switchover, a video
-    whose vectors were only in Chroma)."""
+    """The video has segments without their vectors (a new home after a switchover; a
+    video whose vectors were only in Chroma, or that its copy moved in part)."""
     if active is None or active[1] == 0:
         return False
     if not (await store_state(db)).ready:
         return False
-    return not await PgVectorStore(db, embed_model()).has_vectors(video_id)
+    return not await PgVectorStore(db, embed_model()).has_vectors(video_id, active[0])
 
 
 async def input_fingerprint(db: Any, subject: Subject) -> str | None:
@@ -150,11 +159,16 @@ async def input_fingerprint(db: Any, subject: Subject) -> str | None:
     if await load_video(db, subject.id) is None:
         return None
     active = await active_transcript(db, subject.id)
+    if not (await store_state(db)).ready:
+        return await _fingerprint(db, subject.id, active, off=True)
     missing = await _missing_vectors(db, subject.id, active)
     return await _fingerprint(db, subject.id, active, missing=missing)
 
 
 _log = get_logger()
+
+#: why a home without pgvector indexes nothing
+SEMANTIC_OFF = "semantic search needs Postgres with pgvector; search is full-text here"
 
 
 @dataclass(slots=True)
@@ -171,10 +185,15 @@ class _Timings:
 async def run(db: Any, job: Job, ctx: StageContext) -> StageResult:
     v = await require_video(db, job.subject.id)
     if not (await store_state(db)).ready:
-        raise StageFailure(
-            "search_unavailable",
-            "semantic search needs Postgres with pgvector",
-            retryable=False,
+        # SQLite (Chroma, its store before story 43.5, is retired) or a Postgres without
+        # pgvector: no semantic search here, search is full-text; the job succeeds
+        # unchanged, so nothing downstream runs and no job is left failed
+        active = await active_transcript(db, v.id)
+        return StageResult(
+            output_hash=canonical_hash({"semantic": "off"}),
+            outcome="unchanged",
+            input_hash=await _fingerprint(db, v.id, active, off=True),
+            summary={"segments": 0, "reason": SEMANTIC_OFF},
         )
     embedder = _embedder_factory()
     model = embedder.model_name

@@ -195,11 +195,24 @@ Nothing opens Chroma any more, and nothing depends on `chromadb`.
     `semantic_store_ready()`), but its `store` column is neither acted on nor written. A
     rollback to the release before finds the row as it left it, and goes on searching Chroma
     and copying.
-  - **Videos re-index themselves.** A video whose vectors were only in Chroma has no row in
-    `segment_embeddings`. Its `index` fingerprint says so, and the reconciler's semantic sweep
-    queues it again. So a home whose copy was not done embeds those videos again; on the home
-    Mac that would be up to 13.9 M passages if its copy never finished. Search meanwhile
-    returns what is already in Postgres.
+  - **Videos re-index themselves.**
+    - A video whose vectors were only in Chroma has no row in `segment_embeddings`. Its
+      `index` fingerprint says so, and the reconciler's semantic sweep queues it again.
+    - The copy committed page by page, so one that stopped part way can leave a video with
+      some of its vectors. The fingerprint counts them against the active transcript's
+      non-blank segments (`PgVectorStore.has_vectors`), not "any row". While the state row
+      shows a copy under way (`copied_rows > 0`, `copy_done_at` null), the reconciler also
+      makes one bounded pass (`_partial_copy_sweep`, 500 videos a minute, once per
+      process) that queues those videos.
+    - So a home whose copy was not done embeds those videos again; on the home Mac that
+      would be up to 13.9 M passages if its copy never finished. Search meanwhile returns
+      what is already in Postgres.
+  - **SQLite homes**, and a Postgres without pgvector, have no semantic search: search is
+    full-text. Before 43.5 a SQLite home's store was Chroma. Now `index` and
+    `chapter_infer` succeed `unchanged` with the reason, so no job fails and nothing
+    downstream runs. The index fingerprint carries `semantic: off` only there, so once
+    pgvector is installed every video is indexed, and a home with pgvector keeps its
+    fingerprints.
   - **The folder is cleaned up** (`supervisor.RetireChroma`, at every start).
     - A folder whose copy was done (`chroma-copy.done` names it) is deleted at the start that
       finds it.
@@ -207,11 +220,22 @@ Nothing opens Chroma any more, and nothing depends on `chromadb`.
       deleted by a start a day after the mark (`ChromaKeep`; `MAKTABA_CHROMA_KEEP_SECONDS`
       changes it). The day outlasts the update's watch and any rollback, however often the
       release starts in between.
-    - A folder without `chroma.sqlite3` that is not empty is never deleted.
+    - Only Chroma's own entries are deleted: `chroma.sqlite3` and its side files, and the
+      segment folders it names by UUID. Then the folder goes, if that left it empty. A
+      `MAKTABA_CHROMA_DIR` pointed at a folder holding other things (even the state dir)
+      loses nothing else. A folder without `chroma.sqlite3` that is not empty is never
+      touched, and a leading `~` is the home folder, as the pipeline read it.
+    - **A rollback after the day.** Once a folder never copied is deleted (a day after
+      the first start kept it), a rollback to the release before finds the row still
+      saying `chroma` and an empty Chroma. Its semantic search then answers from Chroma's
+      empty folder until its own copy logic moves it on. The day is the rollback window.
 - **Tests.**
-  - `chromaretire_test.go`: copied, never copied, the keep, other folders, nothing there.
+  - `chromaretire_test.go`: copied, never copied, the keep, a folder holding other things
+    (the state dir), other folders, `~`, nothing there.
   - `test_pgstore.py` on a pgvector Postgres: the stage, search, `chapter_infer` and the sweep
-    on a row that still says `chroma`; `prepare` writes no row.
+    on a row that still says `chroma`; a video copied in part, queued by the one-time
+    pass and indexed whole; without pgvector both stages succeed `unchanged`; `prepare`
+    writes no row.
   - The engine stage and analysis tests, on an in-memory store.
   - The semantic-search parity test, with the row left on `chroma`.
   - Update rehearsal scenario 17 (`api/rehearsal_chroma_e2e_test.go`): a home with a Chroma

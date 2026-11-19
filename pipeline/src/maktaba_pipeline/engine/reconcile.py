@@ -135,7 +135,7 @@ async def _pass(
     sweep = await _version_sweep(db, graph)
     scans = await _library_sweeps(db, graph, t)
     periodic = await _periodic_stages(db, graph, t)
-    missing = await _semantic_sweep(db, graph)
+    missing = await _semantic_sweep(db, graph) + await _partial_copy_sweep(db, graph)
     purges = await _trash_purges(db, graph, t)
     thumbs = await _thumbs_dir_sweep(db, graph)
     derived = await _youtube_derive(db, t)
@@ -673,6 +673,75 @@ async def _semantic_sweep(db: Any, graph: Mapping[str, StageDef]) -> int:
             stage="index",
             priority=SWEEP_PRIORITY,
             reason={"why": "no vectors in segment_embeddings", "by": "system"},
+        )
+        n += 1 if res.job_id is not None else 0
+    return n
+
+
+#: the videos one pass of :func:`_partial_copy_sweep` looks at
+PARTIAL_SWEEP_BATCH = 500
+
+#: where this process's partial-copy sweep is: the last video id looked at ("" before the
+#: first), None once a whole pass found the copy's videos complete
+_partial_cursor: str | None = ""
+
+
+async def _partial_copy_sweep(db: Any, graph: Mapping[str, StageDef]) -> int:
+    """Story 43.5: a home whose Chroma copy (story 43.3, a release before) stopped part
+    way has videos with some of their vectors only: the copy committed page by page.
+    While ``semantic_store_state`` says such a copy was under way (rows copied, never
+    done), each pass looks at the next :data:`PARTIAL_SWEEP_BATCH` videos by id and queues
+    an ``index`` for each whose latest index job succeeded and whose active transcript
+    has more non-blank segments than vectors. Once a whole pass is done it stops (until
+    the process starts again): bounded work each minute, nothing written but the jobs."""
+    global _partial_cursor
+    if _partial_cursor is None or not is_pg(db) or "index" not in graph:
+        return 0
+    from ..search.pgstore import store_state
+
+    if not (await store_state(db)).ready:
+        return 0
+    try:
+        partial = await db.fetchval(
+            "SELECT EXISTS (SELECT 1 FROM semantic_store_state"
+            " WHERE copy_done_at IS NULL AND copied_rows > 0)"
+        )
+    except Exception:  # noqa: BLE001 - no state table: no copy ever ran
+        partial = False
+    if not partial:
+        _partial_cursor = None
+        return 0
+    vids = await db.fetch(
+        "SELECT id FROM videos WHERE id::text > $1 ORDER BY id::text LIMIT $2",
+        _partial_cursor,
+        PARTIAL_SWEEP_BATCH,
+    )
+    if not vids:
+        _partial_cursor = None
+        return 0
+    _partial_cursor = str(vids[-1]["id"])
+    rows = await db.fetch(
+        "SELECT v.id AS sid FROM unnest($1::uuid[]) AS v(id)"
+        " JOIN LATERAL (SELECT t.id FROM transcripts t WHERE t.video_id = v.id AND t.is_active"
+        "  ORDER BY t.created_at DESC, t.id DESC LIMIT 1) a ON true"
+        " WHERE (SELECT j.state = 'done' AND j.outcome IN " + SUCCESS + " FROM processing_jobs j"
+        "  WHERE j.subject_kind = 'video' AND j.subject_id = v.id AND j.stage = 'index'"
+        "  ORDER BY j.id DESC LIMIT 1)"
+        " AND (SELECT count(*) FROM transcript_segments s"
+        "  WHERE s.transcript_id = a.id AND btrim(s.text) <> '')"
+        " > (SELECT count(*) FROM segment_embeddings e JOIN transcript_segments s"
+        "  ON s.id = e.segment_id WHERE e.video_id = v.id AND s.transcript_id = a.id)",
+        [str(r["id"]) for r in vids],
+    )
+    n = 0
+    for r in rows:
+        res = await enqueue_job(
+            db,
+            subject_kind="video",
+            subject_id=UUID(str(r["sid"])),
+            stage="index",
+            priority=SWEEP_PRIORITY,
+            reason={"why": "vectors copied from Chroma in part", "by": "system"},
         )
         n += 1 if res.job_id is not None else 0
     return n

@@ -22,7 +22,7 @@ from maktaba_fp_semantic_search.stages import index as stage
 
 from maktaba_pipeline import grpc_server
 from maktaba_pipeline.db.jobs import Job
-from maktaba_pipeline.engine.context import StageContext, StageFailure
+from maktaba_pipeline.engine.context import StageContext
 from maktaba_pipeline.engine.enqueue import enqueue_job
 from maktaba_pipeline.engine.graph import GRAPH, Subject
 from maktaba_pipeline.engine.reconcile import _semantic_sweep
@@ -299,7 +299,7 @@ async def test_write_read_search_and_delete(pg: Database) -> None:
     assert await store.keep_only(v, [first]) == 1
     assert [x.seq for x in await store.video_vectors(v)] == [0]
     await store.delete_video(v)
-    assert await _count(pg, v) == 0 and not await store.has_vectors(v)
+    assert await _count(pg, v) == 0 and not await store.has_vectors(v, tid)
     await pg.execute("DELETE FROM transcripts WHERE id = $1", str(wid))
     assert await _count(pg, w) == 0  # deleted with its segments
 
@@ -461,12 +461,11 @@ async def test_without_pgvector_the_store_is_unavailable(
 
     monkeypatch.setattr(stage, "store_state", no_pgvector)
     monkeypatch.setattr(chapter_infer, "store_state", no_pgvector)
-    with pytest.raises(StageFailure) as err:
-        await stage.run(pg, _job(v, lib), cast(StageContext, _Ctx()))
-    assert err.value.kind == "search_unavailable" and not err.value.retryable
-    with pytest.raises(StageFailure) as err:
-        await chapter_infer.run(pg, _job(v, lib), cast(StageContext, _Ctx()))
-    assert err.value.kind == "search_unavailable"
+    # no failed job: both succeed unchanged, nothing written
+    res = await stage.run(pg, _job(v, lib), cast(StageContext, _Ctx()))
+    assert res.outcome == "unchanged" and await _count(pg, v) == 0
+    res = await chapter_infer.run(pg, _job(v, lib), cast(StageContext, _Ctx()))
+    assert res.outcome == "unchanged" and res.summary["chapters"] == 0
 
 
 @pytest.mark.integration
@@ -560,3 +559,56 @@ async def test_prepare_grants_the_semantic_search_plugin_its_vectors_table(pg: D
     assert await pg.fetchval(
         "SELECT has_table_privilege($1, 'segment_embeddings', 'INSERT')", pgstore.PLUGIN_ROLE
     )
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_a_video_copied_in_part_is_indexed_again(pg: Database, emb: FakeEmbedder) -> None:
+    """The Chroma copy of a release before 43.5 committed page by page: one stopped part
+    way leaves a video with some of its vectors. Its fingerprint says not stored, and the
+    reconciler's one-time pass (while the state row says a copy was under way) queues it;
+    a whole video and one whose transcript is blank are left alone."""
+    import maktaba_pipeline.engine.reconcile as rec
+
+    graph = {s.name: s for s in GRAPH}
+    lib = await make_library(pg)
+    part, whole, blank = [await make_video(pg, lib) for _ in range(3)]
+    for vid, texts in ((part, ["أ", "ب", "ج"]), (whole, ["د", "ه"]), (blank, [""])):
+        tid = await _transcript(pg, vid, texts)
+        res = await enqueue_job(pg, subject_kind="video", subject_id=vid, stage="index")
+        await pg.execute(
+            "UPDATE processing_jobs SET state = 'done', outcome = 'changed',"
+            " finished_at = now() WHERE id = $1",
+            res.job_id,
+        )
+        segs = await _segments(pg, tid)
+        if vid == part:
+            segs = segs[:1]  # the copy stopped after the first page
+        if vid != blank:
+            await PgVectorStore(pg, "fake/e5").write_vectors(
+                video_id=vid,
+                library_id=lib,
+                chunk=segs,
+                vectors=emb.embed_passages([s.text for s in segs]),
+            )
+    subject = Subject(kind="video", id=part, library_id=lib)
+    before = await stage.input_fingerprint(pg, subject)
+    assert await _semantic_sweep(pg, graph) == 0  # every video has some row
+    rec._partial_cursor = ""
+    try:
+        assert await rec._partial_copy_sweep(pg, graph) == 0  # no copy was under way
+        assert rec._partial_cursor is None
+        rec._partial_cursor = ""
+        await pg.execute("UPDATE semantic_store_state SET copied_rows = 2, copy_done_at = NULL")
+        assert await rec._partial_copy_sweep(pg, graph) == 1
+        queued = await pg.fetch(
+            "SELECT subject_id FROM processing_jobs WHERE stage = 'index' AND state = 'pending'"
+        )
+        assert [str(r["subject_id"]) for r in queued] == [str(part)]
+        assert await rec._partial_copy_sweep(pg, graph) == 0  # the pass is over
+        assert rec._partial_cursor is None
+    finally:
+        rec._partial_cursor = ""
+    res = await stage.run(pg, _job(part, lib), cast(StageContext, _Ctx()))
+    assert res.input_hash != before and await _count(pg, part) == 3
+    assert await stage.input_fingerprint(pg, subject) == res.input_hash

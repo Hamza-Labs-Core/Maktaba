@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -28,8 +29,11 @@ import (
 //     many times the release started meanwhile. Its videos have no vectors in Postgres,
 //     count as not indexed, and are indexed again (the reconciler queues them).
 //
-// Nothing here can stop a start: a folder that cannot be read or deleted is said in the
-// log and left.
+// Only Chroma's own entries are deleted (chroma.sqlite3 and its -wal/-shm/-journal, and
+// the segment folders Chroma names by UUID), then the folder if that left it empty: a
+// MAKTABA_CHROMA_DIR an operator pointed at a folder holding other things (the state dir
+// itself) loses nothing else. Nothing here can stop a start: a folder that cannot be
+// read or deleted is said in the log and left.
 
 const (
 	// ChromaCopyDone is what the copy of the releases before 43.5 wrote (in the state dir)
@@ -54,9 +58,14 @@ func chromaKeep() time.Duration {
 }
 
 // ChromaDir is the install's Chroma folder: MAKTABA_CHROMA_DIR when the operator set
-// it, else <StateDir>/chroma.
+// it (a leading ~ is the home folder, as the pipeline read it), else <StateDir>/chroma.
 func ChromaDir(cfg config.Config) string {
 	if v := strings.TrimSpace(os.Getenv("MAKTABA_CHROMA_DIR")); v != "" {
+		if v == "~" || strings.HasPrefix(v, "~/") || strings.HasPrefix(v, `~\`) {
+			if home, err := os.UserHomeDir(); err == nil {
+				v = filepath.Join(home, v[1:])
+			}
+		}
 		return v
 	}
 	return filepath.Join(cfg.StateDir(), "chroma")
@@ -151,12 +160,43 @@ func chromaCopied(path string) (string, bool) {
 	return d.ChromaDir, true
 }
 
-// removeChroma deletes the Chroma folder and the copy's progress and retirement marks.
+// chromaEntry reports whether a folder entry is Chroma's own: its database (and the
+// database's side files) or a segment folder (named by a UUID).
+func chromaEntry(e os.DirEntry) bool {
+	name := e.Name()
+	if !e.IsDir() {
+		return name == "chroma.sqlite3" || strings.HasPrefix(name, "chroma.sqlite3-")
+	}
+	return uuidName.MatchString(name)
+}
+
+var uuidName = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+
+// removeChroma deletes Chroma's entries of the folder, the folder when nothing else is
+// left in it, and the copy's progress and retirement marks.
 func removeChroma(dir, state string, w io.Writer) {
 	start := time.Now()
-	if err := os.RemoveAll(dir); err != nil {
-		fmt.Fprintf(w, "[supervisor] the search index is in the database; deleting %s (Chroma) failed: %v\n", dir, err)
+	ents, err := os.ReadDir(dir)
+	if err != nil {
+		fmt.Fprintf(w, "[supervisor] the search index is in the database; reading %s (Chroma) failed: %v\n", dir, err)
 		return
+	}
+	kept := 0
+	for _, e := range ents {
+		if !chromaEntry(e) {
+			kept++
+			continue
+		}
+		if err := os.RemoveAll(filepath.Join(dir, e.Name())); err != nil {
+			fmt.Fprintf(w, "[supervisor] the search index is in the database; deleting %s (Chroma) failed: %v\n",
+				filepath.Join(dir, e.Name()), err)
+			return
+		}
+	}
+	if kept == 0 {
+		_ = os.Remove(dir)
+	} else {
+		fmt.Fprintf(w, "[supervisor] %s holds %d entries that are not Chroma's: they are kept\n", dir, kept)
 	}
 	_ = os.Remove(filepath.Join(state, ChromaCopyProgress))
 	_ = os.Remove(filepath.Join(state, ChromaRetired))

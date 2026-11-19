@@ -87,8 +87,11 @@ class FakeStore:
             del self.rows[k]
         return len(gone)
 
-    async def has_vectors(self, video_id: UUID | str) -> bool:
-        return any(r.video_id == str(video_id) for r in self.rows.values())
+    async def has_vectors(self, video_id: UUID | str, transcript_id: UUID | str) -> bool:
+        return any(
+            r.video_id == str(video_id) and str(r.segment.transcript_id) == str(transcript_id)
+            for r in self.rows.values()
+        )
 
 
 @pytest.fixture
@@ -267,7 +270,9 @@ async def test_without_pgvector_the_stage_is_unavailable(
     db: Database, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """SQLite, or a Postgres without pgvector: no semantic search (Chroma, which SQLite
-    homes used, was retired in story 43.5); the job fails for good, search is full-text."""
+    homes used, was retired in story 43.5). The job succeeds unchanged (no failed job,
+    nothing downstream), its fingerprint says so, and once pgvector is there the
+    fingerprint changes and the video is indexed."""
 
     async def not_ready(db: Any, *, fresh: bool = False) -> StoreState:
         return StoreState(ready=False)
@@ -276,9 +281,18 @@ async def test_without_pgvector_the_stage_is_unavailable(
     lib = await make_library(db)
     v = await make_video(db, lib)
     await _transcript(db, v, ["x"])
-    with pytest.raises(StageFailure) as err:
-        await stage.run(db, _job(v, lib), cast(StageContext, _Ctx()))
-    assert err.value.kind == "search_unavailable" and not err.value.retryable
+    subject = Subject(kind="video", id=v, library_id=lib)
+    res = await stage.run(db, _job(v, lib), cast(StageContext, _Ctx()))
+    assert res.outcome == "unchanged" and res.summary["segments"] == 0
+    off = await stage.input_fingerprint(db, subject)
+    assert res.input_hash == off
+
+    async def ready(db: Any, *, fresh: bool = False) -> StoreState:
+        return StoreState(ready=True)
+
+    monkeypatch.setattr(stage, "store_state", ready)
+    monkeypatch.setattr(stage, "PgVectorStore", FakeStore())
+    assert await stage.input_fingerprint(db, subject) != off  # pgvector came: index it
 
 
 @pytest.mark.asyncio

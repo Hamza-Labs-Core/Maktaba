@@ -1,5 +1,5 @@
 {
- "digest": "f6c53628b37957cc1d691cf4def39339d1e94f5987c88c9292148e1dfcf1f9f5",
+ "digest": "c4cb556e091bdfb570f109024f46a50de25cb449f02b34b4145e4b7877860ef5",
  "plugins": [
   {
    "digest": "90cee3b8a50fbfef9b0b1d9f12fbf0516ee5098ee7913c1d5133714f73b1b1b3",
@@ -6395,7 +6395,7 @@
    }
   },
   {
-   "digest": "c702da930de52a0db90b3742a96f89d8dde266d2611a78fce0e06e6328802fc1",
+   "digest": "606fea9fc3c31c2f846b50adde00089a097367265872a71a99f2f2425900cab0",
    "folder": "semantic-search",
    "id": "tv.maktaba.semantic-search",
    "manifest": "# tv.maktaba.semantic-search: a first-party plugin of Maktaba (Epic 54, README §15.2), wave 3\n# (story 54.30): the search index, chapters and topics, in the index runner.\nschema     = 1\nid         = \"tv.maktaba.semantic-search\"\nversion    = \"0.0.0-dev\"\nplugin_api = \"1.0\"\nmaktaba    = \">=0.0.0\"\nlicence    = \"AGPL-3.0-only\"\nruntime    = \"native-python\"\n\n[strings]\nname    = \"fp.semantic-search.name\"\nsummary = \"fp.semantic-search.summary\"\n\n[trusted]\nrunner    = \"index\"\ncomponent = \"search.semantic\"\ndb.read   = [\"libraries\", \"semantic_store_state\", \"transcript_segments\", \"transcripts\", \"videos\"]\ndb.write  = [\"chapters\", \"library_topics\", \"segment_embeddings\", \"video_embeddings\", \"video_topics\"]\nfiles.read  = [\"models\"]\n\n[[stage]]\nname         = \"index\"\nsubject      = \"video\"\nexport       = \"index\"\nversion      = 2\nlabel        = \"Search index\"\nsubject_kinds = [\"video\"]\npool         = \"cpu\"\nlane         = \"speech\"\nlane_order   = 5\nplacement    = \"home\"\nedges        = [{ to = \"chapter_infer\", map = \"same\" }]\nentry        = \"maktaba_fp_semantic_search.stages.index:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"chapter_infer\"\nsubject      = \"video\"\nexport       = \"chapter-infer\"\nversion      = 1\nlabel        = \"Chapters\"\nsubject_kinds = [\"video\"]\npool         = \"cpu\"\nlane         = \"speech\"\nlane_order   = 6\nplacement    = \"home\"\nedges        = [{ to = \"chapter_thumbs\", map = \"same\" }, { to = \"topic_assign\", map = \"same\" }]\nentry        = \"maktaba_fp_semantic_search.stages.chapter_infer:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"topic_assign\"\nsubject      = \"video\"\nexport       = \"topic-assign\"\nversion      = 1\nlabel        = \"Topics\"\nsubject_kinds = [\"video\"]\npool         = \"cpu\"\nlane         = \"speech\"\nlane_order   = 8\nedges        = [{ to = \"topic_recluster\", map = \"library_of\", when = \"always\" }]\nentry        = \"maktaba_fp_semantic_search.stages.topic_assign:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"topic_recluster\"\nsubject      = \"library\"\nexport       = \"topic-recluster\"\nversion      = 1\nlabel        = \"Library topics\"\nsubject_kinds = [\"library\"]\npool         = \"cpu\"\nlane         = \"speech\"\nlane_order   = 9\ndebounce_sec = 1800\ndebounce_max_sec = 21600\nentry        = \"maktaba_fp_semantic_search.stages.topic_recluster:IMPL\"\nfingerprint  = { input = true, output = false }\n",
@@ -6581,15 +6581,22 @@
      ]
     },
     {
+     "also": [
+      {
+       "arg": 2,
+       "scope": "transcript"
+      }
+     ],
      "mode": "read",
-     "name": "pgstore.has_vectors",
+     "name": "pgstore.has_vectors.2",
      "reads": [
-      "segment_embeddings"
+      "segment_embeddings",
+      "transcript_segments"
      ],
      "scope": "subject",
      "scope_arg": 1,
-     "sha256": "d8fc0c97571e5046d8e2897f88264cbcec50d8923fec59aa1cb71d7443e78608",
-     "text": "SELECT 1 FROM segment_embeddings WHERE video_id = $1::uuid LIMIT 1",
+     "sha256": "e83a9a84218f3028fa9d308b3e8d7a335ee1f5f3ed2c3a9d209a34e3c80ac312",
+     "text": "SELECT (SELECT count(*) FROM segment_embeddings e JOIN transcript_segments s ON s.id = e.segment_id WHERE e.video_id = $1::uuid AND s.transcript_id = $2::uuid) >= (SELECT count(*) FROM transcript_segments s WHERE s.transcript_id = $2::uuid AND btrim(s.text) <> '')",
      "writes": []
     },
     {

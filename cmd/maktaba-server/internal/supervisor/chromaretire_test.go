@@ -32,10 +32,10 @@ func copyMarker(t *testing.T, dir string) []byte {
 
 func makeChroma(t *testing.T, dir string) {
 	t.Helper()
-	if err := os.MkdirAll(filepath.Join(dir, "0b5e6f9c-segment"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(dir, "0b5e6f9c-1d2e-4f30-8a9b-0c1d2e3f4a5b"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	for _, f := range []string{"chroma.sqlite3", filepath.Join("0b5e6f9c-segment", "data_level0.bin")} {
+	for _, f := range []string{"chroma.sqlite3", filepath.Join("0b5e6f9c-1d2e-4f30-8a9b-0c1d2e3f4a5b", "data_level0.bin")} {
 		if err := os.WriteFile(filepath.Join(dir, f), []byte("x"), 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -226,4 +226,63 @@ func chromaKeepFor(v string) time.Duration {
 		}
 	}()
 	return chromaKeep()
+}
+
+// TestOnlyChromasOwnEntriesAreDeleted: a MAKTABA_CHROMA_DIR an operator pointed at a
+// folder that holds other things too (the state dir itself, say) loses only Chroma's
+// database and segment folders; the folder and the rest stay.
+func TestOnlyChromasOwnEntriesAreDeleted(t *testing.T) {
+	cfg, _ := chromaConfig(t)
+	dir := cfg.StateDir()
+	t.Setenv("MAKTABA_CHROMA_DIR", dir)
+	makeChroma(t, dir)
+	for _, f := range []string{"chroma.sqlite3-wal", "chroma.sqlite3-shm"} {
+		if err := os.WriteFile(filepath.Join(dir, f), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	keep := map[string]string{"postgres": "PG_VERSION", "backups": "pre.dump", "models": "m.bin"}
+	for d, f := range keep {
+		if err := os.MkdirAll(filepath.Join(dir, d), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, d, f), []byte("mine"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(dir, ChromaCopyDone), copyMarker(t, dir), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var log syncBuffer
+	if got := RetireChroma(cfg, &log); got != dir {
+		t.Fatalf("RetireChroma = %q", got)
+	}
+	waitFileGone(t, filepath.Join(dir, "chroma.sqlite3"), "Chroma's database")
+	waitChromaLog(t, &log, "deleted "+dir)
+	for _, gone := range []string{"chroma.sqlite3-wal", "chroma.sqlite3-shm", "0b5e6f9c-1d2e-4f30-8a9b-0c1d2e3f4a5b"} {
+		if exists(filepath.Join(dir, gone)) {
+			t.Errorf("%s (Chroma's) is still there", gone)
+		}
+	}
+	for d, f := range keep {
+		if !exists(filepath.Join(dir, d, f)) {
+			t.Errorf("%s/%s, not Chroma's, was deleted", d, f)
+		}
+	}
+	if !strings.Contains(log.String(), "not Chroma's: they are kept") {
+		t.Errorf("log: %q", log.String())
+	}
+}
+
+// TestAChromaDirUnderHomeIsExpanded: MAKTABA_CHROMA_DIR=~/x is the home folder's x, as
+// the pipeline read it.
+func TestAChromaDirUnderHomeIsExpanded(t *testing.T) {
+	cfg, _ := chromaConfig(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("MAKTABA_CHROMA_DIR", "~/vec")
+	if got, want := ChromaDir(cfg), filepath.Join(home, "vec"); got != want {
+		t.Fatalf("ChromaDir = %q, want %q", got, want)
+	}
 }

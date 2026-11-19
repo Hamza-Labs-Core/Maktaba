@@ -223,11 +223,19 @@ class PgVectorStore:
         except ValueError:
             return 0
 
-    async def has_vectors(self, video_id: UUID | str) -> bool:
-        row = await self.db.fetchrow(
-            "SELECT 1 FROM segment_embeddings WHERE video_id = $1::uuid LIMIT 1", str(video_id)
+    async def has_vectors(self, video_id: UUID | str, transcript_id: UUID | str) -> bool:
+        """Every non-blank segment of ``transcript_id`` has its vector: not only some (a
+        video the Chroma copy of a release before 43.5 moved in part, page by page)."""
+        got = await self.db.fetchval(
+            "SELECT (SELECT count(*) FROM segment_embeddings e"
+            " JOIN transcript_segments s ON s.id = e.segment_id"
+            " WHERE e.video_id = $1::uuid AND s.transcript_id = $2::uuid)"
+            " >= (SELECT count(*) FROM transcript_segments s"
+            " WHERE s.transcript_id = $2::uuid AND btrim(s.text) <> '')",
+            str(video_id),
+            str(transcript_id),
         )
-        return row is not None
+        return bool(got)
 
     async def video_vectors(
         self, video_id: UUID | str, transcript_id: UUID | str | None = None
