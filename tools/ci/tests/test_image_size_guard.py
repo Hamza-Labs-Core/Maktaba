@@ -109,3 +109,17 @@ def test_the_images_job_builds_the_four_images_and_runs_the_guard() -> None:
     ci = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
     assert ci["jobs"]["images"]["uses"] == "./.github/workflows/_images.yml"
     assert "images" in ci["jobs"]["ci-success"]["needs"]
+
+
+def test_the_images_job_measures_every_platform_the_release_pushes() -> None:
+    # a budget set from one platform's image holds on the other's too: the job builds and
+    # guards each platform release.yml's build-images pushes
+    release = yaml.safe_load((ROOT / ".github/workflows/release.yml").read_text())
+    build = next(s for s in release["jobs"]["build-images"]["steps"] if s.get("id") == "build")
+    pushed = sorted(build["with"]["platforms"].split(","))
+    wf = yaml.safe_load((ROOT / ".github/workflows/_images.yml").read_text())
+    job = wf["jobs"]["images"]
+    legs = job["strategy"]["matrix"]["include"]
+    assert sorted(leg["platform"] for leg in legs) == pushed
+    script = "\n".join(str(s.get("run", "")) for s in job["steps"])
+    assert "--platform linux/amd64" not in script, "the build takes the leg's platform"
