@@ -208,6 +208,9 @@ pub struct Inspected {
     /// The package's i18n words by language (54.16 C6).
     pub strings: BTreeMap<String, Value>,
     pub wasm_size: u64,
+    /// A native package of one of Maktaba's own plugins (runtime native-python, read in the
+    /// trusted mode, story 54.45 §2): no component, so no import audit; its shape instead.
+    pub native: bool,
     pub manifest: serde_json::Map<String, Value>,
     pub manifest_text: Vec<u8>,
     pub files_json: Vec<u8>,
@@ -232,9 +235,45 @@ impl Inspected {
             "audit": self.audit.as_ref().map(|r| json!({"code": r.code, "detail": r.detail})),
             "strings": self.strings,
             "wasm_size": self.wasm_size,
+            "native": self.native,
         })
         .to_string()
     }
+}
+
+/// Whether a manifest's id is one of Maktaba's own (tv.maktaba., not a community prefix).
+fn first_party_id(manifest_text: &[u8]) -> bool {
+    let id = maktaba_plugin_manifest::manifest_id(manifest_text);
+    id.starts_with("tv.maktaba.") && !id.starts_with("tv.maktaba.community.")
+}
+
+/// A native package's shape (story 54.45 §1): exactly manifest.toml, i18n/en.json,
+/// i18n/ar.json, statements.json and wheels/maktaba_fp_<name>-<version>-py3-none-any.whl,
+/// <name> its id's last label; None when it holds exactly those.
+fn native_shape<'a>(
+    manifest: &serde_json::Map<String, Value>,
+    listed: impl Iterator<Item = &'a String>,
+) -> Option<Refusal> {
+    let id = manifest.get("id").and_then(Value::as_str).unwrap_or("");
+    let version = manifest.get("version").and_then(Value::as_str).unwrap_or("");
+    let dist = format!("maktaba_fp_{}", id.trim_start_matches("tv.maktaba.").replace('-', "_"));
+    let want: BTreeSet<String> = ["manifest.toml", "i18n/en.json", "i18n/ar.json", "statements.json"]
+        .iter()
+        .map(|s| s.to_string())
+        .chain([format!("wheels/{dist}-{version}-py3-none-any.whl")])
+        .collect();
+    let got: BTreeSet<String> = listed.cloned().collect();
+    if got == want {
+        return None;
+    }
+    Some(Refusal {
+        code: "package_native_shape".into(),
+        detail: format!(
+            "a native package holds exactly {}; this one holds {}",
+            want.iter().cloned().collect::<Vec<_>>().join(", "),
+            got.iter().cloned().collect::<Vec<_>>().join(", ")
+        ),
+    })
 }
 
 /// Reads and checks a package in memory, by the home's rules.
@@ -350,27 +389,39 @@ pub fn inspect(packed: &[u8]) -> Result<Inspected, Refusal> {
         }
     }
     let lookup = |p: &str| -> Option<Vec<u8>> { bodies.get(p).cloned() };
-    let manifest = maktaba_plugin_manifest::validate(&manifest_text, Some(&lookup)).map_err(|errs| Refusal {
+    // one of Maktaba's own ids (not a community prefix) is read in the trusted mode, as the
+    // home reads Maktaba's manifests (story 54.45 §2); who may submit one is the store's C2
+    let first_party = first_party_id(&manifest_text);
+    let read = if first_party { maktaba_plugin_manifest::validate_trusted } else { maktaba_plugin_manifest::validate };
+    let manifest = read(&manifest_text, Some(&lookup)).map_err(|errs| Refusal {
         code: errs[0].code.clone(),
         detail: errs.iter().map(|e| e.to_string()).collect::<Vec<_>>().join("; "),
     })?;
-    let files = listed.into_iter().map(|(p, (s, n))| (p, s, n)).collect();
-    // C4: the host's own audit on the component's names
-    let wasm = bodies.get("plugin.wasm").cloned().unwrap_or_default();
+    let native = first_party && manifest.get("runtime").and_then(Value::as_str) == Some("native-python");
     let declared: Vec<String> = ["required", "optional"]
         .iter()
         .flat_map(|k| manifest["capabilities"][*k].as_array().cloned().unwrap_or_default())
         .filter_map(|v| v.as_str().map(str::to_string))
         .collect();
-    let (imports, exports, audit) = match maktaba_plugin_audit::component_names(&wasm) {
-        Ok((i, e)) => {
-            let a = maktaba_plugin_audit::audit(&i, &e, &declared)
-                .err()
-                .map(|e| Refusal { code: e.code.into(), detail: e.detail });
-            (i, e, a)
+    let wasm = bodies.get("plugin.wasm").cloned().unwrap_or_default();
+    let (imports, exports, audit) = if native {
+        // no component: the package holds exactly its manifest, strings, statements and one
+        // wheel of its own at its version (as tools/plugins/build.py writes it); the home
+        // checks the rest against its own server (fppackage.CheckStore)
+        (vec![], vec![], native_shape(&manifest, listed.keys()))
+    } else {
+        // C4: the host's own audit on the component's names
+        match maktaba_plugin_audit::component_names(&wasm) {
+            Ok((i, e)) => {
+                let a = maktaba_plugin_audit::audit(&i, &e, &declared)
+                    .err()
+                    .map(|e| Refusal { code: e.code.into(), detail: e.detail });
+                (i, e, a)
+            }
+            Err(e) => (vec![], vec![], Some(Refusal { code: e.code.into(), detail: e.detail })),
         }
-        Err(e) => (vec![], vec![], Some(Refusal { code: e.code.into(), detail: e.detail })),
     };
+    let files = listed.into_iter().map(|(p, (s, n))| (p, s, n)).collect();
     let mut strings = BTreeMap::new();
     for lang in ["en", "ar"] {
         if let Some(b) = bodies.get(&format!("i18n/{lang}.json")) {
@@ -384,6 +435,7 @@ pub fn inspect(packed: &[u8]) -> Result<Inspected, Refusal> {
         audit,
         strings,
         wasm_size,
+        native,
         manifest,
         manifest_text,
         files_json,
@@ -555,5 +607,46 @@ mod tests {
         let e = vec![Entry { name: name.clone(), kind: b'0', body: b"hi".to_vec() }];
         let back = read_tar(&write_tar(&e)).unwrap();
         assert_eq!((back[0].name.as_str(), back[0].body.as_slice()), (name.as_str(), &b"hi"[..]));
+    }
+
+    /// Story 54.45 §2: a native package of one of Maktaba's own plugins is read in the
+    /// trusted mode, with no component to audit; its shape is its audit.
+    #[test]
+    fn a_native_maktaba_package_is_read_trusted() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../plugins/first-party/thumbnails");
+        let manifest = std::fs::read_to_string(root.join("manifest.toml"))
+            .unwrap()
+            .replacen("version    = \"0.0.0-dev\"", "version    = \"0.9.0\"", 1)
+            .replacen("maktaba    = \">=0.0.0\"", "maktaba    = \"=0.9.0\"", 1);
+        assert!(manifest.contains("\"0.9.0\"") && manifest.contains("\"=0.9.0\""), "the manifest's lines moved");
+        let en = std::fs::read(root.join("i18n/en.json")).unwrap();
+        let ar = std::fs::read(root.join("i18n/ar.json")).unwrap();
+        let wheel = b"PK not really".to_vec();
+        let files: Vec<(&str, &[u8])> = vec![
+            ("i18n/ar.json", &ar),
+            ("i18n/en.json", &en),
+            ("manifest.toml", manifest.as_bytes()),
+            ("statements.json", b"[]"),
+            ("wheels/maktaba_fp_thumbnails-0.9.0-py3-none-any.whl", &wheel),
+        ];
+        let i = inspect(&pkg(&files, &[])).unwrap();
+        assert!(i.native, "not read as a native package");
+        assert!(i.audit.is_none(), "{:?}", i.audit.map(|r| r.detail));
+        assert_eq!(i.manifest["id"], "tv.maktaba.thumbnails");
+        // a file more: its shape refuses it
+        let mut more = files.clone();
+        more.push(("run.sh", b"#!/bin/sh"));
+        let j = inspect(&pkg(&more, &[])).unwrap();
+        assert_eq!(j.audit.as_ref().map(|r| r.code.as_str()), Some("package_native_shape"));
+        // a wheel named for another version: refused the same way
+        let mut other = files.clone();
+        other[4].0 = "wheels/maktaba_fp_thumbnails-0.8.9-py3-none-any.whl";
+        let k = inspect(&pkg(&other, &[])).unwrap();
+        assert_eq!(k.audit.as_ref().map(|r| r.code.as_str()), Some("package_native_shape"));
+        // the same manifest under a third-party id is not read trusted: its trusted keys refused
+        let third = manifest.replacen("\"tv.maktaba.thumbnails\"", "\"dev.example.thumbnails\"", 1);
+        let mut t = files.clone();
+        t[2].1 = third.as_bytes();
+        assert_eq!(inspect(&pkg(&t, &[])).err().unwrap().code, "plugin_trusted_field");
     }
 }

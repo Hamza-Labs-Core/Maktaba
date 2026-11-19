@@ -40,9 +40,6 @@ Today `[trusted]` counts when the package's `files.json` digest is in the runnin
 
 ## As built
 
-Part 1 is the home's rule and the packages; part 2, the store's Maktaba publisher, follows in
-its own pull request.
-
 - **One package per plugin but core's.** `tools/plugins/build.py` leaves out a plugin whose
   `[trusted]` component is not switchable in the catalog (`tv.maktaba.core-media`, for
   `core.pipeline`): core is not a plugin. The release check (`fp-packages`) refuses a core
@@ -74,8 +71,25 @@ its own pull request.
   `api/internal/plugins/firstparty` into `shared/plugins/fppackage`. The release's own check
   and the home's store check now run the same code, and the install path (54.46, in the
   supervisor) can call it.
-- **Not yet:** the store's Maktaba publisher and its checks (§2, part 2), and a package
-  installed through the install path with parity, which needs 54.46.
+- **The store's publisher, §2.** A store admin sets the one Maktaba publisher account
+  (`POST /v1/admin/maktaba-publisher {account}`, passkey confirmed, audited). The account gets
+  the prefix `tv.maktaba` of kind `maktaba` (catalog migration `0006`), which is never claimed
+  and is held by one account only (`409 maktaba_publisher_taken`). `prefixCovers` gates both
+  a submission's start and check C2. Maktaba's own ids (`tv.maktaba.*`, community prefixes
+  aside) are covered only by that prefix, and that prefix covers no community id.
+- **The store's checks of a native package.** The store reads a Maktaba id's manifest in the
+  trusted mode. The Rust validator gained `validate_trusted`, rule for rule with Go's
+  `ValidateTrusted`, and every first-party manifest of the repo is valid only in that mode. A
+  `native-python` package of one of those ids has no component, so the checks change:
+  - C4 checks its shape: exactly the manifest, the two strings files, `statements.json` and its
+    wheel named for its version (`package_native_shape`);
+  - C3 takes its exact `=<version>` as an upper bound;
+  - C5 is skipped, since there are no imports;
+  - C7's static rules scan the wheel;
+  - C8 and C10 run nothing, and a person reviews it.
+  
+  The home then holds it to its own server (§3).
+- **Not yet:** a package installed through the install path with parity, which needs 54.46.
 - **Tests.**
   - `shared/plugins/fppackage/store_test.go`: the trusted case at both levels, and every
     refusal. These cover no store signature, no store keys, another developer's key, an empty
@@ -86,4 +100,14 @@ its own pull request.
     and countersigned is trusted by `CheckStore`, its `files.json` and the release's check
     unchanged. Core is never packaged, and a core package in a release is refused.
   - `fp-sign`'s and `mkplugin -developer-sig`'s own tests, and `test_build_packages.py`.
+  - `store/test/workers/maktaba.test.ts` covers the publisher and the submissions:
+    - only a store admin with a passkey sets the publisher, only for an active developer and
+      only once, and `tv.maktaba` cannot be claimed;
+    - `prefixCovers`'s cases;
+    - another account's `tv.maktaba.*` submission is refused at its start;
+    - the publisher's native package passes C2 to C4, skips C5 and C8, and goes to a person;
+    - a file more is blocked at C4;
+    - the publisher cannot enter a community prefix.
+  - The Rust tests: every first-party manifest is valid only trusted, the trusted mode is no
+    wider than Go's, and a native package is read trusted, its shape checked.
 

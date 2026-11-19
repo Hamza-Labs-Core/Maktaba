@@ -600,3 +600,9 @@ refused with `plugin_trusted_unsigned`, and nothing of it runs.
 
 A Maktaba plugin's database statements change only with a server release, so a store package
 can never bring SQL the server did not ship.
+
+In the store, only Maktaba's publisher account, which a store admin sets, may submit a
+`tv.maktaba.*` id; the community prefixes `tv.maktaba.community.*` stay open to everyone. The
+store reads such a package's manifest in the trusted mode. A native package has no component to
+audit or run, so the store checks that it holds exactly its manifest, strings, statements and
+wheel, and a person reviews every version.

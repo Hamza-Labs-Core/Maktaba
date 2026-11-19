@@ -6215,6 +6215,7 @@
       ],
       "related": [
         "epic-54-plugins",
+        "ep-get-workers",
         "ep-get-plugins"
       ],
       "files": {
@@ -6223,6 +6224,7 @@
         "mockups": []
       },
       "api_endpoints": [
+        "GET /workers",
         "GET /plugins"
       ],
       "db_tables": [],
