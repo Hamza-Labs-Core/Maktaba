@@ -90,6 +90,16 @@ fi
 # bundled server runs it (a home's machines' slots need it to start at all)
 if [ -n "$pg16" ] && [ -n "$old" ] && [ -f "$old/PG_VERSION" ]; then
     new="$scratch/upgraded"
+    # a row of its own in the old cluster, to find again after the upgrade
+    oport=$((port + 3))
+    if "$pg16/pg_ctl$x" -D "$old" -l "$scratch/pg16.log" -w -t 60 -o "-p $oport -k '' -c listen_addresses=127.0.0.1" start >/dev/null 2>&1 &&
+        "$pg16/psql$x" -X -h 127.0.0.1 -p "$oport" -U maktaba -d postgres -Atq -v ON_ERROR_STOP=1 \
+            -c "CREATE TABLE upgrade_probe (id int PRIMARY KEY, note text); INSERT INTO upgrade_probe VALUES (16, 'made on 16');" >/dev/null 2>&1 &&
+        "$pg16/pg_ctl$x" -D "$old" -m fast -w stop >/dev/null 2>&1; then
+        ok "a row written on PostgreSQL 16 before the upgrade"
+    else
+        fail "the PostgreSQL 16 cluster to upgrade: $(tail -3 "$scratch/pg16.log" 2>/dev/null)"
+    fi
     sums=--no-data-checksums
     control="$("$pg16/pg_controldata$x" "$old" 2>/dev/null || true)"
     if grep -Eq 'Data page checksum version: *[1-9]' <<<"$control"; then sums=--data-checksums; fi
@@ -109,8 +119,8 @@ if [ -n "$pg16" ] && [ -n "$old" ] && [ -f "$old/PG_VERSION" ]; then
             >"$scratch/pg_upgrade.log" 2>&1; then
         ok "pg_upgrade 16 -> 18 ($(grep -c . "$scratch/pg_upgrade.log") lines of output)"
         if "$pg18/pg_ctl$x" -D "$new" -l "$scratch/pg-up.log" -w -t 60 -o "$flags" start >/dev/null 2>&1; then
-            out="$(psql18 -d postgres -c "SELECT string_agg(datname, ',' ORDER BY datname) FROM pg_database WHERE NOT datistemplate;" 2>&1)"
-            case "$out" in *maktaba_check*) ok "the upgraded cluster has its databases: $out" ;; *) fail "the upgraded cluster's databases: $out" ;; esac
+            out="$(psql18 -d postgres -c "SELECT note FROM upgrade_probe WHERE id = 16;" 2>&1)"
+            case "$out" in "made on 16") ok "the upgraded cluster has the row written on 16" ;; *) fail "the row written on 16, after the upgrade: $out" ;; esac
             "$pg18/pg_ctl$x" -D "$new" -m fast -w stop >/dev/null 2>&1 || fail "pg_ctl stop (the upgraded cluster)"
         else
             fail "the upgraded cluster does not start: $(tail -3 "$scratch/pg-up.log" 2>/dev/null)"
