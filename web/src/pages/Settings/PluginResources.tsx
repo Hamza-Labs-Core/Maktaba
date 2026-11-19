@@ -1,8 +1,8 @@
-// Story 54.44: what a plugin uses, the same for every plugin. The memory is its process's
-// as the machine's supervisor measured it. A runner group, the pipeline worker and the
-// plugin host each run several plugins: the page says so and shows the whole process's
-// number with the plugins that share it, never a share made up for one of them. CPU is
-// not measured per process yet, and the page says that too.
+// Story 54.44: what a plugin uses, the same for every plugin. The memory and processor use
+// are its process's as the machine's supervisor measured them (story 54.52: processor use
+// is the share of one core over the last five minutes). A runner group, the pipeline worker
+// and the plugin host each run several plugins: the page says so and shows the whole
+// process's numbers with the plugins that share it, never a share made up for one of them.
 import { ProgressBar } from "@ds/components/ProgressBar/ProgressBar";
 import { bidiIsolate, useI18n } from "../../lib/i18n";
 import type { Plugin, PluginDetail, ProcessUse } from "../../lib/pluginsApi";
@@ -95,6 +95,7 @@ export function ResourcesSection({
               <th>{t("plugins.resources.process")}</th>
               <th>{t("plugins.resources.machine")}</th>
               <th>{t("plugins.resources.memory")}</th>
+              <th>{t("plugins.resources.cpu")}</th>
               <th>{t("plugins.resources.shared_with")}</th>
             </tr>
           </thead>
@@ -113,6 +114,13 @@ export function ResourcesSection({
                       : u.scope === "component"
                         ? t("plugins.resources.mb_component", { mb: n(u.rss_mb) })
                         : t("plugins.resources.mb", { mb: n(u.rss_mb) })}
+                  </td>
+                  <td>
+                    {u.cpu_pct === undefined
+                      ? t("plugins.resources.not_measured")
+                      : (u.cpu_scope ?? u.scope) === "component"
+                        ? t("plugins.resources.cpu_pct_component", { pct: n(u.cpu_pct) })
+                        : t("plugins.resources.cpu_pct", { pct: n(u.cpu_pct) })}
                   </td>
                   <td>{others || t("plugins.resources.not_shared")}</td>
                 </tr>
@@ -137,7 +145,6 @@ export function ResourcesSection({
           />
         </div>
       )}
-      <p className="mkt-plugins__hint">{t("plugins.resources.cpu_note")}</p>
     </section>
   );
 }

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"os"
 	"testing"
 	"time"
 
@@ -70,5 +71,22 @@ func TestStartComponentsWithoutReconciler(t *testing.T) {
 	case got := <-ran:
 		t.Fatalf("%s ran", got)
 	case <-time.After(50 * time.Millisecond):
+	}
+}
+
+// The reconciler the server starts reads its processes' memory and processor time (stories
+// 51.14, 54.52): both samplers are the machine's own and read this test's process.
+func TestTheReconcilerMeasuresMemoryAndProcessor(t *testing.T) {
+	rec := &supervisor.Reconciler{}
+	measureProcesses(rec)
+	if rec.RSS == nil || rec.CPU == nil {
+		t.Fatal("a sampler is missing")
+	}
+	pid := os.Getpid()
+	if rec.RSS([]int{pid})[pid] == 0 {
+		t.Fatal("no memory read for this process")
+	}
+	if _, ok := rec.CPU([]int{pid})[pid]; !ok {
+		t.Fatal("no processor time read for this process")
 	}
 }
