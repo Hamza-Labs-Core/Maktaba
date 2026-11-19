@@ -142,11 +142,14 @@ jobs:
         run: |
           set -euo pipefail
           tools/rehearsal/postgres18.sh --out "$RUNNER_TEMP/pg18"
-          d="$RUNNER_TEMP/pg55434"
+          # a port free now (the job's earlier steps leave servers on fixed ones)
+          port="$(python3 -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')"
+          echo "PG18_PORT=$port" >> "$GITHUB_ENV"
+          d="$RUNNER_TEMP/pg-home18"
           "$RUNNER_TEMP/pg18/bin/initdb" -D "$d" -U postgres --auth=trust -E UTF8 --locale=C >/dev/null
           { echo 'host all /^maktaba_node_ 127.0.0.1/32 scram-sha-256'; cat "$d/pg_hba.conf"; } > "$d/pg_hba.new"
           mv "$d/pg_hba.new" "$d/pg_hba.conf"
-          "$RUNNER_TEMP/pg18/bin/pg_ctl" -D "$d" -l "$RUNNER_TEMP/pg55434.log" -w -o "-p 55434 -k $RUNNER_TEMP \
+          "$RUNNER_TEMP/pg18/bin/pg_ctl" -D "$d" -l "$RUNNER_TEMP/pg-home18.log" -w -o "-p $port -k $RUNNER_TEMP \
             -c listen_addresses=127.0.0.1 -c wal_level=logical -c max_replication_slots=40 \
             -c max_wal_senders=40 -c shared_preload_libraries=pg_textsearch" start
 
@@ -154,7 +157,6 @@ jobs:
         working-directory: api
         env:
           MAKTABA_E2E_TWO_MACHINE: "1"
-          MAKTABA_TEST_PG_URL: postgres://postgres@127.0.0.1:55434/postgres?sslmode=disable
           MAKTABA_E2E_LOG_DIR: ${{ runner.temp }}/e2e-logs-pg18
         run: |
           set -euo pipefail
@@ -162,6 +164,7 @@ jobs:
             major="$("$node/bin/postgres" --version | awk '{print $NF}' | cut -d. -f1)"
             logs="$RUNNER_TEMP/e2e-logs-pg18/node-$major"
             echo "::group::the machine's copy on PostgreSQL $major"
+            MAKTABA_TEST_PG_URL="postgres://postgres@127.0.0.1:$PG18_PORT/postgres?sslmode=disable" \
             MAKTABA_E2E_LOG_ALWAYS=1 MAKTABA_E2E_LOG_DIR="$logs" MAKTABA_TEST_PG_BIN="$node" \
               go test -count=1 -timeout 30m -run '^TestTwoMachinesOnePC$' -v . | tee "$RUNNER_TEMP/e2e-pg18.out"
             echo "::endgroup::"
