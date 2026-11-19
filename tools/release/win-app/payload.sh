@@ -412,8 +412,9 @@ done
 sigs18="$(SIGN_FILES="$(win "${msvc18[@]}" | tr '\n' ';')" powershell.exe -NoProfile -NonInteractive -Command \
     '$env:SIGN_FILES.TrimEnd(";") -split ";" | ForEach-Object { $s = Get-AuthenticodeSignature -LiteralPath $_; "{0}|{1}|{2}|{3}" -f $s.Status, $s.SignerCertificate.Subject, (Get-Item -LiteralPath $_).VersionInfo.FileVersion, (Split-Path -Leaf $_) }' | tr -d '\r')"
 while IFS='|' read -r status subject version name; do
-    if [ "$status" != Valid ] || [[ "$subject" != *"O=Microsoft Corporation"* ]] || [ "$version" != "$MSVC_RUNTIME_VERSION" ]; then
-        die "$name beside PostgreSQL $POSTGRES18_VERSION is not the Microsoft-signed Visual C++ runtime $MSVC_RUNTIME_VERSION ($status, $subject, $version)"
+    # the same release as 16's set (MSVC_VERSION, chosen above from pins.env's)
+    if [ "$status" != Valid ] || [[ "$subject" != *"O=Microsoft Corporation"* ]] || [ "$version" != "$MSVC_VERSION" ]; then
+        die "$name beside PostgreSQL $POSTGRES18_VERSION is not the Microsoft-signed Visual C++ runtime $MSVC_VERSION ($status, $subject, $version)"
     fi
 done <<<"$sigs18"
 log "PostgreSQL $POSTGRES18_VERSION: ${#pg18_dlls[@]} DLLs beside it"
