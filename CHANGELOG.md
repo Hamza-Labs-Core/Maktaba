@@ -1061,12 +1061,11 @@ build fails when the two differ.
 
 ### Added
 
-- **Each release carries Maktaba's plugins as signed packages (Epic 54, story 54.27).** Every
-  release now has one `tv.maktaba.<name>-<version>.mkplugin` for each of Maktaba's own plugins,
-  with its `files.json` beside it, both listed in the signed `checksums.txt`. The release
-  checks each package with the same trust rule the server uses before it publishes. Homes keep
-  running the plugins from the pipeline wheel as before; these packages are what the store and
-  offline installs will use.
+- **The Plugins page shows each program's processor use (Epic 54, story 54.52).** Beside its
+  memory, each program that runs a plugin now shows the share of one processor core it used over
+  the last five minutes, measured on macOS, Linux and Windows. A program several plugins share
+  shows the whole program's number with the plugins that share it. The note saying processor use
+  is not measured is gone.
 
 - **Watch a broadcast on Android phones, tablets and TVs (Epic 50, story 50.27).** Maktaba
   Player on Android and Maktaba TV on Android TV, Google TV and Fire TV now have **Watch a
@@ -3199,6 +3198,13 @@ build fails when the two differ.
   everywhere but them, and Maktaba's own deny list applies to every channel; a viewer outside
   sees that the channel isn't available in their country. An item that loses its permission
   plays the "Not available online" card until the schedule is rebuilt.
+
+- **Each release carries Maktaba's plugins as signed packages (Epic 54, story 54.27).** Every
+  release now has one `tv.maktaba.<name>-<version>.mkplugin` for each of Maktaba's own plugins,
+  with its `files.json` beside it, both listed in the signed `checksums.txt`. The release
+  checks each package with the same trust rule the server uses before it publishes. Homes keep
+  running the plugins from the pipeline wheel as before; these packages are what the store and
+  offline installs will use.
 
 ### Changed
 
