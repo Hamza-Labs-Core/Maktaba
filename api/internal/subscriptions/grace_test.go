@@ -145,3 +145,65 @@ func TestARemovedLicenseKeepsItsGraceAcrossARestart(t *testing.T) {
 		t.Fatalf("after a restart the downgrade's grace is gone: %+v", s2.State())
 	}
 }
+
+// The cloud's plan license keeps its id from plan to plan (cloud-<server>): Pro → Home on
+// the same id is a downgrade all the same, kept in its grace, across a restart too.
+func TestACloudDowngradeOnTheSameIDKeepsItsGrace(t *testing.T) {
+	ctx := context.Background()
+	pub, priv := newKey(t)
+	v := &Verifier{PublicKey: pub}
+	db := &statefulDB{}
+	s, _ := NewPersistentStore(ctx, db, v)
+	now := time.Now().UTC()
+	applyLicense(t, s, v, priv, LicenseInner{LicenseID: "cloud-srv-1", Tier: TierPro, IssuedAt: now.Add(-time.Hour),
+		ExpiresAt: now.Add(31 * 24 * time.Hour), ServerID: "srv-1"})
+	applyLicense(t, s, v, priv, LicenseInner{LicenseID: "cloud-srv-1", Tier: TierHome, Seats: 4, IssuedAt: now,
+		ExpiresAt: now.Add(31 * 24 * time.Hour), ServerID: "srv-1"})
+	if !s.Allows(FeatureFederation) || s.State().GraceUntil.IsZero() || s.State().Status != StatusActive {
+		t.Fatalf("a same-id downgrade: %+v", s.State())
+	}
+	// the daily renewal of Home on the same id: nothing new is kept, the grace stands
+	applyLicense(t, s, v, priv, LicenseInner{LicenseID: "cloud-srv-1", Tier: TierHome, Seats: 4, IssuedAt: now.Add(time.Minute),
+		ExpiresAt: now.Add(31 * 24 * time.Hour), ServerID: "srv-1"})
+	if !s.Allows(FeatureFederation) {
+		t.Fatal("the renewal after a same-id downgrade ended its grace")
+	}
+	s2, err := NewPersistentStore(ctx, db, v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !s2.Allows(FeatureFederation) || s2.TierName() != "pro" {
+		t.Fatalf("after a restart the same-id downgrade's grace is gone: %+v", s2.State())
+	}
+}
+
+// A license the cloud revoked (fraud) and then replaced, or removed, is no grace after a
+// restart either: its row's end is not "now".
+func TestARevokedLicenseReplacedIsNoGraceAfterARestart(t *testing.T) {
+	ctx := context.Background()
+	pub, priv := newKey(t)
+	v := &Verifier{PublicKey: pub}
+	now := time.Now().UTC()
+	for _, then := range []string{"replaced", "removed"} {
+		db := &statefulDB{}
+		s, _ := NewPersistentStore(ctx, db, v)
+		applyLicense(t, s, v, priv, LicenseInner{LicenseID: "pro-fraud", Tier: TierPro, IssuedAt: now.Add(-time.Hour),
+			ExpiresAt: now.Add(31 * 24 * time.Hour)})
+		if err := s.Lock(ctx, LockRevoked); err != nil {
+			t.Fatal(err)
+		}
+		if then == "replaced" {
+			applyLicense(t, s, v, priv, LicenseInner{LicenseID: "home-ok", Tier: TierHome, Seats: 4, IssuedAt: now,
+				ExpiresAt: now.Add(31 * 24 * time.Hour)})
+		} else if err := s.Revoke(ctx); err != nil {
+			t.Fatal(err)
+		}
+		if s.Allows(FeatureFederation) {
+			t.Fatalf("%s: the revoked license's plan is granted", then)
+		}
+		s2, _ := NewPersistentStore(ctx, db, v)
+		if s2.Allows(FeatureFederation) {
+			t.Fatalf("%s, then a restart: the revoked license's plan is granted again", then)
+		}
+	}
+}

@@ -63,6 +63,11 @@ type LicensePersistence interface {
 // implements it; a backend without it keeps them in memory only.
 type EndedPersistence interface {
 	LoadEnded(ctx context.Context, since time.Time) ([]persistedLicense, error)
+	// SaveEnded keeps a license that ended now as a row of its own (a plan license whose
+	// row the next one, of the same id, overwrites).
+	SaveEnded(ctx context.Context, rec persistedLicense) error
+	// DropGrace makes a revoked license's row no grace: its end is not "now".
+	DropGrace(ctx context.Context, licenseID string) error
 }
 
 // StatePersistence keeps what the license server last said (slot
@@ -288,6 +293,28 @@ func (p *sqlLicenseStore) LoadActive(ctx context.Context) (*persistedLicense, er
 		}
 	}
 	return &rec, nil
+}
+
+func (p *sqlLicenseStore) SaveEnded(ctx context.Context, rec persistedLicense) error {
+	feats, err := json.Marshal(rec.Features)
+	if err != nil || rec.Features == nil {
+		feats = []byte("[]")
+	}
+	// a row id of its own (the signed license inside keeps its id): the license and when
+	// it was issued
+	id := rec.LicenseID + "@" + rec.IssuedAt.UTC().Format(time.RFC3339Nano)
+	_, err = p.db.ExecContext(ctx,
+		`INSERT INTO licenses (license_id, tier, seats, issued_at, expires_at, revoked_at, raw_jwt, features)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT (license_id) DO NOTHING`,
+		id, string(rec.Tier), rec.Seats, rec.IssuedAt, rec.ExpiresAt, time.Now().UTC(), rec.RawJWT, string(feats))
+	return err
+}
+
+func (p *sqlLicenseStore) DropGrace(ctx context.Context, licenseID string) error {
+	_, err := p.db.ExecContext(ctx,
+		`UPDATE licenses SET revoked_at = $2 WHERE license_id = $1 AND revoked_at IS NOT NULL`,
+		licenseID, time.Unix(0, 0).UTC())
+	return err
 }
 
 func (p *sqlLicenseStore) LoadEnded(ctx context.Context, since time.Time) ([]persistedLicense, error) {

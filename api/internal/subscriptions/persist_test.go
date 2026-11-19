@@ -228,6 +228,24 @@ func (f *fakeLicenseDB) LoadActive(_ context.Context) (*persistedLicense, error)
 	return nil, nil
 }
 
+func (f *fakeLicenseDB) SaveEnded(_ context.Context, rec persistedLicense) error {
+	now := time.Now().UTC()
+	rec.RevokedAt = &now
+	rec.LicenseID += "@" + rec.IssuedAt.UTC().Format(time.RFC3339Nano)
+	f.rows = append(f.rows, rec)
+	return nil
+}
+
+func (f *fakeLicenseDB) DropGrace(_ context.Context, id string) error {
+	old := time.Unix(0, 0).UTC()
+	for i := range f.rows {
+		if f.rows[i].LicenseID == id && f.rows[i].RevokedAt != nil {
+			f.rows[i].RevokedAt = &old
+		}
+	}
+	return nil
+}
+
 func (f *fakeLicenseDB) LoadEnded(_ context.Context, since time.Time) ([]persistedLicense, error) {
 	var out []persistedLicense
 	for _, r := range f.rows {

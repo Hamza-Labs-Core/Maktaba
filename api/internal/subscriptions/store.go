@@ -269,7 +269,7 @@ func merge(parts []*Entitlements) *Entitlements {
 // A revoked license is not kept. Callers hold s.mu.
 func (s *Store) retireLocked() {
 	l := s.license
-	if l == nil || s.lockReason == LockRevoked || s.revoked[l.LicenseID] {
+	if l == nil || s.lockedLocked() {
 		return
 	}
 	end := s.nowLocked()
@@ -279,12 +279,18 @@ func (s *Store) retireLocked() {
 	s.keepEndedLocked(l, end.Add(Grace))
 }
 
+// lockedLocked: the applied license is revoked (the cloud's lock, or the list). Callers
+// hold s.mu.
+func (s *Store) lockedLocked() bool {
+	return s.license != nil && (s.lockReason == LockRevoked || s.revoked[s.license.LicenseID])
+}
+
 // keepEndedLocked records an ended license (dropping those whose grace is over).
 func (s *Store) keepEndedLocked(e *Entitlements, until time.Time) {
 	now := s.nowLocked()
 	kept := s.previous[:0]
 	for _, p := range s.previous {
-		if now.Before(p.until) && p.ent.LicenseID != e.LicenseID {
+		if now.Before(p.until) && (p.ent.LicenseID != e.LicenseID || !p.ent.IssuedAt.Equal(e.IssuedAt)) {
 			kept = append(kept, p)
 		}
 	}
@@ -365,13 +371,32 @@ func (s *Store) TierName() string {
 // durably recording it as the sole active license. Applying a license
 // clears a revocation lock: a revoked id stays refused by the list.
 func (s *Store) SetLicense(ctx context.Context, lic *License, ent *Entitlements) error {
+	s.mu.RLock()
+	old, oldRaw, locked := s.license, s.raw, s.lockedLocked()
+	s.mu.RUnlock()
+	// a plan license keeps its id from plan to plan (the cloud's cloud-<server>): one that
+	// now grants less is a downgrade all the same, kept in its grace
+	sameIDDown := old != nil && ent != nil && old.LicenseID == ent.LicenseID && !locked && addsTo(ent, old)
+	ep, _ := s.persist.(EndedPersistence)
+	if sameIDDown && ep != nil && oldRaw != nil {
+		// its row is about to be overwritten: the ended one is kept as a row of its own
+		if err := ep.SaveEnded(ctx, recordOf(oldRaw)); err != nil {
+			return fmt.Errorf("subscriptions: persist the ended license: %w", err)
+		}
+	}
 	if s.persist != nil {
 		if err := s.persist.SaveActive(ctx, recordOf(lic)); err != nil {
 			return fmt.Errorf("subscriptions: persist license: %w", err)
 		}
 	}
+	if locked && ep != nil && old != nil && (ent == nil || old.LicenseID != ent.LicenseID) {
+		// a revoked license replaced: its row's end is no grace after a restart
+		if err := ep.DropGrace(ctx, old.LicenseID); err != nil {
+			return fmt.Errorf("subscriptions: persist the revoked license: %w", err)
+		}
+	}
 	s.mu.Lock()
-	if s.license == nil || ent == nil || s.license.LicenseID != ent.LicenseID {
+	if old == nil || ent == nil || old.LicenseID != ent.LicenseID || sameIDDown {
 		s.retireLocked()
 	}
 	s.license, s.raw, s.lockReason = ent, lic, ""
@@ -428,9 +453,17 @@ func (s *Store) ReloadActive(ctx context.Context, v *Verifier) (bool, error) {
 // granted keeps working for Grace from its end (story 16.2). With no
 // persistence backend it is equivalent to Set(nil).
 func (s *Store) Revoke(ctx context.Context) error {
+	s.mu.RLock()
+	old, locked := s.license, s.lockedLocked()
+	s.mu.RUnlock()
 	if s.persist != nil {
 		if err := s.persist.RevokeActive(ctx); err != nil {
 			return fmt.Errorf("subscriptions: persist revoke: %w", err)
+		}
+	}
+	if ep, ok := s.persist.(EndedPersistence); ok && locked && old != nil {
+		if err := ep.DropGrace(ctx, old.LicenseID); err != nil {
+			return fmt.Errorf("subscriptions: persist the revoked license: %w", err)
 		}
 	}
 	s.mu.Lock()
