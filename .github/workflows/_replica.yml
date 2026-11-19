@@ -132,6 +132,80 @@ jobs:
             grep -q -- "--- PASS: $t " "$RUNNER_TEMP/e2e-two.out" || { echo "::error::$t did not run"; exit 1; }
           done
 
+      # Epic 49 story 49.3: the home's database on PostgreSQL 18 (the Linux payload's pins,
+      # pgvector and pg_textsearch), its machine's copy on 16 (a machine on a release before
+      # the upgrade), then on 18 (the machine updated): the copy follows the home and the
+      # machine serves from it with the home gone, both times
+      - name: PostgreSQL 18 for the home (the Linux payload's pins)
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tools/rehearsal/postgres18.sh --out "$RUNNER_TEMP/pg18"
+          # a port free now (the job's earlier steps leave servers on fixed ones)
+          port="$(python3 -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')"
+          echo "PG18_PORT=$port" >> "$GITHUB_ENV"
+          d="$RUNNER_TEMP/pg-home18"
+          "$RUNNER_TEMP/pg18/bin/initdb" -D "$d" -U postgres --auth=trust -E UTF8 --locale=C >/dev/null
+          { echo 'host all /^maktaba_node_ 127.0.0.1/32 scram-sha-256'; cat "$d/pg_hba.conf"; } > "$d/pg_hba.new"
+          mv "$d/pg_hba.new" "$d/pg_hba.conf"
+          "$RUNNER_TEMP/pg18/bin/pg_ctl" -D "$d" -l "$RUNNER_TEMP/pg-home18.log" -w -o "-p $port -k $RUNNER_TEMP \
+            -c listen_addresses=127.0.0.1 -c wal_level=logical -c max_replication_slots=40 \
+            -c max_wal_senders=40 -c shared_preload_libraries=pg_textsearch" start
+
+      - name: Two machines, the home on PostgreSQL 18, its machine on 16 then on 18 (e2e)
+        working-directory: api
+        env:
+          MAKTABA_E2E_TWO_MACHINE: "1"
+          MAKTABA_E2E_LOG_DIR: ${{ runner.temp }}/e2e-logs-pg18
+        run: |
+          set -euo pipefail
+          # (and a machine ahead of its home: the home on 16, the machine's copy on 18, below)
+          for node in "$PG16" "$RUNNER_TEMP/pg18"; do
+            major="$("$node/bin/postgres" --version | awk '{print $NF}' | cut -d. -f1)"
+            logs="$RUNNER_TEMP/e2e-logs-pg18/node-$major"
+            echo "::group::the machine's copy on PostgreSQL $major"
+            # the machine that starts on 16 moves its copy to 18 part way (MAKTABA_TEST_PG18_BIN)
+            MAKTABA_TEST_PG_URL="postgres://postgres@127.0.0.1:$PG18_PORT/postgres?sslmode=disable" \
+            MAKTABA_TEST_PG18_BIN="$RUNNER_TEMP/pg18" \
+            MAKTABA_E2E_LOG_ALWAYS=1 MAKTABA_E2E_LOG_DIR="$logs" MAKTABA_TEST_PG_BIN="$node" \
+              go test -count=1 -timeout 30m -run '^TestTwoMachinesOnePC$' -v . | tee "$RUNNER_TEMP/e2e-pg18.out"
+            echo "::endgroup::"
+            # the machine's copy ran on that major (its own programs, nothing fetched)
+            grep -q "starting PostgreSQL $major\." "$logs/TestTwoMachinesOnePC-node.log" ||
+              { echo "::error::the machine's copy did not start PostgreSQL $major"; exit 1; }
+            grep -q -- "--- PASS: TestTwoMachinesOnePC " "$RUNNER_TEMP/e2e-pg18.out" || { echo "::error::TestTwoMachinesOnePC (machine on $node) did not pass"; exit 1; }
+            grep -q -- "--- PASS: TestTwoMachinesOnePC/home_gone:_the_node_runs_on_its_copy" "$RUNNER_TEMP/e2e-pg18.out" ||
+              { echo "::error::the copy (machine on $node) did not run"; exit 1; }
+          done
+
+      # a machine ahead of its home: the home's database on 16, the machine's copy on 18 (a home
+      # held on 16, its machines updated)
+      - name: Two machines, the home on PostgreSQL 16, its machine on 18 (e2e)
+        working-directory: api
+        env:
+          MAKTABA_E2E_TWO_MACHINE: "1"
+        run: |
+          set -euo pipefail
+          logs="$RUNNER_TEMP/e2e-logs-pg18/home16-node18"
+          MAKTABA_E2E_LOG_ALWAYS=1 MAKTABA_E2E_LOG_DIR="$logs" MAKTABA_TEST_PG_BIN="$RUNNER_TEMP/pg18" \
+            go test -count=1 -timeout 30m -run '^TestTwoMachinesOnePC$' -v . | tee "$RUNNER_TEMP/e2e-home16.out"
+          grep -q -- "--- PASS: TestTwoMachinesOnePC " "$RUNNER_TEMP/e2e-home16.out" || { echo "::error::TestTwoMachinesOnePC (home 16, machine 18) did not pass"; exit 1; }
+          grep -q "starting PostgreSQL 18\." "$logs/TestTwoMachinesOnePC-node.log" || { echo "::error::the machine's copy did not start PostgreSQL 18"; exit 1; }
+
+      # a switch of the home onto a machine whose copy runs on PostgreSQL 18 (every machine of
+      # the run on 18): the promoted machine starts as the home on the copy it kept in the 18
+      # major's own directory
+      - name: Switching the home, every machine on PostgreSQL 18 (e2e)
+        working-directory: api
+        env:
+          MAKTABA_E2E_SWITCHOVER: "1"
+          MAKTABA_E2E_LOG_DIR: ${{ runner.temp }}/e2e-logs-switch18
+        run: |
+          set -euo pipefail
+          MAKTABA_TEST_PG_BIN="$RUNNER_TEMP/pg18" go test -count=1 -timeout 30m -run '^TestSwitchTheHome$' -v . | tee "$RUNNER_TEMP/e2e-switch18.out"
+          grep -q -- "--- PASS: TestSwitchTheHome " "$RUNNER_TEMP/e2e-switch18.out" || { echo "::error::TestSwitchTheHome on PostgreSQL 18 did not pass"; exit 1; }
+
       - name: The servers' logs (on failure)
         if: failure()
         run: |

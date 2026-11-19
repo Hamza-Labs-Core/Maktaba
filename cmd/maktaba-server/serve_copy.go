@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -68,7 +69,7 @@ func resolveNodeCopy(cfg *config.Config, wholeMachine bool) (*nodeCopy, error) {
 			Backups: filepath.Join(root, "backups"), Port: port}}
 	nc := &nodeCopy{}
 	exe, _ := os.Executable()
-	if home := pgbundle.FindHome(*cfg, exe); home != "" && pgbin.Installed(home) && nodecopy.MajorOf(home) == pgbin.Major {
+	if home := pgbundle.FindHome(*cfg, exe); home != "" && pgbin.Installed(home) && copyMajor(nodecopy.MajorOf(home)) {
 		c.DB.Home, nc.programs = home, nodecopy.Installed(home)
 	} else if pin, ok := pgbin.Here(); ok {
 		c.DB.Home = filepath.Join(copyPrograms(*cfg), pin.Dir())
@@ -76,6 +77,38 @@ func resolveNodeCopy(cfg *config.Config, wholeMachine bool) (*nodeCopy, error) {
 	} else {
 		fmt.Fprintln(os.Stderr, "[serve] no Postgres build for this platform: this machine keeps no copy of its home's database")
 		return nil, nil
+	}
+	// Epic 49 story 49.3: the copy is kept where a home of its major keeps its cluster
+	// (pgbundle.DataDirFor: <state>/postgres for 16, <state>/postgres-18 for 18), so a switch
+	// that makes this machine the home finds it there. A cluster in the other major's
+	// directory (the copy made before this machine's payload moved to 18, or this machine's
+	// own database from before it joined) is set aside, never deleted: a promotion would
+	// otherwise find it, and the copy is made again from the home.
+	if major := nodecopy.MajorOf(c.DB.Home); major != "" {
+		c.DB.Data = pgbundle.DataDirFor(root, major)
+		other := pgbundle.DataDirFor(root, "16")
+		if other == c.DB.Data {
+			other = pgbundle.DataDirFor(root, "18")
+		}
+		now := time.Now()
+		for _, d := range []struct {
+			dir string
+			any bool
+		}{{other, true}, {c.DB.Data, false}} {
+			aside, err := setAsideCluster(d.dir, major, d.any, now)
+			if err != nil {
+				// (a server left on it holds it: Windows refuses the rename) no copy this start,
+				// rather than no start: the next one tries again
+				fmt.Fprintf(os.Stderr, "[serve] level=error this machine's copy cannot be made on PostgreSQL %s: "+
+					"the cluster in %s cannot be set aside (%v); this start keeps no copy, the next tries again\n",
+					major, d.dir, err)
+				return nil, nil
+			}
+			if aside != "" {
+				fmt.Fprintf(os.Stderr, "[serve] this machine's copy runs on PostgreSQL %s: the cluster in %s is set "+
+					"aside in %s, and the copy is made again from the home\n", major, d.dir, aside)
+			}
+		}
 	}
 	dsn, err := c.DSN()
 	if err != nil {
@@ -177,4 +210,30 @@ func watchRejoin(ctx context.Context) {
 			return
 		}
 	}
+}
+
+// copyMajors are the PostgreSQL majors a machine's copy runs on from a Postgres it has (a
+// payload's postgres/ or postgres-18/, Epic 49): logical replication follows a home of
+// either from a copy of either.
+var copyMajors = []string{pgbin.Major, "18"}
+
+func copyMajor(m string) bool { return slices.Contains(copyMajors, m) }
+
+// setAsideCluster moves a cluster out of the way (dir, with its marker files, to
+// <dir>.pg<its major>-<time>), never deleting it: any cluster there (anyMajor), or only one
+// another major than major made. "" when nothing was moved.
+func setAsideCluster(dir, major string, anyMajor bool, now time.Time) (string, error) {
+	raw, err := os.ReadFile(filepath.Join(dir, "PG_VERSION"))
+	if err != nil {
+		return "", nil
+	}
+	have := strings.TrimSpace(string(raw))
+	if have == major && !anyMajor {
+		return "", nil
+	}
+	aside := dir + ".pg" + have + "-" + now.UTC().Format("20060102-150405")
+	if err := os.Rename(dir, aside); err != nil {
+		return "", err
+	}
+	return aside, nil
 }
