@@ -470,7 +470,7 @@ jobs:
       - name: Go modules
         uses: ./.github/actions/go-mod-download
         with:
-          modules: api
+          modules: api shared/go/componentpack
 
       - uses: astral-sh/setup-uv@v8.1.0
         with:
@@ -519,7 +519,34 @@ jobs:
 
       - name: The plugin API's statements, trusted tokens and the flip (54.22, 54.24, 54.25)
         working-directory: api
-        run: go test -count=1 ./internal/plugins/... ./internal/handlers/queues/ -run 'Statement|Trusted|FirstParty|Flip|CheckPackage|Bundle|Command'
+        run: go test -count=1 ./internal/plugins/... ./internal/handlers/queues/ -run 'Statement|Trusted|FirstParty|Flip|CheckPackage|Bundle|Command|Package'
+
+      # 54.27: every test of the release packages' check, which builds the packages with
+      # build.py (skipped under -short, so the unit job does not run them)
+      - name: The release packages' trust check, every case (54.27)
+        working-directory: api
+        run: go test -count=1 ./internal/plugins/firstparty/ ./tools/fp-packages/
+
+      # 54.27 T01, the release's dry run: every first-party package built as release.yml
+      # builds it, beside a pipeline wheel of this tree, checksummed as its "Generate
+      # checksums" step does, then checked by the same command the release runs on its
+      # signed dist/ (each package's code is the pipeline wheel's)
+      - name: The release's first-party packages, built and trusted (54.27 T01)
+        env:
+          FP_OUT: ${{ runner.temp }}/fp-packages
+        run: |
+          set -euo pipefail
+          # the pipeline wheel first: the packages are built at its version, as a release's are.
+          # Without the bytecode the tests above left (the release's build removes it too:
+          # deploy/packaging/node/build-release.sh); fp-packages refuses bytecode in a wheel
+          find plugins pipeline/src -name __pycache__ -type d -prune -exec rm -rf {} +
+          uv build --wheel --project pipeline --out-dir "$FP_OUT" --quiet
+          wheels=("$FP_OUT"/maktaba_pipeline-*-py3-none-any.whl)
+          [ "${#wheels[@]}" -eq 1 ] && [ -f "${wheels[0]}" ] || { echo "::error::expected one pipeline wheel, got: ${wheels[*]}"; exit 1; }
+          ver="$(basename "${wheels[0]}")"; ver="${ver#maktaba_pipeline-}"; ver="${ver%-py3-none-any.whl}"
+          python3 tools/plugins/build.py --version "$ver" --out "$FP_OUT"
+          (cd "$FP_OUT" && find . -maxdepth 1 -type f ! -name 'checksums.txt' | sort | LC_ALL=C xargs sha256sum > checksums.txt)
+          (cd api && go run ./tools/fp-packages -dir "$FP_OUT" -version "$ver" -pipeline-wheel "$(basename "${wheels[0]}")")
 
   # the runner's Seatbelt sandbox and protocol on macOS (no Postgres there)
   first-party-macos:

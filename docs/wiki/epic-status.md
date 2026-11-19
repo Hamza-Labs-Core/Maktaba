@@ -3,7 +3,7 @@
 > Story-by-story status of every epic, read from the code and history on `main` at `f43b0d3ed` (2026-11-19).
 > The specs and epic pages don't record a status; this page does. Update the row when a story changes.
 
-**Not every epic is done.** Of 773 stories across all 60 epics, 695 are done, 41 are partial, 27 are not started, and 10 were deferred or removed on purpose. The largest open pieces are Epic 49 (Search, not started), Epic 34 (the TV public site, a first slice only) and Epic 54 Phase 5 (Plugins).
+**Not every epic is done.** Of 773 stories across all 60 epics, 700 are done, 41 are partial, 22 are not started, and 10 were deferred or removed on purpose. The largest open pieces are Epic 49 (Search, 2 stories of fourteen done), Epic 34 (the TV public site, a first slice only) and Epic 54 Phase 5 (Plugins).
 
 ## How this was checked
 
@@ -38,14 +38,14 @@
 | 13 Desktop | 8* | 0 | 0 | 0 | Done |
 | 14 TV apps | 7* | 0 | 0 | 0 | Done |
 | 15 Discovery | 7* | 0 | 0 | 0 | Done |
-| 16 Subscriptions | 6* | 2 | 0 | 0 | **Partial** |
+| 16 Subscriptions | 7* | 1 | 0 | 0 | **Partial** |
 | 17 UX design system | 11* | 0 | 0 | 0 | Done |
 | 18 Performance | 8* | 0 | 0 | 0 | Done |
 | 19 Scalability | 8* | 0 | 0 | 0 | Done |
 | 20 Testing | 8* | 0 | 0 | 0 | Done |
 | 21 Observability | 8* | 0 | 0 | 0 | Done |
-| 22 DevOps | 8* | 1 | 0 | 0 | **Partial** |
-| 23 Security | 6* | 2 | 0 | 0 | **Partial** |
+| 22 DevOps | 9* | 0 | 0 | 0 | Done |
+| 23 Security | 7* | 1 | 0 | 0 | **Partial** |
 | 24 Data integrity | 9* | 0 | 0 | 0 | Done |
 | 25 Cloud relay | 36* | 0 | 0 | 0 | Done |
 | 26 Content intelligence | 6 | 4 | 0 | 0 | **Partial** |
@@ -71,19 +71,19 @@
 | 46 Big screen | 7 | 0 | 0 | 0 | Done |
 | 47 Offline convert / dedup | 11 | 3 | 0 | 0 | **Partial** |
 | 48 Native players | 36 | 1 | 0 | 0 | **Partial** |
-| 49 Search | 0 | 0 | 14 | 0 | **Not started** |
+| 49 Search | 2 | 0 | 12 | 0 | **Partial** |
 | 50 Cloud with no downtime | 35 | 0 | 0 | 0 | Done (live SLOs not checked) |
 | 51 Configurable components | 19 | 0 | 0 | 0 | Done |
 | 52 Transcript word review | 13 | 3 | 0 | 1 | **Partial** |
 | 53 Logs, errors and reports | 18 | 0 | 0 | 0 | Done (open issue #1064) |
-| 54 Plugins | 40 | 3 | 8 | 1 | **Not done** |
+| 54 Plugins | 42 | 4 | 5 | 1 | **Not done** |
 | 55 Desktop player parity | 10 | 0 | 0 | 0 | Done |
 | 56 TV library view | 13 | 0 | 0 | 1 | Done (56.07 removed by #969) |
 | 57 Parental controls | 13 | 3 | 0 | 1 | **Partial** |
 | 58 Smart TV platforms | 17 | 0 | 0 | 1 | Done (58.18 Vega OS deferred) |
 | 59 NAS | 16 | 0 | 0 | 0 | Done (device results not checked) |
 | 60 Website | 11 | 1 | 0 | 1 | **Partial** |
-| **Total** | **695** | **41** | **27** | **10** | **Not all done** |
+| **Total** | **699** | **41** | **23** | **10** | **Not all done** |
 
 `*` sampled, see [How this was checked](#how-this-was-checked).
 
@@ -96,8 +96,6 @@
 - **34.9 Budget, abuse controls and analytics** — no public budget, viewer/session limits, rate-limit wiring, Analytics Engine sink, or Stream reconciliation.
 - **34.10 Deployment pipeline** — manual `wrangler.toml` exists, but no release artifact pipeline or home-driven deploy/promote/rollback implementation.
 - **43.6 Measured on the home Mac** — PR #319 explicitly excludes the 13.9M-row p50/p95, disk and recall measurement; no later merged measurement was found.
-- **49.1 PostgreSQL 18 + pg_textsearch** — current bundles still describe PostgreSQL 16; no `pg_textsearch` packaging or checks.
-- **49.2 Major updater upgrade 16 → 18** — no such update-rehearsal path or rollback evidence.
 - **49.3 Cluster major-version rollout** — no home-18/node-16 two-machine test.
 - **49.4 Arabic normalisation and word forms** — no `maktaba_search` v2 / `maktaba_stem` implementation or migration.
 - **49.5 `video_search_docs` and BM25 indexes** — no table, SQLite twin, or index migration.
@@ -110,17 +108,14 @@
 - **49.12 AI-mode API** — no grounded retrieval, citation validation, streaming/follow-up endpoint, or role tests.
 - **49.13 Remove the stopgap** — the Epic 49 document path does not exist, so its removal is not started either.
 - **49.14 AI-mode client tab** — no streaming AI tab or citation-to-player UI on any client.
-- **54.45–54.52, Epic 54 Phase 5:** store packages, plugin lifecycle, plugin updates, preinstalled plugins and migration, offline homes, release variants, variant updates, and process CPU. Each spec says "Not built", and #1243 confirms it.
+- **54.45–54.51, Epic 54 Phase 5:** store packages, plugin lifecycle, plugin updates, preinstalled plugins and migration, offline homes, release variants and variant updates. Each spec says "Not built"; 54.45 and 54.50 each have an open question their spec leaves to a decision.
 
 ### Partial
 
 | Story | Missing |
 |---|---|
 | 16.02 Premium features | The 30-day read-only period after a downgrade. |
-| 16.04 License validation | Read-only access for users over the seat limit; they keep full access. |
-| 22.03 Container images | `tools/image-size-guard.sh` exists but no workflow runs it. |
 | 23.07 Supply-chain security | A per-component SBOM (`tools/sbom.sh` is a stub) and a CVE gate that can stop a release. Release images already carry SBOM attestations; Dependabot alerts (78 open on 2026-11-19) and CodeQL default setup (3 open alerts) scan the repo, but neither stops a release. |
-| 23.08 Coordinated disclosure | `SECURITY.md` and the version-aware advisory surface in the clients. |
 | 26.2 Transcript topic & entity extraction | Only slot 0074's schema is present. No `topic_extractor` implementation, NER/gazetteer path, classification/entity writers, or its tests are on `origin/main`; `classify_stage.py` still describes that extractor as future work. |
 | 26.4 Auto-collection builder | Slot 0076 exists, but no `auto_collections` producer, suggestion lifecycle implementation, or builder tests exist. Existing smart-collection code belongs to earlier/later stories. |
 | 26.5 Web metadata enrichment | The current service makes internal and web/LLM proposals. The specified TMDb, OMDb, MusicBrainz and Wikipedia/Wikidata adapters and their tests are absent. |
@@ -150,7 +145,6 @@
 | 52.02 Evaluation set | The human-corrected gold set and calibration on real data; CI has only synthetic data. |
 | 52.11 Web review queue | The Playwright test of the branch-stack review flow. |
 | 52.13 Native review | The Apple UI tests and Android Compose/Robolectric screen tests. |
-| 54.27 Layout and packaging | `tools/plugins/build.py` and the per-plugin release packages. |
 | 54.31 Wave 4 classify/enrich | `enrich` still runs in-process; the six classify stages moved. |
 | 54.36 Wave 9 core and removal | Removing the in-process path and its switch, which waits on the preconditions the spec names. |
 | 57.03 Server filter | A restricted account's Home is over the 60 ms p95 target. |
@@ -470,7 +464,7 @@ Each epic below has an evidence key naming current implementation and test files
 | 16.01 Free tier | Done (sampled) | E16 |
 | 16.02 Premium features | **partial** | E16; merged implementation is visible in `subscriptions.go`, but its spec explicitly says downgrade visibility/read-only-for-30-days is **not built**; backup/federation TCs also waited on those surfaces. Current backup/federation code exists, but the downgrade AC remains absent. |
 | 16.03 Subscription management | Done (sampled) | E16 |
-| 16.04 License validation | **partial** | E16; signed offline validation, refresh and tests exist. The spec says over-seat existing users have full access, **not the required read-only mode**. This is a deliberate implementation decision, not evidence that the AC was met. |
+| 16.04 License validation | **Done** | E16; signed offline validation, refresh and tests; #1454: past the seats, the newest non-admin accounts are read-only as the owner decided (2026-11-19): they watch and keep their progress, history, playlists and favourites; uploads, metadata edits and managing the home are refused (`subscriptions.SeatGuard`, `seats.go`, `seats_test.go`, `seats_pg_test.go`, `403 seat-read-only`); the admin sees them, the account is told (`SubscriptionSettings.tsx`). |
 | 16.05 Telemetry opt-in | Done (sampled) | E16; `api/internal/router/telemetry.go`, `web/src/components/TelemetryPrompt.tsx` |
 | 16.06 Feature flags | Done (sampled) | E16 |
 | 16.07 Telemetry API | Done (sampled) | E16 |
@@ -562,7 +556,7 @@ Each epic below has an evidence key naming current implementation and test files
 |---|---|---|
 | 22.01 CI pipeline | Done (sampled) | E22 |
 | 22.02 Reproducible builds | Done (sampled) | E22; signed release/checksum workflows exist |
-| 22.03 Container images | **partial** | Compose/images and `tools/image-size-guard.sh` exist, but `tools/ci/ci_paths.py` still labels it **“run by hand”** and no workflow invokes it. TC3's CI regression gate is missing; the script's own “wired into CI” comment is contradicted by workflow search. |
+| 22.03 Container images | Done | E22; CI's `images` job (`_images.yml`) builds the four images on linux/amd64 and linux/arm64 and holds them to AC4's budgets with `tools/image-size-guard.sh` (#1449) |
 | 22.04 Database migrations | Done (sampled) | E22 |
 | 22.05 Release management | Done (sampled) | E22 |
 | 22.06 Upgrade/rollback | Done (sampled) | E22 |
@@ -583,7 +577,7 @@ Each epic below has an evidence key naming current implementation and test files
 | 23.05 Input validation | Done (sampled) | E23 |
 | 23.06 Rate limiting/confirmation | Done (sampled) | E23 |
 | 23.07 Supply-chain security | **partial** | Release images carry BuildKit SBOM attestations (`sbom: true` in `.github/workflows/release.yml` and `relay.yml`), and SBOM parsing/tests exist in `api/internal/security/sbom.go`. Missing: `tools/sbom.sh` is still a stub that `tools/ci/ci_paths.py` marks “run by hand”, so no per-component SBOM is published, and no workflow runs a CVE gate (`govulncheck`, `pip-audit` or npm/pnpm audit). Dependabot alerts (78 open on 2026-11-19) and CodeQL default setup (3 open alerts) scan the repo, but nothing stops a release on them. |
-| 23.08 Coordinated disclosure | **partial** | `api/internal/security/disclosure.go`, `security_test.go`, public `security.txt`, and `docs/security/advisories/` exist. Missing required `SECURITY.md` with SLA/scope and the specified version-aware client advisory feed/surface (`web/src/lib/advisories.ts` is absent). Private GHSA process/tabletop execution is unverified. |
+| 23.08 Coordinated disclosure | Done | #1444: `SECURITY.md` (GitHub private reporting or security@maktaba.dev, 3 business days to acknowledge, 90 days to a fix or coordinated disclosure, scope, anonymity); `GET /api/system/updates` carries the published GHSAs that affect the running version (`api/internal/system/advisories.go`, `advisories_test.go`) and Settings → About lists them with the release that fixes them (`web/src/pages/Settings/AboutPanel.tsx`, `Settings.test.tsx` SAB-23.8). Also `disclosure.go` and the public `security.txt`. The tabletop drill (TC1) and a synthetic-CVE patch release (TC3) are process exercises, not code. |
 
 ### Epic 24 — Data integrity
 
@@ -1069,8 +1063,8 @@ Stories are the fourteen numbered rows in `specs/epics/49-search/README.md` §6 
 
 | Story | Status | Evidence |
 |---|---|---|
-| 49.1 PostgreSQL 18 / pg_textsearch bundles | **Not started** | Only `specs/epics/49-search/README.md`; current `tools/release/mac-app/payload.sh`, `tools/release/linux-app/payload.sh`, and `tools/release/win-app/payload.sh` still describe PostgreSQL 16 and no pg_textsearch. |
-| 49.2 Major updater upgrade | **Not started** | Only `specs/epics/49-search/README.md`; `.github/workflows/update-rehearsal.yml` has no 16→18 scenario evidence. |
+| 49.1 PostgreSQL 18 / pg_textsearch bundles | **Done** (#1441) | Every app payload carries PostgreSQL 18.7 in `postgres-18/` with pgvector and pg_textsearch, beside the 16 the server still runs until 49.2; `tools/release/pg18-check.sh` in each payload's `check.sh`, `TestRealPgTextsearchPreloaded`; README §9 "As built". |
+| 49.2 Major updater upgrade | **Done** (#1445) | The server upgrades the 16 cluster into its own `postgres-18` with pg_upgrade (clone, else copy), the 16 cluster untouched for any rollback; held on 16 when it cannot run; update-rehearsal scenario 17 (16 → 18 with data, a rollback, the upgrade again), `TestRealMajorUpgrade` on Linux, Mac and Windows payloads; README §9 "As built". |
 | 49.3 Cluster major-version rollout | **Not started** | Only `specs/epics/49-search/README.md`; `api/twomachine_e2e_test.go` has no home-18/node-16 scenario. |
 | 49.4 Arabic normalisation / word forms | **Not started** | Only `specs/epics/49-search/README.md`; no `maktaba_search` v2 or `maktaba_stem` code/migration found. |
 | 49.5 `video_search_docs` / BM25 schema | **Not started** | Only `specs/epics/49-search/README.md`; no such migration in `shared/db/migrations/`. |
@@ -1235,7 +1229,7 @@ The wiki table omits 54.43–54.52; this audit includes all 52 spec files. Open 
 | 54.24 Statement registry/roles | Done | #750; `api/internal/plugins/statements/`; `tools/plugins/statements_build.py`, `roles.py`; Postgres role/scope/rollback tests |
 | 54.25 Graph/stage switch | Done | #750; `pipeline/src/maktaba_pipeline/engine/assemble.py`; `shared/plugins/graph.golden.json`; `api/internal/handlers/queues/impl_pg_test.go` |
 | 54.26 Parity proof | Done | #750; `tools/plugins/parity.py`; `plugins/sdk/python/maktaba_plugin_sdk/parity.py`; first-party `test_*_parity.py` suites and self-tests |
-| 54.27 Layout/packaging | **partial** | #750; repo layout, catalog ownership, CI, embedding and import contracts exist. **`tools/plugins/build.py` is absent**; per-plugin `.mkplugin` outputs and their `files.json` entries in release `checksums.txt` are not produced. #750 explicitly deferred them, and 54.45 still says that builder is not built. T01/package-release AC is missing. |
+| 54.27 Layout/packaging | Done | #750, #1440; `tools/plugins/build.py` builds one `.mkplugin` per first-party plugin with its `files.json`, both in the release's signed `checksums.txt`; `release.yml` `package-plugins` and the `fp-packages` check after signing; `api/internal/plugins/firstparty/release_test.go`, `pipeline/tests/plugins/firstparty/test_build_packages.py`; T01 dry run in `_plugins.yml` `first-party`. The payload does not carry the packages (nothing on a home reads them before 54.45/54.46; the spec's As built says why). |
 | 54.28 Wave 1 classify leaves | Done | #760, #925; `plugins/first-party/classify/manifest.toml`, `plugins/first-party/classify/tests/test_classify_parity.py`; `api/rehearsal_waves_e2e_test.go` scenario 16.1. `display_title` followed in wave 4 as the spec records. |
 | 54.29 Wave 2 thumbnails/subtitles | Done | #773; `plugins/first-party/thumbnails/`, `subtitles/`; parity tests; rehearsal 16.2 |
 | 54.30 Wave 3 transcription/search | Done | #789; `plugins/first-party/transcription/`, `semantic-search/`; parity tests; rehearsal 16.3 |
@@ -1253,14 +1247,14 @@ The wiki table omits 54.43–54.52; this audit includes all 52 spec files. Open 
 | 54.42 Joined machines | Done | #767; cluster plugin distribution/runner tests |
 | 54.43 Fallback counts | Done | #1080; `shared/db/migrations/0218_stage_fallbacks.sql`; `api/internal/handlers/queues/fallbacks_pg_test.go`; `web/src/components/queue/FallbackCounts.test.tsx` |
 | 54.44 One Plugins page | Done | #1243; `api/internal/plugins/published.go`, `published_pg_test.go`; `api/internal/handlers/plugins/published_pg_test.go`; `web/src/pages/Settings/PluginPage.tsx` and tests |
-| 54.45 Maktaba store packages | **not started** | Spec says **Not built**; #1243 explicitly says 54.45–54.52 not built. No `tools/plugins/build.py` or per-plugin store packages. |
-| 54.46 Maktaba plugin lifecycle | **not started** | Spec says **Not built**; independent install/removal/update lifecycle absent; depends on 54.45 |
+| 54.45 Maktaba store packages | **partial** | #1450; `shared/plugins/fppackage.CheckStore` (store countersigned, Maktaba's pinned key in `shared/plugins/maktaba-keys.json`, statements exactly the server's, as decided), `build.py --developer-key`, core not packaged; store: the Maktaba publisher (`POST /v1/admin/maktaba-publisher`), `prefixCovers`, trusted manifests and native-package checks. **Missing:** a store or file package installed and run with parity, which waits for an install path (54.46/54.49) and Maktaba's key. |
+| 54.46 Maktaba plugin lifecycle | **partial** | #1452; `DELETE /api/plugins/{id}` (want absent, `component_required_by`, jobs parked, `plugin_data_kept`), `POST /api/plugins/{id}/install` from the release; the Plugins page's Remove and Install; rehearsal 15 keeps a removed plugin removed across a rollback and an update. **Missing:** installing a Maktaba plugin from a store package or a file (§2), which comes with 54.49's offline files and Maktaba's key. |
 | 54.47 Maktaba plugin updates | **not started** | Spec says **Not built**; independent plugin update channel absent |
 | 54.48 Preinstalled/migration | **not started** | Spec says **Not built**; package-based preinstall/migration absent |
 | 54.49 Offline homes | **not started** | Spec says **Not built**; downloadable offline first-party packages absent |
 | 54.50 Release variants | **not started** | Spec says **Not built**; Full/Core release-variant production path absent |
 | 54.51 Variant updates | **not started** | Spec says **Not built**; update/migration between package-based variants absent |
-| 54.52 Process CPU | **not started** | Spec says **Not built**; supervisor still reports memory (`rss_parts`) but no required `cpu_pct`/`cpu_parts` implementation/test |
+| 54.52 Process CPU | Done | #1443; `cmd/maktaba-server/internal/hostinfo/cpu_*.go` (macOS, Linux, Windows); the reconciler's `cpu_pct`/`cpu_parts` beside `rss_mb`/`rss_parts` with hysteresis (`internal/supervisor/cpu_test.go`); `GET /api/plugins` `cpu_pct` (`api/internal/plugins/measure_test.go`, `published_pg_test.go`); the Plugins page's Processor column (`PluginsSection.test.tsx` T08) |
 
 ### Epic 55 — Desktop player parity
 

@@ -382,3 +382,29 @@ func TestSuggestTakesTheRoomiestSuitableDisk(t *testing.T) {
 		t.Errorf("suggested %s with no disk", got)
 	}
 }
+
+// Epic 49 story 49.2: an install whose only cluster is postgres-18 (a fresh install on a
+// payload that runs PostgreSQL 18) moves, and its database is checked on the copy.
+func TestMoveVerifiesAPostgres18Cluster(t *testing.T) {
+	fakeDisk(t, 100<<30, "apfs", true)
+	in, base := macInstall(t)
+	root := in.From.Root
+	if err := os.Rename(filepath.Join(root, "postgres"), filepath.Join(root, "postgres-18")); err != nil {
+		t.Fatal(err)
+	}
+	write(t, filepath.Join(root, "postgres-18", "PG_VERSION"), "18\n")
+	target := filepath.Join(base, "Big", "Maktaba")
+	verified := ""
+	if _, err := Move(context.Background(), in, target, Options{
+		VerifyPostgres: func(_ context.Context, root string) error { verified = root; return nil },
+		Now:            func() time.Time { return time.Date(2026, 11, 19, 9, 30, 0, 0, time.UTC) },
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if verified != target {
+		t.Errorf("the 18 cluster was not checked on the copy (checked in %q)", verified)
+	}
+	if !exists(filepath.Join(target, "postgres-18", "PG_VERSION")) {
+		t.Error("postgres-18 is not in the new place")
+	}
+}

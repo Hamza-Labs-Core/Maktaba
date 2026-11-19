@@ -14,6 +14,13 @@ build fails when the two differ.
 
 ### Changed
 
+- **Over the plan's seats, the newest accounts are read-only (story 16.4).** When a home has
+  more users than its licence's seats, the most recently created accounts beyond the seat
+  count can still watch, keep their progress and history, and keep their own playlists and
+  favourites, but can't upload, edit metadata or manage the home. Admins are never limited.
+  Removing users or adding seats restores them at once. Settings → Subscription names them to
+  the admin and tells the account itself.
+
 - **Guest sharing ends when the plan does (Epic 50, story 50.20).** When an account's Pro or
   Broadcaster plan ends (cancelled, lapsed, or changed to Basic or Free by the payment provider or
   a service admin), Maktaba Cloud revokes every guest invite of its homes at that moment and
@@ -343,6 +350,12 @@ build fails when the two differ.
   second failed probe and Broadcasting shows an outage. It is no longer an expected failure.
 
 ### Fixed
+
+- **A release is published only with every file its signed checksums name.** Until now a draft
+  release could be made public with only its signed set attached (`release.json`, the checksums
+  and their signature, the component index), so an upload that stopped part way could publish a
+  checksum for a file nobody could download. It now stays a draft, naming each missing file,
+  until every file `checksums.txt` lists is attached.
 
 - **Sign-in no longer hangs while Maktaba's own plugins are busy with the database.** The
   first-party plugins ran their database work on the API's own connections. They kept some
@@ -1060,6 +1073,12 @@ build fails when the two differ.
   alerted.
 
 ### Added
+
+- **The Plugins page shows each program's processor use (Epic 54, story 54.52).** Beside its
+  memory, each program that runs a plugin now shows the share of one processor core it used over
+  the last five minutes, measured on macOS, Linux and Windows. A program several plugins share
+  shows the whole program's number with the plugins that share it. The note saying processor use
+  is not measured is gone.
 
 - **Watch a broadcast on Android phones, tablets and TVs (Epic 50, story 50.27).** Maktaba
   Player on Android and Maktaba TV on Android TV, Google TV and Fire TV now have **Watch a
@@ -3193,6 +3212,28 @@ build fails when the two differ.
   sees that the channel isn't available in their country. An item that loses its permission
   plays the "Not available online" card until the schedule is rebuilt.
 
+- **Each release carries Maktaba's plugins as signed packages (Epic 54, story 54.27).** Every
+  release now has one `tv.maktaba.<name>-<version>.mkplugin` for each of Maktaba's own plugins,
+  with its `files.json` beside it, both listed in the signed `checksums.txt`. The release
+  checks each package with the same trust rule the server uses before it publishes. Homes keep
+  running the plugins from the pipeline wheel as before; these packages are what the store and
+  offline installs will use.
+
+- **Maktaba's plugins can be trusted as store packages (Epic 54, story 54.45).** Every package
+  of a Maktaba plugin except core's can now carry Maktaba's developer signature. A home trusts
+  one delivered apart from the release only when the store countersigned it, the signature is
+  by Maktaba's key pinned in the server, and its manifest, strings and database statements are
+  exactly the server's own. A Maktaba plugin's statements change only with a server release.
+  Releases no longer package core, which is not a plugin. In the store, only Maktaba's publisher
+  account, set by a store admin, may submit a `tv.maktaba.*` plugin, and a person reviews every
+  version. Nothing installs a store package of a Maktaba plugin yet.
+
+- **Remove one of Maktaba's plugins, and install it again (Epic 54, story 54.46).** A plugin
+  Maktaba publishes now has Remove on its page. Its queued jobs wait, none lost, and what it
+  wrote stays in your library. A plugin that other parts still need is refused, with what needs
+  it. A removed plugin shows Install, which brings it back from the Maktaba you run, with
+  nothing to download, and its waiting jobs run again.
+
 ### Changed
 
 - **A machine that loses its home stays usable** under a notice instead of the whole app being
@@ -3558,6 +3599,15 @@ build fails when the two differ.
   `plugins` list is the installed plugins, as before; `GET /api/plugins?release=true` adds
   Maktaba's plugins with `publisher` and `source`. `GET /api/queues/failures` takes several
   stages in `stage`.
+
+- **The library database moves to PostgreSQL 18 (Epic 49, story 49.2).** An update to this
+  release upgrades the home's database from PostgreSQL 16 to 18 at its first start, with
+  `pg_upgrade`, into a folder of its own (`postgres-18`, beside `postgres`). The files are cloned
+  where the disk can (APFS on the Mac: no extra room), else copied. The PostgreSQL 16 database is
+  left as it was, so a rollback starts the release before on it at once. When there isn't room
+  for a copy, or the upgrade fails, the home keeps running on PostgreSQL 16, says why in its log,
+  and tries again at its next start. PostgreSQL 18 brings pg_textsearch, which ranked keyword
+  search will use.
 
 ### Fixed
 

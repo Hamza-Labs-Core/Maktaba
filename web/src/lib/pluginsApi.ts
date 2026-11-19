@@ -103,8 +103,12 @@ export interface ProcessUse {
   machine: string;
   phase?: string;
   rss_mb?: number;
+  /** the share of one processor core it used over the last sample (100 is a whole core) */
+  cpu_pct?: number;
   /** what rss_mb measures: this process alone, or every process of its component */
   scope?: "process" | "component";
+  /** what cpu_pct measures, the same way (for one sample it can differ from scope) */
+  cpu_scope?: "process" | "component";
   stages: string[] | null;
   shared_with: string[] | null;
   shared_core: boolean;
@@ -454,9 +458,15 @@ export const pluginsApi = {
       `/api/plugins/${enc(id)}/rollback${clearData ? "?clear_data=true" : ""}`
     ),
   remove: (id: string, purge: boolean) =>
-    api.delete<{ id: string; queued_jobs_dropped: number; writes_reverted?: number }>(
-      `/api/plugins/${enc(id)}${purge ? "?purge=true" : ""}`
-    ),
+    api.delete<{
+      id: string;
+      queued_jobs_dropped?: number;
+      queued_jobs_parked?: number;
+      writes_reverted?: number;
+    }>(`/api/plugins/${enc(id)}${purge ? "?purge=true" : ""}`),
+  /** a Maktaba plugin installed again from this release (story 54.46 §2) */
+  installFromRelease: (id: string, enable: boolean) =>
+    api.post<PluginDetail>(`/api/plugins/${enc(id)}/install`, { enable }),
   writes: (id: string, before?: number) =>
     api.get<{ writes: PluginWrite[] }>(
       `/api/plugins/${enc(id)}/writes${before ? `?before=${before}` : ""}`

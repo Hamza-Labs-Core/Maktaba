@@ -30,8 +30,13 @@ server periodically.
 
 - Clock manipulation (user sets system clock back): we trust the
   license server's `expires_at` over local time when reachable.
-- License covers seats=4 but server has 5 users: existing 5 keep working
-  read-only; new logins refused. Admin warned.
+- License covers seats=4 but server has 5 users (owner's decision, 2026-11-19): admins
+  are exempt, and only the most recently created accounts beyond the seat count go
+  read-only. A read-only account can still sign in, watch, save its own progress
+  and history and keep its own playlists and favourites, but cannot upload, edit
+  metadata or manage the home. Removing users or
+  adding seats restores them at once. No new account can be added meanwhile. Admin
+  warned, with the read-only accounts named.
 - Revocation reaches the server while offline: we use the last-known
   list; on reconnect we re-evaluate.
 
@@ -58,6 +63,55 @@ server periodically.
   revive a license; the license server's `Date` wins when reachable.
 - Write-only: no response carries the signature or the signed JSON; apply/remove
   are admin-only with role tests.
-- Over-seat: existing users keep working; new users are refused; the admin sees a
-  warning. (The AC's "read-only" for the extra users is not built: they keep full
-  access, by decision.)
+- Over-seat (2026-11-19, the owner's decision): see "Seats (as built)" below. New
+  accounts are refused, as before.
+
+## Seats (as built, 2026-11-19)
+
+The owner decided that when a home has more users than its license's seats, admins are
+exempt and only the most recently created accounts beyond the seat count go read-only.
+A read-only account can watch and save its own progress and history, but cannot
+upload, edit metadata or manage anything. Removing users or adding seats restores them
+at once. This replaces "they keep full access, by decision". A later decision the same
+day: its own playlists and favourites stay open too (they are personal, like progress);
+read-only blocks only uploads, metadata edits and managing the home.
+
+- **Which accounts** (`subscriptions.SeatGuard`, `api/internal/subscriptions/seats.go`):
+  - with N real accounts and S seats, the read-only ones are the N − S newest non-admin
+    accounts by `created_at`. The admins count toward N but are never chosen, and the
+    disabled sentinel row is no seat (as `CountUsers`);
+  - an unlimited plan has none;
+  - nothing is cached: each write asks, so a removal or more seats count at the next
+    request.
+- **The gate** (`SeatGuard.Gate`, in front of the API's router in `main.go`):
+  - **Reads are never refused.** Every GET, HEAD and OPTIONS goes through.
+  - **Writes that stay open** to a read-only account (`AllowedWhileSeatReadOnly`):
+    - signing in and out;
+    - playback (`/api/stream/sessions*`, `/api/watch/*`, live TV at home
+      (`/api/channels/{id}/play`) and away (`/api/tv/remote/tune` and its session),
+      casting, a video kept for offline watching);
+    - everything that is the account's own, under `/api/me`: progress and history,
+      play queues, playlists, favourites, profile, password, sessions and app sign-ins,
+      pinned libraries, API tokens, its cloud link, the parental requests a child needs
+      to keep watching;
+    - its searches (`/api/search*`), its devices (`/api/devices/*`), its
+      notifications.
+  - **GraphQL too.** Each GraphQL field runs its REST route on the router; the bridge
+    runs those sub-requests under the same gate (`graphql.SubRequestGate`), so a
+    mutation is refused where its route is.
+  - **Everything else is refused** with `403 seat-read-only` (in the problem
+    registry, English and Arabic), saying to ask the admin: uploads, metadata edits,
+    collections, settings, and every management route.
+  - **What it never refuses.** An admin (without a query), a request with no account, or the admin token
+    always goes through. A database error lets the request through, logged.
+- **The admin's view.** `GET /api/admin/license` lists `read_only_users` (newest
+  first), and its message names them. Settings → Subscription shows them under the
+  seats.
+- **The account's view.** `GET /api/entitlements` says `read_only: true` to a read-only
+  account, and Settings → Subscription tells it so.
+- **Tests.**
+  - `seats_test.go` (SQLite): which accounts, admins exempt, a removal and more seats
+    restoring, the gate's allowed and refused writes, a database error.
+  - `seats_pg_test.go`: the statements on Postgres.
+  - `license_test.go`: the admin's view and the entitlements flag.
+  - `SubscriptionSettings.test.tsx` SUB-13 to SUB-13c.

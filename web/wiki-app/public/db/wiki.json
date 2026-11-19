@@ -13,7 +13,7 @@
   ],
   "counts": {
     "diagram": 14,
-    "endpoint": 280,
+    "endpoint": 281,
     "entity": 42,
     "epic": 60,
     "feature": 3,
@@ -5648,6 +5648,7 @@
         "story-12.9",
         "story-14.2",
         "story-14.4",
+        "story-16.4",
         "story-18.1",
         "story-26.6",
         "story-26.8",
@@ -5687,6 +5688,7 @@
         "story-12.9",
         "story-14.2",
         "story-14.4",
+        "story-16.4",
         "story-18.1",
         "story-26.6",
         "story-26.8",
@@ -6210,6 +6212,7 @@
         "story-11.3",
         "story-11.10",
         "story-12.3",
+        "story-16.4",
         "story-57.3",
         "story-57.14",
         "story-58.2",
@@ -6622,6 +6625,7 @@
         "story-11.10",
         "story-12.4",
         "story-12.10",
+        "story-16.4",
         "story-25.17",
         "story-25.24"
       ],
@@ -7904,7 +7908,8 @@
         "get"
       ],
       "related": [
-        "story-54.15"
+        "story-54.15",
+        "story-54.45"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -8194,6 +8199,7 @@
         "story-54.37",
         "story-54.38",
         "story-54.42",
+        "story-54.46",
         "story-54.48",
         "story-54.50",
         "story-54.51",
@@ -10139,6 +10145,30 @@
       }
     },
     {
+      "id": "ep-post-plugins-id-install",
+      "type": "endpoint",
+      "title": "POST /plugins/{id}/install",
+      "content": "Install a Maktaba plugin again",
+      "tags": [
+        "api",
+        "Plugins",
+        "post"
+      ],
+      "related": [
+        "story-54.38",
+        "story-54.46"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/plugins/{id}/install",
+        "tag": "Plugins",
+        "operationId": "installPluginFromRelease"
+      }
+    },
+    {
       "id": "ep-get-system-updates",
       "type": "endpoint",
       "title": "GET /system/updates",
@@ -10697,6 +10727,7 @@
         "post"
       ],
       "related": [
+        "story-16.4",
         "story-57.10"
       ],
       "files": {
@@ -11275,6 +11306,7 @@
         "get"
       ],
       "related": [
+        "story-16.4",
         "story-27.1",
         "story-27.3",
         "story-27.4",

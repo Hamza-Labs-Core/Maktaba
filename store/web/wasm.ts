@@ -69,6 +69,8 @@ export interface Inspected {
   audit: { code: string; detail: string } | null;
   strings: Record<string, Record<string, unknown>>;
   wasm_size: number;
+  /** a native package of one of Maktaba's own plugins (story 54.45 §2): no component */
+  native: boolean;
 }
 
 export async function inspect(pkg: Uint8Array): Promise<Inspected> {

@@ -114,11 +114,13 @@ jobs:
           f=tools/release/fetch-pinned.sh d=build/mac-app/downloads
           $f "$POSTGRES_URL" "$POSTGRES_SHA256" "$d/postgresql-$POSTGRES_VERSION.tar.gz"
           $f "$PGVECTOR_URL" "$PGVECTOR_SHA256" "$d/pgvector-$PGVECTOR_VERSION.tar.gz"
+          $f "$POSTGRES18_URL" "$POSTGRES18_SHA256" "$d/postgresql-$POSTGRES18_VERSION.tar.gz"
+          $f "$PGTEXTSEARCH_URL" "$PGTEXTSEARCH_SHA256" "$d/pg_textsearch-$PGTEXTSEARCH_VERSION.tar.gz"
           $f "$FFMPEG_URL" "$FFMPEG_SHA256" "$d/ffmpeg-$FFMPEG_VERSION.zip"
           $f "$FFPROBE_URL" "$FFPROBE_SHA256" "$d/ffprobe-$FFMPEG_VERSION.zip"
           $f "$PYTHON_URL" "$PYTHON_SHA256" "$d/cpython-$PYTHON_VERSION.tar.gz"
           $f "$OLLAMA_URL" "$OLLAMA_SHA256" "$d/ollama-$OLLAMA_VERSION-darwin.tgz"
-          keep=" postgresql-$POSTGRES_VERSION.tar.gz pgvector-$PGVECTOR_VERSION.tar.gz ffmpeg-$FFMPEG_VERSION.zip ffprobe-$FFMPEG_VERSION.zip cpython-$PYTHON_VERSION.tar.gz ollama-$OLLAMA_VERSION-darwin.tgz "
+          keep=" postgresql-$POSTGRES_VERSION.tar.gz pgvector-$PGVECTOR_VERSION.tar.gz postgresql-$POSTGRES18_VERSION.tar.gz pg_textsearch-$PGTEXTSEARCH_VERSION.tar.gz ffmpeg-$FFMPEG_VERSION.zip ffprobe-$FFMPEG_VERSION.zip cpython-$PYTHON_VERSION.tar.gz ollama-$OLLAMA_VERSION-darwin.tgz "
           for x in "$d"/*; do
             case "$keep" in *" ${x##*/} "*) ;; *) echo "dropping ${x##*/} (no pin names it)"; rm -rf "$x" ;; esac
           done
@@ -170,6 +172,21 @@ jobs:
           APPLE_TEAM_ID: ''
         run: make mac-app
 
+      # Epic 49 story 49.2: the 16 → 18 upgrade on this platform's own payload, both majors
+      # from it (the Mac's APFS takes pg_upgrade's --clone; Linux runners' ext4 never does):
+      # the upgrade, its grants, the 16 cluster starting after it (a rollback's), the redo
+      # after 16 moved on, a 16 cluster stopped hard
+      - name: The PostgreSQL 16 → 18 upgrade on this payload (TestRealMajorUpgrade)
+        working-directory: cmd/maktaba-server
+        env:
+          MAKTABA_TEST_PG16_HOME: ${{ github.workspace }}/build/mac-app/server/postgres
+          MAKTABA_TEST_PG18_HOME: ${{ github.workspace }}/build/mac-app/server/postgres-18
+        run: |
+          set -o pipefail
+          go test -tags integration -count=1 -timeout 15m -run '^(TestRealMajorUpgrade|TestRealPgTextsearchPreloaded)$' -v ./internal/pgbundle/ 2>&1 | tee "$RUNNER_TEMP/major.out"
+          grep -q -- '--- PASS: TestRealMajorUpgrade' "$RUNNER_TEMP/major.out"
+          grep -q -- '--- PASS: TestRealPgTextsearchPreloaded' "$RUNNER_TEMP/major.out"
+
       - name: Sizes
         if: always()
         run: |
@@ -207,12 +224,13 @@ jobs:
   # publish job's updater-feed over what it staged, into a scratch folder: the feed must carry
   # darwin-aarch64-core (and -app) and no Full key. Unsigned and not notarized (that needs the
   # Developer ID, a tag's); the updater signatures are a throwaway key's, checked with its
-  # public half as the publish job checks the real one. Then the budgets (README N7-N9):
+  # public half as the publish job checks the real one. Then the budgets (README N7, N9):
   #   N7  the Core dmg against the v0.3.62 Full dmg (tools/release/bundle-size/baseline.json)
-  #   N8  a Core home set up from that app as the app does (Core chosen), idle 120 s: the
-  #       launcher's whole tree at or under 700 MB resident (core-home.sh)
-  #   N9  exactly 4 processes besides the launcher and the supervisor: postgres, api,
-  #       streaming, pipeline
+  #   N9  a Core home set up from that app as the app does (Core chosen), idle 120 s
+  #       (core-home.sh): exactly 4 processes besides the launcher and the supervisor:
+  #       postgres, api, streaming, pipeline. Its idle memory is recorded and shown, held to
+  #       no budget: N8 (700 MB) was removed on 2026-11-19, because it measured only an
+  #       empty home
   # What it measured, the feed and the home's logs are kept as the bundle-size artifact.
   bundle-size:
     name: Bundle size (Core payload)
@@ -313,11 +331,13 @@ jobs:
           f=tools/release/fetch-pinned.sh d=build/mac-app/downloads
           $f "$POSTGRES_URL" "$POSTGRES_SHA256" "$d/postgresql-$POSTGRES_VERSION.tar.gz"
           $f "$PGVECTOR_URL" "$PGVECTOR_SHA256" "$d/pgvector-$PGVECTOR_VERSION.tar.gz"
+          $f "$POSTGRES18_URL" "$POSTGRES18_SHA256" "$d/postgresql-$POSTGRES18_VERSION.tar.gz"
+          $f "$PGTEXTSEARCH_URL" "$PGTEXTSEARCH_SHA256" "$d/pg_textsearch-$PGTEXTSEARCH_VERSION.tar.gz"
           $f "$FFMPEG_URL" "$FFMPEG_SHA256" "$d/ffmpeg-$FFMPEG_VERSION.zip"
           $f "$FFPROBE_URL" "$FFPROBE_SHA256" "$d/ffprobe-$FFMPEG_VERSION.zip"
           $f "$PYTHON_URL" "$PYTHON_SHA256" "$d/cpython-$PYTHON_VERSION.tar.gz"
           $f "$OLLAMA_URL" "$OLLAMA_SHA256" "$d/ollama-$OLLAMA_VERSION-darwin.tgz"
-          keep=" postgresql-$POSTGRES_VERSION.tar.gz pgvector-$PGVECTOR_VERSION.tar.gz ffmpeg-$FFMPEG_VERSION.zip ffprobe-$FFMPEG_VERSION.zip cpython-$PYTHON_VERSION.tar.gz ollama-$OLLAMA_VERSION-darwin.tgz "
+          keep=" postgresql-$POSTGRES_VERSION.tar.gz pgvector-$PGVECTOR_VERSION.tar.gz postgresql-$POSTGRES18_VERSION.tar.gz pg_textsearch-$PGTEXTSEARCH_VERSION.tar.gz ffmpeg-$FFMPEG_VERSION.zip ffprobe-$FFMPEG_VERSION.zip cpython-$PYTHON_VERSION.tar.gz ollama-$OLLAMA_VERSION-darwin.tgz "
           for x in "$d"/*; do
             case "$keep" in *" ${x##*/} "*) ;; *) echo "dropping ${x##*/} (no pin names it)"; rm -rf "$x" ;; esac
           done
@@ -399,10 +419,10 @@ jobs:
           dmg=("$staged"/Maktaba-Core_*_aarch64.dmg)
           echo "CORE_DMG_BYTES=$(stat -f %z "${dmg[0]}")" >>"$GITHUB_ENV"
 
-      - name: A Core home, idle (N8, N9)
+      - name: A Core home, idle (N9; its idle memory recorded)
         run: bash tools/release/bundle-size/core-home.sh --app "$APP" --out bundle-size/core-home.json --logs bundle-size/logs
 
-      - name: Budgets (N7, N8, N9)
+      - name: Budgets (N7, N9)
         if: ${{ !cancelled() && env.CORE_DMG_BYTES != '' }}
         run: |
           set -euo pipefail

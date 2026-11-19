@@ -63,6 +63,16 @@ type UpdateStatus struct {
 	ReleaseNotes   string    `json:"release_notes,omitempty"`
 	Assets         []Asset   `json:"assets,omitempty"`
 	CheckedAt      time.Time `json:"checked_at"`
+	// Story 23.8: the published security advisories that affect CurrentVersion
+	// (advisories.go), read with the releases. AdvisoriesChecked is false when the list
+	// could not be read (or the check is off): a client then links to AdvisoriesURL and
+	// never says "none".
+	Advisories        []Advisory `json:"advisories"`
+	AdvisoriesChecked bool       `json:"advisories_checked"`
+	AdvisoriesURL     string     `json:"advisories_url"`
+	// AdvisoriesFixedIn is the lowest release that none of Advisories affects (every
+	// supported branch's ranges counted), "" when there is none yet.
+	AdvisoriesFixedIn string `json:"advisories_fixed_in,omitempty"`
 }
 
 // UpdaterConfig configures an Updater. Zero values are sane: empty Repo
@@ -222,6 +232,8 @@ func (u *Updater) Status(ctx context.Context, refresh bool) UpdateStatus {
 			CurrentVersion: u.current,
 			Channel:        u.channel,
 			CheckedAt:      u.now(),
+			Advisories:     []Advisory{},
+			AdvisoriesURL:  u.AdvisoriesURL(),
 		}
 	}
 	if !refresh {
@@ -235,7 +247,8 @@ func (u *Updater) Status(ctx context.Context, refresh bool) UpdateStatus {
 		if s, ok := u.cachedAny(); ok {
 			return s // serve stale on error
 		}
-		return UpdateStatus{CurrentVersion: u.current, Channel: u.channel, CheckedAt: u.now()}
+		return UpdateStatus{CurrentVersion: u.current, Channel: u.channel, CheckedAt: u.now(),
+			Advisories: []Advisory{}, AdvisoriesURL: u.AdvisoriesURL()}
 	}
 	u.store(s)
 	return s
@@ -343,6 +356,16 @@ func (u *Updater) check(ctx context.Context) (UpdateStatus, error) {
 		CurrentVersion: u.current,
 		Channel:        u.channel,
 		CheckedAt:      u.now(),
+		Advisories:     []Advisory{},
+		AdvisoriesURL:  u.AdvisoriesURL(),
+	}
+	// best effort: an unreadable advisory list never fails the update check
+	if advs, aerr := u.fetchAdvisories(ctx); aerr != nil {
+		u.logErr(aerr)
+	} else {
+		status.Advisories = affecting(advs, u.current)
+		status.AdvisoriesFixedIn = fixedForAll(advs, u.current)
+		status.AdvisoriesChecked = true
 	}
 	latest, ok := selectLatest(rels, u.channel)
 	if !ok {

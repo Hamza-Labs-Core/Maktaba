@@ -7621,12 +7621,76 @@ paths:
         default:
           $ref: '#/components/responses/InternalError'
       operationId: putPluginIsolation
+  /plugins/{id}/install:
+    post:
+      tags:
+      - Plugins
+      summary: Install a Maktaba plugin again
+      description: 'Installs one of Maktaba''s own plugins again from this release after it was removed: its code ships with the server, so this sets its component to installed (off until turned on), or to on with `enable`. Its parked jobs run again once it is on. Any other plugin installs from a file or the store (`POST /plugins/install`).'
+      x-maktaba-role: admin
+      parameters:
+      - name: id
+        in: path
+        required: true
+        description: The plugin's id, such as `tv.maktaba.subtitles`.
+        schema:
+          type: string
+      requestBody:
+        required: false
+        description: Whether to turn it on at once.
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                enable:
+                  type: boolean
+                  description: Turn the plugin on at once.
+      responses:
+        '200':
+          description: The plugin's detail after the change.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '400':
+          description: Invalid request.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Admin only.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: '`plugin_not_installed`: the id is not one of Maktaba''s plugins.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: The component change was refused (for example `component_conflicts`).
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        default:
+          $ref: '#/components/responses/InternalError'
+      operationId: installPluginFromRelease
   /system/updates:
     get:
       tags:
       - System
       summary: This server's release and the newest one
-      description: 'Every signed-in user: the release running (`current_version`), the newest on the channel (`latest_version`, `available`), its notes and when it was checked; how this server updates (`install`, and for a container that cannot update itself the `instructions` and `image`); `rolled_back` when the last update was undone. To an admin only, on the Docker image: `container`, the release on the volume (`runtime`) beside the image''s (`image`), which one runs (`running`: `runtime` or `image`) and why (`reason`: `same`, `image_older`, `image_refused` or `image_pending`).'
+      description: 'Every signed-in user: the release running (`current_version`), the newest on the channel (`latest_version`, `available`), its notes and when it was checked; how this server updates (`install`, and for a container that cannot update itself the `instructions` and `image`); `rolled_back` when the last update was undone. To an admin only, on the Docker image: `container`, the release on the volume (`runtime`) beside the image''s (`image`), which one runs (`running`: `runtime` or `image`) and why (`reason`: `same`, `image_older`, `image_refused` or `image_pending`). The published security advisories that affect the running release (`advisories`: each its GHSA `id`, `cve`, `severity`, `summary`, `url`, the `affected` range that matched and the release that fixes it, `fixed_in`), whether the list could be read (`advisories_checked`: when false the list is unknown, not empty), the repository''s list of every advisory (`advisories_url`) and the lowest release that fixes them all (`advisories_fixed_in`).'
       responses:
         '200':
           description: The release.
@@ -7662,6 +7726,45 @@ paths:
                         - image_older
                         - image_refused
                         - image_pending
+                  advisories:
+                    type: array
+                    description: The published security advisories that affect the running release, most severe first.
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        cve:
+                          type: string
+                        severity:
+                          type: string
+                          enum:
+                          - critical
+                          - high
+                          - medium
+                          - low
+                          - unknown
+                        summary:
+                          type: string
+                        url:
+                          type: string
+                          format: uri
+                        affected:
+                          type: string
+                        fixed_in:
+                          type: string
+                        published_at:
+                          type: string
+                          format: date-time
+                  advisories_checked:
+                    type: boolean
+                    description: 'False when the advisory list could not be read: the list is unknown, not empty.'
+                  advisories_url:
+                    type: string
+                    format: uri
+                  advisories_fixed_in:
+                    type: string
+                    description: The lowest release none of `advisories` affects, every supported branch's ranges counted; absent when there is none yet.
         '401':
           $ref: '#/components/responses/Unauthorized'
         '429':

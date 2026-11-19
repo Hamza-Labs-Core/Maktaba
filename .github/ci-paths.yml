@@ -394,6 +394,9 @@ plugins:
   - 'api/internal/plugins/**'
   - 'api/internal/handlers/queues/impl*.go'
   - 'api/tools/plugin-api-dev/**'
+  # the release's first-party packages (54.27 §2): their packer and the trust check over them
+  - 'api/tools/fp-packages/**'
+  - 'shared/go/componentpack/**'
 
 # Epic 54 (story 54.23): Maktaba's own stages through the worker's plugin path into their
 # Windows runners, end to end (_runner-stages.yml): the runner, the worker's side of the
@@ -707,6 +710,29 @@ cve_gate:
   - 'web/package.json'
   - 'web/pnpm-lock.yaml'
 
+# Story 22.3 AC4 / TC3: the four compose images built and held to their size budgets
+# (_images.yml). A budget measures the whole image, so every input of it: each tree the
+# four Dockerfiles COPY from (the source, not only its manifests: a web asset or a bundle
+# grows the web image), their .dockerignore and the guard, so the pull request that goes
+# over a budget is the one that fails, not main after it. test_image_size_guard holds this
+# list to the Dockerfiles' COPY sources.
+images:
+  - *ci
+  - '.github/workflows/_images.yml'
+  - 'tools/image-size-guard.sh'
+  - '.dockerignore'
+  - 'api/**'
+  - 'streaming/**'
+  - 'pipeline/**'
+  - 'plugins/**'
+  - 'web/**'
+  - 'shared/**'
+  - 'tools/healthcheck/**'
+  - 'tools/plugin-sdk/js/src/flowchart.ts'
+  - 'apps/tv/web/src/**'
+  - 'apps/tv/web/bridge.schema.json'
+  - 'apps/tv/web/i18n/**'
+
 # ---- install and packaging ------------------------------------------------------------
 
 node_packaging:
@@ -756,6 +782,9 @@ launcher:
 mac_app:
   - *ci
   - 'tools/release/mac-app/**'
+  - 'tools/release/pg18-check.sh'
+  # the bundled Postgres each app runs, and its major's upgrade (Epic 49)
+  - 'cmd/maktaba-server/internal/pgbundle/**'
   - 'tools/release/bundle-size/**'
   # the Core leg's dry run (story 51.17): its stamp, its feed
   - 'tools/release/tauri-stamp.mjs'
@@ -795,6 +824,9 @@ mac_app:
 win_app:
   - *ci
   - 'tools/release/win-app/**'
+  - 'tools/release/pg18-check.sh'
+  # the bundled Postgres each app runs, and its major's upgrade (Epic 49)
+  - 'cmd/maktaba-server/internal/pgbundle/**'
   - 'apps/desktop/**'
   - 'cmd/maktaba-launcher/**'
   - 'deploy/packaging/node/build-release.sh'
@@ -814,6 +846,9 @@ win_app:
 linux_app:
   - *ci
   - 'tools/release/linux-app/**'
+  - 'tools/release/pg18-check.sh'
+  # the bundled Postgres each app runs, and its major's upgrade (Epic 49)
+  - 'cmd/maktaba-server/internal/pgbundle/**'
   - 'apps/desktop/**'
   - 'cmd/maktaba-launcher/**'
   - 'deploy/packaging/node/build-release.sh'

@@ -270,6 +270,16 @@ describe("help links from the app", () => {
     });
   });
 
+  // story 54.52: the Plugins page measures each program's processor use, so its help
+  // explains the number and no longer says it is not measured
+  it("the plugins topic explains processor use and never says it is not measured", () => {
+    expect(src("en", "plugins")).toMatch(/share of one processor core/);
+    expect(src("ar", "plugins")).toMatch(/نصيب نواة معالج واحدة/);
+    for (const locale of LOCALES) {
+      expect(src(locale, "plugins")).not.toMatch(/not measured|لا يُقاس/);
+    }
+  });
+
   it("the Live TV page's guide links point at entries that exist", () => {
     for (const [k, ref] of Object.entries(DOC_SECTIONS)) expectRef(ref, `Live TV doc ${k}`);
   });

@@ -239,11 +239,15 @@ has:
 | `stage_names`, `queues` | its stages, and their names in the queue (`GET /api/queues/failures?stage=` takes several, joined by commas) |
 | `switch_locked` | why it cannot be turned on from its switch (`licence_missing`, `held`, `revoked`, …); absent when it can. Turning a plugin off is never locked |
 | `activity` | `pending`, `running`, `done_24h`, `failed_24h`, `problems`, `avg_ms`, `p95_ms` |
-| `resources` | `processes` (each `{process, group, component, machine, rss_mb, scope, stages, shared_with, shared_core}`), `shared`, and a third-party plugin's `data_rows`, `data_bytes`, `data_mb`, `memory_mb`, `peak_memory_mb` |
+| `resources` | `processes` (each `{process, group, component, machine, rss_mb, scope, cpu_pct, cpu_scope, stages, shared_with, shared_core}`), `shared`, and a third-party plugin's `data_rows`, `data_bytes`, `data_mb`, `memory_mb`, `peak_memory_mb` |
 
 A process often runs several plugins (a runner group, the pipeline worker, the plugin host):
-`rss_mb` is the whole process's memory and `shared_with` names the other plugins. Nothing
-splits it per plugin, and CPU is not measured per process.
+`rss_mb` is the whole process's memory, `cpu_pct` the share of one processor core the whole
+process used over the supervisor's last five-minute sample (100 is one core; a busy process can
+pass it), and `shared_with` names the other plugins. Nothing splits either number per plugin.
+`scope` and `cpu_scope` say what each number covers: `process` (this process alone) or
+`component` (every process of its component together). They can differ for one sample, just
+after another process of the component starts. A process with no number yet has no `cpu_pct`.
 
 `core` lists the parts of Maktaba itself that must always run. They are not plugins: they are
 not in `plugins`, and `GET /api/plugins/{id}` answers `404 plugin_not_installed` for them.
@@ -263,5 +267,10 @@ A plugin's `activity.problems` is counted by the rule of `GET /api/queues/failur
 the number of items that list shows for the plugin's stages.
 
 A plugin with `source: "release"` is switched with `enable`, `disable`, `start` and `stop`
-like any other. Its update, rollback, removal, grants, settings and writes routes answer
-`409 plugin_with_release`: it is updated and removed with Maktaba.
+like any other. `DELETE /api/plugins/{id}` removes it: its component's `want` becomes
+`absent`, its queued jobs wait (`queued_jobs_parked`), and what it wrote stays, so `?purge=true`
+answers `409 plugin_data_kept`. A plugin that components still on need answers
+`409 component_required_by`, naming them. `POST /api/plugins/{id}/install` (`{"enable": true}`
+to turn it on too) installs it again from the Maktaba release, with nothing to download. Its
+update, rollback, grants, settings and writes routes answer `409 plugin_with_release`: it is
+updated with Maktaba.

@@ -212,11 +212,14 @@ outcome}` (`ok` و`failed`)، و`maktaba_plugin_job_seconds{plugin, quantile}` (
 | `stage_names`، `queues` | مراحلها، وأسماؤها في قائمة الانتظار (يقبل `GET /api/queues/failures?stage=` عدة مراحل تفصل بينها فواصل) |
 | `switch_locked` | سبب تعذّر تشغيلها من مفتاحها (`licence_missing`، `held`، `revoked`، …)؛ ويغيب حين يمكن. وإيقاف الإضافة لا يُقفل أبدًا |
 | `activity` | `pending`، `running`، `done_24h`، `failed_24h`، `problems`، `avg_ms`، `p95_ms` |
-| `resources` | `processes` (كل واحدة `{process, group, component, machine, rss_mb, scope, stages, shared_with, shared_core}`)، و`shared`، ولإضافة الطرف الثالث `data_rows` و`data_bytes` و`data_mb` و`memory_mb` و`peak_memory_mb` |
+| `resources` | `processes` (كل واحدة `{process, group, component, machine, rss_mb, scope, cpu_pct, cpu_scope, stages, shared_with, shared_core}`)، و`shared`، ولإضافة الطرف الثالث `data_rows` و`data_bytes` و`data_mb` و`memory_mb` و`peak_memory_mb` |
 
 كثيرًا ما تشغّل العملية الواحدة عدة إضافات (مجموعة مشغّل، أو عامل خط المعالجة، أو مضيف الإضافات):
-فـ`rss_mb` ذاكرة العملية كلها و`shared_with` يسمّي الإضافات الأخرى. لا شيء يقسّمها على الإضافات، ولا
-يُقاس استخدام المعالج لكل عملية.
+فـ`rss_mb` ذاكرة العملية كلها، و`cpu_pct` نصيب نواة معالج واحدة الذي استخدمته العملية كلها في آخر قياس
+للمشرف كل خمس دقائق (100 نواة واحدة، وقد تتجاوزه العملية المشغولة)، و`shared_with` يسمّي الإضافات الأخرى.
+لا شيء يقسّم أيًّا من الرقمين على الإضافات. ويقول `scope` و`cpu_scope` ما يغطيه كل رقم: `process` (هذه
+العملية وحدها) أو `component` (كل عمليات مكوّنها معًا). وقد يختلفان في قياس واحد، بعد بدء عملية أخرى
+للمكوّن مباشرة. والعملية التي لا رقم لها بعد لا `cpu_pct` لها.
 
 يسرد `core` أجزاء مكتبة نفسها التي يجب أن تعمل دائمًا. وهي ليست إضافات: لا تظهر في `plugins`، ويجيب
 `GET /api/plugins/{id}` عنها بـ`404 plugin_not_installed`.
@@ -235,5 +238,9 @@ outcome}` (`ok` و`failed`)، و`maktaba_plugin_job_seconds{plugin, quantile}` (
 تلك القائمة لمراحل الإضافة.
 
 الإضافة التي `source` فيها `"release"` تُشغَّل وتُوقَف بـ`enable` و`disable` و`start` و`stop` مثل غيرها.
-أما مسارات تحديثها وإرجاعها وإزالتها ومنحها وإعداداتها وكتاباتها فتجيب بـ`409 plugin_with_release`:
-فهي تُحدَّث وتُزال مع مكتبة.
+ويزيلها `DELETE /api/plugins/{id}`: تصير `want` لمكوّنها `absent`، وتنتظر مهامّها المنتظرة
+(`queued_jobs_parked`)، ويبقى ما كتبته، فيجيب `?purge=true` بـ`409 plugin_data_kept`. والإضافة التي
+لا تزال تحتاجها مكوّنات تعمل تجيب بـ`409 component_required_by` مع ذكرها. ويعيد
+`POST /api/plugins/{id}/install` تثبيتها من إصدار مكتبة دون تنزيل شيء (مع `{"enable": true}` لتشغيلها أيضًا).
+أما مسارات تحديثها وإرجاعها ومنحها وإعداداتها وكتاباتها فتجيب بـ`409 plugin_with_release`: فهي تُحدَّث
+مع مكتبة.

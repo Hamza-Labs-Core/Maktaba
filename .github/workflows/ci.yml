@@ -115,6 +115,7 @@ jobs:
       perf_ci: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.perf_ci == 'true' }}
       build_artifacts: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.build_artifacts == 'true' }}
       cve_gate: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.cve_gate == 'true' }}
+      images: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.images == 'true' }}
       node_packaging: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.node_packaging == 'true' }}
       components_packs: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.components_packs == 'true' }}
       release_venv: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.release_venv == 'true' }}
@@ -336,6 +337,13 @@ jobs:
     needs: [changes]
     if: needs.changes.outputs.cve_gate == 'true'
     uses: ./.github/workflows/_cve-gate.yml
+
+  images:
+    # Story 22.3 AC4 / TC3: the four compose images built and held to their size budgets
+    # (tools/image-size-guard.sh); an image over its budget fails with the overshoot
+    needs: [changes]
+    if: needs.changes.outputs.images == 'true'
+    uses: ./.github/workflows/_images.yml
 
   node-packaging:
     needs: [changes]
@@ -639,6 +647,7 @@ jobs:
       - perf-ci
       - build-artifacts
       - cve-gate
+      - images
       - node-packaging
       - components-packs
       - launcher

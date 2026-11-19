@@ -5988,7 +5988,8 @@
         "ep-get-components-id",
         "ep-put-components-id",
         "ep-delete-components-id",
-        "ep-get-plugins"
+        "ep-get-plugins",
+        "ep-post-plugins-id-install"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-38-plugin-files.md",
@@ -6001,7 +6002,8 @@
         "GET /components/{id}",
         "PUT /components/{id}",
         "DELETE /components/{id}",
-        "GET /plugins"
+        "GET /plugins",
+        "POST /plugins/{id}/install"
       ],
       "db_tables": [],
       "metadata": {
@@ -6207,7 +6209,7 @@
       "title": "Maktaba's plugins as store packages",
       "epic": "54-plugins",
       "phase": 5,
-      "content": "# Story 54.45 — Maktaba's plugins as store packages\n\n> Epic 54 · Phase 5 · Depends on: 54.14, 54.15, 54.16, 54.22, 54.27, 54.44 · Needed by: 54.46 to 54.51 · Not built\n\n## Why\n\nA plugin Maktaba publishes is a store plugin whose publisher is Maktaba. Today it is not a package at all: its code rides in the pipeline wheel and its manifest in a bundle embedded in the server, so it cannot be installed, removed or updated on its own. This story makes each one a real signed package that the store lists under the verified publisher Maktaba. It reverses the part of README §15.6 that said the store neve",
+      "content": "# Story 54.45 — Maktaba's plugins as store packages\n\n> Epic 54 · Phase 5 · Depends on: 54.14, 54.15, 54.16, 54.22, 54.27, 54.44 · Needed by: 54.46 to 54.51 · Partly built\n\n## Why\n\nA plugin Maktaba publishes is a store plugin whose publisher is Maktaba. Today it is not a package at all: its code rides in the pipeline wheel and its manifest in a bundle embedded in the server, so it cannot be installed, removed or updated on its own. This story makes each one a real signed package that the store lists under the verified publisher Maktaba. It reverses the part of README §15.6 that said the store n",
       "tags": [
         "story",
         "54-plugins",
@@ -6215,6 +6217,7 @@
       ],
       "related": [
         "epic-54-plugins",
+        "ep-get-workers",
         "ep-get-plugins"
       ],
       "files": {
@@ -6223,6 +6226,7 @@
         "mockups": []
       },
       "api_endpoints": [
+        "GET /workers",
         "GET /plugins"
       ],
       "db_tables": [],
@@ -6236,7 +6240,7 @@
       "title": "Install and remove a Maktaba plugin",
       "epic": "54-plugins",
       "phase": 5,
-      "content": "# Story 54.46 — Install and remove a Maktaba plugin\n\n> Epic 54 · Phase 5 · Depends on: 54.44, 54.45, 54.38, Epic 51 (51.15, 51.16) · Needed by: 54.47, 54.48, 54.50 · Not built\n\n## Why\n\nAfter 54.44 a Maktaba plugin can be turned on and off on its page, but its files are always on disk and its Remove is absent with the reason in words. This story lets an admin install and remove each Maktaba plugin like any store plugin, with one source of truth for its state and no lost jobs.\n\n## Description\n\n### 1. One source of truth\n\nA Maktaba plugin keeps the Epic 51 component whose stages it implements as ",
+      "content": "# Story 54.46 — Install and remove a Maktaba plugin\n\n> Epic 54 · Phase 5 · Depends on: 54.44, 54.45, 54.38, Epic 51 (51.15, 51.16) · Needed by: 54.47, 54.48, 54.50 · Built\n\n## Why\n\nAfter 54.44 a Maktaba plugin can be turned on and off on its page, but its files are always on disk and its Remove is absent with the reason in words. This story lets an admin install and remove each Maktaba plugin like any store plugin, with one source of truth for its state and no lost jobs.\n\n## Description\n\n### 1. One source of truth\n\nA Maktaba plugin keeps the Epic 51 component whose stages it implements as its ",
       "tags": [
         "story",
         "54-plugins",
@@ -6244,7 +6248,9 @@
       ],
       "related": [
         "epic-54-plugins",
-        "ep-get-plugins"
+        "ep-get-components",
+        "ep-get-plugins",
+        "ep-post-plugins-id-install"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-46-maktaba-plugin-lifecycle.md",
@@ -6252,7 +6258,9 @@
         "mockups": []
       },
       "api_endpoints": [
-        "GET /plugins"
+        "GET /components",
+        "GET /plugins",
+        "POST /plugins/{id}/install"
       ],
       "db_tables": [],
       "metadata": {
@@ -6408,7 +6416,7 @@
       "title": "CPU of each process",
       "epic": "54-plugins",
       "phase": 5,
-      "content": "# Story 54.52 — CPU of each process\n\n> Epic 54 · Phase 5 · Depends on: 54.44, Epic 51 (51.14) · Not built\n\n## Why\n\nThe Plugins page shows the memory of each process that runs a plugin and says that processor use is not measured. The supervisor samples memory only. An admin deciding which plugin to turn off on a slow machine needs both.\n\n## Description\n\n- The supervisor samples each running process's CPU time with its memory, every five minutes, on macOS, Linux and Windows, and reports the share of one core used since the last sample as `cpu_pct` beside `rss_mb`, and per process in `cpu_parts` ",
+      "content": "# Story 54.52 — CPU of each process\n\n> Epic 54 · Phase 5 · Depends on: 54.44, Epic 51 (51.14) · Built\n\n## Why\n\nThe Plugins page shows the memory of each process that runs a plugin and says that processor use is not measured. The supervisor samples memory only. An admin deciding which plugin to turn off on a slow machine needs both.\n\n## Description\n\n- The supervisor samples each running process's CPU time with its memory, every five minutes, on macOS, Linux and Windows, and reports the share of one core used since the last sample as `cpu_pct` beside `rss_mb`, and per process in `cpu_parts` besi",
       "tags": [
         "story",
         "54-plugins",

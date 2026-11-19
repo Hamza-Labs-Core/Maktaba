@@ -562,3 +562,47 @@ plugins/
 
 The plugins ride in the release's signed pipeline wheel; the server embeds their bundle
 (`shared/plugins/firstparty.json`, `tools/plugins/bundle.py`).
+
+## The release's packages
+
+Each release also builds one package per plugin, `tv.maktaba.<name>-<version>.mkplugin`, with
+its `files.json` beside it as `tv.maktaba.<name>-<version>.files.json`:
+
+```
+python3 tools/plugins/build.py --version 0.3.152 --out dist [plugin ...]
+```
+
+A package holds the manifest with `version` and `maktaba = "=<version>"` stamped from the
+release, the strings, the compiled statements (`statements.json`, the same the server embeds)
+and the plugin's code as a wheel of its own (`wheels/maktaba_fp_<name>-<version>-py3-none-any.whl`).
+It is packed by the home's own writer (`shared/go/componentpack/cmd/mkplugin`) and is
+reproducible: the same commit gives the same bytes. A plugin with no stage is refused.
+
+The release lists both files in its signed `checksums.txt`. A first-party package is trusted
+only when its `files.json` is listed there and its version is the server's
+(`firstparty.CheckPackage`). After signing, the release runs `api/tools/fp-packages` over its
+files. That command also checks that each package's manifest, strings and statements are the
+ones the server embeds, and that its wheel holds the same code as the release's signed pipeline
+wheel, file for file. CI runs it on a dry run of the build. The packages are release
+files only: homes still run the code from the pipeline wheel, and nothing installs a package
+yet.
+
+## Maktaba's plugins in the store
+
+Each of Maktaba's plugins except core's (`tv.maktaba.core-media`; core is not a plugin) is also
+a store package, signed by Maktaba's developer key (`build.py --developer-key`) and countersigned
+by the store. A home trusts such a package only when every rule below holds. Anything else is
+refused with `plugin_trusted_unsigned`, and nothing of it runs.
+
+- The store countersigned it.
+- Its developer key is one the server binary pins (`shared/plugins/maktaba-keys.json`).
+- Its manifest, strings and statements are exactly the server's own, at the server's version.
+
+A Maktaba plugin's database statements change only with a server release, so a store package
+can never bring SQL the server did not ship.
+
+In the store, only Maktaba's publisher account, which a store admin sets, may submit a
+`tv.maktaba.*` id; the community prefixes `tv.maktaba.community.*` stay open to everyone. The
+store reads such a package's manifest in the trusted mode. A native package has no component to
+audit or run, so the store checks that it holds exactly its manifest, strings, statements and
+wheel, and a person reviews every version.

@@ -28,25 +28,22 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/plugins/statements"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/releaseverify"
 	sharedplugins "github.com/Hamza-Labs-Core/Maktaba/shared/plugins"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/plugins/fppackage"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/plugins/pluginmanifest"
 )
 
-// The trust refusals (Epic 51 reason codes too, story 54.37 §3).
+// The trust refusals (Epic 51 reason codes too, story 54.37 §3), shared with the home's
+// check of a package from the store (shared/plugins/fppackage).
 const (
-	CodeTrustedUnsigned = "plugin_trusted_unsigned"
-	CodeTrustedVersion  = "plugin_trusted_version"
+	CodeTrustedUnsigned = fppackage.CodeTrustedUnsigned
+	CodeTrustedVersion  = fppackage.CodeTrustedVersion
 )
 
 // FirstPartyPrefix is the id prefix only Maktaba's own plugins use.
-const FirstPartyPrefix = "tv.maktaba."
+const FirstPartyPrefix = fppackage.Prefix
 
 // Error is a refused package: plugin_trusted_unsigned or plugin_trusted_version.
-type Error struct {
-	Code   string
-	Detail string
-}
-
-func (e *Error) Error() string { return e.Code + ": " + e.Detail }
+type Error = fppackage.Error
 
 // FirstParty is one of Maktaba's own plugins as this release built it.
 type FirstParty struct {
@@ -264,26 +261,22 @@ type Package struct {
 }
 
 // CheckPackage is story 54.22 §2: a first-party package is trusted when its files.json
-// digest is in the running release's verified checksums (under any name), its version is
-// the server's, and its id is under tv.maktaba.. The verified checksums come from
-// releaseverify (the updater's own check); nil checksums trust nothing.
+// digest is the one the running release's verified checksums list under that package's own
+// name (FilesJSONName of its id and the server's version, story 54.27 §2), its version is
+// the server's, and its id is under tv.maktaba.. A digest listed under any other name
+// (another plugin's files.json, any other release file) trusts nothing. The verified
+// checksums come from releaseverify (the updater's own check); nil checksums trust nothing.
 func CheckPackage(p Package, checksums releaseverify.Checksums, serverVersion string) error {
 	if !strings.HasPrefix(p.ID, FirstPartyPrefix) {
 		return &Error{Code: CodeTrustedUnsigned, Detail: p.ID + " is not a Maktaba id"}
 	}
-	sum := sha256.Sum256(p.FilesJSON)
-	digest := hex.EncodeToString(sum[:])
-	listed := false
-	for _, d := range checksums {
-		if strings.EqualFold(d, digest) {
-			listed = true
-		}
-	}
-	if !listed {
-		return &Error{Code: CodeTrustedUnsigned, Detail: p.ID + ": files.json is not in the release's checksums"}
-	}
 	if p.Version != serverVersion {
 		return &Error{Code: CodeTrustedVersion, Detail: p.ID + " " + p.Version + " is not " + serverVersion}
+	}
+	sum := sha256.Sum256(p.FilesJSON)
+	name := FilesJSONName(p.ID, serverVersion)
+	if d, ok := checksums[name]; !ok || !strings.EqualFold(d, hex.EncodeToString(sum[:])) {
+		return &Error{Code: CodeTrustedUnsigned, Detail: p.ID + ": files.json is not the release's " + name}
 	}
 	return nil
 }

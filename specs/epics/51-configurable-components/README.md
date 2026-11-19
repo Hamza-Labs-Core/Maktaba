@@ -522,7 +522,7 @@ Chapter detection has no stage of its own today; it gets a component when it get
 | N5 | Drain | ≤ the component's `drain.grace_s` (30 s default, 120 s transcription) | same |
 | N6 | Jobs lost, failed or cancelled by a disable | **0** over 100 random enable/disable flips under load | `components-chaos` CI job (CI only) |
 | N7 | Core footprint after setup (payload + first-run downloads), macOS | ≤ 45 % of Full's, and ≤ 400 MB | `bundle-size` CI job; baseline v0.3.62 (Full dmg 188.3 MB) in 51.17 |
-| N8 | Core idle memory (postgres + API + streaming + pipeline, no media work) | ≤ 700 MB RSS on an M-series Mac | `bundle-size` job's footprint step, on the macOS runner |
+| N8 | Core idle memory (postgres + API + streaming + pipeline, no media work) | **Removed on 2026-11-19.** The 700 MB budget measured only an empty home. The `bundle-size` job still records the figure (`idle_rss_mb` in `core-home.json`) and shows it for information | — |
 | N9 | Core idle processes | 4 (postgres, API, streaming, pipeline) besides supervisor and launcher | same |
 | N10 | Pack install (download excluded): verify + unpack + pointer switch | ≤ 30 s for `runtime.ml` on CI hardware; the venv rebuild after it is warm-up, reported apart | `components-packs` CI job |
 | N11 | Capabilities answer | ≤ 20 ms p95 at the API; ≤ 1 KB | API benchmark test |

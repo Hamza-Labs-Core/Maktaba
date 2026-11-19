@@ -265,34 +265,36 @@ COPY web/docker-Caddyfile /etc/caddy/Caddyfile
 
 `web/docker-Caddyfile` is a thin SPA fallback (`try_files` to
 `index.html`); the outer Caddy at the compose edge already terminates
-TLS. Image size measured against the 30 MiB target in the size guard.
+TLS. Image size measured against the 88 MiB budget in the size guard
+(79.7 MiB on linux/amd64, 77.1 MiB on linux/arm64, 2026-11-19).
 
 ### 2.6 Image size guard
 
-`tools/image-size-guard.sh`:
+`tools/image-size-guard.sh` sums each image's unpacked layers (`docker
+history`; `docker image inspect`'s `.Size` also counts compressed content on
+a containerd image store and overstates) and holds it to its budget:
 
-```bash
-#!/usr/bin/env bash
-set -euo pipefail
-declare -A MAX
-MAX[api]=62914560        # 60 MiB
-MAX[streaming]=83886080  # 80 MiB
-MAX[pipeline]=1288490188 # 1.2 GiB
-MAX[web]=31457280        # 30 MiB
+| Image | Budget | Measured amd64 | Measured arm64 |
+|---|---|---|---|
+| api | 60 MiB | 54.7 MiB | 50.7 MiB |
+| streaming | 80 MiB | 30.5 MiB | 29.0 MiB |
+| pipeline | 1200 MiB | 682.4 MiB | 643.5 MiB |
+| web | 88 MiB | 79.7 MiB | 77.1 MiB |
 
-for svc in api streaming pipeline web; do
-  size=$(docker image inspect "ghcr.io/maktaba/${svc}:${VERSION:-latest}" --format '{{.Size}}')
-  if (( size > MAX[$svc] )); then
-    delta=$(( size - MAX[$svc] ))
-    printf "FAIL %-9s size=%s max=%s overshoot=%s\n" "$svc" "$size" "${MAX[$svc]}" "$delta"
-    exit 1
-  fi
-  printf "OK   %-9s size=%s\n" "$svc" "$size"
-done
-```
+The budgets were set on 2026-11-19 from the images as CI builds them, the
+larger platform plus ~10% headroom rounded up to a whole MiB, replacing the
+original targets where they did not hold (web's 30 MiB was below its
+`caddy:2-alpine` base alone); api, streaming and pipeline keep their original
+targets, which they fit.
 
-Wired into `_build-artifacts.yml` after the build step; a regression
-fails CI with the delta (TC3).
+CI's `images` job (`.github/workflows/_images.yml`, called from `ci.yml` and
+required by `ci-success`) builds the four images on each platform
+`release.yml` pushes (linux/amd64 and linux/arm64, native runners) and runs
+the guard. An image over budget prints a `FAIL` line with its size, budget
+and overshoot and an error annotation, and fails the job (TC3). A pull request
+runs it when it changes anything the four Dockerfiles copy from
+(`.github/ci-paths.yml`'s `images`, held to their COPY sources by
+`tools/ci/tests/test_image_size_guard.py`); a push to main always does.
 
 ### 2.7 Doctor check for Mac MLX
 
@@ -389,7 +391,7 @@ key. The compose-mac path's smoke test asserts this key is `OK`.
 **Images**
 - [ ] Four images published per release (api, streaming, pipeline, web).
 - [ ] Multi-arch (linux/amd64, linux/arm64).
-- [ ] Sizes within the AC4 caps.
+- [x] Sizes within the AC4 caps.
 
 **Compose**
 - [ ] `docker compose up -d` brings the stack to all-healthy in ≤ 90 s.
@@ -402,5 +404,5 @@ key. The compose-mac path's smoke test asserts this key is `OK`.
 - [ ] HSTS header set; Story 23.3 owns the policy.
 
 **CI**
-- [ ] Image size guard wired into the build-artifacts gate.
+- [x] Image size guard wired into CI (`_images.yml`, both platforms).
 - [ ] Healthcheck round-trip tested in `_e2e.yml`.

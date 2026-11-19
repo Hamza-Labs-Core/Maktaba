@@ -5,6 +5,9 @@
 #   bin/       maktaba-server (web UI embedded) maktaba-api maktaba-streaming maktaba-launcher
 #              maktaba-plugind (Epic 54: the plugin host, Rust; cargo builds it)
 #   postgres/  bin/ lib/ share/          PostgreSQL 16, relocatable, with pgvector
+#   postgres-18/                         PostgreSQL 18 with pgvector and pg_textsearch (Epic 49,
+#                                        story 49.1): the next major, unused until the
+#                                        updater's upgrade (49.2)
 #   ffmpeg/    ffmpeg ffprobe            static
 #   ollama/    ollama llama-server       the language model server (arm64; the full flavour only)
 #   python/    CPython 3.12              python-build-standalone, stdlib precompiled
@@ -76,7 +79,7 @@ mkdir -p "$CACHE"
 OUT="$BUILD/server"
 WORK="$BUILD/work"
 rm -rf "$OUT" "$WORK"
-mkdir -p "$OUT"/{bin,postgres,ffmpeg,pipeline,licenses} "$WORK"
+mkdir -p "$OUT"/{bin,postgres,postgres-18,ffmpeg,pipeline,licenses} "$WORK"
 
 # sha256, fetch (download once, always checked against pins.env), check_pins
 # shellcheck source-path=SCRIPTDIR source=lib.sh
@@ -144,6 +147,47 @@ make -C "$pgv" --no-print-directory PG_CONFIG="$pg/bin/pg_config" PG_SYSROOT="$(
 cp "$pgv/vector.dylib" "$OUT/postgres/lib/"
 cp "$pgv/vector.control" "$pgv"/sql/vector--*.sql "$OUT/postgres/share/extension/"
 cp "$pgv/LICENSE" "$OUT/licenses/pgvector.txt"
+
+# --- PostgreSQL 18, pgvector and pg_textsearch (Epic 49, story 49.1) ---------------------------
+# The next major in postgres-18/, picked as 16 is above, without what the theseus-rs 18 build
+# adds and Maktaba never loads: LLVM (JIT, 118 MB), PL/Python and its Python, the bitcode.
+# pgvector (the same source) and pg_textsearch are built against it, with_llvm=no (no bitcode
+# without LLVM) and no -march=native; signed below with every other Mach-O file.
+log "PostgreSQL $POSTGRES18_VERSION"
+mkdir -p "$WORK/pg18"
+tar -xzf "$(fetch "$POSTGRES18_URL" "$POSTGRES18_SHA256" "postgresql-$POSTGRES18_VERSION.tar.gz")" -C "$WORK/pg18"
+pg18="$WORK/pg18/postgresql-$POSTGRES18_VERSION-aarch64-apple-darwin"
+[ -x "$pg18/bin/postgres" ] || die "unexpected PostgreSQL $POSTGRES18_VERSION archive layout"
+mkdir -p "$OUT/postgres-18/bin"
+for b in postgres initdb pg_ctl pg_dump pg_dumpall pg_restore psql pg_isready pg_upgrade pg_controldata pg_resetwal vacuumdb; do
+    cp "$pg18/bin/$b" "$OUT/postgres-18/bin/"
+done
+(cd "$pg18" && tar -cf - --exclude='*.a' --exclude=pgxs --exclude=pkgconfig --exclude=bitcode \
+    --exclude='libLLVM*' --exclude='llvmjit*' --exclude='*plpython*' --exclude='Python' --exclude='python3*' \
+    --exclude='plperl*' --exclude='*_plperl*' --exclude='pltcl*' --exclude='libecpg*' --exclude='libpgtypes*' --exclude='libsqlite3*' lib share) | (cd "$OUT/postgres-18" && tar -xf -)
+find "$OUT/postgres-18/lib" -type f ! -name 'pgoutput.*' -exec grep -l -a -F _PG_output_plugin_init {} + 2>/dev/null |
+    while IFS= read -r f; do rm -f "$f"; done || true
+cp "$pg18/COPYRIGHT" "$OUT/licenses/postgresql-18.txt"
+log "pgvector $PGVECTOR_VERSION for PostgreSQL $POSTGRES18_VERSION"
+mkdir -p "$WORK/pgv18"
+tar -xzf "$(fetch "$PGVECTOR_URL" "$PGVECTOR_SHA256" "pgvector-$PGVECTOR_VERSION.tar.gz")" -C "$WORK/pgv18"
+pgv18="$WORK/pgv18/pgvector-$PGVECTOR_VERSION"
+make -C "$pgv18" --no-print-directory PG_CONFIG="$pg18/bin/pg_config" PG_SYSROOT="$(xcrun --show-sdk-path)" OPTFLAGS="" \
+    with_llvm=no >"$WORK/pgvector18.log" 2>&1 || { tail -20 "$WORK/pgvector18.log" >&2; die "pgvector did not build for PostgreSQL 18"; }
+[ -f "$pgv18/vector.dylib" ] || die "pgvector built no vector.dylib for PostgreSQL 18"
+cp "$pgv18/vector.dylib" "$OUT/postgres-18/lib/"
+cp "$pgv18/vector.control" "$pgv18"/sql/vector--*.sql "$OUT/postgres-18/share/extension/"
+log "pg_textsearch $PGTEXTSEARCH_VERSION"
+tar -xzf "$(fetch "$PGTEXTSEARCH_URL" "$PGTEXTSEARCH_SHA256" "pg_textsearch-$PGTEXTSEARCH_VERSION.tar.gz")" -C "$WORK"
+pgts="$WORK/pg_textsearch-$PGTEXTSEARCH_VERSION"
+if ! { [ -f "$pgts/Makefile" ] && [ -f "$pgts/pg_textsearch.control" ]; }; then die "unexpected pg_textsearch archive layout"; fi
+make -C "$pgts" --no-print-directory -j"$(sysctl -n hw.ncpu)" PG_CONFIG="$pg18/bin/pg_config" \
+    PG_SYSROOT="$(xcrun --show-sdk-path)" with_llvm=no \
+    >"$WORK/pg_textsearch.log" 2>&1 || { tail -20 "$WORK/pg_textsearch.log" >&2; die "pg_textsearch did not build"; }
+[ -f "$pgts/pg_textsearch.dylib" ] || die "pg_textsearch built no pg_textsearch.dylib"
+cp "$pgts/pg_textsearch.dylib" "$OUT/postgres-18/lib/"
+cp "$pgts/pg_textsearch.control" "$pgts"/sql/pg_textsearch--*.sql "$OUT/postgres-18/share/extension/"
+cat "$pgts/LICENSE" "$pgts/NOTICE" >"$OUT/licenses/pg_textsearch.txt"
 
 # --- ffmpeg --------------------------------------------------------------------------------------
 log "ffmpeg $FFMPEG_VERSION"
@@ -256,6 +300,9 @@ cat >"$OUT/payload.json" <<EOF
   "flavour": "$FLAVOUR",
   "postgres": {"version": "$POSTGRES_VERSION", "source": "$POSTGRES_URL", "sha256": "$POSTGRES_SHA256"},
   "pgvector": {"version": "$PGVECTOR_VERSION", "source": "$PGVECTOR_URL", "sha256": "$PGVECTOR_SHA256"},
+  "postgres_18": {"version": "$POSTGRES18_VERSION", "source": "$POSTGRES18_URL", "sha256": "$POSTGRES18_SHA256",
+                  "dir": "postgres-18"},
+  "pg_textsearch": {"version": "$PGTEXTSEARCH_VERSION", "source": "$PGTEXTSEARCH_URL", "sha256": "$PGTEXTSEARCH_SHA256"},
   "ffmpeg": {"version": "$FFMPEG_VERSION", "source": "$FFMPEG_URL", "sha256": "$FFMPEG_SHA256",
              "ffprobe_source": "$FFPROBE_URL", "ffprobe_sha256": "$FFPROBE_SHA256"},
   "python": {"version": "$PYTHON_VERSION", "source": "$PYTHON_URL", "sha256": "$PYTHON_SHA256"},

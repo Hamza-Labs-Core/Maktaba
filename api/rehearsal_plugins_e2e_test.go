@@ -358,6 +358,18 @@ func incompatible(v pluginView) bool {
 	return v.Want == "enabled" && v.Phase == "waiting" && v.Reason == "incompatible"
 }
 
+// rehearsalRemovedMaktaba is the Maktaba plugin scenario 15 removes (story 54.46).
+const rehearsalRemovedMaktaba = "tv.maktaba.dedup"
+
+// removedStays fails unless the removed Maktaba plugin's want is still absent.
+func (r *rehearsal) removedStays(admin *ownerSession, where string) {
+	r.t.Helper()
+	v := admin.waitPlugin(rehearsalRemovedMaktaba, "removed "+where, 2*time.Minute, func(v pluginView) bool { return v.Want != "" })
+	if v.Want != "absent" {
+		r.t.Errorf("%s %s: want %q; a removed plugin stays removed until an admin installs it again", rehearsalRemovedMaktaba, where, v.Want)
+	}
+}
+
 // keptOff fails unless C is installed and kept off.
 func (r *rehearsal) keptOff(admin *ownerSession, where string) {
 	r.t.Helper()
@@ -375,6 +387,12 @@ func TestUpdateRehearsal15Plugins(t *testing.T) {
 	r := newRehearsal(t)
 	k := r.kit
 	home, admin := r.homeWithPlugins()
+	// story 54.46: a Maktaba plugin removed on cur stays removed through the rollback and the
+	// update after it (its component's want absent is the home's choice, not the release's)
+	if code, body := admin.adminJSON("DELETE", "/api/plugins/"+rehearsalRemovedMaktaba, nil); code != http.StatusAccepted {
+		t.Fatalf("remove %s: %d %s", rehearsalRemovedMaktaba, code, body)
+	}
+	r.removedStays(admin, "after its removal")
 	queued := queuePluginJobs(t, home, rehearsalPluginB, 20)
 	jobsBefore := pluginJobs(t, home, rehearsalPluginB)
 	r.logf("B's jobs before the update: %v (%d queued now)", jobsBefore, queued)
@@ -403,6 +421,7 @@ func TestUpdateRehearsal15Plugins(t *testing.T) {
 		admin.waitPlugin(id, "its gate passing after the rollback", 5*time.Minute, gatePasses)
 	}
 	r.keptOff(admin, "after the rollback")
+	r.removedStays(admin, "after the rollback")
 	jobs := pluginJobs(t, home, rehearsalPluginB)
 	if total(jobs) != total(jobsBefore) || jobs["failed"] > jobsBefore["failed"] || jobs["cancelled"] > jobsBefore["cancelled"] {
 		t.Errorf("B's jobs after the rollback %v, before %v: none lost, failed or cancelled", jobs, jobsBefore)
@@ -419,6 +438,7 @@ func TestUpdateRehearsal15Plugins(t *testing.T) {
 	admin.waitPlugin(rehearsalPluginA, "its gate passing on "+k.after, 5*time.Minute, gatePasses)
 	admin.waitPlugin(rehearsalPluginB, "waiting incompatible on "+k.after, 5*time.Minute, incompatible)
 	r.keptOff(admin, "on "+k.after)
+	r.removedStays(admin, "on "+k.after)
 	before := pluginJobs(t, home, rehearsalPluginB)
 	more := queuePluginJobs(t, home, rehearsalPluginB, 30)
 	time.Sleep(30 * time.Second)

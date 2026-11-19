@@ -59,7 +59,7 @@ Existing homes keep running exactly what they run today.
 | A change seen by every machine | p95 ≤ 2 s, ≤ 30 s worst case |
 | Loop / stage component on | p95 ≤ 5 s; process component ≤ 15 s plus warm-up |
 | Jobs lost, failed or cancelled by a disable | 0 (CI chaos job, 100 flips under load) |
-| Core footprint after setup | ≤ 45 % of Full's and ≤ 400 MB; ≤ 700 MB idle RAM; 4 processes |
+| Core footprint after setup | ≤ 45 % of Full's and ≤ 400 MB; 4 processes (the 700 MB idle-RAM budget was removed on 2026-11-19: it measured only an empty home) |
 | Existing installs after the update | the same processes, stages, extensions and loops (rehearsal diff) |
 
 ## Hard calls (details in the README §9)

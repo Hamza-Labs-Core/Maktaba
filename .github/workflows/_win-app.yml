@@ -140,8 +140,10 @@ jobs:
           $f "$PYTHON_URL" "$PYTHON_SHA256" "$d/cpython-$PYTHON_VERSION.tar.gz"
           $f "$POSTGRES_URL" "$POSTGRES_SHA256" "$d/postgresql-$POSTGRES_VERSION.zip"
           $f "$PGVECTOR_URL" "$PGVECTOR_SHA256" "$d/pgvector-$PGVECTOR_VERSION.tar.gz"
+          $f "$POSTGRES18_URL" "$POSTGRES18_SHA256" "$d/postgresql-$POSTGRES18_VERSION.zip"
+          $f "$PGTEXTSEARCH_URL" "$PGTEXTSEARCH_SHA256" "$d/pg_textsearch-$PGTEXTSEARCH_VERSION.tar.gz"
           $f "$FFMPEG_URL" "$FFMPEG_SHA256" "$d/ffmpeg-$FFMPEG_VERSION.zip"
-          keep=" cpython-$PYTHON_VERSION.tar.gz postgresql-$POSTGRES_VERSION.zip pgvector-$PGVECTOR_VERSION.tar.gz ffmpeg-$FFMPEG_VERSION.zip "
+          keep=" cpython-$PYTHON_VERSION.tar.gz postgresql-$POSTGRES_VERSION.zip pgvector-$PGVECTOR_VERSION.tar.gz postgresql-$POSTGRES18_VERSION.zip pg_textsearch-$PGTEXTSEARCH_VERSION.tar.gz ffmpeg-$FFMPEG_VERSION.zip "
           for x in "$d"/*; do
             case "$keep" in *" ${x##*/} "*) ;; *) echo "dropping ${x##*/} (no pin names it)"; rm -rf "$x" ;; esac
           done
@@ -228,6 +230,22 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           WIN_APP_REQUIRE_PGVECTOR: "1"
         run: make win-app
+
+      # Epic 49 story 49.2: the 16 → 18 upgrade on this platform's own payload, both majors
+      # from it (the Mac's APFS takes pg_upgrade's --clone; Linux runners' ext4 never does):
+      # the upgrade, its grants, the 16 cluster starting after it (a rollback's), the redo
+      # after 16 moved on, a 16 cluster stopped hard
+      - name: The PostgreSQL 16 → 18 upgrade on this payload (TestRealMajorUpgrade)
+        working-directory: cmd/maktaba-server
+        shell: bash
+        env:
+          MAKTABA_TEST_PG16_HOME: ${{ github.workspace }}/build/win-app/server/postgres
+          MAKTABA_TEST_PG18_HOME: ${{ github.workspace }}/build/win-app/server/postgres-18
+        run: |
+          set -o pipefail
+          go test -tags integration -count=1 -timeout 15m -run '^(TestRealMajorUpgrade|TestRealPgTextsearchPreloaded)$' -v ./internal/pgbundle/ 2>&1 | tee "$RUNNER_TEMP/major.out"
+          grep -q -- '--- PASS: TestRealMajorUpgrade' "$RUNNER_TEMP/major.out"
+          grep -q -- '--- PASS: TestRealPgTextsearchPreloaded' "$RUNNER_TEMP/major.out"
 
       - name: Sizes
         if: always()

@@ -8,6 +8,8 @@
 #   postgres/  bin/ lib/ share/          PostgreSQL 16 with pgvector, and the libraries it
 #                                        links that a minimal system can lack, all on an
 #                                        $ORIGIN rpath
+#   postgres-18/  the same for PostgreSQL 18 with pgvector and pg_textsearch (Epic 49, story
+#                 49.1): the next major, unused until the updater's upgrade (49.2)
 #   python/    CPython 3.12              python-build-standalone, stdlib precompiled
 #   pipeline/  maktaba_pipeline-<v>-py3-none-any.whl constraints.txt constraints-core.txt
 #              constraints-stt.txt (the stt extra's pins alone, story 59.06)
@@ -104,17 +106,21 @@ fetch() {
 PG_FILE="postgresql-$POSTGRES_VERSION-$ARCH.tar.gz"
 PY_FILE="cpython-$PYTHON_VERSION-$ARCH.tar.gz"
 PGV_FILE="pgvector-$PGVECTOR_VERSION.tar.gz"
+PG18_FILE="postgresql-$POSTGRES18_VERSION-$ARCH.tar.gz"
+PGTS_FILE="pg_textsearch-$PGTEXTSEARCH_VERSION.tar.gz"
 # an earlier pins.env's files (a cache restored by its prefix) are not kept, so a piece
 # no longer pinned (the ffmpeg builds of before) never goes into the payload or the cache
 # saved after this run
 for f in "$CACHE"/*; do
     [ -e "$f" ] || continue
-    case "${f##*/}" in "$PG_FILE"|"$PY_FILE"|"$PGV_FILE") ;; *) rm -rf "$f" ;; esac
+    case "${f##*/}" in "$PG_FILE"|"$PY_FILE"|"$PGV_FILE"|"$PG18_FILE"|"$PGTS_FILE") ;; *) rm -rf "$f" ;; esac
 done
 
 if [ "$FETCH_ONLY" = 1 ]; then
     fetch "$(pin POSTGRES_URL)" "$(pin POSTGRES_SHA256)" "$PG_FILE" >/dev/null
     fetch "$PGVECTOR_URL" "$PGVECTOR_SHA256" "$PGV_FILE" >/dev/null
+    fetch "$(pin POSTGRES18_URL)" "$(pin POSTGRES18_SHA256)" "$PG18_FILE" >/dev/null
+    fetch "$PGTEXTSEARCH_URL" "$PGTEXTSEARCH_SHA256" "$PGTS_FILE" >/dev/null
     fetch "$(pin PYTHON_URL)" "$(pin PYTHON_SHA256)" "$PY_FILE" >/dev/null
     log "the pinned downloads for $ARCH are in $CACHE"
     exit 0
@@ -123,7 +129,7 @@ fi
 OUT="$BUILD/server"
 WORK="$BUILD/work"
 rm -rf "$OUT" "$WORK"
-mkdir -p "$OUT"/{bin,postgres,pipeline,licenses} "$WORK"
+mkdir -p "$OUT"/{bin,postgres,postgres-18,pipeline,licenses} "$WORK"
 
 
 # the license-server key (Epic 16): a release's workflow writes it before this
@@ -193,6 +199,52 @@ cp "$pgv/vector.so" "$OUT/postgres/lib/"
 cp "$pgv/vector.control" "$pgv"/sql/vector--*.sql "$OUT/postgres/share/extension/"
 cp "$pgv/LICENSE" "$OUT/licenses/pgvector.txt"
 
+# --- PostgreSQL 18, pgvector and pg_textsearch (Epic 49, story 49.1) ---------------------------
+# The next major in postgres-18/, picked as 16 is above, without what the theseus-rs 18 build
+# adds and Maktaba never loads: LLVM (JIT), PL/Python and its Python, the bitcode. pgvector
+# (the same source) and pg_textsearch are built against it with gcc, with_llvm=no (no bitcode
+# without LLVM) and no -march=native.
+log "PostgreSQL $POSTGRES18_VERSION"
+mkdir -p "$WORK/pg18"
+tar -xzf "$(fetch "$(pin POSTGRES18_URL)" "$(pin POSTGRES18_SHA256)" "$PG18_FILE")" -C "$WORK/pg18"
+pg18="$WORK/pg18/postgresql-$POSTGRES18_VERSION-$ARCH-unknown-linux-gnu"
+[ -x "$pg18/bin/postgres" ] || die "unexpected PostgreSQL $POSTGRES18_VERSION archive layout"
+mkdir -p "$OUT/postgres-18/bin"
+for b in postgres initdb pg_ctl pg_dump pg_dumpall pg_restore psql pg_isready pg_upgrade pg_controldata pg_resetwal vacuumdb; do
+    cp "$pg18/bin/$b" "$OUT/postgres-18/bin/"
+done
+(cd "$pg18" && tar -cf - --exclude='*.a' --exclude=pgxs --exclude=pkgconfig --exclude=bitcode \
+    --exclude='libLLVM*' --exclude='llvmjit*' --exclude='*plpython*' --exclude='Python' --exclude='python3*' \
+    --exclude='plperl*' --exclude='*_plperl*' --exclude='pltcl*' --exclude='libecpg*' --exclude='libpgtypes*' --exclude='libsqlite3*' \
+    --exclude='uuid-ossp*' lib share) | (cd "$OUT/postgres-18" && tar -xf -)
+find "$OUT/postgres-18/lib" -type f ! -name 'pgoutput.*' -exec grep -l -a -F _PG_output_plugin_init {} + 2>/dev/null |
+    while IFS= read -r f; do rm -f "$f"; done || true
+# the 18 archive carries some of the system's own libraries, built against a newer glibc than
+# the payload's baseline (libstdc++, libgcc_s, libcrypt, libexpat need 2.36 on aarch64): they
+# go, and the closure below copies this machine's, as it does every library 16 links
+rm -f "$OUT"/postgres-18/lib/libstdc++.so* "$OUT"/postgres-18/lib/libgcc_s.so* \
+      "$OUT"/postgres-18/lib/libcrypt.so* "$OUT"/postgres-18/lib/libexpat.so*
+cp "$pg18/COPYRIGHT" "$OUT/licenses/postgresql-18.txt"
+log "pgvector $PGVECTOR_VERSION for PostgreSQL $POSTGRES18_VERSION"
+mkdir -p "$WORK/pgv18"
+tar -xzf "$(fetch "$PGVECTOR_URL" "$PGVECTOR_SHA256" "$PGV_FILE")" -C "$WORK/pgv18"
+pgv18="$WORK/pgv18/pgvector-$PGVECTOR_VERSION"
+make -C "$pgv18" --no-print-directory PG_CONFIG="$pg18/bin/pg_config" CC=gcc OPTFLAGS="" with_llvm=no \
+    >"$WORK/pgvector18.log" 2>&1 || { tail -20 "$WORK/pgvector18.log" >&2; die "pgvector did not build for PostgreSQL 18"; }
+[ -f "$pgv18/vector.so" ] || die "pgvector built no vector.so for PostgreSQL 18"
+cp "$pgv18/vector.so" "$OUT/postgres-18/lib/"
+cp "$pgv18/vector.control" "$pgv18"/sql/vector--*.sql "$OUT/postgres-18/share/extension/"
+log "pg_textsearch $PGTEXTSEARCH_VERSION"
+tar -xzf "$(fetch "$PGTEXTSEARCH_URL" "$PGTEXTSEARCH_SHA256" "$PGTS_FILE")" -C "$WORK"
+pgts="$WORK/pg_textsearch-$PGTEXTSEARCH_VERSION"
+if [ ! -f "$pgts/Makefile" ] || [ ! -f "$pgts/pg_textsearch.control" ]; then die "unexpected pg_textsearch archive layout"; fi
+make -C "$pgts" --no-print-directory -j"$(nproc)" PG_CONFIG="$pg18/bin/pg_config" CC=gcc with_llvm=no \
+    >"$WORK/pg_textsearch.log" 2>&1 || { tail -20 "$WORK/pg_textsearch.log" >&2; die "pg_textsearch did not build"; }
+[ -f "$pgts/pg_textsearch.so" ] || die "pg_textsearch built no pg_textsearch.so"
+cp "$pgts/pg_textsearch.so" "$OUT/postgres-18/lib/"
+cp "$pgts/pg_textsearch.control" "$pgts"/sql/pg_textsearch--*.sql "$OUT/postgres-18/share/extension/"
+cat "$pgts/LICENSE" "$pgts/NOTICE" >"$OUT/licenses/pg_textsearch.txt"
+
 # --- Python (first: the payload's own tools run with it) ------------------------------------
 log "Python $PYTHON_VERSION"
 tar -xzf "$(fetch "$(pin PYTHON_URL)" "$(pin PYTHON_SHA256)" "$PY_FILE")" -C "$WORK"
@@ -218,30 +270,40 @@ tool() { "$PY" -I "$SCRIPT_DIR/payload_tool.py" "$@"; }
 # this machine. Every library in postgres/lib loads its neighbours through $ORIGIN (the
 # archive's own modules carry the build machine's /opt/postgresql/lib).
 log "Postgres's libraries from this machine"
-mapfile -t elves < <(find "$OUT/postgres/bin" "$OUT/postgres/lib" -type f -exec sh -c \
-    'for f; do case "$(head -c 4 "$f" | LC_ALL=C tr -d "\\000")" in *ELF) printf "%s\n" "$f" ;; esac; done' sh {} +)
-needs="$(tool closure "$OUT/postgres" "${elves[@]}")" || die "Postgres needs a library this machine does not have"
+# tree_libs DIR: the libraries DIR's programs and modules need, copied into DIR/lib; their
+# sonames are appended to closure
 closure=()
-while read -r soname path; do
-    [ -n "$soname" ] || continue
-    cp -L "$path" "$OUT/postgres/lib/$soname"
-    chmod 0644 "$OUT/postgres/lib/$soname"
-    closure+=("$soname")
-done <<<"$needs"
-for f in "$OUT"/postgres/lib/*.so*; do
-    [ -L "$f" ] && continue
-    grep -q ELF < <(head -c 4 "$f") || continue
-    # shellcheck disable=SC2016 # $ORIGIN is the dynamic loader's, not the shell's
-    patchelf --set-rpath '$ORIGIN' "$f"
-done
-log "copied ${#closure[@]} libraries: ${closure[*]:-none}"
+tree_libs() {
+    local dir="$1" needs soname path f
+    local -a elves
+    mapfile -t elves < <(find "$dir/bin" "$dir/lib" -type f -exec sh -c \
+        'for f; do case "$(head -c 4 "$f" | LC_ALL=C tr -d "\\000")" in *ELF) printf "%s\n" "$f" ;; esac; done' sh {} +)
+    needs="$(tool closure "$dir" "${elves[@]}")" || die "$dir needs a library this machine does not have"
+    while read -r soname path; do
+        [ -n "$soname" ] || continue
+        cp -L "$path" "$dir/lib/$soname"
+        chmod 0644 "$dir/lib/$soname"
+        closure+=("$soname")
+    done <<<"$needs"
+    for f in "$dir"/lib/*.so*; do
+        [ -L "$f" ] && continue
+        grep -q ELF < <(head -c 4 "$f") || continue
+        # shellcheck disable=SC2016 # $ORIGIN is the dynamic loader's, not the shell's
+        patchelf --set-rpath '$ORIGIN' "$f"
+    done
+}
+tree_libs "$OUT/postgres-18"
+closure18=("${closure[@]}")
+closure=()
+tree_libs "$OUT/postgres"
+log "copied ${#closure[@]} libraries: ${closure[*]:-none}; for PostgreSQL 18 ${#closure18[@]}: ${closure18[*]:-none}"
 cat >"$OUT/licenses/postgresql-libraries.txt" <<EOF
 Libraries copied in beside PostgreSQL from the build machine ($(sed -n 's/^PRETTY_NAME=//p' /etc/os-release | tr -d '"'), $ARCH),
 each under its own licence (OpenSSL: Apache-2.0; libxml2, lz4, zstd, zlib: MIT/BSD-style;
 MIT Kerberos: MIT; ICU: Unicode). Their sources are the distribution's source packages of the
 same versions.
 
-$(for s in "${closure[@]}"; do printf '%s\n' "$s"; done)
+$(for s in "${closure[@]}" "${closure18[@]}"; do printf '%s\n' "$s"; done | sort -u)
 EOF
 
 # --- the pipeline: the same wheel and constraints a node release ships ---------------------------
@@ -333,6 +395,8 @@ P_VERSION="$VERSION" P_PLATFORM="linux-$ARCH" P_MIN_GLIBC="$min_glibc" P_MANIFES
 P_PG_VERSION="$POSTGRES_VERSION" P_PG_URL="$(pin POSTGRES_URL)" P_PG_SHA="$(pin POSTGRES_SHA256)" \
 P_PY_VERSION="$PYTHON_VERSION" P_PY_URL="$(pin PYTHON_URL)" P_PY_SHA="$(pin PYTHON_SHA256)" \
 P_PGV_VERSION="$PGVECTOR_VERSION" P_PGV_URL="$PGVECTOR_URL" P_PGV_SHA="$PGVECTOR_SHA256" \
+P_PG18_LIBS="${closure18[*]}" P_PG18_VERSION="$POSTGRES18_VERSION" P_PG18_URL="$(pin POSTGRES18_URL)" P_PG18_SHA="$(pin POSTGRES18_SHA256)" \
+P_PGTS_VERSION="$PGTEXTSEARCH_VERSION" P_PGTS_URL="$PGTEXTSEARCH_URL" P_PGTS_SHA="$PGTEXTSEARCH_SHA256" \
 P_WHEEL="$WHEEL_NAME" P_WHEEL_SHA="$(sha256 "$OUT/pipeline/$WHEEL_NAME")" \
 P_CONS_SHA="$(sha256 "$OUT/pipeline/constraints.txt")" \
 P_CONS_CORE_SHA="$(sha256 "$OUT/pipeline/constraints-core.txt")" \
@@ -348,6 +412,10 @@ doc = {
     "postgres": {"version": e["P_PG_VERSION"], "source": e["P_PG_URL"], "sha256": e["P_PG_SHA"],
                  "libraries": sys.argv[2:]},
     "pgvector": {"version": e["P_PGV_VERSION"], "source": e["P_PGV_URL"], "sha256": e["P_PGV_SHA"]},
+    # Epic 49 story 49.1: the next major beside it (postgres-18/), unused until the upgrade
+    "postgres_18": {"version": e["P_PG18_VERSION"], "source": e["P_PG18_URL"], "sha256": e["P_PG18_SHA"],
+                    "dir": "postgres-18", "libraries": e["P_PG18_LIBS"].split()},
+    "pg_textsearch": {"version": e["P_PGTS_VERSION"], "source": e["P_PGTS_URL"], "sha256": e["P_PGTS_SHA"]},
     "python": {"version": e["P_PY_VERSION"], "source": e["P_PY_URL"], "sha256": e["P_PY_SHA"]},
     "pipeline": {"wheel": e["P_WHEEL"], "sha256": e["P_WHEEL_SHA"], "constraints_sha256": e["P_CONS_SHA"],
                  "constraints_core_sha256": e["P_CONS_CORE_SHA"]},

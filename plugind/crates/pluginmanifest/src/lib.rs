@@ -218,6 +218,23 @@ impl<F: Fn(&str) -> Option<Vec<u8>>> Files for F {
 /// Parse and check a manifest.toml: the normalised manifest, or every refusal.
 /// `files: None` skips the package rules (a manifest checked on its own).
 pub fn validate(src: &[u8], files: Option<&dyn Files>) -> Result<Map<String, Value>, Vec<ManifestError>> {
+    validate_mode(src, files, false)
+}
+
+/// The trusted mode, for Maktaba's own plugins only (story 54.22; Go's ValidateTrusted, rule
+/// for rule): the keys marked x-trusted-only are read, the id must be under tv.maktaba. (not
+/// a community prefix), the dup_group subject is allowed, and a stage may request another
+/// core stage by its name (the assembled graph checks it). The store runs it for a package
+/// of the Maktaba publisher only (story 54.45 §2); everything else is `validate`.
+pub fn validate_trusted(src: &[u8], files: Option<&dyn Files>) -> Result<Map<String, Value>, Vec<ManifestError>> {
+    validate_mode(src, files, true)
+}
+
+fn validate_mode(
+    src: &[u8],
+    files: Option<&dyn Files>,
+    trusted: bool,
+) -> Result<Map<String, Value>, Vec<ManifestError>> {
     let l = loaded();
     let raw = parse_toml(src).map_err(|e| vec![ManifestError::new(CODE_NOT_TOML, "", &e)])?;
     if let Some(s) = raw.get("schema").and_then(Value::as_i64) {
@@ -227,7 +244,7 @@ pub fn validate(src: &[u8], files: Option<&dyn Files>) -> Result<Map<String, Val
     }
     let mut v = Value::Object(raw);
     let mut errs = Vec::new();
-    check(&l.schema, &v, "", "", &mut errs);
+    check(&l.schema, &v, "", "", trusted, &mut errs);
     if !errs.is_empty() {
         return Err(errs);
     }
@@ -241,7 +258,7 @@ pub fn validate(src: &[u8], files: Option<&dyn Files>) -> Result<Map<String, Val
             d["version"] = Value::String(r);
         }
     }
-    let errs = rules(&m, files);
+    let errs = rules(&m, files, trusted);
     if !errs.is_empty() {
         return Err(errs);
     }
@@ -284,6 +301,12 @@ fn canonical(v: &Value, out: &mut String) {
         }
         _ => out.push_str(&serde_json::to_string(v).expect("json")),
     }
+}
+
+/// A manifest's id as written ("" when it is not TOML or has none): what decides which mode
+/// reads it (`validate` or `validate_trusted`), before either runs.
+pub fn manifest_id(src: &[u8]) -> String {
+    parse_toml(src).ok().and_then(|m| m.get("id").and_then(Value::as_str).map(str::to_string)).unwrap_or_default()
 }
 
 fn parse_toml(src: &[u8]) -> Result<Map<String, Value>, String> {
@@ -347,7 +370,7 @@ fn join(path: &str, el: &str) -> String {
     }
 }
 
-fn check(n: &Value, v: &Value, path: &str, parent: &str, errs: &mut Vec<ManifestError>) {
+fn check(n: &Value, v: &Value, path: &str, parent: &str, trusted: bool, errs: &mut Vec<ManifestError>) {
     let l = loaded();
     let code = n.get("x-code").and_then(Value::as_str).filter(|s| !s.is_empty()).unwrap_or(if parent.is_empty() {
         CODE_INVALID
@@ -410,7 +433,7 @@ fn check(n: &Value, v: &Value, path: &str, parent: &str, errs: &mut Vec<Manifest
             }
             if let Some(items) = n.get("items") {
                 for (i, x) in a.iter().enumerate() {
-                    check(items, x, &join(path, &i.to_string()), code, errs);
+                    check(items, x, &join(path, &i.to_string()), code, trusted, errs);
                 }
             }
         }
@@ -425,10 +448,10 @@ fn check(n: &Value, v: &Value, path: &str, parent: &str, errs: &mut Vec<Manifest
             let props = n.get("properties").and_then(Value::as_object);
             for (k, x) in o {
                 match props.and_then(|p| p.get(k)) {
-                    Some(c) if c.get("x-trusted-only") == Some(&Value::Bool(true)) => {
+                    Some(c) if !trusted && c.get("x-trusted-only") == Some(&Value::Bool(true)) => {
                         errs.push(ManifestError::new(CODE_TRUSTED_FIELD, &join(path, k), ""));
                     }
-                    Some(c) => check(c, x, &join(path, k), code, errs),
+                    Some(c) => check(c, x, &join(path, k), code, trusted, errs),
                     None => {
                         if n.get("additionalProperties") == Some(&Value::Bool(false)) {
                             errs.push(ManifestError::new(CODE_UNKNOWN_KEY, &join(path, k), ""));
@@ -512,11 +535,13 @@ fn arr<'a>(v: &'a Value, k: &str) -> &'a [Value] {
     v.get(k).and_then(Value::as_array).map(Vec::as_slice).unwrap_or(&[])
 }
 
-fn rules(m: &Map<String, Value>, files: Option<&dyn Files>) -> Vec<ManifestError> {
+fn rules(m: &Map<String, Value>, files: Option<&dyn Files>, trusted: bool) -> Vec<ManifestError> {
     let l = loaded();
     let mv = Value::Object(m.clone());
     let mut errs = Vec::new();
-    if reserved(s(&mv, "id")) {
+    let id0 = s(&mv, "id");
+    let first_party = id0.starts_with("tv.maktaba.") && !id0.starts_with("tv.maktaba.community.");
+    if (trusted && !first_party) || (!trusted && reserved(id0)) {
         errs.push(ManifestError::new(CODE_RESERVED_ID, "id", ""));
     }
     let platforms = arr(&mv, "platforms");
@@ -551,7 +576,7 @@ fn rules(m: &Map<String, Value>, files: Option<&dyn Files>) -> Vec<ManifestError
         subjects.insert(name.into(), s(st, "subject").into());
         // R5a: the dup_group subject is Maktaba's own (54.22 §1); a core stage's name is not
         // reserved (a third-party stage's queue is p_<hash>_<name>)
-        if s(st, "subject") == "dup_group" {
+        if !trusted && s(st, "subject") == "dup_group" {
             errs.push(ManifestError::new(CODE_TRUSTED_FIELD, &format!("stage/{i}/name"), name));
         }
     }
@@ -579,7 +604,9 @@ fn rules(m: &Map<String, Value>, files: Option<&dyn Files>) -> Vec<ManifestError
     for (i, st) in stages.iter().enumerate() {
         for (j, r) in arr(st, "may_request").iter().enumerate() {
             let r = r.as_str().unwrap_or("");
-            if !subjects.contains_key(r) {
+            // a first-party stage requests other core stages by their exact names: the
+            // assembled graph checks them (54.25 §1)
+            if !subjects.contains_key(r) && !trusted {
                 errs.push(ManifestError::new(CODE_BAD_REQUEST, &format!("stage/{i}/may_request/{j}"), r));
             }
         }
@@ -785,5 +812,58 @@ mod tests {
             .replace("version = 3", "version = 3.0");
         let errs = validate(src.as_bytes(), None).unwrap_err();
         assert!(errs.iter().any(|e| e.code == "manifest_bad_stage"), "{errs:?}");
+    }
+
+    /// Story 54.45 §2: the store reads Maktaba's own manifests in the trusted mode, as the
+    /// home does (Go's ValidateTrusted). Every first-party manifest of the repo, with its
+    /// strings, is valid trusted and refused by the ordinary validator; a third-party
+    /// manifest is refused trusted (its id is not Maktaba's).
+    #[test]
+    fn the_first_party_manifests_are_valid_only_trusted() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../plugins/first-party");
+        let mut seen = 0;
+        let mut dirs: Vec<_> = std::fs::read_dir(&root).unwrap().map(|e| e.unwrap().path()).collect();
+        dirs.sort();
+        for d in dirs {
+            let Ok(src) = std::fs::read(d.join("manifest.toml")) else { continue };
+            let dir = d.clone();
+            let files = move |p: &str| std::fs::read(dir.join(p)).ok();
+            let m = validate_trusted(&src, Some(&files)).unwrap_or_else(|e| panic!("{}: {e:?}", d.display()));
+            assert!(s(&Value::Object(m), "id").starts_with("tv.maktaba."), "{}", d.display());
+            let errs = validate(&src, Some(&files)).unwrap_err();
+            assert!(
+                errs.iter().any(|e| e.code == CODE_TRUSTED_FIELD || e.code == CODE_RESERVED_ID),
+                "{}: {errs:?}",
+                d.display()
+            );
+            seen += 1;
+        }
+        assert!(seen >= 12, "{seen} first-party manifests");
+        for p in tomls("valid") {
+            let src = std::fs::read(&p).unwrap();
+            if let Err(errs) = validate_trusted(&src, None) {
+                assert!(errs.iter().any(|e| e.code == CODE_RESERVED_ID), "{}: {errs:?}", p.display());
+            } else {
+                panic!("{}: a third-party manifest passed the trusted mode", p.display());
+            }
+        }
+    }
+
+    /// The trusted mode allows exactly what Go's does, and no more: a community id is still
+    /// refused, an unknown key still is, and a trusted key's own rules still hold.
+    #[test]
+    fn the_trusted_mode_is_no_wider_than_gos() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../plugins/first-party/thumbnails");
+        let src = std::fs::read_to_string(root.join("manifest.toml")).unwrap();
+        let files = move |p: &str| std::fs::read(root.join(p)).ok();
+        let community = src.replacen("\"tv.maktaba.thumbnails\"", "\"tv.maktaba.community.bob.thumbs\"", 1);
+        assert!(validate_trusted(community.as_bytes(), Some(&files))
+            .unwrap_err()
+            .iter()
+            .any(|e| e.code == CODE_RESERVED_ID));
+        let unknown = src.replacen("[trusted]\n", "[trusted]\nshell = true\n", 1);
+        assert!(validate_trusted(unknown.as_bytes(), Some(&files)).is_err());
+        let bad_exec = src.replacen("[trusted]\n", "[trusted]\nexec = [\"sh\"]\n", 1);
+        assert!(validate_trusted(bad_exec.as_bytes(), Some(&files)).is_err());
     }
 }

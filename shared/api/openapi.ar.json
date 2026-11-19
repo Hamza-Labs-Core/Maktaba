@@ -3562,12 +3562,16 @@
       "ar": "إصدار هذا الخادم وأحدث إصدار"
     },
     "/paths/~1system~1updates/get/description": {
-      "en": "Every signed-in user: the release running (`current_version`), the newest on the channel (`latest_version`, `available`), its notes and when it was checked; how this server updates (`install`, and for a container that cannot update itself the `instructions` and `image`); `rolled_back` when the last update was undone. To an admin only, on the Docker image: `container`, the release on the volume (`runtime`) beside the image's (`image`), which one runs (`running`: `runtime` or `image`) and why (`reason`: `same`, `image_older`, `image_refused` or `image_pending`).",
-      "ar": "كل مستخدم مسجّل الدخول: الإصدار الذي يعمل (`current_version`)، وأحدث إصدار في القناة (`latest_version` و`available`)، وملاحظاته ووقت التحقق منه؛ وطريقة تحديث هذا الخادم (`install`، وللحاوية التي لا تستطيع تحديث نفسها `instructions` و`image`)؛ و`rolled_back` إن تراجع التحديث الأخير. وللمسؤول وحده، على صورة Docker: `container`، أي الإصدار على وحدة التخزين (`runtime`) بجانب إصدار الصورة (`image`)، وأيهما يعمل (`running`: `runtime` أو `image`) ولماذا (`reason`: `same` أو `image_older` أو `image_refused` أو `image_pending`)."
+      "en": "Every signed-in user: the release running (`current_version`), the newest on the channel (`latest_version`, `available`), its notes and when it was checked; how this server updates (`install`, and for a container that cannot update itself the `instructions` and `image`); `rolled_back` when the last update was undone. To an admin only, on the Docker image: `container`, the release on the volume (`runtime`) beside the image's (`image`), which one runs (`running`: `runtime` or `image`) and why (`reason`: `same`, `image_older`, `image_refused` or `image_pending`). The published security advisories that affect the running release (`advisories`: each its GHSA `id`, `cve`, `severity`, `summary`, `url`, the `affected` range that matched and the release that fixes it, `fixed_in`), whether the list could be read (`advisories_checked`: when false the list is unknown, not empty), the repository's list of every advisory (`advisories_url`) and the lowest release that fixes them all (`advisories_fixed_in`).",
+      "ar": "كل مستخدم مسجّل الدخول: الإصدار الذي يعمل (`current_version`)، وأحدث إصدار في القناة (`latest_version` و`available`)، وملاحظاته ووقت التحقق منه؛ وطريقة تحديث هذا الخادم (`install`، وللحاوية التي لا تستطيع تحديث نفسها `instructions` و`image`)؛ و`rolled_back` إن تراجع التحديث الأخير. وللمسؤول وحده، على صورة Docker: `container`، أي الإصدار على وحدة التخزين (`runtime`) بجانب إصدار الصورة (`image`)، وأيهما يعمل (`running`: `runtime` أو `image`) ولماذا (`reason`: `same` أو `image_older` أو `image_refused` أو `image_pending`). والتنبيهات الأمنية المنشورة التي تمسّ الإصدار الذي يعمل (`advisories`: لكلٍّ منها معرّف GHSA ‏`id` و`cve` و`severity` و`summary` و`url` والنطاق المتأثر الذي طابقه `affected` والإصدار الذي يصلحه `fixed_in`)، وهل أمكن قراءة القائمة (`advisories_checked`: إن كانت false فالقائمة مجهولة لا فارغة)، وقائمة المستودع بكل التنبيهات (`advisories_url`)، وأدنى إصدار يصلحها كلها (`advisories_fixed_in`)."
     },
     "/paths/~1system~1updates/get/responses/200/description": {
       "en": "The release.",
       "ar": "الإصدار."
+    },
+    "/paths/~1system~1updates/get/responses/200/content/application~1json/schema/properties/advisories_fixed_in/description": {
+      "en": "The lowest release none of `advisories` affects, every supported branch's ranges counted; absent when there is none yet.",
+      "ar": "أدنى إصدار لا يمسّه أيٌّ من `advisories`، مع احتساب نطاقات كل فرع مدعوم؛ ويغيب إن لم يوجد بعد."
     },
     "/paths/~1system~1updates/get/responses/200/content/application~1json/schema/properties/container/description": {
       "en": "Admins only: the volume's runtime beside the Docker image's release.",
@@ -6596,6 +6600,54 @@
     "/paths/~1tv~1broadcast~1analytics/get/responses/409/description": {
       "en": "Broadcasting is off on this home.",
       "ar": "البث متوقف على هذا المنزل."
+    },
+    "/paths/~1system~1updates/get/responses/200/content/application~1json/schema/properties/advisories/description": {
+      "en": "The published security advisories that affect the running release, most severe first.",
+      "ar": "التنبيهات الأمنية المنشورة التي تمسّ الإصدار الذي يعمل، الأخطر أولًا."
+    },
+    "/paths/~1system~1updates/get/responses/200/content/application~1json/schema/properties/advisories_checked/description": {
+      "en": "False when the advisory list could not be read: the list is unknown, not empty.",
+      "ar": "تكون false إن تعذّرت قراءة قائمة التنبيهات: فالقائمة مجهولة لا فارغة."
+    },
+    "/paths/~1plugins~1{id}~1install/post/summary": {
+      "en": "Install a Maktaba plugin again",
+      "ar": "تثبيت إضافة من إضافات مكتبة مرة أخرى"
+    },
+    "/paths/~1plugins~1{id}~1install/post/description": {
+      "en": "Installs one of Maktaba's own plugins again from this release after it was removed: its code ships with the server, so this sets its component to installed (off until turned on), or to on with `enable`. Its parked jobs run again once it is on. Any other plugin installs from a file or the store (`POST /plugins/install`).",
+      "ar": "يثبّت إحدى إضافات مكتبة نفسها مرة أخرى من هذا الإصدار بعد إزالتها: شيفرتها تأتي مع الخادم، فيضبط هذا مكوّنها على مثبّت (معطّل حتى يُشغَّل)، أو على مشغّل مع `enable`. وتعود مهامها الموقوفة إلى العمل حين تُشغَّل. وأي إضافة أخرى تُثبَّت من ملف أو من المتجر (`POST /plugins/install`)."
+    },
+    "/paths/~1plugins~1{id}~1install/post/parameters/0/description": {
+      "en": "The plugin's id, such as `tv.maktaba.subtitles`.",
+      "ar": "معرّف الإضافة، مثل `tv.maktaba.subtitles`."
+    },
+    "/paths/~1plugins~1{id}~1install/post/requestBody/description": {
+      "en": "Whether to turn it on at once.",
+      "ar": "هل تُشغَّل فورًا."
+    },
+    "/paths/~1plugins~1{id}~1install/post/requestBody/content/application~1json/schema/properties/enable/description": {
+      "en": "Turn the plugin on at once.",
+      "ar": "تشغيل الإضافة فورًا."
+    },
+    "/paths/~1plugins~1{id}~1install/post/responses/200/description": {
+      "en": "The plugin's detail after the change.",
+      "ar": "تفاصيل الإضافة بعد التغيير."
+    },
+    "/paths/~1plugins~1{id}~1install/post/responses/400/description": {
+      "en": "Invalid request.",
+      "ar": "طلب غير صالح."
+    },
+    "/paths/~1plugins~1{id}~1install/post/responses/403/description": {
+      "en": "Admin only.",
+      "ar": "للمشرفين وحدهم."
+    },
+    "/paths/~1plugins~1{id}~1install/post/responses/404/description": {
+      "en": "`plugin_not_installed`: the id is not one of Maktaba's plugins.",
+      "ar": "`plugin_not_installed`: المعرّف ليس إحدى إضافات مكتبة."
+    },
+    "/paths/~1plugins~1{id}~1install/post/responses/409/description": {
+      "en": "The component change was refused (for example `component_conflicts`).",
+      "ar": "رُفض تغيير المكوّن (مثل `component_conflicts`)."
     }
   }
 }

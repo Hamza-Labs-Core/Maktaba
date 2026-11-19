@@ -98,3 +98,22 @@ func TestFirstPartyStageGroups(t *testing.T) {
 		}
 	}
 }
+
+// maktaba-keys.json is embedded and reads: the list of Maktaba's developer keys a store
+// package of a Maktaba plugin must be signed by (story 54.45 §3), each a key id.
+func TestMaktabaKeysAreEmbedded(t *testing.T) {
+	var doc struct {
+		DeveloperKeys []string `json:"developer_keys"`
+	}
+	if err := json.Unmarshal(MaktabaKeys, &doc); err != nil {
+		t.Fatalf("maktaba-keys.json: %v", err)
+	}
+	if doc.DeveloperKeys == nil {
+		t.Fatal("maktaba-keys.json has no developer_keys list")
+	}
+	for _, k := range doc.DeveloperKeys {
+		if len(k) != 32 || strings.Trim(k, "0123456789abcdef") != "" {
+			t.Fatalf("%q is not a key id (the first 16 bytes of the key's sha256, in hex)", k)
+		}
+	}
+}

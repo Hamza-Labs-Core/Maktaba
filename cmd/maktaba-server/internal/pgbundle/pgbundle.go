@@ -103,9 +103,16 @@ func Resolve(cfg config.Config, exe string) (Bundle, bool, error) {
 	}
 	root := cfg.StateDir()
 	bk := cfg.Backups
+	// Epic 49 story 49.2: a newer major's cluster has a directory of its own (DataDirFor);
+	// while its upgrade is held (no room, a failed pg_upgrade: MajorHold) the payload's
+	// previous major runs on the cluster it has
+	major := dirMajor(home)
+	if old := PreviousHome(home); old != "" && HeldMajor(root) != "" {
+		home, major = old, dirMajor(old)
+	}
 	return Bundle{
 		Home:    home,
-		Data:    filepath.Join(root, "postgres"),
+		Data:    DataDirFor(root, major),
 		Keys:    config.KeysDir(),
 		Backups: cfg.BackupsDir(filepath.Join(root, "backups")),
 		Nightly: &NightlyPolicy{Off: !bk.NightlyOn(), EveryDays: bk.EveryDaysOr(), Hour: bk.HourOr(), Keep: bk.KeepOr()},
@@ -138,8 +145,10 @@ func findHome(cfg config.Config, exe string) string {
 			return ""
 		}
 	}
-	if b := config.AppBundle(); b != "" && hasServer(filepath.Join(b, "postgres")) {
-		return filepath.Join(b, "postgres")
+	if b := config.AppBundle(); b != "" {
+		if h := payloadHome(b); h != "" {
+			return h
+		}
 	}
 	if exe == "" {
 		return ""
@@ -147,9 +156,17 @@ func findHome(cfg config.Config, exe string) string {
 	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
 		exe = resolved
 	}
-	h := filepath.Join(filepath.Dir(filepath.Dir(exe)), "postgres")
-	if hasServer(h) {
-		return h
+	return payloadHome(filepath.Dir(filepath.Dir(exe)))
+}
+
+// payloadHome is the Postgres a payload runs: postgres-18/ when it has one (Epic 49 story
+// 49.2: the newer major, beside the previous one in postgres/, which the upgrade reads),
+// else postgres/; "" for none.
+func payloadHome(payload string) string {
+	for _, d := range []string{"postgres-18", "postgres"} {
+		if h := filepath.Join(payload, d); hasServer(h) {
+			return h
+		}
 	}
 	return ""
 }
@@ -259,9 +276,29 @@ func (b Bundle) serverArgs(lan bool) []string {
 		"-c", "max_logical_replication_workers=12", "-c", "max_sync_workers_per_subscription=8",
 		"-c", "log_timezone=UTC"}
 	// Epic 59 story 59.02: the tier's memory and the disk's values, the household's last
-	// (as -c arguments, so postgresql.auto.conf cannot override them)
+	// (as -c arguments, so postgresql.auto.conf cannot override them). Epic 49 story 49.1:
+	// pg_textsearch (BM25) loads only at the server's start, so an install that has it
+	// preloads it, also into a household's own shared_preload_libraries
+	// PostgreSQL 18's asynchronous I/O runs in worker processes by default (three more, about
+	// 12 MB idle); the bundled server reads as 16 does (io_method=sync), within the home's
+	// idle memory budget (Epic 51 story 51.17). 16 refuses the setting. The cluster's major
+	// is the server's (Postgres starts on no other), read from PG_VERSION, never by running it
+	if m, _ := b.ClusterMajor(); m != "" {
+		if n, err := strconv.Atoi(m); err == nil && n >= 18 {
+			args = append(args, "-c", "io_method=sync")
+		}
+	}
+	preload := strings.Join(b.Preload(), ",")
 	for _, kv := range b.Tuning {
+		if name, val, ok := strings.Cut(kv, "="); ok && strings.TrimSpace(name) == "shared_preload_libraries" && preload != "" {
+			// the household's value as it wrote it, ours after it
+			preload = mergePreload(val, b.Preload())
+			continue
+		}
 		args = append(args, "-c", kv)
+	}
+	if preload != "" {
+		args = append(args, "-c", "shared_preload_libraries="+preload)
 	}
 	if b.TLS && b.TLSReady() {
 		args = append(args, "-c", "ssl=on", "-c", "ssl_cert_file="+b.serverCert(), "-c", "ssl_key_file="+b.serverKey())
@@ -274,6 +311,81 @@ func (b Bundle) serverArgs(lan bool) []string {
 		}
 	}
 	return args
+}
+
+// preloadModules are the libraries the bundled server preloads when its install has them:
+// pg_textsearch (BM25 ranked search, Epic 49) refuses to work unless it is in
+// shared_preload_libraries. An install without it (PostgreSQL 16, a machine's fetched
+// Postgres) preloads nothing.
+var preloadModules = []string{"pg_textsearch"}
+
+// Preload is what of preloadModules this install's lib/ holds (pg_textsearch.so,
+// .dylib or .dll).
+func (b Bundle) Preload() []string {
+	var out []string
+	for _, m := range preloadModules {
+		for _, ext := range []string{".so", ".dylib", ".dll"} {
+			if st, err := os.Stat(filepath.Join(b.Home, "lib", m+ext)); err == nil && !st.IsDir() {
+				out = append(out, m)
+				break
+			}
+		}
+	}
+	return out
+}
+
+// mergePreload is a household's shared_preload_libraries value, kept as it wrote it, with
+// each of ours it does not name added after it. Its entries are read as Postgres reads the
+// list (SplitDirectoriesString): commas outside double quotes separate them, and a quoted
+// entry is taken without its quotes.
+func mergePreload(theirs string, ours []string) string {
+	theirs = strings.TrimSpace(theirs)
+	named := map[string]bool{}
+	for _, e := range splitPreload(theirs) {
+		named[e] = true
+	}
+	out := theirs
+	for _, l := range ours {
+		if named[l] {
+			continue
+		}
+		if strings.TrimSpace(strings.Trim(out, ",")) == "" {
+			out = l
+		} else {
+			out = strings.TrimRight(out, ", ") + "," + l
+		}
+	}
+	return out
+}
+
+// splitPreload is a shared_preload_libraries value's entries.
+func splitPreload(v string) []string {
+	var out []string
+	var cur strings.Builder
+	quoted := false
+	flush := func() {
+		if e := strings.TrimSpace(cur.String()); e != "" {
+			out = append(out, e)
+		}
+		cur.Reset()
+	}
+	for i := 0; i < len(v); i++ {
+		switch c := v[i]; {
+		case c == '"':
+			if quoted && i+1 < len(v) && v[i+1] == '"' {
+				cur.WriteByte('"')
+				i++
+				continue
+			}
+			quoted = !quoted
+		case c == ',' && !quoted:
+			flush()
+		default:
+			cur.WriteByte(c)
+		}
+	}
+	flush()
+	return out
 }
 
 // ServerCommand is the foreground `postgres` of this cluster (ServerArgs). On
@@ -345,6 +457,13 @@ func (b Bundle) Prepare(ctx context.Context, log io.Writer) error {
 				"or move the cluster away to start a new one", b.passwordFile(SuperUser), b.Data)
 		}
 	}
+	// never an empty cluster of a newer major beside the previous major's that holds the
+	// library (Epic 49 story 49.2): only the upgrade makes that directory (the server's
+	// start, majorUpgradeStep), and a fresh one there would later be taken for the library
+	if !b.Initialized() && b.HasDatabase() {
+		return fmt.Errorf("bundled postgres: the library database is in the previous major's cluster and %s is not "+
+			"upgraded yet: start the server (`maktaba-server serve`), which upgrades it", b.Data)
+	}
 	superPW, err := ensurePassword(b.passwordFile(SuperUser))
 	if err != nil {
 		return err
@@ -398,6 +517,11 @@ func (b Bundle) Prepare(ctx context.Context, log io.Writer) error {
 }
 
 func (b Bundle) initdb(ctx context.Context, superPW string, log io.Writer) error {
+	return b.initdbWith(ctx, superPW, log)
+}
+
+// initdbWith is initdb with more of initdb's flags (an upgrade's checksums, major.go).
+func (b Bundle) initdbWith(ctx context.Context, superPW string, log io.Writer, extra ...string) error {
 	if err := os.MkdirAll(filepath.Dir(b.Data), 0o700); err != nil {
 		return err
 	}
@@ -420,8 +544,8 @@ func (b Bundle) initdb(ctx context.Context, superPW string, log io.Writer) error
 		return err
 	}
 	fmt.Fprintf(log, "[postgres] creating the database cluster in %s\n", b.Data)
-	cmd := exec.CommandContext(ctx, b.Bin("initdb"), "-D", tmp, "-U", SuperUser, "--pwfile="+pwfile.Name(),
-		"--auth=scram-sha-256", "--encoding=UTF8", "--locale=C")
+	cmd := exec.CommandContext(ctx, b.Bin("initdb"), append([]string{"-D", tmp, "-U", SuperUser, "--pwfile=" + pwfile.Name(),
+		"--auth=scram-sha-256", "--encoding=UTF8", "--locale=C"}, extra...)...)
 	cmd.Stdout, cmd.Stderr = childLog(log), childLog(log)
 	if err := cmd.Run(); err != nil {
 		_ = os.RemoveAll(tmp)

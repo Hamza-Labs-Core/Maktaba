@@ -550,7 +550,9 @@ describe("Settings → Plugins: one page for every plugin (Epic 54, story 54.44)
     machine: "home",
     phase: "running",
     rss_mb: 310,
+    cpu_pct: 25,
     scope: "process" as const,
+    cpu_scope: "process" as const,
     stages: ["subtitle_gen"],
     shared_with: ["tv.maktaba.thumbnails"],
     shared_core: true,
@@ -1248,19 +1250,68 @@ describe("Settings → Plugins: one page for every plugin (Epic 54, story 54.44)
     const versions = screen.getByTestId("versions-with-release");
     expect(within(versions).getByRole("link")).toHaveAttribute("href", "/admin/updates");
     expect(screen.queryByText(EN["plugins.versions.update_file"])).toBeNull();
-    // what does not apply is absent: no writes, no remove buttons, and why in words
+    // what does not apply is absent: no writes and no purge; Remove is there (story 54.46),
+    // and it says what stays
     expect(screen.queryByRole("heading", { name: EN["plugins.section.writes"] })).toBeNull();
-    expect(screen.queryByRole("button", { name: EN["plugins.action.remove"] })).toBeNull();
+    expect(screen.getByRole("button", { name: EN["plugins.action.remove"] })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: EN["plugins.action.purge"] })).toBeNull();
-    const why = screen.getByTestId("remove-with-release");
-    expect(why).toHaveTextContent(EN["plugins.remove.with_release"]);
-    expect(within(why).getByRole("link")).toHaveAttribute("href", "/settings/components#subtitles");
+    expect(screen.getByTestId("remove-maktaba")).toHaveTextContent(
+      EN["plugins.remove.maktaba_hint"]
+    );
     // the same switch as its card
     expect(screen.getByRole("switch", { name: /Subtitles/ })).toBeChecked();
     // a link back to the list
     expect(screen.getByRole("link", { name: EN["plugins.page.back"] })).toHaveAttribute(
       "href",
       "/settings/plugins"
+    );
+  });
+
+  it("54.46: a Maktaba plugin is removed (its jobs parked, its data kept) and installed again", async () => {
+    page([maktaba()]);
+    open("/settings/plugins/tv.maktaba.subtitles");
+    await userEvent.click(await screen.findByRole("button", { name: EN["plugins.action.remove"] }));
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog).toHaveTextContent(EN["plugins.remove.maktaba_keep"]);
+    expect(dialog).not.toHaveTextContent(/dropped/);
+    del.mockResolvedValue({ id: "tv.maktaba.subtitles", want: "absent", queued_jobs_parked: 4 });
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: EN["plugins.action.remove"] })
+    );
+    await waitFor(() => expect(del).toHaveBeenCalledWith("/api/plugins/tv.maktaba.subtitles"));
+  });
+
+  it("54.46: a removed Maktaba plugin says it is not installed and installs again from the release", async () => {
+    const d = maktabaDetail({ want: "absent" });
+    page([maktaba({ want: "absent" })], { detail: d });
+    open("/settings/plugins/tv.maktaba.subtitles");
+    expect(await screen.findByTestId("remove-maktaba")).toHaveTextContent(
+      EN["plugins.remove.maktaba_absent"]
+    );
+    expect(screen.queryByRole("button", { name: EN["plugins.action.remove"] })).toBeNull();
+    post.mockResolvedValue(maktabaDetail());
+    await userEvent.click(screen.getByRole("button", { name: EN["plugins.browse.install"] }));
+    await waitFor(() =>
+      expect(post).toHaveBeenCalledWith("/api/plugins/tv.maktaba.subtitles/install", {
+        enable: true,
+      })
+    );
+  });
+
+  it("T08: processor use says what it measures even when memory says otherwise (54.52 review)", async () => {
+    // just after a second runner starts: memory is this process's, processor use still the
+    // component's last total
+    const d = maktabaDetail();
+    d.resources = {
+      ...d.resources!,
+      processes: [{ ...light, cpu_pct: 40, cpu_scope: "component" as const }],
+    };
+    page([maktaba(), thumbs()], { detail: d });
+    open("/settings/plugins/tv.maktaba.subtitles");
+    const table = await screen.findByTestId("resources-processes");
+    expect(table).toHaveTextContent("310 MB");
+    expect(table).toHaveTextContent(
+      EN["plugins.resources.cpu_pct_component"].replace("{pct}", "40")
     );
   });
 
@@ -1290,7 +1341,7 @@ describe("Settings → Plugins: one page for every plugin (Epic 54, story 54.44)
     expect(screen.getByRole("link", { name: EN["plugins.page.back"] })).toBeInTheDocument();
   });
 
-  it("T08: a shared runner group shows the group's memory and who shares it, not a split", async () => {
+  it("T08: a shared runner group shows the group's memory, its processor use and who shares it, not a split", async () => {
     page([maktaba(), thumbs()]);
     open("/settings/plugins/tv.maktaba.subtitles");
     const table = await screen.findByTestId("resources-processes");
@@ -1300,7 +1351,10 @@ describe("Settings → Plugins: one page for every plugin (Epic 54, story 54.44)
     expect(screen.getByTestId("resources-shared")).toHaveTextContent(
       EN["plugins.resources.shared_note"]
     );
-    expect(screen.getByText(EN["plugins.resources.cpu_note"])).toBeInTheDocument();
+    // story 54.52: the group's processor use beside its memory, and no sentence saying it
+    // is not measured
+    expect(table).toHaveTextContent("25% of one core");
+    expect(screen.queryByText(/Processor use is not measured/)).toBeNull();
     // its jobs: running, waiting and the usual time
     const section = screen.getByRole("region", { name: EN["plugins.section.resources"] });
     expect(section).toHaveTextContent("3 s");
@@ -1346,7 +1400,7 @@ describe("Settings → Plugins: one page for every plugin (Epic 54, story 54.44)
     );
     expect(screen.getByRole("button", { name: EN["plugins.action.remove"] })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: EN["plugins.section.writes"] })).toBeInTheDocument();
-    expect(screen.queryByTestId("remove-with-release")).toBeNull();
+    expect(screen.queryByTestId("remove-maktaba")).toBeNull();
   });
 
   it("T09: how to install is on the page, with what unreviewed means", async () => {
@@ -1396,8 +1450,8 @@ describe("Settings → Plugins: one page for every plugin (Epic 54, story 54.44)
     expect(await screen.findByTestId("resources-shared")).toHaveTextContent(
       AR["plugins.resources.shared_note"]
     );
-    expect(screen.getByTestId("remove-with-release")).toHaveTextContent(
-      AR["plugins.remove.with_release"]
+    expect(screen.getByTestId("remove-maktaba")).toHaveTextContent(
+      AR["plugins.remove.maktaba_hint"]
     );
     expect(screen.getByTestId("plugin-problems")).toHaveTextContent(/مشكلات/);
   });

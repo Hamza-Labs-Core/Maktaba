@@ -36,8 +36,10 @@ var moveLockWait = 30 * time.Second
 
 // stateFolders are the large state's folders, beside the default data folder on
 // macOS and Windows (Config.StateDir) and inside it before (a Windows install from
-// before Epic 38 keeps them there).
-var stateFolders = []string{"models", "cache", "chroma", "postgres", "backups"}
+// before Epic 38 keeps them there). postgres-18 is the cluster of a newer major, made by
+// its upgrade beside postgres (Epic 49 story 49.2): a move that left it behind would leave
+// the home on its old cluster, without what was written since the upgrade.
+var stateFolders = []string{"models", "cache", "chroma", "postgres", "postgres-18", "backups"}
 
 // MigrateDirs brings an install made before this platform's paths into them
 // (MigrateMacDirs moves it, MigrateWindowsDirs copies it) and says what it did, a

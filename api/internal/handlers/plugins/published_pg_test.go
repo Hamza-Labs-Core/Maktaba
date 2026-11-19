@@ -259,7 +259,9 @@ func TestActivityAndSharedProcesses(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := f.s.Store.ReportStatus(context.Background(), store.Home, "supervisor", []store.Status{{ID: "core.plugin_runners", Phase: "running",
-		Detail: map[string]any{"rss_mb": 900, "rss_parts": map[string]any{"plugin-runner/light": 310, "plugin-runner/files": 590}}}}); err != nil {
+		Detail: map[string]any{"rss_mb": 900, "rss_parts": map[string]any{"plugin-runner/light": 310, "plugin-runner/files": 590},
+			// story 54.52: the processor use, reported beside the memory
+			"cpu_pct": 75, "cpu_parts": map[string]any{"plugin-runner/light": 25, "plugin-runner/files": 50}}}}); err != nil {
 		t.Fatal(err)
 	}
 	code, got := f.call(f.admin, http.MethodGet, "/api/plugins/tv.maktaba.subtitles")
@@ -282,7 +284,8 @@ func TestActivityAndSharedProcesses(t *testing.T) {
 	}
 	p := procs[0].(map[string]any)
 	shared, _ := json.Marshal(p["shared_with"])
-	if p["process"] != "plugin-runner/light" || p["rss_mb"] != float64(310) || p["scope"] != "process" ||
+	// the shared group's whole process, for memory and processor alike (story 54.52)
+	if p["process"] != "plugin-runner/light" || p["rss_mb"] != float64(310) || p["cpu_pct"] != float64(25) || p["scope"] != "process" ||
 		p["component"] != "core.plugin_runners" || !strings.Contains(string(shared), "tv.maktaba.thumbnails") ||
 		strings.Contains(string(shared), "core-media") {
 		t.Fatalf("the runner group's process: %v", p)
@@ -303,11 +306,11 @@ func TestActivityAndSharedProcesses(t *testing.T) {
 }
 
 // Story 54.44 T05: what a plugin that comes with the release cannot do yet is refused in
-// words, not offered: it is removed, updated and rolled back with Maktaba only.
+// words, not offered: it is updated and rolled back with Maktaba only (removing it is its
+// component's since story 54.46).
 func TestWithReleaseRefusals(t *testing.T) {
 	f := newPub(t)
 	for _, rt := range []string{
-		"DELETE /api/plugins/tv.maktaba.subtitles",
 		"POST /api/plugins/tv.maktaba.subtitles/rollback",
 		"POST /api/plugins/tv.maktaba.subtitles/update",
 		"PUT /api/plugins/tv.maktaba.subtitles/grants",
@@ -321,7 +324,7 @@ func TestWithReleaseRefusals(t *testing.T) {
 		}
 	}
 	if d, _ := f.s.Show(context.Background(), "subtitles"); d.Want != "enabled" {
-		t.Fatalf("a refused removal changed the row: %q", d.Want)
+		t.Fatalf("a refused change changed the row: %q", d.Want)
 	}
 	// its flow is its stages and the ones they hand work to, core drawn as core
 	code, got := f.call(f.admin, http.MethodGet, "/api/plugins/tv.maktaba.thumbnails/flow")
@@ -425,5 +428,89 @@ func TestEnableNamesAConflictAndCanSwitch(t *testing.T) {
 	if code, _ := f.send(&principal.Principal{UserID: "00000000-0000-0000-0000-0000000000c1"}, http.MethodPost,
 		"/api/plugins/tv.maktaba.livetv-slots/disable", `{"with_conflicts": true}`); code != http.StatusForbidden {
 		t.Fatalf("a viewer: %d", code)
+	}
+}
+
+// Story 54.46 §3, §2: a Maktaba plugin is removed through its component (want absent): its
+// queued jobs are parked, never dropped, and run again once it is installed again from the
+// release; one that others on need is refused with what needs it; its data is kept, so a
+// purge is refused; only Maktaba's plugins install from the release.
+func TestAMaktabaPluginIsRemovedAndInstalledAgain(t *testing.T) {
+	f := newPub(t)
+	ctx := context.Background()
+	db := f.s.Store.DB
+	var vid string
+	if err := db.QueryRow(`WITH l AS (INSERT INTO libraries (name, roots) VALUES ('Films', '{}') RETURNING id)
+		INSERT INTO videos (library_id, content_hash, path, filename, size_bytes, mtime, title, duration_sec)
+		SELECT id, repeat('a', 64), '/x/a.mp4', 'a.mp4', 1, now(), 'A', 60 FROM l RETURNING id::text`).Scan(&vid); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO processing_jobs (video_id, subject_kind, subject_id, stage, state) VALUES ($1, 'video', $1, 'thumb_small', 'pending')`, vid); err != nil {
+		t.Fatal(err)
+	}
+	// a purge of a Maktaba plugin is refused: what it wrote is the library's own
+	if code, got := f.call(f.admin, http.MethodDelete, "/api/plugins/tv.maktaba.thumbnails?purge=true"); code != http.StatusConflict || got["code"] != pl.CodeDataKept {
+		t.Fatalf("purge: %d %v", code, got)
+	}
+	code, got := f.call(f.admin, http.MethodDelete, "/api/plugins/tv.maktaba.thumbnails")
+	if code != http.StatusAccepted || got["want"] != "absent" || got["queued_jobs_parked"] != float64(1) {
+		t.Fatalf("remove: %d %v", code, got)
+	}
+	if d, _ := f.s.Show(ctx, "media.thumbnails"); d.Want != "absent" {
+		t.Fatalf("the component after a removal: %q", d.Want)
+	}
+	var pending int
+	if err := db.QueryRow(`SELECT count(*) FROM processing_jobs WHERE stage = 'thumb_small' AND state = 'pending'`).Scan(&pending); err != nil || pending != 1 {
+		t.Fatalf("the queued job after a removal: %d %v (parked, not dropped)", pending, err)
+	}
+	// its page says it is not installed
+	_, page := f.call(f.admin, http.MethodGet, "/api/plugins/tv.maktaba.thumbnails")
+	if page["want"] != "absent" {
+		t.Fatalf("page: %v", page["want"])
+	}
+	// installed again from the release, on at once
+	code, got = f.send(f.admin, http.MethodPost, "/api/plugins/tv.maktaba.thumbnails/install", `{"enable": true}`)
+	if code != http.StatusOK || got["want"] != "enabled" {
+		t.Fatalf("install again: %d %v", code, got)
+	}
+	if err := db.QueryRow(`SELECT count(*) FROM processing_jobs WHERE stage = 'thumb_small' AND state = 'pending'`).Scan(&pending); err != nil || pending != 1 {
+		t.Fatalf("the parked job after the install: %d %v", pending, err)
+	}
+	// without enable it is installed and off
+	if _, _ = f.call(f.admin, http.MethodDelete, "/api/plugins/tv.maktaba.thumbnails"); true {
+		code, got = f.call(f.admin, http.MethodPost, "/api/plugins/tv.maktaba.thumbnails/install")
+		if code != http.StatusOK || got["want"] != "installed" {
+			t.Fatalf("install, off: %d %v", code, got)
+		}
+	}
+	// another plugin is installed from a file or the store
+	if code, got := f.call(f.admin, http.MethodPost, "/api/plugins/dev.example.x/install"); code != http.StatusNotFound {
+		t.Fatalf("a third-party id from the release: %d %v", code, got)
+	}
+}
+
+// Story 54.46 §3: a Maktaba plugin that components still on need is not removed; once
+// they are off it is.
+func TestRemovingAMaktabaPluginOthersNeedIsRefused(t *testing.T) {
+	f := newPub(t)
+	ctx := context.Background()
+	// subtitles requires transcription; both on
+	for _, c := range []string{"transcription", "subtitles"} {
+		if _, err := f.s.Apply(ctx, svc.Request{Changes: []svc.Change{{ID: c, Want: "enabled"}}}, svc.Actor{By: "owner", Source: "web"}); err != nil {
+			t.Fatalf("enable %s: %v", c, err)
+		}
+	}
+	code, got := f.call(f.admin, http.MethodDelete, "/api/plugins/tv.maktaba.transcription")
+	if code != http.StatusConflict || got["code"] != "component_required_by" {
+		t.Fatalf("removing what subtitles needs: %d %v", code, got)
+	}
+	if d, _ := f.s.Show(ctx, "transcription"); d.Want != "enabled" {
+		t.Fatalf("a refused removal changed the row: %q", d.Want)
+	}
+	if code, got := f.call(f.admin, http.MethodPost, "/api/plugins/tv.maktaba.subtitles/disable"); code != http.StatusOK {
+		t.Fatalf("subtitles off: %d %v", code, got)
+	}
+	if code, got := f.call(f.admin, http.MethodDelete, "/api/plugins/tv.maktaba.transcription"); code != http.StatusAccepted {
+		t.Fatalf("removing it once subtitles is off: %d %v", code, got)
 	}
 }

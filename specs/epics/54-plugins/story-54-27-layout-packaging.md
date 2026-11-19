@@ -146,6 +146,96 @@ plugin's `i18n`.
 - **A plugin with no stages left after a refactor**: the build refuses a first-party plugin
   with no stage (it would be an empty component).
 
+## As built
+
+- **The layout, catalog, CI, embedding and import contract** came with #750 (its "54.27
+  layout" part): `plugins/`, the `plugin` catalog field in both loaders, CODEOWNERS, the
+  `first-party` jobs in `_plugins.yml` and their path filters, the embedded bundle
+  (`shared/plugins/firstparty.json`) and `tools/plugins/import_contracts.py`. There is no `_lib`
+  folder yet, because no plugin shares code with another. Thirteen plugins exist, not fifteen:
+  #969 removed dizqueTV, and `tv.maktaba.enrich` waits for the decision recorded in 54.31.
+- **`tools/plugins/build.py --version <v> --out <dir> [plugin ...]`** writes
+  `tv.maktaba.<name>-<v>.mkplugin` for each folder, and the package's `files.json` beside it as
+  `tv.maktaba.<name>-<v>.files.json`. A package holds:
+  - the manifest, with `version = "<v>"` and `maktaba = "=<v>"` stamped;
+  - `i18n/en.json` and `ar.json`;
+  - `statements.json`, compiled by `bundle.py`'s own code, so it holds the statements the server
+    embeds;
+  - `wheels/maktaba_fp_<name>-<v>-py3-none-any.whl`, the plugin's `src/` as its own wheel,
+    requiring `maktaba-pipeline==<v>`.
+- **The packer is the home's writer.** `shared/go/componentpack/cmd/mkplugin` gained
+  `-files-json`, which reads the package back with `UnpackPlugin` and writes its `files.json`.
+  The wheel and the package are reproducible: entries are sorted, timestamps are fixed and
+  zstd runs at one level, so a re-run of the release signs the same checksums. The build
+  refuses a plugin with no stage, an id outside `tv.maktaba.` and a version with no PEP 440 form.
+- **Release.** `release.yml` has a `package-plugins` job. `sign-and-release` needs it, copies
+  both files of each package into `dist/` before "Generate checksums", and after the
+  `releaseverify` step runs `api/tools/fp-packages` on `dist/` with the release's pipeline
+  wheel. That command (`firstparty.VerifyReleasePackages`) requires a package and a
+  `files.json` for every plugin of the bundle the server embeds, each listed under its own name
+  with its own digest. Each package must:
+  - unpack to that `files.json`, holding exactly its manifest, strings, statements and one wheel
+    of its own;
+  - have a stamped manifest that is valid as a trusted manifest, with its manifest, strings and
+    statements equal to the embedded ones;
+  - have a wheel named for this version whose files match its own dist-info's `RECORD`
+    (digests and sizes; no member over the unpacked limit, which is refused rather than hashed
+    as a prefix) and
+    equal its plugin's files in the signed pipeline wheel, digest for digest, both ways, so a
+    package's code is the code the runner loads;
+  - hold no bytecode (`.pyc`, `__pycache__`) under its plugin's package, in its wheel or in
+    the pipeline wheel's copy, since Python can run bytecode that is not its source. The
+    release's build removes it. A wheel is also limited to 20,000 members and 1 GiB unpacked
+    in total, declared and read;
+  - keep its wheel's dist-info to exactly `METADATA`, `WHEEL` and `RECORD`. The `METADATA` names
+    this distribution and version and requires only `maktaba-pipeline==<version>`, and the
+    `WHEEL` says a pure `py3-none-any` wheel;
+  - pass `CheckPackage`.
+  
+  Any other `tv.maktaba.*` package or `files.json`, on disk or in the checksums, fails the
+  release. The pipeline wheel the packages are compared with must be this release's, both by
+  its name (`maktaba_pipeline-<version>-py3-none-any.whl`) and by its own `METADATA`. Only
+  that file's headers are read, as Python's metadata parser reads them: names in any case, a
+  folded value refused, `Name` and `Version` each exactly once.
+- **The check's Go.** `api/go.mod` asks for a newer Go than `tools/release`'s, and the release
+  job runs with `GOTOOLCHAIN=local`. So `sign-and-release` sets up `api`'s Go just before the
+  check and downloads `api`'s modules there. `test_go_mod_download.py` now fails any job that
+  downloads a module asking for a newer Go than the job set up before it.
+- **`CheckPackage` reads the digest under the package's own name.** It looks at
+  `tv.maktaba.<name>-<server version>.files.json` only; until now it accepted the digest under
+  any name. A digest listed for another plugin, or for any other release file, trusts nothing.
+- **A pre-release carries no packages.** A manifest's `maktaba` range takes only
+  `MAJOR.MINOR.PATCH` (54.01 §2), so a stamped `=1.2.3-rc.1` would fail the trusted manifest
+  check and the release with it. For a pre-release, `build.py` writes only a note
+  (`first-party-packages.txt`, which is not a release file), and `fp-packages` requires that no
+  first-party package or `files.json` is there. Widening the range grammar would change the
+  manifest contract for every plugin, so it is left to the story that first installs a
+  package (54.45). Releases are patch versions; pre-releases are rare and tagged by hand.
+- **The payload does not carry the packages** (a change from §2). Homes still run the code
+  from the signed pipeline wheel, and nothing on a home reads a package until stories 54.45 and
+  54.46 build an install path. Carrying them would change every platform's payload for no
+  reader. The packages are release files, which is where 54.45 §4 and 54.49 want them.
+- **Tests.** T01 runs in the `first-party` job: a dry run builds every package, checksums
+  them as the release does and runs `fp-packages`. `release_test.go` builds the packages with
+  `build.py` and covers the trusted case, reproducibility, a package or `files.json` missing
+  from the checksums, a changed byte, another release's packages under this release's names
+  (`plugin_trusted_version`), a repacked package with other statements, one with a wider
+  manifest, an extra package and a missing one. The review fixes add: a wheel that differs from
+  the pipeline wheel's code (a changed file, or one file more on either side), a rewritten
+  `RECORD`, a `RECORD` that does not hold, an unsigned pipeline wheel, a package with an extra
+  member, an orphan `files.json` (on disk, and in the checksums only), and `CheckPackage` with
+  the digest under another plugin's name, another release file's name or another version's.
+  The second review adds: a pre-release (no package, and one present refused), a wheel
+  `METADATA` with another dependency, another pipeline range or another version, an extra
+  dist-info file, a platform `WHEEL`, a wheel named for another version, and wrong `RECORD`
+  sizes. The `first-party` job runs every test of `internal/plugins/firstparty` and
+  `tools/fp-packages` with no name filter, since the unit job's `-short` skips the ones that
+  build packages. The third review adds: an older pipeline wheel under this release's name, a
+  pipeline wheel named for another version, a `RECORD` outside its dist-info, and a member over
+  the unpacked limit. The dry run builds the packages at the pipeline wheel's own version. `test_build_packages.py` covers stamping,
+  versions, the no-stage and third-party refusals, the package's files and the wheel's
+  `RECORD`. T02 to T06 are #750's.
+
 ## Build plan
 
 ### Files to touch

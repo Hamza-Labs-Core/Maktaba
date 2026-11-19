@@ -44,9 +44,24 @@ const (
 	SourceFile    = "file"
 )
 
-// CodeWithRelease refuses what a plugin that comes with the release cannot do yet: remove,
-// update or roll back on its own, grants, schema settings, reverting writes (409).
+// CodeWithRelease refuses what a plugin that comes with the release cannot do yet: update
+// or roll back on its own, grants, schema settings, reverting writes (409). Removing and
+// installing it again are its component's (story 54.46).
 const CodeWithRelease = "plugin_with_release"
+
+// CodeDataKept refuses a purge of a Maktaba plugin: the data it wrote is the library's own
+// and stays when it is removed (story 54.46 §3).
+const CodeDataKept = "plugin_data_kept"
+
+// Published answers one Maktaba-published plugin (core's is not one), nil for any other id.
+func Published(id string) *firstparty.FirstParty {
+	for _, fp := range published() {
+		if fp.ID == id {
+			return fp
+		}
+	}
+	return nil
+}
 
 // Switch locks: why a plugin's switch cannot turn it on (the reason's words are Epic 51's).
 // Turning a plugin off is never locked.
@@ -113,17 +128,25 @@ type ProcessUse struct {
 	Machine   string `json:"machine"`
 	Phase     string `json:"phase,omitempty"`
 	RSSMB     *int64 `json:"rss_mb,omitempty"`
-	// Scope is what RSSMB measures: "process" (this process alone) or "component" (every
-	// process of Component together: its supervisor does not report each one yet).
+	// Scope is what RSSMB and CPUPct measure: "process" (this process alone) or
+	// "component" (every process of Component together: its supervisor does not report
+	// each one yet).
 	Scope string `json:"scope,omitempty"`
+	// CPUPct is the share of one processor core it used over the supervisor's last sample
+	// (100 is one whole core; story 54.52); CPUScope is what it measures, as Scope is for
+	// RSSMB. The two can differ for a sample: just after another process of the component
+	// starts, memory is read per process at once while processor use keeps the component's
+	// last number until the next sample.
+	CPUPct   *int64 `json:"cpu_pct,omitempty"`
+	CPUScope string `json:"cpu_scope,omitempty"`
 	// Stages are this plugin's stages that run in it.
 	Stages     []string `json:"stages"`
 	SharedWith []string `json:"shared_with"`
 	SharedCore bool     `json:"shared_core"`
 }
 
-// Resources is what a plugin uses: the processes that run it, and what it stores.
-// CPU is not here: no supervisor measures a process's CPU yet (story 54.52).
+// Resources is what a plugin uses: the processes that run it (memory and processor), and
+// what it stores.
 type Resources struct {
 	Processes []ProcessUse `json:"processes"`
 	// Shared: at least one of its processes also runs other plugins.
@@ -373,33 +396,47 @@ func (d *pageData) processesOf(component, role, instance, group string) []Proces
 	for _, r := range d.status[component] {
 		u := ProcessUse{Process: role + "/" + instance, Group: group, Component: component, Machine: r.Machine,
 			Phase: r.Phase, Stages: []string{}, SharedWith: []string{}}
-		parts, _ := r.Detail["rss_parts"].(map[string]any)
-		var own int64
-		found := false
-		for name, v := range parts {
-			// the group's own process, and its numbered ones (ml-0, ml-1 …)
-			if name != u.Process && !strings.HasPrefix(name, u.Process+"-") {
-				continue
-			}
-			if n, ok := num(v); ok {
-				own += n
-				found = true
-			}
+		single := false
+		if c, ok := components.Default().Get(component); ok && len(c.Processes) == 1 && !strings.Contains(c.Processes[0], "*") {
+			single = true
 		}
-		switch {
-		case found:
-			u.RSSMB, u.Scope = &own, "process"
-		case len(parts) == 0:
-			if n, ok := num(r.Detail["rss_mb"]); ok {
-				u.RSSMB, u.Scope = &n, "component"
-				if c, ok := components.Default().Get(component); ok && len(c.Processes) == 1 && !strings.Contains(c.Processes[0], "*") {
-					u.Scope = "process"
-				}
-			}
-		}
+		u.RSSMB, u.Scope = measure(r.Detail, "rss_mb", "rss_parts", u.Process, single)
+		// processor use is reported as memory is (cpu_pct beside rss_mb, cpu_parts beside
+		// rss_parts), with its own scope; a row from before story 54.52 has none
+		u.CPUPct, u.CPUScope = measure(r.Detail, "cpu_pct", "cpu_parts", u.Process, single)
 		out = append(out, u)
 	}
 	return out
+}
+
+// measure answers a process's own number from a status row's detail: its entry (and its
+// numbered ones: ml-0, ml-1 …) in parts when the supervisor reports each process, else the
+// component's total, which is the process's own when the component has one process.
+func measure(detail map[string]any, total, partsKey, process string, single bool) (*int64, string) {
+	parts, _ := detail[partsKey].(map[string]any)
+	var own int64
+	found := false
+	for name, v := range parts {
+		if name != process && !strings.HasPrefix(name, process+"-") {
+			continue
+		}
+		if n, ok := num(v); ok {
+			own += n
+			found = true
+		}
+	}
+	switch {
+	case found:
+		return &own, "process"
+	case len(parts) == 0:
+		if n, ok := num(detail[total]); ok {
+			if single {
+				return &n, "process"
+			}
+			return &n, "component"
+		}
+	}
+	return nil, ""
 }
 
 func num(v any) (int64, bool) {
@@ -997,7 +1034,7 @@ func (l *Lifecycle) publishedFlow(ctx context.Context, fp *firstparty.FirstParty
 
 // withRelease refuses what a plugin that comes with the release cannot do yet.
 func withRelease(id string) *Problem {
-	return problem(http.StatusConflict, CodeWithRelease, "%s comes with Maktaba: it is updated with Maktaba and cannot be removed or changed on its own yet", id)
+	return problem(http.StatusConflict, CodeWithRelease, "%s comes with Maktaba: it is updated with Maktaba and cannot be changed on its own yet", id)
 }
 
 // RefuseWithRelease answers the refusal for id when Maktaba publishes it and it came with
