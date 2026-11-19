@@ -3,7 +3,7 @@
 > Story-by-story status of every epic, read from the code and history on `main` at `f43b0d3ed` (2026-11-19).
 > The specs and epic pages don't record a status; this page does. Update the row when a story changes.
 
-**Not every epic is done.** Of 773 stories across all 60 epics, 700 are done, 39 are partial, 24 are not started, and 10 were deferred or removed on purpose. The largest open pieces are Epic 49 (Search, one story of fourteen done), Epic 34 (the TV public site, a first slice only) and Epic 54 Phase 5 (Plugins).
+**Not every epic is done.** Of 773 stories across all 60 epics, 701 are done, 38 are partial, 24 are not started, and 10 were deferred or removed on purpose. The largest open pieces are Epic 49 (Search, one story of fourteen done), Epic 34 (the TV public site, a first slice only) and Epic 54 Phase 5 (Plugins).
 
 ## How this was checked
 
@@ -38,7 +38,7 @@
 | 13 Desktop | 8* | 0 | 0 | 0 | Done |
 | 14 TV apps | 7* | 0 | 0 | 0 | Done |
 | 15 Discovery | 7* | 0 | 0 | 0 | Done |
-| 16 Subscriptions | 7* | 1 | 0 | 0 | **Partial** |
+| 16 Subscriptions | 8* | 0 | 0 | 0 | Done |
 | 17 UX design system | 11* | 0 | 0 | 0 | Done |
 | 18 Performance | 8* | 0 | 0 | 0 | Done |
 | 19 Scalability | 8* | 0 | 0 | 0 | Done |
@@ -83,7 +83,7 @@
 | 58 Smart TV platforms | 17 | 0 | 0 | 1 | Done (58.18 Vega OS deferred) |
 | 59 NAS | 16 | 0 | 0 | 0 | Done (device results not checked) |
 | 60 Website | 11 | 1 | 0 | 1 | **Partial** |
-| **Total** | **700** | **39** | **24** | **10** | **Not all done** |
+| **Total** | **701** | **38** | **24** | **10** | **Not all done** |
 
 `*` sampled, see [How this was checked](#how-this-was-checked).
 
@@ -115,7 +115,6 @@
 
 | Story | Missing |
 |---|---|
-| 16.02 Premium features | The 30-day read-only period after a downgrade. |
 | 22.03 Container images | `tools/image-size-guard.sh` exists but no workflow runs it. |
 | 23.07 Supply-chain security | A per-component SBOM (`tools/sbom.sh` is a stub) and a CVE gate that can stop a release. Release images already carry SBOM attestations; Dependabot alerts (78 open on 2026-11-19) and CodeQL default setup (3 open alerts) scan the repo, but neither stops a release. |
 | 26.2 Transcript topic & entity extraction | Only slot 0074's schema is present. No `topic_extractor` implementation, NER/gazetteer path, classification/entity writers, or its tests are on `origin/main`; `classify_stage.py` still describes that extractor as future work. |
