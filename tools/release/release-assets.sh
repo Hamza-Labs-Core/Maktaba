@@ -163,6 +163,29 @@ upload() {
     done
 }
 
+# checksum_names FILE: the names a checksums.txt lists, one a line, as
+# releaseverify.ParseChecksums reads them; fails (printing nothing) on any line it would refuse
+# or on a file that names nothing. No regex interval ({64}): mawk's support for it varies.
+checksum_names() {
+    awk '
+        { sub(/\r$/, "") }
+        $0 ~ /^[ \t]*$/ { next }
+        {
+            d = substr($0, 1, 64)
+            if (length($0) < 66 || substr($0, 65, 1) != " " || d ~ /[^0-9a-f]/) { bad = 1; exit }
+            name = substr($0, 66)
+            sub(/^ +/, "", name); sub(/^\*/, "", name); sub(/^\.\//, "", name)
+            if (name == "" || name == "." || name == ".." || name ~ /[\/\\ \t]/ || name ~ /^-/ || (name in seen)) { bad = 1; exit }
+            seen[name] = 1
+            out[++n] = name
+        }
+        END {
+            if (bad || n == 0) exit 1
+            for (i = 1; i <= n; i++) print out[i]
+        }
+    ' "$1"
+}
+
 publish() {
     local id names missing=() tmp all=false
     id="$(release_id)"
@@ -178,18 +201,19 @@ publish() {
     # finished) leaves a draft whose checksums list a file nobody can download
     if grep -qx checksums.txt <<<"${names}"; then
         gh_ release download "${tag}" --pattern checksums.txt --dir "${tmp}" --clobber
-        # read strictly, as releaseverify.ParseChecksums does: every line "<64 hex>  <name>"
-        # (an optional "*" or "./"), and at least one; anything else is not this release's
-        # checksums, and the draft waits
-        local listed n bad
-        bad="$(grep -cvE '^[0-9a-f]{64} [ *]?(\./)?[^ /]+$' "${tmp}/checksums.txt" || true)"
-        listed="$(awk 'NF >= 2 { n = $2; sub(/^\*/, "", n); sub(/^\.\//, "", n); print n }' "${tmp}/checksums.txt")"
-        if [ "${bad}" != 0 ] || [ -z "${listed}" ]; then
-            missing+=("a well-formed checksums.txt (release.yml)")
-        else
+        # read as releaseverify.ParseChecksums reads it (shared/go/releaseverify/manifest.go),
+        # rule for rule: a CR before the newline dropped, blank lines skipped, every other line
+        # "<64 lowercase hex> <name>" (spaces, then an optional "*" and "./"), each name a
+        # valid file name (not ".", "..", "-…", nor holding "/", "\\", a space or a tab) and
+        # listed once, and at least one name. Anything else is not this release's checksums,
+        # and the draft waits (machines refuse such a file, so publishing it helps nobody)
+        local listed n
+        if listed="$(checksum_names "${tmp}/checksums.txt")"; then
             while IFS= read -r n; do
                 grep -qxF -- "${n}" <<<"${names}" || missing+=("${n} (in checksums.txt)")
             done <<<"${listed}"
+        else
+            missing+=("a well-formed checksums.txt (release.yml)")
         fi
     fi
     if grep -qx latest.json <<<"${names}"; then

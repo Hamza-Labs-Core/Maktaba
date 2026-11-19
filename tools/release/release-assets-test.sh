@@ -30,6 +30,7 @@ case "$1" in
         ;;
     release)
         if [ "$2" = edit ]; then echo "edited $*" >>"${EDITS}"; exit 0; fi
+        if [ "$2" = list ]; then printf '%s\n' "${PUBLISHED:-}"; exit 0; fi
         [ "$2" = download ] || { echo "gh stub: $*" >&2; exit 1; }
         name="" dir=""
         while [ $# -gt 0 ]; do
@@ -54,6 +55,16 @@ case "$1" in
 esac
 EOF
 chmod +x "${work}/stubs/gh"
+# a stubbed go for publish's stable path: release-order answers LATEST ("true" when this tag
+# is the highest stable one)
+cat >"${work}/stubs/go" <<'GOSTUB'
+#!/usr/bin/env bash
+case "$*" in
+    *cmd/release-order*) cat >/dev/null; echo "${LATEST:-true}" ;;
+    *) echo "go stub: $*" >&2; exit 1 ;;
+esac
+GOSTUB
+chmod +x "${work}/stubs/go"
 
 # stage NAME...: a run's staged directory, each file "built <name>"
 stage() {
@@ -180,6 +191,38 @@ for bad in "" "${z64}  ./release.json"$'\n'"${z64:0:20}" "${z64}  ./release.json
         fail "published with a malformed checksums.txt: $(cat "${work}/log" "${work}/edits")"
     fi
 done
+# the lines releaseverify.ParseChecksums refuses keep the draft too: a name listed twice
+# (./release.json and *release.json), an option-like name, a backslash, a path
+for bad in "${z64}  ./release.json"$'\n'"${z64} *release.json" "${z64}  -rf" "${z64}  a\\b" "${z64}  ./dir/file"; do
+    if publish "${full}"$'\nrelease.json\n-rf' "${bad}" && grep -q "a well-formed checksums.txt" "${work}/log" && [ ! -s "${work}/edits" ]; then
+        ok "a checksums.txt releaseverify refuses keeps the draft: $(printf '%s' "${bad}" | tail -n1 | cut -c66-)"
+    else
+        fail "published with a refused checksums.txt [${bad}]: $(cat "${work}/log" "${work}/edits")"
+    fi
+done
+# what it accepts publishes: CRLF line ends, a blank line, "*" and "./" names
+crlf="${z64}  ./release.json"$'\r\n\r\n'"${z64} *checksums.txt.sigstore.json"$'\r\n'
+if publish "${full}" "${crlf}" && grep -q -- "--draft=false" "${work}/edits"; then
+    ok "CRLF line ends, a blank line, \"*\" and \"./\" names: read, and published"
+else
+    fail "a CRLF checksums.txt: $(cat "${work}/log" "${work}/edits")"
+fi
+# a stable tag, complete: its checksums read, published as a stable release and made the
+# latest (no feed required)
+stable=$'release.json\nchecksums.txt\nchecksums.txt.sigstore.json\ncomponents-0.3.2.json\nmaktaba-server-0.3.2-linux-amd64.tar.gz'
+if TAG=v0.3.2 PUBLISHED=v0.3.2 publish "${stable}" && grep -q "download checksums.txt" "${work}/downloads" &&
+    grep -q -- "--draft=false --prerelease=false" "${work}/edits" && grep -q -- "--latest$" "${work}/edits"; then
+    ok "a complete stable release: its checksums read, published and made the latest"
+else
+    fail "stable release: $(cat "${work}/log" "${work}/edits")"
+fi
+# and one missing a checksummed file stays a draft, stable or not
+if TAG=v0.3.2 publish "$(grep -v maktaba-server <<<"${stable}")" "${z64}  ./maktaba-server-0.3.2-linux-amd64.tar.gz" &&
+    grep -q "maktaba-server-0.3.2-linux-amd64.tar.gz (in checksums.txt)" "${work}/log" && [ ! -s "${work}/edits" ]; then
+    ok "a stable draft missing a checksummed file stays a draft"
+else
+    fail "stable, missing a file: $(cat "${work}/log" "${work}/edits")"
+fi
 # no checksums.txt yet: nothing downloaded, the draft waits for release.yml's set
 if publish $'release.json\nchecksums.txt.sigstore.json\ncomponents-0.3.2-rc.1.json' && [ ! -s "${work}/downloads" ] &&
     grep -q "checksums.txt (release.yml)" "${work}/log" && [ ! -s "${work}/edits" ]; then
