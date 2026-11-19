@@ -336,9 +336,11 @@ runs only when the person opens that tab or submits from it; Results never waits
     and refuses while either cluster runs.
   - A home whose 16 cluster waits for its upgrade counts as set up (`Bundle.HasDatabase`), and
     `Prepare` never makes an empty 18 cluster beside it.
-- **pg_upgrade's own servers** take free ports each try. A server an earlier, hard-stopped try
-  left on the half-made directory is stopped before that directory goes. The set-aside `.stale`
-  copy is removed once a redo succeeds.
+- **pg_upgrade's own servers** take free ports each try. A stop interrupts pg_upgrade, which
+  then stops the servers it started, rather than killing it (Windows: killed, as before). A
+  server an earlier, hard-stopped try left behind is stopped by the next start, on the half-made
+  directory and on the old cluster alike. The set-aside `.stale` copy goes before a redo's room
+  is counted, so a disk that took one copy takes the next.
 - **The pre-update backup** is the existing database step's dump (`pgbundle`, run by the 18
   release before its migrations). A failed migration puts it back into the 18 cluster. The 16
   cluster remains the way back to the release before.

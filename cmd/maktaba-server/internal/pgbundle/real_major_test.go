@@ -168,4 +168,55 @@ func TestRealMajorUpgrade(t *testing.T) {
 			t.Errorf("the row written after the rollback is not in the new copy: %v", got)
 		}
 	})
+	// a server left running on the 16 cluster (an earlier pg_upgrade stopped hard while its
+	// server of the old cluster ran): the next upgrade stops it and goes on
+	with(old, func() { q(old, AppDatabase, "INSERT INTO seg (id, body) VALUES (6000, 'written again')") })
+	left, err := old.serverCommand(old.serverArgs(false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := left.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = left.Process.Kill(); _ = left.Wait() }()
+	deadline = time.Now().Add(30 * time.Second)
+	for !old.Running() && time.Now().Before(deadline) {
+		time.Sleep(100 * time.Millisecond)
+	}
+	if !old.Running() {
+		t.Fatal("the server left on the 16 cluster did not start")
+	}
+	if err := u.Run(ctx, io.Discard); err != nil {
+		t.Fatalf("an upgrade with a server left on the 16 cluster: %v", err)
+	}
+	if old.Running() {
+		t.Error("the server left on the 16 cluster still runs")
+	}
+	with(nw, func() {
+		if got := q(nw, AppDatabase, "SELECT body FROM seg WHERE id = 6000"); len(got) != 1 {
+			t.Errorf("the row written before the leftover server's stop is not in the new copy: %v", got)
+		}
+	})
+	// a redo by copy: the copy set aside goes before the room is counted (a disk that took
+	// one copy takes the next), and the copy is made
+	with(old, func() { q(old, AppDatabase, "INSERT INTO seg (id, body) VALUES (7000, 'copied')") })
+	checked := false
+	byCopy := u
+	byCopy.NoClone = true
+	byCopy.Room = func(string, uint64) error {
+		checked = true
+		if _, err := os.Stat(nw.Data + ".stale"); !os.IsNotExist(err) {
+			t.Errorf("the copy set aside is still there when the room is counted: %v", err)
+		}
+		return nil
+	}
+	if err := byCopy.Run(ctx, io.Discard); err != nil {
+		t.Fatalf("a redo by copy: %v", err)
+	}
+	if !checked {
+		t.Error("the redo by copy did not count its room")
+	}
+	if mk, ok, _ := ReadUpgradedFrom(nw.Data); !ok || mk.Mode != "copy" {
+		t.Errorf("the redo's marker: %+v", mk)
+	}
 }

@@ -286,6 +286,12 @@ func (u MajorUpgrade) Run(ctx context.Context, log io.Writer) error {
 	oldMajor, _ := u.Old.ClusterMajor()
 	fmt.Fprintf(log, "[postgres] upgrading the library database from PostgreSQL %s (%s) to %s: %s\n",
 		oldMajor, u.Old.Data, filepath.Base(u.New.Data), why)
+	// a server an earlier upgrade's pg_upgrade left on the old cluster (stopped hard between
+	// its start and its stop of it): nothing of this machine runs one there before the
+	// supervisor starts postgres, and while it runs no start can use the cluster at all
+	if u.Old.Running() {
+		u.stopServer(ctx, u.Old, u.Old.Data, "fast", log)
+	}
 	c, err := ReadControl(ctx, u.Old.Bin("pg_controldata"), u.Old.Data)
 	if err != nil {
 		return err
@@ -371,6 +377,10 @@ func (u MajorUpgrade) Run(ctx context.Context, log io.Writer) error {
 	if cloneErr != nil {
 		mode = "copy"
 		fmt.Fprintf(log, "[postgres] no clone of the old cluster's files (%v): copying them\n", cloneErr)
+		// the copy an earlier upgrade made, set aside above, is abandoned once a new one is
+		// made (the old cluster moved on): its room goes first, or a disk that took one copy
+		// would never take this one beside it
+		_ = os.RemoveAll(u.New.Data + ".stale")
 		if err := u.room(u.Old.Data, tmp); err != nil {
 			return err
 		}
@@ -528,6 +538,16 @@ func (u MajorUpgrade) upgrade(ctx context.Context, nb Bundle, mode string, log i
 		args = append(args, "-s", sock)
 	}
 	cmd := exec.CommandContext(ctx, u.New.Bin("pg_upgrade"), args...)
+	// a stop asks pg_upgrade to end (an interrupt), which stops the servers it started, rather
+	// than killing it and leaving them running; killed only if it does not end in a minute
+	// (Windows has no interrupt to send: killed at once, as before)
+	cmd.Cancel = func() error {
+		if runtime.GOOS == "windows" {
+			return cmd.Process.Kill()
+		}
+		return cmd.Process.Signal(os.Interrupt)
+	}
+	cmd.WaitDelay = time.Minute
 	cmd.Dir = work
 	cmd.Env = append(os.Environ(), "PGPASSWORD="+superPW)
 	tail := &tailWriter{max: startTailBytes, next: childLog(log)}
@@ -584,10 +604,17 @@ func (u MajorUpgrade) stopLeftover(ctx context.Context, dir string, log io.Write
 	if _, err := os.Stat(filepath.Join(dir, "postmaster.pid")); err != nil {
 		return
 	}
-	cmd := exec.CommandContext(ctx, u.New.Bin("pg_ctl"), "-D", dir, "-m", "immediate", "-w", "-t", "30", "stop")
+	u.stopServer(ctx, u.New, dir, "immediate", log)
+}
+
+// stopServer stops a server on dir with b's pg_ctl (mode fast or immediate).
+func (u MajorUpgrade) stopServer(ctx context.Context, b Bundle, dir, mode string, log io.Writer) {
+	cmd := exec.CommandContext(ctx, b.Bin("pg_ctl"), "-D", dir, "-m", mode, "-w", "-t", "60", "stop")
 	cmd.Stdout, cmd.Stderr = childLog(log), childLog(log)
 	if err := cmd.Run(); err == nil {
 		fmt.Fprintf(log, "[postgres] a server an earlier upgrade left on %s is stopped\n", dir)
+	} else {
+		fmt.Fprintf(log, "[postgres] level=warn a server an earlier upgrade left on %s could not be stopped: %v\n", dir, err)
 	}
 }
 
