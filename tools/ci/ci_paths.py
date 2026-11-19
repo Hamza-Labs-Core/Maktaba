@@ -143,7 +143,6 @@ NOT_IN_CI: dict[str, str] = {
     "tools/check-prereqs.sh": "make prereqs, run by hand",
     "tools/sbom.sh": "make sbom, run by hand",
     "tools/verify-reproducibility.sh": "make verify-reproducibility, run by hand",
-    "tools/image-size-guard.sh": "make image-size-guard, run by hand",
 }
 
 MARKERS = {"always-run", "push-only", "pr-only", "pr-event", "not-a-gate"}
