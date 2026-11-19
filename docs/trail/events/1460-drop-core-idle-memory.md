@@ -21,7 +21,8 @@ prs: [1445]
   connections. GLM-5.3 approved #1460; its one minor is issue #1461.
 
 ## What we learned
-- On one runner, the idle figure moves by about 20 MB between runs of the same commit.
+- The idle figure moved by 9 to 36 MB between runs of neighbouring heads of #1445, each on
+  another runner: one run is not a trend.
 - Turn a budget's figure into an information line before dropping it, so its trend stays
   visible.
 
