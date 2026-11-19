@@ -114,6 +114,7 @@ jobs:
       media_e2e: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.media_e2e == 'true' }}
       perf_ci: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.perf_ci == 'true' }}
       build_artifacts: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.build_artifacts == 'true' }}
+      images: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.images == 'true' }}
       node_packaging: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.node_packaging == 'true' }}
       components_packs: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.components_packs == 'true' }}
       release_venv: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.release_venv == 'true' }}
@@ -327,6 +328,13 @@ jobs:
     needs: [changes]
     if: needs.changes.outputs.build_artifacts == 'true'
     uses: ./.github/workflows/_build-artifacts.yml
+
+  images:
+    # Story 22.3 AC4 / TC3: the four compose images built and held to their size budgets
+    # (tools/image-size-guard.sh); an image over its budget fails with the overshoot
+    needs: [changes]
+    if: needs.changes.outputs.images == 'true'
+    uses: ./.github/workflows/_images.yml
 
   node-packaging:
     needs: [changes]
@@ -629,6 +637,7 @@ jobs:
       - media-e2e
       - perf-ci
       - build-artifacts
+      - images
       - node-packaging
       - components-packs
       - launcher
