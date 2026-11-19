@@ -244,6 +244,38 @@ describe("Settings → Subscription (test-cases/subscription.md)", () => {
     expect(screen.getByText("Revoked")).toBeInTheDocument();
   });
 
+  it("SUB-13 (story 16.4): the admin sees which accounts are read-only for want of seats", async () => {
+    routeGet(get, {
+      "/api/admin/license": {
+        ...FREE_OVER,
+        read_only_users: [
+          { id: "u-3", username: "sara" },
+          { id: "u-2", username: "omar" },
+        ],
+      },
+    });
+    open();
+    expect(await screen.findByTestId("subscription-read-only-users")).toHaveTextContent(
+      "sara, omar"
+    );
+    expect(screen.getByText("Read-only (no seat)")).toBeInTheDocument();
+  });
+
+  it("SUB-13b: a read-only account is told so", async () => {
+    routeGet(get, { "/api/entitlements": { tier: "home", features: OFF, read_only: true } });
+    open(memberUser);
+    expect(await screen.findByTestId("subscription-read-only")).toHaveTextContent(
+      "this account can watch and keep its progress, playlists and favourites, but not change anything else"
+    );
+  });
+
+  it("SUB-13c: an account with a seat is not told it is read-only", async () => {
+    routeGet(get, { "/api/entitlements": { tier: "home", features: OFF } });
+    open(memberUser);
+    expect(await screen.findByText("Your home's admin manages the plan.")).toBeInTheDocument();
+    expect(screen.queryByTestId("subscription-read-only")).toBeNull();
+  });
+
   it("SUB-11: a load error offers Retry", async () => {
     get.mockRejectedValueOnce(
       new ApiError({ type: "about:blank", status: 500, title: "Server error" })

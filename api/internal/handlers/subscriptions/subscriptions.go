@@ -14,6 +14,7 @@ package subscriptions
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -55,6 +56,11 @@ type Handler struct {
 	ManageURL string
 	// Audit, when set, records a license change.
 	Audit func(ctx context.Context, actorUserID, event string, detail map[string]any)
+	// Seats names the accounts read-only for want of seats (story 16.4). Nil: none.
+	Seats interface {
+		ReadOnlyUsers(ctx context.Context) ([]subscriptions.SeatUser, error)
+		ReadOnly(ctx context.Context, userID string) (bool, error)
+	}
 }
 
 // Mount attaches the routes.
@@ -73,6 +79,9 @@ type Response struct {
 	Seats        int                            `json:"seats,omitempty"`
 	SeatsAllowed int                            `json:"seats_allowed"`
 	Features     map[subscriptions.Feature]bool `json:"features"`
+	// ReadOnly is true when the signed-in account is read-only for want of seats (story
+	// 16.4): it can watch and keep its progress, playlists and favourites, nothing else.
+	ReadOnly bool `json:"read_only,omitempty"`
 }
 
 // GetEntitlements is readable by any signed-in principal: what the UI
@@ -83,7 +92,13 @@ func (h *Handler) GetEntitlements(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.Forbidden("", "auth required"))
 		return
 	}
-	common.WriteJSON(w, r, http.StatusOK, entitlements(h.Store.Current()))
+	resp := entitlements(h.Store.Current())
+	if h.Seats != nil && !p.IsAdmin {
+		if ro, err := h.Seats.ReadOnly(r.Context(), p.UserID); err == nil {
+			resp.ReadOnly = ro
+		}
+	}
+	common.WriteJSON(w, r, http.StatusOK, resp)
 }
 
 func entitlements(ent *subscriptions.Entitlements) Response {
@@ -113,6 +128,9 @@ type LicenseView struct {
 	SeatsAllowed int                            `json:"seats_allowed"`
 	SeatsUsed    *int                           `json:"seats_used,omitempty"`
 	OverSeats    bool                           `json:"over_seats"`
+	// ReadOnlyUsers are the accounts read-only for want of seats, newest first (story
+	// 16.4: the newest beyond the seat count; admins never).
+	ReadOnlyUsers []subscriptions.SeatUser `json:"read_only_users,omitempty"`
 	// Status: none | active | grace | expired | revoked.
 	Status  subscriptions.Status `json:"status"`
 	License *licenseSummary      `json:"license,omitempty"`
@@ -149,6 +167,11 @@ func (h *Handler) view(ctx context.Context) LicenseView {
 		if n, err := h.SeatCount.CountUsers(ctx); err == nil {
 			v.SeatsUsed = &n
 			v.OverSeats = v.SeatsAllowed != subscriptions.SeatsUnlimited && n > v.SeatsAllowed
+		}
+	}
+	if h.Seats != nil && v.OverSeats {
+		if us, err := h.Seats.ReadOnlyUsers(ctx); err == nil {
+			v.ReadOnlyUsers = us
 		}
 	}
 	if l := st.License; l != nil {
@@ -189,8 +212,18 @@ func message(v LicenseView, st subscriptions.State) string {
 			"Reconnect to Maktaba Cloud or apply a new license."
 	}
 	if v.OverSeats && v.SeatsUsed != nil {
-		return "This home has more users than its plan allows. They all keep working, " +
-			"but no new user can be added until the plan allows more or users are removed."
+		if n := len(v.ReadOnlyUsers); n > 0 {
+			names := make([]string, 0, n)
+			for _, u := range v.ReadOnlyUsers {
+				names = append(names, u.Username)
+			}
+			return fmt.Sprintf("This home has more users than its plan allows, so its newest %s read-only "+
+				"(they can watch and keep their progress, playlists and favourites, but not change anything else): %s. Admins are never limited. "+
+				"Add seats or remove users and they can change things again at once; no new user can be added meanwhile.",
+				plural(n, "account is", "accounts are"), strings.Join(names, ", "))
+		}
+		return "This home has more users than its plan allows. No new user can be added " +
+			"until the plan allows more or users are removed."
 	}
 	return ""
 }
@@ -310,4 +343,12 @@ func (h *Handler) audit(ctx context.Context, actor, event string, detail map[str
 	if h.Audit != nil {
 		h.Audit(ctx, actor, event, detail)
 	}
+}
+
+// plural is "account is" for one, "3 accounts are" for more.
+func plural(n int, one, many string) string {
+	if n == 1 {
+		return one
+	}
+	return fmt.Sprintf("%d %s", n, many)
 }

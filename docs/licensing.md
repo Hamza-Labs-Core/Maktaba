@@ -15,6 +15,7 @@ The home enforces every gate in its API, whatever the client:
 | Feature | Gate | Refusal |
 |---|---|---|
 | more than one user | `POST /api/users` and open registration (`POST /api/auth/register` after the first user) | `403 https://maktaba.tv/problems/seat-limit`, e.g. _This home's Free plan allows 1 user and it has 1. Adding users needs the Home plan (4 users) or Pro (unlimited): apply a license in Settings → Subscription._ |
+| over the seats (a license with fewer seats than the home has users) | every write of the newest non-admin accounts beyond the seat count, but watching, their own progress, history, playlists and favourites, signing in and out (story 16.4) | `403 https://maktaba.tv/problems/seat-read-only`; admins are never limited; removing users or adding seats restores them at once |
 | remote access | every request the cloud relay forwards (`X-Maktaba-Via`), health probes excepted | `403 https://maktaba.tv/problems/license-required` (`feature: cloud_relay`) |
 | analytics | `/api/admin/analytics/*` with a range beyond 30 days, `/users`, `/export` | `403 license-required` (`feature: advanced_analytics`) |
 | cloud backup, federation | `subscriptions.RequireFeature` (the routes do not exist yet: stories 24.5 / 15.3 mount behind it) | `403 license-required` |
@@ -96,8 +97,8 @@ Every change (applied, removed, revoked, plan ended) writes a security audit row
 
 | Route | Who | What |
 |---|---|---|
-| `GET /api/entitlements` | any signed-in user | tier, `seats_allowed`, the feature map |
-| `GET /api/admin/license` | admin | tier, features, seats used and allowed, status (`none`/`active`/`grace`/`expired`/`revoked`), the license's id, holder and dates (never its signature), the admin message, last refresh and its error, the cloud link, the billing page |
+| `GET /api/entitlements` | any signed-in user | tier, `seats_allowed`, the feature map, `read_only` when this account is read-only for want of seats |
+| `GET /api/admin/license` | admin | tier, features, seats used and allowed, status (`none`/`active`/`grace`/`expired`/`revoked`), the license's id, holder and dates (never its signature), the admin message, last refresh and its error, the cloud link, the billing page, `read_only_users` when over the seats |
 | `POST /api/admin/license` | admin | apply a pasted license → the view; `400 license-invalid` with a plain reason; `503` in a build without the key |
 | `DELETE /api/admin/license` | admin | back to Free |
 | `POST /api/admin/license/refresh` | admin | ask the license server now → the view |

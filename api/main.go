@@ -45,6 +45,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/components"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/directaccess"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/discovery"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/graphql"
 	grpcpipeline "github.com/Hamza-Labs-Core/Maktaba/api/internal/grpcclients/pipeline"
 	grpcstreaming "github.com/Hamza-Labs-Core/Maktaba/api/internal/grpcclients/streaming"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/logs"
@@ -376,6 +377,8 @@ func runServe() error {
 	// Epic 16: the entitlement store is built with the app DB below; the
 	// relay gate in the router's chain reads it through this reference.
 	licRef := &subscriptions.StoreRef{}
+	// the seat gate (story 16.4), set once the database is: nil lets every request through
+	var seatGuard *subscriptions.SeatGuard
 	// Epic 51 story 51.19: the gate also asks the cloud.relay component's Licensed
 	// condition (the row the runners read), the same answer from one source
 	licRef.SetRelayLicensed(func() (bool, bool) { return loops.Licensed("cloud.relay") })
@@ -660,6 +663,10 @@ func runServe() error {
 			p10Deps.SubscriptionsStore = entStore
 			p10Deps.SubscriptionsVerifier = licVerifier
 			licRef.Set(entStore)
+			// Epic 16 story 16.4: past the plan's seats, the newest non-admin accounts are
+			// read-only (they watch, they change nothing)
+			seatGuard = &subscriptions.SeatGuard{DB: appDB, Store: entStore, Log: logger}
+			p10Deps.SeatGuard = seatGuard
 			licRefresher, licCloud, licManage := licenseRefresher(entStore, licVerifier, appDB, logger)
 			p10Deps.LicenseRefresher, p10Deps.LicenseCloud, p10Deps.LicenseManageURL = licRefresher, licCloud, licManage
 			// Epic 42 stories 42.2, 42.6: the home's identity for the apps (its instance
@@ -881,7 +888,10 @@ func runServe() error {
 	publicMux := http.NewServeMux()
 	publicMux.Handle("/healthz", health.NewLive("api"))
 	publicMux.Handle("/api/.well-known/jwks.json", &keys.JWKSHandler{Set: auth.keys})
-	publicMux.Handle("/", r)
+	publicMux.Handle("/", seatGuard.Gate(r))
+	// a GraphQL field runs its REST route on the router, under the same seat gate
+	seatGate := seatGuard.Gate
+	graphql.SubRequestGate.Store(&seatGate)
 
 	// The home verifies the nodes' signed requests before anything else (story
 	// 35.9); a full node serves every route by its placement class (story 35.10).

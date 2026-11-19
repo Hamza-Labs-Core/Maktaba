@@ -50,6 +50,8 @@ export interface LicenseView {
   seats_allowed: number;
   seats_used?: number;
   over_seats: boolean;
+  /** Story 16.4: the accounts read-only for want of seats, newest first (admins never). */
+  read_only_users?: { id: string; username: string }[];
   status: Status;
   license?: {
     license_id: string;
@@ -71,6 +73,8 @@ interface Entitlements {
   tier: Tier;
   seats_allowed?: number;
   features?: Record<string, boolean> | null;
+  /** Story 16.4: this account is read-only for want of seats. */
+  read_only?: boolean;
 }
 
 export function SubscriptionSettings() {
@@ -155,6 +159,11 @@ function ViewerSubscription() {
       <p>
         <Badge tone={ent.tier === "free" ? "neutral" : "accent"}>{tierLabel(t, ent.tier)}</Badge>
       </p>
+      {ent.read_only && (
+        <p className="mkt-alert" role="alert" data-testid="subscription-read-only">
+          {t("subscription.readOnly.self")}
+        </p>
+      )}
       <FeatureList features={ent.features ?? {}} />
       <p className="mkt-muted">{t("subscription.viewerHint")}</p>
     </div>
@@ -280,6 +289,14 @@ function AdminSubscription() {
               {seatsText(t, view.seats_allowed, view.seats_used)}
             </dd>
           </div>
+          {view.read_only_users && view.read_only_users.length > 0 && (
+            <div>
+              <dt className="mkt-muted">{t("subscription.readOnly.users")}</dt>
+              <dd data-testid="subscription-read-only-users">
+                {view.read_only_users.map((u) => u.username).join(", ")}
+              </dd>
+            </div>
+          )}
           {lic?.holder && (
             <div>
               <dt className="mkt-muted">{t("subscription.holder")}</dt>
