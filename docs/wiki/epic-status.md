@@ -3,7 +3,7 @@
 > Story-by-story status of every epic, read from the code and history on `main` at `f43b0d3ed` (2026-11-19).
 > The specs and epic pages don't record a status; this page does. Update the row when a story changes.
 
-**Not every epic is done.** Of 773 stories across all 60 epics, 701 are done, 39 are partial, 24 are not started, and 9 were deferred or removed on purpose. The largest open pieces are Epic 49 (Search, one story of fourteen done), Epic 34 (the TV public site, a first slice only) and Epic 54 Phase 5 (Plugins).
+**Not every epic is done.** Of 773 stories across all 60 epics, 702 are done, 40 are partial, 22 are not started, and 9 were deferred or removed on purpose. The largest open pieces are Epic 49 (Search, 2 stories of fourteen done), Epic 34 (the TV public site, a first slice only) and Epic 54 Phase 5 (Plugins).
 
 ## How this was checked
 
@@ -71,19 +71,19 @@
 | 46 Big screen | 7 | 0 | 0 | 0 | Done |
 | 47 Offline convert / dedup | 11 | 3 | 0 | 0 | **Partial** |
 | 48 Native players | 36 | 1 | 0 | 0 | **Partial** |
-| 49 Search | 1 | 0 | 13 | 0 | **Partial** |
+| 49 Search | 2 | 0 | 12 | 0 | **Partial** |
 | 50 Cloud with no downtime | 35 | 0 | 0 | 0 | Done (live SLOs not checked) |
 | 51 Configurable components | 19 | 0 | 0 | 0 | Done |
 | 52 Transcript word review | 13 | 3 | 0 | 1 | **Partial** |
 | 53 Logs, errors and reports | 18 | 0 | 0 | 0 | Done (open issue #1064) |
-| 54 Plugins | 42 | 3 | 6 | 1 | **Not done** |
+| 54 Plugins | 42 | 4 | 5 | 1 | **Not done** |
 | 55 Desktop player parity | 10 | 0 | 0 | 0 | Done |
 | 56 TV library view | 13 | 0 | 0 | 1 | Done (56.07 removed by #969) |
 | 57 Parental controls | 13 | 3 | 0 | 1 | **Partial** |
 | 58 Smart TV platforms | 17 | 0 | 0 | 1 | Done (58.18 Vega OS deferred) |
 | 59 NAS | 16 | 0 | 0 | 0 | Done (device results not checked) |
 | 60 Website | 11 | 1 | 0 | 1 | **Partial** |
-| **Total** | **701** | **39** | **24** | **9** | **Not all done** |
+| **Total** | **702** | **40** | **22** | **9** | **Not all done** |
 
 `*` sampled, see [How this was checked](#how-this-was-checked).
 
@@ -96,7 +96,6 @@
 - **34.9 Budget, abuse controls and analytics** — no public budget, viewer/session limits, rate-limit wiring, Analytics Engine sink, or Stream reconciliation.
 - **34.10 Deployment pipeline** — manual `wrangler.toml` exists, but no release artifact pipeline or home-driven deploy/promote/rollback implementation.
 - **43.6 Measured on the home Mac** — PR #319 explicitly excludes the 13.9M-row p50/p95, disk and recall measurement; no later merged measurement was found.
-- **49.2 Major updater upgrade 16 → 18** — no such update-rehearsal path or rollback evidence.
 - **49.3 Cluster major-version rollout** — no home-18/node-16 two-machine test.
 - **49.4 Arabic normalisation and word forms** — no `maktaba_search` v2 / `maktaba_stem` implementation or migration.
 - **49.5 `video_search_docs` and BM25 indexes** — no table, SQLite twin, or index migration.
@@ -1065,7 +1064,7 @@ Stories are the fourteen numbered rows in `specs/epics/49-search/README.md` §6 
 | Story | Status | Evidence |
 |---|---|---|
 | 49.1 PostgreSQL 18 / pg_textsearch bundles | **Done** (#1441) | Every app payload carries PostgreSQL 18.7 in `postgres-18/` with pgvector and pg_textsearch, beside the 16 the server still runs until 49.2; `tools/release/pg18-check.sh` in each payload's `check.sh`, `TestRealPgTextsearchPreloaded`; README §9 "As built". |
-| 49.2 Major updater upgrade | **Not started** | Only `specs/epics/49-search/README.md`; `.github/workflows/update-rehearsal.yml` has no 16→18 scenario evidence. |
+| 49.2 Major updater upgrade | **Done** (#1445) | The server upgrades the 16 cluster into its own `postgres-18` with pg_upgrade (clone, else copy), the 16 cluster untouched for any rollback; held on 16 when it cannot run; update-rehearsal scenario 17 (16 → 18 with data, a rollback, the upgrade again), `TestRealMajorUpgrade` on Linux, Mac and Windows payloads; README §9 "As built". |
 | 49.3 Cluster major-version rollout | **Not started** | Only `specs/epics/49-search/README.md`; `api/twomachine_e2e_test.go` has no home-18/node-16 scenario. |
 | 49.4 Arabic normalisation / word forms | **Not started** | Only `specs/epics/49-search/README.md`; no `maktaba_search` v2 or `maktaba_stem` code/migration found. |
 | 49.5 `video_search_docs` / BM25 schema | **Not started** | Only `specs/epics/49-search/README.md`; no such migration in `shared/db/migrations/`. |
@@ -1249,7 +1248,7 @@ The wiki table omits 54.43–54.52; this audit includes all 52 spec files. Open 
 | 54.43 Fallback counts | Done | #1080; `shared/db/migrations/0218_stage_fallbacks.sql`; `api/internal/handlers/queues/fallbacks_pg_test.go`; `web/src/components/queue/FallbackCounts.test.tsx` |
 | 54.44 One Plugins page | Done | #1243; `api/internal/plugins/published.go`, `published_pg_test.go`; `api/internal/handlers/plugins/published_pg_test.go`; `web/src/pages/Settings/PluginPage.tsx` and tests |
 | 54.45 Maktaba store packages | **partial** | #1450; `shared/plugins/fppackage.CheckStore` (store countersigned, Maktaba's pinned key in `shared/plugins/maktaba-keys.json`, statements exactly the server's, as decided), `build.py --developer-key`, core not packaged; store: the Maktaba publisher (`POST /v1/admin/maktaba-publisher`), `prefixCovers`, trusted manifests and native-package checks. **Missing:** a store or file package installed and run with parity, which waits for an install path (54.46/54.49) and Maktaba's key. |
-| 54.46 Maktaba plugin lifecycle | **not started** | Spec says **Not built**; independent install/removal/update lifecycle absent; depends on 54.45 |
+| 54.46 Maktaba plugin lifecycle | **partial** | #1452; `DELETE /api/plugins/{id}` (want absent, `component_required_by`, jobs parked, `plugin_data_kept`), `POST /api/plugins/{id}/install` from the release; the Plugins page's Remove and Install; rehearsal 15 keeps a removed plugin removed across a rollback and an update. **Missing:** installing a Maktaba plugin from a store package or a file (§2), which comes with 54.49's offline files and Maktaba's key. |
 | 54.47 Maktaba plugin updates | **not started** | Spec says **Not built**; independent plugin update channel absent |
 | 54.48 Preinstalled/migration | **not started** | Spec says **Not built**; package-based preinstall/migration absent |
 | 54.49 Offline homes | **not started** | Spec says **Not built**; downloadable offline first-party packages absent |

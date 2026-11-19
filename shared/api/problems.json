@@ -4551,6 +4551,29 @@
       "install": null
     },
     {
+      "slug": "plugin-data-kept",
+      "status": 409,
+      "area": "plugins",
+      "audience": "admin",
+      "codes": [
+        "plugin_data_kept"
+      ],
+      "title": {
+        "en": "Maktaba's plugins keep what they wrote",
+        "ar": "إضافات مكتبة تُبقي ما كتبته"
+      },
+      "means": {
+        "en": "You asked to remove one of Maktaba's own plugins and clear what it wrote. What it wrote (transcripts, thumbnails, tags) is your library's own, so removing the plugin keeps it.",
+        "ar": "طلبتم إزالة إضافة من إضافات مكتبة نفسها ومسح ما كتبته. وما كتبته (التفريغات والصور المصغّرة والوسوم) جزء من مكتبتكم، فتبقى عند إزالة الإضافة."
+      },
+      "do": {
+        "en": "Remove the plugin without clearing its data. To clear one kind of data, use that data's own action where it has one, such as the subtitles or thumbnails of a video.",
+        "ar": "أزيلوا الإضافة دون مسح بياناتها. ولمسح نوع واحد من البيانات استعملوا الإجراء الخاص به حيث يوجد، مثل ترجمات الفيديو أو صوره المصغّرة."
+      },
+      "help": null,
+      "install": null
+    },
+    {
       "slug": "plugin-data-newer",
       "status": 409,
       "area": "plugins",
@@ -5161,12 +5184,12 @@
         "ar": "هذه الإضافة تأتي مع مكتبة"
       },
       "means": {
-        "en": "This plugin is published by Maktaba and came with the Maktaba release your home runs. It is updated when Maktaba is updated, and it cannot be removed, rolled back or given other permissions on its own yet.",
-        "ar": "هذه الإضافة تنشرها مكتبة وجاءت مع إصدار مكتبة الذي يعمل على جهازكم الرئيسي. تُحدَّث عند تحديث مكتبة، ولا يمكن بعدُ إزالتها أو إرجاعها إلى إصدار سابق أو تغيير صلاحياتها وحدها."
+        "en": "This plugin is published by Maktaba and came with the Maktaba release your home runs. It is updated when Maktaba is updated, and it cannot be rolled back or given other permissions on its own yet.",
+        "ar": "هذه الإضافة تنشرها مكتبة وجاءت مع إصدار مكتبة الذي يعمل على جهازكم الرئيسي. تُحدَّث عند تحديث مكتبة، ولا يمكن بعدُ إرجاعها إلى إصدار سابق أو تغيير صلاحياتها وحدها."
       },
       "do": {
-        "en": "Turn the plugin off on the Plugins page if you do not want it to run. Update Maktaba to get its newer version.",
-        "ar": "أوقفوا الإضافة من صفحة الإضافات إن لم تريدوا أن تعمل، وحدّثوا مكتبة للحصول على إصدارها الأحدث."
+        "en": "Turn the plugin off, or remove it, on the Plugins page if you do not want it to run. Update Maktaba to get its newer version.",
+        "ar": "أوقفوا الإضافة أو أزيلوها من صفحة الإضافات إن لم تريدوا أن تعمل، وحدّثوا مكتبة للحصول على إصدارها الأحدث."
       },
       "help": null,
       "install": null

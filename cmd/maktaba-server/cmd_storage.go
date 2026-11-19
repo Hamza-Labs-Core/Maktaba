@@ -164,7 +164,9 @@ func verifyPostgresFor(cfg config.Config, log io.Writer) func(ctx context.Contex
 	}
 	return func(ctx context.Context, root string) error {
 		c := b
-		c.Data, c.Backups, c.LAN = filepath.Join(root, "postgres"), filepath.Join(root, "backups"), false
+		// the cluster this install runs on (postgres, or postgres-18 once upgraded: Epic 49
+		// story 49.2), in the copy
+		c.Data, c.Backups, c.LAN = filepath.Join(root, filepath.Base(b.Data)), filepath.Join(root, "backups"), false
 		return c.Verify(ctx, log)
 	}
 }

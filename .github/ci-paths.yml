@@ -736,6 +736,8 @@ mac_app:
   - *ci
   - 'tools/release/mac-app/**'
   - 'tools/release/pg18-check.sh'
+  # the bundled Postgres each app runs, and its major's upgrade (Epic 49)
+  - 'cmd/maktaba-server/internal/pgbundle/**'
   - 'tools/release/bundle-size/**'
   # the Core leg's dry run (story 51.17): its stamp, its feed
   - 'tools/release/tauri-stamp.mjs'
@@ -776,6 +778,8 @@ win_app:
   - *ci
   - 'tools/release/win-app/**'
   - 'tools/release/pg18-check.sh'
+  # the bundled Postgres each app runs, and its major's upgrade (Epic 49)
+  - 'cmd/maktaba-server/internal/pgbundle/**'
   - 'apps/desktop/**'
   - 'cmd/maktaba-launcher/**'
   - 'deploy/packaging/node/build-release.sh'
@@ -796,6 +800,8 @@ linux_app:
   - *ci
   - 'tools/release/linux-app/**'
   - 'tools/release/pg18-check.sh'
+  # the bundled Postgres each app runs, and its major's upgrade (Epic 49)
+  - 'cmd/maktaba-server/internal/pgbundle/**'
   - 'apps/desktop/**'
   - 'cmd/maktaba-launcher/**'
   - 'deploy/packaging/node/build-release.sh'

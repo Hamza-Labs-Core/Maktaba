@@ -458,9 +458,15 @@ export const pluginsApi = {
       `/api/plugins/${enc(id)}/rollback${clearData ? "?clear_data=true" : ""}`
     ),
   remove: (id: string, purge: boolean) =>
-    api.delete<{ id: string; queued_jobs_dropped: number; writes_reverted?: number }>(
-      `/api/plugins/${enc(id)}${purge ? "?purge=true" : ""}`
-    ),
+    api.delete<{
+      id: string;
+      queued_jobs_dropped?: number;
+      queued_jobs_parked?: number;
+      writes_reverted?: number;
+    }>(`/api/plugins/${enc(id)}${purge ? "?purge=true" : ""}`),
+  /** a Maktaba plugin installed again from this release (story 54.46 §2) */
+  installFromRelease: (id: string, enable: boolean) =>
+    api.post<PluginDetail>(`/api/plugins/${enc(id)}/install`, { enable }),
   writes: (id: string, before?: number) =>
     api.get<{ writes: PluginWrite[] }>(
       `/api/plugins/${enc(id)}/writes${before ? `?before=${before}` : ""}`

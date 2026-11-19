@@ -2,7 +2,7 @@
 
 package main
 
-// Update-rehearsal scenario 17 (Epic 43 story 43.5; docs/update-rehearsal.md): a home whose
+// Update-rehearsal scenario 18 (Epic 43 story 43.5; docs/update-rehearsal.md): a home whose
 // copy of its Chroma vectors into Postgres stopped part way updates to the release that
 // retired Chroma.
 //
@@ -177,7 +177,7 @@ func pgVectors(t *testing.T, db *sql.DB) map[string][]float64 {
 	return out
 }
 
-func TestUpdateRehearsal17ChromaCopyFinished(t *testing.T) {
+func TestUpdateRehearsal18ChromaCopyFinished(t *testing.T) {
 	r := newRehearsal(t)
 	k := r.kit
 	r.realPipeline(nil)
@@ -223,7 +223,7 @@ func TestUpdateRehearsal17ChromaCopyFinished(t *testing.T) {
 	}
 	var lastJob int64
 	_ = db.QueryRow(`SELECT COALESCE(max(id), 0) FROM processing_jobs`).Scan(&lastJob)
-	r.logf("17: a copy stopped part way: %d of %d vectors copied (cursor %s)", before, len(want),
+	r.logf("18: a copy stopped part way: %d of %d vectors copied (cursor %s)", before, len(want),
 		strings.TrimSpace(string(stopped)))
 	counts := seedCounts(t, db)
 	delete(counts, "segment_embeddings") // the copy adds the rest
@@ -236,7 +236,7 @@ func TestUpdateRehearsal17ChromaCopyFinished(t *testing.T) {
 		t.Fatalf("the update to %s ended %s: %s (steps %+v)", k.cur, run.State, run.Error, run.Steps)
 	}
 	home.waitServing(k.cur, 5*time.Minute)
-	r.budget(mon, "17: an update of a home whose Chroma copy stopped part way", 2*time.Minute)
+	r.budget(mon, "18: an update of a home whose Chroma copy stopped part way", 2*time.Minute)
 	home.assertServing(k.cur)
 	r.noRestore(home, states)
 	waitFor(t, "the copy finished", 10*time.Minute, func() bool {
@@ -251,7 +251,7 @@ func TestUpdateRehearsal17ChromaCopyFinished(t *testing.T) {
 		}
 		return false
 	})
-	home.assertNoCrashLoop("17: after the copy")
+	home.assertNoCrashLoop("18: after the copy")
 	if !pathExists(done) || !pathExists(filepath.Join(chroma, "chroma.sqlite3")) {
 		t.Errorf("after the copy: done file %v, folder %v (want both: the folder goes the start after)",
 			pathExists(done), pathExists(filepath.Join(chroma, "chroma.sqlite3")))
@@ -296,11 +296,11 @@ func TestUpdateRehearsal17ChromaCopyFinished(t *testing.T) {
 	home.waitServing(k.cur, 5*time.Minute)
 	waitFor(t, "the Chroma folder gone the start after the copy", 2*time.Minute,
 		func() bool { return !pathExists(chroma) })
-	home.assertNoCrashLoop("17: the start after the copy")
+	home.assertNoCrashLoop("18: the start after the copy")
 	home.assertServing(k.cur)
 	if n := len(pgVectors(t, db)); n != len(want) {
 		t.Errorf("after the folder went: %d vectors, want %d", n, len(want))
 	}
-	r.summary(fmt.Sprintf("17 a part-done Chroma copy finishes at the update: %d -> %d vectors, no index job, "+
+	r.summary(fmt.Sprintf("18 a part-done Chroma copy finishes at the update: %d -> %d vectors, no index job, "+
 		"Chroma's files gone the start after", before, len(want)))
 }

@@ -361,6 +361,25 @@ jobs:
           path: ${{ env.KIT }}/pg
           key: rehearsal-pg-${{ steps.prev.outputs.tag }}-${{ runner.arch }}
 
+      # Epic 49 story 49.2 (scenario 17): PostgreSQL 18 with pgvector and pg_textsearch, from
+      # the Linux payload's pins, for this commit's payloads that upgrade the home's cluster
+      - name: PostgreSQL 18 (the Linux payload's pins)
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: tools/rehearsal/postgres18.sh --out "$KIT/pg18"
+
+      # the upgrade step on real programs: the previous release's PostgreSQL 16 (pgvector) to
+      # the 18 above, the rollback's start on 16, a second upgrade after 16 moved on
+      - name: The PostgreSQL 16 → 18 upgrade on real programs (TestRealMajorUpgrade)
+        working-directory: cmd/maktaba-server
+        env:
+          MAKTABA_TEST_PG16_HOME: ${{ env.KIT }}/pg
+          MAKTABA_TEST_PG18_HOME: ${{ env.KIT }}/pg18
+        run: |
+          set -o pipefail
+          go test -tags integration -count=1 -run '^(TestRealMajorUpgrade|TestRealPgTextsearchPreloaded)$' -v ./internal/pgbundle/ 2>&1 | tee "$RUNNER_TEMP/major.out"
+          grep -q -- '--- PASS: TestRealMajorUpgrade' "$RUNNER_TEMP/major.out"
+
       - name: Pack the kit
         run: tar -C "$KIT/.." -cf "$RUNNER_TEMP/rh-kit.tar" "$(basename "$KIT")"
 
@@ -540,9 +559,12 @@ jobs:
           - { id: '16.7', name: wave 7's TV change staged before an update and swapped and rolled back after it, test: TestUpdateRehearsal16_7Wave7, profile: small, venvs: true }
           - { id: '16.8', name: wave 8's jobs across a rollback and an update, test: TestUpdateRehearsal16_8Wave8, profile: small, venvs: true }
           - { id: '16.9', name: wave 9's core stages across a rollback and an update, test: TestUpdateRehearsal16_9Wave9, profile: small, venvs: true }
+          # Epic 49 story 49.2: PostgreSQL 16 → 18 with data (pg_upgrade into a cluster of its own), a
+          # rollback onto the untouched 16 cluster, then the upgrade again
+          - { id: '17', name: PostgreSQL 16 to 18 with data then a rollback, test: TestUpdateRehearsal17PostgresMajorUpgrade, profile: small }
           # Epic 43 story 43.5: a home whose Chroma copy stopped part way updates to the
           # release without Chroma: the copy finishes, nothing is embedded again
-          - { id: '17', name: a home whose Chroma copy stopped part way updates (the copy finishes), test: TestUpdateRehearsal17ChromaCopyFinished, profile: small, venvs: true }
+          - { id: '18', name: a home whose Chroma copy stopped part way updates (the copy finishes), test: TestUpdateRehearsal18ChromaCopyFinished, profile: small, venvs: true }
           # the fault rehearsal (Epic 53 story 53.07, docs/fault-rehearsal.md): one part
           # killed at a time on a home of this commit; the tag guard requires these too
           - { id: 'F03', name: streaming crash (the status says so; it comes back), test: TestFaultRehearsalF03StreamingCrash, profile: small }
@@ -735,7 +757,7 @@ jobs:
             echo "| test | what | downtime | budget |"
             echo "|---|---|---|---|"
           } >> "$GITHUB_STEP_SUMMARY"
-          MAKTABA_REHEARSAL_KIT="$KIT" MAKTABA_REHEARSAL_PG_HOME="$KIT/pg" MAKTABA_REHEARSAL_SEEDS="$SEEDS" \
+          MAKTABA_REHEARSAL_KIT="$KIT" MAKTABA_REHEARSAL_PG_HOME="$KIT/pg" MAKTABA_REHEARSAL_PG18_HOME="$KIT/pg18" MAKTABA_REHEARSAL_SEEDS="$SEEDS" \
             MAKTABA_REHEARSAL_WORK="$RUNNER_TEMP/rh-work" MAKTABA_E2E_LOG_DIR="$RUNNER_TEMP/rh-logs" \
             MAKTABA_REHEARSAL_VENVS="$VENVS" \
             go test -count=1 -timeout 45m -run "^${TEST}\$" -v . 2>&1 | tee "$RUNNER_TEMP/scenario.out"

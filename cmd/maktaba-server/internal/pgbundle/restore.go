@@ -644,13 +644,19 @@ func (q Querier) Query(ctx context.Context, database, sql string) ([]string, err
 	if err != nil {
 		return nil, err
 	}
+	return rowsOf(out), nil
+}
+
+// rowsOf is psql's -At output as rows. Windows' psql ends its lines with \r\n: a row is
+// never taken with its \r (a database named "postgres\r" does not exist).
+func rowsOf(out string) []string {
 	var rows []string
-	for _, l := range strings.Split(strings.TrimRight(out, "\n"), "\n") {
-		if l != "" {
+	for _, l := range strings.Split(strings.TrimRight(out, "\r\n"), "\n") {
+		if l = strings.TrimSuffix(l, "\r"); l != "" {
 			rows = append(rows, l)
 		}
 	}
-	return rows, nil
+	return rows
 }
 
 func (q Querier) run(ctx context.Context, database, script string) (string, error) {

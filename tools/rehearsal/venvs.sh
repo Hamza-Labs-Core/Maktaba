@@ -45,7 +45,7 @@ venv() {
     echo "venvs.sh: $version: $(basename "${whl[0]}")"
     rm -rf "$dir"
     uv venv --quiet --python "$python" "$dir"
-    # numpy: the Chroma copy's (scenario 17; every home that had Chroma has it, with the
+    # numpy: the Chroma copy's (scenario 18; every home that had Chroma has it, with the
     # search extra)
     uv pip install --quiet --python "$dir/bin/python" -c "$kit/$rel/pipeline/constraints.txt" "${whl[0]}" numpy
     site="$("$dir/bin/python" -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')"

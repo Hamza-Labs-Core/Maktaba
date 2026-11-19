@@ -267,6 +267,6 @@ Nothing opens Chroma any more, and nothing depends on `chromadb`.
     says "not stored"; after it a copied video's fingerprint is the plain one.
   - `chromaretire_test.go`: a Postgres home runs the copy first and keeps the folder until
     it is done.
-  - Update rehearsal scenario 17 (`api/rehearsal_chroma_e2e_test.go`): a home whose copy
+  - Update rehearsal scenario 18 (`api/rehearsal_chroma_e2e_test.go`): a home whose copy
     was stopped part way updates; the copy finishes, every vector is in Postgres as Chroma
     held it, no index job runs, and Chroma's files go only the start after.

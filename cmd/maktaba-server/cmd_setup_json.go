@@ -246,7 +246,7 @@ func databaseExists(cfg config.Config) bool {
 	}
 	exe, _ := os.Executable()
 	if b, ok, err := pgbundle.Resolve(cfg, exe); err == nil && ok {
-		return b.Initialized()
+		return b.HasDatabase()
 	}
 	if path, ok := strings.CutPrefix(cfg.Database.URL, "sqlite://"); ok {
 		_, err := os.Stat(path)
