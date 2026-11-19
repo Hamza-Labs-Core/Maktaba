@@ -437,6 +437,24 @@ export function PluginPage() {
               {t("plugins.action.stop")}
             </Button>
           )}
+          {release && d.want === "absent" && (
+            <Button
+              variant="primary"
+              onClick={() =>
+                void act(
+                  () => pluginsApi.installFromRelease(d.id, true),
+                  t("plugins.remove.installed_again")
+                )
+              }
+            >
+              {t("plugins.browse.install")}
+            </Button>
+          )}
+          {release && d.want !== "absent" && (
+            <Button variant="destructive" onClick={() => setConfirm("remove")}>
+              {t("plugins.action.remove")}
+            </Button>
+          )}
           {!release && (
             <>
               <Button variant="destructive" onClick={() => setConfirm("remove")}>
@@ -450,11 +468,10 @@ export function PluginPage() {
         </div>
         <p className="mkt-plugins__hint">{t("plugins.switch.stop_hint")}</p>
         {release && (
-          <p data-testid="remove-with-release">
-            {t("plugins.remove.with_release")}{" "}
-            <Link to={`/settings/components#${d.component}`}>
-              {t("plugins.switch.component_link")}
-            </Link>
+          <p data-testid="remove-maktaba">
+            {d.want === "absent"
+              ? t("plugins.remove.maktaba_absent")
+              : t("plugins.remove.maktaba_hint")}
           </p>
         )}
       </section>
@@ -501,8 +518,14 @@ export function PluginPage() {
             <p>{t("plugins.versions.clear_body")}</p>
           ) : (
             <>
-              <p>{t("plugins.remove.queued", { n: n(queued) })}</p>
-              {confirm === "purge" ? (
+              <p>
+                {release
+                  ? t("plugins.remove.queued_parked", { n: n(queued) })
+                  : t("plugins.remove.queued", { n: n(queued) })}
+              </p>
+              {release ? (
+                <p>{t("plugins.remove.maktaba_keep")}</p>
+              ) : confirm === "purge" ? (
                 <p>{t("plugins.remove.purge_body", { n: n(d.writes) })}</p>
               ) : (
                 <p>{t("plugins.remove.keep_body")}</p>

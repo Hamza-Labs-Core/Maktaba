@@ -13,7 +13,7 @@
   ],
   "counts": {
     "diagram": 14,
-    "endpoint": 280,
+    "endpoint": 281,
     "entity": 42,
     "epic": 60,
     "feature": 3,
@@ -10030,6 +10030,7 @@
         "story-54.37",
         "story-54.38",
         "story-54.42",
+        "story-54.46",
         "story-54.48",
         "story-54.50",
         "story-54.51",
@@ -12433,6 +12434,36 @@
         "lang": "ar",
         "source": {
           "content": "511c226e7d618716"
+        }
+      }
+    },
+    {
+      "id": "ep-post-plugins-id-install",
+      "type": "endpoint",
+      "title": "POST /plugins/{id}/install",
+      "content": "تثبيت إضافة من إضافات مكتبة مرة أخرى",
+      "tags": [
+        "api",
+        "Plugins",
+        "post"
+      ],
+      "related": [
+        "story-54.38",
+        "story-54.46"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/plugins/{id}/install",
+        "tag": "Plugins",
+        "operationId": "installPluginFromRelease"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "08efda2f3776265d"
         }
       }
     },
