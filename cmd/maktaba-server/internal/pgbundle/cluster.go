@@ -388,12 +388,7 @@ DO $$
 DECLARE f regprocedure;
 BEGIN
     FOR f IN SELECT p.oid::regprocedure FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-              WHERE n.nspname = 'pg_catalog' AND p.proname IN ('pg_create_logical_replication_slot',
-                    'pg_create_physical_replication_slot', 'pg_copy_logical_replication_slot',
-                    'pg_copy_physical_replication_slot', 'pg_logical_slot_get_changes',
-                    'pg_logical_slot_get_binary_changes', 'pg_logical_slot_peek_changes',
-                    'pg_logical_slot_peek_binary_changes', 'pg_replication_slot_advance',
-                    'pg_drop_replication_slot') LOOP
+              WHERE n.nspname = 'pg_catalog' AND p.proname IN (` + slotFunctions + `) LOOP
         EXECUTE format('REVOKE EXECUTE ON FUNCTION %s FROM PUBLIC', f);
         EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO ` + AppRole + `', f);
     END LOOP;
@@ -441,6 +436,13 @@ BEGIN
 END
 $$;
 `
+
+// slotFunctions are the replication slot functions the app role may run (clusterSQL).
+const slotFunctions = `'pg_create_logical_replication_slot', 'pg_create_physical_replication_slot',
+                    'pg_copy_logical_replication_slot', 'pg_copy_physical_replication_slot',
+                    'pg_logical_slot_get_changes', 'pg_logical_slot_get_binary_changes',
+                    'pg_logical_slot_peek_changes', 'pg_logical_slot_peek_binary_changes',
+                    'pg_replication_slot_advance', 'pg_drop_replication_slot'`
 
 // clusterRev is clusterSQL's revision: a cluster whose marker names an older one (or
 // none: the first) runs it again. 3: the app role administers the roles the superuser

@@ -336,6 +336,9 @@ func (r *restorer) mark(pl restorePlan, by string) error {
 	if target.Version == "" {
 		return refuse("restore_no_release", "%s is no longer kept", pl.Release)
 	}
+	if err := sameMajorRelease(r.stateDir, target.Version, held); err != nil {
+		return err
+	}
 	rec := apppayload.Database{Version: held, State: apppayload.DatabaseRestoring, From: pl.Release, Dump: p, By: by,
 		Error: "restore asked by " + by}
 	if err := apppayload.WriteDatabase(r.stateDir, rec); err != nil {
@@ -469,4 +472,40 @@ func apiRestoreNotice(cfg config.Config) func(ctx context.Context, pl restorePla
 		}
 		return nil
 	}
+}
+
+// sameMajorRelease refuses a restore onto a release that runs on another cluster than the
+// one in use (Epic 49 story 49.2): on a home upgraded to PostgreSQL 18, a release that ran
+// on 16 (the last one the 16 cluster's own record names, database.json, or one before it)
+// would start on the 16 cluster, which the upgrade left as it was, and never put the dump
+// back (its record is not the one marked): the home would run on its data from before the
+// upgrade, saying it restored.
+func sameMajorRelease(stateDir, release, running string) error {
+	if apppayload.ClusterMajorIn(stateDir) != "18" {
+		return nil
+	}
+	raw, err := os.ReadFile(filepath.Join(stateDir, "state", apppayload.ClusterRecordName("")))
+	if err != nil {
+		if _, err := os.Stat(filepath.Join(stateDir, "postgres", "PG_VERSION")); err == nil {
+			// a 16 cluster with no record of its own (an install from before the record): which
+			// releases ran on it cannot be told; the one running now runs on 18, so a release
+			// older than it may be one that ran on 16, and is refused
+			if running != "" && apppayload.Older(release, running) {
+				return refuse("restore_other_major", "the library database runs on PostgreSQL 18 since its upgrade, "+
+					"and its PostgreSQL 16 cluster keeps no record of the releases that ran on it: %s, older than %s, "+
+					"may be one of them; restore a backup made since the upgrade", release, running)
+			}
+		}
+		return nil // no 16 cluster: no release ran on 16 here
+	}
+	var rec16 apppayload.Database
+	if json.Unmarshal(raw, &rec16) != nil || rec16.Ran() == "" {
+		return nil
+	}
+	if last := rec16.Ran(); !apppayload.Older(last, release) {
+		return refuse("restore_other_major", "the library database runs on PostgreSQL 18 since its upgrade, and %s "+
+			"runs on PostgreSQL 16 (%s is the last release that ran on it): restore a backup made since the upgrade",
+			release, last)
+	}
+	return nil
 }

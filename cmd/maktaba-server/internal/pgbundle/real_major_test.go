@@ -1,0 +1,259 @@
+//go:build integration
+
+package pgbundle
+
+import (
+	"context"
+	"errors"
+	"io"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/apppayload"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/testport"
+)
+
+// TestRealMajorUpgrade (Epic 49, story 49.2) on real programs: a bundled PostgreSQL 16
+// cluster (MAKTABA_TEST_PG16_HOME, with pgvector: a payload's postgres-16/ or a release's
+// postgres/) with a home's kind of data (pgvector and its HNSW index, full-text search, a
+// machine's logical slot) is upgraded to PostgreSQL 18 (MAKTABA_TEST_PG18_HOME) in a
+// directory of its own; the app role connects to it with its old password and pg_textsearch
+// is there. The 16 cluster still starts with its data (a rollback's release finds it as it
+// was). Once 16 moved on (the release before ran on it again), the next upgrade sets the
+// stale copy aside and takes what was written meanwhile; and a 16 cluster that was not shut
+// down cleanly is recovered first.
+func TestRealMajorUpgrade(t *testing.T) {
+	h16, h18 := os.Getenv("MAKTABA_TEST_PG16_HOME"), os.Getenv("MAKTABA_TEST_PG18_HOME")
+	if h16 == "" || h18 == "" {
+		t.Skip("MAKTABA_TEST_PG16_HOME and MAKTABA_TEST_PG18_HOME (PostgreSQL 16 with pgvector, 18 with pgvector and pg_textsearch)")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("postgres refuses to run as root")
+	}
+	root, err := os.MkdirTemp("", "mkmaj")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(root) })
+	keys := filepath.Join(root, "keys")
+	port := testport.Free(t)
+	old := Bundle{Home: h16, Data: DataDirFor(root, "16"), Keys: keys, Backups: filepath.Join(root, "backups"), Port: port}
+	nw := old
+	nw.Home, nw.Data = h18, DataDirFor(root, "18")
+	if old.Data != filepath.Join(root, "postgres") || nw.Data != filepath.Join(root, "postgres-18") {
+		t.Fatalf("DataDirFor: %s %s", old.Data, nw.Data)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+	q := func(b Bundle, db, sql string) []string {
+		t.Helper()
+		qq, err := b.NewQuerier()
+		if err != nil {
+			t.Fatal(err)
+		}
+		rows, err := qq.Query(ctx, db, sql)
+		if err != nil {
+			t.Fatalf("%s: %v", sql, err)
+		}
+		return rows
+	}
+	with := func(b Bundle, fn func()) {
+		t.Helper()
+		if err := b.withServer(ctx, io.Discard, func() error { fn(); return nil }); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := old.Prepare(ctx, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	with(old, func() {
+		q(old, AppDatabase, `CREATE TABLE seg (id int PRIMARY KEY, body text, tsv tsvector
+			GENERATED ALWAYS AS (to_tsvector('simple', body)) STORED, emb vector(3));
+		INSERT INTO seg (id, body, emb) SELECT g, 'الصبر ' || g, ARRAY[g, 1, 0]::vector FROM generate_series(1, 2000) g;
+		CREATE INDEX ON seg USING gin (tsv); CREATE INDEX ON seg USING hnsw (emb vector_cosine_ops);
+		CREATE PUBLICATION maktaba_pub FOR TABLE seg;
+		SELECT 1 FROM pg_create_logical_replication_slot('machine_a', 'pgoutput');`)
+	})
+	u := MajorUpgrade{Old: old, New: nw}
+	if need, why, err := u.Needed(ctx); err != nil || !need {
+		t.Fatalf("Needed = %v %q %v", need, why, err)
+	}
+	var ulog strings.Builder
+	if err := u.Run(ctx, &ulog); err != nil {
+		t.Fatalf("%v\n%s", err, ulog.String())
+	}
+	t.Logf("the upgrade:\n%s", ulog.String())
+	if m, err := nw.ClusterMajor(); err != nil || m != "18" {
+		t.Fatalf("the new cluster's major: %q %v", m, err)
+	}
+	if mk, ok, err := ReadUpgradedFrom(nw.Data); err != nil || !ok || mk.Major != "16" || mk.SystemID == "" {
+		t.Fatalf("the marker: %+v %v %v", mk, ok, err)
+	}
+	if err := nw.Prepare(ctx, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	// the record in use is the 18 cluster's (every process reads it from the directories)
+	if got := apppayload.ClusterMajorIn(root); got != "18" {
+		t.Errorf("after the upgrade the cluster in use is %q, want 18", got)
+	}
+	// the last step failing at every start: the cluster runs, the failure is recorded and
+	// said, the start goes on (never a loop of restarts); without the fault it is done
+	afterUpgradeFault = errors.New("an extension update that always fails")
+	for range 2 {
+		if err := nw.FinishUpgrade(ctx, io.Discard); err == nil {
+			t.Fatal("FinishUpgrade hid the failure")
+		}
+		if nw.AfterUpgradeDone() || !strings.Contains(nw.LastUpgradeFailure(), "always fails") {
+			t.Fatalf("after a failed last step: done %v, failure %q", nw.AfterUpgradeDone(), nw.LastUpgradeFailure())
+		}
+		with(nw, func() {
+			if got := q(nw, AppDatabase, "SELECT count(*) FROM seg"); got[0] != "2000" {
+				t.Errorf("the cluster after a failed last step: %v", got)
+			}
+		})
+	}
+	afterUpgradeFault = nil
+	if err := nw.FinishUpgrade(ctx, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if !nw.AfterUpgradeDone() || nw.LastUpgradeFailure() != "" {
+		t.Fatalf("after the last step: done %v, failure %q", nw.AfterUpgradeDone(), nw.LastUpgradeFailure())
+	}
+	with(nw, func() {
+		if got := q(nw, AppDatabase, "SELECT count(*) FROM seg WHERE tsv @@ 'الصبر'::tsquery"); got[0] != "2000" {
+			t.Errorf("the upgraded rows: %v", got)
+		}
+		q(nw, AppDatabase, "CREATE EXTENSION IF NOT EXISTS pg_textsearch")
+		// clusterSQL ran on 18's own signatures (pg_create_logical_replication_slot has a
+		// failover argument since 17): the app role makes the machines' slots
+		if got := q(nw, AppDatabase, `SELECT bool_and(has_function_privilege('maktaba', p.oid, 'EXECUTE'))::text FROM pg_proc p WHERE p.proname = 'pg_create_logical_replication_slot'`); got[0] != "true" {
+			t.Errorf("the app role's slot grants on 18: %v", got)
+		}
+		if got := q(nw, AppDatabase, "SELECT current_setting('server_version_num')::int / 10000"); got[0] != "18" {
+			t.Errorf("server version %v", got)
+		}
+		// the app role, with the password every child has
+		u, err := nw.URL()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(u, AppRole) {
+			t.Fatal(u)
+		}
+		if err := Ready(ctx, nw.Addr(), AppRole, AppDatabase); err != nil {
+			t.Errorf("the app role on the upgraded cluster: %v", err)
+		}
+	})
+	if need, why, err := u.Needed(ctx); err != nil || need {
+		t.Fatalf("after the upgrade Needed = %v %q %v", need, why, err)
+	}
+	// the rollback: the release before starts on its own cluster, as it was
+	with(old, func() {
+		if got := q(old, AppDatabase, "SELECT count(*) FROM seg"); got[0] != "2000" {
+			t.Errorf("the 16 cluster after the upgrade: %v", got)
+		}
+		if got := q(old, AppDatabase, `SELECT bool_and(has_function_privilege('maktaba', p.oid, 'EXECUTE'))::text FROM pg_proc p WHERE p.proname = 'pg_create_logical_replication_slot'`); got[0] != "true" {
+			t.Errorf("the app role's slot grants are not back on 16: %v", got)
+		}
+		if _, err := os.Stat(filepath.Join(old.Data, clusterMarker)); err != nil {
+			t.Errorf("16's cluster marker is not back: %v", err)
+		}
+		q(old, AppDatabase, "INSERT INTO seg (id, body) VALUES (5000, 'written after the rollback')")
+	})
+	// the release before ran on 16 again: 16 is the cluster in use, its record database.json,
+	// so a restore marks the record that release reads (and an 18 start's redo carries it)
+	if got := apppayload.ClusterMajorIn(root); got != "" {
+		t.Errorf("after the release before ran on 16 again the cluster in use is %q, want 16's", got)
+	}
+	if got := filepath.Base(apppayload.DatabasePath(root)); got != "database.json" {
+		t.Errorf("after the release before ran on 16 again the record is %s", got)
+	}
+	if need, why, err := u.Needed(ctx); err != nil || !need || !strings.Contains(why, "moved on") {
+		t.Fatalf("after the release before wrote: Needed = %v %q %v", need, why, err)
+	}
+	// the 16 cluster stopped hard (a power cut): recovered, then upgraded again
+	srv, err := old.serverCommand(old.serverArgs(false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.Start(); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(30 * time.Second)
+	for Ready(ctx, old.Addr(), AppRole, AppDatabase) != nil && time.Now().Before(deadline) {
+		time.Sleep(100 * time.Millisecond)
+	}
+	_ = srv.Process.Kill()
+	_ = srv.Wait()
+	if err := u.Run(ctx, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(nw.Data + ".stale"); !os.IsNotExist(err) {
+		t.Errorf("the stale copy is still there after the upgrade made it again: %v", err)
+	}
+	if got := apppayload.ClusterMajorIn(root); got != "18" {
+		t.Errorf("after the upgrade made again the cluster in use is %q, want 18", got)
+	}
+	if err := nw.Prepare(ctx, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	with(nw, func() {
+		if got := q(nw, AppDatabase, "SELECT body FROM seg WHERE id = 5000"); len(got) != 1 {
+			t.Errorf("the row written after the rollback is not in the new copy: %v", got)
+		}
+	})
+	// a server left running on the 16 cluster (an earlier pg_upgrade stopped hard while its
+	// server of the old cluster ran): the next upgrade stops it and goes on
+	with(old, func() { q(old, AppDatabase, "INSERT INTO seg (id, body) VALUES (6000, 'written again')") })
+	left, err := old.serverCommand(old.serverArgs(false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := left.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = left.Process.Kill(); _ = left.Wait() }()
+	deadline = time.Now().Add(30 * time.Second)
+	for !old.Running() && time.Now().Before(deadline) {
+		time.Sleep(100 * time.Millisecond)
+	}
+	if !old.Running() {
+		t.Fatal("the server left on the 16 cluster did not start")
+	}
+	if err := u.Run(ctx, io.Discard); err != nil {
+		t.Fatalf("an upgrade with a server left on the 16 cluster: %v", err)
+	}
+	if old.Running() {
+		t.Error("the server left on the 16 cluster still runs")
+	}
+	with(nw, func() {
+		if got := q(nw, AppDatabase, "SELECT body FROM seg WHERE id = 6000"); len(got) != 1 {
+			t.Errorf("the row written before the leftover server's stop is not in the new copy: %v", got)
+		}
+	})
+	// a redo by copy: the copy set aside goes before the room is counted (a disk that took
+	// one copy takes the next), and the copy is made
+	with(old, func() { q(old, AppDatabase, "INSERT INTO seg (id, body) VALUES (7000, 'copied')") })
+	checked := false
+	byCopy := u
+	byCopy.NoClone = true
+	byCopy.Room = func(string, uint64) error {
+		checked = true
+		if _, err := os.Stat(nw.Data + ".stale"); !os.IsNotExist(err) {
+			t.Errorf("the copy set aside is still there when the room is counted: %v", err)
+		}
+		return nil
+	}
+	if err := byCopy.Run(ctx, io.Discard); err != nil {
+		t.Fatalf("a redo by copy: %v", err)
+	}
+	if !checked {
+		t.Error("the redo by copy did not count its room")
+	}
+	if mk, ok, _ := ReadUpgradedFrom(nw.Data); !ok || mk.Mode != "copy" {
+		t.Errorf("the redo's marker: %+v", mk)
+	}
+}
