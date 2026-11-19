@@ -30,6 +30,7 @@ case "$1" in
         ;;
     release)
         if [ "$2" = edit ]; then echo "edited $*" >>"${EDITS}"; exit 0; fi
+        if [ "$2" = list ]; then printf '%s\n' "${PUBLISHED:-}"; exit 0; fi
         [ "$2" = download ] || { echo "gh stub: $*" >&2; exit 1; }
         name="" dir=""
         while [ $# -gt 0 ]; do
@@ -39,12 +40,34 @@ case "$1" in
             esac
             shift
         done
-        printf 'published %s' "${name}" >"${dir}/${name}"
+        echo "download ${name}" >>"${DOWNLOADS:-/dev/null}"
+        if [ "${name}" = checksums.txt ] && [ -n "${CHECKSUMS_FILE:-}" ]; then
+            # a fixture's bytes (a NUL cannot ride in an environment variable)
+            cp "${CHECKSUMS_FILE}" "${dir}/${name}"
+        elif [ "${name}" = checksums.txt ] && [ -n "${CHECKSUMS+set}" ]; then
+            # as given, an empty value included
+            printf '%s' "${CHECKSUMS}" >"${dir}/${name}"
+        elif [ "${name}" = checksums.txt ]; then
+            # a well-formed checksums.txt naming the release's own files
+            printf '%s\n' "${ASSETS}" | awk 'NF { printf "%064d  ./%s\n", 0, $1 }' >"${dir}/${name}"
+        else
+            printf 'published %s' "${name}" >"${dir}/${name}"
+        fi
         ;;
     *) echo "gh stub: $*" >&2; exit 1 ;;
 esac
 EOF
 chmod +x "${work}/stubs/gh"
+# a stubbed go for publish's stable path: release-order answers LATEST ("true" when this tag
+# is the highest stable one)
+cat >"${work}/stubs/go" <<'GOSTUB'
+#!/usr/bin/env bash
+case "$*" in
+    *cmd/release-order*) cat >/dev/null; echo "${LATEST:-true}" ;;
+    *) echo "go stub: $*" >&2; exit 1 ;;
+esac
+GOSTUB
+chmod +x "${work}/stubs/go"
 
 # stage NAME...: a run's staged directory, each file "built <name>"
 stage() {
@@ -121,10 +144,16 @@ fi
 
 # publish: a draft stays one until release.yml's signed set is there, the component index
 # among it (story 51.15)
-publish() { # publish ASSETS: runs publish on the draft v0.3.2-rc.1; its log in ${work}/log
+publish() { # publish ASSETS [CHECKSUMS]: runs publish on the draft v0.3.2-rc.1; its log in ${work}/log
     : >"${work}/edits"
-    PATH="${work}/stubs:${PATH}" GITHUB_REPOSITORY=o/r DRAFT=true ASSETS="$1" EDITS="${work}/edits" \
-        bash "${here}/release-assets.sh" publish v0.3.2-rc.1 >"${work}/log" 2>&1
+    : >"${work}/downloads"
+    if [ $# -ge 2 ]; then
+        PATH="${work}/stubs:${PATH}" GITHUB_REPOSITORY=o/r DRAFT=true ASSETS="$1" CHECKSUMS="$2" EDITS="${work}/edits" \
+            DOWNLOADS="${work}/downloads" bash "${here}/release-assets.sh" publish "${TAG:-v0.3.2-rc.1}" >"${work}/log" 2>&1
+    else
+        PATH="${work}/stubs:${PATH}" GITHUB_REPOSITORY=o/r DRAFT=true ASSETS="$1" EDITS="${work}/edits" \
+            DOWNLOADS="${work}/downloads" bash "${here}/release-assets.sh" publish "${TAG:-v0.3.2-rc.1}" >"${work}/log" 2>&1
+    fi
 }
 signed=$'release.json\nchecksums.txt\nchecksums.txt.sigstore.json'
 if publish "${signed}" && grep -q "components-0.3.2-rc.1.json (release.yml)" "${work}/log" && [ ! -s "${work}/edits" ]; then
@@ -138,6 +167,89 @@ else
     fail "not published with the index: $(cat "${work}/log" "${work}/edits")"
 fi
 
+# every file checksums.txt names must be attached before the draft is published: an upload
+# that stopped part way leaves a signed checksum for a file nobody can download
+full="${signed}"$'\ncomponents-0.3.2-rc.1.json'
+z="$(printf '%064d' 0)"
+sums="${z}  ./maktaba-server-0.3.2-rc.1-linux-amd64.tar.gz"$'\n'"${z}  ./tv.maktaba.classify-0.3.2.mkplugin"$'\n'"${z}  ./release.json"$'\n'
+if publish "${full}"$'\nmaktaba-server-0.3.2-rc.1-linux-amd64.tar.gz\nrelease.json' "${sums}" &&
+    grep -q "tv.maktaba.classify-0.3.2.mkplugin (in checksums.txt)" "${work}/log" && [ ! -s "${work}/edits" ]; then
+    ok "a draft missing a file its checksums name stays a draft, naming it"
+else
+    fail "published with a checksummed file missing: $(cat "${work}/log" "${work}/edits")"
+fi
+if publish "${full}"$'\nmaktaba-server-0.3.2-rc.1-linux-amd64.tar.gz\ntv.maktaba.classify-0.3.2.mkplugin' "${sums}" &&
+    grep -q -- "--draft=false" "${work}/edits"; then
+    ok "a draft with every checksummed file is published"
+else
+    fail "not published with every checksummed file: $(cat "${work}/log" "${work}/edits")"
+fi
+
+# a checksums.txt that is empty, or has a line that is not "<sha256>  <name>": the draft waits
+z64="$(printf '%064d' 0)"
+for bad in "" "${z64}  ./release.json"$'\n'"${z64:0:20}" "${z64}  ./release.json"$'\n'"garbage line"; do
+    if publish "${full}"$'\nrelease.json' "${bad}" && grep -q "a well-formed checksums.txt" "${work}/log" && [ ! -s "${work}/edits" ]; then
+        ok "a malformed or empty checksums.txt keeps the draft ($(printf '%s' "${bad}" | wc -l | tr -d ' ') newlines)"
+    else
+        fail "published with a malformed checksums.txt: $(cat "${work}/log" "${work}/edits")"
+    fi
+done
+# the lines releaseverify.ParseChecksums refuses keep the draft too: a name listed twice
+# (./release.json and *release.json), an option-like name, a backslash, a path
+for bad in "${z64}  ./release.json"$'\n'"${z64}  ./release.json"$'\n' "${z64}  ./-rf"$'\n' "${z64}  ./a\\b"$'\n' "${z64}  ./dir/file"$'\n'; do
+    if publish "${full}"$'\nrelease.json\n-rf' "${bad}" && grep -q "a well-formed checksums.txt" "${work}/log" && [ ! -s "${work}/edits" ]; then
+        ok "a checksums.txt releaseverify refuses keeps the draft: $(printf '%s' "${bad}" | tail -n1 | cut -c66-)"
+    else
+        fail "published with a refused checksums.txt [${bad}]: $(cat "${work}/log" "${work}/edits")"
+    fi
+done
+# the gate reads only what release.yml's sha256sum writes, so it never publishes a file
+# machines refuse: anything else keeps the draft, though releaseverify would read it (it is
+# never written): CRLF, a blank line, "*" names, no last newline, a NUL, a long name
+nul="${work}/nul.txt"
+printf '%s  ./release.json\000x\n' "${z64}" >"${nul}"
+for odd in "${z64}  ./release.json"$'\r\n' "${z64}  ./release.json"$'\n\n' "${z64} *release.json"$'\n' \
+    "${z64}  ./release.json" "${z64}  ./$(printf 'a%.0s' $(seq 1 256))"$'\n' nul; do
+    if [ "${odd}" = nul ]; then
+        CHECKSUMS_FILE="${nul}" publish "${full}"$'\nrelease.json' x
+    else
+        publish "${full}"$'\nrelease.json' "${odd}"
+    fi
+    if grep -q "a well-formed checksums.txt" "${work}/log" && [ ! -s "${work}/edits" ]; then
+        ok "only sha256sum's own format: the draft waits ($(printf '%q' "${odd:0:80}" | cut -c1-60)…)"
+    else
+        fail "published with a checksums.txt not in sha256sum's form [$(printf '%q' "${odd:0:80}")]: $(cat "${work}/log" "${work}/edits")"
+    fi
+done
+# sha256sum's own form publishes
+if publish "${full}" "${z64}  ./release.json"$'\n'"${z64}  ./checksums.txt.sigstore.json"$'\n' && grep -q -- "--draft=false" "${work}/edits"; then
+    ok "sha256sum's own lines: read, and published"
+else
+    fail "a well-formed checksums.txt: $(cat "${work}/log" "${work}/edits")"
+fi
+# a stable tag, complete: its checksums read, published as a stable release and made the
+# latest (no feed required)
+stable=$'release.json\nchecksums.txt\nchecksums.txt.sigstore.json\ncomponents-0.3.2.json\nmaktaba-server-0.3.2-linux-amd64.tar.gz'
+if TAG=v0.3.2 PUBLISHED=v0.3.2 publish "${stable}" && grep -q "download checksums.txt" "${work}/downloads" &&
+    grep -q -- "--draft=false --prerelease=false" "${work}/edits" && grep -q -- "--latest$" "${work}/edits"; then
+    ok "a complete stable release: its checksums read, published and made the latest"
+else
+    fail "stable release: $(cat "${work}/log" "${work}/edits")"
+fi
+# and one missing a checksummed file stays a draft, stable or not
+if TAG=v0.3.2 publish "$(grep -v maktaba-server <<<"${stable}")" "${z64}  ./maktaba-server-0.3.2-linux-amd64.tar.gz"$'\n' &&
+    grep -q "maktaba-server-0.3.2-linux-amd64.tar.gz (in checksums.txt)" "${work}/log" && [ ! -s "${work}/edits" ]; then
+    ok "a stable draft missing a checksummed file stays a draft"
+else
+    fail "stable, missing a file: $(cat "${work}/log" "${work}/edits")"
+fi
+# no checksums.txt yet: nothing downloaded, the draft waits for release.yml's set
+if publish $'release.json\nchecksums.txt.sigstore.json\ncomponents-0.3.2-rc.1.json' && [ ! -s "${work}/downloads" ] &&
+    grep -q "checksums.txt (release.yml)" "${work}/log" && [ ! -s "${work}/edits" ]; then
+    ok "no checksums.txt yet: nothing downloaded, the draft waits"
+else
+    fail "no checksums.txt: $(cat "${work}/log" "${work}/downloads" "${work}/edits")"
+fi
 if [ "${fails}" -gt 0 ]; then
     echo "release-assets-test: ${fails} failed"
     exit 1

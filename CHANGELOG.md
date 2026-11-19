@@ -344,6 +344,12 @@ build fails when the two differ.
 
 ### Fixed
 
+- **A release is published only with every file its signed checksums name.** Until now a draft
+  release could be made public with only its signed set attached (`release.json`, the checksums
+  and their signature, the component index), so an upload that stopped part way could publish a
+  checksum for a file nobody could download. It now stays a draft, naming each missing file,
+  until every file `checksums.txt` lists is attached.
+
 - **Sign-in no longer hangs while Maktaba's own plugins are busy with the database.** The
   first-party plugins ran their database work on the API's own connections. They kept some
   between calls and could leave transactions open for hours, until no connection was left

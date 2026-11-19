@@ -163,6 +163,27 @@ upload() {
     done
 }
 
+# checksum_names FILE: the names a checksums.txt lists, one a line; fails (printing nothing)
+# unless every line is exactly what release.yml's "Generate checksums" writes (GNU sha256sum
+# over ./<name>): 64 lowercase hex, two spaces, "./", a name of [A-Za-z0-9._+-] (not
+# starting with "." or "-"), a newline; no NUL, no CR, no blank line, no name twice, at least
+# one line. Every file this accepts, releaseverify.ParseChecksums accepts with the same names,
+# so a draft never goes public with checksums machines refuse; any other file (even one
+# ParseChecksums would read, which release.yml never writes) keeps the draft, and the notice
+# says why.
+checksum_names() {
+    local f="$1" n lines
+    [ -s "$f" ] || return 1
+    # no NUL (awk and bash would drop it), and the last line ends in a newline
+    [ "$(LC_ALL=C tr -d '\000' <"$f" | wc -c)" = "$(wc -c <"$f")" ] || return 1
+    [ "$(tail -c 1 "$f" | od -An -c | tr -d ' ')" = '\n' ] || return 1
+    lines="$(wc -l <"$f" | tr -d ' ')"
+    n="$(LC_ALL=C grep -cE '^[0-9a-f]{64}  \./[A-Za-z0-9_+][A-Za-z0-9._+-]{0,254}$' "$f" || true)"
+    [ "$n" = "$lines" ] || return 1
+    [ -z "$(LC_ALL=C cut -c 69- "$f" | sort | uniq -d)" ] || return 1
+    LC_ALL=C cut -c 69- "$f"
+}
+
 publish() {
     local id names missing=() tmp all=false
     id="$(release_id)"
@@ -173,6 +194,26 @@ publish() {
         grep -qx "${a}" <<<"${names}" || missing+=("${a} (release.yml)")
     done
     tmp="$(mktemp -d)"
+    # every file the signed checksums.txt names is attached: an upload that stopped part way
+    # (release.yml's own files, or desktop-release.yml publishing before release.yml's upload
+    # finished) leaves a draft whose checksums list a file nobody can download
+    if grep -qx checksums.txt <<<"${names}"; then
+        gh_ release download "${tag}" --pattern checksums.txt --dir "${tmp}" --clobber
+        # read as releaseverify.ParseChecksums reads it (shared/go/releaseverify/manifest.go),
+        # rule for rule: a CR before the newline dropped, blank lines skipped, every other line
+        # "<64 lowercase hex> <name>" (spaces, then an optional "*" and "./"), each name a
+        # valid file name (not ".", "..", "-…", nor holding "/", "\\", a space or a tab) and
+        # listed once, and at least one name. Anything else is not this release's checksums,
+        # and the draft waits (machines refuse such a file, so publishing it helps nobody)
+        local listed n
+        if listed="$(checksum_names "${tmp}/checksums.txt")"; then
+            while IFS= read -r n; do
+                grep -qxF -- "${n}" <<<"${names}" || missing+=("${n} (in checksums.txt)")
+            done <<<"${listed}"
+        else
+            missing+=("a well-formed checksums.txt (release.yml)")
+        fi
+    fi
     if grep -qx latest.json <<<"${names}"; then
         gh_ release download "${tag}" --pattern latest.json --dir "${tmp}" --clobber
         if [ "${REQUIRE_FEED:-false}" = true ] &&
