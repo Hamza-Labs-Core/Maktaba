@@ -255,7 +255,9 @@ describe("Settings → Subscription (test-cases/subscription.md)", () => {
       },
     });
     open();
-    expect(await screen.findByTestId("subscription-read-only-users")).toHaveTextContent("sara, omar");
+    expect(await screen.findByTestId("subscription-read-only-users")).toHaveTextContent(
+      "sara, omar"
+    );
     expect(screen.getByText("Read-only (no seat)")).toBeInTheDocument();
   });
 
