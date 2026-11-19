@@ -3,7 +3,7 @@
 > Story-by-story status of every epic, read from the code and history on `main` at `f43b0d3ed` (2026-11-19).
 > The specs and epic pages don't record a status; this page does. Update the row when a story changes.
 
-**Not every epic is done.** Of 773 stories across all 60 epics, 702 are done, 39 are partial, 22 are not started, and 10 were deferred or removed on purpose. The largest open pieces are Epic 49 (Search, 2 stories of fourteen done), Epic 34 (the TV public site, a first slice only) and Epic 54 Phase 5 (Plugins).
+**Not every epic is done.** Of 773 stories across all 60 epics, 703 are done, 38 are partial, 22 are not started, and 10 were deferred or removed on purpose. The largest open pieces are Epic 49 (Search, 2 stories of fourteen done), Epic 34 (the TV public site, a first slice only) and Epic 54 Phase 5 (Plugins).
 
 ## How this was checked
 
@@ -44,7 +44,7 @@
 | 19 Scalability | 8* | 0 | 0 | 0 | Done |
 | 20 Testing | 8* | 0 | 0 | 0 | Done |
 | 21 Observability | 8* | 0 | 0 | 0 | Done |
-| 22 DevOps | 8* | 1 | 0 | 0 | **Partial** |
+| 22 DevOps | 9* | 0 | 0 | 0 | Done |
 | 23 Security | 7* | 1 | 0 | 0 | **Partial** |
 | 24 Data integrity | 9* | 0 | 0 | 0 | Done |
 | 25 Cloud relay | 36* | 0 | 0 | 0 | Done |
@@ -83,7 +83,7 @@
 | 58 Smart TV platforms | 17 | 0 | 0 | 1 | Done (58.18 Vega OS deferred) |
 | 59 NAS | 16 | 0 | 0 | 0 | Done (device results not checked) |
 | 60 Website | 11 | 1 | 0 | 1 | **Partial** |
-| **Total** | **702** | **39** | **22** | **10** | **Not all done** |
+| **Total** | **703** | **38** | **22** | **10** | **Not all done** |
 
 `*` sampled, see [How this was checked](#how-this-was-checked).
 
@@ -114,7 +114,6 @@
 
 | Story | Missing |
 |---|---|
-| 22.03 Container images | `tools/image-size-guard.sh` exists but no workflow runs it. |
 | 23.07 Supply-chain security | A per-component SBOM (`tools/sbom.sh` is a stub) and a CVE gate that can stop a release. Release images already carry SBOM attestations; Dependabot alerts (78 open on 2026-11-19) and CodeQL default setup (3 open alerts) scan the repo, but neither stops a release. |
 | 26.2 Transcript topic & entity extraction | Only slot 0074's schema is present. No `topic_extractor` implementation, NER/gazetteer path, classification/entity writers, or its tests are on `origin/main`; `classify_stage.py` still describes that extractor as future work. |
 | 26.4 Auto-collection builder | Slot 0076 exists, but no `auto_collections` producer, suggestion lifecycle implementation, or builder tests exist. Existing smart-collection code belongs to earlier/later stories. |
@@ -462,9 +461,9 @@ Each epic below has an evidence key naming current implementation and test files
 | Story | Status | Evidence / missing work |
 |---|---|---|
 | 16.01 Free tier | Done (sampled) | E16 |
-| 16.02 Premium features | **Done** | E16; #1453: the expiry and downgrade grace as the owner decided (2026-11-19): the plan keeps working fully for 30 days from the license's expiry, then locks (`subscriptions.Grace`, `api/internal/subscriptions/store.go`, `grace_test.go`); the admin sees the days left (`grace_until`/`grace_days_left`, `SubscriptionSettings.tsx`). Backup and federation mount behind `RequireFeature` when their routes ship. |
+| 16.02 Premium features | **Done** | E16; #1453: the expiry and downgrade grace: the plan keeps working fully for 30 days from the license's expiry, then locks (`subscriptions.Grace`, `api/internal/subscriptions/store.go`, `grace_test.go`); the admin sees the days left (`grace_until`/`grace_days_left`, `SubscriptionSettings.tsx`). Backup and federation mount behind `RequireFeature` when their routes ship. |
 | 16.03 Subscription management | Done (sampled) | E16 |
-| 16.04 License validation | **Done** | E16; signed offline validation, refresh and tests; #1454: past the seats, the newest non-admin accounts are read-only as the owner decided (2026-11-19): they watch and keep their progress, history, playlists and favourites; uploads, metadata edits and managing the home are refused (`subscriptions.SeatGuard`, `seats.go`, `seats_test.go`, `seats_pg_test.go`, `403 seat-read-only`); the admin sees them, the account is told (`SubscriptionSettings.tsx`). |
+| 16.04 License validation | **Done** | E16; signed offline validation, refresh and tests; #1454: past the seats, the newest non-admin accounts are read-only: they watch and keep their progress, history, playlists and favourites; uploads, metadata edits and managing the home are refused (`subscriptions.SeatGuard`, `seats.go`, `seats_test.go`, `seats_pg_test.go`, `403 seat-read-only`); the admin sees them, the account is told (`SubscriptionSettings.tsx`). |
 | 16.05 Telemetry opt-in | Done (sampled) | E16; `api/internal/router/telemetry.go`, `web/src/components/TelemetryPrompt.tsx` |
 | 16.06 Feature flags | Done (sampled) | E16 |
 | 16.07 Telemetry API | Done (sampled) | E16 |
@@ -556,7 +555,7 @@ Each epic below has an evidence key naming current implementation and test files
 |---|---|---|
 | 22.01 CI pipeline | Done (sampled) | E22 |
 | 22.02 Reproducible builds | Done (sampled) | E22; signed release/checksum workflows exist |
-| 22.03 Container images | **partial** | Compose/images and `tools/image-size-guard.sh` exist, but `tools/ci/ci_paths.py` still labels it **“run by hand”** and no workflow invokes it. TC3's CI regression gate is missing; the script's own “wired into CI” comment is contradicted by workflow search. |
+| 22.03 Container images | Done | E22; CI's `images` job (`_images.yml`) builds the four images on linux/amd64 and linux/arm64 and holds them to AC4's budgets with `tools/image-size-guard.sh` (#1449) |
 | 22.04 Database migrations | Done (sampled) | E22 |
 | 22.05 Release management | Done (sampled) | E22 |
 | 22.06 Upgrade/rollback | Done (sampled) | E22 |
