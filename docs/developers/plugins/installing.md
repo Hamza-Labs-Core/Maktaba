@@ -263,5 +263,10 @@ A plugin's `activity.problems` is counted by the rule of `GET /api/queues/failur
 the number of items that list shows for the plugin's stages.
 
 A plugin with `source: "release"` is switched with `enable`, `disable`, `start` and `stop`
-like any other. Its update, rollback, removal, grants, settings and writes routes answer
-`409 plugin_with_release`: it is updated and removed with Maktaba.
+like any other. `DELETE /api/plugins/{id}` removes it: its component's `want` becomes
+`absent`, its queued jobs wait (`queued_jobs_parked`), and what it wrote stays, so `?purge=true`
+answers `409 plugin_data_kept`. A plugin that components still on need answers
+`409 component_required_by`, naming them. `POST /api/plugins/{id}/install` (`{"enable": true}`
+to turn it on too) installs it again from the Maktaba release, with nothing to download. Its
+update, rollback, grants, settings and writes routes answer `409 plugin_with_release`: it is
+updated with Maktaba.

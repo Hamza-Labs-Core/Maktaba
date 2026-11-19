@@ -6238,7 +6238,7 @@
       "title": "Install and remove a Maktaba plugin",
       "epic": "54-plugins",
       "phase": 5,
-      "content": "# Story 54.46 — Install and remove a Maktaba plugin\n\n> Epic 54 · Phase 5 · Depends on: 54.44, 54.45, 54.38, Epic 51 (51.15, 51.16) · Needed by: 54.47, 54.48, 54.50 · Not built\n\n## Why\n\nAfter 54.44 a Maktaba plugin can be turned on and off on its page, but its files are always on disk and its Remove is absent with the reason in words. This story lets an admin install and remove each Maktaba plugin like any store plugin, with one source of truth for its state and no lost jobs.\n\n## Description\n\n### 1. One source of truth\n\nA Maktaba plugin keeps the Epic 51 component whose stages it implements as ",
+      "content": "# Story 54.46 — Install and remove a Maktaba plugin\n\n> Epic 54 · Phase 5 · Depends on: 54.44, 54.45, 54.38, Epic 51 (51.15, 51.16) · Needed by: 54.47, 54.48, 54.50 · Built\n\n## Why\n\nAfter 54.44 a Maktaba plugin can be turned on and off on its page, but its files are always on disk and its Remove is absent with the reason in words. This story lets an admin install and remove each Maktaba plugin like any store plugin, with one source of truth for its state and no lost jobs.\n\n## Description\n\n### 1. One source of truth\n\nA Maktaba plugin keeps the Epic 51 component whose stages it implements as its ",
       "tags": [
         "story",
         "54-plugins",
@@ -6246,6 +6246,7 @@
       ],
       "related": [
         "epic-54-plugins",
+        "ep-get-components",
         "ep-get-plugins"
       ],
       "files": {
@@ -6254,6 +6255,7 @@
         "mockups": []
       },
       "api_endpoints": [
+        "GET /components",
         "GET /plugins"
       ],
       "db_tables": [],

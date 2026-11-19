@@ -57,6 +57,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/plugins/catalog"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/plugins/storelink"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/components"
+	"github.com/lib/pq"
 )
 
 // maxPackage is the largest package an install takes (54.01: 50 MB packed), and a margin
@@ -118,7 +119,8 @@ func (h *Admin) Mount(r chi.Router) {
 		r.Post("/api/plugins/{id}/stop", h.hold(true))
 		r.With(h.notWithRelease).Post("/api/plugins/{id}/update", h.update)
 		r.With(h.notWithRelease).Post("/api/plugins/{id}/rollback", h.rollback)
-		r.With(h.notWithRelease).Delete("/api/plugins/{id}", h.remove)
+		r.Delete("/api/plugins/{id}", h.remove)
+		r.Post("/api/plugins/{id}/install", h.installFromRelease)
 		r.With(h.notWithRelease).Get("/api/plugins/{id}/writes", h.writes)
 		r.Get("/api/plugins/{id}/downstream", h.downstream)
 		r.Get("/api/plugins/{id}/flow", h.flow)
@@ -541,6 +543,60 @@ func (h *Admin) apply(w http.ResponseWriter, r *http.Request, ch svc.Change) {
 	h.show(w, r)
 }
 
+// removePublished is a Maktaba plugin's removal (story 54.46 §3): its component's want is
+// absent. Its running jobs drain and its queued ones wait, parked with component_off, never
+// dropped; a plugin other components on need is refused with what needs it
+// (component_required_by). The data it wrote is Maktaba's own and stays: purge is refused.
+func (h *Admin) removePublished(w http.ResponseWriter, r *http.Request, id string) {
+	if r.URL.Query().Get("purge") == "true" {
+		httperror.Write(w, r, problem(http.StatusConflict, pl.CodeDataKept,
+			id+" is Maktaba's own: the data it wrote (transcripts, thumbnails, tags) is the library's and stays"))
+		return
+	}
+	fp := pl.Published(id)
+	parked := 0
+	_ = h.L.DB.QueryRowContext(r.Context(), `SELECT count(*) FROM processing_jobs WHERE stage = ANY($1) AND state = 'pending'`,
+		pq.Array(fp.Stages)).Scan(&parked)
+	req := svc.Request{Changes: []svc.Change{{ID: fp.Trusted.Component, Want: components.WantAbsent}}}
+	if _, err := h.L.Components.Apply(r.Context(), req, h.actor(r)); err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	common.WriteJSON(w, r, http.StatusAccepted, map[string]any{"id": id, "want": components.WantAbsent, "queued_jobs_parked": parked})
+}
+
+// installFromRelease installs a Maktaba plugin again from this release (story 54.46 §2): its
+// code ships with the server, so it is its component's want installed (off until turned on;
+// "enable": true turns it on at once). Its parked jobs run again once it is on. Any other
+// plugin installs from a file or the store (POST /api/plugins/install).
+func (h *Admin) installFromRelease(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if !pl.IsPublished(id) {
+		httperror.Write(w, r, problem(http.StatusNotFound, "plugin_not_installed",
+			id+" is not one of Maktaba's plugins: install it from a file or the store"))
+		return
+	}
+	var body struct {
+		Enable bool `json:"enable"`
+	}
+	if r.ContentLength != 0 {
+		if e := common.ReadJSON(r, &body, 1<<10); e != nil {
+			httperror.Write(w, r, e)
+			return
+		}
+	}
+	want := components.WantInstalled
+	if body.Enable {
+		want = components.WantEnabled
+	}
+	req := svc.Request{Changes: []svc.Change{{ID: pl.ComponentOf(id), Want: want}}}
+	if _, err := h.L.Components.Apply(r.Context(), req, h.actor(r)); err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	h.show(w, r)
+}
+
 func (h *Admin) switchTo(want string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) { h.apply(w, r, svc.Change{Want: want}) }
 }
@@ -562,9 +618,14 @@ func (h *Admin) rollback(w http.ResponseWriter, r *http.Request) {
 }
 
 // remove is want absent (the supervisor removes the files once the jobs drained), and with
-// purge=true the plugin's settings, data and artifacts, and its writes reverted.
+// purge=true the plugin's settings, data and artifacts, and its writes reverted. A Maktaba
+// plugin's removal is its component's (story 54.46 §3).
 func (h *Admin) remove(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
+	if pl.IsPublished(id) {
+		h.removePublished(w, r, id)
+		return
+	}
 	cid := components.PluginPrefix + id
 	if _, err := h.L.Show(r.Context(), id); err != nil {
 		h.fail(w, r, err)

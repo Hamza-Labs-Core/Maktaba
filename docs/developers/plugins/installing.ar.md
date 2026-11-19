@@ -235,5 +235,9 @@ outcome}` (`ok` و`failed`)، و`maktaba_plugin_job_seconds{plugin, quantile}` (
 تلك القائمة لمراحل الإضافة.
 
 الإضافة التي `source` فيها `"release"` تُشغَّل وتُوقَف بـ`enable` و`disable` و`start` و`stop` مثل غيرها.
-أما مسارات تحديثها وإرجاعها وإزالتها ومنحها وإعداداتها وكتاباتها فتجيب بـ`409 plugin_with_release`:
-فهي تُحدَّث وتُزال مع مكتبة.
+ويزيلها `DELETE /api/plugins/{id}`: تصير `want` لمكوّنها `absent`، وتنتظر مهامّها المنتظرة
+(`queued_jobs_parked`)، ويبقى ما كتبته، فيجيب `?purge=true` بـ`409 plugin_data_kept`. والإضافة التي
+لا تزال تحتاجها مكوّنات تعمل تجيب بـ`409 component_required_by` مع ذكرها. ويعيد
+`POST /api/plugins/{id}/install` تثبيتها من إصدار مكتبة دون تنزيل شيء (مع `{"enable": true}` لتشغيلها أيضًا).
+أما مسارات تحديثها وإرجاعها ومنحها وإعداداتها وكتاباتها فتجيب بـ`409 plugin_with_release`: فهي تُحدَّث
+مع مكتبة.

@@ -1,6 +1,6 @@
 # Story 54.46 — Install and remove a Maktaba plugin
 
-> Epic 54 · Phase 5 · Depends on: 54.44, 54.45, 54.38, Epic 51 (51.15, 51.16) · Needed by: 54.47, 54.48, 54.50 · Not built
+> Epic 54 · Phase 5 · Depends on: 54.44, 54.45, 54.38, Epic 51 (51.15, 51.16) · Needed by: 54.47, 54.48, 54.50 · Built
 
 ## Why
 
@@ -34,3 +34,45 @@ The Plugins page shows Remove and Install for Maktaba plugins, and `source` beco
 - Remove refused while a dependant is on; allowed after it is off.
 - Role tests: every route admin only.
 - update-rehearsal: a home with some Maktaba plugins removed updates and rolls back with the same set.
+
+## As built
+
+- **One source of truth.** A Maktaba plugin's state is its component's desired row, as §1
+  has it: `absent` means not installed (phase `not_installed`), `installed` means off, and
+  `enabled` means on. No `plugin.<id>` entry is made.
+- **Remove** (`DELETE /api/plugins/{id}`) sets the component's want to `absent` through the
+  components service. That service refuses it with what needs it (`component_required_by`)
+  while a component that is on requires it. The answer counts the queued jobs parked
+  (`queued_jobs_parked`). Their stages wait with `component_off` and no worker claims them,
+  since `absent` closes the gate as off does. Running jobs drain as for any component turned
+  off. `?purge=true` is refused (`plugin_data_kept`, 409): what a Maktaba plugin wrote is the
+  library's own and stays.
+- **Install** (`POST /api/plugins/{id}/install`, `{"enable": bool}`) puts a removed Maktaba
+  plugin back from the release: want `installed`, or `enabled`, and its parked jobs run again.
+  Its code ships with the server, so nothing is downloaded. A package of a Maktaba plugin from
+  the store or a file is trusted only by 54.45 §3. No such package can be had yet: the store
+  is not deployed and Maktaba's key is not made. So installing from a store package or a file
+  (§2's other half) comes with the offline files of 54.49, through the same rule. Any other id
+  is `404` here and installs from a file or the store as before.
+- **The runner and the worker (§4).** A removed plugin's stages are never claimed, so its code
+  never runs: the runner imports a stage's module only for a job. The code stays in the signed
+  pipeline wheel, which is the package's own code at the server's version (54.45 §3). Moving
+  it out of the wheel waits for 54.47, which lets a plugin's version differ from the server's.
+- **The page (§5).** A Maktaba plugin shows Remove, with words saying its jobs wait and its
+  data stays. A removed one shows Install. The "cannot be removed yet" refusal is gone; the
+  other with-release refusals (update, roll back, grants, schema settings) stay until 54.47.
+  `source` stays `release` for a plugin that came with the server.
+- **Tests.**
+  - `api/internal/handlers/plugins/published_pg_test.go`: removal parks the queued job (still
+    pending), the page says `absent`, installing again turns it on with the job still there,
+    install without enable is off, purge is refused, and a third-party id is refused. Removing
+    `transcription` while `subtitles` is on is `component_required_by`, and allowed once
+    `subtitles` is off.
+  - `TestEveryPluginRouteIsAdminOnly` lists the new route.
+  - `pipeline/tests/components/test_stage_groups.py`: an `absent` component's stages are off
+    with `component_off`, and open again when enabled.
+  - `PluginsSection.test.tsx`: Remove and its confirmation, Install of a removed plugin, the
+    words in English and Arabic.
+  - Update rehearsal scenario 15: a Maktaba plugin removed on the release under test stays
+    removed through a failed update's rollback and through the next update.
+
