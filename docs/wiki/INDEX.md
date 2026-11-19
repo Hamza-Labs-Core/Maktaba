@@ -13,6 +13,7 @@
 |---|---|---|
 | Stories | [stories-map.md](stories-map.md) | 273 |
 | Phases | [build-order.md](build-order.md) | 17 implementation phases |
+| Epic status | [epic-status.md](epic-status.md) | every epic, story by story |
 | Features | [features.md](features.md) | per epic |
 | DB entities | [entities.md](entities.md) | 32 |
 | API endpoints | [api-catalog.md](api-catalog.md) | 70 |

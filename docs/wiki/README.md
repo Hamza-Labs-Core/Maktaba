@@ -11,6 +11,7 @@ Wiki pages for the Maktaba platform — a self-hosted, RTL-first media library w
 | [file-inventory.md](file-inventory.md) | _What is every file in this repo?_ — Annotated index of all mockups, specs, plans, diagrams, infra, and reviews. |
 | [build-order.md](build-order.md) | _What do we build first?_ — Phase 0 → Phase 10 sequencing, critical-path stories, and parallelizable tracks. |
 | [review-status.md](review-status.md) | _What audit findings remain?_ — Status of REVIEW.md and four PLAN_REVIEW files. |
+| [epic-status.md](epic-status.md) | _Is each epic done?_ — Story-by-story status of every epic on `main`, with what is left. |
 | [features.md](features.md) | _What features exist?_ — Feature catalog across all epics. |
 | [stories-map.md](stories-map.md) | _Where is story X?_ — Story-to-file mapping. |
 | [entities.md](entities.md) | _What entities does the system model?_ — Domain entities. |
@@ -143,6 +144,7 @@ python3 docs/wiki/db/generate_wiki.py --ar-todo [--epic N]
 - **"I'm picking up HLB-47 — where's everything?"** → [linear-map.md](linear-map.md), search for `HLB-47`.
 - **"Where does the OpenAPI spec live, and which stories own each endpoint?"** → [linear-map.md](linear-map.md) — every story row lists its endpoints.
 - **"Are there open audit issues I should worry about before merging?"** → [review-status.md](review-status.md).
+- **"Which stories are still not built?"** → [epic-status.md](epic-status.md) → "What is left".
 - **"Which mockups exist for Epic 11?"** → [file-inventory.md](file-inventory.md) → "HTML mockups" section.
 
 ## Source artifacts
