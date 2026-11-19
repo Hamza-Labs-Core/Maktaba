@@ -3,6 +3,10 @@
 # says what each level changed.
 level: 1
 operations:
+  DELETE /broadcast/access/invites/{id}:
+    "204": null
+  DELETE /broadcast/access/invites/{id}/devices/{pass}:
+    "204": null
   DELETE /collections/{id}:
     "204": null
   DELETE /collections/{id}/items/{video_id}:
@@ -22,6 +26,8 @@ operations:
           items:
             type: string
   DELETE /libraries/{id}/youtube/sources/{sid}:
+    "204": null
+  DELETE /me/app-sign-ins/{id}:
     "204": null
   DELETE /me/play-queues/{id}:
     "204": null
@@ -109,6 +115,51 @@ operations:
         - id
         - is_admin
         - username
+  GET /broadcast/access:
+    "200":
+      type: object
+      properties:
+        channels:
+          type: array
+          items:
+            type: object
+            properties:
+              access:
+                type: string
+              id:
+                type: string
+              max_viewers:
+                type: integer
+              slug:
+                type: string
+        daily_minutes:
+          type: integer
+        max_sessions_per_ip:
+          type: integer
+        max_viewers:
+          type: integer
+        open_access_enabled:
+          type: boolean
+        open_in_plan:
+          type: boolean
+        verification:
+          type: object
+  GET /broadcast/access/invites:
+    "200":
+      type: object
+      properties:
+        invites:
+          type: array
+          items:
+            type: object
+  GET /broadcast/access/invites/{id}/devices:
+    "200":
+      type: object
+      properties:
+        devices:
+          type: array
+          items:
+            type: object
   GET /capabilities:
     "200":
       type: object
@@ -1077,6 +1128,31 @@ operations:
   GET /libraries/summary:
     "200":
       type: object
+  GET /me/app-sign-ins:
+    "200":
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              created_at:
+                type: string
+              current:
+                type: boolean
+              expires_at:
+                type: string
+              id:
+                type: string
+              kind:
+                type: string
+              label:
+                type: string
+              last_seen_at:
+                type: string
+              via:
+                type: string
   GET /me/history:
     "200":
       type: object
@@ -1492,6 +1568,20 @@ operations:
   GET /me/videos/{id}:
     "200":
       type: object
+  GET /pairing/cloud-code/{code}:
+    "200":
+      type: object
+      properties:
+        app_version:
+          type: string
+        code:
+          type: string
+        country:
+          type: string
+        expires_at:
+          type: string
+        platform:
+          type: string
   GET /parental/children:
     "200":
       type: object
@@ -3503,6 +3593,33 @@ operations:
     "200":
       type: object
       properties:
+        advisories:
+          type: array
+          items:
+            type: object
+            properties:
+              affected:
+                type: string
+              cve:
+                type: string
+              fixed_in:
+                type: string
+              id:
+                type: string
+              published_at:
+                type: string
+              severity:
+                type: string
+              summary:
+                type: string
+              url:
+                type: string
+        advisories_checked:
+          type: boolean
+        advisories_fixed_in:
+          type: string
+        advisories_url:
+          type: string
         available:
           type: boolean
         container:
@@ -3560,6 +3677,294 @@ operations:
           type: string
       required:
         - items
+  GET /tv/broadcast:
+    "200":
+      type: object
+      properties:
+        channels:
+          type: array
+          items:
+            type: object
+            properties:
+              access:
+                type: string
+              configured:
+                type: boolean
+              countries:
+                type: array
+                items:
+                  type: string
+              detail:
+                type: string
+              dropped_rungs:
+                type: integer
+              id:
+                type: string
+              mode:
+                type: string
+              name:
+                type: string
+              number:
+                type: integer
+              published_at:
+                type: string
+              published_by:
+                type: string
+              rungs:
+                type: array
+                items:
+                  type: string
+              slug:
+                type: string
+              state:
+                type: string
+        checks:
+          type: array
+          items:
+            type: string
+        cloud:
+          type: string
+        plan:
+          type: object
+        uplink:
+          type: object
+          properties:
+            kbps:
+              type: integer
+            measured_at:
+              type: string
+        uplink_budget_kbps:
+          type: integer
+        uplink_used_kbps:
+          type: integer
+  GET /tv/broadcast/analytics:
+    "200":
+      type: object
+      properties:
+        cloud:
+          type: string
+        report:
+          type: object
+          properties:
+            avg_watch_minutes:
+              type: number
+            blocked:
+              type: array
+              items:
+                type: object
+                properties:
+                  key:
+                    type: string
+                  value:
+                    type: number
+            countries:
+              type: array
+              items:
+                type: object
+                properties:
+                  key:
+                    type: string
+                  value:
+                    type: number
+            devices:
+              type: array
+              items:
+                type: object
+                properties:
+                  key:
+                    type: string
+                  value:
+                    type: number
+            errors:
+              type: array
+              items:
+                type: object
+                properties:
+                  key:
+                    type: string
+                  value:
+                    type: number
+            hours:
+              type: object
+              properties:
+                allowance:
+                  type: number
+                month:
+                  type: number
+                today:
+                  type: number
+                week:
+                  type: number
+            k:
+              type: integer
+            level:
+              type: string
+            live_viewers:
+              type: number
+            peak:
+              type: number
+            period_hours:
+              type: number
+            quality:
+              type: array
+              items:
+                type: object
+                properties:
+                  key:
+                    type: string
+                  value:
+                    type: number
+            rebuffer_ratio:
+              type: number
+            sessions:
+              type: number
+            time_zone:
+              type: string
+  GET /tv/broadcast/moderation:
+    "200":
+      type: object
+      properties:
+        cloud:
+          type: string
+        records:
+          type: object
+          properties:
+            reports:
+              type: array
+              items:
+                type: object
+                properties:
+                  at:
+                    type: string
+                  category:
+                    type: string
+                  channel:
+                    type: string
+                  id:
+                    type: string
+                  programme:
+                    type: string
+                  received_at:
+                    type: string
+                  status:
+                    type: string
+                  text:
+                    type: string
+            statements:
+              type: array
+              items:
+                type: object
+                properties:
+                  action_id:
+                    type: string
+                  can_counter:
+                    type: boolean
+                  counter_notice:
+                    type: object
+                  created_at:
+                    type: string
+                  id:
+                    type: string
+                  kind:
+                    type: string
+                  params:
+                    type: object
+            strike_limit:
+              type: integer
+            strike_window_months:
+              type: integer
+            strikes:
+              type: integer
+            terminated:
+              type: boolean
+        takedowns:
+          type: array
+          items:
+            type: object
+            properties:
+              applied_at:
+                type: string
+              id:
+                type: string
+              notice_id:
+                type: string
+              programme:
+                type: string
+              restored_at:
+                type: string
+              scope:
+                type: string
+              source_kind:
+                type: string
+              source_ref:
+                type: string
+              video_id:
+                type: string
+  GET /tv/broadcast/publishable:
+    "200":
+      type: object
+      properties:
+        publishable_only:
+          type: boolean
+        shares:
+          type: array
+          items:
+            type: object
+            properties:
+              channel_id:
+                type: string
+              percent:
+                type: integer
+              publishable_seconds:
+                type: integer
+              scheduled_seconds:
+                type: integer
+              suggestions:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    kind:
+                      type: string
+                    label:
+                      type: string
+                    ref:
+                      type: string
+                    seconds:
+                      type: integer
+                    url:
+                      type: string
+        sources:
+          type: array
+          items:
+            type: object
+            properties:
+              credit:
+                type: string
+              id:
+                type: string
+              kind:
+                type: string
+              label:
+                type: string
+              non_commercial:
+                type: boolean
+              note:
+                type: string
+              proof_file:
+                type: string
+              proof_url:
+                type: string
+              recorded_at:
+                type: string
+              recorded_by:
+                type: string
+              ref:
+                type: string
+              revoked_at:
+                type: string
+              revoked_reason:
+                type: string
   GET /tv/hdhr/allowed:
     "200":
       type: object
@@ -4611,6 +5016,9 @@ operations:
         - expires_in
         - token_type
         - user
+  POST /broadcast/access/invites:
+    "201":
+      type: object
   POST /cast/grants:
     "201":
       type: object
@@ -5661,6 +6069,28 @@ operations:
       properties:
         status:
           type: string
+  POST /pairing/cloud-approve:
+    "200":
+      type: object
+      properties:
+        country:
+          type: string
+        platform:
+          type: string
+        status:
+          type: string
+        user_id:
+          type: string
+  POST /pairing/cloud-assertion:
+    "200":
+      type: object
+      properties:
+        country:
+          type: string
+        platform:
+          type: string
+        status:
+          type: string
   POST /parental/requests/{id}/approve:
     "200":
       type: object
@@ -6151,6 +6581,8 @@ operations:
           type: string
         start_sec:
           type: number
+        stream_sig:
+          type: string
         user_id:
           type: string
         video_id:
@@ -6184,6 +6616,154 @@ operations:
       required:
         - id
         - name
+  POST /tv/broadcast/channels/{id}/publish:
+    "200":
+      type: object
+      properties:
+        access:
+          type: string
+        configured:
+          type: boolean
+        countries:
+          type: array
+          items:
+            type: string
+        detail:
+          type: string
+        dropped_rungs:
+          type: integer
+        id:
+          type: string
+        mode:
+          type: string
+        name:
+          type: string
+        number:
+          type: integer
+        published_at:
+          type: string
+        published_by:
+          type: string
+        rungs:
+          type: array
+          items:
+            type: string
+        slug:
+          type: string
+        state:
+          type: string
+  POST /tv/broadcast/channels/{id}/unpublish:
+    "200":
+      type: object
+      properties:
+        access:
+          type: string
+        configured:
+          type: boolean
+        countries:
+          type: array
+          items:
+            type: string
+        detail:
+          type: string
+        dropped_rungs:
+          type: integer
+        id:
+          type: string
+        mode:
+          type: string
+        name:
+          type: string
+        number:
+          type: integer
+        published_at:
+          type: string
+        published_by:
+          type: string
+        rungs:
+          type: array
+          items:
+            type: string
+        slug:
+          type: string
+        state:
+          type: string
+  POST /tv/broadcast/moderation/counter-notices:
+    "201":
+      type: object
+      properties:
+        id:
+          type: string
+        restore_after:
+          type: string
+  POST /tv/broadcast/publishable/sources:
+    "201":
+      type: object
+      properties:
+        credit:
+          type: string
+        id:
+          type: string
+        kind:
+          type: string
+        label:
+          type: string
+        non_commercial:
+          type: boolean
+        note:
+          type: string
+        proof_file:
+          type: string
+        proof_url:
+          type: string
+        recorded_at:
+          type: string
+        recorded_by:
+          type: string
+        ref:
+          type: string
+        revoked_at:
+          type: string
+        revoked_reason:
+          type: string
+  POST /tv/broadcast/publishable/sources/{id}/withdraw:
+    "200":
+      type: object
+      properties:
+        credit:
+          type: string
+        id:
+          type: string
+        kind:
+          type: string
+        label:
+          type: string
+        non_commercial:
+          type: boolean
+        note:
+          type: string
+        proof_file:
+          type: string
+        proof_url:
+          type: string
+        recorded_at:
+          type: string
+        recorded_by:
+          type: string
+        ref:
+          type: string
+        revoked_at:
+          type: string
+        revoked_reason:
+          type: string
+  POST /tv/broadcast/speedtest:
+    "200":
+      type: object
+      properties:
+        kbps:
+          type: integer
+        measured_at:
+          type: string
   POST /users:
     "201":
       type: object
@@ -6323,6 +6903,10 @@ operations:
           type: string
         tracking:
           type: boolean
+  PUT /broadcast/access/channels/{id}:
+    "204": null
+  PUT /broadcast/access/limits:
+    "204": null
   PUT /channels/{id}/age-tier:
     "200":
       type: object
@@ -6790,6 +7374,54 @@ operations:
               type: string
             theme:
               type: string
+  PUT /tv/broadcast/channels/{id}:
+    "200":
+      type: object
+      properties:
+        access:
+          type: string
+        configured:
+          type: boolean
+        countries:
+          type: array
+          items:
+            type: string
+        detail:
+          type: string
+        dropped_rungs:
+          type: integer
+        id:
+          type: string
+        mode:
+          type: string
+        name:
+          type: string
+        number:
+          type: integer
+        published_at:
+          type: string
+        published_by:
+          type: string
+        rungs:
+          type: array
+          items:
+            type: string
+        slug:
+          type: string
+        state:
+          type: string
+  PUT /tv/broadcast/publishable/items:
+    "200":
+      type: object
+      properties:
+        changed:
+          type: integer
+  PUT /tv/broadcast/publishable/only:
+    "200":
+      type: object
+      properties:
+        publishable_only:
+          type: boolean
   PUT /tv/hdhr/allowed:
     "200":
       type: object

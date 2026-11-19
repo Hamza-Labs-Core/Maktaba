@@ -59,28 +59,6 @@ const SEVERITY_TONE: Record<SecurityAdvisory["severity"], "error" | "warn" | "ne
   unknown: "neutral",
 };
 
-/** The release that fixes every advisory listed: the highest of their fixes ("" when one
- * has none yet). Versions as the Updates page writes them, without the "v". */
-export function fixingRelease(advisories: SecurityAdvisory[]): string {
-  let best = "";
-  for (const a of advisories) {
-    if (!a.fixed_in) return "";
-    const v = a.fixed_in.replace(/^v(?=\d)/, "");
-    if (!best || compareVersions(v, best) > 0) best = v;
-  }
-  return best;
-}
-
-function compareVersions(a: string, b: string): number {
-  const pa = a.split(/[.-]/).map((x) => Number.parseInt(x, 10) || 0);
-  const pb = b.split(/[.-]/).map((x) => Number.parseInt(x, 10) || 0);
-  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
-    const d = (pa[i] ?? 0) - (pb[i] ?? 0);
-    if (d !== 0) return d;
-  }
-  return 0;
-}
-
 /** Story 23.8 AC4 / TC2: the advisories that affect this version, and what to do. */
 function AdvisoriesSection({
   status,
@@ -95,7 +73,9 @@ function AdvisoriesSection({
   const list = status?.advisories ?? [];
   const checked = Boolean(status?.advisories_checked);
   const all = status?.advisories_url || ADVISORIES_URL;
-  const fix = checked && list.length > 0 ? fixingRelease(list) : "";
+  // the server's: the lowest release none of them affects, every branch's ranges counted
+  const fix =
+    checked && list.length > 0 ? (status?.advisories_fixed_in ?? "").replace(/^v(?=\d)/, "") : "";
   return (
     <section
       aria-labelledby="about-advisories"

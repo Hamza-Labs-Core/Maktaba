@@ -70,6 +70,9 @@ type UpdateStatus struct {
 	Advisories        []Advisory `json:"advisories"`
 	AdvisoriesChecked bool       `json:"advisories_checked"`
 	AdvisoriesURL     string     `json:"advisories_url"`
+	// AdvisoriesFixedIn is the lowest release that none of Advisories affects (every
+	// supported branch's ranges counted), "" when there is none yet.
+	AdvisoriesFixedIn string `json:"advisories_fixed_in,omitempty"`
 }
 
 // UpdaterConfig configures an Updater. Zero values are sane: empty Repo
@@ -361,6 +364,7 @@ func (u *Updater) check(ctx context.Context) (UpdateStatus, error) {
 		u.logErr(aerr)
 	} else {
 		status.Advisories = affecting(advs, u.current)
+		status.AdvisoriesFixedIn = fixedForAll(advs, u.current)
 		status.AdvisoriesChecked = true
 	}
 	latest, ok := selectLatest(rels, u.channel)

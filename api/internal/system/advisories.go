@@ -61,11 +61,31 @@ func (u *Updater) AdvisoriesURL() string {
 	return "https://github.com/" + u.repo + "/security/advisories"
 }
 
+// advisoryPages bounds the pages read (100 advisories each): a list longer than that is
+// read in part, newest first, and the check says so (an error: never "none").
+const advisoryPages = 20
+
 func (u *Updater) fetchAdvisories(ctx context.Context) ([]ghAdvisory, error) {
-	url := u.baseURL + "/repos/" + u.repo + "/security-advisories?state=published&per_page=100&sort=published&direction=desc"
+	next := u.baseURL + "/repos/" + u.repo + "/security-advisories?state=published&per_page=100&sort=published&direction=desc"
+	var all []ghAdvisory
+	for page := 0; next != ""; page++ {
+		if page == advisoryPages {
+			return nil, fmt.Errorf("github security advisories: more than %d pages", advisoryPages)
+		}
+		list, link, err := u.fetchAdvisoryPage(ctx, next)
+		if err != nil {
+			return nil, err
+		}
+		all = append(all, list...)
+		next = nextLink(link)
+	}
+	return all, nil
+}
+
+func (u *Updater) fetchAdvisoryPage(ctx context.Context, url string) ([]ghAdvisory, string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
@@ -74,17 +94,96 @@ func (u *Updater) fetchAdvisories(ctx context.Context) ([]ghAdvisory, error) {
 	}
 	resp, err := u.httpc.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("fetch advisories: %w", err)
+		return nil, "", fmt.Errorf("fetch advisories: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("github security advisories: HTTP %d", resp.StatusCode)
+		return nil, "", fmt.Errorf("github security advisories: HTTP %d", resp.StatusCode)
 	}
 	var out []ghAdvisory
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(&out); err != nil {
-		return nil, fmt.Errorf("decode advisories: %w", err)
+		return nil, "", fmt.Errorf("decode advisories: %w", err)
 	}
-	return out, nil
+	return out, resp.Header.Get("Link"), nil
+}
+
+// nextLink is the rel="next" URL of a GitHub Link header, or "".
+func nextLink(h string) string {
+	for _, part := range strings.Split(h, ",") {
+		seg := strings.Split(part, ";")
+		if len(seg) < 2 {
+			continue
+		}
+		for _, p := range seg[1:] {
+			if strings.TrimSpace(p) == `rel="next"` {
+				return strings.Trim(strings.TrimSpace(seg[0]), "<>")
+			}
+		}
+	}
+	return ""
+}
+
+// fixedForAll is the lowest release newer than version that none of the advisories
+// affecting version (affecting's) covers: among their patched versions, the first that
+// is in no vulnerable range of any of them. "" when there is none (one has no fix yet, or
+// every candidate is still covered by another). It is the release an update to would fix
+// them all, across supported branches (a fix on 1.0.x is no fix of a 2.0 range).
+func fixedForAll(list []ghAdvisory, version string) string {
+	if !validSemver(version) {
+		return ""
+	}
+	var hit []ghAdvisory
+	candidates := map[string]bool{}
+	for _, a := range list {
+		if a.WithdrawnAt != nil || (a.State != "" && a.State != "published") {
+			continue
+		}
+		affects := false
+		for _, v := range a.Vulnerabilities {
+			if inRange(version, v.VulnerableVersionRange) {
+				affects = true
+				break
+			}
+		}
+		if !affects {
+			continue
+		}
+		hit = append(hit, a)
+		for _, v := range a.Vulnerabilities {
+			for _, p := range strings.Split(v.PatchedVersions, ",") {
+				p = strings.TrimSpace(strings.TrimLeft(strings.TrimSpace(p), ">= "))
+				if validSemver(p) && compareSemver(p, version) > 0 {
+					candidates[p] = true
+				}
+			}
+		}
+	}
+	if len(hit) == 0 {
+		return ""
+	}
+	sorted := make([]string, 0, len(candidates))
+	for c := range candidates {
+		sorted = append(sorted, c)
+	}
+	sort.Slice(sorted, func(i, j int) bool { return compareSemver(sorted[i], sorted[j]) < 0 })
+	for _, c := range sorted {
+		covered := false
+		for _, a := range hit {
+			for _, v := range a.Vulnerabilities {
+				if inRange(c, v.VulnerableVersionRange) {
+					covered = true
+					break
+				}
+			}
+			if covered {
+				break
+			}
+		}
+		if !covered {
+			return c
+		}
+	}
+	return ""
 }
 
 // affecting returns the advisories whose affected ranges cover version, most severe

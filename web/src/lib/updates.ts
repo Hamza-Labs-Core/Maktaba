@@ -31,6 +31,8 @@ export interface UpdateStatus {
   advisories_checked?: boolean;
   /** The repository's list of every advisory. */
   advisories_url?: string;
+  /** The lowest release none of `advisories` affects ("" or absent: none yet). */
+  advisories_fixed_in?: string;
 }
 
 /** One published security advisory that affects the running release (story 23.8). */

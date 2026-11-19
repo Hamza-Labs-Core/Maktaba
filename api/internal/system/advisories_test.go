@@ -64,6 +64,10 @@ func TestStatusCarriesTheAdvisoriesThatAffectThisVersion(t *testing.T) {
 		!strings.HasSuffix(a.URL, "GHSA-aaaa-aaaa-aaaa") || a.Summary == "" {
 		t.Fatalf("advisory = %+v", a)
 	}
+	// 0.3.151 fixes B but A still covers it: 0.3.152 fixes both
+	if s.AdvisoriesFixedIn != "0.3.152" {
+		t.Fatalf("advisories_fixed_in = %q, want 0.3.152", s.AdvisoriesFixedIn)
+	}
 	// the update that fixes it is there too: the client's upgrade prompt
 	if !s.Available || s.LatestVersion != "v0.3.152" {
 		t.Fatalf("update = %+v", s)
@@ -151,6 +155,98 @@ func TestSeverityWords(t *testing.T) {
 	for in, want := range map[string]string{"CRITICAL": "critical", "moderate": "medium", "low": "low", "": "unknown", "weird": "unknown"} {
 		if got := severityWord(in); got != want {
 			t.Errorf("severityWord(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// TestTheAdvisoriesAreReadPageByPage: an advisory past the first page (100 a page) is
+// found; a list that never ends is an error (unknown), never "none".
+func TestTheAdvisoriesAreReadPageByPage(t *testing.T) {
+	var srvURL string
+	pages := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasSuffix(r.URL.Path, "/security-advisories") {
+			_ = json.NewEncoder(w).Encode([]ghRelease{{TagName: "v0.3.152", HTMLURL: "rel"}})
+			return
+		}
+		pages++
+		switch r.URL.Query().Get("page") {
+		case "":
+			w.Header().Set("Link", `<`+srvURL+`/repos/o/r/security-advisories?page=2>; rel="next", <`+srvURL+`/repos/o/r/security-advisories?page=2>; rel="last"`)
+			_, _ = w.Write([]byte(`[{"ghsa_id": "GHSA-new", "summary": "n", "severity": "low", "state": "published",
+				"vulnerabilities": [{"vulnerable_version_range": ">= 9.0.0", "patched_versions": "9.1.0"}]}]`))
+		case "2":
+			_, _ = w.Write([]byte(`[{"ghsa_id": "GHSA-old", "summary": "o", "severity": "high", "state": "published",
+				"vulnerabilities": [{"vulnerable_version_range": "< 0.3.150", "patched_versions": "0.3.150"}]}]`))
+		}
+	}))
+	t.Cleanup(srv.Close)
+	srvURL = srv.URL
+	u := NewUpdater(UpdaterConfig{Repo: "o/r", CurrentVersion: "v0.3.140", APIBaseURL: srv.URL})
+	s := u.Status(context.Background(), true)
+	if !s.AdvisoriesChecked || len(s.Advisories) != 1 || s.Advisories[0].ID != "GHSA-old" || pages != 2 {
+		t.Fatalf("pages %d, advisories %+v (checked %v)", pages, s.Advisories, s.AdvisoriesChecked)
+	}
+
+	endless := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasSuffix(r.URL.Path, "/security-advisories") {
+			_ = json.NewEncoder(w).Encode([]ghRelease{{TagName: "v0.3.152", HTMLURL: "rel"}})
+			return
+		}
+		w.Header().Set("Link", `<http://`+r.Host+r.URL.Path+`?page=x>; rel="next"`)
+		_, _ = w.Write([]byte(`[]`))
+	}))
+	t.Cleanup(endless.Close)
+	u = NewUpdater(UpdaterConfig{Repo: "o/r", CurrentVersion: "v0.3.140", APIBaseURL: endless.URL})
+	if s := u.Status(context.Background(), true); s.AdvisoriesChecked || !s.Available {
+		t.Fatalf("an endless list: checked %v (want false), update still answered %v", s.AdvisoriesChecked, s.Available)
+	}
+}
+
+func TestNextLink(t *testing.T) {
+	for h, want := range map[string]string{
+		``: "",
+		`<https://api/x?page=2>; rel="next", <https://api/x?page=5>; rel="last"`: "https://api/x?page=2",
+		`<https://api/x?page=1>; rel="prev", <https://api/x?page=3>; rel="next"`: "https://api/x?page=3",
+		`<https://api/x?page=1>; rel="first"`:                                    "",
+	} {
+		if got := nextLink(h); got != want {
+			t.Errorf("nextLink(%q) = %q, want %q", h, got, want)
+		}
+	}
+}
+
+// TestFixedForAll: the release to update to must fix every advisory, on every branch its
+// ranges name, and a prerelease is below its release.
+func TestFixedForAll(t *testing.T) {
+	// adv is one advisory of (range, patched) pairs, one per branch
+	adv := func(pairs ...string) ghAdvisory {
+		a := ghAdvisory{State: "published"}
+		for i := 0; i+1 < len(pairs); i += 2 {
+			a.Vulnerabilities = append(a.Vulnerabilities, struct {
+				VulnerableVersionRange string `json:"vulnerable_version_range"`
+				PatchedVersions        string `json:"patched_versions"`
+			}{pairs[i], pairs[i+1]})
+		}
+		return a
+	}
+	cases := []struct {
+		name    string
+		list    []ghAdvisory
+		version string
+		want    string
+	}{
+		{"one fix", []ghAdvisory{adv("< 1.0.1", "1.0.1")}, "1.0.0", "1.0.1"},
+		// A: 1.0.x fixed in 1.0.1, 2.0.0 still affected (fixed in 2.0.1); B fixed in 2.0.0
+		{"branches", []ghAdvisory{adv("< 1.0.1", "1.0.1", ">= 2.0.0, < 2.0.1", "2.0.1"), adv("< 2.0.0", "2.0.0")}, "1.0.0", "2.0.1"},
+		{"no fix yet", []ghAdvisory{adv("< 1.0.1", "1.0.1"), adv("<= 9.9.9", "")}, "1.0.0", ""},
+		{"a prerelease is below its release", []ghAdvisory{adv("< 1.6.0-rc.1", "1.6.0-rc.1"), adv("< 1.6.0", "1.6.0")}, "1.5.0", "1.6.0"},
+		{"none affect", []ghAdvisory{adv("< 1.0.0", "1.0.0")}, "1.2.0", ""},
+		{"not a release", []ghAdvisory{adv("< 1.0.0", "1.0.0")}, "dev", ""},
+	}
+	for _, c := range cases {
+		if got := fixedForAll(c.list, c.version); got != c.want {
+			t.Errorf("%s: fixedForAll = %q, want %q", c.name, got, c.want)
 		}
 	}
 }

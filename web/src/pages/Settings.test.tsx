@@ -1324,6 +1324,7 @@ describe("Settings about (test-cases/settings-about.md)", () => {
         ],
         advisories_checked: true,
         advisories_url: ALL,
+        advisories_fixed_in: "1.6.0",
       },
     });
     renderSettings("/settings/about");
@@ -1344,7 +1345,8 @@ describe("Settings about (test-cases/settings-about.md)", () => {
     expect(first).toHaveTextContent("fixed in 1.6.0");
     // no CVE: the GHSA id
     expect(within(section).getAllByTestId("about-advisory")[1]).toHaveTextContent("GHSA-2");
-    // the release that fixes them all: the highest fix; an admin gets the Updates page
+    // the release that fixes them all (the server's advisories_fixed_in); an admin gets the
+    // Updates page
     const prompt = within(section).getByTestId("about-advisories-update");
     expect(prompt).toHaveTextContent("Update to version 1.6.0: it fixes these advisories.");
     expect(within(prompt).getByRole("link", { name: "Open Updates" })).toHaveAttribute(
@@ -1361,6 +1363,7 @@ describe("Settings about (test-cases/settings-about.md)", () => {
         advisories: [ADVISORY],
         advisories_checked: true,
         advisories_url: ALL,
+        advisories_fixed_in: "1.6.0",
       },
     });
     const { unmount } = renderSettings("/settings/about", { user: memberUser });
@@ -1423,6 +1426,7 @@ describe("Settings about (test-cases/settings-about.md)", () => {
         advisories: [ADVISORY],
         advisories_checked: true,
         advisories_url: ALL,
+        advisories_fixed_in: "1.6.0",
       },
     });
     localStorage.setItem("mkt:locale", "ar");
