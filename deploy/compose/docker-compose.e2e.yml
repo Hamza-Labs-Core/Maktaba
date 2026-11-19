@@ -9,7 +9,7 @@
 #
 # This overlay publishes api:8080 on host port 18080 (chosen high to
 # avoid colliding with anything the canonical stack already binds:
-# 80/443 Caddy, 5432 postgres, 8000 chroma). Layer it on top of the
+# 80/443 Caddy, 5432 postgres). Layer it on top of the
 # canonical file ONLY for the e2e gate:
 #
 #   docker compose -f deploy/compose/docker-compose.yml \

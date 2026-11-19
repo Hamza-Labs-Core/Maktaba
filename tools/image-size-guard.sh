@@ -15,7 +15,7 @@
 # Limits track AC4:
 #   api       <=   60 MiB
 #   streaming <=   80 MiB  (FFmpeg static excluded, per AC4)
-#   pipeline  <= 1200 MiB  (Whisper + Chroma)
+#   pipeline  <= 1200 MiB  (Whisper + the embedder)
 #   web       <=   30 MiB
 
 set -euo pipefail

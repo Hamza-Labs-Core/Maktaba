@@ -64,7 +64,7 @@ through [`epics/epic-06-job-queue.md`](epics/epic-06-job-queue.md).
 | STT — Faster-Whisper | `faster-whisper` | ≥ 1.0 | CUDA + CPU; ctranslate2 backend. (Epic 03 Story 3.3) |
 | STT — OpenAI | `openai` | ≥ 1.0 | Network backend with budget cap. (Epic 03 Story 3.4) |
 | Embeddings | `sentence-transformers` | latest | `intfloat/multilingual-e5-large` by default. |
-| Vector store | `chromadb` (Persistent client, DuckDB+Parquet) | latest | Embedded; no extra service. |
+| Vector store | Postgres `pgvector` (`halfvec(384)`, HNSW) | 0.8.7 | In the home's Postgres (Epic 43); Chroma retired in story 43.5. |
 | Diarization (opt-in) | `pyannote.audio` | ≥ 2.1 | Heavyweight; lazy import; v1.1 deferred speaker matching. |
 | Audio I/O | `audioread`, `librosa` | latest | Silence detection / silence-map for OpenAI chunker. |
 | Filesystem watch | `watchdog` | latest | inotify / FSEvents / ReadDirectoryChangesW. |
@@ -130,7 +130,6 @@ through [`epics/epic-06-job-queue.md`](epics/epic-06-job-queue.md).
 | `audioread` | latest | Pipeline | 03 | Silence-map preparation. |
 | `librosa` | latest | Pipeline | 03 | Silence detection for OpenAI chunker. |
 | `regex` | latest | Pipeline | 04 | Grapheme-cluster line wrapping for SRT/VTT. |
-| `chromadb` | latest | Pipeline | 05 | Embedded vector DB (PersistentClient). |
 | `sentence-transformers` | latest | Pipeline | 05 | `intfloat/multilingual-e5-large` + `-base` fallback. |
 | `pg_trgm` (Postgres ext.) | bundled | Postgres | 05 | GIN index for fuzzy suggestion fallback. |
 | `aiosqlite` | latest | Pipeline tests | 06 | Fast SQLite-backed unit tests for queue logic. |

@@ -88,8 +88,6 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      chroma:
-        condition: service_healthy
       # Base file gates this on `api: service_healthy` so pipeline
       # waits for migrations. In dev, api's healthcheck is disabled
       # (the dev image doesn't bundle /usr/local/bin/healthcheck),
@@ -111,7 +109,6 @@ services:
       # `DATABASE_URL` used by api/streaming doesn't apply here — the
       # pipeline code path is namespace-scoped.
       MAKTABA_DATABASE_URL: postgres://maktaba:maktaba@postgres:5432/maktaba?sslmode=disable
-      MAKTABA_CHROMA_URL: http://chroma:8000
     command: ["bash", "/src/pipeline/dev-watch.sh"]
     # Override the canonical healthcheck: dev's Dockerfile.dev doesn't
     # put a venv on PATH (uv manages an in-image venv at runtime), so

@@ -70,8 +70,8 @@ func TestTheIndexWorker(t *testing.T) {
 			t.Errorf("index worker %s = %q, want %q", k, m[k], want)
 		}
 	}
-	if m["MAKTABA_CHROMA_DIR"] == "" {
-		t.Error("the index worker must know the Chroma directory")
+	if _, set := m["MAKTABA_CHROMA_DIR"]; set {
+		t.Error("Chroma is retired (story 43.5): no worker is told a Chroma folder")
 	}
 
 	main := envMap(mainProcess(t, cfg).Cmd.Env)
@@ -84,7 +84,7 @@ func TestTheIndexWorker(t *testing.T) {
 	if main["MAKTABA_PIPELINE_SEMANTIC"] != "off" || main["MAKTABA_PIPELINE_SHARE"] != "" {
 		t.Errorf("the main worker: semantic %q, share %q", main["MAKTABA_PIPELINE_SEMANTIC"], main["MAKTABA_PIPELINE_SHARE"])
 	}
-	if main["MAKTABA_PIPELINE_GRPC_ADDR"] != "127.0.0.1:9090" || main["MAKTABA_CHROMA_DIR"] != m["MAKTABA_CHROMA_DIR"] {
+	if main["MAKTABA_PIPELINE_GRPC_ADDR"] != "127.0.0.1:9090" {
 		t.Errorf("the main worker keeps its gRPC port: %q", main["MAKTABA_PIPELINE_GRPC_ADDR"])
 	}
 

@@ -11,9 +11,11 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/ports"
 )
 
-// IndexStages are the stages that open the search index (Chroma): index writes the
-// vectors, chapter_infer reads them back. Chroma wants one process per directory, so
-// they run in one worker, the one that also answers the semantic search.
+// IndexStages are the stages of the search index: index writes the vectors
+// (segment_embeddings), chapter_infer reads them back. They run in one worker, the one
+// that also answers the semantic search (it holds the embedding model), away from the
+// share's stalls. (They were one worker's because Chroma wanted one process per
+// directory; Chroma was retired in story 43.5.)
 const IndexStages = "index,chapter_infer"
 
 // IndexInstance is the index worker's instance name (pipeline/index).
@@ -24,8 +26,7 @@ const (
 	// asked to stop (MAKTABA_PIPELINE_DRAIN_SEC): no new search index write starts
 	// then, and the one running finishes (search/gate.py), so most stops take seconds.
 	IndexDrain = 30 * time.Second
-	// IndexStopGrace is its stop grace: the drain, the Chroma close and the exit after
-	// it. Within the launcher's 60 s, which also stops postgres after the roles.
+	// IndexStopGrace is its stop grace: the drain and the exit after it. Within the launcher's 60 s, which also stops postgres after the roles.
 	IndexStopGrace = 45 * time.Second
 )
 
@@ -46,9 +47,8 @@ func pipelineIndexLogs(cfg config.Config) string {
 // IndexWorkerOn reports whether the search index runs in a pipeline worker of its own
 // (BuildIndexWorker): [pipeline] index_worker is not off, this machine is a home (the
 // index stage is home-only: a node's pipeline never claims it), and the operator's
-// own environment does not place the index stage itself (operatorKeepsIndexOff). The main worker then leaves IndexStages to it and opens no
-// Chroma, so the share's stalls that get it killed can no longer cut a write in half
-// (three times on the home Mac, 2026-10-23..25: "Error constructing hnsw segment").
+// own environment does not place the index stage itself (operatorKeepsIndexOff). The main worker then leaves IndexStages to it and loads no
+// embedding model, so the share's stalls that get it killed never stop an index job.
 func IndexWorkerOn(cfg config.Config, n config.NodeConfig) bool {
 	return cfg.Pipeline.IndexWorkerOn() && !NodeMode(cfg, n) && !operatorKeepsIndexOff()
 }
@@ -100,7 +100,7 @@ func BuildIndexWorker(opts Options) ([]Process, error) {
 
 // indexMainEnv is the main worker's side of the index worker: it leaves IndexStages
 // to it (added to the stages env already excludes) and answers no semantic search
-// (MAKTABA_PIPELINE_SEMANTIC=off: it never opens Chroma).
+// (MAKTABA_PIPELINE_SEMANTIC=off: it never loads the embedding model).
 func indexMainEnv(cfg config.Config, env []string) ([]string, error) {
 	n, err := NodeOf(cfg)
 	if err != nil {

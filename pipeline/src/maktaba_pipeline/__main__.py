@@ -205,14 +205,13 @@ async def _serve(args: argparse.Namespace, log: Any) -> int:
         raise
 
     if database.dialect == "postgres" and cfg.role == "home":
-        # semantic search's store (Epic 43): what pgvector allows, and a home with no
-        # Chroma vectors on Postgres. A machine decides nothing: its Chroma folder is
-        # not the home's
+        # semantic search's store (Epic 43): what pgvector allows. A machine makes
+        # nothing: segment_embeddings is the home's
         from .search import pgstore
 
         try:
             state = await pgstore.prepare(database)
-            log.info("semantic_store", store=state.store, pgvector=state.ready)
+            log.info("semantic_store", pgvector=state.ready)
         except Exception as exc:  # noqa: BLE001 - search falls back, the worker runs
             log.warning("semantic_store_prepare_failed", error=f"{type(exc).__name__}: {exc}")
 
@@ -298,18 +297,14 @@ _THREAD_END_SEC = 1.0
 
 
 async def _close_search_index(log: Any) -> None:
-    """No new write to the search index, wait for the one running, close the Chroma
-    clients (search/gate.py): the files are whole when the process ends."""
-    from .search import gate, semantic
+    """No new write to the search index, wait for the one running (search/gate.py)."""
+    from .search import gate
 
     gate.close()
     if not await asyncio.to_thread(gate.wait_idle, _INDEX_CLOSE_WAIT_SEC):
         # never close the client under a write: the exit waits for that thread below
         log.warning("search_index_write_still_running", after_sec=_INDEX_CLOSE_WAIT_SEC)
         return
-    closed = await asyncio.to_thread(semantic.close_clients)
-    if closed:
-        log.info("search_index_closed", clients=closed)
 
 
 def _threads_still_running(grace: float) -> list[threading.Thread]:
@@ -341,9 +336,6 @@ async def _exit_if_threads_linger(
     if not await asyncio.to_thread(gate.wait_idle, _INDEX_CLOSE_WAIT_SEC):
         log.warning("search_index_write_still_running", after_sec=2 * _INDEX_CLOSE_WAIT_SEC)
         return
-    from .search import semantic
-
-    await asyncio.to_thread(semantic.close_clients)  # when the write ended late
     loop: Any = asyncio.get_running_loop()  # the base loop's shutdown takes a timeout
     with contextlib.suppress(Exception):  # the threads are counted below
         await loop.shutdown_default_executor(timeout=_EXIT_WAIT_SEC)
@@ -427,8 +419,8 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         default=os.getenv("MAKTABA_PIPELINE_SEMANTIC") == "off",
         help="The gRPC server answers no Embed / SemanticSearch and never opens the search "
-        "index (MAKTABA_PIPELINE_SEMANTIC=off): another worker (the index worker) holds it, "
-        "and Chroma wants one process per directory.",
+        "index (MAKTABA_PIPELINE_SEMANTIC=off): another worker (the index worker) answers "
+        "them.",
     )
     run_p.add_argument(
         "--drain-sec",
@@ -523,19 +515,7 @@ def _build_parser() -> argparse.ArgumentParser:
     from .models.fetch_cli import add_parser as add_models_parser
 
     add_models_parser(subparsers)
-    _add_copy_chroma_parser(subparsers)
     return parser
-
-
-def _add_copy_chroma_parser(subparsers: Any) -> None:
-    """``copy-chroma`` (story 43.3). Its module needs numpy (the ``search`` extra):
-    without it the command is still listed, and says so when run."""
-    try:
-        from .search.chroma_copy import add_parser
-    except ImportError:
-        subparsers.add_parser("copy-chroma", help="Needs the search extra (numpy).")
-        return
-    add_parser(subparsers)
 
 
 def _join(args: argparse.Namespace, parser: argparse.ArgumentParser, log: Any) -> int:
@@ -576,7 +556,7 @@ def main(argv: list[str] | None = None) -> int:
     # --database-url never attach to the namespace and _serve crashes
     # with AttributeError. Both the prod ENTRYPOINT (`python -m
     # maktaba_pipeline`) and the dev supervisor invoke us this way.
-    _subcommands = {"run", "doctor", "join", "cluster", "storage", "models", "copy-chroma"}
+    _subcommands = {"run", "doctor", "join", "cluster", "storage", "models"}
     _top_level_flags = {"--version", "-V", "--help", "-h"}
     if not any(a in _subcommands for a in argv) and not any(a in _top_level_flags for a in argv):
         argv = ["run", *argv]
@@ -608,14 +588,6 @@ def main(argv: list[str] | None = None) -> int:
         from .models.fetch_cli import main as models_main
 
         return models_main(args)
-    if command == "copy-chroma":
-        try:
-            from .search.chroma_copy import main as copy_main
-        except ImportError as exc:
-            sys.stderr.write(f"copy-chroma needs the search extra: {exc}\n")
-            return 78
-        return copy_main(args)
-
     parser.print_help()
     return 2
 

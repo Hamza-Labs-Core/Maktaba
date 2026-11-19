@@ -36,7 +36,7 @@ func TestEveryPythonChildRunsFromTheVenv(t *testing.T) {
 	}
 	all = append(all, main)
 	for _, build := range []func(Options) ([]Process, error){BuildPipelineInstances, BuildIndexWorker,
-		BuildChromaCopy, BuildPluginRunners} {
+		BuildPluginRunners} {
 		ps, err := build(opts)
 		if err != nil {
 			t.Fatal(err)

@@ -35,7 +35,7 @@ var catalogInstances = map[Role][]string{
 }
 
 func pipelineInstances() []string {
-	out := []string{"", IndexInstance, ChromaCopyInstance}
+	out := []string{"", IndexInstance}
 	for i := 1; i <= MaxPipelineInstances; i++ {
 		out = append(out, "stt-"+strconv.Itoa(i))
 	}

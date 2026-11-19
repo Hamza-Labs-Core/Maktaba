@@ -21,6 +21,6 @@ text in JSON. Without the variable the `[postgres]` cases are skipped.
 
 `uv run --frozen --extra dev pytest` runs the same suite without the stage extras (`stt`,
 `search`, `mediaintel`). The `dev` extra brings numpy, which the tests use directly, so
-nothing fails for want of it; tests that need an extra's own libraries (chromadb,
-sentence-transformers, mlx, faster-whisper) are skipped, and the stages that need them
+nothing fails for want of it; tests that need an extra's own libraries
+(sentence-transformers, mlx, faster-whisper) are skipped, and the stages that need them
 are checked to be left unserved. Use `--all-extras` before saying the suite passes.

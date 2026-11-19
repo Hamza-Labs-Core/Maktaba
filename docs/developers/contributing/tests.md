@@ -8,7 +8,7 @@ you push; it runs the unit tier for Go, Python and the web app.
 | Tier | What runs | I/O allowed | Make target |
 |---|---|---|---|
 | unit | pure logic | none: sockets are blocked, files only in temp dirs | `make test-unit` (or `make test`) |
-| integration | real Postgres, Chroma, FFmpeg, fixture media | in-cluster services | `make test-integration` |
+| integration | real Postgres (pgvector), FFmpeg, fixture media | in-cluster services | `make test-integration` |
 | e2e | Playwright and pytest against the compose stack | full stack | `make test-e2e` |
 | media e2e | real FFmpeg and Postgres | full stack | `make test-media-e2e` |
 | perf-ci | reduced performance suite | full stack | `make perf-ci` |

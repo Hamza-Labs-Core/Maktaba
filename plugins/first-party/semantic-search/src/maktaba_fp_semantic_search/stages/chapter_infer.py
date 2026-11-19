@@ -1,8 +1,8 @@
 """``chapter_infer``: chapters at a video's topic shifts, and its mean vector (Story 9.18).
 
 Runs after ``index``. Reads the video's segment vectors back out of the semantic index
-(no embedding model loaded: the store search reads, Chroma or ``segment_embeddings``,
-:mod:`~maktaba_pipeline.search.pgstore`), then:
+(no embedding model loaded: ``segment_embeddings``, :mod:`~maktaba_pipeline.search.pgstore`),
+then:
 
 * stores their normalised mean in ``video_embeddings``: what ``topic_assign`` and
   ``topic_recluster`` cluster (slot 0121);
@@ -25,9 +25,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import importlib
-from collections.abc import Callable
 from typing import Any
-from uuid import UUID
 
 from maktaba_fp_semantic_search.stages.index import active_transcript, unavailable
 from maktaba_pipeline.db.jobs import Job
@@ -44,52 +42,14 @@ from maktaba_pipeline.engine.stages._analysis import (
 from maktaba_pipeline.engine.stages._common import load_video, require_video
 from maktaba_pipeline.engine.stages.registry import StageImpl
 from maktaba_pipeline.library_mgmt.chapter import Segment, extractive_title, infer_topic_chapters
-from maktaba_pipeline.search import gate
-from maktaba_pipeline.search.embedder import embed_id_for
 from maktaba_pipeline.search.pgstore import PgVectorStore, store_state
-from maktaba_pipeline.search.semantic import (
-    SemanticUnavailable,
-    StoredVector,
-    VectorCollection,
-    embed_model,
-    open_collection,
-    video_vectors,
-)
+from maktaba_pipeline.search.semantic import StoredVector, embed_model
 
-__all__ = [
-    "CHAPTER_VERSION",
-    "IMPL",
-    "reset_collection_factory",
-    "set_collection_factory",
-]
-
-#: the active transcript's segments: the ids of its vectors (search/embedder.py), read by
-#: id (a read by video scans the whole collection's metadata)
-_SEQS_SQL = "SELECT seq, text FROM transcript_segments WHERE transcript_id = $1"
+__all__ = ["CHAPTER_VERSION", "IMPL"]
 
 _AUTHORED_SQL = (
     "SELECT COUNT(*) FROM chapters WHERE video_id = $1 AND source IN ('embedded', 'manual')"
 )
-
-
-def _shared_collection() -> VectorCollection:
-    """The index's own persistent collection (one Chroma client per process)."""
-    collection: VectorCollection = open_collection(embed_model())
-    return collection
-
-
-#: the vector store the stage reads; tests swap in a fake (``set_collection_factory``)
-_collection_factory: Callable[[], VectorCollection] = _shared_collection
-
-
-def set_collection_factory(factory: Callable[[], VectorCollection]) -> None:
-    global _collection_factory
-    _collection_factory = factory
-
-
-def reset_collection_factory() -> None:
-    global _collection_factory
-    _collection_factory = _shared_collection
 
 
 async def _enabled(db: Any, library_id: Any) -> bool:
@@ -118,30 +78,15 @@ async def input_fingerprint(db: Any, subject: Subject) -> str | None:
     )
 
 
-def _read_vectors(video_id: Any, ids: list[str] | None = None) -> list[StoredVector]:
-    try:
-        return video_vectors(_collection_factory(), video_id, ids)
-    except SemanticUnavailable as exc:
-        raise StageFailure("search_unavailable", str(exc), retryable=False) from exc
-
-
 async def _video_vectors(db: Any, video_id: Any, transcript_id: str) -> list[StoredVector]:
-    """The active transcript's vectors, from the store search reads (pgstore)."""
-    state = await store_state(db)
-    if state.read_postgres:
-        if not state.ready:
-            raise StageFailure(
-                "search_unavailable",
-                "semantic search is on Postgres and pgvector is not installed",
-                retryable=False,
-            )
-        return await PgVectorStore(db, embed_model()).video_vectors(video_id, transcript_id)
-    ids = [
-        embed_id_for(UUID(transcript_id), int(r["seq"]))
-        for r in await db.fetch(_SEQS_SQL, transcript_id)
-        if str(r["text"] or "").strip()  # blank segments have no vector
-    ]
-    return await gate.read(_read_vectors, video_id, ids)
+    """The active transcript's vectors (``segment_embeddings``)."""
+    if not (await store_state(db)).ready:
+        raise StageFailure(
+            "search_unavailable",
+            "semantic search needs Postgres with pgvector",
+            retryable=False,
+        )
+    return await PgVectorStore(db, embed_model()).video_vectors(video_id, transcript_id)
 
 
 def _mean(vectors: list[StoredVector]) -> list[float]:

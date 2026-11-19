@@ -3,20 +3,20 @@
 Module map:
 
 - :mod:`.fts`       PostgreSQL FTS — ``tsquery`` builder + result struct.
-- :mod:`.embedder`  ChromaDB vector indexing for transcript segments.
+- :mod:`.embedder`  transcript segments as vector-search records.
+- :mod:`.semantic`  the e5 embedder; :mod:`.pgstore` the vectors in Postgres (pgvector).
 - :mod:`.hybrid`    RRF merge of FTS + semantic results.
 - :mod:`.suggest`   Autocomplete from ``search_history`` prefix matching.
 
-Heavy dependencies (chromadb, sentence-transformers) are lazy — importing
-this package doesn't pull them in. The Chroma backend lives behind a
-``Protocol`` so unit tests substitute an in-memory fake.
+Heavy dependencies (sentence-transformers) are lazy — importing this package
+doesn't pull them in.
 """
 
 from __future__ import annotations
 
 from .embedder import (
-    ChromaCollection,
     EmbeddingFunction,
+    SegmentCollection,
     SegmentDoc,
     SemanticHit,
     index_segments,
@@ -27,7 +27,7 @@ from .hybrid import HybridHit, reciprocal_rank_fusion
 from .suggest import Suggestion, record_search, suggest
 
 __all__ = [
-    "ChromaCollection",
+    "SegmentCollection",
     "EmbeddingFunction",
     "FTSHit",
     "HybridHit",

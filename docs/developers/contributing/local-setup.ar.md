@@ -44,7 +44,7 @@ make test                # unit tier
 
 ## بيئة التطوير
 
-يشغّل `make dev` كلًّا من Postgres وChroma والواجهة البرمجية والبث وخط المعالجة وتطبيق الويب:
+يشغّل `make dev` كلًّا من Postgres والواجهة البرمجية والبث وخط المعالجة وتطبيق الويب:
 
 | الخدمة | العنوان |
 |---|---|
@@ -52,7 +52,6 @@ make test                # unit tier
 | البث | http://localhost:8081 |
 | الويب | http://localhost:5173 |
 | Postgres | `postgres://maktaba:maktaba@localhost:5432/maktaba` (بيانات اعتماد للتطوير فقط) |
-| Chroma | http://localhost:8000 |
 
 تُطبَّق التعديلات تلقائيًا: يعيد `air` بناء خدمات Go، ويعيد `watchmedo` تشغيل خط المعالجة،
 ويعيد Vite تحميل تطبيق الويب فوريًا.

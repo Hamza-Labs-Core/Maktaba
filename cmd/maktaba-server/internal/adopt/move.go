@@ -26,7 +26,7 @@ import (
 // Target is the app the install moves into.
 type Target struct {
 	ConfigPath string // the app's server.toml
-	StateDir   string // the app's state root (moved/, chroma/, models/, cache/)
+	StateDir   string // the app's state root (moved/, models/, cache/)
 	KeysDir    string
 	NodeConfig string // the node.json the app's roles read (config.LocalNodeConfigPath)
 	// ForeignNode is the node config in this PC's roaming profile when another
@@ -330,7 +330,6 @@ func moveItems(src Source, old, cfg config.Config, tgt Target, getenv func(strin
 		// (which is the app's data folder too); they are copied beside it, the
 		// originals kept for going back
 		state := old.StateDirOutsideApp()
-		add("search_index", devmigrate.Item{What: "search index", From: filepath.Join(state, "chroma"), To: filepath.Join(tgt.StateDir, "chroma")})
 		add("streaming_cache", devmigrate.Item{What: "streaming cache", From: filepath.Join(state, "cache", "streaming"),
 			To: filepath.Join(tgt.StateDir, "cache", "streaming")})
 		add("models", devmigrate.Item{What: "models", From: filepath.Join(state, "models"), To: filepath.Join(tgt.StateDir, "models")})

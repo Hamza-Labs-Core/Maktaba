@@ -208,8 +208,7 @@
       ],
       "plugin": "tv.maktaba.core-media",
       "processes": [
-        "pipeline/",
-        "pipeline/chroma-copy"
+        "pipeline/"
       ],
       "requires": [],
       "resources": {

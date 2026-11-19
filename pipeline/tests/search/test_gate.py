@@ -111,33 +111,3 @@ def test_wait_idle() -> None:
     hold.set()
     t.join()
     assert gate.wait_idle(0.5)
-
-
-def test_close_clients_closes_each_and_forgets_them(monkeypatch: pytest.MonkeyPatch) -> None:
-    from maktaba_pipeline.search import semantic
-
-    class WithClose:
-        closed = 0
-
-        def close(self) -> None:
-            WithClose.closed += 1
-
-    class System:
-        stopped = 0
-
-        def stop(self) -> None:
-            System.stopped += 1
-
-    class Older:  # a chromadb without Client.close: its system is stopped
-        _system = System()
-
-    class Broken:
-        def close(self) -> None:
-            raise RuntimeError("already closed")
-
-    monkeypatch.setattr(semantic, "_CLIENTS", {"/a": WithClose(), "/b": Older(), "/c": Broken()})
-    monkeypatch.setattr(semantic, "_COLLECTIONS", {("/a", "c"): object()})
-    assert semantic.close_clients() == 3
-    assert WithClose.closed == 1 and System.stopped == 1
-    assert semantic._CLIENTS == {} and semantic._COLLECTIONS == {}
-    assert semantic.close_clients() == 0

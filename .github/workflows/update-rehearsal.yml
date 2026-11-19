@@ -540,6 +540,9 @@ jobs:
           - { id: '16.7', name: wave 7's TV change staged before an update and swapped and rolled back after it, test: TestUpdateRehearsal16_7Wave7, profile: small, venvs: true }
           - { id: '16.8', name: wave 8's jobs across a rollback and an update, test: TestUpdateRehearsal16_8Wave8, profile: small, venvs: true }
           - { id: '16.9', name: wave 9's core stages across a rollback and an update, test: TestUpdateRehearsal16_9Wave9, profile: small, venvs: true }
+          # Epic 43 story 43.5: a home whose Chroma copy was not done updates to the release
+          # without Chroma (each release's own pipeline, as 16.x)
+          - { id: '17', name: a home with Chroma data updates (Chroma retired), test: TestUpdateRehearsal17ChromaRetired, profile: small, venvs: true }
           # the fault rehearsal (Epic 53 story 53.07, docs/fault-rehearsal.md): one part
           # killed at a time on a home of this commit; the tag guard requires these too
           - { id: 'F03', name: streaming crash (the status says so; it comes back), test: TestFaultRehearsalF03StreamingCrash, profile: small }

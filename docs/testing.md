@@ -9,7 +9,7 @@ enforcer is wired into CI.
 | Tier | What runs | Allowed I/O | Per-tier wall budget |
 |---|---|---|---|
 | **unit** | Pure logic, no I/O. | None — sockets blocked, FS limited to `t.TempDir`. | ≤ 30 s **per Go package**, ≤ ~30 s total per language. |
-| **integration** | Real Postgres, real Chroma, real FFmpeg, fixture media. | All in-cluster services. | ≤ 2 min total wall-clock. |
+| **integration** | Real Postgres (pgvector), real FFmpeg, fixture media. | All in-cluster services. | ≤ 2 min total wall-clock. |
 | **e2e** | Playwright against the compose stack. | Full stack. | ≤ 5 min total wall-clock. |
 | **perf-ci** | Reduced perf regression suite (Epic 20.7). | Full stack. | ≤ 2 min total wall-clock. |
 

@@ -102,9 +102,6 @@ func ChildEnv(role Role, cfg config.Config) ([]string, error) {
 	if os.Getenv("MAKTABA_COMPONENTS_DIR") == "" {
 		add("MAKTABA_COMPONENTS_DIR", filepath.Join(cfg.StateDir(), "components"))
 	}
-	if os.Getenv("MAKTABA_CHROMA_DIR") == "" {
-		add("MAKTABA_CHROMA_DIR", filepath.Join(cfg.StateDir(), "chroma"))
-	}
 
 	// One ffmpeg for every role, the one setup's check and the status check
 	// ([media] ffmpeg, the operator's MAKTABA_FFMPEG, the desktop app's own on a
@@ -264,7 +261,7 @@ func ChildEnv(role Role, cfg config.Config) ([]string, error) {
 			"pipeline=http://" + pipelineLogs(cfg) + "/logs/recent"
 		if IndexWorkerOn(cfg, n) {
 			// the semantic search is the index worker's (BuildIndexWorker): the
-			// main worker opens no Chroma
+			// main worker answers none
 			add("MAKTABA_PIPELINE_SEARCH_ADDR", pipelineSearch(cfg))
 			peers += ",pipeline-index=http://" + pipelineIndexLogs(cfg) + "/logs/recent"
 		}

@@ -459,8 +459,6 @@ async def choose(db: Any, stage: str) -> ImplChoice:
         return ImplChoice("inproc", "runner_not_serving_here")
     if not await role_usable(db, stage):
         return ImplChoice("inproc", "role_unusable")
-    if stage in CHROMA_STAGES and not await _postgres_index(db):
-        return ImplChoice("inproc", "index_store_chroma")
     if files_stage(stage):
         want = _AREAS_WRITTEN[-1] if _AREAS_WRITTEN else ""
         if stage in AREAS_FIRST_STAGES:
@@ -472,22 +470,6 @@ async def choose(db: Any, stage: str) -> ImplChoice:
             # was added): this job runs here while the runner restarts on the new areas
             return ImplChoice("inproc", "runner_areas_stale")
     return ImplChoice("plugin")
-
-
-#: the stages that open the search index: while it is Chroma (a folder one process may
-#: open), they stay in the worker beside the query server; once search reads Postgres
-#: (semantic_store_state), the runner writes it like any table (story 54.30)
-CHROMA_STAGES = frozenset({"index", "chapter_infer"})
-
-
-async def _postgres_index(db: Any) -> bool:
-    from ..search.pgstore import store_state
-
-    try:
-        st = await store_state(db)
-    except Exception:  # noqa: BLE001 - unreadable: the worker keeps the stage
-        return False
-    return st.read_postgres and not st.write_chroma
 
 
 # role -> (checked at, usable): a home whose migrations could not make or grant the
@@ -1310,7 +1292,6 @@ async def areas_doc(db: Any, path_map: Any = None) -> dict[str, str]:
                 _own_folder(str(cache_path_for("x").parent)),
             ]
         ),
-        "data.index": _own_folder(os.environ.get("MAKTABA_CHROMA_DIR") or "~/.maktaba/chroma"),
         # the reports folder (Reports: the channel plan's page, engine.plan_page)
         "data.review": _own_folder(str(reviews_dir())),
         # the channels' art: what an admin uploaded (<data dir>/channel-art, the API's

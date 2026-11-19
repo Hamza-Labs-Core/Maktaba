@@ -297,8 +297,9 @@ INSERT INTO streaming_hosts (host_id, host, role) VALUES ('1e943eda-0064-42e9-86
 	if b, _ := os.ReadFile(filepath.Join(target.Keys, "secrets.key")); string(b) != "0123456789abcdef0123456789abcdef" {
 		t.Fatalf("secrets.key = %q", b)
 	}
-	if _, err := os.Stat(filepath.Join(appRoot, "chroma", "chroma.sqlite3")); err != nil {
-		t.Fatal(err)
+	// Chroma is retired (story 43.5): the dev stack's folder stays where it is
+	if _, err := os.Stat(filepath.Join(appRoot, "chroma")); err == nil {
+		t.Fatal("the dev stack's Chroma folder was copied into the app")
 	}
 	got, _, err := config.LoadFrom(cfgPath)
 	if err != nil {

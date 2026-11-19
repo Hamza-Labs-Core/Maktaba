@@ -8,11 +8,9 @@ otherwise.
 from __future__ import annotations
 
 import random
-import sqlite3
 import uuid
 from collections.abc import AsyncIterator, Iterator
 from datetime import UTC, datetime
-from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
 from uuid import UUID
@@ -34,27 +32,23 @@ from maktaba_pipeline.search.pgstore import (
     DIMENSIONS,
     PgVectorStore,
     StoreState,
-    chroma_has_vectors,
     prepare,
     store_state,
 )
-from maktaba_pipeline.search.semantic import IndexedSegment, SemanticIndex
+from maktaba_pipeline.search.semantic import IndexedSegment
 from tests.engine.factory import make_library, make_video
 from tests.engine.fixtures_db import PG_URL, _swap_db, pg_template  # noqa: F401
 from tests.engine.test_index_stage import _transcript
-from tests.search.semantic_fakes import FakeCollection, FakeEmbedder, bag_vector
+from tests.search.semantic_fakes import FakeEmbedder, bag_vector
 
 # --------------------------------------------------------------------------- units
 
 
-def test_the_state_says_where_to_write_and_read() -> None:
-    copying = StoreState(store="chroma", ready=True)
-    assert copying.write_chroma and copying.write_postgres and not copying.read_postgres
-    switched = StoreState(store="postgres", ready=True)
-    assert not switched.write_chroma and switched.write_postgres and switched.read_postgres
-    no_pgvector = StoreState(store="postgres", ready=False)
-    assert not no_pgvector.write_chroma and not no_pgvector.write_postgres
-    assert StoreState() == StoreState(store="chroma", ready=False)  # SQLite
+def test_the_state_says_whether_pgvector_is_ready() -> None:
+    """Story 43.5: no store to choose any more, only whether segment_embeddings is usable."""
+    assert StoreState(ready=True).ready
+    assert StoreState() == StoreState(ready=False)  # SQLite, an older schema
+    assert not hasattr(StoreState(), "store")
 
 
 def test_literals_round_trip() -> None:
@@ -72,31 +66,6 @@ def test_library_filter_keeps_valid_ids() -> None:
     assert pgstore._uuids(["nope"]) == []  # a filter that matches nothing
 
 
-def _chroma_file(path: Path, *, embeddings: int = 0, queued: int = 0) -> None:
-    path.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(path / "chroma.sqlite3")
-    conn.execute("CREATE TABLE embeddings (id INTEGER PRIMARY KEY)")
-    conn.execute("CREATE TABLE embeddings_queue (seq_id INTEGER PRIMARY KEY)")
-    conn.executemany("INSERT INTO embeddings DEFAULT VALUES", [()] * embeddings)
-    conn.executemany("INSERT INTO embeddings_queue DEFAULT VALUES", [()] * queued)
-    conn.commit()
-    conn.close()
-
-
-def test_chroma_vectors_are_found_without_chromadb(tmp_path: Path) -> None:
-    assert not chroma_has_vectors(str(tmp_path / "none"))  # no folder
-    _chroma_file(tmp_path / "empty")
-    assert not chroma_has_vectors(str(tmp_path / "empty"))  # a collection, no vector
-    _chroma_file(tmp_path / "full", embeddings=2)
-    assert chroma_has_vectors(str(tmp_path / "full"))
-    _chroma_file(tmp_path / "log", queued=1)
-    assert chroma_has_vectors(str(tmp_path / "log"))  # still in its write log
-    broken = tmp_path / "broken"
-    broken.mkdir()
-    (broken / "chroma.sqlite3").write_bytes(b"not a database")
-    assert chroma_has_vectors(str(broken))  # unreadable counts as yes
-
-
 class _StateDB:
     """A Postgres look-alike for the state reads: counts them."""
 
@@ -107,6 +76,11 @@ class _StateDB:
         self.reads = 0
         self.fail = False
         self.updates: list[str] = []
+        self.executed: list[str] = []
+
+    async def execute(self, sql: str, *args: Any) -> Any:
+        self.executed.append(sql)
+        return "GRANT"
 
     async def fetchrow(self, sql: str, *args: Any) -> Any:
         self.reads += 1
@@ -126,22 +100,22 @@ class _StateDB:
 @pytest.mark.asyncio
 async def test_the_state_is_cached_for_a_while(monkeypatch: pytest.MonkeyPatch) -> None:
     pgstore.forget_state()
-    db = _StateDB()
-    assert await store_state(db) == StoreState("chroma", True)
-    assert await store_state(db) == StoreState("chroma", True)
-    assert db.reads == 1  # cached
+    db = _StateDB(ready=False)
+    assert await store_state(db) == StoreState(ready=False)
     assert db.row is not None
-    db.row["store"] = "postgres"
+    db.row["ready"] = True
+    assert await store_state(db) == StoreState(ready=False)
+    assert db.reads == 1  # cached
     later = pgstore._clock() + pgstore.STATE_TTL_SEC + 1
     monkeypatch.setattr(pgstore, "_clock", lambda: later)
-    assert (await store_state(db)).store == "postgres"  # read again after the TTL
+    assert (await store_state(db)).ready  # read again after the TTL
     assert db.reads == 2
-    assert (await store_state(db, fresh=True)).store == "postgres" and db.reads == 3
+    assert (await store_state(db, fresh=True)).ready and db.reads == 3
     pgstore.forget_state()
 
 
 @pytest.mark.asyncio
-async def test_an_older_schema_or_sqlite_reads_chroma() -> None:
+async def test_an_older_schema_or_sqlite_has_no_semantic_store() -> None:
     pgstore.forget_state()
     db = _StateDB()
     db.fail = True
@@ -151,16 +125,15 @@ async def test_an_older_schema_or_sqlite_reads_chroma() -> None:
 
 
 @pytest.mark.asyncio
-async def test_a_home_without_chroma_vectors_moves_to_postgres(tmp_path: Path) -> None:
+@pytest.mark.parametrize("store", ["chroma", "postgres", None])
+async def test_prepare_never_writes_the_store_row(store: str | None) -> None:
+    """A home on Chroma (its copy not done) is ready the same as one switched: the row
+    is left as the release before left it, for a rollback to that release."""
     pgstore.forget_state()
-    db = _StateDB()
-    assert (await prepare(db, chroma_path=str(tmp_path / "none"))).store == "postgres"
-    assert len(db.updates) == 1
-    pgstore.forget_state()
-    kept = _StateDB()
-    _chroma_file(tmp_path / "full", embeddings=1)
-    assert (await prepare(kept, chroma_path=str(tmp_path / "full"))).store == "chroma"
-    assert kept.updates == []
+    db = _StateDB(store=store)
+    assert await prepare(db) == StoreState(ready=True)
+    assert db.updates == []
+    assert not any("semantic_store_state" in q for q in db.executed)
     pgstore.forget_state()
 
 
@@ -264,13 +237,13 @@ async def test_migration_made_the_table_and_the_state_row(pg: Database) -> None:
 
 @pytest.mark.integration
 @pytest.mark.asyncio
-async def test_prepare_moves_a_fresh_home_but_never_a_copy_under_way(
-    pg: Database, tmp_path: Path
-) -> None:
-    await pg.execute("UPDATE semantic_store_state SET copied_rows = 10")
-    assert (await prepare(pg, chroma_path=str(tmp_path))).store == "chroma"  # copy began
-    await pg.execute("UPDATE semantic_store_state SET copied_rows = 0")
-    assert (await prepare(pg, chroma_path=str(tmp_path))).store == "postgres"
+async def test_prepare_leaves_a_home_mid_copy_as_it_is(pg: Database) -> None:
+    """A home whose Chroma copy was under way when it updated: prepare is ready and the
+    row keeps what the release before wrote (a rollback goes on with its copy)."""
+    await pg.execute("UPDATE semantic_store_state SET copied_rows = 10, copy_cursor = '{}'")
+    assert (await prepare(pg)).ready
+    row = await pg.fetchrow("SELECT store, copied_rows, copy_cursor FROM semantic_store_state")
+    assert (row["store"], row["copied_rows"], row["copy_cursor"]) == ("chroma", 10, "{}")
 
 
 @pytest.mark.integration
@@ -319,8 +292,8 @@ async def test_write_read_search_and_delete(pg: Database) -> None:
     assert {h.video_id for h in ar} == {str(v)}
     assert await store.search(q, k=5, library_ids=[str(lib)], languages=["en"]) == []
 
-    # deletes: by Chroma id, by keep list, by video, and by cascade
-    await store.delete_ids([f"{tid}:1", "junk"])
+    # deletes: by segment, by keep list, by video, and by cascade
+    await store.delete_segments([(await _segments(pg, tid))[1].segment_id])
     assert sorted(x.seq for x in await store.video_vectors(v)) == [0, 2]
     first = (await _segments(pg, tid))[0].segment_id
     assert await store.keep_only(v, [first]) == 1
@@ -421,36 +394,30 @@ def _job(video: UUID, library: UUID) -> Job:
 
 
 @pytest.fixture
-def fakes() -> Iterator[tuple[FakeCollection, FakeEmbedder]]:
-    coll, emb = FakeCollection(), _emb()
-    stage.set_index_factory(lambda: SemanticIndex(coll, emb))
-    stage.set_embedder_factory(lambda: emb)
-    chapter_infer.set_collection_factory(lambda: coll)
-    yield coll, emb
-    stage.reset_index_factory()
+def emb() -> Iterator[FakeEmbedder]:
+    e = _emb()
+    stage.set_embedder_factory(lambda: e)
+    yield e
     stage.reset_embedder_factory()
-    chapter_infer.reset_collection_factory()
 
 
 @pytest.mark.integration
 @pytest.mark.asyncio
-async def test_the_index_stage_writes_both_during_the_copy_then_postgres_only(
-    pg: Database, fakes: tuple[FakeCollection, FakeEmbedder]
+async def test_the_index_stage_writes_postgres_whatever_the_store_row_says(
+    pg: Database, emb: FakeEmbedder
 ) -> None:
-    coll, _ = fakes
+    """Story 43.5: a home whose row still says chroma (its copy not done) indexes into
+    Postgres the same as one switched."""
     lib = await make_library(pg)
     v = await make_video(pg, lib)
     await _transcript(pg, v, ["قديم"])
     ctx = cast(StageContext, _Ctx())
-    res = await stage.run(pg, _job(v, lib), ctx)  # store chroma: both
-    assert len(coll.rows) == 1 and await _count(pg, v) == 1
-    assert res.summary["store"] == "chroma"
+    res = await stage.run(pg, _job(v, lib), ctx)  # the row: chroma
+    assert await _count(pg, v) == 1 and "store" not in res.summary
 
     await _set_store(pg, "postgres")
-    coll.rows.clear()
     new = await _transcript(pg, v, ["صلاة", "", "زكاة"], created=datetime(2026, 3, 1, tzinfo=UTC))
     res = await stage.run(pg, _job(v, lib), ctx)
-    assert coll.rows == {}  # Chroma no longer written
     vecs = await PgVectorStore(pg, "fake/e5").video_vectors(v)
     assert {x.transcript_id for x in vecs} == {str(new)} and [x.seq for x in vecs] == [0, 2]
     assert res.summary["segments"] == 2 and res.summary["stale_ids"] == 1  # the old one
@@ -462,35 +429,35 @@ async def test_the_index_stage_writes_both_during_the_copy_then_postgres_only(
 
 @pytest.mark.integration
 @pytest.mark.asyncio
+@pytest.mark.parametrize("row", ["chroma", "postgres"])
 async def test_a_video_without_vectors_in_postgres_is_not_indexed(
-    pg: Database, fakes: tuple[FakeCollection, FakeEmbedder]
+    pg: Database, emb: FakeEmbedder, row: str
 ) -> None:
-    """After the switch (a new home whose copy held no vectors), the fingerprint of a
-    video with segments and no row changes; once indexed it is the plain one again."""
+    """A video with segments and no row (a new home after a switchover; a video whose
+    vectors were only in Chroma, never copied) has another fingerprint; once indexed it
+    is the plain one. The store row does not matter any more (story 43.5)."""
+    await _set_store(pg, row)
     lib = await make_library(pg)
     v = await make_video(pg, lib)
     subject = Subject(kind="video", id=v, library_id=lib)
     await _transcript(pg, v, ["أ", "ب"])
-    plain = await stage.input_fingerprint(pg, subject)  # store chroma: as before
-    await _set_store(pg, "postgres")
     missing = await stage.input_fingerprint(pg, subject)
-    assert missing is not None and missing != plain
     res = await stage.run(pg, _job(v, lib), cast(StageContext, _Ctx()))
-    assert res.input_hash == plain  # what it answers: the video, stored
-    assert await stage.input_fingerprint(pg, subject) == plain
+    assert missing is not None and missing != res.input_hash
+    assert await stage.input_fingerprint(pg, subject) == res.input_hash  # the video, stored
 
 
 @pytest.mark.integration
 @pytest.mark.asyncio
-async def test_without_pgvector_the_postgres_store_is_unavailable(
-    pg: Database, fakes: tuple[FakeCollection, FakeEmbedder], monkeypatch: pytest.MonkeyPatch
+async def test_without_pgvector_the_store_is_unavailable(
+    pg: Database, emb: FakeEmbedder, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     lib = await make_library(pg)
     v = await make_video(pg, lib)
     await _transcript(pg, v, ["أ"])
 
     async def no_pgvector(db: Any, *, fresh: bool = False) -> StoreState:
-        return StoreState(store="postgres", ready=False)
+        return StoreState(ready=False)
 
     monkeypatch.setattr(stage, "store_state", no_pgvector)
     monkeypatch.setattr(chapter_infer, "store_state", no_pgvector)
@@ -504,49 +471,45 @@ async def test_without_pgvector_the_postgres_store_is_unavailable(
 
 @pytest.mark.integration
 @pytest.mark.asyncio
-async def test_chapter_infer_reads_postgres_after_the_switch(
-    pg: Database, fakes: tuple[FakeCollection, FakeEmbedder]
-) -> None:
-    coll, _ = fakes
-    await _set_store(pg, "postgres")
+async def test_chapter_infer_reads_postgres(pg: Database, emb: FakeEmbedder) -> None:
     lib = await make_library(pg)
     v = await make_video(pg, lib)
     await _transcript(pg, v, ["صلاة الفجر", "زكاة المال"])
     await stage.run(pg, _job(v, lib), cast(StageContext, _Ctx()))
     res = await chapter_infer.run(pg, _job(v, lib), cast(StageContext, _Ctx()))
     assert res.outcome is None and res.summary["segments"] == 2
-    assert coll.gets == []  # Chroma is not read
     dim = await pg.fetchval("SELECT dim FROM video_embeddings WHERE video_id = $1", str(v))
     assert dim == DIMENSIONS
 
 
 @pytest.mark.integration
 @pytest.mark.asyncio
-async def test_grpc_search_follows_the_store(
-    pg: Database, fakes: tuple[FakeCollection, FakeEmbedder], monkeypatch: pytest.MonkeyPatch
+async def test_grpc_search_reads_postgres(
+    pg: Database, emb: FakeEmbedder, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    coll, emb = fakes
     lib = await make_library(pg)
     v = await make_video(pg, lib)
     tid = await _transcript(pg, v, ["صوم رمضان"])
     await _write(pg, v, lib, tid)
     monkeypatch.setattr(semantic, "search_available", lambda: True)
     monkeypatch.setattr(semantic, "get_query_embedder", lambda model=None: emb)
-    monkeypatch.setattr(
-        semantic.SemanticIndex, "for_queries", classmethod(lambda cls: cls(coll, emb))
-    )
     _, search, _ = grpc_server.default_search_backends(pg)
     assert search is not None
-    assert await search("صوم رمضان", 3, [str(lib)], []) == []  # chroma: the empty fake
-    await _set_store(pg, "postgres")
-    hits = await search("صوم رمضان", 3, [str(lib)], [])
-    assert [h["video_id"] for h in hits] == [str(v)] and hits[0]["text"] == "صوم رمضان"
+    for row in ("chroma", "postgres"):  # the row does not matter any more (story 43.5)
+        await _set_store(pg, row)
+        hits = await search("صوم رمضان", 3, [str(lib)], [])
+        assert [h["video_id"] for h in hits] == [str(v)] and hits[0]["text"] == "صوم رمضان"
+    assert await search("  ", 3, [], []) == []
 
     async def no_pgvector(db: Any, *, fresh: bool = False) -> StoreState:
-        return StoreState(store="postgres", ready=False)
+        return StoreState(ready=False)
 
     monkeypatch.setattr(pgstore, "store_state", no_pgvector)
     _, search, _ = grpc_server.default_search_backends(pg)
+    assert search is not None
+    with pytest.raises(RuntimeError, match="backend not configured"):
+        await search("x", 3, [], [])
+    _, search, _ = grpc_server.default_search_backends(None)
     assert search is not None
     with pytest.raises(RuntimeError, match="backend not configured"):
         await search("x", 3, [], [])
@@ -555,8 +518,10 @@ async def test_grpc_search_follows_the_store(
 @pytest.mark.integration
 @pytest.mark.asyncio
 async def test_the_reconciler_queues_videos_without_vectors(
-    pg: Database, fakes: tuple[FakeCollection, FakeEmbedder]
+    pg: Database, emb: FakeEmbedder
 ) -> None:
+    """A home that updated with its Chroma copy not done (the row still says chroma):
+    every video indexed into Chroma only is queued again."""
     graph = {s.name: s for s in GRAPH}
     lib = await make_library(pg)
     v, blank, kept = [await make_video(pg, lib) for _ in range(3)]
@@ -572,8 +537,7 @@ async def test_the_reconciler_queues_videos_without_vectors(
         "SELECT id FROM transcripts WHERE video_id = $1 AND is_active", str(kept)
     )
     await _write(pg, kept, lib, UUID(str(tid)))
-    assert await _semantic_sweep(pg, graph) == 0  # chroma: nothing to do
-    await _set_store(pg, "postgres")
+    assert await pg.fetchval("SELECT store FROM semantic_store_state") == "chroma"
     assert await _semantic_sweep(pg, graph) == 1  # v only: blank has no words, kept has rows
     queued = await pg.fetch(
         "SELECT subject_id FROM processing_jobs WHERE stage = 'index' AND state = 'pending'"

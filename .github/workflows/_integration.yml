@@ -48,19 +48,8 @@ jobs:
           --health-timeout 3s
           --health-retries 10
 
-      chroma:
-        image: ghcr.io/chroma-core/chroma:0.5.5
-        ports:
-          - 8000:8000
-        options: >-
-          --health-cmd "curl -fsS http://localhost:8000/api/v1/heartbeat || exit 1"
-          --health-interval 5s
-          --health-timeout 3s
-          --health-retries 20
-
     env:
       DATABASE_URL: postgres://maktaba:maktaba@localhost:5432/maktaba?sslmode=disable
-      CHROMA_URL: http://localhost:8000
 
     steps:
       - uses: actions/checkout@v6.0.2
@@ -106,8 +95,7 @@ jobs:
         # connections from non-loopback. Belt-and-braces: poll once.
         run: |
           for i in {1..30}; do
-            if pg_isready -h localhost -p 5432 -U maktaba >/dev/null 2>&1 \
-               && curl -fsS http://localhost:8000/api/v1/heartbeat >/dev/null 2>&1; then
+            if pg_isready -h localhost -p 5432 -U maktaba >/dev/null 2>&1; then
               echo "services ready"
               exit 0
             fi

@@ -8,8 +8,8 @@ Deployment), and from Epic 22 plans (Stories 22.3, 22.4, 22.7).
 ## 1. Topology
 
 Three Go/Python service binaries, a Postgres, a Caddy reverse proxy, and
-the static `web/dist` bundle served behind the same proxy. `media/`,
-`cache/`, and the ChromaDB directory are bind-mounted volumes.
+the static `web/dist` bundle served behind the same proxy. `media/`
+and `cache/` are bind-mounted volumes (the search vectors are in Postgres).
 
 ```
                     ┌──────────────────────────┐
@@ -81,7 +81,7 @@ Six services + named volumes + Docker secrets:
 | `caddy` | `caddy:2-alpine@sha256:<digest>` | api, streaming, web | (built-in admin) |
 
 **Volumes.** `pg_data`, `media` (operator binds their library here),
-`cache`, `chroma`, `caddy_data`, `caddy_config`.
+`cache`, `caddy_data`, `caddy_config`. (A `chroma` volume from before Chroma was retired is no longer used: `docker volume rm` it.)
 
 **Secrets** (mounted as files at `/run/secrets/...`):
 - `pg_password` — Postgres password.

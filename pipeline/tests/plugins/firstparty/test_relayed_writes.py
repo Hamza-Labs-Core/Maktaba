@@ -347,7 +347,7 @@ async def test_only_storage_canonicalizes_job_runs_the_path_conversion(db: Datab
 # and the stage fell back to the worker. The worker now makes its own folders before it names
 # them, by their real paths, wherever ``HOME`` puts them; a library's folders are never made.
 
-OWN = ("data.thumbnails", "data.cache", "data.index", "data.review")
+OWN = ("data.thumbnails", "data.cache", "data.review")
 
 
 @pytest.fixture
@@ -384,7 +384,8 @@ async def test_a_fresh_home_gets_its_folders_before_they_are_granted(
         os.path.join(real, ".maktaba", "work", "yt"),
         os.path.join(cache, "audio"),
     ]
-    assert doc["data.index"] == os.path.join(real, ".maktaba", "chroma")
+    # Chroma is retired (story 43.5): no index folder is made or granted
+    assert "data.index" not in doc and not os.path.exists(os.path.join(real, ".maktaba", "chroma"))
     for area in OWN:
         for folder in doc[area].split(";"):
             assert os.path.isdir(folder), (area, folder)
@@ -401,7 +402,7 @@ async def test_a_setting_that_names_a_folder_is_granted_that_folder(
     monkeypatch.setenv("MAKTABA_CHROMA_DIR", str(tmp_path / "state" / "chroma"))
     doc = await native.areas_doc(db)
     assert doc["data.review"] == os.path.realpath(tmp_path / "state" / "reports")
-    assert doc["data.index"] == os.path.realpath(tmp_path / "state" / "chroma")
+    assert "data.index" not in doc and not (tmp_path / "state" / "chroma").exists()
     assert (tmp_path / "state" / "reports").is_dir()
 
 
