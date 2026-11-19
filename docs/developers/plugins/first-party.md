@@ -582,6 +582,7 @@ The release lists both files in its signed `checksums.txt`. A first-party packag
 only when its `files.json` is listed there and its version is the server's
 (`firstparty.CheckPackage`). After signing, the release runs `api/tools/fp-packages` over its
 files. That command also checks that each package's manifest, strings and statements are the
-ones the server embeds, and CI runs it on a dry run of the build. The packages are release
+ones the server embeds, and that its wheel holds the same code as the release's signed pipeline
+wheel, file for file. CI runs it on a dry run of the build. The packages are release
 files only: homes still run the code from the pipeline wheel, and nothing installs a package
 yet.

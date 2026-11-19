@@ -2164,12 +2164,21 @@ jobs:
       # 54.27 T01: the signed checksums.txt lists every first-party package and its
       # files.json, and the server's own check (firstparty.CheckPackage, through
       # api/tools/fp-packages, built with the bundle this release's server embeds) trusts
-      # each. CI runs the same command on a dry run of the build (_plugins.yml first-party).
+      # each; each package's wheel holds exactly its plugin's files of the signed pipeline
+      # wheel, the code the runner loads. CI runs the same command on a dry run of the build
+      # (_plugins.yml first-party).
       - name: The first-party packages are trusted (fp-packages)
         env:
           TAG: ${{ github.ref_name }}
         working-directory: api
-        run: go run ./tools/fp-packages -dir ../dist -version "${TAG#v}"
+        run: |
+          set -euo pipefail
+          wheels=(../dist/maktaba_pipeline-*-py3-none-any.whl)
+          if [ "${#wheels[@]}" -ne 1 ] || [ ! -f "${wheels[0]}" ]; then
+            echo "::error::expected one pipeline wheel in dist/, got: ${wheels[*]}"
+            exit 1
+          fi
+          go run ./tools/fp-packages -dir ../dist -version "${TAG#v}" -pipeline-wheel "$(basename "${wheels[0]}")"
 
       - name: Attach the files to the release, publish it once complete
         env:

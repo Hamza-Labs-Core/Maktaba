@@ -5,8 +5,10 @@
 from __future__ import annotations
 
 import base64
+import csv
 import hashlib
 import importlib.util
+import io
 import json
 import os
 import shutil
@@ -117,7 +119,7 @@ def test_the_wheel_is_reproducible_and_its_record_holds(tmp_path: Path) -> None:
         assert not [n for n in names if "__pycache__" in n or n.endswith(".pyc")]
         meta = z.read(f"{info}/METADATA").decode()
         assert "Requires-Dist: maktaba-pipeline==1.0.0" in meta
-        rows = [r.split(",") for r in z.read(f"{info}/RECORD").decode().splitlines()]
+        rows = list(csv.reader(io.StringIO(z.read(f"{info}/RECORD").decode())))
         listed = {r[0] for r in rows}
         assert listed == set(names)
         for path, digest, size in rows:
@@ -162,3 +164,17 @@ def test_build_writes_each_package_and_its_files_json(tmp_path: Path) -> None:
 
 def test_an_unknown_plugin_name_is_refused(tmp_path: Path) -> None:
     assert build.main(["nope", "--version", "1.0.0", "--out", str(tmp_path)]) == 1
+
+
+def test_a_name_with_a_comma_or_a_quote_is_quoted_in_record(tmp_path: Path) -> None:
+    folder = _copy_plugin(tmp_path)
+    (folder / "src" / "maktaba_fp_convert" / 'a,b "c".txt').write_text("x")
+    name, data = build.wheel(folder, "tv.maktaba.convert", "1.0.0")
+    p = tmp_path / name
+    p.write_bytes(data)
+    with zipfile.ZipFile(p) as z:
+        rows = list(
+            csv.reader(io.StringIO(z.read("maktaba_fp_convert-1.0.0.dist-info/RECORD").decode()))
+        )
+    assert all(len(r) == 3 for r in rows)
+    assert 'maktaba_fp_convert/a,b "c".txt' in {r[0] for r in rows}

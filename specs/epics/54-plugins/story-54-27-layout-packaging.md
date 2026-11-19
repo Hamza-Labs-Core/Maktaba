@@ -170,12 +170,24 @@ plugin's `i18n`.
   refuses a plugin with no stage, an id outside `tv.maktaba.` and a version with no PEP 440 form.
 - **Release.** `release.yml` has a `package-plugins` job. `sign-and-release` needs it, copies
   both files of each package into `dist/` before "Generate checksums", and after the
-  `releaseverify` step runs `api/tools/fp-packages` on `dist/`. That command
-  (`firstparty.VerifyReleasePackages`) requires a package and a `files.json` for every
-  plugin of the bundle the server embeds, each listed under its own name with its own digest.
-  Each package must unpack to that `files.json`, its stamped manifest must be valid as a trusted
-  manifest, and its manifest, strings and statements must equal the embedded ones; then
-  `CheckPackage` must accept it. A first-party package of no bundle plugin fails the release.
+  `releaseverify` step runs `api/tools/fp-packages` on `dist/` with the release's pipeline
+  wheel. That command (`firstparty.VerifyReleasePackages`) requires a package and a
+  `files.json` for every plugin of the bundle the server embeds, each listed under its own name
+  with its own digest. Each package must:
+  - unpack to that `files.json`, holding exactly its manifest, strings, statements and one wheel
+    of its own;
+  - have a stamped manifest that is valid as a trusted manifest, with its manifest, strings and
+    statements equal to the embedded ones;
+  - have a wheel whose files match its `RECORD` and equal its plugin's files in the signed
+    pipeline wheel, digest for digest, both ways, so a package's code is the code the runner
+    loads;
+  - pass `CheckPackage`.
+  
+  Any other `tv.maktaba.*` package or `files.json`, on disk or in the checksums, fails the
+  release.
+- **`CheckPackage` reads the digest under the package's own name.** It looks at
+  `tv.maktaba.<name>-<server version>.files.json` only; until now it accepted the digest under
+  any name. A digest listed for another plugin, or for any other release file, trusts nothing.
 - **The payload does not carry the packages** (a change from §2). Homes still run the code
   from the signed pipeline wheel, and nothing on a home reads a package until stories 54.45 and
   54.46 build an install path. Carrying them would change every platform's payload for no
@@ -185,7 +197,11 @@ plugin's `i18n`.
   `build.py` and covers the trusted case, reproducibility, a package or `files.json` missing
   from the checksums, a changed byte, another release's packages under this release's names
   (`plugin_trusted_version`), a repacked package with other statements, one with a wider
-  manifest, an extra package and a missing one. `test_build_packages.py` covers stamping,
+  manifest, an extra package and a missing one. The review fixes add: a wheel that differs from
+  the pipeline wheel's code (a changed file, or one file more on either side), a rewritten
+  `RECORD`, a `RECORD` that does not hold, an unsigned pipeline wheel, a package with an extra
+  member, an orphan `files.json` (on disk, and in the checksums only), and `CheckPackage` with
+  the digest under another plugin's name, another release file's name or another version's. `test_build_packages.py` covers stamping,
   versions, the no-stage and third-party refusals, the package's files and the wheel's
   `RECORD`. T02 to T06 are #750's.
 

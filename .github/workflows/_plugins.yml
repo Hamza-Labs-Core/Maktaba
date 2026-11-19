@@ -522,16 +522,20 @@ jobs:
         run: go test -count=1 ./internal/plugins/... ./internal/handlers/queues/ -run 'Statement|Trusted|FirstParty|Flip|CheckPackage|Bundle|Command|Package'
 
       # 54.27 T01, the release's dry run: every first-party package built as release.yml
-      # builds it, checksummed as its "Generate checksums" step does, then checked by the
-      # same command the release runs on its signed dist/
+      # builds it, beside a pipeline wheel of this tree, checksummed as its "Generate
+      # checksums" step does, then checked by the same command the release runs on its
+      # signed dist/ (each package's code is the pipeline wheel's)
       - name: The release's first-party packages, built and trusted (54.27 T01)
         env:
           FP_OUT: ${{ runner.temp }}/fp-packages
         run: |
           set -euo pipefail
           python3 tools/plugins/build.py --version 0.0.1 --out "$FP_OUT"
+          uv build --wheel --project pipeline --out-dir "$FP_OUT" --quiet
+          wheels=("$FP_OUT"/maktaba_pipeline-*-py3-none-any.whl)
+          [ "${#wheels[@]}" -eq 1 ] && [ -f "${wheels[0]}" ] || { echo "::error::expected one pipeline wheel, got: ${wheels[*]}"; exit 1; }
           (cd "$FP_OUT" && find . -maxdepth 1 -type f ! -name 'checksums.txt' | sort | LC_ALL=C xargs sha256sum > checksums.txt)
-          (cd api && go run ./tools/fp-packages -dir "$FP_OUT" -version 0.0.1)
+          (cd api && go run ./tools/fp-packages -dir "$FP_OUT" -version 0.0.1 -pipeline-wheel "$(basename "${wheels[0]}")")
 
   # the runner's Seatbelt sandbox and protocol on macOS (no Postgres there)
   first-party-macos:

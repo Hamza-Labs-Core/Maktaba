@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import csv
 import hashlib
 import io
 import os
@@ -135,8 +136,13 @@ def wheel(folder: Path, plugin_id: str, version: str) -> tuple[str, bytes]:
         b"Root-Is-Purelib: true\n"
         b"Tag: py3-none-any\n"
     )
-    record = "".join(f"{n},{_record_hash(b)},{len(b)}\n" for n, b in sorted(files.items()))
-    files[f"{info}/RECORD"] = (record + f"{info}/RECORD,,\n").encode()
+    # RECORD is CSV (PEP 376): a name with a comma or a quote is quoted
+    rec = io.StringIO()
+    w = csv.writer(rec, lineterminator="\n")
+    for n, b in sorted(files.items()):
+        w.writerow([n, _record_hash(b), len(b)])
+    w.writerow([f"{info}/RECORD", "", ""])
+    files[f"{info}/RECORD"] = rec.getvalue().encode()
     # dist-info last, as wheel tools write it
     order = sorted(n for n in files if not n.startswith(info)) + [
         f"{info}/METADATA",

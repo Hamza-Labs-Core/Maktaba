@@ -6,7 +6,11 @@
 // strings and statements are the embedded ones, stamped with the version. It prints each
 // package checked and exits 1 on the first that is not trusted.
 //
-//	fp-packages -dir dist -version 0.3.152
+//	fp-packages -dir dist -version 0.3.152 [-pipeline-wheel maktaba_pipeline-0.3.152-py3-none-any.whl]
+//
+// With -pipeline-wheel, each package's wheel must hold exactly the files of its plugin that
+// the release's signed pipeline wheel holds, digest for digest: the package's code is the
+// code the runner loads.
 //
 // release.yml runs it on the release's own dist/ after its checksums are signed and
 // verified; CI runs it on a dry run of tools/plugins/build.py.
@@ -31,6 +35,7 @@ func run(args []string) int {
 	fs := flag.NewFlagSet("fp-packages", flag.ContinueOnError)
 	dir := fs.String("dir", "", "the release directory (holds checksums.txt)")
 	version := fs.String("version", "", "the release version (a tag without its v)")
+	pipeline := fs.String("pipeline-wheel", "", "the release's pipeline wheel in -dir (its plugin files are checked against each package's wheel)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -49,7 +54,7 @@ func run(args []string) int {
 		fmt.Fprintln(os.Stderr, "fp-packages:", err)
 		return 1
 	}
-	names, err := firstparty.VerifyReleasePackages(*dir, v, sums)
+	names, err := firstparty.VerifyReleasePackages(*dir, v, sums, *pipeline)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "fp-packages:", err)
 		return 1
