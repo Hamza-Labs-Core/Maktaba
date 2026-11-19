@@ -577,7 +577,7 @@ SELECT 'CREATE DATABASE ` + AppDatabase + ` OWNER ` + AppRole + `'
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
 CREATE EXTENSION IF NOT EXISTS unaccent;
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
-` + vectorSQL
+` + vectorSQL + textsearchSQL
 }
 
 // vectorSQL creates pgvector (semantic search, specs/epics/43-pgvector-search) in the
@@ -586,6 +586,18 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto;
 // extension, so the superuser makes it, never the app role's migrations.
 const vectorSQL = `SELECT 'CREATE EXTENSION IF NOT EXISTS vector'
   WHERE EXISTS (SELECT FROM pg_available_extensions WHERE name = 'vector')\gexec
+`
+
+// textsearchSQL creates pg_textsearch (keyword search's BM25 indexes, Epic 49) in the
+// current database when this Postgres has it and the server preloads it (Bundle.Preload:
+// PostgreSQL 18's postgres-18/; the extension refuses to load otherwise). The indexes are the
+// api's to make once it is there (`maktaba-api migrate up`, api/internal/searchindex): a home
+// whose schema migrated on PostgreSQL 16 gains them at its first start on 18. Without the
+// extension (PostgreSQL 16, a machine's fetched Postgres) it does nothing, and keyword search
+// goes on without BM25. Not a trusted extension: the superuser makes it.
+const textsearchSQL = `SELECT 'CREATE EXTENSION IF NOT EXISTS pg_textsearch'
+  WHERE EXISTS (SELECT FROM pg_available_extensions WHERE name = 'pg_textsearch')
+    AND current_setting('shared_preload_libraries') ~ '(^|[\s,])pg_textsearch([\s,]|$)'\gexec
 `
 
 // readyTimeout bounds how long the bootstrap server may take to come up.

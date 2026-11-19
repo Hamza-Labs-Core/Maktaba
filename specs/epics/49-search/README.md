@@ -457,3 +457,61 @@ runs only when the person opens that tab or submits from it; Results never waits
     and 5), and nothing needs it. Story 49.5's per-video documents carry the normalised text,
     and story 49.7's passages match the lines of the videos found on the fly, a bounded set.
     `search_tsv` serves the line path, unchanged, until story 49.13 removes it.
+
+### 49.5 `video_search_docs` and its BM25 indexes, exact and stemmed
+
+- **The table** is `video_search_docs` (migration 0232), as §5.4 has it: one row per video
+  (`video_id` → `videos` with `ON DELETE CASCADE`, `library_id`, `language`, `title`,
+  `speakers`, `body`, `transcript_id`, `built_at`), with a btree on `library_id`. Story 49.6's
+  `keyword_index` stage fills it. A machine's copy leaves it out (`cluster_copy_excluded()`).
+- **Two BM25 indexes**, each over title, speakers and body (pg_textsearch multi-field):
+  - `video_search_docs_bm25`: `maktaba_normalize()` of each field, `maktaba_search`;
+  - `video_search_docs_bm25_stem`: `maktaba_stem_prepare()` of each field, `maktaba_stem`.
+
+  Story 49.7 queries each with the same function applied to the query
+  (`to_bm25query(maktaba_normalize($q), 'video_search_docs_bm25')`), and weights the exact
+  score above the stemmed one.
+- **Where the indexes are made.** pg_textsearch exists on PostgreSQL 18 only, where the
+  server preloads it, and it isn't a trusted extension:
+  - the bundled server's bootstrap and cluster SQL create it, as the superuser, when the
+    server has it and preloads it (`pgbundle.textsearchSQL`, `clusterRev` 5), as pgvector is;
+  - the migration doesn't build the indexes. It ships `maktaba_search_index_statements()`,
+    which returns a `CREATE INDEX CONCURRENTLY IF NOT EXISTS` for each index missing (after a
+    `DROP INDEX CONCURRENTLY` of one a failed build left invalid), and nothing without the
+    extension;
+  - `maktaba-api migrate up` runs those statements after the migrations, outside a
+    transaction (`api/internal/searchindex`). The server runs it at every start, so a fresh
+    home on 18 builds them at its first start, and a home whose schema migrated on 16 builds
+    them at its first start on 18. A build that fails is logged, the start goes on, and the
+    next start tries again.
+- **Without pg_textsearch** (PostgreSQL 16, an operator's own server, a machine's fetched
+  Postgres) the table is there with no BM25 index. Keyword search keeps its line path.
+- **SQLite** gets the same table, and an FTS5 table `video_search_docs_fts` (title, speakers,
+  body). The application writes it with `api/internal/textnorm`'s normalised text, under the
+  document's rowid. A trigger deletes a document's FTS5 row with the document.
+- **Proof:**
+  - `api/internal/searchindex`, on Postgres 16 and 18 through the real migrations: the
+    schema goes up, down (slot 0230's exclusion back) and up again.
+  - On 18 with pg_textsearch, `Ensure` builds one index on `maktaba_search` and one on
+    `maktaba_stem`, both CONCURRENTLY, and builds nothing on a second call. It rebuilds an
+    index marked invalid.
+  - Ranked queries are answered by each index's Index Scan: احمد المصيبه finds أحمد … المصيبة
+    through the exact index, يصبر finds الصبر through the stemmed one, and talks finds
+    talking.
+  - On SQLite, FTS5 finds a document by its normalised text, and a deleted video takes both
+    rows.
+  - CI runs the 18 tests in the replica job, on its PostgreSQL 18 server.
+  - Each payload's `pg18-check.sh` runs `maktaba-api migrate up` on a database with
+    pg_textsearch and checks that both indexes are there and valid.
+- **How it differs from the spec.**
+  - The indexes are over the normalised fields (`maktaba_normalize`, `maktaba_stem_prepare`),
+    not the raw ones. Story 49.4 made normalisation a SQL function instead of a rules file
+    inside the configuration, so the index expression applies it.
+  - There is a second, stemmed index. §5.3 asks for the document indexed twice; §5.4's
+    listing shows only the exact one.
+  - The migration doesn't create the indexes; `migrate up` does, after it. A migration can't
+    tell whether pg_textsearch is there without a `DO` block, and a `DO` block can't build an
+    index CONCURRENTLY (the repo's migration rule 4).
+  - Title and speakers aren't yet weighted above body. pg_textsearch 1.5.1's multi-field
+    index scores the fields as one document. Story 49.9 tunes the weights against the
+    relevance check.

@@ -65,6 +65,15 @@ func TestRealPgTextsearchPreloaded(t *testing.T) {
 		if !strings.Contains(preload, "pg_textsearch") {
 			t.Errorf("shared_preload_libraries = %q", preload)
 		}
+		// story 49.5: the bootstrap made pg_textsearch in the app's database (textsearchSQL),
+		// beside pgvector, so slot 0232's migration makes its BM25 indexes there
+		var exts string
+		if err := db.QueryRowContext(qctx, `SELECT string_agg(extname, ',' ORDER BY extname) FROM pg_extension`).Scan(&exts); err != nil {
+			return err
+		}
+		if !strings.Contains(exts, "pg_textsearch") || !strings.Contains(exts, "vector") {
+			t.Errorf("the app's database has %s: no pg_textsearch or vector", exts)
+		}
 		for _, q := range []string{
 			"CREATE EXTENSION IF NOT EXISTS pg_textsearch",
 			"CREATE TEXT SEARCH CONFIGURATION public.check_search (COPY = simple)",

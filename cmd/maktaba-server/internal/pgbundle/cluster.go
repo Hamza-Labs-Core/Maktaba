@@ -406,7 +406,7 @@ BEGIN
     END IF;
 END
 $$;
-` + vectorSQL + roleAdminSQL
+` + vectorSQL + textsearchSQL + roleAdminSQL
 
 // roleAdminSQL gives the app role ADMIN OPTION on the machines' roles (maktaba_node_*,
 // their copies' maktaba_rep_*), their groups and the groups' members that it does not
@@ -447,8 +447,9 @@ const slotFunctions = `'pg_create_logical_replication_slot', 'pg_create_physical
 // clusterRev is clusterSQL's revision: a cluster whose marker names an older one (or
 // none: the first) runs it again. 3: the app role administers the roles the superuser
 // made (roleAdminSQL). 4: pgvector in the app's database (vectorSQL), for a home made
-// before the bundle had it.
-const clusterRev = 4
+// before the bundle had it. 5: pg_textsearch (textsearchSQL), for a home made before the
+// bundle had it (a home upgraded to PostgreSQL 18 runs clusterSQL at its first start anyway).
+const clusterRev = 5
 
 // MendClusterGrants runs the cluster bootstrap's grants again on the running server, as
 // its superuser: the home's API asks for it (its supervisor's mend-roles) when its user

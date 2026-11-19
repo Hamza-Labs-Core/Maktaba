@@ -81,10 +81,19 @@ SQL
         *) fail "pg_textsearch's BM25 query (exit $rc): $(printf '%s\n' "$out" | tail -4 | tr '\n' ' ') server: $(tail -5 "$scratch/pg18.log" 2>/dev/null | tr '\n' ' ')" ;;
     esac
     if [ -n "$api" ]; then
+        # with pg_textsearch made first, as the bundled server's bootstrap makes it: migrate
+        # up then makes keyword search's two BM25 indexes (story 49.5)
         if psql18 -d postgres -c "CREATE DATABASE maktaba_check18;" >/dev/null 2>&1 &&
+            psql18 -d maktaba_check18 -c "CREATE EXTENSION pg_trgm; CREATE EXTENSION pgcrypto; CREATE EXTENSION unaccent; CREATE EXTENSION vector; CREATE EXTENSION pg_textsearch;" >/dev/null 2>&1 &&
             out="$(cd "$scratch" && env -u MAKTABA_MIGRATIONS_DIR \
                 DATABASE_URL="postgres://maktaba@127.0.0.1:$port/maktaba_check18?sslmode=disable" "$api" migrate up 2>&1)"; then
             ok "the schema migrates on PostgreSQL 18 (maktaba-api migrate up)"
+            out="$(psql18 -d maktaba_check18 -c "SELECT count(*) FROM pg_index x JOIN pg_class c ON c.oid = x.indexrelid
+                WHERE c.relname IN ('video_search_docs_bm25', 'video_search_docs_bm25_stem') AND x.indisvalid;" 2>&1)"
+            case "$out" in
+                2) ok "keyword search's BM25 indexes, exact and stemmed, made by migrate up" ;;
+                *) fail "keyword search's BM25 indexes after migrate up: $out" ;;
+            esac
         else
             fail "maktaba-api migrate up on PostgreSQL 18: $(printf '%s\n' "$out" | tail -3)"
         fi

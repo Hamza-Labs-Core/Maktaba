@@ -553,6 +553,38 @@ func TestVectorOnlyWhenAvailable(t *testing.T) {
 	}
 }
 
+// pg_textsearch (Epic 49, story 49.5) is made only when this Postgres has it and the server
+// preloads it (PostgreSQL 16, a machine's fetched Postgres, must still start), by the
+// superuser, in the bootstrap, the cluster SQL (a home upgraded to 18 runs it at its first
+// start; clusterRev 5 for one made before) and a restore. Its indexes are the api's
+// (api/internal/searchindex).
+func TestTextsearchOnlyWhenPreloaded(t *testing.T) {
+	for _, want := range []string{
+		"WHERE EXISTS (SELECT FROM pg_available_extensions WHERE name = 'pg_textsearch')",
+		"current_setting('shared_preload_libraries') ~",
+		"pg_textsearch([\\s,]|$)'\\gexec",
+	} {
+		if !strings.Contains(textsearchSQL, want) {
+			t.Errorf("textsearchSQL lacks %q:\n%s", want, textsearchSQL)
+		}
+	}
+	for name, sql := range map[string]string{"bootstrap": bootstrapSQL("pw"), "restore": recreateSQL(RestoreOptions{}, AppDatabase),
+		"cluster": clusterSQL} {
+		if !strings.Contains(sql, textsearchSQL) {
+			t.Errorf("%s SQL lacks pg_textsearch:\n%s", name, sql)
+		}
+		if strings.Contains(sql, "\nCREATE EXTENSION IF NOT EXISTS pg_textsearch") {
+			t.Errorf("%s SQL makes pg_textsearch unconditionally:\n%s", name, sql)
+		}
+	}
+	if clusterRev < 5 {
+		t.Errorf("clusterRev = %d: a home made before pg_textsearch must run the cluster SQL again", clusterRev)
+	}
+	if !slices.Contains(Extensions, "pg_textsearch") {
+		t.Errorf("Extensions = %v: a home's dump on 18 has pg_textsearch", Extensions)
+	}
+}
+
 // A pre-update dump is named after the update, replaces one of that name, and
 // keeps the newest of its kind beside the nightly ones.
 func TestDumpBeforeUpdate(t *testing.T) {
