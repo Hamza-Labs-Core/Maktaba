@@ -119,7 +119,7 @@
 | 16.02 Premium features | The 30-day read-only period after a downgrade. |
 | 16.04 License validation | Read-only access for users over the seat limit; they keep full access. |
 | 22.03 Container images | `tools/image-size-guard.sh` exists but no workflow runs it. |
-| 23.07 Supply-chain security | A per-component SBOM (`tools/sbom.sh` is a stub) and a CVE gate. Release images already carry SBOM attestations. |
+| 23.07 Supply-chain security | A per-component SBOM (`tools/sbom.sh` is a stub) and a CVE gate that can stop a release. Release images already carry SBOM attestations, and Dependabot alerts are on for the repo (78 open on 2026-11-19). |
 | 23.08 Coordinated disclosure | `SECURITY.md` and the version-aware advisory surface in the clients. |
 | 26.2 Transcript topic & entity extraction | Only slot 0074's schema is present. No `topic_extractor` implementation, NER/gazetteer path, classification/entity writers, or its tests are on `origin/main`; `classify_stage.py` still describes that extractor as future work. |
 | 26.4 Auto-collection builder | Slot 0076 exists, but no `auto_collections` producer, suggestion lifecycle implementation, or builder tests exist. Existing smart-collection code belongs to earlier/later stories. |
@@ -582,7 +582,7 @@ Each epic below has an evidence key naming current implementation and test files
 | 23.04 Secrets management | Done (sampled) | E23; redaction suites |
 | 23.05 Input validation | Done (sampled) | E23 |
 | 23.06 Rate limiting/confirmation | Done (sampled) | E23 |
-| 23.07 Supply-chain security | **partial** | Release images carry BuildKit SBOM attestations (`sbom: true` in `.github/workflows/release.yml` and `relay.yml`), and SBOM parsing/tests exist in `api/internal/security/sbom.go`. Missing: `tools/sbom.sh` is still a stub that `tools/ci/ci_paths.py` marks “run by hand”, so no per-component SBOM is published, and no workflow runs a CVE gate (`govulncheck`, `pip-audit`, npm/pnpm audit, Dependabot or CodeQL). |
+| 23.07 Supply-chain security | **partial** | Release images carry BuildKit SBOM attestations (`sbom: true` in `.github/workflows/release.yml` and `relay.yml`), and SBOM parsing/tests exist in `api/internal/security/sbom.go`. Missing: `tools/sbom.sh` is still a stub that `tools/ci/ci_paths.py` marks “run by hand”, so no per-component SBOM is published, and no workflow runs a CVE gate (`govulncheck`, `pip-audit`, npm/pnpm audit or CodeQL). Dependabot alerts are on for the repo (78 open on 2026-11-19), but nothing stops a release on them. |
 | 23.08 Coordinated disclosure | **partial** | `api/internal/security/disclosure.go`, `security_test.go`, public `security.txt`, and `docs/security/advisories/` exist. Missing required `SECURITY.md` with SLA/scope and the specified version-aware client advisory feed/surface (`web/src/lib/advisories.ts` is absent). Private GHSA process/tabletop execution is unverified. |
 
 ### Epic 24 — Data integrity
