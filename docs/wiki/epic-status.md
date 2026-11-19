@@ -38,7 +38,7 @@
 | 13 Desktop | 8* | 0 | 0 | 0 | Done |
 | 14 TV apps | 7* | 0 | 0 | 0 | Done |
 | 15 Discovery | 7* | 0 | 0 | 0 | Done |
-| 16 Subscriptions | 6* | 2 | 0 | 0 | **Partial** |
+| 16 Subscriptions | 7* | 1 | 0 | 0 | **Partial** |
 | 17 UX design system | 11* | 0 | 0 | 0 | Done |
 | 18 Performance | 8* | 0 | 0 | 0 | Done |
 | 19 Scalability | 8* | 0 | 0 | 0 | Done |
@@ -116,7 +116,6 @@
 | Story | Missing |
 |---|---|
 | 16.02 Premium features | The 30-day read-only period after a downgrade. |
-| 16.04 License validation | Read-only access for users over the seat limit; they keep full access. |
 | 22.03 Container images | `tools/image-size-guard.sh` exists but no workflow runs it. |
 | 23.07 Supply-chain security | A per-component SBOM (`tools/sbom.sh` is a stub) and a CVE gate that can stop a release. Release images already carry SBOM attestations; Dependabot alerts (78 open on 2026-11-19) and CodeQL default setup (3 open alerts) scan the repo, but neither stops a release. |
 | 26.2 Transcript topic & entity extraction | Only slot 0074's schema is present. No `topic_extractor` implementation, NER/gazetteer path, classification/entity writers, or its tests are on `origin/main`; `classify_stage.py` still describes that extractor as future work. |
@@ -467,7 +466,7 @@ Each epic below has an evidence key naming current implementation and test files
 | 16.01 Free tier | Done (sampled) | E16 |
 | 16.02 Premium features | **partial** | E16; merged implementation is visible in `subscriptions.go`, but its spec explicitly says downgrade visibility/read-only-for-30-days is **not built**; backup/federation TCs also waited on those surfaces. Current backup/federation code exists, but the downgrade AC remains absent. |
 | 16.03 Subscription management | Done (sampled) | E16 |
-| 16.04 License validation | **partial** | E16; signed offline validation, refresh and tests exist. The spec says over-seat existing users have full access, **not the required read-only mode**. This is a deliberate implementation decision, not evidence that the AC was met. |
+| 16.04 License validation | **Done** | E16; signed offline validation, refresh and tests; #1454: past the seats, the newest non-admin accounts are read-only as the owner decided (2026-11-19): they watch and keep their progress, history, playlists and favourites; uploads, metadata edits and managing the home are refused (`subscriptions.SeatGuard`, `seats.go`, `seats_test.go`, `seats_pg_test.go`, `403 seat-read-only`); the admin sees them, the account is told (`SubscriptionSettings.tsx`). |
 | 16.05 Telemetry opt-in | Done (sampled) | E16; `api/internal/router/telemetry.go`, `web/src/components/TelemetryPrompt.tsx` |
 | 16.06 Feature flags | Done (sampled) | E16 |
 | 16.07 Telemetry API | Done (sampled) | E16 |

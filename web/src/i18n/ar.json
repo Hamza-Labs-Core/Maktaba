@@ -5218,6 +5218,8 @@
   "subscription.holder": "مرخّص لـ",
   "subscription.renews": "يتجدد قبل",
   "subscription.expires": "ينتهي",
+  "subscription.readOnly.self": "لدى هذا الجهاز الرئيسي مستخدمون أكثر مما تسمح به خطته، لذا يستطيع هذا الحساب المشاهدة وحفظ تقدّمه وقوائم تشغيله ومفضّلاته، لكنه لا يستطيع تغيير شيء آخر. اطلبوا من المسؤول إضافة مقاعد أو حذف مستخدم.",
+  "subscription.readOnly.users": "للقراءة فقط (بلا مقعد)",
   "subscription.licenseId": "معرّف الترخيص",
   "subscription.features": "ما تشمله الخطة",
   "subscription.feature.on": "مشمول",
