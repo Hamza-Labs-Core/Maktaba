@@ -60,7 +60,7 @@ func TestABundleWithAThirdPartyIDIsRefused(t *testing.T) {
 func TestCheckPackage(t *testing.T) {
 	files := []byte(`{"files":{"manifest.toml":"abc"}}`)
 	sum := sha256.Sum256(files)
-	signed := releaseverify.Checksums{"plugins/first-party/tv.maktaba.toy/files.json": hex.EncodeToString(sum[:])}
+	signed := releaseverify.Checksums{FilesJSONName("tv.maktaba.toy", "0.9.0"): hex.EncodeToString(sum[:])}
 	ok := Package{ID: "tv.maktaba.toy", Version: "0.9.0", FilesJSON: files}
 	code := func(err error) string {
 		var e *Error
@@ -88,5 +88,12 @@ func TestCheckPackage(t *testing.T) {
 	}
 	if c := code(CheckPackage(ok, nil, "0.9.0")); c != CodeTrustedUnsigned {
 		t.Fatalf("no verified checksums: %q", c)
+	}
+	// the digest listed under another name trusts nothing: another plugin's files.json, or
+	// any other release file (story 54.27)
+	for _, other := range []string{FilesJSONName("tv.maktaba.other", "0.9.0"), "maktaba-server-0.9.0-linux-amd64.tar.gz", FilesJSONName("tv.maktaba.toy", "0.8.9")} {
+		if c := code(CheckPackage(ok, releaseverify.Checksums{other: hex.EncodeToString(sum[:])}, "0.9.0")); c != CodeTrustedUnsigned {
+			t.Fatalf("its digest listed as %s: %q", other, c)
+		}
 	}
 }

@@ -239,11 +239,15 @@ has:
 | `stage_names`, `queues` | its stages, and their names in the queue (`GET /api/queues/failures?stage=` takes several, joined by commas) |
 | `switch_locked` | why it cannot be turned on from its switch (`licence_missing`, `held`, `revoked`, …); absent when it can. Turning a plugin off is never locked |
 | `activity` | `pending`, `running`, `done_24h`, `failed_24h`, `problems`, `avg_ms`, `p95_ms` |
-| `resources` | `processes` (each `{process, group, component, machine, rss_mb, scope, stages, shared_with, shared_core}`), `shared`, and a third-party plugin's `data_rows`, `data_bytes`, `data_mb`, `memory_mb`, `peak_memory_mb` |
+| `resources` | `processes` (each `{process, group, component, machine, rss_mb, scope, cpu_pct, cpu_scope, stages, shared_with, shared_core}`), `shared`, and a third-party plugin's `data_rows`, `data_bytes`, `data_mb`, `memory_mb`, `peak_memory_mb` |
 
 A process often runs several plugins (a runner group, the pipeline worker, the plugin host):
-`rss_mb` is the whole process's memory and `shared_with` names the other plugins. Nothing
-splits it per plugin, and CPU is not measured per process.
+`rss_mb` is the whole process's memory, `cpu_pct` the share of one processor core the whole
+process used over the supervisor's last five-minute sample (100 is one core; a busy process can
+pass it), and `shared_with` names the other plugins. Nothing splits either number per plugin.
+`scope` and `cpu_scope` say what each number covers: `process` (this process alone) or
+`component` (every process of its component together). They can differ for one sample, just
+after another process of the component starts. A process with no number yet has no `cpu_pct`.
 
 `core` lists the parts of Maktaba itself that must always run. They are not plugins: they are
 not in `plugins`, and `GET /api/plugins/{id}` answers `404 plugin_not_installed` for them.

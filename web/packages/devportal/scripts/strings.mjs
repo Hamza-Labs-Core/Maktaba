@@ -76,10 +76,10 @@ export const STRINGS = {
       "We want to hear about any vulnerability in Maktaba: the server, the apps, the cloud services and this site.",
     "security.report.title": "How to report",
     "security.report.body":
-      "Email security@maktaba.dev with what you found, how to reproduce it and what it lets an attacker do. Please do not open a public GitHub issue for a vulnerability.",
+      "Report it privately on GitHub (the repository's Security tab, then Report a vulnerability), or email security@maktaba.dev, with what you found, how to reproduce it, the version and what it lets an attacker do. Please do not open a public GitHub issue for a vulnerability.",
     "security.after.title": "What happens next",
     "security.after.body":
-      "We confirm your report, work on a fix, and tell you when it ships. We publish an advisory with the release that fixes it, and credit you if you want to be credited.",
+      "We acknowledge your report within 3 business days, and release a fix or agree a disclosure date with you within 90 days. We publish an advisory with the release that fixes it, with the affected versions, and credit you if you want to be credited (or thank an anonymous researcher). Settings → About in every Maktaba home lists the advisories that affect its version.",
     "security.rules.title": "Good faith",
     "security.rules.body":
       "Test only against your own Maktaba installation. Do not access other people's data, do not degrade a service for others, and give us reasonable time to fix a problem before you share it.",
@@ -169,10 +169,10 @@ export const STRINGS = {
       "نريد أن نعرف بأي ثغرة في مكتبة: الخادم، والتطبيقات، والخدمات السحابية، وهذا الموقع.",
     "security.report.title": "كيف تبلّغ",
     "security.report.body":
-      "راسل security@maktaba.dev بما وجدت، وكيف يُعاد إنتاجه، وما يتيحه للمهاجم. من فضلك لا تفتح بلاغاً عاماً على GitHub عن ثغرة.",
+      "بلّغ عنها سرّاً على GitHub (تبويب Security في المستودع، ثم Report a vulnerability)، أو راسل security@maktaba.dev، بما وجدت، وكيف يُعاد إنتاجه، والإصدار، وما يتيحه للمهاجم. من فضلك لا تفتح بلاغاً عاماً على GitHub عن ثغرة.",
     "security.after.title": "ماذا يحدث بعد ذلك",
     "security.after.body":
-      "نؤكد استلام بلاغك، ونعمل على إصلاح، ونخبرك حين يصدر. وننشر تنبيهاً أمنياً مع الإصدار الذي يصلحها، ونذكر اسمك إن أردت.",
+      "نؤكد استلام بلاغك خلال 3 أيام عمل، ونُصدر إصلاحاً أو نتفق معك على موعد للإفصاح خلال 90 يوماً. وننشر تنبيهاً أمنياً مع الإصدار الذي يصلحها، بالإصدارات المتأثرة، ونذكر اسمك إن أردت (أو نشكر باحثاً مجهول الاسم). وتعرض الإعدادات ← حول في كل جهاز رئيسي لمكتبة التنبيهات التي تمسّ إصداره.",
     "security.rules.title": "حسن النية",
     "security.rules.body":
       "اختبر على تثبيت مكتبة الخاص بك فقط. لا تصل إلى بيانات الآخرين، ولا تُضعف خدمة لغيرك، وامنحنا وقتاً معقولاً لإصلاح المشكلة قبل أن تنشرها.",

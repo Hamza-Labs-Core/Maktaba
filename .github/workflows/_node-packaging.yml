@@ -223,8 +223,10 @@ jobs:
       - name: cloud deploy guard
         if: runner.os == 'Linux'
         run: bash tools/release/cloud-guard-test.sh
+      # on Linux and macOS: the publish gate reads checksums.txt with grep, cut and sort, which
+      # GNU's and BSD's tools must read the same
       - name: release assets adopt (a bundle and its signature together)
-        if: runner.os == 'Linux'
+        if: runner.os != 'Windows'
         run: bash tools/release/release-assets-test.sh
       # every GitHub release call goes through gh-retry.sh: a transient GitHub error (HTTP 5xx,
       # a stream CANCEL, a timeout) is tried again (reads, release edit, create-once, uploads

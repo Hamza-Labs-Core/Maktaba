@@ -25,6 +25,26 @@ export interface UpdateStatus {
   rolled_back?: { version: string; reason: string; at: string };
   /** The Docker image against the volume's runtime (story 59.12; admins only). */
   container?: ContainerImage;
+  /** Story 23.8: the published security advisories that affect the running release. */
+  advisories?: SecurityAdvisory[];
+  /** False when the server could not read the advisory list: unknown, not "none". */
+  advisories_checked?: boolean;
+  /** The repository's list of every advisory. */
+  advisories_url?: string;
+  /** The lowest release none of `advisories` affects ("" or absent: none yet). */
+  advisories_fixed_in?: string;
+}
+
+/** One published security advisory that affects the running release (story 23.8). */
+export interface SecurityAdvisory {
+  id: string;
+  cve?: string;
+  severity: "critical" | "high" | "medium" | "low" | "unknown";
+  summary: string;
+  url: string;
+  affected: string;
+  fixed_in?: string;
+  published_at?: string;
 }
 
 /** Which release runs on the Docker image, and why (story 59.12). */

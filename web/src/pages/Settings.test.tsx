@@ -1295,6 +1295,174 @@ describe("Settings about (test-cases/settings-about.md)", () => {
     expect(avail).toHaveTextContent("1.6.0");
   });
 
+  // Story 23.8 AC4 / TC2: the advisories that affect this version, beside it
+  const ADVISORY = {
+    id: "GHSA-aaaa-bbbb-cccc",
+    cve: "CVE-2026-1001",
+    severity: "high",
+    summary: "Path traversal in subtitle ingest",
+    url: "https://github.com/Hamza-Labs-Core/Maktaba/security/advisories/GHSA-aaaa-bbbb-cccc",
+    affected: "< 1.6.0",
+    fixed_in: "1.6.0",
+  };
+  const ALL = "https://github.com/Hamza-Labs-Core/Maktaba/security/advisories";
+
+  it("SAB-23.8: an outdated version lists the advisories that affect it and prompts the update", async () => {
+    aboutGets({
+      "/api/system/updates": {
+        ...AVAILABLE,
+        advisories: [
+          ADVISORY,
+          {
+            ...ADVISORY,
+            id: "GHSA-2",
+            cve: undefined,
+            severity: "critical",
+            summary: "Session fixation",
+            fixed_in: "1.5.2",
+          },
+        ],
+        advisories_checked: true,
+        advisories_url: ALL,
+        advisories_fixed_in: "1.6.0",
+      },
+    });
+    renderSettings("/settings/about");
+    const section = await screen.findByTestId("about-advisories");
+    expect(
+      within(section).getByRole("heading", { name: "Security advisories" })
+    ).toBeInTheDocument();
+    await waitFor(() => expect(within(section).getAllByTestId("about-advisory")).toHaveLength(2));
+    expect(within(section).getByTestId("about-advisories-affected")).toHaveTextContent(
+      "These security advisories affect version 1.5.0:"
+    );
+    const first = within(section).getAllByTestId("about-advisory")[0];
+    expect(
+      within(first).getByRole("link", { name: "Path traversal in subtitle ingest" })
+    ).toHaveAttribute("href", ADVISORY.url);
+    expect(first).toHaveTextContent("High");
+    expect(first).toHaveTextContent("CVE-2026-1001");
+    expect(first).toHaveTextContent("fixed in 1.6.0");
+    // no CVE: the GHSA id
+    expect(within(section).getAllByTestId("about-advisory")[1]).toHaveTextContent("GHSA-2");
+    // the release that fixes them all (the server's advisories_fixed_in); an admin gets the
+    // Updates page
+    const prompt = within(section).getByTestId("about-advisories-update");
+    expect(prompt).toHaveTextContent("Update to version 1.6.0: it fixes these advisories.");
+    expect(within(prompt).getByRole("link", { name: "Open Updates" })).toHaveAttribute(
+      "href",
+      "/admin/updates"
+    );
+    expect(within(section).getByTestId("about-advisories-all")).toHaveAttribute("href", ALL);
+  });
+
+  it("SAB-23.8: a viewer is told to ask the admin; an advisory with no fix yet prompts no update", async () => {
+    aboutGets({
+      "/api/system/updates": {
+        ...AVAILABLE,
+        advisories: [ADVISORY],
+        advisories_checked: true,
+        advisories_url: ALL,
+        advisories_fixed_in: "1.6.0",
+      },
+    });
+    const { unmount } = renderSettings("/settings/about", { user: memberUser });
+    const prompt = await screen.findByTestId("about-advisories-update");
+    expect(prompt).toHaveTextContent("Ask your home's admin to update to version 1.6.0");
+    expect(within(prompt).queryByRole("link")).toBeNull();
+    unmount();
+
+    aboutGets({
+      "/api/system/updates": {
+        ...AVAILABLE,
+        advisories: [{ ...ADVISORY, fixed_in: "" }],
+        advisories_checked: true,
+        advisories_url: ALL,
+      },
+    });
+    renderSettings("/settings/about");
+    const item = await screen.findByTestId("about-advisory");
+    expect(item).toHaveTextContent("no fixed release yet");
+    expect(screen.queryByTestId("about-advisories-update")).toBeNull();
+  });
+
+  it("SAB-23.8: a fixed version says none affect it; an unreadable list never says none", async () => {
+    aboutGets({
+      "/api/system/updates": {
+        ...UP_TO_DATE,
+        advisories: [],
+        advisories_checked: true,
+        advisories_url: ALL,
+      },
+    });
+    const { unmount } = renderSettings("/settings/about", { user: memberUser });
+    expect(await screen.findByTestId("about-advisories-none")).toHaveTextContent(
+      "No published security advisory affects version 1.5.0."
+    );
+    expect(screen.queryByTestId("about-advisory")).toBeNull();
+    unmount();
+
+    aboutGets({
+      "/api/system/updates": {
+        ...UP_TO_DATE,
+        advisories: [],
+        advisories_checked: false,
+        advisories_url: ALL,
+      },
+    });
+    renderSettings("/settings/about", { user: memberUser });
+    expect(await screen.findByTestId("about-advisories-unknown")).toHaveTextContent(
+      "Could not check the security advisories for version 1.5.0."
+    );
+    expect(screen.queryByTestId("about-advisories-none")).toBeNull();
+    // still a way to every advisory
+    expect(screen.getByTestId("about-advisories-all")).toHaveAttribute("href", ALL);
+  });
+
+  it("SAB-23.8: on a machine whose version is not the home's the list is unknown, never none", async () => {
+    aboutGets({
+      "/api/system/updates": {
+        ...UP_TO_DATE,
+        current_version: "v9.9.9",
+        advisories: [],
+        advisories_checked: true,
+        advisories_url: ALL,
+      },
+    });
+    renderSettings("/settings/about");
+    expect(await screen.findByTestId("about-advisories-unknown")).toBeInTheDocument();
+    expect(screen.queryByTestId("about-advisories-none")).toBeNull();
+    expect(screen.queryByTestId("about-advisory")).toBeNull();
+  });
+
+  it("SAB-23.8: in Arabic", async () => {
+    aboutGets({
+      "/api/system/updates": {
+        ...AVAILABLE,
+        advisories: [ADVISORY],
+        advisories_checked: true,
+        advisories_url: ALL,
+        advisories_fixed_in: "1.6.0",
+      },
+    });
+    localStorage.setItem("mkt:locale", "ar");
+    try {
+      renderSettings("/settings/about", { user: memberUser });
+      const section = await screen.findByTestId("about-advisories");
+      await waitFor(() =>
+        expect(
+          within(section).getByRole("heading", { name: "التنبيهات الأمنية" })
+        ).toBeInTheDocument()
+      );
+      expect(within(section).getByTestId("about-advisory")).toHaveTextContent("مرتفع");
+      expect(within(section).getByTestId("about-advisories-update")).toHaveTextContent(
+        "اطلب من مسؤول الجهاز الرئيسي"
+      );
+    } finally {
+      localStorage.removeItem("mkt:locale");
+    }
+  });
+
   it("SAB-05: an admin's line is the Updates page's: same status, same version, a link there", async () => {
     aboutGets();
     renderSettings("/settings/about");

@@ -3,7 +3,7 @@
 > Story-by-story status of every epic, read from the code and history on `main` at `f43b0d3ed` (2026-11-19).
 > The specs and epic pages don't record a status; this page does. Update the row when a story changes.
 
-**Not every epic is done.** Of 773 stories across all 60 epics, 697 are done, 41 are partial, 25 are not started, and 10 were deferred or removed on purpose. The largest open pieces are Epic 49 (Search, 2 stories of fourteen done), Epic 34 (the TV public site, a first slice only) and Epic 54 Phase 5 (Plugins).
+**Not every epic is done.** Of 773 stories across all 60 epics, 699 are done, 40 are partial, 24 are not started, and 10 were deferred or removed on purpose. The largest open pieces are Epic 49 (Search, 2 stories of fourteen done), Epic 34 (the TV public site, a first slice only) and Epic 54 Phase 5 (Plugins).
 
 ## How this was checked
 
@@ -45,7 +45,7 @@
 | 20 Testing | 8* | 0 | 0 | 0 | Done |
 | 21 Observability | 8* | 0 | 0 | 0 | Done |
 | 22 DevOps | 8* | 1 | 0 | 0 | **Partial** |
-| 23 Security | 6* | 2 | 0 | 0 | **Partial** |
+| 23 Security | 7* | 1 | 0 | 0 | **Partial** |
 | 24 Data integrity | 9* | 0 | 0 | 0 | Done |
 | 25 Cloud relay | 36* | 0 | 0 | 0 | Done |
 | 26 Content intelligence | 6 | 4 | 0 | 0 | **Partial** |
@@ -76,14 +76,14 @@
 | 51 Configurable components | 19 | 0 | 0 | 0 | Done |
 | 52 Transcript word review | 13 | 3 | 0 | 1 | **Partial** |
 | 53 Logs, errors and reports | 18 | 0 | 0 | 0 | Done (open issue #1064) |
-| 54 Plugins | 40 | 3 | 8 | 1 | **Not done** |
+| 54 Plugins | 42 | 2 | 7 | 1 | **Not done** |
 | 55 Desktop player parity | 10 | 0 | 0 | 0 | Done |
 | 56 TV library view | 13 | 0 | 0 | 1 | Done (56.07 removed by #969) |
 | 57 Parental controls | 13 | 3 | 0 | 1 | **Partial** |
 | 58 Smart TV platforms | 17 | 0 | 0 | 1 | Done (58.18 Vega OS deferred) |
 | 59 NAS | 16 | 0 | 0 | 0 | Done (device results not checked) |
 | 60 Website | 11 | 1 | 0 | 1 | **Partial** |
-| **Total** | **695** | **41** | **27** | **10** | **Not all done** |
+| **Total** | **698** | **40** | **25** | **10** | **Not all done** |
 
 `*` sampled, see [How this was checked](#how-this-was-checked).
 
@@ -108,7 +108,7 @@
 - **49.12 AI-mode API** — no grounded retrieval, citation validation, streaming/follow-up endpoint, or role tests.
 - **49.13 Remove the stopgap** — the Epic 49 document path does not exist, so its removal is not started either.
 - **49.14 AI-mode client tab** — no streaming AI tab or citation-to-player UI on any client.
-- **54.45–54.52, Epic 54 Phase 5:** store packages, plugin lifecycle, plugin updates, preinstalled plugins and migration, offline homes, release variants, variant updates, and process CPU. Each spec says "Not built", and #1243 confirms it.
+- **54.45–54.51, Epic 54 Phase 5:** store packages, plugin lifecycle, plugin updates, preinstalled plugins and migration, offline homes, release variants and variant updates. Each spec says "Not built"; 54.45 and 54.50 each have an open question their spec leaves to a decision.
 
 ### Partial
 
@@ -118,7 +118,6 @@
 | 16.04 License validation | Read-only access for users over the seat limit; they keep full access. |
 | 22.03 Container images | `tools/image-size-guard.sh` exists but no workflow runs it. |
 | 23.07 Supply-chain security | A per-component SBOM (`tools/sbom.sh` is a stub) and a CVE gate that can stop a release. Release images already carry SBOM attestations; Dependabot alerts (78 open on 2026-11-19) and CodeQL default setup (3 open alerts) scan the repo, but neither stops a release. |
-| 23.08 Coordinated disclosure | `SECURITY.md` and the version-aware advisory surface in the clients. |
 | 26.2 Transcript topic & entity extraction | Only slot 0074's schema is present. No `topic_extractor` implementation, NER/gazetteer path, classification/entity writers, or its tests are on `origin/main`; `classify_stage.py` still describes that extractor as future work. |
 | 26.4 Auto-collection builder | Slot 0076 exists, but no `auto_collections` producer, suggestion lifecycle implementation, or builder tests exist. Existing smart-collection code belongs to earlier/later stories. |
 | 26.5 Web metadata enrichment | The current service makes internal and web/LLM proposals. The specified TMDb, OMDb, MusicBrainz and Wikipedia/Wikidata adapters and their tests are absent. |
@@ -148,7 +147,6 @@
 | 52.02 Evaluation set | The human-corrected gold set and calibration on real data; CI has only synthetic data. |
 | 52.11 Web review queue | The Playwright test of the branch-stack review flow. |
 | 52.13 Native review | The Apple UI tests and Android Compose/Robolectric screen tests. |
-| 54.27 Layout and packaging | `tools/plugins/build.py` and the per-plugin release packages. |
 | 54.31 Wave 4 classify/enrich | `enrich` still runs in-process; the six classify stages moved. |
 | 54.36 Wave 9 core and removal | Removing the in-process path and its switch, which waits on the preconditions the spec names. |
 | 57.03 Server filter | A restricted account's Home is over the 60 ms p95 target. |
@@ -581,7 +579,7 @@ Each epic below has an evidence key naming current implementation and test files
 | 23.05 Input validation | Done (sampled) | E23 |
 | 23.06 Rate limiting/confirmation | Done (sampled) | E23 |
 | 23.07 Supply-chain security | **partial** | Release images carry BuildKit SBOM attestations (`sbom: true` in `.github/workflows/release.yml` and `relay.yml`), and SBOM parsing/tests exist in `api/internal/security/sbom.go`. Missing: `tools/sbom.sh` is still a stub that `tools/ci/ci_paths.py` marks “run by hand”, so no per-component SBOM is published, and no workflow runs a CVE gate (`govulncheck`, `pip-audit` or npm/pnpm audit). Dependabot alerts (78 open on 2026-11-19) and CodeQL default setup (3 open alerts) scan the repo, but nothing stops a release on them. |
-| 23.08 Coordinated disclosure | **partial** | `api/internal/security/disclosure.go`, `security_test.go`, public `security.txt`, and `docs/security/advisories/` exist. Missing required `SECURITY.md` with SLA/scope and the specified version-aware client advisory feed/surface (`web/src/lib/advisories.ts` is absent). Private GHSA process/tabletop execution is unverified. |
+| 23.08 Coordinated disclosure | Done | #1444: `SECURITY.md` (GitHub private reporting or security@maktaba.dev, 3 business days to acknowledge, 90 days to a fix or coordinated disclosure, scope, anonymity); `GET /api/system/updates` carries the published GHSAs that affect the running version (`api/internal/system/advisories.go`, `advisories_test.go`) and Settings → About lists them with the release that fixes them (`web/src/pages/Settings/AboutPanel.tsx`, `Settings.test.tsx` SAB-23.8). Also `disclosure.go` and the public `security.txt`. The tabletop drill (TC1) and a synthetic-CVE patch release (TC3) are process exercises, not code. |
 
 ### Epic 24 — Data integrity
 
@@ -1233,7 +1231,7 @@ The wiki table omits 54.43–54.52; this audit includes all 52 spec files. Open 
 | 54.24 Statement registry/roles | Done | #750; `api/internal/plugins/statements/`; `tools/plugins/statements_build.py`, `roles.py`; Postgres role/scope/rollback tests |
 | 54.25 Graph/stage switch | Done | #750; `pipeline/src/maktaba_pipeline/engine/assemble.py`; `shared/plugins/graph.golden.json`; `api/internal/handlers/queues/impl_pg_test.go` |
 | 54.26 Parity proof | Done | #750; `tools/plugins/parity.py`; `plugins/sdk/python/maktaba_plugin_sdk/parity.py`; first-party `test_*_parity.py` suites and self-tests |
-| 54.27 Layout/packaging | **partial** | #750; repo layout, catalog ownership, CI, embedding and import contracts exist. **`tools/plugins/build.py` is absent**; per-plugin `.mkplugin` outputs and their `files.json` entries in release `checksums.txt` are not produced. #750 explicitly deferred them, and 54.45 still says that builder is not built. T01/package-release AC is missing. |
+| 54.27 Layout/packaging | Done | #750, #1440; `tools/plugins/build.py` builds one `.mkplugin` per first-party plugin with its `files.json`, both in the release's signed `checksums.txt`; `release.yml` `package-plugins` and the `fp-packages` check after signing; `api/internal/plugins/firstparty/release_test.go`, `pipeline/tests/plugins/firstparty/test_build_packages.py`; T01 dry run in `_plugins.yml` `first-party`. The payload does not carry the packages (nothing on a home reads them before 54.45/54.46; the spec's As built says why). |
 | 54.28 Wave 1 classify leaves | Done | #760, #925; `plugins/first-party/classify/manifest.toml`, `plugins/first-party/classify/tests/test_classify_parity.py`; `api/rehearsal_waves_e2e_test.go` scenario 16.1. `display_title` followed in wave 4 as the spec records. |
 | 54.29 Wave 2 thumbnails/subtitles | Done | #773; `plugins/first-party/thumbnails/`, `subtitles/`; parity tests; rehearsal 16.2 |
 | 54.30 Wave 3 transcription/search | Done | #789; `plugins/first-party/transcription/`, `semantic-search/`; parity tests; rehearsal 16.3 |
@@ -1258,7 +1256,7 @@ The wiki table omits 54.43–54.52; this audit includes all 52 spec files. Open 
 | 54.49 Offline homes | **not started** | Spec says **Not built**; downloadable offline first-party packages absent |
 | 54.50 Release variants | **not started** | Spec says **Not built**; Full/Core release-variant production path absent |
 | 54.51 Variant updates | **not started** | Spec says **Not built**; update/migration between package-based variants absent |
-| 54.52 Process CPU | **not started** | Spec says **Not built**; supervisor still reports memory (`rss_parts`) but no required `cpu_pct`/`cpu_parts` implementation/test |
+| 54.52 Process CPU | Done | #1443; `cmd/maktaba-server/internal/hostinfo/cpu_*.go` (macOS, Linux, Windows); the reconciler's `cpu_pct`/`cpu_parts` beside `rss_mb`/`rss_parts` with hysteresis (`internal/supervisor/cpu_test.go`); `GET /api/plugins` `cpu_pct` (`api/internal/plugins/measure_test.go`, `published_pg_test.go`); the Plugins page's Processor column (`PluginsSection.test.tsx` T08) |
 
 ### Epic 55 — Desktop player parity
 

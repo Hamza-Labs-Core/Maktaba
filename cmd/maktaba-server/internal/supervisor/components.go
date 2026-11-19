@@ -129,6 +129,9 @@ type procView struct {
 	// FailReason: it exited with one of its FatalExits and waits, not restarted
 	// (maktaba-plugind's 78: sandbox_unavailable)
 	FailReason string
+	// StartedAt: when its running process started (zero: none), set at every start, a
+	// requested restart included (Restarts counts crashes only)
+	StartedAt time.Time
 }
 
 // restartWindow is the health's restart window (restarts_24h).
@@ -163,7 +166,7 @@ const (
 // sampleRSS reads the memory of every running process, every rssEvery, into r.rss by
 // component (a component with none running has no entry).
 func (r *Reconciler) sampleRSS(views []procView) {
-	if r.RSS == nil {
+	if r.RSS == nil && r.CPU == nil {
 		return
 	}
 	now := time.Now()
@@ -184,6 +187,12 @@ func (r *Reconciler) sampleRSS(views []procView) {
 		if p.Running && p.PID > 0 {
 			pids = append(pids, p.PID)
 		}
+	}
+	if r.CPU != nil {
+		r.sampleCPU(views, r.CPU(pids), now)
+	}
+	if r.RSS == nil {
+		return
 	}
 	got := r.RSS(pids)
 	sum := map[string]int64{}
@@ -276,7 +285,11 @@ func (s *Supervisor) procViews() []procView {
 	out := make([]procView, 0, len(s.children))
 	for _, c := range s.children {
 		missing := c.proc.Present != nil && !c.proc.Present()
-		out = append(out, procView{Role: c.proc.Role, Instance: c.proc.Instance, Component: c.proc.Component,
+		var started time.Time
+		if c.status.StartedAt != nil {
+			started = *c.status.StartedAt
+		}
+		out = append(out, procView{StartedAt: started, Role: c.proc.Role, Instance: c.proc.Instance, Component: c.proc.Component,
 			Dormant: c.proc.Dormant, Allowed: c.allowed, Wanted: c.wanted, Draining: c.draining, Once: c.proc.Once,
 			State: c.status.State, Running: c.cmd != nil && c.cmd.Process != nil, Restarts: c.status.Restarts,
 			CrashLoop: c.failed, Missing: missing, Restarts24h: len(recentRestarts(c.restartAt, s.now())), PID: c.status.PID,
@@ -316,4 +329,134 @@ func procPhase(p procView) (phase, reason string, ok bool) {
 		return components.PhaseStopped, "", true
 	}
 	return components.PhaseStopped, "", true
+}
+
+// cpuStep is the change in cpu_pct (points of one core) that is written, or a tenth of a
+// busy process's number: a point or two either way rewrites no row, so an idle machine
+// writes nothing (story 54.52, the same rule as rss_mb).
+const cpuStep = 5
+
+// cpuSample is a process's processor time as last read, when, and which process it was: its
+// component, role, instance and start time, so a pid another process took, or any restart
+// (a crash's or one asked for) that got the same pid back, starts a new baseline whatever
+// its time.
+type cpuSample struct {
+	used time.Duration
+	at   time.Time
+	who  string
+}
+
+func cpuWho(p procView) string {
+	return fmt.Sprintf("%s|%s/%s|%d|%d", p.Component, p.Role, p.Instance, p.Restarts, p.StartedAt.UnixNano())
+}
+
+// sampleCPU turns each running process's processor time into the share of one core it used
+// since the last sample (cpu_pct, 100 is one whole core), by component and by process
+// ("<role>/<instance>"), into r.cpu and r.cpuParts. A process first seen, another process on
+// the same pid, or a time that went back has no number until the next sample, and while any
+// running process of a component has none the component keeps the numbers it last had (or
+// none): a sum of only some of its processes would read as the whole component's.
+func (r *Reconciler) sampleCPU(views []procView, used map[int]time.Duration, now time.Time) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	prev := r.cpuPrev
+	r.cpuPrev = map[int]cpuSample{}
+	sum := map[string]int64{}
+	parts := map[string]map[string]int64{}
+	incomplete := map[string]bool{}
+	running := map[string]bool{}
+	for _, p := range views {
+		if !p.Running || p.PID <= 0 {
+			continue
+		}
+		running[p.Component] = true
+		u, ok := used[p.PID]
+		if !ok {
+			incomplete[p.Component] = true
+			continue
+		}
+		who := cpuWho(p)
+		r.cpuPrev[p.PID] = cpuSample{used: u, at: now, who: who}
+		was, ok := prev[p.PID]
+		wall := now.Sub(was.at)
+		if !ok || was.who != who || u < was.used || wall <= 0 {
+			incomplete[p.Component] = true
+			continue
+		}
+		pct := int64((u - was.used) * 100 / wall)
+		sum[p.Component] += pct
+		if parts[p.Component] == nil {
+			parts[p.Component] = map[string]int64{}
+		}
+		parts[p.Component][string(p.Role)+"/"+p.Instance] += pct
+	}
+	if r.cpu == nil {
+		r.cpu = map[string]int64{}
+	}
+	out := map[string]map[string]int64{}
+	for id := range running {
+		if incomplete[id] {
+			// keep what it last had, whole
+			if was, ok := r.cpuParts[id]; ok {
+				out[id] = was
+			}
+			continue
+		}
+		// each process's number moves only by cpuMoved; the component's is the sum of its
+		// processes' as written, so the two always agree
+		out[id] = map[string]int64{}
+		var total int64
+		for name, pct := range parts[id] {
+			if was, ok := r.cpuParts[id][name]; ok && !cpuMoved(was, pct) {
+				pct = was
+			}
+			out[id][name] = pct
+			total += pct
+		}
+		r.cpu[id] = total
+	}
+	r.cpuParts = out
+	// a component with nothing running has no number
+	for id := range r.cpu {
+		if !running[id] {
+			delete(r.cpu, id)
+		}
+	}
+}
+
+// cpuMoved: from prev to pct is a change worth a write: cpuStep points and a tenth, or a
+// process gone idle (a low number would otherwise stay on an idle process for ever).
+func cpuMoved(prev, pct int64) bool {
+	if pct == 0 {
+		return prev != 0
+	}
+	d := pct - prev
+	if d < 0 {
+		d = -d
+	}
+	return d >= cpuStep && d*10 >= prev
+}
+
+// cpuOf is component id's processor use (cpu_pct) as last sampled, while one of its
+// processes runs, and by process when more than one runs (cpu_parts).
+func (r *Reconciler) cpuOf(id string, own []procView) (int64, map[string]any, bool) {
+	running := false
+	for _, p := range own {
+		running = running || p.Running
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	pct, ok := r.cpu[id]
+	if !ok || !running {
+		return 0, nil, false
+	}
+	procs := r.cpuParts[id]
+	if len(procs) < 2 {
+		return pct, nil, true
+	}
+	out := make(map[string]any, len(procs))
+	for name, v := range procs {
+		out[name] = v
+	}
+	return pct, out, true
 }
