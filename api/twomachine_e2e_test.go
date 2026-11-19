@@ -30,8 +30,9 @@ package main
 // Opt-in (it builds three binaries): MAKTABA_TEST_PG_URL (a Postgres whose user may
 // create databases and roles, run with wal_level=logical and taking connections from
 // 127.0.0.1: initdb --locale=C, as the bundled one is) and MAKTABA_E2E_TWO_MACHINE=1;
-// MAKTABA_TEST_PG_BIN (a Postgres 16 install: initdb, postgres, pg_ctl) gives the node
-// its copy. MAKTABA_E2E_HOLD=<seconds>
+// MAKTABA_TEST_PG_BIN (a Postgres install, 16 or 18: initdb, postgres, pg_ctl) gives the
+// node its copy; MAKTABA_TEST_PG18_BIN (18), with a 16 MAKTABA_TEST_PG_BIN, has the node move
+// its copy to 18 part way (Epic 49 story 49.3). MAKTABA_E2E_HOLD=<seconds>
 // keeps both machines up at the end (manual checks, screenshots). It never reads this
 // machine's own node config, keys or installs: every path is under t.TempDir().
 
@@ -821,6 +822,54 @@ slots = "off"
 				tokenFile: filepath.Join(nodeData, "supervisor", "local.token")},
 			v1, lib)
 	})
+
+	// Epic 49 story 49.3: a machine following its home with a copy on PostgreSQL 16 updates to a
+	// payload with PostgreSQL 18 (MAKTABA_TEST_PG18_BIN): its next start sets the 16 copy aside,
+	// makes the copy again in the 18 major's directory from the home, and follows it; the rest
+	// of the run is on that copy
+	if pg18 := os.Getenv("MAKTABA_TEST_PG18_BIN"); withCopy && pg18 != "" && pg18 != pgPrograms {
+		outer := t // the upgraded node lives on through the subtests after this one
+		t.Run("the machine upgrades: its copy is made again on PostgreSQL 18 and follows the home", func(t *testing.T) {
+			following := func() bool {
+				// (while the node restarts nothing answers: not a failure, a wait)
+				r, err := http.Get(nodeWebURL + "/api/cluster/self")
+				if err != nil {
+					return false
+				}
+				defer r.Body.Close()
+				b, _ := io.ReadAll(r.Body)
+				var st struct {
+					Copy struct {
+						State string `json:"state"`
+					} `json:"copy"`
+				}
+				return r.StatusCode == 200 && json.Unmarshal(b, &st) == nil && st.Copy.State == "following"
+			}
+			waitFor(t, "the node's 16 copy following the home", 4*time.Minute, following)
+			node.stop()
+			upgraded := make([]string, 0, len(nodeEnv))
+			for _, e := range nodeEnv {
+				if !strings.HasPrefix(e, "MAKTABA_POSTGRES_HOME=") {
+					upgraded = append(upgraded, e)
+				}
+			}
+			nodeEnv = append(upgraded, "MAKTABA_POSTGRES_HOME="+pg18)
+			node = startMachine(outer, "node (on PostgreSQL 18)", bin, nodeEnv)
+			node.web = nodeWebURL
+			waitFor(t, "the node's copy made again on 18, following the home", 6*time.Minute, following)
+			if !strings.Contains(node.log.String(), "starting PostgreSQL 18.") {
+				t.Errorf("the upgraded node's copy did not start PostgreSQL 18:\n%s", tail(node.log.String(), 2000))
+			}
+			data := filepath.Join(nodeDir, "data")
+			if aside, _ := filepath.Glob(filepath.Join(data, "postgres.pg16-*")); len(aside) != 1 {
+				t.Errorf("the 16 copy was not set aside (found %v)", aside)
+			}
+			if raw, err := os.ReadFile(filepath.Join(data, "postgres-18", "PG_VERSION")); err != nil ||
+				strings.TrimSpace(string(raw)) != "18" {
+				t.Errorf("no 18 copy in postgres-18: %q %v", raw, err)
+			}
+		})
+	}
 
 	t.Run("home gone: the node runs on its copy of the home's database", func(t *testing.T) {
 		if !withCopy {

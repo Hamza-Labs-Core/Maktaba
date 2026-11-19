@@ -14,6 +14,13 @@ build fails when the two differ.
 
 ### Changed
 
+- **Machines follow a home on PostgreSQL 18, and upgrade with their own update (Epic 49,
+  story 49.3).** A machine still on PostgreSQL 16 keeps following its home once the home runs
+  18. When the machine updates, its copy of the home's database is made again on 18, beside the
+  old one, which is set aside rather than deleted. Until the new copy is complete, the machine
+  serves the home's reads through the home. A machine whose copy runs on 18 can be switched to
+  be the home.
+
 - **Over the plan's seats, the newest accounts are read-only (story 16.4).** When a home has
   more users than its licence's seats, the most recently created accounts beyond the seat
   count can still watch, keep their progress and history, and keep their own playlists and

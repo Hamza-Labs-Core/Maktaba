@@ -622,6 +622,9 @@ replica:
   - 'cmd/**'
   - 'shared/**'
   - 'tools/ci/no-pg-skips.sh'
+  # the home's PostgreSQL 18 of the machines' run (Epic 49 story 49.3)
+  - 'tools/rehearsal/postgres18.sh'
+  - 'tools/release/linux-app/pins.env'
   - '.github/workflows/_replica.yml'
 
 # the compose stack (the api, streaming, pipeline and web images) driven by tests/e2e
