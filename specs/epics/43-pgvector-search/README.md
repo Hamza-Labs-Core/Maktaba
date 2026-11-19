@@ -215,6 +215,12 @@ Nothing opens Chroma any more, and nothing depends on `chromadb`.
     far. The copy drops the HNSW index for its load and builds it after, so the semantic
     leg is slow, and the API falls back to full-text past its budget, until the copy is
     done.
+  - **A copy that cannot finish.** A copy whose check keeps failing, or that cannot run at
+    all (no pgvector, no collection, no numpy: exit 78, not retried at that start), keeps
+    holding: nothing is embedded again, as decided. The admin sees why on the processes
+    page, and that removing the Chroma folder gives the copy up and indexes those videos
+    again (the operator's choice, never the release's). `chapter_infer` waits as well, so
+    no video is chaptered from part of its vectors.
   - **Videos copied in part, with no copy to finish them.** A home whose copy stopped part
     way and whose Chroma folder is gone has videos with some of their vectors only. The
     fingerprint counts the vectors against the active transcript's non-blank segments

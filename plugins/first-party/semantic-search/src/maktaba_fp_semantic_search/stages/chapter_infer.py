@@ -74,6 +74,9 @@ async def input_fingerprint(db: Any, subject: Subject) -> str | None:
             "enabled": await _enabled(db, v.library_id),
             "authored": await _authored(db, v.id),
             "v": CHAPTER_VERSION,
+            # story 43.5: while the Chroma copy brings the vectors, chapters wait for them
+            # (this field goes when it is done, so the video is chaptered then)
+            **({"copying": True} if (await store_state(db)).copying else {}),
         }
     )
 
@@ -147,7 +150,16 @@ async def run(db: Any, job: Job, ctx: StageContext) -> StageResult:
             summary={"chapters": 0, "reason": "no active transcript"},
         )
     transcript_id, _ = active
-    if not (await store_state(db)).ready:
+    state = await store_state(db)
+    if state.copying:
+        # the Chroma copy is bringing this video's vectors: chaptering a part of them would
+        # stand once they are all there
+        return StageResult(
+            output_hash=canonical_hash({"copying": True}),
+            outcome="waiting_inputs",
+            summary={"chapters": 0, "reason": "the search index copy is not done"},
+        )
+    if not state.ready:
         # no pgvector here (SQLite, or the extension missing): no vectors to chapter by
         return StageResult(
             output_hash=canonical_hash({"semantic": "off"}),

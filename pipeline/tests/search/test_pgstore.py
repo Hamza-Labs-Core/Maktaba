@@ -654,6 +654,17 @@ async def test_while_the_chroma_copy_runs_nothing_is_indexed_again(
     assert not (await store_state(pg, fresh=True)).copying
     assert await stage.input_fingerprint(pg, subject) == plain  # nothing to do
     assert await _semantic_sweep(pg, graph) == 0
+    # chapters wait for the copy too: none from a part of the vectors
+    await pg.execute("UPDATE semantic_store_state SET store = 'chroma', copy_done_at = NULL")
+    pgstore.forget_state()
+    before = await chapter_infer.input_fingerprint(pg, subject)
+    held = await chapter_infer.run(pg, _job(v, lib), cast(StageContext, _Ctx()))
+    assert held.outcome == "waiting_inputs" and held.summary["chapters"] == 0
+    means = "SELECT count(*) FROM video_embeddings WHERE video_id = $1"
+    assert await pg.fetchval(means, str(v)) == 0
+    await pg.execute("UPDATE semantic_store_state SET store = 'postgres', copy_done_at = now()")
+    pgstore.forget_state()
+    assert await chapter_infer.input_fingerprint(pg, subject) != before  # chaptered then
     # without the supervisor's word (no Chroma folder: no copy runs) the row alone holds
     # nothing back
     monkeypatch.delenv(pgstore.COPY_ENV)

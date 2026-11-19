@@ -593,7 +593,7 @@ async def _tail(conn: Any, files: ChromaFiles, cfg: CopyConfig, cur: Cursor) -> 
                 cfg.model,
                 keys[i : i + cfg.page],
                 np.stack(vecs[i : i + cfg.page]),
-                replace=True,
+                # never over a vector the index stage wrote (story 43.5: it is newer)
             )
         if gone:
             await conn.execute(

@@ -46,6 +46,9 @@ const ChromaCopyInstance = "chroma-copy"
 // continues where it stopped each time, so a failure that repeats is not a passing one.
 const ChromaCopyTries = 5
 
+// ReasonChromaCopyNotReady is the copy's state when it cannot run at all (exit 78).
+const ReasonChromaCopyNotReady = "chroma_copy_not_ready"
+
 // EnvChromaCopy tells every child that this start runs the copy ("pending"): the
 // pipeline then indexes nothing again for want of vectors (search/pgstore.py).
 const EnvChromaCopy = "MAKTABA_CHROMA_COPY"
@@ -109,25 +112,26 @@ func RetireChroma(cfg config.Config, w io.Writer) string {
 	copied, ok := chromaCopied(filepath.Join(state, ChromaCopyDone))
 	keptAt, marked := keptSince(retired, dir)
 	switch {
-	case ok && (copied == "" || filepath.Clean(copied) == filepath.Clean(dir)):
-		// the copy was checked (a done file that cannot be read is a done copy all the same)
+	case ok && copied != "" && filepath.Clean(copied) == filepath.Clean(dir):
+		// the copy was checked (a done file that cannot be read is not: the copy runs
+		// again, finds its state done and writes the file again)
 	case copyHome(cfg):
 		fmt.Fprintf(w, "[supervisor] %s (Chroma) is not copied into the database yet: the copy runs now; "+
 			"the folder goes at the start after it is done\n", dir)
 		return ""
 	case marked && time.Since(keptAt) >= chromaKeep():
 	case marked:
-		fmt.Fprintf(w, "[supervisor] %s (Chroma, not copied) is no longer used; kept since %s for a rollback, "+
+		fmt.Fprintf(w, "[supervisor] Chroma is retired: %s (Chroma) is kept since %s for a rollback, "+
 			"deleted at a start from %s\n", dir, keptAt.Format(time.RFC3339), keptAt.Add(chromaKeep()).Format(time.RFC3339))
 		return ""
 	default:
 		raw, _ := json.Marshal(map[string]any{"chroma_dir": dir, "kept_at": time.Now().UTC().Format(time.RFC3339)})
 		if err := os.WriteFile(retired, raw, 0o600); err != nil {
-			fmt.Fprintf(w, "[supervisor] the search index is in the database now; %s is no longer used and is kept: %v\n", dir, err)
+			fmt.Fprintf(w, "[supervisor] Chroma is retired; %s is no longer used and is kept: %v\n", dir, err)
 			return ""
 		}
-		fmt.Fprintf(w, "[supervisor] the search index is in the database now: %s (Chroma, not copied) is no longer used; "+
-			"kept for this start (a rollback reads it), deleted at a start a day from now; its videos are indexed again\n", dir)
+		fmt.Fprintf(w, "[supervisor] Chroma is retired: %s (Chroma) is no longer used, and there is no Postgres to copy "+
+			"it into; kept for a day (a rollback reads it), then deleted\n", dir)
 		return ""
 	}
 	go removeChroma(dir, state, w)
@@ -156,7 +160,7 @@ func ChromaCopyPending(cfg config.Config) bool {
 		return false
 	}
 	if copied, ok := chromaCopied(filepath.Join(cfg.StateDir(), ChromaCopyDone)); ok &&
-		(copied == "" || filepath.Clean(copied) == filepath.Clean(dir)) {
+		copied != "" && filepath.Clean(copied) == filepath.Clean(dir) {
 		return false
 	}
 	return copyHome(cfg)
@@ -185,7 +189,10 @@ func BuildChromaCopy(opts Options) ([]Process, error) {
 	wire(cmd)
 	return []Process{{Role: RolePipeline, Instance: ChromaCopyInstance, Cmd: cmd,
 		Once: true, Tries: ChromaCopyTries,
-		Progress: func() Detail { return chromaCopyDetail(progress) }}}, nil
+		// 78: nothing to copy from or into (no pgvector, no collection, no numpy): trying
+		// again at this start changes nothing
+		FatalExits: map[int]string{78: ReasonChromaCopyNotReady},
+		Progress:   func() Detail { return chromaCopyDetail(progress, ChromaDir(opts.Config)) }}}, nil
 }
 
 // isChromaFolder: Chroma's own database is there, or the folder is empty (Chroma made it
@@ -241,7 +248,22 @@ func chromaEntry(e os.DirEntry) bool {
 	if !e.IsDir() {
 		return name == "chroma.sqlite3" || strings.HasPrefix(name, "chroma.sqlite3-")
 	}
-	return uuidName.MatchString(name)
+	if !uuidName.MatchString(name) {
+		return false
+	}
+	return true
+}
+
+// chromaSegment: a UUID-named folder that holds an HNSW segment's files (Chroma's own;
+// an operator's folder of the same shape is not).
+func chromaSegment(dir string) bool {
+	for _, f := range []string{"header.bin", "data_level0.bin", "index_metadata.pickle"} {
+		if _, err := os.Stat(filepath.Join(dir, f)); err == nil {
+			return true
+		}
+	}
+	ents, err := os.ReadDir(dir)
+	return err == nil && len(ents) == 0
 }
 
 var uuidName = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
@@ -257,7 +279,7 @@ func removeChroma(dir, state string, w io.Writer) {
 	}
 	kept := 0
 	for _, e := range ents {
-		if !chromaEntry(e) {
+		if !chromaEntry(e) || (e.IsDir() && !chromaSegment(filepath.Join(dir, e.Name()))) {
 			kept++
 			continue
 		}
@@ -279,7 +301,7 @@ func removeChroma(dir, state string, w io.Writer) {
 }
 
 // chromaCopyDetail is the copy's progress as /processes says it.
-func chromaCopyDetail(path string) Detail {
+func chromaCopyDetail(path, dir string) Detail {
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return Detail{}
@@ -311,7 +333,11 @@ func chromaCopyDetail(path string) Detail {
 	case "verify":
 		return Detail{Text: "Checking the copied search index"}
 	case "failed":
-		return Detail{Text: "The copied search index failed its check: " + p.Reason}
+		// the copy holds every re-index of the videos it has not brought yet (nothing is
+		// embedded twice): until it passes, or the admin gives it up by removing the folder
+		return Detail{Text: "The copied search index failed its check: " + p.Reason + ". It is tried again at " +
+			"the next start; search uses what is copied so far. To give the copy up and index those videos again, " +
+			"remove " + dir + "."}
 	}
 	return Detail{}
 }

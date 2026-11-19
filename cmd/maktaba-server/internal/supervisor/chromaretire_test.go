@@ -122,7 +122,7 @@ func TestASQLiteHomesChromaFolderIsKeptADay(t *testing.T) {
 	if !exists(marker) {
 		t.Fatal("first start: no retirement mark")
 	}
-	if !strings.Contains(log.String(), "kept for this start") {
+	if !strings.Contains(log.String(), "kept for a day") {
 		t.Errorf("first start's log: %q", log.String())
 	}
 	if got := RetireChroma(cfg, &log); got != "" {
@@ -383,21 +383,85 @@ func TestNoCopyOnSQLiteOrAMachine(t *testing.T) {
 
 func TestTheChromaCopyProgress(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "p.json")
-	if d := chromaCopyDetail(path); d.Text != "" {
+	if d := chromaCopyDetail(path, "/x/chroma"); d.Text != "" {
 		t.Errorf("no file: %q", d.Text)
 	}
 	for raw, want := range map[string]string{
 		`{"phase":"load","elements":250,"total":1000,"eta_sec":600}`: "Copying the search index into the database: 250 of 1000 (25%), about 10m0s left",
 		`{"phase":"index","copied":990}`:                             "Building the search index in the database (990 vectors copied)",
 		`{"phase":"verify"}`:                                         "Checking the copied search index",
-		`{"phase":"failed","reason":"recall@10 0.8 below 0.95"}`:     "The copied search index failed its check: recall@10 0.8 below 0.95",
+		`{"phase":"failed","reason":"recall@10 0.8 below 0.95"}`:     "The copied search index failed its check: recall@10 0.8 below 0.95. It is tried again at the next start; search uses what is copied so far. To give the copy up and index those videos again, remove /x/chroma.",
 		`{"phase":"done"}`:                                           "",
 	} {
 		if err := os.WriteFile(path, []byte(raw), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		if d := chromaCopyDetail(path); d.Text != want {
+		if d := chromaCopyDetail(path, "/x/chroma"); d.Text != want {
 			t.Errorf("%s: %q, want %q", raw, d.Text, want)
 		}
+	}
+}
+
+// TestAnUnreadableDoneFileIsNoDoneCopy: a done file that cannot be read never deletes the
+// folder (the copy runs again, finds its state done and writes it again).
+func TestAnUnreadableDoneFileIsNoDoneCopy(t *testing.T) {
+	cfg, dir := chromaConfig(t)
+	makeChroma(t, dir)
+	if err := os.WriteFile(filepath.Join(cfg.StateDir(), ChromaCopyDone), []byte("{broken"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if !ChromaCopyPending(cfg) {
+		t.Fatal("an unreadable done file reads as a done copy")
+	}
+	var log syncBuffer
+	if got := RetireChroma(cfg, &log); got != "" {
+		t.Fatalf("RetireChroma = %q", got)
+	}
+	time.Sleep(50 * time.Millisecond)
+	if !exists(filepath.Join(dir, "chroma.sqlite3")) {
+		t.Fatal("the folder went on an unreadable done file")
+	}
+}
+
+// TestAUUIDFolderThatIsNotChromasIsKept: only a UUID-named folder with an HNSW segment's
+// files (or empty) is Chroma's.
+func TestAUUIDFolderThatIsNotChromasIsKept(t *testing.T) {
+	cfg, dir := chromaConfig(t)
+	makeChroma(t, dir)
+	mine := filepath.Join(dir, "11111111-2222-4333-8444-555555555555")
+	if err := os.MkdirAll(mine, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(mine, "notes.txt"), []byte("mine"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cfg.StateDir(), ChromaCopyDone), copyMarker(t, dir), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var log syncBuffer
+	if got := RetireChroma(cfg, &log); got != dir {
+		t.Fatalf("RetireChroma = %q", got)
+	}
+	waitFileGone(t, filepath.Join(dir, "chroma.sqlite3"), "Chroma's database")
+	waitChromaLog(t, &log, "deleted "+dir)
+	if !exists(filepath.Join(mine, "notes.txt")) {
+		t.Fatal("a UUID-named folder that is not Chroma's was deleted")
+	}
+	if exists(filepath.Join(dir, "0b5e6f9c-1d2e-4f30-8a9b-0c1d2e3f4a5b")) {
+		t.Fatal("Chroma's own segment folder is still there")
+	}
+}
+
+// TestACopyThatCannotRunIsNotRetried: exit 78 (no pgvector, no collection, no numpy) is
+// the copy's fatal exit: the start does not try it again.
+func TestACopyThatCannotRunIsNotRetried(t *testing.T) {
+	cfg, dir := chromaConfig(t)
+	makeChroma(t, dir)
+	procs, err := BuildChromaCopy(Options{Config: cfg})
+	if err != nil || len(procs) != 1 {
+		t.Fatalf("copy = %d, %v", len(procs), err)
+	}
+	if procs[0].FatalExits[78] != ReasonChromaCopyNotReady {
+		t.Fatalf("fatal exits = %v", procs[0].FatalExits)
 	}
 }
