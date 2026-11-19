@@ -84,7 +84,7 @@
 | 58 Smart TV platforms | 17 | 0 | 0 | 1 | Done (58.18 Vega OS deferred) |
 | 59 NAS | 16 | 0 | 0 | 0 | Done (device results not checked) |
 | 60 Website | 11 | 1 | 0 | 1 | **Partial** |
-| **Total** | **705** | **38** | **21** | **9** | **Not all done** |
+| **Total** | **706** | **38** | **20** | **9** | **Not all done** |
 
 `*` sampled, see [How this was checked](#how-this-was-checked).
 
