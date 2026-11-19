@@ -163,7 +163,7 @@ const (
 // sampleRSS reads the memory of every running process, every rssEvery, into r.rss by
 // component (a component with none running has no entry).
 func (r *Reconciler) sampleRSS(views []procView) {
-	if r.RSS == nil {
+	if r.RSS == nil && r.CPU == nil {
 		return
 	}
 	now := time.Now()
@@ -184,6 +184,12 @@ func (r *Reconciler) sampleRSS(views []procView) {
 		if p.Running && p.PID > 0 {
 			pids = append(pids, p.PID)
 		}
+	}
+	if r.CPU != nil {
+		r.sampleCPU(views, r.CPU(pids), now)
+	}
+	if r.RSS == nil {
+		return
 	}
 	got := r.RSS(pids)
 	sum := map[string]int64{}
@@ -316,4 +322,104 @@ func procPhase(p procView) (phase, reason string, ok bool) {
 		return components.PhaseStopped, "", true
 	}
 	return components.PhaseStopped, "", true
+}
+
+// cpuStep is the change in cpu_pct (points of one core) that is written, or a tenth of a
+// busy process's number: a point or two either way rewrites no row, so an idle machine
+// writes nothing (story 54.52, the same rule as rss_mb).
+const cpuStep = 5
+
+// cpuSample is a process's processor time as last read, and when.
+type cpuSample struct {
+	used time.Duration
+	at   time.Time
+}
+
+// sampleCPU turns each running process's processor time into the share of one core it used
+// since the last sample (cpu_pct, 100 is one whole core), by component and by process
+// ("<role>/<instance>"), into r.cpu and r.cpuParts. A process first seen, or whose time
+// went back (a pid used again), has no number until the next sample.
+func (r *Reconciler) sampleCPU(views []procView, used map[int]time.Duration, now time.Time) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	prev := r.cpuPrev
+	r.cpuPrev = map[int]cpuSample{}
+	sum := map[string]int64{}
+	parts := map[string]map[string]int64{}
+	for _, p := range views {
+		u, ok := used[p.PID]
+		if !ok || !p.Running || p.PID <= 0 {
+			continue
+		}
+		r.cpuPrev[p.PID] = cpuSample{used: u, at: now}
+		was, ok := prev[p.PID]
+		wall := now.Sub(was.at)
+		if !ok || u < was.used || wall <= 0 {
+			continue
+		}
+		pct := int64((u - was.used) * 100 / wall)
+		sum[p.Component] += pct
+		if parts[p.Component] == nil {
+			parts[p.Component] = map[string]int64{}
+		}
+		parts[p.Component][string(p.Role)+"/"+p.Instance] += pct
+	}
+	// each process's number moves only by cpuMoved, as the component's does
+	out := map[string]map[string]int64{}
+	for id, procs := range parts {
+		out[id] = map[string]int64{}
+		for name, pct := range procs {
+			if was, ok := r.cpuParts[id][name]; ok && !cpuMoved(was, pct) {
+				pct = was
+			}
+			out[id][name] = pct
+		}
+	}
+	r.cpuParts = out
+	if r.cpu == nil {
+		r.cpu = map[string]int64{}
+	}
+	for id := range r.cpu {
+		if _, ok := sum[id]; !ok {
+			delete(r.cpu, id)
+		}
+	}
+	for id, pct := range sum {
+		if was, ok := r.cpu[id]; !ok || cpuMoved(was, pct) {
+			r.cpu[id] = pct
+		}
+	}
+}
+
+// cpuMoved: from prev to pct is a change worth a write (cpuStep points, or a tenth).
+func cpuMoved(prev, pct int64) bool {
+	d := pct - prev
+	if d < 0 {
+		d = -d
+	}
+	return d >= cpuStep && d*10 >= prev
+}
+
+// cpuOf is component id's processor use (cpu_pct) as last sampled, while one of its
+// processes runs, and by process when more than one runs (cpu_parts).
+func (r *Reconciler) cpuOf(id string, own []procView) (int64, map[string]any, bool) {
+	running := false
+	for _, p := range own {
+		running = running || p.Running
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	pct, ok := r.cpu[id]
+	if !ok || !running {
+		return 0, nil, false
+	}
+	procs := r.cpuParts[id]
+	if len(procs) < 2 {
+		return pct, nil, true
+	}
+	out := make(map[string]any, len(procs))
+	for name, v := range procs {
+		out[name] = v
+	}
+	return pct, out, true
 }

@@ -103,7 +103,9 @@ export interface ProcessUse {
   machine: string;
   phase?: string;
   rss_mb?: number;
-  /** what rss_mb measures: this process alone, or every process of its component */
+  /** the share of one processor core it used over the last sample (100 is a whole core) */
+  cpu_pct?: number;
+  /** what rss_mb and cpu_pct measure: this process alone, or every process of its component */
   scope?: "process" | "component";
   stages: string[] | null;
   shared_with: string[] | null;

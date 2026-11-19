@@ -1,6 +1,6 @@
 # Story 54.52 — CPU of each process
 
-> Epic 54 · Phase 5 · Depends on: 54.44, Epic 51 (51.14) · Not built
+> Epic 54 · Phase 5 · Depends on: 54.44, Epic 51 (51.14) · Built
 
 ## Why
 
@@ -16,3 +16,42 @@ The Plugins page shows the memory of each process that runs a plugin and says th
 
 - The reconciler's rows carry `cpu_pct` and `cpu_parts` from a fake sampler, and an idle process rewrites nothing.
 - The page shows a shared group's CPU with who shares it.
+
+## As built
+
+- **Reading the processor time.** `hostinfo.ProcessCPU` reads each running pid's user and system
+  processor time since the process started: `ps -o cputime` on macOS, `/proc/<pid>/stat`'s
+  `utime` and `stime` at 100 ticks a second on Linux, and `GetProcessTimes` on Windows. A pid
+  that is gone has no entry.
+- **The reconciler.** The supervisor's reconciler reads processor time in the same five-minute
+  sample as memory (`Reconciler.CPU`, set from `hostinfo.ProcessCPU` in `serve_reconcile.go`).
+  `cpu_pct` is the processor time used since the last sample over the wall time between the
+  two, times 100, so 100 is one whole core and a busy multi-threaded process can pass it.
+  It is written beside `rss_mb` as the component's sum, and per `<role>/<instance>` in
+  `cpu_parts` when more than one process runs, as `rss_parts` is.
+- **When there is no number.** A process seen for the first time, or a pid whose time went back
+  because a new process took it, has no share until the next sample. A component with nothing
+  running has no `cpu_pct`.
+- **Hysteresis.** A number is rewritten only when it moves by 5 points and by a tenth of the
+  last written number (`cpuMoved`). Rows equal to the last written ones are never sent, so an
+  idle machine writes nothing.
+- **`GET /api/plugins`.** Each process in `resources.processes` carries `cpu_pct`. It is read
+  as memory is (`measure`): the process's own entry in `cpu_parts`, including numbered ones
+  such as `ml-0`, else the component's total with `scope: "component"`. A shared process's
+  number is the whole process's, shown with `shared_with`.
+- **The Plugins page.** The page shows a **Processor** column beside **Memory**: "25% of one
+  core", or "…, with the other programs of the same part" for a component's total. The
+  sentence saying processor use is not measured is gone, and the shared note covers both
+  numbers. Words are in English and Arabic.
+- **Tests.**
+  - `internal/supervisor/cpu_test.go` (fake sampler): the shares and parts, no share from one
+    sample, no rewrite for the same use, an idle machine writing nothing, a reused pid, a
+    stopped component, and `cpuMoved`.
+  - `internal/hostinfo/cpu_test.go`: the real reader grows while the test works, and ps's time
+    forms. `cpu_linux_test.go` reads a stat line whose command name holds spaces and
+    parentheses.
+  - `api/internal/plugins/measure_test.go`, and `published_pg_test.go` for the shared group's
+    `cpu_pct` through the API.
+  - `PluginsSection.test.tsx` T08: the shared group's processor use with who shares it, and no
+    "not measured" sentence.
+

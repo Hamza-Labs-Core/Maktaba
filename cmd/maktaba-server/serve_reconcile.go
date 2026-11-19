@@ -63,6 +63,14 @@ func bootConfig(cfg config.Config, log io.Writer) config.Config {
 	return out
 }
 
+// measureProcesses gives the reconciler its samplers: the rows' rss_mb (story 51.14), its
+// processes' memory, and their processor use, cpu_pct (story 54.52), read together every few
+// minutes.
+func measureProcesses(rec *supervisor.Reconciler) {
+	rec.RSS = hostinfo.ProcessRSS
+	rec.CPU = hostinfo.ProcessCPU
+}
+
 // freeMB is this machine's memory a new process can have, in MB (0: not known).
 func freeMB() int64 { return int64(hostinfo.FreeMemory() >> 20) }
 
@@ -94,8 +102,7 @@ func startComponents(ctx context.Context, cfg config.Config, sup *supervisor.Sup
 	rec.Log = log
 	// a dormant process is checked for memory before its first start (not_enough_memory)
 	rec.FreeMB = freeMB
-	// the rows' rss_mb (story 51.14): its processes' memory, read every few minutes
-	rec.RSS = hostinfo.ProcessRSS
+	measureProcesses(rec)
 	// the asset half: what a crash left is tidied before anything reads it
 	m := newPacksManager(cfg, releaseDir, log)
 	for _, did := range m.Layout.Recover(m.Version) {

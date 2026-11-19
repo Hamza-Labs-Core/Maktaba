@@ -550,6 +550,7 @@ describe("Settings → Plugins: one page for every plugin (Epic 54, story 54.44)
     machine: "home",
     phase: "running",
     rss_mb: 310,
+    cpu_pct: 25,
     scope: "process" as const,
     stages: ["subtitle_gen"],
     shared_with: ["tv.maktaba.thumbnails"],
@@ -1290,7 +1291,7 @@ describe("Settings → Plugins: one page for every plugin (Epic 54, story 54.44)
     expect(screen.getByRole("link", { name: EN["plugins.page.back"] })).toBeInTheDocument();
   });
 
-  it("T08: a shared runner group shows the group's memory and who shares it, not a split", async () => {
+  it("T08: a shared runner group shows the group's memory, its processor use and who shares it, not a split", async () => {
     page([maktaba(), thumbs()]);
     open("/settings/plugins/tv.maktaba.subtitles");
     const table = await screen.findByTestId("resources-processes");
@@ -1300,7 +1301,10 @@ describe("Settings → Plugins: one page for every plugin (Epic 54, story 54.44)
     expect(screen.getByTestId("resources-shared")).toHaveTextContent(
       EN["plugins.resources.shared_note"]
     );
-    expect(screen.getByText(EN["plugins.resources.cpu_note"])).toBeInTheDocument();
+    // story 54.52: the group's processor use beside its memory, and no sentence saying it
+    // is not measured
+    expect(table).toHaveTextContent("25% of one core");
+    expect(screen.queryByText(/Processor use is not measured/)).toBeNull();
     // its jobs: running, waiting and the usual time
     const section = screen.getByRole("region", { name: EN["plugins.section.resources"] });
     expect(section).toHaveTextContent("3 s");
