@@ -146,6 +146,49 @@ plugin's `i18n`.
 - **A plugin with no stages left after a refactor**: the build refuses a first-party plugin
   with no stage (it would be an empty component).
 
+## As built
+
+- **The layout, catalog, CI, embedding and import contract** came with #750 (its "54.27
+  layout" part): `plugins/`, the `plugin` catalog field in both loaders, CODEOWNERS, the
+  `first-party` jobs in `_plugins.yml` and their path filters, the embedded bundle
+  (`shared/plugins/firstparty.json`) and `tools/plugins/import_contracts.py`. There is no `_lib`
+  folder yet, because no plugin shares code with another. Thirteen plugins exist, not fifteen:
+  #969 removed dizqueTV, and `tv.maktaba.enrich` waits for the decision recorded in 54.31.
+- **`tools/plugins/build.py --version <v> --out <dir> [plugin ...]`** writes
+  `tv.maktaba.<name>-<v>.mkplugin` for each folder, and the package's `files.json` beside it as
+  `tv.maktaba.<name>-<v>.files.json`. A package holds:
+  - the manifest, with `version = "<v>"` and `maktaba = "=<v>"` stamped;
+  - `i18n/en.json` and `ar.json`;
+  - `statements.json`, compiled by `bundle.py`'s own code, so it holds the statements the server
+    embeds;
+  - `wheels/maktaba_fp_<name>-<v>-py3-none-any.whl`, the plugin's `src/` as its own wheel,
+    requiring `maktaba-pipeline==<v>`.
+- **The packer is the home's writer.** `shared/go/componentpack/cmd/mkplugin` gained
+  `-files-json`, which reads the package back with `UnpackPlugin` and writes its `files.json`.
+  The wheel and the package are reproducible: entries are sorted, timestamps are fixed and
+  zstd runs at one level, so a re-run of the release signs the same checksums. The build
+  refuses a plugin with no stage, an id outside `tv.maktaba.` and a version with no PEP 440 form.
+- **Release.** `release.yml` has a `package-plugins` job. `sign-and-release` needs it, copies
+  both files of each package into `dist/` before "Generate checksums", and after the
+  `releaseverify` step runs `api/tools/fp-packages` on `dist/`. That command
+  (`firstparty.VerifyReleasePackages`) requires a package and a `files.json` for every
+  plugin of the bundle the server embeds, each listed under its own name with its own digest.
+  Each package must unpack to that `files.json`, its stamped manifest must be valid as a trusted
+  manifest, and its manifest, strings and statements must equal the embedded ones; then
+  `CheckPackage` must accept it. A first-party package of no bundle plugin fails the release.
+- **The payload does not carry the packages** (a change from §2). Homes still run the code
+  from the signed pipeline wheel, and nothing on a home reads a package until stories 54.45 and
+  54.46 build an install path. Carrying them would change every platform's payload for no
+  reader. The packages are release files, which is where 54.45 §4 and 54.49 want them.
+- **Tests.** T01 runs in the `first-party` job: a dry run builds every package, checksums
+  them as the release does and runs `fp-packages`. `release_test.go` builds the packages with
+  `build.py` and covers the trusted case, reproducibility, a package or `files.json` missing
+  from the checksums, a changed byte, another release's packages under this release's names
+  (`plugin_trusted_version`), a repacked package with other statements, one with a wider
+  manifest, an extra package and a missing one. `test_build_packages.py` covers stamping,
+  versions, the no-stage and third-party refusals, the package's files and the wheel's
+  `RECORD`. T02 to T06 are #750's.
+
 ## Build plan
 
 ### Files to touch

@@ -394,6 +394,9 @@ plugins:
   - 'api/internal/plugins/**'
   - 'api/internal/handlers/queues/impl*.go'
   - 'api/tools/plugin-api-dev/**'
+  # the release's first-party packages (54.27 §2): their packer and the trust check over them
+  - 'api/tools/fp-packages/**'
+  - 'shared/go/componentpack/**'
 
 # Epic 54 (story 54.23): Maktaba's own stages through the worker's plugin path into their
 # Windows runners, end to end (_runner-stages.yml): the runner, the worker's side of the

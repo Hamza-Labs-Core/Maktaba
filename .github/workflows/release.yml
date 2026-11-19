@@ -992,6 +992,49 @@ jobs:
           path: out/*
           retention-days: 7
 
+  # Maktaba's first-party plugin packages (Epic 54, story 54.27 §2): one
+  # tv.maktaba.<name>-<ver>.mkplugin per folder of plugins/first-party/ and its files.json
+  # beside it, from tools/plugins/build.py (reproducible: a re-run builds the same bytes).
+  # sign-and-release lists both in checksums.txt, which is what makes [trusted] count
+  # (firstparty.CheckPackage), and checks them after signing with the server's own check
+  # (api/tools/fp-packages). Their code also rides in the pipeline wheel, which the runner
+  # still loads; the packages are the release's files for the store and offline homes
+  # (stories 54.45, 54.49), and no home reads them yet.
+  package-plugins:
+    name: package first-party plugins
+    needs: [guard]
+    if: needs.guard.outputs.published != 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      # the packer is the home's own writer (shared/go/componentpack/cmd/mkplugin)
+      - uses: actions/setup-go@v6.4.0
+        with:
+          go-version-file: shared/go/componentpack/go.mod
+          cache: false
+
+      - name: Go modules
+        uses: ./.github/actions/go-mod-download
+        with:
+          modules: shared/go/componentpack
+
+      - name: Build the first-party packages
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          python3 tools/plugins/build.py --version "${TAG#v}" --out out
+          ls -l out
+
+      - name: Upload the first-party packages
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: release-plugins
+          path: out/*
+          retention-days: 7
+
   # The component packs (Epic 51 story 51.15, README §4.9): the files an asset component
   # needs on one platform that the payload does not carry (runtime.ml's and tool.yt-dlp's
   # wheelhouses today), built from the tagged commit by tools/release/packs/build.sh:
@@ -1423,13 +1466,13 @@ jobs:
   # (tools/ci/tests/test_release_packs.py keeps it so).
   sign-and-release:
     name: sign + publish release
-    needs: [build-artifacts, build-server, build-images, build-server-image, package-archives, package-nfpm, package-node, package-linux-payload, package-packs]
+    needs: [build-artifacts, build-server, build-images, build-server-image, package-archives, package-nfpm, package-node, package-linux-payload, package-packs, package-plugins]
     if: >-
       !cancelled() &&
       needs.build-artifacts.result == 'success' && needs.build-server.result == 'success' &&
       needs.build-images.result == 'success' && needs.package-archives.result == 'success' &&
       needs.package-nfpm.result == 'success' && needs.package-node.result == 'success' &&
-      needs.package-packs.result == 'success'
+      needs.package-packs.result == 'success' && needs.package-plugins.result == 'success'
     runs-on: ubuntu-22.04
     # the packs are several GB to download, hash and attach
     timeout-minutes: 60
@@ -1465,13 +1508,13 @@ jobs:
       - name: Go modules
         uses: ./.github/actions/go-mod-download
         with:
-          modules: tools/release shared/go/releaseverify shared/go/componentpack shared/components
+          modules: tools/release shared/go/releaseverify shared/go/componentpack shared/components api
           offline: "false"
 
       - name: Go modules (from the cache, verified)
         run: |
           set -euo pipefail
-          for m in tools/release shared/go/releaseverify shared/go/componentpack; do
+          for m in tools/release shared/go/releaseverify shared/go/componentpack api; do
             ( cd "$m" && go mod download && go mod verify )
           done
 
@@ -1683,6 +1726,47 @@ jobs:
           echo "::error::the artifact $ARTIFACT never downloaded after 3 attempts (the artifacts API unreachable, or no job uploaded it)"
           exit 1
 
+      - name: Download the first-party packages
+        id: artifact-release-plugins
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: release-plugins
+          path: staged/plugins
+      - name: Wait 15s to retry the download of release-plugins
+        if: steps.artifact-release-plugins.outcome == 'failure'
+        shell: bash
+        run: sleep 15
+      - name: Download the first-party packages (attempt 2)
+        id: artifact-release-plugins-2
+        if: steps.artifact-release-plugins.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: release-plugins
+          path: staged/plugins
+      - name: Wait 45s to retry the download of release-plugins
+        if: steps.artifact-release-plugins-2.outcome == 'failure'
+        shell: bash
+        run: sleep 45
+      - name: Download the first-party packages (attempt 3)
+        id: artifact-release-plugins-3
+        if: steps.artifact-release-plugins-2.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: release-plugins
+          path: staged/plugins
+      - name: Check release-plugins downloaded
+        id: artifact-release-plugins-check
+        if: steps.artifact-release-plugins-3.outcome == 'failure'
+        shell: bash
+        env:
+          ARTIFACT: release-plugins
+        run: |
+          echo "::error::the artifact $ARTIFACT never downloaded after 3 attempts (the artifacts API unreachable, or no job uploaded it)"
+          exit 1
+
       # none when both legs failed
       - name: Download the Linux payloads
         id: artifact-release-linux-payload
@@ -1874,6 +1958,9 @@ jobs:
           # The node's wheel, constraints and installer archives (a worker
           # machine joins a home with these; no checkout).
           cp staged/node/* dist/
+          # Maktaba's first-party plugin packages and their files.json (story 54.27 §2):
+          # checksums.txt lists both, which is what makes each package trusted
+          cp staged/plugins/tv.maktaba.*.mkplugin staged/plugins/tv.maktaba.*.files.json dist/
           # The cloud (relay) binary ships loose — it's a separate VPS
           # deploy target, not part of the home-server archives. Restore
           # the +x bit dropped by artifact download.
@@ -2073,6 +2160,16 @@ jobs:
           TAG: ${{ github.ref_name }}
         working-directory: shared/go/releaseverify
         run: go run ./cmd/releaseverify --tag "${TAG}" --dir ../../../dist --repo "${GITHUB_REPOSITORY}"
+
+      # 54.27 T01: the signed checksums.txt lists every first-party package and its
+      # files.json, and the server's own check (firstparty.CheckPackage, through
+      # api/tools/fp-packages, built with the bundle this release's server embeds) trusts
+      # each. CI runs the same command on a dry run of the build (_plugins.yml first-party).
+      - name: The first-party packages are trusted (fp-packages)
+        env:
+          TAG: ${{ github.ref_name }}
+        working-directory: api
+        run: go run ./tools/fp-packages -dir ../dist -version "${TAG#v}"
 
       - name: Attach the files to the release, publish it once complete
         env:

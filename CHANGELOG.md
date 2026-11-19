@@ -1061,6 +1061,13 @@ build fails when the two differ.
 
 ### Added
 
+- **Each release carries Maktaba's plugins as signed packages (Epic 54, story 54.27).** Every
+  release now has one `tv.maktaba.<name>-<version>.mkplugin` for each of Maktaba's own plugins,
+  with its `files.json` beside it, both listed in the signed `checksums.txt`. The release
+  checks each package with the same trust rule the server uses before it publishes. Homes keep
+  running the plugins from the pipeline wheel as before; these packages are what the store and
+  offline installs will use.
+
 - **Watch a broadcast on Android phones, tablets and TVs (Epic 50, story 50.27).** Maktaba
   Player on Android and Maktaba TV on Android TV, Google TV and Fire TV now have **Watch a
   broadcast**, as the Apple apps do: a home's published channels watched as a guest, with no

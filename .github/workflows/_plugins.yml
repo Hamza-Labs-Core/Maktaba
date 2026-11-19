@@ -519,7 +519,19 @@ jobs:
 
       - name: The plugin API's statements, trusted tokens and the flip (54.22, 54.24, 54.25)
         working-directory: api
-        run: go test -count=1 ./internal/plugins/... ./internal/handlers/queues/ -run 'Statement|Trusted|FirstParty|Flip|CheckPackage|Bundle|Command'
+        run: go test -count=1 ./internal/plugins/... ./internal/handlers/queues/ -run 'Statement|Trusted|FirstParty|Flip|CheckPackage|Bundle|Command|Package'
+
+      # 54.27 T01, the release's dry run: every first-party package built as release.yml
+      # builds it, checksummed as its "Generate checksums" step does, then checked by the
+      # same command the release runs on its signed dist/
+      - name: The release's first-party packages, built and trusted (54.27 T01)
+        env:
+          FP_OUT: ${{ runner.temp }}/fp-packages
+        run: |
+          set -euo pipefail
+          python3 tools/plugins/build.py --version 0.0.1 --out "$FP_OUT"
+          (cd "$FP_OUT" && find . -maxdepth 1 -type f ! -name 'checksums.txt' | sort | LC_ALL=C xargs sha256sum > checksums.txt)
+          (cd api && go run ./tools/fp-packages -dir "$FP_OUT" -version 0.0.1)
 
   # the runner's Seatbelt sandbox and protocol on macOS (no Postgres there)
   first-party-macos:
