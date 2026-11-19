@@ -9,7 +9,7 @@ import (
 )
 
 // Grace is how long a license's paid features keep working, fully, after it
-// expires or is replaced by a lower plan (story 16.2, the owner's decision of
+// expires or is replaced by a lower plan (story 16.2, decided
 // 2026-11-19): counted from the license's expiry (a replaced license ends when it is
 // replaced, if that is earlier), then they lock. It covers the clock skew between the
 // home and the license server too (the 72 h of the EC). A license the cloud issues

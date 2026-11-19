@@ -13,8 +13,8 @@ server periodically.
 - Server bundles the license-server public key at build time.
 - Validation: signature check + expiry check + seat-count check.
 - Daily refresh against the license server. An expired license keeps working fully
-  for 30 d from its expiry before features lock (story 16.2's grace, the owner's
-  decision of 2026-11-19), so a plan license (31 d) locks about 61 d after the home
+  for 30 d from its expiry before features lock (story 16.2's grace, decided
+  2026-11-19), so a plan license (31 d) locks about 61 d after the home
   last reached the license server.
 - Revocation list fetched daily; if a license id is on the list, lock
   features immediately with admin notification.
@@ -33,7 +33,7 @@ server periodically.
 
 - Clock manipulation (user sets system clock back): we trust the
   license server's `expires_at` over local time when reachable.
-- License covers seats=4 but server has 5 users (owner's decision, 2026-11-19): admins
+- License covers seats=4 but server has 5 users (decided 2026-11-19): admins
   are exempt, and only the most recently created accounts beyond the seat count go
   read-only. A read-only account can still sign in, watch, save its own progress
   and history and keep its own playlists and favourites, but cannot upload, edit
@@ -66,12 +66,12 @@ server periodically.
   revive a license; the license server's `Date` wins when reachable.
 - Write-only: no response carries the signature or the signed JSON; apply/remove
   are admin-only with role tests.
-- Over-seat (2026-11-19, the owner's decision): see "Seats (as built)" below. New
+- Over-seat (decided 2026-11-19): see "Seats (as built)" below. New
   accounts are refused, as before.
 
 ## Seats (as built, 2026-11-19)
 
-The owner decided that when a home has more users than its license's seats, admins are
+When a home has more users than its license's seats, admins are
 exempt and only the most recently created accounts beyond the seat count go read-only.
 A read-only account can watch and save its own progress and history, but cannot
 upload, edit metadata or manage anything. Removing users or adding seats restores them

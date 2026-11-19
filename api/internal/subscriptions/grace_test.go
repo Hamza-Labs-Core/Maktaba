@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-// Story 16.2, the owner's decision of 2026-11-19: when a license expires or the home
+// Story 16.2, decided 2026-11-19: when a license expires or the home
 // downgrades, the paid features keep working fully for 30 days counted from the
 // license's expiry, then lock. A revocation (fraud) locks at once.
 

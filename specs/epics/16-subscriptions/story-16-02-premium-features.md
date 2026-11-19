@@ -16,7 +16,7 @@ on [Story 16.4](story-16-04-license-validation.md) (license validation),
 - `pro` tier: relay 1 TB / mo, unlimited seats, hourly backup, advanced
   analytics, federation.
 - Server enforces gates; clients only render the UI conditionally.
-- Expiry or downgrade (owner's decision, 2026-11-19): when a license expires or the
+- Expiry or downgrade (decided 2026-11-19): when a license expires or the
   home downgrades (a lower plan, or no license), the paid features keep working
   **fully** for 30 days counted from the license's expiry, then lock. Not read-only:
   everything the plan allowed keeps working. A license replaced before its expiry
@@ -54,7 +54,7 @@ on [Story 16.4](story-16-04-license-validation.md) (license validation),
 - Server-side gates: seats (admin create and open registration), the cloud relay,
   analytics beyond 30 days / per-user / export. Refusals are `403` with
   `feature`, `tier`, `required_tier` and a plain `detail`.
-- Expiry and downgrade grace (2026-11-19, the owner's decision): see "Grace (as
+- Expiry and downgrade grace (decided 2026-11-19): see "Grace (as
   built)" below. It replaced the 72 h clock-skew grace (`SkewGrace`).
 - Revocation: the signed revocation list (daily) and the cloud's `license_revoked`
   lock at once; Settings shows _revoked by Maktaba_.
@@ -66,8 +66,8 @@ on [Story 16.4](story-16-04-license-validation.md) (license validation),
 
 ## Grace (as built, 2026-11-19)
 
-The owner decided that an expiry or a downgrade keeps the paid features working
-**fully** for 30 days counted from the license's expiry, then locks them, and that the
+An expiry or a downgrade keeps the paid features working
+**fully** for 30 days counted from the license's expiry, then locks them, and the
 home's admin sees how many days are left. That replaces the AC's "read-only for 30 d".
 
 - `subscriptions.Grace` (30 days, `api/internal/subscriptions/store.go`):
