@@ -75,6 +75,16 @@ jobs:
           go test -count=1 -v ./internal/config
           go test -count=1 -v . -run "PrivateFilesAreTheUsersAlone|PrivateWritesSweepTheirOldTempFiles|ASwitchFolderStaysInTheSwitchoverFolder|WriteNodeConfigKeepsThePipelinesFields|NodeConfigIsolated|ServeStartsNothingOfAHome|ServeWaitsOutAWrite"
 
+      # Story 54.52: each process's processor time and memory, read on the OS itself (ps on
+      # macOS, /proc on Linux, GetProcessTimes on Windows), and the samplers the server's
+      # reconciler is given
+      - name: maktaba-server (processor time and memory per process, per OS)
+        working-directory: cmd/maktaba-server
+        shell: bash
+        run: |
+          go test -count=1 -v ./internal/hostinfo -run "ProcessCPU|FreeMemoryAndResidentMemory|ParsePSTime|StatCPU"
+          go test -count=1 -v . -run "TheReconcilerMeasuresMemoryAndProcessor"
+
       # A restore by hand and the dumps' room on a Mac (the app's home): the restore's
       # tests failed on a Mac whose disk had less than 5% free and passed on Linux, as no
       # job ran them on macOS; the room a dump makes is faked, so they pass on any disk.

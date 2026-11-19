@@ -158,6 +158,10 @@ type Reconciler struct {
 	// RSS reads the resident memory of running pids, in bytes (hostinfo.ProcessRSS; nil:
 	// not measured): sampled every rssEvery for the rows' rss_mb (story 51.14).
 	RSS func(pids []int) map[int]uint64
+	// CPU reads the processor time running pids have used since they started
+	// (hostinfo.ProcessCPU; nil: not measured): sampled with RSS for the rows' cpu_pct, the
+	// share of one core used since the last sample (story 54.52).
+	CPU func(pids []int) map[int]time.Duration
 	// PluginGate, when set, is a plugin entry's gate beyond its desired row (Epic 54,
 	// story 54.37 §3: incompatible, grants_needed, unreviewed_disallowed …): "" when it
 	// passes. An on-demand component (plugins.host) runs its process only while one of
@@ -188,6 +192,9 @@ type Reconciler struct {
 	rssAt    time.Time                   // the last RSS sample
 	rss      map[string]int64            // by component, MB, as last written (hysteresis: rssMoved)
 	rssParts map[string]map[string]int64 // by component and process, MB (story 54.44: a shared runner group's own number)
+	cpuPrev  map[int]cpuSample           // story 54.52: each running pid's processor time at the last sample
+	cpu      map[string]int64            // by component, cpu_pct, as last written (hysteresis: cpuMoved)
+	cpuParts map[string]map[string]int64 // by component and process, cpu_pct
 	phases   map[string]ComponentPhase   // the last pass's phase of each component (Phases)
 }
 
@@ -1114,6 +1121,12 @@ func (r *Reconciler) rows(decs map[string]decision) []store.Status {
 			detail["rss_mb"] = mb
 			if parts, ok := r.rssPartsOf(comp.ID); ok {
 				detail["rss_parts"] = parts
+			}
+		}
+		if pct, parts, ok := r.cpuOf(comp.ID, own); ok {
+			detail["cpu_pct"] = pct
+			if parts != nil {
+				detail["cpu_parts"] = parts
 			}
 		}
 		if dec.idle && phase == components.PhaseRunning {

@@ -259,7 +259,9 @@ func TestActivityAndSharedProcesses(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := f.s.Store.ReportStatus(context.Background(), store.Home, "supervisor", []store.Status{{ID: "core.plugin_runners", Phase: "running",
-		Detail: map[string]any{"rss_mb": 900, "rss_parts": map[string]any{"plugin-runner/light": 310, "plugin-runner/files": 590}}}}); err != nil {
+		Detail: map[string]any{"rss_mb": 900, "rss_parts": map[string]any{"plugin-runner/light": 310, "plugin-runner/files": 590},
+			// story 54.52: the processor use, reported beside the memory
+			"cpu_pct": 75, "cpu_parts": map[string]any{"plugin-runner/light": 25, "plugin-runner/files": 50}}}}); err != nil {
 		t.Fatal(err)
 	}
 	code, got := f.call(f.admin, http.MethodGet, "/api/plugins/tv.maktaba.subtitles")
@@ -282,7 +284,8 @@ func TestActivityAndSharedProcesses(t *testing.T) {
 	}
 	p := procs[0].(map[string]any)
 	shared, _ := json.Marshal(p["shared_with"])
-	if p["process"] != "plugin-runner/light" || p["rss_mb"] != float64(310) || p["scope"] != "process" ||
+	// the shared group's whole process, for memory and processor alike (story 54.52)
+	if p["process"] != "plugin-runner/light" || p["rss_mb"] != float64(310) || p["cpu_pct"] != float64(25) || p["scope"] != "process" ||
 		p["component"] != "core.plugin_runners" || !strings.Contains(string(shared), "tv.maktaba.thumbnails") ||
 		strings.Contains(string(shared), "core-media") {
 		t.Fatalf("the runner group's process: %v", p)
