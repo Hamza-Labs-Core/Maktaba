@@ -7904,7 +7904,8 @@
         "get"
       ],
       "related": [
-        "story-54.15"
+        "story-54.15",
+        "story-54.45"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"

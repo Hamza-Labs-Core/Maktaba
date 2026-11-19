@@ -19,15 +19,15 @@ A person who wants only a media home should not download speech models and ML wh
 
 Today the `core` bundle is: `core.postgres`, `core.api`, `core.streaming`, `core.pipeline`, `core.plugin_runners`, `core.node`, `core.updates`, `core.switchover`, `media.thumbnails`, `library.convert`, `library.dedup`, `plugins.host`, `discovery.mdns`, `queue_health`, `analytics`, `backups` and `updates.auto`.
 
-Story 54.44 says what must always run is core and is not a plugin, and that every switchable component a Maktaba plugin implements is a plugin. Three members of the `core` bundle are such plugins. This story does not redefine the bundle; each is an open question:
+Story 54.44 says what must always run is core and is not a plugin, and that every switchable component a Maktaba plugin implements is a plugin. Three members of the `core` bundle are such plugins. **Decided (2026-11-19): the Core variant preinstalls Thumbnails only**; Convert and Dedup are installed from the store (or from files, 54.49) when wanted.
 
-| Item | In the `core` bundle today | Under "core is not a plugin" | Question |
+| Item | In the `core` bundle today | Under "core is not a plugin" | Core variant |
 |---|---|---|---|
-| Thumbnails (`media.thumbnails`, `tv.maktaba.thumbnails`) | yes | a Maktaba store plugin | Does the Core variant preinstall it, or leave it to the admin? |
-| Convert (`library.convert`, `tv.maktaba.convert`) | yes | a Maktaba store plugin | the same |
-| Dedup (`library.dedup`, `tv.maktaba.dedup`) | yes | a Maktaba store plugin | the same |
+| Thumbnails (`media.thumbnails`, `tv.maktaba.thumbnails`) | yes | a Maktaba store plugin | preinstalled |
+| Convert (`library.convert`, `tv.maktaba.convert`) | yes | a Maktaba store plugin | not preinstalled: from the store when wanted |
+| Dedup (`library.dedup`, `tv.maktaba.dedup`) | yes | a Maktaba store plugin | not preinstalled: from the store when wanted |
 
-If they stay in the bundle, the Core variant carries three Maktaba plugins preinstalled and "Core" means "the `core` bundle", not "no plugins". If they leave it, the `core` bundle changes for setup too, and existing Core homes keep the three installed (54.48 §4). Either way the bundle stays the one definition.
+So the `core` bundle loses `library.convert` and `library.dedup`, for setup too, and stays the one definition. An existing Core home keeps the two installed (54.48 §4): the change is to what a new install preinstalls, never a removal.
 
 ### 3. Per platform
 

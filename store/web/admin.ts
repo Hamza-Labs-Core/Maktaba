@@ -59,6 +59,31 @@ export async function grantRole(ctx: Ctx): Promise<Response> {
   return json({ status: "granted" });
 }
 
+/**
+ * POST /v1/admin/maktaba-publisher {account} (story 54.45 §2): the store's one publisher
+ * account for Maktaba, marked verified. Its prefix (tv.maktaba, kind 'maktaba') is the only one
+ * that covers Maktaba's own plugin ids (developers.prefixCovers); it is never claimed, only set
+ * here, and only one account holds it. The account must be an active developer.
+ */
+export async function setMaktabaPublisher(ctx: Ctx): Promise<Response> {
+  const a = admin(ctx);
+  const b = await body(ctx.req);
+  const target = str(b.account, "account", 64);
+  const dev = await ctx.env.DB_CATALOG.prepare("SELECT 1 FROM developers WHERE account = ? AND status = 'active'").bind(target).first();
+  if (!dev) refuse(404, "not_found");
+  const held = await ctx.env.DB_CATALOG.prepare("SELECT account FROM developer_prefixes WHERE prefix = 'tv.maktaba'").first<{ account: string }>();
+  if (held && held.account !== target) refuse(409, "maktaba_publisher_taken");
+  if (!held) {
+    await ctx.env.DB_CATALOG.prepare(
+      "INSERT INTO developer_prefixes (prefix, account, kind, verified_at) VALUES ('tv.maktaba', ?, 'maktaba', ?)",
+    )
+      .bind(target, iso(now()))
+      .run();
+    await audit(ctx, a.id, "maktaba_publisher.set", target);
+  }
+  return json({ status: "set", account: target, prefix: "tv.maktaba" });
+}
+
 export async function revokeRole(ctx: Ctx, target: string, role: string): Promise<Response> {
   const a = admin(ctx);
   if (target === a.id && role === "store_admin") refuse(409, "last_admin_guard");

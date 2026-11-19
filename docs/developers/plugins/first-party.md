@@ -586,3 +586,23 @@ ones the server embeds, and that its wheel holds the same code as the release's 
 wheel, file for file. CI runs it on a dry run of the build. The packages are release
 files only: homes still run the code from the pipeline wheel, and nothing installs a package
 yet.
+
+## Maktaba's plugins in the store
+
+Each of Maktaba's plugins except core's (`tv.maktaba.core-media`; core is not a plugin) is also
+a store package, signed by Maktaba's developer key (`build.py --developer-key`) and countersigned
+by the store. A home trusts such a package only when every rule below holds. Anything else is
+refused with `plugin_trusted_unsigned`, and nothing of it runs.
+
+- The store countersigned it.
+- Its developer key is one the server binary pins (`shared/plugins/maktaba-keys.json`).
+- Its manifest, strings and statements are exactly the server's own, at the server's version.
+
+A Maktaba plugin's database statements change only with a server release, so a store package
+can never bring SQL the server did not ship.
+
+In the store, only Maktaba's publisher account, which a store admin sets, may submit a
+`tv.maktaba.*` id; the community prefixes `tv.maktaba.community.*` stay open to everyone. The
+store reads such a package's manifest in the trusted mode. A native package has no component to
+audit or run, so the store checks that it holds exactly its manifest, strings, statements and
+wheel, and a person reviews every version.

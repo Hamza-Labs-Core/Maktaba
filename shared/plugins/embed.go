@@ -50,6 +50,13 @@ var RevokedEmbedded []byte
 //go:embed store-keys-embedded.json
 var StoreKeysEmbedded []byte
 
+// MaktabaKeys is maktaba-keys.json: the developer keys of Maktaba's own plugins, pinned in
+// the signed server binary (story 54.45 §3). Empty until the key is made, so no store
+// package of a Maktaba plugin is trusted before then.
+//
+//go:embed maktaba-keys.json
+var MaktabaKeys []byte
+
 // FlowSchema is flow.schema.json (story 54.39 §1).
 //
 //go:embed flow.schema.json

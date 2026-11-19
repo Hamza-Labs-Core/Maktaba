@@ -28,25 +28,22 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/plugins/statements"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/releaseverify"
 	sharedplugins "github.com/Hamza-Labs-Core/Maktaba/shared/plugins"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/plugins/fppackage"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/plugins/pluginmanifest"
 )
 
-// The trust refusals (Epic 51 reason codes too, story 54.37 §3).
+// The trust refusals (Epic 51 reason codes too, story 54.37 §3), shared with the home's
+// check of a package from the store (shared/plugins/fppackage).
 const (
-	CodeTrustedUnsigned = "plugin_trusted_unsigned"
-	CodeTrustedVersion  = "plugin_trusted_version"
+	CodeTrustedUnsigned = fppackage.CodeTrustedUnsigned
+	CodeTrustedVersion  = fppackage.CodeTrustedVersion
 )
 
 // FirstPartyPrefix is the id prefix only Maktaba's own plugins use.
-const FirstPartyPrefix = "tv.maktaba."
+const FirstPartyPrefix = fppackage.Prefix
 
 // Error is a refused package: plugin_trusted_unsigned or plugin_trusted_version.
-type Error struct {
-	Code   string
-	Detail string
-}
-
-func (e *Error) Error() string { return e.Code + ": " + e.Detail }
+type Error = fppackage.Error
 
 // FirstParty is one of Maktaba's own plugins as this release built it.
 type FirstParty struct {

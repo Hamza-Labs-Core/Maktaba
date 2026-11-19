@@ -2,7 +2,11 @@
 // the same writer the tests use (componentpack.BuildPlugin): manifest.toml and files.json
 // first, every file's sha256 listed. It signs nothing (54.14).
 //
-//	mkplugin [-files-json <out.files.json>] <folder> <out.mkplugin>
+//	mkplugin [-files-json <out.files.json>] [-developer-sig <developer.sig>] <folder> <out.mkplugin>
+//
+// -developer-sig puts that file in the package as signatures/developer.sig (story 54.45 §2:
+// Maktaba's key signs its own packages, through shared/plugins/cmd/fp-sign). The signature
+// sits beside files.json and is not listed in it, so files.json is the same signed or not.
 //
 // -files-json also writes the package's files.json beside it: a release lists that file in
 // its signed checksums.txt, which is what makes a first-party package trusted (story 54.27
@@ -22,9 +26,10 @@ import (
 
 func main() {
 	filesJSON := flag.String("files-json", "", "also write the package's files.json to this path")
+	devSig := flag.String("developer-sig", "", "a developer.sig to put in the package")
 	flag.Parse()
 	if flag.NArg() != 2 {
-		fmt.Fprintln(os.Stderr, "usage: mkplugin [-files-json <out.files.json>] <folder> <out.mkplugin>")
+		fmt.Fprintln(os.Stderr, "usage: mkplugin [-files-json <out.files.json>] [-developer-sig <developer.sig>] <folder> <out.mkplugin>")
 		os.Exit(2)
 	}
 	dir, out := flag.Arg(0), flag.Arg(1)
@@ -49,7 +54,16 @@ func main() {
 		os.Exit(1)
 	}
 	var buf bytes.Buffer
-	sum, err := componentpack.BuildPlugin(&buf, files, nil)
+	var sigs map[string][]byte
+	if *devSig != "" {
+		b, err := os.ReadFile(*devSig)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "mkplugin:", err)
+			os.Exit(1)
+		}
+		sigs = map[string][]byte{componentpack.PluginDeveloperSig: b}
+	}
+	sum, err := componentpack.BuildPlugin(&buf, files, sigs)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "mkplugin:", err)
 		os.Exit(1)

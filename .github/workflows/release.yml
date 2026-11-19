@@ -1018,14 +1018,28 @@ jobs:
       - name: Go modules
         uses: ./.github/actions/go-mod-download
         with:
-          modules: shared/go/componentpack
+          modules: shared/go/componentpack shared/plugins
 
+      # Maktaba's developer key signs each package (story 54.45 §2: the store countersigns
+      # it, and a home trusts a store package of a Maktaba plugin only by that key). Until
+      # the key is made the secret is empty: the packages are built unsigned, still trusted
+      # as this release's files through the signed checksums.
       - name: Build the first-party packages
         env:
           TAG: ${{ github.ref_name }}
+          DEVELOPER_KEY: ${{ secrets.MAKTABA_PLUGINS_DEVELOPER_KEY }}
         run: |
           set -euo pipefail
-          python3 tools/plugins/build.py --version "${TAG#v}" --out out
+          sign=()
+          if [ -n "${DEVELOPER_KEY}" ]; then
+            umask 077
+            printf '%s' "${DEVELOPER_KEY}" > "${RUNNER_TEMP}/maktaba-developer.key"
+            sign=(--developer-key "${RUNNER_TEMP}/maktaba-developer.key")
+          else
+            echo "::warning::no MAKTABA_PLUGINS_DEVELOPER_KEY: the first-party packages are built without developer.sig (story 54.45: signing ships dark until the key is made)"
+          fi
+          python3 tools/plugins/build.py --version "${TAG#v}" --out out ${sign[@]+"${sign[@]}"}
+          rm -f "${RUNNER_TEMP}/maktaba-developer.key"
           ls -l out
 
       - name: Upload the first-party packages

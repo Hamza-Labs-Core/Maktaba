@@ -204,8 +204,32 @@ def is_prerelease(version: str) -> bool:
     return bool(m and m.group(4))
 
 
-def build(folders: list[Path], version: str, out: Path, mkplugin: Path | None = None) -> list[Path]:
-    """Every package, written to out; answers the .mkplugin paths (none for a pre-release)."""
+SHARED_PLUGINS = ROOT / "shared" / "plugins"
+
+
+def signer_binary(work: Path) -> Path:
+    """Build the developer signer once (shared/plugins/cmd/fp-sign)."""
+    exe = work / ("fp-sign.exe" if os.name == "nt" else "fp-sign")
+    subprocess.run(  # noqa: S603
+        ["go", "build", "-o", str(exe), "./cmd/fp-sign"],  # noqa: S607
+        cwd=SHARED_PLUGINS,
+        check=True,
+    )
+    return exe
+
+
+def build(
+    folders: list[Path],
+    version: str,
+    out: Path,
+    mkplugin: Path | None = None,
+    developer_key: Path | None = None,
+    signer: Path | None = None,
+) -> list[Path]:
+    """Every package, written to out; answers the .mkplugin paths (none for a pre-release).
+    With developer_key (Maktaba's key, its seed in base64), each package carries its
+    signatures/developer.sig over files.json (story 54.45 §2); files.json is the same either
+    way, so the release's signed checksums of it do not change."""
     pep440(version)  # a bad version fails before anything is written
     out.mkdir(parents=True, exist_ok=True)
     if is_prerelease(version):
@@ -218,6 +242,11 @@ def build(folders: list[Path], version: str, out: Path, mkplugin: Path | None = 
     with tempfile.TemporaryDirectory(prefix="fp-build-") as tmp:
         work = Path(tmp)
         exe = mkplugin or mkplugin_binary(work)
+        sign = None
+        if developer_key is not None:
+            if not developer_key.is_file():
+                raise BuildError(f"no developer key at {developer_key}")
+            sign = signer or signer_binary(work)
         for folder in folders:
             plugin_id, files = contents(folder, version)
             stage = work / folder.name
@@ -232,13 +261,55 @@ def build(folders: list[Path], version: str, out: Path, mkplugin: Path | None = 
                 check=True,
                 stdout=subprocess.DEVNULL,
             )
+            if sign is not None and developer_key is not None:
+                sig = work / f"{folder.name}.developer.sig"
+                subprocess.run(  # noqa: S603
+                    [
+                        str(sign),
+                        "-key",
+                        str(developer_key),
+                        "-plugin",
+                        plugin_id,
+                        "-version",
+                        version,
+                        "-files-json",
+                        str(fj),
+                        "-out",
+                        str(sig),
+                    ],
+                    check=True,
+                    stdout=subprocess.DEVNULL,
+                )
+                # the same files and files.json, with the signature in the head
+                subprocess.run(  # noqa: S603
+                    [str(exe), "-developer-sig", str(sig), str(stage), str(pkg)],
+                    check=True,
+                    stdout=subprocess.DEVNULL,
+                )
             shutil.rmtree(stage)
             built.append(pkg)
     return built
 
 
+CATALOG = ROOT / "shared" / "components" / "catalog.toml"
+
+
+def is_core(folder: Path) -> bool:
+    """Core is not a plugin (story 54.44): a plugin whose [trusted] component is not
+    switchable in the catalog (tv.maktaba.core-media for core.pipeline) is never packaged.
+    It stays in the server and its wheel (story 54.45 §1)."""
+    m = tomllib.loads((folder / "manifest.toml").read_text(encoding="utf-8"))
+    comp = m.get("trusted", {}).get("component", "")
+    for c in tomllib.loads(CATALOG.read_text(encoding="utf-8")).get("component", []):
+        if c.get("id") == comp:
+            return c.get("switchable", True) is False
+    raise BuildError(f"{folder.name}: its component {comp!r} is not in the catalog")
+
+
 def folders_of(names: list[str]) -> list[Path]:
-    every = sorted(p for p in FIRST_PARTY.iterdir() if (p / "manifest.toml").is_file())
+    every = sorted(
+        p for p in FIRST_PARTY.iterdir() if (p / "manifest.toml").is_file() and not is_core(p)
+    )
     if not names:
         return every
     by = {p.name: p for p in every}
@@ -256,6 +327,11 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--version", required=True, help="the release version (a tag without its v)")
     ap.add_argument("--out", required=True, type=Path)
     ap.add_argument(
+        "--developer-key",
+        type=Path,
+        help="Maktaba's developer key (its seed in base64): each package carries developer.sig",
+    )
+    ap.add_argument(
         "--mkplugin",
         type=Path,
         help="a built shared/go/componentpack/cmd/mkplugin (default: go build it here)",
@@ -263,7 +339,11 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
     try:
         built = build(
-            folders_of(args.plugins), args.version.removeprefix("v"), args.out, args.mkplugin
+            folders_of(args.plugins),
+            args.version.removeprefix("v"),
+            args.out,
+            args.mkplugin,
+            args.developer_key,
         )
     except BuildError as e:
         print(f"build.py: {e}", file=sys.stderr)  # noqa: T201

@@ -3212,6 +3212,15 @@ build fails when the two differ.
   running the plugins from the pipeline wheel as before; these packages are what the store and
   offline installs will use.
 
+- **Maktaba's plugins can be trusted as store packages (Epic 54, story 54.45).** Every package
+  of a Maktaba plugin except core's can now carry Maktaba's developer signature. A home trusts
+  one delivered apart from the release only when the store countersigned it, the signature is
+  by Maktaba's key pinned in the server, and its manifest, strings and database statements are
+  exactly the server's own. A Maktaba plugin's statements change only with a server release.
+  Releases no longer package core, which is not a plugin. In the store, only Maktaba's publisher
+  account, set by a store admin, may submit a `tv.maktaba.*` plugin, and a person reviews every
+  version. Nothing installs a store package of a Maktaba plugin yet.
+
 ### Changed
 
 - **A machine that loses its home stays usable** under a notice instead of the whole app being

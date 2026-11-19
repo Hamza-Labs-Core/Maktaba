@@ -16,8 +16,13 @@ import (
 	"strings"
 	"testing"
 
+	"time"
+
+	"github.com/Hamza-Labs-Core/Maktaba/shared/components"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/componentpack"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/releaseverify"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/plugins/fppackage"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/plugins/pluginsig"
 )
 
 const relVersion = "0.9.0"
@@ -89,7 +94,7 @@ func TestTheReleasesPackagesAreTrusted(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	plugins, _ := Plugins()
+	plugins := packaged(t)
 	if len(names) != len(plugins) || len(names) == 0 {
 		t.Fatalf("%d packages for %d plugins", len(names), len(plugins))
 	}
@@ -139,7 +144,7 @@ func TestAChangedByteIsUnsigned(t *testing.T) {
 // say the other version.
 func TestAnotherReleasesPackageIsRefused(t *testing.T) {
 	dir := buildRelease(t, "0.8.9")
-	plugins, _ := Plugins()
+	plugins := packaged(t)
 	for _, fp := range plugins {
 		for _, n := range [][2]string{{PackageName(fp.ID, "0.8.9"), PackageName(fp.ID, relVersion)}, {FilesJSONName(fp.ID, "0.8.9"), FilesJSONName(fp.ID, relVersion)}} {
 			if err := os.Rename(filepath.Join(dir, n[0]), filepath.Join(dir, n[1])); err != nil {
@@ -201,11 +206,27 @@ func TestAMissingPackageIsRefused(t *testing.T) {
 
 func firstPlugin(t *testing.T) *FirstParty {
 	t.Helper()
-	plugins, err := Plugins()
-	if err != nil || len(plugins) == 0 {
-		t.Fatalf("%v %v", plugins, err)
+	plugins := packaged(t)
+	if len(plugins) == 0 {
+		t.Fatal("no packaged plugin")
 	}
 	return plugins[0]
+}
+
+// packaged is the bundle's plugins a release packages: every one but core's (54.45 §1).
+func packaged(t *testing.T) []*FirstParty {
+	t.Helper()
+	all, err := Plugins()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out []*FirstParty
+	for _, fp := range all {
+		if !IsCore(fp) {
+			out = append(out, fp)
+		}
+	}
+	return out
 }
 
 // repack rewrites one file of a package with the home's writer and its files.json beside it,
@@ -354,7 +375,7 @@ func packageWheel(t *testing.T, dir, id string) (string, map[string][]byte) {
 func pipelineWheel(t *testing.T, dir string, change func(map[string][]byte)) string {
 	t.Helper()
 	files := map[string][]byte{"maktaba_pipeline/__init__.py": []byte("")}
-	plugins, _ := Plugins()
+	plugins := packaged(t)
 	for _, fp := range plugins {
 		_, members := packageWheel(t, dir, fp.ID)
 		for n, b := range members {
@@ -600,6 +621,8 @@ func TestAnotherReleasesPipelineWheelIsRefused(t *testing.T) {
 		"CRLF lines":            "Metadata-Version: 2.1\r\nName: maktaba-pipeline\r\nVersion: " + relVersion + "\r\n",
 		"a line not a header":   "Metadata-Version: 2.1\nName: maktaba-pipeline\nnot a header\nVersion: " + relVersion + "\n",
 		"a name with a space":   "Metadata-Version: 2.1\nName: maktaba-pipeline\nX Note: x\nVersion: " + relVersion + "\n",
+		// Python reads "0.9.0 " here, not this release's version
+		"a trailing blank": "Metadata-Version: 2.1\nName: maktaba-pipeline\nVersion: " + relVersion + " \n",
 	} {
 		name := pipelineWheel(t, dir, func(f map[string][]byte) {
 			f["maktaba_pipeline-"+relVersion+".dist-info/METADATA"] = []byte(meta)
@@ -668,7 +691,7 @@ func TestAnOversizedWheelMemberIsRefused(t *testing.T) {
 	if err := z.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, _, err := readWheel(buf.Bytes()); err == nil || !strings.Contains(err.Error(), "over") {
+	if _, _, _, err := fppackage.ReadWheel(buf.Bytes()); err == nil || !strings.Contains(err.Error(), "over") {
 		t.Fatalf("a member over the limit: %v", err)
 	}
 	// RECORD itself over the limit (its self-row skipped by the digest check): refused too
@@ -686,13 +709,14 @@ func TestAnOversizedWheelMemberIsRefused(t *testing.T) {
 	if err := z.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, _, err := readWheel(buf.Bytes()); err == nil || !strings.Contains(err.Error(), "over") {
+	if _, _, _, err := fppackage.ReadWheel(buf.Bytes()); err == nil || !strings.Contains(err.Error(), "over") {
 		t.Fatalf("a RECORD over the limit: %v", err)
 	}
 }
 
 // Fifth review of #1440: bytecode under a plugin's package is refused in either wheel (Python
-// can run bytecode that is not its source), and a wheel is limited in members and in total.
+// can run bytecode that is not its source). A wheel's limits in members and in total are
+// fppackage's tests (TestAWheelsMembersAndTotalAreLimited).
 func TestBytecodeAndAWheelsTotalAreRefused(t *testing.T) {
 	dir := buildRelease(t, relVersion)
 	fp := firstPlugin(t)
@@ -716,36 +740,6 @@ func TestBytecodeAndAWheelsTotalAreRefused(t *testing.T) {
 	repack(t, dir, fp.ID, wheel, func([]byte) []byte { return wheelBytes(t, info, files) })
 	if _, err := VerifyReleasePackages(dir, relVersion, checksums(t, dir), ""); err == nil || !strings.Contains(err.Error(), "bytecode") {
 		t.Fatalf("bytecode in the package's wheel: %v", err)
-	}
-	// a total over the limit, each member under it; and too many members
-	oldBytes, oldMembers := maxWheelBytes, maxWheelMembers
-	defer func() { maxWheelBytes, maxWheelMembers = oldBytes, oldMembers }()
-	big := map[string][]byte{"x/a.py": bytes.Repeat([]byte("a"), 600), "x/b.py": bytes.Repeat([]byte("b"), 600)}
-	maxWheelBytes = 1 << 10
-	// refused by what it declares, before a byte is read
-	if _, _, _, err := readWheel(wheelBytes(t, "x-1.dist-info", big)); err == nil || !strings.Contains(err.Error(), "bytes unpacked, at most") {
-		t.Fatalf("a wheel declaring over its total: %v", err)
-	}
-	// refused by what it reads: RECORD names a member twice, so it is read twice, over the
-	// total though the declared sizes are under it
-	a := bytes.Repeat([]byte("a"), 600)
-	sum := sha256.Sum256(a)
-	row := "x/a.py,sha256=" + base64.RawURLEncoding.EncodeToString(sum[:]) + ",600\n"
-	var twice bytes.Buffer
-	z := zip.NewWriter(&twice)
-	for n, b := range map[string][]byte{"x/a.py": a, "x-1.dist-info/RECORD": []byte(row + row + "x-1.dist-info/RECORD,,\n")} {
-		w, _ := z.Create(n)
-		_, _ = w.Write(b)
-	}
-	if err := z.Close(); err != nil {
-		t.Fatal(err)
-	}
-	if _, _, _, err := readWheel(twice.Bytes()); err == nil || !strings.Contains(err.Error(), "over ") {
-		t.Fatalf("a wheel reading over its total: %v", err)
-	}
-	maxWheelBytes, maxWheelMembers = oldBytes, 2
-	if _, _, _, err := readWheel(wheelBytes(t, "x-1.dist-info", big)); err == nil || !strings.Contains(err.Error(), "members") {
-		t.Fatalf("a wheel over its members: %v", err)
 	}
 }
 
@@ -773,7 +767,154 @@ func TestAnUnderDeclaredMemberIsRefused(t *testing.T) {
 	if !patched {
 		t.Fatal("no central directory entry for x/a.py")
 	}
-	if _, _, _, err := readWheel(b); err == nil {
+	if _, _, _, err := fppackage.ReadWheel(b); err == nil {
 		t.Fatal("a member holding more than it declares was read")
 	}
+}
+
+// Story 54.45 §1: core is not a plugin. Its plugin is never packaged, and a package of it in a
+// release is refused.
+func TestCoreIsNotPackaged(t *testing.T) {
+	all, _ := Plugins()
+	var core *FirstParty
+	for _, fp := range all {
+		if IsCore(fp) {
+			core = fp
+		}
+	}
+	if core == nil || core.ID != "tv.maktaba.core-media" {
+		t.Fatalf("core's plugin: %+v", core)
+	}
+	dir := buildRelease(t, relVersion)
+	if _, err := os.Stat(filepath.Join(dir, PackageName(core.ID, relVersion))); !os.IsNotExist(err) {
+		t.Fatalf("build.py packaged core: %v", err)
+	}
+	if len(packaged(t)) != len(all)-1 {
+		t.Fatal("only core is left out")
+	}
+	// one made by hand under core's name is refused
+	fp := firstPlugin(t)
+	b, _ := os.ReadFile(filepath.Join(dir, PackageName(fp.ID, relVersion)))
+	_ = os.WriteFile(filepath.Join(dir, PackageName(core.ID, relVersion)), b, 0o644)
+	if _, err := VerifyReleasePackages(dir, relVersion, checksums(t, dir), ""); codeOf(err) != CodeTrustedUnsigned {
+		t.Fatalf("a core package in a release: %v", err)
+	}
+}
+
+// Story 54.45: a package built with Maktaba's developer key (build.py --developer-key), then
+// countersigned by the store, is what a home trusts from the store (fppackage.CheckStore);
+// the signature leaves files.json, and so the release's own check, unchanged.
+func TestASignedPackageIsTrustedFromTheStore(t *testing.T) {
+	if testing.Short() {
+		t.Skip("builds packages")
+	}
+	seed := sha256.Sum256([]byte("maktaba-plugins TEST KEY, never for production: maktaba-developer"))
+	keyFile := filepath.Join(t.TempDir(), "maktaba.key")
+	if err := os.WriteFile(keyFile, []byte(base64.StdEncoding.EncodeToString(seed[:])), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	dev := pluginsig.NewSigner(seed[:])
+	plain := buildRelease(t, relVersion)
+	out := t.TempDir()
+	cmd := exec.Command("python3", filepath.Join("..", "..", "..", "..", "tools", "plugins", "build.py"), "--mkplugin", packer(t),
+		"--developer-key", keyFile, "--version", relVersion, "--out", out)
+	if b, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("build.py --developer-key: %v: %s", err, b)
+	}
+	if _, err := VerifyReleasePackages(out, relVersion, checksums(t, out), ""); err != nil {
+		t.Fatalf("the release's check of signed packages: %v", err)
+	}
+	fp := firstPlugin(t)
+	a, _ := os.ReadFile(filepath.Join(plain, FilesJSONName(fp.ID, relVersion)))
+	b, _ := os.ReadFile(filepath.Join(out, FilesJSONName(fp.ID, relVersion)))
+	if !bytes.Equal(a, b) {
+		t.Fatal("signing changed files.json")
+	}
+	// the home: unpack, then the store rule with the store's countersignature
+	f, err := os.Open(filepath.Join(out, PackageName(fp.ID, relVersion)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(t.TempDir(), "p")
+	pkg, err := componentpack.UnpackPlugin(f, dir, componentpack.PluginExpect{})
+	_ = f.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pkg.DeveloperSig) == 0 {
+		t.Fatal("no developer.sig in the package")
+	}
+	store, keys := storeKit(t)
+	e := fppackage.ByID(fp.ID)
+	sum, _ := pluginsig.FilesSHA256(pkg.FilesJSON)
+	caps, _ := pluginsig.CapabilitiesSHA256(e.Manifest["capabilities"])
+	ss, err := pluginsig.SignStore(store, pluginsig.StoreSigned{PluginID: fp.ID, Version: relVersion, FilesSHA256: sum, DeveloperKeyID: dev.ID,
+		ReviewLevel: pluginsig.LevelReviewed, ReviewedAt: pluginsig.FormatTime(time.Now().UTC().Add(-time.Hour)), CapabilitiesSHA256: caps})
+	if err != nil {
+		t.Fatal(err)
+	}
+	files := []string{}
+	for _, pf := range pkg.Files {
+		files = append(files, pf.Path)
+	}
+	u := fppackage.Unpacked{Dir: dir, Manifest: pkg.Manifest, Files: files}
+	switchable := func(c string) bool { cc, ok := components.Default().Get(c); return ok && cc.Switchable }
+	sig := fppackage.Signed{FilesJSON: pkg.FilesJSON, DeveloperSig: pkg.DeveloperSig, StoreSig: ss}
+	// the plugin's code as the release's pipeline wheel holds it: here, the package's own
+	// wheel's RECORD (the release's check compares the two, TestAPackagesWheelIsThePipelineWheelsCode)
+	var whl []byte
+	for _, p := range files {
+		if strings.HasPrefix(p, "wheels/") {
+			whl, err = os.ReadFile(filepath.Join(dir, filepath.FromSlash(p)))
+		}
+	}
+	if err != nil || whl == nil {
+		t.Fatalf("the package's wheel: %v", err)
+	}
+	pipe, _, _, err := fppackage.ReadWheel(whl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer fppackage.UseMaktabaKeys(dev.ID)()
+	if _, err := fppackage.CheckStore(u, sig, keys, relVersion, switchable, pipe); err != nil {
+		t.Fatalf("a Maktaba-signed, store-countersigned package: %v", err)
+	}
+	// the same package under this build's real list (empty): refused
+	restore := fppackage.UseMaktabaKeys()
+	_, err = fppackage.CheckStore(u, sig, keys, relVersion, switchable, pipe)
+	restore()
+	if codeOf(err) != CodeTrustedUnsigned {
+		t.Fatalf("no pinned key: %v", err)
+	}
+}
+
+// storeKit is a test root, its store key and the verified store-keys.json listing it.
+func storeKit(t *testing.T) (pluginsig.Signer, *pluginsig.StoreKeys) {
+	t.Helper()
+	mk := func(label string) pluginsig.Signer {
+		s := sha256.Sum256([]byte("maktaba-plugins TEST KEY, never for production: " + label))
+		return pluginsig.NewSigner(s[:])
+	}
+	root, store := mk("root-1"), mk("store-1")
+	now := time.Now().UTC().Truncate(time.Second)
+	rootRaw, err := pluginsig.SignEnvelope(pluginsig.KindRoot, pluginsig.RootSigned{Version: 1, Threshold: 1,
+		Keys: []pluginsig.RootKey{{ID: root.ID, Public: root.Public()}}}, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := pluginsig.ParseRoot(rootRaw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := pluginsig.SignEnvelope(pluginsig.KindStoreKeys, pluginsig.StoreKeysSigned{Version: 1, Expires: pluginsig.FormatTime(now.Add(300 * 24 * time.Hour)),
+		Keys: []pluginsig.StoreKey{{ID: store.ID, Public: store.Public(), Use: pluginsig.UseStore,
+			NotBefore: pluginsig.FormatTime(now.Add(-30 * 24 * time.Hour)), NotAfter: pluginsig.FormatTime(now.Add(365 * 24 * time.Hour))}}}, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keys, err := r.VerifyStoreKeys(raw, pluginsig.State{}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return store, keys
 }
