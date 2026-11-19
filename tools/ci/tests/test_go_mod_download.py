@@ -148,3 +148,64 @@ def test_a_job_that_builds_the_cloudlink_downloads_cloud() -> None:
         mods = str(found[1]["with"]["modules"]).split()
         if any(BUILDS_CLOUD.search(str(s.get("run", ""))) for s in steps):
             assert mods == ["all"] or "cloud" in mods, f"{workflow} {job}: builds the cloudlink offline without cloud"
+
+
+def _go_directive(module: str) -> tuple[int, ...] | None:
+    for line in (ROOT / module / "go.mod").read_text(encoding="utf-8").splitlines():
+        m = re.match(r"^go (\d+(?:\.\d+)*)\s*$", line)
+        if m:
+            return tuple(int(x) for x in m.group(1).split("."))
+    return None
+
+
+def _go_of(step: dict[str, Any]) -> tuple[int, ...] | None:
+    w = step.get("with") or {}
+    if "go-version-file" in w:
+        return _go_directive(str(w["go-version-file"]).removesuffix("/go.mod").removesuffix("go.mod") or ".")
+    m = re.match(r"^(\d+(?:\.\d+)*)", str(w.get("go-version", "")))
+    return tuple(int(x) for x in m.group(1).split(".")) if m else None
+
+
+# jobs whose steps that build a newer-Go module set GOTOOLCHAIN=auto themselves
+AUTO_TOOLCHAIN = {
+    ("_launcher.yml", "launcher"): "its api steps run with GOTOOLCHAIN=auto (the api asks a newer Go than the server)",
+}
+
+
+# Review of #1440: with GOTOOLCHAIN=local, a module whose go directive is newer than the Go a
+# job set up fails at its download (api's go 1.26.0 under tools/release's 1.25.8 failed every
+# tag's sign-and-release). Each module a job downloads asks at most the Go set up before it.
+def test_each_downloaded_module_takes_the_go_set_up_before_it() -> None:
+    checked = 0
+    for workflow, job, steps in _go_jobs():
+        if (workflow, job) in AUTO_TOOLCHAIN:
+            continue
+        go: tuple[int, ...] | None = None
+        for s in steps:
+            if str(s.get("uses", "")).startswith("actions/setup-go@"):
+                go = _go_of(s)
+            if s.get("uses") != ACTION or go is None:
+                continue
+            for m in str(s["with"]["modules"]).split():
+                if m == "all" or not (ROOT / m / "go.mod").is_file():
+                    continue
+                want = _go_directive(m)
+                if want is None:
+                    continue
+                checked += 1
+                assert want <= go, (
+                    f"{workflow} {job}: {m} asks go {'.'.join(map(str, want))}, "
+                    f"the job set up {'.'.join(map(str, go))}"
+                )
+    assert checked > 40
+
+
+def test_the_auto_toolchain_jobs_are_real() -> None:
+    jobs = {(w, j) for w, j, _ in _go_jobs()}
+    assert set(AUTO_TOOLCHAIN) <= jobs
+
+
+def test_the_go_check_sees_a_job_that_sets_up_too_old_a_go() -> None:
+    old = {"uses": "actions/setup-go@v6", "with": {"go-version": "1.20"}}
+    assert _go_of(old) == (1, 20)
+    assert _go_directive("api") is not None and _go_directive("api") > (1, 20)

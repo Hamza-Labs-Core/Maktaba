@@ -63,13 +63,28 @@ func VerifyReleasePackages(dir, version string, sums releaseverify.Checksums, pi
 	}
 	var pipeline map[string]string
 	if pipelineWheel != "" {
+		// this release's pipeline wheel, by name and by its own METADATA: an older one with
+		// the same plugin files would otherwise pass
+		if want := "maktaba_pipeline-" + version + "-py3-none-any.whl"; pipelineWheel != want {
+			return nil, &Error{Code: CodeTrustedVersion, Detail: pipelineWheel + " is not " + want}
+		}
 		b, err := listed(dir, pipelineWheel, sums)
 		if err != nil {
 			return nil, err
 		}
-		if pipeline, err = wheelRecord(b); err != nil {
+		rec, files, recPath, err := readWheel(b)
+		if err != nil {
 			return nil, fmt.Errorf("%s: %w", pipelineWheel, err)
 		}
+		info := "maktaba_pipeline-" + version + ".dist-info/"
+		if recPath != info+"RECORD" {
+			return nil, fmt.Errorf("%s: its RECORD is %s, not %sRECORD", pipelineWheel, recPath, info)
+		}
+		meta, ok := files[info+"METADATA"]
+		if !ok || !hasHeader(meta, "Name", "maktaba-pipeline") || !hasHeader(meta, "Version", version) {
+			return nil, &Error{Code: CodeTrustedVersion, Detail: pipelineWheel + ": its METADATA is not maktaba-pipeline " + version}
+		}
+		pipeline = rec
 	}
 	want := map[string]bool{}
 	var out []string
@@ -213,16 +228,13 @@ func verifyOne(dir, version string, fp *FirstParty, sums releaseverify.Checksums
 // wheelRecord reads a wheel's RECORD (PEP 376 CSV: path, sha256=<urlsafe base64>, size) and
 // checks every member against it: each member listed with its digest, each listed path a
 // member. It answers path -> digest (RECORD itself has none).
-func wheelRecord(b []byte) (map[string]string, error) {
-	rec, _, err := readWheel(b)
-	return rec, err
-}
-
-// readWheel is wheelRecord, also answering each member's bytes.
-func readWheel(b []byte) (map[string]string, map[string][]byte, error) {
+// readWheel checks a wheel against its RECORD as wheelRecord did, answering each member's
+// digest and bytes and the RECORD's own path. A member over the unpacked limit is refused,
+// never hashed as a prefix.
+func readWheel(b []byte) (map[string]string, map[string][]byte, string, error) {
 	z, err := zip.NewReader(bytes.NewReader(b), int64(len(b)))
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, "", err
 	}
 	var record *zip.File
 	files := map[string]*zip.File{}
@@ -231,65 +243,72 @@ func readWheel(b []byte) (map[string]string, map[string][]byte, error) {
 			continue
 		}
 		if _, dup := files[f.Name]; dup {
-			return nil, nil, fmt.Errorf("%s twice", f.Name)
+			return nil, nil, "", fmt.Errorf("%s twice", f.Name)
 		}
 		files[f.Name] = f
 		if strings.HasSuffix(f.Name, ".dist-info/RECORD") && strings.Count(f.Name, "/") == 1 {
 			if record != nil {
-				return nil, nil, fmt.Errorf("two RECORD files")
+				return nil, nil, "", fmt.Errorf("two RECORD files")
 			}
 			record = f
 		}
 	}
 	if record == nil {
-		return nil, nil, fmt.Errorf("no RECORD")
+		return nil, nil, "", fmt.Errorf("no RECORD")
 	}
 	rc, err := record.Open()
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, "", err
 	}
 	rows, err := csv.NewReader(rc).ReadAll()
 	_ = rc.Close()
 	if err != nil {
-		return nil, nil, fmt.Errorf("RECORD: %w", err)
+		return nil, nil, "", fmt.Errorf("RECORD: %w", err)
 	}
 	out := map[string]string{}
 	contents := map[string][]byte{}
 	for _, r := range rows {
 		if len(r) != 3 {
-			return nil, nil, fmt.Errorf("RECORD: a row of %d fields", len(r))
+			return nil, nil, "", fmt.Errorf("RECORD: a row of %d fields", len(r))
 		}
 		path, digest := r[0], r[1]
 		f, ok := files[path]
 		if !ok {
-			return nil, nil, fmt.Errorf("RECORD lists %s, which it does not hold", path)
+			return nil, nil, "", fmt.Errorf("RECORD lists %s, which it does not hold", path)
 		}
 		if path == record.Name {
 			continue
 		}
 		rc, err := f.Open()
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, "", err
+		}
+		if f.UncompressedSize64 > componentpack.PluginMaxUnpackedBytes {
+			_ = rc.Close()
+			return nil, nil, "", fmt.Errorf("%s is over %d bytes", path, componentpack.PluginMaxUnpackedBytes)
 		}
 		data, err := io.ReadAll(io.LimitReader(rc, componentpack.PluginMaxUnpackedBytes+1))
 		_ = rc.Close()
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, "", err
+		}
+		if len(data) > componentpack.PluginMaxUnpackedBytes {
+			return nil, nil, "", fmt.Errorf("%s is over %d bytes", path, componentpack.PluginMaxUnpackedBytes)
 		}
 		sum := sha256.Sum256(data)
 		size, err := strconv.ParseInt(r[2], 10, 64)
 		if err != nil || size < 0 || size != int64(len(data)) || digest != "sha256="+base64.RawURLEncoding.EncodeToString(sum[:]) {
-			return nil, nil, fmt.Errorf("%s does not match its RECORD", path)
+			return nil, nil, "", fmt.Errorf("%s does not match its RECORD", path)
 		}
 		out[path] = digest
 		contents[path] = data
 	}
 	for name := range files {
 		if _, ok := out[name]; !ok && name != record.Name {
-			return nil, nil, fmt.Errorf("%s is not in RECORD", name)
+			return nil, nil, "", fmt.Errorf("%s is not in RECORD", name)
 		}
 	}
-	return out, contents, nil
+	return out, contents, record.Name, nil
 }
 
 // compiled is a file Python writes for itself, which a wheel may or may not carry.
@@ -304,11 +323,14 @@ func compiled(p string) bool {
 // claim another version. With the release's pipeline wheel's RECORD, its package's files
 // equal that wheel's, digest for digest, both ways.
 func checkWheel(b []byte, dist, version string, pipeline map[string]string) error {
-	rec, files, err := readWheel(b)
+	rec, files, recPath, err := readWheel(b)
 	if err != nil {
 		return err
 	}
 	info := dist + "-" + version + ".dist-info/"
+	if recPath != info+"RECORD" {
+		return fmt.Errorf("its RECORD is %s, not %sRECORD", recPath, info)
+	}
 	own := 0
 	for p, d := range rec {
 		switch {
@@ -386,4 +408,14 @@ func checkHeaders(b []byte, exact map[string]string, free ...string) error {
 		}
 	}
 	return nil
+}
+
+// hasHeader: a "Key: value" line of b has that value.
+func hasHeader(b []byte, key, value string) bool {
+	for _, line := range strings.Split(string(b), "\n") {
+		if k, v, ok := strings.Cut(strings.TrimRight(line, "\r"), ": "); ok && k == key && v == value {
+			return true
+		}
+	}
+	return false
 }

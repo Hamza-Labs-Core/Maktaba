@@ -1508,13 +1508,13 @@ jobs:
       - name: Go modules
         uses: ./.github/actions/go-mod-download
         with:
-          modules: tools/release shared/go/releaseverify shared/go/componentpack shared/components api
+          modules: tools/release shared/go/releaseverify shared/go/componentpack shared/components
           offline: "false"
 
       - name: Go modules (from the cache, verified)
         run: |
           set -euo pipefail
-          for m in tools/release shared/go/releaseverify shared/go/componentpack api; do
+          for m in tools/release shared/go/releaseverify shared/go/componentpack; do
             ( cd "$m" && go mod download && go mod verify )
           done
 
@@ -2168,6 +2168,19 @@ jobs:
       # each; each package's wheel holds exactly its plugin's files of the signed pipeline
       # wheel, the code the runner loads. CI runs the same command on a dry run of the build
       # (_plugins.yml first-party).
+      # api/go.mod asks a newer Go than tools/release's (GOTOOLCHAIN is local): the check is
+      # built with api's own, set up here so the steps above keep theirs
+      - uses: actions/setup-go@v6.4.0
+        with:
+          go-version-file: api/go.mod
+          cache: false
+
+      - name: Go modules (the server's check)
+        uses: ./.github/actions/go-mod-download
+        with:
+          modules: api
+          offline: "false"
+
       - name: The first-party packages are trusted (fp-packages)
         env:
           TAG: ${{ github.ref_name }}

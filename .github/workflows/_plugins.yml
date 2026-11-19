@@ -536,12 +536,14 @@ jobs:
           FP_OUT: ${{ runner.temp }}/fp-packages
         run: |
           set -euo pipefail
-          python3 tools/plugins/build.py --version 0.0.1 --out "$FP_OUT"
+          # the pipeline wheel first: the packages are built at its version, as a release's are
           uv build --wheel --project pipeline --out-dir "$FP_OUT" --quiet
           wheels=("$FP_OUT"/maktaba_pipeline-*-py3-none-any.whl)
           [ "${#wheels[@]}" -eq 1 ] && [ -f "${wheels[0]}" ] || { echo "::error::expected one pipeline wheel, got: ${wheels[*]}"; exit 1; }
+          ver="$(basename "${wheels[0]}")"; ver="${ver#maktaba_pipeline-}"; ver="${ver%-py3-none-any.whl}"
+          python3 tools/plugins/build.py --version "$ver" --out "$FP_OUT"
           (cd "$FP_OUT" && find . -maxdepth 1 -type f ! -name 'checksums.txt' | sort | LC_ALL=C xargs sha256sum > checksums.txt)
-          (cd api && go run ./tools/fp-packages -dir "$FP_OUT" -version 0.0.1 -pipeline-wheel "$(basename "${wheels[0]}")")
+          (cd api && go run ./tools/fp-packages -dir "$FP_OUT" -version "$ver" -pipeline-wheel "$(basename "${wheels[0]}")")
 
   # the runner's Seatbelt sandbox and protocol on macOS (no Postgres there)
   first-party-macos:

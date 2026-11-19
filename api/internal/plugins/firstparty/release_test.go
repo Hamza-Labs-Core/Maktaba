@@ -363,6 +363,7 @@ func pipelineWheel(t *testing.T, dir string, change func(map[string][]byte)) str
 			}
 		}
 	}
+	files["maktaba_pipeline-"+relVersion+".dist-info/METADATA"] = []byte("Metadata-Version: 2.1\nName: maktaba-pipeline\nVersion: " + relVersion + "\n")
 	if change != nil {
 		change(files)
 	}
@@ -571,5 +572,73 @@ func TestARecordWithAWrongSizeIsRefused(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), "RECORD") {
 			t.Fatalf("size %q: %v", size, err)
 		}
+	}
+}
+
+// Third review of #1440: the pipeline wheel is this release's, by name and by its METADATA;
+// an older one with the same plugin files is refused.
+func TestAnotherReleasesPipelineWheelIsRefused(t *testing.T) {
+	dir := buildRelease(t, relVersion)
+	name := pipelineWheel(t, dir, func(f map[string][]byte) {
+		f["maktaba_pipeline-"+relVersion+".dist-info/METADATA"] = []byte("Metadata-Version: 2.1\nName: maktaba-pipeline\nVersion: 0.8.9\n")
+	})
+	if _, err := VerifyReleasePackages(dir, relVersion, checksums(t, dir), name); codeOf(err) != CodeTrustedVersion {
+		t.Fatalf("an older pipeline wheel under this release's name: %v", err)
+	}
+	// and a pipeline wheel named for another version
+	name = pipelineWheel(t, dir, nil)
+	other := "maktaba_pipeline-0.8.9-py3-none-any.whl"
+	if err := os.Rename(filepath.Join(dir, name), filepath.Join(dir, other)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := VerifyReleasePackages(dir, relVersion, checksums(t, dir), other); codeOf(err) != CodeTrustedVersion {
+		t.Fatalf("a pipeline wheel of another version: %v", err)
+	}
+}
+
+// Third review of #1440: the wheel's RECORD is the one in its own dist-info.
+func TestAWheelWhoseRecordIsElsewhereIsRefused(t *testing.T) {
+	dir := buildRelease(t, relVersion)
+	fp := firstPlugin(t)
+	wheel, members := packageWheel(t, dir, fp.ID)
+	info := strings.TrimSuffix(strings.TrimPrefix(wheel, "wheels/"), "-py3-none-any.whl") + ".dist-info"
+	files := map[string][]byte{}
+	for n, b := range members {
+		if n != info+"/RECORD" {
+			files[n] = b
+		}
+	}
+	repack(t, dir, fp.ID, wheel, func([]byte) []byte { return wheelBytes(t, "other.dist-info", files) })
+	_, err := VerifyReleasePackages(dir, relVersion, checksums(t, dir), "")
+	if err == nil || !strings.Contains(err.Error(), "RECORD") {
+		t.Fatalf("a RECORD outside its dist-info: %v", err)
+	}
+}
+
+// Third review of #1440: a member over the unpacked limit is refused, never hashed as its
+// first 200 MiB (two wheels sharing that prefix would read as equal).
+func TestAnOversizedWheelMemberIsRefused(t *testing.T) {
+	if testing.Short() {
+		t.Skip("writes a 200 MiB member")
+	}
+	var buf bytes.Buffer
+	z := zip.NewWriter(&buf)
+	w, err := z.CreateHeader(&zip.FileHeader{Name: "x/big.py", Method: zip.Deflate})
+	if err != nil {
+		t.Fatal(err)
+	}
+	chunk := make([]byte, 1<<20)
+	for i := 0; i <= componentpack.PluginMaxUnpackedBytes>>20; i++ {
+		if _, err := w.Write(chunk); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rec, _ := z.Create("x-1.dist-info/RECORD")
+	_, _ = rec.Write([]byte("x/big.py,sha256=AAAA,1\nx-1.dist-info/RECORD,,\n"))
+	if err := z.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, err := readWheel(buf.Bytes()); err == nil || !strings.Contains(err.Error(), "over") {
+		t.Fatalf("a member over the limit: %v", err)
 	}
 }

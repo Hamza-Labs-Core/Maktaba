@@ -178,7 +178,9 @@ plugin's `i18n`.
     of its own;
   - have a stamped manifest that is valid as a trusted manifest, with its manifest, strings and
     statements equal to the embedded ones;
-  - have a wheel named for this version whose files match its `RECORD` (digests and sizes) and
+  - have a wheel named for this version whose files match its own dist-info's `RECORD`
+    (digests and sizes; no member over the unpacked limit, which is refused rather than hashed
+    as a prefix) and
     equal its plugin's files in the signed pipeline wheel, digest for digest, both ways, so a
     package's code is the code the runner loads;
   - keep its wheel's dist-info to exactly `METADATA`, `WHEEL` and `RECORD`. The `METADATA` names
@@ -187,7 +189,12 @@ plugin's `i18n`.
   - pass `CheckPackage`.
   
   Any other `tv.maktaba.*` package or `files.json`, on disk or in the checksums, fails the
-  release.
+  release. The pipeline wheel the packages are compared with must be this release's, both by
+  its name (`maktaba_pipeline-<version>-py3-none-any.whl`) and by its own `METADATA`.
+- **The check's Go.** `api/go.mod` asks for a newer Go than `tools/release`'s, and the release
+  job runs with `GOTOOLCHAIN=local`. So `sign-and-release` sets up `api`'s Go just before the
+  check and downloads `api`'s modules there. `test_go_mod_download.py` now fails any job that
+  downloads a module asking for a newer Go than the job set up before it.
 - **`CheckPackage` reads the digest under the package's own name.** It looks at
   `tv.maktaba.<name>-<server version>.files.json` only; until now it accepted the digest under
   any name. A digest listed for another plugin, or for any other release file, trusts nothing.
@@ -217,7 +224,9 @@ plugin's `i18n`.
   dist-info file, a platform `WHEEL`, a wheel named for another version, and wrong `RECORD`
   sizes. The `first-party` job runs every test of `internal/plugins/firstparty` and
   `tools/fp-packages` with no name filter, since the unit job's `-short` skips the ones that
-  build packages. `test_build_packages.py` covers stamping,
+  build packages. The third review adds: an older pipeline wheel under this release's name, a
+  pipeline wheel named for another version, a `RECORD` outside its dist-info, and a member over
+  the unpacked limit. The dry run builds the packages at the pipeline wheel's own version. `test_build_packages.py` covers stamping,
   versions, the no-stage and third-party refusals, the package's files and the wheel's
   `RECORD`. T02 to T06 are #750's.
 
