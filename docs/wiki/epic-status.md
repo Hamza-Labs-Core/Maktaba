@@ -3,7 +3,7 @@
 > Story-by-story status of every epic, read from the code and history on `main` at `f43b0d3ed` (2026-11-19).
 > The specs and epic pages don't record a status; this page does. Update the row when a story changes.
 
-**Not every epic is done.** Of 773 stories across all 60 epics, 697 are done, 40 are partial, 26 are not started, and 10 were deferred or removed on purpose. The largest open pieces are Epic 49 (Search, one story of fourteen done), Epic 34 (the TV public site, a first slice only) and Epic 54 Phase 5 (Plugins).
+**Not every epic is done.** Of 773 stories across all 60 epics, 697 are done, 41 are partial, 25 are not started, and 10 were deferred or removed on purpose. The largest open pieces are Epic 49 (Search, one story of fourteen done), Epic 34 (the TV public site, a first slice only) and Epic 54 Phase 5 (Plugins).
 
 ## How this was checked
 
@@ -76,14 +76,14 @@
 | 51 Configurable components | 19 | 0 | 0 | 0 | Done |
 | 52 Transcript word review | 13 | 3 | 0 | 1 | **Partial** |
 | 53 Logs, errors and reports | 18 | 0 | 0 | 0 | Done (open issue #1064) |
-| 54 Plugins | 41 | 2 | 8 | 1 | **Not done** |
+| 54 Plugins | 41 | 3 | 7 | 1 | **Not done** |
 | 55 Desktop player parity | 10 | 0 | 0 | 0 | Done |
 | 56 TV library view | 13 | 0 | 0 | 1 | Done (56.07 removed by #969) |
 | 57 Parental controls | 13 | 3 | 0 | 1 | **Partial** |
 | 58 Smart TV platforms | 17 | 0 | 0 | 1 | Done (58.18 Vega OS deferred) |
 | 59 NAS | 16 | 0 | 0 | 0 | Done (device results not checked) |
 | 60 Website | 11 | 1 | 0 | 1 | **Partial** |
-| **Total** | **697** | **40** | **26** | **10** | **Not all done** |
+| **Total** | **697** | **41** | **25** | **10** | **Not all done** |
 
 `*` sampled, see [How this was checked](#how-this-was-checked).
 
@@ -1251,7 +1251,7 @@ The wiki table omits 54.43–54.52; this audit includes all 52 spec files. Open 
 | 54.42 Joined machines | Done | #767; cluster plugin distribution/runner tests |
 | 54.43 Fallback counts | Done | #1080; `shared/db/migrations/0218_stage_fallbacks.sql`; `api/internal/handlers/queues/fallbacks_pg_test.go`; `web/src/components/queue/FallbackCounts.test.tsx` |
 | 54.44 One Plugins page | Done | #1243; `api/internal/plugins/published.go`, `published_pg_test.go`; `api/internal/handlers/plugins/published_pg_test.go`; `web/src/pages/Settings/PluginPage.tsx` and tests |
-| 54.45 Maktaba store packages | **not started** | Spec says **Not built**; #1243 explicitly says 54.45–54.52 not built. No `tools/plugins/build.py` or per-plugin store packages. |
+| 54.45 Maktaba store packages | **partial** | #1450; `shared/plugins/fppackage.CheckStore` (store countersigned, Maktaba's pinned key in `shared/plugins/maktaba-keys.json`, statements exactly the server's, as decided), `build.py --developer-key`, core not packaged; store: the Maktaba publisher (`POST /v1/admin/maktaba-publisher`), `prefixCovers`, trusted manifests and native-package checks. **Missing:** a store or file package installed and run with parity, which waits for an install path (54.46/54.49) and Maktaba's key. |
 | 54.46 Maktaba plugin lifecycle | **not started** | Spec says **Not built**; independent install/removal/update lifecycle absent; depends on 54.45 |
 | 54.47 Maktaba plugin updates | **not started** | Spec says **Not built**; independent plugin update channel absent |
 | 54.48 Preinstalled/migration | **not started** | Spec says **Not built**; package-based preinstall/migration absent |
