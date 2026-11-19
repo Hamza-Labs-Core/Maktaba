@@ -4,6 +4,8 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -89,5 +91,27 @@ func TestMajorUpgradeNeeded(t *testing.T) {
 	}
 	if need, why, err := u.Needed(ctx); err != nil || !need || why != "an upgrade that did not finish" {
 		t.Fatalf("an unfinished upgrade: %v %q %v", need, why, err)
+	}
+}
+
+// PostgreSQL 18 runs with io_method=sync (no I/O worker processes: the idle memory
+// budget); 16, which has no such setting, never gets it.
+func TestServerArgsIOMethodOn18Only(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("a shell script as postgres")
+	}
+	for major, want := range map[string]bool{"16": false, "18": true} {
+		home := t.TempDir()
+		if err := os.MkdirAll(filepath.Join(home, "bin"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		script := "#!/bin/sh\necho 'postgres (PostgreSQL) " + major + ".7'\n"
+		if err := os.WriteFile(filepath.Join(home, "bin", "postgres"), []byte(script), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		args := strings.Join(Bundle{Home: home, Data: t.TempDir(), Port: 5499}.serverArgs(false), " ")
+		if got := strings.Contains(args, "io_method=sync"); got != want {
+			t.Errorf("PostgreSQL %s: io_method=sync %v, want %v (%s)", major, got, want, args)
+		}
 	}
 }

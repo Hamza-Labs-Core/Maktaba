@@ -279,6 +279,12 @@ func (b Bundle) serverArgs(lan bool) []string {
 	// (as -c arguments, so postgresql.auto.conf cannot override them). Epic 49 story 49.1:
 	// pg_textsearch (BM25) loads only at the server's start, so an install that has it
 	// preloads it, also into a household's own shared_preload_libraries
+	// PostgreSQL 18's asynchronous I/O runs in worker processes by default (three more, about
+	// 12 MB idle); the bundled server reads as 16 does (io_method=sync), within the home's
+	// idle memory budget (Epic 51 story 51.17). 16 refuses the setting.
+	if n, err := strconv.Atoi(HomeMajor(b.Home)); err == nil && n >= 18 {
+		args = append(args, "-c", "io_method=sync")
+	}
 	preload := strings.Join(b.Preload(), ",")
 	for _, kv := range b.Tuning {
 		if name, val, ok := strings.Cut(kv, "="); ok && strings.TrimSpace(name) == "shared_preload_libraries" && preload != "" {
