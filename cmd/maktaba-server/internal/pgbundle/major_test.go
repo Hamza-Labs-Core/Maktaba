@@ -156,3 +156,16 @@ func TestHasDatabaseAndNoEmptyNewerCluster(t *testing.T) {
 		t.Fatalf("Prepare made %s: %v", b.Data, err)
 	}
 }
+
+// Windows' psql answers with \r\n line ends: the rows are the same as elsewhere (the upgrade's
+// last step named a database "postgres\r" on the Windows runner).
+func TestRowsOfTakesNoCarriageReturn(t *testing.T) {
+	for _, out := range []string{"postgres\nmaktaba\n", "postgres\r\nmaktaba\r\n", "postgres\r\n\r\nmaktaba"} {
+		if got := rowsOf(out); len(got) != 2 || got[0] != "postgres" || got[1] != "maktaba" {
+			t.Errorf("%q: %q", out, got)
+		}
+	}
+	if got := rowsOf(""); len(got) != 0 {
+		t.Errorf("no output: %q", got)
+	}
+}
