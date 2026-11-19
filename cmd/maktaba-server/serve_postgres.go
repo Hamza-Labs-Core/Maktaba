@@ -165,7 +165,6 @@ func majorUpgradeStep(ctx context.Context, cfg config.Config, b pgbundle.Bundle,
 	if old == "" {
 		// the payload's previous major runs (held), or the payload has only one
 		if held := pgbundle.HeldMajor(root); held != "" && pgbundle.HomeMajor(b.Home) != "" {
-			apppayload.UseClusterRecord(pgbundle.HomeMajor(b.Home))
 			if exe, _ := os.Executable(); exe != "" {
 				if nb, ok := retryHeldUpgrade(ctx, cfg, b, exe, held, log); ok {
 					return nb
@@ -173,7 +172,6 @@ func majorUpgradeStep(ctx context.Context, cfg config.Config, b pgbundle.Bundle,
 			}
 			return b
 		}
-		apppayload.UseClusterRecord(pgbundle.HomeMajor(b.Home))
 		return b
 	}
 	return upgradeTo(ctx, cfg, b, old, log)
@@ -220,11 +218,9 @@ func upgradeTo(ctx context.Context, cfg config.Config, b pgbundle.Bundle, old st
 		if herr := pgbundle.HoldMajor(root, err.Error()); herr != nil {
 			fmt.Fprintf(log, "[postgres] level=error the hold cannot be recorded: %v\n", herr)
 		}
-		apppayload.UseClusterRecord(oldMajor)
 		return ob
 	}
 	_ = pgbundle.ReleaseMajor(root)
-	apppayload.UseClusterRecord(newMajor)
 	return b
 }
 

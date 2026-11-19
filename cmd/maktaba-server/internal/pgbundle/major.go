@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -22,7 +23,7 @@ import (
 //
 // The new major's cluster lives in a directory of its own (DataDirFor: <state>/postgres-18),
 // made from the old one by pg_upgrade with the old major's programs, which the payload keeps
-// for this step (postgres-16/). The old cluster (<state>/postgres) is never changed: pg_upgrade
+// for this step (its postgres/, beside postgres-18/). The old cluster (<state>/postgres) is never changed: pg_upgrade
 // clones its files (APFS, btrfs, XFS: no extra room) or copies them, never links them (a
 // linked old cluster cannot start again once the new one has). So whatever switches back to
 // the release before (the updater's rollback, the launcher's guard, the desktop app) finds
@@ -340,6 +341,7 @@ func (u MajorUpgrade) Run(ctx context.Context, log io.Writer) error {
 		fmt.Fprintf(log, "[postgres] the earlier upgraded copy is set aside in %s\n", stale)
 	}
 	tmp := u.New.Data + ".upgrading"
+	u.stopLeftover(ctx, tmp, log)
 	if err := os.RemoveAll(tmp); err != nil {
 		return err
 	}
@@ -348,6 +350,7 @@ func (u MajorUpgrade) Run(ctx context.Context, log io.Writer) error {
 	// each try on a cluster initdb just made (a try that failed part way leaves roles in it,
 	// which the next refuses)
 	try := func(mode string) error {
+		u.stopLeftover(ctx, tmp, log)
 		if err := os.RemoveAll(tmp); err != nil {
 			return err
 		}
@@ -412,6 +415,10 @@ func (u MajorUpgrade) Run(ctx context.Context, log io.Writer) error {
 	raw, _ := json.MarshalIndent(m, "", "  ")
 	if err := os.WriteFile(filepath.Join(u.New.Data, UpgradeMarker), append(raw, '\n'), 0o600); err != nil {
 		return err
+	}
+	// the copy an earlier upgrade made, set aside above: this one replaces it
+	if err := os.RemoveAll(u.New.Data + ".stale"); err == nil {
+		fmt.Fprintf(log, "[postgres] the earlier upgraded copy set aside is removed\n")
 	}
 	fmt.Fprintf(log, "[postgres] the library database is upgraded (%s): %s; PostgreSQL %s's cluster is left as it was in %s\n",
 		mode, u.New.Data, oldMajor, u.Old.Data)
@@ -497,10 +504,20 @@ func (u MajorUpgrade) upgrade(ctx context.Context, nb Bundle, mode string, log i
 	if err != nil {
 		return err
 	}
+	// ports free now, not fixed ones: a server of an earlier try that outlived it (its
+	// pg_upgrade stopped hard) would hold a fixed one for every try after
+	oldPort, err := freePort()
+	if err != nil {
+		return err
+	}
+	newPort, err := freePort()
+	if err != nil {
+		return err
+	}
 	opts := "-c wal_level=logical -c max_replication_slots=40 -c max_wal_senders=40 -c max_worker_processes=24"
 	args := []string{"-b", filepath.Dir(u.Old.Bin("postgres")), "-B", filepath.Dir(u.New.Bin("postgres")),
-		"-d", u.Old.Data, "-D", nb.Data, "-U", SuperUser, "-p", strconv.Itoa(u.Old.Port + 1),
-		"-P", strconv.Itoa(u.Old.Port + 2), "-o", opts, "-O", opts + " -c shared_preload_libraries=" + strings.Join(nb.Preload(), ","),
+		"-d", u.Old.Data, "-D", nb.Data, "-U", SuperUser, "-p", strconv.Itoa(oldPort),
+		"-P", strconv.Itoa(newPort), "-o", opts, "-O", opts + " -c shared_preload_libraries=" + strings.Join(nb.Preload(), ","),
 		mode}
 	if runtime.GOOS != "windows" {
 		sock, err := os.MkdirTemp("", "pgu")
@@ -548,6 +565,30 @@ func upgradeLogTail(data string) string {
 		lines = lines[len(lines)-12:]
 	}
 	return "\n" + filepath.Base(newest) + ":\n" + strings.Join(lines, "\n")
+}
+
+// freePort is a loopback port no one listens on now.
+func freePort() (int, error) {
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return 0, err
+	}
+	defer l.Close()
+	return l.Addr().(*net.TCPAddr).Port, nil
+}
+
+// stopLeftover stops a server pg_upgrade started on dir that outlived it (pg_upgrade was
+// stopped hard: its servers are pg_ctl's, not its children), before dir goes: else it
+// would run on, with its files deleted under it.
+func (u MajorUpgrade) stopLeftover(ctx context.Context, dir string, log io.Writer) {
+	if _, err := os.Stat(filepath.Join(dir, "postmaster.pid")); err != nil {
+		return
+	}
+	cmd := exec.CommandContext(ctx, u.New.Bin("pg_ctl"), "-D", dir, "-m", "immediate", "-w", "-t", "30", "stop")
+	cmd.Stdout, cmd.Stderr = childLog(log), childLog(log)
+	if err := cmd.Run(); err == nil {
+		fmt.Fprintf(log, "[postgres] a server an earlier upgrade left on %s is stopped\n", dir)
+	}
 }
 
 // AfterUpgrade brings a cluster pg_upgrade just made up to date, with a server of its own:

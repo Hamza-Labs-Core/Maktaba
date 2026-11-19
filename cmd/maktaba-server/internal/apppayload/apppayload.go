@@ -20,7 +20,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"sync/atomic"
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/layout"
@@ -159,22 +158,26 @@ const (
 	DatabaseRestored = "restored"
 )
 
-// DatabasePath is the database's record.
+// DatabasePath is the database's record: the record of the cluster this install runs on
+// (ClusterMajorIn), the same in every process (the server, the container's entrypoint, an
+// offline restore, the updater).
 func DatabasePath(stateDir string) string {
-	return filepath.Join(stateDir, "state", recordName.Load().(string))
+	return filepath.Join(stateDir, "state", ClusterRecordName(ClusterMajorIn(stateDir)))
 }
 
-// recordName is the database record's file: database.json, or for a cluster of a newer
-// major in a directory of its own (Epic 49 story 49.2) database-pg<major>.json, so a
-// release before it, switched back to on its own cluster, reads its own record as it left it.
-var recordName atomic.Value
-
-func init() { recordName.Store("database.json") }
-
-// UseClusterRecord makes DatabasePath this process's cluster's: major 18 and later have
-// their own record, an older one (or "") database.json.
-func UseClusterRecord(major string) {
-	recordName.Store(ClusterRecordName(major))
+// ClusterMajorIn is the major of the cluster an install under stateDir runs on, as its
+// directories say (Epic 49 story 49.2): "18" when <stateDir>/postgres-18 holds a cluster
+// and no hold keeps the previous major running (state/postgres-upgrade-held, pgbundle's
+// HoldMajor); else "" (<stateDir>/postgres, the record database.json, as every release
+// before reads it).
+func ClusterMajorIn(stateDir string) string {
+	if _, err := os.Stat(filepath.Join(stateDir, "postgres-18", "PG_VERSION")); err != nil {
+		return ""
+	}
+	if _, err := os.Stat(filepath.Join(stateDir, "state", "postgres-upgrade-held")); err == nil {
+		return ""
+	}
+	return "18"
 }
 
 // ClusterRecordName is the record's file name for a cluster of major.

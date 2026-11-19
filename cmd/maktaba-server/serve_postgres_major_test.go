@@ -33,7 +33,6 @@ func fakePostgres(t *testing.T, dir, major string) string {
 // there), the home stays on the previous major, on its own cluster and record, and the
 // hold says why, so every command runs 16 until a start upgrades it.
 func TestMajorUpgradeStepHoldsAndRunsThePreviousMajor(t *testing.T) {
-	defer apppayload.UseClusterRecord("")
 	cfg, _ := appEnv(t, "v0.3.0", "")
 	root := cfg.StateDir()
 	payload := t.TempDir()
@@ -65,7 +64,6 @@ func TestMajorUpgradeStepHoldsAndRunsThePreviousMajor(t *testing.T) {
 
 // A payload with one Postgres has nothing to upgrade: it runs as it is, on database.json.
 func TestMajorUpgradeStepWithOneMajor(t *testing.T) {
-	defer apppayload.UseClusterRecord("")
 	cfg, _ := appEnv(t, "v0.3.0", "")
 	home := fakePostgres(t, filepath.Join(t.TempDir(), "postgres"), "16")
 	b := pgbundle.Bundle{Home: home, Data: pgbundle.DataDirFor(cfg.StateDir(), "16")}
@@ -94,5 +92,31 @@ func TestAppBundleGateTakesTheMajorItRuns(t *testing.T) {
 	gate := prepareOf(t, appBundleGates(cfg, payload, pg, gateProcs(true), io.Discard), supervisor.RolePostgres)
 	if err := gate(context.Background(), noReport); err != nil {
 		t.Fatalf("an 18 cluster on the 18 it runs (payload.json says 16): %v", err)
+	}
+}
+
+// Epic 49 story 49.2 (review of #1445): on a home upgraded to 18, a restore onto a release
+// that ran on 16 is refused (it would start on the old cluster and never put the dump back);
+// one onto a release from the upgrade on goes ahead; on a 16 home nothing is refused.
+func TestRestoreRefusesAReleaseOfTheOtherMajor(t *testing.T) {
+	root := t.TempDir()
+	if err := sameMajorRelease(root, "0.3.140"); err != nil {
+		t.Fatalf("a 16 home: %v", err)
+	}
+	for _, f := range []string{filepath.Join("postgres-18", "PG_VERSION"), filepath.Join("state", "database.json")} {
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(root, f)), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_ = os.WriteFile(filepath.Join(root, "postgres-18", "PG_VERSION"), []byte("18\n"), 0o600)
+	_ = os.WriteFile(filepath.Join(root, "state", "database.json"), []byte(`{"version":"0.3.151","state":"migrated"}`), 0o600)
+	for rel, refused := range map[string]bool{"0.3.140": true, "0.3.151": true, "0.3.153": false} {
+		err := sameMajorRelease(root, rel)
+		if (err != nil) != refused {
+			t.Errorf("a restore onto %s: %v, want refused %v", rel, err, refused)
+		}
+		if err != nil && !strings.Contains(err.Error(), "PostgreSQL 16") {
+			t.Errorf("%s: %v", rel, err)
+		}
 	}
 }

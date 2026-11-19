@@ -1,4 +1,4 @@
-//go:build integration && !windows
+//go:build integration
 
 package pgbundle
 
@@ -157,8 +157,8 @@ func TestRealMajorUpgrade(t *testing.T) {
 	if err := u.Run(ctx, io.Discard); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(nw.Data + ".stale"); err != nil {
-		t.Errorf("the stale copy was not set aside: %v", err)
+	if _, err := os.Stat(nw.Data + ".stale"); !os.IsNotExist(err) {
+		t.Errorf("the stale copy is still there after the upgrade made it again: %v", err)
 	}
 	if err := nw.Prepare(ctx, io.Discard); err != nil {
 		t.Fatal(err)

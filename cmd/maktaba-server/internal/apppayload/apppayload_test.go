@@ -80,14 +80,30 @@ func TestConfirmAndRead(t *testing.T) {
 	}
 }
 
-// Epic 49 story 49.2: a cluster of a newer major in its own directory has its own record;
-// the release before keeps database.json.
+// Epic 49 story 49.2: the record is the cluster's the install runs on, from its directories:
+// database.json for 16 (and every release before), database-pg18.json once postgres-18 holds
+// a cluster, database.json again while the upgrade is held.
 func TestClusterRecord(t *testing.T) {
-	defer UseClusterRecord("")
-	for major, want := range map[string]string{"": "database.json", "16": "database.json", "18": "database-pg18.json"} {
-		UseClusterRecord(major)
-		if got := filepath.Base(DatabasePath("/s")); got != want {
-			t.Errorf("major %q: %s, want %s", major, got, want)
-		}
+	root := t.TempDir()
+	if got := filepath.Base(DatabasePath(root)); got != "database.json" {
+		t.Fatalf("no cluster: %s", got)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "postgres-18"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "postgres-18", "PG_VERSION"), []byte("18\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := filepath.Base(DatabasePath(root)); got != "database-pg18.json" {
+		t.Fatalf("an 18 cluster: %s", got)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "state"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "state", "postgres-upgrade-held"), []byte("no room\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := filepath.Base(DatabasePath(root)); got != "database.json" {
+		t.Fatalf("held: %s", got)
 	}
 }
