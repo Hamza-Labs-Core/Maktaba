@@ -129,6 +129,9 @@ type procView struct {
 	// FailReason: it exited with one of its FatalExits and waits, not restarted
 	// (maktaba-plugind's 78: sandbox_unavailable)
 	FailReason string
+	// StartedAt: when its running process started (zero: none), set at every start, a
+	// requested restart included (Restarts counts crashes only)
+	StartedAt time.Time
 }
 
 // restartWindow is the health's restart window (restarts_24h).
@@ -282,7 +285,11 @@ func (s *Supervisor) procViews() []procView {
 	out := make([]procView, 0, len(s.children))
 	for _, c := range s.children {
 		missing := c.proc.Present != nil && !c.proc.Present()
-		out = append(out, procView{Role: c.proc.Role, Instance: c.proc.Instance, Component: c.proc.Component,
+		var started time.Time
+		if c.status.StartedAt != nil {
+			started = *c.status.StartedAt
+		}
+		out = append(out, procView{StartedAt: started, Role: c.proc.Role, Instance: c.proc.Instance, Component: c.proc.Component,
 			Dormant: c.proc.Dormant, Allowed: c.allowed, Wanted: c.wanted, Draining: c.draining, Once: c.proc.Once,
 			State: c.status.State, Running: c.cmd != nil && c.cmd.Process != nil, Restarts: c.status.Restarts,
 			CrashLoop: c.failed, Missing: missing, Restarts24h: len(recentRestarts(c.restartAt, s.now())), PID: c.status.PID,
@@ -330,8 +337,9 @@ func procPhase(p procView) (phase, reason string, ok bool) {
 const cpuStep = 5
 
 // cpuSample is a process's processor time as last read, when, and which process it was: its
-// component, role, instance and restart count, so a pid another process took (or a restart
-// that got the same pid back) starts a new baseline whatever its time.
+// component, role, instance and start time, so a pid another process took, or any restart
+// (a crash's or one asked for) that got the same pid back, starts a new baseline whatever
+// its time.
 type cpuSample struct {
 	used time.Duration
 	at   time.Time
@@ -339,7 +347,7 @@ type cpuSample struct {
 }
 
 func cpuWho(p procView) string {
-	return fmt.Sprintf("%s|%s/%s|%d", p.Component, p.Role, p.Instance, p.Restarts)
+	return fmt.Sprintf("%s|%s/%s|%d|%d", p.Component, p.Role, p.Instance, p.Restarts, p.StartedAt.UnixNano())
 }
 
 // sampleCPU turns each running process's processor time into the share of one core it used

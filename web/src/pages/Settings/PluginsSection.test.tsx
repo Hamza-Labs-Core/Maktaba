@@ -552,6 +552,7 @@ describe("Settings → Plugins: one page for every plugin (Epic 54, story 54.44)
     rss_mb: 310,
     cpu_pct: 25,
     scope: "process" as const,
+    cpu_scope: "process" as const,
     stages: ["subtitle_gen"],
     shared_with: ["tv.maktaba.thumbnails"],
     shared_core: true,
@@ -1262,6 +1263,23 @@ describe("Settings → Plugins: one page for every plugin (Epic 54, story 54.44)
     expect(screen.getByRole("link", { name: EN["plugins.page.back"] })).toHaveAttribute(
       "href",
       "/settings/plugins"
+    );
+  });
+
+  it("T08: processor use says what it measures even when memory says otherwise (54.52 review)", async () => {
+    // just after a second runner starts: memory is this process's, processor use still the
+    // component's last total
+    const d = maktabaDetail();
+    d.resources = {
+      ...d.resources!,
+      processes: [{ ...light, cpu_pct: 40, cpu_scope: "component" as const }],
+    };
+    page([maktaba(), thumbs()], { detail: d });
+    open("/settings/plugins/tv.maktaba.subtitles");
+    const table = await screen.findByTestId("resources-processes");
+    expect(table).toHaveTextContent("310 MB");
+    expect(table).toHaveTextContent(
+      EN["plugins.resources.cpu_pct_component"].replace("{pct}", "40")
     );
   });
 

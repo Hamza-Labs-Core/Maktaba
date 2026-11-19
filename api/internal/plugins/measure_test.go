@@ -1,6 +1,10 @@
 package plugins
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/Hamza-Labs-Core/Maktaba/shared/components/store"
+)
 
 // Story 54.52: a process's processor use is read from a status row as its memory is: its
 // own entry (with its numbered ones), else the component's total; a row from before has none.
@@ -21,5 +25,21 @@ func TestMeasure(t *testing.T) {
 	}
 	if n, _ := measure(map[string]any{"rss_mb": 100}, "cpu_pct", "cpu_parts", "plugins/", true); n != nil {
 		t.Fatal("a row with no processor use has one")
+	}
+}
+
+// Review of #1443: just after a second runner starts, memory is per process while processor
+// use is still the component's last total; both are answered, each with its own scope.
+func TestProcessesOfKeepsEachNumbersScope(t *testing.T) {
+	d := &pageData{status: map[string][]store.Status{"core.plugin_runners": {{ID: "core.plugin_runners", Machine: "home", Phase: "running",
+		Detail: map[string]any{"rss_mb": int64(900), "rss_parts": map[string]any{"plugin-runner/light": int64(310), "plugin-runner/files": int64(590)},
+			"cpu_pct": int64(40)}}}}}
+	got := d.processesOf("core.plugin_runners", "plugin-runner", "light", "light")
+	if len(got) != 1 {
+		t.Fatalf("%+v", got)
+	}
+	u := got[0]
+	if u.RSSMB == nil || *u.RSSMB != 310 || u.Scope != "process" || u.CPUPct == nil || *u.CPUPct != 40 || u.CPUScope != "component" {
+		t.Fatalf("memory %v %q, processor %v %q", u.RSSMB, u.Scope, u.CPUPct, u.CPUScope)
 	}
 }

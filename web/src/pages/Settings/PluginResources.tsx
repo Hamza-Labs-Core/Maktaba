@@ -118,7 +118,7 @@ export function ResourcesSection({
                   <td>
                     {u.cpu_pct === undefined
                       ? t("plugins.resources.not_measured")
-                      : u.scope === "component"
+                      : (u.cpu_scope ?? u.scope) === "component"
                         ? t("plugins.resources.cpu_pct_component", { pct: n(u.cpu_pct) })
                         : t("plugins.resources.cpu_pct", { pct: n(u.cpu_pct) })}
                   </td>

@@ -118,8 +118,12 @@ type ProcessUse struct {
 	// each one yet).
 	Scope string `json:"scope,omitempty"`
 	// CPUPct is the share of one processor core it used over the supervisor's last sample
-	// (100 is one whole core; story 54.52), measured as RSSMB is.
-	CPUPct *int64 `json:"cpu_pct,omitempty"`
+	// (100 is one whole core; story 54.52); CPUScope is what it measures, as Scope is for
+	// RSSMB. The two can differ for a sample: just after another process of the component
+	// starts, memory is read per process at once while processor use keeps the component's
+	// last number until the next sample.
+	CPUPct   *int64 `json:"cpu_pct,omitempty"`
+	CPUScope string `json:"cpu_scope,omitempty"`
 	// Stages are this plugin's stages that run in it.
 	Stages     []string `json:"stages"`
 	SharedWith []string `json:"shared_with"`
@@ -383,11 +387,8 @@ func (d *pageData) processesOf(component, role, instance, group string) []Proces
 		}
 		u.RSSMB, u.Scope = measure(r.Detail, "rss_mb", "rss_parts", u.Process, single)
 		// processor use is reported as memory is (cpu_pct beside rss_mb, cpu_parts beside
-		// rss_parts), so it has the same scope; a row from before story 54.52 has none
-		if cpu, scope := measure(r.Detail, "cpu_pct", "cpu_parts", u.Process, single); cpu != nil && (u.Scope == "" || scope == u.Scope) {
-			u.CPUPct = cpu
-			u.Scope = scope
-		}
+		// rss_parts), with its own scope; a row from before story 54.52 has none
+		u.CPUPct, u.CPUScope = measure(r.Detail, "cpu_pct", "cpu_parts", u.Process, single)
 		out = append(out, u)
 	}
 	return out

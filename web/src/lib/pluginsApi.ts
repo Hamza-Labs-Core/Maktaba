@@ -105,8 +105,10 @@ export interface ProcessUse {
   rss_mb?: number;
   /** the share of one processor core it used over the last sample (100 is a whole core) */
   cpu_pct?: number;
-  /** what rss_mb and cpu_pct measure: this process alone, or every process of its component */
+  /** what rss_mb measures: this process alone, or every process of its component */
   scope?: "process" | "component";
+  /** what cpu_pct measures, the same way (for one sample it can differ from scope) */
+  cpu_scope?: "process" | "component";
   stages: string[] | null;
   shared_with: string[] | null;
   shared_core: boolean;

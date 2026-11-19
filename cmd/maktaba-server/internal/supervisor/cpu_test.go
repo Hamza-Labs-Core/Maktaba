@@ -205,3 +205,41 @@ func TestCPUMoved(t *testing.T) {
 		}
 	}
 }
+
+// Second review of #1443: a restart asked for (Supervisor.Restart) counts no crash, so
+// Restarts stays; its new start time still starts a new baseline, even with more time.
+func TestProcessorUseAfterARequestedRestart(t *testing.T) {
+	cat := testCatalog(t, procComp("a", "fake/a*", "", ""))
+	tab := &fakeTable{}
+	tab.add("a", "a1", false)
+	tab.procs[0].PID = 101
+	now := time.Date(2026, 11, 3, 9, 0, 0, 0, time.UTC)
+	tab.procs[0].StartedAt = now.Add(-time.Hour)
+	st := &fakeStore{}
+	r, _ := newTestReconciler(cat, tab, st)
+	r.Now = func() time.Time { return now }
+	used := 100 * time.Second
+	r.CPU = func([]int) map[int]time.Duration { return map[int]time.Duration{101: used} }
+	d := map[string]store.Desired{"a": want("a", "enabled", 1)}
+	passWith(r, d)
+	used += 150 * time.Second // 50%
+	now = now.Add(5 * time.Minute)
+	passWith(r, d)
+	if v := mustRow(t, st, "a").Detail["cpu_pct"]; v != int64(50) {
+		t.Fatalf("before: %v", v)
+	}
+	// restarted on request, the same pid, Restarts unchanged; the new process used 300 s
+	tab.procs[0].StartedAt = now.Add(time.Minute)
+	used = 300 * time.Second
+	now = now.Add(5 * time.Minute)
+	passWith(r, d)
+	if v := mustRow(t, st, "a").Detail["cpu_pct"]; v != int64(50) {
+		t.Fatalf("a requested restart's sample mixed two processes: %v, want the last 50", v)
+	}
+	used += 300 * time.Second // a whole core
+	now = now.Add(5 * time.Minute)
+	passWith(r, d)
+	if v := mustRow(t, st, "a").Detail["cpu_pct"]; v != int64(100) {
+		t.Fatalf("after: %v", v)
+	}
+}
