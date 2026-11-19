@@ -8,6 +8,5 @@
   "ollama_tgz_bytes": 167473220,
   "core_share": 0.45,
   "core_max_bytes": 400000000,
-  "idle_rss_mb": 700,
   "processes": 4
 }
