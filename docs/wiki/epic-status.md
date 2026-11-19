@@ -3,7 +3,7 @@
 > Story-by-story status of every epic, read from the code and history on `main` at `f43b0d3ed` (2026-11-19).
 > The specs and epic pages don't record a status; this page does. Update the row when a story changes.
 
-**Not every epic is done.** Of 773 stories across all 60 epics, 701 are done, 41 are partial, 21 are not started, and 10 were deferred or removed on purpose. The largest open pieces are Epic 49 (Search, 3 stories of fourteen done), Epic 34 (the TV public site, a first slice only) and Epic 54 Phase 5 (Plugins).
+**Not every epic is done.** Of 773 stories across all 60 epics, 702 are done, 41 are partial, 20 are not started, and 10 were deferred or removed on purpose. The largest open pieces are Epic 49 (Search, 4 stories of fourteen done), Epic 34 (the TV public site, a first slice only) and Epic 54 Phase 5 (Plugins).
 
 ## How this was checked
 
@@ -71,7 +71,7 @@
 | 46 Big screen | 7 | 0 | 0 | 0 | Done |
 | 47 Offline convert / dedup | 11 | 3 | 0 | 0 | **Partial** |
 | 48 Native players | 36 | 1 | 0 | 0 | **Partial** |
-| 49 Search | 3 | 0 | 11 | 0 | **Partial** |
+| 49 Search | 4 | 0 | 10 | 0 | **Partial** |
 | 50 Cloud with no downtime | 35 | 0 | 0 | 0 | Done (live SLOs not checked) |
 | 51 Configurable components | 19 | 0 | 0 | 0 | Done |
 | 52 Transcript word review | 13 | 3 | 0 | 1 | **Partial** |
@@ -96,7 +96,6 @@
 - **34.9 Budget, abuse controls and analytics** — no public budget, viewer/session limits, rate-limit wiring, Analytics Engine sink, or Stream reconciliation.
 - **34.10 Deployment pipeline** — manual `wrangler.toml` exists, but no release artifact pipeline or home-driven deploy/promote/rollback implementation.
 - **43.6 Measured on the home Mac** — PR #319 explicitly excludes the 13.9M-row p50/p95, disk and recall measurement; no later merged measurement was found.
-- **49.4 Arabic normalisation and word forms** — no `maktaba_search` v2 / `maktaba_stem` implementation or migration.
 - **49.5 `video_search_docs` and BM25 indexes** — no table, SQLite twin, or index migration.
 - **49.6 `keyword_index` stage** — no such queue stage or backfill.
 - **49.7 BM25 query path** — no BM25 video/phrase/passage query or 45k-document performance test.
@@ -1065,7 +1064,7 @@ Stories are the fourteen numbered rows in `specs/epics/49-search/README.md` §6 
 | 49.1 PostgreSQL 18 / pg_textsearch bundles | **Done** (#1441) | Every app payload carries PostgreSQL 18.7 in `postgres-18/` with pgvector and pg_textsearch, beside the 16 the server still runs until 49.2; `tools/release/pg18-check.sh` in each payload's `check.sh`, `TestRealPgTextsearchPreloaded`; README §9 "As built". |
 | 49.2 Major updater upgrade | **Done** (#1445) | The server upgrades the 16 cluster into its own `postgres-18` with pg_upgrade (clone, else copy), the 16 cluster untouched for any rollback; held on 16 when it cannot run; update-rehearsal scenario 17 (16 → 18 with data, a rollback, the upgrade again), `TestRealMajorUpgrade` on Linux, Mac and Windows payloads; README §9 "As built". |
 | 49.3 Cluster major-version rollout | **Done** (#1459) | A machine on 16 follows a home on 18 (logical replication; a copy whose slot the upgrade dropped is made anew); a copy runs on 16 or 18, one of the other major set aside and made again; the replica job runs `TestTwoMachinesOnePC` with the home on 18 and the machine on 16, then on 18; README §9 "As built". |
-| 49.4 Arabic normalisation / word forms | **Not started** | Only `specs/epics/49-search/README.md`; no `maktaba_search` v2 or `maktaba_stem` code/migration found. |
+| 49.4 Arabic normalisation / word forms | **Done** (#1476) | `maktaba_normalize()` and the `maktaba_stem` configuration (migration 0231), the IMMUTABLE `maktaba_tsv`/`maktaba_query` pair, and `api/internal/textnorm` for SQLite; tested on Postgres 16 and 18 and SQLite in `api/internal/textnorm`; README §9 "As built". |
 | 49.5 `video_search_docs` / BM25 schema | **Not started** | Only `specs/epics/49-search/README.md`; no such migration in `shared/db/migrations/`. |
 | 49.6 `keyword_index` stage / backfill | **Not started** | Only `specs/epics/49-search/README.md`; no such stage in `pipeline/src/maktaba_pipeline/engine/graph.py` or its tests. |
 | 49.7 BM25 query / passages / hybrid | **Not started** | Only `specs/epics/49-search/README.md`; current `api/internal/handlers/search/search.go` has no Epic 49 BM25 path or 45k fixture. |
