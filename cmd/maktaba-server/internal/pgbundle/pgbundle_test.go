@@ -691,14 +691,23 @@ func TestServerArgsPreloadPgTextsearch(t *testing.T) {
 		}
 		_ = os.Remove(lib)
 	}
+	// an install without pg_textsearch passes a household's value on exactly as it is
+	b.Tuning = []string{`shared_preload_libraries="pg_stat_statements","auto_explain"`}
+	if got := preloads(b.serverArgs(false)); len(got) != 1 || got[0] != `"pg_stat_statements","auto_explain"` {
+		t.Fatalf("without pg_textsearch the household's value became %v", got)
+	}
+	b.Tuning = nil
 	if err := os.WriteFile(filepath.Join(home, "lib", "pg_textsearch.so"), nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	for _, c := range []struct{ setting, want string }{
 		{"shared_preload_libraries=pg_stat_statements", "pg_stat_statements,pg_textsearch"},
-		{"shared_preload_libraries='pg_stat_statements, auto_explain'", "pg_stat_statements,auto_explain,pg_textsearch"},
+		{"shared_preload_libraries=pg_stat_statements, auto_explain", "pg_stat_statements, auto_explain,pg_textsearch"},
 		{"shared_preload_libraries=pg_textsearch,pg_stat_statements", "pg_textsearch,pg_stat_statements"},
 		{"shared_preload_libraries=", "pg_textsearch"},
+		// double-quoted entries, as Postgres reads them, kept as written (review of #1441)
+		{`shared_preload_libraries="pg_stat_statements","auto_explain"`, `"pg_stat_statements","auto_explain",pg_textsearch`},
+		{`shared_preload_libraries="/opt/a,b/lib.so", "pg_textsearch"`, `"/opt/a,b/lib.so", "pg_textsearch"`},
 	} {
 		b.Tuning = []string{"work_mem=8MB", c.setting}
 		got := preloads(b.serverArgs(false))

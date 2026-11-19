@@ -76,8 +76,8 @@ SELECT 'top: ' || string_agg(id::text, ',') FROM (SELECT id FROM docs ORDER BY b
 EXPLAIN (COSTS OFF) SELECT id FROM docs ORDER BY body <@> to_bm25query('الصبر', 'docs_bm25') LIMIT 3;
 SQL
 )" || rc=$?
-    case "$out" in
-        *"top: 7,"*docs_bm25*) ok "pg_textsearch: a BM25 index ranks the right row first ($(grep -m1 '^top: ' <<<"$out"))" ;;
+    case "$rc:$out" in
+        0:*"top: 7,"*"Index Scan using docs_bm25"*) ok "pg_textsearch: a BM25 index ranks the right row first ($(grep -m1 '^top: ' <<<"$out"))" ;;
         *) fail "pg_textsearch's BM25 query (exit $rc): $(printf '%s\n' "$out" | tail -4 | tr '\n' ' ') server: $(tail -5 "$scratch/pg18.log" 2>/dev/null | tr '\n' ' ')" ;;
     esac
     if [ -n "$api" ]; then

@@ -262,16 +262,17 @@ func (b Bundle) serverArgs(lan bool) []string {
 	// (as -c arguments, so postgresql.auto.conf cannot override them). Epic 49 story 49.1:
 	// pg_textsearch (BM25) loads only at the server's start, so an install that has it
 	// preloads it, also into a household's own shared_preload_libraries
-	preload := b.Preload()
+	preload := strings.Join(b.Preload(), ",")
 	for _, kv := range b.Tuning {
-		if name, val, ok := strings.Cut(kv, "="); ok && strings.TrimSpace(name) == "shared_preload_libraries" {
-			preload = mergePreload(preload, val)
+		if name, val, ok := strings.Cut(kv, "="); ok && strings.TrimSpace(name) == "shared_preload_libraries" && preload != "" {
+			// the household's value as it wrote it, ours after it
+			preload = mergePreload(val, b.Preload())
 			continue
 		}
 		args = append(args, "-c", kv)
 	}
-	if len(preload) > 0 {
-		args = append(args, "-c", "shared_preload_libraries="+strings.Join(preload, ","))
+	if preload != "" {
+		args = append(args, "-c", "shared_preload_libraries="+preload)
 	}
 	if b.TLS && b.TLSReady() {
 		args = append(args, "-c", "ssl=on", "-c", "ssl_cert_file="+b.serverCert(), "-c", "ssl_key_file="+b.serverKey())
@@ -307,22 +308,57 @@ func (b Bundle) Preload() []string {
 	return out
 }
 
-// mergePreload is ours with a household's shared_preload_libraries value: theirs first, in
-// their order, then each of ours they did not name.
-func mergePreload(ours []string, theirs string) []string {
-	var out []string
-	seen := map[string]bool{}
-	for _, l := range strings.Split(strings.Trim(strings.TrimSpace(theirs), "'\""), ",") {
-		if l = strings.TrimSpace(l); l != "" && !seen[l] {
-			seen[l] = true
-			out = append(out, l)
-		}
+// mergePreload is a household's shared_preload_libraries value, kept as it wrote it, with
+// each of ours it does not name added after it. Its entries are read as Postgres reads the
+// list (SplitDirectoriesString): commas outside double quotes separate them, and a quoted
+// entry is taken without its quotes.
+func mergePreload(theirs string, ours []string) string {
+	theirs = strings.TrimSpace(theirs)
+	named := map[string]bool{}
+	for _, e := range splitPreload(theirs) {
+		named[e] = true
 	}
+	out := theirs
 	for _, l := range ours {
-		if !seen[l] {
-			out = append(out, l)
+		if named[l] {
+			continue
+		}
+		if strings.TrimSpace(strings.Trim(out, ",")) == "" {
+			out = l
+		} else {
+			out = strings.TrimRight(out, ", ") + "," + l
 		}
 	}
+	return out
+}
+
+// splitPreload is a shared_preload_libraries value's entries.
+func splitPreload(v string) []string {
+	var out []string
+	var cur strings.Builder
+	quoted := false
+	flush := func() {
+		if e := strings.TrimSpace(cur.String()); e != "" {
+			out = append(out, e)
+		}
+		cur.Reset()
+	}
+	for i := 0; i < len(v); i++ {
+		switch c := v[i]; {
+		case c == '"':
+			if quoted && i+1 < len(v) && v[i+1] == '"' {
+				cur.WriteByte('"')
+				i++
+				continue
+			}
+			quoted = !quoted
+		case c == ',' && !quoted:
+			flush()
+		default:
+			cur.WriteByte(c)
+		}
+	}
+	flush()
 	return out
 }
 
