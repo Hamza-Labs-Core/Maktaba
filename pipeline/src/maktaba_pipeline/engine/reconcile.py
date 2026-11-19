@@ -643,7 +643,8 @@ async def _identity_sweep(db: Any, graph: Mapping[str, StageDef]) -> int:
 async def _semantic_sweep(db: Any, graph: Mapping[str, StageDef]) -> int:
     """An ``index`` for each video whose latest index job succeeded, whose active
     transcript has words, and that has no vector in ``segment_embeddings`` (a switchover's
-    new home; a video whose vectors were only in Chroma, retired in story 43.5). A failed or live job is the latest: not queued again."""
+    new home; a video whose vectors were only in Chroma, retired in story 43.5). A failed
+    or live job is the latest: not queued again."""
     if not is_pg(db) or "index" not in graph:
         return 0
     from ..search.pgstore import store_state
