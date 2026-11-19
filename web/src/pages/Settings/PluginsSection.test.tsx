@@ -1378,7 +1378,7 @@ describe("Settings → Plugins: one page for every plugin (Epic 54, story 54.44)
     );
     expect(screen.getByRole("button", { name: EN["plugins.action.remove"] })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: EN["plugins.section.writes"] })).toBeInTheDocument();
-    expect(screen.queryByTestId("remove-with-release")).toBeNull();
+    expect(screen.queryByTestId("remove-maktaba")).toBeNull();
   });
 
   it("T09: how to install is on the page, with what unreviewed means", async () => {
