@@ -860,13 +860,28 @@ func TestASignedPackageIsTrustedFromTheStore(t *testing.T) {
 	u := fppackage.Unpacked{Dir: dir, Manifest: pkg.Manifest, Files: files}
 	switchable := func(c string) bool { cc, ok := components.Default().Get(c); return ok && cc.Switchable }
 	sig := fppackage.Signed{FilesJSON: pkg.FilesJSON, DeveloperSig: pkg.DeveloperSig, StoreSig: ss}
+	// the plugin's code as the release's pipeline wheel holds it: here, the package's own
+	// wheel's RECORD (the release's check compares the two, TestAPackagesWheelIsThePipelineWheelsCode)
+	var whl []byte
+	for _, p := range files {
+		if strings.HasPrefix(p, "wheels/") {
+			whl, err = os.ReadFile(filepath.Join(dir, filepath.FromSlash(p)))
+		}
+	}
+	if err != nil || whl == nil {
+		t.Fatalf("the package's wheel: %v", err)
+	}
+	pipe, _, _, err := fppackage.ReadWheel(whl)
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer fppackage.UseMaktabaKeys(dev.ID)()
-	if _, err := fppackage.CheckStore(u, sig, keys, relVersion, switchable); err != nil {
+	if _, err := fppackage.CheckStore(u, sig, keys, relVersion, switchable, pipe); err != nil {
 		t.Fatalf("a Maktaba-signed, store-countersigned package: %v", err)
 	}
 	// the same package under this build's real list (empty): refused
 	restore := fppackage.UseMaktabaKeys()
-	_, err = fppackage.CheckStore(u, sig, keys, relVersion, switchable)
+	_, err = fppackage.CheckStore(u, sig, keys, relVersion, switchable, pipe)
 	restore()
 	if codeOf(err) != CodeTrustedUnsigned {
 		t.Fatalf("no pinned key: %v", err)

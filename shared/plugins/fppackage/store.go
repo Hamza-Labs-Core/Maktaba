@@ -65,12 +65,18 @@ type Signed struct {
 //   - its contents are exactly this server's plugin at this server's version
 //     (CheckContents): the same manifest, strings and statements. A Maktaba plugin's
 //     statements change only with a server release, so a package bringing any other SQL is
-//     refused.
+//     refused;
+//   - its wheel is the plugin's code in this server's own pipeline wheel, digest for digest
+//     both ways (pipeline: that wheel's RECORD, path -> "sha256=..."). Until the code leaves
+//     the pipeline wheel (54.49) every home has it, so a package rebuilt from other source
+//     is refused though Maktaba's key signed it.
 //
-// Anything else is plugin_trusted_unsigned (a version other than the server's,
-// plugin_trusted_version), and nothing of it may run. keys is the home's verified
-// store-keys.json (nil: none, which trusts nothing).
-func CheckStore(u Unpacked, sig Signed, keys *pluginsig.StoreKeys, serverVersion string, switchable func(component string) bool) (*pluginsig.Result, error) {
+// Every file is read again against the signed files.json, so the check does not rest on
+// the caller's unpacking. Anything else is plugin_trusted_unsigned (a version other than
+// the server's, plugin_trusted_version), and nothing of it may run. keys is the home's
+// verified store-keys.json (nil: none, which trusts nothing); a nil pipeline trusts
+// nothing either.
+func CheckStore(u Unpacked, sig Signed, keys *pluginsig.StoreKeys, serverVersion string, switchable func(component string) bool, pipeline map[string]string) (*pluginsig.Result, error) {
 	m, err := manifestID(u.Manifest)
 	if err != nil {
 		return nil, unsigned("%v", err)
@@ -89,6 +95,9 @@ func CheckStore(u Unpacked, sig Signed, keys *pluginsig.StoreKeys, serverVersion
 	if keys == nil {
 		return nil, unsigned("%s: the home has no store-keys.json to check the store's signature with", id)
 	}
+	if pipeline == nil {
+		return nil, unsigned("%s: no pipeline wheel RECORD to compare its code with", id)
+	}
 	if len(sig.StoreSig) == 0 {
 		return nil, unsigned("%s %s is not countersigned by the store", id, version)
 	}
@@ -97,7 +106,7 @@ func CheckStore(u Unpacked, sig Signed, keys *pluginsig.StoreKeys, serverVersion
 		return nil, unsigned("capabilities: %v", err)
 	}
 	res, err := pluginsig.VerifyPackage(pluginsig.Package{FilesJSON: sig.FilesJSON, DeveloperSig: sig.DeveloperSig, StoreSig: sig.StoreSig,
-		PluginID: id, Version: version, CapabilitiesSHA256: caps}, keys)
+		PluginID: id, Version: version, CapabilitiesSHA256: caps, Open: u.open}, keys)
 	if err != nil {
 		return nil, unsigned("%s %s: %v", id, version, err)
 	}
@@ -115,7 +124,7 @@ func CheckStore(u Unpacked, sig Signed, keys *pluginsig.StoreKeys, serverVersion
 	if !ok {
 		return nil, unsigned("%s %s is signed by %s, which is not Maktaba's key", id, version, res.DeveloperKeyID)
 	}
-	if _, err := CheckContents(u, e, serverVersion, nil); err != nil {
+	if _, err := CheckContents(u, e, serverVersion, pipeline); err != nil {
 		return nil, err
 	}
 	return res, nil

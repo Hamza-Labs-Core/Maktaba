@@ -61,8 +61,12 @@ Today `[trusted]` counts when the package's `files.json` digest is in the runnin
   - the store countersigned it (`store.sig` at level automated or reviewed, by a store key the
     home verified);
   - its `developer.sig` is by a pinned key;
-  - its manifest, strings and statements are exactly the server's at the server's version,
-    and its wheel is that plugin's own code (`CheckContents`).
+  - its manifest, strings and statements are exactly the server's at the server's version
+    (`CheckContents`);
+  - its wheel is that plugin's code in the server's own pipeline wheel, digest for digest both
+    ways. The caller passes that wheel's RECORD, which every home has until the code leaves
+    the pipeline wheel (54.49); without it, nothing is trusted;
+  - every file matches the signed `files.json`, read again by the check itself.
   
   As decided, the statements change only with a server release, so a package bringing other
   SQL is refused. Every refusal is `plugin_trusted_unsigned`; another version is
