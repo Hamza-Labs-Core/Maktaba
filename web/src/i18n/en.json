@@ -5196,6 +5196,8 @@
   "subscription.holder": "Licensed to",
   "subscription.renews": "Renews by",
   "subscription.expires": "Expires",
+  "subscription.readOnly.self": "This home has more users than its plan allows, so this account can watch and keep its progress, but not change anything. Ask the home's admin to add seats or remove a user.",
+  "subscription.readOnly.users": "Read-only (no seat)",
   "subscription.licenseId": "License ID",
   "subscription.features": "What the plan includes",
   "subscription.feature.on": "Included",

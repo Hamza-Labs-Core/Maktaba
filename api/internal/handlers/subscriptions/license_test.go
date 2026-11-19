@@ -138,15 +138,56 @@ func TestLicense_NoVerifier(t *testing.T) {
 	}
 }
 
-// Story 16.4 EC: more users than seats — a warning; nothing locks.
+// Story 16.4 EC: more users than seats — the warning names the read-only accounts
+// (the newest beyond the seats; admins never).
 func TestLicense_OverSeatWarning(t *testing.T) {
 	h, r, _ := newHandler(t)
 	h.SeatCount = countStub(2)
 	var v LicenseView
 	_ = json.Unmarshal(do(adminCtx(), r, http.MethodGet, "/api/admin/license", nil).Body.Bytes(), &v)
-	if !v.OverSeats || v.SeatsUsed == nil || *v.SeatsUsed != 2 || v.SeatsAllowed != 1 || !strings.Contains(v.Message, "keep working") {
+	if !v.OverSeats || v.SeatsUsed == nil || *v.SeatsUsed != 2 || v.SeatsAllowed != 1 || !strings.Contains(v.Message, "No new user") {
 		t.Fatalf("over-seat view: %+v", v)
 	}
+	h.Seats = seatsStub{"u-9": "sara"}
+	_ = json.Unmarshal(do(adminCtx(), r, http.MethodGet, "/api/admin/license", nil).Body.Bytes(), &v)
+	if len(v.ReadOnlyUsers) != 1 || v.ReadOnlyUsers[0].Username != "sara" ||
+		!strings.Contains(v.Message, "its newest account is read-only") || !strings.Contains(v.Message, ": sara.") ||
+		!strings.Contains(v.Message, "Admins are never limited") {
+		t.Fatalf("over-seat view with a read-only account: %+v", v)
+	}
+}
+
+// A read-only account learns it from its entitlements; another does not.
+func TestEntitlementsSayWhetherThisAccountIsReadOnly(t *testing.T) {
+	h, r, _ := newHandler(t)
+	h.Seats = seatsStub{"user": "user"}
+	var e Response
+	_ = json.Unmarshal(do(userCtx(), r, http.MethodGet, "/api/entitlements", nil).Body.Bytes(), &e)
+	if !e.ReadOnly {
+		t.Fatalf("a read-only account: %+v", e)
+	}
+	h.Seats = seatsStub{}
+	e = Response{}
+	_ = json.Unmarshal(do(userCtx(), r, http.MethodGet, "/api/entitlements", nil).Body.Bytes(), &e)
+	if e.ReadOnly {
+		t.Fatal("an account with a seat reads as read-only")
+	}
+}
+
+// seatsStub: the read-only accounts, id → username.
+type seatsStub map[string]string
+
+func (s seatsStub) ReadOnlyUsers(context.Context) ([]subscriptions.SeatUser, error) {
+	var out []subscriptions.SeatUser
+	for id, name := range s {
+		out = append(out, subscriptions.SeatUser{ID: id, Username: name})
+	}
+	return out, nil
+}
+
+func (s seatsStub) ReadOnly(_ context.Context, id string) (bool, error) {
+	_, ok := s[id]
+	return ok, nil
 }
 
 // Applying writes an audit row with the actor; removing too.

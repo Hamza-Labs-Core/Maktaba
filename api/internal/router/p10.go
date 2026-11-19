@@ -57,6 +57,10 @@ type P10Deps struct {
 	// the package creates a default (free-tier) store.
 	SubscriptionsStore *subpkg.Store
 
+	// SeatGuard says which accounts are read-only for want of seats (story 16.4).
+	// Nil: none is reported.
+	SeatGuard *subpkg.SeatGuard
+
 	// SubscriptionsVerifier verifies signed licenses. Nil leaves the
 	// /api/admin/license endpoint disabled.
 	SubscriptionsVerifier *subpkg.Verifier
@@ -182,7 +186,7 @@ func EntitlementStore(d P10Deps) (*subpkg.Store, *subpkg.Verifier) {
 func MountP10(r chi.Router, d P10Deps) discoverypkg.PairingStore {
 	store, verifier := EntitlementStore(d)
 	sh := &subh.Handler{Store: store, Verifier: verifier, Refresher: d.LicenseRefresher,
-		Cloud: d.LicenseCloud, ManageURL: d.LicenseManageURL}
+		Cloud: d.LicenseCloud, ManageURL: d.LicenseManageURL, Seats: d.SeatGuard}
 	if d.DB != nil {
 		sh.SeatCount = users.New(d.DB)
 		sh.Audit = LicenseAudit(d.DB)

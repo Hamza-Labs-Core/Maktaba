@@ -2828,8 +2828,13 @@
       "related": [
         "epic-16-subscriptions",
         "plan-16.04-license-validation",
+        "ep-post-stream-sessions",
         "ep-get-settings",
-        "ep-put-settings"
+        "ep-put-settings",
+        "ep-post-me-watched",
+        "ep-get-me-history",
+        "ep-post-channels-id-play",
+        "ep-get-channels"
       ],
       "files": {
         "story": "specs/epics/16-subscriptions/story-16-04-license-validation.md",
@@ -2837,8 +2842,13 @@
         "mockups": []
       },
       "api_endpoints": [
+        "POST /stream/sessions",
         "GET /settings",
-        "PUT /settings"
+        "PUT /settings",
+        "POST /me/watched",
+        "GET /me/history",
+        "POST /channels/{id}/play",
+        "GET /channels"
       ],
       "db_tables": [],
       "metadata": {
