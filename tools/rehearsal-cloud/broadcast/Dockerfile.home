@@ -5,7 +5,7 @@
 # Never published.
 #
 #   docker build -f tools/rehearsal-cloud/broadcast/Dockerfile.home -t maktaba-broadcast-home:rehearsal .
-ARG GO_VERSION=1.25
+ARG GO_VERSION=1.26
 FROM golang:${GO_VERSION}-bookworm AS builder
 WORKDIR /src
 ENV CGO_ENABLED=0 GOOS=linux
