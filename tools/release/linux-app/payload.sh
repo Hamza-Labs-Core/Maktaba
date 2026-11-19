@@ -219,6 +219,11 @@ done
     --exclude='uuid-ossp*' lib share) | (cd "$OUT/postgres-18" && tar -xf -)
 find "$OUT/postgres-18/lib" -type f ! -name 'pgoutput.*' -exec grep -l -a -F _PG_output_plugin_init {} + 2>/dev/null |
     while IFS= read -r f; do rm -f "$f"; done || true
+# the 18 archive carries some of the system's own libraries, built against a newer glibc than
+# the payload's baseline (libstdc++, libgcc_s, libcrypt, libexpat need 2.36 on aarch64): they
+# go, and the closure below copies this machine's, as it does every library 16 links
+rm -f "$OUT"/postgres-18/lib/libstdc++.so* "$OUT"/postgres-18/lib/libgcc_s.so* \
+      "$OUT"/postgres-18/lib/libcrypt.so* "$OUT"/postgres-18/lib/libexpat.so*
 cp "$pg18/COPYRIGHT" "$OUT/licenses/postgresql-18.txt"
 log "pgvector $PGVECTOR_VERSION for PostgreSQL $POSTGRES18_VERSION"
 mkdir -p "$WORK/pgv18"
