@@ -17,7 +17,7 @@ Story 54.52 shipped in #1443 (merge 168fce430).
 - `GET /api/plugins` carries `cpu_pct` with its own `cpu_scope`, and the Plugins page shows a Processor column.
 - The developer guide and the Plugins help topic were updated in English and Arabic.
 
-Three Kimi K3.1 Pro review rounds found nine real defects, each fixed with a test that fails without the fix:
+Three Kimi K3.1 Pro review rounds found ten real defects, all fixed. The seven code defects each got a test that fails without the fix:
 
 - A pid reused with more processor time than the old process had.
 - A restart that got its pid back. A requested restart does not bump `Restarts`, so the baseline is now keyed by pid, component, role, instance, restart count and start time.
@@ -26,21 +26,22 @@ Three Kimi K3.1 Pro review rounds found nine real defects, each fixed with a tes
 - A low reading that never went back to 0.
 - A total that disagreed with its parts under per-part hysteresis. The total is now the sum of the written parts.
 - Processor use dropped by the API for the one sample after a second runner starts. Hence `cpu_scope`.
-- Stale "not measured" sentences in the help topic and the developer guide.
-- The macOS and Windows readers not run in CI. The launcher matrix now runs them.
+
+The other three were fixed without a red-first test:
+
+- A stale "not measured" sentence in the Plugins help topic. `help.coverage.test.ts` now refuses it.
+- A stale "CPU is not measured" sentence in the developer guide (`installing.md`, en and ar).
+- The macOS and Windows readers not run in CI. The launcher matrix now runs them: a workflow step, not a test.
 
 ## What we learned
 
-- A supervisor's `Restarts` counts crashes only. `Supervisor.Restart` does not increment it, so an identity that must change at every start needs the start time (`ChildStatus.StartedAt`).
+- `Supervisor.Restart` does not increment `Restarts`, so the restart count alone cannot identify every process start. The baseline also needs `ChildStatus.StartedAt`.
 - Hysteresis applied to a sum and to its parts separately lets them disagree for good. Apply it to the parts and derive the sum.
 - A rule "moved by N and by a tenth" never lets a value under N return to 0. Writing any drop to 0 once keeps an idle machine quiet and the number true.
 - `ps -o cputime` and `/proc/<pid>/stat` are cumulative since start. A share needs two samples of the same process: a first sample, or another process on the pid, has none.
-- The Kimi provider sometimes ended a run within two seconds with no output, eight times in a row at one point. Retrying after a pause worked; an empty run is not a review.
+- The Kimi provider sometimes ended a run within two seconds with no output, several times in a row. Retrying after a pause worked; an empty run is not a review.
+- The supervisor reports each process's processor use and the component's total, and does not divide a shared process's use among the plugins it runs, by design.
 
 ## Keep doing
 
 - Ask the reviewer for file:line and a failing scenario, turn each check off to see its test fail, and record every finding and what was done with it in a PR comment.
-
-## Open
-
-- The supervisor still reports only one process's own number per sample. A shared group's share per plugin is not split, by design.
