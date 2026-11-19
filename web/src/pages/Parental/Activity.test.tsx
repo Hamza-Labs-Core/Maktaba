@@ -106,6 +106,30 @@ describe("Activity", () => {
     expect(screen.queryByRole("button", { name: "Load more" })).toBeNull();
   });
 
+  it("a first page with more shows its Load more in the same render as its rows", async () => {
+    // every DOM change is looked at as it lands (a MutationObserver runs before React's
+    // effects do): the rows never show without the button, as they did for one render
+    // when an effect copied the page's cursor, and a test could read the page in between
+    let torn = 0;
+    const seen = new MutationObserver(() => {
+      if (
+        screen.queryByTestId("family-activity") &&
+        !screen.queryByRole("button", { name: "Load more" })
+      )
+        torn++;
+    });
+    seen.observe(document.body, { childList: true, subtree: true });
+    try {
+      open({ activity: () => ({ events: first.slice(0, 2), next_cursor: "next-1" }) });
+      await screen.findByTestId("family-activity");
+      await screen.findByRole("button", { name: "Load more" });
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    } finally {
+      seen.disconnect();
+    }
+    expect(torn).toBe(0);
+  });
+
   it("a quiet re-read of the first page keeps the pages already loaded", async () => {
     const h: FamilyHome = {
       activity: (q) =>
