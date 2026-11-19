@@ -231,6 +231,22 @@ jobs:
           WIN_APP_REQUIRE_PGVECTOR: "1"
         run: make win-app
 
+      # Epic 49 story 49.2: the 16 → 18 upgrade on this platform's own payload, both majors
+      # from it (the Mac's APFS takes pg_upgrade's --clone; Linux runners' ext4 never does):
+      # the upgrade, its grants, the 16 cluster starting after it (a rollback's), the redo
+      # after 16 moved on, a 16 cluster stopped hard
+      - name: The PostgreSQL 16 → 18 upgrade on this payload (TestRealMajorUpgrade)
+        working-directory: cmd/maktaba-server
+        shell: bash
+        env:
+          MAKTABA_TEST_PG16_HOME: ${{ github.workspace }}/build/win-app/server/postgres
+          MAKTABA_TEST_PG18_HOME: ${{ github.workspace }}/build/win-app/server/postgres-18
+        run: |
+          set -o pipefail
+          go test -tags integration -count=1 -timeout 15m -run '^(TestRealMajorUpgrade|TestRealPgTextsearchPreloaded)$' -v ./internal/pgbundle/ 2>&1 | tee "$RUNNER_TEMP/major.out"
+          grep -q -- '--- PASS: TestRealMajorUpgrade' "$RUNNER_TEMP/major.out"
+          grep -q -- '--- PASS: TestRealPgTextsearchPreloaded' "$RUNNER_TEMP/major.out"
+
       - name: Sizes
         if: always()
         run: |

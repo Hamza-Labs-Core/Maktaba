@@ -3600,6 +3600,15 @@ build fails when the two differ.
   Maktaba's plugins with `publisher` and `source`. `GET /api/queues/failures` takes several
   stages in `stage`.
 
+- **The library database moves to PostgreSQL 18 (Epic 49, story 49.2).** An update to this
+  release upgrades the home's database from PostgreSQL 16 to 18 at its first start, with
+  `pg_upgrade`, into a folder of its own (`postgres-18`, beside `postgres`). The files are cloned
+  where the disk can (APFS on the Mac: no extra room), else copied. The PostgreSQL 16 database is
+  left as it was, so a rollback starts the release before on it at once. When there isn't room
+  for a copy, or the upgrade fails, the home keeps running on PostgreSQL 16, says why in its log,
+  and tries again at its next start. PostgreSQL 18 brings pg_textsearch, which ranked keyword
+  search will use.
+
 ### Fixed
 
 - **A TV held on its old streaming software stays there through schedule and settings

@@ -55,6 +55,10 @@ import (
 type rehearsalKit struct {
 	dir    string // prev/, cur/, next/, versions.env
 	pgHome string // a Postgres 16 install with pgvector: bin/postgres
+	// pg18Home is PostgreSQL 18 with pgvector and pg_textsearch (tools/rehearsal/postgres18.sh,
+	// MAKTABA_REHEARSAL_PG18_HOME): a payload that has it in postgres-18/ upgrades the home's
+	// cluster (Epic 49 story 49.2, scenario 17). "" when the kit has none.
+	pg18Home string
 	// the versions: the previous release, the newer one the live Mac's state rolled back
 	// from, this commit, and this commit as the release after it
 	prev, failed, cur, next string
@@ -84,7 +88,8 @@ func rehearsalOn(t *testing.T) {
 func loadKit(t *testing.T) *rehearsalKit {
 	t.Helper()
 	rehearsalOn(t)
-	k := &rehearsalKit{dir: os.Getenv("MAKTABA_REHEARSAL_KIT"), pgHome: os.Getenv("MAKTABA_REHEARSAL_PG_HOME")}
+	k := &rehearsalKit{dir: os.Getenv("MAKTABA_REHEARSAL_KIT"), pgHome: os.Getenv("MAKTABA_REHEARSAL_PG_HOME"),
+		pg18Home: os.Getenv("MAKTABA_REHEARSAL_PG18_HOME")}
 	if k.dir == "" || k.pgHome == "" {
 		t.Fatal("MAKTABA_REHEARSAL_KIT (tools/rehearsal/build.sh's --out) and MAKTABA_REHEARSAL_PG_HOME (a Postgres 16 with " +
 			"pgvector: tools/rehearsal/postgres.sh) are needed")
@@ -181,6 +186,8 @@ type payloadSpec struct {
 	variant string // prev, cur, next
 	version string
 	extra   map[string]string // more migrations (name -> SQL)
+	// pg18 puts the kit's PostgreSQL 18 in postgres-18/ (a release of Epic 49 story 49.2)
+	pg18 bool
 }
 
 // makePayload writes the app's server payload into dst: bin/ (the kit's binaries),
@@ -207,6 +214,14 @@ func (k *rehearsalKit) makePayload(t *testing.T, dst string, p payloadSpec) {
 	// the bundled Postgres: one install for every payload (a link the kept copies keep)
 	if err := os.Symlink(k.pgHome, filepath.Join(dst, "postgres")); err != nil {
 		t.Fatal(err)
+	}
+	if p.pg18 {
+		if k.pg18Home == "" {
+			t.Fatal("MAKTABA_REHEARSAL_PG18_HOME (tools/rehearsal/postgres18.sh) is needed for a payload with PostgreSQL 18")
+		}
+		if err := os.Symlink(k.pg18Home, filepath.Join(dst, "postgres-18")); err != nil {
+			t.Fatal(err)
+		}
 	}
 	pgVersion := "16.0.0"
 	if out, err := exec.Command(filepath.Join(k.pgHome, "bin", "postgres"), "--version").Output(); err == nil {

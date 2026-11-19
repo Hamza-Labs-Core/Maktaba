@@ -1,6 +1,7 @@
 package apppayload
 
 import (
+	"encoding/binary"
 	"os"
 	"path/filepath"
 	"testing"
@@ -77,5 +78,75 @@ func TestConfirmAndRead(t *testing.T) {
 	if err != nil || !ok || got.Version != "v0.3.0" || got.PostgresMajor() != "16" ||
 		got.Pipeline.ConstraintsSHA256 != "bb" || got.Python.Version != "3.12.15" {
 		t.Fatalf("confirmed = %+v %v %v", got, ok, err)
+	}
+}
+
+// Epic 49 story 49.2: the record is the cluster's the install runs on, from its directories:
+// database.json for 16 (and every release before), database-pg18.json once postgres-18 holds
+// a cluster, database.json again while the upgrade is held.
+func TestClusterRecord(t *testing.T) {
+	root := t.TempDir()
+	if got := filepath.Base(DatabasePath(root)); got != "database.json" {
+		t.Fatalf("no cluster: %s", got)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "postgres-18"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "postgres-18", "PG_VERSION"), []byte("18\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := filepath.Base(DatabasePath(root)); got != "database-pg18.json" {
+		t.Fatalf("an 18 cluster: %s", got)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "state"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "state", "postgres-upgrade-held"), []byte("no room\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := filepath.Base(DatabasePath(root)); got != "database.json" {
+		t.Fatalf("held: %s", got)
+	}
+}
+
+// Epic 49 story 49.2 (review of #1445): on a home rolled back to 16 after its upgrade, the
+// 16 cluster has moved on, so it is the one in use and database.json the record (a restore
+// marks the record the release that runs reads). Read from pg_control as it is on disk.
+func TestClusterInUseAfterARollback(t *testing.T) {
+	root := t.TempDir()
+	put := func(rel string, b []byte) {
+		t.Helper()
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(root, rel)), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, rel), b, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	control := func(sysid, lsn uint64) []byte {
+		b := make([]byte, 64)
+		binary.LittleEndian.PutUint64(b[0:8], sysid)
+		binary.LittleEndian.PutUint64(b[32:40], lsn)
+		return b
+	}
+	put(filepath.Join("postgres-18", "PG_VERSION"), []byte("18\n"))
+	put(filepath.Join("postgres", "PG_VERSION"), []byte("16\n"))
+	put(filepath.Join("postgres-18", "maktaba-upgraded-from.json"),
+		[]byte(`{"major":"16","system_identifier":"7709798569366362372","checkpoint":"0/14C8640"}`))
+	put(filepath.Join("postgres", "global", "pg_control"), control(7709798569366362372, 0x14C8640))
+	if got := ClusterMajorIn(root); got != "18" {
+		t.Fatalf("the 16 cluster as the upgrade left it: %q, want 18", got)
+	}
+	put(filepath.Join("postgres", "global", "pg_control"), control(7709798569366362372, 0x1_0000_2A40))
+	if got := ClusterMajorIn(root); got != "" || filepath.Base(DatabasePath(root)) != "database.json" {
+		t.Fatalf("the 16 cluster moved on (a rollback): %q, %s", got, DatabasePath(root))
+	}
+	put(filepath.Join("postgres", "global", "pg_control"), control(42, 0x1_0000_2A40))
+	if got := ClusterMajorIn(root); got != "18" {
+		t.Fatalf("another cluster in the old directory: %q, want the upgraded one", got)
+	}
+	put(filepath.Join("postgres-18", "maktaba-upgraded-from.json"), []byte(`{"major":"16"}`))
+	if got := ClusterMajorIn(root); got != "" {
+		t.Fatalf("an upgrade that did not finish: %q, want 16's", got)
 	}
 }
