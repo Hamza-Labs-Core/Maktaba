@@ -71,7 +71,7 @@
 | 46 Big screen | 7 | 0 | 0 | 0 | Done |
 | 47 Offline convert / dedup | 11 | 3 | 0 | 0 | **Partial** |
 | 48 Native players | 36 | 1 | 0 | 0 | **Partial** |
-| 49 Search | 1 | 0 | 13 | 0 | **Started** |
+| 49 Search | 1 | 0 | 13 | 0 | **Partial** |
 | 50 Cloud with no downtime | 35 | 0 | 0 | 0 | Done (live SLOs not checked) |
 | 51 Configurable components | 19 | 0 | 0 | 0 | Done |
 | 52 Transcript word review | 13 | 3 | 0 | 1 | **Partial** |
