@@ -20,6 +20,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/layout"
@@ -159,7 +160,30 @@ const (
 )
 
 // DatabasePath is the database's record.
-func DatabasePath(stateDir string) string { return filepath.Join(stateDir, "state", "database.json") }
+func DatabasePath(stateDir string) string {
+	return filepath.Join(stateDir, "state", recordName.Load().(string))
+}
+
+// recordName is the database record's file: database.json, or for a cluster of a newer
+// major in a directory of its own (Epic 49 story 49.2) database-pg<major>.json, so a
+// release before it, switched back to on its own cluster, reads its own record as it left it.
+var recordName atomic.Value
+
+func init() { recordName.Store("database.json") }
+
+// UseClusterRecord makes DatabasePath this process's cluster's: major 18 and later have
+// their own record, an older one (or "") database.json.
+func UseClusterRecord(major string) {
+	recordName.Store(ClusterRecordName(major))
+}
+
+// ClusterRecordName is the record's file name for a cluster of major.
+func ClusterRecordName(major string) string {
+	if n, err := strconv.Atoi(major); err == nil && n >= 18 {
+		return "database-pg" + major + ".json"
+	}
+	return "database.json"
+}
 
 // ReadDatabase reads the database's record; ok false when there is none.
 func ReadDatabase(stateDir string) (Database, bool, error) {

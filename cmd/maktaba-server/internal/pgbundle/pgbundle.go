@@ -103,9 +103,16 @@ func Resolve(cfg config.Config, exe string) (Bundle, bool, error) {
 	}
 	root := cfg.StateDir()
 	bk := cfg.Backups
+	// Epic 49 story 49.2: a newer major's cluster has a directory of its own (DataDirFor);
+	// while its upgrade is held (no room, a failed pg_upgrade: MajorHold) the payload's
+	// previous major runs on the cluster it has
+	major := HomeMajor(home)
+	if old := PreviousHome(home); old != "" && HeldMajor(root) != "" {
+		home, major = old, HomeMajor(old)
+	}
 	return Bundle{
 		Home:    home,
-		Data:    filepath.Join(root, "postgres"),
+		Data:    DataDirFor(root, major),
 		Keys:    config.KeysDir(),
 		Backups: cfg.BackupsDir(filepath.Join(root, "backups")),
 		Nightly: &NightlyPolicy{Off: !bk.NightlyOn(), EveryDays: bk.EveryDaysOr(), Hour: bk.HourOr(), Keep: bk.KeepOr()},
@@ -138,8 +145,10 @@ func findHome(cfg config.Config, exe string) string {
 			return ""
 		}
 	}
-	if b := config.AppBundle(); b != "" && hasServer(filepath.Join(b, "postgres")) {
-		return filepath.Join(b, "postgres")
+	if b := config.AppBundle(); b != "" {
+		if h := payloadHome(b); h != "" {
+			return h
+		}
 	}
 	if exe == "" {
 		return ""
@@ -147,9 +156,17 @@ func findHome(cfg config.Config, exe string) string {
 	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
 		exe = resolved
 	}
-	h := filepath.Join(filepath.Dir(filepath.Dir(exe)), "postgres")
-	if hasServer(h) {
-		return h
+	return payloadHome(filepath.Dir(filepath.Dir(exe)))
+}
+
+// payloadHome is the Postgres a payload runs: postgres-18/ when it has one (Epic 49 story
+// 49.2: the newer major, beside the previous one in postgres/, which the upgrade reads),
+// else postgres/; "" for none.
+func payloadHome(payload string) string {
+	for _, d := range []string{"postgres-18", "postgres"} {
+		if h := filepath.Join(payload, d); hasServer(h) {
+			return h
+		}
 	}
 	return ""
 }

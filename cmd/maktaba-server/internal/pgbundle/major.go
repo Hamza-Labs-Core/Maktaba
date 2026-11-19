@@ -14,6 +14,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -54,14 +55,87 @@ func DataDirFor(root, major string) string {
 	return filepath.Join(root, "postgres")
 }
 
-// OldHomeFor is where a payload keeps the previous major's programs for the upgrade
-// (<payload>/postgres-<major>), "" when it has none.
-func OldHomeFor(home, major string) string {
-	h := filepath.Join(filepath.Dir(home), "postgres-"+major)
-	if hasServer(h) {
+// PreviousHome is the previous major's programs a payload keeps beside home for the
+// upgrade (home <payload>/postgres-18: <payload>/postgres), "" when home is no such newer
+// major's or the payload has none.
+func PreviousHome(home string) string {
+	if filepath.Base(home) != "postgres-18" {
+		return ""
+	}
+	if h := filepath.Join(filepath.Dir(home), "postgres"); hasServer(h) {
 		return h
 	}
 	return ""
+}
+
+var homeMajors sync.Map // home -> major
+
+// HomeMajor is the major of the Postgres install at home ("16" of "postgres (PostgreSQL)
+// 16.15"), asked once per process; "" when it cannot be told.
+func HomeMajor(home string) string {
+	if v, ok := homeMajors.Load(home); ok {
+		return v.(string)
+	}
+	out, err := exec.Command(filepath.Join(home, "bin", exe("postgres")), "--version").Output()
+	if err != nil {
+		return ""
+	}
+	f := strings.Fields(string(out))
+	if len(f) == 0 {
+		return ""
+	}
+	major, _, _ := strings.Cut(f[len(f)-1], ".")
+	if _, err := strconv.Atoi(major); err != nil {
+		return ""
+	}
+	homeMajors.Store(home, major)
+	return major
+}
+
+// majorHoldFile holds a major's upgrade: while it is there the previous major runs.
+func majorHoldFile(root string) string { return filepath.Join(root, "state", "postgres-upgrade-held") }
+
+// HeldMajor is why the upgrade is held ("" when it is not).
+func HeldMajor(root string) string {
+	raw, err := os.ReadFile(majorHoldFile(root))
+	if err != nil {
+		return ""
+	}
+	if why := strings.TrimSpace(string(raw)); why != "" {
+		return why
+	}
+	return "held"
+}
+
+// HoldMajor records that the upgrade could not run (why), so every command runs the
+// previous major on its cluster until a start upgrades it; ReleaseMajor takes it back.
+func HoldMajor(root, why string) error {
+	if err := os.MkdirAll(filepath.Dir(majorHoldFile(root)), 0o700); err != nil {
+		return err
+	}
+	return os.WriteFile(majorHoldFile(root), []byte(why+"\n"), 0o600)
+}
+
+// ReleaseMajor takes the hold back.
+func ReleaseMajor(root string) error {
+	err := os.Remove(majorHoldFile(root))
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	return err
+}
+
+// afterUpgradeMarker records that AfterUpgrade ran on the cluster.
+const afterUpgradeMarker = "maktaba-after-upgrade.done"
+
+// AfterUpgradeDone reports whether a cluster pg_upgrade made had AfterUpgrade (true for one
+// no upgrade made).
+func (b Bundle) AfterUpgradeDone() bool {
+	if _, ok, _ := ReadUpgradedFrom(b.Data); !ok {
+		return true
+	}
+	_, err := os.Stat(filepath.Join(b.Data, afterUpgradeMarker))
+	return err == nil
 }
 
 // Control is what pg_controldata says of a cluster that matters here.
@@ -130,12 +204,12 @@ func (u MajorUpgrade) Needed(ctx context.Context) (bool, string, error) {
 		// a cluster of the new major that no upgrade made (a fresh install): it stays
 		return false, "made fresh", nil
 	}
+	if m.Checkpoint == "" {
+		return true, "an upgrade that did not finish", nil
+	}
 	c, err := ReadControl(ctx, u.Old.Bin("pg_controldata"), u.Old.Data)
 	if err != nil {
 		return false, "", err
-	}
-	if m.Checkpoint == "" {
-		return true, "an upgrade that did not finish", nil
 	}
 	if c.SystemID != m.SystemID {
 		// another cluster stands where the old one was (made anew by hand, or by a release
@@ -478,6 +552,9 @@ func (b Bundle) AfterUpgrade(ctx context.Context, log io.Writer) error {
 			"--all", "--analyze-in-stages", "--missing-stats-only")
 		cmd.Env = append(os.Environ(), "PGPASSWORD="+superPW)
 		cmd.Stdout, cmd.Stderr = childLog(log), childLog(log)
-		return cmd.Run()
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("vacuumdb: %w", err)
+		}
+		return os.WriteFile(filepath.Join(b.Data, afterUpgradeMarker), []byte(time.Now().UTC().Format(time.RFC3339)+"\n"), 0o600)
 	})
 }

@@ -10,11 +10,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/apppayload"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/dsn"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbin"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbundle"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/supervisor"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/layout"
 )
 
 // backupCheckInterval is how often serve checks whether the nightly dump is due.
@@ -57,8 +59,16 @@ func bundledPostgres(ctx context.Context, cfg *config.Config, prepare bool) (*pg
 		if err := postgresPortCheck(b, *cfg, os.Stderr); err != nil {
 			return nil, err
 		}
+		b = majorUpgradeStep(ctx, *cfg, b, os.Stderr)
 		if err := b.Prepare(ctx, os.Stderr); err != nil {
 			return nil, err
+		}
+		if !b.AfterUpgradeDone() {
+			// the extensions to the new programs' versions, the statistics pg_upgrade did not
+			// carry (once: a start that stops part way does it again)
+			if err := b.AfterUpgrade(ctx, os.Stderr); err != nil {
+				return nil, fmt.Errorf("the upgraded library database's last step: %w", err)
+			}
 		}
 		// a machine's replication role may make a slot with any output plugin this
 		// Postgres has, and one other than pgoutput decodes every table past what is
@@ -140,4 +150,98 @@ func postgresPortCheck(b pgbundle.Bundle, cfg config.Config, out io.Writer) erro
 		return errors.New(en + "\n" + ar)
 	}
 	return nil
+}
+
+// majorUpgradeStep (Epic 49 story 49.2): a payload that runs a newer PostgreSQL major
+// (postgres-18/) than the cluster this machine has (<state>/postgres, made by 16) upgrades
+// it into a directory of its own with pg_upgrade (pgbundle.MajorUpgrade), leaving the old
+// cluster as it was for a switch back to the release before. The upgraded cluster has its
+// own database record, seeded from the old one's when it is made. When the upgrade cannot
+// run (no room for a copy, a failed pg_upgrade), the previous major runs on its cluster as
+// before, held until a start upgrades it (pgbundle.HoldMajor): the home keeps working.
+func majorUpgradeStep(ctx context.Context, cfg config.Config, b pgbundle.Bundle, log io.Writer) pgbundle.Bundle {
+	root := cfg.StateDir()
+	old := pgbundle.PreviousHome(b.Home)
+	if old == "" {
+		// the payload's previous major runs (held), or the payload has only one
+		if held := pgbundle.HeldMajor(root); held != "" && pgbundle.HomeMajor(b.Home) != "" {
+			apppayload.UseClusterRecord(pgbundle.HomeMajor(b.Home))
+			if exe, _ := os.Executable(); exe != "" {
+				if nb, ok := retryHeldUpgrade(ctx, cfg, b, exe, held, log); ok {
+					return nb
+				}
+			}
+			return b
+		}
+		apppayload.UseClusterRecord(pgbundle.HomeMajor(b.Home))
+		return b
+	}
+	return upgradeTo(ctx, cfg, b, old, log)
+}
+
+// retryHeldUpgrade tries a held upgrade again at this start: b runs the previous major.
+func retryHeldUpgrade(ctx context.Context, cfg config.Config, b pgbundle.Bundle, exe, held string, log io.Writer) (pgbundle.Bundle, bool) {
+	root := cfg.StateDir()
+	if err := pgbundle.ReleaseMajor(root); err != nil {
+		return b, false
+	}
+	nb, ok, err := pgbundle.Resolve(cfg, exe)
+	if err != nil || !ok || pgbundle.PreviousHome(nb.Home) == "" {
+		_ = pgbundle.HoldMajor(root, held)
+		return b, false
+	}
+	fmt.Fprintf(log, "[postgres] the library database's upgrade was held (%s): trying it again\n", held)
+	got := upgradeTo(ctx, cfg, nb, pgbundle.PreviousHome(nb.Home), log)
+	return got, true
+}
+
+// upgradeTo upgrades the cluster old's major made into b's, or holds it and runs old.
+func upgradeTo(ctx context.Context, cfg config.Config, b pgbundle.Bundle, old string, log io.Writer) pgbundle.Bundle {
+	root := cfg.StateDir()
+	newMajor, oldMajor := pgbundle.HomeMajor(b.Home), pgbundle.HomeMajor(old)
+	ob := b
+	ob.Home, ob.Data = old, pgbundle.DataDirFor(root, oldMajor)
+	u := pgbundle.MajorUpgrade{Old: ob, New: b}
+	need, why, err := u.Needed(ctx)
+	if err == nil && need {
+		err = u.Run(ctx, log)
+		if err == nil {
+			// the new cluster's record starts as the old one's: the same release's
+			// migrations, the same dumps (a second try takes it again: the old moved on)
+			seedClusterRecord(root, oldMajor, newMajor, log)
+		}
+	} else if err == nil {
+		fmt.Fprintf(log, "[postgres] the library database runs on PostgreSQL %s (%s)\n", newMajor, why)
+	}
+	if err != nil {
+		fmt.Fprintf(log, "[postgres] level=error the library database could not be upgraded to PostgreSQL %s, so it "+
+			"stays on PostgreSQL %s for now (search works as before; the next start tries again): %v\n",
+			newMajor, oldMajor, err)
+		if herr := pgbundle.HoldMajor(root, err.Error()); herr != nil {
+			fmt.Fprintf(log, "[postgres] level=error the hold cannot be recorded: %v\n", herr)
+		}
+		apppayload.UseClusterRecord(oldMajor)
+		return ob
+	}
+	_ = pgbundle.ReleaseMajor(root)
+	apppayload.UseClusterRecord(newMajor)
+	return b
+}
+
+// seedClusterRecord copies the old cluster's database record to the new one's.
+func seedClusterRecord(root, oldMajor, newMajor string, log io.Writer) {
+	dir := filepath.Join(root, "state")
+	from, to := filepath.Join(dir, apppayload.ClusterRecordName(oldMajor)), filepath.Join(dir, apppayload.ClusterRecordName(newMajor))
+	raw, err := os.ReadFile(from)
+	if errors.Is(err, os.ErrNotExist) {
+		_ = os.Remove(to)
+		return
+	}
+	if err == nil {
+		err = layout.WriteFileAtomic(to, raw, 0o644)
+	}
+	if err != nil {
+		fmt.Fprintf(log, "[postgres] level=warn the upgraded library database's record is not seeded (%v): "+
+			"this start takes it as an update from the release that ran last\n", err)
+	}
 }

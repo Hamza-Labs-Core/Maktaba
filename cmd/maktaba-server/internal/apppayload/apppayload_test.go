@@ -79,3 +79,15 @@ func TestConfirmAndRead(t *testing.T) {
 		t.Fatalf("confirmed = %+v %v %v", got, ok, err)
 	}
 }
+
+// Epic 49 story 49.2: a cluster of a newer major in its own directory has its own record;
+// the release before keeps database.json.
+func TestClusterRecord(t *testing.T) {
+	defer UseClusterRecord("")
+	for major, want := range map[string]string{"": "database.json", "16": "database.json", "18": "database-pg18.json"} {
+		UseClusterRecord(major)
+		if got := filepath.Base(DatabasePath("/s")); got != want {
+			t.Errorf("major %q: %s, want %s", major, got, want)
+		}
+	}
+}

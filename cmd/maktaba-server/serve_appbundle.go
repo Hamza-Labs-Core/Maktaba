@@ -158,7 +158,13 @@ func appBundleGates(cfg config.Config, dir string, pg *pgbundle.Bundle, procs []
 		switch {
 		case p.Role == supervisor.RolePostgres:
 			if pg != nil {
-				p.Prepare = postgresMajorGate(*pg, cur.PostgresMajor())
+				// the major of the Postgres this start runs (Epic 49 story 49.2: postgres-18/
+				// once the cluster is upgraded, payload.json's postgres, 16, while it is held)
+				major := pgbundle.HomeMajor(pg.Home)
+				if major == "" {
+					major = cur.PostgresMajor()
+				}
+				p.Prepare = postgresMajorGate(*pg, major)
 			}
 		case p.Role == supervisor.RoleOllama:
 			// the model server keeps nothing of the library: it waits on nothing
