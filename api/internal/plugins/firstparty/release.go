@@ -236,6 +236,18 @@ func readWheel(b []byte) (map[string]string, map[string][]byte, string, error) {
 	if err != nil {
 		return nil, nil, "", err
 	}
+	// the whole wheel too: a count and a total under limits, declared and read, so a small
+	// file that expands into many members at the limit each cannot exhaust the runner
+	if len(z.File) > maxWheelMembers {
+		return nil, nil, "", fmt.Errorf("%d members, at most %d", len(z.File), maxWheelMembers)
+	}
+	var declared uint64
+	for _, f := range z.File {
+		declared += f.UncompressedSize64
+	}
+	if declared > maxWheelBytes {
+		return nil, nil, "", fmt.Errorf("%d bytes unpacked, at most %d", declared, maxWheelBytes)
+	}
 	var record *zip.File
 	files := map[string]*zip.File{}
 	for _, f := range z.File {
@@ -278,6 +290,7 @@ func readWheel(b []byte) (map[string]string, map[string][]byte, string, error) {
 	}
 	out := map[string]string{}
 	contents := map[string][]byte{}
+	read := uint64(len(recBytes))
 	for _, r := range rows {
 		if len(r) != 3 {
 			return nil, nil, "", fmt.Errorf("RECORD: a row of %d fields", len(r))
@@ -306,13 +319,19 @@ func readWheel(b []byte) (map[string]string, map[string][]byte, string, error) {
 		if len(data) > componentpack.PluginMaxUnpackedBytes {
 			return nil, nil, "", fmt.Errorf("%s is over %d bytes", path, componentpack.PluginMaxUnpackedBytes)
 		}
+		if read += uint64(len(data)); read > maxWheelBytes {
+			return nil, nil, "", fmt.Errorf("over %d bytes unpacked", maxWheelBytes)
+		}
 		sum := sha256.Sum256(data)
 		size, err := strconv.ParseInt(r[2], 10, 64)
 		if err != nil || size < 0 || size != int64(len(data)) || digest != "sha256="+base64.RawURLEncoding.EncodeToString(sum[:]) {
 			return nil, nil, "", fmt.Errorf("%s does not match its RECORD", path)
 		}
 		out[path] = digest
-		contents[path] = data
+		// only the dist-info's own files are read again (METADATA, WHEEL): nothing else kept
+		if strings.Count(path, "/") == 1 && strings.Contains(path, ".dist-info/") {
+			contents[path] = data
+		}
 	}
 	for name := range files {
 		if _, ok := out[name]; !ok && name != record.Name {
@@ -322,9 +341,18 @@ func readWheel(b []byte) (map[string]string, map[string][]byte, string, error) {
 	return out, contents, record.Name, nil
 }
 
-// compiled is a file Python writes for itself, which a wheel may or may not carry.
+// A wheel's limits beyond each member's (componentpack.PluginMaxUnpackedBytes): its members
+// and their total, declared and read. Variables so a test sets them small.
+var (
+	maxWheelMembers        = 20000
+	maxWheelBytes   uint64 = 1 << 30
+)
+
+// compiled is a file Python writes for itself (bytecode). Neither wheel may carry one under
+// a plugin's package: Python can run bytecode that is not its source, so the source alone
+// is what both wheels hold and what is compared (the release's build removes __pycache__).
 func compiled(p string) bool {
-	return strings.Contains(p, "/__pycache__/") || strings.HasSuffix(p, ".pyc")
+	return strings.Contains(p, "/__pycache__/") || strings.HasSuffix(p, ".pyc") || strings.HasSuffix(p, ".pyo")
 }
 
 // checkWheel: the plugin's wheel holds its own package (dist) and exactly its dist-info's
@@ -347,6 +375,9 @@ func checkWheel(b []byte, dist, version string, pipeline map[string]string) erro
 		switch {
 		case p == info+"METADATA" || p == info+"WHEEL":
 		case strings.HasPrefix(p, dist+"/"):
+			if compiled(p) {
+				return fmt.Errorf("%s is bytecode: a package holds its plugin's source only", p)
+			}
 			own++
 			if pipeline != nil {
 				if pd, ok := pipeline[p]; !ok || pd != d {
@@ -377,7 +408,10 @@ func checkWheel(b []byte, dist, version string, pipeline map[string]string) erro
 		return fmt.Errorf("WHEEL: %w", err)
 	}
 	for p := range pipeline {
-		if strings.HasPrefix(p, dist+"/") && !compiled(p) {
+		if strings.HasPrefix(p, dist+"/") {
+			if compiled(p) {
+				return fmt.Errorf("the release's pipeline wheel has bytecode %s: it holds the plugin's source only", p)
+			}
 			if _, ok := rec[p]; !ok {
 				return fmt.Errorf("the release's pipeline wheel has %s, which it lacks", p)
 			}
@@ -423,16 +457,29 @@ func checkHeaders(b []byte, exact map[string]string, free ...string) error {
 
 // hasHeader: a "Key: value" line of b has that value.
 func hasHeader(b []byte, key, value string) bool {
-	// the metadata's headers only: they end at the first blank line (the description's body
-	// follows), and a header given twice names nothing
+	// the metadata's headers only (RFC 822, as Python's metadata reads them): they end at
+	// the first blank line (the description's body follows); a name matches in any case; a
+	// value folded onto the next line, or the header given twice, names nothing
 	seen := 0
+	last := ""
 	for _, line := range strings.Split(string(b), "\n") {
 		line = strings.TrimRight(line, "\r")
 		if line == "" {
 			break
 		}
-		if k, v, ok := strings.Cut(line, ": "); ok && k == key {
-			if v != value {
+		if line[0] == ' ' || line[0] == '\t' {
+			if strings.EqualFold(last, key) {
+				return false
+			}
+			continue
+		}
+		k, v, ok := strings.Cut(line, ":")
+		if !ok {
+			continue
+		}
+		last = k
+		if strings.EqualFold(k, key) {
+			if strings.TrimSpace(v) != value {
 				return false
 			}
 			seen++

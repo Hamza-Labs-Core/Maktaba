@@ -183,6 +183,10 @@ plugin's `i18n`.
     as a prefix) and
     equal its plugin's files in the signed pipeline wheel, digest for digest, both ways, so a
     package's code is the code the runner loads;
+  - hold no bytecode (`.pyc`, `__pycache__`) under its plugin's package, in its wheel or in
+    the pipeline wheel's copy, since Python can run bytecode that is not its source. The
+    release's build removes it. A wheel is also limited to 20,000 members and 1 GiB unpacked
+    in total, declared and read;
   - keep its wheel's dist-info to exactly `METADATA`, `WHEEL` and `RECORD`. The `METADATA` names
     this distribution and version and requires only `maktaba-pipeline==<version>`, and the
     `WHEEL` says a pure `py3-none-any` wheel;
@@ -190,7 +194,9 @@ plugin's `i18n`.
   
   Any other `tv.maktaba.*` package or `files.json`, on disk or in the checksums, fails the
   release. The pipeline wheel the packages are compared with must be this release's, both by
-  its name (`maktaba_pipeline-<version>-py3-none-any.whl`) and by its own `METADATA`.
+  its name (`maktaba_pipeline-<version>-py3-none-any.whl`) and by its own `METADATA`. Only
+  that file's headers are read, as Python's metadata parser reads them: names in any case, a
+  folded value refused, `Name` and `Version` each exactly once.
 - **The check's Go.** `api/go.mod` asks for a newer Go than `tools/release`'s, and the release
   job runs with `GOTOOLCHAIN=local`. So `sign-and-release` sets up `api`'s Go just before the
   check and downloads `api`'s modules there. `test_go_mod_download.py` now fails any job that

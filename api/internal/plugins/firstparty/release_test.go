@@ -587,11 +587,14 @@ func TestAnotherReleasesPipelineWheelIsRefused(t *testing.T) {
 	}
 	// the version on a line after the headers, or a header given twice: not this release's
 	for what, meta := range map[string]string{
-		"in the body":      "Metadata-Version: 2.1\nName: maktaba-pipeline\nVersion: 0.8.9\n\nVersion: " + relVersion + "\n",
-		"only in the body": "Metadata-Version: 2.1\nName: maktaba-pipeline\n\nVersion: " + relVersion + "\n",
-		"given twice":      "Metadata-Version: 2.1\nName: maktaba-pipeline\nVersion: " + relVersion + "\nVersion: 0.8.9\n",
-		"two versions":     "Metadata-Version: 2.1\nName: maktaba-pipeline\nVersion: " + relVersion + "\nVersion: " + relVersion + "\n",
-		"another name":     "Metadata-Version: 2.1\nName: maktaba-pipeline\nName: evil\nVersion: " + relVersion + "\n",
+		"in the body":           "Metadata-Version: 2.1\nName: maktaba-pipeline\nVersion: 0.8.9\n\nVersion: " + relVersion + "\n",
+		"only in the body":      "Metadata-Version: 2.1\nName: maktaba-pipeline\n\nVersion: " + relVersion + "\n",
+		"given twice":           "Metadata-Version: 2.1\nName: maktaba-pipeline\nVersion: " + relVersion + "\nVersion: 0.8.9\n",
+		"two versions":          "Metadata-Version: 2.1\nName: maktaba-pipeline\nVersion: " + relVersion + "\nVersion: " + relVersion + "\n",
+		"another name":          "Metadata-Version: 2.1\nName: maktaba-pipeline\nName: evil\nVersion: " + relVersion + "\n",
+		"names in two cases":    "Metadata-Version: 2.1\nname: not-maktaba-pipeline\nName: maktaba-pipeline\nVersion: " + relVersion + "\n",
+		"versions in two cases": "Metadata-Version: 2.1\nName: maktaba-pipeline\nversion: 0.8.9\nVersion: " + relVersion + "\n",
+		"a folded version":      "Metadata-Version: 2.1\nName: maktaba-pipeline\nVersion: " + relVersion + "\n 0.8.9\n",
 	} {
 		name := pipelineWheel(t, dir, func(f map[string][]byte) {
 			f["maktaba_pipeline-"+relVersion+".dist-info/METADATA"] = []byte(meta)
@@ -673,5 +676,74 @@ func TestAnOversizedWheelMemberIsRefused(t *testing.T) {
 	}
 	if _, _, _, err := readWheel(buf.Bytes()); err == nil || !strings.Contains(err.Error(), "over") {
 		t.Fatalf("a RECORD over the limit: %v", err)
+	}
+}
+
+// Fifth review of #1440: bytecode under a plugin's package is refused in either wheel (Python
+// can run bytecode that is not its source), and a wheel is limited in members and in total.
+func TestBytecodeAndAWheelsTotalAreRefused(t *testing.T) {
+	dir := buildRelease(t, relVersion)
+	fp := firstPlugin(t)
+	dist := "maktaba_fp_" + strings.ReplaceAll(fp.Folder, "-", "_")
+	for _, p := range []string{dist + "/__pycache__/__init__.cpython-312.pyc", dist + "/old.pyc"} {
+		name := pipelineWheel(t, dir, func(f map[string][]byte) { f[p] = []byte("bytecode") })
+		if _, err := VerifyReleasePackages(dir, relVersion, checksums(t, dir), name); err == nil || !strings.Contains(err.Error(), "bytecode") {
+			t.Fatalf("%s in the pipeline wheel: %v", p, err)
+		}
+	}
+	// the same in the package's own wheel
+	wheel, members := packageWheel(t, dir, fp.ID)
+	info := strings.TrimSuffix(strings.TrimPrefix(wheel, "wheels/"), "-py3-none-any.whl") + ".dist-info"
+	files := map[string][]byte{}
+	for n, b := range members {
+		if n != info+"/RECORD" {
+			files[n] = b
+		}
+	}
+	files[dist+"/__pycache__/x.cpython-312.pyc"] = []byte("bytecode")
+	repack(t, dir, fp.ID, wheel, func([]byte) []byte { return wheelBytes(t, info, files) })
+	if _, err := VerifyReleasePackages(dir, relVersion, checksums(t, dir), ""); err == nil || !strings.Contains(err.Error(), "bytecode") {
+		t.Fatalf("bytecode in the package's wheel: %v", err)
+	}
+	// a total over the limit, each member under it; and too many members
+	oldBytes, oldMembers := maxWheelBytes, maxWheelMembers
+	defer func() { maxWheelBytes, maxWheelMembers = oldBytes, oldMembers }()
+	big := map[string][]byte{"x/a.py": bytes.Repeat([]byte("a"), 600), "x/b.py": bytes.Repeat([]byte("b"), 600)}
+	maxWheelBytes = 1 << 10
+	if _, _, _, err := readWheel(wheelBytes(t, "x-1.dist-info", big)); err == nil || !strings.Contains(err.Error(), "unpacked") {
+		t.Fatalf("a wheel over its total: %v", err)
+	}
+	maxWheelBytes, maxWheelMembers = oldBytes, 2
+	if _, _, _, err := readWheel(wheelBytes(t, "x-1.dist-info", big)); err == nil || !strings.Contains(err.Error(), "members") {
+		t.Fatalf("a wheel over its members: %v", err)
+	}
+}
+
+// A member whose zip entry declares fewer bytes than it holds is refused (the reader stops at
+// the declared size and the entry fails), never read past its limit.
+func TestAnUnderDeclaredMemberIsRefused(t *testing.T) {
+	data := bytes.Repeat([]byte("z"), 4096)
+	b := wheelBytes(t, "x-1.dist-info", map[string][]byte{"x/a.py": data})
+	sig := []byte("PK\x01\x02") // a central directory entry
+	patched := false
+	for off := 0; ; {
+		i := bytes.Index(b[off:], sig)
+		if i < 0 {
+			break
+		}
+		i += off
+		nameLen := int(b[i+28]) | int(b[i+29])<<8
+		if string(b[i+46:i+46+nameLen]) == "x/a.py" {
+			b[i+24], b[i+25], b[i+26], b[i+27] = 10, 0, 0, 0 // its uncompressed size: 10
+			patched = true
+			break
+		}
+		off = i + 4
+	}
+	if !patched {
+		t.Fatal("no central directory entry for x/a.py")
+	}
+	if _, _, _, err := readWheel(b); err == nil {
+		t.Fatal("a member holding more than it declares was read")
 	}
 }
