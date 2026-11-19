@@ -232,7 +232,10 @@ jobs:
         working-directory: cmd/maktaba-server
         env:
           MAKTABA_TEST_PG18_HOME: ${{ github.workspace }}/build/linux-app/server/postgres-18
-        run: go test -tags integration -count=1 -run '^TestRealPgTextsearchPreloaded$' -v ./internal/pgbundle/ 2>&1 | tee "$RUNNER_TEMP/pg18.out" && grep -q -- '--- PASS: TestRealPgTextsearchPreloaded' "$RUNNER_TEMP/pg18.out"
+        run: |
+          set -o pipefail
+          go test -tags integration -count=1 -run '^TestRealPgTextsearchPreloaded$' -v ./internal/pgbundle/ 2>&1 | tee "$RUNNER_TEMP/pg18.out"
+          grep -q -- '--- PASS: TestRealPgTextsearchPreloaded' "$RUNNER_TEMP/pg18.out"
 
       # The Docker install's image (deploy/docker/server), built from this payload as
       # release.yml builds it from the release's: a command runs after the entrypoint put the
