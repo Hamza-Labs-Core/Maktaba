@@ -179,7 +179,11 @@ if [ -z "$MSVC_RUNTIME" ]; then
     mapfile -t versions < <(file_version "${crts[@]/%//vcruntime140.dll}")
     for i in "${!crts[@]}"; do
         found+=("${versions[$i]:-?} ($(win "${crts[$i]}"))")
-        if [ "${versions[$i]:-}" = "$MSVC_RUNTIME_VERSION" ]; then MSVC_RUNTIME="${crts[$i]}"; break; fi
+        # pins.env may name more than one release (a runner image rolling out): the first of
+        # them found here, the whole set from that one folder
+        case " $MSVC_RUNTIME_VERSION " in
+            *" ${versions[$i]:-none} "*) MSVC_RUNTIME="${crts[$i]}"; break ;;
+        esac
     done
     [ -n "$MSVC_RUNTIME" ] || die "no Visual Studio here has the Visual C++ runtime $MSVC_RUNTIME_VERSION that pins.env pins (found: ${found[*]}): install the Visual Studio whose C++ redistributable has it, pass --msvc-runtime a folder that holds it, or, when the build machine's Visual Studio moved on (a runner image update), bump MSVC_RUNTIME_VERSION in pins.env to the version found, in a reviewed change (README.md, \"The Visual C++ runtime\")"
 fi
@@ -282,13 +286,17 @@ done
 # shellcheck disable=SC2016
 sigs="$(SIGN_FILES="$(win "${msvc_dlls[@]}" | tr '\n' ';')" powershell.exe -NoProfile -NonInteractive -Command \
     '$env:SIGN_FILES.TrimEnd(";") -split ";" | ForEach-Object { $s = Get-AuthenticodeSignature -LiteralPath $_; "{0}|{1}|{2}|{3}" -f $s.Status, $s.SignerCertificate.Subject, (Get-Item -LiteralPath $_).VersionInfo.FileVersion, (Split-Path -Leaf $_) }' | tr -d '\r')"
-MSVC_VERSION=""
+MSVC_VERSION="" first=""
 while IFS='|' read -r status subject version name; do
     if [ "$status" != Valid ] || [[ "$subject" != *"O=Microsoft Corporation"* ]]; then
         die "$name from $MSVC_RUNTIME is not signed by Microsoft ($status, $subject)"
     fi
-    if [ "$version" != "$MSVC_RUNTIME_VERSION" ]; then
-        die "$name from $MSVC_RUNTIME is $version, not the Visual C++ runtime $MSVC_RUNTIME_VERSION that pins.env pins"
+    case " $MSVC_RUNTIME_VERSION " in *" $version "*) ;; *) false ;; esac || {
+        die "$name from $MSVC_RUNTIME is $version, not a Visual C++ runtime pins.env pins ($MSVC_RUNTIME_VERSION)"
+    }
+    first="${first:-$version}"
+    if [ "$version" != "$first" ]; then
+        die "$name from $MSVC_RUNTIME is $version, and $first's DLLs are beside it: one release's set only"
     fi
     log "Visual C++ runtime: $name $version, signed by Microsoft"
     if [ "$name" = vcruntime140.dll ]; then MSVC_VERSION="$version"; fi
