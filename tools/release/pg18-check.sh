@@ -40,7 +40,7 @@ mkdir -p "$scratch"
 port=$((55000 + RANDOM % 900))
 # the flags the bundled server starts PostgreSQL 18 with that matter here (pgbundle.serverArgs)
 flags="-p $port $sock -c listen_addresses=127.0.0.1 -c wal_level=logical -c max_replication_slots=40 -c shared_preload_libraries=pg_textsearch"
-psql18() { "$pg18/psql$x" -X -h 127.0.0.1 -p "$port" -U maktaba -Atq -v ON_ERROR_STOP=1 "$@"; }
+psql18() { PGCLIENTENCODING=UTF8 "$pg18/psql$x" -X -h 127.0.0.1 -p "$port" -U maktaba -Atq -v ON_ERROR_STOP=1 "$@"; }
 
 ver="$("$pg18/postgres$x" --version 2>&1)"
 case "$ver" in
@@ -63,18 +63,22 @@ if "$pg18/initdb$x" -D "$(w "$data")" -U maktaba --auth=trust -E UTF8 --locale=C
     esac
     # Maktaba's text search configuration (unaccent in front of simple), a BM25 index on it,
     # and the ranked query of Epic 49 (ORDER BY <@> LIMIT), answered by the index
-    out="$(psql18 -d postgres \
-        -c "CREATE TEXT SEARCH CONFIGURATION public.maktaba_search (COPY = simple);" \
-        -c "ALTER TEXT SEARCH CONFIGURATION public.maktaba_search ALTER MAPPING FOR hword, hword_part, word WITH unaccent, simple;" \
-        -c "CREATE TABLE docs (id int PRIMARY KEY, body text NOT NULL);" \
-        -c "INSERT INTO docs SELECT i, CASE WHEN i = 7 THEN 'الصبر الصبر الصبر عند المصيبة' ELSE 'كلمة ' || i || ' الصبر' END FROM generate_series(1, 500) i;" \
-        -c "CREATE INDEX docs_bm25 ON docs USING bm25 (body) WITH (text_config = 'public.maktaba_search');" \
-        -c "SET enable_seqscan = off;" \
-        -c "SELECT 'top: ' || string_agg(id::text, ',') FROM (SELECT id FROM docs ORDER BY body <@> to_bm25query('الصبر المصيبة', 'docs_bm25') LIMIT 3) t;" \
-        -c "EXPLAIN (COSTS OFF) SELECT id FROM docs ORDER BY body <@> to_bm25query('الصبر', 'docs_bm25') LIMIT 3;" 2>&1)"
+    # (in through stdin, UTF-8: Windows' command line would pass the Arabic in its code page)
+    rc=0
+    out="$(psql18 -d postgres 2>&1 <<'SQL'
+CREATE TEXT SEARCH CONFIGURATION public.maktaba_search (COPY = simple);
+ALTER TEXT SEARCH CONFIGURATION public.maktaba_search ALTER MAPPING FOR hword, hword_part, word WITH unaccent, simple;
+CREATE TABLE docs (id int PRIMARY KEY, body text NOT NULL);
+INSERT INTO docs SELECT i, CASE WHEN i = 7 THEN 'الصبر الصبر الصبر عند المصيبة' ELSE 'كلمة ' || i || ' الصبر' END FROM generate_series(1, 500) i;
+CREATE INDEX docs_bm25 ON docs USING bm25 (body) WITH (text_config = 'public.maktaba_search');
+SET enable_seqscan = off;
+SELECT 'top: ' || string_agg(id::text, ',') FROM (SELECT id FROM docs ORDER BY body <@> to_bm25query('الصبر المصيبة', 'docs_bm25') LIMIT 3) t;
+EXPLAIN (COSTS OFF) SELECT id FROM docs ORDER BY body <@> to_bm25query('الصبر', 'docs_bm25') LIMIT 3;
+SQL
+)" || rc=$?
     case "$out" in
         *"top: 7,"*docs_bm25*) ok "pg_textsearch: a BM25 index ranks the right row first ($(grep -m1 '^top: ' <<<"$out"))" ;;
-        *) fail "pg_textsearch's BM25 query: $(printf '%s\n' "$out" | tail -4)" ;;
+        *) fail "pg_textsearch's BM25 query (exit $rc): $(printf '%s\n' "$out" | tail -4 | tr '\n' ' ') server: $(tail -5 "$scratch/pg18.log" 2>/dev/null | tr '\n' ' ')" ;;
     esac
     if [ -n "$api" ]; then
         if psql18 -d postgres -c "CREATE DATABASE maktaba_check18;" >/dev/null 2>&1 &&
