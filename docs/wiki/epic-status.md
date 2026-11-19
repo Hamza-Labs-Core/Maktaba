@@ -3,7 +3,7 @@
 > Story-by-story status of every epic, read from the code and history on `main` at `f43b0d3ed` (2026-11-19).
 > The specs and epic pages don't record a status; this page does. Update the row when a story changes.
 
-**Not every epic is done.** Of 773 stories across all 60 epics, 699 are done, 40 are partial, 24 are not started, and 10 were deferred or removed on purpose. The largest open pieces are Epic 49 (Search, 2 stories of fourteen done), Epic 34 (the TV public site, a first slice only) and Epic 54 Phase 5 (Plugins).
+**Not every epic is done.** Of 773 stories across all 60 epics, 699 are done, 41 are partial, 23 are not started, and 10 were deferred or removed on purpose. The largest open pieces are Epic 49 (Search, 2 stories of fourteen done), Epic 34 (the TV public site, a first slice only) and Epic 54 Phase 5 (Plugins).
 
 ## How this was checked
 
@@ -38,7 +38,7 @@
 | 13 Desktop | 8* | 0 | 0 | 0 | Done |
 | 14 TV apps | 7* | 0 | 0 | 0 | Done |
 | 15 Discovery | 7* | 0 | 0 | 0 | Done |
-| 16 Subscriptions | 6* | 2 | 0 | 0 | **Partial** |
+| 16 Subscriptions | 7* | 1 | 0 | 0 | **Partial** |
 | 17 UX design system | 11* | 0 | 0 | 0 | Done |
 | 18 Performance | 8* | 0 | 0 | 0 | Done |
 | 19 Scalability | 8* | 0 | 0 | 0 | Done |
@@ -76,14 +76,14 @@
 | 51 Configurable components | 19 | 0 | 0 | 0 | Done |
 | 52 Transcript word review | 13 | 3 | 0 | 1 | **Partial** |
 | 53 Logs, errors and reports | 18 | 0 | 0 | 0 | Done (open issue #1064) |
-| 54 Plugins | 42 | 2 | 7 | 1 | **Not done** |
+| 54 Plugins | 42 | 3 | 6 | 1 | **Not done** |
 | 55 Desktop player parity | 10 | 0 | 0 | 0 | Done |
 | 56 TV library view | 13 | 0 | 0 | 1 | Done (56.07 removed by #969) |
 | 57 Parental controls | 13 | 3 | 0 | 1 | **Partial** |
 | 58 Smart TV platforms | 17 | 0 | 0 | 1 | Done (58.18 Vega OS deferred) |
 | 59 NAS | 16 | 0 | 0 | 0 | Done (device results not checked) |
 | 60 Website | 11 | 1 | 0 | 1 | **Partial** |
-| **Total** | **698** | **40** | **25** | **10** | **Not all done** |
+| **Total** | **698** | **41** | **24** | **10** | **Not all done** |
 
 `*` sampled, see [How this was checked](#how-this-was-checked).
 
@@ -115,7 +115,6 @@
 | Story | Missing |
 |---|---|
 | 16.02 Premium features | The 30-day read-only period after a downgrade. |
-| 16.04 License validation | Read-only access for users over the seat limit; they keep full access. |
 | 22.03 Container images | `tools/image-size-guard.sh` exists but no workflow runs it. |
 | 23.07 Supply-chain security | A per-component SBOM (`tools/sbom.sh` is a stub) and a CVE gate that can stop a release. Release images already carry SBOM attestations; Dependabot alerts (78 open on 2026-11-19) and CodeQL default setup (3 open alerts) scan the repo, but neither stops a release. |
 | 26.2 Transcript topic & entity extraction | Only slot 0074's schema is present. No `topic_extractor` implementation, NER/gazetteer path, classification/entity writers, or its tests are on `origin/main`; `classify_stage.py` still describes that extractor as future work. |
@@ -466,7 +465,7 @@ Each epic below has an evidence key naming current implementation and test files
 | 16.01 Free tier | Done (sampled) | E16 |
 | 16.02 Premium features | **partial** | E16; merged implementation is visible in `subscriptions.go`, but its spec explicitly says downgrade visibility/read-only-for-30-days is **not built**; backup/federation TCs also waited on those surfaces. Current backup/federation code exists, but the downgrade AC remains absent. |
 | 16.03 Subscription management | Done (sampled) | E16 |
-| 16.04 License validation | **partial** | E16; signed offline validation, refresh and tests exist. The spec says over-seat existing users have full access, **not the required read-only mode**. This is a deliberate implementation decision, not evidence that the AC was met. |
+| 16.04 License validation | **Done** | E16; signed offline validation, refresh and tests; #1454: past the seats, the newest non-admin accounts are read-only as the owner decided (2026-11-19): they watch and keep their progress, history, playlists and favourites; uploads, metadata edits and managing the home are refused (`subscriptions.SeatGuard`, `seats.go`, `seats_test.go`, `seats_pg_test.go`, `403 seat-read-only`); the admin sees them, the account is told (`SubscriptionSettings.tsx`). |
 | 16.05 Telemetry opt-in | Done (sampled) | E16; `api/internal/router/telemetry.go`, `web/src/components/TelemetryPrompt.tsx` |
 | 16.06 Feature flags | Done (sampled) | E16 |
 | 16.07 Telemetry API | Done (sampled) | E16 |
@@ -1249,7 +1248,7 @@ The wiki table omits 54.43–54.52; this audit includes all 52 spec files. Open 
 | 54.42 Joined machines | Done | #767; cluster plugin distribution/runner tests |
 | 54.43 Fallback counts | Done | #1080; `shared/db/migrations/0218_stage_fallbacks.sql`; `api/internal/handlers/queues/fallbacks_pg_test.go`; `web/src/components/queue/FallbackCounts.test.tsx` |
 | 54.44 One Plugins page | Done | #1243; `api/internal/plugins/published.go`, `published_pg_test.go`; `api/internal/handlers/plugins/published_pg_test.go`; `web/src/pages/Settings/PluginPage.tsx` and tests |
-| 54.45 Maktaba store packages | **not started** | Spec says **Not built**; #1243 explicitly says 54.45–54.52 not built. No `tools/plugins/build.py` or per-plugin store packages. |
+| 54.45 Maktaba store packages | **partial** | #1450; `shared/plugins/fppackage.CheckStore` (store countersigned, Maktaba's pinned key in `shared/plugins/maktaba-keys.json`, statements exactly the server's, as decided), `build.py --developer-key`, core not packaged; store: the Maktaba publisher (`POST /v1/admin/maktaba-publisher`), `prefixCovers`, trusted manifests and native-package checks. **Missing:** a store or file package installed and run with parity, which waits for an install path (54.46/54.49) and Maktaba's key. |
 | 54.46 Maktaba plugin lifecycle | **not started** | Spec says **Not built**; independent install/removal/update lifecycle absent; depends on 54.45 |
 | 54.47 Maktaba plugin updates | **not started** | Spec says **Not built**; independent plugin update channel absent |
 | 54.48 Preinstalled/migration | **not started** | Spec says **Not built**; package-based preinstall/migration absent |

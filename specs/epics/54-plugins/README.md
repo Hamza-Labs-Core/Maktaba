@@ -1404,6 +1404,16 @@ Items 1–9 are decided. Open: the email provider (item 10) and the isolated che
     (Thumbnails, Convert to MP4, Duplicates), story 54.50 §2 lists each as an open question
     and decides none. One name is proposed for it everywhere: Core.
 
+### Decisions of 2026-11-19: Maktaba's plugins in the store and the Core variant
+
+22. **A Maktaba plugin's statements change only with a server release** (story 54.45 §3).
+    There is no signed list of statements per plugin version: a store package of a Maktaba
+    plugin is trusted only when its statements are exactly the ones the running server
+    embeds.
+23. **The Core variant preinstalls Thumbnails only** (story 54.50 §2). Convert to MP4 and
+    Duplicates leave the `core` bundle and are installed from the store, or from files, when
+    wanted; a Core home that has them keeps them.
+
 ## 15. Maktaba's own stages as first-party plugins
 
 Added to this epic on 2026-11-03: turn **all** of Maktaba's own queues and stages into

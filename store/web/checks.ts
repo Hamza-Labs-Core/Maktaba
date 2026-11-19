@@ -12,6 +12,7 @@ import { Root, emptyState } from "../signing/verify";
 import committedRoot from "../../shared/plugins/plugins-root.json";
 import { sha256hex, token } from "./crypto";
 import { type Env, iso, now } from "./env";
+import { type Prefix, firstPartyId, prefixCovers } from "./developers";
 import { sendMail } from "./mail";
 import { countersign } from "./publish";
 import { PackageRefused, extract, inspect, type Inspected } from "./wasm";
@@ -231,15 +232,20 @@ export async function runChecks(env: Env, submissionId: string): Promise<Report>
     });
   }
   const prefix = await env.DB_CATALOG.prepare(
-    "SELECT prefix FROM developer_prefixes WHERE account = ? AND verified_at IS NOT NULL AND lapsed_at IS NULL",
+    "SELECT prefix, kind FROM developer_prefixes WHERE account = ? AND verified_at IS NOT NULL AND lapsed_at IS NULL",
   )
     .bind(s.uploaded_by)
-    .all<{ prefix: string }>();
-  if (!prefix.results.some((p) => m.id.startsWith(p.prefix + "."))) return block({ id: "C2", result: "block", code: "prefix_unverified" });
+    .all<Prefix>();
+  if (!prefixCovers(m.id, prefix.results)) return block({ id: "C2", result: "block", code: "prefix_unverified" });
+  // a native package is Maktaba's own (read in the trusted mode, 54.45 §2): only the
+  // Maktaba publisher's (prefixCovers above), and nothing else is native
+  if (i.native && !firstPartyId(m.id)) return block({ id: "C2", result: "block", code: "prefix_unverified" });
   report.checks.push({ id: "C2", result: "pass", detail: String(dev.key_id) });
 
-  // C3: the manifest (the home's validator, in inspect) and an upper bound on maktaba
-  if (!/</.test(m.maktaba)) return block({ id: "C3", result: "block", code: "maktaba_upper_bound", detail: m.maktaba });
+  // C3: the manifest (the home's validator, in inspect) and an upper bound on maktaba (a
+  // Maktaba plugin's exact "=<server version>" is one: it runs on that server alone)
+  const bounded = /</.test(m.maktaba) || (i.native && /^=\d+\.\d+\.\d+$/.test(m.maktaba));
+  if (!bounded) return block({ id: "C3", result: "block", code: "maktaba_upper_bound", detail: m.maktaba });
   const flagged = await env.DB_CATALOG.prepare("SELECT word FROM flagged_words").all<{ word: string }>();
   const squat = flagged.results.filter((w) => m.id.toLowerCase().includes(w.word.toLowerCase()));
   report.checks.push(
@@ -252,8 +258,13 @@ export async function runChecks(env: Env, submissionId: string): Promise<Report>
   if (i.audit) return block({ id: "C4", result: "block", code: i.audit.code, detail: i.audit.detail });
   report.checks.push({ id: "C4", result: "pass" });
 
-  // C5: declared but not imported; medium capabilities without a stated reason
+  // C5: declared but not imported; medium capabilities without a stated reason (a native
+  // package has no component to import from: its trusted rights are its manifest's, which the
+  // home holds to its own server's, 54.45 §3)
   const declared = [...m.capabilities.required, ...m.capabilities.optional];
+  if (i.native) {
+    report.checks.push({ id: "C5", result: "skip", detail: "a native Maktaba plugin: no component; the home checks it against its own server" });
+  }
   const imported = new Set(i.imports.map((n) => n.replace(/^maktaba:plugin\//, "").split("@")[0]));
   const unused = declared.filter((c) => {
     const cap = capOf(c);
@@ -266,17 +277,19 @@ export async function runChecks(env: Env, submissionId: string): Promise<Report>
   const c5: string[] = [];
   if (unused.length) c5.push(`declared, not imported: ${unused.join(", ")}`);
   if (unexplained.length) c5.push(`no reason given: ${unexplained.join(", ")}`);
-  report.checks.push(
-    c5.length ? { id: "C5", result: "warn", code: "capability_audit", detail: c5.join("; ") } : { id: "C5", result: "pass" },
-  );
+  if (!i.native)
+    report.checks.push(
+      c5.length ? { id: "C5", result: "warn", code: "capability_audit", detail: c5.join("; ") } : { id: "C5", result: "pass" },
+    );
 
   // C6: strings
   const c6 = stringChecks(i.strings, m.strings.name);
   if (c6.result === "block") return block(c6);
   report.checks.push(c6);
 
-  // C7 (static rules here; ClamAV in the runner)
-  const wasmBytes = await componentBytes(pkg);
+  // C7 (static rules here; ClamAV in the runner): the component's bytes, or a native
+  // package's wheel
+  const wasmBytes = i.native ? await nativeWheel(pkg, i) : await componentBytes(pkg);
   const c7 = malwareRules(wasmBytes);
   if (c7.result === "block") return block(c7);
   report.checks.push(c7);
@@ -318,6 +331,17 @@ export async function runChecks(env: Env, submissionId: string): Promise<Report>
     await env.DB_CATALOG.prepare("UPDATE submissions SET flow_sha256 = ? WHERE id = ?").bind(flowFile.sha256, s.id).run();
   }
 
+  // a native package runs nothing here: the isolated runner runs components (C8, C10). A
+  // person reviews it (route), and the home trusts it only against its own server (54.45 §3)
+  if (i.native) {
+    report.checks.push(
+      { id: "C8", result: "skip", detail: "a native Maktaba plugin: no component to run; a person reviews" },
+      { id: "C10", result: "skip", detail: "a native Maktaba plugin" },
+    );
+    await env.DB_CATALOG.prepare("UPDATE submissions SET runner_state = 'skipped' WHERE id = ?").bind(s.id).run();
+    return finish(env, s, report);
+  }
+
   // the isolated runner: C7 (ClamAV), C8 and C10
   if (env.RUNNER === "containers" && env.CHECK_RUNNER) {
     report.checks.push({ id: "C8", result: "pending" }, { id: "C10", result: "pending" });
@@ -351,6 +375,12 @@ export async function runChecks(env: Env, submissionId: string): Promise<Report>
   );
   await env.DB_CATALOG.prepare("UPDATE submissions SET runner_state = 'skipped' WHERE id = ?").bind(s.id).run();
   return finish(env, s, report);
+}
+
+/** A native package's one wheel (wheels/*.whl, the shape inspect checked). */
+async function nativeWheel(pkg: Uint8Array, i: Inspected): Promise<Uint8Array> {
+  const w = i.files.find((f) => f.path.startsWith("wheels/"));
+  return w ? extract(pkg, w.path) : new Uint8Array();
 }
 
 /** plugin.wasm of a package (the checks scan the component's bytes). */

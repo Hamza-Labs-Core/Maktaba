@@ -109,6 +109,25 @@ export async function revokeKey(ctx: Ctx, id: string): Promise<Response> {
 
 // ---- id prefixes ------------------------------------------------------------------------
 
+/** A verified id prefix of an account: its prefix and kind. */
+export interface Prefix {
+  prefix: string;
+  kind: string;
+}
+
+/** Whether one of Maktaba's own plugin ids: tv.maktaba.*, not a community prefix. */
+export const firstPartyId = (id: string) => id.startsWith("tv.maktaba.") && !id.startsWith("tv.maktaba.community.");
+
+/**
+ * Whether an account's verified prefixes cover a plugin id (story 54.15 §6, 54.45 §2). One of
+ * Maktaba's own ids is covered only by the Maktaba publisher's prefix (kind 'maktaba', set by
+ * a store admin); that prefix covers no community id; any other prefix covers the ids under it.
+ */
+export function prefixCovers(id: string, prefixes: Prefix[]): boolean {
+  if (firstPartyId(id)) return prefixes.some((p) => p.kind === "maktaba");
+  return prefixes.some((p) => p.kind !== "maktaba" && id.startsWith(p.prefix + "."));
+}
+
 /** The domain a prefix proves: "dev.example" → "example.dev". */
 export const domainOf = (prefix: string) => prefix.split(".").reverse().join(".");
 
@@ -281,11 +300,11 @@ export async function startSubmission(ctx: Ctx): Promise<Response> {
     .first();
   if (!key) refuse(403, "key_required");
   const prefixes = await ctx.env.DB_CATALOG.prepare(
-    "SELECT prefix FROM developer_prefixes WHERE account = ? AND verified_at IS NOT NULL AND lapsed_at IS NULL",
+    "SELECT prefix, kind FROM developer_prefixes WHERE account = ? AND verified_at IS NOT NULL AND lapsed_at IS NULL",
   )
     .bind(a.id)
-    .all<{ prefix: string }>();
-  if (!prefixes.results.some((p) => id.startsWith(p.prefix + "."))) refuse(403, "prefix_unverified");
+    .all<Prefix>();
+  if (!prefixCovers(id, prefixes.results)) refuse(403, "prefix_unverified");
   const existing = await ownPlugin(ctx, id, a.id);
   if (existing?.status === "removed") refuse(403, "plugin_removed");
   const v = await ctx.env.DB_CATALOG.prepare("SELECT status FROM versions WHERE plugin = ? AND version = ?")

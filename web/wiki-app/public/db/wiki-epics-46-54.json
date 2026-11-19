@@ -6207,7 +6207,7 @@
       "title": "Maktaba's plugins as store packages",
       "epic": "54-plugins",
       "phase": 5,
-      "content": "# Story 54.45 — Maktaba's plugins as store packages\n\n> Epic 54 · Phase 5 · Depends on: 54.14, 54.15, 54.16, 54.22, 54.27, 54.44 · Needed by: 54.46 to 54.51 · Not built\n\n## Why\n\nA plugin Maktaba publishes is a store plugin whose publisher is Maktaba. Today it is not a package at all: its code rides in the pipeline wheel and its manifest in a bundle embedded in the server, so it cannot be installed, removed or updated on its own. This story makes each one a real signed package that the store lists under the verified publisher Maktaba. It reverses the part of README §15.6 that said the store neve",
+      "content": "# Story 54.45 — Maktaba's plugins as store packages\n\n> Epic 54 · Phase 5 · Depends on: 54.14, 54.15, 54.16, 54.22, 54.27, 54.44 · Needed by: 54.46 to 54.51 · Partly built\n\n## Why\n\nA plugin Maktaba publishes is a store plugin whose publisher is Maktaba. Today it is not a package at all: its code rides in the pipeline wheel and its manifest in a bundle embedded in the server, so it cannot be installed, removed or updated on its own. This story makes each one a real signed package that the store lists under the verified publisher Maktaba. It reverses the part of README §15.6 that said the store n",
       "tags": [
         "story",
         "54-plugins",
@@ -6215,6 +6215,7 @@
       ],
       "related": [
         "epic-54-plugins",
+        "ep-get-workers",
         "ep-get-plugins"
       ],
       "files": {
@@ -6223,6 +6224,7 @@
         "mockups": []
       },
       "api_endpoints": [
+        "GET /workers",
         "GET /plugins"
       ],
       "db_tables": [],

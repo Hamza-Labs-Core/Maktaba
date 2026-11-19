@@ -14,14 +14,12 @@ build fails when the two differ.
 
 ### Changed
 
-- **The library database moves to PostgreSQL 18 (Epic 49, story 49.2).** An update to this
-  release upgrades the home's database from PostgreSQL 16 to 18 at its first start, with
-  `pg_upgrade`, into a folder of its own (`postgres-18`, beside `postgres`). The files are cloned
-  where the disk can (APFS on the Mac: no extra room), else copied. The PostgreSQL 16 database is
-  left as it was, so a rollback starts the release before on it at once. When there isn't room
-  for a copy, or the upgrade fails, the home keeps running on PostgreSQL 16, says why in its log,
-  and tries again at its next start. PostgreSQL 18 brings pg_textsearch, which ranked keyword
-  search will use.
+- **Over the plan's seats, the newest accounts are read-only (story 16.4).** When a home has
+  more users than its licence's seats, the most recently created accounts beyond the seat
+  count can still watch, keep their progress and history, and keep their own playlists and
+  favourites, but can't upload, edit metadata or manage the home. Admins are never limited.
+  Removing users or adding seats restores them at once. Settings → Subscription names them to
+  the admin and tells the account itself.
 
 - **Guest sharing ends when the plan does (Epic 50, story 50.20).** When an account's Pro or
   Broadcaster plan ends (cancelled, lapsed, or changed to Basic or Free by the payment provider or
@@ -3221,6 +3219,15 @@ build fails when the two differ.
   running the plugins from the pipeline wheel as before; these packages are what the store and
   offline installs will use.
 
+- **Maktaba's plugins can be trusted as store packages (Epic 54, story 54.45).** Every package
+  of a Maktaba plugin except core's can now carry Maktaba's developer signature. A home trusts
+  one delivered apart from the release only when the store countersigned it, the signature is
+  by Maktaba's key pinned in the server, and its manifest, strings and database statements are
+  exactly the server's own. A Maktaba plugin's statements change only with a server release.
+  Releases no longer package core, which is not a plugin. In the store, only Maktaba's publisher
+  account, set by a store admin, may submit a `tv.maktaba.*` plugin, and a person reviews every
+  version. Nothing installs a store package of a Maktaba plugin yet.
+
 ### Changed
 
 - **A machine that loses its home stays usable** under a notice instead of the whole app being
@@ -3586,6 +3593,15 @@ build fails when the two differ.
   `plugins` list is the installed plugins, as before; `GET /api/plugins?release=true` adds
   Maktaba's plugins with `publisher` and `source`. `GET /api/queues/failures` takes several
   stages in `stage`.
+
+- **The library database moves to PostgreSQL 18 (Epic 49, story 49.2).** An update to this
+  release upgrades the home's database from PostgreSQL 16 to 18 at its first start, with
+  `pg_upgrade`, into a folder of its own (`postgres-18`, beside `postgres`). The files are cloned
+  where the disk can (APFS on the Mac: no extra room), else copied. The PostgreSQL 16 database is
+  left as it was, so a rollback starts the release before on it at once. When there isn't room
+  for a copy, or the upgrade fails, the home keeps running on PostgreSQL 16, says why in its log,
+  and tries again at its next start. PostgreSQL 18 brings pg_textsearch, which ranked keyword
+  search will use.
 
 ### Fixed
 

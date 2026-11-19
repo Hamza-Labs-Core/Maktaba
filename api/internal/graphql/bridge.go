@@ -33,6 +33,11 @@ type Bridge struct {
 }
 
 // reqKey carries the outer GraphQL request on the resolver context.
+// SubRequestGate, when set, wraps the router each field's REST sub-request runs on: the
+// gates the public mux puts in front of the router (the seat gate, story 16.4) hold for a
+// GraphQL field as for the REST route it runs.
+var SubRequestGate atomic.Pointer[func(http.Handler) http.Handler]
+
 type reqKey struct{}
 
 type outerRequest struct {
@@ -132,7 +137,11 @@ func (b *Bridge) do(ctx context.Context, c call) (*result, error) {
 		req.Header.Set("Content-Type", "application/json")
 	}
 	rec := &recorder{header: http.Header{}}
-	b.Router.ServeHTTP(rec, req)
+	h := b.Router
+	if w := SubRequestGate.Load(); w != nil {
+		h = (*w)(h)
+	}
+	h.ServeHTTP(rec, req)
 	if rec.status == 0 {
 		rec.status = http.StatusOK
 	}

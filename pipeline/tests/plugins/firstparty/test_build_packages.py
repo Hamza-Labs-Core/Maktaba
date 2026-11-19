@@ -185,3 +185,18 @@ def test_a_pre_release_builds_no_package(tmp_path: Path) -> None:
     assert build.main(["--version", "1.2.3-rc.1", "--out", str(out)]) == 0
     assert [p.name for p in out.iterdir()] == [build.PRERELEASE_NOTE]
     assert not build.is_prerelease("1.2.3") and build.is_prerelease("1.2.3-rc.1")
+
+
+def test_core_is_not_packaged() -> None:
+    names = [p.name for p in build.folders_of([])]
+    assert "core-media" not in names and "thumbnails" in names
+    assert build.is_core(ROOT / "plugins" / "first-party" / "core-media")
+    with pytest.raises(build.BuildError, match="core-media"):
+        build.folders_of(["core-media"])
+
+
+def test_a_missing_developer_key_is_refused(tmp_path: Path) -> None:
+    exe = _packer(tmp_path)
+    out = tmp_path / "out"
+    args = ["convert", "--version", "1.0.0", "--out", str(out), "--mkplugin", str(exe)]
+    assert build.main([*args, "--developer-key", str(tmp_path / "nope.key")]) == 1
