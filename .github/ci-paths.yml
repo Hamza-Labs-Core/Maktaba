@@ -689,6 +689,29 @@ build_artifacts:
   - 'web/**'
   - '.github/workflows/_build-artifacts.yml'
 
+# Story 22.3 AC4 / TC3: the four compose images built and held to their size budgets
+# (_images.yml). A budget measures the whole image, so every input of it: each tree the
+# four Dockerfiles COPY from (the source, not only its manifests: a web asset or a bundle
+# grows the web image), their .dockerignore and the guard, so the pull request that goes
+# over a budget is the one that fails, not main after it. test_image_size_guard holds this
+# list to the Dockerfiles' COPY sources.
+images:
+  - *ci
+  - '.github/workflows/_images.yml'
+  - 'tools/image-size-guard.sh'
+  - '.dockerignore'
+  - 'api/**'
+  - 'streaming/**'
+  - 'pipeline/**'
+  - 'plugins/**'
+  - 'web/**'
+  - 'shared/**'
+  - 'tools/healthcheck/**'
+  - 'tools/plugin-sdk/js/src/flowchart.ts'
+  - 'apps/tv/web/src/**'
+  - 'apps/tv/web/bridge.schema.json'
+  - 'apps/tv/web/i18n/**'
+
 # ---- install and packaging ------------------------------------------------------------
 
 node_packaging:

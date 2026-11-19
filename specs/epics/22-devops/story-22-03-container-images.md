@@ -14,9 +14,11 @@ on Mac and Linux without local dependencies beyond Docker.
 - AC3. `docker-compose.mac.yml` overlay bind-mounts host FFmpeg and
   exposes Apple Neural Engine to the Pipeline container. A "doctor"
   one-liner verifies the bind worked.
-- AC4. Image sizes ≤ targets: api ≤ 60 MiB, streaming ≤ 80 MiB
-  (FFmpeg static excluded), pipeline ≤ 1.2 GiB (Whisper + Chroma),
-  web ≤ 30 MiB.
+- AC4. Image sizes ≤ targets, on linux/amd64 and linux/arm64: api ≤ 60 MiB,
+  streaming ≤ 80 MiB (FFmpeg static excluded), pipeline ≤ 1.2 GiB
+  (Whisper + Chroma), web ≤ 88 MiB. Set on 2026-11-19 from the images as
+  CI builds them, with ~10% headroom over the larger platform, replacing
+  the original targets (web was 30 MiB, below its `caddy:2-alpine` base).
 
 ## Test cases
 
