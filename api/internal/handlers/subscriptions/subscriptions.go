@@ -132,8 +132,14 @@ type LicenseView struct {
 	// 16.4: the newest beyond the seat count; admins never).
 	ReadOnlyUsers []subscriptions.SeatUser `json:"read_only_users,omitempty"`
 	// Status: none | active | grace | expired | revoked.
-	Status  subscriptions.Status `json:"status"`
-	License *licenseSummary      `json:"license,omitempty"`
+	Status subscriptions.Status `json:"status"`
+	// GraceUntil is when the features that only the grace grants lock (story 16.2: an
+	// expired license's, or a downgraded plan's, 30 days from the license's expiry);
+	// GraceDaysLeft the whole days left until then (rounded up). Both absent when
+	// nothing is in its grace.
+	GraceUntil    *time.Time      `json:"grace_until,omitempty"`
+	GraceDaysLeft *int            `json:"grace_days_left,omitempty"`
+	License       *licenseSummary `json:"license,omitempty"`
 	// Message is the plain-words banner for an admin, "" when all is well.
 	Message          string     `json:"message,omitempty"`
 	LastRefreshAt    *time.Time `json:"last_refresh_at,omitempty"`
@@ -190,8 +196,24 @@ func (h *Handler) view(ctx context.Context) LicenseView {
 	if h.Cloud != nil {
 		v.Cloud = h.Cloud()
 	}
+	if !st.GraceUntil.IsZero() {
+		until := st.GraceUntil.UTC()
+		days := int((until.Sub(st.Now) + 24*time.Hour - 1) / (24 * time.Hour))
+		v.GraceUntil, v.GraceDaysLeft = &until, &days
+	}
 	v.Message = message(v, st)
 	return v
+}
+
+// daysLeft says the grace's days in words ("1 day", "12 days").
+func daysLeft(v LicenseView) string {
+	if v.GraceDaysLeft == nil {
+		return ""
+	}
+	if *v.GraceDaysLeft == 1 {
+		return "1 more day"
+	}
+	return fmt.Sprintf("%d more days", *v.GraceDaysLeft)
 }
 
 // message is the admin banner (story 16.4: a clear message on a lock;
@@ -208,8 +230,21 @@ func message(v LicenseView, st subscriptions.State) string {
 		}
 		return "This home's license expired, so the home is on the Free plan. Apply a new license to restore it."
 	case subscriptions.StatusGrace:
-		return "This home's license has expired; paid features stop within 3 days. " +
-			"Reconnect to Maktaba Cloud or apply a new license."
+		when := ""
+		if v.GraceUntil != nil {
+			when = fmt.Sprintf(" for %s, until %s", daysLeft(v), v.GraceUntil.Format("2 January 2006"))
+		}
+		if st.License == nil {
+			return "This home's license was removed. Its paid features keep working" + when +
+				", then the home is on the Free plan. Apply a license to keep them."
+		}
+		return "This home's license has expired. Its paid features keep working" + when +
+			", then they lock. Reconnect to Maktaba Cloud or apply a new license."
+	case subscriptions.StatusActive:
+		if v.GraceUntil != nil {
+			return fmt.Sprintf("This home's plan changed. The previous plan's features keep working for %s, "+
+				"until %s, then only this plan's remain.", daysLeft(v), v.GraceUntil.Format("2 January 2006"))
+		}
 	}
 	if v.OverSeats && v.SeatsUsed != nil {
 		if n := len(v.ReadOnlyUsers); n > 0 {

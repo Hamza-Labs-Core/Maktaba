@@ -138,6 +138,9 @@ type Entitlements struct {
 	Features  map[Feature]bool
 	ServerID  string
 	Holder    string
+	// seatFloor is the most seats a merged grant allows (Store.merge: a license in its
+	// grace beside the applied one); 0 for a single license.
+	seatFloor int
 }
 
 // Allows reports whether feature f is enabled. The free tier matrix is
@@ -162,6 +165,9 @@ func (e *Entitlements) Allows(f Feature) bool {
 func (e *Entitlements) SeatLimit() int {
 	if e == nil {
 		return 1
+	}
+	if e.seatFloor != 0 {
+		return e.seatFloor // a merged grant: the most of its parts (SeatsUnlimited included)
 	}
 	tierCap, ok := tierSeatCap[e.Tier]
 	if !ok {
@@ -286,8 +292,9 @@ func (v *Verifier) VerifySignature(lic *License) (*Entitlements, error) {
 // ErrBadSignature: the license was altered, or another key signed it.
 var ErrBadSignature = errors.New("signature verification failed")
 
-// ErrExpired is returned when the license is past expiry; callers may
-// retain a grace period (story 16.4: 30 days) before locking.
+// ErrExpired is returned when the license is past expiry. An applied license that
+// expires keeps working, fully, for Grace (30 days, counted from its expiry: story
+// 16.2), then locks; a license that is already expired when applied is refused.
 var ErrExpired = errors.New("license expired")
 
 // Sign is a helper used by tests and the license-server seeding script.

@@ -27,10 +27,10 @@ func TestLicenceLapseAndReturn(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	// a Home licence whose grace (expires_at + SkewGrace) ends in 3 s
+	// a Home licence whose grace (expires_at + Grace) ends in 3 s
 	lic := subscriptions.NewStore()
 	home := func(end time.Time) *subscriptions.Entitlements {
-		return &subscriptions.Entitlements{Tier: subscriptions.TierHome, LicenseID: "l", ExpiresAt: end.Add(-subscriptions.SkewGrace),
+		return &subscriptions.Entitlements{Tier: subscriptions.TierHome, LicenseID: "l", ExpiresAt: end.Add(-subscriptions.Grace),
 			Features: map[subscriptions.Feature]bool{subscriptions.FeatureCloudRelay: true}}
 	}
 	lic.Set(home(time.Now().Add(3 * time.Second)))

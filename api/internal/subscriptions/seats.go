@@ -11,11 +11,11 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
 )
 
-// Story 16.4, the owner's decision of 2026-11-19: when a home has more users than its
+// Story 16.4, decided 2026-11-19: when a home has more users than its
 // license's seats, admins are exempt and only the most recently created accounts beyond
 // the seat count go read-only. A read-only account can still watch and save its own
-// progress and history, and keep its own playlists and favourites (the owner's decision
-// of 2026-11-19: they are personal, like progress), but cannot upload, edit metadata or
+// progress and history, and keep its own playlists and favourites (they are
+// personal, like progress), but cannot upload, edit metadata or
 // manage the home. Removing
 // users or adding seats restores them at once: nothing is cached, each write asks.
 
