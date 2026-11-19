@@ -621,6 +621,8 @@ func TestAnotherReleasesPipelineWheelIsRefused(t *testing.T) {
 		"CRLF lines":            "Metadata-Version: 2.1\r\nName: maktaba-pipeline\r\nVersion: " + relVersion + "\r\n",
 		"a line not a header":   "Metadata-Version: 2.1\nName: maktaba-pipeline\nnot a header\nVersion: " + relVersion + "\n",
 		"a name with a space":   "Metadata-Version: 2.1\nName: maktaba-pipeline\nX Note: x\nVersion: " + relVersion + "\n",
+		// Python reads "0.9.0 " here, not this release's version
+		"a trailing blank": "Metadata-Version: 2.1\nName: maktaba-pipeline\nVersion: " + relVersion + " \n",
 	} {
 		name := pipelineWheel(t, dir, func(f map[string][]byte) {
 			f["maktaba_pipeline-"+relVersion+".dist-info/METADATA"] = []byte(meta)

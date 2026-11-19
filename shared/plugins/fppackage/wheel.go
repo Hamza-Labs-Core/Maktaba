@@ -18,7 +18,8 @@ const MaxMemberBytes = 200 << 20
 
 // ReadWheel reads a wheel's RECORD (PEP 376 CSV: path, sha256=<urlsafe base64>, size) and
 // checks every member against it: each member listed with its digest and size, each listed
-// path a member. It answers each member's digest and bytes and the RECORD's own path. A member over the unpacked limit is refused,
+// path a member. It answers each member's digest, the bytes of its dist-info's own files
+// (METADATA, WHEEL) and the RECORD's own path. A member over the unpacked limit is refused,
 // never hashed as a prefix.
 func ReadWheel(b []byte) (map[string]string, map[string][]byte, string, error) {
 	z, err := zip.NewReader(bytes.NewReader(b), int64(len(b)))
@@ -295,7 +296,8 @@ func HasHeader(b []byte, key, value string) bool {
 		}
 		last = k
 		if strings.EqualFold(k, key) {
-			if strings.TrimSpace(v) != value {
+			// Python strips the leading blanks of a value only, so a trailing one is part of it
+			if strings.TrimLeft(v, " \t") != value {
 				return false
 			}
 			seen++
