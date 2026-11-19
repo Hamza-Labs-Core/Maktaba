@@ -710,8 +710,9 @@ func TestBytecodeAndAWheelsTotalAreRefused(t *testing.T) {
 	defer func() { maxWheelBytes, maxWheelMembers = oldBytes, oldMembers }()
 	big := map[string][]byte{"x/a.py": bytes.Repeat([]byte("a"), 600), "x/b.py": bytes.Repeat([]byte("b"), 600)}
 	maxWheelBytes = 1 << 10
-	if _, _, _, err := readWheel(wheelBytes(t, "x-1.dist-info", big)); err == nil || !strings.Contains(err.Error(), "unpacked") {
-		t.Fatalf("a wheel over its total: %v", err)
+	// refused by what it declares, before a byte is read
+	if _, _, _, err := readWheel(wheelBytes(t, "x-1.dist-info", big)); err == nil || !strings.Contains(err.Error(), "bytes unpacked, at most") {
+		t.Fatalf("a wheel declaring over its total: %v", err)
 	}
 	maxWheelBytes, maxWheelMembers = oldBytes, 2
 	if _, _, _, err := readWheel(wheelBytes(t, "x-1.dist-info", big)); err == nil || !strings.Contains(err.Error(), "members") {
