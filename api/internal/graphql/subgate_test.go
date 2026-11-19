@@ -17,7 +17,7 @@ func TestSubRequestsRunUnderTheGate(t *testing.T) {
 			if r.Method != http.MethodGet {
 				w.Header().Set("Content-Type", "application/problem+json")
 				w.WriteHeader(http.StatusForbidden)
-				_, _ = w.Write([]byte(`{"type":"https://maktaba.tv/problems/seat-read-only","title":"forbidden","status":403}`))
+				_, _ = w.Write([]byte(`{"title":"forbidden","status":403,"detail":"read-only"}`))
 				return
 			}
 			next.ServeHTTP(w, r)
