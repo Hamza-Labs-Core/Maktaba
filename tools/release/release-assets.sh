@@ -180,7 +180,7 @@ checksum_names() {
     lines="$(wc -l <"$f" | tr -d ' ')"
     n="$(LC_ALL=C grep -cE '^[0-9a-f]{64}  \./[A-Za-z0-9_+][A-Za-z0-9._+-]{0,254}$' "$f" || true)"
     [ "$n" = "$lines" ] || return 1
-    LC_ALL=C cut -c 69- "$f" | sort | uniq -d | grep -q . && return 1
+    [ -z "$(LC_ALL=C cut -c 69- "$f" | sort | uniq -d)" ] || return 1
     LC_ALL=C cut -c 69- "$f"
 }
 
