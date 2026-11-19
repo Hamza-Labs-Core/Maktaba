@@ -3,7 +3,7 @@
 > Story-by-story status of every epic, read from the code and history on `main` at `f43b0d3ed` (2026-11-19).
 > The specs and epic pages don't record a status; this page does. Update the row when a story changes.
 
-**Not every epic is done.** Of 773 stories across all 60 epics, 696 are done, 41 are partial, 26 are not started, and 10 were deferred or removed on purpose. The largest open pieces are Epic 49 (Search, one story of fourteen done), Epic 34 (the TV public site, a first slice only) and Epic 54 Phase 5 (Plugins).
+**Not every epic is done.** Of 773 stories across all 60 epics, 697 are done, 41 are partial, 25 are not started, and 10 were deferred or removed on purpose. The largest open pieces are Epic 49 (Search, one story of fourteen done), Epic 34 (the TV public site, a first slice only) and Epic 54 Phase 5 (Plugins).
 
 ## How this was checked
 
@@ -76,14 +76,14 @@
 | 51 Configurable components | 19 | 0 | 0 | 0 | Done |
 | 52 Transcript word review | 13 | 3 | 0 | 1 | **Partial** |
 | 53 Logs, errors and reports | 18 | 0 | 0 | 0 | Done (open issue #1064) |
-| 54 Plugins | 40 | 3 | 8 | 1 | **Not done** |
+| 54 Plugins | 41 | 3 | 7 | 1 | **Not done** |
 | 55 Desktop player parity | 10 | 0 | 0 | 0 | Done |
 | 56 TV library view | 13 | 0 | 0 | 1 | Done (56.07 removed by #969) |
 | 57 Parental controls | 13 | 3 | 0 | 1 | **Partial** |
 | 58 Smart TV platforms | 17 | 0 | 0 | 1 | Done (58.18 Vega OS deferred) |
 | 59 NAS | 16 | 0 | 0 | 0 | Done (device results not checked) |
 | 60 Website | 11 | 1 | 0 | 1 | **Partial** |
-| **Total** | **695** | **41** | **27** | **10** | **Not all done** |
+| **Total** | **697** | **41** | **25** | **10** | **Not all done** |
 
 `*` sampled, see [How this was checked](#how-this-was-checked).
 
@@ -109,7 +109,7 @@
 - **49.12 AI-mode API** — no grounded retrieval, citation validation, streaming/follow-up endpoint, or role tests.
 - **49.13 Remove the stopgap** — the Epic 49 document path does not exist, so its removal is not started either.
 - **49.14 AI-mode client tab** — no streaming AI tab or citation-to-player UI on any client.
-- **54.45–54.52, Epic 54 Phase 5:** store packages, plugin lifecycle, plugin updates, preinstalled plugins and migration, offline homes, release variants, variant updates, and process CPU. Each spec says "Not built", and #1243 confirms it.
+- **54.45–54.51, Epic 54 Phase 5:** store packages, plugin lifecycle, plugin updates, preinstalled plugins and migration, offline homes, release variants and variant updates. Each spec says "Not built"; 54.45 and 54.50 each have an open question their spec leaves to a decision.
 
 ### Partial
 
@@ -1259,7 +1259,7 @@ The wiki table omits 54.43–54.52; this audit includes all 52 spec files. Open 
 | 54.49 Offline homes | **not started** | Spec says **Not built**; downloadable offline first-party packages absent |
 | 54.50 Release variants | **not started** | Spec says **Not built**; Full/Core release-variant production path absent |
 | 54.51 Variant updates | **not started** | Spec says **Not built**; update/migration between package-based variants absent |
-| 54.52 Process CPU | **not started** | Spec says **Not built**; supervisor still reports memory (`rss_parts`) but no required `cpu_pct`/`cpu_parts` implementation/test |
+| 54.52 Process CPU | Done | #1443; `cmd/maktaba-server/internal/hostinfo/cpu_*.go` (macOS, Linux, Windows); the reconciler's `cpu_pct`/`cpu_parts` beside `rss_mb`/`rss_parts` with hysteresis (`internal/supervisor/cpu_test.go`); `GET /api/plugins` `cpu_pct` (`api/internal/plugins/measure_test.go`, `published_pg_test.go`); the Plugins page's Processor column (`PluginsSection.test.tsx` T08) |
 
 ### Epic 55 — Desktop player parity
 

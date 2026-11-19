@@ -1061,6 +1061,12 @@ build fails when the two differ.
 
 ### Added
 
+- **The Plugins page shows each program's processor use (Epic 54, story 54.52).** Beside its
+  memory, each program that runs a plugin now shows the share of one processor core it used over
+  the last five minutes, measured on macOS, Linux and Windows. A program several plugins share
+  shows the whole program's number with the plugins that share it. The note saying processor use
+  is not measured is gone.
+
 - **Watch a broadcast on Android phones, tablets and TVs (Epic 50, story 50.27).** Maktaba
   Player on Android and Maktaba TV on Android TV, Google TV and Fire TV now have **Watch a
   broadcast**, as the Apple apps do: a home's published channels watched as a guest, with no

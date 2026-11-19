@@ -74,13 +74,11 @@ A section that does not apply to a plugin is not shown.
 
 ### See what a plugin uses {#resources}
 
-**What it uses** shows the jobs running and waiting, how long a job usually takes, and the memory of each program that runs the plugin, on each machine.
+**What it uses** shows the jobs running and waiting, how long a job usually takes, and the memory and processor use of each program that runs the plugin, on each machine. Processor use is the share of one processor core the program used over the last five minutes: 100% is one whole core, and a busy program can use more than one.
 
-Several plugins often run inside one program. The page says so: it shows the whole program's memory and names the other plugins it runs. Maktaba does not split that number between plugins, because it cannot measure each plugin's part.
+Several plugins often run inside one program. The page says so: it shows the whole program's memory and processor use and names the other plugins it runs. Maktaba does not split those numbers between plugins, because it cannot measure each plugin's part.
 
 A plugin from the store or a file also shows how much of its own storage it used, with a bar, and the memory its jobs used lately against what one job may use.
-
-Processor use is not measured for each program yet.
 
 ### Find a plugin's problems {#errors}
 
