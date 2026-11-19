@@ -28,6 +28,12 @@ build fails when the two differ.
   Removing users or adding seats restores them at once. Settings → Subscription names them to
   the admin and tells the account itself.
 
+- **Semantic search runs on Postgres only; Chroma is retired (story 43.5).** Search's vectors
+  live in the home's Postgres (pgvector), and Chroma is no longer installed or run. A home
+  whose one-time copy of its Chroma vectors had not finished completes it at the update,
+  without embedding anything again, and Chroma's files are deleted the start after. The
+  Docker Compose files no longer start a Chroma service; an old `chroma` volume can be
+  removed.
 - **An expired or downgraded plan keeps working fully for 30 days (story 16.2).** When a home's
   licence expires, or its plan changes to a lower one or ends, every paid feature keeps working,
   not read-only, for 30 days counted from the licence's expiry (or from the change, if that

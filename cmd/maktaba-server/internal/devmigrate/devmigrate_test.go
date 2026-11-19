@@ -64,7 +64,7 @@ func TestFindStackAndSettings(t *testing.T) {
 		"ps -ww -o command= -p 12":                 "/tmp/exe/streaming serve\n",
 		"ps -wwE -o command= -p 12":                "/tmp/exe/streaming serve PWD=" + filepath.Join(repo, "streaming") + " MAKTABA_CACHE_ROOT=/c/streaming\n",
 		"ps -ww -o command= -p 21":                 main + "\n",
-		"ps -wwE -o command= -p 21":                main + pwd + " MAKTABA_STT_AUDIO_HOURS=12 MAKTABA_CHROMA_DIR=/x/chroma\n",
+		"ps -wwE -o command= -p 21":                main + pwd + " MAKTABA_STT_AUDIO_HOURS=12\n",
 		"ps -ww -o command= -p 22":                 stt("1") + "\n",
 		"ps -wwE -o command= -p 22":                stt("1") + pwd + " MAKTABA_STT_REFINE=0 MAKTABA_STT_SLOT=stt-1\n",
 		"ps -ww -o command= -p 23":                 stt("2") + "\n",
@@ -89,7 +89,6 @@ func TestFindStackAndSettings(t *testing.T) {
 		Refine:     "off",
 		SecretsKey: filepath.Join(home, ".config", "maktaba", "secrets.key"),
 		StreamKey:  "/k/stream.key",
-		ChromaDir:  "/x/chroma",
 		CacheRoot:  "/c/streaming",
 		HFHome:     filepath.Join(home, ".cache", "huggingface"),
 		CamelData:  filepath.Join(home, ".camel_tools"),
@@ -169,7 +168,7 @@ func TestItemsCopy(t *testing.T) {
 	}
 	s := ReadSettings(fakeSys(t, home, nil, nil), Stack{})
 	write(s.SecretsKey, "secret")
-	write(filepath.Join(s.ChromaDir, "chroma.sqlite3"), "index")
+	write(filepath.Join(s.CacheRoot, "seg.ts"), "cache")
 	repo := filepath.Join(s.HFHome, "hub", "models--intfloat--multilingual-e5-small")
 	write(filepath.Join(repo, "blobs", "abc"), "weights")
 	if err := os.MkdirAll(filepath.Join(repo, "snapshots", "r1"), 0o755); err != nil {
@@ -190,7 +189,7 @@ func TestItemsCopy(t *testing.T) {
 	for _, it := range items {
 		byWhat[it.What] = it
 	}
-	if !byWhat["secrets key"].Exists || byWhat["stream signing key"].Exists || byWhat["search index (Chroma)"].Size != 5 {
+	if !byWhat["secrets key"].Exists || byWhat["stream signing key"].Exists || byWhat["streaming cache"].Size != 5 {
 		t.Fatalf("items = %+v", items)
 	}
 	for _, it := range items {
@@ -223,18 +222,24 @@ func TestItemsCopy(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	// Chroma is retired (story 43.5): its folder is not carried
+	for _, it := range items {
+		if strings.Contains(strings.ToLower(it.What), "chroma") || strings.HasSuffix(it.To, "chroma") {
+			t.Fatalf("a Chroma item: %+v", it)
+		}
+	}
 	// a move made again replaces the folders (not the keys), atomically
-	write(filepath.Join(s.ChromaDir, "chroma.sqlite3"), "newer index")
+	write(filepath.Join(s.CacheRoot, "seg.ts"), "newer cache")
 	for _, it := range Items(s, state, keys) {
 		if err := it.Copy(true); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if b, _ := os.ReadFile(filepath.Join(state, "chroma", "chroma.sqlite3")); string(b) != "newer index" {
-		t.Fatalf("chroma after a replace = %q", b)
+	if b, _ := os.ReadFile(filepath.Join(state, "cache", "streaming", "seg.ts")); string(b) != "newer cache" {
+		t.Fatalf("the streaming cache after a replace = %q", b)
 	}
-	if _, err := os.Stat(filepath.Join(state, "chroma.old")); err == nil {
-		t.Fatal("chroma.old left behind")
+	if _, err := os.Stat(filepath.Join(state, "cache", "streaming.old")); err == nil {
+		t.Fatal("streaming.old left behind")
 	}
 	// a key that is a link is copied as the file
 	keyLink := filepath.Join(home, "linked.key")

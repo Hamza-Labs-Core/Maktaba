@@ -19,6 +19,7 @@ from maktaba_pipeline.search.embedder import embed_id_for
 from maktaba_pipeline.search.index_stage import (
     IndexTarget,
     commit_index,
+    default_index_target,
     load_segment_docs,
 )
 from tests.audio._fake_audio_db import FakeAudioDB
@@ -151,3 +152,20 @@ def test_commit_index_missing_video_raises_lookuperror() -> None:
     except LookupError:
         raised = True
     assert raised
+
+
+def test_the_default_target_writes_no_vectors_and_the_video_moves_on() -> None:
+    """Story 43.5: Chroma is retired; the legacy loop's INDEX names no store (semantic
+    search is the engine's index stage, into segment_embeddings) and still advances."""
+    target = asyncio.run(default_index_target(video_id=uuid4()))
+    assert target.collection is None and target.embed is None
+    db = FakeAudioDB(dialect="postgres")
+    video_id = db.add_video(state="transcribed")
+    tid = db.seed_transcript(video_id=video_id)
+    docs = asyncio.run(load_segment_docs(db, transcript_id=tid))
+    assert docs
+    count, new_state = asyncio.run(
+        commit_index(db, video_id=video_id, transcript_id=tid, docs=docs, target=target)
+    )
+    assert (count, new_state) == (0, "indexed")
+    assert db.videos[video_id].state == "indexed"

@@ -205,14 +205,13 @@ async def _serve(args: argparse.Namespace, log: Any) -> int:
         raise
 
     if database.dialect == "postgres" and cfg.role == "home":
-        # semantic search's store (Epic 43): what pgvector allows, and a home with no
-        # Chroma vectors on Postgres. A machine decides nothing: its Chroma folder is
-        # not the home's
+        # semantic search's store (Epic 43): what pgvector allows. A machine makes
+        # nothing: segment_embeddings is the home's
         from .search import pgstore
 
         try:
             state = await pgstore.prepare(database)
-            log.info("semantic_store", store=state.store, pgvector=state.ready)
+            log.info("semantic_store", pgvector=state.ready)
         except Exception as exc:  # noqa: BLE001 - search falls back, the worker runs
             log.warning("semantic_store_prepare_failed", error=f"{type(exc).__name__}: {exc}")
 
@@ -298,18 +297,14 @@ _THREAD_END_SEC = 1.0
 
 
 async def _close_search_index(log: Any) -> None:
-    """No new write to the search index, wait for the one running, close the Chroma
-    clients (search/gate.py): the files are whole when the process ends."""
-    from .search import gate, semantic
+    """No new write to the search index, wait for the one running (search/gate.py)."""
+    from .search import gate
 
     gate.close()
     if not await asyncio.to_thread(gate.wait_idle, _INDEX_CLOSE_WAIT_SEC):
         # never close the client under a write: the exit waits for that thread below
         log.warning("search_index_write_still_running", after_sec=_INDEX_CLOSE_WAIT_SEC)
         return
-    closed = await asyncio.to_thread(semantic.close_clients)
-    if closed:
-        log.info("search_index_closed", clients=closed)
 
 
 def _threads_still_running(grace: float) -> list[threading.Thread]:
@@ -341,9 +336,6 @@ async def _exit_if_threads_linger(
     if not await asyncio.to_thread(gate.wait_idle, _INDEX_CLOSE_WAIT_SEC):
         log.warning("search_index_write_still_running", after_sec=2 * _INDEX_CLOSE_WAIT_SEC)
         return
-    from .search import semantic
-
-    await asyncio.to_thread(semantic.close_clients)  # when the write ended late
     loop: Any = asyncio.get_running_loop()  # the base loop's shutdown takes a timeout
     with contextlib.suppress(Exception):  # the threads are counted below
         await loop.shutdown_default_executor(timeout=_EXIT_WAIT_SEC)
@@ -427,8 +419,8 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         default=os.getenv("MAKTABA_PIPELINE_SEMANTIC") == "off",
         help="The gRPC server answers no Embed / SemanticSearch and never opens the search "
-        "index (MAKTABA_PIPELINE_SEMANTIC=off): another worker (the index worker) holds it, "
-        "and Chroma wants one process per directory.",
+        "index (MAKTABA_PIPELINE_SEMANTIC=off): another worker (the index worker) answers "
+        "them.",
     )
     run_p.add_argument(
         "--drain-sec",
@@ -528,8 +520,9 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def _add_copy_chroma_parser(subparsers: Any) -> None:
-    """``copy-chroma`` (story 43.3). Its module needs numpy (the ``search`` extra):
-    without it the command is still listed, and says so when run."""
+    """``copy-chroma`` (stories 43.3, 43.5: the copy a home finishes when it updates with
+    it not done). Its module needs numpy (the ``search`` extra, which every home that
+    had Chroma has): without it the command is still listed, and says so when run."""
     try:
         from .search.chroma_copy import add_parser
     except ImportError:

@@ -26,7 +26,7 @@ type Disk struct {
 
 // mlModules are the packages of runtime.ml (the stt and search extras): one of them in
 // the pipeline's environment means the runtime is there.
-var mlModules = []string{"mlx_whisper", "faster_whisper", "sentence_transformers", "chromadb"}
+var mlModules = []string{"mlx_whisper", "faster_whisper", "sentence_transformers"}
 
 // Platform is this machine's catalog platform.
 func Platform() string { return runtime.GOOS + "-" + runtime.GOARCH }

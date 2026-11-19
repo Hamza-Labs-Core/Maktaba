@@ -27,7 +27,7 @@ type Target struct {
 	Config     config.Config
 	ConfigPath string
 	Found      bool   // server.toml exists
-	State      string // the state root (models/, chroma/, postgres/, backups/, venv/)
+	State      string // the state root (models/, postgres/, backups/, venv/)
 	Keys       string
 	Bundle     *pgbundle.Bundle // nil: no bundled Postgres
 	NoBundle   string           // why there is none

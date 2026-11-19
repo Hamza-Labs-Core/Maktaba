@@ -55,6 +55,11 @@ func ChildEnv(role Role, cfg config.Config) ([]string, error) {
 	// the whole stack regardless of which service consumes it.
 	add("DATABASE_URL", cfg.Database.URL)
 	add("MAKTABA_DATABASE_URL", cfg.Database.URL)
+	// Epic 43 story 43.5: this start finishes the Chroma copy (BuildChromaCopy): nothing
+	// indexes a video again for want of its vectors meanwhile
+	if ChromaCopyPending(cfg) {
+		add(EnvChromaCopy, "pending")
+	}
 	// Epic 51 story 51.04: [components] reconcile = "off" is every runner's kill switch
 	// (the api's, streaming's and the pipeline's report status and act on nothing)
 	if !cfg.Components.ReconcileOn() {
@@ -101,9 +106,6 @@ func ChildEnv(role Role, cfg config.Config) ([]string, error) {
 	// finds a data pack's folder (components/packs.py pack_dir: the lang.* dictionaries)
 	if os.Getenv("MAKTABA_COMPONENTS_DIR") == "" {
 		add("MAKTABA_COMPONENTS_DIR", filepath.Join(cfg.StateDir(), "components"))
-	}
-	if os.Getenv("MAKTABA_CHROMA_DIR") == "" {
-		add("MAKTABA_CHROMA_DIR", filepath.Join(cfg.StateDir(), "chroma"))
 	}
 
 	// One ffmpeg for every role, the one setup's check and the status check
@@ -264,7 +266,7 @@ func ChildEnv(role Role, cfg config.Config) ([]string, error) {
 			"pipeline=http://" + pipelineLogs(cfg) + "/logs/recent"
 		if IndexWorkerOn(cfg, n) {
 			// the semantic search is the index worker's (BuildIndexWorker): the
-			// main worker opens no Chroma
+			// main worker answers none
 			add("MAKTABA_PIPELINE_SEARCH_ADDR", pipelineSearch(cfg))
 			peers += ",pipeline-index=http://" + pipelineIndexLogs(cfg) + "/logs/recent"
 		}

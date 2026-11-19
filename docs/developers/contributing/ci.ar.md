@@ -62,7 +62,7 @@
 |---|---|
 | `lint` | `golangci-lint` و`gofmt` و`ruff` و`mypy` و`eslint` و`tsc` و`prettier`، وفحص الترحيلات والسجلات، وفحوص المستودع |
 | `unit` | مستوى اختبارات الوحدة للغة Go وخط المعالجة وتطبيق الويب ورموز التصميم |
-| `integration` | اختبارات على حاويات خدمتَي PostgreSQL وChroma |
+| `integration` | اختبارات على حاوية خدمة PostgreSQL (مع pgvector) |
 | `replica`، `e2e`، `media-e2e`، `perf-ci` | مجموعات النسخ المتماثلة، ومن طرف إلى طرف، والوسائط، والأداء على حزم حقيقية |
 | `build-artifacts`، `node-packaging`، `launcher` | الملفات التنفيذية المترجمة لعدة منصات، وأصول العُقد للإصدار، والمُشغِّل |
 | `mac-app`، `win-app`، `linux-app` | تطبيقات الخادم لسطح المكتب |

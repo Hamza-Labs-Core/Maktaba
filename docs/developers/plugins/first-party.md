@@ -387,9 +387,8 @@ shared ones:
   `MAKTABA_STT_UNLOAD_IDLE_S` seconds without transcription work (default 600; 0 keeps them)
   it lets both models go and logs `stt.model_unloaded`; the next job loads them again. A plugin
   that keeps a large model in a runner should let it go when idle the same way.
-- **`index`**, beside `pipeline/index`, which keeps answering search. While the home's
-  vectors are in Chroma (one process may open its folder), the index and chapter stages
-  stay in the worker; once they are in Postgres, the runner writes them like any table.
+- **`index`**, beside `pipeline/index`, which keeps answering search. The vectors are in
+  Postgres (`segment_embeddings`, pgvector), and the runner writes them like any table.
 - **No network.** A runner reads the model caches (`files.read = ["models"]`) with the
   Hugging Face libraries offline; a stage whose model is not downloaded yet runs in the
   worker, which fetches it.

@@ -1,24 +1,17 @@
-"""ChromaDB vector indexing for transcript segments.
+"""Transcript segments as vector-search records (Epic 5's legacy loop and hybrid search).
 
-The collection schema:
+The record shape:
 
-  - ``ids``       — ``"{transcript_id}:{seq}"`` (deterministic, idempotent upsert).
-  - ``documents`` — the raw segment text.
-  - ``metadatas`` — ``{video_id, transcript_id, segment_id, start_sec, end_sec,
-                       language, speaker?}``.
-  - ``embeddings``— produced by the caller-supplied
-                    :class:`EmbeddingFunction`.
+  - ids       — ``"{transcript_id}:{seq}"`` (deterministic, idempotent upsert).
+  - documents — the raw segment text.
+  - metadatas — ``{video_id, transcript_id, segment_id, start_sec, end_sec,
+                  language, speaker?}``.
+  - embeddings— produced by the caller-supplied :class:`EmbeddingFunction`.
 
-Why deterministic ids: re-indexing the same transcript is a no-op when
-nothing changed. Chroma's upsert semantics match if and only if the id
-collides — so we hash by ``(transcript_id, seq)`` and rely on the
-caller to bump ``seq`` when a segment is revised (the segment-commit
-flow guarantees seq stability per transcript).
-
-The :class:`ChromaCollection` Protocol is a strict subset of the
-``chromadb.Collection`` interface — enough for tests to substitute a
-dict-backed fake. The real chromadb client is imported lazily inside
-:func:`make_collection`, which keeps the package's import cost low.
+:class:`SegmentCollection` is the store shape :func:`index_segments` and
+:func:`semantic_search` need; the engine's search index is ``segment_embeddings`` in
+Postgres (:mod:`maktaba_pipeline.search.pgstore`). Chroma, which this module once
+opened, was retired in story 43.5: the legacy loop (``--no-engine``) writes no vectors.
 """
 
 from __future__ import annotations
@@ -29,13 +22,12 @@ from typing import Any, Protocol
 from uuid import UUID
 
 __all__ = [
-    "ChromaCollection",
+    "SegmentCollection",
     "EmbeddingFunction",
     "SegmentDoc",
     "SemanticHit",
     "embed_id_for",
     "index_segments",
-    "make_collection",
     "semantic_search",
 ]
 
@@ -79,23 +71,15 @@ def embed_id_for(transcript_id: UUID, seq: int) -> str:
 
 
 class EmbeddingFunction(Protocol):
-    """Signature of the embed callback Chroma collections accept.
-
-    Returning lists of lists keeps the shape compatible with both the
-    sentence-transformers ``encode`` API and Chroma's native embedding-
-    function abstraction without an adapter.
-    """
+    """Signature of the embed callback: lists of lists, the sentence-transformers
+    ``encode`` shape."""
 
     def __call__(self, texts: Sequence[str]) -> list[list[float]]: ...
 
 
-class ChromaCollection(Protocol):
-    """Subset of ``chromadb.Collection`` we depend on.
-
-    The real Chroma type is dynamically created at runtime, so we can't
-    structurally type against it directly; the Protocol pins the surface
-    we exercise and lets tests substitute a fake.
-    """
+class SegmentCollection(Protocol):
+    """The vector store surface :func:`index_segments` and :func:`semantic_search` use
+    (tests substitute a dict-backed fake)."""
 
     name: str
 
@@ -118,35 +102,8 @@ class ChromaCollection(Protocol):
     ) -> dict[str, Any]: ...
 
 
-def make_collection(
-    name: str,
-    *,
-    persist_dir: str | None = None,
-    embedding_function: EmbeddingFunction | None = None,
-) -> ChromaCollection:
-    """Open or create a Chroma collection.
-
-    ``chromadb`` is imported lazily so the pipeline package can be
-    inspected (and unit-tested) without the dependency installed.
-    """
-    try:
-        import chromadb  # type: ignore[import-not-found,unused-ignore]
-    except ImportError as exc:  # pragma: no cover — env-only
-        raise RuntimeError(
-            "chromadb is not installed; install the optional `search` extra"
-        ) from exc
-
-    # chromadb's own types (when installed) are stricter than this module's protocols
-    client: Any = chromadb.PersistentClient(path=persist_dir) if persist_dir else chromadb.Client()
-    coll: ChromaCollection = client.get_or_create_collection(
-        name=name,
-        embedding_function=embedding_function,
-    )
-    return coll
-
-
 def _metadata_for(doc: SegmentDoc) -> dict[str, Any]:
-    """Project a :class:`SegmentDoc` into the metadata dict Chroma stores."""
+    """Project a :class:`SegmentDoc` into the metadata dict the store keeps."""
     md: dict[str, Any] = {
         "video_id": str(doc.video_id),
         "transcript_id": str(doc.transcript_id),
@@ -165,7 +122,7 @@ def _metadata_for(doc: SegmentDoc) -> dict[str, Any]:
 
 
 def index_segments(
-    collection: ChromaCollection,
+    collection: SegmentCollection,
     docs: Iterable[SegmentDoc],
     *,
     embed: EmbeddingFunction | None = None,
@@ -195,7 +152,7 @@ def index_segments(
 
 
 def semantic_search(
-    collection: ChromaCollection,
+    collection: SegmentCollection,
     query: str,
     *,
     limit: int = 50,
@@ -204,9 +161,9 @@ def semantic_search(
 ) -> list[SemanticHit]:
     """Run a semantic query against the collection.
 
-    ``video_id`` translates to a Chroma ``where`` clause so the search
+    ``video_id`` translates to a ``where`` clause so the search
     is filtered server-side. When ``embed`` is supplied the query text
-    is embedded by the caller; otherwise Chroma's bound embedding
+    is embedded by the caller; otherwise the store's bound embedding
     function handles it.
     """
     if not query.strip():
@@ -225,18 +182,18 @@ def semantic_search(
             n_results=limit,
             where=where,
         )
-    return _parse_chroma_result(result)
+    return _parse_result(result)
 
 
-def _parse_chroma_result(result: dict[str, Any]) -> list[SemanticHit]:
-    """Flatten Chroma's nested ``query`` response into :class:`SemanticHit`."""
+def _parse_result(result: dict[str, Any]) -> list[SemanticHit]:
+    """Flatten the store's nested ``query`` response into :class:`SemanticHit`."""
     if not result:
         return []
     ids_batches = result.get("ids") or []
     documents_batches = result.get("documents") or []
     metadatas_batches = result.get("metadatas") or []
     distances_batches = result.get("distances") or []
-    # Chroma always returns one outer list per query string. We pass one
+    # the store returns one outer list per query string. We pass one
     # query, so we read the first slot.
     if not ids_batches:
         return []

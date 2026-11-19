@@ -3,7 +3,7 @@
 > Story-by-story status of every epic, read from the code and history on `main` at `f43b0d3ed` (2026-11-19).
 > The specs and epic pages don't record a status; this page does. Update the row when a story changes.
 
-**Not every epic is done.** Of 773 stories across all 60 epics, 705 are done, 38 are partial, 20 are not started, and 10 were deferred or removed on purpose. The largest open pieces are Epic 49 (Search, 4 stories of fourteen done), Epic 34 (the TV public site, a first slice only) and Epic 54 Phase 5 (Plugins).
+**Not every epic is done.** Of 773 stories across all 60 epics, 706 are done, 38 are partial, 20 are not started, and 9 were deferred or removed on purpose. The largest open pieces are Epic 49 (Search, 4 stories of fourteen done), Epic 34 (the TV public site, a first slice only) and Epic 54 Phase 5 (Plugins).
 
 ## How this was checked
 
@@ -65,7 +65,7 @@
 | 40 Queue health | 6 | 0 | 0 | 0 | Done |
 | 41 Help guide | 6 | 0 | 0 | 0 | Done |
 | 42 Apps / player / remote / server | 10 | 0 | 0 | 0 | Done |
-| 43 pgvector search | 4 | 0 | 1 | 1 | **Partial** |
+| 43 pgvector search | 5 | 0 | 1 | 0 | **Partial** |
 | 44 Viewing analytics | 7 | 0 | 0 | 0 | Done |
 | 45 Libraries UI | 21 | 1 | 0 | 2 | **Partial** |
 | 46 Big screen | 7 | 0 | 0 | 0 | Done |
@@ -83,7 +83,7 @@
 | 58 Smart TV platforms | 17 | 0 | 0 | 1 | Done (58.18 Vega OS deferred) |
 | 59 NAS | 16 | 0 | 0 | 0 | Done (device results not checked) |
 | 60 Website | 11 | 1 | 0 | 1 | **Partial** |
-| **Total** | **704** | **38** | **21** | **10** | **Not all done** |
+| **Total** | **705** | **38** | **21** | **9** | **Not all done** |
 
 `*` sampled, see [How this was checked](#how-this-was-checked).
 
@@ -154,7 +154,6 @@
 | Story | Why |
 |---|---|
 | 31.R Home relay for Plex extension calls | Built in #78, including two-process tests. #969 later removed Plex sync and dizqueTV; the remaining generic/Plex-Live-TV relay is not the original node-run Plex-stage deliverable. |
-| 43.5 Chroma retired | The spec orders this after a checked live copy. PR #319 explicitly leaves it out; `chromadb`, Chroma CI/compose entries and migration references remain. |
 | 45.22 Per-user star ratings | Explicitly shelved on 2026-10-28; Epic 45 is declared done without it. |
 | 45.23 PIN profiles / extra parental limits | Explicitly shelved on the same decision. |
 | 52.07 LLM judge | Removed on 2026-11-03; no story replaces it. |
@@ -927,7 +926,7 @@ Stories are the six numbered rows in `specs/epics/43-pgvector-search/README.md`.
 | 43.2 `segment_embeddings` / Postgres backend | **Done** | PR #319; `pipeline/src/maktaba_pipeline/search/semantic.py`; `pipeline/tests/search/test_pgstore.py`; `pipeline/tests/search/test_semantic.py`; `pipeline/tests/search/test_semantic_grpc.py`; `shared/db/migrations/0152_segment_embeddings.sql`; `shared/db/migrations/0152_segment_embeddings.sqlite.sql`. |
 | 43.3 Copy existing vectors | **Done** | PR #319; `pipeline/src/maktaba_pipeline/search/chroma_copy.py`; `pipeline/tests/search/test_chroma_copy.py`; `cmd/maktaba-server/cmd_serve.go`; `cmd/maktaba-server/internal/supervisor/chromacopy.go`. Resumability, recall checks and deferred folder deletion are implemented and tested with synthetic data. |
 | 43.4 Machines / switchover | **Done** | PR #319; `api/internal/cluster/copy_tables_pg_test.go`; `api/internal/cluster/copies.go`; `pipeline/src/maktaba_pipeline/engine/reconcile.py`; `pipeline/tests/search/test_pgstore.py`; `shared/db/migrations/0152_segment_embeddings.sql`. |
-| 43.5 Chroma retired | **Deferred** | PR #319 explicitly excludes this until the live copy is checked. Current `pipeline/pyproject.toml`, `.github/workflows/_integration.yml`, `deploy/compose/docker-compose.yml`, `cmd/maktaba-server/cmd_migrate_dev.go`, and `pipeline/src/maktaba_pipeline/search/chroma_copy.py` still carry Chroma. |
+| 43.5 Chroma retired | **Done** | #1451: `chromadb` out of `pipeline/pyproject.toml`; search, `index` and `chapter_infer` on `segment_embeddings` only; a home whose Chroma copy is not done finishes it at the update (`search/chroma_copy.py` reads Chroma's files; `supervisor/chromaretire.go` runs it and holds every re-index meanwhile, `MAKTABA_CHROMA_COPY`), nothing embedded again, Chroma's own files deleted the start after; compose/CI/Dockerfile/docs without Chroma; update rehearsal scenario 18 (`api/rehearsal_chroma_e2e_test.go`: a part-done copy finished, no index job). |
 | 43.6 Measured on home Mac | **Not started** | PR #319 explicitly says “Not in this PR”; no later merged 13.9M-row p50/p95/disk/recall report was found. |
 
 ### Epic 44 — Viewing analytics

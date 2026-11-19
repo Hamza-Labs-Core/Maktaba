@@ -67,7 +67,7 @@ only the trail, and an empty one changes nothing).
 |---|---|
 | `lint` | golangci-lint, gofmt, ruff, mypy, eslint, tsc, prettier, migration and log lint, and repository checks |
 | `unit` | the unit tier for Go, the pipeline, the web app and design tokens |
-| `integration` | tests against Postgres and Chroma service containers |
+| `integration` | tests against a Postgres (pgvector) service container |
 | `replica`, `e2e`, `media-e2e`, `perf-ci` | replica, end-to-end, media and performance suites against real stacks |
 | `build-artifacts`, `node-packaging`, `launcher` | cross-compiled binaries, release node assets, the launcher |
 | `mac-app`, `win-app`, `linux-app` | the desktop server apps |

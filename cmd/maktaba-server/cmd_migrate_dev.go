@@ -28,7 +28,7 @@ func newMigrateFromDevCmd() *cobra.Command {
 		Short: "Move this Mac's developer stack (stack.sh + Docker Postgres) into Maktaba.app",
 		Long: `migrate-from-dev moves a Mac that runs tools/dev/stack.sh and the compose Postgres in
 Docker into Maktaba.app: it stops the stack, dumps the Docker database into the bundled Postgres,
-copies the keys, the Chroma index and the models the pipeline loads into the app's folder, and
+copies the keys and the models the pipeline loads into the app's folder, and
 carries the stack's path map and transcription settings into server.toml. Run it from the app's
 payload (/Applications/Maktaba.app/Contents/Resources/server/bin/maktaba-server) with Maktaba quit.
 

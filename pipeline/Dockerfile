@@ -2,11 +2,11 @@
 # Maktaba pipeline image (Story 22.3).
 #
 # Two-stage build with uv as the resolver. Builder stage installs the
-# pipeline package + its (eventual) Whisper / Chroma deps into a venv
+# pipeline package + its Whisper / embedder deps into a venv
 # under /opt/venv; the final stage copies just the venv and the source
 # tree onto a slim Python base.
 #
-# AC4 cap: 1.2 GiB. Whisper + Chroma model weights are NOT baked in —
+# AC4 cap: 1.2 GiB. Whisper + embedding model weights are NOT baked in —
 # they download on first run into a writable cache volume so the image
 # stays under the cap (Story 23.7 owns the offline-bundle variant).
 #
@@ -59,8 +59,7 @@ LABEL org.opencontainers.image.licenses="AGPL-3.0"
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PATH=/opt/venv/bin:$PATH \
-    MAKTABA_MEDIA_ROOT=/var/maktaba/media \
-    MAKTABA_CHROMA_DIR=/var/maktaba/chroma
+    MAKTABA_MEDIA_ROOT=/var/maktaba/media
 
 # ffmpeg: native dependency for STT and segment extraction. The Mac
 # overlay re-binds /usr/local/bin/ffmpeg over this with the host's
@@ -73,7 +72,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # is readable from every service (EC3 rootless docker note).
 RUN groupadd --system --gid 1000 maktaba \
     && useradd --system --uid 1000 --gid maktaba --create-home --home-dir /home/maktaba maktaba \
-    && mkdir -p /var/maktaba/media /var/maktaba/chroma \
+    && mkdir -p /var/maktaba/media \
     && chown -R 1000:1000 /var/maktaba
 
 COPY --from=builder /opt/venv /opt/venv
