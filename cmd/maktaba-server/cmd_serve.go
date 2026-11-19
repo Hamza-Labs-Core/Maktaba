@@ -739,8 +739,8 @@ func webHandler(cfg config.Config, node *nodeServices) http.Handler {
 	api := apiOrigin(cfg.Server.Listen)
 	if api != nil {
 		proxy := httputil.NewSingleHostReverseProxy(api)
-		apiDirector := proxy.Director
-		proxy.Director = func(r *http.Request) {
+		apiDirector := proxy.Director            //nolint:staticcheck // SA1019: Director, not Rewrite, until its own change: Rewrite drops and sets the X-Forwarded headers differently
+		proxy.Director = func(r *http.Request) { //nolint:staticcheck // SA1019, as above
 			apiDirector(r)
 			keepRelayMark(r)
 			keepRelayCap(r)
@@ -800,8 +800,8 @@ var publicStreamPaths = []string{"/xmltv.xml", "/lineup.m3u"}
 func newStreamProxy(streamAddr string) http.Handler {
 	target := &url.URL{Scheme: "http", Host: supervisor.LocalAddr(streamAddr, ports.StreamingPublic.PortString())}
 	proxy := httputil.NewSingleHostReverseProxy(target)
-	director := proxy.Director
-	proxy.Director = func(r *http.Request) {
+	director := proxy.Director               //nolint:staticcheck // SA1019: Director, not Rewrite, until its own change: Rewrite drops and sets the X-Forwarded headers differently
+	proxy.Director = func(r *http.Request) { //nolint:staticcheck // SA1019, as above
 		director(r)
 		// the web session is for the API only, never the streaming service
 		r.Header.Del("Cookie")
