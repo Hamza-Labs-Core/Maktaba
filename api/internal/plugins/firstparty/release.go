@@ -455,15 +455,42 @@ func checkHeaders(b []byte, exact map[string]string, free ...string) error {
 	return nil
 }
 
+// headerName: an RFC 822 field name, as Python's email parser takes one (printable ASCII,
+// no space or colon).
+func headerName(k string) bool {
+	if k == "" {
+		return false
+	}
+	for i := 0; i < len(k); i++ {
+		if k[i] < 0x21 || k[i] > 0x7e {
+			return false
+		}
+	}
+	return true
+}
+
 // hasHeader: a "Key: value" line of b has that value.
 func hasHeader(b []byte, key, value string) bool {
 	// the metadata's headers only (RFC 822, as Python's metadata reads them): they end at
 	// the first blank line (the description's body follows); a name matches in any case; a
 	// value folded onto the next line, or the header given twice, names nothing
+	//
+	// Python splits lines on CR as well as LF, so a CR could hide a header from this reader:
+	// a wheel's headers have none (uv and setuptools write LF), and a header block with a CR
+	// names nothing. Python's block then ends no later than this one, on the same lines (the
+	// description's body after it may hold any byte). A header line Python would not read as
+	// one (a name outside RFC 822's printable characters, or no colon) names nothing too, so
+	// every header Python reads is one read here.
+	head := b
+	if i := bytes.Index(b, []byte("\n\n")); i >= 0 {
+		head = b[:i]
+	}
+	if bytes.IndexByte(head, '\r') >= 0 {
+		return false
+	}
 	seen := 0
 	last := ""
 	for _, line := range strings.Split(string(b), "\n") {
-		line = strings.TrimRight(line, "\r")
 		if line == "" {
 			break
 		}
@@ -474,8 +501,8 @@ func hasHeader(b []byte, key, value string) bool {
 			continue
 		}
 		k, v, ok := strings.Cut(line, ":")
-		if !ok {
-			continue
+		if !ok || !headerName(k) {
+			return false
 		}
 		last = k
 		if strings.EqualFold(k, key) {

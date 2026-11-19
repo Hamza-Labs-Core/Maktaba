@@ -595,6 +595,11 @@ func TestAnotherReleasesPipelineWheelIsRefused(t *testing.T) {
 		"names in two cases":    "Metadata-Version: 2.1\nname: not-maktaba-pipeline\nName: maktaba-pipeline\nVersion: " + relVersion + "\n",
 		"versions in two cases": "Metadata-Version: 2.1\nName: maktaba-pipeline\nversion: 0.8.9\nVersion: " + relVersion + "\n",
 		"a folded version":      "Metadata-Version: 2.1\nName: maktaba-pipeline\nVersion: " + relVersion + "\n 0.8.9\n",
+		// Python reads a lone CR as a line end: "Version: 0.8.9" is a header to it
+		"a version behind a CR": "Metadata-Version: 2.1\nName: maktaba-pipeline\nX-Note: x\rVersion: 0.8.9\nVersion: " + relVersion + "\n",
+		"CRLF lines":            "Metadata-Version: 2.1\r\nName: maktaba-pipeline\r\nVersion: " + relVersion + "\r\n",
+		"a line not a header":   "Metadata-Version: 2.1\nName: maktaba-pipeline\nnot a header\nVersion: " + relVersion + "\n",
+		"a name with a space":   "Metadata-Version: 2.1\nName: maktaba-pipeline\nX Note: x\nVersion: " + relVersion + "\n",
 	} {
 		name := pipelineWheel(t, dir, func(f map[string][]byte) {
 			f["maktaba_pipeline-"+relVersion+".dist-info/METADATA"] = []byte(meta)
@@ -602,6 +607,13 @@ func TestAnotherReleasesPipelineWheelIsRefused(t *testing.T) {
 		if _, err := VerifyReleasePackages(dir, relVersion, checksums(t, dir), name); codeOf(err) != CodeTrustedVersion {
 			t.Fatalf("a pipeline wheel's version %s: %v", what, err)
 		}
+	}
+	// a CR in the description's body, after the headers, is any text's: this release's wheel
+	name = pipelineWheel(t, dir, func(f map[string][]byte) {
+		f["maktaba_pipeline-"+relVersion+".dist-info/METADATA"] = []byte("Metadata-Version: 2.1\nName: maktaba-pipeline\nVersion: " + relVersion + "\n\nA line\r\nand a CR\r")
+	})
+	if _, err := VerifyReleasePackages(dir, relVersion, checksums(t, dir), name); err != nil {
+		t.Fatalf("a CR in the description refused this release's wheel: %v", err)
 	}
 	// and a pipeline wheel named for another version
 	name = pipelineWheel(t, dir, nil)
@@ -713,6 +725,23 @@ func TestBytecodeAndAWheelsTotalAreRefused(t *testing.T) {
 	// refused by what it declares, before a byte is read
 	if _, _, _, err := readWheel(wheelBytes(t, "x-1.dist-info", big)); err == nil || !strings.Contains(err.Error(), "bytes unpacked, at most") {
 		t.Fatalf("a wheel declaring over its total: %v", err)
+	}
+	// refused by what it reads: RECORD names a member twice, so it is read twice, over the
+	// total though the declared sizes are under it
+	a := bytes.Repeat([]byte("a"), 600)
+	sum := sha256.Sum256(a)
+	row := "x/a.py,sha256=" + base64.RawURLEncoding.EncodeToString(sum[:]) + ",600\n"
+	var twice bytes.Buffer
+	z := zip.NewWriter(&twice)
+	for n, b := range map[string][]byte{"x/a.py": a, "x-1.dist-info/RECORD": []byte(row + row + "x-1.dist-info/RECORD,,\n")} {
+		w, _ := z.Create(n)
+		_, _ = w.Write(b)
+	}
+	if err := z.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, err := readWheel(twice.Bytes()); err == nil || !strings.Contains(err.Error(), "over ") {
+		t.Fatalf("a wheel reading over its total: %v", err)
 	}
 	maxWheelBytes, maxWheelMembers = oldBytes, 2
 	if _, _, _, err := readWheel(wheelBytes(t, "x-1.dist-info", big)); err == nil || !strings.Contains(err.Error(), "members") {
