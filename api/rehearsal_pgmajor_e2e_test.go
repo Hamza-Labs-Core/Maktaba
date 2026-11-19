@@ -39,8 +39,7 @@ func TestUpdateRehearsal17PostgresMajorUpgrade(t *testing.T) {
 	if got := pgVersionOf(t, old); got != "16" {
 		t.Fatalf("the home's cluster before the update is PostgreSQL %q", got)
 	}
-	oldRecord, err := os.ReadFile(filepath.Join(home.root, "state", "database.json"))
-	if err != nil {
+	if _, err := os.Stat(filepath.Join(home.root, "state", "database.json")); err != nil {
 		t.Fatalf("the previous release's record: %v", err)
 	}
 
@@ -61,8 +60,13 @@ func TestUpdateRehearsal17PostgresMajorUpgrade(t *testing.T) {
 	if got := pgVersionOf(t, old); got != "16" {
 		t.Errorf("the 16 cluster after the rollback is %q", got)
 	}
-	if now, _ := os.ReadFile(filepath.Join(home.root, "state", "database.json")); string(now) != string(oldRecord) {
-		t.Errorf("the previous release's record changed across the upgrade and the rollback:\n%s\nwas\n%s", now, oldRecord)
+	// the previous release's own record: still its own and migrated, with no restore of
+	// any kind marked (the release before writes its pre-update dump's name into it, next and
+	// next_dump, before the switch: that is its own doing)
+	if rec, all := home.record(); layoutVersion(rec.Version) != layoutVersion(k.prev) || rec.State != "migrated" ||
+		all["failed"] != nil || all["restore_of"] != nil {
+		t.Errorf("the previous release's record after the rollback is %v: want %s's own, migrated, nothing to put back",
+			all, k.prev)
 	}
 	db = home.superDB("maktaba")
 	r.countsUnchanged(before, seedCounts(t, db))
@@ -75,7 +79,7 @@ func TestUpdateRehearsal17PostgresMajorUpgrade(t *testing.T) {
 	m1, c1 := additiveMigration(k.rev + 1)
 	good := payloadSpec{variant: "next", version: k.next, extra: map[string]string{m1: c1}, pg18: true}
 	run, mon, _ = r.update(home, good, 30*time.Minute)
-	if run.State != "committed" && run.State != "succeeded" {
+	if run.State != "done" && run.State != "committed" {
 		t.Fatalf("the update to %s (PostgreSQL 18) ended %s: %s", k.next, run.State, run.Error)
 	}
 	home.waitServing(k.next, 8*time.Minute)
