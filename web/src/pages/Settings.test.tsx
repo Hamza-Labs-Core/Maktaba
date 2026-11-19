@@ -1419,6 +1419,22 @@ describe("Settings about (test-cases/settings-about.md)", () => {
     expect(screen.getByTestId("about-advisories-all")).toHaveAttribute("href", ALL);
   });
 
+  it("SAB-23.8: on a machine whose version is not the home's the list is unknown, never none", async () => {
+    aboutGets({
+      "/api/system/updates": {
+        ...UP_TO_DATE,
+        current_version: "v9.9.9",
+        advisories: [],
+        advisories_checked: true,
+        advisories_url: ALL,
+      },
+    });
+    renderSettings("/settings/about");
+    expect(await screen.findByTestId("about-advisories-unknown")).toBeInTheDocument();
+    expect(screen.queryByTestId("about-advisories-none")).toBeNull();
+    expect(screen.queryByTestId("about-advisory")).toBeNull();
+  });
+
   it("SAB-23.8: in Arabic", async () => {
     aboutGets({
       "/api/system/updates": {

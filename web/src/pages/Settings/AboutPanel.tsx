@@ -60,6 +60,11 @@ const SEVERITY_TONE: Record<SecurityAdvisory["severity"], "error" | "warn" | "ne
 };
 
 /** Story 23.8 AC4 / TC2: the advisories that affect this version, and what to do. */
+/** A version as the pages write it, without the "v". */
+function bare(v: string): string {
+  return v.trim().replace(/^v(?=\d)/, "");
+}
+
 function AdvisoriesSection({
   status,
   version,
@@ -70,8 +75,12 @@ function AdvisoriesSection({
   isAdmin: boolean;
 }) {
   const { t } = useI18n();
-  const list = status?.advisories ?? [];
-  const checked = Boolean(status?.advisories_checked);
+  // the advisories are matched to the release the answering server runs: on a joined
+  // machine /api/system/updates is the home's, so when that is not this machine's
+  // version the list says nothing about it (unknown, never "none")
+  const sameRelease = !status?.current_version || bare(status.current_version) === bare(version);
+  const list = sameRelease ? (status?.advisories ?? []) : [];
+  const checked = sameRelease && Boolean(status?.advisories_checked);
   const all = status?.advisories_url || ADVISORIES_URL;
   // the server's: the lowest release none of them affects, every branch's ranges counted
   const fix =
