@@ -5,48 +5,41 @@ language; an HNSW index (cosine) answers the nearest ones. Slot 0152 creates the
 where the ``vector`` extension is installed (``ensure_segment_embeddings()``, called
 again at every start: a later start with pgvector creates what was deferred).
 
-Which store search reads is ``semantic_store_state.store``:
+Search, the index stage and ``chapter_infer`` read and write only this table (Chroma was
+retired in story 43.5). Without pgvector the semantic leg is off: the API falls back to
+full-text search, as on SQLite, which has no ``segment_embeddings``.
 
-* ``chroma`` until the one-time copy of the Chroma vectors (story 43.3) is done: search
-  and ``chapter_infer`` read Chroma; the index stage writes both (Postgres when it is
-  ready), so nothing indexed during the copy is missed;
-* ``postgres`` after it, and on a home that never had a Chroma collection (decided at
-  start, :func:`prepare`): everything reads and writes Postgres. Without pgvector the
-  semantic leg is then off (the API falls back to full-text search).
-
-The state is read again every :data:`STATE_TTL_SEC`, so the switch takes effect without a
-restart. SQLite has neither table: there the store is Chroma.
+``semantic_store_state`` says whether the one-time copy of the Chroma vectors (story
+43.3) is done: ``chroma`` while it is not. A home that updates with it not done finishes
+it (``search/chroma_copy.py``, run by the supervisor, which then gives every worker
+``MAKTABA_CHROMA_COPY=pending``): while both hold, :attr:`StoreState.copying` is true and
+nothing indexes a video again for want of its vectors (they are on their way). The copy
+writes ``postgres`` when it is done, as the release before did. A home with no Chroma
+folder left (the supervisor runs no copy) indexes again what has no vectors.
 """
 
 from __future__ import annotations
 
-import sqlite3
+import os
 import time
 import weakref
 from collections.abc import Sequence
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 from uuid import UUID
 
 from ..log import get_logger
-from .semantic import IndexedSegment, SegmentHit, StoredVector, chroma_dir
+from .semantic import IndexedSegment, SegmentHit, StoredVector
 
 __all__ = [
-    "CHROMA",
     "DIMENSIONS",
-    "POSTGRES",
     "STATE_TTL_SEC",
     "PgVectorStore",
     "StoreState",
-    "chroma_has_vectors",
     "forget_state",
     "prepare",
     "store_state",
 ]
-
-CHROMA = "chroma"
-POSTGRES = "postgres"
 
 #: the vectors' size (``halfvec(384)``: multilingual-e5-small)
 DIMENSIONS = 384
@@ -64,25 +57,18 @@ _log = get_logger()
 _clock = time.monotonic
 
 
+#: the supervisor's word that this start runs the Chroma copy (story 43.5)
+COPY_ENV = "MAKTABA_CHROMA_COPY"
+
+
 @dataclass(frozen=True, slots=True)
 class StoreState:
-    """Which store search reads, and whether ``segment_embeddings`` can be used."""
+    """Whether ``segment_embeddings`` can be used (pgvector installed, the table made),
+    and whether the copy of the Chroma vectors is under way here (``copying``: nothing is
+    indexed again for want of vectors meanwhile)."""
 
-    store: str = CHROMA
     ready: bool = False
-
-    @property
-    def write_postgres(self) -> bool:
-        return self.ready
-
-    @property
-    def write_chroma(self) -> bool:
-        """Chroma is written while it is what search reads (the copy's dual write)."""
-        return self.store == CHROMA
-
-    @property
-    def read_postgres(self) -> bool:
-        return self.store == POSTGRES
+    copying: bool = False
 
 
 _STATE: weakref.WeakKeyDictionary[Any, tuple[float, StoreState]] = weakref.WeakKeyDictionary()
@@ -95,7 +81,7 @@ def forget_state() -> None:
 
 async def store_state(db: Any, *, fresh: bool = False) -> StoreState:
     """The store's state, at most :data:`STATE_TTL_SEC` old. SQLite, or a database
-    older than slot 0152: Chroma."""
+    older than slot 0152: not ready (no semantic search)."""
     if getattr(db, "dialect", "") != "postgres":
         return StoreState()
     now = _clock()
@@ -103,45 +89,27 @@ async def store_state(db: Any, *, fresh: bool = False) -> StoreState:
     if hit is not None and not fresh and now - hit[0] < STATE_TTL_SEC:
         return hit[1]
     try:
+        # the statement the semantic-search plugin is granted (its store column unused)
         row = await db.fetchrow(
             "SELECT semantic_store_ready() AS ready,"
             " (SELECT store FROM semantic_store_state LIMIT 1) AS store"
         )
-    except Exception as exc:  # noqa: BLE001 - before slot 0152: Chroma, as before
+    except Exception as exc:  # noqa: BLE001 - before slot 0152: no semantic store
         _log.debug("semantic_store_state_unread", error=f"{type(exc).__name__}: {exc}")
         state = StoreState()
     else:
-        store = str(row["store"] or CHROMA) if row is not None else CHROMA
+        store = str(row["store"] or "") if row is not None else ""
         state = StoreState(
-            store=store if store in (CHROMA, POSTGRES) else CHROMA,
             ready=bool(row["ready"]) if row is not None else False,
+            copying=store == "chroma" and os.environ.get(COPY_ENV, "") == "pending",
         )
     _STATE[db] = (now, state)
     return state
 
 
-def chroma_has_vectors(path: str | None = None) -> bool:
-    """Whether the Chroma folder holds any vector (in a collection or still in its
-    write log). Read with SQLite, not chromadb; anything unreadable counts as yes."""
-    db_file = Path(path or chroma_dir()) / "chroma.sqlite3"
-    if not db_file.exists():
-        return False
-    try:
-        conn = sqlite3.connect(f"file:{db_file}?mode=ro", uri=True, timeout=5)
-        try:
-            for table in ("embeddings", "embeddings_queue"):
-                if conn.execute(f"SELECT 1 FROM {table} LIMIT 1").fetchone() is not None:  # noqa: S608
-                    return True
-        finally:
-            conn.close()
-    except sqlite3.Error:
-        return True
-    return False
-
-
-async def prepare(db: Any, *, chroma_path: str | None = None) -> StoreState:
-    """At a home worker's start: create what pgvector allows (slot 0152's deferred part),
-    and move a home that has no Chroma vectors and no copy under way to Postgres."""
+async def prepare(db: Any) -> StoreState:
+    """At a home worker's start: create what pgvector allows (slot 0152's deferred part)
+    and grant the semantic-search plugin's role the table."""
     if getattr(db, "dialect", "") != "postgres":
         return StoreState()
     try:
@@ -150,17 +118,7 @@ async def prepare(db: Any, *, chroma_path: str | None = None) -> StoreState:
         _log.warning("semantic_store_ensure_failed", error=f"{type(exc).__name__}: {exc}")
         return await store_state(db, fresh=True)
     await _grant_plugin_role(db)
-    state = await store_state(db, fresh=True)
-    if state.store == CHROMA and not chroma_has_vectors(chroma_path):
-        moved = await db.fetchval(
-            "UPDATE semantic_store_state SET store = 'postgres', updated_at = now()"
-            " WHERE store = 'chroma' AND copied_rows = 0 AND copy_cursor IS NULL"
-            " RETURNING store"
-        )
-        if moved is not None:
-            _log.info("semantic_store_postgres", reason="no Chroma vectors", ready=state.ready)
-            state = await store_state(db, fresh=True)
-    return state
+    return await store_state(db, fresh=True)
 
 
 #: tv.maktaba.semantic-search's role (Epic 54 wave 3): its roles migration grants the tables
@@ -194,7 +152,7 @@ def _parse(text: str) -> list[float]:
 
 def _uuids(values: Sequence[str] | None) -> list[str] | None:
     """The valid ids of a filter (None: no filter); an id that is not a UUID matches
-    nothing, as in Chroma."""
+    nothing."""
     if not values:
         return None
     out: list[str] = []
@@ -260,27 +218,6 @@ class PgVectorStore:
                 [int(i) for i in segment_ids],
             )
 
-    async def delete_ids(self, ids: Sequence[str]) -> None:
-        """Delete by Chroma ids (``{transcript_id}:{seq}``), mapped to their segments."""
-        tids: list[str] = []
-        seqs: list[int] = []
-        for i in ids:
-            tid, _, seq = str(i).rpartition(":")
-            try:
-                tids.append(str(UUID(tid)))
-                seqs.append(int(seq))
-            except ValueError:
-                continue
-        if tids:
-            await self.db.execute(
-                "DELETE FROM segment_embeddings e USING transcript_segments s,"
-                " unnest($1::uuid[], $2::int[]) AS u(transcript_id, seq)"
-                " WHERE s.transcript_id = u.transcript_id AND s.seq = u.seq"
-                " AND e.segment_id = s.id",
-                tids,
-                seqs,
-            )
-
     async def delete_video(self, video_id: UUID | str) -> None:
         await self.db.execute(
             "DELETE FROM segment_embeddings WHERE video_id = $1::uuid", str(video_id)
@@ -300,11 +237,19 @@ class PgVectorStore:
         except ValueError:
             return 0
 
-    async def has_vectors(self, video_id: UUID | str) -> bool:
-        row = await self.db.fetchrow(
-            "SELECT 1 FROM segment_embeddings WHERE video_id = $1::uuid LIMIT 1", str(video_id)
+    async def has_vectors(self, video_id: UUID | str, transcript_id: UUID | str) -> bool:
+        """Every non-blank segment of ``transcript_id`` has its vector: not only some (a
+        video the Chroma copy of a release before 43.5 moved in part, page by page)."""
+        got = await self.db.fetchval(
+            "SELECT (SELECT count(*) FROM segment_embeddings e"
+            " JOIN transcript_segments s ON s.id = e.segment_id"
+            " WHERE e.video_id = $1::uuid AND s.transcript_id = $2::uuid)"
+            " >= (SELECT count(*) FROM transcript_segments s"
+            " WHERE s.transcript_id = $2::uuid AND btrim(s.text) <> '')",
+            str(video_id),
+            str(transcript_id),
         )
-        return row is not None
+        return bool(got)
 
     async def video_vectors(
         self, video_id: UUID | str, transcript_id: UUID | str | None = None

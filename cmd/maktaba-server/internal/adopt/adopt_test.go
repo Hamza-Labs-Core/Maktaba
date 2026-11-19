@@ -990,7 +990,6 @@ python = "C:/venv/python.exe"
 	for from, to := range map[string]string{
 		filepath.Join(data, "maktaba.db"):                            filepath.Join(app, "data", "maktaba.db"),
 		filepath.Join(data, "maktaba.db-wal"):                        filepath.Join(app, "data", "maktaba.db-wal"),
-		filepath.Join(data, "chroma", "index.bin"):                   filepath.Join(app, "chroma", "index.bin"),
 		filepath.Join(data, "models", "huggingface", "hub", "m.bin"): filepath.Join(app, "models", "huggingface", "hub", "m.bin"),
 		filepath.Join(dir, "secrets.key"):                            filepath.Join(app, "keys", "secrets.key"),
 		filepath.Join(hfHome, "token"):                               filepath.Join(app, "models", "huggingface", "token"),
@@ -998,6 +997,10 @@ python = "C:/venv/python.exe"
 		if read(t, to) != read(t, from) {
 			t.Errorf("%s is not in the app at %s", from, to)
 		}
+	}
+	// Chroma is retired (story 43.5): the old install's folder is not carried
+	if _, err := os.Stat(filepath.Join(app, "chroma")); err == nil {
+		t.Error("the old install's Chroma folder was moved into the app")
 	}
 	cfg, _, _ := config.LoadFrom(tgt.ConfigPath)
 	if want := "sqlite://" + filepath.ToSlash(filepath.Join(app, "data", "maktaba.db")); cfg.Database.URL != want {

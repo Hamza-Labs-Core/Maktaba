@@ -37,7 +37,7 @@ Recommended (sharper feedback, not strictly required):
 
 ### Apple Silicon vs. Intel (EC1)
 
-Both work. Container images for postgres, chroma, golang, python, and
+Both work. Container images for postgres, golang, python, and
 node all have `linux/arm64` and `linux/amd64` variants and Compose
 picks the right one automatically. The MLX-backed transcription path
 (Epic 4) requires Apple Silicon; on Intel the pipeline transparently
@@ -111,7 +111,6 @@ brings it back.
 | streaming | http://localhost:8081 |
 | web | http://localhost:5173 |
 | postgres | `postgres://maktaba:maktaba@localhost:5432/maktaba` |
-| chroma | http://localhost:8000 |
 
 ---
 
@@ -300,7 +299,7 @@ gates from [Story 22.1](specs/epics/22-devops/story-22-01-ci-pipeline.md):
 
 1. `lint` — golangci-lint, gofmt, ruff, mypy, eslint, tsc, prettier.
 2. `unit` — fast in-process tests across all services.
-3. `integration` — tests against Postgres + Chroma service containers.
+3. `integration` — tests against a Postgres (pgvector) service container.
 4. `e2e` — tests against the full docker-compose stack.
 5. `perf-ci` — reduced perf suite (sub-2-minute fixture).
 6. `build-artifacts` — cross-compile for linux/amd64, linux/arm64,

@@ -31,7 +31,6 @@ func Items(s Settings, state, keys string) []Item {
 	items := []Item{
 		{What: "secrets key", From: s.SecretsKey, To: filepath.Join(keys, "secrets.key"), Key: true},
 		{What: "stream signing key", From: s.StreamKey, To: filepath.Join(keys, "stream-signing.key"), Key: true},
-		{What: "search index (Chroma)", From: s.ChromaDir, To: filepath.Join(state, "chroma")},
 		{What: "streaming cache", From: s.CacheRoot, To: filepath.Join(state, "cache", "streaming")},
 	}
 	for _, repo := range s.HubRepos() {

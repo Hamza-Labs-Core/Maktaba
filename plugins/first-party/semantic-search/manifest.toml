@@ -18,7 +18,6 @@ component = "search.semantic"
 db.read   = ["libraries", "semantic_store_state", "transcript_segments", "transcripts", "videos"]
 db.write  = ["chapters", "library_topics", "segment_embeddings", "video_embeddings", "video_topics"]
 files.read  = ["models"]
-files.write = ["data.index"]
 
 [[stage]]
 name         = "index"

@@ -127,7 +127,7 @@ Recommended (sharper inner loop):
 | **pre-commit** | `uv tool install pre-commit`  /  `pip install pre-commit` |
 | **jq, shellcheck** | `brew install jq shellcheck`  /  `sudo apt install jq shellcheck` |
 
-Postgres 16 (and the Chroma server the e2e tests still use) are managed by `deploy/compose/docker-compose.yml`
+Postgres 16 (with pgvector) is managed by `deploy/compose/docker-compose.yml`
 and started by `make dev` — keep them in Docker; a host Postgres install
 will collide on port 5432 and skip the migrations we ship.
 
@@ -137,7 +137,7 @@ will collide on port 5432 and skip the migrations we ship.
 
 ```sh
 make prereqs        # verify docker, go, uv, pnpm, node, ffmpeg are present (prints install commands for missing tools)
-make dev            # live-reload stack: postgres, chroma, api, streaming, pipeline, web
+make dev            # live-reload stack: postgres, api, streaming, pipeline, web
 make test           # unit tier — no network, no sudo
 make help           # list every target, grouped by section
 ```

@@ -252,8 +252,11 @@ func TestChildEnvStateDirs(t *testing.T) {
 		t.Fatalf("StateDir = %s on a Mac, want the parent of data/", root)
 	}
 	m := envMap(childEnvOK(RolePipeline, cfg))
-	if m["MAKTABA_MODEL_CACHE_DIR"] != filepath.Join(root, "models") || m["MAKTABA_CHROMA_DIR"] != filepath.Join(root, "chroma") {
-		t.Fatalf("models/chroma = %q / %q, want under %s", m["MAKTABA_MODEL_CACHE_DIR"], m["MAKTABA_CHROMA_DIR"], root)
+	if m["MAKTABA_MODEL_CACHE_DIR"] != filepath.Join(root, "models") {
+		t.Fatalf("models = %q, want under %s", m["MAKTABA_MODEL_CACHE_DIR"], root)
+	}
+	if v, set := m["MAKTABA_CHROMA_DIR"]; set {
+		t.Fatalf("MAKTABA_CHROMA_DIR = %q: Chroma is retired (story 43.5)", v)
 	}
 	// Epic 52 (story 52.16): the pipeline finds the installed packs' folders
 	if m["MAKTABA_COMPONENTS_DIR"] != filepath.Join(root, "components") {
@@ -271,10 +274,6 @@ func TestChildEnvStateDirs(t *testing.T) {
 	}
 	if got := envMap(childEnvOK(RoleStreaming, cfg))["MAKTABA_CACHE_ROOT"]; got != filepath.Join(root, "cache", "streaming") {
 		t.Fatalf("MAKTABA_CACHE_ROOT = %q", got)
-	}
-	t.Setenv("MAKTABA_CHROMA_DIR", "/own/chroma")
-	if v, ok := envMap(childEnvOK(RolePipeline, cfg))["MAKTABA_CHROMA_DIR"]; ok {
-		t.Fatalf("overrode the operator's chroma dir with %q", v)
 	}
 }
 

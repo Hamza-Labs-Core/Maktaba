@@ -77,15 +77,14 @@ func TestAnOldInstallInTheAppsFolders(t *testing.T) {
 			t.Errorf("%s copied onto itself", it.What)
 		}
 	}
-	if want := []string{"search_index", "models"}; !reflect.DeepEqual(items, want) {
+	if want := []string{"models"}; !reflect.DeepEqual(items, want) {
 		t.Fatalf("items %q, want %q: the state from the old data folder, never the key or database in place", items, want)
 	}
 	if _, err := Move(context.Background(), sys, plan, tgt, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	for from, to := range map[string]string{
-		filepath.Join(data, "chroma", "index.bin"): filepath.Join(tgt.StateDir, "chroma", "index.bin"),
-		filepath.Join(data, "models", "m.bin"):     filepath.Join(tgt.StateDir, "models", "m.bin"),
+		filepath.Join(data, "models", "m.bin"): filepath.Join(tgt.StateDir, "models", "m.bin"),
 	} {
 		if read(t, to) != read(t, from) {
 			t.Errorf("%s is not in the app at %s", from, to)

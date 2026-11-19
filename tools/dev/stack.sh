@@ -31,7 +31,6 @@ PM=${MAKTABA_PATH_MAP:-/Volumes/Originals/=$HOME/nas-nfs/}
 LOGS=${MAKTABA_LOG_DIR:-$HOME/.maktaba/logs}
 KEY=${MAKTABA_STREAM_SIGNING_KEY:-$HOME/.maktaba/stream-signing.key}
 PGURL="${DB/postgresql:/postgres:}?sslmode=disable"
-export MAKTABA_CHROMA_DIR=${MAKTABA_CHROMA_DIR:-$HOME/.maktaba/chroma}
 export MAKTABA_STT_AUDIO_HOURS=${MAKTABA_STT_AUDIO_HOURS:-16}
 export MAKTABA_STT_GPU_GB=${MAKTABA_STT_GPU_GB:-20}
 export MAKTABA_STT_GPU_CACHE_GB=${MAKTABA_STT_GPU_CACHE_GB:-2}

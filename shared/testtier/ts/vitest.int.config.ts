@@ -1,7 +1,7 @@
 // Vitest config for the integration tier (Story 20.1).
 //
 // Integration TS tests run against in-cluster services (Postgres,
-// Chroma, the API binary) but stop short of bringing up a browser —
+// the API binary) but stop short of bringing up a browser —
 // e2e tests own the Playwright stack.
 //
 // @ts-expect-error vitest is not yet a workspace dependency (Epic 11).

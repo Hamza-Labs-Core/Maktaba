@@ -14,7 +14,7 @@ from typing import Any
 import pytest
 
 from maktaba_pipeline import __main__ as cli
-from maktaba_pipeline.search import gate, semantic
+from maktaba_pipeline.search import gate
 
 
 class _Log:
@@ -89,24 +89,13 @@ def test_a_clean_stop_exits_normally(exits: list[int], monkeypatch: pytest.Monke
     assert exits == []
 
 
-def test_the_search_index_is_closed_after_its_write(monkeypatch: pytest.MonkeyPatch) -> None:
-    closed: list[bool] = []
-
-    def close_clients() -> int:
-        closed.append(gate.wait_idle(0))
-        return 1
-
-    monkeypatch.setattr(semantic, "close_clients", close_clients)
+def test_the_search_index_closes_for_writes() -> None:
     log = _Log()
     asyncio.run(cli._close_search_index(log))
-    assert gate.is_closed() and closed == [True]
-    assert ("search_index_closed", {"clients": 1}) in log.events
+    assert gate.is_closed() and log.events == []
 
 
-def test_the_client_is_never_closed_under_a_write(
-    monkeypatch: pytest.MonkeyPatch, exits: list[int]
-) -> None:
-    monkeypatch.setattr(semantic, "close_clients", lambda: pytest.fail("closed under a write"))
+def test_the_close_waits_for_a_write(exits: list[int]) -> None:
     hold, started = threading.Event(), threading.Event()
 
     def writer() -> None:
@@ -126,10 +115,9 @@ def test_the_client_is_never_closed_under_a_write(
     assert log.events[-1][0] == "search_index_write_still_running"
 
 
-def test_the_exit_never_cuts_a_write(monkeypatch: pytest.MonkeyPatch, exits: list[int]) -> None:
+def test_the_exit_never_cuts_a_write(exits: list[int]) -> None:
     """A write still running after both waits: no os._exit (the process ends once the
-    write's thread did, or at the supervisor's kill), and no client is closed under it."""
-    monkeypatch.setattr(semantic, "close_clients", lambda: pytest.fail("closed under a write"))
+    write's thread did, or at the supervisor's kill)."""
     hold, started = threading.Event(), threading.Event()
 
     def writer() -> None:

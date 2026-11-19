@@ -8,7 +8,7 @@ The API talks to the pipeline over a small gRPC surface:
   a plugin's ``compute.embed`` (Epic 54, story 54.21), with the same model semantic search
   uses. Never logs the texts.
 - ``SemanticSearch({q, k, library_ids}) -> {hits: [...]}`` — embed the
-  query and return the top-k transcript segments from the Chroma index
+  query and return the top-k transcript segments from the vector index
   the engine ``index`` stage writes (segment_id, video_id, start_sec,
   end_sec, score), filtered by library when ``library_ids`` is given.
 - ``ListBackends(Empty) -> BackendList`` — enumerate registered STT
@@ -559,28 +559,17 @@ def default_search_backends(
     Both use the process-wide embedder (``MAKTABA_EMBED_MODEL``, default
     multilingual-e5-small, ``"query: "`` prefix) and the store the engine ``index``
     stage writes, so query and index vectors always come from the same model. The store
-    is the one ``semantic_store_state`` names (search/pgstore.py): ``segment_embeddings``
-    in ``database`` once it says postgres (without pgvector the search answers "backend
-    not configured": the API then searches the words only), else the persistent Chroma
-    collection at ``MAKTABA_CHROMA_DIR``. The model and collection open lazily on the
-    first call; the third value is the embedder, for warming it up.
+    is ``segment_embeddings`` in ``database`` (search/pgstore.py); without pgvector, or
+    with no database, the search answers "backend not configured" and the API then
+    searches the words only. The model loads on the first call; the third value is the
+    embedder, for warming it up.
     """
     from .search.pgstore import PgVectorStore, store_state  # noqa: PLC0415
-    from .search.semantic import (  # noqa: PLC0415
-        SemanticIndex,
-        get_query_embedder,
-        search_available,
-    )
+    from .search.semantic import get_query_embedder, search_available  # noqa: PLC0415
 
     if not search_available():
         return None, None, None
     embedder = get_query_embedder()  # the CPU by default: queries never wait for indexing
-    index: list[SemanticIndex] = []
-
-    def _index() -> SemanticIndex:
-        if not index:
-            index.append(SemanticIndex.for_queries())
-        return index[0]
 
     async def embed(text: str) -> list[float]:
         return await asyncio.to_thread(embedder.embed_query, text)
@@ -588,21 +577,14 @@ def default_search_backends(
     async def semantic(
         q: str, k: int, library_ids: list[str], languages: list[str]
     ) -> list[dict[str, Any]]:
-        if database is not None and (state := await store_state(database)).read_postgres:
-            if not state.ready:
-                raise RuntimeError("semantic search backend not configured (no pgvector)")
-            vec = await asyncio.to_thread(embedder.embed_query, q)
-            pg = PgVectorStore(database, embedder.model_name)
-            hits = await pg.search(vec, k=k, library_ids=library_ids, languages=languages)
-            return [h.to_json() for h in hits]
-
-        def _run() -> list[dict[str, Any]]:
-            hits = _index().search(q, k=k, library_ids=library_ids, languages=languages)
-            return [h.to_json() for h in hits]
-
-        from .search import gate  # noqa: PLC0415
-
-        return await gate.read(_run)
+        if database is None or not (await store_state(database)).ready:
+            raise RuntimeError("semantic search backend not configured (no pgvector)")
+        if not q.strip() or k <= 0:
+            return []
+        vec = await asyncio.to_thread(embedder.embed_query, q)
+        pg = PgVectorStore(database, embedder.model_name)
+        hits = await pg.search(vec, k=k, library_ids=library_ids, languages=languages)
+        return [h.to_json() for h in hits]
 
     return embed, semantic, embedder
 
@@ -620,7 +602,7 @@ async def serve_grpc(
     ``semantic=False`` (``MAKTABA_PIPELINE_SEMANTIC=off``) leaves ``Embed`` /
     ``SemanticSearch`` unconfigured: the process never opens the search index nor
     loads the embedding model, because another worker (the supervisor's index worker)
-    holds the Chroma directory.
+    answers them.
 
     Returns the server handle (call ``.stop(grace=…)`` to shut down)
     and the background task that drives the server. The caller is

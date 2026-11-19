@@ -86,10 +86,9 @@ ExtractRunner = Callable[..., Awaitable[Path]]
 # loads a model / spawns a subprocess (mirrors PROBE/EXTRACT seams).
 BackendSelector = Callable[..., Awaitable[tuple[Any, str, "str | None"]]]
 
-# DI seam for INDEX: ``(*, video_id) -> IndexTarget`` (a Chroma
-# collection + optional embed fn). The default resolves the *configured*
-# process-wide collection via ``search.index_stage.default_index_target``
-# (``make_collection`` imports chromadb lazily); tests inject a fake
+# DI seam for INDEX: ``(*, video_id) -> IndexTarget`` (a vector store
+# + optional embed fn). The default, ``search.index_stage.default_index_target``,
+# names none since Chroma was retired (story 43.5); tests inject a fake
 # returning an in-memory collection + a deterministic embed fn so the
 # suite never loads a model / touches a real vector DB (mirrors the
 # PROBE/EXTRACT/TRANSCRIBE seams).
@@ -911,10 +910,10 @@ async def index_handler(
        header (``video_id`` / ``language``) + every committed
        ``transcript_segments`` row (ordered by ``seq``) and builds the
        :class:`SegmentDoc` list,
-    3. resolve the target Chroma collection + embed fn via the DI seam
-       (``resolve_target`` — default = the configured process-wide
-       collection; tests inject a fake collection + deterministic embed
-       so no model loads and no network is touched),
+    3. resolve the target store + embed fn via the DI seam
+       (``resolve_target`` — the default names no store since Chroma was
+       retired: semantic search is the engine's; tests inject a fake
+       collection + deterministic embed),
     4. :func:`search.index_stage.commit_index` calls the existing
        :func:`search.embedder.index_segments` (the embed + upsert hot
        path stays there), then advances the FSM
@@ -1053,7 +1052,7 @@ async def index_handler(
             ),
         )
     except Exception as exc:  # noqa: BLE001 — funnel every failure to the retry helper
-        # Embed / vector-store failures (model load hiccup, a Chroma
+        # Embed / vector-store failures (model load hiccup, a store
         # write error, a transient I/O fault) are transient by nature →
         # retryable.
         _log.warning(
@@ -1115,7 +1114,7 @@ def build_real_dispatch(
     Track R4: INDEX now has a real thin-wrapper adapter
     (``commit_index`` loads the transcript's committed segments, calls
     the existing ``search.embedder.index_segments`` to embed + upsert
-    them into the configured Chroma collection, and advances the FSM
+    them into the target's store (none by default since story 43.5), and advances the FSM
     ``TRANSCRIBED -> INDEXED``), so it joins the override map too.
     ``_DEFAULT_STAGES`` listing INDEX is now safe — a default worker
     claiming the INDEX job TRANSCRIBE enqueues runs the real vector

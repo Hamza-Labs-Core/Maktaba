@@ -17,37 +17,21 @@ delegates to:
   activating a complete transcript) and an empty list when the header
   exists but has no segments.
 - :func:`default_index_target` is the production DI default for the
-  handler's collection/embed seam: it resolves the *configured*
-  process-wide Chroma collection via
-  :func:`maktaba_pipeline.search.embedder.make_collection` (collection
-  name + persist dir come from config/env, never hardcoded vendor
-  choices). Tests inject a fake returning an in-memory collection + a
-  deterministic embed fn so the suite never loads a model or touches a
-  real vector store.
+  handler's collection/embed seam. Since story 43.5 (Chroma retired) it
+  names no store: the legacy loop's INDEX advances the video and writes
+  no vectors (semantic search is the engine's ``index`` stage, into
+  ``segment_embeddings``). Tests inject a fake returning an in-memory
+  collection + a deterministic embed fn.
 - :func:`commit_index` is the INDEX analogue of
   :func:`maktaba_pipeline.stt.transcribe.commit_transcribe`: it calls
-  the existing :func:`maktaba_pipeline.search.embedder.index_segments`
-  (the embed + upsert hot path stays there — NOT reimplemented here),
-  advances the FSM ``TRANSCRIBED -> INDEXED`` via
+  :func:`maktaba_pipeline.search.embedder.index_segments` when the target
+  has a collection, advances the FSM ``TRANSCRIBED -> INDEXED`` via
   :func:`advance_after_stage` (replay-guarded exactly like
   ``commit_transcribe``), and returns the upsert count.
 
 Idempotency: :func:`index_segments` keys every vector by
 ``embed_id_for(transcript_id, seq)`` — deterministic, so re-running
-INDEX upserts the *same* ids (Chroma upsert overwrites in place; no
-duplicate vectors). The loader does not need a bespoke id scheme; the
-existing ``{transcript_id}:{seq}`` key already supports replay.
-
-NOTE(wave-0): that determinism only covers replay of the *same*
-transcript. Re-transcription creates a NEW ``transcript_id``, so INDEX
-writes a DISJOINT vector-id set and the prior transcript's vectors are
-NOT deleted — no delete-by-transcript path exists yet, by design.
-Consequence: stale vectors from a superseded transcript stay queryable
-(search-relevance drift) and the vector store grows unbounded across
-re-transcriptions. Deterministic-id replay does NOT reconcile this (it
-only overwrites the same ``transcript_id:seq``); supersede-cleanup
-(delete-by-transcript on re-transcription) is a SEPARATE later story —
-deliberately deferred here, not silent.
+INDEX upserts the *same* ids (no duplicate vectors).
 
 Scope (Wave 0): exactly one job -> one transcript -> one collection,
 straight-through. Re-embedding policy on a transcript revision,
@@ -57,12 +41,11 @@ wiring are SEPARATE later stories — see the NOTE markers below.
 
 from __future__ import annotations
 
-import os
 from collections.abc import Awaitable, Callable
 from typing import Any, Protocol, cast
 from uuid import UUID
 
-from .embedder import ChromaCollection, EmbeddingFunction, SegmentDoc
+from .embedder import EmbeddingFunction, SegmentCollection, SegmentDoc
 
 __all__ = [
     "IndexTarget",
@@ -96,41 +79,27 @@ class _IndexDB(Protocol):
 class IndexTarget:
     """The resolved vector-store destination for one INDEX run.
 
-    ``collection`` is the Chroma collection the segments upsert into;
-    ``embed`` is the embedding callback (``None`` => the collection's
-    own bound embedding function handles it — the production default
-    when sentence-transformers is wired). The handler injects this via
-    the DI seam; tests substitute a fake collection + deterministic
-    embed fn so no model loads and no network is touched.
+    ``collection`` is the store the segments upsert into (``None``: no
+    store, the production default since Chroma was retired); ``embed``
+    is the embedding callback (``None`` => the collection's own). The
+    handler injects this via the DI seam; tests substitute a fake
+    collection + deterministic embed fn.
     """
 
     __slots__ = ("collection", "embed")
 
     def __init__(
         self,
-        collection: ChromaCollection,
+        collection: SegmentCollection | None,
         embed: EmbeddingFunction | None = None,
     ) -> None:
         self.collection = collection
         self.embed = embed
 
 
-# DI seam for the handler: ``(*, video_id) -> IndexTarget``. The default
-# resolves the *configured* process-wide Chroma collection; tests inject
-# a fake returning an in-memory collection so the suite never loads a
-# model / touches a real vector DB (mirrors PROBE/EXTRACT/TRANSCRIBE
-# seams).
+# DI seam for the handler: ``(*, video_id) -> IndexTarget``; tests inject a fake
+# returning an in-memory collection.
 IndexTargetResolver = Callable[..., Awaitable[IndexTarget]]
-
-
-# Default collection name + persist dir. These default to the existing
-# configured process-wide values (env override, stable on-disk path);
-# per-library / per-video collection routing is a SEPARATE settings-
-# plumbing story (see NOTE in default_index_target), not an INDEX-stage
-# change — the seam keeps the handler agnostic.
-_DEFAULT_COLLECTION = "maktaba_segments"
-_COLLECTION_ENV = "MAKTABA_CHROMA_COLLECTION"
-_PERSIST_DIR_ENV = "MAKTABA_CHROMA_DIR"
 
 
 _SELECT_TRANSCRIPT_HEADER = """
@@ -195,33 +164,13 @@ async def default_index_target(
     video_id: UUID,  # noqa: ARG001 — part of the resolver seam signature
     settings: Any | None = None,  # noqa: ARG001 — see NOTE below
 ) -> IndexTarget:
-    """Production default for the handler's collection/embed DI seam.
+    """Production default for the handler's collection/embed DI seam: no store.
 
-    Resolves the *configured* process-wide Chroma collection via
-    :func:`maktaba_pipeline.search.embedder.make_collection`. The
-    collection name and on-disk persist directory come from the
-    environment (``MAKTABA_CHROMA_COLLECTION`` / ``MAKTABA_CHROMA_DIR``)
-    defaulting to the stable process-wide values — defaulting to the
-    existing configured default is intentional, not an infra guess.
-    ``chromadb`` is imported lazily inside ``make_collection`` so
-    importing this module costs nothing.
-
-    NOTE(wave-0): per-library / per-video collection routing (a
-    ``video_id``-scoped collection name, the gap-analysis Chroma
-    single-writer concern, and the ``embedding.model``/``device``
-    library-settings plumbing) is a SEPARATE settings story (Epic 5.x /
-    9.1) — deliberately deferred, not silent. Until it lands this
-    resolves the one configured process-wide collection and lets
-    Chroma's bound embedding function (``embed=None``) handle vectors.
-    The ``video_id``/``settings`` params are kept so the future
-    library-scoped resolver is a drop-in seam swap, not a handler change.
+    The legacy loop's semantic index was a Chroma collection; Chroma was retired in
+    story 43.5, and the engine's ``index`` stage writes ``segment_embeddings``. Here
+    INDEX advances the video and writes no vectors.
     """
-    from .embedder import make_collection  # noqa: PLC0415
-
-    name = os.getenv(_COLLECTION_ENV, _DEFAULT_COLLECTION)
-    persist_dir = os.getenv(_PERSIST_DIR_ENV) or None
-    collection = make_collection(name, persist_dir=persist_dir)
-    return IndexTarget(collection=collection, embed=None)
+    return IndexTarget(collection=None, embed=None)
 
 
 async def commit_index(
@@ -240,8 +189,8 @@ async def commit_index(
     1. :func:`maktaba_pipeline.search.embedder.index_segments` embeds +
        upserts every doc (the hot path stays there — NOT reimplemented).
        Its id scheme is ``embed_id_for(transcript_id, seq)``, so a
-       re-run upserts the *same* ids: Chroma overwrites in place, no
-       duplicate vectors (idempotent on replay).
+       re-run upserts the *same* ids, no duplicate vectors (idempotent
+       on replay). A target without a collection writes nothing.
     2. advance the FSM ``TRANSCRIBED -> INDEXED`` via
        :func:`advance_after_stage` (its terminal-drop guard + the
        explicit state check make a replay a no-op — exactly the
@@ -271,7 +220,11 @@ async def commit_index(
 
     log = get_logger()
 
-    upserted = index_segments(target.collection, docs, embed=target.embed)
+    upserted = (
+        0
+        if target.collection is None
+        else index_segments(target.collection, docs, embed=target.embed)
+    )
 
     state_row = await db.fetchrow("SELECT state FROM videos WHERE id = $1", video_id)
     if state_row is None:

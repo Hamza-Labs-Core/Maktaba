@@ -15,9 +15,10 @@ import pytest
 
 from maktaba_pipeline import grpc_server
 from maktaba_pipeline.grpc_server import PipelineService, _dispatch
-from maktaba_pipeline.search import semantic
-from maktaba_pipeline.search.semantic import IndexedSegment, SemanticIndex
-from tests.search.semantic_fakes import FakeCollection, FakeEmbedder
+from maktaba_pipeline.search import pgstore, semantic
+from maktaba_pipeline.search.pgstore import StoreState
+from maktaba_pipeline.search.semantic import IndexedSegment, SegmentHit
+from tests.search.semantic_fakes import FakeEmbedder, bag_vector
 
 
 def _segments(tid: uuid.UUID, texts: list[str]) -> list[IndexedSegment]:
@@ -61,39 +62,71 @@ def test_semantic_search_rpc_returns_hits_and_validates() -> None:
     assert "not configured" in _call(bare, bare.semantic_search, {"q": "x"})["error"]
 
 
-def test_default_backends_use_the_shared_index(monkeypatch: pytest.MonkeyPatch) -> None:
+class _FakePg:
+    """``PgVectorStore.search`` over a few segments: cosine on the fake embedder's
+    vectors, the library and language filters applied before the top k."""
+
+    rows: list[tuple[str, str, str, IndexedSegment]] = []
+
+    def __init__(self, db: Any, model: str) -> None:
+        self.db = db
+
+    async def search(
+        self,
+        vec: list[float],
+        *,
+        k: int,
+        library_ids: list[str] | None = None,
+        languages: list[str] | None = None,
+    ) -> list[SegmentHit]:
+        hits = []
+        for video, lib, lang, seg in self.rows:
+            if library_ids and lib not in library_ids or languages and lang not in languages:
+                continue
+            score = sum(a * b for a, b in zip(vec, bag_vector(seg.text), strict=True))
+            hits.append(SegmentHit(seg.segment_id, video, seg.start_sec, seg.end_sec, score))
+        return sorted(hits, key=lambda h: -h.score)[:k]
+
+
+def test_default_backends_read_postgres(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(semantic, "search_available", lambda: False)
     assert grpc_server.default_search_backends() == (None, None, None)
 
-    coll, emb = FakeCollection(), FakeEmbedder()
+    emb = FakeEmbedder()
     vid, lib = uuid.uuid4(), uuid.uuid4()
-    SemanticIndex(coll, emb).replace_video(
-        video_id=vid, library_id=lib, segments=_segments(uuid.uuid4(), ["صوم رمضان"]), language="ar"
-    )
+    _FakePg.rows = [(str(vid), str(lib), "ar", s) for s in _segments(uuid.uuid4(), ["صوم رمضان"])]
+
+    async def ready(db: Any, *, fresh: bool = False) -> StoreState:
+        return StoreState(ready=True)
+
     monkeypatch.setattr(semantic, "search_available", lambda: True)
     monkeypatch.setattr(semantic, "get_query_embedder", lambda model=None: emb)
-    monkeypatch.setattr(
-        semantic.SemanticIndex, "for_queries", classmethod(lambda cls: cls(coll, emb))
-    )
-    embed, search, warm = grpc_server.default_search_backends()
+    monkeypatch.setattr(pgstore, "store_state", ready)
+    monkeypatch.setattr(pgstore, "PgVectorStore", _FakePg)
+    embed, search, warm = grpc_server.default_search_backends(object())
     assert embed is not None and search is not None and warm is emb
     svc = PipelineService(embedder=embed, semantic=search)
     out = _call(svc, svc.semantic_search, {"q": "صوم رمضان", "k": 3, "library_ids": [str(lib)]})
     assert [h["video_id"] for h in out["hits"]] == [str(vid)]
-    # the language filter applies inside the index, before the top k
+    # the language filter goes to the store, applied there before the top k
     req = {"q": "صوم رمضان", "k": 3, "library_ids": [str(lib)], "languages": ["en"]}
     assert _call(svc, svc.semantic_search, req)["hits"] == []
     req["languages"] = ["ar", "en"]
     assert len(_call(svc, svc.semantic_search, req)["hits"]) == 1
     vec = _call(svc, svc.embed, {"text": "صوم"})["vector"]
     assert len(vec) > 0 and emb.queries[-1] == "صوم"
+    # no database (or no pgvector): the API is told, and searches the words only
+    _, nodb, _ = grpc_server.default_search_backends()
+    assert nodb is not None
+    svc = PipelineService(embedder=embed, semantic=nodb)
+    assert "not configured" in _call(svc, svc.semantic_search, {"q": "x"})["error"]
 
 
 def test_a_worker_without_the_index_answers_no_semantic_search(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """``semantic=False`` (MAKTABA_PIPELINE_SEMANTIC=off, the main worker beside the index
-    worker): the server never builds the search backends, so it never opens Chroma."""
+    worker): the server never builds the search backends, so it never loads the model."""
 
     def backends() -> Any:
         raise AssertionError("the search index must stay closed in this worker")
