@@ -7374,7 +7374,8 @@
         "ep-get-components-id",
         "ep-put-components-id",
         "ep-delete-components-id",
-        "ep-get-plugins"
+        "ep-get-plugins",
+        "ep-post-plugins-id-install"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-38-plugin-files.md",
@@ -7387,7 +7388,8 @@
         "GET /components/{id}",
         "PUT /components/{id}",
         "DELETE /components/{id}",
-        "GET /plugins"
+        "GET /plugins",
+        "POST /plugins/{id}/install"
       ],
       "db_tables": [],
       "metadata": {
@@ -7680,7 +7682,7 @@
       "title": "تثبيت إضافة من مكتبة وإزالتها",
       "epic": "54-plugins",
       "phase": 5,
-      "content": "# القصة 54.46 — تثبيت إضافة من مكتبة وإزالتها\n\n> الملحمة 54 · المرحلة 5 · تعتمد على: 54.44، 54.45، 54.38، الملحمة 51 (51.15، 51.16) · تحتاجها: 54.47، 54.48، 54.50 · لم تُبنَ\n\n## لماذا\n\nبعد 54.44 يمكن تشغيل إضافة مكتبة وإيقافها من صفحتها، لكن ملفاتها دائمًا على القرص وزر الإزالة غائب مع ذكر السبب بالكلمات. تتيح هذه القصة للمسؤول تثبيت كل إضافة من مكتبة وإزالتها مثل أي إضافة متجر، مع مصدر واحد للحقيقة لحالتها ودون ضياع أي مهمة.\n\n## الوصف\n\n### 1. مصدر واحد للحقيقة\n\nتحتفظ إضافة مكتبة بمكوّن الملحمة 51 الذي تنفّذ مراحله",
+      "content": "# القصة 54.46 — تثبيت إضافة من مكتبة وإزالتها\n\n> الملحمة 54 · المرحلة 5 · تعتمد على: 54.44، 54.45، 54.38، الملحمة 51 (51.15، 51.16) · تحتاجها: 54.47، 54.48، 54.50 · بُنيت\n\n## لماذا\n\nبعد 54.44 يمكن تشغيل إضافة مكتبة وإيقافها من صفحتها، لكن ملفاتها دائمًا على القرص وزر الإزالة غائب مع ذكر السبب بالكلمات. تتيح هذه القصة للمسؤول تثبيت كل إضافة من مكتبة وإزالتها مثل أي إضافة متجر، مع مصدر واحد للحقيقة لحالتها ودون ضياع أي مهمة.\n\n## الوصف\n\n### 1. مصدر واحد للحقيقة\n\nتحتفظ إضافة مكتبة بمكوّن الملحمة 51 الذي تنفّذ مراحله",
       "tags": [
         "story",
         "54-plugins",
@@ -7688,7 +7690,9 @@
       ],
       "related": [
         "epic-54-plugins",
-        "ep-get-plugins"
+        "ep-get-components",
+        "ep-get-plugins",
+        "ep-post-plugins-id-install"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-46-maktaba-plugin-lifecycle.md",
@@ -7696,7 +7700,9 @@
         "mockups": []
       },
       "api_endpoints": [
-        "GET /plugins"
+        "GET /components",
+        "GET /plugins",
+        "POST /plugins/{id}/install"
       ],
       "db_tables": [],
       "metadata": {
@@ -7706,7 +7712,7 @@
         "lang": "ar",
         "source": {
           "title": "20cc0ca9811b9ab6",
-          "content": "2b18ab408a9aba63"
+          "content": "6f046033263be5b3"
         }
       }
     },

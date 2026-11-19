@@ -71,6 +71,21 @@ def test_off_and_held_and_their_dependents() -> None:
     assert home_reasons(held)["subtitle_gen"] == "component_held"
 
 
+def test_a_removed_maktaba_plugins_stages_are_claimed_by_no_worker() -> None:
+    """Story 54.46 §4: a Maktaba plugin removed (its component's want absent) is off on
+    every machine: its stages wait with component_off and no worker claims them, the same as
+    a plugin turned off. Installing it again (want installed, then enabled) opens them."""
+    gs = gates({"media.thumbnails": _d("media.thumbnails", "absent")})
+    assert gs["media.thumbnails"].state == OFF
+    assert gs["media.thumbnails"].want == "absent"
+    r = machine_reasons(gs)
+    assert r["thumb_small"] == "component_off:media.thumbnails"
+    assert home_reasons(gs)["thumb_small"] == "component_off"
+    back = gates({"media.thumbnails": _d("media.thumbnails", "enabled")})
+    assert back["media.thumbnails"].state == ON
+    assert "thumb_small" not in machine_reasons(back)
+
+
 def test_an_any_group_needs_one_and_an_asset_needs_only_installing() -> None:
     models = (
         "model.whisper-turbo",

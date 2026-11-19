@@ -3228,6 +3228,12 @@ build fails when the two differ.
   account, set by a store admin, may submit a `tv.maktaba.*` plugin, and a person reviews every
   version. Nothing installs a store package of a Maktaba plugin yet.
 
+- **Remove one of Maktaba's plugins, and install it again (Epic 54, story 54.46).** A plugin
+  Maktaba publishes now has Remove on its page. Its queued jobs wait, none lost, and what it
+  wrote stays in your library. A plugin that other parts still need is refused, with what needs
+  it. A removed plugin shows Install, which brings it back from the Maktaba you run, with
+  nothing to download, and its waiting jobs run again.
+
 ### Changed
 
 - **A machine that loses its home stays usable** under a notice instead of the whole app being

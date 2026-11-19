@@ -44,9 +44,24 @@ const (
 	SourceFile    = "file"
 )
 
-// CodeWithRelease refuses what a plugin that comes with the release cannot do yet: remove,
-// update or roll back on its own, grants, schema settings, reverting writes (409).
+// CodeWithRelease refuses what a plugin that comes with the release cannot do yet: update
+// or roll back on its own, grants, schema settings, reverting writes (409). Removing and
+// installing it again are its component's (story 54.46).
 const CodeWithRelease = "plugin_with_release"
+
+// CodeDataKept refuses a purge of a Maktaba plugin: the data it wrote is the library's own
+// and stays when it is removed (story 54.46 §3).
+const CodeDataKept = "plugin_data_kept"
+
+// Published answers one Maktaba-published plugin (core's is not one), nil for any other id.
+func Published(id string) *firstparty.FirstParty {
+	for _, fp := range published() {
+		if fp.ID == id {
+			return fp
+		}
+	}
+	return nil
+}
 
 // Switch locks: why a plugin's switch cannot turn it on (the reason's words are Epic 51's).
 // Turning a plugin off is never locked.
@@ -1019,7 +1034,7 @@ func (l *Lifecycle) publishedFlow(ctx context.Context, fp *firstparty.FirstParty
 
 // withRelease refuses what a plugin that comes with the release cannot do yet.
 func withRelease(id string) *Problem {
-	return problem(http.StatusConflict, CodeWithRelease, "%s comes with Maktaba: it is updated with Maktaba and cannot be removed or changed on its own yet", id)
+	return problem(http.StatusConflict, CodeWithRelease, "%s comes with Maktaba: it is updated with Maktaba and cannot be changed on its own yet", id)
 }
 
 // RefuseWithRelease answers the refusal for id when Maktaba publishes it and it came with
