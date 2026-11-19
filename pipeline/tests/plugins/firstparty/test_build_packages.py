@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import importlib.util
 import json
 import os
 import shutil
@@ -14,14 +15,19 @@ import sys
 import tomllib
 import zipfile
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 from tests.plugins.firstparty.conftest import ROOT
 
+# tools/plugins/build.py, loaded from its file under a name of its own: "build" is also a
+# PyPI package (the dev tools install it), which an import by name could find first
 sys.path.insert(0, str(ROOT / "tools" / "plugins"))
-
-import build  # noqa: E402
+_spec = importlib.util.spec_from_file_location("fp_build", ROOT / "tools" / "plugins" / "build.py")
+assert _spec is not None and _spec.loader is not None
+build: Any = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(build)
 
 
 @pytest.mark.parametrize(
