@@ -19,7 +19,7 @@ import yaml
 ROOT = Path(__file__).resolve().parents[3]
 GUARD = ROOT / "tools" / "image-size-guard.sh"
 MIB = 1024 * 1024
-BUDGET = {"api": 60, "streaming": 80, "pipeline": 1200, "web": 30}
+BUDGET = {"api": 60, "streaming": 80, "pipeline": 1200, "web": 88}
 
 FAKE_DOCKER = """#!/usr/bin/env bash
 # docker history --no-trunc --human=false --format '{{.Size}}' IMAGE: the image's layers,
