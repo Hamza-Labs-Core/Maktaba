@@ -130,7 +130,6 @@ services:
       MAKTABA_DATABASE_URL: postgres://maktaba@postgres:5432/maktaba?sslmode=disable
     volumes:
       - media:/var/maktaba/media
-      - chroma:/var/maktaba/chroma
     healthcheck:
       test: ["CMD", "maktaba-pipeline", "doctor", "--quiet"]
       interval: 30s
@@ -155,7 +154,6 @@ volumes:
   pg_data:
   media:        # Operator binds their library here.
   cache:
-  chroma:
   caddy_data:
   caddy_config:
 
@@ -397,7 +395,7 @@ key. The compose-mac path's smoke test asserts this key is `OK`.
 - [ ] `docker compose up -d` brings the stack to all-healthy in ≤ 90 s.
 - [ ] `docker-compose.mac.yml` overlay exists with the `:cached` bind for media and the FFmpeg/MLX hookup.
 - [ ] `maktaba-pipeline doctor` reports `mac_mlx: OK` under the Mac overlay.
-- [ ] Volumes named (`pg_data`, `media`, `cache`, `chroma`, `caddy_data`).
+- [ ] Volumes named (`pg_data`, `media`, `cache`, `caddy_data`).
 
 **Caddy**
 - [ ] Routes `/api`, `/graphql`, `/ws`, `/stream`, `/` to the right service.
