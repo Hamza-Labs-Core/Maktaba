@@ -9,14 +9,18 @@ The guard runs for real under bash with a stand-in `docker` first on PATH that a
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 import yaml
 
 ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(ROOT / "tools" / "ci"))
+import ci_paths  # noqa: E402
 GUARD = ROOT / "tools" / "image-size-guard.sh"
 MIB = 1024 * 1024
 BUDGET = {"api": 60, "streaming": 80, "pipeline": 1200, "web": 88}
@@ -29,6 +33,12 @@ img="${@: -1}"
 f="$SIZES_DIR/$(printf '%s' "$img" | tr '/:' '__')"
 [ -f "$f" ] || { echo "Error: No such image: $img" >&2; exit 1; }
 n=$(cat "$f")
+case "${FAKE_HISTORY:-bytes}" in
+  # a docker that ignores --human=false: the layers in its human units
+  human) echo "$((n / 1000000))MB"; echo 0B; exit 0 ;;
+  # a docker that fails after a layer
+  partial) echo $((n / 3)); exit 1 ;;
+esac
 echo $((n - 2 * (n / 3))); echo $((n / 3)); echo 0; echo $((n / 3))
 """
 
@@ -103,8 +113,10 @@ def test_the_images_job_builds_the_four_images_and_runs_the_guard() -> None:
     wf = yaml.safe_load((ROOT / ".github/workflows/_images.yml").read_text())
     job = wf["jobs"]["images"]
     script = "\n".join(str(s.get("run", "")) for s in job["steps"])
-    for svc in BUDGET:
-        assert f"{svc}/Dockerfile" in script or "${svc}/Dockerfile" in script
+    loop = re.search(r"for svc in ([a-z ]+); do", script)
+    assert loop, script
+    assert sorted(loop.group(1).split()) == sorted(BUDGET)
+    assert '-f "${svc}/Dockerfile"' in script
     assert "tools/image-size-guard.sh" in script
     ci = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
     assert ci["jobs"]["images"]["uses"] == "./.github/workflows/_images.yml"
@@ -123,3 +135,50 @@ def test_the_images_job_measures_every_platform_the_release_pushes() -> None:
     assert sorted(leg["platform"] for leg in legs) == pushed
     script = "\n".join(str(s.get("run", "")) for s in job["steps"])
     assert "--platform linux/amd64" not in script, "the build takes the leg's platform"
+
+
+@pytest.mark.parametrize("mode", ["human", "partial"])
+def test_unreadable_layer_sizes_fail_rather_than_under_count(tmp_path: Path, mode: str) -> None:
+    # "145MB" would add as 145 bytes, and a docker that failed partway would leave a partial
+    # sum: either would pass an image far over its budget, so either fails the guard instead
+    sizes = at_budget()
+    sizes["web"] += 50 * MIB
+    r = run_guard(tmp_path, sizes, FAKE_HISTORY=mode)
+    assert r.returncode == 1, r.stdout
+    assert "MISS web" in r.stdout
+    assert not any(ln.startswith("OK") for ln in r.stdout.splitlines()), r.stdout
+
+
+def _copy_sources(dockerfile: Path) -> list[str]:
+    """The repository paths a Dockerfile COPYs or ADDs from its build context (the repo root)."""
+    out = []
+    for line in dockerfile.read_text().splitlines():
+        words = line.split()
+        if not words or words[0] not in ("COPY", "ADD"):
+            continue
+        args = [w for w in words[1:] if not w.startswith("--")]
+        if any(w.startswith("--from") for w in words[1:]):
+            continue
+        out += args[:-1]
+    return out
+
+
+@pytest.mark.parametrize("svc", sorted(BUDGET))
+def test_a_change_to_anything_an_image_copies_runs_the_images_job(svc: str) -> None:
+    # a budget measures the whole image, so the pull request that grows any input of it must
+    # run the gate (docs/trail: "a job measuring a whole-product budget needs every input of
+    # that budget in its filter"), not only main after it merges
+    sources = _copy_sources(ROOT / svc / "Dockerfile")
+    assert sources
+    filters = ci_paths.job_filters(ci_paths.load_filters())
+    missed = []
+    for src in sources:
+        path = ROOT / src
+        # a file inside the source: the source itself if it is a file, else any tracked file under it
+        probe = src if path.is_file() else next(
+            (str(f.relative_to(ROOT)) for f in sorted(path.rglob("*")) if f.is_file()), src + "/x"
+        )
+        if "images" not in ci_paths.matched(filters, [probe]):
+            missed.append(f"{src} ({probe})")
+    assert not missed, f"{svc}/Dockerfile copies from paths the images filter misses: {missed}"
+    assert "images" in ci_paths.matched(filters, [f"{svc}/Dockerfile"])

@@ -291,7 +291,10 @@ CI's `images` job (`.github/workflows/_images.yml`, called from `ci.yml` and
 required by `ci-success`) builds the four images on each platform
 `release.yml` pushes (linux/amd64 and linux/arm64, native runners) and runs
 the guard. An image over budget prints a `FAIL` line with its size, budget
-and overshoot and an error annotation, and fails the job (TC3).
+and overshoot and an error annotation, and fails the job (TC3). A pull request
+runs it when it changes anything the four Dockerfiles copy from
+(`.github/ci-paths.yml`'s `images`, held to their COPY sources by
+`tools/ci/tests/test_image_size_guard.py`); a push to main always does.
 
 ### 2.7 Doctor check for Mac MLX
 

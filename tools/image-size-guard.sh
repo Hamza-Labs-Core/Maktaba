@@ -51,10 +51,16 @@ for svc in api streaming pipeline web; do
     # The sum of the image's unpacked layers, from its history: `docker image inspect`'s
     # .Size also counts the compressed content on a containerd image store (Docker
     # Desktop's default), which reads the same image as ~40% larger than overlay2 does.
-    size=$(docker history --no-trunc --human=false --format '{{.Size}}' "$image" 2>/dev/null \
-        | awk '{ t += $1 } END { if (NR) print t }' || echo "")
+    # Every layer's size must be a whole byte count: a line in any other form (a docker
+    # that printed "47.8MB" despite --human=false) would add as a few bytes and under-count,
+    # so it makes the whole sum unreadable instead (MISS, a failure), never a small pass.
+    # A docker that fails (no such image, or partway through) leaves no size at all.
+    if ! size=$(docker history --no-trunc --human=false --format '{{.Size}}' "$image" 2>/dev/null \
+        | awk '$1 !~ /^[0-9]+$/ { bad = 1 } { t += $1 } END { if (NR && !bad) printf "%.0f\n", t }'); then
+        size=""
+    fi
     if ! [[ "$size" =~ ^[0-9]+$ ]]; then
-        printf "MISS %-9s image=%s (not built locally)\n" "$svc" "$image"
+        printf "MISS %-9s image=%s (not built locally, or its layer sizes unreadable)\n" "$svc" "$image"
         failed=1
         continue
     fi

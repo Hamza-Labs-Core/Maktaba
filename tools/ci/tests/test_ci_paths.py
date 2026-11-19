@@ -54,7 +54,7 @@ CASES: dict[str, tuple[list[str], set[str], dict[str, set[str]]]] = {
     # Playwright config run its gate and the web jobs
     "tv build tools only": (
         ["web/tv-build/tvcheck.mjs", "web/playwright.tv.config.ts", "web/index.tv.html"],
-        {"tv-web", "unit", "e2e", "build-artifacts"},
+        {"images", "tv-web", "unit", "e2e", "build-artifacts"},
         {"lint": {"web"}, "unit": {"web"}},
     ),
     "android tv only": (
@@ -99,7 +99,7 @@ CASES: dict[str, tuple[list[str], set[str], dict[str, set[str]]]] = {
     ),
     "pipeline only": (
         ["pipeline/src/maktaba_pipeline/orchestrator/advance.py"],
-        {"unit", "integration", "e2e", "node-packaging"},
+        {"images", "unit", "integration", "e2e", "node-packaging"},
         {
             "lint": {"pipeline"},
             "unit": {"pipeline"},
@@ -109,7 +109,7 @@ CASES: dict[str, tuple[list[str], set[str], dict[str, set[str]]]] = {
     ),
     "a pipeline package a first-party plugin imports": (
         ["pipeline/src/maktaba_pipeline/scanner/walk.py"],
-        {"unit", "integration", "e2e", "node-packaging", "plugins"},
+        {"images", "unit", "integration", "e2e", "node-packaging", "plugins"},
         {
             "lint": {"pipeline"},
             "unit": {"pipeline"},
@@ -121,7 +121,7 @@ CASES: dict[str, tuple[list[str], set[str], dict[str, set[str]]]] = {
     # runners, end to end (_runner-stages.yml)
     "a runner's change runs its stages on Windows": (
         ["pipeline/src/maktaba_plugin_runner/winproc.py"],
-        {"unit", "integration", "plugins", "runner-stages", "e2e", "node-packaging", "mac-app"},
+        {"images", "unit", "integration", "plugins", "runner-stages", "e2e", "node-packaging", "mac-app"},
         {
             "lint": {"pipeline"},
             "unit": {"pipeline"},
@@ -131,7 +131,7 @@ CASES: dict[str, tuple[list[str], set[str], dict[str, set[str]]]] = {
     ),
     "api only": (
         ["api/internal/handlers/browse/browse.go"],
-        GO_SERVER,
+        GO_SERVER | {"images"},
         # Epic 57 (story 57.13): the parental bypass rehearsal runs for the API's code
         {"lint": {"go"}, "unit": {"go"}, "integration": {"integration", "compat_prev", "parental_bypass", "tv_clients"}},
     ),
@@ -158,7 +158,7 @@ CASES: dict[str, tuple[list[str], set[str], dict[str, set[str]]]] = {
         ["pipeline/src/maktaba_pipeline/engine/graph.py"],
         # the engine is also the first-party plugins' (Epic 54 Phase 4): their parity runs,
         # and their stages in their Windows runners (54.23)
-        {"unit", "integration", "e2e", "node-packaging", "plugins", "runner-stages"},
+        {"images", "unit", "integration", "e2e", "node-packaging", "plugins", "runner-stages"},
         {
             "lint": {"pipeline", "catalog"},
             "unit": {"pipeline"},
@@ -168,7 +168,7 @@ CASES: dict[str, tuple[list[str], set[str], dict[str, set[str]]]] = {
     "the catalog runs its check, the Go and the pipeline parts": (
         ["shared/components/catalog.toml"],
         # the components' defaults decide what runs on an idle Core home: the mac app too
-        GO_SERVER | {"components-packs", "components", "mac-app"},
+        GO_SERVER | {"images", "components-packs", "components", "mac-app"},
         {
             "lint": {"go", "pipeline", "catalog"},
             "unit": {"go", "pipeline"},
@@ -177,7 +177,7 @@ CASES: dict[str, tuple[list[str], set[str], dict[str, set[str]]]] = {
     ),
     "the component runner runs components-live and components-chaos": (
         ["pipeline/src/maktaba_pipeline/components/runner.py"],
-        {"unit", "integration", "e2e", "node-packaging", "components"},
+        {"images", "unit", "integration", "e2e", "node-packaging", "components"},
         {
             "lint": {"pipeline", "catalog"},
             "unit": {"pipeline"},
@@ -194,17 +194,17 @@ CASES: dict[str, tuple[list[str], set[str], dict[str, set[str]]]] = {
     # and the website: its help pages take each topic's title and summary from the catalog (60.12)
     "the language files run the catalog's words check": (
         ["web/src/i18n/ar.json"],
-        {"unit", "e2e", "build-artifacts", "plugins", "website", "tv-web"},
+        {"images", "unit", "e2e", "build-artifacts", "plugins", "website", "tv-web"},
         {"lint": {"web", "catalog"}, "unit": {"web"}},
     ),
     "web only": (
         ["web/src/pages/Home.tsx"],
-        {"unit", "e2e", "build-artifacts", "tv-web"},
+        {"images", "unit", "e2e", "build-artifacts", "tv-web"},
         {"lint": {"web"}, "unit": {"web"}},
     ),
     "design tokens": (
         ["web/design-system/tokens/color.json"],
-        {"unit", "e2e", "build-artifacts", "website", "tv-web"},
+        {"images", "unit", "e2e", "build-artifacts", "website", "tv-web"},
         {"lint": {"web"}, "unit": {"web", "tokens"}},
     ),
     "desktop shell": (
@@ -238,7 +238,7 @@ CASES: dict[str, tuple[list[str], set[str], dict[str, set[str]]]] = {
     ),
     "shared migrations": (
         ["shared/db/migrations/0200_example.sql"],
-        GO_SERVER,
+        GO_SERVER | {"images"},
         {
             "lint": {"go", "pipeline"},
             "unit": {"go", "pipeline"},
@@ -250,7 +250,7 @@ CASES: dict[str, tuple[list[str], set[str], dict[str, set[str]]]] = {
     # previous release's API tests do not; a pipeline change runs neither ("pipeline only")
     "streaming only: the parental bypass rehearsal": (
         ["streaming/internal/hls/serve.go"],
-        {"unit", "integration", "replica", "e2e", "media-e2e", "build-artifacts", "launcher"},
+        {"images", "unit", "integration", "replica", "e2e", "media-e2e", "build-artifacts", "launcher"},
         {"lint": {"go"}, "unit": {"go"}, "integration": {"integration", "parental_bypass", "tv_clients"}},
     ),
 }
@@ -434,7 +434,7 @@ def test_a_trail_only_change_runs_nothing() -> None:
 def test_the_trail_with_code_runs_the_codes_jobs() -> None:
     alone = run("web/src/pages/Home.tsx")
     both = run("docs/claude-trail.md", "web/src/pages/Home.tsx")
-    assert ran(both) == ran(alone) == ALWAYS | {"unit", "e2e", "build-artifacts", "tv-web"}
+    assert ran(both) == ran(alone) == ALWAYS | {"images", "unit", "e2e", "build-artifacts", "tv-web"}
     assert parts(both, "lint") == {"web"}
 
 
