@@ -163,27 +163,25 @@ upload() {
     done
 }
 
-# checksum_names FILE: the names a checksums.txt lists, one a line, as
-# releaseverify.ParseChecksums reads them; fails (printing nothing) on any line it would refuse
-# or on a file that names nothing. No regex interval ({64}): mawk's support for it varies.
+# checksum_names FILE: the names a checksums.txt lists, one a line; fails (printing nothing)
+# unless every line is exactly what release.yml's "Generate checksums" writes (GNU sha256sum
+# over ./<name>): 64 lowercase hex, two spaces, "./", a name of [A-Za-z0-9._+-] (not
+# starting with "." or "-"), a newline; no NUL, no CR, no blank line, no name twice, at least
+# one line. Every file this accepts, releaseverify.ParseChecksums accepts with the same names,
+# so a draft never goes public with checksums machines refuse; any other file (even one
+# ParseChecksums would read, which release.yml never writes) keeps the draft, and the notice
+# says why.
 checksum_names() {
-    awk '
-        { sub(/\r$/, "") }
-        $0 ~ /^[ \t]*$/ { next }
-        {
-            d = substr($0, 1, 64)
-            if (length($0) < 66 || substr($0, 65, 1) != " " || d ~ /[^0-9a-f]/) { bad = 1; exit }
-            name = substr($0, 66)
-            sub(/^ +/, "", name); sub(/^\*/, "", name); sub(/^\.\//, "", name)
-            if (name == "" || name == "." || name == ".." || name ~ /[\/\\ \t]/ || name ~ /^-/ || (name in seen)) { bad = 1; exit }
-            seen[name] = 1
-            out[++n] = name
-        }
-        END {
-            if (bad || n == 0) exit 1
-            for (i = 1; i <= n; i++) print out[i]
-        }
-    ' "$1"
+    local f="$1" n lines
+    [ -s "$f" ] || return 1
+    # no NUL (awk and bash would drop it), and the last line ends in a newline
+    [ "$(LC_ALL=C tr -d '\000' <"$f" | wc -c)" = "$(wc -c <"$f")" ] || return 1
+    [ "$(tail -c 1 "$f" | od -An -c | tr -d ' ')" = '\n' ] || return 1
+    lines="$(wc -l <"$f" | tr -d ' ')"
+    n="$(LC_ALL=C grep -cE '^[0-9a-f]{64}  \./[A-Za-z0-9_+][A-Za-z0-9._+-]{0,254}$' "$f" || true)"
+    [ "$n" = "$lines" ] || return 1
+    LC_ALL=C cut -c 69- "$f" | sort | uniq -d | grep -q . && return 1
+    LC_ALL=C cut -c 69- "$f"
 }
 
 publish() {

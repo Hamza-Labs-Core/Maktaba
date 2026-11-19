@@ -41,7 +41,10 @@ case "$1" in
             shift
         done
         echo "download ${name}" >>"${DOWNLOADS:-/dev/null}"
-        if [ "${name}" = checksums.txt ] && [ -n "${CHECKSUMS+set}" ]; then
+        if [ "${name}" = checksums.txt ] && [ -n "${CHECKSUMS_FILE:-}" ]; then
+            # a fixture's bytes (a NUL cannot ride in an environment variable)
+            cp "${CHECKSUMS_FILE}" "${dir}/${name}"
+        elif [ "${name}" = checksums.txt ] && [ -n "${CHECKSUMS+set}" ]; then
             # as given, an empty value included
             printf '%s' "${CHECKSUMS}" >"${dir}/${name}"
         elif [ "${name}" = checksums.txt ]; then
@@ -168,7 +171,7 @@ fi
 # that stopped part way leaves a signed checksum for a file nobody can download
 full="${signed}"$'\ncomponents-0.3.2-rc.1.json'
 z="$(printf '%064d' 0)"
-sums="${z}  ./maktaba-server-0.3.2-rc.1-linux-amd64.tar.gz"$'\n'"${z}  ./tv.maktaba.classify-0.3.2.mkplugin"$'\n'"${z} *release.json"
+sums="${z}  ./maktaba-server-0.3.2-rc.1-linux-amd64.tar.gz"$'\n'"${z}  ./tv.maktaba.classify-0.3.2.mkplugin"$'\n'"${z}  ./release.json"$'\n'
 if publish "${full}"$'\nmaktaba-server-0.3.2-rc.1-linux-amd64.tar.gz\nrelease.json' "${sums}" &&
     grep -q "tv.maktaba.classify-0.3.2.mkplugin (in checksums.txt)" "${work}/log" && [ ! -s "${work}/edits" ]; then
     ok "a draft missing a file its checksums name stays a draft, naming it"
@@ -193,19 +196,36 @@ for bad in "" "${z64}  ./release.json"$'\n'"${z64:0:20}" "${z64}  ./release.json
 done
 # the lines releaseverify.ParseChecksums refuses keep the draft too: a name listed twice
 # (./release.json and *release.json), an option-like name, a backslash, a path
-for bad in "${z64}  ./release.json"$'\n'"${z64} *release.json" "${z64}  -rf" "${z64}  a\\b" "${z64}  ./dir/file"; do
+for bad in "${z64}  ./release.json"$'\n'"${z64}  ./release.json"$'\n' "${z64}  ./-rf"$'\n' "${z64}  ./a\\b"$'\n' "${z64}  ./dir/file"$'\n'; do
     if publish "${full}"$'\nrelease.json\n-rf' "${bad}" && grep -q "a well-formed checksums.txt" "${work}/log" && [ ! -s "${work}/edits" ]; then
         ok "a checksums.txt releaseverify refuses keeps the draft: $(printf '%s' "${bad}" | tail -n1 | cut -c66-)"
     else
         fail "published with a refused checksums.txt [${bad}]: $(cat "${work}/log" "${work}/edits")"
     fi
 done
-# what it accepts publishes: CRLF line ends, a blank line, "*" and "./" names
-crlf="${z64}  ./release.json"$'\r\n\r\n'"${z64} *checksums.txt.sigstore.json"$'\r\n'
-if publish "${full}" "${crlf}" && grep -q -- "--draft=false" "${work}/edits"; then
-    ok "CRLF line ends, a blank line, \"*\" and \"./\" names: read, and published"
+# the gate reads only what release.yml's sha256sum writes, so it never publishes a file
+# machines refuse: anything else keeps the draft, though releaseverify would read it (it is
+# never written): CRLF, a blank line, "*" names, no last newline, a NUL, a long name
+nul="${work}/nul.txt"
+printf '%s  ./release.json\000x\n' "${z64}" >"${nul}"
+for odd in "${z64}  ./release.json"$'\r\n' "${z64}  ./release.json"$'\n\n' "${z64} *release.json"$'\n' \
+    "${z64}  ./release.json" "${z64}  ./$(printf 'a%.0s' $(seq 1 256))"$'\n' nul; do
+    if [ "${odd}" = nul ]; then
+        CHECKSUMS_FILE="${nul}" publish "${full}"$'\nrelease.json' x
+    else
+        publish "${full}"$'\nrelease.json' "${odd}"
+    fi
+    if grep -q "a well-formed checksums.txt" "${work}/log" && [ ! -s "${work}/edits" ]; then
+        ok "only sha256sum's own format: the draft waits ($(printf '%q' "${odd:0:80}" | cut -c1-60)…)"
+    else
+        fail "published with a checksums.txt not in sha256sum's form [$(printf '%q' "${odd:0:80}")]: $(cat "${work}/log" "${work}/edits")"
+    fi
+done
+# sha256sum's own form publishes
+if publish "${full}" "${z64}  ./release.json"$'\n'"${z64}  ./checksums.txt.sigstore.json"$'\n' && grep -q -- "--draft=false" "${work}/edits"; then
+    ok "sha256sum's own lines: read, and published"
 else
-    fail "a CRLF checksums.txt: $(cat "${work}/log" "${work}/edits")"
+    fail "a well-formed checksums.txt: $(cat "${work}/log" "${work}/edits")"
 fi
 # a stable tag, complete: its checksums read, published as a stable release and made the
 # latest (no feed required)
@@ -217,7 +237,7 @@ else
     fail "stable release: $(cat "${work}/log" "${work}/edits")"
 fi
 # and one missing a checksummed file stays a draft, stable or not
-if TAG=v0.3.2 publish "$(grep -v maktaba-server <<<"${stable}")" "${z64}  ./maktaba-server-0.3.2-linux-amd64.tar.gz" &&
+if TAG=v0.3.2 publish "$(grep -v maktaba-server <<<"${stable}")" "${z64}  ./maktaba-server-0.3.2-linux-amd64.tar.gz"$'\n' &&
     grep -q "maktaba-server-0.3.2-linux-amd64.tar.gz (in checksums.txt)" "${work}/log" && [ ! -s "${work}/edits" ]; then
     ok "a stable draft missing a checksummed file stays a draft"
 else
