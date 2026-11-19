@@ -1,68 +1,95 @@
 #!/usr/bin/env bash
-# tools/sbom.sh — generate CycloneDX SBOMs for every Maktaba component.
+# tools/sbom.sh — a CycloneDX SBOM for every shipped Maktaba component (story 23.7 AC1, TC1).
 #
-# Story 22.2 stub. We emit SBOMs but do NOT gate on CVEs here — that
-# lands in Story 23.7 (security-supply-chain). The SBOMs themselves are
-# attached to releases by Story 22.5 so downstream consumers can run
-# their own scanners.
+#   tools/sbom.sh [VERSION] [OUT_DIR]        # make sbom; release.yml's sbom job
 #
-# Tools (all required to be on PATH; install hints in CONTRIBUTING.md):
-#   cyclonedx-gomod  -> Go modules (https://github.com/CycloneDX/cyclonedx-gomod)
-#   cyclonedx-py     -> Python deps via uv lockfile (pip install cyclonedx-bom)
-#   cyclonedx-npm    -> Web deps via pnpm lockfile (npm i -g @cyclonedx/cyclonedx-npm)
+# Writes OUT_DIR/maktaba-sbom-<component>-<VERSION>.cdx.json (default VERSION `dev`,
+# OUT_DIR artifacts/sbom) for:
 #
-# If a tool is missing we warn and skip that component rather than fail —
-# this is a stub, not a hard CI gate. Story 23.7 promotes this to a gate.
+#   api, streaming, server (cmd/maktaba-server), cloud   cyclonedx-gomod app (what each binary links)
+#   pipeline                                             cyclonedx-py over `uv export`
+#   web                                                  tools/security/sbom.py over pnpm-lock.yaml
+#
+# Each SBOM is then checked against the dependency list its own tool chain resolves (`go
+# list -deps`, `uv export`, the lockfile's packages): a component that misses one
+# transitive dependency fails, so no short SBOM is published. Every tool is required; a
+# missing one fails (this is the release's, not a best effort).
+#
+# Tools: cyclonedx-gomod (go install github.com/CycloneDX/cyclonedx-gomod/cmd/cyclonedx-gomod@v1.9.0),
+# uv (cyclonedx-py runs through uvx at CYCLONEDX_PY_VERSION) and python3.
+#
+# Release images also carry BuildKit's own SBOM attestations (release.yml's `sbom: true`);
+# these files are the per-component view, attached to the GitHub release and signed by its
+# checksums.txt.
 
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
-OUT="${ROOT}/artifacts/sbom"
+VERSION="${1:-dev}"
+OUT="${2:-${ROOT}/artifacts/sbom}"
+CYCLONEDX_PY_VERSION="${CYCLONEDX_PY_VERSION:-7.2.1}"
 mkdir -p "${OUT}"
+WORK=$(mktemp -d)
+trap 'rm -rf "${WORK}"' EXIT
 
-have() { command -v "$1" >/dev/null 2>&1; }
+need() { command -v "$1" >/dev/null 2>&1 || { echo "[sbom] $1 is not on PATH" >&2; exit 2; }; }
+need cyclonedx-gomod
+need go
+need uv
+need python3
 
+out_for() { echo "${OUT}/maktaba-sbom-$1-${VERSION}.cdx.json"; }
+check() {
+    python3 "${ROOT}/tools/security/sbom.py" check "$1" --expect "$2"
+    echo "[sbom] $(basename "$1"): every one of $(wc -l <"$2" | tr -d ' ') dependencies listed"
+}
+
+# emit_go NAME MODULE MAIN [TAGS]: the modules the binary links (cyclonedx-gomod app, for
+# linux/amd64 as released, the Go standard library included), checked against the modules
+# of the packages `go list -deps` says the main package builds from (a module replaced by a
+# local directory, the shared ones, as `path@`: its version is the commit's, any matches)
 emit_go() {
-	local mod=$1
-	local out="${OUT}/${mod}.cdx.json"
-	if ! have cyclonedx-gomod; then
-		echo "[sbom] cyclonedx-gomod missing; skipping ${mod}" >&2
-		return 0
-	fi
-	echo "[sbom] go module: ${mod} -> ${out}"
-	(cd "${ROOT}/${mod}" && cyclonedx-gomod mod -licenses -json -output "${out}")
+    local name=$1 mod=$2 main=$3 tags=${4:-} out
+    out=$(out_for "${name}")
+    echo "[sbom] go ${mod} (${main}) -> ${out}"
+    (cd "${ROOT}/${mod}" && GOOS=linux GOARCH=amd64 CGO_ENABLED=0 GOFLAGS="${tags:+-tags=${tags}}" \
+        cyclonedx-gomod app -json -std -main "${main}" -output "${out}" >/dev/null)
+    (cd "${ROOT}/${mod}" && GOOS=linux GOARCH=amd64 CGO_ENABLED=0 \
+        go list ${tags:+-tags "${tags}"} -deps \
+        -f '{{with .Module}}{{if not .Main}}{{.Path}}@{{if .Replace}}{{.Replace.Version}}{{else}}{{.Version}}{{end}}{{end}}{{end}}' "${main}") \
+        | sort -u | awk 'NF' >"${WORK}/${name}.expect"
+    check "${out}" "${WORK}/${name}.expect"
 }
 
 emit_python() {
-	local out="${OUT}/pipeline.cdx.json"
-	if ! have cyclonedx-py; then
-		echo "[sbom] cyclonedx-py missing; skipping pipeline" >&2
-		return 0
-	fi
-	echo "[sbom] python pipeline -> ${out}"
-	# uv exports a requirements.txt-compatible view that cyclonedx-py
-	# can consume; we don't keep the intermediate file around.
-	local reqs
-	reqs=$(mktemp)
-	trap 'rm -f "${reqs}"' RETURN
-	(cd "${ROOT}/pipeline" && uv export --frozen --no-hashes --format requirements-txt > "${reqs}")
-	cyclonedx-py requirements --input-file "${reqs}" --output-format json --output-file "${out}"
+    local out reqs
+    out=$(out_for pipeline)
+    reqs="${WORK}/pipeline-requirements.txt"
+    echo "[sbom] python pipeline -> ${out}"
+    (cd "${ROOT}/pipeline" && uv export --frozen --no-hashes --no-emit-project --no-dev --all-extras \
+        --format requirements-txt >"${reqs}")
+    uvx --from "cyclonedx-bom==${CYCLONEDX_PY_VERSION}" cyclonedx-py requirements "${reqs}" \
+        --output-format JSON --output-file "${out}"
+    # `name==version ; marker` lines, as name@version
+    sed -nE 's/^([A-Za-z0-9_.-]+)(\[[^]]*\])?==([^ ;]+).*/\1@\3/p' "${reqs}" >"${WORK}/pipeline.expect"
+    check "${out}" "${WORK}/pipeline.expect"
 }
 
 emit_web() {
-	local out="${OUT}/web.cdx.json"
-	if ! have cyclonedx-npm; then
-		echo "[sbom] cyclonedx-npm missing; skipping web" >&2
-		return 0
-	fi
-	echo "[sbom] web -> ${out}"
-	(cd "${ROOT}/web" && cyclonedx-npm --output-format json --output-file "${out}")
+    local out
+    out=$(out_for web)
+    echo "[sbom] web -> ${out}"
+    python3 "${ROOT}/tools/security/sbom.py" pnpm "${ROOT}/web/pnpm-lock.yaml" web "${VERSION}" "${out}" \
+        --expect-out "${WORK}/web.expect"
+    check "${out}" "${WORK}/web.expect"
 }
 
-emit_go api
-emit_go streaming
+emit_go api api .
+emit_go streaming streaming .
+emit_go server cmd/maktaba-server . embed_web
+emit_go cloud cloud ./cmd/maktaba-cloud
 emit_python
 emit_web
 
-echo "[sbom] artifacts written under ${OUT}"
-ls -la "${OUT}" 2>/dev/null || true
+echo "[sbom] written under ${OUT}:"
+ls -1 "${OUT}"

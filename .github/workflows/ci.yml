@@ -114,6 +114,7 @@ jobs:
       media_e2e: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.media_e2e == 'true' }}
       perf_ci: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.perf_ci == 'true' }}
       build_artifacts: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.build_artifacts == 'true' }}
+      cve_gate: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.cve_gate == 'true' }}
       node_packaging: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.node_packaging == 'true' }}
       components_packs: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.components_packs == 'true' }}
       release_venv: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.release_venv == 'true' }}
@@ -327,6 +328,14 @@ jobs:
     needs: [changes]
     if: needs.changes.outputs.build_artifacts == 'true'
     uses: ./.github/workflows/_build-artifacts.yml
+
+  cve-gate:
+    # Story 23.7 AC2: govulncheck, pip-audit and pnpm audit over the shipped components; a
+    # called Go vulnerability or a high/critical Python or npm one fails it unless
+    # security/suppressions/ records why, until a date (see _cve-gate.yml)
+    needs: [changes]
+    if: needs.changes.outputs.cve_gate == 'true'
+    uses: ./.github/workflows/_cve-gate.yml
 
   node-packaging:
     needs: [changes]
@@ -629,6 +638,7 @@ jobs:
       - media-e2e
       - perf-ci
       - build-artifacts
+      - cve-gate
       - node-packaging
       - components-packs
       - launcher

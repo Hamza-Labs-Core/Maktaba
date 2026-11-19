@@ -1421,11 +1421,60 @@ jobs:
   # architecture out (the notes say so), the rest is published; so does the server image,
   # which is made of them. Every other job must pass, every leg of package-packs among them
   # (tools/ci/tests/test_release_packs.py keeps it so).
+  # Story 23.7 AC1 / TC1: a CycloneDX SBOM per shipped component (api, streaming, the
+  # unified server, cloud, pipeline, web), each checked to hold every transitive dependency
+  # its own tool chain resolves (tools/sbom.sh), attached to the release and signed by its
+  # checksums.txt with the rest. The images keep their BuildKit SBOM attestations too.
+  sbom:
+    name: SBOMs
+    needs: [guard]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      # the Go that builds the release's binaries (build-server's setup-go)
+      - uses: actions/setup-go@v6.4.0
+        with:
+          go-version-file: api/go.mod
+          cache: false
+
+      - name: Install cyclonedx-gomod
+        run: go install github.com/CycloneDX/cyclonedx-gomod/cmd/cyclonedx-gomod@v1.9.0
+
+      - name: Go modules
+        uses: ./.github/actions/go-mod-download
+        with:
+          modules: api streaming cmd/maktaba-server cloud
+
+      - uses: astral-sh/setup-uv@v8.1.0
+        with:
+          # the release's uv: the same pins as its other jobs
+          version: "0.13.4"
+
+      - name: Write the SBOMs
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          bash tools/sbom.sh "${TAG#v}" sbom-out
+
+      - name: Upload the SBOMs
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: release-sbom
+          path: sbom-out/*.cdx.json
+          if-no-files-found: error
+          retention-days: 7
+
   sign-and-release:
     name: sign + publish release
-    needs: [build-artifacts, build-server, build-images, build-server-image, package-archives, package-nfpm, package-node, package-linux-payload, package-packs]
+    needs: [build-artifacts, build-server, build-images, build-server-image, package-archives, package-nfpm, package-node, package-linux-payload, package-packs, sbom]
     if: >-
       !cancelled() &&
+      needs.sbom.result == 'success' &&
       needs.build-artifacts.result == 'success' && needs.build-server.result == 'success' &&
       needs.build-images.result == 'success' && needs.package-archives.result == 'success' &&
       needs.package-nfpm.result == 'success' && needs.package-node.result == 'success' &&
@@ -1819,6 +1868,48 @@ jobs:
           echo "::error::the artifact $ARTIFACT never downloaded after 3 attempts (the artifacts API unreachable, or no job uploaded it)"
           exit 1
 
+      # Story 23.7: the per-component SBOMs (the sbom job); a failed download fails the release
+      - name: Download the SBOMs
+        id: artifact-release-sbom
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: release-sbom
+          path: staged/sbom
+      - name: Wait 15s to retry the download of release-sbom
+        if: steps.artifact-release-sbom.outcome == 'failure'
+        shell: bash
+        run: sleep 15
+      - name: Download the SBOMs (attempt 2)
+        id: artifact-release-sbom-2
+        if: steps.artifact-release-sbom.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: release-sbom
+          path: staged/sbom
+      - name: Wait 45s to retry the download of release-sbom
+        if: steps.artifact-release-sbom-2.outcome == 'failure'
+        shell: bash
+        run: sleep 45
+      - name: Download the SBOMs (attempt 3)
+        id: artifact-release-sbom-3
+        if: steps.artifact-release-sbom-2.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: release-sbom
+          path: staged/sbom
+      - name: Check release-sbom downloaded
+        id: artifact-release-sbom-check
+        if: steps.artifact-release-sbom-3.outcome == 'failure'
+        shell: bash
+        env:
+          ARTIFACT: release-sbom
+        run: |
+          echo "::error::the artifact $ARTIFACT never downloaded after 3 attempts (the artifacts API unreachable, or no job uploaded it)"
+          exit 1
+
       - name: Assemble release tree
         env:
           TAG: ${{ github.ref_name }}
@@ -1830,6 +1921,8 @@ jobs:
           # server/api/streaming binaries live inside them, not loose.
           cp staged/archives/* dist/
           cp staged/packages/* dist/
+          # Story 23.7: one CycloneDX SBOM per component (maktaba-sbom-<component>-<ver>.cdx.json)
+          cp staged/sbom/*.cdx.json dist/
           # The Linux server payloads (Epic 39): a machine without a desktop
           # installs and updates from these. An architecture whose leg failed is
           # left out, and the notes say so (LINUX_PAYLOAD_MISSING).
