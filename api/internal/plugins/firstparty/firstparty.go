@@ -264,26 +264,22 @@ type Package struct {
 }
 
 // CheckPackage is story 54.22 §2: a first-party package is trusted when its files.json
-// digest is in the running release's verified checksums (under any name), its version is
-// the server's, and its id is under tv.maktaba.. The verified checksums come from
-// releaseverify (the updater's own check); nil checksums trust nothing.
+// digest is the one the running release's verified checksums list under that package's own
+// name (FilesJSONName of its id and the server's version, story 54.27 §2), its version is
+// the server's, and its id is under tv.maktaba.. A digest listed under any other name
+// (another plugin's files.json, any other release file) trusts nothing. The verified
+// checksums come from releaseverify (the updater's own check); nil checksums trust nothing.
 func CheckPackage(p Package, checksums releaseverify.Checksums, serverVersion string) error {
 	if !strings.HasPrefix(p.ID, FirstPartyPrefix) {
 		return &Error{Code: CodeTrustedUnsigned, Detail: p.ID + " is not a Maktaba id"}
 	}
-	sum := sha256.Sum256(p.FilesJSON)
-	digest := hex.EncodeToString(sum[:])
-	listed := false
-	for _, d := range checksums {
-		if strings.EqualFold(d, digest) {
-			listed = true
-		}
-	}
-	if !listed {
-		return &Error{Code: CodeTrustedUnsigned, Detail: p.ID + ": files.json is not in the release's checksums"}
-	}
 	if p.Version != serverVersion {
 		return &Error{Code: CodeTrustedVersion, Detail: p.ID + " " + p.Version + " is not " + serverVersion}
+	}
+	sum := sha256.Sum256(p.FilesJSON)
+	name := FilesJSONName(p.ID, serverVersion)
+	if d, ok := checksums[name]; !ok || !strings.EqualFold(d, hex.EncodeToString(sum[:])) {
+		return &Error{Code: CodeTrustedUnsigned, Detail: p.ID + ": files.json is not the release's " + name}
 	}
 	return nil
 }
