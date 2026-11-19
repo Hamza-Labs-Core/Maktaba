@@ -4,32 +4,26 @@ Reads the video's active ``transcripts`` row (the newest when several audio trac
 one) and its ``transcript_segments``, embeds every segment with the configured model
 (:func:`maktaba_pipeline.search.semantic.embed_model`, default
 ``intfloat/multilingual-e5-small``, ``"passage: "`` prefix, batched, on Apple's GPU when
-there is one) and replaces the video's vectors in the persistent Chroma collection
-(``MAKTABA_CHROMA_DIR``). Once the new vectors are written, the vectors the video may
-still have of its other transcripts, and of segments of this one that are blank now,
-are deleted by id (the ids come from the database: a delete by video, or a read of the
-video's ids, scans the whole collection's metadata), so a re-transcription never leaves
-the old transcript searchable.
+there is one) and writes the vectors to ``segment_embeddings``
+(:mod:`~maktaba_pipeline.search.pgstore`, pgvector). Once the new vectors are written,
+the vectors the video may still have of its other transcripts, and of segments of this
+one that are blank now, are deleted, so a re-transcription never leaves the old
+transcript searchable. Each write is one statement (atomic).
 
 The input fingerprint is the active transcript, its segment count, the model and
 :data:`~maktaba_pipeline.search.semantic.INDEX_VERSION`: a new transcript, a changed
-model or a new index format indexes the video again; anything else is skipped. Once
-search reads Postgres (:mod:`~maktaba_pipeline.search.pgstore`), a video with segments
-and no row in ``segment_embeddings`` counts as not indexed (a new home after a
-switchover: the machines' copies hold no vectors) and is indexed again.
-
-Where the vectors go follows ``semantic_store_state`` (Epic 43): ``segment_embeddings``
-whenever pgvector is ready, and Chroma too while search still reads it (the copy's dual
-write). A Postgres write is one statement (atomic), outside the write gate.
+model or a new index format indexes the video again; anything else is skipped. A video
+with segments and no row in ``segment_embeddings`` counts as not indexed (a new home
+after a switchover: the machines' copies hold no vectors; a video whose vectors were only
+in Chroma, retired in story 43.5) and is indexed again. Without pgvector (SQLite, or a
+Postgres without the extension) the stage fails ``search_unavailable``: search is then
+full-text only.
 
 A video without an active transcript has its vectors removed and succeeds (there is
 nothing to search). Segments are embedded and written in batches
-(``MAKTABA_EMBED_BATCH``, default 64), each in a worker thread, with progress and a cancel
-check between batches. Every Chroma write goes through :mod:`~maktaba_pipeline.search.gate`:
-one write at a time in the process, none cut short by the worker stopping. Only the
-upsert holds it: a batch is embedded before (the model has its own lock), so one job
-embeds while another writes. Each job logs where its time went (``index_timings``: the
-embedding, the writes, the wait for the write lock, the read), also in its summary.
+(``MAKTABA_EMBED_BATCH``, default 64), each embedded in a worker thread, with progress
+and a cancel check between batches. Each job logs where its time went
+(``index_timings``: the embedding and the writes), also in its summary.
 """
 
 from __future__ import annotations
@@ -49,17 +43,13 @@ from maktaba_pipeline.engine.sql import uid
 from maktaba_pipeline.engine.stages._common import load_video, require_video
 from maktaba_pipeline.engine.stages.registry import StageImpl
 from maktaba_pipeline.log import get_logger
-from maktaba_pipeline.search import gate
-from maktaba_pipeline.search.embedder import embed_id_for
 from maktaba_pipeline.search.pgstore import PgVectorStore, store_state
 from maktaba_pipeline.search.semantic import (
     INDEX_VERSION,
     Embedder,
     IndexedSegment,
-    SemanticIndex,
     SemanticUnavailable,
     batch_size,
-    collection_open,
     embed_model,
     embed_segments,
     get_embedder,
@@ -69,9 +59,7 @@ __all__ = [
     "IMPL",
     "active_transcript",
     "reset_embedder_factory",
-    "reset_index_factory",
     "set_embedder_factory",
-    "set_index_factory",
 ]
 
 _ACTIVE_SQL = (
@@ -81,10 +69,7 @@ _ACTIVE_SQL = (
     " ORDER BY t.created_at DESC, t.id DESC LIMIT 1"
 )
 
-#: the segments of the video's other transcripts: their vectors (if any) are stale once
-#: the active one is written. Transcripts and their segments are never deleted but with
-#: the video, so these are every vector the video can have besides the active one's
-_OTHER_SEGMENTS_SQL = (
+_SEGMENTS_SQL = (
     "SELECT s.transcript_id AS transcript_id, s.seq AS seq FROM transcript_segments s"
     " JOIN transcripts t ON t.id = s.transcript_id WHERE t.video_id = $1 AND t.id <> $2"
 )
@@ -94,22 +79,7 @@ _SEGMENTS_SQL = (
     " WHERE transcript_id = $1 ORDER BY seq"
 )
 
-#: builds the vector store the stage writes to; tests swap in a fake (``set_index_factory``)
-_index_factory: Callable[[], SemanticIndex] = SemanticIndex.default
-
-
-def set_index_factory(factory: Callable[[], SemanticIndex]) -> None:
-    global _index_factory
-    _index_factory = factory
-
-
-def reset_index_factory() -> None:
-    global _index_factory
-    _index_factory = SemanticIndex.default
-
-
-#: the embedding model when Chroma is not written (search reads Postgres); tests swap in
-#: a fake (``set_embedder_factory``)
+#: the embedding model; tests swap in a fake (``set_embedder_factory``)
 _embedder_factory: Callable[[], Embedder] = get_embedder
 
 
@@ -145,7 +115,12 @@ async def _revision(db: Any, transcript_id: str) -> int:
 
 
 async def _fingerprint(
-    db: Any, video_id: UUID | str, active: tuple[str, int] | None, *, missing: bool = False
+    db: Any,
+    video_id: UUID | str,
+    active: tuple[str, int] | None,
+    *,
+    missing: bool = False,
+    off: bool = False,
 ) -> str:
     fields: dict[str, Any] = {
         "transcript": active[0] if active else None,
@@ -156,6 +131,10 @@ async def _fingerprint(
     }
     if missing:
         fields["stored"] = False
+    if off:
+        # no pgvector here: the video was not indexed; once there is, this field goes and
+        # the video is indexed (a home with pgvector never has it: its fingerprints stand)
+        fields["semantic"] = "off"
     # Epic 52 (story 52.9): a reviewer's fix bumps the revision; only once there is one, so
     # a transcript nobody edited keeps its fingerprint
     rev = await _revision(db, active[0]) if active else 0
@@ -165,101 +144,64 @@ async def _fingerprint(
 
 
 async def _missing_vectors(db: Any, video_id: UUID | str, active: tuple[str, int] | None) -> bool:
-    """Search reads Postgres and the video has segments but no vectors there (a new home
-    after a switchover, a video indexed into Chroma and not copied)."""
+    """The video has segments without their vectors (a new home after a switchover; a
+    video whose vectors were only in Chroma, or that its copy moved in part)."""
     if active is None or active[1] == 0:
         return False
     state = await store_state(db)
-    if not (state.read_postgres and state.ready):
-        return False
-    return not await PgVectorStore(db, embed_model()).has_vectors(video_id)
+    if not state.ready or state.copying:
+        return False  # the Chroma copy is bringing them: never embedded again (43.5)
+    return not await PgVectorStore(db, embed_model()).has_vectors(video_id, active[0])
 
 
 async def input_fingerprint(db: Any, subject: Subject) -> str | None:
     """DB only: the active transcript, its size, the language, the model and the format;
-    and, once search reads Postgres, whether the video has vectors there."""
+    and whether the video has vectors."""
     if await load_video(db, subject.id) is None:
         return None
     active = await active_transcript(db, subject.id)
+    if not (await store_state(db)).ready:
+        return await _fingerprint(db, subject.id, active, off=True)
     missing = await _missing_vectors(db, subject.id, active)
     return await _fingerprint(db, subject.id, active, missing=missing)
 
 
 _log = get_logger()
 
+#: why a home without pgvector indexes nothing
+SEMANTIC_OFF = "semantic search needs Postgres with pgvector; search is full-text here"
+
 
 @dataclass(slots=True)
 class _Timings:
-    """Seconds a job spent: embedding, writing (the write lock held), waiting for the
-    write lock, reading the video's ids."""
+    """Seconds a job spent: embedding, writing."""
 
     embed: float = 0.0
     write: float = 0.0
-    write_wait: float = 0.0
-    read: float = 0.0
 
     def as_dict(self) -> dict[str, float]:
-        return {
-            "embed_sec": round(self.embed, 2),
-            "write_sec": round(self.write, 2),
-            "write_wait_sec": round(self.write_wait, 2),
-            "read_sec": round(self.read, 2),
-        }
-
-
-async def _timed_write(t: _Timings, fn: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
-    ran = 0.0
-
-    def call() -> Any:
-        nonlocal ran
-        began = time.perf_counter()
-        try:
-            return fn(*args, **kwargs)
-        finally:
-            ran = time.perf_counter() - began
-
-    began = time.perf_counter()
-    try:
-        return await gate.write(call)
-    finally:
-        t.write += ran
-        t.write_wait += max(0.0, time.perf_counter() - began - ran)
-
-
-async def _index_for_job() -> SemanticIndex:
-    """The index: under the write lock only to open it (the first job; opening may write
-    the collection's settings and apply Chroma's log), a lookup after."""
-    if collection_open():
-        return _open_index()
-    return await gate.write(_open_index)
-
-
-def _open_index() -> SemanticIndex:
-    try:
-        return _index_factory()
-    except SemanticUnavailable as exc:
-        raise StageFailure("search_unavailable", str(exc), retryable=False) from exc
+        return {"embed_sec": round(self.embed, 2), "write_sec": round(self.write, 2)}
 
 
 async def run(db: Any, job: Job, ctx: StageContext) -> StageResult:
     v = await require_video(db, job.subject.id)
-    state = await store_state(db)
-    index = await _index_for_job() if state.write_chroma else None
-    if index is None and not state.write_postgres:
-        raise StageFailure(
-            "search_unavailable",
-            "semantic search is on Postgres and pgvector is not installed",
-            retryable=False,
+    if not (await store_state(db)).ready:
+        # SQLite (Chroma, its store before story 43.5, is retired) or a Postgres without
+        # pgvector: no semantic search here, search is full-text; the job succeeds
+        # unchanged, so nothing downstream runs and no job is left failed
+        active = await active_transcript(db, v.id)
+        return StageResult(
+            output_hash=canonical_hash({"semantic": "off"}),
+            outcome="unchanged",
+            input_hash=await _fingerprint(db, v.id, active, off=True),
+            summary={"segments": 0, "reason": SEMANTIC_OFF},
         )
-    embedder = index.embedder if index is not None else _embedder_factory()
+    embedder = _embedder_factory()
     model = embedder.model_name
-    pg = PgVectorStore(db, model) if state.write_postgres else None
+    pg = PgVectorStore(db, model)
     active = await active_transcript(db, v.id)
     if active is None:
-        if index is not None:
-            await gate.write(index.delete_video, v.id)
-        if pg is not None:
-            await pg.delete_video(v.id)
+        await pg.delete_video(v.id)
         return StageResult(
             output_hash=canonical_hash({"transcript": None, "model": model}),
             summary={"segments": 0, "reason": "no active transcript", "model": model},
@@ -294,18 +236,8 @@ async def run(db: Any, job: Job, ctx: StageContext) -> StageResult:
     total = len(segments)
     await ctx.progress("embed", 0, total, force=True)
     written = 0
-    stale_count = 0
     t = _Timings()
     try:
-        others: list[Any] = []
-        if index is not None:
-            began = time.perf_counter()
-            # the stale ids come from the database, not from Chroma: asking Chroma for
-            # the video's ids scans the collection's metadata (about a second on 12
-            # million vectors, serialised with the writes), and a delete of ids it does
-            # not have costs nothing
-            others = await db.fetch(_OTHER_SEGMENTS_SQL, uid(v.id), transcript_id)
-            t.read += time.perf_counter() - began
         for start in range(0, total, size):
             await ctx.check_cancel()
             began = time.perf_counter()
@@ -313,43 +245,21 @@ async def run(db: Any, job: Job, ctx: StageContext) -> StageResult:
                 embed_segments, embedder, segments[start : start + size]
             )
             t.embed += time.perf_counter() - began
-            done = 0
-            if pg is not None:
-                began = time.perf_counter()
-                done = await pg.write_vectors(
-                    video_id=v.id,
-                    library_id=v.library_id,
-                    chunk=chunk,
-                    vectors=vectors,
-                    language=language,
-                )
-                t.write += time.perf_counter() - began
-            if index is not None:
-                done = await _timed_write(
-                    t,
-                    index.write_vectors,
-                    video_id=v.id,
-                    library_id=v.library_id,
-                    chunk=chunk,
-                    vectors=vectors,
-                    language=language,
-                )
-            written += done
-            await ctx.progress("embed", min(start + size, total), total)
-        if index is not None:
-            stale = {embed_id_for(UUID(str(r["transcript_id"])), int(r["seq"])) for r in others}
-            # blank segments are not embedded: a vector of one (an edit blanked it) is stale
-            stale |= {embed_id_for(s.transcript_id, s.seq) for s in segments if not s.text.strip()}
-            if stale:
-                await _timed_write(t, index.delete_ids, sorted(stale))
-            stale_count = len(stale)
-        if pg is not None:
-            # every vector of the video but its active transcript's non-blank segments
             began = time.perf_counter()
-            keep = [s.segment_id for s in everything if s.text.strip()]
-            dropped = await pg.keep_only(v.id, keep)
+            written += await pg.write_vectors(
+                video_id=v.id,
+                library_id=v.library_id,
+                chunk=chunk,
+                vectors=vectors,
+                language=language,
+            )
             t.write += time.perf_counter() - began
-            stale_count = stale_count or dropped
+            await ctx.progress("embed", min(start + size, total), total)
+        # every vector of the video but its active transcript's non-blank segments
+        began = time.perf_counter()
+        keep = [s.segment_id for s in everything if s.text.strip()]
+        stale_count = await pg.keep_only(v.id, keep)
+        t.write += time.perf_counter() - began
     except SemanticUnavailable as exc:
         raise StageFailure("search_unavailable", str(exc), retryable=False) from exc
     except ValueError as exc:  # a model whose vectors segment_embeddings cannot hold
@@ -359,7 +269,6 @@ async def run(db: Any, job: Job, ctx: StageContext) -> StageResult:
         video_id=str(v.id),
         segments=written,
         stale=stale_count,
-        store=state.store,
         **t.as_dict(),
     )
     await ctx.progress("embed", total, total, force=True)
@@ -379,7 +288,6 @@ async def run(db: Any, job: Job, ctx: StageContext) -> StageResult:
             "segments": written,
             "model": model,
             "stale_ids": stale_count,
-            "store": state.store,
             **t.as_dict(),
         },
     )
@@ -391,7 +299,7 @@ def unavailable() -> str | None:
 
     if search_available():
         return None
-    return "chromadb / sentence-transformers are not installed (the search extra)"
+    return "sentence-transformers is not installed (the search extra)"
 
 
 IMPL = StageImpl(run=run, input_fingerprint=input_fingerprint, unavailable=unavailable)

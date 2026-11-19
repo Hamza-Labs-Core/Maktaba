@@ -1,4 +1,13 @@
-"""``maktaba-pipeline copy-chroma``: the vectors in Chroma copied into Postgres, once (story 43.3).
+"""``maktaba-pipeline copy-chroma``: the vectors in Chroma copied into Postgres, once (stories
+43.3 and 43.5).
+
+Story 43.5 retired Chroma: nothing searches or writes it any more, and chromadb is no
+dependency. A home that updates with this copy not finished (its Chroma folder still
+there, ``semantic_store_state`` on ``chroma``) finishes it with this release: the
+supervisor runs it at start (``pipeline/chroma-copy``), the videos it copies keep their
+index fingerprints (nothing is embedded again), and only once it is done are Chroma's
+files deleted (the start after). Until then the reconciler's sweeps hold off
+(``MAKTABA_CHROMA_COPY=pending``) so no video waiting for its vectors is indexed again.
 
 The copy reads Chroma's files and never opens a Chroma client: the index worker has the
 collection open (and loaded, 24 GB on the home Mac) and keeps writing it until the copy
@@ -28,7 +37,8 @@ Steps, each saved in ``semantic_store_state.copy_cursor`` (a restart continues):
 4. ``verify``: row count, and recall of the HNSW index against the exact top 10 of
    Chroma's own vectors; then ``store = 'postgres'`` and ``copy_done_at``.
 
-While it runs the index stage writes both stores and search reads Chroma.
+While it runs, search reads Postgres (what is copied so far) and the index stage writes
+Postgres only: a row it writes is never overwritten by the copy.
 """
 
 from __future__ import annotations
@@ -58,6 +68,27 @@ import numpy.typing as npt
 
 from ..log import get_logger
 from . import semantic
+
+#: the collection the index stage of the releases before 43.5 wrote: one per model
+COLLECTION_PREFIX = "maktaba_segments"
+DEFAULT_CHROMA_DIR = "~/.maktaba/chroma"
+
+
+def collection_name(model: str) -> str:
+    """``maktaba_segments-intfloat-multilingual-e5-small``: as those releases named it."""
+    import re  # noqa: PLC0415
+
+    base = os.getenv("MAKTABA_CHROMA_COLLECTION", "").strip() or COLLECTION_PREFIX
+    slug = re.sub(r"[^A-Za-z0-9._-]+", "-", model).strip("-._")
+    return f"{base}-{slug}".strip("-._")[:512]
+
+
+def chroma_dir() -> str:
+    """The Chroma folder: ``MAKTABA_CHROMA_DIR`` (the supervisor gives the copy its own),
+    else ``~/.maktaba/chroma``."""
+    raw = os.getenv("MAKTABA_CHROMA_DIR", "").strip() or DEFAULT_CHROMA_DIR
+    return str(Path(raw).expanduser())
+
 
 __all__ = [
     "EXIT_FAILED",
@@ -562,7 +593,7 @@ async def _tail(conn: Any, files: ChromaFiles, cfg: CopyConfig, cur: Cursor) -> 
                 cfg.model,
                 keys[i : i + cfg.page],
                 np.stack(vecs[i : i + cfg.page]),
-                replace=True,
+                # never over a vector the index stage wrote (story 43.5: it is newer)
             )
         if gone:
             await conn.execute(
@@ -925,7 +956,7 @@ async def copy_chroma(conn: Any, cfg: CopyConfig) -> int:
     if not (cfg.chroma_dir / "chroma.sqlite3").exists():
         _log.error("chroma_copy_no_chroma", dir=str(cfg.chroma_dir))
         return EXIT_NOT_READY
-    name = semantic.collection_name(cfg.model)
+    name = collection_name(cfg.model)
     try:
         files = await asyncio.to_thread(ChromaFiles.open, cfg.chroma_dir, name)
     except LookupError as exc:
@@ -1053,7 +1084,7 @@ async def _run(args: argparse.Namespace) -> int:
     import asyncpg  # type: ignore[import-untyped]
 
     cfg = CopyConfig(
-        chroma_dir=Path(args.chroma_dir or semantic.chroma_dir()).expanduser(),
+        chroma_dir=Path(args.chroma_dir or chroma_dir()).expanduser(),
         model=semantic.embed_model(),
         page=max(1, args.page),
         samples=max(1, args.samples),

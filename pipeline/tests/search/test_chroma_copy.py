@@ -1,13 +1,15 @@
-"""``copy-chroma`` (story 43.3) against a real persistent Chroma and, when
-``MAKTABA_TEST_PG_URL`` names a Postgres with pgvector, a real database.
+"""The copy of the Chroma vectors into Postgres (search/chroma_copy.py, stories 43.3, 43.5).
 
-Chroma comes from the optional ``search`` extra; each test skips without it.
+The Chroma folder is the one Chroma 1.5.9 wrote (``tests/search/data/chroma-1.5.9``,
+made by ``tests/search/chroma_fixture.py``): chromadb is no dependency. The copy reads
+the files only. The Postgres tests need ``MAKTABA_TEST_PG_URL`` with pgvector.
 """
 
 from __future__ import annotations
 
 import json
 import os
+import shutil
 import uuid
 from collections.abc import AsyncIterator
 from pathlib import Path
@@ -18,83 +20,38 @@ import pytest_asyncio
 
 np = pytest.importorskip("numpy")
 
-from maktaba_pipeline.search import chroma_copy, semantic  # noqa: E402
+from maktaba_pipeline.search import chroma_copy  # noqa: E402
 from maktaba_pipeline.search.chroma_copy import (  # noqa: E402
     ChromaFiles,
     CopyConfig,
     Cursor,
     split_id,
 )
+from tests.search import chroma_fixture  # noqa: E402
 
 MODEL = "intfloat/multilingual-e5-small"
-DIM = 384
+DIM = chroma_fixture.DIM
+PER = chroma_fixture.PER
 PG_URL = os.environ.get("MAKTABA_TEST_PG_URL", "")
-
-
-def _unit(rng: Any, n: int) -> Any:
-    v = rng.standard_normal((n, DIM)).astype(np.float32)
-    return v / np.linalg.norm(v, axis=1, keepdims=True)
+FIXTURE = Path(__file__).parent / "data" / "chroma-1.5.9"
 
 
 class Built:
-    """A Chroma collection as the index stage writes it, and what it should hold."""
+    """The fixture's Chroma folder (a copy of it) and what it holds."""
 
     def __init__(self, root: Path) -> None:
         self.root = root
-        self.vectors: dict[str, Any] = {}
-        self.transcripts: list[uuid.UUID] = []
-        self.orphan_transcript = uuid.uuid4()
-        self.coll: Any = None
-        self.client: Any = None
+        self.vectors: dict[str, Any] = chroma_fixture.expected()
+        self.transcripts: list[uuid.UUID] = list(chroma_fixture.TRANSCRIPTS)
+        self.orphan_transcript = chroma_fixture.ORPHAN
 
 
-def _build(root: Path, *, transcripts: int = 30, per: int = 100, seed: int = 7) -> Built:
-    """``transcripts`` transcripts of ``per`` segments, one more whose transcript is not
-    in the database (orphans), some deleted, and the last writes left in Chroma's queue
-    (its sync threshold is 1000: the files hold the writes up to the last thousand)."""
-    chromadb = pytest.importorskip("chromadb")
-    b = Built(root)
-    b.client = chromadb.PersistentClient(
-        path=str(root), settings=chromadb.Settings(anonymized_telemetry=False)
-    )
-    b.coll = b.client.get_or_create_collection(
-        name=semantic.collection_name(MODEL),
-        metadata={"hnsw:space": "cosine"},
-        embedding_function=None,
-    )
-    rng = np.random.default_rng(seed)
-    b.transcripts = [uuid.uuid4() for _ in range(transcripts)]
-    for tid in [b.orphan_transcript, *b.transcripts]:
-        ids = [f"{tid}:{s}" for s in range(per)]
-        vecs = _unit(rng, per)
-        b.coll.upsert(
-            ids=ids,
-            embeddings=vecs,
-            metadatas=[{"seq": s} for s in range(per)],
-            documents=["x"] * per,
-        )
-        b.vectors.update(zip(ids, vecs, strict=True))
-    # deleted: two in the files (the first transcript) and two only in the queue (the last)
-    gone = [f"{b.transcripts[0]}:0", f"{b.transcripts[0]}:1"]
-    gone += [f"{b.transcripts[-1]}:5", f"{b.transcripts[-1]}:6"]
-    b.coll.delete(ids=gone)
-    for g in gone:
-        b.vectors.pop(g)
-    # written again, the newer vector only in the queue
-    again = f"{b.transcripts[-1]}:7"
-    b.vectors[again] = _unit(rng, 1)[0]
-    b.coll.upsert(
-        ids=[again], embeddings=[b.vectors[again]], metadatas=[{"seq": 7}], documents=["x"]
-    )
-    return b
-
-
-def _close(b: Built) -> None:
-    semantic.close_clients()
-    if b.client is not None:
-        close = getattr(b.client, "close", None)
-        if callable(close):
-            close()
+def _build(root: Path) -> Built:
+    """The folder Chroma 1.5.9 wrote: five transcripts of fifty segments and one more
+    whose transcript is not in the database (orphans); four deleted and one written
+    again after the files' last write (those only in Chroma's queue)."""
+    shutil.copytree(FIXTURE, root)
+    return Built(root)
 
 
 # ------------------------------------------------------------------ Chroma's files
@@ -115,39 +72,35 @@ def test_cursor_round_trip() -> None:
 
 
 def test_the_files_read_without_chroma(tmp_path: Path) -> None:
-    """Every vector Chroma holds is in its files or its queue, exactly as written."""
+    """Every vector Chroma 1.5.9 holds is in its files or its queue, exactly as written."""
     b = _build(tmp_path / "chroma")
+    files = ChromaFiles.open(b.root, chroma_copy.collection_name(MODEL))
+    files.load_labels()
+    assert files.header.dim == DIM
+    fd = os.open(files.segment_dir / "data_level0.bin", os.O_RDONLY)
     try:
-        files = ChromaFiles.open(b.root, semantic.collection_name(MODEL))
-        files.load_labels()
-        assert files.header.dim == DIM
-        fd = os.open(files.segment_dir / "data_level0.bin", os.O_RDONLY)
-        try:
-            el = files.read(fd, 0, files.elements())
-        finally:
-            os.close(fd)
-        seen: dict[str, Any] = {}
-        for label, vec, live in zip(el.labels.tolist(), el.vectors, el.live.tolist(), strict=True):
-            eid = files.label_to_id.get(label)
-            if eid is not None and live:
-                seen[eid] = vec
-        tail = files.queue_tail()
-        for _seq, op, eid, vec in tail:
-            if op == 3:
-                seen.pop(eid, None)
-            elif vec is not None:
-                seen[eid] = vec
-        assert tail, "the last writes are still in the queue"
-        assert set(seen) == set(b.vectors)
-        for eid, vec in b.vectors.items():
-            assert np.allclose(seen[eid], vec, atol=1e-5), eid
-        # and the files agree with Chroma's own read
-        some = list(b.vectors)[:50]
-        got = b.coll.get(ids=some, include=["embeddings"])
-        for eid, vec in zip(got["ids"], got["embeddings"], strict=True):
-            assert np.allclose(seen[eid], vec, atol=1e-5)
+        el = files.read(fd, 0, files.elements())
     finally:
-        _close(b)
+        os.close(fd)
+    seen: dict[str, Any] = {}
+    for label, vec, live in zip(el.labels.tolist(), el.vectors, el.live.tolist(), strict=True):
+        eid = files.label_to_id.get(label)
+        if eid is not None and live:
+            seen[eid] = vec
+    tail = files.queue_tail()
+    for _seq, op, eid, vec in tail:
+        if op == 3:
+            seen.pop(eid, None)
+        elif vec is not None:
+            seen[eid] = vec
+    assert tail, "the last writes are still in the queue"
+    assert set(seen) == set(b.vectors)
+    for eid, vec in b.vectors.items():
+        assert np.allclose(seen[eid], vec, atol=1e-5), eid
+
+
+def test_the_collection_and_folder_names() -> None:
+    assert chroma_copy.collection_name(MODEL) == chroma_fixture.COLLECTION
 
 
 def test_copy_rows_is_a_binary_copy() -> None:
@@ -257,7 +210,7 @@ def _cfg(root: Path, tmp: Path, **kw: Any) -> CopyConfig:
         chroma_dir=root,
         model=MODEL,
         page=kw.pop("page", 500),
-        samples=kw.pop("samples", 200),
+        samples=kw.pop("samples", 50),
         min_free_bytes=0,
         build_mem="64MB",
         progress_file=tmp / "progress.json",
@@ -276,12 +229,9 @@ async def _copied(conn: Any) -> dict[int, Any]:
 @pytest.mark.asyncio
 async def test_the_copy_moves_every_vector_and_switches(pg: Any, tmp_path: Path) -> None:
     b = _build(tmp_path / "chroma")
-    try:
-        seg = await _segments(pg, b, 100)
-        cfg = _cfg(b.root, tmp_path)
-        assert await chroma_copy.copy_chroma(pg, cfg) == chroma_copy.EXIT_OK
-    finally:
-        _close(b)
+    seg = await _segments(pg, b, PER)
+    cfg = _cfg(b.root, tmp_path)
+    assert await chroma_copy.copy_chroma(pg, cfg) == chroma_copy.EXIT_OK
     got = await _copied(pg)
     want = {seg[eid]: v for eid, v in b.vectors.items() if eid in seg}
     assert set(got) == set(want)  # orphans and deleted ones are not copied
@@ -289,7 +239,7 @@ async def test_the_copy_moves_every_vector_and_switches(pg: Any, tmp_path: Path)
         assert np.allclose(got[sid], vec, atol=2e-3)  # halfvec
     row = await pg.fetchrow("SELECT * FROM semantic_store_state")
     assert row["store"] == "postgres" and row["copy_done_at"] is not None
-    assert json.loads(row["copy_cursor"])["orphans"] == 100
+    assert json.loads(row["copy_cursor"])["orphans"] == PER
     meta = await pg.fetchrow("SELECT DISTINCT model, language FROM segment_embeddings")
     assert (meta["model"], meta["language"]) == (MODEL, "ar")
     valid = await pg.fetchval(
@@ -312,61 +262,55 @@ async def test_a_killed_copy_continues(
     """A stop in the middle: the next run goes on from the last page, keeps what the
     index stage wrote meanwhile, and ends with the same rows."""
     b = _build(tmp_path / "chroma")
-    try:
-        seg = await _segments(pg, b, 100)
-        real = chroma_copy._write_page
-        pages = {"n": 0}
+    seg = await _segments(pg, b, PER)
+    real = chroma_copy._write_page
+    pages = {"n": 0}
 
-        async def dies(*a: Any, **kw: Any) -> int:
-            pages["n"] += 1
-            if pages["n"] == 4:
-                raise RuntimeError("killed")
-            return await real(*a, **kw)
+    async def dies(*a: Any, **kw: Any) -> int:
+        pages["n"] += 1
+        if pages["n"] == 4:
+            raise RuntimeError("killed")
+        return await real(*a, **kw)
 
-        monkeypatch.setattr(chroma_copy, "_write_page", dies)
-        cfg = _cfg(b.root, tmp_path)
-        with pytest.raises(RuntimeError):
-            await chroma_copy.copy_chroma(pg, cfg)
-        await pg.execute("SELECT pg_advisory_unlock_all()")
-        cur = Cursor.parse(await pg.fetchval("SELECT copy_cursor FROM semantic_store_state"))
-        assert cur is not None and cur.phase == "load" and 0 < cur.next < cur.total
-        # the index was dropped for the load
-        assert await pg.fetchval("SELECT to_regclass('segment_embeddings_hnsw')") is None
-        # the index stage writes one meanwhile (both stores): its vector stays
-        eid = f"{b.transcripts[-2]}:99"
-        newer = np.zeros(DIM, dtype=np.float32)
-        newer[0] = 1.0
-        await pg.execute(
-            "INSERT INTO segment_embeddings SELECT ts.id, t.video_id, v.library_id, 'ar', $2, "
-            "$3::halfvec FROM transcript_segments ts JOIN transcripts t ON t.id = ts.transcript_id "
-            "JOIN videos v ON v.id = t.video_id WHERE ts.id = $1",
-            seg[eid],
-            MODEL,
-            "[" + ",".join(str(float(x)) for x in newer) + "]",
-        )
-        monkeypatch.setattr(chroma_copy, "_write_page", real)
-        assert await chroma_copy.copy_chroma(pg, cfg) == chroma_copy.EXIT_OK
-    finally:
-        _close(b)
+    monkeypatch.setattr(chroma_copy, "_write_page", dies)
+    cfg = _cfg(b.root, tmp_path, page=40)
+    with pytest.raises(RuntimeError):
+        await chroma_copy.copy_chroma(pg, cfg)
+    await pg.execute("SELECT pg_advisory_unlock_all()")
+    cur = Cursor.parse(await pg.fetchval("SELECT copy_cursor FROM semantic_store_state"))
+    assert cur is not None and cur.phase == "load" and 0 < cur.next < cur.total
+    # the index was dropped for the load
+    assert await pg.fetchval("SELECT to_regclass('segment_embeddings_hnsw')") is None
+    # the index stage writes one meanwhile (both stores): its vector stays
+    eid = f"{b.transcripts[-2]}:{PER - 1}"
+    newer = np.zeros(DIM, dtype=np.float32)
+    newer[0] = 1.0
+    await pg.execute(
+        "INSERT INTO segment_embeddings SELECT ts.id, t.video_id, v.library_id, 'ar', $2, "
+        "$3::halfvec FROM transcript_segments ts JOIN transcripts t ON t.id = ts.transcript_id "
+        "JOIN videos v ON v.id = t.video_id WHERE ts.id = $1",
+        seg[eid],
+        MODEL,
+        "[" + ",".join(str(float(x)) for x in newer) + "]",
+    )
+    monkeypatch.setattr(chroma_copy, "_write_page", real)
+    assert await chroma_copy.copy_chroma(pg, cfg) == chroma_copy.EXIT_OK
     got = await _copied(pg)
     want = {seg[e]: v for e, v in b.vectors.items() if e in seg}
     assert set(got) == set(want)
     assert np.allclose(got[seg[eid]], newer)
     # the load's rows, counted once though a page ran twice (the queue's are not counted)
     copied = await pg.fetchval("SELECT copied_rows FROM semantic_store_state")
-    assert len(want) - 1000 < copied <= len(want)
+    assert 0 < copied <= len(want)
 
 
 @pytest.mark.integration
 @pytest.mark.asyncio
-async def test_a_failed_check_leaves_search_on_chroma(pg: Any, tmp_path: Path) -> None:
-    b = _build(tmp_path / "chroma", transcripts=15)
-    try:
-        await _segments(pg, b, 100)
-        cfg = _cfg(b.root, tmp_path, min_recall=1.01)
-        assert await chroma_copy.copy_chroma(pg, cfg) == chroma_copy.EXIT_VERIFY_FAILED
-    finally:
-        _close(b)
+async def test_a_failed_check_leaves_the_copy_not_done(pg: Any, tmp_path: Path) -> None:
+    b = _build(tmp_path / "chroma")
+    await _segments(pg, b, PER)
+    cfg = _cfg(b.root, tmp_path, min_recall=1.01)
+    assert await chroma_copy.copy_chroma(pg, cfg) == chroma_copy.EXIT_VERIFY_FAILED
     row = await pg.fetchrow("SELECT * FROM semantic_store_state")
     assert row["store"] == "chroma" and row["copy_done_at"] is None
     assert json.loads(row["copy_cursor"])["phase"] == "verify"

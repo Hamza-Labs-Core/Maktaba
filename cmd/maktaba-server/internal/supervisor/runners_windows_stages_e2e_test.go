@@ -159,7 +159,6 @@ func TestFirstPartyStagesRunInTheirRunnersOnWindows(t *testing.T) {
 		"MAKTABA_FFPROBE":        ffprobe,
 		"MAKTABA_THUMBNAIL_ROOT": thumbs,
 		"MAKTABA_YT_WORK":        filepath.Join(dir, "cache", "yt"),
-		"MAKTABA_CHROMA_DIR":     filepath.Join(dir, "cache", "chroma"),
 		"HF_HOME":                filepath.Join(dir, "cache", "hf"),
 		"MAKTABA_CONFIG":         filepath.Join(dir, "config", "config.toml"),
 	} {

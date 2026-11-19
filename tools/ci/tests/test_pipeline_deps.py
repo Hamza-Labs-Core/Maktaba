@@ -71,7 +71,7 @@ def test_it_syncs_every_extra_but_torch_and_its_gpu_wheels(tmp_path: Path) -> No
            if n.startswith(("nvidia-", "cuda-"))}  # fmt: skip
     assert gpu and gpu <= skipped
     # what the tests import stays
-    assert not skipped & {"transformers", "chromadb", "ctranslate2", "yt-dlp", "numpy"}
+    assert not skipped & {"transformers", "ctranslate2", "yt-dlp", "numpy"}
 
 
 def test_torch_keeps_only_its_plain_dependencies(tmp_path: Path) -> None:

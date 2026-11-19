@@ -146,7 +146,9 @@ During the copy, search and the index stage keep using Chroma.
 | 43.6 | Measured on the home Mac | p50/p95 of the semantic leg at 13.9 M rows, disk before/after, recall vs Chroma, in the PR |
 
 Order: 43.1 → 43.2 → 43.3 + 43.4 → 43.6 → 43.5 (Chroma's code goes only after the live copy is
-checked; one release reads Chroma for the copy, the next drops it).
+checked; one release reads Chroma for the copy, the next drops it). 43.5 moved ahead of 43.6 on
+2026-11-19, without waiting for a checked live copy: a home whose copy was not done when it updates
+finishes the copy first and embeds nothing again (see As built).
 
 ## Risks
 
@@ -159,3 +161,112 @@ checked; one release reads Chroma for the copy, the next drops it).
   (FTS only) until fixed, never a broken database.
 - **Disk during the copy:** Chroma (42 GB) and Postgres (about 13 GB) side by side until the folder is
   deleted; the copy checks free space first.
+
+## As built
+
+### 43.5 Chroma retired
+
+Search, the `index` stage and `chapter_infer` read and write Postgres only (`segment_embeddings`).
+Nothing opens Chroma any more, and nothing depends on `chromadb`.
+
+- **Dependencies.** `chromadb` is out of the pipeline's `search` extra (`pipeline/pyproject.toml`,
+  `uv.lock`). About forty packages only it pulled in went with it, `oauthlib` and `kubernetes`
+  among them. The Mac, Windows and Linux payloads build their venvs from that extra, so they
+  lose it too. The node-packaging checks (`_node-packaging.yml`) no longer import it, and
+  componentseed no longer counts it as part of `runtime.ml`.
+- **Code.**
+  - Gone: the Chroma store in `search/semantic.py` (`SemanticIndex`, `open_collection`, the
+    sync threshold, `close_clients`), the copy (`search/chroma_copy.py` and its `copy-chroma`
+    command), `pgstore.chroma_has_vectors` and `delete_ids`, and the supervisor's
+    `pipeline/chroma-copy` job (`chromacopy.go`, and its process in the catalog).
+  - `StoreState` keeps only `ready` (pgvector installed, table made). The plugin stages run in
+    their runner whatever the row says (`index_store_chroma` is gone).
+  - The legacy `--no-engine` INDEX writes no vectors: its default target names no store. The
+    doctor no longer checks a Chroma folder. `MAKTABA_CHROMA_DIR` is no longer given to any
+    worker.
+  - The dev-stack move (`devmigrate`) and adopt no longer carry a Chroma folder. Uninstall
+    still removes one that is left.
+- **Compose, CI and docs.** The `chroma` service, its volumes and `MAKTABA_CHROMA_*` are out of
+  `deploy/compose/*.yml`, `pipeline/Dockerfile`, `.env.example`, `tools/dev/stack.sh`, CI's
+  integration services, the Makefile and the developer docs. A Docker home keeps its old
+  `chroma` volume unused until the operator removes it.
+- **A home that still has Chroma data finishes its copy** (decided 2026-11-19: a home whose
+  copy never finished must not embed anything again).
+  - **The copy runs at the update.** `copy-chroma` is the story 43.3 copy, kept: it reads
+    Chroma's files (`chroma.sqlite3`, the HNSW segment's `header.bin`,
+    `index_metadata.pickle` and `data_level0.bin`), never Chroma, so it needs no chromadb,
+    only numpy (the `search` extra every home that had Chroma has). On a home on Postgres
+    whose Chroma folder is there and not copied, the supervisor runs it at every start
+    until it is done (`pipeline/chroma-copy`, `BuildChromaCopy`). It goes on from the
+    cursor an earlier copy saved (the same code and cursor as the releases before), and
+    never overwrites a vector the index stage wrote.
+  - **Nothing is embedded again meanwhile.** The supervisor gives every child
+    `MAKTABA_CHROMA_COPY=pending`. While that holds and the state row says `chroma`, the
+    reconciler's sweeps queue nothing, and the index fingerprint never says "not stored"
+    (`StoreState.copying`).
+  - **"Marked indexed".** The copied videos keep the fingerprints their index jobs
+    answered, so once their vectors are in nothing indexes them.
+  - **It ends like the old copy.** Once the copy has checked itself (row count, and recall
+    of the HNSW index against Chroma's own vectors), it writes `store = 'postgres'`,
+    `copy_done_at` and `chroma-copy.done`, as the releases before did. A rollback to the
+    release before then finds a copy done. One that comes back before it is done finds
+    the folder and the cursor, and goes on copying.
+  - **What search gives meanwhile.** Search reads Postgres throughout: what is copied so
+    far. The copy drops the HNSW index for its load and builds it after, so the semantic
+    leg is slow, and the API falls back to full-text past its budget, until the copy is
+    done.
+  - **A copy that cannot finish.** A copy whose check keeps failing, or that cannot run at
+    all (no pgvector, no collection, no numpy: exit 78, not retried at that start), keeps
+    holding: nothing is embedded again, as decided. The admin sees why on the processes
+    page, and that removing the Chroma folder gives the copy up and indexes those videos
+    again (the operator's choice, never the release's). `chapter_infer` waits as well, so
+    no video is chaptered from part of its vectors.
+  - **Videos copied in part, with no copy to finish them.** A home whose copy stopped part
+    way and whose Chroma folder is gone has videos with some of their vectors only. The
+    fingerprint counts the vectors against the active transcript's non-blank segments
+    (`PgVectorStore.has_vectors`), and the reconciler makes one bounded pass
+    (`_partial_copy_sweep`, 500 videos a minute, once per process) that queues them. Those
+    are indexed again: there is nothing to copy them from.
+- **SQLite homes**, and a Postgres without pgvector, have no semantic search: search is
+  full-text. Before 43.5 a SQLite home's store was Chroma; there is no pgvector to copy
+  into. `index` and `chapter_infer` succeed `unchanged` with the reason, so no job fails
+  and nothing downstream runs. The index fingerprint carries `semantic: off` only there,
+  so once pgvector is installed every video is indexed, and a home with pgvector keeps
+  its fingerprints.
+- **The folder is cleaned up** (`supervisor.RetireChroma`, at every start), only after
+  the copy.
+  - **Copied:** a folder whose copy is done (`chroma-copy.done` names it) loses Chroma's
+    files at the start after the copy (kept that start, for a rollback, as before). A
+    folder not copied on a Postgres home is kept, however often the release starts,
+    until the copy is done.
+  - **SQLite:** a SQLite home's folder (nothing to copy into) is kept by the first start
+    and marked (`chroma-retired`), then deleted by a start a day after the mark
+    (`ChromaKeep`; `MAKTABA_CHROMA_KEEP_SECONDS` changes it).
+  - **Only Chroma's own entries** are deleted: `chroma.sqlite3` and its side files, and the
+    segment folders it names by UUID. Then the folder goes, if that left it empty. A
+    `MAKTABA_CHROMA_DIR` pointed at a folder holding other things (even the state dir)
+    loses nothing else. A folder without `chroma.sqlite3` that is not empty is never
+    touched, and a leading `~` is the home folder, as the pipeline read it.
+  - **Rollback.** Before the copy is done, a rollback finds the folder and the cursor and
+    goes on copying with the release before's copy. After it, it finds `postgres` and the
+    done file, and reads Postgres. On a SQLite home, a rollback after the day finds no
+    folder and an empty Chroma; the day is its rollback window.
+- **Tests.**
+  - `chromaretire_test.go`: copied, never copied, the keep, a folder holding other things
+    (the state dir), other folders, `~`, nothing there.
+  - `test_pgstore.py` on a pgvector Postgres: the stage, search, `chapter_infer` and the sweep
+    on a row that still says `chroma`; a video copied in part, queued by the one-time
+    pass and indexed whole; without pgvector both stages succeed `unchanged`; `prepare`
+    writes no row.
+  - The engine stage and analysis tests, on an in-memory store.
+  - The semantic-search parity test, with the row left on `chroma`.
+  - `test_chroma_copy.py`: the reader against a folder Chroma 1.5.9 wrote
+    (`tests/search/data/chroma-1.5.9`, made by `tests/search/chroma_fixture.py`), and on
+    pgvector the whole copy, a killed copy that goes on, a failed check, no pgvector.
+  - `test_pgstore.py`: while the copy runs no sweep queues an index and no fingerprint
+    says "not stored"; after it a copied video's fingerprint is the plain one.
+  - `chromaretire_test.go`: a Postgres home runs the copy first and keeps the folder until
+    it is done.
+  - Update rehearsal scenario 18 (`api/rehearsal_chroma_e2e_test.go`): a home whose copy
+    was stopped part way updates; the copy finishes, every vector is in Postgres as Chroma
+    held it, no index job runs, and Chroma's files go only the start after.

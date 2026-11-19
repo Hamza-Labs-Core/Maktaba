@@ -968,7 +968,7 @@ func (s *Supervisor) probe(ctx context.Context, c *child, cmd *exec.Cmd, started
 			s.mu.Unlock()
 			// asked first, like a shutdown: a child busy in a long write (a worker in a
 			// native call holding its GIL) finishes it and exits, where a kill mid-write
-			// can leave its store broken (the Chroma index). Killed after HangGrace.
+			// can leave a store broken. Killed after HangGrace.
 			if c.proc.askStop(cmd.Process, tree) == nil {
 				hang := c.proc.graceFor(s.hangGrace)
 				select {

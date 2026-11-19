@@ -46,7 +46,7 @@ faster.
 
 ## The dev stack
 
-`make dev` starts Postgres, Chroma, the API, streaming, the pipeline and the web app:
+`make dev` starts Postgres, the API, streaming, the pipeline and the web app:
 
 | Service | Address |
 |---|---|
@@ -54,7 +54,6 @@ faster.
 | Streaming | http://localhost:8081 |
 | Web | http://localhost:5173 |
 | Postgres | `postgres://maktaba:maktaba@localhost:5432/maktaba` (dev-only credentials) |
-| Chroma | http://localhost:8000 |
 
 Edits reload on their own: `air` rebuilds Go services, `watchmedo` restarts the
 pipeline, and Vite hot-reloads the web app.

@@ -91,13 +91,12 @@ dev = [
     "types-psutil>=6",
     "types-pyyaml>=6.0",
 ]
-# Semantic search (engine `index` stage + the gRPC SemanticSearch RPC):
-# embedded persistent Chroma and a sentence-transformers embedder
-# (default intfloat/multilingual-e5-small; torch picks up Apple MPS).
+# Semantic search (engine `index` stage + the gRPC SemanticSearch RPC): a
+# sentence-transformers embedder (default intfloat/multilingual-e5-small; torch
+# picks up Apple MPS). The vectors are in Postgres (pgvector, Epic 43).
 search = [
-    # copy-chroma, chapter_infer and topic_recluster use numpy directly
+    # chapter_infer and topic_recluster use numpy directly
     "numpy>=2",
-    "chromadb>=1.0,<2",
     "sentence-transformers>=3.0,<7",
 ]
 

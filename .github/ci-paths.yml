@@ -495,7 +495,7 @@ store:
 
 # ---- the server's tiers ---------------------------------------------------------------
 
-# Postgres + Chroma: the Go modules' and the pipeline's integration tiers, cloud's, and the
+# Postgres: the Go modules' and the pipeline's integration tiers, cloud's, and the
 # pipeline's real-ffmpeg tests (the relay test builds the api)
 integration:
   - *ci

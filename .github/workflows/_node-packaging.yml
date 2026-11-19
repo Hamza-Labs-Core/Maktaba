@@ -491,7 +491,7 @@ jobs:
           grep -q '"state": "ready"' <<<"$last"
           grep -q '"state": "ready"' "$RUNNER_TEMP/App Support/Maktaba/venv-status.json"
           "$venv/bin/maktaba-pipeline" --version
-          "$venv/bin/python" -c "import mlx_whisper, mlx_audio, chromadb, sentence_transformers, camel_tools, silero_vad"
+          "$venv/bin/python" -c "import mlx_whisper, mlx_audio, sentence_transformers, camel_tools, silero_vad"
           # the default constraints are PyPI's (the cuda set is Windows'): a Mac has PyPI's torch
           "$venv/bin/python" -c "from importlib.metadata import version; v = version('torch'); assert '+' not in v, v; print('torch', v)"
           grep -q '"torch": "cpu"' "$RUNNER_TEMP/App Support/Maktaba/venv-status.json"
@@ -709,7 +709,7 @@ jobs:
           if ($LASTEXITCODE -ne 0 -or $base -ne $py) { throw "the venv runs on '$base', not the bundled $py" }
           $got = (& (Join-Path $venv 'Scripts\maktaba-pipeline.exe') --version | Out-String).Trim()
           if ($LASTEXITCODE -ne 0 -or $got -ne $ver) { throw "maktaba-pipeline --version says '$got', the wheel is $ver" }
-          & $vpy -c 'import chromadb, sentence_transformers, maktaba_pipeline'
+          & $vpy -c 'import sentence_transformers, maktaba_pipeline'
           if ($LASTEXITCODE -ne 0) { throw 'the search extra does not import' }
           # story 38.9: no NVIDIA GPU here, so torch's CPU build (PyPI's), not the cuda set's
           if ($status.torch -ne 'cpu') { throw "venv-status.json: torch $($status.torch) ($($status.torch_why))" }

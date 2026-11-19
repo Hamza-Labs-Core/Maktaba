@@ -59,7 +59,7 @@ type Process struct {
 	// OnDemand: not started until asked for (Supervisor.Want).
 	OnDemand bool
 	// ProbeTimeout, when longer than the policy's, is how long one liveness check of
-	// this child may take (the Python workers: Chroma's native calls hold the GIL,
+	// this child may take (the Python workers: a native call holds the GIL,
 	// so /healthz can wait seconds behind a write without the worker being stuck).
 	ProbeTimeout time.Duration
 	// StartupGrace, when longer than the policy's, is how long after a start this child's
@@ -308,8 +308,8 @@ func roleBinds(role Role, cfg config.Config) []ports.Bind {
 const EnvWheelhousePython = "MAKTABA_WHEELHOUSE_PYTHON"
 
 // PythonProbeTimeout bounds one liveness check of a pipeline worker: its /healthz
-// answers once the GIL is free, which a Chroma write into a large index can hold for
-// tens of seconds. A worker killed then, mid-write, leaves the search index unusable.
+// answers once the GIL is free, which a long native call (the embedding model) can hold
+// for tens of seconds.
 const PythonProbeTimeout = 30 * time.Second
 
 // PythonStartupGrace is how long a pipeline worker has from its start to its first
