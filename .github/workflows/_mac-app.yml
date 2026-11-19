@@ -209,12 +209,13 @@ jobs:
   # publish job's updater-feed over what it staged, into a scratch folder: the feed must carry
   # darwin-aarch64-core (and -app) and no Full key. Unsigned and not notarized (that needs the
   # Developer ID, a tag's); the updater signatures are a throwaway key's, checked with its
-  # public half as the publish job checks the real one. Then the budgets (README N7-N9):
+  # public half as the publish job checks the real one. Then the budgets (README N7, N9):
   #   N7  the Core dmg against the v0.3.62 Full dmg (tools/release/bundle-size/baseline.json)
-  #   N8  a Core home set up from that app as the app does (Core chosen), idle 120 s: the
-  #       launcher's whole tree at or under 700 MB resident (core-home.sh)
-  #   N9  exactly 4 processes besides the launcher and the supervisor: postgres, api,
-  #       streaming, pipeline
+  #   N9  a Core home set up from that app as the app does (Core chosen), idle 120 s
+  #       (core-home.sh): exactly 4 processes besides the launcher and the supervisor:
+  #       postgres, api, streaming, pipeline. Its idle memory is recorded and shown, held to
+  #       no budget: N8 (700 MB) was removed on 2026-11-19, because it measured only an
+  #       empty home
   # What it measured, the feed and the home's logs are kept as the bundle-size artifact.
   bundle-size:
     name: Bundle size (Core payload)
@@ -403,10 +404,10 @@ jobs:
           dmg=("$staged"/Maktaba-Core_*_aarch64.dmg)
           echo "CORE_DMG_BYTES=$(stat -f %z "${dmg[0]}")" >>"$GITHUB_ENV"
 
-      - name: A Core home, idle (N8, N9)
+      - name: A Core home, idle (N9; its idle memory recorded)
         run: bash tools/release/bundle-size/core-home.sh --app "$APP" --out bundle-size/core-home.json --logs bundle-size/logs
 
-      - name: Budgets (N7, N8, N9)
+      - name: Budgets (N7, N9)
         if: ${{ !cancelled() && env.CORE_DMG_BYTES != '' }}
         run: |
           set -euo pipefail

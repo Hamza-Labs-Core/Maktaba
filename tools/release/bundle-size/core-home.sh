@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# A Core home, idle (Epic 51 story 51.17, N8 and N9): sets up a home from a Core Mac app's
+# A Core home, idle (Epic 51 story 51.17, N9): sets up a home from a Core Mac app's
 # payload the way the desktop app does when Core is chosen (setup --json, one step per run:
 # status, check, admin, libraries, bundle core, plex skipped, venv, finish; no models and no
 # llm step, as the wizard skips them for Core), starts it as launchd does
@@ -10,7 +10,8 @@
 #                children other than the supervisor, and the supervisor's children (N9:
 #                exactly 4, the four above; Core runs no media worker)
 #   idle_rss_mb  the resident memory of the launcher's whole tree, the supervisor and
-#                postgres's own workers included (N8: at most 700 MB)
+#                postgres's own workers included: for information (N8's 700 MB budget was
+#                removed on 2026-11-19: it measured only an empty home)
 #
 # Written as JSON to --out; tools/release/bundle-size/bundle_size.py judges the numbers.
 # Hermetic: HOME is a scratch folder (the data, the config, the logs, the venv), removed at

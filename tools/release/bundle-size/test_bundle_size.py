@@ -80,10 +80,12 @@ class BudgetTest(unittest.TestCase):
         self.assertTrue(cs[0].ok)
         self.assertFalse(cs[1].ok)
 
-    def test_memory_and_processes(self) -> None:
-        cs = bundle_size.checks(BASE, 50_000_000, idle_rss_mb=701, processes=5)
-        self.assertEqual([c.ok for c in cs], [True, True, False, False])
+    def test_processes_and_no_memory_budget(self) -> None:
+        # N8 (idle memory) was removed on 2026-11-19: it measured only an empty home
+        cs = bundle_size.checks(BASE, 50_000_000, processes=5)
+        self.assertEqual([c.ok for c in cs], [True, True, False])
         self.assertEqual(len(bundle_size.checks(BASE, 50_000_000)), 2)
+        self.assertNotIn("idle memory", [c.name for c in cs])
 
     def test_exactly_four_processes(self) -> None:
         # N9: exactly postgres, api, streaming and pipeline; fewer is a part missing
@@ -97,12 +99,17 @@ class BudgetTest(unittest.TestCase):
             home.write_text(json.dumps({"idle_rss_mb": 512.5, "processes": 4, "roles": []}), encoding="utf-8")
             with redirect_stdout(io.StringIO()) as out:
                 self.assertEqual(bundle_size.main(["--core-bytes", "60000000", "--home", str(home)]), 0)
-            self.assertIn("ok   idle memory: 512.5 MB", out.getvalue())
+            self.assertIn("info idle memory: 512.5 MB", out.getvalue())
             self.assertIn("ok   processes: 4.0 processes (budget exactly 4.0 processes)", out.getvalue())
+            # any idle memory passes (shown, no budget); a wrong process count fails
+            home.write_text(json.dumps({"idle_rss_mb": 900, "processes": 4}), encoding="utf-8")
+            with redirect_stdout(io.StringIO()) as out:
+                self.assertEqual(bundle_size.main(["--core-bytes", "60000000", "--home", str(home)]), 0)
+            self.assertIn("info idle memory: 900.0 MB", out.getvalue())
+            self.assertNotIn("FAIL", out.getvalue())
             home.write_text(json.dumps({"idle_rss_mb": 900, "processes": 6}), encoding="utf-8")
             with redirect_stdout(io.StringIO()) as out:
                 self.assertEqual(bundle_size.main(["--core-bytes", "60000000", "--home", str(home)]), 1)
-            self.assertIn("FAIL idle memory", out.getvalue())
             self.assertIn("FAIL processes", out.getvalue())
 
     def test_zero_is_refused(self) -> None:
