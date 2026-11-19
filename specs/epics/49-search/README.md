@@ -249,3 +249,40 @@ runs only when the person opens that tab or submits from it; Results never waits
 - No language model in ordinary search; AI mode is a separate tab, run only when chosen, like
   Google's AI mode (2026-11-01).
 - The relevance tests are generated from the home's own transcripts, not a hand-written list (2026-11-01).
+
+## 9. As built
+
+### 49.1 PostgreSQL 18 + pg_textsearch in every bundle
+
+- Every app payload (Mac, Linux x86_64 and aarch64, Windows) carries PostgreSQL 18.7 in
+  `postgres-18/`, beside the PostgreSQL 16 in `postgres/` that the server still runs. The pins
+  are `POSTGRES18_*` and `PGTEXTSEARCH_*` in `tools/release/{mac,linux,win}-app/pins.env`, the
+  same theseus-rs builds as 16, checked by SHA-256. `payload.sh` leaves out what the 18 builds add
+  and Maktaba never loads: LLVM and `llvmjit`, PL/Python and its Python, the bitcode, ecpg and
+  sqlite. About 27 MB compressed on the Mac.
+- pgvector 0.8.7 and pg_textsearch 1.5.1 are built from their pinned source tags against 18:
+  gcc or clang with `with_llvm=no` and no `-march=native`, Visual C++ on Windows. On Windows,
+  pg_textsearch 1.5.1's `Makefile.win` lacks six of its Makefile's objects (`boolean`,
+  `build_merge`, `rls`, `debug/injection`, `index/compaction_job`, `segment/graph_snapshot`), so the
+  build passes the Makefile's object list to nmake.
+- The bundled server (`pgbundle`) adds `shared_preload_libraries=pg_textsearch` whenever its
+  install's `lib/` holds the module, and merges it into a household's own
+  `shared_preload_libraries`. On 16, or on a machine's fetched Postgres, it adds nothing.
+- `payload.json` gains `postgres_18` (version, source, SHA-256, `dir`, and its libraries on Linux
+  and Windows) and `pg_textsearch`. Its `postgres` stays 16, so `app_postgres_major` and the
+  updater's major-version gates are unchanged.
+- Licences: `licenses/postgresql-18.txt` and `licenses/pg_textsearch.txt` (LICENSE and NOTICE).
+- Proof: each payload's `check.sh` runs `tools/release/pg18-check.sh` on the built payload. It
+  checks that `postgres --version` is 18.x; that the server starts with the bundle's preload;
+  that `CREATE EXTENSION` works for pg_textsearch, vector, pg_trgm, pgcrypto and unaccent; that a
+  BM25 index on Maktaba's kind of configuration ranks the right row first through the index;
+  that the schema migrates (`maktaba-api migrate up`); and that the payload's own 16 cluster
+  upgrades to 18 with `pg_upgrade`. The Linux job also runs `TestRealPgTextsearchPreloaded`
+  (pgbundle's `Prepare` and start flags on the payload's 18).
+- **How it differs from the spec.** 18 ships beside 16 rather than replacing it. A bundle that
+  only carried 18 would leave every home on 16 unable to update (the updater refuses another
+  major, `pg_major_change`) and a container started from the new image unable to start
+  (`pg_major`) until 49.2's upgrade exists. The switch of the running server to 18 comes with
+  49.2's upgrade. So do Docker Compose's and CI's `pgvector/pgvector:*-pg18` images: those run
+  the server's database, and they move when the server does. A node's fetched Postgres
+  (`pgbin`, which the deb and rpm also use) moves in 49.3.

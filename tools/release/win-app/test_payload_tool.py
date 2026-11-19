@@ -189,6 +189,20 @@ class CheckTest(Base):
         self.assertEqual(rc, 1)
         self.assertIn("postgres/lib/pgxml.dll: imports libxml2.dll", out)
 
+    def test_postgres_18_resolves_from_its_own_bin(self):
+        # Epic 49 story 49.1: postgres-18\ is a Postgres of its own; its extensions' imports
+        # come from its bin\, never from 16's
+        root = self.payload()
+        put(root / "postgres-18" / "bin" / "postgres.exe", make_pe(["kernel32.dll", "vcruntime140.dll"]))
+        put(root / "postgres-18" / "bin" / "vcruntime140.dll", make_pe(["kernel32.dll"]))
+        put(root / "postgres-18" / "lib" / "pg_textsearch.dll", make_pe(["postgres.exe", "vcruntime140.dll"]))
+        rc, out, _ = quiet(pt.main, ["check", str(root)])
+        self.assertEqual(rc, 0, out)
+        (root / "postgres-18" / "bin" / "vcruntime140.dll").unlink()
+        rc, out, _ = quiet(pt.main, ["check", str(root)])
+        self.assertEqual(rc, 1)
+        self.assertIn("postgres-18/lib/pg_textsearch.dll: imports vcruntime140.dll", out)
+
     def test_the_runtime_from_system32_is_not_enough(self):
         root = self.payload()
         (root / "postgres" / "bin" / "vcruntime140.dll").unlink()

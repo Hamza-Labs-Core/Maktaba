@@ -112,7 +112,8 @@ plugins="$(find "$PAYLOAD/postgres/lib" -type f ! -name 'pgoutput.*' -exec grep 
 if [ -z "$plugins" ]; then ok "no output plugin but pgoutput"; else fail "output plugins besides pgoutput: $(printf '%s\n' "$plugins" | tr '\n' ' ')"; fi
 pg="$PAYLOAD/postgres/bin"
 port=$((54000 + RANDOM % 900))
-if "$pg/initdb" -D "$SCRATCH/pgdata" -U maktaba --auth=trust -E UTF8 >"$SCRATCH/initdb.log" 2>&1 &&
+# --locale=C as the bundled server makes its cluster (pgbundle), so the upgrade below matches
+if "$pg/initdb" -D "$SCRATCH/pgdata" -U maktaba --auth=trust -E UTF8 --locale=C >"$SCRATCH/initdb.log" 2>&1 &&
     "$pg/pg_ctl" -D "$SCRATCH/pgdata" -l "$SCRATCH/pg.log" -w -t 30 \
         -o "-p $port -k '' -c listen_addresses=127.0.0.1" start >/dev/null 2>&1; then
     run "extensions" "$pg/psql" -h 127.0.0.1 -p "$port" -U maktaba -d postgres -Atq -v ON_ERROR_STOP=1 \
@@ -141,6 +142,19 @@ if "$pg/initdb" -D "$SCRATCH/pgdata" -U maktaba --auth=trust -E UTF8 >"$SCRATCH/
 else
     fail "initdb/start: $(tail -3 "$SCRATCH/initdb.log" "$SCRATCH/pg.log" 2>/dev/null)"
 fi
+
+# PostgreSQL 18 (Epic 49, story 49.1): postgres-18/, with pgvector and pg_textsearch, and the
+# 16 cluster above upgraded to it by pg_upgrade (what the updater's upgrade runs, story 49.2)
+echo "PostgreSQL 18"
+"$SCRIPT_DIR/../pg18-check.sh" --pg16 "$pg" --pg18 "$PAYLOAD/postgres-18/bin" --old "$SCRATCH/pgdata" \
+    --scratch "$SCRATCH/pg18" --api "$PAYLOAD/bin/maktaba-api" >"$SCRATCH/pg18.out" 2>&1 || true
+while IFS= read -r line; do
+    case "$line" in
+        "ok "*) ok "${line#ok }" ;;
+        "FAIL "*) fail "${line#FAIL }" ;;
+    esac
+done <"$SCRATCH/pg18.out"
+grep -q '^ok PostgreSQL 18 checks done' "$SCRATCH/pg18.out" || fail "the PostgreSQL 18 checks did not finish: $(tail -5 "$SCRATCH/pg18.out")"
 
 if [ "$FLAVOUR" = full ]; then
 echo "Ollama"
