@@ -11,9 +11,11 @@
 package apppayload
 
 import (
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -166,10 +168,13 @@ func DatabasePath(stateDir string) string {
 }
 
 // ClusterMajorIn is the major of the cluster an install under stateDir runs on, as its
-// directories say (Epic 49 story 49.2): "18" when <stateDir>/postgres-18 holds a cluster
-// and no hold keeps the previous major running (state/postgres-upgrade-held, pgbundle's
-// HoldMajor); else "" (<stateDir>/postgres, the record database.json, as every release
-// before reads it).
+// directories say (Epic 49 story 49.2): "18" when <stateDir>/postgres-18 holds a cluster,
+// no hold keeps the previous major running (state/postgres-upgrade-held, pgbundle's
+// HoldMajor), and the 16 cluster has not moved on since it was upgraded (a release before
+// the upgrade ran on it again after a rollback: that release runs on 16 and reads
+// database.json, and the next start of 18 upgrades it again). Else "" (<stateDir>/postgres,
+// database.json, as every release before reads it). No program runs: the 16 cluster's
+// pg_control is read as it is on disk.
 func ClusterMajorIn(stateDir string) string {
 	if _, err := os.Stat(filepath.Join(stateDir, "postgres-18", "PG_VERSION")); err != nil {
 		return ""
@@ -177,7 +182,56 @@ func ClusterMajorIn(stateDir string) string {
 	if _, err := os.Stat(filepath.Join(stateDir, "state", "postgres-upgrade-held")); err == nil {
 		return ""
 	}
+	if oldMovedOn(stateDir) {
+		return ""
+	}
 	return "18"
+}
+
+// oldMovedOn reports whether the 16 cluster beside an upgraded 18 one is no longer what
+// the upgrade made it from: the upgrade's marker names no checkpoint (it did not finish),
+// or the same cluster (its system identifier) has another checkpoint now. Another cluster
+// in the old directory, or none, or an 18 cluster no upgrade made, is not taken over the
+// 18 one (pgbundle.MajorUpgrade.Needed decides the same).
+func oldMovedOn(stateDir string) bool {
+	raw, err := os.ReadFile(filepath.Join(stateDir, "postgres-18", "maktaba-upgraded-from.json"))
+	if err != nil {
+		return false
+	}
+	var m struct {
+		SystemID   string `json:"system_identifier"`
+		Checkpoint string `json:"checkpoint"`
+	}
+	if json.Unmarshal(raw, &m) != nil {
+		return false
+	}
+	if m.Checkpoint == "" {
+		return true
+	}
+	sysid, ckpt, ok := readControl(filepath.Join(stateDir, "postgres", "global", "pg_control"))
+	if !ok || sysid != m.SystemID {
+		return false
+	}
+	return ckpt != m.Checkpoint
+}
+
+// readControl is a cluster's pg_control's system identifier and latest checkpoint, as
+// pg_controldata prints them (ControlFileData: uint64 system_identifier at 0, the latest
+// checkpoint's XLogRecPtr at 32; the machine's byte order, little-endian on every platform
+// Maktaba runs on).
+func readControl(path string) (sysid, checkpoint string, ok bool) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", "", false
+	}
+	defer f.Close()
+	b := make([]byte, 40)
+	if _, err := io.ReadFull(f, b); err != nil {
+		return "", "", false
+	}
+	id := binary.LittleEndian.Uint64(b[0:8])
+	lsn := binary.LittleEndian.Uint64(b[32:40])
+	return strconv.FormatUint(id, 10), fmt.Sprintf("%X/%X", lsn>>32, lsn&0xffffffff), true
 }
 
 // ClusterRecordName is the record's file name for a cluster of major.

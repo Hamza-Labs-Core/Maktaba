@@ -618,6 +618,45 @@ func (u MajorUpgrade) stopServer(ctx context.Context, b Bundle, dir, mode string
 	}
 }
 
+// afterUpgradeFailed records why AfterUpgrade failed last (removed once it succeeds).
+const afterUpgradeFailed = "maktaba-after-upgrade.failed"
+
+// afterUpgradeFault makes AfterUpgrade fail (tests: a step that fails at every start).
+var afterUpgradeFault error
+
+// FinishUpgrade runs AfterUpgrade on a cluster pg_upgrade made that has not had it, and
+// never stops the start for it: the cluster runs as pg_upgrade made it (its extensions at
+// their old versions, which work; some planner statistics missing), the failure is
+// recorded in the cluster (maktaba-after-upgrade.failed, LastUpgradeFailure) and returned
+// for the log, and every start tries again until it succeeds. A failure that repeats at
+// every start (an extension whose update always fails) so leaves the home running on 18 and
+// saying why, never restarting.
+func (b Bundle) FinishUpgrade(ctx context.Context, log io.Writer) error {
+	if b.AfterUpgradeDone() {
+		return nil
+	}
+	err := afterUpgradeFault
+	if err == nil {
+		err = b.AfterUpgrade(ctx, log)
+	}
+	path := filepath.Join(b.Data, afterUpgradeFailed)
+	if err != nil {
+		_ = os.WriteFile(path, []byte(time.Now().UTC().Format(time.RFC3339)+" "+err.Error()+"\n"), 0o600)
+		return err
+	}
+	_ = os.Remove(path)
+	return nil
+}
+
+// LastUpgradeFailure is why the upgrade's last step failed last ("" when it did not).
+func (b Bundle) LastUpgradeFailure() string {
+	raw, err := os.ReadFile(filepath.Join(b.Data, afterUpgradeFailed))
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(raw))
+}
+
 // AfterUpgrade brings a cluster pg_upgrade just made up to date, with a server of its own:
 // every extension to the version its new programs install (pg_upgrade keeps the old ones),
 // and the planner's statistics pg_upgrade could not carry (vacuumdb --missing-stats-only).

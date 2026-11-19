@@ -323,13 +323,24 @@ runs only when the person opens that tab or submits from it; Results never waits
   - An old cluster not shut down cleanly is started and stopped once.
   - Afterwards every extension is updated (`ALTER EXTENSION … UPDATE`) and
     `vacuumdb --analyze-in-stages --missing-stats-only` runs.
+- **The last step never stops a start.** After the upgrade, every extension is updated and
+  the missing statistics are made (`FinishUpgrade`). If that fails, the cluster runs as
+  pg_upgrade made it: its extensions at their 16 versions, which work, and some planner
+  statistics missing. The failure is logged at error level and recorded in the cluster
+  (`maktaba-after-upgrade.failed`), and every start retries until it succeeds. A failure that
+  repeats leaves the home running on 18 and saying why, never restarting.
 - **When it cannot run.** On no room or a failed `pg_upgrade`, the home keeps running
   PostgreSQL 16 on its cluster (`pgbundle.HoldMajor`; every command's `Resolve` honours it), logs
   why, and tries again at its next start. A home is never left unable to start.
 - **Every command agrees on the cluster in use.** The record and the cluster are read from the
-  install's directories (`apppayload.ClusterMajorIn`: `postgres-18` with no hold), in every
-  process: the server, the container's entrypoint (its image fallback marks the right record), an
-  offline `restore`, and the updater.
+  install's directories, in every process: the server, the container's entrypoint (its image
+  fallback marks the right record), an offline `restore`, and the updater.
+  `apppayload.ClusterMajorIn` says 18 when `postgres-18` holds a cluster, no hold is recorded,
+  and the 16 cluster hasn't moved on since its upgrade. That last test reads the 16 cluster's
+  `global/pg_control` (system identifier and latest checkpoint) against the upgrade's marker,
+  without running a program. On a home rolled back to a release before the upgrade, 16 is
+  therefore in use, and a restore marks `database.json`, the record that release reads. An 18
+  start's redo of the upgrade carries that mark into `database-pg18.json`.
   - A restore onto a release that ran on 16 is refused on an 18 home (`restore_other_major`).
     That release would start on the untouched 16 cluster and never put the dump back.
   - A storage move carries `postgres-18` (`stateFolders`), checks the cluster in use on its copy,

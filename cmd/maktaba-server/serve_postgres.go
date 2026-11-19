@@ -63,12 +63,13 @@ func bundledPostgres(ctx context.Context, cfg *config.Config, prepare bool) (*pg
 		if err := b.Prepare(ctx, os.Stderr); err != nil {
 			return nil, err
 		}
-		if !b.AfterUpgradeDone() {
-			// the extensions to the new programs' versions, the statistics pg_upgrade did not
-			// carry (once: a start that stops part way does it again)
-			if err := b.AfterUpgrade(ctx, os.Stderr); err != nil {
-				return nil, fmt.Errorf("the upgraded library database's last step: %w", err)
-			}
+		// the extensions to the new programs' versions, the statistics pg_upgrade did not
+		// carry: never a reason not to start (pgbundle.FinishUpgrade), tried again at each
+		// start until it is done
+		if err := b.FinishUpgrade(ctx, os.Stderr); err != nil {
+			fmt.Fprintf(os.Stderr, "[postgres] level=error the upgraded library database's last step failed, so its "+
+				"extensions stay at their versions from PostgreSQL 16 and some of its planner statistics are missing "+
+				"(it runs; the next start tries again): %v\n", err)
 		}
 		// a machine's replication role may make a slot with any output plugin this
 		// Postgres has, and one other than pgoutput decodes every table past what is

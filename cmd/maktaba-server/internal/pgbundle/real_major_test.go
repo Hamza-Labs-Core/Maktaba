@@ -4,6 +4,7 @@ package pgbundle
 
 import (
 	"context"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -11,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/apppayload"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/testport"
 )
 
@@ -93,8 +95,32 @@ func TestRealMajorUpgrade(t *testing.T) {
 	if err := nw.Prepare(ctx, io.Discard); err != nil {
 		t.Fatal(err)
 	}
-	if err := nw.AfterUpgrade(ctx, io.Discard); err != nil {
+	// the record in use is the 18 cluster's (every process reads it from the directories)
+	if got := apppayload.ClusterMajorIn(root); got != "18" {
+		t.Errorf("after the upgrade the cluster in use is %q, want 18", got)
+	}
+	// the last step failing at every start: the cluster runs, the failure is recorded and
+	// said, the start goes on (never a loop of restarts); without the fault it is done
+	afterUpgradeFault = errors.New("an extension update that always fails")
+	for range 2 {
+		if err := nw.FinishUpgrade(ctx, io.Discard); err == nil {
+			t.Fatal("FinishUpgrade hid the failure")
+		}
+		if nw.AfterUpgradeDone() || !strings.Contains(nw.LastUpgradeFailure(), "always fails") {
+			t.Fatalf("after a failed last step: done %v, failure %q", nw.AfterUpgradeDone(), nw.LastUpgradeFailure())
+		}
+		with(nw, func() {
+			if got := q(nw, AppDatabase, "SELECT count(*) FROM seg"); got[0] != "2000" {
+				t.Errorf("the cluster after a failed last step: %v", got)
+			}
+		})
+	}
+	afterUpgradeFault = nil
+	if err := nw.FinishUpgrade(ctx, io.Discard); err != nil {
 		t.Fatal(err)
+	}
+	if !nw.AfterUpgradeDone() || nw.LastUpgradeFailure() != "" {
+		t.Fatalf("after the last step: done %v, failure %q", nw.AfterUpgradeDone(), nw.LastUpgradeFailure())
 	}
 	with(nw, func() {
 		if got := q(nw, AppDatabase, "SELECT count(*) FROM seg WHERE tsv @@ 'الصبر'::tsquery"); got[0] != "2000" {
@@ -137,6 +163,14 @@ func TestRealMajorUpgrade(t *testing.T) {
 		}
 		q(old, AppDatabase, "INSERT INTO seg (id, body) VALUES (5000, 'written after the rollback')")
 	})
+	// the release before ran on 16 again: 16 is the cluster in use, its record database.json,
+	// so a restore marks the record that release reads (and an 18 start's redo carries it)
+	if got := apppayload.ClusterMajorIn(root); got != "" {
+		t.Errorf("after the release before ran on 16 again the cluster in use is %q, want 16's", got)
+	}
+	if got := filepath.Base(apppayload.DatabasePath(root)); got != "database.json" {
+		t.Errorf("after the release before ran on 16 again the record is %s", got)
+	}
 	if need, why, err := u.Needed(ctx); err != nil || !need || !strings.Contains(why, "moved on") {
 		t.Fatalf("after the release before wrote: Needed = %v %q %v", need, why, err)
 	}
@@ -159,6 +193,9 @@ func TestRealMajorUpgrade(t *testing.T) {
 	}
 	if _, err := os.Stat(nw.Data + ".stale"); !os.IsNotExist(err) {
 		t.Errorf("the stale copy is still there after the upgrade made it again: %v", err)
+	}
+	if got := apppayload.ClusterMajorIn(root); got != "18" {
+		t.Errorf("after the upgrade made again the cluster in use is %q, want 18", got)
 	}
 	if err := nw.Prepare(ctx, io.Discard); err != nil {
 		t.Fatal(err)
