@@ -66,7 +66,8 @@ type EndedPersistence interface {
 	// SaveEnded keeps a license that ended now as a row of its own (a plan license whose
 	// row the next one, of the same id, overwrites).
 	SaveEnded(ctx context.Context, rec persistedLicense) error
-	// DropGrace makes a revoked license's row no grace: its end is not "now".
+	// DropGrace makes a revoked license's rows no grace (its plain row and every ended
+	// row kept of it): their end is not "now".
 	DropGrace(ctx context.Context, licenseID string) error
 }
 
@@ -316,7 +317,8 @@ func (p *sqlLicenseStore) SaveEnded(ctx context.Context, rec persistedLicense) e
 
 func (p *sqlLicenseStore) DropGrace(ctx context.Context, licenseID string) error {
 	_, err := p.db.ExecContext(ctx,
-		`UPDATE licenses SET revoked_at = $2 WHERE license_id = $1 AND revoked_at IS NOT NULL`,
+		`UPDATE licenses SET revoked_at = $2
+		  WHERE (license_id = $1 OR left(license_id, length($1) + 1) = $1 || '@') AND revoked_at IS NOT NULL`,
 		licenseID, time.Unix(0, 0).UTC())
 	return err
 }

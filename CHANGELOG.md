@@ -21,6 +21,13 @@ build fails when the two differ.
   Removing users or adding seats restores them at once. Settings → Subscription names them to
   the admin and tells the account itself.
 
+- **An expired or downgraded plan keeps working fully for 30 days (story 16.2).** When a home's
+  licence expires, or its plan changes to a lower one or ends, every paid feature keeps working,
+  not read-only, for 30 days counted from the licence's expiry (or from the change, if that
+  is earlier), then locks. Settings → Subscription shows the admin how many days are left. A
+  home cut off from Maktaba Cloud keeps its plan about 61 days. A licence revoked by Maktaba
+  still locks at once.
+
 - **Guest sharing ends when the plan does (Epic 50, story 50.20).** When an account's Pro or
   Broadcaster plan ends (cancelled, lapsed, or changed to Basic or Free by the payment provider or
   a service admin), Maktaba Cloud revokes every guest invite of its homes at that moment and

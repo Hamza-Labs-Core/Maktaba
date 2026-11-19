@@ -248,7 +248,7 @@ func (f *fakeLicenseDB) SaveEnded(_ context.Context, rec persistedLicense) error
 func (f *fakeLicenseDB) DropGrace(_ context.Context, id string) error {
 	old := time.Unix(0, 0).UTC()
 	for i := range f.rows {
-		if f.rows[i].LicenseID == id && f.rows[i].RevokedAt != nil {
+		if (f.rows[i].LicenseID == id || strings.HasPrefix(f.rows[i].LicenseID, id+"@")) && f.rows[i].RevokedAt != nil {
 			f.rows[i].RevokedAt = &old
 		}
 	}

@@ -250,3 +250,35 @@ func TestASeatsOnlyDowngradeKeepsTheSeats(t *testing.T) {
 		t.Fatalf("after the grace: seats %d", s.SeatLimit())
 	}
 }
+
+// A same-id downgrade, then the cloud's license_revoked (Lock): the revoked license's
+// earlier plan does not come back when a new license clears the lock, before or after a
+// restart (the revocation list already refuses it; the lock must too).
+func TestALockedLicensesEarlierPlanNeverComesBack(t *testing.T) {
+	ctx := context.Background()
+	pub, priv := newKey(t)
+	v := &Verifier{PublicKey: pub}
+	db := &statefulDB{}
+	s, _ := NewPersistentStore(ctx, db, v)
+	now := time.Now().UTC()
+	applyLicense(t, s, v, priv, LicenseInner{LicenseID: "cloud-srv-1", Tier: TierPro, IssuedAt: now.Add(-time.Hour),
+		ExpiresAt: now.Add(31 * 24 * time.Hour), ServerID: "srv-1"})
+	applyLicense(t, s, v, priv, LicenseInner{LicenseID: "cloud-srv-1", Tier: TierHome, Seats: 4, IssuedAt: now,
+		ExpiresAt: now.Add(31 * 24 * time.Hour), ServerID: "srv-1"})
+	if !s.Allows(FeatureFederation) {
+		t.Fatal("the downgrade's grace is missing to begin with")
+	}
+	if err := s.Lock(ctx, LockRevoked); err != nil {
+		t.Fatal(err)
+	}
+	// the dispute resolved: the cloud re-issues Home on the same id
+	applyLicense(t, s, v, priv, LicenseInner{LicenseID: "cloud-srv-1", Tier: TierHome, Seats: 4, IssuedAt: now.Add(time.Minute),
+		ExpiresAt: now.Add(31 * 24 * time.Hour), ServerID: "srv-1"})
+	if s.Allows(FeatureFederation) || s.TierName() != "home" || !s.State().GraceUntil.IsZero() {
+		t.Fatalf("after the lock and a new license: %+v", s.State())
+	}
+	s2, _ := NewPersistentStore(ctx, db, v)
+	if s2.Allows(FeatureFederation) || s2.TierName() != "home" {
+		t.Fatalf("after a restart the revoked license's earlier plan is back: %+v", s2.State())
+	}
+}

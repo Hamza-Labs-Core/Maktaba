@@ -495,8 +495,27 @@ func (s *Store) Revoke(ctx context.Context) error {
 func (s *Store) Lock(ctx context.Context, reason string) error {
 	s.mu.Lock()
 	s.lockReason = reason
+	var id string
+	if reason == LockRevoked && s.license != nil {
+		// a revocation (fraud) leaves no grace of that license behind: the plans it had
+		// before (a same-id downgrade's) end with it, and never come back when another
+		// license clears the lock
+		id = s.license.LicenseID
+		kept := s.previous[:0]
+		for _, p := range s.previous {
+			if p.ent.LicenseID != id {
+				kept = append(kept, p)
+			}
+		}
+		s.previous = kept
+	}
 	s.mu.Unlock()
 	defer s.changed()
+	if ep, ok := s.persist.(EndedPersistence); ok && id != "" {
+		if err := ep.DropGrace(ctx, id); err != nil {
+			return fmt.Errorf("subscriptions: persist the revoked license: %w", err)
+		}
+	}
 	return s.saveState(ctx)
 }
 
