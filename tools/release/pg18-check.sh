@@ -31,10 +31,15 @@ ok() { printf 'ok %s\n' "$*"; }
 fail() { printf 'FAIL %s\n' "$*"; fails=$((fails + 1)); }
 x=""
 case "$(uname -s)" in MINGW* | MSYS* | CYGWIN*) x=.exe ;; esac
+# w PATH: the form a native program takes (Windows: C:\...; elsewhere as it is); sock: the
+# servers' unix socket off (Windows' check runs them on TCP alone, as its 16 check does)
+w() { if [ -n "$x" ]; then cygpath -w "$1"; else printf '%s' "$1"; fi; }
+sock="-k ''"
+[ -z "$x" ] || sock=""
 mkdir -p "$scratch"
 port=$((55000 + RANDOM % 900))
 # the flags the bundled server starts PostgreSQL 18 with that matter here (pgbundle.serverArgs)
-flags="-p $port -k '' -c listen_addresses=127.0.0.1 -c wal_level=logical -c max_replication_slots=40 -c shared_preload_libraries=pg_textsearch"
+flags="-p $port $sock -c listen_addresses=127.0.0.1 -c wal_level=logical -c max_replication_slots=40 -c shared_preload_libraries=pg_textsearch"
 psql18() { "$pg18/psql$x" -X -h 127.0.0.1 -p "$port" -U maktaba -Atq -v ON_ERROR_STOP=1 "$@"; }
 
 ver="$("$pg18/postgres$x" --version 2>&1)"
@@ -44,8 +49,8 @@ case "$ver" in
 esac
 
 data="$scratch/data18"
-if "$pg18/initdb$x" -D "$data" -U maktaba --auth=trust -E UTF8 --locale=C >"$scratch/initdb18.log" 2>&1 &&
-    "$pg18/pg_ctl$x" -D "$data" -l "$scratch/pg18.log" -w -t 60 -o "$flags" start >/dev/null 2>&1; then
+if "$pg18/initdb$x" -D "$(w "$data")" -U maktaba --auth=trust -E UTF8 --locale=C >"$scratch/initdb18.log" 2>&1 &&
+    "$pg18/pg_ctl$x" -D "$(w "$data")" -l "$(w "$scratch/pg18.log")" -w -t 60 -o "$flags" start >/dev/null 2>&1; then
     out="$(psql18 -d postgres -c "SHOW shared_preload_libraries" 2>&1)"
     case "$out" in *pg_textsearch*) ok "shared_preload_libraries: $out" ;; *) fail "shared_preload_libraries: $out" ;; esac
     out="$(psql18 -d postgres \
@@ -80,7 +85,7 @@ if "$pg18/initdb$x" -D "$data" -U maktaba --auth=trust -E UTF8 --locale=C >"$scr
             fail "maktaba-api migrate up on PostgreSQL 18: $(printf '%s\n' "$out" | tail -3)"
         fi
     fi
-    "$pg18/pg_ctl$x" -D "$data" -m fast -w stop >/dev/null 2>&1 || fail "pg_ctl stop (PostgreSQL 18)"
+    "$pg18/pg_ctl$x" -D "$(w "$data")" -m fast -w stop >/dev/null 2>&1 || fail "pg_ctl stop (PostgreSQL 18)"
 else
     fail "PostgreSQL 18 initdb/start: $(tail -3 "$scratch/initdb18.log" "$scratch/pg18.log" 2>/dev/null)"
 fi
@@ -92,10 +97,10 @@ if [ -n "$pg16" ] && [ -n "$old" ] && [ -f "$old/PG_VERSION" ]; then
     new="$scratch/upgraded"
     # a row of its own in the old cluster, to find again after the upgrade
     oport=$((port + 3))
-    if "$pg16/pg_ctl$x" -D "$old" -l "$scratch/pg16.log" -w -t 60 -o "-p $oport -k '' -c listen_addresses=127.0.0.1" start >/dev/null 2>&1 &&
+    if "$pg16/pg_ctl$x" -D "$(w "$old")" -l "$(w "$scratch/pg16.log")" -w -t 60 -o "-p $oport $sock -c listen_addresses=127.0.0.1" start >/dev/null 2>&1 &&
         "$pg16/psql$x" -X -h 127.0.0.1 -p "$oport" -U maktaba -d postgres -Atq -v ON_ERROR_STOP=1 \
             -c "CREATE TABLE upgrade_probe (id int PRIMARY KEY, note text); INSERT INTO upgrade_probe VALUES (16, 'made on 16');" >/dev/null 2>&1 &&
-        "$pg16/pg_ctl$x" -D "$old" -m fast -w stop >/dev/null 2>&1; then
+        "$pg16/pg_ctl$x" -D "$(w "$old")" -m fast -w stop >/dev/null 2>&1; then
         ok "a row written on PostgreSQL 16 before the upgrade"
     else
         fail "the PostgreSQL 16 cluster to upgrade: $(tail -3 "$scratch/pg16.log" 2>/dev/null)"
@@ -107,21 +112,21 @@ if [ -n "$pg16" ] && [ -n "$old" ] && [ -f "$old/PG_VERSION" ]; then
     mkdir -p "$work"
     # its servers' socket: a short directory (a unix socket path has at most 103 bytes);
     # Windows' pg_upgrade connects over TCP
-    sock=()
+    sockarg=()
     if [ -z "$x" ]; then
         sockdir="$(mktemp -d /tmp/pgu.XXXXXX)"
-        sock=(-s "$sockdir")
+        sockarg=(-s "$sockdir")
     fi
-    if "$pg18/initdb$x" -D "$new" -U maktaba --auth=trust -E UTF8 --locale=C "$sums" >"$scratch/initdb-up.log" 2>&1 &&
-        (cd "$work" && "$pg18/pg_upgrade$x" -b "$pg16" -B "$pg18" -d "$old" -D "$new" -U maktaba \
-            -p $((port + 1)) -P $((port + 2)) "${sock[@]}" --copy \
+    if "$pg18/initdb$x" -D "$(w "$new")" -U maktaba --auth=trust -E UTF8 --locale=C "$sums" >"$scratch/initdb-up.log" 2>&1 &&
+        (cd "$work" && "$pg18/pg_upgrade$x" -b "$(w "$pg16")" -B "$(w "$pg18")" -d "$(w "$old")" -D "$(w "$new")" -U maktaba \
+            -p $((port + 1)) -P $((port + 2)) "${sockarg[@]}" --copy \
             -o "-c wal_level=logical -c max_replication_slots=40" -O "-c wal_level=logical -c max_replication_slots=40") \
             >"$scratch/pg_upgrade.log" 2>&1; then
         ok "pg_upgrade 16 -> 18 ($(grep -c . "$scratch/pg_upgrade.log") lines of output)"
-        if "$pg18/pg_ctl$x" -D "$new" -l "$scratch/pg-up.log" -w -t 60 -o "$flags" start >/dev/null 2>&1; then
+        if "$pg18/pg_ctl$x" -D "$(w "$new")" -l "$(w "$scratch/pg-up.log")" -w -t 60 -o "$flags" start >/dev/null 2>&1; then
             out="$(psql18 -d postgres -c "SELECT note FROM upgrade_probe WHERE id = 16;" 2>&1)"
             case "$out" in "made on 16") ok "the upgraded cluster has the row written on 16" ;; *) fail "the row written on 16, after the upgrade: $out" ;; esac
-            "$pg18/pg_ctl$x" -D "$new" -m fast -w stop >/dev/null 2>&1 || fail "pg_ctl stop (the upgraded cluster)"
+            "$pg18/pg_ctl$x" -D "$(w "$new")" -m fast -w stop >/dev/null 2>&1 || fail "pg_ctl stop (the upgraded cluster)"
         else
             fail "the upgraded cluster does not start: $(tail -3 "$scratch/pg-up.log" 2>/dev/null)"
         fi
