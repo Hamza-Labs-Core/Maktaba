@@ -70,7 +70,7 @@ func TestStore_ExpiryGraceThenFree(t *testing.T) {
 	if st := s.State(); st.Status != StatusGrace || s.SeatLimit() != 4 {
 		t.Fatalf("1 h past expiry: status %q seats %d, want grace and 4", st.Status, s.SeatLimit())
 	}
-	now = now.Add(SkewGrace)
+	now = now.Add(Grace)
 	st := s.State()
 	if st.Status != StatusExpired || s.Current() != nil || s.SeatLimit() != 1 {
 		t.Fatalf("past the grace: status %q current %v seats %d, want expired, nil, 1", st.Status, s.Current(), s.SeatLimit())
@@ -94,14 +94,14 @@ func TestStore_ClockSetBackDoesNotRevive(t *testing.T) {
 	s.SetClock(func() time.Time { return now })
 	applyLicense(t, s, v, priv, LicenseInner{LicenseID: "l1", Tier: TierPro, IssuedAt: now, ExpiresAt: now.Add(10 * 24 * time.Hour)})
 
-	now = now.Add(20 * 24 * time.Hour) // past expiry and grace
+	now = now.Add(50 * 24 * time.Hour) // past expiry (10 d) and Grace (30 d)
 	if err := s.RecordRefresh(context.Background(), nil); err != nil {
 		t.Fatal(err) // persists the high-water mark
 	}
 	if s.Current() != nil {
 		t.Fatal("expired license still grants")
 	}
-	now = now.Add(-15 * 24 * time.Hour) // the clock goes back inside the validity
+	now = now.Add(-45 * 24 * time.Hour) // the clock goes back inside the validity
 	if s.Current() != nil {
 		t.Fatal("a clock set back revived an expired license")
 	}

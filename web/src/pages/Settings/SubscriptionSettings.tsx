@@ -18,6 +18,7 @@ import { Button } from "@ds/components/Button/Button";
 import { Skeleton } from "@ds/components/Skeleton/Skeleton";
 import { Textarea } from "@ds/components/Textarea/Textarea";
 import { useToast } from "@ds/components/Toast/Toast";
+import { pluralKey } from "../../lib/plural";
 import { api, ApiError } from "../../lib/api";
 import { useI18n } from "../../lib/i18n";
 import { useAuth } from "../../lib/auth";
@@ -63,6 +64,10 @@ export interface LicenseView {
     source: "cloud" | "offline";
   };
   message?: string;
+  /** Story 16.2: when the features only the grace grants lock (an expired license's,
+   * a downgraded plan's: 30 days from the license's expiry), and the days left. */
+  grace_until?: string;
+  grace_days_left?: number;
   last_refresh_at?: string;
   last_refresh_error?: string;
   cloud: { claimed: boolean; server_id?: string; slug?: string; cloud_api?: string };
@@ -177,7 +182,7 @@ function problemText(e: unknown, t: (k: string) => string): string {
 }
 
 function AdminSubscription() {
-  const { t, formatDate: d } = useI18n();
+  const { t, n, formatDate: d, locale } = useI18n();
   const toast = useToast();
   const {
     data: view,
@@ -309,6 +314,17 @@ function AdminSubscription() {
                 {lic.source === "cloud" ? t("subscription.renews") : t("subscription.expires")}
               </dt>
               <dd>{d(lic.expires_at)}</dd>
+            </div>
+          )}
+          {view.grace_until && view.grace_days_left != null && (
+            <div>
+              <dt className="mkt-muted">{t("subscription.grace")}</dt>
+              <dd data-testid="subscription-grace">
+                {t(pluralKey(locale, "subscription.grace.left", view.grace_days_left), {
+                  count: n(view.grace_days_left),
+                  date: d(view.grace_until),
+                })}
+              </dd>
             </div>
           )}
           {lic && (

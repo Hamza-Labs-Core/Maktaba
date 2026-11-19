@@ -83,7 +83,7 @@ func TestBundleWithAGatedComponent(t *testing.T) {
 }
 
 // What the licence allows, as published on the rows: granted until expires_at +
-// SkewGrace; inside the grace still granted; past it, revoked, or free: not granted, no
+// Grace; inside the grace still granted; past it, revoked, or free: not granted, no
 // until. cloud.link is never in it.
 func TestLicences(t *testing.T) {
 	cat := components.Default()
@@ -99,7 +99,7 @@ func TestLicences(t *testing.T) {
 		Features: map[subscriptions.Feature]bool{subscriptions.FeatureCloudRelay: true}})
 	got = Licences(cat, lic)
 	l := got["cloud.relay"]
-	if !l.Licensed || l.Until == nil || !l.Until.Equal(exp.Add(subscriptions.SkewGrace)) {
+	if !l.Licensed || l.Until == nil || !l.Until.Equal(exp.Add(subscriptions.Grace)) {
 		t.Fatalf("home: %+v", l)
 	}
 	if _, ok := got["cloud.link"]; ok {
@@ -109,7 +109,7 @@ func TestLicences(t *testing.T) {
 	if l := Licences(cat, lic)["cloud.relay"]; !l.Licensed {
 		t.Fatal("inside the grace: not granted")
 	}
-	now = exp.Add(subscriptions.SkewGrace) // the grace is over
+	now = exp.Add(subscriptions.Grace) // the grace is over
 	if l := Licences(cat, lic)["cloud.relay"]; l.Licensed || l.Until != nil {
 		t.Fatalf("past the grace: %+v", l)
 	}

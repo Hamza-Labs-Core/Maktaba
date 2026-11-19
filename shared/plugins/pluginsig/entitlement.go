@@ -19,8 +19,10 @@ const (
 	CodeEntitlementExpired   = "entitlement_expired"
 )
 
-// EntitlementGrace is the clock skew allowed around an entitlement's validity: Epic 16's
-// SkewGrace, the same number as the home's licences (72 hours).
+// EntitlementGrace is the clock skew allowed around an entitlement's validity (72 hours):
+// Epic 16's number when it was written. A home's plan licence has 30 days of grace since
+// story 16.2 (subscriptions.Grace); a paid plugin is a purchase, not the plan, and keeps
+// this.
 const EntitlementGrace = 72 * time.Hour
 
 // Entitlement is a checked entitlement's content (version 1).
