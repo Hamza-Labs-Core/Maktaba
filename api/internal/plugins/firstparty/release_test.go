@@ -473,3 +473,103 @@ func repackAdd(t *testing.T, dir, id, path string, b []byte) {
 	t.Helper()
 	repackFiles(t, dir, id, func(files map[string][]byte) { files[path] = b })
 }
+
+// Second review of #1440: a pre-release builds no package and the check passes with none,
+// but refuses one that is there.
+func TestAPreReleaseCarriesNoPackage(t *testing.T) {
+	dir := buildRelease(t, "1.2.3-rc.1")
+	names, err := VerifyReleasePackages(dir, "1.2.3-rc.1", checksums(t, dir), "")
+	if err != nil || len(names) != 0 {
+		t.Fatalf("a pre-release: %v %v", names, err)
+	}
+	other := buildRelease(t, relVersion)
+	fp := firstPlugin(t)
+	b, _ := os.ReadFile(filepath.Join(other, PackageName(fp.ID, relVersion)))
+	_ = os.WriteFile(filepath.Join(dir, PackageName(fp.ID, "1.2.3-rc.1")), b, 0o644)
+	if _, err := VerifyReleasePackages(dir, "1.2.3-rc.1", checksums(t, dir), ""); codeOf(err) != CodeTrustedUnsigned {
+		t.Fatalf("a package in a pre-release: %v", err)
+	}
+}
+
+// Second review of #1440: the wheel's dist-info is exactly its METADATA, WHEEL and RECORD,
+// its METADATA requires only this release's pipeline, its RECORD's sizes hold, and its name
+// is this version's.
+func TestAWheelWithOtherMetadataIsRefused(t *testing.T) {
+	fp := firstPlugin(t)
+	dist := "maktaba_fp_" + strings.ReplaceAll(fp.Folder, "-", "_")
+	info := dist + "-" + relVersion + ".dist-info"
+	for what, change := range map[string]func(map[string][]byte){
+		"another dependency": func(f map[string][]byte) {
+			f[info+"/METADATA"] = append(f[info+"/METADATA"], []byte("Requires-Dist: attacker-package\n")...)
+		},
+		"another pipeline": func(f map[string][]byte) {
+			f[info+"/METADATA"] = bytes.Replace(f[info+"/METADATA"], []byte("maktaba-pipeline=="+relVersion), []byte("maktaba-pipeline>=0"), 1)
+		},
+		"another version": func(f map[string][]byte) {
+			f[info+"/METADATA"] = bytes.Replace(f[info+"/METADATA"], []byte("Version: "+relVersion), []byte("Version: 9.9.9"), 1)
+		},
+		"a dist-info file more": func(f map[string][]byte) { f[info+"/entry_points.txt"] = []byte("[console_scripts]\nx = os:system\n") },
+		"a platform wheel": func(f map[string][]byte) {
+			f[info+"/WHEEL"] = bytes.Replace(f[info+"/WHEEL"], []byte("py3-none-any"), []byte("cp312-cp312-linux_x86_64"), 1)
+		},
+	} {
+		dir := buildRelease(t, relVersion)
+		wheel, members := packageWheel(t, dir, fp.ID)
+		files := map[string][]byte{}
+		for n, b := range members {
+			if n != info+"/RECORD" {
+				files[n] = b
+			}
+		}
+		change(files)
+		repack(t, dir, fp.ID, wheel, func([]byte) []byte { return wheelBytes(t, info, files) })
+		if _, err := VerifyReleasePackages(dir, relVersion, checksums(t, dir), ""); err == nil {
+			t.Fatalf("%s: accepted", what)
+		}
+	}
+	// a wheel under another version's name
+	dir := buildRelease(t, relVersion)
+	wheel, _ := packageWheel(t, dir, fp.ID)
+	repackFiles(t, dir, fp.ID, func(f map[string][]byte) {
+		f["wheels/"+dist+"-9.9.9-py3-none-any.whl"] = f[wheel]
+		delete(f, wheel)
+	})
+	if _, err := VerifyReleasePackages(dir, relVersion, checksums(t, dir), ""); err == nil {
+		t.Fatal("a wheel named for another version: accepted")
+	}
+}
+
+func TestARecordWithAWrongSizeIsRefused(t *testing.T) {
+	fp := firstPlugin(t)
+	dist := "maktaba_fp_" + strings.ReplaceAll(fp.Folder, "-", "_")
+	for _, size := range []string{"0", "not-a-number", "-1"} {
+		dir := buildRelease(t, relVersion)
+		wheel, _ := packageWheel(t, dir, fp.ID)
+		repack(t, dir, fp.ID, wheel, func(b []byte) []byte {
+			f := wheelFiles(t, b)
+			info := strings.TrimSuffix(strings.TrimPrefix(wheel, "wheels/"), "-py3-none-any.whl") + ".dist-info/RECORD"
+			rows, _ := csv.NewReader(bytes.NewReader(f[info])).ReadAll()
+			for _, r := range rows {
+				if r[0] == dist+"/__init__.py" {
+					r[2] = size
+				}
+			}
+			var rec bytes.Buffer
+			w := csv.NewWriter(&rec)
+			_ = w.WriteAll(rows)
+			f[info] = rec.Bytes()
+			var buf bytes.Buffer
+			z := zip.NewWriter(&buf)
+			for n, c := range f {
+				zw, _ := z.Create(n)
+				_, _ = zw.Write(c)
+			}
+			_ = z.Close()
+			return buf.Bytes()
+		})
+		_, err := VerifyReleasePackages(dir, relVersion, checksums(t, dir), "")
+		if err == nil || !strings.Contains(err.Error(), "RECORD") {
+			t.Fatalf("size %q: %v", size, err)
+		}
+	}
+}

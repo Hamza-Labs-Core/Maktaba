@@ -178,3 +178,10 @@ def test_a_name_with_a_comma_or_a_quote_is_quoted_in_record(tmp_path: Path) -> N
         )
     assert all(len(r) == 3 for r in rows)
     assert 'maktaba_fp_convert/a,b "c".txt' in {r[0] for r in rows}
+
+
+def test_a_pre_release_builds_no_package(tmp_path: Path) -> None:
+    out = tmp_path / "out"
+    assert build.main(["--version", "1.2.3-rc.1", "--out", str(out)]) == 0
+    assert [p.name for p in out.iterdir()] == [build.PRERELEASE_NOTE]
+    assert not build.is_prerelease("1.2.3") and build.is_prerelease("1.2.3-rc.1")

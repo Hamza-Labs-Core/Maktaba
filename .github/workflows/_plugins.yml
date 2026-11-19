@@ -521,6 +521,12 @@ jobs:
         working-directory: api
         run: go test -count=1 ./internal/plugins/... ./internal/handlers/queues/ -run 'Statement|Trusted|FirstParty|Flip|CheckPackage|Bundle|Command|Package'
 
+      # 54.27: every test of the release packages' check, which builds the packages with
+      # build.py (skipped under -short, so the unit job does not run them)
+      - name: The release packages' trust check, every case (54.27)
+        working-directory: api
+        run: go test -count=1 ./internal/plugins/firstparty/ ./tools/fp-packages/
+
       # 54.27 T01, the release's dry run: every first-party package built as release.yml
       # builds it, beside a pipeline wheel of this tree, checksummed as its "Generate
       # checksums" step does, then checked by the same command the release runs on its

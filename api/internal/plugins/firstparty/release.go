@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/plugins/statements"
@@ -51,6 +52,15 @@ func VerifyReleasePackages(dir, version string, sums releaseverify.Checksums, pi
 	if len(plugins) == 0 {
 		return nil, fmt.Errorf("plugins: the bundle has no first-party plugin")
 	}
+	// a pre-release (1.2.3-rc.1) carries no first-party package: a manifest's maktaba range
+	// takes only MAJOR.MINOR.PATCH (54.01 §2), so tools/plugins/build.py builds none, and
+	// none may be there
+	if strings.Contains(version, "-") {
+		if n := firstPartyNames(dir, sums); n != "" {
+			return nil, &Error{Code: CodeTrustedUnsigned, Detail: n + ": a pre-release carries no first-party package"}
+		}
+		return nil, nil
+	}
 	var pipeline map[string]string
 	if pipelineWheel != "" {
 		b, err := listed(dir, pipelineWheel, sums)
@@ -73,22 +83,33 @@ func VerifyReleasePackages(dir, version string, sums releaseverify.Checksums, pi
 	}
 	// nothing else that looks like a first-party package, on disk or in the checksums: a
 	// signed files.json of no bundle plugin would trust a package this server never embedded
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return nil, err
-	}
-	names := make([]string, 0, len(entries)+len(sums))
-	for _, e := range entries {
-		names = append(names, e.Name())
-	}
-	names = append(names, sums.Names()...)
-	for _, n := range names {
-		if strings.HasPrefix(n, FirstPartyPrefix) && (strings.HasSuffix(n, ".mkplugin") || strings.HasSuffix(n, ".files.json")) && !want[n] {
-			return nil, &Error{Code: CodeTrustedUnsigned, Detail: n + ": no plugin of this release's bundle"}
-		}
+	if n := firstPartyNames(dir, sums, want); n != "" {
+		return nil, &Error{Code: CodeTrustedUnsigned, Detail: n + ": no plugin of this release's bundle"}
 	}
 	sort.Strings(out)
 	return out, nil
+}
+
+// firstPartyNames answers the first name, on disk in dir or in sums, that looks like a
+// first-party package or its files.json and is not in want ("" when none).
+func firstPartyNames(dir string, sums releaseverify.Checksums, want ...map[string]bool) string {
+	names := sums.Names()
+	if entries, err := os.ReadDir(dir); err == nil {
+		for _, e := range entries {
+			names = append(names, e.Name())
+		}
+	}
+	sort.Strings(names)
+	for _, n := range names {
+		looks := strings.HasPrefix(n, FirstPartyPrefix) && (strings.HasSuffix(n, ".mkplugin") || strings.HasSuffix(n, ".files.json"))
+		if !looks {
+			continue
+		}
+		if len(want) == 0 || !want[0][n] {
+			return n
+		}
+	}
+	return ""
 }
 
 func sha256Hex(b []byte) string {
@@ -133,24 +154,6 @@ func verifyOne(dir, version string, fp *FirstParty, sums releaseverify.Checksums
 	for _, f := range pkg.Files {
 		members[f.Path] = true
 	}
-	var wheel string
-	for m := range members {
-		if strings.HasPrefix(m, "wheels/"+dist+"-") && strings.HasSuffix(m, "-py3-none-any.whl") && !strings.Contains(strings.TrimPrefix(m, "wheels/"), "/") {
-			if wheel != "" {
-				return fmt.Errorf("it holds two wheels")
-			}
-			wheel = m
-		}
-	}
-	expect := []string{"manifest.toml", "i18n/en.json", "i18n/ar.json", "statements.json", wheel}
-	if wheel == "" || len(members) != len(expect) {
-		return fmt.Errorf("it holds %d files, not its manifest, strings, statements and one wheel %s-*", len(members), dist)
-	}
-	for _, m := range expect {
-		if !members[m] {
-			return fmt.Errorf("it has no %s", m)
-		}
-	}
 	read := func(rel string) ([]byte, bool) {
 		b, err := os.ReadFile(filepath.Join(unpacked, filepath.FromSlash(rel)))
 		return b, err == nil
@@ -166,6 +169,18 @@ func verifyOne(dir, version string, fp *FirstParty, sums releaseverify.Checksums
 	}
 	if m["maktaba"] != "="+version {
 		return &Error{Code: CodeTrustedVersion, Detail: fmt.Sprintf("maktaba %v is not =%s", m["maktaba"], version)}
+	}
+	// a release version has no pre-release (VerifyReleasePackages), so its wheel's PEP 440
+	// version is the same text
+	wheel := "wheels/" + dist + "-" + version + "-py3-none-any.whl"
+	expect := []string{"manifest.toml", "i18n/en.json", "i18n/ar.json", "statements.json", wheel}
+	if len(members) != len(expect) {
+		return fmt.Errorf("it holds %d files, not its manifest, strings, statements and its wheel %s", len(members), wheel)
+	}
+	for _, m := range expect {
+		if !members[m] {
+			return fmt.Errorf("it has no %s", m)
+		}
 	}
 	// the manifest is the bundle's but for the two stamped fields
 	stamped := map[string]any{}
@@ -189,7 +204,7 @@ func verifyOne(dir, version string, fp *FirstParty, sums releaseverify.Checksums
 		return fmt.Errorf("its statements.json is not the one this server embeds")
 	}
 	whl, _ := read(wheel)
-	if err := checkWheel(whl, dist, pipeline); err != nil {
+	if err := checkWheel(whl, dist, version, pipeline); err != nil {
 		return fmt.Errorf("%s: %w", wheel, err)
 	}
 	return CheckPackage(Package{ID: id, Version: pv, FilesJSON: pkg.FilesJSON}, sums, version)
@@ -199,9 +214,15 @@ func verifyOne(dir, version string, fp *FirstParty, sums releaseverify.Checksums
 // checks every member against it: each member listed with its digest, each listed path a
 // member. It answers path -> digest (RECORD itself has none).
 func wheelRecord(b []byte) (map[string]string, error) {
+	rec, _, err := readWheel(b)
+	return rec, err
+}
+
+// readWheel is wheelRecord, also answering each member's bytes.
+func readWheel(b []byte) (map[string]string, map[string][]byte, error) {
 	z, err := zip.NewReader(bytes.NewReader(b), int64(len(b)))
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	var record *zip.File
 	files := map[string]*zip.File{}
@@ -210,62 +231,65 @@ func wheelRecord(b []byte) (map[string]string, error) {
 			continue
 		}
 		if _, dup := files[f.Name]; dup {
-			return nil, fmt.Errorf("%s twice", f.Name)
+			return nil, nil, fmt.Errorf("%s twice", f.Name)
 		}
 		files[f.Name] = f
 		if strings.HasSuffix(f.Name, ".dist-info/RECORD") && strings.Count(f.Name, "/") == 1 {
 			if record != nil {
-				return nil, fmt.Errorf("two RECORD files")
+				return nil, nil, fmt.Errorf("two RECORD files")
 			}
 			record = f
 		}
 	}
 	if record == nil {
-		return nil, fmt.Errorf("no RECORD")
+		return nil, nil, fmt.Errorf("no RECORD")
 	}
 	rc, err := record.Open()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	rows, err := csv.NewReader(rc).ReadAll()
 	_ = rc.Close()
 	if err != nil {
-		return nil, fmt.Errorf("RECORD: %w", err)
+		return nil, nil, fmt.Errorf("RECORD: %w", err)
 	}
 	out := map[string]string{}
+	contents := map[string][]byte{}
 	for _, r := range rows {
 		if len(r) != 3 {
-			return nil, fmt.Errorf("RECORD: a row of %d fields", len(r))
+			return nil, nil, fmt.Errorf("RECORD: a row of %d fields", len(r))
 		}
 		path, digest := r[0], r[1]
 		f, ok := files[path]
 		if !ok {
-			return nil, fmt.Errorf("RECORD lists %s, which it does not hold", path)
+			return nil, nil, fmt.Errorf("RECORD lists %s, which it does not hold", path)
 		}
 		if path == record.Name {
 			continue
 		}
 		rc, err := f.Open()
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
-		h := sha256.New()
-		_, err = io.Copy(h, rc)
+		data, err := io.ReadAll(io.LimitReader(rc, componentpack.PluginMaxUnpackedBytes+1))
 		_ = rc.Close()
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
-		if digest != "sha256="+base64.RawURLEncoding.EncodeToString(h.Sum(nil)) {
-			return nil, fmt.Errorf("%s does not match its RECORD", path)
+		sum := sha256.Sum256(data)
+		size, err := strconv.ParseInt(r[2], 10, 64)
+		if err != nil || size < 0 || size != int64(len(data)) || digest != "sha256="+base64.RawURLEncoding.EncodeToString(sum[:]) {
+			return nil, nil, fmt.Errorf("%s does not match its RECORD", path)
 		}
 		out[path] = digest
+		contents[path] = data
 	}
 	for name := range files {
 		if _, ok := out[name]; !ok && name != record.Name {
-			return nil, fmt.Errorf("%s is not in RECORD", name)
+			return nil, nil, fmt.Errorf("%s is not in RECORD", name)
 		}
 	}
-	return out, nil
+	return out, contents, nil
 }
 
 // compiled is a file Python writes for itself, which a wheel may or may not carry.
@@ -273,18 +297,22 @@ func compiled(p string) bool {
 	return strings.Contains(p, "/__pycache__/") || strings.HasSuffix(p, ".pyc")
 }
 
-// checkWheel: the plugin's wheel holds its own package (dist) and its dist-info only, each
-// file as its RECORD says; and, with the release's pipeline wheel's RECORD, the same files of
-// that package with the same digests, both ways.
-func checkWheel(b []byte, dist string, pipeline map[string]string) error {
-	rec, err := wheelRecord(b)
+// checkWheel: the plugin's wheel holds its own package (dist) and exactly its dist-info's
+// METADATA, WHEEL and RECORD, each file as its RECORD says. Its METADATA names the plugin's
+// distribution at this version and requires only maktaba-pipeline at this version, and its
+// WHEEL says a pure py3-none-any wheel, so a package cannot pull another dependency in or
+// claim another version. With the release's pipeline wheel's RECORD, its package's files
+// equal that wheel's, digest for digest, both ways.
+func checkWheel(b []byte, dist, version string, pipeline map[string]string) error {
+	rec, files, err := readWheel(b)
 	if err != nil {
 		return err
 	}
+	info := dist + "-" + version + ".dist-info/"
 	own := 0
 	for p, d := range rec {
 		switch {
-		case strings.HasPrefix(p, dist+"-") && strings.Count(p, "/") == 1 && strings.Contains(p, ".dist-info/"):
+		case p == info+"METADATA" || p == info+"WHEEL":
 		case strings.HasPrefix(p, dist+"/"):
 			own++
 			if pipeline != nil {
@@ -293,17 +321,68 @@ func checkWheel(b []byte, dist string, pipeline map[string]string) error {
 				}
 			}
 		default:
-			return fmt.Errorf("%s is outside its package %s", p, dist)
+			return fmt.Errorf("%s is outside its package %s and its dist-info", p, dist)
 		}
 	}
 	if own == 0 {
 		return fmt.Errorf("it holds no file of %s", dist)
+	}
+	meta, ok := files[info+"METADATA"]
+	if !ok {
+		return fmt.Errorf("no %sMETADATA", info)
+	}
+	name := strings.ReplaceAll(dist, "_", "-")
+	if err := checkHeaders(meta, map[string]string{"Name": name, "Version": version, "Requires-Dist": "maktaba-pipeline==" + version},
+		"Metadata-Version", "Summary", "License", "Requires-Python"); err != nil {
+		return fmt.Errorf("METADATA: %w", err)
+	}
+	wh, ok := files[info+"WHEEL"]
+	if !ok {
+		return fmt.Errorf("no %sWHEEL", info)
+	}
+	if err := checkHeaders(wh, map[string]string{"Root-Is-Purelib": "true", "Tag": "py3-none-any"}, "Wheel-Version", "Generator"); err != nil {
+		return fmt.Errorf("WHEEL: %w", err)
 	}
 	for p := range pipeline {
 		if strings.HasPrefix(p, dist+"/") && !compiled(p) {
 			if _, ok := rec[p]; !ok {
 				return fmt.Errorf("the release's pipeline wheel has %s, which it lacks", p)
 			}
+		}
+	}
+	return nil
+}
+
+// checkHeaders reads "Key: value" lines: each key of exact once with that value, the free
+// keys at most once each with any value, and no other key or line.
+func checkHeaders(b []byte, exact map[string]string, free ...string) error {
+	seen := map[string]bool{}
+	for _, line := range strings.Split(strings.TrimRight(string(b), "\n"), "\n") {
+		k, v, ok := strings.Cut(line, ": ")
+		if !ok {
+			return fmt.Errorf("the line %q", line)
+		}
+		if seen[k] {
+			return fmt.Errorf("%s twice", k)
+		}
+		seen[k] = true
+		if want, isExact := exact[k]; isExact {
+			if v != want {
+				return fmt.Errorf("%s is %q, not %q", k, v, want)
+			}
+			continue
+		}
+		allowed := false
+		for _, f := range free {
+			allowed = allowed || f == k
+		}
+		if !allowed {
+			return fmt.Errorf("%s is not allowed", k)
+		}
+	}
+	for k := range exact {
+		if !seen[k] {
+			return fmt.Errorf("no %s", k)
 		}
 	}
 	return nil

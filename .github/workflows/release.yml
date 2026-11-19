@@ -1959,8 +1959,9 @@ jobs:
           # machine joins a home with these; no checkout).
           cp staged/node/* dist/
           # Maktaba's first-party plugin packages and their files.json (story 54.27 §2):
-          # checksums.txt lists both, which is what makes each package trusted
-          cp staged/plugins/tv.maktaba.*.mkplugin staged/plugins/tv.maktaba.*.files.json dist/
+          # checksums.txt lists both, which is what makes each package trusted. A pre-release
+          # has none (build.py writes only a note, which is not a release file)
+          find staged/plugins -maxdepth 1 -type f \( -name 'tv.maktaba.*.mkplugin' -o -name 'tv.maktaba.*.files.json' \) -exec cp {} dist/ \;
           # The cloud (relay) binary ships loose — it's a separate VPS
           # deploy target, not part of the home-server archives. Restore
           # the +x bit dropped by artifact download.

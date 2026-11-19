@@ -191,10 +191,29 @@ def mkplugin_binary(work: Path) -> Path:
     return exe
 
 
+# A pre-release (1.2.3-rc.1) builds no package: a manifest's maktaba range takes only
+# MAJOR.MINOR.PATCH (54.01 §2), so "=<pre-release>" would fail the trusted manifest check and
+# the release with it. Nothing installs a first-party package yet (stories 54.45, 54.46), so a
+# pre-release ships without them; the release check (fp-packages) requires that none is there.
+# The note is the job's one output, so its artifact is never empty.
+PRERELEASE_NOTE = "first-party-packages.txt"
+
+
+def is_prerelease(version: str) -> bool:
+    m = SEMVER.match(version)
+    return bool(m and m.group(4))
+
+
 def build(folders: list[Path], version: str, out: Path, mkplugin: Path | None = None) -> list[Path]:
-    """Every package, written to out; answers the .mkplugin paths."""
+    """Every package, written to out; answers the .mkplugin paths (none for a pre-release)."""
     pep440(version)  # a bad version fails before anything is written
     out.mkdir(parents=True, exist_ok=True)
+    if is_prerelease(version):
+        (out / PRERELEASE_NOTE).write_text(
+            f"{version} is a pre-release: it carries no first-party plugin packages.\n",
+            encoding="utf-8",
+        )
+        return []
     built: list[Path] = []
     with tempfile.TemporaryDirectory(prefix="fp-build-") as tmp:
         work = Path(tmp)

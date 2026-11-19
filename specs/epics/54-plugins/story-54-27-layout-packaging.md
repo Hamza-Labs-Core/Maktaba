@@ -178,9 +178,12 @@ plugin's `i18n`.
     of its own;
   - have a stamped manifest that is valid as a trusted manifest, with its manifest, strings and
     statements equal to the embedded ones;
-  - have a wheel whose files match its `RECORD` and equal its plugin's files in the signed
-    pipeline wheel, digest for digest, both ways, so a package's code is the code the runner
-    loads;
+  - have a wheel named for this version whose files match its `RECORD` (digests and sizes) and
+    equal its plugin's files in the signed pipeline wheel, digest for digest, both ways, so a
+    package's code is the code the runner loads;
+  - keep its wheel's dist-info to exactly `METADATA`, `WHEEL` and `RECORD`. The `METADATA` names
+    this distribution and version and requires only `maktaba-pipeline==<version>`, and the
+    `WHEEL` says a pure `py3-none-any` wheel;
   - pass `CheckPackage`.
   
   Any other `tv.maktaba.*` package or `files.json`, on disk or in the checksums, fails the
@@ -188,6 +191,13 @@ plugin's `i18n`.
 - **`CheckPackage` reads the digest under the package's own name.** It looks at
   `tv.maktaba.<name>-<server version>.files.json` only; until now it accepted the digest under
   any name. A digest listed for another plugin, or for any other release file, trusts nothing.
+- **A pre-release carries no packages.** A manifest's `maktaba` range takes only
+  `MAJOR.MINOR.PATCH` (54.01 §2), so a stamped `=1.2.3-rc.1` would fail the trusted manifest
+  check and the release with it. For a pre-release, `build.py` writes only a note
+  (`first-party-packages.txt`, which is not a release file), and `fp-packages` requires that no
+  first-party package or `files.json` is there. Widening the range grammar would change the
+  manifest contract for every plugin, so it is left to the story that first installs a
+  package (54.45). Releases are patch versions; pre-releases are rare and tagged by hand.
 - **The payload does not carry the packages** (a change from §2). Homes still run the code
   from the signed pipeline wheel, and nothing on a home reads a package until stories 54.45 and
   54.46 build an install path. Carrying them would change every platform's payload for no
@@ -201,7 +211,13 @@ plugin's `i18n`.
   the pipeline wheel's code (a changed file, or one file more on either side), a rewritten
   `RECORD`, a `RECORD` that does not hold, an unsigned pipeline wheel, a package with an extra
   member, an orphan `files.json` (on disk, and in the checksums only), and `CheckPackage` with
-  the digest under another plugin's name, another release file's name or another version's. `test_build_packages.py` covers stamping,
+  the digest under another plugin's name, another release file's name or another version's.
+  The second review adds: a pre-release (no package, and one present refused), a wheel
+  `METADATA` with another dependency, another pipeline range or another version, an extra
+  dist-info file, a platform `WHEEL`, a wheel named for another version, and wrong `RECORD`
+  sizes. The `first-party` job runs every test of `internal/plugins/firstparty` and
+  `tools/fp-packages` with no name filter, since the unit job's `-short` skips the ones that
+  build packages. `test_build_packages.py` covers stamping,
   versions, the no-stage and third-party refusals, the package's files and the wheel's
   `RECORD`. T02 to T06 are #750's.
 
