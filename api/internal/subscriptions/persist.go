@@ -58,6 +58,13 @@ type LicensePersistence interface {
 	LoadActive(ctx context.Context) (*persistedLicense, error)
 }
 
+// EndedPersistence lists the licenses replaced or removed since a time (their
+// revoked_at), so a restart keeps a downgrade's grace (story 16.2). The SQL backend
+// implements it; a backend without it keeps them in memory only.
+type EndedPersistence interface {
+	LoadEnded(ctx context.Context, since time.Time) ([]persistedLicense, error)
+}
+
 // StatePersistence keeps what the license server last said (slot
 // 0155). The SQL backend implements it; a backend without it keeps that
 // state in memory only.
@@ -81,7 +88,8 @@ type persistedState struct {
 // stored signed license is re-verified against v so a key rotation or
 // tampered row fails closed (free tier) instead of trusting the
 // persisted snapshot. An expired license is kept (Settings says
-// "expired") but grants nothing past SkewGrace.
+// "expired") but grants nothing past Grace. The licenses replaced or removed less than
+// Grace ago are re-verified the same way and keep their grace.
 //
 // A recovery error is returned: callers (router wiring) decide whether
 // to fail boot or degrade to free tier; we surface it rather than
@@ -109,6 +117,26 @@ func NewPersistentStore(ctx context.Context, db LicensePersistence, v *Verifier)
 					s.revocationsRaw, s.revocationsAt = st.Revocations, st.RevocationsAt
 				}
 			}
+		}
+	}
+	if ep, ok := db.(EndedPersistence); ok && v != nil {
+		since := s.nowLocked().Add(-Grace)
+		if recs, err := ep.LoadEnded(ctx, since); err == nil {
+			for i := range recs {
+				r := recs[i]
+				if r.RevokedAt == nil {
+					continue
+				}
+				if _, ent, err := s.recover(&r, v); err == nil {
+					end := r.RevokedAt.UTC()
+					if !ent.ExpiresAt.IsZero() && ent.ExpiresAt.Before(end) {
+						end = ent.ExpiresAt
+					}
+					s.keepEndedLocked(ent, end.Add(Grace))
+				}
+			}
+		} else if stateErr == nil {
+			stateErr = fmt.Errorf("subscriptions: load ended licenses: %w", err)
 		}
 	}
 	rec, err := db.LoadActive(ctx)
@@ -260,6 +288,30 @@ func (p *sqlLicenseStore) LoadActive(ctx context.Context) (*persistedLicense, er
 		}
 	}
 	return &rec, nil
+}
+
+func (p *sqlLicenseStore) LoadEnded(ctx context.Context, since time.Time) ([]persistedLicense, error) {
+	rows, err := p.db.QueryContext(ctx,
+		`SELECT license_id, tier, seats, issued_at, expires_at, revoked_at, raw_jwt
+		   FROM licenses
+		  WHERE revoked_at IS NOT NULL AND revoked_at > $1
+		  ORDER BY revoked_at`, since.UTC())
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var out []persistedLicense
+	for rows.Next() {
+		var rec persistedLicense
+		var tier string
+		var rev time.Time
+		if err := rows.Scan(&rec.LicenseID, &tier, &rec.Seats, &rec.IssuedAt, &rec.ExpiresAt, &rev, &rec.RawJWT); err != nil {
+			return nil, err
+		}
+		rec.Tier, rec.RevokedAt = Tier(tier), &rev
+		out = append(out, rec)
+	}
+	return out, rows.Err()
 }
 
 func (p *sqlLicenseStore) SaveState(ctx context.Context, st persistedState) error {

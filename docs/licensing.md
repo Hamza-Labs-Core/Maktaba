@@ -80,10 +80,13 @@ The home's API (`subscriptions.Refresher`, started in `api/license.go`):
   `GET /v1/servers/{id}/license`. A new license applies; `no_license` returns a plan
   license to Free (an offline license someone applied is left alone, and a plan
   license never replaces a higher offline one); `license_revoked` locks.
-- **Grace.** A plan license lasts 31 days and is renewed daily, so a home cut off
-  from the cloud keeps its plan for about a month. Any license keeps working 72 hours
-  past `expires_at` (clock skew), then the home is on Free and Settings says
-  _Reconnect to validate the license_.
+- **Grace** (story 16.2). When a license expires, or the home downgrades (a lower
+  plan, the plan ended, the license removed), its paid features keep working fully
+  for 30 days from its `expires_at` (or from when it was replaced, if earlier). Then
+  they lock, and the home is on its new plan, or Free with Settings saying _Reconnect
+  to validate the license_. Settings → Subscription shows the days left. A plan
+  license lasts 31 days and is renewed daily, so a home cut off from the cloud keeps
+  its plan for about 61 days. A revocation locks at once.
 - **Clock.** The home never goes back in time: it keeps a high-water mark of the
   latest time it saw (its own clock or the license server's `Date`), so setting the
   clock back does not revive an expired license; when the license server answers,

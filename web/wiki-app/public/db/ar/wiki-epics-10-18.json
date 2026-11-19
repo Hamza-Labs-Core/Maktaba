@@ -2756,17 +2756,14 @@
       ],
       "related": [
         "epic-16-subscriptions",
-        "plan-16.02-premium-features",
-        "ep-get-home"
+        "plan-16.02-premium-features"
       ],
       "files": {
         "story": "specs/epics/16-subscriptions/story-16-02-premium-features.md",
         "plan": "specs/epics/16-subscriptions/plan-16-02-premium-features.md",
         "mockups": []
       },
-      "api_endpoints": [
-        "GET /home"
-      ],
+      "api_endpoints": [],
       "db_tables": [],
       "metadata": {
         "slug": "premium-features"
@@ -2819,7 +2816,7 @@
       "title": "التحقق من مفتاح الترخيص",
       "epic": "16-subscriptions",
       "phase": 3,
-      "content": "# القصة 16.4 — التحقق من مفتاح الترخيص\n\nتحقّق من الترخيص يتحمّل انقطاع الاتصال: المفاتيح موقّعة بمفتاح عام؛ ويتحقق\nالخادم من التوقيع محليًا ويحدّث حالته مقابل خادم التراخيص\nدوريًا.\n\n**المراجع:** [`architecture.md` §11.5 (الأسرار)](../../architecture.md).\n\n## معايير القبول\n\n- مفاتيح الترخيص بصيغة JSON موقّعة بـ Ed25519: `{license_id, tier, seats,\n  expires_at, signature}`.\n- يضمّن الخادم المفتاح العام لخادم التراخيص وقت البناء.\n- التحقق: فحص التوقيع + فحص الانتهاء + فحص عدد المقاعد.\n- تحديث يومي مقابل خادم التراخيص؛ ومهلة 30 يومًا دون اتصال قبل\n  قفل الميزات.\n- الإبطا",
+      "content": "# القصة 16.4 — التحقق من مفتاح الترخيص\n\nتحقّق من الترخيص يتحمّل انقطاع الاتصال: المفاتيح موقّعة بمفتاح عام؛ ويتحقق\nالخادم من التوقيع محليًا ويحدّث حالته مقابل خادم التراخيص\nدوريًا.\n\n**المراجع:** [`architecture.md` §11.5 (الأسرار)](../../architecture.md).\n\n## معايير القبول\n\n- مفاتيح الترخيص بصيغة JSON موقّعة بـ Ed25519: `{license_id, tier, seats,\n  expires_at, signature}`.\n- يضمّن الخادم المفتاح العام لخادم التراخيص وقت البناء.\n- التحقق: فحص التوقيع + فحص الانتهاء + فحص عدد المقاعد.\n- تحديث يومي مقابل خادم التراخيص. ويبقى الترخيص المنتهي عاملًا بالكامل\n  مدة 30 يومًا من",
       "tags": [
         "story",
         "16-subscriptions",
@@ -2860,7 +2857,7 @@
         "lang": "ar",
         "source": {
           "title": "6276a56b1b232adc",
-          "content": "d83f4ae9e8e8042b"
+          "content": "0f35f9fc9f1c05dd"
         }
       }
     },

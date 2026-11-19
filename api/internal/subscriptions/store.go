@@ -8,12 +8,14 @@ import (
 	"time"
 )
 
-// SkewGrace is how long an expired license keeps working (story 16.2
-// EC: clock skew between the home and the license server). A license
-// the cloud issues lasts 31 days and is refreshed daily, so a home cut
-// off from the license server locks about 34 days after its last
-// refresh (story 16.4: 30 d offline grace, locked by 35 d).
-const SkewGrace = 72 * time.Hour
+// Grace is how long a license's paid features keep working, fully, after it
+// expires or is replaced by a lower plan (story 16.2, the owner's decision of
+// 2026-11-19): counted from the license's expiry (a replaced license ends when it is
+// replaced, if that is earlier), then they lock. It covers the clock skew between the
+// home and the license server too (the 72 h of the EC). A license the cloud issues
+// lasts 31 days and is refreshed daily, so a home cut off from the license server keeps
+// its plan about 61 days after its last refresh. A revocation (fraud) locks at once.
+const Grace = 30 * 24 * time.Hour
 
 // Status is where the applied license stands.
 type Status string
@@ -23,9 +25,10 @@ const (
 	StatusNone Status = "none"
 	// StatusActive: the license grants its tier.
 	StatusActive Status = "active"
-	// StatusGrace: past expires_at, inside SkewGrace; still granted.
+	// StatusGrace: past expires_at (or replaced by a lower plan), inside Grace; still
+	// granted, fully, until State.GraceUntil.
 	StatusGrace Status = "grace"
-	// StatusExpired: past expires_at + SkewGrace; the free tier.
+	// StatusExpired: past expires_at + Grace; the free tier.
 	StatusExpired Status = "expired"
 	// StatusRevoked: the license server revoked it; the free tier.
 	StatusRevoked Status = "revoked"
@@ -47,6 +50,16 @@ type State struct {
 	LastRefreshError string
 	RevocationsAt    time.Time
 	Now              time.Time
+	// GraceUntil is when the features granted only by Grace lock (an expired license's,
+	// a replaced one's): zero when nothing is in its grace.
+	GraceUntil time.Time
+}
+
+// ended is a license this home had before the applied one (replaced by another, or
+// removed): what it granted keeps working until until (Grace after its end).
+type ended struct {
+	ent   *Entitlements
+	until time.Time
 }
 
 // Store is the runtime cache of the applied license and what the
@@ -56,6 +69,9 @@ type Store struct {
 	mu sync.RWMutex
 	// license is the applied, signature-checked license (nil: none).
 	license *Entitlements
+	// previous are the licenses replaced or removed less than Grace ago (story 16.2:
+	// a downgrade keeps the old plan's features for Grace).
+	previous []ended
 	// raw is the applied license as signed, for persistence.
 	raw *License
 
@@ -155,20 +171,156 @@ func (s *Store) Current() *Entitlements {
 }
 
 func (s *Store) effectiveLocked() (*Entitlements, Status) {
-	if s.license == nil {
-		return nil, StatusNone
-	}
-	if s.lockReason == LockRevoked || s.revoked[s.license.LicenseID] {
-		return nil, StatusRevoked
+	ent, st, _ := s.grantLocked()
+	return ent, st
+}
+
+// grantLocked is what the gates use now, the license's standing, and when what only
+// Grace grants locks (zero: nothing). The applied license grants its plan while it is
+// valid and for Grace after its expiry; each license replaced or removed less than Grace
+// ago adds its plan until its own end + Grace (the higher plan wins: a downgrade keeps
+// working fully). A revocation (the lock, or the list) grants nothing, at once.
+func (s *Store) grantLocked() (*Entitlements, Status, time.Time) {
+	if s.lockReason == LockRevoked || (s.license != nil && s.revoked[s.license.LicenseID]) {
+		return nil, StatusRevoked, time.Time{}
 	}
 	now := s.nowLocked()
-	if s.license.ExpiresAt.IsZero() || now.Before(s.license.ExpiresAt) {
-		return s.license, StatusActive
+	var parts []*Entitlements
+	var graceUntil time.Time
+	grace := func(until time.Time) {
+		if until.After(graceUntil) {
+			graceUntil = until
+		}
 	}
-	if now.Before(s.license.ExpiresAt.Add(SkewGrace)) {
-		return s.license, StatusGrace
+	st := StatusNone
+	if l := s.license; l != nil {
+		switch {
+		case l.ExpiresAt.IsZero() || now.Before(l.ExpiresAt):
+			parts, st = append(parts, l), StatusActive
+		case now.Before(l.ExpiresAt.Add(Grace)):
+			parts, st = append(parts, l), StatusGrace
+			grace(l.ExpiresAt.Add(Grace))
+		default:
+			st = StatusExpired
+		}
 	}
-	return nil, StatusExpired
+	for _, p := range s.previous {
+		if s.revoked[p.ent.LicenseID] || !now.Before(p.until) {
+			continue
+		}
+		if st != StatusActive || addsTo(s.license, p.ent) {
+			grace(p.until)
+		}
+		parts = append(parts, p.ent)
+		if st != StatusActive {
+			st = StatusGrace
+		}
+	}
+	switch len(parts) {
+	case 0:
+		return nil, st, time.Time{}
+	case 1:
+		return parts[0], st, graceUntil
+	}
+	return merge(parts), st, graceUntil
+}
+
+// addsTo: prev grants something cur does not (a feature, or seats).
+func addsTo(cur, prev *Entitlements) bool {
+	if cur == nil {
+		return true
+	}
+	for f, on := range prev.Features {
+		if on && !cur.Features[f] {
+			return true
+		}
+	}
+	cs, ps := cur.SeatLimit(), prev.SeatLimit()
+	return cs != SeatsUnlimited && (ps == SeatsUnlimited || ps > cs)
+}
+
+// merge is the union of what parts grant: every feature, the most seats, the highest
+// tier. The first part (the applied license, when it grants) names the license.
+func merge(parts []*Entitlements) *Entitlements {
+	out := *parts[0]
+	out.Features = map[Feature]bool{}
+	seats := 0
+	for _, p := range parts {
+		for f, on := range p.Features {
+			if on {
+				out.Features[f] = true
+			}
+		}
+		if tierRank[p.Tier] > tierRank[out.Tier] {
+			out.Tier = p.Tier
+		}
+		switch n := p.SeatLimit(); {
+		case seats == SeatsUnlimited:
+		case n == SeatsUnlimited || n > seats:
+			seats = n
+		}
+	}
+	out.seatFloor = seats
+	return &out
+}
+
+// retire moves the applied license to previous (it was replaced or removed now): what it
+// granted keeps working until its end (its expiry, or now if that is earlier) + Grace.
+// A revoked license is not kept. Callers hold s.mu.
+func (s *Store) retireLocked() {
+	l := s.license
+	if l == nil || s.lockReason == LockRevoked || s.revoked[l.LicenseID] {
+		return
+	}
+	end := s.nowLocked()
+	if !l.ExpiresAt.IsZero() && l.ExpiresAt.Before(end) {
+		end = l.ExpiresAt
+	}
+	s.keepEndedLocked(l, end.Add(Grace))
+}
+
+// keepEndedLocked records an ended license (dropping those whose grace is over).
+func (s *Store) keepEndedLocked(e *Entitlements, until time.Time) {
+	now := s.nowLocked()
+	kept := s.previous[:0]
+	for _, p := range s.previous {
+		if now.Before(p.until) && p.ent.LicenseID != e.LicenseID {
+			kept = append(kept, p)
+		}
+	}
+	s.previous = kept
+	if now.Before(until) {
+		s.previous = append(s.previous, ended{ent: e, until: until})
+	}
+}
+
+// Until is when f stops being granted: the latest end of a grant of it (the applied
+// license's expiry + Grace, an ended one's grace). ok is false when f is not granted;
+// a zero time with ok is a grant that does not end.
+func (s *Store) Until(f Feature) (time.Time, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	eff, _, _ := s.grantLocked()
+	if !eff.Allows(f) {
+		return time.Time{}, false
+	}
+	if FreeFeatures[f] {
+		return time.Time{}, true
+	}
+	now := s.nowLocked()
+	var until time.Time
+	if l := s.license; l != nil && l.Features[f] && (l.ExpiresAt.IsZero() || now.Before(l.ExpiresAt.Add(Grace))) {
+		if l.ExpiresAt.IsZero() {
+			return time.Time{}, true
+		}
+		until = l.ExpiresAt.Add(Grace)
+	}
+	for _, p := range s.previous {
+		if p.ent.Features[f] && !s.revoked[p.ent.LicenseID] && now.Before(p.until) && p.until.After(until) {
+			until = p.until
+		}
+	}
+	return until, true
 }
 
 // State reports the applied license, what it grants now, and the last
@@ -176,7 +328,7 @@ func (s *Store) effectiveLocked() (*Entitlements, Status) {
 func (s *Store) State() State {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	eff, st := s.effectiveLocked()
+	eff, st, until := s.grantLocked()
 	lock := s.lockReason
 	if st == StatusRevoked {
 		lock = LockRevoked
@@ -184,7 +336,7 @@ func (s *Store) State() State {
 	return State{
 		License: s.license, Effective: eff, Status: st, LockReason: lock,
 		LastRefreshAt: s.lastRefreshAt, LastRefreshError: s.lastRefreshError,
-		RevocationsAt: s.revocationsAt, Now: s.nowLocked(),
+		RevocationsAt: s.revocationsAt, Now: s.nowLocked(), GraceUntil: until,
 	}
 }
 
@@ -219,6 +371,9 @@ func (s *Store) SetLicense(ctx context.Context, lic *License, ent *Entitlements)
 		}
 	}
 	s.mu.Lock()
+	if s.license == nil || ent == nil || s.license.LicenseID != ent.LicenseID {
+		s.retireLocked()
+	}
 	s.license, s.raw, s.lockReason = ent, lic, ""
 	s.mu.Unlock()
 	defer s.changed()
@@ -247,6 +402,7 @@ func (s *Store) ReloadActive(ctx context.Context, v *Verifier) (bool, error) {
 			return false, nil
 		}
 		s.mu.Lock()
+		s.retireLocked()
 		s.license, s.raw = nil, nil
 		s.mu.Unlock()
 		s.changed()
@@ -260,6 +416,7 @@ func (s *Store) ReloadActive(ctx context.Context, v *Verifier) (bool, error) {
 		return false, err
 	}
 	s.mu.Lock()
+	s.retireLocked()
 	s.license, s.raw, s.lockReason = ent, lic, ""
 	s.mu.Unlock()
 	s.changed()
@@ -267,7 +424,8 @@ func (s *Store) ReloadActive(ctx context.Context, v *Verifier) (bool, error) {
 }
 
 // Revoke durably reverts the instance to the free tier (an admin
-// removed the license, or the cloud says the plan ended). With no
+// removed the license, or the cloud says the plan ended): what the license
+// granted keeps working for Grace from its end (story 16.2). With no
 // persistence backend it is equivalent to Set(nil).
 func (s *Store) Revoke(ctx context.Context) error {
 	if s.persist != nil {
@@ -276,6 +434,7 @@ func (s *Store) Revoke(ctx context.Context) error {
 		}
 	}
 	s.mu.Lock()
+	s.retireLocked()
 	s.license, s.raw, s.lockReason = nil, nil, ""
 	s.mu.Unlock()
 	defer s.changed()

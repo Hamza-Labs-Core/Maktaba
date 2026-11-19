@@ -165,7 +165,7 @@ provider's own fees are shown to developers as the provider states them.
   at most +31 days ahead and rolled), issued_at}`.
 - The home verifies it **offline**: embedded `plugins-root.json` → `store-keys.json` → E →
   the entitlement, and that `home_id` and `home_key_fp` are its own. No call to Maktaba Cloud,
-  its licence issuer or its licence verifier; the grace rules (31 days plus `SkewGrace`) are
+  its licence issuer or its licence verifier; the grace rules (31 days plus `Grace`, 30 days: story 16.2) are
   the same numbers as Epic 16's, in `shared/plugins/pluginsig` (`CheckEntitlement`).
 - The home refreshes entitlements daily with a signed request to the store. A store outage
   shorter than 31 days changes nothing for a paying home; a cloud outage of any length changes
