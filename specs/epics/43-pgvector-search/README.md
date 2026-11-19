@@ -146,9 +146,9 @@ During the copy, search and the index stage keep using Chroma.
 | 43.6 | Measured on the home Mac | p50/p95 of the semantic leg at 13.9 M rows, disk before/after, recall vs Chroma, in the PR |
 
 Order: 43.1 → 43.2 → 43.3 + 43.4 → 43.6 → 43.5 (Chroma's code goes only after the live copy is
-checked; one release reads Chroma for the copy, the next drops it). The owner moved 43.5 ahead of
-43.6 on 2026-11-19 ("retire Chroma first"), without waiting for a checked live copy: a home whose
-copy was not done when it updates indexes its videos again (see As built).
+checked; one release reads Chroma for the copy, the next drops it). 43.5 moved ahead of 43.6 on
+2026-11-19, without waiting for a checked live copy: a home whose copy was not done when it updates
+finishes the copy first and embeds nothing again (see As built).
 
 ## Risks
 
@@ -190,8 +190,8 @@ Nothing opens Chroma any more, and nothing depends on `chromadb`.
   `deploy/compose/*.yml`, `pipeline/Dockerfile`, `.env.example`, `tools/dev/stack.sh`, CI's
   integration services, the Makefile and the developer docs. A Docker home keeps its old
   `chroma` volume unused until the operator removes it.
-- **A home that still has Chroma data finishes its copy** (the owner's decision of 2026-11-19:
-  a home whose copy never finished must not embed anything again).
+- **A home that still has Chroma data finishes its copy** (decided 2026-11-19: a home whose
+  copy never finished must not embed anything again).
   - **The copy runs at the update.** `copy-chroma` is the story 43.3 copy, kept: it reads
     Chroma's files (`chroma.sqlite3`, the HNSW segment's `header.bin`,
     `index_metadata.pickle` and `data_level0.bin`), never Chroma, so it needs no chromadb,

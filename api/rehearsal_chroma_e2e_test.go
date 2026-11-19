@@ -7,8 +7,8 @@ package main
 // retired Chroma.
 //
 // The releases before 43.5 kept semantic search's vectors in Chroma (<StateDir>/chroma)
-// until a one-time copy moved them into Postgres (story 43.3). The owner's decision: a
-// home whose copy never finished must not embed anything again. This commit has no
+// until a one-time copy moved them into Postgres (story 43.3). A home whose copy never
+// finished must not embed anything again. This commit has no
 // Chroma, but its copy reads Chroma's files: the update finishes the copy, the videos it
 // copies keep their index fingerprints (no index job), and Chroma's files go only once
 // the copy is done (the start after). The folder planted here is the one Chroma 1.5.9
