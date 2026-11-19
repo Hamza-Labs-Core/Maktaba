@@ -18,7 +18,8 @@ What blocks:
   gives no severity, so each id is looked up on OSV (api.osv.dev; `--severities` gives a
   file of {id: severity} instead, for tests and offline runs). An id OSV gives no
   severity for blocks: the gate fails closed.
-- web (pnpm audit --json): an advisory of severity high or critical.
+- web (pnpm audit --json): an advisory of severity high or critical, or of none (fails
+  closed, as Python).
 
 A suppression is a file `security/suppressions/<id>.md` (the id is the advisory's, a CVE,
 GHSA, GO- or PYSEC- id; any of a vulnerability's aliases matches) with front matter:
@@ -53,7 +54,8 @@ ROOT = Path(__file__).resolve().parents[2]
 SUPPRESSIONS = ROOT / "security" / "suppressions"
 # the furthest a suppression's expiry may be from today (AC2's "date ceiling")
 MAX_DAYS = 180
-BLOCKING = {"HIGH", "CRITICAL"}
+# what does not block; any other severity, none included, does (the gate fails closed)
+NOT_BLOCKING = {"LOW", "MODERATE", "MEDIUM", "INFO"}
 OSV = "https://api.osv.dev/v1/vulns/"
 
 
@@ -156,7 +158,7 @@ def parse_pip_audit(component: str, text: str, severity: Callable[[str, set[str]
                     fixed=", ".join(v.get("fix_versions") or []),
                     severity=sev,
                     summary=(v.get("description") or "").strip().split("\n")[0][:120],
-                    blocks=sev not in {"LOW", "MODERATE", "MEDIUM"},
+                    blocks=sev not in NOT_BLOCKING,
                 )
             )
     return out
@@ -168,7 +170,7 @@ def parse_pnpm_audit(component: str, text: str) -> list[Vuln]:
         raise ReportError(f"{component}: pnpm audit failed: {doc['error']}")
     out = []
     for adv in (doc.get("advisories") or {}).values():
-        sev = str(adv.get("severity", "")).upper()
+        sev = str(adv.get("severity") or "none").upper()
         ghsa = adv.get("github_advisory_id") or ""
         aliases = set(adv.get("cves") or []) | ({ghsa} if ghsa else set())
         versions = sorted({f.get("version", "") for f in adv.get("findings") or []} - {""})
@@ -183,7 +185,8 @@ def parse_pnpm_audit(component: str, text: str) -> list[Vuln]:
                 fixed=adv.get("patched_versions", ""),
                 severity=sev,
                 summary=adv.get("title", ""),
-                blocks=sev in BLOCKING,
+                # an advisory pnpm gives no severity blocks, as a Python one does
+                blocks=sev not in NOT_BLOCKING,
             )
         )
     return out

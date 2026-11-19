@@ -81,6 +81,7 @@ PNPM = {
     "advisories": {
         "1": {"id": 1, "github_advisory_id": "GHSA-xffm-g5w8-qvg7", "severity": "low", "module_name": "@eslint/plugin-kit", "patched_versions": ">=0.3.4", "title": "ReDoS", "cves": [], "findings": [{"version": "0.3.1"}]},
         "2": {"id": 2, "github_advisory_id": "GHSA-aaaa-bbbb-cccc", "severity": "high", "module_name": "left-pad", "patched_versions": ">=1.3.1", "title": "prototype pollution", "cves": ["CVE-2026-11111"], "findings": [{"version": "1.3.0"}]},
+        "3": {"id": 3, "github_advisory_id": "GHSA-nnnn-oooo-pppp", "module_name": "no-severity", "patched_versions": ">=2.0.0", "title": "no severity given", "cves": [], "findings": [{"version": "1.0.0"}]},
     },
     "metadata": {"vulnerabilities": {"low": 1, "high": 1}},
 }
@@ -127,9 +128,9 @@ def test_tc2_a_called_go_vulnerability_blocks_and_an_uncalled_one_is_only_report
 def test_the_gate_blocks_called_go_high_python_unknown_python_and_high_npm(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     rc = cve_gate.main(write_reports(tmp_path))
     assert rc == 1
-    # MODERATE Python and low npm are reported, not blocking; an id with no severity
-    # anywhere blocks (fail closed)
-    assert blocking_ids(capsys) == {"GO-2026-6611", "GHSA-vvf4-9x63-8xvv", "PYSEC-2026-9999", "GHSA-aaaa-bbbb-cccc"}
+    # MODERATE Python and low npm are reported, not blocking; a Python id or an npm
+    # advisory with no severity blocks (fail closed)
+    assert blocking_ids(capsys) == {"GO-2026-6611", "GHSA-vvf4-9x63-8xvv", "PYSEC-2026-9999", "GHSA-aaaa-bbbb-cccc", "GHSA-nnnn-oooo-pppp"}
 
 
 def test_a_recorded_unexpired_suppression_lets_its_vulnerability_through(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -139,10 +140,11 @@ def test_a_recorded_unexpired_suppression_lets_its_vulnerability_through(tmp_pat
     suppress(tmp_path, "GHSA-vvf4-9x63-8xvv")
     suppress(tmp_path, "PYSEC-2026-9999")
     suppress(tmp_path, "CVE-2026-11111")
+    suppress(tmp_path, "GHSA-nnnn-oooo-pppp")
     assert cve_gate.main(args) == 0
     out = capsys.readouterr().out
     assert "Nothing blocks." in out
-    assert out.count("| suppressed |") == 4
+    assert out.count("| suppressed |") == 5
 
 
 @pytest.mark.parametrize(
@@ -201,3 +203,17 @@ def test_ci_runs_the_gate_on_every_push_to_main_and_in_ci_success() -> None:
     # the Go that builds the release (release.yml's setup-go reads api/go.mod too)
     assert setup_go and setup_go[0]["with"]["go-version-file"] == "api/go.mod"
     assert any("tools/security/cve-gate.sh" in str(s.get("run", "")) for s in steps)
+
+
+def test_the_gate_scans_every_shipped_go_module() -> None:
+    # the launcher ships in every server archive and package, the healthcheck in the api
+    # and streaming images
+    shipped = {"api", "streaming", "cmd/maktaba-server", "cloud", "cmd/maktaba-launcher", "tools/healthcheck"}
+    text = (ROOT / "tools/security/cve-gate.sh").read_text()
+    default = text.split('GO_COMPONENTS="${CVE_GATE_GO:-', 1)[1].split("}", 1)[0].split()
+    assert set(default) == shipped
+    assert text.index('OUT=$(cd "${OUT}" && pwd)') < text.index("for mod in ${GO_COMPONENTS}")
+    wf = yaml.safe_load((ROOT / ".github/workflows/_cve-gate.yml").read_text())
+    steps = wf["jobs"]["cve-gate"]["steps"]
+    mods = next(s["with"]["modules"].split() for s in steps if str(s.get("uses", "")).endswith("/go-mod-download"))
+    assert shipped <= set(mods)

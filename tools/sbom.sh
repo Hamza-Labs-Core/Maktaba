@@ -6,7 +6,9 @@
 # Writes OUT_DIR/maktaba-sbom-<component>-<VERSION>.cdx.json (default VERSION `dev`,
 # OUT_DIR artifacts/sbom) for:
 #
-#   api, streaming, server (cmd/maktaba-server), cloud   cyclonedx-gomod app (what each binary links)
+#   api, streaming, server (cmd/maktaba-server), cloud,  cyclonedx-gomod app (what each binary links)
+#   launcher (cmd/maktaba-launcher), healthcheck
+#   (tools/healthcheck, in the api and streaming images)
 #   pipeline                                             cyclonedx-py over `uv export`
 #   web                                                  tools/security/sbom.py over pnpm-lock.yaml
 #
@@ -29,6 +31,8 @@ VERSION="${1:-dev}"
 OUT="${2:-${ROOT}/artifacts/sbom}"
 CYCLONEDX_PY_VERSION="${CYCLONEDX_PY_VERSION:-7.2.1}"
 mkdir -p "${OUT}"
+# absolute: emit_go writes from inside each module (release.yml passes a relative one)
+OUT=$(cd "${OUT}" && pwd)
 WORK=$(mktemp -d)
 trap 'rm -rf "${WORK}"' EXIT
 
@@ -47,7 +51,8 @@ check() {
 # emit_go NAME MODULE MAIN [TAGS]: the modules the binary links (cyclonedx-gomod app, for
 # linux/amd64 as released, the Go standard library included), checked against the modules
 # of the packages `go list -deps` says the main package builds from (a module replaced by a
-# local directory, the shared ones, as `path@`: its version is the commit's, any matches)
+# local directory, the shared ones, as `path@`: its version is the commit's, any matches),
+# and the standard library
 emit_go() {
     local name=$1 mod=$2 main=$3 tags=${4:-} out
     out=$(out_for "${name}")
@@ -58,6 +63,8 @@ emit_go() {
         go list ${tags:+-tags "${tags}"} -deps \
         -f '{{with .Module}}{{if not .Main}}{{.Path}}@{{if .Replace}}{{.Replace.Version}}{{else}}{{.Version}}{{end}}{{end}}{{end}}' "${main}") \
         | sort -u | awk 'NF' >"${WORK}/${name}.expect"
+    # and the standard library at the Go that builds it (-std; the healthcheck links nothing else)
+    echo "std@$(cd "${ROOT}/${mod}" && go env GOVERSION)" >>"${WORK}/${name}.expect"
     check "${out}" "${WORK}/${name}.expect"
 }
 
@@ -88,6 +95,8 @@ emit_go api api .
 emit_go streaming streaming .
 emit_go server cmd/maktaba-server . embed_web
 emit_go cloud cloud ./cmd/maktaba-cloud
+emit_go launcher cmd/maktaba-launcher .
+emit_go healthcheck tools/healthcheck .
 emit_python
 emit_web
 

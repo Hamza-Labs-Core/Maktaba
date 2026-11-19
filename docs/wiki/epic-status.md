@@ -115,7 +115,7 @@
 | Story | Missing |
 |---|---|
 | 16.02 Premium features | The 30-day read-only period after a downgrade. |
-| 23.07 Supply-chain security | A per-component SBOM (`tools/sbom.sh` is a stub) and a CVE gate that can stop a release. Release images already carry SBOM attestations; Dependabot alerts (78 open on 2026-11-19) and CodeQL default setup (3 open alerts) scan the repo, but neither stops a release. |
+| 23.07 Supply-chain security | `maktaba-plugind` (Rust) ships with neither an SBOM nor a `cargo audit` in the CVE gate; every Go, Python and web component has both (#1442). |
 | 26.2 Transcript topic & entity extraction | Only slot 0074's schema is present. No `topic_extractor` implementation, NER/gazetteer path, classification/entity writers, or its tests are on `origin/main`; `classify_stage.py` still describes that extractor as future work. |
 | 26.4 Auto-collection builder | Slot 0076 exists, but no `auto_collections` producer, suggestion lifecycle implementation, or builder tests exist. Existing smart-collection code belongs to earlier/later stories. |
 | 26.5 Web metadata enrichment | The current service makes internal and web/LLM proposals. The specified TMDb, OMDb, MusicBrainz and Wikipedia/Wikidata adapters and their tests are absent. |
@@ -576,7 +576,7 @@ Each epic below has an evidence key naming current implementation and test files
 | 23.04 Secrets management | Done (sampled) | E23; redaction suites |
 | 23.05 Input validation | Done (sampled) | E23 |
 | 23.06 Rate limiting/confirmation | Done (sampled) | E23 |
-| 23.07 Supply-chain security | **partial** | Release images carry BuildKit SBOM attestations (`sbom: true` in `.github/workflows/release.yml` and `relay.yml`), and SBOM parsing/tests exist in `api/internal/security/sbom.go`. Missing: `tools/sbom.sh` is still a stub that `tools/ci/ci_paths.py` marks “run by hand”, so no per-component SBOM is published, and no workflow runs a CVE gate (`govulncheck`, `pip-audit` or npm/pnpm audit). Dependabot alerts (78 open on 2026-11-19) and CodeQL default setup (3 open alerts) scan the repo, but nothing stops a release on them. |
+| 23.07 Supply-chain security | **partial** | #1442: `tools/sbom.sh` writes a checked CycloneDX SBOM per component (api, streaming, server, cloud, launcher, healthcheck, pipeline, web) and the release attaches them (`sbom` job, before `sign-and-release`); CI's `cve-gate` (`_cve-gate.yml`, `tools/security/cve_gate.py`) runs govulncheck, pip-audit and pnpm audit and fails on a called Go vulnerability or a high/critical Python or npm one unless `security/suppressions/` records a reason and an expiry. Release images also carry BuildKit SBOM attestations. Missing: `maktaba-plugind` (Rust) has no SBOM and no audit. |
 | 23.08 Coordinated disclosure | Done | #1444: `SECURITY.md` (GitHub private reporting or security@maktaba.dev, 3 business days to acknowledge, 90 days to a fix or coordinated disclosure, scope, anonymity); `GET /api/system/updates` carries the published GHSAs that affect the running version (`api/internal/system/advisories.go`, `advisories_test.go`) and Settings → About lists them with the release that fixes them (`web/src/pages/Settings/AboutPanel.tsx`, `Settings.test.tsx` SAB-23.8). Also `disclosure.go` and the public `security.txt`. The tabletop drill (TC1) and a synthetic-CVE patch release (TC3) are process exercises, not code. |
 
 ### Epic 24 — Data integrity

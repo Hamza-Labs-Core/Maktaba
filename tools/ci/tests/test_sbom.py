@@ -1,6 +1,7 @@
 """Story 23.7 AC1, TC1: the per-component SBOMs. The web SBOM holds every package the
 lockfile resolves (the transitive ones included) with its version, the check fails an SBOM
-that misses one, and the release attaches the six SBOMs."""
+that misses one, and the release attaches the SBOMs: one per shipped Go binary, the
+pipeline and the web."""
 
 from __future__ import annotations
 
@@ -149,12 +150,45 @@ def test_sbom_sh_covers_the_four_spec_components_and_requires_its_tools() -> Non
     assert "need cyclonedx-gomod" in text
 
 
+# every Go binary a release ships: the archives' and packages' (api, streaming, the server,
+# the cloud relay, the launcher) and the api and streaming images' healthcheck
+SHIPPED_GO = {
+    "api": "api",
+    "streaming": "streaming",
+    "server": "cmd/maktaba-server",
+    "cloud": "cloud",
+    "launcher": "cmd/maktaba-launcher",
+    "healthcheck": "tools/healthcheck",
+}
+
+
+def test_every_shipped_go_binary_has_an_sbom_and_the_release_downloads_its_modules() -> None:
+    text = (ROOT / "tools" / "sbom.sh").read_text()
+    for name, mod in SHIPPED_GO.items():
+        assert f"\nemit_go {name} {mod} " in text, name
+    wf = yaml.safe_load((ROOT / ".github/workflows/release.yml").read_text())
+    steps = wf["jobs"]["sbom"]["steps"]
+    mods = next(s["with"]["modules"].split() for s in steps if str(s.get("uses", "")).endswith("/go-mod-download"))
+    assert set(SHIPPED_GO.values()) <= set(mods)
+    for docker in ("api/Dockerfile", "streaming/Dockerfile"):
+        assert "COPY tools/healthcheck" in (ROOT / docker).read_text(), docker
+
+
+def test_sbom_sh_writes_a_relative_out_dir_from_inside_each_module() -> None:
+    # release.yml passes `sbom-out`; emit_go runs cyclonedx-gomod from the module's directory,
+    # where a relative -output does not exist
+    text = (ROOT / "tools" / "sbom.sh").read_text()
+    assert text.index('OUT=$(cd "${OUT}" && pwd)') < text.index("\nemit_go api ")
+
+
 def test_the_release_attaches_the_sboms() -> None:
     wf = yaml.safe_load((ROOT / ".github/workflows/release.yml").read_text())
     jobs = wf["jobs"]
     job = jobs["sbom"]
     assert any("tools/sbom.sh" in str(s.get("run", "")) for s in job["steps"])
     assert any(str(s.get("uses", "")).startswith("actions/upload-artifact@") and s["with"]["name"] == "release-sbom" for s in job["steps"])
+    # a re-run of a published tag builds nothing, like every other build job
+    assert job["if"] == "needs.guard.outputs.published != 'true'"
     publish = jobs["sign-and-release"]
     assert "sbom" in publish["needs"]
     assert "needs.sbom.result == 'success'" in publish["if"]

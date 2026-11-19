@@ -1485,6 +1485,7 @@ jobs:
   sbom:
     name: SBOMs
     needs: [guard]
+    if: needs.guard.outputs.published != 'true'
     runs-on: ubuntu-22.04
     timeout-minutes: 20
     permissions:
@@ -1504,7 +1505,7 @@ jobs:
       - name: Go modules
         uses: ./.github/actions/go-mod-download
         with:
-          modules: api streaming cmd/maktaba-server cloud
+          modules: api streaming cmd/maktaba-server cloud cmd/maktaba-launcher tools/healthcheck
 
       - uses: astral-sh/setup-uv@v8.1.0
         with:
