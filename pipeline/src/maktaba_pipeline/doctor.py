@@ -13,7 +13,7 @@ fails, so a broken worker is reported unhealthy instead of always green:
   running counts are shown.
 - **ffmpeg** / **ffprobe**: the binaries the stages run (``MAKTABA_FFMPEG`` /
   ``MAKTABA_FFPROBE`` or PATH) exist and are executable.
-- **storage**: the Chroma directory, and the thumbnail and model roots when set, are
+- **storage**: the thumbnail and model roots when set are
   writable (a directory that does not exist yet must be creatable). The probe file
   is removed again; nothing else is created.
 """
@@ -59,10 +59,8 @@ def check_binary(name: str, binary: str) -> Check:
 
 def storage_dirs(env: dict[str, str] | None = None) -> list[tuple[str, str]]:
     """The directories this worker writes: (label, path)."""
-    from .search.semantic import chroma_dir
-
     env = dict(os.environ) if env is None else env
-    out = [("chroma", chroma_dir())]
+    out: list[tuple[str, str]] = []
     for label, var in (("thumbnails", "MAKTABA_THUMBNAIL_ROOT"), ("models", "MAKTABA_MODELS_DIR")):
         raw = (env.get(var) or "").strip()
         if raw:

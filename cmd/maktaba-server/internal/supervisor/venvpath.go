@@ -8,7 +8,7 @@ func VenvPython(venv string) string { return venvPython(venv) }
 // RunsFromVenv reports whether p runs from the pipeline's Python environment
 // (pythonFor: the desktop app's venv, a plain server release's <release>/venv): the
 // pipeline's processes (the main worker, the transcription workers, the index
-// worker, the Chroma copy) and every plugin runner. Such a child cannot start before
+// worker) and every plugin runner. Such a child cannot start before
 // that environment holds this release's packages, so the desktop app gates every one
 // of them on its venv step (serve_appbundle.go); started before it, the child dies on
 // a missing module and its exits feed the crash loop (the 0.3.96 update: the plugin

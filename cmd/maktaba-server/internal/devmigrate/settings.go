@@ -27,7 +27,6 @@ type Settings struct {
 
 	SecretsKey string // the API's and the pipeline's secrets key file
 	StreamKey  string // the stream signing key file
-	ChromaDir  string
 	CacheRoot  string // the streaming cache
 	HFHome     string // the Hugging Face cache (hub/ inside)
 	CamelData  string // CAMeL Tools' data
@@ -97,7 +96,6 @@ func ReadSettings(sys Sys, st Stack) Settings {
 		EmbedModel:  get("MAKTABA_EMBED_MODEL", ""),
 		SecretsKey:  get("MAKTABA_SECRETS_KEY", ""),
 		StreamKey:   get("MAKTABA_STREAM_SIGNING_KEY", filepath.Join(dot, "stream-signing.key")),
-		ChromaDir:   get("MAKTABA_CHROMA_DIR", filepath.Join(dot, "chroma")),
 		CacheRoot:   get("MAKTABA_CACHE_ROOT", filepath.Join(dot, "cache", "streaming")),
 		HFHome:      get("HF_HOME", filepath.Join(home, ".cache", "huggingface")),
 		CamelData:   get("CAMELTOOLS_DATA", filepath.Join(home, ".camel_tools")),

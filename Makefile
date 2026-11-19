@@ -190,7 +190,7 @@ prereqs:  ## Verify host has docker, go, uv, pnpm, git (and report versions).
 	@bash tools/check-prereqs.sh
 
 .PHONY: dev
-dev:  ## Bring up the live-reload stack (postgres, chroma, api, streaming, pipeline, web).
+dev:  ## Bring up the live-reload stack (postgres, api, streaming, pipeline, web).
 	$(DEV_COMPOSE) up --build -d
 	@echo ""
 	@echo "Maktaba dev stack is up:"
@@ -198,7 +198,6 @@ dev:  ## Bring up the live-reload stack (postgres, chroma, api, streaming, pipel
 	@echo "  streaming: http://localhost:8081"
 	@echo "  web      : http://localhost:5173"
 	@echo "  postgres : postgres://maktaba:maktaba@localhost:5432/maktaba"
-	@echo "  chroma   : http://localhost:8000"
 	@echo ""
 	@echo "Tail logs with: make dev-logs"
 
@@ -381,7 +380,7 @@ test-unit-web:
 
 # ---------------------------------------------------------------------------
 # Integration tests (gate 3; Story 20.1 integration tier)
-# Needs Postgres + Chroma reachable.
+# Needs Postgres reachable.
 #
 # INTEGRATION_GO_PG_URL names a Postgres server (its user may create
 # databases and roles) for the Go tests gated on MAKTABA_TEST_PG_URL:

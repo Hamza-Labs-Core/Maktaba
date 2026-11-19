@@ -32,12 +32,12 @@ from maktaba_pipeline.engine.stages._analysis import (
     store_embedding,
 )
 from maktaba_pipeline.runtime import Database
-from maktaba_pipeline.search.embedder import embed_id_for
+from maktaba_pipeline.search.pgstore import StoreState
+from maktaba_pipeline.search.semantic import StoredVector
 from tests.engine.factory import make_library, make_video
 from tests.engine.migrate import MIGRATIONS_DIR, up_statements
 from tests.engine.test_index_stage import _transcript
 from tests.engine.toy import Recorder, drain, rows, setup
-from tests.search.semantic_fakes import FakeCollection
 
 DIM = 8
 
@@ -69,16 +69,41 @@ def _unit(i: int) -> list[float]:
     return [x / n for x in v]
 
 
+class FakeVectors:
+    """``segment_embeddings`` as ``chapter_infer`` reads it (PgVectorStore.video_vectors),
+    in memory: video -> its vectors. Records each read."""
+
+    def __init__(self) -> None:
+        self.rows: dict[str, list[StoredVector]] = {}
+        self.reads: list[tuple[str, str | None]] = []
+
+    def __call__(self, db: Any, model: str) -> FakeVectors:
+        return self
+
+    async def video_vectors(
+        self, video_id: Any, transcript_id: Any | None = None
+    ) -> list[StoredVector]:
+        tid = None if transcript_id is None else str(transcript_id)
+        self.reads.append((str(video_id), tid))
+        return [
+            v for v in self.rows.get(str(video_id), []) if tid is None or v.transcript_id == tid
+        ]
+
+
 @pytest.fixture
-def coll() -> Iterator[FakeCollection]:
-    c = FakeCollection()
-    chapter_infer.set_collection_factory(lambda: c)
+def coll(monkeypatch: pytest.MonkeyPatch) -> Iterator[FakeVectors]:
+    c = FakeVectors()
+
+    async def ready(db: Any, *, fresh: bool = False) -> StoreState:
+        return StoreState(ready=True)
+
+    monkeypatch.setattr(chapter_infer, "store_state", ready)
+    monkeypatch.setattr(chapter_infer, "PgVectorStore", c)
     yield c
-    chapter_infer.reset_collection_factory()
 
 
 async def _indexed(
-    db: Database, coll: FakeCollection, video: UUID, library: UUID, topics: list[int], per: int
+    db: Database, coll: FakeVectors, video: UUID, library: UUID, topics: list[int], per: int
 ) -> UUID:
     """A transcript of ``per`` segments per topic, and its vectors in the fake store."""
     texts = [f"جملة طويلة عن الموضوع {t} رقم {k}" for t in topics for k in range(per)]
@@ -89,20 +114,19 @@ async def _indexed(
         str(tid),
     )
     rng = random.Random(5)
+    vecs = coll.rows.setdefault(str(video), [])
     for r in rows:
         base = _unit(topics[int(r["seq"]) // per])
-        coll.rows[embed_id_for(tid, int(r["seq"]))] = (
-            [x + rng.gauss(0.0, 0.01) for x in base],
-            {
-                "video_id": str(video),
-                "library_id": str(library),
-                "transcript_id": str(tid),
-                "segment_id": int(r["id"]),
-                "seq": int(r["seq"]),
-                "start_sec": float(r["start_sec"]),
-                "end_sec": float(r["end_sec"]),
-            },
-            str(r["text"]),
+        vecs.append(
+            StoredVector(
+                segment_id=int(r["id"]),
+                transcript_id=str(tid),
+                seq=int(r["seq"]),
+                start_sec=float(r["start_sec"]),
+                end_sec=float(r["end_sec"]),
+                text=str(r["text"]),
+                embedding=[x + rng.gauss(0.0, 0.01) for x in base],
+            )
         )
     return tid
 
@@ -156,9 +180,7 @@ def test_graph_runs_analysis_after_index_and_posters_from_the_file() -> None:
 
 
 @pytest.mark.asyncio
-async def test_chapters_and_the_video_vector_are_written(
-    db: Database, coll: FakeCollection
-) -> None:
+async def test_chapters_and_the_video_vector_are_written(db: Database, coll: FakeVectors) -> None:
     lib = await make_library(db)
     v = await make_video(db, lib)
     tid = await _indexed(db, coll, v, lib, [0, 1, 2], per=60)  # 3 subjects, 4 s segments
@@ -174,13 +196,13 @@ async def test_chapters_and_the_video_vector_are_written(
     # a re-run replaces, never duplicates
     again = await chapter_infer.run(db, _job("video", v, lib), _ctx())
     assert len(await _chapters(db, v)) == 3 and again.output_hash == res.output_hash
-    # the vectors are read by id (from the database), never by a scan of the video
-    assert coll.gets and all(g["where"] is None and g["ids"] for g in coll.gets)
+    # only the active transcript's vectors are read
+    assert coll.reads and all(r == (str(v), str(tid)) for r in coll.reads)
 
 
 @pytest.mark.asyncio
 async def test_authored_chapters_or_the_setting_suppress_inference(
-    db: Database, coll: FakeCollection
+    db: Database, coll: FakeVectors
 ) -> None:
     lib = await make_library(db)
     v = await make_video(db, lib)
@@ -208,7 +230,7 @@ async def test_authored_chapters_or_the_setting_suppress_inference(
 
 @pytest.mark.asyncio
 async def test_waits_for_the_index_and_cleans_up_without_a_transcript(
-    db: Database, coll: FakeCollection
+    db: Database, coll: FakeVectors
 ) -> None:
     lib = await make_library(db)
     v = await make_video(db, lib)

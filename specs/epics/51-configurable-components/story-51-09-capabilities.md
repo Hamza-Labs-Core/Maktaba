@@ -188,7 +188,7 @@ words so a `409` already reads well.
 - **`recommendations`.** §5 of the README lists no component behind the for-you rail, and no
   pipeline stage writes `user_recs` today. The feature is listed as always on until a component
   owns it; the feature list stays stable either way.
-- **Licence lapses offline.** The licence store's grace (a 31-day licence refreshed daily, plus `SkewGrace`, 72 h; 51.19) keeps `Licensed` true, so `remote_access`
+- **Licence lapses offline.** The licence store's grace (a 31-day licence refreshed daily, plus `Grace`, 30 days, story 16.2; 51.19) keeps `Licensed` true, so `remote_access`
   stays on during it.
 - **A newer server sends a feature an app doesn't know.** Ignored. A known feature missing
   from the answer counts as on (an older server).

@@ -16,7 +16,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 )
 
-// Story 16.4, the owner's decision of 2026-11-19: past the seats, admins are exempt and
+// Story 16.4, decided 2026-11-19: past the seats, admins are exempt and
 // the newest accounts beyond the seat count go read-only; they watch and keep their
 // progress and history, nothing else; removing users or adding seats restores them at
 // once.

@@ -422,7 +422,10 @@ func runServe(cfg config.Config, opts serveOptions) (err error) {
 				return err
 			}
 			procs = append(procs, index...)
-			// Epic 43: the search index copied from Chroma into Postgres, once
+			// Epic 43 story 43.5: the search index is in Postgres. A copy of the
+			// Chroma vectors not done is finished now (nothing is embedded again), and
+			// Chroma's files go only the start after it is done
+			supervisor.RetireChroma(cfg, os.Stderr)
 			copyChroma, err := supervisor.BuildChromaCopy(sopts)
 			if err != nil {
 				return err

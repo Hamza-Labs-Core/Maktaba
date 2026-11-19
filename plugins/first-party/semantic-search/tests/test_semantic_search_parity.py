@@ -56,23 +56,17 @@ def template(pg_template: str) -> str:
 
 @pytest.fixture
 def fakes() -> Iterator[None]:
-    from maktaba_fp_semantic_search.stages import chapter_infer
     from maktaba_fp_semantic_search.stages import index as stage
 
     from maktaba_pipeline.search import pgstore
     from maktaba_pipeline.search.pgstore import DIMENSIONS
-    from maktaba_pipeline.search.semantic import SemanticIndex
-    from tests.search.semantic_fakes import FakeCollection, FakeEmbedder
+    from tests.search.semantic_fakes import FakeEmbedder
 
-    coll, emb = FakeCollection(), FakeEmbedder(dim=DIMENSIONS)
-    stage.set_index_factory(lambda: SemanticIndex(coll, emb))
+    emb = FakeEmbedder(dim=DIMENSIONS)
     stage.set_embedder_factory(lambda: emb)
-    chapter_infer.set_collection_factory(lambda: coll)
     pgstore.forget_state()
     yield
-    stage.reset_index_factory()
     stage.reset_embedder_factory()
-    chapter_infer.reset_collection_factory()
     pgstore.forget_state()
 
 
@@ -82,7 +76,6 @@ async def seed(db: Any) -> None:
 
     if not await db.fetchval("SELECT ensure_segment_embeddings()"):
         pytest.skip("pgvector is not installed on MAKTABA_TEST_PG_URL's server")
-    await db.execute("UPDATE semantic_store_state SET store = 'postgres'")
     pgstore.forget_state()
     with pytest.MonkeyPatch.context() as mp:
         mp.setattr(uuid, "uuid4", SameIds(5432))

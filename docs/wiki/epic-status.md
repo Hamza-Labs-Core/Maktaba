@@ -3,7 +3,7 @@
 > Story-by-story status of every epic, read from the code and history on `main` at `f43b0d3ed` (2026-11-19).
 > The specs and epic pages don't record a status; this page does. Update the row when a story changes.
 
-**Not every epic is done.** Of 773 stories across all 60 epics, 700 are done, 41 are partial, 22 are not started, and 10 were deferred or removed on purpose. The largest open pieces are Epic 49 (Search, 2 stories of fourteen done), Epic 34 (the TV public site, a first slice only) and Epic 54 Phase 5 (Plugins).
+**Not every epic is done.** Of 773 stories across all 60 epics, 705 are done, 38 are partial, 21 are not started, and 9 were deferred or removed on purpose. The largest open pieces are Epic 49 (Search, 3 stories of fourteen done), Epic 34 (the TV public site, a first slice only) and Epic 54 Phase 5 (Plugins).
 
 ## How this was checked
 
@@ -38,7 +38,7 @@
 | 13 Desktop | 8* | 0 | 0 | 0 | Done |
 | 14 TV apps | 7* | 0 | 0 | 0 | Done |
 | 15 Discovery | 7* | 0 | 0 | 0 | Done |
-| 16 Subscriptions | 7* | 1 | 0 | 0 | **Partial** |
+| 16 Subscriptions | 8* | 0 | 0 | 0 | Done |
 | 17 UX design system | 11* | 0 | 0 | 0 | Done |
 | 18 Performance | 8* | 0 | 0 | 0 | Done |
 | 19 Scalability | 8* | 0 | 0 | 0 | Done |
@@ -65,13 +65,13 @@
 | 40 Queue health | 6 | 0 | 0 | 0 | Done |
 | 41 Help guide | 6 | 0 | 0 | 0 | Done |
 | 42 Apps / player / remote / server | 10 | 0 | 0 | 0 | Done |
-| 43 pgvector search | 4 | 0 | 1 | 1 | **Partial** |
+| 43 pgvector search | 5 | 0 | 1 | 0 | **Partial** |
 | 44 Viewing analytics | 7 | 0 | 0 | 0 | Done |
 | 45 Libraries UI | 21 | 1 | 0 | 2 | **Partial** |
 | 46 Big screen | 7 | 0 | 0 | 0 | Done |
 | 47 Offline convert / dedup | 11 | 3 | 0 | 0 | **Partial** |
 | 48 Native players | 36 | 1 | 0 | 0 | **Partial** |
-| 49 Search | 2 | 0 | 12 | 0 | **Partial** |
+| 49 Search | 3 | 0 | 11 | 0 | **Partial** |
 | 50 Cloud with no downtime | 35 | 0 | 0 | 0 | Done (live SLOs not checked) |
 | 51 Configurable components | 19 | 0 | 0 | 0 | Done |
 | 52 Transcript word review | 13 | 3 | 0 | 1 | **Partial** |
@@ -83,7 +83,7 @@
 | 58 Smart TV platforms | 17 | 0 | 0 | 1 | Done (58.18 Vega OS deferred) |
 | 59 NAS | 16 | 0 | 0 | 0 | Done (device results not checked) |
 | 60 Website | 11 | 1 | 0 | 1 | **Partial** |
-| **Total** | **699** | **41** | **23** | **10** | **Not all done** |
+| **Total** | **705** | **38** | **21** | **9** | **Not all done** |
 
 `*` sampled, see [How this was checked](#how-this-was-checked).
 
@@ -96,7 +96,6 @@
 - **34.9 Budget, abuse controls and analytics** — no public budget, viewer/session limits, rate-limit wiring, Analytics Engine sink, or Stream reconciliation.
 - **34.10 Deployment pipeline** — manual `wrangler.toml` exists, but no release artifact pipeline or home-driven deploy/promote/rollback implementation.
 - **43.6 Measured on the home Mac** — PR #319 explicitly excludes the 13.9M-row p50/p95, disk and recall measurement; no later merged measurement was found.
-- **49.3 Cluster major-version rollout** — no home-18/node-16 two-machine test.
 - **49.4 Arabic normalisation and word forms** — no `maktaba_search` v2 / `maktaba_stem` implementation or migration.
 - **49.5 `video_search_docs` and BM25 indexes** — no table, SQLite twin, or index migration.
 - **49.6 `keyword_index` stage** — no such queue stage or backfill.
@@ -114,7 +113,6 @@
 
 | Story | Missing |
 |---|---|
-| 16.02 Premium features | The 30-day read-only period after a downgrade. |
 | 23.07 Supply-chain security | `maktaba-plugind` (Rust) ships with neither an SBOM nor a `cargo audit` in the CVE gate; every Go, Python and web component has both (#1442). |
 | 26.2 Transcript topic & entity extraction | Only slot 0074's schema is present. No `topic_extractor` implementation, NER/gazetteer path, classification/entity writers, or its tests are on `origin/main`; `classify_stage.py` still describes that extractor as future work. |
 | 26.4 Auto-collection builder | Slot 0076 exists, but no `auto_collections` producer, suggestion lifecycle implementation, or builder tests exist. Existing smart-collection code belongs to earlier/later stories. |
@@ -157,7 +155,6 @@
 | Story | Why |
 |---|---|
 | 31.R Home relay for Plex extension calls | Built in #78, including two-process tests. #969 later removed Plex sync and dizqueTV; the remaining generic/Plex-Live-TV relay is not the original node-run Plex-stage deliverable. |
-| 43.5 Chroma retired | The spec orders this after a checked live copy. PR #319 explicitly leaves it out; `chromadb`, Chroma CI/compose entries and migration references remain. |
 | 45.22 Per-user star ratings | Explicitly shelved on 2026-10-28; Epic 45 is declared done without it. |
 | 45.23 PIN profiles / extra parental limits | Explicitly shelved on the same decision. |
 | 52.07 LLM judge | Removed on 2026-11-03; no story replaces it. |
@@ -462,9 +459,9 @@ Each epic below has an evidence key naming current implementation and test files
 | Story | Status | Evidence / missing work |
 |---|---|---|
 | 16.01 Free tier | Done (sampled) | E16 |
-| 16.02 Premium features | **partial** | E16; merged implementation is visible in `subscriptions.go`, but its spec explicitly says downgrade visibility/read-only-for-30-days is **not built**; backup/federation TCs also waited on those surfaces. Current backup/federation code exists, but the downgrade AC remains absent. |
+| 16.02 Premium features | **Done** | E16; #1453: the expiry and downgrade grace: the plan keeps working fully for 30 days from the license's expiry, then locks (`subscriptions.Grace`, `api/internal/subscriptions/store.go`, `grace_test.go`); the admin sees the days left (`grace_until`/`grace_days_left`, `SubscriptionSettings.tsx`). Backup and federation mount behind `RequireFeature` when their routes ship. |
 | 16.03 Subscription management | Done (sampled) | E16 |
-| 16.04 License validation | **Done** | E16; signed offline validation, refresh and tests; #1454: past the seats, the newest non-admin accounts are read-only as the owner decided (2026-11-19): they watch and keep their progress, history, playlists and favourites; uploads, metadata edits and managing the home are refused (`subscriptions.SeatGuard`, `seats.go`, `seats_test.go`, `seats_pg_test.go`, `403 seat-read-only`); the admin sees them, the account is told (`SubscriptionSettings.tsx`). |
+| 16.04 License validation | **Done** | E16; signed offline validation, refresh and tests; #1454: past the seats, the newest non-admin accounts are read-only: they watch and keep their progress, history, playlists and favourites; uploads, metadata edits and managing the home are refused (`subscriptions.SeatGuard`, `seats.go`, `seats_test.go`, `seats_pg_test.go`, `403 seat-read-only`); the admin sees them, the account is told (`SubscriptionSettings.tsx`). |
 | 16.05 Telemetry opt-in | Done (sampled) | E16; `api/internal/router/telemetry.go`, `web/src/components/TelemetryPrompt.tsx` |
 | 16.06 Feature flags | Done (sampled) | E16 |
 | 16.07 Telemetry API | Done (sampled) | E16 |
@@ -930,7 +927,7 @@ Stories are the six numbered rows in `specs/epics/43-pgvector-search/README.md`.
 | 43.2 `segment_embeddings` / Postgres backend | **Done** | PR #319; `pipeline/src/maktaba_pipeline/search/semantic.py`; `pipeline/tests/search/test_pgstore.py`; `pipeline/tests/search/test_semantic.py`; `pipeline/tests/search/test_semantic_grpc.py`; `shared/db/migrations/0152_segment_embeddings.sql`; `shared/db/migrations/0152_segment_embeddings.sqlite.sql`. |
 | 43.3 Copy existing vectors | **Done** | PR #319; `pipeline/src/maktaba_pipeline/search/chroma_copy.py`; `pipeline/tests/search/test_chroma_copy.py`; `cmd/maktaba-server/cmd_serve.go`; `cmd/maktaba-server/internal/supervisor/chromacopy.go`. Resumability, recall checks and deferred folder deletion are implemented and tested with synthetic data. |
 | 43.4 Machines / switchover | **Done** | PR #319; `api/internal/cluster/copy_tables_pg_test.go`; `api/internal/cluster/copies.go`; `pipeline/src/maktaba_pipeline/engine/reconcile.py`; `pipeline/tests/search/test_pgstore.py`; `shared/db/migrations/0152_segment_embeddings.sql`. |
-| 43.5 Chroma retired | **Deferred** | PR #319 explicitly excludes this until the live copy is checked. Current `pipeline/pyproject.toml`, `.github/workflows/_integration.yml`, `deploy/compose/docker-compose.yml`, `cmd/maktaba-server/cmd_migrate_dev.go`, and `pipeline/src/maktaba_pipeline/search/chroma_copy.py` still carry Chroma. |
+| 43.5 Chroma retired | **Done** | #1451: `chromadb` out of `pipeline/pyproject.toml`; search, `index` and `chapter_infer` on `segment_embeddings` only; a home whose Chroma copy is not done finishes it at the update (`search/chroma_copy.py` reads Chroma's files; `supervisor/chromaretire.go` runs it and holds every re-index meanwhile, `MAKTABA_CHROMA_COPY`), nothing embedded again, Chroma's own files deleted the start after; compose/CI/Dockerfile/docs without Chroma; update rehearsal scenario 18 (`api/rehearsal_chroma_e2e_test.go`: a part-done copy finished, no index job). |
 | 43.6 Measured on home Mac | **Not started** | PR #319 explicitly says “Not in this PR”; no later merged 13.9M-row p50/p95/disk/recall report was found. |
 
 ### Epic 44 — Viewing analytics
@@ -1065,7 +1062,7 @@ Stories are the fourteen numbered rows in `specs/epics/49-search/README.md` §6 
 |---|---|---|
 | 49.1 PostgreSQL 18 / pg_textsearch bundles | **Done** (#1441) | Every app payload carries PostgreSQL 18.7 in `postgres-18/` with pgvector and pg_textsearch, beside the 16 the server still runs until 49.2; `tools/release/pg18-check.sh` in each payload's `check.sh`, `TestRealPgTextsearchPreloaded`; README §9 "As built". |
 | 49.2 Major updater upgrade | **Done** (#1445) | The server upgrades the 16 cluster into its own `postgres-18` with pg_upgrade (clone, else copy), the 16 cluster untouched for any rollback; held on 16 when it cannot run; update-rehearsal scenario 17 (16 → 18 with data, a rollback, the upgrade again), `TestRealMajorUpgrade` on Linux, Mac and Windows payloads; README §9 "As built". |
-| 49.3 Cluster major-version rollout | **Not started** | Only `specs/epics/49-search/README.md`; `api/twomachine_e2e_test.go` has no home-18/node-16 scenario. |
+| 49.3 Cluster major-version rollout | **Done** (#1459) | A machine on 16 follows a home on 18 (logical replication; a copy whose slot the upgrade dropped is made anew); a copy runs on 16 or 18, one of the other major set aside and made again; the replica job runs `TestTwoMachinesOnePC` with the home on 18 and the machine on 16, then on 18; README §9 "As built". |
 | 49.4 Arabic normalisation / word forms | **Not started** | Only `specs/epics/49-search/README.md`; no `maktaba_search` v2 or `maktaba_stem` code/migration found. |
 | 49.5 `video_search_docs` / BM25 schema | **Not started** | Only `specs/epics/49-search/README.md`; no such migration in `shared/db/migrations/`. |
 | 49.6 `keyword_index` stage / backfill | **Not started** | Only `specs/epics/49-search/README.md`; no such stage in `pipeline/src/maktaba_pipeline/engine/graph.py` or its tests. |

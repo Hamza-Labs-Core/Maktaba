@@ -82,7 +82,7 @@ func TestP51PublishesTheLicence(t *testing.T) {
 		t.Fatalf("%d notifications for one licence change, want 1", n)
 	}
 	d := row()
-	if d.Licence == nil || !d.Licence.Licensed || d.Licence.Until == nil || !d.Licence.Until.Equal(exp.Add(subscriptions.SkewGrace)) {
+	if d.Licence == nil || !d.Licence.Licensed || d.Licence.Until == nil || !d.Licence.Until.Equal(exp.Add(subscriptions.Grace)) {
 		t.Fatalf("licensed row %+v", d.Licence)
 	}
 	if d.Generation != gen || d.Want != components.WantEnabled {

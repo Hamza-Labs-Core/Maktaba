@@ -1,9 +1,15 @@
-"""The engine ``index`` stage: fingerprint, embed the active transcript, replace vectors."""
+"""The engine ``index`` stage: fingerprint, embed the active transcript, replace vectors.
+
+The store is ``segment_embeddings`` (Postgres, pgvector): here an in-memory stand-in of
+:class:`~maktaba_pipeline.search.pgstore.PgVectorStore`, so the tests run on either test
+database; tests/search/test_pgstore.py runs the real one.
+"""
 
 from __future__ import annotations
 
 import uuid
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import Any, cast
@@ -18,9 +24,9 @@ from maktaba_pipeline.engine.graph import Subject
 from maktaba_pipeline.engine.sql import is_pg, to_ts
 from maktaba_pipeline.runtime import Database
 from maktaba_pipeline.search.pgstore import StoreState
-from maktaba_pipeline.search.semantic import SemanticIndex, SemanticUnavailable
+from maktaba_pipeline.search.semantic import IndexedSegment, SemanticUnavailable
 from tests.engine.factory import make_library, make_video
-from tests.search.semantic_fakes import FakeCollection, FakeEmbedder
+from tests.search.semantic_fakes import FakeEmbedder
 
 
 class _Ctx:
@@ -35,23 +41,72 @@ class _Ctx:
         self.cancel_checks += 1
 
 
-@pytest.fixture(autouse=True)
-def chroma_only(monkeypatch: pytest.MonkeyPatch) -> None:
-    """These tests are about Chroma: no segment_embeddings even where pgvector is
-    installed (tests/search/test_pgstore.py has the Postgres store's)."""
+@dataclass
+class _Row:
+    video_id: str
+    library_id: str
+    language: str | None
+    segment: IndexedSegment
+    embedding: list[float]
 
-    async def state(db: Any, *, fresh: bool = False) -> StoreState:
-        return StoreState(store="chroma", ready=False)
 
-    monkeypatch.setattr(stage, "store_state", state)
+@dataclass
+class FakeStore:
+    """``PgVectorStore``'s writes, in memory (one per test: every instance shares it)."""
+
+    rows: dict[int, _Row] = field(default_factory=dict)
+    writes: list[int] = field(default_factory=list)
+
+    def __call__(self, db: Any, model: str) -> FakeStore:
+        return self
+
+    async def write_vectors(
+        self,
+        *,
+        video_id: UUID | str,
+        library_id: UUID | str,
+        chunk: Sequence[IndexedSegment],
+        vectors: Sequence[Sequence[float]],
+        language: str | None = None,
+    ) -> int:
+        for seg, vec in zip(chunk, vectors, strict=True):
+            self.rows[seg.segment_id] = _Row(
+                str(video_id), str(library_id), language, seg, list(vec)
+            )
+        self.writes.append(len(chunk))
+        return len(chunk)
+
+    async def delete_video(self, video_id: UUID | str) -> None:
+        for k in [k for k, r in self.rows.items() if r.video_id == str(video_id)]:
+            del self.rows[k]
+
+    async def keep_only(self, video_id: UUID | str, segment_ids: Sequence[int]) -> int:
+        keep = set(segment_ids)
+        gone = [k for k, r in self.rows.items() if r.video_id == str(video_id) and k not in keep]
+        for k in gone:
+            del self.rows[k]
+        return len(gone)
+
+    async def has_vectors(self, video_id: UUID | str, transcript_id: UUID | str) -> bool:
+        return any(
+            r.video_id == str(video_id) and str(r.segment.transcript_id) == str(transcript_id)
+            for r in self.rows.values()
+        )
 
 
 @pytest.fixture
-def store() -> Iterator[tuple[FakeCollection, FakeEmbedder]]:
-    coll, emb = FakeCollection(), FakeEmbedder()
-    stage.set_index_factory(lambda: SemanticIndex(coll, emb))
-    yield coll, emb
-    stage.reset_index_factory()
+def store(monkeypatch: pytest.MonkeyPatch) -> Iterator[tuple[FakeStore, FakeEmbedder]]:
+    """pgvector ready, the store in memory, the fake embedder."""
+    fake, emb = FakeStore(), FakeEmbedder()
+
+    async def ready(db: Any, *, fresh: bool = False) -> StoreState:
+        return StoreState(ready=True)
+
+    monkeypatch.setattr(stage, "store_state", ready)
+    monkeypatch.setattr(stage, "PgVectorStore", fake)
+    stage.set_embedder_factory(lambda: emb)
+    yield fake, emb
+    stage.reset_embedder_factory()
 
 
 def _job(video: UUID, library: UUID) -> Job:
@@ -130,137 +185,131 @@ async def test_fingerprint_follows_transcript_size_and_model(
 @pytest.mark.asyncio
 async def test_run_embeds_the_active_transcript_and_replaces_old_vectors(
     db: Database,
-    store: tuple[FakeCollection, FakeEmbedder],
+    store: tuple[FakeStore, FakeEmbedder],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    coll, emb = store
+    fake, emb = store
     monkeypatch.setenv("MAKTABA_EMBED_BATCH", "2")
     lib = await make_library(db)
     v = await make_video(db, lib)
     old = await _transcript(db, v, ["قديم"])
     ctx = _Ctx()
     await stage.run(db, _job(v, lib), cast(StageContext, ctx))
-    assert {m["transcript_id"] for m in coll.metas()} == {str(old)}
+    assert {r.segment.transcript_id for r in fake.rows.values()} == {old}
 
     new = await _transcript(
         db, v, ["صلاة الفجر", "زكاة", "صوم", ""], created=datetime(2026, 3, 1, tzinfo=UTC)
     )
     ctx = _Ctx()
     res = await stage.run(db, _job(v, lib), cast(StageContext, ctx))
-    metas = coll.metas()
-    assert {m["transcript_id"] for m in metas} == {str(new)}  # the old transcript is gone
-    assert len(metas) == 3  # the blank segment is not embedded
-    assert all(m["library_id"] == str(lib) and m["video_id"] == str(v) for m in metas)
+    rows = list(fake.rows.values())
+    assert {r.segment.transcript_id for r in rows} == {new}  # the old transcript is gone
+    assert len(rows) == 3  # the blank segment is not embedded
+    assert all(r.library_id == str(lib) and r.video_id == str(v) for r in rows)
     seg_ids = {
         int(r["id"])
         for r in await db.fetch(
             "SELECT id FROM transcript_segments WHERE transcript_id = $1 AND text <> ''", str(new)
         )
     }
-    assert {m["segment_id"] for m in metas} == seg_ids
+    assert set(fake.rows) == seg_ids
     assert [len(b) for b in emb.passages[-2:]] == [2, 1]  # batches of MAKTABA_EMBED_BATCH
     timings = {k: res.summary.pop(k) for k in list(res.summary) if k.endswith("_sec")}
-    assert set(timings) == {"embed_sec", "write_sec", "write_wait_sec", "read_sec"}
+    assert set(timings) == {"embed_sec", "write_sec"}
     assert res.summary == {
         "transcript_id": str(new),
         "segments": 3,
         "model": "fake/e5",
-        "stale_ids": 2,  # the old transcript's one segment, the new one's blank one
-        "store": "chroma",
+        "stale_ids": 1,  # the old transcript's one segment
     }
-    # the old vectors go by id once the new ones are written: no delete scans the
-    # collection by video (about a second each on the home Mac's 12 million vectors)
-    stale = sorted([f"{old}:0", f"{new}:3"])
-    assert coll.deletes[-1] == {"ids": stale, "where": None}
-    assert all(d["where"] is None for d in coll.deletes)
     assert ctx.progress_calls[0] == ("embed", 0, 4) and ctx.progress_calls[-1] == ("embed", 4, 4)
     assert ctx.cancel_checks == 2
 
-    deletes = len(coll.deletes)
     again = await stage.run(db, _job(v, lib), cast(StageContext, _Ctx()))
     assert again.output_hash == res.output_hash  # same transcript, same output
-    assert again.summary["stale_ids"] == 2  # asked again: Chroma no longer has them
-    assert coll.deletes[deletes:] == [{"ids": stale, "where": None}]
-
-    hits = SemanticIndex(coll, emb).search("صلاة الفجر", k=1, library_ids=[str(lib)])
-    assert hits[0].start_sec == 0.0 and hits[0].segment_id in seg_ids
+    assert again.summary["stale_ids"] == 0
+    assert set(fake.rows) == seg_ids
 
 
 @pytest.mark.asyncio
 async def test_run_without_a_transcript_clears_the_video(
-    db: Database, store: tuple[FakeCollection, FakeEmbedder]
+    db: Database, store: tuple[FakeStore, FakeEmbedder]
 ) -> None:
-    coll, _ = store
+    fake, _ = store
     lib = await make_library(db)
     v = await make_video(db, lib)
     tid = await _transcript(db, v, ["x"])
     await stage.run(db, _job(v, lib), cast(StageContext, _Ctx()))
-    assert coll.rows
+    assert fake.rows
     await db.execute(
         "UPDATE transcripts SET is_active = $2 WHERE id = $1", str(tid), False if is_pg(db) else 0
     )
     res = await stage.run(db, _job(v, lib), cast(StageContext, _Ctx()))
-    assert coll.rows == {} and res.summary["segments"] == 0
+    assert fake.rows == {} and res.summary["segments"] == 0
 
 
 @pytest.mark.asyncio
-async def test_missing_search_extra_fails_without_retry(db: Database) -> None:
-    def unavailable() -> SemanticIndex:
-        raise SemanticUnavailable("chromadb is not installed")
+async def test_missing_search_extra_fails_without_retry(
+    db: Database, store: tuple[FakeStore, FakeEmbedder]
+) -> None:
+    class Broken(FakeEmbedder):
+        def embed_passages(self, texts: Any) -> list[list[float]]:
+            raise SemanticUnavailable("sentence-transformers is not installed")
 
-    stage.set_index_factory(unavailable)
-    try:
-        lib = await make_library(db)
-        v = await make_video(db, lib)
-        with pytest.raises(StageFailure) as err:
-            await stage.run(db, _job(v, lib), cast(StageContext, _Ctx()))
-        assert err.value.kind == "search_unavailable" and not err.value.retryable
-    finally:
-        stage.reset_index_factory()
+    stage.set_embedder_factory(Broken)
+    lib = await make_library(db)
+    v = await make_video(db, lib)
+    await _transcript(db, v, ["x"])
+    with pytest.raises(StageFailure) as err:
+        await stage.run(db, _job(v, lib), cast(StageContext, _Ctx()))
+    assert err.value.kind == "search_unavailable" and not err.value.retryable
+
+
+@pytest.mark.asyncio
+async def test_without_pgvector_the_stage_is_unavailable(
+    db: Database, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """SQLite, or a Postgres without pgvector: no semantic search (Chroma, which SQLite
+    homes used, was retired in story 43.5). The job succeeds unchanged (no failed job,
+    nothing downstream), its fingerprint says so, and once pgvector is there the
+    fingerprint changes and the video is indexed."""
+
+    async def not_ready(db: Any, *, fresh: bool = False) -> StoreState:
+        return StoreState(ready=False)
+
+    monkeypatch.setattr(stage, "store_state", not_ready)
+    lib = await make_library(db)
+    v = await make_video(db, lib)
+    await _transcript(db, v, ["x"])
+    subject = Subject(kind="video", id=v, library_id=lib)
+    res = await stage.run(db, _job(v, lib), cast(StageContext, _Ctx()))
+    assert res.outcome == "unchanged" and res.summary["segments"] == 0
+    off = await stage.input_fingerprint(db, subject)
+    assert res.input_hash == off
+
+    async def ready(db: Any, *, fresh: bool = False) -> StoreState:
+        return StoreState(ready=True)
+
+    monkeypatch.setattr(stage, "store_state", ready)
+    monkeypatch.setattr(stage, "PgVectorStore", FakeStore())
+    assert await stage.input_fingerprint(db, subject) != off  # pgvector came: index it
 
 
 @pytest.mark.asyncio
 async def test_a_blanked_segment_loses_its_vector(
-    db: Database, store: tuple[FakeCollection, FakeEmbedder]
+    db: Database, store: tuple[FakeStore, FakeEmbedder]
 ) -> None:
-    """The same transcript, edited: a segment made blank has its vector deleted (by id),
-    the others are replaced in place."""
-    coll, _ = store
+    """The same transcript, edited: a segment made blank has its vector deleted, the
+    others are replaced in place."""
+    fake, _ = store
     lib = await make_library(db)
     v = await make_video(db, lib)
     tid = await _transcript(db, v, ["أ", "ب", "ج"])
     await stage.run(db, _job(v, lib), cast(StageContext, _Ctx()))
-    assert len(coll.rows) == 3
+    assert len(fake.rows) == 3
     await db.execute(
         "UPDATE transcript_segments SET text = '' WHERE transcript_id = $1 AND seq = 1", str(tid)
     )
     res = await stage.run(db, _job(v, lib), cast(StageContext, _Ctx()))
-    assert sorted(m["seq"] for m in coll.metas()) == [0, 2]
+    assert sorted(r.segment.seq for r in fake.rows.values()) == [0, 2]
     assert res.summary["stale_ids"] == 1
-
-
-@pytest.mark.asyncio
-async def test_the_embedding_does_not_hold_the_write_lock(
-    db: Database, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """One job embeds while another writes: only the upsert holds the search index's
-    write lock (search/gate.py), the model has its own."""
-    from maktaba_pipeline.search import gate
-
-    coll = FakeCollection()
-    held: list[bool] = []
-
-    class Probe(FakeEmbedder):
-        def embed_passages(self, texts: Any) -> list[list[float]]:
-            held.append(gate._write_lock.locked())
-            return super().embed_passages(texts)
-
-    stage.set_index_factory(lambda: SemanticIndex(coll, Probe()))
-    try:
-        lib = await make_library(db)
-        v = await make_video(db, lib)
-        await _transcript(db, v, ["أ", "ب"])
-        await stage.run(db, _job(v, lib), cast(StageContext, _Ctx()))
-    finally:
-        stage.reset_index_factory()
-    assert held and not any(held)

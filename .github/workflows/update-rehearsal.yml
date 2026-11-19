@@ -562,6 +562,9 @@ jobs:
           # Epic 49 story 49.2: PostgreSQL 16 → 18 with data (pg_upgrade into a cluster of its own), a
           # rollback onto the untouched 16 cluster, then the upgrade again
           - { id: '17', name: PostgreSQL 16 to 18 with data then a rollback, test: TestUpdateRehearsal17PostgresMajorUpgrade, profile: small }
+          # Epic 43 story 43.5: a home whose Chroma copy stopped part way updates to the
+          # release without Chroma: the copy finishes, nothing is embedded again
+          - { id: '18', name: a home whose Chroma copy stopped part way updates (the copy finishes), test: TestUpdateRehearsal18ChromaCopyFinished, profile: small, venvs: true }
           # the fault rehearsal (Epic 53 story 53.07, docs/fault-rehearsal.md): one part
           # killed at a time on a home of this commit; the tag guard requires these too
           - { id: 'F03', name: streaming crash (the status says so; it comes back), test: TestFaultRehearsalF03StreamingCrash, profile: small }

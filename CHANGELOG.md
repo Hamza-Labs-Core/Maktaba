@@ -14,12 +14,32 @@ build fails when the two differ.
 
 ### Changed
 
+- **Machines follow a home on PostgreSQL 18, and upgrade with their own update (Epic 49,
+  story 49.3).** A machine still on PostgreSQL 16 keeps following its home once the home runs
+  18. When the machine updates, its copy of the home's database is made again on 18, beside the
+  old one, which is set aside rather than deleted. Until the new copy is complete, the machine
+  serves the home's reads through the home. A machine whose copy runs on 18 can be switched to
+  be the home.
+
 - **Over the plan's seats, the newest accounts are read-only (story 16.4).** When a home has
   more users than its licence's seats, the most recently created accounts beyond the seat
   count can still watch, keep their progress and history, and keep their own playlists and
   favourites, but can't upload, edit metadata or manage the home. Admins are never limited.
   Removing users or adding seats restores them at once. Settings → Subscription names them to
   the admin and tells the account itself.
+
+- **Semantic search runs on Postgres only; Chroma is retired (story 43.5).** Search's vectors
+  live in the home's Postgres (pgvector), and Chroma is no longer installed or run. A home
+  whose one-time copy of its Chroma vectors had not finished completes it at the update,
+  without embedding anything again, and Chroma's files are deleted the start after. The
+  Docker Compose files no longer start a Chroma service; an old `chroma` volume can be
+  removed.
+- **An expired or downgraded plan keeps working fully for 30 days (story 16.2).** When a home's
+  licence expires, or its plan changes to a lower one or ends, every paid feature keeps working,
+  not read-only, for 30 days counted from the licence's expiry (or from the change, if that
+  is earlier), then locks. Settings → Subscription shows the admin how many days are left. A
+  home cut off from Maktaba Cloud keeps its plan about 61 days. A licence revoked by Maktaba
+  still locks at once.
 
 - **Guest sharing ends when the plan does (Epic 50, story 50.20).** When an account's Pro or
   Broadcaster plan ends (cancelled, lapsed, or changed to Basic or Free by the payment provider or

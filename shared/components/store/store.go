@@ -64,7 +64,7 @@ type Desired struct {
 }
 
 // Licence is a desired row's licensed and licensed_until: whether the home's licence
-// grants the component's flag, and until when (the licence's expires_at + SkewGrace; nil:
+// grants the component's flag, and until when (the end of its grant, subscriptions.Store.Until: expires_at + Grace; nil:
 // it does not expire, or it is not granted).
 type Licence struct {
 	Licensed bool       `json:"licensed"`

@@ -2,7 +2,7 @@
 // with the compose Postgres in Docker) into Maktaba.app (Epic 36 story 36.9):
 // `maktaba-server migrate-from-dev`. It finds the stack, stops it, dumps the
 // Docker database into the bundled Postgres, copies the state the app keeps in
-// its own folder (keys, the Chroma index, the models), carries the stack's
+// its own folder (keys, the models), carries the stack's
 // settings into server.toml and checks the result. Nothing of the stack is
 // deleted: the Docker volume is kept until `--finalize`, the files are copies.
 package devmigrate

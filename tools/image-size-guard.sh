@@ -18,7 +18,7 @@
 # original targets did not hold:
 #   api       <=   60 MiB  (measured 54.7 amd64 / 50.7 arm64)
 #   streaming <=   80 MiB  (FFmpeg static excluded, per AC4; measured 30.5 / 29.0)
-#   pipeline  <= 1200 MiB  (Whisper + Chroma; measured 682.4 / 643.5)
+#   pipeline  <= 1200 MiB  (Whisper + the embedder; measured 682.4 / 643.5)
 #   web       <=   88 MiB  (caddy:2-alpine base + the SPA; measured 79.7 / 77.1)
 #
 # Plain bash 3 (no associative arrays), so it runs on macOS's /bin/bash too.

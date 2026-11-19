@@ -71,7 +71,7 @@ async def test_all_checks_pass_on_a_migrated_postgres(tmp_path: Path, tools: Pat
     store.mkdir()
     out = io.StringIO()
     code = await run_doctor(
-        "postgres://x", connect=_connect_to(db), dirs=[("chroma", str(store))], out=out
+        "postgres://x", connect=_connect_to(db), dirs=[("thumbnails", str(store))], out=out
     )
     text = out.getvalue()
     assert code == 0, text
@@ -88,7 +88,7 @@ async def test_schema_behind_fails(tmp_path: Path, tools: Path) -> None:
     code = await run_doctor(
         "postgres://x",
         connect=_connect_to(FakePG(SCHEMA_REV - 1)),
-        dirs=[("chroma", str(tmp_path))],
+        dirs=[("thumbnails", str(tmp_path))],
         out=out,
     )
     assert code == 1
@@ -101,7 +101,7 @@ async def test_unmigrated_database_and_missing_queue_fail(tmp_path: Path, tools:
     code = await run_doctor(
         "postgres://x",
         connect=_connect_to(FakePG(None, queue_ok=False)),
-        dirs=[("chroma", str(tmp_path))],
+        dirs=[("thumbnails", str(tmp_path))],
         out=out,
         quiet=True,
     )
@@ -118,7 +118,7 @@ async def test_unreachable_database_fails(tmp_path: Path, tools: Path) -> None:
 
     out = io.StringIO()
     code = await run_doctor(
-        "postgres://x", connect=refuse, dirs=[("chroma", str(tmp_path))], out=out
+        "postgres://x", connect=refuse, dirs=[("thumbnails", str(tmp_path))], out=out
     )
     assert code == 1
     assert "FAIL  database  unreachable (ConnectionRefusedError" in out.getvalue()
@@ -127,7 +127,7 @@ async def test_unreachable_database_fails(tmp_path: Path, tools: Path) -> None:
 @pytest.mark.asyncio
 async def test_no_database_configured_fails(tmp_path: Path, tools: Path) -> None:
     out = io.StringIO()
-    assert await run_doctor(None, dirs=[("chroma", str(tmp_path))], out=out) == 1
+    assert await run_doctor(None, dirs=[("thumbnails", str(tmp_path))], out=out) == 1
     assert "no database configured" in out.getvalue()
 
 
@@ -139,7 +139,7 @@ async def test_real_sqlite_database(tmp_path: Path, tools: Path) -> None:
     await db.execute("INSERT INTO processing_jobs (state) VALUES ('queued')")
     await db.close()
     out = io.StringIO()
-    code = await run_doctor(f"sqlite:///{path}", dirs=[("chroma", str(tmp_path))], out=out)
+    code = await run_doctor(f"sqlite:///{path}", dirs=[("thumbnails", str(tmp_path))], out=out)
     assert code == 0, out.getvalue()
     assert "sqlite: not judged" in out.getvalue()
     assert "1 queued, 0 running" in out.getvalue()
@@ -151,14 +151,14 @@ def test_missing_binary_fails(tmp_path: Path) -> None:
 
 
 def test_storage_checks(tmp_path: Path) -> None:
-    assert check_storage("chroma", str(tmp_path)).ok
+    assert check_storage("thumbnails", str(tmp_path)).ok
     # not created yet, but its parent is writable: fine, and nothing is created
     later = tmp_path / "a" / "b"
-    assert check_storage("chroma", str(later)).ok
+    assert check_storage("thumbnails", str(later)).ok
     assert not later.exists() and not (tmp_path / "a").exists()
     f = tmp_path / "file"
     f.write_text("x")
-    assert not check_storage("chroma", str(f)).ok
+    assert not check_storage("thumbnails", str(f)).ok
 
 
 @pytest.mark.skipif(
@@ -169,23 +169,23 @@ def test_read_only_storage_fails(tmp_path: Path) -> None:
     ro.mkdir()
     ro.chmod(0o500)
     try:
-        c = check_storage("chroma", str(ro))
+        c = check_storage("thumbnails", str(ro))
         assert not c.ok and "not writable" in c.detail
     finally:
         ro.chmod(0o700)
 
 
 def test_storage_dirs_reads_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("MAKTABA_CHROMA_DIR", str(tmp_path / "chroma"))
+    monkeypatch.setenv("MAKTABA_CHROMA_DIR", str(tmp_path / "chroma"))  # retired: not checked
     dirs = dict(storage_dirs({"MAKTABA_THUMBNAIL_ROOT": str(tmp_path / "thumbs")}))
-    assert dirs == {"chroma": str(tmp_path / "chroma"), "thumbnails": str(tmp_path / "thumbs")}
+    assert dirs == {"thumbnails": str(tmp_path / "thumbs")}
+    assert storage_dirs({}) == []
 
 
 def test_cli_exits_non_zero_on_failure(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.setenv("MAKTABA_FFMPEG", str(tmp_path / "missing-ffmpeg"))
-    monkeypatch.setenv("MAKTABA_CHROMA_DIR", str(tmp_path))
     path = tmp_path / "m.db"
     code = cli.main(["doctor", "--database-url", f"sqlite:///{path}"])
     assert code == 1

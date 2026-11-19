@@ -196,7 +196,8 @@ type fakeLicenseDB struct {
 }
 
 func (f *fakeLicenseDB) SaveActive(_ context.Context, rec persistedLicense) error {
-	// Revoke any currently-active row (one-active invariant).
+	// Revoke any currently-active row (one-active invariant), then upsert by license_id
+	// as the SQL store does: a row of the same id is replaced and made active again.
 	now := time.Now().UTC()
 	for i := range f.rows {
 		if f.rows[i].RevokedAt == nil {
@@ -204,6 +205,12 @@ func (f *fakeLicenseDB) SaveActive(_ context.Context, rec persistedLicense) erro
 		}
 	}
 	rec.RevokedAt = nil
+	for i := range f.rows {
+		if f.rows[i].LicenseID == rec.LicenseID {
+			f.rows[i] = rec
+			return nil
+		}
+	}
 	f.rows = append(f.rows, rec)
 	return nil
 }
@@ -226,6 +233,36 @@ func (f *fakeLicenseDB) LoadActive(_ context.Context) (*persistedLicense, error)
 		}
 	}
 	return nil, nil
+}
+
+func (f *fakeLicenseDB) SaveEnded(_ context.Context, rec persistedLicense) error {
+	if rec.RevokedAt == nil {
+		now := time.Now().UTC()
+		rec.RevokedAt = &now
+	}
+	rec.LicenseID += "@" + rec.IssuedAt.UTC().Format(time.RFC3339Nano)
+	f.rows = append(f.rows, rec)
+	return nil
+}
+
+func (f *fakeLicenseDB) DropGrace(_ context.Context, id string) error {
+	old := time.Unix(0, 0).UTC()
+	for i := range f.rows {
+		if (f.rows[i].LicenseID == id || strings.HasPrefix(f.rows[i].LicenseID, id+"@")) && f.rows[i].RevokedAt != nil {
+			f.rows[i].RevokedAt = &old
+		}
+	}
+	return nil
+}
+
+func (f *fakeLicenseDB) LoadEnded(_ context.Context, since time.Time) ([]persistedLicense, error) {
+	var out []persistedLicense
+	for _, r := range f.rows {
+		if r.RevokedAt != nil && r.RevokedAt.After(since) {
+			out = append(out, r)
+		}
+	}
+	return out, nil
 }
 
 func mintLicense(t *testing.T) (*License, ed25519.PublicKey) {
@@ -299,7 +336,8 @@ func TestPersistentStore_AppliedLicenseSurvivesRestart(t *testing.T) {
 }
 
 // TestPersistentStore_RevokeSurvivesRestart confirms a revoke is
-// durable: after revoke + restart the instance is back to free tier.
+// durable: after revoke + restart the license is gone, and what it granted keeps
+// working for Grace (story 16.2), across the restart too; then the free tier.
 func TestPersistentStore_RevokeSurvivesRestart(t *testing.T) {
 	ctx := context.Background()
 	lic, pub := mintLicense(t)
@@ -317,16 +355,21 @@ func TestPersistentStore_RevokeSurvivesRestart(t *testing.T) {
 	if err := s1.Revoke(ctx); err != nil {
 		t.Fatalf("Revoke: %v", err)
 	}
-	if s1.Current() != nil {
-		t.Fatal("revoke should drop to free tier in-memory")
+	if st := s1.State(); st.License != nil || st.Status != StatusGrace || st.Effective == nil || st.GraceUntil.IsZero() {
+		t.Fatalf("a removed license: the license gone, its plan in its grace; got %+v", st)
 	}
 
 	s2, err := NewPersistentStore(ctx, db, v)
 	if err != nil {
 		t.Fatalf("NewPersistentStore (restart): %v", err)
 	}
+	if st := s2.State(); st.License != nil || st.Status != StatusGrace || st.Effective == nil {
+		t.Fatalf("after a restart the removed license's grace is kept: %+v", st)
+	}
+	later := time.Now().Add(Grace + time.Hour)
+	s2.SetClock(func() time.Time { return later })
 	if s2.Current() != nil {
-		t.Fatal("revoked license came back after restart")
+		t.Fatal("the removed license still grants past its grace")
 	}
 }
 
@@ -440,15 +483,19 @@ func TestStore_ReloadActiveTakesUpAnotherProcesssLicense(t *testing.T) {
 	if err := cli.Revoke(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if changed, _ := running.ReloadActive(ctx, v); !changed || running.Current() != nil {
+	if changed, _ := running.ReloadActive(ctx, v); !changed || running.State().License != nil {
 		t.Fatal("a license removed elsewhere stayed")
+	}
+	if running.State().Status != StatusGrace {
+		t.Fatalf("a license removed elsewhere keeps its grace: %+v", running.State())
 	}
 
 	// a row signed by another key is not taken up
 	_, otherPriv, _ := ed25519.GenerateKey(rand.Reader)
 	db.rows = append(db.rows, signedRow(t, otherPriv, LicenseInner{LicenseID: "forged", Tier: TierPro,
 		IssuedAt: time.Date(2026, 5, 17, 0, 0, 0, 0, time.UTC), ExpiresAt: time.Date(2027, 5, 17, 0, 0, 0, 0, time.UTC)}))
-	if changed, err := running.ReloadActive(ctx, v); changed || err == nil || running.Current() != nil {
+	if changed, err := running.ReloadActive(ctx, v); changed || err == nil || running.State().License != nil ||
+		running.TierName() == "pro" && running.Current().LicenseID == "forged" {
 		t.Fatalf("a forged row: changed=%v err=%v", changed, err)
 	}
 }
