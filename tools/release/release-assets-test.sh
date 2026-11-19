@@ -39,7 +39,11 @@ case "$1" in
             esac
             shift
         done
-        printf 'published %s' "${name}" >"${dir}/${name}"
+        if [ "${name}" = checksums.txt ] && [ -n "${CHECKSUMS:-}" ]; then
+            printf '%s\n' "${CHECKSUMS}" >"${dir}/${name}"
+        else
+            printf 'published %s' "${name}" >"${dir}/${name}"
+        fi
         ;;
     *) echo "gh stub: $*" >&2; exit 1 ;;
 esac
@@ -121,9 +125,9 @@ fi
 
 # publish: a draft stays one until release.yml's signed set is there, the component index
 # among it (story 51.15)
-publish() { # publish ASSETS: runs publish on the draft v0.3.2-rc.1; its log in ${work}/log
+publish() { # publish ASSETS [CHECKSUMS]: runs publish on the draft v0.3.2-rc.1; its log in ${work}/log
     : >"${work}/edits"
-    PATH="${work}/stubs:${PATH}" GITHUB_REPOSITORY=o/r DRAFT=true ASSETS="$1" EDITS="${work}/edits" \
+    PATH="${work}/stubs:${PATH}" GITHUB_REPOSITORY=o/r DRAFT=true ASSETS="$1" CHECKSUMS="${2:-}" EDITS="${work}/edits" \
         bash "${here}/release-assets.sh" publish v0.3.2-rc.1 >"${work}/log" 2>&1
 }
 signed=$'release.json\nchecksums.txt\nchecksums.txt.sigstore.json'
@@ -136,6 +140,23 @@ if publish "${signed}"$'\ncomponents-0.3.2-rc.1.json' && grep -q -- "--draft=fal
     ok "a draft with its signed set and index is published"
 else
     fail "not published with the index: $(cat "${work}/log" "${work}/edits")"
+fi
+
+# every file checksums.txt names must be attached before the draft is published: an upload
+# that stopped part way leaves a signed checksum for a file nobody can download
+full="${signed}"$'\ncomponents-0.3.2-rc.1.json'
+sums=$'aa  ./maktaba-server-0.3.2-rc.1-linux-amd64.tar.gz\nbb  ./tv.maktaba.classify-0.3.2.mkplugin\ncc *release.json'
+if publish "${full}"$'\nmaktaba-server-0.3.2-rc.1-linux-amd64.tar.gz\nrelease.json' "${sums}" &&
+    grep -q "tv.maktaba.classify-0.3.2.mkplugin (in checksums.txt)" "${work}/log" && [ ! -s "${work}/edits" ]; then
+    ok "a draft missing a file its checksums name stays a draft, naming it"
+else
+    fail "published with a checksummed file missing: $(cat "${work}/log" "${work}/edits")"
+fi
+if publish "${full}"$'\nmaktaba-server-0.3.2-rc.1-linux-amd64.tar.gz\ntv.maktaba.classify-0.3.2.mkplugin' "${sums}" &&
+    grep -q -- "--draft=false" "${work}/edits"; then
+    ok "a draft with every checksummed file is published"
+else
+    fail "not published with every checksummed file: $(cat "${work}/log" "${work}/edits")"
 fi
 
 if [ "${fails}" -gt 0 ]; then

@@ -173,6 +173,18 @@ publish() {
         grep -qx "${a}" <<<"${names}" || missing+=("${a} (release.yml)")
     done
     tmp="$(mktemp -d)"
+    # every file the signed checksums.txt names is attached: an upload that stopped part way
+    # (release.yml's own files, or desktop-release.yml publishing before release.yml's upload
+    # finished) leaves a draft whose checksums list a file nobody can download
+    if grep -qx checksums.txt <<<"${names}"; then
+        gh_ release download "${tag}" --pattern checksums.txt --dir "${tmp}" --clobber
+        local listed n
+        listed="$(awk 'NF >= 2 { n = $2; sub(/^\*/, "", n); sub(/^\.\//, "", n); print n }' "${tmp}/checksums.txt")"
+        while IFS= read -r n; do
+            [ -n "${n}" ] || continue
+            grep -qxF -- "${n}" <<<"${names}" || missing+=("${n} (in checksums.txt)")
+        done <<<"${listed}"
+    fi
     if grep -qx latest.json <<<"${names}"; then
         gh_ release download "${tag}" --pattern latest.json --dir "${tmp}" --clobber
         if [ "${REQUIRE_FEED:-false}" = true ] &&
