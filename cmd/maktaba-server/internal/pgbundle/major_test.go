@@ -109,7 +109,11 @@ func TestServerArgsIOMethodOn18Only(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(home, "bin", "postgres"), []byte(script), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		args := strings.Join(Bundle{Home: home, Data: t.TempDir(), Port: 5499}.serverArgs(false), " ")
+		data := t.TempDir()
+		if err := os.WriteFile(filepath.Join(data, "PG_VERSION"), []byte(major+"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		args := strings.Join(Bundle{Home: home, Data: data, Port: 5499}.serverArgs(false), " ")
 		if got := strings.Contains(args, "io_method=sync"); got != want {
 			t.Errorf("PostgreSQL %s: io_method=sync %v, want %v (%s)", major, got, want, args)
 		}

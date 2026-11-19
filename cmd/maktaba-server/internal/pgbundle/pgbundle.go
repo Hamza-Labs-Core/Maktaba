@@ -106,9 +106,9 @@ func Resolve(cfg config.Config, exe string) (Bundle, bool, error) {
 	// Epic 49 story 49.2: a newer major's cluster has a directory of its own (DataDirFor);
 	// while its upgrade is held (no room, a failed pg_upgrade: MajorHold) the payload's
 	// previous major runs on the cluster it has
-	major := HomeMajor(home)
+	major := dirMajor(home)
 	if old := PreviousHome(home); old != "" && HeldMajor(root) != "" {
-		home, major = old, HomeMajor(old)
+		home, major = old, dirMajor(old)
 	}
 	return Bundle{
 		Home:    home,
@@ -281,9 +281,12 @@ func (b Bundle) serverArgs(lan bool) []string {
 	// preloads it, also into a household's own shared_preload_libraries
 	// PostgreSQL 18's asynchronous I/O runs in worker processes by default (three more, about
 	// 12 MB idle); the bundled server reads as 16 does (io_method=sync), within the home's
-	// idle memory budget (Epic 51 story 51.17). 16 refuses the setting.
-	if n, err := strconv.Atoi(HomeMajor(b.Home)); err == nil && n >= 18 {
-		args = append(args, "-c", "io_method=sync")
+	// idle memory budget (Epic 51 story 51.17). 16 refuses the setting. The cluster's major
+	// is the server's (Postgres starts on no other), read from PG_VERSION, never by running it
+	if m, _ := b.ClusterMajor(); m != "" {
+		if n, err := strconv.Atoi(m); err == nil && n >= 18 {
+			args = append(args, "-c", "io_method=sync")
+		}
 	}
 	preload := strings.Join(b.Preload(), ",")
 	for _, kv := range b.Tuning {

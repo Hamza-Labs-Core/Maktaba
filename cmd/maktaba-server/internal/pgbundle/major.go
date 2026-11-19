@@ -68,6 +68,21 @@ func PreviousHome(home string) string {
 	return ""
 }
 
+// dirMajor is the major whose cluster directory home takes (DataDirFor): a payload's
+// postgres-<major>/ says it in its name, its postgres/ is the previous major's (16: the
+// old directory); any other install (an operator's own) is asked (HomeMajor).
+func dirMajor(home string) string {
+	switch b := filepath.Base(home); {
+	case strings.HasPrefix(b, "postgres-"):
+		if _, err := strconv.Atoi(strings.TrimPrefix(b, "postgres-")); err == nil {
+			return strings.TrimPrefix(b, "postgres-")
+		}
+	case b == "postgres":
+		return ""
+	}
+	return HomeMajor(home)
+}
+
 var homeMajors sync.Map // home -> major
 
 // HomeMajor is the major of the Postgres install at home ("16" of "postgres (PostgreSQL)
@@ -76,7 +91,10 @@ func HomeMajor(home string) string {
 	if v, ok := homeMajors.Load(home); ok {
 		return v.(string)
 	}
-	out, err := exec.Command(filepath.Join(home, "bin", exe("postgres")), "--version").Output()
+	// bounded: a program that is no real postgres (a test's stand-in) may not answer
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, filepath.Join(home, "bin", exe("postgres")), "--version").Output()
 	if err != nil {
 		return ""
 	}
