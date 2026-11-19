@@ -376,3 +376,28 @@ runs only when the person opens that tab or submits from it; Results never waits
     is left for later; it is kept meanwhile.
   - If `<state>/postgres` is ever made anew by hand after an upgrade (another cluster's system
     identifier), the upgraded cluster is kept, and that new 16 cluster is not taken over it.
+
+### 49.3 Cluster: machines upgrade after the home; a 16 machine keeps serving
+
+- **A machine on 16 follows a home on 18.** A machine's copy is a logical subscription:
+  schema from its own migrations, rows from the home's publication. That works from an 18
+  publisher to a 16 subscriber. The home's `pg_upgrade` from 16 carries no replication slots, so
+  each machine's copy finds its slot gone. The copy manager already makes such a copy anew
+  (`nodecopy.Manager.resubscribeReason`: "the home gave up on this copy"), which costs one full
+  first copy per machine.
+- **The machine upgrades with its release.** A copy runs on a Postgres the machine has of either
+  major its payloads carry, 16 or 18 (`serve_copy.go` `copyMajors`). A payload with
+  `postgres-18/` runs the copy on 18. Before that release, only 16 was taken and any other
+  install fetched 16. A copy made by the other major is set aside (`<copy>.pg16-<time>`, never
+  deleted) and made again from the home (`setAsideOtherMajor`). Its marker goes with it, so the
+  copy manager subscribes anew.
+- **Proof.** The replica job builds PostgreSQL 18 from the Linux payload's pins. It runs
+  `TestTwoMachinesOnePC` with the home's database on 18, twice: the machine's copy on 16 (a
+  machine on a release before the upgrade), then on 18 (the machine updated). Both times the
+  copy follows the home, and the machine plays and reads from it with the home and its database
+  gone, through a restart. `TestCopyOfTheOtherMajorIsSetAside` covers the set-aside. Both runs
+  also passed locally on macOS arm64 against theseus-rs 16.15 and 18.7.
+- **How it differs from the spec.** The e2e's machine starts each run on its major rather than
+  moving from 16 to 18 inside one run. The move is the set-aside followed by a fresh copy, the
+  same path as a copy the home gave up on. `pgbin` (the copy's fetched Postgres) still pins 16;
+  a machine whose payload has `postgres-18/` doesn't fetch.

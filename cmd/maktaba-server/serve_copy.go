@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -68,7 +69,7 @@ func resolveNodeCopy(cfg *config.Config, wholeMachine bool) (*nodeCopy, error) {
 			Backups: filepath.Join(root, "backups"), Port: port}}
 	nc := &nodeCopy{}
 	exe, _ := os.Executable()
-	if home := pgbundle.FindHome(*cfg, exe); home != "" && pgbin.Installed(home) && nodecopy.MajorOf(home) == pgbin.Major {
+	if home := pgbundle.FindHome(*cfg, exe); home != "" && pgbin.Installed(home) && copyMajor(nodecopy.MajorOf(home)) {
 		c.DB.Home, nc.programs = home, nodecopy.Installed(home)
 	} else if pin, ok := pgbin.Here(); ok {
 		c.DB.Home = filepath.Join(copyPrograms(*cfg), pin.Dir())
@@ -76,6 +77,17 @@ func resolveNodeCopy(cfg *config.Config, wholeMachine bool) (*nodeCopy, error) {
 	} else {
 		fmt.Fprintln(os.Stderr, "[serve] no Postgres build for this platform: this machine keeps no copy of its home's database")
 		return nil, nil
+	}
+	// a copy made by the other major (the machine's payload moved from 16 to 18, Epic 49
+	// story 49.3): its programs would not start it, so it is set aside and made again from
+	// the home, as a copy the home gave up on is
+	if major := nodecopy.MajorOf(c.DB.Home); major != "" {
+		if aside, err := setAsideOtherMajor(c.DB.Data, major, time.Now()); err != nil {
+			return nil, fmt.Errorf("this machine's copy of its home's database: %w", err)
+		} else if aside != "" {
+			fmt.Fprintf(os.Stderr, "[serve] this machine's copy was made by another PostgreSQL major than its programs' "+
+				"(%s): it is set aside in %s and made again from the home\n", major, aside)
+		}
 	}
 	dsn, err := c.DSN()
 	if err != nil {
@@ -177,4 +189,29 @@ func watchRejoin(ctx context.Context) {
 			return
 		}
 	}
+}
+
+// copyMajors are the PostgreSQL majors a machine's copy runs on from a Postgres it has (a
+// payload's postgres/ or postgres-18/, Epic 49): logical replication follows a home of
+// either from a copy of either.
+var copyMajors = []string{pgbin.Major, "18"}
+
+func copyMajor(m string) bool { return slices.Contains(copyMajors, m) }
+
+// setAsideOtherMajor moves a copy's cluster another major made out of the way (data, with
+// its marker files, to <data>.pg<major>-<time>), never deleting it; "" when there is none.
+func setAsideOtherMajor(data, major string, now time.Time) (string, error) {
+	raw, err := os.ReadFile(filepath.Join(data, "PG_VERSION"))
+	if err != nil {
+		return "", nil
+	}
+	have := strings.TrimSpace(string(raw))
+	if have == major {
+		return "", nil
+	}
+	aside := data + ".pg" + have + "-" + now.UTC().Format("20060102-150405")
+	if err := os.Rename(data, aside); err != nil {
+		return "", err
+	}
+	return aside, nil
 }

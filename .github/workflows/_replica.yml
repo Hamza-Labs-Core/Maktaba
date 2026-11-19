@@ -132,6 +132,47 @@ jobs:
             grep -q -- "--- PASS: $t " "$RUNNER_TEMP/e2e-two.out" || { echo "::error::$t did not run"; exit 1; }
           done
 
+      # Epic 49 story 49.3: the home's database on PostgreSQL 18 (the Linux payload's pins,
+      # pgvector and pg_textsearch), its machine's copy on 16 (a machine on a release before
+      # the upgrade), then on 18 (the machine updated): the copy follows the home and the
+      # machine serves from it with the home gone, both times
+      - name: PostgreSQL 18 for the home (the Linux payload's pins)
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tools/rehearsal/postgres18.sh --out "$RUNNER_TEMP/pg18"
+          d="$RUNNER_TEMP/pg55434"
+          "$RUNNER_TEMP/pg18/bin/initdb" -D "$d" -U postgres --auth=trust -E UTF8 --locale=C >/dev/null
+          { echo 'host all /^maktaba_node_ 127.0.0.1/32 scram-sha-256'; cat "$d/pg_hba.conf"; } > "$d/pg_hba.new"
+          mv "$d/pg_hba.new" "$d/pg_hba.conf"
+          "$RUNNER_TEMP/pg18/bin/pg_ctl" -D "$d" -l "$RUNNER_TEMP/pg55434.log" -w -o "-p 55434 -k $RUNNER_TEMP \
+            -c listen_addresses=127.0.0.1 -c wal_level=logical -c max_replication_slots=40 \
+            -c max_wal_senders=40 -c shared_preload_libraries=pg_textsearch" start
+
+      - name: Two machines, the home on PostgreSQL 18, its machine on 16 then on 18 (e2e)
+        working-directory: api
+        env:
+          MAKTABA_E2E_TWO_MACHINE: "1"
+          MAKTABA_TEST_PG_URL: postgres://postgres@127.0.0.1:55434/postgres?sslmode=disable
+          MAKTABA_E2E_LOG_DIR: ${{ runner.temp }}/e2e-logs-pg18
+        run: |
+          set -euo pipefail
+          for node in "$PG16" "$RUNNER_TEMP/pg18"; do
+            major="$("$node/bin/postgres" --version | awk '{print $NF}' | cut -d. -f1)"
+            logs="$RUNNER_TEMP/e2e-logs-pg18/node-$major"
+            echo "::group::the machine's copy on PostgreSQL $major"
+            MAKTABA_E2E_LOG_ALWAYS=1 MAKTABA_E2E_LOG_DIR="$logs" MAKTABA_TEST_PG_BIN="$node" \
+              go test -count=1 -timeout 30m -run '^TestTwoMachinesOnePC$' -v . | tee "$RUNNER_TEMP/e2e-pg18.out"
+            echo "::endgroup::"
+            # the machine's copy ran on that major (its own programs, nothing fetched)
+            grep -q "starting PostgreSQL $major\." "$logs/TestTwoMachinesOnePC-node.log" ||
+              { echo "::error::the machine's copy did not start PostgreSQL $major"; exit 1; }
+            grep -q -- "--- PASS: TestTwoMachinesOnePC " "$RUNNER_TEMP/e2e-pg18.out" || { echo "::error::TestTwoMachinesOnePC (machine on $node) did not pass"; exit 1; }
+            grep -q -- "--- PASS: TestTwoMachinesOnePC/home_gone:_the_node_runs_on_its_copy" "$RUNNER_TEMP/e2e-pg18.out" ||
+              { echo "::error::the copy (machine on $node) did not run"; exit 1; }
+          done
+
       - name: The servers' logs (on failure)
         if: failure()
         run: |
