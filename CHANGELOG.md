@@ -14,6 +14,13 @@ build fails when the two differ.
 
 ### Changed
 
+- **Over the plan's seats, the newest accounts are read-only (story 16.4).** When a home has
+  more users than its licence's seats, the most recently created accounts beyond the seat
+  count can still watch, keep their progress and history, and keep their own playlists and
+  favourites, but can't upload, edit metadata or manage the home. Admins are never limited.
+  Removing users or adding seats restores them at once. Settings → Subscription names them to
+  the admin and tells the account itself.
+
 - **Guest sharing ends when the plan does (Epic 50, story 50.20).** When an account's Pro or
   Broadcaster plan ends (cancelled, lapsed, or changed to Basic or Free by the payment provider or
   a service admin), Maktaba Cloud revokes every guest invite of its homes at that moment and

@@ -467,7 +467,7 @@ Each epic below has an evidence key naming current implementation and test files
 | 16.01 Free tier | Done (sampled) | E16 |
 | 16.02 Premium features | **partial** | E16; merged implementation is visible in `subscriptions.go`, but its spec explicitly says downgrade visibility/read-only-for-30-days is **not built**; backup/federation TCs also waited on those surfaces. Current backup/federation code exists, but the downgrade AC remains absent. |
 | 16.03 Subscription management | Done (sampled) | E16 |
-| 16.04 License validation | **Done** | E16; signed offline validation, refresh and tests; #1454: past the seats, the newest non-admin accounts are read-only as the owner decided (2026-11-19): they watch and keep their progress and history, nothing else (`subscriptions.SeatGuard`, `seats.go`, `seats_test.go`, `seats_pg_test.go`, `403 seat-read-only`); the admin sees them, the account is told (`SubscriptionSettings.tsx`). |
+| 16.04 License validation | **Done** | E16; signed offline validation, refresh and tests; #1454: past the seats, the newest non-admin accounts are read-only as the owner decided (2026-11-19): they watch and keep their progress, history, playlists and favourites; uploads, metadata edits and managing the home are refused (`subscriptions.SeatGuard`, `seats.go`, `seats_test.go`, `seats_pg_test.go`, `403 seat-read-only`); the admin sees them, the account is told (`SubscriptionSettings.tsx`). |
 | 16.05 Telemetry opt-in | Done (sampled) | E16; `api/internal/router/telemetry.go`, `web/src/components/TelemetryPrompt.tsx` |
 | 16.06 Feature flags | Done (sampled) | E16 |
 | 16.07 Telemetry API | Done (sampled) | E16 |
