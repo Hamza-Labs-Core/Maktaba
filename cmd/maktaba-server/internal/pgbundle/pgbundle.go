@@ -484,6 +484,11 @@ func (b Bundle) Prepare(ctx context.Context, log io.Writer) error {
 }
 
 func (b Bundle) initdb(ctx context.Context, superPW string, log io.Writer) error {
+	return b.initdbWith(ctx, superPW, log)
+}
+
+// initdbWith is initdb with more of initdb's flags (an upgrade's checksums, major.go).
+func (b Bundle) initdbWith(ctx context.Context, superPW string, log io.Writer, extra ...string) error {
 	if err := os.MkdirAll(filepath.Dir(b.Data), 0o700); err != nil {
 		return err
 	}
@@ -506,8 +511,8 @@ func (b Bundle) initdb(ctx context.Context, superPW string, log io.Writer) error
 		return err
 	}
 	fmt.Fprintf(log, "[postgres] creating the database cluster in %s\n", b.Data)
-	cmd := exec.CommandContext(ctx, b.Bin("initdb"), "-D", tmp, "-U", SuperUser, "--pwfile="+pwfile.Name(),
-		"--auth=scram-sha-256", "--encoding=UTF8", "--locale=C")
+	cmd := exec.CommandContext(ctx, b.Bin("initdb"), append([]string{"-D", tmp, "-U", SuperUser, "--pwfile=" + pwfile.Name(),
+		"--auth=scram-sha-256", "--encoding=UTF8", "--locale=C"}, extra...)...)
 	cmd.Stdout, cmd.Stderr = childLog(log), childLog(log)
 	if err := cmd.Run(); err != nil {
 		_ = os.RemoveAll(tmp)
