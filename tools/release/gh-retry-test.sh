@@ -53,6 +53,20 @@ case "$1 $2" in
         o="$(next edit "$@")"
         case "${o}" in "" | ok) exit 0 ;; *) fail "${o}" ;; esac
         ;;
+    "release download")
+        # publish reads the draft's checksums.txt: it names the draft's own files
+        o="$(next download "$@")"
+        case "${o}" in "" | ok) ;; *) fail "${o}" ;; esac
+        name="" dir=""
+        while [ $# -gt 0 ]; do
+            case "$1" in
+                --pattern) name="$2"; shift ;;
+                --dir) dir="$2"; shift ;;
+            esac
+            shift
+        done
+        printf '%s\n' "${ASSETS:-}" | awk 'NF { print "00  ./" $1 }' >"${dir}/${name}"
+        ;;
     "release create")
         o="$(next create "$@")"
         case "${o}" in
