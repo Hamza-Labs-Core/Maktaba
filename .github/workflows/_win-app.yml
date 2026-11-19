@@ -140,8 +140,10 @@ jobs:
           $f "$PYTHON_URL" "$PYTHON_SHA256" "$d/cpython-$PYTHON_VERSION.tar.gz"
           $f "$POSTGRES_URL" "$POSTGRES_SHA256" "$d/postgresql-$POSTGRES_VERSION.zip"
           $f "$PGVECTOR_URL" "$PGVECTOR_SHA256" "$d/pgvector-$PGVECTOR_VERSION.tar.gz"
+          $f "$POSTGRES18_URL" "$POSTGRES18_SHA256" "$d/postgresql-$POSTGRES18_VERSION.zip"
+          $f "$PGTEXTSEARCH_URL" "$PGTEXTSEARCH_SHA256" "$d/pg_textsearch-$PGTEXTSEARCH_VERSION.tar.gz"
           $f "$FFMPEG_URL" "$FFMPEG_SHA256" "$d/ffmpeg-$FFMPEG_VERSION.zip"
-          keep=" cpython-$PYTHON_VERSION.tar.gz postgresql-$POSTGRES_VERSION.zip pgvector-$PGVECTOR_VERSION.tar.gz ffmpeg-$FFMPEG_VERSION.zip "
+          keep=" cpython-$PYTHON_VERSION.tar.gz postgresql-$POSTGRES_VERSION.zip pgvector-$PGVECTOR_VERSION.tar.gz postgresql-$POSTGRES18_VERSION.zip pg_textsearch-$PGTEXTSEARCH_VERSION.tar.gz ffmpeg-$FFMPEG_VERSION.zip "
           for x in "$d"/*; do
             case "$keep" in *" ${x##*/} "*) ;; *) echo "dropping ${x##*/} (no pin names it)"; rm -rf "$x" ;; esac
           done

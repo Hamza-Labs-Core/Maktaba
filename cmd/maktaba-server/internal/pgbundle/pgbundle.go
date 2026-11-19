@@ -259,9 +259,19 @@ func (b Bundle) serverArgs(lan bool) []string {
 		"-c", "max_logical_replication_workers=12", "-c", "max_sync_workers_per_subscription=8",
 		"-c", "log_timezone=UTC"}
 	// Epic 59 story 59.02: the tier's memory and the disk's values, the household's last
-	// (as -c arguments, so postgresql.auto.conf cannot override them)
+	// (as -c arguments, so postgresql.auto.conf cannot override them). Epic 49 story 49.1:
+	// pg_textsearch (BM25) loads only at the server's start, so an install that has it
+	// preloads it, also into a household's own shared_preload_libraries
+	preload := b.Preload()
 	for _, kv := range b.Tuning {
+		if name, val, ok := strings.Cut(kv, "="); ok && strings.TrimSpace(name) == "shared_preload_libraries" {
+			preload = mergePreload(preload, val)
+			continue
+		}
 		args = append(args, "-c", kv)
+	}
+	if len(preload) > 0 {
+		args = append(args, "-c", "shared_preload_libraries="+strings.Join(preload, ","))
 	}
 	if b.TLS && b.TLSReady() {
 		args = append(args, "-c", "ssl=on", "-c", "ssl_cert_file="+b.serverCert(), "-c", "ssl_key_file="+b.serverKey())
@@ -274,6 +284,46 @@ func (b Bundle) serverArgs(lan bool) []string {
 		}
 	}
 	return args
+}
+
+// preloadModules are the libraries the bundled server preloads when its install has them:
+// pg_textsearch (BM25 ranked search, Epic 49) refuses to work unless it is in
+// shared_preload_libraries. An install without it (PostgreSQL 16, a machine's fetched
+// Postgres) preloads nothing.
+var preloadModules = []string{"pg_textsearch"}
+
+// Preload is what of preloadModules this install's lib/ holds (pg_textsearch.so,
+// .dylib or .dll).
+func (b Bundle) Preload() []string {
+	var out []string
+	for _, m := range preloadModules {
+		for _, ext := range []string{".so", ".dylib", ".dll"} {
+			if st, err := os.Stat(filepath.Join(b.Home, "lib", m+ext)); err == nil && !st.IsDir() {
+				out = append(out, m)
+				break
+			}
+		}
+	}
+	return out
+}
+
+// mergePreload is ours with a household's shared_preload_libraries value: theirs first, in
+// their order, then each of ours they did not name.
+func mergePreload(ours []string, theirs string) []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, l := range strings.Split(strings.Trim(strings.TrimSpace(theirs), "'\""), ",") {
+		if l = strings.TrimSpace(l); l != "" && !seen[l] {
+			seen[l] = true
+			out = append(out, l)
+		}
+	}
+	for _, l := range ours {
+		if !seen[l] {
+			out = append(out, l)
+		}
+	}
+	return out
 }
 
 // ServerCommand is the foreground `postgres` of this cluster (ServerArgs). On

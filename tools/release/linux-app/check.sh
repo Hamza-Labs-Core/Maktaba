@@ -143,6 +143,20 @@ else
     fail "initdb/start: $(tail -3 "$SCRATCH/initdb.log" "$SCRATCH/pg.log" 2>/dev/null)"
 fi
 
+# PostgreSQL 18 (Epic 49, story 49.1): postgres-18/, with pgvector and pg_textsearch, and the
+# 16 cluster above upgraded to it by pg_upgrade (what the updater's upgrade runs, story 49.2)
+echo "PostgreSQL 18"
+pg18="$PAYLOAD/postgres-18/bin"
+"$SCRIPT_DIR/../pg18-check.sh" --pg16 "$pg" --pg18 "$pg18" --old "$SCRATCH/pgdata" --scratch "$SCRATCH/pg18" \
+    --api "$PAYLOAD/bin/maktaba-api" >"$SCRATCH/pg18.out" 2>&1 || true
+while IFS= read -r line; do
+    case "$line" in
+        "ok "*) ok "${line#ok }" ;;
+        "FAIL "*) fail "${line#FAIL }" ;;
+    esac
+done <"$SCRATCH/pg18.out"
+grep -q '^ok PostgreSQL 18 checks done' "$SCRATCH/pg18.out" || fail "the PostgreSQL 18 checks did not finish: $(tail -5 "$SCRATCH/pg18.out")"
+
 echo "ffmpeg (the system's: $FFMPEG_WANT expected)"
 inside="$(find "$PAYLOAD" \( -iname 'ffmpeg*' -o -iname 'ffprobe*' -o -name 'libavcodec*' -o -name 'libx264*' \) -print | sed -n '1,5p' | tr '\n' ' ')"
 if [ -z "$inside" ]; then ok "no ffmpeg in the payload"; else fail "ffmpeg is in the payload (Linux runs the distribution's): $inside"; fi

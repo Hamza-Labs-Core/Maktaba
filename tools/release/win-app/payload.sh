@@ -7,6 +7,8 @@
 #   postgres\  bin\ lib\ share\           PostgreSQL 16: the programs, the DLLs they load and
 #                                         the Visual C++ runtime beside postgres.exe; pgvector
 #                                         when Visual C++'s build tools are here
+#   postgres-18\  the same for PostgreSQL 18, with pgvector and pg_textsearch (Epic 49, story
+#                 49.1): the next major, unused until the updater's upgrade (49.2)
 #   ffmpeg\    ffmpeg.exe ffprobe.exe     static
 #   python\    CPython 3.12               python-build-standalone, stdlib precompiled
 #   pipeline\  maktaba_pipeline-<v>-py3-none-any.whl constraints.txt constraints-cuda.txt
@@ -92,7 +94,7 @@ mkdir -p "$CACHE"
 OUT="$BUILD/server"
 WORK="$BUILD/work"
 rm -rf "$OUT" "$WORK"
-mkdir -p "$OUT"/{bin,postgres/bin,ffmpeg,pipeline,licenses} "$WORK"
+mkdir -p "$OUT"/{bin,postgres/bin,postgres-18/bin,ffmpeg,pipeline,licenses} "$WORK"
 
 sha256() { sha256sum "$1" | awk '{print $1}'; }
 # win PATH...: the Windows form of each path, for the native programs given a path
@@ -303,6 +305,109 @@ Distributable Code under the Visual Studio licence terms
 (https://visualstudio.microsoft.com/license-terms/). Signed by Microsoft Corporation.
 EOF
 
+# --- PostgreSQL 18, pgvector and pg_textsearch (Epic 49, story 49.1) ---------------------------
+# The next major in postgres-18\, picked as 16 is above: the programs, the extensions and
+# share\, the DLLs they load (its archive's bin\ holds a Python for PL/Python too, which no
+# program here loads: the closure leaves it out) and the same Visual C++ runtime. pgvector
+# (the same source) and pg_textsearch are built against it with Visual C++, as pgvector is
+# for 16, under the same rule (WIN_APP_REQUIRE_PGVECTOR=1: both or the build stops).
+log "PostgreSQL $POSTGRES18_VERSION"
+mkdir -p "$WORK/pg18"
+unzip -q "$(fetch "$POSTGRES18_URL" "$POSTGRES18_SHA256" "postgresql-$POSTGRES18_VERSION.zip")" -d "$WORK/pg18"
+pg18="$WORK/pg18/postgresql-$POSTGRES18_VERSION-x86_64-pc-windows-msvc"
+[ -f "$pg18/bin/postgres.exe" ] && [ -f "$pg18/lib/postgres.lib" ] || die "unexpected PostgreSQL $POSTGRES18_VERSION archive layout"
+for b in postgres initdb pg_ctl pg_dump pg_dumpall pg_restore psql pg_isready pg_upgrade pg_controldata pg_resetwal pg_basebackup vacuumdb; do
+    cp "$pg18/bin/$b.exe" "$OUT/postgres-18/bin/"
+done
+(cd "$pg18" && tar -cf - --exclude='*.lib' --exclude=pkgconfig --exclude=pgxs lib share) | (cd "$OUT/postgres-18" && tar -xf -)
+rm -f "$OUT"/postgres-18/lib/plperl.dll "$OUT"/postgres-18/lib/plpython3.dll "$OUT"/postgres-18/lib/pltcl.dll \
+      "$OUT"/postgres-18/lib/*_plperl.dll "$OUT"/postgres-18/lib/*_plpython3.dll "$OUT"/postgres-18/lib/llvmjit*
+rm -rf "$OUT/postgres-18/lib/bitcode"
+find "$OUT/postgres-18/lib" -type f ! -name 'pgoutput.*' -exec grep -l -a -F _PG_output_plugin_init {} + 2>/dev/null |
+    while IFS= read -r f; do rm -f "$f"; done || true
+cp "$pg18/COPYRIGHT" "$OUT/licenses/postgresql-18.txt"
+# msvc_build NAME SRC LOG [NMAKE_MACRO...]: nmake /F Makefile.win in SRC against PostgreSQL 18
+# (PGROOT), in vcvars64's environment, no /arch (OPTFLAGS empty): it runs on any x86_64 CPU
+msvc_build() {
+    local name="$1" src="$2" logf="$3" vswhere vs bat
+    shift 3
+    vswhere="$(cygpath -u -F 42)/Microsoft Visual Studio/Installer/vswhere.exe"   # 42: Program Files (x86)
+    [ -f "$vswhere" ] || { log "$name: no Visual Studio (vswhere.exe)"; return 1; }
+    vs="$("$vswhere" -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 \
+        -property installationPath | tr -d '\r' | sed -n 1p)"
+    if [ -z "$vs" ] || [ ! -f "$vs/VC/Auxiliary/Build/vcvars64.bat" ]; then
+        log "$name: no Visual Studio with the C++ build tools (vcvars64.bat)"
+        return 1
+    fi
+    bat="$WORK/$name-build.bat"
+    # the macros go in through a response-free command line: each is NAME=VALUE with no
+    # quote or percent sign in it (checked), the paths in Windows form through the environment
+    local m macros=""
+    for m in "$@"; do
+        case "$m" in *'"'* | *%*) log "$name: a macro with a quote or a percent sign"; return 1 ;; esac
+        macros="$macros \"$m\""
+    done
+    printf '%s\r\n' '@echo off' \
+        'call "%MB_VCVARS%" >nul || exit /b 1' \
+        'cd /d "%MB_SRC%" || exit /b 1' \
+        "nmake /nologo /F Makefile.win PGROOT=\"%MB_PGROOT%\" OPTFLAGS=$macros || exit /b 1" >"$bat"
+    MB_VCVARS="$(win "$vs/VC/Auxiliary/Build/vcvars64.bat")" MB_SRC="$(win "$src")" MB_PGROOT="$(win "$pg18")" \
+        cmd.exe //d //c "$(win "$bat")" >"$logf" 2>&1 ||
+        { tail -20 "$logf" >&2; log "$name: the build failed"; return 1; }
+}
+PG18_EXT_BUILT=""
+log "pgvector $PGVECTOR_VERSION and pg_textsearch $PGTEXTSEARCH_VERSION for PostgreSQL $POSTGRES18_VERSION"
+mkdir -p "$WORK/pgv18"
+tar -xzf "$(fetch "$PGVECTOR_URL" "$PGVECTOR_SHA256" "pgvector-$PGVECTOR_VERSION.tar.gz")" -C "$WORK/pgv18"
+pgv18="$WORK/pgv18/pgvector-$PGVECTOR_VERSION"
+tar -xzf "$(fetch "$PGTEXTSEARCH_URL" "$PGTEXTSEARCH_SHA256" "pg_textsearch-$PGTEXTSEARCH_VERSION.tar.gz")" -C "$WORK"
+pgts="$WORK/pg_textsearch-$PGTEXTSEARCH_VERSION"
+[ -f "$pgts/Makefile.win" ] && [ -f "$pgts/Makefile" ] || die "unexpected pg_textsearch archive layout"
+# pg_textsearch 1.5.1's Makefile.win lacks objects its Makefile builds (boolean, build_merge,
+# rls, ...): the Makefile's list, as .obj with backslashes, overrides it (nmake takes a macro
+# on its command line over the file's)
+pgts_objs="$(sed -n '/^OBJS *=/,/^[[:space:]]*$/p' "$pgts/Makefile" | grep -o 'src/[A-Za-z0-9_/]*\.o' |
+    sed -e 's/\.o$/.obj/' -e 's|/|\\|g' | tr '\n' ' ')"
+[ -n "$pgts_objs" ] || die "pg_textsearch: no OBJS list in its Makefile"
+if msvc_build pgvector18 "$pgv18" "$WORK/pgvector18.log" && [ -f "$pgv18/vector.dll" ] &&
+    msvc_build pg_textsearch "$pgts" "$WORK/pg_textsearch.log" "OBJS=${pgts_objs% }" && [ -f "$pgts/pg_textsearch.dll" ]; then
+    cp "$pgv18/vector.dll" "$pgts/pg_textsearch.dll" "$OUT/postgres-18/lib/"
+    cp "$pgv18/vector.control" "$pgv18"/sql/vector--*.sql "$pgts/pg_textsearch.control" "$pgts"/sql/pg_textsearch--*.sql \
+        "$OUT/postgres-18/share/extension/"
+    cat "$pgts/LICENSE" "$pgts/NOTICE" >"$OUT/licenses/pg_textsearch.txt"
+    PG18_EXT_BUILT=1
+elif [ "${WIN_APP_REQUIRE_PGVECTOR:-}" = 1 ]; then
+    die "pgvector or pg_textsearch did not build for PostgreSQL 18 (above) and WIN_APP_REQUIRE_PGVECTOR=1"
+else
+    log "WARNING: no pgvector or pg_textsearch for PostgreSQL 18 in this payload"
+    if [ -n "${GITHUB_ACTIONS:-}" ]; then echo "::warning::no pgvector or pg_textsearch for PostgreSQL 18 in the Windows payload"; fi
+fi
+mapfile -t pg18_files < <(win "$OUT"/postgres-18/bin/*.exe "$OUT"/postgres-18/lib/*.dll)
+tool closure --dir "$(win "$pg18/bin")" --into "$(win "$OUT/postgres-18/bin")" --runtime "$(win "$MSVC_RUNTIME")" \
+    "${pg18_files[@]}" >"$WORK/postgres18-dlls.txt" ||
+    die "PostgreSQL $POSTGRES18_VERSION needs a DLL that neither its archive nor Windows has (above)"
+pg18_dlls=()
+while IFS=$'\r' read -r f; do
+    [ -n "$f" ] || continue
+    cp "$(cygpath -u "$f")" "$OUT/postgres-18/bin/"
+    pg18_dlls+=("$(basename "$(cygpath -u "$f")")")
+done <"$WORK/postgres18-dlls.txt"
+# its Visual C++ runtime DLLs: the same folder's, checked as 16's are (signed, the pinned version)
+msvc18=()
+for d in "${pg18_dlls[@]}"; do
+    if [ -f "$MSVC_RUNTIME/$d" ]; then msvc18+=("$OUT/postgres-18/bin/$d"); fi
+done
+[ "${#msvc18[@]}" -gt 0 ] || die "PostgreSQL $POSTGRES18_VERSION loads no Visual C++ runtime DLL (unexpected archive)"
+# shellcheck disable=SC2016
+sigs18="$(SIGN_FILES="$(win "${msvc18[@]}" | tr '\n' ';')" powershell.exe -NoProfile -NonInteractive -Command \
+    '$env:SIGN_FILES.TrimEnd(";") -split ";" | ForEach-Object { $s = Get-AuthenticodeSignature -LiteralPath $_; "{0}|{1}|{2}|{3}" -f $s.Status, $s.SignerCertificate.Subject, (Get-Item -LiteralPath $_).VersionInfo.FileVersion, (Split-Path -Leaf $_) }' | tr -d '\r')"
+while IFS='|' read -r status subject version name; do
+    if [ "$status" != Valid ] || [[ "$subject" != *"O=Microsoft Corporation"* ]] || [ "$version" != "$MSVC_RUNTIME_VERSION" ]; then
+        die "$name beside PostgreSQL $POSTGRES18_VERSION is not the Microsoft-signed Visual C++ runtime $MSVC_RUNTIME_VERSION ($status, $subject, $version)"
+    fi
+done <<<"$sigs18"
+log "PostgreSQL $POSTGRES18_VERSION: ${#pg18_dlls[@]} DLLs beside it"
+
 # --- ffmpeg --------------------------------------------------------------------------------------
 log "ffmpeg $FFMPEG_VERSION"
 unzip -q "$(fetch "$FFMPEG_URL" "$FFMPEG_SHA256" "ffmpeg-$FFMPEG_VERSION.zip")" \
@@ -365,6 +470,9 @@ P_PG_VERSION="$POSTGRES_VERSION" P_PG_URL="$POSTGRES_URL" P_PG_SHA="$POSTGRES_SH
 P_PG_DLLS="$(printf '%s\n' "${pg_dlls[@]}")" P_MSVC_VERSION="$MSVC_VERSION" \
 P_FF_VERSION="$FFMPEG_VERSION" P_FF_URL="$FFMPEG_URL" P_FF_SHA="$FFMPEG_SHA256" \
 P_PY_VERSION="$PYTHON_VERSION" P_PY_URL="$PYTHON_URL" P_PY_SHA="$PYTHON_SHA256" \
+P_PG18_VERSION="$POSTGRES18_VERSION" P_PG18_URL="$POSTGRES18_URL" P_PG18_SHA="$POSTGRES18_SHA256" \
+P_PG18_DLLS="$(printf '%s\n' "${pg18_dlls[@]}")" P_PG18_EXT_BUILT="$PG18_EXT_BUILT" \
+P_PGTS_VERSION="$PGTEXTSEARCH_VERSION" P_PGTS_URL="$PGTEXTSEARCH_URL" P_PGTS_SHA="$PGTEXTSEARCH_SHA256" \
 P_PGV_BUILT="$PGVECTOR_BUILT" P_PGV_VERSION="$PGVECTOR_VERSION" P_PGV_URL="$PGVECTOR_URL" P_PGV_SHA="$PGVECTOR_SHA256" \
 P_WHEEL="$WHEEL_NAME" P_WHEEL_SHA="$(sha256 "$OUT/pipeline/$WHEEL_NAME")" \
 P_CONS_SHA="$(sha256 "$OUT/pipeline/constraints.txt")" \
@@ -384,6 +492,11 @@ doc = {
     # null when it could not be built here (semantic search off: check.sh says so)
     "pgvector": {"version": e["P_PGV_VERSION"], "source": e["P_PGV_URL"], "sha256": e["P_PGV_SHA"]}
                 if e["P_PGV_BUILT"] else None,
+    # Epic 49 story 49.1: the next major beside it (postgres-18\), unused until the upgrade
+    "postgres_18": {"version": e["P_PG18_VERSION"], "source": e["P_PG18_URL"], "sha256": e["P_PG18_SHA"],
+                    "dir": "postgres-18", "libraries": sorted(e["P_PG18_DLLS"].split())},
+    "pg_textsearch": {"version": e["P_PGTS_VERSION"], "source": e["P_PGTS_URL"], "sha256": e["P_PGTS_SHA"]}
+                     if e["P_PG18_EXT_BUILT"] else None,
     "msvc_runtime": {"version": e["P_MSVC_VERSION"], "source": "Visual Studio redistributable"},
     # one archive holds both programs (the Mac's has two: the same fields, for the supervisor)
     "ffmpeg": {"version": e["P_FF_VERSION"], "source": e["P_FF_URL"], "sha256": e["P_FF_SHA"],

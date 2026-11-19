@@ -659,3 +659,51 @@ func TestServerArgsLogInUTC(t *testing.T) {
 		t.Fatalf("args: %s", args)
 	}
 }
+
+// Epic 49 story 49.1: an install with pg_textsearch preloads it (it works only so); one
+// without (PostgreSQL 16, a machine's fetched Postgres) preloads nothing; a household's own
+// shared_preload_libraries keeps its libraries and gains pg_textsearch, never twice.
+func TestServerArgsPreloadPgTextsearch(t *testing.T) {
+	preloads := func(args []string) []string {
+		var out []string
+		for i := 0; i+1 < len(args); i++ {
+			if args[i] == "-c" && strings.HasPrefix(args[i+1], "shared_preload_libraries=") {
+				out = append(out, strings.TrimPrefix(args[i+1], "shared_preload_libraries="))
+			}
+		}
+		return out
+	}
+	home := t.TempDir()
+	b := Bundle{Home: home, Data: t.TempDir(), Port: 5499}
+	if got := preloads(b.serverArgs(false)); len(got) != 0 {
+		t.Fatalf("an install without pg_textsearch preloads %v", got)
+	}
+	if err := os.MkdirAll(filepath.Join(home, "lib"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, ext := range []string{".so", ".dylib", ".dll"} {
+		lib := filepath.Join(home, "lib", "pg_textsearch"+ext)
+		if err := os.WriteFile(lib, nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if got := preloads(b.serverArgs(false)); len(got) != 1 || got[0] != "pg_textsearch" {
+			t.Fatalf("%s: preloads %v", ext, got)
+		}
+		_ = os.Remove(lib)
+	}
+	if err := os.WriteFile(filepath.Join(home, "lib", "pg_textsearch.so"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct{ setting, want string }{
+		{"shared_preload_libraries=pg_stat_statements", "pg_stat_statements,pg_textsearch"},
+		{"shared_preload_libraries='pg_stat_statements, auto_explain'", "pg_stat_statements,auto_explain,pg_textsearch"},
+		{"shared_preload_libraries=pg_textsearch,pg_stat_statements", "pg_textsearch,pg_stat_statements"},
+		{"shared_preload_libraries=", "pg_textsearch"},
+	} {
+		b.Tuning = []string{"work_mem=8MB", c.setting}
+		got := preloads(b.serverArgs(false))
+		if len(got) != 1 || got[0] != c.want {
+			t.Errorf("%s: preloads %v, want [%s]", c.setting, got, c.want)
+		}
+	}
+}

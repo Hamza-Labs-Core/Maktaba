@@ -467,6 +467,23 @@ else
     fail "initdb/start: $(tail -3 "$SCRATCH/initdb.log" "$SCRATCH/pg.log" "$SCRATCH/pg_ctl.log" 2>/dev/null | tr -d '\r')"
 fi
 
+# PostgreSQL 18 (Epic 49, story 49.1): postgres-18\, with pgvector and pg_textsearch, and the
+# 16 cluster above upgraded to it by pg_upgrade (what the updater's upgrade runs, story 49.2)
+echo "PostgreSQL 18"
+for b in postgres initdb pg_ctl pg_dump pg_restore psql pg_upgrade pg_controldata vacuumdb; do
+    run "postgres-18 $b" "$PAYLOAD/postgres-18/bin/$b.exe" --version
+done
+"$SCRIPT_DIR/../pg18-check.sh" --pg16 "$pg" --pg18 "$PAYLOAD/postgres-18/bin" --old "$PGDATA_DIR" \
+    --scratch "$SCRATCH/pg18" --api "$PAYLOAD/bin/maktaba-api.exe" >"$SCRATCH/pg18.out" 2>&1 || true
+while IFS= read -r line; do
+    line="${line%$'\r'}"
+    case "$line" in
+        "ok "*) ok "${line#ok }" ;;
+        "FAIL "*) fail "${line#FAIL }" ;;
+    esac
+done <"$SCRATCH/pg18.out"
+grep -q '^ok PostgreSQL 18 checks done' "$SCRATCH/pg18.out" || fail "the PostgreSQL 18 checks did not finish: $(tail -5 "$SCRATCH/pg18.out" | tr -d '\r')"
+
 echo "Python"
 run "stdlib imports" "$PY" -I -c 'import asyncio, bz2, ctypes, decimal, email.message, hashlib, http.client, json, lzma, multiprocessing, sqlite3, ssl, uuid, venv, xml.etree.ElementTree, zlib, zoneinfo; print("ok")'
 run "venv (offline, with pip)" "$PY" -I -m venv "$(win "$SCRATCH/venv")"
