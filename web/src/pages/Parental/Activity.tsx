@@ -7,7 +7,7 @@
 // is about (a subject in a library this reader cannot open comes with its kind
 // only), the guardian who answered, the device of a signal, or, for the time
 // events, minutes and no subject.
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useParams } from "react-router-dom";
 import { Button } from "@ds/components/Button/Button";
 import { Badge } from "@ds/components/Badge/Badge";
@@ -50,6 +50,18 @@ export function eventDetail(
   return parts.join(" · ");
 }
 
+/** The pages after the first, read on Load more, and the first page they follow. */
+interface Later {
+  after: string | null;
+  more: ActivityEvent[];
+  cursor: string | null;
+  failed: boolean;
+}
+
+function fresh(after: string | null, cursor: string | null): Later {
+  return { after, more: [], cursor, failed: false };
+}
+
 export function ActivityPage() {
   const { userId = "" } = useParams();
   const words = useI18n();
@@ -61,35 +73,36 @@ export function ActivityPage() {
     () => fetchActivity(userId, kind),
     [userId, kind]
   );
-  // the pages after the first, read on Load more
-  const [more, setMore] = useState<ActivityEvent[]>([]);
-  const [cursor, setCursor] = useState<string | null>(null);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [moreFailed, setMoreFailed] = useState(false);
   // The later pages hang off the first one. A fresh read of the first page that says
   // the same (the quiet re-read on coming back to the page) keeps the pages already
-  // loaded; a first page that changed starts them over.
+  // loaded; a first page that changed starts them over. They are kept with the first
+  // page they follow (`firstPage` names it, its cursor too: the object is new on every
+  // read) and worked out in the same render as it, so the first page never shows a
+  // render without its Load more (an effect copying its cursor came one render late).
   const firstPage = data
     ? JSON.stringify([userId, kind, data.events.map((e) => e.id), data.nextCursor])
     : null;
-  const firstCursor = data?.nextCursor ?? null;
-  useEffect(() => {
-    setMore([]);
-    setCursor(firstCursor);
-    setMoreFailed(false);
-    // `firstPage` names the first page (its cursor too): the object is new on every read
-  }, [firstPage]);
+  const [later, setLater] = useState<Later>(() => fresh(null, null));
+  const paged = later.after === firstPage ? later : fresh(firstPage, data?.nextCursor ?? null);
+  const { more, cursor, failed: moreFailed } = paged;
+  const [loadingMore, setLoadingMore] = useState(false);
 
   async function loadMore() {
     if (!cursor) return;
+    const from = paged;
     setLoadingMore(true);
-    setMoreFailed(false);
+    setLater({ ...from, failed: false });
     try {
       const page = await fetchActivity(userId, kind, cursor);
-      setMore((m) => [...m, ...page.events]);
-      setCursor(page.nextCursor);
+      // kept with the first page it follows: if that page has changed since, the render
+      // no longer reads these (`paged` starts over), so they go with it
+      setLater((l) =>
+        l.after === from.after
+          ? { ...l, more: [...l.more, ...page.events], cursor: page.nextCursor }
+          : l
+      );
     } catch {
-      setMoreFailed(true);
+      setLater((l) => (l.after === from.after ? { ...l, failed: true } : l));
     } finally {
       setLoadingMore(false);
     }

@@ -3,6 +3,7 @@ package system
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -109,15 +110,23 @@ func allocated(f func()) uint64 {
 	return b.TotalAlloc - a.TotalAlloc
 }
 
-// The update check reads GitHub's list of 30 releases (about 7 MB) at every start
-// and every check. Decoded whole it allocated three times its size in one burst,
-// and the API's resident memory stayed some 35 MB higher for good (the Core home's
-// idle memory budget, tools/release/bundle-size). Read one release at a time it
-// allocates less than the list is long.
+// The update check reads GitHub's list of 30 releases (about 7 MB: 150 assets each) at
+// every start and every check. Decoded whole it allocated three times its size in one
+// burst, and the API's resident memory stayed some 35 MB higher for good (the Core home's
+// idle memory budget, tools/release/bundle-size). Read one release at a time it allocates
+// less than the list is long.
+//
+// The list here has the real one's 30 releases and its assets' shape, with 30 assets a
+// release instead of 150 (about 1.5 MB). What one release at a time allocates (the
+// releases kept, and a buffer of one release) grows with the assets as the list does: a
+// third of the list here, a fifth at 150, against four and a half times it read whole.
+// The 7 MB list decoded under -race took 1.2 s on a CI runner, three times the unit
+// tier's per-test budget (tools/ci/test-budget), and failed main's runs on a slow one.
+// The control below shows the bound still tells the two readings apart at this size.
 func TestFetchReleasesAllocatesLessThanTheList(t *testing.T) {
-	body := gitHubReleases(30, 150)
-	if len(body) < 6<<20 || len(body) > 8<<20 {
-		t.Fatalf("the list is %d bytes; the test wants one the size of the real one, under the 8 MiB cap", len(body))
+	body := gitHubReleases(30, 30)
+	if len(body) < 1<<20 || len(body) > 8<<20 {
+		t.Fatalf("the list is %d bytes; the test wants one over 1 MiB and under the 8 MiB cap", len(body))
 	}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write(body) }))
 	t.Cleanup(srv.Close)
@@ -128,12 +137,29 @@ func TestFetchReleasesAllocatesLessThanTheList(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(rels) != 30 || len(rels[29].Assets) != 150 || rels[29].TagName != "v1.29.0" ||
-		rels[29].Assets[149].Name != "maktaba-29-149.tar.gz" || rels[29].Assets[149].Size != 1149 {
+	if len(rels) != 30 || len(rels[29].Assets) != 30 || rels[29].TagName != "v1.29.0" ||
+		rels[29].Assets[29].Name != "maktaba-29-29.tar.gz" || rels[29].Assets[29].Size != 1029 {
 		t.Fatalf("the list was not read whole: %d releases", len(rels))
 	}
 	t.Logf("a %d byte list: %d bytes allocated", len(body), n)
 	if n > uint64(len(body))/2 {
 		t.Fatalf("reading a %d byte list allocated %d bytes: more than half its length, so it is not read one release at a time", len(body), n)
+	}
+
+	// the control: the same list decoded whole is over the bound, so the reading above
+	// passes because it is one release at a time, not because the list is small
+	var whole []ghRelease
+	w := allocated(func() {
+		b, err := io.ReadAll(bytes.NewReader(body))
+		if err == nil {
+			err = json.Unmarshal(b, &whole)
+		}
+		if err != nil {
+			t.Error(err)
+		}
+	})
+	t.Logf("the same list read whole: %d bytes allocated", w)
+	if len(whole) != 30 || w <= uint64(len(body))/2 {
+		t.Fatalf("read whole, the %d byte list allocated %d bytes: the bound would not tell the readings apart", len(body), w)
 	}
 }
