@@ -199,7 +199,7 @@ func TestCPUMoved(t *testing.T) {
 	for _, c := range []struct {
 		prev, now int64
 		moved     bool
-	}{{0, 4, false}, {0, 5, true}, {3, 0, false}, {10, 0, true}, {100, 108, false}, {100, 110, true}, {400, 430, false}} {
+	}{{0, 4, false}, {0, 5, true}, {3, 0, true}, {0, 0, false}, {10, 0, true}, {100, 108, false}, {100, 110, true}, {400, 430, false}} {
 		if got := cpuMoved(c.prev, c.now); got != c.moved {
 			t.Errorf("%d -> %d: %v", c.prev, c.now, got)
 		}
@@ -241,5 +241,62 @@ func TestProcessorUseAfterARequestedRestart(t *testing.T) {
 	passWith(r, d)
 	if v := mustRow(t, st, "a").Detail["cpu_pct"]; v != int64(100) {
 		t.Fatalf("after: %v", v)
+	}
+}
+
+// Third review of #1443: a low reading goes back to 0 when the process goes idle, once, and
+// the component's cpu_pct is always the sum of its written cpu_parts.
+func TestProcessorUseGoesIdleAndAddsUp(t *testing.T) {
+	cat := testCatalog(t, procComp("a", "fake/a*", "", ""))
+	tab := &fakeTable{}
+	tab.add("a", "a1", false)
+	tab.add("a", "a2", false)
+	tab.procs[0].PID, tab.procs[1].PID = 101, 102
+	st := &fakeStore{}
+	r, _ := newTestReconciler(cat, tab, st)
+	now := time.Date(2026, 11, 3, 9, 0, 0, 0, time.UTC)
+	r.Now = func() time.Time { return now }
+	used := map[int]time.Duration{101: 0, 102: 0}
+	r.CPU = func([]int) map[int]time.Duration {
+		out := map[int]time.Duration{}
+		for k, v := range used {
+			out[k] = v
+		}
+		return out
+	}
+	d := map[string]store.Desired{"a": want("a", "enabled", 1)}
+	step := func(a, b time.Duration) map[string]any {
+		used[101] += a
+		used[102] += b
+		now = now.Add(5 * time.Minute)
+		passWith(r, d)
+		row := mustRow(t, st, "a")
+		parts, _ := row.Detail["cpu_parts"].(map[string]any)
+		var sum int64
+		for _, v := range parts {
+			sum += v.(int64)
+		}
+		if parts != nil && row.Detail["cpu_pct"] != sum {
+			t.Fatalf("cpu_pct %v, its parts %v", row.Detail["cpu_pct"], parts)
+		}
+		return row.Detail
+	}
+	passWith(r, d)
+	// 100% and 10%, then 110% and 10%: the first part moves, the total follows it
+	step(300*time.Second, 30*time.Second)
+	if got := step(330*time.Second, 30*time.Second); got["cpu_pct"] != int64(120) {
+		t.Fatalf("after 110+10: %v", got)
+	}
+	// 4% each, then idle: back to 0 once, then nothing rewritten
+	step(12*time.Second, 12*time.Second)
+	if got := step(0, 0); got["cpu_pct"] != int64(0) {
+		t.Fatalf("idle after a low reading: %v", got)
+	}
+	writes := st.reports
+	for range 3 {
+		step(0, 0)
+	}
+	if st.reports != writes {
+		t.Fatalf("an idle machine rewrote its row %d times", st.reports-writes)
 	}
 }

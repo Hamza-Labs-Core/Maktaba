@@ -39,9 +39,14 @@ The Plugins page shows the memory of each process that runs a plugin and says th
   `cpu_pct`.
 - **Linux units.** Linux ticks are converted as ticks × 10 ms, which cannot overflow; ticks ×
   1 s ÷ 100 overflowed after about 2.9 years of processor time.
-- **Hysteresis.** A number is rewritten only when it moves by 5 points and by a tenth of the
-  last written number (`cpuMoved`). Rows equal to the last written ones are never sent, so an
-  idle machine writes nothing.
+- **Hysteresis.** A process's number is rewritten only when it moves by 5 points and by a
+  tenth of the last written number, or when the process goes idle: any number dropping to 0
+  is written once, so a low reading does not stay on an idle process for ever (`cpuMoved`).
+  The component's `cpu_pct` is the sum of its processes' numbers as written, so it always
+  equals the sum of `cpu_parts`. Rows equal to the last written ones are never sent, so an idle
+  machine writes nothing.
+- **Every OS's reader runs on that OS.** The launcher job's matrix (Ubuntu, macOS, Windows)
+  runs the real readers' tests and the reconciler's wiring test.
 - **`GET /api/plugins`.** Each process in `resources.processes` carries `cpu_pct`. It is read
   as memory is (`measure`): the process's own entry in `cpu_parts`, including numbered ones
   such as `ml-0`, else the component's total. Its own `cpu_scope` says which, as `scope` does
@@ -61,7 +66,8 @@ The Plugins page shows the memory of each process that runs a plugin and says th
     stopped component, and `cpuMoved`. From the review: a restart that got its pid back with
     more time than before, another process on the same pid, and a partial sample that keeps
     the component's last numbers. From the second review: a restart asked for, with the same
-    pid and `Restarts` unchanged.
+    pid and `Restarts` unchanged. From the third review: a low reading that goes back to 0
+    once, and a total that stays the sum of its parts (100% + 10% becoming 110% + 10%).
   - `internal/hostinfo/cpu_test.go`: the real reader grows while the test works, and ps's time
     forms. `cpu_linux_test.go` reads a stat line whose command name holds spaces and
     parentheses, and four years of processor time.

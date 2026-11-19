@@ -402,17 +402,18 @@ func (r *Reconciler) sampleCPU(views []procView, used map[int]time.Duration, now
 			}
 			continue
 		}
-		// each process's number moves only by cpuMoved, as the component's does
+		// each process's number moves only by cpuMoved; the component's is the sum of its
+		// processes' as written, so the two always agree
 		out[id] = map[string]int64{}
+		var total int64
 		for name, pct := range parts[id] {
 			if was, ok := r.cpuParts[id][name]; ok && !cpuMoved(was, pct) {
 				pct = was
 			}
 			out[id][name] = pct
+			total += pct
 		}
-		if was, ok := r.cpu[id]; !ok || cpuMoved(was, sum[id]) {
-			r.cpu[id] = sum[id]
-		}
+		r.cpu[id] = total
 	}
 	r.cpuParts = out
 	// a component with nothing running has no number
@@ -423,8 +424,12 @@ func (r *Reconciler) sampleCPU(views []procView, used map[int]time.Duration, now
 	}
 }
 
-// cpuMoved: from prev to pct is a change worth a write (cpuStep points, or a tenth).
+// cpuMoved: from prev to pct is a change worth a write: cpuStep points and a tenth, or a
+// process gone idle (a low number would otherwise stay on an idle process for ever).
 func cpuMoved(prev, pct int64) bool {
+	if pct == 0 {
+		return prev != 0
+	}
 	d := pct - prev
 	if d < 0 {
 		d = -d
