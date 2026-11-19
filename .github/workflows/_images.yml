@@ -1,0 +1,50 @@
+# Reusable image size gate (Story 22.3 AC4 / TC3).
+#
+# Builds the four compose images (api, streaming, pipeline, web) from this commit's
+# Dockerfiles, as release.yml's build-images job does but for linux/amd64 only and loaded
+# into the runner's Docker instead of pushed, then runs tools/image-size-guard.sh over
+# them. An image past its budget fails the job with its size, budget and overshoot (a
+# `FAIL` line and an error annotation), and with it ci-success: the merge gate, and the
+# tag gate, which tags only a main commit whose CI run passed.
+#
+# A pull request runs it when a Dockerfile, a .dockerignore, a dependency manifest the
+# images install from, the guard or this file changes (.github/ci-paths.yml's `images`);
+# a push to main runs it always, so a size change from source alone still stops the tag.
+
+name: Image sizes
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  images:
+    name: image sizes
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      # Each Dockerfile takes the repository root as its context (release.yml's builds too).
+      - name: Build the four images
+        env:
+          REGISTRY: maktaba-ci
+          VERSION: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          for svc in api streaming pipeline web; do
+            echo "::group::${svc}"
+            docker build --platform linux/amd64 \
+              -f "${svc}/Dockerfile" \
+              --build-arg VERSION=ci --build-arg COMMIT="${VERSION}" \
+              -t "${REGISTRY}/${svc}:${VERSION}" .
+            echo "::endgroup::"
+          done
+
+      - name: Image size guard
+        env:
+          MAKTABA_REGISTRY: maktaba-ci
+          MAKTABA_VERSION: ${{ github.sha }}
+        run: bash tools/image-size-guard.sh

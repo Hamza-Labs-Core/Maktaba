@@ -686,6 +686,36 @@ build_artifacts:
   - 'web/**'
   - '.github/workflows/_build-artifacts.yml'
 
+# Story 22.3 AC4 / TC3: the four compose images built and held to their size budgets
+# (_images.yml). On a pull request what most moves an image's size: its Dockerfile, its
+# .dockerignore, the dependency manifests it installs from, and the guard; a push to main
+# runs it always, so a size change from source alone still stops the tag.
+images:
+  - *ci
+  - '.github/workflows/_images.yml'
+  - 'tools/image-size-guard.sh'
+  - '.dockerignore'
+  - 'api/Dockerfile'
+  - 'api/.dockerignore'
+  - 'api/go.mod'
+  - 'api/go.sum'
+  - 'streaming/Dockerfile'
+  - 'streaming/.dockerignore'
+  - 'streaming/go.mod'
+  - 'streaming/go.sum'
+  - 'shared/**/go.mod'
+  - 'shared/**/go.sum'
+  - 'tools/healthcheck/**'
+  - 'pipeline/Dockerfile'
+  - 'pipeline/.dockerignore'
+  - 'pipeline/pyproject.toml'
+  - 'pipeline/uv.lock'
+  - 'web/Dockerfile'
+  - 'web/.dockerignore'
+  - 'web/docker-Caddyfile'
+  - 'web/package.json'
+  - 'web/pnpm-lock.yaml'
+
 # ---- install and packaging ------------------------------------------------------------
 
 node_packaging:
