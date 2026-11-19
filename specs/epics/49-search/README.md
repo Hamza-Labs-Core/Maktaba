@@ -416,3 +416,44 @@ runs only when the person opens that tab or submits from it; Results never waits
   machine whose payload has `postgres-18/` doesn't fetch, and a fetched 16 copy follows an 18
   home. A home promoted from a fetched 16 copy runs on 16, the `[postgres] home` the switch
   pins, until a person moves it.
+
+### 49.4 Arabic normalisation (`maktaba_search` v2) and word forms (`maktaba_stem`)
+
+- **Normalisation** is `maktaba_normalize(text)` (migration 0231), one `translate()`:
+  - harakat (U+064B–U+0652, U+0670) and tatweel (U+0640) go;
+  - أ إ آ ٱ → ا, ى → ي, ة → ه, ؤ → و, ئ → ي;
+  - Arabic-Indic and Persian digits → ASCII;
+  - Latin keeps `maktaba_search`'s `unaccent` step.
+- **Word forms** are the `maktaba_stem` configuration: the same normalisation, then PostgreSQL's
+  own Snowball stemmers (Arabic for words, English for ASCII words). `maktaba_stem_prepare()`
+  first strips what the Arabic stemmer leaves:
+  - the prefixes وال بال فال كال لل;
+  - the imperfect tense's ي ت ن before a three-letter root (a four-letter word, or one with
+    ون ين ان وا after the root). On 16 and 18 the stemmer alone leaves `يصبر` as it is.
+
+  So الصبر, بالصبر, صبروا, يصبر, تصبر and نصبر all become صبر, and three-letter words such as
+  يوم, تمر and نور keep their first letter. Remaining roughness (يزيد → زيد, والصابرات →
+  صابرا) is for story 49.9's relevance check to measure. The exact form is weighted above
+  its stem, so the word as typed ranks first.
+- **The two sides of a match** are `maktaba_tsv` / `maktaba_tsv_stem` (a text) and
+  `maktaba_query` / `maktaba_query_stem` (a query, `websearch_to_tsquery`), all `IMMUTABLE`,
+  ready for story 49.5's indexes.
+- **SQLite** normalises in the application (`api/internal/textnorm`, the same folding) before
+  FTS5 indexes or matches a text. A test keeps it equal to Postgres's function. Word forms
+  are Postgres only (§4).
+- **Proof** (`api/internal/textnorm`), on Postgres 16 and 18 through the real migrations:
+  - اسلام finds إسلام, هدي finds هدى, مدرسه finds مدرسة, الله finds اللَّهُ;
+  - يصبر, تصبر and صبروا find الصبر, with the exact word ranked first;
+  - the Go and SQL foldings agree on a corpus;
+  - on SQLite, FTS5 over the normalised text finds every spelling, and an unnormalised query
+    doesn't (the control).
+- **How it differs from the spec.**
+  - The normalisation is a SQL function, not a custom `unaccent` rules file. A file in the
+    server's `tsearch_data` would have to reach every Postgres the migrations run on: the
+    bundles, Docker Compose's image, CI's service containers, an operator's own server. A
+    configuration that names a missing file fails its migration there.
+  - The migration doesn't rebuild `transcript_segments.search_tsv` (23.1 M rows on the home).
+    The repo's migration rules forbid long-running DDL and rewrites in a migration (rules 4
+    and 5), and nothing needs it. Story 49.5's per-video documents carry the normalised text,
+    and story 49.7's passages match the lines of the videos found on the fly, a bounded set.
+    `search_tsv` serves the line path, unchanged, until story 49.13 removes it.
