@@ -5988,7 +5988,8 @@
         "ep-get-components-id",
         "ep-put-components-id",
         "ep-delete-components-id",
-        "ep-get-plugins"
+        "ep-get-plugins",
+        "ep-post-plugins-id-install"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-38-plugin-files.md",
@@ -6001,7 +6002,8 @@
         "GET /components/{id}",
         "PUT /components/{id}",
         "DELETE /components/{id}",
-        "GET /plugins"
+        "GET /plugins",
+        "POST /plugins/{id}/install"
       ],
       "db_tables": [],
       "metadata": {
@@ -6247,7 +6249,8 @@
       "related": [
         "epic-54-plugins",
         "ep-get-components",
-        "ep-get-plugins"
+        "ep-get-plugins",
+        "ep-post-plugins-id-install"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-46-maktaba-plugin-lifecycle.md",
@@ -6256,7 +6259,8 @@
       },
       "api_endpoints": [
         "GET /components",
-        "GET /plugins"
+        "GET /plugins",
+        "POST /plugins/{id}/install"
       ],
       "db_tables": [],
       "metadata": {
