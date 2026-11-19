@@ -2,8 +2,9 @@
 -- +goose StatementBegin
 -- Slot 0232 (Epic 49 story 49.5): one keyword search document per video, as on Postgres, and
 -- its FTS5 index: the application writes the normalised title, speakers and body into
--- video_search_docs_fts (api/internal/textnorm's folding; its rowid is the document's), and
--- SQLite ranks with FTS5's bm25(). No word forms on SQLite (§4 of the epic).
+-- video_search_docs_fts (api/internal/textnorm's folding), keyed by video_id (a rowid of a
+-- table without an INTEGER PRIMARY KEY may change at a VACUUM), and SQLite ranks with FTS5's
+-- bm25(). No word forms on SQLite (§4 of the epic).
 CREATE TABLE IF NOT EXISTS video_search_docs (
     video_id      TEXT PRIMARY KEY REFERENCES videos(id) ON DELETE CASCADE,
     library_id    TEXT NOT NULL,
@@ -22,7 +23,7 @@ CREATE INDEX IF NOT EXISTS video_search_docs_library_idx ON video_search_docs (l
 
 -- +goose StatementBegin
 CREATE VIRTUAL TABLE IF NOT EXISTS video_search_docs_fts
-    USING fts5(title, speakers, body, tokenize = 'unicode61 remove_diacritics 2');
+    USING fts5(video_id UNINDEXED, title, speakers, body, tokenize = 'unicode61 remove_diacritics 2');
 -- +goose StatementEnd
 
 -- +goose StatementBegin
@@ -30,7 +31,7 @@ CREATE VIRTUAL TABLE IF NOT EXISTS video_search_docs_fts
 CREATE TRIGGER IF NOT EXISTS video_search_docs_fts_ad
     AFTER DELETE ON video_search_docs
     BEGIN
-        DELETE FROM video_search_docs_fts WHERE rowid = old.rowid;
+        DELETE FROM video_search_docs_fts WHERE video_id = old.video_id;
     END;
 -- +goose StatementEnd
 

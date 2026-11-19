@@ -155,14 +155,14 @@ jobs:
 
       # Epic 49 stories 49.4 and 49.5: the search schema on PostgreSQL 18 with pg_textsearch
       # preloaded: Arabic normalisation, and video_search_docs' two BM25 indexes (exact and
-      # stemmed), made and answering ranked queries through themselves (on 16, the unit tier,
-      # the BM25 test skips)
+      # stemmed), made and answering ranked queries through themselves (on 16, the integration
+      # tier, the BM25 test skips)
       - name: Keyword search's schema on PostgreSQL 18 (pg_textsearch)
         working-directory: api
         run: |
           set -euo pipefail
           MAKTABA_TEST_PG_URL="postgres://postgres@127.0.0.1:$PG18_PORT/postgres?sslmode=disable" \
-            go test -count=1 -v ./internal/textnorm/ | tee "$RUNNER_TEMP/search18.out"
+            go test -count=1 -v ./internal/textnorm/ ./internal/searchindex/ | tee "$RUNNER_TEMP/search18.out"
           for t in TestSlot0232BM25Indexes TestSlot0232UpAndDownOnPostgres TestArabicSearchOnPostgres; do
             grep -q -- "--- PASS: $t " "$RUNNER_TEMP/search18.out" || { echo "::error::$t did not pass on PostgreSQL 18"; exit 1; }
           done

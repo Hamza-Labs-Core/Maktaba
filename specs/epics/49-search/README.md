@@ -487,8 +487,9 @@ runs only when the person opens that tab or submits from it; Results never waits
 - **Without pg_textsearch** (PostgreSQL 16, an operator's own server, a machine's fetched
   Postgres) the table is there with no BM25 index. Keyword search keeps its line path.
 - **SQLite** gets the same table, and an FTS5 table `video_search_docs_fts` (title, speakers,
-  body). The application writes it with `api/internal/textnorm`'s normalised text, under the
-  document's rowid. A trigger deletes a document's FTS5 row with the document.
+  body, keyed by an unindexed `video_id`: a rowid of a table without an integer key can change
+  at a `VACUUM`). The application writes it with `api/internal/textnorm`'s normalised text. A
+  trigger deletes a document's FTS5 row with the document.
 - **Proof:**
   - `api/internal/searchindex`, on Postgres 16 and 18 through the real migrations: the
     schema goes up, down (slot 0230's exclusion back) and up again.

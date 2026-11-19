@@ -280,20 +280,18 @@ func TestSlot0232OnSQLite(t *testing.T) {
 	run(t, db, "up", up)
 	add := func(vid, title, body string) {
 		t.Helper()
-		res, err := db.Exec(`INSERT INTO video_search_docs (video_id, library_id, title, body, transcript_id) VALUES (?, 'l', ?, ?, 't')`, vid, title, body)
-		if err != nil {
+		if _, err := db.Exec(`INSERT INTO video_search_docs (video_id, library_id, title, body, transcript_id) VALUES (?, 'l', ?, ?, 't')`, vid, title, body); err != nil {
 			t.Fatal(err)
 		}
-		id, _ := res.LastInsertId()
-		if _, err := db.Exec(`INSERT INTO video_search_docs_fts (rowid, title, speakers, body) VALUES (?, ?, '', ?)`,
-			id, textnorm.Normalize(title), textnorm.Normalize(body)); err != nil {
+		if _, err := db.Exec(`INSERT INTO video_search_docs_fts (video_id, title, speakers, body) VALUES (?, ?, '', ?)`,
+			vid, textnorm.Normalize(title), textnorm.Normalize(body)); err != nil {
 			t.Fatal(err)
 		}
 	}
 	add("v1", "درس في الصبر", "إن الصبر عند المصيبة")
 	add("v2", "الطهارة", "كلمة عن الوضوء")
 	var got string
-	if err := db.QueryRow(`SELECT d.video_id FROM video_search_docs_fts f JOIN video_search_docs d ON d.rowid = f.rowid
+	if err := db.QueryRow(`SELECT d.video_id FROM video_search_docs_fts f JOIN video_search_docs d ON d.video_id = f.video_id
 		WHERE video_search_docs_fts MATCH ? ORDER BY bm25(video_search_docs_fts) LIMIT 1`, textnorm.Normalize("المصيبه")).Scan(&got); err != nil || got != "v1" {
 		t.Fatalf("FTS5 finds %q (%v), want v1", got, err)
 	}
