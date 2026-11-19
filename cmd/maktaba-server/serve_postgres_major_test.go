@@ -100,7 +100,7 @@ func TestAppBundleGateTakesTheMajorItRuns(t *testing.T) {
 // one onto a release from the upgrade on goes ahead; on a 16 home nothing is refused.
 func TestRestoreRefusesAReleaseOfTheOtherMajor(t *testing.T) {
 	root := t.TempDir()
-	if err := sameMajorRelease(root, "0.3.140"); err != nil {
+	if err := sameMajorRelease(root, "0.3.140", "0.3.153"); err != nil {
 		t.Fatalf("a 16 home: %v", err)
 	}
 	for _, f := range []string{filepath.Join("postgres-18", "PG_VERSION"), filepath.Join("state", "database.json")} {
@@ -111,12 +111,31 @@ func TestRestoreRefusesAReleaseOfTheOtherMajor(t *testing.T) {
 	_ = os.WriteFile(filepath.Join(root, "postgres-18", "PG_VERSION"), []byte("18\n"), 0o600)
 	_ = os.WriteFile(filepath.Join(root, "state", "database.json"), []byte(`{"version":"0.3.151","state":"migrated"}`), 0o600)
 	for rel, refused := range map[string]bool{"0.3.140": true, "0.3.151": true, "0.3.153": false} {
-		err := sameMajorRelease(root, rel)
+		err := sameMajorRelease(root, rel, "0.3.153")
 		if (err != nil) != refused {
 			t.Errorf("a restore onto %s: %v, want refused %v", rel, err, refused)
 		}
 		if err != nil && !strings.Contains(err.Error(), "PostgreSQL 16") {
 			t.Errorf("%s: %v", rel, err)
 		}
+	}
+}
+
+// An 18 home whose 16 cluster keeps no record (an install from before the record): a
+// restore onto a release older than the one running is refused (it may have run on 16);
+// onto the running one it goes ahead (review of #1445).
+func TestRestoreWithNoRecordOfThe16Cluster(t *testing.T) {
+	root := t.TempDir()
+	for _, f := range []string{filepath.Join("postgres-18", "PG_VERSION"), filepath.Join("postgres", "PG_VERSION")} {
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(root, f)), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		_ = os.WriteFile(filepath.Join(root, f), []byte("x\n"), 0o600)
+	}
+	if err := sameMajorRelease(root, "0.3.140", "0.3.153"); err == nil || !strings.Contains(err.Error(), "no record") {
+		t.Errorf("an older release with no 16 record: %v", err)
+	}
+	if err := sameMajorRelease(root, "0.3.153", "0.3.153"); err != nil {
+		t.Errorf("the running release: %v", err)
 	}
 }
