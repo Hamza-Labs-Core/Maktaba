@@ -278,19 +278,20 @@ async def test_a_write_cut_short_leaves_no_document_without_its_search_row(
     lib = await make_library(db)
     vid = await make_video(db, lib, title="درس")
     await _transcript(db, vid, ["الصبر عند المصيبة"])
-    real = stage.normalize
+    real = normalize
+    target = "maktaba_pipeline.engine.stages.keyword_index.normalize"
 
     def broken(s: str) -> str:
         raise RuntimeError("cut short")
 
-    monkeypatch.setattr(stage, "normalize", broken if not is_pg(db) else real)
+    monkeypatch.setattr(target, broken if not is_pg(db) else real)
     doc = await stage.build(db, vid)
     assert doc is not None
     if not is_pg(db):
         with pytest.raises(RuntimeError):
             await stage._write(db, doc)
         assert await _doc(db, vid) is None
-    monkeypatch.setattr(stage, "normalize", real)
+    monkeypatch.setattr(target, real)
     assert (await _index(db, rt, vid))["keyword_index"] == "written"
     if not is_pg(db):
         assert await db.fetchval("SELECT count(*) FROM video_search_docs_fts") == 1
