@@ -626,7 +626,8 @@ runs only when the person opens that tab or submits from it; Results never waits
   A page of 20 videos, some 6,000 lines, takes 12 to 28 ms locally. Working `maktaba_tsv`
   out line by line in SQL costs about 40 µs a line, so it is not used. A line with
   punctuation inside a word (Qur'an, well-known) or another form of the word goes to
-  Postgres, which decides. A query with websearch's operators (a quoted phrase, `-word`,
+  Postgres, which decides: at most 300 lines, within the budget's rest. A common word inside
+  others (الله in والله) sends many, and past either bound the lines matched as typed stand. A query with websearch's operators (a quoted phrase, `-word`,
   `OR`) keeps the line path's passages. The query has a 60 ms budget. Past it, the page
   shows the line path's passages, and a video found only through its document shows 0
   matches there. A BM25 video's lines are counted for the page shown, not for the whole

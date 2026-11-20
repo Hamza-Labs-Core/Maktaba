@@ -409,6 +409,11 @@ func (h *Handler) normalisedLines(ctx context.Context, q string, videoIDs []stri
 			}
 		}
 	}
+	// lines for Postgres: within maybeCap (a common word inside others, والله for الله,
+	// sends many), and within the budget's rest; past either, the lines matched here stand
+	if len(maybe) > maybeCap {
+		maybe = maybe[:maybeCap]
+	}
 	if len(maybe) > 0 {
 		ids := make([]int64, len(maybe))
 		byID := map[int64]*line{}
@@ -433,15 +438,21 @@ func (h *Handler) normalisedLines(ctx context.Context, q string, videoIDs []stri
 			 WHERE s.id IN (`+placeholders(ids, &args)+`)
 			   AND (public.maktaba_tsv(s.text) @@ q.e OR public.maktaba_tsv_stem(s.text) @@ q.st)`, args...)
 		if err != nil {
-			return late(err)
+			if pctx.Err() == nil || ctx.Err() != nil {
+				return late(err)
+			}
+			rows = nil // out of time: the lines matched here stand
 		}
-		for rows.Next() {
+		for rows != nil && rows.Next() {
 			var id int64
 			var score float64
 			var words []string
 			if err := rows.Scan(&id, &score, pq.Array(&words)); err != nil {
 				_ = rows.Close()
-				return late(err)
+				if pctx.Err() == nil || ctx.Err() != nil {
+					return late(err)
+				}
+				break
 			}
 			if l := byID[id]; l != nil {
 				l.hit.Score = score
@@ -449,11 +460,13 @@ func (h *Handler) normalisedLines(ctx context.Context, q string, videoIDs []stri
 				marks[id] = words
 			}
 		}
-		if err := rows.Close(); err != nil {
-			return late(err)
-		}
-		if err := rows.Err(); err != nil {
-			return late(err)
+		if rows != nil {
+			cerr, rerr := rows.Close(), rows.Err()
+			for _, err := range []error{cerr, rerr} {
+				if err != nil && (pctx.Err() == nil || ctx.Err() != nil) {
+					return late(err)
+				}
+			}
 		}
 	}
 	// each video's lines, best first (the exact ones above the word forms), then in order
@@ -478,18 +491,23 @@ func (h *Handler) normalisedLines(ctx context.Context, q string, videoIDs []stri
 	return hits, counts, marks, true, nil
 }
 
+// maybeCap bounds the lines normalisedLines asks Postgres about. Each costs it some 40 µs
+// twice (maktaba_tsv and its stemmed pair): 300 fit in the budget with the rest of it.
+var maybeCap = 300
+
 // exactLine lifts a line that says the query's words as typed (normalised) above every
-// line that says another form of them: a form's rank is below 1.
+// line that says another form of them (a form's ts_rank stays far below it).
 const exactLine = 1000
 
 // queryHasOperators reports whether q uses websearch_to_tsquery's operators: a quoted
 // phrase, a word negated with -, or OR between words.
 func queryHasOperators(q string) bool {
-	if strings.ContainsAny(q, `"-`) {
+	if strings.Contains(q, `"`) {
 		return true
 	}
 	for _, w := range strings.Fields(q) {
-		if strings.EqualFold(w, "or") {
+		// - negates a word it starts (well-known is one word, not a negation)
+		if strings.EqualFold(w, "or") || strings.HasPrefix(w, "-") {
 			return true
 		}
 	}

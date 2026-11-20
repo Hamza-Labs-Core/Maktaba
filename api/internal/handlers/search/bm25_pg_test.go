@@ -208,8 +208,10 @@ func TestBM25_VariantsHaveMatchesAndPassages(t *testing.T) {
 		{"اسلام", "إسلام", "حديث عن الإيمان و إسلام المرء"},
 		{"هدي", "هدى", "هذا هدى للمتقين"},
 		{"مدرسه", "مدرسة", "ذهب إلى مدرسة القرية، ثم عاد"},
-		{"صبروا", "الصبر", "إن الصبر عند المصيبة الأولى"}, // another form of the word
-		{"cafe", "café", "a talk at the café"},            // the exact configuration's unaccent
+		{"صبروا", "الصبر", "إن الصبر عند المصيبة الأولى"},  // another form of the word
+		{"cafe", "café", "a talk at the café"},             // the exact configuration's unaccent
+		{"Qur'an", "Qur'an", "reading the Qur'an at dawn"}, // one lexeme to the parser
+		{"comes", "coming", "he keeps coming back"},        // an English stem Snowball ends with e
 	}
 	for i, c := range cases {
 		v := pgUUID(121 + i)
@@ -240,6 +242,38 @@ func TestBM25_VariantsHaveMatchesAndPassages(t *testing.T) {
 			"/api/search/passages?sid="+resp.SearchID+"&video_id="+v, ""), 200)
 		if page.Total != 1 || !strings.Contains(page.Items[0].Snippet, "<mark>"+c.said+"</mark>") {
 			t.Fatalf("%s: passages page %+v", c.q, page)
+		}
+	}
+}
+
+// A common word inside many others (الله in والله, بالله) sends many lines to Postgres's
+// stemmer: past maybeCap the rest are not asked, and the lines matched as typed still count
+// and are marked.
+func TestBM25_CommonWordWithinOthers(t *testing.T) {
+	db := bm25DB(t)
+	v := pgUUID(141)
+	tr := pgVideo(t, db, v, libA, "درس")
+	lines := []string{"قال الله تعالى", "الله أكبر"}
+	for i := 0; i < 20; i++ {
+		lines = append(lines, "والله "+strconv.Itoa(i), "بالله "+strconv.Itoa(i))
+	}
+	pgTranscript(t, db, pgUUID(241), v, tr, true, lines...)
+	pgDoc(t, db, v)
+	buildIndexes(t, db)
+	old := maybeCap
+	maybeCap = 5
+	t.Cleanup(func() { maybeCap = old })
+	h := &Handler{DB: db}
+	hits, counts, marks, ok, err := h.normalisedLines(context.Background(), "الله", []string{v}, 10)
+	if err != nil || !ok {
+		t.Fatalf("normalisedLines: %v, ok %v", err, ok)
+	}
+	if counts[v] != 2 || len(hits[v]) != 2 {
+		t.Fatalf("counts %v, %d passages: want the 2 lines saying الله", counts, len(hits[v]))
+	}
+	for _, hit := range hits[v] {
+		if len(marks[hit.SegmentID]) == 0 || marks[hit.SegmentID][0] != "الله" {
+			t.Fatalf("marks of %q: %q", hit.Snippet, marks[hit.SegmentID])
 		}
 	}
 }
