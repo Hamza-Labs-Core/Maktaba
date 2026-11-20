@@ -17,6 +17,7 @@ requests by .github/workflows/_apple-apps.yml, so a tag never archives an app CI
 from __future__ import annotations
 
 import json
+import re
 import struct
 import subprocess
 from pathlib import Path
@@ -340,3 +341,15 @@ def test_every_simulator_is_made_by_the_shared_pick() -> None:
             run = s.get("run", "")
             if "simctl create" in run:
                 raise AssertionError(f"{name}: {s.get('name')} makes its own simulator")
+
+
+def test_the_apps_need_the_27_systems_and_the_mac_app_macos_15() -> None:
+    """The iPhone, iPad and Apple TV apps' minimum is the 27 systems CI tests them on (the
+    xcode-27 image has no 26 simulators); the Mac app keeps macOS 15. The same in project.yml,
+    the generated project and MaktabaKit's package."""
+    assert PROJECT["options"]["deploymentTarget"] == {"iOS": "27.0", "macOS": "15.0", "tvOS": "27.0"}
+    for setting, want in (("IPHONEOS", "27.0"), ("TVOS", "27.0"), ("MACOSX", "15.0")):
+        found = set(re.findall(rf"{setting}_DEPLOYMENT_TARGET = ([0-9.]+);", PBXPROJ))
+        assert found == {want}, (setting, found)
+    package = (APPLE / "MaktabaKit/Package.swift").read_text(encoding="utf-8")
+    assert 'platforms: [.iOS("27.0"), .macOS("15.0"), .tvOS("27.0")]' in package

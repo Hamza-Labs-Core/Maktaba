@@ -28,8 +28,8 @@ App Store Connect record doesn't exist yet, the other apps still upload.
    27 SDK or later from April 2027 (ITMS-90725), so a leg that finds no Xcode 27, or no 27 SDK
    for its platform, fails before it builds. After the archive, `xcode.py check-sdk --min 27`
    reads the archived app's `DTSDKName`, `DTPlatformVersion` and `DTXcode` and stops the leg
-   before the upload if any is older than 27. The deployment targets stay iOS 26, tvOS 26 and
-   macOS 15: the 27 SDKs build for them.
+   before the upload if any is older than 27. The apps need iOS and iPadOS 27 and tvOS 27 (the
+   systems CI tests them on); the Mac app keeps macOS 15.
 3. Versions: the tag's version is the app version (`v0.3.45` → `0.3.45`; a `-rc.N` suffix is
    dropped). A hand run uses the latest tag. The build number is the UTC time of the run
    (`YYYYMMDD.HHMMSS`), so every upload is new and higher than the last.
@@ -156,8 +156,7 @@ in this release:
 
 `.github/workflows/_apple-apps.yml` makes a throwaway simulator for each UI-test job. Every
 Apple job now runs on the `xcode-27` image, whose simulators are iOS 27.0, 27.1 (the iPhone
-Duo's alone) and 27.2, and tvOS 27.0 and 27.2; it has no iOS or tvOS 26 runtime, so CI runs
-the UI tests on 27 only, and the iOS 26 and tvOS 26 minimums are not exercised there. The
+Duo's alone) and 27.2, and tvOS 27.0 and 27.2, the apps' own minimums (iOS 27, tvOS 27). The
 pick by "newest runtime, newest device type" alone is refused under Xcode 27 (found on a Mac
 with **Xcode 27.1**, build 27A9275, on 2026-11-12), so `tools/apple/xcode.py simulator` tries
 pairs in order (below).

@@ -9,7 +9,7 @@ SwiftUI apps that talk to a home's REST API, like the TV apps.
 | Maktaba Player Mac | macOS 15+, Apple silicon | `com.hamzalabs.maktaba.player.mac` | browse and watch |
 | Maktaba Remote | iPhone (iPhone Duo included) | `com.hamzalabs.maktaba.remote` | run a home (its admins only): needs attention, the queue and its running jobs, libraries, machines, the home's state, its updates and processes |
 | Maktaba Remote iPad | iPad | `com.hamzalabs.maktaba.remote.tablet` | the same, on iPad |
-| Maktaba TV | Apple TV (tvOS 26) | `com.hamzalabs.maktaba.tv` | browse and watch on the television; sources in [`apps/tv/tvos`](../tv/tvos/) |
+| Maktaba TV | Apple TV (tvOS 27) | `com.hamzalabs.maktaba.tv` | browse and watch on the television; sources in [`apps/tv/tvos`](../tv/tvos/) |
 
 `MaktabaKit/` is the Swift package they share: the API client (Bearer tokens, one refresh on
 a 401, `X-Maktaba-Client: native`), stream sessions (signed URLs; `StreamProxy` hands every `/stream/` request to
@@ -112,8 +112,9 @@ permission and error screens keep their own English and Arabic tables in Maktaba
 
 ## Open and run
 
-The apps are built with **Xcode 27** (the iOS, tvOS and macOS 27 SDKs) for iOS 26, tvOS 26
-and macOS 15 and later. App Store Connect wants the 27 SDKs from April 2027 (ITMS-90725), so
+The apps are built with **Xcode 27** (the iOS, tvOS and macOS 27 SDKs) for iOS and iPadOS 27,
+tvOS 27 and macOS 15 and later: the iPhone, iPad and Apple TV apps need the 27 systems, the
+same ones CI runs their tests on. App Store Connect wants the 27 SDKs from April 2027 (ITMS-90725), so
 CI's jobs and the TestFlight uploads run on GitHub's `xcode-27` runner image and fail on an
 older Xcode (`tools/apple/xcode.py`, `docs/testflight.md`).
 

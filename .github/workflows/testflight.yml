@@ -115,7 +115,8 @@ jobs:
       # The newest released Xcode on the runner, and it must be 27 or later with the leg's
       # device SDK 27 or later, or the leg fails here, before anything is built: an app built
       # with an older SDK would be refused by App Store Connect from April 2027 (ITMS-90725).
-      # The deployment targets stay iOS 26, tvOS 26 and macOS 15 (apps/apple/project.yml).
+      # The apps need iOS 27 and tvOS 27, the systems CI tests on; the Mac app macOS 15
+      # (apps/apple/project.yml).
       - name: Select Xcode
         run: python3 tools/apple/xcode.py select --min 27 --sdk "$SDK"
 

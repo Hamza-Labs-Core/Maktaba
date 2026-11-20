@@ -937,7 +937,7 @@ export const APPS = [
               head: [t("Platform", "المنصة"), t("How to get it", "طريقة الحصول عليه")],
               rows: [
                 [
-                  t("Apple TV (tvOS 26)", "آبل تي في (tvOS 26)"),
+                  t("Apple TV (tvOS 27)", "آبل تي في (tvOS 27)"),
                   t(
                     "TestFlight, installed from the Apple TV's App Store and signed in with the tester's Apple ID",
                     "تطبيق TestFlight، يُثبَّت من متجر آبل تي في ويُسجَّل الدخول فيه بمعرّف آبل الخاص بالمختبِر"
