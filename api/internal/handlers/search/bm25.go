@@ -358,7 +358,8 @@ func (h *Handler) normalisedLines(ctx context.Context, q string, videoIDs []stri
 	rows, err := h.DB.QueryContext(pctx, `
 		SELECT s.id, t.video_id::text, s.start_sec, s.end_sec, s.text
 		  FROM transcripts t JOIN transcript_segments s ON s.transcript_id = t.id
-		 WHERE t.is_active AND t.video_id IN (`+placeholders(videoIDs, &args)+`)`, args...)
+		 WHERE t.is_active AND t.video_id IN (`+placeholders(videoIDs, &args)+`)
+		 ORDER BY t.video_id, s.seq`, args...) // in order: maybeCap keeps the earliest lines
 	if err != nil {
 		return late(err)
 	}
