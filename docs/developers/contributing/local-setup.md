@@ -27,8 +27,8 @@ Both Apple Silicon and Intel work. The MLX transcription backend needs Apple Sil
 elsewhere the pipeline falls back to another Whisper backend.
 
 For the native apps you also need the platform toolchain: Xcode 27 or later for `apps/apple/`
-and `apps/tv/tvos/` (CI and the TestFlight uploads build with it), the Android SDK and JDK 17 for `apps/android/` and `apps/tv/`, and Rust
-for the Tauri desktop app.
+and `apps/tv/tvos/` (CI and the TestFlight uploads build with it), the Android SDK and JDK 17
+for `apps/android/` and `apps/tv/`, and Rust for the Tauri desktop app.
 
 ## First run
 

@@ -145,7 +145,9 @@ def make_simulator(kind: str, name: str, create: Callable[[str, str, str], str |
             print(f"{kind}: {label} ({devtype}, {runtime})", file=sys.stderr)
             return udid
         tried.append(label)
-    print(f"::error::no {kind} simulator could be made; tried: {', '.join(tried) or 'no matching device type in any runtime'}")
+    # stderr: the workflow reads stdout into udid=$(...), and that is lost when the step fails
+    print(f"::error::no {kind} simulator could be made; tried: {', '.join(tried) or 'no matching device type in any runtime'}",
+          file=sys.stderr)
     return None
 
 
