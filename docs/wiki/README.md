@@ -168,3 +168,5 @@ The wiki is derived from:
 ---
 
 _Generated from `docs/wiki/db/`. Edit the JSON and regenerate; do not hand-edit derived markdown._
+
+_[epic-status.md](epic-status.md) is kept by hand, but its counts are derived: change a story's row (and its "What is left" entry), then run `python3 docs/wiki/db/epic_status.py`; never edit the counts by hand (CI runs `--check`)._

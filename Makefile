@@ -786,12 +786,16 @@ verify-reproducibility:  ## Build twice, diff sha256 sums (TC1).
 	@bash tools/verify-reproducibility.sh
 
 # ---------------------------------------------------------------------------
-# SBOM (Story 22.2 stub; Story 23.7 wires CVE gating)
+# SBOM and CVE gate (Story 23.7)
 # ---------------------------------------------------------------------------
 
 .PHONY: sbom
-sbom:  ## Generate CycloneDX SBOMs for every component (stub).
+sbom:  ## A CycloneDX SBOM per shipped component under artifacts/sbom (release.yml attaches them).
 	@bash tools/sbom.sh
+
+.PHONY: cve-gate
+cve-gate:  ## govulncheck + pip-audit + pnpm audit; fails on what blocks (CI's cve-gate job).
+	@bash tools/security/cve-gate.sh
 
 ##@ Formatting
 

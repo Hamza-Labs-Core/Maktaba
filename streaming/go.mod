@@ -1,6 +1,8 @@
 module github.com/Hamza-Labs-Core/Maktaba/streaming
 
-go 1.25.0
+go 1.26.0
+
+toolchain go1.26.11
 
 // No multipath TCP on our listeners (Go 1.24+ turns it on by default): it was the path
 // into CVE-2026-98432, the Linux IPv4 TCP use-after-free (docs/security/advisories/2026-11-01-linux-tcp-uaf.md).
@@ -11,20 +13,18 @@ require (
 	github.com/Hamza-Labs-Core/Maktaba/shared/go/clientip v0.0.0
 	github.com/Hamza-Labs-Core/Maktaba/shared/health/go v0.0.0
 	github.com/Hamza-Labs-Core/Maktaba/shared/log/go v0.0.0
+	github.com/coder/websocket v1.8.15
 	github.com/go-chi/chi/v5 v5.4.0
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.9.2
-	golang.org/x/net v0.58.0
-	golang.org/x/sync v0.22.0
-	golang.org/x/sys v0.47.0
-	golang.org/x/text v0.41.0
+	golang.org/x/net v0.62.0
+	golang.org/x/sync v0.24.0
+	golang.org/x/sys v0.49.0
+	golang.org/x/text v0.43.0
 	google.golang.org/grpc v1.83.2
 )
 
-require (
-	github.com/BurntSushi/toml v1.6.0 // indirect
-	github.com/coder/websocket v1.8.15 // indirect
-)
+require github.com/BurntSushi/toml v1.6.0 // indirect
 
 require (
 	github.com/Hamza-Labs-Core/Maktaba/shared/go/ports v0.0.0

@@ -83,9 +83,10 @@ jobs:
       unbuilt: ${{ steps.sets.outputs.unbuilt }}
     steps:
       - uses: actions/checkout@v6.0.2
+      # streaming's Go: the newer of the two modules it downloads (test_go_mod_download)
       - uses: actions/setup-go@v6.4.0
         with:
-          go-version-file: tools/broadcast-viewers/go.mod
+          go-version-file: streaming/go.mod
           cache: false
       # the viewers' module has no dependency (no go.sum); the home's tests are streaming's
       - name: Go modules

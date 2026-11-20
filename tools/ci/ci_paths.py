@@ -141,7 +141,7 @@ NOT_IN_CI: dict[str, str] = {
     "tools/icons/**": "makes the icons by hand",
     "tools/tv/**": "a spike's notes",
     "tools/check-prereqs.sh": "make prereqs, run by hand",
-    "tools/sbom.sh": "make sbom, run by hand",
+    "tools/sbom.sh": "release.yml's sbom job (story 23.7); its tests (tools/ci/tests) run on every pull request",
     "tools/verify-reproducibility.sh": "make verify-reproducibility, run by hand",
 }
 
