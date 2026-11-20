@@ -117,6 +117,9 @@ RULES: Mapping[tuple[str, str], Rule] = {
     ("series_episodes", "video_id"): Rule("union", ()),  # one series per video
     ("recommendation_dismissals", "video_id"): Rule("union", ("user_id", "reason_kind")),
     ("user_recs", "video_id"): Rule("drop"),
+    # keyword search's document (slot 0232): built from the video's active transcript, so
+    # the keeper's is built again from its own (story 49.6's planner sees it is missing)
+    ("video_search_docs", "video_id"): Rule("drop"),
     # ---- what groups, schedules or links the video (kept pointing at a playable file)
     ("topic_items", "video_id"): Rule("union", ("topic_id",)),
     ("clip_group_items", "video_id"): Rule("union", ()),  # one clip group per video
