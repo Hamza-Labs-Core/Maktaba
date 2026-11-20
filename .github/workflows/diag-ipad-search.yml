@@ -17,25 +17,28 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        variant: [asis, nodrop]
+        variant: [asis, presented]
     env:
       RESULTS: ${{ github.workspace }}/build/diag
     steps:
       - uses: actions/checkout@v6.0.2
       - name: Select Xcode
         run: python3 tools/apple/xcode.py select --min 27
-      - name: The app without its focus drop after submit
-        if: matrix.variant == 'nodrop'
+      - name: The app with an isPresented binding on its search field
+        if: matrix.variant == 'presented'
         run: |
           python3 - <<'PY'
           p = 'apps/apple/Player/Search/SearchScreen.swift'
           s = open(p).read()
-          old = 'if let now = letGo.begin(change, focused: typing) { perform(now) } else { typing = false }'
+          old = '    @FocusState private var typing: Bool\n'
           assert old in s
-          s = s.replace(old, 'if let now = letGo.begin(change, focused: false) { perform(now) }')
+          s = s.replace(old, old + '    @State private var presented = false\n', 1)
+          old = '.searchable(text: $model.query, placement: Self.placement,'
+          assert old in s
+          s = s.replace(old, '.searchable(text: $model.query, isPresented: $presented, placement: Self.placement,')
           open(p, 'w').write(s)
           PY
-          git diff --stat
+          git diff
       - name: Make, boot and settle the iPad simulator (as _apple-apps.yml)
         run: |
           set -euo pipefail
@@ -59,7 +62,9 @@ jobs:
         working-directory: apps/apple
         run: |
           set -uo pipefail
-          for t in testDiagRefocusAfterSubmit testATitleTappedWhileRefiningLetsTheKeyboardGoAndOpensItsPage; do
+          tests=(testDiagRefocusAfterSubmit testDiagRefocusAfterClear testDiagRefocusNoResults)
+          if [ "${{ matrix.variant }}" = presented ]; then tests=(testDiagRefocusAfterSubmit); fi
+          for t in "${tests[@]}"; do
             xcodebuild test -project Maktaba.xcodeproj -scheme "Maktaba Player iPad" -destination "id=$UDID" \
               -derivedDataPath "$RUNNER_TEMP/derived" CODE_SIGNING_ALLOWED=NO \
               -resultBundlePath "$RESULTS/$t.xcresult" \

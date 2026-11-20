@@ -251,28 +251,50 @@ final class PlayerSearchUITests: PlayerUITestCase {
 
     // DIAGNOSTIC ONLY (scratch branch diag/ipad-search-272, never merged): what the iPad's
     // search field does when tapped after a submitted search on iPadOS 27.2.
+    private func diagReport(_ s: String) {
+        let f = (field.value(forKey: "hasKeyboardFocus") as? Bool) ?? false
+        let line = "DIAG \(s): focus=\(f) hittable=\(field.isHittable) keyboard=\(app.keyboards.firstMatch.exists) value=\(field.value as? String ?? "nil")"
+        let t = XCTAttachment(string: line + "\n\n" + app.debugDescription)
+        t.name = "diag-\(s)-tree"
+        t.lifetime = .keepAlways
+        add(t)
+        let a = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        a.name = "diag-\(s)"
+        a.lifetime = .keepAlways
+        add(a)
+    }
+
+    private var diagFocused: Bool { (field.value(forKey: "hasKeyboardFocus") as? Bool) ?? false }
+
     func testDiagRefocusAfterSubmit() {
         home.stub("GET", "/api/search/suggest", body: #"{"suggestions": []}"#)
         openSearch()
-        func report(_ s: String) {
-            let f = (field.value(forKey: "hasKeyboardFocus") as? Bool) ?? false
-            print("DIAG \(s): focus=\(f) keyboards=\(app.keyboards.count) keyboardExists=\(app.keyboards.firstMatch.exists) value=\(field.value as? String ?? "nil")")
-            let a = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
-            a.name = "diag-\(s)"
-            a.lifetime = .keepAlways
-            add(a)
-        }
-        report("fresh")
-        field.tap(); sleep(2); report("fresh-tap")
         type("seerah\n")
         XCTAssertTrue(element("search.title.v3").waitForExistence(timeout: 10))
-        sleep(3); report("after-submit")
-        field.tap(); sleep(3); report("after-tap-1")
-        field.tap(); sleep(3); report("after-tap-2")
-        field.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.5)).tap(); sleep(3); report("after-tap-text")
-        field.doubleTap(); sleep(3); report("after-doubletap")
-        // last: fails the test when nothing holds the keyboard focus
-        app.typeText("x"); sleep(2); report("after-typeText")
+        sleep(3); diagReport("after-submit")
+        field.tap(); sleep(3); diagReport("after-tap-1")
+        XCTAssertTrue(diagFocused, "DIAGRESULT submit: the field takes focus after a submit")
+    }
+
+    func testDiagRefocusAfterClear() {
+        home.stub("GET", "/api/search/suggest", body: #"{"suggestions": []}"#)
+        openSearch()
+        type("seerah\n")
+        XCTAssertTrue(element("search.title.v3").waitForExistence(timeout: 10))
+        sleep(3)
+        field.buttons["Clear text"].tap(); sleep(3); diagReport("after-clear")
+        if !diagFocused { field.tap(); sleep(3); diagReport("after-clear-tap") }
+        XCTAssertTrue(diagFocused, "DIAGRESULT clear: the field takes focus after clearing")
+    }
+
+    func testDiagRefocusNoResults() {
+        home.stub("GET", "/api/search/suggest", body: #"{"suggestions": []}"#)
+        home.stub("POST", "/api/search", body: try! XCTUnwrap(home.fixture(named: "search-empty")))
+        openSearch()
+        type("zzzz\n")
+        sleep(5); diagReport("noresults-after-submit")
+        field.tap(); sleep(3); diagReport("noresults-after-tap")
+        XCTAssertTrue(diagFocused, "DIAGRESULT noresults: the field takes focus after a submit with no results")
     }
 
 }
