@@ -3,7 +3,7 @@ schema: 1
 kind: pr
 pr: 1478
 title: "video_search_docs and its BM25 indexes, with pg_textsearch in its own schema"
-date: 2026-11-20
+date: 2026-11-19
 session: 753035df-3990-44b1-9dff-f305bbe9c3cd
 agent: claude-code
 prs: [1476]
@@ -21,7 +21,7 @@ prs: [1476]
   - The bundled server creates pg_textsearch, as the superuser, in the schema `textsearch`.
   - A dedup merge drops the losing copy's document.
 - GLM-5.3's first review: one blocker, that the replica step ran the wrong test package. It
-  was fixed, with two minors; the rest are issues #1479 and #1483.
+  was fixed, with two minors; the rest are in issue #1479.
 - CI found two bugs that the reviews and local tests missed:
   - **A rule for the new foreign key.** `test_every_foreign_key_to_videos_has_a_rule` fails
     on any table pointing at `videos` that has no dedup merge rule.
@@ -46,5 +46,5 @@ prs: [1476]
   `migrate up` as a non-superuser.
 
 ## Open
-- Issue #1479: the BM25 build in `migrate up` is solved by #1482 (story 49.6).
-- Issue #1483: review minors.
+- Issue #1479: the review's minors, among them the BM25 build in `migrate up`, which #1482
+  (story 49.6, open) moves after the start.
