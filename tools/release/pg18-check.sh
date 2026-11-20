@@ -55,14 +55,15 @@ if "$pg18/initdb$x" -D "$(w "$data")" -U maktaba --auth=trust -E UTF8 --locale=C
     case "$out" in *pg_textsearch*) ok "shared_preload_libraries: $out" ;; *) fail "shared_preload_libraries: $out" ;; esac
     out="$(psql18 -d postgres \
         -c "CREATE EXTENSION pg_trgm; CREATE EXTENSION pgcrypto; CREATE EXTENSION unaccent; CREATE EXTENSION vector;" \
-        -c "CREATE EXTENSION pg_textsearch;" \
+        -c "CREATE SCHEMA textsearch; CREATE EXTENSION pg_textsearch SCHEMA textsearch;" \
         -c "SELECT string_agg(extname || ' ' || extversion, ', ' ORDER BY extname) FROM pg_extension WHERE extname <> 'plpgsql';" 2>&1)"
     case "$out" in
         *pg_textsearch*vector*) ok "extensions: $(printf '%s\n' "$out" | tail -1)" ;;
         *) fail "CREATE EXTENSION (pg_textsearch, vector, the contrib ones): $(printf '%s\n' "$out" | tail -3)" ;;
     esac
     # Maktaba's text search configuration (unaccent in front of simple), a BM25 index on it,
-    # and the ranked query of Epic 49 (ORDER BY <@> LIMIT), answered by the index
+    # and the ranked query of Epic 49 (ORDER BY <@> LIMIT), answered by the index, with
+    # pg_textsearch in its own schema as the bundled server makes it (pgbundle.textsearchSQL)
     # (in through stdin, UTF-8: Windows' command line would pass the Arabic in its code page)
     rc=0
     out="$(psql18 -d postgres 2>&1 <<'SQL'
@@ -72,8 +73,8 @@ CREATE TABLE docs (id int PRIMARY KEY, body text NOT NULL);
 INSERT INTO docs SELECT i, CASE WHEN i = 7 THEN 'الصبر الصبر الصبر عند المصيبة' ELSE 'كلمة ' || i || ' الصبر' END FROM generate_series(1, 500) i;
 CREATE INDEX docs_bm25 ON docs USING bm25 (body) WITH (text_config = 'public.maktaba_search');
 SET enable_seqscan = off;
-SELECT 'top: ' || string_agg(id::text, ',') FROM (SELECT id FROM docs ORDER BY body <@> to_bm25query('الصبر المصيبة', 'docs_bm25') LIMIT 3) t;
-EXPLAIN (COSTS OFF) SELECT id FROM docs ORDER BY body <@> to_bm25query('الصبر', 'docs_bm25') LIMIT 3;
+SELECT 'top: ' || string_agg(id::text, ',') FROM (SELECT id FROM docs ORDER BY body OPERATOR(textsearch.<@>) textsearch.to_bm25query('الصبر المصيبة', 'docs_bm25') LIMIT 3) t;
+EXPLAIN (COSTS OFF) SELECT id FROM docs ORDER BY body OPERATOR(textsearch.<@>) textsearch.to_bm25query('الصبر', 'docs_bm25') LIMIT 3;
 SQL
 )" || rc=$?
     case "$rc:$out" in
