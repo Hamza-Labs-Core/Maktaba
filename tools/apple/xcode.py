@@ -6,8 +6,9 @@
     tools/apple/xcode.py check-sdk [--min 27] ARCHIVE.xcarchive
     tools/apple/xcode.py --self-test
 
-`select` switches to the newest released Xcode on the runner (`/Applications/Xcode_<version>.app`;
-a beta's folder, `Xcode_27_beta_3.app`, is never picked: App Store Connect refuses its builds)
+`select` switches to the newest released Xcode on the runner (`/Applications/Xcode_<version>.app`,
+judged by the app a link leads to: the xcode-27 image's `Xcode_27.3.app` is a link to
+`Xcode_27.3_beta.app`; a beta is never picked, App Store Connect refuses its builds)
 and fails, naming what it found, when that Xcode is older than --min. App Store Connect wants
 the iOS 27 SDK from April 2027 (ITMS-90725), so every Apple job asks for 27. With --sdk it also
 fails when that Xcode has no such SDK (`xcodebuild -showsdks`).
@@ -59,23 +60,19 @@ def version(text: str) -> tuple[int, ...]:
 
 
 def newest_xcode(names: Iterable[str], real: Callable[[str], str] = lambda n: n) -> tuple[str, tuple[int, ...]] | None:
-    """The newest released Xcode among /Applications' entries: (name, version), or None.
+    """The newest released Xcode among /Applications' entries: (app name, version), or None.
 
-    `real` resolves a name to the app it is (the image's `Xcode_27.2.0.app` is a link to
-    `Xcode_27.2.app`); two names for one app count once, under the first seen."""
+    `real` resolves a name to the app it is. Each entry is judged by that app's own folder name,
+    never the link's: the xcode-27 image links `Xcode_27.3.app` to `Xcode_27.3_beta.app`
+    (27C5020n), and `Xcode_27.2.0.app` to `Xcode_27.2.app`. An app counts once."""
     best: tuple[str, tuple[int, ...]] | None = None
-    seen: set[str] = set()
-    for name in sorted(names):
-        m = RELEASE.match(name)
+    for app in sorted({os.path.basename(real(n)) for n in names}):
+        m = RELEASE.match(app)
         if not m:
             continue
-        target = real(name)
-        if target in seen:
-            continue
-        seen.add(target)
         v = version(m.group(1))
         if best is None or v > best[1]:
-            best = (name, v)
+            best = (app, v)
     return best
 
 
@@ -97,6 +94,11 @@ def select(minimum: int, sdk: str | None) -> int:
         return 1
     path = APPS / found[0]
     subprocess.run(["sudo", "xcode-select", "-s", str(path / "Contents/Developer")], check=True)
+    active = subprocess.run(["xcode-select", "-p"], check=True, capture_output=True, text=True).stdout.strip()
+    app = os.path.basename(os.path.realpath(active).removesuffix("/Contents/Developer"))
+    if not RELEASE.match(app):
+        print(f"::error::the active Xcode is {os.path.realpath(active)}, not a released Xcode")
+        return 1
     out = subprocess.run(["xcodebuild", "-version"], check=True, capture_output=True, text=True).stdout
     print(out, end="")
     if xcodebuild_major(out) < minimum:
@@ -234,7 +236,13 @@ def _self_test() -> None:
     names = ["Xcode.app", "Xcode_27.app", "Xcode_27.0.app", "Xcode_27.0.0.app", "Xcode_27.1.app",
              "Xcode_27.2.app", "Xcode_27.2.0.app", "Xcode_28_beta_1.app", "Xcode_26.6.app"]
     # Xcode_27.2.0.app and Xcode_27.2.app are one app; the beta and Xcode.app never count
-    assert newest_xcode(names, lambda n: links.get(n, n)) == ("Xcode_27.2.0.app", (27, 2, 0))
+    assert newest_xcode(names, lambda n: links.get(n, n)) == ("Xcode_27.2.app", (27, 2))
+    # the image's Xcode_27.3.app is a link to the 27.3 beta (CI run 44659284257 built with it)
+    beta = {**links, "Xcode_27.3.app": "Xcode_27.3_beta.app"}
+    assert newest_xcode([*names, "Xcode_27.3.app", "Xcode_27.3_beta.app"], lambda n: beta.get(n, n)) == \
+        ("Xcode_27.2.app", (27, 2))
+    # a link to a release counts as that release
+    assert newest_xcode(["Xcode.app"], lambda n: "/Applications/Xcode_27.1.app") == ("Xcode_27.1.app", (27, 1))
     assert newest_xcode(["Xcode_26.6.app", "Xcode_27.app"]) == ("Xcode_27.app", (27,))
     # a beta is never picked, however new
     assert newest_xcode(["Xcode_27_beta_3.app", "Xcode_26.6.app"]) == ("Xcode_26.6.app", (26, 6))
