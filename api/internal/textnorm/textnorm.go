@@ -11,29 +11,54 @@ package textnorm
 import "strings"
 
 // fold is each folded rune's form; -1 removes it.
-var fold = func() map[rune]rune {
-	m := map[rune]rune{
+// fold is the folding as a table over the runes below foldEnd (every rune it folds is an
+// Arabic one): 0 leaves a rune, -1 deletes it, anything else replaces it. A table, not a
+// map: search folds every word of a page's lines (story 49.7).
+var fold = func() *[foldEnd]rune {
+	var t [foldEnd]rune
+	for r, f := range map[rune]rune{
 		'أ': 'ا', 'إ': 'ا', 'آ': 'ا', 'ٱ': 'ا',
 		'ى': 'ي', 'ة': 'ه', 'ؤ': 'و', 'ئ': 'ي',
 		'ـ': -1, // tatweel
 		'ٰ': -1, // superscript alef
+	} {
+		t[r] = f
 	}
 	for r := rune(0x064B); r <= 0x0652; r++ { // the harakat
-		m[r] = -1
+		t[r] = -1
 	}
 	for i := rune(0); i < 10; i++ {
-		m[0x0660+i] = '0' + i // Arabic-Indic digits
-		m[0x06F0+i] = '0' + i // Persian (Eastern Arabic-Indic) digits
+		t[0x0660+i] = '0' + i // Arabic-Indic digits
+		t[0x06F0+i] = '0' + i // Persian (Eastern Arabic-Indic) digits
 	}
-	return m
+	return &t
 }()
+
+// foldEnd bounds fold: every rune it folds is below it.
+const foldEnd = 0x0700
 
 // Normalize folds s as maktaba_normalize() does.
 func Normalize(s string) string {
-	return strings.Map(func(r rune) rune {
-		if f, ok := fold[r]; ok {
-			return f
+	i := strings.IndexFunc(s, folds)
+	if i < 0 {
+		return s // nothing to fold
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	b.WriteString(s[:i])
+	for _, r := range s[i:] {
+		if r < foldEnd {
+			if f := fold[r]; f != 0 {
+				if f > 0 {
+					b.WriteRune(f)
+				}
+				continue
+			}
 		}
-		return r
-	}, s)
+		b.WriteRune(r)
+	}
+	return b.String()
 }
+
+// folds reports whether the folding changes r.
+func folds(r rune) bool { return r < foldEnd && fold[r] != 0 }

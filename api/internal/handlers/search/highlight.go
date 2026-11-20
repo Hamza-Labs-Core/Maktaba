@@ -20,12 +20,27 @@ import (
 // length (Turkish İ, uppercase ẞ), and the window never cuts a multi-byte rune
 // (Arabic; Story 5.4 "Arabic grapheme-aware" highlighting).
 func highlightSnippet(s, q string, maxLen int) string {
+	return highlightSnippetWith(s, q, nil, maxLen)
+}
+
+// highlightSnippetWith is highlightSnippet that also marks words, the line's own words
+// the query matched another way (story 49.7: a spelling variant, another form of the
+// word), as they are written in s. A word's leading and trailing punctuation is not
+// part of it.
+func highlightSnippetWith(s, q string, words []string, maxLen int) string {
 	if s == "" || strings.TrimSpace(q) == "" {
 		return s
 	}
 	runes := []rune(s)
 	folded := foldRunes(runes)
 	terms := highlightTerms(q)
+	for _, w := range words {
+		w = strings.TrimFunc(w, func(r rune) bool { return unicode.IsPunct(r) || unicode.IsSpace(r) })
+		if utf8.RuneCountInString(w) < 2 {
+			continue
+		}
+		terms = append(terms, foldRunes([]rune(w)))
+	}
 
 	// The matches, leftmost and then longest first, never overlapping.
 	type span struct{ start, end int }
