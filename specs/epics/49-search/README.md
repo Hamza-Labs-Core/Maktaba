@@ -525,3 +525,76 @@ runs only when the person opens that tab or submits from it; Results never waits
   - Title and speakers aren't yet weighted above body. pg_textsearch 1.5.1's multi-field
     index scores the fields as one document. Story 49.9 tunes the weights against the
     relevance check.
+
+### 49.6 The `keyword_index` stage and its backfill
+
+- **The stage** (`pipeline/src/maktaba_pipeline/engine/stages/keyword_index.py`) is a core
+  stage of the always-on `core.search` component, on any machine's CPU, after
+  `second_listen` (its edge). On a video it builds the document from:
+  - the lines of the video's first active transcript (by id, as `content_screen` reads it), in
+    order, blank lines left out;
+  - the names of the speakers of those lines (`segment_speakers`; unnamed clusters left out);
+  - the title the video shows (its manual display title, else the one found for it, else
+    its metadata title) with its file name without the extension.
+
+  It upserts `video_search_docs` with the transcript, its revision and the stage's version
+  (migration 0233: `transcript_revision`, `doc_version`). On SQLite it also writes the
+  document's FTS5 row, normalised in Python (`search/textnorm.py`, held equal to
+  `maktaba_normalize()` by a test). A video with no active transcript, or deleted, loses its
+  document. The row is its own state: the stage keeps no input fingerprint, and a run with
+  nothing to change is `unchanged`.
+- **What queues it.**
+  - A new transcript: the `second_listen` edge, which every transcript passes.
+  - A title or display title set in the API: `videos.KeywordIndexRefresh`.
+  - A speaker renamed or merged in the API: `speakers.KeywordIndexRefresh`, for the videos
+    whose active transcript has the speaker's lines.
+  - The plan. On a library it queues the videos whose document is missing, older than the
+    stage's version, or built from another transcript, revision or title, and the documents
+    of videos with no transcript left. A worker that serves the stage plans every library
+    every half hour, so a title another writer changes is caught, and a version bump
+    rebuilds every document.
+- **The backfill** is that plan: one job a video, at priority 900 (behind all other work), on
+  the Queues page as **Keyword index**. Until a video has its document, keyword search finds
+  it by its lines.
+- **The BM25 indexes build after the start, not in `migrate up`** (issue #1479):
+  - on a large library a build outlasts any bound a start's migrations have, and a build cut
+    short leaves an invalid index that each start would drop and build again, never
+    finishing;
+  - the home API's `api:search_index` loop builds what is missing after the start, with no
+    statement or lock timeout, one API at a time (an advisory lock), and looks again every
+    hour;
+  - `searchindex.Ready` says when both indexes are valid; story 49.7 ranks by BM25 only then;
+  - `maktaba-api search-indexes` builds them in the foreground, for an operator and for
+    `pg18-check.sh`, which also checks that `migrate up` builds none.
+
+  This replaces 49.5's build in `migrate up`.
+- **Proof:**
+  - `pipeline/tests/stages/test_keyword_index.py`, on SQLite and Postgres:
+    - the edge and the Queues page label;
+    - the document's lines, speakers and title, and SQLite's FTS5 row;
+    - a title change, a transcript edit and a transcript that arrives some other way each
+      queue the video;
+    - a version bump queues every video at priority 900, one job each, and a video keeps
+      its document until its job runs;
+    - a deleted video or a lost transcript removes the document;
+    - the worker's plan of each library;
+    - Python's folding equals Postgres's.
+  - The API's hooks: `TestTitleChangeQueuesKeywordIndex` and
+    `TestRenameAndMergeQueueKeywordIndex`.
+  - The large-library case, `TestLargeLibraryBuildsInTheBackground` (the replica job, on
+    PostgreSQL 18), with 45,000 documents:
+    - a build cut short after 2 s leaves an invalid index, and the loop drops it and builds
+      both (43 s locally);
+    - writes and reads go through during the build, and search is not Ready meanwhile;
+    - a document written during the build is found by the index afterwards.
+  - `TestBuildOnceOneAtATime`: a second builder builds nothing while the lock is held, and
+    the session's timeouts are back afterwards.
+- **How it differs from the spec.**
+  - Priority 900, not 10: here a lower number runs first, and 900 is the backfill priority
+    of the other planners (`word_check`, `content_screen`).
+  - Pool `cpu`: there is no `index` pool. The meaning stage `index` is a plugin stage on the
+    GPU's pools, and building a document is a few queries.
+  - The plan, not a version-bump hook, re-queues done videos. The engine re-queues no done
+    item on its own, and the document's `doc_version` lets one query find them.
+  - One transcript a video: the first active one, as the other transcript stages read it.
+
