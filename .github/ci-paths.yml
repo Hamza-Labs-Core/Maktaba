@@ -1105,11 +1105,13 @@ website:
 
 # The database (web/wiki-app/public/db) is generated from the specs, the mockups, the
 # OpenAPI description and the hand-kept curated.json by docs/wiki/db/generate_wiki.py; the
-# job fails when the committed database does not match them.
+# job fails when the committed database does not match them. It also checks
+# docs/wiki/epic-status.md's counts against its story rows (docs/wiki/db/epic_status.py).
 wiki:
   - *ci
   - 'web/wiki-app/**'
   - 'docs/wiki/db/**'
+  - 'docs/wiki/epic-status.md'
   - 'specs/**'
   - 'web/mockups/**'
   - 'shared/api/openapi.yaml'

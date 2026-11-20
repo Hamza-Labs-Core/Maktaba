@@ -2,6 +2,7 @@
 
 > Story-by-story status of every epic, read from the code and history on `main` at `f43b0d3ed` (2026-11-19).
 > The specs and epic pages don't record a status; this page does. Update the row when a story changes.
+> **Change a story's row (and its "What is left" entry), then run `python3 docs/wiki/db/epic_status.py`; never edit the counts by hand.** CI fails on stale counts (`--check`).
 
 **Not every epic is done.** Of 773 stories across all 60 epics, 706 are done, 38 are partial, 20 are not started, and 9 were deferred or removed on purpose. The largest open pieces are Epic 49 (Search, 4 stories of fourteen done), Epic 34 (the TV public site, a first slice only) and Epic 54 Phase 5 (Plugins).
 
@@ -83,7 +84,7 @@
 | 58 Smart TV platforms | 17 | 0 | 0 | 1 | Done (58.18 Vega OS deferred) |
 | 59 NAS | 16 | 0 | 0 | 0 | Done (device results not checked) |
 | 60 Website | 11 | 1 | 0 | 1 | **Partial** |
-| **Total** | **705** | **38** | **21** | **9** | **Not all done** |
+| **Total** | **706** | **38** | **20** | **9** | **Not all done** |
 
 `*` sampled, see [How this was checked](#how-this-was-checked).
 
@@ -106,7 +107,7 @@
 - **49.12 AI-mode API** — no grounded retrieval, citation validation, streaming/follow-up endpoint, or role tests.
 - **49.13 Remove the stopgap** — the Epic 49 document path does not exist, so its removal is not started either.
 - **49.14 AI-mode client tab** — no streaming AI tab or citation-to-player UI on any client.
-- **54.45–54.51, Epic 54 Phase 5:** store packages, plugin lifecycle, plugin updates, preinstalled plugins and migration, offline homes, release variants and variant updates. Each spec says "Not built"; 54.45 and 54.50 each have an open question their spec leaves to a decision.
+- **54.47–54.51, Epic 54 Phase 5:** plugin updates, preinstalled plugins and migration, offline homes, release variants and variant updates. Each spec says "Not built". (54.45 and 54.46 are partial, below.)
 
 ### Partial
 
@@ -144,6 +145,8 @@
 | 52.13 Native review | The Apple UI tests and Android Compose/Robolectric screen tests. |
 | 54.31 Wave 4 classify/enrich | `enrich` still runs in-process; the six classify stages moved. |
 | 54.36 Wave 9 core and removal | Removing the in-process path and its switch, which waits on the preconditions the spec names. |
+| 54.45 Maktaba store packages | A store or file package installed and run with parity, which waits for an install path (54.46/54.49) and Maktaba's key (#1450). |
+| 54.46 Maktaba plugin lifecycle | Installing a Maktaba plugin from a store package or a file (§2), which comes with 54.49's offline files and Maktaba's key (#1452). |
 | 57.03 Server filter | A restricted account's Home is over the 60 ms p95 target. |
 | 57.04 Device signal | Apple's age-range entitlement, so no age range is sent yet; the real-device check. |
 | 57.07 Family settings | The notification opt-in control and the iPad split view. |
