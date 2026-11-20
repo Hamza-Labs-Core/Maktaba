@@ -1,0 +1,82 @@
+# DIAGNOSTIC ONLY (scratch branch diag/ipad-search-272, never merged): the iPad search field's
+# refocus after a submitted search, on iPadOS 27.2 (the xcode-27 image).
+name: diag ipad search 27.2
+
+on:
+  push:
+    branches: ['diag/ipad-search-272']
+
+permissions:
+  contents: read
+
+jobs:
+  diag:
+    name: diag (${{ matrix.variant }})
+    runs-on: xcode-27
+    timeout-minutes: 50
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [asis, nodrop]
+    env:
+      RESULTS: ${{ github.workspace }}/build/diag
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - name: Select Xcode
+        run: python3 tools/apple/xcode.py select --min 27
+      - name: The app without its focus drop after submit
+        if: matrix.variant == 'nodrop'
+        run: |
+          python3 - <<'PY'
+          p = 'apps/apple/Player/Search/SearchScreen.swift'
+          s = open(p).read()
+          old = 'if let now = letGo.begin(change, focused: typing) { perform(now) } else { typing = false }'
+          assert old in s
+          s = s.replace(old, 'if let now = letGo.begin(change, focused: false) { perform(now) }')
+          open(p, 'w').write(s)
+          PY
+          git diff --stat
+      - name: Make, boot and settle the iPad simulator (as _apple-apps.yml)
+        run: |
+          set -euo pipefail
+          mkdir -p "$RESULTS"
+          xcrun simctl list runtimes
+          udid=$(python3 tools/apple/xcode.py simulator ipad "diag-${GITHUB_RUN_ID}-${{ matrix.variant }}")
+          echo "UDID=$udid" >> "$GITHUB_ENV"
+          defaults write com.apple.iphonesimulator ConnectHardwareKeyboard -bool false
+          xcrun simctl bootstatus "$udid" -b > /dev/null
+          xcrun simctl ui "$udid" appearance dark
+          for key in KeyboardAutocorrection KeyboardPrediction KeyboardShowPredictionBar KeyboardCheckSpelling \
+                     KeyboardAutocapitalization KeyboardContinuousPathEnabled; do
+            xcrun simctl spawn "$udid" defaults write com.apple.Preferences "$key" -bool false
+          done
+          xcrun simctl spawn "$udid" defaults write com.apple.Preferences DidShowContinuousPathIntroduction -bool true
+          xcrun simctl spawn "$udid" defaults write com.apple.Preferences AutomaticMinimizationEnabled -bool false
+          # what the simulator says about keyboards
+          xcrun simctl spawn "$udid" defaults read com.apple.Preferences 2>/dev/null | grep -i -E 'keyboard|hardware' || true
+          python3 tools/apple/sim-settle.py "$udid" "$RESULTS/settle.log" --max 480
+      - name: Run the tests
+        working-directory: apps/apple
+        run: |
+          set -uo pipefail
+          for t in testDiagRefocusAfterSubmit testATitleTappedWhileRefiningLetsTheKeyboardGoAndOpensItsPage; do
+            xcodebuild test -project Maktaba.xcodeproj -scheme "Maktaba Player iPad" -destination "id=$UDID" \
+              -derivedDataPath "$RUNNER_TEMP/derived" CODE_SIGNING_ALLOWED=NO \
+              -resultBundlePath "$RESULTS/$t.xcresult" \
+              -only-testing "Maktaba Player iPad UITests/PlayerSearchUITests/$t" > "$RESULTS/$t.log" 2>&1
+            echo "$t: exit $?"
+            grep -E 'DIAG |Test Case .*(passed|failed)|error: -\[' "$RESULTS/$t.log" | cut -c1-300
+          done
+      - name: Delete the simulator
+        if: always() && env.UDID != ''
+        run: |
+          xcrun simctl spawn "$UDID" log show --style compact --info --last 15m \
+            --predicate 'subsystem BEGINSWITH "com.hamzalabs.maktaba" OR process == "TextInput" OR eventMessage CONTAINS[c] "keyboard"' > "$RESULTS/sim.log" 2>/dev/null || true
+          xcrun simctl shutdown "$UDID" || true
+          xcrun simctl delete "$UDID" || true
+      - uses: actions/upload-artifact@v7.0.1
+        if: always()
+        with:
+          name: diag-${{ matrix.variant }}
+          path: build/diag
+          retention-days: 5

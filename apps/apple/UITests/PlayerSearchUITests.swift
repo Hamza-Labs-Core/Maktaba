@@ -248,4 +248,31 @@ final class PlayerSearchUITests: PlayerUITestCase {
         XCTAssertEqual(searches.last?["mode"] as? String, "fts", "words only")
         XCTAssertFalse(element("search.wordsOnly").exists, "no line for a viewer")
     }
+
+    // DIAGNOSTIC ONLY (scratch branch diag/ipad-search-272, never merged): what the iPad's
+    // search field does when tapped after a submitted search on iPadOS 27.2.
+    func testDiagRefocusAfterSubmit() {
+        home.stub("GET", "/api/search/suggest", body: #"{"suggestions": []}"#)
+        openSearch()
+        func report(_ s: String) {
+            let f = (field.value(forKey: "hasKeyboardFocus") as? Bool) ?? false
+            print("DIAG \(s): focus=\(f) keyboards=\(app.keyboards.count) keyboardExists=\(app.keyboards.firstMatch.exists) value=\(field.value as? String ?? "nil")")
+            let a = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+            a.name = "diag-\(s)"
+            a.lifetime = .keepAlways
+            add(a)
+        }
+        report("fresh")
+        field.tap(); sleep(2); report("fresh-tap")
+        type("seerah\n")
+        XCTAssertTrue(element("search.title.v3").waitForExistence(timeout: 10))
+        sleep(3); report("after-submit")
+        field.tap(); sleep(3); report("after-tap-1")
+        field.tap(); sleep(3); report("after-tap-2")
+        field.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.5)).tap(); sleep(3); report("after-tap-text")
+        field.doubleTap(); sleep(3); report("after-doubletap")
+        // last: fails the test when nothing holds the keyboard focus
+        app.typeText("x"); sleep(2); report("after-typeText")
+    }
+
 }
