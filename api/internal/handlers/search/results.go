@@ -130,6 +130,9 @@ type savedVideo struct {
 	V string  `json:"v"`
 	S float64 `json:"s"`
 	N int     `json:"n"`
+	// L: ranked by its search document (story 49.7), its matching lines not counted yet:
+	// the page that shows it counts them (countLines), not the search
+	L bool `json:"l,omitempty"`
 }
 
 // run is one search: its query and its result set.
@@ -340,7 +343,7 @@ func (h *Handler) compute(ctx context.Context, req Request, rl Rules) (*run, Res
 				defer wg.Done()
 				defer safego.Recover(nil, "search_fts")
 				errFT = errSearchPanicked
-				ftsVideos, errFT = h.runFTSVideos(ctx, req.Q, rl.MaxVideos, req.Filters)
+				ftsVideos, errFT = h.keywordVideos(ctx, req.Q, rl.MaxVideos, req.Filters)
 				took.FTS = time.Since(t0).Milliseconds()
 			}()
 		}
@@ -552,6 +555,7 @@ func fuseVideos(fts []savedVideo, sem []Hit, matched map[int64]bool, wFTS, wSem 
 		f := get(v.V)
 		f.S += wFTS / float64(k+rank+1)
 		f.N += v.N
+		f.L = f.L || v.L
 	}
 	for rank, v := range semVideos {
 		f := get(v.V)
@@ -612,6 +616,12 @@ var ftsCandidates = 5000
 // best rank is the video's match quality. Postgres: the GIN index on
 // search_tsv finds the segments; SQLite: LIKE on the text.
 func (h *Handler) runFTSVideos(ctx context.Context, q string, limit int, f Filters) ([]savedVideo, error) {
+	return h.runFTSVideosWhere(ctx, q, limit, f, "")
+}
+
+// runFTSVideosWhere is runFTSVideos with one more condition on the transcript t (Postgres
+// only; "": none): the videos with no search document yet, while story 49.6's backfill runs.
+func (h *Handler) runFTSVideosWhere(ctx context.Context, q string, limit int, f Filters, also string) ([]savedVideo, error) {
 	var query string
 	var args []any
 	if isSQLite(h.DB) {
@@ -632,6 +642,9 @@ func (h *Handler) runFTSVideos(ctx context.Context, q string, limit int, f Filte
 		args = []any{q}
 		where := append([]string{`s.search_tsv @@ plainto_tsquery('maktaba_search', $1)`}, whereVideos(f, &args)...)
 		where = append(where, limitWhere(ctx)...)
+		if also != "" {
+			where = append(where, also)
+		}
 		args = append(args, limit)
 		args = append(args, ftsCandidates)
 		query = `
@@ -863,6 +876,11 @@ func (h *Handler) transcriptPage(ctx context.Context, p *principal.Principal, rn
 	if err != nil {
 		return nil, err
 	}
+	// the BM25 videos' matching lines, counted for this page only (story 49.7)
+	lines, err := h.countLines(ctx, rn.Q, page)
+	if err != nil {
+		return nil, err
+	}
 	out := make([]TranscriptVideo, 0, len(page))
 	for _, v := range page {
 		c, ok := cards[v.V]
@@ -874,7 +892,7 @@ func (h *Handler) transcriptPage(ctx context.Context, p *principal.Principal, rn
 			ps = []Passage{}
 		}
 		out = append(out, TranscriptVideo{
-			VideoCard: c, BestScore: v.S, Matches: v.N, Passages: ps, InTitle: rn.hasTitle(v.V),
+			VideoCard: c, BestScore: v.S, Matches: v.N + lines[v.V], Passages: ps, InTitle: rn.hasTitle(v.V),
 		})
 	}
 	return out, nil
