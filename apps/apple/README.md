@@ -112,6 +112,11 @@ permission and error screens keep their own English and Arabic tables in Maktaba
 
 ## Open and run
 
+The apps are built with **Xcode 27** (the iOS, tvOS and macOS 27 SDKs) for iOS 26, tvOS 26
+and macOS 15 and later. App Store Connect wants the 27 SDKs from April 2027 (ITMS-90725), so
+CI's jobs and the TestFlight uploads run on GitHub's `xcode-27` runner image and fail on an
+older Xcode (`tools/apple/xcode.py`, `docs/testflight.md`).
+
 ```bash
 cd apps/apple
 xcodegen            # makes Maktaba.xcodeproj from project.yml (commit both)

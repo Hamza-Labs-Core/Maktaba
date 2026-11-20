@@ -81,8 +81,10 @@ jobs:
     needs: [guard]
     # a hand run has no guard; a re-run of a published tag uploads nothing again
     if: always() && (needs.guard.result == 'skipped' || (needs.guard.result == 'success' && needs.guard.outputs.published != 'true'))
-    # the newest Xcode is on macos-26 (macos-15 stops at Xcode 26.3)
-    runs-on: macos-26
+    # Xcode 27 is on the xcode-27 image alone (macOS 27, Xcode 27.0, 27.1 and 27.2): App Store
+    # Connect wants apps built with the iOS 27 SDK from April 2027 (ITMS-90725), macos-26 has
+    # Xcode 26 only
+    runs-on: xcode-27
     timeout-minutes: 60
     strategy:
       fail-fast: false
@@ -110,18 +112,12 @@ jobs:
         with:
           fetch-depth: 0 # the tags, for a hand run's version
 
-      # The newest Xcode on the runner: 27.x once the image has it (the iPhone Duo's
-      # arrangement needs its iOS 27.1 SDK; with Xcode 26 the Player builds without it).
-      # The TV app needs only tvOS 26 (its deployment target), in every Xcode 26 and later,
-      # and the Mac app macOS 15.
-      # The leg's device SDK is checked here, so a runner image without it fails plainly.
+      # The newest released Xcode on the runner, and it must be 27 or later with the leg's
+      # device SDK 27 or later, or the leg fails here, before anything is built: an app built
+      # with an older SDK would be refused by App Store Connect from April 2027 (ITMS-90725).
+      # The deployment targets stay iOS 26, tvOS 26 and macOS 15 (apps/apple/project.yml).
       - name: Select Xcode
-        run: |
-          set -euo pipefail
-          xcode=$(ls -d /Applications/Xcode_2[6-9]*.app | sort -V | tail -n1)
-          sudo xcode-select -s "$xcode/Contents/Developer"
-          xcodebuild -version
-          xcodebuild -showsdks | grep -E -- "-sdk ${SDK}[0-9]" || { echo "::error::no $SDK SDK in $xcode"; exit 1; }
+        run: python3 tools/apple/xcode.py select --min 27 --sdk "$SDK"
 
       - name: Versions
         id: version
@@ -173,6 +169,11 @@ jobs:
             MARKETING_VERSION="$MARKETING" CURRENT_PROJECT_VERSION="$BUILD" \
             | tee "$RUNNER_TEMP/archive.log" | grep -E '(error|warning: .*sign|\*\* ARCHIVE)' || true
           test -d "$RUNNER_TEMP/app.xcarchive/Products/Applications" || { tail -n 80 "$RUNNER_TEMP/archive.log"; exit 1; }
+
+      # The archived app's own word for what built it (DTSDKName, DTPlatformVersion, DTXcode in
+      # its Info.plist): SDK 27 or later and Xcode 27 or later, or nothing is uploaded.
+      - name: The archive was built with the 27 SDK
+        run: python3 tools/apple/xcode.py check-sdk --min 27 "$RUNNER_TEMP/app.xcarchive"
 
       # The Mac app's sandbox and keychain group: signed into the archived app ad hoc, for the
       # export to keep (an unsigned app has none). $(AppIdentifierPrefix) is the team's.

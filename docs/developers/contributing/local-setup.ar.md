@@ -26,7 +26,8 @@
 تعمل البيئة على Apple Silicon وIntel كليهما. تحتاج واجهة التفريغ النصي MLX إلى Apple Silicon؛
 وفي غيره يلجأ خط المعالجة إلى واجهة Whisper أخرى.
 
-للتطبيقات الأصلية تحتاج أيضًا إلى أدوات المنصة: Xcode لـ `apps/apple/` و`apps/tv/tvos/`،
+للتطبيقات الأصلية تحتاج أيضًا إلى أدوات المنصة: Xcode 27 أو أحدث لـ `apps/apple/` و`apps/tv/tvos/`
+(به تُبنى تطبيقات CI ورفعات TestFlight)،
 وAndroid SDK وJDK 17 لـ `apps/android/` و`apps/tv/`، وRust لتطبيق Tauri المكتبي.
 
 ## التشغيل الأول
