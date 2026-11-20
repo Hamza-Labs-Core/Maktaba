@@ -491,7 +491,10 @@ func (b Bundle) tableOfContents(ctx context.Context, dump, superPW string) (stri
 	var sb strings.Builder
 	for _, line := range strings.Split(string(out), "\n") {
 		if !strings.HasPrefix(line, ";") && (strings.Contains(line, " EXTENSION - ") || strings.Contains(line, " COMMENT - EXTENSION ") ||
-			strings.Contains(line, " ACL pg_catalog ")) {
+			strings.Contains(line, " ACL pg_catalog ") ||
+			// pg_textsearch's schema and its grant: the superuser's, made with the extension
+			// (textsearchSQL) before the restore
+			strings.Contains(line, " SCHEMA - "+TextsearchSchema+" ") || strings.Contains(line, " ACL - SCHEMA "+TextsearchSchema+" ")) {
 			line = ";" + line
 		}
 		sb.WriteString(line + "\n")

@@ -468,13 +468,19 @@ runs only when the person opens that tab or submits from it; Results never waits
   - `video_search_docs_bm25`: `maktaba_normalize()` of each field, `maktaba_search`;
   - `video_search_docs_bm25_stem`: `maktaba_stem_prepare()` of each field, `maktaba_stem`.
 
-  Story 49.7 queries each with the same function applied to the query
-  (`to_bm25query(maktaba_normalize($q), 'video_search_docs_bm25')`), and weights the exact
-  score above the stemmed one.
+  Story 49.7 queries each with the same function applied to the query (`OPERATOR(textsearch.<@>)
+  textsearch.to_bm25query(maktaba_normalize($q), 'video_search_docs_bm25')`), and weights the
+  exact score above the stemmed one.
 - **Where the indexes are made.** pg_textsearch exists on PostgreSQL 18 only, where the
   server preloads it, and it isn't a trusted extension:
   - the bundled server's bootstrap and cluster SQL create it, as the superuser, when the
     server has it and preloads it (`pgbundle.textsearchSQL`, `clusterRev` 5), as pgvector is;
+  - it lives in its own schema, `textsearch`, never `public`, with USAGE for the app role.
+    A few of its functions (test and debug ones) are the superuser's alone. The app role's
+    migrations grant on every function of `public` (slot 0103's `maktaba_worker` grants), and
+    a grant on a function the granting role may not run fails. In `public`, a fresh home's
+    first migration failed. A restore leaves the schema's entry and its grant out, as it does
+    the extensions';
   - the migration doesn't build the indexes. It ships `maktaba_search_index_statements()`,
     which returns a `CREATE INDEX CONCURRENTLY IF NOT EXISTS` for each index missing (after a
     `DROP INDEX CONCURRENTLY` of one a failed build left invalid), and nothing without the
@@ -502,8 +508,11 @@ runs only when the person opens that tab or submits from it; Results never waits
   - On SQLite, FTS5 finds a document by its normalised text, and a deleted video takes both
     rows.
   - CI runs the 18 tests in the replica job, on its PostgreSQL 18 server.
-  - Each payload's `pg18-check.sh` runs `maktaba-api migrate up` on a database with
-    pg_textsearch and checks that both indexes are there and valid.
+  - Each payload's `pg18-check.sh` runs `maktaba-api migrate up` as a home does: an app role
+    that is no superuser, on a database with the extensions made by the superuser and
+    pg_textsearch in its schema. It checks that both indexes are there and valid.
+  - `TestRealPgTextsearchPreloaded` checks that the bundle's own bootstrap puts the extension
+    in `textsearch`, and that the app role can grant on all of `public`'s functions.
 - **How it differs from the spec.**
   - The indexes are over the normalised fields (`maktaba_normalize`, `maktaba_stem_prepare`),
     not the raw ones. Story 49.4 made normalisation a SQL function instead of a rules file

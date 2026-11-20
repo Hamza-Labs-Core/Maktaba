@@ -85,15 +85,20 @@ func scalar[T any](t *testing.T, db *sql.DB, q string, args ...any) T {
 }
 
 // textsearchHere reports whether this server can hold pg_textsearch (it has it and
-// preloads it), and makes it in db when it can, as the bundled server's cluster SQL does.
+// preloads it), and makes it in db when it can, as the bundled server's bootstrap does: in
+// the schema textsearch, so its operator and functions are named with it.
 func textsearchHere(t *testing.T, db *sql.DB) bool {
 	t.Helper()
 	if !scalar[bool](t, db, `SELECT EXISTS (SELECT FROM pg_available_extensions WHERE name = 'pg_textsearch')
 		AND current_setting('shared_preload_libraries') ~ '(^|[\s,])pg_textsearch([\s,]|$)'`) {
 		return false
 	}
-	if _, err := db.Exec(`CREATE EXTENSION IF NOT EXISTS pg_textsearch`); err != nil {
-		t.Fatalf("CREATE EXTENSION pg_textsearch: %v", err)
+	// in its own schema, as the bundled server makes it (pgbundle.textsearchSQL)
+	for _, q := range []string{`CREATE SCHEMA IF NOT EXISTS textsearch`,
+		`CREATE EXTENSION IF NOT EXISTS pg_textsearch SCHEMA textsearch`} {
+		if _, err := db.Exec(q); err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
 	}
 	return true
 }
@@ -220,7 +225,7 @@ func TestSlot0232BM25Indexes(t *testing.T) {
 		t.Helper()
 		query := `SELECT title FROM video_search_docs
 			ORDER BY ARRAY[public.` + fn + `(title), public.` + fn + `(speakers), public.` + fn + `(body)]
-			      <@> to_bm25query(public.` + fn + `($1), '` + index + `') LIMIT 1`
+			      OPERATOR(textsearch.<@>) textsearch.to_bm25query(public.` + fn + `($1), '` + index + `') LIMIT 1`
 		var plan strings.Builder
 		rows, err := db.Query(`EXPLAIN (COSTS OFF) `+query, q)
 		if err != nil {
