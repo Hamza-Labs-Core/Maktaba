@@ -266,3 +266,31 @@ async def test_python_folds_as_postgres_does(db: Database) -> None:
               "Ayah 255: آية الكرسي", "", "ًٌٍَُِّْٰـ", "plain ascii 0123", "قرآن – ﷲ ﻻ"]  # fmt: skip
     for s in corpus:
         assert normalize(s) == await db.fetchval("SELECT maktaba_normalize($1)", s), s
+
+
+@pytest.mark.asyncio
+async def test_a_write_cut_short_leaves_no_document_without_its_search_row(
+    db: Database, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Review M1: the row and SQLite's FTS5 row are written together. A run that fails
+    between them leaves neither, so its retry writes both."""
+    rt = await core_runtime(db)
+    lib = await make_library(db)
+    vid = await make_video(db, lib, title="درس")
+    await _transcript(db, vid, ["الصبر عند المصيبة"])
+    real = stage.normalize
+
+    def broken(s: str) -> str:
+        raise RuntimeError("cut short")
+
+    monkeypatch.setattr(stage, "normalize", broken if not is_pg(db) else real)
+    doc = await stage.build(db, vid)
+    assert doc is not None
+    if not is_pg(db):
+        with pytest.raises(RuntimeError):
+            await stage._write(db, doc)
+        assert await _doc(db, vid) is None
+    monkeypatch.setattr(stage, "normalize", real)
+    assert (await _index(db, rt, vid))["keyword_index"] == "written"
+    if not is_pg(db):
+        assert await db.fetchval("SELECT count(*) FROM video_search_docs_fts") == 1

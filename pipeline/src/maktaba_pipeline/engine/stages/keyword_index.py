@@ -150,23 +150,29 @@ def _same(row: Any, doc: dict[str, Any]) -> bool:
 
 
 async def _write(db: Any, doc: dict[str, Any]) -> None:
+    """The document upserted, and on SQLite its FTS5 row, in one transaction: a run cut
+    short between them would leave a current row whose FTS5 row a retry never writes (the
+    run finds the row current)."""
     cols = ("video_id", *_FIELDS, "built_at")
     vals = [doc["video_id"], *(doc[f] for f in _FIELDS), to_ts(db, now())]
     marks = ", ".join(f"${i}" for i in range(1, len(cols) + 1))
     sets = ", ".join(f"{c} = excluded.{c}" for c in cols[1:])
-    await db.execute(
-        f"INSERT INTO video_search_docs ({', '.join(cols)}) VALUES ({marks})"
-        f" ON CONFLICT (video_id) DO UPDATE SET {sets}",
-        *vals,
-    )
-    if not is_pg(db):
-        await db.execute("DELETE FROM video_search_docs_fts WHERE video_id = $1", doc["video_id"])
+    async with db.transaction():
         await db.execute(
-            "INSERT INTO video_search_docs_fts (video_id, title, speakers, body)"
-            " VALUES ($1, $2, $3, $4)",
-            doc["video_id"], normalize(doc["title"]), normalize(doc["speakers"]),
-            normalize(doc["body"]),
-        )  # fmt: skip
+            f"INSERT INTO video_search_docs ({', '.join(cols)}) VALUES ({marks})"
+            f" ON CONFLICT (video_id) DO UPDATE SET {sets}",
+            *vals,
+        )
+        if not is_pg(db):
+            await db.execute(
+                "DELETE FROM video_search_docs_fts WHERE video_id = $1", doc["video_id"]
+            )
+            await db.execute(
+                "INSERT INTO video_search_docs_fts (video_id, title, speakers, body)"
+                " VALUES ($1, $2, $3, $4)",
+                doc["video_id"], normalize(doc["title"]), normalize(doc["speakers"]),
+                normalize(doc["body"]),
+            )  # fmt: skip
 
 
 async def _drop(db: Any, video_id: Any) -> bool:
@@ -301,18 +307,26 @@ async def refresh(db: Any, serving: bool) -> None:
     t = time.monotonic()
     if _LAST_PLAN and t - _LAST_PLAN[0] < PLAN_EVERY_S:
         return
-    _LAST_PLAN[:] = [t]
     from ..enqueue import enqueue_job
 
     try:
-        for r in await db.fetch("SELECT id FROM libraries"):
+        libs = await db.fetch("SELECT id FROM libraries")
+    except Exception as exc:  # noqa: BLE001 - the next refresh plans again
+        _log.warning("keyword_index_plan_failed", error=f"{type(exc).__name__}: {exc}"[:200])
+        return
+    failed = 0
+    for r in libs:
+        try:
             await enqueue_job(
                 db, subject_kind="library", subject_id=r["id"], stage="keyword_index",
                 priority=BACKFILL_PRIORITY,
                 reason={"why": "keyword_index_plan", "by": "system"},
             )  # fmt: skip
-    except Exception as exc:  # noqa: BLE001 - the next refresh plans again
-        _log.warning("keyword_index_plan_failed", error=f"{type(exc).__name__}: {exc}"[:200])
+        except Exception as exc:  # noqa: BLE001 - the other libraries are planned still
+            failed += 1
+            _log.warning("keyword_index_plan_failed", error=f"{type(exc).__name__}: {exc}"[:200])
+    if not failed:  # a round that failed is tried again at the next refresh
+        _LAST_PLAN[:] = [t]
 
 
 IMPL = StageImpl(run=run, refresh=refresh)
