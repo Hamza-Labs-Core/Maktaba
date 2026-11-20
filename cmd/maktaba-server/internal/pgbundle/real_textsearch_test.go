@@ -65,8 +65,43 @@ func TestRealPgTextsearchPreloaded(t *testing.T) {
 		if !strings.Contains(preload, "pg_textsearch") {
 			t.Errorf("shared_preload_libraries = %q", preload)
 		}
+		// story 49.5: the bootstrap made pg_textsearch in the app's database (textsearchSQL),
+		// beside pgvector, so slot 0232's migration makes its BM25 indexes there
+		var exts string
+		if err := db.QueryRowContext(qctx, `SELECT string_agg(extname, ',' ORDER BY extname) FROM pg_extension`).Scan(&exts); err != nil {
+			return err
+		}
+		if !strings.Contains(exts, "pg_textsearch") || !strings.Contains(exts, "vector") {
+			t.Errorf("the app's database has %s: no pg_textsearch or vector", exts)
+		}
+		// in its own schema: the app role's migrations grant on every function of public,
+		// which fails on a function the role may not run (a few of pg_textsearch's are the
+		// superuser's alone). Slot 0103's grant, as the app role:
+		var schema string
+		if err := db.QueryRowContext(qctx, `SELECT n.nspname FROM pg_extension e JOIN pg_namespace n ON n.oid = e.extnamespace
+			WHERE e.extname = 'pg_textsearch'`).Scan(&schema); err != nil || schema != TextsearchSchema {
+			t.Errorf("pg_textsearch is in schema %q (%v), want %s", schema, err, TextsearchSchema)
+		}
+		if _, err := db.ExecContext(qctx, "CREATE ROLE check_worker NOLOGIN"); err != nil {
+			return err
+		}
+		appPW, err := readPassword(b.passwordFile(AppRole))
+		if err != nil {
+			return err
+		}
+		appDB, err := sql.Open("postgres", "postgres://"+AppRole+":"+appPW+"@"+b.Addr()+"/"+AppDatabase+"?sslmode=disable")
+		if err != nil {
+			return err
+		}
+		defer appDB.Close()
+		if _, err := appDB.ExecContext(qctx, "GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO check_worker"); err != nil {
+			t.Errorf("the app role's grant on public's functions (slot 0103's): %v", err)
+		}
+		var usable bool
+		if err := appDB.QueryRowContext(qctx, `SELECT has_schema_privilege('`+TextsearchSchema+`', 'USAGE')`).Scan(&usable); err != nil || !usable {
+			t.Errorf("the app role's USAGE on %s: %v (%v)", TextsearchSchema, usable, err)
+		}
 		for _, q := range []string{
-			"CREATE EXTENSION IF NOT EXISTS pg_textsearch",
 			"CREATE TEXT SEARCH CONFIGURATION public.check_search (COPY = simple)",
 			"ALTER TEXT SEARCH CONFIGURATION public.check_search ALTER MAPPING FOR hword, hword_part, word WITH unaccent, simple",
 			"CREATE TABLE docs (id int PRIMARY KEY, body text NOT NULL)",
@@ -79,7 +114,7 @@ func TestRealPgTextsearchPreloaded(t *testing.T) {
 		}
 		var top int
 		if err := db.QueryRowContext(qctx,
-			"SELECT id FROM docs ORDER BY body <@> to_bm25query('الصبر', 'docs_bm25') LIMIT 1").Scan(&top); err != nil {
+			"SELECT id FROM docs ORDER BY body OPERATOR(textsearch.<@>) textsearch.to_bm25query('الصبر', 'docs_bm25') LIMIT 1").Scan(&top); err != nil {
 			return err
 		}
 		if top != 3 {

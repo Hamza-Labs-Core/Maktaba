@@ -438,9 +438,9 @@ var roleName = regexp.MustCompile(`^[a-z_][a-z0-9_]*$`)
 func ValidRoleName(r string) bool { return roleName.MatchString(r) }
 
 // Extensions are the extensions every app database has (made by Prepare and
-// Restore; vector when the bundle has it); a dump that needs another cannot be
-// restored as the app role.
-var Extensions = []string{"plpgsql", "pg_trgm", "unaccent", "pgcrypto", "vector"}
+// Restore; vector when the bundle has it, pg_textsearch when its PostgreSQL 18 preloads it);
+// a dump that needs another cannot be restored as the app role.
+var Extensions = []string{"plpgsql", "pg_trgm", "unaccent", "pgcrypto", "vector", "pg_textsearch"}
 
 // clusterSQLFor is clusterSQL made in database db: its grants on Postgres's own functions
 // (the slots' to the app role alone, pg_reload_conf) belong to a database, and clusterSQL
@@ -471,7 +471,7 @@ func recreateSQL(opts RestoreOptions, db string) string {
 	}
 	sb.WriteString("\\c " + db + "\n")
 	sb.WriteString("CREATE EXTENSION IF NOT EXISTS pg_trgm;\nCREATE EXTENSION IF NOT EXISTS unaccent;\nCREATE EXTENSION IF NOT EXISTS pgcrypto;\n")
-	sb.WriteString(vectorSQL)
+	sb.WriteString(vectorSQL + textsearchSQL)
 	return sb.String()
 }
 
@@ -491,7 +491,10 @@ func (b Bundle) tableOfContents(ctx context.Context, dump, superPW string) (stri
 	var sb strings.Builder
 	for _, line := range strings.Split(string(out), "\n") {
 		if !strings.HasPrefix(line, ";") && (strings.Contains(line, " EXTENSION - ") || strings.Contains(line, " COMMENT - EXTENSION ") ||
-			strings.Contains(line, " ACL pg_catalog ")) {
+			strings.Contains(line, " ACL pg_catalog ") ||
+			// pg_textsearch's schema and its grant: the superuser's, made with the extension
+			// (textsearchSQL) before the restore
+			strings.Contains(line, " SCHEMA - "+TextsearchSchema+" ") || strings.Contains(line, " ACL - SCHEMA "+TextsearchSchema+" ")) {
 			line = ";" + line
 		}
 		sb.WriteString(line + "\n")

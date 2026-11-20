@@ -4,7 +4,7 @@
 > The specs and epic pages don't record a status; this page does. Update the row when a story changes.
 > **Change a story's row (and its "What is left" entry), then run `python3 docs/wiki/db/epic_status.py`; never edit the counts by hand.** CI fails on stale counts (`--check`).
 
-**Not every epic is done.** Of 773 stories across all 60 epics, 706 are done, 38 are partial, 20 are not started, and 9 were deferred or removed on purpose. The largest open pieces are Epic 49 (Search, 4 stories of fourteen done), Epic 34 (the TV public site, a first slice only) and Epic 54 Phase 5 (Plugins).
+**Not every epic is done.** Of 773 stories across all 60 epics, 707 are done, 38 are partial, 19 are not started, and 9 were deferred or removed on purpose. The largest open pieces are Epic 49 (Search, 5 stories of fourteen done), Epic 34 (the TV public site, a first slice only) and Epic 54 Phase 5 (Plugins).
 
 ## How this was checked
 
@@ -72,7 +72,7 @@
 | 46 Big screen | 7 | 0 | 0 | 0 | Done |
 | 47 Offline convert / dedup | 11 | 3 | 0 | 0 | **Partial** |
 | 48 Native players | 36 | 1 | 0 | 0 | **Partial** |
-| 49 Search | 4 | 0 | 10 | 0 | **Partial** |
+| 49 Search | 5 | 0 | 9 | 0 | **Partial** |
 | 50 Cloud with no downtime | 35 | 0 | 0 | 0 | Done (live SLOs not checked) |
 | 51 Configurable components | 19 | 0 | 0 | 0 | Done |
 | 52 Transcript word review | 13 | 3 | 0 | 1 | **Partial** |
@@ -84,7 +84,7 @@
 | 58 Smart TV platforms | 17 | 0 | 0 | 1 | Done (58.18 Vega OS deferred) |
 | 59 NAS | 16 | 0 | 0 | 0 | Done (device results not checked) |
 | 60 Website | 11 | 1 | 0 | 1 | **Partial** |
-| **Total** | **706** | **38** | **20** | **9** | **Not all done** |
+| **Total** | **707** | **38** | **19** | **9** | **Not all done** |
 
 `*` sampled, see [How this was checked](#how-this-was-checked).
 
@@ -97,7 +97,6 @@
 - **34.9 Budget, abuse controls and analytics** — no public budget, viewer/session limits, rate-limit wiring, Analytics Engine sink, or Stream reconciliation.
 - **34.10 Deployment pipeline** — manual `wrangler.toml` exists, but no release artifact pipeline or home-driven deploy/promote/rollback implementation.
 - **43.6 Measured on the home Mac** — PR #319 explicitly excludes the 13.9M-row p50/p95, disk and recall measurement; no later merged measurement was found.
-- **49.5 `video_search_docs` and BM25 indexes** — no table, SQLite twin, or index migration.
 - **49.6 `keyword_index` stage** — no such queue stage or backfill.
 - **49.7 BM25 query path** — no BM25 video/phrase/passage query or 45k-document performance test.
 - **49.8 Suggestions / did-you-mean / facets / sort** — the new did-you-mean API and its fixture/role tests are absent; older facets are not this story's implementation.
@@ -1058,7 +1057,7 @@ Stories are the fourteen numbered rows in `specs/epics/47-offline-convert-dedup/
 
 ### Epic 49 — Search
 
-Stories are the fourteen numbered rows in `specs/epics/49-search/README.md` §6 (49.14 appears before 49.13 there). Spec PRs #514/#515 are not implementation evidence. Searches found no `pg_textsearch`, `video_search_docs`, `maktaba_stem`, `keyword_index`, or Epic 49 AI-mode implementation.
+Stories are the fourteen numbered rows in `specs/epics/49-search/README.md` §6 (49.14 appears before 49.13 there). Spec PRs #514/#515 are not implementation evidence. Searches found no `keyword_index` stage or Epic 49 AI-mode implementation.
 
 | Story | Status | Evidence |
 |---|---|---|
@@ -1066,7 +1065,7 @@ Stories are the fourteen numbered rows in `specs/epics/49-search/README.md` §6 
 | 49.2 Major updater upgrade | **Done** (#1445) | The server upgrades the 16 cluster into its own `postgres-18` with pg_upgrade (clone, else copy), the 16 cluster untouched for any rollback; held on 16 when it cannot run; update-rehearsal scenario 17 (16 → 18 with data, a rollback, the upgrade again), `TestRealMajorUpgrade` on Linux, Mac and Windows payloads; README §9 "As built". |
 | 49.3 Cluster major-version rollout | **Done** (#1459) | A machine on 16 follows a home on 18 (logical replication; a copy whose slot the upgrade dropped is made anew); a copy runs on 16 or 18, one of the other major set aside and made again; the replica job runs `TestTwoMachinesOnePC` with the home on 18 and the machine on 16, then on 18; README §9 "As built". |
 | 49.4 Arabic normalisation / word forms | **Done** (#1476) | `maktaba_normalize()` and the `maktaba_stem` configuration (migration 0231), the IMMUTABLE `maktaba_tsv`/`maktaba_query` pair, and `api/internal/textnorm` for SQLite; tested on Postgres 16 and 18 and SQLite in `api/internal/textnorm`; README §9 "As built". |
-| 49.5 `video_search_docs` / BM25 schema | **Not started** | Only `specs/epics/49-search/README.md`; no such migration in `shared/db/migrations/`. |
+| 49.5 `video_search_docs` / BM25 schema | **Done** (#1478) | `video_search_docs` (migration 0232, its SQLite twin with FTS5), two BM25 indexes (exact on `maktaba_search`, stemmed on `maktaba_stem`) built CONCURRENTLY by `maktaba-api migrate up` (`api/internal/searchindex`) where pg_textsearch is, which the bundled server creates (`pgbundle.textsearchSQL`); tested on Postgres 16 and 18 and SQLite, and in each payload's `pg18-check.sh`; README §9 "As built". |
 | 49.6 `keyword_index` stage / backfill | **Not started** | Only `specs/epics/49-search/README.md`; no such stage in `pipeline/src/maktaba_pipeline/engine/graph.py` or its tests. |
 | 49.7 BM25 query / passages / hybrid | **Not started** | Only `specs/epics/49-search/README.md`; current `api/internal/handlers/search/search.go` has no Epic 49 BM25 path or 45k fixture. |
 | 49.8 Suggestions / did-you-mean / facets / sort API | **Not started** | Only `specs/epics/49-search/README.md`; no Epic 49 did-you-mean implementation or fixture/role tests found. |
@@ -1074,7 +1073,7 @@ Stories are the fourteen numbered rows in `specs/epics/49-search/README.md` §6 
 | 49.10 Web search page | **Not started** | Only `specs/epics/49-search/README.md`; current `web/src/pages/Search.tsx` is the older search surface, without the new integrated API. |
 | 49.11 Apple / Android / TV / big screen | **Not started** | Only `specs/epics/49-search/README.md`; existing `apps/apple/Player/Search/SearchScreen.swift` and `apps/android/player/src/main/kotlin/com/hamzalabs/maktaba/player/search/SearchScreen.kt` predate the Epic 49 API. |
 | 49.12 AI-mode API | **Not started** | Only `specs/epics/49-search/README.md`; no grounded-answer/citation/streaming/follow-up API or tests found. |
-| 49.13 Remove stopgap | **Not started** | Only `specs/epics/49-search/README.md`; its start condition (every video has a document) is unmet because 49.5/49.6 are absent. |
+| 49.13 Remove stopgap | **Not started** | Only `specs/epics/49-search/README.md`; its start condition (every video has a document) is unmet because 49.6 is absent. |
 | 49.14 AI-mode client tab | **Not started** | Only `specs/epics/49-search/README.md`; no AI tab, streaming citation UI, or client tests found. |
 
 ## Epics 50–60 (every story checked)
