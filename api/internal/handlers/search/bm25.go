@@ -26,6 +26,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/safego"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/searchindex"
 )
 
@@ -40,12 +41,20 @@ const (
 	bm25TopK = 100
 	// bm25StateTTL is how long the indexes' readiness and the backfill's state are kept
 	bm25StateTTL = time.Minute
+	// bm25StateRetry is how long a state that could not be read is kept (the line path
+	// meanwhile), and bm25StateProbe how long reading it may take
+	bm25StateRetry = 5 * time.Second
+	bm25StateProbe = 2 * time.Second
+	// phraseBudget bounds the phrase boost's query: past it the list keeps its BM25 order
+	// (a phrase of common words over a large library's lines), and the query its 50 ms
+	phraseBudget = 20 * time.Millisecond
 )
 
 // bm25State is what the handler knows of the BM25 path, refreshed every bm25StateTTL.
 type bm25State struct {
 	mu      sync.Mutex
 	at      time.Time
+	ttl     time.Duration
 	ready   bool // both indexes valid
 	missing bool // a video with an active transcript has no document yet
 }
@@ -57,20 +66,25 @@ func (h *Handler) bm25Now(ctx context.Context) (ready, missing bool) {
 	st := &h.bm25
 	st.mu.Lock()
 	defer st.mu.Unlock()
-	if !st.at.IsZero() && time.Since(st.at) < bm25StateTTL {
+	if !st.at.IsZero() && time.Since(st.at) < st.ttl {
 		return st.ready, st.missing
 	}
-	ready, err := searchindex.Ready(ctx, h.DB)
+	// its own deadline: a request the client gave up on is no reason to drop every search
+	// to the line path for a minute
+	pctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), bm25StateProbe)
+	defer cancel()
+	st.ttl = bm25StateTTL
+	ready, err := searchindex.Ready(pctx, h.DB)
 	if err != nil {
-		ready = false
+		ready, st.ttl = false, bm25StateRetry
 	}
 	missing = false
 	if ready {
-		if err := h.DB.QueryRowContext(ctx, `SELECT EXISTS (
+		if err := h.DB.QueryRowContext(pctx, `SELECT EXISTS (
 			SELECT 1 FROM transcripts t
 			 WHERE t.is_active
 			   AND NOT EXISTS (SELECT 1 FROM video_search_docs d WHERE d.video_id = t.video_id))`).Scan(&missing); err != nil {
-			missing = true
+			missing, st.ttl = true, bm25StateRetry
 		}
 	}
 	st.ready, st.missing, st.at = ready, missing, time.Now()
@@ -151,10 +165,14 @@ func (h *Handler) runBM25Videos(ctx context.Context, q string, limit int, f Filt
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
+		defer safego.Recover(nil, "search_bm25_exact")
+		e1 = errSearchPanicked
 		exact, e1 = h.bm25Leg(ctx, q, leg, f, "video_search_docs_bm25_text", "search_text", "maktaba_normalize")
 	}()
 	go func() {
 		defer wg.Done()
+		defer safego.Recover(nil, "search_bm25_stem")
+		e2 = errSearchPanicked
 		stem, e2 = h.bm25Leg(ctx, q, leg, f, "video_search_docs_bm25_stem_text", "stem_text", "maktaba_stem_prepare")
 	}()
 	wg.Wait()
@@ -215,12 +233,17 @@ func (h *Handler) phraseBoost(ctx context.Context, q string, vs []savedVideo) er
 		ids[i] = v.V
 	}
 	args := []any{q}
-	rows, err := h.DB.QueryContext(ctx, `
+	pctx, cancel := context.WithTimeout(ctx, phraseBudget)
+	defer cancel()
+	rows, err := h.DB.QueryContext(pctx, `
 		SELECT DISTINCT t.video_id::text FROM transcripts t
 		  JOIN transcript_segments s ON s.transcript_id = t.id
 		 WHERE t.is_active AND t.video_id IN (`+placeholders(ids, &args)+`)
 		   AND s.search_tsv @@ phraseto_tsquery('maktaba_search', $1)`, args...)
 	if err != nil {
+		if pctx.Err() != nil && ctx.Err() == nil {
+			return nil // over its budget: the BM25 order stands
+		}
 		return fmt.Errorf("phrase: %w", err)
 	}
 	defer rows.Close()
@@ -233,6 +256,9 @@ func (h *Handler) phraseBoost(ctx context.Context, q string, vs []savedVideo) er
 		phrase[id] = true
 	}
 	if err := rows.Err(); err != nil {
+		if pctx.Err() != nil && ctx.Err() == nil {
+			return nil // over its budget while reading: the BM25 order stands
+		}
 		return err
 	}
 	if len(phrase) == 0 {
