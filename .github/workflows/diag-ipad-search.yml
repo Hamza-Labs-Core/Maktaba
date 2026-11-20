@@ -17,26 +17,35 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        variant: [asis, edge]
+        variant: [nosuggest, nofocus]
     env:
       RESULTS: ${{ github.workspace }}/build/diag
     steps:
       - uses: actions/checkout@v6.0.2
       - name: Select Xcode
         run: python3 tools/apple/xcode.py select --min 27
-      - name: The results list without its top scroll edge effect
-        if: matrix.variant == 'edge'
+      - name: The app without its search suggestions
+        if: matrix.variant == 'nosuggest'
         run: |
           python3 - <<'PY'
           p = 'apps/apple/Player/Search/SearchScreen.swift'
           s = open(p).read()
-          lines = s.split('\n')
-          # the second `.listStyle(.plain)` is ResultsList's
-          idx = [i for i, l in enumerate(lines) if l.strip() == '.listStyle(.plain)']
-          assert len(idx) == 2, idx
-          i = idx[1]
-          lines.insert(i + 1, lines[i].replace('.listStyle(.plain)', '.scrollEdgeEffectHidden(true, for: .top)'))
-          open(p, 'w').write('\n'.join(lines))
+          a = s.index('            .searchSuggestions {')
+          b = s.index('            .onSubmit(of: .search)')
+          s = s[:a] + s[b:]
+          open(p, 'w').write(s)
+          PY
+          git diff
+      - name: The app without its search focus binding
+        if: matrix.variant == 'nofocus'
+        run: |
+          python3 - <<'PY'
+          p = 'apps/apple/Player/Search/SearchScreen.swift'
+          s = open(p).read()
+          old = '            .searchFocused($typing)\n'
+          assert old in s
+          s = s.replace(old, '')
+          open(p, 'w').write(s)
           PY
           git diff
       - name: Make, boot and settle the iPad simulator (as _apple-apps.yml)
@@ -62,8 +71,7 @@ jobs:
         working-directory: apps/apple
         run: |
           set -uo pipefail
-          tests=(testDiagRefocusNoResults testDiagRefocusAfterClear testATitleTappedWhileRefiningLetsTheKeyboardGoAndOpensItsPage)
-          if [ "${{ matrix.variant }}" = edge ]; then tests=(testDiagRefocusAfterSubmit testATitleTappedWhileRefiningLetsTheKeyboardGoAndOpensItsPage); fi
+          tests=(testDiagRefocusAfterSubmit testATitleTappedWhileRefiningLetsTheKeyboardGoAndOpensItsPage)
           for t in "${tests[@]}"; do
             xcodebuild test -project Maktaba.xcodeproj -scheme "Maktaba Player iPad" -destination "id=$UDID" \
               -derivedDataPath "$RUNNER_TEMP/derived" CODE_SIGNING_ALLOWED=NO \
