@@ -602,9 +602,10 @@ runs only when the person opens that tab or submits from it; Results never waits
 
 - **Keyword search ranks videos by their documents** (`api/internal/handlers/search/bm25.go`)
   once both BM25 indexes are valid (`searchindex.Ready`, checked once a minute).
-  - Two queries run in parallel, each `ORDER BY score LIMIT 100`: the exact index
-    (`search_text`, `maktaba_search`, the query through `maktaba_normalize`) and the stemmed
-    one (`stem_text`, `maktaba_stem`, through `maktaba_stem_prepare`).
+  - Two queries run in parallel, each `ORDER BY score LIMIT k`: the exact index (`search_text`,
+    `maktaba_search`, the query through `maktaba_normalize`; its top 100) and the stemmed one
+    (`stem_text`, `maktaba_stem`, through `maktaba_stem_prepare`; its top 50, Snowball costing
+    more per row).
   - A video's score is twice its exact score plus its stemmed score, so the word as typed
     ranks first and its other forms follow.
   - Both queries join `videos`, so the library filter (a limited user's libraries), the
@@ -662,13 +663,14 @@ runs only when the person opens that tab or submits from it; Results never waits
   - `TestBM25_NotReadyUsesTheLines` covers the fallback.
   - `TestBM25_Perf45k` (the replica job) uses a 45,000-document library: about 400 words a
     document from a Zipf vocabulary of 17,576 words, with الله in nine in ten. Locally p95 is
-    27 ms for الله, 28 ms for a sentence, 21 ms for a rare word, and 28 ms for الله
-    filtered to one library.
+    15 ms for الله, 15 ms for a sentence, 13 ms for a rare word, and 16 ms for الله
+    filtered to one library. CI's runner takes about twice as long: with the stemmed list at
+    100 too, it measured 53 ms.
 - **How it differs from the spec.**
   - The indexes are on stored columns, not the documents' fields as an array: see migration
     0234 above.
-  - Each index gives its top 100, so keyword search shows up to 200 videos (the two lists'
-    union), not the 500 of `rules.search.max_videos`. The meaning search's videos still fuse
+  - The exact index gives its top 100 and the stemmed one its top 50, so keyword search shows
+    up to 150 videos (the two lists' union), not the 500 of `rules.search.max_videos`. The meaning search's videos still fuse
     in for hybrid.
   - There is no separate pre-filter by the `library_id` index for a user with few libraries.
     The filter is in the BM25 query, and pg_textsearch's filtered top-k (`filtered_seed`)

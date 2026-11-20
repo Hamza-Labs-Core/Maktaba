@@ -41,10 +41,13 @@ const (
 	bm25ExactWeight = 2.0
 	// bm25PhraseTop is how many of the best videos a phrase is looked for in
 	bm25PhraseTop = 100
-	// bm25TopK is how many videos each index gives: its query scores every row it returns
-	// again (0.15 to 0.25 ms a row on a 45,000-document library), so the two legs together
-	// return up to 200 videos within the 50 ms the query has
-	bm25TopK = 100
+	// bm25TopK and bm25StemTopK are how many videos each index gives. A BM25 query scores
+	// every row it returns again: about 0.15 ms a row on the exact index and 0.25 ms on the
+	// stemmed one (Snowball) on a 45,000-document library, twice that on CI's runner. The
+	// word as typed keeps the deeper list; together they return up to 150 videos within the
+	// 50 ms the query has
+	bm25TopK     = 100
+	bm25StemTopK = 50
 	// bm25StateTTL is how long the indexes' readiness and the backfill's state are kept
 	bm25StateTTL = time.Minute
 	// bm25StateRetry is how long a state that could not be read is kept (the line path
@@ -170,7 +173,7 @@ func (h *Handler) runBM25Videos(ctx context.Context, q string, limit int, f Filt
 		exact, stem []savedVideo
 		e1, e2      error
 	)
-	leg := min(limit, bm25TopK)
+	leg, stemLeg := min(limit, bm25TopK), min(limit, bm25StemTopK)
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
@@ -182,7 +185,7 @@ func (h *Handler) runBM25Videos(ctx context.Context, q string, limit int, f Filt
 		defer wg.Done()
 		defer safego.Recover(nil, "search_bm25_stem")
 		e2 = errSearchPanicked
-		stem, e2 = h.bm25Leg(ctx, q, leg, f, "video_search_docs_bm25_stem_text", "stem_text", "maktaba_stem_prepare")
+		stem, e2 = h.bm25Leg(ctx, q, stemLeg, f, "video_search_docs_bm25_stem_text", "stem_text", "maktaba_stem_prepare")
 	}()
 	wg.Wait()
 	if e1 != nil {
