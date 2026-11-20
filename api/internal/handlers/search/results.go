@@ -131,7 +131,7 @@ type savedVideo struct {
 	S float64 `json:"s"`
 	N int     `json:"n"`
 	// L: ranked by its search document (story 49.7), its matching lines not counted yet:
-	// the page that shows it counts them (countLines), not the search
+	// the page that shows it counts them (normalisedLines), not the search
 	L bool `json:"l,omitempty"`
 }
 
@@ -872,12 +872,9 @@ func (h *Handler) transcriptPage(ctx context.Context, p *principal.Principal, rn
 			visible = append(visible, id)
 		}
 	}
-	passages, err := h.passagesOf(ctx, rn, visible, perVideo)
-	if err != nil {
-		return nil, err
-	}
-	// the BM25 videos' matching lines, counted for this page only (story 49.7)
-	lines, err := h.countLines(ctx, rn.Q, page)
+	// the BM25 videos' matching lines are counted for this page only (story 49.7), as
+	// their passages are read: normalised, and by the word's forms
+	passages, lines, err := h.passagesOf(ctx, rn, visible, perVideo)
 	if err != nil {
 		return nil, err
 	}
@@ -892,29 +889,56 @@ func (h *Handler) transcriptPage(ctx context.Context, p *principal.Principal, rn
 			ps = []Passage{}
 		}
 		out = append(out, TranscriptVideo{
-			VideoCard: c, BestScore: v.S, Matches: v.N + lines[v.V], Passages: ps, InTitle: rn.hasTitle(v.V),
+			VideoCard: c, BestScore: v.S, Matches: v.N + linesOf(v, lines), Passages: ps, InTitle: rn.hasTitle(v.V),
 		})
 	}
 	return out, nil
 }
 
+// linesOf is a BM25 video's matching lines as the page counted them (savedVideo.L; 0 for
+// a video the search counted itself).
+func linesOf(v savedVideo, counts map[string]int) int {
+	if !v.L {
+		return 0
+	}
+	return counts[v.V]
+}
+
 // passagesOf ranks each video's matching passages, best first, and keeps
 // the first perVideo of each (0: all of them, up to maxVideoPassages).
-func (h *Handler) passagesOf(ctx context.Context, rn *run, videoIDs []string, perVideo int) (map[string][]Passage, error) {
+//
+// With the BM25 indexes ready (story 49.7) the lines are matched as the videos were
+// ranked: normalised, and by their word forms (normalisedLines), and counts holds each
+// video's matching lines then (nil: the line path's passages, counted by the search).
+func (h *Handler) passagesOf(ctx context.Context, rn *run, videoIDs []string, perVideo int) (map[string][]Passage, map[string]int, error) {
 	out := map[string][]Passage{}
 	if len(videoIDs) == 0 {
-		return out, nil
+		return out, nil, nil
 	}
 	if perVideo <= 0 || perVideo > maxVideoPassages {
 		perVideo = maxVideoPassages
 	}
 	var fts map[string][]Hit
+	var counts map[string]int
+	var marks map[int64][]string
 	if rn.Mode != "semantic" && h.DB != nil {
-		var err error
+		done := false
+		if ready, _ := h.bm25Now(ctx); ready {
+			hits, n, m, ok, err := h.normalisedLines(ctx, rn.Q, videoIDs, perVideo)
+			if err != nil {
+				return nil, nil, err
+			}
+			if ok {
+				fts, counts, marks, done = hits, n, m, true
+			}
+		}
 		// Hybrid: a passage outside a video's FTS top perVideo that the meaning
 		// search did not find ranks below all of them, so perVideo is enough.
-		if fts, err = h.ftsPassages(ctx, rn.Q, videoIDs, perVideo); err != nil {
-			return nil, err
+		if !done {
+			var err error
+			if fts, err = h.ftsPassages(ctx, rn.Q, videoIDs, perVideo); err != nil {
+				return nil, nil, err
+			}
 		}
 	}
 	want := map[string]bool{}
@@ -951,12 +975,12 @@ func (h *Handler) passagesOf(ctx context.Context, rn *run, videoIDs []string, pe
 		for i, hit := range ranked {
 			ps[i] = Passage{
 				SegmentID: hit.SegmentID, StartSec: hit.StartSec, EndSec: hit.EndSec,
-				Snippet: highlightSnippet(hit.Snippet, rn.Q, 240), Score: hit.Score,
+				Snippet: highlightSnippetWith(hit.Snippet, rn.Q, marks[hit.SegmentID], 240), Score: hit.Score,
 			}
 		}
 		out[id] = ps
 	}
-	return out, nil
+	return out, counts, nil
 }
 
 // ftsPassages reads the videos' full-text matching segments of their active

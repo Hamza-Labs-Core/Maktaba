@@ -613,9 +613,20 @@ runs only when the person opens that tab or submits from it; Results never waits
   transcript has a line saying the words together (`phraseto_tsquery` on the lines' GIN)
   each gain the list's best score. They rank above every video whose words are scattered,
   in BM25 order among themselves.
-- **Passages** stay the line path's: the shown page's videos' best lines, with `<mark>` and
-  times. A BM25 video's matching lines are counted for the page shown, not for the whole
-  result (`savedVideo.L`).
+- **Passages and match counts** are read as the videos are ranked: normalised, then by the
+  word's forms. A video found through a spelling variant (اسلام finding إسلام) shows its
+  matching lines and a passage marking the word as written. `normalisedLines`:
+  - reads the shown page's videos' lines once, and folds them in Go (`textnorm`, held equal
+    to `maktaba_normalize`);
+  - matches a line whose folded words hold every one of the query's exact lexemes;
+  - asks Postgres's stemmer only about the lines that fail that and yet contain every
+    stemmed lexeme;
+  - marks the line's own words that matched.
+
+  A page of 20 videos, some 6,000 lines, takes 12 to 28 ms locally. Working `maktaba_tsv`
+  out line by line in SQL costs about 40 µs a line, so it is not used. The query has a
+  60 ms budget, and past it the page keeps the line path's passages. A BM25 video's lines
+  are counted for the page shown, not for the whole result (`savedVideo.L`).
 - **Hybrid** fuses the BM25 videos with the meaning search's videos by weighted RRF (k=60,
   today's weights), as the line path's videos were.
 - **Fallbacks.** Before the indexes are valid, on PostgreSQL 16 or on SQLite, keyword search
@@ -637,6 +648,10 @@ runs only when the person opens that tab or submits from it; Results never waits
     - a rare word finds its videos;
     - word forms follow the word as typed;
     - matches are counted and passages are marked;
+    - `TestBM25_VariantsHaveMatchesAndPassages`: اسلام, هدي, مدرسه, صبروا and cafe each find
+      the video saying إسلام, هدى, مدرسة, الصبر or café, with at least one match and a
+      passage marking the word as written, on the results and on the video's passages
+      page;
     - hybrid keeps BM25's order where the meaning search agrees;
     - a video with no document yet is found by its lines.
   - `TestBM25_NotReadyUsesTheLines` covers the fallback.

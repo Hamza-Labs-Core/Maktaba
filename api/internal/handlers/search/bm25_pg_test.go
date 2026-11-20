@@ -7,6 +7,7 @@ import (
 	"context"
 	"database/sql"
 	"net/http"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -195,5 +196,50 @@ func TestBM25_NotReadyUsesTheLines(t *testing.T) {
 		`{"q":"الصبر","mode":"fts","view":"list"}`), 200)
 	if len(resp.TranscriptVideos) != 1 || resp.TranscriptVideos[0].Matches != 1 {
 		t.Fatalf("the line path: %+v", resp.TranscriptVideos)
+	}
+}
+
+// A video found through a spelling variant (story 49.4's point: اسلام finds إسلام) or
+// another form of the word shows its matching lines and a passage that marks the word as
+// it is written, not 0 matches and no passage.
+func TestBM25_VariantsHaveMatchesAndPassages(t *testing.T) {
+	db := bm25DB(t)
+	cases := []struct{ q, said, line string }{
+		{"اسلام", "إسلام", "حديث عن الإيمان و إسلام المرء"},
+		{"هدي", "هدى", "هذا هدى للمتقين"},
+		{"مدرسه", "مدرسة", "ذهب إلى مدرسة القرية، ثم عاد"},
+		{"صبروا", "الصبر", "إن الصبر عند المصيبة الأولى"}, // another form of the word
+		{"cafe", "café", "a talk at the café"},            // the exact configuration's unaccent
+	}
+	for i, c := range cases {
+		v := pgUUID(121 + i)
+		tr := pgVideo(t, db, v, libA, "درس "+strconv.Itoa(i))
+		pgTranscript(t, db, pgUUID(221+i), v, tr, true, "مقدمة", c.line, "خاتمة")
+		pgDoc(t, db, v)
+	}
+	buildIndexes(t, db)
+	srv := router(&Handler{DB: db})
+	for i, c := range cases {
+		v := pgUUID(121 + i)
+		resp := decode[Response](t, call(t, srv, adminB, http.MethodPost, "/api/search",
+			`{"q":"`+c.q+`","mode":"fts","view":"list"}`), 200)
+		var got *TranscriptVideo
+		for j := range resp.TranscriptVideos {
+			if resp.TranscriptVideos[j].VideoID == v {
+				got = &resp.TranscriptVideos[j]
+			}
+		}
+		if got == nil {
+			t.Fatalf("%s: the video saying %s is not found: %+v", c.q, c.said, order(resp.TranscriptVideos))
+		}
+		if got.Matches < 1 || len(got.Passages) == 0 || !strings.Contains(got.Passages[0].Snippet, "<mark>"+c.said+"</mark>") {
+			t.Fatalf("%s: %d matches, passages %+v: want ≥ 1 and %s marked", c.q, got.Matches, got.Passages, c.said)
+		}
+		// the video's own passages page reads them the same way
+		page := decode[passagesPage](t, call(t, srv, adminB, http.MethodGet,
+			"/api/search/passages?sid="+resp.SearchID+"&video_id="+v, ""), 200)
+		if page.Total != 1 || !strings.Contains(page.Items[0].Snippet, "<mark>"+c.said+"</mark>") {
+			t.Fatalf("%s: passages page %+v", c.q, page)
+		}
 	}
 }
