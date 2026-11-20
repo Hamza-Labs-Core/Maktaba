@@ -898,6 +898,35 @@
    "unreleased": false,
    "version": 2
   },
+  "keyword_index": {
+   "after_topup": false,
+   "debounce_max_sec": 0,
+   "debounce_sec": 0,
+   "edges": [],
+   "entry_for": [],
+   "every_minutes_rule": null,
+   "extension": null,
+   "external_write": false,
+   "hidden": false,
+   "label": "Keyword index",
+   "lane": "speech",
+   "lane_order": 5,
+   "legacy": false,
+   "max_attempts": 3,
+   "may_request": [],
+   "model_rules": null,
+   "name": "keyword_index",
+   "placement": "any",
+   "pool": "cpu",
+   "relay": null,
+   "storage": null,
+   "subject_kinds": [
+    "video",
+    "library"
+   ],
+   "unreleased": false,
+   "version": 1
+  },
   "link": {
    "after_topup": false,
    "debounce_max_sec": 0,
@@ -1245,6 +1274,12 @@
      "legacy": false,
      "map": "same",
      "to": "index",
+     "when": "output_changed"
+    },
+    {
+     "legacy": false,
+     "map": "same",
+     "to": "keyword_index",
      "when": "output_changed"
     },
     {

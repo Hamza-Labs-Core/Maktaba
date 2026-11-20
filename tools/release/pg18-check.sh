@@ -82,23 +82,32 @@ SQL
         *) fail "pg_textsearch's BM25 query (exit $rc): $(printf '%s\n' "$out" | tail -4 | tr '\n' ' ') server: $(tail -5 "$scratch/pg18.log" 2>/dev/null | tr '\n' ' ')" ;;
     esac
     if [ -n "$api" ]; then
-        # as a home migrates (story 49.5): its database owned by an app role that is no
-        # superuser, the extensions made first by the superuser as the bundled server's
+        # as a home migrates (stories 49.5, 49.6): its database owned by an app role that is
+        # no superuser, the extensions made first by the superuser as the bundled server's
         # bootstrap makes them, pg_textsearch in its own schema (pgbundle.textsearchSQL); then
         # migrate up as the app role, which grants on every function of public (slot 0103)
-        # and makes keyword search's two BM25 indexes
+        # and builds no BM25 index (the build has no time limit, so it is never a
+        # migration's), and `maktaba-api search-indexes`, what the home API's loop runs after
+        # its start, builds both
+        db18="postgres://check_app@127.0.0.1:$port/maktaba_check18?sslmode=disable"
+        bm25="SELECT count(*) FROM pg_index x JOIN pg_class c ON c.oid = x.indexrelid
+            WHERE c.relname IN ('video_search_docs_bm25', 'video_search_docs_bm25_stem') AND x.indisvalid;"
         if psql18 -d postgres -c "CREATE ROLE check_app LOGIN CREATEROLE;" -c "CREATE DATABASE maktaba_check18 OWNER check_app;" >/dev/null 2>&1 &&
             psql18 -d maktaba_check18 -c "CREATE EXTENSION pg_trgm; CREATE EXTENSION pgcrypto; CREATE EXTENSION unaccent; CREATE EXTENSION vector;
                 CREATE SCHEMA textsearch; GRANT USAGE ON SCHEMA textsearch TO check_app; CREATE EXTENSION pg_textsearch SCHEMA textsearch;" >/dev/null 2>&1 &&
-            out="$(cd "$scratch" && env -u MAKTABA_MIGRATIONS_DIR \
-                DATABASE_URL="postgres://check_app@127.0.0.1:$port/maktaba_check18?sslmode=disable" "$api" migrate up 2>&1)"; then
+            out="$(cd "$scratch" && env -u MAKTABA_MIGRATIONS_DIR DATABASE_URL="$db18" "$api" migrate up 2>&1)"; then
             ok "the schema migrates on PostgreSQL 18 as an app role (maktaba-api migrate up)"
-            out="$(psql18 -d maktaba_check18 -c "SELECT count(*) FROM pg_index x JOIN pg_class c ON c.oid = x.indexrelid
-                WHERE c.relname IN ('video_search_docs_bm25', 'video_search_docs_bm25_stem') AND x.indisvalid;" 2>&1)"
+            out="$(psql18 -d maktaba_check18 -c "$bm25" 2>&1)"
             case "$out" in
-                2) ok "keyword search's BM25 indexes, exact and stemmed, made by migrate up" ;;
-                *) fail "keyword search's BM25 indexes after migrate up: $out" ;;
+                0) ok "migrate up builds no BM25 index" ;;
+                *) fail "migrate up built BM25 indexes ($out): the build belongs after the start" ;;
             esac
+            if out="$(DATABASE_URL="$db18" "$api" search-indexes 2>&1)" &&
+                [ "$(psql18 -d maktaba_check18 -c "$bm25" 2>&1)" = 2 ]; then
+                ok "keyword search's BM25 indexes, exact and stemmed, built by maktaba-api search-indexes"
+            else
+                fail "maktaba-api search-indexes on PostgreSQL 18: $(printf '%s\n' "$out" | tail -3)"
+            fi
         else
             fail "maktaba-api migrate up on PostgreSQL 18: $(printf '%s\n' "$out" | tail -3)"
         fi

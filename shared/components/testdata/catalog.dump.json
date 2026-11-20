@@ -82,7 +82,8 @@
         "api:parental_cache_listen",
         "api:plugins_catalog",
         "api:parental_recompute",
-        "api:parental_activity"
+        "api:parental_activity",
+        "api:search_index"
       ],
       "on_demand": false,
       "placement": "any",
@@ -834,6 +835,54 @@
         "lang.en",
         "model.refine"
       ]
+    },
+    {
+      "bundles": [
+        "full",
+        "core",
+        "worker"
+      ],
+      "conflicts": [],
+      "desc_key": "components.core.search.desc",
+      "drain": {
+        "checkpoint": false,
+        "grace_s": 30
+      },
+      "features": [],
+      "gated": false,
+      "group": "core",
+      "id": "core.search",
+      "in_payload": false,
+      "kind": "stages",
+      "licence": "",
+      "loops": [],
+      "on_demand": false,
+      "placement": "any",
+      "platforms": [
+        "darwin-arm64",
+        "windows-amd64",
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "plugin": "",
+      "processes": [],
+      "requires": [],
+      "resources": {
+        "disk_mb": 0,
+        "gpu": "",
+        "ram_mb": 0
+      },
+      "settings": [],
+      "since": "0.3.152",
+      "source": "",
+      "sources": {},
+      "stages": [
+        "keyword_index"
+      ],
+      "stop_grace_s": 0,
+      "switchable": false,
+      "title_key": "components.core.search.title",
+      "wants": []
     },
     {
       "bundles": [
@@ -3614,6 +3663,7 @@
     "subtitles",
     "runtime.lang",
     "review.words",
+    "core.search",
     "parental.detect",
     "model.embedder",
     "search.semantic",
