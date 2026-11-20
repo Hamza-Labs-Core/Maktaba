@@ -113,7 +113,10 @@ loops      = ["api:process_recorder", "api:license_refresher", "api:license_relo
               "api:parental_recompute",
               # asking a parent and a child's activity (stories 57.06, 57.08): closes old
               # requests, records what was watched, deletes activity older than 90 days
-              "api:parental_activity"]
+              "api:parental_activity",
+              # keyword search's BM25 indexes (stories 49.5, 49.6): built after the start, with
+              # no time limit, and looked at again every hour
+              "api:search_index"]
 settings   = ["rules.storage", "rules.system_health", "rules.search"]
 platforms  = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
 bundles    = ["full", "core", "worker"]

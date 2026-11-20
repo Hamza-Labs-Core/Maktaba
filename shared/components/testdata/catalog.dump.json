@@ -82,7 +82,8 @@
         "api:parental_cache_listen",
         "api:plugins_catalog",
         "api:parental_recompute",
-        "api:parental_activity"
+        "api:parental_activity",
+        "api:search_index"
       ],
       "on_demand": false,
       "placement": "any",

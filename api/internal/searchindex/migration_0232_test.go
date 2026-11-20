@@ -334,3 +334,41 @@ func TestEnsureBeforeSlot0232(t *testing.T) {
 		t.Fatalf("Ensure before slot 0232 ran %q (%v)", ran, err)
 	}
 }
+
+// Story 49.6: one builder at a time. While another API holds the builders' lock, BuildOnce
+// builds nothing and says so; once it is free, it builds.
+func TestBuildOnceOneAtATime(t *testing.T) {
+	db, _ := clustertest.ScratchDB(t)
+	if !textsearchHere(t, db) {
+		t.Skip("no pg_textsearch on this server (PostgreSQL 16, or not preloaded): the replica job runs this on 18")
+	}
+	ctx := context.Background()
+	other, err := db.Conn(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer other.Close()
+	if _, err := other.ExecContext(ctx, `SELECT pg_advisory_lock($1)`, lockKey); err != nil {
+		t.Fatal(err)
+	}
+	if ran, locked, err := BuildOnce(ctx, db); err != nil || locked || ran != nil {
+		t.Fatalf("BuildOnce beside another builder: ran %q, locked %v (%v)", ran, locked, err)
+	}
+	if ready, _ := Ready(ctx, db); ready {
+		t.Fatal("Ready with no index built")
+	}
+	if _, err := other.ExecContext(ctx, `SELECT pg_advisory_unlock($1)`, lockKey); err != nil {
+		t.Fatal(err)
+	}
+	if ran, locked, err := BuildOnce(ctx, db); err != nil || !locked || len(ran) != 2 {
+		t.Fatalf("BuildOnce alone: ran %q, locked %v (%v)", ran, locked, err)
+	}
+	if ready, err := Ready(ctx, db); err != nil || !ready {
+		t.Fatalf("Ready after the build = %v (%v)", ready, err)
+	}
+	// the session's own timeouts are back as they were on the pooled connection
+	var st string
+	if err := db.QueryRow(`SHOW statement_timeout`).Scan(&st); err != nil || st != "0" {
+		t.Fatalf("statement_timeout after BuildOnce = %q (%v)", st, err)
+	}
+}
