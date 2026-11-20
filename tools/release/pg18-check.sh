@@ -55,14 +55,15 @@ if "$pg18/initdb$x" -D "$(w "$data")" -U maktaba --auth=trust -E UTF8 --locale=C
     case "$out" in *pg_textsearch*) ok "shared_preload_libraries: $out" ;; *) fail "shared_preload_libraries: $out" ;; esac
     out="$(psql18 -d postgres \
         -c "CREATE EXTENSION pg_trgm; CREATE EXTENSION pgcrypto; CREATE EXTENSION unaccent; CREATE EXTENSION vector;" \
-        -c "CREATE EXTENSION pg_textsearch;" \
+        -c "CREATE SCHEMA textsearch; CREATE EXTENSION pg_textsearch SCHEMA textsearch;" \
         -c "SELECT string_agg(extname || ' ' || extversion, ', ' ORDER BY extname) FROM pg_extension WHERE extname <> 'plpgsql';" 2>&1)"
     case "$out" in
         *pg_textsearch*vector*) ok "extensions: $(printf '%s\n' "$out" | tail -1)" ;;
         *) fail "CREATE EXTENSION (pg_textsearch, vector, the contrib ones): $(printf '%s\n' "$out" | tail -3)" ;;
     esac
     # Maktaba's text search configuration (unaccent in front of simple), a BM25 index on it,
-    # and the ranked query of Epic 49 (ORDER BY <@> LIMIT), answered by the index
+    # and the ranked query of Epic 49 (ORDER BY <@> LIMIT), answered by the index, with
+    # pg_textsearch in its own schema as the bundled server makes it (pgbundle.textsearchSQL)
     # (in through stdin, UTF-8: Windows' command line would pass the Arabic in its code page)
     rc=0
     out="$(psql18 -d postgres 2>&1 <<'SQL'
@@ -72,8 +73,8 @@ CREATE TABLE docs (id int PRIMARY KEY, body text NOT NULL);
 INSERT INTO docs SELECT i, CASE WHEN i = 7 THEN 'الصبر الصبر الصبر عند المصيبة' ELSE 'كلمة ' || i || ' الصبر' END FROM generate_series(1, 500) i;
 CREATE INDEX docs_bm25 ON docs USING bm25 (body) WITH (text_config = 'public.maktaba_search');
 SET enable_seqscan = off;
-SELECT 'top: ' || string_agg(id::text, ',') FROM (SELECT id FROM docs ORDER BY body <@> to_bm25query('الصبر المصيبة', 'docs_bm25') LIMIT 3) t;
-EXPLAIN (COSTS OFF) SELECT id FROM docs ORDER BY body <@> to_bm25query('الصبر', 'docs_bm25') LIMIT 3;
+SELECT 'top: ' || string_agg(id::text, ',') FROM (SELECT id FROM docs ORDER BY body OPERATOR(textsearch.<@>) textsearch.to_bm25query('الصبر المصيبة', 'docs_bm25') LIMIT 3) t;
+EXPLAIN (COSTS OFF) SELECT id FROM docs ORDER BY body OPERATOR(textsearch.<@>) textsearch.to_bm25query('الصبر', 'docs_bm25') LIMIT 3;
 SQL
 )" || rc=$?
     case "$rc:$out" in
@@ -81,17 +82,21 @@ SQL
         *) fail "pg_textsearch's BM25 query (exit $rc): $(printf '%s\n' "$out" | tail -4 | tr '\n' ' ') server: $(tail -5 "$scratch/pg18.log" 2>/dev/null | tr '\n' ' ')" ;;
     esac
     if [ -n "$api" ]; then
-        # with pg_textsearch made first, as the bundled server's bootstrap makes it: migrate
-        # up builds no BM25 index (the build has no time limit, so it is never a migration's:
-        # stories 49.5, 49.6), and `maktaba-api search-indexes`, what the home API's loop runs
-        # after its start, builds both
-        db18="postgres://maktaba@127.0.0.1:$port/maktaba_check18?sslmode=disable"
+        # as a home migrates (stories 49.5, 49.6): its database owned by an app role that is
+        # no superuser, the extensions made first by the superuser as the bundled server's
+        # bootstrap makes them, pg_textsearch in its own schema (pgbundle.textsearchSQL); then
+        # migrate up as the app role, which grants on every function of public (slot 0103)
+        # and builds no BM25 index (the build has no time limit, so it is never a
+        # migration's), and `maktaba-api search-indexes`, what the home API's loop runs after
+        # its start, builds both
+        db18="postgres://check_app@127.0.0.1:$port/maktaba_check18?sslmode=disable"
         bm25="SELECT count(*) FROM pg_index x JOIN pg_class c ON c.oid = x.indexrelid
             WHERE c.relname IN ('video_search_docs_bm25', 'video_search_docs_bm25_stem') AND x.indisvalid;"
-        if psql18 -d postgres -c "CREATE DATABASE maktaba_check18;" >/dev/null 2>&1 &&
-            psql18 -d maktaba_check18 -c "CREATE EXTENSION pg_trgm; CREATE EXTENSION pgcrypto; CREATE EXTENSION unaccent; CREATE EXTENSION vector; CREATE EXTENSION pg_textsearch;" >/dev/null 2>&1 &&
+        if psql18 -d postgres -c "CREATE ROLE check_app LOGIN CREATEROLE;" -c "CREATE DATABASE maktaba_check18 OWNER check_app;" >/dev/null 2>&1 &&
+            psql18 -d maktaba_check18 -c "CREATE EXTENSION pg_trgm; CREATE EXTENSION pgcrypto; CREATE EXTENSION unaccent; CREATE EXTENSION vector;
+                CREATE SCHEMA textsearch; GRANT USAGE ON SCHEMA textsearch TO check_app; CREATE EXTENSION pg_textsearch SCHEMA textsearch;" >/dev/null 2>&1 &&
             out="$(cd "$scratch" && env -u MAKTABA_MIGRATIONS_DIR DATABASE_URL="$db18" "$api" migrate up 2>&1)"; then
-            ok "the schema migrates on PostgreSQL 18 (maktaba-api migrate up)"
+            ok "the schema migrates on PostgreSQL 18 as an app role (maktaba-api migrate up)"
             out="$(psql18 -d maktaba_check18 -c "$bm25" 2>&1)"
             case "$out" in
                 0) ok "migrate up builds no BM25 index" ;;

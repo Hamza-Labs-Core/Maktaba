@@ -140,7 +140,7 @@ func TestLargeLibraryBuildsInTheBackground(t *testing.T) {
 	}
 	q := `SELECT video_id::text FROM video_search_docs
 		ORDER BY ARRAY[public.maktaba_normalize(title), public.maktaba_normalize(speakers), public.maktaba_normalize(body)]
-		      <@> to_bm25query(public.maktaba_normalize($1), 'video_search_docs_bm25') LIMIT 1`
+		      OPERATOR(textsearch.<@>) textsearch.to_bm25query(public.maktaba_normalize($1), 'video_search_docs_bm25') LIMIT 1`
 	// (its words as another spelling: أ and ة folded)
 	if got := scalar[string](t, db, q, "محاضره متاخره"); got != late {
 		t.Errorf("the document written during the build: top is %s", got)

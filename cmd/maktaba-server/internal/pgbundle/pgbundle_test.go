@@ -563,6 +563,9 @@ func TestTextsearchOnlyWhenPreloaded(t *testing.T) {
 		"WHERE EXISTS (SELECT FROM pg_available_extensions WHERE name = 'pg_textsearch')",
 		"current_setting('shared_preload_libraries') ~",
 		"pg_textsearch([\\s,]|$)'\\gexec",
+		// its own schema, never public (the migrations grant on every function of public)
+		"'CREATE EXTENSION IF NOT EXISTS pg_textsearch SCHEMA textsearch'",
+		"'GRANT USAGE ON SCHEMA textsearch TO maktaba'",
 	} {
 		if !strings.Contains(textsearchSQL, want) {
 			t.Errorf("textsearchSQL lacks %q:\n%s", want, textsearchSQL)
