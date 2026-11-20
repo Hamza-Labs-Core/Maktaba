@@ -246,6 +246,10 @@ func MountP6(r chi.Router, d P6Deps) {
 		})
 		return err
 	}
+	// Epic 49 story 49.6: a new title reaches the video's keyword search document
+	videoHandler.KeywordIndexRefresh = func(ctx context.Context, ids []string) error {
+		return enqueueKeywordIndex(ctx, d.DB, ids, "title_edited")
+	}
 	videoHandler.Mount(r)
 	// Epic 56 story 56.09: smart playlists are GET /api/videos run as their owner
 	browseHandler.ListVideos = videoHandler.List
@@ -314,7 +318,10 @@ func MountP6(r chi.Router, d P6Deps) {
 	fillerHandler := &filler.Handler{DB: d.DB, Drafts: tvchange.NewDrafts(d.DB)} // Epic 33: drafts while staging is on
 	fillerHandler.Mount(r)
 
-	speakerHandler := &speakers.Handler{DB: d.DB}
+	speakerHandler := &speakers.Handler{DB: d.DB, KeywordIndexRefresh: func(ctx context.Context, ids []string) error {
+		// Epic 49 story 49.6: a speaker's new name reaches its videos' search documents
+		return enqueueKeywordIndex(ctx, d.DB, ids, "speaker_renamed")
+	}}
 	speakerHandler.Mount(r)
 
 	settingsHandler := &settings.Handler{
@@ -494,4 +501,19 @@ func analyticsSalt(d P6Deps) string {
 		return ""
 	}
 	return AnalyticsSalt(context.Background(), d.Secrets, nil)
+}
+
+// enqueueKeywordIndex queues the videos' keyword_index stage at the normal priority, ahead
+// of the stage's own backfill (Epic 49 story 49.6): their keyword search documents are
+// built again with what an admin just changed.
+func enqueueKeywordIndex(ctx context.Context, db *sql.DB, videoIDs []string, why string) error {
+	for _, id := range videoIDs {
+		if _, err := queues.Enqueue(ctx, db, queues.EnqueueParams{
+			SubjectKind: queues.KindVideo, SubjectID: id, Stage: "keyword_index",
+			Reason: queues.ReasonFor(ctx, why, nil),
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
 }

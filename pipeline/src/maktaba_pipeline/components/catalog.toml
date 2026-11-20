@@ -328,6 +328,22 @@ drain     = { grace_s = 30, checkpoint = false }
 bundles   = ["full", "worker"]
 since     = "0.3.86"
 
+# Epic 49 story 49.6: each video's keyword search document, built from its transcript,
+# title and speakers for the BM25 search (its indexes are the API's: api:search_index). CPU
+# only; never off: keyword search is the search
+[[component]]
+id         = "core.search"
+kind       = "stages"
+switchable = false
+group      = "core"
+title_key  = "components.core.search.title"
+desc_key   = "components.core.search.desc"
+stages     = ["keyword_index"]
+platforms  = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
+drain      = { grace_s = 30, checkpoint = false }
+bundles    = ["full", "core", "worker"]
+since      = "0.3.152"
+
 # Epic 57 story 57.17: each video's age tier worked out from its transcript on the home's
 # own model, for the parental controls. Home only: a transcript goes to the cluster's LLM
 # door and nowhere else. No model, no detected tiers

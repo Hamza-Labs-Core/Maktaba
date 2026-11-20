@@ -23,6 +23,7 @@ file_restore
 fingerprint
 fp_gate
 index
+keyword_index
 link
 plan_channels
 plex_livetv

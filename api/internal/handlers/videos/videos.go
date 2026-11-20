@@ -120,6 +120,11 @@ type Handler struct {
 	// set or cleared by hand: it enqueues the library's display_title stage
 	// so the channels' future blocks get the new title. Best effort.
 	DisplayTitleRefresh func(ctx context.Context, libraryID string) error
+	// KeywordIndexRefresh, when set, is called after the title or the display title
+	// changed: it queues the video's keyword_index stage, so its keyword search document
+	// carries the new title (Epic 49 story 49.6; the stage's plan catches any other
+	// writer within half an hour). Best effort.
+	KeywordIndexRefresh func(ctx context.Context, videoIDs []string) error
 }
 
 // DisplayTitleMaxRunes caps a hand-set display title.
@@ -769,6 +774,12 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		h.recordUserProvenance(r.Context(), id, edited, now)
+	}
+	if _, titled := edited["title"]; (displayChanged || titled) && h.KeywordIndexRefresh != nil {
+		if err := h.KeywordIndexRefresh(r.Context(), []string{id}); err != nil {
+			slog.WarnContext(r.Context(), "videos: keyword index refresh not queued", "video", id, "err", err.Error(),
+				"event", "keyword_index_refresh_failed")
+		}
 	}
 	if displayChanged && h.DisplayTitleRefresh != nil {
 		if err := h.DisplayTitleRefresh(r.Context(), v.LibraryID); err != nil {
