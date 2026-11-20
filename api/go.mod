@@ -2,13 +2,15 @@ module github.com/Hamza-Labs-Core/Maktaba/api
 
 go 1.26.0
 
+toolchain go1.26.11
+
 // No multipath TCP on our listeners (Go 1.24+ turns it on by default): it was the path
 // into CVE-2026-98432, the Linux IPv4 TCP use-after-free (docs/security/advisories/2026-11-01-linux-tcp-uaf.md).
 godebug multipathtcp=0
 
 require (
-	github.com/Hamza-Labs-Core/Maktaba/shared/go/clientip v0.0.0
 	github.com/Hamza-Labs-Core/Maktaba/shared/errrpt/go v0.0.0
+	github.com/Hamza-Labs-Core/Maktaba/shared/go/clientip v0.0.0
 	github.com/Hamza-Labs-Core/Maktaba/shared/go/componentpack v0.0.0
 	github.com/Hamza-Labs-Core/Maktaba/shared/go/releaseverify v0.0.0
 	github.com/Hamza-Labs-Core/Maktaba/shared/health/go v0.0.0-00010101000000-000000000000
@@ -22,6 +24,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/grandcat/zeroconf v1.0.0
 	github.com/graph-gophers/graphql-go v1.9.0
+	github.com/jackpal/gateway v1.1.1
 	github.com/lib/pq v1.11.2
 	github.com/miekg/dns v1.1.72
 	github.com/pressly/goose/v3 v3.29.0
@@ -74,9 +77,8 @@ require (
 	github.com/in-toto/attestation v1.2.0 // indirect
 	github.com/in-toto/in-toto-golang v0.11.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
-	github.com/jackpal/gateway v1.1.1 // indirect
 	github.com/jedisct1/go-minisign v0.0.0-20211028175153-1c139d1cc84b // indirect
-	github.com/klauspost/compress v1.20.1 // indirect
+	github.com/klauspost/compress v1.20.2 // indirect
 	github.com/kylelemons/godebug v1.1.0 // indirect
 	github.com/oklog/ulid/v2 v2.1.1 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
@@ -143,7 +145,7 @@ require (
 	go.opentelemetry.io/otel/trace v1.47.0 // indirect
 	go.opentelemetry.io/proto/otlp v1.11.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	golang.org/x/net v0.61.0
+	golang.org/x/net v0.62.0
 	golang.org/x/sync v0.24.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20261005182115-fad411399dd8 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20261005182115-fad411399dd8 // indirect

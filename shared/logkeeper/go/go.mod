@@ -2,9 +2,11 @@ module github.com/Hamza-Labs-Core/Maktaba/shared/logkeeper/go
 
 go 1.25.8
 
+toolchain go1.26.11
+
 require (
 	github.com/Hamza-Labs-Core/Maktaba/shared/log/go v0.0.0
-	github.com/klauspost/compress v1.20.1
+	github.com/klauspost/compress v1.20.2
 	golang.org/x/sys v0.47.0
 	modernc.org/sqlite v1.51.0
 )

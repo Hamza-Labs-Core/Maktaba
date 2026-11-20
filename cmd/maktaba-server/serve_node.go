@@ -201,8 +201,8 @@ func homeStreamProxy(target string) http.Handler {
 		})
 	}
 	proxy := httputil.NewSingleHostReverseProxy(u)
-	director := proxy.Director
-	proxy.Director = func(r *http.Request) {
+	director := proxy.Director               //nolint:staticcheck // SA1019: Director, not Rewrite, until its own change (cmd_serve.go)
+	proxy.Director = func(r *http.Request) { //nolint:staticcheck // SA1019, as above
 		director(r)
 		r.Host = u.Host
 		// the web session is for the API only, never a streaming service

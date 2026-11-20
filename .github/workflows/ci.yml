@@ -114,6 +114,7 @@ jobs:
       media_e2e: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.media_e2e == 'true' }}
       perf_ci: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.perf_ci == 'true' }}
       build_artifacts: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.build_artifacts == 'true' }}
+      cve_gate: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.cve_gate == 'true' }}
       images: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.images == 'true' }}
       node_packaging: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.node_packaging == 'true' }}
       components_packs: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.components_packs == 'true' }}
@@ -329,6 +330,14 @@ jobs:
     if: needs.changes.outputs.build_artifacts == 'true'
     uses: ./.github/workflows/_build-artifacts.yml
 
+  cve-gate:
+    # Story 23.7 AC2: govulncheck, pip-audit and pnpm audit over the shipped components; a
+    # called Go vulnerability or a high/critical Python or npm one fails it unless
+    # security/suppressions/ records why, until a date (see _cve-gate.yml)
+    needs: [changes]
+    if: needs.changes.outputs.cve_gate == 'true'
+    uses: ./.github/workflows/_cve-gate.yml
+
   images:
     # Story 22.3 AC4 / TC3: the four compose images built and held to their size budgets
     # (tools/image-size-guard.sh); an image over its budget fails with the overshoot
@@ -486,6 +495,7 @@ jobs:
 
   # The in-repo wiki app (web/wiki-app): its database matches the specs it is generated
   # from (docs/wiki/db/generate_wiki.py --check, and the generator's tests), and it builds.
+  # docs/wiki/epic-status.md's counts match its story rows (docs/wiki/db/epic_status.py --check).
   wiki:
     needs: [changes]
     if: needs.changes.outputs.wiki == 'true'
@@ -497,6 +507,8 @@ jobs:
       - uses: actions/checkout@v6.0.2
       - name: The wiki database matches the specs
         run: python3 docs/wiki/db/generate_wiki.py --check
+      - name: The epic status page's counts match its story rows
+        run: python3 docs/wiki/db/epic_status.py --check
       - name: The generator's tests
         run: python3 -m unittest discover -s docs/wiki/db -p 'test_*.py' -v
       - uses: actions/setup-node@v6.4.0
@@ -637,6 +649,7 @@ jobs:
       - media-e2e
       - perf-ci
       - build-artifacts
+      - cve-gate
       - images
       - node-packaging
       - components-packs
