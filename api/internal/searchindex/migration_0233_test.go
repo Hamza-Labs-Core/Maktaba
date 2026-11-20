@@ -58,9 +58,15 @@ func TestSlot0233OnSQLite(t *testing.T) {
 	up, down := gooseStatements(t, "0233_video_search_docs_version.sqlite.sql")
 	// the API's SQLite migrator applies ADD COLUMN IF NOT EXISTS (api/migrate_sqlite.go);
 	// stock SQLite takes it without IF NOT EXISTS on a table that lacks the column
-	plain := make([]string, len(up))
-	for i, s := range up {
-		plain[i] = strings.Replace(s, "ADD COLUMN IF NOT EXISTS", "ADD COLUMN", 1)
+	// stock SQLite takes it without IF NOT EXISTS on a table that lacks the column. The
+	// stage's job_stages seed needs the queue's tables, which this database leaves out: the
+	// API's own SQLite migrator applies every slot (api/migrate_sqlite_test.go)
+	var plain []string
+	for _, s := range up {
+		if strings.Contains(s, "INSERT INTO job_stages") {
+			continue
+		}
+		plain = append(plain, strings.Replace(s, "ADD COLUMN IF NOT EXISTS", "ADD COLUMN", 1))
 	}
 	run(t, db, "up", plain)
 	run(t, db, "a document", []string{
