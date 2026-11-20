@@ -340,6 +340,11 @@ func (h *Handler) normalisedLines(ctx context.Context, q string, videoIDs []stri
 		}
 		return nil, nil, nil, false, fmt.Errorf("normalised lines: %w", err)
 	}
+	// websearch's operators (a quoted phrase, -word, OR) are not a list of words: such a
+	// query keeps the line path's passages
+	if queryHasOperators(q) {
+		return nil, nil, nil, false, nil
+	}
 	var exact, stems []string
 	if err := h.DB.QueryRowContext(pctx, `SELECT tsvector_to_array(public.maktaba_tsv($1)),
 		tsvector_to_array(public.maktaba_tsv_stem($1))`, q).Scan(pq.Array(&exact), pq.Array(&stems)); err != nil {
@@ -348,6 +353,7 @@ func (h *Handler) normalisedLines(ctx context.Context, q string, videoIDs []stri
 	if len(exact) == 0 && len(stems) == 0 {
 		return hits, counts, marks, true, nil
 	}
+	loose := looseStems(stems)
 	args := []any{}
 	rows, err := h.DB.QueryContext(pctx, `
 		SELECT s.id, t.video_id::text, s.start_sec, s.end_sec, s.text
@@ -362,7 +368,7 @@ func (h *Handler) normalisedLines(ctx context.Context, q string, videoIDs []stri
 		norm  []string // the same words, normalised and lowercased
 	}
 	var matched []line
-	var maybe []line // contain every stem: Postgres's stemmer decides
+	var maybe []line // Postgres decides: they hold the query's letters but not its words as split here
 	for rows.Next() {
 		var l line
 		if err := rows.Scan(&l.hit.SegmentID, &l.hit.VideoID, &l.hit.StartSec, &l.hit.EndSec, &l.hit.Snippet); err != nil {
@@ -373,14 +379,16 @@ func (h *Handler) normalisedLines(ctx context.Context, q string, videoIDs []stri
 		// any word is split
 		folded := foldWord(l.hit.Snippet)
 		inExact := len(exact) > 0 && containsAll(folded, exact)
-		if !inExact && (len(stems) == 0 || !containsAll(folded, stems)) {
+		if !inExact && (len(loose) == 0 || !containsAll(folded, loose)) {
 			continue
 		}
 		l.words, l.norm = lineWords(l.hit.Snippet)
 		if n := hasAll(l.norm, exact); inExact && n > 0 {
-			l.hit.Score = 2 * float64(n)
+			l.hit.Score = exactLine + float64(n)
 			matched = append(matched, l)
-		} else if len(stems) > 0 && containsAll(strings.Join(l.norm, " "), stems) {
+		} else {
+			// a word with punctuation in it (Qur'an, well-known, 2.0: one lexeme to the
+			// parser), or another form of the word
 			maybe = append(maybe, l)
 		}
 	}
@@ -410,14 +418,20 @@ func (h *Handler) normalisedLines(ctx context.Context, q string, videoIDs []stri
 		}
 		args := []any{q}
 		rows, err := h.DB.QueryContext(pctx, `
-			WITH q AS (SELECT public.maktaba_query_stem($1) AS st,
+			WITH q AS (SELECT public.maktaba_query($1) AS e, public.maktaba_query_stem($1) AS st,
+			                  NULLIF(array_to_string(ARRAY(SELECT quote_literal(l)
+			                      FROM unnest(tsvector_to_array(public.maktaba_tsv($1))) l), ' | '), '')::tsquery AS eo,
 			                  NULLIF(array_to_string(ARRAY(SELECT quote_literal(l)
 			                      FROM unnest(tsvector_to_array(public.maktaba_tsv_stem($1))) l), ' | '), '')::tsquery AS so)
-			SELECT s.id, ts_rank(public.maktaba_tsv_stem(s.text), q.st),
+			SELECT s.id,
+			       CASE WHEN public.maktaba_tsv(s.text) @@ q.e
+			            THEN `+strconv.Itoa(exactLine)+` + ts_rank(public.maktaba_tsv(s.text), q.e)
+			            ELSE ts_rank(public.maktaba_tsv_stem(s.text), q.st) END,
 			       ARRAY(SELECT w FROM regexp_split_to_table(s.text, '\s+') w
-			              WHERE w <> '' AND public.maktaba_tsv_stem(w) @@ q.so)
+			              WHERE w <> '' AND (public.maktaba_tsv(w) @@ q.eo OR public.maktaba_tsv_stem(w) @@ q.so))
 			  FROM q, transcript_segments s
-			 WHERE s.id IN (`+placeholders(ids, &args)+`) AND public.maktaba_tsv_stem(s.text) @@ q.st`, args...)
+			 WHERE s.id IN (`+placeholders(ids, &args)+`)
+			   AND (public.maktaba_tsv(s.text) @@ q.e OR public.maktaba_tsv_stem(s.text) @@ q.st)`, args...)
 		if err != nil {
 			return late(err)
 		}
@@ -462,6 +476,47 @@ func (h *Handler) normalisedLines(ctx context.Context, q string, videoIDs []stri
 		}
 	}
 	return hits, counts, marks, true, nil
+}
+
+// exactLine lifts a line that says the query's words as typed (normalised) above every
+// line that says another form of them: a form's rank is below 1.
+const exactLine = 1000
+
+// queryHasOperators reports whether q uses websearch_to_tsquery's operators: a quoted
+// phrase, a word negated with -, or OR between words.
+func queryHasOperators(q string) bool {
+	if strings.ContainsAny(q, `"-`) {
+		return true
+	}
+	for _, w := range strings.Fields(q) {
+		if strings.EqualFold(w, "or") {
+			return true
+		}
+	}
+	return false
+}
+
+// looseStems are the stems as the line test looks for them: an English stem that Snowball
+// ended with an e it added (come from coming, hope from hoping) is looked for without it.
+// The test only lets lines through to Postgres's stemmer, which decides.
+func looseStems(stems []string) []string {
+	out := make([]string, len(stems))
+	for i, st := range stems {
+		if len(st) > 3 && strings.HasSuffix(st, "e") && st == strings.ToLower(st) && isASCII(st) {
+			st = st[:len(st)-1]
+		}
+		out[i] = st
+	}
+	return out
+}
+
+func isASCII(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] >= 0x80 {
+			return false
+		}
+	}
+	return true
 }
 
 // lineWords splits a line into its words (letters and digits; anything else ends a word,

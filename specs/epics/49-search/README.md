@@ -624,9 +624,13 @@ runs only when the person opens that tab or submits from it; Results never waits
   - marks the line's own words that matched.
 
   A page of 20 videos, some 6,000 lines, takes 12 to 28 ms locally. Working `maktaba_tsv`
-  out line by line in SQL costs about 40 µs a line, so it is not used. The query has a
-  60 ms budget, and past it the page keeps the line path's passages. A BM25 video's lines
-  are counted for the page shown, not for the whole result (`savedVideo.L`).
+  out line by line in SQL costs about 40 µs a line, so it is not used. A line with
+  punctuation inside a word (Qur'an, well-known) or another form of the word goes to
+  Postgres, which decides. A query with websearch's operators (a quoted phrase, `-word`,
+  `OR`) keeps the line path's passages. The query has a 60 ms budget. Past it, the page
+  shows the line path's passages, and a video found only through its document shows 0
+  matches there. A BM25 video's lines are counted for the page shown, not for the whole
+  result (`savedVideo.L`).
 - **Hybrid** fuses the BM25 videos with the meaning search's videos by weighted RRF (k=60,
   today's weights), as the line path's videos were.
 - **Fallbacks.** Before the indexes are valid, on PostgreSQL 16 or on SQLite, keyword search
@@ -648,8 +652,8 @@ runs only when the person opens that tab or submits from it; Results never waits
     - a rare word finds its videos;
     - word forms follow the word as typed;
     - matches are counted and passages are marked;
-    - `TestBM25_VariantsHaveMatchesAndPassages`: اسلام, هدي, مدرسه, صبروا and cafe each find
-      the video saying إسلام, هدى, مدرسة, الصبر or café, with at least one match and a
+    - `TestBM25_VariantsHaveMatchesAndPassages`: اسلام, هدي, مدرسه, صبروا, cafe, Qur'an and
+      comes each find the video saying إسلام, هدى, مدرسة, الصبر, café, Qur'an or coming, with at least one match and a
       passage marking the word as written, on the results and on the video's passages
       page;
     - hybrid keeps BM25's order where the meaning search agrees;
