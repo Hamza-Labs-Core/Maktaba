@@ -1,14 +1,16 @@
 module github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server
 
-go 1.25.8
+go 1.26.0
+
+toolchain go1.26.11
 
 // No multipath TCP on our listeners (Go 1.24+ turns it on by default): it was the path
 // into CVE-2026-98432, the Linux IPv4 TCP use-after-free (docs/security/advisories/2026-11-01-linux-tcp-uaf.md).
 godebug multipathtcp=0
 
 require (
-	github.com/Hamza-Labs-Core/Maktaba/shared/go/clientip v0.0.0
 	github.com/BurntSushi/toml v1.6.0
+	github.com/Hamza-Labs-Core/Maktaba/shared/go/clientip v0.0.0
 	github.com/Hamza-Labs-Core/Maktaba/shared/go/releaseverify v0.0.0
 	github.com/godbus/dbus/v5 v5.1.0
 	github.com/grandcat/zeroconf v1.0.0
@@ -16,12 +18,12 @@ require (
 	github.com/miekg/dns v1.1.72
 	github.com/sigstore/sigstore-go v1.3.0
 	github.com/spf13/cobra v1.10.2
-	golang.org/x/sys v0.47.0
-	golang.org/x/term v0.45.0
+	golang.org/x/sys v0.49.0
+	golang.org/x/term v0.47.0
 	modernc.org/sqlite v1.51.0
 )
 
-require github.com/klauspost/compress v1.20.1
+require github.com/klauspost/compress v1.20.2
 
 require (
 	github.com/Hamza-Labs-Core/Maktaba/shared/components v0.0.0
@@ -102,12 +104,12 @@ require (
 	go.opentelemetry.io/otel/metric v1.44.0 // indirect
 	go.opentelemetry.io/otel/trace v1.44.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
-	golang.org/x/crypto v0.55.0
-	golang.org/x/mod v0.38.0 // indirect
-	golang.org/x/net v0.58.0
-	golang.org/x/sync v0.22.0 // indirect
-	golang.org/x/text v0.41.0 // indirect
-	golang.org/x/tools v0.48.0 // indirect
+	golang.org/x/crypto v0.58.0
+	golang.org/x/mod v0.41.0 // indirect
+	golang.org/x/net v0.62.0
+	golang.org/x/sync v0.24.0 // indirect
+	golang.org/x/text v0.43.0 // indirect
+	golang.org/x/tools v0.51.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260526163538-3dc84a4a5aaa // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260526163538-3dc84a4a5aaa // indirect
 	google.golang.org/grpc v1.83.2 // indirect
