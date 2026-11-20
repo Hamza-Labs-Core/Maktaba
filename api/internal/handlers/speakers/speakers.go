@@ -10,14 +10,17 @@
 package speakers
 
 import (
+	"context"
 	"database/sql"
 	"errors"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
+	"github.com/lib/pq"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
@@ -41,6 +44,48 @@ type MergeRequest struct {
 // Handler bundles deps.
 type Handler struct {
 	DB *sql.DB
+	// KeywordIndexRefresh, when set, is called after a rename or a merge with the videos
+	// whose active transcript has the speaker's lines: it queues their keyword_index stage,
+	// so their keyword search documents carry the new name (Epic 49 story 49.6). Best effort.
+	KeywordIndexRefresh func(ctx context.Context, videoIDs []string) error
+}
+
+// videosOf are the videos whose active transcript has a line of one of the speakers.
+func videosOf(ctx context.Context, q interface {
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+}, speakerIDs ...string) ([]string, error) {
+	rows, err := q.QueryContext(ctx, `
+		SELECT DISTINCT t.video_id::text FROM segment_speakers ss
+		  JOIN transcript_segments g ON g.id = ss.segment_id
+		  JOIN transcripts t ON t.id = g.transcript_id AND t.is_active
+		 WHERE ss.speaker_id::text = ANY($1)`, pq.Array(speakerIDs))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var v string
+		if err := rows.Scan(&v); err != nil {
+			return nil, err
+		}
+		out = append(out, v)
+	}
+	return out, rows.Err()
+}
+
+// refreshKeywordIndex queues the videos' keyword_index stage (best effort: logged).
+func (h *Handler) refreshKeywordIndex(r *http.Request, videoIDs []string, err error) {
+	if h.KeywordIndexRefresh == nil || (err == nil && len(videoIDs) == 0) {
+		return
+	}
+	if err == nil {
+		err = h.KeywordIndexRefresh(r.Context(), videoIDs)
+	}
+	if err != nil {
+		slog.WarnContext(r.Context(), "speakers: keyword index refresh not queued", "videos", len(videoIDs),
+			"err", err.Error(), "event", "keyword_index_refresh_failed")
+	}
 }
 
 func (h *Handler) Mount(r chi.Router) {
@@ -162,6 +207,8 @@ func (h *Handler) Rename(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.Internal("rename").Wrap(err))
 		return
 	}
+	vids, verr := videosOf(r.Context(), h.DB, id)
+	h.refreshKeywordIndex(r, vids, verr)
 	common.WriteJSON(w, r, http.StatusOK, map[string]any{"id": id, "name": req.Name})
 }
 
@@ -213,6 +260,10 @@ func (h *Handler) Merge(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.Internal("commit").Wrap(err))
 		return
 	}
+	// the kept speaker's videos now (the dropped one's lines are its): their documents
+	// carry one name for the two
+	vids, verr := videosOf(r.Context(), h.DB, req.Keep)
+	h.refreshKeywordIndex(r, vids, verr)
 	n, _ := res.RowsAffected()
 	common.WriteJSON(w, r, http.StatusOK, map[string]any{"affected_segments": n})
 }

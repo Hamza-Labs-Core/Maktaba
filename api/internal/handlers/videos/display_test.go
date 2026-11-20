@@ -117,3 +117,27 @@ func TestDisplayTitleRejected(t *testing.T) {
 		t.Fatalf("queued %v", *queued)
 	}
 }
+
+// Epic 49 story 49.6: a new title or display title queues the video's keyword_index
+// stage; a description alone does not.
+func TestTitleChangeQueuesKeywordIndex(t *testing.T) {
+	db, _, _ := newDisplayEnv(t)
+	var queued []string
+	h := &Handler{DB: db, KeywordIndexRefresh: func(_ context.Context, ids []string) error {
+		queued = append(queued, ids...)
+		return nil
+	}}
+	r := chi.NewRouter()
+	h.Mount(r)
+	for _, body := range []string{`{"title":"درس جديد"}`, `{"display_title":"عنوان"}`, `{"display_title":null}`} {
+		if rec, _ := call(t, r, "PATCH", body); rec.Code != 200 {
+			t.Fatalf("%s: %d %s", body, rec.Code, rec.Body.String())
+		}
+	}
+	if len(queued) != 3 || queued[0] != vid {
+		t.Fatalf("queued %v, want the video three times", queued)
+	}
+	if rec, _ := call(t, r, "PATCH", `{"description":"x"}`); rec.Code != 200 || len(queued) != 3 {
+		t.Fatalf("a description queued it: %v", queued)
+	}
+}

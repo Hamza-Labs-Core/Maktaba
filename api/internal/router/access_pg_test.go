@@ -295,11 +295,15 @@ func TestPGAccessAuditLibrariesVideos(t *testing.T) {
 	// video patch / process / reprocess / delete
 	e.want(http.StatusOK, "admin", http.MethodPatch, "/api/videos/"+acVidA1, map[string]any{"title": "New title"})
 	audited("video-patched", acVidA1)
+	// a new title queues the video's keyword search document (Epic 49 story 49.6)
+	if n := count(`SELECT count(*) FROM processing_jobs WHERE video_id=$1 AND stage='keyword_index' AND state='pending'`, acVidA1); n != 1 {
+		t.Fatalf("the title change queued %d keyword_index jobs, want 1", n)
+	}
 	// process and reprocess are an admin's, and queue a real pipeline job (before
 	// fix/video-process-noop the production router wired no job queue: 200, no job)
 	e.want(http.StatusForbidden, "member", http.MethodPost, "/api/videos/"+acVidA1+"/process", map[string]any{"stage": "transcribe"})
 	e.want(http.StatusForbidden, "member", http.MethodPost, "/api/videos/"+acVidA1+"/reprocess", map[string]any{"from_stage": "transcribe"})
-	if n := count(`SELECT count(*) FROM processing_jobs WHERE video_id=$1`, acVidA1); n != 0 {
+	if n := count(`SELECT count(*) FROM processing_jobs WHERE video_id=$1 AND stage <> 'keyword_index'`, acVidA1); n != 0 {
 		t.Fatalf("a refused process queued %d jobs", n)
 	}
 	proc := e.want(http.StatusOK, "admin", http.MethodPost, "/api/videos/"+acVidA1+"/process", map[string]any{"stage": "transcribe"})

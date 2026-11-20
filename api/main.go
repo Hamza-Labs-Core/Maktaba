@@ -64,6 +64,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/pgdsn"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/router"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/runtimecfg"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/searchindex"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/secrets"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/sharepath"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/subscriptions"
@@ -105,6 +106,12 @@ func main() {
 		case "serve":
 			if err := runServe(); err != nil {
 				fmt.Fprintf(os.Stderr, "serve: %v\n", err)
+				os.Exit(1)
+			}
+			return
+		case "search-indexes":
+			if err := runSearchIndexes(os.Args[2:], os.Stdout); err != nil {
+				fmt.Fprintf(os.Stderr, "search-indexes: %v\n", err)
 				os.Exit(1)
 			}
 			return
@@ -202,6 +209,9 @@ Usage:
 Commands:
   serve      Run the HTTP server (chi router + admin port + /metrics)
   migrate    Run database migrations (see "migrate --help")
+  search-indexes
+             Build keyword search's BM25 indexes now, with no time limit (the
+             home's API builds them in the background after its start)
   adduser    Seed the first admin user (Story 10.1 AC-4)
   hash-password
              Hash a password (stdin) for adduser --password-hash-file
@@ -830,6 +840,9 @@ func runServe() error {
 			loops.Declare("watch_reaper", runner.Func(reaper.Run))
 			// Epic 56 story 56.01: queues not used for 7 days go, checked every hour
 			loops.Declare("play_queue_sweep", runner.Func(func(ctx context.Context) { playqueue.Sweep(ctx, appDB, time.Hour, logger) }))
+			// Epic 49 stories 49.5, 49.6: keyword search's BM25 indexes, built after the start
+			// with no time limit (never in a migration), and looked at again every hour
+			loops.Declare("search_index", runner.Func(func(ctx context.Context) { searchindex.Run(ctx, appDB, logger) }))
 			// Epic 57 story 57.01: the admin's age-tier routes, the ratings table, and the
 			// recompute that writes each video's tier from the queue of slot 0220
 			parentalHandles.Recompute = router.MountP57Tiers(r, router.P57TiersDeps{DB: appDB, Logger: logger})

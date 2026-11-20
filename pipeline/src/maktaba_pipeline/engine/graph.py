@@ -96,6 +96,9 @@ SUBTITLE_VERSION = 1
 WORD_CHECK_VERSION = 1
 #: content_screen (Epic 57, story 57.17): stages/content_screen.py
 CONTENT_SCREEN_VERSION = 1
+#: keyword_index (Epic 49, story 49.6): stages/keyword_index.py; a bump rebuilds every
+#: video's keyword search document through the planner, behind all other work
+KEYWORD_INDEX_VERSION = 1
 #: transcript analysis (stages/chapter_infer.py, topic_assign.py, topic_recluster.py)
 CHAPTER_VERSION = 1
 CHAPTER_THUMBS_VERSION = 1
@@ -516,6 +519,20 @@ GRAPH: tuple[StageDef, ...] = (
         version=CONTENT_SCREEN_VERSION,
         max_attempts=3,
         placement="home",
+    ),
+    # Epic 49 (story 49.6): the video's keyword search document (video_search_docs) built
+    # from its transcript, title and speakers, for the BM25 search. CPU only and cheap; on a
+    # library it plans the videos whose document is missing or stale, behind every other
+    # stage (a version bump rebuilds them all, one job a video)
+    StageDef(
+        name="keyword_index",
+        label="Keyword index",
+        subject_kinds=("video", "library"),
+        pool="cpu",
+        lane="speech",
+        lane_order=5,
+        version=KEYWORD_INDEX_VERSION,
+        max_attempts=3,
     ),
     # plan 03-10: the transcript's sentences as e5 vectors (search/semantic.py)
     # Epic 54: defined by tv.maktaba.semantic-search's manifest

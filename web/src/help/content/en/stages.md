@@ -165,6 +165,10 @@ Finds the words of each transcript that may be wrong: words the language's dicti
 
 Reads each video's transcript and works out an age rating from what is said in it: all ages, 9, 13, 16 or 18, with how sure it is and what it heard (violence, sexual content, coarse language, drugs and alcohol, frightening scenes, mature themes), each with up to three times in the video. The transcript never leaves the home: only the home's own language model is asked, on a machine of the home, and a home with no language model gets no detected ratings at all. A detected rating counts only when the model is sure enough, it can only make a video stricter than the library's rating, and a rating an admin gives always wins. An admin checks the unsure ones in the parental review list. Music and Quran recitation are skipped. A video with no transcript, or in a language other than Arabic or English, is marked not checked. It runs after **Second listen**, again when the transcript changes, and for every video again, at the lowest priority, when the home changes its language model; until then a video keeps the rating it had.
 
+### Keyword index {#keyword-index}
+
+Builds each video's searchable text from its transcript (every line, in order), the title it shows with its file name, and the names of its speakers, so search can find and rank whole videos by the words in them. It runs on any machine's CPU after **Second listen**, again when the transcript is edited, the title changes or a speaker is renamed, and for every video again, at the lowest priority, when Maktaba changes how the text is built. It never changes the transcript. Until a video has its searchable text, search still finds it by its transcript's lines.
+
 ### Subtitle files {#subtitle-gen}
 
 Writes the transcript as subtitle files (.srt and .vtt) next to the video, so Plex, VLC and TVs pick them up. It never overwrites a subtitle file Maktaba did not write. It writes to your share, so it offers **Review first**. Runs after **Second listen**.

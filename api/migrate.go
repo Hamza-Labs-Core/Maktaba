@@ -18,7 +18,6 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/nodemode"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/pgdsn"
-	"github.com/Hamza-Labs-Core/Maktaba/api/internal/searchindex"
 )
 
 // runMigrate executes the `migrate` subcommand. The subcommand wraps
@@ -179,11 +178,7 @@ Flags:`)
 	case "up":
 		fmt.Fprintf(os.Stderr, "migrate: applying migrations from %s against %s\n",
 			dir, redactDSN(dsn))
-		if err := runGooseUp(ctx, db, dir); err != nil {
-			return err
-		}
-		ensureSearchIndexes(ctx, db)
-		return nil
+		return runGooseUp(ctx, db, dir)
 	case "status":
 		return goose.StatusContext(ctx, db, dir)
 	case "version":
@@ -234,20 +229,6 @@ func runGooseUp(ctx context.Context, db *sql.DB, dir string) error {
 	}
 	defer os.RemoveAll(stage)
 	return goose.UpContext(ctx, db, stage)
-}
-
-// ensureSearchIndexes makes keyword search's BM25 indexes the database lacks, after the
-// migrations (Epic 49 story 49.5: CREATE INDEX CONCURRENTLY, outside a migration's
-// transaction). One that cannot be made is said and left for the next start: keyword search
-// works without it (by its lines), so the start goes on.
-func ensureSearchIndexes(ctx context.Context, db *sql.DB) {
-	ran, err := searchindex.Ensure(ctx, db)
-	for _, s := range ran {
-		fmt.Fprintf(os.Stderr, "migrate: search index: %s\n", s)
-	}
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "migrate: warning: %v (keyword search goes on without it; the next start tries again)\n", err)
-	}
 }
 
 // guardDown refuses a rollback when MAKTABA_DISABLE_DOWN is truthy.
