@@ -14,6 +14,11 @@ build fails when the two differ.
 
 ### Changed
 
+- **The iPhone, iPad and Apple TV apps need iOS, iPadOS and tvOS 27.** Maktaba Player, Maktaba
+  Remote and Maktaba TV are now built with Xcode 27 and the 27 SDKs, which App Store Connect
+  requires from April 2027, and need iOS or iPadOS 27 or tvOS 27 or later. A device still on
+  26 keeps the build it has. The Mac app still runs on macOS 15 and later.
+
 - **Machines follow a home on PostgreSQL 18, and upgrade with their own update (Epic 49,
   story 49.3).** A machine still on PostgreSQL 16 keeps following its home once the home runs
   18. When the machine updates, its copy of the home's database is made again on 18, beside the

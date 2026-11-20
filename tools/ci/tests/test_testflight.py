@@ -17,6 +17,7 @@ requests by .github/workflows/_apple-apps.yml, so a tag never archives an app CI
 from __future__ import annotations
 
 import json
+import re
 import struct
 import subprocess
 from pathlib import Path
@@ -282,3 +283,73 @@ def test_the_deploy_provisions_the_cloud_token() -> None:
     assert 'EnvSymbolsTokenFile = "MAKTABA_CLOUD_SYMBOLS_TOKEN_FILE"' in logs
     # step 6 (app-update restarts the leader's api) comes after the token is written
     assert deploy.index("symbols.token") < deploy.index("app-update ${tag}")
+
+
+# App Store Connect wants apps built with the iOS 27 SDK from April 2027 (ITMS-90725, on
+# Maktaba Player 0.3.152 built with the 26.5 SDK). Every Apple job runs on the image with
+# Xcode 27 and refuses an older one; the upload also reads the archive's own SDK.
+XCODE_MIN = "--min 27"
+
+
+def _apple_jobs() -> dict[str, dict[str, Any]]:
+    jobs = {f"_apple-apps.yml:{n}": j for n, j in APPLE_CI.items()}
+    jobs["testflight.yml:upload"] = UPLOAD
+    return jobs
+
+
+def test_every_apple_job_runs_on_the_xcode_27_image() -> None:
+    for name, job in _apple_jobs().items():
+        assert job["runs-on"] == "xcode-27", name
+
+
+def test_every_apple_job_requires_xcode_27() -> None:
+    for name, job in _apple_jobs().items():
+        steps = [s for s in job["steps"] if s.get("name") == "Select Xcode"]
+        assert len(steps) == 1, name
+        run = steps[0]["run"]
+        assert run.startswith("python3 tools/apple/xcode.py select ") and XCODE_MIN in run, name
+        # no job picks its own Xcode beside the shared one
+        for s in job["steps"]:
+            assert "xcode-select -s" not in s.get("run", ""), (name, s.get("name"))
+
+
+def test_every_upload_requires_the_legs_sdk() -> None:
+    assert '--sdk "$SDK"' in STEPS["Select Xcode"]["run"]
+
+
+def test_the_upload_checks_the_archives_sdk_before_uploading() -> None:
+    names = [s.get("name") for s in UPLOAD["steps"]]
+    check = names.index("The archive was built with the 27 SDK")
+    assert names.index("Archive") < check < names.index("Sign and upload to TestFlight")
+    run = STEPS["The archive was built with the 27 SDK"]["run"]
+    assert run == f'python3 tools/apple/xcode.py check-sdk {XCODE_MIN} "$RUNNER_TEMP/app.xcarchive"'
+    assert "continue-on-error" not in STEPS["The archive was built with the 27 SDK"]
+
+
+def test_the_xcode_helpers_self_test_runs_in_ci() -> None:
+    runs = [s.get("run", "") for s in APPLE_CI["apple-apps"]["steps"]]
+    assert "python3 tools/apple/xcode.py --self-test" in runs
+    out = subprocess.run(
+        ["python3", str(ROOT / "tools/apple/xcode.py"), "--self-test"], capture_output=True, text=True, check=False
+    )
+    assert out.returncode == 0, out.stdout + out.stderr
+
+
+def test_every_simulator_is_made_by_the_shared_pick() -> None:
+    for name, job in APPLE_CI.items():
+        for s in job["steps"]:
+            run = s.get("run", "")
+            if "simctl create" in run:
+                raise AssertionError(f"{name}: {s.get('name')} makes its own simulator")
+
+
+def test_the_apps_need_the_27_systems_and_the_mac_app_macos_15() -> None:
+    """The iPhone, iPad and Apple TV apps' minimum is the 27 systems CI tests them on (the
+    xcode-27 image has no 26 simulators); the Mac app keeps macOS 15. The same in project.yml,
+    the generated project and MaktabaKit's package."""
+    assert PROJECT["options"]["deploymentTarget"] == {"iOS": "27.0", "macOS": "15.0", "tvOS": "27.0"}
+    for setting, want in (("IPHONEOS", "27.0"), ("TVOS", "27.0"), ("MACOSX", "15.0")):
+        found = set(re.findall(rf"{setting}_DEPLOYMENT_TARGET = ([0-9.]+);", PBXPROJ))
+        assert found == {want}, (setting, found)
+    package = (APPLE / "MaktabaKit/Package.swift").read_text(encoding="utf-8")
+    assert 'platforms: [.iOS("27.0"), .macOS("15.0"), .tvOS("27.0")]' in package

@@ -294,7 +294,7 @@ reaches testers as an update, and attaches the installable files to the
 |---|---|---|---|
 | **Maktaba Player** (watch) | iPhone · iPad (*Maktaba Player for iPad*) · Mac, macOS 15+ (*Maktaba Player for Mac*) | TestFlight | [`testflight.yml`](.github/workflows/testflight.yml) |
 | **Maktaba Remote** (run the home; admins only) | iPhone · iPad (*Maktaba Remote iPad*) | TestFlight | [`testflight.yml`](.github/workflows/testflight.yml) |
-| **Maktaba TV** | Apple TV (tvOS 26) | TestFlight on the Apple TV | [`testflight.yml`](.github/workflows/testflight.yml) |
+| **Maktaba TV** | Apple TV (tvOS 27) | TestFlight on the Apple TV | [`testflight.yml`](.github/workflows/testflight.yml) |
 | **Maktaba Player** and **Maktaba Remote** | Android phones, foldables and tablets | Google Play internal testing (`maktaba-player-<version>.aab`, `maktaba-remote-<version>.aab`, signed with the Play upload key) | [`play-bundles.yml`](.github/workflows/play-bundles.yml) |
 | **Maktaba TV** | Android TV and Google TV | Google Play internal testing (`maktaba-tv-<version>.aab`); or sideload `maktaba-tv-<version>.apk` when a release carries it (only signed builds are attached) | [`play-bundles.yml`](.github/workflows/play-bundles.yml), [`tv-release.yml`](.github/workflows/tv-release.yml) |
 | **Maktaba Player** | Windows (x64), Linux (x86_64, aarch64) | `Maktaba-Player_<v>_x64.msi`, `maktaba-player_<v>_<amd64\|arm64>.deb`, `maktaba-player-<v>.<x86_64\|aarch64>.rpm` (each with a `.sig`) from the [latest release](https://github.com/Hamza-Labs-Core/Maktaba/releases/latest); it updates itself from `latest-player.json` (Help → Check for updates) | [`desktop-release.yml`](.github/workflows/desktop-release.yml) |
