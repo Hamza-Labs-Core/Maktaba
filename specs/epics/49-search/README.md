@@ -672,7 +672,8 @@ runs only when the person opens that tab or submits from it; Results never waits
     0234 above.
   - The exact index gives its top 100 and the stemmed one its top 50, so keyword search shows
     up to 150 videos (the two lists' union), not the 500 of `rules.search.max_videos`. The meaning search's videos still fuse
-    in for hybrid.
+    in for hybrid. (No longer: both give their top 500 since the scores come from the index
+    scan, "The BM25 score from the index scan" below.)
   - There is no separate pre-filter by the `library_id` index for a user with few libraries.
     The filter is in the BM25 query, and pg_textsearch's filtered top-k (`filtered_seed`)
     serves it: the one-library case measured the same as the whole library.
@@ -800,3 +801,35 @@ runs only when the person opens that tab or submits from it; Results never waits
   - A video deleted outright (its document cascading with it) leaves its words counted until
     the dictionary is rebuilt. A suggestion may then name a word that finds nothing. The
     stage's own deletions (a soft-deleted video, a lost transcript) take the words off.
+
+### The BM25 score from the index scan (found while building 49.9)
+
+- **What was wrong.** Each row of a BM25 query was scored again from its whole text: about
+  1.8 ms for a 5,000-word document, the home's average (23.1 M lines over 45,000 videos).
+  - Measured on 5,000 such documents, a search took 180 ms, not 49.7's 15 ms. 49.7's 45,000
+    test documents had 400 words, so its test could not see the cost.
+  - The index scan itself returns the top 100 in 0.6 ms; Postgres then worked out each
+    row's `ORDER BY` value again.
+- **Why.** pg_textsearch's planner hook replaces that value with the score its scan already
+  computed (`bm25_get_current_score()`), with two conditions:
+  - the `ORDER BY` must be the operator alone, not a select-list column;
+  - the hook finds its operators and that function by unqualified name, on the session's
+    `search_path`, once per connection. The bundled server makes the extension in its own
+    schema, `textsearch`, which no path held.
+- **The fix.**
+  - The bundle sets the app role's `search_path` to `"$user", public, textsearch`
+    (`pgbundle.textsearchSQL`; `clusterRev` 6, so a home made before runs it at its next
+    start). `textsearch` comes last, so a name of the app's still resolves in `public`.
+  - Each leg selects `textsearch.bm25_get_current_score()` and orders by the operator
+    (`bm25LegSQL`).
+  - A table small enough to be read whole and sorted gets no index scan, and so no
+    score: a leg whose every score is 0 asks again with the operator in the select list.
+- **Measured.**
+  - 5,000 documents of 5,000 words (`TestBM25_LongDocuments`, the replica job): p95 2.3 ms
+    for الله and 3.2 ms for a sentence, at 500 results.
+  - 45,000 documents (`TestBM25_Perf45k`): p95 under 2.5 ms, and 13.9 ms for one library.
+  - The real bundled PostgreSQL 18 gives the app role that path
+    (`TestRealPgTextsearchPreloaded`).
+- **So the 500 results of the spec are back.** Both indexes give their top 500 (49.7 kept
+  100 and 50 for the cost).
+

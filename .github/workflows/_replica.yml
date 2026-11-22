@@ -171,7 +171,7 @@ jobs:
           for t in TestSlot0232BM25Indexes TestSlot0232UpAndDownOnPostgres TestArabicSearchOnPostgres \
             TestBuildOnceOneAtATime TestLargeLibraryBuildsInTheBackground TestSlot0234ReplacesTheExpressionIndexes \
             TestBM25_Postgres TestBM25_VariantsHaveMatchesAndPassages TestBM25_CommonWordWithinOthers TestBM25_Perf45k \
-            TestBM25_SearchHelp; do
+            TestBM25_SearchHelp TestBM25_LongDocuments; do
             grep -q -- "--- PASS: $t " "$RUNNER_TEMP/search18.out" || { echo "::error::$t did not pass on PostgreSQL 18"; exit 1; }
           done
 
