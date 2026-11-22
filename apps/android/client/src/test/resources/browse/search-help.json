@@ -1,0 +1,38 @@
+{
+  "search_id": "ffffffff-0000-4000-8000-000000000003",
+  "q": "المدرصة",
+  "mode": "hybrid",
+  "sort": "newest",
+  "did_you_mean": "المدرسة",
+  "videos": [
+    {
+      "video_id": "11111111-0000-4000-8000-000000000002",
+      "title": "المدرسة",
+      "library_id": "aaaaaaaa-0000-4000-8000-000000000001",
+      "library_name": "دروس",
+      "title_snippet": "<mark>المدرسة</mark>",
+      "duration_sec": 2400
+    }
+  ],
+  "videos_total": 1,
+  "transcript_videos": [],
+  "transcript_total": 0,
+  "facets": {
+    "library": [
+      {"value": "aaaaaaaa-0000-4000-8000-000000000001", "label": "دروس", "count": 3},
+      {"value": "aaaaaaaa-0000-4000-8000-000000000002", "label": "Talks", "count": 1}
+    ],
+    "language": [{"value": "ar", "count": 3}, {"value": "en", "count": 1}],
+    "tag": [],
+    "speaker": [{"value": "الشيخ أحمد", "count": 2}, {"value": 7}, {"count": 1}],
+    "year": [
+      {"value": "2024", "count": 2, "filter": {"date": {"gte": "2024-01-01T00:00:00.000Z", "lt": "2025-01-01T00:00:00.000Z"}}},
+      {"value": "2023", "count": 2, "filter": {"date": {"gte": "2023-01-01T00:00:00.000Z", "lt": "2024-01-01T00:00:00.000Z"}}}
+    ],
+    "duration": [
+      {"value": "20m_60m", "count": 3, "filter": {"duration_sec": {"gte": 1200, "lt": 3600}}},
+      {"value": "over_60m", "count": 1, "filter": {"duration_sec": {"gte": 3600}}}
+    ],
+    "videos": 4
+  }
+}

@@ -100,7 +100,7 @@ class SearchScreenTest {
         val asked = home.requests.last { it.url.encodedPath == "/api/search/suggest" }
         assertEquals("pati", asked.url.queryParameter("q"))
 
-        compose.onNodeWithTag("suggestion").performClick()
+        compose.onNode(hasTestTag("suggestion") and hasText("patience in hardship", substring = true)).performClick()
         waitForTag("search-results")
         assertEquals("patience in hardship", searchBodies().last()["q"]!!.jsonPrimitive.content)
     }
@@ -286,5 +286,111 @@ class SearchScreenTest {
         assertEquals(listOf("الصلاة"), t.spanStyles.map { t.text.substring(it.start, it.end) })
         assertEquals("plain words", markedText("plain words", style).text)
         assertEquals("a b", plain("a <mark>b</mark>"))
+    }
+
+    // ---------- story 49.11: suggestions' kinds, did-you-mean, facets, sort ----------
+
+    private fun tagged(tag: String) = compose.onAllNodesWithTag(tag).fetchSemanticsNodes().isNotEmpty()
+
+    @Test
+    fun suggestionsSayWhatTheyAreAndATitleOpensItsVideo() {
+        open()
+        field().performClick()
+        field().performTextInput("pa")
+        compose.settledUntil(5_000) { compose.onAllNodesWithTag("suggestion").fetchSemanticsNodes().size == 4 }
+        for ((text, kind) in listOf("patience" to "Recent", "patience in hardship" to "Word", "On Patience" to "Video", "Shaykh Ahmad" to "Speaker")) {
+            compose.onNode(hasTestTag("suggestion") and hasText(text) and hasText(kind)).assertExists()
+        }
+        val before = searchBodies().size
+        compose.onNode(hasTestTag("suggestion") and hasText("Video")).performClick()
+        compose.onNodeWithText("video v1").assertIsDisplayed()
+        assertEquals("a title is opened, not searched", before, searchBodies().size)
+    }
+
+    @Test
+    fun didYouMeanRunsTheCorrectedWords() {
+        open()
+        search("patiance")
+        waitForTag("search-did-you-mean")
+        compose.onNodeWithText("Did you mean", substring = true).assertIsDisplayed()
+        compose.onNodeWithTag("search-did-you-mean-run").performClick()
+        compose.settledUntil(5_000) { searchBodies().size == 2 }
+        assertEquals("patience", searchBodies().last()["q"]!!.jsonPrimitive.content)
+        compose.settledUntil(5_000) { !tagged("search-did-you-mean") }
+    }
+
+    @Test
+    fun theSortMenuRunsTheSearchInTheOrderChosen() {
+        open()
+        search("patience")
+        compose.onNodeWithText("Sort by: Relevance").assertIsDisplayed()
+        compose.onNodeWithTag("search-sort").performClick()
+        compose.onNodeWithTag("search-sort-newest").performClick()
+        compose.settledUntil(5_000) { searchBodies().size == 2 }
+        assertEquals("newest", searchBodies().last()["sort"]!!.jsonPrimitive.content)
+        waitFor("Sort by: Newest")
+    }
+
+    @Test
+    fun facetsNarrowTheSearchAndTheFiltersInUseComeOff() {
+        open()
+        search("patience")
+        compose.onNodeWithTag("search-filters").performClick()
+        waitForTag("search-facets")
+        // each bucket with its count, read as "name, N videos"
+        compose.onNode(hasContentDescription("Talks, 1 video")).assertExists()
+        compose.onNode(hasContentDescription("English, 3 videos")).assertExists()
+        compose.onNode(hasContentDescription("Over an hour, 2 videos")).assertExists()
+        compose.onNode(hasContentDescription("2024, 3 videos")).assertExists()
+
+        compose.onNodeWithTag("facet-library-l2").performClick()
+        compose.settledUntil(5_000) { searchBodies().size == 2 }
+        compose.onNodeWithTag("facet-speaker-Shaykh Ahmad").performClick()
+        compose.settledUntil(5_000) { searchBodies().size == 3 }
+        val filters = searchBodies().last()["filters"]!!.jsonObject
+        assertEquals("[\"l2\"]", filters["library_id"].toString())
+        assertEquals("[\"Shaykh Ahmad\"]", filters["speaker"].toString())
+
+        compose.onNodeWithTag("facets-done").performClick()
+        compose.settledUntil(5_000) { !tagged("search-facets") }
+        compose.onNode(hasContentDescription("Remove Library: Talks")).assertIsDisplayed()
+        compose.onNode(hasContentDescription("Filters, 2 in use")).assertIsDisplayed()
+
+        compose.onNodeWithTag("active-library-l2").performClick()
+        compose.settledUntil(5_000) { searchBodies().size == 4 }
+        assertEquals(null, searchBodies().last()["filters"]!!.jsonObject["library_id"])
+        compose.onNodeWithTag("search-filters-clear").performClick()
+        compose.settledUntil(5_000) { searchBodies().size == 5 }
+        assertEquals(null, searchBodies().last()["filters"])
+        compose.settledUntil(5_000) { !tagged("search-active-filters") }
+    }
+
+    @Test
+    fun anOlderHomeShowsTheOrderButNoFilters() {
+        SearchFixtures.install(home) { SearchFixtures.results(SearchFixtures.EN, help = false) }
+        compose.setShell(home, sections = PlayerSection.enabled, screens = screens)
+        compose.onNodeWithTag("section-Search").performClick()
+        search("patience")
+        compose.onNodeWithTag("search-sort").assertIsDisplayed()
+        assertTrue(!tagged("search-filters"))
+        assertTrue(!tagged("search-did-you-mean"))
+        compose.onNode(hasTestTag("title-v1")).assertIsDisplayed()
+    }
+
+    @Test
+    @Config(qualifiers = "ar-w411dp-h891dp")
+    fun theHelpIsInArabic() {
+        val l = SearchFixtures.AR
+        open(l)
+        search(l.misspelt)
+        compose.onNodeWithText("الترتيب حسب: الأقرب صلة").assertIsDisplayed()
+        compose.onNodeWithText("التصفية").assertIsDisplayed()
+        compose.onNodeWithText("هل تقصد", substring = true).assertIsDisplayed()
+        compose.onNodeWithTag("search-filters").performClick()
+        waitForTag("search-facets")
+        compose.onNodeWithText("تضييق النتائج").assertIsDisplayed()
+        compose.onNodeWithText("المتحدث").assertIsDisplayed()
+        compose.onNode(hasContentDescription("أكثر من ساعة", substring = true)).assertExists()
+        compose.onNode(hasContentDescription("الإنجليزية", substring = true)).assertExists()
     }
 }

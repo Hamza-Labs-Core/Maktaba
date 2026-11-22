@@ -28,7 +28,11 @@ import com.hamzalabs.maktaba.core.api.pinnedLibraries
 import com.hamzalabs.maktaba.core.api.recentSearches
 import com.hamzalabs.maktaba.core.api.recommendations
 import com.hamzalabs.maktaba.core.api.search
-import com.hamzalabs.maktaba.core.api.searchSuggestions
+import com.hamzalabs.maktaba.core.api.searchSuggest
+import com.hamzalabs.maktaba.core.api.Facet
+import com.hamzalabs.maktaba.core.api.FacetChoice
+import com.hamzalabs.maktaba.core.api.SearchSort
+import com.hamzalabs.maktaba.core.api.SuggestKind
 import com.hamzalabs.maktaba.core.api.searchTitles
 import com.hamzalabs.maktaba.core.api.searchTranscripts
 import com.hamzalabs.maktaba.core.api.segments
@@ -393,10 +397,13 @@ class BrowseTest {
     @Test
     fun suggestionsAndRecentSearches() = runBlocking {
         val c = client()
-        assertEquals(listOf("الطهارة", "الطهارة الكبرى"), c.searchSuggestions("الطه"))
+        // a home before 49.8: its texts, without a kind
+        val older = c.searchSuggest("الطه")
+        assertEquals(listOf("الطهارة", "الطهارة الكبرى"), older.map { it.text })
+        assertTrue(older.all { it.kind == null && it.opensVideo == null })
         assertEquals("الطه", last().url.queryParameter("q"))
         val before = seen.size
-        assertTrue(c.searchSuggestions("  ").isEmpty())
+        assertTrue(c.searchSuggest("  ").isEmpty())
         assertEquals("a blank query asks nothing", before, seen.size)
 
         val recent = c.recentSearches().single()
@@ -409,6 +416,71 @@ class BrowseTest {
         c.clearRecentSearches()
         assertEquals("DELETE", last().method)
         assertEquals("/api/search/recent", last().url.encodedPath)
+    }
+
+    @Test
+    fun suggestionsCarryTheirKindAndATitleItsVideo() = runBlocking {
+        answer = { r -> if (r.url.encodedPath == "/api/search/suggest") json(200, fixture("search-suggest-items.json")) else null }
+        val s = client().searchSuggest("الص")
+        // the blank one is left out; a kind this app does not know is kept, without a kind
+        assertEquals(listOf("الصبر", "الصبر عند الله", "الصبر والشكر", "الشيخ أحمد", "a kind this app does not know"), s.map { it.text })
+        assertEquals(listOf(SuggestKind.History, SuggestKind.Term, SuggestKind.Title, SuggestKind.Speaker, null), s.map { it.kind })
+        assertEquals(listOf(null, null, video, null, null), s.map { it.opensVideo })
+    }
+
+    @Test
+    fun searchReadsSortDidYouMeanAndFacets() = runBlocking {
+        answer = { r -> if (r.url.encodedPath == "/api/search") json(200, fixture("search-help.json")) else null }
+        val r = client().search("المدرصة")
+        assertEquals("newest", r.sort)
+        assertEquals(SearchSort.Newest, SearchSort.of(r.sort))
+        assertEquals("المدرسة", r.didYouMean)
+        val f = r.facets!!
+        assertEquals(4, f.videos)
+        assertEquals(listOf("دروس", "Talks"), f.of(Facet.Library).map { it.label })
+        assertEquals(listOf("ar", "en"), f.of(Facet.Language).map { it.value })
+        // a bucket that cannot be read, or has no value, is left out
+        assertEquals(listOf("الشيخ أحمد"), f.of(Facet.Speaker).map { it.value })
+        assertEquals(listOf("2024", "2023"), f.of(Facet.Year).map { it.value })
+        assertEquals(listOf("20m_60m", "over_60m"), f.of(Facet.Duration).map { it.value })
+    }
+
+    @Test
+    fun anOlderHomesAnswerHasNoSortDidYouMeanOrFacets() = runBlocking {
+        val r = client().search("x")
+        assertEquals("", r.sort)
+        assertEquals(SearchSort.Relevance, SearchSort.of(r.sort))
+        assertNull(r.didYouMean)
+        assertNull(r.facets)
+        // facets that are not an object are none, and the search still reads
+        answer = { q -> if (q.url.encodedPath == "/api/search") json(200, fixture("search.json").replaceFirst("\"degraded\"", "\"facets\": [1, 2],\n  \"degraded\"")) else null }
+        val odd = client().search("x")
+        assertNull(odd.facets)
+        assertEquals(1, odd.transcriptVideos.size)
+    }
+
+    @Test
+    fun searchSendsTheSortAndTheChosenFilters() = runBlocking {
+        val c = client()
+        c.search("x", sort = SearchSort.Relevance)
+        assertNull("relevance is the home's default: not sent", last().bodyJson()["sort"])
+        c.search("x", sort = SearchSort.Matches)
+        assertEquals("matches", last().bodyJson()["sort"]!!.jsonPrimitive.content)
+
+        val choice = FacetChoice()
+            .toggle(Facet.Library, lib)
+            .toggle(Facet.Speaker, "الشيخ أحمد")
+            .toggle(Facet.Duration, "over_60m")
+        c.search("x", sort = SearchSort.Newest, filters = choice.filters(), libraryIds = listOf("ignored"))
+        val f = last().bodyJson()["filters"]!!.jsonObject
+        assertEquals(JsonArray(listOf(JsonPrimitive(lib))), f["library_id"])
+        assertEquals(JsonArray(listOf(JsonPrimitive("الشيخ أحمد"))), f["speaker"])
+        assertEquals("3600", f["duration_sec"]!!.jsonObject["gte"]!!.jsonPrimitive.content)
+        assertNull(f["duration_sec"]!!.jsonObject["lt"])
+        assertEquals("newest", last().bodyJson()["sort"]!!.jsonPrimitive.content)
+
+        c.search("x", filters = FacetChoice().filters())
+        assertNull("nothing chosen, no filters", last().bodyJson()["filters"])
     }
 
     // ---------- lenient ----------

@@ -18,4 +18,40 @@
     <string name="search_degraded">مطابقات نصية فقط: لم يستجب البحث بالمعنى.</string>
     <string name="search_failed">تعذّر البحث</string>
     <string name="search_preview_hint">اختر نتيجة لتراها في هذه الصفحة.</string>
+    <!-- Story 49.11، بكلمات الويب (web/src/i18n/ar.json، search.*). -->
+    <string name="search_suggest_kind_history">بحثت عنه</string>
+    <string name="search_suggest_kind_term">كلمة</string>
+    <string name="search_suggest_kind_title">مقطع</string>
+    <string name="search_suggest_kind_speaker">متحدث</string>
+    <string name="search_did_you_mean">هل تقصد %1$s؟</string>
+    <string name="search_sort">الترتيب حسب</string>
+    <string name="search_sort_current">الترتيب حسب: %1$s</string>
+    <string name="search_sort_relevance">الأقرب صلة</string>
+    <string name="search_sort_newest">الأحدث</string>
+    <string name="search_sort_matches">الأكثر مطابقات</string>
+    <string name="search_filters">التصفية</string>
+    <string name="search_filters_in_use">التصفية، المستخدم منها: %1$d</string>
+    <string name="search_facets">تضييق النتائج</string>
+    <string name="search_facet_library">المكتبة</string>
+    <string name="search_facet_language">اللغة</string>
+    <string name="search_facet_speaker">المتحدث</string>
+    <string name="search_facet_year">السنة</string>
+    <string name="search_facet_duration">المدة</string>
+    <plurals name="search_facet_videos">
+        <item quantity="zero">لا مقاطع</item>
+        <item quantity="one">مقطع واحد</item>
+        <item quantity="two">مقطعان</item>
+        <item quantity="few">%1$d مقاطع</item>
+        <item quantity="many">%1$d مقطعًا</item>
+        <item quantity="other">%1$d مقطع</item>
+    </plurals>
+    <string name="search_duration_under_5m">أقل من %1$d دقائق</string>
+    <string name="search_duration_5m_20m">من %1$d إلى %2$d دقيقة</string>
+    <string name="search_duration_20m_60m">من %1$d إلى %2$d دقيقة</string>
+    <string name="search_duration_over_60m">أكثر من ساعة</string>
+    <string name="search_filters_active">عوامل التصفية المستخدمة</string>
+    <string name="search_filter_chip">%1$s: %2$s</string>
+    <string name="search_filter_remove">إزالة %1$s</string>
+    <string name="search_filters_clear">إزالة كل عوامل التصفية</string>
+    <string name="search_filters_done">عرض النتائج</string>
 </resources>
