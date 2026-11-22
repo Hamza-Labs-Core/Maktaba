@@ -1,6 +1,6 @@
 # Search
 
-- **Routes:** `/search`, with `?q=<term>&mode=<hybrid|fts|semantic>&sid=<saved search>&vp=<In titles page>&tp=<In transcripts page>` (the header search box in `src/components/AppShell.tsx` navigates to `/search?q=<encoded term>`; the global `/` shortcut focuses that box). `/search/video/:videoId?q=&mode=&sid=&vp=&tp=[&t=]` is the matches page of one video (cases SRC-36 to SRC-43).
+- **Routes:** `/search`, with `?q=<term>&mode=<hybrid|fts|semantic>[&sort=newest|matches][&lib=<library id>…&lang=<language>…&spk=<speaker>…&year=<YYYY>&dur=<under_5m|5m_20m|20m_60m|over_60m>]&sid=<saved search>&vp=<In titles page>&tp=<In transcripts page>` (the header search box in `src/components/AppShell.tsx` navigates to `/search?q=<encoded term>`; the global `/` shortcut focuses that box). `/search/video/:videoId?q=&mode=[&sort=&lib=…]&sid=&vp=&tp=[&t=]` is the matches page of one video (cases SRC-36 to SRC-43).
 - **Components:** `src/pages/Search.tsx` (`ResultSection`, `VideoResult`, `TranscriptResult`, `PassageList`, `RecentSearches`, `YouTubeSection`, `ImportModal`), `src/pages/SearchVideo.tsx` (reuses `VideoPlayer` with `markers`, `onVideoElement`, `hideBack`), shared `src/pages/searchShared.tsx` and `src/components/VideoViews.tsx` (`ViewToggle`, `VideoPoster`, also used by the Library); `@ds` `Button`, `Badge`, `Pagination`, `EmptyState`, `ErrorState`, `Modal`, `useToast`.
 - **API calls (all via `api` in `src/lib/api.ts`):**
   - `POST /api/search { q, mode, view: "list" | "grid" }` → `{ search_id, expires_at, page_size, passages_page_size, videos: TitleVideo[] (In titles, page 1), videos_total, transcript_videos: TranscriptVideo[] (In transcripts, one per video, page 1), transcript_total }`. `TitleVideo = { video_id, title, title_snippet, duration_sec?, library_id, library_name, poster_url, score, in_transcripts }`; `TranscriptVideo = { …card, best_score, matches, passages: [{ segment_id, start_sec, end_sec, snippet, score }] (top 3), in_title }`. `search_id` is `""` for an admin token (nothing saved, nothing to page).
@@ -17,7 +17,8 @@
   - Matches page only: `POST /api/stream/sessions` and `GET /api/videos/{id}/chapters` (the player).
 - **State in URL / storage:** `q`, `mode`, `sid`, `vp`, `tp` in the URL. A submit pushes `?q&mode`, then the answer's sid replaces that entry; page changes push. Mode in `localStorage["mkt:search:mode"]` (`hybrid` | `fts` | `semantic`, default `hybrid`; a `mode` in the URL wins). List / Grid in `localStorage["mkt:search:view"]` (default `list`). Page sizes of each sid in `sessionStorage["mkt:search:sizes"]` (fallback 20 list / 24 grid, 20 passages). YouTube toggle is component state only.
 - **Access:** signed-in user (`RequireAuth`). Server scopes results to libraries the user can access; a sid belongs to its user (another user's sid answers 410).
-- **Existing tests:** `src/pages/Search.test.tsx` (SRC-01 to SRC-35), `src/pages/Search.youtube.test.tsx` (SRC-21, SRC-22), `src/pages/SearchVideo.test.tsx` (SRC-36 to SRC-43); the fake saved-search server is `src/test/searchServer.ts`.
+- **Story 49.10 (suggestions, did-you-mean, facets, sort; the API of story 49.8):** `GET /api/search/suggest` → `{ suggestions, items: [{ text, kind: history | term | title | speaker, video_id? }] }`, shown as a combobox's listbox under the box (`src/pages/searchHelp.tsx` `SuggestBox`); `POST /api/search` takes `sort` (left out for relevance) and `filters { library_id[], language[], speaker[], date { gte, lt }, duration_sec { gte, lt? } }` (left out when none) and answers `sort`, `did_you_mean` and `facets { library, language, speaker, year, duration: [{ value, label?, count, filter? }], videos }` with the first page. The facets and did-you-mean are kept per sid in `sessionStorage["mkt:search:help"]` for a reload or Back.
+- **Existing tests:** `src/pages/Search.test.tsx` (SRC-01 to SRC-35), `src/pages/Search.help.test.tsx` (SRC-44 to SRC-53), `src/pages/Search.youtube.test.tsx` (SRC-21, SRC-22), `src/pages/SearchVideo.test.tsx` (SRC-36 to SRC-43); the fake saved-search server is `src/test/searchServer.ts`.
 
 ## Summary
 
@@ -66,6 +67,16 @@
 | SRC-41 | Matches page with an expired or missing sid runs the search               | Error         | P1       | Yes (`SearchVideo.test.tsx`)                        |
 | SRC-42 | Matches page for a video not in the results                               | Error         | P2       | Yes (`SearchVideo.test.tsx`)                        |
 | SRC-43 | Matches page in Arabic; phone layouts of both pages                       | RTL           | P2       | Partial (`SearchVideo.test.tsx`: phone is e2e-only) |
+| SRC-44 | Suggestions show their kind; combobox keyboard: up / down, Enter, Escape  | Happy path    | P1       | Yes (`Search.help.test.tsx`)                        |
+| SRC-45 | A title suggestion opens its video; a word or speaker is searched         | Happy path    | P1       | Yes (`Search.help.test.tsx`)                        |
+| SRC-46 | Did you mean: shown above the results, one click runs it, filters kept    | Happy path    | P1       | Yes (`Search.help.test.tsx`)                        |
+| SRC-47 | Facets: counts, narrowing, combined, remove one, Clear all, Back          | Happy path    | P1       | Yes (`Search.help.test.tsx`)                        |
+| SRC-48 | A chosen bucket the narrowed facets drop stays pressed                    | Edge          | P2       | Yes (`Search.help.test.tsx`)                        |
+| SRC-49 | A deep link's sort and filters reach the request                          | Navigation    | P1       | Yes (`Search.help.test.tsx`)                        |
+| SRC-50 | Sort: sent, in the URL and matches links; the answer's sort shown         | Happy path    | P1       | Yes (`Search.help.test.tsx`)                        |
+| SRC-51 | Facets stay while the lists page and after a reload by sid                | Navigation    | P1       | Yes (`Search.help.test.tsx`)                        |
+| SRC-52 | Suggestions, facets, sort and did-you-mean in Arabic                      | RTL           | P1       | Yes (`Search.help.test.tsx`)                        |
+| SRC-53 | axe: suggestions open, did-you-mean and facets, English and Arabic        | Accessibility | P1       | Yes (`Search.help.test.tsx`)                        |
 
 ## Cases
 
@@ -521,3 +532,91 @@
 - **Steps:**
   1. Open the matches page.
 - **Expected:** «العودة إلى النتائج» with "→", «المطابقة التالية», «عدد المطابقات: ٣»; snippets `dir="auto"`. At phone width the match rows wrap, the Next / Previous buttons wrap, nothing scrolls sideways.
+
+### SRC-44 — Suggestions show their kind; combobox keyboard
+
+- **Priority:** P1
+- **Category:** Happy path
+- **Covered by existing test?** Yes (`Search.help.test.tsx`)
+- **Preconditions / data:** suggest answers an earlier search, a word, a title (with `video_id`) and a speaker. A home before story 49.8 answers `suggestions` only.
+- **Steps:**
+  1. Focus the box and type `pat`; wait 200 ms. 2. Down, down, up, up, down, down. 3. Enter. 4. Type again, Down, Escape, then submit.
+- **Expected:** a listbox "Suggestions" under the box lists each with its icon and kind (Recent, Word, Video, Speaker); the box is a combobox with `aria-expanded`, `aria-controls` and `aria-activedescendant` following the highlighted option (wrapping at both ends). Enter on a word searches it (`POST { q: "patience" }`) and closes the list. Escape closes the list and keeps the text; Enter then submits what was typed. A plain `suggestions` answer lists the texts with no kind; leaving the box closes the list.
+
+### SRC-45 — A title suggestion opens its video; a word or speaker is searched
+
+- **Priority:** P1
+- **Category:** Happy path
+- **Covered by existing test?** Yes (`Search.help.test.tsx`)
+- **Steps:**
+  1. Highlight the title with the keyboard and press Enter. 2. Click (or tap) a speaker. 3. Click a title.
+- **Expected:** a title opens `/videos/<video_id>` with no search; a speaker is searched as its text. A press on the list does not take focus from the box.
+
+### SRC-46 — Did you mean
+
+- **Priority:** P1
+- **Category:** Happy path
+- **Covered by existing test?** Yes (`Search.help.test.tsx`)
+- **Preconditions / data:** `POST /api/search` answers `did_you_mean: "المدرسة"` for المدرصة; `lib=lib-1` in the URL.
+- **Steps:**
+  1. Open `/search?q=المدرصة&mode=hybrid&lib=lib-1`. 2. Click the corrected words.
+- **Expected:** "Did you mean المدرسة?" above the results (هل تقصد …؟ in Arabic); the click searches المدرسة with the same filters and sort, fills the box, and the row leaves. No row when there is none, or when it equals the query.
+
+### SRC-47 — Facets: counts, narrowing, combined, remove one, Clear all, Back
+
+- **Priority:** P1
+- **Category:** Happy path
+- **Covered by existing test?** Yes (`Search.help.test.tsx`)
+- **Preconditions / data:** facets with two libraries (labels), two languages, a speaker, two years and two duration bands, each year and band with its `filter`.
+- **Steps:**
+  1. Search. 2. Press a library, a year, a duration band, a language and the speaker in turn. 3. Press another year. 4. Remove the speaker's chip under Filters in use; press the language again. 5. Clear all filters. 6. Back.
+- **Expected:** one group per facet (Library, Language, Speaker, Year, Length), each chip with its count (read as "N videos"); a library by its name, a language by its name in the page's language, a band as "Under 5 min" … "Over an hour". Each press runs the search again (pushing a history entry) with `filters` combined: `library_id`, `language` and `speaker` lists, and the year's and band's own `filter` (`date`, `duration_sec`); a second year replaces the first. The URL carries `lib`, `lang`, `spk`, `year`, `dur`. Filters in use lists each as "Facet: value" with a remove button; Clear all sends no `filters`. Back opens the filtered search by its sid, chips and facets with it, with no new POST.
+
+### SRC-48 — A chosen bucket the narrowed facets drop stays pressed
+
+- **Priority:** P2
+- **Category:** Edge
+- **Covered by existing test?** Yes (`Search.help.test.tsx`)
+- **Expected:** a speaker chosen, the narrowed answer lists no speaker facet: the speaker's chip stays, pressed and without a count, and pressing it takes the filter off.
+
+### SRC-49 — A deep link's sort and filters reach the request
+
+- **Priority:** P1
+- **Category:** Navigation
+- **Covered by existing test?** Yes (`Search.help.test.tsx`)
+- **Steps:**
+  1. Open `/search?q=patience&mode=fts&sort=newest&lib=lib-1&lib=lib-2&lang=en&year=2021&dur=5m_20m&year=bad`.
+- **Expected:** `POST { q, mode: "fts", view, sort: "newest", filters: { library_id: [lib-1, lib-2], language: [en], date: { gte: 2021-01-01T00:00:00.000Z, lt: 2022-01-01T00:00:00.000Z }, duration_sec: { gte: 300, lt: 1200 } } }` (a year and a band by the ranges the server gives them, a bad value ignored); the library chips take their names once the facets arrive.
+
+### SRC-50 — Sort
+
+- **Priority:** P1
+- **Category:** Happy path
+- **Covered by existing test?** Yes (`Search.help.test.tsx`)
+- **Steps:**
+  1. Search; choose Newest in "Sort by". 2. Press a library. 3. Search other words. 4. Choose Most matches on a home that answers `sort: "newest"`.
+- **Expected:** relevance is the default and is not sent; Newest sends `sort: "newest"`, puts `sort=newest` in the URL and on the matches links. A filter and a new query keep the order (a new query drops the filters). The select shows the answer's `sort`, and the URL follows it.
+
+### SRC-51 — Facets stay while the lists page and after a reload by sid
+
+- **Priority:** P1
+- **Category:** Navigation
+- **Covered by existing test?** Yes (`Search.help.test.tsx`)
+- **Steps:**
+  1. Search (45 titles, facets, did-you-mean). 2. Page 2 of In titles. 3. Reload that URL.
+- **Expected:** paging reads the saved search only (no POST) and the facets and did-you-mean stay; the reload reads the pages by sid and shows the facets and did-you-mean kept for that sid in this tab.
+
+### SRC-52 — Suggestions, facets, sort and did-you-mean in Arabic
+
+- **Priority:** P1
+- **Category:** RTL
+- **Covered by existing test?** Yes (`Search.help.test.tsx`)
+- **Preconditions / data:** `localStorage["mkt:locale"] = "ar"`.
+- **Expected:** «هل تقصد الصبر؟», «تضييق النتائج», «أقل من ٥ دقائق ٢», «أكثر من ساعة» read as «عدد المقاطع: ١٣», «العربية ١٠», year «٢٠٢٤ ٩»; «الترتيب حسب» with «الأقرب صلة», «الأحدث», «الأكثر مطابقات»; the suggestion kinds «بحثت عنه», «كلمة», «مقطع», «متحدث»; «عوامل التصفية المستخدمة» with «إزالة المكتبة: …» and «إزالة كل عوامل التصفية». The list, the chips and the sort sit right to left (logical CSS properties only).
+
+### SRC-53 — axe
+
+- **Priority:** P1
+- **Category:** Accessibility
+- **Covered by existing test?** Yes (`Search.help.test.tsx`)
+- **Expected:** in English and in Arabic, axe finds no violation on the page with the suggestions open and one highlighted, did-you-mean shown, facets and a filter in use.

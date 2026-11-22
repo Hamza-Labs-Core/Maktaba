@@ -8,7 +8,8 @@
 //   GET    /api/search/results/{sid}?list=titles|transcripts&offset=&limit=
 //   GET    /api/search/passages?sid=&video_id=&order=score&offset=&limit=
 //   GET    /api/search/recent   DELETE /api/search/recent[/{sid}]
-//   GET    /api/search/suggest?q=  -> { suggestions: string[] }
+//   GET    /api/search/suggest?q=  -> { suggestions: string[], items: [{ text, kind:
+//          history|term|title|speaker, video_id? }] }   (story 49.8)
 //   POST   /api/search/save     { q, mode }
 //   GET    /api/search/saved    -> { items:[{ id, q, mode }] }
 //   DELETE /api/search/saved/{id}
@@ -16,15 +17,31 @@
 //   GET    /api/search/youtube?q=     -> { items, reason? }
 //   POST   /api/videos/{id}/import-youtube  { youtube_id, title, channel, ... }
 //
-// URL state: /search?q=&mode=&sid=&vp=<titles page>&tp=<transcripts page>.
+// Story 49.10 (the API of 49.8): suggestions as you type (a combobox: an earlier search,
+// a word, a title that opens its video, a speaker), "Did you mean" above the results,
+// facets (library, language, speaker, year, duration band) that narrow the search, and
+// the sort. POST /api/search takes { sort, filters } and answers { sort, did_you_mean,
+// facets } with the first page; the facets stay on screen while the lists page, and
+// are kept per sid (searchShared rememberHelp) for a reload or Back.
+//
+// URL state: /search?q=&mode=[&sort=][&lib=&lang=&spk=&year=&dur=]&sid=&vp=<titles
+// page>&tp=<transcripts page>.
 // With a sid the pages are read from the saved search (Back / Forward /
 // reload keep the same order); without one the search is POSTed and its sid
 // replaces the URL. A sid read answering 410 search-expired runs the search
 // again, keeps the pages (clamped) and says the order may have changed —
 // pages of two sids are never shown together. Snippet `<mark>` runs are
 // rendered as escaped React nodes (no raw HTML).
-import { type FormEvent, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import {
+  type FormEvent,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@ds/components/Button/Button";
 import { Badge } from "@ds/components/Badge/Badge";
 import { Modal } from "@ds/components/Modal/Modal";
@@ -45,6 +62,9 @@ import {
 } from "../components/VideoViews";
 import {
   DEFAULT_PASSAGES_PAGE_SIZE,
+  type FacetName,
+  type FacetSel,
+  type Facets,
   MODE_KEY,
   type Mode,
   type Passage,
@@ -52,6 +72,7 @@ import {
   type ResultsPage,
   type SearchResponse,
   type SearchState,
+  type Sort,
   type TitleVideo,
   type TranscriptVideo,
   type VideoCard,
@@ -63,15 +84,32 @@ import {
   matchesLabel,
   pageCount,
   pageParam,
+  noSel,
   readMode,
+  recallHelp,
   recallSizes,
+  rememberHelp,
   rememberSizes,
   renderSnippet,
+  requestFilters,
   searchParamsOf,
+  selCount,
+  selOf,
+  toggleSel,
   ts,
   urlMode,
+  urlSort,
   watchHref,
 } from "./searchShared";
+import {
+  ActiveFilters,
+  DidYouMean,
+  FacetPanel,
+  SortSelect,
+  SuggestBox,
+  type SuggestItem,
+  suggestItems,
+} from "./searchHelp";
 import { errorText } from "../lib/errorText";
 import { cachedAnswer, keepAnswer } from "../lib/pageCache";
 import { FeatureOffNote, useCapabilities, useFeatureGate } from "../lib/capabilities";
@@ -121,6 +159,12 @@ interface Snapshot {
   passagesPageSize: number;
   titlesTotal: number;
   transcriptsTotal: number;
+  /** The order and the facet filters it was asked with (story 49.10). */
+  sort: Sort;
+  sel: FacetSel;
+  /** Its facets (from the first page's answer) and its did-you-mean. */
+  facets: Facets | null;
+  didYouMean: string;
 }
 /** The pages on screen of a saved search, kept for a return (lib/pageCache). */
 interface KeptSearch {
@@ -140,7 +184,14 @@ interface Loaded<T> {
 }
 
 const YT_REASONS = new Set(["disabled", "rate_limited", "error"]);
-const runKey = (q: string, m: Mode, sid: string) => `${q}\n${m}\n${sid}`;
+/** What the URL effect runs: the query, mode, order, filters and sid. */
+const runKey = (q: string, m: Mode, sort: Sort, sel: FacetSel, sid: string) =>
+  `${q}\n${m}\n${searchParamsOf({ q: "", mode: m, sort, sel }).toString()}\n${sid}`;
+/** How a search is asked beyond its words: its order and facet filters. */
+interface Ask {
+  sort: Sort;
+  sel: FacetSel;
+}
 const total = (v: unknown, atLeast: number) =>
   typeof v === "number" && Number.isFinite(v) ? Math.max(v, atLeast) : atLeast;
 
@@ -173,6 +224,11 @@ export function Search() {
   const sid = params.get("sid") ?? "";
   const vp = pageParam(params.get("vp"));
   const tp = pageParam(params.get("tp"));
+  // story 49.10: the order and the facet filters (one string, so the effect sees a change)
+  const uSort = urlSort(params.get("sort"));
+  const uSelKey = JSON.stringify(selOf(params));
+  const uSel = useMemo(() => JSON.parse(uSelKey) as FacetSel, [uSelKey]);
+  const navigate = useNavigate();
   const [q, setQ] = useState(urlQ);
   const [mode, setMode] = useState<Mode>(() => uMode ?? readMode());
   const [view, setView] = useStoredView(VIEW_KEY, "list");
@@ -200,10 +256,12 @@ export function Search() {
   const ytGateRef = useRef(ytGate);
   ytGateRef.current = ytGate;
   // The last search, so an import can run it again.
-  const lastSearch = useRef<{ term: string; mode: Mode; yt: boolean } | null>(null);
+  const lastSearch = useRef<{ term: string; mode: Mode; ask: Ask; yt: boolean } | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
-  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [suggestions, setSuggestions] = useState<SuggestItem[]>([]);
+  // the names seen for facet buckets (a library's), for a chip whose bucket is gone
+  const [labels, setLabels] = useState<Record<string, string>>({});
   const userId = user?.id ?? null;
   // the saved and recent lists come back at once too, and are read again
   const [saved, setSavedState] = useState<SavedSearch[]>(
@@ -341,7 +399,22 @@ export function Search() {
       setTranscripts(b);
       inflight.current = { titles: "", transcripts: "" };
       setBusy({ titles: false, transcripts: false });
+      if (s?.facets) {
+        const lib = listOf(s.facets.library).filter((b) => b?.label);
+        if (lib.length)
+          setLabels((old) => {
+            const next = { ...old };
+            for (const b of lib) next[`library:${b.value}`] = b.label!;
+            return next;
+          });
+      }
       if (s?.sid) {
+        rememberHelp(s.sid, {
+          sort: s.sort,
+          sel: s.sel,
+          facets: s.facets,
+          didYouMean: s.didYouMean,
+        });
         keepAnswer(userId, keptKey(s.sid, vPage, tPage), {
           s,
           vPage,
@@ -401,6 +474,7 @@ export function Search() {
     async (
       query: string,
       m: Mode,
+      ask: Ask,
       want: { vp: number; tp: number },
       opts: { notice?: boolean; youtube?: boolean } = {}
     ) => {
@@ -408,6 +482,7 @@ export function Search() {
       lastSearch.current = {
         term: query,
         mode: m,
+        ask,
         yt: opts.youtube ?? lastSearch.current?.yt ?? false,
       };
       const withYt =
@@ -420,10 +495,14 @@ export function Search() {
       setPending(true);
       setErr(null);
       try {
+        // the facets on screen give a year's or a duration's own filter
+        const filters = requestFilters(ask.sel, snapRef.current?.facets);
         const res = await api.post<SearchResponse>("/api/search", {
           q: query,
           mode: m,
           view: viewRef.current,
+          ...(ask.sort !== "relevance" ? { sort: ask.sort } : {}),
+          ...(filters ? { filters } : {}),
         });
         if (g !== gen.current) return;
         let vItems = listOf(res?.videos);
@@ -440,6 +519,14 @@ export function Search() {
               : DEFAULT_PASSAGES_PAGE_SIZE,
           titlesTotal: total(res?.videos_total, vItems.length),
           transcriptsTotal: total(res?.transcript_total, tItems.length),
+          // the order the home answered in is the one shown as chosen
+          sort: urlSort(res?.sort ?? ask.sort),
+          sel: ask.sel,
+          facets: res?.facets && typeof res.facets === "object" ? res.facets : null,
+          didYouMean:
+            typeof res?.did_you_mean === "string" && res.did_you_mean.trim() !== query
+              ? res.did_you_mean.trim()
+              : "",
         };
         // Without a sid (an admin token) there is nothing to page.
         const vPage = s.sid ? Math.min(want.vp, pageCount(s.titlesTotal, s.pageSize)) : 1;
@@ -457,8 +544,16 @@ export function Search() {
         commit(s, vPage, vItems, tPage, tItems);
         setNotice(Boolean(opts.notice));
         if (s.sid) {
-          lastRun.current = runKey(query, m, s.sid);
-          showUrl({ q: query, mode: m, sid: s.sid, vp: vPage, tp: tPage });
+          lastRun.current = runKey(query, m, s.sort, s.sel, s.sid);
+          showUrl({
+            q: query,
+            mode: m,
+            sort: s.sort,
+            sel: s.sel,
+            sid: s.sid,
+            vp: vPage,
+            tp: tPage,
+          });
         }
         void refreshRecent();
       } catch (e) {
@@ -480,13 +575,16 @@ export function Search() {
     async (
       query: string,
       m: Mode,
+      ask: Ask,
       s: string,
       want: { vp: number; tp: number },
       yt: boolean,
       quiet = false
     ) => {
       const g = ++gen.current;
-      lastSearch.current = { term: query, mode: m, yt };
+      lastSearch.current = { term: query, mode: m, ask, yt };
+      // the facets and did-you-mean came with the first page: kept per sid
+      const help = recallHelp(s);
       if (!quiet) setPending(true);
       setErr(null);
       const sizes = recallSizes(s) ?? {
@@ -508,6 +606,10 @@ export function Search() {
           passagesPageSize: sizes.passagesPageSize,
           titlesTotal: total(a?.total, 0),
           transcriptsTotal: total(b?.total, 0),
+          sort: ask.sort,
+          sel: ask.sel,
+          facets: help?.facets ?? null,
+          didYouMean: help?.didYouMean ?? "",
         };
         // A page past the end (a hand-made link) shows the last page.
         const vPage = Math.min(want.vp, pageCount(snapshot.titlesTotal, size));
@@ -520,7 +622,7 @@ export function Search() {
           if (g !== gen.current) return;
           if (a2) a = a2;
           if (b2) b = b2;
-          showUrl({ q: query, mode: m, sid: s, vp: vPage, tp: tPage });
+          showUrl({ q: query, mode: m, ...ask, sid: s, vp: vPage, tp: tPage });
         }
         commit(snapshot, vPage, listOf(a?.items), tPage, listOf(b?.items));
         setNotice(false);
@@ -528,7 +630,7 @@ export function Search() {
       } catch (e) {
         if (g !== gen.current) return;
         if (isSearchExpired(e)) {
-          void postSearch(query, m, want, { notice: true, youtube: yt });
+          void postSearch(query, m, ask, want, { notice: true, youtube: yt });
           return;
         }
         setErr(errorText(e, t));
@@ -571,7 +673,7 @@ export function Search() {
       } catch (e) {
         if (g !== gen.current || inflight.current[list] !== key) return;
         if (isSearchExpired(e)) {
-          void postSearch(s.q, s.mode, wantRef.current, { notice: true });
+          void postSearch(s.q, s.mode, s, wantRef.current, { notice: true });
           return;
         }
         toast.show({
@@ -591,7 +693,7 @@ export function Search() {
   /** A passage list found its saved search expired: refresh, keep the pages. */
   const onExpired = useCallback(() => {
     const s = snapRef.current;
-    if (s) void postSearch(s.q, s.mode, wantRef.current, { notice: true });
+    if (s) void postSearch(s.q, s.mode, s, wantRef.current, { notice: true });
   }, [postSearch]);
 
   // The URL drives the search: a deep link, the header search box, Back /
@@ -612,7 +714,8 @@ export function Search() {
       if (transcriptsRef.current?.page !== tp) void loadPage("transcripts", tp);
       return;
     }
-    const key = runKey(urlQ, m, sid);
+    const ask: Ask = { sort: uSort, sel: uSel };
+    const key = runKey(urlQ, m, uSort, uSel, sid);
     if (lastRun.current === key) return;
     lastRun.current = key;
     setQ(urlQ);
@@ -620,23 +723,44 @@ export function Search() {
     if (sid) {
       // a return to a search already seen: its pages at once, read again quietly
       const kept = cachedAnswer<KeptSearch>(userId, keptKey(sid, vp, tp));
-      if (kept && kept.s.q === urlQ && kept.s.mode === m) {
+      if (kept && kept.s.q === urlQ && kept.s.mode === m && kept.s.sel) {
         commit(kept.s, kept.vPage, kept.vItems, kept.tPage, kept.tItems);
       }
-      void openBySid(urlQ, m, sid, { vp, tp }, ytRef.current, Boolean(kept));
-    } else void postSearch(urlQ, m, { vp: 1, tp: 1 }, { youtube: ytRef.current });
-  }, [urlQ, uMode, sid, vp, tp, clearResults, loadPage, openBySid, postSearch, commit, userId]);
+      void openBySid(urlQ, m, ask, sid, { vp, tp }, ytRef.current, Boolean(kept));
+    } else void postSearch(urlQ, m, ask, { vp: 1, tp: 1 }, { youtube: ytRef.current });
+  }, [
+    urlQ,
+    uMode,
+    uSort,
+    uSel,
+    sid,
+    vp,
+    tp,
+    clearResults,
+    loadPage,
+    openBySid,
+    postSearch,
+    commit,
+    userId,
+  ]);
 
   // Re-run the last search (after a YouTube import, so the result shows
   // its new state).
   const rerun = () => {
     const last = lastSearch.current;
-    if (last) void postSearch(last.term, last.mode, wantRef.current, { youtube: last.yt });
+    if (last)
+      void postSearch(last.term, last.mode, last.ask, wantRef.current, { youtube: last.yt });
   };
 
-  /** Shows `term` in the URL (a history entry) and searches it. */
-  function search(term: string, m: Mode) {
+  /**
+   * Shows `term` in the URL (a history entry) and searches it. The order stays; the facet
+   * filters stay for the same words and are cleared for new ones (they were the old
+   * results' counts), unless `ask` says otherwise.
+   */
+  function search(term: string, m: Mode, ask?: Partial<Ask>) {
     const query = term.trim();
+    suggestSeq.current += 1;
+    if (suggestTimer.current) clearTimeout(suggestTimer.current);
     setSuggestions([]);
     if (!query) {
       if (urlQ) {
@@ -646,11 +770,42 @@ export function Search() {
       clearResults();
       return;
     }
-    // Same query and mode again (a retry): the URL entry is replaced.
-    const same = query === urlQ && m === (uMode ?? modeRef.current);
-    lastRun.current = runKey(query, m, "");
-    setParams(searchParamsOf({ q: query, mode: m }), { replace: same });
-    void postSearch(query, m, { vp: 1, tp: 1 }, { youtube: withYouTube });
+    const next: Ask = {
+      sort: ask?.sort ?? uSort,
+      sel: ask?.sel ?? (query === urlQ ? uSel : noSel()),
+    };
+    // Same query, mode, order and filters again (a retry): the URL entry is replaced.
+    const same =
+      query === urlQ &&
+      m === (uMode ?? modeRef.current) &&
+      runKey(query, m, next.sort, next.sel, "") === runKey(urlQ, m, uSort, uSel, "");
+    lastRun.current = runKey(query, m, next.sort, next.sel, "");
+    setParams(searchParamsOf({ q: query, mode: m, ...next }), { replace: same });
+    void postSearch(query, m, next, { vp: 1, tp: 1 }, { youtube: withYouTube });
+  }
+
+  /** The search on screen again, with another order or other filters. */
+  function refine(ask: Partial<Ask>) {
+    const s = snapRef.current;
+    const query = s?.q ?? urlQ;
+    if (!query) return;
+    const m = s?.mode ?? uMode ?? modeRef.current;
+    search(query, m, { sort: ask.sort ?? s?.sort ?? uSort, sel: ask.sel ?? s?.sel ?? uSel });
+  }
+
+  const toggleFacet = (facet: FacetName, value: string) =>
+    refine({ sel: toggleSel(snapRef.current?.sel ?? uSel, facet, value) });
+
+  /** A suggestion: a title opens its video; any other is searched. */
+  function chooseSuggestion(it: SuggestItem) {
+    if (it.kind === "title" && it.video_id) {
+      suggestSeq.current += 1;
+      setSuggestions([]);
+      navigate(`/videos/${encodeURIComponent(it.video_id)}`);
+      return;
+    }
+    setQ(it.text);
+    search(it.text, mode);
   }
 
   function onChangeQuery(value: string) {
@@ -663,14 +818,10 @@ export function Search() {
     }
     suggestTimer.current = setTimeout(() => {
       api
-        .get<{ suggestions: string[] }>(`/api/search/suggest?q=${encodeURIComponent(value.trim())}`)
+        .get<unknown>(`/api/search/suggest?q=${encodeURIComponent(value.trim())}`)
         .then((r) => {
-          if (seq !== suggestSeq.current) return;
-          setSuggestions(
-            Array.isArray(r?.suggestions)
-              ? r.suggestions.filter((x): x is string => typeof x === "string")
-              : []
-          );
+          if (seq !== suggestSeq.current || !alive.current) return;
+          setSuggestions(suggestItems(r));
         })
         .catch(() => {
           if (seq === suggestSeq.current) setSuggestions([]);
@@ -680,8 +831,6 @@ export function Search() {
 
   function onSubmit(e: FormEvent) {
     e.preventDefault();
-    suggestSeq.current += 1;
-    if (suggestTimer.current) clearTimeout(suggestTimer.current);
     search(q, mode);
   }
 
@@ -705,6 +854,8 @@ export function Search() {
       {
         q: s.q,
         mode: s.mode,
+        sort: s.sort,
+        sel: s.sel,
         sid: s.sid,
         vp: list === "titles" ? page : vp,
         tp: list === "transcripts" ? page : tp,
@@ -716,19 +867,22 @@ export function Search() {
   function backToFirst() {
     const s = snapRef.current;
     setNotice(false);
-    if (s?.sid) showUrl({ q: s.q, mode: s.mode, sid: s.sid }, true);
+    if (s?.sid) showUrl({ q: s.q, mode: s.mode, sort: s.sort, sel: s.sel, sid: s.sid }, true);
   }
 
   function openRecent(r: RecentSearch) {
     const m = asMode(r.mode);
+    // its order and filters, when this browser ran it (the list does not carry them)
+    const help = recallHelp(r.search_id);
+    const ask: Ask = { sort: help?.sort ?? "relevance", sel: help?.sel ?? noSel() };
     setQ(r.q);
     setMode(m);
     if (!r.live) {
-      search(r.q, m);
+      search(r.q, m, ask);
       return;
     }
     setNotice(false);
-    showUrl({ q: r.q, mode: m, sid: r.search_id }, true);
+    showUrl({ q: r.q, mode: m, ...ask, sid: r.search_id }, true);
   }
 
   // The row leaves the screen once the home has removed it, and the list is
@@ -764,6 +918,8 @@ export function Search() {
     ? {
         q: snap.q,
         mode: snap.mode,
+        sort: snap.sort,
+        sel: snap.sel,
         sid: snap.sid,
         vp: titles?.page ?? 1,
         tp: transcripts?.page ?? 1,
@@ -776,20 +932,14 @@ export function Search() {
       <div className="mkt-search__layout">
         <div className="mkt-search__main">
           <form onSubmit={onSubmit} className="mkt-search__form" role="search">
-            <input
-              type="search"
+            <SuggestBox
               value={q}
-              onChange={(e) => onChangeQuery(e.target.value)}
+              onChange={onChangeQuery}
+              items={suggestions}
+              onChoose={chooseSuggestion}
+              label={t("nav.search")}
               placeholder={t("search.placeholder")}
-              aria-label={t("nav.search")}
-              list="mkt-suggest"
-              autoFocus
             />
-            <datalist id="mkt-suggest">
-              {suggestions.map((s) => (
-                <option key={s} value={s} />
-              ))}
-            </datalist>
             {!meaningOff && (
               <select
                 value={mode}
@@ -845,12 +995,42 @@ export function Search() {
 
           {err && <ErrorState kind="server" title={t("common.error")} description={err} />}
 
+          {snap && !err && snap.didYouMean && (
+            <DidYouMean
+              text={snap.didYouMean}
+              onRun={(corrected) => {
+                setQ(corrected);
+                // the filters were the caller's choice, not the words': they stay
+                search(corrected, snap.mode, { sort: snap.sort, sel: snap.sel });
+              }}
+            />
+          )}
+
+          {snap && !err && selCount(snap.sel) > 0 && (
+            <ActiveFilters
+              sel={snap.sel}
+              labels={labels}
+              onRemove={(facet, value) => toggleFacet(facet, value)}
+              onClear={() => refine({ sel: noSel() })}
+            />
+          )}
+
           {nothing && <EmptyState kind="filtered_out" title={t("search.didYouMean")} />}
 
           {snap && here && !nothing && (
             <div className="mkt-search__toolbar">
+              <SortSelect value={snap.sort} onChange={(sort) => refine({ sort })} />
               <ViewToggle view={view} onChange={setView} />
             </div>
+          )}
+
+          {snap && !err && !nothing && snap.facets && (
+            <FacetPanel
+              facets={snap.facets}
+              sel={snap.sel}
+              onToggle={toggleFacet}
+              labels={labels}
+            />
           )}
 
           {snap && here && titles && snap.titlesTotal > 0 && (

@@ -80,7 +80,32 @@ export interface FakeServerOptions {
   existing?: Record<string, { q: string; mode: string; corpus: Corpus }>;
   /** Answers every other POST (save, import). */
   otherPost?: (url: string, body: unknown) => unknown;
+  /**
+   * Story 49.8's additions to a POST /api/search answer (sort, facets, did_you_mean) for a
+   * body; without it the answer is the request's sort (relevance) and no facets.
+   */
+  help?: (body: Record<string, unknown>) => Record<string, unknown>;
+  /** GET /api/search/suggest's answer for a query. */
+  suggest?: (q: string) => unknown;
 }
+
+/** A facet bucket. */
+export const bucket = (value: string, count: number, extra: Record<string, unknown> = {}) => ({
+  value,
+  count,
+  ...extra,
+});
+
+/** The facets of an answer, every facet present (empty unless given). */
+export const facetsOf = (f: Record<string, unknown[]> = {}, videos = 1) => ({
+  library: [],
+  language: [],
+  speaker: [],
+  year: [],
+  duration: [],
+  ...f,
+  videos,
+});
 
 export const expiredError = () =>
   new ApiError({ type: PROBLEM_SEARCH_EXPIRED, title: "search results expired", status: 410 });
@@ -129,6 +154,8 @@ export function fakeSearchServer(
         transcript_total: c.transcripts.length,
         hits: [],
         total: 0,
+        sort: typeof body.sort === "string" ? body.sort : "relevance",
+        ...(opts.help?.(body) ?? {}),
       };
     }
     return opts.otherPost?.(url, body);
@@ -139,7 +166,8 @@ export function fakeSearchServer(
     if (u.pathname === "/api/search/youtube/status")
       return { available: opts.ytAvailable === true };
     if (u.pathname === "/api/search/saved") return opts.saved ?? { items: [] };
-    if (u.pathname === "/api/search/suggest") return { suggestions: [] };
+    if (u.pathname === "/api/search/suggest")
+      return opts.suggest?.(p.get("q") ?? "") ?? { suggestions: [], items: [] };
     if (u.pathname === "/api/search/recent") return { items: state.recent };
     const res = /^\/api\/search\/results\/(.+)$/.exec(u.pathname);
     if (res) {

@@ -22,6 +22,7 @@ import {
   DEFAULT_PASSAGES_PAGE_SIZE,
   type Passage,
   type PassagesPage,
+  type FacetSel,
   type SearchResponse,
   type VideoCard,
   defaultPageSize,
@@ -32,11 +33,15 @@ import {
   pageParam,
   readMode,
   recallSizes,
+  rememberHelp,
   rememberSizes,
   renderSnippet,
+  requestFilters,
   searchHref,
+  selOf,
   ts,
   urlMode,
+  urlSort,
 } from "./searchShared";
 import { errorText } from "../lib/errorText";
 import { useOptionalAuth } from "../lib/auth";
@@ -67,6 +72,9 @@ export function SearchVideo() {
   const sid = params.get("sid") ?? "";
   const vp = pageParam(params.get("vp"));
   const tp = pageParam(params.get("tp"));
+  // story 49.10: the search's order and facet filters, kept for the back link and a re-run
+  const sort = urlSort(params.get("sort"));
+  const selKey = JSON.stringify(selOf(params));
   const [data, setData] = useState<Matches | null>(null);
   const [err, setErr] = useState<{ message: string; status?: number } | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -155,13 +163,27 @@ export function SearchVideo() {
       }
       try {
         const view = readStoredView("mkt:search:view", "list");
-        const res = await api.post<SearchResponse>("/api/search", { q, mode, view });
+        const sel = JSON.parse(selKey) as FacetSel;
+        const filters = requestFilters(sel);
+        const res = await api.post<SearchResponse>("/api/search", {
+          q,
+          mode,
+          view,
+          ...(sort !== "relevance" ? { sort } : {}),
+          ...(filters ? { filters } : {}),
+        });
         if (g !== gen.current) return;
         const newSid = typeof res?.search_id === "string" ? res.search_id : "";
         if (!newSid) {
           setErr({ message: t("common.error") });
           return;
         }
+        rememberHelp(newSid, {
+          sort: urlSort(res.sort ?? sort),
+          sel,
+          facets: res.facets ?? null,
+          didYouMean: typeof res.did_you_mean === "string" ? res.did_you_mean : "",
+        });
         const pageSize = res.page_size && res.page_size > 0 ? res.page_size : defaultPageSize(view);
         rememberSizes(newSid, {
           pageSize,
@@ -190,7 +212,7 @@ export function SearchVideo() {
         setErr(failure(e));
       }
     },
-    [q, mode, vp, tp, videoId, t, failure, load, setParams]
+    [q, mode, sort, selKey, vp, tp, videoId, t, failure, load, setParams]
   );
   refreshRef.current = refresh;
 
@@ -264,7 +286,15 @@ export function SearchVideo() {
   const times = data?.times ?? [];
   const nextAt = times.find((x) => x > now + NEXT_SLACK);
   const prevAt = [...times].reverse().find((x) => x < now - PREV_SLACK);
-  const back = searchHref({ q, mode, sid: data?.sid || sid, vp, tp });
+  const back = searchHref({
+    q,
+    mode,
+    sid: data?.sid || sid,
+    vp,
+    tp,
+    sort,
+    sel: JSON.parse(selKey) as FacetSel,
+  });
   const arrow = dir === "rtl" ? "→" : "←";
   const title = data?.video?.title ?? "";
 
