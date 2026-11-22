@@ -28,6 +28,13 @@ prs: [1497, 1511]
   Player's build directory were left corrupt ("Unknown type of test metadata"), and 113 TV tests
   failed with "No space left on device", not from the code. Deleting the module's `build`
   directory cleared it.
+- Once the branch was stacked on #1515, the API's integration job ran
+  `TestAndroidBrowseFixturesMatchTheHandlers` and failed. That test decodes every Android
+  browse fixture into the handler's own type and refuses unknown fields. The two new fixtures,
+  `search-help.json` and `search-suggest-items.json`, had no case. `search-help.json` also held
+  a `tag` facet the home never sends and unreadable speaker buckets. The fixture is now the
+  home's answer as it is, and `BrowseTest` adds the odd buckets itself
+  (f0a4442eb992c7dbf33348fc74264b1d4bdbed82).
 
 ## What we learned
 - A full disk leaves Gradle's binary test results half written; later runs fail before any
@@ -42,6 +49,9 @@ prs: [1497, 1511]
   give each answer a fresh id, as the home does.
 
 ## Keep doing
+- A fixture under `apps/android/client/src/test/resources/browse/` is the home's exact answer:
+  add its case to `api/internal/handlers/browse/native_fixtures_test.go`, and put malformed
+  input in the test that needs it, not in the shared fixture.
 - Put a cross-platform rule (the request body a facet choice sends) in the shared client and
   test it there once; each app tests only its screen.
 
