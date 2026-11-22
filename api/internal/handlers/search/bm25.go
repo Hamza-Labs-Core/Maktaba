@@ -22,18 +22,21 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/lib/pq"
 	"golang.org/x/text/unicode/norm"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/safego"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/searchindex"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/searchterms"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/textnorm"
 )
 
@@ -42,6 +45,10 @@ const (
 	bm25ExactWeight = 2.0
 	// bm25PhraseTop is how many of the best videos a phrase is looked for in
 	bm25PhraseTop = 100
+	// bm25DocPhraseTop is how many of them the phrase is looked for in their documents'
+	// normalised text, when their lines do not say it as written (a regular expression over
+	// the whole document: the first ones, where a misspelt sentence's own video is)
+	bm25DocPhraseTop = 30
 	// bm25TopK and bm25StemTopK are how many videos each index gives: rules.search.max_videos'
 	// 500. Each row's score is the one its index scan worked out (bm25LegSQL), so the depth
 	// costs little: 500 rows of 5,000-word documents in about 2 ms. (Scored again from its
@@ -110,7 +117,7 @@ func (h *Handler) keywordVideos(ctx context.Context, q string, limit int, f Filt
 	if !ready {
 		return h.runFTSVideos(ctx, q, limit, f)
 	}
-	vs, err := h.runBM25Videos(ctx, q, limit, f)
+	vs, err := h.runBM25Videos(ctx, h.withoutConjunctions(ctx, q, f.LibraryID), limit, f)
 	if err != nil {
 		return nil, err
 	}
@@ -348,6 +355,7 @@ func (h *Handler) phraseBoost(ctx context.Context, q string, vs []savedVideo) er
 		   AND s.search_tsv @@ phraseto_tsquery('maktaba_search', $1)`, args...)
 	if err != nil {
 		if pctx.Err() != nil && ctx.Err() == nil {
+			h.phraseAbandoned.Add(1)
 			return nil // over its budget: the BM25 order stands
 		}
 		return fmt.Errorf("phrase: %w", err)
@@ -363,9 +371,55 @@ func (h *Handler) phraseBoost(ctx context.Context, q string, vs []savedVideo) er
 	}
 	if err := rows.Err(); err != nil {
 		if pctx.Err() != nil && ctx.Err() == nil {
+			h.phraseAbandoned.Add(1)
 			return nil // over its budget while reading: the BM25 order stands
 		}
 		return err
+	}
+	// story 49.9: the lines' search_tsv is not normalised (49.4 left the 23 M lines as they
+	// were), so a query spelled otherwise than its line (اسلام for إسلام, harakat in the line)
+	// says no phrase there. The documents' search_text is the same lines normalised: the
+	// videos left are looked for there, the words together within one line.
+	var rest []string
+	for _, v := range top {
+		if !phrase[v.V] && len(rest) < bm25DocPhraseTop {
+			rest = append(rest, v.V)
+		}
+	}
+	if pat := phrasePattern(q); pat != "" && len(rest) > 0 {
+		// a document an hour long is some 200 KB: strpos of the query's longest Arabic word
+		// (a memory search, no copy) passes over the documents that cannot hold the phrase
+		// before the regular expression reads one; ~* folds ASCII case as lower() would,
+		// without copying the text
+		dargs := []any{pat, phraseProbe(q)}
+		drows, err := h.DB.QueryContext(pctx, `SELECT d.video_id::text FROM video_search_docs d
+			 WHERE d.video_id IN (`+placeholders(rest, &dargs)+`)
+			   AND ($2 = '' OR strpos(d.search_text, $2) > 0) AND d.search_text ~* $1`, dargs...)
+		if err != nil {
+			if pctx.Err() != nil && ctx.Err() == nil {
+				h.phraseAbandoned.Add(1)
+				return nil
+			}
+			return fmt.Errorf("phrase (documents): %w", err)
+		}
+		for drows.Next() {
+			var id string
+			if err := drows.Scan(&id); err != nil {
+				_ = drows.Close()
+				return err
+			}
+			phrase[id] = true
+		}
+		if err := drows.Close(); err != nil {
+			return err
+		}
+		if err := drows.Err(); err != nil {
+			if pctx.Err() != nil && ctx.Err() == nil {
+				h.phraseAbandoned.Add(1)
+				return nil
+			}
+			return err
+		}
 	}
 	if len(phrase) == 0 {
 		return nil
@@ -701,3 +755,104 @@ func containsAll(s string, lexemes []string) bool {
 	}
 	return true
 }
+
+// phraseSep is what lies between two words of a line in a document's search_text: no
+// letter or digit (the Arabic letters spelled out: the C locale's [:alnum:] is ASCII), and
+// no line break. phraseEdge is what lies before the first word and after the last: the
+// same, or a line break.
+const (
+	phraseSep  = `[^[:alnum:]` + phraseLetters + `\n]`
+	phraseEdge = `[^[:alnum:]` + phraseLetters + `]`
+	// phraseLetters are the Arabic script's letters: Arabic's, and Persian's and Urdu's
+	// (پ چ ژ گ ی ے), not its punctuation (، ؛ ؟)
+	phraseLetters = `\u0621-\u064a\u066e-\u06d3\u06fa-\u06ff`
+)
+
+// phrasePattern is the regular expression of q's words together in one line of a document's
+// search_text, matched without regard to case (~*): the words folded as maktaba_normalize
+// folds, in lower case ("" for fewer than two words, or a query with operators).
+func phrasePattern(q string) string {
+	if queryHasOperators(q) {
+		return "" // a quoted phrase, -word or OR: not a phrase of every word
+	}
+	words := strings.Fields(strings.ToLower(textnorm.Normalize(q)))
+	var parts []string
+	for _, w := range words {
+		w = strings.TrimFunc(w, func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) })
+		if w != "" {
+			parts = append(parts, regexp.QuoteMeta(w))
+		}
+	}
+	if len(parts) < 2 {
+		return ""
+	}
+	return `(^|` + phraseEdge + `)` + strings.Join(parts, phraseSep+`+`) + `($|` + phraseEdge + `)`
+}
+
+// conjunctions are the one-letter prefixes withoutConjunctions takes off a word.
+var conjunctions = []string{"و", "ف"}
+
+// withoutConjunctions is q with each word that no document of the libraries holds, prefixed
+// by و or ف, written without that letter when documents hold the rest (story 49.9's
+// relevance check: Snowball keeps the و of a word it does not know, so وغفران found
+// neither index's غفران). A word some documents hold as written is left as it is: والصبر
+// and وقت are words. q is unchanged when the dictionary cannot be read, or holds nothing.
+func (h *Handler) withoutConjunctions(ctx context.Context, q string, libs []string) string {
+	if queryHasOperators(q) {
+		return q
+	}
+	words := strings.Fields(q)
+	type cand struct {
+		i          int
+		key, short string
+		cut        int // bytes of the prefix in the word as written
+	}
+	var cands []cand
+	var keys []string
+	for i, w := range words {
+		// the word without punctuation around it (وغفران، is the word وغفران)
+		w = strings.TrimFunc(w, func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) && !unicode.Is(unicode.Mn, r) })
+		k := searchterms.Key(w)
+		for _, c := range conjunctions {
+			if strings.HasPrefix(k, c) && utf8.RuneCountInString(k) >= 5 && strings.HasPrefix(words[i], c) {
+				cands = append(cands, cand{i: i, key: k, short: strings.TrimPrefix(k, c), cut: len(c)})
+				keys = append(keys, k, strings.TrimPrefix(k, c))
+			}
+		}
+	}
+	if len(cands) == 0 {
+		return q
+	}
+	df, err := h.dfOf(ctx, keys, libs)
+	if err != nil || len(df) == 0 {
+		return q
+	}
+	for _, c := range cands {
+		if df[c.key] == 0 && df[c.short] > 0 {
+			words[c.i] = words[c.i][c.cut:]
+		}
+	}
+	return strings.Join(words, " ")
+}
+
+// phraseProbe is the query's longest word of the Arabic script (and digits), folded as
+// search_text is: a document whose text does not hold it holds no phrase of the query ("" none).
+// A word of a script with case (Latin, Greek, Cyrillic) is no probe: strpos minds case, and
+// the expression does not.
+func phraseProbe(q string) string {
+	best := ""
+	for _, w := range strings.Fields(textnorm.Normalize(q)) {
+		w = strings.TrimFunc(w, func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) })
+		if w == "" || strings.IndexFunc(w, func(r rune) bool { return unicode.IsLetter(r) && !unicode.Is(unicode.Arabic, r) }) >= 0 {
+			continue
+		}
+		if utf8.RuneCountInString(w) > utf8.RuneCountInString(best) {
+			best = w
+		}
+	}
+	return best
+}
+
+// PhraseAbandoned is how many phrase boosts ran out of their budget (phraseBudget) since
+// the handler started: the list kept its BM25 order (story 49.9's check reports it).
+func (h *Handler) PhraseAbandoned() int64 { return h.phraseAbandoned.Load() }

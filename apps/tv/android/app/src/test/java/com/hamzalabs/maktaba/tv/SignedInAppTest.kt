@@ -8,7 +8,9 @@ import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.test.performImeAction
 import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.test.performTextInput
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.hamzalabs.maktaba.core.api.ApiClient
@@ -164,6 +166,39 @@ class SignedInAppTest {
         compose.waitUntil(STALL_MS) { compose.waitForIdle(); shows("البث المباشر متوقف على الجهاز الرئيسي.") }
         assertTrue(shows("شغّل من صفحة المكوّنات"))
         compose.onNodeWithTag("feature-off-${Feature.LIVE_TV}").assertExists()
+    }
+
+    /**
+     * Story 49.11: the Search tab runs the Android apps' search model with the home's switches.
+     * Search by meaning off asks words only (`fts`); Transcripts off for a viewer leaves out the
+     * In the transcript row, and the titles show.
+     */
+    @Test
+    fun theSearchTabFollowsTheHomesSearchAndTranscriptsSwitches() {
+        features.value = Capabilities(off = setOf(Feature.SEMANTIC_SEARCH, Feature.TRANSCRIPTS))
+        val bodies = java.util.concurrent.CopyOnWriteArrayList<String>()
+        val inner = server.dispatcher
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse =
+                if (request.method == "POST" && request.url.encodedPath == "/api/search") {
+                    bodies += request.body?.utf8().orEmpty()
+                    json(200, """{"search_id":"s1","q":"patience","videos":[{"video_id":"v1","title":"On Patience"}],"videos_total":1,
+                        "transcript_videos":[{"video_id":"v4","title":"The Night Journey","passages":[{"start_sec":754,"snippet":"patience"}]}],"transcript_total":1}""")
+                } else {
+                    inner.dispatch(request)
+                }
+        }
+        signedIn()
+        compose.waitUntil(STALL_MS) { compose.waitForIdle(); shows("Search") }
+        compose.onNodeWithText("Search").performSemanticsAction(SemanticsActions.RequestFocus)
+        compose.waitUntil(STALL_MS) { compose.waitForIdle(); compose.onAllNodes(androidx.compose.ui.test.hasSetTextAction()).fetchSemanticsNodes().isNotEmpty() }
+        val field = compose.onNode(androidx.compose.ui.test.hasSetTextAction())
+        field.performTextInput("patience")
+        field.performImeAction()
+        compose.waitUntil(STALL_MS) { compose.waitForIdle(); shows("On Patience") }
+        assertTrue("words only: ${bodies.single()}", bodies.single().contains("\"mode\":\"fts\""))
+        assertFalse("no In the transcript row", shows("In the transcript"))
+        assertFalse(shows("The Night Journey"))
     }
 
     /** The home answers `GET /api/me/parental` with a 13+ limit at [version], and records the read. */

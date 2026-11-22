@@ -184,6 +184,76 @@ export function requestFilters(
   return f;
 }
 
+const strings = (v: unknown): string[] =>
+  Array.isArray(v) ? uniq(v.filter((x): x is string => typeof x === "string")) : [];
+const num = (v: unknown): number | undefined =>
+  typeof v === "number" && Number.isFinite(v) ? v : undefined;
+
+/**
+ * The facet selection of a search's filters (as a recent or saved search keeps them): the
+ * inverse of requestFilters. A date range is a year when it spans one calendar year (as a
+ * year bucket's does), a duration range a band when it is one of the bands; any other range
+ * (from another client) is left out, as the page cannot show it.
+ */
+export function selOfFilters(f: unknown): FacetSel {
+  const sel = noSel();
+  if (!f || typeof f !== "object") return sel;
+  const o = f as Record<string, unknown>;
+  sel.library = strings(o.library_id);
+  sel.language = strings(o.language);
+  sel.speaker = strings(o.speaker);
+  const date = o.date as Range<string> | null | undefined;
+  if (date && typeof date === "object" && typeof date.gte === "string") {
+    const y = /^(\d{4})-01-01/.exec(date.gte)?.[1];
+    if (y) {
+      const next = yearRange(String(Number(y))).lt!.slice(0, 10);
+      const end = typeof date.lt === "string" ? date.lt : "";
+      if (end.slice(0, 10) === next && date.lte === undefined) sel.year = String(Number(y));
+    }
+  }
+  const dur = o.duration_sec as Range<number> | null | undefined;
+  if (dur && typeof dur === "object") {
+    const gte = num(dur.gte) ?? 0;
+    const lt = num(dur.lt);
+    for (const [band, r] of Object.entries(DURATION_BANDS))
+      if ((r.gte ?? 0) === gte && r.lt === lt && dur.lte === undefined) sel.duration = band;
+  }
+  return sel;
+}
+
+/** How a recent or saved search was asked: its order and filters (old ones have neither). */
+export interface AskedState {
+  sort?: string;
+  filters?: Record<string, unknown> | null;
+}
+
+/**
+ * A saved search (GET /api/search/saved): `query` is the POST /api/search body it was saved
+ * with, so it keeps the order and filters; an older one has neither.
+ */
+export interface SavedSearch {
+  id: string;
+  name?: string;
+  query?: ({ q?: string; mode?: string } & AskedState) | null;
+  created_at?: string;
+  /** The shape a home before 49.10's follow-up was mocked with (no `query`). */
+  q?: string;
+  mode?: string;
+}
+
+/** A saved search's words, mode and how it was asked, from whichever shape it has. */
+export function savedOf(s: SavedSearch): { q: string; mode: string; name: string } & AskedState {
+  const query = s.query && typeof s.query === "object" ? s.query : null;
+  const q = (typeof query?.q === "string" ? query.q : (s.q ?? s.name ?? "")).trim();
+  return {
+    q,
+    mode: query?.mode ?? s.mode ?? "hybrid",
+    name: (s.name ?? "").trim() || q,
+    sort: typeof query?.sort === "string" ? query.sort : undefined,
+    filters: query?.filters && typeof query.filters === "object" ? query.filters : undefined,
+  };
+}
+
 /** Toggles one bucket: on a list it joins or leaves; a year or duration replaces the last. */
 export function toggleSel(sel: FacetSel, facet: FacetName, value: string): FacetSel {
   if (facet === "year" || facet === "duration") {
@@ -264,6 +334,11 @@ export interface ResultsPage<T> {
   limit: number;
   total: number;
   items: T[] | null;
+  /** The order its pages are in (a search kept before 49.10's follow-up has none). */
+  sort?: string;
+  /** Its facets and did-you-mean, with facets=1. */
+  facets?: Facets | null;
+  did_you_mean?: string;
 }
 export interface PassagesPage {
   search_id: string;

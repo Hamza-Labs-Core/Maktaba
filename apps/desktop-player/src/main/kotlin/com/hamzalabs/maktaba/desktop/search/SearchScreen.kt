@@ -115,6 +115,8 @@ fun SearchContent(model: SearchModel, home: DesktopHome, features: Capabilities)
     val admin = home.user.isAdmin
     BoxWithConstraints(Modifier.fillMaxSize().testTag("search")) {
         val wide = maxWidth >= WIDE
+        // a title suggestion opens its video: beside the results on a wide window, else on its own page
+        val openVideo: (String) -> Unit = { id -> if (wide) model.chosen = id else home.nav.push(Route.Video(id)) }
         Row(Modifier.fillMaxSize()) {
             Column(Modifier.weight(1f).fillMaxHeight().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(
@@ -129,13 +131,13 @@ fun SearchContent(model: SearchModel, home: DesktopHome, features: Capabilities)
                         }
                     },
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                    keyboardActions = KeyboardActions(onSearch = { scope.launch { model.enter() } }),
+                    keyboardActions = KeyboardActions(onSearch = { scope.launch { model.enter(openVideo) } }),
                     modifier = Modifier.fillMaxWidth().focusRequester(field).testTag("search-field").onPreviewKeyEvent { e ->
                         if (e.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                         when (e.key) {
                             Key.DirectionDown -> { model.move(1); model.suggestions.isNotEmpty() }
                             Key.DirectionUp -> { model.move(-1); model.suggestions.isNotEmpty() }
-                            Key.Enter, Key.NumPadEnter -> { scope.launch { model.enter() }; true }
+                            Key.Enter, Key.NumPadEnter -> { scope.launch { model.enter(openVideo) }; true }
                             else -> false
                         }
                     },
@@ -143,9 +145,10 @@ fun SearchContent(model: SearchModel, home: DesktopHome, features: Capabilities)
                 if (admin && !features.isOn(Feature.SEMANTIC_SEARCH)) {
                     Text(t["search.wordsOnly"], color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.testTag("words-only"))
                 }
-                Box(Modifier.weight(1f)) { Results(model, home, features, wide) }
+                Box(Modifier.weight(1f)) { Results(model, home, features, wide, openVideo) }
             }
-            if (wide && model.answer?.isEmpty == false) {
+            // the page beside the results, also for a title suggestion chosen before any results
+            if (wide && (model.chosen != null || model.answer?.isEmpty == false)) {
                 Box(Modifier.weight(1f).fillMaxHeight().testTag("search-preview")) {
                     val id = model.chosen
                     if (id == null) EmptyBox(t["search.previewHint"]) else VideoPage(id, null)
@@ -156,30 +159,51 @@ fun SearchContent(model: SearchModel, home: DesktopHome, features: Capabilities)
 }
 
 @Composable
-private fun Results(model: SearchModel, home: DesktopHome, features: Capabilities, wide: Boolean) {
+private fun Results(model: SearchModel, home: DesktopHome, features: Capabilities, wide: Boolean, openVideo: (String) -> Unit) {
     val t = LocalTexts.current
     val scope = rememberCoroutineScope()
     val answer = model.answer
     val problem = model.problem
+    // a refined search (the same words) keeps its results, order and filters on screen until it answers
+    val refining = model.searching && answer != null && answer.q == model.submitted?.trim()
+    val refine: @Composable () -> Unit = {
+        if (answer != null) {
+            Refine(
+                model,
+                answer,
+                onSort = { scope.launch { model.sortBy(it) } },
+                onToggle = { f, b -> scope.launch { model.toggle(f, b) } },
+                onRemove = { f, v -> scope.launch { model.remove(f, v) } },
+                onClear = { scope.launch { model.clearFilters() } },
+                onDidYouMean = { scope.launch { model.acceptDidYouMean() } },
+            )
+        }
+    }
     when {
         model.query.isNotBlank() && model.suggestions.isNotEmpty() && answer?.q != model.query.trim() -> LazyColumn(Modifier.testTag("suggestions")) {
-            items(model.suggestions.withIndex().toList(), key = { it.value }) { (i, s) ->
+            items(model.suggestions.withIndex().toList(), key = { "${it.index}-${it.value.kindWire}-${it.value.text}" }) { (i, s) ->
                 ListItem(
-                    headlineContent = { Text(s) },
-                    leadingContent = { Icon(Icons.Filled.Search, null) },
+                    headlineContent = { Text(s.text) },
+                    supportingContent = s.kind?.let { k -> { Text(t.kind(k)) } },
+                    leadingContent = { Icon(kindIcon(s.kind), null) },
                     colors = if (i == model.highlighted) ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh) else ListItemDefaults.colors(),
-                    modifier = Modifier.choosable({ scope.launch { model.submit(s) } }).testTag("suggestion-$i"),
+                    modifier = Modifier.choosable({ scope.launch { model.choose(s, openVideo) } }).testTag("suggestion-$i"),
                 )
             }
         }
-        model.searching -> Loading()
+        model.searching && !refining -> Loading()
         problem != null && answer == null -> ErrorBox(t["search.failed"], problem, onRetry = { scope.launch { model.retry() } })
         answer == null || model.query.isBlank() -> Recent(model)
-        answer.isEmpty -> EmptyBox(t["search.noResults", answer.q])
+        // nothing found: the filters that left nothing can be taken off here
+        answer.isEmpty -> LazyColumn(Modifier.fillMaxSize().testTag("results"), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            item { refine() }
+            item { Text(t["search.noResults", answer.q], style = MaterialTheme.typography.bodyLarge, modifier = Modifier.testTag("search-none")) }
+        }
         else -> {
             val transcriptsHidden = features.hides(Feature.TRANSCRIPTS)
             val transcriptsNote = features.explains(Feature.TRANSCRIPTS)
             LazyColumn(Modifier.fillMaxSize().testTag("results"), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                item { refine() }
                 if (answer.degraded) item { Text(t["search.degraded"], color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.testTag("degraded")) }
                 if (answer.titles.isNotEmpty()) {
                     item { Text(t["search.titles"], style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() }) }
@@ -257,7 +281,8 @@ private fun Recent(model: SearchModel) {
                         Icon(Icons.Filled.Close, t["search.recentRemove", r.q])
                     }
                 },
-                modifier = Modifier.choosable({ scope.launch { model.submit(r.q) } }).testTag("recent-${r.searchId}"),
+                // a recent search runs with the order and filters on screen, as did-you-mean does
+                modifier = Modifier.choosable({ scope.launch { model.submit(r.q, keepFilters = true) } }).testTag("recent-${r.searchId}"),
             )
         }
     }

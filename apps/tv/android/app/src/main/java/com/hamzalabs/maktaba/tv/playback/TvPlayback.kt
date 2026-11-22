@@ -28,6 +28,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.coroutines.Dispatchers
 import com.hamzalabs.maktaba.core.api.busyRetryMs
 import com.hamzalabs.maktaba.core.api.errorDetails
+import com.hamzalabs.maktaba.core.playback.DeviceCapsReader
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job

@@ -4,7 +4,7 @@
 > The specs and epic pages don't record a status; this page does. Update the row when a story changes.
 > **Change a story's row (and its "What is left" entry), then run `python3 docs/wiki/db/epic_status.py`; never edit the counts by hand.** CI fails on stale counts (`--check`).
 
-**Not every epic is done.** Of 774 stories across all 60 epics, 712 are done, 39 are partial, 14 are not started, and 9 were deferred or removed on purpose. The largest open pieces are Epic 49 (Search, 10 stories of fifteen done), Epic 34 (the TV public site, a first slice only) and Epic 54 Phase 5 (Plugins).
+**Not every epic is done.** Of 774 stories across all 60 epics, 713 are done, 39 are partial, 13 are not started, and 9 were deferred or removed on purpose. The largest open pieces are Epic 49 (Search, 11 stories of fifteen done), Epic 34 (the TV public site, a first slice only) and Epic 54 Phase 5 (Plugins).
 
 ## How this was checked
 
@@ -72,7 +72,7 @@
 | 46 Big screen | 7 | 0 | 0 | 0 | Done |
 | 47 Offline convert / dedup | 11 | 3 | 0 | 0 | **Partial** |
 | 48 Native players | 36 | 1 | 0 | 0 | **Partial** |
-| 49 Search | 10 | 1 | 4 | 0 | **Partial** |
+| 49 Search | 11 | 1 | 3 | 0 | **Partial** |
 | 50 Cloud with no downtime | 35 | 0 | 0 | 0 | Done (live SLOs not checked) |
 | 51 Configurable components | 19 | 0 | 0 | 0 | Done |
 | 52 Transcript word review | 13 | 3 | 0 | 1 | **Partial** |
@@ -84,7 +84,7 @@
 | 58 Smart TV platforms | 17 | 0 | 0 | 1 | Done (58.18 Vega OS deferred) |
 | 59 NAS | 16 | 0 | 0 | 0 | Done (device results not checked) |
 | 60 Website | 11 | 1 | 0 | 1 | **Partial** |
-| **Total** | **712** | **39** | **14** | **9** | **Not all done** |
+| **Total** | **713** | **39** | **13** | **9** | **Not all done** |
 
 `*` sampled, see [How this was checked](#how-this-was-checked).
 
@@ -97,7 +97,6 @@
 - **34.9 Budget, abuse controls and analytics** — no public budget, viewer/session limits, rate-limit wiring, Analytics Engine sink, or Stream reconciliation.
 - **34.10 Deployment pipeline** — manual `wrangler.toml` exists, but no release artifact pipeline or home-driven deploy/promote/rollback implementation.
 - **43.6 Measured on the home Mac** — PR #319 explicitly excludes the 13.9M-row p50/p95, disk and recall measurement; no later merged measurement was found.
-- **49.9 Transcript-derived relevance check** — no generator, fixed-seed regression suite, or tuned relevance run.
 - **49.12 AI-mode API** — no grounded retrieval, citation validation, streaming/follow-up endpoint, or role tests.
 - **49.13 Remove the stopgap** — the Epic 49 document path does not exist, so its removal is not started either.
 - **49.14 AI-mode client tab** — no streaming AI tab or citation-to-player UI on any client.
@@ -134,7 +133,7 @@
 | 47.13 Web Queues page | PR #428 explicitly leaves the duplicate comparison frame strip for follow-up. |
 | 47.14 Help and rollout | Help is now present, but PR #619 says no live settings or database were touched; the owner's staged dry-run/real rollout is unverified. |
 | 48.24 PiP / AirPlay / Now Playing | Code and simulator tests exist; PR #512 leaves real-receiver video/sound, hand-over, progress and token-refresh checks unticked. |
-| 49.11 Apple / Android / TV / big screen | The big screen (web, and `/tv/` on Samsung and LG) and Roku are done; the Apple apps (iPhone, iPad, Mac, Apple TV) and the Android, Android TV and desktop Player apps have no Epic 49 suggestions, did-you-mean, facets or sort yet. |
+| 49.9 Transcript-derived relevance check | The generator, its fixed-seed regression test and `maktaba-api search-relevance` are built; the run on the home's own transcripts, and the tuning it calls for, wait for the home to serve them. |
 | 52.02 Evaluation set | The human-corrected gold set and calibration on real data; CI has only synthetic data. |
 | 52.11 Web review queue | The Playwright test of the branch-stack review flow. |
 | 52.13 Native review | The Apple UI tests and Android Compose/Robolectric screen tests. |
@@ -1065,9 +1064,9 @@ Stories are the fifteen numbered rows in `specs/epics/49-search/README.md` §6 (
 | 49.6 `keyword_index` stage / backfill | **Done** (#1482) | The `keyword_index` stage (`core.search`) after `second_listen`, queued by the API's title and speaker edits and by its library plan (one job a video at priority 900; migration 0233's `doc_version` and `transcript_revision`); the BM25 indexes built after the start by the API's `api:search_index` loop (issue #1479); tested on SQLite and Postgres, with a 45,000-document build on PostgreSQL 18; README §9 "As built". |
 | 49.7 BM25 query / passages / hybrid | **Done** (#1491) | BM25 over the documents' exact and stemmed indexes with the library, language and account filters, a phrase boost for the top 100, the line path's passages, hybrid by RRF, and the line path while the indexes or a document are missing (`api/internal/handlers/search/bm25.go`, migration 0234's stored columns); `TestBM25_Postgres`, and `TestBM25_Perf45k` p95 under 50 ms on 45,000 documents (the replica job); README §9 "As built". |
 | 49.8 Suggestions / did-you-mean / facets / sort API | **Done** (#1497) | `search_terms` and `search_speakers` (migration 0235) kept by the `keyword_index` stage; `GET /api/search/suggest` (history, completed word, titles, speakers), `did_you_mean`, `facets` and `sort` on `POST /api/search`, each on the caller's libraries; `TestBM25_SearchHelp`, `TestSearchHelp_SQLite`, and `TestBM25_Perf45k` with suggest under 2 ms p95 on 45,000 documents; README §9 "As built".
-| 49.9 Transcript-derived relevance check | **Not started** | Only `specs/epics/49-search/README.md`; no fixed-seed transcript-derived relevance generator/regression suite found. |
+| 49.9 Transcript-derived relevance check | **Partial** (#1505) | The generator (`relevance.go`: known-item with spelling and word-form variants, chapter, topic, common words), `TestBM25_Relevance` on a synthetic library (every search passes after two ranking fixes) and `maktaba-api search-relevance`; the home's own run and its tuning are open; README §9 "As built". |
 | 49.10 Web search page | **Done** | `web/src/pages/Search.tsx` with `searchHelp.tsx`: suggestions as a combobox listing each kind (a title opens its video), did-you-mean above the results, facet chips with counts that narrow and combine (the filters in use removable, Clear all), and the sort, all in the URL; facets kept while paging and per sid; `Search.help.test.tsx` (SRC-44 to SRC-53, axe in English and Arabic); README §9 "As built"; screenshots on maktaba.dev's web app page. |
-| 49.11 Apple / Android / TV / big screen | **Partial** | Big screen: `web/src/bigscreen/screens/Search.tsx` with `searchAsk.ts`, reusing the web's `searchHelp.tsx` and `searchShared.tsx`: suggestions under the screen keyboard with their kinds (a title opens its video), did-you-mean, the order chips, a Filters panel of facet chips with counts that combine, the filters in use as removable chips and Clear all, in the URL; `BigSearch.test.tsx` (axe in English and Arabic), `searchAsk.test.ts`, and the `/tv/` Playwright test `e2e/tv/tv.ui.spec.ts` (D-pad only, both languages). Roku: `apps/tv/roku/source/search.brs` and `SearchScreen` (suggestions under the MiniKeyboard, did-you-mean, the order, a filter sheet), `tests/search_test.brs` and the screen test T07 in both languages. Not done: the Apple apps and the Android, Android TV and desktop Player apps. README §9 "As built". |
+| 49.11 Apple / Android / TV / big screen | **Done** | Apple: `SearchModel` and `SearchHelp.swift` in MaktabaKit (suggestion kinds, did-you-mean, facets with their filters, sort, read tolerantly from an older home), the Player's `SearchScreen.swift` (iPhone, iPad, Mac: a kind on each suggestion, a title opens its video, the did-you-mean row, Filters as a sheet with counts, the filters in use removable with Clear all, the sort menu) and the Apple TV's `SearchView.swift` (the home's search with the same help, driven with the remote); `SearchHelpTests.swift`, `PlayerSearchUITests` and `TVSearchUITests`. Android Player, Android TV and the Player for Windows and Linux: the shared client's `SearchHelp.kt` (sort, facet choice and its request filters, suggestion kinds, did-you-mean) and the Android apps' one `SearchModel` (`apps/android/core/.../core/search/`); suggestions with their kinds (a title opens its video), did-you-mean, facet chips with counts (a sheet on a phone, rows for the D-pad on a TV, chips above the results on the desktop), the filters in use removable with Clear all, and the sort; `SearchHelpTest`, `BrowseTest`, the Player's `SearchModelTest` and `SearchScreenTest`, `TvSearchTest`, the TV emulator's `TvSearchJourneyTest`, the desktop's `SearchModelTest` and `SearchScreenTest`. Big screen: `web/src/bigscreen/screens/Search.tsx` with `searchAsk.ts`, reusing the web's `searchHelp.tsx` and `searchShared.tsx`: suggestions under the screen keyboard with their kinds (a title opens its video), did-you-mean, the order chips, a Filters panel of facet chips with counts that combine, the filters in use as removable chips and Clear all, in the URL; `BigSearch.test.tsx` (axe in English and Arabic), `searchAsk.test.ts`, and the `/tv/` Playwright test `e2e/tv/tv.ui.spec.ts` (D-pad only, both languages). Roku: `apps/tv/roku/source/search.brs` and `SearchScreen` (suggestions under the MiniKeyboard, did-you-mean, the order, a filter sheet), `tests/search_test.brs` and the screen test T07 in both languages; README §9 "As built". |
 | 49.12 AI-mode API | **Not started** | Only `specs/epics/49-search/README.md`; no grounded-answer/citation/streaming/follow-up API or tests found. |
 | 49.13 Remove stopgap | **Not started** | Only `specs/epics/49-search/README.md`; its start condition (every video has a document) waits on 49.6's backfill running on the home. |
 | 49.14 AI-mode client tab | **Not started** | Only `specs/epics/49-search/README.md`; no AI tab, streaming citation UI, or client tests found. |

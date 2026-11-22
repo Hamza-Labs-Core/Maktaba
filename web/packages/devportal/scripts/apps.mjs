@@ -382,8 +382,12 @@ export const APPS = [
                 "**البث المباشر**: قسم **الآن** بما يُعرض على كل قناة ومقدار ما مضى منه، و**الدليل**؛ اختر قناة لتشاهدها مباشرة."
               ),
               t(
-                "**Search**: titles and transcripts; a transcript result plays the video at that moment.",
-                "**البحث**: في العناوين والنصوص المفرَّغة؛ ونتيجة النص تشغّل المقطع عند تلك اللحظة."
+                "**Search**: titles and transcripts; a transcript result plays the video at that moment. On Android and on Windows and Linux, suggestions as you type say what each one is (an earlier search, a word, a video's title, which opens it, or a speaker); **Did you mean** offers the closest spelling when a search finds few videos; **Filters** count the videos found by library, language, speaker, year and length (in a sheet on a phone, as chips above the results on a computer), several at once, each removable, with **Clear all filters**; and **Sort by** orders the results by relevance, newest or most matches.",
+                "**البحث**: في العناوين والنصوص المفرَّغة؛ ونتيجة النص تشغّل المقطع عند تلك اللحظة. وعلى أندرويد وعلى ويندوز ولينكس تبيّن الاقتراحات أثناء الكتابة نوع كلٍّ منها (بحث سابق، أو كلمة، أو عنوان مقطع يفتحه، أو متحدث)؛ ويعرض **هل تقصد** أقرب كتابة حين يجد البحث مقاطع قليلة؛ وتعدّ **التصفية** المقاطع التي وُجدت حسب المكتبة واللغة والمتحدث والسنة والمدة (في لوحة منبثقة على الهاتف، وفي شرائح فوق النتائج على الحاسوب)، ويمكن اختيار عدة مرشّحات معًا وإزالة كلٍّ منها، ومعها **إزالة كل عوامل التصفية**؛ ويرتّب **الترتيب حسب** النتائج حسب الأقرب صلة أو الأحدث أو الأكثر مطابقات."
+              ),
+              t(
+                "**Search help** (iPhone, iPad and Mac): suggestions as you type, each saying what it is (an earlier search, a word, a video's title, which opens the video, or a speaker); **Did you mean** over the results when a search finds few videos, one tap away; **Filters**, a sheet with the counts of the videos found by library, language, speaker, year and length, several combined, the filters in use each removable or cleared together; and the order: relevance, newest or most matches.",
+                "**مساعدة البحث** (آيفون وآيباد وماك): اقتراحات أثناء الكتابة يبيّن كلٌّ منها نوعه (بحث سابق، أو كلمة، أو عنوان مقطع يفتح المقطع، أو متحدث)؛ و**هل تقصد** فوق النتائج حين يجد البحث مقاطع قليلة، بنقرة واحدة؛ و**التصفية**، لوحة بأعداد المقاطع التي وُجدت حسب المكتبة واللغة والمتحدث والسنة والمدة، يُجمع بين أكثر من واحد منها، ويُزال كل مرشّح مستخدم وحده أو تُزال كلها معًا؛ والترتيب: الأقرب صلة أو الأحدث أو الأكثر مطابقات."
               ),
               t(
                 "**Profile**: watch history, favorites, playlists and sessions, **Approve a TV or device**, switch home, and this device's theme, language and playback settings.",
@@ -581,6 +585,12 @@ export const APPS = [
                 "phone",
                 "The Player's Home on an Android phone",
                 "الرئيسية في المشغّل على هاتف أندرويد"
+              ),
+              shot(
+                "android-player-search-phone",
+                "phone",
+                "Search in the Player on an Android phone: sorted by relevance, narrowed to a library and a length (each filter removable), and Did you mean above the titles and transcript matches",
+                "البحث في المشغّل على هاتف أندرويد: مرتّبًا حسب الأقرب صلة، ومحصورًا في مكتبة ومدة (ويمكن إزالة كل مرشّح)، و«هل تقصد» فوق العناوين ومطابقات النص المفرَّغ"
               ),
               shot(
                 "android-player-libraries-library-phone",
@@ -905,8 +915,16 @@ export const APPS = [
                 "**قائمة الانتظار**: تبدأ الرئيسية بـ**تابع قائمة الانتظار**؛ وأثناء المشاهدة **السابق** و**التالي** و**إعادة الخلط**، وبطاقة «التالي» بعدّ تنازلي من 10 ثوانٍ. وعلى أندرويد تي في في قائمة البطاقة **شغّل تاليًا** و**أضف إلى قائمة الانتظار** و**أضف إلى قائمة تشغيل** و**اذهب إلى السلسلة**."
               ),
               t(
-                "**Search**. On Samsung, LG and Roku it suggests as you type, under the on-screen keyboard, saying what each suggestion is: an earlier search, a word the videos say, a video's title (which opens it) or a speaker. A search that finds few videos offers **Did you mean**, one press away. The results sort by relevance, newest or most matches, and **Filters** counts the videos found by library, language, speaker, year and length and narrows the search to the ones chosen, several together; each one in use comes off with another press, or all of them with **Clear all filters**.",
-                "**البحث**. على Samsung وLG وروكو يقترح أثناء الكتابة، تحت لوحة المفاتيح على الشاشة، ويبيّن نوع كل اقتراح: بحث سابق، أو كلمة تقولها المقاطع، أو عنوان مقطع (يفتحه)، أو متحدث. وإذا وجد البحث مقاطع قليلة عرض **هل تقصد** على بُعد ضغطة واحدة. وتُرتَّب النتائج حسب الأقرب صلة أو الأحدث أو الأكثر مطابقات، ويعدّ زر **التصفية** المقاطع التي وُجدت حسب المكتبة واللغة والمتحدث والسنة والمدة، ويحصر البحث فيما تختاره منها، عدةً معًا؛ ويُزال كل مرشّح مستخدم بضغطة أخرى، أو تُزال كلها بـ**إزالة كل عوامل التصفية**."
+                "**Search**: titles and what is said in the videos. On Android TV, Google TV and Fire TV the suggestions follow the typing, each saying what it is (a video's title opens it); the keyboard's Search key runs the words. Above the results, rows the remote moves between: **Did you mean** when a search finds few videos, **Sort by** relevance, newest or most matches, and **Filters**, a row of chips per library, language, speaker, year and length with their counts; the filters in use come off with OK. A transcript result plays from that moment.",
+                "**البحث**: في العناوين وفيما قيل في المقاطع. وعلى أندرويد تي في وجوجل تي في وفاير تي في تتبع الاقتراحات الكتابة، ويبيّن كلٌّ منها نوعه (وعنوان المقطع يفتحه)؛ ويشغّل مفتاح البحث في لوحة المفاتيح الكلمات. وفوق النتائج صفوف يتنقّل بينها جهاز التحكم: **هل تقصد** حين يجد البحث مقاطع قليلة، و**الترتيب حسب** الأقرب صلة أو الأحدث أو الأكثر مطابقات، و**التصفية**، وفيها صف شرائح لكلٍّ من المكتبة واللغة والمتحدث والسنة والمدة بأعدادها؛ ويُزال المرشّح المستخدم بزر الموافقة. ونتيجة النص المفرَّغ تشغّل المقطع من تلك اللحظة."
+              ),
+              t(
+                "**Search on Apple TV**: the home's search of titles and transcripts, with the remote. The suggestions under the keyboard say what each one is, and a video's title opens it; **Search for** runs what was typed. Over the results: **Did you mean**, the order (relevance, newest or most matches) and **Filters**, the counts of the videos found by library, language, speaker, year and length, several combined; the filters in use are each removable, or cleared together.",
+                "**البحث على آبل تي في**: بحث الجهاز الرئيسي في العناوين والنصوص المفرَّغة، بجهاز التحكم. تبيّن الاقتراحات تحت لوحة المفاتيح نوع كلٍّ منها، وعنوان المقطع يفتحه؛ و**البحث عن** يشغّل ما كُتب. وفوق النتائج: **هل تقصد**، والترتيب (الأقرب صلة أو الأحدث أو الأكثر مطابقات)، و**التصفية** بأعداد المقاطع التي وُجدت حسب المكتبة واللغة والمتحدث والسنة والمدة، يُجمع بين أكثر من واحد منها؛ ويُزال كل مرشّح مستخدم وحده أو تُزال كلها معًا."
+              ),
+              t(
+                "**Search on Samsung, LG and Roku**: it suggests as you type, under the on-screen keyboard, saying what each suggestion is: an earlier search, a word the videos say, a video's title (which opens it) or a speaker. A search that finds few videos offers **Did you mean**, one press away. The results sort by relevance, newest or most matches, and **Filters** counts the videos found by library, language, speaker, year and length and narrows the search to the ones chosen, several together; each one in use comes off with another press, or all of them with **Clear all filters**.",
+                "**البحث على Samsung وLG وروكو**: يقترح أثناء الكتابة، تحت لوحة المفاتيح على الشاشة، ويبيّن نوع كل اقتراح: بحث سابق، أو كلمة تقولها المقاطع، أو عنوان مقطع (يفتحه)، أو متحدث. وإذا وجد البحث مقاطع قليلة عرض **هل تقصد** على بُعد ضغطة واحدة. وتُرتَّب النتائج حسب الأقرب صلة أو الأحدث أو الأكثر مطابقات، ويعدّ زر **التصفية** المقاطع التي وُجدت حسب المكتبة واللغة والمتحدث والسنة والمدة، ويحصر البحث فيما تختاره منها، عدةً معًا؛ ويُزال كل مرشّح مستخدم بضغطة أخرى، أو تُزال كلها بـ**إزالة كل عوامل التصفية**."
               ),
               t(
                 "**Live TV**, when the person may watch a channel: **Now**, with every channel and what is on, and the **Guide**; choose a channel to watch it live.",
@@ -1497,8 +1515,8 @@ export const APPS = [
                 "**الرئيسية** و**المكتبات** و**السلاسل** و**قوائم التشغيل** و**دليل التلفاز** و**البحث**، الذي يجد ما يُقال داخل المقاطع."
               ),
               t(
-                "**Search** suggests as you type, saying what each suggestion is: an earlier search, a word the videos say, a video's title (which opens it) or a speaker. A search that finds few videos offers **Did you mean**. Chips count the videos found by library, language, speaker, year and length, and narrow the search to the ones you choose; the results sort by relevance, newest or most matches. The address keeps all of it, so a search can be shared and **Back** returns to it.",
-                "يقترح **البحث** أثناء الكتابة، ويبيّن نوع كل اقتراح: بحث سابق، أو كلمة تقولها المقاطع، أو عنوان مقطع (يفتحه)، أو متحدث. والبحث الذي يجد مقاطع قليلة يعرض **هل تقصد**. وتعدّ الشرائح المقاطع التي وُجدت حسب المكتبة واللغة والمتحدث والسنة والمدة، وتحصر البحث فيما تختاره منها؛ وتُرتَّب النتائج حسب الأقرب صلة أو الأحدث أو الأكثر مطابقات. ويحفظ العنوان ذلك كله، فيمكن مشاركة البحث، ويعود إليه زر **الرجوع**."
+                "**Search** suggests as you type, saying what each suggestion is: an earlier search, a word the videos say, a video's title (which opens it) or a speaker. A search that finds few videos offers **Did you mean**. Chips count the videos found by library, language, speaker, year and length, and narrow the search to the ones you choose; the results sort by relevance, newest or most matches. The address keeps all of it, so a search can be shared and **Back** returns to it. A **Recent** or **Saved** search opens with the order and filters it was asked with, on any device.",
+                "يقترح **البحث** أثناء الكتابة، ويبيّن نوع كل اقتراح: بحث سابق، أو كلمة تقولها المقاطع، أو عنوان مقطع (يفتحه)، أو متحدث. والبحث الذي يجد مقاطع قليلة يعرض **هل تقصد**. وتعدّ الشرائح المقاطع التي وُجدت حسب المكتبة واللغة والمتحدث والسنة والمدة، وتحصر البحث فيما تختاره منها؛ وتُرتَّب النتائج حسب الأقرب صلة أو الأحدث أو الأكثر مطابقات. ويحفظ العنوان ذلك كله، فيمكن مشاركة البحث، ويعود إليه زر **الرجوع**. ويُفتح البحث **الأخير** و**المحفوظ** بالترتيب والتصفية اللذين طُلب بهما، على أي جهاز."
               ),
               t(
                 "A video's page: resume, mark watched, favorite, add to a playlist, **Play next** and **Add to queue**, its chapters and its transcript.",
