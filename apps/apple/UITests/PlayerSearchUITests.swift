@@ -219,6 +219,19 @@ final class PlayerSearchUITests: PlayerUITestCase {
         s.replacingOccurrences(of: "\u{2068}", with: "").replacingOccurrences(of: "\u{2069}", with: "")
     }
 
+    /// A bucket of the facets' sheet, scrolled into sight: the sheet's list draws only the rows
+    /// on screen (a phone's sheet opens at half height).
+    @discardableResult
+    private func reveal(_ id: String) -> XCUIElement {
+        let bucket = element(id), list = element("search.facets")
+        XCTAssertTrue(list.waitForExistence(timeout: 10), "the facets' sheet")
+        for _ in 0 ..< 6 where !(bucket.exists && bucket.isHittable) {
+            list.swipeUp()
+        }
+        XCTAssertTrue(bucket.exists && bucket.isHittable, "\(id) in sight")
+        return bucket
+    }
+
     /// The `filters` of the last `POST /api/search` (nil: none sent).
     private var lastFilters: [String: Any]? { searches.last?["filters"] as? [String: Any] }
 
@@ -266,32 +279,34 @@ final class PlayerSearchUITests: PlayerUITestCase {
         XCTAssertTrue(lectures.waitForExistence(timeout: 10), "the facets' sheet")
         XCTAssertEqual(plain(lectures.label), "Lectures, 3 videos")
         XCTAssertTrue(app.staticTexts["Narrow the results"].exists)
-        XCTAssertEqual(plain(element("search.facet.duration.over_60m").label), "Over an hour, 2 videos")
-        XCTAssertEqual(plain(element("search.facet.language.ar").label), "Arabic, 3 videos")
         shot("search-filters")
 
-        element("search.facet.language.ar").tap()
+        let arabic = reveal("search.facet.language.ar")
+        XCTAssertEqual(plain(arabic.label), "Arabic, 3 videos")
+        arabic.tap()
         eventually("searched in Arabic only") { (self.lastFilters?["language"] as? [String]) == ["ar"] }
-        element("search.facet.year.2024").tap()
+        eventually("a chosen bucket reads as selected") { arabic.isSelected }
+        reveal("search.facet.year.2024").tap()
         eventually("and of 2024, as its bucket's range") {
             (self.lastFilters?["date"] as? [String: String]) == ["gte": "2024-01-01T00:00:00.000Z", "lt": "2025-01-01T00:00:00.000Z"]
         }
         XCTAssertEqual(lastFilters?["language"] as? [String], ["ar"], "the filters combine")
-        element("search.facet.duration.over_60m").tap()
+        let long = reveal("search.facet.duration.over_60m")
+        XCTAssertEqual(plain(long.label), "Over an hour, 2 videos")
+        long.tap()
         eventually("and over an hour") { (self.lastFilters?["duration_sec"] as? [String: Int]) == ["gte": 3600] }
-        XCTAssertTrue(element("search.facet.language.ar").isSelected, "a chosen bucket reads as selected")
         XCTAssertEqual(searches.last?["q"] as? String, "seerah", "the same words")
         element("search.facets.done").tap()
 
-        let arabic = element("search.filter.language.ar")
-        XCTAssertTrue(arabic.waitForExistence(timeout: 10), "the filters in use")
-        XCTAssertEqual(plain(arabic.label), "Remove Language: Arabic")
+        let chip = element("search.filter.language.ar")
+        XCTAssertTrue(chip.waitForExistence(timeout: 10), "the filters in use")
+        XCTAssertEqual(plain(chip.label), "Remove Language: Arabic")
         XCTAssertTrue(element("search.filter.year.2024").exists && element("search.filter.duration.over_60m").exists)
         XCTAssertEqual(plain(filters.label), "Filters (3)", "Filters counts them")
         shot("search-filters-in-use")
         audit("filters")
 
-        tapWhenIdle(arabic, "the filters in use")
+        tapWhenIdle(chip, "the filters in use")
         eventually("Arabic taken off") { self.lastFilters?["language"] == nil && self.lastFilters?["date"] != nil }
         tapWhenIdle(element("search.filters.clear"), "the filters in use")
         eventually("every filter taken off") { self.searches.last.map { $0["filters"] == nil } ?? false }
@@ -315,9 +330,7 @@ final class PlayerSearchUITests: PlayerUITestCase {
         eventually("the order shown") { self.plain(sort.label) == "Sort by: Newest" }
 
         tapWhenIdle(element("search.filters"), "the results in the new order")
-        let speaker = element("search.facet.speaker.الشيخ أحمد")
-        XCTAssertTrue(speaker.waitForExistence(timeout: 10), "the facets' sheet")
-        speaker.tap()
+        reveal("search.facet.speaker.الشيخ أحمد").tap()
         eventually("by the speaker") { (self.lastFilters?["speaker"] as? [String]) == ["الشيخ أحمد"] }
         XCTAssertEqual(searches.last?["sort"] as? String, "newest", "the order kept")
         element("search.facets.done").tap()

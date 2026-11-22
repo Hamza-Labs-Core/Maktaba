@@ -958,7 +958,8 @@ types and words (`SearchHelp.swift`). The behaviour and the words follow the web
   can be taken off where it was put on; a library keeps the name seen before.
 - **The Player** (`Player/Search/SearchScreen.swift`, iPhone, iPad and Mac):
   - each suggestion shows an icon and its kind (Recent, Word, Video, Speaker); a title opens
-    its video, any other is searched as its words;
+    its video, any other is searched as its words. A suggestion's tap also submits the field
+    (what was typed), so the submit that follows a title is not run as a search;
   - "Did you mean …?" is a row over the results, its corrected words marked where each
     language puts them; a tap runs them and the field shows them;
   - **Filters** (with how many are in use) opens a sheet, Narrow the results, with each
@@ -1008,7 +1009,7 @@ types and words (`SearchHelp.swift`). The behaviour and the words follow the web
     The accessibility audit and Dynamic Type check run on the filters in use and on the
     did-you-mean.
   - `TVSearchUITests` (Apple TV, with the Siri remote, in the TV UI tests job):
-    - the suggestion kinds;
+    - the suggestion kinds, and a title opening its page;
     - Search for, two filters combined from the sheet, a chip taken off, the sort;
     - the did-you-mean in Arabic.
 - **Not done here.**

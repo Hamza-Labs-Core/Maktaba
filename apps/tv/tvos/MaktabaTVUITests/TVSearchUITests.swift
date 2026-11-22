@@ -23,22 +23,45 @@ final class TVSearchUITests: XCTestCase {
         home?.stop()
     }
 
-    /// Typing shows the suggestions, each with its kind.
-    func testSuggestionsShowTheirKinds() throws {
+    /// A suggestion under the keyboard, by the kind its label ends with ("seerah  ·  Word"):
+    /// tvOS shows them in its own row of cells, which keep the label and not the identifier.
+    private func suggestion(_ kind: String) -> XCUIElement {
+        app.buttons.matching(NSPredicate(format: "label ENDSWITH %@", "·  \(kind)")).firstMatch
+    }
+
+    /// Typing shows the suggestions, each with its kind; a video's title opens its page and
+    /// searches nothing.
+    func testSuggestionsShowTheirKindsAndATitleOpensItsPage() throws {
         signIn("en")
         openSearch()
         typeQuery("se")
-        let title = element("search.suggestion.title")
+        let title = suggestion("Video")
         XCTAssertTrue(title.waitForExistence(timeout: 15), "the suggestions; the home saw \(home.seen.suffix(8))")
         XCTAssertTrue(wait(timeout: 10) { self.home.requests.contains { $0.path == "/api/search/suggest" && $0.value("q") == "se" } },
                       "asked the home for suggestions")
-        for kind in ["history", "term", "speaker"] {
-            XCTAssertTrue(element("search.suggestion.\(kind)").exists, "a \(kind) suggestion")
-        }
-        XCTAssertTrue(plain(title.label).contains("Video"), "a title says it is a video: \(title.label)")
-        XCTAssertTrue(plain(element("search.suggestion.speaker").label).contains("Speaker"))
+        XCTAssertTrue(suggestion("Recent").exists, "an earlier search")
+        XCTAssertTrue(suggestion("Word").exists, "a word")
+        XCTAssertEqual(plain(title.label), "السيرة النبوية، الدرس ١٢  ·  Video")
         XCTAssertTrue(searches.isEmpty, "typing searches nothing")
         shot("tv-search-suggestions-en")
+
+        // down to the suggestions' row, then along it to the title
+        for _ in 0..<4 where !app.cells.allElementsBoundByIndex.contains(where: \.hasFocus) && !title.hasFocus {
+            remote.press(.down)
+            usleep(400_000)
+        }
+        // the cell or its button takes the focus
+        let cell = app.cells.matching(NSPredicate(format: "label CONTAINS %@", "·  Video")).firstMatch
+        for _ in 0..<8 where !(cell.hasFocus || title.hasFocus) {
+            remote.press(.right)
+            usleep(400_000)
+        }
+        XCTAssertTrue(cell.hasFocus || title.hasFocus, "the focus on the title's suggestion")
+        remote.press(.select)
+        let play = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@ OR label BEGINSWITH %@", "Play", "Resume")).firstMatch
+        XCTAssertTrue(play.waitForExistence(timeout: 20), "the title's page; the home saw \(home.seen.suffix(8))")
+        XCTAssertTrue(home.seen.contains("GET /api/videos/v3"), "v3's page")
+        XCTAssertTrue(searches.isEmpty, "a title is not searched")
     }
 
     /// Search for “seerah”, then Filters: the sheet's buckets with their counts, two combined;
@@ -50,7 +73,7 @@ final class TVSearchUITests: XCTestCase {
         typeQuery("seerah")
         runTyped("seerah")
 
-        let filters = app.buttons["search.filters"], sort = app.buttons["search.sort"]
+        let filters = app.buttons["search.filters"], sort = element("search.sort")
         XCTAssertTrue(reach(filters, from: sort), "the focus on Filters")
         remote.press(.select)
         let arabic = app.buttons["search.facet.language.ar"]
@@ -111,7 +134,7 @@ final class TVSearchUITests: XCTestCase {
         XCTAssertEqual(plain(dym.label), "هل تقصد السيرة النبوية؟")
         XCTAssertTrue(element("search.titles").exists, "over the results")
         shot("tv-search-did-you-mean-ar")
-        XCTAssertTrue(reach(dym, from: app.buttons["search.sort"], then: .up), "the focus on did you mean")
+        XCTAssertTrue(reach(dym, from: element("search.sort"), then: .up), "the focus on did you mean")
         remote.press(.select)
         XCTAssertTrue(wait { self.searches.last?["q"] as? String == corrected }, "the corrected words searched")
         XCTAssertTrue(dym.waitForNonExistence(timeout: 10), "no did-you-mean for its own words")
@@ -177,19 +200,33 @@ final class TVSearchUITests: XCTestCase {
     /// from the results to that row, then along it (or `then`, from `near` to `target`).
     private func reach(_ target: XCUIElement, from near: XCUIElement, then: XCUIRemote.Button? = nil) -> Bool {
         XCTAssertTrue(target.waitForExistence(timeout: 10), "\(target) is not there")
-        // up from the results; down from the keyboard, if the focus went back up there
-        for move in Array(repeating: XCUIRemote.Button.up, count: 6) + Array(repeating: .down, count: 10)
-        where !target.hasFocus && !near.hasFocus {
-            remote.press(move)
+        // the row is found by what has the focus (a Menu is not a button to XCUITest): up from
+        // the results, then down from the keyboard if the focus went back up there
+        let row = [target.identifier, near.identifier]
+        func onRow() -> Bool { row.contains(focused) }
+        for _ in 0..<6 where !onRow() {
+            remote.press(.up)
+            usleep(400_000)
+            // up into the keyboard: the help row is below it
+            if app.keyboards.firstMatch.exists, app.keys.allElementsBoundByIndex.contains(where: \.hasFocus) { break }
+        }
+        for _ in 0..<8 where !onRow() {
+            remote.press(.down)
             usleep(400_000)
         }
         let along = then ?? (language == "ar" ? .left : .right)
         let back: XCUIRemote.Button = along == .right ? .left : along == .left ? .right : along == .down ? .up : .down
-        for move in [along, along, along, back, back, back, back] where !target.hasFocus {
+        for move in [along, along, along, back, back, back, back] where focused != target.identifier {
             remote.press(move)
             usleep(400_000)
         }
-        return target.hasFocus
+        return focused == target.identifier
+    }
+
+    /// The identifier of what has the focus ("" when none has one).
+    private var focused: String {
+        app.descendants(matching: .any).matching(NSPredicate(format: "hasFocus == true")).allElementsBoundByIndex
+            .map(\.identifier).first { !$0.isEmpty } ?? ""
     }
 
     private func element(_ id: String) -> XCUIElement { app.descendants(matching: .any)[id].firstMatch }

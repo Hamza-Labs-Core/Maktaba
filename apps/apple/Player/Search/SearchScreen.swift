@@ -30,6 +30,9 @@ struct SearchScreen: View {
     @State private var pushed: PlayerRoute?
     /// The facets' sheet is open.
     @State private var filtering = false
+    /// A title suggestion was chosen: the field's own submit that follows a suggestion's tap
+    /// is not a search (it would replace the held page with a search of what was typed).
+    @State private var titleChosen = false
 
     /// A query sent as the screen opens (a plugin panel's chip, `PlayerRoute.search`).
     private let initial: String?
@@ -80,7 +83,13 @@ struct SearchScreen: View {
                     .accessibilityIdentifier("search.suggestion.\(s.kind?.rawValue ?? "plain")")
                 }
             }
-            .onSubmit(of: .search) { submit(model.query) }
+            .onSubmit(of: .search) {
+                if titleChosen {
+                    titleChosen = false
+                    return
+                }
+                submit(model.query)
+            }
             // the field let go: the search or the page held for it goes now
             .onChange(of: typing) { _, now in
                 if let change = letGo.focusChanged(now) { perform(change) }
@@ -203,7 +212,13 @@ struct SearchScreen: View {
     /// A suggestion chosen: a title opens its video, any other is searched as its words.
     private func choose(_ s: SearchSuggestion) {
         if s.kind == .title, let id = s.videoID {
+            titleChosen = true
             open(.video(id: id))
+            // the submit comes with the tap, if at all: a later one is a search again
+            Task {
+                try? await Task.sleep(for: .seconds(1))
+                titleChosen = false
+            }
         } else {
             submit(s.text)
         }
@@ -625,19 +640,14 @@ private struct RefineBar: View {
     let showFilters: () -> Void
 
     var body: some View {
-        // side by side, or one under the other when the text is too large for one line
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: MaktabaTokens.Spacing.s3) {
-                filters
-                Spacer(minLength: 0)
-                if refining { progress }
-                order
-            }
-            VStack(alignment: .leading, spacing: 0) {
-                filters
-                order
-                if refining { progress }
-            }
+        // one row; a label too long for its share wraps rather than being cut (no
+        // ViewThatFits: on an iPhone in Arabic it went back and forth between its two layouts
+        // and the app never went idle)
+        HStack(spacing: MaktabaTokens.Spacing.s3) {
+            filters
+            Spacer(minLength: 0)
+            if refining { progress }
+            order
         }
         .font(.maktabaBody(15, weight: .medium, relativeTo: .body))
         .foregroundStyle(Color.mktBrassText)

@@ -36,6 +36,8 @@ private struct TVSearch: View {
     @State private var opened: String?
     /// The facets' sheet is open.
     @State private var filtering = false
+    /// A title suggestion was chosen: a search-field submit that comes with it is not a search.
+    @State private var titleChosen = false
     private let session: AppSession?
 
     private let columns = Array(repeating: GridItem(.fixed(VideoCard.width), spacing: 56), count: 4)
@@ -100,7 +102,13 @@ private struct TVSearch: View {
                 .accessibilityIdentifier("search.suggestion.\(s.kind?.rawValue ?? "plain")")
             }
         }
-        .onSubmit(of: .search) { Task { await model.submit(model.query) } }
+        .onSubmit(of: .search) {
+            if titleChosen {
+                titleChosen = false
+                return
+            }
+            Task { await model.submit(model.query) }
+        }
         // suggestions follow the typing once it rests
         .task(id: model.query) {
             do { try await Task.sleep(for: SearchModel.suggestDelay) } catch { return }
@@ -244,7 +252,12 @@ private struct TVSearch: View {
 
     private func choose(_ s: SearchSuggestion) {
         if s.kind == .title, let id = s.videoID {
+            titleChosen = true
             opened = id
+            Task {
+                try? await Task.sleep(for: .seconds(1))
+                titleChosen = false
+            }
         } else {
             model.query = s.text
             Task { await model.submit(s.text) }
