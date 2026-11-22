@@ -292,6 +292,9 @@ import MaktabaKit
         for key in ["accessibilityLabel", "accessibilityValue", "accessibilityTitle"] {
             let w: String? = switch ax(o, key) {
             case let s as String: s
+            // the macOS 27 SDK gives a SwiftUI Menu's label as its title, attributed
+            // (accessibilityLabel is nil): "Sort" on a library page
+            case let a as NSAttributedString: a.string
             case let n as NSNumber: n.stringValue
             default: nil
             }

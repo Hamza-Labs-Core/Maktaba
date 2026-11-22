@@ -96,18 +96,15 @@ private struct RecoveryList: View {
                 .background(.thinMaterial)
             }
         }
-        .alert(recovery.asking.map { title($0.action) } ?? "Recovery", isPresented: Binding(
-            get: { recovery.asking != nil },
-            set: { if !$0 { recovery.cancel() } }
-        ), presenting: recovery.asking) { asking in
-            Button(button(asking.action), role: asking.action.confirms > 1 ? .destructive : nil) {
-                Task { await recovery.confirm(asking) }
-            }
-            .accessibilityIdentifier("recovery.confirm")
-            Button("Cancel", role: .cancel) { recovery.cancel() }
-        } message: { asking in
-            Text(asking.step > 1 ? "This replaces what is there now. Are you sure?" : "Are you sure?")
-        }
+        // Each confirmation is its own presentation: odd steps on one alert, even steps on
+        // the other, so the next step never reuses the alert that is closing. The closing
+        // alert's own `isPresented` write changes nothing: Confirm and Cancel each say what
+        // they mean (`answer`, `cancel`), and the alerts read `recovery.asking`. On iOS 27.2
+        // SwiftUI writes a closing alert's `isPresented` again some 30 to 60 ms after its
+        // button, and an alert presented again from the same modifier meanwhile never showed
+        // (diag runs 45006590015 and 45008299877; Remote UI tests: "the second confirmation").
+        .modifier(Confirmation(recovery: recovery, odd: true))
+        .modifier(Confirmation(recovery: recovery, odd: false))
         .sheet(isPresented: Binding(
             get: { recovery.backups != nil },
             set: { if !$0 { recovery.backups = nil } }
@@ -220,14 +217,14 @@ private struct RecoveryList: View {
             if recovery.running == action {
                 ProgressView()
             } else {
-                Label(title(action), systemImage: systemImage)
+                Label(Self.title(action), systemImage: systemImage)
             }
         }
         .disabled(recovery.running != nil || recovery.fetching != nil)
         .accessibilityIdentifier("recovery.action.\(Self.slug(action))")
     }
 
-    private func title(_ action: RecoveryAction) -> LocalizedStringKey {
+    static func title(_ action: RecoveryAction) -> LocalizedStringKey {
         switch action {
         case .restart: "Restart"
         case .restartAll: "Restart everything"
@@ -240,7 +237,7 @@ private struct RecoveryList: View {
     }
 
     /// The confirmation's button: the action's title, or Restore (the backup is in the alert's title).
-    private func button(_ action: RecoveryAction) -> LocalizedStringKey {
+    static func button(_ action: RecoveryAction) -> LocalizedStringKey {
         if case .restore = action { return "Restore" }
         return title(action)
     }
@@ -407,4 +404,29 @@ private struct ShareSheet: UIViewControllerRepresentable {
     }
 
     func updateUIViewController(_ vc: UIActivityViewController, context: Context) {}
+}
+
+
+/// The alert for the confirmations of one parity (odd steps, or even): see `RecoveryList`.
+private struct Confirmation: ViewModifier {
+    @Bindable var recovery: RecoveryModel
+    let odd: Bool
+
+    private var asking: RecoveryModel.Asking? {
+        recovery.asking.flatMap { ($0.step % 2 == 1) == odd ? $0 : nil }
+    }
+
+    func body(content: Content) -> some View {
+        content.alert(asking.map { RecoveryList.title($0.action) } ?? "Recovery",
+                      isPresented: Binding(get: { asking != nil }, set: { _ in }),
+                      presenting: asking) { asking in
+            Button(RecoveryList.button(asking.action), role: asking.action.confirms > 1 ? .destructive : nil) {
+                if let run = recovery.answer(asking) { Task { await recovery.perform(run) } }
+            }
+            .accessibilityIdentifier("recovery.confirm")
+            Button("Cancel", role: .cancel) { recovery.cancel() }
+        } message: { asking in
+            Text(asking.step > 1 ? "This replaces what is there now. Are you sure?" : "Are you sure?")
+        }
+    }
 }
