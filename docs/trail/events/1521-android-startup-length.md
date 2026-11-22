@@ -45,6 +45,14 @@ agent: claude-code
   - A forced transcode could be handed the user's direct-play session from another app.
   - A +10 s skip near the written end restarted the transcode.
   - The fallback test's second session was still direct play.
+- **CI on 6c1e47dd2:**
+  - `affected-tests` had blocked a7253fcd9: `ApiClient.kt`, `Models.kt`, `Playback.kt`,
+    `Watch.kt` and `TvPlayback.kt` changed with none of their own tests. Fixed by adding
+    `ApiClientTest` and `PlaybackTest` cases, and a `No-Test-Change` trailer for `Watch.kt` (one
+    line) and `TvPlayback.kt` (an import).
+  - `android-tv / Fire TV build on the Android TV emulator` (run 45076808608) was cancelled at
+    its time limit: the emulator never came up (`adb: device 'emulator-5554' not found` for 40
+    minutes). No TV code had changed since the first push, where the job passed. It was re-run.
 
 ## What we learned
 - A client that omits `client_profile` silently gets `generic`, the narrowest profile, with no
