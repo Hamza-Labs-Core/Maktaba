@@ -105,6 +105,10 @@ type (
 	suggestDoc struct {
 		Suggestions []string `json:"suggestions"`
 	}
+	suggestItemsDoc struct {
+		Suggestions []string            `json:"suggestions"`
+		Items       []search.Suggestion `json:"items"`
+	}
 	updatedDoc struct {
 		Updated int `json:"updated"`
 	}
@@ -112,27 +116,29 @@ type (
 
 func TestAndroidBrowseFixturesMatchTheHandlers(t *testing.T) {
 	cases := map[string]any{
-		"home.json":               &homeDoc{},
-		"recommendations.json":    &recommendations.Response{},
-		"libraries-summary.json":  &summaryDoc{},
-		"pinned-libraries.json":   &pinsDoc{},
-		"hub.json":                &hubDoc{},
-		"library-series.json":     &librarySeriesDoc{},
-		"facets.json":             &facetsDoc{},
-		"videos.json":             &videosDoc{},
-		"video.json":              &videos.Video{},
-		"my-video.json":           &browse.MyVideo{},
-		"chapters.json":           &chaptersDoc{},
-		"segments.json":           &segmentsDoc{},
-		"series-list.json":        &seriesListDoc{},
-		"series.json":             &series.Item{},
-		"episodes.json":           &episodesDoc{},
-		"search.json":             &search.Response{},
-		"search-titles.json":      &titlesPage{},
-		"search-transcripts.json": &transcriptsPage{},
-		"search-recent.json":      &recentDoc{},
-		"search-suggest.json":     &suggestDoc{},
-		"updated.json":            &updatedDoc{},
+		"home.json":                 &homeDoc{},
+		"recommendations.json":      &recommendations.Response{},
+		"libraries-summary.json":    &summaryDoc{},
+		"pinned-libraries.json":     &pinsDoc{},
+		"hub.json":                  &hubDoc{},
+		"library-series.json":       &librarySeriesDoc{},
+		"facets.json":               &facetsDoc{},
+		"videos.json":               &videosDoc{},
+		"video.json":                &videos.Video{},
+		"my-video.json":             &browse.MyVideo{},
+		"chapters.json":             &chaptersDoc{},
+		"segments.json":             &segmentsDoc{},
+		"series-list.json":          &seriesListDoc{},
+		"series.json":               &series.Item{},
+		"episodes.json":             &episodesDoc{},
+		"search.json":               &search.Response{},
+		"search-titles.json":        &titlesPage{},
+		"search-transcripts.json":   &transcriptsPage{},
+		"search-recent.json":        &recentDoc{},
+		"search-suggest.json":       &suggestDoc{},
+		"search-suggest-items.json": &suggestItemsDoc{},
+		"search-help.json":          &search.Response{},
+		"updated.json":              &updatedDoc{},
 	}
 	files, err := filepath.Glob(filepath.Join(fixtureDir, "*.json"))
 	if err != nil || len(files) == 0 {
