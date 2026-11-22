@@ -21,7 +21,7 @@
     "phase": 17,
     "plan": 372,
     "review": 15,
-    "story": 742
+    "story": 743
   },
   "parts": [
     "wiki-epics-01-09.json",
@@ -2933,13 +2933,14 @@
         "story-49.11",
         "story-49.12",
         "story-49.13",
-        "story-49.14"
+        "story-49.14",
+        "story-49.15"
       ],
       "files": {
         "readme": "specs/epics/49-search/README.md"
       },
       "metadata": {
-        "story_count": 14,
+        "story_count": 15,
         "plan_count": 0,
         "mockup_count": 0
       },

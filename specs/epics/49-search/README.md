@@ -234,6 +234,7 @@ runs only when the person opens that tab or submits from it; Results never waits
 | 49.12 | **AI mode: API** (retrieval, grounded answer, citations, streaming, follow-ups, one at a time) | every sentence has a citation that exists in the passages; an unanswerable question says so; no model → 409 with help; a limited user never gets a passage from another library (role test); measured first-token time on the home Mac |
 | 49.14 | **AI mode: the tab in every client** (web, Apple, Android, TV, big screen) | the tab streams the answer, sources first; a citation opens the player at its time; follow-up works; English and Arabic; UI tests |
 | 49.13 | **Remove the stopgap** | the 5,000 cap and the per-line ranking path are gone once every video has a document; help pages and docs updated |
+| 49.15 | **Arabic titles rank by similarity** | found in 49.8, the bundled server's database being `--locale=C`, where pg_trgm finds no trigram in an Arabic word: `similarity()` with `videos_title_trgm_idx` (migration 0098) gives every Arabic title 0, and title matches fall back to newest first. Done when an Arabic query ranks the Arabic title closest to it first on a `--locale=C` database, Latin titles keep their order, and a test on Postgres shows both |
 
 ## 7. Acceptance
 

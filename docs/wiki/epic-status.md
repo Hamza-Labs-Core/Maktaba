@@ -4,7 +4,7 @@
 > The specs and epic pages don't record a status; this page does. Update the row when a story changes.
 > **Change a story's row (and its "What is left" entry), then run `python3 docs/wiki/db/epic_status.py`; never edit the counts by hand.** CI fails on stale counts (`--check`).
 
-**Not every epic is done.** Of 773 stories across all 60 epics, 709 are done, 38 are partial, 17 are not started, and 9 were deferred or removed on purpose. The largest open pieces are Epic 49 (Search, 5 stories of fourteen done), Epic 34 (the TV public site, a first slice only) and Epic 54 Phase 5 (Plugins).
+**Not every epic is done.** Of 774 stories across all 60 epics, 709 are done, 38 are partial, 18 are not started, and 9 were deferred or removed on purpose. The largest open pieces are Epic 49 (Search, 5 stories of fourteen done), Epic 34 (the TV public site, a first slice only) and Epic 54 Phase 5 (Plugins).
 
 ## How this was checked
 
@@ -72,7 +72,7 @@
 | 46 Big screen | 7 | 0 | 0 | 0 | Done |
 | 47 Offline convert / dedup | 11 | 3 | 0 | 0 | **Partial** |
 | 48 Native players | 36 | 1 | 0 | 0 | **Partial** |
-| 49 Search | 7 | 0 | 7 | 0 | **Partial** |
+| 49 Search | 7 | 0 | 8 | 0 | **Partial** |
 | 50 Cloud with no downtime | 35 | 0 | 0 | 0 | Done (live SLOs not checked) |
 | 51 Configurable components | 19 | 0 | 0 | 0 | Done |
 | 52 Transcript word review | 13 | 3 | 0 | 1 | **Partial** |
@@ -84,7 +84,7 @@
 | 58 Smart TV platforms | 17 | 0 | 0 | 1 | Done (58.18 Vega OS deferred) |
 | 59 NAS | 16 | 0 | 0 | 0 | Done (device results not checked) |
 | 60 Website | 11 | 1 | 0 | 1 | **Partial** |
-| **Total** | **709** | **38** | **17** | **9** | **Not all done** |
+| **Total** | **709** | **38** | **18** | **9** | **Not all done** |
 
 `*` sampled, see [How this was checked](#how-this-was-checked).
 
@@ -104,6 +104,7 @@
 - **49.12 AI-mode API** — no grounded retrieval, citation validation, streaming/follow-up endpoint, or role tests.
 - **49.13 Remove the stopgap** — the Epic 49 document path does not exist, so its removal is not started either.
 - **49.14 AI-mode client tab** — no streaming AI tab or citation-to-player UI on any client.
+- **49.15 Arabic titles rank by similarity** — title ranking uses `similarity()` with migration 0098's trigram index, which reads no Arabic letter on the bundled server's `--locale=C` database.
 - **54.47–54.51, Epic 54 Phase 5:** plugin updates, preinstalled plugins and migration, offline homes, release variants and variant updates. Each spec says "Not built". (54.45 and 54.46 are partial, below.)
 
 ### Partial
@@ -1055,7 +1056,7 @@ Stories are the fourteen numbered rows in `specs/epics/47-offline-convert-dedup/
 
 ### Epic 49 — Search
 
-Stories are the fourteen numbered rows in `specs/epics/49-search/README.md` §6 (49.14 appears before 49.13 there). Spec PRs #514/#515 are not implementation evidence. Searches found no `keyword_index` stage or Epic 49 AI-mode implementation.
+Stories are the fifteen numbered rows in `specs/epics/49-search/README.md` §6 (49.14 appears before 49.13 there). Spec PRs #514/#515 are not implementation evidence. Searches found no `keyword_index` stage or Epic 49 AI-mode implementation.
 
 | Story | Status | Evidence |
 |---|---|---|
@@ -1073,6 +1074,7 @@ Stories are the fourteen numbered rows in `specs/epics/49-search/README.md` §6 
 | 49.12 AI-mode API | **Not started** | Only `specs/epics/49-search/README.md`; no grounded-answer/citation/streaming/follow-up API or tests found. |
 | 49.13 Remove stopgap | **Not started** | Only `specs/epics/49-search/README.md`; its start condition (every video has a document) waits on 49.6's backfill running on the home. |
 | 49.14 AI-mode client tab | **Not started** | Only `specs/epics/49-search/README.md`; no AI tab, streaming citation UI, or client tests found. |
+| 49.15 Arabic titles rank by similarity | **Not started** | Found in 49.8: `runTitles` orders by `similarity(v.title, q)`, 0 for every Arabic title in a `--locale=C` database. |
 
 ## Epics 50–60 (every story checked)
 
