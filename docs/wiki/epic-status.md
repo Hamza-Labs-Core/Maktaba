@@ -1072,7 +1072,7 @@ Stories are the fifteen numbered rows in `specs/epics/49-search/README.md` §6 (
 | 49.12 AI-mode API | **Not started** | Only `specs/epics/49-search/README.md`; no grounded-answer/citation/streaming/follow-up API or tests found. |
 | 49.13 Remove stopgap | **Not started** | Only `specs/epics/49-search/README.md`; its start condition (every video has a document) waits on 49.6's backfill running on the home. |
 | 49.14 AI-mode client tab | **Not started** | Only `specs/epics/49-search/README.md`; no AI tab, streaming citation UI, or client tests found. |
-| 49.15 Arabic titles rank by similarity | **Done** (PR pending) | `runTitles` takes similarity over the folded title and query with Arabic letters spelled in ASCII; `TestBM25_ArabicTitlesRankBySimilarity` on a `--locale=C` PostgreSQL 18 (the replica job); README §9 "As built". |
+| 49.15 Arabic titles rank by similarity | **Done** (#1503) | `runTitles` takes similarity over the folded title and query with Arabic letters spelled in ASCII; `TestBM25_ArabicTitlesRankBySimilarity` on a `--locale=C` PostgreSQL 18 (the replica job); README §9 "As built". |
 
 ## Epics 50–60 (every story checked)
 
