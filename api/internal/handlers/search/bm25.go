@@ -21,6 +21,7 @@ package search
 import (
 	"context"
 	"fmt"
+	"math"
 	"sort"
 	"strconv"
 	"strings"
@@ -144,7 +145,7 @@ func bm25LegSQLScored(ctx context.Context, q string, limit int, f Filters, index
 	// a row for a 5,000-word document: 180 ms a search on the home). The hook finds its
 	// objects on the session's search_path: the bundle puts the extension's schema on the
 	// app role's (pgbundle.textsearchSQL). Without it the order and the scores are the same,
-	// only slower.
+	// only slower. A plan with no BM25 index scan has no score to give: bm25Leg checks.
 	if scored {
 		// ORDER BY the alias: the select list's score (one evaluation a row)
 		return `
@@ -166,39 +167,62 @@ func bm25LegSQLScored(ctx context.Context, q string, limit int, f Filters, index
 
 // bm25Leg is one index's top videos: (video id, score), best first.
 func (h *Handler) bm25Leg(ctx context.Context, q string, limit int, f Filters, index, col, fn string) ([]savedVideo, error) {
-	out, scanned, err := h.bm25LegRun(ctx, q, limit, f, index, col, fn, false)
-	if err != nil || scanned {
+	out, first, err := h.bm25LegRun(ctx, q, limit, f, index, col, fn, false)
+	if err != nil || first == nil {
 		return out, err
 	}
-	// every score 0: the plan was no BM25 index scan (a table small enough to read whole and
-	// sort, where bm25_get_current_score has no scan to tell of). Asked again with each
-	// row's score worked out from its text, cheap on a table that small
+	// the scores are the index scan's only when the plan has one: bm25_get_current_score is
+	// the last score of the connection's last BM25 index scan, whatever query ran it (the
+	// extension never clears it), so a plan without one (a table, or a library's rows, few
+	// enough to read whole and sort) would give every row a score of another search. The
+	// first row's score is worked out from its text and compared (one document, about 2 ms
+	// at most); when they differ the leg asks again with each row's score worked out
+	ok, err := h.bm25ScoreIs(ctx, q, index, col, fn, first.V, first.S)
+	if err != nil {
+		return nil, err
+	}
+	if ok {
+		return out, nil
+	}
 	out, _, err = h.bm25LegRun(ctx, q, limit, f, index, col, fn, true)
 	return out, err
 }
 
-// bm25LegRun runs one leg; scanned is whether a row had a score (the index scan's, or the
-// operator's when scored): a leg with no row is scanned.
-func (h *Handler) bm25LegRun(ctx context.Context, q string, limit int, f Filters, index, col, fn string, scored bool) (out []savedVideo, scanned bool, err error) {
+// bm25ScoreIs reports whether raw (a leg's first row's score, as the query returned it) is
+// the score the operator works out for that video's document.
+func (h *Handler) bm25ScoreIs(ctx context.Context, q, index, col, fn, video string, raw float64) (bool, error) {
+	var want float64
+	if err := h.DB.QueryRowContext(ctx, `SELECT d.`+col+` OPERATOR(textsearch.<@>) textsearch.to_bm25query(public.`+fn+`($1), '`+index+`')
+		  FROM video_search_docs d WHERE d.video_id = $2`, q, video).Scan(&want); err != nil {
+		return false, fmt.Errorf("bm25 %s: the first row's score: %w", index, err)
+	}
+	return math.Abs(raw-want) <= 1e-9+1e-6*math.Abs(want), nil
+}
+
+// bm25LegRun runs one leg; first is its first row as returned (nil: none), the one
+// bm25Leg checks the scores by.
+func (h *Handler) bm25LegRun(ctx context.Context, q string, limit int, f Filters, index, col, fn string, scored bool) (out []savedVideo, first *savedVideo, err error) {
 	sqlText, args := bm25LegSQLScored(ctx, q, limit, f, index, col, fn, scored)
 	rows, err := h.DB.QueryContext(ctx, sqlText, args...)
 	if err != nil {
-		return nil, false, fmt.Errorf("bm25 %s: %w", index, err)
+		return nil, nil, fmt.Errorf("bm25 %s: %w", index, err)
 	}
 	defer rows.Close()
-	n := 0
 	for rows.Next() {
 		var v savedVideo
 		if err := rows.Scan(&v.V, &v.S); err != nil {
-			return nil, false, err
+			return nil, nil, err
 		}
-		n++
+		if first == nil {
+			raw := v
+			first = &raw
+		}
 		v.S = -v.S   // <@> is a distance: the BM25 score negated
 		if v.S > 0 { // a document none of whose words is the query's
 			out = append(out, v)
 		}
 	}
-	return out, n == 0 || len(out) > 0, rows.Err()
+	return out, first, rows.Err()
 }
 
 // runBM25Videos ranks the videos by their documents (see the file's words).

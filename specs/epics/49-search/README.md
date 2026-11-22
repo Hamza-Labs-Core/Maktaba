@@ -822,11 +822,16 @@ runs only when the person opens that tab or submits from it; Results never waits
     start). `textsearch` comes last, so a name of the app's still resolves in `public`.
   - Each leg selects `textsearch.bm25_get_current_score()` and orders by the operator
     (`bm25LegSQL`).
-  - A table small enough to be read whole and sorted gets no index scan, and so no
-    score: a leg whose every score is 0 asks again with the operator in the select list.
+  - A plan without the BM25 index scan (a table, or a library's rows, few enough to read
+    whole and sort) has no scan to take the score from. `bm25_get_current_score()` then
+    gives the last score of the connection's last index scan: the extension never clears
+    it. So each leg works out its first row's score from its text and compares (one
+    document, about 2 ms at most). When they differ, it asks again with the operator in the
+    select list. `TestBM25_ScoresAreEachRowsOwn` makes that plan on one connection after
+    another search's index scan; without the check, a row carried that search's score.
 - **Measured.**
-  - 5,000 documents of 5,000 words (`TestBM25_LongDocuments`, the replica job): p95 2.3 ms
-    for الله and 3.2 ms for a sentence, at 500 results.
+  - 5,000 documents of 5,000 words (`TestBM25_LongDocuments`, the replica job): p95 5.6 ms
+    for الله and 5.7 ms for a sentence, at 500 results (the check of the first row included).
   - 45,000 documents (`TestBM25_Perf45k`): p95 under 2.5 ms, and 13.9 ms for one library.
   - The real bundled PostgreSQL 18 gives the app role that path
     (`TestRealPgTextsearchPreloaded`).
