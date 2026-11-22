@@ -1482,6 +1482,10 @@ export const APPS = [
                 "**الرئيسية** و**المكتبات** و**السلاسل** و**قوائم التشغيل** و**دليل التلفاز** و**البحث**، الذي يجد ما يُقال داخل المقاطع."
               ),
               t(
+                "**Search** suggests as you type, saying what each suggestion is: an earlier search, a word the videos say, a video's title (which opens it) or a speaker. A search that finds few videos offers **Did you mean**. Chips count the videos found by library, language, speaker, year and length, and narrow the search to the ones you choose; the results sort by relevance, newest or most matches. The address keeps all of it, so a search can be shared and **Back** returns to it.",
+                "يقترح **البحث** أثناء الكتابة، ويبيّن نوع كل اقتراح: بحث سابق، أو كلمة تقولها المقاطع، أو عنوان مقطع (يفتحه)، أو متحدث. والبحث الذي يجد مقاطع قليلة يعرض **هل تقصد**. وتعدّ الشرائح المقاطع التي وُجدت حسب المكتبة واللغة والمتحدث والسنة والمدة، وتحصر البحث فيما تختاره منها؛ وتُرتَّب النتائج حسب الأقرب صلة أو الأحدث أو الأكثر مطابقات. ويحفظ العنوان ذلك كله، فيمكن مشاركة البحث، ويعود إليه زر **الرجوع**."
+              ),
+              t(
                 "A video's page: resume, mark watched, favorite, add to a playlist, **Play next** and **Add to queue**, its chapters and its transcript.",
                 "صفحة المقطع: المتابعة، ووضع علامة المشاهدة، والإضافة إلى المفضلة أو إلى قائمة تشغيل، و**شغّل تاليًا** و**أضف إلى قائمة الانتظار**، وفصوله، ونصه المفرَّغ."
               ),
@@ -1627,6 +1631,18 @@ export const APPS = [
                 "wide",
                 "A video's page in the web app: resume, mark watched, favorite, add to a playlist",
                 "صفحة مقطع في تطبيق الويب: المتابعة ووضع علامة المشاهدة والمفضلة والإضافة إلى قائمة تشغيل"
+              ),
+              shot(
+                "web-search",
+                "wide",
+                "Search in the web app: Did you mean, the filters in use, the sort and the chips that count the results by library, language, speaker, year and length",
+                "البحث في تطبيق الويب: «هل تقصد»، وعوامل التصفية المستخدمة، والترتيب، والشرائح التي تعدّ النتائج حسب المكتبة واللغة والمتحدث والسنة والمدة"
+              ),
+              shot(
+                "web-search-suggest",
+                "wide",
+                "Suggestions as you type in the web app's Search, each with its kind: an earlier search, a word, a video's title, a speaker",
+                "الاقتراحات أثناء الكتابة في بحث تطبيق الويب، ولكلٍّ منها نوعه: بحث سابق، أو كلمة، أو عنوان مقطع، أو متحدث"
               ),
               shot(
                 "web-review",

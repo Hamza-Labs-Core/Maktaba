@@ -1104,6 +1104,16 @@ build fails when the two differ.
 
 ### Added
 
+- **The web app's Search page shows suggestions as you type, "Did you mean", filters with
+  counts, and a sort (Epic 49, story 49.10).** The suggestions under the search box say what
+  each one is: an earlier search, a word, a video's title (which opens the video) or a speaker,
+  and are chosen with the arrow keys and Enter, or a click or tap. "Did you mean" appears above
+  the results when a search finds few videos, and one click runs it. Chips count the videos
+  found by library, language, speaker, year and length; choosing some narrows the search to
+  them, the filters in use can each be removed or cleared together, and results sort by
+  relevance, newest or most matches. The address keeps the sort and filters, so a search can be
+  shared and Back returns to it. In English and Arabic.
+
 - **Search suggests as you type, offers "Did you mean", counts its results, and sorts them
   (Epic 49, story 49.8).** Typing a word suggests your earlier searches, the word completed
   from what your libraries' videos say, and matching titles and speakers. A search that finds

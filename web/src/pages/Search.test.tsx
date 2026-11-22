@@ -555,6 +555,7 @@ describe("Search (test-cases/search.md)", () => {
     );
     renderSearchPage();
     const box = screen.getByRole("combobox", { name: "Search" });
+    act(() => box.focus());
     const suggestCalls = () => getCalls("/api/search/suggest");
     fireEvent.change(box, { target: { value: "q" } });
     fireEvent.change(box, { target: { value: "qu" } });
@@ -572,9 +573,10 @@ describe("Search (test-cases/search.md)", () => {
     });
     await act(async () => pending["/api/search/suggest?q=qui"]({ suggestions: ["quick", "quiz"] }));
     await act(async () => pending["/api/search/suggest?q=qu"]({ suggestions: ["quiet"] }));
+    // story 49.10: a listbox under the box (a plain list from a home before 49.8)
     const options = () =>
-      Array.from(document.querySelectorAll("#mkt-suggest option")).map((o) =>
-        o.getAttribute("value")
+      Array.from(document.querySelectorAll('[role="listbox"] [role="option"]')).map(
+        (o) => o.textContent
       );
     expect(options()).toEqual(["quick", "quiz"]);
     fireEvent.change(box, { target: { value: "سي ر" } });

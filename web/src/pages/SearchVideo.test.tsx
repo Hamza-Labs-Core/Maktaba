@@ -233,6 +233,27 @@ describe("SearchVideo (test-cases/search.md)", () => {
     );
   });
 
+  it("SRC-41: story 49.10: a re-run keeps the sort and filters, and the back link carries them", async () => {
+    const state = serve({ pageSize: 20 });
+    state.expired.add("sid-a");
+    renderMatches(
+      "/search/video/v1?q=fox&mode=fts&sort=newest&lib=lib-1&spk=Sheikh+Ahmad&dur=over_60m&sid=sid-a"
+    );
+    await waitFor(() => expect(locParams().get("sid")).toBe("sid-1"));
+    expect(post).toHaveBeenCalledWith("/api/search", {
+      q: "fox",
+      mode: "fts",
+      view: "list",
+      sort: "newest",
+      filters: { library_id: ["lib-1"], speaker: ["Sheikh Ahmad"], duration_sec: { gte: 3600 } },
+    });
+    expect(locParams().get("sort")).toBe("newest");
+    expect(screen.getByRole("link", { name: /Back to results/ })).toHaveAttribute(
+      "href",
+      "/search?q=fox&mode=fts&sort=newest&lib=lib-1&spk=Sheikh+Ahmad&dur=over_60m&sid=sid-1"
+    );
+  });
+
   it("SRC-41: a link without a sid runs the search (no notice)", async () => {
     serve();
     renderMatches("/search/video/v1?q=fox&mode=hybrid");

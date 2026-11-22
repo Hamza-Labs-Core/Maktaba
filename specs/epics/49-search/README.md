@@ -923,3 +923,67 @@ runs only when the person opens that tab or submits from it; Results never waits
     documents built.
   - The weights stay as 49.7 set them (exact twice stemmed, phrase lift the list's best
     score), and the lists at 500, until that run shows what to change.
+
+### 49.10 Web search page
+
+The Search page (`web/src/pages/Search.tsx`) uses story 49.8's API; the parts are in
+`web/src/pages/searchHelp.tsx` and the URL and request helpers in `searchShared.tsx`.
+
+- **Suggestions as you type** replace the `<datalist>` of plain texts. The box is an ARIA 1.2
+  combobox (`aria-expanded`, `aria-controls`, `aria-activedescendant`) over a listbox:
+  - each suggestion shows its kind with an icon and a word: an earlier search, a word, a
+    video's title, a speaker; a home before 49.8 (texts only) lists them without a kind;
+  - the 200 ms debounce and the sequence guard stay: a slower, older answer is dropped;
+  - up and down move through the list (wrapping), Enter chooses, Escape closes it and keeps
+    the text; Enter with nothing highlighted submits what was typed; leaving the box closes
+    the list until the next keystroke; the highlighted option is scrolled into sight;
+  - a title opens its video (`/videos/<video_id>`); an earlier search, a word or a speaker is
+    searched as its text;
+  - a press on the list does not take focus from the box, so a click and a tap work; the list
+    is placed with logical properties and mirrors in Arabic.
+- **Did you mean** is a row above the results ("Did you mean المدرسة?", «هل تقصد المدرسة؟»)
+  whose corrected words are a button: it runs that search with the same sort and filters. The
+  row is left out when the answer has none or repeats the query.
+- **Facets** are a panel of chip groups (Library, Language, Speaker, Year, Length), each chip
+  a toggle button with its count (read as "N videos"):
+  - a library shows its `label`, a language its name in the page's language
+    (`Intl.DisplayNames`), a band its words ("Under 5 min", "5 to 20 min", "20 to 60 min",
+    "Over an hour");
+  - a press runs the search again with `filters`: `library_id`, `language` and `speaker` are
+    lists (any of them); a year and a duration band send their bucket's own `filter` (`date`,
+    `duration_sec`), and a second year or band replaces the first, as the request has one range
+    of each;
+  - filters of different facets combine; "Filters in use" lists each as "Facet: value" with a
+    remove button, and "Clear all filters" takes them all off;
+  - a bucket still chosen that the narrowed answer no longer lists stays, pressed and without
+    a count, so it can be taken off where it was put on.
+- **Sort** is a select (Relevance, Newest, Most matches) beside the List / Grid toggle. A
+  change runs the search again; relevance is not sent. The select shows the answer's `sort`.
+- **State.** The URL carries the order and filters beside `q`, `mode` and the pages:
+  `sort`, `lib`, `lang`, `spk` (repeated for each), `year` and `dur`. A search is shareable,
+  and each refinement is a history entry, so Back returns to the search before it, by its sid,
+  with no new request. A year and a band in a link become the ranges the server gives those
+  buckets (UTC years, the bands' seconds). New words keep the order and drop the filters
+  (they were the old results' counts); the same words, did-you-mean and a recent search keep
+  both.
+- **Facets while paging.** The facets and did-you-mean come with the first page only; the
+  page keeps them with the saved search on screen while either list pages, and keeps them per
+  sid in the tab's session storage (`mkt:search:help`), so a reload or Back by sid shows them
+  again. The matches page's back link and its re-run of an expired search carry the order and
+  filters too.
+- **Proof:** `Search.help.test.tsx` (SRC-44 to SRC-53 in `web/test-cases/search.md`):
+  - suggestion kinds, the combobox's keyboard and ARIA, a title opening its video, a pointer
+    choice;
+  - did-you-mean shown and run with the filters kept;
+  - each facet's request body, combined facets, removal, Clear all, Back by sid;
+  - a deep link's filters, the sort request and the answer's sort shown;
+  - facets kept across pages and a reload;
+  - Arabic, and axe in English and Arabic with the list open, did-you-mean and facets shown.
+
+  `SearchVideo.test.tsx` covers the matches page's back link and re-run.
+- **Not done here.**
+  - A recent search shows its own order and filters only when this browser ran it: the recent
+    searches list carries no sort or filters. A saved search keeps neither: it runs with the
+    order on screen and no filters.
+  - Facet buckets are chips, not a side panel of checkboxes as in the 11.4 mockup: they wrap
+    on a phone and need no second column.
