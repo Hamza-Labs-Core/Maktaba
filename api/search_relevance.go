@@ -51,11 +51,15 @@ func runSearchRelevance(args []string, out io.Writer) error {
 	defer db.Close()
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
-	// read only: every statement of the check is a read
+	// read only, on the one connection the check uses (set first, so no other is opened
+	// without it); every statement of the check is a read
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
+	db.SetConnMaxLifetime(0)
+	db.SetConnMaxIdleTime(0)
 	if _, err := db.ExecContext(ctx, `SET SESSION CHARACTERISTICS AS TRANSACTION READ ONLY`); err != nil {
 		return err
 	}
-	db.SetMaxOpenConns(1)
 	t0 := time.Now()
 	cases, err := search.GenerateRelevance(ctx, db, o)
 	if err != nil {

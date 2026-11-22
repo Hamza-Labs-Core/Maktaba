@@ -21,6 +21,7 @@ package search
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"math/rand"
 	"sort"
@@ -170,31 +171,35 @@ func knownItems(ctx context.Context, db *sql.DB, r *rand.Rand, o RelevanceOption
 	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM video_search_docs`).Scan(&docs); err != nil {
 		return nil, err
 	}
-	rows, err := db.QueryContext(ctx, `SELECT d.video_id::text, d.body FROM video_search_docs d
+	// the candidates' ids first, then one body at a time (an hour's lecture is some 200 KB)
+	rows, err := db.QueryContext(ctx, `SELECT d.video_id::text FROM video_search_docs d
 		 ORDER BY `+relevanceSample("d.video_id", o.Seed)+` LIMIT $1`, o.KnownItem*4)
 	if err != nil {
 		return nil, err
 	}
-	type doc struct{ id, body string }
-	var cands []doc
+	var cands []string
 	for rows.Next() {
-		var d doc
-		if err := rows.Scan(&d.id, &d.body); err != nil {
+		var id string
+		if err := rows.Scan(&id); err != nil {
 			_ = rows.Close()
 			return nil, err
 		}
-		cands = append(cands, d)
+		cands = append(cands, id)
 	}
 	if err := rows.Close(); err != nil {
 		return nil, err
 	}
 	rare := max(docs/100, 2)
 	var out []RelevanceCase
-	for _, d := range cands {
+	for _, id := range cands {
 		if len(out)/3 >= o.KnownItem {
 			break
 		}
-		phrase := pickPhrase(r, d.body)
+		var body string
+		if err := db.QueryRowContext(ctx, `SELECT body FROM video_search_docs WHERE video_id = $1`, id).Scan(&body); err != nil {
+			return nil, err
+		}
+		phrase := pickPhrase(r, body)
 		if phrase == "" {
 			continue
 		}
@@ -215,7 +220,7 @@ func knownItems(ctx context.Context, db *sql.DB, r *rand.Rand, o RelevanceOption
 		if videos != 1 {
 			continue
 		}
-		want := []string{d.id}
+		want := []string{id}
 		out = append(out, RelevanceCase{Kind: RelKnownItem, Variant: "as-written", Query: phrase, Want: want, Top: 3})
 		if v := spellingVariant(phrase); v != "" {
 			out = append(out, RelevanceCase{Kind: RelKnownItem, Variant: "spelling", Query: v, Want: want, Top: 3})
@@ -413,7 +418,10 @@ func (h *Handler) RunRelevance(ctx context.Context, cases []RelevanceCase, runs 
 	// the check measures the BM25 ranking: not the line path a library falls back to while
 	// its indexes are missing or building
 	if ready, err := searchindex.Ready(ctx, h.DB); err != nil || !ready {
-		return rep, fmt.Errorf("keyword search's BM25 indexes are not ready (%v): build them first (maktaba-api search-indexes)", err)
+		if err != nil {
+			return rep, fmt.Errorf("keyword search's BM25 indexes cannot be read: %w", err)
+		}
+		return rep, errors.New("keyword search's BM25 indexes are not ready: build them first (maktaba-api search-indexes)")
 	}
 	abandoned := h.PhraseAbandoned()
 	defer func() { rep.PhraseAbandoned = h.PhraseAbandoned() - abandoned }()

@@ -1002,7 +1002,10 @@ func (h *Handler) passagesOf(ctx context.Context, rn *run, videoIDs []string, pe
 	if rn.Mode != "semantic" && h.DB != nil {
 		done := false
 		if ready, _ := h.bm25Now(ctx); ready {
-			hits, n, m, ok, err := h.normalisedLines(ctx, rn.Q, videoIDs, perVideo)
+			// the lines matched as the videos were ranked: a word prefixed by و that no
+			// document holds, without it (withoutConjunctions; story 49.9)
+			q := h.withoutConjunctions(ctx, rn.Q, rn.Filters.LibraryID)
+			hits, n, m, ok, err := h.normalisedLines(ctx, q, videoIDs, perVideo)
 			if err != nil {
 				return nil, nil, err
 			}

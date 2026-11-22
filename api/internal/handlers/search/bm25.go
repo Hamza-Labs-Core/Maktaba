@@ -769,8 +769,8 @@ const (
 )
 
 // phrasePattern is the regular expression of q's words together in one line of a document's
-// lower-cased search_text: folded as maktaba_normalize folds, lower case ("" for fewer than
-// two words).
+// search_text, matched without regard to case (~*): the words folded as maktaba_normalize
+// folds, in lower case ("" for fewer than two words, or a query with operators).
 func phrasePattern(q string) string {
 	if queryHasOperators(q) {
 		return "" // a quoted phrase, -word or OR: not a phrase of every word
@@ -835,14 +835,15 @@ func (h *Handler) withoutConjunctions(ctx context.Context, q string, libs []stri
 	return strings.Join(words, " ")
 }
 
-// phraseProbe is the query's longest word with no ASCII letter, folded as search_text is:
-// a document whose text does not hold it holds no phrase of the query ("" none, a query of
-// Latin words: their case differs between the query and the text).
+// phraseProbe is the query's longest word of the Arabic script (and digits), folded as
+// search_text is: a document whose text does not hold it holds no phrase of the query ("" none).
+// A word of a script with case (Latin, Greek, Cyrillic) is no probe: strpos minds case, and
+// the expression does not.
 func phraseProbe(q string) string {
 	best := ""
 	for _, w := range strings.Fields(textnorm.Normalize(q)) {
 		w = strings.TrimFunc(w, func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) })
-		if strings.IndexFunc(w, func(r rune) bool { return r < utf8.RuneSelf && unicode.IsLetter(r) }) >= 0 {
+		if w == "" || strings.IndexFunc(w, func(r rune) bool { return unicode.IsLetter(r) && !unicode.Is(unicode.Arabic, r) }) >= 0 {
 			continue
 		}
 		if utf8.RuneCountInString(w) > utf8.RuneCountInString(best) {
