@@ -343,6 +343,82 @@ describe("Did you mean, the order and the filters (story 49.11)", () => {
   });
 });
 
+describe("Focus, Back and the list's length (story 49.11)", () => {
+  it("a chosen bucket the narrowed answer dropped, taken off in the panel, closes an empty panel and focus goes to the order", async () => {
+    // the year chosen finds nothing: the answer lists no bucket at all
+    serve((b) => (b.filters ? { facets: { videos: 0 }, videos: [] } : { facets: FACETS }));
+    renderBig("/big/search?q=ab&year=1999");
+    const s = await screen.findByTestId("big-search");
+    fireEvent.click(
+      await within(s).findByRole(
+        "button",
+        { name: new RegExp(`^${E["big.search.filters"]}`) },
+        { timeout: 3000 }
+      )
+    );
+    const panel = await screen.findByTestId("big-filters");
+    const year = within(panel).getByRole("button", { name: /1999/ });
+    expect(year).toHaveAttribute("aria-pressed", "true");
+    year.focus();
+    fireEvent.click(year);
+    await waitFor(() => expect(screen.queryByTestId("big-filters")).toBeNull());
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        within(s).getByRole("button", { name: E["search.sort.relevance"] })
+      )
+    );
+    await waitFor(() => expect(lastBody().filters).toBeUndefined());
+  });
+
+  it("a chip taken off in the panel keeps the focus while it is listed", async () => {
+    serve(() => ({ facets: FACETS }));
+    renderBig("/big/search?q=ab");
+    const s = await screen.findByTestId("big-search");
+    fireEvent.click(await within(s).findByRole("button", { name: E["big.search.filters"] }));
+    const panel = await screen.findByTestId("big-filters");
+    const lib = within(panel).getByRole("button", { name: /Tafsir/ });
+    lib.focus();
+    fireEvent.click(lib);
+    await waitFor(() => expect(lastBody().filters).toEqual({ library_id: ["L1"] }));
+    expect(document.activeElement?.getAttribute("data-bs-focus")).toBe("f:library:L1");
+  });
+
+  it("Back from a video comes back to the same search, its order and filters asked again", async () => {
+    serve(() => ({ facets: FACETS }));
+    renderBig("/big/search?q=ab&sort=newest&lib=L1");
+    const s = await screen.findByTestId("big-search");
+    fireEvent.click(await within(s).findByText("Title ab", {}, { timeout: 3000 }));
+    await waitFor(() => expect(where).toBe("/big/video/v1"));
+    post.mockClear();
+    key("Escape");
+    await screen.findByTestId("big-search");
+    await waitFor(() => expect(where).toBe("/big/search?q=ab&sort=newest&lib=L1"));
+    await waitFor(() =>
+      expect(lastBody()).toEqual({
+        q: "ab",
+        mode: "hybrid",
+        view: "grid",
+        sort: "newest",
+        filters: { library_id: ["L1"] },
+      })
+    );
+    expect(screen.getByRole("searchbox")).toHaveValue("ab");
+  });
+
+  it("lists six suggestions at most", async () => {
+    serve(undefined, { suggestions: ["a1", "a2", "a3", "a4", "a5", "a6", "a7", "a8"] });
+    renderBig("/big/search");
+    const s = await screen.findByTestId("big-search");
+    fireEvent.click(within(s).getByRole("button", { name: "a" }));
+    const list = await within(s).findByRole("list", { name: suggestName() }, { timeout: 3000 });
+    expect(
+      within(list)
+        .getAllByRole("button")
+        .map((b) => b.textContent)
+    ).toEqual(["a1", "a2", "a3", "a4", "a5", "a6"]);
+  });
+});
+
 describe("Arabic and axe (story 49.11)", () => {
   it("reads in Arabic: the kinds, did-you-mean, the order and the facets", async () => {
     localStorage.setItem("mkt:locale", "ar");

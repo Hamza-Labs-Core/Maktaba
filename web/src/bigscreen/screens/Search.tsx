@@ -201,6 +201,34 @@ export function BigSearch() {
     toggle(facet, value);
     focusOn(left > 0 ? "search:filters" : `sort:${ask.sort}`);
   }
+  /**
+   * In the Filters panel: the chip pressed keeps the focus while it is there; when it goes (a
+   * chosen bucket the narrowed answer had dropped, or Clear all) the panel's first chip takes
+   * it, and a panel left with nothing closes, focus going to the order.
+   */
+  function keepPanelFocus(id: string) {
+    setTimeout(() => {
+      const panel = document.querySelector<HTMLElement>('[data-testid="big-filters"]');
+      if (!panel) return;
+      const here = panel.querySelector<HTMLElement>(`[data-bs-focus="${cssEscape(id)}"]`);
+      const next = here ?? panel.querySelector<HTMLElement>("[data-bs-focus]");
+      if (next) {
+        if (next !== document.activeElement) focus.focusEl(next);
+        return;
+      }
+      setFiltersOpen(false);
+      focusOn(`sort:${ask.sort}`);
+    }, 0);
+  }
+  function togglePanel(facet: FacetName, value: string) {
+    toggle(facet, value);
+    keepPanelFocus(`f:${facet}:${value}`);
+  }
+  function clearInPanel() {
+    setAsk((a) => ({ ...a, sel: noSel() }));
+    keepPanelFocus("f:clear");
+  }
+
   function clearFilters() {
     setAsk((a) => ({ ...a, sel: noSel() }));
     focusOn(`sort:${ask.sort}`);
@@ -217,6 +245,14 @@ export function BigSearch() {
   const shownSort = res && answeredKey === key ? urlSort(res.sort ?? ask.sort) : ask.sort;
   const groups = facetGroups(res ? facetsOf(res) : null, ask.sel);
   const inUse = activeChips(ask.sel);
+  // an answer that leaves the open panel with nothing to show closes it
+  const panelEmpty = filtersOpen && groups.length === 0 && inUse.length === 0;
+  useEffect(() => {
+    if (!panelEmpty) return;
+    setFiltersOpen(false);
+    focusOn(`sort:${ask.sort}`);
+    // focusOn reads the order on screen when it runs
+  }, [panelEmpty]);
   const chipName = (facet: FacetName, value: string, label?: string) =>
     `${t(`search.facet.${facet}`)}: ${bucketName(facet, value, label ?? labels[`${facet}:${value}`])}`;
 
@@ -476,7 +512,7 @@ export function BigSearch() {
               type="button"
               className="bs-option"
               data-bs-focus="f:clear"
-              onClick={() => setAsk((a) => ({ ...a, sel: noSel() }))}
+              onClick={clearInPanel}
             >
               {t("search.filters.clear")}
             </button>
@@ -499,7 +535,7 @@ export function BigSearch() {
                     className="bs-chip"
                     aria-pressed={selHas(ask.sel, facet, b.value)}
                     data-bs-focus={`f:${facet}:${b.value}`}
-                    onClick={() => toggle(facet, b.value)}
+                    onClick={() => togglePanel(facet, b.value)}
                   >
                     <bdi>
                       {bucketName(facet, b.value, b.label || labels[`${facet}:${b.value}`])}

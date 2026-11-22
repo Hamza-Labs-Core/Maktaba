@@ -958,7 +958,9 @@ and have no search screen of their own, so this is Samsung's and LG's too.
   and without a count.
 - **The filters in use** are a row of chips under the order, "Facet: value", each removing its
   filter, then **Clear all filters**. Focus moves to Filters (or the order) when the chip it was
-  on goes.
+  on goes. In the panel, a chip taken off keeps the focus while it is listed; when it goes (a
+  chosen bucket the narrowed answer had dropped, or Clear all) the panel's first chip takes it,
+  and a panel left with nothing to show closes, focus going to the order.
 - **State.** The URL carries the order and filters beside `q`, with the desk's parameters (`sort`,
   `lib`, `lang`, `spk`, `year`, `dur`), replaced rather than pushed, as typing is; Back from a
   result comes back to the same search. New words drop the filters and keep the order; the same
@@ -969,7 +971,9 @@ and have no search screen of their own, so this is Samsung's and LG's too.
 - **Proof:** `web/src/bigscreen/BigSearch.test.tsx` (the kinds, a word searched and a title
   opened, an older home's plain texts, did-you-mean with the order and filters kept, each request
   body from the order and facet chips, removal and Clear all, new words, an older home's answer,
-  Arabic, axe in English and Arabic with the panel open and with the suggestions shown);
+  the panel's focus when a chip goes and when the panel empties, Back from a video asking the
+  same order and filters again, six suggestions at most, Arabic, axe in English and Arabic with
+  the panel open and with the suggestions shown);
   `searchAsk.test.ts` (bodies, URL, parsing, a dropped bucket); `web/e2e/tv/tv.ui.spec.ts`
   "Search … (49.11)" on the `/tv/` build in Chromium, D-pad only, in both languages, with each
   request body checked and screenshots.
@@ -994,13 +998,17 @@ found in transcripts, each once. The logic is in `source/search.brs`, apart from
   the ChoiceDialog as a sheet: **Clear all filters** while any is on, then each facet's buckets,
   "Library: Films and series · 4", a chosen one marked ✓; OK toggles a bucket and the sheet stays
   open on that bucket's row, so several combine; Back closes it. A chosen bucket the narrowed
-  answer dropped stays, without a count. A language is named from the catalog (eight languages,
-  else its code), a band in words.
+  answer dropped stays, without a count. An answer that comes while the sheet is open rebuilds
+  it on the row the remote is on (ChoiceDialog's `at`). A language is named from the catalog
+  (eight languages, else its code), a band in words.
 - **Focus.** Right from the keyboard's edge (Left in Arabic, where the screen is mirrored) or
   from the suggestions goes to the column's first part; Up and Down move between Did you mean,
   the order and the results; Left from the column's start, or Back, returns to the keyboard; Back
   from the keyboard leaves. A part that goes away takes the focus to the column's first part.
-- **Proof:** `tests/search_test.brs` on brs-engine (62 checks: the bodies, toggling, the kinds,
+- **New words** drop the filters and keep the order; emptying the box starts afresh, so the same
+  words typed again are new words too.
+- **Proof:** `tests/search_test.brs` on brs-engine (64 checks: the bodies, toggling, the kinds
+  and six at most,
   parsing and an older home's answer, the facet rows, the lines in English and Arabic), also run
   in the device-test package; `tests/screens.test.mjs` T07 against the mock home, which now
   answers `POST /api/search` and `GET /api/search/suggest`: the plain body, a word suggestion

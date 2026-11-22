@@ -73,7 +73,7 @@ end sub
 
 sub t_Suggestions()
     a = ParseJson("{""suggestions"":[""x""],""items"":[{""text"":""patience in islam"",""kind"":""history""},{""text"":""patience"",""kind"":""term""},{""text"":""Patience and prayer"",""kind"":""title"",""video_id"":""v9""},{""text"":""No video"",""kind"":""title""},{""text"":""Patrick"",""kind"":""speaker""},{""text"":""patience"",""kind"":""term""},{""text"":""odd"",""kind"":""other""},{""text"":"" ""}]}")
-    s = SearchSuggestions(a)
+    s = SearchSuggestions(a, 6)
     kinds = []
     for each it in s
         kinds.Push(it.kind)
@@ -82,10 +82,15 @@ sub t_Suggestions()
     ck_Eq("a title's video", s[2].videoId, "v9")
     ck_Eq("an unknown kind is none", s[4].text, "odd")
     ' a home before 49.8: plain texts
-    s = SearchSuggestions(ParseJson("{""suggestions"":[""abc"","""",""abd""]}"))
+    s = SearchSuggestions(ParseJson("{""suggestions"":[""abc"","""",""abd""]}"), 6)
     ck_Eq("plain texts", s, [{text: "abc", kind: "", videoId: ""}, {text: "abd", kind: "", videoId: ""}])
-    ck_Eq("nothing", SearchSuggestions(invalid), [])
-    ck_Eq("an empty answer", SearchSuggestions({}), [])
+    ck_Eq("nothing", SearchSuggestions(invalid, 6), [])
+    ck_Eq("an empty answer", SearchSuggestions({}, 6), [])
+    ' at most SearchSuggestMax(): eight plain texts give six
+    eight = ParseJson("{""suggestions"":[""a1"",""a2"",""a3"",""a4"",""a5"",""a6"",""a7"",""a8""]}")
+    s = SearchSuggestions(eight, SearchSuggestMax())
+    ck_Eq("six at most", s.Count(), 6)
+    ck_Eq("the first six", s[5].text, "a6")
 end sub
 
 sub t_Answer()

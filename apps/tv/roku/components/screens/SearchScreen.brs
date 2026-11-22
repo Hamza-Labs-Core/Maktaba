@@ -122,6 +122,9 @@ sub onTimer()
         m.empty.visible = false
         m.dymText = ""
         m.facets = invalid
+        ' an emptied box starts afresh: the words typed next are new, and drop the filters
+        m.sel = SearchNoSel()
+        m.selFor = ""
         layoutColumn()
         return
     end if
@@ -159,7 +162,13 @@ sub onResults(ev as Object)
     layoutColumn()
     rows = SearchFacetRows(m.facets, m.sel, m.labels)
     print "[search] results "; items.Count(); " dym="; m.dymText; " facets="; rows.Count(); " filters="; SearchSelCount(m.sel)
-    if m.sheet.visible then showSheet(m.sheetAt, m.sheetWant)
+    ' the sheet, open while the answer came, keeps the row the remote is on
+    if m.sheet.visible then
+        at = m.sheet.at
+        want = invalid
+        if at >= 0 and at < m.sheetRows.Count() and not m.sheetRows[at].DoesExist("clear") then want = {facet: m.sheetRows[at].facet, value: m.sheetRows[at].value}
+        showSheet(at, want)
+    end if
     ' a part that went away takes the focus with it: the column's first part, or the keyboard
     if (m.zone = "dym" and not m.dym.visible) or (m.zone = "tools" and not m.tools.visible) or (m.zone = "results" and items.Count() = 0) then
         first = columnFirst()
@@ -263,7 +272,7 @@ sub onSuggest(ev as Object)
     if ev.GetRoSGNode().tag <> "s:" + t or t = m.suggestHidden then return
     r = ev.GetData()
     items = []
-    if r.status = 200 then items = SearchSuggestions(r.data)
+    if r.status = 200 then items = SearchSuggestions(r.data, SearchSuggestMax())
     showSuggestions(items)
 end sub
 
@@ -272,11 +281,9 @@ sub showSuggestions(items as Object)
     texts = []
     kinds = []
     for each it in items
-        if m.suggestions.Count() < 6 then
-            m.suggestions.Push(it)
-            texts.Push(SearchSuggestionText(m.i18n, it))
-            kinds.Push(it.kind)
-        end if
+        m.suggestions.Push(it)
+        texts.Push(SearchSuggestionText(m.i18n, it))
+        kinds.Push(it.kind)
     end for
     m.suggest.content = ui_ListContent(texts)
     m.suggest.visible = (texts.Count() > 0)

@@ -9,7 +9,7 @@
 '                                             ' replaces the last
 '   SearchBody(q, sort, sel, facets)          ' the POST /api/search body; relevance and no
 '                                             ' filters leave their fields out
-'   SearchSuggestions(answer)                 ' GET /api/search/suggest: [{text, kind, videoId}]
+'   SearchSuggestions(answer, max)            ' GET /api/search/suggest: [{text, kind, videoId}]
 '   SearchDidYouMean(answer, q)               ' the corrected query, or ""
 '   SearchFacets(answer)                      ' the answer's facets, or invalid (an older home)
 '   SearchFacetRows(facets, sel)              ' the buckets to list, facet by facet
@@ -131,8 +131,13 @@ end function
 
 ' The suggestions of a GET /api/search/suggest answer: its items with their kinds (history,
 ' term, title, speaker), else its plain texts (a home before story 49.8) with kind "". A title
-' with no video is dropped (it opens its video); the same text and kind once.
-function SearchSuggestions(answer as Dynamic) as Object
+' with no video is dropped (it opens its video); the same text and kind once; max of them.
+' The suggestions the list under the keyboard shows at most.
+function SearchSuggestMax() as Integer
+    return 6
+end function
+
+function SearchSuggestions(answer as Dynamic, max as Integer) as Object
     out = []
     if type(answer) <> "roAssociativeArray" then return out
     kinds = {history: true, term: true, title: true, speaker: true}
@@ -155,7 +160,7 @@ function SearchSuggestions(answer as Dynamic) as Object
     kept = []
     for each it in out
         k = it.kind + Chr(10) + it.text + Chr(10) + it.videoId
-        if not (it.kind = "title" and it.videoId = "") and not seen.DoesExist(k) then
+        if kept.Count() < max and not (it.kind = "title" and it.videoId = "") and not seen.DoesExist(k) then
             seen[k] = true
             kept.Push(it)
         end if
