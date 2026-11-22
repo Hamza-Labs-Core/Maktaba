@@ -44,6 +44,12 @@ func fromTemplate(t *testing.T, name string, build func(testing.TB, *sql.DB)) *s
 			t.Fatal(err)
 		}
 		db.SetMaxOpenConns(1)
+		// A template is thrown away with the test binary: its build need not survive a
+		// crash, so it skips the journal and the sync of each statement's write.
+		if _, err := db.Exec(`PRAGMA journal_mode = OFF; PRAGMA synchronous = OFF`); err != nil {
+			templatesMu.Unlock()
+			t.Fatal(err)
+		}
 		build(t, db)
 		if err := db.Close(); err != nil {
 			templatesMu.Unlock()
