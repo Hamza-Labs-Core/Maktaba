@@ -4299,6 +4299,11 @@ build fails when the two differ.
   the index already worked out, and keyword search shows up to 500 videos again instead of
   150. A home made before this release picks it up at its next start.
 
+- **Search finds a sentence however its letters are spelled (Epic 49, story 49.9).** A
+  sentence typed with a bare alef for a hamza, or ه for ة, now ranks its video as the exact
+  spelling does, and a word with و in front (وغفران) finds the word. A relevance check,
+  built from each library's own transcripts, measures it.
+
 ## [0.2.0] - 2026-10-19
 
 Closes the stub audit: features that were half built, settings that were
