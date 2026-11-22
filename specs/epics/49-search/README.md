@@ -937,7 +937,8 @@ and a search opened by its sid alone shows its facets.
   empty object for none); both are left out for a search kept before slot 0236, and for an
   order the server does not know. `GET /api/search/results/{sid}` gives the order its pages
   are in (`sort`, left out the same way), and with `facets=1` the search's `facets` and
-  `did_you_mean`, counted again from the kept set under the caller's limits as they are now.
+  `did_you_mean`, counted again from the kept set under the caller's limits and libraries as
+  they are now (a library the account lost since is neither counted nor named).
   A saved search already kept its order and filters in `query` (the POST /api/search body);
   the list on SQLite came back empty, as its `created_at` text did not scan into a time, and
   now reads it.

@@ -94,6 +94,21 @@ func stateCase(t *testing.T, db *sql.DB) {
 	if !strings.Contains(stored, libA) || keptAsked != "{}" {
 		t.Fatalf("restricted: filters %s, asked %s", stored, keptAsked)
 	}
+	// it loses library B: the facets by its search_id count and name A only, as its pages
+	// show A only
+	before := decode[pageHelp](t, call(t, h, restricted, http.MethodGet, "/api/search/results/"+scoped.SearchID+"?list=titles&facets=1", ""), 200)
+	if before.Facets == nil || len(before.Facets.Library) != 2 {
+		t.Fatalf("restricted facets %+v", before.Facets)
+	}
+	narrowed := &principal.Principal{UserID: userB, Libraries: []string{libA}}
+	after := decode[pageHelp](t, call(t, h, narrowed, http.MethodGet, "/api/search/results/"+scoped.SearchID+"?list=titles&facets=1", ""), 200)
+	if after.Facets == nil || after.Facets.Videos != 1 || len(after.Facets.Library) != 1 || after.Facets.Library[0].Value != libA {
+		t.Fatalf("facets after losing a library %+v", after.Facets)
+	}
+	none := &principal.Principal{UserID: userB, Libraries: []string{"10000000-0000-4000-8000-0000000000ff"}}
+	if gone := decode[pageHelp](t, call(t, h, none, http.MethodGet, "/api/search/results/"+scoped.SearchID+"?list=titles&facets=1", ""), 200); gone.Facets != nil {
+		t.Fatalf("facets with no library left %+v", gone.Facets)
+	}
 	post(restricted, `{"q":"salah","mode":"fts","filters":{"library_id":["`+libB+`"]}}`)
 	other := decode[recentList](t, call(t, h, restricted, http.MethodGet, "/api/search/recent", ""), 200).Items
 	if len(other) != 2 || other[0].Filters == nil || !slices.Equal(other[0].Filters.LibraryID, []string{libB}) ||

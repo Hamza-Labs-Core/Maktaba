@@ -274,7 +274,7 @@ func (h *Handler) Results(w http.ResponseWriter, r *http.Request) {
 		List: list, Offset: offset, Limit: limit, Sort: rn.Sort,
 	}
 	if r.URL.Query().Get("facets") == "1" {
-		page.Facets, page.DidYouMean = h.helpOf(ctx, rn)
+		page.Facets, page.DidYouMean = h.helpOf(ctx, p, rn)
 	}
 	var err error
 	if list == "titles" {
@@ -514,19 +514,54 @@ func (h *Handler) ClearRecent(w http.ResponseWriter, r *http.Request) {
 
 // helpOf is a kept search's facets and did-you-mean, as POST /api/search answers them with
 // its first page: counted from the kept set, which runFromRequest has already narrowed to
-// what the caller may see. Either one that fails is left out (logged), as there.
-func (h *Handler) helpOf(ctx context.Context, rn *run) (*Facets, string) {
+// what a restricted account may see now. An account limited to some libraries is checked
+// against them as they are now, as its pages are (cards): a library it lost since the search
+// is neither counted nor named. Either one that fails is left out (logged), as there.
+func (h *Handler) helpOf(ctx context.Context, p *principal.Principal, rn *run) (*Facets, string) {
+	scoped := rn
+	if p != nil && !p.AccessAllLibraries {
+		raw := resultIDs(rn, facetVideos)
+		visible, err := h.cards(ctx, p, h.canonIDs(raw))
+		if err != nil {
+			h.log().WarnContext(ctx, "search: no facets", "event", "search_facets_failed", "err", err)
+			return nil, ""
+		}
+		ok := make(map[string]bool, len(visible))
+		for _, id := range raw {
+			if _, seen := visible[canonID(id)]; seen {
+				ok[id] = true
+			}
+		}
+		allowed := make(map[string]bool, len(p.Libraries))
+		for _, l := range p.Libraries {
+			allowed[l] = true
+		}
+		scoped = &run{Q: rn.Q, Mode: rn.Mode, Filters: rn.Filters.clone(), Set: savedSet{
+			Titles: rn.Set.Titles, Videos: rn.Set.Videos, Sem: rn.Set.Sem}}
+		keepAllowed(&scoped.Set, ok)
+		libs := []string{}
+		for _, l := range scoped.Filters.LibraryID {
+			if allowed[l] {
+				libs = append(libs, l)
+			}
+		}
+		scoped.Filters.LibraryID = libs
+	}
 	var out *Facets
-	facets, err := h.facets(ctx, rn)
+	facets, err := h.facets(ctx, scoped)
 	if err != nil {
 		h.log().WarnContext(ctx, "search: no facets", "event", "search_facets_failed", "err", err)
 	} else if facets.Videos > 0 {
 		out = facets
 	}
-	didYouMean, err := h.didYouMean(ctx, rn.Q, rn.Filters.LibraryID, len(resultIDs(rn, fewResults)))
-	if err != nil {
-		h.log().WarnContext(ctx, "search: no did-you-mean", "event", "search_did_you_mean_failed", "err", err)
-		didYouMean = ""
+	didYouMean := ""
+	// no library left to suggest from: none (an empty list would mean every library)
+	if len(scoped.Filters.LibraryID) > 0 || p == nil || p.AccessAllLibraries {
+		didYouMean, err = h.didYouMean(ctx, scoped.Q, scoped.Filters.LibraryID, len(resultIDs(scoped, fewResults)))
+		if err != nil {
+			h.log().WarnContext(ctx, "search: no did-you-mean", "event", "search_did_you_mean_failed", "err", err)
+			didYouMean = ""
+		}
 	}
 	return out, didYouMean
 }
