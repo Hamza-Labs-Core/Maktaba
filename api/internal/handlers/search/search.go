@@ -65,16 +65,20 @@ type Filters struct {
 	Date        *RangeStr `json:"date,omitempty"`
 }
 
-// RangeF is a numeric “{gte, lte}“ range.
+// RangeF is a numeric “{gte, lte}“ range; lt is an upper bound left out (a facet's band,
+// story 49.8).
 type RangeF struct {
 	Gte *float64 `json:"gte,omitempty"`
 	Lte *float64 `json:"lte,omitempty"`
+	Lt  *float64 `json:"lt,omitempty"`
 }
 
-// RangeStr is a date range (RFC3339 strings) with “{gte, lte}“.
+// RangeStr is a date range (RFC3339 strings, or dates) with “{gte, lte}“; lt is an upper
+// bound left out (a year facet's range, story 49.8).
 type RangeStr struct {
 	Gte string `json:"gte,omitempty"`
 	Lte string `json:"lte,omitempty"`
+	Lt  string `json:"lt,omitempty"`
 }
 
 // Request is the POST /api/search body.
@@ -96,6 +100,9 @@ type Request struct {
 	// Save false runs the search without keeping it (no search_id, not in
 	// Recent searches): a lookup such as the YouTube import dialog's.
 	Save *bool `json:"save,omitempty"`
+
+	// Sort orders the results (story 49.8): relevance (default), newest or matches.
+	Sort string `json:"sort,omitempty"`
 }
 
 // save reports whether the search is kept under a search_id.
@@ -263,44 +270,6 @@ func (h *Handler) Mount(r chi.Router) {
 	r.Get("/api/search/youtube", h.SearchYouTube)
 	r.Get("/api/search/youtube/status", h.YouTubeStatus)
 	r.Post("/api/videos/{id}/import-youtube", h.ImportYouTube)
-}
-
-// Suggest implements AC-4: prefix lookup on the search_history corpus,
-// up to 10 results, sourced from the lowercased+unaccented column.
-//
-// Suggestions come from the caller's own history only: another user's
-// searches never leak through the prefix lookup.
-func (h *Handler) Suggest(w http.ResponseWriter, r *http.Request) {
-	p := principal.FromContext(r.Context())
-	if p == nil {
-		httperror.Write(w, r, httperror.Forbidden("", "auth required"))
-		return
-	}
-	q := strings.TrimSpace(r.URL.Query().Get("q"))
-	if q == "" {
-		common.WriteJSON(w, r, http.StatusOK, map[string]any{"suggestions": []string{}})
-		return
-	}
-	prefix := normaliseSuggestQuery(q)
-	rows, err := h.DB.QueryContext(r.Context(), `
-		SELECT query FROM search_history
-		WHERE query_norm LIKE $1 AND user_id = $2
-		ORDER BY hits DESC, last_used_at DESC LIMIT 10
-	`, prefix+"%", p.UserID)
-	if err != nil {
-		// No history table or empty — degrade gracefully.
-		common.WriteJSON(w, r, http.StatusOK, map[string]any{"suggestions": []string{}})
-		return
-	}
-	defer rows.Close()
-	out := []string{}
-	for rows.Next() {
-		var s string
-		if err := rows.Scan(&s); err == nil {
-			out = append(out, s)
-		}
-	}
-	common.WriteJSON(w, r, http.StatusOK, map[string]any{"suggestions": out})
 }
 
 // normaliseSuggestQuery applies a simple lowercase + diacritic-strip so

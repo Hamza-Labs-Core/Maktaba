@@ -217,10 +217,11 @@ async def test_the_plan_queues_what_is_stale_one_job_a_video_behind_all_work(
     jobs = await pending()
     assert len(jobs) == 4 and {j["priority"] for j in jobs} == {stage.BACKFILL_PRIORITY}
     assert await drain_core(db, rt, only={"keyword_index"}, max_jobs=1) == ["keyword_index"]
+    v0 = stage.KEYWORD_INDEX_VERSION - 1
     versions = sorted([(await _doc(db, v) or {})["doc_version"] for v in (*vids, bare)])
-    assert versions == [1, 1, 1, 2]
+    assert versions == [v0, v0, v0, v0 + 1]
     await drain_core(db, rt, only={"keyword_index"})
-    assert {(await _doc(db, v) or {})["doc_version"] for v in (*vids, bare)} == {2}
+    assert {(await _doc(db, v) or {})["doc_version"] for v in (*vids, bare)} == {v0 + 1}
 
 
 @pytest.mark.asyncio
@@ -295,3 +296,133 @@ async def test_a_write_cut_short_leaves_no_document_without_its_search_row(
     assert (await _index(db, rt, vid))["keyword_index"] == "written"
     if not is_pg(db):
         assert await db.fetchval("SELECT count(*) FROM video_search_docs_fts") == 1
+
+
+# --- story 49.8: the terms dictionary -------------------------------------------------
+
+
+async def _terms(db: Database, lib: Any) -> dict[str, tuple[str, int]]:
+    rows = await db.fetch(
+        "SELECT term, shown, df FROM search_terms WHERE library_id = $1", str(lib)
+    )
+    return {str(r["term"]): (str(r["shown"]), int(r["df"])) for r in rows}
+
+
+def test_a_documents_words_are_keyed_as_search_matches_them() -> None:
+    from maktaba_pipeline.search.terms import doc_terms, key, words
+
+    assert words("اللَّهُ أكبرُ، في ٢٠٢٤ x Café-au-lait 2024") == [
+        "الله", "أكبر", "في", "Café", "au", "lait"]  # fmt: skip
+    assert key("أكبرُ") == "اكبر" and key("Café") == "cafe" and key("مدرسة") == "مدرسه"
+    # the shown form is the one written most (harakat gone), Latin in lower case
+    assert doc_terms("مدرسةٌ مدرسة مدرسه", "Café") == {"مدرسه": "مدرسة", "cafe": "café"}
+
+
+def test_python_keys_words_as_go_does() -> None:
+    """The cases Go's searchterms test reads too (shared/testdata/searchterms.json)."""
+    import json
+    from pathlib import Path
+
+    from maktaba_pipeline.search.terms import doc_terms
+
+    cases = json.loads(
+        (Path(__file__).resolve().parents[3] / "shared/testdata/searchterms.json").read_text()
+    )
+    from maktaba_pipeline.search.terms import speaker_keys
+
+    for c in cases:
+        assert doc_terms(c["text"]) == c["terms"], c["text"]
+        if "speaker_keys" in c:
+            got = sorted([list(x) for x in speaker_keys(c["text"].replace("\t", "\n"))])
+            assert got == c["speaker_keys"], c["text"]
+
+
+@pytest.mark.asyncio
+async def test_the_dictionary_counts_the_documents_words(db: Database) -> None:
+    """Each document's words count once per library; an edit moves the counts, a lost
+    transcript takes them off, and a library's words never count in another's."""
+    rt = await core_runtime(db)
+    lib, other = await make_library(db), await make_library(db)
+    a = await make_video(db, lib, title="درس", filename="a.mp4")
+    b = await make_video(db, lib, title="درس", filename="b.mp4")
+    c = await make_video(db, other, title="Other", filename="c.mp4")
+    ta = await _transcript(db, a, ["إن الصبر عند المصيبة", "الصبر الصبر"])
+    await _speaker(db, a, ta, "الشيخ  أحمد", [0])
+    await _transcript(db, b, ["الصبرُ مفتاح الفرج"])
+    await _transcript(db, c, ["كلمة أخرى"])
+    for v in (a, b, c):
+        await _index(db, rt, v)
+    t = await _terms(db, lib)
+    assert t["الصبر"] == ("الصبر", 2) and t["المصيبه"] == ("المصيبة", 1)
+    assert t["درس"] == ("درس", 2) and "كلمه" not in t
+    assert (await _terms(db, other))["كلمه"] == ("كلمة", 1)
+
+    # the named speakers, by each word start
+    sp = {
+        (str(r["key"]), str(r["name"])): int(r["df"])
+        for r in await db.fetch(
+            "SELECT key, name, df FROM search_speakers WHERE library_id = $1", str(lib)
+        )
+    }
+    assert sp == {("الشيخ احمد", "الشيخ أحمد"): 1, ("احمد", "الشيخ أحمد"): 1}, sp
+
+    # an edit: the old words leave, the new ones join
+    await _transcript(db, a, ["الصبر جميل"])
+    await _index(db, rt, a)
+    t = await _terms(db, lib)
+    assert t["الصبر"][1] == 2 and "المصيبه" not in t and t["جميل"] == ("جميل", 1)
+    # the new transcript names no one: the speaker leaves
+    assert await db.fetchval("SELECT count(*) FROM search_speakers") == 0
+
+    # no transcript left: the document and its words go
+    await db.execute("UPDATE transcripts SET is_active = false WHERE video_id = $1", str(b))
+    await _index(db, rt, b)
+    t = await _terms(db, lib)
+    assert t["الصبر"][1] == 1 and "الفرج" not in t
+
+
+@pytest.mark.asyncio
+async def test_a_document_built_before_the_dictionary_is_counted_once(db: Database) -> None:
+    """A document written by version 1 (its words not counted) is rebuilt by the plan; its
+    words are added and nothing is taken off."""
+    rt = await core_runtime(db)
+    lib = await make_library(db)
+    vid = await make_video(db, lib, title="t", filename="t.mp4")
+    tid = await _transcript(db, vid, ["الصبر"])
+    await _speaker(db, vid, tid, "الشيخ أحمد", [0])
+    await _index(db, rt, vid)
+    await db.execute(
+        "UPDATE video_search_docs SET terms_counted = $2, doc_version = 1 WHERE video_id = $1",
+        str(vid), False,
+    )  # fmt: skip
+    await db.execute("DELETE FROM search_terms")
+    await db.execute("DELETE FROM search_speakers")
+    assert (await stage.plan_library(db, lib)).summary["planned"] == 1
+    await drain_core(db, rt, only={"keyword_index"})
+    assert (await _terms(db, lib))["الصبر"] == ("الصبر", 1)
+    assert await db.fetchval("SELECT sum(df) FROM search_speakers") == 2  # name, and أحمد
+    d = await _doc(db, vid)
+    assert d is not None and bool(d["terms_counted"])
+
+
+@pytest.mark.asyncio
+async def test_a_video_whose_library_was_merged_away_is_counted_in_its_new_one(
+    db: Database,
+) -> None:
+    """A library merged into another (its videos moved, the library deleted, its
+    dictionaries with it): the plan of the new library finds the moved video's document
+    under the old library, and its job counts the words there, taking nothing off the old
+    library that no longer exists."""
+    rt = await core_runtime(db)
+    old, new = await make_library(db), await make_library(db)
+    vid = await make_video(db, old, title="t", filename="t.mp4")
+    await _transcript(db, vid, ["الصبر"])
+    await _index(db, rt, vid)
+    await db.execute("UPDATE videos SET library_id = $1 WHERE id = $2", str(new), str(vid))
+    await db.execute("DELETE FROM search_terms WHERE library_id = $1", str(old))
+    await db.execute("DELETE FROM libraries WHERE id = $1", str(old))
+    assert (await stage.plan_library(db, new)).summary["planned"] == 1
+    await drain_core(db, rt, only={"keyword_index"})
+    assert (await _terms(db, new))["الصبر"] == ("الصبر", 1)
+    d = await _doc(db, vid)
+    assert d is not None and str(d["library_id"]) == str(new)

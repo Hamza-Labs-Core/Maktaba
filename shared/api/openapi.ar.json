@@ -542,12 +542,12 @@
       "ar": "استعلام غير صالح."
     },
     "/paths/~1search~1suggest/get/summary": {
-      "en": "Autocomplete suggestions",
-      "ar": "اقتراحات الإكمال التلقائي"
+      "en": "Suggestions as you type",
+      "ar": "اقتراحات أثناء الكتابة"
     },
     "/paths/~1search~1suggest/get/responses/200/description": {
-      "en": "Up to 10 suggestions ranked by frequency.",
-      "ar": "حتى 10 اقتراحات مرتّبة حسب التكرار."
+      "en": "The suggestions, best first.",
+      "ar": "الاقتراحات، الأفضل أولًا."
     },
     "/paths/~1search~1save/post/summary": {
       "en": "Save a search query for the current user",
@@ -5346,8 +5346,8 @@
       "ar": "وللحساب المقيَّد (الخاضع للرقابة الأبوية) لا تحصي الأرقام إلا الفيديوهات التي يحق له رؤيتها، والمكتبة المشمولة بقاعدة حظر تجيب 404."
     },
     "/paths/~1search~1suggest/get/description": {
-      "en": "For a restricted account (one under parental controls) the suggestions come from its own earlier searches only, never from a title.",
-      "ar": "وللحساب المقيَّد (الخاضع للرقابة الأبوية) تأتي الاقتراحات من عمليات بحثه السابقة فقط، لا من عنوان أي فيديو."
+      "en": "Up to 10 suggestions: the caller's own earlier searches that start with `q` first, then `q` with its last word completed from the words of the caller's libraries (most videos first; from 2 letters), then titles of the caller's videos that start with `q`, and named speakers with a word of their name that starts with `q`. For a restricted account (one under parental controls) there is no completed word (the words of a library cannot be told apart by video): its earlier searches, and the titles and speakers of the videos it may see.",
+      "ar": "حتى 10 اقتراحات: عمليات البحث السابقة للمستخدم نفسه التي تبدأ بـ `q` أولًا، ثم `q` وقد أُكملت كلمته الأخيرة من كلمات مكتبات المستخدم (الأكثر فيديوهات أولًا؛ من حرفين)، ثم عناوين فيديوهات المستخدم التي تبدأ بـ `q`، والمتحدثون المسمّون الذين في أسمائهم كلمة تبدأ بـ `q`. للحساب المقيّد (تحت الرقابة الأبوية) لا تُكمَل الكلمة (لا تُعرف كلمات المكتبة فيديو فيديو): عمليات بحثه السابقة، وعناوين الفيديوهات المسموح له بها ومتحدثوها."
     },
     "/paths/~1tags/get/description": {
       "en": "For a restricted account (one under parental controls) only the tags carried by at least one video it may see are listed.",
@@ -6648,6 +6648,54 @@
     "/paths/~1plugins~1{id}~1install/post/responses/409/description": {
       "en": "The component change was refused (for example `component_conflicts`).",
       "ar": "رُفض تغيير المكوّن (مثل `component_conflicts`)."
+    },
+    "/components/schemas/SearchRequest/properties/sort/description": {
+      "en": "The order of the results: `relevance` (the default), `newest` (the date a video shows: published, else added) or `matches` (the most matching transcript lines first). A kept search keeps its order: every page of it follows.",
+      "ar": "ترتيب النتائج: `relevance` (الافتراضي)، أو `newest` (تاريخ الفيديو الظاهر: تاريخ نشره، وإلا تاريخ إضافته)، أو `matches` (الأكثر أسطرًا مطابقة في النص المفرغ أولًا). يحتفظ البحث المحفوظ بترتيبه، فتتبعه كل صفحاته."
+    },
+    "/components/schemas/SearchFilters/properties/duration_sec/description": {
+      "en": "The video's duration in seconds: `gte` and `lte` include their bound, `lt` leaves it out (a duration facet's band).",
+      "ar": "مدة الفيديو بالثواني: `gte` و`lte` تشملان حدّهما، و`lt` تستثنيه (نطاق من نطاقات واجهة المدة)."
+    },
+    "/components/schemas/SearchFilters/properties/date/description": {
+      "en": "The date the video shows (published, else added), as an RFC 3339 time or a date (`2024-01-01`): `gte` and `lte` include their bound, `lt` leaves it out (a year facet's range).",
+      "ar": "تاريخ الفيديو الظاهر (تاريخ نشره، وإلا تاريخ إضافته)، وقتًا بصيغة RFC 3339 أو تاريخًا (`2024-01-01`): `gte` و`lte` تشملان حدّهما، و`lt` تستثنيه (مدى سنة من واجهة السنوات)."
+    },
+    "/components/schemas/SearchFilters/properties/speaker/description": {
+      "en": "Videos with a named speaker of one of these names (the speaker facet's values).",
+      "ar": "الفيديوهات التي فيها متحدث مسمّى بأحد هذه الأسماء (قيم واجهة المتحدثين)."
+    },
+    "/components/schemas/SearchResponse/properties/sort/description": {
+      "en": "The order the results are in.",
+      "ar": "الترتيب الذي جاءت به النتائج."
+    },
+    "/components/schemas/SearchResponse/properties/did_you_mean/description": {
+      "en": "When the search found fewer than 5 videos: the query with each word that the caller's libraries hold rarely or not at all replaced by the closest frequent word, as written in the transcripts (`مدرسة` for `مدرصة`). Absent when nothing would change, and for a restricted account (one under parental controls).",
+      "ar": "حين يجد البحث أقل من 5 فيديوهات: الاستعلام وقد استُبدلت كل كلمة نادرة أو غائبة في مكتبات المستخدم بأقرب كلمة شائعة، كما تُكتب في النصوص المفرغة (`مدرسة` بدل `مدرصة`). يغيب حين لا يتغير شيء، ولحساب مقيّد (تحت الرقابة الأبوية)."
+    },
+    "/components/schemas/SearchResponse/properties/facets/description": {
+      "en": "Counts of the videos found (the titles and transcripts lists, up to 1,000 videos), with the first page of a search. Absent when no video was found.",
+      "ar": "أعداد الفيديوهات التي وُجدت (قائمتا العناوين والنصوص المفرغة، حتى 1,000 فيديو)، مع الصفحة الأولى من البحث. تغيب حين لا يوجد فيديو."
+    },
+    "/components/schemas/SearchFacets/description": {
+      "en": "Each facet's buckets, most first (years newest first, duration bands shortest first). `library` buckets carry the library's name as `label`; at most 20 speakers. A video counts once in each facet it has a value for (once for each of its named speakers). `videos` is how many videos were counted. `tag` is kept for older apps and is always empty.",
+      "ar": "قيم كل واجهة، الأكثر أولًا (السنوات الأحدث أولًا، ونطاقات المدة الأقصر أولًا). تحمل قيم `library` اسم المكتبة في `label`، وللمتحدثين 20 قيمة على الأكثر. يُعدّ الفيديو مرة في كل واجهة له فيها قيمة (ومرة لكل متحدث مسمّى فيه). `videos` عدد الفيديوهات التي عُدّت. ويبقى `tag` من أجل التطبيقات الأقدم، وهو فارغ دائمًا."
+    },
+    "/components/schemas/FacetBucket/properties/value/description": {
+      "en": "A library's id, a language code, a speaker's name, a year (`2024`), or a duration band: `under_5m`, `5m_20m`, `20m_60m`, `over_60m`.",
+      "ar": "معرّف مكتبة، أو رمز لغة، أو اسم متحدث، أو سنة (`2024`)، أو نطاق مدة: `under_5m` و`5m_20m` و`20m_60m` و`over_60m`."
+    },
+    "/components/schemas/FacetBucket/properties/filter/description": {
+      "en": "For a year or a duration band: the request filter that narrows the search to it.",
+      "ar": "للسنة أو نطاق المدة: مرشّح الطلب الذي يحصر البحث فيه."
+    },
+    "/paths/~1search~1suggest/get/responses/200/content/application~1json/schema/properties/suggestions/description": {
+      "en": "The suggestions' texts (as `items`).",
+      "ar": "نصوص الاقتراحات (كما في `items`)."
+    },
+    "/paths/~1search~1suggest/get/responses/200/content/application~1json/schema/properties/items/description": {
+      "en": "Each suggestion and where it comes from: `history`, `term` (`q` with its last word completed), `title` (with its `video_id`) or `speaker`.",
+      "ar": "كل اقتراح ومصدره: `history`، أو `term` (`q` وقد أُكملت كلمته الأخيرة)، أو `title` (مع `video_id` الخاص به)، أو `speaker`."
     }
   }
 }

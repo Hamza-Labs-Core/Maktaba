@@ -1956,6 +1956,33 @@
       }
     },
     {
+      "id": "story-49.15",
+      "type": "story",
+      "title": "Arabic titles rank by similarity",
+      "epic": "49-search",
+      "phase": 5,
+      "content": "Arabic titles rank by similarity. found in 49.8, the bundled server's database being `--locale=C`, where pg_trgm finds no trigram in an Arabic word: `similarity()` with `videos_title_trgm_idx` (migration 0098) gives every Arabic title 0, and title matches fall back to newest first. Done when an Arabic query ranks the Arabic title closest to it first on a `--locale=C` database, Latin titles keep their order, and a test on Postgres shows both",
+      "tags": [
+        "story",
+        "49-search",
+        "phase-5"
+      ],
+      "related": [
+        "epic-49-search"
+      ],
+      "files": {
+        "story": "specs/epics/49-search/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "arabic-titles-rank-by-similarity",
+        "inline": true
+      }
+    },
+    {
       "id": "story-50.1",
       "type": "story",
       "title": "Names and the DNS plan",

@@ -3,7 +3,7 @@
   "generated_for": "Maktaba",
   "totals": {
     "epics": 60,
-    "stories": 742,
+    "stories": 743,
     "plans": 372,
     "diagrams": 14,
     "mockups": 63
@@ -5783,6 +5783,15 @@
       "num": "14",
       "slug": "ai-mode-the-tab-in-every-client-web-apple-android-tv-big-scr",
       "title": "وضع الذكاء الاصطناعي: التبويب في كل عميل (الويب، وApple، وAndroid، والتلفاز، والشاشة الكبيرة)",
+      "story_file": "specs/epics/49-search/README.md",
+      "plan_files": []
+    },
+    {
+      "id": "49.15",
+      "epic": 49,
+      "num": "15",
+      "slug": "arabic-titles-rank-by-similarity",
+      "title": "ترتيب العناوين العربية حسب التشابه",
       "story_file": "specs/epics/49-search/README.md",
       "plan_files": []
     },

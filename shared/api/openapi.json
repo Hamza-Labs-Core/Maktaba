@@ -2012,7 +2012,7 @@
         "tags": [
           "Search"
         ],
-        "summary": "Autocomplete suggestions",
+        "summary": "Suggestions as you type",
         "parameters": [
           {
             "in": "query",
@@ -2020,27 +2020,58 @@
             "required": true,
             "schema": {
               "type": "string",
-              "minLength": 2,
-              "maxLength": 64
+              "minLength": 1,
+              "maxLength": 200
             }
           }
         ],
         "responses": {
           "200": {
-            "description": "Up to 10 suggestions ranked by frequency.",
+            "description": "The suggestions, best first.",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
                   "required": [
-                    "suggestions"
+                    "suggestions",
+                    "items"
                   ],
                   "properties": {
                     "suggestions": {
                       "type": "array",
                       "items": {
                         "type": "string"
-                      }
+                      },
+                      "description": "The suggestions' texts (as `items`)."
+                    },
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "text",
+                          "kind"
+                        ],
+                        "properties": {
+                          "text": {
+                            "type": "string"
+                          },
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "history",
+                              "term",
+                              "title",
+                              "speaker"
+                            ]
+                          },
+                          "video_id": {
+                            "type": "string",
+                            "format": "uuid"
+                          }
+                        }
+                      },
+                      "description": "Each suggestion and where it comes from: `history`, `term` (`q` with its last word completed), `title` (with its `video_id`) or `speaker`."
                     }
                   }
                 }
@@ -2058,7 +2089,7 @@
           }
         },
         "operationId": "searchSuggest",
-        "description": "For a restricted account (one under parental controls) the suggestions come from its own earlier searches only, never from a title."
+        "description": "Up to 10 suggestions: the caller's own earlier searches that start with `q` first, then `q` with its last word completed from the words of the caller's libraries (most videos first; from 2 letters), then titles of the caller's videos that start with `q`, and named speakers with a word of their name that starts with `q`. For a restricted account (one under parental controls) there is no completed word (the words of a library cannot be told apart by video): its earlier searches, and the titles and speakers of the videos it may see."
       }
     },
     "/search/save": {
@@ -22908,6 +22939,16 @@
           },
           "filters": {
             "$ref": "#/components/schemas/SearchFilters"
+          },
+          "sort": {
+            "type": "string",
+            "enum": [
+              "relevance",
+              "newest",
+              "matches"
+            ],
+            "default": "relevance",
+            "description": "The order of the results: `relevance` (the default), `newest` (the date a video shows: published, else added) or `matches` (the most matching transcript lines first). A kept search keeps its order: every page of it follows."
           }
         }
       },
@@ -22931,7 +22972,8 @@
             "type": "array",
             "items": {
               "type": "string"
-            }
+            },
+            "description": "Videos with a named speaker of one of these names (the speaker facet's values)."
           },
           "tag": {
             "type": "array",
@@ -22947,21 +22989,27 @@
               },
               "lte": {
                 "type": "number"
+              },
+              "lt": {
+                "type": "number"
               }
-            }
+            },
+            "description": "The video's duration in seconds: `gte` and `lte` include their bound, `lt` leaves it out (a duration facet's band)."
           },
           "date": {
             "type": "object",
             "properties": {
               "gte": {
-                "type": "string",
-                "format": "date-time"
+                "type": "string"
               },
               "lte": {
-                "type": "string",
-                "format": "date-time"
+                "type": "string"
+              },
+              "lt": {
+                "type": "string"
               }
-            }
+            },
+            "description": "The date the video shows (published, else added), as an RFC 3339 time or a date (`2024-01-01`): `gte` and `lte` include their bound, `lt` leaves it out (a year facet's range)."
           }
         }
       },
@@ -23066,7 +23114,8 @@
             }
           },
           "facets": {
-            "$ref": "#/components/schemas/SearchFacets"
+            "$ref": "#/components/schemas/SearchFacets",
+            "description": "Counts of the videos found (the titles and transcripts lists, up to 1,000 videos), with the first page of a search. Absent when no video was found."
           },
           "degraded": {
             "type": "boolean",
@@ -23080,19 +23129,32 @@
               "string",
               "null"
             ]
+          },
+          "sort": {
+            "type": "string",
+            "enum": [
+              "relevance",
+              "newest",
+              "matches"
+            ],
+            "description": "The order the results are in."
+          },
+          "did_you_mean": {
+            "type": "string",
+            "description": "When the search found fewer than 5 videos: the query with each word that the caller's libraries hold rarely or not at all replaced by the closest frequent word, as written in the transcripts (`مدرسة` for `مدرصة`). Absent when nothing would change, and for a restricted account (one under parental controls)."
           }
         }
       },
       "SearchFacets": {
         "type": "object",
         "properties": {
-          "language": {
+          "library": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/FacetBucket"
             }
           },
-          "library": {
+          "language": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/FacetBucket"
@@ -23109,8 +23171,24 @@
             "items": {
               "$ref": "#/components/schemas/FacetBucket"
             }
+          },
+          "year": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FacetBucket"
+            }
+          },
+          "duration": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FacetBucket"
+            }
+          },
+          "videos": {
+            "type": "integer"
           }
-        }
+        },
+        "description": "Each facet's buckets, most first (years newest first, duration bands shortest first). `library` buckets carry the library's name as `label`; at most 20 speakers. A video counts once in each facet it has a value for (once for each of its named speakers). `videos` is how many videos were counted. `tag` is kept for older apps and is always empty."
       },
       "FacetBucket": {
         "type": "object",
@@ -23120,10 +23198,42 @@
         ],
         "properties": {
           "value": {
+            "type": "string",
+            "description": "A library's id, a language code, a speaker's name, a year (`2024`), or a duration band: `under_5m`, `5m_20m`, `20m_60m`, `over_60m`."
+          },
+          "label": {
             "type": "string"
           },
           "count": {
             "type": "integer"
+          },
+          "filter": {
+            "type": "object",
+            "properties": {
+              "date": {
+                "type": "object",
+                "properties": {
+                  "gte": {
+                    "type": "string"
+                  },
+                  "lt": {
+                    "type": "string"
+                  }
+                }
+              },
+              "duration_sec": {
+                "type": "object",
+                "properties": {
+                  "gte": {
+                    "type": "number"
+                  },
+                  "lt": {
+                    "type": "number"
+                  }
+                }
+              }
+            },
+            "description": "For a year or a duration band: the request filter that narrows the search to it."
           }
         }
       },

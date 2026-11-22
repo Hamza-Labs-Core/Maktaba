@@ -794,7 +794,6 @@ func TestParentalBypass(t *testing.T) {
 // anything needs no entry: the proof finds that out itself.
 var pbBlind = map[string]string{
 	"GET /api/search/recent":                       "the caller's own search words with counts; a count is a number, not a marker (TestP57Gaps checks the numbers)",
-	"GET /api/search/suggest":                      "only the caller's own earlier search words are read: there is nothing of a video in the answer",
 	"GET /api/thumbnails/{hash}/small.jpg":         "the home keeps no thumbnail files, so every hash answers 404; handlers/reports tests the picture with files",
 	"GET /api/videos/{video_id}/downloaded":        "keyed by a registered device's header, which the rehearsal has none of: every id answers the same refusal",
 	"POST /api/videos/{video_id}/downloaded":       "as GET /api/videos/{video_id}/downloaded",

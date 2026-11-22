@@ -1,0 +1,136 @@
+[
+ {
+  "text": "إِسْلَامٌ أحمد آمن ٱلله هدى مدرسة مؤمن سائل صبــر ١٢٣ ۴۵",
+  "terms": {
+   "اسلام": "إسلام",
+   "احمد": "أحمد",
+   "امن": "آمن",
+   "الله": "ٱلله",
+   "هدي": "هدى",
+   "مدرسه": "مدرسة",
+   "مومن": "مؤمن",
+   "سايل": "سائل",
+   "صبر": "صبر"
+  }
+ },
+ {
+  "text": "اللَّهُ أكبرُ، في ٢٠٢٤ x Café-au-lait 2024",
+  "terms": {
+   "الله": "الله",
+   "اكبر": "أكبر",
+   "في": "في",
+   "cafe": "café",
+   "au": "au",
+   "lait": "lait"
+  }
+ },
+ {
+  "text": "Crème BRÛLÉE crème naïve Ångström straße",
+  "terms": {
+   "creme": "crème",
+   "brulee": "brûlée",
+   "naive": "naïve",
+   "angstrom": "ångström",
+   "straße": "straße"
+  }
+ },
+ {
+  "text": "Qur'an well-known e-mail  tab\tnew\nline",
+  "terms": {
+   "qur": "qur",
+   "an": "an",
+   "well": "well",
+   "known": "known",
+   "mail": "mail",
+   "tab": "tab",
+   "new": "new",
+   "line": "line"
+  },
+  "speaker_keys": [
+   [
+    "e-mail tab",
+    "Qur'an well-known e-mail tab"
+   ],
+   [
+    "line",
+    "line"
+   ],
+   [
+    "new",
+    "new"
+   ],
+   [
+    "qur'an well-known e-mail tab",
+    "Qur'an well-known e-mail tab"
+   ],
+   [
+    "tab",
+    "Qur'an well-known e-mail tab"
+   ],
+   [
+    "well-known e-mail tab",
+    "Qur'an well-known e-mail tab"
+   ]
+  ]
+ },
+ {
+  "text": "مدرسةٌ مدرسة مدرسه والصابرين، وَالصّابِرِينَ",
+  "terms": {
+   "مدرسه": "مدرسة",
+   "والصابرين": "والصابرين"
+  }
+ },
+ {
+  "text": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa بببببببببببببببببببببببببببببببببببببببب ok",
+  "terms": {
+   "بببببببببببببببببببببببببببببببببببببببب": "بببببببببببببببببببببببببببببببببببببببب",
+   "ok": "ok"
+  }
+ },
+ {
+  "text": "ﷲ ﻻ",
+  "terms": {}
+ },
+ {
+  "text": "الشيخ  أحمدُ بن عبدِ الله\tMuhammad Ālī",
+  "terms": {
+   "الشيخ": "الشيخ",
+   "احمد": "أحمد",
+   "بن": "بن",
+   "عبد": "عبد",
+   "الله": "الله",
+   "muhammad": "muhammad",
+   "ali": "ālī"
+  },
+  "speaker_keys": [
+   [
+    "ali",
+    "Muhammad Ālī"
+   ],
+   [
+    "muhammad ali",
+    "Muhammad Ālī"
+   ],
+   [
+    "احمد بن عبد الله",
+    "الشيخ أحمدُ بن عبدِ الله"
+   ],
+   [
+    "الشيخ احمد بن عبد الله",
+    "الشيخ أحمدُ بن عبدِ الله"
+   ],
+   [
+    "الله",
+    "الشيخ أحمدُ بن عبدِ الله"
+   ],
+   [
+    "بن عبد الله",
+    "الشيخ أحمدُ بن عبدِ الله"
+   ],
+   [
+    "عبد الله",
+    "الشيخ أحمدُ بن عبدِ الله"
+   ]
+  ]
+ }
+]

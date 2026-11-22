@@ -164,12 +164,14 @@ jobs:
           # and a 45,000-document library's build, in the background (story 49.6)
           MAKTABA_TEST_PG_URL="postgres://postgres@127.0.0.1:$PG18_PORT/postgres?sslmode=disable" MAKTABA_TEST_SEARCH_LARGE=1 \
             go test -count=1 -timeout 30m -v ./internal/textnorm/ ./internal/searchindex/ | tee "$RUNNER_TEMP/search18.out"
-          # story 49.7: the BM25 query, and its p95 on a 45,000-document library
+          # stories 49.7 and 49.8: the BM25 query, suggestions, did-you-mean, facets and sort, and
+          # their p95 on a 45,000-document library
           MAKTABA_TEST_PG_URL="postgres://postgres@127.0.0.1:$PG18_PORT/postgres?sslmode=disable" MAKTABA_TEST_SEARCH_LARGE=1 \
             go test -count=1 -timeout 30m -v -run 'TestBM25' ./internal/handlers/search/ | tee -a "$RUNNER_TEMP/search18.out"
           for t in TestSlot0232BM25Indexes TestSlot0232UpAndDownOnPostgres TestArabicSearchOnPostgres \
             TestBuildOnceOneAtATime TestLargeLibraryBuildsInTheBackground TestSlot0234ReplacesTheExpressionIndexes \
-            TestBM25_Postgres TestBM25_VariantsHaveMatchesAndPassages TestBM25_CommonWordWithinOthers TestBM25_Perf45k; do
+            TestBM25_Postgres TestBM25_VariantsHaveMatchesAndPassages TestBM25_CommonWordWithinOthers TestBM25_Perf45k \
+            TestBM25_SearchHelp; do
             grep -q -- "--- PASS: $t " "$RUNNER_TEMP/search18.out" || { echo "::error::$t did not pass on PostgreSQL 18"; exit 1; }
           done
 

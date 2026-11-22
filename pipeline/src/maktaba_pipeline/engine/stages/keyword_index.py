@@ -17,6 +17,13 @@ transcript, revision or title, and the documents of videos with no transcript le
 Each video is its own job, at :data:`BACKFILL_PRIORITY`, behind all other work, so a
 version bump rebuilds every document one job at a time while search goes on. Until a
 video has a document, keyword search finds it by its lines (story 49.7).
+
+It also keeps the library's terms dictionary, ``search_terms`` (story 49.8, slot 0235): in
+the transaction that writes or drops a document, the old document's words leave the counts
+(when they were counted: ``terms_counted``) and the new one's join them
+(:mod:`maktaba_pipeline.search.terms`); its named speakers move the same way in
+``search_speakers``. Version 2 rebuilds every document once, which fills
+the dictionary.
 """
 
 from __future__ import annotations
@@ -26,6 +33,7 @@ from typing import Any
 
 from ...db.jobs import Job
 from ...log import get_logger
+from ...search.terms import doc_terms, speaker_keys
 from ...search.textnorm import normalize
 from ..context import StageContext
 from ..graph import KEYWORD_INDEX_VERSION, StageResult
@@ -140,24 +148,131 @@ _FIELDS = ("library_id", "language", "title", "speakers", "body", "transcript_id
 
 async def _current(db: Any, video_id: Any) -> Any:
     return await db.fetchrow(
-        "SELECT " + ", ".join(_FIELDS) + " FROM video_search_docs WHERE video_id = $1",
+        "SELECT " + ", ".join(_FIELDS) + ", terms_counted FROM video_search_docs"
+        " WHERE video_id = $1",
         uid(video_id),
     )
 
 
 def _same(row: Any, doc: dict[str, Any]) -> bool:
-    return row is not None and all(str(row[f]) == str(doc[f]) for f in _FIELDS)
+    return (
+        row is not None
+        and bool(row["terms_counted"])
+        and all(str(row[f]) == str(doc[f]) for f in _FIELDS)
+    )
+
+
+def _terms_of(row: Any) -> dict[str, str]:
+    """A document's words (key: shown form), none for a document whose words were never
+    counted."""
+    if row is None or not bool(row["terms_counted"]):
+        return {}
+    return doc_terms(str(row["title"]), str(row["speakers"]), str(row["body"]))
+
+
+async def _count(db: Any, library_id: Any, delta: dict[str, tuple[str, int]]) -> None:
+    """``search_terms`` of the library moved by ``delta`` (key: (shown, +n or -n)), in key
+    order (two jobs that share words lock them in the same order), and the words no
+    document holds any longer removed. A word keeps the shown form it was first counted
+    with."""
+    keys = sorted(k for k, (_, d) in delta.items() if d)
+    if not keys:
+        return
+    lib = uid(library_id)
+    if is_pg(db):
+        await db.execute(
+            "INSERT INTO search_terms (library_id, term, shown, df)"
+            " SELECT $1, x.t, x.s, x.d FROM unnest($2::text[], $3::text[], $4::int[])"
+            "   WITH ORDINALITY AS x(t, s, d, n) ORDER BY x.n"
+            " ON CONFLICT (library_id, term) DO UPDATE SET df = search_terms.df + excluded.df",
+            lib, keys, [delta[k][0] for k in keys], [delta[k][1] for k in keys],
+        )  # fmt: skip
+        await db.execute(
+            "DELETE FROM search_terms WHERE library_id = $1 AND term = ANY($2::text[]) AND df <= 0",
+            lib, keys,
+        )  # fmt: skip
+        return
+    for k in keys:
+        await db.execute(
+            "INSERT INTO search_terms (library_id, term, shown, df) VALUES ($1, $2, $3, $4)"
+            " ON CONFLICT (library_id, term) DO UPDATE SET df = search_terms.df + excluded.df",
+            lib, k, delta[k][0], delta[k][1],
+        )  # fmt: skip
+    for i in range(0, len(keys), 500):
+        part = keys[i : i + 500]
+        marks = ", ".join(f"${j}" for j in range(2, len(part) + 2))
+        await db.execute(
+            f"DELETE FROM search_terms WHERE library_id = $1 AND term IN ({marks}) AND df <= 0",
+            lib, *part,
+        )  # fmt: skip
+
+
+def _speakers_of(row: Any) -> set[tuple[str, str]]:
+    """A document's named speakers by word start, none for one never counted."""
+    if row is None or not bool(row["terms_counted"]):
+        return set()
+    return speaker_keys(str(row["speakers"]))
+
+
+async def _count_speakers(db: Any, library_id: Any, delta: dict[tuple[str, str], int]) -> None:
+    """``search_speakers`` of the library moved by ``delta`` ((key, name): +1 or -1), in
+    order, and the names no document holds any longer removed."""
+    rows = sorted(k for k, d in delta.items() if d)
+    lib = uid(library_id)
+    for k, name in rows:
+        await db.execute(
+            "INSERT INTO search_speakers (library_id, key, name, df) VALUES ($1, $2, $3, $4)"
+            " ON CONFLICT (library_id, key, name)"
+            " DO UPDATE SET df = search_speakers.df + excluded.df",
+            lib, k, name, delta[(k, name)],
+        )  # fmt: skip
+        if delta[(k, name)] < 0:
+            await db.execute(
+                "DELETE FROM search_speakers WHERE library_id = $1 AND key = $2 AND name = $3"
+                " AND df <= 0",
+                lib, k, name,
+            )  # fmt: skip
+
+
+async def _recount(db: Any, old: Any, doc: dict[str, Any] | None) -> None:
+    """The dictionaries moved from the old document's words and speakers to the new
+    one's."""
+    sp_before = _speakers_of(old)
+    sp_after = speaker_keys(doc["speakers"]) if doc is not None else set()
+    before = _terms_of(old)
+    after = doc_terms(doc["title"], doc["speakers"], doc["body"]) if doc is not None else {}
+    old_lib = str(old["library_id"]) if old is not None else None
+    new_lib = str(doc["library_id"]) if doc is not None else None
+    if old_lib == new_lib:
+        delta = {k: (s, 1) for k, s in after.items() if k not in before}
+        delta.update({k: (s, -1) for k, s in before.items() if k not in after})
+        sp = {k: 1 for k in sp_after - sp_before}
+        sp.update({k: -1 for k in sp_before - sp_after})
+        if new_lib is not None:
+            await _count(db, new_lib, delta)
+            await _count_speakers(db, new_lib, sp)
+        return
+    if old_lib is not None and await db.fetchval(
+        "SELECT count(*) FROM libraries WHERE id = $1", uid(old_lib)
+    ):
+        # (a library deleted or merged away took its dictionaries with it)
+        await _count(db, old_lib, {k: (s, -1) for k, s in before.items()})
+        await _count_speakers(db, old_lib, {k: -1 for k in sp_before})
+    if new_lib is not None:
+        await _count(db, new_lib, {k: (s, 1) for k, s in after.items()})
+        await _count_speakers(db, new_lib, {k: 1 for k in sp_after})
 
 
 async def _write(db: Any, doc: dict[str, Any]) -> None:
-    """The document upserted, and on SQLite its FTS5 row, in one transaction: a run cut
-    short between them would leave a current row whose FTS5 row a retry never writes (the
-    run finds the row current)."""
-    cols = ("video_id", *_FIELDS, "built_at")
-    vals = [doc["video_id"], *(doc[f] for f in _FIELDS), to_ts(db, now())]
+    """The document upserted, the terms dictionary moved to its words, and on SQLite its
+    FTS5 row, in one transaction: a run cut short between them would leave a current row
+    whose FTS5 row or counts a retry never writes (the run finds the row current)."""
+    cols = ("video_id", *_FIELDS, "terms_counted", "built_at")
+    vals = [doc["video_id"], *(doc[f] for f in _FIELDS), True, to_ts(db, now())]
     marks = ", ".join(f"${i}" for i in range(1, len(cols) + 1))
     sets = ", ".join(f"{c} = excluded.{c}" for c in cols[1:])
     async with db.transaction():
+        await _recount(db, await _current(db, doc["video_id"]), doc)
         await db.execute(
             f"INSERT INTO video_search_docs ({', '.join(cols)}) VALUES ({marks})"
             f" ON CONFLICT (video_id) DO UPDATE SET {sets}",
@@ -176,13 +291,14 @@ async def _write(db: Any, doc: dict[str, Any]) -> None:
 
 
 async def _drop(db: Any, video_id: Any) -> bool:
-    """The video's document deleted (its FTS5 row with it: slot 0232's trigger)."""
-    row = await db.fetchrow(
-        "SELECT video_id FROM video_search_docs WHERE video_id = $1", uid(video_id)
-    )
-    if row is None:
-        return False
-    await db.execute("DELETE FROM video_search_docs WHERE video_id = $1", uid(video_id))
+    """The video's document deleted (its FTS5 row with it: slot 0232's trigger), and its
+    words taken off the terms dictionary."""
+    async with db.transaction():
+        row = await _current(db, video_id)
+        if row is None:
+            return False
+        await _recount(db, row, None)
+        await db.execute("DELETE FROM video_search_docs WHERE video_id = $1", uid(video_id))
     return True
 
 
@@ -230,6 +346,7 @@ def _stale(v: Any, t: Any, d: Any) -> bool:
         return True
     return (
         int(d["doc_version"] or 0) < KEYWORD_INDEX_VERSION
+        or str(d["library_id"]) != str(v["library_id"])
         or str(d["transcript_id"]) != str(t["id"])
         or int(d["transcript_revision"] or 0) != int(t["revision"] or 0)
         or str(d["title"]) != shown_title(v)
@@ -245,8 +362,9 @@ async def plan_library(db: Any, library_id: Any) -> StageResult:
     while queued < PLAN_BATCH:
         page = (uid(library_id), PLAN_PAGE, offset)
         videos = await db.fetch(
-            "SELECT v.id, v.title, v.display_title, v.display_title_manual, v.filename,"
-            f" v.deleted_at FROM videos v WHERE v.id IN ({_PAGE}) ORDER BY v.created_at DESC, v.id",
+            "SELECT v.id, v.library_id, v.title, v.display_title, v.display_title_manual,"
+            " v.filename, v.deleted_at FROM videos v"
+            f" WHERE v.id IN ({_PAGE}) ORDER BY v.created_at DESC, v.id",
             *page,
         )
         if not videos:
@@ -262,7 +380,8 @@ async def plan_library(db: Any, library_id: Any) -> StageResult:
         docs = {
             str(r["video_id"]): r
             for r in await db.fetch(
-                "SELECT d.video_id, d.title, d.transcript_id, d.transcript_revision, d.doc_version"
+                "SELECT d.video_id, d.library_id, d.title, d.transcript_id,"
+                " d.transcript_revision, d.doc_version"
                 f" FROM video_search_docs d WHERE d.video_id IN ({_PAGE})",
                 *page,
             )

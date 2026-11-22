@@ -98,7 +98,8 @@ WORD_CHECK_VERSION = 1
 CONTENT_SCREEN_VERSION = 1
 #: keyword_index (Epic 49, story 49.6): stages/keyword_index.py; a bump rebuilds every
 #: video's keyword search document through the planner, behind all other work
-KEYWORD_INDEX_VERSION = 1
+#: (2, story 49.8: the terms dictionary, search_terms, filled as each document is rebuilt)
+KEYWORD_INDEX_VERSION = 2
 #: transcript analysis (stages/chapter_infer.py, topic_assign.py, topic_recluster.py)
 CHAPTER_VERSION = 1
 CHAPTER_THUMBS_VERSION = 1

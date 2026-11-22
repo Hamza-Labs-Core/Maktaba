@@ -28,6 +28,15 @@ func TestMergePostgres(t *testing.T) {
 			('00000000-0000-4000-8000-0000000000b2', '` + libSmall + `', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', '/m/b/x.mp4', 'x.mp4', 7, now())`,
 		`INSERT INTO video_copies (video_id, path, size_bytes) VALUES
 			('00000000-0000-4000-8000-0000000000b2', '/m/b/x (copy).mp4', 7)`,
+		// Epic 49: a video that moves, with its keyword search document, and the merged
+		// library's dictionaries; the target's own document stays
+		`INSERT INTO videos (id, library_id, content_hash, path, filename, size_bytes, mtime) VALUES
+			('00000000-0000-4000-8000-0000000000b3', '` + libSmall + `', 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', '/m/b/y.mp4', 'y.mp4', 7, now())`,
+		`INSERT INTO video_search_docs (video_id, library_id, body, transcript_id) VALUES
+			('00000000-0000-4000-8000-0000000000b3', '` + libSmall + `', 'كلمة', gen_random_uuid()),
+			('00000000-0000-4000-8000-0000000000b1', '` + libBig + `', 'كلمة', gen_random_uuid())`,
+		`INSERT INTO search_terms (library_id, term, shown, df) VALUES ('` + libSmall + `', 'كلمه', 'كلمة', 1), ('` + libBig + `', 'كلمه', 'كلمة', 1)`,
+		`INSERT INTO search_speakers (library_id, key, name, df) VALUES ('` + libSmall + `', 'احمد', 'أحمد', 1)`,
 	} {
 		if _, err := db.Exec(q); err != nil {
 			t.Fatalf("%s: %v", q, err)
@@ -105,5 +114,22 @@ func TestMergePostgres(t *testing.T) {
 	var n int
 	if err := db.QueryRow(`SELECT COUNT(*) FROM libraries WHERE id = $1`, libSmall).Scan(&n); err != nil || n != 0 {
 		t.Errorf("the merged library is still there (%d, %v)", n, err)
+	}
+	// keyword search: the moved video's document goes (the stage rebuilds it in the
+	// target), the target's stays, and nothing of the merged library is left
+	var docs, small int
+	if err := db.QueryRow(`SELECT (SELECT count(*) FROM search_terms WHERE library_id = $1)
+		+ (SELECT count(*) FROM search_speakers WHERE library_id = $1)`, libSmall).Scan(&small); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(`SELECT count(*) FROM video_search_docs WHERE video_id = '00000000-0000-4000-8000-0000000000b1'`).Scan(&docs); err != nil {
+		t.Fatal(err)
+	}
+	var moved int
+	if err := db.QueryRow(`SELECT count(*) FROM video_search_docs WHERE video_id = '00000000-0000-4000-8000-0000000000b3'`).Scan(&moved); err != nil {
+		t.Fatal(err)
+	}
+	if docs != 1 || moved != 0 || small != 0 {
+		t.Errorf("after the merge: the target's document %d (want 1), the moved video's %d (want 0), the merged library's dictionary rows %d (want 0)", docs, moved, small)
 	}
 }

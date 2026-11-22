@@ -204,6 +204,8 @@ type mergeTables struct {
 	roots, statsCache             bool
 	collections, topics, channels bool
 	pins                          bool
+	// keyword search's documents and dictionaries (Epic 49): the merged library's go
+	keywordSearch []string
 }
 
 // Merge merges library {id} into another one, in one transaction: each video
@@ -250,6 +252,11 @@ func (h *Handler) Merge(w http.ResponseWriter, r *http.Request) {
 	tables.topics = h.hasColumn(ctx, "topic_collections", "playlist_id")
 	tables.channels = h.hasColumn(ctx, "channels", "slug")
 	tables.pins = h.hasColumn(ctx, "user_library_pins", "position")
+	for _, t := range []string{"video_search_docs", "search_terms", "search_speakers"} {
+		if h.hasColumn(ctx, t, "library_id") {
+			tables.keywordSearch = append(tables.keywordSearch, t)
+		}
+	}
 
 	tx, err := h.DB.BeginTx(ctx, nil)
 	if err != nil {
@@ -351,6 +358,16 @@ func (h *Handler) merge(ctx context.Context, tx *sql.Tx, from, into Library, tab
 		return resp, err
 	}
 	resp.Moved, _ = res.RowsAffected()
+	// keyword search (Epic 49): the moved videos' documents and the merged library's
+	// dictionaries go. The keyword_index stage's plan of the target rebuilds each moved
+	// video's document there and counts its words and speakers in the target's
+	// dictionaries; a document left under the merged library would have been counted in
+	// dictionaries that no longer exist.
+	for _, t := range tables.keywordSearch {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM `+t+` WHERE library_id = $1`, from.ID); err != nil {
+			return resp, err
+		}
+	}
 
 	roots, added := mergeRoots(into.Roots, from.Roots)
 	resp.RootsAdded = added
