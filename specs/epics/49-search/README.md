@@ -825,13 +825,15 @@ runs only when the person opens that tab or submits from it; Results never waits
   - A plan without the BM25 index scan (a table, or a library's rows, few enough to read
     whole and sort) has no scan to take the score from. `bm25_get_current_score()` then
     gives the last score of the connection's last index scan: the extension never clears
-    it. So each leg works out its first row's score from its text and compares (one
-    document, about 2 ms at most). When they differ, it asks again with the operator in the
-    select list. `TestBM25_ScoresAreEachRowsOwn` makes that plan on one connection after
+    it. So each leg works out its first and last rows' scores from their text and compares
+    them, within 1e-3: another search's score is another document's, far off. That is two
+    documents, a few ms at most. When they differ, or the check fails, the leg asks again
+    with the operator in the select list, and a log line says so (`search_bm25_rescored`). `TestBM25_ScoresAreEachRowsOwn` makes that plan on one connection after
     another search's index scan; without the check, a row carried that search's score.
 - **Measured.**
-  - 5,000 documents of 5,000 words (`TestBM25_LongDocuments`, the replica job): p95 5.6 ms
-    for الله and 5.7 ms for a sentence, at 500 results (the check of the first row included).
+  - 5,000 documents of 5,000 words (`TestBM25_LongDocuments`, the replica job): p95 8.9 ms
+    for الله and 8.6 ms for a sentence, at 500 results (the check of the first and last rows
+    included).
   - 45,000 documents (`TestBM25_Perf45k`): p95 under 2.5 ms, and 13.9 ms for one library.
   - The real bundled PostgreSQL 18 gives the app role that path
     (`TestRealPgTextsearchPreloaded`).
