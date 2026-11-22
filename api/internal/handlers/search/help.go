@@ -54,6 +54,12 @@ const (
 	asciiLetters  = "abcdefghijklmnopqrstuvwxyz012"
 )
 
+// asciiTrgm is the SQL of expr folded (maktaba_normalize, lower case) with its Arabic
+// letters spelled in ASCII, for pg_trgm in a --locale=C database (story 49.15).
+func asciiTrgm(expr string) string {
+	return "translate(lower(public.maktaba_normalize(" + expr + ")), '" + arabicLetters + "', '" + asciiLetters + "')"
+}
+
 // libraryWhere is the condition on a table's library_id column for the caller's
 // libraries (none: every library).
 func libraryWhere(col string, libs []string, args *[]any) string {

@@ -802,6 +802,24 @@ runs only when the person opens that tab or submits from it; Results never waits
     the dictionary is rebuilt. A suggestion may then name a word that finds nothing. The
     stage's own deletions (a soft-deleted video, a lost transcript) take the words off.
 
+### 49.15 Arabic titles rank by similarity
+
+- **The cause.** The bundled server's database is `--locale=C`, where pg_trgm finds no trigram
+  in an Arabic word. Search's title matches (`runTitles`) ordered by `similarity(v.title, q)`,
+  0 for every Arabic title, so Arabic title matches came newest first.
+- **The fix.** Similarity is now taken over the title and the query folded
+  (`maktaba_normalize`, lower case) with their Arabic letters spelled in ASCII, as
+  `search_terms.trgm` spells them (story 49.8). pg_trgm reads those in any locale. A Latin
+  title's letters pass through the spelling unchanged, so Latin titles keep their order.
+- **Proof:** `TestBM25_ArabicTitlesRankBySimilarity` (the replica job, whose servers are
+  `--locale=C` like the bundled one). الصبر ranks درس الصبر above a long title that also says
+  it, though the long one is newer, and patience does the same for Latin titles. Without the
+  change the Arabic order was newest first.
+- **Not changed.** The match itself is still `ILIKE '%q%'` on the title as written: a query
+  with harakat, or a hamza the title spells otherwise, finds no title. For an Arabic query
+  the trigram index (migration 0098) cannot narrow the match, so it reads the library's
+  titles (keyword search's documents find these videos by their titles as well).
+
 ### The BM25 score from the index scan (found while building 49.9)
 
 - **What was wrong.** Each row of a BM25 query was scored again from its whole text: about
