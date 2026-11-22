@@ -1,0 +1,13 @@
+diff --git a/api/internal/searchindex/migration_0232_test.go b/api/internal/searchindex/migration_0232_test.go
+index ab8550d6d..f5ffcd038 100644
+--- a/api/internal/searchindex/migration_0232_test.go
++++ b/api/internal/searchindex/migration_0232_test.go
+@@ -135,6 +135,8 @@ func TestSlot0232UpAndDownOnPostgres(t *testing.T) {
+ 			t.Fatalf("%d BM25 indexes without pg_textsearch", n)
+ 		}
+ 	}
++	// from 0232's own list: a later slot's is longer (slot 0235 adds search_terms)
++	run(t, db, "0232's list", up)
+ 	before := scalar[int](t, db, `SELECT cardinality(cluster_copy_excluded())`)
+ 	run(t, db, "down", down)
+ 	if objects() != 0 || excluded() {
