@@ -910,15 +910,16 @@ runs only when the person opens that tab or submits from it; Results never waits
     - each topic's videos are the ones that say its word most.
 
     The same seed draws the same 693 searches twice, and every one passes: 601 known-item,
-    50 chapter, 20 topic and 22 common words (p95 at most 35 ms). Before the two fixes, 578
+    50 chapter, 20 topic and 22 common words (p95 at most 3.9 ms, with the scores from the index scan). Before the two fixes, 578
     known-item and 38 chapter searches passed.
   - `TestPhrasePatternOnPostgres`: the pattern on Postgres's regular expressions.
   - `TestSearchRelevanceCLIOnPostgres`: the command on an empty library.
-  - `TestBM25_Perf45k` keeps a sentence's p95 at 16.5 ms.
+  - `TestBM25_Perf45k` keeps a sentence's p95 at 3.5 ms. `TestBM25_LongDocuments` (5,000-word
+    documents) gives a sentence 14.4 ms with the document phrase check.
 - **Not done yet: the home's own run.**
   - The spec asks to tune the field weights, the exact/stem balance and the phrase boost
     until the check passes on the home's transcripts. That needs
     `maktaba-api search-relevance` run on the home once it serves this release with its
     documents built.
   - The weights stay as 49.7 set them (exact twice stemmed, phrase lift the list's best
-    score) until that run shows what to change.
+    score), and the lists at 500, until that run shows what to change.
