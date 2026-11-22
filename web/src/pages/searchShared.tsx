@@ -155,7 +155,7 @@ export function selOf(p: URLSearchParams): FacetSel {
 
 /** The date range of a year, as the server's year bucket gives it. */
 export const yearRange = (y: string): Range<string> => ({
-  gte: `${y}-01-01T00:00:00.000Z`,
+  gte: `${y.padStart(4, "0")}-01-01T00:00:00.000Z`,
   lt: `${String(Number(y) + 1).padStart(4, "0")}-01-01T00:00:00.000Z`,
 });
 

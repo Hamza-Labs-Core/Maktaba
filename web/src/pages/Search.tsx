@@ -723,7 +723,14 @@ export function Search() {
     if (sid) {
       // a return to a search already seen: its pages at once, read again quietly
       const kept = cachedAnswer<KeptSearch>(userId, keptKey(sid, vp, tp));
-      if (kept && kept.s.q === urlQ && kept.s.mode === m && kept.s.sel) {
+      if (
+        kept &&
+        kept.s.q === urlQ &&
+        kept.s.mode === m &&
+        kept.s.sel &&
+        kept.s.sort === uSort &&
+        runKey(urlQ, m, kept.s.sort, kept.s.sel, sid) === runKey(urlQ, m, uSort, uSel, sid)
+      ) {
         commit(kept.s, kept.vPage, kept.vItems, kept.tPage, kept.tItems);
       }
       void openBySid(urlQ, m, ask, sid, { vp, tp }, ytRef.current, Boolean(kept));

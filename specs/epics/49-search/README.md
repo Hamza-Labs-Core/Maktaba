@@ -870,7 +870,8 @@ The Search page (`web/src/pages/Search.tsx`) uses story 49.8's API; the parts ar
     video's title, a speaker; a home before 49.8 (texts only) lists them without a kind;
   - the 200 ms debounce and the sequence guard stay: a slower, older answer is dropped;
   - up and down move through the list (wrapping), Enter chooses, Escape closes it and keeps
-    the text; Enter with nothing highlighted submits what was typed;
+    the text; Enter with nothing highlighted submits what was typed; leaving the box closes
+    the list until the next keystroke; the highlighted option is scrolled into sight;
   - a title opens its video (`/videos/<video_id>`); an earlier search, a word or a speaker is
     searched as its text;
   - a press on the list does not take focus from the box, so a click and a tap work; the list

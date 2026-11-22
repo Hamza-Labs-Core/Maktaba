@@ -541,7 +541,7 @@
 - **Preconditions / data:** suggest answers an earlier search, a word, a title (with `video_id`) and a speaker. A home before story 49.8 answers `suggestions` only.
 - **Steps:**
   1. Focus the box and type `pat`; wait 200 ms. 2. Down, down, up, up, down, down. 3. Enter. 4. Type again, Down, Escape, then submit.
-- **Expected:** a listbox "Suggestions" under the box lists each with its icon and kind (Recent, Word, Video, Speaker); the box is a combobox with `aria-expanded`, `aria-controls` and `aria-activedescendant` following the highlighted option (wrapping at both ends). Enter on a word searches it (`POST { q: "patience" }`) and closes the list. Escape closes the list and keeps the text; Enter then submits what was typed. A plain `suggestions` answer lists the texts with no kind; leaving the box closes the list.
+- **Expected:** a listbox "Suggestions" under the box lists each with its icon and kind (Recent, Word, Video, Speaker); the box is a combobox with `aria-expanded`, `aria-controls` and `aria-activedescendant` following the highlighted option (wrapping at both ends). Enter on a word searches it (`POST { q: "patience" }`) and closes the list. Escape closes the list and keeps the text; Enter then submits what was typed. A plain `suggestions` answer lists the texts with no kind; leaving the box closes the list until the next keystroke (focus alone does not reopen it); the highlighted option is scrolled into sight; Enter with the list open and nothing highlighted submits the typed text.
 
 ### SRC-45 — A title suggestion opens its video; a word or speaker is searched
 

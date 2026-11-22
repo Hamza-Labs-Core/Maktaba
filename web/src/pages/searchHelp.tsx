@@ -151,6 +151,11 @@ export function SuggestBox({
     setClosed(false);
   }, [items]);
   const open = focused && !closed && items.length > 0;
+  // the highlighted option stays in sight in a list taller than its box
+  useEffect(() => {
+    if (open && active >= 0)
+      document.getElementById(optId(active))?.scrollIntoView?.({ block: "nearest" });
+  }, [open, active]);
 
   function choose(it: SuggestItem) {
     setClosed(true);
@@ -204,7 +209,9 @@ export function SuggestBox({
         onKeyDown={onKeyDown}
         onFocus={() => setFocused(true)}
         onBlur={() => {
+          // leaving the box closes the list until the next keystroke
           setFocused(false);
+          setClosed(true);
           setActive(-1);
         }}
         placeholder={placeholder}

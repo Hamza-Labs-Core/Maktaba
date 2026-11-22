@@ -19,6 +19,7 @@ import { Search } from "./Search";
 import { ToastProvider } from "@ds/components/Toast/Toast";
 import { memberUser, renderPage } from "../test/pageHarness";
 import { axeViolations } from "../test/axe";
+import { suggestItems } from "./searchHelp";
 import {
   type Corpus,
   type FakeServerOptions,
@@ -250,6 +251,88 @@ describe("Search suggestions (story 49.10)", () => {
     // a title without a video is dropped; the list leaves when the box loses focus
     act(() => box().blur());
     expect(screen.queryByRole("listbox")).toBeNull();
+  });
+});
+
+describe("Suggestions: review follow-ups (story 49.10)", () => {
+  it("SRC-44: Enter with the list open and nothing highlighted submits what was typed", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    serve(corpus, { suggest: () => SUGGEST });
+    renderSearchPage();
+    await typeAndWait("pat");
+    expect(screen.getByRole("listbox")).toBeInTheDocument();
+    fireEvent.keyDown(box(), { key: "Enter" });
+    fireEvent.submit(box().closest("form")!);
+    await waitFor(() => expect(searchBodies()).toHaveLength(1));
+    expect(lastBody()).toMatchObject({ q: "pat" });
+    expect(screen.queryByRole("listbox")).toBeNull();
+  });
+
+  it("SRC-44: leaving the box closes the list until the next keystroke; the highlighted option is scrolled into sight", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const scrolled: string[] = [];
+    const original = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = function (this: Element) {
+      scrolled.push(this.id);
+    };
+    try {
+      serve(corpus, { suggest: () => SUGGEST });
+      renderSearchPage();
+      await typeAndWait("pat");
+      fireEvent.keyDown(box(), { key: "ArrowUp" });
+      const last = suggestions().at(-1)!;
+      expect(scrolled.at(-1)).toBe(last.id);
+      act(() => box().blur());
+      act(() => box().focus());
+      expect(screen.queryByRole("listbox")).toBeNull();
+      fireEvent.change(box(), { target: { value: "pati" } });
+      await act(async () => {
+        vi.advanceTimersByTime(200);
+      });
+      await act(async () => {});
+      expect(screen.getByRole("listbox")).toBeInTheDocument();
+    } finally {
+      Element.prototype.scrollIntoView = original;
+    }
+  });
+
+  it("SRC-45: a word chosen while filters are on searches the new words without them, the sort kept", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    serve(corpus, { suggest: () => SUGGEST, help: () => ({ facets: FACETS }) });
+    renderSearchPage("/search?q=gratitude&mode=hybrid&sort=newest&lib=lib-1");
+    await waitFor(() => expect(searchBodies()).toHaveLength(1));
+    expect(lastBody()).toMatchObject({ filters: { library_id: ["lib-1"] } });
+    await screen.findByTestId("facets");
+    await typeAndWait("pat");
+    fireEvent.click(suggestions().find((o) => o.textContent === "patienceWord")!);
+    await waitFor(() => expect(searchBodies()).toHaveLength(2));
+    expect(lastBody()).toEqual({ q: "patience", mode: "hybrid", view: "list", sort: "newest" });
+  });
+
+  it("SRC-44: suggestItems keeps what can be shown and chosen", () => {
+    expect(
+      suggestItems({
+        items: [
+          { text: "a", kind: "term" },
+          { text: "a", kind: "term" },
+          { text: "a", kind: "history" },
+          { text: "  ", kind: "term" },
+          null,
+          { text: "Title", kind: "title" },
+          { text: "Title", kind: "title", video_id: "v9" },
+          { text: "odd", kind: "bogus" },
+          { text: 3 },
+        ],
+      })
+    ).toEqual([
+      { text: "a", kind: "term" },
+      { text: "a", kind: "history" },
+      { text: "Title", kind: "title", video_id: "v9" },
+      { text: "odd" },
+    ]);
+    expect(suggestItems({ suggestions: ["x", "", null, "x"] })).toEqual([{ text: "x" }]);
+    expect(suggestItems(null)).toEqual([]);
+    expect(suggestItems({ items: [], suggestions: ["y"] })).toEqual([{ text: "y" }]);
   });
 });
 
@@ -522,6 +605,38 @@ describe("Facets and sort (story 49.10)", () => {
     expect(searchBodies()).toHaveLength(1);
     expect(screen.getByRole("region", { name: "Narrow the results" })).toBeInTheDocument();
     expect(screen.getByTestId("did-you-mean")).toHaveTextContent("Did you mean patience?");
+  });
+
+  it("SRC-51: an expired saved search runs again with its sort and filters, keeping the page", async () => {
+    const big: Corpus = { titles: manyTitles(45), transcripts: manyTranscripts(3) };
+    const state = serve(big, { help: () => ({ facets: FACETS }) });
+    renderSearchPage("/search?q=patience&mode=hybrid&sort=newest&spk=Sheikh+Ahmad&year=2024");
+    await waitFor(() => expect(locParams().get("sid")).toBe("sid-1"));
+    await screen.findByTestId("facets");
+    state.expired.add("sid-1");
+    const user = userEvent.setup();
+    const titles = screen.getByRole("region", { name: "In titles" });
+    await user.click(
+      within(within(titles).getByRole("navigation", { name: "In titles" })).getByRole("button", {
+        name: "Page 2",
+      })
+    );
+    await waitFor(() => expect(searchBodies()).toHaveLength(2));
+    expect(lastBody()).toEqual({
+      q: "patience",
+      mode: "hybrid",
+      view: "list",
+      sort: "newest",
+      filters: {
+        speaker: ["Sheikh Ahmad"],
+        date: { gte: "2024-01-01T00:00:00.000Z", lt: "2025-01-01T00:00:00.000Z" },
+      },
+    });
+    await waitFor(() => expect(locParams().get("sid")).toBe("sid-2"));
+    expect(locParams().get("vp")).toBe("2");
+    expect(locParams().get("sort")).toBe("newest");
+    expect(locParams().getAll("spk")).toEqual(["Sheikh Ahmad"]);
+    expect(screen.getByRole("status")).toHaveTextContent("These results were refreshed");
   });
 
   it("SRC-52: Arabic: the facet names, bands, counts, sort and did-you-mean read in Arabic", async () => {
