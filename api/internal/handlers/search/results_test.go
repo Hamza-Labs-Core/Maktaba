@@ -51,7 +51,7 @@ func migrationUp(t *testing.T, name string) []string {
 }
 
 // searchDB is a SQLite database with the tables search reads (their columns)
-// and the shipped search_runs twin (slot 0148).
+// and the shipped search_runs twin (slots 0148 and 0236).
 func searchDB(t *testing.T) *sql.DB {
 	t.Helper()
 	db, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "search.db"))
@@ -86,6 +86,13 @@ func searchDB(t *testing.T) *sql.DB {
 	for _, st := range migrationUp(t, "0148_search_runs.sqlite.sql") {
 		if _, err := db.Exec(st); err != nil {
 			t.Fatalf("0148 twin: %v\n%s", err, st)
+		}
+	}
+	// slot 0236: how a search was asked (ADD COLUMN IF NOT EXISTS is the API's SQLite
+	// migrator's; plain SQLite takes ADD COLUMN)
+	for _, st := range migrationUp(t, "0236_search_runs_asked.sqlite.sql") {
+		if _, err := db.Exec(strings.ReplaceAll(st, "ADD COLUMN IF NOT EXISTS", "ADD COLUMN")); err != nil {
+			t.Fatalf("0236 twin: %v\n%s", err, st)
 		}
 	}
 	return db

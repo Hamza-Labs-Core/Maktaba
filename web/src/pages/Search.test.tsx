@@ -603,7 +603,11 @@ describe("Search (test-cases/search.md)", () => {
   });
 
   it("SRC-20: save, run and delete saved searches", async () => {
-    let items = [{ id: "s1", q: "fox", mode: "fts" }];
+    // a saved search as the home lists it (its query is the search's body), and one in the
+    // shape older tests mocked (q and mode only): both open
+    let items: Array<Record<string, unknown>> = [
+      { id: "s1", name: "fox", query: { q: "fox", mode: "fts" } },
+    ];
     serveSearch({}, { saved: () => ({ items }) });
     del.mockResolvedValue(undefined);
     renderSearchPage();
@@ -616,7 +620,10 @@ describe("Search (test-cases/search.md)", () => {
     });
     await user.type(screen.getByRole("combobox", { name: "Search" }), " dog ");
     await user.click(screen.getByRole("button", { name: "Save" }));
-    expect(post).toHaveBeenCalledWith("/api/search/save", { q: "dog", mode: "hybrid" });
+    expect(post).toHaveBeenCalledWith("/api/search/save", {
+      name: "dog",
+      query: { q: "dog", mode: "hybrid" },
+    });
     expect(await within(aside).findByRole("button", { name: "dog" })).toBeInTheDocument();
     await user.click(within(aside).getByRole("button", { name: "fox" }));
     expect(screen.getByRole("combobox", { name: "Search" })).toHaveValue("fox");
@@ -1027,7 +1034,8 @@ describe("Search results redesign (test-cases/search.md SRC-28..)", () => {
     expect(rowTitles(titlesSection())[0]).toBe("Title 41");
     expect(searchCalls()).toHaveLength(0);
     expect(getCalls("/api/search/results/").sort()).toEqual([
-      "/api/search/results/sid-old?list=titles&offset=40&limit=20",
+      // no facets in this tab's memory: the first list brings them (facets=1)
+      "/api/search/results/sid-old?list=titles&offset=40&limit=20&facets=1",
       "/api/search/results/sid-old?list=transcripts&offset=0&limit=20",
     ]);
     expect(screen.getByRole("combobox", { name: "Mode" })).toHaveValue("fts");

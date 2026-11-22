@@ -376,6 +376,14 @@ build fails when the two differ.
 
 ### Fixed
 
+- **Videos start much sooner on Android phones and tablets, and show their real length.** The
+  Maktaba Player on Android now tells the home what the device plays, so a film the phone can
+  play as it is (including Dolby audio its own decoders take) plays directly instead of waiting
+  for the home to convert it first. A video that still has to be converted shows its full length
+  from the start, not only the part converted so far, and a jump past that part starts the video
+  there. If a file does not play as it is after all, it is converted and plays from the same
+  place.
+
 - **Arabic titles that match a search come closest first (Epic 49, story 49.15).** A search's
   "In titles" list ranked Arabic titles newest first, whatever they said, because the home's
   database could not compare Arabic letters. It now puts the title closest to the search
@@ -4300,6 +4308,18 @@ build fails when the two differ.
   for an hour's lecture: some 180 ms a search on a large home. Results now take the score
   the index already worked out, and keyword search shows up to 500 videos again instead of
   150. A home made before this release picks it up at its next start.
+
+- **Search finds a sentence however its letters are spelled (Epic 49, story 49.9).** A
+  sentence typed with a bare alef for a hamza, or ه for ة, now ranks its video as the exact
+  spelling does, and a word with و in front (وغفران) finds the word. A relevance check,
+  built from each library's own transcripts, measures it.
+
+- **A recent or saved search opens with its order and filters (Epic 49, story 49.10).** A
+  recent search came back with its order and filters only in the browser that ran it, and a
+  saved search kept neither: the web app's Save was refused by the home, and saved searches
+  did not list at all on a home on SQLite. Both now open with the order and filters they were
+  asked with, on any device, and Save names a search by its words, order and filters. A shared
+  search opened in a new tab names its library at once and shows the chips that narrow it.
 
 ## [0.2.0] - 2026-10-19
 

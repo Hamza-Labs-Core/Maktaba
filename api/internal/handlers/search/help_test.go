@@ -130,6 +130,21 @@ func TestSearchHelp_SQLite(t *testing.T) {
 	if got := search(adminB, `{"q":"الخفيا","mode":"fts"}`).DidYouMean; got != "الخفية" {
 		t.Fatalf("the admin: did you mean %q, want الخفية", got)
 	}
+	// story 49.10 follow-up: a search read by its search_id with facets=1 gives the same
+	// did-you-mean, and the same nothing from a library the account does not have
+	byID := func(p *principal.Principal, sid string) ResultsPage {
+		t.Helper()
+		return decode[ResultsPage](t, call(t, srv, p, http.MethodGet, "/api/search/results/"+sid+"?list=transcripts&facets=1", ""), 200)
+	}
+	if got := byID(limitedUser, search(limitedUser, `{"q":"المدرصة","mode":"fts"}`).SearchID).DidYouMean; got != "المدرسة" {
+		t.Fatalf("by search_id: did you mean %q, want المدرسة", got)
+	}
+	if got := byID(limitedUser, search(limitedUser, `{"q":"الخفيا","mode":"fts"}`).SearchID).DidYouMean; got != "" {
+		t.Fatalf("by search_id: a limited user was offered %q", got)
+	}
+	if got := byID(adminB, search(adminB, `{"q":"الخفيا","mode":"fts"}`).SearchID).DidYouMean; got != "الخفية" {
+		t.Fatalf("by search_id: the admin: did you mean %q, want الخفية", got)
+	}
 
 	suggest := func(p *principal.Principal, q string) map[string]string {
 		t.Helper()

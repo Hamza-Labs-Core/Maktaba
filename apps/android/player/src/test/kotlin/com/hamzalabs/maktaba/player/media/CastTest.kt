@@ -395,6 +395,34 @@ class CastTest {
 
     // ---------- a home older than the cast grant ----------
 
+    /**
+     * A file the phone plays as it is was chosen for its own decoders (its profile and report):
+     * cast to an older home, the receiver is handed a session opened as for any player (no
+     * profile, no report), never the phone's file.
+     */
+    @Test
+    fun anOlderHomeCastsASessionForTheReceiverNotThePhonesFile() {
+        streams.direct = true
+        streams.directOpens = 1
+        val s = sender()
+        val p = playbackWith(s)
+        p.play(v1)
+        val cast = p.playing()
+        runUntil { s.mode == CastMode.OldHome }
+        channel.connect()
+        cast.startCasting(atMs = 3_000)
+
+        runUntil(what = "a session opened for the receiver") { streams.opens().size == 2 }
+        val again = streams.opens()[1]
+        assertNull("no phone profile for the receiver: $again", again["client_profile"])
+        assertNull(again["device_caps"])
+        assertEquals(3, again["start_sec"]?.jsonPrimitive?.intOrNull)
+        runUntil(what = "the receiver handed the new session") { cast.handed.isNotEmpty() }
+        val signed = home.home.client.home.resolve("/stream/s2/master.m3u8?sig=x").toString()
+        assertEquals(signed, withoutRid(cast.handed.last().media!!.contentUrl!!))
+        assertTrue("the phone's file is never handed", cast.handed.none { it.media?.contentUrl?.contains("two-audio.mp4") == true })
+    }
+
     @Test
     fun anOlderHomeCastsTheSignedUrlToGooglesReceiver() {
         // no grants route: a plain 404 (FakeHome's own), not the home's JSON problem

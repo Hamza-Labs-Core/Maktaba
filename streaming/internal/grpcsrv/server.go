@@ -336,6 +336,8 @@ func (s *Server) OpenSession(ctx context.Context, req OpenSessionRequest) (OpenS
 					"err", cerr.Error(), "event", "vod_session_close_failed")
 			}
 		case existing.Fit == fit && s.reaches(existing, req.StartSec) &&
+			// a forced transcode (a file that did not play as it is) never gets a direct play back
+			(!req.ForceTranscode || existing.Mode == session.ModeTranscode) &&
 			(reuse == nil || existing.StartSec >= reuse.StartSec):
 			reuse = existing
 		}
