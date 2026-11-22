@@ -28,8 +28,9 @@ jobs:
   apple-apps:
     name: Apple apps (Remote, Player, TV)
     if: inputs.build && !inputs.shots_only
-    # the newest Xcode is on macos-26 (as testflight.yml)
-    runs-on: macos-26
+    # Xcode 27 (App Store Connect wants the 27 SDKs from April 2027) is on the xcode-27 image
+    # alone: macOS 27 with Xcode 27.0, 27.1 and 27.2, and only the 27 simulators (as testflight.yml)
+    runs-on: xcode-27
     timeout-minutes: 45
     env:
       DERIVED: ${{ github.workspace }}/build/apple-derived
@@ -64,16 +65,21 @@ jobs:
       - name: A simulator's settle check reads its own processes
         run: python3 tools/apple/sim-settle.py --self-test
 
+      # how a UI job keeps its simulator's logs and the app's crash reports
+      - name: A simulator's logs and the app's crash reports are kept
+        run: python3 tools/apple/sim-log.py --self-test
+
+      # the Xcode pick, the simulator pick and the uploads' SDK check (tools/apple/xcode.py)
+      - name: The Xcode, simulator and SDK checks pick what they should
+        run: python3 tools/apple/xcode.py --self-test
+
       # how a CI run's drawn pages become the Mac Player's page references (issue #876)
       - name: The page references' copier picks PageSnapshots' images only
         run: python3 tools/apple/snapshots.py --self-test
 
+      # the newest released Xcode, 27 or later, or the job fails (tools/apple/xcode.py)
       - name: Select Xcode
-        run: |
-          set -euo pipefail
-          xcode=$(ls -d /Applications/Xcode_2[6-9]*.app | sort -V | tail -n1)
-          sudo xcode-select -s "$xcode/Contents/Developer"
-          xcodebuild -version
+        run: python3 tools/apple/xcode.py select --min 27
 
       # xcodebuild, not `swift test`: the runner's SwiftPM copies Localizable.xcstrings
       # as-is instead of compiling it, so its Arabic and plural forms would not resolve
@@ -138,7 +144,7 @@ jobs:
   player-ui-build:
     name: Player UI tests build (${{ matrix.device }})
     if: inputs.player_ui
-    runs-on: macos-26
+    runs-on: xcode-27
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -151,12 +157,9 @@ jobs:
     steps:
       - uses: actions/checkout@v6.0.2
 
+      # the newest released Xcode, 27 or later, or the job fails (tools/apple/xcode.py)
       - name: Select Xcode
-        run: |
-          set -euo pipefail
-          xcode=$(ls -d /Applications/Xcode_2[6-9]*.app | sort -V | tail -n1)
-          sudo xcode-select -s "$xcode/Contents/Developer"
-          xcodebuild -version
+        run: python3 tools/apple/xcode.py select --min 27
 
       # for the runner's own simulators (arm64), with the .xctestrun the shards run from
       - name: Build the app and its UI tests
@@ -186,7 +189,7 @@ jobs:
   player-ui-tests:
     name: Player UI tests (${{ matrix.device }} ${{ matrix.shard }}/${{ matrix.shards }})
     if: inputs.player_ui
-    runs-on: macos-26
+    runs-on: xcode-27
     timeout-minutes: 60
     permissions:
       contents: read
@@ -205,26 +208,18 @@ jobs:
     steps:
       - uses: actions/checkout@v6.0.2
 
+      # the newest released Xcode, 27 or later, or the job fails (tools/apple/xcode.py)
       - name: Select Xcode
-        run: |
-          set -euo pipefail
-          xcode=$(ls -d /Applications/Xcode_2[6-9]*.app | sort -V | tail -n1)
-          sudo xcode-select -s "$xcode/Contents/Developer"
-          xcodebuild -version
+        run: python3 tools/apple/xcode.py select --min 27
 
       - name: Make, boot and settle the simulator
         run: |
           set -euo pipefail
           device="${{ matrix.device }}" shard="${{ matrix.shard }}"
           mkdir -p "$SHOTS" "$RESULTS" "$PRODUCTS"
-          runtime=$(xcrun simctl list runtimes -j | python3 -c 'import json,sys; r=[x for x in json.load(sys.stdin)["runtimes"] if x["platform"]=="iOS" and x["isAvailable"]]; print(sorted(r, key=lambda x: [int(p) for p in x["version"].split(".")])[-1]["identifier"])')
-          # the newest device type of a kind this Xcode knows ("iPhone 17", "iPad Pro 11-inch (M5)")
-          devtype=$(xcrun simctl list devicetypes -j | python3 -c "
-          import json, re, sys
-          want = {'iphone': r'^iPhone (\d+)$', 'ipad': r'^iPad Pro 11-inch \(M(\d+)\)$'}[sys.argv[1]]
-          t = [(int(m.group(1)), d['identifier']) for d in json.load(sys.stdin)['devicetypes'] if (m := re.match(want, d['name']))]
-          print(max(t)[1])" "$device")
-          udid=$(xcrun simctl create "maktaba-ci-${GITHUB_RUN_ID}-$device-$shard" "$devtype" "$runtime")
+          # the newest runtime that takes the newest "iPhone N" or "iPad Pro 11-inch (MN)"
+          # (iOS 27.1 is the iPhone Duo's alone: tools/apple/xcode.py tries the next pair)
+          udid=$(python3 tools/apple/xcode.py simulator "$device" "maktaba-ci-${GITHUB_RUN_ID}-$device-$shard")
           echo "UDID=$udid" >> "$GITHUB_ENV"
           # the on-screen keyboard shows, as on a phone (PlayerSignInKeyboardUITests measures
           # fields against it): no hardware keyboard, and the software one not minimized when
@@ -364,10 +359,9 @@ jobs:
           APP_ARTIFACT: player-ui-build-${{ matrix.device }}
         run: |
           log="$RESULTS/${{ matrix.device }}-${{ matrix.shard }}-app.log"
-          xcrun simctl spawn "$UDID" log show --style compact --info --debug \
-            --predicate 'subsystem BEGINSWITH "com.hamzalabs.maktaba"' > "$log" || true
-          xcrun simctl shutdown "$UDID" || true
-          xcrun simctl delete "$UDID" || true
+          # the app's log, the system's word on its processes ending, its crash reports; a
+          # simulator that stopped under the tests is said and booted again to read its log
+          python3 tools/apple/sim-log.py "$UDID" "$RESULTS" "${{ matrix.device }}-${{ matrix.shard }}" || true
           if [ "$APP_DOWNLOAD" = failure ]; then
             echo "::error::no line of the app at all: the app artifact $APP_ARTIFACT never downloaded, so no test ran"
             exit 1
@@ -410,7 +404,7 @@ jobs:
   tv-ui-tests:
     name: TV UI tests
     if: inputs.build
-    runs-on: macos-26
+    runs-on: xcode-27
     timeout-minutes: 60
     env:
       DERIVED: ${{ github.workspace }}/build/tv-ui-derived
@@ -419,24 +413,16 @@ jobs:
     steps:
       - uses: actions/checkout@v6.0.2
 
+      # the newest released Xcode, 27 or later, or the job fails (tools/apple/xcode.py)
       - name: Select Xcode
-        run: |
-          set -euo pipefail
-          xcode=$(ls -d /Applications/Xcode_2[6-9]*.app | sort -V | tail -n1)
-          sudo xcode-select -s "$xcode/Contents/Developer"
-          xcodebuild -version
+        run: python3 tools/apple/xcode.py select --min 27
 
       - name: Make and boot the Apple TV simulator
         run: |
           set -euo pipefail
           mkdir -p "$SHOTS" "$RESULTS"
-          runtime=$(xcrun simctl list runtimes -j | python3 -c 'import json,sys; r=[x for x in json.load(sys.stdin)["runtimes"] if x["platform"]=="tvOS" and x["isAvailable"]]; print(sorted(r, key=lambda x: [int(p) for p in x["version"].split(".")])[-1]["identifier"])')
-          # the newest 4K Apple TV this Xcode knows
-          devtype=$(xcrun simctl list devicetypes -j | python3 -c "
-          import json, sys
-          t = [d['identifier'] for d in json.load(sys.stdin)['devicetypes'] if d['name'].startswith('Apple TV 4K')]
-          print(sorted(t)[-1])")
-          udid=$(xcrun simctl create "maktaba-ci-${GITHUB_RUN_ID}-tv" "$devtype" "$runtime")
+          # the newest runtime with the newest 4K Apple TV it takes (tvOS 27 has no first one)
+          udid=$(python3 tools/apple/xcode.py simulator appletv "maktaba-ci-${GITHUB_RUN_ID}-tv")
           echo "UDID=$udid" >> "$GITHUB_ENV"
           # (no `simctl ui appearance` here: the tvOS runtime does not support it)
           xcrun simctl bootstatus "$udid" -b > /dev/null
@@ -467,10 +453,7 @@ jobs:
       - name: Keep the app's log, delete the simulator
         if: always() && env.UDID != ''
         run: |
-          xcrun simctl spawn "$UDID" log show --style compact --info --debug \
-            --predicate 'subsystem BEGINSWITH "com.hamzalabs.maktaba"' > "$RESULTS/tv-app.log" || true
-          xcrun simctl shutdown "$UDID" || true
-          xcrun simctl delete "$UDID" || true
+          python3 tools/apple/sim-log.py "$UDID" "$RESULTS" tv || true
 
       - name: Export the product screenshots
         if: "!cancelled()"
@@ -501,7 +484,7 @@ jobs:
   player-ui-mac:
     name: Player UI tests (mac)
     if: inputs.player_ui
-    runs-on: macos-26
+    runs-on: xcode-27
     timeout-minutes: 30
     env:
       DERIVED: ${{ github.workspace }}/build/player-ui-derived
@@ -510,12 +493,9 @@ jobs:
     steps:
       - uses: actions/checkout@v6.0.2
 
+      # the newest released Xcode, 27 or later, or the job fails (tools/apple/xcode.py)
       - name: Select Xcode
-        run: |
-          set -euo pipefail
-          xcode=$(ls -d /Applications/Xcode_2[6-9]*.app | sort -V | tail -n1)
-          sudo xcode-select -s "$xcode/Contents/Developer"
-          xcodebuild -version
+        run: python3 tools/apple/xcode.py select --min 27
 
       - name: Run the Mac Player tests
         working-directory: apps/apple
@@ -608,7 +588,7 @@ jobs:
   remote-ui-tests:
     name: Remote UI tests
     if: inputs.player_ui
-    runs-on: macos-26
+    runs-on: xcode-27
     timeout-minutes: 60
     env:
       DERIVED: ${{ github.workspace }}/build/remote-ui-derived
@@ -617,23 +597,15 @@ jobs:
     steps:
       - uses: actions/checkout@v6.0.2
 
+      # the newest released Xcode, 27 or later, or the job fails (tools/apple/xcode.py)
       - name: Select Xcode
-        run: |
-          set -euo pipefail
-          xcode=$(ls -d /Applications/Xcode_2[6-9]*.app | sort -V | tail -n1)
-          sudo xcode-select -s "$xcode/Contents/Developer"
-          xcodebuild -version
+        run: python3 tools/apple/xcode.py select --min 27
 
       - name: Make, boot and settle the iPhone simulator
         run: |
           set -euo pipefail
           mkdir -p "$SHOTS" "$RESULTS"
-          runtime=$(xcrun simctl list runtimes -j | python3 -c 'import json,sys; r=[x for x in json.load(sys.stdin)["runtimes"] if x["platform"]=="iOS" and x["isAvailable"]]; print(sorted(r, key=lambda x: [int(p) for p in x["version"].split(".")])[-1]["identifier"])')
-          devtype=$(xcrun simctl list devicetypes -j | python3 -c "
-          import json, re, sys
-          t = [(int(m.group(1)), d['identifier']) for d in json.load(sys.stdin)['devicetypes'] if (m := re.match(r'^iPhone (\d+)$', d['name']))]
-          print(max(t)[1])")
-          udid=$(xcrun simctl create "maktaba-ci-${GITHUB_RUN_ID}-remote" "$devtype" "$runtime")
+          udid=$(python3 tools/apple/xcode.py simulator iphone "maktaba-ci-${GITHUB_RUN_ID}-remote")
           echo "UDID=$udid" >> "$GITHUB_ENV"
           defaults write com.apple.iphonesimulator ConnectHardwareKeyboard -bool false
           xcrun simctl bootstatus "$udid" -b > /dev/null
@@ -671,10 +643,7 @@ jobs:
       - name: Keep the app's log, delete the simulator
         if: always() && env.UDID != ''
         run: |
-          xcrun simctl spawn "$UDID" log show --style compact --info --debug \
-            --predicate 'subsystem BEGINSWITH "com.hamzalabs.maktaba"' > "$RESULTS/remote-app.log" || true
-          xcrun simctl shutdown "$UDID" || true
-          xcrun simctl delete "$UDID" || true
+          python3 tools/apple/sim-log.py "$UDID" "$RESULTS" remote || true
 
       # its own artifact: product-shots-iphone is the Player's (the files are iphone-remote-<language>.png)
       - name: Export the product screenshots

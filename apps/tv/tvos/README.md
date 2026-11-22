@@ -1,6 +1,6 @@
 # Maktaba TV (Apple TV)
 
-A SwiftUI app for Apple TV (tvOS 26): a home's libraries on the television, driven with
+A SwiftUI app for Apple TV (tvOS 27): a home's libraries on the television, driven with
 the Siri remote. It is the **"Maktaba TV"** target of the Apple apps' Xcode project
 (`apps/apple/project.yml` → `Maktaba.xcodeproj`) and is built on **MaktabaKit**, the
 package the iPhone, iPad and Mac apps share: the API client (`X-Maktaba-Client: native`,

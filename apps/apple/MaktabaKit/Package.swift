@@ -8,7 +8,7 @@ import PackageDescription
 let package = Package(
     name: "MaktabaKit",
     defaultLocalization: "en",
-    platforms: [.iOS("26.0"), .macOS("15.0"), .tvOS("26.0")],
+    platforms: [.iOS("27.0"), .macOS("15.0"), .tvOS("27.0")],
     products: [
         .library(name: "MaktabaKit", targets: ["MaktabaKit"]),
     ],

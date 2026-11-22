@@ -4,7 +4,7 @@ Maktaba on Apple TV: your home's libraries on the television, driven with the Si
 
 ## What it is {#what-it-is}
 
-**Maktaba** for Apple TV (tvOS 26) has **Home** (your home's rails, continue watching first), **Libraries**, **Live TV**, **Search** and **Settings**. It plays videos with the system player: scrubbing, audio and subtitle choices. **Live TV** has **Now** (every channel you may watch, with what is on and its progress) and **Guide**; choose a channel to watch it live. Settings shows who is signed in and to which home, the theme, and signing out.
+**Maktaba** for Apple TV (tvOS 27) has **Home** (your home's rails, continue watching first), **Libraries**, **Live TV**, **Search** and **Settings**. It plays videos with the system player: scrubbing, audio and subtitle choices. **Live TV** has **Now** (every channel you may watch, with what is on and its progress) and **Guide**; choose a channel to watch it live. Settings shows who is signed in and to which home, the theme, and signing out.
 
 ## How to use it {#how-to-use}
 
