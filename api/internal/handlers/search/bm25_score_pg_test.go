@@ -8,6 +8,7 @@ package search
 
 import (
 	"context"
+	"database/sql"
 	"math"
 	"testing"
 )
@@ -29,20 +30,36 @@ func TestBM25_ScoresAreEachRowsOwn(t *testing.T) {
 	}
 	buildIndexes(t, db)
 	h := &Handler{DB: db}
+	for _, leg := range [][3]string{
+		{"video_search_docs_bm25_text", "search_text", "maktaba_normalize"},
+		{"video_search_docs_bm25_stem_text", "stem_text", "maktaba_stem_prepare"},
+	} {
+		scoresAreEachRowsOwn(t, db, h, leg[0], leg[1], leg[2])
+	}
+}
+
+// scoresAreEachRowsOwn checks one index's leg: with the index scan, and without it after
+// another search's scan on the same connection.
+func scoresAreEachRowsOwn(t *testing.T, db *sql.DB, h *Handler, index, col, fn string) {
+	t.Helper()
 	ctx := context.Background()
-	const index, col, fn = "video_search_docs_bm25_text", "search_text", "maktaba_normalize"
+	for _, q := range []string{`RESET enable_seqscan`, `RESET enable_sort`, `RESET enable_indexscan`, `RESET enable_bitmapscan`} {
+		if _, err := db.Exec(q); err != nil {
+			t.Fatal(err)
+		}
+	}
 	want, _, err := h.bm25LegRun(ctx, "الصبر", 10, Filters{}, index, col, fn, true)
 	if err != nil || len(want) != 4 {
-		t.Fatalf("each row's score worked out: %v %v", want, err)
+		t.Fatalf("%s: each row's score worked out: %v %v", index, want, err)
 	}
 	same := func(what string, got []savedVideo) {
 		t.Helper()
 		if len(got) != len(want) {
-			t.Fatalf("%s: %d rows, want %d", what, len(got), len(want))
+			t.Fatalf("%s %s: %d rows, want %d", index, what, len(got), len(want))
 		}
 		for i := range got {
 			if got[i].V != want[i].V || math.Abs(got[i].S-want[i].S) > 1e-6*math.Abs(want[i].S) {
-				t.Fatalf("%s: row %d is %s %v, want %s %v", what, i, got[i].V, got[i].S, want[i].V, want[i].S)
+				t.Fatalf("%s %s: row %d is %s %v, want %s %v", index, what, i, got[i].V, got[i].S, want[i].V, want[i].S)
 			}
 		}
 	}
