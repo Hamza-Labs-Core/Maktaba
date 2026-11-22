@@ -22,6 +22,20 @@ prs: [1497, 1511]
 - An independent review (GLM-5.3) found a TV UI test that could never reach a row's second
   bucket with Down alone. tvOS moves the focus between rows with Up and Down and along a row
   with Left and Right.
+- CI found three more problems, each fixed in #1515:
+  - Tapping a suggestion in `.searchSuggestions` also submits the search field. For a title,
+    that submit replaced the held "open the video" with a search of what was typed
+    (`LetGoFirst` keeps the latest change). Both apps now skip the submit that comes with a
+    title. On the TV, the submit waits 300 ms, because tvOS can send it just before the
+    suggestion's own action.
+  - `ViewThatFits` in the refine bar went back and forth between its two layouts on an iPhone
+    in Arabic. The app never went idle: every XCUITest tap waited 60 s. It is one row now,
+    whose labels wrap.
+  - The facets' sheet opens at half height on a phone, and its List draws only the rows on
+    screen, so the test scrolls a bucket into sight before tapping it.
+- One iPhone shard then failed with "Audit failed to complete in time" in the accessibility
+  audit. The same test passed on the run before, with the same app code, and a re-run of the
+  shard passed.
 
 ## What we learned
 - `String(localized:)` wraps each interpolated argument in bidi isolates (U+2068, U+2069).
@@ -34,6 +48,19 @@ prs: [1497, 1511]
 - The UI-test fixture's `q` does not echo what the tests type. Keying "the results on screen"
   on the echoed query swapped the list for a spinner on every refinement in tests.
   `Results.sent` (what the app sent) is the key now.
+
+- What tvOS shows XCUITest:
+  - `.searchSuggestions` is a row of cells under a one-row keyboard. The cells keep the label
+    ("seerah  ·  Word") and drop the identifier;
+  - a `Menu` is a button that never reports `hasFocus`, and its items are "Other" elements,
+    not buttons;
+  - after the button that ran a search goes away, the focus returns to the keyboard.
+
+  The TV test now steers by frames: up or down to the target's row, then along it, and the
+  focus counts as reached when the focused frame overlaps the target. That needs no
+  identifier and follows the language's direction.
+- A screen recording from the `.xcresult` (`xcresulttool export attachments`, then `ffmpeg` to
+  a tiled grid of frames) showed where the focus went. Guessing had not found it.
 
 ## Keep doing
 - Delegating a read-only review to another model before the PR. It caught the TV focus bug
