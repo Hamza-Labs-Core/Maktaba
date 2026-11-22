@@ -29,11 +29,17 @@ func bm25DB(t *testing.T) *sql.DB {
 		t.Skip("no pg_textsearch on this server (PostgreSQL 16, or not preloaded): the replica job runs this on 18")
 	}
 	for _, q := range []string{`CREATE SCHEMA IF NOT EXISTS textsearch`,
-		`CREATE EXTENSION IF NOT EXISTS pg_textsearch SCHEMA textsearch`} {
+		`CREATE EXTENSION IF NOT EXISTS pg_textsearch SCHEMA textsearch`,
+		// the app role's search_path as the bundle sets it (pgbundle.textsearchSQL): the
+		// extension's planner hook finds its objects there (story 49.9)
+		`DO $$ BEGIN EXECUTE format('ALTER DATABASE %I SET search_path TO "$user", public, textsearch', current_database()); END $$`} {
 		if _, err := db.Exec(q); err != nil {
 			t.Fatal(err)
 		}
 	}
+	// the setting is a new session's: the pool's sessions so far are closed
+	db.SetMaxIdleConns(0)
+	db.SetMaxIdleConns(2)
 	return db
 }
 

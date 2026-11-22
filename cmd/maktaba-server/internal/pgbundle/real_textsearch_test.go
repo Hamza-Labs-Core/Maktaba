@@ -101,6 +101,12 @@ func TestRealPgTextsearchPreloaded(t *testing.T) {
 		if err := appDB.QueryRowContext(qctx, `SELECT has_schema_privilege('`+TextsearchSchema+`', 'USAGE')`).Scan(&usable); err != nil || !usable {
 			t.Errorf("the app role's USAGE on %s: %v (%v)", TextsearchSchema, usable, err)
 		}
+		// story 49.9: the app role's sessions have the schema on their path, for the
+		// extension's planner hook (each BM25 row's score from its scan, not scored again)
+		var path string
+		if err := appDB.QueryRowContext(qctx, `SHOW search_path`).Scan(&path); err != nil || !strings.HasSuffix(path, ", "+TextsearchSchema) {
+			t.Errorf("the app role's search_path = %q (%v), want it to end with %s", path, err, TextsearchSchema)
+		}
 		for _, q := range []string{
 			"CREATE TEXT SEARCH CONFIGURATION public.check_search (COPY = simple)",
 			"ALTER TEXT SEARCH CONFIGURATION public.check_search ALTER MAPPING FOR hword, hword_part, word WITH unaccent, simple",

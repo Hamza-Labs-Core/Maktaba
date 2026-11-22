@@ -672,7 +672,8 @@ runs only when the person opens that tab or submits from it; Results never waits
     0234 above.
   - The exact index gives its top 100 and the stemmed one its top 50, so keyword search shows
     up to 150 videos (the two lists' union), not the 500 of `rules.search.max_videos`. The meaning search's videos still fuse
-    in for hybrid.
+    in for hybrid. (No longer: both give their top 500 since the scores come from the index
+    scan, "The BM25 score from the index scan" below.)
   - There is no separate pre-filter by the `library_id` index for a user with few libraries.
     The filter is in the BM25 query, and pg_textsearch's filtered top-k (`filtered_seed`)
     serves it: the one-library case measured the same as the whole library.
@@ -800,6 +801,62 @@ runs only when the person opens that tab or submits from it; Results never waits
   - A video deleted outright (its document cascading with it) leaves its words counted until
     the dictionary is rebuilt. A suggestion may then name a word that finds nothing. The
     stage's own deletions (a soft-deleted video, a lost transcript) take the words off.
+
+### 49.15 Arabic titles rank by similarity
+
+- **The cause.** The bundled server's database is `--locale=C`, where pg_trgm finds no trigram
+  in an Arabic word. Search's title matches (`runTitles`) ordered by `similarity(v.title, q)`,
+  0 for every Arabic title, so Arabic title matches came newest first.
+- **The fix.** Similarity is now taken over the title and the query folded
+  (`maktaba_normalize`, lower case) with their Arabic letters spelled in ASCII, as
+  `search_terms.trgm` spells them (story 49.8). pg_trgm reads those in any locale. A Latin
+  title's letters pass through the spelling unchanged, so Latin titles keep their order.
+- **Proof:** `TestBM25_ArabicTitlesRankBySimilarity` (the replica job, whose servers are
+  `--locale=C` like the bundled one). الصبر ranks درس الصبر above a long title that also says
+  it, though the long one is newer, and patience does the same for Latin titles. Without the
+  change the Arabic order was newest first.
+- **Not changed.** The match itself is still `ILIKE '%q%'` on the title as written: a query
+  with harakat, or a hamza the title spells otherwise, finds no title. For an Arabic query
+  the trigram index (migration 0098) cannot narrow the match, so it reads the library's
+  titles (keyword search's documents find these videos by their titles as well).
+
+### The BM25 score from the index scan (found while building 49.9)
+
+- **What was wrong.** Each row of a BM25 query was scored again from its whole text: about
+  1.8 ms for a 5,000-word document, the home's average (23.1 M lines over 45,000 videos).
+  - Measured on 5,000 such documents, a search took 180 ms, not 49.7's 15 ms. 49.7's 45,000
+    test documents had 400 words, so its test could not see the cost.
+  - The index scan itself returns the top 100 in 0.6 ms; Postgres then worked out each
+    row's `ORDER BY` value again.
+- **Why.** pg_textsearch's planner hook replaces that value with the score its scan already
+  computed (`bm25_get_current_score()`), with two conditions:
+  - the `ORDER BY` must be the operator alone, not a select-list column;
+  - the hook finds its operators and that function by unqualified name, on the session's
+    `search_path`, once per connection. The bundled server makes the extension in its own
+    schema, `textsearch`, which no path held.
+- **The fix.**
+  - The bundle sets the app role's `search_path` to `"$user", public, textsearch`
+    (`pgbundle.textsearchSQL`; `clusterRev` 6, so a home made before runs it at its next
+    start). `textsearch` comes last, so a name of the app's still resolves in `public`.
+  - Each leg selects `textsearch.bm25_get_current_score()` and orders by the operator
+    (`bm25LegSQL`).
+  - A plan without the BM25 index scan (a table, or a library's rows, few enough to read
+    whole and sort) has no scan to take the score from. `bm25_get_current_score()` then
+    gives the last score of the connection's last index scan: the extension never clears
+    it. So each leg works out its first and last rows' scores from their text and compares
+    them, within 1e-3: another search's score is another document's, far off. That is two
+    documents, a few ms at most. When they differ, or the check fails, the leg asks again
+    with the operator in the select list, and a log line says so (`search_bm25_rescored`). `TestBM25_ScoresAreEachRowsOwn` makes that plan on one connection after
+    another search's index scan; without the check, a row carried that search's score.
+- **Measured.**
+  - 5,000 documents of 5,000 words (`TestBM25_LongDocuments`, the replica job): p95 8.9 ms
+    for الله and 8.6 ms for a sentence, at 500 results (the check of the first and last rows
+    included).
+  - 45,000 documents (`TestBM25_Perf45k`): p95 under 2.5 ms, and 13.9 ms for one library.
+  - The real bundled PostgreSQL 18 gives the app role that path
+    (`TestRealPgTextsearchPreloaded`).
+- **So the 500 results of the spec are back.** Both indexes give their top 500 (49.7 kept
+  100 and 50 for the cost).
 
 ### 49.9 Relevance check built from the transcripts
 

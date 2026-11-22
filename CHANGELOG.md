@@ -376,10 +376,10 @@ build fails when the two differ.
 
 ### Fixed
 
-- **Search finds a sentence however its letters are spelled (Epic 49, story 49.9).** A
-  sentence typed with a bare alef for a hamza, or ه for ة, now ranks its video as the exact
-  spelling does, and a word with و in front (وغفران) finds the word. A relevance check,
-  built from each library's own transcripts, measures it.
+- **Arabic titles that match a search come closest first (Epic 49, story 49.15).** A search's
+  "In titles" list ranked Arabic titles newest first, whatever they said, because the home's
+  database could not compare Arabic letters. It now puts the title closest to the search
+  first, as it already did for Latin titles.
 
 - **A release is published only with every file its signed checksums name.** Until now a draft
   release could be made public with only its signed set attached (`release.json`, the checksums
@@ -4274,6 +4274,17 @@ build fails when the two differ.
   it now drops dashboard minutes older than a day before any info log line. Before, a week
   of metric minutes kept the file over the cap, and every info line was deleted. Week-long
   dashboards then read the hourly figures, which are always kept.
+
+- **Keyword search answers in a few milliseconds on a home's long transcripts, with up to
+  500 videos (Epic 49).** Each result was scored again from its whole transcript, about 2 ms
+  for an hour's lecture: some 180 ms a search on a large home. Results now take the score
+  the index already worked out, and keyword search shows up to 500 videos again instead of
+  150. A home made before this release picks it up at its next start.
+
+- **Search finds a sentence however its letters are spelled (Epic 49, story 49.9).** A
+  sentence typed with a bare alef for a hamza, or ه for ة, now ranks its video as the exact
+  spelling does, and a word with و in front (وغفران) finds the word. A relevance check,
+  built from each library's own transcripts, measures it.
 
 ## [0.2.0] - 2026-10-19
 

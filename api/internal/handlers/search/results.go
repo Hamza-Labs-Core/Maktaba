@@ -792,8 +792,14 @@ func (h *Handler) ftsMatching(ctx context.Context, q string, sem []Hit) (map[int
 }
 
 // runTitles matches video titles by substring (case-insensitive), most similar
-// first, then the most recently added. On Postgres the trigram index (0098) serves both the ILIKE and the
-// ordering; SQLite scans with LIKE, shortest title first.
+// first, then the most recently added. On Postgres the trigram index (0098) serves the
+// ILIKE of a Latin query; SQLite scans with LIKE, shortest title first.
+//
+// Similarity is pg_trgm's over the title and the query folded (maktaba_normalize, lower
+// case) with their Arabic letters spelled in ASCII (story 49.15): the bundled server's
+// database is --locale=C, where pg_trgm finds no trigram in an Arabic word, and similarity
+// gave every Arabic title 0. The spelling is search_terms.trgm's (slot 0235); a Latin
+// title's letters pass through it as they are.
 func (h *Handler) runTitles(ctx context.Context, q string, limit int, f Filters) ([]savedTitle, error) {
 	args := []any{"%" + escapeLike(q) + "%", q}
 	where := append([]string{"v.deleted_at IS NULL"}, whereVideos(f, &args)...)
@@ -805,7 +811,7 @@ func (h *Handler) runTitles(ctx context.Context, q string, limit int, f Filters)
 			WHERE v.title LIKE $1 ESCAPE '\' AND ` + strings.Join(where, " AND ") + `
 			ORDER BY length(v.title), v.created_at DESC, v.id LIMIT $` + strconv.Itoa(len(args))
 	} else {
-		query = `SELECT v.id::text, similarity(v.title, $2) AS score FROM videos v
+		query = `SELECT v.id::text, similarity(` + asciiTrgm("v.title") + `, ` + asciiTrgm("$2::text") + `) AS score FROM videos v
 			WHERE v.title ILIKE $1 ESCAPE '\' AND ` + strings.Join(where, " AND ") + `
 			ORDER BY score DESC, v.created_at DESC, v.id LIMIT $` + strconv.Itoa(len(args))
 	}

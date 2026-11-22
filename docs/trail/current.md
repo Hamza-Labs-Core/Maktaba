@@ -1,11 +1,11 @@
 ---
 schema: 1
-tag: v0.3.155
-up_to_commit: 75fd70721
-built_from: v0.3.154
+tag: v0.3.156
+up_to_commit: a8d4c9de7
+built_from: v0.3.155
 ---
 
-# Trail snapshot: v0.3.155
+# Trail snapshot: v0.3.156
 
 ## Keep doing
 
@@ -65,7 +65,7 @@ built_from: v0.3.154
 - A finding that belongs to another PR's change gets its own small PR, not a ride in an unrelated story. (#1124)
 - A fallback users see (a title that falls back to the file name) lives in one helper per layer, never copied into each query and client: `videotitle`, `videoTitle`, `VideoTitle`. A test that pins a fix is first seen failing on the old code. (#1125)
 - Read a session's or agent's report as a claim: read the pull request's state, not the memory of having pushed. A child that finds a brief's premise false and stops with evidence is doing its job. (#1237, #1271)
-- One independent review, by a reader given the code and not the conclusions, before merging an agent's large change; findings go back to the agent that has the context. (#1243)
+- One independent review, by a reader given the code and not the conclusions, before CI for a story and before merging an agent's large change; findings go back to the agent that has the context. (#1243, d20261122-498-suggestions-review)
 - Read a suite's per-test timings before accepting a brief's premise that it is slow or sleeps for real. (#1304)
 - Audit a story against main before building it (most of 58.17's OpenAPI half had shipped); before fixing a flake reported on a PR, find the failing job's head sha and check `git merge-base --is-ancestor FIX HEAD`: the failure can predate a fix already merged. A "missing rows" report can concern tests outside the job's scope. (#1342, #1302, #1379)
 - One owner per branch: stop the author when a watcher takes over a PR, check a stopped child's branch head before briefing a replacement, and start worktree children from a checkout of main, not the parent's trail branch. (#1390, #1385, #1389)
@@ -102,6 +102,7 @@ built_from: v0.3.154
 - Turn a "should never happen" rule into a test-time error and run the whole suite under it. (#662)
 - NAS shapes (`nas.yml`, `tests/nas/cells.json`): imitate a NAS shape in a container before any device is bought, and keep every cell's logs, pass or fail. A cell job whose cell is still pending passes, so read each cell's `report.json` (artifact `nas-cell-<cell>-<arch>`) to see that it ran; checks waiting for a fix carry `needs` and turn on in the pull request after the fix merges, by adding it to `landed`. Read a sibling story's merged code before writing the assertion that targets it. A fix's pull request may leave out its own `landed` entry; the next harness pull request adds it. A `CLEAN` merge state does not mean the cells ran against the main a pull request lands on: when a sibling story merges while a NAS pull request waits, merge main in and run the cells again. A story that changes when work runs (quiet hours, tiers) runs nas-shapes and ships its harness change in the same pull request. When the product's behaviour is the decided one, fix the harness, then prove the behaviour in a cell of its own (`quiet-hours-hold`). (#1091, #1100, #1103, #1104)
 - Run a wave's full pipeline suite on a freshly initialised Postgres cluster (`initdb -E UTF8`; SQL_ASCII fails the Unicode tests) before opening its PR: roles are cluster-wide, so a reused cluster hides order bugs, and CI's `unit` job runs only the affected tests. (#847, #902)
+- Test search features on a `--locale=C` scratch database (the bundled server's setting), with Arabic data. (d20261122-0098-arabic-title-trgm)
 - When a layout bug is found by reading code, add the reference test that would have caught it; read each reference image for the part, and the language, it should guard before committing it, and compare pixels, not bytes. Name a new test after the file it guards (`affected-tests` maps `SeriesScreen.swift` to `SeriesScreenTests.swift`). Check a `Reference images:` list with `python3 tools/ci/reference_images.py --body F --files F` before pushing the PR body. (#893, #910, #1185)
 - Verify each new test fails without its fix (origin/main's sources on a WIP commit); a security alert is fixed only once a test fails on main for it. Latch tests that hold a read's answer reproduce read/write races every time. A test of running without an optional dependency hides that dependency itself; `uv sync --all-extras` locally finds the ones that do not. Pair every "is refused" or "does not build" test with a positive control that passes once the missing thing is added (a refusal test called a function that does not exist; another's import sat in a reactor's never-called `main`). Check a timing test by putting the old behaviour back. A test double answers the real API's shape for every return value, even unread ones (the sqlite shim's `batch()` was not D1's). Run every new check's mutation before pushing, and reproduce a reviewer's trust-chain finding through the real command. (#679, #613, #667, #734, #811, #848, #851, #886, #1440)
 - Jobs run only when their code changes; run the same check on every PR that the release tag runs. (#528, #519)
@@ -266,6 +267,7 @@ built_from: v0.3.154
 - Profile each step before optimising and compare old and new as a best of N in one run beside a like-for-like reference loop; read a timing test's number from its first CI run before settling the ceiling, and run timing tests alone (`node --test` runs files side by side). Read the `session time:` line of a pytest tier, measured inside the tier, and find the critical path before cutting a parallel side. (#1347, #1351, #1303)
 - A cache that hits is not a cache that helps: read its restored size (setup-uv's default `prune-cache: true` keeps nothing from an index). Measure downloads from the lock's wheel sizes and the job's own `Prepared N packages` line. (#1190)
 - Read the failing xcresult's element hierarchy before changing a UI test's waits; an Apple UI job counts its tests from the result bundle, never xcodebuild's exit (`tools/ci/xcresult_ran.py`). (#1287, #1317)
+- Read a failed UI test's screen recording frame by frame (`ffmpeg -ss`) before guessing — it showed a missing alert at once — and run diagnostic legs in parallel on a scratch branch, each one change, with the real test kept unchanged. (d20261122-xcode27-ui-failures, d20261122-ipad-search-tab-role)
 - A list-must-match-the-code check is pinned by file as well as by test name; when such a check and a new test break main together, fix it once on main in its own PR and have branches re-merge main. (#1379, #1353)
 - A file the web typecheck reaches outside `web/` gets a COPY line in both `web/Dockerfile` and `cloud/Dockerfile` (the guard names it); TV jobs end with `.github/actions/tv-logs` under `if: always()`; render visual references and generate lockfiles in the CI image, never on the Mac. (#1296, #1233, #1267)
 - Witness a wave's stages with `MAKTABA_REHEARSAL_WITNESS` when they must do real work in the rehearsal. Log the real failure reason in a readiness loop before fixing it (a fake only proves what it models). (#1023, #1380)
@@ -353,6 +355,8 @@ built_from: v0.3.154
 - Removing conflict markers by deleting marker lines: it dropped main's CHANGELOG entries. After a CHANGELOG fix, `git diff origin/main...HEAD -- CHANGELOG.md CHANGELOG.ar.md | grep '^-[^-]'` prints nothing. (#1263)
 - Clamping a metric with `max(0, …)`: a zero latency is a bug signal. Dismissing CodeQL's `len(x)+k` capacity hint: drop the hint. (#1382, #1381)
 - Putting an English note inside a spec table's Arabic column. (#1344)
+- Shipping a fix for a CI-only failure before a diagnostic run has shown the cause, or re-presenting the same `.alert` modifier from its own button. (d20261122-xcode27-ui-failures)
+- Removing app code one piece per round before asking the system who did it. (d20261122-ipad-search-tab-role)
 
 ## What we learned
 
@@ -470,6 +474,7 @@ built_from: v0.3.154
 - Pixel references with a tolerance cannot guard wording; an exact text reference beside them can, and shows the failing line. (#929)
 - Without the bounded waits, a hung `-q` pytest run was cancelled at 15 minutes with no traceback; the stuck cluster test did only aiosqlite work (cause not proven). (#945)
 - `ci-success` fails whenever any other job fails, so a "rerun only if the flaky job is the sole failure" check must leave it out. (#970)
+- A cancelled job fails `ci-success` like a failed one: re-run it, or bring main in, rather than waiting for it to pass. (#1491)
 - In `cloud-rehearsal`, the 4 s aggregate verdict proves nothing alone: read the run's jobs to see that a scenario actually ran. (#967)
 - `actions/cache` derives an entry's version from its path list: a save whose paths differ from its restore's writes an entry the restore never finds. An all-or-nothing cache save never fills during an outage. `/archive/` and the REST tarball are different files with different SHA-256s. (#1014)
 - An EXIT trap's last status becomes the script's exit status: `[ cond ] && cmd` in a trap fails a good run when `cond` is false. A deploy script run from a Mac avoids `chown --reference` and GNU `sed -i`. (#1010)
@@ -506,6 +511,10 @@ built_from: v0.3.154
 - An extension whose functions revoke PUBLIC's EXECUTE must not live in `public` here: slot 0103 grants EXECUTE on every function of `public`, and granting on a function the granting role cannot run is an error, not a warning. `CREATE EXTENSION … SCHEMA s` works even with `relocatable = false` (that only stops a later move); the extension's operator is then named `OPERATOR(textsearch.<@>)`. A migration test that migrates as a superuser cannot see such a privilege bug: `pg18-check.sh` migrates as an app role that is no superuser, as a home does. (#1478)
 - `CREATE DATABASE` cannot share one `psql -c` with another statement (an implicit transaction). (#1478)
 - An index build has no business in a migration on a table that grows: a build cut short leaves an invalid index and a bounded retry never finishes, so the BM25 indexes are built after the start (`api:search_index` loop under an advisory lock, hourly; `maktaba-api search-indexes` in the foreground). (#1478, #1482)
+- A per-row cost in BM25's `ORDER BY ... LIMIT k` multiplies by k: store what the score needs, and keep k as small as the page allows. (#1491)
+- Folding and matching in Go, over the page's lines, is far cheaper than a SQL function per line (40 µs a line in SQL); Postgres's stemmer decides only the lines that need word forms, within a budget. (#1491)
+- On the bundled server, initialised with `--locale=C`, pg_trgm and anything that relies on the locale's notion of a letter does not work on Arabic: an Arabic word has no trigrams, so `similarity` ranks no Arabic title and `ILIKE '%q%'` loses its index. Docker images default to `en_US.utf8`, so a test there does not show it; keep a dictionary's keys as ASCII spellings where pg_trgm must read them. (d20261122-0098-arabic-title-trgm, d20261122-498-suggestions-review)
+- A `text_pattern_ops` btree serves `LIKE 'p%'`, but an `ORDER BY` on the same expression uses it only with `USING ~<~`; without that it is a bitmap scan and a sort of every match. An aggregate kept per library (a dictionary) must follow every way a row changes library: a merge, not only an edit. (d20261122-498-suggestions-review)
 - The SQLite migration runner rewrites `ADD COLUMN IF NOT EXISTS` only when it is the one statement of its `StatementBegin` block. (#733)
 - Cloud migrations are numbered by epic slot; goose refuses a version below the head, so `Migrator.Up` passes `goose.WithAllowMissing()`; `goose Down 1` rolls back the highest slot, so test a migration with `goose.DownTo(<version below it>)`. Widening a CHECK drops and re-adds it, a contract: keep it in its own file marked contract. `CREATE OR REPLACE FUNCTION` is expand-safe. (#700, #832, #854)
 - `job_stages.stage` is capped at 40 characters; the SQLite sibling cannot widen an inline check without rebuilding the table. (#693)
@@ -603,6 +612,8 @@ built_from: v0.3.154
 
 **Apps and UI tests**
 - Let go of focus before an action disables or replaces the form holding it: a focused field removed with the keyboard up leaves UIKit's animation tracking stuck for the rest of the process, and every idle wait times out. Setting `@FocusState` to false and changing the screen in the same turn is not letting go first: the change runs from `onChange` of the focus, once the field has let go (tvOS needs none of this; its keyboard closes before submit). "App animations complete notification not received" with a still recording (it records only on change) means a stuck animation, not a visible one; a SwiftUI `ProgressView` does not block XCUITest's idle check but still costs redraws, so long waits show a still indicator. (#1419, #1425)
+- On iOS 27.2 SwiftUI writes a closed alert's `isPresented` binding again 30–60 ms after its button, and the same `.alert` modifier presented again in that window shows nothing: consecutive confirmations alternate between two presentations (by step parity), and a binding's close writes nothing. On iPadOS 27.2 a `Tab(role: .search)`'s field taking focus makes `.sidebarAdaptable`'s TabView set its UIKit tabs again, and the tab's screen loses first responder, so the iPad's Search tab is an ordinary tab for now. (d20261122-xcode27-ui-failures, d20261122-ipad-search-tab-role)
+- Guessing at a UI failure's cause costs a CI round per fix; logging the state at each step — the window's presentations, `UITextField.textDidEndEditingNotification` with `Thread.callStackSymbols` — named the caller in one run. (d20261122-xcode27-ui-failures, d20261122-ipad-search-tab-role)
 - A UI assertion on something the app hides on a timer must raise it first and act with no query in between: the live banner hides 6 s after play starts, and a loaded runner's query time eats the window, so the test raises the banner itself (Play/Pause) and presses Menu at once. (#1402)
 - To run something before a push in a `NavigationStack(path:)`, push from code (a `Button`, then append to the path): nothing runs before a `NavigationLink(value:)`'s own push, and a tap gesture beside the link can take its tap on iPhone and not on iPad, which only a UI test that checks where the tap led catches. Set a code push action with `.environment` outside the `NavigationStack`, so every pushed page has it. (#1425, #1432)
 - In Arabic text a path is reordered at its slashes: wrap each path, command or URL in U+2066/U+2069, and measure positions with a Range before judging a bidi screenshot. Prettier rewrites escaped isolates as literal characters, so later replacements that search for the escape match nothing; a Vite dev server can serve a stale module until restarted with `--force`. Build an image `src` only from a fixed list (CodeQL flags one built from the page's language). (#1120)
@@ -747,6 +758,8 @@ built_from: v0.3.154
 
 - A web panel for `plugin_relay` (English and Arabic) is still to build; the data is in health and `/metrics`. The live home stays on 0.3.135 until it updates to a release with #1424; after it updates, confirm the logs role sits near idle and `logs.db` drops under its cap at the next hourly sweep. (#1419, #1424, #1426)
 - PostgreSQL 18 (Epic 49): machines follow an 18 home (49.3, PR 1459, its remainder on issue #1473: set-aside clusters and storage moves, an ex-home's 16 cluster, the backups-folder check), and PR 1457's follow-ups (stale comments, a hand-made 16 cluster, the rollback-switch window, an atomic marker write, leftover sweeping). Narrow `MSVC_RUNTIME_VERSION` to 14.52.37029.0 once no runner has the older image. Search on the new normalisation is in: `maktaba_normalize` with its stems (49.4, #1476), `video_search_docs` and its BM25 indexes built after the start (49.5, #1478), and the `keyword_index` stage (49.6, #1482); the review minors are on issue #1477 (the stemmer's remaining roughness waits for 49.9's relevance check), issue #1479 and issue #1483. Installing a store or file package still waits for 54.49 and Maktaba's key (54.46's install path is in, PR 1452, its minors on issue #1463); PR 1456 item 1, a duplicated JSON key in a package's `statements.json`, is not refused until a package statements reader lands; PR 1458 (the Maktaba publisher prefix move, the bundle parser's duplicate-id guard, `CheckStore` taking its member list from the caller); issue #1461, two test comments still cite the removed N8 budget. (#1441, #1445, #1446, #1450, #1460)
+- Keyword search (49.7): the review's minors — the perf fixture without lines, the untested timeout branches, Latin letters ø/ł/æ that fold differently from Postgres — are on issue #1492, and the 150-video cap stays until a story makes the stemmed leg cheaper. (#1491)
+- Story 49.15: rank Arabic title matches by similarity (the ASCII spelling as 49.8's dictionary does, or the dictionary's keys), with a test on a C-locale Postgres. (d20261122-0098-arabic-title-trgm)
 - Image size gate: when the plugin store goes live, release embeds its key and revocation lists into api and streaming before building; the `images` job builds with the committed nulls, so the gate will not see those bytes. (#1449)
 - Seats (story 16.4): no test classifies every non-GET route as open or refused, so a future route under an open prefix (`/api/stream/sessions…`, `/api/cast/grants…`) would be born open; the admin's over-seats message is English only, like every message of the licence view. (#1454)
 - Coordinated disclosure (story 23.8): TC1, the tabletop drill, and TC3, a synthetic-CVE patch release, are process exercises, not done in code. (#1444)
@@ -782,6 +795,7 @@ built_from: v0.3.154
 - Only the wave scenarios run the crash-loop check: the others use a fake pipeline wheel with no `maktaba_plugin_runner`; a fake runner module there would let every scenario run it. (d20261108-runners-wait-venv)
 - Epic 57 (parental controls, built): 57.16 (time rules through Screen Time) waits for the Family Controls entitlement; the Declared Age Range capability on the Player App IDs and the checks on a real child device (the rating limit, Downtime, whether it reflects the parent's own restrictions, 57.04 §4; steps in `docs/testflight.md`); guardian screens on Android and the desktop Player, Notifications and the iPad split view on iPhone; the policy cache's listener holds one more Postgres connection at idle; restricted Home is over its 60 ms bound (the Home row cache is bypassed for restricted accounts). (#979, #1204)
 - `testAlsoSendToMaktabaWhenTheHomeAllowsIt` fails now and then on CI's simulators, on main too, cause not established; CI's simulator device pick will be refused under Xcode 27 (`docs/testflight.md`). (#1204)
+- Xcode 27: the iPhone libraries accessibility audit's app exit has no cause yet — its evidence is the next run's `*-ends.log` and crash reports; and whether a later iPadOS fixes the search-role tab reset decides the Search tab's role coming back on the iPad. (d20261122-xcode27-ui-failures, d20261122-ipad-search-tab-role)
 - Classify parity: every parity open still clones two databases and starts the dev server (about 1 s). In `compute_metrics`, `statistics.pstdev` is about 20 % of what is left for a season; replacing it would change the last bits of three metrics, so it stays. (#996, #1050)
 - One slow iPad shard's warm audits took 15.5 then 14.0 s: on such a runner a test's first audit can still reach XCTest's 15 s deadline. (#1001)
 - Plex removal's cleanup migration, a release or more later: the seven stages' rows, the two pools, the dizqueTV extension and component rows, settings keys, `external_links` targets, `plex_items` and the channel audit tables, the `maktaba_fp_dizquetv` role, the retired lists and the `rules.legacy_tv_live` fallback, and the retired `dizquetv_*` stages' rows (slot 0215 kept them). The mediaintel scripts still write Plex collections on their own. (d20261108-remove-plex-sync, #1078)
@@ -851,7 +865,8 @@ built_from: v0.3.154
 | #1451 | 2026-11-19 | search: retire Chroma, semantic search on pgvector only (story 43.5) |
 | #1453 | 2026-11-19 | subscriptions: an expired or downgraded plan keeps working fully for 30 days (story 16.2) |
 | #1471 | 2026-11-19 | docs(wiki): derive epic-status.md's counts from its story rows |
-| #1491 | 2026-11-22 | Epic 49 story 49.7: keyword search ranks videos by BM25 over their documents |
+| #1486 | 2026-11-22 | ci(apple): Xcode 27 and the 27 SDKs for every Apple build; the apps need iOS and tvOS 27 |
+| #1499 | 2026-11-22 | test(updates): the 7 MiB release-list memory test runs in the integration tier |
 
 ## Index
 
@@ -1622,5 +1637,10 @@ built_from: v0.3.154
 | 1476-arabic-normalisation | 2026-11-19 | pr | Arabic normalisation and word forms for search, on Postgres and SQLite |
 | 1478-video-search-docs | 2026-11-19 | pr | video_search_docs and its BM25 indexes, with pg_textsearch in its own schema |
 | 1482-keyword-index | 2026-11-19 | pr | The keyword_index stage and its backfill; BM25 indexes built after the start |
+| 1491-bm25-query | 2026-11-22 | pr | Keyword search ranks videos by BM25: phrase boost, passages by spelling and form, hybrid |
+| d20261122-0098-arabic-title-trgm | 2026-11-22 | incident | Title similarity ranks no Arabic title on the bundled server (migration 0098, C locale) |
+| d20261122-498-suggestions-review | 2026-11-22 | incident | Story 49.8's first suggestions scanned every title and speaker; the perf fixture had none |
+| d20261122-ipad-search-tab-role | 2026-11-22 | incident | iPadOS 27.2: the search-role tab resets on focus, and a submitted search's field never takes the keyboard again |
 | d20261122-main-unit-budget | 2026-11-22 | incident | Main red on the unit tier's per-test cap (TestMachineRoutesAdminOnly) |
+| d20261122-xcode27-ui-failures | 2026-11-22 | incident | Xcode 27 (#1486): the Remote's second confirmation lost, and UI jobs that could not say why an app ended |
 
