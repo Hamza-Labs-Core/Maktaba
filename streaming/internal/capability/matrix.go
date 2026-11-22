@@ -353,6 +353,11 @@ func defaultProfiles() []*Profile {
 			MaxAudioChannels: 8,
 			SupportsHLS:      true,
 		},
+		// The Android Player on a phone, tablet or foldable (Media3). Its report
+		// (device_caps, read from the device's own decoders) narrows this, and
+		// widens it up to its Ceiling: the Dolby, FLAC, Vorbis and DTS audio a
+		// device decodes itself, HLG on a screen that shows it, MPEG-TS files.
+		// Without a report, this is what every Android phone plays.
 		{
 			Name:             "android-native",
 			Containers:       []string{"mp4", "mkv", "webm"},
@@ -364,6 +369,18 @@ func defaultProfiles() []*Profile {
 			MaxAudioChannels: 8,
 			SupportsHLS:      true,
 			SupportsDASH:     true,
+			Ceiling: &Profile{
+				Containers:       []string{"mp4", "mkv", "webm", "ts"},
+				VideoCodecs:      []string{"h264", "hevc", "vp9", "av1"},
+				AudioCodecs:      []string{"aac", "opus", "mp3", "ac3", "eac3", "flac", "vorbis", "dts"},
+				HDR:              []string{"sdr", "hdr10", "hlg"},
+				MaxHeight:        2160,
+				MaxBitrateKbps:   25000,
+				MaxAudioChannels: 8,
+				SupportsHLS:      true,
+				SupportsDASH:     true,
+				HLSSegments:      []string{"ts", "fmp4"},
+			},
 		},
 		{
 			Name:             "androidtv",

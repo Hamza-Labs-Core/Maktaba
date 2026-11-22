@@ -27,13 +27,20 @@ Each TV profile alone is a **baseline** that plays on every model of its platfor
 1080p, in MP4 or as HLS with TS segments. A newer TV plays far more than that, and what it plays
 depends on its model and year, not its platform. So a TV app also reports what its device plays.
 
+A phone is the same: the Android Player opens every stream with `android-native` and the phone's
+report. Its ceiling adds the audio a phone may decode itself (AC-3, E-AC-3, FLAC, Vorbis, DTS),
+HLG and MPEG-TS files, so a film whose Dolby audio the phone decodes plays as it is. A player
+that names no profile gets `generic`, and nearly every film is transcoded for it: its first
+frame waits for the transcode's first segment, and its length grows as the transcode is written
+(below).
+
 ## Reporting what the device plays
 
 `device_caps` is optional. Fill it from the platform's own query:
 
 | Platform | Query |
 |---|---|
-| Fire TV, Android TV | `MediaCodecList`, `Display.getHdrCapabilities` |
+| Fire TV, Android TV, Android phones and tablets | `MediaCodecList`, `Display.getHdrCapabilities` |
 | Samsung (Tizen) | `webapis.avplay`, `webapis.productinfo` |
 | LG (webOS) | `MediaSource.isTypeSupported` with `webOS`'s `deviceInfo` |
 | Roku | `roDeviceInfo` (`CanDecodeVideo`, `CanDecodeAudio`, `GetDisplayProperties`, `GetAudioOutputChannel`) |
@@ -98,6 +105,24 @@ to SDR) HDR they do not show: a Dolby Vision source they lack plays as its base 
 show it, and profile 5 is a transcode. Codec names are read as one name each, so a profile's
 `h265` is the probe's `hevc` and `ec-3` is `eac3`. HEVC is on `android-native` and `androidtv`
 only: Chrome decodes it only on some hardware, and Safari and AVPlayer refuse HEVC tagged `hev1`.
+
+## A transcode's playlist and the video's length
+
+A transcode's rendition playlists are written while the video plays: an EVENT playlist that
+lists every segment written so far (6 seconds each), with no `#EXT-X-ENDLIST` until the
+transcode is done. A player reads such a playlist as a live stream, and its duration is only
+what is written so far. So:
+
+- Show the video's length from `duration_sec` in the session's answer (the catalogue's), not
+  the player's duration, while the playlist grows.
+- A seek past what is written, or before the stream's `start_sec`, opens the session again at
+  that position: the home starts a transcode there. Its times stay the video's (the part before
+  `start_sec` is listed as `#EXT-X-GAP` segments), so the position, the progress and the
+  subtitles keep to the video.
+- Keep the playback speed at 1: a player that keeps a live offset would play it faster or
+  slower.
+
+Direct play has none of this: the file's own length is known from its first bytes.
 
 ## URLs a player fetches without a header
 

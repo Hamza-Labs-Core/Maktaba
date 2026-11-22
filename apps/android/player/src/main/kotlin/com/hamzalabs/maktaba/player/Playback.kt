@@ -14,6 +14,7 @@ import androidx.media3.common.DeviceInfo
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.MimeTypes
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.Tracks
 import androidx.media3.common.VideoSize
@@ -34,6 +35,7 @@ import com.hamzalabs.maktaba.core.api.Rendition
 import com.hamzalabs.maktaba.core.api.busyRetryMs
 import com.hamzalabs.maktaba.core.api.errorDetails
 import com.hamzalabs.maktaba.core.api.Video
+import com.hamzalabs.maktaba.core.playback.DeviceCapsReader
 import com.hamzalabs.maktaba.player.media.NowPlaying
 import com.hamzalabs.maktaba.player.media.SEEK_INCREMENT_MS
 import com.hamzalabs.maktaba.player.media.CastLoad
@@ -65,6 +67,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.JsonObject
 
 /**
  * What is playing, for the whole app: the watch screen may be full screen (folded, open flat,
@@ -114,6 +117,11 @@ class Playback(
     private val system: Boolean = true,
     /** The time now, in milliseconds: when the stream was opened and when to renew it (a test gives its own clock). */
     private val nowMs: () -> Long = System::currentTimeMillis,
+    /**
+     * What this device plays (story 58.02's `device_caps`), read at each open; null leaves it to
+     * the [PHONE_PROFILE] alone.
+     */
+    private val deviceCaps: suspend () -> JsonObject? = { withContext(Dispatchers.Default) { DeviceCapsReader.read(context) } },
 ) {
     var video by mutableStateOf<Video?>(null)
         private set
@@ -193,6 +201,14 @@ class Playback(
     private var qualityChosen = false
 
     private var session: String? = null
+    /** The session plays the file itself (direct play): its duration is the file's. */
+    private var direct = false
+    /** Where the stream starts in the video (a transcode opened at a position), in ms. */
+    private var streamStartMs = 0L
+    /** The video's length in the catalogue, in ms (0: unknown): the session's, else the video's. */
+    private var catalogueMs = 0L
+    /** This video was opened again as a transcode after its file failed to play as it is. */
+    private var transcodeForced = false
     /** Where the video was opened (Try again opens there). */
     private var startedAtSec = 0
     /** When to reopen: just before the signed URL ends. */
@@ -218,6 +234,7 @@ class Playback(
         if (v.id == video?.id && problem == null && timeUp == null && !endedByHome) return
         stop()
         video = v
+        transcodeForced = false
         startedAtSec = startSec.coerceAtLeast(0)
         running = scope.launch(Dispatchers.Main.immediate) { run(fromMs = startedAtSec * 1000L) }
     }
@@ -259,6 +276,9 @@ class Playback(
         }
         releasePlayers()
         session = null
+        direct = false
+        streamStartMs = 0L
+        catalogueMs = 0L
         problem = null
         waiting = null
         timeUp = null
@@ -296,6 +316,47 @@ class Playback(
         castLoad?.cancel()
         castLoad = null
         videoSize = VideoSize.UNKNOWN
+    }
+
+    /**
+     * The video's length for the scrubber, the time and Next (in ms, 0: unknown). A file played
+     * directly has its own; a transcode's playlist grows as it is written (no `#EXT-X-ENDLIST`
+     * until the transcode is done), so the player's duration is only what is there so far: the
+     * catalogue's length is the video's then, and the playlist's once it is longer (or the
+     * catalogue does not know it).
+     */
+    fun lengthMs(p: Player): Long {
+        val own = p.duration.takeIf { it != C.TIME_UNSET && it > 0 } ?: 0L
+        if (own > 0 && !p.isCurrentMediaItemDynamic) return own
+        return maxOf(own, catalogueMs, ((video?.durationSec ?: 0.0) * 1000).toLong())
+    }
+
+    /**
+     * Seeks to [toMs] in the video. A transcode has only what it has written so far, from where
+     * it was opened: a seek past that, or before it, opens the stream again there (the home starts
+     * a transcode at that position, its times still the video's), instead of waiting for the
+     * transcode to get there or landing in the gaps before its start.
+     */
+    fun seekTo(toMs: Long) {
+        val c = control ?: return
+        val to = toMs.coerceAtLeast(0).let { val d = lengthMs(c); if (d > 0) it.coerceAtMost(d) else it }
+        if (!outsideStream(c, to)) {
+            c.seekTo(to)
+            return
+        }
+        val wasPlaying = c.playWhenReady
+        Log.i("Maktaba", "playback: a seek to ${to / 1000} s is outside what the transcode has written; opening the stream there")
+        scope.launch(Dispatchers.Main.immediate) {
+            opening.withLock { open(fromMs = to) }
+            if (!wasPlaying) control?.playWhenReady = false
+        }
+    }
+
+    /** [to] is before the transcode's start or past what it has written (the playlist still grows). */
+    private fun outsideStream(c: Player, to: Long): Boolean {
+        if (direct || isRemote(c) || !c.isCurrentMediaItemDynamic) return false
+        val written = c.duration.takeIf { it != C.TIME_UNSET && it > 0 } ?: return false
+        return to < streamStartMs - STREAM_EDGE_MS || to > written - STREAM_EDGE_MS
     }
 
     /**
@@ -367,9 +428,16 @@ class Playback(
         }
         val old = session
         try {
+            // the profile and what this device plays, so a file it plays as it is is played
+            // directly (the home's `generic` profile transcoded nearly every file); a transcode
+            // only once that failed to play
+            val caps = if (transcodeForced) null else deviceCaps()
             // a session the home opened is always closed, even when the player stopped meanwhile
             val s = withContext(NonCancellable) {
-                client.openStream(v.id, (fromMs / 1000).toInt(), maxBitrateKbps = maxBitrateKbps)
+                client.openStream(
+                    v.id, (fromMs / 1000).toInt(), profile = PHONE_PROFILE, maxBitrateKbps = maxBitrateKbps,
+                    deviceCaps = caps, forceTranscode = transcodeForced,
+                )
             }
             try {
                 currentCoroutineContext().ensureActive()
@@ -382,6 +450,10 @@ class Playback(
                 val item = MediaItem.Builder()
                     .setUri(url.toString())
                     .apply { if (s.isHls) setMimeType(MimeTypes.APPLICATION_M3U8) }
+                    // a transcode's playlist grows while it is written (an EVENT playlist): the
+                    // player reads it as live, and would speed up or slow down to keep a live
+                    // offset. It is a video: it plays at the speed it was made at
+                    .setLiveConfiguration(MediaItem.LiveConfiguration.Builder().setMinPlaybackSpeed(1f).setMaxPlaybackSpeed(1f).build())
                     // the notification's, the lock screen's and the receiver's title
                     .setMediaMetadata(MediaMetadata.Builder().setTitle(v.displayTitle).build())
                     .build()
@@ -400,6 +472,9 @@ class Playback(
                 throw e
             }
             session = s.sessionId
+            direct = s.isDirect
+            streamStartMs = ((s.startSec ?: 0.0) * 1000).toLong().coerceAtLeast(0)
+            catalogueMs = ((s.durationSec ?: v.durationSec ?: 0.0) * 1000).toLong().coerceAtLeast(0)
             waiting = null
             ladder = s.ladder
             ended = false
@@ -615,6 +690,16 @@ class Playback(
                 isPlaying = playing
             }
 
+            override fun onPlayerError(error: PlaybackException) {
+                // a file this device was to play as it is (its decoders said so) that it cannot
+                // decode after all: opened again once, as a transcode, where it was
+                if (!direct || transcodeForced || isRemote(p) || !cannotDecode(error)) return
+                Log.w("Maktaba", "player: the file did not play as it is (${error.errorCodeName}); opening a transcode", error)
+                transcodeForced = true
+                val at = p.currentPosition
+                scope.launch(Dispatchers.Main.immediate) { opening.withLock { open(fromMs = at) } }
+            }
+
             override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
                 // paused: "continue watching" resumes here (FR-32). Resumed: the home hears of it at
                 // once, as a time-limited account's stream is served only while it does (57.14)
@@ -758,6 +843,18 @@ class Playback(
         }
     }
 }
+
+/** The profile the Player opens its streams with (the home's `android-native`, narrowed by `device_caps`). */
+const val PHONE_PROFILE = "android-native"
+
+/** How near a transcode's start or its written end a seek still lands in it, in ms. */
+const val STREAM_EDGE_MS = 1_000L
+
+/**
+ * A player failure of the file itself (its parsing, a decoder, the audio output: Media3's 3xxx,
+ * 4xxx and 5xxx codes), not of the network or the home.
+ */
+fun cannotDecode(e: PlaybackException): Boolean = e.errorCode in 3000..5999
 
 /** A lease that lapses again this soon after it was reopened for a lapse stops the video. */
 const val LAPSE_REOPEN_ONCE_MS = 30_000L

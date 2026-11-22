@@ -376,6 +376,14 @@ build fails when the two differ.
 
 ### Fixed
 
+- **Videos start much sooner on Android phones and tablets, and show their real length.** The
+  Maktaba Player on Android now tells the home what the device plays, so a film the phone can
+  play as it is (including Dolby audio its own decoders take) plays directly instead of waiting
+  for the home to convert it first. A video that still has to be converted shows its full length
+  from the start, not only the part converted so far, and a jump past that part starts the video
+  there. If a file does not play as it is after all, it is converted and plays from the same
+  place.
+
 - **Arabic titles that match a search come closest first (Epic 49, story 49.15).** A search's
   "In titles" list ranked Arabic titles newest first, whatever they said, because the home's
   database could not compare Arabic letters. It now puts the title closest to the search
