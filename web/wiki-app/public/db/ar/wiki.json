@@ -6961,7 +6961,7 @@
       "id": "ep-get-search-suggest",
       "type": "endpoint",
       "title": "GET /search/suggest",
-      "content": "اقتراحات الإكمال التلقائي",
+      "content": "اقتراحات أثناء الكتابة",
       "tags": [
         "api",
         "Search",
@@ -6986,7 +6986,7 @@
       "i18n": {
         "lang": "ar",
         "source": {
-          "content": "8fbb354c65538332"
+          "content": "7aac2000122e1713"
         }
       }
     },

@@ -1094,6 +1094,14 @@ build fails when the two differ.
 
 ### Added
 
+- **Search suggests as you type, offers "Did you mean", counts its results, and sorts them
+  (Epic 49, story 49.8).** Typing a word suggests your earlier searches, the word completed
+  from what your libraries' videos say, and matching titles and speakers. A search that finds
+  few videos offers the closest common spelling (مدرسة for مدرصة). Every search counts its
+  videos by library, language, speaker, year and length, and each count narrows the search to
+  it. Results can be sorted by relevance, newest or most matches. Each of these only ever
+  shows what you can see.
+
 - **The Plugins page shows each program's processor use (Epic 54, story 54.52).** Beside its
   memory, each program that runs a plugin now shows the share of one processor core it used over
   the last five minutes, measured on macOS, Linux and Windows. A program several plugins share

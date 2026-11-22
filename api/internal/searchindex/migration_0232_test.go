@@ -135,6 +135,8 @@ func TestSlot0232UpAndDownOnPostgres(t *testing.T) {
 			t.Fatalf("%d BM25 indexes without pg_textsearch", n)
 		}
 	}
+	// from 0232's own list: a later slot's is longer (slot 0235 adds search_terms)
+	run(t, db, "0232's list", up)
 	before := scalar[int](t, db, `SELECT cardinality(cluster_copy_excluded())`)
 	run(t, db, "down", down)
 	if objects() != 0 || excluded() {

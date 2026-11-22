@@ -169,12 +169,24 @@ func searchFilterCase(t *testing.T, db *sql.DB, vOK, vHi, vUnr string, sem []Hit
 		t.Errorf("with an allow rule: titles %d, transcripts %d, want 2 and 2", resp.VideosTotal, resp.TranscriptTotal)
 	}
 
-	// suggestions are the caller's own earlier words, never a title
+	// suggestions (story 49.8) under the 9+ limit: the titles of the videos the account
+	// may see and its own earlier words, never a hidden title, and no word of the terms
+	// dictionary (it cannot tell which video a word comes from)
+	limit.Store(nine())
+	if _, err := db.Exec(`INSERT INTO search_terms (library_id, term, shown, df) VALUES ($1, 'zarqawords', 'zarqawords', 3)`, libA); err != nil {
+		t.Fatal(err)
+	}
+	if vrec := call(t, base, viewer, http.MethodGet, "/api/search/suggest?q=Zar", ""); !strings.Contains(vrec.Body.String(), `"zarqawords"`) {
+		t.Errorf("suggest as the viewer: %s", vrec.Body.String())
+	}
 	srec := call(t, h, child, http.MethodGet, "/api/search/suggest?q=Zar", "")
-	if srec.Code != http.StatusOK {
-		t.Errorf("suggest: %d", srec.Code)
+	if srec.Code != http.StatusOK || !strings.Contains(srec.Body.String(), "Kid Zarqa") {
+		t.Errorf("suggest: %d %s", srec.Code, srec.Body.String())
 	}
 	hidden("suggest", srec.Body.String())
+	if strings.Contains(srec.Body.String(), `"kind":"term"`) {
+		t.Errorf("suggest gave a restricted account a dictionary word: %s", srec.Body.String())
+	}
 }
 
 func TestSearchUnderParentalFilter_Postgres(t *testing.T) {

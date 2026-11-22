@@ -6,6 +6,10 @@ package search
 // words by a Zipf law, الله in most documents, the sentence in some, the rare word in a
 // few. It takes about a minute to build, so it is the replica job's
 // (MAKTABA_TEST_SEARCH_LARGE=1, on its PostgreSQL 18).
+//
+// Story 49.8's acceptance on the same library: suggestions as you type answer in p95 < 50
+// ms (the terms dictionary filled from the documents, as the keyword_index stage fills
+// it), and so does did-you-mean.
 
 import (
 	"context"
@@ -18,6 +22,9 @@ import (
 	"time"
 
 	"github.com/lib/pq"
+
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/searchterms"
 )
 
 func TestBM25_Perf45k(t *testing.T) {
@@ -81,26 +88,49 @@ func TestBM25_Perf45k(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// the terms dictionary, as the keyword_index stage counts it: per library, each word's
+	// documents
+	type term struct{ lib, key string }
+	df, shown := map[term]int{}, map[term]string{}
 	for i := 0; i < docs; i++ {
 		lib := libA
 		if i%10 == 0 {
 			lib = libB
 		}
-		if _, err := dst.Exec(id(i), lib, "درس "+vocab[zipf.Uint64()], "الشيخ", body(), id(i), 1); err != nil {
+		title, b := "درس "+vocab[zipf.Uint64()], body()
+		for k, s := range searchterms.DocTerms(title, "الشيخ", b) {
+			df[term{lib, k}]++
+			if _, ok := shown[term{lib, k}]; !ok {
+				shown[term{lib, k}] = s
+			}
+		}
+		if _, err := dst.Exec(id(i), lib, title, "الشيخ", b, id(i), 1); err != nil {
 			t.Fatal(err)
 		}
 	}
 	if _, err := dst.Exec(); err != nil {
 		t.Fatal(err)
 	}
+	tst, err := txn.Prepare(pq.CopyIn("search_terms", "library_id", "term", "shown", "df"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for k, n := range df {
+		if _, err := tst.Exec(k.lib, k.key, shown[k], n); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := tst.Exec(); err != nil {
+		t.Fatal(err)
+	}
 	if err := txn.Commit(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.Exec(`ANALYZE videos; ANALYZE video_search_docs`); err != nil {
+	if _, err := db.Exec(`ANALYZE videos; ANALYZE video_search_docs; ANALYZE search_terms`); err != nil {
 		t.Fatal(err)
 	}
 	buildIndexes(t, db)
-	t.Logf("%d documents loaded and indexed in %s", docs, time.Since(t0).Round(time.Second))
+	t.Logf("%d documents loaded and indexed in %s (%d dictionary rows)", docs, time.Since(t0).Round(time.Second), len(df))
 
 	h := &Handler{DB: db}
 	if ready, _ := h.bm25Now(ctx); !ready {
@@ -149,6 +179,51 @@ func TestBM25_Perf45k(t *testing.T) {
 				_ = rows.Close()
 				t.Logf("the exact leg's plan:\n%s", plan.String())
 			}
+		}
+	}
+
+	// story 49.8: suggestions and did-you-mean on the same library
+	admin := &principal.Principal{UserID: userA, AccessAllLibraries: true}
+	limitedUser := &principal.Principal{UserID: userB, Libraries: []string{libB}}
+	misspelt := []rune(vocab[3])
+	misspelt[1] = 'ك' // one letter off a frequent word (ك is in no word)
+	for _, c := range []struct {
+		name string
+		run  func() (int, error)
+	}{
+		{"suggest ال (the commonest prefix)", func() (int, error) { s, err := h.suggest(ctx, admin, "ال"); return len(s), err }},
+		{"suggest الص", func() (int, error) { s, err := h.suggest(ctx, admin, "الص"); return len(s), err }},
+		{"suggest a sentence's last word", func() (int, error) { s, err := h.suggest(ctx, admin, "الصبر عند الم"); return len(s), err }},
+		{"suggest ال, one library (a limited user)", func() (int, error) { s, err := h.suggest(ctx, limitedUser, "ال"); return len(s), err }},
+		{"did-you-mean " + string(misspelt), func() (int, error) {
+			d, err := h.didYouMean(ctx, string(misspelt), nil, 0)
+			if d == "" {
+				return 0, err
+			}
+			return 1, err
+		}},
+	} {
+		var took []time.Duration
+		var n int
+		for i := 0; i < runs+3; i++ {
+			s := time.Now()
+			got, err := c.run()
+			if err != nil {
+				t.Fatalf("%s: %v", c.name, err)
+			}
+			if i >= 3 {
+				took = append(took, time.Since(s))
+			}
+			n = got
+		}
+		sort.Slice(took, func(i, j int) bool { return took[i] < took[j] })
+		p50, p95 := took[len(took)/2], took[len(took)*95/100]
+		t.Logf("%s: %d answers, p50 %s, p95 %s", c.name, n, p50.Round(time.Millisecond/10), p95.Round(time.Millisecond/10))
+		if n == 0 {
+			t.Errorf("%s: nothing answered", c.name)
+		}
+		if p95 > 50*time.Millisecond {
+			t.Errorf("%s: p95 %s, want < 50ms", c.name, p95)
 		}
 	}
 }

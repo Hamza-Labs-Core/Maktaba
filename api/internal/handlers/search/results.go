@@ -110,6 +110,16 @@ type Response struct {
 	// YouTube is the optional "From YouTube" augmentation block (Story
 	// 26.8). Present only when the caller passed include=["youtube"].
 	YouTube *YTBlock `json:"youtube,omitempty"`
+
+	// Sort is the order the results are in: relevance, newest or matches (story 49.8).
+	Sort string `json:"sort"`
+	// Facets count the videos found by library, language, speaker, year and duration
+	// band (story 49.8; nil when no video was found).
+	Facets *Facets `json:"facets,omitempty"`
+	// DidYouMean is the query with its rare or unknown words replaced by the closest
+	// frequent word of the caller's libraries, when the search found few videos
+	// (story 49.8; empty: none).
+	DidYouMean string `json:"did_you_mean,omitempty"`
 }
 
 // savedSet is a search's ordered result, as search_runs keeps it.
@@ -211,6 +221,11 @@ func (h *Handler) Search(w http.ResponseWriter, r *http.Request) {
 	if req.Limit <= 0 || req.Limit > 200 {
 		req.Limit = 50
 	}
+	switch req.Sort {
+	case SortNewest, SortMatches:
+	default:
+		req.Sort = SortRelevance
+	}
 
 	// Authz scope: non-admin restricted to their library set.
 	p := principal.FromContext(r.Context())
@@ -239,7 +254,7 @@ func (h *Handler) Search(w http.ResponseWriter, r *http.Request) {
 		}
 		if len(req.Filters.LibraryID) == 0 {
 			common.WriteJSON(w, r, http.StatusOK, Response{
-				Q: req.Q, Mode: req.Mode, Filters: req.Filters, Hits: []Hit{},
+				Q: req.Q, Mode: req.Mode, Sort: req.Sort, Filters: req.Filters, Hits: []Hit{},
 				Videos: []TitleVideo{}, TranscriptVideos: []TranscriptVideo{},
 				PageSize: rl.pageSize(req.View), PassagesPageSize: rl.PassagesPageSize,
 			})
@@ -251,6 +266,23 @@ func (h *Handler) Search(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		httperror.Write(w, r, httperror.Internal("").Wrap(err))
 		return
+	}
+	// story 49.8: the order asked for, kept with the search so every page follows it
+	if err := h.sortRun(ctx, rn, req.Q, req.Sort); err != nil {
+		httperror.Write(w, r, httperror.Internal("sort").Wrap(err))
+		return
+	}
+	facets, err := h.facets(ctx, rn)
+	if err != nil {
+		// the results are still answered, with no facets
+		h.log().WarnContext(ctx, "search: no facets", "event", "search_facets_failed", "err", err)
+		facets = &Facets{}
+	}
+	didYouMean, err := h.didYouMean(ctx, req.Q, req.Filters.LibraryID, len(resultIDs(rn, fewResults)))
+	if err != nil {
+		// the results are still answered, with no suggestion
+		h.log().WarnContext(ctx, "search: no did-you-mean", "event", "search_did_you_mean_failed", "err", err)
+		didYouMean = ""
 	}
 	if h.DB != nil && p.UserID != "" && req.save() {
 		if err := h.saveRun(ctx, p.UserID, rn, rl); err != nil {
@@ -273,14 +305,18 @@ func (h *Handler) Search(w http.ResponseWriter, r *http.Request) {
 	}
 	hits := flatHits(videos, req.Limit)
 	resp := Response{
-		SearchID: rn.ID, Q: req.Q, Mode: req.Mode, Filters: req.Filters, TookMs: took,
-		Degraded: rn.Degraded, PageSize: pageSize, PassagesPageSize: rl.PassagesPageSize,
+		SearchID: rn.ID, Q: req.Q, Mode: req.Mode, Sort: req.Sort, Filters: req.Filters, TookMs: took,
+		DidYouMean: didYouMean,
+		Degraded:   rn.Degraded, PageSize: pageSize, PassagesPageSize: rl.PassagesPageSize,
 		Videos: titles, VideosTotal: len(rn.Set.Titles),
 		TranscriptVideos: videos, TranscriptTotal: len(rn.Set.Videos),
 		Hits: hits, Total: len(hits),
 	}
 	if semOff {
 		resp.Semantic = "off"
+	}
+	if facets.Videos > 0 {
+		resp.Facets = facets
 	}
 	if rn.ID != "" {
 		resp.ExpiresAt = rn.ExpiresAt.UTC()
@@ -588,6 +624,42 @@ func whereVideos(f Filters, args *[]any) []string {
 			ph[i] = "$" + strconv.Itoa(len(*args))
 		}
 		where = append(where, "v.detected_language IN ("+strings.Join(ph, ",")+")")
+	}
+	// story 49.8: the facets' filters (a speaker, a duration band, a year)
+	if len(f.Speaker) > 0 {
+		where = append(where, "EXISTS (SELECT 1 FROM speakers sp WHERE sp.video_id = v.id AND sp.unknown_index IS NULL AND sp.name IN ("+
+			placeholders(f.Speaker, args)+"))")
+	}
+	if d := f.DurationSec; d != nil {
+		if d.Gte != nil {
+			*args = append(*args, *d.Gte)
+			where = append(where, "v.duration_sec >= $"+strconv.Itoa(len(*args)))
+		}
+		if d.Lte != nil {
+			*args = append(*args, *d.Lte)
+			where = append(where, "v.duration_sec <= $"+strconv.Itoa(len(*args)))
+		}
+		if d.Lt != nil {
+			*args = append(*args, *d.Lt)
+			where = append(where, "v.duration_sec < $"+strconv.Itoa(len(*args)))
+		}
+	}
+	if d := f.Date; d != nil {
+		// the date a video shows: published, else added. Compared as a timestamp on
+		// Postgres, as canonical ISO text on SQLite (a date "2024-01-01" sorts before
+		// every time of that day, so lte a date leaves that day out: lt the next day)
+		if d.Gte != "" {
+			*args = append(*args, d.Gte)
+			where = append(where, "COALESCE(v.published_at, v.created_at) >= $"+strconv.Itoa(len(*args)))
+		}
+		if d.Lte != "" {
+			*args = append(*args, d.Lte)
+			where = append(where, "COALESCE(v.published_at, v.created_at) <= $"+strconv.Itoa(len(*args)))
+		}
+		if d.Lt != "" {
+			*args = append(*args, d.Lt)
+			where = append(where, "COALESCE(v.published_at, v.created_at) < $"+strconv.Itoa(len(*args)))
+		}
 	}
 	return where
 }

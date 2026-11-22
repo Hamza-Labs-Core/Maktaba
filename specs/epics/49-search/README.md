@@ -678,3 +678,95 @@ runs only when the person opens that tab or submits from it; Results never waits
   - SQLite keeps the line path. Its FTS5 table is written (story 49.6), and ranking by it is
     not built.
 
+
+### 49.8 Suggestions, did-you-mean, facets, sort (API)
+
+- **The terms dictionary** (migration 0235). `search_terms` has one row per library and word:
+  - `term`: the word's key as search matches it (folded as `maktaba_normalize` folds, lower
+    case, Latin accents removed);
+  - `shown`: the spelling the transcripts use most (harakat and tatweel removed), so a
+    suggestion shows مدرسة, not the key مدرسه;
+  - `df`: how many of the library's documents hold the word.
+
+  The `keyword_index` stage keeps it, in the transaction that writes or drops a document: the
+  old document's words leave the counts and the new one's join them
+  (`pipeline/src/maktaba_pipeline/search/terms.py`). `video_search_docs.terms_counted` says
+  whether a document's words are counted, so a document written before the dictionary
+  existed is only added. The stage's version is 2, so its plan rebuilds every document once
+  and fills the dictionary. Go's `api/internal/searchterms` keys words the same way; both
+  read `shared/testdata/searchterms.json` in a test.
+- **Suggestions as you type** (`GET /api/search/suggest`), at most 10:
+  - the caller's own earlier searches that start with the query (at most 3);
+  - the query with its last word completed from the dictionary, most documents first (at
+    most 5, from 2 letters): الصبر عند ال → الصبر عند الله;
+  - titles (at most 3) and named speakers (at most 2) of the caller's videos with a word that
+    starts with the query.
+
+  The answer keeps `suggestions` (the texts, as before) and adds `items`, each with its
+  `kind` (`history`, `term`, `title`, `speaker`) and a title's `video_id`.
+- **Did-you-mean** (`did_you_mean` on `POST /api/search`) comes when a search finds fewer
+  than 5 videos. Each word of 3 letters or more that the caller's libraries hold in no
+  document is replaced by the closest word of the same script, by trigram similarity (at
+  least 0.3), then by documents. A word some documents hold is replaced only by one that 10
+  times as many hold: a transcript's own misspelling is a word too. The answer is the
+  query with the words as the transcripts write them.
+- **Facets** (`facets` on `POST /api/search`, with the first page) count the videos found
+  (the titles and transcripts lists, at most 1,000) by:
+  - library (with its name);
+  - language;
+  - named speaker (the top 20);
+  - year (the date a video shows: published, else added);
+  - duration band (`under_5m`, `5m_20m`, `20m_60m`, `over_60m`).
+
+  Each year and duration bucket carries the filter that narrows the search to it. The
+  request's filters now apply `speaker`, `duration_sec` and `date` to every keyword leg
+  (BM25, the line path, titles). `lt`, an upper bound left out, is new beside `gte` and
+  `lte`.
+- **Sort** (`sort` on `POST /api/search`): `relevance` (the default), `newest` (the date a
+  video shows) or `matches` (most matching lines first). The kept search keeps the order,
+  so every page follows it. For `matches`, a BM25 video's lines are counted by the lines'
+  full-text index (the words as written), as the line path counts them. The page still
+  shows its own count, by the word's spellings and forms.
+- **Roles.** Each part reads only the caller's libraries: a limited user's own (or the
+  request's narrower filter), every library for an account that sees all. A parental limit
+  hides videos within a library, and the dictionary cannot tell which video a word comes
+  from. So a restricted account gets no dictionary word: no completed word and no
+  did-you-mean. It still gets its earlier searches, and the titles and speakers of the
+  videos it may see. A failed facet or did-you-mean lookup answers the search without
+  them.
+- **Proof:**
+  - `TestBM25_SearchHelp` (PostgreSQL 18, the replica job):
+    - the facets' counts equal the videos found, and each year, duration and speaker
+      bucket's filter narrows to its videos;
+    - newest and most-matches order, kept across pages;
+    - المدرصة gets المدرسة;
+    - the last word completed, titles and speakers suggested;
+    - another library's word is never suggested nor offered as did-you-mean to a limited
+      user, and is to the admin.
+  - `TestSearchHelp_SQLite` is the same on SQLite.
+  - `TestSearchUnderParentalFilter_*`: a restricted account's suggestions hold no hidden
+    title and no dictionary word.
+  - The stage's tests (`test_keyword_index.py`, SQLite and Postgres) cover the dictionary's
+    counts across an edit, a lost transcript, two libraries and a version-1 document.
+  - `TestBM25_Perf45k` times the dictionary of the 45,000-document library (32,578 rows):
+    - suggest takes p95 6.5 ms for ال (the commonest prefix), 5.4 ms for الص, 6.7 ms for a
+      sentence's last word and 2.3 ms for one library;
+    - did-you-mean takes p95 2.4 ms;
+    - all locally, against a 50 ms limit.
+- **How it differs from the spec.**
+  - Did-you-mean's similarity is at least 0.3, not 0.4: one wrong letter in a five-letter
+    Arabic word (مدرصه for مدرسه) scores 0.33.
+  - pg_trgm does not read the key itself. The bundled server's database is
+    `--locale=C`, where pg_trgm finds no trigram in an Arabic word. A generated column,
+    `search_terms.trgm`, spells the key's 29 Arabic letters in ASCII, and its GIN index
+    serves the lookup; a key is compared only with keys of the same script. Found on the
+    way: `videos_title_trgm_idx` (migration 0098) has the same limit, so title similarity
+    ranks no Arabic title (unchanged here).
+  - SQLite has no pg_trgm. Did-you-mean compares the 2,000 most frequent words that share
+    the word's first letter or its last two, in Go, by the same similarity.
+  - Suggestions are completed words, titles and speakers. There is no separate trigram
+    match on prefixes: a prefix lookup on the key's btree (`text_pattern_ops`) is the whole
+    of it.
+  - A video deleted outright (its document cascading with it) leaves its words counted until
+    the dictionary is rebuilt. A suggestion may then name a word that finds nothing. The
+    stage's own deletions (a soft-deleted video, a lost transcript) take the words off.
