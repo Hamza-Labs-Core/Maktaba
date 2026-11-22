@@ -154,9 +154,10 @@ func TestSlot0232UpAndDownOnPostgres(t *testing.T) {
 	run(t, db, "up twice", up) // every statement can run again
 }
 
-// The acceptance on PostgreSQL 18: one BM25 index on maktaba_search (the text as typed,
-// normalised), one on maktaba_stem (its word forms), both over title, speakers and body; a
-// ranked query on each is answered by its index. Skipped where pg_textsearch is not (16).
+// The acceptance on PostgreSQL 18 (story 49.5, the indexes as slot 0234 builds them): one
+// BM25 index on maktaba_search (the text as typed, normalised), one on maktaba_stem (its
+// word forms), both over title, speakers and body (the columns search_text and stem_text);
+// a ranked query on each is answered by its index. Skipped where pg_textsearch is not (16).
 func TestSlot0232BM25Indexes(t *testing.T) {
 	db, _ := clustertest.ScratchDB(t)
 	if !textsearchHere(t, db) {
@@ -177,25 +178,21 @@ func TestSlot0232BM25Indexes(t *testing.T) {
 	}
 	// a build that did not finish (a concurrent build stopped part way leaves its index
 	// invalid): the next Ensure drops it and builds it again
-	if _, err := db.Exec(`UPDATE pg_index SET indisvalid = false WHERE indexrelid = 'video_search_docs_bm25_stem'::regclass`); err != nil {
+	if _, err := db.Exec(`UPDATE pg_index SET indisvalid = false WHERE indexrelid = 'video_search_docs_bm25_stem_text'::regclass`); err != nil {
 		t.Fatal(err)
 	}
 	ran, err = Ensure(ctx, db)
-	if err != nil || len(ran) != 2 || !strings.HasPrefix(ran[0], "DROP INDEX CONCURRENTLY IF EXISTS public.video_search_docs_bm25_stem") ||
-		!strings.Contains(ran[1], "video_search_docs_bm25_stem") {
+	if err != nil || len(ran) != 2 || !strings.HasPrefix(ran[0], "DROP INDEX CONCURRENTLY IF EXISTS public.video_search_docs_bm25_stem_text") ||
+		!strings.Contains(ran[1], "video_search_docs_bm25_stem_text") {
 		t.Fatalf("Ensure after an invalid build ran %q (%v)", ran, err)
 	}
-	if !scalar[bool](t, db, `SELECT indisvalid FROM pg_index WHERE indexrelid = 'video_search_docs_bm25_stem'::regclass`) {
+	if !scalar[bool](t, db, `SELECT indisvalid FROM pg_index WHERE indexrelid = 'video_search_docs_bm25_stem_text'::regclass`) {
 		t.Fatal("the stemmed index is still invalid")
 	}
-	for name, cfg := range map[string]string{"video_search_docs_bm25": "maktaba_search", "video_search_docs_bm25_stem": "maktaba_stem"} {
+	for name, want := range map[string][2]string{"video_search_docs_bm25_text": {"search_text", "maktaba_search"},
+		"video_search_docs_bm25_stem_text": {"stem_text", "maktaba_stem"}} {
 		def := scalar[string](t, db, `SELECT pg_get_indexdef($1::regclass)`, name)
-		fn := "maktaba_normalize"
-		if cfg == "maktaba_stem" {
-			fn = "maktaba_stem_prepare"
-		}
-		if !strings.Contains(def, "USING bm25") || !strings.Contains(def, "public."+cfg) ||
-			strings.Count(def, fn+"(") != 3 {
+		if !strings.Contains(def, "USING bm25 ("+want[0]+")") || !strings.Contains(def, "public."+want[1]) {
 			t.Errorf("%s: %s", name, def)
 		}
 	}
@@ -223,9 +220,12 @@ func TestSlot0232BM25Indexes(t *testing.T) {
 	}
 	top := func(index, fn, q string) string {
 		t.Helper()
+		col := "search_text"
+		if strings.HasSuffix(index, "_stem_text") {
+			col = "stem_text"
+		}
 		query := `SELECT title FROM video_search_docs
-			ORDER BY ARRAY[public.` + fn + `(title), public.` + fn + `(speakers), public.` + fn + `(body)]
-			      OPERATOR(textsearch.<@>) textsearch.to_bm25query(public.` + fn + `($1), '` + index + `') LIMIT 1`
+			ORDER BY ` + col + ` OPERATOR(textsearch.<@>) textsearch.to_bm25query(public.` + fn + `($1), '` + index + `') LIMIT 1`
 		var plan strings.Builder
 		rows, err := db.Query(`EXPLAIN (COSTS OFF) `+query, q)
 		if err != nil {
@@ -243,14 +243,14 @@ func TestSlot0232BM25Indexes(t *testing.T) {
 		return scalar[string](t, db, query, q)
 	}
 	// spelling variants (أ/ا, ة/ه) find the document through the exact index
-	if got := top("video_search_docs_bm25", "maktaba_normalize", "احمد المصيبه"); got != "درس في الصبر" {
+	if got := top("video_search_docs_bm25_text", "maktaba_normalize", "احمد المصيبه"); got != "درس في الصبر" {
 		t.Errorf("the exact index ranks %q first", got)
 	}
 	// another form of the word (يصبر, الصابرون's root) finds it through the stemmed index
-	if got := top("video_search_docs_bm25_stem", "maktaba_stem_prepare", "يصبر"); got != "درس في الصبر" {
+	if got := top("video_search_docs_bm25_stem_text", "maktaba_stem_prepare", "يصبر"); got != "درس في الصبر" {
 		t.Errorf("the stemmed index ranks %q first", got)
 	}
-	if got := top("video_search_docs_bm25_stem", "maktaba_stem_prepare", "talks"); got != "Patience" {
+	if got := top("video_search_docs_bm25_stem_text", "maktaba_stem_prepare", "talks"); got != "Patience" {
 		t.Errorf("the stemmed index ranks %q first for English", got)
 	}
 	// a video deleted takes its document

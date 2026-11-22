@@ -302,7 +302,7 @@ func (h *Handler) Passages(w http.ResponseWriter, r *http.Request) {
 	}
 	all := []Passage{}
 	if inVideos {
-		ps, err := h.passagesOf(ctx, rn, []string{videoID}, 0)
+		ps, _, err := h.passagesOf(ctx, rn, []string{videoID}, 0)
 		if err != nil {
 			httperror.Write(w, r, httperror.Internal("search").Wrap(err))
 			return

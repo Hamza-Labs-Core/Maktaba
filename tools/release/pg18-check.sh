@@ -91,7 +91,7 @@ SQL
         # its start, builds both
         db18="postgres://check_app@127.0.0.1:$port/maktaba_check18?sslmode=disable"
         bm25="SELECT count(*) FROM pg_index x JOIN pg_class c ON c.oid = x.indexrelid
-            WHERE c.relname IN ('video_search_docs_bm25', 'video_search_docs_bm25_stem') AND x.indisvalid;"
+            WHERE c.relname IN ('video_search_docs_bm25_text', 'video_search_docs_bm25_stem_text') AND x.indisvalid;"
         if psql18 -d postgres -c "CREATE ROLE check_app LOGIN CREATEROLE;" -c "CREATE DATABASE maktaba_check18 OWNER check_app;" >/dev/null 2>&1 &&
             psql18 -d maktaba_check18 -c "CREATE EXTENSION pg_trgm; CREATE EXTENSION pgcrypto; CREATE EXTENSION unaccent; CREATE EXTENSION vector;
                 CREATE SCHEMA textsearch; GRANT USAGE ON SCHEMA textsearch TO check_app; CREATE EXTENSION pg_textsearch SCHEMA textsearch;" >/dev/null 2>&1 &&

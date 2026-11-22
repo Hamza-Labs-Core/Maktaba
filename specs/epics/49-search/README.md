@@ -598,3 +598,83 @@ runs only when the person opens that tab or submits from it; Results never waits
     item on its own, and the document's `doc_version` lets one query find them.
   - One transcript a video: the first active one, as the other transcript stages read it.
 
+### 49.7 The query: BM25 videos, phrase boost, passages, hybrid
+
+- **Keyword search ranks videos by their documents** (`api/internal/handlers/search/bm25.go`)
+  once both BM25 indexes are valid (`searchindex.Ready`, checked once a minute).
+  - Two queries run in parallel, each `ORDER BY score LIMIT k`: the exact index (`search_text`,
+    `maktaba_search`, the query through `maktaba_normalize`; its top 100) and the stemmed one
+    (`stem_text`, `maktaba_stem`, through `maktaba_stem_prepare`; its top 50, Snowball costing
+    more per row).
+  - A video's score is twice its exact score plus its stemmed score, so the word as typed
+    ranks first and its other forms follow.
+  - Both queries join `videos`, so the library filter (a limited user's libraries), the
+    language filter and the account's limits are part of each.
+- **Phrase boost.** For a query of more than one word, the first 100 videos whose active
+  transcript has a line saying the words together (`phraseto_tsquery` on the lines' GIN)
+  each gain the list's best score. They rank above every video whose words are scattered,
+  in BM25 order among themselves.
+- **Passages and match counts** are read as the videos are ranked: normalised, then by the
+  word's forms. A video found through a spelling variant (اسلام finding إسلام) shows its
+  matching lines and a passage marking the word as written. `normalisedLines`:
+  - reads the shown page's videos' lines once, and folds them in Go (`textnorm`, held equal
+    to `maktaba_normalize`);
+  - matches a line whose folded words hold every one of the query's exact lexemes;
+  - asks Postgres's stemmer only about the lines that fail that and yet contain every
+    stemmed lexeme;
+  - marks the line's own words that matched.
+
+  A page of 20 videos, some 6,000 lines, takes 12 to 28 ms locally. Working `maktaba_tsv`
+  out line by line in SQL costs about 40 µs a line, so it is not used. A line with
+  punctuation inside a word (Qur'an, well-known) or another form of the word goes to
+  Postgres, which decides: at most 300 lines, within the budget's rest. A common word inside
+  others (الله in والله) sends many, and past either bound the lines matched as typed stand. A query with websearch's operators (a quoted phrase, `-word`,
+  `OR`) keeps the line path's passages. The query has a 60 ms budget. Past it, the page
+  shows the line path's passages, and a video found only through its document shows 0
+  matches there. A BM25 video's lines are counted for the page shown, not for the whole
+  result (`savedVideo.L`).
+- **Hybrid** fuses the BM25 videos with the meaning search's videos by weighted RRF (k=60,
+  today's weights), as the line path's videos were.
+- **Fallbacks.** Before the indexes are valid, on PostgreSQL 16 or on SQLite, keyword search
+  ranks the matching lines as before. While story 49.6's backfill runs, the videos with an
+  active transcript and no document yet are found by their lines and fused in. They sit
+  half a place behind the BM25 video of the same rank.
+- **Migration 0234** stores the normalised text as two generated columns, `search_text` and
+  `stem_text`, and builds the indexes on them (`video_search_docs_bm25_text`,
+  `video_search_docs_bm25_stem_text`). `maktaba_search_index_statements()` drops 0232's
+  expression indexes once the new ones are there.
+  - The reason: a BM25 `ORDER BY ... LIMIT k` works the score out again for each row it
+    returns. Over the expression indexes, that normalised each document again, about 0.6 ms
+    a row (285 ms for the top 500). Over a stored column it is 0.15 to 0.25 ms a row.
+- **Proof:**
+  - `TestBM25_Postgres` (PostgreSQL 18):
+    - الله ranks the video that says it most first, and keeps the other library out for a
+      limited user;
+    - a sentence ranks the video saying it as a phrase above one whose words are scattered;
+    - a rare word finds its videos;
+    - word forms follow the word as typed;
+    - matches are counted and passages are marked;
+    - `TestBM25_VariantsHaveMatchesAndPassages`: اسلام, هدي, مدرسه, صبروا, cafe, Qur'an and
+      comes each find the video saying إسلام, هدى, مدرسة, الصبر, café, Qur'an or coming, with at least one match and a
+      passage marking the word as written, on the results and on the video's passages
+      page;
+    - hybrid keeps BM25's order where the meaning search agrees;
+    - a video with no document yet is found by its lines.
+  - `TestBM25_NotReadyUsesTheLines` covers the fallback.
+  - `TestBM25_Perf45k` (the replica job) uses a 45,000-document library: about 400 words a
+    document from a Zipf vocabulary of 17,576 words, with الله in nine in ten. Locally p95 is
+    15 ms for الله, 15 ms for a sentence, 13 ms for a rare word, and 16 ms for الله
+    filtered to one library. CI's runner takes about twice as long: with the stemmed list at
+    100 too, it measured 53 ms.
+- **How it differs from the spec.**
+  - The indexes are on stored columns, not the documents' fields as an array: see migration
+    0234 above.
+  - The exact index gives its top 100 and the stemmed one its top 50, so keyword search shows
+    up to 150 videos (the two lists' union), not the 500 of `rules.search.max_videos`. The meaning search's videos still fuse
+    in for hybrid.
+  - There is no separate pre-filter by the `library_id` index for a user with few libraries.
+    The filter is in the BM25 query, and pg_textsearch's filtered top-k (`filtered_seed`)
+    serves it: the one-library case measured the same as the whole library.
+  - SQLite keeps the line path. Its FTS5 table is written (story 49.6), and ranking by it is
+    not built.
+
