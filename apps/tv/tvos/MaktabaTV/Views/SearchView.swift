@@ -103,11 +103,17 @@ private struct TVSearch: View {
             }
         }
         .onSubmit(of: .search) {
-            if titleChosen {
-                titleChosen = false
-                return
+            let typed = model.query
+            // a moment first: tvOS can send the submit just before a title suggestion's own
+            // action, which then says it was not a search
+            Task {
+                try? await Task.sleep(for: .milliseconds(300))
+                if titleChosen {
+                    titleChosen = false
+                    return
+                }
+                await model.submit(typed)
             }
-            Task { await model.submit(model.query) }
         }
         // suggestions follow the typing once it rests
         .task(id: model.query) {

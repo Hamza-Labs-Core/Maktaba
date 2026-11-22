@@ -73,20 +73,18 @@ final class TVSearchUITests: XCTestCase {
         typeQuery("seerah")
         runTyped("seerah")
 
-        let filters = app.buttons["search.filters"], sort = element("search.sort")
-        XCTAssertTrue(reach(filters, from: sort), "the focus on Filters")
+        let filters = app.buttons["search.filters"]
+        XCTAssertTrue(reach(filters), "the focus on Filters")
         remote.press(.select)
         let arabic = app.buttons["search.facet.language.ar"]
         XCTAssertTrue(arabic.waitForExistence(timeout: 10), "the facets' sheet")
         XCTAssertEqual(plain(arabic.label), "Arabic, 3 videos")
         XCTAssertEqual(plain(app.buttons["search.facet.library.lib-lectures"].label), "Lectures, 3 videos")
-        moveFocus(to: arabic, with: .down)
+        XCTAssertTrue(reach(arabic), "the focus on Arabic")
         remote.press(.select)
         XCTAssertTrue(wait { (self.lastFilters?["language"] as? [String]) == ["ar"] }, "searched in Arabic only")
-        // down to the length row (its first bucket, under 20 to 60 min), then along it
         let long = app.buttons["search.facet.duration.over_60m"]
-        moveFocus(to: app.buttons["search.facet.duration.20m_60m"], with: .down)
-        moveFocus(to: long, with: language == "ar" ? .left : .right)
+        XCTAssertTrue(reach(long), "the focus on Over an hour")
         remote.press(.select)
         XCTAssertTrue(wait { (self.lastFilters?["duration_sec"] as? [String: Int]) == ["gte": 3600] }, "and over an hour")
         XCTAssertEqual(lastFilters?["language"] as? [String], ["ar"], "the filters combine")
@@ -100,15 +98,15 @@ final class TVSearchUITests: XCTestCase {
         XCTAssertEqual(plain(chip.label), "Remove Language: Arabic")
         XCTAssertTrue(app.buttons["search.filter.duration.over_60m"].exists)
         shot("tv-search-filters-in-use-en")
-        XCTAssertTrue(reach(chip, from: filters, then: .down), "the focus on the Arabic filter")
+        XCTAssertTrue(reach(chip), "the focus on the Arabic filter")
         remote.press(.select)
         XCTAssertTrue(wait { self.lastFilters?["language"] == nil && self.lastFilters?["duration_sec"] != nil }, "Arabic taken off")
 
-        XCTAssertTrue(reach(sort, from: filters), "the focus on the order")
+        XCTAssertTrue(reach(sortMenu), "the focus on the order")
         remote.press(.select)
-        let newest = app.buttons["search.sort.newest"]
+        let newest = app.buttons.matching(NSPredicate(format: "identifier == 'search.sort.newest' OR label == 'Newest'")).firstMatch
         XCTAssertTrue(newest.waitForExistence(timeout: 10), "the orders")
-        moveFocus(to: newest, with: .down)
+        XCTAssertTrue(reach(newest), "the focus on Newest")
         remote.press(.select)
         XCTAssertTrue(wait { self.searches.last?["sort"] as? String == "newest" }, "newest first")
         XCTAssertNotNil(lastFilters?["duration_sec"], "the filter kept")
@@ -134,7 +132,7 @@ final class TVSearchUITests: XCTestCase {
         XCTAssertEqual(plain(dym.label), "هل تقصد السيرة النبوية؟")
         XCTAssertTrue(element("search.titles").exists, "over the results")
         shot("tv-search-did-you-mean-ar")
-        XCTAssertTrue(reach(dym, from: element("search.sort"), then: .up), "the focus on did you mean")
+        XCTAssertTrue(reach(dym), "the focus on did you mean")
         remote.press(.select)
         XCTAssertTrue(wait { self.searches.last?["q"] as? String == corrected }, "the corrected words searched")
         XCTAssertTrue(dym.waitForNonExistence(timeout: 10), "no did-you-mean for its own words")
@@ -196,37 +194,41 @@ final class TVSearchUITests: XCTestCase {
         XCTAssertTrue(run.waitForNonExistence(timeout: 5), "the words are searched: no Search for")
     }
 
-    /// Gets the focus to `target` once the focus is on the row of `near` (or `target`): up
-    /// from the results to that row, then along it (or `then`, from `near` to `target`).
-    private func reach(_ target: XCUIElement, from near: XCUIElement, then: XCUIRemote.Button? = nil) -> Bool {
+    /// Moves the focus to `target` with the remote, steered by where the focus is: up or down
+    /// to `target`'s row, then along it. Read from frames, not identifiers: tvOS's Menu and its
+    /// suggestion cells keep no identifier, and a row's sides follow the language.
+    private func reach(_ target: XCUIElement) -> Bool {
         XCTAssertTrue(target.waitForExistence(timeout: 10), "\(target) is not there")
-        // the row is found by what has the focus (a Menu is not a button to XCUITest): up from
-        // the results, then down from the keyboard if the focus went back up there
-        let row = [target.identifier, near.identifier]
-        func onRow() -> Bool { row.contains(focused) }
-        for _ in 0..<6 where !onRow() {
-            remote.press(.up)
-            usleep(400_000)
-            // up into the keyboard: the help row is below it
-            if app.keyboards.firstMatch.exists, app.keys.allElementsBoundByIndex.contains(where: \.hasFocus) { break }
-        }
-        for _ in 0..<8 where !onRow() {
-            remote.press(.down)
-            usleep(400_000)
-        }
-        let along = then ?? (language == "ar" ? .left : .right)
-        let back: XCUIRemote.Button = along == .right ? .left : along == .left ? .right : along == .down ? .up : .down
-        for move in [along, along, along, back, back, back, back] where focused != target.identifier {
-            remote.press(move)
+        for _ in 0..<16 {
+            if target.hasFocus { return true }
+            let t = target.frame
+            guard let f = focusedFrame else {
+                remote.press(.down)
+                usleep(400_000)
+                continue
+            }
+            if abs(f.midY - t.midY) < max(20, t.height / 2) {
+                remote.press(t.midX > f.midX ? .right : .left)
+            } else {
+                remote.press(t.midY > f.midY ? .down : .up)
+            }
             usleep(400_000)
         }
-        return focused == target.identifier
+        return target.hasFocus
     }
 
-    /// The identifier of what has the focus ("" when none has one).
-    private var focused: String {
+    /// The frame of what has the focus: the smallest focused element (its containers report the
+    /// focus too).
+    private var focusedFrame: CGRect? {
         app.descendants(matching: .any).matching(NSPredicate(format: "hasFocus == true")).allElementsBoundByIndex
-            .map(\.identifier).first { !$0.isEmpty } ?? ""
+            .map(\.frame).filter { !$0.isEmpty }.min { $0.width * $0.height < $1.width * $1.height }
+    }
+
+    /// The order's menu, by identifier or by its words.
+    private var sortMenu: XCUIElement {
+        app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier == 'search.sort' OR label BEGINSWITH 'Sort by' OR label BEGINSWITH 'الترتيب حسب'"))
+            .firstMatch
     }
 
     private func element(_ id: String) -> XCUIElement { app.descendants(matching: .any)[id].firstMatch }
