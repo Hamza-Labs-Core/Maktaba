@@ -84,6 +84,16 @@ data class StreamSession(
     /** The quality this session plays at, when the home says. */
     @SerialName("current_rendition") val currentRendition: Rendition? = null,
     /**
+     * The video's length in the catalogue (null: unknown). A transcode's playlist grows as it is
+     * written, so the player's own duration is only what is there so far; this is the real one.
+     */
+    @SerialName("duration_sec") val durationSec: Double? = null,
+    /**
+     * Where in the video the stream starts (null: its start): a transcode opened at a position.
+     * Its times are the video's; before it, nothing plays (the playlist lists gaps there).
+     */
+    @SerialName("start_sec") val startSec: Double? = null,
+    /**
      * The id of the call that opened the session (this app's `X-Request-Id`, not the home's
      * answer; Epic 53 story 53.08): an HLS playlist's URL carries it as `rid`, so streaming's
      * lines for the playback share the id of the API's.
@@ -111,6 +121,9 @@ data class StreamSession(
     }
 
     val isHls: Boolean get() = directUrl == null && manifestUrl != null
+
+    /** The file itself plays (direct play), not a playlist. */
+    val isDirect: Boolean get() = directUrl != null
 }
 
 /** A rung of a stream session's `ladder`: a quality the home can transcode to. */

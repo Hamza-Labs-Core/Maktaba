@@ -858,6 +858,71 @@ runs only when the person opens that tab or submits from it; Results never waits
 - **So the 500 results of the spec are back.** Both indexes give their top 500 (49.7 kept
   100 and 50 for the cost).
 
+### 49.9 Relevance check built from the transcripts
+
+- **The generator** (`api/internal/handlers/search/relevance.go`) draws the searches from the
+  library's own documents with a fixed seed, so a library gives the same searches each run:
+  - **known-item:** a run of 5 to 7 words from a random line of a random document. It is kept
+    when a word of it is in under 1% of the documents and only that video's lines say it
+    (the lines' phrase index). Each is searched as written, with its spelling folded (hamza
+    forms, ta marbuta and alef maqsura as a quick typist writes them, no harakat), and with
+    a word prefixed by و. Each must bring its own video in the top 3.
+  - **chapter:** a chapter title of two words or more that no other chapter has, with a word
+    in under 1% of the documents (a generic title names no one video). It must bring its
+    video in the top 10.
+  - **topic:** a labelled topic's first content word. One of the topic's 20 best-scored
+    videos must be in the top 10.
+  - **common words:** الله, الصبر and the dictionary's 20 most frequent content words. Each
+    must answer in under 50 ms at p95, and the top 10 must use the word more per minute than
+    the videos found do (their medians).
+- **`maktaba-api search-relevance`** runs the check on `$DATABASE_URL`'s library, in a
+  read-only session. Flags size each kind; `--json` prints the whole report. It exits 1 when
+  a search did not pass.
+- **What the check found, and the fixes:**
+  - **Spelling variants lost the phrase boost.** The phrase boost read the lines'
+    `search_tsv`, which 49.4 left unnormalised. So اسلام found إسلام by its document, but
+    never as a phrase, and a misspelt sentence fell below the videos that say its words apart.
+    The boost now also looks for the phrase in the first 30 videos' documents
+    (`search_text`, normalised): a regular expression of the words together within one line
+    (`phrasePattern`). The letters around them are the Arabic script's, Persian and Urdu
+    included. A query with search operators has no phrase. The query's longest Arabic word
+    is looked for first (`strpos`, a memory search), so the expression reads only the
+    documents that hold it: an hour's lecture is some 200 KB.
+  - **Visible when it does not run.** A boost past its 20 ms budget keeps the BM25 order. The
+    handler counts them, and the check's report says how many (`phrase_abandoned`), so a
+    sentence that failed because the boost did not run is told apart from one that ranked
+    wrong.
+  - **A word prefixed by و or ف** that Snowball does not know (it keeps the و) matched
+    neither index. Keyword search now writes such a word without the prefix when no
+    document holds it as written and some hold the rest (`withoutConjunctions`, through the
+    dictionary). والصبر and وقت are words of their own and stay as written. Punctuation
+    around the word is left out (وغفران، is وغفران).
+  - **The check measures BM25 only.** It refuses to run while the indexes are not ready (a
+    library would answer by its lines instead).
+  - **Not covered:** a Latin phrase with accents (CAFÉ) is matched as written, because
+    `search_text` keeps Latin accents.
+- **Proof:**
+  - `TestBM25_Relevance` (the replica job) runs on a synthetic library of 3,000 videos:
+    - its vocabulary is Zipf-distributed, with real Arabic words in it that fold;
+    - الله appears at very different rates per minute;
+    - videos last 5 to 120 minutes;
+    - chapters take their titles from the video's own lines;
+    - each topic's videos are the ones that say its word most.
+
+    The same seed draws the same 693 searches twice, and every one passes: 601 known-item,
+    50 chapter, 20 topic and 22 common words (p95 at most 3.9 ms, with the scores from the index scan). Before the two fixes, 578
+    known-item and 38 chapter searches passed.
+  - `TestPhrasePatternOnPostgres`: the pattern on Postgres's regular expressions.
+  - `TestSearchRelevanceCLIOnPostgres`: the command on an empty library.
+  - `TestBM25_Perf45k` keeps a sentence's p95 at 3.5 ms. `TestBM25_LongDocuments` (5,000-word
+    documents) gives a sentence 14.4 ms with the document phrase check.
+- **Not done yet: the home's own run.**
+  - The spec asks to tune the field weights, the exact/stem balance and the phrase boost
+    until the check passes on the home's transcripts. That needs
+    `maktaba-api search-relevance` run on the home once it serves this release with its
+    documents built.
+  - The weights stay as 49.7 set them (exact twice stemmed, phrase lift the list's best
+    score), and the lists at 500, until that run shows what to change.
 
 ### 49.10 Web search page
 
@@ -917,16 +982,155 @@ The Search page (`web/src/pages/Search.tsx`) uses story 49.8's API; the parts ar
 
   `SearchVideo.test.tsx` covers the matches page's back link and re-run.
 - **Not done here.**
-  - A recent search shows its own order and filters only when this browser ran it: the recent
-    searches list carries no sort or filters. A saved search keeps neither: it runs with the
-    order on screen and no filters.
+  - A recent search showed its own order and filters only when this browser ran it, and a
+    saved search kept neither: done in "49.10 follow-up: search state kept" below.
   - Facet buckets are chips, not a side panel of checkboxes as in the 11.4 mockup: they wrap
     on a phone and need no second column.
 
+### 49.10 follow-up: search state kept
+
+A recent or saved search opens with the order and filters it was asked with, on any device,
+and a search opened by its sid alone shows its facets.
+
+- **Kept with the search.** Slot 0236 gives `search_runs` two nullable columns:
+  `sort_order` (relevance, newest or matches) and `asked_filters` (the filters as asked, JSON
+  text). `filters` holds them after a restricted account's libraries were put in, which are
+  not a choice, so it is not what a recent search shows. A row written before the slot keeps
+  NULL in both; no row is changed, so a rollback keeps the columns.
+- **API.** `GET /api/search/recent` gives each search its `sort` and `filters` (as asked; an
+  empty object for none); both are left out for a search kept before slot 0236, and for an
+  order the server does not know. `GET /api/search/results/{sid}` gives the order its pages
+  are in (`sort`, left out the same way), and with `facets=1` the search's `facets` and
+  `did_you_mean`, counted again from the kept set under the caller's limits and libraries as
+  they are now (a library the account lost since is neither counted nor named).
+  A saved search already kept its order and filters in `query` (the POST /api/search body);
+  the list on SQLite came back empty, as its `created_at` text did not scan into a time, and
+  now reads it.
+- **Web.** A recent search opens with the list's `sort` and `filters` (a live one by its sid,
+  an expired one searched again with them); one kept before slot 0236 opens as this tab ran
+  it, else with relevance and no filters. Save sends `{ name, query }`, the query with the
+  order and the filters on screen (the filters only for the words on screen), named by the
+  words, the order and the filters ("patience · Newest · Lectures · 2024"), so the same words
+  asked two ways are two entries; the web had sent `{ q, mode }`, which the server refused for
+  lacking a name. A saved search runs with its query's order and filters, one without them with
+  relevance and none. Filters become chips by `selOfFilters` (`searchShared.tsx`): a date range
+  is a year when it spans one calendar year, a duration range a band when it is one; any other
+  range, from another client, is left out, as the page has no chip for it.
+- **A link in a new tab.** A library filter is named at once: from the libraries list this
+  session already read (the page cache), else (or when that list lacks it: a library added
+  since) from `GET /api/libraries/summary`, read once beside the search; a name the facets
+  give replaces it. A saved search's name leaves out a library not named yet. Opened by its sid with no facets kept
+  in the tab, the first list's page asks `facets=1`, so the facet panel and did-you-mean show
+  with the first pages. A link naming another order than its search's own (made by hand)
+  follows the search's: its pages are in that order, and the address is set to it.
+- **Proof:** `state_test.go` on SQLite and Postgres (the order and filters kept, listed and
+  given by sid; a restricted account's libraries not listed as a filter; facets by sid; an
+  older row and an unknown order left out; a saved search's query round trip and its
+  `created_at` on SQLite), `migration_0236_test.go` (up, down and up twice, an older row kept
+  with NULLs, an older release's insert); `Search.help.test.tsx` SRC-54 to SRC-57 and
+  `searchShared.test.tsx` on the web; `help_test.go` checks did-you-mean by sid.
+- **Not done here.**
+  - The Android and Apple apps search with no order or filters, so they leave the recent
+    list's new fields unread.
+  - A results page by sid gives the order but not the filters: a link with the sid and its
+    filter parameters removed shows the filtered results with no chips.
+
 ### 49.11 Apple and Android apps, TV, big screen
 
-Story 49.11 is built a platform at a time. Each part below names what it built; the parts not
-listed here are not done yet.
+Each client has its own part; the parts not listed here are not built yet.
+
+#### Apple: the Player (iPhone, iPad, Mac) and the Apple TV
+
+Both apps use one model in MaktabaKit: `SearchModel` (`SearchPage.swift`) and the search help's
+types and words (`SearchHelp.swift`). The behaviour and the words follow the web's page (49.10).
+
+- **What the apps read** (`SearchHelp.swift`, `Browse.swift`):
+  - a suggestion's `kind` and a title's `video_id` from `items`, else the plain `suggestions`
+    of a home before 49.8. A kind the app does not know reads as none; a title without its
+    video is left out; the same text and kind come once;
+  - `sort`, `did_you_mean` and `facets` on `POST /api/search`, each read tolerantly: a field
+    of the wrong shape reads as absent, a bucket without a value is left out, a year sent as
+    a number is read as its text. A home before 49.8 sends none of them, and the apps search
+    as they did. A did-you-mean that only repeats the query is not shown.
+- **What the apps send.** `sort` when it is not relevance, and `filters` when any is chosen:
+  - `library_id`, `language` and `speaker` as lists (any of them);
+  - a year and a duration band as their bucket's own `filter` (`date`, `duration_sec`). When
+    the answer does not list the bucket, the range the home gives it is sent (UTC years, the
+    bands' seconds). A second year or band replaces the first.
+- **What a search keeps** (`SearchModel.Ask`):
+  - new words keep the order and drop the filters;
+  - the same words keep both;
+  - the did-you-mean keeps both;
+  - a refinement (an order, a bucket, a filter removed, Clear all) is the search on screen
+    with that one change;
+  - Try again, and a kept search that expired while paging, ask again with the order and
+    filters.
+
+  A chosen bucket the narrowed answer no longer lists stays, chosen and without a count, so it
+  can be taken off where it was put on; a library keeps the name seen before.
+- **The Player** (`Player/Search/SearchScreen.swift`, iPhone, iPad and Mac):
+  - each suggestion shows an icon and its kind (Recent, Word, Video, Speaker); a title opens
+    its video, any other is searched as its words. A suggestion's tap also submits the field
+    (what was typed), so the submit that follows a title is not run as a search;
+  - "Did you mean …?" is a row over the results, its corrected words marked where each
+    language puts them; a tap runs them and the field shows them;
+  - **Filters** (with how many are in use) opens a sheet, Narrow the results, with each
+    facet's buckets and their counts. A press searches again at once, and the sheet stays
+    open on the new counts. A library shows its name, a language its name in the app's
+    language, a year in the app's digits, a band its words ("Under 5 min", "5 to 20 min",
+    "20 to 60 min", "Over an hour");
+  - the filters in use are chips under the bar ("Language: Arabic"), each of which takes
+    itself off, then Clear all filters;
+  - the sort is a menu (Relevance, Newest, Most matches);
+  - every refinement waits for the field to let go of the keyboard first, as a search and a
+    result's page do (`LetGoFirst`);
+  - a search that found nothing still shows its did-you-mean and the filters in use, so a
+    filter can be taken off there.
+- **The Apple TV** (`apps/tv/tvos/MaktabaTV/Views/SearchView.swift`) searched titles with
+  `GET /api/videos?q=` as you typed. It now uses the home's search, with the same help:
+  - the suggestions show under the keyboard with their kind, and a title opens its page;
+  - what is typed runs from **Search for “…”**, the first button under the keyboard (or the
+    keyboard's own search key, where tvOS gives one). The home keeps every search as a
+    recent one, so the TV no longer searches each word as it is typed;
+  - over the results, did-you-mean, the sort menu and **Filters**, in rows the focus moves
+    along with the remote (`focusSection`). The filters' sheet has a row of buckets per facet,
+    and Menu or Done closes it;
+  - Titles and In the transcript are cards that open the video's page, with Show more.
+- **Words.** The help's words are MaktabaKit's (`SearchWords`, its catalog), shared by both
+  apps, in English and Arabic as the web words them. The suggestion kinds are keyed
+  (`search.kind.<kind>`): "Speaker" is «متحدث» as a kind and «المتحدث» as a facet.
+  Interpolated words carry their bidi isolates, so an English word in an Arabic sentence
+  keeps its place.
+- **Proof:**
+  - `SearchHelpTests.swift` (MaktabaKit):
+    - the suggestion kinds, and an older home's plain texts;
+    - the answer's new fields, and their absence from an older home;
+    - odd shapes read tolerantly;
+    - the request bodies of facet choices, with and without the bucket's own filter;
+    - the client's `sort` and `filters`;
+    - the view model's asks: combined facets, removal, Clear all, new words, did-you-mean,
+      Try again;
+    - a chosen bucket the answer no longer lists;
+    - the words in English and Arabic.
+  - `PlayerSearchUITests` (iPhone and iPad, against `MockHome`):
+    - the suggestion kinds in English and Arabic, and a title opening its video;
+    - the sheet's counts, three filters combined, the chips, one taken off, then Clear all;
+    - the sort, and new words dropping the filters but keeping the order;
+    - the did-you-mean in Arabic.
+
+    The accessibility audit and Dynamic Type check run on the filters in use and on the
+    did-you-mean.
+  - `TVSearchUITests` (Apple TV, with the Siri remote, in the TV UI tests job):
+    - the suggestion kinds, and a title opening its page;
+    - Search for, two filters combined from the sheet, a chip taken off, the sort;
+    - the did-you-mean in Arabic.
+- **Not done here.**
+  - The TV's transcript results open the video's page, not the player at a passage: the
+    TV's video page has no start time to open at.
+  - A recent search runs as new words: the recent list carries no order or filters, so
+    the filters on screen are not applied to another query.
+  - The web big screen (`apps/tv/web`) and Roku are the other parts of 49.11; the Android
+    and desktop parts are below.
 
 #### Android Player, Android TV, and the Player for Windows and Linux
 
@@ -1012,4 +1216,4 @@ The three Kotlin clients read story 49.8's API through the apps' portable client
     (`tools/ci/firetv-journey.sh`) and drives the order, Filters and a library's chip with D-pad
     key events;
   - the desktop: `SearchModelTest` and `SearchScreenTest` (off screen), in English and Arabic.
-- **Left for 49.11:** the Apple apps (iOS, macOS, tvOS), the web big screen and Roku.
+- **Left for 49.11:** the web big screen (`apps/tv/web`) and Roku.

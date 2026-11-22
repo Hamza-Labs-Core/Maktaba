@@ -212,6 +212,160 @@ final class PlayerSearchUITests: PlayerUITestCase {
         XCTAssertTrue(app.staticTexts["Nothing matches “zzzz”."].exists)
     }
 
+    // MARK: Search help (story 49.11)
+
+    /// A label read without the bidi isolates (U+2068, U+2069) around its interpolated words.
+    private func plain(_ s: String) -> String {
+        s.replacingOccurrences(of: "\u{2068}", with: "").replacingOccurrences(of: "\u{2069}", with: "")
+    }
+
+    /// A bucket of the facets' sheet, scrolled into sight: the sheet's list draws only the rows
+    /// on screen (a phone's sheet opens at half height).
+    @discardableResult
+    private func reveal(_ id: String) -> XCUIElement {
+        let bucket = element(id), list = element("search.facets")
+        XCTAssertTrue(list.waitForExistence(timeout: 10), "the facets' sheet")
+        for _ in 0 ..< 6 where !(bucket.exists && bucket.isHittable) {
+            list.swipeUp()
+        }
+        XCTAssertTrue(bucket.exists && bucket.isHittable, "\(id) in sight")
+        return bucket
+    }
+
+    /// The `filters` of the last `POST /api/search` (nil: none sent).
+    private var lastFilters: [String: Any]? { searches.last?["filters"] as? [String: Any] }
+
+    /// Each suggestion says what it is (`Fixtures/search-suggest.json`, story 49.8's kinds), and
+    /// a video's title opens that video rather than searching its words.
+    func testSuggestionsShowTheirKindAndATitleOpensItsVideo() {
+        openSearch()
+        type("se")
+        XCTAssertTrue(element("search.suggestion.title").waitForExistence(timeout: 10), "the suggestions")
+        XCTAssertTrue(element("search.suggestion.history").exists, "an earlier search")
+        XCTAssertTrue(element("search.suggestion.term").exists, "a word")
+        XCTAssertTrue(element("search.suggestion.speaker").exists, "a speaker")
+        for word in ["Recent", "Word", "Video", "Speaker"] {
+            XCTAssertTrue(app.staticTexts[word].exists, "the kind \(word)")
+        }
+        shot("search-suggestion-kinds")
+        element("search.suggestion.title").tap()
+        XCTAssertTrue(element("screen.video").waitForExistence(timeout: 10), "the title's video")
+        XCTAssertTrue(app.staticTexts["السيرة النبوية، الدرس ١٢"].waitForExistence(timeout: 10), "v3's title")
+        XCTAssertTrue(searches.isEmpty, "a title is not searched")
+    }
+
+    /// The kinds in Arabic.
+    func testSuggestionKindsInArabic() {
+        openSearch("ar")
+        type("se")
+        XCTAssertTrue(element("search.suggestion.title").waitForExistence(timeout: 10), "the suggestions")
+        for word in ["بحثت عنه", "كلمة", "مقطع", "متحدث"] {
+            XCTAssertTrue(app.staticTexts[word].exists, "the kind \(word)")
+        }
+        shot("search-suggestion-kinds")
+    }
+
+    /// Filters: the sheet lists each facet's buckets with their counts; each press searches
+    /// again with that bucket's filter, several combined; the filters in use are listed, each
+    /// removable, and Clear all takes them all off. The words and the order stay.
+    func testFacetsNarrowCombineAndAreTakenOff() throws {
+        openSearch()
+        type("seerah\n")
+        let filters = element("search.filters")
+        XCTAssertTrue(filters.waitForExistence(timeout: 10), "Filters over the results")
+        tapWhenIdle(filters, "the results after Return")
+
+        let lectures = element("search.facet.library.lib-lectures")
+        XCTAssertTrue(lectures.waitForExistence(timeout: 10), "the facets' sheet")
+        XCTAssertEqual(plain(lectures.label), "Lectures, 3 videos")
+        XCTAssertTrue(app.staticTexts["Narrow the results"].exists)
+        shot("search-filters")
+
+        let arabic = reveal("search.facet.language.ar")
+        XCTAssertEqual(plain(arabic.label), "Arabic, 3 videos")
+        arabic.tap()
+        eventually("searched in Arabic only") { (self.lastFilters?["language"] as? [String]) == ["ar"] }
+        eventually("a chosen bucket reads as selected") { arabic.isSelected }
+        reveal("search.facet.year.2024").tap()
+        eventually("and of 2024, as its bucket's range") {
+            (self.lastFilters?["date"] as? [String: String]) == ["gte": "2024-01-01T00:00:00.000Z", "lt": "2025-01-01T00:00:00.000Z"]
+        }
+        XCTAssertEqual(lastFilters?["language"] as? [String], ["ar"], "the filters combine")
+        let long = reveal("search.facet.duration.over_60m")
+        XCTAssertEqual(plain(long.label), "Over an hour, 2 videos")
+        long.tap()
+        eventually("and over an hour") { (self.lastFilters?["duration_sec"] as? [String: Int]) == ["gte": 3600] }
+        XCTAssertEqual(searches.last?["q"] as? String, "seerah", "the same words")
+        element("search.facets.done").tap()
+
+        let chip = element("search.filter.language.ar")
+        XCTAssertTrue(chip.waitForExistence(timeout: 10), "the filters in use")
+        XCTAssertEqual(plain(chip.label), "Remove Language: Arabic")
+        XCTAssertTrue(element("search.filter.year.2024").exists && element("search.filter.duration.over_60m").exists)
+        XCTAssertEqual(plain(filters.label), "Filters (3)", "Filters counts them")
+        shot("search-filters-in-use")
+        audit("filters")
+
+        tapWhenIdle(chip, "the filters in use")
+        eventually("Arabic taken off") { self.lastFilters?["language"] == nil && self.lastFilters?["date"] != nil }
+        tapWhenIdle(element("search.filters.clear"), "the filters in use")
+        eventually("every filter taken off") { self.searches.last.map { $0["filters"] == nil } ?? false }
+        XCTAssertTrue(element("search.filter.year.2024").waitForNonExistence(timeout: 5), "none in use")
+    }
+
+    /// New words drop the filters (they were the old results' counts) and keep the order.
+    func testNewWordsDropTheFiltersAndKeepTheOrder() {
+        openSearch()
+        type("seerah\n")
+        let sort = element("search.sort")
+        XCTAssertTrue(sort.waitForExistence(timeout: 10), "the order over the results")
+        XCTAssertEqual(plain(sort.label), "Sort by: Relevance")
+        tapWhenIdle(sort, "the results after Return")
+        let newest = app.buttons["Newest"]
+        XCTAssertTrue(newest.waitForExistence(timeout: 5), "the orders")
+        XCTAssertTrue(app.buttons["Most matches"].exists && app.buttons["Relevance"].exists)
+        newest.tap()
+        eventually("searched newest first") { self.searches.last?["sort"] as? String == "newest" }
+        XCTAssertTrue(sort.waitForExistence(timeout: 5))
+        eventually("the order shown") { self.plain(sort.label) == "Sort by: Newest" }
+
+        tapWhenIdle(element("search.filters"), "the results in the new order")
+        reveal("search.facet.speaker.الشيخ أحمد").tap()
+        eventually("by the speaker") { (self.lastFilters?["speaker"] as? [String]) == ["الشيخ أحمد"] }
+        XCTAssertEqual(searches.last?["sort"] as? String, "newest", "the order kept")
+        element("search.facets.done").tap()
+        XCTAssertTrue(element("search.filter.speaker.الشيخ أحمد").waitForExistence(timeout: 10))
+
+        type("cordoba\n")
+        eventually("the new words") { self.searches.last?["q"] as? String == "cordoba" }
+        XCTAssertNil(searches.last?["filters"], "new words drop the filters")
+        XCTAssertEqual(searches.last?["sort"] as? String, "newest", "and keep the order")
+    }
+
+    /// Did you mean: a row over the results with the corrected words; a tap searches them, the
+    /// order kept, and the field shows them. In Arabic, its words in Arabic's own order.
+    func testDidYouMeanRunsTheCorrectedWordsInArabic() throws {
+        let corrected = "السيرة النبوية"
+        let first = try XCTUnwrap(home.fixture(named: "search"))
+            .replacingOccurrences(of: #""q": "السيرة","#, with: #""q": "السيره النبويه", "did_you_mean": "\#(corrected)","#)
+        XCTAssertTrue(first.contains("did_you_mean"), "the fixture's query was found")
+        home.stub("POST", "/api/search", body: first)
+        openSearch("ar")
+        type("السيره النبويه\n")
+        let dym = element("search.didYouMean")
+        XCTAssertTrue(dym.waitForExistence(timeout: 10), "did you mean")
+        XCTAssertEqual(plain(dym.label), "هل تقصد السيرة النبوية؟")
+        XCTAssertTrue(element("search.titles").exists, "over the results")
+        shot("search-did-you-mean")
+        audit("did-you-mean")
+
+        tapWhenIdle(dym, "the results after Return")
+        eventually("the corrected words searched") { self.searches.last?["q"] as? String == corrected }
+        XCTAssertEqual(searches.count, 2)
+        eventually("in the field") { (self.field.value as? String) == corrected }
+        XCTAssertTrue(dym.waitForNonExistence(timeout: 5), "no did-you-mean for its own words")
+    }
+
     // MARK: Search by meaning off on the home (story 51.11)
 
     /// An admin: the line under the field says the search is by words only, and it is.

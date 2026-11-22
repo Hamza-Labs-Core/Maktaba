@@ -68,6 +68,9 @@ export interface RecentFx {
   transcript_count: number;
   live: boolean;
   expires_at?: string;
+  /** How it was asked (a home after 49.10's follow-up). */
+  sort?: string;
+  filters?: Record<string, unknown>;
 }
 
 export interface FakeServerOptions {
@@ -77,7 +80,9 @@ export interface FakeServerOptions {
   saved?: unknown;
   ytAvailable?: boolean;
   /** Snapshots that exist before the test (a reload, a recent search). */
-  existing?: Record<string, { q: string; mode: string; corpus: Corpus }>;
+  existing?: Record<string, Snapshot>;
+  /** GET /api/libraries/summary's items (unset: that read fails). */
+  libraries?: Array<{ id: string; name: string }>;
   /** Answers every other POST (save, import). */
   otherPost?: (url: string, body: unknown) => unknown;
   /**
@@ -87,6 +92,14 @@ export interface FakeServerOptions {
   help?: (body: Record<string, unknown>) => Record<string, unknown>;
   /** GET /api/search/suggest's answer for a query. */
   suggest?: (q: string) => unknown;
+}
+
+/** A kept search: its words, mode, order and results. */
+interface Snapshot {
+  q: string;
+  mode: string;
+  sort?: string;
+  corpus: Corpus;
 }
 
 /** A facet bucket. */
@@ -130,9 +143,7 @@ export function fakeSearchServer(
   const pps = opts.passagesPageSize ?? 20;
   const state = {
     n: 0,
-    searches: new Map<string, { q: string; mode: string; corpus: Corpus }>(
-      Object.entries(opts.existing ?? {})
-    ),
+    searches: new Map<string, Snapshot>(Object.entries(opts.existing ?? {})),
     expired: new Set<string>(),
     recent: [...(opts.recent ?? [])],
   };
@@ -140,7 +151,12 @@ export function fakeSearchServer(
     if (url === "/api/search") {
       const c = typeof corpus === "function" ? corpus(body) : corpus;
       const sid = `sid-${++state.n}`;
-      state.searches.set(sid, { q: String(body.q), mode: String(body.mode), corpus: c });
+      state.searches.set(sid, {
+        q: String(body.q),
+        mode: String(body.mode),
+        sort: typeof body.sort === "string" ? body.sort : "relevance",
+        corpus: c,
+      });
       return {
         search_id: sid,
         expires_at: "2026-10-22T10:15:00Z",
@@ -169,6 +185,10 @@ export function fakeSearchServer(
     if (u.pathname === "/api/search/suggest")
       return opts.suggest?.(p.get("q") ?? "") ?? { suggestions: [], items: [] };
     if (u.pathname === "/api/search/recent") return { items: state.recent };
+    if (u.pathname === "/api/libraries/summary") {
+      if (!opts.libraries) throw new Error(`unmocked GET ${url}`);
+      return { items: opts.libraries };
+    }
     const res = /^\/api\/search\/results\/(.+)$/.exec(u.pathname);
     if (res) {
       const sid = decodeURIComponent(res[1]!);
@@ -177,6 +197,9 @@ export function fakeSearchServer(
       const list = p.get("list") === "titles" ? s.corpus.titles : s.corpus.transcripts.map(wire);
       const offset = Number(p.get("offset"));
       const limit = Number(p.get("limit"));
+      // facets=1: the search's facets and did-you-mean, as its first answer had them
+      const help =
+        p.get("facets") === "1" ? (opts.help?.({ q: s.q, mode: s.mode, sort: s.sort }) ?? {}) : {};
       return {
         search_id: sid,
         q: s.q,
@@ -186,6 +209,9 @@ export function fakeSearchServer(
         limit,
         total: list.length,
         items: list.slice(offset, offset + limit),
+        ...(s.sort ? { sort: s.sort } : {}),
+        ...("facets" in help ? { facets: help.facets } : {}),
+        ...("did_you_mean" in help ? { did_you_mean: help.did_you_mean } : {}),
       };
     }
     if (u.pathname === "/api/search/passages") {

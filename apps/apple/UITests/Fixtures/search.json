@@ -123,5 +123,71 @@
    "score": 0.061
   }
  ],
- "total": 3
+ "total": 3,
+ "facets": {
+  "library": [
+   {
+    "value": "lib-lectures",
+    "label": "Lectures",
+    "count": 3
+   }
+  ],
+  "language": [
+   {
+    "value": "ar",
+    "count": 3
+   }
+  ],
+  "tag": [],
+  "speaker": [
+   {
+    "value": "الشيخ أحمد",
+    "count": 2
+   }
+  ],
+  "year": [
+   {
+    "value": "2025",
+    "count": 2,
+    "filter": {
+     "date": {
+      "gte": "2025-01-01T00:00:00.000Z",
+      "lt": "2026-01-01T00:00:00.000Z"
+     }
+    }
+   },
+   {
+    "value": "2024",
+    "count": 1,
+    "filter": {
+     "date": {
+      "gte": "2024-01-01T00:00:00.000Z",
+      "lt": "2025-01-01T00:00:00.000Z"
+     }
+    }
+   }
+  ],
+  "duration": [
+   {
+    "value": "20m_60m",
+    "count": 1,
+    "filter": {
+     "duration_sec": {
+      "gte": 1200,
+      "lt": 3600
+     }
+    }
+   },
+   {
+    "value": "over_60m",
+    "count": 2,
+    "filter": {
+     "duration_sec": {
+      "gte": 3600
+     }
+    }
+   }
+  ],
+  "videos": 3
+ }
 }

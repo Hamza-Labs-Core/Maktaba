@@ -339,6 +339,17 @@
         }
       }
     },
+    "In the transcript" : {
+      "comment" : "Search results whose transcript matches",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "في التفريغ"
+          }
+        }
+      }
+    },
     "Kind" : {
       "comment" : "Epic 56: the library view",
       "localizations" : {
@@ -864,6 +875,17 @@
         }
       }
     },
+    "Show more" : {
+      "comment" : "Loads the next page of a group of search results",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "عرض المزيد"
+          }
+        }
+      }
+    },
     "Show: Series" : {
       "comment" : "Epic 56: the library view",
       "localizations" : {
@@ -1070,6 +1092,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "تعذّر تحميل هذا الصف."
+          }
+        }
+      }
+    },
+    "Titles" : {
+      "comment" : "Search results whose title matches",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "العناوين"
           }
         }
       }

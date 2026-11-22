@@ -5,6 +5,7 @@
 package capability
 
 import (
+	"strconv"
 	"strings"
 	"sync"
 )
@@ -176,6 +177,34 @@ func (r *Registry) Decide(profile *Profile, src Source, ov Override) Verdict {
 		return v
 	}
 
+	// a device's report (Apply) sets each codec's own height, bit depth and
+	// frame rate: a phone whose HEVC decoder is 8-bit or stops at 1080p gets a
+	// transcode of what it cannot decode. Without a report these are unset.
+	vcodec := canonVideo(src.VideoCodec)
+	if h := profile.heightFor(vcodec); h > 0 && src.Height > h {
+		return Verdict{
+			Mode:           ModeTranscode,
+			Reason:         "source height exceeds profile",
+			BitrateCapKbps: effectiveBitrate(profile, ov),
+			HeightCap:      effectiveHeight(profile, ov),
+		}
+	}
+	if d := profile.VideoBitDepths[vcodec]; d > 0 && src.BitDepth > d {
+		return Verdict{
+			Mode:           ModeTranscode,
+			Reason:         "source bit depth exceeds the device's " + strconv.Itoa(d) + "-bit " + vcodec,
+			BitrateCapKbps: effectiveBitrate(profile, ov),
+			HeightCap:      effectiveHeight(profile, ov),
+		}
+	}
+	if f := profile.VideoFPS[vcodec]; f > 0 && src.FPS > float64(f)+0.5 {
+		return Verdict{
+			Mode:           ModeTranscode,
+			Reason:         "source frame rate exceeds the device's",
+			BitrateCapKbps: effectiveBitrate(profile, ov),
+			HeightCap:      effectiveHeight(profile, ov),
+		}
+	}
 	if profile.MaxHeight > 0 && src.Height > profile.MaxHeight {
 		return Verdict{
 			Mode:           ModeTranscode,
@@ -353,6 +382,11 @@ func defaultProfiles() []*Profile {
 			MaxAudioChannels: 8,
 			SupportsHLS:      true,
 		},
+		// The Android Player on a phone, tablet or foldable (Media3). Its report
+		// (device_caps, read from the device's own decoders) narrows this, and
+		// widens it up to its Ceiling: the Dolby, FLAC, Vorbis and DTS audio a
+		// device decodes itself, and HLG on a screen that shows it.
+		// Without a report, this is what every Android phone plays.
 		{
 			Name:             "android-native",
 			Containers:       []string{"mp4", "mkv", "webm"},
@@ -364,6 +398,18 @@ func defaultProfiles() []*Profile {
 			MaxAudioChannels: 8,
 			SupportsHLS:      true,
 			SupportsDASH:     true,
+			Ceiling: &Profile{
+				Containers:       []string{"mp4", "mkv", "webm"},
+				VideoCodecs:      []string{"h264", "hevc", "vp9", "av1"},
+				AudioCodecs:      []string{"aac", "opus", "mp3", "ac3", "eac3", "flac", "vorbis", "dts"},
+				HDR:              []string{"sdr", "hdr10", "hlg"},
+				MaxHeight:        2160,
+				MaxBitrateKbps:   25000,
+				MaxAudioChannels: 8,
+				SupportsHLS:      true,
+				SupportsDASH:     true,
+				HLSSegments:      []string{"ts", "fmp4"},
+			},
 		},
 		{
 			Name:             "androidtv",

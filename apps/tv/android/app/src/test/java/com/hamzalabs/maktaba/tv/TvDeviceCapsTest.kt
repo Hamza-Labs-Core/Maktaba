@@ -9,7 +9,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.hamzalabs.maktaba.core.api.ApiClient
 import com.hamzalabs.maktaba.core.api.AuthTokens
 import com.hamzalabs.maktaba.core.session.TokenStore
-import com.hamzalabs.maktaba.tv.playback.DeviceCapsReader
+import com.hamzalabs.maktaba.core.playback.DeviceCapsReader
 import com.hamzalabs.maktaba.tv.playback.TvPlayback
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
