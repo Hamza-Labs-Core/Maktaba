@@ -104,7 +104,8 @@ final class TVSearchUITests: XCTestCase {
 
         XCTAssertTrue(reach(sortMenu), "the focus on the order")
         remote.press(.select)
-        let newest = app.buttons.matching(NSPredicate(format: "identifier == 'search.sort.newest' OR label == 'Newest'")).firstMatch
+        // a menu's items are not buttons to XCUITest on tvOS
+        let newest = element("search.sort.newest")
         XCTAssertTrue(newest.waitForExistence(timeout: 10), "the orders")
         XCTAssertTrue(reach(newest), "the focus on Newest")
         remote.press(.select)
