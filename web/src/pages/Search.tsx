@@ -940,8 +940,8 @@ export function Search() {
     const filters = requestFilters(sel, s?.facets);
     const parts = [query];
     if (sort !== "relevance") parts.push(t(`search.sort.${sort}`));
+    // a library not named yet stays out of the name (the query keeps its filter)
     for (const facet of FACETS)
-      // a library not named yet stays out of the name (the query keeps its filter)
       for (const v of facet === "year" || facet === "duration"
         ? sel[facet]
           ? [sel[facet]!]
