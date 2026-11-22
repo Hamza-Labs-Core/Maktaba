@@ -100,6 +100,11 @@ func TestSlot0235OnSQLite(t *testing.T) {
 	up, down := gooseStatements(t, "0235_search_terms.sqlite.sql")
 	var plain []string
 	for _, s := range up {
+		// the stage's job_stages version needs the queue's tables, which this database
+		// leaves out (the API's own SQLite migrator applies every slot)
+		if strings.Contains(s, "job_stages") {
+			continue
+		}
 		plain = append(plain, strings.Replace(s, "ADD COLUMN IF NOT EXISTS", "ADD COLUMN", 1))
 	}
 	run(t, db, "up", plain)
@@ -118,7 +123,13 @@ func TestSlot0235OnSQLite(t *testing.T) {
 	if err := db.QueryRow(`SELECT count(*) FROM search_terms`).Scan(&n); err != nil || n != 0 {
 		t.Fatalf("a deleted library left %d words (%v)", n, err)
 	}
-	run(t, db, "down", down)
+	var plainDown []string
+	for _, s := range down {
+		if !strings.Contains(s, "job_stages") {
+			plainDown = append(plainDown, s)
+		}
+	}
+	run(t, db, "down", plainDown)
 	if err := db.QueryRow(`SELECT count(*) FROM sqlite_master WHERE name = 'search_terms'`).Scan(&n); err != nil || n != 0 {
 		t.Fatalf("after down: %d (%v)", n, err)
 	}

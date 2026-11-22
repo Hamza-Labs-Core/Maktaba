@@ -172,7 +172,17 @@ LANGUAGE sql IMMUTABLE AS $f$
 $f$;
 -- +goose StatementEnd
 
+-- +goose StatementBegin
+-- the keyword_index stage is at version 2 (its documents' words counted: the graph's
+-- KEYWORD_INDEX_VERSION), as a freshly migrated database's seed must match the graph
+UPDATE job_stages SET version = 2 WHERE stage = 'keyword_index' AND version < 2;
+-- +goose StatementEnd
+
 -- +goose Down
+-- +goose StatementBegin
+UPDATE job_stages SET version = 1 WHERE stage = 'keyword_index' AND version = 2;
+-- +goose StatementEnd
+
 -- +goose StatementBegin
 -- slot 0232's exclusion
 CREATE OR REPLACE FUNCTION cluster_copy_excluded() RETURNS text[]

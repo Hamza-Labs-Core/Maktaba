@@ -40,7 +40,17 @@ CREATE INDEX IF NOT EXISTS speakers_name_idx ON speakers (name);
 ALTER TABLE video_search_docs ADD COLUMN IF NOT EXISTS terms_counted INTEGER NOT NULL DEFAULT 0;
 -- +goose StatementEnd
 
+-- +goose StatementBegin
+-- the keyword_index stage is at version 2 (its documents' words counted: the graph's
+-- KEYWORD_INDEX_VERSION), as a freshly migrated database's seed must match the graph
+UPDATE job_stages SET version = 2 WHERE stage = 'keyword_index' AND version < 2;
+-- +goose StatementEnd
+
 -- +goose Down
+-- +goose StatementBegin
+UPDATE job_stages SET version = 1 WHERE stage = 'keyword_index' AND version = 2;
+-- +goose StatementEnd
+
 -- +goose StatementBegin
 ALTER TABLE video_search_docs DROP COLUMN terms_counted;
 -- +goose StatementEnd
