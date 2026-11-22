@@ -57,7 +57,7 @@ sub onHome(ev as Object)
         m.inMenu = false
         if m.top.visible then onTakeFocus()
     end if
-    print "[screen] HomeScreen ready rows="; root.GetChildCount()
+    print "[screen] HomeScreen ready rows="; root.GetChildCount(); " lang="; m.global.lang
     ui_Navigate({action: "drawn", screen: "HomeScreen"})
     ui_Api("GET", "/api/recommendations", invalid, "rec", "onRecommendations")
 end sub

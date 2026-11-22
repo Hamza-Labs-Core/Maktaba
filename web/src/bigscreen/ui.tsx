@@ -393,8 +393,9 @@ export function Panel({
 }) {
   const ref = useRef<HTMLDivElement | null>(null);
   useLayer(ref, onClose);
+  // a div: an aside is a landmark, and a landmark may not be a dialog (axe aria-allowed-role)
   return (
-    <aside
+    <div
       ref={ref}
       className="bs-panel"
       role="dialog"
@@ -407,7 +408,7 @@ export function Panel({
       <div className="bs-panel__list" data-bs-group="panel">
         {children}
       </div>
-    </aside>
+    </div>
   );
 }
 

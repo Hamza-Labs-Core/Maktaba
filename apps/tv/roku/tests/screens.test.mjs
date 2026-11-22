@@ -21,7 +21,7 @@ import { after, before, test } from "node:test";
 
 import { build } from "../tools/build.mjs";
 import { LOGS, ROKU } from "./brs.mjs";
-import { HIDDEN, LATE, REFUSED, SERIES, startCloud, startHome, videos } from "./mockhome.mjs";
+import { HIDDEN, LATE, LIB, REFUSED, SERIES, startCloud, startHome, videos } from "./mockhome.mjs";
 import { Channel, SCREENS } from "./sg.mjs";
 
 const require = createRequire(import.meta.url);
@@ -685,6 +685,203 @@ test("T06 (57.15 on Roku): the time left in the corner, the five- and one-minute
     home.state.time = null;
     home.state.timeLeft = null;
     home.state.requests = [];
+  }
+});
+
+/** Presses key until the channel logs re (a widget's edge: the key leaves it), at most max times. */
+async function pressUntil(c, key, re, max = 10) {
+  for (let i = 0; i < max; i++) {
+    await c.key(key, 300);
+    if (await c.waitFor(re, 700).then(() => true, () => false)) return;
+  }
+  throw new Error(`${key} ×${max}: no ${re}`);
+}
+
+/**
+ * Home's menu item `target` (0 Home … 2 Search, 3 Account) from wherever Back left the focus:
+ * down to the cards, up to the menu, then along it in reading order (Left moves forward in
+ * Arabic).
+ */
+async function toMenu(c, target, rtl) {
+  await c.key("Down");
+  await c.waitFor(/\[focus\] home row/);
+  let at = -1;
+  for (let i = 0; i < 4 && at < 0; i++) {
+    await c.key("Up", 300);
+    const m = await c.waitFor(/\[focus\] home menu\s+(\d)/, 700).catch(() => null);
+    if (m) at = Number(m[1]);
+  }
+  if (at < 0) throw new Error("Up never reached Home's menu");
+  const step = target > at === !rtl ? "Right" : "Left";
+  for (let i = 0; i < Math.abs(target - at); i++) await c.key(step);
+}
+
+/** The bodies of POST /api/search the mock home was sent since `from`. */
+const searches = (from = 0) =>
+  requests
+    .slice(from)
+    .filter((l) => l.startsWith("home search "))
+    .map((l) => JSON.parse(l.slice("home search ".length)));
+
+test("T07 (49.11): Search: suggestions with their kinds, Did you mean, the order and the filter sheet, in English and Arabic", { timeout: 300000 }, async () => {
+  // T06 leaves the channel in English, its viewer no longer limited; a run of this test alone
+  // after the first one starts in Arabic, and switches to English first
+  const c = await Channel.start("search", zip, data);
+  try {
+    const lang = (await c.waitFor(/\[screen\] HomeScreen ready rows=\s*\d+ lang=(\w+)/, 30000))[1];
+    await c.waitFor(/\[home\] for you/, 20000);
+    if (lang === "ar") {
+      await c.key("Up");
+      await c.waitFor(/\[focus\] home menu\s+0/);
+      await c.keys(["Left", "Left", "Left"]);
+      await c.key("Select");
+      await c.waitFor(/\[screen\] AccountScreen ready lang=ar/);
+      await c.keys(["Down", "Down"]); // Language: English, the third row
+      await c.key("Select");
+      await c.waitFor(/\[screen\] AccountScreen ready lang=en/);
+      await c.key("Back");
+      await c.waitFor(/\[nav\] back to HomeScreen/);
+      await c.key("Left");
+    }
+    await c.key("Up");
+    await c.waitFor(/\[focus\] home menu\s+0/);
+    await c.keys(["Right", "Right"]);
+    await c.key("Select");
+    await c.waitFor(/\[screen\] SearchScreen ready/);
+
+    // a letter: the suggestions under the keyboard, each with its kind, and the results
+    let from = requests.length;
+    await c.key("Lit_r");
+    await c.waitFor(/\[search\] suggestions history,term,title,speaker/);
+    await c.waitFor(/\[search\] results\s+24\s+dym= facets=/);
+    assert.deepEqual(searches(from), [{ q: "r", mode: "hybrid", view: "grid" }], "relevance and no filters send the plain request");
+    await compare(c, "search-en");
+
+    // Down to the suggestions; a word is searched, and its list stays hidden
+    await pressUntil(c, "Down", /\[focus\] search suggest/);
+    await pressUntil(c, "Down", /\[focus\] search suggest item\s+1/);
+    await c.key("Select");
+    await c.waitFor(/\[search\] chose term/);
+    await c.waitFor(/\[search\] results\s+0\s+dym=harbour/);
+    // Did you mean harbour? heads the column: Right from the keyboard's edge reaches it
+    await pressUntil(c, "Right", /\[focus\] search dym/);
+    await compare(c, "search-dym-en");
+    from = requests.length;
+    await c.key("Select");
+    await c.waitFor(/\[search\] did you mean harbour/);
+    await c.waitFor(/\[search\] results\s+4\s+dym= /);
+    assert.deepEqual(searches(from), [{ q: "harbour", mode: "hybrid", view: "grid" }]);
+    // the row went: the focus moved to the order
+    await c.waitFor(/\[focus\] search tools\s+0/);
+
+    // the order: Newest is sent, and marked
+    from = requests.length;
+    await pressUntil(c, "Right", /\[focus\] search tools\s+1/);
+    await c.key("Select");
+    await c.waitFor(/\[search\] results\s+4/);
+    assert.equal(searches(from)[0].sort, "newest");
+
+    // Filters: the sheet of facets with their counts; OK toggles and the sheet stays open
+    await pressUntil(c, "Right", /\[focus\] search tools\s+3/);
+    await c.key("Select");
+    await c.waitFor(/\[search\] sheet\s+6 at\s+0/);
+    await compare(c, "search-filters-en");
+    from = requests.length;
+    await c.key("Select"); // Library: Films and series
+    await c.waitFor(/\[search\] filter\s+1/);
+    // Clear all filters now heads the sheet; the focus stayed on the library's row
+    await c.waitFor(/\[search\] sheet\s+7 at\s+1/);
+    await pressUntil(c, "Down", /\[focus\] choice\s+2/); // Language: English
+    await c.key("Select");
+    await c.waitFor(/\[search\] filter\s+2/);
+    await pressUntil(c, "Down", /\[focus\] choice\s+4/); // Year: 2024
+    await c.key("Select");
+    await c.waitFor(/\[search\] filter\s+3/);
+    await c.waitFor(/\[search\] results\s+4\s+dym= facets=\s*\d+\s+filters=\s*3/);
+    const last = searches(from).at(-1);
+    assert.deepEqual(last, {
+      q: "harbour",
+      mode: "hybrid",
+      view: "grid",
+      sort: "newest",
+      filters: {
+        library_id: [LIB],
+        language: ["en"],
+        date: { gte: "2024-01-01T00:00:00.000Z", lt: "2025-01-01T00:00:00.000Z" },
+      },
+    }, "the filters of different facets combine; the year sends its bucket's own filter");
+    await compare(c, "search-filters-chosen-en");
+    // Clear all filters takes them all off; Back closes the sheet
+    from = requests.length;
+    await pressUntil(c, "Up", /\[focus\] choice\s+0/); // Clear all filters, at the top
+    await c.key("Select");
+    await c.waitFor(/\[search\] filter\s+0/);
+    await c.waitFor(/\[search\] results\s+4/);
+    assert.equal(searches(from).at(-1).filters, undefined);
+    await c.key("Back");
+    await c.waitFor(/\[focus\] search tools\s+3/);
+
+    // new words drop the filters and keep the order; a title suggestion opens its video
+    await c.key("Back");
+    await c.waitFor(/\[focus\] search keyboard/);
+    from = requests.length;
+    await c.key("Lit_s");
+    await c.waitFor(/\[search\] suggestions history,term,title,speaker/);
+    await c.waitFor(/\[search\] results/);
+    const typed = searches(from).at(-1);
+    assert.notEqual(typed.q, "harbour");
+    assert.equal(typed.sort, "newest", "new words keep the order");
+    assert.equal(typed.filters, undefined, "new words drop the filters");
+    await pressUntil(c, "Down", /\[focus\] search suggest/);
+    await pressUntil(c, "Down", /\[focus\] search suggest item\s+2/);
+    await c.key("Select");
+    await c.waitFor(/\[search\] chose title/);
+    await c.waitFor(/\[screen\] VideoScreen ready/, 20000);
+    await c.key("Back");
+    await c.waitFor(/\[nav\] back to SearchScreen/);
+    await c.key("Back"); // the suggestions to the keyboard, then out
+    await c.waitFor(/\[focus\] search keyboard/);
+    await c.key("Back");
+    await c.waitFor(/\[nav\] back to HomeScreen/);
+
+    // Arabic: Account → العربية; the screen mirrored, its lines shaped right to left
+    await toMenu(c, 3, false);
+    await c.key("Select");
+    await c.waitFor(/\[screen\] AccountScreen ready lang=en/);
+    await c.keys(["Down", "Down", "Down"]);
+    await c.key("Select");
+    await c.waitFor(/\[screen\] AccountScreen ready lang=ar/);
+    await c.key("Back");
+    await c.waitFor(/\[nav\] back to HomeScreen/);
+    await toMenu(c, 2, true);
+    await c.key("Select");
+    await c.waitFor(/\[screen\] SearchScreen ready/);
+    await c.key("Lit_r");
+    await c.waitFor(/\[search\] suggestions history,term,title,speaker/);
+    await c.waitFor(/\[search\] results\s+24/);
+    await compare(c, "search-ar");
+    // in Arabic the keyboard is on the right: Left from its edge reaches the order
+    await pressUntil(c, "Left", /\[focus\] search tools\s+0/);
+    await pressUntil(c, "Left", /\[focus\] search tools\s+3/);
+    await c.key("Select");
+    await c.waitFor(/\[search\] sheet/);
+    await compare(c, "search-filters-ar");
+    await c.key("Back");
+    await c.waitFor(/\[focus\] search tools\s+3/);
+
+    // back to English for the tests after this one
+    await c.key("Back");
+    await c.waitFor(/\[focus\] search keyboard/);
+    await c.key("Back");
+    await c.waitFor(/\[nav\] back to HomeScreen/);
+    await toMenu(c, 3, true);
+    await c.key("Select");
+    await c.waitFor(/\[screen\] AccountScreen ready lang=ar/);
+    await c.keys(["Down", "Down"]); // Language: English, the third row
+    await c.key("Select");
+    await c.waitFor(/\[screen\] AccountScreen ready lang=en/);
+  } finally {
+    await c.stop();
   }
 });
 

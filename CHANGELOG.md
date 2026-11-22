@@ -1104,6 +1104,17 @@ build fails when the two differ.
 
 ### Added
 
+- **Search on the big screen, on Samsung and LG TVs and on Roku suggests as you type, offers
+  "Did you mean", filters with counts, and sorts (Epic 49, story 49.11).** Under the screen
+  keyboard, suggestions appear from the first letter and say what each one is: an earlier
+  search, a word, a video's title (which opens the video) or a speaker. "Did you mean" above the
+  results runs the corrected words with one press, keeping the sort and filters. The results
+  sort by relevance, newest or most matches, and **Filters** opens a panel of the videos found
+  counted by library, language, speaker, year and length; several can be chosen together, and
+  each one in use can be taken off, or all at once. On the big screen the filters in use are
+  also chips above the results. All of it works with the remote's arrows, OK and Back, in
+  English and Arabic, right to left in Arabic.
+
 - **The web app's Search page shows suggestions as you type, "Did you mean", filters with
   counts, and a sort (Epic 49, story 49.10).** The suggestions under the search box say what
   each one is: an earlier search, a word, a video's title (which opens the video) or a speaker,

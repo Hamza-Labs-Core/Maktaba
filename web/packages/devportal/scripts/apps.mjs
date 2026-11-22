@@ -904,7 +904,10 @@ export const APPS = [
                 "**The play queue**: Home starts with **Continue your queue**; while watching, **Previous**, **Next** and **Shuffle again**, and an Up next card that counts down 10 seconds. On Android TV a card's menu has **Play next**, **Add to queue**, **Add to playlist** and **Go to series**.",
                 "**قائمة الانتظار**: تبدأ الرئيسية بـ**تابع قائمة الانتظار**؛ وأثناء المشاهدة **السابق** و**التالي** و**إعادة الخلط**، وبطاقة «التالي» بعدّ تنازلي من 10 ثوانٍ. وعلى أندرويد تي في في قائمة البطاقة **شغّل تاليًا** و**أضف إلى قائمة الانتظار** و**أضف إلى قائمة تشغيل** و**اذهب إلى السلسلة**."
               ),
-              t("**Search**.", "**البحث**."),
+              t(
+                "**Search**. On Samsung, LG and Roku it suggests as you type, under the on-screen keyboard, saying what each suggestion is: an earlier search, a word the videos say, a video's title (which opens it) or a speaker. A search that finds few videos offers **Did you mean**, one press away. The results sort by relevance, newest or most matches, and **Filters** counts the videos found by library, language, speaker, year and length and narrows the search to the ones chosen, several together; each one in use comes off with another press, or all of them with **Clear all filters**.",
+                "**البحث**. على Samsung وLG وروكو يقترح أثناء الكتابة، تحت لوحة المفاتيح على الشاشة، ويبيّن نوع كل اقتراح: بحث سابق، أو كلمة تقولها المقاطع، أو عنوان مقطع (يفتحه)، أو متحدث. وإذا وجد البحث مقاطع قليلة عرض **هل تقصد** على بُعد ضغطة واحدة. وتُرتَّب النتائج حسب الأقرب صلة أو الأحدث أو الأكثر مطابقات، ويعدّ زر **التصفية** المقاطع التي وُجدت حسب المكتبة واللغة والمتحدث والسنة والمدة، ويحصر البحث فيما تختاره منها، عدةً معًا؛ ويُزال كل مرشّح مستخدم بضغطة أخرى، أو تُزال كلها بـ**إزالة كل عوامل التصفية**."
+              ),
               t(
                 "**Live TV**, when the person may watch a channel: **Now**, with every channel and what is on, and the **Guide**; choose a channel to watch it live.",
                 "**البث المباشر** حين يُسمح للشخص بمشاهدة قناة: قسم **الآن** بكل قناة وما يُعرض عليها، و**الدليل**؛ اختر قناة لتشاهدها مباشرة."
@@ -1203,6 +1206,18 @@ export const APPS = [
                 "wide",
                 "Arabic subtitles on Roku, drawn by the channel joined and right to left",
                 "ترجمة عربية على روكو، ترسمها القناة موصولة الحروف ومن اليمين إلى اليسار"
+              ),
+              shot(
+                "roku-search",
+                "wide",
+                "Search on Roku: the suggestions under the keyboard with their kinds, the sort and Filters, and the results",
+                "البحث على روكو: الاقتراحات تحت لوحة المفاتيح بأنواعها، والترتيب والتصفية، والنتائج"
+              ),
+              shot(
+                "roku-search-filters",
+                "wide",
+                "Filters on Roku: the videos found counted by library, language, speaker, year and length, the chosen ones marked",
+                "التصفية على روكو: المقاطع التي وُجدت معدودةً حسب المكتبة واللغة والمتحدث والسنة والمدة، والمختارة معلَّمة"
               ),
             ],
           },
@@ -1541,6 +1556,28 @@ export const APPS = [
               "The big screen is a full-screen view for a TV or a big monitor: **Home**, **Libraries**, **Series**, **Search**, **Live TV** and **Settings**, in large type, always in the dark library theme. It shows the same videos, watch progress and permissions as the normal view. A library opens on its tabs, as on the TV apps: **Recommended**, **Library** (Show videos or series, **Sort**, **Filter** and a letter rail, A to Z then the Arabic letters, or the other way round in Arabic), **Collections**, **Playlists** and **Categories**. **Play** and **Shuffle** in its header play the Library tab's view in its order, filters included, on the play queue; a series, a season, a collection and a playlist have their own. On a focused card, Play/Pause plays it at once, and holding OK (or the menu key) offers Play next, Add to queue, Add to playlist, Go to series and Mark watched. Back steps out: to the top of the tab, then to its tabs, then out of the library. Each tab remembers where you were. Open it with **Big screen** at the top of any page, or `g` then `b`; in the desktop apps, **View → Big Screen**, and **Start in Big Screen** opens it at launch. Leave it with **Leave big screen** in its top row; in the desktop apps, **View → Leave Big Screen**, or **View → Big Screen** again. In Arabic the screens run right to left and the arrows follow them.",
               "الشاشة الكبيرة عرض بملء الشاشة لتلفاز أو شاشة كبيرة: **الرئيسية** و**المكتبات** و**السلاسل** و**البحث** و**البث المباشر** و**الإعدادات**، بخط كبير وبمظهر المكتبة الداكن دائمًا. وتعرض المقاطع نفسها وتقدّم المشاهدة نفسه والصلاحيات نفسها التي في العرض العادي. وتُفتح المكتبة على تبويباتها كما في تطبيقات التلفاز: **المقترحات** و**المكتبة** (عرض المقاطع أو السلاسل، و**ترتيب** و**تصفية** وشريط حروف من A إلى Z ثم الحروف العربية، أو بالعكس بالعربية) و**المجموعات** و**قوائم التشغيل** و**الفئات**. ويشغّل زرّا **تشغيل** و**تشغيل عشوائي** في رأسها عرضَ تبويب المكتبة بترتيبه وتصفياته في قائمة الانتظار؛ وللسلسلة والموسم والمجموعة وقائمة التشغيل أزرارها الخاصة. وعلى البطاقة المحددة يشغّلها زر التشغيل/الإيقاف فورًا، ويعرض الضغط المطوّل على OK (أو زر القائمة) خيارات التشغيل التالي والإضافة إلى قائمة الانتظار والإضافة إلى قائمة تشغيل والانتقال إلى السلسلة وتعليمها كمُشاهَدة. ويرجع زر الرجوع خطوة خطوة: إلى أعلى التبويب، ثم إلى التبويبات، ثم إلى خارج المكتبة. ويتذكّر كل تبويب موضعك فيه. افتحها بزر **الشاشة الكبيرة** أعلى أي صفحة، أو بالضغط على `g` ثم `b`؛ وفي تطبيقات سطح المكتب بالأمر **عرض ← الشاشة الكبيرة**، ويفتحها خيار **البدء بالشاشة الكبيرة** عند التشغيل. واخرج منها بزر **الخروج من الشاشة الكبيرة** في صفها العلوي؛ وفي تطبيقات سطح المكتب بالأمر **عرض ← الخروج من الشاشة الكبيرة**، أو بالأمر **عرض ← الشاشة الكبيرة** مرة أخرى. وبالعربية تسير الشاشات من اليمين إلى اليسار، وتتبعها الأسهم."
             ),
+          },
+          {
+            p: t(
+              "**Search** on the big screen suggests from the first letter, in a list under the screen keyboard that says what each suggestion is: an earlier search, a word, a video's title (which opens it) or a speaker. **Did you mean** above the results searches the corrected words with one press, keeping the sort and filters. The results sort by **Relevance**, **Newest** or **Most matches**, and **Filters** opens a panel of the videos found counted by library, language, speaker, year and length: choose several, and **Back** closes it. The filters in use are chips above the results, each removing itself, then **Clear all filters**. The address keeps the sort and filters, so **Back** from a video returns to the same search.",
+              "يقترح **البحث** في الشاشة الكبيرة من أول حرف، في قائمة تحت لوحة المفاتيح على الشاشة تبيّن نوع كل اقتراح: بحث سابق، أو كلمة، أو عنوان مقطع (يفتحه)، أو متحدث. ويبحث **هل تقصد** فوق النتائج عن الكلمات المصحَّحة بضغطة واحدة، مع إبقاء الترتيب والمرشّحات. وتُرتَّب النتائج حسب **الأقرب صلة** أو **الأحدث** أو **الأكثر مطابقات**، ويفتح زر **التصفية** لوحةً تعدّ المقاطع التي وُجدت حسب المكتبة واللغة والمتحدث والسنة والمدة: اختر منها عدة، ويغلقها **الرجوع**. وتظهر المرشّحات المستخدمة شرائحَ فوق النتائج، تُزيل كلٌّ منها نفسها، ثم **إزالة كل عوامل التصفية**. ويحفظ العنوان الترتيب والمرشّحات، فيعود **الرجوع** من المقطع إلى البحث نفسه."
+            ),
+          },
+          {
+            shots: [
+              shot(
+                "big-search",
+                "wide",
+                "Search on the big screen: the suggestions under the keyboard with their kinds, Did you mean, the sort and the results",
+                "البحث في الشاشة الكبيرة: الاقتراحات تحت لوحة المفاتيح بأنواعها، و«هل تقصد»، والترتيب، والنتائج"
+              ),
+              shot(
+                "big-search-filters",
+                "wide",
+                "The big screen's Filters panel: counts by library, language, speaker, year and length, two chosen, and the filters in use above the results",
+                "لوحة التصفية في الشاشة الكبيرة: الأعداد حسب المكتبة واللغة والمتحدث والسنة والمدة، واثنان مختاران، والمرشّحات المستخدمة فوق النتائج"
+              ),
+            ],
           },
           {
             p: t(

@@ -7,6 +7,8 @@
 //        3-second budget between screens.
 //   58.15: an Arabic title with a number and an English word reads in the order Roku draws it
 //        (shared/i18n/visual-vectors.json), in the bundled Arabic font, in both languages.
+//   49.11: Search with the D-pad: suggestions with their kinds, Did you mean, the order and
+//        the Filters panel, in both languages.
 import { expect, test, type Page, type TestInfo } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
@@ -197,6 +199,95 @@ for (const locale of ["en", "ar"] as const) {
 
     await log.attach(info, home);
     expect(home.unknown, "every call the screens made has an answer in the mock home").toEqual([]);
+    expect(log.consoleLines.filter((l) => l.startsWith("[pageerror]"))).toEqual([]);
+  });
+}
+
+// Story 49.11: Search with story 49.8's help, D-pad only: two letters on the screen keyboard,
+// the suggestions under it with their kinds, Did you mean, the order, the Filters panel (a
+// focus layer whose chips combine), the filters in use as chips; each request body checked.
+for (const locale of ["en", "ar"] as const) {
+  test(`Search: suggestions, did-you-mean, the order and the filters, ${locale} (49.11)`, async ({
+    page,
+  }, info) => {
+    const log = record(page);
+    const home = await mockHome(page);
+    await start(page, locale);
+    await page.goto("/tv/");
+    await expect(page.getByTestId("big-hero")).toBeVisible();
+    const forward = locale === "ar" ? "ArrowLeft" : "ArrowRight";
+    await pressTo(page, "ArrowUp", /^tab:/);
+    await pressTo(page, forward, "tab:/big/search");
+    await page.keyboard.press("Enter");
+    const s = page.getByTestId("big-search");
+    await expect(s).toBeVisible();
+
+    // two letters with the screen keyboard: ص then ب, or p then a
+    const [first, second] = locale === "ar" ? ["ص", "ب"] : ["p", "a"];
+    await expect.poll(() => focused(page)).toMatch(/^key:/);
+    await pressTo(page, "ArrowDown", locale === "ar" ? "key:ar:ز" : "key:en:k");
+    await pressTo(page, forward, `key:${locale}:${first}`);
+    await page.keyboard.press("Enter");
+    // up to the first row (the alphabet's start)
+    await pressTo(page, "ArrowUp", locale === "ar" ? /^key:ar:[ابتثجحخدذر]$/ : /^key:en:[a-j]$/);
+    await pressTo(page, locale === "ar" ? "ArrowRight" : "ArrowLeft", `key:${locale}:${second}`);
+    await page.keyboard.press("Enter");
+    const typed = `${first}${second}`;
+    await expect(s.getByRole("searchbox")).toHaveValue(typed);
+
+    // the suggestions under the keyboard, each with its kind; Down reaches them
+    const kinds = s.locator(".bs-suggest__item");
+    await expect(kinds).toHaveCount(4);
+    await expect(s.locator(".bs-suggest__kind")).toHaveText(
+      locale === "ar"
+        ? ["بحثت عنه", "كلمة", "مقطع", "متحدث"]
+        : ["Recent", "Word", "Video", "Speaker"]
+    );
+    await expect(page.getByTestId("big-did-you-mean")).toBeVisible();
+    expect(home.searches.at(-1)).toEqual({ q: typed, mode: "hybrid", view: "grid" });
+    await pressTo(page, "ArrowDown", "sg:0");
+    await shot(page, `search-${locale}`);
+
+    // across to the results' column: the order, then Filters
+    // across from a suggestion is the result beside it; up from there, the order
+    await pressTo(page, forward, /^(st|sm|sort|search):/);
+    await pressTo(page, "ArrowUp", /^sort:/);
+    await pressTo(page, forward, "sort:newest");
+    await page.keyboard.press("Enter");
+    await expect.poll(() => home.searches.at(-1)?.sort).toBe("newest");
+    await pressTo(page, forward, "search:filters");
+    await page.keyboard.press("Enter");
+    const panel = page.getByTestId("big-filters");
+    await expect(panel).toBeVisible();
+    // the panel's first chip has the focus: a library, then a year further down
+    await expect.poll(() => focused(page)).toBe("f:library:L1");
+    await page.keyboard.press("Enter");
+    await expect.poll(() => home.searches.at(-1)?.filters).toEqual({ library_id: ["L1"] });
+    await pressTo(page, "ArrowDown", /^f:year:/);
+    await pressTo(page, forward, "f:year:2024");
+    await page.keyboard.press("Enter");
+    await expect
+      .poll(() => home.searches.at(-1)?.filters)
+      .toEqual({
+        library_id: ["L1"],
+        date: { gte: "2024-01-01T00:00:00.000Z", lt: "2025-01-01T00:00:00.000Z" },
+      });
+    await expect(panel.locator('[aria-pressed="true"]')).toHaveCount(2);
+    await shot(page, `search-filters-${locale}`);
+
+    // Back closes the panel; the filters in use are chips, and Clear all takes them off
+    await page.keyboard.press("Escape");
+    await expect(panel).toHaveCount(0);
+    await expect(s.locator(".bs-refine__active .bs-chip--remove")).toHaveCount(2);
+    await expect.poll(() => focused(page)).toBe("search:filters");
+    await pressTo(page, "ArrowDown", /^(rm:|search:clear)/);
+    await pressTo(page, forward, "search:clear");
+    await page.keyboard.press("Enter");
+    await expect.poll(() => home.searches.at(-1)?.filters).toBeUndefined();
+    await expect(s.locator(".bs-refine__active")).toHaveCount(0);
+
+    await log.attach(info, home);
+    expect(home.unknown, "every call the screen made has an answer in the mock home").toEqual([]);
     expect(log.consoleLines.filter((l) => l.startsWith("[pageerror]"))).toEqual([]);
   });
 }

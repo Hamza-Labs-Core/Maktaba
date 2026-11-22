@@ -281,6 +281,30 @@ maktaba.tv/tv ﻰﻟﺇ ﺐﻫﺫﺍ ﻭﺃ ،ﺯﺎﻔﻠﺗ</translation>
         <translation>.ﺞﺋﺎﺘﻧ ﻻ</translation>
     </message>
     <message>
+        <source>search.sort.relevance</source>
+        <translation>ﺔﻠﺻ ﺏﺮﻗﻷﺍ</translation>
+    </message>
+    <message>
+        <source>search.sort.newest</source>
+        <translation>ﺙﺪﺣﻷﺍ</translation>
+    </message>
+    <message>
+        <source>search.sort.matches</source>
+        <translation>ﺕﺎﻘﺑﺎﻄﻣ ﺮﺜﻛﻷﺍ</translation>
+    </message>
+    <message>
+        <source>search.filters</source>
+        <translation>ﺔﻴﻔﺼﺘﻟﺍ</translation>
+    </message>
+    <message>
+        <source>search.filters.title</source>
+        <translation>ﺞﺋﺎﺘﻨﻟﺍ ﻖﻴﻴﻀﺗ</translation>
+    </message>
+    <message>
+        <source>search.filters.clear</source>
+        <translation>ﺔﻴﻔﺼﺘﻟﺍ ﻞﻣﺍﻮﻋ ﻞﻛ ﺔﻟﺍﺯﺇ</translation>
+    </message>
+    <message>
         <source>player.error</source>
         <translation>.ﻥﻵﺍ ﻮﻳﺪﻴﻔﻟﺍ ﺍﺬﻫ ﻞﻴﻐﺸﺗ ﻦﻜﻤﻳ ﻻ</translation>
     </message>

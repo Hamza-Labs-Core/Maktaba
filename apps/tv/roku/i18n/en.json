@@ -389,6 +389,202 @@
     "lines": 1
   },
   "search.noResults": "No results.",
+  "@search.suggest.item": {
+    "widthChars": 34,
+    "lines": 1
+  },
+  "search.suggest.item": "%1$s  ·  %2$s",
+  "@search.suggest.plain": {
+    "widthChars": 34,
+    "lines": 1
+  },
+  "search.suggest.plain": "%1$s",
+  "@search.kind.history": {
+    "widthChars": 12,
+    "lines": 1,
+    "value": true
+  },
+  "search.kind.history": "Recent",
+  "@search.kind.term": {
+    "widthChars": 12,
+    "lines": 1,
+    "value": true
+  },
+  "search.kind.term": "Word",
+  "@search.kind.title": {
+    "widthChars": 12,
+    "lines": 1,
+    "value": true
+  },
+  "search.kind.title": "Video",
+  "@search.kind.speaker": {
+    "widthChars": 12,
+    "lines": 1,
+    "value": true
+  },
+  "search.kind.speaker": "Speaker",
+  "@search.didYouMean": {
+    "widthChars": 56,
+    "lines": 1
+  },
+  "search.didYouMean": "Did you mean %1$s?",
+  "@search.sort.relevance": {
+    "widthChars": 14,
+    "lines": 1
+  },
+  "search.sort.relevance": "Relevance",
+  "@search.sort.newest": {
+    "widthChars": 14,
+    "lines": 1
+  },
+  "search.sort.newest": "Newest",
+  "@search.sort.matches": {
+    "widthChars": 14,
+    "lines": 1
+  },
+  "search.sort.matches": "Most matches",
+  "@search.filters": {
+    "widthChars": 14,
+    "lines": 1
+  },
+  "search.filters": "Filters",
+  "@search.filters.on": {
+    "widthChars": 14,
+    "lines": 1
+  },
+  "search.filters.on": "Filters · %1$s",
+  "@search.filters.title": {
+    "widthChars": 30,
+    "lines": 1
+  },
+  "search.filters.title": "Narrow the results",
+  "@search.filters.clear": {
+    "widthChars": 30,
+    "lines": 1
+  },
+  "search.filters.clear": "Clear all filters",
+  "@search.facet.option": {
+    "widthChars": 30,
+    "lines": 1
+  },
+  "search.facet.option": "%1$s: %2$s · %3$s",
+  "@search.facet.noCount": {
+    "widthChars": 30,
+    "lines": 1
+  },
+  "search.facet.noCount": "%1$s: %2$s",
+  "@search.facet.chosen": {
+    "widthChars": 30,
+    "lines": 1
+  },
+  "search.facet.chosen": "✓ %1$s: %2$s · %3$s",
+  "@search.facet.chosenGone": {
+    "widthChars": 30,
+    "lines": 1
+  },
+  "search.facet.chosenGone": "✓ %1$s: %2$s",
+  "@search.facet.library": {
+    "widthChars": 12,
+    "lines": 1,
+    "value": true
+  },
+  "search.facet.library": "Library",
+  "@search.facet.language": {
+    "widthChars": 12,
+    "lines": 1,
+    "value": true
+  },
+  "search.facet.language": "Language",
+  "@search.facet.speaker": {
+    "widthChars": 12,
+    "lines": 1,
+    "value": true
+  },
+  "search.facet.speaker": "Speaker",
+  "@search.facet.year": {
+    "widthChars": 12,
+    "lines": 1,
+    "value": true
+  },
+  "search.facet.year": "Year",
+  "@search.facet.duration": {
+    "widthChars": 12,
+    "lines": 1,
+    "value": true
+  },
+  "search.facet.duration": "Length",
+  "@search.duration.under_5m": {
+    "widthChars": 20,
+    "lines": 1,
+    "value": true
+  },
+  "search.duration.under_5m": "Under 5 min",
+  "@search.duration.5m_20m": {
+    "widthChars": 20,
+    "lines": 1,
+    "value": true
+  },
+  "search.duration.5m_20m": "5 to 20 min",
+  "@search.duration.20m_60m": {
+    "widthChars": 20,
+    "lines": 1,
+    "value": true
+  },
+  "search.duration.20m_60m": "20 to 60 min",
+  "@search.duration.over_60m": {
+    "widthChars": 20,
+    "lines": 1,
+    "value": true
+  },
+  "search.duration.over_60m": "Over an hour",
+  "@search.language.ar": {
+    "widthChars": 16,
+    "lines": 1,
+    "value": true
+  },
+  "search.language.ar": "Arabic",
+  "@search.language.en": {
+    "widthChars": 16,
+    "lines": 1,
+    "value": true
+  },
+  "search.language.en": "English",
+  "@search.language.ur": {
+    "widthChars": 16,
+    "lines": 1,
+    "value": true
+  },
+  "search.language.ur": "Urdu",
+  "@search.language.fr": {
+    "widthChars": 16,
+    "lines": 1,
+    "value": true
+  },
+  "search.language.fr": "French",
+  "@search.language.tr": {
+    "widthChars": 16,
+    "lines": 1,
+    "value": true
+  },
+  "search.language.tr": "Turkish",
+  "@search.language.id": {
+    "widthChars": 16,
+    "lines": 1,
+    "value": true
+  },
+  "search.language.id": "Indonesian",
+  "@search.language.fa": {
+    "widthChars": 16,
+    "lines": 1,
+    "value": true
+  },
+  "search.language.fa": "Persian",
+  "@search.language.ms": {
+    "widthChars": 16,
+    "lines": 1,
+    "value": true
+  },
+  "search.language.ms": "Malay",
   "@account.signedInAs": {
     "widthChars": 60,
     "lines": 1

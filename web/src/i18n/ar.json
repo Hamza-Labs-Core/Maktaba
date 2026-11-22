@@ -5853,6 +5853,7 @@
   "big.search.none": "لم يُعثر على شيء لـ«{q}».",
   "big.search.titles": "في العناوين",
   "big.search.transcripts": "في النصوص",
+  "big.search.filters": "التصفية",
   "big.live.empty": "لا قنوات للمشاهدة.",
   "big.live.progress": "مقدار ما عُرض من البرنامج",
   "big.player.position": "الموضع",

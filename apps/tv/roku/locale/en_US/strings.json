@@ -69,6 +69,12 @@
     "library.onDeck": "On deck",
     "library.recentlyWatched": "Recently watched",
     "search.noResults": "No results.",
+    "search.sort.relevance": "Relevance",
+    "search.sort.newest": "Newest",
+    "search.sort.matches": "Most matches",
+    "search.filters": "Filters",
+    "search.filters.title": "Narrow the results",
+    "search.filters.clear": "Clear all filters",
     "player.error": "This video cannot play right now.",
     "roku.player.upNext": "Up next",
     "roku.player.retrying": "Trying a converted version…",
@@ -163,6 +169,151 @@
     "series.season": {
       "text": "Season %1$d",
       "widthChars": 12,
+      "lines": 1
+    },
+    "search.suggest.item": {
+      "text": "%1$s  ·  %2$s",
+      "widthChars": 34,
+      "lines": 1
+    },
+    "search.suggest.plain": {
+      "text": "%1$s",
+      "widthChars": 34,
+      "lines": 1
+    },
+    "search.kind.history": {
+      "text": "Recent",
+      "widthChars": 12,
+      "lines": 1
+    },
+    "search.kind.term": {
+      "text": "Word",
+      "widthChars": 12,
+      "lines": 1
+    },
+    "search.kind.title": {
+      "text": "Video",
+      "widthChars": 12,
+      "lines": 1
+    },
+    "search.kind.speaker": {
+      "text": "Speaker",
+      "widthChars": 12,
+      "lines": 1
+    },
+    "search.didYouMean": {
+      "text": "Did you mean %1$s?",
+      "widthChars": 56,
+      "lines": 1
+    },
+    "search.filters.on": {
+      "text": "Filters · %1$s",
+      "widthChars": 14,
+      "lines": 1
+    },
+    "search.facet.option": {
+      "text": "%1$s: %2$s · %3$s",
+      "widthChars": 30,
+      "lines": 1
+    },
+    "search.facet.noCount": {
+      "text": "%1$s: %2$s",
+      "widthChars": 30,
+      "lines": 1
+    },
+    "search.facet.chosen": {
+      "text": "✓ %1$s: %2$s · %3$s",
+      "widthChars": 30,
+      "lines": 1
+    },
+    "search.facet.chosenGone": {
+      "text": "✓ %1$s: %2$s",
+      "widthChars": 30,
+      "lines": 1
+    },
+    "search.facet.library": {
+      "text": "Library",
+      "widthChars": 12,
+      "lines": 1
+    },
+    "search.facet.language": {
+      "text": "Language",
+      "widthChars": 12,
+      "lines": 1
+    },
+    "search.facet.speaker": {
+      "text": "Speaker",
+      "widthChars": 12,
+      "lines": 1
+    },
+    "search.facet.year": {
+      "text": "Year",
+      "widthChars": 12,
+      "lines": 1
+    },
+    "search.facet.duration": {
+      "text": "Length",
+      "widthChars": 12,
+      "lines": 1
+    },
+    "search.duration.under_5m": {
+      "text": "Under 5 min",
+      "widthChars": 20,
+      "lines": 1
+    },
+    "search.duration.5m_20m": {
+      "text": "5 to 20 min",
+      "widthChars": 20,
+      "lines": 1
+    },
+    "search.duration.20m_60m": {
+      "text": "20 to 60 min",
+      "widthChars": 20,
+      "lines": 1
+    },
+    "search.duration.over_60m": {
+      "text": "Over an hour",
+      "widthChars": 20,
+      "lines": 1
+    },
+    "search.language.ar": {
+      "text": "Arabic",
+      "widthChars": 16,
+      "lines": 1
+    },
+    "search.language.en": {
+      "text": "English",
+      "widthChars": 16,
+      "lines": 1
+    },
+    "search.language.ur": {
+      "text": "Urdu",
+      "widthChars": 16,
+      "lines": 1
+    },
+    "search.language.fr": {
+      "text": "French",
+      "widthChars": 16,
+      "lines": 1
+    },
+    "search.language.tr": {
+      "text": "Turkish",
+      "widthChars": 16,
+      "lines": 1
+    },
+    "search.language.id": {
+      "text": "Indonesian",
+      "widthChars": 16,
+      "lines": 1
+    },
+    "search.language.fa": {
+      "text": "Persian",
+      "widthChars": 16,
+      "lines": 1
+    },
+    "search.language.ms": {
+      "text": "Malay",
+      "widthChars": 16,
       "lines": 1
     },
     "account.signedInAs": {

@@ -317,7 +317,7 @@ function toNodes(els: HTMLElement[]): FocusNode[] {
   });
 }
 
-function cssEscape(s: string): string {
+export function cssEscape(s: string): string {
   return typeof CSS !== "undefined" && CSS.escape ? CSS.escape(s) : s.replace(/["\\]/g, "\\$&");
 }
 

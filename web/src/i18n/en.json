@@ -5827,6 +5827,7 @@
   "big.search.none": "Nothing found for “{q}”.",
   "big.search.titles": "In titles",
   "big.search.transcripts": "In transcripts",
+  "big.search.filters": "Filters",
   "big.live.empty": "No channels to watch.",
   "big.live.progress": "How far the programme has got",
   "big.player.position": "Position",

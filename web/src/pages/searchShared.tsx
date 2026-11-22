@@ -202,6 +202,16 @@ export function toggleSel(sel: FacetSel, facet: FacetName, value: string): Facet
 export const selHas = (sel: FacetSel, facet: FacetName, value: string) =>
   facet === "year" || facet === "duration" ? sel[facet] === value : sel[facet].includes(value);
 
+/** The facets of an answer, or null (a home before story 49.8 sends none). */
+export const facetsOf = (res: SearchResponse | null | undefined): Facets | null =>
+  res?.facets && typeof res.facets === "object" ? res.facets : null;
+
+/** An answer's corrected query, or "" when it has none or repeats the query. */
+export const didYouMeanOf = (res: SearchResponse | null | undefined, query: string): string =>
+  typeof res?.did_you_mean === "string" && res.did_you_mean.trim() !== query.trim()
+    ? res.did_you_mean.trim()
+    : "";
+
 /** What a saved search was asked and answered beyond its pages, kept per sid for a reload. */
 export interface SearchHelp {
   sort: Sort;
