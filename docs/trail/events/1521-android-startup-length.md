@@ -45,6 +45,7 @@ agent: claude-code
   - A forced transcode could be handed the user's direct-play session from another app.
   - A +10 s skip near the written end restarted the transcode.
   - The fallback test's second session was still direct play.
+- #1521 merged as e8ee69097 with every check green on 6c1e47dd2.
 - **CI on 6c1e47dd2:**
   - `affected-tests` had blocked a7253fcd9: `ApiClient.kt`, `Models.kt`, `Playback.kt`,
     `Watch.kt` and `TvPlayback.kt` changed with none of their own tests. Fixed by adding
@@ -53,6 +54,13 @@ agent: claude-code
   - `android-tv / Fire TV build on the Android TV emulator` (run 45076808608) was cancelled at
     its time limit: the emulator never came up (`adb: device 'emulator-5554' not found` for 40
     minutes). No TV code had changed since the first push, where the job passed. It was re-run.
+- **The trail PR (#1522) failed `lint / repo`.**
+  - The event's `## Keep doing / stop doing` heading is no section the checker knows: it takes
+    `Keep doing` and `Stop doing` apart.
+  - The ten minutes with no output before it in the log (23:04 to 23:13 in run 45081109141)
+    were the `pytest tools/ci/tests` step. `trail check` itself ran 132 s, then failed on that
+    heading.
+  - Fixed by splitting the heading. `trail check --no-git` passes locally in 2.5 s.
 
 ## What we learned
 - A client that omits `client_profile` silently gets `generic`, the narrowest profile, with no
@@ -64,12 +72,17 @@ agent: claude-code
   durations of the fake clock (`PlaylistStuckException`). The fake must add a segment at each
   read.
 
-## Keep doing / stop doing
-- Keep: measure a startup path with the server's exact ffmpeg arguments (print `HLSArgs` from a
-  test) before guessing at buffer settings.
-- Stop: reading `Player.duration` as a video's length when the window is dynamic.
-- Keep: every reopen in `Playback` goes through one job that `stop()` cancels, and `open()`
-  checks the video is still the one it opened before it builds a player.
+## Keep doing
+- Measure a startup path with the server's exact ffmpeg arguments (print `HLSArgs` from a test)
+  before guessing at buffer settings.
+- Send every reopen in `Playback` through one job that `stop()` cancels, and have `open()` check
+  that the video is still the one it opened before it builds a player.
+
+## Stop doing
+- Writing an event's section headings from memory: they are exactly `What happened`, `What we
+  learned`, `Keep doing`, `Stop doing` and `Open`. Run `trail check --no-git` (seconds) before
+  pushing an event.
+- Reading `Player.duration` as a video's length when the window is dynamic.
 
 ## Open
 - The TV app's player and the media notification still show a growing transcode's partial
@@ -78,3 +91,9 @@ agent: claude-code
   segment) would cover every client.
 - The older profiles have no audio-only remux: DTS or TrueHD on a phone without that decoder
   still transcodes the video as well.
+- `trail check` (agent-trail v0.2.0) is not hung, but slow, and grows with the trail. Each
+  snapshot reloads every event at its commit with one `git show` per file (`check_snapshot`,
+  then `load_events`, then `files_at`). Here, on 2026-11-22, that is 75 snapshots and about
+  41,825 `git show` calls: about 130 s on a CI runner, and about 14 minutes on a Mac at 19.7 ms
+  a call. Reading each commit's files in one `git cat-file --batch` would remove most of it.
+  Until then, run `trail check --no-git` locally, and leave the full check to CI.
