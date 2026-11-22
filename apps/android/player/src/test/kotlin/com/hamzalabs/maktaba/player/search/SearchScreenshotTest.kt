@@ -75,6 +75,8 @@ class SearchScreenshotTest {
                 compose.onNodeWithTag("facets-done").performScrollTo().performClick()
                 compose.settledUntil(5_000) { compose.onAllNodesWithTag("search-facets").fetchSemanticsNodes().isEmpty() }
                 compose.settledUntil(5_000) { compose.onAllNodesWithTag("active-duration-20m_60m").fetchSemanticsNodes().isNotEmpty() }
+                // the narrowed answer is in: no progress line under the bar
+                compose.settledUntil(5_000) { compose.onAllNodesWithTag("search-refining").fetchSemanticsNodes().isEmpty() }
             } else {
                 compose.settledUntil(5_000) { compose.onAllNodesWithTag("passage-v4-0").fetchSemanticsNodes().isNotEmpty() }
             }
