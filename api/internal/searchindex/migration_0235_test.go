@@ -29,7 +29,8 @@ func TestSlot0235UpAndDownOnPostgres(t *testing.T) {
 	have := func() (bool, bool) {
 		var table, col bool
 		if err := db.QueryRow(`SELECT to_regclass('public.search_terms') IS NOT NULL AND to_regclass('public.search_speakers') IS NOT NULL
-			AND to_regclass('public.videos_shown_title_prefix') IS NOT NULL AND to_regclass('public.search_terms_df') IS NOT NULL,
+			AND to_regclass('public.videos_shown_title_prefix') IS NOT NULL AND to_regclass('public.search_terms_df') IS NOT NULL
+			AND to_regclass('public.speakers_name_idx') IS NOT NULL,
 			EXISTS (SELECT FROM information_schema.columns WHERE table_name = 'video_search_docs' AND column_name = 'terms_counted')`).Scan(&table, &col); err != nil {
 			t.Fatal(err)
 		}
@@ -93,6 +94,7 @@ func TestSlot0235OnSQLite(t *testing.T) {
 		`CREATE TABLE libraries (id TEXT PRIMARY KEY)`,
 		`CREATE TABLE videos (id TEXT PRIMARY KEY, library_id TEXT NOT NULL REFERENCES libraries(id) ON DELETE CASCADE)`,
 	})
+	run(t, db, "speakers", []string{`CREATE TABLE speakers (id TEXT PRIMARY KEY, video_id TEXT, name TEXT NOT NULL)`})
 	up32, _ := gooseStatements(t, "0232_video_search_docs.sqlite.sql")
 	run(t, db, "0232", up32)
 	up, down := gooseStatements(t, "0235_search_terms.sqlite.sql")

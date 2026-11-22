@@ -366,7 +366,8 @@ func (h *Handler) historySuggestions(ctx context.Context, userID, q string) ([]s
 	if err != nil {
 		// a database with no history table (a test's, an old twin's) has no history; any
 		// other failure is the search's
-		if m := err.Error(); strings.Contains(m, "no such table") || strings.Contains(m, "does not exist") {
+		if m := err.Error(); strings.Contains(m, "no such table: search_history") ||
+			strings.Contains(m, `relation "search_history" does not exist`) {
 			return nil, nil
 		}
 		return nil, err
@@ -387,12 +388,14 @@ func (h *Handler) historySuggestions(ctx context.Context, userID, q string) ([]s
 // with key, most documents first. The rows are read most frequent first and the lookup
 // stops at a few times n: ال starts most Arabic words, and summing every one of them was
 // the slowest part of a suggestion (search_terms_df serves that order, the prefix index a
-// rare prefix).
+// rare prefix). For one library the order is exact; across several, a word read in fewer
+// rows than the window holds can rank below its true place (its other libraries' rows fall
+// past the window), so the window grows with the libraries.
 func (h *Handler) termsStartingWith(ctx context.Context, key string, libs []string, n int) ([]termCount, error) {
 	args := []any{escapeLike(key) + "%"}
 	rows, err := h.DB.QueryContext(ctx, `SELECT term, shown, df FROM search_terms
 		 WHERE term LIKE $1 ESCAPE '\' AND `+libraryWhere("library_id", libs, &args)+`
-		 ORDER BY df DESC, term LIMIT `+strconv.Itoa(n*10), args...)
+		 ORDER BY df DESC, term LIMIT `+strconv.Itoa(n*10*max(len(libs), 4)), args...)
 	if err != nil {
 		return nil, err
 	}
@@ -443,50 +446,68 @@ func (h *Handler) titleSuggestions(ctx context.Context, q string, libs []string)
 	return out, rows.Err()
 }
 
+// restrictedSpeakerCandidates is how many of the dictionary's names a restricted account's
+// suggestion checks against the videos it may see.
+const restrictedSpeakerCandidates = 20
+
 // speakerSuggestions are the named speakers of the caller's libraries with a word start
 // of their name that starts with q, named in the most documents first (search_speakers).
-// A restricted account reads the speakers of the videos it may see instead: the
-// dictionary cannot tell which video a name comes from.
+// The dictionary cannot tell which video a name comes from, so for a restricted account
+// each of its first names is kept only if a video the account may see names it
+// (speakers_name_idx, then the limit on that video): the names it gets are those it can
+// find, in the dictionary's order.
 func (h *Handler) speakerSuggestions(ctx context.Context, q string, libs []string) ([]string, error) {
-	var rows *sql.Rows
-	var err error
-	if limited(ctx) {
-		pat := escapeLike(q)
-		args := []any{pat + "%", "% " + pat + "%"}
-		like := "ILIKE"
-		if isSQLite(h.DB) {
-			like = "LIKE"
-		}
-		where := []string{"s.unknown_index IS NULL", "v.deleted_at IS NULL",
-			"(s.name " + like + " $1 ESCAPE '\\' OR s.name " + like + " $2 ESCAPE '\\')",
-			libraryWhere("v.library_id", libs, &args)}
-		where = append(where, limitWhere(ctx)...)
-		rows, err = h.DB.QueryContext(ctx, `SELECT s.name, count(DISTINCT s.video_id) AS n FROM speakers s
-			 JOIN videos v ON v.id = s.video_id
-			 WHERE `+strings.Join(where, " AND ")+`
-			 GROUP BY s.name ORDER BY n DESC, s.name LIMIT `+strconv.Itoa(suggestSpeakers), args...)
-	} else {
-		key := searchterms.Key(strings.Join(strings.Fields(q), " "))
-		if key == "" {
-			return nil, nil
-		}
-		args := []any{escapeLike(key) + "%"}
-		rows, err = h.DB.QueryContext(ctx, `SELECT name, sum(df) AS n FROM search_speakers
-			 WHERE key LIKE $1 ESCAPE '\' AND `+libraryWhere("library_id", libs, &args)+`
-			 GROUP BY name ORDER BY n DESC, name LIMIT `+strconv.Itoa(suggestSpeakers), args...)
+	key := searchterms.Key(strings.Join(strings.Fields(q), " "))
+	if key == "" {
+		return nil, nil
 	}
+	n := suggestSpeakers
+	if limited(ctx) {
+		n = restrictedSpeakerCandidates
+	}
+	args := []any{escapeLike(key) + "%"}
+	rows, err := h.DB.QueryContext(ctx, `SELECT name, sum(df) AS n FROM search_speakers
+		 WHERE key LIKE $1 ESCAPE '\' AND `+libraryWhere("library_id", libs, &args)+`
+		 GROUP BY name ORDER BY n DESC, name LIMIT `+strconv.Itoa(n), args...)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	var out []string
+	var names []string
 	for rows.Next() {
 		var name string
-		var n int
-		if err := rows.Scan(&name, &n); err != nil {
+		var c int
+		if err := rows.Scan(&name, &c); err != nil {
+			_ = rows.Close()
 			return nil, err
 		}
-		out = append(out, name)
+		names = append(names, name)
 	}
-	return out, rows.Err()
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if !limited(ctx) {
+		return names, nil
+	}
+	var out []string
+	for _, name := range names {
+		if len(out) >= suggestSpeakers {
+			break
+		}
+		args := []any{name}
+		where := []string{"s.name = $1", "s.unknown_index IS NULL", "v.deleted_at IS NULL",
+			libraryWhere("v.library_id", libs, &args)}
+		where = append(where, limitWhere(ctx)...)
+		var seen int
+		if err := h.DB.QueryRowContext(ctx, `SELECT count(*) FROM (SELECT 1 FROM speakers s
+			 JOIN videos v ON v.id = s.video_id WHERE `+strings.Join(where, " AND ")+` LIMIT 1) x`, args...).Scan(&seen); err != nil {
+			return nil, err
+		}
+		if seen > 0 {
+			out = append(out, name)
+		}
+	}
+	return out, nil
 }

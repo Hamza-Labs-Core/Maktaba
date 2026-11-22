@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -16,8 +17,9 @@ func TestDocTermsMatchesThePipeline(t *testing.T) {
 		t.Fatal(err)
 	}
 	var cases []struct {
-		Text  string            `json:"text"`
-		Terms map[string]string `json:"terms"`
+		Text        string            `json:"text"`
+		Terms       map[string]string `json:"terms"`
+		SpeakerKeys [][2]string       `json:"speaker_keys"`
 	}
 	if err := json.Unmarshal(raw, &cases); err != nil {
 		t.Fatal(err)
@@ -25,6 +27,11 @@ func TestDocTermsMatchesThePipeline(t *testing.T) {
 	for _, c := range cases {
 		if got := DocTerms(c.Text); !reflect.DeepEqual(got, c.Terms) {
 			t.Errorf("%q:\n got %v\nwant %v", c.Text, got, c.Terms)
+		}
+		if c.SpeakerKeys != nil {
+			if got := SpeakerKeys(strings.ReplaceAll(c.Text, "\t", "\n")); !reflect.DeepEqual(got, c.SpeakerKeys) {
+				t.Errorf("speakers %q:\n got %v\nwant %v", c.Text, got, c.SpeakerKeys)
+			}
 		}
 	}
 }

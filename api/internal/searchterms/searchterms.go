@@ -11,6 +11,7 @@
 package searchterms
 
 import (
+	"sort"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -128,6 +129,38 @@ func DocTerms(texts ...string) map[string]string {
 		}
 		out[k] = best
 	}
+	return out
+}
+
+// SpeakerKeys are each named speaker (one a line) by each word start of the name: (key,
+// name) pairs, sorted, as search_speakers holds them (the pipeline's speaker_keys), so
+// الشيخ أحمد is found by الشي and by أحم.
+func SpeakerKeys(names string) [][2]string {
+	seen := map[[2]string]bool{}
+	var out [][2]string
+	for _, line := range strings.Split(names, "\n") {
+		parts := strings.Fields(line)
+		name := strings.Join(parts, " ")
+		for i := range parts {
+			k := Key(strings.Join(parts[i:], " "))
+			if k == "" {
+				continue
+			}
+			if utf8.RuneCountInString(k) > 200 {
+				k = string([]rune(k)[:200])
+			}
+			if p := [2]string{k, name}; !seen[p] {
+				seen[p] = true
+				out = append(out, p)
+			}
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i][0] != out[j][0] {
+			return out[i][0] < out[j][0]
+		}
+		return out[i][1] < out[j][1]
+	})
 	return out
 }
 

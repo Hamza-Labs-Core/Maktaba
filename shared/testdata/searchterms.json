@@ -45,7 +45,33 @@
    "tab": "tab",
    "new": "new",
    "line": "line"
-  }
+  },
+  "speaker_keys": [
+   [
+    "e-mail tab",
+    "Qur'an well-known e-mail tab"
+   ],
+   [
+    "line",
+    "line"
+   ],
+   [
+    "new",
+    "new"
+   ],
+   [
+    "qur'an well-known e-mail tab",
+    "Qur'an well-known e-mail tab"
+   ],
+   [
+    "tab",
+    "Qur'an well-known e-mail tab"
+   ],
+   [
+    "well-known e-mail tab",
+    "Qur'an well-known e-mail tab"
+   ]
+  ]
  },
  {
   "text": "مدرسةٌ مدرسة مدرسه والصابرين، وَالصّابِرِينَ",
@@ -64,5 +90,47 @@
  {
   "text": "ﷲ ﻻ",
   "terms": {}
+ },
+ {
+  "text": "الشيخ  أحمدُ بن عبدِ الله\tMuhammad Ālī",
+  "terms": {
+   "الشيخ": "الشيخ",
+   "احمد": "أحمد",
+   "بن": "بن",
+   "عبد": "عبد",
+   "الله": "الله",
+   "muhammad": "muhammad",
+   "ali": "ālī"
+  },
+  "speaker_keys": [
+   [
+    "ali",
+    "Muhammad Ālī"
+   ],
+   [
+    "muhammad ali",
+    "Muhammad Ālī"
+   ],
+   [
+    "احمد بن عبد الله",
+    "الشيخ أحمدُ بن عبدِ الله"
+   ],
+   [
+    "الشيخ احمد بن عبد الله",
+    "الشيخ أحمدُ بن عبدِ الله"
+   ],
+   [
+    "الله",
+    "الشيخ أحمدُ بن عبدِ الله"
+   ],
+   [
+    "بن عبد الله",
+    "الشيخ أحمدُ بن عبدِ الله"
+   ],
+   [
+    "عبد الله",
+    "الشيخ أحمدُ بن عبدِ الله"
+   ]
+  ]
  }
 ]

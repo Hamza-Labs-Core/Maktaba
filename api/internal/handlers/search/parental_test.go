@@ -182,6 +182,21 @@ func searchFilterCase(t *testing.T, db *sql.DB, vOK, vHi, vUnr string, sem []Hit
 	if krec := call(t, h, child, http.MethodGet, "/api/search/suggest?q=Kid", ""); krec.Code != http.StatusOK || !strings.Contains(krec.Body.String(), "Kid Zarqa") {
 		t.Errorf("suggest Kid: %d %s", krec.Code, krec.Body.String())
 	}
+	// a speaker is suggested only when a video the account may see names it
+	for i, s := range []struct{ video, name string }{{vOK, "Zarqa Visible"}, {vHi, "Zarqa Hidden"}} {
+		if _, err := db.Exec(`INSERT INTO speakers (id, video_id, name) VALUES ($1, $2, $3)`, pgUUID(900+i), s.video, s.name); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.Exec(`INSERT INTO search_speakers (library_id, key, name, df) VALUES ($1, $2, $3, 1)`, libA, strings.ToLower(s.name), s.name); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if vrec := call(t, base, viewer, http.MethodGet, "/api/search/suggest?q=Zarqa", ""); !strings.Contains(vrec.Body.String(), "Zarqa Hidden") {
+		t.Errorf("suggest as the viewer: %s", vrec.Body.String())
+	}
+	if crec := call(t, h, child, http.MethodGet, "/api/search/suggest?q=Zarqa", ""); !strings.Contains(crec.Body.String(), "Zarqa Visible") || strings.Contains(crec.Body.String(), "Zarqa Hidden") {
+		t.Errorf("a restricted account's speakers: %s", crec.Body.String())
+	}
 	srec := call(t, h, child, http.MethodGet, "/api/search/suggest?q=Zar", "")
 	if srec.Code != http.StatusOK {
 		t.Errorf("suggest: %d %s", srec.Code, srec.Body.String())

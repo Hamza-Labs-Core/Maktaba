@@ -74,6 +74,11 @@ CREATE INDEX CONCURRENTLY IF NOT EXISTS search_speakers_key_prefix ON search_spe
 -- +goose StatementEnd
 
 -- +goose StatementBegin
+-- a restricted account's speaker suggestions check each name against the videos it may see
+CREATE INDEX CONCURRENTLY IF NOT EXISTS speakers_name_idx ON speakers (name);
+-- +goose StatementEnd
+
+-- +goose StatementBegin
 CREATE INDEX CONCURRENTLY IF NOT EXISTS videos_shown_title_prefix ON videos
     (lower(COALESCE(NULLIF(display_title_manual, ''), NULLIF(display_title, ''), title)) text_pattern_ops)
     WHERE deleted_at IS NULL;
@@ -255,6 +260,10 @@ ALTER TABLE video_search_docs DROP COLUMN IF EXISTS terms_counted;
 
 -- +goose StatementBegin
 DROP INDEX CONCURRENTLY IF EXISTS videos_shown_title_prefix;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+DROP INDEX CONCURRENTLY IF EXISTS speakers_name_idx;
 -- +goose StatementEnd
 
 -- +goose StatementBegin

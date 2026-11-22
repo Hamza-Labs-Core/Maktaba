@@ -328,8 +328,13 @@ def test_python_keys_words_as_go_does() -> None:
     cases = json.loads(
         (Path(__file__).resolve().parents[3] / "shared/testdata/searchterms.json").read_text()
     )
+    from maktaba_pipeline.search.terms import speaker_keys
+
     for c in cases:
         assert doc_terms(c["text"]) == c["terms"], c["text"]
+        if "speaker_keys" in c:
+            got = sorted([list(x) for x in speaker_keys(c["text"].replace("\t", "\n"))])
+            assert got == c["speaker_keys"], c["text"]
 
 
 @pytest.mark.asyncio
@@ -383,15 +388,41 @@ async def test_a_document_built_before_the_dictionary_is_counted_once(db: Databa
     rt = await core_runtime(db)
     lib = await make_library(db)
     vid = await make_video(db, lib, title="t", filename="t.mp4")
-    await _transcript(db, vid, ["الصبر"])
+    tid = await _transcript(db, vid, ["الصبر"])
+    await _speaker(db, vid, tid, "الشيخ أحمد", [0])
     await _index(db, rt, vid)
     await db.execute(
         "UPDATE video_search_docs SET terms_counted = $2, doc_version = 1 WHERE video_id = $1",
         str(vid), False,
     )  # fmt: skip
     await db.execute("DELETE FROM search_terms")
+    await db.execute("DELETE FROM search_speakers")
     assert (await stage.plan_library(db, lib)).summary["planned"] == 1
     await drain_core(db, rt, only={"keyword_index"})
     assert (await _terms(db, lib))["الصبر"] == ("الصبر", 1)
+    assert await db.fetchval("SELECT sum(df) FROM search_speakers") == 2  # name, and أحمد
     d = await _doc(db, vid)
     assert d is not None and bool(d["terms_counted"])
+
+
+@pytest.mark.asyncio
+async def test_a_video_whose_library_was_merged_away_is_counted_in_its_new_one(
+    db: Database,
+) -> None:
+    """A library merged into another (its videos moved, the library deleted, its
+    dictionaries with it): the plan of the new library finds the moved video's document
+    under the old library, and its job counts the words there, taking nothing off the old
+    library that no longer exists."""
+    rt = await core_runtime(db)
+    old, new = await make_library(db), await make_library(db)
+    vid = await make_video(db, old, title="t", filename="t.mp4")
+    await _transcript(db, vid, ["الصبر"])
+    await _index(db, rt, vid)
+    await db.execute("UPDATE videos SET library_id = $1 WHERE id = $2", str(new), str(vid))
+    await db.execute("DELETE FROM search_terms WHERE library_id = $1", str(old))
+    await db.execute("DELETE FROM libraries WHERE id = $1", str(old))
+    assert (await stage.plan_library(db, new)).summary["planned"] == 1
+    await drain_core(db, rt, only={"keyword_index"})
+    assert (await _terms(db, new))["الصبر"] == ("الصبر", 1)
+    d = await _doc(db, vid)
+    assert d is not None and str(d["library_id"]) == str(new)

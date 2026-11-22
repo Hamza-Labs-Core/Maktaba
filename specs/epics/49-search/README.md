@@ -699,6 +699,11 @@ runs only when the person opens that tab or submits from it; Results never waits
   from each document's named speakers. It has one row per library, name and each word start
   of the name (الشيخ أحمد is found by الشي and by أحم), with how many documents name the
   speaker.
+- **A library merged into another** loses its documents and its dictionary rows in the merge's
+  transaction (`api/internal/handlers/libraries/merge.go`). The plan of the target rebuilds
+  each moved video's document there and counts it in the target's dictionaries. The plan also
+  rebuilds any document whose library is not its video's. A job that finds the old library
+  gone takes nothing off it: its dictionaries went with it.
 - **Suggestions as you type** (`GET /api/search/suggest`), at most 10:
   - the caller's own earlier searches that start with the query (at most 3);
   - the query with its last word completed from the dictionary, most documents first (at
@@ -709,7 +714,9 @@ runs only when the person opens that tab or submits from it; Results never waits
 
   Each source is an index lookup that stops early:
   - the words are read most frequent first (`search_terms_df`), and the lookup stops after a
-    few times the answers it needs (ال starts most Arabic words);
+    few times the answers it needs (ال starts most Arabic words). For one library the order
+    is exact; across several, the window grows with them, and a word's place can still be
+    a little low;
   - titles are an index scan of `videos_shown_title_prefix` (the title a video shows, lower
     case) in its own order, stopped at the third;
   - speakers come from `search_speakers`, not from every video's speakers.
@@ -745,8 +752,8 @@ runs only when the person opens that tab or submits from it; Results never waits
   hides videos within a library, and the dictionary cannot tell which video a word comes
   from. So a restricted account gets no dictionary word: no completed word and no
   did-you-mean. It still gets its earlier searches, and the titles and speakers of the
-  videos it may see (read from the videos, with the limit applied, not from
-  `search_speakers`). A failed facet or did-you-mean lookup answers the search without
+  videos it may see. A speaker is one of the dictionary's first 20 names for the prefix
+  that a video it may see names (`speakers_name_idx`, then the limit on that video). A failed facet or did-you-mean lookup answers the search without
   them.
 - **Proof:**
   - `TestBM25_SearchHelp` (PostgreSQL 18, the replica job):
@@ -765,14 +772,17 @@ runs only when the person opens that tab or submits from it; Results never waits
   - `TestBM25_Perf45k` times suggestions on the 45,000-document library: 32,578 dictionary
     rows, a title on every video (all start with درس) and 1 to 3 named speakers each, from
     3,000 names that all start with الشيخ. Measured locally, against a 50 ms limit:
-    - suggest takes p95 1.6 ms for ال (the commonest prefix), 0.5 ms for الص, 0.5 ms for
-      درس (every title), 1.5 ms for الشي (every speaker), 0.5 ms for a sentence's last word
-      and 0.9 ms for one library;
+    - suggest takes p95 1.7 ms for ال (the commonest prefix), 0.6 ms for الص, 0.6 ms for
+      درس (every title), 1.6 ms for الشي (every speaker), 1.3 ms for الشي as a restricted
+      account, 0.5 ms for a sentence's last word and 1.4 ms for one library;
     - did-you-mean takes p95 2.2 ms.
 
     The first version scanned every title and speaker and summed every word with the
     prefix: 120 ms for ال and 165 ms for الشي. The review found it, and the fixture had no
     titles or speakers to show it.
+  - `TestMergePostgres`: a merge drops the merged library's documents and dictionary rows,
+    and the target's document stays. The stage's tests rebuild a video whose library was
+    merged away into its new library.
 - **How it differs from the spec.**
   - Did-you-mean's similarity is at least 0.3, not 0.4: one wrong letter in a five-letter
     Arabic word (مدرصه for مدرسه) scores 0.33.

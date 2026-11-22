@@ -25,6 +25,7 @@ import (
 	"github.com/lib/pq"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/parental"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/searchterms"
 )
 
@@ -229,6 +230,8 @@ func TestBM25_Perf45k(t *testing.T) {
 	// story 49.8: suggestions and did-you-mean on the same library
 	admin := &principal.Principal{UserID: userA, AccessAllLibraries: true}
 	limitedUser := &principal.Principal{UserID: userB, Libraries: []string{libB}}
+	// a 9+ limit under which unrated videos show (the fixture's have no tier)
+	restricted := parental.With(ctx, &parental.Effective{UserID: userB, Restricted: true, MaxTier: parental.Tier9, Unrated: "tier_0", Version: 1})
 	misspelt := []rune(vocab[3])
 	misspelt[1] = 'ك' // one letter off a frequent word (ك is in no word)
 	for _, c := range []struct {
@@ -239,6 +242,10 @@ func TestBM25_Perf45k(t *testing.T) {
 		{"suggest الص", func() (int, error) { s, err := h.suggest(ctx, admin, "الص"); return len(s), err }},
 		{"suggest درس (every title)", func() (int, error) { s, err := h.suggest(ctx, admin, "درس"); return len(s), err }},
 		{"suggest الشي (every speaker)", func() (int, error) { s, err := h.suggest(ctx, admin, "الشي"); return len(s), err }},
+		{"suggest الشي, a restricted account (parental controls)", func() (int, error) {
+			s, err := h.suggest(restricted, limitedUser, "الشي")
+			return len(s), err
+		}},
 		{"suggest a sentence's last word", func() (int, error) { s, err := h.suggest(ctx, admin, "الصبر عند الم"); return len(s), err }},
 		{"suggest ال, one library (a limited user)", func() (int, error) { s, err := h.suggest(ctx, limitedUser, "ال"); return len(s), err }},
 		{"did-you-mean " + string(misspelt), func() (int, error) {

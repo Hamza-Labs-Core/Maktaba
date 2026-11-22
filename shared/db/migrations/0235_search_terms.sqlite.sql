@@ -33,12 +33,20 @@ CREATE INDEX IF NOT EXISTS search_speakers_key ON search_speakers (key);
 -- +goose StatementEnd
 
 -- +goose StatementBegin
+CREATE INDEX IF NOT EXISTS speakers_name_idx ON speakers (name);
+-- +goose StatementEnd
+
+-- +goose StatementBegin
 ALTER TABLE video_search_docs ADD COLUMN IF NOT EXISTS terms_counted INTEGER NOT NULL DEFAULT 0;
 -- +goose StatementEnd
 
 -- +goose Down
 -- +goose StatementBegin
 ALTER TABLE video_search_docs DROP COLUMN terms_counted;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+DROP INDEX IF EXISTS speakers_name_idx;
 -- +goose StatementEnd
 
 -- +goose StatementBegin

@@ -252,7 +252,10 @@ async def _recount(db: Any, old: Any, doc: dict[str, Any] | None) -> None:
             await _count(db, new_lib, delta)
             await _count_speakers(db, new_lib, sp)
         return
-    if old_lib is not None:
+    if old_lib is not None and await db.fetchval(
+        "SELECT count(*) FROM libraries WHERE id = $1", uid(old_lib)
+    ):
+        # (a library deleted or merged away took its dictionaries with it)
         await _count(db, old_lib, {k: (s, -1) for k, s in before.items()})
         await _count_speakers(db, old_lib, {k: -1 for k in sp_before})
     if new_lib is not None:
@@ -343,6 +346,7 @@ def _stale(v: Any, t: Any, d: Any) -> bool:
         return True
     return (
         int(d["doc_version"] or 0) < KEYWORD_INDEX_VERSION
+        or str(d["library_id"]) != str(v["library_id"])
         or str(d["transcript_id"]) != str(t["id"])
         or int(d["transcript_revision"] or 0) != int(t["revision"] or 0)
         or str(d["title"]) != shown_title(v)
@@ -358,8 +362,9 @@ async def plan_library(db: Any, library_id: Any) -> StageResult:
     while queued < PLAN_BATCH:
         page = (uid(library_id), PLAN_PAGE, offset)
         videos = await db.fetch(
-            "SELECT v.id, v.title, v.display_title, v.display_title_manual, v.filename,"
-            f" v.deleted_at FROM videos v WHERE v.id IN ({_PAGE}) ORDER BY v.created_at DESC, v.id",
+            "SELECT v.id, v.library_id, v.title, v.display_title, v.display_title_manual,"
+            " v.filename, v.deleted_at FROM videos v"
+            f" WHERE v.id IN ({_PAGE}) ORDER BY v.created_at DESC, v.id",
             *page,
         )
         if not videos:
@@ -375,7 +380,8 @@ async def plan_library(db: Any, library_id: Any) -> StageResult:
         docs = {
             str(r["video_id"]): r
             for r in await db.fetch(
-                "SELECT d.video_id, d.title, d.transcript_id, d.transcript_revision, d.doc_version"
+                "SELECT d.video_id, d.library_id, d.title, d.transcript_id,"
+                " d.transcript_revision, d.doc_version"
                 f" FROM video_search_docs d WHERE d.video_id IN ({_PAGE})",
                 *page,
             )

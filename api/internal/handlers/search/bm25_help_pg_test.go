@@ -15,18 +15,11 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/searchterms"
 )
 
-// speakerKeys is the pipeline's search/terms.py speaker_keys: each name by each word
-// start of it.
+// speakerKeys is searchterms.SpeakerKeys as a set.
 func speakerKeys(names string) map[[2]string]bool {
 	out := map[[2]string]bool{}
-	for _, line := range strings.Split(names, "\n") {
-		parts := strings.Fields(line)
-		name := strings.Join(parts, " ")
-		for i := range parts {
-			if k := searchterms.Key(strings.Join(parts[i:], " ")); k != "" {
-				out[[2]string{k, name}] = true
-			}
-		}
+	for _, k := range searchterms.SpeakerKeys(names) {
+		out[k] = true
 	}
 	return out
 }
