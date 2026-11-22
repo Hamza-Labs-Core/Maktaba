@@ -6678,8 +6678,8 @@
       "ar": "أعداد الفيديوهات التي وُجدت (قائمتا العناوين والنصوص المفرغة، حتى 1,000 فيديو)، مع الصفحة الأولى من البحث. تغيب حين لا يوجد فيديو."
     },
     "/components/schemas/SearchFacets/description": {
-      "en": "Each facet's buckets, most first (years newest first, duration bands shortest first). `library` buckets carry the library's name as `label`; at most 20 speakers. A video counts once in each facet it has a value for (once for each of its named speakers). `videos` is how many videos were counted.",
-      "ar": "قيم كل واجهة، الأكثر أولًا (السنوات الأحدث أولًا، ونطاقات المدة الأقصر أولًا). تحمل قيم `library` اسم المكتبة في `label`، وللمتحدثين 20 قيمة على الأكثر. يُعدّ الفيديو مرة في كل واجهة له فيها قيمة (ومرة لكل متحدث مسمّى فيه). `videos` عدد الفيديوهات التي عُدّت."
+      "en": "Each facet's buckets, most first (years newest first, duration bands shortest first). `library` buckets carry the library's name as `label`; at most 20 speakers. A video counts once in each facet it has a value for (once for each of its named speakers). `videos` is how many videos were counted. `tag` is kept for older apps and is always empty.",
+      "ar": "قيم كل واجهة، الأكثر أولًا (السنوات الأحدث أولًا، ونطاقات المدة الأقصر أولًا). تحمل قيم `library` اسم المكتبة في `label`، وللمتحدثين 20 قيمة على الأكثر. يُعدّ الفيديو مرة في كل واجهة له فيها قيمة (ومرة لكل متحدث مسمّى فيه). `videos` عدد الفيديوهات التي عُدّت. ويبقى `tag` من أجل التطبيقات الأقدم، وهو فارغ دائمًا."
     },
     "/components/schemas/FacetBucket/properties/value/description": {
       "en": "A library's id, a language code, a speaker's name, a year (`2024`), or a duration band: `under_5m`, `5m_20m`, `20m_60m`, `over_60m`.",

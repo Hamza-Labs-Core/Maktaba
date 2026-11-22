@@ -23160,6 +23160,12 @@
               "$ref": "#/components/schemas/FacetBucket"
             }
           },
+          "tag": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FacetBucket"
+            }
+          },
           "speaker": {
             "type": "array",
             "items": {
@@ -23182,7 +23188,7 @@
             "type": "integer"
           }
         },
-        "description": "Each facet's buckets, most first (years newest first, duration bands shortest first). `library` buckets carry the library's name as `label`; at most 20 speakers. A video counts once in each facet it has a value for (once for each of its named speakers). `videos` is how many videos were counted."
+        "description": "Each facet's buckets, most first (years newest first, duration bands shortest first). `library` buckets carry the library's name as `label`; at most 20 speakers. A video counts once in each facet it has a value for (once for each of its named speakers). `videos` is how many videos were counted. `tag` is kept for older apps and is always empty."
       },
       "FacetBucket": {
         "type": "object",
