@@ -368,6 +368,20 @@ describe("Did you mean (story 49.10)", () => {
     await screen.findByText("Patience in hardship");
     expect(screen.queryByTestId("did-you-mean")).toBeNull();
   });
+
+  it("SRC-46: a correction is shown trimmed, and one that is the query with spaces shows no row (didYouMeanOf, shared with the big screen)", async () => {
+    serve(corpus, {
+      help: (b) => ({
+        did_you_mean: b.q === "same" ? " same " : b.q === "patiense" ? "  patience " : undefined,
+      }),
+    });
+    renderSearchPage();
+    await submit("patiense");
+    const row = await screen.findByTestId("did-you-mean");
+    expect(within(row).getByRole("button", { name: "patience" })).toHaveTextContent(/^patience$/);
+    await submit("same");
+    await waitFor(() => expect(screen.queryByTestId("did-you-mean")).toBeNull());
+  });
 });
 
 describe("Facets and sort (story 49.10)", () => {
