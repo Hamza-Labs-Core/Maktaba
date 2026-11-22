@@ -1008,8 +1008,8 @@ found in transcripts, each once. The logic is in `source/search.brs`, apart from
 - **New words** drop the filters and keep the order; emptying the box starts afresh, so the same
   words typed again are new words too.
 - **Proof:** `tests/search_test.brs` on brs-engine (64 checks: the bodies, toggling, the kinds
-  and six at most,
-  parsing and an older home's answer, the facet rows, the lines in English and Arabic), also run
+  and six at most, parsing and an older home's answer, the facet rows, the lines in English and
+  Arabic), also run
   in the device-test package; `tests/screens.test.mjs` T07 against the mock home, which now
   answers `POST /api/search` and `GET /api/search/suggest`: the plain body, a word suggestion
   searched, Did you mean run, Newest sent, three filters combined with the year's own filter,
