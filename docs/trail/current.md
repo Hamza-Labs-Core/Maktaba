@@ -1,11 +1,11 @@
 ---
 schema: 1
-tag: v0.3.154
-up_to_commit: 22faca9e4
-built_from: v0.3.153
+tag: v0.3.155
+up_to_commit: 75fd70721
+built_from: v0.3.154
 ---
 
-# Trail snapshot: v0.3.154
+# Trail snapshot: v0.3.155
 
 ## Keep doing
 
@@ -169,7 +169,7 @@ built_from: v0.3.153
 - Key a start gate on the dependency a child runs from, not on one role, and test that every `python -m maktaba_*` child is gated (`TestEveryPythonChildRunsFromTheVenv`). (d20261108-runners-wait-venv)
 - Read a failed rehearsal row's test output before treating it as a fault: `no tests to run` means the matrix and the checked-out code disagree. (d20261108-rehearsal-matrix-skew)
 - A flake seen twice is fixed in the test, not rerun a third time: compare only what the reference is about (the page's words), not layout state such as scroll position. (#963)
-- Before pushing a change that makes a hot path costlier, run the touched package's tests with `-race -short` against the test-time budget; it can break unrelated pull requests. Size a new test's fixture to what it asserts. Run new Go tests under `-short -race` before pushing: the unit tier's per-test cap applies to race-instrumented SQLite, about 20× slower. (#971, #970, #1426)
+- Before pushing a change that makes a hot path costlier, run the touched package's tests with `-race -short` against the test-time budget; it can break unrelated pull requests. Size a new test's fixture to what it asserts. Run new Go tests under `-short -race` before pushing: the unit tier's per-test cap applies to race-instrumented SQLite, about 20× slower; another standing breach ran about 2.8× a local `-race` run. (#971, #970, #1426, d20261122-main-unit-budget)
 - Measure an idle service's steady-state CPU before and after on a root of production shape, from the same starting data. (#1426)
 - Check every shard's result, not only the step the change was about: an iPhone-only regression showed up only there. (#1425)
 - A new core stage needs four things beyond its graph entry: a `job_stages` seed in a migration, a component in the catalog (only `core.*` components may be always on), the generated files (`make catalog-sync`, `graph_golden.py --write` after `make plugins-sync`, the plugin entries golden), and a `dist-manifest.json` rebuild when its help changes; commit `260c99965` (content_screen) is a full template. (#1482)
@@ -183,7 +183,7 @@ built_from: v0.3.153
 - When an unrelated PR's check fails, find the cause and fix it in its own PR with a test. A flaky test asserting a status is often a real ordering bug: slow one side at the gap to reproduce it. (#1002)
 - Read the failure's hierarchy before calling a UI failure flaky: an xcresult keeps it (`xcresulttool export attachments --test-id`) and it tells a wrong screen from a slow one. A temporary commit with `-test-iterations N` (for a flake, `-only-testing … -test-iterations 20` on the 12 Player UI shards) proves a UI fix in one CI job; raise the job's `timeout-minutes` with it and drop the commit before merge. Count the evidence from each xcresult's repetitions and retry activities, never from the job's conclusion: a runner restart drops the remaining iterations (`Executed 0 tests`) and the job still ends green. (#1000, #1312)
 - A UI retry is judged by a deterministic signal (a request, a position, a count, a page opened, `TouchHook`'s cancelled count), never repeats a tap that may have landed, and fails naming the step on a second miss. Read that iteration's touch log before deciding: a dropped tap gets the retry, anything else gets its cause found (one was an app bug), and a changed wait cites the app behaviour it waits for. Leaving the player (`leavePlayer`) and choosing a segment (`choose`) now retry the same way. Before blaming a change for a red UI test, read the job's ` t = ` lines: idle waits that each take their full 60 s mean the runner or the app stalled. (#1309, #1312, #1412, #1417, #1425)
-- Profile before trimming a slow test: the time is often in shared fixtures. Build tools and clone databases in a test's setup, since the soft cap judges only the call. Profile the phases first: when a world's fixed cost outweighs the part worth splitting, it has to come down too (starting the dev server while the databases are copied cut it; `FILE_COPY` did not). Profile with `-cpuprofile` and `pprof -top -cum`, then trim the fixture, not the assertion: a race-built test binary is tens of MB, a fixture that copies it with a syncing copy costs about 0.2 s a copy, so copy it only into payloads the test starts and stub the rest. A test near the hard cap fails on runner load, and re-running it alone does not save it when the test itself is the slow part; a test over its hard cap even when re-run alone is doing too much work, not suffering load. (#996, #992, #1068, #1430, #1467)
+- Profile before trimming a slow test: the time is often in shared fixtures. Build tools and clone databases in a test's setup, since the soft cap judges only the call. Profile the phases first: when a world's fixed cost outweighs the part worth splitting, it has to come down too (starting the dev server while the databases are copied cut it; `FILE_COPY` did not). Profile with `-cpuprofile` and `pprof -top -cum`, then trim the fixture, not the assertion: a race-built test binary is tens of MB, a fixture that copies it with a syncing copy costs about 0.2 s a copy, so copy it only into payloads the test starts and stub the rest. A test near the hard cap fails on runner load, and re-running it alone does not save it when the test itself is the slow part; a test over its hard cap even when re-run alone is doing too much work, not suffering load. A package's fixture template is paid for by whichever test asks for it first, so that test carries the build in its time; a standing breach is fixed by splitting the work into independent tests with every assertion kept (the slowest of the split took 0.28 s alone where the old test took 0.44 s). (#996, #992, #1068, #1430, #1467, d20261122-main-unit-budget)
 - A warm-up's "warm" is when the measure stops improving, not a fixed time that holds on one device: check a threshold on every device in the PR's own run. (#1001)
 - Check a dependency map before removing a feature. A removal is two releases: first the code goes and ignores the leftovers (a lossless migration, so a rollback runs the Down scripts), then a later migration deletes the data once no release that uses it can be rolled back to. (d20261108-remove-plex-sync)
 - Write down a product direction that rules features out: Maktaba replaces Plex, and only Plex Live TV stays. Unwritten, features against it were built, moved and hardened across several epics. (d20261108-remove-plex-sync)
@@ -210,7 +210,7 @@ built_from: v0.3.153
 - Before changing a timing gate, judge the old and new rule offline on stored CI samples and say how many runs each would have failed. (#1059)
 - Give every artifact a test writes a name unique to that test, and make the writer refuse a name already taken. Before hunting shared state behind an order-dependent number, check that the number comes from the test you think. (#1066)
 - When moving code across a process boundary, list the module-level state it reads and pin each with a test that leaves the global empty, plus a guard against importing it. (#1062)
-- Read each failing job's log before touching code: four of six failures on one PR had different causes. (#1027)
+- Read each failing job's log before touching code: four of six failures on one PR had different causes, and one red main hid five different failed jobs across five runs — list the failed jobs of each run (`gh run view ID --json jobs`) before choosing what to fix. (#1027, d20261122-main-unit-budget)
 - To prove a package's init did no expensive work, count calls inside the once and read the counter in `TestMain` before `m.Run`; a tiny `database/sql` driver that returns no rows runs a handler's not-found path with no Postgres. The cloud unit tier runs `go test -short` without `-race`, so a real 64 MiB argon2id costs about 0.3 s there. (#1077)
 - Revoke sessions, not just the credential, when a credential looks cloned. (#1067)
 - Add each new `ErrorKind` with its sentence in every app's strings (Android, Apple, desktop player) in the same commit: the desktop player's `StringsTest.everyErrorKindHasASentence` fails otherwise. A player test that reaches AVPlayer signs in first (`playbackHeaders` needs an access token whose `exp` it can read), and a test's wait for an outcome also ends on the failure, so the run names the cause instead of timing out. (#1111)
@@ -851,7 +851,7 @@ built_from: v0.3.153
 | #1451 | 2026-11-19 | search: retire Chroma, semantic search on pgvector only (story 43.5) |
 | #1453 | 2026-11-19 | subscriptions: an expired or downgraded plan keeps working fully for 30 days (story 16.2) |
 | #1471 | 2026-11-19 | docs(wiki): derive epic-status.md's counts from its story rows |
-| #1493 | 2026-11-22 | fix(test): the machine routes' admin check fits the unit tier's per-test cap |
+| #1491 | 2026-11-22 | Epic 49 story 49.7: keyword search ranks videos by BM25 over their documents |
 
 ## Index
 
@@ -1622,4 +1622,5 @@ built_from: v0.3.153
 | 1476-arabic-normalisation | 2026-11-19 | pr | Arabic normalisation and word forms for search, on Postgres and SQLite |
 | 1478-video-search-docs | 2026-11-19 | pr | video_search_docs and its BM25 indexes, with pg_textsearch in its own schema |
 | 1482-keyword-index | 2026-11-19 | pr | The keyword_index stage and its backfill; BM25 indexes built after the start |
+| d20261122-main-unit-budget | 2026-11-22 | incident | Main red on the unit tier's per-test cap (TestMachineRoutesAdminOnly) |
 
