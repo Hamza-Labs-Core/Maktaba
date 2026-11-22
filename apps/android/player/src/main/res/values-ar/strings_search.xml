@@ -24,7 +24,6 @@
     <string name="search_suggest_kind_title">مقطع</string>
     <string name="search_suggest_kind_speaker">متحدث</string>
     <string name="search_did_you_mean">هل تقصد %1$s؟</string>
-    <string name="search_sort">الترتيب حسب</string>
     <string name="search_sort_current">الترتيب حسب: %1$s</string>
     <string name="search_sort_relevance">الأقرب صلة</string>
     <string name="search_sort_newest">الأحدث</string>

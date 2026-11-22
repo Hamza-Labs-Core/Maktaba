@@ -24,7 +24,6 @@
     <string name="search_suggest_kind_title">Video</string>
     <string name="search_suggest_kind_speaker">Speaker</string>
     <string name="search_did_you_mean">Did you mean %1$s?</string>
-    <string name="search_sort">Sort by</string>
     <string name="search_sort_current">Sort by: %1$s</string>
     <string name="search_sort_relevance">Relevance</string>
     <string name="search_sort_newest">Newest</string>
