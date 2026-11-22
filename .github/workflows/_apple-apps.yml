@@ -65,6 +65,10 @@ jobs:
       - name: A simulator's settle check reads its own processes
         run: python3 tools/apple/sim-settle.py --self-test
 
+      # how a UI job keeps its simulator's logs and the app's crash reports
+      - name: A simulator's logs and the app's crash reports are kept
+        run: python3 tools/apple/sim-log.py --self-test
+
       # the Xcode pick, the simulator pick and the uploads' SDK check (tools/apple/xcode.py)
       - name: The Xcode, simulator and SDK checks pick what they should
         run: python3 tools/apple/xcode.py --self-test
@@ -355,10 +359,9 @@ jobs:
           APP_ARTIFACT: player-ui-build-${{ matrix.device }}
         run: |
           log="$RESULTS/${{ matrix.device }}-${{ matrix.shard }}-app.log"
-          xcrun simctl spawn "$UDID" log show --style compact --info --debug \
-            --predicate 'subsystem BEGINSWITH "com.hamzalabs.maktaba"' > "$log" || true
-          xcrun simctl shutdown "$UDID" || true
-          xcrun simctl delete "$UDID" || true
+          # the app's log, the system's word on its processes ending, its crash reports; a
+          # simulator that stopped under the tests is said and booted again to read its log
+          python3 tools/apple/sim-log.py "$UDID" "$RESULTS" "${{ matrix.device }}-${{ matrix.shard }}" || true
           if [ "$APP_DOWNLOAD" = failure ]; then
             echo "::error::no line of the app at all: the app artifact $APP_ARTIFACT never downloaded, so no test ran"
             exit 1
@@ -450,10 +453,7 @@ jobs:
       - name: Keep the app's log, delete the simulator
         if: always() && env.UDID != ''
         run: |
-          xcrun simctl spawn "$UDID" log show --style compact --info --debug \
-            --predicate 'subsystem BEGINSWITH "com.hamzalabs.maktaba"' > "$RESULTS/tv-app.log" || true
-          xcrun simctl shutdown "$UDID" || true
-          xcrun simctl delete "$UDID" || true
+          python3 tools/apple/sim-log.py "$UDID" "$RESULTS" tv || true
 
       - name: Export the product screenshots
         if: "!cancelled()"
@@ -643,10 +643,7 @@ jobs:
       - name: Keep the app's log, delete the simulator
         if: always() && env.UDID != ''
         run: |
-          xcrun simctl spawn "$UDID" log show --style compact --info --debug \
-            --predicate 'subsystem BEGINSWITH "com.hamzalabs.maktaba"' > "$RESULTS/remote-app.log" || true
-          xcrun simctl shutdown "$UDID" || true
-          xcrun simctl delete "$UDID" || true
+          python3 tools/apple/sim-log.py "$UDID" "$RESULTS" remote || true
 
       # its own artifact: product-shots-iphone is the Player's (the files are iphone-remote-<language>.png)
       - name: Export the product screenshots
