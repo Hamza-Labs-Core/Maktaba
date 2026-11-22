@@ -430,7 +430,14 @@ class BrowseTest {
 
     @Test
     fun searchReadsSortDidYouMeanAndFacets() = runBlocking {
-        answer = { r -> if (r.url.encodedPath == "/api/search") json(200, fixture("search-help.json")) else null }
+        // the fixture is the home's answer as it is (the API's fixture test holds it); a bucket
+        // that cannot be read, one with no value, and a facet this app does not know are added
+        val odd = fixture("search-help.json").replaceFirst(
+            "{\"value\": \"الشيخ أحمد\", \"count\": 2}",
+            "{\"value\": \"الشيخ أحمد\", \"count\": 2}, {\"value\": 7}, {\"count\": 1}], \"tag\": [",
+        )
+        assertTrue(odd.contains("{\"value\": 7}"))
+        answer = { r -> if (r.url.encodedPath == "/api/search") json(200, odd) else null }
         val r = client().search("المدرصة")
         assertEquals("newest", r.sort)
         assertEquals(SearchSort.Newest, SearchSort.of(r.sort))

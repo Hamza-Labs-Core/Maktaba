@@ -23,8 +23,7 @@
       {"value": "aaaaaaaa-0000-4000-8000-000000000002", "label": "Talks", "count": 1}
     ],
     "language": [{"value": "ar", "count": 3}, {"value": "en", "count": 1}],
-    "tag": [],
-    "speaker": [{"value": "الشيخ أحمد", "count": 2}, {"value": 7}, {"count": 1}],
+    "speaker": [{"value": "الشيخ أحمد", "count": 2}],
     "year": [
       {"value": "2024", "count": 2, "filter": {"date": {"gte": "2024-01-01T00:00:00.000Z", "lt": "2025-01-01T00:00:00.000Z"}}},
       {"value": "2023", "count": 2, "filter": {"date": {"gte": "2023-01-01T00:00:00.000Z", "lt": "2024-01-01T00:00:00.000Z"}}}
