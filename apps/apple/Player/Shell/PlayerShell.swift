@@ -1,5 +1,8 @@
 import MaktabaKit
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
 
 /// What every screen of the signed-in Player gets: the session (switch home, sign out), who
 /// is signed in, and the home's client. One value, so a screen's story never changes the
@@ -157,7 +160,7 @@ struct PlayerShell: View {
     private var tabs: some View {
         TabView(selection: chosen) {
             ForEach(shown) { section in
-                Tab(value: section, role: section == .search ? .search : nil) {
+                Tab(value: section, role: Self.role(section)) {
                     stack(section)
                 } label: {
                     Label { Text(section.title) } icon: { Image(systemName: section.systemImage) }
@@ -168,6 +171,20 @@ struct PlayerShell: View {
         .tabViewStyle(.sidebarAdaptable)
         .tabViewCustomization($customization)
         .accessibilityIdentifier("player.shell")
+    }
+
+    /// Search's tab is the system's search tab on an iPhone and the Mac, and an ordinary tab
+    /// on an iPad. There, on iPadOS 27.2, the search role's tab is set again each time its
+    /// field takes the keyboard: the tab's screen goes off and on, the field lets the
+    /// keyboard go, and a field that already holds a search never takes it back (CI: the
+    /// field tapped after a submitted search had no keyboard; the field's end of editing came
+    /// from `UITabBarController.setTabs`). Without the role the field keeps it.
+    private static func role(_ section: PlayerSection) -> TabRole? {
+        guard section == .search else { return nil }
+        #if os(iOS)
+        if UIDevice.current.userInterfaceIdiom == .pad { return nil }
+        #endif
+        return .search
     }
 
     /// The chosen section; choosing it again pops its stack to its first screen (FR-6).
