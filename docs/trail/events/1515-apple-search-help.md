@@ -1,10 +1,12 @@
 ---
 schema: 1
 kind: pr
+pr: 1515
 title: "Search help on the Apple Player and Apple TV (49.11, Apple part)"
 date: 2026-11-22
 session: b6bacc17-4700-40a7-b0f0-e6a9a38a96f9
-prs: [1515]
+agent: claude-code
+prs: [1497, 1511]
 ---
 
 ## What happened
