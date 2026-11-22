@@ -106,6 +106,18 @@ class PlaybackTest {
         assertFalse(p.trackSelectionParameters.disabledTrackTypes.contains(C.TRACK_TYPE_AUDIO))
     }
 
+    /**
+     * A finished stream (its playlist ended, a file) has its own length: the catalogue's is only
+     * for a transcode's playlist still being written, and is not shown over the real one.
+     */
+    @Test
+    fun aFinishedStreamShowsItsOwnLength() {
+        playback.play(v1.copy(durationSec = 600.0))
+        val p = playing()
+        assertFalse(p.isCurrentMediaItemDynamic)
+        assertEquals(TestStreams.LENGTH_MS.toDouble(), playback.lengthMs(p).toDouble(), 100.0)
+    }
+
     @Test
     fun opensAtTheResumePositionAndReportsProgress() {
         playback.play(v1, startSec = 2)

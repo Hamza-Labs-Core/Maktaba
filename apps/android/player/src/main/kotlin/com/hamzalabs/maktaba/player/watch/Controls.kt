@@ -127,7 +127,7 @@ fun PlayerControls(
     fun seekBy(ms: Long) {
         val d = clock.durationMs
         val to = (player.currentPosition + ms).coerceAtLeast(0).let { if (d > 0) it.coerceAtMost(d) else it }
-        player.seekTo(to)
+        playback.seekTo(to)
         clock.positionMs = to
     }
 
@@ -201,7 +201,7 @@ fun PlayerControls(
                 )
                 BottomRow(
                     clock = clock,
-                    onSeek = { player.seekTo(it); clock.positionMs = it; touched++ },
+                    onSeek = { playback.seekTo(it); clock.positionMs = it; touched++ },
                     hasNext = hasNext,
                     onNext = onNext,
                     modifier = Modifier.align(Alignment.BottomCenter),

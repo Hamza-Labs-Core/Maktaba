@@ -43,7 +43,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.media3.common.C
 import com.hamzalabs.maktaba.player.media.pictureInPicture
 import com.hamzalabs.maktaba.player.watch.PlayerClock
 import com.hamzalabs.maktaba.player.watch.PlayerControls
@@ -200,8 +199,8 @@ fun WatchScreen(
                     val c = control ?: return@LaunchedEffect
                     while (true) {
                         clock.positionMs = c.currentPosition
-                        clock.durationMs = c.duration.takeIf { it != C.TIME_UNSET && it > 0 }
-                            ?: playback.video?.durationSec?.let { (it * 1000).toLong() } ?: 0L
+                        // the video's length, not only what a transcode has written so far
+                        clock.durationMs = playback.lengthMs(c)
                         delay(500)
                     }
                 }

@@ -91,7 +91,7 @@ class ApiClientTest {
         val c = client(MemoryTokens(fresh, "r1"))
         c.openStream("v1", 30, profile = "desktop-player")
         assertTrue(seen.last().body!!.utf8().contains("\"client_profile\":\"desktop-player\""))
-        // the Android players leave it to the home, as before
+        // a player that names none leaves it to the home (its `generic` profile)
         c.openStream("v1")
         assertFalse(seen.last().body!!.utf8().contains("client_profile"))
         // another audio track, as HLS (the desktop Player's JavaFX plays one track only)
@@ -164,6 +164,34 @@ class ApiClientTest {
         // Auto sends no cap
         c.openStream("v1")
         assertFalse(seen.last().body!!.utf8().contains("max_bitrate_kbps"))
+    }
+
+    /**
+     * A file that did not play as it is is asked for again as a transcode; the session's answer
+     * says the video's length and where its stream starts (a transcode's playlist grows, so the
+     * player's own duration is only what is written).
+     */
+    @Test
+    fun aTranscodeCanBeAskedForAndTheSessionSaysTheVideosLength() = runBlocking {
+        route = {
+            json(201, """{"session_id":"s1","mode":"transcode","manifest_url":"/stream/s1/master.m3u8?sig=x",
+                "duration_sec":5400.5,"start_sec":300}""")
+        }
+        val c = client(MemoryTokens(fresh, "r1"))
+        val s = c.openStream("v1", 300, profile = "android-native", forceTranscode = true)
+        val body = seen.last().body!!.utf8()
+        assertTrue(body, body.contains("\"force_transcode\":true") && body.contains("\"client_profile\":\"android-native\""))
+        assertEquals(5400.5, s.durationSec!!, 0.0)
+        assertEquals(300.0, s.startSec!!, 0.0)
+        assertFalse(s.isDirect)
+        assertTrue(s.isHls)
+        // not asked: not sent; a home that says neither leaves both unknown
+        route = { json(201, """{"session_id":"s2","mode":"direct","direct_url":"/stream/direct/v1?sig=y"}""") }
+        val d = c.openStream("v1")
+        assertFalse(seen.last().body!!.utf8().contains("force_transcode"))
+        assertNull(d.durationSec)
+        assertNull(d.startSec)
+        assertTrue(d.isDirect)
     }
 
     /** Epic 53 story 53.08: an HLS playlist carries the open call's own id as rid; a direct file none. */

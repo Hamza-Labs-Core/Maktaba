@@ -52,8 +52,20 @@ object TestStreams {
  * The home's stream routes on [FakeHome]: `POST /api/stream/sessions` opens s1, s2, … each
  * playing [direct] (`/stream/sN/two-audio.mp4`) or else the HLS master (`/stream/sN/master.m3u8`),
  * with [ladder] as its qualities; every stream file is served under every session.
+ *
+ * [growing]: the HLS rendition is a transcode still being written, as the streaming service
+ * serves it (an EVENT playlist with no `#EXT-X-ENDLIST`, a segment longer at each read), and
+ * the session says the video is [durationSec] long and starts where it was asked to.
  */
-class FakeStreams(private val home: FakeHome, var direct: Boolean = false, var ladder: String = "[]") {
+class FakeStreams(
+    private val home: FakeHome,
+    var direct: Boolean = false,
+    var ladder: String = "[]",
+    var growing: Boolean = false,
+    var durationSec: Double? = null,
+    /** With [direct], how many opens play the file; the ones after play the HLS stream (a transcode). */
+    var directOpens: Int = Int.MAX_VALUE,
+) {
     private val opened = AtomicInteger()
     /** How many opens more answer 503 `transcode_busy` (story 59.05) before one opens. */
     val busy = AtomicInteger()
@@ -68,19 +80,43 @@ class FakeStreams(private val home: FakeHome, var direct: Boolean = false, var l
                     .build()
             }
             val n = opened.incrementAndGet()
+            val direct = direct && n <= directOpens
             val url = if (direct) "/stream/s$n/two-audio.mp4?sig=x" else "/stream/s$n/master.m3u8?sig=x"
             val key = if (direct) "direct_url" else "manifest_url"
+            val length = durationSec?.let { ",\"duration_sec\":$it" } ?: ""
+            val start = if (growing) (it.json().int("start_sec") ?: 0) else 0
+            val from = if (start > 0) ",\"start_sec\":$start" else ""
             FakeHome.json(
-                """{"session_id":"s$n","mode":"${if (direct) "direct" else "transcode"}","$key":"$url","expires_at":"2099-01-01T00:00:00Z","ladder":$ladder}""",
+                """{"session_id":"s$n","mode":"${if (direct) "direct" else "transcode"}","$key":"$url","expires_at":"2099-01-01T00:00:00Z","ladder":$ladder$length$from}""",
                 code = 201,
             )
         }
         for (n in 1..sessions) {
-            TestStreams.HLS_FILES.forEach { f -> home.answer("/stream/s$n/$f") { file("hls/$f") } }
+            TestStreams.HLS_FILES.forEach { f -> home.answer("/stream/s$n/$f") { if (growing && f == "video.m3u8") written("s$n") else file("hls/$f") } }
             home.answer("/stream/s$n/two-audio.mp4") { file("two-audio.mp4") }
             home.answer("/api/stream/sessions/s$n") { MockResponse.Builder().code(204).build() }
             home.answer("/api/stream/sessions/s$n/progress") { MockResponse.Builder().code(204).build() }
         }
+    }
+
+    /** How many times each session's growing rendition was read. */
+    private val reads = java.util.concurrent.ConcurrentHashMap<String, AtomicInteger>()
+
+    /**
+     * The rendition while its transcode runs: what is written so far, one 2-second segment more
+     * at each read (the test's two segments over again, each time after a discontinuity), never
+     * ended. A playlist that stopped growing would be "stuck" to the player.
+     */
+    private fun written(session: String): MockResponse {
+        val n = 2 + reads.getOrPut(session) { AtomicInteger() }.getAndIncrement()
+        val body = buildString {
+            append("#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:2\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-PLAYLIST-TYPE:EVENT\n")
+            for (i in 0 until n) {
+                if (i >= 2 && i % 2 == 0) append("#EXT-X-DISCONTINUITY\n")
+                append("#EXTINF:2.000000,\nseg${i % 2}.ts\n")
+            }
+        }
+        return MockResponse.Builder().code(200).setHeader("Content-Type", "application/vnd.apple.mpegurl").body(body).build()
     }
 
     private fun file(path: String): MockResponse {
