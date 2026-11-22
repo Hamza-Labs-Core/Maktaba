@@ -137,4 +137,19 @@ class SearchScreenTest {
             onNode(hasTestTag("suggestion-1") and hasText("Video", substring = true)).assertExists()
         }
     }
+
+    @Test
+    fun aTitleSuggestionOnAWideWindowShowsItsPageBesideEvenBeforeAnyResults() = TestHome().use { fake ->
+        fake.answer("GET /api/search/suggest", """{"suggestions":["Fasting 1"],"items":[{"text":"Fasting 1","kind":"title","video_id":"v1"}]}""")
+        val m = SearchModel(fake.client, rest = {}).also { runBlocking { it.typing("fa") } }
+        val home = fake.home()
+        // a window wider than the page-beside breakpoint (1,100 dp)
+        androidx.compose.ui.test.runDesktopComposeUiTest(width = 1400, height = 800) {
+            setContent { InPlayer(home) { Box(Modifier.size(1400.dp, 800.dp)) { SearchContent(m, home, fake.features.value) } } }
+            onNodeWithTag("suggestion-0").performClick()
+            waitUntil(timeoutMillis = 5_000) { onAllNodes(hasTestTag("search-preview")).fetchSemanticsNodes().isNotEmpty() }
+            assertEquals("v1", m.chosen)
+            assertTrue("no search was run", fake.asked("POST /api/search").isEmpty())
+        }
+    }
 }

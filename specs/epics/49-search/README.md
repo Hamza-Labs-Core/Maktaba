@@ -954,6 +954,8 @@ The three Kotlin clients read story 49.8's API through the apps' portable client
   - the same words, did-you-mean and a recent search keep both;
   - a chip, a removal, Clear all filters or another order runs the search again;
   - the answer's `sort` is the one shown;
+  - an older word's suggestions that answer after a newer word's, or after a search, are
+    dropped;
   - Try again repeats the search with its order and filters.
 
   The desktop's model (`apps/desktop-player/.../search/SearchModel.kt`) follows the same rules.
@@ -980,12 +982,12 @@ The three Kotlin clients read story 49.8's API through the apps' portable client
     ends. A transcript card plays from its first passage's moment, in a queue as a video's page
     plays it;
   - a chip pressed keeps the focus while the narrowed answer comes back. Back from a result
-    focuses the results;
+    focuses the results once; a later answer (a new search id) leaves the focus where it is;
   - the transcripts' row follows the home's Transcripts switch.
 - **The Player for Windows and Linux** (`desktop/search/SearchScreen.kt`, `SearchRefine.kt`,
   `SearchStrings.kt`):
   - the suggestions show their kinds, and Enter on a highlighted title opens it (beside the
-    results on a wide window);
+    results on a wide window, even before any search);
   - Did you mean, the order and the filters in use sit at the top of the results list. Below
     them are the facets as rows of chips under **Narrow the results**, which scroll away with
     the results and are reached with Tab.

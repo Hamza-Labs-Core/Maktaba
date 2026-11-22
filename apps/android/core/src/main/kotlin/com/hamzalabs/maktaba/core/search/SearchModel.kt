@@ -115,13 +115,23 @@ class SearchModel(private val client: ApiClient, private val signedOut: () -> Un
 
     private var generation = 0
 
-    /** Asks for the suggestions for [q]; blank asks nothing. A failure keeps the list empty. */
+    /** The suggestions asked for last: an older word's answer that arrives later is dropped. */
+    private var suggested = 0
+
+    /**
+     * Asks for the suggestions for [q]; blank asks nothing. A failure keeps the list empty. A
+     * newer word's ask, or a search, wins over one still on its way.
+     */
     suspend fun suggest(q: String) {
+        val mine = ++suggested
         if (q.isBlank()) {
             suggestions = emptyList()
             return
         }
-        quietly("search suggest") { suggestions = client.searchSuggest(q) }
+        quietly("search suggest") {
+            val s = client.searchSuggest(q)
+            if (mine == suggested) suggestions = s
+        }
     }
 
     /** The order of the recent searches' reads and their removals: a read older than one is dropped. */
@@ -189,6 +199,7 @@ class SearchModel(private val client: ApiClient, private val signedOut: () -> Un
         submitted = q
         chosen = null
         suggestions = emptyList()
+        suggested++
         val mine = ++generation
         searching = true
         problem = null

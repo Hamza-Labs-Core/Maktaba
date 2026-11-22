@@ -275,4 +275,17 @@ class SearchModelTest {
         assertEquals(listOf("l2"), shown.map { it.value })
         assertFalse(shown.single().counted)
     }
+
+    @Test
+    fun anOlderWordsSuggestionsAnsweringLateAreDropped() = runBlocking {
+        val m = model()
+        val held = home.hold("/api/search/suggest") { r -> json("""{"suggestions":["${r.url.queryParameter("q")}-x"]}""") }
+        val older = launch(Dispatchers.IO) { m.suggest("pa") }
+        withContext(Dispatchers.IO) { held.awaitAsked() }
+        m.suggest("pat")
+        assertEquals(listOf("pat-x"), m.suggestions.map { it.text })
+        held.release()
+        older.join()
+        assertEquals("the older word's answer is dropped", listOf("pat-x"), m.suggestions.map { it.text })
+    }
 }

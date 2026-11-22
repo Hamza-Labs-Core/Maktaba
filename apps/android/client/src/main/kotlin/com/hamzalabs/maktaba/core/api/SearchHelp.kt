@@ -207,7 +207,8 @@ data class FacetChoice(
             if (library.isNotEmpty()) put("library_id", JsonArray(library.map(::JsonPrimitive)))
             if (language.isNotEmpty()) put("language", JsonArray(language.map(::JsonPrimitive)))
             if (speaker.isNotEmpty()) put("speaker", JsonArray(speaker.map(::JsonPrimitive)))
-            year?.let { put("date", date ?: yearRange(it)) }
+            // a year the home gave no filter for and that is not a number narrows nothing
+            year?.let { y -> (date ?: y.toIntOrNull()?.let { yearRange(y) })?.let { put("date", it) } }
             duration?.let { d -> (durationSec ?: bandRange(d))?.let { put("duration_sec", it) } }
         }
     }

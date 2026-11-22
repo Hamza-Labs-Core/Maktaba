@@ -101,9 +101,15 @@ fun SearchScreen(
     var filtersOpen by rememberSaveable { mutableStateOf(false) }
     val answer = search.answer
     val firstResult = remember { FocusRequester() }
-    // back from a result: its row takes the focus again (typing keeps it in the field)
-    LaunchedEffect(focusFirst, answer?.searchId) {
-        if (focusFirst && answer != null && !answer.isEmpty) runCatching { firstResult.requestFocus() }
+    // back from a result: its row takes the focus again, once (a refined answer later keeps the
+    // focus where the remote put it; typing keeps it in the field)
+    var refocused by remember { mutableStateOf(false) }
+    val hasResults = answer != null && !answer.isEmpty
+    LaunchedEffect(focusFirst, hasResults) {
+        if (focusFirst && hasResults && !refocused) {
+            refocused = true
+            runCatching { firstResult.requestFocus() }
+        }
     }
     Column(Modifier.fillMaxSize().padding(top = 28.dp).testTag("tv-search")) {
         TvTextField(

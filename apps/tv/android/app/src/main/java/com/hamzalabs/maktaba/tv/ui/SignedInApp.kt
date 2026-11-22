@@ -261,6 +261,7 @@ fun SignedInApp(
                                     scope.launch {
                                         val item = runCatching { queue.create(QueueSource("video", hit.videoId), false) }.getOrNull()
                                         if (item != null) open(playerPlace(item, (sec * 1000).toLong())) else notice = queueFailed
+                                        if (queue.staleSeen) { notice = queueStale; queue.staleSeen = false }
                                     }
                                 },
                                 showTranscripts = !features.hides(Feature.TRANSCRIPTS) && !features.explains(Feature.TRANSCRIPTS),

@@ -92,6 +92,8 @@ class SearchHelpTest {
         assertEquals("1200", bandRange("5m_20m")!!["lt"]!!.jsonPrimitive.content)
         assertNull("over an hour has no upper bound", bandRange("over_60m")!!["lt"])
         assertNull(bandRange("forever"))
+        // a year that is not a number, with no filter of its own, sends no date at all
+        assertNull(FacetChoice().toggle(Facet.Year, "20x4").filters()!!["date"])
     }
 
     @Test

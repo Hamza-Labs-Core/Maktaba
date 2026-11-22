@@ -147,7 +147,8 @@ fun SearchContent(model: SearchModel, home: DesktopHome, features: Capabilities)
                 }
                 Box(Modifier.weight(1f)) { Results(model, home, features, wide, openVideo) }
             }
-            if (wide && model.answer?.isEmpty == false) {
+            // the page beside the results, also for a title suggestion chosen before any results
+            if (wide && (model.chosen != null || model.answer?.isEmpty == false)) {
                 Box(Modifier.weight(1f).fillMaxHeight().testTag("search-preview")) {
                     val id = model.chosen
                     if (id == null) EmptyBox(t["search.previewHint"]) else VideoPage(id, null)

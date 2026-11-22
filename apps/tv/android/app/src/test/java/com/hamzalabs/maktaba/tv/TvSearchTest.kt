@@ -87,7 +87,8 @@ class TvSearchTest {
               "language":[{"value":"en","count":3}],"speaker":[{"value":"Shaykh Ahmad","count":2}],
               "year":[{"value":"2024","count":3,"filter":{"date":{"gte":"2024-01-01T00:00:00.000Z","lt":"2025-01-01T00:00:00.000Z"}}}],
               "duration":[{"value":"over_60m","count":2,"filter":{"duration_sec":{"gte":3600}}}],"videos":4}"""
-        return """{"search_id":"s1","q":"$q","mode":"hybrid","videos":[{"video_id":"v1","title":"On Patience","library_id":"l1","library_name":"Lessons","duration_sec":2400}],
+        // a real home keeps each search under a fresh id
+        return """{"search_id":"s${searches().size}","q":"$q","mode":"hybrid","videos":[{"video_id":"v1","title":"On Patience","library_id":"l1","library_name":"Lessons","duration_sec":2400}],
             "videos_total":1,"transcript_videos":[{"video_id":"v4","title":"The Night Journey","library_id":"l1","passages":[{"start_sec":754,"snippet":"and so <mark>patience</mark> is half"}]}],
             "transcript_total":1$helpFields}"""
     }
@@ -259,6 +260,12 @@ class TvSearchTest {
                 generateSequence(n) { it.parent }.any { p -> p.config.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.TestTag) == "tv-title-v1" }
             }
         }
+        // a refined answer (a new search id) leaves the focus on the button pressed
+        compose.onNodeWithTag("tv-sort-newest").performSemanticsAction(SemanticsActions.RequestFocus)
+        press("tv-sort-newest")
+        wait { searches().size == 2 }
+        wait { shows("✓ Newest") }
+        compose.onNodeWithTag("tv-sort-newest").assertIsFocused()
     }
 
     @Test

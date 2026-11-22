@@ -72,7 +72,8 @@ class TvSearchJourneyTest {
 
     private fun body(r: RecordedRequest): JsonObject = Json.parseToJsonElement(r.body?.utf8() ?: "{}").jsonObject
 
-    private fun results(q: String, sort: String) = """{"search_id":"s1","q":"$q","mode":"hybrid","sort":"$sort",
+    // a real home keeps each search under a fresh id
+    private fun results(q: String, sort: String) = """{"search_id":"s${searches().size}","q":"$q","mode":"hybrid","sort":"$sort",
         "videos":[{"video_id":"v1","title":"On Patience","library_id":"l1","library_name":"Lessons","duration_sec":2400}],"videos_total":1,
         "transcript_videos":[{"video_id":"v4","title":"The Night Journey","library_id":"l1","passages":[{"start_sec":754,"snippet":"and so <mark>patience</mark> is half"}]}],
         "transcript_total":1,

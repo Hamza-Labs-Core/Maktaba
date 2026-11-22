@@ -393,4 +393,27 @@ class SearchScreenTest {
         compose.onNode(hasContentDescription("أكثر من ساعة، مقطعان")).assertExists()
         compose.onNode(hasContentDescription("الإنجليزية", substring = true)).assertExists()
     }
+
+    @Test
+    fun aFilterThatLeavesNothingCanBeTakenOffThere() {
+        // narrowed to the second library, the home finds nothing (and sends no facets)
+        SearchFixtures.install(home) { r ->
+            val f = SearchFixtures.body(r)["filters"]
+            if (f != null && f.toString().contains(SearchFixtures.OTHER_LIB)) SearchFixtures.EMPTY else SearchFixtures.answering(SearchFixtures.EN)(r)
+        }
+        compose.setShell(home, sections = PlayerSection.enabled, screens = screens)
+        compose.onNodeWithTag("section-Search").performClick()
+        search("patience")
+        compose.onNodeWithTag("search-filters").performClick()
+        waitForTag("search-facets")
+        compose.onNodeWithTag("facet-library-${SearchFixtures.OTHER_LIB}").performClick()
+        compose.settledUntil(5_000) { searchBodies().size == 2 }
+        compose.onNodeWithTag("facets-done").performClick()
+        waitForTag("search-none")
+        compose.onNode(hasContentDescription("Remove Library: Talks")).assertIsDisplayed()
+        compose.onNodeWithTag("active-library-${SearchFixtures.OTHER_LIB}").performClick()
+        compose.settledUntil(5_000) { searchBodies().size == 3 }
+        assertEquals(null, searchBodies().last()["filters"])
+        waitForTag("search-results")
+    }
 }

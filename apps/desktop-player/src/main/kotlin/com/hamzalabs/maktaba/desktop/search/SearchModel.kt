@@ -255,6 +255,7 @@ class SearchModel(
     fun clear() {
         query = ""
         choice = FacetChoice()
+        chosen = null
         suggestions = emptyList()
         answer = null
         problem = null
