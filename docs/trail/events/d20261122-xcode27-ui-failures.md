@@ -11,12 +11,14 @@ session: f531cea2-971f-4c9c-833d-47dc53bdf492
   image). Its CI run 44674187921 at b25c72db7 failed four Apple UI jobs. Main's macos-26 runs
   fail about one UI job in four.
 - **Remote UI tests:** `testRecoveryRestoreAndDiagnostics` failed with "the second confirmation".
-  The screen recording shows the first alert closing and no second one. The alert's button
-  started a task that put the second confirmation in place, and the alert's close
-  (`isPresented` set to false) called `cancel()`. On iOS 27.2 the close came after the task, so
-  it cleared the second confirmation. Fixed in ca1215a37: `RecoveryModel.answer` puts the next
-  confirmation in place within the button's action, and the alert's close changes nothing
-  (Cancel still forgets the action). A unit test covers the step order.
+  The screen recording shows the first alert closing and no second one.
+  - The first fix, ca1215a37, assumed the alert's close cleared the second step after the
+    button's task set it. It made the button's step synchronous (`RecoveryModel.answer`) and
+    the close a no-op. CI run 44994509246 failed the same way: the state was right, and still
+    no alert showed.
+  - The cause is the presentation. On iOS 27.2 SwiftUI drops an alert presented while the
+    previous alert is still closing. In ea8261ae1 the view shows its own `shown`, set only once
+    the window has no alert left and no presentation opening or closing.
 - **Player UI tests (ipad 4/6):** every test passed, then the log step found the simulator
   stopped ("device is not booted"), read no line of the app and failed as "it never ran".
 - **Player UI tests (iphone 1/6):** `PlayerLibrariesUITests.testAccessibilityAudit` failed with
@@ -31,12 +33,15 @@ session: f531cea2-971f-4c9c-833d-47dc53bdf492
   A simulator found stopped is reported with CoreSimulator's host lines, and is booted again to
   read its own log.
 - **Player UI tests (ipad 6/6):** the iPad search field does not take the keyboard when tapped
-  after a submitted search, on iPadOS 27.2 only. Its cause is a separate event.
+  after a submitted search, on iPadOS 27.2 only. Its cause is in its own event
+  (d20261122-ipad-search-tab-role).
 
 ## What we learned
-- On iOS 27.2 a SwiftUI alert's `isPresented` setter can run after a task started by the
-  alert's button. State that a button sets for the next presentation must be set
-  synchronously in the button's action. The close must not clear it.
+- On iOS 27.2 a SwiftUI alert presented while another is still closing never shows, even
+  when its `isPresented` reads true throughout. A chain of confirmations must wait for the
+  previous presentation to be gone.
+- A fix judged from a guess at ordering, not from the evidence, cost a CI round. The
+  recording showed the state; the presentation was the question.
 - A UI job that only keeps the app's own log cannot explain "the app is not running". The
   system's termination lines and the crash report are the evidence.
 
@@ -45,10 +50,9 @@ session: f531cea2-971f-4c9c-833d-47dc53bdf492
   showed the missing alert at once.
 
 ## Stop doing
-- Clearing presentation state from an alert's or sheet's `isPresented` setter when a button
-  of that same presentation sets the next state.
+- Presenting the next alert or sheet from the previous one's button without waiting for
+  the previous one to close.
 
 ## Open
 - The iPhone libraries audit's app exit: its cause is to come from the next run's
   `*-ends.log` and crash reports.
-- The iPad search field's refocus on iPadOS 27.2.
