@@ -69,6 +69,8 @@ export function BigSearch() {
   const [ask, setAsk] = useState<BigAsk>(() => askOf(params));
   const [layout, setLayout] = useState<KeyboardLayout>(locale === "ar" ? "ar" : "en");
   const [res, setRes] = useState<SearchResponse | null>(null);
+  // the order and filters the answer on screen was asked with
+  const [answeredKey, setAnsweredKey] = useState("");
   const [pending, setPending] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [suggestions, setSuggestions] = useState<SuggestItem[]>([]);
@@ -119,6 +121,7 @@ export function BigSearch() {
       return;
     }
     const s = ++seq.current;
+    const sentKey = key;
     const delay = ranFor.current === query ? 0 : SEARCH_DELAY_MS;
     ranFor.current = query;
     setPending(true);
@@ -137,6 +140,7 @@ export function BigSearch() {
               return next;
             });
           setRes(r);
+          setAnsweredKey(sentKey);
           setErr(null);
         })
         .catch((e) => {
@@ -209,7 +213,8 @@ export function BigSearch() {
   const shownSuggestions = suggestions.slice(0, SUGGEST_MAX);
   const dym = query && res && !err ? didYouMeanOf(res, query) : "";
   // the order the home answered in is the one shown as chosen, once it has answered
-  const shownSort = res && !pending ? urlSort(res.sort ?? ask.sort) : ask.sort;
+  // (the chosen chip at once, before the answer comes)
+  const shownSort = res && answeredKey === key ? urlSort(res.sort ?? ask.sort) : ask.sort;
   const groups = facetGroups(res ? facetsOf(res) : null, ask.sel);
   const inUse = activeChips(ask.sel);
   const chipName = (facet: FacetName, value: string, label?: string) =>
