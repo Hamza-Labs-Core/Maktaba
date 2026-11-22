@@ -78,3 +78,30 @@ func TestAndroidNative_ReportClampedToTheCeiling(t *testing.T) {
 		t.Fatalf("audio %v", eff.AudioCodecs)
 	}
 }
+
+// A report's per-codec limits hold for android-native too (it is not one of
+// the Detailed TV profiles): an 8-bit HEVC decoder, or H.264 only to 1080p,
+// gets a transcode of what it cannot decode.
+func TestAndroidNative_PerCodecLimitsOfTheReport(t *testing.T) {
+	r := NewRegistry()
+	p, _ := r.Get("android-native")
+	rep := phoneReport()
+	rep.Video = []VideoCap{{Codec: "h264", MaxHeight: 1080, MaxFPS: 30}, {Codec: "hevc", MaxHeight: 2160, BitDepth: 8}}
+	mkv := "matroska,webm"
+	cases := []struct {
+		name string
+		src  Source
+		want Mode
+	}{
+		{"10-bit HEVC on an 8-bit decoder", Source{Container: mkv, VideoCodec: "hevc", AudioCodec: "aac", Height: 1080, BitDepth: 10, BitrateKbps: 6000}, ModeTranscode},
+		{"8-bit HEVC 2160p", Source{Container: mkv, VideoCodec: "hevc", AudioCodec: "aac", Height: 2160, BitDepth: 8, BitrateKbps: 15000}, ModeDirect},
+		{"H.264 2160p on a 1080p decoder", Source{Container: mkv, VideoCodec: "h264", AudioCodec: "aac", Height: 2160, BitrateKbps: 15000}, ModeTranscode},
+		{"H.264 60 fps on a 30 fps decoder", Source{Container: mkv, VideoCodec: "h264", AudioCodec: "aac", Height: 1080, FPS: 59.94, BitrateKbps: 8000}, ModeTranscode},
+		{"H.264 1080p 24 fps", Source{Container: mkv, VideoCodec: "h264", AudioCodec: "aac", Height: 1080, FPS: 23.976, BitrateKbps: 8000}, ModeDirect},
+	}
+	for _, c := range cases {
+		if got := r.DecideFor(p, rep, c.src, Override{}); got.Mode != c.want {
+			t.Errorf("%s: %s (%s), want %s", c.name, got.Mode, got.Reason, c.want)
+		}
+	}
+}

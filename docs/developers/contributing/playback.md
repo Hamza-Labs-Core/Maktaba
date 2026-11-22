@@ -28,8 +28,8 @@ Each TV profile alone is a **baseline** that plays on every model of its platfor
 depends on its model and year, not its platform. So a TV app also reports what its device plays.
 
 A phone is the same: the Android Player opens every stream with `android-native` and the phone's
-report. Its ceiling adds the audio a phone may decode itself (AC-3, E-AC-3, FLAC, Vorbis, DTS),
-HLG and MPEG-TS files, so a film whose Dolby audio the phone decodes plays as it is. A player
+report. Its ceiling adds the audio a phone may decode itself (AC-3, E-AC-3, FLAC, Vorbis, DTS)
+and HLG, so a film whose Dolby audio the phone decodes plays as it is. A player
 that names no profile gets `generic`, and nearly every film is transcoded for it: its first
 frame waits for the transcode's first segment, and its length grows as the transcode is written
 (below).

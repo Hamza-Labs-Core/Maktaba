@@ -135,7 +135,10 @@ class StartupAndLengthTest {
         val p = written()
         assertTrue("the player's own duration is what is written so far: ${p.duration}", p.duration in 1..60_000)
         assertEquals(600_000L, playback.lengthMs(p))
-        assertEquals("it plays at the speed it was made at", 1f, p.playbackParameters.speed)
+        // as live, the player would speed up or slow down to keep a live offset: pinned to 1
+        val live = p.currentMediaItem!!.liveConfiguration
+        assertEquals(1f, live.minPlaybackSpeed)
+        assertEquals(1f, live.maxPlaybackSpeed)
     }
 
     @Test
@@ -149,6 +152,20 @@ class StartupAndLengthTest {
         runDue()
         assertEquals("no second open", 1, streams.opens().size)
         assertTrue(p === playback.player)
+    }
+
+    @Test
+    fun aShortSkipPastWhatIsWrittenGoesAsFarAsItIs() {
+        streams.growing = true
+        streams.durationSec = 600.0
+        playback.play(film)
+        val p = written()
+        val end = p.duration
+        // +10 s past the written end: the transcode runs ahead; opening it again would wait anew
+        playback.seekTo(end + 10_000)
+        runDue()
+        assertEquals("no second open", 1, streams.opens().size)
+        assertTrue("at the written edge: ${p.currentPosition} of $end", p.currentPosition in (end - 2_000)..end)
     }
 
     @Test
@@ -168,8 +185,30 @@ class StartupAndLengthTest {
     }
 
     @Test
+    fun theVideoStoppedWhileASeekReopensPlaysNothing() {
+        streams.growing = true
+        streams.durationSec = 600.0
+        // the new transcode's first playlist takes a while
+        home.answer("/stream/s2/master.m3u8") {
+            MockResponse.Builder().code(200).setHeader("Content-Type", "application/vnd.apple.mpegurl")
+                .body(okio.Buffer().write(TestStreams.bytes("hls/master.m3u8"))).headersDelay(1, java.util.concurrent.TimeUnit.SECONDS).build()
+        }
+        playback.play(film)
+        written()
+        playback.seekTo(300_000)
+        runUntil(what = "the reopen asked for") { streams.opens().size == 2 }
+        // the person leaves while it waits
+        playback.stop()
+        runUntil(what = "the reopen's session closed") { "s2" in streams.closed() }
+        runDue()
+        assertNull("nothing plays after the stop", playback.player)
+        assertNull(playback.control)
+    }
+
+    @Test
     fun aFileThatDoesNotPlayAsItIsOpensOnceAsATranscode() {
         streams.direct = true
+        streams.directOpens = 1
         // the first session's file is not one this device reads; the second session's is
         home.answer("/stream/s1/two-audio.mp4") {
             MockResponse.Builder().code(200).setHeader("Content-Type", "video/mp4").body("not a video file at all").build()
@@ -181,7 +220,12 @@ class StartupAndLengthTest {
         assertNull("no device report with it", again["device_caps"])
         playing()
         assertNull(playback.problem)
+        assertTrue("the transcode plays", playback.player!!.currentMediaItem!!.localConfiguration!!.uri.path!!.endsWith("/s2/master.m3u8"))
         runUntil(what = "the video playing") { playback.player!!.currentPosition > 500 }
+        // past the 10-second watch: it does not take the first file's error for the stream's
+        idleFor(10_000)
+        assertNull(playback.problem)
+        assertTrue(playback.player != null)
         assertEquals("only once", 2, streams.opens().size)
     }
 

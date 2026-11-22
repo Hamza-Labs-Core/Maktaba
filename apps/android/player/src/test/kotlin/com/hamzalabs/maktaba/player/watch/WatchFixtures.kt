@@ -63,6 +63,8 @@ class FakeStreams(
     var ladder: String = "[]",
     var growing: Boolean = false,
     var durationSec: Double? = null,
+    /** With [direct], how many opens play the file; the ones after play the HLS stream (a transcode). */
+    var directOpens: Int = Int.MAX_VALUE,
 ) {
     private val opened = AtomicInteger()
     /** How many opens more answer 503 `transcode_busy` (story 59.05) before one opens. */
@@ -78,6 +80,7 @@ class FakeStreams(
                     .build()
             }
             val n = opened.incrementAndGet()
+            val direct = direct && n <= directOpens
             val url = if (direct) "/stream/s$n/two-audio.mp4?sig=x" else "/stream/s$n/master.m3u8?sig=x"
             val key = if (direct) "direct_url" else "manifest_url"
             val length = durationSec?.let { ",\"duration_sec\":$it" } ?: ""
