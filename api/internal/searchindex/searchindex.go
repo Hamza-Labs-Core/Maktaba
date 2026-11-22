@@ -19,8 +19,9 @@ import (
 	"time"
 )
 
-// Names are the two BM25 indexes: exact (maktaba_search) and stemmed (maktaba_stem).
-var Names = []string{"video_search_docs_bm25", "video_search_docs_bm25_stem"}
+// Names are the two BM25 indexes (slot 0234): exact (search_text, maktaba_search) and
+// stemmed (stem_text, maktaba_stem).
+var Names = []string{"video_search_docs_bm25_text", "video_search_docs_bm25_stem_text"}
 
 // lockKey is the advisory lock one builder holds while it builds ("mkt49idx").
 const lockKey int64 = 0x6d6b7434396964
@@ -75,7 +76,7 @@ func Ensure(ctx context.Context, db Querier) ([]string, error) {
 func Ready(ctx context.Context, db Querier) (bool, error) {
 	var n int
 	err := db.QueryRowContext(ctx, `SELECT count(*) FROM pg_index x
-		WHERE x.indexrelid IN (to_regclass('public.video_search_docs_bm25'), to_regclass('public.video_search_docs_bm25_stem'))
+		WHERE x.indexrelid IN (to_regclass('public.video_search_docs_bm25_text'), to_regclass('public.video_search_docs_bm25_stem_text'))
 		  AND x.indisvalid AND x.indisready`).Scan(&n)
 	if err != nil {
 		return false, fmt.Errorf("search indexes: %w", err)

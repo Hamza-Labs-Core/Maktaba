@@ -167,6 +167,10 @@ type Handler struct {
 	// 51.09). Off: the semantic leg is not asked at all, the answer is the keyword
 	// results with "semantic": "off". nil: on.
 	SemanticOn func() bool
+
+	// bm25 is whether keyword search ranks by the search documents' BM25 indexes now
+	// (story 49.7), and whether a video still lacks its document
+	bm25 bm25State
 }
 
 // semanticOff reports whether the semantic component is switched off.
