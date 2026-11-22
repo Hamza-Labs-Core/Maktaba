@@ -97,6 +97,11 @@ func TestListTooLong(t *testing.T) {
 // for good (the Core home's idle memory budget, tools/release/bundle-size). Read one
 // release at a time it allocates less than the list is long.
 func TestListAllocatesLessThanTheList(t *testing.T) {
+	if testing.Short() {
+		// it decodes a 7 MiB list, about a second under -race: past the unit tier's per-test
+		// cap (1.2 s) on a loaded runner. What it proves is memory, not time
+		t.Skip("decodes a release list the real one's size; runs without -short (the integration tier)")
+	}
 	var body bytes.Buffer
 	pad := strings.Repeat("x", 1400)
 	body.WriteByte('[')
