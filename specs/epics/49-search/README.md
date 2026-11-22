@@ -827,11 +827,23 @@ runs only when the person opens that tab or submits from it; Results never waits
     never as a phrase, and a misspelt sentence fell below the videos that say its words apart.
     The boost now also looks for the phrase in the first 30 videos' documents
     (`search_text`, normalised): a regular expression of the words together within one line
-    (`phrasePattern`).
+    (`phrasePattern`). The letters around them are the Arabic script's, Persian and Urdu
+    included. A query with search operators has no phrase. The query's longest Arabic word
+    is looked for first (`strpos`, a memory search), so the expression reads only the
+    documents that hold it: an hour's lecture is some 200 KB.
+  - **Visible when it does not run.** A boost past its 20 ms budget keeps the BM25 order. The
+    handler counts them, and the check's report says how many (`phrase_abandoned`), so a
+    sentence that failed because the boost did not run is told apart from one that ranked
+    wrong.
   - **A word prefixed by و or ف** that Snowball does not know (it keeps the و) matched
     neither index. Keyword search now writes such a word without the prefix when no
     document holds it as written and some hold the rest (`withoutConjunctions`, through the
-    dictionary). والصبر and وقت are words of their own and stay as written.
+    dictionary). والصبر and وقت are words of their own and stay as written. Punctuation
+    around the word is left out (وغفران، is وغفران).
+  - **The check measures BM25 only.** It refuses to run while the indexes are not ready (a
+    library would answer by its lines instead).
+  - **Not covered:** a Latin phrase with accents (CAFÉ) is matched as written, because
+    `search_text` keeps Latin accents.
 - **Proof:**
   - `TestBM25_Relevance` (the replica job) runs on a synthetic library of 3,000 videos:
     - its vocabulary is Zipf-distributed, with real Arabic words in it that fold;

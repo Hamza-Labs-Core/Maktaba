@@ -28,6 +28,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/searchindex"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/searchterms"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/textnorm"
 )
@@ -76,6 +77,9 @@ type RelevanceReport struct {
 	Results []RelevanceResult `json:"results"`
 	Passed  map[string]int    `json:"passed"`
 	Total   map[string]int    `json:"total"`
+	// PhraseAbandoned is how many of the run's phrase boosts ran out of their 20 ms budget
+	// (a failed sentence then says why: the boost did not run, not that it ranked wrong)
+	PhraseAbandoned int64 `json:"phrase_abandoned"`
 }
 
 // Failed are the cases that did not pass.
@@ -376,7 +380,7 @@ func commonCases(ctx context.Context, db *sql.DB, o RelevanceOptions) ([]Relevan
 	if o.Common <= 0 {
 		return out, nil
 	}
-	rows, err := db.QueryContext(ctx, `SELECT term, (array_agg(shown ORDER BY df DESC))[1], sum(df) AS n FROM search_terms
+	rows, err := db.QueryContext(ctx, `SELECT term, (array_agg(shown ORDER BY df DESC, shown))[1], sum(df) AS n FROM search_terms
 		 WHERE length(term) >= 3 GROUP BY term ORDER BY n DESC, term LIMIT $1`, o.Common*5)
 	if err != nil {
 		return nil, err
@@ -406,6 +410,13 @@ func (h *Handler) RunRelevance(ctx context.Context, cases []RelevanceCase, runs 
 	if runs <= 0 {
 		runs = 1
 	}
+	// the check measures the BM25 ranking: not the line path a library falls back to while
+	// its indexes are missing or building
+	if ready, err := searchindex.Ready(ctx, h.DB); err != nil || !ready {
+		return rep, fmt.Errorf("keyword search's BM25 indexes are not ready (%v): build them first (maktaba-api search-indexes)", err)
+	}
+	abandoned := h.PhraseAbandoned()
+	defer func() { rep.PhraseAbandoned = h.PhraseAbandoned() - abandoned }()
 	for _, c := range cases {
 		res := RelevanceResult{RelevanceCase: c}
 		var vs []savedVideo

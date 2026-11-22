@@ -81,6 +81,9 @@ func runSearchRelevance(args []string, out io.Writer) error {
 				fmt.Fprintf(out, "  common %q: p95 %s; %s\n", r.Query, r.P95.Round(time.Millisecond/10), r.Note)
 			}
 		}
+		if rep.PhraseAbandoned > 0 {
+			fmt.Fprintf(out, "  the phrase boost ran out of its budget %d times: those searches kept their BM25 order\n", rep.PhraseAbandoned)
+		}
 		for _, f := range rep.Failed() {
 			fmt.Fprintf(out, "FAILED %s %s %q: rank %d, want the top %d %s\n", f.Kind, f.Variant, f.Query, f.Rank, f.Top, f.Note)
 		}

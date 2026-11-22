@@ -201,6 +201,7 @@ func TestBM25_Relevance(t *testing.T) {
 	for _, k := range []string{RelKnownItem, RelChapter, RelTopic, RelCommon} {
 		t.Logf("%s: %d of %d passed", k, rep.Passed[k], rep.Total[k])
 	}
+	t.Logf("phrase boosts past their budget: %d", rep.PhraseAbandoned)
 	// each failure with where its video stands in each index, and whether its phrase is
 	// found in its lines and in its document: what to tune
 	hh := &Handler{DB: db}

@@ -261,6 +261,7 @@ func (h *Handler) phraseBoost(ctx context.Context, q string, vs []savedVideo) er
 		   AND s.search_tsv @@ phraseto_tsquery('maktaba_search', $1)`, args...)
 	if err != nil {
 		if pctx.Err() != nil && ctx.Err() == nil {
+			h.phraseAbandoned.Add(1)
 			return nil // over its budget: the BM25 order stands
 		}
 		return fmt.Errorf("phrase: %w", err)
@@ -276,6 +277,7 @@ func (h *Handler) phraseBoost(ctx context.Context, q string, vs []savedVideo) er
 	}
 	if err := rows.Err(); err != nil {
 		if pctx.Err() != nil && ctx.Err() == nil {
+			h.phraseAbandoned.Add(1)
 			return nil // over its budget while reading: the BM25 order stands
 		}
 		return err
@@ -291,11 +293,17 @@ func (h *Handler) phraseBoost(ctx context.Context, q string, vs []savedVideo) er
 		}
 	}
 	if pat := phrasePattern(q); pat != "" && len(rest) > 0 {
-		dargs := []any{pat}
+		// a document an hour long is some 200 KB: strpos of the query's longest Arabic word
+		// (a memory search, no copy) passes over the documents that cannot hold the phrase
+		// before the regular expression reads one; ~* folds ASCII case as lower() would,
+		// without copying the text
+		dargs := []any{pat, phraseProbe(q)}
 		drows, err := h.DB.QueryContext(pctx, `SELECT d.video_id::text FROM video_search_docs d
-			 WHERE d.video_id IN (`+placeholders(rest, &dargs)+`) AND lower(d.search_text) ~ $1`, dargs...)
+			 WHERE d.video_id IN (`+placeholders(rest, &dargs)+`)
+			   AND ($2 = '' OR strpos(d.search_text, $2) > 0) AND d.search_text ~* $1`, dargs...)
 		if err != nil {
 			if pctx.Err() != nil && ctx.Err() == nil {
+				h.phraseAbandoned.Add(1)
 				return nil
 			}
 			return fmt.Errorf("phrase (documents): %w", err)
@@ -313,6 +321,7 @@ func (h *Handler) phraseBoost(ctx context.Context, q string, vs []savedVideo) er
 		}
 		if err := drows.Err(); err != nil {
 			if pctx.Err() != nil && ctx.Err() == nil {
+				h.phraseAbandoned.Add(1)
 				return nil
 			}
 			return err
@@ -658,14 +667,20 @@ func containsAll(s string, lexemes []string) bool {
 // no line break. phraseEdge is what lies before the first word and after the last: the
 // same, or a line break.
 const (
-	phraseSep  = `[^[:alnum:]\u0621-\u064a\n]`
-	phraseEdge = `[^[:alnum:]\u0621-\u064a]`
+	phraseSep  = `[^[:alnum:]` + phraseLetters + `\n]`
+	phraseEdge = `[^[:alnum:]` + phraseLetters + `]`
+	// phraseLetters are the Arabic script's letters: Arabic's, and Persian's and Urdu's
+	// (پ چ ژ گ ی ے), not its punctuation (، ؛ ؟)
+	phraseLetters = `\u0621-\u064a\u066e-\u06d3\u06fa-\u06ff`
 )
 
 // phrasePattern is the regular expression of q's words together in one line of a document's
 // lower-cased search_text: folded as maktaba_normalize folds, lower case ("" for fewer than
 // two words).
 func phrasePattern(q string) string {
+	if queryHasOperators(q) {
+		return "" // a quoted phrase, -word or OR: not a phrase of every word
+	}
 	words := strings.Fields(strings.ToLower(textnorm.Normalize(q)))
 	var parts []string
 	for _, w := range words {
@@ -701,9 +716,11 @@ func (h *Handler) withoutConjunctions(ctx context.Context, q string, libs []stri
 	var cands []cand
 	var keys []string
 	for i, w := range words {
+		// the word without punctuation around it (وغفران، is the word وغفران)
+		w = strings.TrimFunc(w, func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) && !unicode.Is(unicode.Mn, r) })
 		k := searchterms.Key(w)
 		for _, c := range conjunctions {
-			if strings.HasPrefix(k, c) && utf8.RuneCountInString(k) >= 5 && strings.HasPrefix(w, c) {
+			if strings.HasPrefix(k, c) && utf8.RuneCountInString(k) >= 5 && strings.HasPrefix(words[i], c) {
 				cands = append(cands, cand{i: i, key: k, short: strings.TrimPrefix(k, c), cut: len(c)})
 				keys = append(keys, k, strings.TrimPrefix(k, c))
 			}
@@ -723,3 +740,24 @@ func (h *Handler) withoutConjunctions(ctx context.Context, q string, libs []stri
 	}
 	return strings.Join(words, " ")
 }
+
+// phraseProbe is the query's longest word with no ASCII letter, folded as search_text is:
+// a document whose text does not hold it holds no phrase of the query ("" none, a query of
+// Latin words: their case differs between the query and the text).
+func phraseProbe(q string) string {
+	best := ""
+	for _, w := range strings.Fields(textnorm.Normalize(q)) {
+		w = strings.TrimFunc(w, func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) })
+		if strings.IndexFunc(w, func(r rune) bool { return r < utf8.RuneSelf && unicode.IsLetter(r) }) >= 0 {
+			continue
+		}
+		if utf8.RuneCountInString(w) > utf8.RuneCountInString(best) {
+			best = w
+		}
+	}
+	return best
+}
+
+// PhraseAbandoned is how many phrase boosts ran out of their budget (phraseBudget) since
+// the handler started: the list kept its BM25 order (story 49.9's check reports it).
+func (h *Handler) PhraseAbandoned() int64 { return h.phraseAbandoned.Load() }
