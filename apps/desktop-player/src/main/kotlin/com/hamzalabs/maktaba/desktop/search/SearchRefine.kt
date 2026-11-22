@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
@@ -153,8 +154,8 @@ private fun DidYouMean(q: String, onClick: () -> Unit) {
     val t = LocalTexts.current
     val (before, after) = t["search.didYouMean", "\u0000"].split("\u0000").let { it[0] to it.getOrElse(1) { "" } }
     Row(Modifier.testTag("search-did-you-mean"), verticalAlignment = Alignment.CenterVertically) {
-        if (before.isNotBlank()) Text(before.trim())
-        TextButton(onClick = onClick, modifier = Modifier.testTag("search-did-you-mean-run").semantics { contentDescription = t["search.didYouMean", q] }) { Text(q) }
+        if (before.isNotBlank()) Text(before.trimStart())
+        TextButton(onClick = onClick, modifier = Modifier.testTag("search-did-you-mean-run").semantics { contentDescription = t["search.didYouMean", q] }, contentPadding = PaddingValues(horizontal = 4.dp)) { Text(q) }
         if (after.isNotBlank()) Text(after.trim())
     }
 }

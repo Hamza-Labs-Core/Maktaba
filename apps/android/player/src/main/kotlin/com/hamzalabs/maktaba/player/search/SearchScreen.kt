@@ -1,5 +1,8 @@
 package com.hamzalabs.maktaba.player.search
 
+import com.hamzalabs.maktaba.core.search.SearchModel
+import com.hamzalabs.maktaba.core.search.SearchAnswer
+import com.hamzalabs.maktaba.core.search.SUGGEST_DELAY_MS
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement

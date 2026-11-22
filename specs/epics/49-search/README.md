@@ -922,3 +922,92 @@ The Search page (`web/src/pages/Search.tsx`) uses story 49.8's API; the parts ar
     order on screen and no filters.
   - Facet buckets are chips, not a side panel of checkboxes as in the 11.4 mockup: they wrap
     on a phone and need no second column.
+
+### 49.11 Apple and Android apps, TV, big screen
+
+Story 49.11 is built a platform at a time. Each part below names what it built; the parts not
+listed here are not done yet.
+
+#### Android Player, Android TV, and the Player for Windows and Linux
+
+The three Kotlin clients read story 49.8's API through the apps' portable client
+(`apps/android/client`), and the two Android apps share one search model.
+
+- **One set of rules** (`apps/android/client/.../core/api/SearchHelp.kt`):
+  - `SearchSort`: relevance, newest, most matches. Relevance is not sent, so a home before 49.8
+    is asked as before.
+  - `Suggestion` and `SuggestKind`: a title's `video_id` is the video it opens. A home before
+    49.8 sends texts only, which come back without a kind.
+  - `SearchFacets` and `FacetBucket`, read leniently: a bucket that cannot be read is left out,
+    and `facets` that are not an object read as none, so the search still answers.
+  - `FacetChoice`: libraries, languages and speakers are lists (any of them). A year and a
+    duration band are one each, a second replacing the first, and each keeps its bucket's own
+    `filter`. Without one, the home's range for it is sent (the year as `.000Z` instants, the
+    bands' seconds). `shown()` puts a chosen bucket the narrowed facets no longer list first,
+    without a count, so it can be taken off where it was put on. Library names seen in the
+    facets are kept by id for such a bucket.
+  - `didYouMean()` offers a correction only when it changes the words (case and spaces aside).
+  - `languageName()` names a language code in the app's language, else shows the code.
+- **One model for the Android apps** (`apps/android/core/.../core/search/SearchModel.kt`, the
+  Player's model moved to the core):
+  - new words keep the order and drop the filters, as the web does;
+  - the same words, did-you-mean and a recent search keep both;
+  - a chip, a removal, Clear all filters or another order runs the search again;
+  - the answer's `sort` is the one shown;
+  - Try again repeats the search with its order and filters.
+
+  The desktop's model (`apps/desktop-player/.../search/SearchModel.kt`) follows the same rules.
+- **The Android Player** (`player/search/SearchScreen.kt`, `SearchRefine.kt`):
+  - each suggestion has its kind's icon and word (Recent, Word, Video, Speaker). A title opens
+    its video; held like a book, it opens beside the results.
+  - Above the results, and above "nothing matches" so that a filter that left nothing can be
+    taken off:
+    - **Sort by**, a menu;
+    - **Filters**, a chip with a badge counting the filters in use, which opens a bottom
+      sheet. The sheet has a group of chips per facet with counts, read by TalkBack as "name,
+      N videos" (Arabic plurals), and **Show results**;
+    - the filters in use as removable chips ("Library: Talks"), with **Clear all filters**;
+    - **Did you mean**, whose corrected words are a button.
+  - A thin bar runs while a refined search is on its way; the results stay until it answers.
+- **Android TV** (`tv/ui/screens/SearchScreen.kt`) now searches with `POST /api/search` (titles
+  and transcripts) instead of the video list's title match:
+  - suggestions follow the typing as a row of buttons, each with its kind. The keyboard's Search
+    key, or a suggestion, runs the search, so typing no longer fills the recent searches;
+  - every part is a row the D-pad moves between: Did you mean, then the order's three buttons,
+    **Filters** and **Clear all filters**. Then come the filters in use (OK takes one off) and,
+    once Filters is pressed, a row of chips per facet with counts;
+  - the results are **Titles** and **In the transcript**, a row of cards each, paged near their
+    ends. A transcript card plays from its first passage's moment, in a queue as a video's page
+    plays it;
+  - a chip pressed keeps the focus while the narrowed answer comes back. Back from a result
+    focuses the results;
+  - the transcripts' row follows the home's Transcripts switch.
+- **The Player for Windows and Linux** (`desktop/search/SearchScreen.kt`, `SearchRefine.kt`,
+  `SearchStrings.kt`):
+  - the suggestions show their kinds, and Enter on a highlighted title opens it (beside the
+    results on a wide window);
+  - Did you mean, the order and the filters in use sit at the top of the results list. Below
+    them are the facets as rows of chips under **Narrow the results**, which scroll away with
+    the results and are reached with Tab.
+- **Words.** Every new string is in English and Arabic, in the web's wording. Where the web has
+  no word the apps add their own: Show results, Filters (N), Filters in use and Suggestions on
+  the TV. A list's comma is Arabic's in Arabic, and the layouts mirror in Arabic.
+- **Proof:**
+  - the client: `SearchHelpTest` (the filters each choice sends, a second year replacing the
+    first, the bands' and years' ranges, kept chosen buckets, library names, did-you-mean,
+    language names); `BrowseTest` (the kinds, the new fields read, an older home's answer
+    without them, odd `facets`, the sort and filters sent);
+  - the Android Player: `SearchModelTest` and `SearchScreenTest` (Robolectric). They cover the
+    kinds shown and a title opening its video, did-you-mean run, the sort menu's request, the
+    sheet's chips and counts, the filters in use removed and cleared, an older home with the
+    order and no Filters, and the Arabic. `SearchScreenshotTest`'s references are re-recorded
+    with the new bar, and a refined search's (Did you mean, two filters in use) is added, in
+    English and Arabic; maktaba.dev's Player page shows it;
+  - Android TV: `TvSearchTest` (Robolectric) covers the suggestions and a title, the Search key,
+    a passage playing from its moment, the order, the facets' rows, the focus kept on a chip
+    pressed, D-pad down from the order to the results, Back focusing the results, an older home
+    and the Arabic. `TvSearchJourneyTest` runs on CI's Android TV emulator
+    (`tools/ci/firetv-journey.sh`) and drives the order, Filters and a library's chip with D-pad
+    key events;
+  - the desktop: `SearchModelTest` and `SearchScreenTest` (off screen), in English and Arabic.
+- **Left for 49.11:** the Apple apps (iOS, macOS, tvOS), the web big screen and Roku.

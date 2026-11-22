@@ -1,4 +1,4 @@
-package com.hamzalabs.maktaba.player.search
+package com.hamzalabs.maktaba.core.search
 
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -60,7 +60,8 @@ data class SearchAnswer(
 
 /**
  * Search's state (FR-19, FR-20), kept by the signed-in home so leaving the section and coming
- * back finds the same query and results. The screen calls the suspend functions from its own
+ * back finds the same query and results. The Android Player's and the Android TV app's (story
+ * 49.11): one model, each app its own screen. The screen calls the suspend functions from its own
  * scope; every answer is from the home (`/api/search*`), which decides what this user may see.
  */
 class SearchModel(private val client: ApiClient, private val signedOut: () -> Unit = {}) {

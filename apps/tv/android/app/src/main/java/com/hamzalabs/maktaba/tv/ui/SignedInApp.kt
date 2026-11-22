@@ -37,7 +37,7 @@ import com.hamzalabs.maktaba.tv.ui.screens.LiveState
 import com.hamzalabs.maktaba.tv.ui.screens.LocalChooseHome
 import com.hamzalabs.maktaba.tv.ui.screens.PlayerScreen
 import com.hamzalabs.maktaba.tv.ui.screens.SearchScreen
-import com.hamzalabs.maktaba.tv.ui.screens.SearchState
+import com.hamzalabs.maktaba.core.search.SearchModel
 import com.hamzalabs.maktaba.tv.ui.screens.VideoScreen
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.rememberCoroutineScope
@@ -146,7 +146,10 @@ fun SignedInApp(
     val queueFailed = stringResource(R.string.queue_error_load)
     val queueStale = stringResource(R.string.queue_error_stale)
     val stack = remember(client) { mutableStateListOf<Place>(Place.Tabs) }
-    val search = remember(client, limitEpoch) { SearchState() }
+    // Search's state (story 49.11: the Android apps' model): words only while search by meaning is off
+    val search = remember(client, limitEpoch) {
+        SearchModel(client, signedOut = { app.session.signedOut() }).apply { meaningOn = { capabilities.value.isOn(Feature.SEMANTIC_SEARCH) } }
+    }
     val live = remember(client, limitEpoch) { LiveState() }
     val features by capabilities.collectAsState()
     val liveOn = features.isOn(Feature.LIVE_TV)
@@ -248,7 +251,20 @@ fun SignedInApp(
                             TvTab.Home -> HomeScreen(api, focusFirst = focusContent, onOpen = { open(Place.Video(it)) }, signedOut = signedOut,
                                 queue = queue, onContinue = { playItem(it, replace = false) })
                             TvTab.Libraries -> LibrariesScreen(api, focusFirst = focusContent, onOpen = { id, name -> open(Place.Library(id, name)) }, signedOut = signedOut)
-                            TvTab.Search -> SearchScreen(api, search, focusFirst = focusContent, onOpen = { open(Place.Video(it)) }, signedOut = signedOut)
+                            TvTab.Search -> SearchScreen(
+                                api,
+                                search,
+                                focusFirst = focusContent,
+                                onOpen = { open(Place.Video(it)) },
+                                // a passage plays from its moment, in a queue as a video's page plays it
+                                onPlay = { hit, sec ->
+                                    scope.launch {
+                                        val item = runCatching { queue.create(QueueSource("video", hit.videoId), false) }.getOrNull()
+                                        if (item != null) open(playerPlace(item, (sec * 1000).toLong())) else notice = queueFailed
+                                    }
+                                },
+                                showTranscripts = !features.hides(Feature.TRANSCRIPTS) && !features.explains(Feature.TRANSCRIPTS),
+                            )
                             TvTab.Live -> if (features.explains(Feature.LIVE_TV)) {
                                 LiveOffNote(client.home.toString(), focusFirst = focusContent)
                             } else {

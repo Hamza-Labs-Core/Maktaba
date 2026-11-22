@@ -1,5 +1,6 @@
 package com.hamzalabs.maktaba.player.search
 
+import com.hamzalabs.maktaba.core.search.SearchModel
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.hamzalabs.maktaba.player.harness.FakeHome
 import com.hamzalabs.maktaba.player.harness.FakeHome.Companion.json

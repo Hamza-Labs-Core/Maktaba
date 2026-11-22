@@ -18,6 +18,7 @@ import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performImeAction
 import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -48,7 +49,7 @@ class SearchScreenshotTest {
     @get:Rule(order = 0) val home = FakeHome()
     @get:Rule(order = 1) val compose = createAndroidComposeRule<ComponentActivity>()
 
-    private fun shoot(window: Window, name: String, results: Boolean) {
+    private fun shoot(window: Window, name: String, results: Boolean, refined: Boolean = false) {
         val ar = compose.activity.resources.configuration.locales[0].language == "ar"
         val l = if (ar) SearchFixtures.AR else SearchFixtures.EN
         SearchFixtures.install(home, l)
@@ -60,9 +61,23 @@ class SearchScreenshotTest {
         if (results) {
             val field = compose.onNode(hasSetTextAction())
             field.performClick()
-            field.performTextInput(l.query)
+            // refined (story 49.11): a misspelling, so Did you mean shows, narrowed to a library and a length
+            field.performTextInput(if (refined) l.misspelt else l.query)
             field.performImeAction()
-            compose.settledUntil(5_000) { compose.onAllNodesWithTag("passage-v4-0").fetchSemanticsNodes().isNotEmpty() }
+            compose.settledUntil(5_000) { compose.onAllNodesWithTag("title-v1").fetchSemanticsNodes().isNotEmpty() }
+            if (refined) {
+                compose.onNodeWithTag("search-filters").performClick()
+                compose.settledUntil(5_000) { compose.onAllNodesWithTag("facet-library-${SearchFixtures.LIB}").fetchSemanticsNodes().isNotEmpty() }
+                compose.onNodeWithTag("facet-library-${SearchFixtures.LIB}").performClick()
+                compose.settledUntil(5_000) { home.paths.count { it == "/api/search" } == 2 }
+                compose.onNodeWithTag("facet-duration-20m_60m").performScrollTo().performClick()
+                compose.settledUntil(5_000) { home.paths.count { it == "/api/search" } == 3 }
+                compose.onNodeWithTag("facets-done").performScrollTo().performClick()
+                compose.settledUntil(5_000) { compose.onAllNodesWithTag("search-facets").fetchSemanticsNodes().isEmpty() }
+                compose.settledUntil(5_000) { compose.onAllNodesWithTag("active-duration-20m_60m").fetchSemanticsNodes().isNotEmpty() }
+            } else {
+                compose.settledUntil(5_000) { compose.onAllNodesWithTag("passage-v4-0").fetchSemanticsNodes().isNotEmpty() }
+            }
         } else {
             compose.settledUntil(5_000) { compose.onAllNodesWithTag("recent").fetchSemanticsNodes().isNotEmpty() }
         }
@@ -82,6 +97,12 @@ class SearchScreenshotTest {
 
     @Test @Config(qualifiers = "ar-w411dp-h891dp-xxhdpi")
     fun phoneRecentArabic() = shoot(Window.Phone, "recent_phone", results = false)
+
+    @Test @Config(qualifiers = "w411dp-h891dp-xxhdpi")
+    fun phoneRefinedEnglish() = shoot(Window.Phone, "refined_phone", results = true, refined = true)
+
+    @Test @Config(qualifiers = "ar-w411dp-h891dp-xxhdpi")
+    fun phoneRefinedArabic() = shoot(Window.Phone, "refined_phone", results = true, refined = true)
 
     @Test @Config(qualifiers = "w1280dp-h800dp-xhdpi")
     fun tabletResultsEnglish() = shoot(Window.Tablet, "results_tablet", results = true)

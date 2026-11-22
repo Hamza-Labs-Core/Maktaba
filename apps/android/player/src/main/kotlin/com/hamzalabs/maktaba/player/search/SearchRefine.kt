@@ -1,10 +1,13 @@
 package com.hamzalabs.maktaba.player.search
 
+import com.hamzalabs.maktaba.core.search.SearchModel
+import com.hamzalabs.maktaba.core.search.SearchAnswer
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -23,7 +26,6 @@ import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.PlayCircle
 import androidx.compose.material.icons.outlined.TextFields
 import androidx.compose.material3.Badge
-import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -174,10 +176,11 @@ internal fun RefineBar(model: SearchModel, answer: SearchAnswer, onSort: (Search
                     selected = !choice.isEmpty,
                     onClick = { sheet = true },
                     label = { Text(label) },
-                    leadingIcon = {
-                        BadgedBox(badge = { if (!choice.isEmpty) Badge { Text(String.format(LocalConfiguration.current.locales[0], "%d", choice.count)) } }) {
-                            Icon(Icons.Outlined.FilterList, contentDescription = null, Modifier.size(FilterChipDefaults.IconSize))
-                        }
+                    leadingIcon = { Icon(Icons.Outlined.FilterList, contentDescription = null, Modifier.size(FilterChipDefaults.IconSize)) },
+                    trailingIcon = if (choice.isEmpty) {
+                        null
+                    } else {
+                        { Badge { Text(String.format(LocalConfiguration.current.locales[0], "%d", choice.count)) } }
                     },
                     modifier = Modifier.testTag("search-filters").semantics { contentDescription = described },
                 )
@@ -256,10 +259,11 @@ private fun DidYouMean(q: String, onClick: (String) -> Unit) {
         Modifier.fillMaxWidth().padding(horizontal = 16.dp).testTag("search-did-you-mean"),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (before.isNotBlank()) Text(before.trim(), style = MaterialTheme.typography.bodyLarge)
+        if (before.isNotBlank()) Text(before.trimStart(), style = MaterialTheme.typography.bodyLarge)
         TextButton(
             onClick = { onClick(q) },
             modifier = Modifier.testTag("search-did-you-mean-run").semantics { contentDescription = sentence },
+            contentPadding = PaddingValues(horizontal = 4.dp),
         ) { Text(q, style = MaterialTheme.typography.bodyLarge.copy(textDirection = TextDirection.Content)) }
         if (after.isNotBlank()) Text(after.trim(), style = MaterialTheme.typography.bodyLarge)
     }
