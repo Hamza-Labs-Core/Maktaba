@@ -320,7 +320,7 @@ private fun FacetChip(model: SearchModel, f: Facet, b: FacetBucket, onToggle: (F
             null
         },
         modifier = Modifier.testTag("facet-${f.wire}-${b.value}").clearAndSetSemantics {
-            contentDescription = listOfNotNull(name, count).joinToString(", ")
+            contentDescription = listOfNotNull(name, count).joinToString(if (locale.language == "ar") "، " else ", ")
             role = Role.Checkbox
             selected = on
             onClick { onToggle(f, b); true }

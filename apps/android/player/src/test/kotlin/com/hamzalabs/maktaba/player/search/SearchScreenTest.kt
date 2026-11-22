@@ -390,7 +390,7 @@ class SearchScreenTest {
         waitForTag("search-facets")
         compose.onNodeWithText("تضييق النتائج").assertIsDisplayed()
         compose.onNodeWithText("المتحدث").assertIsDisplayed()
-        compose.onNode(hasContentDescription("أكثر من ساعة", substring = true)).assertExists()
+        compose.onNode(hasContentDescription("أكثر من ساعة، مقطعان")).assertExists()
         compose.onNode(hasContentDescription("الإنجليزية", substring = true)).assertExists()
     }
 }

@@ -6,16 +6,24 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.hamzalabs.maktaba.core.api.ApiClient
 import com.hamzalabs.maktaba.core.api.ApiException
+import com.hamzalabs.maktaba.core.api.Facet
+import com.hamzalabs.maktaba.core.api.FacetBucket
+import com.hamzalabs.maktaba.core.api.FacetChoice
 import com.hamzalabs.maktaba.core.api.RecentSearch
+import com.hamzalabs.maktaba.core.api.SearchFacets
+import com.hamzalabs.maktaba.core.api.SearchSort
+import com.hamzalabs.maktaba.core.api.Suggestion
 import com.hamzalabs.maktaba.core.api.TitleHit
 import com.hamzalabs.maktaba.core.api.TranscriptHit
 import com.hamzalabs.maktaba.core.api.clearRecentSearches
 import com.hamzalabs.maktaba.core.api.forgetRecentSearch
 import com.hamzalabs.maktaba.core.api.recentSearches
 import com.hamzalabs.maktaba.core.api.search
-import com.hamzalabs.maktaba.core.api.searchSuggestions
+import com.hamzalabs.maktaba.core.api.didYouMean
+import com.hamzalabs.maktaba.core.api.searchSuggest
 import com.hamzalabs.maktaba.core.api.searchTitles
 import com.hamzalabs.maktaba.core.api.searchTranscripts
+import com.hamzalabs.maktaba.core.api.withLibraries
 import com.hamzalabs.maktaba.core.session.ReadOrder
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
@@ -33,6 +41,12 @@ data class SearchAnswer(
     val transcriptsTotal: Int,
     /** the meaning half did not answer: text matches only */
     val degraded: Boolean,
+    /** the order the lists are in (story 49.8) */
+    val sort: SearchSort = SearchSort.Relevance,
+    /** the corrected query worth offering; null when none (story 49.8) */
+    val didYouMean: String? = null,
+    /** counts of the videos found, from the first page; null from an older home or when none were found */
+    val facets: SearchFacets? = null,
 ) {
     val isEmpty: Boolean get() = titles.isEmpty() && transcripts.isEmpty()
     val moreTitles: Boolean get() = searchId.isNotEmpty() && titles.size < titlesTotal
@@ -55,7 +69,17 @@ class SearchModel(
     private val rest: suspend (Long) -> Unit = { delay(it) },
 ) {
     var query by mutableStateOf("")
-    var suggestions by mutableStateOf<List<String>>(emptyList())
+    /** Earlier searches, words, titles and speakers, each with its kind (an older home's have none; story 49.11). */
+    var suggestions by mutableStateOf<List<Suggestion>>(emptyList())
+        private set
+    /** The order asked for: the answer's, once there is one. New words keep it. */
+    var sort by mutableStateOf(SearchSort.Relevance)
+        private set
+    /** The facet buckets chosen; new words drop them (they were the old results' counts). */
+    var choice by mutableStateOf(FacetChoice())
+        private set
+    /** Library names seen in the facets, by id: a chosen one the narrowed facets lost keeps its name. */
+    var libraryNames by mutableStateOf<Map<String, String>>(emptyMap())
         private set
     /** The suggestion Up and Down have chosen (-1: none). */
     var highlighted by mutableIntStateOf(-1)
@@ -93,7 +117,7 @@ class SearchModel(
         rest(SUGGEST_DELAY_MS)
         if (mine != typed) return
         quietly {
-            val s = client.searchSuggestions(q)
+            val s = client.searchSuggest(q)
             if (mine == typed) suggestions = s
         }
     }
@@ -112,11 +136,76 @@ class SearchModel(
         }
     }
 
-    /** Enter: the highlighted suggestion, else what is typed. An empty query searches nothing. */
-    suspend fun enter() = submit(suggestions.getOrNull(highlighted) ?: query)
+    /**
+     * Enter: the highlighted suggestion, else what is typed. A title opens its video
+     * ([openVideo]); an earlier search, a word or a speaker is searched. An empty query searches
+     * nothing.
+     */
+    suspend fun enter(openVideo: (String) -> Unit = {}) {
+        val s = suggestions.getOrNull(highlighted)
+        if (s == null) submit(query) else choose(s, openVideo)
+    }
 
-    suspend fun submit(q: String = query) {
+    /** A suggestion chosen: a title opens its video, any other is searched as its text. */
+    suspend fun choose(s: Suggestion, openVideo: (String) -> Unit) {
+        val video = s.opensVideo
+        if (video == null) {
+            submit(s.text)
+            return
+        }
+        suggestions = emptyList()
+        highlighted = -1
+        typed++
+        openVideo(video)
+    }
+
+    /**
+     * Runs [q] in the [sort] on screen. New words drop the filters chosen (they were the old
+     * results' counts); the same words, did-you-mean and a recent search keep them ([keepFilters]).
+     */
+    suspend fun submit(q: String = query, keepFilters: Boolean = q.trim() == submitted?.trim()) {
         if (q.isBlank()) return
+        if (!keepFilters) choice = FacetChoice()
+        run(q)
+    }
+
+    /** Did you mean: runs the corrected words with the order and filters kept. */
+    suspend fun acceptDidYouMean() {
+        answer?.didYouMean?.let { submit(it, keepFilters = true) }
+    }
+
+    /** Another order: the same search again. */
+    suspend fun sortBy(s: SearchSort) {
+        if (s == sort) return
+        sort = s
+        again()
+    }
+
+    /** A facet chip pressed: its bucket joins the filters, or leaves them; the search runs again. */
+    suspend fun toggle(f: Facet, bucket: FacetBucket) {
+        choice = choice.toggle(f, bucket)
+        again()
+    }
+
+    /** One filter in use taken off. */
+    suspend fun remove(f: Facet, value: String) {
+        if (!choice.has(f, value)) return
+        choice = choice.remove(f, value)
+        again()
+    }
+
+    /** Clear all filters. */
+    suspend fun clearFilters() {
+        if (choice.isEmpty) return
+        choice = FacetChoice()
+        again()
+    }
+
+    private suspend fun again() {
+        submitted?.let { run(it) }
+    }
+
+    private suspend fun run(q: String) {
         query = q
         submitted = q
         chosen = null
@@ -127,16 +216,24 @@ class SearchModel(
         searching = true
         problem = null
         try {
-            val r = client.search(q, mode = if (meaningOn()) "hybrid" else "fts")
+            val asked = sort
+            val r = client.search(q, mode = if (meaningOn()) "hybrid" else "fts", sort = asked, filters = choice.filters())
             if (mine != generation) return
+            val shown = if (r.sort.isBlank()) asked else SearchSort.of(r.sort)
+            sort = shown
+            libraryNames = libraryNames.withLibraries(r.facets)
+            val asSent = r.q.ifEmpty { q.trim() }
             answer = SearchAnswer(
-                q = r.q.ifEmpty { q.trim() },
+                q = asSent,
                 searchId = r.searchId,
                 titles = r.videos,
                 titlesTotal = maxOf(r.videosTotal, r.videos.size),
                 transcripts = r.transcriptVideos,
                 transcriptsTotal = maxOf(r.transcriptTotal, r.transcriptVideos.size),
                 degraded = r.degraded && r.semantic != "off",
+                sort = shown,
+                didYouMean = didYouMean(asSent, r.didYouMean),
+                facets = r.facets,
             )
         } catch (e: ApiException.SignedOut) {
             signedOut()
@@ -151,13 +248,13 @@ class SearchModel(
         loadRecent()
     }
 
-    suspend fun retry() {
-        submitted?.let { submit(it) }
-    }
+    /** The last search again, with its order and filters (the error's Try again). */
+    suspend fun retry() = again()
 
-    /** The field is cleared: recent searches again. */
+    /** The field is cleared: recent searches again, with no filters. */
     fun clear() {
         query = ""
+        choice = FacetChoice()
         suggestions = emptyList()
         answer = null
         problem = null
