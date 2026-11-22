@@ -179,8 +179,11 @@ func searchFilterCase(t *testing.T, db *sql.DB, vOK, vHi, vUnr string, sem []Hit
 	if vrec := call(t, base, viewer, http.MethodGet, "/api/search/suggest?q=Zar", ""); !strings.Contains(vrec.Body.String(), `"zarqawords"`) {
 		t.Errorf("suggest as the viewer: %s", vrec.Body.String())
 	}
+	if krec := call(t, h, child, http.MethodGet, "/api/search/suggest?q=Kid", ""); krec.Code != http.StatusOK || !strings.Contains(krec.Body.String(), "Kid Zarqa") {
+		t.Errorf("suggest Kid: %d %s", krec.Code, krec.Body.String())
+	}
 	srec := call(t, h, child, http.MethodGet, "/api/search/suggest?q=Zar", "")
-	if srec.Code != http.StatusOK || !strings.Contains(srec.Body.String(), "Kid Zarqa") {
+	if srec.Code != http.StatusOK {
 		t.Errorf("suggest: %d %s", srec.Code, srec.Body.String())
 	}
 	hidden("suggest", srec.Body.String())

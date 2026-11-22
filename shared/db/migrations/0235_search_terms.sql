@@ -17,8 +17,17 @@
 -- and adds the new document's words, in the same transaction. The stage's version moves to
 -- 2, so its plan rebuilds every document once and fills the dictionary, one job at a time.
 -- Counts are per library so a suggestion never shows a word from a library the caller cannot
--- read. A trigram index on the key spelled in ASCII (trgm) serves did-you-mean, and a
--- text_pattern_ops btree the prefix lookups of suggestions.
+-- read. A trigram index on the key spelled in ASCII (trgm) serves did-you-mean, a
+-- text_pattern_ops btree the prefix lookups of suggestions, and one on df the commonest
+-- prefixes (ال starts most Arabic words: the most frequent come first, and the lookup stops).
+--
+-- search_speakers is the same for the named speakers, per library: one row per name and
+-- each of its word starts (الشيخ أحمد is found by الشي and by أحم), with how many of the
+-- library's documents name the speaker. Suggestions read it rather than every video's
+-- speakers.
+--
+-- videos_shown_title_prefix serves the title suggestions: the title a video shows, lower
+-- case, by prefix, the first three in order (an index scan that stops).
 --
 -- Not copied to the machines (cluster_copy_excluded), as video_search_docs is not. Both
 -- tables are new or gain a column with a constant default: no rewrite.
@@ -44,6 +53,30 @@ CREATE INDEX CONCURRENTLY IF NOT EXISTS search_terms_trgm ON search_terms USING 
 
 -- +goose StatementBegin
 CREATE INDEX CONCURRENTLY IF NOT EXISTS search_terms_term_prefix ON search_terms (term text_pattern_ops);
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+CREATE INDEX CONCURRENTLY IF NOT EXISTS search_terms_df ON search_terms (df DESC, term);
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+CREATE TABLE IF NOT EXISTS search_speakers (
+    library_id uuid    NOT NULL REFERENCES libraries(id) ON DELETE CASCADE,
+    key        text    NOT NULL,
+    name       text    NOT NULL,
+    df         integer NOT NULL,
+    PRIMARY KEY (library_id, key, name)
+);
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+CREATE INDEX CONCURRENTLY IF NOT EXISTS search_speakers_key_prefix ON search_speakers (key text_pattern_ops);
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+CREATE INDEX CONCURRENTLY IF NOT EXISTS videos_shown_title_prefix ON videos
+    (lower(COALESCE(NULLIF(display_title_manual, ''), NULLIF(display_title, ''), title)) text_pattern_ops)
+    WHERE deleted_at IS NULL;
 -- +goose StatementEnd
 
 -- +goose StatementBegin
@@ -127,9 +160,9 @@ LANGUAGE sql IMMUTABLE AS $f$
         -- copy already holds; a machine that serves search builds its own (story 49.6), a
         -- new home builds what it lacks
         'video_search_docs',
-        -- keyword search's terms dictionary (slot 0235): built by the keyword_index stage
-        -- from the documents, which are not copied either
-        'search_terms'
+        -- keyword search's terms and speakers dictionaries (slot 0235): built by the
+        -- keyword_index stage from the documents, which are not copied either
+        'search_terms', 'search_speakers'
     ]::text[]
 $f$;
 -- +goose StatementEnd
@@ -218,6 +251,14 @@ $f$;
 
 -- +goose StatementBegin
 ALTER TABLE video_search_docs DROP COLUMN IF EXISTS terms_counted;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+DROP INDEX CONCURRENTLY IF EXISTS videos_shown_title_prefix;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+DROP TABLE IF EXISTS search_speakers;
 -- +goose StatementEnd
 
 -- +goose StatementBegin

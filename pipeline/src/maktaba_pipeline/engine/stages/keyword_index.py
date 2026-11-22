@@ -21,7 +21,8 @@ video has a document, keyword search finds it by its lines (story 49.7).
 It also keeps the library's terms dictionary, ``search_terms`` (story 49.8, slot 0235): in
 the transaction that writes or drops a document, the old document's words leave the counts
 (when they were counted: ``terms_counted``) and the new one's join them
-(:mod:`maktaba_pipeline.search.terms`). Version 2 rebuilds every document once, which fills
+(:mod:`maktaba_pipeline.search.terms`); its named speakers move the same way in
+``search_speakers``. Version 2 rebuilds every document once, which fills
 the dictionary.
 """
 
@@ -32,7 +33,7 @@ from typing import Any
 
 from ...db.jobs import Job
 from ...log import get_logger
-from ...search.terms import doc_terms
+from ...search.terms import doc_terms, speaker_keys
 from ...search.textnorm import normalize
 from ..context import StageContext
 from ..graph import KEYWORD_INDEX_VERSION, StageResult
@@ -206,24 +207,57 @@ async def _count(db: Any, library_id: Any, delta: dict[str, tuple[str, int]]) ->
         )  # fmt: skip
 
 
+def _speakers_of(row: Any) -> set[tuple[str, str]]:
+    """A document's named speakers by word start, none for one never counted."""
+    if row is None or not bool(row["terms_counted"]):
+        return set()
+    return speaker_keys(str(row["speakers"]))
+
+
+async def _count_speakers(db: Any, library_id: Any, delta: dict[tuple[str, str], int]) -> None:
+    """``search_speakers`` of the library moved by ``delta`` ((key, name): +1 or -1), in
+    order, and the names no document holds any longer removed."""
+    rows = sorted(k for k, d in delta.items() if d)
+    lib = uid(library_id)
+    for k, name in rows:
+        await db.execute(
+            "INSERT INTO search_speakers (library_id, key, name, df) VALUES ($1, $2, $3, $4)"
+            " ON CONFLICT (library_id, key, name)"
+            " DO UPDATE SET df = search_speakers.df + excluded.df",
+            lib, k, name, delta[(k, name)],
+        )  # fmt: skip
+        if delta[(k, name)] < 0:
+            await db.execute(
+                "DELETE FROM search_speakers WHERE library_id = $1 AND key = $2 AND name = $3"
+                " AND df <= 0",
+                lib, k, name,
+            )  # fmt: skip
+
+
 async def _recount(db: Any, old: Any, doc: dict[str, Any] | None) -> None:
-    """The dictionary moved from the old document's words to the new one's."""
+    """The dictionaries moved from the old document's words and speakers to the new
+    one's."""
+    sp_before = _speakers_of(old)
+    sp_after = speaker_keys(doc["speakers"]) if doc is not None else set()
     before = _terms_of(old)
-    after = (
-        doc_terms(doc["title"], doc["speakers"], doc["body"]) if doc is not None else {}
-    )
+    after = doc_terms(doc["title"], doc["speakers"], doc["body"]) if doc is not None else {}
     old_lib = str(old["library_id"]) if old is not None else None
     new_lib = str(doc["library_id"]) if doc is not None else None
     if old_lib == new_lib:
         delta = {k: (s, 1) for k, s in after.items() if k not in before}
         delta.update({k: (s, -1) for k, s in before.items() if k not in after})
+        sp = {k: 1 for k in sp_after - sp_before}
+        sp.update({k: -1 for k in sp_before - sp_after})
         if new_lib is not None:
             await _count(db, new_lib, delta)
+            await _count_speakers(db, new_lib, sp)
         return
     if old_lib is not None:
         await _count(db, old_lib, {k: (s, -1) for k, s in before.items()})
+        await _count_speakers(db, old_lib, {k: -1 for k in sp_before})
     if new_lib is not None:
         await _count(db, new_lib, {k: (s, 1) for k, s in after.items()})
+        await _count_speakers(db, new_lib, {k: 1 for k in sp_after})
 
 
 async def _write(db: Any, doc: dict[str, Any]) -> None:

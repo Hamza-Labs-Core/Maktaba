@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
@@ -42,6 +43,13 @@ func (f *fixture) terms() {
 	for k, n := range df {
 		f.exec(`INSERT INTO search_terms (library_id, term, shown, df) VALUES ($1, $2, $3, $4)`, k.lib, k.term, shown[k], n)
 	}
+	// the named speakers by each word start of the name, as the stage counts them
+	f.exec(`INSERT INTO search_speakers (library_id, key, name, df)
+		SELECT v.library_id, lower(s.name), s.name, count(*) FROM speakers s JOIN videos v ON v.id = s.video_id
+		 WHERE s.unknown_index IS NULL GROUP BY v.library_id, s.name`)
+	f.exec(`INSERT INTO search_speakers (library_id, key, name, df)
+		SELECT v.library_id, substr(s.name, instr(s.name, ' ') + 1), s.name, count(*) FROM speakers s JOIN videos v ON v.id = s.video_id
+		 WHERE s.unknown_index IS NULL AND instr(s.name, ' ') > 0 GROUP BY v.library_id, s.name`)
 }
 
 func TestSearchHelp_SQLite(t *testing.T) {
@@ -151,5 +159,17 @@ func TestSearchHelp_SQLite(t *testing.T) {
 	}
 	if got := suggest(&principal.Principal{UserID: userA}, "المد"); len(got) != 0 {
 		t.Fatalf("an account with no library got %v", got)
+	}
+
+	// a word in two libraries shows the spelling of the library that holds it most
+	// (ة sorts before ه: the rarer spelling is the smaller, so the smallest would be wrong)
+	f.exec(`INSERT INTO search_terms (library_id, term, shown, df) VALUES ($1, 'مكتوبه', 'مكتوبة', 1), ($2, 'مكتوبه', 'مكتوبه', 5)`, libA, libB)
+	if got := suggest(adminB, "مكتو"); got["مكتوبه"] != "term" {
+		t.Fatalf("suggest مكتو across libraries: %v", got)
+	}
+	// a long query is cut on a letter, not inside one
+	long := strings.Repeat("ب", 250)
+	if rec := call(t, srv, adminB, http.MethodGet, "/api/search/suggest?q="+url.QueryEscape(long), ""); rec.Code != http.StatusOK {
+		t.Fatalf("a 250-letter query: %d %s", rec.Code, rec.Body.String())
 	}
 }

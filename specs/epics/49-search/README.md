@@ -695,12 +695,24 @@ runs only when the person opens that tab or submits from it; Results never waits
   existed is only added. The stage's version is 2, so its plan rebuilds every document once
   and fills the dictionary. Go's `api/internal/searchterms` keys words the same way; both
   read `shared/testdata/searchterms.json` in a test.
+- **The speakers dictionary**, `search_speakers` (the same migration), is kept the same way
+  from each document's named speakers. It has one row per library, name and each word start
+  of the name (الشيخ أحمد is found by الشي and by أحم), with how many documents name the
+  speaker.
 - **Suggestions as you type** (`GET /api/search/suggest`), at most 10:
   - the caller's own earlier searches that start with the query (at most 3);
   - the query with its last word completed from the dictionary, most documents first (at
     most 5, from 2 letters): الصبر عند ال → الصبر عند الله;
-  - titles (at most 3) and named speakers (at most 2) of the caller's videos with a word that
-    starts with the query.
+  - titles of the caller's videos that start with the query (at most 3, in order);
+  - named speakers with a word of their name that starts with the query, named in the most
+    documents first (at most 2).
+
+  Each source is an index lookup that stops early:
+  - the words are read most frequent first (`search_terms_df`), and the lookup stops after a
+    few times the answers it needs (ال starts most Arabic words);
+  - titles are an index scan of `videos_shown_title_prefix` (the title a video shows, lower
+    case) in its own order, stopped at the third;
+  - speakers come from `search_speakers`, not from every video's speakers.
 
   The answer keeps `suggestions` (the texts, as before) and adds `items`, each with its
   `kind` (`history`, `term`, `title`, `speaker`) and a title's `video_id`.
@@ -725,14 +737,16 @@ runs only when the person opens that tab or submits from it; Results never waits
 - **Sort** (`sort` on `POST /api/search`): `relevance` (the default), `newest` (the date a
   video shows) or `matches` (most matching lines first). The kept search keeps the order,
   so every page follows it. For `matches`, a BM25 video's lines are counted by the lines'
-  full-text index (the words as written), as the line path counts them. The page still
+  full-text index (the words as written), as the line path counts them: at most 5,000
+  matching lines in all (`ftsCandidates`), as the line path reads them. The page still
   shows its own count, by the word's spellings and forms.
 - **Roles.** Each part reads only the caller's libraries: a limited user's own (or the
   request's narrower filter), every library for an account that sees all. A parental limit
   hides videos within a library, and the dictionary cannot tell which video a word comes
   from. So a restricted account gets no dictionary word: no completed word and no
   did-you-mean. It still gets its earlier searches, and the titles and speakers of the
-  videos it may see. A failed facet or did-you-mean lookup answers the search without
+  videos it may see (read from the videos, with the limit applied, not from
+  `search_speakers`). A failed facet or did-you-mean lookup answers the search without
   them.
 - **Proof:**
   - `TestBM25_SearchHelp` (PostgreSQL 18, the replica job):
@@ -748,11 +762,17 @@ runs only when the person opens that tab or submits from it; Results never waits
     title and no dictionary word.
   - The stage's tests (`test_keyword_index.py`, SQLite and Postgres) cover the dictionary's
     counts across an edit, a lost transcript, two libraries and a version-1 document.
-  - `TestBM25_Perf45k` times the dictionary of the 45,000-document library (32,578 rows):
-    - suggest takes p95 6.5 ms for ال (the commonest prefix), 5.4 ms for الص, 6.7 ms for a
-      sentence's last word and 2.3 ms for one library;
-    - did-you-mean takes p95 2.4 ms;
-    - all locally, against a 50 ms limit.
+  - `TestBM25_Perf45k` times suggestions on the 45,000-document library: 32,578 dictionary
+    rows, a title on every video (all start with درس) and 1 to 3 named speakers each, from
+    3,000 names that all start with الشيخ. Measured locally, against a 50 ms limit:
+    - suggest takes p95 1.6 ms for ال (the commonest prefix), 0.5 ms for الص, 0.5 ms for
+      درس (every title), 1.5 ms for الشي (every speaker), 0.5 ms for a sentence's last word
+      and 0.9 ms for one library;
+    - did-you-mean takes p95 2.2 ms.
+
+    The first version scanned every title and speaker and summed every word with the
+    prefix: 120 ms for ال and 165 ms for الشي. The review found it, and the fixture had no
+    titles or speakers to show it.
 - **How it differs from the spec.**
   - Did-you-mean's similarity is at least 0.3, not 0.4: one wrong letter in a five-letter
     Arabic word (مدرصه for مدرسه) scores 0.33.
@@ -764,9 +784,8 @@ runs only when the person opens that tab or submits from it; Results never waits
     ranks no Arabic title (unchanged here).
   - SQLite has no pg_trgm. Did-you-mean compares the 2,000 most frequent words that share
     the word's first letter or its last two, in Go, by the same similarity.
-  - Suggestions are completed words, titles and speakers. There is no separate trigram
-    match on prefixes: a prefix lookup on the key's btree (`text_pattern_ops`) is the whole
-    of it.
+  - Suggestions are completed words, titles and speakers, by prefix (`text_pattern_ops`
+    btrees), not pg_trgm. A title is suggested by its start only, not by a word inside it.
   - A video deleted outright (its document cascading with it) leaves its words counted until
     the dictionary is rebuilt. A suggestion may then name a word that finds nothing. The
     stage's own deletions (a soft-deleted video, a lost transcript) take the words off.

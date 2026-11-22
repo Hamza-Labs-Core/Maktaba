@@ -1329,7 +1329,7 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
       operationId: searchSuggest
-      description: 'Up to 10 suggestions: the caller''s own earlier searches that start with `q` first, then `q` with its last word completed from the words of the caller''s libraries (most videos first; from 2 letters), then titles and named speakers of the caller''s videos with a word that starts with `q`. For a restricted account (one under parental controls) there is no completed word (the words of a library cannot be told apart by video): its earlier searches, and the titles and speakers of the videos it may see.'
+      description: 'Up to 10 suggestions: the caller''s own earlier searches that start with `q` first, then `q` with its last word completed from the words of the caller''s libraries (most videos first; from 2 letters), then titles of the caller''s videos that start with `q`, and named speakers with a word of their name that starts with `q`. For a restricted account (one under parental controls) there is no completed word (the words of a library cannot be told apart by video): its earlier searches, and the titles and speakers of the videos it may see.'
   /search/save:
     post:
       tags:

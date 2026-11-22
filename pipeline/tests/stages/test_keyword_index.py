@@ -341,7 +341,8 @@ async def test_the_dictionary_counts_the_documents_words(db: Database) -> None:
     a = await make_video(db, lib, title="درس", filename="a.mp4")
     b = await make_video(db, lib, title="درس", filename="b.mp4")
     c = await make_video(db, other, title="Other", filename="c.mp4")
-    await _transcript(db, a, ["إن الصبر عند المصيبة", "الصبر الصبر"])
+    ta = await _transcript(db, a, ["إن الصبر عند المصيبة", "الصبر الصبر"])
+    await _speaker(db, a, ta, "الشيخ  أحمد", [0])
     await _transcript(db, b, ["الصبرُ مفتاح الفرج"])
     await _transcript(db, c, ["كلمة أخرى"])
     for v in (a, b, c):
@@ -351,11 +352,22 @@ async def test_the_dictionary_counts_the_documents_words(db: Database) -> None:
     assert t["درس"] == ("درس", 2) and "كلمه" not in t
     assert (await _terms(db, other))["كلمه"] == ("كلمة", 1)
 
+    # the named speakers, by each word start
+    sp = {
+        (str(r["key"]), str(r["name"])): int(r["df"])
+        for r in await db.fetch(
+            "SELECT key, name, df FROM search_speakers WHERE library_id = $1", str(lib)
+        )
+    }
+    assert sp == {("الشيخ احمد", "الشيخ أحمد"): 1, ("احمد", "الشيخ أحمد"): 1}, sp
+
     # an edit: the old words leave, the new ones join
     await _transcript(db, a, ["الصبر جميل"])
     await _index(db, rt, a)
     t = await _terms(db, lib)
     assert t["الصبر"][1] == 2 and "المصيبه" not in t and t["جميل"] == ("جميل", 1)
+    # the new transcript names no one: the speaker leaves
+    assert await db.fetchval("SELECT count(*) FROM search_speakers") == 0
 
     # no transcript left: the document and its words go
     await db.execute("UPDATE transcripts SET is_active = false WHERE video_id = $1", str(b))

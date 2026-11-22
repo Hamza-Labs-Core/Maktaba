@@ -15,7 +15,24 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/searchterms"
 )
 
-// pgTerms fills search_terms from every document, as the keyword_index stage counts them.
+// speakerKeys is the pipeline's search/terms.py speaker_keys: each name by each word
+// start of it.
+func speakerKeys(names string) map[[2]string]bool {
+	out := map[[2]string]bool{}
+	for _, line := range strings.Split(names, "\n") {
+		parts := strings.Fields(line)
+		name := strings.Join(parts, " ")
+		for i := range parts {
+			if k := searchterms.Key(strings.Join(parts[i:], " ")); k != "" {
+				out[[2]string{k, name}] = true
+			}
+		}
+	}
+	return out
+}
+
+// pgTerms fills search_terms and search_speakers from every document, as the
+// keyword_index stage counts them.
 func pgTerms(t *testing.T, db *sql.DB) {
 	t.Helper()
 	rows, err := db.Query(`SELECT library_id::text, title, speakers, body FROM video_search_docs`)
@@ -24,10 +41,15 @@ func pgTerms(t *testing.T, db *sql.DB) {
 	}
 	type key struct{ lib, term string }
 	df, shown := map[key]int{}, map[key]string{}
+	type sk struct{ lib, key, name string }
+	sp := map[sk]int{}
 	for rows.Next() {
 		var lib, title, speakers, body string
 		if err := rows.Scan(&lib, &title, &speakers, &body); err != nil {
 			t.Fatal(err)
+		}
+		for k := range speakerKeys(speakers) {
+			sp[sk{lib, k[0], k[1]}]++
 		}
 		for k, s := range searchterms.DocTerms(title, speakers, body) {
 			df[key{lib, k}]++
@@ -39,6 +61,11 @@ func pgTerms(t *testing.T, db *sql.DB) {
 	_ = rows.Close()
 	for k, n := range df {
 		if _, err := db.Exec(`INSERT INTO search_terms (library_id, term, shown, df) VALUES ($1, $2, $3, $4)`, k.lib, k.term, shown[k], n); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for k, n := range sp {
+		if _, err := db.Exec(`INSERT INTO search_speakers (library_id, key, name, df) VALUES ($1, $2, $3, $4)`, k.lib, k.key, k.name, n); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -68,6 +95,9 @@ func TestBM25_SearchHelp(t *testing.T) {
 	}
 	for _, v := range []string{va, vb, vc} {
 		pgDoc(t, db, v)
+	}
+	if _, err := db.Exec(`UPDATE video_search_docs SET speakers = 'الشيخ أحمد' WHERE video_id = $1`, va); err != nil {
+		t.Fatal(err)
 	}
 	pgTerms(t, db)
 	buildIndexes(t, db)

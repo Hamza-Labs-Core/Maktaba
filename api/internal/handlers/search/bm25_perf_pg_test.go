@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -67,21 +68,47 @@ func TestBM25_Perf45k(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	vst, err := txn.Prepare(pq.CopyIn("videos", "id", "library_id", "content_hash", "path", "filename", "size_bytes", "mtime", "state"))
+	vst, err := txn.Prepare(pq.CopyIn("videos", "id", "library_id", "content_hash", "path", "filename", "size_bytes", "mtime", "state", "title"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	id := func(i int) string { return fmt.Sprintf("49700000-0000-4000-8000-%012d", i) }
+	names := func(i int) []string {
+		var out []string
+		for j := 0; j <= i%3; j++ {
+			if n := "الشيخ " + vocab[(i*7+j*131)%3000]; !slices.Contains(out, n) {
+				out = append(out, n)
+			}
+		}
+		return out
+	}
 	for i := 0; i < docs; i++ {
 		lib := libA
 		if i%10 == 0 {
 			lib = libB
 		}
-		if _, err := vst.Exec(id(i), lib, fmt.Sprintf("%064x", i+0x4970000), "/m/"+id(i), id(i)+".mp4", 1, time.Now(), "ready"); err != nil {
+		// a title like a lecture's: درس and a word, its number
+		title := fmt.Sprintf("درس %s %d", vocab[zipf.Uint64()], i)
+		if _, err := vst.Exec(id(i), lib, fmt.Sprintf("%064x", i+0x4970000), "/m/"+id(i), id(i)+".mp4", 1, time.Now(), "ready", title); err != nil {
 			t.Fatal(err)
 		}
 	}
 	if _, err := vst.Exec(); err != nil {
+		t.Fatal(err)
+	}
+	// named speakers as diarisation leaves them: one to three a video, from 3,000 names
+	sst, err := txn.Prepare(pq.CopyIn("speakers", "video_id", "name"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < docs; i++ {
+		for _, name := range names(i) {
+			if _, err := sst.Exec(id(i), name); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if _, err := sst.Exec(); err != nil {
 		t.Fatal(err)
 	}
 	dst, err := txn.Prepare(pq.CopyIn("video_search_docs", "video_id", "library_id", "title", "speakers", "body", "transcript_id", "doc_version"))
@@ -92,19 +119,24 @@ func TestBM25_Perf45k(t *testing.T) {
 	// documents
 	type term struct{ lib, key string }
 	df, shown := map[term]int{}, map[term]string{}
+	type sk struct{ lib, key, name string }
+	sp := map[sk]int{}
 	for i := 0; i < docs; i++ {
 		lib := libA
 		if i%10 == 0 {
 			lib = libB
 		}
-		title, b := "درس "+vocab[zipf.Uint64()], body()
-		for k, s := range searchterms.DocTerms(title, "الشيخ", b) {
+		title, b, who := "درس "+vocab[zipf.Uint64()], body(), strings.Join(names(i), "\n")
+		for k := range speakerKeys(who) {
+			sp[sk{lib, k[0], k[1]}]++
+		}
+		for k, s := range searchterms.DocTerms(title, who, b) {
 			df[term{lib, k}]++
 			if _, ok := shown[term{lib, k}]; !ok {
 				shown[term{lib, k}] = s
 			}
 		}
-		if _, err := dst.Exec(id(i), lib, title, "الشيخ", b, id(i), 1); err != nil {
+		if _, err := dst.Exec(id(i), lib, title, who, b, id(i), 1); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -123,10 +155,22 @@ func TestBM25_Perf45k(t *testing.T) {
 	if _, err := tst.Exec(); err != nil {
 		t.Fatal(err)
 	}
+	spst, err := txn.Prepare(pq.CopyIn("search_speakers", "library_id", "key", "name", "df"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for k, n := range sp {
+		if _, err := spst.Exec(k.lib, k.key, k.name, n); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := spst.Exec(); err != nil {
+		t.Fatal(err)
+	}
 	if err := txn.Commit(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.Exec(`ANALYZE videos; ANALYZE video_search_docs; ANALYZE search_terms`); err != nil {
+	if _, err := db.Exec(`ANALYZE videos; ANALYZE speakers; ANALYZE video_search_docs; ANALYZE search_terms; ANALYZE search_speakers`); err != nil {
 		t.Fatal(err)
 	}
 	buildIndexes(t, db)
@@ -193,6 +237,8 @@ func TestBM25_Perf45k(t *testing.T) {
 	}{
 		{"suggest ال (the commonest prefix)", func() (int, error) { s, err := h.suggest(ctx, admin, "ال"); return len(s), err }},
 		{"suggest الص", func() (int, error) { s, err := h.suggest(ctx, admin, "الص"); return len(s), err }},
+		{"suggest درس (every title)", func() (int, error) { s, err := h.suggest(ctx, admin, "درس"); return len(s), err }},
+		{"suggest الشي (every speaker)", func() (int, error) { s, err := h.suggest(ctx, admin, "الشي"); return len(s), err }},
 		{"suggest a sentence's last word", func() (int, error) { s, err := h.suggest(ctx, admin, "الصبر عند الم"); return len(s), err }},
 		{"suggest ال, one library (a limited user)", func() (int, error) { s, err := h.suggest(ctx, limitedUser, "ال"); return len(s), err }},
 		{"did-you-mean " + string(misspelt), func() (int, error) {

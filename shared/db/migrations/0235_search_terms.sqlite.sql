@@ -18,12 +18,31 @@ CREATE INDEX IF NOT EXISTS search_terms_term ON search_terms (term);
 -- +goose StatementEnd
 
 -- +goose StatementBegin
+-- the named speakers, per library, by each word start of the name (as on Postgres)
+CREATE TABLE IF NOT EXISTS search_speakers (
+    library_id TEXT    NOT NULL REFERENCES libraries(id) ON DELETE CASCADE,
+    key        TEXT    NOT NULL,
+    name       TEXT    NOT NULL,
+    df         INTEGER NOT NULL,
+    PRIMARY KEY (library_id, key, name)
+);
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+CREATE INDEX IF NOT EXISTS search_speakers_key ON search_speakers (key);
+-- +goose StatementEnd
+
+-- +goose StatementBegin
 ALTER TABLE video_search_docs ADD COLUMN IF NOT EXISTS terms_counted INTEGER NOT NULL DEFAULT 0;
 -- +goose StatementEnd
 
 -- +goose Down
 -- +goose StatementBegin
 ALTER TABLE video_search_docs DROP COLUMN terms_counted;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+DROP TABLE IF EXISTS search_speakers;
 -- +goose StatementEnd
 
 -- +goose StatementBegin

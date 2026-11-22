@@ -195,7 +195,8 @@ func (h *Handler) facets(ctx context.Context, rn *run) (*Facets, error) {
 	sort.Sort(sort.Reverse(sort.IntSlice(years)))
 	for _, y := range years {
 		out.Year = append(out.Year, Bucket{Value: strconv.Itoa(y), Count: year[y], Filter: &BucketFilter{
-			Date: &RangeStr{Gte: fmt.Sprintf("%04d-01-01", y), Lt: fmt.Sprintf("%04d-01-01", y+1)}}})
+			// whole UTC instants, as the year was counted (and as SQLite's ISO text sorts)
+			Date: &RangeStr{Gte: fmt.Sprintf("%04d-01-01T00:00:00.000Z", y), Lt: fmt.Sprintf("%04d-01-01T00:00:00.000Z", y+1)}}})
 	}
 	for i, b := range durationBands {
 		if band[i] == 0 {
@@ -367,11 +368,18 @@ func (h *Handler) countAllMatches(ctx context.Context, rn *run, q string) (map[s
 			WHERE lower(s.text) LIKE $1 ESCAPE '\' AND t.video_id IN (` + placeholders(ids, &args) + `)
 			GROUP BY t.video_id`
 	} else {
+		// at most ftsCandidates matching lines in all, as the line path reads them: a
+		// common word is in millions of lines, and counting them all was the 60 s search
+		// this epic replaced. Past the cap the order is that of the lines read.
 		args = []any{q}
-		query = `SELECT t.video_id::text, count(*) FROM transcript_segments s
-			JOIN transcripts t ON t.id = s.transcript_id AND t.is_active
-			WHERE s.search_tsv @@ plainto_tsquery('maktaba_search', $1) AND t.video_id IN (` + placeholders(ids, &args) + `)
-			GROUP BY t.video_id`
+		in := placeholders(ids, &args)
+		args = append(args, ftsCandidates)
+		query = `SELECT m.video_id::text, count(*) FROM (
+				SELECT t.video_id FROM transcript_segments s
+				JOIN transcripts t ON t.id = s.transcript_id AND t.is_active
+				WHERE s.search_tsv @@ plainto_tsquery('maktaba_search', $1) AND t.video_id IN (` + in + `)
+				LIMIT $` + strconv.Itoa(len(args)) + `
+			) m GROUP BY m.video_id`
 	}
 	rows, err := h.DB.QueryContext(ctx, query, args...)
 	if err != nil {

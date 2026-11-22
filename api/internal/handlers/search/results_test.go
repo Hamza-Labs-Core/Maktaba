@@ -69,6 +69,8 @@ func searchDB(t *testing.T) *sql.DB {
 		`CREATE TABLE speakers (id TEXT PRIMARY KEY, video_id TEXT, name TEXT NOT NULL, unknown_index INTEGER)`,
 		`CREATE TABLE search_terms (library_id TEXT NOT NULL, term TEXT NOT NULL, shown TEXT NOT NULL,
 			df INTEGER NOT NULL, PRIMARY KEY (library_id, term))`,
+		`CREATE TABLE search_speakers (library_id TEXT NOT NULL, key TEXT NOT NULL, name TEXT NOT NULL,
+			df INTEGER NOT NULL, PRIMARY KEY (library_id, key, name))`,
 		`CREATE TABLE transcripts (id TEXT PRIMARY KEY, video_id TEXT NOT NULL, is_active INTEGER NOT NULL DEFAULT 1)`,
 		`CREATE TABLE transcript_segments (id INTEGER PRIMARY KEY AUTOINCREMENT, transcript_id TEXT NOT NULL,
 			seq INTEGER NOT NULL, start_sec REAL NOT NULL, end_sec REAL NOT NULL, text TEXT NOT NULL)`,

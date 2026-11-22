@@ -12,8 +12,10 @@ package search
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -92,60 +94,82 @@ func (h *Handler) dfOf(ctx context.Context, keys, libs []string) (map[string]int
 	return out, rows.Err()
 }
 
+// termRows reads (term, shown, df) rows, one a library, and sums them by term: its
+// documents in the caller's libraries, and the spelling of the library that holds it most.
+func termRows(rows *sql.Rows) ([]termCount, error) {
+	defer rows.Close()
+	by := map[string]*termCount{}
+	best := map[string]int{}
+	var order []string
+	for rows.Next() {
+		var term, shown string
+		var df int
+		if err := rows.Scan(&term, &shown, &df); err != nil {
+			return nil, err
+		}
+		c := by[term]
+		if c == nil {
+			c = &termCount{term: term}
+			by[term] = c
+			order = append(order, term)
+		}
+		c.df += df
+		if df > best[term] {
+			best[term], c.shown = df, shown
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	out := make([]termCount, 0, len(order))
+	for _, t := range order {
+		out = append(out, *by[t])
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].df != out[j].df {
+			return out[i].df > out[j].df
+		}
+		return out[i].term < out[j].term
+	})
+	return out, nil
+}
+
 // closest is the frequent word of the caller's libraries closest to key (by trigram
 // similarity, then by how many documents hold it), at least similarEnough; ok false when
 // there is none.
 func (h *Handler) closest(ctx context.Context, key string, libs []string) (termCount, float64, bool, error) {
-	var cands []termCount
-	sameScript := "term !~ '[^ -~]'"
-	if searchterms.Arabic(key) {
-		sameScript = "term ~ '[^ -~]'"
-	}
+	var rows *sql.Rows
+	var err error
 	if isSQLite(h.DB) {
 		// no pg_trgm: the most frequent words that share the key's first letter or its
 		// last two, compared in Go
 		r := []rune(key)
 		first, last := string(r[0]), string(r[len(r)-2:])
 		args := []any{escapeLike(first) + "%", "%" + escapeLike(last)}
-		rows, err := h.DB.QueryContext(ctx, `SELECT term, min(shown), sum(df) AS n FROM search_terms
+		rows, err = h.DB.QueryContext(ctx, `SELECT term, shown, df FROM search_terms
 			 WHERE (term LIKE $1 ESCAPE '\' OR term LIKE $2 ESCAPE '\') AND `+libraryWhere("library_id", libs, &args)+`
-			 GROUP BY term ORDER BY n DESC, term LIMIT `+strconv.Itoa(sqliteDidYouMeanOf), args...)
-		if err != nil {
-			return termCount{}, 0, false, err
-		}
-		for rows.Next() {
-			var c termCount
-			if err := rows.Scan(&c.term, &c.shown, &c.df); err != nil {
-				_ = rows.Close()
-				return termCount{}, 0, false, err
-			}
-			cands = append(cands, c)
-		}
-		if err := rows.Close(); err != nil {
-			return termCount{}, 0, false, err
-		}
+			 ORDER BY df DESC, term LIMIT `+strconv.Itoa(sqliteDidYouMeanOf), args...)
 	} else {
+		sameScript := "s.term !~ '[^ -~]'"
+		if searchterms.Arabic(key) {
+			sameScript = "s.term ~ '[^ -~]'"
+		}
+		// the most similar first, then the most frequent: the candidates past the limit are
+		// the least likely
 		args := []any{key, similarEnough}
-		rows, err := h.DB.QueryContext(ctx, `
+		rows, err = h.DB.QueryContext(ctx, `
 			WITH q AS (SELECT translate($1::text, '`+arabicLetters+`', '`+asciiLetters+`') AS t)
-			SELECT s.term, min(s.shown), sum(s.df) FROM search_terms s, q
+			SELECT s.term, s.shown, s.df FROM search_terms s, q
 			 WHERE s.trgm OPERATOR(public.%) q.t AND public.similarity(s.trgm, q.t) >= $2
-			   AND s.`+sameScript+` AND `+libraryWhere("s.library_id", libs, &args)+`
-			 GROUP BY s.term LIMIT 200`, args...)
-		if err != nil {
-			return termCount{}, 0, false, err
-		}
-		for rows.Next() {
-			var c termCount
-			if err := rows.Scan(&c.term, &c.shown, &c.df); err != nil {
-				_ = rows.Close()
-				return termCount{}, 0, false, err
-			}
-			cands = append(cands, c)
-		}
-		if err := rows.Close(); err != nil {
-			return termCount{}, 0, false, err
-		}
+			   AND `+sameScript+` AND `+libraryWhere("s.library_id", libs, &args)+`
+			 ORDER BY public.similarity(s.trgm, q.t) DESC, s.df DESC, s.term LIMIT 200`, args...)
+	}
+	if err != nil {
+		return termCount{}, 0, false, err
+	}
+	cands, err := termRows(rows)
+	if err != nil {
+		return termCount{}, 0, false, err
 	}
 	var best termCount
 	bestSim := 0.0
@@ -228,8 +252,8 @@ func (h *Handler) Suggest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	q := strings.TrimSpace(r.URL.Query().Get("q"))
-	if len(q) > 200 {
-		q = q[:200]
+	if rs := []rune(q); len(rs) > 200 {
+		q = string(rs[:200])
 	}
 	items := []Suggestion{}
 	if q != "" {
@@ -340,8 +364,12 @@ func (h *Handler) historySuggestions(ctx context.Context, userID, q string) ([]s
 		ORDER BY hits DESC, last_used_at DESC LIMIT `+strconv.Itoa(suggestHistory),
 		escapeLike(normaliseSuggestQuery(q))+"%", userID)
 	if err != nil {
-		// no history table: no history
-		return nil, nil //nolint:nilerr // history is optional
+		// a database with no history table (a test's, an old twin's) has no history; any
+		// other failure is the search's
+		if m := err.Error(); strings.Contains(m, "no such table") || strings.Contains(m, "does not exist") {
+			return nil, nil
+		}
+		return nil, err
 	}
 	defer rows.Close()
 	var out []string
@@ -356,45 +384,50 @@ func (h *Handler) historySuggestions(ctx context.Context, userID, q string) ([]s
 }
 
 // termsStartingWith are the dictionary's words of the caller's libraries whose key starts
-// with key, most documents first.
+// with key, most documents first. The rows are read most frequent first and the lookup
+// stops at a few times n: ال starts most Arabic words, and summing every one of them was
+// the slowest part of a suggestion (search_terms_df serves that order, the prefix index a
+// rare prefix).
 func (h *Handler) termsStartingWith(ctx context.Context, key string, libs []string, n int) ([]termCount, error) {
 	args := []any{escapeLike(key) + "%"}
-	rows, err := h.DB.QueryContext(ctx, `SELECT term, min(shown), sum(df) AS n FROM search_terms
+	rows, err := h.DB.QueryContext(ctx, `SELECT term, shown, df FROM search_terms
 		 WHERE term LIKE $1 ESCAPE '\' AND `+libraryWhere("library_id", libs, &args)+`
-		 GROUP BY term ORDER BY n DESC, term LIMIT `+strconv.Itoa(n), args...)
+		 ORDER BY df DESC, term LIMIT `+strconv.Itoa(n*10), args...)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	var out []termCount
-	for rows.Next() {
-		var c termCount
-		if err := rows.Scan(&c.term, &c.shown, &c.df); err != nil {
-			return nil, err
-		}
-		out = append(out, c)
+	out, err := termRows(rows)
+	if err != nil {
+		return nil, err
 	}
-	return out, rows.Err()
+	if len(out) > n {
+		out = out[:n]
+	}
+	return out, nil
 }
 
 type titleSuggestion struct{ id, text string }
 
-// titleSuggestions are the titles of the caller's videos (the parental limit applied) with
-// a word that starts with q, shortest first.
+// shownTitle is the title a video shows, as videos_shown_title_prefix indexes it.
+const shownTitle = "COALESCE(NULLIF(v.display_title_manual, ''), NULLIF(v.display_title, ''), v.title)"
+
+// titleSuggestions are the titles of the caller's videos (the parental limit applied) that
+// start with q, in order: an index scan of videos_shown_title_prefix that stops at the
+// third.
 func (h *Handler) titleSuggestions(ctx context.Context, q string, libs []string) ([]titleSuggestion, error) {
-	pat := escapeLike(q)
-	args := []any{pat + "%", "% " + pat + "%"}
-	title := "COALESCE(NULLIF(v.display_title_manual, ''), NULLIF(v.display_title, ''), v.title)"
-	like, idCol := "ILIKE", "v.id::text"
+	args := []any{escapeLike(q) + "%"}
+	// in the index's own order (text_pattern_ops sorts with ~<~): an index scan that stops
+	// at the third title, not every title that starts so, sorted (درس starts them all)
+	idCol, order := "v.id::text", "lower("+shownTitle+") USING OPERATOR(pg_catalog.~<~)"
 	if isSQLite(h.DB) {
-		like, idCol = "LIKE", "v.id" // SQLite's LIKE ignores ASCII case
+		idCol, order = "v.id", "lower("+shownTitle+")"
 	}
-	where := []string{"v.deleted_at IS NULL", "(" + title + " " + like + " $1 ESCAPE '\\' OR " + title + " " + like + " $2 ESCAPE '\\')",
+	where := []string{"v.deleted_at IS NULL", "lower(" + shownTitle + ") LIKE lower($1) ESCAPE '\\'",
 		libraryWhere("v.library_id", libs, &args)}
 	where = append(where, limitWhere(ctx)...)
-	rows, err := h.DB.QueryContext(ctx, `SELECT `+idCol+`, `+title+` AS t FROM videos v
+	rows, err := h.DB.QueryContext(ctx, `SELECT `+idCol+`, `+shownTitle+` FROM videos v
 		 WHERE `+strings.Join(where, " AND ")+`
-		 ORDER BY length(`+title+`), t LIMIT `+strconv.Itoa(suggestTitles), args...)
+		 ORDER BY `+order+` LIMIT `+strconv.Itoa(suggestTitles), args...)
 	if err != nil {
 		return nil, err
 	}
@@ -410,23 +443,38 @@ func (h *Handler) titleSuggestions(ctx context.Context, q string, libs []string)
 	return out, rows.Err()
 }
 
-// speakerSuggestions are the named speakers of the caller's videos whose name has a word
-// that starts with q, in the most videos first.
+// speakerSuggestions are the named speakers of the caller's libraries with a word start
+// of their name that starts with q, named in the most documents first (search_speakers).
+// A restricted account reads the speakers of the videos it may see instead: the
+// dictionary cannot tell which video a name comes from.
 func (h *Handler) speakerSuggestions(ctx context.Context, q string, libs []string) ([]string, error) {
-	pat := escapeLike(q)
-	args := []any{pat + "%", "% " + pat + "%"}
-	like := "ILIKE"
-	if isSQLite(h.DB) {
-		like = "LIKE"
+	var rows *sql.Rows
+	var err error
+	if limited(ctx) {
+		pat := escapeLike(q)
+		args := []any{pat + "%", "% " + pat + "%"}
+		like := "ILIKE"
+		if isSQLite(h.DB) {
+			like = "LIKE"
+		}
+		where := []string{"s.unknown_index IS NULL", "v.deleted_at IS NULL",
+			"(s.name " + like + " $1 ESCAPE '\\' OR s.name " + like + " $2 ESCAPE '\\')",
+			libraryWhere("v.library_id", libs, &args)}
+		where = append(where, limitWhere(ctx)...)
+		rows, err = h.DB.QueryContext(ctx, `SELECT s.name, count(DISTINCT s.video_id) AS n FROM speakers s
+			 JOIN videos v ON v.id = s.video_id
+			 WHERE `+strings.Join(where, " AND ")+`
+			 GROUP BY s.name ORDER BY n DESC, s.name LIMIT `+strconv.Itoa(suggestSpeakers), args...)
+	} else {
+		key := searchterms.Key(strings.Join(strings.Fields(q), " "))
+		if key == "" {
+			return nil, nil
+		}
+		args := []any{escapeLike(key) + "%"}
+		rows, err = h.DB.QueryContext(ctx, `SELECT name, sum(df) AS n FROM search_speakers
+			 WHERE key LIKE $1 ESCAPE '\' AND `+libraryWhere("library_id", libs, &args)+`
+			 GROUP BY name ORDER BY n DESC, name LIMIT `+strconv.Itoa(suggestSpeakers), args...)
 	}
-	where := []string{"s.unknown_index IS NULL", "v.deleted_at IS NULL",
-		"(s.name " + like + " $1 ESCAPE '\\' OR s.name " + like + " $2 ESCAPE '\\')",
-		libraryWhere("v.library_id", libs, &args)}
-	where = append(where, limitWhere(ctx)...)
-	rows, err := h.DB.QueryContext(ctx, `SELECT s.name, count(DISTINCT s.video_id) AS n FROM speakers s
-		 JOIN videos v ON v.id = s.video_id
-		 WHERE `+strings.Join(where, " AND ")+`
-		 GROUP BY s.name ORDER BY n DESC, s.name LIMIT `+strconv.Itoa(suggestSpeakers), args...)
 	if err != nil {
 		return nil, err
 	}

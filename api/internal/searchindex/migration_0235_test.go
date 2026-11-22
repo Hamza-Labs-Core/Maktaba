@@ -28,14 +28,15 @@ func TestSlot0235UpAndDownOnPostgres(t *testing.T) {
 	}
 	have := func() (bool, bool) {
 		var table, col bool
-		if err := db.QueryRow(`SELECT to_regclass('public.search_terms') IS NOT NULL,
+		if err := db.QueryRow(`SELECT to_regclass('public.search_terms') IS NOT NULL AND to_regclass('public.search_speakers') IS NOT NULL
+			AND to_regclass('public.videos_shown_title_prefix') IS NOT NULL AND to_regclass('public.search_terms_df') IS NOT NULL,
 			EXISTS (SELECT FROM information_schema.columns WHERE table_name = 'video_search_docs' AND column_name = 'terms_counted')`).Scan(&table, &col); err != nil {
 			t.Fatal(err)
 		}
 		return table, col
 	}
 	before := excluded()
-	if !slices.Contains(before, "search_terms") || !slices.Contains(before, "video_search_docs") {
+	if !slices.Contains(before, "search_terms") || !slices.Contains(before, "search_speakers") || !slices.Contains(before, "video_search_docs") {
 		t.Fatalf("cluster_copy_excluded: %v", before)
 	}
 	// the trgm column spells an Arabic key in ASCII, which pg_trgm reads in any locale
@@ -68,7 +69,7 @@ func TestSlot0235UpAndDownOnPostgres(t *testing.T) {
 		t.Fatalf("after down: table %v, column %v", table, col)
 	}
 	after := excluded()
-	if slices.Contains(after, "search_terms") || len(after) != len(before)-1 {
+	if slices.Contains(after, "search_terms") || slices.Contains(after, "search_speakers") || len(after) != len(before)-2 {
 		t.Fatalf("down's cluster_copy_excluded: %v (before %v)", after, before)
 	}
 	run(t, db, "up", up)

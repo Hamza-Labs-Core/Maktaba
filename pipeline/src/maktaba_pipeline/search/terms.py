@@ -17,7 +17,7 @@ from collections import Counter
 
 from .textnorm import normalize
 
-__all__ = ["MAX_LEN", "MIN_LEN", "doc_terms", "key", "words"]
+__all__ = ["MAX_LEN", "MIN_LEN", "doc_terms", "key", "speaker_keys", "words"]
 
 MIN_LEN = 2
 MAX_LEN = 40
@@ -64,3 +64,17 @@ def doc_terms(*texts: str) -> dict[str, str]:
             if MIN_LEN <= len(k) <= MAX_LEN:
                 seen.setdefault(k, Counter())[w.lower()] += 1
     return {k: c.most_common(1)[0][0] for k, c in seen.items()}
+
+
+def speaker_keys(speakers: str) -> set[tuple[str, str]]:
+    """Each named speaker (one a line) by each word start of the name: (key, name), so
+    الشيخ أحمد is found by الشي and by أحم (``search_speakers``)."""
+    out: set[tuple[str, str]] = set()
+    for line in speakers.splitlines():
+        name = " ".join(line.split())
+        parts = name.split(" ")
+        for i in range(len(parts)):
+            k = key(" ".join(parts[i:]))
+            if k:
+                out.add((k[:200], name))
+    return out
