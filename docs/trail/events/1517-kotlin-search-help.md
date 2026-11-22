@@ -1,10 +1,12 @@
 ---
 schema: 1
 kind: pr
+pr: 1517
 title: "Story 49.11 on the Kotlin clients: search help on Android, Android TV and the desktop Player"
 date: 2026-11-22
 session: 110a659c-8eac-4e3b-a02d-0ae3582e6546
-prs: [1517]
+agent: claude-code
+prs: [1497, 1511]
 ---
 
 ## What happened
