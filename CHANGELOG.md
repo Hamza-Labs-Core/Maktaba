@@ -376,6 +376,13 @@ build fails when the two differ.
 
 ### Fixed
 
+- **A recent or saved search opens with its order and filters (Epic 49, story 49.10).** A
+  recent search came back with its order and filters only in the browser that ran it, and a
+  saved search kept neither: the web app's Save was refused by the home, and saved searches
+  did not list at all on a home on SQLite. Both now open with the order and filters they were
+  asked with, on any device, and Save names a search by its words, order and filters. A shared
+  search opened in a new tab names its library at once and shows the chips that narrow it.
+
 - **Arabic titles that match a search come closest first (Epic 49, story 49.15).** A search's
   "In titles" list ranked Arabic titles newest first, whatever they said, because the home's
   database could not compare Arabic letters. It now puts the title closest to the search

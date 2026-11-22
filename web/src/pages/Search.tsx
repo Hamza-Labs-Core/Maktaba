@@ -5,13 +5,15 @@
 //   POST   /api/search          { q, mode, view } -> { search_id, page_size,
 //          videos (In titles, page 1), videos_total, transcript_videos
 //          (In transcripts, one row per video, page 1), transcript_total, ... }
-//   GET    /api/search/results/{sid}?list=titles|transcripts&offset=&limit=
+//   GET    /api/search/results/{sid}?list=titles|transcripts&offset=&limit=[&facets=1]
+//          -> { items, total, sort, facets?, did_you_mean? }
 //   GET    /api/search/passages?sid=&video_id=&order=score&offset=&limit=
-//   GET    /api/search/recent   DELETE /api/search/recent[/{sid}]
+//   GET    /api/search/recent   -> { items:[{ search_id, q, mode, live, sort?, filters? }] }
+//   DELETE /api/search/recent[/{sid}]
 //   GET    /api/search/suggest?q=  -> { suggestions: string[], items: [{ text, kind:
 //          history|term|title|speaker, video_id? }] }   (story 49.8)
-//   POST   /api/search/save     { q, mode }
-//   GET    /api/search/saved    -> { items:[{ id, q, mode }] }
+//   POST   /api/search/save     { name, query: { q, mode, sort?, filters? } }
+//   GET    /api/search/saved    -> { items:[{ id, name, query }] }
 //   DELETE /api/search/saved/{id}
 //   GET    /api/search/youtube/status -> { available }   (yt-dlp installed?)
 //   GET    /api/search/youtube?q=     -> { items, reason? }
@@ -23,6 +25,11 @@
 // the sort. POST /api/search takes { sort, filters } and answers { sort, did_you_mean,
 // facets } with the first page; the facets stay on screen while the lists page, and
 // are kept per sid (searchShared rememberHelp) for a reload or Back.
+//
+// A recent or saved search opens with the order and filters it was asked with (the recent
+// list and a saved search's query carry them); a page opened by its sid alone (a link in a
+// new tab) reads its facets with its first page (facets=1). A library filter is named from
+// the libraries list until the facets name it.
 //
 // URL state: /search?q=&mode=[&sort=][&lib=&lang=&spk=&year=&dur=]&sid=&vp=<titles
 // page>&tp=<transcripts page>.
@@ -62,6 +69,8 @@ import {
 } from "../components/VideoViews";
 import {
   DEFAULT_PASSAGES_PAGE_SIZE,
+  FACETS,
+  type AskedState,
   type FacetName,
   type FacetSel,
   type Facets,
@@ -70,6 +79,7 @@ import {
   type Passage,
   type PassagesPage,
   type ResultsPage,
+  type SavedSearch,
   type SearchResponse,
   type SearchState,
   type Sort,
@@ -92,9 +102,11 @@ import {
   rememberSizes,
   renderSnippet,
   requestFilters,
+  savedOf,
   searchParamsOf,
   selCount,
   selOf,
+  selOfFilters,
   toggleSel,
   ts,
   urlMode,
@@ -109,7 +121,9 @@ import {
   SuggestBox,
   type SuggestItem,
   suggestItems,
+  useBucketLabel,
 } from "./searchHelp";
+import { fetchLibrarySummary, type LibrarySummary } from "../lib/browse";
 import { errorText } from "../lib/errorText";
 import { cachedAnswer, keepAnswer } from "../lib/pageCache";
 import { FeatureOffNote, useCapabilities, useFeatureGate } from "../lib/capabilities";
@@ -134,12 +148,7 @@ interface YTBlock {
   items: YTItem[];
   reason?: string;
 }
-interface SavedSearch {
-  id: string;
-  q: string;
-  mode: string;
-}
-interface RecentSearch {
+interface RecentSearch extends AskedState {
   search_id: string;
   q: string;
   mode: string;
@@ -195,11 +204,14 @@ interface Ask {
 const total = (v: unknown, atLeast: number) =>
   typeof v === "number" && Number.isFinite(v) ? Math.max(v, atLeast) : atLeast;
 
-function fetchPage<T>(list: ListKind, sid: string, page: number, size: number) {
+function fetchPage<T>(list: ListKind, sid: string, page: number, size: number, help = false) {
   return api.get<ResultsPage<T>>(
-    `/api/search/results/${encodeURIComponent(sid)}?list=${list}&offset=${(page - 1) * size}&limit=${size}`
+    `/api/search/results/${encodeURIComponent(sid)}?list=${list}&offset=${(page - 1) * size}&limit=${size}${help ? "&facets=1" : ""}`
   );
 }
+
+/** The order and filters a recent or saved search was asked with (none: relevance, none). */
+const askOf = (a: AskedState): Ask => ({ sort: urlSort(a.sort), sel: selOfFilters(a.filters) });
 
 /** "5 minutes ago" in the active language. */
 function relativeTime(iso: string, locale: string, now = Date.now()): string {
@@ -262,6 +274,9 @@ export function Search() {
   const [suggestions, setSuggestions] = useState<SuggestItem[]>([]);
   // the names seen for facet buckets (a library's), for a chip whose bucket is gone
   const [labels, setLabels] = useState<Record<string, string>>({});
+  const labelsRef = useRef(labels);
+  labelsRef.current = labels;
+  const bucketName = useBucketLabel();
   const userId = user?.id ?? null;
   // the saved and recent lists come back at once too, and are read again
   const [saved, setSavedState] = useState<SavedSearch[]>(
@@ -362,6 +377,47 @@ export function Search() {
     void refreshSaved();
     void refreshRecent();
   }, [refreshRecent]);
+
+  // A library filter is named at once: from the libraries list this session already read,
+  // else read once beside the search (the facets name it too, when they come).
+  const libsRead = useRef(false);
+  const libKey = uSel.library.join("\n");
+  useEffect(() => {
+    const ids = libKey ? libKey.split("\n") : [];
+    if (ids.every((id) => labelsRef.current[`library:${id}`])) return;
+    const name = (libs: LibrarySummary[] | undefined) => {
+      const found = listOf(libs).filter(
+        (l) => typeof l.id === "string" && typeof l.name === "string" && l.name.trim() !== ""
+      );
+      if (!found.length) return;
+      setLabels((old) => {
+        const next = { ...old };
+        // a name the facets gave stays: it is the newer
+        for (const l of found) next[`library:${l.id}`] ??= l.name;
+        return next;
+      });
+    };
+    const kept = cachedAnswer<LibrarySummary[]>(userId, "libraries");
+    if (kept) {
+      name(kept);
+      return;
+    }
+    if (libsRead.current) return;
+    libsRead.current = true;
+    let cancelled = false;
+    fetchLibrarySummary()
+      .then((libs) => {
+        keepAnswer(userId, "libraries", libs);
+        if (!cancelled) name(libs);
+      })
+      .catch(() => {
+        // the chip keeps its id until the facets name it
+        libsRead.current = false;
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [libKey, userId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -592,12 +648,14 @@ export function Search() {
         passagesPageSize: DEFAULT_PASSAGES_PAGE_SIZE,
       };
       try {
+        // without them (a link opened in a new tab) the first page brings them
         let [a, b] = await Promise.all([
-          fetchPage<TitleVideo>("titles", s, want.vp, sizes.pageSize),
+          fetchPage<TitleVideo>("titles", s, want.vp, sizes.pageSize, !help),
           fetchPage<TranscriptVideo>("transcripts", s, want.tp, sizes.pageSize),
         ]);
         if (g !== gen.current) return;
         const size = a?.limit && a.limit > 0 ? a.limit : sizes.pageSize;
+        const read = help ? null : a;
         const snapshot: Snapshot = {
           sid: s,
           q: query,
@@ -606,10 +664,16 @@ export function Search() {
           passagesPageSize: sizes.passagesPageSize,
           titlesTotal: total(a?.total, 0),
           transcriptsTotal: total(b?.total, 0),
-          sort: ask.sort,
+          // the order its pages are in, as the home says (a search kept before it: asked)
+          sort: urlSort(a?.sort ?? ask.sort),
           sel: ask.sel,
-          facets: help?.facets ?? null,
-          didYouMean: help?.didYouMean ?? "",
+          facets:
+            help?.facets ?? (read?.facets && typeof read.facets === "object" ? read.facets : null),
+          didYouMean:
+            help?.didYouMean ??
+            (typeof read?.did_you_mean === "string" && read.did_you_mean.trim() !== query
+              ? read.did_you_mean.trim()
+              : ""),
         };
         // A page past the end (a hand-made link) shows the last page.
         const vPage = Math.min(want.vp, pageCount(snapshot.titlesTotal, size));
@@ -622,7 +686,15 @@ export function Search() {
           if (g !== gen.current) return;
           if (a2) a = a2;
           if (b2) b = b2;
-          showUrl({ q: query, mode: m, ...ask, sid: s, vp: vPage, tp: tPage });
+          showUrl({
+            q: query,
+            mode: m,
+            sort: snapshot.sort,
+            sel: ask.sel,
+            sid: s,
+            vp: vPage,
+            tp: tPage,
+          });
         }
         commit(snapshot, vPage, listOf(a?.items), tPage, listOf(b?.items));
         setNotice(false);
@@ -841,10 +913,37 @@ export function Search() {
     search(q, mode);
   }
 
+  /**
+   * Saves the search in the box with the order and filters on screen (the filters only for
+   * the words on screen: new words drop them, as a search of them does). Its name is the
+   * words, then the order and filters, so the same words asked two ways are two entries.
+   */
   function saveCurrent() {
-    if (!q.trim()) return;
+    const query = q.trim();
+    if (!query) return;
+    const s = snapRef.current;
+    const sort = s?.sort ?? uSort;
+    const sel = s && s.q === query ? s.sel : query === urlQ ? uSel : noSel();
+    const filters = requestFilters(sel, s?.facets);
+    const parts = [query];
+    if (sort !== "relevance") parts.push(t(`search.sort.${sort}`));
+    for (const facet of FACETS)
+      for (const v of facet === "year" || facet === "duration"
+        ? sel[facet]
+          ? [sel[facet]!]
+          : []
+        : sel[facet])
+        parts.push(bucketName(facet, v, labels[`${facet}:${v}`]));
     void api
-      .post("/api/search/save", { q: q.trim(), mode })
+      .post("/api/search/save", {
+        name: parts.join(" · "),
+        query: {
+          q: query,
+          mode,
+          ...(sort !== "relevance" ? { sort } : {}),
+          ...(filters ? { filters } : {}),
+        },
+      })
       .then(refreshSaved)
       .catch((e) =>
         toast.show({
@@ -877,11 +976,25 @@ export function Search() {
     if (s?.sid) showUrl({ q: s.q, mode: s.mode, sort: s.sort, sel: s.sel, sid: s.sid }, true);
   }
 
+  /** A saved search runs again with the order and filters it was saved with. */
+  function openSaved(saved: SavedSearch) {
+    const it = savedOf(saved);
+    if (!it.q) return;
+    const m = asMode(it.mode);
+    setQ(it.q);
+    setMode(m);
+    search(it.q, m, askOf(it));
+  }
+
   function openRecent(r: RecentSearch) {
     const m = asMode(r.mode);
-    // its order and filters, when this browser ran it (the list does not carry them)
+    // its order and filters as the list says; a search kept before the home kept them:
+    // as this browser ran it, else relevance and none
     const help = recallHelp(r.search_id);
-    const ask: Ask = { sort: help?.sort ?? "relevance", sel: help?.sel ?? noSel() };
+    const ask: Ask =
+      r.sort !== undefined || r.filters != null
+        ? askOf(r)
+        : { sort: help?.sort ?? "relevance", sel: help?.sel ?? noSel() };
     setQ(r.q);
     setMode(m);
     if (!r.live) {
@@ -1124,19 +1237,15 @@ export function Search() {
                     <button
                       type="button"
                       className="mkt-link-btn"
-                      onClick={() => {
-                        const m = asMode(s.mode);
-                        setQ(s.q);
-                        setMode(m);
-                        search(s.q, m);
-                      }}
+                      dir="auto"
+                      onClick={() => openSaved(s)}
                     >
-                      {s.q}
+                      {savedOf(s).name}
                     </button>
                     <button
                       type="button"
                       className="mkt-icon-btn"
-                      aria-label={`${t("common.delete")} ${s.q}`}
+                      aria-label={`${t("common.delete")} ${savedOf(s).name}`}
                       onClick={() => removeSaved(s.id)}
                     >
                       ×

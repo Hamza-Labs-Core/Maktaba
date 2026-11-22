@@ -705,3 +705,227 @@ describe("Facets and sort (story 49.10)", () => {
     30_000
   );
 });
+
+// Story 49.10's follow-up: a recent or saved search opens with the order and filters it was
+// asked with, and a page opened by its sid alone names its filters and shows its facets.
+describe("Search state kept (story 49.10 follow-up)", () => {
+  const recentPanel = () => screen.getByRole("complementary", { name: "Recent searches" });
+  const savedPanel = () => screen.getByRole("complementary", { name: "Saved searches" });
+  const activeChips = () =>
+    within(screen.getByRole("group", { name: "Filters in use" }))
+      .getAllByRole("listitem")
+      .map((li) => li.textContent);
+  const row = (sid: string, live: boolean, extra: Record<string, unknown> = {}) => ({
+    search_id: sid,
+    q: "patience",
+    mode: "fts",
+    created_at: "2026-11-22T10:00:00Z",
+    title_count: 1,
+    transcript_count: 1,
+    live,
+    ...extra,
+  });
+
+  it("SRC-54: a recent search opens with its sort and filters: live by its sid, expired run again with them", async () => {
+    serve(corpus, {
+      existing: { "sid-r": { q: "patience", mode: "fts", sort: "newest", corpus } },
+      help: () => ({ facets: FACETS }),
+      recent: [
+        row("sid-r", true, {
+          sort: "newest",
+          filters: { library_id: ["lib-1"], duration_sec: { gte: 0, lt: 300 } },
+        }),
+        row("sid-x", false, {
+          q: "sabr",
+          sort: "matches",
+          filters: {
+            speaker: ["Sheikh Ahmad"],
+            date: { gte: "2024-01-01T00:00:00.000Z", lt: "2025-01-01T00:00:00.000Z" },
+          },
+        }),
+      ],
+    });
+    renderSearchPage();
+    const user = userEvent.setup();
+    await user.click(await within(recentPanel()).findByRole("button", { name: /^patience/ }));
+    await waitFor(() =>
+      expect(loc()).toBe("/search?q=patience&mode=fts&sort=newest&lib=lib-1&dur=under_5m&sid=sid-r")
+    );
+    // read by its sid, no new search; its order and filters on screen, its facets with them
+    expect(searchBodies()).toHaveLength(0);
+    expect(await screen.findByTestId("facets")).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Sort by" })).toHaveValue("newest");
+    expect(activeChips()).toEqual(["Library: Lectures", "Length: Under 5 min"]);
+
+    await user.click(within(recentPanel()).getByRole("button", { name: /^sabr/ }));
+    await waitFor(() => expect(searchBodies()).toHaveLength(1));
+    expect(lastBody()).toEqual({
+      q: "sabr",
+      mode: "fts",
+      view: "list",
+      sort: "matches",
+      filters: {
+        speaker: ["Sheikh Ahmad"],
+        date: { gte: "2024-01-01T00:00:00.000Z", lt: "2025-01-01T00:00:00.000Z" },
+      },
+    });
+    await waitFor(() => expect(locParams().get("sid")).toBe("sid-1"));
+    expect(locParams().get("sort")).toBe("matches");
+    expect(locParams().getAll("spk")).toEqual(["Sheikh Ahmad"]);
+    expect(locParams().get("year")).toBe("2024");
+  });
+
+  it("SRC-54: a recent search kept before the home kept its sort and filters opens as this tab ran it, else plain", async () => {
+    serve(corpus, {
+      existing: {
+        "sid-a": { q: "patience", mode: "fts", corpus },
+        "sid-b": { q: "sabr", mode: "fts", corpus },
+      },
+      recent: [row("sid-a", true), row("sid-b", true, { q: "sabr" })],
+    });
+    sessionStorage.setItem(
+      "mkt:search:help",
+      JSON.stringify({
+        "sid-a": { sort: "newest", sel: { library: [], language: ["ar"], speaker: [] } },
+      })
+    );
+    renderSearchPage();
+    const user = userEvent.setup();
+    await user.click(await within(recentPanel()).findByRole("button", { name: /^patience/ }));
+    await waitFor(() =>
+      expect(loc()).toBe("/search?q=patience&mode=fts&sort=newest&lang=ar&sid=sid-a")
+    );
+    await user.click(within(recentPanel()).getByRole("button", { name: /^sabr/ }));
+    await waitFor(() => expect(loc()).toBe("/search?q=sabr&mode=fts&sid=sid-b"));
+    expect(searchBodies()).toHaveLength(0);
+  });
+
+  it("SRC-55: a saved search runs with its sort and filters; one saved without them runs plain", async () => {
+    serve(corpus, {
+      help: () => ({ facets: FACETS }),
+      saved: {
+        items: [
+          {
+            id: "s1",
+            name: "patience · Newest · Lectures",
+            query: {
+              q: "patience",
+              mode: "fts",
+              sort: "newest",
+              filters: { library_id: ["lib-1"], duration_sec: { gte: 3600 } },
+            },
+            created_at: "2026-11-22T10:00:00Z",
+          },
+          {
+            id: "s2",
+            name: "sabr",
+            query: { q: "sabr", mode: "hybrid" },
+            created_at: "2026-11-01T10:00:00Z",
+          },
+        ],
+      },
+    });
+    renderSearchPage();
+    const user = userEvent.setup();
+    await user.click(
+      await within(savedPanel()).findByRole("button", { name: "patience · Newest · Lectures" })
+    );
+    await waitFor(() => expect(searchBodies()).toHaveLength(1));
+    expect(lastBody()).toEqual({
+      q: "patience",
+      mode: "fts",
+      view: "list",
+      sort: "newest",
+      filters: { library_id: ["lib-1"], duration_sec: { gte: 3600 } },
+    });
+    await waitFor(() =>
+      expect(loc()).toBe("/search?q=patience&mode=fts&sort=newest&lib=lib-1&dur=over_60m&sid=sid-1")
+    );
+    expect(screen.getByRole("combobox", { name: "Sort by" })).toHaveValue("newest");
+    expect(activeChips()).toEqual(["Library: Lectures", "Length: Over an hour"]);
+
+    // an older saved search (no sort, no filters): relevance, and the filters on screen go
+    await user.click(within(savedPanel()).getByRole("button", { name: "sabr" }));
+    await waitFor(() => expect(searchBodies()).toHaveLength(2));
+    expect(lastBody()).toEqual({ q: "sabr", mode: "hybrid", view: "list" });
+    await waitFor(() => expect(loc()).toBe("/search?q=sabr&mode=hybrid&sid=sid-2"));
+    expect(screen.queryByRole("group", { name: "Filters in use" })).toBeNull();
+  });
+
+  it("SRC-55: Save keeps the sort and filters on screen, named by them", async () => {
+    serve(corpus, { help: () => ({ facets: FACETS }), otherPost: () => ({}) });
+    renderSearchPage("/search?q=patience&mode=fts&sort=newest&lib=lib-1&year=2024");
+    await screen.findByTestId("facets");
+    await userEvent.setup().click(screen.getByRole("button", { name: "Save" }));
+    expect(post).toHaveBeenCalledWith("/api/search/save", {
+      name: "patience · Newest · Lectures · 2024",
+      query: {
+        q: "patience",
+        mode: "fts",
+        sort: "newest",
+        filters: {
+          library_id: ["lib-1"],
+          date: { gte: "2024-01-01T00:00:00.000Z", lt: "2025-01-01T00:00:00.000Z" },
+        },
+      },
+    });
+  });
+
+  it("SRC-56: a shared filtered link in a new tab names its library at once, before any facet count", async () => {
+    // the page answers no facets yet: the name can only come from the libraries list
+    serve(corpus, {
+      existing: { "sid-s": { q: "patience", mode: "fts", corpus } },
+      libraries: [
+        { id: "lib-1", name: "Lectures" },
+        { id: "lib-2", name: "Khutbahs" },
+      ],
+    });
+    renderSearchPage("/search?q=patience&mode=fts&lib=lib-1&sid=sid-s");
+    await waitFor(() => expect(activeChips()).toEqual(["Library: Lectures"]));
+    expect(screen.queryByTestId("facets")).toBeNull();
+    expect(getCalls("/api/libraries/summary")).toHaveLength(1);
+    expect(searchBodies()).toHaveLength(0);
+  });
+
+  it("SRC-57: a page opened by its sid alone shows its facets and did-you-mean, read with its first page", async () => {
+    serve(corpus, {
+      existing: { "sid-s": { q: "patiense", mode: "fts", sort: "newest", corpus } },
+      help: () => ({ facets: FACETS, did_you_mean: "patience" }),
+    });
+    renderSearchPage("/search?q=patiense&mode=fts&sort=newest&sid=sid-s");
+    expect(await screen.findByTestId("facets")).toBeInTheDocument();
+    expect(screen.getByTestId("did-you-mean")).toHaveTextContent("Did you mean patience?");
+    expect(facetButton("Library", /Lectures/)).toBeInTheDocument();
+    expect(getCalls("/api/search/results/").sort()).toEqual([
+      "/api/search/results/sid-s?list=titles&offset=0&limit=20&facets=1",
+      "/api/search/results/sid-s?list=transcripts&offset=0&limit=20",
+    ]);
+    expect(searchBodies()).toHaveLength(0);
+  });
+
+  it("SRC-57: Arabic: a recent search opened with its filters names them in Arabic", async () => {
+    localStorage.setItem("mkt:locale", "ar");
+    serve(corpus, {
+      existing: { "sid-r": { q: "الصبر", mode: "fts", sort: "newest", corpus } },
+      help: () => ({ facets: FACETS }),
+      recent: [
+        row("sid-r", true, {
+          q: "الصبر",
+          sort: "newest",
+          filters: { language: ["ar"], duration_sec: { gte: 0, lt: 300 } },
+        }),
+      ],
+    });
+    renderSearchPage();
+    await waitFor(() => expect(document.documentElement).toHaveAttribute("dir", "rtl"));
+    const recent = screen.getByRole("complementary", { name: "عمليات البحث الأخيرة" });
+    await userEvent.setup().click(await within(recent).findByRole("button", { name: /^الصبر/ }));
+    const active = await screen.findByRole("group", { name: "عوامل التصفية المستخدمة" });
+    expect(
+      within(active)
+        .getAllByRole("listitem")
+        .map((li) => li.textContent)
+    ).toEqual(["اللغة: العربية", "المدة: أقل من ٥ دقائق"]);
+    expect(screen.getByRole("combobox", { name: "الترتيب حسب" })).toHaveValue("newest");
+  });
+});

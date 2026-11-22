@@ -922,3 +922,45 @@ The Search page (`web/src/pages/Search.tsx`) uses story 49.8's API; the parts ar
     order on screen and no filters.
   - Facet buckets are chips, not a side panel of checkboxes as in the 11.4 mockup: they wrap
     on a phone and need no second column.
+
+### 49.10 follow-up: search state kept
+
+A recent or saved search opens with the order and filters it was asked with, on any device,
+and a search opened by its sid alone shows its facets.
+
+- **Kept with the search.** Slot 0236 gives `search_runs` two nullable columns:
+  `sort_order` (relevance, newest or matches) and `asked_filters` (the filters as asked, JSON
+  text). `filters` holds them after a restricted account's libraries were put in, which are
+  not a choice, so it is not what a recent search shows. A row written before the slot keeps
+  NULL in both; no row is changed, so a rollback keeps the columns.
+- **API.** `GET /api/search/recent` gives each search its `sort` and `filters` (as asked; an
+  empty object for none); both are left out for a search kept before slot 0236, and for an
+  order the server does not know. `GET /api/search/results/{sid}` gives the order its pages
+  are in (`sort`, left out the same way), and with `facets=1` the search's `facets` and
+  `did_you_mean`, counted again from the kept set under the caller's limits as they are now.
+  A saved search already kept its order and filters in `query` (the POST /api/search body);
+  the list on SQLite came back empty, as its `created_at` text did not scan into a time, and
+  now reads it.
+- **Web.** A recent search opens with the list's `sort` and `filters` (a live one by its sid,
+  an expired one searched again with them); one kept before slot 0236 opens as this tab ran
+  it, else with relevance and no filters. Save sends `{ name, query }`, the query with the
+  order and the filters on screen (the filters only for the words on screen), named by the
+  words, the order and the filters ("patience · Newest · Lectures · 2024"), so the same words
+  asked two ways are two entries; the web had sent `{ q, mode }`, which the server refused for
+  lacking a name. A saved search runs with its query's order and filters, one without them with
+  relevance and none. Filters become chips by `selOfFilters` (`searchShared.tsx`): a date range
+  is a year when it spans one calendar year, a duration range a band when it is one; any other
+  range, from another client, is left out, as the page has no chip for it.
+- **A link in a new tab.** A library filter is named at once: from the libraries list this
+  session already read (the page cache), else from `GET /api/libraries/summary`, read once
+  beside the search; a name the facets give replaces it. Opened by its sid with no facets kept
+  in the tab, the first list's page asks `facets=1`, so the facet panel and did-you-mean show
+  with the first pages.
+- **Proof:** `state_test.go` on SQLite and Postgres (the order and filters kept, listed and
+  given by sid; a restricted account's libraries not listed as a filter; facets by sid; an
+  older row and an unknown order left out; a saved search's query round trip and its
+  `created_at` on SQLite), `migration_0236_test.go` (up, down and up twice, an older row kept
+  with NULLs, an older release's insert); `Search.help.test.tsx` SRC-54 to SRC-57 and
+  `searchShared.test.tsx` on the web.
+- **Not done here.** The Android and Apple apps search with no order or filters, so they
+  leave the recent list's new fields unread.
