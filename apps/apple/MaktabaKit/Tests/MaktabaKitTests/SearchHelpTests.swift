@@ -70,6 +70,7 @@ extension BrowseClient {
             #expect(f.duration.last?.filter?.durationSec == ["gte": 3600])
 
             let r = SearchModel.Results(a, sent: "المدرصة")
+            #expect(r.sent == "المدرصة")
             #expect(r.sort == .newest && r.didYouMean == "المدرسة" && r.facets == f)
         }
 
@@ -150,6 +151,9 @@ extension BrowseClient {
             #expect(body["date"] as? [String: String] == ["gte": "1999-01-01T00:00:00.000Z", "lt": "2000-01-01T00:00:00.000Z"])
             #expect(body["duration_sec"] as? [String: Int] == ["gte": 300, "lt": 1200])
             #expect(body["library_id"] == nil && body["language"] == nil)
+            // a band this app does not know, not listed: no range is sent, the choice stays
+            let unknown = SearchFilterChoice(duration: "over_3h")
+            #expect(unknown.requestBody(facets: nil)?["duration_sec"] == nil && unknown.count == 1)
             for band in SearchFilterChoice.bandOrder {
                 #expect(SearchFilterChoice(duration: band).requestBody(facets: nil)?["duration_sec"] != nil, "\(band)")
             }
@@ -281,7 +285,9 @@ extension BrowseClient {
             #expect(SearchWords.bucket(.language, "zz-unknown", label: nil, en) == "zz-unknown")
             #expect(SearchWords.bucket(.library, BrowseHome.lib, label: "Tafsir Lessons", en) == "Tafsir Lessons")
             #expect(SearchWords.bucket(.library, BrowseHome.lib, label: nil, en) == BrowseHome.lib)
-            #expect(SearchWords.inUse(.speaker, "الشيخ أحمد", label: nil, ar) == "المتحدث: الشيخ أحمد")
+            #expect(plain(SearchWords.inUse(.speaker, "الشيخ أحمد", label: nil, ar)) == "المتحدث: الشيخ أحمد")
+            #expect(SearchWords.inUse(.library, BrowseHome.lib, label: "Lectures", ar) == "المكتبة: \u{2068}Lectures\u{2069}",
+                    "a Latin name isolated in an Arabic line")
             #expect(plain(SearchWords.videos(1, en)) == "1 video" && plain(SearchWords.videos(3, en)) == "3 videos")
             #expect(plain(SearchWords.videos(3, arSA)) == "عدد المقاطع: ٣")
         }

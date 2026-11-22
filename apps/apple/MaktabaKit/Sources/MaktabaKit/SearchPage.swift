@@ -30,8 +30,10 @@ public final class SearchModel {
 
     /// What a submitted search found.
     public struct Results {
-        /// The query as it was sent.
+        /// The query as the home answered it (as it was sent, when the home says none).
         public let query: String
+        /// The query as this app sent it: what the results are of (`submitted`).
+        public let sent: String
         /// The kept result set ("" when the home kept none: no more pages).
         public let searchID: String
         /// How many of each group a page holds.
@@ -57,6 +59,7 @@ public final class SearchModel {
 
         public init(_ a: SearchAnswer, sent: String, sort asked: SearchSort = .relevance) {
             query = a.query.isEmpty ? sent : a.query
+            self.sent = sent
             searchID = a.searchID
             pageSize = max(a.pageSize, 1)
             titles = a.titles
@@ -107,7 +110,7 @@ public final class SearchModel {
     }
 
     /// A refinement of the search on screen is on its way (its results stay meanwhile).
-    public var refining: Bool { searching && results != nil && results?.query == submitted }
+    public var refining: Bool { searching && results != nil && results?.sent == submitted }
 
     private let client: APIClient
     private let signedOut: @MainActor () -> Void

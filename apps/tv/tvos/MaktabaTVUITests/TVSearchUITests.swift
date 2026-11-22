@@ -60,8 +60,10 @@ final class TVSearchUITests: XCTestCase {
         moveFocus(to: arabic, with: .down)
         remote.press(.select)
         XCTAssertTrue(wait { (self.lastFilters?["language"] as? [String]) == ["ar"] }, "searched in Arabic only")
+        // down to the length row (its first bucket, under 20 to 60 min), then along it
         let long = app.buttons["search.facet.duration.over_60m"]
-        moveFocus(to: long, with: .down)
+        moveFocus(to: app.buttons["search.facet.duration.20m_60m"], with: .down)
+        moveFocus(to: long, with: language == "ar" ? .left : .right)
         remote.press(.select)
         XCTAssertTrue(wait { (self.lastFilters?["duration_sec"] as? [String: Int]) == ["gte": 3600] }, "and over an hour")
         XCTAssertEqual(lastFilters?["language"] as? [String], ["ar"], "the filters combine")
@@ -148,7 +150,13 @@ final class TVSearchUITests: XCTestCase {
         let field = app.searchFields.firstMatch
         XCTAssertTrue(field.waitForExistence(timeout: 20), "the search field")
         field.typeExactly(text, in: app) {
-            self.remote.press(.down)
+            // as the other TV tests open a field: down to it, Select; the search tab's field
+            // may instead give the keyboard as soon as the focus is in it
+            for _ in 0..<4 where !field.hasFocus {
+                self.remote.press(.down)
+                usleep(400_000)
+            }
+            if field.hasFocus { self.remote.press(.select) }
             usleep(600_000)
         }
     }

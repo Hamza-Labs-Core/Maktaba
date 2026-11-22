@@ -111,7 +111,7 @@ struct SearchScreen: View {
     @ViewBuilder private var content: some View {
         if model.query.isEmpty {
             recentList
-        } else if model.searching, model.results?.query != model.submitted {
+        } else if model.searching, model.results?.sent != model.submitted {
             ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
                 .accessibilityIdentifier("search.loading")
         } else if let problem = model.problem {

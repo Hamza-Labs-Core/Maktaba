@@ -59,12 +59,6 @@ struct SuggestItem: Decodable {
     let kind: String?
     let videoID: String?
 
-    init(text: String?, kind: String?, videoID: String?) {
-        self.text = text
-        self.kind = kind
-        self.videoID = videoID
-    }
-
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: AnyKey.self)
         text = c.lenient(AnyKey(stringValue: "text"))
@@ -317,6 +311,8 @@ public struct SearchFilterChoice: Hashable, Sendable {
         }
         if let duration {
             let own = facets?.duration.first { $0.value == duration }?.filter?.durationSec
+            // a band this app does not know, and the answer no longer lists, sends no range (as
+            // the web's page): the chip stays, to be taken off
             if let range = own.flatMap({ $0.isEmpty ? nil : $0 }) ?? Self.durationBands[duration] {
                 // whole seconds go as integers
                 f["duration_sec"] = range.mapValues { $0.rounded() == $0 && abs($0) < 1e15 ? Int($0) as Any : $0 as Any }
@@ -427,7 +423,9 @@ public enum SearchWords {
 
     /// "Library: Tafsir Lessons": a filter in use.
     public static func inUse(_ facet: SearchFacet, _ value: String, label: String?, _ locale: Locale = AppLanguage.locale) -> String {
-        "\(self.facet(facet, locale)): \(bucket(facet, value, label: label, locale))"
+        // the name isolated, as the catalog's sentences isolate theirs: a Latin name keeps its
+        // place in an Arabic line
+        "\(self.facet(facet, locale)): \u{2068}\(bucket(facet, value, label: label, locale))\u{2069}"
     }
 
     /// A bucket's name: a library by its name, a language by its name in the app's language, a

@@ -113,7 +113,7 @@ private struct TVSearch: View {
     @ViewBuilder private var content: some View {
         if let problem = model.problem {
             ErrorBanner(failure: problem) { Task { await model.retry() } }
-        } else if model.searching, model.results?.query != model.submitted {
+        } else if model.searching, model.results?.sent != model.submitted {
             ProgressView().frame(maxWidth: .infinity).padding(.top, 80)
                 .accessibilityIdentifier("search.loading")
         } else if let results = model.results {
