@@ -28,6 +28,7 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"time"
 	"unicode"
 
@@ -197,6 +198,9 @@ type Handler struct {
 	// bm25 is whether keyword search ranks by the search documents' BM25 indexes now
 	// (story 49.7), and whether a video still lacks its document
 	bm25 bm25State
+
+	// phraseAbandoned counts the phrase boosts past their budget (story 49.9)
+	phraseAbandoned atomic.Int64
 }
 
 // semanticOff reports whether the semantic component is switched off.

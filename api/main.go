@@ -109,6 +109,12 @@ func main() {
 				os.Exit(1)
 			}
 			return
+		case "search-relevance":
+			if err := runSearchRelevance(os.Args[2:], os.Stdout); err != nil {
+				fmt.Fprintf(os.Stderr, "search-relevance: %v\n", err)
+				os.Exit(1)
+			}
+			return
 		case "search-indexes":
 			if err := runSearchIndexes(os.Args[2:], os.Stdout); err != nil {
 				fmt.Fprintf(os.Stderr, "search-indexes: %v\n", err)
@@ -212,6 +218,9 @@ Commands:
   search-indexes
              Build keyword search's BM25 indexes now, with no time limit (the
              home's API builds them in the background after its start)
+  search-relevance
+             The keyword search relevance check on the library, read only
+             (searches drawn from its own transcripts; "search-relevance --help")
   adduser    Seed the first admin user (Story 10.1 AC-4)
   hash-password
              Hash a password (stdin) for adduser --password-hash-file
