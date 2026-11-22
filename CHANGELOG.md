@@ -376,6 +376,11 @@ build fails when the two differ.
 
 ### Fixed
 
+- **Arabic titles that match a search come closest first (Epic 49, story 49.15).** A search's
+  "In titles" list ranked Arabic titles newest first, whatever they said, because the home's
+  database could not compare Arabic letters. It now puts the title closest to the search
+  first, as it already did for Latin titles.
+
 - **A release is published only with every file its signed checksums name.** Until now a draft
   release could be made public with only its signed set attached (`release.json`, the checksums
   and their signature, the component index), so an upload that stopped part way could publish a
