@@ -98,10 +98,14 @@ private struct RecoveryList: View {
         }
         .alert(recovery.asking.map { title($0.action) } ?? "Recovery", isPresented: Binding(
             get: { recovery.asking != nil },
-            set: { if !$0 { recovery.cancel() } }
+            // The alert closing changes nothing: each button says what it means. Confirm
+            // puts the next confirmation in place (or none) at once, Cancel forgets the
+            // action. A close that cleared `asking` raced the next confirmation, and on
+            // iOS 27.2 it came last and the second confirmation never showed.
+            set: { _ in }
         ), presenting: recovery.asking) { asking in
             Button(button(asking.action), role: asking.action.confirms > 1 ? .destructive : nil) {
-                Task { await recovery.confirm(asking) }
+                if let run = recovery.answer(asking) { Task { await recovery.perform(run) } }
             }
             .accessibilityIdentifier("recovery.confirm")
             Button("Cancel", role: .cancel) { recovery.cancel() }

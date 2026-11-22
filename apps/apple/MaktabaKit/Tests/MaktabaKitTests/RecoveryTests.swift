@@ -209,6 +209,29 @@ struct RecoveryTests {
         #expect(model.outcome == .done && model.phase == .ready && model.state?.rollback == "0.3.44")
     }
 
+    /// The alert's button answers at once: the second confirmation is in place before the
+    /// alert has closed, and the last answer hands back the action and asks nothing more.
+    /// Nothing is sent until the action is performed.
+    @MainActor @Test func anAnswerPutsTheNextConfirmationInPlaceAtOnce() async throws {
+        RecoveryStub.on("GET /recovery/api/state", 200, Self.state)
+        RecoveryStub.on("GET /recovery/api/logs", 200, #"{"lines":[]}"#)
+        RecoveryStub.on("POST /recovery/api/action", 200, #"{"result":"ok"}"#)
+        let (client, _) = RecoveryStub.client(pass: "p1")
+        let model = RecoveryModel(client: client)
+        model.ask(.restore("maktaba-20261106-030000.dump"))
+        let first = try #require(model.asking)
+        #expect(model.answer(first) == nil, "a second confirmation, not the action")
+        let second = try #require(model.asking)
+        #expect(second == RecoveryModel.Asking(action: .restore("maktaba-20261106-030000.dump"), step: 2, need: 2))
+        let run = try #require(model.answer(second))
+        #expect(model.asking == nil)
+        #expect(!RecoveryStub.seen.contains { $0.route == "POST /recovery/api/action" })
+        await model.perform(run)
+        let sent = try #require(RecoveryStub.seen.first { $0.route == "POST /recovery/api/action" })
+        #expect(sent.json?["action"] as? String == "restore" && sent.json?["confirm"] as? Int == 2)
+        #expect(model.outcome == .restoring)
+    }
+
     @MainActor @Test func throughTheRelayTheHomeAsksASecondConfirmation() async throws {
         RecoveryStub.on("POST /recovery/api/action", 428, #"{"error":"confirm","confirm":2}"#)
         RecoveryStub.on("POST /recovery/api/action", 200, #"{"result":"ok"}"#)
