@@ -22,6 +22,7 @@ ROOT = Path(__file__).resolve().parents[3]
 WORKFLOW = yaml.safe_load((ROOT / ".github/workflows/_apple-apps.yml").read_text(encoding="utf-8"))
 PROJECT = yaml.safe_load((ROOT / "apps/apple/project.yml").read_text(encoding="utf-8"))
 CHECK = ROOT / "tools/apple/check-app-log.py"
+SIM_LOG = ROOT / "tools/apple/sim-log.py"
 PERSIST = '--mode "level:debug,persist:debug"'
 
 
@@ -85,7 +86,9 @@ def test_iphone_and_ipad_keep_info_and_debug() -> None:
     # read once the tests are done (whether they passed or not), then checked
     read = next(s for s in _steps() if s.get("name") == "Read and check the app's log, delete the simulator")
     assert read["if"].startswith("always()")
-    assert "log show --style compact --info --debug" in read["run"]
+    # tools/apple/sim-log.py reads it into "$log" ($RESULTS/<device>-<shard>-app.log)
+    assert 'sim-log.py "$UDID" "$RESULTS" "${{ matrix.device }}-${{ matrix.shard }}"' in read["run"]
+    assert 'log="$RESULTS/${{ matrix.device }}-${{ matrix.shard }}-app.log"' in read["run"]
     assert 'check-app-log.py "$log"' in read["run"]
     assert all("log stream" not in s.get("run", "") for s in _steps())
 
@@ -104,3 +107,21 @@ def test_the_logs_are_uploaded() -> None:
     for job in ("player-ui-tests", "player-ui-mac"):
         upload = next(s for s in _steps(job) if s.get("uses", "").startswith("actions/upload-artifact") and s.get("if") == "always()")
         assert "build/player-results" in upload["with"]["path"]
+
+
+def test_the_simulator_log_reads_info_and_debug() -> None:
+    """sim-log.py reads the app's subsystems with info and debug lines, into NAME-app.log."""
+    script = SIM_LOG.read_text(encoding="utf-8")
+    assert '"log", "show", "--style", "compact", "--info", "--debug"' in script
+    assert 'APP = \'subsystem BEGINSWITH "com.hamzalabs.maktaba"\'' in script
+    assert 'results / f"{name}-app.log"' in script
+    out = subprocess.run([sys.executable, str(SIM_LOG), "--self-test"], capture_output=True, text=True, check=False)
+    assert out.returncode == 0, out.stderr
+    assert "self-test passed" in out.stdout
+
+
+def test_remote_and_tv_keep_their_logs() -> None:
+    for job, name in (("remote-ui-tests", "remote"), ("tv-ui-tests", "tv")):
+        read = next(s for s in _steps(job) if s.get("name") == "Keep the app's log, delete the simulator")
+        assert read["if"].startswith("always()")
+        assert f'sim-log.py "$UDID" "$RESULTS" {name}' in read["run"]
