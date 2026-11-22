@@ -21,6 +21,7 @@ package search
 import (
 	"context"
 	"fmt"
+	"math"
 	"sort"
 	"strconv"
 	"strings"
@@ -41,13 +42,12 @@ const (
 	bm25ExactWeight = 2.0
 	// bm25PhraseTop is how many of the best videos a phrase is looked for in
 	bm25PhraseTop = 100
-	// bm25TopK and bm25StemTopK are how many videos each index gives. A BM25 query scores
-	// every row it returns again: about 0.15 ms a row on the exact index and 0.25 ms on the
-	// stemmed one (Snowball) on a 45,000-document library, twice that on CI's runner. The
-	// word as typed keeps the deeper list; together they return up to 150 videos within the
-	// 50 ms the query has
-	bm25TopK     = 100
-	bm25StemTopK = 50
+	// bm25TopK and bm25StemTopK are how many videos each index gives: rules.search.max_videos'
+	// 500. Each row's score is the one its index scan worked out (bm25LegSQL), so the depth
+	// costs little: 500 rows of 5,000-word documents in about 2 ms. (Scored again from its
+	// text, a row cost 0.15 to 1.8 ms by its length, and the lists were 100 and 50.)
+	bm25TopK     = 500
+	bm25StemTopK = 500
 	// bm25StateTTL is how long the indexes' readiness and the backfill's state are kept
 	bm25StateTTL = time.Minute
 	// bm25StateRetry is how long a state that could not be read is kept (the line path
@@ -128,42 +128,136 @@ func (h *Handler) keywordVideos(ctx context.Context, q string, limit int, f Filt
 // bm25LegSQL is one index's query and its arguments: col is the document's column the
 // index is on (slot 0234), fn the function that normalises the query as col was.
 func bm25LegSQL(ctx context.Context, q string, limit int, f Filters, index, col, fn string) (string, []any) {
+	return bm25LegSQLScored(ctx, q, limit, f, index, col, fn, false)
+}
+
+// bm25LegSQLScored is bm25LegSQL; scored selects the score worked out from each row's text
+// (the operator itself), for a plan that is no BM25 index scan (bm25Leg).
+func bm25LegSQLScored(ctx context.Context, q string, limit int, f Filters, index, col, fn string, scored bool) (string, []any) {
 	args := []any{q}
 	score := `d.` + col + ` OPERATOR(textsearch.<@>) textsearch.to_bm25query(public.` + fn + `($1), '` + index + `')`
 	where := append([]string{"true"}, whereVideos(f, &args)...)
 	where = append(where, limitWhere(ctx)...)
 	args = append(args, limit)
-	// ORDER BY the score's alias: the index scan's own value. Written out again in the
-	// select list above a join, the score is worked out once more for every row
-	return `
+	// the score is the one the index scan worked out (bm25_get_current_score), and the ORDER
+	// BY is the operator alone, not in the select list: pg_textsearch's planner hook then
+	// gives each row the scan's score instead of scoring its whole document again (1.8 ms
+	// a row for a 5,000-word document: 180 ms a search on the home). The hook finds its
+	// objects on the session's search_path: the bundle puts the extension's schema on the
+	// app role's (pgbundle.textsearchSQL). Without it the order and the scores are the same,
+	// only slower. A plan with no BM25 index scan has no score to give: bm25Leg checks.
+	if scored {
+		// ORDER BY the alias: the select list's score (one evaluation a row)
+		return `
 		SELECT d.video_id::text, ` + score + ` AS score
 		  FROM video_search_docs d
 		  JOIN videos v ON v.id = d.video_id AND v.deleted_at IS NULL
 		 WHERE ` + strings.Join(where, " AND ") + `
 		 ORDER BY score
 		 LIMIT $` + strconv.Itoa(len(args)), args
+	}
+	return `
+		SELECT d.video_id::text, textsearch.bm25_get_current_score() AS score
+		  FROM video_search_docs d
+		  JOIN videos v ON v.id = d.video_id AND v.deleted_at IS NULL
+		 WHERE ` + strings.Join(where, " AND ") + `
+		 ORDER BY ` + score + `
+		 LIMIT $` + strconv.Itoa(len(args)), args
 }
 
 // bm25Leg is one index's top videos: (video id, score), best first.
 func (h *Handler) bm25Leg(ctx context.Context, q string, limit int, f Filters, index, col, fn string) ([]savedVideo, error) {
-	sqlText, args := bm25LegSQL(ctx, q, limit, f, index, col, fn)
+	out, ends, err := h.bm25LegRun(ctx, q, limit, f, index, col, fn, false)
+	if err != nil || len(ends) == 0 {
+		return out, err
+	}
+	// the scores are the index scan's only when the plan has one: bm25_get_current_score is
+	// the last score of the connection's last BM25 index scan, whatever query ran it (the
+	// extension never clears it), so a plan without one (a table, or a library's rows, few
+	// enough to read whole and sort) gives every row one score, another search's. The first
+	// and last rows' scores are worked out from their text and compared (two documents, a
+	// few ms at most); when they differ, or the check cannot be made, the leg asks again
+	// with each row's score worked out
+	ok, why := h.bm25ScoresAre(ctx, q, index, col, fn, ends)
+	if ok {
+		return out, nil
+	}
+	h.log().InfoContext(ctx, "search: BM25 scores worked out from the text", "event", "search_bm25_rescored", "index", index, "why", why)
+	out, _, err = h.bm25LegRun(ctx, q, limit, f, index, col, fn, true)
+	return out, err
+}
+
+// bm25ScoresAre reports whether each of rows (a leg's rows, scores as the query returned
+// them) has the score the operator works out for its video's document, within 1e-3 of it: a
+// score of another search is another document's, far from it, and a write between the two
+// statements moves every score by about one part in the library's size. why says what
+// differed.
+func (h *Handler) bm25ScoresAre(ctx context.Context, q, index, col, fn string, rows []savedVideo) (bool, string) {
+	args := []any{q}
+	ids := make([]string, len(rows))
+	for i, r := range rows {
+		ids[i] = r.V
+	}
+	got, err := h.DB.QueryContext(ctx, `SELECT d.video_id::text, d.`+col+` OPERATOR(textsearch.<@>) textsearch.to_bm25query(public.`+fn+`($1), '`+index+`')
+		  FROM video_search_docs d WHERE d.video_id IN (`+placeholders(ids, &args)+`)`, args...)
+	if err != nil {
+		return false, "the check failed: " + err.Error()
+	}
+	defer got.Close()
+	want := map[string]float64{}
+	for got.Next() {
+		var id string
+		var sc float64
+		if err := got.Scan(&id, &sc); err != nil {
+			return false, "the check failed: " + err.Error()
+		}
+		want[id] = sc
+	}
+	if err := got.Err(); err != nil {
+		return false, "the check failed: " + err.Error()
+	}
+	for _, r := range rows {
+		w, ok := want[r.V]
+		if !ok {
+			return false, "a row's document is gone"
+		}
+		if math.Abs(r.S-w) > 1e-9+1e-3*math.Abs(w) {
+			return false, fmt.Sprintf("a row's score %v, its document's %v", r.S, w)
+		}
+	}
+	return true, ""
+}
+
+// bm25LegRun runs one leg; ends are its first and last rows as returned (none, one or two),
+// the ones bm25Leg checks the scores by.
+func (h *Handler) bm25LegRun(ctx context.Context, q string, limit int, f Filters, index, col, fn string, scored bool) (out []savedVideo, ends []savedVideo, err error) {
+	sqlText, args := bm25LegSQLScored(ctx, q, limit, f, index, col, fn, scored)
 	rows, err := h.DB.QueryContext(ctx, sqlText, args...)
 	if err != nil {
-		return nil, fmt.Errorf("bm25 %s: %w", index, err)
+		return nil, nil, fmt.Errorf("bm25 %s: %w", index, err)
 	}
 	defer rows.Close()
-	var out []savedVideo
+	var last savedVideo
+	n := 0
 	for rows.Next() {
 		var v savedVideo
 		if err := rows.Scan(&v.V, &v.S); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
+		if n == 0 {
+			ends = append(ends, v)
+		}
+		last = v
+		n++
 		v.S = -v.S   // <@> is a distance: the BM25 score negated
 		if v.S > 0 { // a document none of whose words is the query's
 			out = append(out, v)
 		}
 	}
-	return out, rows.Err()
+	if n > 1 {
+		ends = append(ends, last)
+	}
+	return out, ends, rows.Err()
 }
 
 // runBM25Videos ranks the videos by their documents (see the file's words).

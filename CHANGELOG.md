@@ -4275,6 +4275,12 @@ build fails when the two differ.
   of metric minutes kept the file over the cap, and every info line was deleted. Week-long
   dashboards then read the hourly figures, which are always kept.
 
+- **Keyword search answers in a few milliseconds on a home's long transcripts, with up to
+  500 videos (Epic 49).** Each result was scored again from its whole transcript, about 2 ms
+  for an hour's lecture: some 180 ms a search on a large home. Results now take the score
+  the index already worked out, and keyword search shows up to 500 videos again instead of
+  150. A home made before this release picks it up at its next start.
+
 ## [0.2.0] - 2026-10-19
 
 Closes the stub audit: features that were half built, settings that were

@@ -566,6 +566,8 @@ func TestTextsearchOnlyWhenPreloaded(t *testing.T) {
 		// its own schema, never public (the migrations grant on every function of public)
 		"'CREATE EXTENSION IF NOT EXISTS pg_textsearch SCHEMA textsearch'",
 		"'GRANT USAGE ON SCHEMA textsearch TO maktaba'",
+		// its planner hook finds its objects by their unqualified names (story 49.9)
+		`'ALTER ROLE maktaba SET search_path TO "$user", public, textsearch'`,
 	} {
 		if !strings.Contains(textsearchSQL, want) {
 			t.Errorf("textsearchSQL lacks %q:\n%s", want, textsearchSQL)
@@ -580,8 +582,8 @@ func TestTextsearchOnlyWhenPreloaded(t *testing.T) {
 			t.Errorf("%s SQL makes pg_textsearch unconditionally:\n%s", name, sql)
 		}
 	}
-	if clusterRev < 5 {
-		t.Errorf("clusterRev = %d: a home made before pg_textsearch must run the cluster SQL again", clusterRev)
+	if clusterRev < 6 {
+		t.Errorf("clusterRev = %d: a home made before the app role's search_path held pg_textsearch's schema must run the cluster SQL again", clusterRev)
 	}
 	if !slices.Contains(Extensions, "pg_textsearch") {
 		t.Errorf("Extensions = %v: a home's dump on 18 has pg_textsearch", Extensions)

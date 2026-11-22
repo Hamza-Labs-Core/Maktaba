@@ -599,9 +599,18 @@ const vectorSQL = `SELECT 'CREATE EXTENSION IF NOT EXISTS vector'
 // api's to make once the extension is there (api/internal/searchindex). Without the
 // extension (PostgreSQL 16, a machine's fetched Postgres) it does nothing, and keyword
 // search goes on without BM25. Not a trusted extension: the superuser makes it.
+//
+// The app role's search_path ends with the schema (story 49.9). pg_textsearch's planner
+// hook gives a BM25 index scan's rows the score the scan worked out
+// (bm25_get_current_score) instead of scoring each row's whole text again, and it finds
+// its operators and that function by their unqualified names, once per connection.
+// Without the schema on the path it finds none, and each of a query's 150 rows is scored
+// again: about 1.8 ms for a 5,000-word document, 180 ms a search on the home instead of
+// under one. The schema is last: a name of the app's resolves in public as before.
 const textsearchSQL = `SELECT unnest(ARRAY['CREATE SCHEMA IF NOT EXISTS ` + TextsearchSchema + `',
     'GRANT USAGE ON SCHEMA ` + TextsearchSchema + ` TO ` + AppRole + `',
-    'CREATE EXTENSION IF NOT EXISTS pg_textsearch SCHEMA ` + TextsearchSchema + `'])
+    'CREATE EXTENSION IF NOT EXISTS pg_textsearch SCHEMA ` + TextsearchSchema + `',
+    'ALTER ROLE ` + AppRole + ` SET search_path TO "$user", public, ` + TextsearchSchema + `'])
   WHERE EXISTS (SELECT FROM pg_available_extensions WHERE name = 'pg_textsearch')
     AND current_setting('shared_preload_libraries') ~ '(^|[\s,])pg_textsearch([\s,]|$)'\gexec
 `
