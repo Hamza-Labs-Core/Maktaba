@@ -376,6 +376,11 @@ build fails when the two differ.
 
 ### Fixed
 
+- **Search finds a sentence however its letters are spelled (Epic 49, story 49.9).** A
+  sentence typed with a bare alef for a hamza, or ه for ة, now ranks its video as the exact
+  spelling does, and a word with و in front (وغفران) finds the word. A relevance check,
+  built from each library's own transcripts, measures it.
+
 - **A release is published only with every file its signed checksums name.** Until now a draft
   release could be made public with only its signed set attached (`release.json`, the checksums
   and their signature, the component index), so an upload that stopped part way could publish a
