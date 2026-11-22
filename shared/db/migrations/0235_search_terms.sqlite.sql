@@ -42,8 +42,17 @@ ALTER TABLE video_search_docs ADD COLUMN IF NOT EXISTS terms_counted INTEGER NOT
 
 -- +goose StatementBegin
 -- the keyword_index stage is at version 2 (its documents' words counted: the graph's
--- KEYWORD_INDEX_VERSION), as a freshly migrated database's seed must match the graph
-UPDATE job_stages SET version = 2 WHERE stage = 'keyword_index' AND version < 2;
+-- KEYWORD_INDEX_VERSION), as a freshly migrated database's seed must match the graph. The
+-- seed of slot 0233 again, at version 2 (a stage the graph sync already moved on keeps its
+-- own): no row's data is lost on the way up, and the Down puts version 1 back, so a
+-- rollback runs the Down scripts and keeps the database (updater's Reversible)
+INSERT INTO job_stages
+    (stage, label, subject_kinds, pool, lane, lane_order, version, debounce_sec,
+     debounce_max_sec, max_attempts, edges, may_request, entry_for, legacy, hidden,
+     external_write, write_mode, placement, enabled, disabled_reason)
+VALUES
+    ('keyword_index', 'Keyword index', '["video","library"]', 'cpu', 'speech', 5, 2, 0, 0, 3, '[]', '[]', '[]', 0, 0, 0, 'auto', 'any', 1, NULL)
+ON CONFLICT (stage) DO UPDATE SET version = 2 WHERE job_stages.version < 2;
 -- +goose StatementEnd
 
 -- +goose Down
