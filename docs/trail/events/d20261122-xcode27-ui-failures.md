@@ -11,14 +11,23 @@ session: f531cea2-971f-4c9c-833d-47dc53bdf492
   image). Its CI run 44674187921 at b25c72db7 failed four Apple UI jobs. Main's macos-26 runs
   fail about one UI job in four.
 - **Remote UI tests:** `testRecoveryRestoreAndDiagnostics` failed with "the second confirmation".
-  The screen recording shows the first alert closing and no second one.
-  - The first fix, ca1215a37, assumed the alert's close cleared the second step after the
-    button's task set it. It made the button's step synchronous (`RecoveryModel.answer`) and
-    the close a no-op. CI run 44994509246 failed the same way: the state was right, and still
-    no alert showed.
-  - The cause is the presentation. On iOS 27.2 SwiftUI drops an alert presented while the
-    previous alert is still closing. In ea8261ae1 the view shows its own `shown`, set only once
-    the window has no alert left and no presentation opening or closing.
+  The screen recording shows the first alert closing and no second one. Two fixes failed
+  before the cause was logged:
+  - ca1215a37 assumed the alert's close cleared step 2 after the button's task set it. It made
+    the step synchronous (`RecoveryModel.answer`) and the close a no-op. CI run 44994509246
+    failed the same way.
+  - ea8261ae1 assumed a presentation dropped while the first alert was still closing, and
+    waited for the window to settle. CI run 45001846039 failed the same way.
+  - The step-by-step log (scratch branch `diag/remote-confirm-272`, never merged; runs
+    45004838549, 45006590015, 45008299877) showed what happens instead. The button runs,
+    step 2 is in place at once, and the first alert is already gone from the window when its
+    close is reported. SwiftUI on iOS 27.2 then writes the closed alert's `isPresented` false
+    again 30 to 60 ms later, and an alert presented again from the same modifier in that time
+    never shows. With 600 ms between them it showed; two modifiers sharing one cleared state
+    lost step 2 to the late write.
+  - The fix, 827f668d2: the confirmations alternate between two alerts by step parity, both
+    read `recovery.asking`, and a close writes nothing. It passed four runs of four (run
+    45009911826).
 - **Player UI tests (ipad 4/6):** every test passed, then the log step found the simulator
   stopped ("device is not booted"), read no line of the app and failed as "it never ran".
 - **Player UI tests (iphone 1/6):** `PlayerLibrariesUITests.testAccessibilityAudit` failed with
@@ -37,11 +46,12 @@ session: f531cea2-971f-4c9c-833d-47dc53bdf492
   (d20261122-ipad-search-tab-role).
 
 ## What we learned
-- On iOS 27.2 a SwiftUI alert presented while another is still closing never shows, even
-  when its `isPresented` reads true throughout. A chain of confirmations must wait for the
-  previous presentation to be gone.
-- A fix judged from a guess at ordering, not from the evidence, cost a CI round. The
-  recording showed the state; the presentation was the question.
+- On iOS 27.2 SwiftUI writes a closed alert's `isPresented` binding again 30 to 60 ms after
+  its button. The same `.alert` modifier presented again in that time shows nothing.
+  Consecutive confirmations need separate presentations, and a binding's close should not
+  clear state that buttons own.
+- Two fixes judged from a guess at the cause each cost a CI round. Logging the state and the
+  window's presentations at each step found the cause in one run.
 - A UI job that only keeps the app's own log cannot explain "the app is not running". The
   system's termination lines and the crash report are the evidence.
 
@@ -50,8 +60,8 @@ session: f531cea2-971f-4c9c-833d-47dc53bdf492
   showed the missing alert at once.
 
 ## Stop doing
-- Presenting the next alert or sheet from the previous one's button without waiting for
-  the previous one to close.
+- Re-presenting the same `.alert` modifier from its own button.
+- Shipping a fix for a CI-only failure before a diagnostic run has shown the cause.
 
 ## Open
 - The iPhone libraries audit's app exit: its cause is to come from the next run's
