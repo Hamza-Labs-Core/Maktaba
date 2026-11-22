@@ -116,7 +116,8 @@ var machineRoutes = []struct{ method, path, body string }{
 
 // T05: every route of §2 as no one is 401; as a viewer, an admin's cloud play sign-in, a
 // token without the admin scope and a machine's certificate 403; nothing changes. An
-// admin and an admin's manage link pass.
+// admin and an admin's manage link pass (the two tests after this one: each is a fixture
+// of its own, and one test for all three went past the unit tier's per-test cap on CI).
 func TestMachineRoutesAdminOnly(t *testing.T) {
 	f := machineFixture(t)
 	rev := f.revision(t)
@@ -133,12 +134,19 @@ func TestMachineRoutesAdminOnly(t *testing.T) {
 	if _, has := f.override(t, nodeN, "transcription"); has || f.revision(t) != rev || f.audits(t) != 0 || len(f.switches(t, nodeN)) != 0 {
 		t.Fatal("a refused call changed something")
 	}
-	for name, p := range map[string]*principal.Principal{"admin": admin(), "manage": manageLink()} {
-		f := machineFixture(t)
-		for _, c := range machineRoutes {
-			if rec := f.do(c.method, c.path, c.body, p); rec.Code/100 != 2 {
-				t.Errorf("%s %s as %s: %d %s", c.method, c.path, name, rec.Code, rec.Body)
-			}
+}
+
+func TestMachineRoutesPassAnAdmin(t *testing.T) { machineRoutesPass(t, "admin", admin()) }
+
+func TestMachineRoutesPassAManageLink(t *testing.T) { machineRoutesPass(t, "manage", manageLink()) }
+
+// machineRoutesPass: every route of §2 answers 2xx to p, on a machine of its own.
+func machineRoutesPass(t *testing.T, name string, p *principal.Principal) {
+	t.Helper()
+	f := machineFixture(t)
+	for _, c := range machineRoutes {
+		if rec := f.do(c.method, c.path, c.body, p); rec.Code/100 != 2 {
+			t.Errorf("%s %s as %s: %d %s", c.method, c.path, name, rec.Code, rec.Body)
 		}
 	}
 }
