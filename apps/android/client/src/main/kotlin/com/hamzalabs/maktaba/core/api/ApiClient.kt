@@ -269,6 +269,8 @@ class ApiClient(
      * the stream (a player's quality choice, FR-35); none is the home's own ceiling.
      * [audioTrack] picks the file's audio track (from 0) and [format] asks for a container
      * ("hls"): a player that plays one audio track only asks for another this way.
+     * [forceTranscode] asks for a transcode whatever the device plays (a file it was to play as it
+     * is failed in its player).
      * [deviceCaps] is what this device reports it plays (story 58.02's `device_caps`,
      * `DeviceCaps.toJson`). A home from before 58.02 reads the body strictly and refuses a key it
      * does not know: the session is then asked for again without it, and this client stops
@@ -282,6 +284,7 @@ class ApiClient(
         audioTrack: Int? = null,
         format: String? = null,
         deviceCaps: JsonObject? = null,
+        forceTranscode: Boolean = false,
     ): StreamSession {
         fun body(caps: JsonObject?) = buildJsonObject {
             put("video_id", video)
@@ -291,6 +294,7 @@ class ApiClient(
             if (audioTrack != null && audioTrack >= 0) put("audio_track", audioTrack)
             if (format != null) put("format", format)
             if (caps != null) put("device_caps", caps)
+            if (forceTranscode) put("force_transcode", true)
         }
         val caps = deviceCaps?.takeIf { homeTakesDeviceCaps }
         var r = request("POST", "/api/stream/sessions", body = body(caps))

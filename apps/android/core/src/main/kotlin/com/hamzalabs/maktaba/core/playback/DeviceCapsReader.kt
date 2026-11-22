@@ -1,4 +1,4 @@
-package com.hamzalabs.maktaba.tv.playback
+package com.hamzalabs.maktaba.core.playback
 
 import android.content.Context
 import android.hardware.display.DisplayManager
@@ -13,19 +13,17 @@ import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.audio.AudioCapabilities
-import com.hamzalabs.maktaba.core.playback.AudioAnswer
-import com.hamzalabs.maktaba.core.playback.CodecAnswer
-import com.hamzalabs.maktaba.core.playback.DeviceCaps
-import com.hamzalabs.maktaba.core.playback.PlatformAnswers
 import kotlinx.serialization.json.JsonObject
 
 /**
- * Reads what this TV plays (story 58.05, for 58.02's `device_caps`), on a Fire TV and an Android
- * TV alike: the hardware video decoders and every audio decoder from `MediaCodecList`, the
- * display's HDR types, and what the audio output takes as it is (Media3's [AudioCapabilities],
- * which knows Fire OS's own surround setting). [DeviceCaps.build] turns them into the report.
+ * Reads what this device plays (story 58.05, for 58.02's `device_caps`), on a Fire TV, an Android
+ * TV and a phone or tablet alike (the Player sends it with the `android-native` profile, so a file
+ * the phone plays as it is plays directly instead of through a transcode): the hardware video
+ * decoders and every audio decoder from `MediaCodecList`, the display's HDR types, and what the
+ * audio output takes as it is (Media3's [AudioCapabilities], which knows Fire OS's own surround
+ * setting). [DeviceCaps.build] turns them into the report.
  *
- * Read at each stream open, so a TV moved to another screen or receiver reports the new one.
+ * Read at each stream open, so a device moved to another screen or receiver reports the new one.
  * Anything the platform will not answer is left out rather than guessed: a report that cannot be
  * read at all is null, and the home then uses the platform's profile alone.
  */
@@ -35,7 +33,7 @@ object DeviceCapsReader {
 
     /** The `device_caps` JSON, or null when the platform would not answer. */
     fun read(context: Context): JsonObject? = runCatching { DeviceCaps.build(answers(context)).toJson() }
-        .onFailure { Log.w(TAG, "could not read this TV's playback capabilities", it) }
+        .onFailure { Log.w(TAG, "could not read this device's playback capabilities", it) }
         .getOrNull()
 
     fun answers(context: Context): PlatformAnswers = PlatformAnswers(
@@ -55,7 +53,7 @@ object DeviceCapsReader {
                     out += CodecAnswer(mime)
                     continue
                 }
-                // a software video decoder claims sizes the TV cannot play smoothly: hardware only
+                // a software video decoder claims sizes the device cannot play smoothly: hardware only
                 if (!mime.startsWith("video/") || softwareOnly(info)) continue
                 val video = caps.videoCapabilities
                 val size = video?.let { v -> SIZES.firstOrNull { (w, h) -> runCatching { v.isSizeSupported(w, h) }.getOrDefault(false) } }
@@ -128,7 +126,7 @@ object DeviceCapsReader {
     )
 
     /** A `CodecProfileLevel` profile's name without its codec prefix, as `PlatformAnswers` takes it. */
-    internal fun profileName(mime: String, profile: Int): String? = when (mime) {
+    fun profileName(mime: String, profile: Int): String? = when (mime) {
         "video/avc" -> AVC[profile]
         "video/hevc" -> HEVC[profile]
         "video/av01" -> AV1[profile]

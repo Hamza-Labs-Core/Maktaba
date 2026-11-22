@@ -222,3 +222,26 @@ func TestHealthCheck(t *testing.T) {
 		t.Fatalf("status=%+v err=%v", st, err)
 	}
 }
+
+// A file that did not play as it is is opened again with force_transcode: the
+// user's direct-play session of the same video (another app's, with no report)
+// is never handed back for it.
+func TestOpenSession_ForcedTranscodeIsNotADirectSessionReused(t *testing.T) {
+	srv, _, row := setupServer(t)
+	user := uuid.New().String()
+	direct, err := srv.OpenSession(context.Background(), OpenSessionRequest{
+		VideoID: row.VideoID.String(), UserID: user, ClientProfile: "ios-native",
+	})
+	if err != nil || direct.Mode != "direct" {
+		t.Fatalf("first open: %v %s", err, direct.Mode)
+	}
+	forced, err := srv.OpenSession(context.Background(), OpenSessionRequest{
+		VideoID: row.VideoID.String(), UserID: user, ClientProfile: "android-native", ForceTranscode: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if forced.SessionID == direct.SessionID || forced.Mode != "transcode" {
+		t.Fatalf("forced open got %s (%s), the direct one is %s", forced.SessionID, forced.Mode, direct.SessionID)
+	}
+}
