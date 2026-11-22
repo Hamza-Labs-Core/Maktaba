@@ -1,11 +1,11 @@
 ---
 schema: 1
-tag: v0.3.156
-up_to_commit: a8d4c9de7
-built_from: v0.3.155
+tag: v0.3.157
+up_to_commit: 2e29e74ee
+built_from: v0.3.156
 ---
 
-# Trail snapshot: v0.3.156
+# Trail snapshot: v0.3.157
 
 ## Keep doing
 
@@ -170,7 +170,7 @@ built_from: v0.3.155
 - Key a start gate on the dependency a child runs from, not on one role, and test that every `python -m maktaba_*` child is gated (`TestEveryPythonChildRunsFromTheVenv`). (d20261108-runners-wait-venv)
 - Read a failed rehearsal row's test output before treating it as a fault: `no tests to run` means the matrix and the checked-out code disagree. (d20261108-rehearsal-matrix-skew)
 - A flake seen twice is fixed in the test, not rerun a third time: compare only what the reference is about (the page's words), not layout state such as scroll position. (#963)
-- Before pushing a change that makes a hot path costlier, run the touched package's tests with `-race -short` against the test-time budget; it can break unrelated pull requests. Size a new test's fixture to what it asserts. Run new Go tests under `-short -race` before pushing: the unit tier's per-test cap applies to race-instrumented SQLite, about 20× slower; another standing breach ran about 2.8× a local `-race` run. (#971, #970, #1426, d20261122-main-unit-budget)
+- Before pushing a change that makes a hot path costlier, run the touched package's tests with `-race -short` against the test-time budget; it can break unrelated pull requests. Size a new test's fixture to what it asserts; a test whose work is fixed by what it proves (a real-size input, a 7 MiB release list decoded to prove one-release-at-a-time reading) belongs in the integration tier — skip it under `-short` like its package's other over-cap test, and it runs unchanged where there is no `-short`, since the unit tier's per-test cap is for tests whose cost can shrink. Run new Go tests under `-short -race` before pushing: the unit tier's per-test cap applies to race-instrumented SQLite, about 20× slower; another standing breach ran about 2.8× a local `-race` run. (#971, #970, #1426, d20261122-main-unit-budget, d20261122-list-alloc-test-tier)
 - Measure an idle service's steady-state CPU before and after on a root of production shape, from the same starting data. (#1426)
 - Check every shard's result, not only the step the change was about: an iPhone-only regression showed up only there. (#1425)
 - A new core stage needs four things beyond its graph entry: a `job_stages` seed in a migration, a component in the catalog (only `core.*` components may be always on), the generated files (`make catalog-sync`, `graph_golden.py --write` after `make plugins-sync`, the plugin entries golden), and a `dist-manifest.json` rebuild when its help changes; commit `260c99965` (content_screen) is a full template. (#1482)
@@ -184,7 +184,7 @@ built_from: v0.3.155
 - When an unrelated PR's check fails, find the cause and fix it in its own PR with a test. A flaky test asserting a status is often a real ordering bug: slow one side at the gap to reproduce it. (#1002)
 - Read the failure's hierarchy before calling a UI failure flaky: an xcresult keeps it (`xcresulttool export attachments --test-id`) and it tells a wrong screen from a slow one. A temporary commit with `-test-iterations N` (for a flake, `-only-testing … -test-iterations 20` on the 12 Player UI shards) proves a UI fix in one CI job; raise the job's `timeout-minutes` with it and drop the commit before merge. Count the evidence from each xcresult's repetitions and retry activities, never from the job's conclusion: a runner restart drops the remaining iterations (`Executed 0 tests`) and the job still ends green. (#1000, #1312)
 - A UI retry is judged by a deterministic signal (a request, a position, a count, a page opened, `TouchHook`'s cancelled count), never repeats a tap that may have landed, and fails naming the step on a second miss. Read that iteration's touch log before deciding: a dropped tap gets the retry, anything else gets its cause found (one was an app bug), and a changed wait cites the app behaviour it waits for. Leaving the player (`leavePlayer`) and choosing a segment (`choose`) now retry the same way. Before blaming a change for a red UI test, read the job's ` t = ` lines: idle waits that each take their full 60 s mean the runner or the app stalled. (#1309, #1312, #1412, #1417, #1425)
-- Profile before trimming a slow test: the time is often in shared fixtures. Build tools and clone databases in a test's setup, since the soft cap judges only the call. Profile the phases first: when a world's fixed cost outweighs the part worth splitting, it has to come down too (starting the dev server while the databases are copied cut it; `FILE_COPY` did not). Profile with `-cpuprofile` and `pprof -top -cum`, then trim the fixture, not the assertion: a race-built test binary is tens of MB, a fixture that copies it with a syncing copy costs about 0.2 s a copy, so copy it only into payloads the test starts and stub the rest. A test near the hard cap fails on runner load, and re-running it alone does not save it when the test itself is the slow part; a test over its hard cap even when re-run alone is doing too much work, not suffering load. A package's fixture template is paid for by whichever test asks for it first, so that test carries the build in its time; a standing breach is fixed by splitting the work into independent tests with every assertion kept (the slowest of the split took 0.28 s alone where the old test took 0.44 s). (#996, #992, #1068, #1430, #1467, d20261122-main-unit-budget)
+- Profile before trimming a slow test: the time is often in shared fixtures. Build tools and clone databases in a test's setup, since the soft cap judges only the call. Profile the phases first: when a world's fixed cost outweighs the part worth splitting, it has to come down too (starting the dev server while the databases are copied cut it; `FILE_COPY` did not). Profile with `-cpuprofile` and `pprof -top -cum`, then trim the fixture, not the assertion: a race-built test binary is tens of MB, a fixture that copies it with a syncing copy costs about 0.2 s a copy, so copy it only into payloads the test starts and stub the rest. A test near the hard cap fails on runner load, and re-running it alone does not save it when the test itself is the slow part; a test over its hard cap even when re-run alone is doing too much work, not suffering load; read "re-run alone" in a breach — over the cap it is the test's cost, and it fails again. A package's fixture template is paid for by whichever test asks for it first, so that test carries the build in its time; a standing breach is fixed by splitting the work into independent tests with every assertion kept (the slowest of the split took 0.28 s alone where the old test took 0.44 s). (#996, #992, #1068, #1430, #1467, d20261122-main-unit-budget, d20261122-list-alloc-test-tier)
 - A warm-up's "warm" is when the measure stops improving, not a fixed time that holds on one device: check a threshold on every device in the PR's own run. (#1001)
 - Check a dependency map before removing a feature. A removal is two releases: first the code goes and ignores the leftovers (a lossless migration, so a rollback runs the Down scripts), then a later migration deletes the data once no release that uses it can be rolled back to. (d20261108-remove-plex-sync)
 - Write down a product direction that rules features out: Maktaba replaces Plex, and only Plex Live TV stays. Unwritten, features against it were built, moved and hardened across several epics. (d20261108-remove-plex-sync)
@@ -866,7 +866,7 @@ built_from: v0.3.155
 | #1453 | 2026-11-19 | subscriptions: an expired or downgraded plan keeps working fully for 30 days (story 16.2) |
 | #1471 | 2026-11-19 | docs(wiki): derive epic-status.md's counts from its story rows |
 | #1486 | 2026-11-22 | ci(apple): Xcode 27 and the 27 SDKs for every Apple build; the apps need iOS and tvOS 27 |
-| #1499 | 2026-11-22 | test(updates): the 7 MiB release-list memory test runs in the integration tier |
+| #1503 | 2026-11-22 | fix(49.15): Arabic titles rank by similarity on the bundled server's database |
 
 ## Index
 
@@ -1641,6 +1641,7 @@ built_from: v0.3.155
 | d20261122-0098-arabic-title-trgm | 2026-11-22 | incident | Title similarity ranks no Arabic title on the bundled server (migration 0098, C locale) |
 | d20261122-498-suggestions-review | 2026-11-22 | incident | Story 49.8's first suggestions scanned every title and speaker; the perf fixture had none |
 | d20261122-ipad-search-tab-role | 2026-11-22 | incident | iPadOS 27.2: the search-role tab resets on focus, and a submitted search's field never takes the keyboard again |
+| d20261122-list-alloc-test-tier | 2026-11-22 | incident | A memory test at the unit tier's time cap (TestListAllocatesLessThanTheList) |
 | d20261122-main-unit-budget | 2026-11-22 | incident | Main red on the unit tier's per-test cap (TestMachineRoutesAdminOnly) |
 | d20261122-xcode27-ui-failures | 2026-11-22 | incident | Xcode 27 (#1486): the Remote's second confirmation lost, and UI jobs that could not say why an app ended |
 
