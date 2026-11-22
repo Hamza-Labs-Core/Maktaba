@@ -488,10 +488,8 @@ public final class RecoveryModel {
 
     /// The person confirmed `a` with the alert's button: the next confirmation takes its
     /// place at once, or none is asked and the action is returned for `perform`. At once, in
-    /// the button's own action, and never left to a task: the closing alert must find the
-    /// next confirmation already there. A task that set it after the alert closed raced
-    /// the close, and on iOS 27.2 the close came last and took the second confirmation
-    /// with it (CI: the restore's second alert never showed).
+    /// the button's own action: nothing the alert's close does can come between the answer
+    /// and the next confirmation (the screen shows it once the first alert has gone).
     public func answer(_ a: Asking) -> Asking? {
         if a.step < a.need {
             asking = Asking(action: a.action, step: a.step + 1, need: a.need)
