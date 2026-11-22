@@ -81,11 +81,11 @@ var durationBands = []struct {
 func f64(v float64) *float64 { return &v }
 
 // resultIDs are a search's videos, titles and transcripts, once each, in list order.
-func resultIDs(rn *run, max int) []string {
+func resultIDs(rn *run, limit int) []string {
 	seen := map[string]bool{}
 	var out []string
 	add := func(id string) {
-		if !seen[id] && len(out) < max {
+		if !seen[id] && len(out) < limit {
 			seen[id] = true
 			out = append(out, id)
 		}

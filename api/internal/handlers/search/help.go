@@ -300,8 +300,8 @@ func (h *Handler) suggest(ctx context.Context, p *principal.Principal, q string)
 	for _, s := range hist {
 		add(Suggestion{Text: s, Kind: "history"})
 	}
-	libs, any := callerLibraries(p)
-	if !any {
+	libs, some := callerLibraries(p)
+	if !some {
 		return out, nil
 	}
 	// the last word, completed from the dictionary: "الصبر عند ال" → "الصبر عند الله"
