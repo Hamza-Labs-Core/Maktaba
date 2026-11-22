@@ -200,7 +200,7 @@ final class TVSearchUITests: XCTestCase {
     private func reach(_ target: XCUIElement) -> Bool {
         XCTAssertTrue(target.waitForExistence(timeout: 10), "\(target) is not there")
         for _ in 0..<16 {
-            if target.hasFocus { return true }
+            if isFocused(target) { return true }
             let t = target.frame
             guard let f = focusedFrame else {
                 remote.press(.down)
@@ -214,7 +214,18 @@ final class TVSearchUITests: XCTestCase {
             }
             usleep(400_000)
         }
-        return target.hasFocus
+        return isFocused(target)
+    }
+
+    /// `target` has the focus: by its own word, or the focused element is inside it (a Menu
+    /// does not say it has the focus; the button drawn for it does).
+    private func isFocused(_ target: XCUIElement) -> Bool {
+        if target.hasFocus { return true }
+        // the two overlap for most of the smaller (the menu's words inside its button)
+        guard let f = focusedFrame else { return false }
+        let t = target.frame, both = t.intersection(f)
+        guard !both.isNull else { return false }
+        return both.width * both.height >= 0.5 * min(t.width * t.height, f.width * f.height)
     }
 
     /// The frame of what has the focus: the smallest focused element (its containers report the
