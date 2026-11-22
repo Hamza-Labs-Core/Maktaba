@@ -20,6 +20,7 @@ import { ToastProvider } from "@ds/components/Toast/Toast";
 import { memberUser, renderPage } from "../test/pageHarness";
 import { axeViolations } from "../test/axe";
 import { suggestItems } from "./searchHelp";
+import { forgetAnswers, keepAnswer } from "../lib/pageCache";
 import {
   type Corpus,
   type FakeServerOptions,
@@ -149,6 +150,8 @@ beforeEach(() => {
   del.mockReset();
   sessionStorage.clear();
   localStorage.clear();
+  // the libraries list a test read stays in the page cache (memory) for the next test
+  forgetAnswers("libraries");
 });
 afterEach(() => {
   vi.useRealTimers();
@@ -884,6 +887,33 @@ describe("Search state kept (story 49.10 follow-up)", () => {
     await waitFor(() => expect(activeChips()).toEqual(["Library: Lectures"]));
     expect(screen.queryByTestId("facets")).toBeNull();
     expect(getCalls("/api/libraries/summary")).toHaveLength(1);
+    expect(searchBodies()).toHaveLength(0);
+  });
+
+  it("SRC-56: a libraries list kept from before that lacks a library is read again to name it", async () => {
+    // the list this session read earlier knows Lectures only; Khutbahs was added since
+    keepAnswer(memberUser.id, "libraries", [
+      { id: "lib-1", name: "Lectures", videos: 1, poster_video_ids: [], pinned: false },
+    ]);
+    serve(corpus, {
+      existing: { "sid-s": { q: "patience", mode: "fts", corpus } },
+      libraries: [
+        { id: "lib-1", name: "Lectures" },
+        { id: "lib-2", name: "Khutbahs" },
+      ],
+    });
+    renderSearchPage("/search?q=patience&mode=fts&lib=lib-1&lib=lib-2&sid=sid-s");
+    await waitFor(() => expect(activeChips()).toEqual(["Library: Lectures", "Library: Khutbahs"]));
+    expect(getCalls("/api/libraries/summary")).toHaveLength(1);
+  });
+
+  it("SRC-57: a link naming another order than its search's own follows the search's", async () => {
+    serve(corpus, {
+      existing: { "sid-s": { q: "patience", mode: "fts", sort: "newest", corpus } },
+    });
+    renderSearchPage("/search?q=patience&mode=fts&sort=matches&sid=sid-s");
+    await waitFor(() => expect(loc()).toBe("/search?q=patience&mode=fts&sort=newest&sid=sid-s"));
+    expect(screen.getByRole("combobox", { name: "Sort by" })).toHaveValue("newest");
     expect(searchBodies()).toHaveLength(0);
   });
 

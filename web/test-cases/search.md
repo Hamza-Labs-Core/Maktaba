@@ -650,7 +650,7 @@
 - **Category:** Navigation
 - **Covered by existing test?** Yes (`Search.help.test.tsx`)
 - **Preconditions / data:** a link with `lib=lib-1&sid=…`, opened in a tab with no session storage; the page answers no facets.
-- **Expected:** "Filters in use" reads "Library: Lectures" from the libraries list (read once), not the id, and no search is sent.
+- **Expected:** "Filters in use" reads "Library: Lectures" from the libraries list (read once), not the id, and no search is sent. A libraries list kept from earlier in the session that lacks a chosen library is read again once, and names both.
 
 ### SRC-57 — A page opened by its sid alone shows its facets
 
@@ -659,4 +659,4 @@
 - **Covered by existing test?** Yes (`Search.help.test.tsx`)
 - **Steps:**
   1. Open `/search?q=…&sort=newest&sid=…` in a tab with no session storage. 2. In Arabic, open a recent search with a language and a band.
-- **Expected:** the titles page is read with `facets=1`, and the facet panel and did-you-mean show with it, with no POST. In Arabic the chips read «اللغة: العربية» and «المدة: أقل من ٥ دقائق», and «الترتيب حسب» shows the order.
+- **Expected:** the titles page is read with `facets=1`, and the facet panel and did-you-mean show with it, with no POST. A link naming another order (`sort=matches`) than the search's own (Newest) shows Newest and the address changes to `sort=newest`. In Arabic the chips read «اللغة: العربية» and «المدة: أقل من ٥ دقائق», and «الترتيب حسب» shows the order.

@@ -917,9 +917,8 @@ The Search page (`web/src/pages/Search.tsx`) uses story 49.8's API; the parts ar
 
   `SearchVideo.test.tsx` covers the matches page's back link and re-run.
 - **Not done here.**
-  - A recent search shows its own order and filters only when this browser ran it: the recent
-    searches list carries no sort or filters. A saved search keeps neither: it runs with the
-    order on screen and no filters.
+  - A recent search showed its own order and filters only when this browser ran it, and a
+    saved search kept neither: done in "49.10 follow-up: search state kept" below.
   - Facet buckets are chips, not a side panel of checkboxes as in the 11.4 mockup: they wrap
     on a phone and need no second column.
 
@@ -953,15 +952,20 @@ and a search opened by its sid alone shows its facets.
   is a year when it spans one calendar year, a duration range a band when it is one; any other
   range, from another client, is left out, as the page has no chip for it.
 - **A link in a new tab.** A library filter is named at once: from the libraries list this
-  session already read (the page cache), else from `GET /api/libraries/summary`, read once
-  beside the search; a name the facets give replaces it. Opened by its sid with no facets kept
+  session already read (the page cache), else (or when that list lacks it: a library added
+  since) from `GET /api/libraries/summary`, read once beside the search; a name the facets
+  give replaces it. A saved search's name leaves out a library not named yet. Opened by its sid with no facets kept
   in the tab, the first list's page asks `facets=1`, so the facet panel and did-you-mean show
-  with the first pages.
+  with the first pages. A link naming another order than its search's own (made by hand)
+  follows the search's: its pages are in that order, and the address is set to it.
 - **Proof:** `state_test.go` on SQLite and Postgres (the order and filters kept, listed and
   given by sid; a restricted account's libraries not listed as a filter; facets by sid; an
   older row and an unknown order left out; a saved search's query round trip and its
   `created_at` on SQLite), `migration_0236_test.go` (up, down and up twice, an older row kept
   with NULLs, an older release's insert); `Search.help.test.tsx` SRC-54 to SRC-57 and
-  `searchShared.test.tsx` on the web.
-- **Not done here.** The Android and Apple apps search with no order or filters, so they
-  leave the recent list's new fields unread.
+  `searchShared.test.tsx` on the web; `help_test.go` checks did-you-mean by sid.
+- **Not done here.**
+  - The Android and Apple apps search with no order or filters, so they leave the recent
+    list's new fields unread.
+  - A results page by sid gives the order but not the filters: a link with the sid and its
+    filter parameters removed shows the filtered results with no chips.

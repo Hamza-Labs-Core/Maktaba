@@ -379,17 +379,20 @@ export function Search() {
   }, [refreshRecent]);
 
   // A library filter is named at once: from the libraries list this session already read,
-  // else read once beside the search (the facets name it too, when they come).
-  const libsRead = useRef(false);
+  // else (or when that list lacks it: a library added since) read once beside the search;
+  // the facets name it too, when they come. The read names what it finds even if the
+  // filters changed meanwhile, so a second library added while it was on its way is named.
+  const libsRead = useRef<"no" | "reading" | "read">("no");
   const libKey = uSel.library.join("\n");
   useEffect(() => {
     const ids = libKey ? libKey.split("\n") : [];
-    if (ids.every((id) => labelsRef.current[`library:${id}`])) return;
+    const unnamed = (known: Record<string, string>) => ids.filter((id) => !known[`library:${id}`]);
+    if (unnamed(labelsRef.current).length === 0) return;
     const name = (libs: LibrarySummary[] | undefined) => {
       const found = listOf(libs).filter(
         (l) => typeof l.id === "string" && typeof l.name === "string" && l.name.trim() !== ""
       );
-      if (!found.length) return;
+      if (!found.length || !alive.current) return;
       setLabels((old) => {
         const next = { ...old };
         // a name the facets gave stays: it is the newer
@@ -400,23 +403,22 @@ export function Search() {
     const kept = cachedAnswer<LibrarySummary[]>(userId, "libraries");
     if (kept) {
       name(kept);
-      return;
+      const inKept = new Set(listOf(kept).map((l) => l.id));
+      if (ids.every((id) => labelsRef.current[`library:${id}`] || inKept.has(id))) return;
     }
-    if (libsRead.current) return;
-    libsRead.current = true;
-    let cancelled = false;
+    // one read a visit: an id it does not name (a library gone) keeps its id
+    if (libsRead.current !== "no") return;
+    libsRead.current = "reading";
     fetchLibrarySummary()
       .then((libs) => {
+        libsRead.current = "read";
         keepAnswer(userId, "libraries", libs);
-        if (!cancelled) name(libs);
+        name(libs);
       })
       .catch(() => {
-        // the chip keeps its id until the facets name it
-        libsRead.current = false;
+        // the chip keeps its id until the facets name it; a later change may read again
+        libsRead.current = "no";
       });
-    return () => {
-      cancelled = true;
-    };
   }, [libKey, userId]);
 
   useEffect(() => {
@@ -697,6 +699,17 @@ export function Search() {
           });
         }
         commit(snapshot, vPage, listOf(a?.items), tPage, listOf(b?.items));
+        // a link naming another order than the search's own: the address follows the pages
+        if (snapshot.sort !== ask.sort && vPage === want.vp && tPage === want.tp)
+          showUrl({
+            q: query,
+            mode: m,
+            sort: snapshot.sort,
+            sel: ask.sel,
+            sid: s,
+            vp: vPage,
+            tp: tPage,
+          });
         setNotice(false);
         void refreshRecent();
       } catch (e) {
@@ -928,12 +941,14 @@ export function Search() {
     const parts = [query];
     if (sort !== "relevance") parts.push(t(`search.sort.${sort}`));
     for (const facet of FACETS)
+      // a library not named yet stays out of the name (the query keeps its filter)
       for (const v of facet === "year" || facet === "duration"
         ? sel[facet]
           ? [sel[facet]!]
           : []
         : sel[facet])
-        parts.push(bucketName(facet, v, labels[`${facet}:${v}`]));
+        if (facet !== "library" || labels[`library:${v}`])
+          parts.push(bucketName(facet, v, labels[`${facet}:${v}`]));
     void api
       .post("/api/search/save", {
         name: parts.join(" · "),
