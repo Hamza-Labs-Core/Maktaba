@@ -386,6 +386,10 @@ export const APPS = [
                 "**البحث**: في العناوين والنصوص المفرَّغة؛ ونتيجة النص تشغّل المقطع عند تلك اللحظة."
               ),
               t(
+                "**Search help** (iPhone, iPad and Mac): suggestions as you type, each saying what it is (an earlier search, a word, a video's title, which opens the video, or a speaker); **Did you mean** over the results when a search finds few videos, one tap away; **Filters**, a sheet with the counts of the videos found by library, language, speaker, year and length, several combined, the filters in use each removable or cleared together; and the order: relevance, newest or most matches.",
+                "**مساعدة البحث** (آيفون وآيباد وماك): اقتراحات أثناء الكتابة يبيّن كلٌّ منها نوعه (بحث سابق، أو كلمة، أو عنوان مقطع يفتح المقطع، أو متحدث)؛ و**هل تقصد** فوق النتائج حين يجد البحث مقاطع قليلة، بنقرة واحدة؛ و**التصفية**، لوحة بأعداد المقاطع التي وُجدت حسب المكتبة واللغة والمتحدث والسنة والمدة، يُجمع بين أكثر من واحد منها، ويُزال كل مرشّح مستخدم وحده أو تُزال كلها معًا؛ والترتيب: الأقرب صلة أو الأحدث أو الأكثر مطابقات."
+              ),
+              t(
                 "**Profile**: watch history, favorites, playlists and sessions, **Approve a TV or device**, switch home, and this device's theme, language and playback settings.",
                 "**الملف الشخصي**: سجل المشاهدة والمفضلة وقوائم التشغيل والجلسات، و**الموافقة على تلفاز أو جهاز**، وتبديل الجهاز الرئيسي، وإعدادات المظهر واللغة والتشغيل على هذا الجهاز."
               ),
@@ -905,6 +909,10 @@ export const APPS = [
                 "**قائمة الانتظار**: تبدأ الرئيسية بـ**تابع قائمة الانتظار**؛ وأثناء المشاهدة **السابق** و**التالي** و**إعادة الخلط**، وبطاقة «التالي» بعدّ تنازلي من 10 ثوانٍ. وعلى أندرويد تي في في قائمة البطاقة **شغّل تاليًا** و**أضف إلى قائمة الانتظار** و**أضف إلى قائمة تشغيل** و**اذهب إلى السلسلة**."
               ),
               t("**Search**.", "**البحث**."),
+              t(
+                "**Search on Apple TV**: the home's search of titles and transcripts, with the remote. The suggestions under the keyboard say what each one is, and a video's title opens it; **Search for** runs what was typed. Over the results: **Did you mean**, the order (relevance, newest or most matches) and **Filters**, the counts of the videos found by library, language, speaker, year and length, several combined; the filters in use are each removable, or cleared together.",
+                "**البحث على آبل تي في**: بحث الجهاز الرئيسي في العناوين والنصوص المفرَّغة، بجهاز التحكم. تبيّن الاقتراحات تحت لوحة المفاتيح نوع كلٍّ منها، وعنوان المقطع يفتحه؛ و**البحث عن** يشغّل ما كُتب. وفوق النتائج: **هل تقصد**، والترتيب (الأقرب صلة أو الأحدث أو الأكثر مطابقات)، و**التصفية** بأعداد المقاطع التي وُجدت حسب المكتبة واللغة والمتحدث والسنة والمدة، يُجمع بين أكثر من واحد منها؛ ويُزال كل مرشّح مستخدم وحده أو تُزال كلها معًا."
+              ),
               t(
                 "**Live TV**, when the person may watch a channel: **Now**, with every channel and what is on, and the **Guide**; choose a channel to watch it live.",
                 "**البث المباشر** حين يُسمح للشخص بمشاهدة قناة: قسم **الآن** بكل قناة وما يُعرض عليها، و**الدليل**؛ اختر قناة لتشاهدها مباشرة."

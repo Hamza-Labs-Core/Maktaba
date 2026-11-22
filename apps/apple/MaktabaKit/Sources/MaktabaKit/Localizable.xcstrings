@@ -31,6 +31,16 @@
         }
       }
     },
+    "%@ to %@ min" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "من %1$@ إلى %2$@ دقيقة"
+          }
+        }
+      }
+    },
     "%lld days" : {
       "localizations" : {
         "en" : {
@@ -269,6 +279,34 @@
         }
       }
     },
+    "%lld videos" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "عدد المقاطع: %lld"
+          }
+        },
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld video"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld videos"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "%lldd %lldh" : {
       "localizations" : {
         "ar" : {
@@ -389,6 +427,16 @@
         }
       }
     },
+    "Clear all filters" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إزالة كل عوامل التصفية"
+          }
+        }
+      }
+    },
     "Closed" : {
       "localizations" : {
         "ar" : {
@@ -429,6 +477,16 @@
         }
       }
     },
+    "Did you mean %@?" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "هل تقصد %@؟"
+          }
+        }
+      }
+    },
     "Done" : {
       "localizations" : {
         "ar" : {
@@ -445,6 +503,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "في وقت سابق اليوم"
+          }
+        }
+      }
+    },
+    "Filters" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "التصفية"
+          }
+        }
+      }
+    },
+    "Filters in use" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "عوامل التصفية المستخدمة"
           }
         }
       }
@@ -635,6 +713,36 @@
         }
       }
     },
+    "Language" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "اللغة"
+          }
+        }
+      }
+    },
+    "Length" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "المدة"
+          }
+        }
+      }
+    },
+    "Library" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "المكتبة"
+          }
+        }
+      }
+    },
     "Light" : {
       "localizations" : {
         "ar" : {
@@ -705,6 +813,16 @@
         }
       }
     },
+    "Most matches" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الأكثر مطابقات"
+          }
+        }
+      }
+    },
     "My reports" : {
       "localizations" : {
         "ar" : {
@@ -715,12 +833,32 @@
         }
       }
     },
+    "Narrow the results" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تضييق النتائج"
+          }
+        }
+      }
+    },
     "New" : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "جديد"
+          }
+        }
+      }
+    },
+    "Newest" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الأحدث"
           }
         }
       }
@@ -835,6 +973,16 @@
         }
       }
     },
+    "Over an hour" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أكثر من ساعة"
+          }
+        }
+      }
+    },
     "Paused" : {
       "localizations" : {
         "ar" : {
@@ -895,12 +1043,32 @@
         }
       }
     },
+    "Relevance" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الأقرب صلة"
+          }
+        }
+      }
+    },
     "Remote" : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "الإدارة عن بُعد"
+          }
+        }
+      }
+    },
+    "Remove %@" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إزالة %@"
           }
         }
       }
@@ -981,6 +1149,84 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "البحث"
+          }
+        }
+      }
+    },
+    "Search for “%@”" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "البحث عن «%@»"
+          }
+        }
+      }
+    },
+    "search.kind.history" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "بحثت عنه"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recent"
+          }
+        }
+      }
+    },
+    "search.kind.speaker" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "متحدث"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Speaker"
+          }
+        }
+      }
+    },
+    "search.kind.term" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "كلمة"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Word"
+          }
+        }
+      }
+    },
+    "search.kind.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "مقطع"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Video"
           }
         }
       }
@@ -1101,6 +1347,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "حدث خطأ في الجهاز الرئيسي."
+          }
+        }
+      }
+    },
+    "Sort by" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الترتيب حسب"
+          }
+        }
+      }
+    },
+    "Sort by: %@" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الترتيب حسب: %@"
+          }
+        }
+      }
+    },
+    "Speaker" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "المتحدث"
           }
         }
       }
@@ -1409,6 +1685,16 @@
         }
       }
     },
+    "Under %@ min" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أقل من %@ دقائق"
+          }
+        }
+      }
+    },
     "Updating to %@ now." : {
       "localizations" : {
         "ar" : {
@@ -1485,6 +1771,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "متى؟"
+          }
+        }
+      }
+    },
+    "Year" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "السنة"
           }
         }
       }

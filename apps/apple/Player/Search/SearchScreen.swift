@@ -7,8 +7,15 @@ import SwiftUI
 /// and **In the transcript**: a title opens the video's page, a transcript passage opens the
 /// player at its time. The query goes as typed, Arabic with its diacritics too.
 ///
+/// Story 49.11 brings the search help of story 49.8, as the web has it (49.10): each suggestion
+/// shows its kind, and a title opens its video; "Did you mean …?" runs the corrected words;
+/// **Filters** opens a sheet of the facets with their counts (library, language, speaker, year,
+/// length), several combinable; the filters in use are listed, each removable, with Clear all;
+/// and the order is Relevance, Newest or Most matches.
+///
 /// Both a search and a result's page change the screen under the field, so both wait for the
-/// field to let go of the keyboard first (`LetGoFirst`, Trail #1419 and #1425).
+/// field to let go of the keyboard first (`LetGoFirst`, Trail #1419 and #1425); so does every
+/// refinement.
 struct SearchScreen: View {
     let context: PlayerContext
 
@@ -21,6 +28,8 @@ struct SearchScreen: View {
     @Environment(\.playerPush) private var push
     /// A result's page, where no stack takes a push (`PlayerPush` is nil: a linked page's sheet).
     @State private var pushed: PlayerRoute?
+    /// The facets' sheet is open.
+    @State private var filtering = false
 
     /// A query sent as the screen opens (a plugin panel's chip, `PlayerRoute.search`).
     private let initial: String?
@@ -62,13 +71,13 @@ struct SearchScreen: View {
                         prompt: Text("Search titles and transcripts", tableName: "Search", comment: "The search field's placeholder"))
             .searchFocused($typing)
             .searchSuggestions {
-                ForEach(model.suggestions, id: \.self) { s in
+                ForEach(model.suggestions) { s in
                     Button {
-                        submit(s)
+                        choose(s)
                     } label: {
-                        Label { Text(verbatim: s) } icon: { Image(systemName: "magnifyingglass") }
+                        SuggestionRow(suggestion: s)
                     }
-                    .accessibilityIdentifier("search.suggestion")
+                    .accessibilityIdentifier("search.suggestion.\(s.kind?.rawValue ?? "plain")")
                 }
             }
             .onSubmit(of: .search) { submit(model.query) }
@@ -77,6 +86,9 @@ struct SearchScreen: View {
                 if let change = letGo.focusChanged(now) { perform(change) }
             }
             .navigationDestination(item: $pushed) { PlayerDestination(context: context, route: $0) }
+            .sheet(isPresented: $filtering) {
+                FilterSheet(model: model) { hold(.refine($0)) }
+            }
             // suggestions follow the typing once it rests
             .task(id: model.query) {
                 try? await Task.sleep(for: SearchModel.suggestDelay)
@@ -106,15 +118,15 @@ struct SearchScreen: View {
             HomeErrorView(problem, video: false) { _ in Task { await model.retry() } }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if let results = model.results {
-            if results.isEmpty {
+            if results.isEmpty, results.didYouMean == nil, model.filters.isEmpty {
                 ContentUnavailableView {
                     Label { Text("Nothing matches “\(results.query)”.", tableName: "Search", comment: "A search found nothing; the query")
                     } icon: { Image(systemName: "magnifyingglass") }
                 }
                 .accessibilityIdentifier("search.none")
             } else {
-                ResultsList(results: results, home: context.client.home, byMeaning: caps.isOn(.semanticSearch), paging: model.paging,
-                            open: open,
+                ResultsList(results: results, model: model, home: context.client.home, byMeaning: caps.isOn(.semanticSearch),
+                            open: open, refine: { hold(.refine($0)) }, showFilters: { hold(.filters) },
                             moreTitles: { Task { await model.moreTitles() } },
                             moreTranscripts: { Task { await model.moreTranscripts() } })
             }
@@ -188,6 +200,15 @@ struct SearchScreen: View {
         .listStyle(.plain)
     }
 
+    /// A suggestion chosen: a title opens its video, any other is searched as its words.
+    private func choose(_ s: SearchSuggestion) {
+        if s.kind == .title, let id = s.videoID {
+            open(.video(id: id))
+        } else {
+            submit(s.text)
+        }
+    }
+
     private func submit(_ q: String) {
         guard !SearchModel.sendable(q).isEmpty else { return }
         // the field holds the chosen text at once: the field's own submit, which can follow
@@ -219,15 +240,23 @@ struct SearchScreen: View {
     private func perform(_ change: SearchChange) {
         switch change {
         case let .search(q): Task { await model.submit(q) }
+        case let .refine(ask):
+            // the did-you-mean's words show in the field
+            if ask.query != model.query { model.query = ask.query }
+            Task { await model.run(ask) }
+        case .filters: filtering = true
         case let .open(route): if let push { push(route) } else { pushed = route }
         }
     }
 }
 
 /// What the search screen changes once the field has let go of the keyboard: a search to run,
-/// or a result's page to open. One held at a time, the latest (`LetGoFirst`).
+/// a refinement of it (an order, a filter, the did-you-mean), the facets' sheet to open, or a
+/// result's page to open. One held at a time, the latest (`LetGoFirst`).
 enum SearchChange: Equatable {
     case search(String)
+    case refine(SearchModel.Ask)
+    case filters
     case open(PlayerRoute)
 }
 
@@ -244,20 +273,49 @@ private struct SearchHeading: View {
     }
 }
 
-/// Titles, then In the transcript, each with Show more while the home kept more.
+/// The search help over the results (story 49.11), then Titles, then In the transcript, each
+/// with Show more while the home kept more.
 private struct ResultsList: View {
     let results: SearchModel.Results
+    let model: SearchModel
     let home: URL
     /// Search by meaning is on: words-only results while it is off are no failure to report.
     let byMeaning: Bool
-    let paging: Bool
     /// Opens a result's page (`SearchScreen.open`: after the field lets go).
     let open: (PlayerRoute) -> Void
+    /// Runs a refinement (after the field lets go).
+    let refine: (SearchModel.Ask) -> Void
+    /// Opens the facets' sheet (after the field lets go).
+    let showFilters: () -> Void
     let moreTitles: () -> Void
     let moreTranscripts: () -> Void
 
+    private var paging: Bool { model.paging }
+
     var body: some View {
         List {
+            if let dym = results.didYouMean {
+                DidYouMeanRow(words: dym) { refine(model.ask(didYouMean: dym)) }
+                    .listRowBackground(Color.clear)
+            }
+            RefineBar(sort: model.sort, inUse: model.filters.count, canFilter: !model.shownFacets.isEmpty,
+                      refining: model.refining, sortBy: { s in model.ask(sort: s).map(refine) }, showFilters: showFilters)
+                .listRowBackground(Color.clear)
+            if !model.filters.isEmpty {
+                FiltersInUse(model: model, refine: refine)
+                    .listRowBackground(Color.clear)
+            }
+            if results.isEmpty {
+                Text("Nothing matches “\(results.query)”.", tableName: "Search", comment: "A search found nothing; the query")
+                    .font(.maktabaBody(15, relativeTo: .body))
+                    .foregroundStyle(Color.mktMuted)
+                    .frame(maxWidth: .infinity)
+                    .multilineTextAlignment(.center)
+                    .padding(.vertical, MaktabaTokens.Spacing.s6)
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+                    .accessibilityIdentifier("search.none")
+            }
             if results.degraded, byMeaning {
                 Text("Text matches only: the meaning search did not answer.", tableName: "Search",
                      comment: "The home answered a search with its text half only")
@@ -497,5 +555,264 @@ private struct PassageRow: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text("Play from \(time)", tableName: "Search", comment: "A transcript passage plays from this time")
             + Text(verbatim: ": " + SearchSnippet.plain(passage.snippet ?? "")))
+    }
+}
+
+// MARK: Search help (story 49.11)
+
+/// A suggestion: an icon and a word for its kind (an earlier search, a word, a video, a
+/// speaker), none from a home before story 49.8.
+private struct SuggestionRow: View {
+    let suggestion: SearchSuggestion
+
+    var body: some View {
+        Label {
+            HStack(spacing: MaktabaTokens.Spacing.s2) {
+                Text(verbatim: suggestion.text)
+                Spacer(minLength: MaktabaTokens.Spacing.s2)
+                if let kind = suggestion.kind {
+                    Text(verbatim: SearchWords.kind(kind))
+                        .font(.maktabaBody(13, relativeTo: .caption))
+                        .foregroundStyle(Color.mktMuted)
+                }
+            }
+        } icon: {
+            Image(systemName: Self.icon(suggestion.kind))
+        }
+    }
+
+    static func icon(_ kind: SuggestionKind?) -> String {
+        switch kind {
+        case .history: "clock.arrow.circlepath"
+        case .title: "play.rectangle"
+        case .speaker: "person"
+        case .term, nil: "magnifyingglass"
+        }
+    }
+}
+
+/// "Did you mean المدرسة?": the corrected words marked where the sentence puts them; the row
+/// runs them with the order and the filters kept.
+private struct DidYouMeanRow: View {
+    let words: String
+    let run: () -> Void
+
+    var body: some View {
+        let parts = SearchWords.didYouMeanParts()
+        Button(action: run) {
+            (Text(verbatim: parts.before)
+                + Text(verbatim: "\u{2068}\(words)\u{2069}").fontWeight(.semibold).foregroundStyle(Color.mktBrassText).underline()
+                + Text(verbatim: parts.after))
+                .font(.maktabaBody(15, relativeTo: .body))
+                .foregroundStyle(Color.mktText)
+                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.borderless)
+        .accessibilityLabel(Text(verbatim: SearchWords.didYouMean(words)))
+        .accessibilityIdentifier("search.didYouMean")
+    }
+}
+
+/// Filters (with how many are in use) and the order: Relevance, Newest, Most matches.
+private struct RefineBar: View {
+    let sort: SearchSort
+    let inUse: Int
+    /// There are facets to narrow by.
+    let canFilter: Bool
+    let refining: Bool
+    let sortBy: (SearchSort) -> Void
+    let showFilters: () -> Void
+
+    var body: some View {
+        // side by side, or one under the other when the text is too large for one line
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: MaktabaTokens.Spacing.s3) {
+                filters
+                Spacer(minLength: 0)
+                if refining { progress }
+                order
+            }
+            VStack(alignment: .leading, spacing: 0) {
+                filters
+                order
+                if refining { progress }
+            }
+        }
+        .font(.maktabaBody(15, weight: .medium, relativeTo: .body))
+        .foregroundStyle(Color.mktBrassText)
+    }
+
+    private var progress: some View {
+        ProgressView().controlSize(.small)
+            .accessibilityIdentifier("search.refining")
+    }
+
+    @ViewBuilder private var filters: some View {
+        if canFilter || inUse > 0 {
+            Button(action: showFilters) {
+                Label {
+                    Text(verbatim: inUse > 0 ? "\(SearchWords.filters()) (\(SearchWords.number(inUse)))" : SearchWords.filters())
+                } icon: {
+                    Image(systemName: inUse > 0 ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
+                }
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.borderless)
+            .accessibilityIdentifier("search.filters")
+        }
+    }
+
+    private var order: some View {
+        Menu {
+            Picker(selection: Binding(get: { sort }, set: sortBy)) {
+                ForEach(SearchSort.allCases, id: \.self) { s in
+                    Text(verbatim: SearchWords.sort(s)).tag(s)
+                }
+            } label: {
+                Text(verbatim: SearchWords.sortBy())
+            }
+        } label: {
+            Label { Text(verbatim: SearchWords.sortedBy(sort)) } icon: { Image(systemName: "arrow.up.arrow.down") }
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
+        }
+        #if os(macOS)
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        #else
+        // its own button in the row: a tap on Filters does not open it
+        .menuStyle(.button)
+        .buttonStyle(.borderless)
+        #endif
+        .accessibilityIdentifier("search.sort")
+    }
+}
+
+/// The filters in use, each a chip that takes it off, and Clear all filters.
+private struct FiltersInUse: View {
+    let model: SearchModel
+    let refine: (SearchModel.Ask) -> Void
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: MaktabaTokens.Spacing.s2) {
+                ForEach(Array(model.filters.inUse.enumerated()), id: \.offset) { _, f in
+                    let name = SearchWords.inUse(f.facet, f.value, label: model.label(f.facet, f.value))
+                    Button {
+                        model.ask(removing: f.facet, f.value).map(refine)
+                    } label: {
+                        HStack(spacing: 6) {
+                            Text(verbatim: name)
+                            Image(systemName: "xmark")
+                                .font(.maktabaBody(11, weight: .bold, relativeTo: .caption2))
+                                .accessibilityHidden(true)
+                        }
+                        .font(.maktabaBody(15, weight: .medium, relativeTo: .body))
+                        .foregroundStyle(Color.mktText)
+                        .padding(.horizontal, MaktabaTokens.Spacing.s3)
+                        .padding(.vertical, 6)
+                        .background(Color.mktRaised, in: Capsule())
+                        .frame(minHeight: 44)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.borderless)
+                    .accessibilityLabel(Text(verbatim: SearchWords.remove(name)))
+                    .accessibilityIdentifier("search.filter.\(f.facet.rawValue).\(f.value)")
+                }
+                Button {
+                    model.askClearingFilters().map(refine)
+                } label: {
+                    Text(verbatim: SearchWords.clearFilters())
+                        .font(.maktabaBody(15, weight: .medium, relativeTo: .body))
+                        .foregroundStyle(Color.mktBrassText)
+                        .frame(minHeight: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.borderless)
+                .accessibilityIdentifier("search.filters.clear")
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(Text(verbatim: SearchWords.filtersInUse()))
+        .accessibilityIdentifier("search.filters.inUse")
+    }
+}
+
+/// Narrow the results: each facet's buckets with their counts, a chosen one ticked; a press
+/// takes it on or off and searches again at once, the sheet staying open on the new counts.
+private struct FilterSheet: View {
+    let model: SearchModel
+    let run: (SearchModel.Ask) -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            List {
+                ForEach(model.shownFacets) { group in
+                    Section {
+                        ForEach(group.buckets) { b in
+                            bucketRow(b)
+                        }
+                    } header: {
+                        SearchHeading(text: Text(verbatim: SearchWords.facet(group.facet)))
+                    }
+                }
+            }
+            .accessibilityIdentifier("search.facets")
+            .navigationTitle(Text(verbatim: SearchWords.narrow()))
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button { dismiss() } label: { Text(verbatim: SearchWords.done()) }
+                        .accessibilityIdentifier("search.facets.done")
+                }
+                if !model.filters.isEmpty {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button { model.askClearingFilters().map(run) } label: { Text(verbatim: SearchWords.clearFilters()) }
+                            .accessibilityIdentifier("search.facets.clear")
+                    }
+                }
+            }
+            .maktabaSurface()
+        }
+        #if os(iOS)
+        .presentationDetents([.medium, .large])
+        #else
+        .frame(minWidth: 420, minHeight: 480)
+        #endif
+    }
+
+    private func bucketRow(_ b: ShownBucket) -> some View {
+        let name = SearchWords.bucket(b.facet, b.value, label: b.label)
+        return Button {
+            model.ask(toggling: b.facet, b.value).map(run)
+        } label: {
+            HStack(spacing: MaktabaTokens.Spacing.s3) {
+                Image(systemName: b.chosen ? "checkmark.circle.fill" : "circle")
+                    .foregroundStyle(b.chosen ? Color.mktBrassText : Color.mktMuted)
+                Text(verbatim: name)
+                    .font(.maktabaBody(17, relativeTo: .body))
+                    .foregroundStyle(Color.mktText)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: MaktabaTokens.Spacing.s2)
+                if let n = b.count {
+                    Text(verbatim: SearchWords.number(n))
+                        .font(.maktabaBody(15, relativeTo: .subheadline))
+                        .foregroundStyle(Color.mktMuted)
+                }
+            }
+            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.borderless)
+        .listRowBackground(Color.clear)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(verbatim: b.count.map { "\(name), \(SearchWords.videos($0))" } ?? name))
+        .accessibilityAddTraits(b.chosen ? [.isButton, .isSelected] : .isButton)
+        .accessibilityIdentifier("search.facet.\(b.facet.rawValue).\(b.value)")
     }
 }

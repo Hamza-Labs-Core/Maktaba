@@ -4,6 +4,8 @@ import Observation
 
 /// Search's state (FR-19, FR-20): what is typed, the suggestions for it, the recent searches,
 /// and the last submitted search's two groups, each paged from the search the home keeps.
+/// Story 49.11 adds the search help of story 49.8: each suggestion's kind, the did-you-mean,
+/// the facets to narrow the results by, and the order.
 /// Every answer is the home's (`/api/search*`), which decides what this person may see.
 /// The screen keeps one for as long as its tab lives, so another section and back finds the
 /// same query and results.
@@ -11,6 +13,20 @@ import Observation
 public final class SearchModel {
     /// How long typing rests before the field asks for suggestions.
     public static let suggestDelay: Duration = .milliseconds(250)
+
+    /// What is sent: the query, its order and its filters. A refinement (an order, a facet, the
+    /// did-you-mean) is a new ask, run as a search is.
+    public struct Ask: Hashable, Sendable {
+        public var query: String
+        public var sort: SearchSort
+        public var filters: SearchFilterChoice
+
+        public init(query: String, sort: SearchSort = .relevance, filters: SearchFilterChoice = SearchFilterChoice()) {
+            self.query = query
+            self.sort = sort
+            self.filters = filters
+        }
+    }
 
     /// What a submitted search found.
     public struct Results {
@@ -29,10 +45,17 @@ public final class SearchModel {
         public internal(set) var transcriptsNext: Int?
         /// The meaning half did not answer: text matches only.
         public let degraded: Bool
+        /// The order the lists are in: the home's answer, else what was asked.
+        public let sort: SearchSort
+        /// The query corrected, when few videos were found and it differs from the query.
+        public let didYouMean: String?
+        /// The counts of the videos found (nil when none were, or from an older home). The
+        /// pages after the first keep them.
+        public let facets: SearchFacets?
 
         public var isEmpty: Bool { titles.isEmpty && transcripts.isEmpty }
 
-        public init(_ a: SearchAnswer, sent: String) {
+        public init(_ a: SearchAnswer, sent: String, sort asked: SearchSort = .relevance) {
             query = a.query.isEmpty ? sent : a.query
             searchID = a.searchID
             pageSize = max(a.pageSize, 1)
@@ -41,6 +64,9 @@ public final class SearchModel {
             transcripts = a.transcripts
             transcriptsTotal = max(a.transcriptsTotal, a.transcripts.count)
             degraded = a.degraded
+            sort = a.sort ?? asked
+            didYouMean = a.didYouMean.flatMap { SearchModel.sendable($0) == sent ? nil : $0 }
+            facets = a.facets.flatMap { $0.isEmpty ? nil : $0 }
             let kept = !a.searchID.isEmpty
             titlesNext = kept && a.titles.count < titlesTotal ? max(a.pageSize, a.titles.count) : nil
             transcriptsNext = kept && a.transcripts.count < transcriptsTotal ? max(a.pageSize, a.transcripts.count) : nil
@@ -49,8 +75,8 @@ public final class SearchModel {
 
     /// What is typed in the field.
     public var query = ""
-    /// The person's own past searches starting with what is typed (`GET /api/search/suggest`).
-    public private(set) var suggestions: [String] = []
+    /// The suggestions for what is typed, each with its kind (`GET /api/search/suggest`).
+    public private(set) var suggestions: [SearchSuggestion] = []
     /// Recent searches, newest first (`GET /api/search/recent`).
     public private(set) var recent: [RecentSearch] = []
     /// The last submitted search's answer; nil before the first.
@@ -63,6 +89,25 @@ public final class SearchModel {
     public private(set) var problem: HomeFailure?
     /// The query of the last submit (what Try again sends again).
     public private(set) var submitted: String?
+    /// The last search asked: its query, order and filters (what Try again asks again).
+    public private(set) var asked: Ask?
+    /// The names seen of buckets ("library:<id>"), for a chosen bucket the narrowed answer no
+    /// longer lists.
+    public private(set) var labels: [String: String] = [:]
+
+    /// The order asked (relevance before the first search).
+    public var sort: SearchSort { asked?.sort ?? .relevance }
+    /// The filters in use.
+    public var filters: SearchFilterChoice { asked?.filters ?? SearchFilterChoice() }
+    /// The facets to show: the answer's buckets with the chosen ones kept.
+    public var shownFacets: [ShownFacet] { filters.shown(results?.facets, labels: labels) }
+    /// A bucket's name from the home: the answer's, else the one seen before (a library).
+    public func label(_ facet: SearchFacet, _ value: String) -> String? {
+        results?.facets?.buckets(facet).first { $0.value == value }?.label ?? labels["\(facet.rawValue):\(value)"]
+    }
+
+    /// A refinement of the search on screen is on its way (its results stay meanwhile).
+    public var refining: Bool { searching && results != nil && results?.query == submitted }
 
     private let client: APIClient
     private let signedOut: @MainActor () -> Void
@@ -85,7 +130,7 @@ public final class SearchModel {
 
     /// The query as it is sent: only the spaces around it go. Nothing else changes (no
     /// normalising, no removing an Arabic word's diacritics): the home ranks it.
-    public static func sendable(_ q: String) -> String { q.trimmingCharacters(in: .whitespacesAndNewlines) }
+    nonisolated public static func sendable(_ q: String) -> String { q.trimmingCharacters(in: .whitespacesAndNewlines) }
 
     /// Asks for the suggestions for `q`; blank, or the query just submitted, asks nothing.
     /// A failure keeps the list empty.
@@ -110,15 +155,68 @@ public final class SearchModel {
         }
     }
 
-    /// Runs `q` in hybrid mode (words only while search by meaning is off). A newer submit
-    /// wins over an older one still on its way.
+    // MARK: Asks
+
+    /// New words, as typed or chosen: the order stays; the filters stay only for the same
+    /// words (they were the old results' counts).
+    public func ask(words q: String) -> Ask {
+        let sent = Self.sendable(q)
+        let same = asked.map { $0.query == sent } ?? false
+        return Ask(query: q, sort: sort, filters: same ? filters : SearchFilterChoice())
+    }
+
+    /// The did-you-mean's words, with the order and the filters kept.
+    public func ask(didYouMean q: String) -> Ask {
+        Ask(query: q, sort: sort, filters: filters)
+    }
+
+    /// The search on screen in another order; nil before the first search.
+    public func ask(sort s: SearchSort) -> Ask? {
+        guard var a = asked else { return nil }
+        a.sort = s
+        return a
+    }
+
+    /// The search on screen with a bucket taken on or off; nil before the first search.
+    public func ask(toggling facet: SearchFacet, _ value: String) -> Ask? {
+        guard var a = asked else { return nil }
+        a.filters = a.filters.toggled(facet, value)
+        return a
+    }
+
+    /// The search on screen with a filter taken off.
+    public func ask(removing facet: SearchFacet, _ value: String) -> Ask? {
+        guard var a = asked else { return nil }
+        a.filters = a.filters.removing(facet, value)
+        return a
+    }
+
+    /// The search on screen with every filter taken off.
+    public func askClearingFilters() -> Ask? {
+        guard var a = asked else { return nil }
+        a.filters = SearchFilterChoice()
+        return a
+    }
+
+    /// Runs `q` as new words (`ask(words:)`).
     public func submit(_ q: String) async {
+        await run(ask(words: q))
+    }
+
+    /// Runs `ask` in hybrid mode (words only while search by meaning is off). A newer search
+    /// wins over an older one still on its way.
+    public func run(_ ask: Ask) async {
+        let q = ask.query
         let sent = Self.sendable(q)
         guard !sent.isEmpty else { return }
+        let ask = Ask(query: sent, sort: ask.sort, filters: ask.filters)
         // the same search already on its way (a suggestion's tap and the field's submit)
-        guard !(searching && sent == submitted) else { return }
+        guard !(searching && ask == asked) else { return }
+        // a year or a band goes as its bucket's own filter, from the answer on screen
+        let facets = results?.facets
         query = q
         submitted = sent
+        asked = ask
         suggestions = []
         generation += 1
         let mine = generation
@@ -126,9 +224,11 @@ public final class SearchModel {
         problem = nil
         defer { if mine == generation { searching = false } }
         do {
-            let answer = try await client.search(sent, mode: Self.mode(byMeaning: byMeaning()))
+            let answer = try await client.search(sent, mode: Self.mode(byMeaning: byMeaning()), sort: ask.sort,
+                                                 filters: ask.filters, facets: facets)
             guard mine == generation else { return }
-            results = Results(answer, sent: sent)
+            results = Results(answer, sent: sent, sort: ask.sort)
+            for b in answer.facets?.library ?? [] { if let l = b.label { labels["library:\(b.value)"] = l } }
         } catch {
             guard mine == generation else { return }
             if case APIError.signedOut = error { return signedOut() }
@@ -141,9 +241,9 @@ public final class SearchModel {
         await loadRecent()
     }
 
-    /// Submits the last query again (the error's Try again).
+    /// Asks the last search again, its order and filters too (the error's Try again).
     public func retry() async {
-        if let submitted { await submit(submitted) }
+        if let asked { await run(asked) }
     }
 
     /// The next page of Titles.

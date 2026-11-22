@@ -922,3 +922,99 @@ The Search page (`web/src/pages/Search.tsx`) uses story 49.8's API; the parts ar
     order on screen and no filters.
   - Facet buckets are chips, not a side panel of checkboxes as in the 11.4 mockup: they wrap
     on a phone and need no second column.
+
+### 49.11 Apple and Android apps, TV, big screen
+
+Each client has its own part; the parts not listed here are not built yet.
+
+#### Apple: the Player (iPhone, iPad, Mac) and the Apple TV
+
+Both apps use one model in MaktabaKit: `SearchModel` (`SearchPage.swift`) and the search help's
+types and words (`SearchHelp.swift`). The behaviour and the words follow the web's page (49.10).
+
+- **What the apps read** (`SearchHelp.swift`, `Browse.swift`):
+  - a suggestion's `kind` and a title's `video_id` from `items`, else the plain `suggestions`
+    of a home before 49.8. A kind the app does not know reads as none; a title without its
+    video is left out; the same text and kind come once;
+  - `sort`, `did_you_mean` and `facets` on `POST /api/search`, each read tolerantly: a field
+    of the wrong shape reads as absent, a bucket without a value is left out, a year sent as
+    a number is read as its text. A home before 49.8 sends none of them, and the apps search
+    as they did. A did-you-mean that only repeats the query is not shown.
+- **What the apps send.** `sort` when it is not relevance, and `filters` when any is chosen:
+  - `library_id`, `language` and `speaker` as lists (any of them);
+  - a year and a duration band as their bucket's own `filter` (`date`, `duration_sec`). When
+    the answer does not list the bucket, the range the home gives it is sent (UTC years, the
+    bands' seconds). A second year or band replaces the first.
+- **What a search keeps** (`SearchModel.Ask`):
+  - new words keep the order and drop the filters;
+  - the same words keep both;
+  - the did-you-mean keeps both;
+  - a refinement (an order, a bucket, a filter removed, Clear all) is the search on screen
+    with that one change;
+  - Try again, and a kept search that expired while paging, ask again with the order and
+    filters.
+
+  A chosen bucket the narrowed answer no longer lists stays, chosen and without a count, so it
+  can be taken off where it was put on; a library keeps the name seen before.
+- **The Player** (`Player/Search/SearchScreen.swift`, iPhone, iPad and Mac):
+  - each suggestion shows an icon and its kind (Recent, Word, Video, Speaker); a title opens
+    its video, any other is searched as its words;
+  - "Did you mean …?" is a row over the results, its corrected words marked where each
+    language puts them; a tap runs them and the field shows them;
+  - **Filters** (with how many are in use) opens a sheet, Narrow the results, with each
+    facet's buckets and their counts. A press searches again at once, and the sheet stays
+    open on the new counts. A library shows its name, a language its name in the app's
+    language, a year in the app's digits, a band its words ("Under 5 min", "5 to 20 min",
+    "20 to 60 min", "Over an hour");
+  - the filters in use are chips under the bar ("Language: Arabic"), each of which takes
+    itself off, then Clear all filters;
+  - the sort is a menu (Relevance, Newest, Most matches);
+  - every refinement waits for the field to let go of the keyboard first, as a search and a
+    result's page do (`LetGoFirst`);
+  - a search that found nothing still shows its did-you-mean and the filters in use, so a
+    filter can be taken off there.
+- **The Apple TV** (`apps/tv/tvos/MaktabaTV/Views/SearchView.swift`) searched titles with
+  `GET /api/videos?q=` as you typed. It now uses the home's search, with the same help:
+  - the suggestions show under the keyboard with their kind, and a title opens its page;
+  - what is typed runs from **Search for “…”**, the first button under the keyboard (or the
+    keyboard's own search key, where tvOS gives one). The home keeps every search as a
+    recent one, so the TV no longer searches each word as it is typed;
+  - over the results, did-you-mean, the sort menu and **Filters**, in rows the focus moves
+    along with the remote (`focusSection`). The filters' sheet has a row of buckets per facet,
+    and Menu or Done closes it;
+  - Titles and In the transcript are cards that open the video's page, with Show more.
+- **Words.** The help's words are MaktabaKit's (`SearchWords`, its catalog), shared by both
+  apps, in English and Arabic as the web words them. The suggestion kinds are keyed
+  (`search.kind.<kind>`): "Speaker" is «متحدث» as a kind and «المتحدث» as a facet.
+  Interpolated words carry their bidi isolates, so an English word in an Arabic sentence
+  keeps its place.
+- **Proof:**
+  - `SearchHelpTests.swift` (MaktabaKit):
+    - the suggestion kinds, and an older home's plain texts;
+    - the answer's new fields, and their absence from an older home;
+    - odd shapes read tolerantly;
+    - the request bodies of facet choices, with and without the bucket's own filter;
+    - the client's `sort` and `filters`;
+    - the view model's asks: combined facets, removal, Clear all, new words, did-you-mean,
+      Try again;
+    - a chosen bucket the answer no longer lists;
+    - the words in English and Arabic.
+  - `PlayerSearchUITests` (iPhone and iPad, against `MockHome`):
+    - the suggestion kinds in English and Arabic, and a title opening its video;
+    - the sheet's counts, three filters combined, the chips, one taken off, then Clear all;
+    - the sort, and new words dropping the filters but keeping the order;
+    - the did-you-mean in Arabic.
+
+    The accessibility audit and Dynamic Type check run on the filters in use and on the
+    did-you-mean.
+  - `TVSearchUITests` (Apple TV, with the Siri remote, in the TV UI tests job):
+    - the suggestion kinds;
+    - Search for, two filters combined from the sheet, a chip taken off, the sort;
+    - the did-you-mean in Arabic.
+- **Not done here.**
+  - The TV's transcript results open the video's page, not the player at a passage: the
+    TV's video page has no start time to open at.
+  - A recent search runs as new words: the recent list carries no order or filters, so
+    the filters on screen are not applied to another query.
+  - The Android Player, Android TV, the desktop player, the web big screen (`apps/tv/web`)
+    and Roku are the other parts of 49.11.
