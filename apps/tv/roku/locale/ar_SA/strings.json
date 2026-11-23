@@ -75,6 +75,24 @@
     "search.filters": "ﺔﻴﻔﺼﺘﻟﺍ",
     "search.filters.title": "ﺞﺋﺎﺘﻨﻟﺍ ﻖﻴﻴﻀﺗ",
     "search.filters.clear": "ﺔﻴﻔﺼﺘﻟﺍ ﻞﻣﺍﻮﻋ ﻞﻛ ﺔﻟﺍﺯﺇ",
+    "search.tab.results": "ﺞﺋﺎﺘﻨﻟﺍ",
+    "search.tab.ai": "ﻲﻋﺎﻨﻄﺻﻻﺍ ﺀﺎﻛﺬﻟﺍ ﻊﺿﻭ",
+    "search.ai.ask": "ﻝﺄﺳﺍ",
+    "search.ai.newTopic": "ﺪﻳﺪﺟ ﻉﻮﺿﻮﻣ",
+    "search.ai.sources": "ﺭﺩﺎﺼﻤﻟﺍ",
+    "search.ai.hint": ".«ﻝﺄﺳﺍ» ﻂﻐﺿﺍ ﻢﺛ ،ﺢﻴﺗﺎﻔﻤﻟﺍ ﺔﺣﻮﻠﺑ ﻻﺍﺆﺳ ﺐﺘﻛﺍ",
+    "search.ai.followUp": ".ﺍﺪﻳﺪﺟ ﺎﻋﻮﺿﻮﻣ ﺃﺪﺑﺍ ﻭﺃ ،«ﻝﺄﺳﺍ» ﻂﻐﺿﺍﻭ ﺎﻴﻟﺎﺗ ﻻﺍﺆﺳ ﺐﺘﻛﺍ",
+    "search.ai.asking": "…ﻲﺴﻴﺋﺮﻟﺍ ﻙﺯﺎﻬﺟ ﻝﺍﺆﺳ ﺭﺎﺟ",
+    "search.ai.writing": "…ﺔﺑﺎﺟﻹﺍ ﺔﺑﺎﺘﻛ ﺭﺎﺟ",
+    "search.ai.noAnswer": ".ﻝﺍﺆﺴﻟﺍ ﻦﻋ ﺐﻴﺠﺗ ﻻ ﻊﻃﺎﻘﻤﻟﺍ ﻩﺬﻫ",
+    "search.ai.noPassages": ".ﻝﺍﺆﺴﻟﺍ ﺍﺬﻫ ﻖﺑﺎﻄﻳ ﻚﺗﺎﺒﺘﻜﻣ ﻲﻓ ﺀﻲﺷ ﻻ",
+    "search.ai.timeout": ".ﺎﻨﻫ ﺖﻔﻗﻮﺘﻓ ﻼﻳﻮﻃ ﺎﺘﻗﻭ ﺔﺑﺎﺟﻹﺍ ﺖﻗﺮﻐﺘﺳﺍ",
+    "search.ai.stopped": ".ﺎﻬﻨﻣ ﺐﺘﻛ ﺎﻣ ﻰﻘﺒﻳ .ﺔﺑﺎﺟﻹﺍ ﺖﻔﻗﻮﺗ",
+    "search.ai.unavailable": "ﻊﻴﻄﺘﺴﻳ .ﺪﻌﺑ ﻲﺴﻴﺋﺮﻟﺍ ﺯﺎﻬﺠﻟﺍ ﺍﺬﻫ ﻲﻓ ﺔﻐﻠﻟﺍ ﺝﺫﻮﻤﻧ ﺪﻌﻳ ﻢﻟ\nﺓﺪﻋﺎﺴﻤﻟﺍ ﺔﺤﻔﺻﻭ ،ﺐﻳﻮﻟﺍ ﻰﻠﻋ ﺕﺍﺩﺍﺪﻋﻹﺍ ﻦﻣ ﻩﺩﺍﺪﻋﺇ ﻝﻭﺆﺴﻤﻟﺍ\n.ﻚﻟﺫ ﺡﺮﺸﺗ «ﺚﺤﺒﻟﺍ»",
+    "search.ai.off": ".ﻲﺴﻴﺋﺮﻟﺍ ﺯﺎﻬﺠﻟﺍ ﺍﺬﻫ ﻲﻓ ﻲﻋﺎﻨﻄﺻﻻﺍ ﺀﺎﻛﺬﻟﺍ ﻊﺿﻭ ﻝﻭﺆﺴﻤﻟﺍ ﻒﻗﻭﺃ",
+    "search.ai.busy": "ﻯﺮﺧﺃ ﺓﺮﻣ ﻝﺄﺳﺍ .ﻯﺮﺧﺃ ﺔﻠﺌﺳﺄﺑ ﻝﻮﻐﺸﻣ ﻲﻋﺎﻨﻄﺻﻻﺍ ﺀﺎﻛﺬﻟﺍ ﻊﺿﻭ\n.ﻞﻴﻠﻗ ﺪﻌﺑ",
+    "search.ai.old": ".ﺪﻌﺑ ﻲﻋﺎﻨﻄﺻﻻﺍ ﺀﺎﻛﺬﻟﺍ ﻊﺿﻭ ﻢﻋﺪﻳ ﻻ ﻲﺴﻴﺋﺮﻟﺍ ﺯﺎﻬﺠﻟﺍ ﺍﺬﻫ\n.ﺔﻠﺌﺳﻷﺍ ﺡﺮﻄﺘﻟ ﻪﺛﺪﺣ",
+    "search.ai.failed": ".ﻯﺮﺧﺃ ﺓﺮﻣ ﻝﺄﺳﺍ .ﻲﺴﻴﺋﺮﻟﺍ ﺯﺎﻬﺠﻟﺍ ﺐﺠﻳ ﻢﻟ",
     "player.error": ".ﻥﻵﺍ ﻮﻳﺪﻴﻔﻟﺍ ﺍﺬﻫ ﻞﻴﻐﺸﺗ ﻦﻜﻤﻳ ﻻ",
     "roku.player.upNext": "ﻲﻟﺎﺘﻟﺍ",
     "roku.player.retrying": "…ﺔﻟﻮﺤﻣ ﺔﺨﺴﻧ ﺔﺑﺮﺠﺗ ﺭﺎﺟ",
@@ -314,6 +332,16 @@
     "search.language.ms": {
       "text": "الملايوية",
       "widthChars": 16,
+      "lines": 1
+    },
+    "search.ai.queue": {
+      "text": "أسئلة أخرى قبل هذا السؤال: ترتيبه %1$d في الدور.",
+      "widthChars": 56,
+      "lines": 2
+    },
+    "search.ai.source": {
+      "text": "%1$s  %2$s · %3$s · %4$s",
+      "widthChars": 56,
       "lines": 1
     },
     "account.signedInAs": {

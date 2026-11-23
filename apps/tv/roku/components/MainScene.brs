@@ -3,6 +3,7 @@ sub init()
     m.top.backgroundURI = ""
     m.global.AddFields({lang: StoreLang(), session: {}})
     m.global.AddField("api", "node", false)
+    m.global.AddField("aiApi", "node", false)
     ui_Init()
     m.clock = CreateObject("roTimespan")
     m.stack = m.top.FindNode("stack")
@@ -24,6 +25,16 @@ sub init()
     api.ObserveField("tokens", "onTokens")
     m.global.api = api
     api.control = "RUN"
+    ' AI mode's answers (story 49.14) take their own Task: one is read for as long as the home
+    ' writes it, and the other calls must not wait behind it
+    ai = CreateObject("roSGNode", "ApiTask")
+    ai.timeoutMs = 300000
+    ai.follow = true
+    ai.ObserveField("signedOut", "onSignedOut")
+    ai.ObserveField("tooOld", "onTooOld")
+    ai.ObserveField("tokens", "onTokens")
+    m.global.aiApi = ai
+    ai.control = "RUN"
 end sub
 
 ' The launch: a deep link waits for a home; the last home used opens at once when it still

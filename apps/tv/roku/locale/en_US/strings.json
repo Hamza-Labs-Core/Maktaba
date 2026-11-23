@@ -75,6 +75,24 @@
     "search.filters": "Filters",
     "search.filters.title": "Narrow the results",
     "search.filters.clear": "Clear all filters",
+    "search.tab.results": "Results",
+    "search.tab.ai": "AI mode",
+    "search.ai.ask": "Ask",
+    "search.ai.newTopic": "New topic",
+    "search.ai.sources": "Sources",
+    "search.ai.hint": "Type a question on the keyboard, then press Ask.",
+    "search.ai.followUp": "Type a follow-up and press Ask, or start a new topic.",
+    "search.ai.asking": "Asking your home…",
+    "search.ai.writing": "Writing the answer…",
+    "search.ai.noAnswer": "These passages do not answer the question.",
+    "search.ai.noPassages": "Nothing in your libraries matches this question.",
+    "search.ai.timeout": "The answer took too long and stopped here.",
+    "search.ai.stopped": "The answer stopped. What was written stands.",
+    "search.ai.unavailable": "This home's language model is not set up yet. An admin can set one up in Settings on the web; Help, Search, says how.",
+    "search.ai.off": "An admin turned AI mode off for this home.",
+    "search.ai.busy": "AI mode is busy with other questions. Ask again shortly.",
+    "search.ai.old": "This home does not have AI mode yet. Update it to ask questions.",
+    "search.ai.failed": "The home did not answer. Ask again.",
     "player.error": "This video cannot play right now.",
     "roku.player.upNext": "Up next",
     "roku.player.retrying": "Trying a converted version…",
@@ -279,6 +297,16 @@
     "search.language.ar": {
       "text": "Arabic",
       "widthChars": 16,
+      "lines": 1
+    },
+    "search.ai.queue": {
+      "text": "Other questions are ahead of this one: it is number %1$d in line.",
+      "widthChars": 56,
+      "lines": 2
+    },
+    "search.ai.source": {
+      "text": "%1$s  %2$s · %3$s · %4$s",
+      "widthChars": 56,
       "lines": 1
     },
     "search.language.en": {

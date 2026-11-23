@@ -5,9 +5,13 @@
 '   t.Do({method: "GET", url: "...", headers: {...}, body: ""})   ' {status, body}
 '
 ' status 0 means no answer (timeout, refused, a certificate that did not verify).
+'
+' A transport with a node (t.node, a Task) and a tag (t.tag, the request being sent) stops the
+' transfer when the node's cancel field is set to that tag: AI mode's answer (story 49.14) is
+' given up when the person asks again or leaves, so the home gives the turn to the next.
 
 function NetUrlTransport(timeoutMs as Integer) as Object
-    return {timeoutMs: timeoutMs, Do: http_Do}
+    return {timeoutMs: timeoutMs, node: invalid, tag: "", Do: http_Do}
 end function
 
 function http_Do(req as Object) as Object
@@ -21,7 +25,19 @@ function http_Do(req as Object) as Object
         ok = ut.AsyncPostFromString(req.body)
     end if
     if not ok then return {status: 0, body: ""}
-    msg = Wait(m.timeoutMs, port)
+    if m.node <> invalid then m.node.ObserveField("cancel", port)
+    msg = invalid
+    while true
+        msg = Wait(m.timeoutMs, port)
+        if type(msg) <> "roSGNodeEvent" then exit while
+        if msg.GetData() = m.tag and m.tag <> "" then
+            m.node.UnobserveField("cancel")
+            ut.AsyncCancel()
+            print "[http] "; req.method; " "; HttpRedact(req.url); " cancelled"
+            return {status: 0, body: "", cancelled: true}
+        end if
+    end while
+    if m.node <> invalid then m.node.UnobserveField("cancel")
     if type(msg) <> "roUrlEvent" then
         ut.AsyncCancel()
         print "[http] "; req.method; " "; HttpRedact(req.url); " timed out"

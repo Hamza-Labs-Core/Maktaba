@@ -7,6 +7,12 @@
     <field id="signedOut" type="boolean" alwaysNotify="true" />
     <field id="tooOld" type="boolean" alwaysNotify="true" />
     <field id="tokens" type="assocarray" />
+    <!-- story 49.14: AI mode's own ApiTask (MainScene's aiApi) waits as long as an answer is
+         written, takes the scene's tokens before each call, and drops the call whose tag is set
+         in cancel -->
+    <field id="timeoutMs" type="integer" value="15000" />
+    <field id="follow" type="boolean" value="false" />
+    <field id="cancel" type="string" alwaysNotify="true" />
   </interface>
   <script type="text/brightscript" uri="ApiTask.brs" />
   <script type="text/brightscript" uri="pkg:/source/config.brs" />
