@@ -46,3 +46,4 @@ prs: [1548, 1546, 1140]
 - Every QNAP, UGREEN and ASUSTOR checklist step needs a device. The project has none.
 - Screenshots: `qnap/create-application`, `ugreen/project`, `asustor/stack`.
 - OpenMediaVault: the code names it, but nothing installs it. A guide waits for an install file and a CI cell.
+- `web/src/pages/Search.ai.test.tsx:197` (SRC-60) failed once on #1548's run 45259311929: two `/api/search` calls where one was expected. The code under test was untouched, and its earlier flake fix 85ac326fe was included. A re-run was requested. The test still races.
