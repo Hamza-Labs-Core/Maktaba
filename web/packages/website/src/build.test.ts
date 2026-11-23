@@ -294,7 +294,7 @@ describe("the built site (dist/)", () => {
     expect(fs.existsSync(path.join(DIST, "install/assets"))).toBe(true);
   });
 
-  it("60.05 T01: the nine guides and the chooser in both languages, the install assets", () => {
+  it("60.05 T01: the ten guides and the chooser in both languages, the install assets", () => {
     const guides = [
       "nas",
       "docker",
@@ -303,6 +303,7 @@ describe("the built site (dist/)", () => {
       "unraid",
       "qnap",
       "ugreen",
+      "asustor",
       "after-setup",
       "troubleshooting",
     ];
@@ -352,7 +353,7 @@ describe("the built site (dist/)", () => {
   });
 
   it("60.05 T07: no guide shows a screenshot still to come", () => {
-    for (const g of ["truenas", "unraid", "qnap", "ugreen"])
+    for (const g of ["truenas", "unraid", "qnap", "ugreen", "asustor"])
       for (const f of [`install/${g}/index.html`, `ar/install/${g}/index.html`]) {
         expect(read(f), f).not.toContain('class="placeholder"');
         expect(read(f), f).not.toContain("Screenshot to come");

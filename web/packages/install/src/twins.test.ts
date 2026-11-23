@@ -22,7 +22,16 @@ const page = (lang: "en" | "ar", name: string): string => {
   return s;
 };
 
-const STATIC = ["nas", "truenas", "unraid", "qnap", "ugreen", "after-setup", "troubleshooting"];
+const STATIC = [
+  "nas",
+  "truenas",
+  "unraid",
+  "qnap",
+  "ugreen",
+  "asustor",
+  "after-setup",
+  "troubleshooting",
+];
 const ALL = [...STATIC, "docker", "synology"];
 
 const h2s = (s: string) => [...s.matchAll(/<h2( id="([^"]+)")?>/g)].map((m) => m[2] ?? "");
@@ -134,7 +143,7 @@ describe("the NAS guides", () => {
 
   it("gives the same setup command in every guide that runs it", () => {
     const cmd = "/opt/maktaba/server/bin/maktaba-server container setup";
-    for (const n of ["truenas", "unraid", "qnap", "ugreen"]) {
+    for (const n of ["truenas", "unraid", "qnap", "ugreen", "asustor"]) {
       expect(page("en", n)).toContain(cmd);
       expect(page("ar", n)).toContain(cmd);
     }

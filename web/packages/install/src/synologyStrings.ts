@@ -99,6 +99,8 @@ export const SYN = {
       "Running it as your own admin user also works, but a user made for Maktaba can only reach the folders you give it.",
     "after.encrypted":
       "Encrypted shared folders: until you unlock one, its libraries show No access. Nothing in them is deleted or scanned as missing.",
+    "after.role":
+      "The home or storage: these steps make the NAS your Maktaba home, on any tier. Setup offers each shared folder as the share your other computers open it by (/volume1/Movies is Movies), so a computer with a graphics card can join later and take the heavy work. If the home runs on another computer instead, the NAS needs no Maktaba: share its folders, and that home reads them. A Light NAS is warned before it joins a home elsewhere as a machine.",
     "after.updates":
       "Updates: Maktaba updates itself in its update window (Manage → Updates). Pulling a newer image in Container Manager is safe too: an older image never replaces a newer Maktaba. Each update takes a backup of the database first, so keep room for it on the volume.",
     trouble: "If something goes wrong",
@@ -234,6 +236,8 @@ export const SYN = {
       "تشغيله بحساب المسؤول الخاص بك يعمل أيضًا، لكن المستخدم المخصص لـ Maktaba لا يصل إلا إلى المجلدات التي تمنحه إياها.",
     "after.encrypted":
       "المجلدات المشتركة المشفّرة: إلى أن تفتح قفل أحدها، تظهر مكتباته بلا وصول. ولا يُحذف شيء منها ولا يُعدّ مفقودًا.",
+    "after.role":
+      "جهاز رئيسي أم مساحة تخزين: تجعل هذه الخطوات الخادم الجهاز الرئيسي لـ Maktaba، في أي فئة. ويعرض الإعداد كل مجلد مشترك باسم المشاركة التي تفتحه بها حواسيبك الأخرى (‎/volume1/Movies هو Movies)، فيمكن لاحقًا أن ينضم حاسوب فيه بطاقة رسوميات ليتولى العمل الثقيل. وإن كان الجهاز الرئيسي يعمل على حاسوب آخر، فلا يحتاج الخادم إلى Maktaba: شارك مجلداته فيقرؤها ذلك الجهاز. ويُنبَّه الخادم الخفيف قبل أن ينضم جهازًا إلى منزل في مكان آخر.",
     "after.updates":
       "التحديثات: يحدّث Maktaba نفسه في نافذة التحديث (الإدارة ← التحديثات). وسحب صورة أحدث في Container Manager آمن أيضًا: لا تحلّ صورة أقدم أبدًا محلّ نسخة أحدث من Maktaba. ويأخذ كل تحديث نسخة احتياطية من قاعدة البيانات أولًا، فأبقِ لها مساحة على وحدة التخزين.",
     trouble: "إذا حدث خطأ",

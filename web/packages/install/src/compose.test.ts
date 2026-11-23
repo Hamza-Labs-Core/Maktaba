@@ -70,6 +70,14 @@ describe("fillCompose", () => {
     expect(out).toContain("    # devices:");
   });
 
+  // story 59.13: a QNAP home names its platform, so its /share/<name> folders are known shares
+  it("names the QNAP platform for a QNAP, docker for anything else", () => {
+    expect(fillCompose(BASE, answers({ platform: "qts" }))).toContain("MAKTABA_PLATFORM: qts");
+    expect(fillCompose(BASE, answers({ platform: "docker" }))).toContain(
+      "MAKTABA_PLATFORM: docker"
+    );
+  });
+
   it("keeps the named volume without a data folder", () => {
     const out = fillCompose(BASE, answers({ data: "", user: "1000:1000" }));
     expect(out).toContain("- maktaba:/var/lib/maktaba");

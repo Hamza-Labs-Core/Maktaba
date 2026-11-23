@@ -21,7 +21,8 @@ same rule.
 
 **QNAP.** Container Station → Applications → Create, paste the file. The data folder is a share
 folder such as `/share/Container/maktaba`; the user is one made for Maktaba (`id <user>` over
-SSH gives its uid and gid). QTS keeps port 8080 for its own UI: Maktaba moves its cluster port
+SSH gives its uid and gid). maktaba.tv's page writes `MAKTABA_PLATFORM: qts`, so setup
+offers each `/share/<name>` folder as the share `<name>` (59.13). QTS keeps port 8080 for its own UI: Maktaba moves its cluster port
 at the start and setup shows the new one (59.08), kept in `server.toml`; to choose it instead,
 set `MAKTABA_API_PORT` in the file's `[ports]` block. Untested on a QNAP device so far (the device checklist covers it when one is available).
 
@@ -29,8 +30,9 @@ set `MAKTABA_API_PORT` in the file's `[ports]` block. Untested on a QNAP device 
 `/volume1/docker/maktaba` and the file pasted. An N100 model (DXP4800 Plus) has VA-API: turn
 the `dri` block on with the render group's id.
 
-**ASUSTOR (ADM).** Portainer from App Central, then Stacks → Add stack, the file pasted. Data
-under `/volume1/Docker/maktaba`.
+**ASUSTOR (ADM).** Portainer CE from App Central (it opens at port 19943), then Stacks → Add
+stack, the file pasted. Data under `/volume1/Docker/maktaba`. ADM lets only `admin` or `root` in
+over SSH.
 
 **Portainer, Dockge.** The file works as a stack unchanged.
 

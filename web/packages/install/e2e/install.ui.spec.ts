@@ -23,6 +23,7 @@ const GUIDES = [
   "unraid",
   "qnap",
   "ugreen",
+  "asustor",
   "after-setup",
   "troubleshooting",
 ];
@@ -41,6 +42,8 @@ test("T04: the compose file is made in the page, and no answer leaves it", async
     tz: "Asia/Riyadh",
     network: "host",
     hostIp: "",
+    // a QNAP: the file names its platform (story 59.13)
+    platform: "qts",
   };
   await page.selectOption("#nas", "qnap");
   await page.fill("#user", answers.user);

@@ -106,8 +106,16 @@ Troubleshooting page (`#update-failed`, `#update-disk`) says what each looks lik
 - **maktaba.tv's install pages** are `web/packages/install` (`pnpm -C web build:install`):
   `/install/nas` (which guide, and the model table, `src/nas-models.json`), `/install/docker`
   and `/install/synology` (forms that fill the compose file in the page; no answer leaves it),
-  the TrueNAS, Unraid, QNAP and UGREEN/ASUSTOR guides, After setup and Troubleshooting, each
-  with its Arabic page under `/ar/`.
+  the TrueNAS, Unraid, QNAP, UGREEN and ASUSTOR guides, After setup and Troubleshooting, each
+  with its Arabic page under `/ar/`. Every platform guide has the same sections: before you start,
+  the user and its uid:gid, the folders, the install in the NAS's own app, the setup and the role,
+  ports, hardware video, updates and troubleshooting. The model table links each model to its
+  maker's guide (`GUIDE` in `src/nasPage.ts`).
+- **Platforms the code knows** (`hostinfo.Platform*`): `dsm`, `truenas`, `unraid`, `qts` (QNAP:
+  the install page writes `MAKTABA_PLATFORM: qts` for it, so `/share/<name>` folders are known
+  shares) and `omv`, beside `docker` and `linux`. UGREEN and ASUSTOR run as `docker`.
+  OpenMediaVault is only a name in the code so far (no install file, CI cell or guide);
+  TerraMaster and CasaOS are not in it at all.
 - The build fails when an Arabic page's prose is mostly Latin: the same check as maktaba.dev's
   (`web/packages/devportal/scripts/parity.mjs`, through `src/latin.ts`). A NAS menu name that
   has no Arabic stays English in «quotes» after an Arabic description, and counts as a name.

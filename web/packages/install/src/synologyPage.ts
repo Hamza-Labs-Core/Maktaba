@@ -371,6 +371,7 @@ export function mount(root: HTMLElement, base: string, lang: Lang): void {
         "after.folders",
         "after.admin",
         "after.encrypted",
+        "after.role",
         "after.updates",
       ]),
       ...shots(lang, "after")

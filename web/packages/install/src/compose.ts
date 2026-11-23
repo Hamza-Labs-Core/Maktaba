@@ -28,6 +28,9 @@ export interface Answers {
   network: Network;
   /** this machine's address (bridge network) */
   hostIp: string;
+  /** MAKTABA_PLATFORM: "qts" on a QNAP (its shares are /share/<name>, story 59.13);
+   *  absent or "docker" anywhere else */
+  platform?: "docker" | "qts";
 }
 
 /** The memory limit each tier sets (story 59.04's tiers: Light under 6 GiB, Standard under 16). */
@@ -133,6 +136,7 @@ export function fillCompose(base: string, a: Answers): string {
   let t = enable(base, on);
   t = replaceOnce(t, 'user: "1000:1000"', `user: "${a.user.trim()}"`);
   t = replaceOnce(t, "TZ: Etc/UTC", `TZ: ${a.tz.trim()}`);
+  if (a.platform === "qts") t = replaceOnce(t, "MAKTABA_PLATFORM: docker", "MAKTABA_PLATFORM: qts");
   if (a.tier !== "none") t = replaceOnce(t, "mem_limit: 6g", `mem_limit: ${MEM_LIMIT[a.tier]}`);
   if (a.network === "bridge") {
     t = replaceOnce(t, "MAKTABA_HOST_IP: 192.168.1.20", `MAKTABA_HOST_IP: ${a.hostIp.trim()}`);

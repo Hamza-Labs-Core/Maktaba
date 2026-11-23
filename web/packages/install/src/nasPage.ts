@@ -1,9 +1,23 @@
 // maktaba.tv/install/nas's model table (Epic 59 story 59.14): one row per model of
 // nas-models.json, in the page's language (<html lang>). Everything else on the page is static.
 
-import { CHECKED, MODELS, fitOf, type Model } from "./nasModels";
+import { CHECKED, MODELS, fitOf, type Model, type Vendor } from "./nasModels";
 
 export type Lang = "en" | "ar";
+
+/** Each maker's guide: a model's row links to it. A model of no listed maker (a mini PC)
+ * takes the Docker page. */
+export const GUIDE: Record<Vendor, string> = {
+  synology: "synology",
+  qnap: "qnap",
+  ugreen: "ugreen",
+  asustor: "asustor",
+  other: "docker",
+};
+
+/** The address of a model's guide, in the page's language. */
+export const guideHref = (lang: Lang, m: Model): string =>
+  `${lang === "ar" ? "/ar" : ""}/install/${GUIDE[m.vendor]}/`;
 
 const T = {
   en: {
@@ -66,7 +80,13 @@ export function renderModels(doc: Document): void {
     for (const [i, c] of rowCells(lang, m).entries()) {
       const td = doc.createElement("td");
       // a Latin name or a number inside Arabic text keeps its own direction
-      if (i < 2 || i === 3) td.append(Object.assign(doc.createElement("bdi"), { textContent: c }));
+      const bdi = () => Object.assign(doc.createElement("bdi"), { textContent: c });
+      if (i === 0) {
+        // the model's name links to its maker's guide
+        const a = Object.assign(doc.createElement("a"), { href: guideHref(lang, m) });
+        a.append(bdi());
+        td.append(a);
+      } else if (i < 2 || i === 3) td.append(bdi());
       else td.textContent = c;
       tr.append(td);
     }

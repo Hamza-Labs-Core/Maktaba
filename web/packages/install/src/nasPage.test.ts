@@ -2,7 +2,9 @@
 // model a row, and nothing fetched.
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MODELS } from "./nasModels";
-import { fitText, renderModels, rowCells } from "./nasPage";
+import { GUIDE, fitText, guideHref, renderModels, rowCells } from "./nasPage";
+
+const pages = import.meta.glob("../site/**/index.html", { query: "?raw", eager: true });
 
 function doc(lang: "en" | "ar"): Document {
   const d = document.implementation.createHTMLDocument("t");
@@ -39,5 +41,22 @@ describe("the NAS landing page's model table", () => {
       "4 (32)",
       "Fits: Light",
     ]);
+  });
+
+  // every model routes to its maker's guide, a page that exists in both languages
+  it.each(["en", "ar"] as const)("links each model to its guide in %s", (lang) => {
+    const d = doc(lang);
+    renderModels(d);
+    const links = [...d.querySelectorAll<HTMLAnchorElement>("#models tr td:first-child a")];
+    expect(links).toHaveLength(MODELS.length);
+    MODELS.forEach((m, i) => {
+      const href = links[i]!.getAttribute("href")!;
+      expect(href).toBe(guideHref(lang, m));
+      expect(Object.keys(pages)).toContain(`../site${href}index.html`);
+    });
+    expect(guideHref("en", model("DS923+"))).toBe("/install/synology/");
+    expect(guideHref("ar", model("AS5402T"))).toBe("/ar/install/asustor/");
+    expect(guideHref("en", model("N100 mini PC"))).toBe("/install/docker/");
+    expect(Object.keys(GUIDE).sort()).toEqual(["asustor", "other", "qnap", "synology", "ugreen"]);
   });
 });
