@@ -402,4 +402,147 @@ final class PlayerSearchUITests: PlayerUITestCase {
         XCTAssertEqual(searches.last?["mode"] as? String, "fts", "words only")
         XCTAssertFalse(element("search.wordsOnly").exists, "no line for a viewer")
     }
+
+    // MARK: AI mode (story 49.14)
+
+    /// An answer as the home streams it (`api/internal/handlers/search/ai.go`): its place in
+    /// line, the passages, two sentences each citing one, the end.
+    enum AIStream {
+        static let queue = "event: queue\ndata: {\"position\":2}\n\n"
+        static let sources = """
+        event: sources
+        data: {"q":"patience","passages":[{"n":1,"video_id":"v1","title":"السيرة النبوية، الدرس ١٠","library_name":"Lectures","poster_url":"/api/videos/v1/poster","start_sec":1622,"end_sec":1630,"text":"Patience is of three kinds."},{"n":2,"video_id":"v3","title":"السيرة النبوية، الدرس ١٢","library_name":"Lectures","poster_url":"/api/videos/v3/poster","start_sec":90,"end_sec":98,"text":"Patience in obedience comes first."}]}
+
+
+        """
+        static let sentences = """
+        event: text
+        data: {"text":"Patience is of three kinds.","citations":[{"n":1,"video_id":"v1","start_sec":1622,"end_sec":1630,"quote":"Patience is of three kinds."}]}
+
+        event: text
+        data: {"text":"The first is patience in obedience.","citations":[{"n":2,"video_id":"v3","start_sec":90,"end_sec":98,"quote":"Patience in obedience comes first."}]}
+
+        event: done
+        data: {"answered":true,"sentences":2,"dropped":0,"took_ms":900}
+
+
+        """
+        static let whole = sources + sentences
+    }
+
+    /// The bodies of every `POST /api/search/ai` so far.
+    private var questions: [[String: Any]] {
+        home.requests.filter { $0.method == "POST" && $0.path == "/api/search/ai" }
+            .compactMap { try? JSONSerialization.jsonObject(with: $0.body) as? [String: Any] }
+    }
+
+    /// The AI mode tab (its words in the app's language).
+    private func openAIMode() {
+        let tab = app.segmentedControls.buttons[language == "ar" ? "وضع الذكاء الاصطناعي" : "AI mode"]
+        XCTAssertTrue(tab.waitForExistence(timeout: 10), "the AI mode tab")
+        tapWhenIdle(tab, "Search")
+    }
+
+    /// `id` scrolled into sight in AI mode's list.
+    @discardableResult
+    private func revealInAnswer(_ id: String) -> XCUIElement {
+        let e = element(id), pane = element("ai.pane")
+        XCTAssertTrue(pane.waitForExistence(timeout: 10), "AI mode")
+        for _ in 0 ..< 6 where !(e.exists && e.isHittable) {
+            pane.swipeUp()
+        }
+        XCTAssertTrue(e.exists && e.isHittable, "\(id) in sight")
+        return e
+    }
+
+    /// AI mode asks only when its tab is opened: the place in line, then the sources before any
+    /// sentence, then the sentences; a citation opens the player at its moment.
+    func testAIModeStreamsTheSourcesFirstAndACitationPlaysAtItsTime() {
+        home.stub("GET", "/api/search/suggest", body: #"{"suggestions": []}"#)
+        home.stubStream("POST", "/api/search/ai", first: AIStream.queue, then: [AIStream.sources, AIStream.sentences])
+        openSearch()
+        type("patience\n")
+        XCTAssertTrue(element("search.titles").waitForExistence(timeout: 10), "Results")
+        XCTAssertTrue(questions.isEmpty, "Results asks AI mode nothing")
+
+        openAIMode()
+        eventually("the question asked") { self.questions.first?["q"] as? String == "patience" }
+        XCTAssertNil(questions.first?["history"], "a first question has no conversation")
+        let waiting = element("ai.waiting.0")
+        XCTAssertTrue(waiting.waitForExistence(timeout: 10), "the place in line")
+        XCTAssertTrue(waiting.label.contains("Waiting in line: 1 question before yours."), waiting.label)
+
+        home.release()
+        XCTAssertTrue(element("ai.source.0.1").waitForExistence(timeout: 10), "the sources")
+        XCTAssertTrue(element("ai.source.0.2").exists)
+        XCTAssertFalse(element("ai.sentence.0.0").exists, "no sentence before the sources")
+        XCTAssertEqual(plain(element("ai.source.0.1").label), "Source 1: السيرة النبوية، الدرس ١٠, at 27:02. Patience is of three kinds.")
+
+        home.release()
+        let first = element("ai.sentence.0.0")
+        XCTAssertTrue(first.waitForExistence(timeout: 10), "the first sentence")
+        XCTAssertEqual(first.label, "Patience is of three kinds.")
+        XCTAssertTrue(element("ai.sentence.0.1").waitForExistence(timeout: 10), "the second")
+        XCTAssertTrue(element("ai.writing.0").waitForNonExistence(timeout: 10), "the answer done")
+        shot("search-ai-mode")
+        audit("ai-mode")
+
+        let cite = revealInAnswer("ai.sentence.0.0.cite.1")
+        XCTAssertEqual(plain(cite.label), "Source 1: السيرة النبوية، الدرس ١٠, at 27:02")
+        tapWhenIdle(cite, "the answer")
+        playerOpened("v1", at: 1622, "at the cited moment")
+    }
+
+    /// A follow-up in the same tab: the earlier question and its answer go with it.
+    func testAIModeFollowUpCarriesTheConversation() {
+        home.stub("GET", "/api/search/suggest", body: #"{"suggestions": []}"#)
+        home.stubStream("POST", "/api/search/ai", first: AIStream.whole)
+        openSearch()
+        type("patience\n")
+        openAIMode()
+        XCTAssertTrue(element("ai.sentence.0.1").waitForExistence(timeout: 15), "the answer")
+
+        let next = revealInAnswer("ai.followUp")
+        next.typeExactly("and its kinds?", in: app)
+        revealInAnswer("ai.followUp.send").tap()
+        eventually("the follow-up asked") { self.questions.count == 2 }
+        XCTAssertEqual(questions.last?["q"] as? String, "and its kinds?")
+        let history = questions.last?["history"] as? [[String: String]]
+        XCTAssertEqual(history?.count, 1, "the conversation so far")
+        XCTAssertEqual(history?.first?["q"], "patience")
+        XCTAssertEqual(history?.first?["answer"], "Patience is of three kinds. The first is patience in obedience.")
+        XCTAssertTrue(element("ai.question.1").waitForExistence(timeout: 10), "the follow-up on screen")
+        XCTAssertTrue(revealInAnswer("ai.sentence.1.0").exists, "its answer")
+        XCTAssertTrue(element("ai.question.0").exists, "under the first")
+    }
+
+    /// No language model on the home: the tab says so, in Arabic, and an admin is told where
+    /// to set it up. Not an error.
+    func testAIModeWithoutAModelSaysSoInArabic() {
+        home.capabilities(off: [], admin: true)
+        home.stub("POST", "/api/search/ai", status: 409,
+                  body: #"{"type":"https://maktaba.tv/problems/ai-unavailable","title":"no language model","status":409,"code":"ai-unavailable","help":{"settings":"/settings/rules?section=tagcheck&q=url","help":"/help/search#ai-mode"}}"#)
+        openSearch("ar")
+        type("الصبر\n")
+        openAIMode()
+        let line = element("ai.ending.0")
+        XCTAssertTrue(line.waitForExistence(timeout: 15), "the tab's message")
+        XCTAssertEqual(line.label, "يحتاج وضع الذكاء الاصطناعي إلى نموذج اللغة في الجهاز الرئيسي، وهو غير مُعدّ.")
+        XCTAssertEqual(element("ai.unavailable.admin").label,
+                       "يضبط المسؤول خادم النموذج في تطبيق الويب للجهاز الرئيسي: الإعدادات، القواعد، فحص الوسوم.")
+        XCTAssertTrue(element("ai.settings").exists, "the settings' link")
+        XCTAssertTrue(element("ai.help").exists, "the help's link")
+        XCTAssertFalse(element("ai.followUp").exists, "nothing to follow up")
+        shot("search-ai-mode-no-model")
+    }
+
+    /// A home before AI mode (404 for the route) says it has none yet.
+    func testAIModeOnAnOlderHomeSaysItHasNoneYet() {
+        openSearch()
+        type("patience\n")
+        openAIMode()
+        let line = element("ai.ending.0")
+        XCTAssertTrue(line.waitForExistence(timeout: 15), "the tab's message")
+        XCTAssertEqual(line.label, "This home does not have AI mode yet. It comes with an update of the home.")
+    }
 }

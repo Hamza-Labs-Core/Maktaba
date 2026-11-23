@@ -195,6 +195,7 @@
 		2C8A95777FBDF766A071D596 /* video-v7.json in Resources */ = {isa = PBXBuildFile; fileRef = C8181B1E47B9309AD90DB519 /* video-v7.json */; };
 		2C94FF2405AC79BBD41634EF /* series-seerah.json in Resources */ = {isa = PBXBuildFile; fileRef = 6A2EF4528458BE561D5D5E3D /* series-seerah.json */; };
 		2CE52515B34EDD95A443649A /* ReportsInboxView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 076EC6D65DD5EDF1384D61B0 /* ReportsInboxView.swift */; };
+		2CF6C1FDE72314DC50BE70A4 /* AIModePane.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D1D033C4255E28CBCC8E1CD /* AIModePane.swift */; };
 		2D41AD6DEEE458BE4199C440 /* picture-0.ts in Resources */ = {isa = PBXBuildFile; fileRef = E3FBB727A4EE8A2516B22A50 /* picture-0.ts */; };
 		2D5FE684B1D66F5DEA1201D5 /* home.json in Resources */ = {isa = PBXBuildFile; fileRef = 5EFFA92E7C6A2006B0D6623A /* home.json */; };
 		2D99A4436C514308FD60F36D /* Shell.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 6BA42F40AC03D7A9DCFE3FF7 /* Shell.xcstrings */; };
@@ -329,9 +330,11 @@
 		4B9BCBB2B02FEB37342B7212 /* libraries-summary.json in Resources */ = {isa = PBXBuildFile; fileRef = DE03B499C6326913603D6C57 /* libraries-summary.json */; };
 		4BD2A8C34980B0BA0D301642 /* me-video-v4.json in Resources */ = {isa = PBXBuildFile; fileRef = 4D42008504D68B05C07B686D /* me-video-v4.json */; };
 		4BDE027DF06B89F42E3BC4F9 /* Components.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 53837B9670C68C97101F9F9E /* Components.xcstrings */; };
+		4C0C8EE64A87056E931A3808 /* AIModePane.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D1D033C4255E28CBCC8E1CD /* AIModePane.swift */; };
 		4C6191BB5D5F91260E1D0BBF /* HomeRows.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED205B97C3ED5562E177BCDA /* HomeRows.swift */; };
 		4CB8C98399DB4813072B4860 /* library-collections.json in Resources */ = {isa = PBXBuildFile; fileRef = 2F54871DF7C6E8E2F483C707 /* library-collections.json */; };
 		4CCF3859E7228B369A52DDEB /* video-0.ts in Resources */ = {isa = PBXBuildFile; fileRef = 7155A0ABC39039D117575927 /* video-0.ts */; };
+		4D163A99E86C0E3335C1F27C /* AIModePane.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D1D033C4255E28CBCC8E1CD /* AIModePane.swift */; };
 		4D9BD72B282765B08ADC328B /* SeriesScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7797D4BCE39BE93034371710 /* SeriesScreen.swift */; };
 		4DD348656C3CC0741165C586 /* library-categories.json in Resources */ = {isa = PBXBuildFile; fileRef = D1892A153EF5A11DCEEC0C52 /* library-categories.json */; };
 		4DFB4099AEA5CB08069AAD21 /* UpNext.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB23121524971048DFC4FAAE /* UpNext.swift */; };
@@ -675,6 +678,7 @@
 		9BDC9E16EBAA6A53D4D8A3B0 /* InfoPlist.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = CD42A40FE5CCA1A4E73C464A /* InfoPlist.xcstrings */; };
 		9BE157207ABCFB32FFE74B1A /* video-v5.json in Resources */ = {isa = PBXBuildFile; fileRef = FC6C8ADDCCF8BA90EB3F6579 /* video-v5.json */; };
 		9C6D79C900808EB8B3342A11 /* LibraryBrowser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3033581386E66EA372B7CC00 /* LibraryBrowser.swift */; };
+		9CE8E1E27E9B9C8CF610EE42 /* AIModeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0BFB13E8359669653477C38 /* AIModeView.swift */; };
 		9D69FC4E72A41D2D33139B3D /* AttentionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89A0D10E805B91C6DF487118 /* AttentionView.swift */; };
 		9D9DDD0FC365769A47F924EB /* live-segment.ts in Resources */ = {isa = PBXBuildFile; fileRef = B95F80C00932C42124C51265 /* live-segment.ts */; };
 		9E0B9CF93B206A6CBE252E05 /* pinned-libraries.json in Resources */ = {isa = PBXBuildFile; fileRef = B8F40A31A58629458B396F20 /* pinned-libraries.json */; };
@@ -1300,6 +1304,7 @@
 		8BBA9051D7E6532CD41D442B /* library-dark.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = "library-dark.jpg"; sourceTree = "<group>"; };
 		8C52919EC066F087CF6D172D /* LibraryTabsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryTabsView.swift; sourceTree = "<group>"; };
 		8CAB2480242420873FE19615 /* channel-guide-ch-3.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "channel-guide-ch-3.json"; sourceTree = "<group>"; };
+		8D1D033C4255E28CBCC8E1CD /* AIModePane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIModePane.swift; sourceTree = "<group>"; };
 		8D7854985D06FAC66B7A1713 /* ParentalProfile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ParentalProfile.swift; sourceTree = "<group>"; };
 		8ED91FC6D9AA2D5272DD2F3E /* channel-ch-3.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "channel-ch-3.json"; sourceTree = "<group>"; };
 		8FC62B44E1ADC7CCADF67B6D /* MaktabaKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = MaktabaKit; path = MaktabaKit; sourceTree = SOURCE_ROOT; };
@@ -1413,6 +1418,7 @@
 		EF8A504D2033AFF469413F98 /* IBMPlexSansArabic-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "IBMPlexSansArabic-Regular.ttf"; sourceTree = "<group>"; };
 		EFC8CA7A13A9418D0100F0C0 /* LivePlayback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LivePlayback.swift; sourceTree = "<group>"; };
 		EFE4AF409F15480BB2C15167 /* CastController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CastController.swift; sourceTree = "<group>"; };
+		F0BFB13E8359669653477C38 /* AIModeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIModeView.swift; sourceTree = "<group>"; };
 		F19454F5AD097C64274322B1 /* LiveGuide.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveGuide.swift; sourceTree = "<group>"; };
 		F2AAF6514EB46D3CBD9DCA24 /* channels-now.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "channels-now.json"; sourceTree = "<group>"; };
 		F2E7A424529D8DE1BCD5975E /* Maktaba Remote iPad.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = "Maktaba Remote iPad.app"; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -1892,6 +1898,7 @@
 		A91E4DB4C25A251D4FDAE94A /* Search */ = {
 			isa = PBXGroup;
 			children = (
+				8D1D033C4255E28CBCC8E1CD /* AIModePane.swift */,
 				9298598314EC8A4FFE96B154 /* Search.xcstrings */,
 				E3184D41DED31BB738DA554B /* SearchScreen.swift */,
 			);
@@ -1929,6 +1936,7 @@
 			isa = PBXGroup;
 			children = (
 				AD07EABD391C15886B8A214D /* Library */,
+				F0BFB13E8359669653477C38 /* AIModeView.swift */,
 				A9B42EAB8CCCB3618D5A3333 /* CompatView.swift */,
 				80B08E8952466CDCCB78005F /* GuestViews.swift */,
 				D41DCD8360915712BC0B6FED /* HomeView.swift */,
@@ -3275,6 +3283,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				9CE8E1E27E9B9C8CF610EE42 /* AIModeView.swift in Sources */,
 				1D466999A271B2446D7BA6ED /* CompatView.swift in Sources */,
 				6A727E03589D0C92DB27EC3A /* ContentView.swift in Sources */,
 				4A1EC6A04911398B2B6F0BCE /* CrashCapture.swift in Sources */,
@@ -3382,6 +3391,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				4D163A99E86C0E3335C1F27C /* AIModePane.swift in Sources */,
 				B5491EE5D18F285DE5EB0AA3 /* CachedImage.swift in Sources */,
 				9713A87D2F7E8CE00077BFCD /* CastContext.swift in Sources */,
 				212D6716D47C41D23A1E6EF3 /* CastController.swift in Sources */,
@@ -3513,6 +3523,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				4C0C8EE64A87056E931A3808 /* AIModePane.swift in Sources */,
 				08FC672F6F0FA8B90D1A9D17 /* CachedImage.swift in Sources */,
 				E79BF9864B317B5A37674513 /* CastContext.swift in Sources */,
 				49543AC22ED2C1914C8848B1 /* CastController.swift in Sources */,
@@ -3581,6 +3592,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				2CF6C1FDE72314DC50BE70A4 /* AIModePane.swift in Sources */,
 				9AF4D01A44868E95268E1EEA /* CachedImage.swift in Sources */,
 				17425CEF3EF15A18D7722C9D /* CastContext.swift in Sources */,
 				1B4657047C03EDC7868440CA /* CastController.swift in Sources */,

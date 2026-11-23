@@ -16,6 +16,11 @@ import SwiftUI
 /// Both a search and a result's page change the screen under the field, so both wait for the
 /// field to let go of the keyboard first (`LetGoFirst`, Trail #1419 and #1425); so does every
 /// refinement.
+///
+/// Story 49.14 adds AI mode, a second tab beside **Results** (`AIModePane`): the home's language
+/// model answers a question from the library's passages, each sentence citing the moment it
+/// comes from. It runs only when the tab is opened or a question is asked from it; Results
+/// never waits on it. Leaving the tab, asking again or leaving Search closes its stream.
 struct SearchScreen: View {
     let context: PlayerContext
 
@@ -33,6 +38,10 @@ struct SearchScreen: View {
     /// A title suggestion was chosen: the field's own submit that follows a suggestion's tap
     /// is not a search (it would replace the held page with a search of what was typed).
     @State private var titleChosen = false
+    /// Results or AI mode.
+    @State private var tab = SearchTab.results
+    /// AI mode's conversation (story 49.14).
+    @State private var ai: AIModeModel
 
     /// A query sent as the screen opens (a plugin panel's chip, `PlayerRoute.search`).
     private let initial: String?
@@ -43,16 +52,39 @@ struct SearchScreen: View {
         let session = context.session
         _model = State(initialValue: SearchModel(client: context.client,
                                                  byMeaning: { session.capabilities.current.isOn(.semanticSearch) }) { session.signedOut() })
+        _ai = State(initialValue: AIModeModel(client: context.client) { session.signedOut() })
     }
 
     private var caps: Capabilities { context.session.capabilities.current }
 
     var body: some View {
         @Bindable var model = model
-        content
+        Group {
+            if tab == .ai {
+                AIModePane(ai: ai, typed: model.query, home: context.client.home, isAdmin: caps.isAdmin,
+                           open: open, ask: { hold(.ask($0)) }, followUp: { hold(.followUp($0)) })
+            } else {
+                content
+            }
+        }
+            // Results and AI mode (49.14), over the screen under the field
+            .safeAreaInset(edge: .top, spacing: 0) {
+                Picker(selection: $tab) {
+                    Text(verbatim: AIWords.results()).tag(SearchTab.results)
+                    Text(verbatim: AIWords.aiMode()).tag(SearchTab.ai)
+                } label: {
+                    Text(verbatim: AIWords.aiMode())
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .padding(.horizontal, MaktabaTokens.Spacing.s4)
+                .padding(.vertical, MaktabaTokens.Spacing.s2)
+                .background(Color.mktBackground)
+                .accessibilityIdentifier("search.tabs")
+            }
             // search by meaning off: words only, and an admin reads so under the field (51.11)
             .safeAreaInset(edge: .top, spacing: 0) {
-                if caps.wordsOnlyLine {
+                if caps.wordsOnlyLine, tab == .results {
                     Text(verbatim: FeatureWords.wordsOnly)
                         .font(.maktabaBody(13, relativeTo: .footnote))
                         .foregroundStyle(Color.mktMuted)
@@ -90,6 +122,9 @@ struct SearchScreen: View {
                 }
                 submit(model.query)
             }
+            .onChange(of: tab) { _, now in tabChanged(now) }
+            // leaving Search closes AI mode's stream
+            .onDisappear { ai.cancel() }
             // the field let go: the search or the page held for it goes now
             .onChange(of: typing) { _, now in
                 if let change = letGo.focusChanged(now) { perform(change) }
@@ -229,6 +264,8 @@ struct SearchScreen: View {
         // the field holds the chosen text at once: the field's own submit, which can follow
         // a suggestion's tap, then sends that too rather than what was typed so far
         model.query = q
+        // in AI mode, the field asks a new question
+        if tab == .ai { return hold(.ask(q)) }
         // The keyboard is let go of first, and the search runs once the field has let go
         // (`onChange(of: typing)`). Searching swaps the screen under the field (the suggestions
         // go, then a spinner, then the results). In the same update as the field letting go,
@@ -246,6 +283,25 @@ struct SearchScreen: View {
         hold(.open(route))
     }
 
+    /// AI mode opened: what the field holds is asked, unless it is the question on screen (a
+    /// question stopped by leaving the tab is asked again). Back on Results: AI mode's stream
+    /// closes, and what the field holds is searched when it is not the search on screen.
+    private func tabChanged(_ now: SearchTab) {
+        switch now {
+        case .ai:
+            let q = SearchModel.sendable(model.query)
+            if !q.isEmpty, q != ai.question {
+                hold(.ask(q))
+            } else if let last = ai.turns.last, last.state == .stopped(code: AIModeModel.left) {
+                ai.askAgain()
+            }
+        case .results:
+            ai.cancel()
+            let q = SearchModel.sendable(model.query)
+            if !q.isEmpty, q != model.submitted { hold(.search(q)) }
+        }
+    }
+
     /// Runs `change` now when the field holds no keyboard; otherwise drops the focus, and
     /// `onChange(of: typing)` runs it once the field has let go.
     private func hold(_ change: SearchChange) {
@@ -260,6 +316,8 @@ struct SearchScreen: View {
             if ask.query != model.query { model.query = ask.query }
             Task { await model.run(ask) }
         case .filters: filtering = true
+        case let .ask(q): ai.ask(q)
+        case let .followUp(q): ai.followUp(q)
         case let .open(route): if let push { push(route) } else { pushed = route }
         }
     }
@@ -273,6 +331,14 @@ enum SearchChange: Equatable {
     case refine(SearchModel.Ask)
     case filters
     case open(PlayerRoute)
+    /// AI mode: a new question, or a follow-up in the conversation (49.14).
+    case ask(String)
+    case followUp(String)
+}
+
+/// Search's two tabs (49.14): the results, and AI mode.
+enum SearchTab: Hashable {
+    case results, ai
 }
 
 /// A group's heading: brass, a heading for VoiceOver.

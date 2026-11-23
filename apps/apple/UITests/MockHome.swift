@@ -50,6 +50,9 @@ final class MockHome: @unchecked Sendable {
         var delay: TimeInterval = 0
         /// More response headers (`Retry-After`).
         var headers: [String: String] = [:]
+        /// The rest of a streamed body (`stubStream`), in parts: each sent after the one before
+        /// it once the test calls `release`, the connection kept open meanwhile.
+        var rest: [Data]?
     }
 
     private struct Route: Decodable {
@@ -192,6 +195,16 @@ final class MockHome: @unchecked Sendable {
         lock.withLock { stubs["\(method) \(path)"] = Answer(status: status, body: Data(body.utf8), contentType: type, delay: delay, headers: headers) }
     }
 
+    /// From now on, `method path` answers a Server-Sent Events stream (AI mode, story 49.14):
+    /// `first` at once, then each part of `then` at each `release` (a latch: "the sources show
+    /// before the sentences" never races a timer). With no `then`, the whole stream at once.
+    func stubStream(_ method: String, _ path: String, first: String, then: [String] = []) {
+        lock.withLock {
+            stubs["\(method) \(path)"] = Answer(status: 200, body: Data(first.utf8), contentType: "text/event-stream",
+                                               rest: then.isEmpty ? nil : then.map { Data($0.utf8) })
+        }
+    }
+
     /// From now on, `GET /api/capabilities` (story 51.09) answers with the features in `off`
     /// off (`live_tv`, `semantic_search` …), as it answers a viewer, or with the admin block
     /// (`admin`). A feature that is off also answers its routes' 409 `component_off`
@@ -310,8 +323,15 @@ final class MockHome: @unchecked Sendable {
                     let request = Request(method: method, path: target[0], query: target.count > 1 ? target[1] : "",
                                           body: Data(buf[end.upperBound...].prefix(length)), headers: headers)
                     let a = answer(request)
-                    var response = Data("HTTP/1.1 \(a.status) \(a.status < 400 ? "OK" : "Error")\r\nContent-Type: \(a.contentType)\r\n\(a.headers.map { "\($0): \($1)\r\n" }.joined())Content-Length: \(a.body.count)\r\nConnection: close\r\n\r\n".utf8)
+                    let length = a.body.count + (a.rest ?? []).reduce(0) { $0 + $1.count }
+                    var response = Data("HTTP/1.1 \(a.status) \(a.status < 400 ? "OK" : "Error")\r\nContent-Type: \(a.contentType)\r\n\(a.headers.map { "\($0): \($1)\r\n" }.joined())Content-Length: \(length)\r\nConnection: close\r\n\r\n".utf8)
                     response.append(a.body)
+                    if let rest = a.rest {
+                        // a stream: the head and the first part now, each next part on a `release`
+                        c.send(content: response, completion: .contentProcessed { _ in })
+                        streamOn(c, rest[...])
+                        return
+                    }
                     let send = { c.send(content: response, completion: .contentProcessed { _ in c.cancel() }) }
                     let parked = lock.withLock {
                         guard held.contains("\(request.method) \(request.path)") else { return false }
@@ -333,6 +353,17 @@ final class MockHome: @unchecked Sendable {
             }
             receive(c, buf)
         }
+    }
+
+    /// Parks the next part of a stream until `release`; the last one closes the connection.
+    private func streamOn(_ c: NWConnection, _ parts: ArraySlice<Data>) {
+        guard let part = parts.first else { return }
+        let more = { [weak self] in
+            let last = parts.count == 1
+            c.send(content: part, completion: .contentProcessed { _ in if last { c.cancel() } })
+            self?.streamOn(c, parts.dropFirst())
+        }
+        lock.withLock { parked.append(more) }
     }
 
     private func answer(_ r: Request) -> Answer {
