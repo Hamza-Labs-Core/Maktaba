@@ -21,7 +21,7 @@
     "phase": 17,
     "plan": 372,
     "review": 15,
-    "story": 743
+    "story": 744
   },
   "parts": [
     "wiki-epics-01-09.json",
@@ -856,6 +856,7 @@
         "story-13.6",
         "story-13.7",
         "story-13.8",
+        "story-13.9",
         "plan-13.01-macos",
         "plan-13.02-windows",
         "plan-13.03-linux",
@@ -872,7 +873,7 @@
         "readme": "specs/epics/13-desktop/README.md"
       },
       "metadata": {
-        "story_count": 8,
+        "story_count": 9,
         "plan_count": 8,
         "mockup_count": 3
       }

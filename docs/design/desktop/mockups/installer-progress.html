@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="window" content="720x460">
+<title>Installer: installing (Windows, the server app's -setup.exe)</title>
+<link rel="stylesheet" href="../../../../web/packages/website/design/site-tokens.css">
+<link rel="stylesheet" href="../desktop.css">
+<style>
+  .brand { inline-size: 232px; padding: 24px 22px 0; }
+  .brand .arch-art { inline-size: 170px; inset-inline: 31px; }
+  .brand .ver { color: var(--dk-muted); font-size: var(--dk-t-small); line-height: var(--dk-t-small-lh); }
+  .wpage .wbody { padding: 26px 32px 0; }
+  .wpage h1 { font-size: var(--dk-t-h2); line-height: var(--dk-t-h2-lh); }
+  .wfoot { padding: 14px 32px; }
+  .prog { margin-block: 22px 8px; }
+  .prog .bar { block-size: 8px; }
+  .now { display: flex; justify-content: space-between; color: var(--dk-muted); font-size: var(--dk-t-small); }
+  .list { margin-block-start: 18px; display: flex; flex-direction: column; gap: 6px; }
+  .list div { display: flex; align-items: center; gap: 10px; color: var(--dk-muted); }
+  .list .ok { color: var(--dk-fg); }
+  .list .ok svg { color: var(--dk-ok); }
+  .list .run { color: var(--dk-fg); font-weight: 600; }
+  .spin { inline-size: 18px; block-size: 18px; border-radius: 50%; border: 2px solid rgba(227,178,82,.25); border-block-start-color: var(--dk-brass); }
+  .ring { inline-size: 18px; block-size: 18px; border-radius: 50%; border: 1.5px solid var(--dk-control); }
+  .opt { display: flex; align-items: center; gap: 10px; }
+  .opt .check svg { inline-size: 14px; block-size: 14px; stroke-width: 2.4; }
+</style>
+</head>
+<body>
+<div class="win win11">
+  <header class="titlebar mica" style="block-size: 36px">
+    <div class="app"><img src="../../../../web/public/icons/icon-192.png" alt=""><span data-t="wtitle"></span></div>
+    <div class="grow"></div>
+    <div data-caption="close"></div>
+  </header>
+  <div class="wizard">
+    <aside class="brand">
+      <div class="wordmark" style="margin-block-end: 14px"><img src="../../../../web/public/icons/icon-192.png" alt=""><span data-t="c.server"></span></div>
+      <div class="ver num" data-th="ver"></div>
+      <div data-arch></div>
+    </aside>
+    <section class="wpage">
+      <div class="wbody">
+        <h1 class="display" data-t="h1"></h1>
+        <p class="lead" data-t="lead"></p>
+        <div class="prog"><div class="bar"><i style="inline-size: 64%"></i></div></div>
+        <div class="now"><span data-t="step"></span><span class="num" data-t="pct"></span></div>
+        <div class="list">
+          <div class="ok"><i data-i="checkcircle"></i><span data-t="l1"></span></div>
+          <div class="run"><span class="spin"></span><span data-t="l2"></span></div>
+          <div><span class="ring"></span><span data-t="l3"></span></div>
+          <div><span class="ring"></span><span data-t="l4"></span></div>
+        </div>
+      </div>
+      <div class="wfoot">
+        <span class="opt"><span class="check on"><i data-i="check"></i></span><span data-t="openAfter"></span></span>
+        <span class="grow"></span>
+        <span class="btn" data-t="cancel"></span>
+      </div>
+    </section>
+  </div>
+</div>
+<script src="kit.js"></script>
+<script>
+MK.applyKit({
+  en: {
+    title: "Installer: installing", wtitle: "Install Maktaba", ver: "Version 0.3.113 · 1.4 GB",
+    h1: "Installing Maktaba", lead: "This takes about a minute. Your library and settings stay where they are.",
+    step: "Copying the server: the database, ffmpeg and Python", pct: "64%",
+    l1: "Maktaba app", l2: "The server and its tools", l3: "The sign-in task, so Maktaba starts with Windows", l4: "Start menu",
+    openAfter: "Open Maktaba when it's done", cancel: "Cancel",
+  },
+  ar: {
+    title: "المثبّت: جارٍ التثبيت", wtitle: "تثبيت مكتبة", ver: "الإصدار <bdi>0.3.113</bdi> · ١٫٤ غيغابايت",
+    h1: "جارٍ تثبيت مكتبة", lead: "يستغرق هذا دقيقة تقريبًا. تبقى مكتبتك وإعداداتك في مكانها.",
+    step: "نسخ الخادم: قاعدة البيانات وffmpeg وPython", pct: "٦٤٪",
+    l1: "تطبيق مكتبة", l2: "الخادم وأدواته", l3: "مهمة تسجيل الدخول، لتبدأ مكتبة مع Windows", l4: "قائمة ابدأ",
+    openAfter: "افتح مكتبة عند الانتهاء", cancel: "إلغاء",
+  },
+});
+</script>
+</body>
+</html>

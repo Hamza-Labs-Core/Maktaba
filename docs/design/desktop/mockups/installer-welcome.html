@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="window" content="720x460">
+<title>Installer: welcome (Windows, the server app's -setup.exe)</title>
+<link rel="stylesheet" href="../../../../web/packages/website/design/site-tokens.css">
+<link rel="stylesheet" href="../desktop.css">
+<style>
+  .brand { inline-size: 232px; padding: 24px 22px 0; }
+  .brand .arch-art { inline-size: 170px; inset-inline: 31px; }
+  .brand .ver { color: var(--dk-muted); font-size: var(--dk-t-small); line-height: var(--dk-t-small-lh); }
+  .wpage .wbody { padding: 26px 32px 0; }
+  .wpage h1 { font-size: var(--dk-t-h2); line-height: var(--dk-t-h2-lh); }
+  .wfoot { padding: 14px 32px; }
+  .loc { display: flex; align-items: center; gap: 10px; margin-block: 20px 14px; }
+  .loc .field { flex: 1; color: var(--dk-fg); }
+  .path { direction: ltr; unicode-bidi: isolate; font-family: ui-monospace, Consolas, monospace; font-size: 13px; }
+  .opt { display: flex; align-items: center; gap: 10px; min-block-size: 32px; }
+  .opt .check svg { inline-size: 14px; block-size: 14px; stroke-width: 2.4; }
+  .fine { font-size: var(--dk-t-caption); line-height: var(--dk-t-caption-lh); color: var(--dk-muted); }
+  .fine a { color: var(--dk-brass); text-decoration: none; }
+</style>
+</head>
+<body>
+<div class="win win11">
+  <header class="titlebar mica" style="block-size: 36px">
+    <div class="app"><img src="../../../../web/public/icons/icon-192.png" alt=""><span data-t="wtitle"></span></div>
+    <div class="grow"></div>
+    <div data-caption="close"></div>
+  </header>
+  <div class="wizard">
+    <aside class="brand">
+      <div class="wordmark" style="margin-block-end: 14px"><img src="../../../../web/public/icons/icon-192.png" alt=""><span data-t="c.server"></span></div>
+      <div class="ver num" data-th="ver"></div>
+      <div data-arch></div>
+    </aside>
+    <section class="wpage">
+      <div class="wbody">
+        <h1 class="display" data-t="h1"></h1>
+        <p class="lead" data-t="lead"></p>
+        <div class="loc"><span class="field"><i data-i="folder" class="s16"></i><span class="path">%LOCALAPPDATA%\Maktaba</span></span><span class="btn" data-t="change"></span></div>
+        <div class="opt"><span class="check on"><i data-i="check"></i></span><span data-t="o1"></span></div>
+        <div class="opt"><span class="check on"><i data-i="check"></i></span><span data-t="o2"></span></div>
+        <div class="opt"><span class="check"></span><span data-t="o3"></span></div>
+      </div>
+      <div class="wfoot">
+        <span class="fine" data-th="fine"></span>
+        <span class="grow"></span>
+        <span class="btn" data-t="cancel"></span>
+        <span class="btn primary focus"><i data-i="download" class="s16"></i><span data-t="install"></span></span>
+      </div>
+    </section>
+  </div>
+</div>
+<script src="kit.js"></script>
+<script>
+MK.applyKit({
+  en: {
+    title: "Installer: welcome", wtitle: "Install Maktaba", ver: "Version 0.3.113 · 1.4 GB",
+    h1: "Install Maktaba on this PC",
+    lead: "The server, the web app and Live TV, in one app. It installs for you only and needs no administrator.",
+    change: "Change",
+    o1: "Start Maktaba when I sign in", o2: "Add Maktaba to the Start menu", o3: "Put a shortcut on the desktop",
+    fine: 'Free and open source (<a>MIT licence</a>)',
+    cancel: "Cancel", install: "Install",
+  },
+  ar: {
+    title: "المثبّت: مرحبًا", wtitle: "تثبيت مكتبة", ver: "الإصدار <bdi>0.3.113</bdi> · ١٫٤ غيغابايت",
+    h1: "ثبّت مكتبة على هذا الحاسوب",
+    lead: "الخادم وتطبيق الويب والبث المباشر في تطبيق واحد. يُثبَّت لك وحدك ولا يحتاج إلى مسؤول.",
+    change: "تغيير",
+    o1: "شغّل مكتبة عند تسجيل دخولي", o2: "أضف مكتبة إلى قائمة ابدأ", o3: "ضع اختصارًا على سطح المكتب",
+    fine: 'مجاني ومفتوح المصدر (<a>ترخيص MIT</a>)',
+    cancel: "إلغاء", install: "تثبيت",
+  },
+});
+</script>
+</body>
+</html>

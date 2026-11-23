@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="window" content="1280x800">
+<title>Player: a library</title>
+<link rel="stylesheet" href="../../../../web/packages/website/design/site-tokens.css">
+<link rel="stylesheet" href="../desktop.css">
+<style>
+  .head { display: flex; align-items: flex-end; gap: 16px; }
+  .head h1 { font-size: var(--dk-t-h1); line-height: var(--dk-t-h1-lh); }
+  .crumbs { display: flex; align-items: center; gap: 6px; color: var(--dk-muted); font-size: var(--dk-t-small); margin-block-end: 4px; }
+  .tools { display: flex; align-items: center; gap: 8px; margin-block: 18px 22px; }
+  .tools .grow { flex: 1; }
+  .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 26px 20px; }
+  .grid .card { inline-size: auto; }
+  .hoverplay { position: absolute; inset: 0; display: grid; place-items: center; background: linear-gradient(0deg, rgba(5,8,14,.55), rgba(5,8,14,.15)); }
+  .hoverplay span { display: grid; place-items: center; inline-size: 48px; block-size: 48px; border-radius: 50%; background: var(--dk-brass); color: var(--dk-on-brass); }
+  .hoverplay span svg { inline-size: 20px; block-size: 20px; margin-inline-start: 3px; }
+  :root[dir="rtl"] .hoverplay span svg { margin-inline-start: 0; margin-inline-end: 3px; }
+  .watched { position: absolute; inset-block-start: 8px; inset-inline-start: 8px; display: grid; place-items: center; inline-size: 24px; block-size: 24px; border-radius: 50%; background: rgba(5,8,14,.75); color: var(--dk-brass); }
+  .watched svg { inline-size: 14px; block-size: 14px; stroke-width: 2.4; }
+</style>
+</head>
+<body>
+<div data-shell="player" data-on="libraries">
+    <main class="page pad">
+      <div class="crumbs"><span data-t="nav.libraries"></span><i data-i="chevron" class="s16 dir"></i><span data-t="lib"></span></div>
+      <div class="head">
+        <h1 class="display" data-t="lib"></h1>
+        <span class="muted" style="margin-block-end: 8px" data-t="count"></span>
+      </div>
+      <div class="tools">
+        <span class="chip on" data-t="f.all"></span>
+        <span class="chip" data-t="f.unwatched"></span>
+        <span class="chip" data-t="f.progress"></span>
+        <span class="grow"></span>
+        <span class="btn ghost"><i data-i="filter" class="s16"></i><span data-t="sort"></span><i data-i="chevdown" class="s16"></i></span>
+        <span class="seg"><span class="on"><i data-i="grid" class="s16"></i></span><span><i data-i="list" class="s16"></i></span></span>
+        <span class="btn primary"><i data-i="play" class="s16"></i><span data-t="playall"></span></span>
+      </div>
+      <div class="grid">
+        <div class="card"><div class="art"><img src="../../../../tests/fixtures/demo-library/art/spring-backdrop.jpg" alt=""><span class="dur num" data-t="d1"></span></div><div class="t" data-t="v.spring"></div><div class="m" data-t="m.spring"></div></div>
+        <div class="card focus"><div class="art"><img src="../../../../tests/fixtures/demo-library/art/sintel-backdrop.jpg" alt=""><div class="hoverplay"><span><i data-i="play"></i></span></div><span class="prog"><i style="inline-size: 43%"></i></span></div><div class="t" data-t="v.sintel"></div><div class="m" data-t="m.sintel"></div></div>
+        <div class="card"><div class="art"><img src="../../../../tests/fixtures/demo-library/art/big-buck-bunny-backdrop.jpg" alt=""><span class="watched"><i data-i="check"></i></span><span class="dur num" data-t="d3"></span></div><div class="t" data-t="v.bbb"></div><div class="m" data-t="m.bbb"></div></div>
+        <div class="card"><div class="art"><img src="../../../../tests/fixtures/demo-library/art/tears-of-steel-backdrop.jpg" alt=""><span class="dur num" data-t="d4"></span></div><div class="t" data-t="v.tos"></div><div class="m" data-t="m.tos"></div></div>
+        <div class="card"><div class="art"><img src="../../../../tests/fixtures/demo-library/art/cosmos-laundromat-backdrop.jpg" alt=""><span class="dur num" data-t="d5"></span></div><div class="t" data-t="v.cosmos"></div><div class="m" data-t="m.cosmos"></div></div>
+        <div class="card"><div class="art"><img src="../../../../tests/fixtures/demo-library/art/elephants-dream-backdrop.jpg" alt=""><span class="watched"><i data-i="check"></i></span><span class="dur num" data-t="d6"></span></div><div class="t" data-t="v.ed"></div><div class="m" data-t="m.ed"></div></div>
+      </div>
+    </main>
+</div>
+<script src="kit.js"></script>
+<script>
+MK.applyKit({
+  en: {
+    title: "Player: a library",
+   
+    lib: "Films", count: "6 videos",
+    "f.all": "All", "f.unwatched": "Unwatched", "f.progress": "In progress",
+    sort: "Newest first", playall: "Play all",
+    "v.spring": "Spring", "m.spring": "2019 · Added yesterday",
+    "v.sintel": "Sintel", "m.sintel": "2010 · 8:28 left",
+    "v.bbb": "Big Buck Bunny", "m.bbb": "2008 · Watched",
+    "v.tos": "Tears of Steel", "m.tos": "2012",
+    "v.cosmos": "Cosmos Laundromat", "m.cosmos": "2015",
+    "v.ed": "Elephants Dream", "m.ed": "2006 · Watched",
+    d1: "7:44", d3: "9:56", d4: "12:14", d5: "12:10", d6: "10:54",
+  },
+  ar: {
+    title: "المشغّل: مكتبة",
+    lib: "أفلام", count: "٦ مقاطع",
+    "f.all": "الكل", "f.unwatched": "لم تُشاهَد", "f.progress": "قيد المشاهدة",
+    sort: "الأحدث أولًا", playall: "تشغيل الكل",
+    "v.spring": "الربيع", "m.spring": "٢٠١٩ · أضيف أمس",
+    "v.sintel": "سينتل", "m.sintel": "٢٠١٠ · بقي ٨:٢٨",
+    "v.bbb": "الأرنب الكبير", "m.bbb": "٢٠٠٨ · تمت المشاهدة",
+    "v.tos": "دموع من فولاذ", "m.tos": "٢٠١٢",
+    "v.cosmos": "مغسلة الكون", "m.cosmos": "٢٠١٥",
+    "v.ed": "حلم الفيلة", "m.ed": "٢٠٠٦ · تمت المشاهدة",
+    d1: "٧:٤٤", d3: "٩:٥٦", d4: "١٢:١٤", d5: "١٢:١٠", d6: "١٠:٥٤",
+  },
+});
+</script>
+</body>
+</html>

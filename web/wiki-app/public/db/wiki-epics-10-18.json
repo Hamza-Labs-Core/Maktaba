@@ -1791,6 +1791,32 @@
       }
     },
     {
+      "id": "story-13.9",
+      "type": "story",
+      "title": "Design: Maktaba's own look on the desktop, as reviewed mockups",
+      "epic": "13-desktop",
+      "phase": 3,
+      "content": "# Story 13.9 — Design: Maktaba's own look on the desktop, as reviewed mockups\n\n> Epic 13 · Design first · Depends on: Epic 17 (tokens), Epic 60 story 60.01 part B (the\n> direction, Maktaba Display) · Gates: every story that changes a desktop surface's look (the\n> build stories proposed below)\n\n## Why\n\nMaktaba's desktop apps show the operating system's stock parts wherever the app's own pages\nstop: the title bar, the menu bar, error message boxes, the tray menu and every installer.\nThe apps are to look like one designed Maktaba product instead, in English and Arabic, while\nkeeping what people e",
+      "tags": [
+        "story",
+        "13-desktop",
+        "phase-3"
+      ],
+      "related": [
+        "epic-13-desktop"
+      ],
+      "files": {
+        "story": "specs/epics/13-desktop/story-13-09-desktop-design.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "desktop-design"
+      }
+    },
+    {
       "id": "story-14.1",
       "type": "story",
       "title": "tvOS app (Swift / SwiftUI)",

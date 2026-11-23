@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="window" content="1280x800">
+<title>Player on Linux (GNOME): Home</title>
+<link rel="stylesheet" href="../../../../web/packages/website/design/site-tokens.css">
+<link rel="stylesheet" href="../desktop.css">
+<style>
+  .hero { position: relative; block-size: 330px; margin: 20px 28px 0; border-radius: 16px; overflow: hidden; }
+  .hero img { position: absolute; inset: 0; inline-size: 100%; block-size: 100%; object-fit: cover; object-position: 50% 35%; }
+  .hero::after { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, rgba(11,17,28,.92) 0%, rgba(11,17,28,.55) 45%, rgba(11,17,28,0) 75%); }
+  :root[dir="rtl"] .hero::after { background: linear-gradient(270deg, rgba(11,17,28,.92) 0%, rgba(11,17,28,.55) 45%, rgba(11,17,28,0) 75%); }
+  .hero .in { position: absolute; z-index: 1; inset-inline-start: 36px; inset-block-end: 32px; max-inline-size: 440px; }
+  .hero .kick { color: var(--dk-brass); font-weight: 600; font-size: var(--dk-t-small); }
+  .hero h1 { font-size: var(--dk-t-hero); line-height: var(--dk-t-hero-lh); }
+  .hero p { color: var(--dk-muted); margin-block: 6px 18px; }
+  .hero .acts { display: flex; gap: 10px; }
+  .sec { padding-inline: 28px; }
+  .shelf .card { inline-size: 250px; }
+</style>
+</head>
+<body>
+<div data-shell="player" data-on="home" data-os="gtk">
+  <main class="page">
+    <div class="hero">
+      <img src="../../../../tests/fixtures/demo-library/art/spring-backdrop.jpg" alt="">
+      <div class="in">
+        <div class="kick" data-t="kick"></div>
+        <h1 class="display" data-t="name"></h1>
+        <p data-t="syn"></p>
+        <div class="acts"><span class="btn primary lg"><i data-i="play" class="s16"></i><span data-t="play"></span></span><span class="btn lg" data-t="more"></span></div>
+      </div>
+    </div>
+    <div class="sec">
+      <div class="h-section"><h2 data-t="cw"></h2></div>
+      <div class="shelf">
+        <div class="card"><div class="art"><img src="../../../../tests/fixtures/demo-library/art/sintel-backdrop.jpg" alt=""><span class="prog"><i style="inline-size: 43%"></i></span></div><div class="t" data-t="v1"></div><div class="m" data-t="m1"></div></div>
+        <div class="card"><div class="art"><img src="../../../../tests/fixtures/demo-library/art/llamigos-backdrop.jpg" alt=""><span class="prog"><i style="inline-size: 47%"></i></span></div><div class="t" data-t="v2"></div><div class="m" data-t="m2"></div></div>
+        <div class="card"><div class="art"><img src="../../../../tests/fixtures/demo-library/art/coffee-run-backdrop.jpg" alt=""></div><div class="t" data-t="v3"></div><div class="m" data-t="m3"></div></div>
+        <div class="card"><div class="art"><img src="../../../../tests/fixtures/demo-library/art/sprite-fright-backdrop.jpg" alt=""></div><div class="t" data-t="v4"></div><div class="m" data-t="m4"></div></div>
+      </div>
+    </div>
+  </main>
+</div>
+<script src="kit.js"></script>
+<script>
+MK.applyKit({
+  en: {
+    title: "Player on Linux: Home", kick: "New in Films", name: "Spring",
+    syn: "A shepherd girl and her dog face the ancient spirits of the forest to keep the cycle of life turning.",
+    play: "Play", more: "More options", cw: "Continue Watching",
+    v1: "Sintel", m1: "8:28 left", v2: "Caminandes: Llamigos", m2: "Season 1, Episode 2 · 1:20 left",
+    v3: "Coffee Run", m3: "Up next in Open Shorts", v4: "Sprite Fright", m4: "Up next in Open Shorts",
+  },
+  ar: {
+    title: "المشغّل على لينكس: الرئيسية", kick: "جديد في أفلام", name: "الربيع",
+    syn: "راعية صغيرة وكلبها يواجهان أرواح الغابة القديمة كي تبقى دورة الحياة مستمرة.",
+    play: "تشغيل", more: "خيارات أخرى", cw: "تابع المشاهدة",
+    v1: "سينتل", m1: "بقي ٨:٢٨", v2: "كاميناندس: صديقا اللاما", m2: "الموسم ١، الحلقة ٢ · بقي ١:٢٠",
+    v3: "مشوار القهوة", m3: "التالي في حكايات قصيرة", v4: "رعب الجنيات", m4: "التالي في حكايات قصيرة",
+  },
+});
+</script>
+</body>
+</html>

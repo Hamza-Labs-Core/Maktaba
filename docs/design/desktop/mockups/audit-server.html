@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="window" content="1280x900">
+<meta name="langs" content="en">
+<title>Audit: the Maktaba app (server) today</title>
+<link rel="stylesheet" href="../../../../web/packages/website/design/site-tokens.css">
+<link rel="stylesheet" href="../desktop.css">
+<link rel="stylesheet" href="audit.css">
+</head>
+<body>
+<div class="sheet">
+  <h1 class="display">Audit 2 of 3: the Maktaba app (the server, on Mac, Windows and Linux), today</h1>
+  <p>Tauri 2, <code>apps/desktop</code>: WKWebView on the Mac, WebView2 on Windows, webkit2gtk on Linux. The window is the
+    web app (<code>web/dist</code>, or the local server); first-run setup is the web page
+    <code>web/src/pages/Setup/SetupWizard.tsx</code>. The images are the web app as maktaba.tv shows it, captured in CI on
+    the demo library (<code>web/packages/website/static/shots/web-home-*-1440.webp</code>). No capture of the shell itself (its
+    frame, menus, tray, dialogs, setup screens or installers) exists in the repository or in any CI artifact.</p>
+  <div class="shots" style="grid-template-columns: 1fr 1fr">
+    <figure><img src="../../../../web/packages/website/static/shots/web-home-en-1440.webp" alt=""><figcaption>What the window shows: the web app's Home, English (designed: Ink &amp; Brass, the arch and the lamp).</figcaption></figure>
+    <figure><img src="../../../../web/packages/website/static/shots/web-home-ar-1440.webp" alt=""><figcaption>The same, Arabic: the web app mirrors.</figcaption></figure>
+  </div>
+  <div class="facts">
+    <h2>What is designed, what is stock (from the code; file and line)</h2>
+    <div class="good"><span class="k">✓</span><span>The window's content: the web app, on the design system's tokens, dark first, English and Arabic.</span></div>
+    <div class="good"><span class="k">✓</span><span>The window opens on the ink colour, in the dark theme: <code>"theme": "Dark"</code>, <code>"backgroundColor": "#0b111c"</code> (<code>tauri.conf.json:28–29</code>).</span></div>
+    <div class="stock"><span class="k">!</span><span>The OS title bar: <code>"decorations": true</code>, <code>"titleBarStyle": "Visible"</code> (<code>tauri.conf.json:25–27</code>), and the web app draws its own header under it: two bars.</span></div>
+    <div class="stock"><span class="k">!</span><span>A native menu bar on every platform: App, File, Edit, View, Library, Window, Help, and a Linux "Server" menu (<code>src/lib.rs:328–530</code>). Its titles are English literals ("File", "Library", "Help"), so it stays English in Arabic.</span></div>
+    <div class="stock"><span class="k">!</span><span>Errors open the system's message box: <code>tauri-plugin-dialog</code>, <code>MessageDialogKind::Error</code> (<code>src/shell.rs:386–390</code>).</span></div>
+    <div class="stock"><span class="k">!</span><span>The tray is the OS's plain menu (Tauri <code>tray-icon</code>; StatusNotifier on Linux): a dozen text rows and more (<code>src/tray.rs</code>, <code>entries</code>). Only the icon is drawn: a status dot on Windows and Linux (<code>tray::badge</code>).</span></div>
+    <div class="stock"><span class="k">!</span><span>Installers are stock: NSIS <code>-setup.exe</code> (<code>tools/release/win-app/payload.sh</code>; the hooks are logic only), WiX <code>.msi</code> (<code>en-US</code> only), a <code>.dmg</code> without a background, AppImage, <code>.deb</code>, <code>.rpm</code>. No header, sidebar, banner or dialog image is set.</span></div>
+    <div class="stock"><span class="k">!</span><span>Setup is a centred card in the web app (<code>web/src/styles/app.css:3740</code>, 40 rem), inside the OS frame.</span></div>
+    <div class="none"><span class="k">–</span><span>Older mockups in <code>web/mockups/desktop/</code> (main window, tray, drag and drop) use a green accent from before Ink &amp; Brass; this story replaces them.</span></div>
+    <div class="none"><span class="k">–</span><span>No visual regression: <code>_mac-app.yml</code>, <code>_win-app.yml</code>, <code>_linux-app.yml</code> and <code>_unit.yml</code>'s <code>desktop-shell*</code> jobs build and test, and upload no image.</span></div>
+  </div>
+</div>
+<script src="kit.js"></script>
+<script>MK.applyKit({ en: {}, ar: {} });</script>
+</body>
+</html>
