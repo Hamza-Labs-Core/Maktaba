@@ -179,7 +179,10 @@ end sub
 sub scene_Reset(name as String, params as Object)
     ' an AI mode answer still being read belongs to a Search that is going away: give it up,
     ' so the home's one answer at a time is not held for no one (story 49.14)
-    if m.global.aiApi <> invalid then m.global.aiApi.cancel = "*"
+    ' only a Task that runs is told: a field set on one never started (no question asked)
+    ' is a write across threads for nothing, on every reset (a deep link included)
+    ai = m.global.aiApi
+    if ai <> invalid and LCase(ai.control) = "run" then ai.cancel = "*"
     m.confirm.visible = false
     while m.stack.GetChildCount() > 0
         m.stack.RemoveChildIndex(m.stack.GetChildCount() - 1)
