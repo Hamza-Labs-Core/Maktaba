@@ -11,6 +11,9 @@
 //   - Up / down go to the nearest group that way and land on the node that
 //     group last had focused when it is still there (focus memory), else on
 //     the node nearest the current one across the axis.
+//   - A region (a screen's column, story 49.14) keeps up / down inside it while
+//     it has a node that way: a row of the next column that sits nearer does not
+//     take the focus. Past its last row the move goes on as if there were none.
 //   - The score is the distance along the move plus twice the distance
 //     across it, so a node straight ahead beats a closer one off to the side.
 //
@@ -31,6 +34,8 @@ export interface FocusNode {
   rect: Rect;
   /** The row / grid / bar the node belongs to; nodes without one are each their own. */
   group?: string | null;
+  /** The column the node sits in, when its screen marks columns (data-bs-region). */
+  region?: string | null;
 }
 
 /** The node each group had focused last (group → node id). */
@@ -117,7 +122,11 @@ export function next(
 
   // up / down: the nearest line of another group that way (the next row, even
   // when its cards lie off to the side), then the node to land on
-  const others = toward.filter((n) => groupOf(n) !== group);
+  let others = toward.filter((n) => groupOf(n) !== group);
+  if (current.region) {
+    const inRegion = others.filter((n) => n.region === current.region);
+    if (inRegion.length > 0) others = inRegion;
+  }
   const gap = Math.min(...others.map((n) => alongGap(from, n.rect, dir)));
   const nearest = best(
     from,

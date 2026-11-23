@@ -256,6 +256,53 @@ function suggestAnswer(q: string) {
   return { suggestions: items.map((i) => i.text), items };
 }
 
+/**
+ * Story 49.14: AI mode's answer as Server-Sent Events, in the question's script: its place in
+ * line, two sources, then a sentence citing each (one for a follow-up), then done.
+ */
+function aiAnswer(body: Record<string, unknown>) {
+  const q = String(body.q ?? "");
+  const ar = isArabic(q);
+  const passages = [
+    {
+      n: 1,
+      video_id: "v3",
+      title: "Patience and Gratitude",
+      library_name: "Tafsir",
+      start_sec: 312,
+      end_sec: 318,
+      text: ar ? "والصبر عند الشدة" : "and patience in hardship",
+    },
+    {
+      n: 2,
+      video_id: "v4",
+      title: "Stories of the Prophets",
+      library_name: "Tafsir",
+      start_sec: 95,
+      end_sec: 101,
+      text: ar ? "صبر الأنبياء على قومهم" : "the prophets were patient with their people",
+    },
+  ];
+  const sentences = [
+    {
+      text: ar ? "الصبر يكون عند الشدة." : "Patience is shown in hardship.",
+      citations: [{ n: 1, video_id: "v3", start_sec: 312, end_sec: 318 }],
+    },
+    {
+      text: ar ? "وصبر الأنبياء على قومهم." : "The prophets were patient with their people.",
+      citations: [{ n: 2, video_id: "v4", start_sec: 95, end_sec: 101 }],
+    },
+  ].slice(0, Array.isArray(body.history) && body.history.length ? 1 : 2);
+  const ev = (name: string, data: unknown) => `event: ${name}\ndata: ${JSON.stringify(data)}\n\n`;
+  return (
+    ev("queue", { position: 1 }) +
+    ": ping\n\n" +
+    ev("sources", { q, passages }) +
+    sentences.map((s) => ev("text", s)).join("") +
+    ev("done", { answered: true, sentences: sentences.length, dropped: 0, took_ms: 40 })
+  );
+}
+
 export interface MockHome {
   /** GETs no table answered */
   unknown: string[];
@@ -265,6 +312,8 @@ export interface MockHome {
   asked: unknown[];
   /** the bodies of POST /api/search (story 49.11) */
   searches: Record<string, unknown>[];
+  /** the bodies of POST /api/search/ai (story 49.14) */
+  asks: Record<string, unknown>[];
 }
 
 export interface MockOptions {
@@ -279,7 +328,7 @@ export interface MockOptions {
 const MISSING = { type: "about:blank", title: "not found", status: 404, detail: "not found" };
 
 export async function mockHome(page: Page, opts: MockOptions = {}): Promise<MockHome> {
-  const home: MockHome = { unknown: [], calls: [], asked: [], searches: [] };
+  const home: MockHome = { unknown: [], calls: [], asked: [], searches: [], asks: [] };
   const requests: Record<string, unknown>[] = [];
   const renamed = (text: string) =>
     Object.entries(opts.rename ?? {}).reduce(
@@ -323,6 +372,15 @@ export async function mockHome(page: Page, opts: MockOptions = {}): Promise<Mock
       const body = req.postDataJSON() as Record<string, unknown>;
       home.searches.push(body);
       return json(route, 200, searchAnswer(body));
+    }
+    if (url.pathname === "/api/search/ai" && req.method() === "POST") {
+      const body = req.postDataJSON() as Record<string, unknown>;
+      home.asks.push(body);
+      return route.fulfill({
+        status: 200,
+        contentType: "text/event-stream",
+        body: aiAnswer(body),
+      });
     }
     if (url.pathname === "/api/search/suggest")
       return json(route, 200, suggestAnswer(url.searchParams.get("q") ?? ""));
