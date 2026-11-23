@@ -20,20 +20,32 @@ brings up the live-reload stack, and runs the unit tier.
 ## Prerequisites
 
 Run `make prereqs` to verify your host (it lists each tool with a ✓ or
-✗ and what version was found). The required set:
+✗ and what version was found, and prints the install command for
+anything missing). The required set:
 
-| Tool | Min version | Why |
-|---|---|---|
-| Docker | 24+ | container runtime for the dev stack |
-| Docker Compose | v2.27+ | needed for healthchecks + named profiles |
-| Git | 2.40+ | working tree checks rely on `git diff --name-only` |
-| Go | 1.23+ | `api/` and `streaming/` build |
-| uv | 0.4+ | `pipeline/` deps (no separate venv to manage) |
-| pnpm | 9+ | `web/` deps |
-| Node | 20+ | runs the web frontend tooling |
+| Tool | Min version | Why | macOS | Linux (Debian/Ubuntu) |
+|---|---|---|---|---|
+| Docker | 24+ | container runtime for the dev stack | `brew install --cask docker` | `sudo apt install docker.io docker-compose-plugin` |
+| Docker Compose | v2.27+ | needed for healthchecks + named profiles | ships with Docker Desktop | `sudo apt install docker-compose-plugin` |
+| Git | 2.40+ | working tree checks rely on `git diff --name-only` | | |
+| Go | 1.26+ | `api/`, `streaming/`, `cloud/`, `cmd/` and the tools build | `brew install go` | `sudo apt install golang-go` (or [go.dev/dl](https://go.dev/dl/)) |
+| Python + uv | Python 3.12+, uv 0.4+ | `pipeline/` deps (no separate venv to manage) | `curl -LsSf https://astral.sh/uv/install.sh \| sh` | the same |
+| Node + pnpm | Node 20+, pnpm 9+ | `web/` deps and the frontend tooling | `brew install node && corepack enable && corepack prepare pnpm@latest --activate` | `sudo apt install nodejs npm && corepack enable && corepack prepare pnpm@latest --activate` |
+| FFmpeg | 6+ | streaming and the media tests | `brew install ffmpeg` | `sudo apt install ffmpeg` |
 
 Recommended (sharper feedback, not strictly required):
-`pre-commit`, `golangci-lint`, `jq`, `shellcheck`.
+
+| Tool | Install |
+|---|---|
+| golangci-lint | `brew install golangci-lint` / `go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest` |
+| goose (DB migrations) | `go install github.com/pressly/goose/v3/cmd/goose@latest` |
+| pre-commit | `uv tool install pre-commit` / `pip install pre-commit` |
+| jq, shellcheck | `brew install jq shellcheck` / `sudo apt install jq shellcheck` |
+
+PostgreSQL 16 (with pgvector) is managed by
+`deploy/compose/docker-compose.yml` and started by `make dev`: keep it
+in Docker. A host Postgres install collides on port 5432 and skips the
+migrations the stack applies.
 
 ### Apple Silicon vs. Intel (EC1)
 
@@ -65,6 +77,13 @@ cp .env.example .env             # tweak if you need non-default ports
 make prereqs                     # verify host has docker/go/uv/pnpm/node
 make dev                         # builds dev images + brings up the stack
 make test                        # unit tier; no network, no sudo
+make help                        # every target, grouped by section
+```
+
+Or plain Docker Compose, without the live-reload tooling:
+
+```sh
+docker compose -f deploy/compose/docker-compose.yml up --build
 ```
 
 Expected timing on a representative laptop:

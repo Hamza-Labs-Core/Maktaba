@@ -102,6 +102,23 @@ unchanged, so mixed versions work: an older home ignores the extra headers, and 
 node, which sends none, shows as its own address. The cloud has its own
 `[server] trusted_proxies` for `CF-Connecting-IP`, which takes CIDRs only.
 
+## Tech stack
+
+- **Backend:** Go 1.26 (the API, streaming, the cloud and `cmd/`), Python 3.12+ (the
+  pipeline).
+- **Frontend:** TypeScript, React 18, Vite.
+- **Native:** Swift and SwiftUI (iPhone, iPad, Mac, Apple TV), Kotlin and Jetpack Compose
+  (Android, Android TV), Compose for Desktop (the Windows and Linux Player), Tauri 2 (the
+  desktop server app), Capacitor (the older mobile wrapper).
+- **Data:** PostgreSQL 16 with pgvector, or SQLite for single-user mode.
+- **Media:** FFmpeg for transcoding, remuxing and probing.
+- **Speech to text and ML:** Whisper through `mlx-whisper` (Apple Silicon), `faster-whisper`
+  (CUDA or CPU) or the OpenAI API; multilingual `sentence-transformers` embeddings;
+  `pyannote` diarization.
+- **Observability:** OpenTelemetry tracing and metrics, structured JSON logs.
+- **Tooling:** `uv` (Python), `pnpm` (Node), `goose` (migrations), `golangci-lint`, `ruff`
+  and `mypy --strict`, Vitest and Playwright.
+
 ## Design principles
 
 - **Content-addressed identity.** A video is identified by a BLAKE3 hash of its content,

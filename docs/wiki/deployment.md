@@ -51,6 +51,18 @@ and `cache/` are bind-mounted volumes (the search vectors are in Postgres).
 The two gRPC listeners bind only to loopback by default. The
 public-facing surface is just Caddy on 80/443.
 
+### The one-container install (Docker, a NAS)
+
+[`cloud/installers/docker/docker-compose.yml`](../../cloud/installers/docker/docker-compose.yml)
+(attached to each release as `maktaba-docker-compose.yml`, its `:latest` rewritten to the
+release's tag) runs Maktaba in one container (`ghcr.io/hamza-labs-core/maktaba-server`,
+multi-arch): `docker compose up -d`, then `docker compose run --rm maktaba setup` once. It updates
+itself on its volume like every other install. It runs as whichever user is set (`user:` in the
+compose file; on a NAS, the user that owns the folders; never root), and its first start needs no
+internet beyond pulling the image. The NAS files made from it (Unraid's template, Synology's and TrueNAS's) are in
+[`deploy/nas/`](../../deploy/nas/README.md). `deploy/compose/docker-compose.yml` (section 3) is
+the development and CI stack, built from source: not for a NAS.
+
 ### Ports of the one-container install (the Docker image, a NAS)
 
 The image (`deploy/docker/server/Dockerfile`) runs everything in one container: the web app on

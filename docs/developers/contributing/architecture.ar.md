@@ -96,6 +96,23 @@ trusted_proxies = ["198.51.100.5", "203.0.113.0/24"]
 الترويستين الإضافيتين، والعقدة الأقدم، التي لا ترسل أيًّا منهما، تظهر بعنوانها هي. وللسحابة
 إعداد `[server] trusted_proxies` خاص بها لترويس `CF-Connecting-IP`، ولا يقبل إلا نطاقات CIDR.
 
+## التقنيات المستخدمة
+
+- **الخادم:** Go 1.26 (الواجهة البرمجية والبث والسحابة و`cmd/`)، وPython 3.12 فما فوق (خط
+  المعالجة).
+- **الواجهة:** TypeScript وReact 18 وVite.
+- **التطبيقات الأصلية:** Swift وSwiftUI (iPhone وiPad وMac وApple TV)، وKotlin وJetpack Compose
+  (Android وAndroid TV)، وCompose for Desktop (المشغّل على Windows وLinux)، وTauri 2 (تطبيق
+  الخادم على أجهزة الكمبيوتر)، وCapacitor (الغلاف القديم للهواتف).
+- **البيانات:** PostgreSQL 16 مع pgvector، أو SQLite في وضع المستخدم الواحد.
+- **الوسائط:** FFmpeg لتحويل الترميز وإعادة التغليف والفحص.
+- **تحويل الكلام إلى نص وتعلّم الآلة:** Whisper عبر `mlx-whisper` (Apple Silicon) أو
+  `faster-whisper` (CUDA أو المعالج) أو واجهة OpenAI البرمجية؛ وتضمينات `sentence-transformers`
+  متعددة اللغات؛ وتمييز المتحدثين بـ`pyannote`.
+- **المراقبة:** تتبّع ومقاييس OpenTelemetry، وسجلات JSON منظَّمة.
+- **الأدوات:** `uv` (Python) و`pnpm` (Node) و`goose` (الترحيلات) و`golangci-lint` و`ruff`
+  و`mypy --strict` وVitest وPlaywright.
+
 ## مبادئ التصميم
 
 - **هوية مبنية على المحتوى.** يُعرَّف الفيديو ببصمة BLAKE3 لمحتواه، فلا تؤدي إعادة التسمية
