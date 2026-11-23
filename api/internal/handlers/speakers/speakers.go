@@ -13,6 +13,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -20,7 +21,6 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
-	"github.com/lib/pq"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
@@ -54,11 +54,21 @@ type Handler struct {
 func videosOf(ctx context.Context, q interface {
 	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
 }, speakerIDs ...string) ([]string, error) {
+	if len(speakerIDs) == 0 {
+		return nil, nil
+	}
+	// portable SQL (CAST, an IN list): a SQLite-backed API runs it too (#1483)
+	marks := make([]string, len(speakerIDs))
+	args := make([]any, len(speakerIDs))
+	for i, id := range speakerIDs {
+		marks[i] = fmt.Sprintf("$%d", i+1)
+		args[i] = id
+	}
 	rows, err := q.QueryContext(ctx, `
-		SELECT DISTINCT t.video_id::text FROM segment_speakers ss
+		SELECT DISTINCT CAST(t.video_id AS TEXT) FROM segment_speakers ss
 		  JOIN transcript_segments g ON g.id = ss.segment_id
 		  JOIN transcripts t ON t.id = g.transcript_id AND t.is_active
-		 WHERE ss.speaker_id::text = ANY($1)`, pq.Array(speakerIDs))
+		 WHERE CAST(ss.speaker_id AS TEXT) IN (`+strings.Join(marks, ", ")+`)`, args...)
 	if err != nil {
 		return nil, err
 	}

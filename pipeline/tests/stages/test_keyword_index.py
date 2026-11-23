@@ -143,6 +143,49 @@ async def test_a_transcript_becomes_a_document(db: Database) -> None:
 
 
 @pytest.mark.asyncio
+async def test_sqlites_search_row_is_keyed_by_its_documents_rowid(db: Database) -> None:
+    """#1483: the FTS5 row is keyed by its document's rowid above FTS_KEY_BASE, so a rewrite
+    deletes it by key, not by reading the table for its video_id; a row written before is
+    replaced once, and another video's row is left alone."""
+    if is_pg(db):
+        pytest.skip("SQLite's FTS5 table")
+    rt = await core_runtime(db)
+    lib = await make_library(db)
+    a = await make_video(db, lib, title="a")
+    b = await make_video(db, lib, title="b")
+    await _transcript(db, a, ["كلمة أولى"])
+    await _transcript(db, b, ["كلمة ثانية"])
+    await _index(db, rt, a)
+    await _index(db, rt, b)
+
+    async def rows() -> list[tuple[int, str]]:
+        got = await db.fetch("SELECT rowid, video_id FROM video_search_docs_fts ORDER BY rowid")
+        return [(int(r[0]), str(r[1])) for r in got]
+
+    async def key(v: Any) -> int:
+        rid = await db.fetchval("SELECT rowid FROM video_search_docs WHERE video_id = $1", str(v))
+        return int(stage.FTS_KEY_BASE + rid)
+
+    assert await rows() == [(await key(a), str(a)), (await key(b), str(b))]
+    # a rewrite replaces the row under the same key
+    await db.execute("UPDATE transcripts SET is_active = false WHERE video_id = $1", str(a))
+    await _transcript(db, a, ["كلمة جديدة"])
+    assert (await _index(db, rt, a))["keyword_index"] == "written"
+    assert await rows() == [(await key(a), str(a)), (await key(b), str(b))]
+    # a row written before (FTS5's own small rowid) goes once, when its video is written
+    await db.execute("DELETE FROM video_search_docs_fts WHERE rowid = $1", await key(b))
+    await db.execute(
+        "INSERT INTO video_search_docs_fts (rowid, video_id, title, speakers, body)"
+        " VALUES (1, $1, 'b', '', 'old')",
+        str(b),
+    )
+    await db.execute("UPDATE transcripts SET is_active = false WHERE video_id = $1", str(b))
+    await _transcript(db, b, ["كلمة أخرى"])
+    assert (await _index(db, rt, b))["keyword_index"] == "written"
+    assert await rows() == [(await key(a), str(a)), (await key(b), str(b))]
+
+
+@pytest.mark.asyncio
 async def test_a_video_with_no_transcript_left_loses_its_document(db: Database) -> None:
     rt = await core_runtime(db)
     lib = await make_library(db)
