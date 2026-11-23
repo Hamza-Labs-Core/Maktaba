@@ -37,6 +37,13 @@ prs: [1519]
     the focus line and presses nothing.
   - The first failed runs wrote `search-ai-en.png` references from broken screens (a missing
     reference is written, and the test passes). They were deleted before the final run.
+  - CI's first run (job 137480431013) failed T03 at the library grid, and T04 after it. The
+    second page of the grid arrived after the focus had reached the first page's last row,
+    and the focus went back to 0. T07 and T08 passed. The second ApiTask ran from launch, and
+    brs-engine's `Wait` in a Task polls every 10 ms, so every screen test carried a second
+    polling thread. Now MainScene creates the Task without running it, and SearchScreen runs
+    it at the first question (33df43004). `ApiTask` sends a call it was given before it
+    started, and never sends the same node twice.
 
 ## What we learned
 - brs-engine's `roUrlTransfer` writes `AsyncPostFromFileToFile`'s output only on 200, so a
@@ -46,6 +53,8 @@ prs: [1519]
   missing one and the next run measures against it.
 - An `UPDATE_SCREENS=1` run rewrites every reference it passes, including ones byte-different
   but visually the same (`account-*`, `code-en`). Restore those with `git checkout`.
+- A Task waiting in brs-engine is not free: its `Wait` polls (`Atomics.wait` for 10 ms a
+  turn). Start a Task when it is first needed, not at launch.
 - Rename a BrightScript identifier with a pattern that cannot match a member (`m.tab`) or text
   inside a string.
 
