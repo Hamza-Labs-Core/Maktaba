@@ -26,6 +26,13 @@ prs: [1517, 1525]
   unescaped apostrophe (`home's`) in a new English string. Escaped as `\'`.
 - The desktop's `formatDuration` wraps a time in bidi isolates (U+2066…U+2069), so its tests
   match a citation's spoken label with the isolate in it.
+- The affected-tests gate blocked the first run: `SignedInApp.kt` changed (the TV's `onPlay` now
+  takes a video id) with none of its tests changed. `SignedInAppTest` now checks that an AI mode
+  citation makes a queue of the cited video (a1489f8c2).
+- CI's Android TV emulator journey (`TvSearchJourneyTest.aiModeWithTheRemote`, Android 11)
+  failed with `NoSuchMethodError: ByteArrayOutputStream.toString(Charset)`: a Java 10 method
+  that Android has only from API 33. The JVM tests (Robolectric too) passed with it. The reader
+  now decodes `String(bytes, UTF_8)` (d7970b386b19e3e49a297174076abf9b3d6e4c7a).
 - Re-reading the conversation found Try again after a refused follow-up asking the first
   question instead of the follow-up; it asks the last question asked now, with a test.
 - This machine had no Java on the PATH: Gradle ran with Homebrew's OpenJDK 21 as `JAVA_HOME`
@@ -42,6 +49,10 @@ prs: [1517, 1525]
   the rest of a stream arrives (the passages before the sentences).
 - A Gradle `--tests` filter from `apps/desktop-player` also applies to the included `:client`
   and fails it with no matching test: run `:test --tests …` there.
+
+- The portable client compiles against the desktop JDK, not Android's API: a JDK method newer
+  than Java 8 compiles and passes every JVM test, then fails on an older Android device. Only
+  the emulator journey caught it.
 
 ## Keep doing
 - Put the stream reader and the conversation's rules in the client, tested once; each app tests
