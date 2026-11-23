@@ -49,6 +49,16 @@ prs: [1529]
   once). On run 45109831118, `PlayerSearchUITests.testATitleOpensItsPage` waited 62 s for idle
   on an iPhone and `TVSearchUITests.testSuggestionsShowTheirKindsAndATitleOpensItsPage` failed
   to give the field the keyboard; both passed on the next runs.
+- A GLM-5.3 review found no major issue. Fixed by the lead in
+  f342969997de8702c74b51433dc4aff2fee180f6:
+  - `AIWords.clock` trapped on a valid-JSON but absurd `start_sec` (1e308): `Duration`
+    cannot hold it. It now clamps, and a number that is not finite reads as absent.
+  - On Apple TV, the documented follow-up meant climbing back from the answer to the
+    search field, which the UI test could not do reliably. `.searchFocused` is unavailable
+    on tvOS, so the follow-up is now a field and Ask under the answer, as on the Player.
+    `TVSearchUITests` now asks one.
+  - New question disappeared after a refusal.
+  - The 401 renew-and-retry path and the timeout line had no tests; both do now.
 
 ## What we learned
 - `URLSession.AsyncBytes.lines` drops empty lines. Server-Sent Events end each event with an
@@ -75,6 +85,8 @@ prs: [1529]
   check at large text sizes. The source cards wrap their text instead.
 
 ## Keep doing
+- On tvOS, put the input where the focus already is. A field off the top of a long page is
+  hard for the remote to reach, and focusing it from code is not available.
 - Keep every word in MaktabaKit's catalog when the Player and the TV share a feature. One
   test checks both languages, and neither app's catalog changes.
 
