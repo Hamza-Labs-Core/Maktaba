@@ -23,6 +23,7 @@ export const PAGES = [
   "unraid",
   "qnap",
   "ugreen",
+  "asustor",
   "after-setup",
   "troubleshooting",
 ];

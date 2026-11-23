@@ -1,6 +1,5 @@
 <!doctype html>
-<!-- maktaba.tv/ar/install/qnap (Epic 59 story 59.14): the Arabic twin of /install/qnap. QTS's
-     menu names stay in English, in quotes, after an Arabic description. -->
+<!-- maktaba.tv/ar/install/qnap: the Arabic twin of /install/qnap. QTS's menu names stay in English, in quotes, after an Arabic description. -->
 <html lang="ar" dir="rtl">
   <head>
     <meta charset="utf-8" />
@@ -10,7 +9,7 @@
     <title>تثبيت Maktaba على خادم QNAP · Maktaba</title>
     <meta
       name="description"
-      content="ثبّت Maktaba على خادم تخزين QNAP باستخدام «Container Station»: المستخدم، والمجلدات، وملف compose، والإعداد."
+      content="ثبّت Maktaba على خادم تخزين QNAP باستخدام «Container Station»: المستخدم، والمجلدات، وملف compose، والمنافذ، وتحويل الفيديو بالعتاد، والإعداد، والتحديثات."
     />
     <link rel="alternate" hreflang="en" href="https://maktaba.tv/install/qnap/" />
     <link rel="alternate" hreflang="ar" href="https://maktaba.tv/ar/install/qnap/" />
@@ -28,70 +27,75 @@
     </header>
     <main id="main" class="guide">
       <p class="notice">
-        <strong>لم تُجرَّب هذه الخطوات بعد على جهاز QNAP.</strong> وهي تتبع خطوات QNAP نفسها، والملف
-        نفسه يعمل على كل جهاز فيه Docker. أخبرنا بما تجده على
-        <a href="https://github.com/Hamza-Labs-Core/Maktaba/issues">GitHub</a>.
+        <strong>لم يُختبر بعد على جهاز QNAP.</strong> أسماء قوائم QNAP أدناه مأخوذة من وثائق QNAP
+        نفسها، والملف نفسه يعمل على كل مضيف Docker؛ أخبرنا عبر
+        <a href="https://github.com/Hamza-Labs-Core/Maktaba/issues">GitHub</a> بما تجده.
       </p>
       <p>
-        لنظام QTS ‏5.1 أو QuTS hero ‏5.1 وما بعدهما، مع تطبيق <strong>«Container Station 3»</strong>
-        من مركز التطبيقات. يستغرق التثبيت نحو 20 دقيقة.
+        لنظام QTS 5.1 أو QuTS hero 5.1 وما بعدهما، مع تطبيق
+        <strong>«Container Station 3»</strong> من «App Center». يستغرق نحو 20 دقيقة. ويعمل Maktaba
+        بمستخدم تنشئه له، لا بالمستخدم الجذر أبدًا.
       </p>
-      <h2>قبل أن تبدأ</h2>
+      <h2 id="before">قبل أن تبدأ</h2>
       <ul>
         <li>
-          <strong>الذاكرة:</strong> ‏8 غيغابايت أو أكثر مريحة، ويعمل Maktaba بدءًا من 4 غيغابايت.
+          <strong>الذاكرة:</strong> يحتاج Maktaba إلى 3.5 غيغابايت متاحة له، والأريح 8 غيغابايت
+          فأكثر. ويختار فئته من تلك الذاكرة (<a href="/ar/install/nas/#fits">أي فئة</a>). أما الطراز
+          ذو الغيغابايتين، مثل TS-233، فخير ما يفيد به أن يكون مساحة تخزين.
         </li>
         <li>
-          <strong>تحويل الفيديو بالعتاد:</strong> الطرازات التي فيها معالج Intel من فئة Celeron أو
-          Pentium ‏(TS-464 وTS-264 وTS-462 وغيرها) تحوّل الفيديو بتقنية Quick Sync عبر
-          <code>/dev/dri</code>.
+          <strong>وحدة تخزين SSD</strong> لمجلد البيانات إن وُجدت: فقاعدة البيانات والصور المصغّرة
+          أسرع عليها بكثير، وتبقى وسائطك على الأقراص الصلبة.
         </li>
         <li>
-          <strong>المنفذ 8080:</strong> يحجزه نظام QTS لصفحاته. يلاحظ Maktaba ذلك وينقل منفذه إلى ما
-          بين 8780 و8790، ويعرض الإعداد وصفحة «الإعدادات ← هذا الجهاز» المنفذ الجديد. لا تحتاج إلى
-          فعل شيء. ولتختار المنفذ بنفسك، اضبط <code>MAKTABA_API_PORT</code> في كتلة
-          <code>[ports]</code> من الملف (<a href="/ar/install/troubleshooting/#port-taken"
-            >منفذ مشغول</a
-          >).
+          <strong>معالج رسوميات:</strong> الطرز التي فيها معالج Intel Celeron أو Pentium ‏(TS-464
+          وTS-264 وTS-462) فيها Quick Sync؛ أما طرز Ryzen وARM فتحوّل الفيديو برمجيًا.
+        </li>
+        <li>
+          <strong>‏SSH:</strong> من «Control Panel» ← «Network &amp; File Services» ← «Telnet / SSH»
+          ← <strong>«Allow SSH connection»</strong>. ولا يسمح QTS بالدخول عبر SSH إلا للمديرين.
         </li>
       </ul>
-      <h2>1. أنشئ مستخدمًا لـ Maktaba</h2>
+      <h2 id="user">1. أنشئ مستخدمًا واقرأ رقميه</h2>
       <p>
         من «Control Panel» ← «Privilege» ← «Users» ← <strong>«Create»</strong> ← «Create a User»:
-        سمّه <code>maktaba</code>، بكلمة مرور قوية، ودون صلاحيات المدير. ثم اقرأ رقميه: فعّل SSH (من
-        «Control Panel» ← «Network &amp; File Services» ← «Telnet / SSH») وشغّل الأمر
-        <code>id maktaba</code>. فالنتيجة <code>uid=1001 gid=100</code> تعني الإجابة
-        <code>1001:100</code>.
+        سمّه <code>maktaba</code>، بكلمة مرور قوية، ودون صلاحيات المدير. ثم ادخل عبر SSH بحساب مدير
+        (وفي قائمة «Console Management» التي يعرضها QTS اضغط <kbd>Q</kbd> ثم <kbd>Y</kbd> لتصل إلى
+        سطر الأوامر)، وشغّل <code>id maktaba</code>: فالنتيجة <code>uid=1001 gid=100</code> تعني
+        الإجابة <code>1001:100</code>.
       </p>
-      <h2>2. امنحه مجلداته</h2>
+      <h2 id="folders">2. امنحه مجلداته</h2>
       <ul>
         <li>
           <strong>البيانات:</strong> أنشئ المجلد <code>maktaba</code> داخل المجلد المشترك
-          <code>Container</code> (ينشئه «Container Station»، واجعله على قرص SSD إن وُجد)، وامنح
-          <code>maktaba</code> صلاحية القراءة والكتابة عليه.
+          <code>Container</code> الذي ينشئه «Container Station» عند تثبيته (واجعله على وحدة SSD إن
+          وُجدت)، وامنح <code>maktaba</code> صلاحية القراءة والكتابة عليه.
         </li>
         <li>
-          <strong>الوسائط:</strong> من «Control Panel» ← «Privilege» ← «Shared Folders» ← كل مجلد
-          فيه مقاطع ← «Edit Shared Folder Permission»: القراءة والكتابة لـ <code>maktaba</code> حيث
-          يحفظ Maktaba الترجمات والتحويلات، والقراءة فقط في غيرها.
+          <strong>الوسائط:</strong> من «Control Panel» ← «Privilege» ← «Shared Folders» ← أيقونة
+          تعديل الأذونات لكل مجلد فيه مقاطع ← «Edit Shared Folder Permission»: القراءة والكتابة لـ
+          <code>maktaba</code> حيث يحفظ Maktaba الترجمات والتحويلات، والقراءة فقط في غيرها.
         </li>
       </ul>
       <p>
         ومسار المجلد المشترك داخل الحاوية هو مساره على الخادم نفسه، مثل
-        <code>/share/Multimedia</code> أو <code>/share/CACHEDEV1_DATA/Movies</code>.
+        <code>/share/Multimedia</code> أو <code>/share/CACHEDEV1_DATA/Movies</code>. اربط كل مجلد
+        بالمسار نفسه، فيعرفه Maktaba بالمشاركة التي تفتحها بها حواسيبك الأخرى.
       </p>
-      <h2>3. أنشئ ملف compose</h2>
+      <h2 id="compose">3. أنشئ ملف compose</h2>
       <p>
         افتح <a href="/ar/install/docker/">صفحة التثبيت</a>، واختر <strong>QNAP</strong>، وأجب:
         المستخدم (<code>1001:100</code>)، والذاكرة، ومجلد البيانات
         (<code>/share/Container/maktaba</code>)، ومجلدات وسائطك، وتحويل الفيديو بالعتاد، والمنطقة
-        الزمنية. ثم انسخ الملف. لا يغادر شيء مما تكتبه هناك الصفحة.
+        الزمنية. ويذكر الملف <code>MAKTABA_PLATFORM: qts</code>، فيعرف Maktaba أنه يعمل على QNAP. ثم
+        انسخه. لا يغادر شيء مما تكتبه هناك الصفحة.
       </p>
-      <h2>4. أنشئ التطبيق</h2>
+      <h2 id="install">4. أنشئ التطبيق</h2>
       <p>
         من «Container Station» ← <strong>«Applications»</strong> ← <strong>«Create»</strong>: سمّه
-        <code>maktaba</code>، والصق الملف، ثم <strong>«Create»</strong>. فينزّل «Container Station»
-        الصورة ويشغّلها.
+        <code>maktaba</code> (حروف وأرقام و<code>-</code> و<code>_</code>)، والصق الملف، ثم
+        <strong>«Validate»</strong> ثم <strong>«Create»</strong>. فينزّل «Container Station» الصورة
+        ويشغّلها، ويقول سجل الحاوية حتى الإعداد كيف تشغّله.
       </p>
       <figure class="placeholder" data-shot="screenshots/qnap/create-application.ar.png">
         <figcaption>
@@ -99,27 +103,87 @@
           نافذة «Create Application» مع ملف compose ملصوقًا.
         </figcaption>
       </figure>
-      <h2>5. شغّل الإعداد</h2>
-      <p>شغّل عبر SSH:</p>
+      <h2 id="setup">5. شغّل الإعداد واختر الدور</h2>
+      <p>شغّل عبر SSH بحساب مدير (وضع <code>sudo</code> قبله إن رُفض):</p>
       <pre
         tabindex="0"
       ><code>docker exec -it maktaba /opt/maktaba/server/bin/maktaba-server container setup</code></pre>
       <p>
         أجب عن أسئلته: اسمٌ لحساب المدير (غير <code>admin</code> الذي يحتفظ به Maktaba لنفسه)، وكلمة
-        مروره، والمجلدات التي فيها مقاطعك. ويحتاج الخادم إلى الإنترنت في هذه الخطوة: ينزّل الإعداد
-        أدوات التفريغ والبحث (نحو 2 GB) ونماذج الكلام. ويبدأ Maktaba بنفسه حين ينتهي. ثم افتح
-        <code>http://&lt;your NAS&gt;:8088</code>. وسجّل الدخول بعدها، وأضف مكتبة لكل مجلد:
-        <strong>«الإدارة ← إدارة المكتبات ← إضافة مكتبة»</strong> (<a
-          href="/ar/install/after-setup/#libraries"
-          >بعد الإعداد</a
+        مروره، والمجلدات التي فيها مقاطعك. ولكل مجلد يعرض الإعداد المشاركة التي استنتجها (فالمجلد
+        <code>/share/Movies</code> هو المشاركة <code>Movies</code>): أكّدها، أو اكتب الاسم الذي
+        تستعمله حواسيبك الأخرى. ويحتاج الخادم إلى الإنترنت في هذه الخطوة: ينزّل الإعداد أدوات
+        التفريغ والبحث (نحو 2 GB) ونماذج الكلام. ويبدأ Maktaba بنفسه حين ينتهي. افتح العنوان الذي
+        يعرضه الإعداد، وسجّل الدخول، وأضف مكتبة لكل مجلد:
+        <strong>«الإدارة ← إدارة المكتبات ← إضافة مكتبة»</strong>.
+      </p>
+      <p>
+        تجعل هذه الخطوات الخادم <strong>الجهاز الرئيسي</strong> لـ Maktaba. ويمكن لاحقًا أن ينضم
+        إليه حاسوب فيه بطاقة رسوميات (<a href="/ar/install/after-setup/#gpu-node">بعد الإعداد</a>).
+        وإن كان جهازك الرئيسي يعمل على حاسوب آخر، فلا يحتاج الخادم إلى Maktaba: شارك مجلداته فيقرؤها
+        ذلك الجهاز (<a href="/ar/install/nas/#roles">جهاز رئيسي أم جهاز منضم أم مساحة تخزين</a>).
+      </p>
+      <h2 id="ports">المنافذ</h2>
+      <ul>
+        <li>
+          <strong>يحجز QTS المنفذ 8080</strong> لصفحاته (منفذ النظام الافتراضي). يلاحظ Maktaba ذلك
+          وينقل منفذ واجهته البرمجية إلى منفذ حر بين 8780 و8790، ويعرض الإعداد و«الإعدادات ← هذا
+          الجهاز» المنفذ الجديد. لا تحتاج إلى فعل شيء.
+        </li>
+        <li>
+          <strong>المنفذ 8081:</strong> تستعمله حزمة «Web Server» من QNAP لـ HTTPS حين تكون مثبّتة،
+          فينقل Maktaba منفذ البث المباشر بالطريقة نفسها.
+        </li>
+        <li>
+          <strong>ولتختار منفذًا بنفسك</strong> احذف علامة <code>#</code> أمام سطره في كتلة
+          <code>[ports]</code> من الملف (<code>MAKTABA_API_PORT</code> أو
+          <code>MAKTABA_WEB_PORT</code> أو <code>MAKTABA_STREAM_PORT</code> أو
+          <code>MAKTABA_POSTGRES_PORT</code>)، واضبط منفذًا حرًا، وأعد إنشاء التطبيق. فالمنفذ الذي
+          تضبطه لا يُنقل أبدًا: إن شغله برنامج آخر توقف Maktaba وذكر سجله المنفذ (<a
+            href="/ar/install/troubleshooting/#port-taken"
+            >منفذ مشغول</a
+          >).
+        </li>
+      </ul>
+      <h2 id="video">تحويل الفيديو بالعتاد</h2>
+      <p>
+        على طراز فيه Quick Sync اختر <strong>إنتل أو AMD</strong> تحت «الفيديو بالعتاد» في صفحة
+        التثبيت، وأعطها مجموعة جهاز العرض: شغّل عبر SSH الأمر
+        <code>stat -c %g /dev/dri/renderD128</code>. فيمرّر الملف <code>/dev/dri</code> وتلك
+        المجموعة إلى الحاوية، وتقول «الإعدادات ← هذا الجهاز» <strong>الفيديو: بالعتاد</strong>. ولا
+        تتناول وثائق QNAP تمرير <code>/dev/dri</code> في ملف compose، وتؤكده قائمة فحص الجهاز على
+        TS-464. ومن دونه يحوّل Maktaba الفيديو برمجيًا.
+      </p>
+      <h2 id="updates">التحديثات</h2>
+      <p>
+        يحدّث Maktaba نفسه في نافذة التحديث (الإدارة ← التحديثات)، وإعادة إنشاء التطبيق بصورة أحدث
+        آمنة أيضًا: لا تحلّ صورة أقدم أبدًا محلّ نسخة أحدث من Maktaba. ويأخذ كل تحديث نسخة احتياطية
+        من قاعدة البيانات أولًا، فأبقِ لها مساحة على وحدة التخزين التي فيها مجلد البيانات. وإن تعذّر
+        على إصدارٍ تعديل قاعدة البيانات، عاد Maktaba بنفسه إلى الإصدار الذي كان عندك (<a
+          href="/ar/install/troubleshooting/#update-failed"
+          >لم يكتمل تحديث</a
         >).
       </p>
-      <h2>بعد الإعداد</h2>
-      <p>
-        <a href="/ar/install/after-setup/">بعد الإعداد</a>: الأذونات، وساعات الهدوء، وتحويل الكلام
-        إلى نص، وتحويل الفيديو بالعتاد، والوكيل العكسي، والتحديثات، وإضافة حاسوب فيه معالج رسوميات.
-        <a href="/ar/install/troubleshooting/">حل المشكلات</a>: معنى كل رسالة.
-      </p>
+      <h2 id="trouble">حل المشكلات</h2>
+      <ul>
+        <li>
+          <strong>تتوقف الحاوية فورًا:</strong> يذكر سجلها، في صفحة الحاوية في «Container Station»،
+          المجلد والمستخدم. امنح <code>maktaba</code> القراءة والكتابة على
+          <code>Container/maktaba</code> (الخطوة 2) وشغّلها من جديد.
+        </li>
+        <li>
+          <strong>تظهر مكتبة بعبارة لا وصول:</strong> امنح <code>maktaba</code> صلاحية على ذلك
+          المجلد المشترك (الخطوة 2)، ثم اضغط <strong>افحص الصلاحيات</strong> في صفحة المكتبة.
+        </li>
+        <li>
+          <strong>يرفض SSH دخول المستخدم:</strong> ادخل بحساب مدير، فنظام QTS يرفض غيرهم عبر SSH.
+        </li>
+        <li>
+          تشرح صفحة <a href="/ar/install/troubleshooting/">حل المشكلات</a> كل رسالة أخرى، وتتناول
+          صفحة <a href="/ar/install/after-setup/">بعد الإعداد</a> ساعات الهدوء، وتحويل الكلام إلى
+          نص، والوكيل العكسي، وإضافة حاسوب فيه معالج رسوميات.
+        </li>
+      </ul>
     </main>
   </body>
 </html>

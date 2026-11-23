@@ -1,0 +1,188 @@
+<!doctype html>
+<!-- maktaba.tv/ar/install/asustor: the Arabic twin of /install/asustor. ADM's and Portainer's menu names stay in English, in quotes, after an Arabic description. -->
+<html lang="ar" dir="rtl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark light" />
+    <meta name="maktaba-menu" content="none" />
+    <title>تثبيت Maktaba على خادم ASUSTOR · Maktaba</title>
+    <meta
+      name="description"
+      content="ثبّت Maktaba على خادم تخزين ASUSTOR باستخدام Portainer من App Central: المستخدم، والمجلدات، وملف compose، والمنافذ، وتحويل الفيديو بالعتاد، والإعداد، والتحديثات."
+    />
+    <link rel="alternate" hreflang="en" href="https://maktaba.tv/install/asustor/" />
+    <link rel="alternate" hreflang="ar" href="https://maktaba.tv/ar/install/asustor/" />
+    <link rel="stylesheet" href="/install/install.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#main">انتقلوا إلى المحتوى</a>
+    <header>
+      <h1>تثبيت Maktaba على خادم ASUSTOR</h1>
+      <p class="lead">يشغّل Portainer برنامج Maktaba على ADM من ملف compose واحد.</p>
+      <nav>
+        <a href="/ar/install/nas/">كل أدلة خوادم التخزين</a> ·
+        <a href="/install/asustor/" hreflang="en" lang="en">English</a>
+      </nav>
+    </header>
+    <main id="main" class="guide">
+      <p class="notice">
+        <strong>لم يُختبر بعد على جهاز ASUSTOR.</strong> أسماء قوائم ADM أدناه مأخوذة من وثائق
+        ASUSTOR نفسها، والملف نفسه يعمل على كل مضيف Docker؛ أخبرنا عبر
+        <a href="https://github.com/Hamza-Labs-Core/Maktaba/issues">GitHub</a> بما تجده.
+      </p>
+      <p>
+        لنظام <strong>ADM 4.2</strong> وما بعده، مع <strong>Portainer CE</strong> من «App Central».
+        يستغرق نحو 20 دقيقة. ويعمل Maktaba بمستخدم تنشئه له، لا بالمستخدم الجذر أبدًا.
+      </p>
+      <h2 id="before">قبل أن تبدأ</h2>
+      <ul>
+        <li>
+          <strong>الذاكرة:</strong> يحتاج Maktaba إلى 3.5 غيغابايت متاحة له. وتأتي طرز Celeron N5105
+          بـ 4 غيغابايت، وهذا يكفي بالكاد في الفئة الخفيفة، وتبلغ بذاكرة أكبر الفئة القياسية (<a
+            href="/ar/install/nas/#fits"
+            >أي فئة</a
+          >). أما طراز ARM ذو الغيغابايت الواحد، مثل AS1102T، فخير ما يفيد به أن يكون مساحة تخزين.
+        </li>
+        <li>
+          <strong>قرص SSD</strong> لمجلد البيانات إن وُجد: فقاعدة البيانات والصور المصغّرة أسرع عليه
+          بكثير، وتبقى وسائطك على الأقراص الصلبة.
+        </li>
+        <li>
+          <strong>معالج رسوميات:</strong> في طرز Intel Celeron ‏(AS5402T وAS6702T وFS6706T) تقنية
+          Quick Sync.
+        </li>
+        <li>
+          <strong>‏SSH:</strong> من «Services» ← <strong>«Terminal»</strong> ←
+          <strong>«Enable SSH service»</strong> ← «Apply». ولا يسمح ADM بالدخول عبر SSH إلا لـ
+          <code>admin</code> أو <code>root</code>.
+        </li>
+      </ul>
+      <h2 id="user">1. أنشئ مستخدمًا واقرأ رقميه</h2>
+      <p>
+        من «Access Control» ← «Local Users» ← <strong>«Add»</strong>: سمّه <code>maktaba</code>،
+        بكلمة مرور قوية، ودون صلاحيات المدير. ثم شغّل عبر SSH بالحساب <code>admin</code> الأمر
+        <code>id maktaba</code>: فالنتيجة <code>uid=1001 gid=100</code> تعني الإجابة
+        <code>1001:100</code>.
+      </p>
+      <h2 id="folders">2. امنحه مجلداته</h2>
+      <ul>
+        <li>
+          <strong>البيانات:</strong> تحفظ تطبيقات Docker من «App Central» ملفاتها في المجلد المشترك
+          <code>Docker</code>. أنشئ داخله المجلد <code>maktaba</code>، أي
+          <code>/volume1/Docker/maktaba</code>، وامنح <code>maktaba</code> صلاحية القراءة والكتابة
+          عليه.
+        </li>
+        <li>
+          <strong>الوسائط:</strong> من «Access Control» ← «Shared Folders» ← كل مجلد فيه مقاطع ←
+          <strong>«Access Rights»</strong>: القراءة والكتابة لـ <code>maktaba</code> حيث يحفظ
+          Maktaba الترجمات والتحويلات، والقراءة فقط في غيرها. ومنع الوصول («Deny Access») مقدَّم على
+          أي صلاحية أخرى.
+        </li>
+      </ul>
+      <p>
+        اربط كل مجلد داخل الحاوية بمساره نفسه على الخادم، مثل <code>/volume1/Movies</code>: فتجد
+        الأجهزة التي تنضم إلى هذا الجهاز الرئيسي لاحقًا المشاركة نفسها.
+      </p>
+      <h2 id="compose">3. أنشئ ملف compose</h2>
+      <p>
+        افتح <a href="/ar/install/docker/">صفحة التثبيت</a>، واختر <strong>ASUSTOR</strong>، وأجب:
+        المستخدم، والذاكرة، ومجلد البيانات (<code>/volume1/Docker/maktaba</code>)، ومجلدات وسائطك،
+        وتحويل الفيديو بالعتاد، والمنطقة الزمنية. ثم انسخ الملف. لا يغادر شيء مما تكتبه هناك الصفحة.
+      </p>
+      <h2 id="install">4. انشر الحزمة في Portainer</h2>
+      <p>
+        من «App Central» ثبّت <strong>Portainer CE</strong> (يثبّت «Docker Engine» أولًا إن لم يكن
+        موجودًا)، وافتحه من قائمة ADM؛ وكلمة مروره الأولى في الملف
+        <code>Docker/PortainerCE/portainer_password.txt</code>. ثم «Stacks» ←
+        <strong>«Add stack»</strong>: سمّها <code>maktaba</code>، واختر
+        <strong>«Web editor»</strong>، والصق الملف، ثم <strong>«Deploy the stack»</strong>. ويقول
+        سجل الحاوية حتى الإعداد كيف تشغّله.
+      </p>
+      <figure class="placeholder" data-shot="screenshots/asustor/stack.ar.png">
+        <figcaption>
+          📷 <strong>صورة قادمة:</strong> <code>screenshots/asustor/stack.ar.png</code>: نافذة «Add
+          stack» في Portainer مع ملف compose ملصوقًا.
+        </figcaption>
+      </figure>
+      <h2 id="setup">5. شغّل الإعداد واختر الدور</h2>
+      <p>شغّل عبر SSH بالحساب <code>admin</code> (وضع <code>sudo</code> قبله إن رُفض):</p>
+      <pre
+        tabindex="0"
+      ><code>docker exec -it maktaba /opt/maktaba/server/bin/maktaba-server container setup</code></pre>
+      <p>
+        أجب عن أسئلته: اسمٌ لحساب المدير (غير <code>admin</code> الذي يحتفظ به Maktaba لنفسه)، وكلمة
+        مروره، والمجلدات التي فيها مقاطعك. ولكل مجلد يسألك الإعداد عن اسم المشاركة التي تفتحه بها
+        حواسيبك الأخرى. ويحتاج الخادم إلى الإنترنت في هذه الخطوة: ينزّل الإعداد أدوات التفريغ والبحث
+        (نحو 2 GB) ونماذج الكلام. ويبدأ Maktaba بنفسه حين ينتهي. افتح
+        <code>http://&lt;your NAS&gt;:8088</code>، وسجّل الدخول، وأضف مكتبة لكل مجلد:
+        <strong>«الإدارة ← إدارة المكتبات ← إضافة مكتبة»</strong>.
+      </p>
+      <p>
+        تجعل هذه الخطوات الخادم <strong>الجهاز الرئيسي</strong> لـ Maktaba. ويمكن لاحقًا أن ينضم
+        إليه حاسوب فيه بطاقة رسوميات (<a href="/ar/install/after-setup/#gpu-node">بعد الإعداد</a>).
+        وإن كان جهازك الرئيسي يعمل على حاسوب آخر، فلا يحتاج الخادم إلى Maktaba: شارك مجلداته فيقرؤها
+        ذلك الجهاز (<a href="/ar/install/nas/#roles">جهاز رئيسي أم جهاز منضم أم مساحة تخزين</a>).
+      </p>
+      <h2 id="ports">المنافذ</h2>
+      <ul>
+        <li>
+          <strong>صفحات ADM نفسها</strong> على المنفذين 8000 و8001، وPortainer CE على 19943، بعيدًا
+          عن منافذ Maktaba ‏8088 و8080 و8081 و54329.
+        </li>
+        <li>
+          <strong>تطبيق آخر على أحد منافذ Maktaba:</strong> ينقل Maktaba بنفسه منفذ الويب أو الواجهة
+          البرمجية أو البث المباشر المشغول إلى منفذ حر بين 8780 و8790، ويعرض الإعداد و«الإعدادات ←
+          هذا الجهاز» المنفذ الجديد.
+        </li>
+        <li>
+          <strong>ولتختار منفذًا بنفسك</strong> احذف علامة <code>#</code> أمام سطره في كتلة
+          <code>[ports]</code> من الملف، واضبط منفذًا حرًا، وحدّث الحزمة. فالمنفذ الذي تضبطه لا
+          يُنقل أبدًا: إن شغله برنامج آخر توقف Maktaba وذكر سجله المنفذ (<a
+            href="/ar/install/troubleshooting/#port-taken"
+            >منفذ مشغول</a
+          >).
+        </li>
+      </ul>
+      <h2 id="video">تحويل الفيديو بالعتاد</h2>
+      <p>
+        على طراز Celeron اختر <strong>إنتل أو AMD</strong> تحت «الفيديو بالعتاد» في صفحة التثبيت،
+        وأعطها مجموعة جهاز العرض: شغّل عبر SSH الأمر <code>stat -c %g /dev/dri/renderD128</code>.
+        فيمرّر الملف <code>/dev/dri</code> وتلك المجموعة إلى الحاوية، وتقول «الإعدادات ← هذا الجهاز»
+        <strong>الفيديو: بالعتاد</strong>. ولا تتناول وثائق ASUSTOR تمرير <code>/dev/dri</code> في
+        حزمة، وتؤكده قائمة فحص الجهاز. ومن دونه يحوّل Maktaba الفيديو برمجيًا.
+      </p>
+      <h2 id="updates">التحديثات</h2>
+      <p>
+        يحدّث Maktaba نفسه في نافذة التحديث (الإدارة ← التحديثات)، وسحب صورة أحدث في Portainer آمن
+        أيضًا: لا تحلّ صورة أقدم أبدًا محلّ نسخة أحدث من Maktaba. ويأخذ كل تحديث نسخة احتياطية من
+        قاعدة البيانات أولًا، فأبقِ لها مساحة على وحدة التخزين التي فيها مجلد البيانات. وإن تعذّر
+        على إصدارٍ تعديل قاعدة البيانات، عاد Maktaba بنفسه إلى الإصدار الذي كان عندك (<a
+          href="/ar/install/troubleshooting/#update-failed"
+          >لم يكتمل تحديث</a
+        >).
+      </p>
+      <h2 id="trouble">حل المشكلات</h2>
+      <ul>
+        <li>
+          <strong>تتوقف الحاوية فورًا:</strong> يذكر سجلها، في Portainer، المجلد والمستخدم. امنح
+          <code>maktaba</code> القراءة والكتابة على <code>Docker/maktaba</code> (الخطوة 2) وشغّلها
+          من جديد.
+        </li>
+        <li>
+          <strong>تظهر مكتبة بعبارة لا وصول:</strong> امنح <code>maktaba</code> صلاحية على ذلك
+          المجلد المشترك (الخطوة 2)، ثم اضغط <strong>افحص الصلاحيات</strong> في صفحة المكتبة.
+        </li>
+        <li>
+          <strong>يرفض SSH دخول المستخدم:</strong> ادخل بالحساب <code>admin</code>، فنظام ADM يرفض
+          غيره عبر SSH.
+        </li>
+        <li>
+          تشرح صفحة <a href="/ar/install/troubleshooting/">حل المشكلات</a> كل رسالة أخرى، وتتناول
+          صفحة <a href="/ar/install/after-setup/">بعد الإعداد</a> ساعات الهدوء، وتحويل الكلام إلى
+          نص، والوكيل العكسي، وإضافة حاسوب فيه معالج رسوميات.
+        </li>
+      </ul>
+    </main>
+  </body>
+</html>

@@ -8,7 +8,7 @@ password, a token or a pairing code: read the log before committing it.
 
 ```markdown
 ---
-checklist: synology            # synology, truenas or unraid
+checklist: synology            # synology, truenas, unraid, qnap, ugreen or asustor
 date: 2026-12-01
 device: DS920+ (J4125, 8 GB)
 os: DSM 7.2.2-72806 Update 3

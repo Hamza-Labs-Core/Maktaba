@@ -23,6 +23,7 @@ const GUIDES = [
   "unraid",
   "qnap",
   "ugreen",
+  "asustor",
   "after-setup",
   "troubleshooting",
 ];

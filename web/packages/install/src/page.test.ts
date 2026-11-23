@@ -52,6 +52,7 @@ describe("the install page", () => {
 
     setValue(root, "#nas", "qnap");
     expect(out()).toContain("/share/Container/maktaba:/var/lib/maktaba");
+    expect(out()).toContain("MAKTABA_PLATFORM: qts");
     expect(root.querySelector("#nas-hint")!.textContent).toMatch(lang === "en" ? /8080/ : /8080/);
     expect(fetchSpy).not.toHaveBeenCalled();
   });

@@ -11,6 +11,13 @@ for TrueNAS; no self-hosted runner):
 | [synology.md](synology.md) | DS425+ (J4125, Quick Sync), DS923+ (Ryzen, no GPU), DS223 (ARM, 2 GB) | Container Manager's project install, DSM's ACL dialogs, real Quick Sync, the DSM kernel's Landlock and cgroup version, disk sleep on DSM, the guide's DSM screenshots |
 | [truenas.md](truenas.md) | N100 on TrueNAS SCALE 25.04 and 25.10 | the app install from the catalog, the Apps preset and ACL editor, ARC as available memory, VA-API on the N100 |
 | [unraid.md](unraid.md) | any Unraid box (or a VM with a USB key) | the Community Applications template, the cache-pool data path, shfs media, user 99:100 |
+| [qnap.md](qnap.md) | a QNAP with an Intel Celeron (TS-464, TS-264) | Container Station's application, QTS's menus, its port 8080, `/share/` paths, Quick Sync |
+| [ugreen.md](ugreen.md) | a UGREEN DXP with an Intel N100 or Pentium | UGOS Pro's Docker project, its menus, VA-API |
+| [asustor.md](asustor.md) | an ASUSTOR with an Intel Celeron N5105 | ADM's menus, Portainer from App Central, `/volume1/Docker`, Quick Sync |
+
+The QNAP, UGREEN and ASUSTOR checklists have not been run yet: the project has none of these
+devices (Epic 59 README Q6 names Synology and TrueNAS boxes only). Until each is run, its guide's
+menu names come from the maker's documentation and are marked untested.
 
 ## When
 

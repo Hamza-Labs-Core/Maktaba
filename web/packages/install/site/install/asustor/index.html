@@ -1,0 +1,190 @@
+<!doctype html>
+<!-- maktaba.tv/install/asustor (Epic 59 stories 59.11, 59.14): the ASUSTOR guide, a static page. ADM's menu names come from ASUSTOR's documentation, Portainer's from Portainer's; docs/nas/checklists/asustor.md confirms them on a device. Its Arabic twin has the same sections. -->
+<html lang="en" dir="ltr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark light" />
+    <meta name="maktaba-menu" content="none" />
+    <title>Install Maktaba on ASUSTOR · Maktaba</title>
+    <meta
+      name="description"
+      content="Install Maktaba on an ASUSTOR NAS with Portainer from App Central: the user, the folders, the compose file, ports, hardware video, the setup and updates."
+    />
+    <link rel="alternate" hreflang="en" href="https://maktaba.tv/install/asustor/" />
+    <link rel="alternate" hreflang="ar" href="https://maktaba.tv/ar/install/asustor/" />
+    <link rel="stylesheet" href="/install/install.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to the content</a>
+    <header>
+      <h1>Install Maktaba on ASUSTOR</h1>
+      <p class="lead">Portainer runs Maktaba on ADM from one compose file.</p>
+      <nav>
+        <a href="/install/nas/">All NAS guides</a> ·
+        <a href="/ar/install/asustor/" hreflang="ar" lang="ar">العربية</a>
+      </nav>
+    </header>
+    <main id="main" class="guide">
+      <p class="notice">
+        <strong>Not yet tested on an ASUSTOR device.</strong> ADM's menu names below come from
+        ASUSTOR's own documentation, and the same file runs on every Docker host; tell us at
+        <a href="https://github.com/Hamza-Labs-Core/Maktaba/issues">GitHub</a> what you find.
+      </p>
+      <p>
+        For <strong>ADM 4.2</strong> and newer, with <strong>Portainer CE</strong> from App Central.
+        About 20 minutes. Maktaba runs as a user you make for it, never as root.
+      </p>
+      <h2 id="before">Before you start</h2>
+      <ul>
+        <li>
+          <strong>Memory:</strong> Maktaba needs 3.5 GB it may use. The Celeron N5105 models ship
+          with 4 GB, which just fits on the Light tier; with more memory they reach Standard (<a
+            href="/install/nas/#fits"
+            >which tier</a
+          >). A 1 GB ARM model, such as the AS1102T, serves best as storage.
+        </li>
+        <li>
+          <strong>An SSD</strong> for the data folder if there is one: the database and thumbnails
+          are much faster there. Your media can stay on hard disks.
+        </li>
+        <li>
+          <strong>A GPU:</strong> the Intel Celeron models (AS5402T, AS6702T, FS6706T) have Quick
+          Sync.
+        </li>
+        <li>
+          <strong>SSH:</strong> Services → <strong>Terminal</strong> →
+          <strong>Enable SSH service</strong> → Apply. ADM lets only <code>admin</code> or
+          <code>root</code> sign in over SSH.
+        </li>
+      </ul>
+      <h2 id="user">1. Make a user and read its numbers</h2>
+      <p>
+        Access Control → Local Users → <strong>Add</strong>: name <code>maktaba</code>, a strong
+        password, not an administrator. Then, over SSH as <code>admin</code>, run
+        <code>id maktaba</code>: <code>uid=1001 gid=100</code> is the answer <code>1001:100</code>.
+      </p>
+      <h2 id="folders">2. Give it its folders</h2>
+      <ul>
+        <li>
+          <strong>Data:</strong> App Central's Docker apps keep their files in the shared folder
+          <code>Docker</code>. Make the folder <code>maktaba</code> inside it,
+          <code>/volume1/Docker/maktaba</code>, and give <code>maktaba</code> Read &amp; Write on
+          it.
+        </li>
+        <li>
+          <strong>Media:</strong> Access Control → Shared Folders → each folder with videos →
+          <strong>Access Rights</strong>: Read &amp; Write for <code>maktaba</code> where Maktaba
+          may save subtitles and conversions, Read Only elsewhere. Deny Access wins over any other
+          right.
+        </li>
+      </ul>
+      <p>
+        Mount each folder in the container at its own path on the NAS, such as
+        <code>/volume1/Movies</code>: machines that join this home later find the same share.
+      </p>
+      <h2 id="compose">3. Make the compose file</h2>
+      <p>
+        Open <a href="/install/docker/">the install page</a>, choose <strong>ASUSTOR</strong>, and
+        answer: the user, the memory, the data folder (<code>/volume1/Docker/maktaba</code>), your
+        media folders, hardware video and the time zone. Copy the file. Nothing you type there
+        leaves the page.
+      </p>
+      <h2 id="install">4. Deploy the stack in Portainer</h2>
+      <p>
+        App Central → install <strong>Portainer CE</strong> (it installs Docker Engine first when it
+        is missing), and open it from ADM's menu; its first password is in
+        <code>Docker/PortainerCE/portainer_password.txt</code>. Then Stacks →
+        <strong>Add stack</strong>: name <code>maktaba</code>, <strong>Web editor</strong>, paste
+        the file, and <strong>Deploy the stack</strong>. Until its setup, the container's log says
+        how to run it.
+      </p>
+      <figure class="placeholder" data-shot="screenshots/asustor/stack.en.png">
+        <figcaption>
+          📷 <strong>Screenshot to come:</strong> <code>screenshots/asustor/stack.en.png</code>:
+          Portainer's Add stack with the compose file pasted.
+        </figcaption>
+      </figure>
+      <h2 id="setup">5. Run the setup and choose the role</h2>
+      <p>Over SSH as <code>admin</code>, run (with <code>sudo</code> in front if it is refused):</p>
+      <pre
+        tabindex="0"
+      ><code>docker exec -it maktaba /opt/maktaba/server/bin/maktaba-server container setup</code></pre>
+      <p>
+        Answer its questions: a name for the admin account (not <code>admin</code>, which Maktaba
+        keeps for itself), its password, and the folders with your videos. For each folder setup
+        asks the name of the share your other computers open it by. The NAS needs the internet for
+        this step: setup downloads the transcription and search tools (about 2 GB) and the speech
+        models. Maktaba starts by itself when it finishes. Open
+        <code>http://&lt;your NAS&gt;:8088</code>, sign in, and add a library for each folder:
+        <strong>Manage → Manage libraries → Add library</strong>.
+      </p>
+      <p>
+        These steps make the NAS your Maktaba <strong>home</strong>. A computer with a graphics card
+        can join it later (<a href="/install/after-setup/#gpu-node">After setup</a>). If your home
+        runs on another computer instead, the NAS needs no Maktaba: share its folders and that home
+        reads them (<a href="/install/nas/#roles">Home, machine or storage</a>).
+      </p>
+      <h2 id="ports">Ports</h2>
+      <ul>
+        <li>
+          <strong>ADM's own pages</strong> are on 8000 and 8001, and Portainer CE on 19943, clear of
+          Maktaba's 8088, 8080, 8081 and 54329.
+        </li>
+        <li>
+          <strong>Another app on one of Maktaba's ports:</strong> Maktaba moves a taken web, API or
+          live TV port to a free one from 8780 to 8790 by itself, and setup and Settings → This
+          machine show the new one.
+        </li>
+        <li>
+          <strong>To choose a port yourself</strong>, remove the <code>#</code> in front of its line
+          in the file's <code>[ports]</code> block, set a free port, and update the stack. A port
+          you set is never moved: if another program holds it, Maktaba stops and its log names the
+          port (<a href="/install/troubleshooting/#port-taken">A port is taken</a>).
+        </li>
+      </ul>
+      <h2 id="video">Hardware video</h2>
+      <p>
+        On a Celeron model, choose <strong>Intel or AMD</strong> under Hardware video on the install
+        page, and give it the render device's group: over SSH, run
+        <code>stat -c %g /dev/dri/renderD128</code>. The file then passes <code>/dev/dri</code> and
+        that group to the container, and Settings → This machine says
+        <strong>Video: hardware</strong>. ASUSTOR's documentation does not cover
+        <code>/dev/dri</code> in a stack; the device checklist confirms it. Without it, Maktaba
+        converts in software.
+      </p>
+      <h2 id="updates">Updates</h2>
+      <p>
+        Maktaba updates itself in its update window (Manage → Updates), and pulling a newer image in
+        Portainer is safe too: an older image never replaces a newer Maktaba. Each update takes a
+        backup of the database first, so keep room for it on the data folder's volume. If a release
+        cannot change the database, Maktaba goes back to the one you had by itself (<a
+          href="/install/troubleshooting/#update-failed"
+          >An update did not go through</a
+        >).
+      </p>
+      <h2 id="trouble">Troubleshooting</h2>
+      <ul>
+        <li>
+          <strong>The container stops at once:</strong> its log, in Portainer, names the folder and
+          the user. Give <code>maktaba</code> Read &amp; Write on <code>Docker/maktaba</code> (step
+          2) and start it again.
+        </li>
+        <li>
+          <strong>A library shows No access:</strong> give <code>maktaba</code> Access Rights on
+          that shared folder (step 2), then press <strong>Check access</strong> on the library's
+          page.
+        </li>
+        <li>
+          <strong>SSH refuses the user:</strong> sign in as <code>admin</code>; ADM refuses other
+          users over SSH.
+        </li>
+        <li>
+          <a href="/install/troubleshooting/">Troubleshooting</a> explains every other message;
+          <a href="/install/after-setup/">After setup</a> covers quiet hours, speech to text, a
+          reverse proxy and adding a computer with a GPU.
+        </li>
+      </ul>
+    </main>
+  </body>
+</html>

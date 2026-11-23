@@ -1,17 +1,15 @@
 <!doctype html>
-<!-- maktaba.tv/install/ugreen (Epic 59 story 59.14): the UGREEN and ASUSTOR guide, a static
-     page. The compose file comes from /install/docker (story 59.11); this page says where it goes
-     on UGOS Pro (Docker) and on ADM (Portainer). Its twin in Arabic has the same sections. -->
+<!-- maktaba.tv/install/ugreen (Epic 59 stories 59.11, 59.14): the UGREEN guide, a static page. UGOS Pro's menu names come from UGREEN's guides; docs/nas/checklists/ugreen.md confirms them on a device. Its Arabic twin has the same sections. -->
 <html lang="en" dir="ltr">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="dark light" />
     <meta name="maktaba-menu" content="none" />
-    <title>Install Maktaba on UGREEN or ASUSTOR · Maktaba</title>
+    <title>Install Maktaba on UGREEN · Maktaba</title>
     <meta
       name="description"
-      content="Install Maktaba on a UGREEN NAS (UGOS Pro's Docker) or an ASUSTOR NAS (Portainer): the user, the folders, the compose file and the setup."
+      content="Install Maktaba on a UGREEN NAS with UGOS Pro's Docker app: the user, the folders, the compose file, ports, hardware video, the setup and updates."
     />
     <link rel="alternate" hreflang="en" href="https://maktaba.tv/install/ugreen/" />
     <link rel="alternate" hreflang="ar" href="https://maktaba.tv/ar/install/ugreen/" />
@@ -20,93 +18,158 @@
   <body>
     <a class="skip-link" href="#main">Skip to the content</a>
     <header>
-      <h1>Install Maktaba on UGREEN or ASUSTOR</h1>
-      <p class="lead">Both run Maktaba from one compose file.</p>
+      <h1>Install Maktaba on UGREEN</h1>
+      <p class="lead">UGOS Pro's Docker app runs Maktaba from one compose file.</p>
       <nav>
         <a href="/install/nas/">All NAS guides</a> ·
         <a href="/ar/install/ugreen/" hreflang="ar" lang="ar">العربية</a>
       </nav>
     </header>
     <main id="main" class="guide">
-      <p>
-        For <strong>UGOS Pro</strong> (the DXP models) with the Docker app, and
-        <strong>ADM 4.2</strong> and newer with Portainer from App Central. About 20 minutes.
+      <p class="notice">
+        <strong>Not yet tested on a UGREEN device.</strong> UGOS Pro's menu names below come from
+        UGREEN's own guides, and the same file runs on every Docker host; tell us at
+        <a href="https://github.com/Hamza-Labs-Core/Maktaba/issues">GitHub</a> what you find.
       </p>
-      <h2>Before you start</h2>
+      <p>
+        For <strong>UGOS Pro</strong> (the DXP models) with its <strong>Docker</strong> app. About
+        20 minutes. Maktaba runs as a user you make for it, never as root.
+      </p>
+      <h2 id="before">Before you start</h2>
       <ul>
-        <li><strong>Memory:</strong> 8 GB or more is comfortable; Maktaba runs from 4 GB.</li>
         <li>
-          <strong>Hardware video:</strong> the Intel models (N100, Pentium, Core, Celeron) convert
-          video with Quick Sync through <code>/dev/dri</code>.
+          <strong>Memory:</strong> Maktaba needs 3.5 GB it may use; the DXP models ship with 8 GB, a
+          Standard tier (<a href="/install/nas/#fits">which tier</a>).
         </li>
         <li>
           <strong>An SSD</strong> for the data folder if there is one: the database and thumbnails
-          are much faster there.
+          are much faster there. Your media can stay on hard disks.
+        </li>
+        <li>
+          <strong>A GPU:</strong> the Intel models (N100, Pentium, Core) convert video with Quick
+          Sync through <code>/dev/dri</code>.
+        </li>
+        <li>
+          <strong>SSH:</strong> Control Panel → <strong>Terminal</strong> → turn SSH on. Sign in
+          with an administrator account; <code>sudo -i</code> gives a root shell.
         </li>
       </ul>
-      <h2>1. Make a user and read its numbers</h2>
+      <h2 id="user">1. Make a user and read its numbers</h2>
       <p>
-        <strong>UGREEN:</strong> Control Panel → User → <strong>Create</strong>: name
-        <code>maktaba</code>, not an administrator. <strong>ASUSTOR:</strong> Access Control → Local
-        Users → <strong>Add</strong>. Then, over SSH (turn it on in the NAS's terminal settings),
-        run <code>id maktaba</code>: <code>uid=1001 gid=100</code> is the answer
+        Control Panel → <strong>User Management</strong> → User → <strong>Add</strong>: name
+        <code>maktaba</code>, a strong password, the role <strong>Standard User</strong>. Then, over
+        SSH, run <code>id maktaba</code>: <code>uid=1001 gid=100</code> is the answer
         <code>1001:100</code>.
       </p>
-      <h2>2. Give it its folders</h2>
-      <p>
-        Make a folder for Maktaba's data, such as <code>/volume1/docker/maktaba</code> on UGREEN or
-        <code>/volume1/Docker/maktaba</code> on ASUSTOR, and give <code>maktaba</code> Read/Write on
-        it. For each shared folder with videos, give <code>maktaba</code> Read/Write where Maktaba
-        may save subtitles and conversions, Read only elsewhere.
-      </p>
-      <h2>3. Make the compose file</h2>
-      <p>
-        Open <a href="/install/docker/">the install page</a>, choose <strong>UGREEN</strong> or
-        <strong>ASUSTOR</strong>, and answer: the user, the memory, the data folder, your media
-        folders, hardware video and the time zone. Copy the file. Nothing you type there leaves the
-        page.
-      </p>
-      <h2>4. Create the project</h2>
+      <h2 id="folders">2. Give it its folders</h2>
       <ul>
         <li>
-          <strong>UGREEN:</strong> Docker → <strong>Project</strong> → <strong>Create</strong>: name
-          <code>maktaba</code>, its folder under <code>/volume1/docker</code>, paste the file,
-          <strong>Deploy</strong>.
+          <strong>Data:</strong> installing the Docker app makes a shared folder named
+          <code>docker</code>. Make the folder <code>maktaba</code> inside it, such as
+          <code>/volume1/docker/maktaba</code> (on an SSD volume when there is one), and give
+          <code>maktaba</code> Read/Write on it.
         </li>
         <li>
-          <strong>ASUSTOR:</strong> install <strong>Portainer CE</strong> from App Central, then
-          Stacks → <strong>Add stack</strong>: name <code>maktaba</code>, paste the file,
-          <strong>Deploy the stack</strong>.
+          <strong>Media:</strong> in Files → Shared Folder, open the properties of each folder with
+          videos and give <code>maktaba</code> Read/Write where Maktaba may save subtitles and
+          conversions, Read Only elsewhere.
         </li>
       </ul>
+      <p>
+        Mount each folder in the container at its own path on the NAS, such as
+        <code>/volume1/Movies</code>: machines that join this home later find the same share.
+      </p>
+      <h2 id="compose">3. Make the compose file</h2>
+      <p>
+        Open <a href="/install/docker/">the install page</a>, choose <strong>UGREEN</strong>, and
+        answer: the user, the memory, the data folder, your media folders, hardware video and the
+        time zone. Copy the file. Nothing you type there leaves the page.
+      </p>
+      <h2 id="install">4. Create the project</h2>
+      <p>
+        Docker → <strong>Project</strong> → <strong>Create</strong>: name <code>maktaba</code>, keep
+        its storage path inside the <code>docker</code> folder, paste the file, and
+        <strong>Deploy</strong>. UGOS Pro downloads the image and starts it; until its setup, the
+        container's log says how to run it.
+      </p>
       <figure class="placeholder" data-shot="screenshots/ugreen/project.en.png">
         <figcaption>
           📷 <strong>Screenshot to come:</strong> <code>screenshots/ugreen/project.en.png</code>:
           UGOS Pro's Create Project with the compose file pasted.
         </figcaption>
       </figure>
-      <h2>5. Run the setup</h2>
+      <h2 id="setup">5. Run the setup and choose the role</h2>
       <p>Over SSH, run:</p>
       <pre
         tabindex="0"
       ><code>sudo docker exec -it maktaba /opt/maktaba/server/bin/maktaba-server container setup</code></pre>
       <p>
         Answer its questions: a name for the admin account (not <code>admin</code>, which Maktaba
-        keeps for itself), its password, and the folders with your videos. The NAS needs the
-        internet for this step: setup downloads the transcription and search tools (about 2 GB) and
-        the speech models. Maktaba starts by itself when it finishes. Open
-        <code>http://&lt;your NAS&gt;:8088</code>. Sign in, then add a library for each folder:
-        <strong>Manage → Manage libraries → Add library</strong> (<a
-          href="/install/after-setup/#libraries"
-          >After setup</a
-        >).
+        keeps for itself), its password, and the folders with your videos. For each folder setup
+        asks the name of the share your other computers open it by. The NAS needs the internet for
+        this step: setup downloads the transcription and search tools (about 2 GB) and the speech
+        models. Maktaba starts by itself when it finishes. Open
+        <code>http://&lt;your NAS&gt;:8088</code>, sign in, and add a library for each folder:
+        <strong>Manage → Manage libraries → Add library</strong>.
       </p>
-      <h2>After setup</h2>
       <p>
-        <a href="/install/after-setup/">After setup</a>: permissions, quiet hours, speech to text,
-        hardware video, a reverse proxy, updates, and adding a computer with a GPU.
-        <a href="/install/troubleshooting/">Troubleshooting</a>: what each message means.
+        These steps make the NAS your Maktaba <strong>home</strong>. A computer with a graphics card
+        can join it later (<a href="/install/after-setup/#gpu-node">After setup</a>). If your home
+        runs on another computer instead, the NAS needs no Maktaba: share its folders and that home
+        reads them (<a href="/install/nas/#roles">Home, machine or storage</a>).
       </p>
+      <h2 id="ports">Ports</h2>
+      <ul>
+        <li>
+          <strong>UGOS Pro's own pages</strong> are on 9999 (HTTP) and 9443 (HTTPS), clear of
+          Maktaba's 8088, 8080, 8081 and 54329.
+        </li>
+        <li>
+          <strong>Another app on one of Maktaba's ports</strong> (a media server's, for one):
+          Maktaba moves a taken web, API or live TV port to a free one from 8780 to 8790 by itself,
+          and setup and Settings → This machine show the new one.
+        </li>
+        <li>
+          <strong>To choose a port yourself</strong>, remove the <code>#</code> in front of its line
+          in the file's <code>[ports]</code> block, set a free port, and deploy the project again. A
+          port you set is never moved: if another program holds it, Maktaba stops and its log names
+          the port (<a href="/install/troubleshooting/#port-taken">A port is taken</a>).
+        </li>
+      </ul>
+      <h2 id="video">Hardware video</h2>
+      <p>
+        On an Intel model, choose <strong>Intel or AMD</strong> under Hardware video on the install
+        page, and give it the render device's group: over SSH, run
+        <code>stat -c %g /dev/dri/renderD128</code>. The file then passes <code>/dev/dri</code> and
+        that group to the container (UGREEN's own guides do the same for other media servers), and
+        Settings → This machine says <strong>Video: hardware</strong>. Without it, Maktaba converts
+        in software.
+      </p>
+      <h2 id="updates">Updates</h2>
+      <p>
+        Maktaba updates itself in its update window (Manage → Updates), and deploying the project
+        again with a newer image is safe too: an older image never replaces a newer Maktaba. Each
+        update takes a backup of the database first, so keep room for it on the data folder's
+        volume. If a release cannot change the database, Maktaba goes back to the one you had by
+        itself (<a href="/install/troubleshooting/#update-failed">An update did not go through</a>).
+      </p>
+      <h2 id="trouble">Troubleshooting</h2>
+      <ul>
+        <li>
+          <strong>The container stops at once:</strong> its log, in the Docker app, names the folder
+          and the user. Give <code>maktaba</code> Read/Write on <code>docker/maktaba</code> (step 2)
+          and start it again.
+        </li>
+        <li>
+          <strong>A library shows No access:</strong> give <code>maktaba</code> permission on that
+          shared folder (step 2), then press <strong>Check access</strong> on the library's page.
+        </li>
+        <li>
+          <a href="/install/troubleshooting/">Troubleshooting</a> explains every other message;
+          <a href="/install/after-setup/">After setup</a> covers quiet hours, speech to text, a
+          reverse proxy and adding a computer with a GPU.
+        </li>
+      </ul>
     </main>
   </body>
 </html>

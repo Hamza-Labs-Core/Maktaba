@@ -157,6 +157,7 @@ export function mount(root: HTMLElement, base: string, lang: Lang): void {
     tz: zone.value,
     network: network.value as "host" | "bridge",
     hostIp: hostIp.value,
+    platform: nas.value === "qnap" ? "qts" : "docker",
   });
 
   let url = "";

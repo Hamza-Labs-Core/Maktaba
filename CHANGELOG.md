@@ -14,6 +14,15 @@ build fails when the two differ.
 
 ### Changed
 
+- **A full guide for each NAS on maktaba.tv/install.** QNAP, UGREEN and a new ASUSTOR page each
+  walk through the same steps as the TrueNAS and Unraid guides: what to check first, the user and
+  its uid:gid, the folders and their permissions, the install in the NAS's own app, the setup and
+  the NAS's role, ports and the NAS's own (QTS's 8080), hardware video, updates and
+  troubleshooting, with menu names from each maker's documentation. Every model in the NAS
+  page's table links to its maker's guide. The compose file the install page makes for a QNAP now
+  says `MAKTABA_PLATFORM: qts`, so setup offers each `/share/<name>` folder as its share. In
+  English and Arabic.
+
 - **The NAS guides match what Maktaba does today.** maktaba.tv/install's Troubleshooting page
   says what a failed update looks like (nothing put back, undone by its own Down scripts, or
   restored from the backup), what to do when an update waits for free space, and what each port

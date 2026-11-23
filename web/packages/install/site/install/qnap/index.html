@@ -1,18 +1,15 @@
 <!doctype html>
-<!-- maktaba.tv/install/qnap (Epic 59 story 59.14): the QNAP guide, a static page. The compose
-     file comes from /install/docker (story 59.11); this page says where it goes in Container
-     Station. Not yet tested on a QNAP device (docs/nas/checklists/). Its twin in Arabic has the
-     same sections. -->
+<!-- maktaba.tv/install/qnap (Epic 59 stories 59.11, 59.14): the QNAP guide, a static page. QNAP's menu names come from QNAP's documentation; docs/nas/checklists/qnap.md confirms them on a device. Its Arabic twin has the same sections. -->
 <html lang="en" dir="ltr">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="dark light" />
     <meta name="maktaba-menu" content="none" />
-    <title>Install Maktaba on a QNAP NAS · Maktaba</title>
+    <title>Install Maktaba on QNAP · Maktaba</title>
     <meta
       name="description"
-      content="Install Maktaba on a QNAP NAS with Container Station: the user, the folders, the compose file and the setup."
+      content="Install Maktaba on a QNAP NAS with Container Station: the user, the folders, the compose file, ports, hardware video, the setup and updates."
     />
     <link rel="alternate" hreflang="en" href="https://maktaba.tv/install/qnap/" />
     <link rel="alternate" hreflang="ar" href="https://maktaba.tv/ar/install/qnap/" />
@@ -21,7 +18,7 @@
   <body>
     <a class="skip-link" href="#main">Skip to the content</a>
     <header>
-      <h1>Install Maktaba on a QNAP NAS</h1>
+      <h1>Install Maktaba on QNAP</h1>
       <p class="lead">Container Station runs Maktaba from one compose file.</p>
       <nav>
         <a href="/install/nas/">All NAS guides</a> ·
@@ -30,66 +27,75 @@
     </header>
     <main id="main" class="guide">
       <p class="notice">
-        <strong>Not yet tested on a QNAP device.</strong> The steps follow QNAP's own and the same
-        file runs on every Docker host; tell us at
+        <strong>Not yet tested on a QNAP device.</strong> QNAP's menu names below come from QNAP's
+        own documentation, and the same file runs on every Docker host; tell us at
         <a href="https://github.com/Hamza-Labs-Core/Maktaba/issues">GitHub</a> what you find.
       </p>
       <p>
         For QTS 5.1 or QuTS hero 5.1 and newer, with <strong>Container Station 3</strong> from App
-        Center. About 20 minutes.
+        Center. About 20 minutes. Maktaba runs as a user you make for it, never as root.
       </p>
-      <h2>Before you start</h2>
+      <h2 id="before">Before you start</h2>
       <ul>
-        <li><strong>Memory:</strong> 8 GB or more is comfortable; Maktaba runs from 4 GB.</li>
         <li>
-          <strong>Hardware video:</strong> models with an Intel Celeron or Pentium (TS-464, TS-264,
-          TS-462 and others) convert video with Quick Sync through <code>/dev/dri</code>.
+          <strong>Memory:</strong> Maktaba needs 3.5 GB it may use; 8 GB or more is comfortable. It
+          picks its tier from that memory (<a href="/install/nas/#fits">which tier</a>). A 2 GB
+          model, such as the TS-233, serves best as storage.
         </li>
         <li>
-          <strong>Port 8080:</strong> QTS keeps it for its own pages. Maktaba sees that, moves its
-          own port into 8780 to 8790, and setup and Settings → This machine show the new one. You do
-          nothing. To choose the port yourself, set <code>MAKTABA_API_PORT</code> in the file's
-          <code>[ports]</code> block (<a href="/install/troubleshooting/#port-taken"
-            >A port is taken</a
-          >).
+          <strong>An SSD volume</strong> for the data folder if there is one: the database and
+          thumbnails are much faster there. Your media can stay on hard disks.
+        </li>
+        <li>
+          <strong>A GPU:</strong> models with an Intel Celeron or Pentium (TS-464, TS-264, TS-462)
+          have Quick Sync; the Ryzen and ARM models convert video in software.
+        </li>
+        <li>
+          <strong>SSH:</strong> Control Panel → Network &amp; File Services → Telnet / SSH →
+          <strong>Allow SSH connection</strong>. QTS lets only administrators sign in over SSH.
         </li>
       </ul>
-      <h2>1. Make a user for Maktaba</h2>
+      <h2 id="user">1. Make a user and read its numbers</h2>
       <p>
         Control Panel → Privilege → Users → <strong>Create</strong> → Create a User: name
-        <code>maktaba</code>, a strong password, not an administrator. Then read its numbers: over
-        SSH (Control Panel → Network &amp; File Services → Telnet / SSH), run
-        <code>id maktaba</code>. <code>uid=1001 gid=100</code> is the answer <code>1001:100</code>.
+        <code>maktaba</code>, a strong password, not an administrator. Then sign in over SSH as an
+        administrator (in the Console Management menu QTS shows, press <kbd>Q</kbd> and then
+        <kbd>Y</kbd> for a shell) and run <code>id maktaba</code>: <code>uid=1001 gid=100</code> is
+        the answer <code>1001:100</code>.
       </p>
-      <h2>2. Give it its folders</h2>
+      <h2 id="folders">2. Give it its folders</h2>
       <ul>
         <li>
           <strong>Data:</strong> create the folder <code>maktaba</code> inside the shared folder
-          <code>Container</code> (Container Station makes it; put it on an SSD volume when there is
-          one), and give <code>maktaba</code> Read/Write on it.
+          <code>Container</code>, which Container Station makes when it is installed (put it on an
+          SSD volume when there is one), and give <code>maktaba</code> Read/Write on it.
         </li>
         <li>
-          <strong>Media:</strong> Control Panel → Privilege → Shared Folders → each folder with
-          videos → Edit Shared Folder Permission: Read/Write for <code>maktaba</code> where Maktaba
-          may save subtitles and conversions, Read only elsewhere.
+          <strong>Media:</strong> Control Panel → Privilege → Shared Folders → the edit-permissions
+          icon of each folder with videos → Edit Shared Folder Permission: Read/Write for
+          <code>maktaba</code> where Maktaba may save subtitles and conversions, Read only
+          elsewhere.
         </li>
       </ul>
       <p>
         A shared folder's path in the container is its path on the NAS, such as
-        <code>/share/Multimedia</code> or <code>/share/CACHEDEV1_DATA/Movies</code>.
+        <code>/share/Multimedia</code> or <code>/share/CACHEDEV1_DATA/Movies</code>. Mount each at
+        that same path: Maktaba then knows it as the share your other computers open.
       </p>
-      <h2>3. Make the compose file</h2>
+      <h2 id="compose">3. Make the compose file</h2>
       <p>
         Open <a href="/install/docker/">the install page</a>, choose <strong>QNAP</strong>, and
         answer: the user (<code>1001:100</code>), the memory, the data folder
         (<code>/share/Container/maktaba</code>), your media folders, hardware video and the time
-        zone. Copy the file. Nothing you type there leaves the page.
+        zone. The file says <code>MAKTABA_PLATFORM: qts</code>, so Maktaba knows it runs on a QNAP.
+        Copy it. Nothing you type there leaves the page.
       </p>
-      <h2>4. Create the application</h2>
+      <h2 id="install">4. Create the application</h2>
       <p>
         Container Station → <strong>Applications</strong> → <strong>Create</strong>: name
-        <code>maktaba</code>, paste the file, <strong>Create</strong>. Container Station downloads
-        the image and starts it.
+        <code>maktaba</code> (letters, digits, <code>-</code> and <code>_</code>), paste the file,
+        <strong>Validate</strong>, then <strong>Create</strong>. Container Station downloads the
+        image and starts it; until its setup, the container's log says how to run it.
       </p>
       <figure class="placeholder" data-shot="screenshots/qnap/create-application.en.png">
         <figcaption>
@@ -98,28 +104,85 @@
           compose file pasted.
         </figcaption>
       </figure>
-      <h2>5. Run the setup</h2>
-      <p>Over SSH, run:</p>
+      <h2 id="setup">5. Run the setup and choose the role</h2>
+      <p>Over SSH, as an administrator, run (with <code>sudo</code> in front if it is refused):</p>
       <pre
         tabindex="0"
       ><code>docker exec -it maktaba /opt/maktaba/server/bin/maktaba-server container setup</code></pre>
       <p>
         Answer its questions: a name for the admin account (not <code>admin</code>, which Maktaba
-        keeps for itself), its password, and the folders with your videos. The NAS needs the
-        internet for this step: setup downloads the transcription and search tools (about 2 GB) and
-        the speech models. Maktaba starts by itself when it finishes. Open
-        <code>http://&lt;your NAS&gt;:8088</code>. Sign in, then add a library for each folder:
-        <strong>Manage → Manage libraries → Add library</strong> (<a
-          href="/install/after-setup/#libraries"
-          >After setup</a
-        >).
+        keeps for itself), its password, and the folders with your videos. For each folder setup
+        offers the share it works out (<code>/share/Movies</code> is the share <code>Movies</code>):
+        confirm it, or type the name your other computers use. The NAS needs the internet for this
+        step: setup downloads the transcription and search tools (about 2 GB) and the speech models.
+        Maktaba starts by itself when it finishes. Open the address setup shows, sign in, and add a
+        library for each folder: <strong>Manage → Manage libraries → Add library</strong>.
       </p>
-      <h2>After setup</h2>
       <p>
-        <a href="/install/after-setup/">After setup</a>: permissions, quiet hours, speech to text,
-        hardware video, a reverse proxy, updates, and adding a computer with a GPU.
-        <a href="/install/troubleshooting/">Troubleshooting</a>: what each message means.
+        These steps make the NAS your Maktaba <strong>home</strong>. A computer with a graphics card
+        can join it later (<a href="/install/after-setup/#gpu-node">After setup</a>). If your home
+        runs on another computer instead, the NAS needs no Maktaba: share its folders and that home
+        reads them (<a href="/install/nas/#roles">Home, machine or storage</a>).
       </p>
+      <h2 id="ports">Ports</h2>
+      <ul>
+        <li>
+          <strong>QTS keeps 8080</strong> for its own pages (its default system port). Maktaba sees
+          that and moves its API port to a free one from 8780 to 8790; setup and Settings → This
+          machine show the new one. You do nothing.
+        </li>
+        <li>
+          <strong>8081:</strong> QNAP's Web Server package, when it is installed, uses 8081 for
+          HTTPS. Maktaba then moves its live TV port the same way.
+        </li>
+        <li>
+          <strong>To choose a port yourself</strong>, remove the <code>#</code> in front of its line
+          in the file's <code>[ports]</code> block (<code>MAKTABA_API_PORT</code>,
+          <code>MAKTABA_WEB_PORT</code>, <code>MAKTABA_STREAM_PORT</code> or
+          <code>MAKTABA_POSTGRES_PORT</code>), set a free port, and recreate the application. A port
+          you set is never moved: if another program holds it, Maktaba stops and its log names the
+          port (<a href="/install/troubleshooting/#port-taken">A port is taken</a>).
+        </li>
+      </ul>
+      <h2 id="video">Hardware video</h2>
+      <p>
+        On a model with Quick Sync, choose <strong>Intel or AMD</strong> under Hardware video on the
+        install page, and give it the render device's group: over SSH, run
+        <code>stat -c %g /dev/dri/renderD128</code>. The file then passes <code>/dev/dri</code> and
+        that group to the container, and Settings → This machine says
+        <strong>Video: hardware</strong>. QNAP's own documentation does not cover
+        <code>/dev/dri</code> in a compose file; the device checklist confirms it on a TS-464.
+        Without it, Maktaba converts in software.
+      </p>
+      <h2 id="updates">Updates</h2>
+      <p>
+        Maktaba updates itself in its update window (Manage → Updates), and recreating the
+        application with a newer image is safe too: an older image never replaces a newer Maktaba.
+        Each update takes a backup of the database first, so keep room for it on the data folder's
+        volume. If a release cannot change the database, Maktaba goes back to the one you had by
+        itself (<a href="/install/troubleshooting/#update-failed">An update did not go through</a>).
+      </p>
+      <h2 id="trouble">Troubleshooting</h2>
+      <ul>
+        <li>
+          <strong>The container stops at once:</strong> its log, on the container's page in
+          Container Station, names the folder and the user. Give <code>maktaba</code> Read/Write on
+          <code>Container/maktaba</code> (step 2) and start it again.
+        </li>
+        <li>
+          <strong>A library shows No access:</strong> give <code>maktaba</code> permission on that
+          shared folder (step 2), then press <strong>Check access</strong> on the library's page.
+        </li>
+        <li>
+          <strong>SSH says the user cannot sign in:</strong> sign in as an administrator; QTS
+          refuses other users over SSH.
+        </li>
+        <li>
+          <a href="/install/troubleshooting/">Troubleshooting</a> explains every other message;
+          <a href="/install/after-setup/">After setup</a> covers quiet hours, speech to text, a
+          reverse proxy and adding a computer with a GPU.
+        </li>
+      </ul>
     </main>
   </body>
 </html>
