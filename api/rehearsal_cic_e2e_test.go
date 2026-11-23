@@ -20,8 +20,10 @@ package main
 // the same (a machine's api session coming straight back); the update to this commit, with
 // a NO TRANSACTION migration that builds two indexes CONCURRENTLY (a new table's and one on
 // videos), its backup taken while the previous release serves. The update must commit with
-// no restore, both indexes valid, and the log naming the copy's walsender it ended. On a
-// release from before the fix it rolls back after the three lock timeouts.
+// no restore, both indexes valid, and the log naming the copy's walsender it ended. On the
+// code from before the fix (rehearsed with cur_ref = main on 2026-11-23) the lock timeout
+// hit and the next tries took the INVALID indexes for done: the update committed with both
+// indexes INVALID after 4 min 11 s of downtime, as 0232 was recorded on the owner's home.
 
 import (
 	"bytes"
