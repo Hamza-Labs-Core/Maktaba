@@ -44,6 +44,22 @@ prs: [1519]
     polling thread. Now MainScene creates the Task without running it, and SearchScreen runs
     it at the first question (33df43004). `ApiTask` sends a call it was given before it
     started, and never sends the same node twice.
+- A GLM-5.3 review, run twice (the first ended without its report, waiting on a background
+  run), found these, fixed by the lead in 4921fe558b45947de5f29436207042e9ead8a57e:
+  - Ask with the words erased forgot the answer being read without cancelling it, and the
+    next question waited behind it.
+  - Two Tasks could refresh one refresh token at once. The home treats that as a replay,
+    revokes the family and signs the person out. AI mode's Task now never refreshes; on a
+    401 it uses the tokens the main Task renewed.
+  - A scene reset (deep link, sign-out, an app too old) did not give up an answer being
+    read.
+  - `answered:false` with `reason:timeout` showed "these passages do not answer".
+- The review's byte-cut finding was wrong. BrightScript's `Len` and `Left` count UTF-16
+  units (`visualtext.brs` splits a string into them), so a cut at 79 cannot split an Arabic
+  letter.
+- A T08 step that asked again mid-answer could not run in brs-engine: the second key is
+  handled only after the AI Task has read the whole answer. Cancelling stays untested in the
+  emulator.
 
 ## What we learned
 - brs-engine's `roUrlTransfer` writes `AsyncPostFromFileToFile`'s output only on 200, so a
