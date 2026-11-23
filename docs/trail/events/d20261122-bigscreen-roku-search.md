@@ -25,6 +25,13 @@ prs: [1519, 1511, 1497]
   emptied and the same words typed again) and three minors (the big screen's panel lost focus
   when its last chip went; Roku's sheet jumped back to the pressed row when an answer came;
   test gaps). All fixed in f2a9498ac.
+- #1519 was stacked on #1517, which is stacked on #1515. With all of 49.11 in, this branch
+  marks the story Done. Its first CI attempt (run 45086064605) failed two Apple UI tests this
+  branch does not touch, and both passed on the re-run:
+  - `TVSearchUITests.testSuggestionsShowTheirKindsAndATitleOpensItsPage`: the focus had not
+    reached the suggestions' row;
+  - `PlayerParentalUITests.testAChannelOpenedBeforeTheLimitIsKnownStillShowsTheSlate`:
+    "Timed out while evaluating UI query".
 
 ## What we learned
 - brs-engine's SceneGraph differs from a Roku in ways a screen test meets:
