@@ -20,6 +20,16 @@ import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import com.hamzalabs.maktaba.core.AiStreams
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.test.performKeyInput
+import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.pressKey
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import mockwebserver3.MockResponse
 
 /** Story 55.04 T06 and T07, off screen. */
 @OptIn(ExperimentalTestApi::class)
@@ -150,6 +160,108 @@ class SearchScreenTest {
             waitUntil(timeoutMillis = 5_000) { onAllNodes(hasTestTag("search-preview")).fetchSemanticsNodes().isNotEmpty() }
             assertEquals("v1", m.chosen)
             assertTrue("no search was run", fake.asked("POST /api/search").isEmpty())
+        }
+    }
+
+    // ---------- story 49.14: AI mode's tab ----------
+
+    private fun stream(body: String) = MockResponse.Builder().code(200).setHeader("Content-Type", "text/event-stream").body(body).build()
+
+    private fun aiAsks(fake: TestHome) = fake.asked("POST /api/search/ai").map { Json.parseToJsonElement(it.body!!.utf8()).jsonObject }
+
+    private fun answering(fake: TestHome, passages: List<AiStreams.Passage> = AiStreams.EN_PASSAGES, sentences: List<AiStreams.Sentence> = AiStreams.EN_SENTENCES) =
+        fake.answer("POST /api/search/ai") { r ->
+            stream(AiStreams.answer(Json.parseToJsonElement(r.body!!.utf8()).jsonObject["q"]!!.jsonPrimitive.content, passages, sentences))
+        }
+
+    @Test
+    fun aiModeAsksOnlyWhenOpenedThenStreamsAndACitationPlays() = TestHome().use { fake ->
+        answering(fake)
+        val m = searched(fake)
+        val home = fake.home()
+        runComposeUiTest {
+            setContent { InPlayer(home) { Box(Modifier.size(900.dp, 900.dp)) { SearchContent(m, home, fake.features.value) } } }
+            onNodeWithTag("title-v1").assertExists()
+            assertTrue("Results never asks AI mode", fake.asked("POST /api/search/ai").isEmpty())
+            onNodeWithTag("tab-ai").performClick()
+            waitUntil(timeoutMillis = 5_000) { onAllNodes(hasTestTag("ai-sentence-1-1")).fetchSemanticsNodes().isNotEmpty() }
+            assertEquals("fasting", aiAsks(fake).single()["q"]!!.jsonPrimitive.content)
+            onNodeWithText("Passages read").assertExists()
+            onNodeWithTag("ai-passage-1-2").assertExists()
+            onNodeWithText("Patience is half of faith.").assertExists()
+            onNode(hasContentDescription("Source 2, The Night Journey, play from \u2066" + "22:02", substring = true)).assertExists()
+            onNodeWithTag("ai-cite-1-1-2").performClick()
+            assertEquals("v4", fake.played.single().videoId)
+            assertEquals(1322, fake.played.single().startSec)
+            // a passage plays from its moment too
+            onNodeWithTag("ai-passage-1-1").performClick()
+            assertEquals(754, fake.played.last().startSec)
+        }
+    }
+
+    @Test
+    fun aFollowUpWithEnterCarriesTheEarlierAnswer() = TestHome().use { fake ->
+        answering(fake)
+        val m = searched(fake)
+        val home = fake.home()
+        runComposeUiTest {
+            setContent { InPlayer(home) { Box(Modifier.size(900.dp, 900.dp)) { SearchContent(m, home, fake.features.value) } } }
+            onNodeWithTag("tab-ai").performClick()
+            waitUntil(timeoutMillis = 5_000) { onAllNodes(hasTestTag("ai-sentence-1-1")).fetchSemanticsNodes().isNotEmpty() }
+            onNodeWithTag("ai-follow-up").performTextInput("and its reward?")
+            onNodeWithTag("ai-follow-up").performKeyInput { pressKey(Key.Enter) }
+            waitUntil(timeoutMillis = 5_000) { aiAsks(fake).size == 2 }
+            val turn = aiAsks(fake).last()["history"]!!.jsonArray.single().jsonObject
+            assertEquals("fasting", turn["q"]!!.jsonPrimitive.content)
+            assertEquals("Patience is half of faith. Its reward comes without measure.", turn["answer"]!!.jsonPrimitive.content)
+            waitUntil(timeoutMillis = 5_000) { onAllNodes(hasTestTag("ai-question-2")).fetchSemanticsNodes().isNotEmpty() }
+        }
+    }
+
+    @Test
+    fun noLanguageModelOpensTheSettingAndTheHelpInTheBrowser() = TestHome().use { fake ->
+        fake.answer("POST /api/search/ai", AiStreams.UNAVAILABLE, 409)
+        val m = searched(fake)
+        val home = fake.home()
+        runComposeUiTest {
+            setContent { InPlayer(home) { Box(Modifier.size(900.dp, 900.dp)) { SearchContent(m, home, fake.features.value) } } }
+            onNodeWithTag("tab-ai").performClick()
+            waitUntil(timeoutMillis = 5_000) { onAllNodes(hasTestTag("ai-unavailable")).fetchSemanticsNodes().isNotEmpty() }
+            onNodeWithText("AI mode is not set up").assertExists()
+            onNodeWithTag("ai-help").performClick()
+            assertTrue(fake.opened.last().endsWith("/help/search#ai-mode"))
+            onNodeWithTag("ai-settings").performClick()
+            assertTrue(fake.opened.last().endsWith("/settings/rules?section=tagcheck&q=url"))
+        }
+    }
+
+    @Test
+    fun anOlderHomeAndAnAdminsSwitchEachSayWhy() = TestHome().use { fake ->
+        val m = searched(fake)
+        val home = fake.home()
+        runComposeUiTest {
+            setContent { InPlayer(home) { Box(Modifier.size(900.dp, 900.dp)) { SearchContent(m, home, fake.features.value) } } }
+            onNodeWithTag("tab-ai").performClick()
+            waitUntil(timeoutMillis = 5_000) { onAllNodes(hasTestTag("ai-old-home")).fetchSemanticsNodes().isNotEmpty() }
+            fake.answer("POST /api/search/ai", AiStreams.OFF, 409)
+            onNodeWithTag("ai-follow-up").performTextInput("again")
+            onNodeWithTag("ai-ask").performClick()
+            waitUntil(timeoutMillis = 5_000) { onAllNodes(hasTestTag("ai-off")).fetchSemanticsNodes().isNotEmpty() }
+        }
+    }
+
+    @Test
+    fun aiModeIsInArabic() = TestHome().use { fake ->
+        answering(fake, AiStreams.AR_PASSAGES, AiStreams.AR_SENTENCES)
+        val m = searched(fake)
+        val home = fake.home()
+        runComposeUiTest {
+            setContent { InPlayer(home, Lang.Ar) { Box(Modifier.size(900.dp, 900.dp)) { SearchContent(m, home, fake.features.value) } } }
+            onNodeWithText("وضع الذكاء الاصطناعي").performClick()
+            waitUntil(timeoutMillis = 5_000) { onAllNodes(hasTestTag("ai-sentence-1-1")).fetchSemanticsNodes().isNotEmpty() }
+            onNodeWithText("الصبر نصف الإيمان.").assertExists()
+            onNodeWithText("المقاطع المقروءة").assertExists()
+            onNode(hasContentDescription("المصدر 1، الإسراء والمعراج، تشغيل من \u2066" + "12:34", substring = true)).assertExists()
         }
     }
 }
