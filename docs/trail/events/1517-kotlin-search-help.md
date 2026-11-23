@@ -35,6 +35,10 @@ prs: [1497, 1511]
   a `tag` facet the home never sends and unreadable speaker buckets. The fixture is now the
   home's answer as it is, and `BrowseTest` adds the odd buckets itself
   (f0a4442eb992c7dbf33348fc74264b1d4bdbed82).
+- That run's `apple-apps / Player UI tests (ipad 1/6)` failed in
+  `PlayerLibrariesUITests.testTheSeriesTabPagesToTheEnd` ("Timed out while evaluating UI
+  query", run 45086054800). The test is not about search, and this branch changes nothing under
+  `apps/apple`, so it was re-run as a flake.
 
 ## What we learned
 - A full disk leaves Gradle's binary test results half written; later runs fail before any
