@@ -175,6 +175,9 @@ describe("AI mode tab (story 49.14)", () => {
     renderSearch("/search?q=patience&mode=hybrid");
     expect(tab(E["search.tab.results"]!)).toHaveAttribute("aria-selected", "true");
     await screen.findByTestId("search-videos");
+    // the search answered (its video listed) before AI mode opens: a search still on its way
+    // when the tab changes is dropped, and Results asks again on return
+    await screen.findByText("Patience in hardship", {}, { timeout: 3000 });
     expect(streams).toHaveLength(0);
 
     fireEvent.click(tab(E["search.tab.ai"]!));
