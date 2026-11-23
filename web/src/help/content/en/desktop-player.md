@@ -56,6 +56,8 @@ A series' page shows its seasons and episodes, **Continue watching** (the first 
 
 **Ctrl+F** (or **/**) opens Search from anywhere. Type: the words you searched before are suggested (**Up** and **Down** choose, **Enter** searches). Results come in two groups: **Titles**, and **In the transcript**, the words said in a video, each passage with **Play from** its moment. **Show more** gives the next results. With the field empty you see your **Recent searches**: remove one, or **Clear all**. On a wide window, choosing a result shows its page beside the results.
 
+Above the results, **Results** and **AI mode** are two tabs. **AI mode** answers a question from your library's passages, and asks the home only once you open it or ask from it. The passages it read show at once; the answer follows sentence by sentence, each with a chip per passage it cites: click it (or **Tab** to it and press **Enter**) to play the video from that moment. Type a follow-up in the field under the answer and press **Enter**. When the home has no language model, the tab says so, with buttons that open the setting and the help page in your browser (see [AI mode](/help/search#ai-mode)).
+
 ### Watch {#watch}
 
 A video resumes where you left it, unless you finished it or were nearly at the end; **Play from start** starts it over. The controls are under the picture: play and pause, back and forward 10 seconds, the bar (with a mark at each chapter), the volume, **Subtitles**, **Audio**, **Quality** and full screen.
