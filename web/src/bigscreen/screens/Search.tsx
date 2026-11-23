@@ -296,7 +296,7 @@ export function BigSearch() {
   return (
     <Screen testId="big-search">
       <div className="bs-search">
-        <div className="bs-search__entry">
+        <div className="bs-search__entry" data-bs-region="search-entry">
           <input
             className="bs-search__field"
             type="search"
@@ -396,7 +396,7 @@ export function BigSearch() {
           )}
         </div>
 
-        <div className="bs-search__results">
+        <div className="bs-search__results" data-bs-region="search-results">
           <div
             className="bs-chips bs-tabs"
             role="tablist"
@@ -412,7 +412,7 @@ export function BigSearch() {
                 aria-selected={tab === id}
                 aria-controls="bs-search-panel"
                 className="bs-chip"
-                data-bs-focus={`tab:${id}`}
+                data-bs-focus={`stab:${id}`}
                 onClick={() => selectTab(id)}
               >
                 {t(`search.tab.${id}`)}

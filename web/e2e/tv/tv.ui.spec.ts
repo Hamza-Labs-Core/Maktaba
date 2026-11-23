@@ -83,6 +83,7 @@ async function pressTo(page: Page, key: string, id: string | RegExp, max = 16) {
   let k = key;
   let turned = false;
   let last = await focused(page);
+  const path = [last];
   for (let i = 0; i < max; i++) {
     if (hit(last)) return;
     await page.keyboard.press(k);
@@ -93,8 +94,9 @@ async function pressTo(page: Page, key: string, id: string | RegExp, max = 16) {
       turned = true;
     }
     last = now;
+    path.push(now);
   }
-  throw new Error(`focus never reached ${id} with ${key} (on ${last})`);
+  throw new Error(`focus never reached ${id} with ${key} (on ${last}) PATH ${path.join(" > ")}`);
 }
 
 async function shot(page: Page, name: string) {
@@ -329,8 +331,8 @@ for (const locale of ["en", "ar"] as const) {
 
     // across to the results' column, up to the tabs, AI mode
     await pressTo(page, forward, /^(st|sm|sort|search|sg|tab):/);
-    await pressTo(page, "ArrowUp", /^tab:/);
-    await pressTo(page, forward, "tab:ai");
+    await pressTo(page, "ArrowUp", /^stab:/);
+    await pressTo(page, forward, "stab:ai");
     await page.keyboard.press("Enter");
     await expect(
       s.getByRole("tab", { name: locale === "ar" ? "وضع الذكاء الاصطناعي" : "AI mode" })
@@ -344,13 +346,15 @@ for (const locale of ["en", "ar"] as const) {
     const searches = home.searches.length;
 
     // a follow-up: two more letters after the words asked, then Ask
-    await pressTo(page, locale === "ar" ? "ArrowRight" : "ArrowLeft", /^key:/, 24);
+    // back across to the keyboard (the field keeps left and right: down leaves it)
+    await pressTo(page, locale === "ar" ? "ArrowRight" : "ArrowLeft", /^(key:|search:field$)/, 24);
+    await pressTo(page, "ArrowDown", /^key:/);
     await page.keyboard.press("Enter");
     await page.keyboard.press("Enter");
     const follow = await s.getByRole("searchbox").inputValue();
     expect(follow).toHaveLength(typed.length + 2);
     await pressTo(page, forward, /^(ai|tab):/, 24);
-    await pressTo(page, "ArrowUp", /^tab:/);
+    await pressTo(page, "ArrowUp", /^stab:/);
     await pressTo(page, "ArrowDown", "ai:ask");
     await page.keyboard.press("Enter");
     await expect.poll(() => home.asks.length).toBe(2);

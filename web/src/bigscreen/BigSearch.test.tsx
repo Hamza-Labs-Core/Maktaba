@@ -552,7 +552,7 @@ describe("AI mode (story 49.14)", () => {
     await within(s).findByText("Title patience", {}, { timeout: 3000 });
     const results = tabEl(E["search.tab.results"]!);
     expect(results).toHaveAttribute("aria-selected", "true");
-    expect(results).toHaveAttribute("data-bs-focus", "tab:results");
+    expect(results).toHaveAttribute("data-bs-focus", "stab:results");
     expect(results.closest("[data-bs-group]")).toHaveAttribute("data-bs-group", "search-tabs");
     const searches = post.mock.calls.length;
 
