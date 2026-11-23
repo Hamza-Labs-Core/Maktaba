@@ -533,6 +533,7 @@ final class PlayerSearchUITests: PlayerUITestCase {
         XCTAssertTrue(element("ai.settings").exists, "the settings' link")
         XCTAssertTrue(element("ai.help").exists, "the help's link")
         XCTAssertFalse(element("ai.followUp").exists, "nothing to follow up")
+        XCTAssertTrue(element("ai.new").waitForExistence(timeout: 5), "New question after a refusal too")
         shot("search-ai-mode-no-model")
     }
 

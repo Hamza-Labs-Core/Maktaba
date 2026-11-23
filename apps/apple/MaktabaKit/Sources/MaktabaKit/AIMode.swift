@@ -221,9 +221,12 @@ public enum AIEvent: Hashable, Sendable {
 
     static func double(_ v: Any?) -> Double? {
         // a JSON true or false reads as a number to NSNumber: not one here
-        if let n = v as? NSNumber, CFGetTypeID(n) != CFBooleanGetTypeID() { return n.doubleValue }
-        if let s = v as? String { return Double(s.trimmingCharacters(in: .whitespaces)) }
-        return nil
+        var d: Double?
+        if let n = v as? NSNumber, CFGetTypeID(n) != CFBooleanGetTypeID() { d = n.doubleValue }
+        if let s = v as? String { d = Double(s.trimmingCharacters(in: .whitespaces)) }
+        // a number that is not finite (Double("inf"), "nan") reads as absent
+        guard let d, d.isFinite else { return nil }
+        return d
     }
 
     /// A text that is not blank.
@@ -621,7 +624,7 @@ public enum AIWords {
     }
     /// A citation's mark: its passage's number in the app's digits.
     public static func mark(_ n: Int, _ l: Locale = AppLanguage.locale) -> String { SearchWords.number(n, l) }
-    /// What VoiceOver reads for a citation: "Source 2: Patience, at 27:02. Plays the video there."
+    /// What VoiceOver reads for a citation: "Source 2: Patience, at 27:02".
     public static func citation(_ n: Int, title: String, at time: String, _ l: Locale = AppLanguage.locale) -> String {
         kit("Source \(SearchWords.number(n, l)): \(title), at \(time)", l)
     }
@@ -639,7 +642,8 @@ public enum AIWords {
 
     /// A passage's time as a clock (27:02, 1:02:03) in the app's digits.
     public static func clock(_ seconds: Double, _ l: Locale = AppLanguage.locale) -> String {
-        let s = max(0, seconds.rounded(.down))
+        // a time no video has (a broken home's 1e308) is clamped: Duration traps past Int128
+        let s = min(max(0, seconds.isFinite ? seconds.rounded(.down) : 0), 9_999_999)
         return Duration.seconds(s).formatted(.time(pattern: s >= 3600 ? .hourMinuteSecond : .minuteSecond).locale(l))
     }
 

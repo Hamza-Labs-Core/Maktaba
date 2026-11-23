@@ -14,6 +14,8 @@ struct TVAIModePane: View {
     let ai: AIModeModel
     let client: APIClient
     let isAdmin: Bool
+    /// A follow-up typed under the answer (the search field may be far above it).
+    @State private var next = ""
     @Environment(\.appSession) private var session
     /// The video playing from a citation.
     @State private var playing: TVPlayback?
@@ -34,19 +36,45 @@ struct TVAIModePane: View {
             ForEach(Array(ai.turns.enumerated()), id: \.element.id) { i, turn in
                 TVTurn(turn: turn, index: i, home: client.home, isAdmin: isAdmin, play: play, again: { ai.askAgain() })
             }
-            if let last = ai.turns.last, !last.state.isRunning, TVTurn.canFollowUp(last.state) {
-                Button {
-                    ai.clear()
-                } label: {
-                    Label { Text(verbatim: AIWords.newQuestion()) } icon: { Image(systemName: "square.and.pencil") }
-                        .font(Theme.body(28, weight: .medium))
+            if let last = ai.turns.last, !last.state.isRunning {
+                HStack(spacing: 32) {
+                    // a follow-up typed here, under the answer: the remote need not climb back
+                    // to the search field at the top of the page
+                    if TVTurn.canFollowUp(last.state) {
+                        TextField(text: $next) { Text(verbatim: AIWords.followUpPrompt()) }
+                            .font(Theme.body(28))
+                            .frame(maxWidth: 900)
+                            .onSubmit(sendNext)
+                            .accessibilityIdentifier("ai.followUp")
+                        Button(action: sendNext) {
+                            Label { Text(verbatim: AIWords.send()) } icon: { Image(systemName: "arrow.up.circle") }
+                                .font(Theme.body(28, weight: .medium))
+                        }
+                        .disabled(SearchModel.sendable(next).isEmpty)
+                        .accessibilityIdentifier("ai.followUp.send")
+                    }
+                    // a new question after a refusal too (no model, AI mode off, an older home)
+                    Button {
+                        ai.clear()
+                    } label: {
+                        Label { Text(verbatim: AIWords.newQuestion()) } icon: { Image(systemName: "square.and.pencil") }
+                            .font(Theme.body(28, weight: .medium))
+                    }
+                    .accessibilityIdentifier("ai.new")
                 }
-                .accessibilityIdentifier("ai.new")
                 .focusSection()
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .fullScreenCover(item: $playing, onDismiss: stopped) { PlayerScreen(playback: $0) }
+    }
+
+    /// Asks what is typed under the answer as a follow-up.
+    private func sendNext() {
+        let q = SearchModel.sendable(next)
+        guard !q.isEmpty else { return }
+        ai.followUp(q)
+        next = ""
     }
 
     /// Plays `videoID` from `at` seconds.

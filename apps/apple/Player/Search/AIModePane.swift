@@ -38,8 +38,9 @@ struct AIModePane: View {
                              again: { ai.askAgain() })
                         .id(turn.id)
                 }
-                if let last = ai.turns.last, !last.state.isRunning, Self.canFollowUp(last.state) {
-                    followUpRow
+                // New question after a refusal too; the follow-up field only where one can be asked
+                if let last = ai.turns.last, !last.state.isRunning {
+                    followUpRow(Self.canFollowUp(last.state))
                         .id("followUp")
                 }
             }
@@ -87,25 +88,27 @@ struct AIModePane: View {
         .listRowSeparator(.hidden)
     }
 
-    private var followUpRow: some View {
+    private func followUpRow(_ canFollowUp: Bool) -> some View {
         VStack(alignment: .leading, spacing: MaktabaTokens.Spacing.s3) {
-            HStack(spacing: MaktabaTokens.Spacing.s2) {
-                TextField(text: $next) { Text(verbatim: AIWords.followUpPrompt()) }
-                    .textFieldStyle(.roundedBorder)
-                    .font(.maktabaBody(17, relativeTo: .body))
-                    .focused($typingNext)
-                    .submitLabel(.send)
-                    .onSubmit(sendNext)
-                    .accessibilityIdentifier("ai.followUp")
-                Button(action: sendNext) {
-                    Image(systemName: "arrow.up.circle.fill")
-                        .font(.maktabaBody(28, relativeTo: .title2))
-                        .frame(minWidth: 44, minHeight: 44)
+            if canFollowUp {
+                HStack(spacing: MaktabaTokens.Spacing.s2) {
+                    TextField(text: $next) { Text(verbatim: AIWords.followUpPrompt()) }
+                        .textFieldStyle(.roundedBorder)
+                        .font(.maktabaBody(17, relativeTo: .body))
+                        .focused($typingNext)
+                        .submitLabel(.send)
+                        .onSubmit(sendNext)
+                        .accessibilityIdentifier("ai.followUp")
+                    Button(action: sendNext) {
+                        Image(systemName: "arrow.up.circle.fill")
+                            .font(.maktabaBody(28, relativeTo: .title2))
+                            .frame(minWidth: 44, minHeight: 44)
+                    }
+                    .buttonStyle(.borderless)
+                    .disabled(SearchModel.sendable(next).isEmpty)
+                    .accessibilityLabel(Text(verbatim: AIWords.send()))
+                    .accessibilityIdentifier("ai.followUp.send")
                 }
-                .buttonStyle(.borderless)
-                .disabled(SearchModel.sendable(next).isEmpty)
-                .accessibilityLabel(Text(verbatim: AIWords.send()))
-                .accessibilityIdentifier("ai.followUp.send")
             }
             Button {
                 next = ""

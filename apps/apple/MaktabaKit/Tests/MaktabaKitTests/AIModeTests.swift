@@ -18,6 +18,10 @@ final class AIStub: URLProtocol, @unchecked Sendable {
     }
 
     nonisolated(unsafe) private static var script = Script()
+    /// The answers of the requests after the first, in turn (then `script` again).
+    nonisolated(unsafe) private static var then: [Script] = []
+    nonisolated(unsafe) private static var auths: [String] = []
+    nonisolated(unsafe) private static var paths: [String] = []
     nonisolated(unsafe) private static var bodies: [[String: Any]] = []
     nonisolated(unsafe) private static var accepts: [String] = []
     nonisolated(unsafe) private static var stops = 0
@@ -26,9 +30,12 @@ final class AIStub: URLProtocol, @unchecked Sendable {
     private let done = NSLock()
     nonisolated(unsafe) private var stopped = false
 
-    static func reset(_ s: Script = Script()) {
+    static func reset(_ s: Script = Script(), then next: [Script] = []) {
         lock.withLock {
             script = s
+            then = next
+            auths = []
+            paths = []
             bodies = []
             accepts = []
             stops = 0
@@ -39,6 +46,8 @@ final class AIStub: URLProtocol, @unchecked Sendable {
     static func letGo() { lock.withLock { gate }.signal() }
     static var asked: [[String: Any]] { lock.withLock { bodies } }
     static var accept: [String] { lock.withLock { accepts } }
+    static var authorization: [String] { lock.withLock { auths } }
+    static var path: [String] { lock.withLock { paths } }
     static var stopCount: Int { lock.withLock { stops } }
 
     static func client() -> APIClient {
@@ -71,6 +80,10 @@ final class AIStub: URLProtocol, @unchecked Sendable {
         let (s, gate) = Self.lock.withLock {
             Self.bodies.append(body.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? [:])
             Self.accepts.append(request.value(forHTTPHeaderField: "Accept") ?? "")
+            Self.auths.append(request.value(forHTTPHeaderField: "Authorization") ?? "")
+            Self.paths.append(request.url?.path ?? "")
+            // the first request takes `script`; each one after it the next of `then`
+            if Self.paths.count > 1, !Self.then.isEmpty { return (Self.then.removeFirst(), Self.gate) }
             return (Self.script, Self.gate)
         }
         var headers = s.headers
@@ -275,6 +288,36 @@ enum AIStream {
         AIStub.letGo()
         await again?.value
         #expect(m.turns[0].sentences.count == 1)
+    }
+
+    /// An access token that ran out: one refresh, and the question asked again with the new one.
+    @Test func aRefusedTokenIsRenewedOnceAndTheQuestionAskedAgain() async throws {
+        AIStub.reset(
+            .init(status: 401, pieces: [#"{"status":401,"title":"unauthorized"}"#]),
+            then: [
+                .init(pieces: [#"{"access_token":"access.ai.new","refresh_token":"refresh-ai-2"}"#]),
+                .init(pieces: [AIStream.whole]),
+            ]
+        )
+        let got = Collected()
+        try await AIStub.client().askAI("q") { await got.add($0) }
+        let ended = await got.events.last.map { if case .done = $0 { true } else { false } } ?? false
+        #expect(AIStub.path == ["/api/search/ai", "/api/auth/refresh", "/api/search/ai"])
+        #expect(AIStub.authorization.first == "Bearer access.ai.x")
+        #expect(AIStub.authorization.last == "Bearer access.ai.new")
+        #expect(ended)
+    }
+
+    /// A timeout before any sentence says so; a time no video has does not crash the clock.
+    @Test func aTimeoutSaysSoAndAnAbsurdTimeIsClamped() async {
+        AIStub.reset(.init(pieces: [AIStream.sources, #"event: done\#ndata: {"answered":false,"reason":"timeout"}\#n\#n"#]))
+        let m = AIModeModel(client: AIStub.client()) {}
+        await m.ask("q")?.value
+        #expect(AIWords.ending(m.turns[0].state, Locale(identifier: "en")) == AIWords.timedOut(Locale(identifier: "en")))
+        #expect(!AIWords.clock(1e308, Locale(identifier: "en")).isEmpty)
+        #expect(AIWords.clock(-5, Locale(identifier: "en")) == AIWords.clock(0, Locale(identifier: "en")))
+        let odd = AIEvent(SSEMessage(event: "text", data: #"{"text":"x.","citations":[{"n":1,"start_sec":"inf"}]}"#))
+        if case let .text(s)? = odd { #expect(s.citations.first?.startSec == nil) }
     }
 
     @Test func passagesThatDoNotAnswerStayShown() async {

@@ -198,9 +198,22 @@ final class TVSearchUITests: XCTestCase {
         XCTAssertEqual(lastStream?["start_sec"] as? Int, 1622, "at the cited moment")
         remote.press(.menu)
         XCTAssertTrue(sentence.waitForExistence(timeout: 15), "back on the answer")
-        // the follow-up is the Player's test (PlayerSearchUITests) and MaktabaKit's: here, from
-        // the answer, the remote does not reliably reach the field scrolled off the top
         XCTAssertTrue(app.buttons["ai.new"].exists, "New question under the answer")
+
+        // a follow-up typed under the answer, sent with its button: the first turn as history
+        let follow = app.textFields["ai.followUp"]
+        XCTAssertTrue(reach(follow), "the focus on the follow-up field")
+        follow.typeExactly("its kinds", in: app) {
+            if follow.hasFocus { self.remote.press(.select) }
+            usleep(600_000)
+        }
+        let send = app.buttons["ai.followUp.send"]
+        XCTAssertTrue(reach(send), "the focus on the follow-up's Ask")
+        remote.press(.select)
+        XCTAssertTrue(wait { self.questions.count == 2 }, "the follow-up asked; the home saw \(home.seen.suffix(8))")
+        XCTAssertEqual(questions[1]["q"] as? String, "its kinds")
+        let history = questions[1]["history"] as? [[String: Any]]
+        XCTAssertEqual(history?.first?["q"] as? String, "patience", "the first question goes as history")
     }
 
     /// No language model on the home: the tab says so in Arabic, not as an error.
