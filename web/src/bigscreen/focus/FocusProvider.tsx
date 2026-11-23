@@ -5,6 +5,8 @@
 //   button, link, field or tabindex >= 0 (so an ErrorState's Retry is
 //   reachable too). Inside [data-bs-skip] nothing is.
 // - Groups: the nearest [data-bs-group] (a row, a grid, the tab row).
+// - Regions: the nearest [data-bs-region], a screen's column (Search's keyboard and
+//   its results): up / down stay in it while it has a row that way (graph.ts).
 // - Layers: a dialog or a panel registers itself (useLayer); while one is
 //   open only its controls are reachable, and Back closes it (no traps).
 //   Closing it puts focus back on what opened it.
@@ -83,6 +85,10 @@ function idOf(el: Element): string {
 
 function groupOf(el: Element): string | null {
   return el.closest("[data-bs-group]")?.getAttribute("data-bs-group") ?? null;
+}
+
+function regionOf(el: Element): string | null {
+  return el.closest("[data-bs-region]")?.getAttribute("data-bs-region") ?? null;
 }
 
 function reachable(el: HTMLElement, scope: HTMLElement): boolean {
@@ -312,6 +318,7 @@ function toNodes(els: HTMLElement[]): FocusNode[] {
     return {
       id: idOf(el),
       group: groupOf(el),
+      region: regionOf(el),
       rect: { x: r.left, y: top, w: r.width, h: r.height },
     };
   });

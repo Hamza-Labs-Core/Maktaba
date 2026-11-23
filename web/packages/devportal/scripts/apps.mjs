@@ -386,8 +386,16 @@ export const APPS = [
                 "**البحث**: في العناوين والنصوص المفرَّغة؛ ونتيجة النص تشغّل المقطع عند تلك اللحظة. وعلى أندرويد وعلى ويندوز ولينكس تبيّن الاقتراحات أثناء الكتابة نوع كلٍّ منها (بحث سابق، أو كلمة، أو عنوان مقطع يفتحه، أو متحدث)؛ ويعرض **هل تقصد** أقرب كتابة حين يجد البحث مقاطع قليلة؛ وتعدّ **التصفية** المقاطع التي وُجدت حسب المكتبة واللغة والمتحدث والسنة والمدة (في لوحة منبثقة على الهاتف، وفي شرائح فوق النتائج على الحاسوب)، ويمكن اختيار عدة مرشّحات معًا وإزالة كلٍّ منها، ومعها **إزالة كل عوامل التصفية**؛ ويرتّب **الترتيب حسب** النتائج حسب الأقرب صلة أو الأحدث أو الأكثر مطابقات."
               ),
               t(
+                "**AI mode** (Android, Windows and Linux): Search has two tabs, **Results** and **AI mode**. AI mode asks the home's language model a question, only once its tab is opened or asked from. The passages it reads show at once; the answer follows sentence by sentence, each with a chip per passage it cites that plays the video from that moment. A follow-up carries the earlier questions and answers. When the passages do not answer, it says so and keeps them shown; a home without a language model says where an admin sets one up, with the help page.",
+                "**وضع الذكاء الاصطناعي** (أندرويد وويندوز ولينكس): للبحث تبويبان، **النتائج** و**وضع الذكاء الاصطناعي**. يسأل وضع الذكاء الاصطناعي نموذج اللغة في الجهاز الرئيسي، ولا يسأله إلا حين يُفتح تبويبه أو يُسأل منه. تظهر المقاطع التي يقرؤها فورًا، ثم تتبعها الإجابة جملةً جملة، ومع كل جملة شريحة لكل مقطع تستشهد به تشغّل المقطع من تلك اللحظة. ويحمل السؤال التالي الأسئلة والإجابات السابقة. وحين لا تجيب المقاطع يقول ذلك ويُبقيها ظاهرة؛ وفي جهاز رئيسي بلا نموذج لغة يبيّن أين يُعدّه المسؤول، مع صفحة المساعدة."
+              ),
+              t(
                 "**Search help** (iPhone, iPad and Mac): suggestions as you type, each saying what it is (an earlier search, a word, a video's title, which opens the video, or a speaker); **Did you mean** over the results when a search finds few videos, one tap away; **Filters**, a sheet with the counts of the videos found by library, language, speaker, year and length, several combined, the filters in use each removable or cleared together; and the order: relevance, newest or most matches.",
                 "**مساعدة البحث** (آيفون وآيباد وماك): اقتراحات أثناء الكتابة يبيّن كلٌّ منها نوعه (بحث سابق، أو كلمة، أو عنوان مقطع يفتح المقطع، أو متحدث)؛ و**هل تقصد** فوق النتائج حين يجد البحث مقاطع قليلة، بنقرة واحدة؛ و**التصفية**، لوحة بأعداد المقاطع التي وُجدت حسب المكتبة واللغة والمتحدث والسنة والمدة، يُجمع بين أكثر من واحد منها، ويُزال كل مرشّح مستخدم وحده أو تُزال كلها معًا؛ والترتيب: الأقرب صلة أو الأحدث أو الأكثر مطابقات."
+              ),
+              t(
+                "**AI mode** (iPhone, iPad and Mac): Search's second tab, beside **Results**. Ask a question and the home's own language model answers from the passages of your libraries: the sources show first, each opening the player at its passage, then the answer sentence by sentence, each with its citations, which play the video from the cited moment. While another answer is being written, the question's place in line shows. Follow-ups go in the same tab, with the conversation so far, and **New question** starts again. When the passages do not answer, it says so and keeps them shown. A home without a language model says so in the tab (an admin is told where to set one up, with the help page), as does a home where an admin turned AI mode off, or one too old to have it.",
+                "**وضع الذكاء الاصطناعي** (آيفون وآيباد وماك): التبويب الثاني في البحث، بجانب **النتائج**. اطرح سؤالًا فيجيب نموذج اللغة في الجهاز الرئيسي نفسه من مقاطع مكتباتك: تظهر المصادر أولًا، ويفتح كلٌّ منها المشغّل عند مقطعه، ثم الجواب جملةً جملة، ولكل جملة استشهاداتها التي تشغّل المقطع من اللحظة المستشهد بها. وما دام جوابٌ آخر يُكتب، يظهر دور السؤال في الانتظار. وأسئلة المتابعة في التبويب نفسه، مع المحادثة حتى الآن، و**سؤال جديد** يبدأ من جديد. وإن لم تُجب المقاطع عن السؤال قال ذلك وأبقاها ظاهرة. والجهاز الرئيسي الذي لا نموذج لغة فيه يقول ذلك في التبويب (ويُخبَر المسؤول أين يُعدّه، مع صفحة المساعدة)، وكذلك الجهاز الرئيسي الذي أوقف فيه مسؤولٌ هذا الوضع، أو الأقدم من أن يكون فيه."
               ),
               t(
                 "**Profile**: watch history, favorites, playlists and sessions, **Approve a TV or device**, switch home, and this device's theme, language and playback settings.",
@@ -591,6 +599,12 @@ export const APPS = [
                 "phone",
                 "Search in the Player on an Android phone: sorted by relevance, narrowed to a library and a length (each filter removable), and Did you mean above the titles and transcript matches",
                 "البحث في المشغّل على هاتف أندرويد: مرتّبًا حسب الأقرب صلة، ومحصورًا في مكتبة ومدة (ويمكن إزالة كل مرشّح)، و«هل تقصد» فوق العناوين ومطابقات النص المفرَّغ"
+              ),
+              shot(
+                "android-player-search-ai-phone",
+                "phone",
+                "AI mode in the Player on an Android phone: the answer sentence by sentence, each citation a chip that plays its moment, and the passages read under it",
+                "وضع الذكاء الاصطناعي في المشغّل على هاتف أندرويد: الإجابة جملةً جملة، وكل استشهاد شريحة تشغّل لحظته، والمقاطع المقروءة تحتها"
               ),
               shot(
                 "android-player-libraries-library-phone",
@@ -919,8 +933,16 @@ export const APPS = [
                 "**البحث**: في العناوين وفيما قيل في المقاطع. وعلى أندرويد تي في وجوجل تي في وفاير تي في تتبع الاقتراحات الكتابة، ويبيّن كلٌّ منها نوعه (وعنوان المقطع يفتحه)؛ ويشغّل مفتاح البحث في لوحة المفاتيح الكلمات. وفوق النتائج صفوف يتنقّل بينها جهاز التحكم: **هل تقصد** حين يجد البحث مقاطع قليلة، و**الترتيب حسب** الأقرب صلة أو الأحدث أو الأكثر مطابقات، و**التصفية**، وفيها صف شرائح لكلٍّ من المكتبة واللغة والمتحدث والسنة والمدة بأعدادها؛ ويُزال المرشّح المستخدم بزر الموافقة. ونتيجة النص المفرَّغ تشغّل المقطع من تلك اللحظة."
               ),
               t(
+                "**AI mode** on Android TV, Google TV and Fire TV: a second tab beside **Results**, reached with the remote. It answers a question from the library's passages: the passages first, as a row, then each sentence with a row of its citations; OK on one plays the video from that moment. A follow-up is asked from the field under the answer.",
+                "**وضع الذكاء الاصطناعي** على أندرويد تي في وجوجل تي في وفاير تي في: تبويب ثانٍ بجانب **النتائج**، يُبلغ بجهاز التحكم. يجيب عن سؤال من مقاطع المكتبة: المقاطع أولًا في صف، ثم كل جملة ومعها صف استشهاداتها؛ وزر الموافقة على أحدها يشغّل المقطع من تلك اللحظة. ويُطرح السؤال التالي من الحقل تحت الإجابة."
+              ),
+              t(
                 "**Search on Apple TV**: the home's search of titles and transcripts, with the remote. The suggestions under the keyboard say what each one is, and a video's title opens it; **Search for** runs what was typed. Over the results: **Did you mean**, the order (relevance, newest or most matches) and **Filters**, the counts of the videos found by library, language, speaker, year and length, several combined; the filters in use are each removable, or cleared together.",
                 "**البحث على آبل تي في**: بحث الجهاز الرئيسي في العناوين والنصوص المفرَّغة، بجهاز التحكم. تبيّن الاقتراحات تحت لوحة المفاتيح نوع كلٍّ منها، وعنوان المقطع يفتحه؛ و**البحث عن** يشغّل ما كُتب. وفوق النتائج: **هل تقصد**، والترتيب (الأقرب صلة أو الأحدث أو الأكثر مطابقات)، و**التصفية** بأعداد المقاطع التي وُجدت حسب المكتبة واللغة والمتحدث والسنة والمدة، يُجمع بين أكثر من واحد منها؛ ويُزال كل مرشّح مستخدم وحده أو تُزال كلها معًا."
+              ),
+              t(
+                "**AI mode on Apple TV**: Search's second tab, chosen with the remote. Type a question and choose **Ask**: the home's language model answers from the passages of your libraries, the sources first as a row of cards, then each sentence with its citations; a citation or a source plays the video from that moment. **Ask as a follow-up** asks what is typed next in the same conversation. While other questions are answered first, the place in line shows. A home without a language model, with AI mode turned off, or too old to have it, says so in the tab.",
+                "**وضع الذكاء الاصطناعي على آبل تي في**: التبويب الثاني في البحث، يُختار بجهاز التحكم. اكتب سؤالًا واختر **اسأل**: يجيب نموذج اللغة في الجهاز الرئيسي من مقاطع مكتباتك، المصادر أولًا في صف من البطاقات، ثم كل جملة باستشهاداتها؛ والاستشهاد أو المصدر يشغّل المقطع من تلك اللحظة. و**سؤال متابعة** يسأل ما يُكتب بعدها في المحادثة نفسها. وما دامت أسئلة أخرى يُجاب عنها أولًا، يظهر الدور في الانتظار. والجهاز الرئيسي الذي لا نموذج لغة فيه، أو أُوقف فيه هذا الوضع، أو الأقدم من أن يكون فيه، يقول ذلك في التبويب."
               ),
               t(
                 "**Search on Samsung, LG and Roku**: it suggests as you type, under the on-screen keyboard, saying what each suggestion is: an earlier search, a word the videos say, a video's title (which opens it) or a speaker. A search that finds few videos offers **Did you mean**, one press away. The results sort by relevance, newest or most matches, and **Filters** counts the videos found by library, language, speaker, year and length and narrows the search to the ones chosen, several together; each one in use comes off with another press, or all of them with **Clear all filters**.",
@@ -1529,6 +1551,10 @@ export const APPS = [
                 "يقترح **البحث** أثناء الكتابة، ويبيّن نوع كل اقتراح: بحث سابق، أو كلمة تقولها المقاطع، أو عنوان مقطع (يفتحه)، أو متحدث. والبحث الذي يجد مقاطع قليلة يعرض **هل تقصد**. وتعدّ الشرائح المقاطع التي وُجدت حسب المكتبة واللغة والمتحدث والسنة والمدة، وتحصر البحث فيما تختاره منها؛ وتُرتَّب النتائج حسب الأقرب صلة أو الأحدث أو الأكثر مطابقات. ويحفظ العنوان ذلك كله، فيمكن مشاركة البحث، ويعود إليه زر **الرجوع**. ويُفتح البحث **الأخير** و**المحفوظ** بالترتيب والتصفية اللذين طُلب بهما، على أي جهاز."
               ),
               t(
+                "**AI mode**, a tab beside the results, answers a question from the library: the home's language model reads the best passages and writes a short answer in the question's language. The sources show first, then the answer a sentence at a time, each sentence's numbers opening the player at the passage it comes from. A follow-up carries the conversation; when the passages do not answer, it says so and keeps them shown. Without a language model the tab says how to set one up (an admin gets the setting's link), and when an admin has turned AI mode off, or other questions are waiting, it says that.",
+                "**وضع الذكاء الاصطناعي**، تبويب بجانب النتائج، يجيب عن سؤال من المكتبة: يقرأ نموذج اللغة في الجهاز الرئيسي أفضل المقاطع ويكتب إجابة قصيرة بلغة السؤال. تظهر المصادر أولًا، ثم الإجابة جملةً جملة، وأرقام كل جملة تفتح المشغّل عند المقطع الذي جاءت منه. والسؤال التالي يحمل المحادثة معه؛ وحين لا تجيب المقاطع يقول ذلك ويبقيها معروضة. ومن دون نموذج لغة يبيّن التبويب كيف يُعدّ (ويرى المسؤول رابط الإعداد)، وإذا أوقف المسؤول وضع الذكاء الاصطناعي أو كانت أسئلة أخرى تنتظر قال ذلك."
+              ),
+              t(
                 "A video's page: resume, mark watched, favorite, add to a playlist, **Play next** and **Add to queue**, its chapters and its transcript.",
                 "صفحة المقطع: المتابعة، ووضع علامة المشاهدة، والإضافة إلى المفضلة أو إلى قائمة تشغيل، و**شغّل تاليًا** و**أضف إلى قائمة الانتظار**، وفصوله، ونصه المفرَّغ."
               ),
@@ -1592,6 +1618,12 @@ export const APPS = [
             ),
           },
           {
+            p: t(
+              "**AI mode** sits beside **Results** above the big screen's search results, driven by the remote alone: choosing it asks the words typed as a question, and **Ask** sends the next one, typed on the screen keyboard. The sources show first, then the cited answer, newest question at the top; each citation and each source plays its video at that moment. Leaving the tab or the screen stops an answer still being written.",
+              "يقع **وضع الذكاء الاصطناعي** بجانب **النتائج** فوق نتائج البحث في الشاشة الكبيرة، ويُستعمل بجهاز التحكم وحده: اختياره يسأل ما كُتب سؤالًا، و**اسأل** يرسل السؤال التالي المكتوب بلوحة المفاتيح على الشاشة. تظهر المصادر أولًا، ثم الإجابة بمصادرها، وأحدث سؤال في الأعلى؛ وكل إحالة وكل مصدر يشغّل الفيديو عند تلك اللحظة. ومغادرة التبويب أو الشاشة توقف إجابة ما زالت تُكتب."
+            ),
+          },
+          {
             shots: [
               shot(
                 "big-search",
@@ -1604,6 +1636,12 @@ export const APPS = [
                 "wide",
                 "The big screen's Filters panel: counts by library, language, speaker, year and length, two chosen, and the filters in use above the results",
                 "لوحة التصفية في الشاشة الكبيرة: الأعداد حسب المكتبة واللغة والمتحدث والسنة والمدة، واثنان مختاران، والمرشّحات المستخدمة فوق النتائج"
+              ),
+              shot(
+                "big-search-ai",
+                "wide",
+                "AI mode on the big screen: the answer with its numbered citations, then the sources, each playing its moment",
+                "وضع الذكاء الاصطناعي في الشاشة الكبيرة: الإجابة بإحالاتها المرقّمة، ثم المصادر، ويشغّل كلٌّ منها لحظته"
               ),
             ],
           },
@@ -1708,6 +1746,12 @@ export const APPS = [
                 "wide",
                 "Suggestions as you type in the web app's Search, each with its kind: an earlier search, a word, a video's title, a speaker",
                 "الاقتراحات أثناء الكتابة في بحث تطبيق الويب، ولكلٍّ منها نوعه: بحث سابق، أو كلمة، أو عنوان مقطع، أو متحدث"
+              ),
+              shot(
+                "web-search-ai",
+                "wide",
+                "AI mode in the web app's Search: a question, its answer with a citation after each sentence, and the sources it was written from",
+                "وضع الذكاء الاصطناعي في بحث تطبيق الويب: سؤال وإجابته وبعد كل جملة إحالتها، والمصادر التي كُتبت منها"
               ),
               shot(
                 "web-review",

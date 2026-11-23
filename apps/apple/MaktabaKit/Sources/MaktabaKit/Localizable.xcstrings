@@ -13262,6 +13262,324 @@
           }
         }
       }
+    },
+    "AI mode" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "وضع الذكاء الاصطناعي"
+          }
+        }
+      }
+    },
+    "AI mode is busy with other questions. Ask again in a moment." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "وضع الذكاء الاصطناعي مشغول بأسئلة أخرى. اسأل مرة أخرى بعد قليل."
+          }
+        }
+      }
+    },
+    "AI mode needs the home's language model, and it is not set up." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يحتاج وضع الذكاء الاصطناعي إلى نموذج اللغة في الجهاز الرئيسي، وهو غير مُعدّ."
+          }
+        }
+      }
+    },
+    "An admin sets the model server in the home's web app: Settings, Rules, Tag check." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يضبط المسؤول خادم النموذج في تطبيق الويب للجهاز الرئيسي: الإعدادات، القواعد، فحص الوسوم."
+          }
+        }
+      }
+    },
+    "An admin turned AI mode off for this home." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أوقف مسؤولٌ وضع الذكاء الاصطناعي في هذا الجهاز الرئيسي."
+          }
+        }
+      }
+    },
+    "Answer" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الجواب"
+          }
+        }
+      }
+    },
+    "Ask" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "اسأل"
+          }
+        }
+      }
+    },
+    "Ask a follow-up" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "اطرح سؤال متابعة"
+          }
+        }
+      }
+    },
+    "Ask a question: the answer comes from your libraries' passages, each sentence with its source." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "اطرح سؤالًا: يأتي الجواب من مقاطع مكتباتك، وكل جملة فيه مع مصدرها."
+          }
+        }
+      }
+    },
+    "Ask again" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "اسأل مرة أخرى"
+          }
+        }
+      }
+    },
+    "Ask as a follow-up: “%@”" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "سؤال متابعة: «%@»"
+          }
+        }
+      }
+    },
+    "Ask the home's admin to set it up." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "اطلب من مسؤول الجهاز الرئيسي إعداده."
+          }
+        }
+      }
+    },
+    "Ask “%@”" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "اسأل «%@»"
+          }
+        }
+      }
+    },
+    "Finding the passages…" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "جارٍ البحث عن المقاطع…"
+          }
+        }
+      }
+    },
+    "Help: %@" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "المساعدة: %@"
+          }
+        }
+      }
+    },
+    "Help: AI mode" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "المساعدة: وضع الذكاء الاصطناعي"
+          }
+        }
+      }
+    },
+    "New question" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "سؤال جديد"
+          }
+        }
+      }
+    },
+    "Nothing in your libraries answers this question." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا شيء في مكتباتك يجيب عن هذا السؤال."
+          }
+        }
+      }
+    },
+    "Open the settings" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "افتح الإعدادات"
+          }
+        }
+      }
+    },
+    "Results" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "النتائج"
+          }
+        }
+      }
+    },
+    "Source %@: %@, at %@" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "المصدر %@: %@، عند %@"
+          }
+        }
+      }
+    },
+    "Sources" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "المصادر"
+          }
+        }
+      }
+    },
+    "The answer stopped." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "توقف الجواب."
+          }
+        }
+      }
+    },
+    "The answer took too long and stopped here." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "استغرق الجواب وقتًا طويلًا فتوقف هنا."
+          }
+        }
+      }
+    },
+    "The passages found do not answer this question. Here they are." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "المقاطع التي وُجدت لا تجيب عن هذا السؤال، وهذه هي."
+          }
+        }
+      }
+    },
+    "This home does not have AI mode yet. It comes with an update of the home." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا يوجد وضع الذكاء الاصطناعي في هذا الجهاز الرئيسي بعد. يأتي مع تحديث للجهاز الرئيسي."
+          }
+        }
+      }
+    },
+    "Waiting in line: %lld questions before yours." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "في الانتظار: عدد الأسئلة قبل سؤالك: %lld."
+          }
+        },
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Waiting in line: %lld question before yours."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Waiting in line: %lld questions before yours."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Waiting: your question is next." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "في الانتظار: سؤالك هو التالي."
+          }
+        }
+      }
+    },
+    "Writing the answer…" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "جارٍ كتابة الجواب…"
+          }
+        }
+      }
+    },
+    "Show all %lld sources" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "عرض المصادر كلها: %lld"
+          }
+        }
+      }
     }
   },
   "version" : "1.0"

@@ -194,4 +194,15 @@ class SearchModelTest {
             assertNull("relevance is not sent", bodies(fake).single()["sort"])
         }
     }
+
+    @Test
+    fun resultsIsTheTabAndASearchNeverAsksAiMode() = TestHome().use { fake ->
+        // story 49.14: AI mode asks only when its tab is opened or asked from
+        fake.answer("POST /api/search", """{"search_id":"s1","q":"fasting","videos":[],"videos_total":0,"transcript_videos":[],"transcript_total":0}""")
+        val m = SearchModel(fake.client, rest = {})
+        runBlocking { m.submit("fasting") }
+        assertEquals(SearchTab.Results, m.tab)
+        assertTrue(fake.asked("POST /api/search/ai").isEmpty())
+        assertTrue(m.ai.state.value.isEmpty)
+    }
 }

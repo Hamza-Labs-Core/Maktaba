@@ -26,6 +26,10 @@ The app is in testing, so it comes from **TestFlight**, not the App Store yet. A
 
 When something opens a `maktaba://connect` link on the Apple TV, the app asks **Connect to this home?** with the home's name and addresses, before it contacts anything. **Cancel** has the focus; choose **Connect** only if you trust where the link came from. You sign in there yourself.
 
+### AI mode {#ai-mode}
+
+**Search** has two tabs at the top: **Results** and **AI mode**. Type a question with the keyboard, move down to **AI mode** and press select: the home's language model answers from the passages of your libraries. The sources come first, as a row of cards, then the answer sentence by sentence; under each sentence, its citations. Select a card or a citation to play the video from that moment, and Menu to come back to the answer. To ask a follow-up, type it in **Ask a follow-up** under the answer and choose **Ask**, or type it in the search field and choose **Ask as a follow-up**; **Ask “…”** under the keyboard starts a new question, and **New question** clears the answer. While other questions are answered first, the place in line shows. When the home has no language model, or an admin turned AI mode off, the tab says so (see [AI mode's help](/help/search#ai-mode)).
+
 ### Permissions {#permissions}
 
 The Apple TV app asks for **no permissions**. tvOS has no Local Network permission (unlike iPhone, iPad and the Mac), so the TV can find and reach your home on the network without asking, and there is nothing to allow or turn on in Settings. It uses no camera, microphone, location or notifications.
