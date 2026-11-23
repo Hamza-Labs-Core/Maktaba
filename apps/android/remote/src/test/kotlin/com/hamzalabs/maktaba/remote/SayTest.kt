@@ -16,6 +16,7 @@ import com.hamzalabs.maktaba.core.api.UpdatesStuck
 import com.hamzalabs.maktaba.core.api.UpdatesTick
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.ZoneOffset
 
@@ -134,6 +135,18 @@ class SayTest {
             en.processDetail(ProcessStatus(role = "pipeline", detailCode = "venv_building", detail = "venv 40%", detailParams = buildJsonObject { put("percent", 40) })),
         )
         assertEquals("something new", en.processDetail(ProcessStatus(role = "pipeline", detailCode = "brand_new", detail = "something new")))
+        // a failed update whose database was kept, or undone by its Down scripts (#1538)
+        val versions = buildJsonObject { put("failed", "0.3.158"); put("release", "0.3.153") }
+        for ((code, en1, ar1) in listOf(
+            Triple("db_kept", "Nothing had to be put back", "لم يلزم إرجاع شيء"),
+            Triple("db_undone", "undone by its own Down scripts", "أُلغيت تغييراته بنصوص التراجع"),
+        )) {
+            val st = ProcessStatus(role = "api", detailCode = code, detail = "english from the server", detailParams = versions)
+            val e = en.processDetail(st).orEmpty()
+            val a = ar.processDetail(st).orEmpty()
+            assertTrue("$code en: $e", e.contains(en1) && e.contains("0.3.158") && e.contains("0.3.153"))
+            assertTrue("$code ar: $a", a.contains(ar1) && a.contains("0.3.158") && a.contains("0.3.153"))
+        }
         assertEquals(
             "جارٍ تثبيت أدوات التفريغ (40%).",
             ar.processDetail(ProcessStatus(role = "pipeline", detailCode = "venv_building", detail = "venv 40%", detailParams = buildJsonObject { put("percent", 40) })),

@@ -299,6 +299,18 @@ import Testing
         }
     }
 
+    /// A failed update whose database was kept, or undone by its Down scripts (#1538), reads in
+    /// both languages, with the two releases it names.
+    @Test func aFailedUpdateKeptOrUndoneHasWords() {
+        for (code, en1, ar1) in [("db_kept", "Nothing had to be put back", "لم يلزم إرجاع شيء"),
+                                 ("db_undone", "undone by its own Down scripts", "أُلغيت تغييراته بنصوص التراجع")] {
+            let en = words(StatusWords.processDetails, "setup.starting.detail.", code, Locale(identifier: "en"))
+            let ar = words(StatusWords.processDetails, "setup.starting.detail.", code, Locale(identifier: "ar"))
+            #expect(en.contains(en1) && en.contains("{failed}") && en.contains("{release}"), "\(code): \(en)")
+            #expect(ar.contains(ar1) && ar.contains("{failed}") && ar.contains("{release}"), "\(code): \(ar)")
+        }
+    }
+
     /// A process whose component is off reads held (the home's snapshot says "held"), never raw.
     @Test func aProcessWhoseComponentIsOffReadsHeld() {
         #expect(words(StatusWords.processStates, "health.processes.state.", "held", Locale(identifier: "en"))
