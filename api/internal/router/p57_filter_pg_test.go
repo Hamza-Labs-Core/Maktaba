@@ -761,8 +761,9 @@ func TestP57FilterRecordsBlocked(t *testing.T) {
 }
 
 // echoModel is AI mode's model in the rehearsal (story 49.12): it answers with every word it
-// was given, as one sentence citing the first passage, so the scan of the answer reads what
-// the model read as well as the sources.
+// was given, as one sentence citing the first passage (every sentence end and bracket taken
+// out, so the citation check keeps it whole), so the scan of the answer reads what the model
+// read as well as the sources.
 type echoModel struct{}
 
 func (echoModel) Ready(context.Context, string, string) error { return nil }
@@ -770,7 +771,7 @@ func (echoModel) Ready(context.Context, string, string) error { return nil }
 func (echoModel) Chat(_ context.Context, _, _ string, msgs []search.AIMessage, piece func(string) error) error {
 	var b strings.Builder
 	for _, m := range msgs[1:] { // the instructions are the home's own
-		b.WriteString(strings.NewReplacer("\n", " ", ".", " ", "!", " ", "?", " ", "[", "(", "]", ")").Replace(m.Content))
+		b.WriteString(strings.NewReplacer("\n", " ", ".", " ", "!", " ", "?", " ", "؟", " ", "۔", " ", "[", "(", "]", ")").Replace(m.Content))
 		b.WriteString(" ")
 	}
 	return piece(b.String() + " [1]")

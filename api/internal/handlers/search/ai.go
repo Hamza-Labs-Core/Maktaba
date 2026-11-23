@@ -804,8 +804,10 @@ func (s *sentenceSplitter) cut() int {
 			continue
 		}
 		j := i + utf8.RuneLen(r)
-		if next, _ := utf8.DecodeRuneInString(b[j:]); r == '.' && j < len(b) && unicode.IsDigit(next) {
-			continue // 3.5, ٣.٥
+		if r == '.' {
+			if next, _ := utf8.DecodeRuneInString(b[j:]); unicode.IsDigit(next) {
+				continue // 3.5, ٣.٥
+			}
 		}
 		// the markers and spaces after the end belong to this sentence
 		for {

@@ -72,9 +72,13 @@ func TestSearchLLMOn_FollowsTheComponent(t *testing.T) {
 	if searchLLMOn(nil) != nil {
 		t.Fatal("no capabilities: the language model is taken as on")
 	}
-	caps := components.NewCapabilities(components.CapabilitiesOptions{})
-	_, off := caps.Snapshot().ComponentOff("llm")
-	if searchLLMOn(caps)() == off {
-		t.Fatalf("llm off %v, searchLLMOn %v", off, searchLLMOn(caps)())
+	if !searchLLMOn(components.NewCapabilities(components.CapabilitiesOptions{}))() {
+		t.Fatal("every component is on until the database says otherwise")
+	}
+	if searchLLMOn(off("llm"))() {
+		t.Fatal("the llm component off: AI mode must see it off")
+	}
+	if !searchLLMOn(off("search.semantic"))() {
+		t.Fatal("another component off leaves the llm on")
 	}
 }

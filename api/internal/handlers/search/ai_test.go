@@ -25,14 +25,14 @@ import (
 
 func TestSentenceSplitter_CutsAfterTheMarkers(t *testing.T) {
 	stream := "الصبر مفتاح الفرج [1]. Patience is light [2][3]. The rate is 3.5 percent [1]! " +
-		"المعدل ٣.٥ من عشرة [1]. قال كذا [٢]؟ لماذا؟ [2]\nA last one without an end [4]"
+		"المعدل ٣.٥ من عشرة [1]. قال كذا [٢]؟ لماذا؟ [2]؟\nA last one without an end [4]"
 	want := []string{
 		"الصبر مفتاح الفرج [1].",
 		"Patience is light [2][3].",
 		"The rate is 3.5 percent [1]!",
 		"المعدل ٣.٥ من عشرة [1].", // an Arabic-Indic decimal is no end
-		"قال كذا [٢]؟",            // the end after the marker, a two-byte rune
-		"لماذا؟ [2]",
+		"قال كذا [٢]؟",
+		"لماذا؟ [2]؟", // a second end after the marker, a two-byte rune, stays with it
 		"A last one without an end [4]",
 	}
 	// the same sentences whatever the pieces: one rune at a time, or all at once
