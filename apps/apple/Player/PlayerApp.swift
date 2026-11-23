@@ -20,6 +20,11 @@ struct PlayerApp: App {
     @State private var guestNotice: String?
 
     init() {
+        #if DEBUG && os(iOS)
+        // the UI tests' app writes nothing to standard error (`ConsoleHook`; only when launched
+        // with its flag): first, before the app logs anything
+        ConsoleHook.start()
+        #endif
         // Epic 57: the Player asks the home for the account's parental limit and tells it
         // what the device says about its user's age (the source is set before any sign-in
         // is restored, so the first sign-in already sends it)

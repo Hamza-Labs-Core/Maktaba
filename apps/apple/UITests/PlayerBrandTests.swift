@@ -54,6 +54,8 @@ final class PlayerBrandTests: PlayerUITestCase {
         var args = ["-AppleLanguages", "(\(language))", "-AppleLocale", locale,
                     "-maktaba-permissions-reset", "-maktaba-permissions-fake", "granted", "-maktaba-session-reset"]
         if let theme { args += ["-theme", theme] }
+        // nothing to standard error, as `PlayerUITestCase.launch` (`ConsoleHook`)
+        args.append(ConsoleHook.flag)
         app.launchArguments = args
         app.launch()
         shotLanguage = language

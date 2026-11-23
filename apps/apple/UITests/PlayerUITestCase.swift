@@ -275,6 +275,9 @@ class PlayerUITestCase: XCTestCase {
         args.append(TextSizeHook.flag)
         // and counts the touches the system cancels (`TouchHook`, read by `record(_:)`)
         args.append(TouchHook.flag)
+        // and writes nothing to standard error, where each log line would wait on the reader
+        // while XCTest's query runs on the app's main thread (`ConsoleHook`)
+        args.append(ConsoleHook.flag)
         app.launchArguments = args + extra
         app.launch()
     }
