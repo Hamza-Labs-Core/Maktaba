@@ -151,7 +151,7 @@ private struct TVTurn: View {
                         }
                         .buttonStyle(.card)
                         .accessibilityElement(children: .ignore)
-                        .accessibilityLabel(Text(verbatim: AIWords.citation(p.n, title: p.title, at: AIWords.clock(p.startSec))))
+                        .accessibilityLabel(Text(verbatim: AIWords.source(p)))
                         .accessibilityAddTraits(.isButton)
                         .accessibilityIdentifier("ai.source.\(index).\(p.n)")
                     }

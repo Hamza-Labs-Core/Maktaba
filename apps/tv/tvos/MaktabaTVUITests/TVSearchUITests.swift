@@ -200,16 +200,13 @@ final class TVSearchUITests: XCTestCase {
         remote.press(.menu)
         XCTAssertTrue(sentence.waitForExistence(timeout: 15), "back on the answer")
 
-        // the follow-up is typed in the search field, then asked as one
-        let field = app.searchFields.firstMatch
-        field.typeExactly("its kinds", in: app) {
-            for _ in 0..<16 where !field.hasFocus {
-                self.remote.press(.up)
-                usleep(400_000)
-            }
-            if field.hasFocus { self.remote.press(.select) }
-            usleep(600_000)
-        }
+        // the follow-up is typed in the search field, then asked as one. The field has scrolled
+        // off the top and Up from the answer stops at the keyboard's row, so back the way every
+        // search test starts: Menu to the tab bar, then down into the field
+        remote.press(.menu)
+        sleep(1)
+        openSearch()
+        typeQuery("its kinds")
         let followUp = app.buttons["ai.followUpRun"]
         XCTAssertTrue(followUp.waitForExistence(timeout: 10), "Ask as a follow-up")
         XCTAssertTrue(plain(followUp.label).contains("its kinds"), followUp.label)

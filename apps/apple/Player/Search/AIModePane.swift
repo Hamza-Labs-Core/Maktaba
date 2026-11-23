@@ -204,8 +204,8 @@ private struct TurnView: View {
                         }
                         .buttonStyle(.plain)
                         .accessibilityElement(children: .ignore)
-                        .accessibilityLabel(Text(verbatim: AIWords.citation(p.n, title: p.title, at: AIWords.clock(p.startSec))
-                            + ". " + p.text))
+                        // every word the card shows: the audit flags a shown word the label leaves out
+                        .accessibilityLabel(Text(verbatim: AIWords.source(p)))
                         .accessibilityAddTraits(.isButton)
                         .accessibilityIdentifier("ai.source.\(index).\(p.n)")
                     }

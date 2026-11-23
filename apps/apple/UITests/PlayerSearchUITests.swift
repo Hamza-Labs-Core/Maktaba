@@ -476,7 +476,7 @@ final class PlayerSearchUITests: PlayerUITestCase {
         XCTAssertTrue(element("ai.source.0.1").waitForExistence(timeout: 10), "the sources")
         XCTAssertTrue(element("ai.source.0.2").exists)
         XCTAssertFalse(element("ai.sentence.0.0").exists, "no sentence before the sources")
-        XCTAssertEqual(plain(element("ai.source.0.1").label), "Source 1: السيرة النبوية، الدرس ١٠, at 27:02. Patience is of three kinds.")
+        XCTAssertEqual(plain(element("ai.source.0.1").label), "Source 1: السيرة النبوية، الدرس ١٠, at 27:02. Patience is of three kinds. Lectures")
 
         home.release()
         let first = element("ai.sentence.0.0")

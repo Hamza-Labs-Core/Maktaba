@@ -623,6 +623,18 @@ public enum AIWords {
     public static func citation(_ n: Int, title: String, at time: String, _ l: Locale = AppLanguage.locale) -> String {
         kit("Source \(SearchWords.number(n, l)): \(title), at \(time)", l)
     }
+    /// What VoiceOver reads for a source's card: every word it shows. "Source 1: Patience, at
+    /// 27:02. Patience is of three kinds. Lectures"
+    public static func source(_ p: AIPassage, _ l: Locale = AppLanguage.locale) -> String {
+        let parts = [citation(p.n, title: p.title, at: clock(p.startSec, l), l), p.text, p.libraryName ?? ""]
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+        // a part that ends its own sentence (".", "?", "؟") takes no second stop
+        return parts.dropFirst().reduce(parts.first ?? "") { out, part in
+            let ended = out.last.map { ".?!؟۔".contains($0) } ?? true
+            return out + (ended ? " " : ". ") + part
+        }
+    }
+
     /// A passage's time as a clock (27:02, 1:02:03) in the app's digits.
     public static func clock(_ seconds: Double, _ l: Locale = AppLanguage.locale) -> String {
         let s = max(0, seconds.rounded(.down))

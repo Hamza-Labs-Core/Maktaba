@@ -382,6 +382,8 @@ enum AIStream {
         #expect(AIWords.ending(.refused(.busy(position: 9, retryAfter: 30)), en) == "AI mode is busy with other questions. Ask again in a moment.")
         #expect(AIWords.ending(.notAnswered(reason: "no-passages"), ar) == "لا شيء في مكتباتك يجيب عن هذا السؤال.")
         #expect(AIWords.ending(.answered, en) == nil)
+        let p = AIPassage(n: 1, videoID: "v", title: "Patience", libraryName: "Lectures", startSec: 1622, text: "Of three kinds.")
+        #expect(plain(AIWords.source(p, en)) == "Source 1: Patience, at 27:02. Of three kinds. Lectures")
     }
 
     /// Waits (up to 5 s) until `check` holds.
