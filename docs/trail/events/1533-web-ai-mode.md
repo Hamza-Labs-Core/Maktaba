@@ -41,6 +41,16 @@ prs: [1525]
 - **The big screen's Enter is the browser's click.** BigScreen leaves Enter from a keyboard
   to the browser's own click on the focused button, so a jsdom `keyDown` Enter does nothing.
   The unit tests focus and click; the `/tv/` Playwright test presses the real keys.
+- **A new row in one column moved the D-pad in the other.** The focus graph's Up/Down takes
+  the nearest row anywhere on the screen. The tab row moved the results column down, so Down
+  from Filters landed on a keyboard row, and 49.11's `/tv/` test failed in CI (run
+  45109529224). Also, the tabs' first focus ids (`tab:results`, `tab:ai`) shared the `tab:`
+  prefix of the top row, so the new test's `/^tab:/` stopped on the top row.
+  - Fix: a region (`data-bs-region`, a column) keeps Up/Down inside it while it has a row
+    that way; past its last row the move goes on as before. Search marks its keyboard and
+    results columns. The tabs' ids are now `stab:results` and `stab:ai`.
+  - `graph.test.ts` pins the region rule. `pressTo` now reports the focus path it took,
+    which is what showed the cause.
 - **The design system's `Tabs` unmounts the hidden panel.** So the conversation lives in the
   page (`useAIConversation` in `Search`), not in the panel, and survives a tab switch.
 - **Searches answering late kept dropping the tab.** `showUrl` rebuilt the URL from the
@@ -52,7 +62,10 @@ prs: [1525]
   StrictMode) do not.
 - Pin each fix with a test that fails without it.
 
+- Run the `/tv/` Playwright suite (`pnpm build:tv`, then `pnpm e2e:tv`, headless Chromium)
+  before pushing a change that adds a row to a big-screen screen: it found what the jsdom
+  tests could not, the geometry.
+
 ## Open
-- The `/tv/` Playwright test (49.14) was not run locally, only in CI.
 - The CHANGELOG entries and the spec's As built for 49.14 wait for the closing PR, after the
   Apple, Kotlin and Roku parts merge.
