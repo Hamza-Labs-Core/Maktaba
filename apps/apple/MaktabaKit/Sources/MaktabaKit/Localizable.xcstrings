@@ -3584,6 +3584,23 @@
         }
       }
     },
+    "setup.starting.detail.db_kept" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The update to {failed} could not change the library database. Nothing had to be put back: what it changed so far is additive, and {release} runs on the database as it is. Maktaba stays stopped: install {release} again to go on as before, or an update that fixes this; starting Maktaba again tries the update again."
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لم يتمكن التحديث إلى {failed} من تعديل قاعدة بيانات المكتبة. لم يلزم إرجاع شيء: ما غيّره حتى الآن إضافات فقط، ويعمل {release} على قاعدة البيانات كما هي. وتبقى مكتبة متوقفة: ثبّت {release} مجددًا لتتابع كما كنت، أو تحديثًا يصلح هذا؛ وتشغيل مكتبة مجددًا يعيد محاولة التحديث."
+          }
+        }
+      }
+    },
     "setup.starting.detail.db_migrate_failed" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3784,6 +3801,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "جارٍ إعادة قاعدة بيانات المكتبة من النسخة الاحتياطية {dump}، بطلب من {by}."
+          }
+        }
+      }
+    },
+    "setup.starting.detail.db_undone" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The update to {failed} could not change the library database. Its changes were undone by its own Down scripts, so nothing had to be put back from the backup, and the database is as {release} knows it. Maktaba stays stopped: install {release} again to go on as before, or an update that fixes this; starting Maktaba again tries the update again."
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لم يتمكن التحديث إلى {failed} من تعديل قاعدة بيانات المكتبة. أُلغيت تغييراته بنصوص التراجع الخاصة به، فلم يلزم إرجاع شيء من النسخة الاحتياطية، وقاعدة البيانات كما يعرفها {release}. وتبقى مكتبة متوقفة: ثبّت {release} مجددًا لتتابع كما كنت، أو تحديثًا يصلح هذا؛ وتشغيل مكتبة مجددًا يعيد محاولة التحديث."
           }
         }
       }

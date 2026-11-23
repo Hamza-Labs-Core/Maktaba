@@ -63,7 +63,12 @@ More in [Security rules for plugins and contributors](../security/conformance.md
 - **Logs:** structured logging; never concatenate runtime data into a log message
   (`make lint-log` checks this).
 - **Migrations:** append-only, idempotent, with Postgres and SQLite versions together
-  (`make lint-migrations`).
+  (`make lint-migrations`). An index is built with `CREATE INDEX CONCURRENTLY IF NOT EXISTS`
+  in a `NO TRANSACTION` file. Such a build waits for every older transaction, a machine's copy
+  among them. While an update's migrations run, the home ends any session one of them has
+  waited on for more than 10 seconds. A build cut short leaves an INVALID index, which the next
+  try drops and builds again. A failed update undoes its migrations without the backup when
+  they are additive or have lossless Down scripts, so write the Down section too.
 - **Design tokens:** colours, spacing and type come from `web/design-system/tokens/`;
   generated `Tokens.swift` and `Tokens.kt` stay in sync (`make test-tokens`).
 

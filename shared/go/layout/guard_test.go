@@ -83,6 +83,15 @@ func TestRecordKeptMarkAndUnmark(t *testing.T) {
 	if !RecordMigrated(path, "1.5.0") {
 		t.Fatal("the kept record no longer says 1.5.0's migrations ran")
 	}
+	// kept for that release already (the database step kept a failed update's schema): not
+	// written again, which would end the failed release's halt during its rollback
+	before, _ := os.ReadFile(path)
+	if ok, err := MarkRecordKept(path, "1.5.0", "1.4.0", "logs"); err != nil || !ok {
+		t.Fatalf("mark again: %v %v", ok, err)
+	}
+	if after, _ := os.ReadFile(path); string(after) != string(before) {
+		t.Fatalf("a record kept for the same release was written again:\n%s\n%s", before, after)
+	}
 	if ok, err := UnmarkRecordKept(path, "1.5.0"); err != nil || !ok {
 		t.Fatalf("unmark: %v %v", ok, err)
 	}

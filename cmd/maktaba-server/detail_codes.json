@@ -5,6 +5,8 @@
   "db_migrating": ["to"],
   "db_restoring": ["failed", "dump"],
   "db_restored": ["failed", "error", "dump", "release"],
+  "db_kept": ["failed", "error", "release"],
+  "db_undone": ["failed", "error", "release"],
   "db_refused_older": ["release", "needed", "dump"],
   "db_ahead": ["release", "error"],
   "db_dump_failed": ["to", "error"],

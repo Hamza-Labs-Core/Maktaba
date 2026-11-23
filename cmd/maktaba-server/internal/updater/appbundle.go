@@ -170,7 +170,13 @@ func (ai *AppInstaller) InstallFailure(j *Journal) *Failure { return ai.requests
 
 // keptDir is where the payload of version is kept.
 func (ai *AppInstaller) keptDir(version string) string {
-	return filepath.Join(ai.updatesDir(), "payloads", safeName(layout.NormalizeVersion(version)))
+	return KeptPayloadDir(ai.updatesDir(), version)
+}
+
+// KeptPayloadDir is where an app install whose updates folder is updates keeps the payload
+// of version (the release a rollback runs, and whose migrations its database step reads).
+func KeptPayloadDir(updates, version string) string {
+	return filepath.Join(updates, "payloads", safeName(layout.NormalizeVersion(version)))
 }
 
 // KeepsSchema implements SchemaKeeper: the kept payload of the release before (the one a

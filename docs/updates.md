@@ -206,9 +206,13 @@ the next start from the update's journal (`updates/journal.json`).
 A release that does not stay healthy is **rolled back**: the previous release runs again, at once.
 Nothing is dumped before it starts. When the failed release added no migration, or its migrations
 never ran, that is all: a restart onto the previous release, which knows the database as it is.
-When its migrations ran, the backup taken before them is put back first (every release refuses a
-database a newer one migrated); writes made between that backup and the rollback are lost —
-minutes, inside the window, with the jobs drained — and the failed state is not kept. The release
+When its migrations ran, the database goes back the cheapest safe way: it stays as they left it
+when every one of them is additive and the previous release runs on a newer schema; else their
+Down scripts undo them when they lose no data; else the backup taken before them is put back
+first (every release refuses a database a newer one migrated), and writes made between that
+backup and the rollback are lost — minutes, inside the window, with the jobs drained — and the
+failed state is not kept. The same three ways, in that order, apply when the migrations
+themselves fail part way (since 2026-11-23; before, that always put the backup back). The release
 is then blocked until a newer one appears or an admin unblocks it (Admin → Updates → **Try it
 again**, or **Update now** naming it). On a machine, the launcher's guard does the same when the
 new release does not confirm in time (15 minutes) or stops three times in ten minutes.
@@ -218,13 +222,27 @@ new release does not confirm in time (15 minutes) or stops three times in ten mi
 | The release | Before the switch | The switch | Its rollback |
 |---|---|---|---|
 | adds no migration (none of its migrations is one the database lacks) | nothing | a restart | a restart |
-| adds migrations | the backup, taken while the release before keeps serving | a restart, then its migrations | the backup put back, then a restart |
+| adds migrations | the backup, taken while the release before keeps serving | a restart, then its migrations | the schema kept, undone by its Down scripts, or the backup put back; then a restart |
 
 - **Which releases add migrations.** Right before the switch the home compares the staged
   release's migrations (the verified `maktaba-migrations-<v>.tar.gz` of its `release.json`) with
   the newest migration the database holds. A release whose start finds none to run records that
   the database still holds the previous release's migrations, so the previous release can run on
   it again as it is; the launcher's guard then finds no backup to put back.
+- **The migrations never wait long on another session.** Before an update's migrations the home
+  ends the other client sessions on its database. While they run, it ends any session one of
+  them has waited on for more than 10 seconds, and the log names it: a machine's copy making
+  itself anew, whose table sync holds one snapshot for the whole copy of a large table, or a
+  machine's session that came straight back. A `CREATE INDEX CONCURRENTLY` waits for every
+  transaction older than it. Until 2026-11-23 such a wait reached the 2-minute lock timeout
+  three tries running, and the update put a 35 GB backup back (2 h 44 min). An index build cut
+  short leaves an INVALID index; the next try drops it and builds it again, where `IF NOT
+  EXISTS` had taken it for done.
+- **When the migrations fail part way.** The library stays stopped and the start says what
+  happened: `db_kept` (nothing put back: the changes so far are additive and the previous
+  release runs on them), `db_undone` (their Down scripts undid them), or `db_restored` (the
+  backup put back). The update's watch then rolls back to the previous release, and the
+  release is blocked as above.
 - **The backup is taken on the side.** `pg_dump` reads one snapshot, so the library keeps serving
   while it runs. Writes made between its start and the switch (a minute or two, with the jobs
   drained) are not in it. A backup that fails switches nothing (`db_dump_failed`: the release

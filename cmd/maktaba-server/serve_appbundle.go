@@ -119,9 +119,12 @@ func appBundleGates(cfg config.Config, dir string, pg *pgbundle.Bundle, procs []
 	} else if supervisor.NodeMode(cfg, n) {
 		fmt.Fprintf(log, "[serve] this machine is a full node of %s: the home updates the library database\n", n.HomeURL())
 	} else {
+		updates := updatesDirOf(cfg, "")
 		db := &migrationGate{stateDir: cfg.StateDir(), version: cur.Version, pg: pg,
-			keep: updateKeep(cfg), log: log, updates: updatesDirOf(cfg, ""), noDump: !cfg.Backups.PreUpdateOn(),
-			room: roomOf(cfg)}
+			keep: updateKeep(cfg), log: log, updates: updates, noDump: !cfg.Backups.PreUpdateOn(),
+			room: roomOf(cfg), prev: func(v string) string {
+				return existingDir(filepath.Join(updater.KeptPayloadDir(updates, v), "migrations"))
+			}}
 		for _, p := range procs {
 			if p.Role == supervisor.RoleAPI && p.Cmd != nil {
 				db.api = p.Cmd
@@ -189,12 +192,18 @@ func appBundleGates(cfg config.Config, dir string, pg *pgbundle.Bundle, procs []
 // than the one whose migrations the database holds, every role waits while the database
 // is dumped (the bundled Postgres, or an operator's with the pg programs), migrated, and
 // put back when the migrations fail; a rollback of an automatic update marks the record
-// for the next start to put the dump back (internal/updater). version is the release
-// running; a SQLite home has no step (its migrations run as before).
-func layoutHomeGates(cfg config.Config, version string, pg *pgbundle.Bundle, ext *dbsafe.Target, procs []supervisor.Process,
+// for the next start to put the dump back (internal/updater). releaseDir is the release
+// running (its folder's name its version); a SQLite home has no step (its migrations run
+// as before).
+func layoutHomeGates(cfg config.Config, releaseDir string, pg *pgbundle.Bundle, ext *dbsafe.Target, procs []supervisor.Process,
 	updates string, log io.Writer) []supervisor.Process {
-	db := &migrationGate{stateDir: cfg.StateDir(), version: version, pg: pg, ext: ext,
-		keep: updateKeep(cfg), log: log, updates: updates, noDump: !cfg.Backups.PreUpdateOn(), room: roomOf(cfg)}
+	root := filepath.Dir(filepath.Clean(releaseDir))
+	db := &migrationGate{stateDir: cfg.StateDir(), version: filepath.Base(filepath.Clean(releaseDir)), pg: pg, ext: ext,
+		keep: updateKeep(cfg), log: log, updates: updates, noDump: !cfg.Backups.PreUpdateOn(), room: roomOf(cfg),
+		prev: func(v string) string {
+			n := layout.NormalizeVersion(v)
+			return existingDir(filepath.Join(root, n, "migrations"), filepath.Join(root, "v"+n, "migrations"))
+		}}
 	for _, p := range procs {
 		if p.Role == supervisor.RoleAPI && p.Cmd != nil {
 			db.api = p.Cmd
@@ -369,6 +378,10 @@ type migrationGate struct {
 	// updates is the machine's updates folder: a release's start is recorded there
 	// (server-attempts.json), so the Updates page says why it failed ("": not recorded)
 	updates string
+	// prev is the migrations folder of an earlier release, as this install keeps it (the
+	// app's kept payload, the side-by-side layout's release folder; "": not here): a
+	// failed update's way back is decided on it (backWithoutDump). nil: not known.
+	prev func(version string) string
 }
 
 // attempt records what this start does with the update to g.version (update-attempts.md),
@@ -457,6 +470,28 @@ var (
 	// the other sessions on the database, ended before an update's migrations
 	endSessionsBundled  = func(ctx context.Context, b pgbundle.Bundle) (int, error) { return b.EndSessions(ctx) }
 	endSessionsExternal = func(ctx context.Context, t dbsafe.Target) (int, error) { return t.EndSessions(ctx) }
+	// the sessions a migration has waited on for longer than grace, ended while it runs
+	endBlockersBundled = func(ctx context.Context, b pgbundle.Bundle, grace time.Duration) ([]pgbundle.EndedSession, error) {
+		return b.EndBlockers(ctx, grace)
+	}
+	endBlockersExternal = func(ctx context.Context, t dbsafe.Target, grace time.Duration) ([]pgbundle.EndedSession, error) {
+		return t.EndBlockers(ctx, grace)
+	}
+	// how long a migration waits on another session before it is ended, and how often that
+	// is looked at while the migrations run
+	migrationBlockerGrace = 10 * time.Second
+	migrationBlockerEvery = 2 * time.Second
+	// a failed update's way back (updater.FailedBack), the newest migration the database
+	// records, and the INVALID indexes a cancelled build left, dropped
+	failedBack      = updater.FailedBack
+	schemaVersionOf = func(ctx context.Context, g *migrationGate) (int64, error) {
+		t, err := g.target()
+		if err != nil {
+			return 0, err
+		}
+		return t.SchemaVersion(ctx)
+	}
+	dropInvalidIndexes = runDropInvalid
 	// how many of the payload's migrations the database lacks (known false: that cannot be
 	// told, and the update dumps as before)
 	pendingMigrations = func(ctx context.Context, g *migrationGate) (int, bool) { return g.pendingNow(ctx) }
@@ -674,8 +709,10 @@ func expectedDumpMB(dir string) int64 {
 }
 
 // endSessions ends the other client sessions on the database before an update's
-// migrations (the machines' api sessions, anything left holding a lock): a migration
-// never waits on them. Best effort, and the migrations' lock timeout bounds the rest.
+// migrations (the machines' api sessions, anything left holding a lock). Best effort: a
+// machine's session can come straight back, and replication (the machines' copies) goes
+// on, so what a migration then waits on is ended while it runs (freeMigrations), and the
+// migrations' lock timeout bounds the rest.
 func (g *migrationGate) endSessions(ctx context.Context) {
 	var n int
 	var err error
@@ -713,12 +750,73 @@ func (g *migrationGate) migrate(ctx context.Context, cur string, update bool, re
 		if update {
 			g.endSessions(ctx)
 		}
+		stop := g.freeMigrations(ctx)
 		err := migrateUp(ctx, g.api, log)
+		stop()
 		if err == nil || ctx.Err() != nil || !lockTimedOut(err) || try == migrateTries {
 			return err
 		}
 		fmt.Fprintf(g.log, "[serve] a migration for %s waited too long for a lock another session holds (try %d of %d): "+
 			"trying again\n", cur, try, migrateTries)
+	}
+}
+
+// freeMigrations ends, while the migrations run, every session one of them has waited on
+// for longer than migrationBlockerGrace (pgbundle.EndBlockersSQL), and says whom in the
+// log; the returned func stops it and returns once it stopped. The outages of 2026-11-14
+// and 2026-11-23: a CREATE INDEX CONCURRENTLY waited on a joined machine's copy (its
+// table sync's walsender held a snapshot for the whole COPY of a large table, and
+// endSessions leaves replication alone) until the lock timeout cancelled it, three tries
+// running, and the update put its 35 GB dump back. Best effort: a database that cannot
+// tell (no pg_locks.waitstart before PostgreSQL 14) or a role that may not end them leaves
+// the lock timeout to bound the wait, as before.
+func (g *migrationGate) freeMigrations(ctx context.Context) func() {
+	var end func(context.Context) ([]pgbundle.EndedSession, error)
+	switch {
+	case g.pg != nil:
+		b := *g.pg
+		end = func(ctx context.Context) ([]pgbundle.EndedSession, error) {
+			return endBlockersBundled(ctx, b, migrationBlockerGrace)
+		}
+	case g.ext != nil:
+		t := *g.ext
+		end = func(ctx context.Context) ([]pgbundle.EndedSession, error) {
+			return endBlockersExternal(ctx, t, migrationBlockerGrace)
+		}
+	default:
+		return func() {}
+	}
+	ctx, cancel := context.WithCancel(ctx)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		tick := time.NewTicker(migrationBlockerEvery)
+		defer tick.Stop()
+		said := false
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-tick.C:
+			}
+			ended, err := end(ctx)
+			if err != nil {
+				if ctx.Err() == nil && !said {
+					said = true // once a run: the same error every two seconds says nothing more
+					fmt.Fprintf(g.log, "[serve] level=warn the sessions a migration waits on cannot be looked at "+
+						"(the lock timeout bounds the wait): %v\n", err)
+				}
+				continue
+			}
+			for _, s := range ended {
+				fmt.Fprintf(g.log, "[serve] a migration waited longer than %s on %s: ended it, so the "+
+					"migration goes on\n", migrationBlockerGrace, s)
+			}
+		}
+	}()
+	return func() {
+		cancel()
+		<-done
 	}
 }
 
@@ -803,6 +901,23 @@ func runMigrateUp(ctx context.Context, api *exec.Cmd, log io.Writer) error {
 		return fmt.Errorf("%w: %s", errSchemaAhead, msg)
 	}
 	return errors.New(msg)
+}
+
+// runDropInvalid is `maktaba-api migrate drop-invalid` with the api's binary and
+// environment: the INVALID indexes the pending migrations' cancelled builds left, dropped.
+func runDropInvalid(ctx context.Context, api *exec.Cmd, log io.Writer) error {
+	cmd := exec.CommandContext(ctx, api.Path, "migrate", "--timeout", "0", "--lock-timeout", migrateLockTimeout, "drop-invalid")
+	cmd.Env, cmd.Dir = api.Env, api.Dir
+	tail := &tailWriter{max: 4 << 10}
+	cmd.Stdout = io.MultiWriter(log, tail)
+	cmd.Stderr = cmd.Stdout
+	if err := cmd.Run(); err != nil {
+		if msg := tail.lastLines(3); msg != "" {
+			return errors.New(msg)
+		}
+		return err
+	}
+	return nil
 }
 
 // record is the database's record, else one made from the payload that last
@@ -1083,7 +1198,13 @@ func (g *migrationGate) run(ctx context.Context, report func(supervisor.Detail))
 		return detailErr("db_migrate_failed", fmt.Sprintf("the library database could not be brought up to date "+
 			"for %s: %v", cur, err), cur, err.Error())
 	}
-	// a failed update: the database goes back to how it was before it
+	// a failed update: the database goes back to how it was before it, without the dump
+	// when that is safe (its migrations' changes kept, or undone by their Down scripts)
+	if !back {
+		if done, herr := g.backWithoutDump(ctx, cur, update, err); done {
+			return herr
+		}
+	}
 	update.State, update.Failed, update.Error = apppayload.DatabaseRestoring, cur, err.Error()
 	if err := g.save(update); err != nil {
 		return err
@@ -1093,6 +1214,154 @@ func (g *migrationGate) run(ctx context.Context, report func(supervisor.Detail))
 		return err
 	}
 	return supervisor.Halt(failedUpdate(rec))
+}
+
+// backWithoutDump takes the database of an update whose migrations failed back without
+// its dump when that is safe (updater.FailedBack, on what the failure left: the newest
+// migration the database records, the release before's migrations folder and this
+// one's), and halts saying how; done is false when the dump has to go back. The outage of
+// 2026-11-23: a CREATE INDEX CONCURRENTLY cancelled by its lock timeout, and the whole
+// 35 GB dump put back, 2 h 44 min with the library stopped; its migrations' Down scripts
+// undid them in seconds.
+//
+//   - keep: the record says the database holds part of cur's migrations (version cur,
+//     migrated), kept for the release before (kept_for), which also started on it last
+//     (release): that release starts on it, and a start of cur again is an update from a
+//     new dump, which runs what did not finish again. The rollback after it (the update's
+//     watch) keeps it too: the same rule (updater.Machine.keepSchema).
+//   - down: the migrations that ran are undone by their Down scripts (`migrate down-to`,
+//     the release before's newest slot), the sessions they wait on ended as for the
+//     migrations; the record is the release before's, migrated, down_from cur.
+//
+// Either way the INVALID indexes the failed migration's cancelled builds left are dropped
+// first (`migrate drop-invalid`): the release before would keep them up on every write,
+// and the next try builds them again. A Down script that fails puts the dump back after
+// all, as before.
+func (g *migrationGate) backWithoutDump(ctx context.Context, cur string, update apppayload.Database, cause error) (bool, error) {
+	if g.prev == nil || update.From == "" || g.api == nil {
+		return false, nil
+	}
+	applied, verr := schemaVersionOf(ctx, g)
+	if verr != nil {
+		applied = -1 // not known: only a kept schema needs no count
+		fmt.Fprintf(g.log, "[serve] the library database's schema version cannot be read: %v\n", verr)
+	}
+	how, schema, why := failedBack(g.prev(update.From), migrationsDirOf(g.api), applied, update.DumpKeptFor != "")
+	settle := func(code string) {
+		settleAttempt(g.updates, cur, update.From, false, g.log, func(a *attempts.Attempt) {
+			if a.From == "" {
+				a.From = layout.NormalizeVersion(update.From)
+			}
+			if a.Step == "" || a.Step == "dump" {
+				a.Step = "migrate"
+			}
+			a.Code, a.Detail = "db_migrate_failed", cause.Error()+" ("+code+": "+why+")"
+			a.Ended(attempts.PutBack)
+		})
+	}
+	// the update's watch may give up on this start meanwhile (start_timeout) and mark the
+	// dump to be put back (its rollback): then that is what happens, nothing is saved over it
+	gaveUp := func() (bool, error) {
+		now, rerr := g.record()
+		if rerr != nil || now.State != apppayload.DatabaseRestoring || now.Failed != cur {
+			return false, nil
+		}
+		return true, detailErr("db_restoring", fmt.Sprintf("The update to %s gave up: the library database is put "+
+			"back as it was at the next start", cur), cur, now.Dump)
+	}
+	switch how {
+	case updater.FailedKeep:
+		g.dropLeftovers(ctx)
+		if done, err := gaveUp(); done {
+			return true, err
+		}
+		rec := apppayload.Database{Version: cur, State: apppayload.DatabaseMigrated, Release: update.From,
+			From: update.From, Dump: update.Dump, Failed: cur, Error: cause.Error(),
+			KeptFor: layout.NormalizeVersion(update.From), KeptReason: "its migrations failed: " + cause.Error(),
+			DumpKeptFor: update.DumpKeptFor}
+		if err := g.save(rec); err != nil {
+			return true, err
+		}
+		fmt.Fprintf(g.log, "[serve] the update to %s failed (%s): nothing is put back, its migrations so far stay (%s); "+
+			"%s starts on them\n", cur, cause, why, update.From)
+		settle("kept")
+		return true, supervisor.Halt(keptUpdate(rec))
+	case updater.FailedDown:
+		if done, err := gaveUp(); done {
+			return true, err
+		}
+		fmt.Fprintf(g.log, "[serve] the update to %s failed (%s): undoing its migrations with their Down scripts, back "+
+			"to slot %04d (%s): nothing is put back from the dump\n", cur, cause, schema, why)
+		stop := g.freeMigrations(ctx)
+		err := runMigrateDownTo(ctx, g.api, schema, g.log)
+		stop()
+		if ctx.Err() != nil {
+			return true, ctx.Err() // the record still says migrating: the next start decides again
+		}
+		if err != nil {
+			fmt.Fprintf(g.log, "[serve] level=error the Down scripts of %s failed (%v): the dump goes back instead\n", cur, err)
+			return false, nil
+		}
+		g.dropLeftovers(ctx)
+		if done, err := gaveUp(); done {
+			// the rollback puts the dump back over the schema the Down scripts left: the
+			// same database as before the update either way
+			return true, err
+		}
+		rec := apppayload.Database{Version: update.From, State: apppayload.DatabaseMigrated, From: update.From,
+			Dump: update.Dump, Failed: cur, Error: cause.Error(), DownFrom: cur, DownReason: cause.Error()}
+		if err := g.save(rec); err != nil {
+			return true, err
+		}
+		fmt.Fprintf(g.log, "[serve] the library database is back on %s's schema by %s's Down scripts: nothing was put "+
+			"back from the dump\n", update.From, cur)
+		settle("undone")
+		return true, supervisor.Halt(undoneUpdate(rec))
+	}
+	fmt.Fprintf(g.log, "[serve] the update to %s failed: the dump goes back (%s)\n", cur, why)
+	return false, nil
+}
+
+// dropLeftovers drops the INVALID indexes the failed migrations' cancelled builds left
+// (`maktaba-api migrate drop-invalid`). Best effort: the next update's migrations drop
+// them too, before they run.
+func (g *migrationGate) dropLeftovers(ctx context.Context) {
+	stop := g.freeMigrations(ctx)
+	err := dropInvalidIndexes(ctx, g.api, g.log)
+	stop()
+	if err != nil && ctx.Err() == nil {
+		fmt.Fprintf(g.log, "[serve] level=warn the invalid indexes the failed migrations left could not be dropped "+
+			"(the next update's migrations drop them): %v\n", err)
+	}
+}
+
+// keptUpdate is the detail of an update whose migrations failed and whose database stays
+// as they left it (backWithoutDump: additive, the release before runs on it).
+func keptUpdate(rec apppayload.Database) error {
+	return detailErr("db_kept", fmt.Sprintf("the update to %s could not change the library database (%s). Nothing "+
+		"had to be put back: what it changed so far is additive, and %s runs on the database as it is. Maktaba stays "+
+		"stopped: install %s again to go on as before, or an update that fixes this; starting Maktaba again tries "+
+		"this update again", rec.Failed, rec.Error, rec.From, rec.From), rec.Failed, rec.Error, rec.From)
+}
+
+// undoneUpdate is the detail of an update whose migrations failed and were undone by
+// their Down scripts (backWithoutDump).
+func undoneUpdate(rec apppayload.Database) error {
+	return detailErr("db_undone", fmt.Sprintf("the update to %s could not change the library database (%s). Its "+
+		"changes were undone by its own Down scripts, so nothing had to be put back from the backup, and the "+
+		"database is as %s knows it. Maktaba stays stopped: install %s again to go on as before, or an update that "+
+		"fixes this; starting Maktaba again tries this update again", rec.Failed, rec.Error, rec.From, rec.From),
+		rec.Failed, rec.Error, rec.From)
+}
+
+// existingDir is the first of dirs that is a folder ("": none).
+func existingDir(dirs ...string) string {
+	for _, d := range dirs {
+		if st, err := os.Stat(d); err == nil && st.IsDir() {
+			return d
+		}
+	}
+	return ""
 }
 
 // restore puts the dump of a failed update back (rec is restoring) and records

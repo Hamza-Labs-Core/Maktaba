@@ -4392,6 +4392,19 @@ build fails when the two differ.
   asked with, on any device, and Save names a search by its words, order and filters. A shared
   search opened in a new tab names its library at once and shows the chips that narrow it.
 
+- **An update whose new index waits on a machine's copy no longer fails, and a failed update no
+  longer costs hours.** While an update's migrations ran, a joined machine making its copy of
+  the library again could hold an old snapshot for as long as copying a large table takes. Each
+  new index built `CONCURRENTLY` waited for it until its lock timeout, three tries running. The
+  update then put the whole database back from its backup: 2 h 44 min with the library stopped
+  on a 35 GB home, on 2026-11-23, after the same failure on 2026-11-14. Now the home ends any
+  session a migration has waited on for more than 10 seconds and names it in the log. A
+  machine's copy carries on and copies that table again. An index left INVALID by a build cut
+  short is dropped and built again, where the next try used to take it for done. When the
+  migrations still fail part way, nothing is put back if what they changed is additive and the
+  release before runs on it. Otherwise their own Down scripts undo them when they lose no data,
+  in seconds. Only failing both does the backup go back, as before.
+
 ## [0.2.0] - 2026-10-19
 
 Closes the stub audit: features that were half built, settings that were

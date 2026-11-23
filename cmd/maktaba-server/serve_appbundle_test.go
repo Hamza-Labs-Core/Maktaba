@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -238,6 +239,15 @@ type fakeDB struct {
 	ahead bool
 	// connects: the record's state each time the workers' CONNECT was checked
 	connects []string
+	// back is the way back a failed update's migrations take (updater.FailedBack; "":
+	// restore), backSchema the Down scripts' slot; applied the database's newest migration
+	back       string
+	backSchema int64
+	applied    int64
+	backArgs   []string // the release before's folder, applied, on a kept schema, as each was decided
+	downs      []string // the record's state and the slot as each run of the Down scripts began
+	downErr    error
+	drops      []string // the record's state as each drop of the invalid leftovers began
 }
 
 func installFakeDB(t *testing.T, cfg config.Config) *fakeDB {
@@ -245,10 +255,46 @@ func installFakeDB(t *testing.T, cfg config.Config) *fakeDB {
 	f := &fakeDB{cfg: cfg}
 	prevD, prevR, prevM, prevA, prevP := dumpBeforeUpdate, restoreDump, migrateUp, dumpAsideBundled, pendingMigrations
 	prevG := grantWorkersConnect
+	prevFB, prevSV, prevDI, prevMD, prevEB := failedBack, schemaVersionOf, dropInvalidIndexes, runMigrateDownTo, endBlockersBundled
 	t.Cleanup(func() {
 		dumpBeforeUpdate, restoreDump, migrateUp, dumpAsideBundled, pendingMigrations = prevD, prevR, prevM, prevA, prevP
 		grantWorkersConnect = prevG
+		failedBack, schemaVersionOf, dropInvalidIndexes, runMigrateDownTo, endBlockersBundled = prevFB, prevSV, prevDI, prevMD, prevEB
 	})
+	failedBack = func(from, _ string, applied int64, onKept bool) (string, int64, string) {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		f.backArgs = append(f.backArgs, fmt.Sprintf("%s %d %v", filepath.Base(filepath.Dir(from)), applied, onKept))
+		switch f.back {
+		case updater.FailedKeep:
+			return f.back, 0, "every migration since it is additive"
+		case updater.FailedDown:
+			return f.back, f.backSchema, "their Down scripts undo them"
+		}
+		return updater.FailedRestore, 0, "a migration since it drops a column"
+	}
+	schemaVersionOf = func(context.Context, *migrationGate) (int64, error) {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		return f.applied, nil
+	}
+	dropInvalidIndexes = func(context.Context, *exec.Cmd, io.Writer) error {
+		rec, _, _ := apppayload.ReadDatabase(cfg.StateDir())
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		f.drops = append(f.drops, rec.State)
+		return nil
+	}
+	runMigrateDownTo = func(_ context.Context, _ *exec.Cmd, schema int64, _ io.Writer) error {
+		rec, _, _ := apppayload.ReadDatabase(cfg.StateDir())
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		f.downs = append(f.downs, fmt.Sprintf("%s %d", rec.State, schema))
+		return f.downErr
+	}
+	endBlockersBundled = func(context.Context, pgbundle.Bundle, time.Duration) ([]pgbundle.EndedSession, error) {
+		return nil, nil
+	}
 	grantWorkersConnect = func(context.Context, *migrationGate) error {
 		rec, _, _ := apppayload.ReadDatabase(cfg.StateDir())
 		f.mu.Lock()
@@ -524,6 +570,282 @@ func TestAppBundleFailedMigrationPutsTheDumpBack(t *testing.T) {
 	if len(f.dumps) != 2 || recorded(t, cfg).Version != "v0.3.0" {
 		t.Fatalf("dumps = %v, record %+v", f.dumps, recorded(t, cfg))
 	}
+}
+
+// The outage of 2026-11-23: an update's migration failed part way (a CREATE INDEX
+// CONCURRENTLY cancelled by its lock timeout) and the whole dump went back, 2 h 44 min.
+// When every migration since the release before is additive and that release runs on a
+// newer schema, nothing is put back: the record keeps the database for it (version the
+// failed release's, kept_for and release the one before), the invalid indexes the build
+// left are dropped first, and the halt says so. The release before starts on it; the
+// failed release started again is an update again, from a new dump.
+func TestAppBundleFailedMigrationKeepsAnAdditiveSchema(t *testing.T) {
+	cfg, payload := appEnv(t, "v0.3.0", "")
+	updates := updatesDirOf(cfg, "")
+	prevDir := filepath.Join(updater.KeptPayloadDir(updates, "v0.2.0"), "migrations")
+	if err := os.MkdirAll(prevDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	record(t, cfg, apppayload.Database{Version: "v0.2.0", State: apppayload.DatabaseMigrated})
+	f := installFakeDB(t, cfg)
+	f.back, f.applied = updater.FailedKeep, 234
+	f.migrateErr = errors.New(`migrate: ERROR 0235_search_terms.sql: pq: canceling statement due to lock timeout (55P03)`)
+	ps := appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), io.Discard)
+	err := prepareOf(t, ps, supervisor.RoleAPI)(context.Background(), noReport)
+	if !supervisor.Halted(err) || supervisor.DetailOf(err).Code != "db_kept" {
+		t.Fatalf("a failed additive update = %v, want the db_kept halt", err)
+	}
+	checkDetail(t, supervisor.DetailOf(err))
+	for _, want := range []string{"the update to v0.3.0 could not change the library database", "lock timeout",
+		"Nothing had to be put back", "v0.2.0 runs on the database as it is", "install v0.2.0 again"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("detail %q lacks %q", err, want)
+		}
+	}
+	if len(f.restores) != 0 || len(f.downs) != 0 {
+		t.Fatalf("restores %v, Down scripts %v: nothing is put back", f.restores, f.downs)
+	}
+	if len(f.backArgs) != 1 || f.backArgs[0] != "0.2.0 234 false" {
+		t.Fatalf("decided on %v, want the kept payload of v0.2.0 at slot 234", f.backArgs)
+	}
+	if len(f.drops) != 1 || f.drops[0] != apppayload.DatabaseMigrating {
+		t.Fatalf("the invalid leftovers dropped %v, want once while the record says migrating", f.drops)
+	}
+	rec := recorded(t, cfg)
+	if rec.Version != "v0.3.0" || rec.State != apppayload.DatabaseMigrated || rec.KeptFor != "0.2.0" ||
+		rec.Release != "v0.2.0" || rec.From != "v0.2.0" || rec.Dump == "" || !strings.Contains(rec.KeptReason, "lock timeout") {
+		t.Fatalf("record = %+v", rec)
+	}
+	got := attempts.Read(updates)
+	if len(got) != 1 || got[0].Outcome != attempts.PutBack || got[0].Code != "db_migrate_failed" ||
+		!strings.Contains(got[0].Detail, "kept") {
+		t.Fatalf("attempts %+v", got)
+	}
+	// the update's rollback keeps it too (updater.Machine.keepSchema marks it again), and the
+	// failed release's halt holds through it: the record is not written again (a change ends
+	// the halt, and this release would start updating again under the rollback)
+	if ok, err := layout.MarkRecordKept(apppayload.DatabasePath(cfg.StateDir()), "v0.3.0", "v0.2.0", "logs"); err != nil || !ok {
+		t.Fatalf("the rollback's mark = %v, %v", ok, err)
+	}
+	if err := prepareOf(t, ps, supervisor.RoleAPI)(context.Background(), noReport); !supervisor.Halted(err) ||
+		supervisor.DetailOf(err).Code != "db_kept" {
+		t.Fatalf("after the rollback's mark = %v, want the db_kept halt still", err)
+	}
+	if len(f.dumps) != 1 || len(f.migrates) != migrateTries { // the lock timeout tried three times
+		t.Fatalf("dumps %v, migrations %v after the rollback's mark", f.dumps, f.migrates)
+	}
+	// the release before starts on it: nothing dumped or put back, its api told
+	newPayload(t, payload, "v0.2.0")
+	f.migrateErr = nil
+	ps = appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), io.Discard)
+	if err := prepareOf(t, ps, supervisor.RoleAPI)(context.Background(), noReport); err != nil {
+		t.Fatalf("the release before on the kept schema = %v", err)
+	}
+	if len(f.dumps) != 1 || len(f.restores) != 0 {
+		t.Fatalf("dumps %v, restores %v: the release before dumped or put back", f.dumps, f.restores)
+	}
+	// the failed release again: an update again, from a new dump
+	newPayload(t, payload, "v0.3.0")
+	f.pending, f.known = 1, true
+	ps = appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), io.Discard)
+	if err := prepareOf(t, ps, supervisor.RoleAPI)(context.Background(), noReport); err != nil {
+		t.Fatalf("v0.3.0 again = %v", err)
+	}
+	if len(f.dumps) != 2 || f.dumps[1] != "v0.2.0->v0.3.0" {
+		t.Fatalf("dumps = %v, want a new one from v0.2.0", f.dumps)
+	}
+	if rec := recorded(t, cfg); rec.Version != "v0.3.0" || rec.State != apppayload.DatabaseMigrated || rec.KeptFor != "" {
+		t.Fatalf("record after the update again = %+v", rec)
+	}
+}
+
+// As above, when the schema cannot be kept but the migrations that ran lose no data: their
+// Down scripts undo them (back to the release before's newest slot), the sessions they
+// wait on ended as for the migrations; the record is the release before's, down_from the
+// failed release; no dump goes back. Their failure puts the dump back after all.
+func TestAppBundleFailedMigrationUndoneByItsDownScripts(t *testing.T) {
+	cfg, payload := appEnv(t, "v0.3.0", "")
+	prevDir := filepath.Join(updater.KeptPayloadDir(updatesDirOf(cfg, ""), "v0.2.0"), "migrations")
+	if err := os.MkdirAll(prevDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	record(t, cfg, apppayload.Database{Version: "v0.2.0", State: apppayload.DatabaseMigrated})
+	f := installFakeDB(t, cfg)
+	f.back, f.backSchema, f.applied = updater.FailedDown, 230, 234
+	f.migrateErr = errors.New(`migrate: ERROR 0235_search_terms.sql: pq: canceling statement due to lock timeout (55P03)`)
+	ps := appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), io.Discard)
+	err := prepareOf(t, ps, supervisor.RoleAPI)(context.Background(), noReport)
+	if !supervisor.Halted(err) || supervisor.DetailOf(err).Code != "db_undone" {
+		t.Fatalf("a failed lossless update = %v, want the db_undone halt", err)
+	}
+	checkDetail(t, supervisor.DetailOf(err))
+	for _, want := range []string{"undone by its own Down scripts", "nothing had to be put back from the backup",
+		"as v0.2.0 knows it", "install v0.2.0 again"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("detail %q lacks %q", err, want)
+		}
+	}
+	if len(f.restores) != 0 || len(f.downs) != 1 || f.downs[0] != "migrating 230" {
+		t.Fatalf("restores %v, Down scripts %v", f.restores, f.downs)
+	}
+	if len(f.drops) != 1 {
+		t.Fatalf("the invalid leftovers dropped %d times", len(f.drops))
+	}
+	rec := recorded(t, cfg)
+	if rec.Version != "v0.2.0" || rec.State != apppayload.DatabaseMigrated || rec.DownFrom != "v0.3.0" || rec.KeptFor != "" {
+		t.Fatalf("record = %+v", rec)
+	}
+	// the release before starts on its own schema: nothing dumped, nothing put back
+	newPayload(t, payload, "v0.2.0")
+	f.migrateErr = nil
+	ps = appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), io.Discard)
+	if err := prepareOf(t, ps, supervisor.RoleAPI)(context.Background(), noReport); err != nil {
+		t.Fatalf("the release before = %v", err)
+	}
+	if len(f.dumps) != 1 || len(f.restores) != 0 {
+		t.Fatalf("dumps %v, restores %v: the release before dumped or put back", f.dumps, f.restores)
+	}
+
+	// the Down scripts fail: the dump goes back, as before
+	newPayload(t, payload, "v0.3.0")
+	f.migrateErr = errors.New("migrate: ERROR 0235_search_terms.sql: boom")
+	f.downErr = errors.New("migrate: ERROR 0234: cannot drop")
+	f.pending, f.known = 1, true
+	ps = appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), io.Discard)
+	err = prepareOf(t, ps, supervisor.RoleAPI)(context.Background(), noReport)
+	if !supervisor.Halted(err) || supervisor.DetailOf(err).Code != "db_restored" {
+		t.Fatalf("Down scripts that fail = %v, want the dump put back", err)
+	}
+	if len(f.restores) != 1 {
+		t.Fatalf("restores = %v", f.restores)
+	}
+}
+
+// The review of #1538: the update's watch gives up on the start while the Down scripts run
+// and marks the dump to be put back (its rollback): the database step saves nothing over
+// that mark, and says the dump goes back.
+func TestAppBundleFailedMigrationLeavesAWatchsRestoreMark(t *testing.T) {
+	cfg, payload := appEnv(t, "v0.3.0", "")
+	if err := os.MkdirAll(filepath.Join(updater.KeptPayloadDir(updatesDirOf(cfg, ""), "v0.2.0"), "migrations"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	record(t, cfg, apppayload.Database{Version: "v0.2.0", State: apppayload.DatabaseMigrated})
+	f := installFakeDB(t, cfg)
+	f.back, f.backSchema, f.applied = updater.FailedDown, 230, 234
+	f.migrateErr = errors.New("migrate: ERROR 0235_x.sql: boom")
+	runMigrateDownTo = func(context.Context, *exec.Cmd, int64, io.Writer) error {
+		if ok, err := layout.MarkRecordRestoring(apppayload.DatabasePath(cfg.StateDir()), "v0.3.0", "start_timeout"); err != nil || !ok {
+			t.Errorf("the watch's mark = %v, %v", ok, err)
+		}
+		return nil
+	}
+	ps := appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), io.Discard)
+	err := prepareOf(t, ps, supervisor.RoleAPI)(context.Background(), noReport)
+	if err == nil || supervisor.DetailOf(err).Code != "db_restoring" {
+		t.Fatalf("= %v, want db_restoring", err)
+	}
+	if rec := recorded(t, cfg); rec.State != apppayload.DatabaseRestoring || rec.Failed != "v0.3.0" {
+		t.Fatalf("the watch's mark was saved over: %+v", rec)
+	}
+}
+
+// A failed update whose migrations cannot be kept or undone puts the dump back, as before;
+// one whose database was a newer release's kept schema is told so (its Down scripts are not
+// this release's).
+func TestAppBundleFailedMigrationRestoresWhenNeitherIsSafe(t *testing.T) {
+	cfg, payload := appEnv(t, "v0.3.0", "")
+	if err := os.MkdirAll(filepath.Join(updater.KeptPayloadDir(updatesDirOf(cfg, ""), "v0.2.0"), "migrations"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	record(t, cfg, apppayload.Database{Version: "v0.2.5", State: apppayload.DatabaseMigrated, Release: "v0.2.0",
+		KeptFor: "0.2.0"})
+	f := installFakeDB(t, cfg)
+	f.applied = 231
+	f.migrateErr = errors.New("migrate: ERROR 0232_x.sql: boom")
+	ps := appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), io.Discard)
+	err := prepareOf(t, ps, supervisor.RoleAPI)(context.Background(), noReport)
+	if !supervisor.Halted(err) || supervisor.DetailOf(err).Code != "db_restored" {
+		t.Fatalf("= %v, want the dump put back", err)
+	}
+	if len(f.backArgs) != 1 || f.backArgs[0] != "0.2.0 231 true" {
+		t.Fatalf("decided on %v", f.backArgs)
+	}
+	if len(f.drops) != 0 || len(f.downs) != 0 {
+		t.Fatalf("drops %v, downs %v before a restore", f.drops, f.downs)
+	}
+}
+
+// The outages of 2026-11-14 and 2026-11-23: while the migrations run, whatever one of them
+// waits on longer than the grace is ended, and the log says whom.
+func TestAppBundleMigrationsEndWhatTheyWaitOn(t *testing.T) {
+	cfg, payload := appEnv(t, "v0.3.0", "")
+	record(t, cfg, apppayload.Database{Version: "v0.2.0", State: apppayload.DatabaseMigrated})
+	f := installFakeDB(t, cfg)
+	prevEvery, prevGrace := migrationBlockerEvery, migrationBlockerGrace
+	t.Cleanup(func() { migrationBlockerEvery, migrationBlockerGrace = prevEvery, prevGrace })
+	migrationBlockerEvery, migrationBlockerGrace = 5*time.Millisecond, 3*time.Second
+	var mu sync.Mutex
+	asked := 0
+	endBlockersBundled = func(_ context.Context, _ pgbundle.Bundle, grace time.Duration) ([]pgbundle.EndedSession, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		asked++
+		if grace != 3*time.Second {
+			t.Errorf("grace %s", grace)
+		}
+		if asked == 2 {
+			return []pgbundle.EndedSession{{PID: 66198, Kind: "walsender", Role: "maktaba_rep_1e94",
+				App: "maktaba_copy_1e94", Client: "192.168.50.94", Query: "COPY public.transcript_segments TO STDOUT"}}, nil
+		}
+		return nil, nil
+	}
+	f.block = make(chan struct{})
+	go func() {
+		for {
+			mu.Lock()
+			n := asked
+			mu.Unlock()
+			if n >= 3 {
+				close(f.block)
+				return
+			}
+			time.Sleep(time.Millisecond)
+		}
+	}()
+	var log bytes.Buffer
+	var logMu sync.Mutex
+	ps := appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), lockedWriter{&logMu, &log})
+	if err := prepareOf(t, ps, supervisor.RoleAPI)(context.Background(), noReport); err != nil {
+		t.Fatal(err)
+	}
+	logMu.Lock()
+	out := log.String()
+	logMu.Unlock()
+	if !strings.Contains(out, "a migration waited longer than 3s on walsender 66198 (maktaba_rep_1e94, maktaba_copy_1e94, "+
+		"from 192.168.50.94): COPY public.transcript_segments TO STDOUT: ended it") {
+		t.Fatalf("the log does not say whom it ended:\n%s", out)
+	}
+	// stopped with the migrations: no more asking
+	mu.Lock()
+	n := asked
+	mu.Unlock()
+	time.Sleep(30 * time.Millisecond)
+	mu.Lock()
+	defer mu.Unlock()
+	if asked != n {
+		t.Fatalf("still asked after the migrations ended (%d, then %d)", n, asked)
+	}
+}
+
+type lockedWriter struct {
+	mu *sync.Mutex
+	w  io.Writer
+}
+
+func (l lockedWriter) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.w.Write(p)
 }
 
 // Putting the dump back failed: a halt that says so, the record still says
@@ -1407,6 +1729,8 @@ func TestDetailCodesAreAFixedList(t *testing.T) {
 		"db_migrating":             "to",
 		"db_restoring":             "failed dump",
 		"db_restored":              "failed error dump release",
+		"db_kept":                  "failed error release",
+		"db_undone":                "failed error release",
 		"db_refused_older":         "release needed dump",
 		"db_ahead":                 "release error",
 		"db_dump_failed":           "to error",

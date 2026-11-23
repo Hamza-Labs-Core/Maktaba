@@ -294,6 +294,12 @@ func MarkRecordKept(path, failed, from, reason string) (bool, error) {
 	if NormalizeVersion(str("version")) != NormalizeVersion(failed) || str("state") != "migrated" {
 		return false, nil
 	}
+	if NormalizeVersion(str("kept_for")) == NormalizeVersion(from) {
+		// kept for from already (the database step kept a failed update's schema): the
+		// record is not written again, for a change would end the failed release's halt
+		// (it waits for the record to change) while its rollback is under way
+		return true, nil
+	}
 	rec["kept_for"], rec["kept_reason"] = NormalizeVersion(from), reason
 	rec["at"] = time.Now().UTC().Format(time.RFC3339Nano)
 	out, err := json.MarshalIndent(rec, "", "  ")
