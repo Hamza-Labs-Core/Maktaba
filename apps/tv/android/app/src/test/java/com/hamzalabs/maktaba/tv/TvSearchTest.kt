@@ -19,7 +19,7 @@ import androidx.compose.ui.test.pressKey
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.hamzalabs.maktaba.core.api.ApiClient
 import com.hamzalabs.maktaba.core.api.AuthTokens
-import com.hamzalabs.maktaba.core.api.TranscriptHit
+import com.hamzalabs.maktaba.core.AiStreams
 import com.hamzalabs.maktaba.core.search.SearchModel
 import com.hamzalabs.maktaba.core.session.TokenStore
 import com.hamzalabs.maktaba.tv.data.TvApi
@@ -61,6 +61,16 @@ class TvSearchTest {
     private val asked: MutableList<RecordedRequest> = CopyOnWriteArrayList()
     private val opened = mutableListOf<String>()
     private val played = mutableListOf<Pair<String, Double>>()
+
+    /** AI mode's answer (story 49.14); a home before it has no such route. */
+    private var ai: (RecordedRequest) -> MockResponse = { MockResponse.Builder().code(404).build() }
+
+    private fun stream(body: String) = MockResponse.Builder().code(200).setHeader("Content-Type", "text/event-stream").body(body).build()
+
+    private fun answering(passages: List<AiStreams.Passage>, sentences: List<AiStreams.Sentence>): (RecordedRequest) -> MockResponse =
+        { r -> stream(AiStreams.answer(body(r)["q"]!!.jsonPrimitive.content, passages, sentences)) }
+
+    private fun aiAsks() = asked.filter { it.method == "POST" && it.url.encodedPath == "/api/search/ai" }.map(::body)
 
     /** Whether the home answers with story 49.8's help (off: a home before it). */
     private var help = true
@@ -112,6 +122,8 @@ class TvSearchTest {
                         val b = body(request)
                         json(results(b["q"]!!.jsonPrimitive.content, b["sort"]?.jsonPrimitive?.content ?: "relevance"))
                     }
+                    // story 49.14: no answer set is a home before AI mode
+                    "/api/search/ai" -> ai(request)
                     else -> json("{}")
                 }
             }
@@ -129,7 +141,7 @@ class TvSearchTest {
         model = SearchModel(api.client)
         compose.setContent {
             MaktabaTvTheme {
-                SearchScreen(api, model, focusFirst = focusFirst, onOpen = { opened += it }, onPlay = { h: TranscriptHit, s -> played += h.videoId to s })
+                SearchScreen(api, model, focusFirst = focusFirst, onOpen = { opened += it }, onPlay = { v, s -> played += v to s })
             }
         }
     }
@@ -296,5 +308,92 @@ class TvSearchTest {
         assertTrue(shows("الإنجليزية"))
         scrollTo("tv-facet-duration")
         assertTrue(shows("أكثر من ساعة"))
+    }
+
+    // ---------- story 49.14: AI mode's tab, by the D-pad ----------
+
+    /** Focuses [tag] and presses OK on it, as the remote does. */
+    private fun ok(tag: String) {
+        scrollTo(tag)
+        compose.onNodeWithTag(tag).performSemanticsAction(SemanticsActions.RequestFocus)
+        compose.onRoot().performKeyInput { pressKey(Key.DirectionCenter) }
+        compose.waitForIdle()
+    }
+
+    @Test
+    fun aiModeStreamsTheSourcesAndSentencesAndACitationPlaysItsMoment() {
+        ai = answering(AiStreams.EN_PASSAGES, AiStreams.EN_SENTENCES)
+        show()
+        search("patience")
+        assertTrue("Results never asks AI mode", aiAsks().isEmpty())
+        ok("tv-tab-ai")
+        wait { has("tv-ai-sentence-1-1") }
+        assertEquals("patience", aiAsks().single()["q"]!!.jsonPrimitive.content)
+        assertTrue(shows("Patience is half of faith."))
+        scrollTo("tv-ai-sources-1")
+        assertTrue(shows("Passages read"))
+        assertTrue(has("tv-ai-passage-1-2"))
+        ok("tv-ai-cite-1-1-2")
+        wait { played.isNotEmpty() }
+        assertEquals("v4" to 1322.5, played.single())
+        // back to Results: the results are there, AI mode not asked again on its return
+        ok("tv-tab-results")
+        wait { has("tv-search-titles") }
+        ok("tv-tab-ai")
+        wait { has("tv-ai-sentence-1-1") }
+        assertEquals(1, aiAsks().size)
+    }
+
+    @Test
+    fun aFollowUpOnTheTvCarriesTheEarlierAnswer() {
+        ai = answering(AiStreams.EN_PASSAGES, AiStreams.EN_SENTENCES)
+        show()
+        search("patience")
+        ok("tv-tab-ai")
+        wait { has("tv-ai-sentence-1-1") }
+        scrollTo("tv-ai-follow-up")
+        val field = compose.onNode(androidx.compose.ui.test.hasSetTextAction() and androidx.compose.ui.test.hasAnyAncestor(androidx.compose.ui.test.hasTestTag("tv-ai-follow-up")))
+        field.performTextInput("and its reward?")
+        field.performImeAction()
+        wait { aiAsks().size == 2 }
+        val turn = aiAsks().last()["history"]!!.let { it as kotlinx.serialization.json.JsonArray }.single().jsonObject
+        assertEquals("patience", turn["q"]!!.jsonPrimitive.content)
+        assertEquals("Patience is half of faith. Its reward comes without measure.", turn["answer"]!!.jsonPrimitive.content)
+        wait { has("tv-ai-question-2") }
+    }
+
+    @Test
+    fun noLanguageModelIsTheTabsMessageWithTheHelpAddress() {
+        ai = { MockResponse.Builder().code(409).setHeader("Content-Type", "application/problem+json").body(AiStreams.UNAVAILABLE).build() }
+        show()
+        search("patience")
+        ok("tv-tab-ai")
+        wait { has("tv-ai-unavailable") }
+        assertTrue(shows("AI mode is not set up"))
+        assertTrue(shows("/help/search#ai-mode"))
+    }
+
+    @Test
+    fun anOlderHomeSaysItHasNoAiModeYet() {
+        show()
+        search("patience")
+        ok("tv-tab-ai")
+        wait { has("tv-ai-old-home") }
+        assertTrue(shows("This home does not have AI mode yet."))
+    }
+
+    @Test
+    @Config(qualifiers = "ar-w960dp-h540dp-xhdpi")
+    fun aiModeIsInArabic() {
+        ai = answering(AiStreams.AR_PASSAGES, AiStreams.AR_SENTENCES)
+        show()
+        search("الصبر")
+        assertTrue(shows("وضع الذكاء الاصطناعي"))
+        ok("tv-tab-ai")
+        wait { has("tv-ai-sentence-1-1") }
+        assertEquals("الصبر", aiAsks().single()["q"]!!.jsonPrimitive.content)
+        assertTrue(shows("الصبر نصف الإيمان."))
+        scrollTo("tv-ai-sources-1")
+        assertTrue(shows("المقاطع المقروءة"))
     }
 }

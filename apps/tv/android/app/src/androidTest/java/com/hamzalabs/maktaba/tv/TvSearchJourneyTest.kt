@@ -47,7 +47,9 @@ import java.util.concurrent.CopyOnWriteArrayList
  * keyboard's Search key; then only the D-pad and its centre key: right along the order to
  * Newest, which runs the search in that order; right to Filters, which opens the facets' rows;
  * down to the libraries' chips, where the centre key narrows the search to one, and the focus
- * stays on that chip while the narrowed answer comes back.
+ * stays on that chip while the narrowed answer comes back. Story 49.14: right from Results to
+ * AI mode, centre asks it; down reaches the first sentence's citation, whose centre plays the
+ * video from the cited moment.
  */
 @RunWith(AndroidJUnit4::class)
 class TvSearchJourneyTest {
@@ -93,6 +95,8 @@ class TvSearchJourneyTest {
                         val b = body(request)
                         json(results(b["q"]!!.jsonPrimitive.content, b["sort"]?.jsonPrimitive?.content ?: "relevance"))
                     }
+                    // story 49.14: AI mode's answer, as the home streams it
+                    "/api/search/ai" -> MockResponse.Builder().code(200).setHeader("Content-Type", "text/event-stream").body(AI_STREAM).build()
                     else -> json("{}")
                 }
             }
@@ -162,5 +166,43 @@ class TvSearchJourneyTest {
         assertEquals("the order is kept", "newest", searches().last()["sort"]!!.jsonPrimitive.content)
         wait { rule.onAllNodes(hasText("✓ ", substring = true), useUnmergedTree = true).fetchSemanticsNodes().size >= 2 }
         assertTrue("the focus stays on the chip pressed: ${rule.focusedTags()}", chip in rule.focusedTags())
+    }
+
+    @Test
+    fun aiModeWithTheRemote() {
+        val api = TvApi(ApiClient(server.url("/"), Tokens(token, "r1")))
+        val model = SearchModel(api.client)
+        val played = CopyOnWriteArrayList<Pair<String, Double>>()
+        rule.setContent { MaktabaTvTheme { SearchScreen(api, model, focusFirst = false, onOpen = {}, onPlay = { v, s -> played += v to s }) } }
+
+        val field = rule.onNode(hasSetTextAction())
+        field.performTextInput("patience")
+        field.performImeAction()
+        androidx.test.espresso.Espresso.closeSoftKeyboard()
+        wait { has("tv-title-v1") }
+
+        // Results, right to AI mode, centre: AI mode asks the search's words
+        rule.onNodeWithTag("tv-tab-results").performSemanticsAction(SemanticsActions.RequestFocus)
+        rule.waitForIdle()
+        key(KeyEvent.KEYCODE_DPAD_RIGHT)
+        assertTrue("focus on AI mode: ${rule.focusedTags()}", "tv-tab-ai" in rule.focusedTags())
+        key(KeyEvent.KEYCODE_DPAD_CENTER)
+        wait { has("tv-ai-cite-1-0-1") }
+        val ai = asked.filter { it.url.encodedPath == "/api/search/ai" }.map(::body)
+        assertEquals("patience", ai.single()["q"]!!.jsonPrimitive.content)
+
+        // down to the first sentence's citation; centre plays from its moment
+        key(KeyEvent.KEYCODE_DPAD_DOWN)
+        assertTrue("focus on the first citation: ${rule.focusedTags()}", "tv-ai-cite-1-0-1" in rule.focusedTags())
+        key(KeyEvent.KEYCODE_DPAD_CENTER)
+        wait { played.isNotEmpty() }
+        assertEquals("v4" to 754.0, played.single())
+    }
+
+    private companion object {
+        const val AI_STREAM = ": ping\n\n" +
+            "event: sources\ndata: {\"q\":\"patience\",\"passages\":[{\"n\":1,\"video_id\":\"v4\",\"title\":\"The Night Journey\",\"library_name\":\"Lessons\",\"start_sec\":754,\"end_sec\":760,\"text\":\"and so patience is half of faith\"}]}\n\n" +
+            "event: text\ndata: {\"text\":\"Patience is half of faith.\",\"citations\":[{\"n\":1,\"video_id\":\"v4\",\"start_sec\":754,\"end_sec\":760,\"quote\":\"and so patience is half of faith\"}]}\n\n" +
+            "event: done\ndata: {\"answered\":true,\"sentences\":1,\"dropped\":0,\"took_ms\":40}\n\n"
     }
 }
