@@ -67,8 +67,14 @@ prs: [1497, 1511]
   without a simulator.
 
 ## Open
-- The Android Player, Android TV, the desktop player, the web big screen and Roku parts of
-  49.11.
+- The other parts of 49.11 were built in #1517 (Android, Android TV, desktop) and #1519 (the
+  web big screen, Roku), stacked on this branch.
+- `TVSearchUITests.testSuggestionsShowTheirKindsAndATitleOpensItsPage` failed once, on #1519's
+  run 45086064605 ("the focus on the title's suggestion"). #1519 changes nothing under
+  `apps/tv/tvos` or `apps/apple`, and the test passed on this branch, so it flaked. The test
+  presses down at most 4 times, then right at most 8, with 400 ms between presses. On a slow
+  simulator the focus had not reached the suggestions' row in time. If it fails again, wait
+  for the focus to land after each press instead of sleeping a fixed time.
 - The TV's transcript results open the video's page, not the player at a passage.
 - Whether tvOS sends `onSubmit(of: .search)` from its search keyboard. The TV does not rely
   on it.
