@@ -25,6 +25,18 @@ prs: [1525]
 - maktaba.dev's web app and big screen entries describe AI mode, with four screenshots on
   made-up data. They were made with vite and headless Chrome, with `/api/*` and the SSE
   answered by the script.
+- A GLM-5.3 review found two majors and three minors, fixed by the lead in
+  15d74e9e2853cd8ea284e2b16ed4fa69e2334059:
+  - `askAI` hand-rolls its streaming fetch, so it skipped `request()`'s 401 renewal of a
+    bearer token. A TV launcher left on Search dead-ended on AI mode until another screen
+    renewed the token. It now renews once and asks again.
+  - On the big screen, asking from AI mode clears the shared keyboard. That ran the
+    Results' empty-query branch, which dropped the Results and the URL's `q`, so Back from
+    a citation lost the search. AI mode now leaves both alone, and the Results' words
+    return when the tab does.
+  - The words asked as the tab opened stayed on the keyboard beside a live answer, inviting
+    a second ask. A timeout before any sentence said the passages do not answer. A comment
+    promised the Results box's words, but the tab asks the submitted search.
 
 ## What we learned
 - **StrictMode aborted the auto-asked request.** An unmount cleanup that aborts the live
@@ -58,6 +70,8 @@ prs: [1525]
   back on Results. It now keeps `tab`.
 
 ## Keep doing
+- A fetch written by hand for streaming must do what `request()` does for every other call:
+  the bearer 401 renewal, the headers, the error shape.
 - Take the screenshots on the dev server: it runs StrictMode, which the unit tests (without
   StrictMode) do not.
 - Pin each fix with a test that fails without it.
