@@ -616,6 +616,9 @@ func buildSurfaces() SurfaceTable {
 	filtered(mGet, "typeahead: only the caller's own earlier search words (search_history) are read, never a title or a result, so there is nothing of a hidden video to leave out; refused like the rest of search when the policy cannot be read", "",
 		"/api/search/suggest",
 	)
+	filtered(mPost, "AI mode (story 49.12): its passages are the search's (the filter clause in its queries, the meaning search's kept for allowed videos), read through the same cards, so the model is given only what the account may see and every citation names such a video", "",
+		"/api/search/ai",
+	)
 
 	// ---- live feeds (parental/live.go): each connection has its own filter ----
 	filtered(mGet, "the home's live feed: every event is asked of the connection's filter, with the limit as it is at that moment", "",

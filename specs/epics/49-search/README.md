@@ -1305,3 +1305,79 @@ found in transcripts, each once. The logic is in `source/search.brs`, apart from
   searched, Did you mean run, Newest sent, three filters combined with the year's own filter,
   Clear all, new words dropping the filters, a title opening its video, and the screen in Arabic,
   with screenshots in both languages.
+
+### 49.12 AI mode: API
+
+`POST /api/search/ai` (`api/internal/handlers/search/ai.go`) answers a question from the
+caller's passages as Server-Sent Events. The client side is story 49.14; the guide for client
+authors is `docs/developers/contributing/ai-mode.md` (maktaba.dev, English and Arabic).
+
+- **Retrieval.** The same hybrid search as `POST /api/search`, under the caller's libraries
+  (a library asked for that the account may not see is dropped) and parental limits: the best
+  10 videos, at most 3 passages from one, at most `rules.search.ai_passages` (30) in all, each
+  with the line before and after it from its transcript, and at most 14,000 characters in all.
+  A question's own words ("what are", ما هي) are in no transcript, so a keyword search of the
+  question as written found nothing on a real question. When it finds under 12 passages, each
+  of the question's content words (Arabic and English question and stop words left out, 8 at
+  most) is searched as well, and the lists are fused: a video found by more of the words
+  first, then by their ranks; within a video, the passages found by more of the words.
+- **The answer.** Ollama's `/api/chat`, streamed, at the tag check's model server (the
+  machine's own, `MAKTABA_OLLAMA_URL`, where the tag check keeps the default address) with
+  `rules.search.ai_model` or the tag check's model; temperature 0.2. The instructions: answer
+  only from the numbered passages, at most six sentences, in the question's language, each
+  sentence ending with the passages it comes from in brackets; reply `NO_ANSWER` when they do
+  not answer. The earlier turns (`history`, the last three with both a question and an
+  answer) come before the passages; retrieval runs on the new question alone.
+- **Every sentence cited.** The stream is cut into sentences (`. ! ? ؟ ۔` or a line break,
+  with the markers after it, once the next sentence has begun; 3.5 and ٣.٥ are not an end).
+  The sentence still held when the stream ends, by a timeout or a failed model too, is
+  checked and sent when cited. A sentence
+  keeps the citations that name a passage it was given (`[2]`, `[1][3]`, `[1, 3]`,
+  `[passage 2]`, Arabic-Indic digits; the first 5), its markers taken out of its text and
+  its own words, digits included, as the model wrote them. One
+  that names none is dropped and counted (`dropped`). `NO_ANSWER`, or no sentence kept,
+  ends with `answered: false` and `reason: not-in-passages`, the sources already shown; no
+  passages at all is `no-passages`, and the model is not asked.
+- **Events:** `queue` (`position`), `sources` (the numbered passages: video, title, library,
+  poster, moment, the passage's own words), `text` (a sentence and its citations: video,
+  moment, quoted words), `done` (`answered`, `reason`, `sentences`, `dropped`,
+  `first_token_ms`, `took_ms`, `model`) or `error` (`retrieval-failed`, `model-failed`). A
+  `: ping` comment every 15 s while waiting. `rules.search.ai_timeout_s` (120) ends an answer
+  with `reason: timeout`, the sentences sent standing.
+- **One at a time.** One answer is written at a time per home (the API process); up to 8
+  questions wait, each sent its place as the line moves; one that leaves gives its place up.
+  The ninth waiting is answered 429 `ai-busy` with `position` and `Retry-After`. The spec's 429
+  for any question asked while another is written became a line inside the stream, so a
+  client shows the place without asking again.
+- **No model.** 409 `ai-unavailable` when the model server does not answer or lacks the model
+  (`/api/tags`, 5 s), or the `llm` component is switched off; `help` names the tag check's
+  model server setting and the help page (`/help/search#ai-mode`). 409 `ai-off` when
+  `rules.search.ai_mode` is off. `rules.search` is at 1.1 (four fields added: `ai_mode`,
+  `ai_passages`, `ai_model`, `ai_timeout_s`).
+- **Registered.** In the OpenAPI description (`searchAI`; English, Arabic), the problem types
+  (`ai-unavailable`, `ai-off`, `ai-busy` in `shared/api/problems.json`, English and Arabic),
+  the parental surface registry (filtered: its passages are the search's, through the same
+  cards) and the parental bypass rehearsal, whose model (`echoModel`) answers with every word
+  it read, so the scan reads what the model was given as well as the sources.
+- **Proof:** `ai_test.go`:
+  - the splitter (the same sentences whatever the pieces) and the citation check;
+  - the stream with a model that cites, invents a passage and cites nothing (sources first,
+    every sentence citing a listed passage and quoting it, two dropped);
+  - `NO_ANSWER`, only uncited sentences, and no passages;
+  - the 400, both 409s (`help` included), the 429 and the model setting;
+  - follow-ups (the last three whole turns; retrieval on the new question);
+  - the line over HTTP (a second question told place 1, a third leaving, each answered once);
+  - the role test on SQLite and Postgres: a limited account is given, and cites, only its own
+    library's passages, and the model never reads another library's words;
+  - Ollama's API (`/api/tags` with `:latest`, the streamed chat, an error line).
+- **Measured with a real model.** `TestAI_RealModel` (run with `MAKTABA_TEST_OLLAMA_URL`) asks
+  six Arabic and English questions of a 15-lesson test library. On an M3 Ultra (96 GB) with the
+  Mac app's bundled Ollama 0.40.2 and qwen2.5:7b: first token about 3.7 s for a full prompt of
+  30 passages the server has not seen, 0.1 to 0.6 s for a short prompt or one whose start the
+  server kept, and 7.8 s when the model is first loaded; a whole answer in 0.7 to 6 s. With
+  the same Mac under a load average of about 40 (other builds and tests), the first token
+  took 10 to 13 s. The three
+  answerable questions were answered, each sentence cited. The three that are not (one with no
+  passages, one whose passages name no narrator, one whose passages never say what is asked)
+  were not answered.
+- **Open:** the first-token time on the home Mac with the home's own library.

@@ -199,6 +199,13 @@ How the [Search](/help/search) page groups its results per video, pages them and
 - **Keep results for (minutes)** (15): a search's results are kept this long after their last use, so their order stays the same while you page through them. Every page you open starts the time again; after that the search runs again.
 - **Recent searches kept** (20): each user's Recent searches list. The query stays after its results are no longer kept.
 
+[AI mode](/help/search#ai-mode):
+
+- **AI mode** (on): the Search page's AI mode, which answers a question from the library's passages; off, it says an admin turned it off.
+- **Passages AI mode reads** (30): the best passages, with the lines around each, the language model is given for one question.
+- **AI mode's language model** (empty: the tag check's): the model AI mode asks, on the tag check's model server.
+- **Longest answer (seconds)** (120): an answer still being written after this long stops where it is.
+
 ### Plugin models {#plugin-compute}
 
 The language model plugins ask, and how much of the home's models each plugin may use (for plugins that ask for the compute capabilities).

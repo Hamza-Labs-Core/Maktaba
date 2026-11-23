@@ -78,6 +78,9 @@ type P6Deps struct {
 	// grpcpipeline.SemanticSearcher (the real client does); still nil →
 	// search is FTS-only.
 	SearchSemantic search.SemanticClient
+	// SearchAI is the language model AI mode asks (story 49.12). Nil: Ollama's API at the
+	// tag check's model server.
+	SearchAI search.AIModel
 	// SearchPipelineClient is the pipeline worker that holds the search index (the
 	// supervisor's index worker, MAKTABA_PIPELINE_SEARCH_ADDR): the semantic leg asks
 	// it rather than PipelineClient. Nil → PipelineClient.
@@ -284,6 +287,9 @@ func MountP6(r chi.Router, d P6Deps) {
 			return !off
 		}
 	}
+	// story 49.12: AI mode answers 409 while the language model is switched off
+	searchHandler.LLMOn = searchLLMOn(d.Capabilities)
+	searchHandler.AI = d.SearchAI
 	searchHandler.Mount(r)
 
 	streamSvc := streamingServiceAdapter{client: d.StreamingClient}
@@ -516,4 +522,16 @@ func enqueueKeywordIndex(ctx context.Context, db *sql.DB, videoIDs []string, why
 		}
 	}
 	return nil
+}
+
+// searchLLMOn reports whether the llm component is on, for AI mode (story 49.12); nil
+// without capabilities (the language model is taken as on).
+func searchLLMOn(caps *components.Capabilities) func() bool {
+	if caps == nil {
+		return nil
+	}
+	return func() bool {
+		_, off := caps.Snapshot().ComponentOff("llm")
+		return !off
+	}
 }

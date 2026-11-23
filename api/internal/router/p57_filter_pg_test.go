@@ -25,6 +25,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/castgrant"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/clustertest"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/search"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/ws"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/idempotency"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/parental"
@@ -150,7 +151,8 @@ func setupFilterOn(t testing.TB, more func(r chi.Router, e *pfEnv), open func(ds
 	// a streaming service that keeps time limits (story 57.14): without one a
 	// restricted account's stream is refused
 	e.streaming = &tmStreaming{leases: map[string]time.Time{}}
-	router.MountP6(r, router.P6Deps{DB: served, StreamingClient: e.streaming, URLSigner: e.signer, ParentalGate: e.gate, EventHub: e.hub})
+	router.MountP6(r, router.P6Deps{DB: served, StreamingClient: e.streaming, URLSigner: e.signer, ParentalGate: e.gate, EventHub: e.hub,
+		SearchAI: echoModel{}})
 	if e.gate.Cache() == nil {
 		t.Fatal("MountP6 gave the gate no cache")
 	}
@@ -756,4 +758,21 @@ func TestP57FilterRecordsBlocked(t *testing.T) {
 	if n := count(pfViewer, ""); n != 0 {
 		t.Fatalf("an account with no limit wrote %d blocked events", n)
 	}
+}
+
+// echoModel is AI mode's model in the rehearsal (story 49.12): it answers with every word it
+// was given, as one sentence citing the first passage (every sentence end and bracket taken
+// out, so the citation check keeps it whole), so the scan of the answer reads what the model
+// read as well as the sources.
+type echoModel struct{}
+
+func (echoModel) Ready(context.Context, string, string) error { return nil }
+
+func (echoModel) Chat(_ context.Context, _, _ string, msgs []search.AIMessage, piece func(string) error) error {
+	var b strings.Builder
+	for _, m := range msgs[1:] { // the instructions are the home's own
+		b.WriteString(strings.NewReplacer("\n", " ", ".", " ", "!", " ", "?", " ", "؟", " ", "۔", " ", "[", "(", "]", ")").Replace(m.Content))
+		b.WriteString(" ")
+	}
+	return piece(b.String() + " [1]")
 }

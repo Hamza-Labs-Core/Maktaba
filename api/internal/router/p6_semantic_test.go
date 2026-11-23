@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/components"
 	grpcpipeline "github.com/Hamza-Labs-Core/Maktaba/api/internal/grpcclients/pipeline"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/search"
 )
@@ -63,5 +64,21 @@ func TestSearchSemantic_IndexWorker(t *testing.T) {
 	}
 	if got := searchSemantic(P6Deps{PipelineClient: semanticPipeline{}, SearchPipelineClient: plainPipeline{}}); got != nil {
 		t.Fatalf("an index worker without the RPC: want nil (FTS-only), got %T", got)
+	}
+}
+
+// Story 49.12: AI mode follows the llm component; without capabilities it is taken as on.
+func TestSearchLLMOn_FollowsTheComponent(t *testing.T) {
+	if searchLLMOn(nil) != nil {
+		t.Fatal("no capabilities: the language model is taken as on")
+	}
+	if !searchLLMOn(components.NewCapabilities(components.CapabilitiesOptions{}))() {
+		t.Fatal("every component is on until the database says otherwise")
+	}
+	if searchLLMOn(off("llm"))() {
+		t.Fatal("the llm component off: AI mode must see it off")
+	}
+	if !searchLLMOn(off("search.semantic"))() {
+		t.Fatal("another component off leaves the llm on")
 	}
 }

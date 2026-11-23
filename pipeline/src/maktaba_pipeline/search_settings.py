@@ -1,7 +1,8 @@
-"""The ``search`` rules: how the Search page's results are grouped, paged and kept. The
-pipeline never reads them; they live here because every rules section's schema
-(``api/internal/handlers/rules/schema.json``) is generated from one place. The API keeps
-the same defaults (``api/internal/handlers/search/rules.go``, checked by a test)."""
+"""The ``search`` rules: how the Search page's results are grouped, paged and kept, and AI
+mode (story 49.12). The pipeline never reads them; they live here because every rules
+section's schema (``api/internal/handlers/rules/schema.json``) is generated from one place.
+The API keeps the same defaults (``api/internal/handlers/search/rules.go``, checked by a
+test)."""
 
 from __future__ import annotations
 
@@ -13,11 +14,14 @@ __all__ = ["SearchConfig"]
 
 _G = "Search results"
 _K = "Search history"
+_A = "AI mode"
 
 
 @dataclass(frozen=True)
 class SearchConfig:
-    """How search results are grouped per video, paged and kept."""
+    """How search results are grouped per video, paged and kept, and AI mode."""
+
+    SCHEMA_VERSION = (1, 1)
 
     #: passages shown under each video in "In transcripts"
     passages_per_video: int = 3
@@ -35,6 +39,14 @@ class SearchConfig:
     result_minutes: int = 15
     #: recent searches kept per user
     recent_limit: int = 20
+    #: the AI mode tab answers questions from the library's passages
+    ai_mode: bool = True
+    #: passages AI mode gives the language model
+    ai_passages: int = 30
+    #: the language model AI mode asks ("": the tag check's)
+    ai_model: str = ""
+    #: most seconds one AI mode answer may take
+    ai_timeout_s: int = 120
 
 
 register(
@@ -102,6 +114,34 @@ register(
             "stays after its results are no longer kept; opening it searches again.",
             minimum=1,
             maximum=200,
+        ),
+        "ai_mode": Help(
+            _A,
+            "AI mode",
+            "The Search page's AI mode tab: the home's language model reads the best passages "
+            "for a question and answers from them, each sentence linked to its video and "
+            "moment. Off: the tab says an admin turned it off.",
+        ),
+        "ai_passages": Help(
+            _A,
+            "Passages AI mode reads",
+            "How many of the best passages, with the lines around each, the language model "
+            "is given for one question. More can answer more and is slower.",
+            minimum=5,
+            maximum=60,
+        ),
+        "ai_model": Help(
+            _A,
+            "AI mode's language model",
+            "The model AI mode asks, on the tag check's model server. Empty: the tag check's "
+            "model.",
+        ),
+        "ai_timeout_s": Help(
+            _A,
+            "Longest answer (seconds)",
+            "An answer still being written after this long stops where it is.",
+            minimum=10,
+            maximum=600,
         ),
     },
 )

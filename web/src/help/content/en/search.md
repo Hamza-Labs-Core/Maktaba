@@ -55,6 +55,15 @@ The **Mode** list next to the box changes how Maktaba matches your words. Your c
 - **Keyword**: the exact words you typed. Best for a name or a precise phrase.
 - **Semantic**: the meaning. Finds passages that talk about the same idea in other words.
 
+### AI mode {#ai-mode}
+
+AI mode answers a question from your library. The home's language model reads the best passages for the question, with the lines around each, and writes a short answer in the question's language. Each sentence links to the video and the moment it comes from, so you can check it. It answers only from the passages, never from elsewhere; when they do not answer the question it says so and shows the passages it read.
+
+- The passages are found as a search finds them, in the libraries you may see only.
+- A follow-up question carries the earlier questions and answers.
+- The home writes one answer at a time. Another person's question waits in line, and is told its place.
+- AI mode needs the home's language model (the model server under **Settings → Rules → Tag check**). An admin can turn AI mode off, and choose its model, under **Settings → Rules → Search**.
+
 ### Save a search {#saved-searches}
 
 Press **Save** to keep the current search and its mode. It appears under **Saved searches** on the side, apart from **Recent searches**. Click it to run it again, or delete it with the button next to it.

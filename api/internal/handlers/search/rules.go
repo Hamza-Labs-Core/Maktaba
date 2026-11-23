@@ -3,6 +3,7 @@ package search
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/rules"
@@ -19,6 +20,11 @@ type Rules struct {
 	SemanticTopK     int
 	ResultMinutes    int
 	RecentLimit      int
+	// AI mode (story 49.12)
+	AIMode     bool
+	AIPassages int
+	AIModel    string
+	AITimeoutS int
 }
 
 // DefaultRules are the built-in rules.
@@ -32,6 +38,9 @@ func DefaultRules() Rules {
 		SemanticTopK:     200,
 		ResultMinutes:    15,
 		RecentLimit:      20,
+		AIMode:           true,
+		AIPassages:       30,
+		AITimeoutS:       120,
 	}
 }
 
@@ -67,7 +76,15 @@ func (h *Handler) rules(ctx context.Context) Rules {
 		"semantic_top_k":     &cfg.SemanticTopK,
 		"result_minutes":     &cfg.ResultMinutes,
 		"recent_limit":       &cfg.RecentLimit,
+		"ai_passages":        &cfg.AIPassages,
+		"ai_timeout_s":       &cfg.AITimeoutS,
 	})
+	if v, ok := m["ai_mode"].(bool); ok {
+		cfg.AIMode = v
+	}
+	if v, ok := m["ai_model"].(string); ok {
+		cfg.AIModel = strings.TrimSpace(v)
+	}
 	return cfg
 }
 

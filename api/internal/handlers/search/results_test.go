@@ -833,8 +833,11 @@ func TestRules_DefaultsMatchSchema(t *testing.T) {
 		"page_size_list": &got.PageSizeList, "passages_page_size": &got.PassagesPageSize,
 		"max_videos": &got.MaxVideos, "semantic_top_k": &got.SemanticTopK,
 		"result_minutes": &got.ResultMinutes, "recent_limit": &got.RecentLimit,
+		"ai_passages": &got.AIPassages, "ai_timeout_s": &got.AITimeoutS,
 	})
-	if got != DefaultRules() || len(m) != 8 {
+	got.AIMode, _ = m["ai_mode"].(bool)
+	got.AIModel, _ = m["ai_model"].(string)
+	if got != DefaultRules() || len(m) != 12 {
 		t.Fatalf("schema %v, Go %+v", m, DefaultRules())
 	}
 }

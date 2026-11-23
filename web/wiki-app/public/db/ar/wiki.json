@@ -13,7 +13,7 @@
   ],
   "counts": {
     "diagram": 14,
-    "endpoint": 281,
+    "endpoint": 282,
     "entity": 42,
     "epic": 60,
     "feature": 3,
@@ -6988,6 +6988,33 @@
         "lang": "ar",
         "source": {
           "content": "7aac2000122e1713"
+        }
+      }
+    },
+    {
+      "id": "ep-post-search-ai",
+      "type": "endpoint",
+      "title": "POST /search/ai",
+      "content": "اسأل وضع الذكاء الاصطناعي سؤالًا",
+      "tags": [
+        "api",
+        "Search",
+        "post"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/search/ai",
+        "tag": "Search",
+        "operationId": "searchAI"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "8af1e61060629dfc"
         }
       }
     },
