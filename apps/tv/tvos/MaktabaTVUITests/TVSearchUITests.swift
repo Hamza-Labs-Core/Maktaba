@@ -200,16 +200,18 @@ final class TVSearchUITests: XCTestCase {
         XCTAssertTrue(sentence.waitForExistence(timeout: 15), "back on the answer")
         XCTAssertTrue(app.buttons["ai.new"].exists, "New question under the answer")
 
-        // a follow-up typed under the answer, sent with its button: the first turn as history
+        // a follow-up typed under the answer: the full-screen keyboard's own Done submits the
+        // field, which asks it with the first turn as history
         let follow = app.textFields["ai.followUp"]
-        XCTAssertTrue(reach(follow), "the focus on the follow-up field")
         follow.typeExactly("its kinds", in: app) {
-            if follow.hasFocus { self.remote.press(.select) }
-            usleep(600_000)
+            _ = self.reach(follow)
+            self.remote.press(.select)
         }
-        let send = app.buttons["ai.followUp.send"]
-        XCTAssertTrue(reach(send), "the focus on the follow-up's Ask")
-        remote.press(.select)
+        let done = app.buttons.matching(NSPredicate(format: "label IN[c] {'next', 'done', 'go', 'search', 'send', 'التالي', 'تم', 'انتقال', 'بحث', 'إرسال'}")).firstMatch
+        if done.waitForExistence(timeout: 5) {
+            _ = reach(done)
+            remote.press(.select)
+        }
         XCTAssertTrue(wait { self.questions.count == 2 }, "the follow-up asked; the home saw \(home.seen.suffix(8))")
         XCTAssertEqual(questions[1]["q"] as? String, "its kinds")
         let history = questions[1]["history"] as? [[String: Any]]
