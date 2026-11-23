@@ -376,6 +376,19 @@ build fails when the two differ.
 
 ### Fixed
 
+- **An update whose new index waits on a machine's copy no longer fails, and a failed update no
+  longer costs hours.** While an update's migrations ran, a joined machine making its copy of
+  the library again could hold an old snapshot for as long as copying a large table takes. Each
+  new index built `CONCURRENTLY` waited for it until its lock timeout, three tries running. The
+  update then put the whole database back from its backup: 2 h 44 min with the library stopped
+  on a 35 GB home, on 2026-11-23, after the same failure on 2026-11-14. Now the home ends any
+  session a migration has waited on for more than 10 seconds and names it in the log. A
+  machine's copy carries on and copies that table again. An index left INVALID by a build cut
+  short is dropped and built again, where the next try used to take it for done. When the
+  migrations still fail part way, nothing is put back if what they changed is additive and the
+  release before runs on it. Otherwise their own Down scripts undo them when they lose no data,
+  in seconds. Only failing both does the backup go back, as before.
+
 - **Videos start much sooner on Android phones and tablets, and show their real length.** The
   Maktaba Player on Android now tells the home what the device plays, so a film the phone can
   play as it is (including Dolby audio its own decoders take) plays directly instead of waiting

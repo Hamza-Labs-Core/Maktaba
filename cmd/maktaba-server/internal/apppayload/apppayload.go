@@ -136,8 +136,13 @@ type Database struct {
 	// DumpKeptFor is KeptFor of the database Dump was taken of (an update from a release
 	// running on a kept, newer schema): a restore of Dump is again that schema, kept for
 	// that release, and says so (KeptFor of the restored record).
-	DumpKeptFor string    `json:"dump_kept_for,omitempty"`
-	At          time.Time `json:"at"`
+	DumpKeptFor string `json:"dump_kept_for,omitempty"`
+	// DownFrom is the release whose Down scripts brought the database back to Version's
+	// schema (layout.MarkRecordDown; the database step, when that release's migrations
+	// failed part way: updater.FailedBack), DownReason why.
+	DownFrom   string    `json:"down_from,omitempty"`
+	DownReason string    `json:"down_reason,omitempty"`
+	At         time.Time `json:"at"`
 }
 
 // Ran is the release that last started on the database: Release, else Version.

@@ -565,6 +565,10 @@ jobs:
           # Epic 43 story 43.5: a home whose Chroma copy stopped part way updates to the
           # release without Chroma: the copy finishes, nothing is embedded again
           - { id: '18', name: a home whose Chroma copy stopped part way updates (the copy finishes), test: TestUpdateRehearsal18ChromaCopyFinished, profile: small, venvs: true }
+          # the outages of 2026-11-14 and 2026-11-23: a migration's CREATE INDEX CONCURRENTLY
+          # behind a machine's copy holding a snapshot (its table sync), and a machine's
+          # session that comes straight back; the backup taken while the previous release serves
+          - { id: '19', name: a CREATE INDEX CONCURRENTLY migration behind a machine's copy, test: TestUpdateRehearsal19ConcurrentIndexBehindACopy, profile: small }
           # the fault rehearsal (Epic 53 story 53.07, docs/fault-rehearsal.md): one part
           # killed at a time on a home of this commit; the tag guard requires these too
           - { id: 'F03', name: streaming crash (the status says so; it comes back), test: TestFaultRehearsalF03StreamingCrash, profile: small }

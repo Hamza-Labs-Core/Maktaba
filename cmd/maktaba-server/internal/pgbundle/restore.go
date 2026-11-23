@@ -397,6 +397,120 @@ func (b Bundle) EndSessions(ctx context.Context) (int, error) {
 	return strconv.Atoi(strings.TrimSpace(rows[0]))
 }
 
+// MigrateApp is the application_name of every session of the api's migrations
+// (`maktaba-api migrate`, api/migrate.go): the sessions EndBlockersSQL frees.
+const MigrateApp = "maktaba-migrate"
+
+// EndBlockersSQL ends every session of database db ("": the one it runs in) that one of
+// the api's migrations (application_name MigrateApp) has waited on for longer than grace,
+// when its role may end it, and selects each one it ended: its pid, kind (backend_type),
+// role, application_name, client address, how long its transaction had run in seconds,
+// and the start of its query, '|' between them (and none inside).
+//
+// The outage of 2026-11-23 (and of 2026-11-14): a CREATE INDEX CONCURRENTLY waits for
+// every transaction whose snapshot is older than its own, and that wait is a lock wait
+// (a virtualxid), so the migrations' lock_timeout cancelled it. What it waited on was a
+// joined machine's copy making itself anew: its table sync's walsender holds a
+// REPEATABLE READ snapshot for the whole COPY of a large table (tens of minutes), and
+// EndSessionsSQL leaves replication alone; the machine's api sessions, ended before the
+// migrations, came straight back. This ends exactly what a migration waits on, whatever
+// it is (a walsender, a client session that came back, a long query), once the wait is
+// longer than a short query takes; the machine's copy syncs that table again.
+func EndBlockersSQL(db string, grace time.Duration) string {
+	which := "current_database()"
+	if db != "" {
+		which = "'" + strings.ReplaceAll(db, "'", "''") + "'"
+	}
+	clean := func(col string) string {
+		return `regexp_replace(coalesce(` + col + `, ''), '[[:space:]|]+', ' ', 'g')`
+	}
+	return `SELECT e.pid || '|' || e.kind || '|' || e.role || '|' || e.app || '|' || e.client || '|' || e.xact || '|' || e.query
+FROM (
+    SELECT a.pid, ` + clean("a.backend_type") + ` AS kind, ` + clean("a.usename::text") + ` AS role,
+        ` + clean("a.application_name") + ` AS app,
+        coalesce(host(a.client_addr), 'local') AS client,
+        coalesce(extract(epoch FROM clock_timestamp() - a.xact_start)::bigint, 0) AS xact,
+        left(` + clean("a.query") + `, 160) AS query,
+        pg_terminate_backend(a.pid) AS ended
+    FROM (
+        SELECT DISTINCT b.pid
+        FROM pg_stat_activity m
+        JOIN pg_locks w ON w.pid = m.pid AND NOT w.granted
+        CROSS JOIN LATERAL unnest(pg_blocking_pids(m.pid)) AS b(pid)
+        WHERE m.datname = ` + which + ` AND m.application_name = '` + MigrateApp + `'
+          AND w.waitstart < clock_timestamp() - interval '` + strconv.FormatInt(max(grace.Milliseconds(), 0), 10) + ` milliseconds'
+    ) x
+    JOIN pg_stat_activity a ON a.pid = x.pid
+    LEFT JOIN pg_roles r ON r.oid = a.usesysid
+    WHERE a.pid <> pg_backend_pid() AND a.backend_type IN ('client backend', 'walsender')
+      AND coalesce(a.application_name, '') <> '` + MigrateApp + `'
+      AND ((SELECT rolsuper FROM pg_roles WHERE rolname = current_user)
+           OR (pg_has_role(current_user, 'pg_signal_backend', 'MEMBER') AND NOT coalesce(r.rolsuper, false))
+           OR pg_has_role(current_user, a.usesysid, 'MEMBER'))
+) e WHERE e.ended`
+}
+
+// EndedSession is a session EndBlockersSQL ended.
+type EndedSession struct {
+	PID      int
+	Kind     string // backend_type: client backend, walsender
+	Role     string
+	App      string
+	Client   string
+	XactSecs int64 // how long its transaction had run (0: none)
+	Query    string
+}
+
+// String says who it was, for the server's log.
+func (s EndedSession) String() string {
+	who := s.Kind + " " + strconv.Itoa(s.PID)
+	var of []string
+	for _, v := range []string{s.Role, s.App} {
+		if v != "" {
+			of = append(of, v)
+		}
+	}
+	of = append(of, "from "+s.Client)
+	if s.XactSecs > 0 {
+		of = append(of, fmt.Sprintf("in a transaction for %ds", s.XactSecs))
+	}
+	who += " (" + strings.Join(of, ", ") + ")"
+	if s.Query != "" {
+		who += ": " + s.Query
+	}
+	return who
+}
+
+// ParseEndedSessions reads EndBlockersSQL's rows.
+func ParseEndedSessions(rows []string) []EndedSession {
+	var out []EndedSession
+	for _, row := range rows {
+		f := strings.SplitN(row, "|", 7)
+		if len(f) != 7 {
+			continue
+		}
+		pid, _ := strconv.Atoi(f[0])
+		xact, _ := strconv.ParseInt(f[5], 10, 64)
+		out = append(out, EndedSession{PID: pid, Kind: f[1], Role: f[2], App: f[3], Client: f[4], XactSecs: xact,
+			Query: strings.TrimSpace(f[6])})
+	}
+	return out
+}
+
+// EndBlockers ends the sessions on the app database that a migration has waited on for
+// longer than grace (EndBlockersSQL) and returns them.
+func (b Bundle) EndBlockers(ctx context.Context, grace time.Duration) ([]EndedSession, error) {
+	q, err := b.NewQuerier()
+	if err != nil {
+		return nil, err
+	}
+	rows, err := q.Query(ctx, "postgres", EndBlockersSQL(AppDatabase, grace))
+	if err != nil {
+		return nil, err
+	}
+	return ParseEndedSessions(rows), nil
+}
+
 // DropSlotsSQL drops every logical replication slot of database db ("": the one it
 // runs in), ending the sessions that stream from them first: the machines' copies
 // (Epic 37) of a database about to be put back from a dump, or dropped. What they

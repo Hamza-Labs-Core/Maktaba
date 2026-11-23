@@ -60,6 +60,8 @@ Actions:
   status       Show applied vs. pending migrations
   version      Print the current schema version
   validate     Verify the migrations directory is well-formed
+  drop-invalid Drop the INVALID indexes a pending migration's CREATE INDEX
+               CONCURRENTLY left when it did not finish (up does this first)
   down         Roll back the most recently applied migration
   down-to <v>  Roll back until the schema is at version <v>
 
@@ -150,6 +152,9 @@ Flags:`)
 	defer cancel()
 
 	dsn = pgdsn.ForLibPQ(ctx, dsn, pgdsn.Ping)
+	// the server's database step knows the migrations' sessions by their name, and ends
+	// what one of them waits on too long (migrate_leftovers.go)
+	dsn = pgdsn.WithParam(dsn, "application_name", migrateAppName)
 	if lockWait > 0 {
 		// every session goose opens: a migration never waits forever on another's lock
 		// (an update's database step ends the other sessions and tries again)
@@ -179,6 +184,8 @@ Flags:`)
 		fmt.Fprintf(os.Stderr, "migrate: applying migrations from %s against %s\n",
 			dir, redactDSN(dsn))
 		return runGooseUp(ctx, db, dir)
+	case "drop-invalid":
+		return runDropInvalid(ctx, db, dir)
 	case "status":
 		return goose.StatusContext(ctx, db, dir)
 	case "version":
@@ -192,7 +199,7 @@ Flags:`)
 			downToTarget, dir, redactDSN(dsn))
 		return runGooseDownTo(ctx, db, dir, downToTarget)
 	default:
-		return fmt.Errorf("unknown migrate action %q (try 'up', 'down', 'down-to', 'status', 'version', 'validate')", action)
+		return fmt.Errorf("unknown migrate action %q (try 'up', 'down', 'down-to', 'status', 'version', 'validate', 'drop-invalid')", action)
 	}
 }
 
@@ -228,7 +235,23 @@ func runGooseUp(ctx context.Context, db *sql.DB, dir string) error {
 		return err
 	}
 	defer os.RemoveAll(stage)
+	if err := dropCancelledIndexes(ctx, db, stage); err != nil {
+		return fmt.Errorf("the invalid indexes a cancelled migration left: %w", err)
+	}
 	return goose.UpContext(ctx, db, stage)
+}
+
+// runDropInvalid drops only the INVALID indexes the pending migrations' CREATE INDEX
+// CONCURRENTLY left (dropCancelledIndexes): the server's database step runs it when it
+// keeps the schema of an update whose migrations failed, so the release before does not
+// keep an index nobody reads up to date on its writes.
+func runDropInvalid(ctx context.Context, db *sql.DB, dir string) error {
+	stage, err := stagePostgresMigrations(dir)
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(stage)
+	return dropCancelledIndexes(ctx, db, stage)
 }
 
 // guardDown refuses a rollback when MAKTABA_DISABLE_DOWN is truthy.

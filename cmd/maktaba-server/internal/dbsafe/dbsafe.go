@@ -288,6 +288,42 @@ func (t Target) EndSessions(ctx context.Context) (int, error) {
 	return n, d.QueryRowContext(ctx, pgbundle.EndSessionsSQL("")).Scan(&n)
 }
 
+// EndBlockers ends the sessions on the database that a migration has waited on for longer
+// than grace and that its role may end (pgbundle.EndBlockersSQL), and returns them.
+func (t Target) EndBlockers(ctx context.Context, grace time.Duration) ([]pgbundle.EndedSession, error) {
+	d, err := t.open(ctx, "")
+	if err != nil {
+		return nil, err
+	}
+	defer d.Close()
+	rs, err := d.QueryContext(ctx, pgbundle.EndBlockersSQL("", grace))
+	if err != nil {
+		return nil, err
+	}
+	defer rs.Close()
+	var rows []string
+	for rs.Next() {
+		var s string
+		if err := rs.Scan(&s); err != nil {
+			return nil, err
+		}
+		rows = append(rows, s)
+	}
+	return pgbundle.ParseEndedSessions(rows), rs.Err()
+}
+
+// SchemaVersion is the newest migration goose records as applied on the database (0:
+// none).
+func (t Target) SchemaVersion(ctx context.Context) (int64, error) {
+	d, err := t.open(ctx, "")
+	if err != nil {
+		return 0, err
+	}
+	defer d.Close()
+	var v int64
+	return v, d.QueryRowContext(ctx, `SELECT coalesce(max(version_id), 0) FROM goose_db_version WHERE is_applied`).Scan(&v)
+}
+
 // GrantWorkersConnect gives the workers' group (the machines' logins) CONNECT on the
 // database when it lacks it (pgbundle.GrantWorkersConnectSQL): a restore by a release
 // before 2026-10-28 dropped that grant with the database.

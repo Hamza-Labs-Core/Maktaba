@@ -469,7 +469,7 @@ func runServe(cfg config.Config, opts serveOptions) (err error) {
 			if pg != nil {
 				ext = nil
 			}
-			procs = layoutHomeGates(cfg, filepath.Base(filepath.Clean(releaseDir)), pg, ext, procs,
+			procs = layoutHomeGates(cfg, releaseDir, pg, ext, procs,
 				updatesDirOf(cfg, releaseDir), os.Stderr)
 		}
 	}

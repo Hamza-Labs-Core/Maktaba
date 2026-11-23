@@ -1017,7 +1017,7 @@ type selfMachineDB struct {
 }
 
 // haltCodes are database-step details no retry mends: the release cannot run here.
-var haltCodes = map[string]bool{"db_restored": true, "db_restore_failed": true, "db_ahead": true,
+var haltCodes = map[string]bool{"db_restored": true, "db_kept": true, "db_undone": true, "db_restore_failed": true, "db_ahead": true,
 	"db_refused_older": true, "db_no_cluster": true, "pg_major": true}
 
 // startingCodes are the start steps at work (detail_codes.json): the database step's
