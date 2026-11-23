@@ -468,7 +468,7 @@
     <!-- Story 49.14: Search's AI mode tab, the Player's and the Android TV app's (the words of web/src/help/content/en/search.md#ai-mode). -->
     <string name="search_tab_results">Results</string>
     <string name="search_tab_ai">AI mode</string>
-    <string name="search_ai_intro">Ask a question. The home's language model answers from your library's passages only, each sentence linked to its video and moment.</string>
+    <string name="search_ai_intro">Ask a question. The home\'s language model answers from your library\'s passages only, each sentence linked to its video and moment.</string>
     <string name="search_ai_follow_up">Ask a follow-up</string>
     <string name="search_ai_ask">Ask</string>
     <string name="search_ai_queue">Waiting in line: number %1$d</string>

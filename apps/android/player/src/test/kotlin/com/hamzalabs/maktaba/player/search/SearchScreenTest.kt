@@ -21,7 +21,12 @@ import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.hamzalabs.maktaba.core.AiStreams
 import com.hamzalabs.maktaba.core.api.Feature
+import androidx.compose.ui.test.assertIsSelected
+import kotlinx.serialization.json.jsonArray
+import mockwebserver3.MockResponse
+import java.util.concurrent.TimeUnit
 import com.hamzalabs.maktaba.player.harness.FakeHome
 import com.hamzalabs.maktaba.player.harness.FakeHome.Companion.json
 import com.hamzalabs.maktaba.player.harness.setShell
@@ -415,5 +420,183 @@ class SearchScreenTest {
         compose.settledUntil(5_000) { searchBodies().size == 3 }
         assertEquals(null, searchBodies().last()["filters"])
         waitForTag("search-results")
+    }
+
+    // ---------- story 49.14: AI mode's tab ----------
+
+    private fun aiBodies() = home.requests.filter { it.method == "POST" && it.url.encodedPath == "/api/search/ai" }
+        .map { Json.parseToJsonElement(it.body!!.utf8()).jsonObject }
+
+    private fun stream(body: String, firstBytes: Long? = null): MockResponse {
+        val b = MockResponse.Builder().code(200).setHeader("Content-Type", "text/event-stream").body(body)
+        // the sources at once, the sentences seconds later: what is shown before they come can be seen
+        if (firstBytes != null) b.throttleBody(firstBytes, 3, TimeUnit.SECONDS)
+        return b.build()
+    }
+
+    private fun answerAi(l: SearchFixtures.Lang = SearchFixtures.EN, slow: Boolean = false) {
+        val (passages, sentences) = if (l == SearchFixtures.AR) AiStreams.AR_PASSAGES to AiStreams.AR_SENTENCES else AiStreams.EN_PASSAGES to AiStreams.EN_SENTENCES
+        home.answer("/api/search/ai") { r ->
+            val q = SearchFixtures.body(r)["q"]!!.jsonPrimitive.content
+            val first = AiStreams.PING + AiStreams.sources(q, passages)
+            stream(AiStreams.answer(q, passages, sentences), if (slow) first.toByteArray().size.toLong() else null)
+        }
+    }
+
+    private fun openAi() {
+        compose.onNodeWithTag("tab-ai").performClick()
+        waitForTag("ai")
+    }
+
+    @Test
+    fun resultsIsTheDefaultAndAiModeAsksOnlyWhenOpened() {
+        answerAi()
+        open()
+        search("patience")
+        compose.onNodeWithTag("tab-results").assertIsSelected()
+        assertTrue("Results never asks AI mode", aiBodies().isEmpty())
+        openAi()
+        waitForTag("ai-sentence-1-1")
+        assertEquals(listOf("patience"), aiBodies().map { it["q"]!!.jsonPrimitive.content })
+        // back and forth on the same search asks nothing more
+        compose.onNodeWithTag("tab-results").performClick()
+        waitForTag("search-results")
+        openAi()
+        waitForTag("ai-sentence-1-1")
+        assertEquals(1, aiBodies().size)
+    }
+
+    @Test
+    fun aiModeShowsTheSourcesFirstThenEachSentence() {
+        answerAi(slow = true)
+        open()
+        search("patience")
+        openAi()
+        waitForTag("ai-passage-1-1")
+        compose.onNodeWithText("Passages read").assertIsDisplayed()
+        compose.onNodeWithTag("ai-passage-1-2").assertIsDisplayed()
+        assertTrue("no sentence before the sources", compose.onAllNodesWithTag("ai-sentence-1-0").fetchSemanticsNodes().isEmpty())
+        compose.onNodeWithText("Writing the answer…").assertIsDisplayed()
+        compose.settledUntil(15_000) { compose.onAllNodesWithTag("ai-sentence-1-1").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("Patience is half of faith.").assertIsDisplayed()
+        compose.onNodeWithText("Its reward comes without measure.").assertIsDisplayed()
+    }
+
+    @Test
+    fun aCitationOpensThePlayerAtItsMoment() {
+        answerAi()
+        open()
+        search("patience")
+        openAi()
+        waitForTag("ai-cite-1-1-2")
+        compose.onNode(hasContentDescription("Source 2, The Night Journey, play from 22:02")).assertExists()
+        compose.onNodeWithTag("ai-cite-1-1-2").performClick()
+        compose.onNodeWithText("watch v4 at 1322").assertIsDisplayed()
+    }
+
+    @Test
+    fun aFollowUpCarriesTheEarlierQuestionAndAnswer() {
+        answerAi()
+        open()
+        search("patience")
+        openAi()
+        waitForTag("ai-sentence-1-1")
+        compose.onNodeWithTag("ai-follow-up").performTextInput("and its reward?")
+        compose.onNodeWithTag("ai-follow-up").performImeAction()
+        compose.settledUntil(5_000) { aiBodies().size == 2 }
+        val follow = aiBodies().last()
+        assertEquals("and its reward?", follow["q"]!!.jsonPrimitive.content)
+        val turn = follow["history"]!!.jsonArray.single().jsonObject
+        assertEquals("patience", turn["q"]!!.jsonPrimitive.content)
+        assertEquals("Patience is half of faith. Its reward comes without measure.", turn["answer"]!!.jsonPrimitive.content)
+        waitForTag("ai-sentence-2-1")
+        compose.onNodeWithTag("ai-question-2").assertExists()
+    }
+
+    @Test
+    fun passagesThatDoNotAnswerSaySoAndStayShown() {
+        home.answer("/api/search/ai") { stream(AiStreams.noAnswer("patience", AiStreams.EN_PASSAGES)) }
+        open()
+        search("patience")
+        openAi()
+        waitFor("These passages do not answer the question.")
+        compose.onNodeWithTag("ai-passage-1-1").assertExists()
+    }
+
+    @Test
+    fun anErrorKeepsWhatWasShownAndSaysTheAnswerStopped() {
+        home.answer("/api/search/ai") {
+            stream(AiStreams.sources("patience", AiStreams.EN_PASSAGES) + AiStreams.text(AiStreams.EN_SENTENCES[0], AiStreams.EN_PASSAGES) + AiStreams.error("model-failed"))
+        }
+        open()
+        search("patience")
+        openAi()
+        waitFor("The answer stopped. What was written stands.")
+        compose.onNodeWithText("Patience is half of faith.").assertIsDisplayed()
+        compose.onNodeWithTag("ai-again").assertIsDisplayed()
+    }
+
+    @Test
+    fun noLanguageModelIsTheTabsMessageWithItsHelp() {
+        home.answer("/api/search/ai") { json(AiStreams.UNAVAILABLE, 409) }
+        open()
+        search("patience")
+        openAi()
+        waitForTag("ai-unavailable")
+        compose.onNodeWithText("AI mode is not set up").assertIsDisplayed()
+        compose.onNodeWithText("Settings → Rules → Tag check", substring = true).assertIsDisplayed()
+        compose.onNodeWithTag("ai-help").assertIsDisplayed()
+        // the results are where they were
+        compose.onNodeWithTag("tab-results").performClick()
+        waitForTag("search-results")
+    }
+
+    @Test
+    fun offBusyAndAnOlderHomeEachSayWhy() {
+        home.answer("/api/search/ai") { json(AiStreams.OFF, 409) }
+        open()
+        search("patience")
+        openAi()
+        waitFor("An admin turned AI mode off for this home.")
+        home.answer("/api/search/ai") { json(AiStreams.BUSY, 429) }
+        compose.onNodeWithTag("ai-follow-up").performTextInput("again")
+        compose.onNodeWithTag("ai-follow-up").performImeAction()
+        waitFor("AI mode is busy answering other questions. Ask again shortly.")
+        // a home before story 49.12: no such route
+        home.answer("/api/search/ai") { MockResponse.Builder().code(404).build() }
+        compose.onNodeWithTag("ai-follow-up").performTextInput("once more")
+        compose.onNodeWithTag("ai-follow-up").performImeAction()
+        waitFor("This home does not have AI mode yet.")
+    }
+
+    @Test
+    fun leavingTheTabStopsTheAnswer() {
+        answerAi(slow = true)
+        open()
+        search("patience")
+        openAi()
+        waitForTag("ai-passage-1-1")
+        compose.onNodeWithTag("tab-results").performClick()
+        waitForTag("search-results")
+        openAi()
+        waitFor("The answer stopped. What was written stands.")
+        assertTrue(compose.onAllNodesWithTag("ai-sentence-1-0").fetchSemanticsNodes().isEmpty())
+        assertEquals(1, aiBodies().size)
+    }
+
+    @Test
+    @Config(qualifiers = "ar-w411dp-h891dp")
+    fun aiModeIsInArabic() {
+        val l = SearchFixtures.AR
+        answerAi(l)
+        open(l)
+        search(l.query)
+        compose.onNodeWithText("وضع الذكاء الاصطناعي").performClick()
+        waitForTag("ai-sentence-1-1")
+        assertEquals(l.query, aiBodies().single()["q"]!!.jsonPrimitive.content)
+        compose.onNodeWithText("الصبر نصف الإيمان.").assertIsDisplayed()
+        compose.onNodeWithText("المقاطع المقروءة").assertIsDisplayed()
+        // TalkBack reads each citation's video and moment (the digits are the locale's)
+        compose.onNode(hasTestTag("ai-cite-1-0-1") and hasContentDescription("، الإسراء والمعراج، تشغيل من ", substring = true)).assertExists()
     }
 }
