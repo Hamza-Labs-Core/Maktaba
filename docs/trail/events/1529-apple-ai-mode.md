@@ -61,6 +61,15 @@ prs: [1529]
     the field is there. Asking a follow-up on the TV has no UI test.
   - New question disappeared after a refusal.
   - The 401 renew-and-retry path and the timeout line had no tests; both do now.
+- The last head's CI (run 45156256805) needed three attempts. Each failed shard was a UI
+  timeout and passed on a re-run:
+  - `PlayerDemoShots.testFilm` and a `PlayerParentalUITests` test: "Timed out while
+    evaluating UI query".
+  - `PlayerSearchUITests.testFacetsNarrowCombineAndAreTakenOff` (iPad), then
+    `testNewWordsDropTheFiltersAndKeepTheOrder` (iPhone): "the results after Return never
+    went idle", each in a different attempt. The PR adds nothing that animates in the Results
+    tab, and both passed on their re-runs. If this check fails again on main, look for a
+    screen that keeps redrawing (Trail #1418).
 
 ## What we learned
 - `URLSession.AsyncBytes.lines` drops empty lines. Server-Sent Events end each event with an
