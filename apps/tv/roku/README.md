@@ -64,6 +64,10 @@ blank cards that never take the focus.
 - the player's logic (58.13 T01–T03): `tests/player_test.brs`, the capability report against
   58.02's vectors and Arabic cues against 58.15's (`tests/player.test.mjs`);
 - the build (T02): `tests/build.test.mjs`, also running the device-test package;
+- Search's help (Epic 49 story 49.11, `source/search.brs`): `tests/search_test.brs`, the
+  request bodies from the order and the facet choices, the suggestion kinds, did-you-mean and
+  the facets, an older home's answer without them, and the lines in English and Arabic; the
+  screen in T07 of `tests/screens.test.mjs`;
 - the screens (T03): `tests/screens.test.mjs` builds a test package (`--test`) pointed at
   `tests/mockhome.mjs` (a mock home with 80 videos, a series, collections and a playlist, and a
   mock cloud that approves a code), runs it on brs-node's SceneGraph with ECP, sends keys,

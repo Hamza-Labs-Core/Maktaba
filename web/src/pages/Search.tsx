@@ -102,6 +102,8 @@ import {
   rememberSizes,
   renderSnippet,
   requestFilters,
+  facetsOf,
+  didYouMeanOf,
   savedOf,
   searchParamsOf,
   selCount,
@@ -580,11 +582,8 @@ export function Search() {
           // the order the home answered in is the one shown as chosen
           sort: urlSort(res?.sort ?? ask.sort),
           sel: ask.sel,
-          facets: res?.facets && typeof res.facets === "object" ? res.facets : null,
-          didYouMean:
-            typeof res?.did_you_mean === "string" && res.did_you_mean.trim() !== query
-              ? res.did_you_mean.trim()
-              : "",
+          facets: facetsOf(res),
+          didYouMean: didYouMeanOf(res, query),
         };
         // Without a sid (an admin token) there is nothing to page.
         const vPage = s.sid ? Math.min(want.vp, pageCount(s.titlesTotal, s.pageSize)) : 1;

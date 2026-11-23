@@ -7,6 +7,7 @@
     <field id="options" type="array" onChange="onOptions" />
     <field id="selected" type="integer" value="0" />
     <field id="choice" type="integer" alwaysNotify="true" />
+    <field id="at" type="integer" value="0" />
   </interface>
   <script type="text/brightscript" uri="ChoiceDialog.brs" />
   <script type="text/brightscript" uri="pkg:/components/common.brs" />

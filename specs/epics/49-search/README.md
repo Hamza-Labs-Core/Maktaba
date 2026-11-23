@@ -1037,7 +1037,11 @@ and a search opened by its sid alone shows its facets.
 
 ### 49.11 Apple and Android apps, TV, big screen
 
-Each client has its own part; the parts not listed here are not built yet.
+Each client consumes story 49.8's API as the web's Search page does (49.10): the same request
+bodies, the same reading of `suggest`'s `items` (a home before 49.8 sends plain texts, listed
+without a kind) and the same tolerance of an answer without `facets`, `did_you_mean` or `sort`.
+
+Each client has its own part below; with all of them built, 49.11 is done.
 
 #### Apple: the Player (iPhone, iPad, Mac) and the Apple TV
 
@@ -1129,8 +1133,6 @@ types and words (`SearchHelp.swift`). The behaviour and the words follow the web
     TV's video page has no start time to open at.
   - A recent search runs as new words: the recent list carries no order or filters, so
     the filters on screen are not applied to another query.
-  - The web big screen (`apps/tv/web`) and Roku are the other parts of 49.11; the Android
-    and desktop parts are below.
 
 #### Android Player, Android TV, and the Player for Windows and Linux
 
@@ -1216,4 +1218,90 @@ The three Kotlin clients read story 49.8's API through the apps' portable client
     (`tools/ci/firetv-journey.sh`) and drives the order, Filters and a library's chip with D-pad
     key events;
   - the desktop: `SearchModelTest` and `SearchScreenTest` (off screen), in English and Arabic.
-- **Left for 49.11:** the web big screen (`apps/tv/web`) and Roku.
+
+#### Big screen (web `/big`, and `/tv/` on Samsung and LG)
+
+The big screen's Search (`web/src/bigscreen/screens/Search.tsx`) keeps its screen keyboard and
+its two result rows and adds 49.8's help. The TV launchers (`apps/tv/web`) host the home's `/tv/`
+and have no search screen of their own, so this is Samsung's and LG's too.
+
+- **Reuse.** The suggestion parsing, the kinds' icons, Did you mean, the bucket names
+  (`Intl.DisplayNames` for a language, the bands' words), the facet groups and the filters in use
+  come from the web's `searchHelp.tsx` (`facetGroups` and `activeChips` were taken out of
+  `FacetPanel` and `ActiveFilters` for it); the selection, its URL parameters, the request
+  filters, `facetsOf` and `didYouMeanOf` from `searchShared.tsx`. `bigscreen/screens/searchAsk.ts`
+  builds the body (`bigSearchBody`) and the URL (`bigSearchParams`) from them.
+- **Suggestions** are a list under the keyboard, from the first letter (on a remote every key
+  saved counts; the search itself still waits for two), 200 ms after a key, at most six, each a
+  D-pad stop (`sg:<i>`, one focus group) with its kind's icon and word. A title opens its video;
+  any other choice becomes the text and is searched; the list stays hidden for the chosen words,
+  and for the words in the URL on coming back, until the next key. A sequence guard drops a
+  slower, older answer.
+- **Did you mean** is a row above the results whose corrected words are a button (the web's
+  `DidYouMean` with the big screen's classes and focus id); it searches them with the same order
+  and filters.
+- **The order** is a row of chips (Relevance, Newest, Most matches, `aria-pressed`) with
+  **Filters** at its end, shown when the answer has facets or a filter is on. Filters opens a
+  side panel (`Panel`, a focus layer: Back closes it and focus returns to Filters) of chip groups
+  with counts; a chip toggles at once and the panel stays open, so several combine, a second year
+  or band replacing the first. A chosen bucket the narrowed answer no longer lists stays, pressed
+  and without a count.
+- **The filters in use** are a row of chips under the order, "Facet: value", each removing its
+  filter, then **Clear all filters**. Focus moves to Filters (or the order) when the chip it was
+  on goes. In the panel, a chip taken off keeps the focus while it is listed; when it goes (a
+  chosen bucket the narrowed answer had dropped, or Clear all) the panel's first chip takes it,
+  and a panel left with nothing to show closes, focus going to the order.
+- **State.** The URL carries the order and filters beside `q`, with the desk's parameters (`sort`,
+  `lib`, `lang`, `spk`, `year`, `dur`), replaced rather than pushed, as typing is; Back from a
+  result comes back to the same search. New words drop the filters and keep the order; the same
+  words with another order or filter run at once, new words after typing stops (600 ms).
+  Relevance and no filters send the body a home before 49.8 reads.
+- **Accessibility.** The panel is a `div` with `role="dialog"` (it was an `aside`, which axe's
+  `aria-allowed-role` refuses; the player's panels change with it).
+- **Proof:** `web/src/bigscreen/BigSearch.test.tsx` (the kinds, a word searched and a title
+  opened, an older home's plain texts, did-you-mean with the order and filters kept, each request
+  body from the order and facet chips, removal and Clear all, new words, an older home's answer,
+  the panel's focus when a chip goes and when the panel empties, Back from a video asking the
+  same order and filters again, six suggestions at most, Arabic, axe in English and Arabic with
+  the panel open and with the suggestions shown);
+  `searchAsk.test.ts` (bodies, URL, parsing, a dropped bucket); `web/e2e/tv/tv.ui.spec.ts`
+  "Search … (49.11)" on the `/tv/` build in Chromium, D-pad only, in both languages, with each
+  request body checked and screenshots.
+- **Open:** axe's `aria-allowed-role` on the result tiles (a `button` with `role="listitem"`),
+  which every big-screen row shares (`ui.tsx` `VideoTile`); the test sets it aside.
+
+#### Roku
+
+`apps/tv/roku/components/screens/SearchScreen` now asks `POST /api/search` (the web's call,
+mode hybrid) in place of `GET /api/videos?q=`, and lists the videos found by title, then those
+found in transcripts, each once. The logic is in `source/search.brs`, apart from the screen.
+
+- **Suggestions** are a LabelList under the MiniKeyboard, 200 ms after a key, at most six, each
+  line its text and its kind's word ("patience · Word"), shaped right to left in Arabic through
+  the catalogs' templates; Down from the keyboard's last row reaches them. OK on a title opens
+  its video screen; any other is typed into the keyboard and searched, and the list stays hidden
+  until the next key.
+- **Did you mean** is a button at the top of the results' column ("Did you mean harbour?"); OK
+  searches the corrected words with the order and filters kept.
+- **The order and Filters** are a row of buttons under it: Relevance, Newest, Most matches (the
+  chosen one marked ✓ at the reading start) and **Filters**, with the count in use. Filters opens
+  the ChoiceDialog as a sheet: **Clear all filters** while any is on, then each facet's buckets,
+  "Library: Films and series · 4", a chosen one marked ✓; OK toggles a bucket and the sheet stays
+  open on that bucket's row, so several combine; Back closes it. A chosen bucket the narrowed
+  answer dropped stays, without a count. An answer that comes while the sheet is open rebuilds
+  it on the row the remote is on (ChoiceDialog's `at`). A language is named from the catalog
+  (eight languages, else its code), a band in words.
+- **Focus.** Right from the keyboard's edge (Left in Arabic, where the screen is mirrored) or
+  from the suggestions goes to the column's first part; Up and Down move between Did you mean,
+  the order and the results; Left from the column's start, or Back, returns to the keyboard; Back
+  from the keyboard leaves. A part that goes away takes the focus to the column's first part.
+- **New words** drop the filters and keep the order; emptying the box starts afresh, so the same
+  words typed again are new words too.
+- **Proof:** `tests/search_test.brs` on brs-engine (64 checks: the bodies, toggling, the kinds
+  and six at most, parsing and an older home's answer, the facet rows, the lines in English and
+  Arabic), also run
+  in the device-test package; `tests/screens.test.mjs` T07 against the mock home, which now
+  answers `POST /api/search` and `GET /api/search/suggest`: the plain body, a word suggestion
+  searched, Did you mean run, Newest sent, three filters combined with the year's own filter,
+  Clear all, new words dropping the filters, a title opening its video, and the screen in Arabic,
+  with screenshots in both languages.

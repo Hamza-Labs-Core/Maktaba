@@ -1,5 +1,5 @@
 ' A list to choose from (story 58.13). options are visual strings; choice is the index chosen,
-' or -1 for Back.
+' or -1 for Back; at is the row the remote is on.
 
 sub init()
     ui_Init()
@@ -9,11 +9,17 @@ sub init()
     ui_List(m.list)
     ui_Mirror(["panel", "title", "list"])
     m.list.ObserveField("itemSelected", "onSelected")
+    m.list.ObserveField("itemFocused", "onItemFocused")
     m.top.ObserveField("focusedChild", "onFocus")
 end sub
 
 sub onFocus()
     if m.top.HasFocus() then m.list.SetFocus(true)
+end sub
+
+sub onItemFocused()
+    m.top.at = m.list.itemFocused
+    if m.top.visible then print "[focus] choice "; m.list.itemFocused
 end sub
 
 sub onTitle()

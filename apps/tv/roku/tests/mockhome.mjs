@@ -232,6 +232,54 @@ export function startHome(log, tls) {
     if (p === "/api/libraries") return json(res, 200, { items: [{ id: LIB, name: "Films and series" }, { id: uuid(901), name: "محاضرات" }] });
     if (p === `/api/libraries/${LIB}/hub`) return json(res, 200, { library: { id: LIB, name: "Films and series" }, rows: { continue_watching: videos.slice(0, 8).filter((v) => v.position_sec).map(card), recently_added: videos.slice(10, 22).map(card), on_deck: [], recently_watched: videos.slice(30, 38).map(card) } });
     if (p === "/api/videos/facets") return json(res, 200, { letters: [{ letter: "ر", videos: 3 }, { letter: "ح", videos: 2 }, { letter: "A", videos: 1 }, { letter: "N", videos: 2 }, { letter: "R", videos: 4 }, { letter: "T", videos: 4 }] });
+    // story 49.11: search with story 49.8's help: suggestions with their kinds, did-you-mean
+    // for "harbor", the order, and facets counted over the videos found
+    if (p === "/api/search/suggest") {
+      const river = videos.find((v) => v.title === "River of Stars");
+      return json(res, 200, {
+        suggestions: ["river", "harbor", "River of Stars", "Rania"],
+        items: [
+          { text: "river", kind: "history" },
+          { text: "harbor", kind: "term" },
+          { text: "River of Stars", kind: "title", video_id: river.id },
+          { text: "Rania", kind: "speaker" },
+        ],
+      });
+    }
+    if (p === "/api/search" && req.method === "POST") {
+      log(`home search ${JSON.stringify(body)}`);
+      const q = String(body.q || "").toLowerCase();
+      const lang = (v) => (/[\u0600-\u06ff]/.test(v.title) ? "ar" : "en");
+      const f = body.filters || {};
+      let list = videos.filter((v) => v.title.toLowerCase().includes(q));
+      if (f.language) list = list.filter((v) => f.language.includes(lang(v)));
+      if (f.duration_sec?.gte >= 3600) list = list.filter((v) => v.duration_sec >= 3600);
+      if (body.sort === "newest") list = list.slice().reverse();
+      const count = (pred) => list.filter(pred).length;
+      const facets = {
+        library: list.length ? [{ value: LIB, label: "Films and series", count: list.length }] : [],
+        language: ["ar", "en"].map((l) => ({ value: l, count: count((v) => lang(v) === l) })).filter((b) => b.count),
+        speaker: list.length ? [{ value: "Rania", count: Math.min(2, list.length) }] : [],
+        year: list.length ? [{ value: "2024", count: list.length, filter: { date: { gte: "2024-01-01T00:00:00.000Z", lt: "2025-01-01T00:00:00.000Z" } } }] : [],
+        duration: [
+          { value: "20m_60m", count: count((v) => v.duration_sec < 3600) },
+          { value: "over_60m", count: count((v) => v.duration_sec >= 3600) },
+        ].filter((b) => b.count),
+        videos: list.length,
+      };
+      return json(res, 200, {
+        search_id: "s1",
+        q: body.q,
+        mode: "hybrid",
+        sort: body.sort || "relevance",
+        videos: list.slice(0, 24).map((v) => ({ video_id: v.id, title: v.title, duration_sec: v.duration_sec, library_id: v.library_id })),
+        videos_total: list.length,
+        transcript_videos: [],
+        transcript_total: 0,
+        facets,
+        ...(q === "harbor" ? { did_you_mean: "harbour" } : {}),
+      });
+    }
     if (p === "/api/videos") {
       let list = videos.slice();
       const q = url.searchParams.get("q");

@@ -272,6 +272,30 @@
         <translation>No results.</translation>
     </message>
     <message>
+        <source>search.sort.relevance</source>
+        <translation>Relevance</translation>
+    </message>
+    <message>
+        <source>search.sort.newest</source>
+        <translation>Newest</translation>
+    </message>
+    <message>
+        <source>search.sort.matches</source>
+        <translation>Most matches</translation>
+    </message>
+    <message>
+        <source>search.filters</source>
+        <translation>Filters</translation>
+    </message>
+    <message>
+        <source>search.filters.title</source>
+        <translation>Narrow the results</translation>
+    </message>
+    <message>
+        <source>search.filters.clear</source>
+        <translation>Clear all filters</translation>
+    </message>
+    <message>
         <source>player.error</source>
         <translation>This video cannot play right now.</translation>
     </message>

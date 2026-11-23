@@ -168,6 +168,94 @@ function videos(url: URL) {
   return { items, next: null, total: items.length };
 }
 
+const isArabic = (q: string) => /[\u0600-\u06ff]/.test(q);
+
+/**
+ * Story 49.11: a search's answer with story 49.8's help: titles and a transcript match, the
+ * facets (a year and a band with their filters), and Did you mean while no filter is on.
+ */
+function searchAnswer(body: Record<string, unknown>) {
+  const q = String(body.q ?? "");
+  const ar = isArabic(q);
+  const filtered = body.filters !== undefined;
+  const found = filtered ? VIDEOS.slice(2, 5) : VIDEOS.slice(0, 8);
+  const dym = ar ? "الصبر" : "patience";
+  return {
+    search_id: "s1",
+    q,
+    mode: "hybrid",
+    sort: body.sort ?? "relevance",
+    videos: found.map((v) => ({ video_id: v.id, title: v.title, duration_sec: v.duration_sec })),
+    videos_total: found.length,
+    transcript_videos: [
+      {
+        video_id: "v3",
+        title: "Patience and Gratitude",
+        matches: 2,
+        passages: [
+          {
+            segment_id: 1,
+            start_sec: 312,
+            end_sec: 318,
+            snippet: ar ? "و<mark>الصبر</mark> عند الشدة" : "and <mark>patience</mark> in hardship",
+          },
+        ],
+      },
+    ],
+    transcript_total: 1,
+    facets: {
+      library: [
+        { value: "L1", label: "Tafsir", count: filtered ? 3 : 6 },
+        ...(filtered ? [] : [{ value: "L2", label: "Hadith", count: 2 }]),
+      ],
+      language: [
+        { value: "ar", count: 5 },
+        { value: "en", count: 3 },
+      ],
+      speaker: [
+        { value: ar ? "أحمد" : "Ahmad", count: 4 },
+        { value: ar ? "مريم" : "Maryam", count: 2 },
+      ],
+      year: [
+        {
+          value: "2025",
+          count: 6,
+          filter: { date: { gte: "2025-01-01T00:00:00.000Z", lt: "2026-01-01T00:00:00.000Z" } },
+        },
+        {
+          value: "2024",
+          count: 2,
+          filter: { date: { gte: "2024-01-01T00:00:00.000Z", lt: "2025-01-01T00:00:00.000Z" } },
+        },
+      ],
+      duration: [
+        { value: "20m_60m", count: 7, filter: { duration_sec: { gte: 1200, lt: 3600 } } },
+        { value: "over_60m", count: 1, filter: { duration_sec: { gte: 3600 } } },
+      ],
+      videos: found.length,
+    },
+    ...(filtered || q === dym ? {} : { did_you_mean: dym }),
+  };
+}
+
+/** Story 49.11: suggestions of each kind, in the query's script. */
+function suggestAnswer(q: string) {
+  const items = isArabic(q)
+    ? [
+        { text: "الصبر عند الشدة", kind: "history" },
+        { text: "الصبر", kind: "term" },
+        { text: "Stories of the Prophets", kind: "title", video_id: "v4" },
+        { text: "أحمد", kind: "speaker" },
+      ]
+    : [
+        { text: "patience in hardship", kind: "history" },
+        { text: "patience", kind: "term" },
+        { text: "Patience and Gratitude", kind: "title", video_id: "v3" },
+        { text: "Ahmad", kind: "speaker" },
+      ];
+  return { suggestions: items.map((i) => i.text), items };
+}
+
 export interface MockHome {
   /** GETs no table answered */
   unknown: string[];
@@ -175,6 +263,8 @@ export interface MockHome {
   calls: string[];
   /** the bodies of the parental requests the TV sent (story 58.14) */
   asked: unknown[];
+  /** the bodies of POST /api/search (story 49.11) */
+  searches: Record<string, unknown>[];
 }
 
 export interface MockOptions {
@@ -189,7 +279,7 @@ export interface MockOptions {
 const MISSING = { type: "about:blank", title: "not found", status: 404, detail: "not found" };
 
 export async function mockHome(page: Page, opts: MockOptions = {}): Promise<MockHome> {
-  const home: MockHome = { unknown: [], calls: [], asked: [] };
+  const home: MockHome = { unknown: [], calls: [], asked: [], searches: [] };
   const requests: Record<string, unknown>[] = [];
   const renamed = (text: string) =>
     Object.entries(opts.rename ?? {}).reduce(
@@ -229,6 +319,13 @@ export async function mockHome(page: Page, opts: MockOptions = {}): Promise<Mock
           body: JSON.stringify(MISSING),
         });
     }
+    if (url.pathname === "/api/search" && req.method() === "POST") {
+      const body = req.postDataJSON() as Record<string, unknown>;
+      home.searches.push(body);
+      return json(route, 200, searchAnswer(body));
+    }
+    if (url.pathname === "/api/search/suggest")
+      return json(route, 200, suggestAnswer(url.searchParams.get("q") ?? ""));
     if (req.method() !== "GET") return json(route, 200, {});
     if (/\/poster$|\/thumbnail$|\/art\b/.test(url.pathname))
       return route.fulfill({

@@ -95,7 +95,8 @@ const ICON_PATHS: Record<SuggestKind | "plain", ReactNode> = {
   ),
 };
 
-function KindIcon({ kind }: { kind?: SuggestKind }) {
+/** A suggestion kind's icon (a plain search for a home that sends no kind). */
+export function KindIcon({ kind }: { kind?: SuggestKind }) {
   return (
     <svg
       className="mkt-suggest__icon"
@@ -259,14 +260,34 @@ export function SuggestBox({
 }
 
 /** "Did you mean <corrected>?", the corrected query a button that runs it. */
-export function DidYouMean({ text, onRun }: { text: string; onRun: (q: string) => void }) {
+export function DidYouMean({
+  text,
+  onRun,
+  className = "mkt-search__dym",
+  buttonClassName = "mkt-link-btn mkt-search__dym-q",
+  focusId,
+  testId = "did-you-mean",
+}: {
+  text: string;
+  onRun: (q: string) => void;
+  /** The big screen's own classes, its focus id and test id. */
+  className?: string;
+  buttonClassName?: string;
+  focusId?: string;
+  testId?: string;
+}) {
   const { t } = useI18n();
   // the template's {q} is where the button goes, so each language orders it its own way
   const [before, after = ""] = t("search.dym").split("{q}");
   return (
-    <p className="mkt-search__dym" role="status" data-testid="did-you-mean">
+    <p className={className} role="status" data-testid={testId}>
       {before}
-      <button type="button" className="mkt-link-btn mkt-search__dym-q" onClick={() => onRun(text)}>
+      <button
+        type="button"
+        className={buttonClassName}
+        data-bs-focus={focusId}
+        onClick={() => onRun(text)}
+      >
         <bdi>{text}</bdi>
       </button>
       {after}
@@ -324,6 +345,39 @@ function durationLabel(
 }
 
 /**
+ * The facets to show, in their order, each with its buckets: a chosen bucket that the
+ * narrowed answer no longer lists comes first, with no count (-1), so it can be taken off
+ * where it was put on. A facet with no bucket is left out.
+ */
+export function facetGroups(
+  facets: Facets | null | undefined,
+  sel: FacetSel
+): Array<{ facet: FacetName; buckets: Bucket[] }> {
+  return FACETS.map((facet) => {
+    const buckets: Bucket[] = listOf(facets?.[facet]).filter(
+      (b) => b && typeof b.value === "string" && b.value !== ""
+    );
+    const chosen =
+      facet === "year" || facet === "duration" ? (sel[facet] ? [sel[facet]!] : []) : sel[facet];
+    for (const v of chosen)
+      if (!buckets.some((b) => b.value === v)) buckets.unshift({ value: v, count: -1 });
+    return { facet, buckets };
+  }).filter((g) => g.buckets.length > 0);
+}
+
+/** The filters in use, one per chosen bucket, in the facets' order. */
+export function activeChips(sel: FacetSel): Array<{ facet: FacetName; value: string }> {
+  const chips: Array<{ facet: FacetName; value: string }> = [];
+  for (const facet of FACETS) {
+    if (facet === "year" || facet === "duration") {
+      const v = sel[facet];
+      if (v) chips.push({ facet, value: v });
+    } else for (const value of sel[facet]) chips.push({ facet, value });
+  }
+  return chips;
+}
+
+/**
  * The facets of a search, a group of toggle chips each, with each bucket's count. A chosen
  * bucket that the narrowed facets no longer list is still shown, pressed, so it can be
  * taken off where it was put on.
@@ -343,16 +397,7 @@ export function FacetPanel({
   const { t, n } = useI18n();
   const name = useBucketLabel();
   const baseId = useId();
-  const groups = FACETS.map((facet) => {
-    const buckets: Bucket[] = listOf(facets[facet]).filter(
-      (b) => b && typeof b.value === "string" && b.value !== ""
-    );
-    const chosen =
-      facet === "year" || facet === "duration" ? (sel[facet] ? [sel[facet]!] : []) : sel[facet];
-    for (const v of chosen)
-      if (!buckets.some((b) => b.value === v)) buckets.unshift({ value: v, count: -1 });
-    return { facet, buckets };
-  }).filter((g) => g.buckets.length > 0);
+  const groups = facetGroups(facets, sel);
   if (groups.length === 0) return null;
   return (
     <section className="mkt-facets" aria-label={t("search.facets")} data-testid="facets">
@@ -415,13 +460,7 @@ export function ActiveFilters({
   const { t } = useI18n();
   const name = useBucketLabel();
   if (selCount(sel) === 0) return null;
-  const chips: Array<{ facet: FacetName; value: string }> = [];
-  for (const facet of FACETS) {
-    if (facet === "year" || facet === "duration") {
-      const v = sel[facet];
-      if (v) chips.push({ facet, value: v });
-    } else for (const value of sel[facet]) chips.push({ facet, value });
-  }
+  const chips = activeChips(sel);
   return (
     <div className="mkt-active-filters" role="group" aria-label={t("search.filters.active")}>
       <ul className="mkt-active-filters__list">

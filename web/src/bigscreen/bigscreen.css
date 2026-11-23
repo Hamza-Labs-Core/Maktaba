@@ -598,6 +598,104 @@
   margin-block-start: 0;
 }
 
+/* story 49.11: suggestions under the keyboard, did you mean, the order and the filters */
+.bs-suggest {
+  margin-block-start: calc(var(--bs-gap) * 1.2);
+}
+.bs-suggest__title {
+  font-size: var(--bs-small);
+  color: var(--bs-muted);
+  font-weight: 600;
+  margin: 0 0 calc(var(--bs-gap) * 0.4);
+}
+.bs-suggest__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: calc(var(--bs-gap) * 0.3);
+}
+.bs-suggest__item {
+  display: flex;
+  align-items: center;
+  gap: 0.7em;
+  inline-size: 100%;
+  font: inherit;
+  color: inherit;
+  text-align: start;
+  background: rgba(19, 29, 46, 0.78);
+  border: 2px solid transparent;
+  border-radius: var(--bs-radius);
+  padding: 0.4em 0.9em;
+  cursor: pointer;
+}
+.bs-suggest__item:focus {
+  border-color: var(--bs-gold);
+  background: rgba(27, 38, 56, 0.95);
+}
+.bs-suggest__item svg {
+  inline-size: 1em;
+  block-size: 1em;
+  flex: none;
+  color: var(--bs-muted);
+}
+.bs-suggest__item[data-kind="history"] svg,
+.bs-suggest__item[data-kind="title"] svg {
+  color: var(--bs-gold);
+}
+.bs-suggest__text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bs-suggest__kind {
+  color: var(--bs-muted);
+  font-size: var(--bs-small);
+  white-space: nowrap;
+}
+.bs-dym {
+  margin: 0 0 var(--bs-gap);
+  font-size: var(--bs-row-title);
+}
+.bs-dym__q {
+  margin-inline: 0.3em 0.1em;
+  font-weight: 600;
+  color: var(--bs-gold);
+}
+.bs-refine {
+  margin-block-end: var(--bs-gap);
+}
+.bs-refine .bs-chips {
+  margin-block: 0 calc(var(--bs-gap) * 0.6);
+  align-items: center;
+}
+.bs-refine__label {
+  color: var(--bs-muted);
+  font-size: var(--bs-small);
+}
+.bs-refine__filters {
+  margin-inline-start: var(--bs-gap);
+}
+.bs-refine__n,
+.bs-facet__count {
+  margin-inline-start: 0.5em;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.8;
+}
+.bs-facet .bs-chips {
+  margin-block: calc(var(--bs-gap) * 0.4) var(--bs-gap);
+}
+.bs-sr {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 /* states */
 .bs-state {
   display: grid;

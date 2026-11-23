@@ -83,7 +83,7 @@ async function images(STAGE) {
 }
 
 /** The logic tests that run on a device, in the order they run. */
-export const DEVICE_TESTS = ["channel", "layout", "i18n", "player", "timing"];
+export const DEVICE_TESTS = ["channel", "layout", "i18n", "player", "timing", "search"];
 
 /** Puts the logic tests in the staged source, with a Main that runs them in turn. */
 function deviceTests(STAGE) {
