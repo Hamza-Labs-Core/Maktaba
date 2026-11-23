@@ -43,6 +43,12 @@ prs: [1550]
   the second page was still loading, wrapped focus to 0, so eleven Downs ended at 30, not 66.
   A real Roku wraps the same way. T04 then failed because it assumes T03 left the channel in
   Arabic. The grid is now `fixedFocus`, and the test waits for the second page at row 30.
+- **#1550's own runs.** 45255897736 (9b54b8c23): Roku, TV, Remote and Mac green; 12 of 14
+  Player UI shards green. 45264580791 (8584a08d7): 13 of 14 Player UI shards green on attempt 1.
+  The Apple apps job hit MaktabaKit's `WalkthroughModel` timing and passed on attempt 2;
+  iPhone 2/6 hung on "Failed to terminate" twice and passed on attempt 3. Every failure was in
+  a class under Open. None of the fixed causes came back: no PIN race, no query, idle or audit
+  timeout, and no Roku grid failure. Before, Roku's T03 had failed 3 of main's last 4 runs.
 - **iPad 1/6 of 45199851694:** all 34 tests passed, then the results upload failed with
   `ENOTFOUND` from the artifact service. That upload continues on error now.
 
@@ -60,6 +66,10 @@ prs: [1550]
   or `floatingFocus`.
 - `exists` followed by a property read is two queries. Read a snapshot when the element can
   go away in between.
+
+- Two runs of #1550 are not enough to call main reliably green. The causes fixed here were
+  10 of the 12 Player UI failures on main and every Roku one. What is left fails about one
+  Player UI shard in ten, each a class under Open.
 
 ## Keep doing
 - Survey every run's failed jobs and group them by message before fixing any one test.
@@ -80,7 +90,13 @@ prs: [1550]
 - **"Failed to terminate"** after a test (iPad 3/6 of 45189795489, `testShimmer`; iPhone 2/6 of
   45264580791, `PlayerCastUITests.testCastThenBackgroundThenResumeInArabic`). In the second,
   the app exited on SIGTERM 2.5 minutes after XCTest asked, and the runner then hung in its
-  next tearDown until the job's 60-minute timeout cancelled it.
+  next tearDown until the job's 60-minute timeout cancelled it. That happened twice on #1550,
+  on the same test, which is also the shard's first. The app was not hung: it served its
+  stream proxy for 1.5 minutes after the request, and RunningBoard logged no termination
+  request until it was killed. A diagnostic PR (#1553, closed unmerged; run 45285918070) ran
+  the test alone 3 times on each of 6 fresh iPhone simulators. It passed 9 of 9 with
+  `ConsoleHook` and 9 of 9 without, so the hook does not reliably cause it. With the hook the
+  test hung 2 times in 12 runs, and it passed in every main run surveyed.
 - **The accessibility audit's "Text clipped"** on texts drawn in full: the Arabic Refine bar
   (`testDidYouMeanRunsTheCorrectedWordsInArabic`, iPhone 2/6 of 45255897736; its screenshot
   shows both labels whole), and AI mode's source times (iPhone 5/6 of 45238693973).
