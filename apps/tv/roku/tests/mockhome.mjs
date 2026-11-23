@@ -246,6 +246,52 @@ export function startHome(log, tls) {
         ],
       });
     }
+    // story 49.14: AI mode (the API of story 49.12) as Server-Sent Events: the line, the
+    // passages, two cited sentences, done; a follow-up (history) answers the follow-up;
+    // state.ai "unavailable" answers 409 ai-unavailable, "off" 409 ai-off, "busy" 429,
+    // "noanswer" the passages and answered false; state.aiLang "ar" answers in Arabic
+    if (p === "/api/search/ai" && req.method === "POST") {
+      log(`home ai ${JSON.stringify(body)}`);
+      const mode = state.ai || "ok";
+      const problem = (status, code, extra = {}) => json(res, status, { type: code, title: code, status, detail: code, instance: p, requestId: "req-test", code, ...extra });
+      if (mode === "unavailable") return problem(409, "ai-unavailable", { help: { settings: "/settings/rules/tags", help: "/help/search#ai-mode" } });
+      if (mode === "off") return problem(409, "ai-off");
+      if (mode === "busy") {
+        res.setHeader("Retry-After", "30");
+        return problem(429, "ai-busy", { position: 9 });
+      }
+      const ar = state.aiLang === "ar";
+      const pick = [videos[3], videos[7], videos[12]];
+      const words = ar ? ["الصبر ثلاثة أنواع", "الشكر نصف الإيمان", "الأمل"] : ["Patience is of three kinds.", "Gratitude goes with patience.", "Hope at dawn."];
+      const passages = pick.map((v, i) => ({ n: i + 1, video_id: v.id, title: v.title, library_id: LIB, library_name: "Films and series", poster_url: `/api/videos/${v.id}/poster`, segment_id: i + 1, start_sec: 60 * (i + 1) + 15, end_sec: 60 * (i + 1) + 25, text: words[i] }));
+      const cite = (n) => ({ n, video_id: passages[n - 1].video_id, start_sec: passages[n - 1].start_sec, end_sec: passages[n - 1].end_sec, quote: passages[n - 1].text });
+      const follow = Array.isArray(body.history) && body.history.length > 0;
+      const sentences = ar
+        ? follow
+          ? [{ text: "والشكر يصحب الصبر.", citations: [cite(2)] }]
+          : [{ text: "للصبر ثلاثة أنواع.", citations: [cite(1)] }, { text: "والشكر نصف الإيمان.", citations: [cite(2), cite(1)] }]
+        : follow
+          ? [{ text: "Gratitude goes with it.", citations: [cite(2)] }]
+          : [{ text: "Patience is of three kinds.", citations: [cite(1)] }, { text: "Gratitude goes with patience.", citations: [cite(2), cite(1)] }];
+      res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" });
+      const send = (event, data) => res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+      const pause = (ms) => new Promise((r) => setTimeout(r, ms));
+      res.write(": ping\n\n");
+      send("queue", { position: 1 });
+      await pause(100);
+      send("sources", { q: body.q, passages });
+      await pause(100);
+      if (mode === "noanswer") {
+        send("done", { answered: false, reason: "not-in-passages", sentences: 0, dropped: 1, took_ms: 300 });
+        return res.end();
+      }
+      for (const t of sentences) {
+        send("text", t);
+        await pause(50);
+      }
+      send("done", { answered: true, sentences: sentences.length, dropped: 0, first_token_ms: 120, took_ms: 400, model: "test" });
+      return res.end();
+    }
     if (p === "/api/search" && req.method === "POST") {
       log(`home search ${JSON.stringify(body)}`);
       const q = String(body.q || "").toLowerCase();

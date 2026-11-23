@@ -3,6 +3,7 @@ sub init()
     m.top.backgroundURI = ""
     m.global.AddFields({lang: StoreLang(), session: {}})
     m.global.AddField("api", "node", false)
+    m.global.AddField("aiApi", "node", false)
     ui_Init()
     m.clock = CreateObject("roTimespan")
     m.stack = m.top.FindNode("stack")
@@ -24,6 +25,16 @@ sub init()
     api.ObserveField("tokens", "onTokens")
     m.global.api = api
     api.control = "RUN"
+    ' AI mode's answers (story 49.14) take their own Task: one is read for as long as the home
+    ' writes it, and the other calls must not wait behind it. SearchScreen runs it at its first
+    ' question, so a channel that never asks has no second Task waiting
+    ai = CreateObject("roSGNode", "ApiTask")
+    ai.timeoutMs = 300000
+    ai.follow = true
+    ai.ObserveField("signedOut", "onSignedOut")
+    ai.ObserveField("tooOld", "onTooOld")
+    ai.ObserveField("tokens", "onTokens")
+    m.global.aiApi = ai
 end sub
 
 ' The launch: a deep link waits for a home; the last home used opens at once when it still
@@ -166,6 +177,12 @@ end sub
 
 ' The stack: Reset leaves one screen, Push adds one, Pop goes back.
 sub scene_Reset(name as String, params as Object)
+    ' an AI mode answer still being read belongs to a Search that is going away: give it up,
+    ' so the home's one answer at a time is not held for no one (story 49.14)
+    ' only a Task that runs is told: a field set on one never started (no question asked)
+    ' is a write across threads for nothing, on every reset (a deep link included)
+    ai = m.global.aiApi
+    if ai <> invalid and LCase(ai.control) = "run" then ai.cancel = "*"
     m.confirm.visible = false
     while m.stack.GetChildCount() > 0
         m.stack.RemoveChildIndex(m.stack.GetChildCount() - 1)

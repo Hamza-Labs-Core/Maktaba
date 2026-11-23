@@ -66,6 +66,7 @@ It is a tab of its own: **Results** is the search as always, and **AI mode** sit
 - The home writes one answer at a time. Another person's question waits in line, and is told its place.
 - AI mode needs the home's language model (the model server under **Settings → Rules → Tag check**). An admin can turn AI mode off, and choose its model, under **Settings → Rules → Search**.
 - Without the model, the tab says so: an admin gets a link to the model server's setting. When an admin has turned AI mode off, or too many questions are waiting, the tab says that instead, and when to ask again.
+- On Roku, AI mode is the second tab of Search, beside **Results**: press Up from the results to reach it. The answer shows once the home has finished writing it, with its passages listed under it; choose one to play from its moment.
 
 ### Save a search {#saved-searches}
 

@@ -885,6 +885,166 @@ test("T07 (49.11): Search: suggestions with their kinds, Did you mean, the order
   }
 });
 
+const asks = (from = 0) =>
+  requests
+    .slice(from)
+    .filter((l) => l.startsWith("home ai "))
+    .map((l) => JSON.parse(l.slice("home ai ".length)));
+
+test("T08 (49.14): Search's AI mode tab: the passages, cited sentences, a citation opening the player, a follow-up, no model, in English and Arabic", { timeout: 300000 }, async () => {
+  const c = await Channel.start("ai", zip, data);
+  try {
+    const lang = (await c.waitFor(/\[screen\] HomeScreen ready rows=\s*\d+ lang=(\w+)/, 30000))[1];
+    await c.waitFor(/\[home\] for you/, 20000);
+    if (lang === "ar") {
+      await toMenu(c, 3, true);
+      await c.key("Select");
+      await c.waitFor(/\[screen\] AccountScreen ready lang=ar/);
+      await c.keys(["Down", "Down"]); // Language: English, the third row
+      await c.key("Select");
+      await c.waitFor(/\[screen\] AccountScreen ready lang=en/);
+      await c.key("Back");
+      await c.waitFor(/\[nav\] back to HomeScreen/);
+      await toMenu(c, 2, false);
+    } else {
+      await c.key("Up");
+      await c.waitFor(/\[focus\] home menu\s+0/);
+      await c.keys(["Right", "Right"]);
+    }
+    await c.key("Select");
+    await c.waitFor(/\[screen\] SearchScreen ready/);
+    home.state.ai = "ok";
+    home.state.aiLang = "en";
+
+    // Results is the default tab: typing searches, and AI mode is not asked
+    let from = requests.length;
+    await c.key("Lit_r");
+    await c.waitFor(/\[search\] results\s+24/);
+    assert.equal(asks(from).length, 0, "Results never asks AI mode");
+
+    // Right to the column, Up to the tabs, along to AI mode: OK opens it and asks the typed words
+    await pressUntil(c, "Right", /\[focus\] search tools\s+0/);
+    await pressUntil(c, "Up", /\[focus\] search tabs\s+0/);
+    await pressUntil(c, "Right", /\[focus\] search tabs\s+1/);
+    from = requests.length;
+    await c.key("Select");
+    await c.waitFor(/\[search\] tab ai/);
+    await c.waitFor(/\[search\] ai ask \{"q":"r"\}/);
+    // the passages first, then the sentences with their citations
+    await c.waitFor(/\[search\] ai sources\s+3/, 30000);
+    await c.waitFor(/\[search\] ai sentences\s+2 cites=1,2 phase=done answered=true reason= error=/);
+    await c.waitFor(/\[search\] ai turns\s+1/);
+    await c.waitFor(/\[search\] ai shown rows=\s*3 phase=done/);
+    assert.deepEqual(asks(from), [{ q: "r" }], "the first question has no history");
+    await compare(c, "search-ai-en");
+
+    // a citation opens the player at its moment: the first row is the first sentence's passage
+    await pressUntil(c, "Down", /\[focus\] search aiTools\s+0/);
+    await pressUntil(c, "Down", /\[focus\] search aiList/);
+    from = requests.length;
+    await c.key("Select");
+    const opened = await c.waitFor(/\[search\] ai open (\S+) at\s+(\d+)/);
+    assert.equal(opened[1], videos[3].id);
+    assert.equal(opened[2], "75");
+    await c.waitFor(/\[screen\] PlayerScreen/, 20000);
+    const deadline = Date.now() + 15000;
+    while (!requests.slice(from).some((l) => l.startsWith(`home session video=${videos[3].id} `)) && Date.now() < deadline) await new Promise((r) => setTimeout(r, 200));
+    const session = requests.slice(from).find((l) => l.startsWith(`home session video=${videos[3].id} `));
+    assert.ok(session, "the player asked for the cited video");
+    assert.match(session, / start=75 /, "the player opens at the citation's moment");
+    await c.key("Back");
+    await c.waitFor(/\[nav\] back to SearchScreen/, 20000);
+
+    // a follow-up: new words, Ask; the earlier turn goes as history
+    await pressUntil(c, "Left", /\[focus\] search keyboard/);
+    await c.key("Lit_s");
+    await pressUntil(c, "Right", /\[focus\] search aiTools\s+0/);
+    from = requests.length;
+    await c.key("Select");
+    await c.waitFor(/\[search\] ai ask \{"history"/);
+    await c.waitFor(/\[search\] ai sentences\s+1 cites=1 phase=done answered=true/, 30000);
+    await c.waitFor(/\[search\] ai turns\s+2/);
+    assert.deepEqual(asks(from), [{ q: "rs", history: [{ q: "r", answer: "Patience is of three kinds. Gratitude goes with patience." }] }]);
+
+    // the passages that do not answer: said so, the passages kept
+    home.state.ai = "noanswer";
+    from = requests.length;
+    await c.key("Select");
+    await c.waitFor(/\[search\] ai sentences\s+0 cites= phase=done answered=false reason=not-in-passages/, 30000);
+    await c.waitFor(/\[search\] ai shown rows=\s*3 phase=done/);
+    assert.equal(asks(from)[0].history.length, 2, "both earlier turns go");
+
+    // New topic forgets the turns; a home with no language model says so, not an error
+    await pressUntil(c, "Right", /\[focus\] search aiTools\s+1/);
+    await c.key("Select");
+    await c.waitFor(/\[search\] ai new topic/);
+    // with nothing to forget New topic goes, and the focus moves to Ask
+    await c.waitFor(/\[focus\] search aiTools\s+0/);
+    home.state.ai = "unavailable";
+    from = requests.length;
+    await c.key("Select");
+    await c.waitFor(/\[search\] ai refused\s+409 unavailable/, 30000);
+    assert.deepEqual(asks(from), [{ q: "rs" }], "after New topic no history goes");
+    await compare(c, "search-ai-unavailable-en");
+
+    // back to Results: its results are still there
+    await pressUntil(c, "Up", /\[focus\] search tabs\s+1/);
+    await pressUntil(c, "Left", /\[focus\] search tabs\s+0/);
+    await c.key("Select");
+    await c.waitFor(/\[search\] tab results/);
+    await pressUntil(c, "Down", /\[focus\] search tools/);
+
+    // Arabic: Account → العربية; the tabs mirrored, the answer shaped right to left
+    await c.key("Back");
+    await c.waitFor(/\[focus\] search keyboard/);
+    await c.key("Back");
+    await c.waitFor(/\[nav\] back to HomeScreen/);
+    await toMenu(c, 3, false);
+    await c.key("Select");
+    await c.waitFor(/\[screen\] AccountScreen ready lang=en/);
+    await c.keys(["Down", "Down", "Down"]);
+    await c.key("Select");
+    await c.waitFor(/\[screen\] AccountScreen ready lang=ar/);
+    await c.key("Back");
+    await c.waitFor(/\[nav\] back to HomeScreen/);
+    await toMenu(c, 2, true);
+    await c.key("Select");
+    await c.waitFor(/\[screen\] SearchScreen ready/);
+    home.state.ai = "ok";
+    home.state.aiLang = "ar";
+    await c.key("Lit_r");
+    await c.waitFor(/\[search\] results\s+24/);
+    // in Arabic the keyboard is on the right: Left reaches the column, and Left moves along the tabs
+    await pressUntil(c, "Left", /\[focus\] search tools\s+0/);
+    await pressUntil(c, "Up", /\[focus\] search tabs\s+0/);
+    await pressUntil(c, "Left", /\[focus\] search tabs\s+1/);
+    await c.key("Select");
+    await c.waitFor(/\[search\] ai sentences\s+2 cites=1,2 phase=done answered=true/, 30000);
+    await compare(c, "search-ai-ar");
+    home.state.ai = "unavailable";
+    await pressUntil(c, "Down", /\[focus\] search aiTools\s+0/);
+    await c.key("Select");
+    await c.waitFor(/\[search\] ai refused\s+409 unavailable/, 30000);
+    await compare(c, "search-ai-unavailable-ar");
+    home.state.ai = "ok";
+
+    // back to English for the tests after this one
+    await c.key("Back");
+    await c.waitFor(/\[focus\] search keyboard/);
+    await c.key("Back");
+    await c.waitFor(/\[nav\] back to HomeScreen/);
+    await toMenu(c, 3, true);
+    await c.key("Select");
+    await c.waitFor(/\[screen\] AccountScreen ready lang=ar/);
+    await c.keys(["Down", "Down"]); // Language: English, the third row
+    await c.key("Select");
+    await c.waitFor(/\[screen\] AccountScreen ready lang=en/);
+  } finally {
+    home.state.ai = "ok";
+    await c.stop();
+  }
+});
+
 // The probe walks the whole /24; brs-engine's roUrlTransfer is synchronous, so each address
 // that does not answer waits for its connection to fail. Linux refuses loopback addresses
 // (127.0.0.2…) at once; macOS has no such addresses and waits out each one.

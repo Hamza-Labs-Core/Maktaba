@@ -949,6 +949,10 @@ export const APPS = [
                 "**البحث على Samsung وLG وروكو**: يقترح أثناء الكتابة، تحت لوحة المفاتيح على الشاشة، ويبيّن نوع كل اقتراح: بحث سابق، أو كلمة تقولها المقاطع، أو عنوان مقطع (يفتحه)، أو متحدث. وإذا وجد البحث مقاطع قليلة عرض **هل تقصد** على بُعد ضغطة واحدة. وتُرتَّب النتائج حسب الأقرب صلة أو الأحدث أو الأكثر مطابقات، ويعدّ زر **التصفية** المقاطع التي وُجدت حسب المكتبة واللغة والمتحدث والسنة والمدة، ويحصر البحث فيما تختاره منها، عدةً معًا؛ ويُزال كل مرشّح مستخدم بضغطة أخرى، أو تُزال كلها بـ**إزالة كل عوامل التصفية**."
               ),
               t(
+                "**AI mode on Roku**: a second tab beside **Results** at the top of Search, reached with Up from the results. Opening it with words typed asks the home's language model, and **Ask** asks again with new words as a follow-up to the earlier questions; **New topic** starts afresh. The answer cites its passages by number, and the passages are listed under it: choose one to play the video from that moment. When the passages do not answer the question it says so and keeps them listed. If the home has no language model set up, AI mode is turned off, or the home is busy with other questions, the tab says so. Roku reads the answer once the home has finished writing it, so it appears whole rather than sentence by sentence. Developers: [AI mode](/contributing/ai-mode/).",
+                "**وضع الذكاء الاصطناعي على روكو**: تبويب ثانٍ بجانب **النتائج** أعلى صفحة البحث، تصل إليه بزر الأعلى من النتائج. فتحُه بعد كتابة كلمات يسأل نموذج اللغة في الجهاز الرئيسي، و**اسأل** يسأل من جديد بكلمات جديدة سؤالًا تاليًا للأسئلة السابقة؛ و**موضوع جديد** يبدأ من جديد. تستشهد الإجابة بمقاطعها بأرقامها، والمقاطع مسرودة تحتها: اختر أحدها ليُشغَّل الفيديو من تلك اللحظة. وإذا لم تُجب المقاطع عن السؤال قالت ذلك وأبقتها مسرودة. وإن لم يُعدّ نموذج لغة في الجهاز الرئيسي، أو أُوقف وضع الذكاء الاصطناعي، أو كان الجهاز الرئيسي مشغولًا بأسئلة أخرى، قال التبويب ذلك. ويقرأ روكو الإجابة حين ينتهي الجهاز الرئيسي من كتابتها، فتظهر كاملة لا جملةً جملة. للمطوّرين: [وضع الذكاء الاصطناعي](/contributing/ai-mode/)."
+              ),
+              t(
                 "**Live TV**, when the person may watch a channel: **Now**, with every channel and what is on, and the **Guide**; choose a channel to watch it live.",
                 "**البث المباشر** حين يُسمح للشخص بمشاهدة قناة: قسم **الآن** بكل قناة وما يُعرض عليها، و**الدليل**؛ اختر قناة لتشاهدها مباشرة."
               ),
@@ -1258,6 +1262,12 @@ export const APPS = [
                 "wide",
                 "Filters on Roku: the videos found counted by library, language, speaker, year and length, the chosen ones marked",
                 "التصفية على روكو: المقاطع التي وُجدت معدودةً حسب المكتبة واللغة والمتحدث والسنة والمدة، والمختارة معلَّمة"
+              ),
+              shot(
+                "roku-search-ai",
+                "wide",
+                "AI mode on Roku: the answer with its passages' numbers, and the passages that open the player at their moment",
+                "وضع الذكاء الاصطناعي على روكو: الإجابة بأرقام مقاطعها، والمقاطع التي تفتح المشغّل عند لحظتها"
               ),
             ],
           },

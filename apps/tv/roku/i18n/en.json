@@ -543,6 +543,106 @@
     "value": true
   },
   "search.language.ar": "Arabic",
+  "@search.tab.results": {
+    "widthChars": 20,
+    "lines": 1
+  },
+  "search.tab.results": "Results",
+  "@search.tab.ai": {
+    "widthChars": 20,
+    "lines": 1
+  },
+  "search.tab.ai": "AI mode",
+  "@search.ai.ask": {
+    "widthChars": 16,
+    "lines": 1
+  },
+  "search.ai.ask": "Ask",
+  "@search.ai.newTopic": {
+    "widthChars": 16,
+    "lines": 1
+  },
+  "search.ai.newTopic": "New topic",
+  "@search.ai.sources": {
+    "widthChars": 40,
+    "lines": 1
+  },
+  "search.ai.sources": "Sources",
+  "@search.ai.hint": {
+    "widthChars": 56,
+    "lines": 2
+  },
+  "search.ai.hint": "Type a question on the keyboard, then press Ask.",
+  "@search.ai.followUp": {
+    "widthChars": 56,
+    "lines": 2
+  },
+  "search.ai.followUp": "Type a follow-up and press Ask, or start a new topic.",
+  "@search.ai.asking": {
+    "widthChars": 56,
+    "lines": 2
+  },
+  "search.ai.asking": "Asking your home…",
+  "@search.ai.queue": {
+    "widthChars": 56,
+    "lines": 2
+  },
+  "search.ai.queue": "Other questions are ahead of this one: it is number %1$d in line.",
+  "@search.ai.writing": {
+    "widthChars": 56,
+    "lines": 2
+  },
+  "search.ai.writing": "Writing the answer…",
+  "@search.ai.noAnswer": {
+    "widthChars": 56,
+    "lines": 2
+  },
+  "search.ai.noAnswer": "These passages do not answer the question.",
+  "@search.ai.noPassages": {
+    "widthChars": 56,
+    "lines": 2
+  },
+  "search.ai.noPassages": "Nothing in your libraries matches this question.",
+  "@search.ai.timeout": {
+    "widthChars": 56,
+    "lines": 2
+  },
+  "search.ai.timeout": "The answer took too long and stopped here.",
+  "@search.ai.stopped": {
+    "widthChars": 56,
+    "lines": 2
+  },
+  "search.ai.stopped": "The answer stopped. What was written stands.",
+  "@search.ai.unavailable": {
+    "widthChars": 56,
+    "lines": 3
+  },
+  "search.ai.unavailable": "This home's language model is not set up yet. An admin can set one up in Settings on the web; Help, Search, says how.",
+  "@search.ai.off": {
+    "widthChars": 56,
+    "lines": 2
+  },
+  "search.ai.off": "An admin turned AI mode off for this home.",
+  "@search.ai.busy": {
+    "widthChars": 56,
+    "lines": 2
+  },
+  "search.ai.busy": "AI mode is busy with other questions. Ask again shortly.",
+  "@search.ai.old": {
+    "widthChars": 56,
+    "lines": 2
+  },
+  "search.ai.old": "This home does not have AI mode yet. Update it to ask questions.",
+  "@search.ai.failed": {
+    "widthChars": 56,
+    "lines": 2
+  },
+  "search.ai.failed": "The home did not answer. Ask again.",
+  "@search.ai.source": {
+    "widthChars": 56,
+    "lines": 1
+  },
+  "search.ai.source": "%1$s  %2$s · %3$s · %4$s",
   "@search.language.en": {
     "widthChars": 16,
     "lines": 1,

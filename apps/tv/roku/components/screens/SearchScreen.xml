@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <!-- Search (Epic 58 story 58.12): Roku's MiniKeyboard (the remote's voice types into it) and the
      results; story 49.11: suggestions under the keyboard, Did you mean, the order and the
-     filter sheet (source/search.brs). -->
+     filter sheet (source/search.brs); story 49.14: two tabs, Results and AI mode, whose cited
+     answer comes from POST /api/search/ai (source/ai.brs). -->
 <component name="SearchScreen" extends="Screen">
   <script type="text/brightscript" uri="SearchScreen.brs" />
   <script type="text/brightscript" uri="pkg:/components/common.brs" />
@@ -13,10 +14,16 @@
   <script type="text/brightscript" uri="pkg:/source/i18n.brs" />
   <script type="text/brightscript" uri="pkg:/source/layout.brs" />
   <script type="text/brightscript" uri="pkg:/source/search.brs" />
+  <script type="text/brightscript" uri="pkg:/source/ai.brs" />
   <script type="text/brightscript" uri="pkg:/source/visualtext.brs" />
   <script type="text/brightscript" uri="pkg:/source/visualtext_tables.brs" />
   <children>
-    <Label id="title" translation="[120,60]" width="1680" />
+    <Label id="title" translation="[120,60]" width="640" />
+    <Group id="tabs" translation="[800,40]">
+      <TvButton id="tab0" width="300" />
+      <TvButton id="tab1" width="420" />
+    </Group>
+    <Rectangle id="tabLine" height="6" width="300" visible="false" />
     <MiniKeyboard id="keyboard" translation="[120,150]" />
     <Label id="query" translation="[120,780]" width="640" />
     <LabelList id="suggest" translation="[120,836]" itemSize="[640,56]" itemSpacing="[0,6]" numRows="3" vertFocusAnimationStyle="floatingFocus" visible="false" />
@@ -29,6 +36,17 @@
     </Group>
     <MarkupGrid id="results" translation="[800,150]" itemComponentName="PosterCard" itemSize="[300,230]" itemSpacing="[28,40]" numColumns="3" numRows="3" />
     <Label id="empty" translation="[800,300]" width="900" visible="false" />
+    <!-- AI mode's column: Ask and New topic, the question, a line on how it goes, the answer
+         with its passages' numbers, and the passages (OK opens the player at the moment) -->
+    <Group id="ai" visible="false">
+      <TvButton id="aiAsk" width="250" />
+      <TvButton id="aiNew" width="300" />
+      <Label id="aiQuestion" width="1000" />
+      <Label id="aiStatus" width="1000" wrap="true" maxLines="3" />
+      <Label id="aiAnswer" width="1000" wrap="true" maxLines="9" />
+      <Label id="aiSourcesTitle" width="1000" />
+      <LabelList id="aiList" itemSize="[1000,52]" itemSpacing="[0,6]" numRows="4" vertFocusAnimationStyle="floatingFocus" />
+    </Group>
     <!-- takes the focus for Did you mean and the order's row, which the screen draws itself -->
     <Group id="keys" focusable="true" />
     <ChoiceDialog id="sheet" visible="false" />

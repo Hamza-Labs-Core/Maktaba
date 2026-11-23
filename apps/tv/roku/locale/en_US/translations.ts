@@ -296,6 +296,78 @@
         <translation>Clear all filters</translation>
     </message>
     <message>
+        <source>search.tab.results</source>
+        <translation>Results</translation>
+    </message>
+    <message>
+        <source>search.tab.ai</source>
+        <translation>AI mode</translation>
+    </message>
+    <message>
+        <source>search.ai.ask</source>
+        <translation>Ask</translation>
+    </message>
+    <message>
+        <source>search.ai.newTopic</source>
+        <translation>New topic</translation>
+    </message>
+    <message>
+        <source>search.ai.sources</source>
+        <translation>Sources</translation>
+    </message>
+    <message>
+        <source>search.ai.hint</source>
+        <translation>Type a question on the keyboard, then press Ask.</translation>
+    </message>
+    <message>
+        <source>search.ai.followUp</source>
+        <translation>Type a follow-up and press Ask, or start a new topic.</translation>
+    </message>
+    <message>
+        <source>search.ai.asking</source>
+        <translation>Asking your home…</translation>
+    </message>
+    <message>
+        <source>search.ai.writing</source>
+        <translation>Writing the answer…</translation>
+    </message>
+    <message>
+        <source>search.ai.noAnswer</source>
+        <translation>These passages do not answer the question.</translation>
+    </message>
+    <message>
+        <source>search.ai.noPassages</source>
+        <translation>Nothing in your libraries matches this question.</translation>
+    </message>
+    <message>
+        <source>search.ai.timeout</source>
+        <translation>The answer took too long and stopped here.</translation>
+    </message>
+    <message>
+        <source>search.ai.stopped</source>
+        <translation>The answer stopped. What was written stands.</translation>
+    </message>
+    <message>
+        <source>search.ai.unavailable</source>
+        <translation>This home's language model is not set up yet. An admin can set one up in Settings on the web; Help, Search, says how.</translation>
+    </message>
+    <message>
+        <source>search.ai.off</source>
+        <translation>An admin turned AI mode off for this home.</translation>
+    </message>
+    <message>
+        <source>search.ai.busy</source>
+        <translation>AI mode is busy with other questions. Ask again shortly.</translation>
+    </message>
+    <message>
+        <source>search.ai.old</source>
+        <translation>This home does not have AI mode yet. Update it to ask questions.</translation>
+    </message>
+    <message>
+        <source>search.ai.failed</source>
+        <translation>The home did not answer. Ask again.</translation>
+    </message>
+    <message>
         <source>player.error</source>
         <translation>This video cannot play right now.</translation>
     </message>

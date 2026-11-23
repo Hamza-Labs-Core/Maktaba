@@ -68,6 +68,13 @@ blank cards that never take the focus.
   request bodies from the order and the facet choices, the suggestion kinds, did-you-mean and
   the facets, an older home's answer without them, and the lines in English and Arabic; the
   screen in T07 of `tests/screens.test.mjs`;
+- AI mode's help (Epic 49 story 49.14, `source/ai.brs`): `tests/ai_test.brs`, the
+  Server-Sent Events reader with the stream cut anywhere, each event of `POST /api/search/ai`,
+  the bodies of a question and a follow-up, the refusals (no model, off, busy, an older home)
+  and the lines in English and Arabic; the tab in T08 of `tests/screens.test.mjs`, the mock
+  home answering the events. The answer is read when the home has written it: roUrlTransfer
+  gives a body only whole, `AsyncGetSSEvents` (Roku OS 16) sends no request body, and
+  roStreamSocket has no TLS for a home at an https name;
 - the screens (T03): `tests/screens.test.mjs` builds a test package (`--test`) pointed at
   `tests/mockhome.mjs` (a mock home with 80 videos, a series, collections and a playlist, and a
   mock cloud that approves a code), runs it on brs-node's SceneGraph with ECP, sends keys,
