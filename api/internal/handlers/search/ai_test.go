@@ -10,6 +10,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -24,11 +25,13 @@ import (
 
 func TestSentenceSplitter_CutsAfterTheMarkers(t *testing.T) {
 	stream := "الصبر مفتاح الفرج [1]. Patience is light [2][3]. The rate is 3.5 percent [1]! " +
-		"لماذا؟ [2]\nA last one without an end [4]"
+		"المعدل ٣.٥ من عشرة [1]. قال كذا [٢]؟ لماذا؟ [2]\nA last one without an end [4]"
 	want := []string{
 		"الصبر مفتاح الفرج [1].",
 		"Patience is light [2][3].",
 		"The rate is 3.5 percent [1]!",
+		"المعدل ٣.٥ من عشرة [1].", // an Arabic-Indic decimal is no end
+		"قال كذا [٢]؟",            // the end after the marker, a two-byte rune
 		"لماذا؟ [2]",
 		"A last one without an end [4]",
 	}
@@ -88,7 +91,8 @@ func TestCiteSentence(t *testing.T) {
 		{"Patience is light [1].", "Patience is light.", []int{1}, true},
 		{"Two sources [3][1].", "Two sources.", []int{1, 3}, true},
 		{"A list [1, 2].", "A list.", []int{1, 2}, true},
-		{"الصبر ضياء [٢].", "الصبر ضياء.", []int{2}, true}, // Arabic-Indic digits
+		{"الصبر ضياء [٢].", "الصبر ضياء.", []int{2}, true},                   // Arabic-Indic digits
+		{"ذكر ذلك في عام ٢٠٢٤ [١].", "ذكر ذلك في عام ٢٠٢٤.", []int{1}, true}, // the text's own digits stay
 		{"قال [١، ٣] ذلك.", "قال ذلك.", []int{1, 3}, true},
 		{"Named [passage 2].", "Named.", []int{2}, true},
 		{"A made-up source [9].", "", nil, false},
@@ -665,5 +669,27 @@ func TestOllama_ReadyAndChat(t *testing.T) {
 	}
 	if err := o.Chat(ctx, srv.URL, "broken", msgs, func(string) error { return nil }); err == nil || !strings.Contains(err.Error(), "failed to load") {
 		t.Fatalf("an error line: %v", err)
+	}
+}
+
+// The last sentence waits in the splitter for markers that may follow; when the model then
+// fails, it is still checked and sent before the error, as on a timeout.
+func TestAI_TheLastSentenceSurvivesAFailedModel(t *testing.T) {
+	db := aiLibrary(t)
+	model := &fakeModel{answer: func(_ context.Context, _ []AIMessage, piece func(string) error) error {
+		if err := piece("Patience is light [1]"); err != nil {
+			return err
+		}
+		return errors.New("the model server went away")
+	}}
+	h := router(&Handler{DB: db, AI: model})
+	evs := eventsOf(t, call(t, h, admin, http.MethodPost, "/api/search/ai", `{"q":"patience"}`))
+	a := answerOf(t, evs)
+	if got := strings.Join(a.names, ","); got != "sources,text,error" {
+		t.Fatalf("events %s", got)
+	}
+	checkCited(t, a)
+	if a.texts[0].Text != "Patience is light" {
+		t.Fatalf("text %q", a.texts[0].Text)
 	}
 }

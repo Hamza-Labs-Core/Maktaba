@@ -362,9 +362,14 @@ func (h *Handler) Answer(w http.ResponseWriter, r *http.Request) {
 	})
 	close(quiet)
 	<-quietDone
-	if err == nil {
+	// the sentence still held (the last one waits for markers that may follow) is checked
+	// whenever the stream ends, a timeout or a failed model included: only a cited one is
+	// sent. Not when the caller left, nor after NO_ANSWER or the most sentences.
+	if !errors.Is(err, errEnough) && ctx.Err() == nil {
 		if rest := split.flush(); rest != "" {
-			err = emit(rest)
+			if e := emit(rest); err == nil {
+				err = e
+			}
 		}
 	}
 	if !firstToken.IsZero() {
@@ -714,19 +719,19 @@ func videoClock(sec float64) string {
 }
 
 // citation markers: [2], [1, 3], [1][3], [passage 2], with Arabic-Indic digits read as digits
-var citeRe = regexp.MustCompile(`(?i)\[\s*(?:passages?\s*)?(\d+(?:\s*[,،]\s*\d+)*)\s*\]`)
+var citeRe = regexp.MustCompile(`(?i)\[\s*(?:passages?\s*)?([0-9٠-٩۰-۹]+(?:\s*[,،]\s*[0-9٠-٩۰-۹]+)*)\s*\]`)
 
 var spaceRe = regexp.MustCompile(`\s+`)
 
 // citeSentence checks one sentence: it keeps the citations that name a given passage, and
 // is dropped (false) when none does. The markers are taken out of its text.
 func citeSentence(sentence string, srcs []AISource) (AITextEvent, bool) {
-	s := asciiDigits(sentence)
+	s := sentence // the words as the model wrote them; only a marker's digits are read as ASCII
 	seen := map[int]bool{}
 	ev := AITextEvent{Citations: []AICitation{}}
 	for _, m := range citeRe.FindAllStringSubmatch(s, -1) {
 		for _, part := range strings.FieldsFunc(m[1], func(r rune) bool { return r == ',' || r == '،' || unicode.IsSpace(r) }) {
-			n, err := strconv.Atoi(part)
+			n, err := strconv.Atoi(asciiDigits(part))
 			if err != nil || n < 1 || n > len(srcs) || seen[n] || len(ev.Citations) >= aiMaxCitations {
 				continue
 			}
@@ -799,8 +804,8 @@ func (s *sentenceSplitter) cut() int {
 			continue
 		}
 		j := i + utf8.RuneLen(r)
-		if r == '.' && j < len(b) && b[j] >= '0' && b[j] <= '9' {
-			continue // 3.5
+		if next, _ := utf8.DecodeRuneInString(b[j:]); r == '.' && j < len(b) && unicode.IsDigit(next) {
+			continue // 3.5, ٣.٥
 		}
 		// the markers and spaces after the end belong to this sentence
 		for {
@@ -816,8 +821,8 @@ func (s *sentenceSplitter) cut() int {
 				j = k + end + 1
 				continue
 			}
-			if k < len(b) && (isSentenceEnd(rune(b[k])) && b[k] != '\n') {
-				j = k + 1 // "… [2]." : the end after the marker
+			if next, size := utf8.DecodeRuneInString(b[k:]); k < len(b) && isSentenceEnd(next) && next != '\n' {
+				j = k + size // "… [2]." : the end after the marker
 				continue
 			}
 			j = k

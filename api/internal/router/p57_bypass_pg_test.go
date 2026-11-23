@@ -476,6 +476,14 @@ func init() {
 				r.alike(key, http.MethodGet, "/api/search/passages?sid="+r.searchID+"&video_id={id}", "", id)
 			}
 		},
+		// story 49.12: AI mode's passages, and every word the model read (echoModel)
+		"POST /api/search/ai": func(r *pbRun, key string) {
+			rec := r.ask(key, http.MethodPost, "/api/search/ai", `{"q":"zarqa"}`)
+			if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "event: sources") ||
+				!strings.Contains(rec.Body.String(), "event: done") {
+				r.leak(key, "AI mode did not run: %d %s", rec.Code, rec.Body.String())
+			}
+		},
 		"GET /api/search/suggest": func(r *pbRun, key string) {
 			r.ask(key, http.MethodGet, "/api/search/suggest?q=zar", "")
 		},

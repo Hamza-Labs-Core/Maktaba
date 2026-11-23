@@ -78,6 +78,9 @@ type P6Deps struct {
 	// grpcpipeline.SemanticSearcher (the real client does); still nil →
 	// search is FTS-only.
 	SearchSemantic search.SemanticClient
+	// SearchAI is the language model AI mode asks (story 49.12). Nil: Ollama's API at the
+	// tag check's model server.
+	SearchAI search.AIModel
 	// SearchPipelineClient is the pipeline worker that holds the search index (the
 	// supervisor's index worker, MAKTABA_PIPELINE_SEARCH_ADDR): the semantic leg asks
 	// it rather than PipelineClient. Nil → PipelineClient.
@@ -286,6 +289,7 @@ func MountP6(r chi.Router, d P6Deps) {
 	}
 	// story 49.12: AI mode answers 409 while the language model is switched off
 	searchHandler.LLMOn = searchLLMOn(d.Capabilities)
+	searchHandler.AI = d.SearchAI
 	searchHandler.Mount(r)
 
 	streamSvc := streamingServiceAdapter{client: d.StreamingClient}

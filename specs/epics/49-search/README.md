@@ -1329,9 +1329,12 @@ authors is `docs/developers/contributing/ai-mode.md` (maktaba.dev, English and A
   not answer. The earlier turns (`history`, the last three with both a question and an
   answer) come before the passages; retrieval runs on the new question alone.
 - **Every sentence cited.** The stream is cut into sentences (`. ! ? ؟ ۔` or a line break,
-  with the markers after it, once the next sentence has begun; 3.5 is not an end). A sentence
+  with the markers after it, once the next sentence has begun; 3.5 and ٣.٥ are not an end).
+  The sentence still held when the stream ends, by a timeout or a failed model too, is
+  checked and sent when cited. A sentence
   keeps the citations that name a passage it was given (`[2]`, `[1][3]`, `[1, 3]`,
-  `[passage 2]`, Arabic-Indic digits; the first 5), its markers taken out of its text. One
+  `[passage 2]`, Arabic-Indic digits; the first 5), its markers taken out of its text and
+  its own words, digits included, as the model wrote them. One
   that names none is dropped and counted (`dropped`). `NO_ANSWER`, or no sentence kept,
   ends with `answered: false` and `reason: not-in-passages`, the sources already shown; no
   passages at all is `no-passages`, and the model is not asked.
@@ -1351,8 +1354,11 @@ authors is `docs/developers/contributing/ai-mode.md` (maktaba.dev, English and A
   model server setting and the help page (`/help/search#ai-mode`). 409 `ai-off` when
   `rules.search.ai_mode` is off. `rules.search` is at 1.1 (four fields added: `ai_mode`,
   `ai_passages`, `ai_model`, `ai_timeout_s`).
-- **Registered.** In the OpenAPI description (`searchAI`; English, Arabic) and the parental
-  surface registry (filtered: its passages are the search's, through the same cards).
+- **Registered.** In the OpenAPI description (`searchAI`; English, Arabic), the problem types
+  (`ai-unavailable`, `ai-off`, `ai-busy` in `shared/api/problems.json`, English and Arabic),
+  the parental surface registry (filtered: its passages are the search's, through the same
+  cards) and the parental bypass rehearsal, whose model (`echoModel`) answers with every word
+  it read, so the scan reads what the model was given as well as the sources.
 - **Proof:** `ai_test.go`:
   - the splitter (the same sentences whatever the pieces) and the citation check;
   - the stream with a model that cites, invents a passage and cites nothing (sources first,
@@ -1368,7 +1374,9 @@ authors is `docs/developers/contributing/ai-mode.md` (maktaba.dev, English and A
   six Arabic and English questions of a 15-lesson test library. On an M3 Ultra (96 GB) with the
   Mac app's bundled Ollama 0.40.2 and qwen2.5:7b: first token about 3.7 s for a full prompt of
   30 passages the server has not seen, 0.1 to 0.6 s for a short prompt or one whose start the
-  server kept, and 7.8 s when the model is first loaded; a whole answer in 0.7 to 6 s. The three
+  server kept, and 7.8 s when the model is first loaded; a whole answer in 0.7 to 6 s. With
+  the same Mac under a load average of about 40 (other builds and tests), the first token
+  took 10 to 13 s. The three
   answerable questions were answered, each sentence cited. The three that are not (one with no
   passages, one whose passages name no narrator, one whose passages never say what is asked)
   were not answered.

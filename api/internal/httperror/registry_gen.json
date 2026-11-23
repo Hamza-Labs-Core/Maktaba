@@ -5823,6 +5823,75 @@
       "install": null
     },
     {
+      "slug": "ai-busy",
+      "status": 429,
+      "area": "search",
+      "audience": "person",
+      "codes": [
+        "ai-busy"
+      ],
+      "title": {
+        "en": "AI mode is busy",
+        "ar": "وضع الذكاء الاصطناعي مشغول"
+      },
+      "means": {
+        "en": "The home writes one answer at a time, and eight more questions are already waiting for theirs.",
+        "ar": "يكتب الجهاز الرئيسي إجابة واحدة في كل مرة، وثمانية أسئلة أخرى تنتظر إجاباتها بالفعل."
+      },
+      "do": {
+        "en": "Ask again in a little while. Search's Results tab works meanwhile.",
+        "ar": "اسألوا مجددًا بعد قليل. ويعمل تبويب نتائج البحث في الأثناء."
+      },
+      "help": "search#ai-mode",
+      "install": null
+    },
+    {
+      "slug": "ai-off",
+      "status": 409,
+      "area": "search",
+      "audience": "person",
+      "codes": [
+        "ai-off"
+      ],
+      "title": {
+        "en": "AI mode is turned off",
+        "ar": "وضع الذكاء الاصطناعي متوقف"
+      },
+      "means": {
+        "en": "An admin of this home turned AI mode off, so questions are not answered.",
+        "ar": "أوقف مسؤول هذا الجهاز الرئيسي وضع الذكاء الاصطناعي، فلا يُجاب عن الأسئلة."
+      },
+      "do": {
+        "en": "Use Search's Results tab, or ask the home's admin to turn AI mode on under Settings → Rules → Search.",
+        "ar": "استخدموا تبويب نتائج البحث، أو اطلبوا من مسؤول الجهاز الرئيسي تشغيل وضع الذكاء الاصطناعي في الإعدادات ← القواعد ← البحث."
+      },
+      "help": "search#ai-mode",
+      "install": null
+    },
+    {
+      "slug": "ai-unavailable",
+      "status": 409,
+      "area": "search",
+      "audience": "admin",
+      "codes": [
+        "ai-unavailable"
+      ],
+      "title": {
+        "en": "There is no language model to answer with",
+        "ar": "لا يوجد نموذج لغة للإجابة"
+      },
+      "means": {
+        "en": "AI mode needs the home's language model. The model server did not answer, it does not have the model, or the language model is switched off.",
+        "ar": "يحتاج وضع الذكاء الاصطناعي إلى نموذج اللغة في الجهاز الرئيسي. ولم يُجب خادم النماذج، أو ليس فيه النموذج، أو نموذج اللغة متوقف."
+      },
+      "do": {
+        "en": "Set the model server and model under Settings → Rules → Tag check, and turn the language model on under Settings → Components. The answer's help field names the page.",
+        "ar": "اضبطوا خادم النماذج والنموذج في الإعدادات ← القواعد ← فحص الوسوم، وشغّلوا نموذج اللغة في الإعدادات ← المكوّنات. ويذكر حقل help في الإجابة الصفحة."
+      },
+      "help": "search#ai-mode",
+      "install": null
+    },
+    {
       "slug": "seat-limit",
       "status": 403,
       "area": "licensing",
