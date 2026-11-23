@@ -51,6 +51,8 @@ A video's page has **Resume** (where you stopped) or **Play**, **Play from the s
 
 Type with the keyboard on the screen, or your own keyboard. The **ع / EN** key switches the screen keyboard between Arabic and English. Results come as you type: **In titles**, and **In transcripts**, where choosing a result plays the video at that moment.
 
+Above the results, **AI mode** sits beside **Results** ([AI mode](/help/search#ai-mode)). Choose it to ask the words you typed as a question; for the next question, type it and choose **Ask**. The sources show first, then the answer a sentence at a time, newest question at the top. Each number after a sentence, and each source, plays its video at that moment.
+
 ### Watch {#player}
 
 While a video plays the controls hide. Any key brings them back.

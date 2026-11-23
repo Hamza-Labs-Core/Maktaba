@@ -305,6 +305,82 @@ maktaba.tv/tv ﻰﻟﺇ ﺐﻫﺫﺍ ﻭﺃ ،ﺯﺎﻔﻠﺗ</translation>
         <translation>ﺔﻴﻔﺼﺘﻟﺍ ﻞﻣﺍﻮﻋ ﻞﻛ ﺔﻟﺍﺯﺇ</translation>
     </message>
     <message>
+        <source>search.tab.results</source>
+        <translation>ﺞﺋﺎﺘﻨﻟﺍ</translation>
+    </message>
+    <message>
+        <source>search.tab.ai</source>
+        <translation>ﻲﻋﺎﻨﻄﺻﻻﺍ ﺀﺎﻛﺬﻟﺍ ﻊﺿﻭ</translation>
+    </message>
+    <message>
+        <source>search.ai.ask</source>
+        <translation>ﻝﺄﺳﺍ</translation>
+    </message>
+    <message>
+        <source>search.ai.newTopic</source>
+        <translation>ﺪﻳﺪﺟ ﻉﻮﺿﻮﻣ</translation>
+    </message>
+    <message>
+        <source>search.ai.sources</source>
+        <translation>ﺭﺩﺎﺼﻤﻟﺍ</translation>
+    </message>
+    <message>
+        <source>search.ai.hint</source>
+        <translation>.«ﻝﺄﺳﺍ» ﻂﻐﺿﺍ ﻢﺛ ،ﺢﻴﺗﺎﻔﻤﻟﺍ ﺔﺣﻮﻠﺑ ﻻﺍﺆﺳ ﺐﺘﻛﺍ</translation>
+    </message>
+    <message>
+        <source>search.ai.followUp</source>
+        <translation>.ﺍﺪﻳﺪﺟ ﺎﻋﻮﺿﻮﻣ ﺃﺪﺑﺍ ﻭﺃ ،«ﻝﺄﺳﺍ» ﻂﻐﺿﺍﻭ ﺎﻴﻟﺎﺗ ﻻﺍﺆﺳ ﺐﺘﻛﺍ</translation>
+    </message>
+    <message>
+        <source>search.ai.asking</source>
+        <translation>…ﻲﺴﻴﺋﺮﻟﺍ ﻙﺯﺎﻬﺟ ﻝﺍﺆﺳ ﺭﺎﺟ</translation>
+    </message>
+    <message>
+        <source>search.ai.writing</source>
+        <translation>…ﺔﺑﺎﺟﻹﺍ ﺔﺑﺎﺘﻛ ﺭﺎﺟ</translation>
+    </message>
+    <message>
+        <source>search.ai.noAnswer</source>
+        <translation>.ﻝﺍﺆﺴﻟﺍ ﻦﻋ ﺐﻴﺠﺗ ﻻ ﻊﻃﺎﻘﻤﻟﺍ ﻩﺬﻫ</translation>
+    </message>
+    <message>
+        <source>search.ai.noPassages</source>
+        <translation>.ﻝﺍﺆﺴﻟﺍ ﺍﺬﻫ ﻖﺑﺎﻄﻳ ﻚﺗﺎﺒﺘﻜﻣ ﻲﻓ ﺀﻲﺷ ﻻ</translation>
+    </message>
+    <message>
+        <source>search.ai.timeout</source>
+        <translation>.ﺎﻨﻫ ﺖﻔﻗﻮﺘﻓ ﻼﻳﻮﻃ ﺎﺘﻗﻭ ﺔﺑﺎﺟﻹﺍ ﺖﻗﺮﻐﺘﺳﺍ</translation>
+    </message>
+    <message>
+        <source>search.ai.stopped</source>
+        <translation>.ﺎﻬﻨﻣ ﺐﺘﻛ ﺎﻣ ﻰﻘﺒﻳ .ﺔﺑﺎﺟﻹﺍ ﺖﻔﻗﻮﺗ</translation>
+    </message>
+    <message>
+        <source>search.ai.unavailable</source>
+        <translation>ﻊﻴﻄﺘﺴﻳ .ﺪﻌﺑ ﻲﺴﻴﺋﺮﻟﺍ ﺯﺎﻬﺠﻟﺍ ﺍﺬﻫ ﻲﻓ ﺔﻐﻠﻟﺍ ﺝﺫﻮﻤﻧ ﺪﻌﻳ ﻢﻟ
+ﺓﺪﻋﺎﺴﻤﻟﺍ ﺔﺤﻔﺻﻭ ،ﺐﻳﻮﻟﺍ ﻰﻠﻋ ﺕﺍﺩﺍﺪﻋﻹﺍ ﻦﻣ ﻩﺩﺍﺪﻋﺇ ﻝﻭﺆﺴﻤﻟﺍ
+.ﻚﻟﺫ ﺡﺮﺸﺗ «ﺚﺤﺒﻟﺍ»</translation>
+    </message>
+    <message>
+        <source>search.ai.off</source>
+        <translation>.ﻲﺴﻴﺋﺮﻟﺍ ﺯﺎﻬﺠﻟﺍ ﺍﺬﻫ ﻲﻓ ﻲﻋﺎﻨﻄﺻﻻﺍ ﺀﺎﻛﺬﻟﺍ ﻊﺿﻭ ﻝﻭﺆﺴﻤﻟﺍ ﻒﻗﻭﺃ</translation>
+    </message>
+    <message>
+        <source>search.ai.busy</source>
+        <translation>ﻯﺮﺧﺃ ﺓﺮﻣ ﻝﺄﺳﺍ .ﻯﺮﺧﺃ ﺔﻠﺌﺳﺄﺑ ﻝﻮﻐﺸﻣ ﻲﻋﺎﻨﻄﺻﻻﺍ ﺀﺎﻛﺬﻟﺍ ﻊﺿﻭ
+.ﻞﻴﻠﻗ ﺪﻌﺑ</translation>
+    </message>
+    <message>
+        <source>search.ai.old</source>
+        <translation>.ﺪﻌﺑ ﻲﻋﺎﻨﻄﺻﻻﺍ ﺀﺎﻛﺬﻟﺍ ﻊﺿﻭ ﻢﻋﺪﻳ ﻻ ﻲﺴﻴﺋﺮﻟﺍ ﺯﺎﻬﺠﻟﺍ ﺍﺬﻫ
+.ﺔﻠﺌﺳﻷﺍ ﺡﺮﻄﺘﻟ ﻪﺛﺪﺣ</translation>
+    </message>
+    <message>
+        <source>search.ai.failed</source>
+        <translation>.ﻯﺮﺧﺃ ﺓﺮﻣ ﻝﺄﺳﺍ .ﻲﺴﻴﺋﺮﻟﺍ ﺯﺎﻬﺠﻟﺍ ﺐﺠﻳ ﻢﻟ</translation>
+    </message>
+    <message>
         <source>player.error</source>
         <translation>.ﻥﻵﺍ ﻮﻳﺪﻴﻔﻟﺍ ﺍﺬﻫ ﻞﻴﻐﺸﺗ ﻦﻜﻤﻳ ﻻ</translation>
     </message>

@@ -256,10 +256,10 @@ fun SignedInApp(
                                 search,
                                 focusFirst = focusContent,
                                 onOpen = { open(Place.Video(it)) },
-                                // a passage plays from its moment, in a queue as a video's page plays it
-                                onPlay = { hit, sec ->
+                                // a passage (or AI mode's citation) plays from its moment, in a queue as a video's page plays it
+                                onPlay = { videoId, sec ->
                                     scope.launch {
-                                        val item = runCatching { queue.create(QueueSource("video", hit.videoId), false) }.getOrNull()
+                                        val item = runCatching { queue.create(QueueSource("video", videoId), false) }.getOrNull()
                                         if (item != null) open(playerPlace(item, (sec * 1000).toLong())) else notice = queueFailed
                                         if (queue.staleSeen) { notice = queueStale; queue.staleSeen = false }
                                     }

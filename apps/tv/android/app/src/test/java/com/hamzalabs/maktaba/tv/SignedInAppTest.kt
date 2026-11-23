@@ -201,6 +201,43 @@ class SignedInAppTest {
         assertFalse(shows("The Night Journey"))
     }
 
+    /**
+     * Story 49.14: a citation in AI mode plays its video from the cited moment the way a
+     * transcript result does, in a queue made from that video.
+     */
+    @Test
+    fun anAiModeCitationPlaysItsVideoInAQueue() {
+        val queues = java.util.concurrent.CopyOnWriteArrayList<String>()
+        val inner = server.dispatcher
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse = when {
+                request.method == "POST" && request.url.encodedPath == "/api/search" ->
+                    json(200, """{"search_id":"s1","q":"patience","videos":[{"video_id":"v1","title":"On Patience"}],"videos_total":1,"transcript_videos":[],"transcript_total":0}""")
+                request.url.encodedPath == "/api/search/ai" ->
+                    MockResponse.Builder().code(200).setHeader("Content-Type", "text/event-stream")
+                        .body(com.hamzalabs.maktaba.core.AiStreams.answer("patience", com.hamzalabs.maktaba.core.AiStreams.EN_PASSAGES, com.hamzalabs.maktaba.core.AiStreams.EN_SENTENCES)).build()
+                request.method == "POST" && request.url.encodedPath == "/api/me/play-queues" -> {
+                    queues += request.body?.utf8().orEmpty()
+                    json(500, "{}")
+                }
+                else -> inner.dispatch(request)
+            }
+        }
+        signedIn()
+        compose.waitUntil(STALL_MS) { compose.waitForIdle(); shows("Search") }
+        compose.onNodeWithText("Search").performSemanticsAction(SemanticsActions.RequestFocus)
+        compose.waitUntil(STALL_MS) { compose.waitForIdle(); compose.onAllNodes(androidx.compose.ui.test.hasSetTextAction()).fetchSemanticsNodes().isNotEmpty() }
+        val field = compose.onNode(androidx.compose.ui.test.hasSetTextAction())
+        field.performTextInput("patience")
+        field.performImeAction()
+        compose.waitUntil(STALL_MS) { compose.waitForIdle(); shows("On Patience") }
+        compose.onNode(androidx.compose.ui.test.hasTestTag("tv-tab-ai")).performSemanticsAction(SemanticsActions.OnClick)
+        compose.waitUntil(STALL_MS) { compose.waitForIdle(); compose.onAllNodes(androidx.compose.ui.test.hasTestTag("tv-ai-cite-1-1-2")).fetchSemanticsNodes().isNotEmpty() }
+        compose.onNode(androidx.compose.ui.test.hasTestTag("tv-ai-cite-1-1-2")).performSemanticsAction(SemanticsActions.OnClick)
+        compose.waitUntil(STALL_MS) { compose.waitForIdle(); queues.isNotEmpty() }
+        assertTrue("a queue of the cited video: ${queues.single()}", queues.single().contains("\"v4\"") && queues.single().contains("\"video\""))
+    }
+
     /** The home answers `GET /api/me/parental` with a 13+ limit at [version], and records the read. */
     private fun aLimitedSignIn(version: java.util.concurrent.atomic.AtomicInteger) {
         val inner = server.dispatcher

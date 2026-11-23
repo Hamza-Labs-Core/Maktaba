@@ -45,6 +45,33 @@ describe("liesToward and score", () => {
 });
 
 describe("next", () => {
+  // story 49.14: Search's two columns, the keyboard (rows every 50) and the results, whose
+  // order row's next row lies further down than the keyboard's next line
+  it("a region keeps up and down in its column while it has a row that way", () => {
+    const tag = (nodes: FocusNode[], region: string) => nodes.map((n) => ({ ...n, region }));
+    const nodes = [
+      ...tag(row("kbd1", 0, 3, 0, 40, 40), "entry"),
+      ...tag(row("kbd2", 50, 3, 0, 40, 40), "entry"),
+      ...tag(row("kbd3", 100, 3, 0, 40, 40), "entry"),
+      ...tag(row("sort", 40, 2, 400, 100, 40), "results"),
+      ...tag(row("active", 120, 2, 400, 100, 40), "results"),
+    ];
+    // without regions the keyboard's line (nearer) would win
+    expect(
+      id(
+        next(
+          nodes.map((n) => ({ ...n, region: null })),
+          "sort0",
+          "down"
+        )
+      )
+    ).toBe("kbd32");
+    expect(id(next(nodes, "sort0", "down"))).toBe("active0");
+    expect(id(next(nodes, "kbd20", "down"))).toBe("kbd30");
+    // past the column's last row the move goes on to the other column
+    expect(id(next(nodes, "kbd30", "down"))).toBe("active0");
+  });
+
   const tabs = row("tabs", 0, 4);
   const r1 = row("a", 100, 6);
   const r2 = row("b", 200, 6);

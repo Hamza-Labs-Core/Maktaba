@@ -6,6 +6,8 @@ Maktaba for Android TV and Google TV: your home's libraries on the big screen, d
 
 Maktaba for Android TV is a ten-foot app for Android TV and Google TV (Android 9 or later). It has **Home**, **Libraries**, **Search**, **Live TV** (only when you may watch a channel) and **Account**, all driven with the remote's arrows and its centre button. **Live TV** has **On now** (every channel with what is on) and **Guide**; choose a channel to watch it live. It shows on the TV's home row as **Maktaba**.
 
+In **Search**, **AI mode** is a second tab beside **Results**: it answers a question from your library's passages. The passages it read come first, as a row; then each sentence of the answer, with a row of the passages it cites. Press the centre button on one to play the video from that moment. Ask a follow-up from the field under the answer. When the home has no language model, the tab says so and gives the address of the help page (see [AI mode](/help/search#ai-mode)).
+
 ## How to use it {#how-to-use}
 
 ### Get the app {#get-the-app}

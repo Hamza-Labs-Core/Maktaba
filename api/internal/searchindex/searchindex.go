@@ -16,6 +16,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 )
 
@@ -115,12 +116,23 @@ func BuildOnce(ctx context.Context, db *sql.DB) (ran []string, locked bool, err 
 	return ran, true, err
 }
 
+// isPostgres reports whether db is a PostgreSQL database (not the SQLite backend).
+func isPostgres(db *sql.DB) bool {
+	return db != nil && !strings.Contains(strings.ToLower(fmt.Sprintf("%T", db.Driver())), "sqlite")
+}
+
 // Every is how often Run looks again once the indexes are there or could not be built.
 var Every = time.Hour
 
 // Run is the home API's loop (api:search_index): BuildOnce now, then every Every, until ctx
 // ends. A build that fails is said and tried again at the next round.
 func Run(ctx context.Context, db *sql.DB, log *slog.Logger) {
+	// a SQLite-backed API has no BM25 index to build (its keyword search reads FTS5): the
+	// round would ask to_regprocedure, which SQLite lacks, and warn every hour (#1483)
+	if !isPostgres(db) {
+		log.Info("search index loop not needed", "event", "search_index_skipped", "reason", "not postgres")
+		return
+	}
 	for {
 		t0 := time.Now()
 		ran, _, err := BuildOnce(ctx, db)

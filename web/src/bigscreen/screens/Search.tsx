@@ -18,6 +18,12 @@
 //     use is a chip that removes it, and Clear all takes them all off;
 //   - the order and filters ride in the URL beside q (the desk's parameters), and
 //     new words drop the filters (they were the old results' counts).
+//
+// Story 49.14: two tabs above the results, Results and AI mode (SearchAI.tsx, tab=ai in the
+// URL). In AI mode the keyboard's words are a question: Ask sends it (POST /api/search/ai
+// through lib/searchAI), and the keyboard clears for a follow-up. Opening the tab with words
+// typed asks them; the search and the suggestions wait while AI mode is shown, and leaving
+// the tab or the screen stops the answer.
 import { useEffect, useRef, useState } from "react";
 import { useLocation, useSearchParams } from "react-router-dom";
 import { api } from "../../lib/api";
@@ -52,6 +58,8 @@ import { Empty, Failed, Ltr, Panel, Screen, VideoTile, clock } from "../ui";
 import { LAYOUTS, applyKey, searchable, type KeyEdit, type KeyboardLayout } from "./keyboard";
 import { type BigAsk, askKey, askOf, bigSearchBody, bigSearchParams } from "./searchAsk";
 import { errorText } from "../../lib/errorText";
+import { useAIConversation, useAITab } from "../../lib/searchAI";
+import { BigSearchAI } from "./SearchAI";
 
 export const SEARCH_DELAY_MS = 600;
 export const SUGGEST_DELAY_MS = 200;
@@ -90,6 +98,14 @@ export function BigSearch() {
   const suggestHidden = useRef<string | null>((params.get("q") ?? "").trim() || null);
   const query = searchable(text);
   const key = askKey(ask);
+  // story 49.14: Results, or AI mode
+  const tab: "results" | "ai" = params.get("tab") === "ai" ? "ai" : "results";
+  const ai = useAIConversation();
+  // the words the Results were searched for: AI mode clears the keyboard for its questions,
+  // and going back to Results puts these back
+  const resultsText = useRef(params.get("q") ?? "");
+  // the words asked as the tab opens leave the keyboard, as a question asked with Ask does
+  useAITab(ai, tab === "ai", text, () => edit(""));
 
   /** New text; new words drop the filters (they were the old results' counts). */
   function edit(next: string, keepFilters = false) {
@@ -109,6 +125,13 @@ export function BigSearch() {
   }
 
   useEffect(() => {
+    // AI mode on screen: the search waits for Results, and the Results and the URL's words
+    // stay as they were (the keyboard holds AI mode's question now)
+    if (tab === "ai") {
+      seq.current += 1;
+      setPending(false);
+      return;
+    }
     // the URL follows the query, order and filters (replace: typing is not history)
     const want = bigSearchParams(params, query, ask);
     if (want.toString() !== params.toString())
@@ -151,13 +174,13 @@ export function BigSearch() {
     }, delay);
     return () => clearTimeout(timer);
     // params/setParams change with every replace; the query, order and filters drive this
-  }, [query, key, t]);
+  }, [query, key, t, tab]);
 
   // suggestions from the first letter: on a remote every key saved counts
   const typed = text.trim();
   useEffect(() => {
     const s = ++suggestSeq.current;
-    if (!typed || typed === suggestHidden.current) {
+    if (!typed || typed === suggestHidden.current || tab === "ai") {
       setSuggestions([]);
       return;
     }
@@ -169,9 +192,34 @@ export function BigSearch() {
         .catch(() => s === suggestSeq.current && setSuggestions([]));
     }, SUGGEST_DELAY_MS);
     return () => clearTimeout(timer);
-  }, [typed]);
+  }, [typed, tab]);
 
   const press = (k: KeyEdit) => edit(applyKey(textRef.current, k));
+
+  /** The tab, in the URL (replaced: a tab is not a page of its own). */
+  function selectTab(next: "results" | "ai") {
+    if (next === tab) return;
+    const p = new URLSearchParams(params);
+    if (next === "ai") {
+      p.set("tab", "ai");
+      resultsText.current = text;
+    } else {
+      p.delete("tab");
+      // the Results' own words back on the keyboard (AI mode's questions cleared it)
+      if (text !== resultsText.current) edit(resultsText.current, true);
+    }
+    setParams(p, { replace: true, state: location.state });
+  }
+
+  /** AI mode: asks the keyboard's words; the keyboard clears for a follow-up. */
+  function askAI() {
+    const q = text.trim();
+    if (!q) return;
+    ai.ask(q);
+    suggestHidden.current = null;
+    edit("");
+    focusOn(`key:${layout}:${LAYOUTS[layout][0]![0]}`);
+  }
 
   /** A suggestion: a title opens its video; any other is searched. */
   function choose(it: SuggestItem) {
@@ -238,7 +286,7 @@ export function BigSearch() {
   const transcripts = (res?.transcript_videos ?? []).filter(
     (v) => v && typeof v.video_id === "string"
   );
-  const shownSuggestions = suggestions.slice(0, SUGGEST_MAX);
+  const shownSuggestions = tab === "ai" ? [] : suggestions.slice(0, SUGGEST_MAX);
   const dym = query && res && !err ? didYouMeanOf(res, query) : "";
   // the order the home answered in is the one shown as chosen, once it has answered
   // (the chosen chip at once, before the answer comes)
@@ -259,7 +307,7 @@ export function BigSearch() {
   return (
     <Screen testId="big-search">
       <div className="bs-search">
-        <div className="bs-search__entry">
+        <div className="bs-search__entry" data-bs-region="search-entry">
           <input
             className="bs-search__field"
             type="search"
@@ -359,146 +407,190 @@ export function BigSearch() {
           )}
         </div>
 
-        <div className="bs-search__results" aria-live="polite" aria-busy={pending}>
-          {!query && <Empty>{t("big.search.hint")}</Empty>}
-          {dym && (
-            <DidYouMean
-              text={dym}
-              onRun={runCorrected}
-              className="bs-dym"
-              buttonClassName="bs-chip bs-dym__q"
-              focusId="search:dym"
-              testId="big-did-you-mean"
-            />
-          )}
-          {query && res && !err && (
-            <div className="bs-refine">
-              <div
-                className="bs-chips bs-refine__bar"
-                data-bs-group="search-refine"
-                role="group"
-                aria-labelledby="bs-sort-title"
+        <div className="bs-search__results" data-bs-region="search-results">
+          <div
+            className="bs-chips bs-tabs"
+            role="tablist"
+            aria-label={t("big.search.tabs")}
+            data-bs-group="search-tabs"
+          >
+            {(["results", "ai"] as const).map((id) => (
+              <button
+                key={id}
+                type="button"
+                role="tab"
+                id={`bs-search-tab-${id}`}
+                aria-selected={tab === id}
+                aria-controls="bs-search-panel"
+                className="bs-chip"
+                data-bs-focus={`stab:${id}`}
+                onClick={() => selectTab(id)}
               >
-                <span id="bs-sort-title" className="bs-refine__label">
-                  {t("search.sort")}
-                </span>
-                {SORTS.map((so) => (
-                  <button
-                    key={so}
-                    type="button"
-                    className="bs-chip"
-                    aria-pressed={shownSort === so}
-                    data-bs-focus={`sort:${so}`}
-                    onClick={() => setSort(so)}
-                  >
-                    {t(`search.sort.${so}`)}
-                  </button>
-                ))}
-                {groups.length > 0 && (
-                  <button
-                    type="button"
-                    className="bs-chip bs-refine__filters"
-                    data-bs-focus="search:filters"
-                    aria-haspopup="dialog"
-                    onClick={() => setFiltersOpen(true)}
-                  >
-                    {t("big.search.filters")}
-                    {inUse.length > 0 && <span className="bs-refine__n">{n(inUse.length)}</span>}
-                  </button>
-                )}
-              </div>
-              {inUse.length > 0 && (
-                <div
-                  className="bs-chips bs-refine__active"
-                  data-bs-group="search-active"
-                  role="group"
-                  aria-label={t("search.filters.active")}
-                >
-                  {inUse.map(({ facet, value }) => {
-                    const name = chipName(facet, value);
-                    return (
-                      <button
-                        key={`${facet}:${value}`}
-                        type="button"
-                        className="bs-chip bs-chip--remove"
-                        data-bs-focus={`rm:${facet}:${value}`}
-                        aria-label={t("search.filters.remove", { name })}
-                        onClick={() => remove(facet, value)}
-                      >
-                        <bdi>{name}</bdi>
-                        <span aria-hidden="true"> ✕</span>
-                      </button>
-                    );
-                  })}
-                  <button
-                    type="button"
-                    className="bs-chip"
-                    data-bs-focus="search:clear"
-                    onClick={clearFilters}
-                  >
-                    {t("search.filters.clear")}
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
-          {query && err && <Failed message={err} />}
-          {query && !err && pending && !res && <p className="bs-state">{t("common.loading")}</p>}
-          {query && res && !err && titles.length === 0 && transcripts.length === 0 && !pending && (
-            <Empty>{t("big.search.none", { q: query })}</Empty>
-          )}
-          {titles.length > 0 && (
-            <section className="bs-row">
-              <h2 className="bs-row__title">
-                {t("big.search.titles")}{" "}
-                <span className="bs-count">{n(res?.videos_total ?? titles.length)}</span>
-              </h2>
-              <div className="bs-row__scroller" data-bs-group="row:search-titles" role="list">
-                {titles.map((v) => (
-                  <VideoTile
-                    key={v.video_id}
-                    video={{ id: v.video_id, title: v.title, duration_sec: v.duration_sec }}
-                    focusId={`st:${v.video_id}`}
-                    onSelect={() => go(bigPath.video(v.video_id))}
+                {t(`search.tab.${id}`)}
+              </button>
+            ))}
+          </div>
+          <div
+            id="bs-search-panel"
+            role="tabpanel"
+            aria-labelledby={`bs-search-tab-${tab}`}
+            aria-live={tab === "results" ? "polite" : undefined}
+            aria-busy={tab === "results" ? pending : undefined}
+          >
+            {tab === "ai" && <BigSearchAI conv={ai} question={text.trim()} onAsk={askAI} />}
+            {tab === "results" && (
+              <>
+                {!query && <Empty>{t("big.search.hint")}</Empty>}
+                {dym && (
+                  <DidYouMean
+                    text={dym}
+                    onRun={runCorrected}
+                    className="bs-dym"
+                    buttonClassName="bs-chip bs-dym__q"
+                    focusId="search:dym"
+                    testId="big-did-you-mean"
                   />
-                ))}
-              </div>
-            </section>
-          )}
-          {transcripts.length > 0 && (
-            <section className="bs-row">
-              <h2 className="bs-row__title">
-                {t("big.search.transcripts")}{" "}
-                <span className="bs-count">{n(res?.transcript_total ?? transcripts.length)}</span>
-              </h2>
-              <div className="bs-matches" data-bs-group="search-matches">
-                {transcripts.map((v) => {
-                  const p = (v.passages ?? [])[0];
-                  return (
-                    <button
-                      key={v.video_id}
-                      type="button"
-                      className="bs-match"
-                      data-bs-focus={`sm:${v.video_id}`}
-                      onClick={() =>
-                        p
-                          ? go(bigPath.watch(v.video_id, { t: p.start_sec }))
-                          : go(bigPath.video(v.video_id))
-                      }
+                )}
+                {query && res && !err && (
+                  <div className="bs-refine">
+                    <div
+                      className="bs-chips bs-refine__bar"
+                      data-bs-group="search-refine"
+                      role="group"
+                      aria-labelledby="bs-sort-title"
                     >
-                      <bdi className="bs-match__title">{v.title}</bdi>
-                      {p && (
-                        <span className="bs-match__line">
-                          <Ltr className="bs-line__at">{clock(p.start_sec)}</Ltr>
-                          <span dir="auto">{renderSnippet(p.snippet)}</span>
-                        </span>
+                      <span id="bs-sort-title" className="bs-refine__label">
+                        {t("search.sort")}
+                      </span>
+                      {SORTS.map((so) => (
+                        <button
+                          key={so}
+                          type="button"
+                          className="bs-chip"
+                          aria-pressed={shownSort === so}
+                          data-bs-focus={`sort:${so}`}
+                          onClick={() => setSort(so)}
+                        >
+                          {t(`search.sort.${so}`)}
+                        </button>
+                      ))}
+                      {groups.length > 0 && (
+                        <button
+                          type="button"
+                          className="bs-chip bs-refine__filters"
+                          data-bs-focus="search:filters"
+                          aria-haspopup="dialog"
+                          onClick={() => setFiltersOpen(true)}
+                        >
+                          {t("big.search.filters")}
+                          {inUse.length > 0 && (
+                            <span className="bs-refine__n">{n(inUse.length)}</span>
+                          )}
+                        </button>
                       )}
-                    </button>
-                  );
-                })}
-              </div>
-            </section>
-          )}
+                    </div>
+                    {inUse.length > 0 && (
+                      <div
+                        className="bs-chips bs-refine__active"
+                        data-bs-group="search-active"
+                        role="group"
+                        aria-label={t("search.filters.active")}
+                      >
+                        {inUse.map(({ facet, value }) => {
+                          const name = chipName(facet, value);
+                          return (
+                            <button
+                              key={`${facet}:${value}`}
+                              type="button"
+                              className="bs-chip bs-chip--remove"
+                              data-bs-focus={`rm:${facet}:${value}`}
+                              aria-label={t("search.filters.remove", { name })}
+                              onClick={() => remove(facet, value)}
+                            >
+                              <bdi>{name}</bdi>
+                              <span aria-hidden="true"> ✕</span>
+                            </button>
+                          );
+                        })}
+                        <button
+                          type="button"
+                          className="bs-chip"
+                          data-bs-focus="search:clear"
+                          onClick={clearFilters}
+                        >
+                          {t("search.filters.clear")}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+                {query && err && <Failed message={err} />}
+                {query && !err && pending && !res && (
+                  <p className="bs-state">{t("common.loading")}</p>
+                )}
+                {query &&
+                  res &&
+                  !err &&
+                  titles.length === 0 &&
+                  transcripts.length === 0 &&
+                  !pending && <Empty>{t("big.search.none", { q: query })}</Empty>}
+                {titles.length > 0 && (
+                  <section className="bs-row">
+                    <h2 className="bs-row__title">
+                      {t("big.search.titles")}{" "}
+                      <span className="bs-count">{n(res?.videos_total ?? titles.length)}</span>
+                    </h2>
+                    <div className="bs-row__scroller" data-bs-group="row:search-titles" role="list">
+                      {titles.map((v) => (
+                        <VideoTile
+                          key={v.video_id}
+                          video={{ id: v.video_id, title: v.title, duration_sec: v.duration_sec }}
+                          focusId={`st:${v.video_id}`}
+                          onSelect={() => go(bigPath.video(v.video_id))}
+                        />
+                      ))}
+                    </div>
+                  </section>
+                )}
+                {transcripts.length > 0 && (
+                  <section className="bs-row">
+                    <h2 className="bs-row__title">
+                      {t("big.search.transcripts")}{" "}
+                      <span className="bs-count">
+                        {n(res?.transcript_total ?? transcripts.length)}
+                      </span>
+                    </h2>
+                    <div className="bs-matches" data-bs-group="search-matches">
+                      {transcripts.map((v) => {
+                        const p = (v.passages ?? [])[0];
+                        return (
+                          <button
+                            key={v.video_id}
+                            type="button"
+                            className="bs-match"
+                            data-bs-focus={`sm:${v.video_id}`}
+                            onClick={() =>
+                              p
+                                ? go(bigPath.watch(v.video_id, { t: p.start_sec }))
+                                : go(bigPath.video(v.video_id))
+                            }
+                          >
+                            <bdi className="bs-match__title">{v.title}</bdi>
+                            {p && (
+                              <span className="bs-match__line">
+                                <Ltr className="bs-line__at">{clock(p.start_sec)}</Ltr>
+                                <span dir="auto">{renderSnippet(p.snippet)}</span>
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </section>
+                )}
+              </>
+            )}
+          </div>
         </div>
       </div>
       {filtersOpen && (

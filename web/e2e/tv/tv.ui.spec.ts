@@ -9,6 +9,8 @@
 //        (shared/i18n/visual-vectors.json), in the bundled Arabic font, in both languages.
 //   49.11: Search with the D-pad: suggestions with their kinds, Did you mean, the order and
 //        the Filters panel, in both languages.
+//   49.14: Search's AI mode tab with the D-pad: the words typed asked, the sources and the
+//        cited sentences, a follow-up with its history, a citation playing its moment.
 import { expect, test, type Page, type TestInfo } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
@@ -81,6 +83,7 @@ async function pressTo(page: Page, key: string, id: string | RegExp, max = 16) {
   let k = key;
   let turned = false;
   let last = await focused(page);
+  const path = [last];
   for (let i = 0; i < max; i++) {
     if (hit(last)) return;
     await page.keyboard.press(k);
@@ -91,8 +94,9 @@ async function pressTo(page: Page, key: string, id: string | RegExp, max = 16) {
       turned = true;
     }
     last = now;
+    path.push(now);
   }
-  throw new Error(`focus never reached ${id} with ${key} (on ${last})`);
+  throw new Error(`focus never reached ${id} with ${key} (on ${last}) PATH ${path.join(" > ")}`);
 }
 
 async function shot(page: Page, name: string) {
@@ -288,6 +292,100 @@ for (const locale of ["en", "ar"] as const) {
 
     await log.attach(info, home);
     expect(home.unknown, "every call the screen made has an answer in the mock home").toEqual([]);
+    expect(log.consoleLines.filter((l) => l.startsWith("[pageerror]"))).toEqual([]);
+  });
+}
+
+// Story 49.14: AI mode, D-pad only: two letters on the screen keyboard, across to the results'
+// column and up to the tabs, AI mode chosen (the words typed are asked), the sources and the
+// sentences with their citations; a follow-up typed and asked with Ask carries the first
+// turn; a citation plays its video at its moment.
+for (const locale of ["en", "ar"] as const) {
+  test(`Search: AI mode, a cited answer, a follow-up, a citation played, ${locale} (49.14)`, async ({
+    page,
+  }, info) => {
+    const log = record(page);
+    const home = await mockHome(page);
+    await start(page, locale);
+    await page.goto("/tv/");
+    await expect(page.getByTestId("big-hero")).toBeVisible();
+    const forward = locale === "ar" ? "ArrowLeft" : "ArrowRight";
+    await pressTo(page, "ArrowUp", /^tab:/);
+    await pressTo(page, forward, "tab:/big/search");
+    await page.keyboard.press("Enter");
+    const s = page.getByTestId("big-search");
+    await expect(s).toBeVisible();
+
+    // two letters with the screen keyboard, as 49.11 types them
+    const [first, second] = locale === "ar" ? ["ص", "ب"] : ["p", "a"];
+    await expect.poll(() => focused(page)).toMatch(/^key:/);
+    await pressTo(page, "ArrowDown", locale === "ar" ? "key:ar:ز" : "key:en:k");
+    await pressTo(page, forward, `key:${locale}:${first}`);
+    await page.keyboard.press("Enter");
+    await pressTo(page, "ArrowUp", locale === "ar" ? /^key:ar:[ابتثجحخدذر]$/ : /^key:en:[a-j]$/);
+    await pressTo(page, locale === "ar" ? "ArrowRight" : "ArrowLeft", `key:${locale}:${second}`);
+    await page.keyboard.press("Enter");
+    const typed = `${first}${second}`;
+    await expect(s.getByRole("searchbox")).toHaveValue(typed);
+    await expect.poll(() => home.searches.length).toBeGreaterThan(0);
+
+    // across to the results' column, up to the tabs, AI mode
+    await pressTo(page, forward, /^(st|sm|sort|search|sg|tab):/);
+    await pressTo(page, "ArrowUp", /^stab:/);
+    await pressTo(page, forward, "stab:ai");
+    await page.keyboard.press("Enter");
+    await expect(
+      s.getByRole("tab", { name: locale === "ar" ? "وضع الذكاء الاصطناعي" : "AI mode" })
+    ).toHaveAttribute("aria-selected", "true");
+    await expect.poll(() => home.asks).toEqual([{ q: typed }]);
+    const turn = s.getByTestId("big-ai-turn").first();
+    await expect(turn.locator(".bs-match")).toHaveCount(2);
+    await expect(turn.locator(".bs-ai__sentence")).toHaveCount(2);
+    await expect(turn.locator(".bs-ai__cite")).toHaveCount(2);
+    await shot(page, `search-ai-${locale}`);
+    const searches = home.searches.length;
+
+    // a follow-up: two letters (the words asked as the tab opened left the keyboard), then Ask
+    // back across to the keyboard (the field keeps left and right: down leaves it)
+    await pressTo(page, locale === "ar" ? "ArrowRight" : "ArrowLeft", /^(key:|search:field$)/, 24);
+    await pressTo(page, "ArrowDown", /^key:/);
+    await page.keyboard.press("Enter");
+    await page.keyboard.press("Enter");
+    const follow = await s.getByRole("searchbox").inputValue();
+    expect(follow).toHaveLength(2);
+    await pressTo(page, forward, /^(ai|tab):/, 24);
+    await pressTo(page, "ArrowUp", /^stab:/);
+    await pressTo(page, "ArrowDown", "ai:ask");
+    await page.keyboard.press("Enter");
+    await expect.poll(() => home.asks.length).toBe(2);
+    expect(home.asks[1]).toEqual({
+      q: follow,
+      history: [
+        {
+          q: typed,
+          answer:
+            locale === "ar"
+              ? "الصبر يكون عند الشدة. وصبر الأنبياء على قومهم."
+              : "Patience is shown in hardship. The prophets were patient with their people.",
+        },
+      ],
+    });
+    await expect(s.getByTestId("big-ai-turn")).toHaveCount(2);
+    await expect(s.getByTestId("big-ai-turn").first().locator(".bs-ai__sentence")).toHaveCount(1);
+    // the search waited while AI mode was shown
+    expect(home.searches.length).toBe(searches);
+    await shot(page, `search-ai-followup-${locale}`);
+
+    // down the column to a citation of the newest answer, and it plays its moment
+    await pressTo(page, forward, /^(ai|tab):/, 24);
+    await pressTo(page, "ArrowDown", /^ai:c:/, 24);
+    const cite = await focused(page);
+    expect(cite).toMatch(/^ai:c:2:0:1$/);
+    expect(home.unknown, "every call the screen made has an answer in the mock home").toEqual([]);
+    await page.keyboard.press("Enter");
+    await expect(page).toHaveURL(/\/tv\/big\/watch\/v3\?t=312/);
+
+    await log.attach(info, home);
     expect(log.consoleLines.filter((l) => l.startsWith("[pageerror]"))).toEqual([]);
   });
 }

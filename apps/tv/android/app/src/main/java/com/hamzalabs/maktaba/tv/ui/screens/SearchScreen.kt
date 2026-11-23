@@ -45,6 +45,9 @@ import com.hamzalabs.maktaba.core.api.languageName
 import com.hamzalabs.maktaba.core.search.SUGGEST_DELAY_MS
 import com.hamzalabs.maktaba.core.search.SearchAnswer
 import com.hamzalabs.maktaba.core.search.SearchModel
+import com.hamzalabs.maktaba.core.search.SearchTab
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.collectAsState
 import com.hamzalabs.maktaba.core.ui.sentence
 import com.hamzalabs.maktaba.tv.R
 import com.hamzalabs.maktaba.tv.data.TvApi
@@ -71,7 +74,7 @@ fun SearchScreen(
     search: SearchModel,
     focusFirst: Boolean,
     onOpen: (String) -> Unit,
-    onPlay: (TranscriptHit, Double) -> Unit,
+    onPlay: (videoId: String, startSec: Double) -> Unit,
     showTranscripts: Boolean = true,
 ) {
     val scope = rememberCoroutineScope()
@@ -111,6 +114,13 @@ fun SearchScreen(
             runCatching { firstResult.requestFocus() }
         }
     }
+    // AI mode asks only on its tab (story 49.14): opening it asks the search's words, once;
+    // leaving it, or Search, stops the answer still coming
+    val ai by search.ai.state.collectAsState()
+    LaunchedEffect(search.tab, search.submitted) {
+        if (search.tab == SearchTab.Ai) search.ai.open(scope, search.submitted ?: search.query, search.choice.filters())
+    }
+    DisposableEffect(search.tab) { onDispose { search.ai.stop() } }
     Column(Modifier.fillMaxSize().padding(top = 28.dp).testTag("tv-search")) {
         TvTextField(
             value = search.query,
@@ -129,8 +139,16 @@ fun SearchScreen(
             if (showSuggestions) {
                 item(key = "suggestions") { Suggestions(search.suggestions, choose) }
             }
+            item(key = "tabs") { TabsRow(search) }
             val problem = search.problem
             when {
+                search.tab == SearchTab.Ai -> aiItems(
+                    ai,
+                    ask = { q -> search.ai.ask(scope, q, search.choice.filters()) },
+                    again = { search.ai.retry(scope) },
+                    play = onPlay,
+                    helpUrl = { path -> api.client.home.toString().trimEnd('/') + path },
+                )
                 search.searching && (answer == null || answer.q != search.submitted?.trim()) ->
                     item(key = "loading") { Note(stringResource(R.string.loading)) }
                 problem != null -> item(key = "problem") {
@@ -357,7 +375,7 @@ private fun TitlesRow(api: TvApi, search: SearchModel, answer: SearchAnswer, fir
 
 /** In the transcript: a card per video, its first passage under the title; OK plays from that moment. */
 @Composable
-private fun TranscriptsRow(api: TvApi, search: SearchModel, answer: SearchAnswer, transcripts: List<TranscriptHit>, first: FocusRequester?, onPlay: (TranscriptHit, Double) -> Unit) {
+private fun TranscriptsRow(api: TvApi, search: SearchModel, answer: SearchAnswer, transcripts: List<TranscriptHit>, first: FocusRequester?, onPlay: (String, Double) -> Unit) {
     val scope = rememberCoroutineScope()
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         RowTitle(stringResource(R.string.search_transcripts))
@@ -374,7 +392,7 @@ private fun TranscriptsRow(api: TvApi, search: SearchModel, answer: SearchAnswer
                     subtitle = line,
                     width = 240.dp,
                     cardModifier = Modifier.testTag("tv-transcript-${h.videoId}").then(if (i == 0 && first != null) Modifier.focusRequester(first) else Modifier),
-                    onClick = { onPlay(h, at) },
+                    onClick = { onPlay(h.videoId, at) },
                 )
             }
         }

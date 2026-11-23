@@ -376,19 +376,12 @@ build fails when the two differ.
 
 ### Fixed
 
-- **An update whose new index waits on a machine's copy no longer fails, and a failed update no
-  longer costs hours.** While an update's migrations ran, a joined machine making its copy of
-  the library again could hold an old snapshot for as long as copying a large table takes. Each
-  new index built `CONCURRENTLY` waited for it until its lock timeout, three tries running. The
-  update then put the whole database back from its backup: 2 h 44 min with the library stopped
-  on a 35 GB home, on 2026-11-23, after the same failure on 2026-11-14. Now the home ends any
-  session a migration has waited on for more than 10 seconds and names it in the log. A
-  machine's copy carries on and copies that table again. An index left INVALID by a build cut
-  short is dropped and built again, where the next try used to take it for done. When the
-  migrations still fail part way, nothing is put back if what they changed is additive and the
-  release before runs on it. Otherwise their own Down scripts undo them when they lose no data,
-  in seconds. Only failing both does the backup go back, as before.
-
+- **Keyword search's first indexing of a large library on a SQLite home no longer slows as it
+  goes (Epic 49, story 49.6 follow-up).** Each video's full-text row is now found by its key
+  when it is written again, not by reading the whole table, so indexing every video takes time
+  in proportion to the library, not to its square. A SQLite home also no longer warns every
+  hour about a search index it has no use for, and renaming or merging a speaker updates
+  keyword search there too.
 - **Videos start much sooner on Android phones and tablets, and show their real length.** The
   Maktaba Player on Android now tells the home what the device plays, so a film the phone can
   play as it is (including Dolby audio its own decoders take) plays directly instead of waiting
@@ -1125,6 +1118,38 @@ build fails when the two differ.
 
 ### Added
 
+- **Search in the web app, on the big screen and on Samsung and LG TVs has an AI mode tab that
+  answers a question from the library (Epic 49, story 49.14).** Beside **Results**, **AI mode**
+  asks the home's language model. The sources show first, then the answer a sentence at a time,
+  each sentence's numbers opening the player at the passage it comes from. Another answer being
+  written shows the question's place in line. A follow-up carries the conversation, and when the
+  passages do not answer, it says so and keeps them shown. Without a language model the tab says
+  how to set one up (an admin gets the setting's link), and it says when an admin has turned AI
+  mode off or when to ask again if many questions are waiting. Leaving the tab or the page stops
+  an answer still being written. On the big screen and the TVs it works with the remote alone,
+  newest question at the top. In English and Arabic, right to left in Arabic.
+- **AI mode in the Apple apps (Epic 49, story 49.14).** Search in Maktaba Player (iPhone, iPad,
+  Mac) and on Apple TV has a second tab, **AI mode**, beside **Results**. Ask a question and the
+  home's own language model answers from the passages of your libraries: the sources show first,
+  then the answer sentence by sentence, each citation playing the video from the cited moment.
+  While another answer is being written, the place in line shows. Follow-ups go in the same tab.
+  A home without a language model, with AI mode turned off, too busy, or too old to have it says
+  so in the tab. English and Arabic.
+- **AI mode in the Android Player, on Android TV and in the Player for Windows and Linux (Epic
+  49, story 49.14).** Search has two tabs, Results and AI mode. AI mode asks the home's language
+  model a question only once its tab is opened or asked from. The passages it reads show at
+  once, then the answer sentence by sentence, each with a chip per passage it cites that plays
+  the video from that moment (a row the remote moves along on Android TV). A follow-up carries
+  the earlier questions and answers. When the passages do not answer, it says so and keeps them
+  shown. A home without a language model says where an admin sets one up, with the help page; AI
+  mode turned off, a busy home and an older home each say why.
+- **AI mode on Roku (Epic 49, story 49.14).** Search on Roku has an **AI mode** tab beside
+  **Results**. It asks the home's language model about what you typed and shows the answer with
+  the numbers of the passages it cites. The passages are listed under it, and each one plays
+  from its moment. **Ask** with new words asks a follow-up and **New topic** starts afresh. When
+  the passages do not answer, the tab says so and keeps them listed. A home with no language
+  model, with AI mode turned off, or busy with other questions says so too. On Roku the answer
+  appears once it is written.
 - **AI mode answers a question from the library (Epic 49, story 49.12).** `POST /api/search/ai`
   finds the best passages as a search does, in the caller's libraries only, and the home's
   language model writes a short answer from them in the question's language. Every sentence
@@ -4366,6 +4391,19 @@ build fails when the two differ.
   did not list at all on a home on SQLite. Both now open with the order and filters they were
   asked with, on any device, and Save names a search by its words, order and filters. A shared
   search opened in a new tab names its library at once and shows the chips that narrow it.
+
+- **An update whose new index waits on a machine's copy no longer fails, and a failed update no
+  longer costs hours.** While an update's migrations ran, a joined machine making its copy of
+  the library again could hold an old snapshot for as long as copying a large table takes. Each
+  new index built `CONCURRENTLY` waited for it until its lock timeout, three tries running. The
+  update then put the whole database back from its backup: 2 h 44 min with the library stopped
+  on a 35 GB home, on 2026-11-23, after the same failure on 2026-11-14. Now the home ends any
+  session a migration has waited on for more than 10 seconds and names it in the log. A
+  machine's copy carries on and copies that table again. An index left INVALID by a build cut
+  short is dropped and built again, where the next try used to take it for done. When the
+  migrations still fail part way, nothing is put back if what they changed is additive and the
+  release before runs on it. Otherwise their own Down scripts undo them when they lose no data,
+  in seconds. Only failing both does the backup go back, as before.
 
 ## [0.2.0] - 2026-10-19
 

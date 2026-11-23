@@ -90,6 +90,17 @@ sub t_Client()
     c.Request("GET", "/api/libraries", invalid)
     ck_Eq("the second call uses the renewed token", tr.sent[3].headers["Authorization"], "Bearer A2")
     ck_Eq("one refresh", tr.sent.Count(), 4)
+
+    ' AI mode's following client (story 49.14) never refreshes: its 401 is answered as it is,
+    ' nothing renewed and nobody signed out, so two Tasks never refresh one token at once
+    tr = ck_FakeTransport([{status: 401, body: ""}, {status: 200, body: "{""access_token"":""A2"",""refresh_token"":""R2""}"}])
+    c = ApiClientNew(t_Session(), tr)
+    c.noRefresh = true
+    r = c.Request("POST", "/api/search/ai", {q: "x"})
+    ck_Eq("noRefresh: the 401 stands", r.status, 401)
+    ck_Eq("noRefresh: one request, no refresh", tr.sent.Count(), 1)
+    ck_Eq("noRefresh: still signed in", c.signedOut, false)
+    ck_Eq("noRefresh: tokens kept", c.session.refresh, "R1")
 end sub
 
 sub t_Net()

@@ -1718,7 +1718,7 @@
       "title": "`keyword_index` queue stage and backfill through the queue",
       "epic": "49-search",
       "phase": 5,
-      "content": "`keyword_index` queue stage and backfill through the queue. a new transcript queues it; a title change queues it; a version bump queues every video at priority 10; shown on the Queues page; one item at a time",
+      "content": "`keyword_index` queue stage and backfill through the queue. a new transcript queues it; a title change queues it; a version bump queues every video at priority 900 (a lower number runs first, so behind other work); shown on the Queues page; one item at a time",
       "tags": [
         "story",
         "49-search",

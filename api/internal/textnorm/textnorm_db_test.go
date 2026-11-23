@@ -68,17 +68,27 @@ func TestArabicSearchOnPostgres(t *testing.T) {
 		}
 	}
 	// an index on each side's function builds (PostgreSQL 17 and later build an index with
-	// search_path set to pg_catalog: a function calling another unqualified fails there)
+	// search_path set to pg_catalog: a function calling another unqualified fails there). The
+	// test narrows the path itself, so it fails on 16 too, where the server does not (#1477).
+	tx, err := db.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tx.Rollback() }()
 	for _, q := range []string{
 		`CREATE TEMP TABLE idx_check (body text)`,
 		`INSERT INTO idx_check VALUES ('الصبر عند المصيبة'), ('إسلام')`,
-		`CREATE INDEX ON idx_check USING gin (maktaba_tsv(body))`,
-		`CREATE INDEX ON idx_check USING gin (maktaba_tsv_stem(body))`,
-		`CREATE INDEX ON idx_check ((maktaba_stem_prepare(body)))`,
+		`SET LOCAL search_path = pg_catalog`,
+		`CREATE INDEX ON pg_temp.idx_check USING gin (public.maktaba_tsv(body))`,
+		`CREATE INDEX ON pg_temp.idx_check USING gin (public.maktaba_tsv_stem(body))`,
+		`CREATE INDEX ON pg_temp.idx_check ((public.maktaba_stem_prepare(body)))`,
 	} {
-		if _, err := db.Exec(q); err != nil {
+		if _, err := tx.Exec(q); err != nil {
 			t.Fatalf("%s: %v", q, err)
 		}
+	}
+	if err := tx.Rollback(); err != nil {
+		t.Fatal(err)
 	}
 	// the word as typed first: the exact score weighs more than the stemmed one
 	rows, err := db.Query(`

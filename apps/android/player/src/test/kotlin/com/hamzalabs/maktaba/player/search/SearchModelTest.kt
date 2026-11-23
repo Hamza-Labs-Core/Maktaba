@@ -288,4 +288,14 @@ class SearchModelTest {
         older.join()
         assertEquals("the older word's answer is dropped", listOf("pat-x"), m.suggestions.map { it.text })
     }
+
+    @Test
+    fun resultsIsTheTabAndASearchNeverAsksAiMode() = runBlocking {
+        // story 49.14: AI mode asks only when its tab is opened or asked from
+        val m = model()
+        assertEquals(com.hamzalabs.maktaba.core.search.SearchTab.Results, m.tab)
+        m.submit("patience")
+        assertFalse(home.paths.contains("/api/search/ai"))
+        assertTrue(m.ai.state.value.isEmpty)
+    }
 }

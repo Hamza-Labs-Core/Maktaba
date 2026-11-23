@@ -6,7 +6,7 @@ Maktaba Player and Maktaba Remote bring your home to Android phones, foldables a
 
 There are two apps:
 
-- **Maktaba Player**: watch your home. It has **Home**, **Libraries**, **Live TV** (only when you may watch a channel), **Search** and **Profile**: a bar at the bottom on a phone, a rail or a drawer on a wider screen. A video keeps its sound with the screen off, and going Home while it plays opens it in picture in picture.
+- **Maktaba Player**: watch your home. It has **Home**, **Libraries**, **Live TV** (only when you may watch a channel), **Search** and **Profile**: a bar at the bottom on a phone, a rail or a drawer on a wider screen. A video keeps its sound with the screen off, and going Home while it plays opens it in picture in picture. Search has two tabs: **Results**, and **AI mode**, which answers a question from your library's passages, each sentence with a chip per passage it cites that plays the video from that moment (see [AI mode](/help/search#ai-mode)).
 - **Maktaba Remote**: run your home from your phone. It opens on **Needs attention** (with **Retry** and **Retry all**), then **Queue** (pause and resume a stage or everything), **Libraries** (scan) and **Machines** (drain). Only the home's admins can use it; the home refuses everyone else.
 
 Each app is one app for phones, foldables and tablets, and needs Android 8 or later. The screen follows the window, not the device:

@@ -32,7 +32,12 @@
 // the libraries list until the facets name it.
 //
 // URL state: /search?q=&mode=[&sort=][&lib=&lang=&spk=&year=&dur=]&sid=&vp=<titles
-// page>&tp=<transcripts page>.
+// page>&tp=<transcripts page>[&tab=ai].
+//
+// Story 49.14: two tabs, Results (the default, all of the above) and AI mode (SearchAI.tsx,
+// tab=ai in the URL). AI mode asks only when its tab opens with words in the box or a question
+// is asked from it; the Results search does not run while AI mode is shown, and leaving the
+// AI tab stops the answer being written.
 // With a sid the pages are read from the saved search (Back / Forward /
 // reload keep the same order); without one the search is POSTed and its sid
 // replaces the URL. A sid read answering 410 search-expired runs the search
@@ -128,6 +133,9 @@ import {
 import { fetchLibrarySummary, type LibrarySummary } from "../lib/browse";
 import { errorText } from "../lib/errorText";
 import { cachedAnswer, keepAnswer } from "../lib/pageCache";
+import { Tabs } from "@ds/components/Tabs/Tabs";
+import { useAIConversation, useAITab } from "../lib/searchAI";
+import { SearchAI } from "./SearchAI";
 import { FeatureOffNote, useCapabilities, useFeatureGate } from "../lib/capabilities";
 import { useReadOrder } from "../lib/readOrder";
 
@@ -238,6 +246,10 @@ export function Search() {
   const sid = params.get("sid") ?? "";
   const vp = pageParam(params.get("vp"));
   const tp = pageParam(params.get("tp"));
+  // story 49.14: the tab, Results unless the URL says AI mode
+  const tab: "results" | "ai" = params.get("tab") === "ai" ? "ai" : "results";
+  const ai = useAIConversation();
+  useAITab(ai, tab === "ai", urlQ);
   // story 49.10: the order and the facet filters (one string, so the effect sees a change)
   const uSort = urlSort(params.get("sort"));
   const uSelKey = JSON.stringify(selOf(params));
@@ -520,7 +532,15 @@ export function Search() {
   const showUrl = useCallback(
     (s: SearchState, push = false) => {
       if (!alive.current) return;
-      setParams(searchParamsOf(s), { replace: !push });
+      // a search answering after the person moved to AI mode keeps them there
+      setParams(
+        (prev) => {
+          const p = searchParamsOf(s);
+          if (prev.get("tab") === "ai") p.set("tab", "ai");
+          return p;
+        },
+        { replace: !push }
+      );
     },
     [setParams]
   );
@@ -785,6 +805,8 @@ export function Search() {
   // screen only the pages change; `lastRun` keeps a re-run of the same
   // effect (StrictMode) from sending a second request.
   useEffect(() => {
+    // AI mode on screen: the Results search waits until its tab is opened
+    if (tab === "ai") return;
     if (!urlQ) {
       lastRun.current = "";
       setQ("");
@@ -820,6 +842,7 @@ export function Search() {
       void openBySid(urlQ, m, ask, sid, { vp, tp }, ytRef.current, Boolean(kept));
     } else void postSearch(urlQ, m, ask, { vp: 1, tp: 1 }, { youtube: ytRef.current });
   }, [
+    tab,
     urlQ,
     uMode,
     uSort,
@@ -1061,182 +1084,204 @@ export function Search() {
     : null;
   const nothing = snap && !err && snap.titlesTotal === 0 && snap.transcriptsTotal === 0;
 
+  /** The tab, in the URL (a replace: a tab is not a page of its own). */
+  function selectTab(id: string) {
+    const p = new URLSearchParams(params);
+    if (id === "ai") p.set("tab", "ai");
+    else p.delete("tab");
+    setParams(p, { replace: true });
+  }
+
+  const results = (
+    <>
+      <form onSubmit={onSubmit} className="mkt-search__form" role="search">
+        <SuggestBox
+          value={q}
+          onChange={onChangeQuery}
+          items={suggestions}
+          onChoose={chooseSuggestion}
+          label={t("nav.search")}
+          placeholder={t("search.placeholder")}
+        />
+        {!meaningOff && (
+          <select
+            value={mode}
+            onChange={(e) => setMode(e.target.value as Mode)}
+            aria-label={t("search.mode")}
+          >
+            <option value="hybrid">{t("search.mode.hybrid")}</option>
+            <option value="fts">{t("search.mode.fts")}</option>
+            <option value="semantic">{t("search.mode.semantic")}</option>
+          </select>
+        )}
+        <Button type="submit" loading={pending}>
+          {t("nav.search")}
+        </Button>
+        <Button type="button" variant="secondary" onClick={saveCurrent}>
+          {t("search.save")}
+        </Button>
+        <PageHelp />
+        {ytAvailable && ytGate === "show" && (
+          <label className="mkt-search__yt-toggle">
+            <input
+              type="checkbox"
+              checked={withYouTube}
+              onChange={(e) => setWithYouTube(e.target.checked)}
+            />
+            {t("search.youtube.toggle")}
+          </label>
+        )}
+      </form>
+
+      {meaningOff && caps.admin && (
+        <p className="mkt-muted mkt-search__words-only" role="note">
+          {t("capabilities.wordsOnly")}
+        </p>
+      )}
+
+      {notice && (
+        <div className="mkt-search__notice" role="status">
+          <span>{t("search.refreshed")}</span>
+          <button type="button" className="mkt-link-btn" onClick={backToFirst}>
+            {t("search.backToFirst")}
+          </button>
+          <button
+            type="button"
+            className="mkt-icon-btn mkt-search__notice-close"
+            aria-label={t("common.dismiss")}
+            onClick={() => setNotice(false)}
+          >
+            ×
+          </button>
+        </div>
+      )}
+
+      {err && <ErrorState kind="server" title={t("common.error")} description={err} />}
+
+      {snap && !err && snap.didYouMean && (
+        <DidYouMean
+          text={snap.didYouMean}
+          onRun={(corrected) => {
+            setQ(corrected);
+            // the filters were the caller's choice, not the words': they stay
+            search(corrected, snap.mode, { sort: snap.sort, sel: snap.sel });
+          }}
+        />
+      )}
+
+      {snap && !err && selCount(snap.sel) > 0 && (
+        <ActiveFilters
+          sel={snap.sel}
+          labels={labels}
+          onRemove={(facet, value) => toggleFacet(facet, value)}
+          onClear={() => refine({ sel: noSel() })}
+        />
+      )}
+
+      {nothing && <EmptyState kind="filtered_out" title={t("search.didYouMean")} />}
+
+      {snap && here && !nothing && (
+        <div className="mkt-search__toolbar">
+          <SortSelect value={snap.sort} onChange={(sort) => refine({ sort })} />
+          <ViewToggle view={view} onChange={setView} />
+        </div>
+      )}
+
+      {snap && !err && !nothing && snap.facets && (
+        <FacetPanel facets={snap.facets} sel={snap.sel} onToggle={toggleFacet} labels={labels} />
+      )}
+
+      {snap && here && titles && snap.titlesTotal > 0 && (
+        <ResultSection
+          id="titles"
+          heading={t("search.videos")}
+          page={titles.page}
+          total={snap.titlesTotal}
+          pageSize={snap.pageSize}
+          canPage={Boolean(snap.sid)}
+          busy={busy.titles}
+          onPage={(p) => goPage("titles", p)}
+        >
+          <ul
+            className={`mkt-sresults mkt-sresults--${view}`}
+            data-testid="search-videos"
+            aria-label={t("search.videos")}
+          >
+            {titles.items.map((v) => (
+              <VideoResult
+                key={v.video_id}
+                video={v}
+                view={view}
+                href={matchesHref(v.video_id, here)}
+              />
+            ))}
+          </ul>
+        </ResultSection>
+      )}
+
+      {snap && here && transcripts && snap.transcriptsTotal > 0 && (
+        <ResultSection
+          id="transcripts"
+          heading={t("search.passages")}
+          page={transcripts.page}
+          total={snap.transcriptsTotal}
+          pageSize={snap.pageSize}
+          canPage={Boolean(snap.sid)}
+          busy={busy.transcripts}
+          onPage={(p) => goPage("transcripts", p)}
+        >
+          <ul
+            className={`mkt-sresults mkt-sresults--${view}`}
+            data-testid="search-transcripts"
+            aria-label={t("search.passages")}
+          >
+            {transcripts.items.map((v) => (
+              <TranscriptResult
+                key={`${transcripts.sid}:${v.video_id}`}
+                video={v}
+                view={view}
+                href={matchesHref(v.video_id, here)}
+                sid={snap.sid}
+                passagesPageSize={snap.passagesPageSize}
+                onExpired={onExpired}
+              />
+            ))}
+          </ul>
+        </ResultSection>
+      )}
+
+      {snap && ytGate === "explain" && <FeatureOffNote id="youtube" />}
+
+      {ytAvailable && ytGate === "show" && withYouTube && (ytPending || youtube) && (
+        <YouTubeSection
+          block={youtube}
+          pending={ytPending}
+          canImport={Boolean(user?.is_admin)}
+          localVideos={titles?.items ?? []}
+          onImported={rerun}
+        />
+      )}
+    </>
+  );
+
   return (
     <section className="mkt-page mkt-search">
       <div className="mkt-search__layout">
         <div className="mkt-search__main">
-          <form onSubmit={onSubmit} className="mkt-search__form" role="search">
-            <SuggestBox
-              value={q}
-              onChange={onChangeQuery}
-              items={suggestions}
-              onChoose={chooseSuggestion}
-              label={t("nav.search")}
-              placeholder={t("search.placeholder")}
-            />
-            {!meaningOff && (
-              <select
-                value={mode}
-                onChange={(e) => setMode(e.target.value as Mode)}
-                aria-label={t("search.mode")}
-              >
-                <option value="hybrid">{t("search.mode.hybrid")}</option>
-                <option value="fts">{t("search.mode.fts")}</option>
-                <option value="semantic">{t("search.mode.semantic")}</option>
-              </select>
-            )}
-            <Button type="submit" loading={pending}>
-              {t("nav.search")}
-            </Button>
-            <Button type="button" variant="secondary" onClick={saveCurrent}>
-              {t("search.save")}
-            </Button>
-            <PageHelp />
-            {ytAvailable && ytGate === "show" && (
-              <label className="mkt-search__yt-toggle">
-                <input
-                  type="checkbox"
-                  checked={withYouTube}
-                  onChange={(e) => setWithYouTube(e.target.checked)}
-                />
-                {t("search.youtube.toggle")}
-              </label>
-            )}
-          </form>
-
-          {meaningOff && caps.admin && (
-            <p className="mkt-muted mkt-search__words-only" role="note">
-              {t("capabilities.wordsOnly")}
-            </p>
-          )}
-
-          {notice && (
-            <div className="mkt-search__notice" role="status">
-              <span>{t("search.refreshed")}</span>
-              <button type="button" className="mkt-link-btn" onClick={backToFirst}>
-                {t("search.backToFirst")}
-              </button>
-              <button
-                type="button"
-                className="mkt-icon-btn mkt-search__notice-close"
-                aria-label={t("common.dismiss")}
-                onClick={() => setNotice(false)}
-              >
-                ×
-              </button>
-            </div>
-          )}
-
-          {err && <ErrorState kind="server" title={t("common.error")} description={err} />}
-
-          {snap && !err && snap.didYouMean && (
-            <DidYouMean
-              text={snap.didYouMean}
-              onRun={(corrected) => {
-                setQ(corrected);
-                // the filters were the caller's choice, not the words': they stay
-                search(corrected, snap.mode, { sort: snap.sort, sel: snap.sel });
-              }}
-            />
-          )}
-
-          {snap && !err && selCount(snap.sel) > 0 && (
-            <ActiveFilters
-              sel={snap.sel}
-              labels={labels}
-              onRemove={(facet, value) => toggleFacet(facet, value)}
-              onClear={() => refine({ sel: noSel() })}
-            />
-          )}
-
-          {nothing && <EmptyState kind="filtered_out" title={t("search.didYouMean")} />}
-
-          {snap && here && !nothing && (
-            <div className="mkt-search__toolbar">
-              <SortSelect value={snap.sort} onChange={(sort) => refine({ sort })} />
-              <ViewToggle view={view} onChange={setView} />
-            </div>
-          )}
-
-          {snap && !err && !nothing && snap.facets && (
-            <FacetPanel
-              facets={snap.facets}
-              sel={snap.sel}
-              onToggle={toggleFacet}
-              labels={labels}
-            />
-          )}
-
-          {snap && here && titles && snap.titlesTotal > 0 && (
-            <ResultSection
-              id="titles"
-              heading={t("search.videos")}
-              page={titles.page}
-              total={snap.titlesTotal}
-              pageSize={snap.pageSize}
-              canPage={Boolean(snap.sid)}
-              busy={busy.titles}
-              onPage={(p) => goPage("titles", p)}
-            >
-              <ul
-                className={`mkt-sresults mkt-sresults--${view}`}
-                data-testid="search-videos"
-                aria-label={t("search.videos")}
-              >
-                {titles.items.map((v) => (
-                  <VideoResult
-                    key={v.video_id}
-                    video={v}
-                    view={view}
-                    href={matchesHref(v.video_id, here)}
-                  />
-                ))}
-              </ul>
-            </ResultSection>
-          )}
-
-          {snap && here && transcripts && snap.transcriptsTotal > 0 && (
-            <ResultSection
-              id="transcripts"
-              heading={t("search.passages")}
-              page={transcripts.page}
-              total={snap.transcriptsTotal}
-              pageSize={snap.pageSize}
-              canPage={Boolean(snap.sid)}
-              busy={busy.transcripts}
-              onPage={(p) => goPage("transcripts", p)}
-            >
-              <ul
-                className={`mkt-sresults mkt-sresults--${view}`}
-                data-testid="search-transcripts"
-                aria-label={t("search.passages")}
-              >
-                {transcripts.items.map((v) => (
-                  <TranscriptResult
-                    key={`${transcripts.sid}:${v.video_id}`}
-                    video={v}
-                    view={view}
-                    href={matchesHref(v.video_id, here)}
-                    sid={snap.sid}
-                    passagesPageSize={snap.passagesPageSize}
-                    onExpired={onExpired}
-                  />
-                ))}
-              </ul>
-            </ResultSection>
-          )}
-
-          {snap && ytGate === "explain" && <FeatureOffNote id="youtube" />}
-
-          {ytAvailable && ytGate === "show" && withYouTube && (ytPending || youtube) && (
-            <YouTubeSection
-              block={youtube}
-              pending={ytPending}
-              canImport={Boolean(user?.is_admin)}
-              localVideos={titles?.items ?? []}
-              onImported={rerun}
-            />
-          )}
+          <Tabs
+            label={t("search.tabs")}
+            value={tab}
+            onChange={selectTab}
+            className="mkt-search__tabs"
+            items={[
+              { id: "results", label: t("search.tab.results"), content: results },
+              {
+                id: "ai",
+                label: t("search.tab.ai"),
+                content: <SearchAI conv={ai} isAdmin={Boolean(user?.is_admin)} />,
+              },
+            ]}
+          />
         </div>
 
         <div className="mkt-search__side">

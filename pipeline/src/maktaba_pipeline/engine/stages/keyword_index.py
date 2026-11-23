@@ -272,22 +272,44 @@ async def _write(db: Any, doc: dict[str, Any]) -> None:
     marks = ", ".join(f"${i}" for i in range(1, len(cols) + 1))
     sets = ", ".join(f"{c} = excluded.{c}" for c in cols[1:])
     async with db.transaction():
-        await _recount(db, await _current(db, doc["video_id"]), doc)
+        cur = await _current(db, doc["video_id"])
+        await _recount(db, cur, doc)
         await db.execute(
             f"INSERT INTO video_search_docs ({', '.join(cols)}) VALUES ({marks})"
             f" ON CONFLICT (video_id) DO UPDATE SET {sets}",
             *vals,
         )
         if not is_pg(db):
+            await _write_fts(db, doc, new=cur is None)
+
+
+#: FTS5 rows written since #1483 are keyed above every rowid FTS5 gave on its own before
+FTS_KEY_BASE = 1 << 40
+
+
+async def _write_fts(db: Any, doc: dict[str, Any], *, new: bool) -> None:
+    """The document's FTS5 row (SQLite), keyed by its ``video_search_docs`` row's own rowid
+    (which an upsert keeps) plus :data:`FTS_KEY_BASE`: the old row goes by a point delete.
+    ``video_id`` is UNINDEXED in FTS5, so a delete by it read the whole table, and a first
+    backfill of a large library was quadratic (#1483). A new document has no FTS5 row to
+    delete. A row written before (FTS5's own rowid, below the base, so never another
+    document's key) goes by its video_id, once, when its video is next written."""
+    rid = FTS_KEY_BASE + await db.fetchval(
+        "SELECT rowid FROM video_search_docs WHERE video_id = $1", uid(doc["video_id"])
+    )
+    if not new:
+        if await db.fetchval("SELECT 1 FROM video_search_docs_fts WHERE rowid = $1", rid):
+            await db.execute("DELETE FROM video_search_docs_fts WHERE rowid = $1", rid)
+        else:
             await db.execute(
                 "DELETE FROM video_search_docs_fts WHERE video_id = $1", doc["video_id"]
             )
-            await db.execute(
-                "INSERT INTO video_search_docs_fts (video_id, title, speakers, body)"
-                " VALUES ($1, $2, $3, $4)",
-                doc["video_id"], normalize(doc["title"]), normalize(doc["speakers"]),
-                normalize(doc["body"]),
-            )  # fmt: skip
+    await db.execute(
+        "INSERT INTO video_search_docs_fts (rowid, video_id, title, speakers, body)"
+        " VALUES ($1, $2, $3, $4, $5)",
+        rid, doc["video_id"], normalize(doc["title"]), normalize(doc["speakers"]),
+        normalize(doc["body"]),
+    )  # fmt: skip
 
 
 async def _drop(db: Any, video_id: Any) -> bool:
