@@ -56,7 +56,9 @@ prs: [1529]
   - On Apple TV, the documented follow-up meant climbing back from the answer to the
     search field, which the UI test could not do reliably. `.searchFocused` is unavailable
     on tvOS, so the follow-up is now a field and Ask under the answer, as on the Player.
-    `TVSearchUITests` now asks one.
+    The UI test that asked from it failed twice in CI (the field never had the keyboard,
+    after Select whether or not focus was reported), so `TVSearchUITests` checks only that
+    the field is there. Asking a follow-up on the TV has no UI test.
   - New question disappeared after a refusal.
   - The 401 renew-and-retry path and the timeout line had no tests; both do now.
 
@@ -91,6 +93,7 @@ prs: [1529]
   test checks both languages, and neither app's catalog changes.
 
 ## Open
+- The TV's follow-up field under the answer: no UI test reaches it with the remote.
 - The TV's follow-up (**Ask as a follow-up**) has no UI test. The model's follow-up is unit
   tested, and the Player's UI test covers it there.
 - No screenshots of AI mode on maktaba.dev yet. The UI tests attach them
