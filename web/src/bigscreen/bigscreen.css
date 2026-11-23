@@ -1174,3 +1174,46 @@
   background: rgba(19, 29, 46, 0.95);
   border: 1px solid var(--bs-gold);
 }
+
+/* Story 49.14: Search's Results and AI mode tabs, and AI mode's turns */
+.bs-tabs {
+  margin-block: 0 var(--bs-gap);
+}
+.bs-tabs .bs-chip[aria-selected="true"] {
+  color: var(--bs-on-gold);
+  background: var(--bs-gold);
+  border-color: var(--bs-gold);
+}
+.bs-ai__bar {
+  margin-block: 0 var(--bs-gap);
+}
+.bs-ai__ask bdi {
+  font-weight: 600;
+}
+.bs-ai__turn {
+  margin-block-end: calc(var(--bs-gap) * 2);
+}
+.bs-ai__status {
+  margin: 0 0 calc(var(--bs-gap) * 0.5);
+  color: var(--bs-muted);
+}
+.bs-ai__status:empty {
+  display: none;
+}
+.bs-ai__answer {
+  margin-block-end: var(--bs-gap);
+}
+.bs-ai__sentence {
+  margin: 0 0 calc(var(--bs-gap) * 0.4);
+  line-height: 1.6;
+}
+.bs-ai__cite {
+  margin-inline-start: 0.4em;
+  padding: 0 0.6em;
+  font-size: var(--bs-small);
+  font-variant-numeric: tabular-nums;
+}
+.bs-ai__n {
+  color: var(--bs-gold);
+  font-variant-numeric: tabular-nums;
+}

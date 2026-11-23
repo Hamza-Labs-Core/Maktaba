@@ -1519,6 +1519,10 @@ export const APPS = [
                 "يقترح **البحث** أثناء الكتابة، ويبيّن نوع كل اقتراح: بحث سابق، أو كلمة تقولها المقاطع، أو عنوان مقطع (يفتحه)، أو متحدث. والبحث الذي يجد مقاطع قليلة يعرض **هل تقصد**. وتعدّ الشرائح المقاطع التي وُجدت حسب المكتبة واللغة والمتحدث والسنة والمدة، وتحصر البحث فيما تختاره منها؛ وتُرتَّب النتائج حسب الأقرب صلة أو الأحدث أو الأكثر مطابقات. ويحفظ العنوان ذلك كله، فيمكن مشاركة البحث، ويعود إليه زر **الرجوع**. ويُفتح البحث **الأخير** و**المحفوظ** بالترتيب والتصفية اللذين طُلب بهما، على أي جهاز."
               ),
               t(
+                "**AI mode**, a tab beside the results, answers a question from the library: the home's language model reads the best passages and writes a short answer in the question's language. The sources show first, then the answer a sentence at a time, each sentence's numbers opening the player at the passage it comes from. A follow-up carries the conversation; when the passages do not answer, it says so and keeps them shown. Without a language model the tab says how to set one up (an admin gets the setting's link), and when an admin has turned AI mode off, or other questions are waiting, it says that.",
+                "**وضع الذكاء الاصطناعي**، تبويب بجانب النتائج، يجيب عن سؤال من المكتبة: يقرأ نموذج اللغة في الجهاز الرئيسي أفضل المقاطع ويكتب إجابة قصيرة بلغة السؤال. تظهر المصادر أولًا، ثم الإجابة جملةً جملة، وأرقام كل جملة تفتح المشغّل عند المقطع الذي جاءت منه. والسؤال التالي يحمل المحادثة معه؛ وحين لا تجيب المقاطع يقول ذلك ويبقيها معروضة. ومن دون نموذج لغة يبيّن التبويب كيف يُعدّ (ويرى المسؤول رابط الإعداد)، وإذا أوقف المسؤول وضع الذكاء الاصطناعي أو كانت أسئلة أخرى تنتظر قال ذلك."
+              ),
+              t(
                 "A video's page: resume, mark watched, favorite, add to a playlist, **Play next** and **Add to queue**, its chapters and its transcript.",
                 "صفحة المقطع: المتابعة، ووضع علامة المشاهدة، والإضافة إلى المفضلة أو إلى قائمة تشغيل، و**شغّل تاليًا** و**أضف إلى قائمة الانتظار**، وفصوله، ونصه المفرَّغ."
               ),
@@ -1582,6 +1586,12 @@ export const APPS = [
             ),
           },
           {
+            p: t(
+              "**AI mode** sits beside **Results** above the big screen's search results, driven by the remote alone: choosing it asks the words typed as a question, and **Ask** sends the next one, typed on the screen keyboard. The sources show first, then the cited answer, newest question at the top; each citation and each source plays its video at that moment. Leaving the tab or the screen stops an answer still being written.",
+              "يقع **وضع الذكاء الاصطناعي** بجانب **النتائج** فوق نتائج البحث في الشاشة الكبيرة، ويُستعمل بجهاز التحكم وحده: اختياره يسأل ما كُتب سؤالًا، و**اسأل** يرسل السؤال التالي المكتوب بلوحة المفاتيح على الشاشة. تظهر المصادر أولًا، ثم الإجابة بمصادرها، وأحدث سؤال في الأعلى؛ وكل إحالة وكل مصدر يشغّل الفيديو عند تلك اللحظة. ومغادرة التبويب أو الشاشة توقف إجابة ما زالت تُكتب."
+            ),
+          },
+          {
             shots: [
               shot(
                 "big-search",
@@ -1594,6 +1604,12 @@ export const APPS = [
                 "wide",
                 "The big screen's Filters panel: counts by library, language, speaker, year and length, two chosen, and the filters in use above the results",
                 "لوحة التصفية في الشاشة الكبيرة: الأعداد حسب المكتبة واللغة والمتحدث والسنة والمدة، واثنان مختاران، والمرشّحات المستخدمة فوق النتائج"
+              ),
+              shot(
+                "big-search-ai",
+                "wide",
+                "AI mode on the big screen: the answer with its numbered citations, then the sources, each playing its moment",
+                "وضع الذكاء الاصطناعي في الشاشة الكبيرة: الإجابة بإحالاتها المرقّمة، ثم المصادر، ويشغّل كلٌّ منها لحظته"
               ),
             ],
           },
@@ -1698,6 +1714,12 @@ export const APPS = [
                 "wide",
                 "Suggestions as you type in the web app's Search, each with its kind: an earlier search, a word, a video's title, a speaker",
                 "الاقتراحات أثناء الكتابة في بحث تطبيق الويب، ولكلٍّ منها نوعه: بحث سابق، أو كلمة، أو عنوان مقطع، أو متحدث"
+              ),
+              shot(
+                "web-search-ai",
+                "wide",
+                "AI mode in the web app's Search: a question, its answer with a citation after each sentence, and the sources it was written from",
+                "وضع الذكاء الاصطناعي في بحث تطبيق الويب: سؤال وإجابته وبعد كل جملة إحالتها، والمصادر التي كُتبت منها"
               ),
               shot(
                 "web-review",

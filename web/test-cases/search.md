@@ -660,3 +660,82 @@
 - **Steps:**
   1. Open `/search?q=…&sort=newest&sid=…` in a tab with no session storage. 2. In Arabic, open a recent search with a language and a band.
 - **Expected:** the titles page is read with `facets=1`, and the facet panel and did-you-mean show with it, with no POST. A link naming another order (`sort=matches`) than the search's own (Newest) shows Newest and the address changes to `sort=newest`. In Arabic the chips read «اللغة: العربية» and «المدة: أقل من ٥ دقائق», and «الترتيب حسب» shows the order.
+
+## AI mode (story 49.14)
+
+The tab asks `POST /api/search/ai` (story 49.12) and reads its Server-Sent Events through
+`src/lib/searchAI.ts` (its own tests: `searchAI.test.ts`).
+
+### SRC-60 — Results is the default; AI mode rides in the URL
+
+- **Priority:** P0
+- **Category:** Happy path
+- **Covered by existing test?** Yes (`Search.ai.test.tsx`)
+- **Steps:**
+  1. Open `/search?q=patience`. 2. Choose **AI mode**. 3. Choose **Results**. 4. Choose **AI mode** again.
+- **Expected:** Results is selected and searches; AI mode adds `tab=ai` and asks "patience" once; back on Results the same results show with no new search and the answer is stopped; AI mode again shows the stopped turn and does not ask again.
+
+### SRC-61 — A link to AI mode does not search until Results opens
+
+- **Priority:** P1
+- **Category:** Navigation
+- **Covered by existing test?** Yes (`Search.ai.test.tsx`)
+- **Expected:** `/search?q=patience&tab=ai` asks AI mode and sends no `POST /api/search`; choosing Results sends it.
+
+### SRC-62 — The place in line, the sources first, the sentences appended
+
+- **Priority:** P0
+- **Category:** Happy path
+- **Covered by existing test?** Yes (`Search.ai.test.tsx`)
+- **Steps:**
+  1. Ask "What is patience?". 2. The home sends `queue` 2, then `sources` split across two pieces, then two `text` events, then `done`.
+- **Expected:** "Your question is number 2 in line"; the two sources show once the event is whole, before any sentence, with "Writing the answer…"; each sentence is appended with its citations ([1], then [2][1]); "Source 2: Its kinds at 2:05" links to `/videos/v2/watch?t=125` and opens the player.
+
+### SRC-63 — A follow-up carries the conversation; asking again stops the live answer
+
+- **Priority:** P0
+- **Category:** Happy path
+- **Covered by existing test?** Yes (`Search.ai.test.tsx`)
+- **Expected:** the follow-up's body is `{ q, history: [{ q: "What is patience?", answer: "<both sentences>" }] }`; a question asked while an answer is written aborts it, the turn shows "Stopped." with its sources; **New conversation** clears the turns and stops the live one.
+
+### SRC-64 — No answer in the passages, and no passages
+
+- **Priority:** P1
+- **Category:** Edge case
+- **Covered by existing test?** Yes (`Search.ai.test.tsx`)
+- **Expected:** `done` with `answered:false` says "These passages do not answer the question." and keeps the sources (each opening the player at its passage); `reason: no-passages` says nothing in your libraries matches.
+
+### SRC-65 — The answer stops
+
+- **Priority:** P1
+- **Category:** Error handling
+- **Covered by existing test?** Yes (`Search.ai.test.tsx`)
+- **Expected:** an `error` event, or a stream that ends before `done`, keeps the sentences and sources shown and says "The answer stopped. What was written stays shown."
+
+### SRC-66 — No language model
+
+- **Priority:** P0
+- **Category:** Error handling
+- **Covered by existing test?** Yes (`Search.ai.test.tsx`)
+- **Expected:** 409 `ai-unavailable` is a note, not an error: an admin gets "Set up the model server" (the answer's `help.settings`) and everyone "How to turn on AI mode" (`/help/search#ai-mode`); a member reads "Ask an admin to set one up."
+
+### SRC-67 — AI mode off; the line full
+
+- **Priority:** P1
+- **Category:** Error handling
+- **Covered by existing test?** Yes (`Search.ai.test.tsx`)
+- **Expected:** 409 `ai-off` says an admin turned AI mode off; 429 `ai-busy` with `Retry-After: 45` says to ask again in 45 seconds, and **Ask again** asks the same question.
+
+### SRC-68 — Leaving the page stops the answer
+
+- **Priority:** P1
+- **Category:** Edge case
+- **Covered by existing test?** Yes (`Search.ai.test.tsx`)
+- **Expected:** the request's signal is aborted when the page goes.
+
+### SRC-69 — Arabic and axe
+
+- **Priority:** P1
+- **Category:** Accessibility
+- **Covered by existing test?** Yes (`Search.ai.test.tsx`)
+- **Expected:** in Arabic the page is right to left, the tabs read «النتائج» and «وضع الذكاء الاصطناعي», the place in line «سؤالك رقم ٣ في الصف», a citation «المصدر ١: … عند 1:01»; axe finds nothing in English or Arabic with an answer, its sources and a refusal shown.
