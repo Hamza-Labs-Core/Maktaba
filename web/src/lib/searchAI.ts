@@ -282,9 +282,9 @@ export async function askAI(
   onEvent: (e: AIEvent) => void,
   signal?: AbortSignal
 ): Promise<void> {
-  let res: Response;
-  try {
-    res = await fetch(apiUrl(AI_PATH), {
+  // the headers are read at each send: a renewed bearer token goes with the retry
+  const send = () =>
+    fetch(apiUrl(AI_PATH), {
       method: "POST",
       credentials: bearerAuth() ? "omit" : "include",
       headers: {
@@ -296,6 +296,13 @@ export async function askAI(
       body: JSON.stringify(body),
       signal,
     });
+  let res: Response;
+  try {
+    res = await send();
+    // a bearer sign-in's access token ran out (a TV launcher left on Search): a new one, and
+    // once more, as every other call does (api.ts request)
+    const bearer = bearerAuth();
+    if (res.status === 401 && bearer?.token() && (await bearer.refresh())) res = await send();
   } catch (e) {
     if (isAbort(e, signal)) return;
     throw e;
@@ -542,14 +549,17 @@ export function useAIConversation(ask: typeof askAI = askAI): AIConversation {
 
 /**
  * An AI mode tab's life: leaving it (`active` false) stops the live turn; opening it with
- * words in the box (`q`) and no conversation yet asks them. Typing while it is open does not.
+ * words in the box (`q`) and no conversation yet asks them, then calls `onAsked`. Typing while
+ * it is open does not.
  */
-export function useAITab(conv: AIConversation, active: boolean, q: string) {
+export function useAITab(conv: AIConversation, active: boolean, q: string, onAsked?: () => void) {
   const open = useRef(false);
   const { stop, ask, turns } = conv;
   const empty = turns.length === 0;
   const qRef = useRef(q);
   qRef.current = q;
+  const onAskedRef = useRef(onAsked);
+  onAskedRef.current = onAsked;
   useEffect(() => {
     if (!active) {
       open.current = false;
@@ -559,6 +569,9 @@ export function useAITab(conv: AIConversation, active: boolean, q: string) {
     if (open.current) return;
     open.current = true;
     const question = qRef.current.trim();
-    if (empty && question) ask(question);
+    if (empty && question) {
+      ask(question);
+      onAskedRef.current?.();
+    }
   }, [active, empty, stop, ask]);
 }

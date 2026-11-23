@@ -304,6 +304,13 @@ describe("AI mode tab (story 49.14)", () => {
         ev("done", { answered: false, reason: "no-passages" })
     );
     expect(within(turns()[1]!).getByRole("status")).toHaveTextContent(E["search.ai.noPassages"]!);
+
+    // a timeout before any sentence is a timeout, not passages that do not answer
+    fireEvent.change(aiBox(), { target: { value: "slow" } });
+    fireEvent.submit(aiBox().closest("form")!);
+    await waitFor(() => expect(streams).toHaveLength(3));
+    await write(ev("sources", SOURCES) + ev("done", { answered: false, reason: "timeout" }));
+    expect(within(turns()[2]!).getByRole("status")).toHaveTextContent(E["search.ai.timeout"]!);
   });
 
   it("SRC-65: an error keeps what was shown and says the answer stopped; so does a cut stream", async () => {

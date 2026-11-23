@@ -20,7 +20,8 @@ import { ts, watchHref } from "./searchShared";
 
 export function SearchAI({ conv, isAdmin }: { conv: AIConversation; isAdmin: boolean }) {
   const { t } = useI18n();
-  // the words in the Results box are asked as the tab opens (useAITab): the box starts empty
+  // the words of the search in the URL (the Results' submitted words) are asked as the tab
+  // opens (useAITab, given Search's urlQ); this box starts empty
   const [q, setQ] = useState("");
   const input = useRef<HTMLInputElement>(null);
   const last = conv.turns[conv.turns.length - 1];
@@ -190,8 +191,10 @@ function StatusLine({ turn }: { turn: AITurnState }) {
       return turn.sentences.length ? null : <>{t("search.ai.writing")}</>;
     case "done":
       if (turn.reason === "no-passages") return <>{t("search.ai.noPassages")}</>;
-      if (!turn.answered) return <>{t("search.ai.notAnswered")}</>;
+      // a timeout says so, with or without sentences: no sentence is no proof the passages
+      // do not answer
       if (turn.reason === "timeout") return <>{t("search.ai.timeout")}</>;
+      if (!turn.answered) return <>{t("search.ai.notAnswered")}</>;
       return null;
     case "failed":
       return <>{t("search.ai.failed")}</>;

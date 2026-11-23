@@ -163,8 +163,9 @@ function statusText(
       return turn.sentences.length ? "" : t("search.ai.writing");
     case "done":
       if (turn.reason === "no-passages") return t("search.ai.noPassages");
-      if (!turn.answered) return t("search.ai.notAnswered");
+      // a timeout says so, with or without sentences
       if (turn.reason === "timeout") return t("search.ai.timeout");
+      if (!turn.answered) return t("search.ai.notAnswered");
       return "";
     case "failed":
       return t("search.ai.failed");

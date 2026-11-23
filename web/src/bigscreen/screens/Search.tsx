@@ -101,7 +101,11 @@ export function BigSearch() {
   // story 49.14: Results, or AI mode
   const tab: "results" | "ai" = params.get("tab") === "ai" ? "ai" : "results";
   const ai = useAIConversation();
-  useAITab(ai, tab === "ai", text);
+  // the words the Results were searched for: AI mode clears the keyboard for its questions,
+  // and going back to Results puts these back
+  const resultsText = useRef(params.get("q") ?? "");
+  // the words asked as the tab opens leave the keyboard, as a question asked with Ask does
+  useAITab(ai, tab === "ai", text, () => edit(""));
 
   /** New text; new words drop the filters (they were the old results' counts). */
   function edit(next: string, keepFilters = false) {
@@ -121,6 +125,13 @@ export function BigSearch() {
   }
 
   useEffect(() => {
+    // AI mode on screen: the search waits for Results, and the Results and the URL's words
+    // stay as they were (the keyboard holds AI mode's question now)
+    if (tab === "ai") {
+      seq.current += 1;
+      setPending(false);
+      return;
+    }
     // the URL follows the query, order and filters (replace: typing is not history)
     const want = bigSearchParams(params, query, ask);
     if (want.toString() !== params.toString())
@@ -129,12 +140,6 @@ export function BigSearch() {
       ranFor.current = null;
       setRes(null);
       setErr(null);
-      setPending(false);
-      return;
-    }
-    // AI mode on screen: the search waits for Results
-    if (tab === "ai") {
-      seq.current += 1;
       setPending(false);
       return;
     }
@@ -195,8 +200,14 @@ export function BigSearch() {
   function selectTab(next: "results" | "ai") {
     if (next === tab) return;
     const p = new URLSearchParams(params);
-    if (next === "ai") p.set("tab", "ai");
-    else p.delete("tab");
+    if (next === "ai") {
+      p.set("tab", "ai");
+      resultsText.current = text;
+    } else {
+      p.delete("tab");
+      // the Results' own words back on the keyboard (AI mode's questions cleared it)
+      if (text !== resultsText.current) edit(resultsText.current, true);
+    }
     setParams(p, { replace: true, state: location.state });
   }
 

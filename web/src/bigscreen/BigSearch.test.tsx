@@ -631,6 +631,28 @@ describe("AI mode (story 49.14)", () => {
     expect(streams[1]!.signal.aborted).toBe(true);
   });
 
+  it("asking in AI mode keeps the Results and the search's words; the opening ask leaves the keyboard", async () => {
+    renderBig("/big/search?q=patience");
+    const s = await screen.findByTestId("big-search");
+    await within(s).findByText("Title patience", {}, { timeout: 3000 });
+    choose(tabEl(E["search.tab.ai"]!));
+    await waitFor(() => expect(streams).toHaveLength(1));
+    const field = within(s).getByRole("searchbox");
+    // the words asked as the tab opened are off the keyboard: no "Ask: patience" to ask twice
+    await waitFor(() => expect(field).toHaveValue(""));
+    expect(within(s).queryByRole("button", { name: "Ask: patience" })).toBeNull();
+    await write(ev("sources", SOURCES) + ev("text", S1) + ev("done", { answered: true }));
+    for (const ch of "and") choose(within(s).getByRole("button", { name: ch }));
+    choose(await within(s).findByRole("button", { name: "Ask: and" }));
+    await waitFor(() => expect(streams).toHaveLength(2));
+    // the URL keeps the search's words while AI mode asks its own
+    expect(new URLSearchParams(where.split("?")[1]).get("q")).toBe("patience");
+    choose(tabEl(E["search.tab.results"]!));
+    await waitFor(() => expect(where).toBe("/big/search?q=patience"));
+    expect(field).toHaveValue("patience");
+    expect(await within(s).findByText("Title patience", {}, { timeout: 3000 })).toBeInTheDocument();
+  });
+
   it("no language model, AI mode off, the line full", async () => {
     refuse = new Response(
       JSON.stringify({ status: 409, title: "x", code: "ai-unavailable", help: {} }),
@@ -647,6 +669,9 @@ describe("AI mode (story 49.14)", () => {
       status: 409,
       headers: { "Content-Type": "application/problem+json" },
     });
+    // the words asked as the tab opened left the keyboard: typed again to ask again
+    expect(screen.getByRole("searchbox")).toHaveValue("");
+    fireEvent.change(screen.getByRole("searchbox"), { target: { value: "patience" } });
     choose(screen.getByRole("button", { name: "Ask: patience" }));
     expect(await screen.findByTestId("big-ai-off")).toHaveTextContent(E["search.ai.off"]!);
     refuse = new Response(

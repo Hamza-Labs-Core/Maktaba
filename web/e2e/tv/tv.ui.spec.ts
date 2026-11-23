@@ -345,14 +345,14 @@ for (const locale of ["en", "ar"] as const) {
     await shot(page, `search-ai-${locale}`);
     const searches = home.searches.length;
 
-    // a follow-up: two more letters after the words asked, then Ask
+    // a follow-up: two letters (the words asked as the tab opened left the keyboard), then Ask
     // back across to the keyboard (the field keeps left and right: down leaves it)
     await pressTo(page, locale === "ar" ? "ArrowRight" : "ArrowLeft", /^(key:|search:field$)/, 24);
     await pressTo(page, "ArrowDown", /^key:/);
     await page.keyboard.press("Enter");
     await page.keyboard.press("Enter");
     const follow = await s.getByRole("searchbox").inputValue();
-    expect(follow).toHaveLength(typed.length + 2);
+    expect(follow).toHaveLength(2);
     await pressTo(page, forward, /^(ai|tab):/, 24);
     await pressTo(page, "ArrowUp", /^stab:/);
     await pressTo(page, "ArrowDown", "ai:ask");

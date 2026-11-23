@@ -17,6 +17,7 @@ import {
   useAITab,
 } from "./searchAI";
 import { StrictMode, createElement, type ReactNode } from "react";
+import { setBearerAuth } from "./api";
 
 const SOURCES = {
   q: "What is patience?",
@@ -182,6 +183,58 @@ describe("askAI", () => {
     expect(r.events[2]).toEqual({ type: "error", code: "model-failed" });
     r = await collect(streamed([ev("sources", SOURCES), ev("text", TEXT1)]));
     expect(r.events[r.events.length - 1]).toEqual({ type: "error", code: "stream-ended" });
+  });
+
+  it("an Arabic sentence cut between the bytes of one letter is read whole", async () => {
+    const arabic = { text: "الصبر ضياء.", citations: [{ n: 1, video_id: "v1", start_sec: 2 }] };
+    const bytes = new TextEncoder().encode(
+      ev("sources", SOURCES) + ev("text", arabic) + ev("done", DONE)
+    );
+    // the cut lands inside the two bytes of ص
+    const lead = new TextEncoder().encode("ص");
+    let cutAt = -1;
+    for (let i = 0; i < bytes.length - 1; i++)
+      if (bytes[i] === lead[0] && bytes[i + 1] === lead[1]) cutAt = i + 1;
+    expect(cutAt, "the stream holds ص").toBeGreaterThan(0);
+    const body = new ReadableStream<Uint8Array>({
+      start(c) {
+        c.enqueue(bytes.slice(0, cutAt));
+        c.enqueue(bytes.slice(cutAt));
+        c.close();
+      },
+    });
+    const { events } = await collect(new Response(body, { status: 200 }));
+    const text = events.find((e) => e.type === "text");
+    expect(text && "sentence" in text ? text.sentence.text : JSON.stringify(text)).toBe(
+      "الصبر ضياء."
+    );
+  });
+
+  it("a bearer sign-in's 401 renews the token once and asks again", async () => {
+    let token = "old";
+    const refresh = vi.fn(async () => {
+      token = "new";
+      return true;
+    });
+    setBearerAuth({ token: () => token, refresh, logoutBody: () => undefined, clear: () => {} });
+    try {
+      const seen: string[] = [];
+      const fetchMock = vi.fn((_url: string, init: RequestInit) => {
+        const auth = (init.headers as Record<string, string>).Authorization;
+        seen.push(auth);
+        return Promise.resolve(
+          auth === "Bearer new" ? streamed([STREAM]) : problem(401, { code: "unauthorized" })
+        );
+      });
+      vi.stubGlobal("fetch", fetchMock);
+      const events: AIEvent[] = [];
+      await askAI({ q: "q" }, (e) => events.push(e));
+      expect(seen).toEqual(["Bearer old", "Bearer new"]);
+      expect(refresh).toHaveBeenCalledTimes(1);
+      expect(events[events.length - 1]?.type).toBe("done");
+    } finally {
+      setBearerAuth(null);
+    }
   });
 
   it("a connection lost mid-answer is an error event, code network", async () => {
