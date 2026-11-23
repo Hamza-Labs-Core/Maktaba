@@ -576,6 +576,8 @@ public enum AIWords {
     public static func send(_ l: Locale = AppLanguage.locale) -> String { kit("Ask", l) }
     public static func newQuestion(_ l: Locale = AppLanguage.locale) -> String { kit("New question", l) }
     public static func sources(_ l: Locale = AppLanguage.locale) -> String { kit("Sources", l) }
+    /// "Show all 12 sources".
+    public static func allSources(_ n: Int, _ l: Locale = AppLanguage.locale) -> String { kit("Show all \(n) sources", l) }
     public static func answer(_ l: Locale = AppLanguage.locale) -> String { kit("Answer", l) }
     public static func asking(_ l: Locale = AppLanguage.locale) -> String { kit("Finding the passages…", l) }
     public static func writing(_ l: Locale = AppLanguage.locale) -> String { kit("Writing the answer…", l) }

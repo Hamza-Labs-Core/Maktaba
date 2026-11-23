@@ -138,6 +138,7 @@ private struct TurnView: View {
     let isAdmin: Bool
     let open: (PlayerRoute) -> Void
     let again: () -> Void
+    @State private var allSources = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: MaktabaTokens.Spacing.s3) {
@@ -187,34 +188,41 @@ private struct TurnView: View {
         }
     }
 
-    /// The passages, each a card that plays from its moment: a row to scroll along.
+    /// The passages, each a row that plays from its moment: the first three, then all of them
+    /// on Show all (a question reads up to 30). Rows and not a row of cards to scroll along:
+    /// a card cut by the screen's edge drew words outside any element in sight.
     private var sources: some View {
-        VStack(alignment: .leading, spacing: MaktabaTokens.Spacing.s2) {
+        let shown = allSources ? turn.passages : Array(turn.passages.prefix(Self.firstSources))
+        return VStack(alignment: .leading, spacing: MaktabaTokens.Spacing.s2) {
             Text(verbatim: AIWords.sources())
                 .font(.maktabaBody(15, weight: .semibold, relativeTo: .headline))
                 .foregroundStyle(Color.mktBrassText)
                 .accessibilityAddTraits(.isHeader)
-            ScrollView(.horizontal) {
-                LazyHStack(alignment: .top, spacing: MaktabaTokens.Spacing.s3) {
-                    ForEach(turn.passages) { p in
-                        Button {
-                            open(.watch(videoID: p.videoID, at: p.startSec))
-                        } label: {
-                            SourceCard(passage: p, home: home)
-                        }
-                        .buttonStyle(.plain)
+            ForEach(shown) { p in
+                Button {
+                    open(.watch(videoID: p.videoID, at: p.startSec))
+                } label: {
+                    SourceCard(passage: p)
+                        // every word the card shows
                         .accessibilityElement(children: .ignore)
-                        // every word the card shows: the audit flags a shown word the label leaves out
                         .accessibilityLabel(Text(verbatim: AIWords.source(p)))
-                        .accessibilityAddTraits(.isButton)
-                        .accessibilityIdentifier("ai.source.\(index).\(p.n)")
-                    }
                 }
-                .padding(.vertical, 2)
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("ai.source.\(index).\(p.n)")
             }
-            .scrollIndicators(.hidden)
+            if turn.passages.count > shown.count {
+                Button {
+                    allSources = true
+                } label: {
+                    Text(verbatim: AIWords.allSources(turn.passages.count))
+                }
+                .buttonStyle(.borderless)
+                .accessibilityIdentifier("ai.sources.all.\(index)")
+            }
         }
     }
+
+    static let firstSources = 3
 
     @ViewBuilder private var ending: some View {
         if let line = AIWords.ending(turn.state) {
@@ -262,11 +270,9 @@ private struct TurnView: View {
     }
 }
 
-/// A source: the video's poster, its title, the moment and the passage's words.
+/// A source: its number, the moment, the video's title, the passage's words and the library.
 private struct SourceCard: View {
     let passage: AIPassage
-    let home: URL
-    @ScaledMetric(relativeTo: .body) private var width: CGFloat = 220
 
     var body: some View {
         VStack(alignment: .leading, spacing: MaktabaTokens.Spacing.s1) {
@@ -297,7 +303,7 @@ private struct SourceCard: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .frame(width: min(width, 340), alignment: .topLeading)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
         .padding(MaktabaTokens.Spacing.s3)
         .overlay(RoundedRectangle(cornerRadius: MaktabaTokens.Radius.sm).stroke(Color.mktBorder))
         .contentShape(Rectangle())

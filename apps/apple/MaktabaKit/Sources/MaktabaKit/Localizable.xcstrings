@@ -13570,6 +13570,16 @@
           }
         }
       }
+    },
+    "Show all %lld sources" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "عرض المصادر كلها: %lld"
+          }
+        }
+      }
     }
   },
   "version" : "1.0"

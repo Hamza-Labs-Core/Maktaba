@@ -78,7 +78,11 @@ private struct TVSearch: View {
         @Bindable var model = model
         ScrollView {
             VStack(alignment: .leading, spacing: 40) {
-                tabs
+                // only once there is a question to choose for: an empty Search keeps the field the
+                // one thing under the tab bar, as the remote's Down from the bar expects
+                if !model.query.isEmpty || tab == .ai || !ai.turns.isEmpty {
+                    tabs
+                }
                 // the TV searches by words alone while search by meaning is off on the home;
                 // an admin reads so under the field (51.11)
                 if tab == .results, session?.capabilities.current.wordsOnlyLine == true {
