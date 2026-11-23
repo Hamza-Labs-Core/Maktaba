@@ -23,6 +23,32 @@ prs: [1529]
   sentence, without racing a timer.
 - The CHANGELOG, the spec's As built and the epic status are left to the lead's closing PR for
   49.14 (four parts built in parallel).
+- CI found these problems, each fixed in #1529:
+  - `affected-tests` linked `AIMode.swift` to `TVParentalUITests`, which shares only the words
+    "Ask again", and did not count `AIModeTests.swift`. A `No-Test-Change` trailer with that
+    reason, 50aca7bd0.
+  - The website job: new help anchors (`ai-mode`) must be listed in
+    `web/packages/website/dist-manifest.json`, b74dfadfa.
+  - The Player's accessibility audit, run 45109831118: "Potentially inaccessible text", three
+    times, with no element named. Adding the library to the source card's label (4e9c62c57)
+    did not fix it; run 45116460111 failed the same way. The cause was the second source card
+    in a horizontal row, cut by the screen's edge: its words were drawn partly outside the
+    window. The sources are now rows, the first three, then Show all n sources, db54a3bd5.
+  - The TV, run 45116460111: four of five search tests, three of them older tests that passed
+    on main, failed at "the field never had the keyboard". The new Results and AI mode row sat
+    right under the search field, and `typeQuery` presses Down from the tab bar until the field
+    has focus, so the focus could pass the field. The row now shows only once something is
+    typed, AI mode is open or it holds a conversation, db54a3bd5.
+  - Dynamic Type, run 45122208432: the library name in `.caption2` was 18 pt high at the
+    smallest size and at the default. It is 13 pt relative to `.caption` now, as the search
+    rows' details are, 2fc20affa.
+- Failures in tests this PR does not touch, all "Timed out while evaluating UI query":
+  `PlayerDemoShots.testPlayer` (iPad shots, run 45116460111),
+  `PlayerLibrariesUITests.testLibrariesInArabic` (iPhone 4/6, run 45122208432) and
+  `PlayerHomeUITests.testAFailedRowIsARetryTileInArabic` (iPad 3/6, run 45128192106, re-run
+  once). On run 45109831118, `PlayerSearchUITests.testATitleOpensItsPage` waited 62 s for idle
+  on an iPhone and `TVSearchUITests.testSuggestionsShowTheirKindsAndATitleOpensItsPage` failed
+  to give the field the keyboard; both passed on the next runs.
 
 ## What we learned
 - `URLSession.AsyncBytes.lines` drops empty lines. Server-Sent Events end each event with an
@@ -35,6 +61,16 @@ prs: [1529]
 - A 404 on `/api/search/ai` means a home from before 49.12 (MockHome's default 404 shows it in
   `testAIModeOnAnOlderHomeSaysItHasNoneYet`). 405 is read the same way, in case a catch-all
   answers a POST.
+- The audit's "Potentially inaccessible text" with no element can mean words drawn outside
+  the window: a card cut by the edge of a horizontal row. A row scrolled along has no place
+  in an audited Player screen. Use rows, or a capped list with Show all.
+- On tvOS, a focusable view added right under the search field changes where Down from the
+  tab bar lands. Every TV search test opens the field that way, so a control there must
+  wait until it is needed.
+- From an answer far down the page, Up on the remote stops at the keyboard's row, not the
+  search field scrolled off the top. Typing again on the TV starts from the tab bar (Menu),
+  and even that stayed unreliable, so the TV test leaves the follow-up to the Player's test.
+- `.caption2` does not shrink below its default size: a text in it fails `assertTextScales`.
 - A Player view with a fixed width and `lineLimit` risks the accessibility audit's clipped-text
   check at large text sizes. The source cards wrap their text instead.
 
@@ -43,6 +79,8 @@ prs: [1529]
   test checks both languages, and neither app's catalog changes.
 
 ## Open
+- The TV's follow-up (**Ask as a follow-up**) has no UI test. The model's follow-up is unit
+  tested, and the Player's UI test covers it there.
 - No screenshots of AI mode on maktaba.dev yet. The UI tests attach them
   (`player-*-search-ai-mode*`, `tv-search-ai-mode-*`); the Apps pages can take them from a
   green run.
