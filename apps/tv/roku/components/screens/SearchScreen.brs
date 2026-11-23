@@ -707,7 +707,13 @@ sub askAi()
     req.hasBody = true
     req.raw = true
     req.ObserveFieldScoped("response", "onAi")
-    m.global.aiApi.request = req
+    task = m.global.aiApi
+    task.request = req
+    ' the Task starts at the first question (it sends the call it was given before it started)
+    if LCase(task.control) <> "run" then
+        print "[search] ai task started"
+        task.control = "RUN"
+    end if
     layoutAi()
 end sub
 
