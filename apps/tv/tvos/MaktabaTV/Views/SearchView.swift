@@ -17,6 +17,10 @@ import SwiftUI
 /// - Titles, then In the transcript, as cards that open the video's page.
 ///
 /// The model is MaktabaKit's `SearchModel`, the Player's.
+///
+/// Story 49.14: two tabs over the results, **Results** and **AI mode** (`TVAIModePane`). AI
+/// mode asks only when it is chosen, or from **Ask “…”** under the keyboard; Results never
+/// waits on it. Back on Results, a new question or leaving Search closes its stream.
 struct SearchView: View {
     @Environment(\.client) private var client
     @Environment(\.appSession) private var session
@@ -38,12 +42,18 @@ private struct TVSearch: View {
     @State private var filtering = false
     /// A title suggestion was chosen: a search-field submit that comes with it is not a search.
     @State private var titleChosen = false
+    /// Results or AI mode (49.14).
+    @State private var tab = TVSearchTab.results
+    @State private var ai: AIModeModel
+    private let client: APIClient
     private let session: AppSession?
 
     private let columns = Array(repeating: GridItem(.fixed(VideoCard.width), spacing: 56), count: 4)
 
     init(client: APIClient, session: AppSession?) {
         self.session = session
+        self.client = client
+        _ai = State(initialValue: AIModeModel(client: client) { session?.signedOut() })
         _model = State(initialValue: SearchModel(client: client,
                                                  byMeaning: { session?.capabilities.current.isOn(.semanticSearch) ?? true }) {
             session?.signedOut()
@@ -56,19 +66,35 @@ private struct TVSearch: View {
         return q.isEmpty || q == model.submitted ? nil : q
     }
 
+    /// What is typed and not yet asked in AI mode.
+    private var pendingQuestion: String? {
+        let q = SearchModel.sendable(model.query)
+        return q.isEmpty || ai.turns.contains(where: { $0.question == q }) ? nil : q
+    }
+
+    private var isAdmin: Bool { session?.capabilities.current.isAdmin ?? false }
+
     var body: some View {
         @Bindable var model = model
         ScrollView {
             VStack(alignment: .leading, spacing: 40) {
+                // only once there is a question to choose for: an empty Search keeps the field the
+                // one thing under the tab bar, as the remote's Down from the bar expects
+                if !model.query.isEmpty || tab == .ai || !ai.turns.isEmpty {
+                    tabs
+                }
                 // the TV searches by words alone while search by meaning is off on the home;
                 // an admin reads so under the field (51.11)
-                if session?.capabilities.current.wordsOnlyLine == true {
+                if tab == .results, session?.capabilities.current.wordsOnlyLine == true {
                     Text(verbatim: FeatureWords.wordsOnly)
                         .font(Theme.body(26))
                         .foregroundStyle(Theme.muted)
                         .accessibilityIdentifier("search.wordsOnly")
                 }
-                if let pending {
+                if tab == .ai {
+                    asks
+                    TVAIModePane(ai: ai, client: client, isAdmin: isAdmin)
+                } else if let pending {
                     Button {
                         Task { await model.submit(pending) }
                     } label: {
@@ -77,7 +103,9 @@ private struct TVSearch: View {
                     }
                     .accessibilityIdentifier("search.run")
                 }
-                content
+                if tab == .results {
+                    content
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 80)
@@ -112,9 +140,13 @@ private struct TVSearch: View {
                     titleChosen = false
                     return
                 }
+                if tab == .ai { ai.ask(typed); return }
                 await model.submit(typed)
             }
         }
+        .onChange(of: tab) { _, now in tabChanged(now) }
+        // leaving Search closes AI mode's stream
+        .onDisappear { ai.cancel() }
         // suggestions follow the typing once it rests
         .task(id: model.query) {
             do { try await Task.sleep(for: SearchModel.suggestDelay) } catch { return }
@@ -256,6 +288,77 @@ private struct TVSearch: View {
         }
     }
 
+    /// Results and AI mode: a row of two buttons, the chosen one marked.
+    private var tabs: some View {
+        HStack(spacing: 32) {
+            ForEach(TVSearchTab.allCases, id: \.self) { t in
+                Button {
+                    tab = t
+                } label: {
+                    Label {
+                        Text(verbatim: t == .results ? AIWords.results() : AIWords.aiMode())
+                    } icon: {
+                        Image(systemName: t == .results ? "list.bullet" : "sparkles")
+                    }
+                    .font(Theme.body(28, weight: t == tab ? .semibold : .regular))
+                    .foregroundStyle(t == tab ? Theme.goldText : Theme.text)
+                }
+                .accessibilityAddTraits(t == tab ? .isSelected : [])
+                .accessibilityIdentifier("search.tab.\(t.rawValue)")
+            }
+        }
+        .focusSection()
+    }
+
+    /// AI mode's asks of what is typed: a new question, and a follow-up when a conversation is
+    /// on screen.
+    @ViewBuilder private var asks: some View {
+        if let q = pendingQuestion {
+            HStack(spacing: 32) {
+                Button {
+                    ai.ask(q)
+                } label: {
+                    Label { Text(verbatim: AIWords.ask(q)) } icon: { Image(systemName: "sparkles") }
+                        .font(Theme.body(30, weight: .medium))
+                }
+                .accessibilityIdentifier("ai.run")
+                if let last = ai.turns.last, !last.state.isRunning, Self.canFollowUp(last.state) {
+                    Button {
+                        ai.followUp(q)
+                    } label: {
+                        Label { Text(verbatim: AIWords.askFollowUp(q)) } icon: { Image(systemName: "arrow.turn.down.right") }
+                            .font(Theme.body(30, weight: .medium))
+                    }
+                    .accessibilityIdentifier("ai.followUpRun")
+                }
+            }
+            .focusSection()
+        }
+    }
+
+    static func canFollowUp(_ s: AIModeModel.State) -> Bool {
+        switch s {
+        case .refused(.unavailable), .refused(.off), .refused(.missing): false
+        default: true
+        }
+    }
+
+    /// AI mode chosen: what is typed is asked, unless a conversation is on screen (a question
+    /// stopped by leaving the tab is asked again). Results chosen: AI mode's stream closes.
+    private func tabChanged(_ now: TVSearchTab) {
+        switch now {
+        case .ai:
+            let q = SearchModel.sendable(model.query)
+            if ai.turns.isEmpty, !q.isEmpty {
+                ai.ask(q)
+            } else if let last = ai.turns.last, last.state == .stopped(code: AIModeModel.left) {
+                ai.askAgain()
+            }
+        case .results:
+            ai.cancel()
+        }
+    }
+
     private func choose(_ s: SearchSuggestion) {
         if s.kind == .title, let id = s.videoID {
             titleChosen = true
@@ -266,6 +369,7 @@ private struct TVSearch: View {
             }
         } else {
             model.query = s.text
+            if tab == .ai { ai.ask(s.text); return }
             Task { await model.submit(s.text) }
         }
     }
@@ -278,6 +382,11 @@ private struct TVSearch: View {
         case .term, nil: "magnifyingglass"
         }
     }
+}
+
+/// Search's two tabs (49.14).
+enum TVSearchTab: String, CaseIterable, Hashable {
+    case results, ai
 }
 
 /// Narrow the results: a row of buckets per facet, each with its count, a chosen one ticked.

@@ -4,7 +4,8 @@ import XCTest
 /// test runner on 127.0.0.1; no real home): the suggestions with their kinds as you type,
 /// **Search for “…”** under the keyboard, the facets' sheet with its counts (several filters
 /// combined, then taken off), the order, and the did-you-mean in Arabic. The answers are
-/// `UITests/Fixtures/search*.json`, the Player's (story 49.8's fields).
+/// `UITests/Fixtures/search*.json`, the Player's (story 49.8's fields). Story 49.14: AI mode's
+/// tab, its answer streamed by `MockHome.stubStream`.
 @MainActor
 final class TVSearchUITests: XCTestCase {
     let remote = XCUIRemote.shared
@@ -137,6 +138,96 @@ final class TVSearchUITests: XCTestCase {
         remote.press(.select)
         XCTAssertTrue(wait { self.searches.last?["q"] as? String == corrected }, "the corrected words searched")
         XCTAssertTrue(dym.waitForNonExistence(timeout: 10), "no did-you-mean for its own words")
+    }
+
+    // MARK: AI mode (story 49.14)
+
+    /// An answer as the home streams it: the passages, two sentences each citing one, the end.
+    private static let aiStream = """
+    event: queue
+    data: {"position":1}
+
+    event: sources
+    data: {"q":"patience","passages":[{"n":1,"video_id":"v1","title":"السيرة النبوية، الدرس ١٠","library_name":"Lectures","start_sec":1622,"end_sec":1630,"text":"Patience is of three kinds."},{"n":2,"video_id":"v3","title":"السيرة النبوية، الدرس ١٢","library_name":"Lectures","start_sec":90,"end_sec":98,"text":"Patience in obedience comes first."}]}
+
+    event: text
+    data: {"text":"Patience is of three kinds.","citations":[{"n":1,"video_id":"v1","start_sec":1622,"end_sec":1630,"quote":"Patience is of three kinds."}]}
+
+    event: text
+    data: {"text":"The first is patience in obedience.","citations":[{"n":2,"video_id":"v3","start_sec":90,"end_sec":98,"quote":"Patience in obedience comes first."}]}
+
+    event: done
+    data: {"answered":true,"sentences":2,"dropped":0,"took_ms":900}
+
+
+    """
+
+    /// The bodies of every `POST /api/search/ai` so far.
+    private var questions: [[String: Any]] {
+        home.requests.filter { $0.method == "POST" && $0.path == "/api/search/ai" }
+            .compactMap { try? JSONSerialization.jsonObject(with: $0.body) as? [String: Any] }
+    }
+
+    /// AI mode with the remote: choosing the tab asks what was typed; the sources and the
+    /// sentences show; a citation plays the video from its moment.
+    func testAIModeAnswersWithCitationsThatPlay() throws {
+        home.stub("GET", "/api/search/suggest", body: #"{"suggestions": []}"#)
+        home.stubStream("POST", "/api/search/ai", first: Self.aiStream)
+        signIn("en")
+        openSearch()
+        typeQuery("patience")
+        XCTAssertTrue(questions.isEmpty, "typing asks AI mode nothing")
+
+        let tab = app.buttons["search.tab.ai"]
+        XCTAssertTrue(reach(tab), "the focus on AI mode")
+        remote.press(.select)
+        XCTAssertTrue(wait { self.questions.first?["q"] as? String == "patience" }, "the question asked; the home saw \(home.seen.suffix(8))")
+        XCTAssertTrue(searches.isEmpty, "AI mode searches nothing")
+        XCTAssertTrue(element("ai.source.0.1").waitForExistence(timeout: 15), "the sources")
+        let sentence = element("ai.sentence.0.0")
+        XCTAssertTrue(sentence.waitForExistence(timeout: 15), "the answer")
+        XCTAssertEqual(sentence.label, "Patience is of three kinds.")
+        XCTAssertTrue(element("ai.sentence.0.1").exists)
+        shot("tv-search-ai-mode-en")
+
+        let cite = app.buttons["ai.sentence.0.0.cite.1"]
+        XCTAssertEqual(plain(cite.label), "Source 1: السيرة النبوية، الدرس ١٠, at 27:02")
+        XCTAssertTrue(reach(cite), "the focus on the citation")
+        remote.press(.select)
+        XCTAssertTrue(wait(timeout: 20) { self.lastStream?["video_id"] as? String == "v1" }, "the player; the home saw \(home.seen.suffix(8))")
+        XCTAssertEqual(lastStream?["start_sec"] as? Int, 1622, "at the cited moment")
+        remote.press(.menu)
+        XCTAssertTrue(sentence.waitForExistence(timeout: 15), "back on the answer")
+        XCTAssertTrue(app.buttons["ai.new"].exists, "New question under the answer")
+
+        // the follow-up field under the answer is there; asking from it is the Player's test
+        // (PlayerSearchUITests) and MaktabaKit's: in CI the remote's focus did not reach the
+        // field reliably enough to open its keyboard
+        XCTAssertTrue(app.textFields["ai.followUp"].exists, "the follow-up field under the answer")
+    }
+
+    /// No language model on the home: the tab says so in Arabic, not as an error.
+    func testAIModeWithoutAModelSaysSoInArabic() throws {
+        home.stub("GET", "/api/search/suggest", body: #"{"suggestions": []}"#)
+        home.stub("POST", "/api/search/ai", status: 409,
+                  body: #"{"type":"https://maktaba.tv/problems/ai-unavailable","title":"no language model","status":409,"code":"ai-unavailable","help":{"settings":"/settings/rules?section=tagcheck&q=url","help":"/help/search#ai-mode"}}"#)
+        signIn("ar")
+        openSearch("البحث")
+        typeQuery("الصبر")
+        let tab = app.buttons["search.tab.ai"]
+        XCTAssertTrue(reach(tab), "the focus on AI mode")
+        remote.press(.select)
+        let line = element("ai.ending.0")
+        XCTAssertTrue(line.waitForExistence(timeout: 15), "the tab's message; the home saw \(home.seen.suffix(8))")
+        XCTAssertEqual(line.label, "يحتاج وضع الذكاء الاصطناعي إلى نموذج اللغة في الجهاز الرئيسي، وهو غير مُعدّ.")
+        XCTAssertTrue(element("ai.help").exists, "where the help is")
+        shot("tv-search-ai-mode-no-model-ar")
+    }
+
+    /// The body of the last `POST /api/stream/sessions`.
+    private var lastStream: [String: Any]? {
+        home.requests.last { $0.method == "POST" && $0.path == "/api/stream/sessions" }
+            .flatMap { try? JSONSerialization.jsonObject(with: $0.body) as? [String: Any] }
     }
 
     // MARK: steps

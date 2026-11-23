@@ -55,6 +55,16 @@ Away from home, or for a home on another network, open it through Maktaba Cloud.
 
 The home decides what you can do: you are your own account there, and through the cloud only watching, unless you are an admin of the home who allowed managing for your own link. The app keeps both of the home's addresses and uses whichever answers. A sign-in belongs to the address it was made at, so at the other address the app signs in again, through the cloud when the cloud gave that address and you are signed in to it, otherwise with your password or a code. The cloud sign-in lasts until the app quits; **Sign out of Maktaba Cloud** ends it sooner. Signing out of the cloud does not sign you out of your homes.
 
+### AI mode {#ai-mode}
+
+In Maktaba Player, **Search** has two tabs: **Results** and **AI mode**. AI mode asks only when you open it or ask from it; Results never waits for it. Type a question in the search field and open **AI mode** (or, already there, press Return). The home's own language model answers from the passages of your libraries:
+
+- the **Sources** show first, each opening the player at its passage;
+- then the answer, sentence by sentence; the numbers under each sentence are its citations, and each plays the video from the cited moment;
+- while other questions are answered first, the question's place in line shows.
+
+Under the answer, **Ask a follow-up** asks in the same conversation, and **New question** starts again. When the passages do not answer the question, the tab says so and keeps them shown. When the home has no language model, the tab says so; an admin sees where to set one up and a link to [AI mode's help](/help/search#ai-mode). Leaving the tab stops the answer; **Ask again** asks it again.
+
 ### Permissions {#permissions}
 
 The apps ask for Local Network, and on iPhone and iPad the camera only when you scan a QR code. They ask for no microphone, location, photos, contacts or notifications.
