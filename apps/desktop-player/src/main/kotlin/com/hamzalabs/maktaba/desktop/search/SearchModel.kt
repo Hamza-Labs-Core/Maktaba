@@ -4,6 +4,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import com.hamzalabs.maktaba.core.api.AiConversation
 import com.hamzalabs.maktaba.core.api.ApiClient
 import com.hamzalabs.maktaba.core.api.ApiException
 import com.hamzalabs.maktaba.core.api.Facet
@@ -27,6 +28,9 @@ import com.hamzalabs.maktaba.core.api.withLibraries
 import com.hamzalabs.maktaba.core.session.ReadOrder
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
+
+/** Search's two tabs (story 49.14): the results, and AI mode's answer. */
+enum class SearchTab { Results, Ai }
 
 /** How long typing rests before the field asks for suggestions (story 55.04). */
 const val SUGGEST_DELAY_MS = 200L
@@ -69,6 +73,10 @@ class SearchModel(
     private val rest: suspend (Long) -> Unit = { delay(it) },
 ) {
     var query by mutableStateOf("")
+    /** The tab shown (story 49.14): Results, the default, or AI mode. */
+    var tab by mutableStateOf(SearchTab.Results)
+    /** AI mode's conversation (story 49.14): asked only when its tab is opened or asked from. */
+    val ai = AiConversation(client, signedOut)
     /** Earlier searches, words, titles and speakers, each with its kind (an older home's have none; story 49.11). */
     var suggestions by mutableStateOf<List<Suggestion>>(emptyList())
         private set

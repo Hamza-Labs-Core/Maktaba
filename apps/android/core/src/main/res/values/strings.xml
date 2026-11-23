@@ -465,4 +465,30 @@
     <string name="guest_back">Back</string>
     <string name="guest_limited">A parental limit is on for this device, so broadcasts can’t be watched here.</string>
     <string name="guest_held">Your invite opens once your home confirms this account’s limits.</string>
+    <!-- Story 49.14: Search's AI mode tab, the Player's and the Android TV app's (the words of web/src/help/content/en/search.md#ai-mode). -->
+    <string name="search_tab_results">Results</string>
+    <string name="search_tab_ai">AI mode</string>
+    <string name="search_ai_intro">Ask a question. The home's language model answers from your library's passages only, each sentence linked to its video and moment.</string>
+    <string name="search_ai_follow_up">Ask a follow-up</string>
+    <string name="search_ai_ask">Ask</string>
+    <string name="search_ai_queue">Waiting in line: number %1$d</string>
+    <string name="search_ai_reading">Finding the passages…</string>
+    <string name="search_ai_writing">Writing the answer…</string>
+    <string name="search_ai_answer">Answer</string>
+    <string name="search_ai_sources">Passages read</string>
+    <string name="search_ai_no_answer">These passages do not answer the question.</string>
+    <string name="search_ai_no_passages">Nothing in your libraries speaks of this.</string>
+    <string name="search_ai_stopped">The answer stopped. What was written stands.</string>
+    <string name="search_ai_timeout">The answer took too long and was cut short.</string>
+    <string name="search_ai_again">Ask again</string>
+    <string name="search_ai_unavailable_title">AI mode is not set up</string>
+    <string name="search_ai_unavailable">This home has no language model to answer with. An admin sets the model server under Settings → Rules → Tag check.</string>
+    <string name="search_ai_help">Read about AI mode</string>
+    <string name="search_ai_off">An admin turned AI mode off for this home.</string>
+    <string name="search_ai_busy">AI mode is busy answering other questions. Ask again shortly.</string>
+    <string name="search_ai_old_home">This home does not have AI mode yet. It comes with an update of the home.</string>
+    <string name="search_ai_citation">Source %1$d, %2$s, play from %3$s</string>
+    <string name="search_ai_passage">%1$s, play from %2$s: %3$s</string>
+    <string name="search_ai_question">Question: %1$s</string>
+    <string name="search_ai_intro_short">Ask a question</string>
 </resources>

@@ -76,6 +76,34 @@ suspend fun OkHttpClient.exchange(r: Request): HttpAnswer = suspendCancellableCo
     })
 }
 
+/**
+ * Sends [r] and hands back the answer once its headers are in, its body unread (OkHttp's own
+ * thread sends it, as [exchange]'s). Cancelling the caller cancels the call.
+ */
+suspend fun OkHttpClient.opened(r: Request): Opened = suspendCancellableCoroutine { cont ->
+    val call = newCall(r)
+    cont.invokeOnCancellation { call.cancel() }
+    call.enqueue(object : Callback {
+        override fun onFailure(call: Call, e: IOException) {
+            cont.resumeWithException(ApiException.Transport(e.message ?: e.toString()))
+        }
+
+        override fun onResponse(call: Call, response: Response) {
+            cont.resume(Opened(call, response)) { _, o, _ -> o.close() }
+        }
+    })
+}
+
+/** An answer whose body is still to be read, with its call: [cancel] stops a read on another thread. */
+class Opened(private val call: Call, val response: Response) : java.io.Closeable {
+    val code: Int get() = response.code
+
+    /** Cancels the call: a read blocked on its body ends with an [IOException]. */
+    fun cancel() = call.cancel()
+
+    override fun close() = response.close()
+}
+
 /** An answer: its status, its body and, on a 429 or 503, `Retry-After` in seconds. */
 class HttpAnswer(val code: Int, val body: ByteArray, val retryAfterSec: Long? = null, /** The answer's `Date` header. */ val dateMs: Long? = null) {
     operator fun component1() = code
@@ -515,6 +543,39 @@ class ApiClient(
             return checked(again)
         }
         return checked(first)
+    }
+
+    /**
+     * Sends [r] and hands back the open answer, its body not yet read: a stream (story 49.14's
+     * `POST /api/search/ai`) is read as it comes. A 401 is refreshed once, as [send] does; a
+     * status outside 2xx is [ApiException.Status] with the answer read and closed. Cancelling
+     * the caller cancels the call; the caller closes the answer it is handed.
+     */
+    internal suspend fun opened(r: Request): Opened {
+        suspend fun open(access: String?): Opened {
+            val req = if (access != null) r.newBuilder().header("Authorization", "Bearer $access").build() else r
+            return http.opened(req)
+        }
+        val sentWith = tokens.access
+        var answer = open(sentWith)
+        if (answer.code == 401) {
+            answer.close()
+            if (tokens.refresh == null) {
+                tokens.clear()
+                throw ApiException.SignedOut
+            }
+            answer = open(refreshAfter(sentWith))
+            if (answer.code == 401) {
+                answer.close()
+                tokens.clear()
+                throw ApiException.SignedOut
+            }
+        }
+        if (answer.code !in 200..299) {
+            val body = runCatching { answer.use { it.response.body.string() } }.getOrDefault("")
+            throw ApiException.Status(answer.code, body.take(BODY_KEPT), retryAfterSeconds(answer.response.header("Retry-After")))
+        }
+        return answer
     }
 
     private fun checked(a: HttpAnswer): ByteArray {
