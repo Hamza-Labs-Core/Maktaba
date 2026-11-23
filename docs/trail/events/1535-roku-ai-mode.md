@@ -60,6 +60,9 @@ prs: [1519]
 - A T08 step that asked again mid-answer could not run in brs-engine: the second key is
   handled only after the AI Task has read the whole answer. Cancelling stays untested in the
   emulator.
+- The review fixes' first CI run failed T03 (the library grid's focus) and T04 (the
+  Arabic Account screen) on timeouts: run 45117630083. Neither test is about AI mode, both
+  passed locally, and the failed job's re-run passed.
 
 ## What we learned
 - brs-engine's `roUrlTransfer` writes `AsyncPostFromFileToFile`'s output only on 200, so a
