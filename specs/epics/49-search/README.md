@@ -1381,3 +1381,96 @@ authors is `docs/developers/contributing/ai-mode.md` (maktaba.dev, English and A
   passages, one whose passages name no narrator, one whose passages never say what is asked)
   were not answered.
 - **Open:** the first-token time on the home Mac with the home's own library.
+
+### 49.14 AI mode: the tab in every client
+
+Every client has two tabs in Search, **Results** (the default, all of 49.10 and 49.11) and
+**AI mode**, which reads `POST /api/search/ai` (49.12). AI mode asks only when its tab is
+opened with words typed, or a question is asked from it; Results never waits on it. Each
+client shows the place in line (`queue`), the sources first, then each sentence with its
+citations, each opening the player at the cited `start_sec`. A follow-up sends the last three
+answered turns as `history`. `answered:false` says the passages do not answer and keeps them;
+a timeout before any sentence says it timed out; an `error` or a cut stream keeps what was
+shown and says the answer stopped. The refusals are the tab's messages, not errors: 409
+`ai-unavailable` (how to set up a model, an admin's link to the setting, the help page), 409
+`ai-off`, 429 `ai-busy`, and 404 or 405 from a home before 49.12. Leaving the tab, asking
+again or leaving Search stops the answer, and the home frees its line. Every string is in
+English and Arabic. Each part had one independent review round; its findings were fixed in
+the same pull request.
+
+#### Web, the big screen and `/tv/` (#1533)
+
+- `web/src/lib/searchAI.ts`, shared by the page and the big screen: an SSE reader over
+  `fetch`'s body that gives the same events whatever the pieces (a stream decoder, so an
+  Arabic letter cut between its bytes is read whole); `applyAIEvent`, a pure reducer;
+  `historyOf`; `useAIConversation`, one live turn aborted on asking again, a new conversation,
+  leaving the tab or unmounting (not StrictMode's rehearsal); `useAITab`, which asks the
+  submitted words as the tab opens. A bearer sign-in's 401 renews the token once and asks
+  again, as every other call does.
+- The page (`Search.tsx`, `SearchAI.tsx`): the tab in the URL (`tab=ai`, a replace);
+  citations link to `/videos/{id}/watch?t=`.
+- The big screen (`screens/Search.tsx`, `SearchAI.tsx`), and so `/tv/` on Samsung and LG: the
+  tabs above the results, D-pad only, newest question first, every source and citation a focus
+  stop. **Ask** sends the keyboard's words and clears it; the words asked as the tab opens
+  leave the keyboard too; AI mode leaves the Results and the URL's `q` alone, and the Results'
+  words return with their tab. The focus graph gained regions (`data-bs-region`): Up and Down
+  stay in a column while it has a row that way.
+- **Proof:** `searchAI.test.ts`; `Search.ai.test.tsx` (SRC-60 to SRC-69, axe in English and
+  Arabic); `BigSearch.test.tsx`; `graph.test.ts`; `web/e2e/tv/tv.ui.spec.ts` "Search: AI mode
+  … (49.14)" on `/tv/`, D-pad only, in both languages.
+
+#### Apple: the Player (iPhone, iPad, Mac) and the Apple TV (#1529)
+
+- MaktabaKit's `AIMode.swift`: `SSEParser` reads byte by byte (`AsyncBytes.lines` drops the
+  blank lines that end events); `AIEvent` reads tolerantly (a time that is not finite reads as
+  absent, and the clock clamps one no video has); `APIClient.askAI` streams with
+  `URLSession.bytes(for:)`, renews a refused token once and closes the request when cancelled;
+  `AIModeModel` keeps the conversation, with **Ask again**.
+- The Player (`AIModePane`): a segmented control under the field; the sources as rows (the
+  first three, then **Show all**), each read whole by VoiceOver; citation buttons; a follow-up
+  field and **New question** under the answer (New question after a refusal too).
+- The Apple TV (`TVAIModePane`): the tabs shown once something is typed; **Ask “…”** and **Ask
+  as a follow-up** under the keyboard, and a follow-up field and **Ask** under the answer, as
+  the remote does not reliably climb back to the search field at the top (and
+  `.searchFocused` is unavailable on tvOS).
+- **Proof:** `AIModeTests` (MaktabaKit); `PlayerSearchUITests` and `TVSearchUITests` against
+  `MockHome.stubStream`, a stream released part by part. The TV's test checks the follow-up
+  field is there; asking from it has no UI test (in CI the remote's focus did not open its
+  keyboard), and is the Player's and MaktabaKit's test.
+
+#### Android Player, Android TV, and the Player for Windows and Linux (#1531)
+
+- The portable client (`apps/android/client/.../core/api/SearchAI.kt`): `SseReader` (lines
+  ending `\n`, `\r\n` or `\r`, bytes cut anywhere), `AiEvent`, `AiRefusal`, `searchAI()` as a
+  flow over an open answer (a 401 refreshed once; cancelling closes the call), and
+  `AiConversation`, the tab's state in all three apps. Only the latest question's refusal is
+  shown; a busy home's place and `Retry-After` are shown; a timeout before any sentence is a
+  stopped answer with Try again.
+- The Player: citation chips read "Source N, title, play from time" by TalkBack. Android TV:
+  rows the D-pad moves between; a citation plays in a queue as a transcript result does. The
+  desktop: Tab and Enter, the setting and the help page opened in the browser.
+- **Proof:** `SearchAITest`; the Player's `SearchScreenTest`, `SearchModelTest` and
+  `SearchScreenshotTest` (English and Arabic); `TvSearchTest`, `SignedInAppTest` and
+  `TvSearchJourneyTest.aiModeWithTheRemote` on CI's emulator; the desktop's tests.
+
+#### Roku (#1535)
+
+- `SearchScreen`'s two tabs at the top of its right column; AI mode's own `ApiTask`
+  (`m.global.aiApi`), started at the first question, so Results never waits on it.
+  `source/ai.brs` holds the SSE reader, the answer's state, the bodies and the refusals.
+- **Not streamed:** Roku reads the answer when the home has finished writing it.
+  `roUrlTransfer` hands a body over only whole, `AsyncGetSSEvents` sends no request body, and
+  `roStreamSocket` has no TLS. The place in line is not shown.
+- AI mode's Task never refreshes a token (two Tasks refreshing one refresh token is a replay,
+  and the home revokes the family); on a 401 it takes the tokens the main Task renewed. A scene
+  reset (a deep link, a sign-out) gives up an answer still being read.
+- **Proof:** `tests/ai_test.brs` on brs-engine (also in the device-test package) and
+  `tests/screens.test.mjs` T08 against the mock home, in English and Arabic. Cancelling an
+  answer mid-read cannot be driven in brs-engine (the second key is handled after the read).
+
+- **Open:**
+  - Roku does not stream; its tab widths and wrapping in Arabic are checked on a real Roku
+    only by eye.
+  - maktaba.dev has no screenshot of the Apple apps' AI mode yet (CI's UI runs attach them).
+  - Asking a follow-up on Apple TV has no UI test.
+  - AI mode sends no filters: the Results tab's filters do not narrow its passages.
