@@ -308,6 +308,7 @@ targets:
       - path: Player/Shell/ShellLaunch.swift
       - path: Player/Shell/TextSizeHook.swift
       - path: Player/Shell/TouchHook.swift
+      - path: Player/Shell/ConsoleHook.swift
       - path: Player/Components/ImageCache.swift
       - path: Player/Components/PlaceholderTiming.swift
       - path: Player/Watch/WatchLogic.swift
@@ -363,6 +364,7 @@ targets:
       - path: Player/Shell/ShellLaunch.swift
       - path: Player/Shell/TextSizeHook.swift
       - path: Player/Shell/TouchHook.swift
+      - path: Player/Shell/ConsoleHook.swift
       - path: Player/Components/ImageCache.swift
       - path: Player/Components/PlaceholderTiming.swift
       - path: Player/Watch/WatchLogic.swift
