@@ -46,10 +46,38 @@
       </p>
       <h2 id="port-taken">A port is taken</h2>
       <p>
-        Setup says that port 8080 (or 8088) is used by another program, so Maktaba uses 8780 (or
-        another port up to 8790) instead. Nothing to fix: the new port is kept, and apps and
-        machines find it. Use the address setup shows. If you would rather keep the old port, stop
-        the program that holds it and restart Maktaba.
+        Maktaba uses 8088 (the web app), 8080 (the apps and the home's other machines), 8081 (live
+        TV) and 54329 (the database). What you see depends on how the port was chosen:
+      </p>
+      <ul>
+        <li>
+          <strong>A default port moved:</strong> setup or Settings → This machine says that port
+          8080 (or 8088, or 8081) is used by another program, so Maktaba uses 8780 (or another port
+          up to 8790) instead. Nothing to fix: the new port is kept, and apps and machines find it.
+          Use the address setup shows; your NAS's <strong>Web UI</strong> button may still open
+          8088.
+        </li>
+        <li>
+          <strong>A port you set stopped Maktaba:</strong> the container's log says the port is used
+          by another program and names the setting, such as <code>MAKTABA_WEB_PORT</code>. A port
+          you set is never moved. Set that variable to a free port, or stop the other program, then
+          start the container again.
+        </li>
+        <li>
+          <strong>The database port:</strong> when another program holds 54329, the log names
+          <code>MAKTABA_POSTGRES_PORT</code>. It is never moved: set the variable to a free port.
+        </li>
+        <li>
+          <strong>On a bridge network</strong> the container does not start, and Docker says
+          <em>port is already allocated</em>: change the port on the NAS's side of the mapping (the
+          left side of <code>"8088:8088"</code>), and set <code>MAKTABA_PUBLIC_WEB_PORT</code> (or
+          <code>_API_PORT</code>, <code>_STREAM_PORT</code>) to the same number.
+        </li>
+      </ul>
+      <p>
+        Where each NAS sets these variables: the compose file's <code>[ports]</code> block
+        (Synology, QNAP, UGREEN, ASUSTOR, Docker), Additional Environment Variables (TrueNAS), and
+        Show more settings in the template (Unraid). Change the firewall rule to the new port too.
       </p>
       <h2 id="no-access">A library shows No access</h2>
       <p>
@@ -82,6 +110,52 @@
         not). Add memory if the NAS takes it, or raise the container's memory limit. Otherwise the
         NAS serves best as storage: run the Maktaba home on another computer, and it reads your
         media from the NAS.
+      </p>
+      <h2 id="update-failed">An update did not go through</h2>
+      <p>
+        <strong>Manage → Updates</strong> says the new release
+        <em>is blocked: it was rolled back on the home</em>, and the release you had runs again. The
+        library stopped for a moment while the update changed its database. To let those changes
+        finish, Maktaba ends the database sessions they wait on, a joined computer's copy of the
+        database included; that copy makes itself again by itself. When the changes still fail,
+        Maktaba goes back the quickest safe way, and the start screen and the container's log say
+        which:
+      </p>
+      <ul>
+        <li>
+          <strong>Nothing had to be put back:</strong> what the update changed so far only adds to
+          the database, and the release you had runs on it as it is. Seconds.
+        </li>
+        <li>
+          <strong>Its changes were undone by its own Down scripts:</strong> the database is as the
+          release you had knows it. Seconds to a few minutes.
+        </li>
+        <li>
+          <strong>Restored from the backup:</strong> anything else. The backup taken before the
+          update goes back, which takes longer the larger the library: hours for tens of gigabytes.
+        </li>
+      </ul>
+      <p>
+        You need do nothing. Your libraries, watch history and settings are as they were before the
+        update, and the next release is installed in its update window when it comes out.
+        <strong>Try it again</strong> on the Updates page tries the same release once more. Don't
+        delete the data folder or its backups while it works.
+      </p>
+      <h2 id="update-disk">An update waits for free space</h2>
+      <p>
+        Manage → Updates says <em>Not enough free space on the data folder for a safe update</em>,
+        with what it needs and what is free: about 1 GB for the new release and a little more than
+        the database's size for the backup taken first. Nothing is changed until there is room. Free
+        space on the data folder's volume (old snapshots, other apps' files), and the update goes on
+        in the next window.
+      </p>
+      <h2 id="light-nas">A Light NAS asked to join another home</h2>
+      <p>
+        Joining a home on another computer as one of its machines says
+        <em>A Light NAS should be the Maktaba home or just storage</em>: a NAS on the Light tier
+        would slow down without helping that home much. Make the NAS the home instead, or keep it as
+        storage, the home on the other computer reading your media from its shares. The join goes on
+        only when you choose it explicitly.
       </p>
       <h2 id="data-folder">The data folder is refused</h2>
       <p>

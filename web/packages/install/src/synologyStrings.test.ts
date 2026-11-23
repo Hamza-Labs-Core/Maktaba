@@ -67,3 +67,13 @@ describe("a taken port", () => {
     expect(SYN.ar["trouble.port"]).toContain("لا يُنقل");
   });
 });
+
+// #1538: what a failed update looks like, and that the backup needs room
+describe("updates", () => {
+  it("says how a failed update goes back, in both languages", () => {
+    expect(SYN.en["trouble.update"]).toContain("Down scripts");
+    expect(SYN.ar["trouble.update"]).toContain("بنصوص التراجع");
+    expect(SYN.en["after.updates"]).toContain("backup");
+    expect(SYN.ar["after.updates"]).toContain("نسخة احتياطية");
+  });
+});

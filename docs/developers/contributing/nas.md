@@ -63,6 +63,40 @@ key:
 - Tests: `portenv_test.go`, `ports_pinned_test.go`, and the `custom-ports`,
   `bridge-published-ports` and `port-taken` cells of `tests/nas/cells.json`.
 
+## Updates on a NAS
+
+The image has two triggers and one update path (`docs/updates.md`, "Updates on
+a NAS"): the self-update in the household's window, and a newer image a catalog pulls, put on the
+volume at the next start under the same guard. An older image never replaces a newer runtime.
+
+When an update's migrations fail part way, the database step goes back the cheapest safe way
+(`updater.FailedBack`, `migrationGate.backWithoutDump`) and halts with one of three codes, each in
+every client's English and Arabic:
+
+| Code | When | What the household sees |
+|---|---|---|
+| `db_kept` | every migration since the release before is rollback-safe and that release runs on a newer schema | nothing put back; the release before runs on the database as it is, in seconds |
+| `db_undone` | the recorded migrations are reversible and the one that failed part way left only additive work | `migrate down-to` ran their Down scripts, in seconds |
+| `db_restored` | anything else | the pre-update dump put back, hours for a large library |
+
+The update's watch then rolls back to the release before and blocks the failed one. While
+migrations run, any session one of them has waited on for more than 10 s (a client backend or a
+joined machine's walsender) is ended (`pgbundle.EndBlockersSQL`), so a `CREATE INDEX
+CONCURRENTLY` no longer meets its lock timeout behind a copy's long snapshot. The guides'
+Troubleshooting page (`#update-failed`, `#update-disk`) says what each looks like.
+
+## A NAS in a cluster (story 59.13)
+
+- **Home**, the default on any tier: the guides set it up. Setup's share step works out each
+  folder's canonical share (DSM `/volume<N>/<share>`, Unraid `/mnt/user/<share>`, QNAP
+  `/share/<share>`; TrueNAS and other mounts by the name the household types) and keeps the NAS's
+  own `storage_servers` record, so a node's `/Volumes/<share>` matches with no path map.
+  **Machines → This NAS's shares** edits them; once settled, stored paths convert to
+  `smb://<nas>/<share>/…` after a backup (**Revert last conversion** undoes it).
+- **Full node of a home elsewhere:** Standard and Strong. A Light NAS gets `cluster.join.light_nas`
+  and joins only with `setup --node --light-nas` (`setup_node_nas.go`). Nothing hard-blocks.
+- **Storage only:** unchanged; a home on another computer reads the NAS's shares.
+
 ## The install files and the guides
 
 - `cloud/installers/docker/docker-compose.yml` is the one compose file. The Synology project

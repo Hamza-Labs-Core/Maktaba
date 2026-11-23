@@ -81,8 +81,41 @@ describe("the NAS guides", () => {
       "render-device",
       "plugins-held",
       "not-enough-memory",
+      "update-failed",
+      "update-disk",
+      "light-nas",
     ])
       expect(ids).toContain(id);
+  });
+
+  // #1538: a failed update is kept, undone by its Down scripts, or restored; each said
+  it("says the three ways a failed update goes back, in both languages", () => {
+    const en = page("en", "troubleshooting");
+    const ar = page("ar", "troubleshooting");
+    for (const w of ["Nothing had to be put back", "Down scripts", "Restored from the backup"])
+      expect(en).toContain(w);
+    for (const w of ["لم يلزم إرجاع شيء", "بنصوص التراجع", "استُعيدت من النسخة الاحتياطية"])
+      expect(ar).toContain(w);
+  });
+
+  // 59.08: every port variable named where a household sets ports
+  it("names each port variable in the port section and the networking guides' pages", () => {
+    for (const lang of ["en", "ar"] as const) {
+      const t = page(lang, "troubleshooting");
+      for (const v of ["MAKTABA_WEB_PORT", "MAKTABA_POSTGRES_PORT", "MAKTABA_PUBLIC_WEB_PORT"])
+        expect(t, `${lang}: ${v}`).toContain(v);
+      for (const n of ["truenas", "unraid"]) {
+        expect(page(lang, n), `${lang} ${n}`).toContain("/install/troubleshooting/#port-taken");
+        expect(page(lang, n), `${lang} ${n}`).toContain("/install/troubleshooting/#update-failed");
+      }
+    }
+  });
+
+  // 59.13: the roles a NAS can take, on the landing page
+  it("explains home, storage only and joining a home elsewhere on the landing page", () => {
+    expect(h2s(page("en", "nas"))).toContain("roles");
+    expect(page("en", "nas")).toContain("Light NAS is warned");
+    expect(page("ar", "nas")).toContain("الخادم الخفيف فيُنبَّه");
   });
 
   it("has an after-setup section for each topic the story names", () => {

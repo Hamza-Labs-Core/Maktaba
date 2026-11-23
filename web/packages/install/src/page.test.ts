@@ -84,4 +84,15 @@ describe("the install page", () => {
     expect(p.textContent).toContain("[ports]");
     expect(p.textContent).toContain("8780");
   });
+
+  // under the file, links to After setup and Troubleshooting in the page's language
+  it.each(["en", "ar"] as const)("links the guides that follow (%s)", (lang) => {
+    const root = document.createElement("main");
+    mount(root, BASE, lang);
+    const hrefs = [...root.querySelectorAll<HTMLAnchorElement>("p.more a")].map((a) =>
+      a.getAttribute("href")
+    );
+    const pre = lang === "ar" ? "/ar" : "";
+    expect(hrefs).toEqual([`${pre}/install/after-setup/`, `${pre}/install/troubleshooting/`]);
+  });
 });

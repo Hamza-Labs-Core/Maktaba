@@ -98,6 +98,17 @@
           find Maktaba by themselves.
         </li>
         <li>
+          <strong>Ports</strong>, only if another app on the NAS already uses 8088, 8080, 8081 or
+          54329: under <strong>Additional Environment Variables</strong>, add
+          <code>MAKTABA_WEB_PORT</code>, <code>MAKTABA_API_PORT</code>,
+          <code>MAKTABA_STREAM_PORT</code> or <code>MAKTABA_POSTGRES_PORT</code> with a free port.
+          Leave them out and Maktaba moves a taken web, API or live TV port to a free one between
+          8780 and 8790 by itself; a port you set is never moved (<a
+            href="/install/troubleshooting/#port-taken"
+            >A port is taken</a
+          >).
+        </li>
+        <li>
           <strong>Storage → Maktaba Data Storage:</strong> Host Path,
           <code>/mnt/&lt;your SSD pool&gt;/apps/maktaba</code>.
         </li>
@@ -148,8 +159,8 @@
         keeps for itself), its password, and the folders with your videos. The NAS needs the
         internet for this step: setup downloads the transcription and search tools (about 2 GB) and
         the speech models. Maktaba starts by itself when it finishes. Open
-        <strong>Web UI</strong> on the app's page, or <code>http://&lt;your NAS&gt;:8088</code>.
-        Sign in, then add a library for each folder:
+        <strong>Web UI</strong> on the app's page, or <code>http://&lt;your NAS&gt;:8088</code> (or
+        the port setup shows, if it moved one). Sign in, then add a library for each folder:
         <strong>Manage → Manage libraries → Add library</strong> (<a
           href="/install/after-setup/#libraries"
           >After setup</a
@@ -184,7 +195,11 @@
         <li>
           <strong>Updates:</strong> Maktaba updates itself inside its update window (Manage →
           Updates), and TrueNAS updates the app when the catalog moves it. Either way your home
-          carries on.
+          carries on. Keep room on the data dataset for the backup taken first; a release that
+          cannot change the database goes back by itself (<a
+            href="/install/troubleshooting/#update-failed"
+            >An update did not go through</a
+          >).
         </li>
         <li>
           <strong>Reinstalling</strong> with the same data dataset brings your home back as it was.
@@ -192,7 +207,9 @@
         <li>
           <strong>Host Network off:</strong> set <strong>Host IP</strong> to the NAS's address.
           Phones and TVs then can't find Maktaba by themselves; they connect by the NAS's address,
-          the home's HTTPS name, or a code from Maktaba Cloud.
+          the home's HTTPS name, or a code from Maktaba Cloud. Change a published port in the WebUI,
+          Cluster and Live TV Port fields (Live TV's starts at 30575, as another catalog app has
+          8081); the app tells Maktaba the new numbers itself.
         </li>
       </ul>
     </main>

@@ -154,3 +154,10 @@ where DSM has one, once with DSM in English and once in the language the Arabic 
 - **Do:** Control Panel → Security → Firewall → Edit Rules → Create: ports 8088, 8080 and 8081 (TCP), source your LAN's subnet, Allow.
 - **See:** the rule above the deny-all rule; `http://<nas>:8088` opens from a phone on the LAN.
 - **Screenshots:** `synology/guide-firewall.en.png`, `synology/guide-firewall.ar.png`
+
+## Ports (59.08)
+
+### 24. A port another package holds
+- **Do:** with a package or container listening on 8081 (or `python3 -m http.server 8081` over SSH), restart the project with no port variables; then remove the `#` in front of `MAKTABA_STREAM_PORT` in the project's YAML, set `8091`, and build the project again.
+- **See:** first, the log and This machine say 8081 moved to 8781 and name the holder; second, live TV plays from `:8091`, nothing is moved, and Settings → Storage & discovery shows the field locked. Stop the listener afterwards.
+- **Screenshots:** `synology/24-port-pinned.en.png`, `synology/24-port-pinned.ar.png`

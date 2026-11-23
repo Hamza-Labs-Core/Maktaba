@@ -54,3 +54,15 @@ Screenshots are dark, in English and Arabic, under `docs/nas/checklists/screensh
 - **Do:** save `docker logs maktaba` and copy the report from Settings → This machine.
 - **See:** both are attached to the result file, with no secret in them.
 - **Screenshots:** none
+
+## Ports and the guide's screenshots
+
+### 10. A port another container holds (59.08)
+- **Do:** start another container on port 8080 (host network), then restart Maktaba with the template's port fields empty; then set **API port** to `8090` under Show more settings and Apply.
+- **See:** first, the log and This machine say 8080 moved to 8782 and name the holder; second, the apps reach the home at `:8090`, nothing is moved, and Settings → Storage & discovery shows the field locked. Remove the other container afterwards.
+- **Screenshots:** `unraid/10-port-pinned.en.png`, `unraid/10-port-pinned.ar.png`
+
+### 11. The guide's Unraid screenshots
+- **Do:** with Unraid's UI in its dark theme, take each screenshot maktaba.tv/install/unraid shows as a placeholder: the template filled in (data path, a media share, the render device), and the container's Console with the setup command; in English, and in Arabic where Unraid's UI has it.
+- **See:** each file under `web/packages/install/site/screenshots/unraid/` as the placeholder names it (`template`, `console`); each placeholder figure then becomes the image.
+- **Screenshots:** none

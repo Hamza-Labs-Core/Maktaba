@@ -98,3 +98,10 @@ guide's screenshots of TrueNAS's own screens are taken in the same run (step 13)
 - **Do:** save the app's logs (Apps → Maktaba → Logs, or `docker logs` in the shell) and copy the report from This machine.
 - **See:** both are attached to the result file, with no secret in them.
 - **Screenshots:** none
+
+## Ports (59.08)
+
+### 17. A port another app holds
+- **Do:** install a catalog app that listens on 8088 (or start `python3 -m http.server 8088` in a TrueNAS shell), then restart Maktaba with Host Network on and no port variables; then add `MAKTABA_WEB_PORT` = `8090` under Additional Environment Variables and restart; then set `MAKTABA_WEB_PORT` to the other app's port and restart.
+- **See:** first, the log and This machine say 8088 moved to 8780 and name the holder; second, the web app opens at `:8090`, the app's Web UI button opens it, and Settings → Storage & discovery shows the field locked with "Set by MAKTABA_WEB_PORT in the container's settings"; third, the app stops and its log names the port and `MAKTABA_WEB_PORT` in English and Arabic. Remove the variable and the test listener afterwards.
+- **Screenshots:** `truenas/17-port-pinned.en.png`, `truenas/17-port-pinned.ar.png`

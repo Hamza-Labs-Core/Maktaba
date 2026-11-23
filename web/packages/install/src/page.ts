@@ -53,6 +53,7 @@ function select(id: string, options: [string, string][], value: string): HTMLSel
 /** Builds the form in `root` and keeps the output in step with it. */
 export function mount(root: HTMLElement, base: string, lang: Lang): void {
   const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "Etc/UTC";
+  const prefix = lang === "ar" ? "/ar" : "";
   const nas = select(
     "nas",
     (["qnap", "ugreen", "asustor", "linux"] as Nas[]).map((n) => [n, t(lang, `nas.${n}` as Key)]),
@@ -232,7 +233,15 @@ export function mount(root: HTMLElement, base: string, lang: Lang): void {
       el("div", { class: "actions" }, copy, download),
       el("p", {}, t(lang, "next")),
       el("p", { class: "ports" }, t(lang, "ports")),
-      el("p", {}, t(lang, "updates"))
+      el("p", {}, t(lang, "updates")),
+      el(
+        "p",
+        { class: "more" },
+        `${t(lang, "more")} `,
+        el("a", { href: `${prefix}/install/after-setup/` }, t(lang, "more.after")),
+        " · ",
+        el("a", { href: `${prefix}/install/troubleshooting/` }, t(lang, "more.trouble"))
+      )
     )
   );
   update();

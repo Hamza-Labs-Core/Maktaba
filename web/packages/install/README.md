@@ -46,14 +46,14 @@ own words around them.
 
 ## The NAS guides (story 59.14)
 
-| Page                       | What it is                                                                                                                                |
-| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| `/install/nas`             | which guide to follow, the model table (`src/nas-models.json`, read by `src/nasModels.ts`, drawn by `src/nasPage.ts`) and what to prepare |
-| `/install/unraid`          | the Community Applications template (`deploy/nas/unraid/maktaba.xml`)                                                                     |
-| `/install/qnap`            | Container Station, with the file from `/install/docker`; not yet tried on a device                                                        |
-| `/install/ugreen`          | UGOS Pro's Docker and ASUSTOR's Portainer, with the file from `/install/docker`                                                           |
-| `/install/after-setup`     | permissions, quiet hours, speech to text, hardware video, proxy and firewall, updates, a computer with a GPU (one `id` per section)       |
-| `/install/troubleshooting` | one section per message (`#write-denied`, `#port-taken`, `#no-access`, `#render-device`, `#plugins-held`, `#not-enough-memory`, ...)      |
+| Page                       | What it is                                                                                                                                                                           |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `/install/nas`             | which guide to follow, the model table (`src/nas-models.json`, read by `src/nasModels.ts`, drawn by `src/nasPage.ts`) and what to prepare                                            |
+| `/install/unraid`          | the Community Applications template (`deploy/nas/unraid/maktaba.xml`)                                                                                                                |
+| `/install/qnap`            | Container Station, with the file from `/install/docker`; not yet tried on a device                                                                                                   |
+| `/install/ugreen`          | UGOS Pro's Docker and ASUSTOR's Portainer, with the file from `/install/docker`                                                                                                      |
+| `/install/after-setup`     | permissions, quiet hours, speech to text, hardware video, proxy and firewall, updates, a computer with a GPU (one `id` per section)                                                  |
+| `/install/troubleshooting` | one section per message (`#write-denied`, `#port-taken`, `#no-access`, `#render-device`, `#plugins-held`, `#not-enough-memory`, `#update-failed`, `#update-disk`, `#light-nas`, ...) |
 
 Each has its Arabic page under `/ar/`. `src/twins.test.ts` keeps every pair mirrored (the same
 sections and ids, the same placeholders, links both ways). The **model table** is data, checked
@@ -71,9 +71,10 @@ guide is right to left in Arabic and dark, and is photographed in both languages
 (`test-results/guides/`, the run's `install-guides-screenshots` artifact) (T05).
 
 **NAS screenshots still to come**, by hand on each device checklist (`docs/nas/checklists/`):
-`screenshots/unraid/{template,console}`, `screenshots/qnap/create-application`,
-`screenshots/ugreen/project`, each `.en.png` and `.ar.png`, beside TrueNAS's above and
-Synology's (`src/synologyGuide.ts`).
+`screenshots/unraid/{template,console}` (unraid.md, step 11), `screenshots/qnap/create-application`
+and `screenshots/ugreen/project` (no checklist yet: no QNAP or UGREEN device), each `.en.png` and
+`.ar.png`, beside TrueNAS's above (truenas.md, step 13) and Synology's six
+(`src/synologyGuide.ts`, synology.md, steps 19 to 23).
 
 **Hosting:** the site builds to `web/dist-install/` (its hashed files under `install/assets/`),
 and maktaba.tv's build (`web/packages/website`, Epic 60 story 60.03) copies it to the root of

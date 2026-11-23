@@ -91,6 +91,15 @@
           <strong>Network Type:</strong> keep <strong>Host</strong>. Your phones and TVs then find
           Maktaba by themselves.
         </li>
+        <li>
+          <strong>Ports</strong>, only if another container already uses 8088, 8080, 8081 or 54329
+          (Plex or another media app, for one): <strong>Show more settings</strong> → Web port, API
+          port, Live TV port or Database port, a free port in each you change. Left empty, Maktaba
+          moves a taken web, API or live TV port to a free one between 8780 and 8790 by itself; a
+          port you set is never moved (<a href="/install/troubleshooting/#port-taken"
+            >A port is taken</a
+          >).
+        </li>
       </ul>
       <figure class="placeholder" data-shot="screenshots/unraid/template.en.png">
         <figcaption>
@@ -116,7 +125,9 @@
         internet for this step: setup downloads the transcription and search tools (about 2 GB) and
         the speech models. Maktaba starts by itself when it finishes. Open
         <strong>WebUI</strong> from the icon's menu, or
-        <code>http://&lt;your server&gt;:8088</code>. Sign in, then add a library for each folder:
+        <code>http://&lt;your server&gt;:8088</code>. With another web port, type
+        <code>http://&lt;your server&gt;:&lt;port&gt;</code> instead: the WebUI item always opens
+        8088. Sign in, then add a library for each folder:
         <strong>Manage → Manage libraries → Add library</strong> (<a
           href="/install/after-setup/#libraries"
           >After setup</a
@@ -138,6 +149,10 @@
         <li>
           <strong>Updates:</strong> Maktaba updates itself inside its update window (Manage →
           Updates). Unraid's "update ready" for the image is not needed; applying it does no harm.
+          Keep room on the pool for the backup taken first; a release that cannot change the
+          database goes back by itself (<a href="/install/troubleshooting/#update-failed"
+            >An update did not go through</a
+          >).
         </li>
         <li>
           <a href="/install/after-setup/">After setup</a> for quiet hours, speech to text, a reverse

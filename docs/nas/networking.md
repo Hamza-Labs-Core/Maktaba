@@ -19,16 +19,53 @@ tuner by SSDP, and the home is at the NAS's own address.
 | 8081 | live TV | |
 | 54329 | the bundled Postgres, for machines that join the home | nothing (DSM's own Postgres is on 5432) |
 
-A port another program holds is moved at start into Maktaba's fallback range (8780 to 8790).
-Setup and Settings → This machine say which port moved, where to, and which program holds it
-when the NAS lets Maktaba see it; when the web port moves, the container log prints the new
-address in English and Arabic.
+A default web, API or live TV port that another program holds is moved at start into Maktaba's
+fallback range (8780 to 8790): the web port tries 8780 first, live TV 8781, the API 8782. Setup
+and Settings → This machine say which port moved, where to, and which program holds it when the
+NAS lets Maktaba see it; when the web port moves, the container log prints the new address in
+English and Arabic. The database port (54329) is never moved: when another program holds it, the
+log says so in both languages and names `MAKTABA_POSTGRES_PORT`.
 
 The bundled Postgres listens on loopback only until a machine joins the home; the join opens it
 to the LAN, with TLS, and it goes back to loopback when the last machine leaves.
 
 When the NAS has several addresses (bonded links, VLANs), set `MAKTABA_HOST_IP` to the one your
 devices use: mDNS is announced on that interface only, and Maktaba's links name it.
+
+## Choosing the ports
+
+Each port has a variable in the container's environment. Set only the ones to change; the others
+keep their defaults.
+
+| Port | Variable | `server.toml` |
+|---|---|---|
+| 8088, the web app | `MAKTABA_WEB_PORT` | `[server] web_listen` |
+| 8080, the API the apps and the home's machines use | `MAKTABA_API_PORT` | `[server] listen` |
+| 8081, live TV | `MAKTABA_STREAM_PORT` | `[server] stream_addr` |
+| 54329, the database the home's machines use | `MAKTABA_POSTGRES_PORT` | `[postgres] port` |
+
+- **A port you set is never moved.** You chose it, and a firewall rule or a published port may
+  name it. When another program holds it, setup's check and the start stop there, and the log
+  names the port, the program when the NAS lets Maktaba see it, and the variable to change, in
+  English and Arabic.
+- **The variable wins over `server.toml`** on every start; it is never written into the file, so
+  removing it goes back to the file's own port.
+- **Settings → Storage & discovery** shows an address a variable sets as "Set by MAKTABA_… in the
+  container's settings: change the port there.", with the field locked.
+- **Where to set them:**
+  - **Docker, QNAP, UGREEN, ASUSTOR:** the compose file's `[ports]` block; remove the `#` in
+    front of a line and set the port.
+  - **Synology:** the same block, in Container Manager → Project → maktaba → YAML
+    Configurations, then build the project again.
+  - **TrueNAS:** Maktaba Configuration → **Additional Environment Variables**, a name and a
+    value for each.
+  - **Unraid:** **Show more settings** in the template: Web port, API port, Live TV port and
+    Database port.
+
+After a change, open the web app at its new port (`http://<nas>:<port>`), and change the firewall
+rule to match. TrueNAS's **Web UI** button follows `MAKTABA_WEB_PORT`; Unraid's **WebUI** menu
+item always opens 8088, and neither follows a port Maktaba moved by itself: type the new address
+instead.
 
 ## How apps find the home
 
@@ -60,6 +97,15 @@ bridge. Turn on the compose file's `[bridge]` blocks (maktaba.tv's install page 
 they drop `network_mode: host`, publish 8088, 8080 and 8081 (never 54329: a bridge home has no
 other machines) and set `MAKTABA_HOST_IP`, this machine's LAN address.
 
+On a bridge the port on the NAS and the port in the container are two different numbers
+(`"9088:8088"`): the left side is what your devices reach. Docker, not Maktaba, refuses a left
+side that another program holds ("port is already allocated"), and nothing is moved. Change the
+left side, and set `MAKTABA_PUBLIC_WEB_PORT`, `MAKTABA_PUBLIC_API_PORT` or
+`MAKTABA_PUBLIC_STREAM_PORT` to the same number, so the addresses Maktaba hands out (setup, the
+Machines page, the TV tuner's links) name it. TrueNAS's app sets these three from its port
+fields itself. `MAKTABA_WEB_PORT` and the others change the right side, the port inside the
+container, and are rarely needed on a bridge.
+
 On a bridge, multicast stays inside Docker, so Maktaba turns mDNS and SSDP off (it reads the
 bridge from the default route's interface; `MAKTABA_NETWORK=host` or `bridge` overrides that).
 Setup says: *This container is on a bridge network, so apps can't find Maktaba by themselves.
@@ -79,7 +125,8 @@ The home's own HTTPS name (a name of the home's own, with the home's own certifi
 When the NAS's own proxy (DSM's Login Portal, a proxy app on TrueNAS, Nginx Proxy Manager on
 Unraid) serves Maktaba under a name of yours, it needs:
 
-- **the whole site proxied to port 8088** (the web app serves `/api/` and `/stream/` itself);
+- **the whole site proxied to port 8088**, or to the web port you chose (the web app serves
+  `/api/` and `/stream/` itself);
 - **WebSocket**: `Upgrade` and `Connection` passed on for `/api/` (the app's live updates use
   `/api/cluster/ws`);
 - **no buffering** for `/stream/` (video) and for `/api/` (its event streams), and long read
@@ -165,6 +212,9 @@ from your LAN's subnet (for example 192.168.1.0/24) for:
 - UDP 5353 (mDNS), so apps find the home, and UDP 1900 and 65001 (SSDP, HDHomeRun) for TVs and
   Plex;
 - TCP 54329 only when another machine joins the home.
+
+When you chose other ports, or Maktaba moved one (Settings → This machine says which), allow
+those instead.
 
 Allow them from the LAN only, never from everywhere. TrueNAS has no firewall in its UI; a
 router's port forward to the NAS is never needed (the home's HTTPS name and Maktaba Cloud reach
