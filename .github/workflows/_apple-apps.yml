@@ -190,16 +190,16 @@ jobs:
     name: Player UI tests (${{ matrix.device }} ${{ matrix.shard }}/${{ matrix.shards }})
     if: inputs.player_ui
     runs-on: xcode-27
-    timeout-minutes: 60
+    timeout-minutes: 35
     permissions:
       contents: read
       actions: read # the build's artifact, as soon as it is uploaded
     strategy:
       fail-fast: false
       matrix:
-        device: [iphone, ipad]
-        # `shots`: the product screenshots (PlayerDemoShots, story 60.09), on a shard of their own
-        shard: ${{ fromJSON(inputs.shots_only && '["shots"]' || '["1", "2", "3", "4", "5", "6", "shots"]') }}
+        device: [iphone]
+        # DIAGNOSTIC (never merged): the Cast test alone, with (h*) and without (n*) ConsoleHook
+        shard: [h1, h2, h3, n1, n2, n3]
         shards: [6]
     env:
       PRODUCTS: ${{ github.workspace }}/build/player-ui-products
@@ -328,10 +328,9 @@ jobs:
               || echo "::warning::the status bar override failed: the shots keep the simulator's own"
             only=(-only-testing "$target/PlayerDemoShots")
           else
-            # this shard's tests: longest first, to the shard with the least time so far
-            while IFS= read -r t; do only+=(-only-testing "$target/$t"); done \
-              < <(python3 ../../tools/apple/ui-shard.py "$device" "$shard" "$shards" UITests/Player*Tests.swift)
+            only=(-only-testing "$target/PlayerCastUITests/testCastThenBackgroundThenResumeInArabic" -test-iterations 3)
           fi
+          case "$shard" in n*) export TEST_RUNNER_MAKTABA_CONSOLE_KEEP=1; echo "DIAG: no console hook" ;; *) echo "DIAG: console hook" ;; esac
           echo "shard $shard/$shards: ${#only[@]} arguments for $((${#only[@]} / 2)) tests"
           printf '%s\n' "${only[@]}" > "$RESULTS/$device-$shard.selection"
           xctestrun=$(ls "$PRODUCTS/Products/${scheme}_iphonesimulator"*.xctestrun)
@@ -343,6 +342,7 @@ jobs:
       # #1312: 1 iteration of 20, the job green). Reads the result bundle and fails on no test
       # run, a selected test missing from it, or fewer iterations than asked.
       - name: Check every selected test ran
+        if: false
         run: python3 tools/ci/xcresult_ran.py "${{ matrix.device }} ${{ matrix.shard }}/${{ matrix.shards }}" "$RESULTS/${{ matrix.device }}-${{ matrix.shard }}.xcresult" "$RESULTS/${{ matrix.device }}-${{ matrix.shard }}.selection"
 
       # the app's own log (MaktabaKit's `Log`: the requests to the mock home, connects,

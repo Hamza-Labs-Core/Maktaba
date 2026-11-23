@@ -277,7 +277,7 @@ class PlayerUITestCase: XCTestCase {
         args.append(TouchHook.flag)
         // and writes nothing to standard error, where each log line would wait on the reader
         // while XCTest's query runs on the app's main thread (`ConsoleHook`)
-        args.append(ConsoleHook.flag)
+        if ProcessInfo.processInfo.environment["MAKTABA_CONSOLE_KEEP"] != "1" { args.append(ConsoleHook.flag) }
         app.launchArguments = args + extra
         app.launch()
     }
