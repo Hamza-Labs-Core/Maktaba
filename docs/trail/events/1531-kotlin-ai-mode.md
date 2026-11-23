@@ -38,6 +38,15 @@ prs: [1517, 1525]
 - This machine had no Java on the PATH: Gradle ran with Homebrew's OpenJDK 21 as `JAVA_HOME`
   and `ANDROID_HOME=~/Library/Android/sdk`. The client, Player, core, TV and desktop unit tests
   ran locally; the TV emulator journey runs in CI only.
+- A GLM-5.3 review found no major issue and three minor ones, fixed by the lead in
+  38f418ddaacab5f0d2822c94515f8df19590a2ef:
+  - A 409 or 429 for a question could land after a newer question was asked; it was then
+    shown under the newer one, and stayed. Only the latest question's refusal is now
+    shown, and the test holds the older refusal in `NonCancellable` to land it late.
+  - The 429's place in line and `Retry-After` were read but never shown.
+  - A `done` with `reason: timeout` before any sentence said the passages do not answer.
+    It is now a stopped answer, with Try again.
+- A desktop compose test timed out once at a load average of about 67, and passed alone.
 
 ## What we learned
 - A blocking read on OkHttp's body is not cancellable by the coroutine: run it on IO in a
