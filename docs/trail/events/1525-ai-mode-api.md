@@ -40,6 +40,9 @@ prs: [1525]
     after a marker byte by byte (؟ is two bytes). Digit conversion rewrote the sentence's
     own digits. The last, held sentence was lost when a timeout or a failed model ended the
     stream.
+- A re-review confirmed the five fixes and found two tests that did not pin them. The `؟`
+  case ran a branch the fix did not touch, and the llm test never switched the component
+  off. Both now fail on the old code (e5c3f84b37ab1e7c7ff818b223001a04a831ffa4).
 - With the Mac at a load average of about 40, the first token took 10 to 13 s.
 - Local-only noise, not caused by the change:
   - `TestP57LiveTVPG` T02 fails against a scratch Postgres that runs in local time, on main
@@ -57,6 +60,8 @@ prs: [1525]
   types it sends, the parental surface registry, and a probe in the bypass rehearsal.
 
 ## Keep doing
+- Check that a fix's test fails on the code before the fix. A test that passes either way
+  proves nothing about it.
 - Keep `TestAI_RealModel` as the measure: run it with `MAKTABA_TEST_OLLAMA_URL` after any change
   to the prompt, the retrieval or the model.
 
