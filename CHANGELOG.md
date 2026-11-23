@@ -376,6 +376,12 @@ build fails when the two differ.
 
 ### Fixed
 
+- **Keyword search's first indexing of a large library on a SQLite home no longer slows as it
+  goes (Epic 49, story 49.6 follow-up).** Each video's full-text row is now found by its key
+  when it is written again, not by reading the whole table, so indexing every video takes time
+  in proportion to the library, not to its square. A SQLite home also no longer warns every
+  hour about a search index it has no use for, and renaming or merging a speaker updates
+  keyword search there too.
 - **Videos start much sooner on Android phones and tablets, and show their real length.** The
   Maktaba Player on Android now tells the home what the device plays, so a film the phone can
   play as it is (including Dolby audio its own decoders take) plays directly instead of waiting

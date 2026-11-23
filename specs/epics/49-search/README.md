@@ -155,7 +155,7 @@ CREATE INDEX ON video_search_docs (library_id);
 - Enqueued when a transcript becomes active, when a title or speakers change, and when the config
   version changes (stage version bump re-queues done items, as other stages do).
 - Backfill: a stage version bump on deploy queues every video with an active transcript at low
-  priority (`priority 10`), one at a time; the Queues page shows it like any stage.
+  priority (`priority 900`, a lower number running first), one at a time; the Queues page shows it like any stage.
 - Until a video has a document, its keyword results come from the line path (with the 5,000 cap
   from #513), so search works during the backfill. The cap is removed when the backfill is done.
 
@@ -225,7 +225,7 @@ runs only when the person opens that tab or submits from it; Results never waits
 | 49.3 | **Cluster: machines upgrade after the home**; a 16 machine keeps serving | two-machine e2e: home on 18, node on 16 replicating, then the node upgrades |
 | 49.4 | **Arabic normalisation (`maktaba_search` v2) and word forms (`maktaba_stem`)** | اسلام finds إسلام, هدي finds هدى, مدرسه finds مدرسة, الله finds اللَّهُ; يصبر and صبروا find الصبر with the exact word first; tests on Postgres and SQLite; the migration rebuilds `search_tsv` |
 | 49.5 | **`video_search_docs` + BM25 indexes, exact and stemmed** (migration, SQLite twin with FTS5) | schema up/down on scratch PG and SQLite; one index on `maktaba_search`, one on `maktaba_stem` |
-| 49.6 | **`keyword_index` queue stage** and backfill through the queue | a new transcript queues it; a title change queues it; a version bump queues every video at priority 10; shown on the Queues page; one item at a time |
+| 49.6 | **`keyword_index` queue stage** and backfill through the queue | a new transcript queues it; a title change queues it; a version bump queues every video at priority 900 (a lower number runs first, so behind other work); shown on the Queues page; one item at a time |
 | 49.7 | **The query: BM25 videos, phrase boost, passages, hybrid** | p95 < 50 ms on a 45 k-document fixture; الله, a sentence and a rare word; ACL filter test for a limited user; hybrid order unchanged where BM25 and today agree on the obvious case |
 | 49.8 | **Suggestions, did-you-mean, facets, sort** (API) | suggest < 50 ms on the fixture; a misspelled Arabic word gets the right did-you-mean; facet counts match the result set; role tests |
 | 49.9 | **Relevance check built from the transcripts** | test searches generated from the home's own transcripts, no hand-written list: (a) *known-item*: 200 distinctive sentences and phrases taken from random videos, each must bring its own video in the top 3, also with the spelling and word-form variants of 49.4; (b) *topic*: for videos with chapters or topic tags, a chapter title or topic word must bring those videos in the top 10; (c) *common words*: الله, الصبر and the 20 most frequent content words must answer under 50 ms and rank videos that use the word most (per minute) above passing mentions; field weights, the exact/stem balance and the phrase boost tuned until they pass; the generator and its fixed seed kept as a regression test, re-run on a sample in CI |
