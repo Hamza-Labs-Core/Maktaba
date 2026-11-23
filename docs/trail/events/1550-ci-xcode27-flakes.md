@@ -26,7 +26,15 @@ prs: [1550]
   `OS_ACTIVITY_DT_MODE`, which copies every log message to stderr. #1550 adds
   `ConsoleHook`: a Debug build launched with `-maktaba-console-off` points fd 2 at /dev/null
   first thing in `PlayerApp.init`. The unified log, which `tools/apple/sim-log.py` keeps,
-  still has every message.
+  still has every message. Xcode keeps what the app wrote in the result bundle
+  (`StandardOutputAndStandardError-com.hamzalabs.maktaba.player.txt`, via `xcresulttool
+  export diagnostics`). Before the hook, iPhone 1/6 of 45189795489 had 143 MB, 1,124,567
+  lines, nearly all XCTest's own ("Got attributes, transferring to dictionary for return",
+  "(no error) for label using XC_kAXXCAttributeLabel"). With the hook, iPhone 2/6 of
+  45264580791 had 7.9 KB: only the `objc` lines written before `main`. Player UI test times
+  on #1550's first run against main's 45199851694 and 45189795489: median 34.1 s against 40.5
+  and 41.0 s, p90 74 against 89 and 96 s, p99 130 against 161 and 207 s. #1550's runs had no
+  query, idle or audit timeout.
 - **PIN pad (3 failures):** `digitsEntered()` read `exists` and then `label`, two queries. The
   right PIN's sixth key closed the sheet between them, and the label's query failed ("No
   matches found for pin.dots"). It now reads one `snapshot()`.
@@ -62,8 +70,22 @@ prs: [1550]
   timeouts.
 
 ## Open
-- Single failures with no cause found yet: the facets' sheet not opening after its tap
-  (iPhone 3/6, 45189795489; the tap reached the app), "Failed to terminate" (iPad 3/6,
-  45189795489), AI mode's "Text clipped" on a source's time (iPhone 5/6, 45238693973), and
-  the Mac's "Lost connection to the application" (45238693973). The Apple TV and Remote UI
-  tests do not set the console flag yet.
+- **Search's lost presses**, the most frequent cause left, seen 3 times: Filters (iPhone 3/6 of
+  45189795489) and a recent search (`testRecentSearchesRunAgainAndAreForgotten`, iPhone 6/6 of
+  45255897736). The touch reaches the app (`touch held 0.07 s` at the button), the screen
+  recording shows the button's pressed look stuck on, and the action never runs: the query is
+  not set and no sheet opens. Both buttons are `.borderless` in a `List`, tapped just after
+  the list changed (results replacing the spinner; a row removed). The mechanism is not known.
+  A Debug log of the button actions would say whether the action ran.
+- **"Failed to terminate"** after a test (iPad 3/6 of 45189795489, `testShimmer`; iPhone 2/6 of
+  45264580791, `PlayerCastUITests.testCastThenBackgroundThenResumeInArabic`). In the second,
+  the app exited on SIGTERM 2.5 minutes after XCTest asked, and the runner then hung in its
+  next tearDown until the job's 60-minute timeout cancelled it.
+- **The accessibility audit's "Text clipped"** on texts drawn in full: the Arabic Refine bar
+  (`testDidYouMeanRunsTheCorrectedWordsInArabic`, iPhone 2/6 of 45255897736; its screenshot
+  shows both labels whole), and AI mode's source times (iPhone 5/6 of 45238693973).
+- The Mac's "Lost connection to the application" (`PlayerMacDemoShotsUITests.testLibrary`,
+  45238693973; it passed on rerun).
+- MaktabaKit's `WalkthroughModel` tests time out on the 1 s `quick` timing when 798 Swift
+  Testing tests share the main actor (Apple apps job of 45264580791; 1 of 17 earlier runs).
+- The Apple TV and Remote UI tests do not set the console flag yet.
