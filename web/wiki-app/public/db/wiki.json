@@ -13,7 +13,7 @@
   ],
   "counts": {
     "diagram": 14,
-    "endpoint": 281,
+    "endpoint": 282,
     "entity": 42,
     "epic": 60,
     "feature": 3,
@@ -5734,6 +5734,27 @@
         "path": "/search/suggest",
         "tag": "Search",
         "operationId": "searchSuggest"
+      }
+    },
+    {
+      "id": "ep-post-search-ai",
+      "type": "endpoint",
+      "title": "POST /search/ai",
+      "content": "Ask AI mode a question",
+      "tags": [
+        "api",
+        "Search",
+        "post"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/search/ai",
+        "tag": "Search",
+        "operationId": "searchAI"
       }
     },
     {

@@ -1112,6 +1112,17 @@ build fails when the two differ.
 
 ### Added
 
+- **AI mode answers a question from the library (Epic 49, story 49.12).** `POST /api/search/ai`
+  finds the best passages as a search does, in the caller's libraries only, and the home's
+  language model writes a short answer from them in the question's language. Every sentence
+  cites the passages it comes from (video, moment and quoted words); a sentence that cites
+  nothing it was given is left out, and a question the passages do not answer says so and
+  shows them. The answer streams: the passages first, then each sentence. A follow-up carries
+  the earlier turns. One answer is written at a time, the others wait in line told their place.
+  A home without a language model answers 409 with where to set one up. Admins can turn AI
+  mode off, choose its model, and set the passages it reads and the longest answer under
+  **Settings → Rules → Search**. The apps' AI mode tab is story 49.14; the guide for client
+  authors is on maktaba.dev.
 - **Search on the iPhone, iPad, Mac and Apple TV apps suggests as you type, offers "Did you
   mean", narrows by filters with counts, and sorts (Epic 49, story 49.11).** Each suggestion
   says what it is: an earlier search, a word, a video's title (which opens the video) or a

@@ -89,6 +89,7 @@ const GUIDES = {
     "parental-controls.md",
     "broadcasting.md",
     "playback.md",
+    "ai-mode.md",
     "ci.md",
     "pull-requests.md",
     "cloud.md",

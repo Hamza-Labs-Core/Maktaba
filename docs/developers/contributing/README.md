@@ -34,6 +34,8 @@ and CI. The source lives at
 - [Playback: profiles, device reports and signed URLs](playback.md): for player and TV app
   authors: how the home picks direct, remux or transcode, what `device_caps` reports, and the
   signed URLs a TV fetches.
+- [AI mode: asking the home a question](ai-mode.md): for client authors: `POST /api/search/ai`,
+  its events, citations, the line and the codes when there is no answer.
 - [CI](ci.md): how CI picks the jobs a change needs, and the single merge gate.
 - [Pull requests](pull-requests.md): branch, test, describe, review, merge.
 - [Maktaba Cloud: how it stays up](cloud.md): the two nodes, deploys, backups, and the cloud rehearsal.

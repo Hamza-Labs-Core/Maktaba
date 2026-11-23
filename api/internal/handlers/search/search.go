@@ -201,6 +201,16 @@ type Handler struct {
 
 	// phraseAbandoned counts the phrase boosts past their budget (story 49.9)
 	phraseAbandoned atomic.Int64
+
+	// AI is the language model AI mode asks (story 49.12; nil: Ollama's API at the tag
+	// check's model server).
+	AI AIModel
+	// LLMOn reports whether the llm component is on (nil: on). Off: AI mode answers 409.
+	LLMOn func() bool
+	// Env is the environment (nil: os.Getenv), for MAKTABA_OLLAMA_URL.
+	Env func(string) string
+	// ai is AI mode's line: one answer at a time
+	ai aiLine
 }
 
 // semanticOff reports whether the semantic component is switched off.
@@ -285,6 +295,7 @@ func (h *Handler) Mount(r chi.Router) {
 	r.Delete("/api/search/recent", h.ClearRecent)
 	r.Delete("/api/search/recent/{sid}", h.DeleteRecent)
 	r.Get("/api/search/suggest", h.Suggest)
+	r.Post("/api/search/ai", h.Answer)
 	r.Post("/api/search/save", h.SaveSearch)
 	r.Get("/api/search/saved", h.ListSaved)
 	r.Delete("/api/search/saved/{id}", h.DeleteSaved)

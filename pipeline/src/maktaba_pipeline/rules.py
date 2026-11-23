@@ -220,8 +220,8 @@ SECTIONS: dict[str, tuple[type, str, str]] = {
                     "home admin: which transcripts are checked, how many words an hour of "
                     "audio may ask about, which reasons count"),
     "search": (SearchConfig, "Search", "how search results are grouped per video, how many "
-               "show on a page, how long a search's results are kept and how many recent "
-               "searches each user keeps"),
+               "show on a page, how long a search's results are kept, how many recent "
+               "searches each user keeps, and AI mode"),
     "plugin_compute": (PluginComputeConfig, "Plugin models", "which language model plugins "
                        "ask, and how much of the home's models each plugin may use a day"),
     "direct": (DirectConfig, "Direct access", "apps outside the home reach it directly over "

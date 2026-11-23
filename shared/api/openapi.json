@@ -2092,6 +2092,108 @@
         "description": "Up to 10 suggestions: the caller's own earlier searches that start with `q` first, then `q` with its last word completed from the words of the caller's libraries (most videos first; from 2 letters), then titles of the caller's videos that start with `q`, and named speakers with a word of their name that starts with `q`. For a restricted account (one under parental controls) there is no completed word (the words of a library cannot be told apart by video): its earlier searches, and the titles and speakers of the videos it may see."
       }
     },
+    "/search/ai": {
+      "post": {
+        "tags": [
+          "Search"
+        ],
+        "summary": "Ask AI mode a question",
+        "description": "Answers a question from the passages of the caller's libraries (story 49.12). The same hybrid search finds the best passages, with the lines around each; the home's language model reads them and writes a short answer in the question's language. Every sentence cites at least one passage it was given: a sentence that cites none, or only a passage that was not given, is dropped. The answer is a stream of Server-Sent Events: `queue` (`position`, while another answer is being written), `sources` (the numbered passages, first), `text` (one checked sentence with its `citations`: video, moment and quoted words), then `done` (`answered`, and `reason` when there is no answer: `no-passages`, `not-in-passages` or `timeout`), or `error`. One answer is written at a time per home; up to 8 questions wait in line. For a restricted account (one under parental controls) the passages are of the videos it may see only.",
+        "operationId": "searchAI",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "q"
+                ],
+                "properties": {
+                  "q": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 500,
+                    "description": "The question."
+                  },
+                  "history": {
+                    "type": "array",
+                    "description": "The earlier questions and answers of this conversation, oldest first; the last three are given to the model. The passages are found for `q` alone.",
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "q",
+                        "answer"
+                      ],
+                      "properties": {
+                        "q": {
+                          "type": "string"
+                        },
+                        "answer": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "filters": {
+                    "type": "object",
+                    "description": "The filters of `POST /api/search`; the libraries are always the caller's."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The answer as Server-Sent Events.",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "An empty question.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "No answer can be written: `code` is `ai-unavailable` (no language model on this home, or it is switched off; `help` says where to set one up) or `ai-off` (an admin turned AI mode off).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Eight questions are already waiting: `code` is `ai-busy`, `position` the place this one would have had; `Retry-After` says when to ask again.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
     "/search/save": {
       "post": {
         "tags": [

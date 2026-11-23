@@ -5946,10 +5946,10 @@
   {
    "key": "search",
    "title": "Search",
-   "what": "how search results are grouped per video, how many show on a page, how long a search's results are kept and how many recent searches each user keeps",
+   "what": "how search results are grouped per video, how many show on a page, how long a search's results are kept, how many recent searches each user keeps, and AI mode",
    "version": [
     1,
-    0
+    1
    ],
    "fields": [
     {
@@ -6031,6 +6031,42 @@
      "default": 20,
      "minimum": 1,
      "maximum": 200
+    },
+    {
+     "name": "ai_mode",
+     "kind": "bool",
+     "group": "AI mode",
+     "label": "AI mode",
+     "help": "The Search page's AI mode tab: the home's language model reads the best passages for a question and answers from them, each sentence linked to its video and moment. Off: the tab says an admin turned it off.",
+     "default": true
+    },
+    {
+     "name": "ai_passages",
+     "kind": "int",
+     "group": "AI mode",
+     "label": "Passages AI mode reads",
+     "help": "How many of the best passages, with the lines around each, the language model is given for one question. More can answer more and is slower.",
+     "default": 30,
+     "minimum": 5,
+     "maximum": 60
+    },
+    {
+     "name": "ai_model",
+     "kind": "str",
+     "group": "AI mode",
+     "label": "AI mode's language model",
+     "help": "The model AI mode asks, on the tag check's model server. Empty: the tag check's model.",
+     "default": ""
+    },
+    {
+     "name": "ai_timeout_s",
+     "kind": "int",
+     "group": "AI mode",
+     "label": "Longest answer (seconds)",
+     "help": "An answer still being written after this long stops where it is.",
+     "default": 120,
+     "minimum": 10,
+     "maximum": 600
     }
    ]
   },

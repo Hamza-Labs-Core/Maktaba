@@ -283,6 +283,11 @@ func MountP6(r chi.Router, d P6Deps) {
 			_, off := caps.Snapshot().ComponentOff("search.semantic")
 			return !off
 		}
+		// story 49.12: AI mode answers 409 while the language model is switched off
+		searchHandler.LLMOn = func() bool {
+			_, off := caps.Snapshot().ComponentOff("llm")
+			return !off
+		}
 	}
 	searchHandler.Mount(r)
 
