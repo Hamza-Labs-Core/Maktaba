@@ -63,6 +63,13 @@ prs: [1519]
 - The review fixes' first CI run failed T03 (the library grid's focus) and T04 (the
   Arabic Account screen) on timeouts: run 45117630083. Neither test is about AI mode, both
   passed locally, and the failed job's re-run passed.
+- After main was brought in, the first attempt failed T03 and T04 at the same steps again
+  (run 45182778046). The logs showed the library grid's next page arriving late: its
+  re-render sent the focus back to 0. The review fix had made every scene reset, a deep
+  link included, set `cancel` on AI mode's Task node, even one no question had started. Now
+  a reset tells only a running Task (3b5ea59de0481a9557f4dd9f1e37e9e1203b2ca9), and the next
+  run passed T03 and T04 at the first attempt. The library grid resetting its focus when a
+  late page arrives is a separate race, still open.
 
 ## What we learned
 - brs-engine's `roUrlTransfer` writes `AsyncPostFromFileToFile`'s output only on 200, so a
