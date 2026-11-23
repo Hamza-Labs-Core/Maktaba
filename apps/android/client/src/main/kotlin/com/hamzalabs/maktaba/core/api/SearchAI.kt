@@ -73,7 +73,8 @@ class SseReader {
     }
 
     private fun endLine(out: MutableList<SseEvent>) {
-        var text = line.toString(Charsets.UTF_8)
+        // not ByteArrayOutputStream.toString(Charset): Java 10, missing on Android before API 33
+        var text = String(line.toByteArray(), Charsets.UTF_8)
         line.reset()
         if (!started) {
             started = true
