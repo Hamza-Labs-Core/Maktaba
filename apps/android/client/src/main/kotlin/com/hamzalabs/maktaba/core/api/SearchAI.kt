@@ -407,6 +407,7 @@ class AiConversation(
         val id = ++ids
         mutable.update { it.copy(exchanges = it.exchanges + AiExchange(id, t), refusal = null) }
         lastFilters = filters
+        lastAsked = t
         val j = scope.launch {
             try {
                 // an event that arrives after the answer was stopped is left out
@@ -431,15 +432,15 @@ class AiConversation(
     }
 
     private var lastFilters: JsonObject? = null
+    private var lastAsked: String? = null
 
     /** Asks the last question again (Try again), with what came before it. */
     fun retry(scope: CoroutineScope) {
         val s = mutable.value
         val last = s.exchanges.lastOrNull()
         if (s.refusal != null || last == null) {
-            startedFor?.let { q ->
-                if (s.exchanges.isEmpty()) start(scope, q, lastFilters) else ask(scope, q, lastFilters)
-            }
+            // the refused question (a follow-up, maybe) is the one asked again
+            (lastAsked ?: startedFor)?.let { q -> ask(scope, q, lastFilters) }
             return
         }
         stop()
@@ -458,6 +459,7 @@ class AiConversation(
     fun clear() {
         stop()
         startedFor = null
+        lastAsked = null
         mutable.value = AiState()
     }
 

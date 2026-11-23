@@ -407,6 +407,18 @@ class SearchAITest {
         c.retry(scope)
         assertNull(c.state.value.refusal)
         assertEquals(listOf("q", "q"), a.asked.map { it.first })
+        // a follow-up refused (the line is full) is the one asked again, with the answer before it
+        a.channels[0].send(sources())
+        a.channels[0].send(sentence("One."))
+        a.channels[0].send(done(true))
+        a.refuse = AiRefusal.Busy(9, 30)
+        c.ask(scope, "follow-up")
+        assertEquals(AiRefusal.Busy(9, 30), c.state.value.refusal)
+        assertEquals(1, c.state.value.exchanges.size)
+        a.refuse = null
+        c.retry(scope)
+        assertEquals("follow-up" to listOf(AiTurn("q", "One.")), a.asked.last())
+        assertEquals(listOf("q", "follow-up"), c.state.value.exchanges.map { it.q })
     }
 
     @Test
