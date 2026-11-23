@@ -1,5 +1,8 @@
 package com.hamzalabs.maktaba.player.search
 
+import com.hamzalabs.maktaba.core.search.SearchModel
+import com.hamzalabs.maktaba.core.search.SearchAnswer
+import com.hamzalabs.maktaba.core.search.SUGGEST_DELAY_MS
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -17,9 +20,9 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.TrendingUp
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.History
@@ -153,6 +156,13 @@ internal fun SearchContent(model: SearchModel, client: ApiClient, nav: PlayerNav
             scope.launch { model.submit(q) }
         }
     }
+    // a recent search runs with the order and filters on screen, as did-you-mean does
+    val again: (String) -> Unit = { q ->
+        if (q.isNotBlank()) {
+            expanded = false
+            scope.launch { model.submit(q, keepFilters = true) }
+        }
+    }
     val play: (String, Passage) -> Unit = { id, p -> nav.open(Route.Watch(id, p.startSec.toInt())) }
 
     // held like a book: the field and the results on the start page, the chosen video's page on
@@ -163,12 +173,12 @@ internal fun SearchContent(model: SearchModel, client: ApiClient, nav: PlayerNav
         HingeSplit(
             panes,
             first = {
-                SearchPane(model, client, expanded, { expanded = it }, submit, scope, openVideo = { model.chosen = it }, play = play, selected = shown, wordsOnly = wordsOnly)
+                SearchPane(model, client, expanded, { expanded = it }, submit, again, scope, openVideo = { model.chosen = it }, play = play, selected = shown, wordsOnly = wordsOnly)
             },
             second = { Box(Modifier.fillMaxSize().testTag("search-preview")) { Preview(shown, nav) } },
         )
     } else {
-        SearchPane(model, client, expanded, { expanded = it }, submit, scope, openVideo = { nav.open(Route.Video(it)) }, play = play, selected = null, wordsOnly = wordsOnly)
+        SearchPane(model, client, expanded, { expanded = it }, submit, again, scope, openVideo = { nav.open(Route.Video(it)) }, play = play, selected = null, wordsOnly = wordsOnly)
     }
 }
 
@@ -191,6 +201,7 @@ private fun SearchPane(
     expanded: Boolean,
     onExpandedChange: (Boolean) -> Unit,
     submit: (String) -> Unit,
+    again: (String) -> Unit,
     scope: CoroutineScope,
     openVideo: (String) -> Unit,
     play: (String, Passage) -> Unit,
@@ -225,16 +236,20 @@ private fun SearchPane(
         ) {
             LazyColumn(Modifier.fillMaxWidth().testTag("search-suggestions")) {
                 if (model.query.isNotBlank()) {
-                    items(model.suggestions, key = { "s-$it" }) { s ->
-                        ListItem(
-                            headlineContent = { Text(s) },
-                            leadingContent = { Icon(Icons.AutoMirrored.Outlined.TrendingUp, contentDescription = null) },
-                            colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
-                            modifier = Modifier.testTag("suggestion").clickable { submit(s) },
-                        )
+                    itemsIndexed(model.suggestions, key = { i, s -> "s-$i-${s.kindWire}-${s.text}" }) { _, s ->
+                        // a title opens its video; an earlier search, a word or a speaker is searched
+                        SuggestionRow(s) {
+                            val video = s.opensVideo
+                            if (video != null) {
+                                onExpandedChange(false)
+                                openVideo(video)
+                            } else {
+                                submit(s.text)
+                            }
+                        }
                     }
                 } else {
-                    recentItems(model, submit, onForget = { scope.launch { model.forget(it) } }, onClear = { scope.launch { model.clearRecent() } })
+                    recentItems(model, again, onForget = { scope.launch { model.forget(it) } }, onClear = { scope.launch { model.clearRecent() } })
                 }
             }
         }
@@ -248,18 +263,33 @@ private fun SearchPane(
             )
         }
         if (!expanded) {
-            Box(Modifier.widthIn(max = ResultsMaxWidth).fillMaxSize()) {
-                val answer = model.answer
-                val problem = model.problem
+            Column(Modifier.widthIn(max = ResultsMaxWidth).fillMaxSize()) {
+              val answer = model.answer
+              val problem = model.problem
+              val fresh = model.searching && (answer == null || answer.q != model.submitted?.trim())
+              // the order, the filters and did-you-mean above the results, and above none found
+              // (a filter that left nothing can be taken off there)
+              if (answer != null && problem == null && !fresh) {
+                  RefineBar(
+                      model,
+                      answer,
+                      onSort = { scope.launch { model.sortBy(it) } },
+                      onToggle = { f, b -> scope.launch { model.toggle(f, b) } },
+                      onRemove = { f, v -> scope.launch { model.remove(f, v) } },
+                      onClear = { scope.launch { model.clearFilters() } },
+                      onDidYouMean = { scope.launch { model.acceptDidYouMean() } },
+                  )
+              }
+              Box(Modifier.weight(1f).fillMaxWidth()) {
                 when {
-                    model.searching && (answer == null || answer.q != model.submitted?.trim()) ->
+                    fresh ->
                         Box(Modifier.fillMaxSize().testTag("search-loading"), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
                     problem != null -> ErrorState(problem, title = stringResource(R.string.search_failed), onRetry = { scope.launch { model.retry() } })
                     answer == null -> LazyColumn(Modifier.fillMaxSize()) {
                         if (model.recent.isEmpty()) {
                             item { Message(stringResource(R.string.search_empty_hint), Modifier.padding(top = 48.dp)) }
                         } else {
-                            recentItems(model, submit, onForget = { scope.launch { model.forget(it) } }, onClear = { scope.launch { model.clearRecent() } })
+                            recentItems(model, again, onForget = { scope.launch { model.forget(it) } }, onClear = { scope.launch { model.clearRecent() } })
                         }
                     }
                     answer.isEmpty -> Message(stringResource(R.string.search_no_results, answer.q), Modifier.testTag("search-none"))
@@ -274,6 +304,7 @@ private fun SearchPane(
                         moreTranscripts = { scope.launch { model.moreTranscripts() } },
                     )
                 }
+              }
             }
         }
     }

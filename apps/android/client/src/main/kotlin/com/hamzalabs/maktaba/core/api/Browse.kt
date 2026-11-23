@@ -465,6 +465,12 @@ data class SearchResults(
     @SerialName("videos_total") val videosTotal: Int = 0,
     @Serializable(with = LenientList::class) @SerialName("transcript_videos") val transcriptVideos: List<TranscriptHit> = emptyList(),
     @SerialName("transcript_total") val transcriptTotal: Int = 0,
+    /** the order the lists are in (story 49.8); empty from an older home */
+    val sort: String = "",
+    /** the query with its rare or unknown words corrected, when few videos were found (story 49.8) */
+    @SerialName("did_you_mean") val didYouMean: String? = null,
+    /** counts of the videos found, with the first page only (story 49.8); null when none */
+    @Serializable(with = LenientFacets::class) val facets: SearchFacets? = null,
 )
 
 /** A video of Titles. */
@@ -539,7 +545,11 @@ data class RecentSearch(
 internal data class RecentDoc(@Serializable(with = LenientList::class) val items: List<RecentSearch> = emptyList())
 
 @Serializable
-internal data class SuggestDoc(@Serializable(with = LenientList::class) val suggestions: List<String> = emptyList())
+internal data class SuggestDoc(
+    @Serializable(with = LenientList::class) val suggestions: List<String> = emptyList(),
+    /** each suggestion with its kind (story 49.8); absent from an older home */
+    @Serializable(with = LenientList::class) val items: List<Suggestion> = emptyList(),
+)
 
 @Serializable
 internal data class UpdatedDoc(val updated: Int = 0)
@@ -667,13 +677,24 @@ suspend fun ApiClient.seriesEpisodes(id: String, sort: EpisodeSort? = null): Ser
 
 /**
  * `POST /api/search` in [mode] (`hybrid`: text and meaning, Arabic and English alike). The query
- * is sent as typed (trimmed only); the home ranks it.
+ * is sent as typed (trimmed only); the home ranks it. [sort] is sent unless it is relevance (the
+ * home's default, so an older home is asked as before); [filters] (a [FacetChoice]'s) replace
+ * [libraryIds] when given.
  */
-suspend fun ApiClient.search(q: String, mode: String = "hybrid", libraryIds: List<String> = emptyList()): SearchResults =
+suspend fun ApiClient.search(
+    q: String,
+    mode: String = "hybrid",
+    libraryIds: List<String> = emptyList(),
+    sort: SearchSort = SearchSort.Relevance,
+    filters: JsonObject? = null,
+): SearchResults =
     write("POST", "/api/search", buildJsonObject {
         put("q", q.trim())
         put("mode", mode)
-        if (libraryIds.isNotEmpty()) {
+        if (sort != SearchSort.Relevance) put("sort", sort.wire)
+        if (filters != null && filters.isNotEmpty()) {
+            put("filters", filters)
+        } else if (libraryIds.isNotEmpty()) {
             put("filters", buildJsonObject { putJsonArray("library_id") { libraryIds.forEach { add(JsonPrimitive(it)) } } })
         }
     })
@@ -692,11 +713,17 @@ private fun resultsQuery(list: String, offset: Int, limit: Int?) = buildMap {
     limit?.let { put("limit", it.toString()) }
 }
 
-/** `GET /api/search/suggest?q=`: the caller's own past searches that start with [q]. */
-suspend fun ApiClient.searchSuggestions(q: String): List<String> {
+/**
+ * `GET /api/search/suggest?q=`: the caller's earlier searches, the query with its last word
+ * completed, titles and speakers, each with its kind (story 49.8). An older home sends texts
+ * only (its past searches), which come back without a kind.
+ */
+suspend fun ApiClient.searchSuggest(q: String): List<Suggestion> {
     val t = q.trim()
     if (t.isEmpty()) return emptyList()
-    return read<SuggestDoc>("/api/search/suggest", mapOf("q" to t)).suggestions
+    val doc = read<SuggestDoc>("/api/search/suggest", mapOf("q" to t))
+    val items = doc.items.filter { it.text.isNotBlank() }
+    return items.ifEmpty { doc.suggestions.filter { it.isNotBlank() }.map { Suggestion(text = it) } }
 }
 
 /** `GET /api/search/recent`: the caller's recent searches, newest first. */

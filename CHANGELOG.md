@@ -3300,6 +3300,17 @@ build fails when the two differ.
   it. A removed plugin shows Install, which brings it back from the Maktaba you run, with
   nothing to download, and its waiting jobs run again.
 
+- **Search in the Android Player, on Android TV and in the Player for Windows and Linux shows
+  suggestions as you type, "Did you mean", filters with counts, and a sort (Epic 49, story
+  49.11).** Each suggestion says what it is: an earlier search, a word, a video's title (which
+  opens the video) or a speaker. "Did you mean" appears above the results when a search finds
+  few videos, and one press runs it. Filters count the videos found by library, language,
+  speaker, year and length: in a sheet on a phone, in rows the remote moves between on a TV, and
+  as chips above the results on a computer. Choosing some narrows the search to them; the
+  filters in use can each be removed or cleared together, and the results sort by relevance,
+  newest or most matches. Search on Android TV now finds words said in the videos too, and a
+  transcript result plays from that moment. In English and Arabic.
+
 ### Changed
 
 - **A machine that loses its home stays usable** under a notice instead of the whole app being

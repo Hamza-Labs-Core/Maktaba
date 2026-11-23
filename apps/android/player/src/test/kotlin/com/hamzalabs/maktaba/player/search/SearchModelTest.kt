@@ -1,9 +1,18 @@
 package com.hamzalabs.maktaba.player.search
 
+import com.hamzalabs.maktaba.core.search.SearchModel
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.hamzalabs.maktaba.player.harness.FakeHome
 import com.hamzalabs.maktaba.player.harness.FakeHome.Companion.json
+import com.hamzalabs.maktaba.core.api.Facet
+import com.hamzalabs.maktaba.core.api.SearchSort
+import com.hamzalabs.maktaba.core.api.SuggestKind
 import kotlinx.coroutines.Dispatchers
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
@@ -153,5 +162,130 @@ class SearchModelTest {
         val m = SearchModel(home.home.client) { out = true }
         m.submit("patience")
         assertTrue(out)
+    }
+
+    // ---------- story 49.11: suggestions' kinds, did-you-mean, facets, sort ----------
+
+    private fun bodies(): List<JsonObject> =
+        home.requests.filter { it.method == "POST" && it.url.encodedPath == "/api/search" }.map { SearchFixtures.body(it) }
+
+    @Test
+    fun suggestionsCarryTheirKindsAndATitleItsVideo() = runBlocking {
+        val m = model()
+        m.suggest("pa")
+        assertEquals(listOf(SuggestKind.History, SuggestKind.Term, SuggestKind.Title, SuggestKind.Speaker), m.suggestions.map { it.kind })
+        assertEquals(listOf(null, null, "v1", null), m.suggestions.map { it.opensVideo })
+    }
+
+    @Test
+    fun anOlderHomesSuggestionsHaveNoKind() = runBlocking {
+        SearchFixtures.install(home, kinds = false)
+        val m = SearchModel(home.home.client)
+        m.suggest("pa")
+        assertEquals(listOf("patience in hardship"), m.suggestions.map { it.text })
+        assertNull(m.suggestions.single().kind)
+    }
+
+    @Test
+    fun theAnswerKeepsItsFacetsAndOrderAndAnOlderHomesHasNone() = runBlocking {
+        val m = model()
+        m.submit("patience")
+        val a = m.answer!!
+        assertEquals(SearchSort.Relevance, a.sort)
+        assertNull(a.didYouMean)
+        assertEquals(listOf("l1", "l2"), a.facets!!.of(Facet.Library).map { it.value })
+        assertEquals(mapOf("l1" to "Lessons", "l2" to "Talks"), m.libraryNames)
+        assertNull("nothing chosen, no filters sent", bodies().single()["filters"])
+        assertNull("relevance is not sent", bodies().single()["sort"])
+
+        SearchFixtures.install(home) { SearchFixtures.results(SearchFixtures.EN, help = false) }
+        m.submit("patience again")
+        assertNull(m.answer!!.facets)
+        assertNull(m.answer!!.didYouMean)
+        assertEquals(SearchSort.Relevance, m.answer!!.sort)
+    }
+
+    @Test
+    fun facetChoicesBuildTheFiltersAndRunTheSearchAgain() = runBlocking {
+        val m = model()
+        m.submit("patience")
+        val f = m.answer!!.facets!!
+        m.toggle(Facet.Library, f.of(Facet.Library)[1])
+        m.toggle(Facet.Speaker, f.of(Facet.Speaker)[0])
+        m.toggle(Facet.Year, f.of(Facet.Year)[0])
+        m.toggle(Facet.Duration, f.of(Facet.Duration)[1])
+        val sent = bodies().last()["filters"]!!.jsonObject
+        assertEquals("patience", bodies().last()["q"]!!.jsonPrimitive.content)
+        assertEquals(JsonArray(listOf(JsonPrimitive("l2"))), sent["library_id"])
+        assertEquals(JsonArray(listOf(JsonPrimitive("Shaykh Ahmad"))), sent["speaker"])
+        assertEquals("the year's own filter", "2024-01-01T00:00:00.000Z", sent["date"]!!.jsonObject["gte"]!!.jsonPrimitive.content)
+        assertEquals("3600", sent["duration_sec"]!!.jsonObject["gte"]!!.jsonPrimitive.content)
+        assertEquals(5, bodies().size)
+
+        // a second year replaces the first; a filter in use comes off; Clear all takes the rest
+        m.toggle(Facet.Year, f.of(Facet.Year)[1])
+        assertEquals("2023-01-01T00:00:00.000Z", bodies().last()["filters"]!!.jsonObject["date"]!!.jsonObject["gte"]!!.jsonPrimitive.content)
+        m.remove(Facet.Library, "l2")
+        assertNull(bodies().last()["filters"]!!.jsonObject["library_id"])
+        m.clearFilters()
+        assertNull(bodies().last()["filters"])
+        assertTrue(m.choice.isEmpty)
+    }
+
+    @Test
+    fun newWordsKeepTheOrderAndDropTheFiltersTheSameWordsKeepBoth() = runBlocking {
+        val m = model()
+        m.submit("patience")
+        m.sortBy(SearchSort.Newest)
+        assertEquals("newest", bodies().last()["sort"]!!.jsonPrimitive.content)
+        assertEquals("the answer's order is shown", SearchSort.Newest, m.answer!!.sort)
+        m.toggle(Facet.Language, m.answer!!.facets!!.of(Facet.Language)[0])
+
+        m.submit("patience")
+        assertEquals("the same words keep the filters", JsonArray(listOf(JsonPrimitive("en"))), bodies().last()["filters"]!!.jsonObject["language"])
+
+        m.submit("journey")
+        assertNull("new words drop the filters", bodies().last()["filters"])
+        assertEquals("and keep the order", "newest", bodies().last()["sort"]!!.jsonPrimitive.content)
+        assertTrue(m.choice.isEmpty)
+    }
+
+    @Test
+    fun didYouMeanRunsTheCorrectionWithTheFiltersKept() = runBlocking {
+        val m = model()
+        m.submit("patiance")
+        assertEquals("patience", m.answer!!.didYouMean)
+        m.toggle(Facet.Library, m.answer!!.facets!!.of(Facet.Library)[0])
+        m.acceptDidYouMean()
+        assertEquals("patience", bodies().last()["q"]!!.jsonPrimitive.content)
+        assertEquals(JsonArray(listOf(JsonPrimitive("l1"))), bodies().last()["filters"]!!.jsonObject["library_id"])
+        assertNull("the correction is not offered for itself", m.answer!!.didYouMean)
+    }
+
+    @Test
+    fun aChosenLibraryTheNarrowedFacetsLostKeepsItsName() = runBlocking {
+        val m = model()
+        m.submit("patience")
+        m.toggle(Facet.Library, m.answer!!.facets!!.of(Facet.Library)[1])
+        // the narrowed answer has no facets (an older home's, or nothing found)
+        SearchFixtures.install(home) { SearchFixtures.results(SearchFixtures.EN, help = false) }
+        m.toggle(Facet.Speaker, com.hamzalabs.maktaba.core.api.FacetBucket("Shaykh Ahmad", count = 2))
+        assertEquals("Talks", m.libraryNames["l2"])
+        val shown = m.choice.shown(m.answer!!.facets, Facet.Library)
+        assertEquals(listOf("l2"), shown.map { it.value })
+        assertFalse(shown.single().counted)
+    }
+
+    @Test
+    fun anOlderWordsSuggestionsAnsweringLateAreDropped() = runBlocking {
+        val m = model()
+        val held = home.hold("/api/search/suggest") { r -> json("""{"suggestions":["${r.url.queryParameter("q")}-x"]}""") }
+        val older = launch(Dispatchers.IO) { m.suggest("pa") }
+        withContext(Dispatchers.IO) { held.awaitAsked() }
+        m.suggest("pat")
+        assertEquals(listOf("pat-x"), m.suggestions.map { it.text })
+        held.release()
+        older.join()
+        assertEquals("the older word's answer is dropped", listOf("pat-x"), m.suggestions.map { it.text })
     }
 }

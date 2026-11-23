@@ -52,8 +52,37 @@
     <string name="could_not_load">Could not load: %1$s</string>
     <string name="try_again">Try again</string>
 
-    <string name="search_hint">Search your library</string>
+    <string name="search_hint">Search titles and transcripts</string>
     <string name="search_none">No videos match “%1$s”.</string>
+    <!-- Story 49.11: search's help, in the web's words (web/src/i18n/en.json, search.*) -->
+    <string name="search_suggestions">Suggestions</string>
+    <string name="search_kind_history">Recent</string>
+    <string name="search_kind_term">Word</string>
+    <string name="search_kind_title">Video</string>
+    <string name="search_kind_speaker">Speaker</string>
+    <string name="search_did_you_mean">Did you mean %1$s?</string>
+    <string name="search_sort">Sort by</string>
+    <string name="search_sort_relevance">Relevance</string>
+    <string name="search_sort_newest">Newest</string>
+    <string name="search_sort_matches">Most matches</string>
+    <string name="search_filters">Filters</string>
+    <string name="search_filters_count">Filters (%1$d)</string>
+    <string name="search_facet_library">Library</string>
+    <string name="search_facet_language">Language</string>
+    <string name="search_facet_speaker">Speaker</string>
+    <string name="search_facet_year">Year</string>
+    <string name="search_facet_duration">Length</string>
+    <string name="search_bucket_count">%1$s · %2$d</string>
+    <string name="search_duration_under_5m">Under %1$d min</string>
+    <string name="search_duration_5m_20m">%1$d to %2$d min</string>
+    <string name="search_duration_20m_60m">%1$d to %2$d min</string>
+    <string name="search_duration_over_60m">Over an hour</string>
+    <string name="search_filters_active">Filters in use</string>
+    <string name="search_filter_chip">%1$s: %2$s</string>
+    <string name="search_filters_clear">Clear all filters</string>
+    <string name="search_titles">Titles</string>
+    <string name="search_transcripts">In the transcript</string>
+    <string name="search_play_from">Play from %1$s</string>
 
     <string name="play">Play</string>
     <string name="resume_from">Resume from %1$s</string>
