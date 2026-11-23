@@ -58,10 +58,12 @@ final class PlayerParentalUITests: PlayerUITestCase {
     }
 
     /// How many digits the pad holds, from its dots' label ("3 of 6 digits entered", in
-    /// Arabic with Arabic-Indic digits); nil once the pad is gone.
+    /// Arabic with Arabic-Indic digits); nil once the pad is gone. Read from one snapshot: an
+    /// `exists` then a `label` are two queries, and the right PIN's last key closes the sheet
+    /// between them (CI runs 45199851694 and 45238693973, iPhone: "No matches found for
+    /// pin.dots" on the label, after the sixth digit opened the video).
     private func digitsEntered() -> Int? {
-        let dots = element("pin.dots")
-        guard dots.exists else { return nil }
+        guard let dots = try? element("pin.dots").snapshot() else { return nil }
         let western = dots.label.unicodeScalars.map { u -> Character in
             switch u.value {
             case 0x0660 ... 0x0669: Character(UnicodeScalar(u.value - 0x0660 + 0x30)!)

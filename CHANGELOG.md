@@ -376,6 +376,10 @@ build fails when the two differ.
 
 ### Fixed
 
+- **On Roku, Down at the end of a library's loaded titles no longer jumps back to the first
+  title.** The Library tab's grid loads 36 titles at a time; pressing Down on its last row while
+  the next titles were still loading took focus round to the first title. Focus now stays on the
+  last row until the next titles arrive, then goes on down.
 - **Keyword search's first indexing of a large library on a SQLite home no longer slows as it
   goes (Epic 49, story 49.6 follow-up).** Each video's full-text row is now found by its key
   when it is written again, not by reading the whole table, so indexing every video takes time

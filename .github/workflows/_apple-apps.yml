@@ -383,8 +383,12 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+      # kept for reading a failure, not a check: the steps above pass or fail the shard. The
+      # artifact service unreachable here (run 45199851694, iPad 1/6: "Failed to CreateArtifact:
+      # Unable to make request: ENOTFOUND" after all 34 tests passed) marks the step, not the shard
       - name: Keep the screenshots, results and the app's log
         if: always()
+        continue-on-error: true
         uses: actions/upload-artifact@v7.0.1
         with:
           name: player-ui-tests-${{ matrix.device }}-${{ matrix.shard }}
