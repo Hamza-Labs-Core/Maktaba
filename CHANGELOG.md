@@ -1112,6 +1112,38 @@ build fails when the two differ.
 
 ### Added
 
+- **Search in the web app, on the big screen and on Samsung and LG TVs has an AI mode tab that
+  answers a question from the library (Epic 49, story 49.14).** Beside **Results**, **AI mode**
+  asks the home's language model. The sources show first, then the answer a sentence at a time,
+  each sentence's numbers opening the player at the passage it comes from. Another answer being
+  written shows the question's place in line. A follow-up carries the conversation, and when the
+  passages do not answer, it says so and keeps them shown. Without a language model the tab says
+  how to set one up (an admin gets the setting's link), and it says when an admin has turned AI
+  mode off or when to ask again if many questions are waiting. Leaving the tab or the page stops
+  an answer still being written. On the big screen and the TVs it works with the remote alone,
+  newest question at the top. In English and Arabic, right to left in Arabic.
+- **AI mode in the Apple apps (Epic 49, story 49.14).** Search in Maktaba Player (iPhone, iPad,
+  Mac) and on Apple TV has a second tab, **AI mode**, beside **Results**. Ask a question and the
+  home's own language model answers from the passages of your libraries: the sources show first,
+  then the answer sentence by sentence, each citation playing the video from the cited moment.
+  While another answer is being written, the place in line shows. Follow-ups go in the same tab.
+  A home without a language model, with AI mode turned off, too busy, or too old to have it says
+  so in the tab. English and Arabic.
+- **AI mode in the Android Player, on Android TV and in the Player for Windows and Linux (Epic
+  49, story 49.14).** Search has two tabs, Results and AI mode. AI mode asks the home's language
+  model a question only once its tab is opened or asked from. The passages it reads show at
+  once, then the answer sentence by sentence, each with a chip per passage it cites that plays
+  the video from that moment (a row the remote moves along on Android TV). A follow-up carries
+  the earlier questions and answers. When the passages do not answer, it says so and keeps them
+  shown. A home without a language model says where an admin sets one up, with the help page; AI
+  mode turned off, a busy home and an older home each say why.
+- **AI mode on Roku (Epic 49, story 49.14).** Search on Roku has an **AI mode** tab beside
+  **Results**. It asks the home's language model about what you typed and shows the answer with
+  the numbers of the passages it cites. The passages are listed under it, and each one plays
+  from its moment. **Ask** with new words asks a follow-up and **New topic** starts afresh. When
+  the passages do not answer, the tab says so and keeps them listed. A home with no language
+  model, with AI mode turned off, or busy with other questions says so too. On Roku the answer
+  appears once it is written.
 - **AI mode answers a question from the library (Epic 49, story 49.12).** `POST /api/search/ai`
   finds the best passages as a search does, in the caller's libraries only, and the home's
   language model writes a short answer from them in the question's language. Every sentence
