@@ -185,7 +185,14 @@ private fun Refusal(t: Texts, r: AiRefusal, openWeb: (String) -> Unit, again: ()
             }
             AiRefusal.Off -> Text(t["search.ai.off"], modifier = Modifier.testTag("ai-off"))
             is AiRefusal.Busy -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(t["search.ai.busy"], modifier = Modifier.weight(1f).testTag("ai-busy"))
+                Text(
+                    listOfNotNull(
+                        t["search.ai.busy"],
+                        r.position?.takeIf { it > 0 }?.let { t["search.ai.busyAhead", it] },
+                        r.retryAfterSec?.takeIf { it > 0 }?.let { t["search.ai.busyAfter", it] },
+                    ).joinToString(" "),
+                    modifier = Modifier.weight(1f).testTag("ai-busy"),
+                )
                 TextButton(onClick = again, modifier = Modifier.testTag("ai-again")) { Text(t["search.ai.again"]) }
             }
             AiRefusal.NotOnThisHome -> Text(t["search.ai.oldHome"], modifier = Modifier.testTag("ai-old-home"))

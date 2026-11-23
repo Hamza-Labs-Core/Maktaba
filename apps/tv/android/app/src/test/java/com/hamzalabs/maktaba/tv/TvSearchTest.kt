@@ -374,6 +374,19 @@ class TvSearchTest {
     }
 
     @Test
+    fun aBusyHomeSaysItsPlaceInLineAndWhenToAskAgain() {
+        ai = {
+            MockResponse.Builder().code(429).setHeader("Content-Type", "application/problem+json")
+                .setHeader("Retry-After", "30").body(AiStreams.BUSY).build()
+        }
+        show()
+        search("patience")
+        ok("tv-tab-ai")
+        wait { has("tv-ai-busy") }
+        assertTrue(shows("AI mode is busy answering other questions. Ask again shortly. 9 questions are ahead of this one. Ask again in about 30 seconds."))
+    }
+
+    @Test
     fun anOlderHomeSaysItHasNoAiModeYet() {
         show()
         search("patience")

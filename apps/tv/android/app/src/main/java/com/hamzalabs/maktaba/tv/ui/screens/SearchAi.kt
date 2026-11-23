@@ -176,7 +176,14 @@ private fun Refusal(r: AiRefusal, helpUrl: (String) -> String, again: () -> Unit
             }
             AiRefusal.Off -> Text(stringResource(CoreR.string.search_ai_off), Modifier.testTag("tv-ai-off"), style = MaterialTheme.typography.bodyLarge, color = MaktabaPalette.Text)
             is AiRefusal.Busy -> Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(stringResource(CoreR.string.search_ai_busy), Modifier.testTag("tv-ai-busy"), style = MaterialTheme.typography.bodyLarge, color = MaktabaPalette.Text)
+                Text(
+                    listOfNotNull(
+                        stringResource(CoreR.string.search_ai_busy),
+                        r.position?.takeIf { it > 0 }?.let { stringResource(CoreR.string.search_ai_busy_ahead, it) },
+                        r.retryAfterSec?.takeIf { it > 0 }?.let { stringResource(CoreR.string.search_ai_busy_after, it.toInt()) },
+                    ).joinToString(" "),
+                    Modifier.testTag("tv-ai-busy"), style = MaterialTheme.typography.bodyLarge, color = MaktabaPalette.Text,
+                )
                 MaktabaButton(onClick = again, modifier = Modifier.testTag("tv-ai-again")) { Text(stringResource(CoreR.string.search_ai_again)) }
             }
             AiRefusal.NotOnThisHome -> Text(stringResource(CoreR.string.search_ai_old_home), Modifier.testTag("tv-ai-old-home"), style = MaterialTheme.typography.bodyLarge, color = MaktabaPalette.Text)

@@ -261,6 +261,7 @@ private fun Refusal(r: AiRefusal, openHelp: (String) -> Unit, again: () -> Unit)
             AiRefusal.Off -> Text(stringResource(CoreR.string.search_ai_off), Modifier.testTag("ai-off"), style = MaterialTheme.typography.bodyMedium)
             is AiRefusal.Busy -> {
                 Text(stringResource(CoreR.string.search_ai_busy), Modifier.testTag("ai-busy"), style = MaterialTheme.typography.bodyMedium)
+                busyDetail(r)?.let { Text(it, Modifier.testTag("ai-busy-detail"), style = MaterialTheme.typography.bodySmall) }
                 TextButton(onClick = again, modifier = Modifier.testTag("ai-again")) { Text(stringResource(CoreR.string.search_ai_again)) }
             }
             AiRefusal.NotOnThisHome -> Text(stringResource(CoreR.string.search_ai_old_home), Modifier.testTag("ai-old-home"), style = MaterialTheme.typography.bodyMedium)
@@ -293,3 +294,10 @@ private fun FollowUp(first: Boolean, ask: (String) -> Unit) {
         }
     }
 }
+
+/** A busy home's place in line and when to ask again, as it said them (null: neither). */
+@Composable
+internal fun busyDetail(r: AiRefusal.Busy): String? = listOfNotNull(
+    r.position?.takeIf { it > 0 }?.let { stringResource(CoreR.string.search_ai_busy_ahead, it) },
+    r.retryAfterSec?.takeIf { it > 0 }?.let { stringResource(CoreR.string.search_ai_busy_after, it.toInt()) },
+).joinToString(" ").ifEmpty { null }

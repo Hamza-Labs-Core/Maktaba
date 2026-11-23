@@ -562,6 +562,8 @@ class SearchScreenTest {
         compose.onNodeWithTag("ai-follow-up").performTextInput("again")
         compose.onNodeWithTag("ai-follow-up").performImeAction()
         waitFor("AI mode is busy answering other questions. Ask again shortly.")
+        // the place the home said this question would have had
+        compose.onNodeWithText("9 questions are ahead of this one.", substring = true).assertIsDisplayed()
         // a home before story 49.12: no such route
         home.answer("/api/search/ai") { MockResponse.Builder().code(404).build() }
         compose.onNodeWithTag("ai-follow-up").performTextInput("once more")

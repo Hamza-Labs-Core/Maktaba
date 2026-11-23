@@ -474,7 +474,6 @@
     <string name="search_ai_queue">Waiting in line: number %1$d</string>
     <string name="search_ai_reading">Finding the passages…</string>
     <string name="search_ai_writing">Writing the answer…</string>
-    <string name="search_ai_answer">Answer</string>
     <string name="search_ai_sources">Passages read</string>
     <string name="search_ai_no_answer">These passages do not answer the question.</string>
     <string name="search_ai_no_passages">Nothing in your libraries speaks of this.</string>
@@ -486,9 +485,10 @@
     <string name="search_ai_help">Read about AI mode</string>
     <string name="search_ai_off">An admin turned AI mode off for this home.</string>
     <string name="search_ai_busy">AI mode is busy answering other questions. Ask again shortly.</string>
+    <string name="search_ai_busy_ahead">%1$d questions are ahead of this one.</string>
+    <string name="search_ai_busy_after">Ask again in about %1$d seconds.</string>
     <string name="search_ai_old_home">This home does not have AI mode yet. It comes with an update of the home.</string>
     <string name="search_ai_citation">Source %1$d, %2$s, play from %3$s</string>
     <string name="search_ai_passage">%1$s, play from %2$s: %3$s</string>
-    <string name="search_ai_question">Question: %1$s</string>
     <string name="search_ai_intro_short">Ask a question</string>
 </resources>

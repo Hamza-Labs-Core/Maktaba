@@ -422,6 +422,54 @@ class SearchAITest {
     }
 
     @Test
+    fun anOlderQuestionsRefusalIsNotShownUnderANewerOne() = unconfined { scope ->
+        // the first question's refusal is on its way when the second is asked: it lands after
+        val gate = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val later = Asker()
+        var first = true
+        val c = AiConversation({ q, h, f ->
+            if (first) {
+                first = false
+                flow {
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) { gate.await() }
+                    throw AiRefused(AiRefusal.Busy(9, 30))
+                }
+            } else {
+                later.ask(q, h, f)
+            }
+        })
+        c.open(scope, "q1")
+        c.ask(scope, "q2")
+        gate.complete(Unit)
+        assertNull(c.state.value.refusal)
+        assertEquals(listOf("q2"), c.state.value.exchanges.filter { it.live }.map { it.q })
+        later.channels[0].send(sources())
+        later.channels[0].send(sentence("Two."))
+        later.channels[0].send(done(true))
+        assertNull(c.state.value.refusal)
+        assertEquals(AiPhase.Answered, c.state.value.exchanges.last().phase)
+    }
+
+    @Test
+    fun aTimeoutBeforeAnySentenceIsAStoppedAnswer() = unconfined { scope ->
+        val a = Asker()
+        val c = AiConversation(a::ask)
+        c.open(scope, "q")
+        a.channels[0].send(sources())
+        a.channels[0].send(done(false, "timeout"))
+        val e = c.state.value.exchanges.single()
+        // not "these passages do not answer": the model ran out of time; Try again is offered
+        assertEquals(AiPhase.Stopped, e.phase)
+        assertEquals("timeout", e.reason)
+        // passages that do not answer stay that
+        a.channels.clear()
+        c.ask(scope, "q2")
+        a.channels[0].send(sources())
+        a.channels[0].send(done(false, "not-in-passages"))
+        assertEquals(AiPhase.NoAnswer, c.state.value.exchanges.last().phase)
+    }
+
+    @Test
     fun signedOutIsTold() = unconfined { scope ->
         var out = false
         val c = AiConversation({ _, _, _ -> flow { throw ApiException.SignedOut } }, signedOut = { out = true })

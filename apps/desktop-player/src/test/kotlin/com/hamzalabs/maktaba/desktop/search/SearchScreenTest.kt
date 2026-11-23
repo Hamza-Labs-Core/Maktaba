@@ -247,6 +247,12 @@ class SearchScreenTest {
             onNodeWithTag("ai-follow-up").performTextInput("again")
             onNodeWithTag("ai-ask").performClick()
             waitUntil(timeoutMillis = 5_000) { onAllNodes(hasTestTag("ai-off")).fetchSemanticsNodes().isNotEmpty() }
+            // busy: the place the home said this question would have had
+            fake.answer("POST /api/search/ai", AiStreams.BUSY, 429)
+            onNodeWithTag("ai-follow-up").performTextInput(" once more")
+            onNodeWithTag("ai-ask").performClick()
+            waitUntil(timeoutMillis = 5_000) { onAllNodes(hasTestTag("ai-busy")).fetchSemanticsNodes().isNotEmpty() }
+            onNodeWithText("9 questions are ahead of this one.", substring = true).assertExists()
         }
     }
 

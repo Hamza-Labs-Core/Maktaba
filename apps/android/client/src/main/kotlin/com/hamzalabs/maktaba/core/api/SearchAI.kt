@@ -416,7 +416,11 @@ class AiConversation(
                 // the stream ended without its `done`
                 edit(id) { if (it.live) it.copy(phase = AiPhase.Stopped, queue = null) else it }
             } catch (e: AiRefused) {
-                mutable.update { s -> s.copy(exchanges = s.exchanges.filter { it.id != id }, refusal = e.why) }
+                // a refusal that lands after a newer question was asked is that older
+                // question's, and is not shown under the newer one
+                if (id == ids) {
+                    mutable.update { s -> s.copy(exchanges = s.exchanges.filter { it.id != id }, refusal = e.why) }
+                }
             } catch (e: ApiException.SignedOut) {
                 edit(id) { it.copy(phase = AiPhase.Stopped, queue = null) }
                 signedOut()
@@ -456,14 +460,6 @@ class AiConversation(
         mutable.update { s -> s.copy(exchanges = s.exchanges.map { if (it.live) it.copy(phase = AiPhase.Stopped, queue = null) else it }) }
     }
 
-    /** Forgets the conversation (a new search's words, signing out). */
-    fun clear() {
-        stop()
-        startedFor = null
-        lastAsked = null
-        mutable.value = AiState()
-    }
-
     private fun edit(id: Int, f: (AiExchange) -> AiExchange) =
         mutable.update { s -> s.copy(exchanges = s.exchanges.map { if (it.id == id) f(it) else it }) }
 }
@@ -474,7 +470,13 @@ internal fun AiExchange.on(ev: AiEvent): AiExchange = when (ev) {
     is AiEvent.Sources -> copy(passages = ev.passages, phase = AiPhase.Writing, queue = null)
     is AiEvent.Text -> copy(sentences = sentences + ev.sentence, phase = AiPhase.Writing, queue = null)
     is AiEvent.Done -> copy(
-        phase = if (ev.done.answered || sentences.isNotEmpty()) AiPhase.Answered else AiPhase.NoAnswer,
+        // a timeout before any sentence is a stopped answer (Try again), not passages that do
+        // not answer
+        phase = when {
+            ev.done.answered || sentences.isNotEmpty() -> AiPhase.Answered
+            ev.done.reason == "timeout" -> AiPhase.Stopped
+            else -> AiPhase.NoAnswer
+        },
         reason = ev.done.reason,
         queue = null,
     )

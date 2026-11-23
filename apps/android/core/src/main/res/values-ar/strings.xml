@@ -473,7 +473,6 @@
     <string name="search_ai_queue">في الانتظار: رقم %1$d</string>
     <string name="search_ai_reading">يبحث عن المقاطع…</string>
     <string name="search_ai_writing">يكتب الإجابة…</string>
-    <string name="search_ai_answer">الإجابة</string>
     <string name="search_ai_sources">المقاطع المقروءة</string>
     <string name="search_ai_no_answer">هذه المقاطع لا تجيب عن السؤال.</string>
     <string name="search_ai_no_passages">لا شيء في مكتباتك يتحدث عن هذا.</string>
@@ -485,9 +484,10 @@
     <string name="search_ai_help">اقرأ عن وضع الذكاء الاصطناعي</string>
     <string name="search_ai_off">أوقف المسؤول وضع الذكاء الاصطناعي في هذا الجهاز الرئيسي.</string>
     <string name="search_ai_busy">وضع الذكاء الاصطناعي مشغول بالإجابة عن أسئلة أخرى. اسأل مرة أخرى بعد قليل.</string>
+    <string name="search_ai_busy_ahead">أمام هذا السؤال %1$d أسئلة.</string>
+    <string name="search_ai_busy_after">اسأل مرة أخرى بعد %1$d ثانية تقريبًا.</string>
     <string name="search_ai_old_home">لا يتوفر وضع الذكاء الاصطناعي في هذا الجهاز الرئيسي بعد. يأتي مع تحديث الجهاز الرئيسي.</string>
     <string name="search_ai_citation">المصدر %1$d، %2$s، تشغيل من %3$s</string>
     <string name="search_ai_passage">%1$s، تشغيل من %2$s: %3$s</string>
-    <string name="search_ai_question">السؤال: %1$s</string>
     <string name="search_ai_intro_short">اطرح سؤالًا</string>
 </resources>
