@@ -144,3 +144,18 @@ def test_broadcast_is_a_section_of_livetv_broadcast() -> None:
     fields = {f["name"]: f for f in schema["broadcast"]["fields"]}
     assert (fields["uplink_share"]["minimum"], fields["uplink_share"]["maximum"]) == (0.2, 0.8)
     assert fields["rung_slot_weight"]["maximum"] == 1.0
+
+
+def test_search_has_ai_mode_rules() -> None:
+    """Story 49.12: AI mode's rules in ``search`` (1.1): on by default, 30 passages, the tag
+    check's model, two minutes; out of range is refused."""
+    cfg, bad = rules.config("search", {})
+    assert not bad
+    assert (cfg.ai_mode, cfg.ai_passages, cfg.ai_model, cfg.ai_timeout_s) == (True, 30, "", 120)
+    cfg, bad = rules.config("search", {"ai_mode": False, "ai_model": "llama3:8b"})
+    assert not bad and cfg.ai_mode is False and cfg.ai_model == "llama3:8b"
+    for field, value in (("ai_passages", 4), ("ai_passages", 61), ("ai_timeout_s", 5)):
+        _, bad = rules.config("search", {field: value})
+        assert field in bad, (field, value)
+    section = next(s for s in rules.schema()["sections"] if s["key"] == "search")
+    assert section["version"] == [1, 1]
