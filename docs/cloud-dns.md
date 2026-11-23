@@ -4,7 +4,9 @@ The one list of the cloud's public names: what each points at, its TTL, whether 
 proxies it, and who changes it (Epic 50, story 50.01). The owner creates these records when
 the nodes exist (Epic 50 README §12); nothing in the repo calls a DNS API for them.
 
-- **maktaba.tv** is for users. **maktaba.dev** is for development, the wiki and staging.
+- **maktaba.tv** is for users: Maktaba Cloud and everything people use. **maktaba.dev** is for
+  developers: the developer wiki, the source, `security.txt` and staging. No other Maktaba domain
+  is ours.
 - **maktaba.app is not ours.** `tools/lint/no-foreign-domains.sh` fails a pull request that
   adds a host name under it. Reverse-DNS app identifiers (`com.maktaba.app`, `io.maktaba.app`)
   are not host names and stay.
