@@ -31,6 +31,8 @@ import com.hamzalabs.maktaba.player.shell.AppScreens
 import com.hamzalabs.maktaba.player.shell.PlayerSection
 import com.hamzalabs.maktaba.player.ui.components.FakePictures
 import com.hamzalabs.maktaba.player.ui.components.LocalHomeImages
+import com.hamzalabs.maktaba.core.AiStreams
+import mockwebserver3.MockResponse
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -40,7 +42,7 @@ import org.robolectric.annotation.GraphicsMode
 /**
  * Search's screenshots (NFR-20): dark, English and Arabic, phone and tablet, against the fake
  * home: the recent searches before a search, and the results (Titles, In the transcript) after
- * one. Posters come from [FakePictures]. `recordRoborazziDebug` writes the references under
+ * one, and AI mode's answer (story 49.14). Posters come from [FakePictures]. `recordRoborazziDebug` writes the references under
  * `src/test/screenshots`; CI's `verifyRoborazziDebug` fails when one no longer matches.
  */
 @RunWith(AndroidJUnit4::class)
@@ -49,10 +51,15 @@ class SearchScreenshotTest {
     @get:Rule(order = 0) val home = FakeHome()
     @get:Rule(order = 1) val compose = createAndroidComposeRule<ComponentActivity>()
 
-    private fun shoot(window: Window, name: String, results: Boolean, refined: Boolean = false) {
+    private fun shoot(window: Window, name: String, results: Boolean, refined: Boolean = false, ai: Boolean = false) {
         val ar = compose.activity.resources.configuration.locales[0].language == "ar"
         val l = if (ar) SearchFixtures.AR else SearchFixtures.EN
         SearchFixtures.install(home, l)
+        // story 49.14: AI mode's answer, the passages and the sentences citing them
+        home.answer("/api/search/ai") {
+            val (passages, sentences) = if (ar) AiStreams.AR_PASSAGES to AiStreams.AR_SENTENCES else AiStreams.EN_PASSAGES to AiStreams.EN_SENTENCES
+            MockResponse.Builder().code(200).setHeader("Content-Type", "text/event-stream").body(AiStreams.answer(l.query, passages, sentences)).build()
+        }
         compose.setShell(home, sections = PlayerSection.enabled, window = window, screens = { route, nav ->
             val images = remember { pathPictures(compose.activity) }
             CompositionLocalProvider(LocalHomeImages provides images) { AppScreens(route, nav) }
@@ -80,6 +87,10 @@ class SearchScreenshotTest {
             } else {
                 compose.settledUntil(5_000) { compose.onAllNodesWithTag("passage-v4-0").fetchSemanticsNodes().isNotEmpty() }
             }
+            if (ai) {
+                compose.onNodeWithTag("tab-ai").performClick()
+                compose.settledUntil(5_000) { compose.onAllNodesWithTag("ai-sentence-1-1").fetchSemanticsNodes().isNotEmpty() }
+            }
         } else {
             compose.settledUntil(5_000) { compose.onAllNodesWithTag("recent").fetchSemanticsNodes().isNotEmpty() }
         }
@@ -105,6 +116,12 @@ class SearchScreenshotTest {
 
     @Test @Config(qualifiers = "ar-w411dp-h891dp-xxhdpi")
     fun phoneRefinedArabic() = shoot(Window.Phone, "refined_phone", results = true, refined = true)
+
+    @Test @Config(qualifiers = "w411dp-h891dp-xxhdpi")
+    fun phoneAiModeEnglish() = shoot(Window.Phone, "ai_phone", results = true, ai = true)
+
+    @Test @Config(qualifiers = "ar-w411dp-h891dp-xxhdpi")
+    fun phoneAiModeArabic() = shoot(Window.Phone, "ai_phone", results = true, ai = true)
 
     @Test @Config(qualifiers = "w1280dp-h800dp-xhdpi")
     fun tabletResultsEnglish() = shoot(Window.Tablet, "results_tablet", results = true)

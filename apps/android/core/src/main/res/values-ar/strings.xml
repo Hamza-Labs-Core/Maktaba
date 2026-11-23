@@ -464,4 +464,30 @@
     <string name="guest_back">رجوع</string>
     <string name="guest_limited">تقييد أبوي مفعّل على هذا الجهاز، لذا لا يمكن مشاهدة البثوث هنا.</string>
     <string name="guest_held">ستُفتح دعوتك بعد أن يؤكد جهازك الرئيسي قيود هذا الحساب.</string>
+    <!-- القصة 49.14: تبويب وضع الذكاء الاصطناعي في البحث، للمشغّل ولتطبيق Android TV. -->
+    <string name="search_tab_results">النتائج</string>
+    <string name="search_tab_ai">وضع الذكاء الاصطناعي</string>
+    <string name="search_ai_intro">اطرح سؤالًا. يجيب نموذج اللغة في الجهاز الرئيسي من مقاطع مكتبتك فقط، وكل جملة مرتبطة بالفيديو واللحظة التي جاءت منها.</string>
+    <string name="search_ai_follow_up">اطرح سؤالًا تاليًا</string>
+    <string name="search_ai_ask">اسأل</string>
+    <string name="search_ai_queue">في الانتظار: رقم %1$d</string>
+    <string name="search_ai_reading">يبحث عن المقاطع…</string>
+    <string name="search_ai_writing">يكتب الإجابة…</string>
+    <string name="search_ai_sources">المقاطع المقروءة</string>
+    <string name="search_ai_no_answer">هذه المقاطع لا تجيب عن السؤال.</string>
+    <string name="search_ai_no_passages">لا شيء في مكتباتك يتحدث عن هذا.</string>
+    <string name="search_ai_stopped">توقفت الإجابة. ما كُتب منها باقٍ.</string>
+    <string name="search_ai_timeout">استغرقت الإجابة وقتًا طويلًا فقُطعت.</string>
+    <string name="search_ai_again">اسأل مرة أخرى</string>
+    <string name="search_ai_unavailable_title">وضع الذكاء الاصطناعي غير مُعدّ</string>
+    <string name="search_ai_unavailable">لا يوجد في هذا الجهاز الرئيسي نموذج لغة يجيب به. يضبط المسؤول خادم النماذج في الإعدادات ← القواعد ← فحص الوسوم.</string>
+    <string name="search_ai_help">اقرأ عن وضع الذكاء الاصطناعي</string>
+    <string name="search_ai_off">أوقف المسؤول وضع الذكاء الاصطناعي في هذا الجهاز الرئيسي.</string>
+    <string name="search_ai_busy">وضع الذكاء الاصطناعي مشغول بالإجابة عن أسئلة أخرى. اسأل مرة أخرى بعد قليل.</string>
+    <string name="search_ai_busy_ahead">أمام هذا السؤال %1$d أسئلة.</string>
+    <string name="search_ai_busy_after">اسأل مرة أخرى بعد %1$d ثانية تقريبًا.</string>
+    <string name="search_ai_old_home">لا يتوفر وضع الذكاء الاصطناعي في هذا الجهاز الرئيسي بعد. يأتي مع تحديث الجهاز الرئيسي.</string>
+    <string name="search_ai_citation">المصدر %1$d، %2$s، تشغيل من %3$s</string>
+    <string name="search_ai_passage">%1$s، تشغيل من %2$s: %3$s</string>
+    <string name="search_ai_intro_short">اطرح سؤالًا</string>
 </resources>

@@ -386,6 +386,10 @@ export const APPS = [
                 "**البحث**: في العناوين والنصوص المفرَّغة؛ ونتيجة النص تشغّل المقطع عند تلك اللحظة. وعلى أندرويد وعلى ويندوز ولينكس تبيّن الاقتراحات أثناء الكتابة نوع كلٍّ منها (بحث سابق، أو كلمة، أو عنوان مقطع يفتحه، أو متحدث)؛ ويعرض **هل تقصد** أقرب كتابة حين يجد البحث مقاطع قليلة؛ وتعدّ **التصفية** المقاطع التي وُجدت حسب المكتبة واللغة والمتحدث والسنة والمدة (في لوحة منبثقة على الهاتف، وفي شرائح فوق النتائج على الحاسوب)، ويمكن اختيار عدة مرشّحات معًا وإزالة كلٍّ منها، ومعها **إزالة كل عوامل التصفية**؛ ويرتّب **الترتيب حسب** النتائج حسب الأقرب صلة أو الأحدث أو الأكثر مطابقات."
               ),
               t(
+                "**AI mode** (Android, Windows and Linux): Search has two tabs, **Results** and **AI mode**. AI mode asks the home's language model a question, only once its tab is opened or asked from. The passages it reads show at once; the answer follows sentence by sentence, each with a chip per passage it cites that plays the video from that moment. A follow-up carries the earlier questions and answers. When the passages do not answer, it says so and keeps them shown; a home without a language model says where an admin sets one up, with the help page.",
+                "**وضع الذكاء الاصطناعي** (أندرويد وويندوز ولينكس): للبحث تبويبان، **النتائج** و**وضع الذكاء الاصطناعي**. يسأل وضع الذكاء الاصطناعي نموذج اللغة في الجهاز الرئيسي، ولا يسأله إلا حين يُفتح تبويبه أو يُسأل منه. تظهر المقاطع التي يقرؤها فورًا، ثم تتبعها الإجابة جملةً جملة، ومع كل جملة شريحة لكل مقطع تستشهد به تشغّل المقطع من تلك اللحظة. ويحمل السؤال التالي الأسئلة والإجابات السابقة. وحين لا تجيب المقاطع يقول ذلك ويُبقيها ظاهرة؛ وفي جهاز رئيسي بلا نموذج لغة يبيّن أين يُعدّه المسؤول، مع صفحة المساعدة."
+              ),
+              t(
                 "**Search help** (iPhone, iPad and Mac): suggestions as you type, each saying what it is (an earlier search, a word, a video's title, which opens the video, or a speaker); **Did you mean** over the results when a search finds few videos, one tap away; **Filters**, a sheet with the counts of the videos found by library, language, speaker, year and length, several combined, the filters in use each removable or cleared together; and the order: relevance, newest or most matches.",
                 "**مساعدة البحث** (آيفون وآيباد وماك): اقتراحات أثناء الكتابة يبيّن كلٌّ منها نوعه (بحث سابق، أو كلمة، أو عنوان مقطع يفتح المقطع، أو متحدث)؛ و**هل تقصد** فوق النتائج حين يجد البحث مقاطع قليلة، بنقرة واحدة؛ و**التصفية**، لوحة بأعداد المقاطع التي وُجدت حسب المكتبة واللغة والمتحدث والسنة والمدة، يُجمع بين أكثر من واحد منها، ويُزال كل مرشّح مستخدم وحده أو تُزال كلها معًا؛ والترتيب: الأقرب صلة أو الأحدث أو الأكثر مطابقات."
               ),
@@ -595,6 +599,12 @@ export const APPS = [
                 "phone",
                 "Search in the Player on an Android phone: sorted by relevance, narrowed to a library and a length (each filter removable), and Did you mean above the titles and transcript matches",
                 "البحث في المشغّل على هاتف أندرويد: مرتّبًا حسب الأقرب صلة، ومحصورًا في مكتبة ومدة (ويمكن إزالة كل مرشّح)، و«هل تقصد» فوق العناوين ومطابقات النص المفرَّغ"
+              ),
+              shot(
+                "android-player-search-ai-phone",
+                "phone",
+                "AI mode in the Player on an Android phone: the answer sentence by sentence, each citation a chip that plays its moment, and the passages read under it",
+                "وضع الذكاء الاصطناعي في المشغّل على هاتف أندرويد: الإجابة جملةً جملة، وكل استشهاد شريحة تشغّل لحظته، والمقاطع المقروءة تحتها"
               ),
               shot(
                 "android-player-libraries-library-phone",
@@ -921,6 +931,10 @@ export const APPS = [
               t(
                 "**Search**: titles and what is said in the videos. On Android TV, Google TV and Fire TV the suggestions follow the typing, each saying what it is (a video's title opens it); the keyboard's Search key runs the words. Above the results, rows the remote moves between: **Did you mean** when a search finds few videos, **Sort by** relevance, newest or most matches, and **Filters**, a row of chips per library, language, speaker, year and length with their counts; the filters in use come off with OK. A transcript result plays from that moment.",
                 "**البحث**: في العناوين وفيما قيل في المقاطع. وعلى أندرويد تي في وجوجل تي في وفاير تي في تتبع الاقتراحات الكتابة، ويبيّن كلٌّ منها نوعه (وعنوان المقطع يفتحه)؛ ويشغّل مفتاح البحث في لوحة المفاتيح الكلمات. وفوق النتائج صفوف يتنقّل بينها جهاز التحكم: **هل تقصد** حين يجد البحث مقاطع قليلة، و**الترتيب حسب** الأقرب صلة أو الأحدث أو الأكثر مطابقات، و**التصفية**، وفيها صف شرائح لكلٍّ من المكتبة واللغة والمتحدث والسنة والمدة بأعدادها؛ ويُزال المرشّح المستخدم بزر الموافقة. ونتيجة النص المفرَّغ تشغّل المقطع من تلك اللحظة."
+              ),
+              t(
+                "**AI mode** on Android TV, Google TV and Fire TV: a second tab beside **Results**, reached with the remote. It answers a question from the library's passages: the passages first, as a row, then each sentence with a row of its citations; OK on one plays the video from that moment. A follow-up is asked from the field under the answer.",
+                "**وضع الذكاء الاصطناعي** على أندرويد تي في وجوجل تي في وفاير تي في: تبويب ثانٍ بجانب **النتائج**، يُبلغ بجهاز التحكم. يجيب عن سؤال من مقاطع المكتبة: المقاطع أولًا في صف، ثم كل جملة ومعها صف استشهاداتها؛ وزر الموافقة على أحدها يشغّل المقطع من تلك اللحظة. ويُطرح السؤال التالي من الحقل تحت الإجابة."
               ),
               t(
                 "**Search on Apple TV**: the home's search of titles and transcripts, with the remote. The suggestions under the keyboard say what each one is, and a video's title opens it; **Search for** runs what was typed. Over the results: **Did you mean**, the order (relevance, newest or most matches) and **Filters**, the counts of the videos found by library, language, speaker, year and length, several combined; the filters in use are each removable, or cleared together.",

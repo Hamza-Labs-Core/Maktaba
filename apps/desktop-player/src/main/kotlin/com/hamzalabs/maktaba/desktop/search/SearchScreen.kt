@@ -31,6 +31,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -113,6 +114,12 @@ fun SearchContent(model: SearchModel, home: DesktopHome, features: Capabilities)
     LaunchedEffect(home.nav.searchAsked) { runCatching { field.requestFocus() } }
     LaunchedEffect(model) { model.loadRecent() }
     val admin = home.user.isAdmin
+    // AI mode asks only on its tab (story 49.14): opening it asks the search's words, once;
+    // leaving it, or Search, stops the answer still coming
+    LaunchedEffect(model.tab, model.submitted) {
+        if (model.tab == SearchTab.Ai) model.ai.open(scope, model.submitted ?: model.query, model.choice.filters())
+    }
+    DisposableEffect(model.tab) { onDispose { model.ai.stop() } }
     BoxWithConstraints(Modifier.fillMaxSize().testTag("search")) {
         val wide = maxWidth >= WIDE
         // a title suggestion opens its video: beside the results on a wide window, else on its own page
@@ -145,7 +152,19 @@ fun SearchContent(model: SearchModel, home: DesktopHome, features: Capabilities)
                 if (admin && !features.isOn(Feature.SEMANTIC_SEARCH)) {
                     Text(t["search.wordsOnly"], color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.testTag("words-only"))
                 }
-                Box(Modifier.weight(1f)) { Results(model, home, features, wide, openVideo) }
+                SearchTabs(model)
+                Box(Modifier.weight(1f)) {
+                    if (model.tab == SearchTab.Ai) {
+                        AiPane(
+                            model,
+                            scope,
+                            play = { id, title, at -> home.play(PlayRequest(id, title, startSec = at.toInt())) },
+                            openWeb = { path -> home.actions.openUrl(home.webUrl + path) },
+                        )
+                    } else {
+                        Results(model, home, features, wide, openVideo)
+                    }
+                }
             }
             // the page beside the results, also for a title suggestion chosen before any results
             if (wide && (model.chosen != null || model.answer?.isEmpty == false)) {

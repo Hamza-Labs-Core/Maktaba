@@ -3,6 +3,12 @@ package com.hamzalabs.maktaba.player.search
 import com.hamzalabs.maktaba.core.search.SearchModel
 import com.hamzalabs.maktaba.core.search.SearchAnswer
 import com.hamzalabs.maktaba.core.search.SUGGEST_DELAY_MS
+import com.hamzalabs.maktaba.core.search.SearchTab
+import androidx.compose.material.icons.outlined.AutoAwesome
+import androidx.compose.material3.PrimaryTabRow
+import androidx.compose.material3.Tab
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -164,6 +170,12 @@ internal fun SearchContent(model: SearchModel, client: ApiClient, nav: PlayerNav
         }
     }
     val play: (String, Passage) -> Unit = { id, p -> nav.open(Route.Watch(id, p.startSec.toInt())) }
+    // AI mode asks only on its tab (story 49.14): opening it asks the search's words, once, and
+    // leaving it (or Search) stops the answer still coming
+    LaunchedEffect(model.tab, model.submitted) {
+        if (model.tab == SearchTab.Ai) model.ai.open(scope, model.submitted ?: model.query, model.choice.filters())
+    }
+    DisposableEffect(model.tab) { onDispose { model.ai.stop() } }
 
     // held like a book: the field and the results on the start page, the chosen video's page on
     // the other (a passage still plays at once); otherwise a result opens its page on the stack
@@ -263,6 +275,18 @@ private fun SearchPane(
             )
         }
         if (!expanded) {
+            SearchTabs(model)
+        }
+        if (!expanded && model.tab == SearchTab.Ai) {
+            val uri = LocalUriHandler.current
+            AiPane(
+                model,
+                scope,
+                play = { id, at -> play(id, Passage(startSec = at)) },
+                openHelp = { path -> runCatching { uri.openUri(client.home.toString().trimEnd('/') + path) } },
+                modifier = Modifier.widthIn(max = ResultsMaxWidth),
+            )
+        } else if (!expanded) {
             Column(Modifier.widthIn(max = ResultsMaxWidth).fillMaxSize()) {
               val answer = model.answer
               val problem = model.problem
@@ -307,6 +331,29 @@ private fun SearchPane(
               }
             }
         }
+    }
+}
+
+/** Results and AI mode (story 49.14): Results is the default; AI mode asks only once opened. */
+@Composable
+private fun SearchTabs(model: SearchModel) {
+    PrimaryTabRow(
+        selectedTabIndex = model.tab.ordinal,
+        modifier = Modifier.widthIn(max = ResultsMaxWidth).fillMaxWidth().testTag("search-tabs"),
+    ) {
+        Tab(
+            selected = model.tab == SearchTab.Results,
+            onClick = { model.tab = SearchTab.Results },
+            text = { Text(stringResource(CoreR.string.search_tab_results)) },
+            modifier = Modifier.testTag("tab-results"),
+        )
+        Tab(
+            selected = model.tab == SearchTab.Ai,
+            onClick = { model.tab = SearchTab.Ai },
+            text = { Text(stringResource(CoreR.string.search_tab_ai)) },
+            icon = { Icon(Icons.Outlined.AutoAwesome, contentDescription = null, Modifier.size(18.dp)) },
+            modifier = Modifier.testTag("tab-ai"),
+        )
     }
 }
 
