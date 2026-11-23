@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <!-- Every call to the signed-in home, in one Task (Epic 58 story 58.12): one refresh at a time,
-     tokens saved when renewed, a sign-out reported to the scene. -->
+     tokens saved when renewed, a sign-out reported to the scene. AI mode's own Task (follow,
+     story 49.14) never refreshes: it takes the tokens the main Task renewed. -->
 <component name="ApiTask" extends="Task">
   <interface>
     <field id="request" type="node" />

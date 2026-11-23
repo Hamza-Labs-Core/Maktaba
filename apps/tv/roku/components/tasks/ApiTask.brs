@@ -41,9 +41,20 @@ sub send(req as Object)
         m.homeId = s.id
     end if
     client.transport.tag = req.tag
+    client.noRefresh = m.top.follow
     body = invalid
     if req.hasBody then body = req.body
     r = client.Request(req.method, req.path, body)
+    ' a following Task's 401: the main Task renews the tokens; when it has since this call
+    ' was sent, the call is sent once more with them
+    if r.status = 401 and m.top.follow then
+        s = m.global.session
+        if s <> invalid and s.access <> invalid and s.access <> "" and s.access <> client.session.access then
+            client.session.access = s.access
+            client.session.refresh = s.refresh
+            r = client.Request(req.method, req.path, body)
+        end if
+    end if
     print "[api] "; req.method; " "; HttpRedact(req.path); " "; r.status
     if client.changed then
         client.changed = false

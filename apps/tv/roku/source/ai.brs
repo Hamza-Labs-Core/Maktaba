@@ -289,8 +289,10 @@ function AiStatusKey(st as Object) as String
     if st.phase = "writing" then return "search.ai.writing"
     if st.phase = "stopped" then return "search.ai.stopped"
     if st.reason = "no-passages" then return "search.ai.noPassages"
-    if not st.answered then return "search.ai.noAnswer"
+    ' a timeout says so whether or not a sentence came before it (answered:false with no
+    ' sentence is no proof the passages do not answer)
     if st.reason = "timeout" then return "search.ai.timeout"
+    if not st.answered then return "search.ai.noAnswer"
     return ""
 end function
 

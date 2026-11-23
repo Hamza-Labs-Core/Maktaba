@@ -157,6 +157,11 @@ sub t_Ends()
     AiApply(st, {event: "text", data: {text: "One.", citations: [{n: 1, video_id: "V1", start_sec: 2}]}})
     AiApply(st, {event: "done", data: {answered: true, reason: "timeout"}})
     ck_Eq("timeout, the sentences standing", AiStatusKey(st), "search.ai.timeout")
+    ' a timeout before any sentence is a timeout, not passages that do not answer
+    st = AiNew("q")
+    AiApply(st, {event: "sources", data: {passages: [{n: 1, video_id: "V1", title: "T", start_sec: 2, text: "w"}]}})
+    AiApply(st, {event: "done", data: {answered: false, reason: "timeout"}})
+    ck_Eq("timeout, no sentence", AiStatusKey(st), "search.ai.timeout")
     ' an error: the answer stopped, the sentences sent stand
     st = AiNew("q")
     AiApply(st, {event: "text", data: {text: "One.", citations: [{n: 1, video_id: "V1", start_sec: 2}]}})

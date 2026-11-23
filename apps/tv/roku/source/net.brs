@@ -11,7 +11,8 @@
 ' retry, as the Android core does: no refresh token, or a refresh the home refuses (400, 401,
 ' 403), signs out (client.signedOut); a 429 or 5xx on refresh keeps the tokens. A request
 ' that was sent with an older token than the session now holds is retried without another
-' refresh. The channel runs every API call in one Task, so one refresh runs at a time.
+' refresh. Every API call runs in one Task, so one refresh runs at a time: AI mode's own Task
+' (story 49.14) never refreshes (noRefresh), and on a 401 takes the tokens the main Task holds.
 
 function ApiClientNew(session as Object, transport as Object) as Object
     return {
@@ -20,6 +21,9 @@ function ApiClientNew(session as Object, transport as Object) as Object
         changed: false
         signedOut: false
         tooOld: false
+        ' a 401 is answered as it is: no refresh, no sign-out (AI mode's following Task; two
+        ' refreshes of one token at once would be a replay, and the home revokes the family)
+        noRefresh: false
         generation: 0
         Request: api_Request
         Refresh: api_Refresh
@@ -40,6 +44,7 @@ function api_Request(method as String, path as String, body as Dynamic) as Objec
     r = api_Send(m, method, path, body, true)
     if r.status <> 401 then return r
     if m.generation <> gen then return api_Send(m, method, path, body, true)
+    if m.noRefresh then return r
     if not m.Refresh() then return r
     r = api_Send(m, method, path, body, true)
     if r.status = 401 then

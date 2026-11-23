@@ -177,6 +177,9 @@ end sub
 
 ' The stack: Reset leaves one screen, Push adds one, Pop goes back.
 sub scene_Reset(name as String, params as Object)
+    ' an AI mode answer still being read belongs to a Search that is going away: give it up,
+    ' so the home's one answer at a time is not held for no one (story 49.14)
+    if m.global.aiApi <> invalid then m.global.aiApi.cancel = "*"
     m.confirm.visible = false
     while m.stack.GetChildCount() > 0
         m.stack.RemoveChildIndex(m.stack.GetChildCount() - 1)

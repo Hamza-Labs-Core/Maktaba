@@ -685,6 +685,9 @@ end sub
 ' Asks the home the typed words: a follow-up of the turns kept so far. An answer still being
 ' read is given up first.
 sub askAi()
+    ' first, while the answer being read is still known: with the words erased it would
+    ' otherwise be forgotten unstopped, and the next question would wait behind it
+    cancelAi()
     q = m.keyboard.text.Trim()
     if q = "" then
         m.ai = invalid
@@ -692,7 +695,6 @@ sub askAi()
         layoutAi()
         return
     end if
-    cancelAi()
     body = AiBody(q, m.turns)
     m.aiSeq = m.aiSeq + 1
     m.aiTag = "ai" + m.aiSeq.ToStr()

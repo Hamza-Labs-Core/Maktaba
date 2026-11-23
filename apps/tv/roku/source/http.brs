@@ -30,7 +30,8 @@ function http_Do(req as Object) as Object
     while true
         msg = Wait(m.timeoutMs, port)
         if type(msg) <> "roSGNodeEvent" then exit while
-        if msg.GetData() = m.tag and m.tag <> "" then
+        ' "*" drops whatever call is being read (the scene was reset: Search is gone)
+        if (msg.GetData() = m.tag or msg.GetData() = "*") and m.tag <> "" then
             m.node.UnobserveField("cancel")
             ut.AsyncCancel()
             print "[http] "; req.method; " "; HttpRedact(req.url); " cancelled"
