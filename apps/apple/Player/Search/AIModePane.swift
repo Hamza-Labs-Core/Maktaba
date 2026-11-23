@@ -298,7 +298,7 @@ private struct SourceCard: View {
                 .fixedSize(horizontal: false, vertical: true)
             if let l = passage.libraryName {
                 Text(verbatim: l)
-                    .font(.maktabaBody(12, relativeTo: .caption2))
+                    .font(.maktabaBody(13, relativeTo: .caption))
                     .foregroundStyle(Color.mktMuted)
                     .fixedSize(horizontal: false, vertical: true)
             }
