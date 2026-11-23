@@ -901,6 +901,7 @@ func TestParentalBypassCatchesAMissingFilter(t *testing.T) {
 		{"an object by id", http.MethodGet, "/api/series/", "GET /api/series/{id}/episodes"},
 		{"a pipeline collection under a library", http.MethodGet, "/api/libraries/" + pfLibA + "/collections/", "GET /api/libraries/{id}/collections/{kind}/{gid}"},
 		{"search", http.MethodPost, "/api/search", "POST /api/search"},
+		{"AI mode's passages and what its model reads", http.MethodPost, "/api/search/ai", "POST /api/search/ai"},
 		{"GraphQL", http.MethodPost, "/graphql", "POST /graphql videos"},
 		{"opening a stream", http.MethodPost, "/api/stream/sessions", "POST /api/stream/sessions"},
 		{"a live feed", http.MethodGet, "/ws/home", "GET /ws/home"},
