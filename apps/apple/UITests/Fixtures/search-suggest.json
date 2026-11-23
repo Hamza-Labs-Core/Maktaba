@@ -3,5 +3,28 @@
   "السيرة النبوية",
   "السيرة",
   "seerah"
+ ],
+ "items": [
+  {
+   "text": "السيرة النبوية",
+   "kind": "history"
+  },
+  {
+   "text": "السيرة",
+   "kind": "term"
+  },
+  {
+   "text": "seerah",
+   "kind": "term"
+  },
+  {
+   "text": "السيرة النبوية، الدرس ١٢",
+   "kind": "title",
+   "video_id": "v3"
+  },
+  {
+   "text": "الشيخ أحمد",
+   "kind": "speaker"
+  }
  ]
 }

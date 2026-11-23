@@ -1112,6 +1112,16 @@ build fails when the two differ.
 
 ### Added
 
+- **Search on the iPhone, iPad, Mac and Apple TV apps suggests as you type, offers "Did you
+  mean", narrows by filters with counts, and sorts (Epic 49, story 49.11).** Each suggestion
+  says what it is: an earlier search, a word, a video's title (which opens the video) or a
+  speaker. "Did you mean" appears over the results when a search finds few videos, and one tap
+  runs it. **Filters** opens the counts of the videos found by library, language, speaker, year
+  and length; choosing several narrows the search to them, and the filters in use can each be
+  removed or cleared together. Results sort by relevance, newest or most matches. On the Apple
+  TV, search now uses the home's search of titles and transcripts, run from **Search for** under
+  the keyboard, all with the remote. In English and Arabic.
+
 - **The web app's Search page shows suggestions as you type, "Did you mean", filters with
   counts, and a sort (Epic 49, story 49.10).** The suggestions under the search box say what
   each one is: an earlier search, a word, a video's title (which opens the video) or a speaker,

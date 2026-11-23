@@ -990,6 +990,14 @@ public struct SearchAnswer: Decodable, Sendable {
     public let transcriptsTotal: Int
     /// The home answered without its semantic half (keywords only).
     public let degraded: Bool
+    /// The order the lists are in (story 49.8); nil from a home before it.
+    public let sort: SearchSort?
+    /// The query with its rare or unknown words corrected, when few videos were found; nil
+    /// when there is none.
+    public let didYouMean: String?
+    /// The counts of the videos found (the first page only); nil when none were found, or
+    /// from a home before story 49.8.
+    public let facets: SearchFacets?
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: AnyKey.self)
@@ -1004,6 +1012,10 @@ public struct SearchAnswer: Decodable, Sendable {
         transcripts = c.lenientList(k("transcript_videos"))
         transcriptsTotal = c.lenient(k("transcript_total")) ?? transcripts.count
         degraded = c.lenient(k("degraded")) ?? false
+        sort = (c.lenient(k("sort")) as String?).flatMap(SearchSort.init(rawValue:))
+        didYouMean = (c.lenient(k("did_you_mean")) as String?)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.flatMap { $0.isEmpty ? nil : $0 }
+        facets = c.lenient(k("facets"))
     }
 }
 
@@ -1243,13 +1255,6 @@ struct Items<Item: Decodable>: Decodable {
     }
 }
 
-private struct Suggestions: Decodable {
-    let suggestions: [String]
-    init(from decoder: Decoder) throws {
-        suggestions = try decoder.container(keyedBy: AnyKey.self).lenientList(AnyKey(stringValue: "suggestions"))
-    }
-}
-
 private struct Updated: Decodable {
     let updated: Int
     init(from decoder: Decoder) throws {
@@ -1451,9 +1456,15 @@ public extension APIClient {
     // Search
 
     /// Runs a search; its results stay on the home under `searchID` for paging. The query is
-    /// sent as typed (Arabic or English: the home ranks both).
-    func search(_ query: String, mode: SearchMode = .hybrid) async throws -> SearchAnswer {
-        try await browse(request("POST", "/api/search", body: ["q": query, "mode": mode.rawValue, "view": "grid"]))
+    /// sent as typed (Arabic or English: the home ranks both). `sort` goes when it is not the
+    /// home's default (relevance), and `filters` when any is chosen: a year or a duration band
+    /// as its bucket's own filter in `facets` (story 49.8).
+    func search(_ query: String, mode: SearchMode = .hybrid, sort: SearchSort = .relevance,
+                filters: SearchFilterChoice = SearchFilterChoice(), facets: SearchFacets? = nil) async throws -> SearchAnswer {
+        var body: [String: Any] = ["q": query, "mode": mode.rawValue, "view": "grid"]
+        if sort != .relevance { body["sort"] = sort.rawValue }
+        if let f = filters.requestBody(facets: facets) { body["filters"] = f }
+        return try await browse(request("POST", "/api/search", body: body))
     }
 
     /// A page of a saved search's group (`BrowseError.searchExpired`: run it again).
@@ -1469,8 +1480,10 @@ public extension APIClient {
                                          "offset": String(offset), "limit": String(limit)]))
     }
 
-    func searchSuggestions(_ prefix: String) async throws -> [String] {
-        let r: Suggestions = try await browse(request("GET", "/api/search/suggest", query: ["q": prefix]))
+    /// The suggestions for what is typed, each with its kind (plain texts from a home before
+    /// story 49.8).
+    func searchSuggestions(_ prefix: String) async throws -> [SearchSuggestion] {
+        let r: SuggestAnswer = try await browse(request("GET", "/api/search/suggest", query: ["q": prefix]))
         return r.suggestions
     }
 

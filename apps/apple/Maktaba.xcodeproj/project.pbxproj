@@ -711,6 +711,7 @@
 		A7839179AA05BBE3F07C35A4 /* auth-me.json in Resources */ = {isa = PBXBuildFile; fileRef = 5BDF18B38D8C81A79BEA1702 /* auth-me.json */; };
 		A787A980858843D411E34F63 /* me-video-v6.json in Resources */ = {isa = PBXBuildFile; fileRef = 3FF4BA477197A8D0A5389913 /* me-video-v6.json */; };
 		A7C12A007508AC4A08AF86D6 /* audio-en-0.ts in Resources */ = {isa = PBXBuildFile; fileRef = 1D89D51A7457C7862A31927F /* audio-en-0.ts */; };
+		A807677036F432A81A90D7B9 /* TVSearchUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0EF2A2432E30E0D93E2A86CC /* TVSearchUITests.swift */; };
 		A88AE08B403E25179EE574A7 /* video-1.ts in Resources */ = {isa = PBXBuildFile; fileRef = 889424E4EAD6D051DD5BFBFC /* video-1.ts */; };
 		A95AB48CDC263CBB54248701 /* LibrariesModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = F443C3CD0C085EB27F629687 /* LibrariesModels.swift */; };
 		A980902B562327DB20841C9B /* subs-en.vtt in Resources */ = {isa = PBXBuildFile; fileRef = EE8C7CD8274259B846A82C11 /* subs-en.vtt */; };
@@ -1144,6 +1145,7 @@
 		0B255CF92445B9A4965F4D26 /* WatchLogic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchLogic.swift; sourceTree = "<group>"; };
 		0D6FF4D764A02D3AD472B450 /* play-queue.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "play-queue.json"; sourceTree = "<group>"; };
 		0ECB7FAA590AF03E7798BF3A /* PlayerBrandTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerBrandTests.swift; sourceTree = "<group>"; };
+		0EF2A2432E30E0D93E2A86CC /* TVSearchUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TVSearchUITests.swift; sourceTree = "<group>"; };
 		1004CB73EF14C96A06ECAF68 /* RemoteDiagnosticsUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteDiagnosticsUITests.swift; sourceTree = "<group>"; };
 		136F5B08E9086201B88A8B60 /* tv-remote-heartbeat.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "tv-remote-heartbeat.json"; sourceTree = "<group>"; };
 		15376060DE47516866176397 /* library-series-docs.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "library-series-docs.json"; sourceTree = "<group>"; };
@@ -1642,6 +1644,7 @@
 				2D5E0C48C5201515B1909648 /* TVGuestUITests.swift */,
 				B790041B9E119302365AAF2F /* TVLiveUITests.swift */,
 				442874EE350E1ED96E00FC57 /* TVParentalUITests.swift */,
+				0EF2A2432E30E0D93E2A86CC /* TVSearchUITests.swift */,
 			);
 			path = MaktabaTVUITests;
 			sourceTree = "<group>";
@@ -3456,6 +3459,7 @@
 				C1DB7B639A5023A83B6126EA /* TVGuestUITests.swift in Sources */,
 				332EC82BA1511AF9A108BA76 /* TVLiveUITests.swift in Sources */,
 				934D30DDBE625CA7A73FDB73 /* TVParentalUITests.swift in Sources */,
+				A807677036F432A81A90D7B9 /* TVSearchUITests.swift in Sources */,
 				CE729F11875F3136FC873A70 /* TypingInFields.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
