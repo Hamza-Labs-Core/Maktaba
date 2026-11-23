@@ -14,6 +14,17 @@ build fails when the two differ.
 
 ### Changed
 
+- **The NAS guides match what Maktaba does today.** maktaba.tv/install's Troubleshooting page
+  says what a failed update looks like (nothing put back, undone by its own Down scripts, or
+  restored from the backup), what to do when an update waits for free space, and what each port
+  message means: a default port that moved, a port you set that is taken, the database port and
+  a bridge's published ports. The TrueNAS, Unraid and QNAP guides say where to choose each port,
+  the Docker and Synology pages say how a failed update goes back, and the NAS page explains
+  what each memory tier does and whether a NAS is the home, a machine of a home elsewhere or
+  storage only. The networking guide gains a section on choosing the ports, and maktaba.dev's
+  NAS guide and server page cover the port variables, the update rollback and the cluster
+  roles. In English and Arabic.
+
 - **The iPhone, iPad and Apple TV apps need iOS, iPadOS and tvOS 27.** Maktaba Player, Maktaba
   Remote and Maktaba TV are now built with Xcode 27 and the 27 SDKs, which App Store Connect
   requires from April 2027, and need iOS or iPadOS 27 or tvOS 27 or later. A device still on

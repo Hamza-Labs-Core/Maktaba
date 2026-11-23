@@ -91,6 +91,16 @@
           <strong>نوع الشبكة («Network Type»):</strong> أبقِ <strong>«Host»</strong>، فتجد هواتفك
           وأجهزة التلفاز Maktaba بنفسها.
         </li>
+        <li>
+          <strong>المنافذ</strong>، فقط إن كانت حاوية أخرى تستخدم 8088 أو 8080 أو 8081 أو 54329
+          (‏Plex أو تطبيق وسائط آخر مثلًا): من <strong>«Show more settings»</strong> اكتب منفذًا
+          متاحًا في كل خانة تغيّرها من «Web port» و«API port» و«Live TV port» و«Database port». وإن
+          تركتها فارغة نقل Maktaba بنفسه منفذ الويب أو الواجهة البرمجية أو البث المباشر المشغول إلى
+          منفذ حر بين 8780 و8790؛ أما المنفذ الذي تضبطه فلا يُنقل أبدًا (<a
+            href="/ar/install/troubleshooting/#port-taken"
+            >منفذ مشغول</a
+          >).
+        </li>
       </ul>
       <figure class="placeholder" data-shot="screenshots/unraid/template.ar.png">
         <figcaption>
@@ -115,7 +125,9 @@
         مروره، والمجلدات التي فيها مقاطعك. ويحتاج الخادم إلى الإنترنت في هذه الخطوة: ينزّل الإعداد
         أدوات التفريغ والبحث (نحو 2 GB) ونماذج الكلام. ويبدأ Maktaba بنفسه حين ينتهي. ثم افتح
         <strong>«WebUI»</strong> من قائمة الأيقونة، أو العنوان
-        <code>http://&lt;your server&gt;:8088</code>. وسجّل الدخول بعدها، وأضف مكتبة لكل مجلد:
+        <code>http://&lt;your server&gt;:8088</code>. وإن غيّرت منفذ الويب فاكتب
+        <code>http://&lt;your server&gt;:&lt;port&gt;</code> بدلًا منه، فعنصر «WebUI» يفتح 8088
+        دائمًا. وسجّل الدخول بعدها، وأضف مكتبة لكل مجلد:
         <strong>«الإدارة ← إدارة المكتبات ← إضافة مكتبة»</strong> (<a
           href="/ar/install/after-setup/#libraries"
           >بعد الإعداد</a
@@ -135,7 +147,9 @@
         </li>
         <li>
           <strong>التحديثات:</strong> يحدّث Maktaba نفسه في نافذة التحديث (الإدارة ← التحديثات). ولا
-          حاجة إلى تحديث الصورة حين يعرضه Unraid، ولا ضرر في تطبيقه.
+          حاجة إلى تحديث الصورة حين يعرضه Unraid، ولا ضرر في تطبيقه. أبقِ في المجمّع مساحة للنسخة
+          الاحتياطية التي تُؤخذ أولًا؛ والإصدار الذي يتعذّر عليه تعديل قاعدة البيانات يرجع من تلقاء
+          نفسه (<a href="/ar/install/troubleshooting/#update-failed">لم يكتمل تحديث</a>).
         </li>
         <li>
           صفحة <a href="/ar/install/after-setup/">بعد الإعداد</a> لساعات الهدوء وتحويل الكلام إلى نص

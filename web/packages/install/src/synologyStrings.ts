@@ -99,6 +99,8 @@ export const SYN = {
       "Running it as your own admin user also works, but a user made for Maktaba can only reach the folders you give it.",
     "after.encrypted":
       "Encrypted shared folders: until you unlock one, its libraries show No access. Nothing in them is deleted or scanned as missing.",
+    "after.updates":
+      "Updates: Maktaba updates itself in its update window (Manage → Updates). Pulling a newer image in Container Manager is safe too: an older image never replaces a newer Maktaba. Each update takes a backup of the database first, so keep room for it on the volume.",
     trouble: "If something goes wrong",
     "trouble.write":
       "The container stops at once: its log (Container → maktaba → Log) names the folder and the uid. Give that user Read/Write on docker/maktaba (step 2) and start the project again.",
@@ -106,6 +108,8 @@ export const SYN = {
       "A library shows No access: give maktaba permission on that shared folder (step 3), then press Check access on the library's page.",
     "trouble.memory":
       "Setup says there is not enough memory: Maktaba needs 3.5 GiB. Add memory if the model takes it, or use the NAS as storage for a Maktaba home on another computer.",
+    "trouble.update":
+      "An update did not go through: Manage → Updates says the release is blocked because it was rolled back on the home, and the release you had runs again. Maktaba says how it went back: nothing had to be put back, or the update's changes were undone by its own Down scripts (both in seconds), or the database was restored from the backup taken before the update (longer on a large library). Nothing to do: the next release comes in its window, and Try it again tries this one once more.",
     "trouble.port":
       "Another app on the NAS holds port 8088, 8080 or 8081: when it starts, Maktaba moves that port to a free one between 8780 and 8790. The container's log names the new port (if it was 8088, open http://<your NAS>:8780), and Settings → This machine shows what moved and which program holds the port. To choose a port yourself (Plex already uses 32400, so this matters only when another package uses one of Maktaba's): Container Manager → Project → maktaba → Action → Stop, then YAML Configurations, remove the # in front of the port's line under [ports] (MAKTABA_WEB_PORT, MAKTABA_API_PORT, MAKTABA_STREAM_PORT or MAKTABA_POSTGRES_PORT), set a free port, Save, and Build the project again. A port set there is never moved: if another package holds it, the container stops and its log names the port and the line. Change the firewall rule to the new ports too.",
     "shot.guide-user": "The DSM user maktaba in User & Group, with no administrator rights",
@@ -230,6 +234,8 @@ export const SYN = {
       "تشغيله بحساب المسؤول الخاص بك يعمل أيضًا، لكن المستخدم المخصص لـ Maktaba لا يصل إلا إلى المجلدات التي تمنحه إياها.",
     "after.encrypted":
       "المجلدات المشتركة المشفّرة: إلى أن تفتح قفل أحدها، تظهر مكتباته بلا وصول. ولا يُحذف شيء منها ولا يُعدّ مفقودًا.",
+    "after.updates":
+      "التحديثات: يحدّث Maktaba نفسه في نافذة التحديث (الإدارة ← التحديثات). وسحب صورة أحدث في Container Manager آمن أيضًا: لا تحلّ صورة أقدم أبدًا محلّ نسخة أحدث من Maktaba. ويأخذ كل تحديث نسخة احتياطية من قاعدة البيانات أولًا، فأبقِ لها مساحة على وحدة التخزين.",
     trouble: "إذا حدث خطأ",
     "trouble.write":
       "تتوقف الحاوية فورًا: يذكر سجلها (الحاوية ← maktaba ← السجل) المجلد ومعرّف uid. امنح ذلك المستخدم القراءة والكتابة على docker/maktaba (الخطوة 2) ثم شغّل المشروع من جديد.",
@@ -237,6 +243,8 @@ export const SYN = {
       "تظهر مكتبة بلا وصول: امنح maktaba الإذن على ذلك المجلد المشترك (الخطوة 3)، ثم اضغط فحص الوصول في صفحة المكتبة.",
     "trouble.memory":
       "يقول الإعداد إن الذاكرة لا تكفي: يحتاج Maktaba إلى 3.5 غيغابايت. أضف ذاكرة إن كان الطراز يقبلها، أو استخدم الجهاز للتخزين لمنزل Maktaba على حاسوب آخر.",
+    "trouble.update":
+      "لم يكتمل تحديث: تقول صفحة الإدارة ← التحديثات إن الإصدار محظور لأنه أُرجع على المنزل، ويعود الإصدار الذي كان عندك إلى العمل. ويذكر Maktaba كيف رجع: إما أنه لم يلزم إرجاع شيء، أو أن تعديلات التحديث أُلغيت بنصوص التراجع الخاصة به (وكلاهما في ثوانٍ)، أو أن قاعدة البيانات استُعيدت من النسخة الاحتياطية المأخوذة قبل التحديث (ويطول ذلك في المكتبة الكبيرة). لا يلزمك شيء: يأتي الإصدار التالي في نافذته، والزر جرّبه مجدداً يجرّب هذا الإصدار مرة أخرى.",
     "trouble.port":
       "يشغل تطبيق آخر على الجهاز المنفذ 8088 أو 8080 أو 8081: عند التشغيل ينقل Maktaba ذلك المنفذ إلى منفذ حر بين 8780 و8790. ويذكر سجل الحاوية المنفذ الجديد (إن كان 8088 فافتح ⁦http://<your NAS>:8780⁩)، وتعرض الإعدادات ← هذا الجهاز ما انتقل وأي برنامج يشغل المنفذ. ولتختار منفذًا بنفسك (يستخدم Plex المنفذ 32400، فلا يهم هذا إلا حين تستخدم حزمة أخرى أحد منافذ Maktaba): من Container Manager ← المشروع ← maktaba ← إجراء ← إيقاف، ثم إعدادات YAML، احذف علامة # أمام سطر المنفذ تحت [ports] (MAKTABA_WEB_PORT أو MAKTABA_API_PORT أو MAKTABA_STREAM_PORT أو MAKTABA_POSTGRES_PORT)، واضبط منفذًا حرًا، واحفظ، ثم ابنِ المشروع من جديد. لا يُنقل المنفذ المضبوط هناك أبدًا: وإن شغلته حزمة أخرى تتوقف الحاوية ويذكر سجلها المنفذ والسطر. وغيّر قاعدة الجدار الناري إلى المنافذ الجديدة أيضًا.",
     "shot.guide-user": "مستخدم DSM باسم maktaba في المستخدم والمجموعة، دون صلاحيات المسؤول",

@@ -63,10 +63,26 @@
       <h2 id="fits">Will my NAS run it?</h2>
       <p>
         Maktaba picks a tier from the memory it may use: <strong>Light</strong> under 6 GB (under 8
-        GB on an ARM NAS), <strong>Standard</strong> under 16 GB, <strong>Strong</strong> above. The
-        tier only sets defaults, such as how much work runs at once and the speech model. A NAS
-        under 4 GB serves best as storage: run the Maktaba home on another computer, and it reads
-        your media from the NAS.
+        GB on an ARM NAS), <strong>Standard</strong> under 16 GB, <strong>Strong</strong> from 16
+        GB. The tier only sets defaults, which you can change in Settings → This machine:
+      </p>
+      <ul>
+        <li>
+          <strong>Light:</strong> speech to text off until you turn it on (then the base model, in
+          the quiet hours), one video conversion at a time up to 720p.
+        </li>
+        <li>
+          <strong>Standard:</strong> speech to text with the small model, two conversions at once.
+        </li>
+        <li>
+          <strong>Strong:</strong> everything at full size, and the larger speech model
+          (large-v3-turbo) on a processor with AVX2.
+        </li>
+      </ul>
+      <p>
+        On Light and Standard, heavy work waits for the quiet hours (01:00 to 06:00), so the NAS
+        stays quick for its own files. Setup refuses when Maktaba may use less than 3.5 GB: such a
+        NAS serves best as storage.
       </p>
       <div class="table-wrap">
         <table class="models">
@@ -87,6 +103,25 @@
         itself when it starts and says what it found in Settings → This machine. In brackets: the
         most memory the model takes.
       </p>
+      <h2 id="roles">Home, machine or storage</h2>
+      <ul>
+        <li>
+          <strong>The home</strong>, on any tier: what every guide here sets up. Maktaba runs on the
+          NAS, and phones, TVs and browsers watch from it. A computer with a graphics card can join
+          it later and take the heavy work (<a href="/install/after-setup/#gpu-node">After setup</a
+          >).
+        </li>
+        <li>
+          <strong>Storage only:</strong> the NAS keeps your media, and the Maktaba home runs on
+          another computer that reads it from the NAS's shares. Nothing of Maktaba runs on the NAS.
+          This suits a NAS with too little memory, or one already busy.
+        </li>
+        <li>
+          <strong>A machine of a home elsewhere:</strong> a Standard or Strong NAS can also join a
+          home that runs on another computer, and take part of its work. A Light NAS is warned that
+          it would slow down without helping much, and joins only if you choose so explicitly.
+        </li>
+      </ul>
       <h2 id="prepare">What to prepare</h2>
       <ul>
         <li>
@@ -106,6 +141,13 @@
         <li>
           <strong>An internet connection during setup:</strong> it downloads the transcription and
           search tools (about 2 GB) and the speech models, once.
+        </li>
+        <li>
+          <strong>Its ports:</strong> Maktaba uses 8088 (the web app), 8080 (the apps), 8081 (live
+          TV) and 54329 (the database). If another app on the NAS already uses one, Maktaba moves to
+          a free port by itself, or you choose one (<a href="/install/troubleshooting/#port-taken"
+            >A port is taken</a
+          >).
         </li>
         <li><strong>About 20 minutes</strong>, and the NAS's address on your network.</li>
       </ul>

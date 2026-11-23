@@ -371,6 +371,7 @@ export function mount(root: HTMLElement, base: string, lang: Lang): void {
         "after.folders",
         "after.admin",
         "after.encrypted",
+        "after.updates",
       ]),
       ...shots(lang, "after")
     ),
@@ -378,7 +379,13 @@ export function mount(root: HTMLElement, base: string, lang: Lang): void {
       "section",
       { class: "trouble" },
       el("h2", {}, st(lang, "trouble")),
-      list(lang, ["trouble.write", "trouble.noAccess", "trouble.memory", "trouble.port"])
+      list(lang, [
+        "trouble.write",
+        "trouble.noAccess",
+        "trouble.memory",
+        "trouble.port",
+        "trouble.update",
+      ])
     )
   );
   setRam(6);
