@@ -621,9 +621,18 @@ func TestAppBundleFailedMigrationKeepsAnAdditiveSchema(t *testing.T) {
 		!strings.Contains(got[0].Detail, "kept") {
 		t.Fatalf("attempts %+v", got)
 	}
-	// the update's rollback keeps it too (updater.Machine.keepSchema marks it again)
+	// the update's rollback keeps it too (updater.Machine.keepSchema marks it again), and the
+	// failed release's halt holds through it: the record is not written again (a change ends
+	// the halt, and this release would start updating again under the rollback)
 	if ok, err := layout.MarkRecordKept(apppayload.DatabasePath(cfg.StateDir()), "v0.3.0", "v0.2.0", "logs"); err != nil || !ok {
 		t.Fatalf("the rollback's mark = %v, %v", ok, err)
+	}
+	if err := prepareOf(t, ps, supervisor.RoleAPI)(context.Background(), noReport); !supervisor.Halted(err) ||
+		supervisor.DetailOf(err).Code != "db_kept" {
+		t.Fatalf("after the rollback's mark = %v, want the db_kept halt still", err)
+	}
+	if len(f.dumps) != 1 || len(f.migrates) != migrateTries { // the lock timeout tried three times
+		t.Fatalf("dumps %v, migrations %v after the rollback's mark", f.dumps, f.migrates)
 	}
 	// the release before starts on it: nothing dumped or put back, its api told
 	newPayload(t, payload, "v0.2.0")
@@ -709,6 +718,34 @@ func TestAppBundleFailedMigrationUndoneByItsDownScripts(t *testing.T) {
 	}
 	if len(f.restores) != 1 {
 		t.Fatalf("restores = %v", f.restores)
+	}
+}
+
+// The review of #1538: the update's watch gives up on the start while the Down scripts run
+// and marks the dump to be put back (its rollback): the database step saves nothing over
+// that mark, and says the dump goes back.
+func TestAppBundleFailedMigrationLeavesAWatchsRestoreMark(t *testing.T) {
+	cfg, payload := appEnv(t, "v0.3.0", "")
+	if err := os.MkdirAll(filepath.Join(updater.KeptPayloadDir(updatesDirOf(cfg, ""), "v0.2.0"), "migrations"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	record(t, cfg, apppayload.Database{Version: "v0.2.0", State: apppayload.DatabaseMigrated})
+	f := installFakeDB(t, cfg)
+	f.back, f.backSchema, f.applied = updater.FailedDown, 230, 234
+	f.migrateErr = errors.New("migrate: ERROR 0235_x.sql: boom")
+	runMigrateDownTo = func(context.Context, *exec.Cmd, int64, io.Writer) error {
+		if ok, err := layout.MarkRecordRestoring(apppayload.DatabasePath(cfg.StateDir()), "v0.3.0", "start_timeout"); err != nil || !ok {
+			t.Errorf("the watch's mark = %v, %v", ok, err)
+		}
+		return nil
+	}
+	ps := appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), io.Discard)
+	err := prepareOf(t, ps, supervisor.RoleAPI)(context.Background(), noReport)
+	if err == nil || supervisor.DetailOf(err).Code != "db_restoring" {
+		t.Fatalf("= %v, want db_restoring", err)
+	}
+	if rec := recorded(t, cfg); rec.State != apppayload.DatabaseRestoring || rec.Failed != "v0.3.0" {
+		t.Fatalf("the watch's mark was saved over: %+v", rec)
 	}
 }
 

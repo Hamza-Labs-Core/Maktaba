@@ -13,14 +13,17 @@ package updater
 //     left nothing; a NO TRANSACTION one runs again whole, every statement harmless twice:
 //     shared/db/migrations/README.md rule 11).
 //   - down: the migrations that ran (goose recorded them) lose no data on their way up, so
-//     their Down scripts undo them; the one that failed part way left only additive work
-//     (its Up section is rollback-safe), which the release before does not see and the next
-//     try finishes. The database is then the release before's schema.
+//     their Down scripts undo them; the one that failed part way left nothing (it ran in a
+//     transaction) or only additive work that loses no data (a NO TRANSACTION one whose Up
+//     section is rollback-safe and changes no row), which the release before does not see
+//     and the next try finishes. The database is then the release before's schema.
 //   - restore: anything else, and whatever cannot be told: the dump goes back, as before.
 
 import (
 	"fmt"
 	"os"
+	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 )
@@ -65,7 +68,7 @@ func FailedBack(from, to string, applied int64, onKept bool) (how string, schema
 	if failed == 0 {
 		return FailedRestore, 0, keepWhy + "; the migration that failed is not known"
 	}
-	if ok, why := RollbackSafe(to, applied, failed); !ok {
+	if why := partWayLeft(to, failed); why != "" {
 		return FailedRestore, 0, keepWhy + "; the migration that failed part way: " + why
 	}
 	if applied > fromSchema {
@@ -108,3 +111,44 @@ func migrationSlots(dir string) []int64 {
 	}
 	return out
 }
+
+// partWayLeft says why what the migration at slot of dir may have left after failing part
+// way is not safe to leave ("" when it is): nothing, when it runs in a transaction (goose
+// rolled it back); else its Up section must be rollback-safe and lose no data, as the
+// migrations the Down scripts undo must.
+func partWayLeft(dir string, slot int64) string {
+	name := ""
+	ents, err := os.ReadDir(dir)
+	if err != nil {
+		return err.Error()
+	}
+	for _, e := range ents {
+		n := e.Name()
+		if s, _, ok := strings.Cut(n, "_"); ok && strings.HasSuffix(n, ".sql") && !strings.HasSuffix(n, ".sqlite.sql") {
+			if v, err := strconv.ParseInt(s, 10, 64); err == nil && v == slot {
+				name = n
+			}
+		}
+	}
+	if name == "" {
+		return fmt.Sprintf("no migration file in slot %04d", slot)
+	}
+	b, err := os.ReadFile(filepath.Join(dir, name))
+	if err != nil {
+		return err.Error()
+	}
+	if !noTransaction.Match(b) {
+		return "" // its transaction was rolled back: it left nothing
+	}
+	if ok, why := RollbackSafe(dir, slot-1, slot); !ok {
+		return why
+	}
+	up, _ := sections(string(b))
+	if what := losesData(up); what != "" {
+		return name + " " + what
+	}
+	return ""
+}
+
+// noTransaction is goose's NO TRANSACTION directive.
+var noTransaction = regexp.MustCompile(`(?m)^\s*--\s*\+goose\s+NO\s+TRANSACTION\b`)

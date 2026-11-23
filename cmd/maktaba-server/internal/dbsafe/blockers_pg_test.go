@@ -170,6 +170,18 @@ func TestMigrationBlockersEnded(t *testing.T) {
 		}
 	}
 	h.end()
+	// an index a recorded migration has left INVALID (taken for done before this fix): the
+	// next run builds it again from its own definition
+	if _, err := r.db.Exec(`UPDATE pg_index SET indisvalid = false WHERE indexrelid = 'cic_probe_videos'::regclass`); err != nil {
+		t.Fatal(err)
+	}
+	out, err = migrate()
+	if err != nil || !strings.Contains(out, "cic_probe_videos of 9101_cic_probe.sql (recorded) was INVALID: built again") {
+		t.Fatalf("a recorded migration's INVALID index: %v\n%s", err, out)
+	}
+	if ok, valid := invalid("cic_probe_videos"); !ok || !valid {
+		t.Errorf("cic_probe_videos after its rebuild: there %v, valid %v", ok, valid)
+	}
 	mu.Lock()
 	got := append([]pgbundle.EndedSession(nil), ended...)
 	ended = nil

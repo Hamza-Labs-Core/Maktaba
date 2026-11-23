@@ -63,6 +63,21 @@ func TestFailedBack(t *testing.T) {
 		!strings.Contains(why, "failed part way") {
 		t.Fatalf("a destructive one failed part way: %s (%s)", how, why)
 	}
+	// the one that failed part way, NO TRANSACTION, overwrote rows: what it did stays, so
+	// the dump; the same in a transaction left nothing, so the Down scripts
+	backfill := "ALTER TABLE b ADD COLUMN IF NOT EXISTS n int;\nUPDATE b SET n = id;\n" +
+		"CREATE INDEX CONCURRENTLY IF NOT EXISTS b_n ON b (n);"
+	lossyPart := map[string]string{"0001_a.sql": up("SELECT 1;"), "0002_b.sql": up("CREATE TABLE IF NOT EXISTS b (id int);"),
+		"0003_c.sql": "-- +goose NO TRANSACTION\n" + up(backfill)}
+	if how, _, why := FailedBack(from(false), migrationsDir(t, nil, lossyPart, false), 2, false); how != FailedRestore ||
+		!strings.Contains(why, "loses data") {
+		t.Fatalf("a NO TRANSACTION backfill failed part way: %s (%s)", how, why)
+	}
+	inTx := map[string]string{"0001_a.sql": up("SELECT 1;"), "0002_b.sql": up("CREATE TABLE IF NOT EXISTS b (id int);"),
+		"0003_c.sql": up("ALTER TABLE b ADD COLUMN IF NOT EXISTS n int;\nUPDATE b SET n = id;\nALTER TABLE b RENAME n TO m;")}
+	if how, schema, why := FailedBack(from(false), migrationsDir(t, nil, inTx, false), 2, false); how != FailedDown || schema != 1 {
+		t.Fatalf("a transactional migration failed (it left nothing): %s %d (%s)", how, schema, why)
+	}
 	// nothing known
 	if how, _, _ := FailedBack("", to, 2, false); how != FailedRestore {
 		t.Fatalf("no release before: %s", how)

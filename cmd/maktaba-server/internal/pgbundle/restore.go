@@ -403,7 +403,8 @@ const MigrateApp = "maktaba-migrate"
 
 // EndBlockersSQL ends every session of database db ("": the one it runs in) that one of
 // the api's migrations (application_name MigrateApp) has waited on for longer than grace,
-// when its role may end it, and selects each one it ended: its pid, kind (backend_type),
+// when its role may end it (a superuser's session never: an operator's own), and
+// selects each one it ended: its pid, kind (backend_type),
 // role, application_name, client address, how long its transaction had run in seconds,
 // and the start of its query, '|' between them (and none inside).
 //
@@ -444,9 +445,10 @@ FROM (
     LEFT JOIN pg_roles r ON r.oid = a.usesysid
     WHERE a.pid <> pg_backend_pid() AND a.backend_type IN ('client backend', 'walsender')
       AND coalesce(a.application_name, '') <> '` + MigrateApp + `'
+      AND NOT coalesce(r.rolsuper, false)
       AND ((SELECT rolsuper FROM pg_roles WHERE rolname = current_user)
-           OR (pg_has_role(current_user, 'pg_signal_backend', 'MEMBER') AND NOT coalesce(r.rolsuper, false))
-           OR pg_has_role(current_user, a.usesysid, 'MEMBER'))
+           OR pg_has_role(current_user, 'pg_signal_backend', 'USAGE')
+           OR pg_has_role(current_user, a.usesysid, 'USAGE'))
 ) e WHERE e.ended`
 }
 

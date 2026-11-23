@@ -1259,9 +1259,22 @@ func (g *migrationGate) backWithoutDump(ctx context.Context, cur string, update 
 			a.Ended(attempts.PutBack)
 		})
 	}
+	// the update's watch may give up on this start meanwhile (start_timeout) and mark the
+	// dump to be put back (its rollback): then that is what happens, nothing is saved over it
+	gaveUp := func() (bool, error) {
+		now, rerr := g.record()
+		if rerr != nil || now.State != apppayload.DatabaseRestoring || now.Failed != cur {
+			return false, nil
+		}
+		return true, detailErr("db_restoring", fmt.Sprintf("The update to %s gave up: the library database is put "+
+			"back as it was at the next start", cur), cur, now.Dump)
+	}
 	switch how {
 	case updater.FailedKeep:
 		g.dropLeftovers(ctx)
+		if done, err := gaveUp(); done {
+			return true, err
+		}
 		rec := apppayload.Database{Version: cur, State: apppayload.DatabaseMigrated, Release: update.From,
 			From: update.From, Dump: update.Dump, Failed: cur, Error: cause.Error(),
 			KeptFor: layout.NormalizeVersion(update.From), KeptReason: "its migrations failed: " + cause.Error(),
@@ -1274,6 +1287,9 @@ func (g *migrationGate) backWithoutDump(ctx context.Context, cur string, update 
 		settle("kept")
 		return true, supervisor.Halt(keptUpdate(rec))
 	case updater.FailedDown:
+		if done, err := gaveUp(); done {
+			return true, err
+		}
 		fmt.Fprintf(g.log, "[serve] the update to %s failed (%s): undoing its migrations with their Down scripts, back "+
 			"to slot %04d (%s): nothing is put back from the dump\n", cur, cause, schema, why)
 		stop := g.freeMigrations(ctx)
@@ -1287,6 +1303,11 @@ func (g *migrationGate) backWithoutDump(ctx context.Context, cur string, update 
 			return false, nil
 		}
 		g.dropLeftovers(ctx)
+		if done, err := gaveUp(); done {
+			// the rollback puts the dump back over the schema the Down scripts left: the
+			// same database as before the update either way
+			return true, err
+		}
 		rec := apppayload.Database{Version: update.From, State: apppayload.DatabaseMigrated, From: update.From,
 			Dump: update.Dump, Failed: cur, Error: cause.Error(), DownFrom: cur, DownReason: cause.Error()}
 		if err := g.save(rec); err != nil {

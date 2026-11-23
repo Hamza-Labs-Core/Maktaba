@@ -60,8 +60,9 @@ Actions:
   status       Show applied vs. pending migrations
   version      Print the current schema version
   validate     Verify the migrations directory is well-formed
-  drop-invalid Drop the INVALID indexes a pending migration's CREATE INDEX
-               CONCURRENTLY left when it did not finish (up does this first)
+  drop-invalid Drop the INVALID indexes a migration's CREATE INDEX CONCURRENTLY
+               left when it did not finish, building a recorded one's again
+               (up does this before and after it runs)
   down         Roll back the most recently applied migration
   down-to <v>  Roll back until the schema is at version <v>
 
@@ -235,14 +236,21 @@ func runGooseUp(ctx context.Context, db *sql.DB, dir string) error {
 		return err
 	}
 	defer os.RemoveAll(stage)
-	if err := dropCancelledIndexes(ctx, db, stage); err != nil {
+	if err := repairInvalidIndexes(ctx, db, stage); err != nil {
 		return fmt.Errorf("the invalid indexes a cancelled migration left: %w", err)
 	}
-	return goose.UpContext(ctx, db, stage)
+	if err := goose.UpContext(ctx, db, stage); err != nil {
+		return err
+	}
+	// a build cut short while goose ran (and taken for done by IF NOT EXISTS) is built again
+	if err := repairInvalidIndexes(ctx, db, stage); err != nil {
+		return fmt.Errorf("the migrations left an invalid index: %w", err)
+	}
+	return nil
 }
 
-// runDropInvalid drops only the INVALID indexes the pending migrations' CREATE INDEX
-// CONCURRENTLY left (dropCancelledIndexes): the server's database step runs it when it
+// runDropInvalid drops only the INVALID indexes the migrations' CREATE INDEX
+// CONCURRENTLY left (repairInvalidIndexes: a recorded migration's are built again): the server's database step runs it when it
 // keeps the schema of an update whose migrations failed, so the release before does not
 // keep an index nobody reads up to date on its writes.
 func runDropInvalid(ctx context.Context, db *sql.DB, dir string) error {
@@ -251,7 +259,7 @@ func runDropInvalid(ctx context.Context, db *sql.DB, dir string) error {
 		return err
 	}
 	defer os.RemoveAll(stage)
-	return dropCancelledIndexes(ctx, db, stage)
+	return repairInvalidIndexes(ctx, db, stage)
 }
 
 // guardDown refuses a rollback when MAKTABA_DISABLE_DOWN is truthy.

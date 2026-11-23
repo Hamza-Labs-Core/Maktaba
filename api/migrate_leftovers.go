@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/lib/pq"
 	"github.com/pressly/goose/v3"
 )
 
@@ -22,10 +23,13 @@ const migrateAppName = "maktaba-migrate"
 // migration, which goose did not record, runs again whole at the next try (NO TRANSACTION
 // files: shared/db/migrations/README.md rule 11), and its IF NOT EXISTS then took the
 // invalid index for done: on 2026-11-23 the second try recorded 0232 (2.99 ms) and the
-// third took 0235's first index so, both INVALID. So before goose runs, every index a
-// pending migration builds CONCURRENTLY IF NOT EXISTS that is there INVALID, and that no
-// session is building now, is dropped: its migration builds it again, valid. Nothing else
-// is touched: an invalid index no pending migration names is left as it is.
+// third took 0235's first index so, both INVALID. So every index a migration builds
+// CONCURRENTLY IF NOT EXISTS that is there INVALID, and that no session is building now
+// (pg_stat_progress_create_index), is dropped before goose runs: a pending migration
+// builds it again; one goose recorded already has it built again here, from its own
+// definition. The same runs after goose, so no migration stays recorded with an INVALID
+// index (a session that held a lock on the table while the build was cut short, say).
+// Nothing else is touched: an invalid index no migration names is left as it is.
 
 // concurrentIndex is a CREATE [UNIQUE] INDEX CONCURRENTLY IF NOT EXISTS and its name.
 var concurrentIndex = regexp.MustCompile(`(?is)\bCREATE\s+(?:UNIQUE\s+)?INDEX\s+CONCURRENTLY\s+IF\s+NOT\s+EXISTS\s+` +
@@ -55,18 +59,22 @@ func concurrentIndexesOf(sqlText string) []string {
 	return names
 }
 
-// invalidLeftoverSQL selects the index named $1 when it is INVALID and no session is
-// building it or holds a lock on it (a CREATE INDEX CONCURRENTLY of another session in
-// progress is not a leftover), as a name DROP INDEX takes.
-const invalidLeftoverSQL = `SELECT c.oid::regclass::text
-FROM pg_class c JOIN pg_index i ON i.indexrelid = c.oid
-WHERE c.oid = to_regclass($1) AND c.relkind = 'i' AND NOT i.indisvalid
-  AND NOT EXISTS (SELECT 1 FROM pg_stat_progress_create_index p WHERE p.index_relid = c.oid)
-  AND NOT EXISTS (SELECT 1 FROM pg_locks l WHERE l.relation = c.oid AND l.pid <> pg_backend_pid())`
+// invalidIndexesSQL selects, of the index names $1, those there INVALID that no session
+// is building now, as a name DROP INDEX takes and their definition.
+const invalidIndexesSQL = `SELECT n.name, c.oid::regclass::text, pg_get_indexdef(c.oid)
+FROM unnest($1::text[]) AS n(name)
+JOIN pg_class c ON c.oid = to_regclass(n.name)
+JOIN pg_index i ON i.indexrelid = c.oid
+WHERE c.relkind = 'i' AND NOT i.indisvalid
+  AND NOT EXISTS (SELECT 1 FROM pg_stat_progress_create_index p WHERE p.index_relid = c.oid)`
 
-// dropCancelledIndexes drops the INVALID leftovers of the pending migrations of dir (the
-// staged Postgres set) on db, saying each one.
-func dropCancelledIndexes(ctx context.Context, db *sql.DB, dir string) error {
+// createIndex is the start of pg_get_indexdef's statement.
+var createIndex = regexp.MustCompile(`^CREATE (UNIQUE )?INDEX `)
+
+// repairInvalidIndexes drops the INVALID leftovers of the migrations of dir (the staged
+// Postgres set) on db and builds again, CONCURRENTLY, those of the migrations goose has
+// recorded, saying each one.
+func repairInvalidIndexes(ctx context.Context, db *sql.DB, dir string) error {
 	current, err := goose.GetDBVersionContext(ctx, db)
 	if err != nil {
 		return fmt.Errorf("the schema's version: %w", err)
@@ -75,28 +83,60 @@ func dropCancelledIndexes(ctx context.Context, db *sql.DB, dir string) error {
 	if err != nil {
 		return err
 	}
+	of := map[string]*goose.Migration{}
+	var names []string
 	for _, m := range ms {
-		if m.Version <= current {
-			continue
-		}
 		raw, err := os.ReadFile(m.Source)
 		if err != nil {
 			return err
 		}
-		for _, name := range concurrentIndexesOf(string(raw)) {
-			var idx string
-			switch err := db.QueryRowContext(ctx, invalidLeftoverSQL, name).Scan(&idx); {
-			case err == sql.ErrNoRows:
-				continue
-			case err != nil:
-				return fmt.Errorf("%s: %w", name, err)
+		for _, n := range concurrentIndexesOf(string(raw)) {
+			if _, ok := of[n]; !ok {
+				of[n] = m
+				names = append(names, n)
 			}
-			if _, err := db.ExecContext(ctx, `DROP INDEX CONCURRENTLY IF EXISTS `+idx); err != nil {
-				return fmt.Errorf("drop the invalid index %s: %w", idx, err)
-			}
-			fmt.Fprintf(os.Stderr, "migrate: %s was left INVALID by a CREATE INDEX CONCURRENTLY that did not "+
-				"finish: dropped, %s builds it again\n", idx, filepath.Base(m.Source))
 		}
+	}
+	if len(names) == 0 {
+		return nil
+	}
+	rows, err := db.QueryContext(ctx, invalidIndexesSQL, pq.Array(names))
+	if err != nil {
+		return err
+	}
+	type leftover struct{ name, idx, def string }
+	var found []leftover
+	for rows.Next() {
+		var l leftover
+		if err := rows.Scan(&l.name, &l.idx, &l.def); err != nil {
+			rows.Close()
+			return err
+		}
+		found = append(found, l)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, l := range found {
+		m := of[l.name]
+		if _, err := db.ExecContext(ctx, `DROP INDEX CONCURRENTLY IF EXISTS `+l.idx); err != nil {
+			return fmt.Errorf("drop the invalid index %s: %w", l.idx, err)
+		}
+		if m.Version > current {
+			fmt.Fprintf(os.Stderr, "migrate: %s was left INVALID by a CREATE INDEX CONCURRENTLY that did not "+
+				"finish: dropped, %s builds it again\n", l.idx, filepath.Base(m.Source))
+			continue
+		}
+		def := createIndex.ReplaceAllString(l.def, "CREATE ${1}INDEX CONCURRENTLY IF NOT EXISTS ")
+		if def == l.def {
+			return fmt.Errorf("the invalid index %s of %s: its definition is not one to build again: %s", l.idx,
+				filepath.Base(m.Source), l.def)
+		}
+		if _, err := db.ExecContext(ctx, def); err != nil {
+			return fmt.Errorf("build the invalid index %s of %s again: %w", l.idx, filepath.Base(m.Source), err)
+		}
+		fmt.Fprintf(os.Stderr, "migrate: %s of %s (recorded) was INVALID: built again\n", l.idx, filepath.Base(m.Source))
 	}
 	return nil
 }
