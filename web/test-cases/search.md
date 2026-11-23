@@ -18,7 +18,8 @@
 - **State in URL / storage:** `q`, `mode`, `sid`, `vp`, `tp` in the URL. A submit pushes `?q&mode`, then the answer's sid replaces that entry; page changes push. Mode in `localStorage["mkt:search:mode"]` (`hybrid` | `fts` | `semantic`, default `hybrid`; a `mode` in the URL wins). List / Grid in `localStorage["mkt:search:view"]` (default `list`). Page sizes of each sid in `sessionStorage["mkt:search:sizes"]` (fallback 20 list / 24 grid, 20 passages). YouTube toggle is component state only.
 - **Access:** signed-in user (`RequireAuth`). Server scopes results to libraries the user can access; a sid belongs to its user (another user's sid answers 410).
 - **Story 49.10 (suggestions, did-you-mean, facets, sort; the API of story 49.8):** `GET /api/search/suggest` → `{ suggestions, items: [{ text, kind: history | term | title | speaker, video_id? }] }`, shown as a combobox's listbox under the box (`src/pages/searchHelp.tsx` `SuggestBox`); `POST /api/search` takes `sort` (left out for relevance) and `filters { library_id[], language[], speaker[], date { gte, lt }, duration_sec { gte, lt? } }` (left out when none) and answers `sort`, `did_you_mean` and `facets { library, language, speaker, year, duration: [{ value, label?, count, filter? }], videos }` with the first page. The facets and did-you-mean are kept per sid in `sessionStorage["mkt:search:help"]` for a reload or Back.
-- **Existing tests:** `src/pages/Search.test.tsx` (SRC-01 to SRC-35), `src/pages/Search.help.test.tsx` (SRC-44 to SRC-53), `src/pages/Search.youtube.test.tsx` (SRC-21, SRC-22), `src/pages/SearchVideo.test.tsx` (SRC-36 to SRC-43); the fake saved-search server is `src/test/searchServer.ts`.
+- **Story 49.10 follow-up (search state kept):** `GET /api/search/recent` items carry `sort` and `filters` (as asked; left out for a search kept before slot 0236); `GET /api/search/results/{sid}` carries `sort`, and with `facets=1` the search's `facets` and `did_you_mean`; `POST /api/search/save` takes `{ name, query }`, the query being the search's body with its `sort` and `filters`. A library filter is named from `GET /api/libraries/summary` (or the page cache's `libraries` answer) until the facets name it.
+- **Existing tests:** `src/pages/Search.test.tsx` (SRC-01 to SRC-35), `src/pages/Search.help.test.tsx` (SRC-44 to SRC-57), `src/pages/Search.youtube.test.tsx` (SRC-21, SRC-22), `src/pages/SearchVideo.test.tsx` (SRC-36 to SRC-43); the fake saved-search server is `src/test/searchServer.ts`.
 
 ## Summary
 
@@ -77,6 +78,10 @@
 | SRC-51 | Facets stay while the lists page and after a reload by sid                | Navigation    | P1       | Yes (`Search.help.test.tsx`)                        |
 | SRC-52 | Suggestions, facets, sort and did-you-mean in Arabic                      | RTL           | P1       | Yes (`Search.help.test.tsx`)                        |
 | SRC-53 | axe: suggestions open, did-you-mean and facets, English and Arabic        | Accessibility | P1       | Yes (`Search.help.test.tsx`)                        |
+| SRC-54 | A recent search opens with its sort and filters; an older one as before   | Happy path    | P1       | Yes (`Search.help.test.tsx`)                        |
+| SRC-55 | A saved search keeps its sort and filters; Save names it by them          | Happy path    | P1       | Yes (`Search.help.test.tsx`)                        |
+| SRC-56 | A shared filtered link in a new tab names its library at once             | Navigation    | P1       | Yes (`Search.help.test.tsx`)                        |
+| SRC-57 | A page opened by its sid alone shows its facets; Arabic                   | Navigation    | P1       | Yes (`Search.help.test.tsx`)                        |
 
 ## Cases
 
@@ -620,3 +625,38 @@
 - **Category:** Accessibility
 - **Covered by existing test?** Yes (`Search.help.test.tsx`)
 - **Expected:** in English and in Arabic, axe finds no violation on the page with the suggestions open and one highlighted, did-you-mean shown, facets and a filter in use.
+
+### SRC-54 — A recent search opens with its sort and filters
+
+- **Priority:** P1
+- **Category:** Happy path
+- **Covered by existing test?** Yes (`Search.help.test.tsx`)
+- **Steps:**
+  1. Recent searches lists a live search (Newest, library Lectures, under 5 min) and an expired one (Most matches, a speaker, 2024). 2. Open the live one. 3. Open the expired one. 4. On another list, open a live search kept before slot 0236 (no `sort` or `filters`) that this tab ran with Newest and Arabic, and one this tab never ran.
+- **Expected:** the live one opens by its sid with `sort=newest&lib=…&dur=under_5m` and no POST; "Sort by" shows Newest and "Filters in use" lists "Library: Lectures" and "Length: Under 5 min". The expired one searches again with its sort and filters (`date` the year's range). The older one opens as this tab ran it; the one never run here opens with relevance and no filters.
+
+### SRC-55 — A saved search keeps its sort and filters
+
+- **Priority:** P1
+- **Category:** Happy path
+- **Covered by existing test?** Yes (`Search.help.test.tsx`)
+- **Steps:**
+  1. Open a saved search whose query has Newest, library Lectures and over an hour. 2. Open one saved with words and mode only. 3. With `sort=newest&lib=lib-1&year=2024` on screen, press Save.
+- **Expected:** the first searches with its sort and filters, which the URL, the sort select and the chips show; the second searches with relevance and no filters. Save posts `{ name: "patience · Newest · Lectures · 2024", query: { q, mode, sort, filters } }`.
+
+### SRC-56 — A shared filtered link in a new tab names its library at once
+
+- **Priority:** P1
+- **Category:** Navigation
+- **Covered by existing test?** Yes (`Search.help.test.tsx`)
+- **Preconditions / data:** a link with `lib=lib-1&sid=…`, opened in a tab with no session storage; the page answers no facets.
+- **Expected:** "Filters in use" reads "Library: Lectures" from the libraries list (read once), not the id, and no search is sent. A libraries list kept from earlier in the session that lacks a chosen library is read again once, and names both.
+
+### SRC-57 — A page opened by its sid alone shows its facets
+
+- **Priority:** P1
+- **Category:** Navigation
+- **Covered by existing test?** Yes (`Search.help.test.tsx`)
+- **Steps:**
+  1. Open `/search?q=…&sort=newest&sid=…` in a tab with no session storage. 2. In Arabic, open a recent search with a language and a band.
+- **Expected:** the titles page is read with `facets=1`, and the facet panel and did-you-mean show with it, with no POST. A link naming another order (`sort=matches`) than the search's own (Newest) shows Newest and the address changes to `sort=newest`. In Arabic the chips read «اللغة: العربية» and «المدة: أقل من ٥ دقائق», and «الترتيب حسب» shows the order.

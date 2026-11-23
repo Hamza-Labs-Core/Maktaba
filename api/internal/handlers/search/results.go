@@ -147,10 +147,15 @@ type savedVideo struct {
 
 // run is one search: its query and its result set.
 type run struct {
-	ID        string
-	Q         string
-	Mode      string
-	Filters   Filters
+	ID      string
+	Q       string
+	Mode    string
+	Filters Filters
+	// Sort and Asked are how the search was asked: its order, and its filters before a
+	// restricted account's libraries were put in (empty and nil on a search kept before
+	// slot 0236)
+	Sort      string
+	Asked     *Filters
 	Degraded  bool
 	Set       savedSet
 	ExpiresAt time.Time
@@ -227,6 +232,10 @@ func (h *Handler) Search(w http.ResponseWriter, r *http.Request) {
 		req.Sort = SortRelevance
 	}
 
+	// the filters as asked, kept with the search so it reopens with them (the library
+	// scope below is the account's, not a choice)
+	asked := req.Filters.clone()
+
 	// Authz scope: non-admin restricted to their library set.
 	p := principal.FromContext(r.Context())
 	if p == nil {
@@ -267,6 +276,7 @@ func (h *Handler) Search(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.Internal("").Wrap(err))
 		return
 	}
+	rn.Sort, rn.Asked = req.Sort, &asked
 	// story 49.8: the order asked for, kept with the search so every page follows it
 	if err := h.sortRun(ctx, rn, req.Q, req.Sort); err != nil {
 		httperror.Write(w, r, httperror.Internal("sort").Wrap(err))

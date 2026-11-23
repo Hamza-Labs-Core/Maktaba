@@ -70,6 +70,18 @@ func (h *Handler) saveRun(ctx context.Context, userID string, rn *run, rl Rules)
 	if err != nil {
 		return err
 	}
+	// how it was asked (slot 0236): NULL when the caller gave no order
+	var sortOrder, asked sql.NullString
+	if rn.Sort != "" {
+		sortOrder = sql.NullString{String: rn.Sort, Valid: true}
+	}
+	if rn.Asked != nil {
+		raw, err := json.Marshal(rn.Asked)
+		if err != nil {
+			return err
+		}
+		asked = sql.NullString{String: string(raw), Valid: true}
+	}
 	now := h.now()
 	nowMs := now.UnixMilli()
 	expires := now.Add(rl.resultTTL())
@@ -91,10 +103,11 @@ func (h *Handler) saveRun(ctx context.Context, userID string, rn *run, rl Rules)
 	}
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO search_runs (id, user_id, query, mode, filters, title_count, transcript_count,
-		                         degraded, result, created_at_ms, last_used_at_ms, expires_at_ms)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $10, $11)`,
+		                         degraded, result, created_at_ms, last_used_at_ms, expires_at_ms,
+		                         sort_order, asked_filters)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $10, $11, $12, $13)`,
 		id, userID, rn.Q, rn.Mode, string(filters), len(rn.Set.Titles), len(rn.Set.Videos),
-		rn.Degraded, string(result), nowMs, expires.UnixMilli()); err != nil {
+		rn.Degraded, string(result), nowMs, expires.UnixMilli(), sortOrder, asked); err != nil {
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `
@@ -122,16 +135,17 @@ func (h *Handler) loadRun(ctx context.Context, p *principal.Principal, id string
 	nowMs := now.UnixMilli()
 	expires := now.Add(rl.resultTTL())
 	var (
-		rn       = &run{ID: id, ExpiresAt: expires}
-		filters  string
-		result   string
-		degraded bool
+		rn               = &run{ID: id, ExpiresAt: expires}
+		filters          string
+		result           string
+		degraded         bool
+		sortOrder, asked sql.NullString
 	)
 	err := h.DB.QueryRowContext(ctx, `
 		UPDATE search_runs SET last_used_at_ms = $3, expires_at_ms = $4
 		WHERE id = $1 AND user_id = $2 AND result IS NOT NULL AND expires_at_ms > $3
-		RETURNING query, mode, filters, degraded, result`,
-		id, p.UserID, nowMs, expires.UnixMilli()).Scan(&rn.Q, &rn.Mode, &filters, &degraded, &result)
+		RETURNING query, mode, filters, degraded, result, sort_order, asked_filters`,
+		id, p.UserID, nowMs, expires.UnixMilli()).Scan(&rn.Q, &rn.Mode, &filters, &degraded, &result, &sortOrder, &asked)
 	if errors.Is(err, sql.ErrNoRows) {
 		// expired: let its result go now rather than at the next search
 		_, _ = h.DB.ExecContext(ctx, `UPDATE search_runs SET result = NULL
@@ -148,7 +162,27 @@ func (h *Handler) loadRun(ctx context.Context, p *principal.Principal, id string
 	if err := json.Unmarshal([]byte(result), &rn.Set); err != nil {
 		return nil, err
 	}
+	rn.Sort, rn.Asked = askedOf(sortOrder, asked)
 	return rn, nil
+}
+
+// askedOf reads how a kept search was asked (slot 0236): its order, and its filters as
+// asked. A row kept before it has neither: "" and nil; so has a value this code does not
+// know (a later release's order), rather than failing the read.
+func askedOf(sortOrder, asked sql.NullString) (string, *Filters) {
+	how := ""
+	switch sortOrder.String {
+	case SortRelevance, SortNewest, SortMatches:
+		how = sortOrder.String
+	}
+	if !asked.Valid {
+		return how, nil
+	}
+	f := &Filters{}
+	if err := json.Unmarshal([]byte(asked.String), f); err != nil {
+		return how, nil
+	}
+	return how, f
 }
 
 // runFromRequest loads the {sid} (or ?sid=) search for the handlers below,
@@ -207,11 +241,19 @@ type ResultsPage struct {
 	Limit     int       `json:"limit"`
 	Total     int       `json:"total"`
 	Items     any       `json:"items"`
+	// Sort is the order the search's pages are in (left out for a search kept before
+	// slot 0236).
+	Sort string `json:"sort,omitempty"`
+	// Facets and DidYouMean are the search's own, as its first answer gave them, when
+	// asked for (facets=1): a page opened by its search_id alone shows them too.
+	Facets     *Facets `json:"facets,omitempty"`
+	DidYouMean string  `json:"did_you_mean,omitempty"`
 }
 
-// Results implements GET /api/search/results/{sid}?list=titles|transcripts&offset=&limit=:
+// Results implements GET /api/search/results/{sid}?list=titles|transcripts&offset=&limit=[&facets=1]:
 // a page of one list of the saved result set (stable order: offsets always
-// name the same videos).
+// name the same videos). facets=1 adds the search's facets and did-you-mean,
+// counted again from the kept set (what the caller may see now).
 func (h *Handler) Results(w http.ResponseWriter, r *http.Request) {
 	list := r.URL.Query().Get("list")
 	if list != "titles" && list != "transcripts" {
@@ -229,7 +271,10 @@ func (h *Handler) Results(w http.ResponseWriter, r *http.Request) {
 	limit := clampLimit(intParam(r, "limit", 0), rl.PageSizeList, 100)
 	page := ResultsPage{
 		SearchID: rn.ID, ExpiresAt: rn.ExpiresAt.UTC(), Q: rn.Q, Mode: rn.Mode, Degraded: rn.Degraded,
-		List: list, Offset: offset, Limit: limit,
+		List: list, Offset: offset, Limit: limit, Sort: rn.Sort,
+	}
+	if r.URL.Query().Get("facets") == "1" {
+		page.Facets, page.DidYouMean = h.helpOf(ctx, p, rn)
 	}
 	var err error
 	if list == "titles" {
@@ -348,6 +393,10 @@ type RecentSearch struct {
 	// Live: its results are still kept (open it by search_id); otherwise
 	// opening it searches again.
 	Live bool `json:"live"`
+	// Sort and Filters are how it was asked (its order, its filters as asked), so it
+	// opens with them; both are left out for a search kept before slot 0236.
+	Sort    string   `json:"sort,omitempty"`
+	Filters *Filters `json:"filters,omitempty"`
 }
 
 // Recent implements GET /api/search/recent: the caller's searches, newest
@@ -372,7 +421,7 @@ func (h *Handler) Recent(w http.ResponseWriter, r *http.Request) {
 	}
 	rows, err := h.DB.QueryContext(r.Context(), `
 		SELECT id, query, mode, filters, title_count, transcript_count, created_at_ms, last_used_at_ms,
-		       expires_at_ms, result IS NOT NULL, `+resultCol+`
+		       expires_at_ms, result IS NOT NULL, sort_order, asked_filters, `+resultCol+`
 		FROM search_runs WHERE user_id = $1
 		ORDER BY created_at_ms DESC, id DESC LIMIT $2`, p.UserID, rl.RecentLimit)
 	if err != nil {
@@ -387,9 +436,9 @@ func (h *Handler) Recent(w http.ResponseWriter, r *http.Request) {
 		var created, used, expires int64
 		var kept bool
 		var filters string
-		var result sql.NullString
+		var result, sortOrder, asked sql.NullString
 		if err := rows.Scan(&it.SearchID, &it.Q, &it.Mode, &filters, &it.TitleCount, &it.TranscriptCount,
-			&created, &used, &expires, &kept, &result); err != nil {
+			&created, &used, &expires, &kept, &sortOrder, &asked, &result); err != nil {
 			httperror.Write(w, r, httperror.Internal("recent searches").Wrap(err))
 			return
 		}
@@ -397,6 +446,7 @@ func (h *Handler) Recent(w http.ResponseWriter, r *http.Request) {
 		it.LastUsedAt = time.UnixMilli(used).UTC()
 		it.ExpiresAt = time.UnixMilli(expires).UTC()
 		it.Live = kept && expires > nowMs
+		it.Sort, it.Filters = askedOf(sortOrder, asked)
 		if it.Live && result.Valid {
 			results[it.SearchID] = result.String
 		}
@@ -460,4 +510,58 @@ func (h *Handler) ClearRecent(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	common.WriteNoContent(w)
+}
+
+// helpOf is a kept search's facets and did-you-mean, as POST /api/search answers them with
+// its first page: counted from the kept set, which runFromRequest has already narrowed to
+// what a restricted account may see now. An account limited to some libraries is checked
+// against them as they are now, as its pages are (cards): a library it lost since the search
+// is neither counted nor named. Either one that fails is left out (logged), as there.
+func (h *Handler) helpOf(ctx context.Context, p *principal.Principal, rn *run) (*Facets, string) {
+	scoped := rn
+	if p != nil && !p.AccessAllLibraries {
+		raw := resultIDs(rn, facetVideos)
+		visible, err := h.cards(ctx, p, h.canonIDs(raw))
+		if err != nil {
+			h.log().WarnContext(ctx, "search: no facets", "event", "search_facets_failed", "err", err)
+			return nil, ""
+		}
+		ok := make(map[string]bool, len(visible))
+		for _, id := range raw {
+			if _, seen := visible[canonID(id)]; seen {
+				ok[id] = true
+			}
+		}
+		allowed := make(map[string]bool, len(p.Libraries))
+		for _, l := range p.Libraries {
+			allowed[l] = true
+		}
+		scoped = &run{Q: rn.Q, Mode: rn.Mode, Filters: rn.Filters.clone(), Set: savedSet{
+			Titles: rn.Set.Titles, Videos: rn.Set.Videos, Sem: rn.Set.Sem}}
+		keepAllowed(&scoped.Set, ok)
+		libs := []string{}
+		for _, l := range scoped.Filters.LibraryID {
+			if allowed[l] {
+				libs = append(libs, l)
+			}
+		}
+		scoped.Filters.LibraryID = libs
+	}
+	var out *Facets
+	facets, err := h.facets(ctx, scoped)
+	if err != nil {
+		h.log().WarnContext(ctx, "search: no facets", "event", "search_facets_failed", "err", err)
+	} else if facets.Videos > 0 {
+		out = facets
+	}
+	didYouMean := ""
+	// no library left to suggest from: none (an empty list would mean every library)
+	if len(scoped.Filters.LibraryID) > 0 || p == nil || p.AccessAllLibraries {
+		didYouMean, err = h.didYouMean(ctx, scoped.Q, scoped.Filters.LibraryID, len(resultIDs(scoped, fewResults)))
+		if err != nil {
+			h.log().WarnContext(ctx, "search: no did-you-mean", "event", "search_did_you_mean_failed", "err", err)
+			didYouMean = ""
+		}
+	}
+	return out, didYouMean
 }

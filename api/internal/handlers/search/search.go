@@ -23,6 +23,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"sort"
@@ -64,6 +65,24 @@ type Filters struct {
 	Speaker     []string  `json:"speaker,omitempty"`
 	DurationSec *RangeF   `json:"duration_sec,omitempty"`
 	Date        *RangeStr `json:"date,omitempty"`
+}
+
+// clone is a copy of f with lists of its own.
+func (f Filters) clone() Filters {
+	c := Filters{
+		Language:  append([]string(nil), f.Language...),
+		LibraryID: append([]string(nil), f.LibraryID...),
+		Speaker:   append([]string(nil), f.Speaker...),
+	}
+	if f.DurationSec != nil {
+		d := *f.DurationSec
+		c.DurationSec = &d
+	}
+	if f.Date != nil {
+		d := *f.Date
+		c.Date = &d
+	}
+	return c
 }
 
 // RangeF is a numeric “{gte, lte}“ range; lt is an upper bound left out (a facet's band,
@@ -365,10 +384,11 @@ func (h *Handler) ListSaved(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var s SavedSearch
 		var q []byte
-		if err := rows.Scan(&s.ID, &s.Name, &q, &s.CreatedAt); err != nil {
+		var created dbTime
+		if err := rows.Scan(&s.ID, &s.Name, &q, &created); err != nil {
 			continue
 		}
-		s.Query = q
+		s.Query, s.CreatedAt = q, created.t
 		items = append(items, s)
 	}
 	common.WriteJSON(w, r, http.StatusOK, map[string]any{"items": items})
@@ -451,4 +471,35 @@ func RRFuseWeighted(a, b []Hit, k int, wa, wb float64) []Hit {
 		return out[i].Score > out[j].Score
 	})
 	return out
+}
+
+// dbTime scans a timestamp from Postgres (time.Time) or SQLite (text, as datetime('now')
+// writes it): a saved search's created_at, which SQLite gave as text that a time.Time
+// could not take, so its list came back empty there.
+type dbTime struct{ t time.Time }
+
+func (d *dbTime) Scan(v any) error {
+	switch x := v.(type) {
+	case nil:
+		d.t = time.Time{}
+	case time.Time:
+		d.t = x
+	case string:
+		d.parse(x)
+	case []byte:
+		d.parse(string(x))
+	default:
+		return fmt.Errorf("search: cannot scan %T as a time", v)
+	}
+	return nil
+}
+
+func (d *dbTime) parse(s string) {
+	for _, layout := range []string{time.RFC3339Nano, "2006-01-02 15:04:05.999999999-07:00", "2006-01-02 15:04:05"} {
+		if t, err := time.Parse(layout, s); err == nil {
+			d.t = t.UTC()
+			return
+		}
+	}
+	d.t = time.Time{}
 }

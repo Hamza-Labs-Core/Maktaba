@@ -4304,6 +4304,13 @@ build fails when the two differ.
   spelling does, and a word with و in front (وغفران) finds the word. A relevance check,
   built from each library's own transcripts, measures it.
 
+- **A recent or saved search opens with its order and filters (Epic 49, story 49.10).** A
+  recent search came back with its order and filters only in the browser that ran it, and a
+  saved search kept neither: the web app's Save was refused by the home, and saved searches
+  did not list at all on a home on SQLite. Both now open with the order and filters they were
+  asked with, on any device, and Save names a search by its words, order and filters. A shared
+  search opened in a new tab names its library at once and shows the chips that narrow it.
+
 ## [0.2.0] - 2026-10-19
 
 Closes the stub audit: features that were half built, settings that were
