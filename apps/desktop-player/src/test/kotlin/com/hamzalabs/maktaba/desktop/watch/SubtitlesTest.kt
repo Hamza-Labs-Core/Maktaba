@@ -110,8 +110,8 @@ class SubtitlesTest {
         val medium = MpvVideo.captionAss("نص", rtl = true, scale = SubtitleStyle().scale)
         val large = MpvVideo.captionAss("نص", rtl = true, scale = SubtitleStyle(SubtitleSize.Large, SubtitleColour.Yellow).scale, colour = SubtitleColour.Yellow)
         val fs = { s: String -> Regex("""\\fs(\d+)""").find(s)!!.groupValues[1].toInt() }
-        assertEquals(32, fs(medium))
-        assertEquals((720f / 22f * 1.3f).toInt(), fs(large))
+        assertEquals(56, fs(medium))
+        assertEquals((MpvVideo.CAPTION_SIZE * 1.3f).toInt(), fs(large))
         assertTrue(large, large.contains("\\1c&H4DE1FF&"))
         assertTrue(medium, medium.contains("\\1c&HFFFFFF&"))
         // right to left: the embedding mark first

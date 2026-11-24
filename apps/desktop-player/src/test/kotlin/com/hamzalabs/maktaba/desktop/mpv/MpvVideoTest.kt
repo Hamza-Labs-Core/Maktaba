@@ -230,7 +230,7 @@ class MpvVideoTest {
         v.caption("Hello", rtl = false, scale = 1.3f, colour = SubtitleColour.Yellow)
         until("drawn") { fake.calls.any { it.startsWith("osd-overlay 1 ass-events") } }
         val c = fake.calls.first { it.startsWith("osd-overlay 1 ass-events") }
-        assertTrue(c, c.contains("\\1c&H4DE1FF&") && c.contains("\\fs42"))
+        assertTrue(c, c.contains("\\1c&H4DE1FF&") && c.contains("\\fs73"))
     }
 
     @Test

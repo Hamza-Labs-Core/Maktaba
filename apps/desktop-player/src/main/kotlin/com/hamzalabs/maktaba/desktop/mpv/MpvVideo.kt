@@ -119,6 +119,7 @@ class MpvVideo internal constructor(
             // text subtitles without their own styling in the Player's size and colour; ASS
             // keeps its styles but takes the size; picture subtitles are drawn as authored
             val style = events.subtitleStyle
+            opt("sub-font-size", CAPTION_SIZE.toString())
             opt("sub-scale", style.scale.toString())
             opt("sub-color", style.colour.rgb)
             opt("sub-outline-color", "#000000")
@@ -449,6 +450,13 @@ class MpvVideo internal constructor(
     companion object {
         const val CAPTION_FONT = "IBM Plex Sans Arabic"
 
+        /**
+         * A caption's size in ASS's units of a 720-high picture: letters a 22nd of its height, as
+         * JavaFX's were. libass sizes a font by its line (its Windows ascent and descent), which
+         * is 1.729 of this face's em.
+         */
+        const val CAPTION_SIZE = 720f / 22f * 1.729f
+
         /** mpv_render_param[]: each (type, data), then the end. */
         private fun params(vararg p: Pair<Int, Pointer>): Memory {
             val m = Memory(16L * (p.size + 1))
@@ -467,7 +475,7 @@ class MpvVideo internal constructor(
          * times [scale]. ASS's own characters in the text are escaped; a line break is ASS's.
          */
         fun captionAss(text: String, rtl: Boolean, scale: Float, colour: SubtitleColour = SubtitleColour.White): String {
-            val size = (720f / 22f * scale).toInt().coerceIn(14, 96)
+            val size = (CAPTION_SIZE * scale).toInt().coerceIn(24, 166)
             val escaped = text
                 .replace("\\", "\\⁠")
                 .replace("{", "\\{")
