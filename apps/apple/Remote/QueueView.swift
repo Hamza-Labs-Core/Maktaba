@@ -71,6 +71,7 @@ struct QueueView: View {
                 NavigationLink(value: row.id) {
                     StageRow(row: row, busy: model.busy.contains(row.id))
                 }
+                .accessibilityIdentifier("queue.stage.\(row.id)")
                 .swipeActions {
                     if row.info.paused {
                         Button("Resume", systemImage: "play.fill") { Task { await model.setPaused(row, false) } }

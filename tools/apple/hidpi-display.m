@@ -138,9 +138,14 @@ int main(int argc, const char *argv[]) {
             target = display.displayID;
             for (int i = 0; i < 100 && !online(target); i++)
                 pause_a_little();
+            // its modes come a moment after it is online (none at first on GitHub's runner)
+            for (int i = 0; i < 150 && !(mode = retinaMode(target, w, h)); i++) {
+                // its settings again now and then, should the first have come too early
+                if (i % 50 == 49) fprintf(stderr, "settings again: %d\n", [display applySettings:settings]);
+                pause_a_little();
+            }
             fprintf(stderr, "the virtual display (%u), online: %d; its modes:\n", target, online(target));
             printModes(target);
-            mode = retinaMode(target, w, h);
             if (!mode) {
                 fprintf(stderr, "the virtual display has no 2x mode of %u x %u points\n", w, h);
                 return 1;

@@ -598,7 +598,7 @@ jobs:
             ../../tools/apple/hidpi-display.m -o "$RUNNER_TEMP/hidpi-display"
           "$RUNNER_TEMP/hidpi-display" 1920x1200 "$RUNNER_TEMP/hidpi-ready" 2> "$RESULTS/hidpi-display.log" &
           display=$!
-          for _ in $(seq 1 30); do [ -s "$RUNNER_TEMP/hidpi-ready" ] || ! kill -0 "$display" 2>/dev/null && break; sleep 1; done
+          for _ in $(seq 1 60); do [ -s "$RUNNER_TEMP/hidpi-ready" ] || ! kill -0 "$display" 2>/dev/null && break; sleep 1; done
           cat "$RESULTS/hidpi-display.log"
           if [ -s "$RUNNER_TEMP/hidpi-ready" ]; then
             run mac-shots -only-testing "Maktaba Player Mac UITests/PlayerMacDemoShotsUITests"

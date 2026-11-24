@@ -65,12 +65,16 @@ final class RemoteDemoShotsUITests: XCTestCase {
             XCTAssertTrue(wait { home.seen.contains("GET /api/queues") && home.seen.contains("GET /api/queues/running") })
             if isPad {
                 // Transcribe chosen: its page beside the list, its failures read
-                let stage = app.staticTexts[language == "ar" ? "التفريغ" : "Transcribe"].firstMatch
+                // the stage's row by its identifier (its title is a running job's stage too)
+                let stage = element("queue.stage.transcribe")
                 XCTAssertTrue(stage.waitForExistence(timeout: 10), "the Transcribe stage in the list")
-                stage.tap()
-                XCTAssertTrue(wait(timeout: 15) { home.seen.contains("GET /api/queues/transcribe/failures") },
-                              "Transcribe's page; the home saw \(home.seen)")
-                let none = NSPredicate(format: "label == %@", language == "ar" ? "لا إخفاقات" : "No failures")
+                let opened = { home.seen.contains("GET /api/queues/transcribe/failures") }
+                for attempt in 1 ... 2 where !opened() {
+                    waitStill(stage)
+                    stage.tap()
+                    if wait(timeout: 10, opened) { break }
+                    XCTAssertLessThan(attempt, 2, "Transcribe's page; the home saw \(home.seen)")
+                }                let none = NSPredicate(format: "label == %@", language == "ar" ? "لا إخفاقات" : "No failures")
                 XCTAssertTrue(app.descendants(matching: .any).matching(none).firstMatch.waitForExistence(timeout: 10),
                               "its failures read")
             }
