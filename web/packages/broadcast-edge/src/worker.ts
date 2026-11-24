@@ -25,17 +25,22 @@ export { Pairing } from "./pairing";
 
 export type Host = "ingest" | "live" | "watch";
 
-/**
- * hostOf picks the edge's role from the hostname. Any other host (wrangler dev on localhost, the
- * CI rehearsal) is routed by path: /v1/… is ingest; /api/…, /i/…, /s/…, /pair and /ar/… or /en/…
- * watch (the pages, 50.27); everything else live.
- */
-/** broadcastingOn is BROADCAST_ENABLED: off (the default), watch and live serve nothing. */
+/** broadcastingOn is BROADCAST_ENABLED: off (the default), the edge takes and serves nothing. */
 export function broadcastingOn(env: Env): boolean {
   return env.BROADCAST_ENABLED === "1" || env.BROADCAST_ENABLED === "true";
 }
 
-/** The answer of watch and live while broadcasting is off: nothing about any channel. */
+/**
+ * openWhileOff is the one thing that answers while broadcasting is off: the cloud's signed
+ * revocation list, which only ever takes access away (the cron pulls the same list). Uploads,
+ * state, guides, the control socket, the speed test, plans and viewer access are refused, a
+ * valid token or signature included.
+ */
+function openWhileOff(host: Host, path: string): boolean {
+  return host === "ingest" && path === "/v1/control/revocations";
+}
+
+/** The answer of everything else while broadcasting is off: nothing about any channel. */
 function offResponse(): Response {
   return new Response("Not found\n", {
     status: 404,
@@ -47,6 +52,11 @@ function offResponse(): Response {
   });
 }
 
+/**
+ * hostOf picks the edge's role from the hostname. Any other host (wrangler dev on localhost, the
+ * CI rehearsal) is routed by path: /v1/… is ingest; /api/…, /i/…, /s/…, /pair and /ar/… or /en/…
+ * watch (the pages, 50.27); everything else live.
+ */
 export function hostOf(env: Env, url: URL): Host {
   const h = url.hostname;
   if (h === (env.INGEST_HOST || DEFAULT_INGEST_HOST)) return "ingest";
@@ -62,18 +72,18 @@ export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
     try {
-      switch (hostOf(env, url)) {
+      const host = hostOf(env, url);
+      // broadcasting is off (2026-11-24): checked before any route, token or stored state
+      if (!broadcastingOn(env) && !openWhileOff(host, url.pathname)) return offResponse();
+      switch (host) {
         case "ingest":
           // the viewer-access control posts (50.26) beside 50.21's
           if (url.pathname === "/v1/control/access" || url.pathname === "/v1/control/passes")
             return await handleAccessControl(request, env, url.pathname);
           return await handleIngest(request, env, url);
         case "live":
-          if (!broadcastingOn(env)) return offResponse();
           return await handleLive(request, env, url);
         case "watch":
-          // broadcasting is off (2026-11-24): no page, guide, invite or pairing is served
-          if (!broadcastingOn(env)) return offResponse();
           // the viewer API and the invite page (50.26); the pages, guide and pairing (50.27)
           return await handleWatch(request, env, url);
       }

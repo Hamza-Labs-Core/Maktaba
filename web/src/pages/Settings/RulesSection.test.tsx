@@ -177,6 +177,14 @@ describe("RulesSection", { timeout: 20_000 }, () => {
     expect(screen.queryByText("Clip up to (min)")).not.toBeInTheDocument();
   });
 
+  it("has no Broadcasting tab while the licence lacks the broadcast flag (2026-11-24)", async () => {
+    const data = fixture();
+    data.sections.push({ ...data.sections[0]!, key: "broadcast", title: "Broadcasting" });
+    setup(data);
+    expect(await screen.findByRole("tab", { name: /Channels/ })).toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: /Broadcasting/ })).toBeNull();
+  });
+
   it("renders a tab per section and the fields grouped, with label, name, help and default", async () => {
     setup();
     expect(await screen.findByRole("tab", { name: /Channels/ })).toHaveAttribute(
