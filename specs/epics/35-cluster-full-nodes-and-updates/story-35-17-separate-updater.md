@@ -31,7 +31,7 @@ updater.
 
 Design: [design-separate-updater.md](design-separate-updater.md), which covers the shape, the
 contract, the self-update, the bridge, the risks and the stories it splits into. Research:
-`docs/research/update-process.md` (#1601) §6, items 6 and 7.
+[`docs/research/update-process.md`](../../../docs/research/update-process.md) (#1601) §6, items 6 and 7.
 
 ## Acceptance criteria
 
