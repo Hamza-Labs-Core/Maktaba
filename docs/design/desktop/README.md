@@ -3,8 +3,8 @@
 The written spec of story 13.9 ([`specs/epics/13-desktop/story-13-09-desktop-design.md`](../../../specs/epics/13-desktop/story-13-09-desktop-design.md)):
 how Maktaba's desktop apps stop looking like stock operating-system UI and look like one
 designed Maktaba product, in English and Arabic, while keeping what people expect of Windows,
-Linux and the Mac. Nothing here is built yet: the build stories (13.10–13.17) open only after
-the owner approves this design ("Review", below).
+Linux and the Mac. The owner approved this design on 2026-11-24 ("Decisions" and "Review", below); the build
+stories 13.10–13.18 build it, each in its own pull request.
 
 ## What is here
 
@@ -253,15 +253,17 @@ big-screen mode. Focus is a 2 px brass ring, 2 px out, on every focusable thing.
 | | menu bar | removed: Account → the home switcher, Big screen → the title bar button and F11, Language → Settings, Help → the help button | S | L |
 | | theme | colours and type from the token build (`native.mjs` gains the desktop Player's Kotlin file), not copied | S | L |
 | | dialogs | one Maktaba dialog composable replacing Material's defaults | S | L |
+| | video | libmpv (LGPL build) through JNA in place of JavaFX's media stack: MKV, HEVC, AC-3, 5.1 and more play as they are; the Player reports what it decodes to the home, as Android's #1521 did; story 13.18 | L | M: drawing mpv's frames under Compose's controls; bundling per OS; licences |
 | | installer | jpackage `--resource-dir`: the WiX bitmaps, text styles and the Arabic culture | S | M: jpackage's WiX template version |
 | Mac Player (SwiftUI) | sidebar, rows | brass selection (`listRowBackground`, tinted symbols); Profile and settings in the apps' row style | S | L |
 | | Arabic | the in-app language writes `AppleLanguages` and offers a relaunch, so AppKit lays the split view and the traffic lights out right to left | S | L: one relaunch on switching |
 | Server app, Mac | menu-bar item | as the Windows tray: a panel on click, the native menu on right click | S | L |
 
-All of 13.10–13.17 together is about eight medium stories. The order that removes the most
-stock first: 13.10 (frame), 13.12 (tray), 13.11 (dialogs), 13.15 (Player chrome), then
-13.13, 13.14, 13.16; 13.17 (the references) runs beside the first one, so each build story
-lands with its capture.
+All of 13.10–13.18 together is about eight medium stories and one large one. The order that
+removes the most stock first: 13.10 (frame), 13.12 (tray), 13.11 (dialogs), 13.15 (Player
+chrome, on the JetBrains Runtime), 13.18 (libmpv, on 13.15's runtime), then 13.13, 13.14,
+13.16; 13.17 (the references) runs beside the first one, so each build story lands with its
+capture.
 
 ## Quality bar
 
@@ -298,21 +300,22 @@ JetBrains Runtime both are); the installer bitmaps at 100, 150 and 200% where th
 **RTL.** Every reference in Arabic too; the rules above; no physical CSS property in the
 desktop styles (T03).
 
-## Decisions for the owner
+## Decisions (approved 2026-11-24)
 
-- **D1 Windows frame:** our own title bar with Snap Layouts kept (proposed), or the system
-  title bar in its dark mode with Mica only?
-- **D2 Tray:** a designed flyout on left click with the native menu on right click
-  (proposed), or only a reordered native menu?
-- **D3 Installers:** a two-page branded NSIS for the server app and themed `.msi`s (proposed),
-  or branded bitmaps on the stock pages only?
-- **D4 Player runtime:** move the Player to the JetBrains Runtime for a decorated window
-  (proposed), or an undecorated window without Snap Layouts?
-- **D5 Mac in Arabic:** a relaunch when switching the Mac Player's language, so the sidebar
-  and traffic lights move to the right (proposed)?
+- **D1 Windows frame:** our own title bar, with Snap Layouts kept. Approved.
+- **D2 Tray:** a designed panel on left click, the native menu on right click. Approved.
+- **D3 Installers:** the branded two-page NSIS for the server app, themed `.msi`s, and the
+  designed `.dmg` background. Approved.
+- **D4 Player runtime and video:** the Player stays on Kotlin and Compose, moves to the
+  JetBrains Runtime for its decorated window, **and replaces JavaFX's media stack with
+  libmpv** (through JNA), so it plays MKV, HEVC, AC-3 and 5.1 itself instead of the home
+  converting them (story 13.18). Rust, Java and .NET were weighed; Kotlin keeps the `:client`
+  module shared with the Android apps.
+- **D5 Mac in Arabic:** switching the Mac Player's language relaunches it, after a prompt in
+  English and Arabic, so the sidebar and the traffic lights move to the right. Approved.
 
 ## Review
 
 | Part | Date | Reviewer | At | Outcome | Open |
 |---|---|---|---|---|---|
-| The design (this pull request) | — | the owner | — | waiting | D1–D5 |
+| The design (#1556) | 2026-11-24 | the owner | `bead7a18c` (renders) | approved, with D1–D5 as above; D4 adds libmpv (13.18) | build stories 13.10–13.18 |

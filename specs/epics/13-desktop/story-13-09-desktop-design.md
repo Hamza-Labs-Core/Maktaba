@@ -1,8 +1,8 @@
 # Story 13.9 — Design: Maktaba's own look on the desktop, as reviewed mockups
 
-> Epic 13 · Design first · Depends on: Epic 17 (tokens), Epic 60 story 60.01 part B (the
-> direction, Maktaba Display) · Gates: every story that changes a desktop surface's look (the
-> build stories proposed below)
+> Epic 13 · Design first · **Approved 2026-11-24** · Depends on: Epic 17 (tokens), Epic 60
+> story 60.01 part B (the direction, Maktaba Display) · Gates: every story that changes a
+> desktop surface's look (the build stories below)
 
 ## Why
 
@@ -71,14 +71,24 @@ All copy is the apps' own strings where they exist (`*Strings.kt`, `lang.rs`, th
 `setup.*`) and the demo library's titles (`tests/fixtures/demo-library/`), never lorem ipsum.
 
 **The technical approach per app, with effort and risk**, and **the quality bar** are in
-`docs/design/desktop/README.md` ("How each app gets there", "Quality bar"); the owner's choices
-they need are listed there as D1–D5.
+`docs/design/desktop/README.md` ("How each app gets there", "Quality bar"); the decisions
+they needed are D1–D5, below.
 
 **Review.** The pull request lists every image. The owner approves the design (or asks for
 changes) and the approval is recorded in `docs/design/desktop/README.md`, "Review", at a commit.
 No build story opens its pull request before that.
 
-## Proposed build stories (gated by this one)
+## Decisions (approved 2026-11-24)
+
+| | Decision |
+|---|---|
+| D1 | Windows frame: our own title bar, with Snap Layouts kept |
+| D2 | Tray: a designed panel on left click, the native menu on right click |
+| D3 | Installers: the branded two-page NSIS, themed `.msi`s and the designed `.dmg` background |
+| D4 | The Player stays on Kotlin and Compose, on the JetBrains Runtime, and replaces JavaFX's media stack with libmpv through JNA, so MKV, HEVC, AC-3 and 5.1 play as they are (13.18). Rust, Java and .NET were weighed; Kotlin keeps `:client` shared with the Android apps |
+| D5 | Mac: switching the language relaunches the Player, after a prompt in English and Arabic |
+
+## Build stories (gated by this one)
 
 | # | Story | App | Size |
 |---|---|---|---|
@@ -90,6 +100,10 @@ No build story opens its pull request before that.
 | 13.15 | The Player's chrome on Windows and Linux: decorated window with its own title bar, no Swing menu bar, colours and type from the token build, one dialog style | `apps/desktop-player`, `web/design-system/build` | M |
 | 13.16 | The Mac Player: brass selection, the apps' row style in Profile, the sidebar on the right in Arabic | `apps/apple` | S |
 | 13.17 | Desktop visual references: the quality bar's captures and checks in CI | CI | M |
+| 13.18 | [The Player plays with libmpv](story-13-18-player-libmpv.md): direct play of MKV, HEVC, AC-3 and 5.1, reported to the home; bundled per OS; a time-to-first-frame test | `apps/desktop-player`, `streaming/` | L |
+
+Order: 13.10, 13.12, 13.11, 13.15, 13.18 (on 13.15's runtime), 13.13, 13.14, 13.16; 13.17
+beside the first, so each lands with its capture.
 
 ## Acceptance criteria
 
@@ -102,7 +116,8 @@ No build story opens its pull request before that.
   mirrors (layout, window controls), keeps media timelines and transport left to right, and no
   PNG is over 1 MB.
 - **Given** the owner's review, **then** `docs/design/desktop/README.md` records the outcome at
-  a commit, with D1–D5 answered, before any of 13.10–13.17 opens a pull request.
+  a commit, with D1–D5 answered, before any of 13.10–13.18 opens a pull request (done:
+  approved 2026-11-24 at `bead7a18c`).
 - **Given** a build story, **then** its pull request shows its surface's capture beside the
   mockup, and the lead records each difference as fixed or accepted.
 
@@ -113,7 +128,7 @@ No build story opens its pull request before that.
 | T01 | script | `docs/design/desktop/mockups/` | `node docs/design/desktop/render.mjs` | one PNG per mockup and language (audit sheets English only); none over 1 MB; no failed request, no missing copy key, no sideways overflow |
 | T02 | unit | the colour pairs in the README | contrast check | every text pair ≥ 4.5:1, every control edge and focus ring ≥ 3:1 on the surfaces it is drawn on |
 | T03 | lint | `docs/design/desktop/**/*.css` and the mockups' styles | scan | logical properties only: no `left`, `right`, `margin-left` and the like |
-| T04 | review | every PNG | the owner | approval recorded in the README before 13.10–13.17 open |
+| T04 | review | every PNG | the owner | approval recorded in the README before 13.10–13.18 open |
 
 ## Edge cases
 

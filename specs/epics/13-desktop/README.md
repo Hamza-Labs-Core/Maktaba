@@ -25,7 +25,8 @@ system tray, file drag-and-drop, auto-update, mDNS server discovery.
 | 13.6 | [File drag-and-drop](story-13-06-drag-drop.md) | spec |
 | 13.7 | [Keyboard shortcuts](story-13-07-keyboard-shortcuts.md) | spec |
 | 13.8 | [Auto-update](story-13-08-auto-update.md) | spec |
-| 13.9 | [Design: Maktaba's own look on the desktop, as reviewed mockups](story-13-09-desktop-design.md) | design: awaiting the owner's review |
+| 13.9 | [Design: Maktaba's own look on the desktop, as reviewed mockups](story-13-09-desktop-design.md) | design: approved 2026-11-24 |
+| 13.18 | [The Player plays with libmpv: direct play, reported to the home](story-13-18-player-libmpv.md) | spec |
 
 ---
 
