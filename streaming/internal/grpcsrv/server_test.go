@@ -3,6 +3,7 @@ package grpcsrv
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 	"time"
 
@@ -243,5 +244,23 @@ func TestOpenSession_ForcedTranscodeIsNotADirectSessionReused(t *testing.T) {
 	}
 	if forced.SessionID == direct.SessionID || forced.Mode != "transcode" {
 		t.Fatalf("forced open got %s (%s), the direct one is %s", forced.SessionID, forced.Mode, direct.SessionID)
+	}
+}
+
+// Story 13.18: the capabilities name the client profiles this home knows, so the desktop
+// Player asks for desktop-mpv only where the home has it.
+func TestGetCapabilities_ListsTheClientProfiles(t *testing.T) {
+	srv, _, _ := setupServer(t)
+	c, err := srv.GetCapabilities(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(c.ClientProfiles, "desktop-mpv") || !slices.Contains(c.ClientProfiles, "desktop-player") ||
+		!slices.IsSorted(c.ClientProfiles) {
+		t.Fatalf("client profiles %v", c.ClientProfiles)
+	}
+	m, err := srv.handleGetCapabilities(context.Background(), nil)
+	if err != nil || !slices.Contains(m["client_profiles"].([]string), "desktop-mpv") {
+		t.Fatalf("the answer's client_profiles: %v %v", m["client_profiles"], err)
 	}
 }

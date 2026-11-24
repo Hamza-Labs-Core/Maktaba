@@ -60,6 +60,10 @@ _go: &go
   # cloud/internal/billing's tests read them
   - 'deploy/review-home/content/manifest.json'
   - 'deploy/review-home/review-home.env.example'
+  # GitHub's release list as a home reads it, recorded (the incident of 2026-11-24): the
+  # release list's caps are tested against it (api/internal/updates, the About check,
+  # selfupdate, ghasset)
+  - 'tests/fixtures/github-releases/**'
 
 # the pipeline, and what its tests read outside it
 _pipeline: &pipeline

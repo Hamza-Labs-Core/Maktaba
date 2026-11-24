@@ -143,6 +143,10 @@ compose.desktop {
             copyright = "© Hamza Labs"
             // JavaFX on the class path, the stream proxy's HTTP server, TLS: the whole runtime
             includeAllModules = true
+            // story 13.18: the libmpv the Player carries, per system (resources/windows-x64,
+            // linux-x64, linux-arm64), put there by libmpv/build.sh in CI and the release; the
+            // Player finds it through compose.application.resources.dir
+            appResourcesRootDir.set(project.layout.projectDirectory.dir("resources"))
             windows {
                 // its own identity, apart from the server app (com.hamzalabs.maktaba)
                 upgradeUuid = "5d1f6a0c-7c43-4f7e-9f9a-3b0f2a8e4c42"
@@ -162,5 +166,18 @@ compose.desktop {
                 iconFile.set(project.file("icons/maktaba-player.png"))
             }
         }
+    }
+}
+
+// Story 13.18: libmpv (in the app's resources, which jpackage does not read for dependencies)
+// uses the system's libass, libva, PulseAudio and ALSA client libraries: the .deb and the .rpm
+// depend on them by their package names (no spaces: compose writes the args file one argument
+// to a line, and jpackage reads a space as a separator)
+val libmpvDebDeps = "libass9,libva2,libva-drm2,libpulse0,libasound2"
+val libmpvRpmDeps = "libass,libva,pulseaudio-libs,alsa-lib"
+tasks.withType<org.jetbrains.compose.desktop.application.tasks.AbstractJPackageTask>().configureEach {
+    when {
+        name.endsWith("Deb") -> freeArgs.addAll("--linux-package-deps", libmpvDebDeps)
+        name.endsWith("Rpm") -> freeArgs.addAll("--linux-package-deps", libmpvRpmDeps)
     }
 }

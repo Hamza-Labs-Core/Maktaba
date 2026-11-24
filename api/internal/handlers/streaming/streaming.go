@@ -136,6 +136,10 @@ type Capabilities struct {
 	// SoftwareOnly: this home converts video in software only (no GPU encoder works): a
 	// player plays files as they are, or remuxed, whenever it can (Epic 59 story 59.05).
 	SoftwareOnly bool `json:"software_only"`
+	// ClientProfiles are the client profiles this home's streaming service knows (story
+	// 13.18): the desktop Player asks for desktop-mpv only when it is listed. A home older
+	// than the list answers without it.
+	ClientProfiles []string `json:"client_profiles,omitempty"`
 }
 
 // Slots is the transcoder capacity snapshot.
