@@ -21,6 +21,9 @@
   --dk-brass: var(--color-brand-500);
   --dk-on-brass: var(--color-accent-fg);
   --dk-brass-soft: var(--color-accent-soft);
+  /* the design system's parts (buttons, fields, choices) in the app's faces, not the system's */
+  --type-body-family: var(--font-family);
+  --type-display-family: var(--font-heading);
   color: var(--color-fg);
   font-family: var(--font-family);
   font-size: var(--dk-t-body);
