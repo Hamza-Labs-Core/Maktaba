@@ -3904,6 +3904,13 @@ build fails when the two differ.
   plugin directory's report form has no Copyright reason. maktaba.dev no longer describes
   watching a broadcast. In English and Arabic.
 
+- **No help or setting about broadcasting while it is off.** The Broadcast access help topic is
+  gone from the app's help and from maktaba.tv, in English and Arabic; its old address opens the
+  help index. The web app's Rules page has no Broadcasting section, the Components page has no
+  broadcasting row and Subscription does not list it, unless the home's licence includes
+  broadcasting. The broadcast edge takes no uploads while broadcasting is off, with a valid token
+  included; only the list of revoked access still reaches it.
+
 ### Fixed
 
 - **A TV held on its old streaming software stays there through schedule and settings
@@ -4584,6 +4591,19 @@ build fails when the two differ.
   scripts now stop at the slot the database was at before the update (`schema_before`), and that
   schema stays kept for the previous release, which otherwise refused to start on it (`db_ahead`).
   When that slot is not recorded, no Down script runs.
+
+- **A home linked to Maktaba Cloud after its owner chose a plan gets remote play through the
+  relay at once.** A newly linked home started on the Free plan whatever its owner's plan was, so
+  the relay refused it ("remote play through the relay needs a Basic or Pro plan") until the plan
+  was changed again. It now takes its owner's plan and extra streams when it is linked.
+
+- **Suspending a Maktaba Cloud account ends its homes' remote connections at once.** A home that
+  was already connected stayed reachable through the relay, and one that lost its connection
+  could connect again with its own secret. Reinstating the account lets its homes back.
+
+- **Linking a home to Maktaba Cloud can be tried again when the answer was lost.** The code was
+  spent and the home had no credentials, so linking needed a new code and another name. The same
+  home now uses the same code again, for as long as the code lasts.
 
 - **A failed update never puts the whole backup back by itself: it stops and asks.** Until now,
   when an update's Down scripts could not take the library database back (they failed, a change

@@ -117,6 +117,15 @@ describe("the built site (dist/)", () => {
     }
   });
 
+  it("broadcasting is off (2026-11-24): no Broadcast access help page, and the help index doesn't list it", () => {
+    for (const pre of ["", "ar/"]) {
+      expect(fs.existsSync(path.join(DIST, `${pre}help/broadcast-access/index.html`)), pre).toBe(
+        false
+      );
+      expect(read(`${pre}help/index.html`), pre).not.toContain("/help/broadcast-access");
+    }
+  });
+
   it("60.12: the help pages are in part B's shell: Help current, Download to its page (built after)", () => {
     for (const lang of ["en", "ar"]) {
       const pre = lang === "ar" ? "/ar" : "";
