@@ -244,7 +244,7 @@ func runGooseUp(ctx context.Context, db *sql.DB, dir string) error {
 		return err
 	}
 	defer os.RemoveAll(stage)
-	if err := repairInvalidIndexes(ctx, db, stage); err != nil {
+	if err := repairInvalidIndexes(ctx, db, stage, migrateOffline()); err != nil {
 		return fmt.Errorf("the invalid indexes a cancelled migration left: %w", err)
 	}
 	if migrateOffline() {
@@ -263,7 +263,7 @@ func runGooseUp(ctx context.Context, db *sql.DB, dir string) error {
 		return err
 	}
 	// a build cut short while goose ran (and taken for done by IF NOT EXISTS) is built again
-	if err := repairInvalidIndexes(ctx, db, stage); err != nil {
+	if err := repairInvalidIndexes(ctx, db, stage, migrateOffline()); err != nil {
 		return fmt.Errorf("the migrations left an invalid index: %w", err)
 	}
 	return nil
@@ -279,7 +279,7 @@ func runDropInvalid(ctx context.Context, db *sql.DB, dir string) error {
 		return err
 	}
 	defer os.RemoveAll(stage)
-	return repairInvalidIndexes(ctx, db, stage)
+	return repairInvalidIndexes(ctx, db, stage, migrateOffline())
 }
 
 // guardDown refuses a rollback when MAKTABA_DISABLE_DOWN is truthy.

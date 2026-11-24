@@ -25,12 +25,12 @@ package main
 // hit and the next tries took the INVALID indexes for done: the update committed with both
 // indexes INVALID after 4 min 11 s of downtime, as 0232 was recorded on the owner's home.
 //
-// Since research item 5 (2026-11-24) the database step also waits for the machines' table
-// syncs (a slot named as one, made on the home before the update and dropped while the
-// step waits), pauses the copies for the migrations (the copy's role, a member of
-// maktaba_replicas, may not log in and its walsender is ended), runs the index builds
-// plainly with the library stopped (no wait on the old snapshots at all), and lets the copy
-// log in again after: the copy's role can log in once the update is done.
+// Since research item 5 (2026-11-24) the database step also pauses the copies until the
+// schema is settled (pg_hba.conf rejects their roles, their walsenders are ended), which a
+// machine's grant cannot undo (the copy's role is set LOGIN again and again meanwhile),
+// runs the index builds plainly with the library stopped (no wait on the old snapshots at
+// all), and lets the copy in again after. A table sync's slot left by a machine that went
+// away (inactive: a permanent slot) holds nothing up.
 
 import (
 	"bytes"
@@ -191,27 +191,28 @@ func TestUpdateRehearsal19ConcurrentIndexBehindACopy(t *testing.T) {
 		    AND usename = $1 AND backend_xmin IS NOT NULL`, copyRole) > 0
 	})
 
-	// a machine's table sync, as the home sees it: its slot (pg_<sub>_sync_<table>_<system>),
-	// dropped once the database step says it waits for it
+	// the slot a machine that went away in its table sync left (pg_<sub>_sync_<table>_<system>)
 	const syncSlot = "pg_16999_sync_16384_7300000000000000001"
 	if _, err := db.Exec(`SELECT pg_create_logical_replication_slot($1, 'pgoutput')`, syncSlot); err != nil {
 		t.Fatalf("the table sync's slot: %v", err)
 	}
-	syncDone := make(chan struct{})
+	// what a machine's grant does (cluster_node_replica_grant): LOGIN on its role, all along
+	grants, stopGrants := make(chan struct{}), make(chan struct{})
 	go func() {
-		defer close(syncDone)
-		deadline := time.Now().Add(30 * time.Minute)
-		for time.Now().Before(deadline) && !strings.Contains(home.log.String(), "table syncs run (a machine copying") {
-			time.Sleep(time.Second)
-		}
-		time.Sleep(10 * time.Second) // the step waits on it a while
-		if _, err := db.Exec(`SELECT pg_drop_replication_slot($1)`, syncSlot); err != nil {
-			r.logf("dropping the table sync's slot: %v", err)
+		defer close(grants)
+		for {
+			select {
+			case <-stopGrants:
+				return
+			case <-time.After(200 * time.Millisecond):
+				_, _ = db.Exec(`ALTER ROLE ` + copyRole + ` LOGIN`) // the home restarts: it fails then
+			}
 		}
 	}()
 
 	run, mon, states := r.update(home, k.curCICSpec(), 40*time.Minute)
-	<-syncDone
+	close(stopGrants)
+	<-grants
 	if run.State != "done" {
 		t.Fatalf("the update to %s ended %s: %s (steps %+v)\ncopy: %s\nnode: %s", k.cur, run.State, run.Error,
 			run.Steps, copyHolder, nodeHolder)
@@ -239,20 +240,26 @@ func TestUpdateRehearsal19ConcurrentIndexBehindACopy(t *testing.T) {
 	}
 	log := home.log.String()
 	for _, want := range []string{
-		"table syncs run (a machine copying the database): the migrations wait",
-		"the machines' table syncs ended",
+		"the machines' copies are paused until the schema is settled (",
+		"the machines' copies may log in again",
 		"index builds run plainly, not CONCURRENTLY",
 	} {
 		if !strings.Contains(log, want) {
 			t.Errorf("the log lacks %q", want)
 		}
 	}
-	// the seed's own machine has a replication role too: the copy's is one of those named
-	for _, said := range []string{"the machines' copies are paused for the migrations (",
-		"the machines' copies may log in again ("} {
-		if line := lineWith(log, said); !strings.Contains(line, copyRole) {
-			t.Errorf("the log does not name %s in %q (line %q)", copyRole, said, line)
+	if strings.Contains(log, "table syncs run (a machine copying the database)") {
+		t.Errorf("the update waited for the slot of a machine that went away")
+	}
+	// while paused nothing of the copy ran: no migration had a walsender to end
+	if from := strings.Index(log, "the machines' copies are paused"); from >= 0 {
+		to := strings.Index(log[from:], "the machines' copies may log in again")
+		if to > 0 && strings.Contains(log[from:from+to], "walsender") {
+			t.Errorf("a walsender held a migration up while the copies were paused")
 		}
+	}
+	if _, err := db.Exec(`SELECT pg_drop_replication_slot($1)`, syncSlot); err != nil {
+		t.Errorf("the leftover slot: %v", err)
 	}
 	if strings.Contains(log, "waited too long for a lock another session holds") {
 		t.Errorf("a migration still reached its lock timeout")
@@ -260,29 +267,15 @@ func TestUpdateRehearsal19ConcurrentIndexBehindACopy(t *testing.T) {
 	if copyHolder.ended.Load() == 0 {
 		t.Errorf("the copy's walsender was never ended: %s", copyHolder)
 	}
-	// the copy logs in again once the migrations are done
-	var canLogin bool
-	if err := db.QueryRow(`SELECT rolcanlogin FROM pg_roles WHERE rolname = $1`, copyRole).Scan(&canLogin); err != nil || !canLogin {
-		t.Errorf("the copy's role may not log in after the update (%v)", err)
-	}
+	// the copy logs in again once the schema is settled
 	waitFor(t, "the copy's walsender back", 2*time.Minute, func() bool {
 		return queryInt(t, db, `SELECT count(*) FROM pg_stat_activity WHERE backend_type = 'walsender'
 		    AND usename = $1`, copyRole) > 0
 	})
-	if _, err := os.Stat(filepath.Join(home.root, "state", "copies-paused.json")); err == nil {
-		t.Error("the paused copies' record is left after the update")
+	if left, _ := filepath.Glob(filepath.Join(home.root, "postgres*", "maktaba-copies-paused")); len(left) > 0 {
+		t.Error("the copies' pause is left after the update")
 	}
 	if rec, _ := home.record(); rec.State != "migrated" || rec.Version != k.cur {
 		t.Errorf("the database's record is %+v, want migrated for %s", rec, k.cur)
 	}
-}
-
-// lineWith is the first line of log that holds s ("" when none).
-func lineWith(log, s string) string {
-	for _, l := range strings.Split(log, "\n") {
-		if strings.Contains(l, s) {
-			return l
-		}
-	}
-	return ""
 }

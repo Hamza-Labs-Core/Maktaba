@@ -543,7 +543,7 @@ func startUpdates(ctx context.Context, cfg config.Config, releaseDir string, hom
 			// the machines' copies pause for the Down scripts too (no wait for their table
 			// syncs: the home is down until it is back; such a machine copies its table again)
 			g := &migrationGate{stateDir: cfg.StateDir(), version: j.From, pg: pg, log: os.Stderr}
-			return u.migrateDown(ctx, j, schema, g.pauseCopies)
+			return u.migrateDown(ctx, j, schema, g)
 		}
 		u.r = newRestorer(cfg, homeDatabase(cfg, pg), inst, exit)
 		u.r.run = func() *updater.Journal { return m.Status().Journal }
@@ -663,9 +663,10 @@ func (u *updates) setAPI(procs []supervisor.Process) {
 // the api, the pipeline and the streaming role stop first (their writes, and the locks the
 // ALTERs wait for), then `maktaba-api migrate down-to schema` runs with this release's
 // migrations, the ones that made the schema. The machines' copies are paused meanwhile
-// (pause, migrationGate.pauseCopies).
+// (migrationGate.pauseCopies), and stay so when a Down script
+// failed.
 func (u *updates) migrateDown(ctx context.Context, _ *updater.Journal, schema int64,
-	pause func(context.Context, time.Duration) func()) error {
+	g *migrationGate) error {
 	u.mu.Lock()
 	api := u.api
 	u.mu.Unlock()
@@ -675,8 +676,13 @@ func (u *updates) migrateDown(ctx context.Context, _ *updater.Journal, schema in
 	if err := u.stopDatabaseRoles(ctx); err != nil {
 		return err
 	}
-	defer pause(ctx, 0)()
-	return runMigrateDownTo(ctx, api, schema, os.Stderr)
+	defer pgbundle.Hold()()
+	g.pauseCopies(ctx, 0)
+	if err := runMigrateDownTo(ctx, api, schema, os.Stderr); err != nil {
+		return err // the copies stay paused: the schema is part way (the update is held)
+	}
+	g.resumeCopies()
+	return nil
 }
 
 // runMigrateDownTo is `maktaba-api migrate down-to schema` with the api's binary,
@@ -703,7 +709,8 @@ var runMigrateDownTo = func(ctx context.Context, api *exec.Cmd, schema int64, lo
 var runMigrateUndoFailed = func(ctx context.Context, api *exec.Cmd, log io.Writer) error {
 	cmd := exec.CommandContext(ctx, api.Path, "migrate", "--timeout", "0", "--lock-timeout", migrateLockTimeout,
 		"undo-failed")
-	cmd.Env, cmd.Dir = withoutEnv(api.Env, "MAKTABA_DISABLE_DOWN"), api.Dir
+	// offline: what it drops or builds again of the INVALID leftovers, it does plainly
+	cmd.Env, cmd.Dir = append(withoutEnv(envOrOS(api.Env), "MAKTABA_DISABLE_DOWN"), envMigrateOffline+"=1"), api.Dir
 	tail := &tailWriter{max: 4 << 10}
 	cmd.Stdout = io.MultiWriter(log, tail)
 	cmd.Stderr = cmd.Stdout

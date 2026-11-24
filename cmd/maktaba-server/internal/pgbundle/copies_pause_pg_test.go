@@ -7,7 +7,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"slices"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -15,9 +16,9 @@ import (
 )
 
 // The pause of the machines' copies on a real server: only the machines' own replication
-// roles (maktaba_rep_*) are listed, never the app role (a member of the group too: the
-// auto-update e2e's migrations could not log in when it was paused), their sessions are
-// ended, they may not log in until resumed, and a table sync's slot is counted.
+// roles (maktaba_rep_*) are kept out, never the app role (a member of the group too: the
+// auto-update e2e's migrations could not log in when it was paused); their sessions are
+// ended, and they may not log in until resumed whatever their roles are given meanwhile.
 //
 // Opt-in: MAKTABA_TEST_PG_BIN, a Postgres 16 install.
 func TestCopiesPauseOnARealServer(t *testing.T) {
@@ -59,7 +60,7 @@ func TestCopiesPauseOnARealServer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	const rep, pw = "maktaba_rep_0123456789abcdef0123456789abcdef", "pause-test-pw"
+	const rep, other, pw = "maktaba_rep_0123456789abcdef0123456789abcdef", "maktaba_rep_ffffffffffffffffffffffffffffffff", "pause-test-pw"
 	for _, s := range []string{
 		`DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '` + ReplicaGroup + `') THEN
 		    CREATE ROLE ` + ReplicaGroup + ` NOLOGIN; END IF; END $$`,
@@ -71,53 +72,134 @@ func TestCopiesPauseOnARealServer(t *testing.T) {
 			t.Fatalf("%s: %v", s, err)
 		}
 	}
-	roles, err := b.ReplicaLogins(ctx)
-	if err != nil || !slices.Equal(roles, []string{rep}) {
-		t.Fatalf("replica logins %v %v: want only the machine's role", roles, err)
-	}
 	// the machine's session, as a copy's
-	open := func() (*sql.DB, error) {
+	openAs := func(role string) (*sql.DB, error) {
 		db, err := sql.Open("postgres", fmt.Sprintf("host=127.0.0.1 port=%d user=%s password=%s dbname=%s sslmode=disable connect_timeout=5",
-			port, rep, pw, AppDatabase))
+			port, role, pw, AppDatabase))
 		if err != nil {
 			return nil, err
 		}
 		return db, db.PingContext(ctx)
 	}
-	held, err := open()
+	held, err := openAs(rep)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer held.Close()
 	held.SetMaxOpenConns(1)
-	n, err := b.PauseCopies(ctx, roles)
+	n, err := b.PauseCopies(ctx)
 	if err != nil || n != 1 {
 		t.Fatalf("pause: %d %v (want its one session ended)", n, err)
 	}
-	if again, err := open(); err == nil {
-		again.Close()
-		t.Fatal("a paused copy logged in")
+	refused := func(role string) {
+		t.Helper()
+		if db, err := openAs(role); err == nil || !strings.Contains(err.Error(), "pg_hba.conf rejects") {
+			_ = db.Close()
+			t.Fatalf("%s while paused: %v", role, err)
+		}
 	}
+	refused(rep)
+	// what a machine's grant does (cluster_node_replica_grant): LOGIN again, or a role made
+	for _, s := range []string{`ALTER ROLE ` + rep + ` WITH LOGIN REPLICATION PASSWORD '` + pw + `'`,
+		`CREATE ROLE ` + other + ` LOGIN REPLICATION PASSWORD '` + pw + `' IN ROLE ` + ReplicaGroup} {
+		if err := q.Exec(ctx, AppDatabase, s); err != nil {
+			t.Fatal(err)
+		}
+	}
+	refused(rep)
+	refused(other)
 	if err := Ready(ctx, b.Addr(), AppRole, AppDatabase); err != nil {
 		t.Fatalf("the app role after the pause: %v", err)
 	}
-	if err := b.ResumeCopies(ctx, roles); err != nil {
+	// a start of this release keeps them out (killed while paused)
+	if err := b.writeHBA(); err != nil || !strings.Contains(b.hbaConf(), "reject") {
+		t.Fatalf("a start while paused: %v\n%s", err, b.hbaConf())
+	}
+	// paused again, with a role dropped meanwhile
+	if err := q.Exec(ctx, AppDatabase, `DROP ROLE `+other); err != nil {
 		t.Fatal(err)
 	}
-	back, err := open()
-	if err != nil {
+	if n, err := b.PauseCopies(ctx); err != nil || n != 0 {
+		t.Fatalf("pause again: %d %v", n, err)
+	}
+	if err := b.ResumeCopies(ctx); err != nil || b.CopiesPaused() {
+		t.Fatalf("resume: %v (paused %v)", err, b.CopiesPaused())
+	}
+	if err := until(ctx, 10*time.Second, func() (bool, error) {
+		back, err := openAs(rep)
+		_ = back.Close()
+		return err == nil, nil
+	}); err != nil {
 		t.Fatalf("a resumed copy: %v", err)
 	}
-	back.Close()
-	// a table sync's slot (logical decoding is on in the bundled server)
+	// a server that cannot be told keeps the marker: it is tried again
+	if _, err := b.PauseCopies(ctx); err != nil {
+		t.Fatal(err)
+	}
+	gone, cancel := context.WithCancel(ctx)
+	cancel()
+	if err := b.ResumeCopies(gone); err == nil || !b.CopiesPaused() {
+		t.Fatalf("a resume the server did not take: %v (paused %v)", err, b.CopiesPaused())
+	}
+	// WatchCopies lets them in once the schema is settled, and not before
+	wctx, stop := context.WithCancel(ctx)
+	defer stop()
+	var settled atomic.Bool
+	go b.WatchCopies(wctx, 50*time.Millisecond, settled.Load, io.Discard)
+	time.Sleep(300 * time.Millisecond)
+	if !b.CopiesPaused() {
+		t.Fatal("the copies came back on a schema that is not settled")
+	}
+	settled.Store(true)
+	if err := until(ctx, 10*time.Second, func() (bool, error) { return !b.CopiesPaused(), nil }); err != nil {
+		t.Fatal("the copies are kept out for good")
+	}
+	// a pause that does not take lets them in again (the caller is told: nothing half done)
+	if _, err := b.PauseCopies(gone); err == nil {
+		t.Fatal("a pause of no server")
+	}
+	// table syncs: an active slot counts, one left behind does not
+	const sync = "pg_16999_sync_16384_7300000000000000003"
 	if n, err := b.TableSyncs(ctx); err != nil || n != 0 {
 		t.Fatalf("table syncs %d %v", n, err)
 	}
-	if err := q.Exec(ctx, AppDatabase, `SELECT pg_create_logical_replication_slot('pg_16999_sync_16384_7300000000000000003', 'pgoutput')`); err != nil {
+	if err := q.Exec(ctx, AppDatabase, `SELECT pg_create_logical_replication_slot('`+sync+`', 'pgoutput')`); err != nil {
 		t.Fatal(err)
 	}
-	if n, err := b.TableSyncs(ctx); err != nil || n != 1 {
-		t.Fatalf("table syncs %d %v, want 1", n, err)
+	if n, err := b.TableSyncs(ctx); err != nil || n != 0 {
+		t.Fatalf("a slot left behind: %d %v", n, err)
 	}
-	_ = q.Exec(ctx, AppDatabase, `SELECT pg_drop_replication_slot('pg_16999_sync_16384_7300000000000000003')`)
+	_ = q.Exec(ctx, AppDatabase, `SELECT pg_drop_replication_slot('`+sync+`')`)
+	// a slot being made (it waits for the transactions under way) is active
+	super, err := b.SuperURL()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sdb, err := sql.Open("postgres", super)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sdb.Close()
+	tx, err := sdb.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(`SELECT pg_current_xact_id()`); err != nil {
+		t.Fatal(err)
+	}
+	made := make(chan error, 1)
+	go func() {
+		made <- q.Exec(ctx, AppDatabase, `SELECT pg_create_logical_replication_slot('`+sync+`', 'pgoutput')`)
+	}()
+	if err := until(ctx, 20*time.Second, func() (bool, error) {
+		n, err := b.TableSyncs(ctx)
+		return n == 1, err
+	}); err != nil {
+		t.Fatalf("an active table sync is not counted: %v", err)
+	}
+	_ = tx.Rollback()
+	if err := <-made; err != nil {
+		t.Fatal(err)
+	}
+	_ = q.Exec(ctx, AppDatabase, `SELECT pg_drop_replication_slot('`+sync+`')`)
 }

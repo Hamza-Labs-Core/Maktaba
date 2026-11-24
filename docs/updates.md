@@ -368,19 +368,33 @@ new release does not confirm in time (15 minutes) or stops three times in ten mi
 - **The machines' copies wait, then pause (since 2026-11-24).** An automatic update does not
   start while a machine is copying a table of the home's database (its first copy, or one made
   anew: `machine_copying` on Admin → Updates); **Update now** does not wait. Before the
-  migrations the home waits up to 10 minutes for the table syncs still running, then pauses the
-  machines' copies: each machine's replication role may not log in, and its walsender is ended,
-  so nothing of theirs runs or comes straight back while the schema changes. After the
-  migrations, or the Down scripts that undo them (a rollback's too), they log in again and go on
-  from where they stopped (each one's slot kept the changes, under the home's cap). A home stopped in the middle lets them back in at its
-  next start.
+  migrations the home waits for the table syncs still running, 10 minutes at most whatever the
+  database does, then keeps the machines' copies out until the schema is settled: `pg_hba.conf`
+  rejects their replication roles (`/^maktaba_rep_`; never the app role) and their sessions are
+  ended. It is `pg_hba.conf` and not the roles, since a machine asks for its copy again and again
+  and the home's answer (`cluster_node_replica_grant`) sets `LOGIN` on its role.
+  - They come back when the database's record says the schema is settled: the migrations ran, or
+    failed and were kept or undone, or the restore a person asked for is done. Each goes on from
+    where it stopped (its slot kept the changes, under the home's cap).
+  - They stay out, across restarts, while the record says `migrating` (the next start goes on),
+    `restoring` or `held` (a person has not chosen yet), and when a rollback's Down script failed.
+  - Nothing stays out for good: the pause is a marker in the data directory
+    (`maktaba-copies-paused`) that `pg_hba.conf` is written from. A release from before it writes
+    the file without the rejects at its start, and this one looks every minute whether the copies
+    are still out on a settled schema.
+  - When they cannot be kept out (the file cannot be written, the server does not reload it), that
+    is logged at level=error and the migrations run all the same, as before this rule: what they
+    wait on is ended, and their index builds wait on no snapshot.
+  - Only a table sync that streams now counts. Its slot is permanent: one left by a machine that
+    went away holds nothing up, and goes when its machine is back, or when its WAL is past the
+    home's cap (`rules.cluster.replica_wal_keep_gb`) or lost, which the home looks at on its own.
 - **Index builds are plain while the library is stopped (since 2026-11-24).** The migrations
   run before any role starts, so their `CREATE INDEX CONCURRENTLY` and `DROP INDEX CONCURRENTLY`
   run without `CONCURRENTLY` (`MAKTABA_MIGRATE_OFFLINE=1`, set by the database step and the
   rehearsal on a copy). A plain build takes a lock that only holds writes back, which the
   stopped library makes none of, waits for no older transaction, and rolls back whole: it leaves
   no INVALID index. The migration files keep `CONCURRENTLY`; a function's body or a `DO` block is
-  left as it is.
+  left as it is. An INVALID index an earlier try left is dropped, and built again, plainly too.
 - **When the migrations fail part way.** The library stays stopped and the start says what
   happened: `db_kept` (nothing put back: the changes so far are additive and the previous
   release runs on them), `db_undone` (their Down scripts undid them), or `db_held` (nothing

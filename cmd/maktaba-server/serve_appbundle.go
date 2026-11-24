@@ -924,7 +924,7 @@ func envOrOS(env []string) []string {
 // environment: the INVALID indexes the pending migrations' cancelled builds left, dropped.
 func runDropInvalid(ctx context.Context, api *exec.Cmd, log io.Writer) error {
 	cmd := exec.CommandContext(ctx, api.Path, "migrate", "--timeout", "0", "--lock-timeout", migrateLockTimeout, "drop-invalid")
-	cmd.Env, cmd.Dir = api.Env, api.Dir
+	cmd.Env, cmd.Dir = append(envOrOS(api.Env), envMigrateOffline+"=1"), api.Dir
 	tail := &tailWriter{max: 4 << 10}
 	cmd.Stdout = io.MultiWriter(log, tail)
 	cmd.Stderr = cmd.Stdout
@@ -1027,6 +1027,12 @@ func (g *migrationGate) run(ctx context.Context, report func(supervisor.Detail))
 	// a restart of Postgres (the machines' reach changed) would cut the dump, the
 	// migrations or a restore short: it waits until this step is done
 	defer pgbundle.Hold()()
+	// the machines' copies come back once the step leaves a settled schema
+	defer func() {
+		if g.api != nil && ctx.Err() == nil {
+			g.resumeCopies()
+		}
+	}()
 	cur := g.version
 	rec, err := g.record()
 	if err != nil {
@@ -1049,8 +1055,12 @@ func (g *migrationGate) run(ctx context.Context, report func(supervisor.Detail))
 		}
 		return nil
 	}
-	// the machines' copies left paused by migrations that did not finish log in again
-	g.resumeLeftCopies()
+	switch rec.State {
+	case apppayload.DatabaseMigrating, apppayload.DatabaseRestoring, apppayload.DatabaseHeld:
+		// a schema part way (migrations cut short, a restore not done, a held update): the
+		// machines' copies wait until it is settled
+		g.pauseCopies(ctx, 0)
+	}
 	// a start of another release that never finished (stopped during its dump, or the
 	// launcher went back from it) ends failed: this start is cur's
 	if n, err := attempts.SettleStale(g.updates, cur); err != nil {
@@ -1187,18 +1197,13 @@ func (g *migrationGate) run(ctx context.Context, report func(supervisor.Detail))
 		report(detail("db_checking", "Checking the library database", cur))
 	}
 	migStart := time.Now()
-	resumeCopies := func() {}
 	if migrating {
-		// the machines' copies wait out their table syncs, then pause until the migrations
-		// are done, or undone (their Down scripts, backWithoutDump, wait on the same locks)
-		resumeCopies = g.pauseCopies(ctx, copySyncWait)
+		// the machines' copies wait out their table syncs, then pause until the schema is
+		// settled: the migrations done, or undone (their Down scripts, backWithoutDump, wait
+		// on the same locks), or a person's choice on a held update carried out (run)
+		g.pauseCopies(ctx, copySyncWait)
 	}
 	err = g.migrate(ctx, cur, migrating, report)
-	if err == nil {
-		resumeCopies()
-	} else {
-		defer resumeCopies()
-	}
 	if err == nil && migrating {
 		// the update's migrations, for /metrics (story 35.15)
 		if rerr := updater.RecordMigration(g.updates, cur, time.Since(migStart), time.Now()); rerr != nil {
