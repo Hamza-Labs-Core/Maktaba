@@ -532,10 +532,14 @@ func (r *rehearsal) destructiveRollback(o destructiveOptions) {
 	if o.logins {
 		logins = home.machineLogins(seed.Machines, db)
 	}
-	run, mon, states := r.update(home, k.nextDestructiveFailing(), 40*time.Minute)
-	if run.State != "rolled_back" {
-		t.Errorf("the update to %s ended %s, want rolled_back: %s", k.next, run.State, run.Error)
-	}
+	// the update, as r.update starts it; its run is not followed to its end: once it stops
+	// and asks, the API (which says how a run ended) is down until a person chooses
+	p := k.nextDestructiveFailing()
+	r.publish(p.version, home.offer(p))
+	states := home.watchStates()
+	owner := home.signIn()
+	mon := home.watchDowntime()
+	runID := owner.updateNow(p.version)
 	// no automatic restore: the update stops and asks. The record is held (the failed
 	// release's version), the release before runs again and stops on it (db_held, or
 	// db_refused_older for a release from before the held record), and nothing is put back
@@ -555,7 +559,9 @@ func (r *rehearsal) destructiveRollback(o destructiveOptions) {
 			break
 		}
 	}
-	r.logf("held: %+v; a person puts the backup back", held)
+	states.end()
+	r.logf("held: %+v (the record went %v; the journal %v); a person puts the backup back", held,
+		states.recordStates(), states.journalStates())
 	var killed chan string
 	if o.kill {
 		killed = make(chan string, 1)
@@ -607,7 +613,16 @@ func (r *rehearsal) destructiveRollback(o destructiveOptions) {
 	if rehearsalTableExists(t, db, "rehearsal_probe") {
 		t.Error("the failed release's migrations are still there after the restore (rehearsal_probe)")
 	}
-	r.logf("the record went %v", states.recordStates())
+	// the run, as the API says it now: never committed (its row is the one the backup held,
+	// or the one the release before settled)
+	if code, body := home.signIn().get("/api/cluster/updates/runs/" + runID); code == 200 {
+		var run runView
+		_ = json.Unmarshal(body, &run)
+		r.logf("the run %s reads %s after the restore", runID, run.State)
+		if run.State == "done" {
+			t.Errorf("the update to %s reads done", k.next)
+		}
+	}
 }
 
 // machineLogins are fake joined machines logging in to the home's database again and

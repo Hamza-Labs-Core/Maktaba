@@ -1529,7 +1529,7 @@ func (m *Machine) keepSchema(j *Journal, reason string) bool {
 	}
 	marked, err := kr.MarkKept(j.Job.Version, j.From, reason)
 	if err != nil {
-		m.errorf("cannot mark the database record kept for %s (the dump goes back instead): %v", j.From, err)
+		m.errorf("cannot mark the database record kept for %s (its Down scripts are tried, else it is held): %v", j.From, err)
 		return false
 	}
 	if marked {
