@@ -21,7 +21,7 @@
     "phase": 17,
     "plan": 372,
     "review": 15,
-    "story": 746
+    "story": 750
   },
   "parts": [
     "wiki-epics-01-09.json",
@@ -954,6 +954,10 @@
         "story-13.8",
         "story-13.9",
         "story-13.18",
+        "story-13.19",
+        "story-13.20",
+        "story-13.21",
+        "story-13.22",
         "plan-13.01-macos",
         "plan-13.02-windows",
         "plan-13.03-linux",
@@ -970,7 +974,7 @@
         "readme": "specs/epics/13-desktop/README.md"
       },
       "metadata": {
-        "story_count": 10,
+        "story_count": 14,
         "plan_count": 8,
         "mockup_count": 3
       },
@@ -6367,6 +6371,7 @@
         "story-10.13",
         "story-11.13",
         "story-12.11",
+        "story-13.20",
         "story-18.1",
         "story-18.7",
         "story-25.12",
@@ -6430,6 +6435,7 @@
         "story-9.8",
         "story-9.18",
         "story-10.13",
+        "story-13.20",
         "story-18.1",
         "story-26.6",
         "story-26.7",
@@ -6479,6 +6485,7 @@
         "story-9.8",
         "story-9.18",
         "story-10.13",
+        "story-13.20",
         "story-18.1",
         "story-26.6",
         "story-26.7",
@@ -6528,6 +6535,7 @@
         "story-9.8",
         "story-9.18",
         "story-10.13",
+        "story-13.20",
         "story-18.1",
         "story-26.6",
         "story-26.7",
@@ -6655,7 +6663,8 @@
       ],
       "related": [
         "story-7.7",
-        "story-8.11"
+        "story-8.11",
+        "story-13.20"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"

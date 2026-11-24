@@ -1843,6 +1843,121 @@
       }
     },
     {
+      "id": "story-13.19",
+      "type": "story",
+      "title": "The desktop Player reports what it plays (`device_caps`)",
+      "epic": "13-desktop",
+      "phase": 3,
+      "content": "# Story 13.19 — The desktop Player reports what it plays (`device_caps`)\n\n> Epic 13 · Build · Follows 13.18 (PR #1591) · Depends on: 13.18 (the Player plays with\n> libmpv) · Size: M\n\n## Why\n\nStory 13.18 opens libmpv sessions with the `desktop-mpv` profile alone. That profile lists what\nmpv decodes in software on any machine: H.264, HEVC (10-bit too), VP9, AV1 and MPEG-2 up to\n2160p, and eight audio channels. It sent no `device_caps` report, because `DeviceCaps` has no\nfield for hardware decoding, and the decoder in use went to the problem report instead.\n\nThe profile alone is right for a fast ",
+      "tags": [
+        "story",
+        "13-desktop",
+        "phase-3"
+      ],
+      "related": [
+        "epic-13-desktop"
+      ],
+      "files": {
+        "story": "specs/epics/13-desktop/story-13-19-player-device-caps.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "player-device-caps"
+      }
+    },
+    {
+      "id": "story-13.20",
+      "type": "story",
+      "title": "Subtitles through mpv: a file's own tracks, size and colour",
+      "epic": "13-desktop",
+      "phase": 3,
+      "content": "# Story 13.20 — Subtitles through mpv: a file's own tracks, size and colour\n\n> Epic 13 · Build · Follows 13.18 (PR #1591) · Depends on: 13.18 (the Player plays with\n> libmpv) · Size: M\n\n## Why\n\nStory 13.18 draws the Player's captions with mpv, as an ASS event on mpv's OSD\n(`MpvVideo.captionAss`), but only the subtitles the Player already knew: the renditions of an\nHLS stream's master playlist. A file played directly offers no subtitles at all\n(`Playback.followTracks` fills `subtitleOptions` only for HLS), and the file's own tracks stay\noff (`sid=no`). An MKV with Arabic SRT and a Blu-ray rip w",
+      "tags": [
+        "story",
+        "13-desktop",
+        "phase-3"
+      ],
+      "related": [
+        "epic-13-desktop",
+        "ep-get-videos",
+        "ep-get-videos-id",
+        "ep-patch-videos-id",
+        "ep-delete-videos-id",
+        "ep-get-videos-id-subtitles"
+      ],
+      "files": {
+        "story": "specs/epics/13-desktop/story-13-20-player-mpv-subtitles.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /videos",
+        "GET /videos/{id}",
+        "PATCH /videos/{id}",
+        "DELETE /videos/{id}",
+        "GET /videos/{id}/subtitles"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "player-mpv-subtitles"
+      }
+    },
+    {
+      "id": "story-13.21",
+      "type": "story",
+      "title": "The video engine as a setting in the Player",
+      "epic": "13-desktop",
+      "phase": 3,
+      "content": "# Story 13.21 — The video engine as a setting in the Player\n\n> Epic 13 · Build · Follows 13.18 (PR #1591) · Depends on: 13.18 (the Player plays with\n> libmpv) · Size: S\n\n## Why\n\nStory 13.18 keeps JavaFX's engine inside the Player while libmpv proves itself on every\nmachine, but the only way to choose it on purpose is an environment variable,\n`MAKTABA_PLAYER_ENGINE=javafx` (`mpv/LibMpv.kt`). A person whose video stutters, stays black or\nhas no sound on libmpv cannot try the older engine without a terminal or a shortcut edited by\nhand, and the notice shown when libmpv fails to load (`engine.fall",
+      "tags": [
+        "story",
+        "13-desktop",
+        "phase-3"
+      ],
+      "related": [
+        "epic-13-desktop"
+      ],
+      "files": {
+        "story": "specs/epics/13-desktop/story-13-21-player-engine-choice.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "player-engine-choice"
+      }
+    },
+    {
+      "id": "story-13.22",
+      "type": "story",
+      "title": "Live TV plays with libmpv, then JavaFX leaves the Player",
+      "epic": "13-desktop",
+      "phase": 3,
+      "content": "# Story 13.22 — Live TV plays with libmpv, then JavaFX leaves the Player\n\n> Epic 13 · Build · Follows 13.18 (PR #1591) · Depends on: 13.18 (the Player plays with\n> libmpv); the removal also on 13.21 (the engine setting) · Size: M\n\n## Why\n\nAfter 13.18, videos play with libmpv but a channel still plays with JavaFX's `MediaPlayer`\n(`live/ChannelScreen.kt` makes one per tune; `VideoSurface(MediaPlayer?)` draws it). The\nPlayer therefore carries two engines for good, starts JavaFX on every launch, keeps the\nLinux packages' dependency on the system's FFmpeg (`libavcodec`, which JavaFX's media plugin\n",
+      "tags": [
+        "story",
+        "13-desktop",
+        "phase-3"
+      ],
+      "related": [
+        "epic-13-desktop"
+      ],
+      "files": {
+        "story": "specs/epics/13-desktop/story-13-22-player-live-mpv.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "player-live-mpv"
+      }
+    },
+    {
       "id": "story-14.1",
       "type": "story",
       "title": "tvOS app (Swift / SwiftUI)",

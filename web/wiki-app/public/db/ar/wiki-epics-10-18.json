@@ -2215,6 +2215,149 @@
       }
     },
     {
+      "id": "story-13.19",
+      "type": "story",
+      "title": "مشغّل سطح المكتب يُبلغ بما يشغّله (`device_caps`)",
+      "epic": "13-desktop",
+      "phase": 3,
+      "content": "# القصة 13.19 — مشغّل سطح المكتب يُبلغ بما يشغّله (`device_caps`)\n\n> الملحمة 13 · بناء · تتبع القصة 13.18 (طلب الدمج #1591) · تعتمد على: 13.18 (المشغّل يعمل\n> بـ libmpv) · الحجم: متوسط\n\n## لماذا\n\nتفتح القصة 13.18 جلسات libmpv بملف `desktop-mpv` وحده. ويسرد هذا الملف ما يفكّه mpv برمجيًا\nعلى أي جهاز: ‏H.264 وHEVC (و10 بت أيضًا) وVP9 وAV1 وMPEG-2 حتى دقة 2160p، وثماني قنوات صوت.\nولم يُرسَل معه تقرير `device_caps`، لأن `DeviceCaps` ليس فيه حقل لفك الترميز بالعتاد، فذهب\nمفكّك الترميز المستخدم إلى تقرير المشكلة بدلًا من ذلك.\n\nوالملف وحده مناسب لجهاز سريع",
+      "tags": [
+        "story",
+        "13-desktop",
+        "phase-3"
+      ],
+      "related": [
+        "epic-13-desktop"
+      ],
+      "files": {
+        "story": "specs/epics/13-desktop/story-13-19-player-device-caps.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "player-device-caps"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "32fb4a823f3bd903",
+          "content": "4fd8574cbdb7954f"
+        }
+      }
+    },
+    {
+      "id": "story-13.20",
+      "type": "story",
+      "title": "الترجمات عبر mpv: مسارات الملف نفسه، وحجمها ولونها",
+      "epic": "13-desktop",
+      "phase": 3,
+      "content": "# القصة 13.20 — الترجمات عبر mpv: مسارات الملف نفسه، وحجمها ولونها\n\n> الملحمة 13 · بناء · تتبع القصة 13.18 (طلب الدمج #1591) · تعتمد على: 13.18 (المشغّل يعمل\n> بـ libmpv) · الحجم: متوسط\n\n## لماذا\n\nترسم القصة 13.18 ترجمات المشغّل بـ mpv، حدثًا بصيغة ASS على طبقة العرض في mpv\n(`MpvVideo.captionAss`)، لكنها لا ترسم إلا الترجمات التي كان المشغّل يعرفها من قبل: مسارات\nالترجمة في قائمة التشغيل الرئيسية لبث HLS. أما الملف الذي يُشغَّل مباشرة فلا يعرض أي ترجمة\n(`Playback.followTracks` لا يملأ `subtitleOptions` إلا لبث HLS)، وتبقى مسارات الملف نفسه\nمطفأة (`sid=no`). فملف MKV فيه ترجمة SRT عربية، ونسخة منسوخة من قرص",
+      "tags": [
+        "story",
+        "13-desktop",
+        "phase-3"
+      ],
+      "related": [
+        "epic-13-desktop",
+        "ep-get-videos",
+        "ep-get-videos-id",
+        "ep-patch-videos-id",
+        "ep-delete-videos-id",
+        "ep-get-videos-id-subtitles"
+      ],
+      "files": {
+        "story": "specs/epics/13-desktop/story-13-20-player-mpv-subtitles.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /videos",
+        "GET /videos/{id}",
+        "PATCH /videos/{id}",
+        "DELETE /videos/{id}",
+        "GET /videos/{id}/subtitles"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "player-mpv-subtitles"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "e58bca39be536ff6",
+          "content": "a347e2eb32476c6e"
+        }
+      }
+    },
+    {
+      "id": "story-13.21",
+      "type": "story",
+      "title": "محرّك الفيديو إعدادًا في المشغّل",
+      "epic": "13-desktop",
+      "phase": 3,
+      "content": "# القصة 13.21 — محرّك الفيديو إعدادًا في المشغّل\n\n> الملحمة 13 · بناء · تتبع القصة 13.18 (طلب الدمج #1591) · تعتمد على: 13.18 (المشغّل يعمل\n> بـ libmpv) · الحجم: صغير\n\n## لماذا\n\nتُبقي القصة 13.18 محرّك JavaFX داخل المشغّل ريثما يُثبت libmpv جدارته على كل جهاز، لكن\nالسبيل الوحيد لاختياره عمدًا هو متغيّر بيئة،\n`MAKTABA_PLAYER_ENGINE=javafx` (`mpv/LibMpv.kt`). ومن يتقطّع عنده الفيديو أو تبقى شاشته\nسوداء أو لا يُسمع فيه صوت على libmpv لا يستطيع تجربة المحرّك الأقدم دون سطر أوامر أو اختصار\nيُعدَّل باليد، والإشعار الذي يظهر حين يتعذّر تحميل libmpv (`engine.fall",
+      "tags": [
+        "story",
+        "13-desktop",
+        "phase-3"
+      ],
+      "related": [
+        "epic-13-desktop"
+      ],
+      "files": {
+        "story": "specs/epics/13-desktop/story-13-21-player-engine-choice.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "player-engine-choice"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "660252b38f029c37",
+          "content": "2147ec4a412fa83d"
+        }
+      }
+    },
+    {
+      "id": "story-13.22",
+      "type": "story",
+      "title": "البث المباشر يعمل بـ libmpv، ثم يغادر JavaFX المشغّل",
+      "epic": "13-desktop",
+      "phase": 3,
+      "content": "# القصة 13.22 — البث المباشر يعمل بـ libmpv، ثم يغادر JavaFX المشغّل\n\n> الملحمة 13 · بناء · تتبع القصة 13.18 (طلب الدمج #1591) · تعتمد على: 13.18 (المشغّل يعمل\n> بـ libmpv)؛ والإزالة أيضًا على 13.21 (إعداد المحرّك) · الحجم: متوسط\n\n## لماذا\n\nبعد القصة 13.18 تُشغَّل المقاطع بـ libmpv، لكن القناة ما زالت تُشغَّل بـ `MediaPlayer` من\nJavaFX (‏`live/ChannelScreen.kt` ينشئ واحدًا عند كل ضبط لقناة، و`VideoSurface(MediaPlayer?)`\nيرسمه). لذلك يحمل المشغّل محرّكين بلا نهاية، ويبدأ JavaFX في كل تشغيل، ويُبقي اعتماد حزم\nلينكس على مكتبات FFmpeg في النظام (`libavcodec`، التي تحمّلها إضافة الوسائط في JavaFX",
+      "tags": [
+        "story",
+        "13-desktop",
+        "phase-3"
+      ],
+      "related": [
+        "epic-13-desktop"
+      ],
+      "files": {
+        "story": "specs/epics/13-desktop/story-13-22-player-live-mpv.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "player-live-mpv"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "7a33fbbabd84d92b",
+          "content": "9362db491c1b2455"
+        }
+      }
+    },
+    {
       "id": "story-14.1",
       "type": "story",
       "title": "تطبيق tvOS (بلغة Swift وإطار SwiftUI)",
