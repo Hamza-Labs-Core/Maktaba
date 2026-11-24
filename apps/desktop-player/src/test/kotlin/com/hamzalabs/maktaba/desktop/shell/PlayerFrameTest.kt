@@ -36,6 +36,14 @@ class PlayerFrameTest {
     }
 
     @Test
+    fun aRuntimeTooOldForJewelGetsTheSystemsFrameInsteadOfACrash() {
+        // Jewel 0.42 is Java 25 bytecode: on the tests' Java 17 its classes cannot load, and
+        // the check must say so rather than let the window's first composition throw
+        assumeFalse(Runtime.version().feature() >= 25)
+        assertFalse(decoratedFrameAvailable(emptyMap()))
+    }
+
+    @Test
     fun f10OpensTheMenu() = runComposeUiTest {
         // PlayerWindow sets this state on F10, as F10 opened the menu bar
         val open = mutableStateOf(false)

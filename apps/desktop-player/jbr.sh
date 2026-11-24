@@ -9,11 +9,15 @@
 #                            build/jbr/PLATFORM, prints its home
 #
 # PLATFORM is windows-x64, linux-x64 or linux-aarch64. A new JBR changes VERSION and the
-# three pins together (the SHA-256s JetBrains publishes beside each archive).
+# three pins together. JetBrains publishes a SHA-512 beside each archive (<archive>.checksum):
+# check the download against it, then pin its SHA-256 here.
+#
+# Its major follows Jewel's: jewel-int-ui-decorated-window 0.42 (IntelliJ 2026.3) is compiled
+# for Java 25 (class file 69), so a JBR 21 cannot load it.
 set -euo pipefail
 
-VERSION=21.0.11
-BUILD=b1163.125
+VERSION=25.0.4.1
+BUILD=b635.79
 here="$(cd "$(dirname "$0")" && pwd)"
 root="$(cd "$here/../.." && pwd)"
 
@@ -21,9 +25,9 @@ key=0
 if [ "${1:-}" = --key ]; then key=1; shift; fi
 platform="${1:?usage: jbr.sh [--key] windows-x64|linux-x64|linux-aarch64}"
 case "$platform" in
-    windows-x64) sha=70cba75c4675881437670f639d49d8a63f363970b9c3eef45f3f4fad7726a290 ;;
-    linux-x64) sha=255e47175863ed7be108da3eae3133e8f1a78eff47f938d447acec11a5556b14 ;;
-    linux-aarch64) sha=6c2d1691b1de485adce5a48ace53cc6d3638ea036a7e4f004b376792c3f368c2 ;;
+    windows-x64) sha=49176eb6b06ebc5b51bf444060918901ca17eb4688aab3e233439fe382a05d20 ;;
+    linux-x64) sha=37d4a7c0438c635de7d501af9360488bdf1bc595db373522d1ba237aa1e3bc6b ;;
+    linux-aarch64) sha=5a4df4f511217fa2cc30d7586d3e820400192fc98b688c68a37ac4d86b7cacb8 ;;
     *) printf '::error::jbr.sh: no JBR pinned for %s\n' "$platform" >&2; exit 1 ;;
 esac
 name="jbrsdk-${VERSION}-${platform}-${BUILD}"

@@ -129,10 +129,18 @@ class FrameMenu(
 /** Whether this runtime can give the window Maktaba's title bar (the JetBrains Runtime's). */
 fun decoratedFrameAvailable(env: Map<String, String> = System.getenv()): Boolean {
     if (env["MAKTABA_PLAIN_FRAME"] == "1") return false
-    // the JetBrains Runtime's API (Jewel's dependency, reached by name: it is not this module's)
-    return runCatching {
+    // the JetBrains Runtime's API (Jewel's dependency, reached by name: it is not this module's),
+    // and a runtime new enough for Jewel's classes (Java 25: an older JBR throws
+    // UnsupportedClassVersionError on the first one, which would end the Player)
+    return try {
+        Class.forName("org.jetbrains.jewel.foundation.theme.JewelTheme")
+        Class.forName("org.jetbrains.jewel.window.DecoratedWindowKt")
         Class.forName("com.jetbrains.JBR").getMethod("isAvailable").invoke(null) as Boolean
-    }.getOrDefault(false)
+    } catch (e: Exception) {
+        false
+    } catch (e: LinkageError) {
+        false
+    }
 }
 
 /**
