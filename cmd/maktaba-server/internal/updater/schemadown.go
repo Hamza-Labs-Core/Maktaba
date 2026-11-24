@@ -23,7 +23,17 @@ import (
 // SchemaReverter is an installer that can tell whether its rollback may run the new
 // release's Down scripts back to the release before's schema, and which schema that is.
 type SchemaReverter interface {
-	DownTo(j *Journal) (schema int64, ok bool, why string)
+	// before is the slot the database was at before the new release's migrations (0: not
+	// recorded), onKept whether that was a newer release's schema, kept (Records'
+	// SchemaBeforeRecords).
+	DownTo(j *Journal, before int64, onKept bool) (schema int64, ok bool, why string)
+}
+
+// SchemaBeforeRecords is a Records that says which slot the database was at before
+// version's migrations (schema_before; 0: not recorded) and whether that was a schema kept
+// from an earlier rollback (layout.RecordSchemaBefore).
+type SchemaBeforeRecords interface {
+	SchemaBefore(version string) (slot int64, onKept bool, err error)
 }
 
 // DownRecords is a Records that can say the database is back on the release before's
@@ -35,9 +45,15 @@ type DownRecords interface {
 
 // DownToFrom decides a rollback from the release whose migrations folder is to back to
 // the one whose migrations folder is from: the Down scripts of to's migrations above
-// from's newest may run when every one has a Down script and loses no data on its way up
-// (Reversible). schema is from's newest migration.
-func DownToFrom(from, to string) (schema int64, ok bool, why string) {
+// the slot the database was at before to's migrations (before) may run when every one has
+// a Down script and loses no data on its way up (Reversible). schema is that slot.
+//
+// On a database an earlier rollback left on a newer release's schema, kept (onKept), that
+// slot is above from's newest. Until 2026-11-24 the target was always from's newest, so
+// the Down scripts also undid the migrations kept before this update, and dropped what
+// they held. The Down scripts now never go below before, nor below from's newest; and a
+// kept schema whose slot is not recorded is not undone at all.
+func DownToFrom(from, to string, before int64, onKept bool) (schema int64, ok bool, why string) {
 	if from == "" || to == "" {
 		return 0, false, "the releases' migrations are not known"
 	}
@@ -45,8 +61,23 @@ func DownToFrom(from, to string) (schema int64, ok bool, why string) {
 	if fromSchema == 0 || toSchema == 0 {
 		return 0, false, "the releases' schemas are not known"
 	}
-	ok, why = Reversible(to, fromSchema, toSchema)
-	return fromSchema, ok, why
+	target := fromSchema
+	switch {
+	case before > fromSchema && !onKept:
+		return 0, false, fmt.Sprintf("the database was at slot %04d before the update, ahead of the release "+
+			"before's %04d, and is not recorded as kept for it", before, fromSchema)
+	case before > fromSchema:
+		target = before
+	case onKept && before == 0:
+		return 0, false, "the database before the update was a newer release's schema, kept, and the slot it was " +
+			"at is not recorded"
+	}
+	if target > toSchema {
+		return 0, false, fmt.Sprintf("the database before the update (slot %04d) was ahead of this release's "+
+			"migrations (to %04d)", target, toSchema)
+	}
+	ok, why = Reversible(to, target, toSchema)
+	return target, ok, why
 }
 
 // lossy are the statements of an Up script whose change a Down script cannot undo: rows
@@ -187,7 +218,16 @@ func (m *Machine) migrateDown(j *Journal, reason string) bool {
 	if !ok || !ok2 || m.MigrateDown == nil || j.From == "" {
 		return false
 	}
-	schema, safe, why := rv.DownTo(j)
+	before, onKept := int64(0), false
+	if sb, ok := m.Records.(SchemaBeforeRecords); ok {
+		var err error
+		if before, onKept, err = sb.SchemaBefore(j.Job.Version); err != nil {
+			m.errorf("the slot the database was at before %s cannot be read (%v): its Down scripts do not run, the "+
+				"whole dump goes back instead", j.Job.Version, err)
+			return false
+		}
+	}
+	schema, safe, why := rv.DownTo(j, before, onKept)
 	if !safe {
 		m.errorf("%s's Down scripts cannot undo it (%s): the whole dump goes back instead", j.Job.Version, why)
 		return false
