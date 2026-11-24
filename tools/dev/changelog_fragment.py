@@ -3,24 +3,23 @@
 
     changelog_fragment.py check [--base REF] [--head REF]
     changelog_fragment.py convert [--base REF] [--slug NAME] [--merge]
-    changelog_fragment.py prune [--base REF]
 
 `check` is the lint job's gate. It checks every pair in changelog.d/ (name, sections, entries,
 the same sections and number of entries in English and Arabic), and refuses a branch that
 changes the [Unreleased] section of CHANGELOG.md or CHANGELOG.ar.md: those entries are frozen,
 a new one is a fragment. A branch begun before the fragments landed on its base (its oldest
 commit is older) may still add lines there: it gets a warning. A commit in the branch with a
-`Changelog-Edit: <reason>` trailer may correct frozen entries, never add one. An entry the branch
-adds to a fragment while another of its fragments has it is an error; one main already has twice
-is not (two stacked branches that both moved their entries: the page shows it once).
+`Changelog-Edit: <reason>` trailer may correct frozen entries, never add one. The same entry
+(section, English and Arabic) in two fragments the branch itself adds is an error; in one it adds
+and one from main or from a branch merged into it, a warning: the page shows it once (two stacked
+branches that both moved their entries).
 
-`convert` moves the entries this branch added to CHANGELOG.md and CHANGELOG.ar.md into one
-fragment pair, puts both files back, and stages it all. Entries the branch edited stay edited.
-With --merge it finishes the two files of a merge in progress: main's files, this branch's
-entries in a fragment (tools/dev/merge-main.sh runs it). A file resolved by hand stays: it stops.
-
-`prune` drops from the branch's own fragments the entries that fragments of the base, or of a
-branch merged into it, already have (a stacked branch merged with its own). convert does it too.
+`convert` moves the entries this branch added to CHANGELOG.md and CHANGELOG.ar.md into one new
+fragment pair, puts both files back, and stages those files. Entries the branch edited stay
+edited, an entry that a fragment in the tree already has is not moved again, and no existing
+fragment is changed. With --merge it finishes the two files of a merge in progress: main's files,
+this branch's entries in a fragment (tools/dev/merge-main.sh runs it). A file resolved by hand,
+staged or left with no conflict marker, stays: it stops.
 
 Exit codes: 0 done, 1 the check failed, 2 usage, 3 nothing written: a person must look.
 Standard library only, Python 3.9 (macOS's) or newer.
@@ -178,34 +177,22 @@ def check_fragments(files: dict[str, str]) -> list[tuple[str, str]]:
     return errors
 
 
-def holders(files: dict[str, str]) -> dict[str, set[str]]:
-    """Each entry, and the fragments it is in."""
-    out: dict[str, set[str]] = {}
+def pairs_of(files: dict[str, str]) -> dict[tuple[str, str, str], set[str]]:
+    """Each entry (section, English, Arabic), and the fragments (their English files) it is in;
+    a malformed pair has none."""
+    out: dict[tuple[str, str, str], set[str]] = {}
     for name, text in files.items():
-        for e in entries_of(name, text):
-            out.setdefault(e, set()).add(name)
+        ar = name[:-3] + ".ar.md"
+        if name.endswith(".ar.md") or ar not in files:
+            continue
+        try:
+            x, y = outline(text, "en"), outline(files[ar], "ar")
+        except Bad:
+            continue
+        for s in x:
+            for a, b in zip(x[s], y.get(s, [])):
+                out.setdefault((s, a.strip("\n"), b.strip("\n")), set()).add(name)
     return out
-
-
-def introduced(was: dict[str, str], now: dict[str, str]) -> list[tuple[str, str]]:
-    """(file, what is wrong): the entries in more fragments of `now` than of `was`, and in two."""
-    before, errors = holders(was), []
-    for e, names in holders(now).items():
-        new = sorted(names - before.get(e, set()))
-        if new and len(names) > 1:
-            other = sorted(names - {new[-1]})[0]
-            errors.append((new[-1], f"it has an entry that {DIR}/{other} has: {e.splitlines()[0][:70]!r}. "
-                                    f"Drop one (`{CONVERT}` does when main's fragment has it)"))  # fmt: skip
-    return sorted(errors)
-
-
-def entries_of(name: str, text: str) -> list[str]:
-    """A fragment's entries, none when it is malformed."""
-    try:
-        got = outline(text, "ar" if name.endswith(".ar.md") else "en")
-    except Bad:
-        return []
-    return [e.strip("\n") for entries in got.values() for e in entries]
 
 
 # ---- git ------------------------------------------------------------------------------------
@@ -319,14 +306,37 @@ def fragments_at(rev: str) -> dict[str, str]:
     return out
 
 
+def came(name: str, head: str) -> bool:
+    """The branch got the fragment by merging another branch that has it (one it is stacked on),
+    and did not add it itself: not so for one a merge commit of its own added."""
+    log = git("log", "-1", "-m", "--first-parent", "--diff-filter=A", "--format=%P", head, "--", f"{DIR}/{name}")
+    return any(has(p, f"{DIR}/{name}") for p in log.split()[1:])
+
+
+def check_twice(was: dict[str, str], now: dict[str, str], head: str) -> list[tuple[str, str, str]]:
+    """(level, file, message) for an entry in a fragment the branch adds and in another one."""
+    out = []
+    for (_, en, _), names in sorted(pairs_of(now).items()):
+        mine = sorted(n for n in names if len(names) > 1 and n not in was and not came(n, head))
+        if not mine:
+            continue
+        f, what = mine[-1], f"its entry {en.splitlines()[0][:70]!r} is in"
+        if len(mine) > 1:
+            out.append(("error", f"{DIR}/{f}", f"{what} {DIR}/{mine[0]} too, which this branch also adds: keep one"))
+        else:
+            other = min(names - {f})
+            out.append(("warning", f"{DIR}/{f}", f"{what} {DIR}/{other} too, which is not this branch's: "
+                                                 "the page shows it once, there is nothing to do"))  # fmt: skip
+    return out
+
+
 def check(base: str, head: str) -> int:
     files = fragments_here()
     found = [("error", f"{DIR}/{name}", what) for name, what in check_fragments(files)]
     found += check_frozen(base, head)
     # the branch's own tree: a pull request's checkout is its merge, with main's fragments in it
     here = git("rev-parse", head).strip() == git("rev-parse", "HEAD").strip()
-    mine = files if here else fragments_at(head)
-    found += [("error", f"{DIR}/{n}", what) for n, what in introduced(fragments_at(fork_point(base, head)), mine)]
+    found += check_twice(fragments_at(fork_point(base, head)), files if here else fragments_at(head), head)
     for level, f, what in found:
         print(f"::{level} file={f}::{f}: {what}")
     if any(level == "error" for level, _, _ in found):
@@ -346,16 +356,15 @@ def _words(doc: changelog_merge.Doc) -> list[str]:
     return [x for p in doc.prose() for x in p.splitlines() if x.strip() and not x.startswith("### ")]
 
 
-def take(base: str, ours: str, theirs: str, lang: str, moved: frozenset[str] = frozenset()) -> tuple[list[tuple[str, str]], str]:
+def take(base: str, ours: str, theirs: str, lang: str) -> tuple[list[tuple[str, str]], str]:
     """The entries ours adds under [Unreleased] (section, text), and the file without them:
-    theirs, with ours's edits of the base's entries. `moved` entries are in a fragment already."""
+    theirs, with ours's edits of the base's entries."""
     b, o, t = (changelog_merge.parse(x) for x in (base, ours, theirs))
     if _words(b) != _words(o):
         raise Bad(f"{FILES[lang]}: this branch changed text that is not an entry")
     edits = changelog_merge.replacements(b, o)
     old = {e.text for e in b.entries()} | {e.text for e in t.entries()}
     new = [e for e in o.entries() if e.text not in old and e.text not in edits.values()]
-    new = [e for e in new if e.text.strip("\n") not in moved]
     names = {f"### {SECTIONS[s] if lang == 'ar' else s}": s for s in SECTIONS}
     out = []
     for e in new:
@@ -398,11 +407,11 @@ def slug_of(branch: str) -> str:
 
 
 def by_hand(f: str, point: str, theirs: str) -> bool:
-    """A file of a merge in progress that a person resolved: merged in the index, or with no
-    marker left, and not what git's own merge of it is."""
+    """A file of a merge in progress that a person resolved: staged, and not what git's own merge
+    of it is; or not staged, with no conflict marker left."""
+    now = pathlib.Path(f).read_bytes().decode("utf-8", "replace") if pathlib.Path(f).exists() else ""
     if git("ls-files", "-u", "--", f).strip():
-        return False
-    now = pathlib.Path(f).read_bytes().decode("utf-8", "replace")
+        return not re.search(r"^<<<<<<< ", now, re.MULTILINE)
     ours, their = at("HEAD", f), at(theirs, f)
     with tempfile.TemporaryDirectory() as d:
         paths = []
@@ -410,57 +419,6 @@ def by_hand(f: str, point: str, theirs: str) -> bool:
             paths.append(str(pathlib.Path(d, name)))
             pathlib.Path(d, name).write_bytes(text.encode("utf-8"))
         return git("merge-file", "-p", *paths, ok=False) != now
-
-
-def came(name: str, head: str = "HEAD") -> bool:
-    """The branch got the fragment by merging another branch that has it (a branch it is stacked
-    on), and did not write it itself: not so for one a merge commit of its own wrote."""
-    log = git("log", "-1", "-m", "--first-parent", "--diff-filter=A", "--format=%P", head, "--", f"{DIR}/{name}")
-    return any(has(p, f"{DIR}/{name}") for p in log.split()[1:])
-
-
-def prune(theirs: str) -> int:
-    """Drop from the branch's own fragments the entries another branch's fragments have, and
-    stage it: how many (in English). A pair left with no entry goes."""
-    other = fragments_at(theirs)
-    here = fragments_here()
-    held = holders({**other, **here})
-    twice = {n for names in held.values() if len(names) > 1 for n in names}
-    foreign = {n for n in twice if n in other or came(n)}
-    texts = {n: other.get(n, here.get(n, "")) for n in foreign}
-    lose = {e for e, names in holders(texts).items() if names}
-    dropped = 0
-    for en in sorted(n for n in twice - foreign if not n.endswith(".ar.md") and n in here):
-        ar = en[:-3] + ".ar.md"
-        if ar not in here:
-            continue
-        try:
-            x, y = outline(here[en], "en"), outline(here[ar], "ar")
-        except Bad:
-            continue
-        keep: dict[str, list[tuple[str, str]]] = {"en": [], "ar": []}
-        n = 0
-        for s in x:
-            for a, b in zip(x[s], y.get(s, [])):
-                if a.strip("\n") in lose and b.strip("\n") in lose:
-                    n += 1
-                else:
-                    keep["en"].append((s, a))
-                    keep["ar"].append((s, b))
-        if not n or {s: len(e) for s, e in x.items()} != {s: len(e) for s, e in y.items()}:
-            continue
-        if keep["en"]:
-            write({f"{DIR}/{en}": render(keep["en"], "en"), f"{DIR}/{ar}": render(keep["ar"], "ar")})
-        else:
-            git("rm", "-q", "-f", "--ignore-unmatch", "--", f"{DIR}/{en}", f"{DIR}/{ar}")
-            for f in (en, ar):
-                if pathlib.Path(DIR, f).exists():  # it was never added
-                    pathlib.Path(DIR, f).unlink()
-        dropped += n
-    if dropped:
-        print(f"changelog_fragment: dropped {dropped} entr{'y' if dropped == 1 else 'ies'} of this branch's fragments "
-              "that another branch's fragment has (staged)")  # fmt: skip
-    return dropped
 
 
 def convert(base: str, slug: str | None, merging: bool) -> int:
@@ -476,18 +434,23 @@ def convert(base: str, slug: str | None, merging: bool) -> int:
         if git("rev-parse", "-q", "--verify", "MERGE_HEAD", ok=False).strip():
             raise Bad("a merge is in progress: tools/dev/merge-main.sh finishes it")
         point = theirs = fork_point(base, "HEAD")
-    # what a fragment already has (a branch this one is stacked on moved them): not moved twice
-    prune(theirs if merging else base)
-    there = [fragments_here(), {} if merging else fragments_at(base)]
-    moved = frozenset(e for files in there for f, t in files.items() for e in entries_of(f, t))
     got: dict[str, list[tuple[str, str]]] = {}
     result: dict[str, str] = {}
     stale: dict[str, bool] = {}
     for lang, f in FILES.items():
         ours = at("HEAD", f) if merging else pathlib.Path(f).read_text(encoding="utf-8")
-        got[lang], result[f] = take(at(point, f), ours, at(theirs, f), lang, moved)
+        got[lang], result[f] = take(at(point, f), ours, at(theirs, f), lang)
         stale[f] = ours != result[f]
-    if not got["en"] and not got["ar"]:
+    count = {lang: {s: sum(sec == s for sec, _ in got[lang]) for s in SECTIONS} for lang in FILES}
+    if count["en"] != count["ar"]:
+        fmt = lambda d: ", ".join(f"{s}: {n}" for s, n in d.items() if n) or "none"  # noqa: E731
+        raise Bad(f"this branch adds [{fmt(count['en'])}] to CHANGELOG.md and [{fmt(count['ar'])}] to "
+                  "CHANGELOG.ar.md: add the missing entries, then run it again")  # fmt: skip
+    # an entry a fragment in the tree already has (a branch merged into this one moved it) stays there
+    there = pairs_of(fragments_here())
+    by = {lang: [(s, t) for s in SECTIONS for sec, t in got[lang] if sec == s] for lang in FILES}
+    new = [(s, a, b) for (s, a), (_, b) in zip(by["en"], by["ar"]) if (s, a.strip("\n"), b.strip("\n")) not in there]
+    if not new:
         # the files change all the same when the branch's entries are in a fragment already
         if not merging and not any(stale.values()):
             print("changelog_fragment: this branch adds no CHANGELOG entry; nothing to convert")
@@ -496,24 +459,20 @@ def convert(base: str, slug: str | None, merging: bool) -> int:
         print("changelog_fragment: no entry to move; the CHANGELOGs are main's"
               + ("" if merging else " (staged: commit them)"))  # fmt: skip
         return 0
-    count = {lang: {s: sum(sec == s for sec, _ in got[lang]) for s in SECTIONS} for lang in FILES}
-    if count["en"] != count["ar"]:
-        fmt = lambda d: ", ".join(f"{s}: {n}" for s, n in d.items() if n) or "none"  # noqa: E731
-        raise Bad(f"this branch adds [{fmt(count['en'])}] to CHANGELOG.md and [{fmt(count['ar'])}] to "
-                  "CHANGELOG.ar.md: add the missing entries, then run it again")  # fmt: skip
     branch = git("symbolic-ref", "-q", "--short", "HEAD", ok=False).strip() or git("rev-parse", "--short", "HEAD").strip()
     stem = f"{datetime.date.today().isoformat()}-{slug_of(slug or branch)}"
     name, n = stem, 1
     while any(pathlib.Path(DIR, name + x).exists() for x in (".md", ".ar.md")):
         n += 1
         name = f"{stem}-{n}"
-    pair = {f"{name}.md": render(got["en"], "en"), f"{name}.ar.md": render(got["ar"], "ar")}
+    pair = {f"{name}.md": render([(s, a) for s, a, _ in new], "en"),
+            f"{name}.ar.md": render([(s, b) for s, _, b in new], "ar")}  # fmt: skip
     errors = check_fragments(pair)
     if errors:
         raise Bad("; ".join(f"{f}: {what}" for f, what in errors))
     pathlib.Path(DIR).mkdir(exist_ok=True)
     write({**{f"{DIR}/{f}": text for f, text in pair.items()}, **result})
-    total = len(got["en"])
+    total = len(new)
     print(f"changelog_fragment: moved {total} entr{'y' if total == 1 else 'ies'} to {DIR}/{name}.md and {DIR}/{name}.ar.md"
           + ("" if merging else " (staged: commit them with the two CHANGELOGs)"))  # fmt: skip
     return 0
@@ -528,16 +487,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     v = sub.add_parser("convert", help="move this branch's CHANGELOG entries into a fragment pair")
     v.add_argument("--base", default="origin/main")
     v.add_argument("--slug", help="the fragment's name after the date (default: the branch's name)")
-    q = sub.add_parser("prune", help="drop this branch's fragment entries that the base's fragments have")
-    q.add_argument("--base", default="origin/main")
     v.add_argument("--merge", action="store_true", help="finish the CHANGELOGs of a merge in progress")
     a = ap.parse_args(argv)
     try:
         top = git("rev-parse", "--show-toplevel").strip()
         os.chdir(top)  # every path here is from the top of the repository
-        if a.cmd == "prune":
-            prune(a.base)
-            return 0
         return check(a.base, a.head) if a.cmd == "check" else convert(a.base, a.slug, a.merge)
     except Bad as e:
         print(f"changelog_fragment: {e}", file=sys.stderr)

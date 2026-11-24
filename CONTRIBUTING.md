@@ -343,7 +343,7 @@ and Arabic, so two pull requests never conflict on it. A branch begun before tha
 entry by entry in the files. From then on it moves your entries to a fragment pair, takes main's
 two files with your edits of existing entries, and commits the merge. Entries it cannot move
 (written in one language only) it keeps in the files, both sides entry by entry; so does one
-CHANGELOG you resolved by hand. It drops from your own fragments what main's already have. Any other conflicted file, or a change to the same entry on both sides, stops it with the merge
+CHANGELOG you resolved by hand. Any other conflicted file, or a change to the same entry on both sides, stops it with the merge
 left in progress: resolve those, `git add` them, and run it again to finish the CHANGELOGs. It
 runs on macOS's bash 3.2. Its tests: `bash tools/dev/merge-main-test.sh`. With no conflict,
 or after that first run, `python3 tools/dev/changelog_fragment.py convert` moves the entries. Don't

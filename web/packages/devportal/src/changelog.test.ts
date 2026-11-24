@@ -126,6 +126,14 @@ describe("the changelog page", () => {
     const en = changelogPage(EN, "en", [other, first], none);
     expect(checkChangelog(en, changelogPage(AR, "ar", [other, first], none))).toEqual([]);
     expect(outline(en, "en")[0].sections[0].entries).toBe(2);
+    // and the same words in another section are another entry
+    const added = frag(
+      "2026-11-28-o.md",
+      "### Added\n\n- a\n  more\n",
+      "### أُضيف\n\n- أ\n  تتمة\n"
+    );
+    const two = outline(changelogPage(EN, "en", [added, first], none), "en")[0].sections;
+    expect(two.map((x) => `${x.name}:${x.entries}`)).toEqual(["Added:1", "Fixed:1", "Fixed:1"]);
   });
 
   it("reads CRLF files, and no hidden file", () => {
@@ -192,6 +200,18 @@ describe("the fragments' parity", () => {
     ["an untranslated entry", frag(A.name, A.en, "### أُصلح\n\n- left in English\n"), /Latin/],
   ])("%s fails", (_what, f, want) => {
     expect(checkFragments([f]).join("\n")).toMatch(want);
+  });
+
+  it("a pair that does not match is a finding, and no crash of the page", () => {
+    for (const f of [
+      frag(A.name, "### Fixed\n\n- a\n- b\n", A.ar),
+      frag(A.name, A.en, "### أُصلح\n\n- أ\n- ب\n"),
+      frag(A.name, A.en, null),
+      frag(A.name, null, A.ar),
+    ]) {
+      expect(changelogPage(EN, "en", [f], none)).toContain("## [Unreleased]");
+      expect(checkFragments([f]).join()).toContain("changelog.d/2026-11-25-a");
+    }
   });
 
   it("a good pair passes", () => {

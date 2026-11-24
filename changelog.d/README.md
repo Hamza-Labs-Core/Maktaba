@@ -62,10 +62,13 @@ git commit -m "chore: the changelog entry as a fragment"
 ```
 
 From then on `merge-main.sh` moves them itself when a CHANGELOG conflicts, unless one was already
-resolved by hand. A branch begun after the fragments that adds a line there fails the check; the
+resolved by hand. `convert` never changes a fragment that is there. A branch begun after the fragments that adds a line there fails the check; the
 same command fixes it.
 
-Two stacked branches may both move the same entry before either merges. The second one's
-`merge-main.sh` (or `convert`) drops it once the first is on main or merged into it. If both merge
-without that, no check fails and the page shows the entry once; a branch that itself holds the
-entry in two fragments fails the check.
+## The same entry twice
+
+An entry (its section, its English and its Arabic) that two fragments have is on the page once, in
+the earliest release that has it. Two stacked branches that each moved the same entry leave one
+that way: nothing needs removing, and the check only warns. So an identical entry repeated on
+purpose for a later release does not show again: say what is different this time. A branch that
+adds the same entry in two fragments of its own fails the check.

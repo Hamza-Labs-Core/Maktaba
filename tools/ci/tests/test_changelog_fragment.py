@@ -458,8 +458,11 @@ def test_stacked_branches_move_a_shared_entry_once(repo: Repo, squash: bool, mer
         code, out = repo.tool("convert", "--merge")
     else:
         code, out = repo.tool("convert", "--base", "main")
-    assert code == 0 and "moved 1 entry" in out, out
-    assert pair(repo, "second") == ("### Fixed\n\n- second\n", "### أُصلح\n\n- ثانٍ\n")
+    # a squash the branch has not brought in is not in its tree: it moves the shared entry too
+    twice = squash and not merging
+    assert code == 0 and ("moved 2 entries" if twice else "moved 1 entry") in out, out
+    if not twice:
+        assert pair(repo, "second") == ("### Fixed\n\n- second\n", "### أُصلح\n\n- ثانٍ\n")
     repo.git("commit", "-qam", "a fragment")
     if not merging:
         repo.git("merge", "-q", "--no-edit", "main")
@@ -467,6 +470,7 @@ def test_stacked_branches_move_a_shared_entry_once(repo: Repo, squash: bool, mer
         assert repo.read(f) == changelog(lang, main[lang])
     files = {q.name: q.read_text(encoding="utf-8") for q in (repo.path / cf.DIR).iterdir() if q.name != "README.md"}
     assert len(files) == 4 and cf.check_fragments(files) == []
+    assert check(repo)[0] == 0
 
 
 def test_a_branch_whose_every_entry_is_in_a_fragment_only_loses_its_lines(repo: Repo) -> None:
@@ -482,18 +486,52 @@ def test_a_branch_whose_every_entry_is_in_a_fragment_only_loses_its_lines(repo: 
 TWICE = {**GOOD, **{f.replace("-25-", "-26-"): t for f, t in GOOD.items()}}
 
 
-def test_an_entry_a_branch_adds_to_a_second_fragment_is_an_error() -> None:
-    errors = cf.introduced(GOOD, TWICE)
-    assert [f for f, _ in errors] == ["2026-11-26-a.ar.md", "2026-11-26-a.md"]
-    assert "an entry that changelog.d/2026-11-25-a.md has" in errors[1][1]
-    assert len(cf.introduced({}, TWICE)) == 2
+def test_the_same_entry_in_two_fragments_the_branch_adds_is_an_error(repo: Repo) -> None:
+    repo.land()
+    repo.git("checkout", "-q", "-b", "topic")
+    repo.write(**{f"{cf.DIR}/{f}": t for f, t in TWICE.items()})
+    for _ in range(2):  # not committed yet, and committed
+        code, out = check(repo)
+        assert code == 1 and "::error file=changelog.d/2026-11-26-a.md::" in out
+        assert "is in changelog.d/2026-11-25-a.md too, which this branch also adds: keep one" in out
+        repo.git("add", "-A")
+        repo.git("commit", "-q", "--allow-empty", "-m", "feat")
 
 
-def test_an_entry_that_was_in_two_fragments_already_is_not() -> None:
-    assert cf.introduced(TWICE, TWICE) == []
-    assert cf.introduced(TWICE, {**TWICE, "2026-11-27-b.md": "### Added\n\n- b\n"}) == []
-    assert cf.introduced(TWICE, GOOD) == []
-    assert cf.check_fragments(TWICE) == []
+@pytest.mark.parametrize(("en", "ar"), [("### Added\n\n- **A.** x\n", "### أُضيف\n\n- **أ.** س\n"),
+                                        ("### Fixed\n\n- **A.** x\n", "### أُصلح\n\n- **أ.** غيره\n"),
+                                        ("### Fixed\n\n- **A.** y\n", "### أُصلح\n\n- **أ.** س\n")])  # fmt: skip
+def test_another_section_or_another_half_is_another_entry(repo: Repo, en: str, ar: str) -> None:
+    repo.land()
+    repo.git("checkout", "-q", "-b", "topic")
+    repo.write(**{f"{cf.DIR}/2026-11-25-a.md": "### Fixed\n\n- **A.** x\n", f"{cf.DIR}/2026-11-25-a.ar.md": "### أُصلح\n\n- **أ.** س\n",
+                  f"{cf.DIR}/2026-11-26-a.md": en, f"{cf.DIR}/2026-11-26-a.ar.md": ar})  # fmt: skip
+    code, out = check(repo)
+    assert code == 0 and "::" not in out
+
+
+def test_an_entry_main_has_is_a_warning_with_nothing_to_do(repo: Repo) -> None:
+    repo.land()
+    repo.write(**{f"{cf.DIR}/{f}": t for f, t in GOOD.items()})
+    repo.commit("main's")
+    repo.git("checkout", "-q", "-b", "topic")
+    repo.write(**{f"{cf.DIR}/{f}": t for f, t in TWICE.items()})
+    repo.commit("feat: say it again")
+    code, out = check(repo)
+    assert code == 0 and "::warning file=changelog.d/2026-11-26-a.md::" in out
+    assert "there is nothing to do" in out and "keep one" not in out and "rop" not in out
+    assert "::" not in check(repo, "main")[1]
+
+
+def test_an_entry_that_was_in_two_fragments_already_says_nothing(repo: Repo) -> None:
+    repo.land()
+    repo.write(**{f"{cf.DIR}/{f}": t for f, t in TWICE.items()})
+    repo.commit("twice on main")
+    repo.git("checkout", "-q", "-b", "topic")
+    repo.write(**{"x.txt": "x"})
+    repo.commit("feat")
+    code, out = check(repo)
+    assert code == 0 and "::" not in out
 
 
 class Stack:
@@ -522,8 +560,7 @@ class Stack:
 
     def merge_main(self, b: str) -> str:
         self.r.git("checkout", "-q", b)
-        out = subprocess.run(["bash", str(ROOT / "tools/dev/merge-main.sh"), "main"], cwd=self.r.path,
-                             capture_output=True, text=True)  # fmt: skip
+        out = merge_main(self.r)
         assert out.returncode == 0, out.stdout + out.stderr
         assert self.r.git("status", "--porcelain") == ""
         return out.stdout
@@ -531,7 +568,12 @@ class Stack:
     def entries(self) -> list[str]:
         files = {p.name: p.read_text(encoding="utf-8") for p in (self.r.path / cf.DIR).iterdir() if p.name != "README.md"}
         assert cf.check_fragments(files) == []
-        return sorted(e for n, t in files.items() if not n.endswith(".ar.md") for e in cf.entries_of(n, t))
+        return sorted(en for (_, en, _), names in cf.pairs_of(files).items() for _ in names)
+
+    def fragments(self, rev: str) -> dict[str, str]:
+        """A branch's fragments: name -> blob."""
+        rows = (row.split() for row in self.r.git("ls-tree", rev, f"{cf.DIR}/").splitlines())
+        return {name: blob for _, _, blob, name in rows}
 
 
 NEW = LINE["en"].strip("\n")
@@ -565,61 +607,108 @@ def test_two_stacked_branches_that_both_converted_turn_nothing_red(repo: Repo, o
 
 
 @pytest.mark.parametrize("order", ORDERS)
-def test_bringing_main_in_drops_what_mains_fragments_have(repo: Repo, order: tuple[str, str]) -> None:
+def test_bringing_main_in_and_converting_change_no_fragment(repo: Repo, order: tuple[str, str]) -> None:
     st = Stack(repo)
     st.merge(order[0])
-    # merged by hand, the gate sees the branch hold the entry twice
-    repo.git("checkout", "-q", order[1])
-    repo.git("checkout", "-q", "-b", "by-hand")
-    repo.git("merge", "-q", "--no-edit", "main")
-    code, out = check(repo)
-    assert code == 1 and "it has an entry that changelog.d/" in out
-    # convert drops it
-    assert repo.tool("convert", "--base", "main")[0] == 0
-    repo.git("commit", "-qm", "once")
-    assert check(repo)[0] == 0 and st.entries() == [NEW, "- second"]
-    # and merge-main.sh does it all
-    out = st.merge_main(order[1])
-    assert "dropped 1 entry" in out
-    assert check(repo)[0] == 0 and st.entries() == [NEW, "- second"]
+    own = st.fragments(order[1])
+    commits = repo.git("rev-list", "--count", order[1])
+    st.merge_main(order[1])
+    assert repo.git("log", "-1", "--format=%P").count(" ") == 1  # the merge, and no commit of the script's own after it
+    assert int(repo.git("rev-list", "--count", "--first-parent", "HEAD")) == int(
+        repo.git("rev-list", "--count", "--first-parent", "HEAD~1")) + 1  # fmt: skip
+    assert int(commits) < int(repo.git("rev-list", "--count", "HEAD"))
+    for _ in range(2):  # and again after convert, which has nothing to do
+        assert st.fragments("HEAD").items() >= {**own, **st.fragments("main")}.items()
+        code, out = check(repo)
+        assert code == 0 and "::warning" in out and "there is nothing to do" in out
+        code, out = repo.tool("convert", "--base", "main")
+        assert code == 0 and "nothing to convert" in out
+        assert repo.git("status", "--porcelain") == ""
     st.merge(order[1])
-    assert check(repo, "main")[0] == 0 and st.entries() == [NEW, "- second"]
+    assert check(repo, "main")[0] == 0 and st.entries() == [NEW, NEW, "- second"]
 
 
-def test_bringing_main_in_leaves_a_branchs_other_fragments_and_mains_alone(repo: Repo) -> None:
-    st = Stack(repo)
-    st.merge("first")
-    before = repo.git("rev-parse", "main:changelog.d")
-    repo.git("checkout", "-q", "-b", "other", "main~1")
-    repo.write(**{f"{cf.DIR}/2026-11-20-mine.md": "### Added\n\n- mine\n", f"{cf.DIR}/2026-11-20-mine.ar.md": "### أُضيف\n\n- لي\n"})
-    repo.commit("feat: mine")
-    assert "dropped" not in st.merge_main("other")
-    assert st.entries() == [NEW, "- mine"]
-    assert repo.git("rev-parse", "main:changelog.d") == before
-
-
-def test_a_child_that_merged_its_converted_parent_drops_the_parents_entries(repo: Repo) -> None:
+def test_a_child_that_merged_its_converted_parent_is_only_warned(repo: Repo) -> None:
     st = Stack(repo)
     repo.git("checkout", "-q", "second")
     repo.git("merge", "-q", "--no-edit", "first")
-    assert check(repo)[0] == 1
-    assert repo.tool("convert", "--base", "main")[0] == 0
-    repo.git("commit", "-qm", "once")
-    assert check(repo)[0] == 0 and st.entries() == [NEW, "- second"]
-    assert repo.git("diff", "--name-only", "first", "--", cf.DIR).count("first") == 0  # the parent's pair is as it was
+    code, out = check(repo)
+    assert code == 0 and "::warning" in out and "which is not this branch's" in out
+    code, out = repo.tool("convert", "--base", "main")
+    assert code == 0 and "nothing to convert" in out
+    assert repo.git("status", "--porcelain") == "" and st.entries() == [NEW, NEW, "- second"]
 
 
-def test_an_entry_half_there_is_not_dropped(repo: Repo) -> None:
-    """Dropped only when both languages are there: never one half of a pair."""
+def merge_main(r: Repo) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(["bash", str(ROOT / "tools/dev/merge-main.sh"), "main"], cwd=r.path, capture_output=True, text=True)
+
+
+@pytest.mark.parametrize("moves", [False, True])
+def test_a_renamed_fragment_is_never_touched(repo: Repo, moves: bool) -> None:
+    """The branch's rename leaves it the only copy; main's old name is no other one."""
     repo.land()
-    en, ar = GOOD.values()
     repo.write(**{f"{cf.DIR}/{f}": t for f, t in GOOD.items()})
     repo.commit("main's")
-    repo.git("checkout", "-q", "-b", "topic", "main~1")
-    repo.write(**{f"{cf.DIR}/2026-11-26-b.md": en, f"{cf.DIR}/2026-11-26-b.ar.md": "### أُصلح\n\n- آخر\n"})
-    repo.commit("feat")
-    code, out = repo.tool("prune", "--base", "main")
-    assert code == 0 and out == "" and repo.git("status", "--porcelain") == ""
+    repo.git("checkout", "-q", "-b", "topic")
+    for f in GOOD:
+        repo.git("mv", f"{cf.DIR}/{f}", f"{cf.DIR}/{f.replace('-a.', '-better.')}")
+    repo.commit("a better name")
+    if moves:
+        repo.git("checkout", "-q", "main")
+        repo.write(**{"x.txt": "x"})
+        repo.commit("main moves")
+        repo.git("checkout", "-q", "topic")
+    tree = repo.git("rev-parse", "HEAD:changelog.d")
+    assert merge_main(repo).returncode == 0
+    assert repo.tool("convert", "--base", "main")[0] == 0
+    assert repo.git("rev-parse", "HEAD:changelog.d") == tree
+    assert repo.git("status", "--porcelain") == ""
+    code, out = check(repo)
+    assert code == 0 and "::" not in out
+
+
+@pytest.mark.parametrize("state", ["up to date", "behind", "diverged"])
+def test_merge_main_never_commits_what_a_person_staged(repo: Repo, state: str) -> None:
+    repo.land()
+    repo.write(**{f"{cf.DIR}/{f}": t for f, t in TWICE.items()})
+    repo.commit("main's")
+    repo.git("checkout", "-q", "-b", "topic")
+    if state == "diverged":
+        repo.write(**{"own.txt": "own"})
+        repo.commit("own")
+    if state != "up to date":
+        repo.git("checkout", "-q", "main")
+        repo.write(**{"x.txt": "x"})
+        repo.commit("main moves")
+        repo.git("checkout", "-q", "topic")
+    repo.write(**{"mywork.txt": "staged", f"{cf.DIR}/2026-11-25-a.md": GOOD["2026-11-25-a.md"] + "\n- mine\n"})
+    repo.git("add", "mywork.txt")
+    merge_main(repo)  # git itself refuses a real merge with something staged
+    assert repo.git("ls-files", "--error-unmatch", "mywork.txt")
+    assert repo.git("log", "--all", "--format=%h", "--", "mywork.txt") == ""
+    assert repo.git("diff", "--cached", "--name-only") == "mywork.txt"
+    assert repo.git("diff", "--name-only") == "changelog.d/2026-11-25-a.md"
+
+
+def test_a_changelog_resolved_but_not_staged_stops_everything(repo: Repo) -> None:
+    lines(repo)
+    repo.land()
+    repo.write(**{f: changelog(lang, ("\n- main\n", "\n- الرئيسي\n")[lang == "ar"]) for lang, f in cf.FILES.items()})
+    repo.commit("main's")
+    repo.git("checkout", "-q", "topic/One")
+    repo.git("merge", "main", check=False)
+    repo.write(**{"CHANGELOG.md": changelog("en", "\n- by hand\n")})
+    before = repo.git("rev-parse", "HEAD")
+    out = merge_main(repo)
+    assert out.returncode == 3 and "CHANGELOG.md has no conflict marker but is not staged" in out.stderr
+    code, text = repo.tool("convert", "--merge")
+    assert code == 3 and "CHANGELOG.md was resolved by hand" in text
+    assert repo.read("CHANGELOG.md") == changelog("en", "\n- by hand\n")
+    assert repo.git("rev-parse", "HEAD") == before
+    # staged, it stays as it is
+    repo.git("add", "CHANGELOG.md")
+    assert merge_main(repo).returncode == 0
+    assert repo.read("CHANGELOG.md") == changelog("en", "\n- by hand\n")
 
 
 def test_a_branch_out_of_date_with_a_cleaned_up_main_is_not_asked(repo: Repo) -> None:
@@ -633,7 +722,8 @@ def test_a_branch_out_of_date_with_a_cleaned_up_main_is_not_asked(repo: Repo) ->
     repo.git("rm", "-q", *(f"{cf.DIR}/{f}" for f in GOOD))
     repo.commit("once")
     repo.git("checkout", "-q", "topic")
-    assert check(repo)[0] == 0
+    code, out = check(repo)
+    assert code == 0 and "::" not in out
 
 
 @pytest.mark.parametrize("side", ["--ours", "--theirs"])

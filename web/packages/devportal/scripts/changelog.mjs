@@ -141,7 +141,7 @@ export function fragmentReleases(repo) {
 function entriesOf(md, lang) {
   const out = [];
   let section = "";
-  for (const line of md.split("\n")) {
+  for (const line of (md ?? "").split("\n")) {
     const m = line.match(/^### (.+)$/);
     if (m) {
       const name = m[1].trim();
@@ -155,8 +155,8 @@ function entriesOf(md, lang) {
 }
 
 /**
- * The fragments as entries in both languages, an entry two fragments have (in both languages)
- * once: in the earliest release that has it, or in the older fragment. Two stacked branches that
+ * The fragments as entries in both languages, an entry (section, English, Arabic) two fragments
+ * have once: in the earliest release that has it, or in the older fragment. Two stacked branches that
  * both moved their entries leave such a pair.
  */
 export function pageEntries(fragments, releases) {
@@ -176,7 +176,7 @@ export function pageEntries(fragments, releases) {
     const pairs = entriesOf(f.en, "en").map((e, i) => ({
       section: e.section,
       en: e.text,
-      ar: ar[i].text,
+      ar: ar[i]?.text ?? "", // a missing half is checkFragments' finding, not a crash here
     }));
     out.set(
       f.name,
