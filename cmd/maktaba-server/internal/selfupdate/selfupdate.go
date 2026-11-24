@@ -126,7 +126,8 @@ func toRelease(r ghRelease) *Release {
 // Latest is the highest release of the channel.
 func (c *Client) Latest(ctx context.Context) (*Release, error) {
 	var rels []ghRelease
-	if err := c.get(ctx, "/repos/"+c.o.Identity.Repo()+"/releases?per_page=30", &rels); err != nil {
+	// the newest 10: 30 passed get's 8 MiB cap on 2026-11-23 (some 190 assets a release)
+	if err := c.get(ctx, "/repos/"+c.o.Identity.Repo()+"/releases?per_page=10", &rels); err != nil {
 		return nil, err
 	}
 	var best *ghRelease

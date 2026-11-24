@@ -382,7 +382,9 @@ func (u *Updater) check(ctx context.Context) (UpdateStatus, error) {
 }
 
 func (u *Updater) fetchReleases(ctx context.Context) ([]ghRelease, error) {
-	url := u.baseURL + "/repos/" + u.repo + "/releases?per_page=30"
+	// the newest 10: 30 passed the 8 MiB cap below on 2026-11-23 (some 190 assets a
+	// release), and every check failed from then on
+	url := u.baseURL + "/repos/" + u.repo + "/releases?per_page=10"
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err

@@ -412,6 +412,17 @@ build fails when the two differ.
 
 ### Fixed
 
+- **A home whose update rolled back no longer installs an older release instead, and it sees new
+  releases again.** Since 2026-11-23 GitHub's list of the newest 30 releases has been larger than
+  the 8 MiB a home reads, so every check for updates failed and homes stopped learning of new
+  releases. The list is now read 10 releases at a time. A release that rolled back (or whose
+  migrations failed on the rehearsal's copy) now holds back every release below it, and every newer
+  one that carries the same migrations, until an admin retries it; before, the home took the newest
+  release below it in the next window. On 2026-11-24 that was v0.3.157, which rolled back too.
+  Releases now name their set of migrations in `release.json` (`migrations.set_sha256`). The
+  Updates page says which failed release holds the others back, and **Update now** naming a release
+  still installs it.
+
 - **On Roku, Down at the end of a library's loaded titles no longer jumps back to the first
   title.** The Library tab's grid loads 36 titles at a time; pressing Down on its last row while
   the next titles were still loading took focus round to the first title. Focus now stays on the

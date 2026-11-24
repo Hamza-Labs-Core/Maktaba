@@ -79,7 +79,7 @@ func TestListNotAList(t *testing.T) {
 }
 
 func TestListTooLong(t *testing.T) {
-	// valid JSON, longer than the 8 MiB the list may be
+	// valid JSON, longer than the 8 MiB a page of the list may be
 	d := readDiscoverer(t, func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(`[{"tag_name":"v1.0.0","body":"`))
 		_, _ = w.Write(bytes.Repeat([]byte("x"), 9<<20))
@@ -125,7 +125,14 @@ func TestListAllocatesLessThanTheList(t *testing.T) {
 	if len(list) < 6<<20 || len(list) > 8<<20 {
 		t.Fatalf("the list is %d bytes; the test wants one the size of the real one, under the 8 MiB cap", len(list))
 	}
-	d := readDiscoverer(t, func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write(list) })
+	// the list's first page; the next is empty (list asks for pages until a short one)
+	d := readDiscoverer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("page") != "1" {
+			_, _ = w.Write([]byte(`[]`))
+			return
+		}
+		_, _ = w.Write(list)
+	})
 
 	var a, b runtime.MemStats
 	runtime.GC()
@@ -144,5 +151,65 @@ func TestListAllocatesLessThanTheList(t *testing.T) {
 	t.Logf("a %d byte list: %d bytes allocated", len(list), n)
 	if n > uint64(len(list))/2 {
 		t.Fatalf("reading a %d byte list allocated %d bytes: more than half its length, so it is not read one release at a time", len(list), n)
+	}
+}
+
+// The list is read in pages of listPerPage, each held to the cap on its own: on 2026-11-23
+// GitHub's one page of 30 releases (some 190 assets each) passed 8 MiB, every check
+// failed from then on, and the home chose from a catalog that no longer knew the newest
+// releases. Here three pages of some 4 MiB each (12 MiB in all) are read whole, newest
+// first, and the asking stops at the short page.
+func TestListReadsPages(t *testing.T) {
+	const total = 25
+	pad := strings.Repeat("x", 400<<10) // some 400 KiB a release: 4 MiB a page of 10
+	var asked []string
+	d := readDiscoverer(t, func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		asked = append(asked, q.Get("per_page")+"/"+q.Get("page"))
+		per, page := 0, 0
+		_, _ = fmt.Sscan(q.Get("per_page"), &per)
+		_, _ = fmt.Sscan(q.Get("page"), &page)
+		var body bytes.Buffer
+		body.WriteByte('[')
+		for i := (page - 1) * per; i < page*per && i < total; i++ {
+			if body.Len() > 1 {
+				body.WriteByte(',')
+			}
+			fmt.Fprintf(&body, `{"tag_name":"v1.%d.0","body":%q}`, total-1-i, pad)
+		}
+		body.WriteByte(']')
+		_, _ = w.Write(body.Bytes())
+	})
+	rels, decodeErr, err := d.list(context.Background())
+	if err != nil || decodeErr != nil {
+		t.Fatal(err, decodeErr)
+	}
+	if len(rels) != total || rels[0].TagName != "v1.24.0" || rels[total-1].TagName != "v1.0.0" {
+		t.Fatalf("read %d releases, want %d newest first", len(rels), total)
+	}
+	if got := strings.Join(asked, " "); got != "10/1 10/2 10/3" {
+		t.Fatalf("asked for pages %q, want 10/1 10/2 10/3", got)
+	}
+
+	// a full last page: no fourth is asked for
+	asked = nil
+	d2 := readDiscoverer(t, func(w http.ResponseWriter, r *http.Request) {
+		asked = append(asked, r.URL.Query().Get("page"))
+		var body bytes.Buffer
+		body.WriteByte('[')
+		for i := range listPerPage {
+			if i > 0 {
+				body.WriteByte(',')
+			}
+			fmt.Fprintf(&body, `{"tag_name":"v2.%d.0"}`, i)
+		}
+		body.WriteByte(']')
+		_, _ = w.Write(body.Bytes())
+	})
+	if rels, _, err := d2.list(context.Background()); err != nil || len(rels) != listPages*listPerPage {
+		t.Fatalf("read %d releases (%v), want %d", len(rels), err, listPages*listPerPage)
+	}
+	if got := strings.Join(asked, " "); got != "1 2 3" {
+		t.Fatalf("asked for pages %q, want 1 2 3", got)
 	}
 }

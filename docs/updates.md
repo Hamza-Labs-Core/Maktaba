@@ -214,7 +214,14 @@ backup and the rollback are lost — minutes, inside the window, with the jobs d
 failed state is not kept. The same three ways, in that order, apply when the migrations
 themselves fail part way (since 2026-11-23; before, that always put the backup back). The release
 is then blocked until a newer one appears or an admin unblocks it (Admin → Updates → **Try it
-again**, or **Update now** naming it). On a machine, the launcher's guard does the same when the
+again**, or **Update now** naming it). A release that rolled back (or whose migrations failed on
+the rehearsal's copy) also holds back, until an admin retries it, every release below it, and
+every newer release that carries the same migrations (release.json's `migrations.set_sha256`,
+since 2026-11-24): the home waits for a newer release that changes them, and never steps down
+through the releases in between, which have none of the fixes made after the failed one (on
+2026-11-24 a home chose v0.3.157 after v0.3.158 had rolled back, and rolled back again). The
+Updates page says which release holds the others back; **Update now** naming a release installs
+it all the same. On a machine, the launcher's guard does the same when the
 new release does not confirm in time (15 minutes) or stops three times in ten minutes.
 
 ### The database during an update

@@ -3,8 +3,11 @@ package updates
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/releaseverify"
 )
 
 func rel(v string, mods ...func(*Release)) Release {
@@ -243,5 +246,107 @@ func TestChooseTargetComparesTheSigningTime(t *testing.T) {
 	if err != nil || got.Manifest == nil || !got.Manifest.SignedAt.Equal(ts("2026-10-24T17:57:06Z")) ||
 		!got.signedTime().Equal(ts("2026-10-24T17:57:06Z")) {
 		t.Fatalf("the verified signing time: %+v %v", got.Manifest, err)
+	}
+}
+
+func blocked(reason string) func(*Release) { return func(r *Release) { r.BlockedReason = reason } }
+
+func migrations(set string) func(*Release) {
+	return func(r *Release) {
+		r.Manifest.Migrations = &releaseverify.Migrations{Archive: "maktaba-migrations-" + r.Version + ".tar.gz",
+			SHA256: strings.Repeat("0", 64), SetSHA256: set}
+	}
+}
+
+// The incident of 2026-11-24: v0.3.153 runs, v0.3.158 rolled back the day before (0235's
+// lock timeout), and the home chose v0.3.157, which lacked the same fix, rolled back
+// again (a 3-hour outage), and had v0.3.156 and v0.3.155 next. A release below one that
+// failed here is never chosen by itself, nor one above it with its migrations until one
+// changes them; the newest release that is neither is.
+func TestChooseTargetHoldsBackBelowAndBesideAFailedRelease(t *testing.T) {
+	t.Parallel()
+	setA, setB := strings.Repeat("a", 64), strings.Repeat("b", 64)
+	p := DefaultPolicy()
+	for _, tc := range []struct {
+		name       string
+		catalog    []Release
+		current    string
+		want       string
+		reason     string
+		heldBackBy string
+	}{
+		{name: "the incident's catalog: nothing older than the rolled-back release", current: "0.3.153",
+			catalog: []Release{rel("0.3.153"), rel("0.3.154"), rel("0.3.155"), rel("0.3.156"), rel("0.3.157"),
+				rel("0.3.158", blocked(BlockedRolledBack))},
+			reason: ReasonHeldBack, heldBackBy: "0.3.158"},
+		{name: "two rolled back: still nothing older", current: "0.3.153",
+			catalog: []Release{rel("0.3.154"), rel("0.3.155"), rel("0.3.156"),
+				rel("0.3.157", blocked(BlockedRolledBack)), rel("0.3.158", blocked(BlockedRolledBack))},
+			reason: ReasonHeldBack, heldBackBy: "0.3.158"},
+		{name: "a newer release is chosen, past the ones in between", current: "0.3.153",
+			catalog: []Release{rel("0.3.155"), rel("0.3.157"), rel("0.3.158", blocked(BlockedRolledBack)),
+				rel("0.3.159"), rel("0.3.160"), rel("0.3.161")},
+			want: "0.3.161", heldBackBy: "0.3.158"},
+		{name: "its migrations failed on a copy: the same", current: "0.3.153",
+			catalog: []Release{rel("0.3.156"), rel("0.3.158", blocked(BlockedRehearsal))},
+			reason:  ReasonHeldBack, heldBackBy: "0.3.158"},
+		{name: "newer releases with the failed one's migrations are held back", current: "0.3.153",
+			catalog: []Release{rel("0.3.158", blocked(BlockedRolledBack), migrations(setA)),
+				rel("0.3.159", migrations(setA)), rel("0.3.160", migrations(setA))},
+			reason: ReasonHeldBack, heldBackBy: "0.3.158"},
+		{name: "until one changes them", current: "0.3.153",
+			catalog: []Release{rel("0.3.158", blocked(BlockedRolledBack), migrations(setA)),
+				rel("0.3.159", migrations(setA)), rel("0.3.160", migrations(setB)), rel("0.3.161", migrations(setA))},
+			want: "0.3.160", heldBackBy: "0.3.158"},
+		{name: "a release whose set is not known is not held back by it", current: "0.3.153",
+			catalog: []Release{rel("0.3.158", blocked(BlockedRolledBack), migrations(setA)), rel("0.3.159")},
+			want:    "0.3.159", heldBackBy: "0.3.158"},
+		{name: "a failed release without a set holds back no newer one", current: "0.3.153",
+			catalog: []Release{rel("0.3.158", blocked(BlockedRolledBack)), rel("0.3.159", migrations(setA))},
+			want:    "0.3.159", heldBackBy: "0.3.158"},
+		{name: "a release that failed at or below the running one holds nothing back", current: "0.3.158",
+			catalog: []Release{rel("0.3.157", blocked(BlockedRolledBack), migrations(setA)),
+				rel("0.3.158", migrations(setA)), rel("0.3.159", migrations(setA))},
+			want: "0.3.159"},
+		{name: "blocked after failed downloads (attempts): the release below is still chosen", current: "0.3.153",
+			catalog: []Release{rel("0.3.157"), rel("0.3.158", blocked("attempts"))},
+			want:    "0.3.157"},
+		{name: "a withdrawn release holds nothing back", current: "0.3.153",
+			catalog: []Release{rel("0.3.157"), rel("0.3.158", blocked(WithdrawnPrerelease))},
+			want:    "0.3.157"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			c := ChooseTarget(tc.catalog, p, tc.current, "")
+			got := ""
+			if c.Target != nil {
+				got = c.Target.Version
+			}
+			if got != tc.want || (tc.reason != "" && c.Reason != tc.reason) || c.HeldBackBy != tc.heldBackBy {
+				t.Fatalf("target %q reason %q held back by %q; want %q %q %q", got, c.Reason, c.HeldBackBy,
+					tc.want, tc.reason, tc.heldBackBy)
+			}
+		})
+	}
+}
+
+// An admin's Update now naming a release below one that failed installs it: RunNow
+// chooses from that release alone.
+func TestChooseTargetHeldBackReleaseByName(t *testing.T) {
+	t.Parallel()
+	only := []Release{rel("0.3.157")}
+	if c := ChooseTarget(only, DefaultPolicy(), "0.3.153", ""); c.Target == nil || c.Target.Version != "0.3.157" {
+		t.Fatalf("Update now naming 0.3.157: %+v", c)
+	}
+}
+
+// The plan says why nothing installs: held back, not up to date.
+func TestMakePlanSaysHeldBack(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 11, 24, 8, 0, 0, 0, time.UTC)
+	pl := MakePlan(now, time.UTC, DefaultPolicy(), []Release{rel("0.3.157"),
+		rel("0.3.158", blocked(BlockedRolledBack))}, "0.3.153", "")
+	if pl.Target != nil || pl.Due || pl.Waiting != ReasonHeldBack || pl.HeldBackBy != "0.3.158" {
+		t.Fatalf("plan = %+v", pl)
 	}
 }

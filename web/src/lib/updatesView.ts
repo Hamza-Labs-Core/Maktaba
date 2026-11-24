@@ -179,7 +179,10 @@ export function homeNext(ov: UpdatesOverview, now: number, locale: string, t: T)
     return { key: "updates.next.updating", vars: { version: ov.run.version } };
   const plan = ov.plan ?? ({} as UpdatesOverview["plan"]);
   const target = plan.target;
-  if (!target) return { key: "updates.next.upToDate", vars: {} };
+  if (!target)
+    return plan.reason === "held_back" && plan.held_back_by
+      ? { key: "updates.next.heldBack", vars: { version: plan.held_back_by } }
+      : { key: "updates.next.upToDate", vars: {} };
   const version = target.version;
   if (plan.held) return { key: "updates.plan.held", vars: { version } };
   if (plan.next_run_at) {

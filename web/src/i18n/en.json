@@ -6132,6 +6132,7 @@
   "updates.day.tomorrow": "tomorrow",
   "updates.next.updating": "Updating to {version} now.",
   "updates.next.upToDate": "Nothing to install: up to date.",
+  "updates.next.heldBack": "Nothing installs by itself: {version} failed here, so older releases and newer ones with its migrations wait. A newer release that changes them installs; Update now installs one you name.",
   "updates.next.inWindow": "{version} installs {day} between {from} and {to} ({in}).",
   "updates.next.at": "{version} installs {day} at {at} ({in}).",
   "updates.next.nothing": "Nothing to do",

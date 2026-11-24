@@ -6158,6 +6158,7 @@
   "updates.day.tomorrow": "غدًا",
   "updates.next.updating": "يجري التحديث إلى {version} الآن.",
   "updates.next.upToDate": "لا شيء للتثبيت: محدَّث.",
+  "updates.next.heldBack": "لا يُثبَّت شيء من تلقاء نفسه: فشل {version} هنا، فتنتظر الإصدارات الأقدم والأحدث التي تحمل ترحيلاته نفسها. يُثبَّت إصدار أحدث يغيّرها، ويثبّت «حدّث الآن» ما تسمّيه.",
   "updates.next.inWindow": "يُثبَّت {version} {day} بين {from} و{to} ({in}).",
   "updates.next.at": "يُثبَّت {version} {day} عند {at} ({in}).",
   "updates.next.nothing": "لا شيء",
