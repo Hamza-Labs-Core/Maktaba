@@ -639,6 +639,9 @@ replica:
   - 'tools/rehearsal/postgres18.sh'
   - 'tools/release/linux-app/pins.env'
   - '.github/workflows/_replica.yml'
+  # the second listen with a machine's copy published, on PostgreSQL 18 (slot 0237)
+  - 'pipeline/tests/stages/test_second_listen.py'
+  - 'plugins/first-party/transcription/src/maktaba_fp_transcription/stages/**'
 
 # the compose stack (the api, streaming, pipeline and web images) driven by tests/e2e
 e2e:

@@ -1,0 +1,959 @@
+{
+  "tagName": "v0.3.161",
+  "isDraft": false,
+  "isPrerelease": false,
+  "publishedAt": "2026-11-24T02:41:22Z",
+  "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/tag/v0.3.161",
+  "assets": [
+    {
+      "name": "checksums.txt",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/checksums.txt",
+      "size": 15030
+    },
+    {
+      "name": "checksums.txt.pem",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/checksums.txt.pem",
+      "size": 3328
+    },
+    {
+      "name": "checksums.txt.sig",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/checksums.txt.sig",
+      "size": 96
+    },
+    {
+      "name": "checksums.txt.sigstore.json",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/checksums.txt.sigstore.json",
+      "size": 9257
+    },
+    {
+      "name": "components-0.3.161.json",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/components-0.3.161.json",
+      "size": 47014
+    },
+    {
+      "name": "install.sh",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/install.sh",
+      "size": 23048
+    },
+    {
+      "name": "lang.ar-0.3.161-darwin-arm64.tar.zst",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/lang.ar-0.3.161-darwin-arm64.tar.zst",
+      "size": 1389270
+    },
+    {
+      "name": "lang.ar-0.3.161-linux-amd64.tar.zst",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/lang.ar-0.3.161-linux-amd64.tar.zst",
+      "size": 1389260
+    },
+    {
+      "name": "lang.ar-0.3.161-linux-arm64.tar.zst",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/lang.ar-0.3.161-linux-arm64.tar.zst",
+      "size": 1389260
+    },
+    {
+      "name": "lang.ar-0.3.161-windows-amd64.tar.zst",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/lang.ar-0.3.161-windows-amd64.tar.zst",
+      "size": 1389268
+    },
+    {
+      "name": "lang.en-0.3.161-darwin-arm64.tar.zst",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/lang.en-0.3.161-darwin-arm64.tar.zst",
+      "size": 628577
+    },
+    {
+      "name": "lang.en-0.3.161-linux-amd64.tar.zst",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/lang.en-0.3.161-linux-amd64.tar.zst",
+      "size": 628481
+    },
+    {
+      "name": "lang.en-0.3.161-linux-arm64.tar.zst",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/lang.en-0.3.161-linux-arm64.tar.zst",
+      "size": 628481
+    },
+    {
+      "name": "lang.en-0.3.161-windows-amd64.tar.zst",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/lang.en-0.3.161-windows-amd64.tar.zst",
+      "size": 628580
+    },
+    {
+      "name": "lang.hunspell.de-0.3.161-darwin-arm64.tar.zst",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/lang.hunspell.de-0.3.161-darwin-arm64.tar.zst",
+      "size": 1126299
+    },
+    {
+      "name": "lang.hunspell.de-0.3.161-linux-amd64.tar.zst",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/lang.hunspell.de-0.3.161-linux-amd64.tar.zst",
+      "size": 1126282
+    },
+    {
+      "name": "lang.hunspell.de-0.3.161-linux-arm64.tar.zst",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/lang.hunspell.de-0.3.161-linux-arm64.tar.zst",
+      "size": 1126282
+    },
+    {
+      "name": "lang.hunspell.de-0.3.161-windows-amd64.tar.zst",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/lang.hunspell.de-0.3.161-windows-amd64.tar.zst",
+      "size": 1126300
+    },
+    {
+      "name": "lang.hunspell.es-0.3.161-darwin-arm64.tar.zst",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/lang.hunspell.es-0.3.161-darwin-arm64.tar.zst",
+      "size": 238872
+    },
+    {
+      "name": "lang.hunspell.es-0.3.161-linux-amd64.tar.zst",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/lang.hunspell.es-0.3.161-linux-amd64.tar.zst",
+      "size": 238871
+    },
+    {
+      "name": "lang.hunspell.es-0.3.161-linux-arm64.tar.zst",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/lang.hunspell.es-0.3.161-linux-arm64.tar.zst",
+      "size": 238871
+    },
+    {
+      "name": "lang.hunspell.es-0.3.161-windows-amd64.tar.zst",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/lang.hunspell.es-0.3.161-windows-amd64.tar.zst",
+      "size": 238873
+    },
+    {
+      "name": "lang.hunspell.fr-0.3.161-darwin-arm64.tar.zst",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/lang.hunspell.fr-0.3.161-darwin-arm64.tar.zst",
+      "size": 341794
+    },
+    {
+      "name": "lang.hunspell.fr-0.3.161-linux-amd64.tar.zst",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/lang.hunspell.fr-0.3.161-linux-amd64.tar.zst",
+      "size": 341788
+    },
+    {
+      "name": "lang.hunspell.fr-0.3.161-linux-arm64.tar.zst",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/lang.hunspell.fr-0.3.161-linux-arm64.tar.zst",
+      "size": 341787
+    },
+    {
+      "name": "lang.hunspell.fr-0.3.161-windows-amd64.tar.zst",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/lang.hunspell.fr-0.3.161-windows-amd64.tar.zst",
+      "size": 341797
+    },
+    {
+      "name": "lang.hunspell.id-0.3.161-darwin-arm64.tar.zst",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/lang.hunspell.id-0.3.161-darwin-arm64.tar.zst",
+      "size": 176262
+    },
+    {
+      "name": "lang.hunspell.id-0.3.161-linux-amd64.tar.zst",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/lang.hunspell.id-0.3.161-linux-amd64.tar.zst",
+      "size": 176212
+    },
+    {
+      "name": "lang.hunspell.id-0.3.161-linux-arm64.tar.zst",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/lang.hunspell.id-0.3.161-linux-arm64.tar.zst",
+      "size": 176212
+    },
+    {
+      "name": "lang.hunspell.id-0.3.161-windows-amd64.tar.zst",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/lang.hunspell.id-0.3.161-windows-amd64.tar.zst",
+      "size": 176264
+    },
+    {
+      "name": "lang.hunspell.it-0.3.161-darwin-arm64.tar.zst",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/lang.hunspell.it-0.3.161-darwin-arm64.tar.zst",
+      "size": 370667
+    },
+    {
+      "name": "lang.hunspell.it-0.3.161-linux-amd64.tar.zst",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/lang.hunspell.it-0.3.161-linux-amd64.tar.zst",
+      "size": 370641
+    },
+    {
+      "name": "lang.hunspell.it-0.3.161-linux-arm64.tar.zst",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/lang.hunspell.it-0.3.161-linux-arm64.tar.zst",
+      "size": 370641
+    },
+    {
+      "name": "lang.hunspell.it-0.3.161-windows-amd64.tar.zst",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/lang.hunspell.it-0.3.161-windows-amd64.tar.zst",
+      "size": 370666
+    },
+    {
+      "name": "lang.hunspell.nl-0.3.161-darwin-arm64.tar.zst",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/lang.hunspell.nl-0.3.161-darwin-arm64.tar.zst",
+      "size": 799184
+    },
+    {
+      "name": "lang.hunspell.nl-0.3.161-linux-amd64.tar.zst",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/lang.hunspell.nl-0.3.161-linux-amd64.tar.zst",
+      "size": 799088
+    },
+    {
+      "name": "lang.hunspell.nl-0.3.161-linux-arm64.tar.zst",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/lang.hunspell.nl-0.3.161-linux-arm64.tar.zst",
+      "size": 799088
+    },
+    {
+      "name": "lang.hunspell.nl-0.3.161-windows-amd64.tar.zst",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/lang.hunspell.nl-0.3.161-windows-amd64.tar.zst",
+      "size": 799186
+    },
+    {
+      "name": "lang.hunspell.pl-0.3.161-darwin-arm64.tar.zst",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/lang.hunspell.pl-0.3.161-darwin-arm64.tar.zst",
+      "size": 1301134
+    },
+    {
+      "name": "lang.hunspell.pl-0.3.161-linux-amd64.tar.zst",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/lang.hunspell.pl-0.3.161-linux-amd64.tar.zst",
+      "size": 1301129
+    },
+    {
+      "name": "lang.hunspell.pl-0.3.161-linux-arm64.tar.zst",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/lang.hunspell.pl-0.3.161-linux-arm64.tar.zst",
+      "size": 1301129
+    },
+    {
+      "name": "lang.hunspell.pl-0.3.161-windows-amd64.tar.zst",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/lang.hunspell.pl-0.3.161-windows-amd64.tar.zst",
+      "size": 1301139
+    },
+    {
+      "name": "lang.hunspell.pt-0.3.161-darwin-arm64.tar.zst",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/lang.hunspell.pt-0.3.161-darwin-arm64.tar.zst",
+      "size": 233639
+    },
+    {
+      "name": "lang.hunspell.pt-0.3.161-linux-amd64.tar.zst",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/lang.hunspell.pt-0.3.161-linux-amd64.tar.zst",
+      "size": 233636
+    },
+    {
+      "name": "lang.hunspell.pt-0.3.161-linux-arm64.tar.zst",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/lang.hunspell.pt-0.3.161-linux-arm64.tar.zst",
+      "size": 233636
+    },
+    {
+      "name": "lang.hunspell.pt-0.3.161-windows-amd64.tar.zst",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/lang.hunspell.pt-0.3.161-windows-amd64.tar.zst",
+      "size": 233639
+    },
+    {
+      "name": "lang.hunspell.ru-0.3.161-darwin-arm64.tar.zst",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/lang.hunspell.ru-0.3.161-darwin-arm64.tar.zst",
+      "size": 587566
+    },
+    {
+      "name": "lang.hunspell.ru-0.3.161-linux-amd64.tar.zst",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/lang.hunspell.ru-0.3.161-linux-amd64.tar.zst",
+      "size": 587565
+    },
+    {
+      "name": "lang.hunspell.ru-0.3.161-linux-arm64.tar.zst",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/lang.hunspell.ru-0.3.161-linux-arm64.tar.zst",
+      "size": 587565
+    },
+    {
+      "name": "lang.hunspell.ru-0.3.161-windows-amd64.tar.zst",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/lang.hunspell.ru-0.3.161-windows-amd64.tar.zst",
+      "size": 587566
+    },
+    {
+      "name": "lang.hunspell.sv-0.3.161-darwin-arm64.tar.zst",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/lang.hunspell.sv-0.3.161-darwin-arm64.tar.zst",
+      "size": 1166497
+    },
+    {
+      "name": "lang.hunspell.sv-0.3.161-linux-amd64.tar.zst",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/lang.hunspell.sv-0.3.161-linux-amd64.tar.zst",
+      "size": 1166478
+    },
+    {
+      "name": "lang.hunspell.sv-0.3.161-linux-arm64.tar.zst",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/lang.hunspell.sv-0.3.161-linux-arm64.tar.zst",
+      "size": 1166478
+    },
+    {
+      "name": "lang.hunspell.sv-0.3.161-windows-amd64.tar.zst",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/lang.hunspell.sv-0.3.161-windows-amd64.tar.zst",
+      "size": 1166497
+    },
+    {
+      "name": "lang.hunspell.tr-0.3.161-darwin-arm64.tar.zst",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/lang.hunspell.tr-0.3.161-darwin-arm64.tar.zst",
+      "size": 5970747
+    },
+    {
+      "name": "lang.hunspell.tr-0.3.161-linux-amd64.tar.zst",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/lang.hunspell.tr-0.3.161-linux-amd64.tar.zst",
+      "size": 5970738
+    },
+    {
+      "name": "lang.hunspell.tr-0.3.161-linux-arm64.tar.zst",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/lang.hunspell.tr-0.3.161-linux-arm64.tar.zst",
+      "size": 5970738
+    },
+    {
+      "name": "lang.hunspell.tr-0.3.161-windows-amd64.tar.zst",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/lang.hunspell.tr-0.3.161-windows-amd64.tar.zst",
+      "size": 5970749
+    },
+    {
+      "name": "latest-player.json",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/latest-player.json",
+      "size": 5103
+    },
+    {
+      "name": "latest.json",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/latest.json",
+      "size": 8661
+    },
+    {
+      "name": "Maktaba-0.3.161-1.aarch64.rpm",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/Maktaba-0.3.161-1.aarch64.rpm",
+      "size": 326943189
+    },
+    {
+      "name": "Maktaba-0.3.161-1.aarch64.rpm.sig",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/Maktaba-0.3.161-1.aarch64.rpm.sig",
+      "size": 440
+    },
+    {
+      "name": "Maktaba-0.3.161-1.x86_64.rpm",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/Maktaba-0.3.161-1.x86_64.rpm",
+      "size": 254341448
+    },
+    {
+      "name": "Maktaba-0.3.161-1.x86_64.rpm.sig",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/Maktaba-0.3.161-1.x86_64.rpm.sig",
+      "size": 440
+    },
+    {
+      "name": "maktaba-cloud-linux-amd64",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/maktaba-cloud-linux-amd64",
+      "size": 19595390
+    },
+    {
+      "name": "maktaba-cloud-linux-arm64",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/maktaba-cloud-linux-arm64",
+      "size": 18284670
+    },
+    {
+      "name": "Maktaba-Core_0.3.161_aarch64.app.tar.gz",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/Maktaba-Core_0.3.161_aarch64.app.tar.gz",
+      "size": 225115079
+    },
+    {
+      "name": "Maktaba-Core_0.3.161_aarch64.app.tar.gz.sig",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/Maktaba-Core_0.3.161_aarch64.app.tar.gz.sig",
+      "size": 428
+    },
+    {
+      "name": "Maktaba-Core_0.3.161_aarch64.dmg",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/Maktaba-Core_0.3.161_aarch64.dmg",
+      "size": 219633880
+    },
+    {
+      "name": "maktaba-docker-compose.yml",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/maktaba-docker-compose.yml",
+      "size": 7968
+    },
+    {
+      "name": "maktaba-full-0.3.161-1.aarch64.rpm",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/maktaba-full-0.3.161-1.aarch64.rpm",
+      "size": 1990403878
+    },
+    {
+      "name": "maktaba-full-0.3.161-1.x86_64.rpm",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/maktaba-full-0.3.161-1.x86_64.rpm",
+      "size": 1990229895
+    },
+    {
+      "name": "maktaba-full-data1-0.3.161-1.aarch64.rpm",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/maktaba-full-data1-0.3.161-1.aarch64.rpm",
+      "size": 1048909175
+    },
+    {
+      "name": "maktaba-full-data1-0.3.161-1.x86_64.rpm",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/maktaba-full-data1-0.3.161-1.x86_64.rpm",
+      "size": 1689364677
+    },
+    {
+      "name": "maktaba-full-data1_0.3.161_amd64.deb",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/maktaba-full-data1_0.3.161_amd64.deb",
+      "size": 1689486220
+    },
+    {
+      "name": "maktaba-full-data1_0.3.161_arm64.deb",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/maktaba-full-data1_0.3.161_arm64.deb",
+      "size": 1049039632
+    },
+    {
+      "name": "maktaba-full_0.3.161_amd64.deb",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/maktaba-full_0.3.161_amd64.deb",
+      "size": 1990365674
+    },
+    {
+      "name": "maktaba-full_0.3.161_arm64.deb",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/maktaba-full_0.3.161_arm64.deb",
+      "size": 1990661168
+    },
+    {
+      "name": "maktaba-linux-payload-0.3.161-aarch64.tar.gz",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/maktaba-linux-payload-0.3.161-aarch64.tar.gz",
+      "size": 276508808
+    },
+    {
+      "name": "maktaba-linux-payload-0.3.161-x86_64.tar.gz",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/maktaba-linux-payload-0.3.161-x86_64.tar.gz",
+      "size": 196547796
+    },
+    {
+      "name": "maktaba-migrations-0.3.161.tar.gz",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/maktaba-migrations-0.3.161.tar.gz",
+      "size": 261332
+    },
+    {
+      "name": "maktaba-node-0.3.161.tar.gz",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/maktaba-node-0.3.161.tar.gz",
+      "size": 2401615
+    },
+    {
+      "name": "maktaba-node-0.3.161.zip",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/maktaba-node-0.3.161.zip",
+      "size": 2405750
+    },
+    {
+      "name": "maktaba-pipeline-0.3.161-constraints-core.txt",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/maktaba-pipeline-0.3.161-constraints-core.txt",
+      "size": 72003
+    },
+    {
+      "name": "maktaba-pipeline-0.3.161-constraints-cuda.txt",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/maktaba-pipeline-0.3.161-constraints-cuda.txt",
+      "size": 159822
+    },
+    {
+      "name": "maktaba-pipeline-0.3.161-constraints-stt.txt",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/maktaba-pipeline-0.3.161-constraints-stt.txt",
+      "size": 156731
+    },
+    {
+      "name": "maktaba-pipeline-0.3.161-constraints.txt",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/maktaba-pipeline-0.3.161-constraints.txt",
+      "size": 157744
+    },
+    {
+      "name": "maktaba-play-0.3.161.sha256",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/maktaba-play-0.3.161.sha256",
+      "size": 275
+    },
+    {
+      "name": "maktaba-player-0.3.161.aab",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/maktaba-player-0.3.161.aab",
+      "size": 15120897
+    },
+    {
+      "name": "maktaba-player-0.3.161.aarch64.rpm",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/maktaba-player-0.3.161.aarch64.rpm",
+      "size": 143357498
+    },
+    {
+      "name": "maktaba-player-0.3.161.aarch64.rpm.sig",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/maktaba-player-0.3.161.aarch64.rpm.sig",
+      "size": 448
+    },
+    {
+      "name": "maktaba-player-0.3.161.x86_64.rpm",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/maktaba-player-0.3.161.x86_64.rpm",
+      "size": 144353856
+    },
+    {
+      "name": "maktaba-player-0.3.161.x86_64.rpm.sig",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/maktaba-player-0.3.161.x86_64.rpm.sig",
+      "size": 448
+    },
+    {
+      "name": "maktaba-player_0.3.161_amd64.deb",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/maktaba-player_0.3.161_amd64.deb",
+      "size": 123620412
+    },
+    {
+      "name": "maktaba-player_0.3.161_amd64.deb.sig",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/maktaba-player_0.3.161_amd64.deb.sig",
+      "size": 444
+    },
+    {
+      "name": "maktaba-player_0.3.161_arm64.deb",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/maktaba-player_0.3.161_arm64.deb",
+      "size": 122682900
+    },
+    {
+      "name": "maktaba-player_0.3.161_arm64.deb.sig",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/maktaba-player_0.3.161_arm64.deb.sig",
+      "size": 444
+    },
+    {
+      "name": "Maktaba-Player_0.3.161_x64.msi",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/Maktaba-Player_0.3.161_x64.msi",
+      "size": 141546950
+    },
+    {
+      "name": "Maktaba-Player_0.3.161_x64.msi.sig",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/Maktaba-Player_0.3.161_x64.msi.sig",
+      "size": 444
+    },
+    {
+      "name": "maktaba-remote-0.3.161.aab",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/maktaba-remote-0.3.161.aab",
+      "size": 9353474
+    },
+    {
+      "name": "maktaba-roku-0.3.161.zip",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/maktaba-roku-0.3.161.zip",
+      "size": 595645
+    },
+    {
+      "name": "maktaba-roku-0.3.161.zip.sha256",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/maktaba-roku-0.3.161.zip.sha256",
+      "size": 91
+    },
+    {
+      "name": "maktaba-sbom-api-0.3.161.cdx.json",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/maktaba-sbom-api-0.3.161.cdx.json",
+      "size": 167909
+    },
+    {
+      "name": "maktaba-sbom-cloud-0.3.161.cdx.json",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/maktaba-sbom-cloud-0.3.161.cdx.json",
+      "size": 29813
+    },
+    {
+      "name": "maktaba-sbom-cloudlink-0.3.161.cdx.json",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/maktaba-sbom-cloudlink-0.3.161.cdx.json",
+      "size": 16172
+    },
+    {
+      "name": "maktaba-sbom-healthcheck-0.3.161.cdx.json",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/maktaba-sbom-healthcheck-0.3.161.cdx.json",
+      "size": 2982
+    },
+    {
+      "name": "maktaba-sbom-launcher-0.3.161.cdx.json",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/maktaba-sbom-launcher-0.3.161.cdx.json",
+      "size": 5526
+    },
+    {
+      "name": "maktaba-sbom-pipeline-0.3.161.cdx.json",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/maktaba-sbom-pipeline-0.3.161.cdx.json",
+      "size": 84928
+    },
+    {
+      "name": "maktaba-sbom-server-0.3.161.cdx.json",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/maktaba-sbom-server-0.3.161.cdx.json",
+      "size": 127903
+    },
+    {
+      "name": "maktaba-sbom-streaming-0.3.161.cdx.json",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/maktaba-sbom-streaming-0.3.161.cdx.json",
+      "size": 19939
+    },
+    {
+      "name": "maktaba-sbom-web-0.3.161.cdx.json",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/maktaba-sbom-web-0.3.161.cdx.json",
+      "size": 122821
+    },
+    {
+      "name": "maktaba-server-0.3.161-1.aarch64.rpm",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/maktaba-server-0.3.161-1.aarch64.rpm",
+      "size": 58642752
+    },
+    {
+      "name": "maktaba-server-0.3.161-1.x86_64.rpm",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/maktaba-server-0.3.161-1.x86_64.rpm",
+      "size": 63177851
+    },
+    {
+      "name": "maktaba-server-0.3.161-darwin-amd64.tar.gz",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/maktaba-server-0.3.161-darwin-amd64.tar.gz",
+      "size": 52714390
+    },
+    {
+      "name": "maktaba-server-0.3.161-darwin-arm64.tar.gz",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/maktaba-server-0.3.161-darwin-arm64.tar.gz",
+      "size": 56030509
+    },
+    {
+      "name": "maktaba-server-0.3.161-linux-amd64.tar.gz",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/maktaba-server-0.3.161-linux-amd64.tar.gz",
+      "size": 59756821
+    },
+    {
+      "name": "maktaba-server-0.3.161-linux-arm64.tar.gz",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/maktaba-server-0.3.161-linux-arm64.tar.gz",
+      "size": 55176627
+    },
+    {
+      "name": "maktaba-server-0.3.161-windows-amd64.zip",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/maktaba-server-0.3.161-windows-amd64.zip",
+      "size": 52845050
+    },
+    {
+      "name": "maktaba-server_0.3.161-1_amd64.deb",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/maktaba-server_0.3.161-1_amd64.deb",
+      "size": 63343656
+    },
+    {
+      "name": "maktaba-server_0.3.161-1_arm64.deb",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/maktaba-server_0.3.161-1_arm64.deb",
+      "size": 58957120
+    },
+    {
+      "name": "maktaba-synology-compose.j4125.yaml",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/maktaba-synology-compose.j4125.yaml",
+      "size": 6451
+    },
+    {
+      "name": "maktaba-synology-compose.yaml",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/maktaba-synology-compose.yaml",
+      "size": 6468
+    },
+    {
+      "name": "maktaba-truenas-app-0.3.161.tar.gz",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/maktaba-truenas-app-0.3.161.tar.gz",
+      "size": 7164
+    },
+    {
+      "name": "maktaba-truenas-custom-app.yaml",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/maktaba-truenas-custom-app.yaml",
+      "size": 4642
+    },
+    {
+      "name": "maktaba-tv-0.3.161.aab",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/maktaba-tv-0.3.161.aab",
+      "size": 9145973
+    },
+    {
+      "name": "maktaba-web-v0.3.161.tar.gz",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/maktaba-web-v0.3.161.tar.gz",
+      "size": 9329598
+    },
+    {
+      "name": "maktaba-windows-portable-0.3.161.zip",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/maktaba-windows-portable-0.3.161.zip",
+      "size": 15529835
+    },
+    {
+      "name": "maktaba.rb",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/maktaba.rb",
+      "size": 4804
+    },
+    {
+      "name": "Maktaba_0.3.161_aarch64.app.tar.gz",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/Maktaba_0.3.161_aarch64.app.tar.gz",
+      "size": 240693758
+    },
+    {
+      "name": "Maktaba_0.3.161_aarch64.app.tar.gz.sig",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/Maktaba_0.3.161_aarch64.app.tar.gz.sig",
+      "size": 428
+    },
+    {
+      "name": "Maktaba_0.3.161_aarch64.AppImage",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/Maktaba_0.3.161_aarch64.AppImage",
+      "size": 367602184
+    },
+    {
+      "name": "Maktaba_0.3.161_aarch64.AppImage.sig",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/Maktaba_0.3.161_aarch64.AppImage.sig",
+      "size": 444
+    },
+    {
+      "name": "Maktaba_0.3.161_aarch64.dmg",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/Maktaba_0.3.161_aarch64.dmg",
+      "size": 234805014
+    },
+    {
+      "name": "Maktaba_0.3.161_amd64.AppImage",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/Maktaba_0.3.161_amd64.AppImage",
+      "size": 289032696
+    },
+    {
+      "name": "Maktaba_0.3.161_amd64.AppImage.sig",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/Maktaba_0.3.161_amd64.AppImage.sig",
+      "size": 444
+    },
+    {
+      "name": "Maktaba_0.3.161_amd64.deb",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/Maktaba_0.3.161_amd64.deb",
+      "size": 254153584
+    },
+    {
+      "name": "Maktaba_0.3.161_amd64.deb.sig",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/Maktaba_0.3.161_amd64.deb.sig",
+      "size": 436
+    },
+    {
+      "name": "Maktaba_0.3.161_arm64.deb",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/Maktaba_0.3.161_arm64.deb",
+      "size": 326756428
+    },
+    {
+      "name": "Maktaba_0.3.161_arm64.deb.sig",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/Maktaba_0.3.161_arm64.deb.sig",
+      "size": 436
+    },
+    {
+      "name": "Maktaba_0.3.161_x64-setup.exe",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/Maktaba_0.3.161_x64-setup.exe",
+      "size": 167675221
+    },
+    {
+      "name": "Maktaba_0.3.161_x64-setup.exe.sig",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/Maktaba_0.3.161_x64-setup.exe.sig",
+      "size": 440
+    },
+    {
+      "name": "maktaba_pipeline-0.3.161-py3-none-any.whl",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/maktaba_pipeline-0.3.161-py3-none-any.whl",
+      "size": 2248481
+    },
+    {
+      "name": "model.refine-0.3.161-darwin-arm64.tar.zst",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/model.refine-0.3.161-darwin-arm64.tar.zst",
+      "size": 3765427
+    },
+    {
+      "name": "model.refine-0.3.161-linux-amd64.tar.zst",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/model.refine-0.3.161-linux-amd64.tar.zst",
+      "size": 3765427
+    },
+    {
+      "name": "model.refine-0.3.161-linux-arm64.tar.zst",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/model.refine-0.3.161-linux-arm64.tar.zst",
+      "size": 3765427
+    },
+    {
+      "name": "model.refine-0.3.161-windows-amd64.tar.zst",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/model.refine-0.3.161-windows-amd64.tar.zst",
+      "size": 3765428
+    },
+    {
+      "name": "release-manifest.json",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/release-manifest.json",
+      "size": 1216
+    },
+    {
+      "name": "release.json",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/release.json",
+      "size": 4499
+    },
+    {
+      "name": "runtime.lang-0.3.161-darwin-arm64.tar.zst",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/runtime.lang-0.3.161-darwin-arm64.tar.zst",
+      "size": 90917222
+    },
+    {
+      "name": "runtime.lang-0.3.161-linux-amd64.tar.zst",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/runtime.lang-0.3.161-linux-amd64.tar.zst",
+      "size": 92220201
+    },
+    {
+      "name": "runtime.lang-0.3.161-linux-arm64.tar.zst",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/runtime.lang-0.3.161-linux-arm64.tar.zst",
+      "size": 91677907
+    },
+    {
+      "name": "runtime.lang-0.3.161-windows-amd64.tar.zst",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/runtime.lang-0.3.161-windows-amd64.tar.zst",
+      "size": 83875333
+    },
+    {
+      "name": "runtime.ml-0.3.161-darwin-arm64.tar.zst",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/runtime.ml-0.3.161-darwin-arm64.tar.zst",
+      "size": 348137165
+    },
+    {
+      "name": "runtime.ml-0.3.161-linux-amd64.tar.zst.part1",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/runtime.ml-0.3.161-linux-amd64.tar.zst.part1",
+      "size": 1992294400
+    },
+    {
+      "name": "runtime.ml-0.3.161-linux-amd64.tar.zst.part2",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/runtime.ml-0.3.161-linux-amd64.tar.zst.part2",
+      "size": 1655719766
+    },
+    {
+      "name": "runtime.ml-0.3.161-linux-arm64.tar.zst.part1",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/runtime.ml-0.3.161-linux-arm64.tar.zst.part1",
+      "size": 1992294400
+    },
+    {
+      "name": "runtime.ml-0.3.161-linux-arm64.tar.zst.part2",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/runtime.ml-0.3.161-linux-arm64.tar.zst.part2",
+      "size": 1015288916
+    },
+    {
+      "name": "runtime.ml-0.3.161-windows-amd64.tar.zst.part1",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/runtime.ml-0.3.161-windows-amd64.tar.zst.part1",
+      "size": 1992294400
+    },
+    {
+      "name": "runtime.ml-0.3.161-windows-amd64.tar.zst.part2",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/runtime.ml-0.3.161-windows-amd64.tar.zst.part2",
+      "size": 911942025
+    },
+    {
+      "name": "runtime.ollama-0.3.161-darwin-arm64.tar.zst",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/runtime.ollama-0.3.161-darwin-arm64.tar.zst",
+      "size": 22701692
+    },
+    {
+      "name": "tool.ffmpeg-0.3.161-linux-amd64.tar.zst",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/tool.ffmpeg-0.3.161-linux-amd64.tar.zst",
+      "size": 59246461
+    },
+    {
+      "name": "tool.ffmpeg-0.3.161-linux-arm64.tar.zst",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/tool.ffmpeg-0.3.161-linux-arm64.tar.zst",
+      "size": 53740625
+    },
+    {
+      "name": "tool.yt-dlp-0.3.161-darwin-arm64.tar.zst",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/tool.yt-dlp-0.3.161-darwin-arm64.tar.zst",
+      "size": 35955539
+    },
+    {
+      "name": "tool.yt-dlp-0.3.161-linux-amd64.tar.zst",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/tool.yt-dlp-0.3.161-linux-amd64.tar.zst",
+      "size": 36205459
+    },
+    {
+      "name": "tool.yt-dlp-0.3.161-linux-arm64.tar.zst",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/tool.yt-dlp-0.3.161-linux-arm64.tar.zst",
+      "size": 35675807
+    },
+    {
+      "name": "tool.yt-dlp-0.3.161-windows-amd64.tar.zst",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/tool.yt-dlp-0.3.161-windows-amd64.tar.zst",
+      "size": 28873054
+    },
+    {
+      "name": "tv.maktaba.classify-0.3.161.files.json",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/tv.maktaba.classify-0.3.161.files.json",
+      "size": 604
+    },
+    {
+      "name": "tv.maktaba.classify-0.3.161.mkplugin",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/tv.maktaba.classify-0.3.161.mkplugin",
+      "size": 36334
+    },
+    {
+      "name": "tv.maktaba.convert-0.3.161.files.json",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/tv.maktaba.convert-0.3.161.files.json",
+      "size": 601
+    },
+    {
+      "name": "tv.maktaba.convert-0.3.161.mkplugin",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/tv.maktaba.convert-0.3.161.mkplugin",
+      "size": 12812
+    },
+    {
+      "name": "tv.maktaba.dedup-0.3.161.files.json",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/tv.maktaba.dedup-0.3.161.files.json",
+      "size": 600
+    },
+    {
+      "name": "tv.maktaba.dedup-0.3.161.mkplugin",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/tv.maktaba.dedup-0.3.161.mkplugin",
+      "size": 16949
+    },
+    {
+      "name": "tv.maktaba.livetv-0.3.161.files.json",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/tv.maktaba.livetv-0.3.161.files.json",
+      "size": 602
+    },
+    {
+      "name": "tv.maktaba.livetv-0.3.161.mkplugin",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/tv.maktaba.livetv-0.3.161.mkplugin",
+      "size": 26704
+    },
+    {
+      "name": "tv.maktaba.livetv-slots-0.3.161.files.json",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/tv.maktaba.livetv-slots-0.3.161.files.json",
+      "size": 607
+    },
+    {
+      "name": "tv.maktaba.livetv-slots-0.3.161.mkplugin",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/tv.maktaba.livetv-slots-0.3.161.mkplugin",
+      "size": 15747
+    },
+    {
+      "name": "tv.maktaba.plex-0.3.161.files.json",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/tv.maktaba.plex-0.3.161.files.json",
+      "size": 598
+    },
+    {
+      "name": "tv.maktaba.plex-0.3.161.mkplugin",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/tv.maktaba.plex-0.3.161.mkplugin",
+      "size": 4333
+    },
+    {
+      "name": "tv.maktaba.repair-0.3.161.files.json",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/tv.maktaba.repair-0.3.161.files.json",
+      "size": 600
+    },
+    {
+      "name": "tv.maktaba.repair-0.3.161.mkplugin",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/tv.maktaba.repair-0.3.161.mkplugin",
+      "size": 8073
+    },
+    {
+      "name": "tv.maktaba.semantic-search-0.3.161.files.json",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/tv.maktaba.semantic-search-0.3.161.files.json",
+      "size": 611
+    },
+    {
+      "name": "tv.maktaba.semantic-search-0.3.161.mkplugin",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/tv.maktaba.semantic-search-0.3.161.mkplugin",
+      "size": 18204
+    },
+    {
+      "name": "tv.maktaba.subtitles-0.3.161.files.json",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/tv.maktaba.subtitles-0.3.161.files.json",
+      "size": 602
+    },
+    {
+      "name": "tv.maktaba.subtitles-0.3.161.mkplugin",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/tv.maktaba.subtitles-0.3.161.mkplugin",
+      "size": 6902
+    },
+    {
+      "name": "tv.maktaba.thumbnails-0.3.161.files.json",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/tv.maktaba.thumbnails-0.3.161.files.json",
+      "size": 604
+    },
+    {
+      "name": "tv.maktaba.thumbnails-0.3.161.mkplugin",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/tv.maktaba.thumbnails-0.3.161.mkplugin",
+      "size": 9579
+    },
+    {
+      "name": "tv.maktaba.transcription-0.3.161.files.json",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/tv.maktaba.transcription-0.3.161.files.json",
+      "size": 609
+    },
+    {
+      "name": "tv.maktaba.transcription-0.3.161.mkplugin",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/tv.maktaba.transcription-0.3.161.mkplugin",
+      "size": 35755
+    },
+    {
+      "name": "tv.maktaba.youtube-0.3.161.files.json",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/tv.maktaba.youtube-0.3.161.files.json",
+      "size": 603
+    },
+    {
+      "name": "tv.maktaba.youtube-0.3.161.mkplugin",
+      "url": "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v0.3.161/tv.maktaba.youtube-0.3.161.mkplugin",
+      "size": 35520
+    }
+  ]
+}
