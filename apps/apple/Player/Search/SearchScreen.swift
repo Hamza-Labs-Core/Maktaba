@@ -1,5 +1,8 @@
 import MaktabaKit
 import SwiftUI
+#if os(iOS)
+import UIKit
+#endif
 
 /// Search (Epic 48, FR-19 and FR-20): the system's search field (`.searchable`) with the
 /// person's own past searches as suggestions while typing, and their recent searches while
@@ -49,6 +52,10 @@ struct SearchScreen: View {
     init(context: PlayerContext, query: String? = nil) {
         self.context = context
         self.initial = query
+        #if os(iOS)
+        // watching from here on: the field takes the keyboard only once Search is up
+        KeyboardWatch.shared.start()
+        #endif
         let session = context.session
         _model = State(initialValue: SearchModel(client: context.client,
                                                  byMeaning: { session.capabilities.current.isOn(.semanticSearch) }) { session.signedOut() })
@@ -128,7 +135,20 @@ struct SearchScreen: View {
             // the field let go: the search or the page held for it goes now
             .onChange(of: typing) { _, now in
                 Log.ui.debug("search: the field \(now ? "took" : "let go of", privacy: .public) the keyboard")
-                if let change = letGo.focusChanged(now) { perform(change) }
+                guard let change = letGo.focusChanged(now) else { return }
+                #if os(iOS)
+                // the field lets go as the keyboard starts to hide; the screen changes once it
+                // has (Trail #1419). Run in the same update as the letting go, the search swapped
+                // the screen mid-animation, the keyboard's hiding never finished and the app was
+                // never idle again (PR #1562's run 45296281858: "search runs" 0 ms after "let
+                // go", then two 60 s idle waits; also run 45182333067, iPad, AI mode)
+                Task {
+                    await KeyboardWatch.shared.hidden(within: .seconds(2))
+                    perform(change)
+                }
+                #else
+                perform(change)
+                #endif
             }
             .navigationDestination(item: $pushed) { PlayerDestination(context: context, route: $0) }
             .sheet(isPresented: $filtering) {
@@ -909,3 +929,54 @@ private struct FilterSheet: View {
         .accessibilityIdentifier("search.facet.\(b.facet.rawValue).\(b.value)")
     }
 }
+
+#if os(iOS)
+/// Whether the on-screen keyboard is up, and a wait for it to have finished hiding.
+///
+/// A field that lets go of focus starts the keyboard's hide animation; a screen change in the
+/// same update cuts it off, the animation never reports done, and the app is never idle again
+/// (Trail #1419, and Search after Return). `hidden(within:)` returns once
+/// `keyboardDidHideNotification` has come, at once when no keyboard is up, and after `limit`
+/// at the latest.
+@MainActor
+final class KeyboardWatch {
+    static let shared = KeyboardWatch()
+
+    private(set) var shown = false
+    private var waiting: [CheckedContinuation<Void, Never>] = []
+    private var started = false
+
+    func start() {
+        guard !started else { return }
+        started = true
+        let center = NotificationCenter.default
+        center.addObserver(forName: UIResponder.keyboardWillShowNotification, object: nil, queue: .main) { _ in
+            MainActor.assumeIsolated { KeyboardWatch.shared.shown = true }
+        }
+        center.addObserver(forName: UIResponder.keyboardDidHideNotification, object: nil, queue: .main) { _ in
+            MainActor.assumeIsolated {
+                KeyboardWatch.shared.shown = false
+                KeyboardWatch.shared.release()
+            }
+        }
+    }
+
+    func hidden(within limit: Duration) async {
+        guard shown else { return }
+        await withCheckedContinuation { cont in
+            waiting.append(cont)
+            Task {
+                try? await Task.sleep(for: limit)
+                if !waiting.isEmpty { Log.ui.notice("search: the keyboard did not report hidden in \(limit, privacy: .public)") }
+                release()
+            }
+        }
+    }
+
+    private func release() {
+        let all = waiting
+        waiting = []
+        for c in all { c.resume() }
+    }
+}
+#endif
