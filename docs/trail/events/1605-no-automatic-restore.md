@@ -26,8 +26,8 @@ prs: [1598, 1601, 1663]
 
 - **After its review:**
   - the update's record withholds its backup (`dump_unconfirmed`) until its watch passes, so an older launcher's guard and an older release coming back by itself leave it alone;
-  - a held record stays held when the switch back fails;
-  - a restore a person asked for that cannot finish can be tried again, replaced, given up, or left behind by a newer release.
+  - a held record stays held when the switch back fails.
+  - Ways out of a requested restore that cannot finish were written, found unsafe in the second review (six majors) and taken out, for a pull request of their own.
 
 ## What we learned
 - **The code that decides the first update is the old code.** A rule in the new launcher does nothing under the old one. The barrier has to be something the old code already honours: here, "no dump, left alone", in `MarkRecordRestoring` since the first release with a guard.
