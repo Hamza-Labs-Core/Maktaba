@@ -1,0 +1,108 @@
+// The app's commands are declared three times: build.rs (each one a permission,
+// `allow-<command>`), lib.rs's invoke handler (what runs), and the capabilities (which window
+// may call which). A command in one list only is a permission that grants nothing, or a
+// command nothing may call. And the tray's panel (story 13.12) is a window of its own, which
+// may call its three commands and nothing else.
+use std::collections::BTreeSet;
+use std::path::{Path, PathBuf};
+
+fn root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).to_path_buf()
+}
+
+/// The file's text, its line ends as `\n` (a Windows checkout has `\r\n`).
+fn read(p: &Path) -> String {
+    std::fs::read_to_string(p)
+        .unwrap_or_else(|e| panic!("{}: {e}", p.display()))
+        .replace("\r\n", "\n")
+}
+
+/// build.rs's COMMANDS.
+fn declared() -> BTreeSet<String> {
+    let build = read(&root().join("build.rs"));
+    let start = build.find("const COMMANDS").expect("COMMANDS in build.rs");
+    let list = &build[start..];
+    let list = &list[..list.find("];").expect("the list's end")];
+    list.lines()
+        .filter(|l| !l.trim_start().starts_with("//"))
+        .flat_map(|l| l.split('"').skip(1).step_by(2).map(str::to_string))
+        .collect()
+}
+
+/// lib.rs's generate_handler!: each command's name (its last path segment).
+fn registered() -> BTreeSet<String> {
+    let lib = read(&root().join("src/lib.rs"));
+    let start = lib
+        .find("generate_handler![")
+        .expect("the invoke handler in lib.rs");
+    let list = &lib[start + "generate_handler![".len()..];
+    let list = &list[..list.find(']').expect("the handler's end")];
+    list.split(',')
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .map(|s| s.rsplit("::").next().unwrap_or(s).to_string())
+        .collect()
+}
+
+fn capability(name: &str) -> serde_json::Value {
+    serde_json::from_str(&read(&root().join("capabilities").join(name))).expect("a capability")
+}
+
+fn permissions(cap: &serde_json::Value) -> BTreeSet<String> {
+    cap["permissions"]
+        .as_array()
+        .expect("permissions")
+        .iter()
+        .filter_map(|p| p.as_str().map(str::to_string))
+        .collect()
+}
+
+#[test]
+fn every_declared_command_runs_and_every_running_command_is_declared() {
+    let (d, r) = (declared(), registered());
+    assert!(d.len() >= 20, "build.rs was read: {d:?}");
+    assert_eq!(
+        d, r,
+        "build.rs's COMMANDS and lib.rs's invoke handler differ"
+    );
+}
+
+#[test]
+fn every_app_permission_a_capability_grants_is_a_declared_command() {
+    let d = declared();
+    for name in ["default.json", "local-server.json", "tray-panel.json"] {
+        for p in permissions(&capability(name)) {
+            if let Some(cmd) = p.strip_prefix("allow-") {
+                assert!(
+                    d.contains(&cmd.replace('-', "_")),
+                    "{name} grants {p}, which build.rs does not declare"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn the_tray_panel_may_call_its_own_commands_and_nothing_else() {
+    let cap = capability("tray-panel.json");
+    assert_eq!(cap["windows"], serde_json::json!(["tray-panel"]));
+    assert!(cap.get("remote").is_none(), "the app's own pages only");
+    let want: BTreeSet<String> = [
+        "core:event:default",
+        "allow-tray-panel-state",
+        "allow-tray-panel-choose",
+        "allow-tray-panel-hide",
+    ]
+    .into_iter()
+    .map(String::from)
+    .collect();
+    assert_eq!(permissions(&cap), want);
+    // and no other capability gives its window anything
+    for name in ["default.json", "local-server.json"] {
+        let windows = capability(name)["windows"].clone();
+        assert!(
+            !windows.to_string().contains("tray-panel"),
+            "{name} names the tray's panel"
+        );
+    }
+}
