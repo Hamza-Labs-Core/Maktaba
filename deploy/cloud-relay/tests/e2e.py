@@ -351,6 +351,11 @@ def make_home(acct: Account, home: Home) -> str:
 
     h = wait("the home online in the account's homes", online, 10 * 60, every=10)
     home.server_id = h["server_id"]
+    # A claim gives the new home the Free plan whatever its owner's plan is (v0.3.161: the
+    # INSERT takes the column's default); setting the account's plan again reaches every home
+    # it owns. Until the cloud copies the plan at claim, the operator does it after a claim.
+    if ops("set-plan basic", acct.email) != "plan basic":
+        raise AssertionError("cloud-ops set-plan basic after the claim")
     if not str(h.get("relay_url", "")).startswith(HOME):
         raise AssertionError(f"the home's relay address is {h.get('relay_url')}, not {HOME}")
     return f"set up in {setup_sec} s; claimed as {SLUG}; online; relay {HOME}; owned={h.get('owned')}"

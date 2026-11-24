@@ -37,6 +37,17 @@ The images are pinned by digest and verified with cosign before each deploy: `ma
 and `maktaba-server` (the test home) as `release.yml` signed them at the release's tag,
 `maktaba-caddy` as `relay.yml` signed it on main.
 
+### The licence signing key
+
+Every release embeds the public half of one Ed25519 key (`MAKTABA_LICENSE_PUBKEY`,
+[`docs/licensing.md`](licensing.md)), and a home applies only licences signed with its private
+half. The cloud signs licences and home assertions with its entitlement key, so a node must hold
+that same key: the deploy installs it from the `MAKTABA_LICENSE_SIGNING_KEY` secret
+(`setup.sh`, on stdin, `secrets/entitlement.key`, the api restarted on a change). A node
+without it generates its own key, which no released home trusts: such a home stays unlicensed,
+its `cloud.relay` component off, and it never reports its linked accounts, so signing in through
+the cloud fails (the e2e's `link`).
+
 ### Certificates
 
 `RELAY_TLS` in `.env`. With the `CLOUDFLARE_DNS_TOKEN` secret (a token with Zone → DNS → Edit on
@@ -92,9 +103,10 @@ production (no relay restart, no load):
 | backup | the timer is on; a backup taken now restores into a scratch database with the live accounts and homes |
 | account | a new account is refused sign-in until confirmed; the operator tool confirms it and gives it Basic |
 | home | the release's `maktaba-server` image on the runner, set up headlessly with a test video; its claim code minted by the account; online in the account's homes |
-| link | the home's admin linked to the account (the Linked accounts flow, the web app's step by API) |
-| play | sign-in through the cloud (an assertion, `POST /api/auth/cloud` on the home's relay name) and the video played through the relay, its bytes equal to the file |
+| link | the home's admin linked to the account (the Linked accounts flow, the web app's step by API), and the cloud lists the home as linked |
+| relay-play | the home's own sign-in through its relay name, and the video played through the relay, its bytes equal to the file |
 | plans | on Free the relay refuses the home (402 `relay_needs_plan`); on Basic it serves it again |
+| cloud-play | sign-in through the cloud (an assertion, `POST /api/auth/cloud` on the home's relay name), then play again |
 | restart | (QA) the relay restarted under a linked home: how long until it answers again, and it plays |
 | load | (QA) players through the relay for a minute while the node's CPU, memory and network are sampled: `sizing.json` |
 
