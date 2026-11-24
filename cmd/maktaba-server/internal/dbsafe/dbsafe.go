@@ -682,6 +682,13 @@ var havePSQL = func(psql string) bool {
 	return exec.Command(psql, "--version").Run() == nil
 }
 
+// scriptEnd ends a pg_restore script in psql, or fails it. A table's rows end in a line of
+// "\." that is in the dump's own file of them: of a file cut short, which pg_restore does not
+// always notice (PostgreSQL 18's), it is not there, and psql takes what comes next (the
+// COMMIT) for rows. Here that line is inside a comment; taken for rows, it ends them, and what
+// is left of the comment is an error, which stops psql with nothing committed.
+const scriptEnd = "\n/*\n\\.\n*/;\n"
+
 // restoreAtomic makes the public schema afresh and restores the dump in it in one
 // transaction: pg_restore's script (no publications, no owners) streams into psql, which
 // runs it after BEGIN and the schema's drop and creation, stopping at the first error (the
@@ -763,6 +770,9 @@ func (t Target) restoreAtomic(ctx context.Context, dump string, log io.Writer) e
 			kill()
 			_ = cmd.Wait()
 			return fmt.Errorf("pg_restore %s (nothing changed: one transaction): %v: %s", dump, err, tail(genErr.Bytes()))
+		}
+		if _, err := io.WriteString(in, scriptEnd); err != nil {
+			return stopped(err)
 		}
 	}
 	// the whole script: its last line
