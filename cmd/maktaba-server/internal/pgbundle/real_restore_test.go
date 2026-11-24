@@ -10,7 +10,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-
 	"strconv"
 	"strings"
 	"sync"
@@ -321,5 +320,54 @@ func TestRealRestoreSaysWhatIsMissing(t *testing.T) {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("%q does not name %q", err, want)
 		}
+	}
+}
+
+// The restore says each step that destroys the database before it is done, and an error
+// there stops it with nothing done.
+func TestRealRestoreSaysItsStepsFirst(t *testing.T) {
+	b, q := realServer(t)
+	ctx := context.Background()
+	outageDatabase(t, q, 2)
+	dump, err := b.DumpBeforeUpdate(ctx, "v0.3.41", "v0.3.42", 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	db := func() string { return one(t, q, `SELECT oid FROM pg_database WHERE datname = '`+AppDatabase+`'`) }
+	first := db()
+	stop := errors.New("the record cannot be written")
+	for _, full := range []bool{false, true} {
+		prev := diskSpace
+		if full {
+			diskSpace = func(string) (uint64, uint64, error) { return 1, 1 << 40, nil }
+		}
+		want := StepReplaced
+		if full {
+			want = StepGone
+		}
+		var told []string
+		err := b.RestoreRunningWith(ctx, dump, RestoreOptions{Before: func(s string) error {
+			told = append(told, s)
+			if n, _ := q.Query(ctx, "postgres", `SELECT oid FROM pg_database WHERE datname = '`+AppDatabase+`'`); len(n) != 1 || n[0] != first {
+				t.Errorf("told %s once it was done", s)
+			}
+			return stop
+		}}, io.Discard)
+		diskSpace = prev
+		if !errors.Is(err, stop) || len(told) == 0 || told[0] != want || db() != first {
+			t.Fatalf("full disk %v: %v, told %v", full, err, told)
+		}
+		if one(t, q, `SELECT count(*) FROM t001`) != "21" {
+			t.Fatal("the database is not the one from before, or takes no session")
+		}
+	}
+	// and done: both told, in their order
+	prev := diskSpace
+	diskSpace = func(string) (uint64, uint64, error) { return 1, 1 << 40, nil }
+	defer func() { diskSpace = prev }()
+	var told []string
+	if err := b.RestoreRunningWith(ctx, dump, RestoreOptions{Before: func(s string) error { told = append(told, s); return nil }},
+		io.Discard); err != nil || strings.Join(told, " ") != StepGone+" "+StepReplaced || db() == first {
+		t.Fatalf("%v, told %v", err, told)
 	}
 }

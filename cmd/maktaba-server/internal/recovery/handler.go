@@ -38,6 +38,24 @@ type Actions struct {
 	// nothing was put back by itself), nil when none: the page says what happened and the
 	// choices, the backup to put back among them.
 	Held func() *Held
+	// Stuck is a restore a person asked for that is not done (its try failed, or runs), nil
+	// when none; GiveUp gives it up (asked twice): the library database stays as it was
+	// before it.
+	Stuck  func() *Stuck
+	GiveUp func(by string) error
+}
+
+// Stuck is a restore that is not done: its backup (file name), why its last try failed,
+// what the library database is since (untouched, replaced: that backup in part, gone),
+// whether a try runs now, and whether it can be given up, and for which release ("": the
+// held update waits again).
+type Stuck struct {
+	Backup    string `json:"backup"`
+	Why       string `json:"why,omitempty"`
+	Data      string `json:"data"`
+	Running   bool   `json:"running,omitempty"`
+	CanGiveUp bool   `json:"can_give_up,omitempty"`
+	Release   string `json:"release,omitempty"`
 }
 
 // Held is an update that stopped with nothing put back by itself: the release that
@@ -203,6 +221,7 @@ type State struct {
 	Rollback   string               `json:"rollback,omitempty"`
 	SafeMode   bool                 `json:"safe_mode"`
 	Held       *Held                `json:"held,omitempty"`
+	Stuck      *Stuck               `json:"stuck,omitempty"`
 }
 
 func (h *Handler) state() State {
@@ -273,6 +292,9 @@ func (h *Handler) state() State {
 	}
 	if h.Actions.Held != nil {
 		st.Held = h.Actions.Held()
+	}
+	if h.Actions.Stuck != nil {
+		st.Stuck = h.Actions.Stuck()
 	}
 	return st
 }
@@ -408,7 +430,7 @@ func (h *Handler) action(w http.ResponseWriter, r *http.Request, who Who) {
 		return
 	}
 	need := 1
-	if req.Action == "restore" || req.Action == "rollback" || r.Header.Get("X-Maktaba-Via") != "" {
+	if req.Action == "restore" || req.Action == "give_up_restore" || req.Action == "rollback" || r.Header.Get("X-Maktaba-Via") != "" {
 		need = 2
 	}
 	if req.Confirm < need {
@@ -460,11 +482,13 @@ func (h *Handler) action(w http.ResponseWriter, r *http.Request, who Who) {
 			break
 		}
 		detail = req.Backup
-		by := "the recovery console"
-		if who.UserID != "" {
-			by += " (" + who.UserID + ")"
+		err = h.Actions.Restore(req.Backup, who.by())
+	case "give_up_restore":
+		if h.Actions.GiveUp == nil {
+			err = errors.New("restore is not available here")
+			break
 		}
-		err = h.Actions.Restore(req.Backup, by)
+		err = h.Actions.GiveUp(who.by())
 	default:
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "no such action"})
 		return
@@ -476,6 +500,14 @@ func (h *Handler) action(w http.ResponseWriter, r *http.Request, who Who) {
 	}
 	h.Record(who, req.Action, detail)
 	writeJSON(w, http.StatusOK, map[string]string{"result": "ok"})
+}
+
+// by is who asked, as a restore's record names them.
+func (w Who) by() string {
+	if w.UserID != "" {
+		return "the recovery console (" + w.UserID + ")"
+	}
+	return "the recovery console"
 }
 
 // diagnostics is a .tar.gz of the last 2 hours of every service's segments, the status,

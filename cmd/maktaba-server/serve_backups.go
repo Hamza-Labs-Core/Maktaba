@@ -235,7 +235,7 @@ func deleteBackup(path, name string) error {
 	if err != nil {
 		return err
 	}
-	if rec, ok, _ := apppayload.ReadDatabase(cfg.StateDir()); ok && filepath.Base(rec.Dump) == name &&
+	if rec, ok, _ := apppayload.ReadDatabase(cfg.StateDir()); ok && (filepath.Base(rec.Dump) == name || (asked(rec) && filepath.Base(rec.Aside) == name)) &&
 		(rec.State == apppayload.DatabaseMigrating || rec.State == apppayload.DatabaseRestoring ||
 			rec.State == apppayload.DatabaseHeld) {
 		return fmt.Errorf("%w: %s is the way back from the update under way", errDumpInUse, name)

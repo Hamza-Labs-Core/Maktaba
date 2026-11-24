@@ -362,6 +362,28 @@ the update is held. Given up on, the older release refuses the database as newer
 put the backup back when a person asks. Update rehearsal 21 runs the previous release's real
 launcher and server against it.
 
+**A restore a person asked for that cannot finish** always has a way out. The database's record
+(`state/database.json`) says what state the data is in (`data`), written before each step that
+changes it, and that alone allows or refuses each way out:
+
+| The data | Try again | Another backup | Give it up | A newer release installed since |
+|---|---|---|---|---|
+| `untouched`: the database from before the restore | yes | yes | yes | goes on from it |
+| `replaced`: the backup's, in part or whole, not known to be whole | yes | yes | no | tries again |
+| `gone`: dropped, or empty | yes | yes | no | tries again |
+| not known (asked on a release from before this, and the database does not tell) | yes | yes | no | tries again |
+
+`untouched` is checked, never trusted: the record holds the identity of the database the restore
+found (`data_id`: its cluster, its oid and its public schema's), and whatever puts a dump back makes
+another. A restart of the release the restore is for, or of one whose own try failed, tries again: it
+is never taken for a newer release (`tried_by`). The database it replaces is set aside once for a
+restore, however often it is tried (`aside`), and no backup is removed until it is done
+(`backups/restore-hold`: the updates' and the scheduled dumps' pruning, and the room made for a dump,
+leave them all; no scheduled dump is taken). One lock covers asking for a restore, giving one up and
+the start's own try, and the record is written before the release is switched. On a Postgres the home
+does not bundle, the restore's transaction commits as the script's own last line, once psql ran all of
+it: a server killed in the middle of it commits nothing.
+
 **When the switch back fails** (the previous release gone, a pointer that cannot be written), a
 held record stays held: its Down scripts may have run in part, and the failed release never
 migrates and runs on that by itself.

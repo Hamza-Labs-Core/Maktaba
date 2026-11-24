@@ -92,6 +92,20 @@ or a release you rolled back by hand that refuses the newer schema.
   database is not one this restore handles), `restore_not_home` (a machine of a home has no
   backups: restore on the home), `restore_under_way` (one is already being put back),
   `restore_switch_failed` (the release could not be made current: the detail says why).
+- **It cannot finish** (the backup lost or damaged, a full disk, a try that hangs): the home stops
+  and says it, and every backup is kept until it is done. What can be done depends on what the
+  database is, which the start page and the recovery page (`/recovery`) say:
+  - *Nothing was changed*: try it again (a restart does), put another backup back, or give it up
+    (**Give this restore up**, or `maktaba-server restore --abandon --confirm`): the release that
+    ran before it runs again on the database as it was, or the update that had stopped waits for
+    you again. A newer release installed meanwhile goes on from that database. A try that hangs is
+    stopped the same way (**Stop it and give this restore up**).
+  - *The database may hold the backup in part*, or *is gone*: only a backup puts it right. Try it
+    again, or put another back. The database it replaced is in `replaced-<version>-<time>.dump`.
+  - Refusals: `restore_none` (no restore waits), `restore_data_changed` (the database is not the one
+    from before it any more: put a backup back), `restore_database_unanswered` (Postgres does not
+    answer, so that cannot be told), `restore_before_unknown` (asked on a release from before this:
+    put a backup back, or give it up under a newer release).
 
 ## Recovering a corrupt launcher
 

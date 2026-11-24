@@ -39,6 +39,34 @@ type RestoreOptions struct {
 	Members [][2]string
 	// Jobs is pg_restore's parallelism (0: half the CPUs, at least 1).
 	Jobs int
+	// Before is called before each step that destroys or replaces the app database, with
+	// what the database is from then on (StepGone, StepReplaced): an error stops the
+	// restore there, with nothing more done (nil: nothing to tell).
+	Before func(step string) error
+}
+
+// RestoreApp is the application_name of the session that puts a restored database in place
+// (dbsafe.Target.Identity ends the one a killed program left).
+const RestoreApp = "maktaba-restore"
+
+// What the app database is once a restore's destructive step began (RestoreOptions.Before).
+const (
+	// StepGone: it is dropped (its schema, on a Postgres the home does not bundle), and
+	// nothing is in its place yet.
+	StepGone = "gone"
+	// StepReplaced: the dump's data is put in its place, not known to be whole yet.
+	StepReplaced = "replaced"
+)
+
+// before calls fn (nil: nothing) with step.
+func (o RestoreOptions) before(step string) error {
+	if o.Before == nil {
+		return nil
+	}
+	if err := o.Before(step); err != nil {
+		return fmt.Errorf("nothing was done to the database: %w", err)
+	}
+	return nil
 }
 
 // Restore replaces the app database with a pg_dump custom-format dump: a fresh
@@ -113,7 +141,7 @@ func (b Bundle) restoreInto(ctx context.Context, q Querier, dump string, opts Re
 	if jobs <= 0 {
 		jobs = max(1, runtime.NumCPU()/2)
 	}
-	if err := b.makeRoomBeside(ctx, q, dump, log); err != nil {
+	if err := b.makeRoomBeside(ctx, q, dump, opts, log); err != nil {
 		return err
 	}
 	err := b.restoreOnce(ctx, q, dump, opts, jobs, log)
@@ -144,7 +172,7 @@ func roomFor(size int64) uint64 { return uint64(size)*5/4 + 1<<30 }
 // makeRoomBeside makes sure the scratch database fits beside the app database; when it
 // does not, the app database (whose state the restore replaces anyway) is dropped first,
 // with the machines' copy slots (logged: a restore that fails then leaves no database).
-func (b Bundle) makeRoomBeside(ctx context.Context, q Querier, dump string, log io.Writer) error {
+func (b Bundle) makeRoomBeside(ctx context.Context, q Querier, dump string, opts RestoreOptions, log io.Writer) error {
 	// what a restore before this one left
 	if err := q.Exec(ctx, "postgres", "DROP DATABASE IF EXISTS "+replacedDatabase+" WITH (FORCE);\n"+
 		"DROP DATABASE IF EXISTS "+restoringDatabase+" WITH (FORCE);"); err != nil {
@@ -159,9 +187,12 @@ func (b Bundle) makeRoomBeside(ctx context.Context, q Querier, dump string, log 
 		return err
 	}
 	size, _ := strconv.ParseInt(strings.TrimSpace(rows[0]), 10, 64)
-	free, _, err := diskSpaceOf(b.Data)
+	free, _, err := diskSpace(b.Data)
 	if err != nil || free >= roomFor(size) {
 		return nil
+	}
+	if err := opts.before(StepGone); err != nil {
+		return err
 	}
 	_, _ = fmt.Fprintf(log, "[postgres] level=warn not enough room to put %s back beside the %s database (%d MB free, "+
 		"%d MB wanted): the database it replaces is dropped first\n", dump, AppDatabase, free>>20, roomFor(size)>>20)
@@ -261,7 +292,7 @@ func (b Bundle) restoreOnce(ctx context.Context, q Querier, dump string, opts Re
 		return err
 	}
 	_, _ = fmt.Fprintf(log, "[postgres] %s is put back whole: every table, index, key, trigger and grant, and its rows\n", dump)
-	return b.swapIn(ctx, q, log)
+	return b.swapIn(ctx, q, opts, log)
 }
 
 // swapIn renames the whole scratch database into place as the app database, with the app
@@ -269,7 +300,7 @@ func (b Bundle) restoreOnce(ctx context.Context, q Querier, dump string, opts Re
 // CONNECT is the machines' way in), in one transaction, and drops the one it replaced
 // (with the machines' copy slots, which DROP DATABASE refuses to outlive). The database
 // replaced takes no new session meanwhile; those on it are ended.
-func (b Bundle) swapIn(ctx context.Context, q Querier, log io.Writer) error {
+func (b Bundle) swapIn(ctx context.Context, q Querier, opts RestoreOptions, log io.Writer) error {
 	there, err := q.databaseExists(ctx, AppDatabase)
 	if err != nil {
 		return err
@@ -288,8 +319,14 @@ func (b Bundle) swapIn(ctx context.Context, q Querier, log io.Writer) error {
 			return fmt.Errorf("close the %s database to new sessions: %w", AppDatabase, err)
 		}
 	}
+	if err := opts.before(StepReplaced); err != nil {
+		if there {
+			_ = q.Exec(context.WithoutCancel(ctx), "postgres", "ALTER DATABASE "+AppDatabase+" ALLOW_CONNECTIONS true;")
+		}
+		return err
+	}
 	var sb strings.Builder
-	sb.WriteString("BEGIN;\n")
+	sb.WriteString("SET application_name = '" + RestoreApp + "';\nBEGIN;\n")
 	if there {
 		sb.WriteString("ALTER DATABASE " + AppDatabase + " RENAME TO " + replacedDatabase + ";\n")
 	}

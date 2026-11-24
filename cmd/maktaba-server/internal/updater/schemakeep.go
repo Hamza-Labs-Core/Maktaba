@@ -70,7 +70,7 @@ func KeepsSchemaFrom(from, to string) (bool, string) {
 	if !keepsNewerSchema(from) {
 		return false, "the release before does not run on a newer schema (it has no " + SchemaKeepFile + ")"
 	}
-	fromSchema, toSchema := newestMigration(from), newestMigration(to)
+	fromSchema, toSchema := NewestMigration(from), NewestMigration(to)
 	if fromSchema == 0 || toSchema == 0 {
 		return false, "the releases' schemas are not known"
 	}

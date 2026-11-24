@@ -450,8 +450,8 @@ var (
 	dumpBeforeUpdate = func(ctx context.Context, b pgbundle.Bundle, from, to string, keep int) (string, error) {
 		return b.DumpBeforeUpdate(ctx, from, to, keep)
 	}
-	restoreDump = func(ctx context.Context, b pgbundle.Bundle, dump string, log io.Writer) error {
-		return b.RestoreRunning(ctx, dump, log)
+	restoreDump = func(ctx context.Context, b pgbundle.Bundle, dump string, before func(string) error, log io.Writer) error {
+		return b.RestoreRunningWith(ctx, dump, pgbundle.RestoreOptions{Before: before}, log)
 	}
 	migrateUp = runMigrateUp
 	// a database of the user's own (a plain server install's): its dump beside the
@@ -459,8 +459,8 @@ var (
 	dumpExternal = func(ctx context.Context, t dbsafe.Target, from, to string, keep int, room pgbundle.RoomPolicy) (string, error) {
 		return dumpBeforeUpdateExternal(ctx, t, from, to, keep, room)
 	}
-	restoreExternal = func(ctx context.Context, t dbsafe.Target, dump string, log io.Writer) error {
-		return t.Restore(ctx, dump, log)
+	restoreExternal = func(ctx context.Context, t dbsafe.Target, dump string, before func(string) error, log io.Writer) error {
+		return t.RestoreWith(ctx, dump, before, log)
 	}
 	// the database a restore by hand replaces, set aside before the backup is put back
 	dumpAsideBundled  = func(ctx context.Context, b pgbundle.Bundle, path string) error { return b.DumpTo(ctx, path) }
@@ -491,6 +491,14 @@ var (
 			return 0, err
 		}
 		return t.SchemaVersion(ctx)
+	}
+	// the data the database holds (dbsafe.Target.Identity)
+	dataIdentity = func(ctx context.Context, g *migrationGate) (string, int64, error) {
+		t, err := g.target()
+		if err != nil {
+			return "", 0, err
+		}
+		return t.Identity(ctx)
 	}
 	// the slot the database itself recorded before at (goose's own record)
 	schemaVersionAt = func(ctx context.Context, g *migrationGate, at time.Time) (int64, error) {
@@ -615,19 +623,22 @@ func (g *migrationGate) backups() string {
 }
 
 // setAsideReplaced dumps the database a restore by hand replaces
-// (replaced-<version>-<utc>.dump beside the backups), once since it was asked: it holds
-// every change made since the backup, which the person chose to put back. Best effort:
-// the putting back goes on either way (D2). An update's rollback sets nothing aside: the
+// (replaced-<version>-<utc>.dump beside the backups), once for a restore however often it
+// is tried (the record's Aside; its path, "" when it could not): it holds every change made
+// since the backup, which the person chose to put back. No backup is removed to make room
+// for it (they are held: one of them may be needed next). Best effort: the putting back
+// goes on either way (D2). An update's rollback sets nothing aside: the
 // release before starts at once, from the dump taken before the failed release's
 // migrations when they ran.
-func (g *migrationGate) setAsideReplaced(ctx context.Context, rec apppayload.Database) {
+func (g *migrationGate) setAsideReplaced(ctx context.Context, rec apppayload.Database) string {
 	dir := g.backups()
 	prefix, since := pgbundle.ReplacedDumpPrefix+rec.Version+"-", rec.At
-	if ents, err := os.ReadDir(dir); err == nil {
+	if ents, err := os.ReadDir(dir); err == nil && rec.Data == apppayload.DataUnknown {
+		// asked on a release that did not record it: it may have set it aside already
 		for _, e := range ents {
 			if info, err := e.Info(); err == nil && strings.HasPrefix(e.Name(), prefix) &&
 				strings.HasSuffix(e.Name(), ".dump") && !info.ModTime().Before(since) {
-				return // set aside already
+				return filepath.Join(dir, e.Name())
 			}
 		}
 	}
@@ -643,9 +654,10 @@ func (g *migrationGate) setAsideReplaced(ctx context.Context, rec apppayload.Dat
 	if err != nil {
 		fmt.Fprintf(g.log, "[serve] level=warn could not set the library database aside before the restore "+
 			"(it is put back all the same): %v\n", err)
-		return
+		return ""
 	}
 	fmt.Fprintf(g.log, "[serve] the library database the restore replaces is in %s\n", path)
+	return path
 }
 
 // keeps reports whether the gate dumps and puts back (a bundled or an external one).
@@ -861,11 +873,13 @@ func (m *migrationsDone) Write(p []byte) (int, error) {
 	return m.w.Write(p)
 }
 
-func (g *migrationGate) putBack(ctx context.Context, dump string) error {
+// putBack puts dump back as the library database; before is told each step that destroys or
+// replaces it, before it is done.
+func (g *migrationGate) putBack(ctx context.Context, dump string, before func(step string) error) error {
 	if g.pg != nil {
-		return restoreDump(ctx, *g.pg, dump, g.log)
+		return restoreDump(ctx, *g.pg, dump, before, g.log)
 	}
-	return restoreExternal(ctx, *g.ext, dump, g.log)
+	return restoreExternal(ctx, *g.ext, dump, before, g.log)
 }
 
 // pruneDumps keeps the newest keep pre-update dumps in dir (keepPath always) and as many
@@ -1010,8 +1024,17 @@ func (g *migrationGate) recordChanges() func() bool {
 		if json.Unmarshal(now, &rec) != nil {
 			return false
 		}
+		if g.guard().gone() {
+			return false // the process restarts for what was asked: nothing of it starts on it
+		}
 		return rec.State == apppayload.DatabaseMigrated || rec.State == apppayload.DatabaseRestored
 	}
+}
+
+// recordUnread says the database's record cannot be read.
+func (g *migrationGate) recordUnread(err error) error {
+	return detailErr("db_record_failed", fmt.Sprintf("the library database's record (%s) cannot be read: %v",
+		apppayload.DatabasePath(g.stateDir), err), apppayload.DatabasePath(g.stateDir), err.Error())
 }
 
 func (g *migrationGate) save(rec apppayload.Database) error {
@@ -1048,8 +1071,10 @@ func (g *migrationGate) run(ctx context.Context, report func(supervisor.Detail))
 	cur := g.version
 	rec, err := g.record()
 	if err != nil {
-		return detailErr("db_record_failed", fmt.Sprintf("the library database's record (%s) cannot be read: %v",
-			apppayload.DatabasePath(g.stateDir), err), apppayload.DatabasePath(g.stateDir), err.Error())
+		return g.recordUnread(err)
+	}
+	if !asked(rec) {
+		g.holdBackups(rec) // no restore waits: a hold left behind goes
 	}
 	held := rec.Version
 	if g.api == nil {
@@ -1564,25 +1589,72 @@ func existingDir(dirs ...string) string {
 // restoreAsked puts back a backup a person asked for (rec.By: story 35.5 AC8), before
 // any role runs: the database it replaces set aside first, the dump put back as a failed
 // update's is (one transaction, the machines' copies made anew), and recorded restored
-// with the release it was put back for. No update attempt: nothing failed.
+// with the release it was put back for. No update attempt: nothing failed. What the data
+// is goes in the record before each step that changes it; a try that fails says it, and
+// what can be done then (serve_restore_exits.go). A newer release installed since the try
+// failed goes on from what was there before instead.
 func (g *migrationGate) restoreAsked(ctx context.Context, rec apppayload.Database, report func(supervisor.Detail)) (apppayload.Database, error) {
 	if !g.keeps() {
 		return rec, supervisor.Halt(detailErr("db_no_cluster", fmt.Sprintf("the library database cannot be put back "+
 			"from %s (%s): this Maktaba runs no database of its own to put it back into", rec.Dump, rec.Error),
 			rec.Failed, rec.Error, rec.Dump))
 	}
+	tctx, end, ok := g.guard().begin(ctx)
+	if !ok {
+		<-ctx.Done() // the process restarts for what a person asked meanwhile
+		return rec, ctx.Err()
+	}
+	defer end()
+	// as it is now that nothing else changes it
+	now, err := g.record()
+	if err != nil {
+		return rec, g.recordUnread(err)
+	}
+	if rec = now; !asked(rec) {
+		return rec, nil
+	}
+	settled, serr := settleData(tctx, rec, g.probe())
+	if serr == nil {
+		rec = settled
+	} else if ctx.Err() == nil {
+		fmt.Fprintf(g.log, "[serve] level=warn the library database cannot be looked at before the restore: %v\n", serr)
+	}
+	if base, ok := leftBehind(rec, g.version); ok && serr == nil {
+		if err := g.save(base); err != nil {
+			return rec, err
+		}
+		g.holdBackups(base)
+		fmt.Fprintf(g.log, "[serve] the restore of %s failed (%s): %s, installed since, goes on from the database as it "+
+			"was before it\n", rec.Dump, rec.RestoreError, g.version)
+		return base, nil
+	}
+	// every backup stays until this is done: the one put back, and the next one tried
+	if err := holdBackupsFor(g.backups(), rec); err != nil {
+		return rec, g.restoreFailed(ctx, rec, err)
+	}
 	report(detail("db_restoring_backup", fmt.Sprintf("Putting the library database back from %s, as %s asked",
 		rec.Dump, rec.By), rec.Dump, rec.By))
-	g.setAsideReplaced(ctx, rec)
+	if rec.Aside == "" && rec.Data != apppayload.DataReplaced && rec.Data != apppayload.DataGone {
+		rec.Aside = g.setAsideReplaced(tctx, rec)
+	}
 	fmt.Fprintf(g.log, "[serve] restore asked by %s: putting %s back for %s\n", rec.By, rec.Dump, orUnknown(rec.From))
-	err := g.putBack(ctx, rec.Dump)
+	if err = g.save(rec); err == nil && tctx.Err() == nil {
+		err = g.putBack(tctx, rec.Dump, func(step string) error {
+			rec.Data = step
+			return g.save(rec)
+		})
+	}
 	if ctx.Err() != nil {
 		return rec, ctx.Err() // the record still says restoring: the next start finishes it
 	}
+	if err == nil {
+		err = context.Cause(tctx) // stopped before it began
+	}
 	if err != nil {
-		return rec, supervisor.Halt(detailErr("db_restore_backup_failed", fmt.Sprintf("putting the library database "+
-			"back from %s failed: %v. Nothing was changed; Maktaba stays stopped and its next start tries again",
-			rec.Dump, err), rec.Dump, err.Error()))
+		if stopped := context.Cause(tctx); stopped != nil {
+			err = stopped
+		}
+		return rec, g.restoreFailed(ctx, rec, err)
 	}
 	// the dump of a schema kept for a release is that schema again, kept for it
 	done := apppayload.Database{Version: rec.From, State: apppayload.DatabaseRestored, From: rec.From, Dump: rec.Dump,
@@ -1590,8 +1662,53 @@ func (g *migrationGate) restoreAsked(ctx context.Context, rec apppayload.Databas
 	if err := g.save(done); err != nil {
 		return rec, err
 	}
+	g.holdBackups(done)
 	fmt.Fprintf(g.log, "[serve] the library database is back as it was in %s\n", rec.Dump)
 	return done, nil
+}
+
+// guard is the lock over this home's restore.
+func (g *migrationGate) guard() *restoreGuard { return restoreGuardOf(g.stateDir) }
+
+// holdBackups keeps every backup while rec is a restore that is not done, and lets them go
+// otherwise.
+func (g *migrationGate) holdBackups(rec apppayload.Database) {
+	if !g.keeps() {
+		return
+	}
+	if err := holdBackupsFor(g.backups(), rec); err != nil {
+		fmt.Fprintf(g.log, "[serve] level=warn the backups' hold (%s): %v\n", g.backups(), err)
+	}
+}
+
+// restoreFailed records a try of the restore rec that failed, with what the data is now
+// (the database asked, else what was recorded before the step that failed), and halts
+// saying it and what can be done.
+func (g *migrationGate) restoreFailed(ctx context.Context, rec apppayload.Database, cause error) error {
+	if settled, err := settleData(context.WithoutCancel(ctx), rec, g.probe()); err == nil {
+		rec = settled
+	}
+	rec.RestoreError, rec.TriedBy = cause.Error(), g.version
+	if err := g.save(rec); err != nil {
+		fmt.Fprintf(g.log, "[serve] level=warn the failed restore cannot be recorded: %v\n", err)
+	}
+	const ways = "Maktaba stays stopped. Its next start tries again; on the recovery page (/recovery) or with " +
+		"`maktaba-server restore` you can put another backup back"
+	code, text := "db_restore_backup_failed", "putting the library database back from %s failed: %v. Nothing was "+
+		"changed. "+ways+" or give this restore up, and a newer release installed now goes on from the database as it is"
+	switch rec.Data {
+	case apppayload.DataUntouched:
+	case apppayload.DataGone:
+		code, text = "db_restore_backup_gone", "putting the library database back from %s failed: %v. The library "+
+			"database is gone, so only a backup brings it back. "+ways
+	default:
+		code, text = "db_restore_backup_part", "putting the library database back from %s failed: %v. The library "+
+			"database may hold that backup in part, so only a backup puts it right. "+ways
+	}
+	if rec.Aside != "" {
+		text += " (the database it replaces is in " + rec.Aside + ")"
+	}
+	return supervisor.Halt(detailErr(code, fmt.Sprintf(text, rec.Dump, cause), rec.Dump, cause.Error()))
 }
 
 // heldUpdate is the detail of an update that stopped with nothing put back by itself

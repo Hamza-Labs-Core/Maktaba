@@ -142,6 +142,9 @@ func MakeRoomWith(dir string, p RoomPolicy) error {
 	budget := p.budget(total)
 	sort.Slice(all, func(i, j int) bool { return all[i].mod.Before(all[j].mod) })
 	for _, d := range all {
+		if BackupsHeld(dir) {
+			break // a restore is not done: every dump stays
+		}
 		if free >= need && used+next <= budget {
 			break
 		}

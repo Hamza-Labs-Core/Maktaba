@@ -58,7 +58,7 @@ func DownToFrom(from, to string, before int64, onKept bool) (schema int64, ok bo
 	if from == "" || to == "" {
 		return 0, false, "the releases' migrations are not known"
 	}
-	fromSchema, toSchema := newestMigration(from), newestMigration(to)
+	fromSchema, toSchema := NewestMigration(from), NewestMigration(to)
 	if fromSchema == 0 || toSchema == 0 {
 		return 0, false, "the releases' schemas are not known"
 	}

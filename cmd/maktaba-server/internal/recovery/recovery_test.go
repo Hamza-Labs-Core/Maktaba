@@ -421,3 +421,46 @@ func jsonText(s string) string {
 	b, _ := json.Marshal(s)
 	return strings.Trim(jsonForScript(b), `"`)
 }
+
+// A restore that is not done: the console names it, says what the database is, and offers the
+// ways out there are (the same backup again, another, giving it up, asked twice), in both
+// languages.
+func TestARestoreThatIsNotDoneIsShownWithItsWaysOut(t *testing.T) {
+	k := newKey(t)
+	h, _ := newHandler(t, k)
+	h.Actions.Stuck = func() *Stuck {
+		return &Stuck{Backup: "pre-0.3.153-to-0.3.158.dump", Why: "pg_restore: no space left", Data: "untouched", CanGiveUp: true,
+			Release: "0.3.158"}
+	}
+	var by string
+	h.Actions.GiveUp = func(b string) error { by = b; return nil }
+	admin := &http.Cookie{Name: CookiePass, Value: sign(t, k, pass("a1", true, AudienceRecovery, t0, t0.Add(time.Hour)))}
+	var st State
+	if err := json.Unmarshal(do(h, http.MethodGet, "/recovery/api/state", "", admin, nil).Body.Bytes(), &st); err != nil {
+		t.Fatal(err)
+	}
+	if st.Stuck == nil || st.Stuck.Backup != "pre-0.3.153-to-0.3.158.dump" || !st.Stuck.CanGiveUp || st.Stuck.Data != "untouched" {
+		t.Fatalf("stuck: %+v", st.Stuck)
+	}
+	for _, lang := range []string{"en", "ar"} {
+		page := do(h, http.MethodGet, "/recovery", "", admin, map[string]string{"Accept-Language": lang}).Body.String()
+		for _, k := range []string{"running", "untouched", "replaced", "gone", "retry", "other", "giveUp", "giveUpHeld", "stop", "newer"} {
+			k = "recovery.stuck." + k
+			if !strings.Contains(page, `"`+k+`":`) || !strings.Contains(page, jsonText(T(lang, k))) {
+				t.Errorf("%s: the page lacks %s", lang, k)
+			}
+		}
+	}
+	hdr := map[string]string{"X-Maktaba-Recovery": "1"}
+	if c := do(h, http.MethodPost, "/recovery/api/action", `{"action":"give_up_restore","confirm":1}`, admin, hdr).Code; c != http.StatusPreconditionRequired || by != "" {
+		t.Fatalf("given up with one confirmation: %d %q", c, by)
+	}
+	if c := do(h, http.MethodPost, "/recovery/api/action", `{"action":"give_up_restore","confirm":2}`, admin, hdr).Code; c != http.StatusOK ||
+		!strings.Contains(by, "a1") {
+		t.Fatalf("given up: %d %q", c, by)
+	}
+	h.Actions.Stuck = func() *Stuck { return nil }
+	if strings.Contains(do(h, http.MethodGet, "/recovery/api/state", "", admin, nil).Body.String(), `"stuck":`) {
+		t.Fatal("a state with no restore")
+	}
+}
