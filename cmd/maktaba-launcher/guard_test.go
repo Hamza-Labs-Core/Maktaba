@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -502,13 +503,47 @@ func TestAReleaseWithNothingToGoBackToStays(t *testing.T) {
 			if err := stop(); err != nil {
 				t.Fatal(err)
 			}
-			// the machine starts again: its time is not used up (only this last start's)
+			// the machine starts again: its time is not used up (this last start's at most; none
+			// when the time had just started again)
 			ln := &launcher{cfg: cfg, l: l}
 			key, _, _ := ln.pendingGuard("2.0.0")
-			if ran := ln.readGuardRan(key); ran <= 0 || ran > 10*time.Second {
+			if ran := ln.readGuardRan(key); ran > 10*time.Second {
 				t.Fatalf("%s of its time used, as kept for the next start", ran)
 			}
 		})
+	}
+}
+
+// The time a release ran is kept when the launcher stops it (the machine stopped, the service
+// restarted), however short its run: a release that hangs uses its budget up across stops.
+// Nothing here runs long enough for a look to save it.
+func TestGuardTimeIsKeptWhenTheLauncherStops(t *testing.T) {
+	t.Parallel()
+	processTest(t)
+	bundle, root := mkBundle(t, "run")
+	mkPayload(t, bundle, "2.0.0", "run", "new")
+	if err := layout.WriteGuard(root, layout.Guard{Version: "2.0.0", RunID: "run-1", Since: time.Now(),
+		Deadline: time.Now().Add(time.Hour), MaxRunSec: 7200}); err != nil {
+		t.Fatal(err)
+	}
+	l := layout.New(root)
+	var want time.Duration
+	for start := range 2 {
+		var ticks atomic.Int64 // a millisecond a look
+		cfg := testConfig(root)
+		cfg.Bundle = bundle
+		cfg.Tick = func() time.Duration { return time.Duration(ticks.Add(1)) * time.Millisecond }
+		stop := startLauncher(t, cfg)
+		waitFor(t, "a few looks", func() bool { return ticks.Load() >= 3 && countAct(readTrace(l), "new", "run") == start+1 })
+		if err := stop(); err != nil {
+			t.Fatal(err)
+		}
+		want += time.Duration(ticks.Load()) * time.Millisecond
+		ln := &launcher{cfg: cfg, l: l}
+		key, _, _ := ln.pendingGuard("2.0.0")
+		if got := ln.readGuardRan(key); got < want-time.Millisecond/2 || got > want+time.Millisecond/2 {
+			t.Fatalf("start %d: %s kept, ran %s", start+1, got, want)
+		}
 	}
 }
 
