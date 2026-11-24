@@ -10,6 +10,10 @@
 // on Escape, and after a choice. The right click keeps the system's menu: the keyboard's and
 // the screen reader's way in, and the only one on Linux, where the panel draws the menu itself
 // (StatusNotifier).
+//
+// On Linux the window is never built, so the building and placing below go unused there; they
+// stay compiled (and the placement's tests run) on every system.
+#![cfg_attr(target_os = "linux", allow(dead_code))]
 
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
