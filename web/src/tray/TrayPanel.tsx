@@ -72,8 +72,9 @@ export function TrayPanel() {
 
   // the first action takes the focus when the panel opens (its first state, and each time the
   // shell shows it again), never when its words change under a keyboard (a download's percent)
+  // (with the panel's first picture, so a key pressed at once is not lost)
   const opened = useRef(false);
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!parts || opened.current) return;
     opened.current = true;
     buttons.current.find((b) => b && !b.disabled)?.focus();
