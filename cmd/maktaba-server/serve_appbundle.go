@@ -746,11 +746,6 @@ func (g *migrationGate) migrate(ctx context.Context, cur string, update bool, re
 			report(detail("db_migrating", fmt.Sprintf("Updating the library database for %s (%d migrations done)", cur, n), cur))
 		}}
 	}
-	if update {
-		// the machines' copies wait out their table syncs, then pause until this is done
-		resume := g.pauseCopies(ctx)
-		defer resume()
-	}
 	for try := 1; ; try++ {
 		if update {
 			g.endSessions(ctx)
@@ -1173,7 +1168,18 @@ func (g *migrationGate) run(ctx context.Context, report func(supervisor.Detail))
 		report(detail("db_checking", "Checking the library database", cur))
 	}
 	migStart := time.Now()
+	resumeCopies := func() {}
+	if migrating {
+		// the machines' copies wait out their table syncs, then pause until the migrations
+		// are done, or undone (their Down scripts, backWithoutDump, wait on the same locks)
+		resumeCopies = g.pauseCopies(ctx, copySyncWait)
+	}
 	err = g.migrate(ctx, cur, migrating, report)
+	if err == nil {
+		resumeCopies()
+	} else {
+		defer resumeCopies()
+	}
 	if err == nil && migrating {
 		// the update's migrations, for /metrics (story 35.15)
 		if rerr := updater.RecordMigration(g.updates, cur, time.Since(migStart), time.Now()); rerr != nil {

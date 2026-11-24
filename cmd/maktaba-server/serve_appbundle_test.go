@@ -344,6 +344,9 @@ func installFakeDB(t *testing.T, cfg config.Config) *fakeDB {
 		f.mu.Lock()
 		defer f.mu.Unlock()
 		f.downs = append(f.downs, fmt.Sprintf("%s %d", rec.State, schema))
+		if len(f.replicaRoles) > 0 {
+			f.copies = append(f.copies, "down")
+		}
 		return f.downErr
 	}
 	endBlockersBundled = func(context.Context, pgbundle.Bundle, time.Duration) ([]pgbundle.EndedSession, error) {
@@ -2500,6 +2503,42 @@ func TestAppBundleMigrationsPauseTheMachinesCopies(t *testing.T) {
 	f.mu.Unlock()
 	if len(copies) < 2 || copies[0] != "pause maktaba_rep_a migrating" || copies[1] != "resume maktaba_rep_a" {
 		t.Fatalf("after failed migrations: %v", copies)
+	}
+
+	// the Down scripts of failed migrations run with the copies still paused
+	cfg, payload = appEnv(t, "v0.3.0", "")
+	if err := os.MkdirAll(filepath.Join(updater.KeptPayloadDir(updatesDirOf(cfg, ""), "v0.2.0"), "migrations"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	record(t, cfg, apppayload.Database{Version: "v0.2.0", State: apppayload.DatabaseMigrated})
+	f = installFakeDB(t, cfg)
+	f.replicaRoles = []string{"maktaba_rep_a"}
+	f.back, f.backSchema, f.before, f.applied = updater.FailedDown, 230, 230, 234
+	f.migrateErr = errors.New("ERROR 0144_x.sql")
+	ps = appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), io.Discard)
+	_ = prepareOf(t, ps, supervisor.RoleAPI)(context.Background(), noReport)
+	f.mu.Lock()
+	copies = append([]string(nil), f.copies...)
+	f.mu.Unlock()
+	if strings.Join(copies, "|") != "pause maktaba_rep_a migrating|down|resume maktaba_rep_a" {
+		t.Fatalf("around the Down scripts: %v", copies)
+	}
+
+	// so do a rollback's (updater.Machine.MigrateDown), with no wait for a table sync
+	cfg, _ = appEnv(t, "v0.3.0", "")
+	record(t, cfg, apppayload.Database{Version: "v0.3.0", State: apppayload.DatabaseMigrated})
+	f = installFakeDB(t, cfg)
+	f.syncs, f.replicaRoles = []int{1, 1, 1}, []string{"maktaba_rep_a"}
+	g := &migrationGate{stateDir: cfg.StateDir(), version: "v0.2.0", pg: testBundle(cfg), log: io.Discard}
+	u := &updates{api: exec.Command("maktaba-api")}
+	if err := u.migrateDown(context.Background(), nil, 230, g.pauseCopies); err != nil {
+		t.Fatal(err)
+	}
+	f.mu.Lock()
+	copies, syncs = append([]string(nil), f.copies...), len(f.syncs)
+	f.mu.Unlock()
+	if strings.Join(copies, "|") != "pause maktaba_rep_a migrated|down|resume maktaba_rep_a" || syncs != 2 {
+		t.Fatalf("around a rollback's Down scripts: %v (%d counts left)", copies, syncs)
 	}
 
 	// a server stopped during the migrations: its next start lets them back in first

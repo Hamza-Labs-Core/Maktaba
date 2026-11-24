@@ -353,8 +353,8 @@ new release does not confirm in time (15 minutes) or stops three times in ten mi
   migrations the home waits up to 10 minutes for the table syncs still running, then pauses the
   machines' copies: each machine's replication role may not log in, and its walsender is ended,
   so nothing of theirs runs or comes straight back while the schema changes. After the
-  migrations, failed or not, they log in again and go on from where they stopped (each one's slot
-  kept the changes, under the home's cap). A home stopped in the middle lets them back in at its
+  migrations, or the Down scripts that undo them (a rollback's too), they log in again and go on
+  from where they stopped (each one's slot kept the changes, under the home's cap). A home stopped in the middle lets them back in at its
   next start.
 - **Index builds are plain while the library is stopped (since 2026-11-24).** The migrations
   run before any role starts, so their `CREATE INDEX CONCURRENTLY` and `DROP INDEX CONCURRENTLY`

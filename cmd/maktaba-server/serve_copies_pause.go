@@ -48,12 +48,12 @@ func copiesPausedPath(stateDir string) string {
 	return filepath.Join(stateDir, "state", "copies-paused.json")
 }
 
-// pauseCopies waits (up to copySyncWait) for the machines' table syncs to end, then
+// pauseCopies waits (up to wait) for the machines' table syncs to end, then
 // pauses their copies for the migrations; the returned func lets them log in again. Only
 // the bundled Postgres's copies (an operator's keeps none unless allowed, and its roles
 // are the operator's to change). Best effort: what fails is said, and the migrations go
 // on as before (their lock timeout, and freeMigrations, bound what they wait on).
-func (g *migrationGate) pauseCopies(ctx context.Context) func() {
+func (g *migrationGate) pauseCopies(ctx context.Context, wait time.Duration) func() {
 	if g.pg == nil {
 		return func() {}
 	}
@@ -72,15 +72,15 @@ func (g *migrationGate) pauseCopies(ctx context.Context) func() {
 			}
 			break
 		}
-		if time.Since(start) >= copySyncWait {
-			fmt.Fprintf(g.log, "[serve] level=warn %d of the machines' table syncs still run after %s: the copies are "+
-				"paused all the same, and those machines copy those tables again\n", n, copySyncWait)
+		if time.Since(start) >= wait {
+			fmt.Fprintf(g.log, "[serve] level=warn %d of the machines' table syncs still run (%s waited): the copies are "+
+				"paused all the same, and those machines copy those tables again\n", n, wait)
 			break
 		}
 		if !told {
 			told = true
 			fmt.Fprintf(g.log, "[serve] %d of the machines' table syncs run (a machine copying the database): the "+
-				"migrations wait for them to end (at most %s)\n", n, copySyncWait)
+				"migrations wait for them to end (at most %s)\n", n, wait)
 		}
 		select {
 		case <-ctx.Done():
