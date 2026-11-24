@@ -3488,6 +3488,16 @@ build fails when the two differ.
 
 ### Changed
 
+- **The Mac Player's sidebar in brass, and on the right in Arabic.** The Player for Mac marks
+  the section you are in with a brass fill and brass symbols instead of the system's grey, with
+  Profile at the bottom of the sidebar. Drag a section to reorder it or hide it from its menu;
+  ⌘1 to ⌘5 follow the sidebar's order, and ↑ and ↓ move through it. A section keeps its place,
+  its search and its pages while you are in another one. Profile's rows are the apps' own
+  full-width rows with brass symbols in place of the system's buttons. Language in Profile now
+  picks English, Arabic or the system's language in the Player itself: it asks first, in English
+  and Arabic, saves what is playing, then starts the Player again in that language, and in Arabic
+  the sidebar and the window's buttons move to the right. The iPhone and iPad apps are unchanged.
+
 - **A machine that loses its home stays usable** under a notice instead of the whole app being
   swapped for the "cannot reach its home" page (that page stays for a machine whose code does
   not fit the home's database, and for one with no usable copy). This replaces the home's last
@@ -3910,16 +3920,6 @@ build fails when the two differ.
   broadcasting row and Subscription does not list it, unless the home's licence includes
   broadcasting. The broadcast edge takes no uploads while broadcasting is off, with a valid token
   included; only the list of revoked access still reaches it.
-
-- **The Mac Player's sidebar in brass, and on the right in Arabic.** The Player for Mac marks
-  the section you are in with a brass fill and brass symbols instead of the system's grey, with
-  Profile at the bottom of the sidebar. Drag a section to reorder it or hide it from its menu;
-  ⌘1 to ⌘5 follow the sidebar's order, and ↑ and ↓ move through it. A section keeps its place,
-  its search and its pages while you are in another one. Profile's rows are the apps' own
-  full-width rows with brass symbols in place of the system's buttons. Language in Profile now
-  picks English, Arabic or the system's language in the Player itself: it asks first, in English
-  and Arabic, saves what is playing, then starts the Player again in that language, and in Arabic
-  the sidebar and the window's buttons move to the right. The iPhone and iPad apps are unchanged.
 
 ### Fixed
 
