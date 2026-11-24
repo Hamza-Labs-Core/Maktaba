@@ -132,12 +132,15 @@ A release installs by itself only when every one of these holds:
 - the home's local time is inside the window (`window`, default `03:00-05:00`), at least 30
   minutes before its end;
 - no other run is active, and no TV change is being swapped;
-- the list of releases was read in the last 12 hours and 30 minutes (two checks;
-  `StaleHoldAfter`). While the checks fail, automatic installs wait (`catalog_stale` on Admin →
-  Updates, and a notification once a day), because a stale list may not know the newest
-  releases, nor that one was withdrawn. On 2026-11-24 a home whose checks had failed for a day
-  installed a release older than one that had rolled back. **Update now** still installs. A
-  home that never read the list is not held;
+- the list of releases was read in the last 12 hours and 30 minutes (two checks at the default
+  cadence; two checks and 30 minutes at a slower `MAKTABA_UPDATE_INTERVAL_SEC`). One older than
+  that is read again first, so a home that slept, or started a minute ago, installs at once; only
+  when that fails does the install wait (`catalog_stale` on Admin → Updates; tried again every 15
+  minutes, and the admins notified once it lasts half an hour, or at once when the checks keep
+  failing, once a day at most), because a stale list may not know the newest releases, nor that one
+  was withdrawn. On 2026-11-24 a home whose checks had failed for a day installed a release older
+  than one that had rolled back. **Update now** still installs. A home that never read the list, or
+  whose background checks are off (`0`), is not held;
 - it does not need your approval (a release whose migrations an older home could not run,
   `breaks_previous_home`, waits on Live TV → Changes: **Approve and update now** or **Skip this
   version**).

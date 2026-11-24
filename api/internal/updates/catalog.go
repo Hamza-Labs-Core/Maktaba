@@ -71,6 +71,7 @@ type Discoverer struct {
 
 	mu         sync.Mutex
 	retryAfter time.Time
+	checking   sync.Mutex // held while a check runs: one at a time
 }
 
 func (d *Discoverer) now() time.Time {
@@ -403,6 +404,25 @@ type CheckResult struct {
 // goes into the catalog; each new (or re-tagged) entry has its three small files
 // downloaded and verified. A failure to reach GitHub keeps the catalog as it was.
 func (d *Discoverer) Check(ctx context.Context) (CheckResult, error) {
+	d.checking.Lock()
+	defer d.checking.Unlock()
+	return d.check(ctx, true)
+}
+
+// Reread checks when the saved state still asks for it once no other check runs (the start's
+// own, an admin's): a failure of it is no check of the streak the admins are told of.
+func (d *Discoverer) Reread(ctx context.Context, wanted func(State) bool) error {
+	d.checking.Lock()
+	defer d.checking.Unlock()
+	if !wanted(d.Store.LoadState(ctx)) {
+		return nil
+	}
+	_, err := d.check(ctx, false)
+	return err
+}
+
+// check is one check; counted: its failure is one of the streak (checkFailed).
+func (d *Discoverer) check(ctx context.Context, counted bool) (CheckResult, error) {
 	var res CheckResult
 	d.mu.Lock()
 	wait := d.retryAfter
@@ -424,11 +444,11 @@ func (d *Discoverer) Check(ctx context.Context) (CheckResult, error) {
 	}
 	rels, withdrawn, decodeErr, err := d.listing(ctx, pol.Channel, &st)
 	if err != nil {
-		d.checkFailed(ctx, st, now, CheckErrorCode(err), err.Error())
+		d.checkFailed(ctx, st, now, CheckErrorCode(err), err.Error(), counted)
 		return res, err
 	}
 	if decodeErr != nil {
-		d.checkFailed(ctx, st, now, CheckFailDecode, "decode releases: "+decodeErr.Error())
+		d.checkFailed(ctx, st, now, CheckFailDecode, "decode releases: "+decodeErr.Error(), counted)
 		return res, fmt.Errorf("decode releases: %w", decodeErr)
 	}
 	wm, err := d.Store.Watermark(ctx)
@@ -533,8 +553,13 @@ func CheckErrorCode(err error) string {
 // checkFailed records a failed check: the streak of failures, since when, and on what. From
 // the FailingAfter-th failure in a row it notifies the admins (once a day at most); the
 // 14-day stale warning follows its own rule.
-func (d *Discoverer) checkFailed(ctx context.Context, st State, now time.Time, code, msg string) {
+// One that is not counted (a held install reading the list again) saves only what it failed on.
+func (d *Discoverer) checkFailed(ctx context.Context, st State, now time.Time, code, msg string, counted bool) {
 	st.LastCheckErr, st.LastCheckCode = msg, code
+	if !counted {
+		d.Store.SaveState(ctx, st)
+		return
+	}
 	st.Failures++
 	if st.FailingSince == nil {
 		st.FailingSince = &now

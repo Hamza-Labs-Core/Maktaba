@@ -285,6 +285,7 @@ func MountP35(r chi.Router, d P35Deps) *updates.Handler {
 				interval = n // 0: no background checks (Epic 28 meaning), "check now" still works
 			}
 		}
+		svc.CheckEvery = &interval
 		if svc.Discoverer != nil && interval > 0 {
 			d.Loops.Declare("updates_discoverer", runner.Bound(ctx, runner.Func(func(ctx context.Context) {
 				svc.Discoverer.Run(ctx, interval)

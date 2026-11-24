@@ -4621,9 +4621,9 @@ build fails when the two differ.
   then update again. A failed start of the app is now written in the update's log. The Linux app
   has nothing to download for its update, so the update goes on without it after 10 minutes.
 
-- **Automatic updates wait while the list of releases cannot be read.** When the home's checks
-  for updates have failed for over 12 hours, nothing installs by itself until a check reads the
-  list again: a stale list may not know the newest releases, nor that one was withdrawn. On
+- **Automatic updates wait while the list of releases cannot be read.** When the home has not
+  read the list for over 12 hours it reads it again before it installs by itself, and waits while
+  that fails: a stale list may not know the newest releases, nor that one was withdrawn. On
   2026-11-24 a home installed a release older than one that had rolled back, from a list it had
   not been able to read for a day. The Updates page says why the update waits and the admins are
   notified once a day, in English and Arabic; **Update now** still installs.

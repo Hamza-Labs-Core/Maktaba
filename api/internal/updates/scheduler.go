@@ -46,28 +46,51 @@ const (
 	WaitCatalogStale = "catalog_stale"
 )
 
-// StaleHoldAfter is how old the last good read of the list of releases may be before
-// automatic installs wait for a fresh one: two checks (CheckInterval) missed. On
-// 2026-11-24 a home whose checks had failed for a day chose a release older than one that
-// had rolled back, from a list that no longer knew the newest releases (research B3).
+// StaleHoldAfter is how old the last good read of the list of releases may be, at the default
+// cadence, before an automatic install first reads it again: two checks (CheckInterval)
+// missed (staleAfter for another cadence). On 2026-11-24 a home whose checks had failed for a
+// day chose a release older than one that had rolled back, from a list that no longer knew the
+// newest releases (research B3).
 const StaleHoldAfter = 2*CheckInterval + 30*time.Minute
 
-// catalogStale says why the list of releases is too stale to install from by itself ("":
-// fresh enough): its last good read is older than StaleHoldAfter, or every check so far
-// failed. A home that never checked (no state) is not held: what its catalog holds came
-// from no check.
-func catalogStale(st State, now time.Time) string {
-	switch {
-	case st.LastCheckOK != nil && now.Sub(*st.LastCheckOK) > StaleHoldAfter:
-		why := fmt.Sprintf("the list of releases was last read %s ago", now.Sub(*st.LastCheckOK).Round(time.Minute))
-		if st.LastCheckErr != "" {
-			why += ": " + st.LastCheckErr
-		}
-		return why
-	case st.LastCheckOK == nil && st.LastCheckErr != "":
-		return "the list of releases has never been read: " + st.LastCheckErr
+// staleRecheckEvery is how often a held install tries to read the list again, and
+// staleNoticeAfter how long it is held before the admins are told (a start before the network
+// is up, a moment of GitHub's, is none of their business).
+const (
+	staleRecheckEvery = 15 * time.Minute
+	staleNoticeAfter  = 30 * time.Minute
+)
+
+// clockSlack is how far ahead a saved time may be of the clock.
+const clockSlack = 5 * time.Minute
+
+// staleAfter is StaleHoldAfter at the home's cadence: two checks missed, and never less.
+func staleAfter(every time.Duration) time.Duration {
+	return max(StaleHoldAfter, 2*every+30*time.Minute)
+}
+
+// catalogStale says why the list of releases is too old to install from by itself without
+// reading it again ("": fresh enough): its last good read is older than staleAfter, or in the
+// future (the clock was ahead then: how old it is cannot be told), or every check so far
+// failed. Not for a home that never checked (what its catalog holds came from no check), nor
+// one whose background checks are off (every is 0: what an admin's check found installs).
+func catalogStale(st State, now time.Time, every time.Duration) string {
+	if every <= 0 {
+		return ""
 	}
-	return ""
+	why := ""
+	switch {
+	case st.LastCheckOK != nil && st.LastCheckOK.After(now.Add(clockSlack)):
+		why = "the list of releases was last read at a time still to come (the clock was set back)"
+	case st.LastCheckOK != nil && now.Sub(*st.LastCheckOK) > staleAfter(every):
+		why = fmt.Sprintf("the list of releases was last read %s ago", now.Sub(*st.LastCheckOK).Round(time.Minute))
+	case st.LastCheckOK == nil && st.LastCheckErr != "":
+		why = "the list of releases has never been read"
+	}
+	if why != "" && st.LastCheckErr != "" {
+		why += ": " + st.LastCheckErr
+	}
+	return why
 }
 
 // retryBackoff is the pause before a release's third automatic run in one window;
@@ -225,6 +248,12 @@ type Service struct {
 	// nil: a home with no plugins).
 	PluginsPaused func(ctx context.Context, version string) ([]PausedPlugin, error)
 
+	// CheckEvery is the cadence of the home's background checks (nil: CheckInterval; 0: none).
+	CheckEvery *time.Duration
+	// staleChecked and staleSince are the scheduler's own: when a held install read the list
+	// again last, and since when it is held (zero: not)
+	staleChecked, staleSince time.Time
+
 	// lastTick is the scheduler's last decision (the Updates page shows why nothing
 	// starts: a blocker, a retry's pause)
 	tickMu   sync.Mutex
@@ -372,12 +401,6 @@ func (s *Service) tick(ctx context.Context) (Decision, error) {
 		}
 		return Decision{Action: "none", Reason: pl.Waiting}, nil
 	}
-	if why := catalogStale(s.Store.LoadState(ctx), s.now()); why != "" {
-		// no automatic install from a list that may not know the newest releases (or that
-		// a release was withdrawn); the pre-run recheck reads only the target's own entry
-		s.staleHeld(ctx, pl.Target.Version, why)
-		return Decision{Action: "none", Reason: WaitCatalogStale, Version: pl.Target.Version}, nil
-	}
 	if wait := s.retryWait(ctx, pol, pl.Target.Version); wait != "" {
 		return Decision{Action: "none", Reason: wait, Version: pl.Target.Version}, nil
 	}
@@ -388,6 +411,18 @@ func (s *Service) tick(ctx context.Context) (Decision, error) {
 	if why != "" {
 		return Decision{Action: "blocked", Reason: why, Version: pl.Target.Version}, nil
 	}
+	if catalogStale(s.Store.LoadState(ctx), s.now(), s.checkEvery()) != "" {
+		// no automatic install from a list that may not know the newest releases (or that a
+		// release was withdrawn: the pre-run recheck reads only the target's own entry). Its
+		// age alone holds nothing: the list is read again first (a home that slept, or whose
+		// check is a day apart), and what it says now is planned anew
+		if s.rereadList(ctx) {
+			return s.tick(ctx)
+		}
+		s.staleHeld(ctx, pl.Target.Version)
+		return Decision{Action: "none", Reason: WaitCatalogStale, Version: pl.Target.Version}, nil
+	}
+	s.staleSince = time.Time{}
 	run, err := s.start(ctx, *pl.Target, pol, TriggerAuto, "")
 	if err != nil {
 		var w *withdrawnError
@@ -402,11 +437,43 @@ func (s *Service) tick(ctx context.Context) (Decision, error) {
 	return Decision{Action: "started", Version: run.Version, RunID: run.ID}, nil
 }
 
-// staleHeld says, once a day, that version's automatic install waits for a fresh read of
-// the list of releases: logged at warn, and the admins notified.
-func (s *Service) staleHeld(ctx context.Context, version, why string) {
-	s.log().Warn("updates: automatic install held: the list of releases is stale", "event", "update_held_stale",
-		"version", version, "why", why)
+// checkEvery is the cadence of the home's background checks (0: none).
+func (s *Service) checkEvery() time.Duration {
+	if s.CheckEvery != nil {
+		return *s.CheckEvery
+	}
+	return CheckInterval
+}
+
+// rereadList reads the list of releases again when it may (at most every staleRecheckEvery;
+// nothing to read it with: no) and says whether it is fresh now.
+func (s *Service) rereadList(ctx context.Context) bool {
+	if s.Discoverer == nil {
+		return false
+	}
+	since := s.now().Sub(s.staleChecked)
+	if !s.staleChecked.IsZero() && since >= 0 && since < staleRecheckEvery {
+		return false
+	}
+	s.staleChecked = s.now()
+	err := s.Discoverer.Reread(ctx, func(st State) bool { return catalogStale(st, s.now(), s.checkEvery()) != "" })
+	return err == nil && catalogStale(s.Store.LoadState(ctx), s.now(), s.checkEvery()) == ""
+}
+
+// staleHeld notes that version's automatic install waits for a fresh read of the list of
+// releases: logged once, and the admins told once it lasts (at once when the checks keep
+// failing), once a day at most.
+func (s *Service) staleHeld(ctx context.Context, version string) {
+	st := s.Store.LoadState(ctx)
+	why := catalogStale(st, s.now(), s.checkEvery())
+	if s.staleSince.IsZero() || s.staleSince.After(s.now()) {
+		s.staleSince = s.now()
+		s.log().Warn("updates: automatic install held: the list of releases is stale", "event", "update_held_stale",
+			"version", version, "why", why)
+	}
+	if st.Failures < FailingAfter && s.now().Sub(s.staleSince) < staleNoticeAfter {
+		return
+	}
 	s.notify(ctx, NoticeHeldStale, notify.Payload{Severity: notify.SeverityWarn,
 		Params: map[string]any{"version": version, "why": why}, Link: "/admin/updates",
 		Subject: "update_held_stale", Every: 24 * time.Hour})
