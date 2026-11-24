@@ -324,6 +324,19 @@ func (t Target) SchemaVersion(ctx context.Context) (int64, error) {
 	return v, d.QueryRowContext(ctx, `SELECT coalesce(max(version_id), 0) FROM goose_db_version WHERE is_applied`).Scan(&v)
 }
 
+// SchemaVersionAt is the newest migration goose had recorded as applied before at (0:
+// none; its timestamps are the server's local time).
+func (t Target) SchemaVersionAt(ctx context.Context, at time.Time) (int64, error) {
+	d, err := t.open(ctx, "")
+	if err != nil {
+		return 0, err
+	}
+	defer d.Close()
+	var v int64
+	return v, d.QueryRowContext(ctx, `SELECT coalesce(max(version_id), 0) FROM goose_db_version
+	    WHERE is_applied AND tstamp < to_timestamp($1)::timestamp`, float64(at.UnixMicro())/1e6).Scan(&v)
+}
+
 // GrantWorkersConnect gives the workers' group (the machines' logins) CONNECT on the
 // database when it lacks it (pgbundle.GrantWorkersConnectSQL): a restore by a release
 // before 2026-10-28 dropped that grant with the database.

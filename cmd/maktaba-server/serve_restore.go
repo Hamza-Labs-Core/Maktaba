@@ -52,6 +52,8 @@ type restorer struct {
 	// exitDelay is how long a restore lets its answer go out before the home restarts
 	// (restoreExitDelay; tests set it to 0)
 	exitDelay time.Duration
+	// alive says the library database is there and answers (dbsafe's SchemaVersion)
+	alive func(ctx context.Context) bool
 	// tell records a restore the Updates page did not ask for (the command line's) where
 	// the page's is recorded: this machine's API audits it and tells the machines the home
 	// goes away (best effort; nil: nothing to tell)
@@ -79,6 +81,8 @@ type backupList struct {
 	Running string                `json:"running"`
 	// Restoring is a restore asked and not finished (the next start puts Restoring back).
 	Restoring string `json:"restoring,omitempty"`
+	// RestoreError is why its last try failed (it may be tried again, replaced or abandoned).
+	RestoreError string `json:"restore_error,omitempty"`
 }
 
 // restorePlan is what a restore of a backup does.
@@ -119,7 +123,7 @@ func (r *restorer) list() backupList {
 		out.Kept = append(out.Kept, k.Kept()...)
 	}
 	if rec, ok, _ := apppayload.ReadDatabase(r.stateDir); ok && rec.State == apppayload.DatabaseRestoring {
-		out.Restoring = filepath.Base(rec.Dump)
+		out.Restoring, out.RestoreError = filepath.Base(rec.Dump), rec.RestoreError
 	}
 	if r.db == nil {
 		return out
@@ -316,11 +320,16 @@ func (r *restorer) mark(pl restorePlan, by string) error {
 	if err != nil {
 		return err
 	}
-	if had {
-		if old.State == apppayload.DatabaseRestoring {
+	if had && old.State == apppayload.DatabaseRestoring {
+		if old.By == "" || old.RestoreError == "" || old.Before == nil {
 			return refuse("restore_under_way", "the library database is being put back from %s already: its next "+
 				"start finishes that", old.Dump)
 		}
+		// a restore that could not finish: this one (the same backup again, or another)
+		// replaces it, on what was there before it
+		old = *old.Before
+	}
+	if had {
 		if old.Ran() != "" {
 			held = old.Ran()
 		}
@@ -347,6 +356,11 @@ func (r *restorer) mark(pl restorePlan, by string) error {
 		// kept schema): put back, it is that schema again, kept for it
 		rec.DumpKeptFor = old.DumpKeptFor
 	}
+	if had {
+		before := old
+		before.Before = nil
+		rec.Before = &before
+	}
 	if err := apppayload.WriteDatabase(r.stateDir, rec); err != nil {
 		return err
 	}
@@ -359,6 +373,58 @@ func (r *restorer) mark(pl restorePlan, by string) error {
 			_ = os.Remove(apppayload.DatabasePath(r.stateDir))
 		}
 		return refuse("restore_switch_failed", "%s cannot be made the release that starts: %v", pl.Release, err)
+	}
+	return nil
+}
+
+// abandon gives up a restore that could not finish (its dump lost, unreadable, no room): the
+// record is again what it was before it (a held update waits for a person again, another
+// database is the release's that ran on it), and the home restarts on that release. Refused
+// while the restore may still run, and when the library database is not there any more (a
+// restore that made room for itself and failed): only a restore brings one back.
+func (r *restorer) abandon(ctx context.Context, by string) error {
+	rec, had, err := apppayload.ReadDatabase(r.stateDir)
+	if err != nil {
+		return err
+	}
+	if !had || rec.State != apppayload.DatabaseRestoring || rec.By == "" || rec.RestoreError == "" || rec.Before == nil {
+		return refuse("restore_none_failed", "no restore that failed waits here")
+	}
+	if r.db == nil || r.alive == nil || !r.alive(ctx) {
+		return refuse("restore_database_gone", "the library database does not answer: put a backup back "+
+			"(choose one that can be read)")
+	}
+	old := *rec.Before
+	if old.State == apppayload.DatabaseMigrated || old.State == apppayload.DatabaseRestored {
+		// the release that ran on it runs again (the restore pointed the install at the
+		// backup's); a held update waits under whichever release starts
+		if k, ok := r.inst.(updater.Keeper); ok && layout.NormalizeVersion(old.Ran()) != layout.NormalizeVersion(r.running()) {
+			var target updater.KeptRelease
+			for _, kr := range k.Kept() {
+				if layout.NormalizeVersion(kr.Version) == layout.NormalizeVersion(old.Ran()) {
+					target = kr
+				}
+			}
+			if target.Version == "" {
+				return refuse("restore_no_release", "%s, which the library database is %s's, is no longer kept: install "+
+					"it, or put a backup back", old.Ran(), old.Ran())
+			}
+			if err := k.RunKept(ctx, target); err != nil {
+				return refuse("restore_switch_failed", "%s cannot be made the release that starts: %v", target.Version, err)
+			}
+		}
+	}
+	if err := apppayload.WriteDatabase(r.stateDir, old); err != nil {
+		return err
+	}
+	fmt.Fprintf(orDiscardW(r.log), "[serve] the restore of %s, which failed (%s), is abandoned by %s: the library "+
+		"database stays as it was before it\n", filepath.Base(rec.Dump), rec.RestoreError, by)
+	if r.exit != nil {
+		delay := r.exitDelay
+		go func() {
+			time.Sleep(delay) // the answer goes out first
+			r.exit(75)
+		}()
 	}
 	return nil
 }
@@ -386,6 +452,12 @@ func newRestorer(cfg config.Config, db *dbsafe.Target, inst updater.Installer, e
 	if db != nil {
 		t := *db
 		r.schema = t.DumpSchema
+		r.alive = func(ctx context.Context) bool {
+			cctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+			defer cancel()
+			_, err := t.SchemaVersion(cctx)
+			return err == nil
+		}
 	}
 	return r
 }
@@ -427,6 +499,17 @@ func (u *updates) serveRestore(w http.ResponseWriter, r *http.Request, name stri
 			return
 		}
 		answer(http.StatusOK, map[string]any{"plan": pl})
+	case name == "restore-abandon" && r.Method == http.MethodPost:
+		var req restoreRequest
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(&req); err != nil || !req.Confirm {
+			answer(http.StatusBadRequest, map[string]any{"code": "bad_request", "error": "confirm it"})
+			return
+		}
+		if err := u.r.abandon(r.Context(), strings.TrimSpace(req.By)); err != nil {
+			refused(restorePlan{}, err)
+			return
+		}
+		answer(http.StatusAccepted, map[string]any{"abandoned": true})
 	case name == "restore" && r.Method == http.MethodPost:
 		var req restoreRequest
 		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(&req); err != nil {

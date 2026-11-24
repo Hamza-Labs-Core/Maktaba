@@ -162,7 +162,15 @@ func startRecovery(d recoveryDeps) http.Handler {
 			_, err := u.r.restore(context.Background(), name, by, true, false)
 			return err
 		},
-		Held: func() *recovery.Held { return heldOf(state) },
+		Held:  func() *recovery.Held { return heldOf(state) },
+		Stuck: func() *recovery.Stuck { return stuckOf(state) },
+		Abandon: func(by string) error {
+			u := d.upd()
+			if u == nil || u.r == nil {
+				return errors.New("this machine restores no backups (a joined machine's database is the home's)")
+			}
+			return u.r.abandon(context.Background(), by)
+		},
 	}
 	serveRecovery.Store(h)
 	return recovery.LinkHandler(codes, "http://"+supervisor.LocalAddr(d.cfg.Server.WebListen, "8088"), record)
@@ -240,6 +248,16 @@ func recoveryAdmin(base, link http.Handler) http.Handler {
 		}
 		base.ServeHTTP(w, r)
 	})
+}
+
+// stuckOf is the restore a person asked for that could not finish (its dump lost or
+// unreadable, no room), nil when none: the page's ways out of it.
+func stuckOf(stateDir string) *recovery.Stuck {
+	rec, ok, err := apppayload.ReadDatabase(stateDir)
+	if err != nil || !ok || rec.State != apppayload.DatabaseRestoring || rec.By == "" || rec.RestoreError == "" {
+		return nil
+	}
+	return &recovery.Stuck{Backup: filepath.Base(rec.Dump), Why: rec.RestoreError, CanAbandon: rec.Before != nil}
 }
 
 // heldOf is the update the database record holds (held: it stopped with nothing put

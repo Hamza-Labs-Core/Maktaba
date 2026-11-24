@@ -112,6 +112,17 @@ type Database struct {
 	// migrations (backups/pre-<from>-to-<version>.dump).
 	From string `json:"from,omitempty"`
 	Dump string `json:"dump,omitempty"`
+	// Unconfirmed is how Dump is written until the update's release is confirmed (its
+	// watch passed: Confirmed; ReadDatabase gives it as Dump). The guard of every launcher
+	// and the rollback of every release before 2026-11-24 mark a record whose release they
+	// give up on restoring, and the release before then puts the whole dump back unasked;
+	// all of them leave a record with no dump alone (MarkRecordRestoring, since the first
+	// release with a guard). So a new release under an older launcher, or rolled back to an
+	// older release, names its backup where only the releases that stop and ask read it:
+	// the older release refuses the database as newer than itself and stops
+	// (db_refused_older), with nothing put back.
+	Unconfirmed string `json:"dump_unconfirmed,omitempty"`
+	Confirmed   bool   `json:"confirmed,omitempty"`
 	// Next is the release the running one switches to and NextDump the dump it took
 	// for it while it served, at NextAt (the update's backup step: internal/updater):
 	// Next's start takes it as its pre-update dump instead of taking one.
@@ -127,6 +138,12 @@ type Database struct {
 	// then the release whose database is replaced and From the one the dump is put back
 	// for.
 	By string `json:"by,omitempty"`
+	// Before is the record that restore replaced, and RestoreError why its last try failed
+	// ("": not tried, or under way): a restore that cannot finish (its dump lost, a disk
+	// full) is tried again at the next start, given up for another backup, abandoned (the
+	// record is Before again), or left behind by a newer release a person installs.
+	Before       *Database `json:"before,omitempty"`
+	RestoreError string    `json:"restore_error,omitempty"`
 	// KeptFor is the older release a rollback left this database for with nothing put
 	// back (layout.MarkRecordKept): Version's migrations were all rollback-safe, so KeptFor
 	// starts on the newer schema (its api told it may: MAKTABA_SCHEMA_AHEAD_OK), and
@@ -276,13 +293,39 @@ func ReadDatabase(stateDir string) (Database, bool, error) {
 	if err := json.Unmarshal(raw, &d); err != nil {
 		return d, false, fmt.Errorf("%s: %w", DatabasePath(stateDir), err)
 	}
-	return d, true, nil
+	return d.named(), true, nil
+}
+
+// named is d with the dump it withholds from older code (Unconfirmed) as its Dump.
+func (d Database) named() Database {
+	if d.Dump == "" {
+		d.Dump = d.Unconfirmed
+	}
+	d.Unconfirmed = ""
+	if d.Before != nil {
+		b := d.Before.named()
+		d.Before = &b
+	}
+	return d
+}
+
+// withheld is d as it is written: an update's dump not named where older code would put it
+// back unasked (Unconfirmed), while its release is not confirmed.
+func (d Database) withheld() Database {
+	if !d.Confirmed && d.Dump != "" && (d.State == DatabaseMigrating || d.State == DatabaseMigrated) {
+		d.Unconfirmed, d.Dump = d.Dump, ""
+	}
+	if d.Before != nil {
+		b := d.Before.withheld()
+		d.Before = &b
+	}
+	return d
 }
 
 // WriteDatabase saves the database's record (whole, atomically), stamped now.
 func WriteDatabase(stateDir string, d Database) error {
 	d.At = time.Now().UTC()
-	raw, err := json.MarshalIndent(d, "", "  ")
+	raw, err := json.MarshalIndent(d.withheld(), "", "  ")
 	if err != nil {
 		return err
 	}

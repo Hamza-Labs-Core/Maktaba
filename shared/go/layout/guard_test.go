@@ -129,7 +129,7 @@ func TestRecordRestoringMarkAndUnmark(t *testing.T) {
 
 // A failed update stops and asks (no start puts the dump back by itself): the record is
 // held, its version stays the failed release's so every older release refuses it, and a
-// switch back that fails takes the mark back.
+// switch back that fails leaves it held (its Down scripts may have run in part).
 func TestRecordHeldMarkAndUnmark(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "database.json")
 	_ = os.WriteFile(path, []byte(`{"version":"1.5.0","state":"migrating","from":"1.4.0","dump":"/b/pre-1.4.0-to-1.5.0.dump","schema_before":230}`), 0o644)
@@ -151,16 +151,70 @@ func TestRecordHeldMarkAndUnmark(t *testing.T) {
 	if rec := readRecord(t, path); rec["state"] != "held" {
 		t.Fatalf("a held record was marked restoring: %v", rec)
 	}
-	if ok, err := UnmarkRecordRestoring(path, "1.5.0"); err != nil || !ok {
-		t.Fatalf("unmark: %v %v", ok, err)
+	if ok, err := UnmarkRecordRestoring(path, "1.5.0"); err != nil || ok {
+		t.Fatalf("a held record unmarked: %v %v", ok, err)
 	}
-	if rec := readRecord(t, path); rec["state"] != "migrated" || rec["failed"] != nil {
-		t.Fatalf("unmarked record %v", rec)
+	if rec := readRecord(t, path); rec["state"] != "held" || rec["failed"] != "1.5.0" {
+		t.Fatalf("after a switch back that failed: %v", rec)
+	}
+	// the other way round: an older launcher marked it restoring first, with no person
+	// asking; the new release's watch holds it. A person's restore is left as it is
+	for by, want := range map[string]string{"": "held", "admin": "restoring"} {
+		_ = os.WriteFile(path, []byte(`{"version":"1.5.0","state":"restoring","from":"1.4.0","failed":"1.5.0","by":"`+by+
+			`","dump":"/b/pre-1.4.0-to-1.5.0.dump"}`), 0o644)
+		if ok, err := MarkRecordHeld(path, "1.5.0", "watch_timeout"); err != nil || !ok {
+			t.Fatalf("held over restoring (by %q): %v %v", by, ok, err)
+		}
+		if rec := readRecord(t, path); rec["state"] != want || rec["dump"] != "/b/pre-1.4.0-to-1.5.0.dump" {
+			t.Fatalf("held over restoring (by %q): %v, want %s", by, rec, want)
+		}
 	}
 	// no dump: nothing to hold for (the update added no migration)
 	_ = os.WriteFile(path, []byte(`{"version":"1.5.0","state":"migrated"}`), 0o644)
 	if ok, err := MarkRecordHeld(path, "1.5.0", "x"); err != nil || ok {
 		t.Fatalf("held without a dump: %v %v", ok, err)
+	}
+}
+
+// An update's record not confirmed yet withholds its backup from older code: a guard of any
+// release before 2026-11-24 leaves it alone (no dump), a release since holds it, with the
+// backup named where every release reads it; its confirmation names it too.
+func TestUnconfirmedRecordIsLeftAloneByOlderCode(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "database.json")
+	const unconfirmed = `{"version":"1.5.0","state":"migrated","from":"1.4.0","dump_unconfirmed":"/b/d.dump","schema_before":230}`
+	write := func(s string) { _ = os.WriteFile(path, []byte(s), 0o644) }
+	write(unconfirmed)
+	if ok, err := MarkRecordRestoring(path, "1.5.0", "launcher_boot_loop"); err != nil || ok {
+		t.Fatalf("older code marked it restoring: %v %v", ok, err)
+	}
+	if b, _ := os.ReadFile(path); string(b) != unconfirmed {
+		t.Fatalf("older code changed it: %s", b)
+	}
+	if ok, err := MarkRecordHeld(path, "1.5.0", "watch_timeout"); err != nil || !ok {
+		t.Fatalf("held: %v %v", ok, err)
+	}
+	if rec := readRecord(t, path); rec["state"] != "held" || rec["dump"] != "/b/d.dump" || rec["dump_unconfirmed"] != nil {
+		t.Fatalf("held %v", rec)
+	}
+	if ok, err := ConfirmRecord(path, "1.5.0"); err != nil || ok {
+		t.Fatalf("a held record confirmed: %v %v", ok, err)
+	}
+	write(unconfirmed)
+	if ok, err := ConfirmRecord(path, "1.4.0"); err != nil || ok {
+		t.Fatalf("another release's record confirmed: %v %v", ok, err)
+	}
+	if ok, err := ConfirmRecord(path, "v1.5.0"); err != nil || !ok {
+		t.Fatalf("confirm: %v %v", ok, err)
+	}
+	if rec := readRecord(t, path); rec["dump"] != "/b/d.dump" || rec["confirmed"] != true || rec["dump_unconfirmed"] != nil ||
+		rec["schema_before"] != float64(230) {
+		t.Fatalf("confirmed %v", rec)
+	}
+	if ok, _ := ConfirmRecord(path, "1.5.0"); ok {
+		t.Fatal("confirmed twice")
+	}
+	if ok, err := ConfirmRecord(filepath.Join(t.TempDir(), "none.json"), "1.5.0"); ok || err != nil {
+		t.Fatalf("no record: %v %v", ok, err)
 	}
 }
 
@@ -197,6 +251,37 @@ func TestMarkRecordDown(t *testing.T) {
 	if !RecordMigrated(path, "0.3.82") {
 		t.Fatal("the release before's record is not migrated")
 	}
+	// a newer schema kept for the release before, before the update: kept for it again
+	write(`{"version":"v0.3.90","state":"migrated","from":"v0.3.82","dump_kept_for":"0.3.82","schema_before":183}`)
+	if slot, kept, err := RecordSchemaBefore(path, "0.3.90"); err != nil || slot != 183 || !kept {
+		t.Fatalf("before 0.3.90: %d %v %v", slot, kept, err)
+	}
+	if slot, kept, err := RecordSchemaBefore(path, "0.3.89"); err != nil || slot != 0 || kept {
+		t.Fatalf("another release's record: %d %v %v", slot, kept, err)
+	}
+	if ok, err := MarkRecordDown(path, "0.3.90", "0.3.82", "watch_timeout"); !ok || err != nil {
+		t.Fatalf("ok %v, err %v", ok, err)
+	}
+	b, _ = os.ReadFile(path)
+	rec = nil
+	if err := json.Unmarshal(b, &rec); err != nil {
+		t.Fatal(err)
+	}
+	if rec["kept_for"] != "0.3.82" || rec["kept_reason"] == nil || rec["dump_kept_for"] != nil || rec["schema_before"] != nil {
+		t.Fatalf("record: %s", b)
+	}
+	if _, _, err := RecordSchemaBefore(filepath.Join(t.TempDir(), "none.json"), "0.3.90"); err != nil {
+		t.Fatalf("no record: %v", err)
+	}
+	write(`{`)
+	if _, _, err := RecordSchemaBefore(path, "0.3.90"); err == nil {
+		t.Fatal("a record that cannot be read says nothing was kept")
+	}
+	write(`{"version":"v0.3.90","state":"migrated","kept_for":"0.3.82"}`)
+	if slot, kept, _ := RecordSchemaBefore(path, "0.3.90"); slot != 0 || !kept {
+		t.Fatalf("a kept schema 0.3.90 ran no migration on: %d %v", slot, kept)
+	}
+	write(`{"version":"v0.3.82","state":"migrated"}`)
 	if ok, _ := MarkRecordDown(path, "0.3.90", "0.3.82", "again"); ok {
 		t.Fatal("a record that is no longer the failed release's changed")
 	}

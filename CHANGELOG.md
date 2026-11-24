@@ -4551,6 +4551,14 @@ build fails when the two differ.
   says so. The update rehearsal runs every new migration's Down script after each partial Up on
   the bundled PostgreSQL.
 
+- **A rollback never undoes the migrations kept by an earlier one.** When a rolled back update had
+  left the library database on its newer schema (kept, since its changes were additive), and the
+  next update was rolled back with its Down scripts, they went back to the previous release's own
+  newest migration, so they also undid the ones kept before and dropped what they held. The Down
+  scripts now stop at the slot the database was at before the update (`schema_before`), and that
+  schema stays kept for the previous release, which otherwise refused to start on it (`db_ahead`).
+  When that slot is not recorded, no Down script runs.
+
 - **A failed update never puts the whole backup back by itself: it stops and asks.** Until now,
   when an update's Down scripts could not take the library database back (they failed, a change
   had deleted data they cannot bring back, or the way back could not be told), or when the
@@ -4561,7 +4569,12 @@ build fails when the two differ.
   page (`/recovery`) and the Updates page say what happened and the two choices: put back the
   backup taken before the update (**Restore** on the recovery page, which names it), or install
   a newer release that fixes the update, which goes on from where it stopped. A restore mark
-  written by an older release or its launcher is held the same way. In English and Arabic.
+  written by an older release or its launcher is held the same way. The first update to this is
+  protected too: until its watch passes, the new release's record names its backup where no older
+  launcher or release puts it back from. A held update stays held when the switch back fails. A
+  restore that cannot finish (its backup lost, no room) can be tried again, replaced by another
+  backup, or given up on the recovery page (or with `maktaba-server restore --abandon`), and a
+  newer release goes on from it. In English and Arabic.
 
 - **Less to write for every change on a home with a machine's copy.** Most of the library's
   tables on the home moved to PostgreSQL 18 on 2026-11-20 had every change logged with the whole

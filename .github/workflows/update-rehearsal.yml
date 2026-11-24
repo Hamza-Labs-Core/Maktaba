@@ -551,6 +551,7 @@ jobs:
           - { id: '02', name: the TV's change waits during the watch, test: TestUpdateRehearsal02WatchWithTVWaiting, profile: restore }
           - { id: '03', name: rollback after additive migrations, test: TestUpdateRehearsal03RollbackAdditive, profile: restore }
           - { id: '03b', name: rollback by the Down scripts (a lossless migration the schema cannot keep), test: TestUpdateRehearsal03bRollbackDownScripts, profile: restore }
+          - { id: '03c', name: rollback on a schema an earlier rollback kept, test: TestUpdateRehearsal03cRollbackOnAKeptSchema, profile: restore }
           - { id: '04', name: rollback after a destructive migration, test: TestUpdateRehearsal04RollbackDestructive, profile: restore }
           - { id: '05', name: the restore under concurrent logins, test: TestUpdateRehearsal05RestoreUnderLogins, profile: restore }
           - { id: '06', name: the restore killed part way, test: TestUpdateRehearsal06RestoreKilled, profile: restore }
@@ -590,6 +591,10 @@ jobs:
           # and every check failed, only logged. The list at its real size and shape, then past
           # its cap: the update found in it completes, and a failing check is reported
           - { id: '20', name: GitHub's release list at its real size and shape (and over its cap), test: TestUpdateRehearsal20RealSizeReleaseList, profile: small }
+          # the first update to a release that never puts the backup back by itself, under the
+          # previous release's real launcher and server (a crash loop after the migrations)
+          - { id: '21', name: the previous release's launcher and server never put the backup back, test: TestUpdateRehearsal21OldLauncher, profile: restore }
+          - { id: '21b', name: the previous release's launcher in each kind that keeps its launcher, test: TestUpdateRehearsal21OldLauncherKinds, profile: small }
           # the fault rehearsal (Epic 53 story 53.07, docs/fault-rehearsal.md): one part
           # killed at a time on a home of this commit; the tag guard requires these too
           - { id: 'F03', name: streaming crash (the status says so; it comes back), test: TestFaultRehearsalF03StreamingCrash, profile: small }
