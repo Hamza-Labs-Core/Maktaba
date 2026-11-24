@@ -52,13 +52,53 @@ jobs:
       - name: Install
         run: npm ci --no-audit --no-fund
 
-      - name: Download the run's captures
+      # the run's product-shots-* and store-shots-* (each download tried three times)
+      - name: Download *-shots-*
+        id: artifact-shots
+        continue-on-error: true
         uses: actions/download-artifact@v8.0.1
         with:
-          pattern: "{product-shots-*,store-shots-*}"
+          pattern: "*-shots-*"
           path: ${{ runner.temp }}/captures
           run-id: ${{ inputs.run_id }}
           github-token: ${{ github.token }}
+      - name: Wait 15s to retry the download of *-shots-*
+        if: steps.artifact-shots.outcome == 'failure'
+        shell: bash
+        run: sleep 15
+      - name: Download *-shots-* (attempt 2)
+        id: artifact-shots-2
+        if: steps.artifact-shots.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          pattern: "*-shots-*"
+          path: ${{ runner.temp }}/captures
+          run-id: ${{ inputs.run_id }}
+          github-token: ${{ github.token }}
+      - name: Wait 45s to retry the download of *-shots-*
+        if: steps.artifact-shots-2.outcome == 'failure'
+        shell: bash
+        run: sleep 45
+      - name: Download *-shots-* (attempt 3)
+        id: artifact-shots-3
+        if: steps.artifact-shots-2.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          pattern: "*-shots-*"
+          path: ${{ runner.temp }}/captures
+          run-id: ${{ inputs.run_id }}
+          github-token: ${{ github.token }}
+      - name: Check *-shots-* downloaded
+        id: artifact-shots-check
+        if: steps.artifact-shots-3.outcome == 'failure'
+        shell: bash
+        env:
+          ARTIFACT: "*-shots-*"
+        run: |
+          echo "::error::the artifact $ARTIFACT never downloaded after 3 attempts"
+          exit 1
 
       - name: Compose and check every image
         env:
