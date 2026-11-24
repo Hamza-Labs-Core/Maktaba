@@ -16,16 +16,15 @@ These are research item 3's small bugs (`docs/research/update-process.md`, #1601
   - `confirmPending` confirms only a switch with no run id, so the launcher went back after 15 minutes.
   - Now the command switches with no run id, and `confirmsItself` also accepts `cli`. An older command's switch therefore holds once the new release runs.
 - **P5:**
-  - The release that switches writes `latest` into the guard and the pending marker: `pendingCap + WatchBound + 45 min`.
-  - `ExtendGuard` and `ExtendPending` stop there.
-  - The launcher never waits past it, nor past `layout.MaxGuardSpan` (a day) for a marker without one.
+  - The release that switches writes into the guard and the pending marker how long its release may run (`max_run_seconds`: `pendingCap + WatchBound + 45 min`); a marker without one gets `layout.MaxGuardRun` (24 h).
+  - The launcher counts the running time, and `ExtendGuard` and `ExtendPending` stop once it is used up.
 - **P10:**
   - An order the app never stages ends `app_no_answer` at the run's install-by (else 3 h, never under 30 min).
   - The app's failed start with its order is logged once per error.
   - The Linux runtime order, which stages nothing, goes on without the app after 10 minutes.
   - `app_no_answer` has its words on web, Apple and Android.
 
-- **After its review (Kimi K3.1 Pro: 2 majors, 2 minors):** `app_no_answer` counts no attempt (three windows without the app had blocked the release); a guard's explicit `latest` is honoured past a day; a release is confirmed watermark first, marker next, database record last; the runtime's fallback never overwrites a late answer or a withdrawn order.
+- **After its review (Kimi K3.1 Pro: 2 majors, 2 minors):** `app_no_answer` counts no attempt (three windows without the app had blocked the release); a release is confirmed watermark first, marker next, database record last; the runtime's fallback never overwrites a late answer or a withdrawn order.
 - **After the second review:** the cap counted by the wall clock rolled a good update back, and held the home, at the first look after a 5 h power-off. The launcher counts running time instead, across its starts (`guardclock.go`); a rollback under way has its own.
 
 ## What we learned
