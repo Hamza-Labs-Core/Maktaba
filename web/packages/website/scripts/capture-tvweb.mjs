@@ -99,8 +99,11 @@ const arg = (name, fallback) => {
   return i >= 0 ? process.argv[i + 1] : fallback;
 };
 
-/** Playwright's own ffmpeg (VP9 and a JPEG pipe are all it takes), else one on the PATH. */
-export function findFfmpeg() {
+/**
+ * Playwright's own ffmpeg (VP9 and a JPEG pipe are all it takes), else one on the PATH; with
+ * neither, Playwright installs its own (the pinned version's) and that is used.
+ */
+export function findFfmpeg(install = true) {
   const roots = [
     process.env.PLAYWRIGHT_BROWSERS_PATH,
     "/ms-playwright",
@@ -118,7 +121,13 @@ export function findFfmpeg() {
   }
   const which = spawnSync("sh", ["-c", "command -v ffmpeg"], { encoding: "utf8" });
   if (which.status === 0 && which.stdout.trim()) return which.stdout.trim();
-  throw new Error("no ffmpeg: install Playwright's (npx playwright install chromium)");
+  if (install) {
+    spawnSync(join(HERE, "..", "node_modules/.bin/playwright"), ["install", "ffmpeg"], {
+      stdio: "inherit",
+    });
+    return findFfmpeg(false);
+  }
+  throw new Error("no ffmpeg: install Playwright's (npx playwright install ffmpeg)");
 }
 
 /** A WebM of `seconds` of one still (a frame a second, each after the first a repeat). */
