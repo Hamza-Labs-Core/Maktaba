@@ -43,15 +43,23 @@ die() { err "$*"; exit 1; }
 # the stack as its own .env has it: a variable in this script's environment (the new release's tag,
 # in begin) would win over the file, and restoring would start the wrong release
 dc() { (cd "$DEPLOY_DIR" && env -i PATH="$PATH" HOME="${HOME:-/root}" docker compose --env-file .env "$@"); }
+# the stack as the saved set has it, whatever state the new one is in; VAR=value words first win
+# over its .env (the new release's image, to undo its migrations)
+saved() {
+	local vars=()
+	while [[ "${1:-}" =~ ^[A-Z_]+= ]]; do vars+=("$1"); shift; done
+	(cd "$DEPLOY_DIR" && env -i PATH="$PATH" HOME="${HOME:-/root}" ${vars[@]+"${vars[@]}"} docker compose \
+		-f "$STATE/pending/set/docker-compose.yml" --project-directory "$DEPLOY_DIR" --env-file "$STATE/pending/set/.env" "$@")
+}
 env_of() { grep -E "^$1=" "$DEPLOY_DIR/.env" 2>/dev/null | sed -n 1p | cut -d= -f2- || true; }
 
 running() { [ -f "$DEPLOY_DIR/.env" ] && [ -f "$DEPLOY_DIR/docker-compose.yml" ] && dc ps --status running --services 2>/dev/null | grep -x "$1" >/dev/null; }
 
-# the migrations the database records, one a line, in the order they were applied
+# the migrations the database records, one a line, in the order they were applied (COMPOSE: dc or saved)
 applied() {
 	local u d
-	u="$(env_of POSTGRES_USER)"; d="$(env_of POSTGRES_DB)"
-	dc exec -T postgres psql -X -q -A -t -v ON_ERROR_STOP=1 -U "${u:-maktaba}" -d "${d:-maktaba}" -c \
+	u="$(grep -E '^POSTGRES_USER=' "$2" | sed -n 1p | cut -d= -f2-)"; d="$(grep -E '^POSTGRES_DB=' "$2" | sed -n 1p | cut -d= -f2-)"
+	"$1" exec -T postgres psql -X -q -A -t -v ON_ERROR_STOP=1 -U "${u:-maktaba}" -d "${d:-maktaba}" -c \
 		"SELECT CASE WHEN to_regclass('goose_db_version') IS NULL THEN '' ELSE (SELECT coalesce(string_agg(version_id::text, E'\n' ORDER BY id), '') FROM goose_db_version WHERE is_applied AND version_id > 0) END" \
 		</dev/null | sed '/^$/d'
 }
@@ -114,12 +122,16 @@ cmd_begin() {
 	else
 		dc up -d --wait postgres </dev/null >/dev/null 2>&1 || die "begin: the database does not come up: nothing was changed"
 		DEPLOY_DIR="$DEPLOY_DIR" bash "$src/ops/backup.sh" || die "begin: the backup before the deploy failed: nothing was changed"
-		applied > "$STATE/pending.new/applied"
+		applied dc "$DEPLOY_DIR/.env" > "$STATE/pending.new/applied"
 		for p in "${SET[@]}"; do
 			[ ! -e "$DEPLOY_DIR/$p" ] || cp -a "$DEPLOY_DIR/$p" "$STATE/pending.new/set/"
 		done
 		readlink "$DEPLOY_DIR/web/current" > "$STATE/pending.new/web" 2>/dev/null || : > "$STATE/pending.new/web"
 	fi
+	{
+		printf 'MAKTABA_CLOUD_TAG=%s\n' "$MAKTABA_CLOUD_TAG"
+		printf 'MAKTABA_CLOUD_IMAGE=%s\n' "${MAKTABA_CLOUD_IMAGE:-ghcr.io/hamza-labs-core/maktaba-cloud}"
+	} > "$STATE/pending.new/release"
 	sync
 	mv "$STATE/pending.new" "$STATE/pending"
 	log "the present set is saved"
@@ -185,7 +197,6 @@ cmd_apply() {
 	[ ! -f "$STATE/held" ] || die "apply: the node is held"
 	log "the database and the cache"
 	dc up -d --wait postgres redis </dev/null || fail "the database or the cache does not come up"
-	touch "$STATE/pending/migrating" || fail "the state folder can't be written"
 	log "the migrations"
 	# </dev/null everywhere: this script can reach bash on stdin, and a command that read it would
 	# end the deploy at exit 0 with nothing rolled out
@@ -234,46 +245,55 @@ put_back() { # the saved files and the web app's version, each copied whole befo
 	fi
 }
 
+# gone in one rename: a half-removed saved set must never be found by a restore after a crash
+drop_pending() {
+	rm -rf "$STATE/done"
+	mv "$STATE/pending" "$STATE/done" && sync && rm -rf "$STATE/done"
+}
+
 restore() { # restore WHY: back to the saved set; 0 restored, 1 held (or nothing could be)
-	# every step checks itself: this runs where errexit does not (restore ... || ...)
-	local why="$1" added rc
+	# every step checks itself: this runs where errexit does not (restore ... || ...). Each can be
+	# done again: a crash part way is followed by another restore (boot, or the next deploy)
+	local why="$1" added rc release=()
 	[ -d "$STATE/pending" ] || { log "nothing to restore"; return 0; }
 	log "restoring the set from before the deploy ($why)"
 	if [ -f "$STATE/pending/first" ]; then
-		if [ -f "$DEPLOY_DIR/docker-compose.yml" ]; then dc stop "${APP[@]}" caddy </dev/null >/dev/null 2>&1 || true; fi
-		rm -rf "$STATE/pending"
+		if [ -f "$DEPLOY_DIR/docker-compose.yml" ] && [ -f "$DEPLOY_DIR/.env" ]; then dc stop "${APP[@]}" caddy </dev/null >/dev/null 2>&1 || true; fi
+		drop_pending
 		err "a first deploy failed: there is no earlier release to go back to, so the stack is stopped"
 		return 1
 	fi
 
-	# the migrations this deploy applied, newest first (none before apply began them)
-	added=""
-	if [ -f "$STATE/pending/migrating" ]; then
-		dc up -d --wait postgres </dev/null >/dev/null 2>&1 || { hold "the database does not come up ($why)"; return 1; }
-		applied > "$STATE/pending/applied.now" || { hold "the applied migrations can't be read ($why)"; return 1; }
-		added="$(grep -vxF -f "$STATE/pending/applied" "$STATE/pending/applied.now" | tr '\n' ' ' || true)"
-		[ -s "$STATE/pending/applied" ] || added="$(tr '\n' ' ' < "$STATE/pending/applied.now")"
-	fi
-	if [ -n "${added// /}" ]; then
-		log "undoing the migrations it applied: $added"
-		dc stop "${APP[@]}" </dev/null >/dev/null 2>&1 || true
-		rc=0
-		# shellcheck disable=SC2086  # a list of numbers
-		dc run --rm -T --no-deps maktaba-cloud migrate --config /etc/maktaba/cloud/cloud.toml undo $added </dev/null || rc=$?
-		case "$rc" in
-			0) log "undone by their Down scripts" ;;
-			3) err "a Down script would delete rows written since: the schema is KEPT, and the previous release runs on it" ;;
-			4) hold "a migration it applied can't be undone, and the previous release may not run on what it left ($why)"; return 1 ;;
-			*) hold "a Down script failed (exit $rc) ($why)"; return 1 ;;
-		esac
+	# the migrations this deploy applied (by apply, or by a role that started on its own), newest
+	# first; once, not again after a crash further on
+	if [ ! -f "$STATE/pending/settled" ]; then
+		saved up -d --wait postgres </dev/null >/dev/null 2>&1 || { hold "the database does not come up ($why)"; return 1; }
+		# nothing may apply one again meanwhile: a starting role migrates
+		saved stop "${APP[@]}" </dev/null >/dev/null 2>&1 || { hold "the app does not stop ($why)"; return 1; }
+		applied saved "$STATE/pending/set/.env" > "$STATE/pending/applied.now" || { hold "the applied migrations can't be read ($why)"; return 1; }
+		added="$(comm -13 <(sort "$STATE/pending/applied") <(sort "$STATE/pending/applied.now") | tr '\n' ' ')" || { hold "the migrations can't be compared ($why)"; return 1; }
+		if [ -n "${added// /}" ]; then
+			log "undoing the migrations it applied: $added"
+			mapfile -t release < "$STATE/pending/release"
+			rc=0
+			# shellcheck disable=SC2086  # a list of numbers
+			saved "${release[@]}" run --rm -T --no-deps maktaba-cloud migrate --config /etc/maktaba/cloud/cloud.toml undo $added </dev/null || rc=$?
+			case "$rc" in
+				0) log "undone by their Down scripts" ;;
+				3) err "a Down script would delete rows written since: the schema is KEPT, and the previous release runs on it" ;;
+				4) hold "a migration it applied can't be undone, and the previous release may not run on what it left ($why)"; return 1 ;;
+				*) hold "a Down script failed (exit $rc) ($why)"; return 1 ;;
+			esac
+		fi
+		touch "$STATE/pending/settled" || { hold "the state folder can't be written ($why)"; return 1; }
+		sync
 	fi
 
 	put_back || { hold "the saved files can't be put back ($why)"; return 1; }
-
 	dc up -d --wait --remove-orphans postgres redis </dev/null || { hold "the previous database or cache does not come up ($why)"; return 1; }
 	dc up -d --wait --force-recreate "${APP[@]}" caddy </dev/null || { hold "the previous release does not come up ($why)"; return 1; }
 	WATCH_SECONDS=10 verify || { hold "the previous release is not healthy ($why)"; return 1; }
-	rm -rf "$STATE/pending"
+	drop_pending || { hold "the saved set can't be dropped ($why)"; return 1; }
 	log "restored: $(env_of MAKTABA_CLOUD_TAG) serves again"
 	return 0
 }
@@ -287,9 +307,9 @@ cmd_commit() {
 	local cur
 	need_pending commit
 	[ ! -f "$STATE/held" ] || die "commit: the node is held"
+	drop_pending
 	env_of MAKTABA_CLOUD_TAG > "$STATE/committed.new"
 	mv "$STATE/committed.new" "$STATE/committed"
-	rm -rf "$STATE/pending"
 	# the web app's other versions, and the layout before versions (files right in web/)
 	cur="$(readlink "$DEPLOY_DIR/web/current" 2>/dev/null || true)"
 	if [ -n "$cur" ]; then
@@ -338,7 +358,8 @@ main() {
 	case "$c" in
 		begin | web | apply | commit | rollback | unhold)
 			exec 9>"$STATE/lock"
-			flock -w 60 9 || die "another deploy is running"
+			# a rollback waits for an apply whose SSH session was cut to end
+			flock -w "$([ "$c" = rollback ] && echo 1200 || echo 60)" 9 || die "another deploy is running"
 			;;
 		boot)
 			# a deploy under way holds the lock: the unit's start is part of it

@@ -86,17 +86,12 @@ func (m *Migrator) Undo(ctx context.Context, versions []int64) error {
 		if err != nil {
 			return fmt.Errorf("%w: %v", ErrUndoLossy, err)
 		}
-		up, down := migrationSections(text)
-		if strings.TrimSpace(down) == "" {
-			return fmt.Errorf("%w: %s has no Down script", ErrUndoLossy, name)
-		}
-		if what := upLoses(text, up); what != "" {
-			return fmt.Errorf("%w: %s %s", ErrUndoLossy, name, what)
-		}
-		if what, err := m.downLoses(ctx, down); err != nil {
+		verdict, err := m.Judge(ctx, text)
+		if err != nil {
 			return fmt.Errorf("migrate undo: reading what %s would delete: %w", name, err)
-		} else if what != "" {
-			return fmt.Errorf("%w: %s %s", ErrUndoKeeps, name, what)
+		}
+		if verdict.Why != "" {
+			return fmt.Errorf("%w: %s %s", verdict.Err, name, verdict.Why)
 		}
 	}
 	p, err := goose.NewProvider(goose.DialectPostgres, m.pool.DB, sub, goose.WithAllowOutofOrder(true))
@@ -109,6 +104,39 @@ func (m *Migrator) Undo(ctx context.Context, versions []int64) error {
 		}
 	}
 	return nil
+}
+
+// Verdict is whether a migration's Down script may run: Why not ("" it may), and the refusal it is.
+type Verdict struct {
+	Err error
+	Why string
+}
+
+func (v Verdict) String() string {
+	switch {
+	case v.Why == "":
+		return "can be undone"
+	case errors.Is(v.Err, ErrUndoKeeps):
+		return "kept: " + v.Why
+	default:
+		return "cannot be undone: " + v.Why
+	}
+}
+
+// Judge reads a migration's text, and what its Down script would delete as the database is now.
+func (m *Migrator) Judge(ctx context.Context, text string) (Verdict, error) {
+	up, down := migrationSections(text)
+	if strings.TrimSpace(down) == "" {
+		return Verdict{ErrUndoLossy, "has no Down script"}, nil
+	}
+	if what := upLoses(text, up); what != "" {
+		return Verdict{ErrUndoLossy, what}, nil
+	}
+	what, err := m.downLoses(ctx, down)
+	if err != nil || what == "" {
+		return Verdict{}, err
+	}
+	return Verdict{ErrUndoKeeps, what}, nil
 }
 
 // migrationFile is version's file.
@@ -143,8 +171,11 @@ func migrationSections(text string) (up, down string) {
 	return withoutBodies(withoutComments(up)), withoutBodies(withoutComments(down))
 }
 
+var blockComment = regexp.MustCompile(`(?s)/\*.*?\*/`)
+
 func withoutComments(s string) string {
 	var b strings.Builder
+	s = blockComment.ReplaceAllString(s, " ")
 	for _, l := range strings.Split(s, "\n") {
 		if i := strings.Index(l, "--"); i >= 0 {
 			l = l[:i]
@@ -178,12 +209,16 @@ func withoutBodies(s string) string {
 var (
 	contractMark = regexp.MustCompile(`(?im)^\s*--\s*contract:`)
 	downRestores = regexp.MustCompile(`(?im)^\s*--\s*\+maktaba\s+down-restores:\s*\S`)
-	rowsLost     = regexp.MustCompile(`(?is)(^|;)\s*(TRUNCATE\b|DELETE\s+FROM\b|UPDATE\s+["A-Za-z_][^;]*\bSET\b)`)
-	typeRecast   = regexp.MustCompile(`(?is)\bALTER\s+(COLUMN\s+)?("[^"]+"|[A-Za-z_][A-Za-z0-9_]*)\s+(SET\s+DATA\s+)?TYPE\b`)
-	dropTable    = regexp.MustCompile(`(?is)\bDROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?([^;]+)`)
-	alterTable   = regexp.MustCompile(`(?is)\bALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?(?:ONLY\s+)?([A-Za-z_"][A-Za-z0-9_."]*)\s+([^;]+)`)
-	dropColumn   = regexp.MustCompile(`(?is)\bDROP\s+(COLUMN\s+)?(?:IF\s+EXISTS\s+)?("[^"]+"|[A-Za-z_][A-Za-z0-9_]*)`)
-	otherDrop    = regexp.MustCompile(`(?is)\bDROP\s+(SCHEMA|SEQUENCE|MATERIALIZED|DATABASE)\b`)
+	// anywhere in a statement (WITH x AS (DELETE ...) deletes too); ON CONFLICT DO UPDATE SET and a
+	// foreign key's ON UPDATE SET NULL name no table after UPDATE
+	rowsLost = regexp.MustCompile(`(?is)\b(TRUNCATE\b|DELETE\s+FROM\b|MERGE\s+INTO\b|UPDATE\s+(?:ONLY\s+)?["A-Za-z_][A-Za-z0-9_."]*(?:\s+(?:AS\s+)?[A-Za-z_][A-Za-z0-9_]*)?\s+SET\b)`)
+	// what a DO block could do is not read: it runs, so it counts as losing data
+	doBlock    = regexp.MustCompile(`(?is)(^|;)\s*DO\b`)
+	typeRecast = regexp.MustCompile(`(?is)\bALTER\s+(COLUMN\s+)?("[^"]+"|[A-Za-z_][A-Za-z0-9_]*)\s+(SET\s+DATA\s+)?TYPE\b`)
+	dropTable  = regexp.MustCompile(`(?is)\bDROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?([^;]+)`)
+	alterTable = regexp.MustCompile(`(?is)\bALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?(?:ONLY\s+)?([A-Za-z_"][A-Za-z0-9_."]*)\s+([^;]+)`)
+	dropColumn = regexp.MustCompile(`(?is)\bDROP\s+(COLUMN\s+)?(?:IF\s+EXISTS\s+)?("[^"]+"|[A-Za-z_][A-Za-z0-9_]*)`)
+	otherDrop  = regexp.MustCompile(`(?is)\bDROP\s+(SCHEMA|SEQUENCE|MATERIALIZED|DATABASE)\b`)
 )
 
 // keptByDrop are the words after DROP, inside an ALTER TABLE, that lose no rows.
@@ -218,8 +253,11 @@ func upLoses(text, up string) string {
 	if downRestores.MatchString(text) {
 		return ""
 	}
+	if doBlock.MatchString(up) {
+		return "runs a DO block, whose effect is not known"
+	}
 	if m := rowsLost.FindString(up); m != "" {
-		return "changed or deleted rows (" + strings.Join(strings.Fields(strings.TrimLeft(m, "; \n\t")), " ") + ")"
+		return "changed or deleted rows (" + strings.Join(strings.Fields(m), " ") + ")"
 	}
 	if m := typeRecast.FindString(up); m != "" {
 		return "recast a column"
@@ -239,7 +277,10 @@ func upLoses(text, up string) string {
 // table it drops, values other than the default in a column it drops, or rows it changes itself.
 func (m *Migrator) downLoses(ctx context.Context, down string) (string, error) {
 	if x := rowsLost.FindString(down); x != "" {
-		return "changes or deletes rows (" + strings.Join(strings.Fields(strings.TrimLeft(x, "; \n\t")), " ") + ")", nil
+		return "changes or deletes rows (" + strings.Join(strings.Fields(x), " ") + ")", nil
+	}
+	if doBlock.MatchString(down) {
+		return "runs a DO block, whose effect is not known", nil
 	}
 	if typeRecast.MatchString(down) {
 		return "recasts a column", nil
@@ -274,7 +315,7 @@ func (m *Migrator) downLoses(ctx context.Context, down string) (string, error) {
 		if def.Valid {
 			d = "(" + def.String + ")"
 		}
-		has, err := m.exists(ctx, c[0], `SELECT EXISTS (SELECT 1 FROM `+c[0]+` WHERE `+c[1]+` IS DISTINCT FROM `+d+`)`)
+		has, err := m.exists(ctx, c[0], `SELECT EXISTS (SELECT 1 FROM `+c[0]+` WHERE (`+c[1]+`)::text IS DISTINCT FROM (`+d+`)::text)`)
 		if err != nil {
 			return "", err
 		}

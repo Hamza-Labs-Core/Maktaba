@@ -380,6 +380,52 @@ def setup_stops_half_way() -> str:
     return "back, with nothing read from the broken set"
 
 
+def migrated_outside_apply() -> str:
+    """A role that starts migrates by itself: docker restarted in the middle of a deploy, or a
+    person. Its migrations go back too, though apply never ran them."""
+    before = snapshot()
+    code, out = begin("expand")
+    assert code == 0, out[-2000:]
+    write_set("expand")
+    dc("up -d --wait </dev/null")
+    assert "rehearsal_new" in snapshot()["tables"]
+    code, out = rc(f"{ROLLOUT} rollback", env={"WATCH_SECONDS": WATCH})
+    assert code == 0 and "undone by their Down scripts" in out, out[-3000:]
+    not_pending()
+    ready()
+    same(before, snapshot())
+    return "undone as apply's own are"
+
+
+def a_crash_while_restoring() -> str:
+    """Power lost between any two steps of a restore: what a crash leaves is restored again."""
+    before = snapshot()
+    code, out = deploy("expand", "app expand", add_header)
+    assert code == 0, out[-3000:]
+    psql("INSERT INTO rehearsal_new VALUES (1)")  # the schema is kept, so a second pass must not judge it again
+    keep = STATE.parent / "rehearsal-pending"
+    sh(f"rm -rf {keep} && cp -a {STATE}/pending {keep}")
+    code, out = rc(f"{ROLLOUT} rollback", env={"WATCH_SECONDS": WATCH})
+    assert code == 0 and "KEPT" in out, out[-3000:]
+    same(before, snapshot(), but=("migrations", "tables"))
+    # crashed after the migrations were settled, with the files half put back and the app down
+    sh(f"cp -a {keep} {STATE}/pending && touch {STATE}/pending/settled && rm -rf {DEPLOY}/.env {DEPLOY}/Caddyfile && mkdir -p {DEPLOY}/secrets.restore")
+    code, out = reboot()
+    assert code == 0, out[-3000:]
+    not_pending()
+    ready()
+    same(before, snapshot(), but=("migrations", "tables"))
+    # crashed while the saved set was being removed: it was renamed first, so it is nobody's
+    sh(f"mkdir -p {STATE}/done && touch {STATE}/done/boot_id")
+    code, out = reboot()
+    assert code == 0, out[-2000:]
+    not_pending()
+    psql("DROP TABLE rehearsal_new; ALTER TABLE users DROP COLUMN rehearsal_col; DELETE FROM goose_db_version WHERE version_id = 99990001")
+    sh(f"rm -rf {keep}")
+    same(before, snapshot())
+    return "restored again, the kept schema not judged twice"
+
+
 def reboot_during_the_tests() -> str:
     before = snapshot()
     code, out = deploy("expand", "app expand")
@@ -559,7 +605,9 @@ def main() -> int:
     case("rows written since the migration", rows_written_since)
     case("a broken web app", bad_web_app)
     case("setup stopped half way", setup_stops_half_way)
+    case("migrated outside apply", migrated_outside_apply)
     case("a reboot during its tests", reboot_during_the_tests)
+    case("a crash while restoring", a_crash_while_restoring)
     case("a run cut off, then the next deploy", cut_off_then_the_next_deploy)
     case("a configuration change alone", config_only)
     case("backup, restored and spoiled", backup_and_check)
@@ -574,7 +622,7 @@ def main() -> int:
             f.write("| | case | time | |\n|---|---|---|---|\n" + "".join(
                 f"| {'✅' if r['ok'] else '❌'} | {r['case']} | {r['sec']} s | {r['detail'].splitlines()[0][:200] if r['detail'] else ''} |\n" for r in results))
     print(f"\n{len(results) - len(bad)} of {len(results)} cases pass" + (f"; failed: {', '.join(bad)}" if bad else ""), flush=True)
-    return 1 if bad or len(results) < 21 else 0
+    return 1 if bad or len(results) < 23 else 0
 
 
 if __name__ == "__main__":

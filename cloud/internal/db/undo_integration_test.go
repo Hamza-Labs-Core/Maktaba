@@ -12,6 +12,7 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/db"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/db/dbtest"
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/migrations"
 )
 
 // undoWorld is a database with migrations 1 and 2 (the release before), 10 (a deploy's, numbered
@@ -118,6 +119,9 @@ func TestUndoKeepsWhatWasWrittenSince(t *testing.T) {
 func TestUndoRefusesWhatCannotBeUndone(t *testing.T) {
 	ctx := context.Background()
 	for name, sql := range map[string]string{
+		"a CTE deletes":  "-- +goose Up\nWITH gone AS (DELETE FROM ua RETURNING id) SELECT count(*) FROM gone;\n-- +goose Down\nSELECT 1;\n",
+		"a DO block":     "-- +goose Up\n-- +goose StatementBegin\nDO $$ BEGIN DELETE FROM ua; END $$;\n-- +goose StatementEnd\n-- +goose Down\nSELECT 1;\n",
+		"an alias":       "-- +goose Up\nUPDATE ua AS u SET kept = 'y';\n-- +goose Down\nSELECT 1;\n",
 		"a contract":     "-- contract: nothing reads it\n-- +goose Up\nSELECT 1;\n-- +goose Down\nSELECT 1;\n",
 		"rows deleted":   "-- +goose Up\nDELETE FROM ua;\n-- +goose Down\nSELECT 1;\n",
 		"rows changed":   "-- +goose Up\nUPDATE ua SET kept = 'y';\n-- +goose Down\nSELECT 1;\n",
@@ -139,9 +143,11 @@ func TestUndoRefusesWhatCannotBeUndone(t *testing.T) {
 	}
 	// said so by the migration itself, and a constraint or a default dropped loses no rows
 	for name, sql := range map[string]string{
-		"down-restores":         "-- +maktaba down-restores: the Down sets it back\n-- +goose Up\nUPDATE ua SET kept = 'y';\n-- +goose Down\nALTER TABLE ua ALTER kept DROP DEFAULT;\n",
-		"a constraint, dropped": "-- +goose Up\nALTER TABLE ua DROP CONSTRAINT ua_pkey;\n-- +goose Down\nALTER TABLE ua ADD PRIMARY KEY (id);\n",
-		"a function's body":     "-- +goose Up\n-- +goose StatementBegin\nCREATE FUNCTION uf() RETURNS void AS $$ BEGIN DELETE FROM ua; END $$ LANGUAGE plpgsql;\n-- +goose StatementEnd\n-- +goose Down\nDROP FUNCTION uf();\n",
+		"down-restores":            "-- +maktaba down-restores: the Down sets it back\n-- +goose Up\nUPDATE ua SET kept = 'y';\n-- +goose Down\nALTER TABLE ua ALTER kept DROP DEFAULT;\n",
+		"a constraint, dropped":    "-- +goose Up\nALTER TABLE ua DROP CONSTRAINT ua_pkey;\n-- +goose Down\nALTER TABLE ua ADD PRIMARY KEY (id);\n",
+		"an upsert, a foreign key": "-- +goose Up\nCREATE TABLE ug (id INT PRIMARY KEY REFERENCES ua (id) ON UPDATE SET NULL);\nINSERT INTO ua VALUES (1) ON CONFLICT (id) DO UPDATE SET kept = 'x';\n-- +goose Down\nDROP TABLE ug;\n",
+		"a json column":            "-- +goose Up\nALTER TABLE ua ADD COLUMN j JSON NOT NULL DEFAULT '{}';\n-- +goose Down\nALTER TABLE ua DROP COLUMN j;\n",
+		"a function's body":        "-- +goose Up\n-- +goose StatementBegin\nCREATE FUNCTION uf() RETURNS void AS $$ BEGIN DELETE FROM ua; END $$ LANGUAGE plpgsql;\n-- +goose StatementEnd\n-- +goose Down\nDROP FUNCTION uf();\n",
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, m := undoWorld(t, map[string]string{"00000010_x.sql": sql})
@@ -166,5 +172,40 @@ func TestUndoFailures(t *testing.T) {
 	// a version another release's file holds (the running image has no file for it)
 	if err := db.NewMigrator(dbtest.Migrated(t), fstest.MapFS{}, ".").Undo(ctx, []int64{500001}); !errors.Is(err, db.ErrUndoLossy) {
 		t.Fatalf("no file: %v", err)
+	}
+}
+
+// Every migration there is can be judged: none fails the reading, and an expansion (one that says
+// neither contract nor down-restores, and whose Up changes no rows) is not taken for a loss.
+func TestUndoJudgesEveryMigration(t *testing.T) {
+	ctx := context.Background()
+	pool := dbtest.Migrated(t)
+	m := db.NewMigrator(pool, migrations.FS, ".")
+	applied, err := m.Applied(ctx)
+	if err != nil || len(applied) < 40 {
+		t.Fatalf("%d applied, %v", len(applied), err)
+	}
+	ents, err := migrations.FS.ReadDir(".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	judged := 0
+	for _, e := range ents {
+		if !strings.HasSuffix(e.Name(), ".sql") {
+			continue
+		}
+		text, err := migrations.FS.ReadFile(e.Name())
+		if err != nil {
+			t.Fatal(err)
+		}
+		verdict, err := m.Judge(ctx, string(text))
+		if err != nil {
+			t.Errorf("%s: %v", e.Name(), err)
+		}
+		judged++
+		t.Logf("%s: %s", e.Name(), verdict)
+	}
+	if judged != len(applied) {
+		t.Errorf("%d judged, %d applied", judged, len(applied))
 	}
 }
