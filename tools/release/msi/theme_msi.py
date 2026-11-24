@@ -42,6 +42,10 @@ ART = ROOT / "apps" / "desktop-player" / "msi"
 ARABIC = 1025
 ENGLISH = 1033
 STORAGE = str(ARABIC)
+# the transform changes the package's code page (1252 to Arabic's 1256), an error condition
+# Windows Installer stops on unless the transform says to let it pass, as WiX's torch -t language
+# writes it (MSITRANSFORM_ERROR_CHANGECODEPAGE)
+TRANSFORM_ERRORS = 0x20
 
 # jpackage's own words (jdk.jpackage's MsiInstallerStrings_en.wxl), in Arabic
 JPACKAGE_AR = {
@@ -304,7 +308,7 @@ class Msi:
             n = self.H(1024)
             buf = self.c.create_unicode_buffer(1024)
             self.check(self.dll.MsiSummaryInfoGetPropertyW(si, pid, self.c.byref(kind), self.c.byref(ival), None, buf, self.c.byref(n)), "summary get")
-            return buf.value
+            return str(ival.value) if kind.value in (2, 3) else buf.value  # VT_I2, VT_I4
         finally:
             self.close(si)
 
@@ -463,7 +467,7 @@ def theme(path: Path) -> None:
         dar, dbase = msi.open(ar, MSIDBOPEN_READONLY), msi.open(path, MSIDBOPEN_READONLY)
         try:
             msi.check(msi.dll.MsiDatabaseGenerateTransformW(dar, dbase, str(mst), 0, 0), "make the transform")
-            msi.check(msi.dll.MsiCreateTransformSummaryInfoW(dar, dbase, str(mst), 0, 0), "the transform's summary")
+            msi.check(msi.dll.MsiCreateTransformSummaryInfoW(dar, dbase, str(mst), TRANSFORM_ERRORS, 0), "the transform's summary")
         finally:
             msi.close(dar)
             msi.close(dbase)
@@ -507,11 +511,16 @@ def check(path: Path) -> list[str]:
             # the transform, applied to a copy, gives the Arabic dialogs
             mst = tmp / "ar.mst"
             extract_storage(path, STORAGE, mst)
+            # PID_CHARCOUNT: the error conditions it lets pass (low word), so Windows Installer
+            # applies it over the package's code page
+            flags = int(msi.summary(mst, 16) or 0)
+            if flags & TRANSFORM_ERRORS != TRANSFORM_ERRORS:
+                problems.append(f"the Arabic transform does not let its code page change pass (PID_CHARCOUNT {flags:#x})")
             copy = tmp / "ar.msi"
             shutil.copy(path, copy)
             db = msi.open(copy, MSIDBOPEN_TRANSACT)
             try:
-                msi.check(msi.dll.MsiDatabaseApplyTransformW(db, str(mst), 0), "apply the transform")
+                msi.check(msi.dll.MsiDatabaseApplyTransformW(db, str(mst), TRANSFORM_ERRORS), "apply the transform")
                 controls = {(c["Dialog_"], c["Control"]): c for c in _controls(msi, db)}
                 title = controls.get(("WelcomeDlg", "Title"), {}).get("Text", "")
                 if not any("؀" <= ch <= "ۿ" for ch in title):
