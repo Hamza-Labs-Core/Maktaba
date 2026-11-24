@@ -69,9 +69,19 @@ class MpvRealTest {
         thread.shutdown()
     }
 
-    private fun serve(path: String, f: File) = home.answer("GET $path") {
-        MockResponse.Builder().code(200).addHeader("Content-Type", "video/x-matroska")
-            .body(Buffer().apply { write(f.readBytes()) }).build()
+    /** Serves [f] with ranges, as the home does: mpv reads a track chosen later by seeking back. */
+    private fun serve(path: String, f: File) = home.answer("GET $path") { r ->
+        val bytes = f.readBytes()
+        val m = Regex("bytes=(\\d+)-(\\d*)").matchEntire(r.headers["Range"].orEmpty())
+        val from = m?.groupValues?.get(1)?.toInt() ?: 0
+        val to = m?.groupValues?.get(2)?.toIntOrNull()?.coerceAtMost(bytes.size - 1) ?: (bytes.size - 1)
+        val b = MockResponse.Builder().addHeader("Content-Type", "video/x-matroska").addHeader("Accept-Ranges", "bytes")
+        when {
+            m == null -> b.code(200)
+            from >= bytes.size -> return@answer b.code(416).addHeader("Content-Range", "bytes */${bytes.size}").build()
+            else -> b.code(206).addHeader("Content-Range", "bytes $from-$to/${bytes.size}")
+        }
+        b.body(Buffer().apply { write(bytes, from, to - from + 1) }).build()
     }
 
     /** Plays the sessions [paths] answer in turn and returns the time to the first frame, in ms. */
