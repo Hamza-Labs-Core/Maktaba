@@ -145,9 +145,12 @@ if [ "$os" = linux ]; then
   cp "$root/THIRD_PARTY_NOTICES" "$out/licences/" 2>/dev/null || true
 else
   cp "$prefix/bin/libmpv-2.dll" "$out/"
-  # the DLLs it loads from MSYS2, each beside it; Windows' own stay Windows'
-  for dll in $(ntldd -R "$out/libmpv-2.dll" | sed -n 's|.*=> \(/ucrt64/bin/[^ ]*\|[A-Za-z]:[^ ]*ucrt64[^ ]*\) .*|\1|p' | tr '\\' '/' | sort -u); do
-    path="$(cygpath -u "$dll")"
+  # the DLLs it loads from MSYS2 (ldd lists them all, with their own), each beside it;
+  # Windows' own stay Windows'
+  ldd "$out/libmpv-2.dll" | tee "$work/ldd.txt"
+  dlls="$(awk '$3 ~ /^\/ucrt64\/bin\// {print $3}' "$work/ldd.txt" | sort -u)"
+  [ -n "$dlls" ] || { echo "::error::ldd found none of MSYS2's DLLs libmpv-2.dll needs (libass at least)" >&2; exit 1; }
+  for path in $dlls; do
     cp "$path" "$out/"
     owner="$(pacman -Qqo "$path")"
     lic="$(pacman -Qi "$owner" | sed -n 's/^Licenses *: //p')"
@@ -159,7 +162,7 @@ else
     fi
     note "$(basename "$path"): MSYS2 $owner ($lic)"
     for f in /ucrt64/share/licenses/"${owner#mingw-w64-ucrt-x86_64-}"/*; do
-      [ -f "$f" ] && cp "$f" "$out/licences/${owner#mingw-w64-ucrt-x86_64-}-$(basename "$f").txt"
+      if [ -f "$f" ]; then cp "$f" "$out/licences/${owner#mingw-w64-ucrt-x86_64-}-$(basename "$f").txt"; fi
     done
   done
 fi

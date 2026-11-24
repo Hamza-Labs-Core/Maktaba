@@ -24,9 +24,9 @@ class MpvTest {
     }
 
     @Test
-    fun onlyLinuxLoadsItLocally() {
+    fun linuxLoadsItLocallyAndWindowsBesideItsDlls() {
         // Windows reads the same option as LoadLibraryEx's flags: 1 would load it without its imports
-        assertEquals(emptyMap<String, Any>(), MpvLoad.openOptions("Windows Server 2025"))
+        assertEquals(mapOf(com.sun.jna.Library.OPTION_OPEN_FLAGS to 0x8), MpvLoad.openOptions("Windows Server 2025"))
         assertEquals(mapOf(com.sun.jna.Library.OPTION_OPEN_FLAGS to 1), MpvLoad.openOptions("Linux"))
     }
 

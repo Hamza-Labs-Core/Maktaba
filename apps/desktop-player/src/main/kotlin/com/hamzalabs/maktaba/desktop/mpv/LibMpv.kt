@@ -71,6 +71,9 @@ internal object MpvConst {
     /** dlopen's RTLD_LAZY alone (Linux): local symbols, as RTLD_LOCAL is 0. */
     const val RTLD_LAZY_FLAG = 1
 
+    /** LoadLibraryEx's flag (Windows): a DLL's own folder is searched for the DLLs it needs. */
+    const val LOAD_WITH_ALTERED_SEARCH_PATH = 0x8
+
     /** The client API's major this binding is written against (mpv 0.35 and later: 2). */
     const val API_MAJOR = 2L
 }
@@ -113,14 +116,17 @@ sealed interface MpvLoad {
         }
 
         /**
-         * On Linux, RTLD_LOCAL (no RTLD_GLOBAL): FFmpeg's symbols inside libmpv stay out of the
-         * process's namespace, where JavaFX's media plugin finds the system's FFmpeg. Nowhere
-         * else: on Windows the same option is LoadLibraryEx's flags, where 1 is
-         * DONT_RESOLVE_DLL_REFERENCES (the DLL loads without its imports, and its first real
-         * call crashes).
+         * How libmpv is opened. On Linux, RTLD_LOCAL (no RTLD_GLOBAL): FFmpeg's symbols inside
+         * libmpv stay out of the process's namespace, where JavaFX's media plugin finds the
+         * system's FFmpeg. On Windows the same option is LoadLibraryEx's flags:
+         * LOAD_WITH_ALTERED_SEARCH_PATH, so the DLLs beside libmpv-2.dll are the ones it loads
+         * (not 1, DONT_RESOLVE_DLL_REFERENCES, which loads it without its imports).
          */
-        fun openOptions(os: String = System.getProperty("os.name").orEmpty()): Map<String, Any> =
-            if (os.startsWith("Linux")) mapOf(Library.OPTION_OPEN_FLAGS to MpvConst.RTLD_LAZY_FLAG) else emptyMap()
+        fun openOptions(os: String = System.getProperty("os.name").orEmpty()): Map<String, Any> = when {
+            os.startsWith("Linux") -> mapOf(Library.OPTION_OPEN_FLAGS to MpvConst.RTLD_LAZY_FLAG)
+            os.startsWith("Windows") -> mapOf(Library.OPTION_OPEN_FLAGS to MpvConst.LOAD_WITH_ALTERED_SEARCH_PATH)
+            else -> emptyMap()
+        }
 
         /** The packaged Player's libmpv, looked for once. */
         val current: MpvLoad by lazy { from(System.getProperty("compose.application.resources.dir")) }
