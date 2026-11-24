@@ -102,6 +102,10 @@ type UpdaterConfig struct {
 	// Roots keeps the Sigstore trusted root fresh (<data_dir>/sigstore);
 	// nil verifies against the root embedded in the binary.
 	Roots *releaseverify.RootStore
+	// FeedURL is the release feed read before GitHub (updatefeed.go): "" is
+	// releaseverify.DefaultFeedURL for the default repository (none for a fork, or
+	// with APIBaseURL set, a test's), "off" none.
+	FeedURL string
 }
 
 // Updater polls GitHub Releases and caches the result per channel.
@@ -119,6 +123,10 @@ type Updater struct {
 	roots    *releaseverify.RootStore
 	identity releaseverify.Identity
 	idErr    error
+	feedURL  string
+	// feedTrust is the root feeds verify against (tests: a fake Sigstore's); nil is
+	// trustedMaterial
+	feedTrust func(context.Context) (root.TrustedMaterial, error)
 
 	rootsMu       sync.Mutex
 	rootRefreshed time.Time
@@ -159,7 +167,15 @@ func NewUpdater(cfg UpdaterConfig) *Updater {
 		baseURL = "https://api.github.com"
 	}
 	id, idErr := releaseverify.NewIdentity(repo)
+	feedURL := strings.TrimRight(strings.TrimSpace(cfg.FeedURL), "/")
+	switch {
+	case strings.EqualFold(feedURL, "off"):
+		feedURL = ""
+	case feedURL == "" && cfg.APIBaseURL == "" && strings.EqualFold(repo, releaseverify.DefaultRepo):
+		feedURL = releaseverify.DefaultFeedURL
+	}
 	return &Updater{
+		feedURL:  feedURL,
 		roots:    cfg.Roots,
 		identity: id,
 		idErr:    idErr,
@@ -348,7 +364,7 @@ type ghAsset struct {
 // check fetches releases and computes the status against the current
 // version on the active channel.
 func (u *Updater) check(ctx context.Context) (UpdateStatus, error) {
-	rels, err := u.fetchReleases(ctx)
+	rels, err := u.releases(ctx)
 	if err != nil {
 		return UpdateStatus{}, err
 	}

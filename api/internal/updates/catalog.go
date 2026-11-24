@@ -59,6 +59,8 @@ type Discoverer struct {
 	// signing identity inside the verifier).
 	Repo  string
 	Token string
+	// Feed, when set, is read before GitHub's list (feed.go).
+	Feed *FeedSource
 	// Policy is the effective policy (channel, auto_install).
 	Policy func(ctx context.Context) (Policy, error)
 	// Current is the running version.
@@ -355,7 +357,7 @@ func (d *Discoverer) Check(ctx context.Context) (CheckResult, error) {
 	if st.Since == nil {
 		st.Since = &now
 	}
-	rels, decodeErr, err := d.list(ctx)
+	rels, withdrawn, decodeErr, err := d.listing(ctx, pol.Channel, &st)
 	if err != nil {
 		st.LastCheckErr = err.Error()
 		d.Store.SaveState(ctx, st)
@@ -397,6 +399,11 @@ func (d *Discoverer) Check(ctx context.Context) (CheckResult, error) {
 			return res, err
 		}
 		if cur.WithdrawnAt != nil {
+			continue
+		}
+		if why, ok := withdrawn[r.Tag]; ok {
+			// the feed pulled it
+			d.pull(ctx, r.Version, why)
 			continue
 		}
 		if cur.VerifyState == VerifyVerified || cur.VerifyState == VerifyFailed {
@@ -589,6 +596,13 @@ const (
 // (and notifies); it returns the reason ("" when the release is still good). An error
 // reaching GitHub is returned as is: the run does not start on an unknown answer.
 func (d *Discoverer) Recheck(ctx context.Context, r Release, channel string) (string, error) {
+	// the feed first: a release pulled there is withdrawn (it is not marked on GitHub)
+	if why, ok, err := d.feedWithdrawn(ctx, r, channel); err != nil {
+		return "", err
+	} else if ok && why != "" {
+		d.pull(ctx, r.Version, why)
+		return WithdrawnGone, nil
+	}
 	body, code, err := d.get(ctx, d.base()+"/repos/"+d.repo()+"/releases/tags/"+r.Tag, true, 8<<20)
 	reason := ""
 	switch {

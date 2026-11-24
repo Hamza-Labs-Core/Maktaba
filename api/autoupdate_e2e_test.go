@@ -23,7 +23,9 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -113,16 +115,93 @@ next:
 	return out
 }
 
-// fakeGitHub serves the published releases' API and assets.
+// fakeGitHub serves the published releases' API and assets, and (withFeed) the release
+// feed maktaba.tv serves, written by update-feed.yml's own code from what is published.
 type fakeGitHub struct {
+	t        *testing.T
 	mu       sync.Mutex
 	srv      *httptest.Server
 	releases []map[string]any
 	files    map[string][]byte
+	// the release feed: signed by feedBy (nil: none served), under /updates/v1/
+	feedBy    *releaseverifytest.Sigstore
+	feed      map[string][]byte
+	published []*releaseverifytest.FakeRelease
+	feedReads int
+}
+
+// withFeed serves the release feed of every release published from now on, signed by
+// ss as update-feed.yml on main; its base is feedURL().
+func (g *fakeGitHub) withFeed(ss *releaseverifytest.Sigstore) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.feedBy = ss
+	g.writeFeed()
+}
+
+func (g *fakeGitHub) feedURL() string { return g.srv.URL + "/updates/v1" }
+
+// feedReadCount is how many feed files were served.
+func (g *fakeGitHub) feedReadCount() int {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.feedReads
+}
+
+// writeFeed writes both channels' feeds of what is published, as release-feed generate
+// does: each release verified first, then BuildFeeds, each file signed.
+func (g *fakeGitHub) writeFeed() {
+	t := g.t
+	trust, err := g.feedBy.TrustedRoot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, _ := rv.NewIdentity(updateRepo)
+	var srcs []rv.FeedSource
+	for _, r := range g.published {
+		res, err := rv.Verify(rv.Input{Tag: r.Tag, Identity: id, TrustedMaterial: trust, Checksums: r.Files[rv.ChecksumsFile],
+			Bundle: r.Files[rv.BundleFile], Manifest: r.Files[rv.ManifestFile]})
+		if err != nil {
+			t.Logf("fake feed: %s does not verify and is left out: %v", r.Tag, err)
+			continue
+		}
+		src := rv.FeedSource{Tag: r.Tag, PublishedAt: time.Now().Add(-48 * time.Hour), URL: "https://github.test/" + r.Tag,
+			Verified: res, BundleSHA256: hexOf(r.Files[rv.BundleFile])}
+		for n, b := range r.Files {
+			src.Assets = append(src.Assets, rv.FeedSourceAsset{Name: n, Size: int64(len(b)),
+				URL: rv.ReleaseDownloadURL(g.srv.URL, updateRepo, r.Tag, n)})
+		}
+		srcs = append(srcs, src)
+	}
+	g.feed = map[string][]byte{}
+	for _, ch := range []string{rv.FeedStable, rv.FeedBeta} {
+		feeds, _, err := rv.BuildFeeds(rv.FeedBuild{Repo: updateRepo, Channel: ch, DownloadBase: g.srv.URL,
+			GeneratedAt: time.Now(), Releases: srcs})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for p, f := range feeds {
+			b, err := rv.MarshalFeed(f)
+			if err != nil {
+				t.Fatal(err)
+			}
+			bun, err := g.feedBy.SignBlob(b, releaseverifytest.GitHubFeed(updateRepo, "workflow_run"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			g.feed[rv.FeedPath(ch, p)] = b
+			g.feed[rv.FeedPath(ch, p)+rv.FeedBundleSuffix] = bun
+		}
+	}
+}
+
+func hexOf(b []byte) string {
+	s := sha256.Sum256(b)
+	return hex.EncodeToString(s[:])
 }
 
 func newFakeGitHub(t *testing.T) *fakeGitHub {
-	g := &fakeGitHub{files: map[string][]byte{}}
+	g := &fakeGitHub{t: t, files: map[string][]byte{}}
 	g.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		g.mu.Lock()
 		defer g.mu.Unlock()
@@ -139,6 +218,14 @@ func newFakeGitHub(t *testing.T) *fakeGitHub {
 				}
 			}
 			http.NotFound(w, r)
+		case strings.HasPrefix(p, "/updates/v1/") && g.feedBy != nil:
+			b, ok := g.feed[strings.TrimPrefix(p, "/updates/v1/")]
+			if !ok {
+				http.NotFound(w, r)
+				return
+			}
+			g.feedReads++
+			_, _ = w.Write(b)
 		case strings.HasPrefix(p, "/"+updateRepo+"/releases/download/"):
 			b, ok := g.files[strings.TrimPrefix(p, "/"+updateRepo+"/releases/download/")]
 			if !ok {
@@ -166,6 +253,10 @@ func (g *fakeGitHub) publish(r *releaseverifytest.FakeRelease) {
 	g.releases = append([]map[string]any{{"tag_name": r.Tag, "html_url": "https://github.test/" + r.Tag,
 		"body": "notes " + r.Tag, "prerelease": false, "published_at": time.Now().Add(-48 * time.Hour).UTC().Format(time.RFC3339),
 		"assets": assets}}, g.releases...)
+	g.published = append(g.published, r)
+	if g.feedBy != nil {
+		g.writeFeed()
+	}
 }
 
 // installRelease installs r as the first release of the layout at root (as an install

@@ -206,6 +206,17 @@ func GitHubRelease(repo, tag string) SignOptions {
 	}
 }
 
+// GitHubFeed is the identity update-feed.yml on main in repo gets when trigger
+// ("workflow_run", "workflow_dispatch", "schedule") starts it: the release feed's signer.
+func GitHubFeed(repo, trigger string) SignOptions {
+	san := "https://github.com/" + repo + "/.github/workflows/update-feed.yml@refs/heads/main"
+	o := GitHubRelease(repo, "v0.0.0")
+	o.SAN, o.BuildConfigURI = san, san
+	o.Ref = "refs/heads/main"
+	o.Trigger = trigger
+	return o
+}
+
 // DefaultRepo and its ids, duplicated from releaseverify (no import cycle).
 const (
 	defaultRepo    = "Hamza-Labs-Core/Maktaba"

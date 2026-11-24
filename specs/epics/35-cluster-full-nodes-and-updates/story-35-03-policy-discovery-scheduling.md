@@ -77,3 +77,36 @@ Design: [design.md](design.md) §4, §3.5; README R4, R3.6, settings table.
 ## Dependencies
 
 35.1; Epic 28.2 (built); 35.4 (supervisor start endpoint); Epic 33.10 (TV change state for the blocker).
+
+## As built (2026-11-24): the release feed
+
+AC2's poller no longer reads GitHub's list of releases. On 2026-11-23 that list was 10.5 MB for 30
+releases of about 190 files each, past every home's cap, and no home saw a release for a day (#1592 read
+it in pages as a stopgap). A home now reads the **release feed**: one small signed file per channel and
+platform, `https://maktaba.tv/updates/v1/<channel>/<platform>.json`, with its Sigstore bundle beside it.
+
+- **Contents.** The newest 10 releases of the channel, each with only that platform's files (name,
+  address, size, SHA-256), its `checksums.txt` and `release.json` digests, its migration set and its
+  published time. A pulled release stays listed with `withdrawn` and the reason. Shape and checks:
+  `shared/go/releaseverify/feed.go`.
+- **Signed.** `update-feed.yml` on main signs each file keyless after every release is published and
+  verified. A home accepts only that identity (`Identity.FeedSAN`, trigger `workflow_run`,
+  `workflow_dispatch` or `schedule`), then checks that the content is the channel, platform and
+  repository it asked for, with every file at its release's own GitHub address. The files are still
+  downloaded from GitHub and verified as in 35.1.
+- **Fallback.** GitHub's list (in pages, #1592) is read only when the feed cannot be reached, or is older
+  than the one the home read last. A feed that fails its checks stops the check and is never passed over.
+- **The cluster.** The home reads the feed of each platform its machines run; its mirror still serves any
+  file the signed `checksums.txt` lists.
+- **Withdrawal.** TC5's re-check reads the feed first: a release pulled there
+  (`tools/release/pull-release.sh`, the repository variable `UPDATE_FEED_WITHDRAWN`) is withdrawn.
+  Homes before the feed still learn of a pull only from GitHub.
+- **Hosting.** maktaba.tv's Worker serves the feed as static files; every site deploy carries the newest
+  feed. No new server or service. A live check fails `update-feed.yml` when maktaba.tv does not list a new
+  release for every platform.
+- **Tests.** `TestFeedFromTheRealV0_3_161` and `TestFeedSizeOfAFullWindow` (generation from the real
+  v0.3.161), `TestVerifyFeedSignature` (good, tampered, missing, other signers),
+  `TestFeedIsReadInsteadOfGitHubsList`, `TestFeedFallsBackToGitHubOnlyWhenUnreachable`,
+  `TestFeedRefusedNeverFallsBack`, `TestFeedOlderThanTheLastFallsBack`, `TestFeedCapAndARealGeneratedFeed`.
+  The update rehearsal serves the feed at its real shape, and this commit's home must find each release
+  there.

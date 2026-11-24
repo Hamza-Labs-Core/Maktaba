@@ -106,7 +106,13 @@ func (r *rehearsal) update(home *appMachine, p payloadSpec, d time.Duration) (ru
 	states := home.watchStates()
 	a := home.signIn()
 	mon := home.watchDowntime()
+	reads := r.gh.feedReadCount()
 	id := a.updateNow(p.version)
+	if p.variant == "next" && r.gh.feedReadCount() <= reads {
+		// this commit's home found the release in the release feed, at its real shape
+		// (release-feed generate's code, signed as update-feed.yml), not in GitHub's list
+		r.t.Errorf("this commit's home found %s without reading the release feed", p.version)
+	}
 	run := a.follow(id, d)
 	states.end()
 	r.logf("the record went %v; the journal %v", states.recordStates(), states.journalStates())
