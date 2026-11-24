@@ -25,9 +25,12 @@ func TestStreamingAdapterCapabilities(t *testing.T) {
 	a := streamingServiceAdapter{client: capsClient{caps: grpcstreaming.Capabilities{
 		HWAccel: "software", SoftwareOnly: true,
 		TranscodeSlots: grpcstreaming.Slots{Used: 1, Capacity: 1},
+		// story 13.18: the profiles the streaming role knows
+		ClientProfiles: []string{"desktop-mpv", "desktop-player"},
 	}}}
 	got, err := a.Capabilities(context.Background())
-	if err != nil || !got.SoftwareOnly || got.HWAccel != "software" || got.TranscodeSlots.Capacity != 1 {
+	if err != nil || !got.SoftwareOnly || got.HWAccel != "software" || got.TranscodeSlots.Capacity != 1 ||
+		len(got.ClientProfiles) != 2 || got.ClientProfiles[0] != "desktop-mpv" {
 		t.Fatalf("got %+v, %v", got, err)
 	}
 	if got, _ := (streamingServiceAdapter{}).Capabilities(context.Background()); got.SoftwareOnly {
