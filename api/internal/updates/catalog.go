@@ -240,19 +240,41 @@ func (d *Discoverer) read(ctx context.Context, url string, api bool, limit int64
 	return resp.StatusCode, err
 }
 
-// list asks GitHub for the newest 30 releases. The answer is some 7 MB (about 150
-// assets a release) and is read one release at a time (system.DecodeJSONArray). err
-// is an answer that did not come (or came too long); decodeErr one that came and is
-// not a list of releases.
+// The releases list is asked for in listPages pages of listPerPage releases, each answer
+// held to listPageLimit bytes. One page of 30 passed 8 MiB on 2026-11-23 (some 190
+// assets a release, 10.5 MB): every check failed from then on, and the home went on
+// choosing from a catalog that no longer knew the newest releases (the incident of
+// 2026-11-24). Ten a page is some 3.5 MB.
+const (
+	listPages     = 3
+	listPerPage   = 10
+	listPageLimit = 8 << 20
+)
+
+// list asks GitHub for the newest releases (listPages pages of listPerPage), each page
+// read one release at a time (system.DecodeJSONArray). err is an answer that did not
+// come (or came too long); decodeErr one that came and is not a list of releases. A
+// page shorter than listPerPage is the last one.
 func (d *Discoverer) list(ctx context.Context) (rels []ghRelease, decodeErr, err error) {
-	_, err = d.read(ctx, d.base()+"/repos/"+d.repo()+"/releases?per_page=30", true, 8<<20, func(r io.Reader) error {
-		rels, decodeErr = system.DecodeJSONArray[ghRelease](r)
-		return nil // an answer that broke off or is too long is read's error
-	})
-	if err != nil {
-		return nil, nil, err
+	for page := 1; page <= listPages; page++ {
+		var part []ghRelease
+		u := fmt.Sprintf("%s/repos/%s/releases?per_page=%d&page=%d", d.base(), d.repo(), listPerPage, page)
+		_, err = d.read(ctx, u, true, listPageLimit, func(r io.Reader) error {
+			part, decodeErr = system.DecodeJSONArray[ghRelease](r)
+			return nil // an answer that broke off or is too long is read's error
+		})
+		if err != nil {
+			return nil, nil, err
+		}
+		if decodeErr != nil {
+			return nil, decodeErr, nil
+		}
+		rels = append(rels, part...)
+		if len(part) < listPerPage {
+			break
+		}
 	}
-	return rels, decodeErr, nil
+	return rels, nil, nil
 }
 
 func (d *Discoverer) base() string {

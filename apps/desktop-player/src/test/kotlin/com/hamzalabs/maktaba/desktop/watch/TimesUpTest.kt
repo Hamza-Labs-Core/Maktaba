@@ -25,7 +25,7 @@ import java.time.Instant
 class TimesUpTest {
     private val up = TimeUp("limit_reached", Instant.parse("2026-11-12T04:00:00Z"), positionMs = 754_000)
 
-    private fun TestHome.withPin() = answer("GET /api/me/parental/guardians", """{"guardians":[{"id":"g1","username":"huda"}]}""")
+    private fun TestHome.withPin() = answer("GET /api/me/parental/guardians", """{"guardians":[{"id":"g1","username":"khalid"}]}""")
 
     @Test
     fun theScreenSaysWhyAndWhereItStopped() = TestHome().use { fake ->

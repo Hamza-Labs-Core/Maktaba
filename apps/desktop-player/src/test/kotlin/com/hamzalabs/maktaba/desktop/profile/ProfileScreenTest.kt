@@ -27,7 +27,7 @@ class ProfileScreenTest {
         runComposeUiTest {
             setContent { InPlayer(home) { Box(Modifier.size(1200.dp, 800.dp)) { ProfileContent(ProfileState(f.client), home, ProfileNav()) } } }
             onNodeWithTag("profile-groups").assertExists()
-            onNodeWithText("amina on Kitchen").assertExists()
+            onNodeWithText("idris on Kitchen").assertExists()
         }
         runComposeUiTest {
             setContent { InPlayer(home, Lang.Ar) { Box(Modifier.size(600.dp, 800.dp)) { ProfileContent(ProfileState(f.client), home, ProfileNav()) } } }
@@ -42,7 +42,7 @@ class ProfileScreenTest {
     fun signOutAsksFirst() = TestHome().use { f ->
         var signedOut = 0
         val home = DesktopHome(
-            com.hamzalabs.maktaba.core.api.User("u1", "amina"), f.client, "Kitchen", f.prefs,
+            com.hamzalabs.maktaba.core.api.User("u1", "idris"), f.client, "Kitchen", f.prefs,
             kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO),
             posters = com.hamzalabs.maktaba.desktop.Posters(null),
             actions = HomeActions(signOut = { signedOut++ }),

@@ -40,7 +40,7 @@ import org.junit.rules.ExternalResource
  */
 class FakeRemoteHome(
     /** Who is signed in (the demo shots sign in the demo library's own account). */
-    val user: User = User(id = "u1", username = "layla", isAdmin = true),
+    val user: User = User(id = "u1", username = "yusuf", isAdmin = true),
 ) : ExternalResource() {
     private val server = MockWebServer()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)

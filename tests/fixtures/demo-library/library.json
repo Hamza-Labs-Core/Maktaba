@@ -381,7 +381,51 @@
         "lang": "ar",
         "text": "القمر أقرب جيراننا، و<mark>المريخ</mark> هو الخطوة التالية."
       }
-    ]
+    ],
+    "ai": {
+      "question": {
+        "en": "How did Curiosity land on Mars?",
+        "ar": "كيف هبطت كيوريوسيتي على المريخ؟"
+      },
+      "sources": [
+        {
+          "video_id": "v-curiosity",
+          "start_sec": 212,
+          "text": {
+            "en": "The sky crane lowers Curiosity gently onto Mars.",
+            "ar": "الرافعة السماوية تُنزل كيوريوسيتي برفق على المريخ."
+          }
+        },
+        {
+          "video_id": "v-curiosity",
+          "start_sec": 168,
+          "text": {
+            "en": "The parachute opens high above the ground, and the heat shield falls away.",
+            "ar": "تنفتح المظلة عاليًا فوق الأرض، ويسقط الدرع الحراري."
+          }
+        }
+      ],
+      "sentences": [
+        {
+          "text": {
+            "en": "A parachute slowed the capsule and its heat shield fell away.",
+            "ar": "أبطأت المظلة الكبسولة وسقط درعها الحراري."
+          },
+          "cite": [
+            2
+          ]
+        },
+        {
+          "text": {
+            "en": "Then a rocket-powered sky crane lowered the rover on cables to the ground.",
+            "ar": "ثم أنزلت رافعة سماوية تدفعها الصواريخ المركبة الجوالة على حبال إلى الأرض."
+          },
+          "cite": [
+            1
+          ]
+        }
+      ]
+    }
   },
   "artwork": {
     "note": "Each title's art is a frame of the film itself (its artwork_from), or, for the three Blender Studio films, the film's card from its Blender Studio page (the page's og:image), under the CC BY 4.0 licence the studio's terms give its digital content (https://studio.blender.org/terms-and-conditions/): resized to a 640×360 backdrop and cropped to a 240×360 poster, metadata stripped. No art shows a person."

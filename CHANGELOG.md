@@ -412,18 +412,17 @@ build fails when the two differ.
 
 ### Fixed
 
-- **The Android Remote on a 7" tablet, and in Arabic.** On a window about 600 dp wide (a 7"
-  tablet upright, a foldable open flat) the Remote shows one pane at a time, as on a phone: the
-  list sits beside the page only where both fit at their least widths, and the list is never
-  narrower than 360 dp. A detail's value no longer wraps letter by letter beside a long label: it
-  goes under the label when a word of it would not fit. In Arabic the Remote no longer shows the
-  home's English: every processing stage's name (in Needs attention, the queue and its running
-  jobs), every failure cause (the plugins' too, and a stage's failing cause), a running job's
-  step and what it works on, the update channel and quiet window, how a machine is installed and
-  what installed its last update are in the Remote's words, the web's where it has them. An
-  update's steps no longer start with the home's host id. Needs attention's page no longer
-  repeats its cause as a code; a stage or cause this app has no words for still shows as the home
-  sent it.
+- **A home whose update rolled back no longer installs an older release instead, and it sees new
+  releases again.** Since 2026-11-23 GitHub's list of the newest 30 releases has been larger than
+  the 8 MiB a home reads, so every check for updates failed and homes stopped learning of new
+  releases. The list is now read 10 releases at a time. A release that rolled back (or whose
+  migrations failed on the rehearsal's copy) now holds back every release below it, and every newer
+  one that carries the same migrations, until an admin retries it; before, the home took the newest
+  release below it in the next window. On 2026-11-24 that was v0.3.157, which rolled back too.
+  Releases now name their set of migrations in `release.json` (`migrations.set_sha256`). The
+  Updates page says which failed release holds the others back, and **Update now** naming a release
+  still installs it.
+
 - **On Roku, Down at the end of a library's loaded titles no longer jumps back to the first
   title.** The Library tab's grid loads 36 titles at a time; pressing Down on its last row while
   the next titles were still loading took focus round to the first title. Focus now stays on the
@@ -3813,6 +3812,10 @@ build fails when the two differ.
   the Caminandes llama films. Every title is public domain or Creative Commons, credited, and
   no woman or girl appears in any picture. In English and Arabic.
 
+- **maktaba.dev's screenshots show no woman or girl.** The big screen, Roku and web search
+  screenshots on the Apps pages were retaken on test data with men's names only and on the new
+  demo library. In English and Arabic.
+
 ### Fixed
 
 - **A TV held on its old streaming software stays there through schedule and settings
@@ -4471,6 +4474,19 @@ build fails when the two differ.
   migrations still fail part way, nothing is put back if what they changed is additive and the
   release before runs on it. Otherwise their own Down scripts undo them when they lose no data,
   in seconds. Only failing both does the backup go back, as before.
+
+- **The Android Remote on a 7" tablet, and in Arabic.** On a window about 600 dp wide (a 7"
+  tablet upright, a foldable open flat) the Remote shows one pane at a time, as on a phone: the
+  list sits beside the page only where both fit at their least widths, and the list is never
+  narrower than 360 dp. A detail's value no longer wraps letter by letter beside a long label: it
+  goes under the label when a word of it would not fit. In Arabic the Remote no longer shows the
+  home's English: every processing stage's name (in Needs attention, the queue and its running
+  jobs), every failure cause (the plugins' too, and a stage's failing cause), a running job's
+  step and what it works on, the update channel and quiet window, how a machine is installed and
+  what installed its last update are in the Remote's words, the web's where it has them. An
+  update's steps no longer start with the home's host id. Needs attention's page no longer
+  repeats its cause as a code; a stage or cause this app has no words for still shows as the home
+  sent it.
 
 ## [0.2.0] - 2026-10-19
 

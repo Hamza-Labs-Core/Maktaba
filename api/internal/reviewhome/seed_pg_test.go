@@ -29,10 +29,10 @@ func manifest() *reviewhome.Manifest {
 		},
 		Channel: reviewhome.ManifestChannel{NameEN: "Review TV", NameAR: "قناة المراجعة", Library: "films", Number: 1},
 		Items: []reviewhome.ManifestItem{
-			{ID: "spring", Library: "films", File: "spring.mp4", TitleEN: "Spring", TitleAR: "الربيع",
-				Licence: "CC-BY-4.0", LicenceURL: "https://creativecommons.org/licenses/by/4.0/", Attribution: "Spring, Blender Animation Studio (2019)"},
-			{ID: "sintel", Library: "films-older", File: "sintel.mp4", TitleEN: "Sintel", TitleAR: "سينتل",
-				Licence: "CC-BY-3.0", LicenceURL: "https://creativecommons.org/licenses/by/3.0/", Attribution: "Sintel, Blender Foundation (2010)"},
+			{ID: "llama-drama", Library: "films", File: "caminandes-llama-drama.mp4", TitleEN: "Caminandes: Llama Drama", TitleAR: "كاميناندس: دراما اللاما",
+				Licence: "CC-BY-3.0", LicenceURL: "https://creativecommons.org/licenses/by/3.0/", Attribution: "Caminandes: Llama Drama, Blender Foundation (2013)"},
+			{ID: "apollo-11-launch", Library: "films-older", File: "apollo-11-launch.mkv", TitleEN: "Apollo 11: The Launch", TitleAR: "أبولو 11: الإقلاع",
+				Licence: "public-domain", LicenceURL: "https://creativecommons.org/publicdomain/mark/1.0/", Attribution: "Apollo 11 launch, camera E-8, NASA/Kennedy Space Center (1969)"},
 		},
 	}
 }
@@ -117,7 +117,7 @@ func TestSeedMakesTheReviewHome(t *testing.T) {
 	}
 
 	// the scan finds the files; seeding again titles them, and changes nothing else
-	for lib, file := range map[string]string{"films": "spring.mp4", "films-older": "sintel.mp4"} {
+	for lib, file := range map[string]string{"films": "caminandes-llama-drama.mp4", "films-older": "apollo-11-launch.mkv"} {
 		if _, err := db.Exec(`INSERT INTO videos (id, library_id, path, filename, content_hash, size_bytes, mtime, state)
 			VALUES (gen_random_uuid(), $1, '/srv/review-media/' || $2, $2, encode(sha256($2::bytea), 'hex'), 1, now(), 'ready')`, rep.Libraries[lib], file); err != nil {
 			t.Fatal(err)
@@ -133,10 +133,10 @@ func TestSeedMakesTheReviewHome(t *testing.T) {
 	if len(again.Missing) != 0 || again.Titled != 2 {
 		t.Errorf("after the scan: missing %v, titled %d", again.Missing, again.Titled)
 	}
-	title := one[string](t, db, `SELECT title FROM videos WHERE filename = 'spring.mp4'`)
-	desc := one[string](t, db, `SELECT description FROM videos WHERE filename = 'spring.mp4'`)
-	if title != "Spring · الربيع" || desc != m.Items[0].LicenceNote() {
-		t.Errorf("spring: %q / %q", title, desc)
+	title := one[string](t, db, `SELECT title FROM videos WHERE filename = 'caminandes-llama-drama.mp4'`)
+	desc := one[string](t, db, `SELECT description FROM videos WHERE filename = 'caminandes-llama-drama.mp4'`)
+	if title != "Caminandes: Llama Drama · كاميناندس: دراما اللاما" || desc != m.Items[0].LicenceNote() {
+		t.Errorf("llama-drama: %q / %q", title, desc)
 	}
 	for q, want := range map[string]int{
 		`SELECT count(*) FROM users WHERE username IN ('reviewer', 'reviewer-child')`: 2,

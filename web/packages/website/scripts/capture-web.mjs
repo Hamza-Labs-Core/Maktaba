@@ -39,6 +39,24 @@ export const SCREENS = [
     ready: "mark",
   },
   { name: "guide", path: "/guide", ready: null },
+  // maktaba.dev's search pages (scripts/apps.mjs): the box's suggestions while a word is typed,
+  // and AI mode's answer to the library's question; the site (shots.config.json) uses neither
+  {
+    name: "search-suggest",
+    path: "/search",
+    ready: "input[role=combobox]",
+    act: async (page, lib, lang) => {
+      const box = page.locator("input[role=combobox]");
+      await box.click();
+      await box.pressSequentially(lib.search.query[lang].slice(0, 3), { delay: 60 });
+      await page.waitForSelector("[role=listbox] [role=option]", { timeout: 20_000 });
+    },
+  },
+  {
+    name: "search-ai",
+    path: (lib, lang) => `/search?q=${encodeURIComponent(lib.search.ai.question[lang])}&tab=ai`,
+    ready: "[data-testid=ai-sources] li",
+  },
   // the same home on a phone's width (393 × 852, the size of a current iPhone's screen), for the
   // home page's phone frame: the web app in a phone's browser, the screen its caption names
   {
@@ -98,6 +116,40 @@ export const EXTRA = [
   { method: "POST", path: "/api/auth/recovery-pass", status: 204 },
 ];
 
+/** AI mode's answer (story 49.14) to the library's question, as Server-Sent Events: its sources,
+ * then each sentence citing them, then done. */
+function aiAnswer(lib, lang) {
+  const byId = new Map(lib.videos.map((v) => [v.id, v]));
+  const ai = lib.search.ai;
+  const passages = ai.sources.map((p, i) => ({
+    n: i + 1,
+    video_id: p.video_id,
+    title: byId.get(p.video_id).title[lang],
+    library_name: lib.libraries.find((l) => l.id === byId.get(p.video_id).library_id).name[lang],
+    start_sec: p.start_sec,
+    end_sec: p.start_sec + 6,
+    text: p.text[lang],
+  }));
+  const ev = (name, data) => `event: ${name}\ndata: ${JSON.stringify(data)}\n\n`;
+  return (
+    ev("sources", { q: ai.question[lang], passages }) +
+    ai.sentences
+      .map((s) =>
+        ev("text", {
+          text: s.text[lang],
+          citations: s.cite.map((n) => ({
+            n,
+            video_id: passages[n - 1].video_id,
+            start_sec: passages[n - 1].start_sec,
+            end_sec: passages[n - 1].end_sec,
+          })),
+        })
+      )
+      .join("") +
+    ev("done", { answered: true, sentences: ai.sentences.length, dropped: 0, took_ms: 40 })
+  );
+}
+
 export function viewer(body) {
   const out = { ...body, is_admin: false };
   if (out.user) out.user = { ...out.user, is_admin: false };
@@ -141,7 +193,17 @@ export async function capture({ out, only, log }) {
     browser = await chromium.launch();
     for (const lang of LANGS) {
       // the web is shown as a household member sees it: a viewer, without the admin menu
-      const table = [...buildRoutes(lang, lib), ...EXTRA].map((r) =>
+      const table = [
+        ...buildRoutes(lang, lib),
+        ...EXTRA,
+        {
+          method: "POST",
+          path: "/api/search/ai",
+          status: 200,
+          contentType: "text/event-stream",
+          text: aiAnswer(lib, lang),
+        },
+      ].map((r) =>
         r.path === "/api/auth/me" || r.path === "/api/me" ? { ...r, body: viewer(r.body) } : r
       );
       const find = matcher(table);
@@ -183,6 +245,8 @@ export async function capture({ out, only, log }) {
               contentType: "image/jpeg",
               body: readFileSync(join(FIXTURE, "art", r.art)),
             });
+          if (r.text !== undefined)
+            return route.fulfill({ status: r.status, contentType: r.contentType, body: r.text });
           return route.fulfill({
             status: r.status,
             contentType: "application/json",
@@ -212,6 +276,7 @@ export async function capture({ out, only, log }) {
         const path = typeof screen.path === "function" ? screen.path(lib, lang) : screen.path;
         await page.goto(base + path, { waitUntil: "networkidle" });
         if (screen.ready) await page.waitForSelector(screen.ready, { timeout: 20_000 });
+        if (screen.act) await screen.act(page, lib, lang);
         // every image decoded, the fonts in, nothing moving
         // a lazy image below the fold never loads by itself (on a phone's width most do not), so
         // each loads now; one that has not loaded in 15 s fails the capture rather than wait
