@@ -694,8 +694,14 @@ func (u *updates) migrateDown(ctx context.Context, _ *updater.Journal, schema in
 	defer pgbundle.Hold()()
 	g.pauseCopies(ctx, 0)
 	if err := runMigrateDownTo(ctx, api, schema, os.Stderr); err != nil {
-		return err // the copies stay paused: the schema is part way (the update is held)
+		// the copies stay paused: the schema is part way (the update is held, when it has a
+		// backup to hold for)
+		if nerr := noteDownFailed(g.stateDir); nerr != nil {
+			fmt.Fprintf(os.Stderr, "[serve] level=error the Down script that failed cannot be recorded: %v\n", nerr)
+		}
+		return err
 	}
+	clearDownFailed(g.stateDir)
 	g.resumeCopies()
 	return nil
 }
@@ -877,7 +883,7 @@ func (u *updates) adminHandler(base http.Handler, token string) http.Handler {
 			u.serveLog(w, r)
 			return
 		}
-		if name == "backups" || name == "restore" || name == "restore-abandon" {
+		if name == "backups" || name == "restore" {
 			u.serveRestore(w, r, name)
 			return
 		}

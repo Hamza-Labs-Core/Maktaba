@@ -7,8 +7,9 @@ package updater
 // and a Down script (goose). When the schema cannot be kept (schemakeep.go) and every
 // migration since the release before loses no data on its way up, the rollback runs their
 // Down scripts back to the release before's schema (`maktaba-api migrate down-to`): only
-// the tables they touched change, every other table, index and row stays. The dump goes
-// back only when an Up script lost data a Down script cannot bring back, or a Down fails.
+// the tables they touched change, every other table, index and row stays. When an
+// Up script lost data a Down script cannot bring back, or a Down fails, the update is held:
+// nothing is put back by itself (MarkHeld).
 
 import (
 	"context"
@@ -223,7 +224,7 @@ func (m *Machine) migrateDown(j *Journal, reason string) bool {
 		var err error
 		if before, onKept, err = sb.SchemaBefore(j.Job.Version); err != nil {
 			m.errorf("the slot the database was at before %s cannot be read (%v): its Down scripts do not run, the "+
-				"whole dump goes back instead", j.Job.Version, err)
+				"update is held instead (nothing is put back by itself)", j.Job.Version, err)
 			return false
 		}
 	}

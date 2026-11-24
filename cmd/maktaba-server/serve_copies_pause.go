@@ -2,11 +2,17 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/apppayload"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbundle"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/layout"
 )
 
 // The machines' copies during an update's migrations (pgbundle/copies_pause.go): the
@@ -106,8 +112,43 @@ func (g *migrationGate) waitTableSyncs(ctx context.Context, b pgbundle.Bundle, w
 	}
 }
 
+// downFailedPath says a rollback's Down script failed on the database: its schema is part way,
+// whatever the record says (an update with no backup, [backups] pre_update = "off", cannot be
+// held: its record stays migrated).
+func downFailedPath(stateDir string) string {
+	return filepath.Join(stateDir, "state", "down-failed.json")
+}
+
+// noteDownFailed records it for the release the record is of; clearDownFailed forgets it: that
+// release's database step ran to its end (its migrations are whole again).
+func noteDownFailed(stateDir string) error {
+	rec, ok, err := apppayload.ReadDatabase(stateDir)
+	if err != nil || !ok {
+		return err
+	}
+	raw, _ := json.Marshal(map[string]any{"version": rec.Version, "at": time.Now().UTC()})
+	return layout.WriteFileAtomic(downFailedPath(stateDir), append(raw, '\n'), 0o600)
+}
+
+func clearDownFailed(stateDir string) { _ = os.Remove(downFailedPath(stateDir)) }
+
+// downFailed reports whether a Down script failed on the database the record of version
+// holds. One that cannot be read says it did.
+func downFailed(stateDir, version string) bool {
+	raw, err := os.ReadFile(downFailedPath(stateDir))
+	if errors.Is(err, fs.ErrNotExist) {
+		return false
+	}
+	var d struct {
+		Version string `json:"version"`
+	}
+	return err != nil || json.Unmarshal(raw, &d) != nil ||
+		layout.NormalizeVersion(d.Version) == layout.NormalizeVersion(version)
+}
+
 // schemaSettled says whether the database's record holds a schema the machines' copies may
-// follow: no migration, restore or held update under way (none recorded: none is). A
+// follow: no migration, restore or held update under way (none recorded: none is), and no
+// rollback's Down script failed on it. A
 // record that cannot be read, or a state this release does not know, does not.
 func schemaSettled(stateDir string) bool {
 	rec, ok, err := apppayload.ReadDatabase(stateDir)
@@ -116,7 +157,7 @@ func schemaSettled(stateDir string) bool {
 	}
 	switch rec.State {
 	case apppayload.DatabaseMigrated, apppayload.DatabaseRestored:
-		return true
+		return !downFailed(stateDir, rec.Version)
 	}
 	return !ok
 }

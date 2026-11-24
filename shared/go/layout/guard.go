@@ -5,8 +5,8 @@ package layout
 // orchestrator writes <launcher root>/updates/pending.json before it restarts onto a new
 // release; the launcher falls back to the previous release (a kept copy of the app's
 // payload, or the runtime directory that ran before) when the new one cannot stay up,
-// and marks the database record so the previous release puts back the dump taken
-// before the new one's migrations (shared with the layout's pending, Pending.Record).
+// and marks the database record held, so nothing is put back by itself and a person
+// chooses (shared with the layout's pending, Pending.Record).
 
 import (
 	"encoding/json"
@@ -40,8 +40,8 @@ type Guard struct {
 	// bundle); PreviousRuntime the runtime directory that did (runtime copy).
 	PreviousPayload string `json:"previous_payload,omitempty"`
 	PreviousRuntime string `json:"previous_runtime,omitempty"`
-	// Record is the database's record (state/database.json) the fallback marks for
-	// the dump to be put back (a home's; "" on a node).
+	// Record is the database's record (state/database.json) the fallback marks held
+	// (MarkRecordHeld; a home's, "" on a node).
 	Record string `json:"record,omitempty"`
 }
 

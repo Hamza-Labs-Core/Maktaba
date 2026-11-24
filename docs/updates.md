@@ -356,14 +356,6 @@ launcher and server against it.
 held record stays held: its Down scripts may have run in part, and the failed release never
 migrates and runs on that by itself.
 
-**A restore that cannot finish** (its backup lost or unreadable, no room) changes nothing, and has
-a way out: the next start tries it again; the recovery page and `maktaba-server restore` can put
-the same or another backup back; **Give this restore up** (`maktaba-server restore --abandon
---confirm`) leaves the database as it was before it (a held update waits again; on a home that
-ran well, the release that ran on it starts again); and a release newer than the one that failed
-goes on from there. While a restore runs, none of these is possible, and one whose database is
-gone is not given up: only a restore brings a database back.
-
 The automatic restores of 2026-11-14, 2026-11-23 (v0.3.158) and 2026-11-24
 (v0.3.157) each kept the library stopped for about three hours. The release
 is then blocked until a newer one appears or an admin unblocks it (Admin → Updates → **Try it
@@ -429,9 +421,12 @@ so one that hung with its watch alive was never timed out.
 - **Index builds are plain while the library is stopped (since 2026-11-24).** The migrations
   run before any role starts, so their `CREATE INDEX CONCURRENTLY` and `DROP INDEX CONCURRENTLY`
   run without `CONCURRENTLY` (`MAKTABA_MIGRATE_OFFLINE=1`, set by the database step and the
-  rehearsal on a copy). A plain build takes a lock that only holds writes back, which the
-  stopped library makes none of, waits for no older transaction, and rolls back whole: it leaves
-  no INVALID index. The migration files keep `CONCURRENTLY`; a function's body or a `DO` block is
+  rehearsal on a copy). A plain build takes a lock that only holds writes to that table
+  back, waits for no older transaction, and rolls back whole: it leaves no INVALID index. The
+  stopped library writes nothing. A joined machine's own sessions (`maktaba_node_*`) are ended
+  when the migrations start and may come back: one that writes to a table while its index is
+  built waits for the build, and one a migration waits on for more than 10 seconds is ended; the
+  machine's workers try again once the home answers. The migration files keep `CONCURRENTLY`; a function's body or a `DO` block is
   left as it is. An INVALID index an earlier try left is dropped, and built again, plainly too.
 - **When the migrations fail part way.** The library stays stopped and the start says what
   happened: `db_kept` (nothing put back: the changes so far are additive and the previous

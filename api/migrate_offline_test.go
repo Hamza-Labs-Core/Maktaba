@@ -3,7 +3,6 @@ package main
 import (
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"testing"
 )
@@ -73,7 +72,20 @@ func TestPlainIndexBuildsOnEveryMigration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	topLevel := regexp.MustCompile(`(?im)^\s*(CREATE\s+(UNIQUE\s+)?INDEX|DROP\s+INDEX)\s+CONCURRENTLY\b`)
+	// a line that starts a CONCURRENTLY build or drop ("" none), read by words: a regular
+	// expression over every migration took most of a second under the race detector
+	topLevel := func(up string) string {
+		for _, l := range strings.Split(up, "\n") {
+			w := strings.Fields(strings.ToUpper(l))
+			if len(w) > 1 && w[0] == "CREATE" && w[1] == "UNIQUE" {
+				w = w[1:]
+			}
+			if len(w) > 2 && (w[0] == "CREATE" || w[0] == "UNIQUE" || w[0] == "DROP") && w[1] == "INDEX" && w[2] == "CONCURRENTLY" {
+				return l
+			}
+		}
+		return ""
+	}
 	total := 0
 	for _, e := range ents {
 		name := e.Name()
@@ -84,13 +96,19 @@ func TestPlainIndexBuildsOnEveryMigration(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		if !strings.Contains(strings.ToUpper(string(b)), "CONCURRENTLY") {
+			if out, n := plainIndexBuilds(string(b)); n != 0 || out != string(b) {
+				t.Errorf("%s names no CONCURRENTLY, and is changed", name)
+			}
+			continue
+		}
 		out, n := plainIndexBuilds(string(b))
 		total += n
 		up := out
 		if loc := gooseDown.FindStringIndex(out); loc != nil {
 			up = out[:loc[0]]
 		}
-		if m := topLevel.FindString(up); m != "" && !inDollarQuote(up, m) {
+		if m := topLevel(up); m != "" && !inDollarQuote(up, m) {
 			t.Errorf("%s: %q is left CONCURRENTLY", name, strings.TrimSpace(m))
 		}
 		removed := len(b) - len(out)

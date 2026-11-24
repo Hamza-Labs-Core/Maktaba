@@ -249,6 +249,16 @@ class UpdateLeg(nas.Cell):
         self.wait_log(f"{v} kept", f"Maktaba {v} runs: kept", KEEP_WAIT, every=5)
         if self.guard_left():
             raise AssertionError(f"{v} was kept but the launcher's guard ({GUARD}) is still there")
+        nas.wait(f"{v}'s record naming its backup", self.record_confirmed, KEEP_WAIT, every=5)
+
+    def record_confirmed(self) -> bool:
+        """The database's record names the backup of its update where every release reads it.
+
+        An update's record withholds it (dump_unconfirmed) until nothing would take the release
+        back: a container has no update run of its own, its guard cleared is what says so."""
+        p = nas.docker("exec", self.container, "sh", "-c",
+                       f"find {nas.VOLUME} -path '*/state/database*.json' -exec cat {{}} + 2>/dev/null", check=False)
+        return p.returncode == 0 and '"version"' in p.stdout and "dump_unconfirmed" not in p.stdout
 
     # -- the steps
 

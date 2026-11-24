@@ -223,8 +223,7 @@ type Pending struct {
 	// that switched, never moved by the release being judged. Zero (a marker from before
 	// 2026-11-24): Since plus MaxGuardSpan.
 	Latest time.Time `json:"latest,omitzero"`
-	// Record is the database's record the fallback marks for the dump taken
-	// before Version's migrations to be put back (MarkRecordRestoring).
+	// Record is the database's record the fallback marks held (MarkRecordHeld).
 	Record string `json:"record,omitempty"`
 }
 
