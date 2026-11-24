@@ -267,13 +267,13 @@ func (d *Discoverer) read(ctx context.Context, url string, api bool, limit int64
 // catalog that no longer knew the newest releases (the incident of 2026-11-24). A release
 // is some 330 KB as GitHub lists it today (tests/fixtures/github-releases), so a page of
 // ten is some 3.3 MB: the cap is 16 MiB, room for each release to double its assets and
-// still use under FeedHeadroom of it. The list is read one release at a time
+// still use under ListHeadroom of it. The list is read one release at a time
 // (system.DecodeJSONArray), so the cap bounds the answer, not the memory.
 //
 // tagReadLimit holds GitHub's answer for one release (Recheck, before a run starts).
 //
-// Every cap is checked against the live feed hourly and after each release
-// (cmd/release-feed-check: ProbeFeed) and against a recorded real page in the tests.
+// Every cap is checked against the live list hourly and after each release
+// (cmd/release-list-check: ProbeReleaseList) and against a recorded real page in the tests.
 const (
 	listPages     = 3
 	listPerPage   = 10
@@ -281,10 +281,10 @@ const (
 	tagReadLimit  = 8 << 20
 )
 
-// FeedHeadroom is the share of a cap an answer from GitHub may use before the feed check
+// ListHeadroom is the share of a cap an answer from GitHub may use before the list check
 // fails (and the home warns): an answer over it is one release's growth away from a home
 // that can no longer read its updates.
-const FeedHeadroom = 0.70
+const ListHeadroom = 0.70
 
 // countingReader counts what is read through it.
 type countingReader struct {
@@ -312,9 +312,9 @@ func (d *Discoverer) listPage(ctx context.Context, page int) (part []ghRelease, 
 	if err != nil {
 		return nil, 0, nil, err
 	}
-	if float64(n) > float64(listPageLimit)*FeedHeadroom {
+	if float64(n) > float64(listPageLimit)*ListHeadroom {
 		// still read, but one release's growth from failing: say so before it does
-		d.log().Warn("updates: GitHub's list of releases is near its cap", "event", "update_feed_near_cap",
+		d.log().Warn("updates: GitHub's list of releases is near its cap", "event", "update_release_list_near_cap",
 			"page", page, "bytes", n, "cap", listPageLimit)
 	}
 	return part, n, decodeErr, nil

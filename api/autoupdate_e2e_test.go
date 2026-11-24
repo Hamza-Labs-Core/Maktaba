@@ -180,12 +180,12 @@ func (g *fakeGitHub) publish(r *releaseverifytest.FakeRelease) {
 		"assets": assets}}, g.releases...)
 }
 
-// ---- the release feed at its real size and shape (update rehearsal scenario 20) ----
+// ---- GitHub's release list at its real size and shape (update rehearsal scenario 20) ----
 
-// realFeedFixture is GitHub's first page of this repository's releases as a home reads it
+// realListFixture is GitHub's first page of this repository's releases as a home reads it
 // (tests/fixtures/github-releases, recorded by its record.sh): ten releases of some 190
 // assets each, some 3.2 MB.
-const realFeedFixture = "../tests/fixtures/github-releases/page-1.json.gz"
+const realListFixture = "../tests/fixtures/github-releases/page-1.json.gz"
 
 // realShape is what the fake serves in place of its short list: every published release
 // in the recorded release's field set (author, node ids, each asset's uploader, digest,
@@ -205,10 +205,10 @@ type realShape struct {
 	largest, last int
 }
 
-// readRealFeed is the recorded page's releases.
-func readRealFeed(t *testing.T) []map[string]any {
+// readRealList is the recorded page's releases.
+func readRealList(t *testing.T) []map[string]any {
 	t.Helper()
-	f, err := os.Open(realFeedFixture)
+	f, err := os.Open(realListFixture)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -221,18 +221,18 @@ func readRealFeed(t *testing.T) []map[string]any {
 	dec.UseNumber()
 	var rels []map[string]any
 	if err := dec.Decode(&rels); err != nil {
-		t.Fatalf("%s: %v", realFeedFixture, err)
+		t.Fatalf("%s: %v", realListFixture, err)
 	}
 	if len(rels) == 0 {
-		t.Fatalf("%s: no releases", realFeedFixture)
+		t.Fatalf("%s: no releases", realListFixture)
 	}
 	return rels
 }
 
-// realFeedPageBytes is the recorded page's length as GitHub answered it.
-func realFeedPageBytes(t *testing.T) int {
+// realListPageBytes is the recorded page's length as GitHub answered it.
+func realListPageBytes(t *testing.T) int {
 	t.Helper()
-	f, err := os.Open(realFeedFixture)
+	f, err := os.Open(realListFixture)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -268,7 +268,7 @@ func grown(n int, grow float64) int {
 // pages full pages of every page size a home asks for.
 func (g *fakeGitHub) useRealShape(t *testing.T, grow float64, pages int) {
 	t.Helper()
-	rels := readRealFeed(t)
+	rels := readRealList(t)
 	s := &realShape{tmpl: rels[0], grow: grow}
 	for _, a := range rels[0]["assets"].([]any) {
 		s.assets = append(s.assets, a.(map[string]any))
@@ -421,7 +421,7 @@ func TestFakeGitHubRealShape(t *testing.T) {
 	rel := &releaseverifytest.FakeRelease{Tag: "v9.9.9", Files: map[string][]byte{"checksums.txt": []byte("x")}}
 	g.publish(rel)
 	g.useRealShape(t, 2, 3)
-	recorded := realFeedPageBytes(t)
+	recorded := realListPageBytes(t)
 	get := func(q string) []map[string]any {
 		resp, err := g.srv.Client().Get(g.srv.URL + "/repos/" + updateRepo + "/releases" + q)
 		if err != nil {

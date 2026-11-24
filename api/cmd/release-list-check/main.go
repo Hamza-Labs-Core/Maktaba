@@ -1,23 +1,23 @@
-// Command release-feed-check reads GitHub's release feed exactly as a home's update check
+// Command release-list-check reads GitHub's release list exactly as a home's update check
 // reads it (api/internal/updates: the same URLs, headers, pages and caps, through the same
 // code) and fails when a home could not read it, or soon could not:
 //
-//   - any page of the release list over 70% of its cap (updates.FeedHeadroom);
+//   - any page of the release list over 70% of its cap (updates.ListHeadroom);
 //   - the newest published stable release (or -expect) not selectable by the home's catalog;
 //   - the release-by-tag read of it over 70% of its cap.
 //
-// It runs hourly (.github/workflows/release-feed.yml, which opens an issue on a failure)
-// and in each release workflow once it publishes (tools/release/feed-check.sh). Since
+// It runs hourly (.github/workflows/github-release-list.yml, which opens an issue on a failure)
+// and in each release workflow once it publishes (tools/release/release-list-check.sh). Since
 // 2026-11-23 every home's check had failed on a list longer than its cap, for over a day,
-// and nothing outside a home read the feed the way a home does.
+// and nothing outside a home read the list the way a home does.
 //
-//	go run ./cmd/release-feed-check [-repo owner/name] [-expect vX.Y.Z] [-token-env GITHUB_TOKEN] [-json FILE]
+//	go run ./cmd/release-list-check [-repo owner/name] [-expect vX.Y.Z] [-token-env GITHUB_TOKEN] [-json FILE]
 //
 // It reads unauthenticated, as a home does. Only when GitHub refuses that for its rate
 // limit (GitHub's runners share their addresses) does it read again with the token in
 // -token-env, and says so: a token without push access sees the same list.
 //
-// Exit status: 0 the feed is fine, 1 a problem (each printed, and as a GitHub annotation
+// Exit status: 0 the list is fine, 1 a problem (each printed, and as a GitHub annotation
 // under Actions), 2 a usage error.
 package main
 
@@ -43,7 +43,7 @@ func main() {
 	jsonOut := flag.String("json", "", "also write the report as JSON to this file")
 	flag.Parse()
 	if flag.NArg() > 0 {
-		fmt.Fprintln(os.Stderr, "release-feed-check: no arguments expected")
+		fmt.Fprintln(os.Stderr, "release-list-check: no arguments expected")
 		os.Exit(2)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
@@ -51,11 +51,11 @@ func main() {
 
 	quiet := slog.New(slog.NewTextHandler(io.Discard, nil))
 	d := &updates.Discoverer{Repo: *repo, BaseURL: *api, Log: quiet}
-	rep := d.ProbeFeed(ctx, *expect)
+	rep := d.ProbeReleaseList(ctx, *expect)
 	how := "anonymously, as a home reads it"
 	if rep.RateLimited && *tokenEnv != "" && os.Getenv(*tokenEnv) != "" {
 		d = &updates.Discoverer{Repo: *repo, BaseURL: *api, Log: quiet, Token: os.Getenv(*tokenEnv)}
-		rep = d.ProbeFeed(ctx, *expect)
+		rep = d.ProbeReleaseList(ctx, *expect)
 		how = "with " + *tokenEnv + " (the anonymous read was rate-limited)"
 	}
 
@@ -76,7 +76,7 @@ func main() {
 	}
 	if os.Getenv("GITHUB_ACTIONS") == "true" {
 		for _, p := range rep.Problems {
-			_, _ = fmt.Fprintf(os.Stdout, "::error title=Release feed::%s\n", escape(p))
+			_, _ = fmt.Fprintf(os.Stdout, "::error title=GitHub release list::%s\n", escape(p))
 		}
 	}
 	os.Exit(1)
@@ -84,12 +84,12 @@ func main() {
 
 // report is the check's Markdown: each read with its size against its cap, then what
 // the home's catalog can select, then the problems.
-func report(rep updates.FeedReport, how string) string {
+func report(rep updates.ListReport, how string) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "### The release feed of %s\n\n", rep.Repo)
-	fmt.Fprintf(&b, "Read %s. A home may use %.0f%% of each cap.\n\n", how, 100*updates.FeedHeadroom)
+	fmt.Fprintf(&b, "### GitHub's release list of %s\n\n", rep.Repo)
+	fmt.Fprintf(&b, "Read %s. A home may use %.0f%% of each cap.\n\n", how, 100*updates.ListHeadroom)
 	b.WriteString("| Read | Bytes | Cap | Share | Releases | Error |\n|---|---:|---:|---:|---:|---|\n")
-	row := func(name string, r updates.FeedRead) {
+	row := func(name string, r updates.ListRead) {
 		fmt.Fprintf(&b, "| %s | %d | %d | %.0f%% | %d | %s |\n", name, r.Bytes, r.Cap, 100*r.Share(), r.Releases, r.Err)
 	}
 	for i, p := range rep.Pages {
@@ -106,10 +106,10 @@ func report(rep updates.FeedReport, how string) string {
 		fmt.Fprintf(&b, "- Drafts in the list (a token with push access): %d\n", rep.Drafts)
 	}
 	if rep.OK() {
-		b.WriteString("\nA home reads this feed with room to spare.\n")
+		b.WriteString("\nA home reads this list with room to spare.\n")
 		return b.String()
 	}
-	b.WriteString("\n**A home cannot read this feed, or soon cannot:**\n\n")
+	b.WriteString("\n**A home cannot read this list, or soon cannot:**\n\n")
 	for _, p := range rep.Problems {
 		fmt.Fprintf(&b, "- %s\n", p)
 	}

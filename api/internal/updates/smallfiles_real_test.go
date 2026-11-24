@@ -9,7 +9,7 @@ import (
 // The three small signed files a home downloads for each release (checksums.txt, its
 // Sigstore bundle, release.json), and the component index beside them, fit smallFileLimit
 // at their real sizes (GitHub's own count, in the recorded page) doubled, in under
-// FeedHeadroom of it.
+// ListHeadroom of it.
 func TestRealSmallFilesHeadroom(t *testing.T) {
 	t.Parallel()
 	rels := realReleases(t)
@@ -31,9 +31,9 @@ func TestRealSmallFilesHeadroom(t *testing.T) {
 			continue
 		}
 		seen++
-		if grown := AssetGrowth * float64(a.Size); grown > FeedHeadroom*smallFileLimit {
+		if grown := AssetGrowth * float64(a.Size); grown > ListHeadroom*smallFileLimit {
 			t.Errorf("%s's %s is %d bytes: %.1fx that is over %.0f%% of smallFileLimit %d",
-				newest.Tag, a.Name, a.Size, AssetGrowth, 100*FeedHeadroom, smallFileLimit)
+				newest.Tag, a.Name, a.Size, AssetGrowth, 100*ListHeadroom, smallFileLimit)
 		}
 	}
 	if seen != len(small) {

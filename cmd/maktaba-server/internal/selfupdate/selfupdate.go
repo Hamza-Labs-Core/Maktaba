@@ -92,7 +92,7 @@ type ghRelease struct {
 var ErrNoRelease = errors.New("no such release")
 
 // What the client reads from GitHub is held to these caps, each checked against the real
-// feed (tests/fixtures/github-releases) with room for the releases' assets to double in
+// list (tests/fixtures/github-releases) with room for the releases' assets to double in
 // under 70% of it. A release is some 330 KB as GitHub lists it today (some 190 assets): the
 // list asks for listPerPage of them, some 3.3 MB, against listLimit; one release by its tag
 // against releaseLimit; each small signed file (checksums.txt, its Sigstore bundle,

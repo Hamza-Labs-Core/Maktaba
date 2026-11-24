@@ -1019,15 +1019,15 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: tools/release/website-dispatch.sh "${TAG}"
 
-  # A home can read the release feed with this release in it (tools/release/feed-check.sh, the
+  # A home can read GitHub's release list with this release in it (tools/release/release-list-check.sh, the
   # same code a home's update check runs): once this run's publish step has run and the release
   # is published, it must be selectable by a home's catalog and every answer within 70% of its
   # cap. Since 2026-11-23 every home's check had failed on a list longer than its cap, for over
-  # a day, unnoticed: a release whose feed a home cannot read fails here, loudly. A release
-  # still a draft is checked by the workflow that publishes it (release-feed.yml also reads the
-  # feed hourly).
-  feed-check:
-    name: a home can read the release feed
+  # a day, unnoticed: a release a home cannot find in the list fails here, loudly. A release
+  # still a draft is checked by the workflow that publishes it (github-release-list.yml also reads the
+  # list hourly).
+  release-list-check:
+    name: a home can read GitHub's release list
     needs: [publish]
     if: ${{ !cancelled() && needs.publish.result != 'skipped' }}
     runs-on: ubuntu-24.04
@@ -1048,8 +1048,8 @@ jobs:
         uses: ./.github/actions/go-mod-download
         with:
           modules: api
-      - name: Read the feed as a home does
+      - name: Read the list as a home does
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
-        run: tools/release/feed-check.sh "${TAG}"
+        run: tools/release/release-list-check.sh "${TAG}"

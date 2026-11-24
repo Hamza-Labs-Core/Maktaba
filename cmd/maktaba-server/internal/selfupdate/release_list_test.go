@@ -1,6 +1,6 @@
 package selfupdate
 
-// The client against the release feed as GitHub really serves it
+// The client against GitHub's release list as GitHub really serves it
 // (tests/fixtures/github-releases/page-1.json.gz, a home's own request: ten releases of some
 // 190 assets each). Until 2026-11-24 its caps were tested against nothing real; the real list
 // grew past the update catalog's cap, and every home's check failed for over a day.
@@ -23,11 +23,11 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/releaseverify"
 )
 
-// feedHeadroom and assetGrowth are the update catalog's (updates.FeedHeadroom and its
+// listHeadroom and assetGrowth are the update catalog's (updates.ListHeadroom and its
 // tests' AssetGrowth): an answer may use 70% of its cap, and must still fit when the
 // newest releases' assets (and files) double.
 const (
-	feedHeadroom = 0.70
+	listHeadroom = 0.70
 	assetGrowth  = 2.0
 )
 
@@ -109,8 +109,8 @@ func decoded(t *testing.T) []realRelease {
 	return rels
 }
 
-// Latest and ByTag read the real feed: the newest stable release, every asset.
-func TestRealFeed(t *testing.T) {
+// Latest and ByTag read the real list: the newest stable release, every asset.
+func TestRealList(t *testing.T) {
 	if testing.Short() {
 		// decodes the recorded 3.2 MB page: about a second under -race, past the unit tier's
 		// per-test budget on a loaded runner. Runs without -short (the integration tier)
@@ -151,7 +151,7 @@ func TestRealFeed(t *testing.T) {
 }
 
 // Each cap holds the real answer, and the answer grown by assetGrowth, in under 70% of it.
-func TestRealFeedHeadroom(t *testing.T) {
+func TestRealListHeadroom(t *testing.T) {
 	t.Parallel()
 	page := realPage(t)
 	rels := realReleases(t)
@@ -161,8 +161,8 @@ func TestRealFeedHeadroom(t *testing.T) {
 	}
 	check := func(what string, size float64, limit int64) {
 		t.Helper()
-		if size > feedHeadroom*float64(limit) {
-			t.Errorf("%s is %.0f bytes, over %.0f%% of its cap %d", what, size, 100*feedHeadroom, limit)
+		if size > listHeadroom*float64(limit) {
+			t.Errorf("%s is %.0f bytes, over %.0f%% of its cap %d", what, size, 100*listHeadroom, limit)
 		}
 	}
 	check("the recorded page", float64(len(page)), listLimit)

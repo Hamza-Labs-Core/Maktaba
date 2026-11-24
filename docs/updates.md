@@ -556,7 +556,7 @@ does it: migrations, a TV change that waits, rollbacks with and without a restor
 restore under logins and killed part way, halted roles, no room, a joined machine). The
 release's tag guard refuses a commit the rehearsal did not pass on.
 
-## The release feed's caps
+## The caps on GitHub's release list
 
 A home reads GitHub's releases through its update check (`api/internal/updates/catalog.go`),
 and the server's own updater and the About check read the same list. Each answer is held to a
@@ -580,17 +580,17 @@ one release at a time, so its cap bounds the answer, not the memory.
 
 - **The tests** read a real page, recorded as a home asks for it
   ([`tests/fixtures/github-releases`](../tests/fixtures/github-releases/README.md)): every cap must
-  hold the recorded answers within 70% (`updates.FeedHeadroom`), and the worst page the next
+  hold the recorded answers within 70% (`updates.ListHeadroom`), and the worst page the next
   releases can make (each release twice the largest recorded one, `AssetGrowth`) too. The About
   check, `selfupdate` and `ghasset` are tested against the same page.
-- **The release feed check** (`api/cmd/release-feed-check`, through the home's own code: the same
-  URLs, headers, pages and caps) reads the live feed hourly
-  ([`release-feed.yml`](../.github/workflows/release-feed.yml), which opens an issue on a failure
-  and closes it once the feed reads again), and in each release workflow once it publishes
-  (`tools/release/feed-check.sh`). It fails when any page or the newest release's own read is over
+- **GitHub's release list check** (`api/cmd/release-list-check`, through the home's own code: the same
+  URLs, headers, pages and caps) reads the live list hourly
+  ([`github-release-list.yml`](../.github/workflows/github-release-list.yml), which opens an issue on a failure
+  and closes it once the list reads again), and in each release workflow once it publishes
+  (`tools/release/release-list-check.sh`). It fails when any page or the newest release's own read is over
   70% of its cap, or when the newest published stable release is not one a home's catalog can
   select (not in the pages a home reads, a draft or prerelease, or without its signed files).
-- **The update rehearsal**'s scenario 20 serves the feed at its real size and shape, twice as
+- **The update rehearsal**'s scenario 20 serves the list at its real size and shape, twice as
   large, and then past its cap ([update-rehearsal.md](update-rehearsal.md)).
 
 **When a check fails:** re-record the page (`tests/fixtures/github-releases/record.sh`) and look at

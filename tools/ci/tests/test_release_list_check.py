@@ -1,9 +1,9 @@
-"""A home can read the release feed (the incident of 2026-11-24: every home's update check had
+"""A home can read GitHub's release list (the incident of 2026-11-24: every home's update check had
 failed for over a day on a list of releases longer than its cap, and nothing outside a home read
-the feed the way a home does). release-feed.yml reads it hourly through the home's own code
-(api/cmd/release-feed-check) and opens an issue on a failure; release.yml and desktop-release.yml
-each end with a `feed-check` job that runs tools/release/feed-check.sh once their publish step
-has run, and fails the release's workflow when a home could not read the feed with it. The
+the list the way a home does). github-release-list.yml reads it hourly through the home's own code
+(api/cmd/release-list-check) and opens an issue on a failure; release.yml and desktop-release.yml
+each end with a `release-list-check` job that runs tools/release/release-list-check.sh once their publish step
+has run, and fails the release's workflow when a home could not read the list with it. The
 script is run here against a fake `gh` and a fake check.
 
 Run: uv run --no-project --with pyyaml==6.0.3 --with pytest==8.4.2 pytest tools/ci/tests
@@ -19,7 +19,7 @@ import pytest
 import yaml
 
 ROOT = Path(__file__).resolve().parents[3]
-SCRIPT = ROOT / "tools/release/feed-check.sh"
+SCRIPT = ROOT / "tools/release/release-list-check.sh"
 PUBLISHERS = {
     ".github/workflows/release.yml": "sign-and-release",
     ".github/workflows/desktop-release.yml": "publish",
@@ -36,10 +36,10 @@ def needs_of(job: dict) -> list[str]:
 
 
 @pytest.mark.parametrize(("path", "publisher"), PUBLISHERS.items())
-def test_the_feed_check_follows_the_publish_step_and_can_fail_the_release(
+def test_the_list_check_follows_the_publish_step_and_can_fail_the_release(
     path: str, publisher: str
 ) -> None:
-    job = load(path)["jobs"]["feed-check"]
+    job = load(path)["jobs"]["release-list-check"]
     assert needs_of(job) == [publisher]
     assert "!cancelled()" in job["if"] and f"needs.{publisher}.result" in job["if"]
     # it fails loudly: never continue-on-error
@@ -47,22 +47,22 @@ def test_the_feed_check_follows_the_publish_step_and_can_fail_the_release(
     assert job["permissions"] == {"contents": "read"}
     run = [s for s in job["steps"] if "run" in s]
     assert len(run) == 1
-    assert run[0]["run"] == 'tools/release/feed-check.sh "${TAG}"'
+    assert run[0]["run"] == 'tools/release/release-list-check.sh "${TAG}"'
     assert run[0]["env"]["TAG"] == "${{ github.ref_name }}"
 
 
 def test_the_hourly_check_reads_as_a_home_and_opens_an_issue() -> None:
-    wf = load(".github/workflows/release-feed.yml")
+    wf = load(".github/workflows/github-release-list.yml")
     assert wf[True]["schedule"][0]["cron"].split()[1:] == ["*", "*", "*", "*"]  # hourly
-    job = wf["jobs"]["feed"]
+    job = wf["jobs"]["list"]
     assert job["permissions"] == {"contents": "read", "issues": "write"}
     steps = {s.get("name"): s for s in job["steps"]}
-    check = steps["Read the feed as a home does"]
-    assert "go run ./cmd/release-feed-check" in check["run"] and "pipefail" in check["run"]
+    check = steps["Read the list as a home does"]
+    assert "go run ./cmd/release-list-check" in check["run"] and "pipefail" in check["run"]
     issue = steps["Open or update the issue"]
     assert issue["if"] == "failure() && steps.check.outcome == 'failure'"
     assert "gh issue create" in issue["run"] and "gh issue comment" in issue["run"]
-    assert "gh issue close" in steps["Close the issue once the feed reads again"]["run"]
+    assert "gh issue close" in steps["Close the issue once the list reads again"]["run"]
 
 
 def run(
@@ -88,8 +88,8 @@ def run(
         **os.environ,
         "PATH": f"{fake}:{os.environ['PATH']}",
         "GITHUB_REPOSITORY": "Hamza-Labs-Core/Maktaba",
-        "FEED_CHECK_CMD": str(check),
-        "FEED_CHECK_DELAYS": "0 0",
+        "LIST_CHECK_CMD": str(check),
+        "LIST_CHECK_DELAYS": "0 0",
         "GH_RETRY_DELAYS": "0",
     }
     p = subprocess.run(
@@ -104,8 +104,8 @@ def test_a_draft_is_checked_by_the_workflow_that_publishes_it(tmp_path: Path) ->
     assert ran == 0 and "still a draft" in out
 
 
-def test_a_feed_a_home_reads_passes(tmp_path: Path) -> None:
-    code, out, ran = run(tmp_path, "false", [(0, "A home reads this feed with room to spare.")])
+def test_a_list_a_home_reads_passes(tmp_path: Path) -> None:
+    code, out, ran = run(tmp_path, "false", [(0, "A home reads this list with room to spare.")])
     assert code == 0, out
     assert ran == 1 and "room to spare" in out
 
@@ -120,7 +120,7 @@ def test_a_release_not_listed_yet_is_asked_for_again(tmp_path: Path) -> None:
     assert ran == 2
 
 
-def test_a_feed_a_home_cannot_read_fails_the_release_at_once(tmp_path: Path) -> None:
+def test_a_list_a_home_cannot_read_fails_the_release_at_once(tmp_path: Path) -> None:
     code, out, ran = run(
         tmp_path,
         "false",
@@ -128,7 +128,7 @@ def test_a_feed_a_home_cannot_read_fails_the_release_at_once(tmp_path: Path) -> 
     )
     assert code == 1
     assert ran == 1
-    assert "::error title=Release feed::v0.3.162 is published, but a home cannot read" in out
+    assert "::error title=GitHub release list::v0.3.162 is published, but a home cannot read" in out
 
 
 def test_a_release_never_listed_fails_after_the_retries(tmp_path: Path) -> None:

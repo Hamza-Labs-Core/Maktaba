@@ -420,7 +420,7 @@ build fails when the two differ.
   only written to the log: from 2026-11-23 every home's check failed for over a day and nothing on
   screen said so. A page of GitHub's list of releases may now be 16 MiB (it is some 3.2 MB today),
   and the About check and the server's own updater read the list the same way and say "larger than
-  … bytes" instead of failing to decode it. A check in CI reads the real feed every hour, and
+  … bytes" instead of failing to decode it. A check in CI reads the real list every hour, and
   after each release, exactly as a home does, and fails when any answer passes 70% of what a home
   reads or the newest release is not one a home can pick.
 

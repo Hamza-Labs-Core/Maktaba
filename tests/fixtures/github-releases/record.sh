@@ -11,8 +11,8 @@
 #
 # Writes page-1.json.gz beside this script and prints its size. Re-record when the shape
 # of a release changes (many more assets a release, longer notes); the tests that read it
-# (api/internal/updates/catalog_feed_test.go and the sweep's, docs/updates.md "The
-# release feed's caps") then check every cap against it.
+# (api/internal/updates/catalog_list_test.go and the sweep's, docs/updates.md "The
+# release list's caps") then check every cap against it.
 set -euo pipefail
 repo="${1:-Hamza-Labs-Core/Maktaba}"
 here="$(cd "$(dirname "$0")" && pwd)"

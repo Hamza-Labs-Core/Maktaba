@@ -1,15 +1,15 @@
-# The release feed, read hourly exactly as a home's update check reads it (api/cmd/release-feed-check:
+# GitHub's release list, read hourly exactly as a home's update check reads it (api/cmd/release-list-check:
 # the same URLs, headers, pages and caps, through the home's own code). It fails, and opens an
 # issue (or comments on the open one), when any page of the release list or the newest release's
 # own read is over 70% of its cap, or when the newest published stable release is not
 # selectable by a home's catalog. A run that reads fine again closes that issue.
 #
 # Since 2026-11-23 11:02Z every home's update check had failed, silently, for over a day: the
-# list had grown past the 8 MiB a home read, and nothing outside a home read the feed the way a
+# list had grown past the 8 MiB a home read, and nothing outside a home read the list the way a
 # home does (the incident of 2026-11-24). Each release workflow runs the same check once it
-# publishes (tools/release/feed-check.sh); this run catches what changes between releases (a
+# publishes (tools/release/release-list-check.sh); this run catches what changes between releases (a
 # release edited, assets added, GitHub's answer growing).
-name: Release feed
+name: GitHub release list
 
 on:
   schedule:
@@ -20,12 +20,12 @@ permissions:
   contents: read
 
 concurrency:
-  group: release-feed
+  group: release-list
   cancel-in-progress: false
 
 jobs:
-  feed:
-    name: a home can read the release feed
+  list:
+    name: a home can read GitHub's release list
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -49,7 +49,7 @@ jobs:
         with:
           modules: api
 
-      - name: Read the feed as a home does
+      - name: Read the list as a home does
         id: check
         env:
           # only when GitHub rate-limits the anonymous read (its runners share addresses)
@@ -57,7 +57,7 @@ jobs:
         run: |
           set -o pipefail
           cd api
-          go run ./cmd/release-feed-check -repo "${GITHUB_REPOSITORY}" -token-env GH_TOKEN | tee "${RUNNER_TEMP}/feed.md"
+          go run ./cmd/release-list-check -repo "${GITHUB_REPOSITORY}" -token-env GH_TOKEN | tee "${RUNNER_TEMP}/feed.md"
 
       - name: Open or update the issue
         if: failure() && steps.check.outcome == 'failure'
@@ -65,10 +65,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          title="The release feed: a home cannot read it, or soon cannot"
+          title="GitHub's release list: a home cannot read it, or soon cannot"
           body="${RUNNER_TEMP}/body.md"
           {
-            echo "The hourly release-feed check failed ([run](${RUN_URL})). Homes read the feed through the same code: until it is fixed they may not see new releases. See docs/updates.md, \"The release feed's caps\"."
+            echo "The hourly release-release list check failed ([run](${RUN_URL})). Homes read the list through the same code: until it is fixed they may not see new releases. See docs/updates.md, \"The caps on GitHub's release list\"."
             echo
             cat "${RUNNER_TEMP}/feed.md" 2>/dev/null || echo "(the check printed nothing: see the run)"
           } >"${body}"
@@ -79,14 +79,14 @@ jobs:
             gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --body-file "$body"
           fi
 
-      - name: Close the issue once the feed reads again
+      - name: Close the issue once the list reads again
         if: success()
         env:
           GH_TOKEN: ${{ github.token }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          title="The release feed: a home cannot read it, or soon cannot"
+          title="GitHub's release list: a home cannot read it, or soon cannot"
           open=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "\"$title\" in:title" --json number --jq '.[0].number // empty')
           if [ -n "$open" ]; then
-            gh issue close "$open" --repo "$GITHUB_REPOSITORY" --comment "The feed reads again with room to spare ([run](${RUN_URL}))."
+            gh issue close "$open" --repo "$GITHUB_REPOSITORY" --comment "The list reads again with room to spare ([run](${RUN_URL}))."
           fi

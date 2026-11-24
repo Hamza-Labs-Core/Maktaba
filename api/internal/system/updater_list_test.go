@@ -1,6 +1,6 @@
 package system
 
-// The About check against the release feed as GitHub really serves it
+// The About check against GitHub's release list as GitHub really serves it
 // (tests/fixtures/github-releases/page-1.json.gz, a home's own request: ten releases of some
 // 190 assets each). Until 2026-11-24 its cap was tested against nothing real; the real list
 // grew past the cap of the update catalog's read of it, and every home's check failed.
@@ -22,11 +22,11 @@ import (
 	"time"
 )
 
-// feedHeadroom and assetGrowth are the update catalog's (updates.FeedHeadroom and the
+// listHeadroom and assetGrowth are the update catalog's (updates.ListHeadroom and the
 // tests' AssetGrowth): an answer may use 70% of its cap, and must still fit when the
 // newest releases' assets double.
 const (
-	feedHeadroom = 0.70
+	listHeadroom = 0.70
 	assetGrowth  = 2.0
 )
 
@@ -49,7 +49,7 @@ func realReleasesPage(t *testing.T) []byte {
 	return b
 }
 
-func feedUpdater(t *testing.T, page []byte) *Updater {
+func listUpdater(t *testing.T, page []byte) *Updater {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/security-advisories") {
@@ -65,7 +65,7 @@ func feedUpdater(t *testing.T, page []byte) *Updater {
 // The real page is read whole: every release with every asset.
 func TestFetchReleasesRealPage(t *testing.T) {
 	page := realReleasesPage(t)
-	rels, err := feedUpdater(t, page).fetchReleases(context.Background())
+	rels, err := listUpdater(t, page).fetchReleases(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,14 +94,14 @@ func TestFetchReleasesHeadroom(t *testing.T) {
 	for _, r := range rels {
 		largest = max(largest, len(r))
 	}
-	room := feedHeadroom * float64(releasesLimit)
+	room := listHeadroom * float64(releasesLimit)
 	if float64(len(page)) > room {
-		t.Errorf("the recorded page is %d bytes, over %.0f%% of the cap %d", len(page), 100*feedHeadroom, releasesLimit)
+		t.Errorf("the recorded page is %d bytes, over %.0f%% of the cap %d", len(page), 100*listHeadroom, releasesLimit)
 	}
 	worst := float64(releasesPerPage)*assetGrowth*float64(largest) + 2
 	if worst > room {
 		t.Errorf("a page of releases %.1fx the largest recorded one (%d bytes) is %.0f bytes, over %.0f%% of the cap %d",
-			assetGrowth, largest, worst, 100*feedHeadroom, releasesLimit)
+			assetGrowth, largest, worst, 100*listHeadroom, releasesLimit)
 	}
 }
 
@@ -131,7 +131,7 @@ func TestFetchReleasesTooLarge(t *testing.T) {
 	}
 	page := realReleasesPage(t)
 	big := append(append([]byte("["), bytes.Repeat([]byte(" "), releasesLimit)...), page[1:]...)
-	_, err := feedUpdater(t, big).fetchReleases(context.Background())
+	_, err := listUpdater(t, big).fetchReleases(context.Background())
 	if err == nil || !errors.Is(err, errReleasesTooLarge) || !strings.Contains(err.Error(), "larger than") ||
 		strings.Contains(err.Error(), "decode") {
 		t.Fatalf("err = %v, want larger than the cap", err)

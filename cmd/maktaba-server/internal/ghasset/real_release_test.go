@@ -21,10 +21,10 @@ import (
 	"testing"
 )
 
-// feedHeadroom and assetGrowth are the update catalog's (updates.FeedHeadroom and its
+// listHeadroom and assetGrowth are the update catalog's (updates.ListHeadroom and its
 // tests' AssetGrowth): a release may use 70% of the cap even with its assets doubled.
 const (
-	feedHeadroom = 0.70
+	listHeadroom = 0.70
 	assetGrowth  = 2.0
 )
 
@@ -59,9 +59,9 @@ func TestAssetURLRealRelease(t *testing.T) {
 			largest = r
 		}
 	}
-	if float64(len(largest))*assetGrowth > feedHeadroom*releaseLimit {
+	if float64(len(largest))*assetGrowth > listHeadroom*releaseLimit {
 		t.Errorf("the largest recorded release is %d bytes: twice that is over %.0f%% of releaseLimit %d",
-			len(largest), 100*feedHeadroom, releaseLimit)
+			len(largest), 100*listHeadroom, releaseLimit)
 	}
 	var rel struct {
 		Tag    string `json:"tag_name"`

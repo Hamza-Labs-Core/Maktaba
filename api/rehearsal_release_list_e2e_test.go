@@ -2,23 +2,23 @@
 
 package main
 
-// Scenario 20 of the update rehearsal (docs/update-rehearsal.md): the release feed at its
+// Scenario 20 of the update rehearsal (docs/update-rehearsal.md): GitHub's release list at its
 // real size and shape, and past its cap.
 //
 // From 2026-11-23 11:02Z every home's update check failed: GitHub's list of the newest 30
 // releases (some 190 assets each) had grown past the 8 MiB a home read it to, and the
 // failure was only logged. The home went on choosing from a catalog that no longer knew the
 // newest releases (the incident of 2026-11-24). Every rehearsal scenario served a short list
-// of a few small releases, so no scenario ever read a feed the size of GitHub's.
+// of a few small releases, so no scenario ever read a list the size of GitHub's.
 //
 // Here the fake GitHub serves the list as GitHub does (useRealShape: its paging, each
 // release in the recorded release's shape, tests/fixtures/github-releases), every release
 // twice the recorded size (AssetGrowth in api/internal/updates). The previous release asks
 // for 30 releases a page under 8 MiB, which GitHub's real list is over (the incident
 // itself, until a release with the fix is the previous one), so this commit is installed
-// by hand and the feed is rehearsed on it:
+// by hand and the list is rehearsed on it:
 //
-//	(a) the home's check finds the release after this commit in a feed of real size, pages
+//	(a) the home's check finds the release after this commit in a list of real size, pages
 //	    twice the recorded page, and the update to it completes;
 //	(b) the list then grows past the cap a home reads a page to: two checks fail, the
 //	    Updates page's overview says so (too_large, two failures, since when), and the
@@ -32,9 +32,9 @@ import (
 	"time"
 )
 
-// feedGrowth is how much larger than the recorded releases the rehearsal's are: the tests'
-// AssetGrowth (api/internal/updates/catalog_feed_test.go), the worst the caps allow for.
-const feedGrowth = 2.0
+// listGrowth is how much larger than the recorded releases the rehearsal's are: the tests'
+// AssetGrowth (api/internal/updates/catalog_list_test.go), the worst the caps allow for.
+const listGrowth = 2.0
 
 // overCap is a page of the list longer than the 16 MiB a home reads it to
 // (api/internal/updates: listPageLimit).
@@ -92,30 +92,30 @@ func (a *ownerSession) checkNow() int {
 	return resp.StatusCode
 }
 
-func TestUpdateRehearsal20RealSizeFeed(t *testing.T) {
+func TestUpdateRehearsal20RealSizeReleaseList(t *testing.T) {
 	r := newRehearsal(t)
 	k := r.kit
 	home, _ := r.homeOnPrev(profile("small"))
 	home.installByHand(k.curSpec())
 	home.waitServing(k.cur, 10*time.Minute)
 
-	// (a) a feed of real shape, twice the recorded size: the next release is found in it
+	// (a) a list of real shape, twice the recorded size: the next release is found in it
 	// and installed
-	r.gh.useRealShape(t, feedGrowth, 3)
-	recorded := realFeedPageBytes(t)
+	r.gh.useRealShape(t, listGrowth, 3)
+	recorded := realListPageBytes(t)
 	n1, b1 := additiveMigration(k.rev + 1)
 	next := payloadSpec{variant: "next", version: k.next, extra: map[string]string{n1: b1}}
 	run, mon, _ := r.update(home, next, 30*time.Minute)
 	if run.State != "done" {
-		t.Fatalf("the update to %s, found in a feed of real size, ended %s: %s (steps %+v)", k.next, run.State, run.Error, run.Steps)
+		t.Fatalf("the update to %s, found in a list of real size, ended %s: %s (steps %+v)", k.next, run.State, run.Error, run.Steps)
 	}
 	home.waitServing(k.next, 5*time.Minute)
-	r.budget(mon, "an update found in a release feed of real size (twice the recorded)", 2*time.Minute)
+	r.budget(mon, "an update found in a release list of real size (twice the recorded)", 2*time.Minute)
 	largest := r.gh.largestPage()
 	r.logf("the largest page of the list served: %d bytes (the recorded page: %d)", largest, recorded)
-	if float64(largest) < 0.9*feedGrowth*float64(recorded) {
-		t.Errorf("the largest page served was %d bytes: the feed was not served at %.0fx the recorded %d",
-			largest, feedGrowth, recorded)
+	if float64(largest) < 0.9*listGrowth*float64(recorded) {
+		t.Errorf("the largest page served was %d bytes: the list was not served at %.0fx the recorded %d",
+			largest, listGrowth, recorded)
 	}
 
 	// (b) the list past its cap: not log-only
