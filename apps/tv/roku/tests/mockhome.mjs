@@ -237,12 +237,12 @@ export function startHome(log, tls) {
     if (p === "/api/search/suggest") {
       const river = videos.find((v) => v.title === "River of Stars");
       return json(res, 200, {
-        suggestions: ["river", "harbor", "River of Stars", "Rania"],
+        suggestions: ["river", "harbor", "River of Stars", "Hassan"],
         items: [
           { text: "river", kind: "history" },
           { text: "harbor", kind: "term" },
           { text: "River of Stars", kind: "title", video_id: river.id },
-          { text: "Rania", kind: "speaker" },
+          { text: "Hassan", kind: "speaker" },
         ],
       });
     }
@@ -305,7 +305,7 @@ export function startHome(log, tls) {
       const facets = {
         library: list.length ? [{ value: LIB, label: "Films and series", count: list.length }] : [],
         language: ["ar", "en"].map((l) => ({ value: l, count: count((v) => lang(v) === l) })).filter((b) => b.count),
-        speaker: list.length ? [{ value: "Rania", count: Math.min(2, list.length) }] : [],
+        speaker: list.length ? [{ value: "Hassan", count: Math.min(2, list.length) }] : [],
         year: list.length ? [{ value: "2024", count: list.length, filter: { date: { gte: "2024-01-01T00:00:00.000Z", lt: "2025-01-01T00:00:00.000Z" } } }] : [],
         duration: [
           { value: "20m_60m", count: count((v) => v.duration_sec < 3600) },

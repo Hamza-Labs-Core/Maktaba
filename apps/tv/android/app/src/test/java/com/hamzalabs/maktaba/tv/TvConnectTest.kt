@@ -169,7 +169,7 @@ class TvConnectTest {
                 "/api/pairing/device/token" ->
                     if (r.body!!.utf8().contains("secret-1")) json(410, """{"title":"expired"}""")
                     else json(200, """{"access_token":"a2","refresh_token":"r2"}""")
-                "/api/auth/me" -> json(200, """{"id":"u1","username":"amina","home_name":"Kitchen"}""")
+                "/api/auth/me" -> json(200, """{"id":"u1","username":"idris","home_name":"Kitchen"}""")
                 else -> json(404, "{}")
             }
         }
@@ -181,7 +181,7 @@ class TvConnectTest {
         assertEquals(listOf("ABCD-0001", "ABCD-0002"), shown.map { it.code })
         // the QR holds the home's verify_url
         assertEquals("http://192.0.2.5:8088/pair?code=ABCD-0002", shown.last().approveUrl(server.url("/")))
-        assertEquals("amina", (s.phase.value as AppSession.Phase.SignedIn).user.username)
+        assertEquals("idris", (s.phase.value as AppSession.Phase.SignedIn).user.username)
         assertEquals("a2", tokens.getValue(base).access)
         val asks = seen.filter { it.url.encodedPath == "/api/pairing/device" }
         assertTrue(asks.all { it.headers["Authorization"] == null && it.body!!.utf8().contains("\"device_label\":\"Android TV (Shield)\"") })

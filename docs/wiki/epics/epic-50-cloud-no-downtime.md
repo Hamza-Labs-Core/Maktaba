@@ -139,13 +139,16 @@ entertainment or home streamer tier). Epic README
 [§14](../../../specs/epics/50-cloud-no-downtime/README.md#14-home-broadcasting), research in
 [research-broadcasting.md](../../../specs/epics/50-cloud-no-downtime/research-broadcasting.md).
 
-A Maktaba home owner (the **publisher**) publishes chosen live TV channels to viewers outside the
-home through Maktaba Cloud, on `watch.maktaba.tv/<publisher>/<channel>` and in every Maktaba
-Player and TV app as a guest.
+A Maktaba home owner (the **publisher**) publishes chosen live TV channels to friends they
+invite, outside the home, through Maktaba Cloud, on `watch.maktaba.tv/<publisher>/<channel>` and
+in every Maktaba Player and TV app as a guest. Only invited guests can see a channel.
 
 **Decisions (2026-11-03):**
 
-- **Viewers never pay.** Access is open or by invite link only.
+- **Viewers never pay.**
+- **Access is by invitation only** (decided 2026-11-24, replacing the earlier choice of open or
+  invite): no open links, no public watch pages, no directory. 50.36 removes the `open` mode
+  already built.
 - **Maktaba charges for infrastructure, not content.** Maktaba Cloud is an infrastructure and hosting
   provider. It never selects, uploads, curates or recommends what airs. Channel building,
   scheduling and YouTube intake stay on the publisher's home, and the publisher is responsible for
@@ -191,6 +194,9 @@ Mux is ruled out: about $1,369 a month to encode one 24/7 channel.
 repeat-infringer policy (3 strikes in 12 months), acting on actual knowledge, and a short
 Broadcaster agreement that puts rights on the publisher. On top of that: a Report button, and a
 kill switch through a signed revocation list (the Epic 54 pattern). There is no Maktaba directory.
+**Broadcasting stays off for now (2026-11-24),** and nothing about copyright is shown anywhere:
+50.24 (the agent, the notice form, the Report button) is deferred, its code dormant, and the
+copyright page is gone from maktaba.tv.
 
 | # | Story | Phase |
 |---|---|---|
@@ -200,10 +206,11 @@ kill switch through a signed revocation list (the Epic 54 pattern). There is no 
 | 50.23 | [Publishable sources and geo](../../../specs/epics/50-cloud-no-downtime/story-50-23-publishable-sources.md) | B |
 | 50.24 | [Takedown, reports and repeat infringers](../../../specs/epics/50-cloud-no-downtime/story-50-24-takedown-reports.md) | B |
 | 50.25 | [Kill switch and the signed broadcast revocation list](../../../specs/epics/50-cloud-no-downtime/story-50-25-kill-switch.md) | B |
-| 50.26 | [Viewer access: invite and open](../../../specs/epics/50-cloud-no-downtime/story-50-26-viewer-access.md) | B |
-| 50.27 | [Guest viewers: watch pages and apps](../../../specs/epics/50-cloud-no-downtime/story-50-27-guest-viewers.md) | B |
+| 50.26 | [Viewer access by invitation](../../../specs/epics/50-cloud-no-downtime/story-50-26-viewer-access.md) | B |
+| 50.27 | [Guest viewers: invited friends on the watch pages and apps](../../../specs/epics/50-cloud-no-downtime/story-50-27-guest-viewers.md) | B |
 | 50.28 | [Viewer analytics and broadcast monitoring](../../../specs/epics/50-cloud-no-downtime/story-50-28-analytics-monitoring.md) | B |
 | 50.29 | [The broadcast rehearsal and fan-out load test](../../../specs/epics/50-cloud-no-downtime/story-50-29-broadcast-rehearsal.md) | B |
+| 50.36 | [Invite-only broadcasting: close the open links](../../../specs/epics/50-cloud-no-downtime/story-50-36-close-open-links.md) | B |
 
 The open questions, each with a recommended default, are in README §14.10. The
 broadcasting gate is in §14.11.

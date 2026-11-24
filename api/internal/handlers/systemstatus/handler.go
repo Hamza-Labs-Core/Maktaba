@@ -20,6 +20,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/tvcluster"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/hostload"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/safego"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/updates"
 )
 
 // QueueHealth is Epic 40's tile health rollup (queues.Handler).
@@ -62,6 +63,8 @@ type Handler struct {
 	// HostLoad is the load of the machine this server runs on (false: not readable
 	// here); nil: no "This machine's load" item.
 	HostLoad func(ctx context.Context) (hostload.State, bool)
+	// UpdateState reads the update check's state (tests); nil reads app_settings.
+	UpdateState func(ctx context.Context) (updates.State, bool)
 	// PluginStages answers the stages set to run as plugins (tests); nil reads job_stages.
 	PluginStages func(ctx context.Context) ([]string, error)
 

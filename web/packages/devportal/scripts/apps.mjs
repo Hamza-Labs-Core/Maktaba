@@ -402,8 +402,8 @@ export const APPS = [
                 "**الملف الشخصي**: سجل المشاهدة والمفضلة وقوائم التشغيل والجلسات، و**الموافقة على تلفاز أو جهاز**، وتبديل الجهاز الرئيسي، وإعدادات المظهر واللغة والتشغيل على هذا الجهاز."
               ),
               t(
-                "**Watching**: subtitles and audio tracks, the next lesson, AirPlay and Picture in Picture on Apple devices, **Cast** to a Chromecast or a Google TV from an iPhone or iPad (the TV list keeps AirPlay first, and the TV plays and reports where it is by itself, so the phone can lock), picture in picture, sound with the screen off and **Cast** to a Chromecast or a Google TV on Android (the TV plays and reports where it is by itself, so the phone can lock). On the Mac the video fills the window and the **Playback** menu has the keys. On Windows and Linux: the **Audio**, **Subtitles** and **Quality** menus, Up next, and the keys below.",
-                "**المشاهدة**: الترجمات ومسارات الصوت، والدرس التالي، وAirPlay وصورة داخل صورة على أجهزة آبل، و**البث** إلى Chromecast أو Google TV من آيفون أو آيباد (تُبقي قائمة أجهزة التلفاز AirPlay أولًا، ويشغّل التلفاز ويبلّغ عن موضعه بنفسه، فيمكن قفل الهاتف)، وصورة داخل صورة واستمرار الصوت مع إطفاء الشاشة و**البث** إلى Chromecast أو Google TV على أندرويد (يشغّل التلفاز ويبلّغ عن موضعه بنفسه، فيمكن قفل الهاتف). وعلى الماك يملأ المقطع النافذة، وفي قائمة **التشغيل** اختصارات لوحة المفاتيح. وعلى ويندوز ولينكس: قوائم **الصوت** و**الترجمة** و**الجودة**، و«التالي»، والمفاتيح المبيّنة أدناه."
+                "**Watching**: subtitles and audio tracks, the next lesson, AirPlay and Picture in Picture on Apple devices, **Cast** to a Chromecast or a Google TV from an iPhone or iPad (the TV list keeps AirPlay first, and the TV plays and reports where it is by itself, so the phone can lock), picture in picture, sound with the screen off and **Cast** to a Chromecast or a Google TV on Android (the TV plays and reports where it is by itself, so the phone can lock). On the Mac the video fills the window and the **Playback** menu has the keys. On Windows and Linux: the **Audio**, **Subtitles** and **Quality** menus, Up next, and the keys below; the Player plays with libmpv, which it carries, so a home that knows its `desktop-mpv` profile sends MKV, HEVC (10-bit too), AV1, AC-3, E-AC-3, DTS and 5.1 or 7.1 sound as they are instead of converting them first, and a file that does not play as it is opens once more converted.",
+                "**المشاهدة**: الترجمات ومسارات الصوت، والدرس التالي، وAirPlay وصورة داخل صورة على أجهزة آبل، و**البث** إلى Chromecast أو Google TV من آيفون أو آيباد (تُبقي قائمة أجهزة التلفاز AirPlay أولًا، ويشغّل التلفاز ويبلّغ عن موضعه بنفسه، فيمكن قفل الهاتف)، وصورة داخل صورة واستمرار الصوت مع إطفاء الشاشة و**البث** إلى Chromecast أو Google TV على أندرويد (يشغّل التلفاز ويبلّغ عن موضعه بنفسه، فيمكن قفل الهاتف). وعلى الماك يملأ المقطع النافذة، وفي قائمة **التشغيل** اختصارات لوحة المفاتيح. وعلى ويندوز ولينكس: قوائم **الصوت** و**الترجمة** و**الجودة**، و«التالي»، والمفاتيح المبيّنة أدناه؛ ويشغّل المشغّل المقاطع بمكتبة libmpv التي يحملها معه، فالجهاز الرئيسي الذي يعرف ملف العميل `desktop-mpv` يرسل ملفات MKV وHEVC (بعمق 10 بت أيضًا) وAV1 وAC-3 وE-AC-3 وDTS والصوت 5.1 أو 7.1 كما هي بدل تحويلها أولًا، والملف الذي لا يعمل كما هو يُفتح مرة أخرى محوَّلًا."
               ),
               t(
                 "**The status strip**: when the home's streaming is down, the Player says so before you press play.",
@@ -1742,14 +1742,14 @@ export const APPS = [
               shot(
                 "web-search",
                 "wide",
-                "Search in the web app: Did you mean, the filters in use, the sort and the chips that count the results by library, language, speaker, year and length",
-                "البحث في تطبيق الويب: «هل تقصد»، وعوامل التصفية المستخدمة، والترتيب، والشرائح التي تعدّ النتائج حسب المكتبة واللغة والمتحدث والسنة والمدة"
+                "Search in the web app: a word found in a title and in what is said, in English and in Arabic, each passage with its time, the sort and the recent searches",
+                "البحث في تطبيق الويب: كلمة وُجدت في عنوان وفي ما يقال، بالإنجليزية والعربية، ولكل مقطع وقته، والترتيب وعمليات البحث الأخيرة"
               ),
               shot(
                 "web-search-suggest",
                 "wide",
-                "Suggestions as you type in the web app's Search, each with its kind: an earlier search, a word, a video's title, a speaker",
-                "الاقتراحات أثناء الكتابة في بحث تطبيق الويب، ولكلٍّ منها نوعه: بحث سابق، أو كلمة، أو عنوان مقطع، أو متحدث"
+                "Suggestions as you type in the web app's Search, each with its kind: an earlier search, a word, a video's title",
+                "الاقتراحات أثناء الكتابة في بحث تطبيق الويب، ولكلٍّ منها نوعه: بحث سابق، أو كلمة، أو عنوان مقطع"
               ),
               shot(
                 "web-search-ai",

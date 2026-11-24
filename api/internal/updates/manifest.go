@@ -15,6 +15,8 @@ import (
 	"errors"
 	"strings"
 	"time"
+
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/releaseverify"
 )
 
 // Release file names (design §3.1). Only these three small files are downloaded and
@@ -50,6 +52,11 @@ type Manifest struct {
 	// absent before): the machines' jobs carry it, so one whose database another major
 	// made refuses the release before it downloads anything
 	AppPostgresMajor map[string]int `json:"app_postgres_major,omitempty"`
+	// Migrations is release.json's migrations archive and the set of migrations in it
+	// (absent before Epic 35 phase B; the set absent before 2026-11-24, and in a catalog
+	// row verified before this field was kept): a release whose migrations rolled back
+	// here holds back the newer ones with the same set (ChooseTarget).
+	Migrations *releaseverify.Migrations `json:"migrations,omitempty"`
 }
 
 // ReleaseFiles are the three small signed files of a release, as downloaded.

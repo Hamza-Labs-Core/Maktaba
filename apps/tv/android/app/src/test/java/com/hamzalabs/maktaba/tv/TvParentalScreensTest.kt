@@ -82,7 +82,7 @@ class TvParentalScreensTest {
         }
         server.start()
         compose.registerIdlingResource(calls.idling)
-        routes["/api/me/parental/guardians"] = { json("""{"guardians":[{"id":"g1","username":"huda"}]}""") }
+        routes["/api/me/parental/guardians"] = { json("""{"guardians":[{"id":"g1","username":"khalid"}]}""") }
     }
 
     @After

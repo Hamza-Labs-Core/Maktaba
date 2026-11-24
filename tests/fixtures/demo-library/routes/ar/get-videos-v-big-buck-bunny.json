@@ -1,8 +1,8 @@
 {
  "id": "v-big-buck-bunny",
- "library_id": "lib-films",
+ "library_id": "lib-kids",
  "path": "",
- "filename": "big-buck-bunny.mkv",
+ "filename": "big-buck-bunny.mp4",
  "title": "الأرنب الكبير",
  "description": "أرنب ضخم طيب القلب يضيق ذرعًا بثلاثة متنمرين في الغابة، فيدبّر لهم انتقامًا لطيفًا.",
  "state": "ready",
@@ -20,6 +20,6 @@
  "playback_state": {
   "position_sec": 596,
   "completed": true,
-  "updated_at": "{{now-108000}}"
+  "updated_at": "{{now-129600}}"
  }
 }

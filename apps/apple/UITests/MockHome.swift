@@ -24,7 +24,7 @@ import Network
 ///   folder `art`, served as JPEG. They win over everything but a test's stubs, `/api/me` and
 ///   `/api/auth/me` included; the home's name is the demo's; a route the demo has not
 ///   (the stream, sessions, the Remote's screens) answers as above. The demo's stream is
-///   `Fixtures/Stream/demo-*`: 720p segments of a still of Sintel's art (CC BY, as the art)
+///   `Fixtures/Stream/demo-*`: 720p segments of a still of Curiosity: Landing on Mars at 7:00 (public domain, NASA/JPL-Caltech)
 ///   with a line of English and Arabic subtitles written for the fixture.
 final class MockHome: @unchecked Sendable {
     /// One request the app made.
@@ -488,7 +488,7 @@ final class MockHome: @unchecked Sendable {
     /// A demo video's JSON (`GET /api/videos/<id>`), nil without a demo or such a video.
     func demoVideo(_ id: String) -> [String: Any]? { demoDocument("get-videos-\(id)") }
 
-    /// The demo's route file `name` (`get-me-videos-v-sintel`: where Sintel resumes), as JSON.
+    /// The demo's route file `name` (`get-me-videos-v-curiosity`: where Curiosity resumes), as JSON.
     func demoDocument(_ name: String) -> [String: Any]? {
         guard let demo else { return nil }
         return demoFile(name, demo).flatMap { try? JSONSerialization.jsonObject(with: Data($0.utf8)) as? [String: Any] }

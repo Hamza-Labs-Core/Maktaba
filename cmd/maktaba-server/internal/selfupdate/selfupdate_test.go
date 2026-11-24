@@ -207,3 +207,23 @@ func TestCLIUpdateBetaChannel(t *testing.T) {
 		t.Fatalf("missing tag: %v", err)
 	}
 }
+
+// Latest asks for the newest 10 releases: GitHub's 30 (some 190 assets each) passed the
+// 8 MiB cap on 2026-11-23, and every look for an update failed from then on.
+func TestLatestAsksForTen(t *testing.T) {
+	var query string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		query = req.URL.RawQuery
+		_, _ = w.Write([]byte(`[{"tag_name":"v1.5.0","assets":[]}]`))
+	}))
+	t.Cleanup(srv.Close)
+	id, _ := releaseverify.NewIdentity(repo)
+	c := New(Options{Identity: id, APIBase: srv.URL})
+	rel, err := c.Latest(context.Background())
+	if err != nil || rel == nil || rel.Tag != "v1.5.0" {
+		t.Fatalf("Latest = %+v, %v", rel, err)
+	}
+	if query != "per_page=10" {
+		t.Fatalf("asked %q, want per_page=10", query)
+	}
+}

@@ -4,10 +4,10 @@
 The manifest (deploy/review-home/content/manifest.json) lists every file the store reviewers'
 home carries: public-domain and openly licensed only (CC BY, never NC or ND), each with its
 English and Arabic title, its source URL, licence and attribution, and the source's published
-size and SHA-1 (the Internet Archive's own checksums, so a source is verified before anything
-reads it). A file the home needs in a shape no source has (4K HEVC HDR10, an MKV with EAC3 and
-WebVTT subtitles, a file every TV must have transcoded) is derived from its source with ffmpeg,
-by the arguments the manifest gives.
+size and SHA-1 (its host's own checksums, the Internet Archive's or Wikimedia Commons', so a
+source is verified before anything reads it). A file the home needs in a shape no source has
+(4K HEVC HDR10, an MKV with EAC3 and WebVTT subtitles, a file every TV must have transcoded)
+is derived from its source with ffmpeg, by the arguments the manifest gives.
 
     content.py validate [--manifest FILE]
     content.py fetch --dest /srv/review-media [--manifest FILE] [--only ID ...] [--keep-sources]

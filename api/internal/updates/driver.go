@@ -674,7 +674,7 @@ func (d *Driver) blockFor(ctx context.Context, run Run, doc map[string]any) {
 	case classVerify:
 		noteStore(d.log(), "Block", d.Store.Block(ctx, run.Version, "verify"))
 	case classRehearsal:
-		noteStore(d.log(), "Block", d.Store.Block(ctx, run.Version, "rehearsal"))
+		noteStore(d.log(), "Block", d.Store.Block(ctx, run.Version, BlockedRehearsal))
 	default:
 		if d.countedInWindow(ctx, run) {
 			d.audit(ctx, run, "attempt_counted_already", map[string]any{"code": code})
@@ -1197,7 +1197,7 @@ func (d *Driver) homeApplying(ctx context.Context, run Run, det RunDetail) error
 		if tvCodes[st.Reason] {
 			return d.tvRolledBack(ctx, run, det, st.Reason, doc)
 		}
-		noteStore(d.log(), "Block", d.Store.Block(ctx, run.Version, "rolled_back"))
+		noteStore(d.log(), "Block", d.Store.Block(ctx, run.Version, BlockedRolledBack))
 		d.notify(ctx, NoticeRolledBack, notify.SeverityError, run, map[string]any{"reason": st.Reason})
 		return d.finish(ctx, run, det, RunRolledBack, doc)
 	case MApplyFailed:
@@ -1207,7 +1207,7 @@ func (d *Driver) homeApplying(ctx context.Context, run Run, det RunDetail) error
 		return d.finish(ctx, run, det, RunFailed, doc)
 	case MFailed:
 		doc := machineErr(st, "rollback_failed")
-		noteStore(d.log(), "Block", d.Store.Block(ctx, run.Version, "rolled_back"))
+		noteStore(d.log(), "Block", d.Store.Block(ctx, run.Version, BlockedRolledBack))
 		d.notify(ctx, NoticeNeedsPerson, notify.SeverityError, run, map[string]any{"code": doc["code"]})
 		return d.finish(ctx, run, det, RunFailedRollback, doc)
 	}
