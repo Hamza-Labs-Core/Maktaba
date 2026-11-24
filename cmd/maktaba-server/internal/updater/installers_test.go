@@ -163,29 +163,15 @@ func TestLayoutInstaller(t *testing.T) {
 	if cur, _ := l.Current(); cur != "1.5.0" || p == nil || p.Record != record || p.Deadline.Before(time.Now().Add(20*time.Minute)) {
 		t.Fatalf("after the switch: current %q pending %+v", cur, p)
 	}
-	// the latest the release being judged may push its deadline to is set here, by the
-	// release that switches (research P5), beyond the watch's own bound and never a day
-	if want := time.Now().Add(pendingCap(j) + j.Job.WatchBound()); p.Latest.Before(want) ||
-		p.Latest.After(time.Now().Add(layout.MaxGuardSpan)) || p.Latest.Before(p.Deadline) {
-		t.Fatalf("latest %v (deadline %v), want after %v", p.Latest, p.Deadline, want)
+	// the running time the release being judged has is set here, by the release that switches
+	// (research P5): beyond the watch's own bound, and past a day for a large library
+	if got := time.Duration(p.MaxRunSec) * time.Second; got <= pendingCap(j)+j.Job.WatchBound() || got > layout.MaxGuardRun {
+		t.Fatalf("%s to confirm", got)
 	}
-	// a large library's migrations may take over a day (pendingCap): the launcher waits as
-	// long as the watch does, for all the pushes it takes
 	long := *j
 	long.Rehearsal = &Rehearsal{DBBytes: 100 << 30}
-	latest := guardLatest(p.Since, &long)
-	if latest.Sub(p.Since) <= layout.MaxGuardSpan || !layout.GuardLatest(p.Since, latest).Equal(latest) {
-		t.Fatalf("a 100 GiB library: latest %v after the switch, capped to %v", latest.Sub(p.Since),
-			layout.GuardLatest(p.Since, latest).Sub(p.Since))
-	}
-	if err := l.GuardPending("1.5.0", p.Deadline, latest, record); err != nil {
-		t.Fatal(err)
-	}
-	if ok, err := l.ExtendPending(j.Job.RunID, p.Since.Add(26*time.Hour)); !ok || err != nil {
-		t.Fatalf("pushed to 26 h: %v %v", ok, err)
-	}
-	if q, _ := l.ReadPending(); !q.Deadline.Equal(p.Since.Add(26 * time.Hour).UTC()) {
-		t.Fatalf("deadline %v, want 26 h after the switch", q.Deadline.Sub(p.Since))
+	if got := guardRun(&long); got <= layout.MaxGuardRun || layout.GuardBudget(int64(got/time.Second), false) != got {
+		t.Fatalf("a 100 GiB library: %s to confirm", got)
 	}
 	if err := li.Revert(ctx, j); err != nil {
 		t.Fatal(err)

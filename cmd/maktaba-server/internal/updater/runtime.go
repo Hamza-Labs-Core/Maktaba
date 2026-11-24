@@ -370,7 +370,7 @@ func (ri *RuntimeInstaller) Switch(ctx context.Context, j *Journal) error {
 	}
 	if err := layout.WriteGuard(ri.LauncherRoot, layout.Guard{Version: layout.NormalizeVersion(j.Job.Version),
 		RunID: j.Job.RunID, Since: ri.now().UTC(), Deadline: guardDeadline(ri.now(), j).UTC(),
-		Latest: guardLatest(ri.now(), j).UTC(), PreviousRuntime: j.FromRef, Record: ri.Record}); err != nil {
+		MaxRunSec: int64(guardRun(j) / time.Second), PreviousRuntime: j.FromRef, Record: ri.Record}); err != nil {
 		backOn()
 		return Fail("switch_failed", "%v", err)
 	}
@@ -386,6 +386,11 @@ func (ri *RuntimeInstaller) Switch(ctx context.Context, j *Journal) error {
 func (ri *RuntimeInstaller) Extend(j *Journal, until time.Time) error {
 	_, err := layout.ExtendGuard(ri.LauncherRoot, j.Job.RunID, until)
 	return err
+}
+
+// RollingBack implements RollbackGuarder.
+func (ri *RuntimeInstaller) RollingBack(j *Journal) error {
+	return layout.GuardRollingBack(ri.LauncherRoot, j.Job.RunID)
 }
 
 // Restart implements Installer (the app's order, when there is one, says installing).

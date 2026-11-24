@@ -219,10 +219,9 @@ type Pending struct {
 	// Deadline (the update orchestrator's): not confirmed by then, the launcher
 	// falls back; zero: its own pending timeout.
 	Deadline time.Time `json:"deadline,omitzero"`
-	// Latest is how far the deadline may ever be pushed (GuardLatest): set by the release
-	// that switched, never moved by the release being judged. Zero (a marker from before
-	// 2026-11-24): Since plus MaxGuardSpan.
-	Latest time.Time `json:"latest,omitzero"`
+	// MaxRunSec and RollingBack are Guard's.
+	MaxRunSec   int64 `json:"max_run_seconds,omitempty"`
+	RollingBack bool  `json:"rolling_back,omitempty"`
 	// Record is the database's record the fallback marks held (MarkRecordHeld).
 	Record string `json:"record,omitempty"`
 }
@@ -247,10 +246,10 @@ func (l Layout) ReadPending() (*Pending, error) {
 	return &p, nil
 }
 
-// GuardPending adds the orchestrator's deadline, the latest it may be pushed to (zero:
-// Since plus MaxGuardSpan) and the database record to the pending marker of version (a
+// GuardPending adds the orchestrator's deadline, the running time the release has to confirm
+// (0: MaxGuardRun) and the database record to the pending marker of version (a
 // marker of another version is left alone).
-func (l Layout) GuardPending(version string, deadline, latest time.Time, record string) error {
+func (l Layout) GuardPending(version string, deadline time.Time, maxRun time.Duration, record string) error {
 	p, err := l.ReadPending()
 	if err != nil {
 		return err
@@ -258,10 +257,7 @@ func (l Layout) GuardPending(version string, deadline, latest time.Time, record 
 	if p == nil || p.Version != version {
 		return fmt.Errorf("no pending marker for %s", version)
 	}
-	p.Deadline, p.Record = deadline.UTC(), record
-	if !latest.IsZero() {
-		p.Latest = latest.UTC()
-	}
+	p.Deadline, p.Record, p.MaxRunSec = deadline.UTC(), record, int64(maxRun/time.Second)
 	b, err := json.Marshal(p)
 	if err != nil {
 		return err
@@ -271,14 +267,11 @@ func (l Layout) GuardPending(version string, deadline, latest time.Time, record 
 
 // ExtendPending pushes the pending marker's deadline to until when the marker is runID's
 // and its deadline is earlier (the new release is busy starting: its database step dumps
-// and migrates), never past its latest (GuardLatest); it reports whether it did.
+// and migrates); it reports whether it did.
 func (l Layout) ExtendPending(runID string, until time.Time) (bool, error) {
 	p, err := l.ReadPending()
 	if err != nil || p == nil || runID == "" || p.RunID != runID {
 		return false, err
-	}
-	if latest := GuardLatest(p.Since, p.Latest); until.After(latest) {
-		until = latest
 	}
 	if !p.Deadline.Before(until) {
 		return false, nil
@@ -289,6 +282,21 @@ func (l Layout) ExtendPending(runID string, until time.Time) (bool, error) {
 		return false, err
 	}
 	return true, WriteFileAtomic(filepath.Join(l.Root, PendingFile), b, 0o644)
+}
+
+// RollingBackPending says the rollback of the marker's release is under way: the launcher
+// gives it RollbackRun more.
+func (l Layout) RollingBackPending(runID string) error {
+	p, err := l.ReadPending()
+	if err != nil || p == nil || runID == "" || p.RunID != runID || p.RollingBack {
+		return err
+	}
+	p.RollingBack = true
+	b, err := json.Marshal(p)
+	if err != nil {
+		return err
+	}
+	return WriteFileAtomic(filepath.Join(l.Root, PendingFile), b, 0o644)
 }
 
 // ClearPending removes the pending marker (the supervisor's confirmation).

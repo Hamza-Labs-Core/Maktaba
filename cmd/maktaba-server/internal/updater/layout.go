@@ -127,13 +127,12 @@ func (li *LayoutInstaller) Tools(j *Journal) (string, string) {
 	return filepath.Join(j.Staged, layout.Exe("maktaba-api")), mig
 }
 
-// guardLatest is the furthest the new release's watch may push the launcher's guard
-// (layout.GuardLatest): the watch's own longest wait (its start steps' cap, pendingCap,
-// then its bound, as the Updates page shows it) and room for the restart and a
-// rollback's switch back, set by the release that switches, so the release being judged
-// cannot move it (research P5).
-func guardLatest(now time.Time, j *Journal) time.Time {
-	return now.Add(pendingCap(j) + j.Job.WatchBound() + guardMargin + 30*time.Minute)
+// guardRun is the running time the launcher gives the release to confirm (layout.GuardBudget):
+// the watch's own longest wait (its start steps' cap, pendingCap, then its bound, as the
+// Updates page shows it) and room for the restart and a rollback's switch back, set by the
+// release that switches, so the release being judged cannot move it (research P5).
+func guardRun(j *Journal) time.Duration {
+	return pendingCap(j) + j.Job.WatchBound() + guardMargin + 30*time.Minute
 }
 
 // guardDeadline is how long the launcher waits for the new release to confirm: its
@@ -152,7 +151,7 @@ func (li *LayoutInstaller) Switch(_ context.Context, j *Journal) error {
 	if err := li.Layout.Switch(v, j.Job.RunID, li.now()); err != nil {
 		return Fail("switch_failed", "%v", err)
 	}
-	if err := li.Layout.GuardPending(v, guardDeadline(li.now(), j), guardLatest(li.now(), j), li.Record); err != nil {
+	if err := li.Layout.GuardPending(v, guardDeadline(li.now(), j), guardRun(j), li.Record); err != nil {
 		return Fail("switch_failed", "%v", err)
 	}
 	return nil
@@ -162,6 +161,11 @@ func (li *LayoutInstaller) Switch(_ context.Context, j *Journal) error {
 func (li *LayoutInstaller) Extend(j *Journal, until time.Time) error {
 	_, err := li.Layout.ExtendPending(j.Job.RunID, until)
 	return err
+}
+
+// RollingBack implements RollbackGuarder.
+func (li *LayoutInstaller) RollingBack(j *Journal) error {
+	return li.Layout.RollingBackPending(j.Job.RunID)
 }
 
 // Restart implements Installer: exit 75 (the launcher starts current).

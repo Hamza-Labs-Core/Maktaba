@@ -4611,8 +4611,9 @@ build fails when the two differ.
 
 - **A release that hangs while it starts after an update is now timed out.** Its own update watch
   pushed the launcher's deadline on every minute, without limit. The release that switches now
-  writes the latest that deadline may reach, and the launcher never waits longer (a
-  day after the switch when none was written).
+  says how long the new one may run before it confirms, and the launcher counts that time itself.
+  A machine switched off or asleep, or a clock set forward, is no time it had: a good update is
+  not taken back after a long power cut.
 
 - **An update no longer waits forever for a desktop app that is not running.** When the Mac or
   Windows app never takes the update, the update stops waiting at the end of its window (or after

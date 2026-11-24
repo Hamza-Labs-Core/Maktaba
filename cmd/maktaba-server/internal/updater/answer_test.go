@@ -8,6 +8,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/layout"
 )
 
 // Research P10: an order the app never stages ends the run (app_no_answer) at the time it
@@ -182,5 +184,83 @@ func TestRuntimeOrderKeepsALateAnswer(t *testing.T) {
 	now = now.Add(runtimeNoAppAfter + time.Minute)
 	if st, err := ri.Answer(j); err == nil || st == RequestStaged {
 		t.Fatalf("after a late failure: %q %v", st, err)
+	}
+}
+
+// An order is not given up on over time the machine slept, nor before the app had half an
+// hour awake with it: a laptop that slept nine hours past the order's time gives its app that
+// after it wakes; one awake all along is given up on at the time.
+func TestAppWaitCountsAwakeTime(t *testing.T) {
+	at := time.Date(2026, 11, 24, 3, 0, 0, 0, time.UTC)
+	by := at.Add(3 * time.Hour)
+	looks := func(a *appWait, from, to time.Duration) (over time.Duration) {
+		for d := from; d <= to; d += time.Minute {
+			a.look(at.Add(d))
+			if a.over(by) {
+				return d
+			}
+		}
+		return 0
+	}
+	var awake appWait
+	if got := looks(&awake, 0, 5*time.Hour); got != 3*time.Hour+time.Minute {
+		t.Fatalf("awake: given up on after %s", got)
+	}
+	var slept appWait
+	if got := looks(&slept, 0, time.Hour); got != 0 {
+		t.Fatalf("within its time: %s", got)
+	}
+	if got := looks(&slept, 9*time.Hour, 12*time.Hour); got != 9*time.Hour+30*time.Minute {
+		t.Fatalf("awake again after 9 h: given up on after %s", got)
+	}
+	var started appWait // the server started long past the order's time
+	if got := looks(&started, 20*time.Hour, 22*time.Hour); got != 20*time.Hour+30*time.Minute {
+		t.Fatalf("a start: given up on after %s", got)
+	}
+	var back appWait // the clock set back while it waits
+	_ = looks(&back, 2*time.Hour+50*time.Minute, 2*time.Hour+59*time.Minute)
+	if got := looks(&back, 0, 4*time.Hour); got != 3*time.Hour+time.Minute {
+		t.Fatalf("a clock set back: given up on after %s", got)
+	}
+}
+
+// The release being judged stops pushing the launcher's guard once it ran as long as the
+// launcher gives it (one from before 2026-11-24 counts none), a rollback under way later; and
+// the rollback tells the guard it is under way.
+func TestExtendGuardStopsAtItsRunningTime(t *testing.T) {
+	now := time.Date(2026, 11, 24, 3, 0, 0, 0, time.UTC)
+	root := t.TempDir()
+	ri := &RuntimeInstaller{LauncherRoot: root, Now: func() time.Time { return now }}
+	m := &Machine{Dir: t.TempDir(), Installer: ri, Now: func() time.Time { return now }}
+	m.Start(context.Background())
+	j := &Journal{Job: Job{RunID: "run-1", Version: "1.5.0", Home: true}, State: StateWatching}
+	m.j = j
+	if err := layout.WriteGuard(root, layout.Guard{Version: "1.5.0", RunID: "run-1", Since: now, Deadline: now,
+		MaxRunSec: int64(guardRun(j) / time.Second)}); err != nil {
+		t.Fatal(err)
+	}
+	pushed := func() bool {
+		before, _ := layout.ReadGuard(root)
+		m.extendGuard(now.Add(15 * time.Minute))
+		after, _ := layout.ReadGuard(root)
+		return after.Deadline.After(before.Deadline)
+	}
+	if now = now.Add(guardRun(j) - time.Minute); !pushed() {
+		t.Fatal("not pushed within its time")
+	}
+	if now = now.Add(2 * time.Minute); pushed() {
+		t.Fatal("pushed past its time")
+	}
+	j.State = StateRollingBack
+	if now = now.Add(time.Hour); !pushed() {
+		t.Fatal("a rollback under way is not given its own time")
+	}
+	stop := m.keepGuard()
+	stop()
+	if g, _ := layout.ReadGuard(root); !g.RollingBack {
+		t.Fatalf("the guard does not say the rollback is under way: %+v", g)
+	}
+	if now = now.Add(layout.RollbackRun); pushed() {
+		t.Fatal("a rollback pushed past its time")
 	}
 }

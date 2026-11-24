@@ -215,7 +215,7 @@ func TestLayoutRollbackMarksTheRecord(t *testing.T) {
 	}
 	record := filepath.Join(l.Root, "database.json")
 	writeRecord(t, record, "2.0.0", "1.0.0")
-	if err := l.GuardPending("2.0.0", time.Now().Add(time.Hour), time.Time{}, record); err != nil {
+	if err := l.GuardPending("2.0.0", time.Now().Add(time.Hour), 0, record); err != nil {
 		t.Fatal(err)
 	}
 	startLauncher(t, testConfig(l.Root))
@@ -226,96 +226,229 @@ func TestLayoutRollbackMarksTheRecord(t *testing.T) {
 	}
 }
 
-// The orchestrator's deadline holds the pending release past the launcher's own
-// timeout (a long migration at its start).
-func TestPendingDeadlineExtendsTheTimeout(t *testing.T) {
+// guardTime is a guard whose clock and running time the test moves: a release with budget to
+// confirm, its deadline pushed as ExtendGuard pushes it (never back).
+type guardTime struct {
+	c        guardClock
+	wall     time.Time
+	tick     time.Duration
+	deadline time.Time
+	budget   time.Duration
+	timeout  time.Duration
+	used     time.Duration // what a start before used, as saved
+}
+
+func newGuardTime(budget, deadline time.Duration) *guardTime {
+	g := &guardTime{wall: time.Date(2026, 11, 24, 3, 0, 0, 0, time.UTC), budget: budget, timeout: 15 * time.Minute}
+	if deadline > 0 {
+		g.deadline = g.wall.Add(deadline)
+	}
+	return g
+}
+
+// restart is the launcher started again (the machine was off, or the launcher was).
+func (g *guardTime) restart() { g.used, g.tick, g.c = g.c.ran, 0, guardClock{} }
+
+// runs lets d pass with the launcher running, a look every 5 s, the release pushing its
+// deadline 15 minutes ahead every minute (push); how long it took to be given up on (0: not).
+func (g *guardTime) runs(d time.Duration, push bool) time.Duration {
+	const look = 5 * time.Second
+	for t := time.Duration(0); t < d; t += look {
+		g.wall, g.tick = g.wall.Add(look), g.tick+look
+		if until := g.wall.Add(15 * time.Minute); push && t%time.Minute == 0 && g.deadline.Before(until) {
+			g.deadline = until
+		}
+		if g.c.look(g.tick, g.wall, "2.0.0 run-1", g.deadline, g.budget, g.timeout, func(string) time.Duration { return g.used }) {
+			return t + look
+		}
+	}
+	return 0
+}
+
+// The guard's time is the time the release ran (the review of #1607). A good release is not
+// given up on after a long power-off, a sleep, or a clock set forward; one that hung is,
+// whatever it pushes and wherever the clock is set; a rollback under way has its own time.
+func TestGuardCountsRunningTime(t *testing.T) {
 	t.Parallel()
-	l := installed(t, map[string]string{"1.0.0": "run", "2.0.0": "run"}, "1.0.0")
-	if err := l.Switch("2.0.0", "run-1", time.Now()); err != nil {
-		t.Fatal(err)
+	const budget = 3 * time.Hour
+	mk := func() *guardTime { return newGuardTime(budget, 40*time.Minute) }
+	stays := func(t *testing.T, g *guardTime, what string, d time.Duration) {
+		t.Helper()
+		if at := g.runs(d, true); at != 0 {
+			t.Fatalf("%s: given up on after %s", what, at)
+		}
 	}
-	now := time.Now()
-	ln := &launcher{cfg: Config{Root: l.Root, PendingTimeout: time.Minute}, l: l, firstStart: now}
-	if d := ln.deadline("2.0.0"); !d.Equal(now.Add(time.Minute)) {
-		t.Fatalf("no deadline set: %v", d)
+	ends := func(t *testing.T, what string, got, want time.Duration) {
+		t.Helper()
+		if got < want-time.Minute || got > want+time.Minute {
+			t.Errorf("%s: given up on after %s, want %s", what, got, want)
+		}
 	}
-	if err := l.GuardPending("2.0.0", now.Add(time.Hour), time.Time{}, ""); err != nil {
-		t.Fatal(err)
+	t.Run("a 5 h power-off mid-watch", func(t *testing.T) {
+		g := mk()
+		stays(t, g, "before it", 10*time.Minute)
+		g.wall = g.wall.Add(5 * time.Hour)
+		g.restart()
+		stays(t, g, "after the boot", 2*time.Hour)
+	})
+	t.Run("a clock set forward", func(t *testing.T) {
+		g := mk()
+		stays(t, g, "before it", 5*time.Minute)
+		g.wall = g.wall.Add(50 * 365 * 24 * time.Hour) // a NAS with no clock of its own, then NTP
+		stays(t, g, "after it", 2*time.Hour)
+	})
+	t.Run("a clock set forward, the push a minute late", func(t *testing.T) {
+		g := mk()
+		stays(t, g, "before it", 5*time.Minute)
+		g.wall = g.wall.Add(365 * 24 * time.Hour)
+		if at := g.runs(10*time.Minute, false); at != 0 {
+			t.Fatalf("given up on after %s", at)
+		}
+	})
+	t.Run("a sleep, where the tick counts it too", func(t *testing.T) {
+		g := mk()
+		stays(t, g, "before it", 5*time.Minute)
+		g.wall, g.tick = g.wall.Add(9*time.Hour), g.tick+9*time.Hour
+		stays(t, g, "after it woke", 2*time.Hour)
+	})
+	t.Run("the clock set back, healthy", func(t *testing.T) {
+		g := mk()
+		stays(t, g, "before it", 30*time.Minute)
+		g.wall = g.wall.Add(-time.Hour)
+		stays(t, g, "after it", 2*time.Hour)
+	})
+	t.Run("never confirmed, nothing pushed", func(t *testing.T) {
+		ends(t, "the deadline", mk().runs(2*time.Hour, false), 40*time.Minute)
+	})
+	t.Run("no update run watches it", func(t *testing.T) {
+		ends(t, "the timeout", newGuardTime(budget, 0).runs(2*time.Hour, false), 15*time.Minute)
+	})
+	t.Run("the deadline moved back", func(t *testing.T) {
+		g := mk()
+		stays(t, g, "before it", 20*time.Minute)
+		g.deadline = g.wall
+		if at := g.runs(time.Minute, false); at == 0 {
+			t.Fatal("a deadline moved back was not taken")
+		}
+	})
+	t.Run("hung, pushing for ever", func(t *testing.T) {
+		ends(t, "the budget", mk().runs(10*time.Hour, true), budget)
+	})
+	t.Run("hung, across restarts of the launcher", func(t *testing.T) {
+		g := mk()
+		for range 5 {
+			stays(t, g, "before its budget", 30*time.Minute)
+			g.restart()
+		}
+		ends(t, "what is left of the budget", g.runs(10*time.Hour, true), budget-150*time.Minute)
+	})
+	t.Run("hung, the clock set back", func(t *testing.T) {
+		g := mk()
+		g.wall = g.wall.Add(-365 * 24 * time.Hour)
+		ends(t, "the budget", g.runs(10*time.Hour, true), budget)
+	})
+	t.Run("a rollback under way", func(t *testing.T) {
+		g := mk()
+		stays(t, g, "before its rollback", budget-10*time.Minute)
+		g.budget = layout.GuardBudget(int64(budget/time.Second), true)
+		ends(t, "the rollback's own time", g.runs(20*time.Hour, true), layout.RollbackRun+10*time.Minute)
+	})
+}
+
+// The launcher reads the guard's time of each kind (a layout's marker, an app's or a
+// runtime's guard), goes on from what its starts before used, and forgets it with the guard.
+func TestGuardTimeOfEachKind(t *testing.T) {
+	t.Parallel()
+	start := time.Now()
+	for name, mk := range map[string]func(t *testing.T) *launcher{
+		"layout": func(t *testing.T) *launcher {
+			l := installed(t, map[string]string{"1.0.0": "run", "2.0.0": "run"}, "1.0.0")
+			if err := l.Switch("2.0.0", "run-1", start); err != nil {
+				t.Fatal(err)
+			}
+			if err := l.GuardPending("2.0.0", start.Add(time.Hour), 10*time.Minute, ""); err != nil {
+				t.Fatal(err)
+			}
+			return &launcher{cfg: Config{Root: l.Root}, l: l}
+		},
+		"app": func(t *testing.T) *launcher {
+			bundle, root := mkBundle(t, "run")
+			mkPayload(t, bundle, "2.0.0", "run", "new")
+			if err := layout.WriteGuard(root, layout.Guard{Version: "2.0.0", RunID: "run-1", Since: start,
+				Deadline: start.Add(time.Hour), MaxRunSec: 600}); err != nil {
+				t.Fatal(err)
+			}
+			return &launcher{cfg: Config{Root: root, Bundle: bundle}, l: layout.New(root)}
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			ln := mk(t)
+			var tick time.Duration
+			cfg := ln.cfg
+			cfg.Now, cfg.Tick = func() time.Time { return start }, func() time.Duration { return tick }
+			for i := range 2 {
+				// two starts of the launcher, five minutes each
+				ln = &launcher{cfg: cfg, l: ln.l}
+				for tick = 0; tick < 5*time.Minute; tick += time.Minute {
+					if ln.guardLook("2.0.0") {
+						t.Fatalf("start %d: given up on after %s", i+1, tick)
+					}
+				}
+				ln.saveGuardRan()
+			}
+			ln = &launcher{cfg: cfg, l: ln.l}
+			for tick = 0; tick < 3*time.Minute && !ln.guardLook("2.0.0"); tick += time.Minute {
+			}
+			if tick >= 3*time.Minute {
+				t.Fatalf("its ten minutes used in two starts, the third gave it %s more", tick)
+			}
+			ln.forgetGuard()
+			if _, err := os.Stat(ln.guardRanPath()); err == nil {
+				t.Fatal("the time of a guard that is gone is kept")
+			}
+		})
 	}
-	if d := ln.deadline("2.0.0"); d.Sub(now) < 59*time.Minute {
-		t.Fatalf("deadline %v", d)
+	if got := layout.GuardBudget(0, false); got != layout.MaxGuardRun {
+		t.Fatalf("a guard from before: %s", got)
+	}
+	if got := layout.GuardBudget(int64(27*time.Hour/time.Second), false); got != 27*time.Hour {
+		t.Fatalf("a large library's: %s", got)
 	}
 }
 
-// Research P5: the release being judged pushes the deadline every minute while it starts,
-// and nothing capped it. The launcher never waits past the latest the release that
-// switched set, whatever the deadline file says, and a marker with no latest (from before
-// 2026-11-24) waits at most layout.MaxGuardSpan from its switch. The release's own push
-// (ExtendPending) stops at the latest too.
-func TestPendingDeadlineIsCapped(t *testing.T) {
+// The repro of the review of #1607, with a real server under the launcher: the machine off
+// for 5 hours past every deadline, then started: the release runs on and confirms; nothing
+// goes back and the record is as it was.
+func TestLongPowerOffKeepsAGoodRelease(t *testing.T) {
 	t.Parallel()
+	processTest(t)
 	l := installed(t, map[string]string{"1.0.0": "run", "2.0.0": "run"}, "1.0.0")
-	if err := l.Switch("2.0.0", "run-1", time.Now()); err != nil {
+	record := filepath.Join(l.Root, "database.json")
+	writeRecord(t, record, "2.0.0", "1.0.0")
+	off := time.Now().Add(-5 * time.Hour)
+	if err := l.Switch("2.0.0", "run-1", off); err != nil {
 		t.Fatal(err)
 	}
-	now := time.Now()
-	ln := &launcher{cfg: Config{Root: l.Root, PendingTimeout: time.Minute}, l: l, firstStart: now}
-	latest := now.Add(3 * time.Hour)
-	if err := l.GuardPending("2.0.0", now.Add(time.Hour), latest, ""); err != nil {
+	if err := l.GuardPending("2.0.0", off.Add(20*time.Minute), 3*time.Hour, record); err != nil {
 		t.Fatal(err)
 	}
-	// the release pushes far past its latest: stopped there
-	if ok, err := l.ExtendPending("run-1", now.Add(30*time.Hour)); !ok || err != nil {
-		t.Fatalf("push: %v %v", ok, err)
+	cfg := testConfig(l.Root)
+	cfg.PendingTimeout = 2 * time.Second
+	startLauncher(t, cfg)
+	waitFor(t, "the release running", func() bool { return countAct(readTrace(l), "2.0.0", "run") == 1 })
+	time.Sleep(500 * time.Millisecond)
+	if ok, err := l.ExtendPending("run-1", time.Now().Add(15*time.Minute)); !ok || err != nil {
+		t.Fatalf("the release's push: %v %v", ok, err)
 	}
-	if p, _ := l.ReadPending(); p == nil || !p.Deadline.Equal(latest.UTC()) {
-		t.Fatalf("pushed to %+v, want the latest %v", p, latest)
+	time.Sleep(3 * time.Second)
+	if cur, _ := l.Current(); cur != "2.0.0" {
+		t.Fatalf("current is %s", cur)
 	}
-	if ok, _ := l.ExtendPending("run-1", now.Add(40*time.Hour)); ok {
-		t.Fatal("pushed past the latest again")
+	if n := len(events(l, "launcher_rollback")) + len(events(l, "launcher_pending_timeout")); n != 0 {
+		t.Fatalf("%d rollbacks", n)
 	}
-	// a deadline written past the latest by other means: the launcher keeps to the latest
-	p, _ := l.ReadPending()
-	p.Deadline = now.Add(30 * time.Hour).UTC()
-	b, _ := json.Marshal(p)
-	if err := layout.WriteFileAtomic(filepath.Join(l.Root, layout.PendingFile), b, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if d := ln.deadline("2.0.0"); !d.Equal(latest.UTC()) {
-		t.Fatalf("deadline %v, want the latest %v", d, latest)
-	}
-	// no latest (a marker from before): a day from the switch at most
-	p.Latest = time.Time{}
-	b, _ = json.Marshal(p)
-	if err := layout.WriteFileAtomic(filepath.Join(l.Root, layout.PendingFile), b, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if d := ln.deadline("2.0.0"); !d.Equal(p.Since.Add(layout.MaxGuardSpan)) {
-		t.Fatalf("deadline %v, want %v", d, p.Since.Add(layout.MaxGuardSpan))
-	}
-}
-
-// The app bundle's guard: the same cap, on ExtendGuard and on the launcher.
-func TestBundleGuardDeadlineIsCapped(t *testing.T) {
-	t.Parallel()
-	root := t.TempDir()
-	now := time.Now().UTC()
-	latest := now.Add(2 * time.Hour)
-	if err := layout.WriteGuard(root, layout.Guard{Version: "2.0.0", RunID: "run-1", Since: now,
-		Deadline: now.Add(time.Hour), Latest: latest}); err != nil {
-		t.Fatal(err)
-	}
-	if ok, err := layout.ExtendGuard(root, "run-1", now.Add(10*time.Hour)); !ok || err != nil {
-		t.Fatalf("push: %v %v", ok, err)
-	}
-	if g, _ := layout.ReadGuard(root); g == nil || !g.Deadline.Equal(latest) {
-		t.Fatalf("pushed to %+v, want %v", g, latest)
-	}
-	if got := layout.GuardLatest(now, time.Time{}); !got.Equal(now.Add(layout.MaxGuardSpan)) {
-		t.Fatalf("no latest: %v", got)
-	}
-	if got := layout.GuardLatest(now, now.Add(48*time.Hour)); !got.Equal(now.Add(48 * time.Hour)) {
-		t.Fatalf("a latest past a day: %v", got)
+	if st, _ := recordState(t, record); st != "migrated" {
+		t.Fatalf("record %s", st)
 	}
 }
 
