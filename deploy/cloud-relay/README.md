@@ -1,13 +1,22 @@
 # Maktaba Cloud Relay — VPS deployment
 
-> **The single-VPS setup**, for development and a first demo. Production runs the Phase 1
-> pair in [`deploy/cloud-ha/`](../cloud-ha/README.md) (two nodes that cover for each other and
-> a witness, Epic 50 story 50.07): one machine here means every reboot or deploy stops
-> remote play.
+> **The single-VPS setup**: QA and, until the Phase 1 pair exists, production
+> ([`docs/cloud-single-node.md`](../../docs/cloud-single-node.md): the machines, what runs, how
+> a release is deployed and tested). The Phase 1 pair is
+> [`deploy/cloud-ha/`](../cloud-ha/README.md) (two nodes that cover for each other and a
+> witness, Epic 50 story 50.07): one machine here means every reboot or deploy stops remote
+> play.
+>
+> **Deploy from CI, not by hand:** Actions → **Cloud deploy**
+> ([`cloud-deploy.yml`](../../.github/workflows/cloud-deploy.yml)), target `qa` or `prod`.
+> It runs `setup.sh` and `deploy.sh` below over SSH with the pinned host key, then
+> [`tests/e2e.py`](tests/e2e.py); production takes only a release QA passed.
 
-Deploy `maktaba-cloud --role relay` to a single VPS: the relay binary,
-Postgres, Redis, and Caddy (reverse proxy + automatic Let's Encrypt
-TLS), wired together with Docker Compose and managed by systemd.
+Deploy the whole cloud to a single VPS: `maktaba-cloud` as the relay, the api and the
+worker, Postgres, Redis, and Caddy (reverse proxy, certificates, and the cloud web app's
+files), wired together with Docker Compose and managed by systemd. `ops/cloud-ops.py` is the
+operator's tool on the node (confirm an account's email, set a plan) and `ops/backup.sh` the
+nightly backup.
 
 The relay is the public ingress that self-hosted Maktaba servers dial
 out to. Each registered server is reachable at
@@ -32,9 +41,12 @@ flags, the CAA records) are listed once, in [`docs/cloud-dns.md`](../../docs/clo
 ## Prerequisites
 
 - A VPS running **Ubuntu 22.04 or 24.04** with a public IPv4 address.
-- A domain you control, with **two DNS records** pointing at the VPS:
+- A domain you control, with **four DNS records** pointing at the VPS (the CI deploy writes
+  them with `CLOUDFLARE_DNS_TOKEN`, `ops/dns-records.py`):
   - apex: `relay.example.com  A  <vps-ip>`
   - wildcard: `*.relay.example.com  A  <vps-ip>`
+  - the api: `api.example.com  A  <vps-ip>` (`API_DOMAIN`)
+  - the cloud web app: `app.example.com  A  <vps-ip>` (`APP_DOMAIN`)
 - Ports **80** and **443** reachable from the internet (Let's Encrypt
   HTTP-01 + client traffic). The setup script's firewall opens exactly
   these plus SSH.

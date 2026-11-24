@@ -1,0 +1,141 @@
+# Maktaba Cloud on one node
+
+> The cloud as it runs today: one Hetzner machine per environment, QA and production, each
+> the whole cloud (relay, api, worker, database, web app). It is the smallest real setup for
+> one household. The Phase 1 pair ([`deploy/cloud-ha/`](../deploy/cloud-ha/README.md), Epic 50)
+> stays the design for more: on one node, a reboot or a deploy stops remote play for a minute
+> or two, and the machine's disk is the only copy of the database between backups.
+
+## The machines
+
+| | QA | Production |
+|---|---|---|
+| Host | `QA_HOST` (Hetzner, Helsinki) | `RELAY_HOST` (Hetzner, Helsinki) |
+| Size | 1 vCPU, 2 GB (CX22 class) | 2 vCPU, 4 GB |
+| Names | `staging.relay.maktaba.dev`, `*.staging.relay.maktaba.dev`, `staging-api.maktaba.dev`, `staging-app.maktaba.dev` | `relay.maktaba.tv`, `*.relay.maktaba.tv`, `api.maktaba.tv`, `app.maktaba.tv` |
+| Who uses it | the deploy's tests, never people | the household |
+
+Both run Ubuntu 26.04 and the same files (`deploy/cloud-relay`), with each target's names in
+`deploy/cloud-relay/targets/<target>.env`. SSH is root with the `RELAY_SSH_KEY` secret, and the
+host key is pinned (`QA_SSH_KNOWN_HOSTS`, `RELAY_SSH_KNOWN_HOSTS`). Nothing reaches a node by
+hand; every change goes through the workflow below.
+
+## What runs on a node
+
+One Docker Compose stack in `/opt/maktaba-relay`, started at boot by `maktaba-relay.service`:
+
+| Service | What | Reached by |
+|---|---|---|
+| `caddy` | TLS for every name, and the cloud web app's files | the internet, on 80 and 443 only |
+| `maktaba-cloud` | the relay (`--role relay`): the homes' tunnels, `<slug>.<relay name>` | Caddy |
+| `api` | accounts, sign-in, claims, plans, the homes list, assertions (`--role api`), on `172.30.77.10:8090`; the operator console's listener on `:8091` | Caddy (`api` and `app` names); the operator tool, from the node only |
+| `worker` | bandwidth roll-ups, expiries, account purges (`--role worker`) | nobody |
+| `postgres` 16 | every account, home and meter | the stack's network only |
+| `redis` 7 | a cache, nothing kept | the stack's network only |
+
+The images are pinned by digest and verified with cosign before each deploy: `maktaba-cloud`
+and `maktaba-server` (the test home) as `release.yml` signed them at the release's tag,
+`maktaba-caddy` as `relay.yml` signed it on main.
+
+### Certificates
+
+`RELAY_TLS` in `.env`. With the `CLOUDFLARE_DNS_TOKEN` secret (a token with Zone → DNS → Edit on
+maktaba.tv and maktaba.dev only), it is `dns`: the deploy writes the node's four A records (DNS
+only, TTL 300, `ops/dns-records.py`) and Caddy holds one wildcard certificate for every home,
+plus the apex, the api's and the app's, by DNS-01. Without the token, `http` (records made by
+hand; HTTP-01, and each home's name on its first use) or, on QA only, `internal` (Caddy's own
+CA, which the tests trust).
+
+### Differences from the Phase 1 design
+
+- **The api is behind Caddy, not the Cloudflare Tunnel.** Its name is DNS only, like the relay's.
+  The api still listens on a private address only and believes `CF-Connecting-IP` from Caddy's
+  address alone; Caddy writes it from the connection and drops any a client sent
+  (`server.trusted_proxies`, story 50.31's rule, kept).
+- **The web app is Caddy's, not a Worker.** Caddy serves `web/cloud`'s bundle on the app name
+  with the Worker's headers, and `/v1/*` to the api on the same origin.
+- **No Floating IP, no standby, no witness.** A restart of the relay drops the tunnels; homes
+  dial back within seconds (the test measures it).
+- **No mail.** The only mail driver writes to the log, which redacts the address and the link's
+  code, so no sign-up can confirm its email. The operator confirms an account by hand (below)
+  until the cloud sends mail.
+
+## Deploying
+
+Actions → **Cloud deploy** (`.github/workflows/cloud-deploy.yml`): a target (`qa` or `prod`) and
+a release tag (blank: the latest release).
+
+1. **resolve**: the release's images by digest, each verified with cosign; the cloud rehearsal
+   passed on the release's commit (`tools/release/cloud-guard.sh`). For `prod`: a successful
+   QA run of this workflow recorded the same three digests and the same `deploy/cloud-relay`
+   tree, or nothing deploys.
+2. **web** (QA): the cloud web app built from the release's source. Production gets QA's
+   build, byte for byte.
+3. **deploy**: the DNS records; `setup.sh` (idempotent: Docker from Ubuntu's packages, the
+   `maktaba` user, the secrets it generates once, `cloud.toml` from its template, UFW, the
+   backup timer, the unit); the web bundle; `deploy.sh` (pull by digest, migrations in a
+   throwaway container, swap, health, and a rollback to the previous digest if health fails).
+4. **test**: `deploy/cloud-relay/tests/e2e.py` (below), then QA records what it passed.
+
+One deploy per node at a time. The GitHub environments `qa` and `prod` hold the deploy jobs.
+
+## Tests
+
+`e2e.py` runs on the workflow's runner against the node just deployed. Full on QA, smoke on
+production (no relay restart, no load):
+
+| Check | What it proves |
+|---|---|
+| tls | the relay's apex, the api and the app answer HTTPS with a valid certificate; later a home's name (the wildcard) |
+| health | `/healthz` and `/readyz` on the relay and the api; the web app's page |
+| firewall | from outside, of 1,040 TCP ports only 22, 80 and 443 answer; UFW is active and denies incoming; only Caddy publishes a port |
+| backup | the timer is on; a backup taken now restores into a scratch database with the live accounts and homes |
+| account | a new account is refused sign-in until confirmed; the operator tool confirms it and gives it Basic |
+| home | the release's `maktaba-server` image on the runner, set up headlessly with a test video; its claim code minted by the account; online in the account's homes |
+| link | the home's admin linked to the account (the Linked accounts flow, the web app's step by API) |
+| play | sign-in through the cloud (an assertion, `POST /api/auth/cloud` on the home's relay name) and the video played through the relay, its bytes equal to the file |
+| plans | on Free the relay refuses the home (402 `relay_needs_plan`); on Basic it serves it again |
+| restart | (QA) the relay restarted under a linked home: how long until it answers again, and it plays |
+| load | (QA) players through the relay for a minute while the node's CPU, memory and network are sampled: `sizing.json` |
+
+The run's artifact `e2e-<target>` holds `results.json`, `summary.md`, `sizing.json` and the logs.
+The test account goes into the 30-day deletion hold at the end; its home's container and volumes
+are removed from the runner.
+
+## Operator actions
+
+On the node, as root (the deploy's tests run them over SSH). The email is read from stdin and
+nothing secret is printed:
+
+```bash
+echo 'someone@example.com' | /opt/maktaba-relay/ops/cloud-ops.py verify-email   # confirm the account's email
+echo 'someone@example.com' | /opt/maktaba-relay/ops/cloud-ops.py set-plan pro    # free, basic or pro
+echo 'someone@example.com' | /opt/maktaba-relay/ops/cloud-ops.py account         # id, plan, confirmed
+```
+
+`verify-email` changes the account and writes its audit row (`cli`, `auth.email_verified`) in
+one transaction. `set-plan` goes through the operator console's API on the private listener,
+as the node's own staff account (`cloud-ops@maktaba.tv`, `service_admin`), made on first use;
+its password and TOTP secret stay in `/opt/maktaba-relay/ops-state/` (root, 0600), which no
+container mounts.
+
+## Backups
+
+`maktaba-cloud-backup.timer`, nightly at 03:17 UTC: `pg_dump` (checked by listing it with
+`pg_restore` before it is kept) and the node's keys (`.env`, `secrets/`) into
+`/var/backups/maktaba-cloud`, 14 days kept. `ops/backup.sh --check` restores the newest dump
+into a scratch database and compares it with the live one.
+
+**They stay on the node.** Losing the machine loses the cloud's accounts and homes since the
+last copy taken elsewhere. Hetzner's own backups (20 % of the server's price) or a Storage Box
+would keep a copy off the machine; neither is set up.
+
+## Monitoring
+
+The deploy's tests are the checks today. GitHub mails the owner when a run fails. The outside
+probe (`cloud-probe.yml`, story 50.10) is built for the pair's witness and stays off.
+
+## Sizing
+
+Measured by the QA run's `load` check (1 vCPU, 2 GB): the figures are in the run's
+`sizing.json`, and the pull request that set this up reports them.

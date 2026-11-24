@@ -132,7 +132,10 @@ fi
 # The compose file reads ${MAKTABA_CLOUD_TAG} from .env, so the rollout is
 # "edit .env -> pull -> migrate -> up --wait -> verify", with a revert of
 # .env + `up --wait` on health failure.
-ssh "${SSH_OPTS[@]}" "$SSH_TARGET" 'bash -s' -- "$DEPLOY_DIR" "$NEW_TAG" "$HEALTH_URL" <<'REMOTE'
+# ssh joins its arguments into one command line for the remote shell, so each is quoted here
+# (%q): an empty HEALTH_URL would otherwise vanish and the remote script stop on an unbound $3.
+# shellcheck disable=SC2029  # expands here, on purpose: the quoted arguments
+ssh "${SSH_OPTS[@]}" "$SSH_TARGET" "bash -s -- $(printf '%q ' "$DEPLOY_DIR" "$NEW_TAG" "$HEALTH_URL")" <<'REMOTE'
 set -euo pipefail
 DEPLOY_DIR="$1"
 NEW_TAG="$2"
