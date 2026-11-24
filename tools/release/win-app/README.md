@@ -159,6 +159,37 @@ it back. It refuses to run where Maktaba is installed for the user, its sign-in 
 `LOCALAPPDATA` and WebView2's data in its scratch folder; an empty
 `%LOCALAPPDATA%\com.hamzalabs.maktaba` a shell window would make is removed afterwards.
 
+## The installer's pages (story 13.14)
+
+The `-setup.exe` is tauri's NSIS installer from Maktaba's own template,
+[`apps/desktop/src-tauri/windows/installer.nsi`](../../../apps/desktop/src-tauri/windows/installer.nsi)
+(`bundle.windows.nsis.template`): tauri-bundler 2.10.3's, with its welcome, folder and finish
+pages replaced by two of Maktaba's (the mockups `installer-welcome` and `installer-progress` in
+`docs/design/desktop/`). Everything that installs, updates and uninstalls, and every command-line
+flag (`/S`, `/P`, `/UPDATE`, `/NS`, `/R`, `/ARGS`), is tauri's, unchanged; Maktaba's parts are
+marked `Maktaba (13.14)`.
+
+- **Welcome:** the brand pane (the wordmark, the version and size, the arch), the title in
+  Maktaba Display, a line on what it installs, the folder with Change, the Start menu and desktop
+  shortcuts, the licence. Skipped by `/P` and `/S`.
+- **Installing:** tauri's progress page drawn as Maktaba's: the brand pane, the title, a brass
+  progress bar, the steps (the app, the server and its tools, the Start menu and shortcuts) and
+  "Open Maktaba when it's done". It closes itself when done; a failure keeps it open and shows
+  the details.
+- The reinstall page (only over an earlier install) and the uninstaller's pages are MUI's, their
+  header in the chrome colour. English and Arabic (`languages`), by Windows' language; Arabic is
+  right to left.
+
+The art is `apps/desktop/src-tauri/windows/installer/*.bmp` (the brand pane and the two titles,
+English and Arabic, at 100, 150 and 200%: the template picks one by the window's DPI), drawn by
+`docs/design/desktop/installer-art.mjs`. The template learns that folder from the hooks file
+(`installer-ui.nsh`, which `installer-hooks.nsh` includes). `nsis_template.py` renders the
+template as tauri does, for `tools/ci/tests/test_installers.py`, and compiles it with any
+makensis 3.13 (`--makensis makensis --tauri <tauri-bundler>/src/bundle/windows/nsis --plugins
+<folder with nsis_tauri_utils.dll>`; the server build's hooks run `powershell.exe` at compile
+time). A tauri CLI update fails that test until the template is taken again from the new
+bundler and Maktaba's marked parts are put back.
+
 ## Signing
 
 Not done: Authenticode signing is the owner's decision (Epic 38, "Owner decisions"). Unsigned,

@@ -500,8 +500,8 @@ export const APPS = [
                   t("Windows 10 or later (x86-64)", "ويندوز 10 أو أحدث (x86-64)"),
                   t("Maktaba Player", "المشغّل"),
                   t(
-                    `\`Maktaba-Player_<v>_x64.msi\` from the [latest release](${RELEASES}); it updates itself`,
-                    `\`Maktaba-Player_<v>_x64.msi\` من [أحدث إصدار](${RELEASES})؛ ويحدّث نفسه`
+                    `\`Maktaba-Player_<v>_x64.msi\` from the [latest release](${RELEASES}); it updates itself, and its setup is in Maktaba's colours, in Arabic where Windows is`,
+                    `\`Maktaba-Player_<v>_x64.msi\` من [أحدث إصدار](${RELEASES})؛ ويحدّث نفسه، ويأتي إعداده بألوان مكتبة، وبالعربية حيث يكون ويندوز بالعربية`
                   ),
                 ],
                 [
@@ -1404,15 +1404,15 @@ export const APPS = [
                     "ماك بمعالج آبل (macOS 15 أو أحدث)"
                   ),
                   t(
-                    "one `.dmg`, with the whole server inside; there is no Intel build",
-                    "ملف `.dmg` واحد، ومعه الخادم كاملًا؛ ولا توجد نسخة لمعالجات إنتل"
+                    "one `.dmg`, with the whole server inside: open it and drag Maktaba into Applications; there is no Intel build",
+                    "ملف `.dmg` واحد، ومعه الخادم كاملًا: افتحه واسحب مكتبة إلى مجلد التطبيقات؛ ولا توجد نسخة لمعالجات إنتل"
                   ),
                 ],
                 [
                   t("Windows", "ويندوز"),
                   t(
-                    "`Maktaba_<ver>_x64-setup.exe`, with the server inside, installed for the current user with no administrator",
-                    "ملف `Maktaba_<ver>_x64-setup.exe` ومعه الخادم، ويُثبَّت للمستخدم الحالي دون صلاحيات المدير"
+                    "`Maktaba_<ver>_x64-setup.exe`, with the server inside, installed for the current user with no administrator, in two pages (where it goes, then its progress) in English or Arabic, as Windows is",
+                    "ملف `Maktaba_<ver>_x64-setup.exe` ومعه الخادم، ويُثبَّت للمستخدم الحالي دون صلاحيات المدير، في صفحتين (مكان التثبيت ثم تقدّمه) بالعربية أو الإنجليزية بحسب لغة ويندوز"
                   ),
                 ],
                 [

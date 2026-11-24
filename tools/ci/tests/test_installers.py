@@ -1,0 +1,430 @@
+"""The installers' look (Epic 13 story 13.14, decision D3), on every pull request.
+
+What a Windows or a Mac build would show, checked from the files that make it:
+
+- the art (docs/design/desktop/installer-art.mjs's output): every file there, in the format and
+  at the size its tool reads (24-bit uncompressed BMPs; the .dmg's TIFF at 1x and 2x);
+- the -setup.exe's template (apps/desktop/src-tauri/windows/installer.nsi), rendered as tauri
+  renders it (tools/release/win-app/nsis_template.py) for a server and a client build: its
+  two pages in place of MUI's, every word in English and Arabic, every bitmap it embeds, and
+  tauri's own sections and functions kept (the template is taken from one tauri-bundler);
+- tauri.conf.json: the template, the languages, the .msi's bitmaps and words, the .dmg window;
+- the WiX words (tools/release/msi/wixui.py) and the Player .msi's theming decisions
+  (theme_msi.py's plain functions; the database work is Windows', checked by CI's Player job);
+- the colours: the desktop tokens, and the .dmg shelf's names readable in light and dark.
+
+The real builds are CI's: win-app (tauri compiles the template), Desktop Player (packageMsi
+themes the .msi, theme_msi.py --check reads it back), mac-app's bundle-size job (the Core
+.dmg, laid out and checked by check-dmg.sh).
+"""
+
+from __future__ import annotations
+
+import json
+import re
+import struct
+import sys
+import tempfile
+from pathlib import Path
+
+import pytest
+
+ROOT = Path(__file__).resolve().parents[3]
+SRC_TAURI = ROOT / "apps" / "desktop" / "src-tauri"
+NSIS_ART = SRC_TAURI / "windows" / "installer"
+WIX_ART = SRC_TAURI / "windows" / "wix"
+PLAYER_ART = ROOT / "apps" / "desktop-player" / "msi"
+CONF = json.loads((SRC_TAURI / "tauri.conf.json").read_text(encoding="utf-8"))
+TEMPLATE = (SRC_TAURI / "windows" / "installer.nsi").read_text(encoding="utf-8")
+
+for sub in ("tools/release/win-app", "tools/release/msi", "tools/release/mac-app"):
+    sys.path.insert(0, str(ROOT / sub))
+import dmg_layout  # noqa: E402
+import nsis_template  # noqa: E402
+import theme_msi  # noqa: E402
+import wixui  # noqa: E402
+
+
+# --- the art --------------------------------------------------------------------------------
+
+
+def bmp(path: Path) -> tuple[int, int]:
+    """A BMP's width and height, failing unless it is 24-bit, uncompressed and whole."""
+    data = path.read_bytes()
+    assert data[:2] == b"BM", f"{path.name}: not a BMP"
+    size, offset, header, w, h, planes, bits, compression = struct.unpack_from("<I4xIIiiHHI", data, 2)
+    assert size == len(data), f"{path.name}: says {size} bytes, has {len(data)}"
+    assert header == 40 and planes == 1, f"{path.name}: not a BITMAPINFOHEADER BMP"
+    assert bits == 24 and compression == 0, f"{path.name}: {bits}-bit, compression {compression}: NSIS and WiX want 24-bit BI_RGB"
+    assert h > 0, f"{path.name}: top-down; Windows Installer reads bottom-up BMPs"
+    assert offset + ((w * 3 + 3) // 4 * 4) * h == len(data)
+    return w, h
+
+
+SCALES = {100: 1, 150: 1.5, 200: 2}
+NSIS_PIECES = {"brand": (164, 314), "title-welcome": (282, 40), "title-progress": (282, 40)}
+
+
+@pytest.mark.parametrize("lang", ["en", "ar"])
+@pytest.mark.parametrize("pct", SCALES)
+@pytest.mark.parametrize("piece", NSIS_PIECES)
+def test_the_setup_exes_bitmaps_are_there_at_each_scale(piece: str, pct: int, lang: str) -> None:
+    w, h = NSIS_PIECES[piece]
+    assert bmp(NSIS_ART / f"{piece}-{lang}-{pct}.bmp") == (round(w * SCALES[pct]), round(h * SCALES[pct]))
+
+
+@pytest.mark.parametrize(
+    "path",
+    [WIX_ART / "dialog.bmp", PLAYER_ART / "dialog-en.bmp", PLAYER_ART / "dialog-ar.bmp"],
+    ids=lambda p: str(p.relative_to(ROOT)),
+)
+def test_the_msi_dialog_bitmaps_are_wixs_size(path: Path) -> None:
+    assert bmp(path) == (493, 312)
+
+
+@pytest.mark.parametrize(
+    "path",
+    [WIX_ART / "banner.bmp", PLAYER_ART / "banner-en.bmp", PLAYER_ART / "banner-ar.bmp"],
+    ids=lambda p: str(p.relative_to(ROOT)),
+)
+def test_the_msi_banners_are_wixs_size(path: Path) -> None:
+    assert bmp(path) == (493, 58)
+
+
+def test_the_arabic_msi_art_is_mirrored_not_copied() -> None:
+    assert (PLAYER_ART / "dialog-ar.bmp").read_bytes() != (PLAYER_ART / "dialog-en.bmp").read_bytes()
+    # the English dialog bitmap is the server app's too (tauri takes one per kind)
+    assert (PLAYER_ART / "dialog-en.bmp").read_bytes() == (WIX_ART / "dialog.bmp").read_bytes()
+
+
+def tiff_sizes(path: Path) -> list[tuple[int, int]]:
+    data = path.read_bytes()
+    end = {b"II": "<", b"MM": ">"}[data[:2]]
+    (ifd,) = struct.unpack_from(end + "I", data, 4)
+    sizes = []
+    while ifd:
+        (n,) = struct.unpack_from(end + "H", data, ifd)
+        tags = {}
+        for i in range(n):
+            tag, kind, _count, value = struct.unpack_from(end + "HHI4s", data, ifd + 2 + 12 * i)
+            tags[tag] = struct.unpack_from(end + ("H" if kind == 3 else "I"), value)[0]
+        sizes.append((tags[256], tags[257]))
+        (ifd,) = struct.unpack_from(end + "I", data, ifd + 2 + 12 * n)
+    return sizes
+
+
+def test_the_dmg_background_holds_1x_and_2x() -> None:
+    dmg = CONF["bundle"]["macOS"]["dmg"]
+    w, h = dmg["windowSize"]["width"], dmg["windowSize"]["height"]
+    path = SRC_TAURI / dmg["background"]
+    assert sorted(tiff_sizes(path)) == [(w, h), (w * 2, h * 2)]
+    assert path.stat().st_size < 1024 * 1024
+
+
+def luminance(hex_: str) -> float:
+    c = [int(hex_[i : i + 2], 16) / 255 for i in (0, 2, 4)]
+    r, g, b = [v / 12.92 if v <= 0.03928 else ((v + 0.055) / 1.055) ** 2.4 for v in c]
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+
+def contrast(a: str, b: str) -> float:
+    la, lb = sorted([luminance(a), luminance(b)], reverse=True)
+    return (la + 0.05) / (lb + 0.05)
+
+
+def test_the_dmg_shelf_keeps_finders_names_readable_light_and_dark() -> None:
+    art = (ROOT / "docs/design/desktop/installer-art/art.html").read_text(encoding="utf-8")
+    shelf = re.search(r"\.dmg \.shelf \{(.*?)\}", art, re.S).group(1)
+    colour = re.search(r"background: #([0-9a-fA-F]{6});", shelf).group(1)
+    top = int(re.search(r"inset-block-start: (\d+)px", shelf).group(1))
+    height = int(re.search(r"block-size: (\d+)px", shelf).group(1))
+    # Finder writes the names black (light appearance) or white (dark), on the shelf
+    assert contrast(colour, "000000") >= 4.5
+    assert contrast(colour, "FFFFFF") >= 4.5
+    # under each icon (128 points, the name's line below it) and inside the shelf
+    dmg = CONF["bundle"]["macOS"]["dmg"]
+    for pos in (dmg["appPosition"], dmg["applicationFolderPosition"]):
+        name_top = pos["y"] + int(dmg_layout.ICON_SIZE) // 2 + 2
+        assert top <= name_top and name_top + 20 <= top + height, pos
+
+
+# --- the colours ---------------------------------------------------------------------------
+
+
+def tokens() -> dict[str, str]:
+    """The site's dark tokens (the installers are dark), every var() resolved: --name -> RRGGBB."""
+    css = (ROOT / "web/packages/website/design/site-tokens.css").read_text(encoding="utf-8")
+    css = css.split("@media", 1)[0]
+    raw = dict(re.findall(r"--([\w-]+):\s*([^;]+);", css))
+
+    def value(name: str, depth: int = 0) -> str:
+        v = raw[name].strip()
+        m = re.fullmatch(r"var\(--([\w-]+)\)", v)
+        return value(m.group(1), depth + 1) if m else v
+
+    return {k: value(k).lstrip("#").upper() for k in raw if re.fullmatch(r"#?[0-9A-Fa-f]{6}|var\(.*\)", raw[k].strip())}
+
+
+TEMPLATE_TOKENS = {
+    "MK_WINDOW": "color-desktop-window",
+    "MK_PANE": "color-desktop-pane",
+    "MK_CHROME": "color-desktop-chrome",
+    "MK_SUBTLE": "color-desktop-subtle",
+    "MK_FG": "color-semantic-fg",
+    "MK_MUTED": "color-semantic-muted",
+    "MK_BRASS": "color-brand-500",
+    "MK_OK": "color-semantic-success",
+    "MK_CONTROL": "color-desktop-control",
+}
+
+
+@pytest.mark.parametrize("define", TEMPLATE_TOKENS)
+def test_the_setup_exes_colours_are_the_tokens(define: str) -> None:
+    got = re.search(rf'^!define {define} "([0-9A-F]{{6}})"', TEMPLATE, re.M).group(1)
+    assert got == tokens()[TEMPLATE_TOKENS[define]]
+
+
+def test_the_colorrefs_are_the_same_colours() -> None:
+    for define, rgb in (("MK_BRASS_REF", "MK_BRASS"), ("MK_SUBTLE_REF", "MK_SUBTLE")):
+        ref = int(re.search(rf"^!define {define} (0x[0-9A-F]+)", TEMPLATE, re.M).group(1), 16)
+        hex_ = re.search(rf'^!define {rgb} "([0-9A-F]{{6}})"', TEMPLATE, re.M).group(1)
+        assert ref == wixui.colorref(hex_)
+
+
+def test_the_msi_text_styles_are_the_tokens() -> None:
+    t = tokens()
+    assert wixui.TEXT_STYLES["Maktaba_Bigger"][2] == t["color-semantic-fg"]
+    assert wixui.TEXT_STYLES["Maktaba_Title"][2] == t["color-semantic-fg"]
+    assert wixui.TEXT_STYLES["Maktaba_Light"][2] == t["color-semantic-muted"]
+    # light words on the dark art: the dialog bitmap's page and the banner
+    for style in wixui.TEXT_STYLES.values():
+        assert contrast(style[2], t["color-desktop-window"]) >= 4.5
+        assert contrast(style[2], t["color-desktop-chrome"]) >= 4.5
+
+
+# --- the -setup.exe's template ---------------------------------------------------------------
+
+# tauri-bundler 2.10.3's installer.nsi: what installs, updates and uninstalls stays tauri's
+UPSTREAM = [
+    "Function PageReinstall", "Function PageReinstallUpdateSelection", "Function PageLeaveReinstall",
+    "Function RunMainBinary", "Function un.ConfirmShow", "Function un.ConfirmLeave", "Function .onInit",
+    "Section WebView2", "Section Install", "Function .onInstSuccess", "Function un.onInit",
+    "Section Uninstall", "Function RestorePreviousInstallLocation", "Function Skip",
+    "Function SkipIfPassive", "Function un.SkipIfPassive", "Function CreateOrUpdateStartMenuShortcut",
+    "Function CreateOrUpdateDesktopShortcut",
+]
+
+
+def test_the_template_is_the_tauri_clis_own() -> None:
+    lock = (ROOT / "apps/desktop/pnpm-lock.yaml").read_text(encoding="utf-8")
+    cli = re.search(r"^  '@tauri-apps/cli@([\d.]+)':", lock, re.M).group(1)
+    assert f"@tauri-apps/cli {cli}" in TEMPLATE, (
+        f"apps/desktop runs @tauri-apps/cli {cli}: take that CLI's tauri-bundler installer.nsi again, "
+        "put Maktaba's marked parts back into it, and name it in the template's header"
+    )
+
+
+@pytest.mark.parametrize("name", UPSTREAM)
+def test_the_template_keeps_tauris_sections_and_functions(name: str) -> None:
+    assert re.search(rf"^{re.escape(name)}(\s|$)", TEMPLATE, re.M), f"{name} is gone from installer.nsi"
+
+
+@pytest.fixture(scope="module", params=["server", "client"])
+def script(request) -> str:
+    with tempfile.TemporaryDirectory() as tmp:
+        return nsis_template.render(request.param, Path(tmp))
+
+
+def test_the_script_renders_whole(script: str) -> None:
+    assert "{{" not in script and "}}" not in script
+
+
+def test_two_pages_in_place_of_muis(script: str) -> None:
+    pages = re.findall(r"^\s*(Page custom \w+(?: \w+)?|!insertmacro MUI_PAGE_\w+)", script, re.M)
+    assert "Page custom MaktabaWelcome MaktabaWelcomeLeave" in pages
+    assert "!insertmacro MUI_PAGE_INSTFILES" in pages
+    for stock in ("MUI_PAGE_WELCOME", "MUI_PAGE_DIRECTORY", "MUI_PAGE_FINISH"):
+        assert f"!insertmacro {stock}" not in pages
+    # the installing page is drawn by Maktaba's function
+    i = script.index("!insertmacro MUI_PAGE_INSTFILES")
+    assert "!define MUI_PAGE_CUSTOMFUNCTION_SHOW MaktabaInstallingShow" in script[i - 300 : i]
+    # the welcome page comes first
+    assert pages.index("Page custom MaktabaWelcome MaktabaWelcomeLeave") == 0
+
+
+def test_english_and_arabic(script: str) -> None:
+    assert re.findall(r'^!insertmacro MUI_LANGUAGE "(\w+)"', script, re.M) == ["English", "Arabic"]
+    assert CONF["bundle"]["windows"]["nsis"]["languages"] == ["English", "Arabic"]
+    assert CONF["bundle"]["windows"]["nsis"]["displayLanguageSelector"] is False
+
+
+def test_every_word_is_in_both_languages(script: str) -> None:
+    defined = {}
+    for name, lang in re.findall(r"^\s*LangString (mk\w+) \$\{LANG_(\w+)\}", script, re.M):
+        defined.setdefault(name, set()).add(lang)
+    used = set(re.findall(r"\$\((mk\w+)\)", script))
+    assert used, "the pages use no words of their own"
+    for name in used:
+        assert defined.get(name) == {"ENGLISH", "ARABIC"}, f"$({name}): {sorted(defined.get(name, []))}"
+    assert set(defined) <= used | {"mkLead"}, f"words no page uses: {sorted(set(defined) - used)}"
+
+
+def test_every_arabic_word_is_arabic(script: str) -> None:
+    for name, text in re.findall(r'^\s*LangString (mk\w+) \$\{LANG_ARABIC\} "(.*)"$', script, re.M):
+        assert re.search(r"[؀-ۿ]", text), f"{name} has no Arabic: {text}"
+
+
+def test_every_bitmap_the_script_embeds_is_there() -> None:
+    names = set(re.findall(r'!insertmacro MK_ART ([\w-]+)', TEMPLATE))
+    assert names == {"brand", "title-welcome", "title-progress"}
+    for name in names:
+        for lang in ("en", "ar"):
+            for pct in SCALES:
+                assert (NSIS_ART / f"{name}-{lang}-{pct}.bmp").is_file()
+
+
+def test_both_hooks_files_say_where_the_art_is() -> None:
+    ui = (SRC_TAURI / "windows" / "installer-ui.nsh").read_text(encoding="utf-8")
+    assert '!define MAKTABA_ART "${__FILEDIR__}\\installer"' in ui
+    hooks = (SRC_TAURI / "windows" / "installer-hooks.nsh").read_text(encoding="utf-8")
+    assert '!include "${MAKTABA_HOOKS_DIR}\\installer-ui.nsh"' in hooks
+    nsis = CONF["bundle"]["windows"]["nsis"]
+    assert nsis["template"] == "windows/installer.nsi"
+    assert nsis["installerHooks"] == "windows/installer-ui.nsh"
+    # the server build's overlay names the hooks, which include installer-ui.nsh
+    payload = (ROOT / "tools/release/win-app/payload.sh").read_text(encoding="utf-8")
+    assert "installer-hooks.nsh" in payload
+
+
+def test_no_comment_swallows_the_next_line() -> None:
+    # makensis reads a trailing backslash as a line continuation, in a comment too
+    for n, line in enumerate(TEMPLATE.splitlines(), 1):
+        if line.lstrip().startswith(";"):
+            assert not line.rstrip().endswith("\\"), f"installer.nsi:{n}: {line}"
+
+
+# --- the .msi files ------------------------------------------------------------------------
+
+
+def test_tauris_msi_takes_the_art_and_both_languages() -> None:
+    wix = CONF["bundle"]["windows"]["wix"]
+    assert wix["bannerPath"] == "windows/wix/banner.bmp"
+    assert wix["dialogImagePath"] == "windows/wix/dialog.bmp"
+    assert set(wix["language"]) == {"en-US", "ar-SA"}
+    for lang, cfg in wix["language"].items():
+        assert (SRC_TAURI / cfg["localePath"]).is_file(), lang
+    assert wix["fragmentPaths"] == ["windows/wix/maktaba-ui.wxs"]
+    assert wix["componentGroupRefs"] == ["MaktabaUiStyles"]
+
+
+def test_tauris_wix_files_are_what_wixui_writes() -> None:
+    for path, text in wixui.tauri_files().items():
+        assert path.read_text(encoding="utf-8") == text, f"{path.name} is stale: run tools/release/msi/wixui.py write"
+
+
+def test_the_wix_words_cover_what_the_art_carries() -> None:
+    strings = wixui.load()["strings"]
+    for key in wixui.ON_DIALOG + wixui.ON_BANNER:
+        assert strings[key]["en"] and re.search(r"[؀-ۿ]", strings[key]["ar"]), key
+
+
+@pytest.mark.parametrize(
+    "text, on, want",
+    [
+        ("{\\WixUI_Font_Bigger}Welcome to the [ProductName] Setup Wizard", "dialog", "{\\Maktaba_Bigger}Welcome to the [ProductName] Setup Wizard"),
+        ("{\\WixUI_Font_Title}Destination Folder", "banner", "{\\Maktaba_Title}Destination Folder"),
+        ("Click Next to install", "banner", "{\\Maktaba_Light}Click Next to install"),
+        ("{\\WixUI_Font_Emphasized}Install just for you", "banner", "{\\WixUI_Font_Emphasized}Install just for you"),
+    ],
+)
+def test_restyle(text: str, on: str, want: str) -> None:
+    assert wixui.restyle(text, on) == want
+
+
+def control(dialog, name, kind, x, y, w, h, text="", attrs=3):
+    return {"Dialog_": dialog, "Control": name, "Type": kind, "X": x, "Y": y, "Width": w, "Height": h, "Attributes": attrs, "Text": text}
+
+
+CONTROLS = [
+    control("WelcomeDlg", "Bitmap", "Bitmap", 0, 0, 370, 234, "WixUI_Bmp_Dialog", 1),
+    control("WelcomeDlg", "Title", "Text", 135, 20, 220, 60, "{\\WixUI_Font_Bigger}Welcome to the [ProductName] Setup Wizard"),
+    control("WelcomeDlg", "Description", "Text", 135, 80, 220, 60, "The Setup Wizard will install [ProductName] on your computer. Click Next to continue or Cancel to exit the Setup Wizard."),
+    control("WelcomeDlg", "Next", "PushButton", 236, 243, 56, 17, "&Next"),
+    control("InstallDirDlg", "BannerBitmap", "Bitmap", 0, 0, 370, 44, "WixUI_Bmp_Banner", 1),
+    control("InstallDirDlg", "Title", "Text", 15, 6, 200, 15, "{\\WixUI_Font_Title}Destination Folder"),
+    control("InstallDirDlg", "Description", "Text", 25, 23, 280, 15, "Click Next to install to the default folder or click Change to choose another."),
+    control("InstallDirDlg", "FolderLabel", "Text", 20, 60, 290, 30, "Install [ProductName] to:"),
+]
+
+
+def test_the_player_msi_restyles_only_the_words_on_its_art() -> None:
+    out = theme_msi.restyle_controls(CONTROLS)
+    assert out[("WelcomeDlg", "Title")].startswith("{\\Maktaba_Bigger}")
+    assert out[("WelcomeDlg", "Description")].startswith("{\\Maktaba_Light}")
+    assert out[("InstallDirDlg", "Title")].startswith("{\\Maktaba_Title}")
+    assert out[("InstallDirDlg", "Description")].startswith("{\\Maktaba_Light}")
+    # below the banner, on Windows' own dialog colour: as WiX wrote it
+    assert ("InstallDirDlg", "FolderLabel") not in out
+    assert ("WelcomeDlg", "Next") not in out
+
+
+def test_the_arabic_transform_translates_wixs_and_jpackages_words() -> None:
+    table = theme_msi.translations(wixui.load()["strings"])
+    ar = theme_msi.translate("{\\Maktaba_Bigger}Welcome to the [ProductName] Setup Wizard", table)
+    assert ar.startswith("{\\Maktaba_Bigger}") and "[ProductName]" in ar and re.search(r"[؀-ۿ]", ar)
+    assert theme_msi.translate("&Next", table) and re.search(r"[؀-ۿ]", theme_msi.translate("&Next", table))
+    assert theme_msi.translate("[ProductName] Setup", table) == "إعداد [ProductName]"
+    assert theme_msi.translate("Select shortcuts to create.", table)
+    assert theme_msi.translate("no such words", table) is None
+    rows = theme_msi.arabic_rows([("WelcomeDlg\x1fTitle", CONTROLS[1]["Text"]), ("x", "unknown")], table)
+    assert list(rows) == ["WelcomeDlg\x1fTitle"]
+
+
+def test_jpackages_words_keep_their_placeholders() -> None:
+    for en, ar in theme_msi.JPACKAGE_AR.items():
+        assert set(re.findall(r"\[\w+\]", en)) == set(re.findall(r"\[\w+\]", ar)), en
+
+
+def test_the_arabic_dialogs_mirror() -> None:
+    out = theme_msi.mirror(CONTROLS, {"WelcomeDlg": {"Width": 370, "Height": 270, "Attributes": 39}, "InstallDirDlg": {"Width": 370, "Height": 270, "Attributes": 39}})
+    x, attrs = out[("WelcomeDlg", "Title")]
+    assert x == 370 - 135 - 220 and attrs & theme_msi.CONTROL_BIDI == theme_msi.CONTROL_BIDI
+    assert out[("WelcomeDlg", "Next")][0] == 370 - 236 - 56
+    # the bitmap spans the dialog, and draws no words
+    assert out[("WelcomeDlg", "Bitmap")] == (0, 1)
+
+
+def test_the_template_names_arabic() -> None:
+    assert theme_msi.template_with_arabic("x64;1033") == "x64;1033,1025"
+    assert theme_msi.template_with_arabic("x64;1033,1025") == "x64;1033,1025"
+    assert theme_msi.template_with_arabic("x64;") == "x64;1033,1025"
+
+
+def test_the_player_build_themes_its_msi() -> None:
+    gradle = (ROOT / "apps/desktop-player/build.gradle.kts").read_text(encoding="utf-8")
+    assert 'it.name == "packageMsi"' in gradle and "tools/release/msi/theme_msi.py" in gradle
+    for wf in (".github/workflows/_desktop-player.yml", ".github/workflows/desktop-release.yml"):
+        assert "tools/release/msi/theme_msi.py --check" in (ROOT / wf).read_text(encoding="utf-8"), wf
+
+
+# --- the .dmg ------------------------------------------------------------------------------
+
+
+def test_the_dmg_window_comes_from_the_config() -> None:
+    want = dmg_layout.layout(str(SRC_TAURI / "tauri.conf.json"))
+    assert want["background"] == "dmg-background.tiff"
+    w, h = want["size"]
+    for name, (x, y) in want["icons"].items():
+        assert 64 <= x <= w - 64 and 64 <= y <= h - 64, name
+    assert set(want["icons"]) == {"Maktaba.app", "Applications"}
+
+
+def test_every_mac_build_lays_its_dmg_out_and_checks_it() -> None:
+    build = (ROOT / "tools/release/mac-app/tauri-build.sh").read_text(encoding="utf-8")
+    assert "lay_out_dmgs" in build and "dmg-layout.sh" in build
+    check = (ROOT / "tools/release/mac-app/check-dmg.sh").read_text(encoding="utf-8")
+    assert "dmg-layout.sh\" --check" in check
+    layout = (ROOT / "tools/release/mac-app/dmg-layout.sh").read_text(encoding="utf-8")
+    assert "fetch-pinned.sh" in layout
+    assert re.search(r"^DS_STORE_SHA256=[0-9a-f]{64}$", layout, re.M)
+    assert re.search(r"^MAC_ALIAS_SHA256=[0-9a-f]{64}$", layout, re.M)

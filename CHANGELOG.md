@@ -14,6 +14,14 @@ build fails when the two differ.
 
 ### Changed
 
+- **Installers in Maktaba's own look.** On Windows, Maktaba's setup is two dark pages with the
+  arch: the first says where it installs (with Change) and asks about the Start menu and desktop
+  shortcuts, the second shows its progress step by step and opens Maktaba when it is done, if you
+  leave that ticked. Both follow Windows' language, English or Arabic (right to left). The
+  Player's `.msi` has Maktaba's art and light-on-dark words, and its dialogs come in Arabic where
+  Windows is Arabic. On the Mac, opening the `.dmg` shows Maktaba standing in the arch and an
+  arrow to Applications. The desktop shortcut is now off unless you tick it.
+
 - **The Windows and Linux Player's own title bar.** The Player's window has Maktaba's dark title
   bar in place of the system's frame and its menu bar: the menu button holds Account, Big screen,
   Language and Help in the Player's language, beside the app's name, Big screen and Help, with
