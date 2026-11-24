@@ -72,7 +72,9 @@ final class PlayerMacDemoShotsUITests: XCTestCase {
             let field = app.searchFields.firstMatch
             XCTAssertTrue(field.waitForExistence(timeout: 10), "the search field")
             field.typeExactly(language == "ar" ? "المريخ" : "Mars", in: app)
-            field.typeText("\n")
+            // Return to the app, not to the field: once the query is typed the toolbar's field
+            // can be replaced under the test (run 45401018003: "No matches found" for it)
+            app.typeKey(XCUIKeyboardKey.return, modifierFlags: [])
             XCTAssertTrue(element("search.title.v-curiosity").waitForExistence(timeout: 20),
                           "Curiosity among the titles; the home saw \(seen)")
             XCTAssertTrue(element("search.transcripts").waitForExistence(timeout: 10), "In the transcript")
