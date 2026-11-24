@@ -17,7 +17,9 @@ agent: claude-code
 - **Merging main into a pull request reruns all its jobs whatever main changed:** the filters compare the whole pull request with its base and nothing reuses earlier results. Avoiding the conflict is what saves the run.
 - **A pull request's checkout is the merge commit, whose first parent is main.** A check of the branch's own commits reads `github.event.pull_request.head.sha`.
 - **Pairing an edited entry with the next added one mistook a new entry above it for the edit** (`changelog_merge.py`); it now takes the most alike, and an entry's indented second paragraph is part of it.
-- **Stacked branches carry each other's entries:** `convert` skips an entry a fragment already has, and the gate refuses one in two fragments.
+- **Stacked branches carry each other's entries,** and both may move them before either merges. A check of the whole tree for an entry in two fragments turned main and every other pull request red after the second merge. The gate now compares the branch's own tree with its merge-base, the page shows an entry once, and `merge-main.sh` and `convert` drop from the branch's own fragments what fragments of main, or of a branch merged into it, have.
+- **A gate that reads the checked-out tree reads main's state too,** because a pull request's checkout is its merge. What a pull request is blamed for has to come from its own head and its merge-base.
+- **An old branch's first `merge-main.sh` is its own older script:** it keeps both sides in the CHANGELOGs, and `convert` moves the entries after.
 
 ## Keep doing
 - Rehearse a tool for open pull requests on the real ones (`refs/pull/N/head` in a scratch worktree) before shipping it.
