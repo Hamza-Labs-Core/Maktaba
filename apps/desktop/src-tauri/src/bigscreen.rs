@@ -192,6 +192,13 @@ pub fn leaves(id: &str, in_big: bool) -> Option<&'static str> {
     (id == LEAVE_MENU_ID || (id == MENU_ID && in_big)).then_some(LEAVE_MENU_ID)
 }
 
+/// Story 13.13: while this machine is not set up the main window is hidden and blank (the setup
+/// has its own window), so Big Screen and Leave Big Screen do nothing; Start in Big Screen, a
+/// setting, still turns.
+pub fn ignored_in_setup(id: &str, setup: bool) -> bool {
+    setup && (id == MENU_ID || id == LEAVE_MENU_ID)
+}
+
 /// Whether the main window's page is in big screen now.
 pub fn in_big_screen(app: &AppHandle) -> bool {
     app.get_webview_window(crate::webcache::MAIN)
@@ -275,6 +282,15 @@ pub fn set_big_screen_start(app: AppHandle, on: bool) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn big_screen_waits_for_the_setup() {
+        // story 13.13: the hidden, blank main window never goes full screen during setup
+        assert!(ignored_in_setup(MENU_ID, true));
+        assert!(ignored_in_setup(LEAVE_MENU_ID, true));
+        assert!(!ignored_in_setup(START_MENU_ID, true));
+        assert!(!ignored_in_setup(MENU_ID, false));
+    }
 
     #[test]
     fn the_setting_round_trips_and_defaults_off() {

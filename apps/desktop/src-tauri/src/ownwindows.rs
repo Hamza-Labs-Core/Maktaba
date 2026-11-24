@@ -75,15 +75,86 @@ pub fn has_frame(label: &str) -> bool {
 /// The setup runs in its own window: set before that window is made, so the main window's
 /// page, which asks first, shows nothing; cleared when it cannot be made or once the setup
 /// is done.
+///
+/// Once its window could not be made, the setup stays in the main window for this run: no
+/// window is tried again, so the main window's setup is never reloaded under the user.
+/// `told`: the main window's page was told the setup is elsewhere (it shows nothing), so it
+/// must ask again before it is shown.
 #[derive(Default)]
-pub struct SetupApart(AtomicBool);
+pub struct SetupApart {
+    apart: AtomicBool,
+    failed: AtomicBool,
+    told: AtomicBool,
+}
 
 impl SetupApart {
     pub fn get(&self) -> bool {
-        self.0.load(Ordering::SeqCst)
+        self.apart.load(Ordering::SeqCst)
     }
-    fn set(&self, on: bool) {
-        self.0.store(on, Ordering::SeqCst);
+    /// The setup is to run in its own window, unless its window could not be made.
+    fn claim(&self) {
+        if !self.failed() {
+            self.apart.store(true, Ordering::SeqCst);
+        }
+    }
+    /// The setup is done, or back in the main window.
+    fn release(&self) {
+        self.apart.store(false, Ordering::SeqCst);
+    }
+    /// Its window could not be made: the main window has the setup from now on.
+    fn fail(&self) {
+        self.failed.store(true, Ordering::SeqCst);
+        self.release();
+    }
+    pub fn failed(&self) -> bool {
+        self.failed.load(Ordering::SeqCst)
+    }
+    /// The main window's page was told the setup is elsewhere.
+    pub fn tell_main(&self) {
+        self.told.store(true, Ordering::SeqCst);
+    }
+    /// Whether the main window's page must ask again what to show (once).
+    pub fn take_told(&self) -> bool {
+        self.told.swap(false, Ordering::SeqCst)
+    }
+}
+
+/// The windows being made, one at a time per kind: a request while one is made (a second
+/// launch, a tray click, a double click) makes no second window, and asks the one being made
+/// to show once it is.
+#[derive(Default)]
+pub struct Pending {
+    setup: Slot,
+    status: Slot,
+}
+
+#[derive(Default)]
+struct Slot {
+    building: AtomicBool,
+    show: AtomicBool,
+}
+
+impl Pending {
+    fn slot(&self, kind: Kind) -> &Slot {
+        match kind {
+            Kind::Setup => &self.setup,
+            Kind::Status => &self.status,
+        }
+    }
+    /// A request for window `kind` (to show it, or only to make it): whether this request is
+    /// the one to make it.
+    fn begin(&self, kind: Kind, show: bool) -> bool {
+        let s = self.slot(kind);
+        if show {
+            s.show.store(true, Ordering::SeqCst);
+        }
+        !s.building.swap(true, Ordering::SeqCst)
+    }
+    /// Made, or not: whether any request asked for it to show.
+    fn end(&self, kind: Kind) -> bool {
+        let s = self.slot(kind);
+        s.building.store(false, Ordering::SeqCst);
+        s.show.swap(false, Ordering::SeqCst)
     }
 }
 
@@ -91,9 +162,10 @@ impl SetupApart {
 /// where closing the window quits.
 pub struct KeepInTray(pub bool);
 
-/// The setup is to run in its own window: the main window's page shows nothing from now on.
+/// The setup is to run in its own window: the main window's page shows nothing from now on
+/// (unless that window could not be made this run).
 pub fn claim_setup(app: &AppHandle) {
-    app.state::<SetupApart>().set(true);
+    app.state::<SetupApart>().claim();
 }
 
 /// Whether window `label`'s setup screens run elsewhere (app_state's setup_window): the main
@@ -128,29 +200,71 @@ pub fn act(action: &str) -> Option<Act> {
 
 /// Shows window `kind`, making it (off the main thread) when there is none.
 pub fn show(app: &AppHandle, kind: Kind) {
+    open(app, kind, true);
+}
+
+/// Makes the setup window without showing it (the app started in its tray at sign-in): its
+/// page still adopts a server this machine already runs, as the main window's did.
+pub fn prepare_setup(app: &AppHandle) {
+    open(app, Kind::Setup, false);
+}
+
+fn focus(w: &WebviewWindow) {
+    let _ = w.show();
+    let _ = w.unminimize();
+    let _ = w.set_focus();
+}
+
+fn open(app: &AppHandle, kind: Kind, show: bool) {
     if kind == Kind::Setup {
+        if app.state::<SetupApart>().failed() {
+            // its window could not be made this run: the main window has the setup, which is
+            // shown as it is (never reloaded: that would lose the screens' progress)
+            if show {
+                if let Some(main) = app.get_webview_window(webcache::MAIN) {
+                    focus(&main);
+                }
+            }
+            return;
+        }
         claim_setup(app);
     }
     if let Some(w) = app.get_webview_window(kind.label()) {
-        let _ = w.show();
-        let _ = w.unminimize();
-        let _ = w.set_focus();
+        if show {
+            focus(&w);
+        }
+        return;
+    }
+    let pending = app.state::<Pending>();
+    if !pending.begin(kind, show) {
+        // being made: it shows once it is, when this asked for that
         return;
     }
     let app = app.clone();
     std::thread::spawn(move || {
-        if let Err(e) = build(&app, kind) {
-            crate::applog::warn(&format!("the {} window could not open", kind.label()), e);
-            if kind == Kind::Setup {
-                // the main window shows the setup screens, as before this story
-                app.state::<SetupApart>().set(false);
-                crate::shell::setup_in_main(&app);
+        let built = build(&app, kind);
+        let show = app.state::<Pending>().end(kind);
+        match built {
+            Ok(w) => {
+                if show {
+                    focus(&w);
+                }
+            }
+            Err(e) => {
+                crate::applog::warn(&format!("the {} window could not open", kind.label()), e);
+                // a window of that name that exists after all (another request made it) is
+                // the one; else the main window shows the setup screens, as before this story
+                if kind == Kind::Setup && app.get_webview_window(SETUP).is_none() {
+                    app.state::<SetupApart>().fail();
+                    crate::shell::setup_in_main(&app, show);
+                }
             }
         }
     });
 }
 
-fn build(app: &AppHandle, kind: Kind) -> tauri::Result<()> {
+/// Makes window `kind`, hidden (open shows it when asked).
+fn build(app: &AppHandle, kind: Kind) -> tauri::Result<WebviewWindow> {
     let words = crate::shell::words(app);
     let title = match kind {
         Kind::Setup => words.setup_title,
@@ -164,7 +278,8 @@ fn build(app: &AppHandle, kind: Kind) -> tauri::Result<()> {
             .min_inner_size(WIDTH, HEIGHT)
             .center()
             .theme(Some(tauri::Theme::Dark))
-            .background_color(tauri::window::Color(0x0b, 0x11, 0x1c, 0xff));
+            .background_color(tauri::window::Color(0x0b, 0x11, 0x1c, 0xff))
+            .visible(false);
     // the Mac keeps its traffic lights over the page's title bar; Windows and Linux draw
     // none (Windows keeps the shadow, the 1 px edge and the rounded corners)
     #[cfg(target_os = "macos")]
@@ -191,20 +306,24 @@ fn build(app: &AppHandle, kind: Kind) -> tauri::Result<()> {
         WindowEvent::Resized(_) => crate::frame::on_resized(&w),
         _ => {}
     });
-    Ok(())
+    Ok(window)
 }
 
-/// The setup opened a server: the main window, which loads it, shows, and the setup window
-/// goes.
+/// The setup opened a server: the main window loads it, and shows when the setup window was
+/// on show (one made hidden at sign-in, which adopted this machine's server, leaves the app in
+/// its tray); the setup window goes.
 pub fn setup_done(app: &AppHandle) {
-    app.state::<SetupApart>().set(false);
+    let apart = app.state::<SetupApart>();
+    apart.release();
+    // the main window loads the server's page now: it asks nothing again
+    apart.take_told();
     let Some(setup) = app.get_webview_window(SETUP) else {
         return;
     };
-    if let Some(main) = app.get_webview_window(webcache::MAIN) {
-        let _ = main.show();
-        let _ = main.unminimize();
-        let _ = main.set_focus();
+    if setup.is_visible().unwrap_or(true) {
+        if let Some(main) = app.get_webview_window(webcache::MAIN) {
+            focus(&main);
+        }
     }
     let _ = setup.destroy();
 }
@@ -283,8 +402,48 @@ mod tests {
         assert!(!setup_elsewhere(false, "main"));
         let apart = SetupApart::default();
         assert!(!apart.get());
-        apart.set(true);
+        apart.claim();
         assert!(apart.get());
+        apart.release();
+        assert!(!apart.get());
+    }
+
+    #[test]
+    fn a_setup_window_that_could_not_be_made_is_not_tried_again_this_run() {
+        let apart = SetupApart::default();
+        apart.claim();
+        apart.fail();
+        assert!(apart.failed() && !apart.get());
+        // a later Open Maktaba, or Connect to another Maktaba: the main window keeps it
+        apart.claim();
+        assert!(!apart.get());
+    }
+
+    #[test]
+    fn a_main_window_told_the_setup_is_elsewhere_asks_again_once() {
+        let apart = SetupApart::default();
+        assert!(!apart.take_told());
+        apart.tell_main();
+        assert!(apart.take_told());
+        assert!(!apart.take_told());
+    }
+
+    #[test]
+    fn one_window_is_made_per_kind_however_many_ask() {
+        let p = Pending::default();
+        // the first request makes it; a second (a second launch, a double click) does not
+        assert!(p.begin(Kind::Setup, false));
+        assert!(!p.begin(Kind::Setup, true));
+        // the other kind is made apart
+        assert!(p.begin(Kind::Status, true));
+        // made: shown, since a request asked for that while it was made
+        assert!(p.end(Kind::Setup));
+        assert!(p.end(Kind::Status));
+        // made hidden (the sign-in start) and asked for by no one: it stays hidden
+        assert!(p.begin(Kind::Setup, false));
+        assert!(!p.end(Kind::Setup));
+        // and the next request makes one again (the first failed, or was closed)
+        assert!(p.begin(Kind::Setup, true));
     }
 
     #[test]

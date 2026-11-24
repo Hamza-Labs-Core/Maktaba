@@ -117,18 +117,31 @@ pub fn setup_at_start(app: &AppHandle, hidden: bool) {
     }
     if !hidden {
         ownwindows::show(app, Kind::Setup);
+    } else if shell(app).server_bin.is_some() {
+        // made hidden: its page re-registers a server this machine already runs (a reset
+        // config dir), as the main window's did, with only the tray showing
+        ownwindows::prepare_setup(app);
     }
 }
 
+/// Whether this machine is not set up (the setup window is the app's window): the menu bar's
+/// Big Screen does nothing then.
+pub(crate) fn setup_running(app: &AppHandle) -> bool {
+    app.try_state::<Shell>()
+        .is_some_and(|sh| sh.target() == Target::Setup)
+}
+
 /// The setup window could not be made: the main window shows the setup screens (its page
-/// asks again what to show).
-pub(crate) fn setup_in_main(app: &AppHandle) {
+/// asks again what to show), and shows when `show`.
+pub(crate) fn setup_in_main(app: &AppHandle, show: bool) {
     if let Err(e) = navigate_main(app, &bundled_url(app)) {
         applog::warn("the window could not show the setup screens", e);
     }
-    if let Some(w) = app.get_webview_window(webcache::MAIN) {
-        let _ = w.show();
-        let _ = w.set_focus();
+    if show {
+        if let Some(w) = app.get_webview_window(webcache::MAIN) {
+            let _ = w.show();
+            let _ = w.set_focus();
+        }
     }
 }
 
@@ -467,12 +480,19 @@ fn portable_app() -> bool {
 
 pub fn focus_main(app: &AppHandle) {
     // story 13.13: while this machine is not set up, the setup window is the app's window
-    if app
-        .try_state::<Shell>()
-        .is_some_and(|sh| sh.target() == Target::Setup)
-    {
+    // (unless it could not be made this run: then the main window has the setup)
+    let apart = app.try_state::<ownwindows::SetupApart>();
+    let setup_window = apart.as_ref().is_some_and(|a| !a.failed());
+    if setup_window && setup_running(app) {
         ownwindows::show(app, Kind::Setup);
         return;
+    }
+    // a main window whose page was told the setup runs elsewhere shows nothing: it asks again
+    // (the setup saved a server, but could not open it)
+    if apart.is_some_and(|a| a.take_told()) {
+        if let Err(e) = navigate_main(app, &bundled_url(app)) {
+            applog::warn("the window could not load the app's pages again", e);
+        }
     }
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.show();
@@ -484,6 +504,10 @@ pub fn focus_main(app: &AppHandle) {
 fn navigate_main(app: &AppHandle, url: &str) -> Result<(), String> {
     let w = app.get_webview_window("main").ok_or("no main window")?;
     let url: tauri::Url = url.parse().map_err(|e| format!("bad address {url}: {e}"))?;
+    // story 13.13: a new page asks for itself; what the last one was told no longer holds
+    if let Some(apart) = app.try_state::<ownwindows::SetupApart>() {
+        apart.take_told();
+    }
     // while the window's caches are cleared (a release's first start) the load
     // waits for the clear's end
     let Some(url) = webcache::admit(app, url) else {
@@ -2292,11 +2316,14 @@ pub struct AppState {
 #[tauri::command(async)]
 pub fn app_state(app: AppHandle, window: tauri::WebviewWindow) -> AppState {
     let sh = shell(&app);
+    let apart = app.state::<ownwindows::SetupApart>();
+    let setup_window = ownwindows::setup_elsewhere(apart.get(), window.label());
+    // the main window's page shows nothing from now on: it must ask again before it shows
+    if setup_window && window.label() == webcache::MAIN {
+        apart.tell_main();
+    }
     AppState {
-        setup_window: ownwindows::setup_elsewhere(
-            app.state::<ownwindows::SetupApart>().get(),
-            window.label(),
-        ),
+        setup_window,
         target: sh.target(),
         server_available: sh.server_bin.is_some(),
         login_item: agent::login_item(),

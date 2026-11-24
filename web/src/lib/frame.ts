@@ -121,8 +121,10 @@ export interface FrameState {
 export async function onFrameState(cb: (s: FrameState) => void): Promise<() => void> {
   if (preview() || !isDesktop()) return () => {};
   try {
-    const { listen } = await import("@tauri-apps/api/event");
-    return await listen<FrameState>("frame-state", (e) => {
+    // this window's own events (frame.rs sends each window's to it): the global `listen` hears
+    // every window's, and the main window going full screen would take the setup window's bar
+    const { getCurrentWebviewWindow } = await import("@tauri-apps/api/webviewWindow");
+    return await getCurrentWebviewWindow().listen<FrameState>("frame-state", (e) => {
       if (e.payload && typeof e.payload.maximized === "boolean") cb(e.payload);
     });
   } catch {

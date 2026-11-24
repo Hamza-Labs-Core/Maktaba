@@ -116,8 +116,9 @@ export async function statusWindowAction(action: StatusAction): Promise<void> {
 export async function onStatusWindow(cb: (v: StatusWindowView) => void): Promise<() => void> {
   if (preview() || !isDesktop()) return () => {};
   try {
-    const { listen } = await import("@tauri-apps/api/event");
-    return await listen<StatusWindowView>(STATUS_EVENT, (e) => {
+    // this window's own events (ownwindows.rs sends them to it), not any window's
+    const { getCurrentWebviewWindow } = await import("@tauri-apps/api/webviewWindow");
+    return await getCurrentWebviewWindow().listen<StatusWindowView>(STATUS_EVENT, (e) => {
       if (isView(e.payload)) cb(e.payload);
     });
   } catch {

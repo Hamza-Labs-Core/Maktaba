@@ -225,6 +225,7 @@ pub fn run() {
             app.manage(frame::Frame::default());
             // story 13.13: the setup and status windows (ownwindows.rs)
             app.manage(ownwindows::SetupApart::default());
+            app.manage(ownwindows::Pending::default());
             app.manage(ownwindows::KeepInTray(keep_in_tray));
             let menu = build_menu(handle, !keep_in_tray)?;
             app.set_menu(menu)?;
@@ -320,6 +321,10 @@ pub(crate) fn menu_event(app: &tauri::AppHandle, id: &str) {
     #[cfg(target_os = "linux")]
     if let Some(tray_id) = id.strip_prefix(tray::WINDOW_PREFIX) {
         shell::on_window_menu(app, tray_id);
+        return;
+    }
+    // story 13.13: during setup the main window is hidden and blank: no big screen for it
+    if bigscreen::ignored_in_setup(&id, shell::setup_running(app)) {
         return;
     }
     // Epic 46: Start in Big Screen is the shell's own setting; Big

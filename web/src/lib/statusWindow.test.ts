@@ -3,8 +3,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 const { invoke } = vi.hoisted(() => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke }));
-const { listen } = vi.hoisted(() => ({ listen: vi.fn() }));
-vi.mock("@tauri-apps/api/event", () => ({ listen }));
+// the window's own listener (its events only); the global one must not be used
+const { listen, anyWindow } = vi.hoisted(() => ({ listen: vi.fn(), anyWindow: vi.fn() }));
+vi.mock("@tauri-apps/api/event", () => ({ listen: anyWindow }));
+vi.mock("@tauri-apps/api/webviewWindow", () => ({
+  getCurrentWebviewWindow: () => ({ label: "status", listen }),
+}));
 
 import {
   canResume,
@@ -61,6 +65,7 @@ describe("statusWindow", () => {
     heard({ payload: { nonsense: true } });
     heard({ payload: VIEW });
     expect(seen).toEqual([VIEW]);
+    expect(anyWindow).not.toHaveBeenCalled();
   });
 
   it("a view that is not one is none", async () => {

@@ -4,7 +4,47 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const { invoke } = vi.hoisted(() => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke }));
 
-import { chooseFrameMenu, claimFrame, frameAction, frameMenuItems, gtkButtons } from "./frame";
+// story 13.13: Tauri's events as they are delivered: one sent to a window (emit_to) reaches
+// that window's listeners, and every global listener whatever window it was sent to
+const bus = vi.hoisted(() => {
+  type Cb = (e: { payload: unknown }) => void;
+  const all: { label: string | null; event: string; cb: Cb }[] = [];
+  return {
+    current: "main",
+    all,
+    add(label: string | null, event: string, cb: Cb) {
+      all.push({ label, event, cb });
+      return () => {};
+    },
+    emitTo(label: string, event: string, payload: unknown) {
+      for (const l of all)
+        if (l.event === event && (l.label === null || l.label === label)) l.cb({ payload });
+    },
+  };
+});
+vi.mock("@tauri-apps/api/event", () => ({
+  listen: async (event: string, cb: (e: { payload: unknown }) => void) => bus.add(null, event, cb),
+}));
+vi.mock("@tauri-apps/api/webviewWindow", () => ({
+  getCurrentWebviewWindow: () => {
+    const label = bus.current;
+    return {
+      label,
+      listen: async (event: string, cb: (e: { payload: unknown }) => void) =>
+        bus.add(label, event, cb),
+    };
+  },
+}));
+
+import {
+  chooseFrameMenu,
+  claimFrame,
+  frameAction,
+  frameMenuItems,
+  gtkButtons,
+  onFrameState,
+  type FrameState,
+} from "./frame";
 
 type W = Record<string, unknown>;
 
@@ -82,5 +122,31 @@ describe("the shell's frame commands", () => {
     });
     await frameAction("close");
     expect(invoke).not.toHaveBeenCalled();
+  });
+});
+
+describe("the window's state (story 13.13)", () => {
+  afterEach(() => {
+    delete (window as unknown as W).__TAURI_INTERNALS__;
+    bus.all.length = 0;
+    bus.current = "main";
+  });
+
+  it("each window hears only its own: the main window's full screen leaves the setup's bar", async () => {
+    (window as unknown as W).__TAURI_INTERNALS__ = {};
+    const main: FrameState[] = [];
+    const setup: FrameState[] = [];
+    bus.current = "main";
+    await onFrameState((s) => main.push(s));
+    bus.current = "setup";
+    await onFrameState((s) => setup.push(s));
+    bus.emitTo("main", "frame-state", { maximized: false, fullscreen: true });
+    expect(main).toEqual([{ maximized: false, fullscreen: true }]);
+    expect(setup).toEqual([]);
+    bus.emitTo("setup", "frame-state", { maximized: true });
+    expect(setup).toEqual([{ maximized: true }]);
+    expect(main).toHaveLength(1);
+    // no listener hears every window's
+    expect(bus.all.every((l) => l.label !== null)).toBe(true);
   });
 });
