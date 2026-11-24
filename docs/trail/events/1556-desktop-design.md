@@ -24,6 +24,8 @@ The owner approved the design on 2026-11-24 with D1–D5, recorded in the story 
 - The approach for each app, with effort and risk.
 - The quality bar, eight proposed build stories (13.10–13.17), and five decisions for the owner (D1–D5).
 
+Demo media in mockups and references shows no women or girls. A third commit replaced every such image, title and synopsis in the mockups with drawn documentary and history stand-ins (`docs/design/desktop/mockups/art/make_art.py`) and the demo library's animal-only animations, cropped the audit sheets to captures with no demo art, and wrote the rule into the README and story 13.9 for every build story's references.
+
 ## What we learned
 - No capture of any desktop frame, menu, tray, dialog or installer exists, either in the repository or in any CI artifact. Only the Compose Player's content, the web app and the Mac Player are captured. An audit of the stock look therefore has to rest on the code.
 - With Pillow, a 256-colour palette (website `quantize.py`) shifts small saturated areas. The brass and macOS's traffic lights came out wrong. Desktop renders at 1× stay under 1 MB in full colour (0.8 MB at most), so the palette step was dropped.
@@ -36,9 +38,12 @@ The owner approved the design on 2026-11-24 with D1–D5, recorded in the story 
 
 - Run `trail check` from agent-trail v0.2.1: CLAUDE.md's v0.2.0 is the version d20261122 measured at minutes per run, and here it was still running after five minutes; v0.2.1 took seconds.
 
+- Check every mockup and reference PNG by eye for its demo media before pushing, not only its layout; build the contact sheets from the rendered PNGs.
+
 ## Stop doing
 - Quoting a CI or reference image without saying where it came from (run id, artifact, path).
 
 ## Open
 - Build stories 13.10–13.18, each its own pull request, in the order the story gives: 13.10, 13.12, 13.11, 13.15, 13.18, 13.13, 13.14, 13.16, with 13.17 (the desktop visual references in CI) beside the first.
+- The replacement demo library (another session's work): once it lands, the build stories' references use it, and these mockups' stand-ins can move to it.
 - 13.18 starts with a spike: draw mpv's frames as an OpenGL texture under Compose, or in a native child window. The choice is recorded in that pull request.
