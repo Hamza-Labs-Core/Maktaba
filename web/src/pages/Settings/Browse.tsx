@@ -354,18 +354,13 @@ function StorePlugin({
         onChange={(e) => setReason(e.target.value)}
       >
         <option value="" />
-        {[
-          "malware",
-          "data_misuse",
-          "does_not_work",
-          "misleading",
-          "offensive",
-          "other",
-        ].map((r) => (
-          <option key={r} value={r}>
-            {t(`plugins.report.${r}`)}
-          </option>
-        ))}
+        {["malware", "data_misuse", "does_not_work", "misleading", "offensive", "other"].map(
+          (r) => (
+            <option key={r} value={r}>
+              {t(`plugins.report.${r}`)}
+            </option>
+          )
+        )}
       </Select>
       <Input
         label={t("plugins.browse.report_details")}
