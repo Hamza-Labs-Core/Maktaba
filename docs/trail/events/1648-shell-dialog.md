@@ -20,6 +20,7 @@ The third build story of the approved desktop design (#1556).
 - **A window of the shell's own must be made hidden and shown only when its page is ready.** A page that fails to load otherwise leaves a blank, frameless window on top. A short timeout with the system's box as the fallback keeps every error said.
 - **A window's state machine must cover "being made".** A second error during the build otherwise asks for a second window with the same label, the build fails, and the fallback box appears beside the first.
 - **Words belong in a command's answer, not in the page's script.** The page asks for the newest words, so the window always shows the latest error.
+- **A window that takes the focus when it opens does so in a layout effect**, not a passive one: the tray panel's test failed on that race in CI, and the dialog had the same code.
 
 ## Keep doing
 - Every window gets its own capability, held in place by the contract test.
