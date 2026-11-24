@@ -225,7 +225,28 @@ jobs:
           # fields against it): no hardware keyboard, and the software one not minimized when
           # keys are typed (XCUITest types keys)
           defaults write com.apple.iphonesimulator ConnectHardwareKeyboard -bool false
-          xcrun simctl bootstatus "$udid" -b > /dev/null
+          # booted in at most 5 minutes (a boot takes well under one), a line each minute
+          # meanwhile: twice an iPad 6/6 job's log stopped here and the job was cancelled 9 to
+          # 12 minutes in, with no word of why (main's run 45298651218, PR #1561's 45319649409).
+          # The lines say whether the runner was still alive; a boot that runs out is said and
+          # the simulator is made once more
+          boot() {
+            xcrun simctl bootstatus "$1" -b > /dev/null & local pid=$! waited=0
+            while kill -0 "$pid" 2>/dev/null; do
+              sleep 5; waited=$((waited + 5))
+              if [ $((waited % 60)) -eq 0 ]; then echo "booting $1: ${waited}s"; fi
+              if [ "$waited" -ge 300 ]; then kill "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true; return 1; fi
+            done
+            wait "$pid"
+          }
+          if ! boot "$udid"; then
+            echo "::warning::the $device simulator did not boot in 5 minutes: made again"
+            xcrun simctl shutdown "$udid" 2>/dev/null || true
+            xcrun simctl delete "$udid" 2>/dev/null || true
+            udid=$(python3 tools/apple/xcode.py simulator "$device" "maktaba-ci-${GITHUB_RUN_ID}-$device-$shard-again")
+            echo "UDID=$udid" >> "$GITHUB_ENV"
+            boot "$udid"
+          fi
           xcrun simctl ui "$udid" appearance dark
           # the simulator keeps the app's info and debug lines too (its subsystem is its bundle
           # id; a parent's config is not inherited): by default `log show` finds its errors and
@@ -340,10 +361,32 @@ jobs:
           # Without a cap a test that hung in its tearDown after "Failed to terminate" held the
           # shard until the job's 60 minutes ran out, and no later test ran (PR #1550's run
           # 45264580791, iPhone 2/6, twice)
-          TEST_RUNNER_MAKTABA_SHOTS="$SHOTS" xcodebuild test-without-building -xctestrun "$xctestrun" \
-            -destination "id=$UDID" -resultBundlePath "$RESULTS/$device-$shard.xcresult" \
-            -test-timeouts-enabled YES -default-test-execution-time-allowance 600 \
-            -maximum-test-execution-time-allowance 600 "${only[@]}"
+          run_tests() {
+            TEST_RUNNER_MAKTABA_SHOTS="$SHOTS" xcodebuild test-without-building -xctestrun "$xctestrun" \
+              -destination "id=$UDID" -resultBundlePath "$RESULTS/$device-$shard.xcresult" \
+              -test-timeouts-enabled YES -default-test-execution-time-allowance 600 \
+              -maximum-test-execution-time-allowance 600 "${only[@]}" 2>&1 | tee "$RESULTS/$device-$shard-xcodebuild.log"
+          }
+          status=0
+          run_tests || status=$?
+          # The test runner itself not starting, before any test began, is the simulator's, not a
+          # test's: "Failed to install or launch the test runner" (SpringBoard refused it, "The
+          # request was denied by service delegate (SBMainWorkspace)", PR #1561's run 45319649409,
+          # iPhone 1/6, after the simulator never settled) and "The test runner failed to
+          # initialize for UI testing" ("Timed out waiting for AX loaded notification", PR
+          # #1562's run 45296281858, iPad 1/6). Only those, and only with no test started: said,
+          # the first result bundle kept beside, and run once more.
+          started="^Test Case '.*' started"
+          runner="Failed to install or launch the test runner|failed to initialize for UI testing"
+          if [ "$status" -ne 0 ] && ! grep -q "$started" "$RESULTS/$device-$shard-xcodebuild.log" \
+             && grep -qE "$runner" "$RESULTS/$device-$shard-xcodebuild.log"; then
+            echo "::warning::the test runner did not start, no test ran ($(grep -m1 -oE "$runner" "$RESULTS/$device-$shard-xcodebuild.log")): once more"
+            mv "$RESULTS/$device-$shard.xcresult" "$RESULTS/$device-$shard-runner-did-not-start.xcresult"
+            mv "$RESULTS/$device-$shard-xcodebuild.log" "$RESULTS/$device-$shard-runner-did-not-start.log"
+            status=0
+            run_tests || status=$?
+          fi
+          exit "$status"
 
       # xcodebuild can say TEST EXECUTE SUCCEEDED for a run that ran none, or not all, of its
       # tests: a runner restarted after an unexpected exit may run nothing (CI run 43605618404,
