@@ -180,7 +180,7 @@ func losesData(up string) string {
 // migrateDown runs the new release's Down scripts back to the release before's schema
 // when the rollback may (SchemaReverter, DownRecords, MigrateDown), and marks the record
 // so the release before starts on it. It reports whether the database is back that way;
-// otherwise the dump goes back, as before.
+// otherwise the update is held (MarkHeld): nothing is put back by itself.
 func (m *Machine) migrateDown(j *Journal, reason string) bool {
 	rv, ok := m.Installer.(SchemaReverter)
 	dr, ok2 := m.Records.(DownRecords)
@@ -189,7 +189,7 @@ func (m *Machine) migrateDown(j *Journal, reason string) bool {
 	}
 	schema, safe, why := rv.DownTo(j)
 	if !safe {
-		m.errorf("%s's Down scripts cannot undo it (%s): the whole dump goes back instead", j.Job.Version, why)
+		m.errorf("%s's Down scripts cannot undo it (%s): the update is held instead (nothing is put back by itself)", j.Job.Version, why)
 		return false
 	}
 	m.logf("undoing %s's migrations with their Down scripts, back to slot %04d (%s): nothing else in the "+
@@ -197,12 +197,12 @@ func (m *Machine) migrateDown(j *Journal, reason string) bool {
 	ctx, cancel := context.WithCancel(m.ctx())
 	defer cancel()
 	if err := m.MigrateDown(ctx, j, schema); err != nil {
-		m.errorf("the Down scripts of %s failed (%v): the dump goes back instead", j.Job.Version, err)
+		m.errorf("the Down scripts of %s failed (%v): the update is held instead", j.Job.Version, err)
 		return false
 	}
 	marked, err := dr.MarkDown(j.Job.Version, j.From, reason)
 	if err != nil || !marked {
-		m.errorf("the database is on %s's schema, but its record cannot say so (%v): the dump goes back instead",
+		m.errorf("the database is on %s's schema, but its record cannot say so (%v): the update is held instead",
 			orNone(j.From), err)
 		return false
 	}

@@ -34,6 +34,19 @@ type Actions struct {
 	// database: asked twice).
 	Backups func() ([]Backup, error)
 	Restore func(name, by string) error
+	// Held is the update that stopped and waits for a person (the database record is held:
+	// nothing was put back by itself), nil when none: the page says what happened and the
+	// choices, the backup to put back among them.
+	Held func() *Held
+}
+
+// Held is an update that stopped with nothing put back by itself: the release that
+// failed, the one before, the backup taken before it (its file name) and why.
+type Held struct {
+	Failed string `json:"failed"`
+	From   string `json:"from,omitempty"`
+	Backup string `json:"backup,omitempty"`
+	Why    string `json:"why,omitempty"`
 }
 
 // Backup is one restorable backup.
@@ -189,6 +202,7 @@ type State struct {
 	LogsBytes  int64                `json:"logs_bytes"`
 	Rollback   string               `json:"rollback,omitempty"`
 	SafeMode   bool                 `json:"safe_mode"`
+	Held       *Held                `json:"held,omitempty"`
 }
 
 func (h *Handler) state() State {
@@ -256,6 +270,9 @@ func (h *Handler) state() State {
 	}
 	if h.Actions.Rollback != nil {
 		st.Rollback, _ = h.Actions.Rollback()
+	}
+	if h.Actions.Held != nil {
+		st.Held = h.Actions.Held()
 	}
 	return st
 }

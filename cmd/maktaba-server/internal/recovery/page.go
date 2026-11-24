@@ -50,6 +50,12 @@ function load(){
   fetch('/recovery/api/state',{credentials:'same-origin'}).then(function(r){return r.json()}).then(function(s){
     var st=s.status||{},g=st.components||{};
     document.getElementById('safe').hidden=!s.safe_mode;
+    var hd=document.getElementById('held');hd.textContent='';hd.hidden=!s.held;
+    if(s.held){var hv={failed:s.held.failed,from:s.held.from||'?',backup:s.held.backup||'?',why:s.held.why||''};
+      hd.appendChild(el('p',t('recovery.held',hv)));
+      if(s.held.backup){var hb=el('button',t('recovery.held.restore',hv));
+        hb.onclick=function(){act({action:'restore',backup:s.held.backup},2)};hd.appendChild(hb)}
+      hd.appendChild(el('p',t('recovery.held.newer',hv)))}
     document.getElementById('well').hidden=st.overall!=='ok';
     var gl=document.getElementById('groups');gl.textContent='';
     Object.keys(g).forEach(function(k){var li=el('li');li.appendChild(el('span',t('status.group.'+k)+': '));
@@ -124,6 +130,7 @@ func (h *Handler) page(w http.ResponseWriter, lang string) {
 	_, _ = io.WriteString(w, head(lang, T(lang, "recovery.title"))+
 		"<h1>"+e(T(lang, "recovery.title"))+"</h1><p class=\"intro\">"+e(T(lang, "recovery.intro"))+"</p>"+
 		"<div id=\"safe\" class=\"strip\" hidden>"+e(T(lang, "safe.strip"))+"</div>"+
+		"<div id=\"held\" class=\"strip\" hidden></div>"+
 		"<p id=\"well\" class=\"ok\" hidden>"+e(T(lang, "recovery.allWell"))+"</p>"+
 		"<ul id=\"groups\"></ul><div id=\"acts\" class=\"actions\"></div><div id=\"msg\"></div>"+
 		"<h2>"+e(T(lang, "recovery.components"))+"</h2><table><tbody id=\"comps\"></tbody></table>"+

@@ -304,17 +304,35 @@ When its migrations ran, the database goes back by their own Down scripts: it st
 left it when every one of them is additive and the previous release runs on a newer schema;
 else their Down scripts undo them, the one that failed part way by its own Down script first
 (`maktaba-api migrate undo-failed`), back to the slot the database was at before the update
-(recorded as `schema_before` when the migrations start). The backup taken before them is put
-back only when those Down scripts fail (`db_down_failed`), when a migration that ran deleted or
-overwrote data its Down script cannot give back (`db_restored_lossy`: migration-lint refuses
-such a migration unless it says so), or when the way back cannot be told
-(`db_restored_unknown`). Each is logged at level=error and named on the Updates page, since it
-is not the way back. Writes made between that backup and the rollback are then lost (minutes,
-inside the window, with the jobs drained), and the failed state is not kept. The same applies
-when the migrations themselves fail part way: since 2026-11-24, after the backup went back on
-2026-11-23 (v0.3.158) and 2026-11-24 (v0.3.157), about three hours down each time. The way back
-is the new release's code (its database step runs the migrations and undoes them), so it holds
-for every update to a release that has it, whatever the release before. The release
+(recorded as `schema_before` when the migrations start).
+
+A layout install (the `.deb`/`.rpm`, `setup --self-managed`) keeps the release before's
+migrations in `bin/releases/<v>/` and undoes the same way; until 2026-11-24 its rollback
+could only put the backup back.
+
+**No backup is ever put back by itself.** When those Down scripts fail (`db_down_failed`), when
+a migration that ran deleted or overwrote data its Down script cannot give back
+(`db_held_lossy`: migration-lint refuses such a migration unless it says so), when the way back
+cannot be told (`db_held_unknown`), or when the launcher's guard gave up on the new release
+after its migrations ran, the update **stops and asks**. The database record becomes `held`:
+the database stays as the migrations (and any Down scripts that ran) left it, the previous
+release is switched back in, and every start stops on the held database (`db_held`) until a
+person chooses:
+- **Put the backup taken before the update back**, on the recovery page (`/recovery`, which
+  the supervisor serves while the library is stopped: it names the backup) or with
+  `maktaba-server restore --backup <name> --confirm`. The previous release runs on it; changes
+  made since that backup are lost.
+- **Install a release newer than the one that failed**, which fixes it. Its start goes on from
+  the held database (its migrations run what is missing), with the same backup kept.
+
+Each case is logged at level=error, and the update attempt's code says which on the Updates page.
+A release from before 2026-11-24 that meets a held database refuses it as older than the
+database (`db_refused_older`) and stops the same way, putting nothing back. A restore mark that
+such a release, or its launcher, wrote (`restoring` with no person named) is held too by every
+release since: the dump is not put back. Only an update to a release with this rule is
+protected by it: a release from before it runs its own database step and puts the backup back
+as it always did. The automatic restores of 2026-11-14, 2026-11-23 (v0.3.158) and 2026-11-24
+(v0.3.157) each kept the library stopped for about three hours. The release
 is then blocked until a newer one appears or an admin unblocks it (Admin → Updates → **Try it
 again**, or **Update now** naming it). A release that rolled back (or whose migrations failed on
 the rehearsal's copy) also holds back, until an admin retries it, every release below it, and
@@ -331,13 +349,13 @@ new release does not confirm in time (15 minutes) or stops three times in ten mi
 | The release | Before the switch | The switch | Its rollback |
 |---|---|---|---|
 | adds no migration (none of its migrations is one the database lacks) | nothing | a restart | a restart |
-| adds migrations | the backup, taken while the release before keeps serving | a restart, then its migrations | the schema kept, undone by its Down scripts, or the backup put back; then a restart |
+| adds migrations | the backup, taken while the release before keeps serving | a restart, then its migrations | the schema kept, or undone by its Down scripts, then a restart; else held: the library stops and a person chooses (the backup, or a newer release) |
 
 - **Which releases add migrations.** Right before the switch the home compares the staged
   release's migrations (the verified `maktaba-migrations-<v>.tar.gz` of its `release.json`) with
   the newest migration the database holds. A release whose start finds none to run records that
   the database still holds the previous release's migrations, so the previous release can run on
-  it again as it is; the launcher's guard then finds no backup to put back.
+  it again as it is; the launcher's guard then has nothing to hold.
 - **The migrations never wait long on another session.** Before an update's migrations the home
   ends the other client sessions on its database. While they run, it ends any session one of
   them has waited on for more than 10 seconds, and the log names it: a machine's copy making
@@ -365,10 +383,10 @@ new release does not confirm in time (15 minutes) or stops three times in ten mi
   left as it is.
 - **When the migrations fail part way.** The library stays stopped and the start says what
   happened: `db_kept` (nothing put back: the changes so far are additive and the previous
-  release runs on them), `db_undone` (their Down scripts undid them), or `db_restored` (the
-  backup put back, and the update attempt's code says why: `db_down_failed`,
-  `db_restored_lossy` or `db_restored_unknown`). The update's watch then rolls back to the previous release, and the
-  release is blocked as above.
+  release runs on them), `db_undone` (their Down scripts undid them), or `db_held` (nothing
+  could take it back by itself: the update stops and asks, as above, and the update attempt's
+  code says why: `db_down_failed`, `db_held_lossy` or `db_held_unknown`). The update's watch
+  then rolls back to the previous release, and the release is blocked as above.
 - **The backup is taken on the side.** `pg_dump` reads one snapshot, so the library keeps serving
   while it runs. Writes made between its start and the switch (a minute or two, with the jobs
   drained) are not in it. A backup that fails switches nothing (`db_dump_failed`: the release

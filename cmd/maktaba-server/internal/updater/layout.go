@@ -222,3 +222,39 @@ func (li *LayoutInstaller) Discard(_ context.Context, j *Journal) error {
 	}
 	return os.RemoveAll(j.Staged)
 }
+
+// fromMigrations is the migrations folder of the release before (kept in
+// bin/releases/<from>/: its rollback runs it), "" when not known.
+func (li *LayoutInstaller) fromMigrations(j *Journal) string {
+	from := layout.NormalizeVersion(j.From)
+	if from == "" {
+		return ""
+	}
+	dir := filepath.Join(li.Layout.ReleaseDir(from), install.MigrationsDir)
+	if st, err := os.Stat(dir); err != nil || !st.IsDir() {
+		return ""
+	}
+	return dir
+}
+
+// KeepsSchema implements SchemaKeeper: the release before's migrations (bin/releases/<from>)
+// against the staged release's (schemakeep.go). Until 2026-11-24 a layout install had
+// neither this nor DownTo, so its rollback could only put the whole dump back; with no
+// restore by itself (#1605) it would always have stopped and asked.
+func (li *LayoutInstaller) KeepsSchema(j *Journal) (bool, string) {
+	from := li.fromMigrations(j)
+	if from == "" || j.Staged == "" {
+		return false, "the releases' migrations are not known"
+	}
+	return KeepsSchemaFrom(from, filepath.Join(j.Staged, install.MigrationsDir))
+}
+
+// DownTo implements SchemaReverter: the staged release's Down scripts above the release
+// before's migrations (schemadown.go).
+func (li *LayoutInstaller) DownTo(j *Journal) (int64, bool, string) {
+	from := li.fromMigrations(j)
+	if from == "" || j.Staged == "" {
+		return 0, false, "the releases' migrations are not known"
+	}
+	return DownToFrom(from, filepath.Join(j.Staged, install.MigrationsDir))
+}
