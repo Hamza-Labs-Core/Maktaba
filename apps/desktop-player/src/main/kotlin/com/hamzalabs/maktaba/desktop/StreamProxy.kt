@@ -92,9 +92,14 @@ class StreamProxy(
 
     /** A new video: its renditions are not known yet, and no audio is chosen. */
     fun forget() {
+        forgetMaster()
+        audio = null
+    }
+
+    /** The master playlist read last is not the stream's any more (a file turned HLS): the next one's renditions are waited for. */
+    fun forgetMaster() {
         _master.value = null
         masterUrl = null
-        audio = null
     }
 
     /** The proxy's address for a stream URL of this home, or null for anything else. */

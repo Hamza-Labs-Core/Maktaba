@@ -52,18 +52,24 @@ data class SubtitleStyle(val size: SubtitleSize = SubtitleSize.Medium, val colou
 }
 
 /** The home's subtitle sources a session serves: a sidecar file and Maktaba's transcription. */
-val HOME_SUBTITLE_SOURCES = setOf("external", "auto")
+/**
+ * The home's subtitle sources a session serves (`subtitle_files.source`): a file beside the
+ * video (`external`) and Maktaba's own transcription (`generated`), both at the session's
+ * `subs/sidecar/{language}.vtt` (the file beside the video first, else the stored copy).
+ */
+val HOME_SUBTITLE_SOURCES = setOf("external", "generated")
 
 /**
- * Direct play's Subtitles menu (story 13.20): the home's subtitles first (sidecar files and its
- * transcription, in the home's order, each at [url]; a row whose address cannot be made is left
- * out), then the file's own tracks in the file's order. The home's `embedded` rows are the
+ * Direct play's Subtitles menu (story 13.20): the home's subtitles first (in the home's order,
+ * each at [url]; a row with no language, or whose address cannot be made, is left out, and rows
+ * at one address, such as one language's SRT and VTT or its file and transcription, are one
+ * entry), then the file's own tracks in the file's order. The home's `embedded` rows are the
  * file's tracks again, read here from the file itself; a forced track is not a choice.
  */
 fun directSubtitles(home: List<VideoSubtitle>, file: List<FileSubtitle>, url: (VideoSubtitle) -> String?): List<SubtitleOption> {
-    val fromHome = home.filter { it.source in HOME_SUBTITLE_SOURCES }.mapNotNull { s ->
-        url(s)?.let { SubtitleOption(null, s.language.ifBlank { null }, SubtitleOption.Kind.Home, url = it, source = s.source) }
-    }
+    val fromHome = home.filter { it.source in HOME_SUBTITLE_SOURCES && it.language.isNotBlank() }.mapNotNull { s ->
+        url(s)?.let { SubtitleOption(null, s.language, SubtitleOption.Kind.Home, url = it, source = s.source) }
+    }.distinctBy { it.url }
     val fromFile = file.filter { !it.forced }.map { t ->
         SubtitleOption(t.title?.ifBlank { null }, t.language?.ifBlank { null }, SubtitleOption.Kind.File, trackId = t.id, picture = t.picture)
     }

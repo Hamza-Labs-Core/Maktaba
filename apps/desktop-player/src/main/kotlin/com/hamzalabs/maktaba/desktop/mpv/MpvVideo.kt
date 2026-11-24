@@ -54,8 +54,13 @@ class MpvVideo internal constructor(
     private val ops = Executors.newSingleThreadExecutor { r -> Thread(r, "mpv-commands").apply { isDaemon = true } }
     @Volatile private var audioIds: List<String> = emptyList()
     @Volatile private var lastCaption: Triple<String?, Boolean, Pair<Float, SubtitleColour>>? = null
-    /** The home's subtitles added (`sub-add`), by their URL: mpv's track id (on mpv's thread only). */
-    private val added = HashMap<String, String>()
+    /** The home's subtitles added (`sub-add`), by their URL: mpv's track id. */
+    private val added = java.util.concurrent.ConcurrentHashMap<String, String>()
+    /** The `sub-add`s mpv has not answered yet, by their reply number. */
+    private val adding = java.util.concurrent.ConcurrentHashMap<Long, SubtitleOption>()
+    private val replies = java.util.concurrent.atomic.AtomicLong(1000)
+    /** The subtitles asked for last (null: none). */
+    @Volatile private var wanted: SubtitleOption? = null
     @Volatile private var size: Pair<Int, Int> = 0 to 0
     // mpv keeps the callback's address: held here for the handle's life
     private val onUpdate = LibMpv.UpdateCallback { wake.release() }
@@ -112,8 +117,8 @@ class MpvVideo internal constructor(
             val style = events.subtitleStyle
             opt("sub-scale", style.scale.toString())
             opt("sub-color", style.colour.rgb)
-            opt("sub-border-color", "#000000")
-            opt("sub-border-size", "2")
+            opt("sub-outline-color", "#000000")
+            opt("sub-outline-size", "2")
             opt("sub-ass-override", "scale")
             // ASS's own fonts; a raw file's codepage guessed (a sidecar comes as UTF-8)
             opt("embeddedfonts", "yes")
@@ -215,6 +220,8 @@ class MpvVideo internal constructor(
             when (ev.getInt(0)) {
                 MpvConst.EVENT_SHUTDOWN -> return
                 MpvConst.EVENT_FILE_LOADED -> loaded(c)
+                // mpv_event: error at 4, reply_userdata at 8
+                MpvConst.EVENT_COMMAND_REPLY -> addedReply(ev.getLong(8), ev.getInt(4))
                 MpvConst.EVENT_PLAYBACK_RESTART -> {
                     started = true
                     if (hwdec == null) hwdec = string(c, "hwdec-current")?.also { Engine.hwdec = it }
@@ -243,6 +250,7 @@ class MpvVideo internal constructor(
         val ids = mutableListOf<String>()
         val audio = mutableListOf<AudioOption>()
         val subs = mutableListOf<FileSubtitle>()
+        var shownByMpv: FileSubtitle? = null
         for (i in 0 until count) {
             val type = string(c, "track-list/$i/type")
             if (type != "audio" && type != "sub") continue
@@ -254,9 +262,13 @@ class MpvVideo internal constructor(
                 ids += id
             } else if (string(c, "track-list/$i/external") != "yes") {
                 // the file's own (a home's file added before is not one of them)
-                subs += FileSubtitle(id, title, lang, string(c, "track-list/$i/codec"), forced = string(c, "track-list/$i/forced") == "yes")
+                val t = FileSubtitle(id, title, lang, string(c, "track-list/$i/codec"), forced = string(c, "track-list/$i/forced") == "yes")
+                subs += t
+                if (string(c, "track-list/$i/selected") == "yes") shownByMpv = t
             }
         }
+        // a forced picture track mpv picked itself is drawn as authored too
+        if (events.subtitleChoice == null && shownByMpv?.picture == true) onMpv { lib.mpv_set_property_string(it, "sub-scale", "1.0") }
         audioIds = ids
         // the track chosen before this player (a reopen keeps it)
         events.audioIndex.takeIf { it > 0 }?.let { ids.getOrNull(it) }?.let { lib.mpv_set_property_string(c, "aid", it) }
@@ -266,25 +278,69 @@ class MpvVideo internal constructor(
         events.subtitleChoice?.let { o -> onMpv { showSubtitle(it, o) } }
     }
 
-    /** [o] drawn: a file's track by its id, a home's file added once (`sub-add`, then by its id), none: `sid=no`. */
+    /** Track [id] on screen ("no": none), a picture track as authored: no scale of the Player's (mpv may scale pictures too). */
+    private fun show(c: Pointer, id: String, picture: Boolean) {
+        lib.mpv_set_property_string(c, "sub-scale", if (picture) "1.0" else events.subtitleStyle.scale.toString())
+        lib.mpv_set_property_string(c, "sid", id)
+    }
+
+    /**
+     * [o] drawn: a file's track by its id; a home's file added once, then by its id; none:
+     * `sid=no`. A home's file is added without waiting (`sub-add` on mpv's own time, so a slow
+     * read never holds a pause or a seek back): the track before it stays until mpv has it
+     * ([added]), and one mpv could not add is reported, the choice before it kept.
+     */
     private fun showSubtitle(c: Pointer, o: SubtitleOption?) {
-        // a picture track as authored: no scale of the Player's (mpv may scale pictures too)
-        lib.mpv_set_property_string(c, "sub-scale", if (o?.picture == true) "1.0" else events.subtitleStyle.scale.toString())
+        wanted = o
         when (o?.kind) {
-            SubtitleOption.Kind.File -> o.trackId?.let { lib.mpv_set_property_string(c, "sid", it) }
+            SubtitleOption.Kind.File -> o.trackId?.let { show(c, it, o.picture) }
             SubtitleOption.Kind.Home -> {
                 val url = o.url ?: return
                 val known = added[url]
                 if (known != null) {
-                    lib.mpv_set_property_string(c, "sid", known)
-                } else {
-                    // mpv reads and times it itself; "select" shows it at once
-                    lib.mpv_command(c, arrayOf("sub-add", url, "select", o.name ?: o.language ?: "", o.language ?: "", null))
-                    string(c, "sid")?.takeIf { it != "no" }?.let { added[url] = it }
+                    show(c, known, picture = false)
+                    return
+                }
+                val reply = replies.incrementAndGet()
+                adding[reply] = o
+                // "auto": mpv does not show it itself; it is shown once added, if still wanted
+                val err = lib.mpv_command_async(c, reply, arrayOf("sub-add", url, "auto", o.name ?: o.language ?: "", o.language ?: "", null))
+                if (err < 0) {
+                    adding.remove(reply)
+                    events.subtitleFailed(o, lib.mpv_error_string(err))
                 }
             }
-            else -> lib.mpv_set_property_string(c, "sid", "no")
+            else -> show(c, "no", picture = false)
         }
+    }
+
+    /** mpv answered `sub-add` [reply] with [err] (below 0: not added). */
+    private fun addedReply(reply: Long, err: Int) {
+        val o = adding.remove(reply) ?: return
+        if (err < 0) {
+            events.subtitleFailed(o, lib.mpv_error_string(err))
+            return
+        }
+        onMpv { c ->
+            val url = o.url ?: return@onMpv
+            val id = externalTrack(c, url)
+            if (id == null) {
+                events.subtitleFailed(o, "mpv lists no track for it")
+                return@onMpv
+            }
+            added[url] = id
+            if (wanted == o) show(c, id, picture = false)
+        }
+    }
+
+    /** The id of the subtitle track mpv added from [url] (its `external-filename`). */
+    private fun externalTrack(c: Pointer, url: String): String? {
+        val count = string(c, "track-list/count")?.toIntOrNull() ?: 0
+        for (i in 0 until count) {
+            if (string(c, "track-list/$i/type") != "sub") continue
+            if (string(c, "track-list/$i/external-filename") == url) return string(c, "track-list/$i/id")
+        }
+        return null
     }
 
     /** Subtitles drawn by mpv (story 13.20): a file's own track, a home's file, or none. An HLS rendition is not one. */

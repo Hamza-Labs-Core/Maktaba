@@ -133,6 +133,8 @@ interface VideoEvents {
     fun ready(durationMs: Long?, audio: List<AudioOption>)
     /** A file's own subtitle tracks, in order, once it is open (a player that reads them: libmpv's). */
     fun subtitleTracks(tracks: List<FileSubtitle>) {}
+    /** The player could not draw [option] (a home's file it could not add), and [why]; the choice before it stays on screen. */
+    fun subtitleFailed(option: SubtitleOption, why: String) {}
     fun position(ms: Long)
     fun playing(on: Boolean)
     fun failed(why: String)
@@ -402,6 +404,9 @@ class Playback(
         subtitle = null
         fileTracks.value = null
         streamSig = null
+        subtitlesAt = null
+        subtitlesFollow = null
+        beforeChoice = null
         caption = null
         cues = emptyList()
         chapters = emptyList()
@@ -463,9 +468,23 @@ class Playback(
 
     /** Subtitles in [o], or off (null); kept for the next video. */
     fun chooseSubtitle(o: SubtitleOption?) {
+        beforeChoice = subtitle to choice
         choice = if (o == null) choice.copy(textOff = true, textLanguage = null) else choice.copy(textOff = false, textLanguage = o.language)
         showSubtitle(o)
         if (o?.kind == SubtitleOption.Kind.Stream) video?.launch { loadCues(o) }
+    }
+
+    /** The subtitles shown, and the choice, before the last [chooseSubtitle]: back to them when the player cannot add a home's file. */
+    private var beforeChoice: Pair<SubtitleOption?, TrackChoice>? = null
+
+    /** The player could not draw [o] (a home's file mpv could not add): the choice before it stands, and the log says why. */
+    private fun subtitleFailed(o: SubtitleOption, why: String) {
+        log("subtitles: ${o.language ?: "?"} from the home could not be shown: $why")
+        if (subtitle != o) return
+        val (was, wasChoice) = beforeChoice ?: (null to choice)
+        subtitle = was
+        choice = wasChoice
+        beforeChoice = null
     }
 
     /**
@@ -510,6 +529,7 @@ class Playback(
         open(fromMs = start * 1000L, kbps = quality.maxBitrateKbps)
         if (player != null) {
             launch { followTracks() }
+            subtitlesFollow = launch { followSubtitles() }
             watch()
         }
     }
@@ -529,20 +549,34 @@ class Playback(
         upNext.reset(next)
     }
 
-    /** The stream's tracks once known: the person's choice (or the settings) applied (a direct file's audio in [ready]). */
+    /** The stream's audio tracks once known: the person's choice (or the settings) applied (a direct file's in [ready]). */
     private suspend fun followTracks() {
         val plan = choice.plan(settings())
         if (hls) {
             val m = withTimeoutOrNull(15_000) { proxy.master.filterNotNull().first() } ?: return
             audioOptions = if (m.audio.size > 1) m.audio.map { AudioOption(it.name.ifBlank { null }, it.language, rendition = it.name) } else emptyList()
             audio = audioOptions.firstOrNull { o -> m.audio.firstOrNull { it.default }?.name == o.rendition } ?: audioOptions.firstOrNull()
-            subtitleOptions = m.subtitles.filter { it.uri != null }.map(SubtitleOption::of)
             val lang = plan.audioLanguage
             val want = lang?.let { l -> audioOptions.getOrNull(pickTrack(audioOptions.map { it.language }, l) ?: -1) }
             if (lang != null && want != null && want != audio && want.language?.let { sameLanguage(it, lang) } == true) switchAudio(want)
-        } else if (players.drawsSubtitles && features().isOn(Feature.SUBTITLES)) {
-            // story 13.20: a file played as it is, by a player that draws subtitles itself
-            subtitleOptions = directSubtitleOptions()
+        }
+    }
+
+    /** The menu's subtitles are being read for the stream playing now ([followSubtitles]). */
+    private var subtitlesFollow: Job? = null
+
+    /**
+     * The Subtitles menu for the stream playing now, and the person's choice (or the settings)
+     * applied to it: an HLS stream's renditions; a file played as it is by a player that draws
+     * subtitles itself, the home's and the file's own (story 13.20). Read again when a reopen
+     * turns the stream from a file into HLS or back.
+     */
+    private suspend fun followSubtitles() {
+        val plan = choice.plan(settings())
+        subtitleOptions = when {
+            hls -> withTimeoutOrNull(15_000) { proxy.master.filterNotNull().first() }?.subtitles.orEmpty().filter { it.uri != null }.map(SubtitleOption::of)
+            players.drawsSubtitles && features().isOn(Feature.SUBTITLES) -> directSubtitleOptions()
+            else -> emptyList()
         }
         if (plan.textOn && subtitleOptions.isNotEmpty()) {
             // across both sources, the home's first when two share a language
@@ -554,15 +588,31 @@ class Playback(
     }
 
     /**
+     * A reopen turned the stream from a file into HLS or back (a quality cap, a forced transcode,
+     * another audio track as HLS): the menu is read again for it. A file's own tracks and the
+     * home's files leave with the file, and their choice with them; the person's language stays.
+     */
+    private fun refollowSubtitles() {
+        subtitlesFollow?.cancel()
+        subtitleOptions = emptyList()
+        subtitle = null
+        cues = emptyList()
+        caption = null
+        subtitlesFollow = video?.launch { followSubtitles() }
+    }
+
+    /** The session (and its `stream_sig`) the home's subtitles are read from: the one being opened or playing ([rehome]). */
+    private var subtitlesAt: Pair<String, String?>? = null
+
+    /**
      * Direct play's two sources (story 13.20): the home's subtitles (`GET /api/videos/{id}/subtitles`,
      * each through the stream proxy under the session's own path), then the file's own tracks,
-     * once its player has read them. A home that cannot answer leaves the file's tracks alone,
-     * and the problem report's log says why.
+     * once its player has read them. Their addresses are made after that wait, for the session
+     * then in use. A home that cannot answer leaves the file's tracks alone, and the problem
+     * report's log says why.
      */
     private suspend fun directSubtitleOptions(): List<SubtitleOption> = coroutineScope {
         val r = request ?: return@coroutineScope emptyList()
-        val s = session ?: return@coroutineScope emptyList()
-        val sig = streamSig
         val home = async {
             try {
                 client.videoSubtitles(r.videoId)
@@ -574,16 +624,18 @@ class Playback(
             }
         }
         val file = withTimeoutOrNull(15_000) { fileTracks.filterNotNull().first() }.orEmpty()
-        directSubtitles(home.await(), file) { homeSubtitleUrl(s, sig, it) }
+        val listed = home.await()
+        val (s, sig) = subtitlesAt ?: return@coroutineScope emptyList()
+        directSubtitles(listed, file) { homeSubtitleUrl(s, sig, it) }
     }
 
-    /** Where session [s] serves the home's subtitle [sub], through the proxy; null for a source it does not serve. */
+    /**
+     * Where session [s] serves the home's subtitle [sub], through the proxy: a file beside the
+     * video and Maktaba's transcription both at `subs/sidecar/{language}.vtt`; null for another.
+     */
     private fun homeSubtitleUrl(s: String, sig: String?, sub: VideoSubtitle): String? {
-        val path = when (sub.source) {
-            "external" -> "subs/sidecar/" + java.net.URLEncoder.encode(sub.language, Charsets.UTF_8).replace("+", "%20") + ".vtt"
-            "auto" -> "subs/auto.vtt"
-            else -> return null
-        }
+        if (sub.source !in com.hamzalabs.maktaba.desktop.watch.HOME_SUBTITLE_SOURCES || sub.language.isBlank()) return null
+        val path = "subs/sidecar/" + java.net.URLEncoder.encode(sub.language, Charsets.UTF_8).replace("+", "%20") + ".vtt"
         val url = client.home.newBuilder()
             .encodedPath("${client.basePath}/stream/${java.net.URLEncoder.encode(s, Charsets.UTF_8)}/$path")
             .query(null)
@@ -592,8 +644,9 @@ class Playback(
         return proxy.local(url)
     }
 
-    /** The home's subtitles offered (and the one shown) at session [s]'s path (a reopen's new session). */
+    /** The home's subtitles offered (and the one shown) at session [s]'s path (the session being opened, or back to the one playing). */
     private fun rehome(s: String, sig: String?) {
+        subtitlesAt = s to sig
         fun at(o: SubtitleOption): SubtitleOption {
             if (o.kind != SubtitleOption.Kind.Home) return o
             val url = homeSubtitleUrl(s, sig, VideoSubtitle(language = o.language.orEmpty(), source = o.source.orEmpty())) ?: return o
@@ -703,6 +756,9 @@ class Playback(
         return if (knows) want else STREAM_PROFILE
     }
 
+    /** A reopen of the video playing ([old] its session) that turns a file into HLS or back. */
+    private fun modeChanged(old: String?, s: com.hamzalabs.maktaba.core.api.StreamSession) = old != null && s.isHls != hls
+
     private suspend fun openNow(fromMs: Long, kbps: Int? = quality.maxBitrateKbps) {
         val r = request ?: return
         val g = generation
@@ -727,6 +783,11 @@ class Playback(
                 val local = proxy.local(url) ?: throw IllegalStateException("Not this home's stream.")
                 // the home's subtitles are under the session's path: the new player adds the new session's
                 rehome(s.sessionId, s.streamSig)
+                if (modeChanged(old, s)) {
+                    // a file becomes HLS or back: the new stream's tracks are read afresh
+                    fileTracks.value = null
+                    if (s.isHls) proxy.forgetMaster()
+                }
                 val next = withContext(NonCancellable) { players.open(local, fromMs, true, events) }
                 if (stale()) {
                     next.dispose()
@@ -740,9 +801,11 @@ class Playback(
                 background.launch { client.closeStream(s.sessionId) }
                 throw e
             }
+            val changed = modeChanged(old, s)
             session = s.sessionId
             streamSig = s.streamSig
             hls = s.isHls
+            if (changed) refollowSubtitles()
             direct = s.mode == "direct"
             ladder = QualityOption.of(s.ladder.ifEmpty { emptyList<Rung>() })
             // a default from the settings (720p at its own cap) is the ladder's rung of that height
@@ -796,6 +859,10 @@ class Playback(
 
         override fun subtitleTracks(tracks: List<FileSubtitle>) {
             fileTracks.value = tracks
+        }
+
+        override fun subtitleFailed(option: SubtitleOption, why: String) {
+            scope.launch { this@Playback.subtitleFailed(option, why) }
         }
 
         override fun position(ms: Long) {

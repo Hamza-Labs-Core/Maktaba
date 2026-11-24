@@ -33,12 +33,25 @@ class MpvVideoTest {
         val options = ConcurrentHashMap<String, String>()
         val calls: MutableList<String> = Collections.synchronizedList(mutableListOf())
         val properties = ConcurrentHashMap<String, String>()
-        val events = LinkedBlockingQueue<Int>()
+        /** Events to hand out: (event id, error, reply userdata). */
+        val events = LinkedBlockingQueue<Triple<Int, Int, Long>>()
+        /** What mpv answers a `sub-add` (below 0: it could not add it). */
+        @Volatile var addResult = 0
+        /** When set, mpv answers a `sub-add` only once it opens. */
+        @Volatile var replyAfter: java.util.concurrent.CountDownLatch? = null
         private val kept: MutableList<Memory> = Collections.synchronizedList(mutableListOf())
+
+        fun post(id: Int) = events.put(Triple(id, 0, 0L))
 
         private fun text(s: String) = Memory(s.toByteArray().size + 1L).also { it.setString(0, s, "UTF-8"); kept += it }
 
-        private fun event(id: Int) = Memory(64).also { it.clear(); it.setInt(0, id); kept += it }
+        private fun event(e: Triple<Int, Int, Long>) = Memory(64).also {
+            it.clear()
+            it.setInt(0, e.first)
+            it.setInt(4, e.second)
+            it.setLong(8, e.third)
+            kept += it
+        }
 
         val lib = java.lang.reflect.Proxy.newProxyInstance(LibMpv::class.java.classLoader, arrayOf(LibMpv::class.java)) { _, m, a ->
             when (m.name) {
@@ -50,12 +63,29 @@ class MpvVideoTest {
                     @Suppress("UNCHECKED_CAST")
                     val args = (a[1] as Array<String?>).filterNotNull()
                     calls += args.joinToString(" ")
-                    if (args.firstOrNull() == "quit") events.put(MpvConst.EVENT_SHUTDOWN)
-                    if (args.firstOrNull() == "sub-add") properties["sid"] = "9"
+                    if (args.firstOrNull() == "quit") post(MpvConst.EVENT_SHUTDOWN)
+                    0
+                }
+                "mpv_command_async" -> {
+                    @Suppress("UNCHECKED_CAST")
+                    val args = (a[2] as Array<String?>).filterNotNull()
+                    calls += "async " + args.joinToString(" ")
+                    if (args.firstOrNull() == "sub-add" && addResult >= 0) {
+                        // the added file is the list's next track, named by its URL
+                        val n = properties["track-list/count"]?.toInt() ?: 0
+                        properties["track-list/$n/type"] = "sub"
+                        properties["track-list/$n/id"] = "9"
+                        properties["track-list/$n/external"] = "yes"
+                        properties["track-list/$n/external-filename"] = args[1]
+                        properties["track-list/count"] = (n + 1).toString()
+                    }
+                    val reply = Triple(MpvConst.EVENT_COMMAND_REPLY, addResult, a[1] as Long)
+                    val gate = replyAfter
+                    if (gate == null) events.put(reply) else Thread { gate.await(); events.put(reply) }.start()
                     0
                 }
                 "mpv_get_property_string" -> properties[a[1] as String]?.let(::text)
-                "mpv_wait_event" -> event(events.poll(5, TimeUnit.SECONDS) ?: MpvConst.EVENT_NONE)
+                "mpv_wait_event" -> event(events.poll(5, TimeUnit.SECONDS) ?: Triple(MpvConst.EVENT_NONE, 0, 0L))
                 "mpv_render_context_create" -> { (a[0] as PointerByReference).value = Pointer(0x2000); 0 }
                 "mpv_render_context_update" -> 0L
                 "mpv_client_api_version" -> NativeLong(2L shl 16)
@@ -67,6 +97,7 @@ class MpvVideoTest {
 
     private val fake = Fake()
     private val tracks: MutableList<List<FileSubtitle>> = Collections.synchronizedList(mutableListOf())
+    private val failed: MutableList<Pair<SubtitleOption, String>> = Collections.synchronizedList(mutableListOf())
     private var video: MpvVideo? = null
 
     private fun events(style: SubtitleStyle = SubtitleStyle(), chosen: SubtitleOption? = null) = object : VideoEvents {
@@ -77,6 +108,9 @@ class MpvVideoTest {
         override fun ready(durationMs: Long?, audio: List<AudioOption>) {}
         override fun subtitleTracks(tracks: List<FileSubtitle>) {
             this@MpvVideoTest.tracks += tracks
+        }
+        override fun subtitleFailed(option: SubtitleOption, why: String) {
+            failed += option to why
         }
         override fun position(ms: Long) {}
         override fun playing(on: Boolean) {}
@@ -118,8 +152,8 @@ class MpvVideoTest {
         until("set up") { fake.calls.any { it.startsWith("loadfile") } }
         assertEquals("1.3", fake.options["sub-scale"])
         assertEquals("#FFE14D", fake.options["sub-color"])
-        assertEquals("#000000", fake.options["sub-border-color"])
-        assertEquals("2", fake.options["sub-border-size"])
+        assertEquals("#000000", fake.options["sub-outline-color"])
+        assertEquals("2", fake.options["sub-outline-size"])
         assertEquals("scale", fake.options["sub-ass-override"])
         assertEquals("IBM Plex Sans Arabic", fake.options["sub-font"])
         assertEquals("yes", fake.options["embeddedfonts"])
@@ -135,7 +169,7 @@ class MpvVideoTest {
         trackList()
         open(events())
         until("set up") { fake.calls.any { it.startsWith("loadfile") } }
-        fake.events.put(MpvConst.EVENT_FILE_LOADED)
+        fake.post(MpvConst.EVENT_FILE_LOADED)
         until("tracks read") { tracks.isNotEmpty() }
         assertEquals(
             listOf(
@@ -156,14 +190,14 @@ class MpvVideoTest {
         until("sid 1") { "set sid=1" in fake.calls }
         val home = SubtitleOption(null, "en", SubtitleOption.Kind.Home, url = "http://127.0.0.1:1/x/stream/s1/subs/sidecar/en.vtt?sig=abc")
         assertTrue(v.selectSubtitle(home))
-        until("added") { fake.calls.any { it.startsWith("sub-add") } }
-        assertEquals("sub-add http://127.0.0.1:1/x/stream/s1/subs/sidecar/en.vtt?sig=abc select en en", fake.calls.first { it.startsWith("sub-add") })
+        until("added and shown") { fake.calls.last() == "set sid=9" }
+        assertEquals("async sub-add http://127.0.0.1:1/x/stream/s1/subs/sidecar/en.vtt?sig=abc auto en en", fake.calls.first { it.startsWith("async sub-add") })
         assertTrue(v.selectSubtitle(null))
         until("off") { fake.calls.last() == "set sid=no" }
         // the home's file again: by the id mpv gave it, not added twice
         v.selectSubtitle(home)
         until("by its id") { fake.calls.last() == "set sid=9" }
-        assertEquals(1, fake.calls.count { it.startsWith("sub-add") })
+        assertEquals(1, fake.calls.count { it.startsWith("async sub-add") })
         // an HLS rendition's cues are the Player's to draw
         assertFalse(v.selectSubtitle(SubtitleOption("Arabic", "ar", SubtitleOption.Kind.Stream)))
     }
@@ -173,7 +207,7 @@ class MpvVideoTest {
         trackList()
         open(events(chosen = SubtitleOption(null, "ar", SubtitleOption.Kind.File, trackId = "3", picture = true)))
         until("set up") { fake.calls.any { it.startsWith("loadfile") } }
-        fake.events.put(MpvConst.EVENT_FILE_LOADED)
+        fake.post(MpvConst.EVENT_FILE_LOADED)
         until("shown again") { "set sid=3" in fake.calls }
         // a picture track is drawn as authored: no scale of the Player's
         assertTrue(fake.calls.toString(), "set sub-scale=1.0" in fake.calls)
@@ -197,5 +231,52 @@ class MpvVideoTest {
         until("drawn") { fake.calls.any { it.startsWith("osd-overlay 1 ass-events") } }
         val c = fake.calls.first { it.startsWith("osd-overlay 1 ass-events") }
         assertTrue(c, c.contains("\\1c&H4DE1FF&") && c.contains("\\fs42"))
+    }
+
+    @Test
+    fun aHomesFileMpvCannotAddIsReportedAndTheTrackBeforeItStays() {
+        fake.addResult = -13
+        val v = open(events())
+        until("set up") { fake.calls.any { it.startsWith("loadfile") } }
+        v.selectSubtitle(SubtitleOption(null, "ar", SubtitleOption.Kind.File, trackId = "1"))
+        until("sid 1") { "set sid=1" in fake.calls }
+        val home = SubtitleOption(null, "en", SubtitleOption.Kind.Home, url = "http://127.0.0.1:1/x/stream/s1/subs/sidecar/en.vtt?sig=abc")
+        v.selectSubtitle(home)
+        until("reported") { failed.isNotEmpty() }
+        assertEquals(home, failed.single().first)
+        // nothing else was put on screen: the file's track stays
+        assertEquals("set sid=1", fake.calls.last { it.startsWith("set sid=") })
+        // asked again, it is added again (nothing was kept for it)
+        fake.addResult = 0
+        v.selectSubtitle(home)
+        until("added") { fake.calls.last() == "set sid=9" }
+        assertEquals(2, fake.calls.count { it.startsWith("async sub-add") })
+    }
+
+    @Test
+    fun aHomesFileAddedAfterAnotherChoiceIsNotShown() {
+        // the reply comes after the person chose a file's track: that track stays
+        val v = open(events())
+        until("set up") { fake.calls.any { it.startsWith("loadfile") } }
+        fake.properties["track-list/count"] = "0"
+        val home = SubtitleOption(null, "en", SubtitleOption.Kind.Home, url = "http://127.0.0.1:1/x/en.vtt")
+        val held = java.util.concurrent.CountDownLatch(1)
+        fake.replyAfter = held
+        v.selectSubtitle(home)
+        v.selectSubtitle(SubtitleOption(null, "ar", SubtitleOption.Kind.File, trackId = "1"))
+        until("sid 1") { "set sid=1" in fake.calls }
+        held.countDown()
+        Thread.sleep(300)
+        assertFalse(fake.calls.toString(), "set sid=9" in fake.calls)
+    }
+
+    @Test
+    fun aForcedPictureTrackMpvPickedIsDrawnAsAuthored() {
+        trackList()
+        fake.properties["track-list/3/selected"] = "yes"
+        open(events(SubtitleStyle(SubtitleSize.Large)))
+        until("set up") { fake.calls.any { it.startsWith("loadfile") } }
+        fake.post(MpvConst.EVENT_FILE_LOADED)
+        until("unscaled") { "set sub-scale=1.0" in fake.calls }
     }
 }

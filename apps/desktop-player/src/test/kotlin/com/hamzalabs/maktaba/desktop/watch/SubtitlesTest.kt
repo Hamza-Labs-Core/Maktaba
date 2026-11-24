@@ -24,11 +24,12 @@ class SubtitlesTest {
     /** The home's list: a sidecar in English, its transcription in Arabic, and the file's Arabic track again. */
     private val home = listOf(
         VideoSubtitle(7, "en", "srt", "external"),
-        VideoSubtitle(8, "ar", "vtt", "auto"),
+        VideoSubtitle(8, "ar", "vtt", "generated"),
         VideoSubtitle(9, "ar", "srt", "embedded"),
     )
 
-    private fun url(s: VideoSubtitle) = "http://127.0.0.1:1/x/stream/s1/" + if (s.source == "auto") "subs/auto.vtt" else "subs/sidecar/${s.language}.vtt"
+    /** As Playback makes them: a file beside the video and the transcription, both at the session's sidecar path. */
+    private fun url(s: VideoSubtitle) = "http://127.0.0.1:1/x/stream/s1/subs/sidecar/${s.language}.vtt"
 
     @Test
     fun t01_theHomesFirstThenTheFilesOwnWithoutEmbeddedOrForced() {
@@ -41,7 +42,8 @@ class SubtitlesTest {
             menu.map { it.kind to it.language },
         )
         assertEquals("http://127.0.0.1:1/x/stream/s1/subs/sidecar/en.vtt", menu[0].url)
-        assertEquals("http://127.0.0.1:1/x/stream/s1/subs/auto.vtt", menu[1].url)
+        assertEquals("http://127.0.0.1:1/x/stream/s1/subs/sidecar/ar.vtt", menu[1].url)
+        assertEquals(listOf("external", "generated"), menu.take(2).map { it.source })
         assertEquals(listOf("1", "2", "3"), menu.drop(2).map { it.trackId })
         assertEquals(listOf(false, false, true), menu.drop(2).map { it.picture })
 
@@ -50,6 +52,21 @@ class SubtitlesTest {
         // the two Arabic rows (the home's transcription, the file's SRT) share a name: each gets its number
         assertEquals(listOf("English", "Arabic (2)", "Arabic (3)", "English (styled)", "Track 5"), t.subtitleNames(menu))
         assertEquals("في الملف · صورة", Texts(Lang.Ar).subtitleNote(menu[4]))
+    }
+
+    @Test
+    fun rowsAtOneAddressAreOneEntryAndARowWithNoLanguageIsLeftOut() {
+        val rows = listOf(
+            VideoSubtitle(1, "ar", "srt", "external"),
+            VideoSubtitle(2, "ar", "vtt", "external"),
+            VideoSubtitle(3, "ar", "vtt", "generated"),
+            VideoSubtitle(4, "en", "vtt", "generated"),
+            VideoSubtitle(5, "", "srt", "external"),
+            VideoSubtitle(6, "fr", "srt", "something-new"),
+        )
+        val menu = directSubtitles(rows, emptyList(), ::url)
+        assertEquals(listOf("ar", "en"), menu.map { it.language })
+        assertEquals(listOf("external", "generated"), menu.map { it.source })
     }
 
     @Test

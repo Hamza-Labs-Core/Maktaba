@@ -326,7 +326,7 @@ class BrowseTest {
 
         // story 13.20: the subtitles the home keeps, by source
         val subs = client().videoSubtitles(video)
-        assertEquals(listOf("external", "auto"), subs.map { it.source })
+        assertEquals(listOf("external", "generated"), subs.map { it.source })
         assertEquals(listOf("en", "ar"), subs.map { it.language })
         assertTrue(subs[1].isDefault)
 

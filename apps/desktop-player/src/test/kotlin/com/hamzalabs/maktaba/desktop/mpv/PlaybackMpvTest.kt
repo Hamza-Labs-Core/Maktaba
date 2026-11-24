@@ -73,8 +73,11 @@ class PlaybackMpvTest {
     private val players = object : Players {
         override val profile = MPV_PROFILE
         override val drawsSubtitles = true
-        override suspend fun open(url: String, fromMs: Long, autoplay: Boolean, events: VideoEvents): Video =
-            FakeMpv(events).also { made += it }
+        override suspend fun open(url: String, fromMs: Long, autoplay: Boolean, events: VideoEvents): Video {
+            // as mpv does: an HLS stream's master is read through the proxy
+            if (".m3u8" in url) okhttp3.OkHttpClient().newCall(okhttp3.Request.Builder().url(url).build()).execute().close()
+            return FakeMpv(events).also { made += it }
+        }
     }
 
     /** JavaFX's, as the older engine (story 13.21): the `desktop-player` profile. */
@@ -268,7 +271,7 @@ class PlaybackMpvTest {
     fun t04_theMenuInDirectPlayAndWhatMpvIsAskedToDraw() {
         home.answer(
             "GET /api/videos/v1/subtitles",
-            """{"items":[{"id":7,"language":"en","format":"srt","source":"external"},{"id":8,"language":"ar","format":"vtt","source":"auto"},{"id":9,"language":"ar","format":"srt","source":"embedded"}]}""",
+            """{"items":[{"id":7,"language":"en","format":"srt","source":"external"},{"id":8,"language":"ar","format":"vtt","source":"generated"},{"id":9,"language":"ar","format":"srt","source":"embedded"}]}""",
         )
         val p = playDirect()
         until("the menu") { playback.subtitleOptions.size == 5 }
@@ -280,7 +283,8 @@ class PlaybackMpvTest {
         // the home's, through the stream proxy, under the session's path, signed with its stream_sig
         val sidecar = menu[0].url!!
         assertTrue(sidecar, sidecar.startsWith("http://127.0.0.1:") && sidecar.endsWith("/stream/s1/subs/sidecar/en.vtt?sig=SIG1"))
-        assertTrue(menu[1].url!!, menu[1].url!!.endsWith("/stream/s1/subs/auto.vtt?sig=SIG1"))
+        // Maktaba's transcription is served at the same path, by language
+        assertTrue(menu[1].url!!, menu[1].url!!.endsWith("/stream/s1/subs/sidecar/ar.vtt?sig=SIG1"))
         assertEquals(listOf("1", "2", "3"), menu.drop(2).map { it.trackId })
         // subtitles off by default: nothing chosen
         assertEquals(emptyList<SubtitleOption?>(), p.subtitles.toList())
@@ -312,7 +316,7 @@ class PlaybackMpvTest {
     @Test
     fun theHomesComesFirstWhenTwoShareALanguage() {
         settings = PlaybackValues(subtitlesOn = true, subtitleLanguage = SubtitleLanguage.Arabic)
-        home.answer("GET /api/videos/v1/subtitles", """{"items":[{"id":8,"language":"ar","format":"vtt","source":"auto"}]}""")
+        home.answer("GET /api/videos/v1/subtitles", """{"items":[{"id":8,"language":"ar","format":"vtt","source":"generated"}]}""")
         val p = playDirect(listOf(FileSubtitle("1", null, "ara", "subrip")))
         until("on") { p.subtitles.isNotEmpty() }
         assertEquals(SubtitleOption.Kind.Home, p.subtitles.single()!!.kind)
@@ -363,5 +367,65 @@ class PlaybackMpvTest {
         home.answer("GET /api/videos/v2/subtitles", """{"items":[]}""")
         onMain { playback.play(PlayRequest("v2", "v2", startSec = 0)) }
         until("next styled") { playback.subtitleStyle == SubtitleStyle() }
+    }
+
+    @Test
+    fun aHomesFileThePlayerCannotAddLeavesTheChoiceBeforeIt() {
+        home.answer("GET /api/videos/v1/subtitles", """{"items":[{"id":7,"language":"en","format":"srt","source":"external"}]}""")
+        val p = playDirect()
+        until("the menu") { playback.subtitleOptions.size == 4 }
+        val menu = onMain { playback.subtitleOptions }
+        onMain { playback.chooseSubtitle(menu[1]) }
+        onMain { playback.chooseSubtitle(menu[0]) }
+        p.events.subtitleFailed(menu[0], "loading failed")
+        until("back") { playback.subtitle == menu[1] }
+        assertEquals("ara", playback.choice.textLanguage)
+        assertTrue(logged.toString(), logged.any { it.startsWith("subtitles: en from the home could not be shown: loading failed") })
+    }
+
+    @Test
+    fun theHomesAddressesAreTheSessionsInUseAfterTheWait() {
+        // the file's tracks come late: the addresses are made then, for the session then playing
+        home.answer("GET /api/videos/v1/subtitles", """{"items":[{"id":7,"language":"en","format":"srt","source":"external"}]}""")
+        home.answer("GET /api/stream/capabilities", """{"client_profiles":["desktop-mpv"]}""")
+        onMain { playback.play(PlayRequest("v1", "v1", startSec = 0)) }
+        until("playing") { playback.player != null }
+        onMain { playback.chooseQuality(com.hamzalabs.maktaba.core.playback.QualityOption(720, 3000)) }
+        until("reopened") { made.size == 2 && playback.player === made[1] }
+        made[1].events.subtitleTracks(fileTracks)
+        until("the menu") { playback.subtitleOptions.size == 4 }
+        val url = onMain { playback.subtitleOptions }[0].url!!
+        assertTrue(url, url.endsWith("/stream/s2/subs/sidecar/en.vtt?sig=SIG2"))
+    }
+
+    @Test
+    fun aReopenAsHlsOffersTheMastersSubtitlesInsteadOfTheFilesOwn() {
+        home.answer("GET /api/videos/v1/subtitles", """{"items":[{"id":7,"language":"en","format":"srt","source":"external"}]}""")
+        home.answer("POST /api/stream/sessions") {
+            val n = opened.incrementAndGet()
+            if (n == 1) TestHome.json("""{"session_id":"s1","mode":"direct","direct_url":"/stream/s1.mkv","stream_sig":"SIG1"}""")
+            else TestHome.json("""{"session_id":"s$n","mode":"transcode","manifest_url":"/stream/s$n/master.m3u8","stream_sig":"SIG$n"}""")
+        }
+        val master = "#EXTM3U\n#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID=\"subs\",NAME=\"Arabic\",LANGUAGE=\"ar\",URI=\"subs/ar.m3u8\"\n" +
+            "#EXT-X-STREAM-INF:BANDWIDTH=3000000,SUBTITLES=\"subs\"\n720p.m3u8\n"
+        home.answer("GET /stream/s2/master.m3u8") {
+            mockwebserver3.MockResponse.Builder().code(200).setHeader("Content-Type", "application/vnd.apple.mpegurl").body(master).build()
+        }
+        home.answer("GET /stream/s2/720p.m3u8") {
+            mockwebserver3.MockResponse.Builder().code(200).setHeader("Content-Type", "application/vnd.apple.mpegurl")
+                .body("#EXTM3U\n#EXTINF:6,\nseg0.ts\n").build()
+        }
+        val p = playDirect()
+        until("the menu") { playback.subtitleOptions.size == 4 }
+        val arabic = onMain { playback.subtitleOptions }.first { it.trackId == "1" }
+        onMain { playback.chooseSubtitle(arabic) }
+        // a quality cap: the home converts, and the stream is HLS
+        onMain { playback.chooseQuality(com.hamzalabs.maktaba.core.playback.QualityOption(720, 3000)) }
+        until("the master's menu") { playback.subtitleOptions.map { it.kind } == listOf(SubtitleOption.Kind.Stream) }
+        assertEquals("ar", onMain { playback.subtitleOptions }.single().language)
+        // the file's track left with the file; the person's language picks the master's rendition
+        until("Arabic again") { playback.subtitle?.kind == SubtitleOption.Kind.Stream }
+        assertEquals(null, made.last().events.subtitleChoice)
+        assertTrue(p.subtitles.isNotEmpty())
     }
 }

@@ -190,13 +190,15 @@ class MpvRealTest {
     }
 
     /** A drawn line: its box in the lower part of the picture, and the mean colour of its brightest pixels. */
-    private data class Line(val pixels: Int, val height: Int, val r: Int, val g: Int, val b: Int)
+    private data class Line(val pixels: Int, val height: Int, val r: Int, val g: Int, val b: Int, val green: Int = 0, val white: Int = 0)
 
     private fun line(img: java.awt.image.BufferedImage): Line {
         var n = 0
         var top = Int.MAX_VALUE
         var bottom = -1
         var core = 0
+        var green = 0
+        var white = 0
         var r = 0L
         var g = 0L
         var b = 0L
@@ -209,6 +211,8 @@ class MpvRealTest {
                 top = minOf(top, y)
                 bottom = maxOf(bottom, y)
             }
+            if (pg > 180 && pr < 100 && pb < 100) green++
+            if (pr > 200 && pg > 200 && pb > 200) white++
             if (m > 200) {
                 core++
                 r += pr
@@ -216,11 +220,21 @@ class MpvRealTest {
                 b += pb
             }
         }
-        return if (core == 0) Line(n, 0, 0, 0, 0) else Line(n, bottom - top + 1, (r / core).toInt(), (g / core).toInt(), (b / core).toInt())
+        return if (core == 0) Line(n, 0, 0, 0, 0, green, white)
+        else Line(n, bottom - top + 1, (r / core).toInt(), (g / core).toInt(), (b / core).toInt(), green, white)
     }
 
     /** Chooses [title]'s subtitle (null: the home's sidecar) and returns the frame once a line is on it. */
-    private fun drawn(p: Playback, title: String?): java.awt.image.BufferedImage {
+    /**
+     * How each track's line is told apart on screen, chosen in the order SRT, ASS, PGS (so the
+     * frame is never the track's before): the ASS is green, the others are not.
+     */
+    private fun looks(title: String): (Line) -> Boolean = when (title) {
+        "ASS" -> { l -> l.green > 100 }
+        else -> { l -> l.pixels > 300 && l.green == 0 }
+    }
+
+    private fun drawn(p: Playback, title: String?, shows: (Line) -> Boolean = { it.pixels > 300 }): java.awt.image.BufferedImage {
         runBlocking {
             withContext(main) {
                 val o = if (title == null) p.subtitleOptions.first { it.kind == com.hamzalabs.maktaba.desktop.watch.SubtitleOption.Kind.Home }
@@ -237,7 +251,7 @@ class MpvRealTest {
             if (f != null) {
                 val img = f.toAwtImage()
                 last = line(img)
-                if (last.pixels > 300) return img
+                if (shows(last)) return img
             }
             Thread.sleep(50)
         }
@@ -277,12 +291,16 @@ class MpvRealTest {
         val names = runBlocking { withContext(main) { p.subtitleOptions.map { it.kind to (it.name ?: it.language) } } }
         println("13.20 T05 menu: $names")
         for (title in listOf("SRT", "ASS", "PGS")) {
-            val img = drawn(p, title)
+            val img = drawn(p, title, looks(title))
             println("13.20 T05 $title: ${line(img)}")
             reference("mpv-subs-${title.lowercase()}", img)
         }
-        val sidecar = drawn(p, null)
+        // the sidecar after the ASS: its own white line shows, and the ASS's green one is gone
+        val ass = line(drawn(p, "ASS", looks("ASS")))
+        assertTrue("the ASS line is green: $ass", ass.green > 100)
+        val sidecar = drawn(p, null) { it.green == 0 && it.white > 300 }
         println("13.20 T05 sidecar: ${line(sidecar)}")
+        reference("mpv-subs-sidecar", sidecar)
         assertTrue("the sidecar was asked for through the proxy, signed", home.seen.any { it.url.encodedPath == "/stream/s1/subs/sidecar/en.vtt" && it.url.queryParameter("sig") == "sig1" })
     }
 
@@ -290,9 +308,9 @@ class MpvRealTest {
     fun s13_20_t06_largeAndYellowApplyToTextWithoutItsOwnStyle() {
         val lib = lib()
         val plain = playSubtitled(lib, com.hamzalabs.maktaba.core.playback.PlaybackValues())
-        val srt = line(drawn(plain, "SRT"))
-        val ass = line(drawn(plain, "ASS"))
-        val pgs = line(drawn(plain, "PGS"))
+        val srt = line(drawn(plain, "SRT", looks("SRT")))
+        val ass = line(drawn(plain, "ASS", looks("ASS")))
+        val pgs = line(drawn(plain, "PGS", looks("PGS")))
         runBlocking { withContext(main) { plain.close() } }
         opened.set(0)
         val big = playSubtitled(
@@ -302,9 +320,9 @@ class MpvRealTest {
                 subtitleColour = com.hamzalabs.maktaba.core.playback.SubtitleColour.Yellow,
             ),
         )
-        val srtBig = line(drawn(big, "SRT"))
-        val assBig = line(drawn(big, "ASS"))
-        val pgsBig = line(drawn(big, "PGS"))
+        val srtBig = line(drawn(big, "SRT", looks("SRT")))
+        val assBig = line(drawn(big, "ASS", looks("ASS")))
+        val pgsBig = line(drawn(big, "PGS", looks("PGS")))
         println("13.20 T06 SRT $srt -> $srtBig; ASS $ass -> $assBig; PGS $pgs -> $pgsBig")
         // the SRT: white, then yellow (#FFE14D: red and green high, blue low), about 1.3 times as tall
         assertTrue("SRT white: $srt", srt.b > 200 && srt.g > 200)

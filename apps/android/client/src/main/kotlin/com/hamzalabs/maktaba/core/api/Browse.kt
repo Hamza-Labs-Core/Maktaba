@@ -372,9 +372,10 @@ internal data class ChaptersDoc(@Serializable(with = LenientList::class) val ite
 
 /**
  * A subtitle the home keeps for a video (`GET /api/videos/{id}/subtitles`): [source] is
- * `external` (a sidecar file beside the video), `auto` (Maktaba's transcription) or `embedded`
- * (a track of the file itself). A session serves the first two under its own path
- * (`/stream/{session}/subs/sidecar/{language}.vtt`, `/stream/{session}/subs/auto.vtt`).
+ * `external` (a sidecar file beside the video), `generated` (Maktaba's transcription) or
+ * `embedded` (a track of the file itself), as `subtitle_files.source`. A session serves the
+ * first two at its own `/stream/{session}/subs/sidecar/{language}.vtt` (the file beside the
+ * video first, else the stored copy).
  */
 @Serializable
 data class VideoSubtitle(
