@@ -82,6 +82,18 @@ final class CastController {
             UserDefaults.standard.removeObject(forKey: interstitialKey)
             return CastController(context: FakeCastContext(empty: fake == "fake-empty"))
         }
+        #if canImport(GoogleCast) && os(iOS)
+        // `-maktaba-cast real:<app id>`: the real Google Cast SDK with that receiver, whatever
+        // the build names, so a UI test drives the SDK itself (its setup, discovery, the
+        // picker) before Maktaba's receiver is registered: CI passes Google's public Default
+        // Media Receiver. Debug builds only; a Release build casts to its own receiver or not
+        // at all
+        if let real = ShellLaunch.value(of: "-maktaba-cast", in: arguments), real.hasPrefix("real:") {
+            UserDefaults.standard.removeObject(forKey: interstitialKey)
+            let id = CastConfig(receiverAppID: String(real.dropFirst("real:".count)))
+            if id.isEnabled { return CastController(context: GoogleCastContext.make(appID: id.receiverAppID)) }
+        }
+        #endif
         #endif
         #if canImport(GoogleCast) && os(iOS)
         if config.isEnabled {

@@ -110,6 +110,27 @@ final class PlayerCastUITests: PlayerUITestCase {
         shot("cast-empty")
     }
 
+    /// The real Google Cast SDK, not the fake: set up with Google's public Default Media
+    /// Receiver (`CC1AD845`, the one id every Cast device knows), it starts, discovers after
+    /// the local network screen, and with no TV on the runner's network the picker says none
+    /// was found and suggests AirPlay. What a person sees before their first cast, on the SDK
+    /// the App Store build ships; casting to a TV needs a device (docs/stores/cast.md).
+    func testTheGoogleCastSDKStartsAndSaysWhenNoTVIsFound() {
+        openWatch("en", cast: "real:\(Self.defaultMediaReceiver)")
+        tapCast()
+        let go = app.buttons["cast.interstitial.continue"]
+        XCTAssertTrue(go.waitForExistence(timeout: 10), "the local network screen before the first cast")
+        go.tap()
+        RunLoop.current.run(until: Date().addingTimeInterval(6))
+        let empty = element("cast.picker.empty")
+        XCTAssertTrue(empty.waitForExistence(timeout: 40), "the SDK's search ends with the empty state")
+        XCTAssertTrue(empty.label.contains("AirPlay"))
+        XCTAssertTrue(element("player.surface").exists, "the video still plays on the phone")
+    }
+
+    /// Google's Default Media Receiver: public, registered by Google, no console needed.
+    static let defaultMediaReceiver = "CC1AD845"
+
     func testAHomeWithNoAddressTheTVCanReachHasNoCastButton() {
         openWatch("en", discovery: false)
         showControls()
