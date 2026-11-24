@@ -195,7 +195,7 @@ CASES: dict[str, tuple[list[str], set[str], dict[str, set[str]]]] = {
     "the language files run the catalog's words check": (
         ["web/src/i18n/ar.json"],
         {"images", "unit", "e2e", "build-artifacts", "plugins", "website", "tv-web", "desktop-frame"},
-        {"lint": {"web", "catalog"}, "unit": {"web"}},
+        {"lint": {"web", "catalog"}, "unit": {"web", "tokens"}},
     ),
     "web only": (
         ["web/src/pages/Home.tsx"],

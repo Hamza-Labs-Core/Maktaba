@@ -118,6 +118,11 @@ _tokens: &tokens
   - 'web/packages/website/design/**'
   - 'web/packages/website/static/fonts/**'
   - 'web/packages/website/copy/**'
+  # the help mockups list the app's help topics by their titles (a topic removed without
+  # them being made again turned main red, 2026-11-24)
+  - 'web/src/help/topics.ts'
+  - 'web/src/i18n/en.json'
+  - 'web/src/i18n/ar.json'
   - 'web/public/icons/icon-192.png'
   # the store gallery mockups' stand-in screens and art (story 60.14): the check that each
   # still exists and is not from the old demo library
