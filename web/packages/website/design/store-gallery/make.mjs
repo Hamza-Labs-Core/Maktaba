@@ -111,10 +111,9 @@ function lockup(lang) {
   return `<span class="wm">${icon(64)}${lang === "ar" ? ar : en}<span class="rule"></span>${lang === "ar" ? en : ar}</span>`;
 }
 
-/** One captioned shot. */
-export function captioned({ W, H, lang, beat, surface }) {
+/** One captioned shot: the screen is `src` (the full set's capture), or the beat's stand-in. */
+export function captioned({ W, H, lang, beat, surface, src = standinOf(beat, surface, lang) }) {
   const c = beat[lang];
-  const src = standinOf(beat, surface, lang);
   const screen = src
     ? `<div class="screen" data-nomirror><img src="${src}" alt=""></div>`
     : `<div class="screen todo" style="--ratio:${RATIO[surface] ?? "16 / 9"}" data-nomirror><span>full set: ${esc(beat.capture?.[surface] ?? beat.id)}<br>(${esc(surface)})</span></div>`;
@@ -125,8 +124,7 @@ export function captioned({ W, H, lang, beat, surface }) {
 }
 
 /** One unaltered screen (the TV stores). */
-export function plain({ W, H, lang, beat, surface }) {
-  const src = standinOf(beat, surface, lang);
+export function plain({ W, H, lang, beat, surface, src = standinOf(beat, surface, lang) }) {
   return `<div class="shot plain" lang="${lang}" style="--w:${W}px;--h:${H}px;--u:${H}px">${src ? `<img src="${src}" alt="">` : ""}</div>`;
 }
 
@@ -146,10 +144,17 @@ export function tile({ W, H, lang, both = false, bare = false }) {
 export const art = ({ W, H, x = "50%", size = "cover" }) =>
   `<div class="shot art" style="--w:${W}px;--h:${H}px;--art-x:${x};--art-size:${size}"></div>`;
 
-/** The feature graphic (Google Play 1024 x 500, Amazon's promotional image). */
-export function feature({ W, H, lang, app, surface = "appletv" }) {
-  const beat = BEATS.apps[app === "tv" ? "tv" : app].beats[0];
-  const src = standinOf(BEATS.apps.tv.beats[0], surface, lang);
+/** The feature graphic (Google Play 1024 x 500, Amazon's promotional image): the app's first
+ * headline, and `src` (a landscape screen of the app; the TV's home by default). */
+export function feature({
+  W,
+  H,
+  lang,
+  app,
+  surface = "appletv",
+  src = standinOf(BEATS.apps.tv.beats[0], surface, lang),
+}) {
+  const beat = BEATS.apps[app].beats[0];
   const l = {
     ...layout(W, H, lang),
     u: H,

@@ -129,3 +129,51 @@ was looked at before use. Three kinds of screen were left out:
 
 The full set (part 2) captures the new demo library, and its pull request lists every image
 with what it shows.
+
+## Part 2: the full set
+
+`compose.mjs` draws every image of every listing from the apps' captures. The approved style
+is used as is (make.mjs's shots, `gallery.css`).
+
+```
+node web/packages/website/design/store-gallery/compose.mjs --captures DIR --out DIR [--only id,id] [--allow-missing]
+gh workflow run store-gallery.yml --ref main -f run_id=<run>     # in CI, as an artifact
+```
+
+- **Captures:** PNGs named `<surface>-<screen>-<lang>.png`, the names the shot tests write;
+  the Remote's are `<surface>-remote-<screen>-<lang>.png`. The Android and TV references come
+  from the checkout (Roborazzi `demo/`), the Apple ones from the run's `product-shots-*`
+  artifacts, and any other source from `store-shots-*`.
+- **Output** (`store-gallery-<sha>`, 260 images):
+  - `apple/<listing>/screenshots/<locale>/` (fastlane `deliver`);
+  - `google/<listing>/metadata/android/<locale>/images/` (fastlane `supply`);
+  - `<store>/<listing>/<lang or all>/<asset>/` for Amazon, Roku, Samsung and LG;
+  - a contact sheet per listing, `report.json`, and `checklist.md` (one line per image, filled
+    in by the person who looks at each).
+- **Checks:** each image is the store's exact size, in a format the store takes, without alpha
+  where refused and under its byte limit (PNG, else the best JPEG that fits: Samsung's 500 KB),
+  with no metadata. Each set's count is inside the store's, and each caption within 20%.
+- **Tests:** `tests/compose.test.mjs` runs on synthetic captures in CI's `store gallery
+(compose)` job, in the Playwright image.
+
+### Captures
+
+92 distinct screens make the 260 images. 18 are captured today on the demo library:
+
+- iPhone, iPad: home and player;
+- Mac: library and player;
+- Apple TV, Android TV and Fire TV: home, the series or library, player and guide;
+- Android phone: home.
+
+`node -e` over `plan()` lists the rest. Each is a shot test to add on the new demo library:
+
+| Surface                                   | Screens to add                                                                          |
+| ----------------------------------------- | --------------------------------------------------------------------------------------- |
+| iPhone, iPad (Player)                     | search, series, live, parental                                                          |
+| iPhone, iPad (Remote)                     | dashboards, attention, queue, approve-code, updates                                     |
+| Mac                                       | search, series, live                                                                    |
+| Android phone, 7" and 10" tablet (Player) | search, series, live, player, ask-a-parent (and every screen on the 7" and 10" tablets) |
+| Android phone and tablets (Remote)        | dashboards, attention, queue, approve-code, updates                                     |
+| Apple TV, Android TV, Fire TV             | search and code (and the series on Android TV)                                          |
+| Roku                                      | every screen (its screen tests on the demo library)                                     |
+| Samsung, LG                               | every screen (the TV web UI the launchers open, captured by the web shots job)          |

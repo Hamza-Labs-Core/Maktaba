@@ -1085,6 +1085,8 @@ devportal:
 website:
   - *ci
   - 'web/packages/website/**'
+  # the store galleries' composer, run by hand (story 60.14); its test is the website's job
+  - '.github/workflows/store-gallery.yml'
   - 'web/packages/install/**'
   - 'web/vite.install.config.ts'
   - 'web/src/help/content/**'
