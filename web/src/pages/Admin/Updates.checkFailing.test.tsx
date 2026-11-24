@@ -156,7 +156,9 @@ describe("System health: the update check", () => {
     );
     expect(
       itemReason(item("update_check_failed_once", { code: "http_error" }), en, fmt, n, date)
-    ).toBe("The last update check failed: GitHub answered with an error. It is tried again in 6 hours.");
+    ).toBe(
+      "The last update check failed: GitHub answered with an error. It is tried again in 6 hours."
+    );
   });
 
   it("is named and worded in Arabic", () => {

@@ -195,7 +195,8 @@ export function StatusBanner({
           <ul className="mkt-health-banner__list">
             {culprits.slice(0, 4).map((i) => (
               <li key={i.id}>
-                <strong>{bidiIsolate(itemName(i, t))}</strong>: {itemReason(i, t, fmt, n, formatDate)}{" "}
+                <strong>{bidiIsolate(itemName(i, t))}</strong>:{" "}
+                {itemReason(i, t, fmt, n, formatDate)}{" "}
                 <HelpLink
                   to={systemHealthHelp(i.help || i.kind)}
                   label={t("health.learnMoreAbout", { name: itemName(i, t) })}

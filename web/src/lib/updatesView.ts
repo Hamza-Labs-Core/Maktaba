@@ -284,4 +284,3 @@ export function checkFailedWhy(code: string | undefined, t: (k: string) => strin
   const s = t(key);
   return code && s !== key ? s : t("updates.checkFailed.unreachable");
 }
-
