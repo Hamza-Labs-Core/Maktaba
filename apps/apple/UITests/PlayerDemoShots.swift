@@ -1,7 +1,8 @@
 import XCTest
 
 /// The product screenshots of the Player on iPhone and iPad (story 60.09): Home, Curiosity's
-/// page and the player with Arabic subtitles, in English and in Arabic, dark, on the demo
+/// page and the player with Arabic subtitles; and the store gallery's (story 60.14): Search,
+/// the series Caminandes, Live TV and a guardian's Family; in English and in Arabic, dark, on the demo
 /// library (`MockHome(demo:)`, from `tests/fixtures/demo-library/`) with its clock pinned
 /// (`library.json`'s noon; Home's On now row, drawn against the device's clock, counts from
 /// now's quarter hour).
@@ -86,6 +87,103 @@ final class PlayerDemoShots: PlayerUITestCase {
             }
             XCTAssertGreaterThanOrEqual(brightPixels(shot, in: area), 500, "the subtitle line")
             demoShot("player", shot)
+        }
+    }
+
+    // MARK: the store gallery's screens (story 60.14 part 2)
+
+    /// Search for the demo's query ("Mars", «المريخ»): Curiosity among the titles, and the
+    /// lines that say it under In the transcript.
+    func testSearch() throws {
+        for language in ["en", "ar"] {
+            try demo(language)
+            launchSignedIn(language, section: "search")
+            XCTAssertTrue(element("screen.search").waitForExistence(timeout: 20), "Search")
+            let field = app.searchFields.firstMatch
+            XCTAssertTrue(field.waitForExistence(timeout: 10), "the search field")
+            field.typeExactly(language == "ar" ? "المريخ" : "Mars", in: app)
+            field.typeText("\n")
+            XCTAssertTrue(element("search.title.v-curiosity").waitForExistence(timeout: 20),
+                          "Curiosity among the titles; the home saw \(home.seen)")
+            XCTAssertTrue(element("search.transcripts").waitForExistence(timeout: 10), "In the transcript")
+            XCTAssertTrue(waitUntil(timeout: 10) { !self.app.keyboards.firstMatch.exists }, "the keyboard gone")
+            waitForArt(atLeast: 1)
+            demoShot("search")
+        }
+    }
+
+    /// The series Caminandes: its seasons and its episodes, with their pictures.
+    func testSeries() throws {
+        for language in ["en", "ar"] {
+            try demo(language)
+            launchSignedIn(language, section: "libraries", open: "series/s-caminandes")
+            XCTAssertTrue(element("screen.series").waitForExistence(timeout: 20), "Caminandes; the home saw \(home.seen)")
+            XCTAssertTrue(element("episode.v-llama-drama").waitForExistence(timeout: 20), "its first episode")
+            XCTAssertTrue(element("episode.v-gran-dillama").exists, "and the second")
+            waitForArt(atLeast: 3)
+            demoShot("series")
+        }
+    }
+
+    /// Live TV's Now: the demo's three channels, what is on each with its progress and what
+    /// is next. Drawn against the device's clock, so the demo's times count from now's quarter
+    /// hour.
+    func testLive() throws {
+        for language in ["en", "ar"] {
+            try demo(language, clock: MockHome.quarterHour())
+            launchSignedIn(language, section: "live")
+            XCTAssertTrue(element("screen.liveTV").waitForExistence(timeout: 20), "Live TV")
+            for channel in ["ch-space", "ch-kids", "ch-earth"] {
+                XCTAssertTrue(element("live.channel.\(channel)").waitForExistence(timeout: 20),
+                              "\(channel) on Now; the home saw \(home.seen)")
+            }
+            waitUntilHomeIsQuiet(2, timeout: 30)
+            demoShot("live")
+        }
+    }
+
+    /// Epic 57, a guardian's side: Family, with two children of the household and what they
+    /// asked for (a Caminandes episode, and more time). The account and the requests are this
+    /// test's own answers, built from the demo's titles; the children's names are boys'.
+    func testParental() throws {
+        for language in ["en", "ar"] {
+            try demo(language)
+            let (yusuf, omar) = language == "ar" ? ("يوسف", "عمر") : ("Yusuf", "Omar")
+            let title = home.demoVideo("v-big-buck-bunny")?["title"] as? String ?? ""
+            XCTAssertFalse(title.isEmpty, "the demo has Big Buck Bunny")
+            func json(_ s: String) -> String {
+                String(String(decoding: (try? JSONSerialization.data(withJSONObject: [s])) ?? Data(), as: UTF8.self).dropFirst().dropLast())
+            }
+            home.parental(#"{"restricted":false}"#, children: """
+            [{"id":"c-yusuf","username":\(json(yusuf)),"user_id":"c-yusuf","max_tier":0,"unrated":"hide","allow_only":false,"version":2,"updated_at":"{{now-864000}}"},
+             {"id":"c-omar","username":\(json(omar)),"user_id":"c-omar","max_tier":13,"unrated":"hide","allow_only":false,"version":3,"updated_at":"{{now-864000}}"}]
+            """)
+            home.stub("GET", "/api/parental/requests", body: """
+            {"requests":[
+             {"id":"r1","child_id":"c-yusuf","subject_kind":"video","subject_id":"v-big-buck-bunny","status":"pending",
+              "created_at":"{{now-600}}","expires_at":"{{now+86400}}","child":{"id":"c-yusuf","username":\(json(yusuf))},
+              "subject":{"kind":"video","id":"v-big-buck-bunny","title":\(json(title)),"poster_url":"/api/videos/v-big-buck-bunny/poster","tier":7}},
+             {"id":"r2","child_id":"c-omar","subject_kind":"time","subject_id":"30","minutes":30,"status":"pending",
+              "created_at":"{{now-1500}}","expires_at":"{{now+3600}}","child":{"id":"c-omar","username":\(json(omar))},
+              "subject":{"kind":"time","id":"30"}}]}
+            """)
+            home.stub("GET", "/api/me/parental-pin", body: #"{"set":true}"#)
+            home.stub("GET", "/api/parental/settings",
+                      body: #"{"enabled":true,"restricted_accounts":2,"can_disable":false,"child_devices":0,"child_device_notice":false}"#)
+            launchSignedIn(language, section: "profile")
+            let family = element("profile.family")
+            XCTAssertTrue(family.waitForExistence(timeout: 20), "Family, for a guardian; the home saw \(home.seen)")
+            waitUntilStill(family, timeout: 5)
+            open(family, shows: element("screen.family"), "the Family screen")
+            XCTAssertTrue(element("family.child.c-yusuf").waitForExistence(timeout: 10), "the first child")
+            XCTAssertTrue(element("family.child.c-omar").exists, "the second")
+            XCTAssertTrue(element("family.request.r1").waitForExistence(timeout: 10), "what Yusuf asked for")
+            XCTAssertTrue(element("family.request.r2").exists, "and Omar's more time")
+            XCTAssertTrue(waitUntil(timeout: 20) {
+                self.home.requests.contains { $0.method == "GET" && $0.path == "/api/videos/v-big-buck-bunny/poster" }
+            }, "the request's poster asked for; the home saw \(home.seen)")
+            waitUntilHomeIsQuiet(2, timeout: 30)
+            demoShot("parental")
         }
     }
 

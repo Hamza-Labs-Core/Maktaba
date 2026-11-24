@@ -650,7 +650,8 @@ jobs:
         run: |
           python3 tools/apple/sim-log.py "$UDID" "$RESULTS" remote || true
 
-      # its own artifact: product-shots-iphone is the Player's (the files are iphone-remote-<language>.png)
+      # its own artifact: product-shots-iphone is the Player's (the files are iphone-remote-<screen>-<language>.png,
+      # and the Queue's first name, iphone-remote-<language>.png)
       - name: Export the product screenshots
         if: "!cancelled()"
         run: python3 tools/apple/export-shots.py build/product-shots "$RESULTS/remote.xcresult"
@@ -671,5 +672,85 @@ jobs:
           path: |
             build/remote-shots
             build/remote-results
+          if-no-files-found: warn
+          retention-days: 14
+
+  # The Remote's product screenshots on iPad (RemoteDemoShotsUITests, stories 60.09 and 60.14:
+  # the store gallery's iPad Remote), on a throwaway iPad simulator made, settled and deleted
+  # here, as `product-shots-ipad-remote`. The diagnostics tests stay the iPhone job's.
+  remote-ui-ipad:
+    name: Remote UI tests (ipad)
+    if: inputs.player_ui
+    runs-on: xcode-27
+    timeout-minutes: 60
+    env:
+      DERIVED: ${{ github.workspace }}/build/remote-ui-derived
+      RESULTS: ${{ github.workspace }}/build/remote-results
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      # the newest released Xcode, 27 or later, or the job fails (tools/apple/xcode.py)
+      - name: Select Xcode
+        run: python3 tools/apple/xcode.py select --min 27
+
+      - name: Make, boot and settle the iPad simulator
+        run: |
+          set -euo pipefail
+          mkdir -p "$RESULTS"
+          udid=$(python3 tools/apple/xcode.py simulator ipad "maktaba-ci-${GITHUB_RUN_ID}-remote-ipad")
+          echo "UDID=$udid" >> "$GITHUB_ENV"
+          defaults write com.apple.iphonesimulator ConnectHardwareKeyboard -bool false
+          xcrun simctl bootstatus "$udid" -b > /dev/null
+          xcrun simctl ui "$udid" appearance dark
+          xcrun simctl spawn "$udid" log config --subsystem com.hamzalabs.maktaba.remote.tablet --mode "level:debug,persist:debug"
+          for key in KeyboardAutocorrection KeyboardPrediction KeyboardShowPredictionBar KeyboardCheckSpelling \
+                     KeyboardAutocapitalization KeyboardContinuousPathEnabled; do
+            xcrun simctl spawn "$udid" defaults write com.apple.Preferences "$key" -bool false
+          done
+          xcrun simctl spawn "$udid" defaults write com.apple.Preferences DidShowContinuousPathIntroduction -bool true
+          python3 tools/apple/sim-settle.py "$udid" "$RESULTS/remote-ipad-settle.log" --max 480
+
+      - name: Run the Remote's product screenshots
+        working-directory: apps/apple
+        run: |
+          set -euo pipefail
+          # at noon on a full status bar, as the iPhone's
+          xcrun simctl status_bar "$UDID" override --time 2026-06-15T12:00:00.000Z --dataNetwork wifi --wifiMode active \
+            --wifiBars 3 --cellularMode notSupported --batteryState charged --batteryLevel 100 \
+            || echo "::warning::the status bar override failed: the shots keep the simulator's own"
+          only=(-only-testing "Maktaba Remote iPad UITests/RemoteDemoShotsUITests")
+          printf '%s\n' "${only[@]}" > "$RESULTS/remote-ipad.selection"
+          xcodebuild test -project Maktaba.xcodeproj -scheme "Maktaba Remote iPad" \
+            -destination "id=$UDID" -derivedDataPath "$DERIVED" -resultBundlePath "$RESULTS/remote-ipad.xcresult" \
+            CODE_SIGNING_ALLOWED=NO "${only[@]}"
+
+      # the result bundle ran every selected test (as the Player's shards check theirs)
+      - name: Check every selected test ran
+        run: python3 tools/ci/xcresult_ran.py "remote ipad" "$RESULTS/remote-ipad.xcresult" "$RESULTS/remote-ipad.selection"
+
+      - name: Keep the app's log, delete the simulator
+        if: always() && env.UDID != ''
+        run: |
+          python3 tools/apple/sim-log.py "$UDID" "$RESULTS" remote-ipad || true
+
+      # the files are ipad-remote-<screen>-<language>.png
+      - name: Export the product screenshots
+        if: "!cancelled()"
+        run: python3 tools/apple/export-shots.py build/product-shots "$RESULTS/remote-ipad.xcresult"
+      - name: Keep the product screenshots
+        if: "!cancelled()"
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: product-shots-ipad-remote
+          path: build/product-shots
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Keep the results and the app's log
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: remote-ui-tests-ipad
+          path: build/remote-results
           if-no-files-found: warn
           retention-days: 14

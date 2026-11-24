@@ -1,7 +1,8 @@
 import XCTest
 
 /// The Apple TV's product screenshots (story 60.09): Home, the series Caminandes with its
-/// seasons, Curiosity playing, and the live channel guide, in English and in Arabic (the TV is
+/// seasons, Curiosity playing, and the live channel guide; and the store gallery's (story
+/// 60.14): Search and signing in with a code; in English and in Arabic (the TV is
 /// dark by default), with the Siri remote, on the demo library (`MockHome(demo:)`, from
 /// `tests/fixtures/demo-library/`). Each is an attachment named
 /// `shot-appletv-<screen>-<language>`, kept always: CI exports them from the result bundle as
@@ -108,7 +109,91 @@ final class TVDemoShotsUITests: XCTestCase {
         }
     }
 
+    // MARK: the store gallery's screens (story 60.14 part 2)
+
+    /// Search for the demo's query ("Mars", «المريخ»): typed with the TV's keyboard, Search
+    /// for, then down into the results (Curiosity among the titles, In the transcript under it).
+    func testSearch() throws {
+        for language in ["en", "ar"] {
+            try signIn(language)
+            let query = language == "ar" ? "المريخ" : "Mars"
+            openTab(language == "ar" ? "البحث" : "Search")
+            let field = app.searchFields.firstMatch
+            XCTAssertTrue(field.waitForExistence(timeout: 20), "the search field")
+            field.typeExactly(query, in: app) {
+                for _ in 0..<4 where !field.hasFocus {
+                    self.remote.press(.down)
+                    usleep(400_000)
+                }
+                if field.hasFocus { self.remote.press(.select) }
+                usleep(600_000)
+            }
+            let run = app.buttons["search.run"]
+            XCTAssertTrue(run.waitForExistence(timeout: 10), "Search for “\(query)”")
+            for _ in 0..<16 where !run.hasFocus {
+                remote.press(.down)
+                usleep(400_000)
+            }
+            XCTAssertTrue(run.hasFocus, "the focus on Search for")
+            remote.press(.select)
+            XCTAssertTrue(element("search.titles").waitForExistence(timeout: 20), "the results; the home saw \(seen)")
+            XCTAssertTrue(element("search.transcripts").waitForExistence(timeout: 10), "In the transcript")
+            // down into the titles: the keyboard's rows scroll away and the results show
+            let curiosity = app.buttons["search.titles.v-curiosity"]
+            XCTAssertTrue(curiosity.waitForExistence(timeout: 10), "Curiosity among the titles")
+            for _ in 0..<8 where !curiosity.hasFocus {
+                remote.press(.down)
+                usleep(500_000)
+            }
+            XCTAssertTrue(curiosity.hasFocus, "the focus on Curiosity's card")
+            waitForQuiet()
+            shot("search")
+        }
+    }
+
+    /// Signing in with a code: the code the TV shows and the address it can be approved at.
+    /// The code and the address are this test's own (the demo home's is a test's).
+    func testCode() throws {
+        for language in ["en", "ar"] {
+            app.terminate()
+            home?.stop()
+            let home = try MockHome(demo: language)
+            home.clock = MockHome.demoClock
+            home.stub("POST", "/api/pairing/device", status: 201, body: """
+            {"code":"K7M4-P2XR","device_code":"dc","expires_at":"{{now+600}}","verify_path":"/pair?code=K7M4-P2XR",
+             "verify_url":"http://living-room-maktaba.local/pair?code=K7M4-P2XR","interval":1}
+            """)
+            try home.start()
+            self.home = home
+            self.language = language
+            app.launchArguments = ["-uitest-reset", "-AppleLanguages", "(\(language))",
+                                   "-AppleLocale", language == "ar" ? "ar_SA" : "en_US"]
+            app.launch()
+            type(home.url, into: app.textFields["picker.address"])
+            pressIfStillThere(app.buttons["picker.connect"], with: .right)
+            let code = app.staticTexts["pairing-code"]
+            XCTAssertTrue(code.waitForExistence(timeout: 20), "the code; the home saw \(seen)")
+            // read out a character at a time ("K 7 M 4 - P 2 X R")
+            XCTAssertTrue(wait(timeout: 10) { code.label.hasPrefix("K 7 M 4") }, "this test's code: \(code.label)")
+            waitForQuiet()
+            shot("code")
+        }
+    }
+
     // MARK: helpers
+
+    /// Up to the tab bar, along it to `title`, Select.
+    private func openTab(_ title: String) {
+        let tab = app.tabBars.buttons[title]
+        XCTAssertTrue(tab.waitForExistence(timeout: 20), "the \(title) tab")
+        for _ in 0..<6 where !app.tabBars.buttons.allElementsBoundByIndex.contains(where: \.hasFocus) {
+            remote.press(.up)
+            usleep(400_000)
+        }
+        moveFocus(to: tab, with: language == "ar" ? .left : .right)
+        remote.press(.select)
+        sleep(1)
+    }
 
     private var seen: [String] { home?.seen ?? [] }
 

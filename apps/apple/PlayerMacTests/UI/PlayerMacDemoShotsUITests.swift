@@ -1,7 +1,8 @@
 import XCTest
 
 /// The Mac Player's product screenshots (story 60.09): the library window (Libraries on the
-/// demo's Documentaries) and Curiosity playing with the Arabic subtitles on, in English and in Arabic,
+/// demo's Documentaries) and Curiosity playing with the Arabic subtitles on; and the store
+/// gallery's (story 60.14): Search, the series Caminandes and Live TV; in English and in Arabic,
 /// dark, on the demo library (`MockHome(demo:)`, from `tests/fixtures/demo-library/`) with
 /// its clock pinned to `library.json`'s noon. Each is the window as an attachment named
 /// `shot-mac-<screen>-<language>`, kept always: CI exports them from the result bundle as
@@ -56,14 +57,60 @@ final class PlayerMacDemoShotsUITests: XCTestCase {
         }
     }
 
+    // MARK: the store gallery's screens (story 60.14 part 2)
+
+    /// Search for the demo's query ("Mars", «المريخ»), typed in the toolbar's field: Curiosity
+    /// among the titles, and the lines that say it under In the transcript.
+    func testSearch() throws {
+        for language in ["en", "ar"] {
+            try launchSignedIn(language, section: "search", open: nil)
+            XCTAssertTrue(element("screen.search").waitForExistence(timeout: 20), "Search; the home saw \(seen)")
+            let field = app.searchFields.firstMatch
+            XCTAssertTrue(field.waitForExistence(timeout: 10), "the search field")
+            field.typeExactly(language == "ar" ? "المريخ" : "Mars", in: app)
+            field.typeText("\n")
+            XCTAssertTrue(element("search.title.v-curiosity").waitForExistence(timeout: 20),
+                          "Curiosity among the titles; the home saw \(seen)")
+            XCTAssertTrue(element("search.transcripts").waitForExistence(timeout: 10), "In the transcript")
+            waitForArt(atLeast: 1)
+            shot("search")
+        }
+    }
+
+    /// The series Caminandes: its seasons and its episodes, with their pictures.
+    func testSeries() throws {
+        for language in ["en", "ar"] {
+            try launchSignedIn(language, section: "libraries", open: "series/s-caminandes")
+            XCTAssertTrue(element("screen.series").waitForExistence(timeout: 20), "Caminandes; the home saw \(seen)")
+            XCTAssertTrue(element("episode.v-llama-drama").waitForExistence(timeout: 20), "its first episode")
+            waitForArt(atLeast: 3)
+            shot("series")
+        }
+    }
+
+    /// Live TV's Now: the demo's three channels with what is on and what is next, drawn against
+    /// the device's clock (the demo's times count from now's quarter hour).
+    func testLive() throws {
+        for language in ["en", "ar"] {
+            try launchSignedIn(language, section: "live", open: nil, clock: MockHome.quarterHour())
+            XCTAssertTrue(element("screen.liveTV").waitForExistence(timeout: 20), "Live TV; the home saw \(seen)")
+            for channel in ["ch-space", "ch-kids", "ch-earth"] {
+                XCTAssertTrue(element("live.channel.\(channel)").waitForExistence(timeout: 20), "\(channel) on Now")
+            }
+            waitForArt(atLeast: 0)
+            shot("live")
+        }
+    }
+
     // MARK: helpers
 
     /// A first run on the demo home in `language`, dark, signed in by a code.
-    private func launchSignedIn(_ language: String, section: String, open: String, extra: [String] = []) throws {
+    private func launchSignedIn(_ language: String, section: String, open: String?, extra: [String] = [],
+                                clock: Date = MockHome.demoClock) throws {
         if app.state == .runningForeground || app.state == .runningBackground { app.terminate() }
         home?.stop()
         let home = try MockHome(demo: language)
-        home.clock = MockHome.demoClock
+        home.clock = clock
         if let seconds = home.demoVideo("v-curiosity")?["duration_sec"] as? Int { home.streamSeconds = seconds / 2 * 2 }
         try home.start()
         self.home = home
@@ -73,7 +120,7 @@ final class PlayerMacDemoShotsUITests: XCTestCase {
                                "-AppleLanguages", "(\(language))", "-AppleLocale", language == "ar" ? "ar_JO" : "en_US",
                                "-theme", "dark",
                                "-maktaba-permissions-reset", "-maktaba-permissions-fake", "granted", "-maktaba-session-reset",
-                               "-maktaba-section", section, "-maktaba-open", open] + extra
+                               "-maktaba-section", section] + (open.map { ["-maktaba-open", $0] } ?? []) + extra
         app.launch()
         app.activate()
         let walkthrough = element("permissions.walkthrough")
