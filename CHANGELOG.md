@@ -3870,6 +3870,13 @@ build fails when the two differ.
   that cannot draw the frame (another Maktaba in client mode, or an older home) keeps the
   system's. In English and Arabic.
 
+- **The tray's panel.** On Windows and the Mac a click on the tray or menu-bar icon opens a small
+  panel beside it: the server's status with its colour, what it waits on (the language model's
+  download, a release the home ordered), the update when one waits for a restart, the tray's
+  actions and the two ways to quit. It shows what the tray menu shows, in the system's
+  language, and acts through the same items; a right click still opens the menu, and the arrow
+  keys and Escape work in the panel. In English and Arabic.
+
 - **New pictures on maktaba.tv.** The screenshots of every app now show a library of
   documentaries and children's animation: NASA's Curiosity rover, the Apollo 11 launch, Saturn's
   rings, Lake Nasser seen from space, the Moon's phases, a deep-sea octopus, Big Buck Bunny and
@@ -3910,13 +3917,6 @@ build fails when the two differ.
   broadcasting row and Subscription does not list it, unless the home's licence includes
   broadcasting. The broadcast edge takes no uploads while broadcasting is off, with a valid token
   included; only the list of revoked access still reaches it.
-
-- **The tray's panel.** On Windows and the Mac a click on the tray or menu-bar icon opens a small
-  panel beside it: the server's status with its colour, what it waits on (the language model's
-  download, a release the home ordered), the update when one waits for a restart, the tray's
-  actions and the two ways to quit. It shows what the tray menu shows, in the system's
-  language, and acts through the same items; a right click still opens the menu, and the arrow
-  keys and Escape work in the panel. In English and Arabic.
 
 ### Fixed
 
