@@ -46,6 +46,42 @@ func TestTheConsoleIsSameOriginOnly(t *testing.T) {
 	}
 }
 
+// WithGate runs on every request of both listeners, a path with no route and a wrong method
+// included, and only after the platform's own checks (the host, the console's origin).
+func TestTheGateRunsBeforeAnyRoute(t *testing.T) {
+	gate := func(http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusTeapot) })
+	}
+	log := slog.New(slog.DiscardHandler)
+	user := NewRouter(log, nil, nil, BuildInfo{}, nil, WithUserHosts([]string{"api.test"}), WithGate(gate))
+	admin := NewAdminRouter(log, nil, nil, BuildInfo{}, "admin.test", "https://admin.test", nil, WithGate(gate))
+	for _, c := range []struct {
+		h                    http.Handler
+		method, host, origin string
+		path                 string
+		want                 int
+	}{
+		{user, http.MethodGet, "api.test", "", "/healthz", http.StatusTeapot},
+		{user, http.MethodDelete, "api.test", "", "/healthz", http.StatusTeapot},
+		{user, http.MethodGet, "api.test", "", "/no-such-route", http.StatusTeapot},
+		{user, http.MethodGet, "other.test", "", "/no-such-route", http.StatusNotFound},
+		{admin, http.MethodGet, "admin.test", "", "/no-such-route", http.StatusTeapot},
+		{admin, http.MethodPost, "admin.test", "https://evil.test", "/no-such-route", http.StatusForbidden},
+		{admin, http.MethodGet, "other.test", "", "/no-such-route", http.StatusNotFound},
+	} {
+		req := httptest.NewRequest(c.method, c.path, nil)
+		req.Host = c.host
+		if c.origin != "" {
+			req.Header.Set("Origin", c.origin)
+		}
+		rec := httptest.NewRecorder()
+		c.h.ServeHTTP(rec, req)
+		if rec.Code != c.want {
+			t.Errorf("%s %s%s (origin %q) = %d, want %d", c.method, c.host, c.path, c.origin, rec.Code, c.want)
+		}
+	}
+}
+
 // The user listener's JSON carries §5's API headers; the relay's router (no WithUserHosts)
 // does not, since it serves homes' own pages.
 func TestUserListenerHeadersNotTheRelays(t *testing.T) {
