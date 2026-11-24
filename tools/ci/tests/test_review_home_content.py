@@ -37,8 +37,8 @@ def test_the_shipped_manifest_is_valid() -> None:
 
 def test_the_arabic_subtitles_match_the_english_cues() -> None:
     subs = ROOT / "deploy" / "review-home" / "content" / "subtitles"
-    en = [ln for ln in (subs / "cosmos-laundromat.en.vtt").read_text(encoding="utf-8").splitlines() if "-->" in ln]
-    ar = [ln for ln in (subs / "cosmos-laundromat.ar.vtt").read_text(encoding="utf-8").splitlines() if "-->" in ln]
+    en = [ln for ln in (subs / "curiosity.en.vtt").read_text(encoding="utf-8").splitlines() if "-->" in ln]
+    ar = [ln for ln in (subs / "curiosity.ar.vtt").read_text(encoding="utf-8").splitlines() if "-->" in ln]
     assert en == ar and len(en) > 50
 
 
@@ -51,13 +51,13 @@ def _broken(edit: Any) -> list[str]:
 @pytest.mark.parametrize(
     ("edit", "want"),
     [
-        (lambda m: m["items"][0].update(title_ar="Spring"), "needs an Arabic title"),
+        (lambda m: m["items"][0].update(title_ar="Llama Drama"), "needs an Arabic title"),
         (lambda m: m["items"][0].update(licence="CC-BY-NC-4.0"), "not public domain or CC BY"),
-        (lambda m: m["items"][0].update(licence_url="https://creativecommons.org/licenses/by/3.0/"), "is not CC-BY-4.0's"),
+        (lambda m: m["items"][0].update(licence_url="https://creativecommons.org/licenses/by/4.0/"), "is not CC-BY-3.0's"),
         (lambda m: m["items"][0]["sources"][0].update(sha1="abc"), "sha1 must be 40 hex"),
         (lambda m: m["items"][0]["sources"][0].update(url="http://archive.org/x.mp4"), "must be https"),
-        (lambda m: m["items"][0].update(file="spring.mp3"), "not a type the home scans"),
-        (lambda m: m["items"][0].update(file="../spring.mp4"), "not one plain file name"),
+        (lambda m: m["items"][0].update(file="llama-drama.mp3"), "not a type the home scans"),
+        (lambda m: m["items"][0].update(file="../llama-drama.mp4"), "not one plain file name"),
         (lambda m: m["items"][0].update(attribution=" "), "needs an attribution"),
         (lambda m: m["items"][1].update(covers=[]), "no item covers ['4k-hevc-hdr10']"),
         (lambda m: m["items"][1]["derive"].insert(0, "{src3}"), "names {src3}"),

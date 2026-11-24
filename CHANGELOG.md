@@ -429,6 +429,29 @@ build fails when the two differ.
 
 ### Fixed
 
+- **A home that can't check for updates now says so.** When two checks in a row fail, the Updates
+  page says "Can't check for updates since …" with the reason (GitHub's list is larger than this
+  version reads, GitHub asked to wait, GitHub answered with an error or could not be reached) and
+  what GitHub answered; one failure is a quiet line. System health has a new **Update check** item
+  that turns yellow with the same words, and admins get a notification. Before, a failed check was
+  only written to the log: from 2026-11-23 every home's check failed for over a day and nothing on
+  screen said so. A page of GitHub's list of releases may now be 16 MiB (it is some 3.2 MB today),
+  and the About check and the server's own updater read the list the same way and say "larger than
+  … bytes" instead of failing to decode it. A check in CI reads the real list every hour, and
+  after each release, exactly as a home does, and fails when any answer passes 70% of what a home
+  reads or the newest release is not one a home can pick.
+
+- **A home whose update rolled back no longer installs an older release instead, and it sees new
+  releases again.** Since 2026-11-23 GitHub's list of the newest 30 releases has been larger than
+  the 8 MiB a home reads, so every check for updates failed and homes stopped learning of new
+  releases. The list is now read 10 releases at a time. A release that rolled back (or whose
+  migrations failed on the rehearsal's copy) now holds back every release below it, and every newer
+  one that carries the same migrations, until an admin retries it; before, the home took the newest
+  release below it in the next window. On 2026-11-24 that was v0.3.157, which rolled back too.
+  Releases now name their set of migrations in `release.json` (`migrations.set_sha256`). The
+  Updates page says which failed release holds the others back, and **Update now** naming a release
+  still installs it.
+
 - **On Roku, Down at the end of a library's loaded titles no longer jumps back to the first
   title.** The Library tab's grid loads 36 titles at a time; pressing Down on its last row while
   the next titles were still loading took focus round to the first title. Focus now stays on the
@@ -1009,6 +1032,13 @@ build fails when the two differ.
   id first, and anything that isn't one is refused.
 
 ### Security
+
+- **The cloud's sign-in limit holds under a burst.** The shared limit on sign-in, password reset,
+  mail and claim redeem (Epic 50 story 50.17) could let one request past its burst when many
+  arrived at once on several api nodes: a refused request whose database transaction started in
+  the same microsecond as the last allowed one read as allowed. Each request's answer now comes
+  from whether it took a token, and a request that waited on another never refills the same time
+  twice.
 
 - **Watch a broadcast stays closed on Apple devices until a parental limit is ruled out (Epic 50,
   story 50.27; Epic 57).** On Apple TV and in the Player on iPhone, iPad and the Mac, the Watch a
@@ -3811,6 +3841,16 @@ build fails when the two differ.
   them, and the Mac's menu bar is in Arabic when the system is. In Arabic the bar mirrors. A page
   that cannot draw the frame (another Maktaba in client mode, or an older home) keeps the
   system's. In English and Arabic.
+
+- **New pictures on maktaba.tv.** The screenshots of every app now show a library of
+  documentaries and children's animation: NASA's Curiosity rover, the Apollo 11 launch, Saturn's
+  rings, Lake Nasser seen from space, the Moon's phases, a deep-sea octopus, Big Buck Bunny and
+  the Caminandes llama films. Every title is public domain or Creative Commons, credited, and
+  no woman or girl appears in any picture. In English and Arabic.
+
+- **maktaba.dev's screenshots show no woman or girl.** The big screen, Roku and web search
+  screenshots on the Apps pages were retaken on test data with men's names only and on the new
+  demo library. In English and Arabic.
 
 ### Fixed
 

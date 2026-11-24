@@ -30,6 +30,7 @@ import {
   machineNext,
   machineStatus,
   releaseMigrates,
+  checkFailedWhy,
   runActive,
   safeReleaseUrl,
   statusTone,
@@ -160,6 +161,39 @@ function ErrorDetail({ text, testId }: { text: string; testId?: string }) {
   return (
     <div className="mkt-muted" dir="ltr" data-testid={testId}>
       {text.split("`").map((part, i) => (i % 2 === 1 ? <code key={i}>{part}</code> : part))}
+    </div>
+  );
+}
+
+/**
+ * The update check that keeps failing (the incident of 2026-11-24: a day of failed checks
+ * the home only logged): from two in a row a callout says since when and why, with what
+ * GitHub answered; one failure is a quiet line (the next check is 6 hours away).
+ */
+function CheckFailing({ ov }: { ov: UpdatesOverview }) {
+  const { t } = useI18n();
+  const failures = ov.check_failures ?? 0;
+  if (failures <= 0) return null;
+  const why = checkFailedWhy(ov.last_check_code, t);
+  if (failures < 2 || !ov.check_failing_since) {
+    return (
+      <p className="mkt-muted" data-testid="updates-check-failed-once">
+        {t("updates.checkFailing.once", { why })}
+      </p>
+    );
+  }
+  return (
+    <div className="mkt-updates__callout" role="alert" data-testid="updates-check-failing">
+      <p>
+        <strong>{t("updates.checkFailing.title", { when: when(ov.check_failing_since) })}</strong>
+      </p>
+      <p className="mkt-muted">{t("updates.checkFailing.body", { failures, why })}</p>
+      {ov.last_check_error && (
+        <details>
+          <summary>{t("updates.checkFailing.detail")}</summary>
+          <code className="mkt-updates__check-error">{ov.last_check_error}</code>
+        </details>
+      )}
     </div>
   );
 }
@@ -433,6 +467,7 @@ export function AdminUpdates() {
           {t("updates.settings.stale")}
         </p>
       )}
+      <CheckFailing ov={ov} />
       <RunnersWarning />
       {ov.stuck && !running && (
         <div className="mkt-updates__callout" role="alert" data-testid="updates-stuck">

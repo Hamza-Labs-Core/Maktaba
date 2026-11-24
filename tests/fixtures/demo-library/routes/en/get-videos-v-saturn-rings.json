@@ -1,0 +1,20 @@
+{
+ "id": "v-saturn-rings",
+ "library_id": "lib-docs",
+ "path": "",
+ "filename": "saturn-rings.mkv",
+ "title": "Along the Rings of Saturn",
+ "description": "Cassini's cameras sweep across Saturn's rings in their true colours, from the faint outer edge to the planet's shadow and back.",
+ "state": "ready",
+ "detected_language": "en",
+ "duration_sec": 120,
+ "size_bytes": 30000000,
+ "content_hash": "vsaturnrings0000000000000000000000000000000000000000000000000000",
+ "created_at": "{{now-86400}}",
+ "updated_at": "{{now-85800}}",
+ "published_at": "2018-06-01T00:00:00Z",
+ "playable": true,
+ "tags": [],
+ "poster_url": "/api/videos/v-saturn-rings/poster",
+ "backdrop_url": "/api/videos/v-saturn-rings/backdrop"
+}

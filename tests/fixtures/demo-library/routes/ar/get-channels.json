@@ -1,12 +1,12 @@
 {
  "items": [
   {
-   "id": "ch-films",
+   "id": "ch-space",
    "number": 1,
-   "name": "سهرة الأفلام",
-   "slug": "films",
+   "name": "الفضاء",
+   "slug": "space",
    "logo_url": null,
-   "library_id": "lib-films",
+   "library_id": "lib-docs",
    "logo_path": "",
    "art": {
     "watermark": {
@@ -29,20 +29,20 @@
    "created_at": "{{now-17280000}}",
    "updated_at": "{{now-864000}}",
    "now_playing": {
-    "title": "سينتل",
-    "start_at": "{{now-900}}",
+    "title": "على امتداد حلقات زحل",
+    "start_at": "{{now}}",
     "end_at": "{{now+900}}",
-    "progress": 0.5
+    "progress": 0
    },
    "guide_until": "{{now+86400}}"
   },
   {
-   "id": "ch-shorts",
+   "id": "ch-kids",
    "number": 2,
-   "name": "قصيرة",
-   "slug": "shorts",
+   "name": "للأطفال",
+   "slug": "kids",
    "logo_url": null,
-   "library_id": "lib-shorts",
+   "library_id": "lib-kids",
    "logo_path": "",
    "art": {
     "watermark": {
@@ -65,7 +65,7 @@
    "created_at": "{{now-17280000}}",
    "updated_at": "{{now-864000}}",
    "now_playing": {
-    "title": "رعب الجنيات",
+    "title": "كاميناندس: اللاما الكبير",
     "start_at": "{{now}}",
     "end_at": "{{now+900}}",
     "progress": 0
@@ -73,12 +73,12 @@
    "guide_until": "{{now+86400}}"
   },
   {
-   "id": "ch-family",
+   "id": "ch-earth",
    "number": 3,
-   "name": "العائلة",
-   "slug": "family",
+   "name": "الأرض والبحر",
+   "slug": "earth",
    "logo_url": null,
-   "library_id": "lib-films",
+   "library_id": "lib-docs",
    "logo_path": "",
    "art": {
     "watermark": {
@@ -101,7 +101,7 @@
    "created_at": "{{now-17280000}}",
    "updated_at": "{{now-864000}}",
    "now_playing": {
-    "title": "كاميناندس: اللاما الكبير",
+    "title": "أبولو 11: الإقلاع",
     "start_at": "{{now}}",
     "end_at": "{{now+900}}",
     "progress": 0

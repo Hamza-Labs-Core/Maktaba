@@ -1,16 +1,16 @@
 {
  "items": [
   {
-   "id": "lib-films",
-   "name": "Films",
+   "id": "lib-docs",
+   "name": "Documentaries",
    "roots": [],
    "settings": {},
    "created_at": "{{now-34560000}}",
    "updated_at": "{{now-2592000}}"
   },
   {
-   "id": "lib-shorts",
-   "name": "Shorts",
+   "id": "lib-kids",
+   "name": "Kids",
    "roots": [],
    "settings": {},
    "created_at": "{{now-34473600}}",
