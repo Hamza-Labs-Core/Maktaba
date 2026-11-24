@@ -9,6 +9,7 @@ import json
 from datetime import timedelta
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 import numpy as np
 import pytest
@@ -17,7 +18,7 @@ from maktaba_fp_transcription.stages import transcribe as tr
 
 from maktaba_pipeline.engine.enqueue import enqueue_job
 from maktaba_pipeline.engine.graph import GRAPH, Subject
-from maktaba_pipeline.engine.sql import now, to_ts
+from maktaba_pipeline.engine.sql import is_pg, now, to_ts
 from maktaba_pipeline.runtime import Database
 from maktaba_pipeline.stt import gpu_turns, model_share
 from maktaba_pipeline.stt.batched import Sentence, Transcript
@@ -268,3 +269,129 @@ async def test_no_room_beside_whisper_turns_to_taking_turns_and_hears_it_then(
     out = await sl.listen(db, t, np.zeros(16), "m")
     assert calls == [True, False] and forgot == ["m"] and out["source"] == "hf"
     assert out["rtf"] > 0  # its own speed, in the job's summary
+
+
+# ------------------------------------------------- a machine's copy published (slot 0237)
+
+_REFUSED = 'cannot update table "transcript_segments"'
+
+
+async def _last_listen_job(db: Database, vid: Any) -> Any:
+    return await db.fetchrow(
+        "SELECT id, state, error_cause, payload FROM processing_jobs"
+        " WHERE subject_id = $1 AND stage = 'second_listen' ORDER BY id DESC LIMIT 1",
+        str(vid),
+    )
+
+
+async def _sweep(db: Database, monkeypatch: pytest.MonkeyPatch) -> int:
+    """The relisten sweep now, on a worker with the model, the transcripts two hours old."""
+    monkeypatch.setattr(tr, "_has_second_listen_model", lambda model: True)
+    monkeypatch.setattr(tr, "_LAST_RELISTEN", [])
+    await db.execute(
+        "UPDATE transcripts SET created_at = $1", to_ts(db, now() - timedelta(hours=2))
+    )
+    return await tr.relisten(db)
+
+
+@pytest.mark.asyncio
+async def test_a_transcript_whose_second_listen_failed_to_store_is_heard_again(
+    db: Database, tmp_path: Path, fake: FakeTranscriber, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The second listen ran, but the database refused to store it (a home on PostgreSQL 18
+    from 2026-11-20 to slot 0237): the job failed for good, the transcript stayed Whisper's
+    with no ``refine``, and the stages after it never ran. The sweep queues it again, and it
+    is corrected and its subtitles follow; a failure of another kind is not queued by it."""
+    heard = _hears(monkeypatch)
+    rt = await core_runtime(db)
+    vid, media = await _one_video(db, tmp_path)
+    real_store = sl._store
+    fail = {"with": "the share timed out"}
+
+    async def refused(*a: Any, **k: Any) -> Any:
+        raise RuntimeError(fail["with"])
+
+    monkeypatch.setattr(sl, "_store", refused)
+    await enqueue_job(db, subject_kind="video", subject_id=vid, stage="transcribe")
+    await drain_core(db, rt, only={"transcribe", "second_listen", "subtitle_gen"})
+    job = await _last_listen_job(db, vid)
+    assert job["state"] == "failed" and "refine" not in _meta(await _active(db, vid))
+    assert await _sweep(db, monkeypatch) == 0  # another failure: not this sweep's
+
+    fail["with"] = f"42P10: {_REFUSED}"
+    await enqueue_job(db, subject_kind="video", subject_id=vid, stage="second_listen")
+    await drain_core(db, rt, only={"second_listen", "subtitle_gen"})
+    job = await _last_listen_job(db, vid)
+    assert job["state"] == "failed" and "cannot update table" in job["error_cause"]
+    assert not media.with_name("درس السيرة 01.ar.vtt").exists()
+
+    monkeypatch.setattr(sl, "_store", real_store)
+    assert await _sweep(db, monkeypatch) == 1
+    job = await _last_listen_job(db, vid)
+    payload = job["payload"] if isinstance(job["payload"], dict) else json.loads(job["payload"])
+    assert job["state"] == "pending" and payload == {tr.RELISTEN: True}
+    before = len(heard)
+    ran = await drain_core(db, rt, only={"second_listen", "subtitle_gen"})
+    assert ran == ["second_listen", "subtitle_gen"] and len(heard) == before + 1
+    assert _meta(await _active(db, vid))["refine"]["source"] == "hf"
+    vtt = media.with_name("درس السيرة 01.ar.vtt").read_text(encoding="utf-8")
+    assert "قال السلام عليكم" in vtt
+    assert await _sweep(db, monkeypatch) == 0  # corrected: nothing left
+
+
+@pytest.mark.asyncio
+async def test_it_stores_with_a_machine_s_copy_published(
+    db: Database, tmp_path: Path, fake: FakeTranscriber, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The home as it was on 2026-11-20: a machine's copy published (slot 0147) and
+    transcript_segments at REPLICA IDENTITY FULL with its generated search_tsv. On
+    PostgreSQL 18 the second listen's UPDATE is refused (on 16 it is not); slot 0237 gives the
+    table its primary key as its identity, the sweep queues the video again, and it is
+    stored. The publication keeps the table, without search_tsv."""
+    if not is_pg(db):
+        pytest.skip("a publication and a replica identity are Postgres's")
+    from tests.engine.migrate import list_migrations, up_statements
+
+    heard = _hears(monkeypatch)
+    rt = await core_runtime(db)
+    vid, _ = await _one_video(db, tmp_path)
+    pub = await db.fetchval("SELECT cluster_copy_publication($1)", str(uuid4()))
+    await db.execute("ALTER TABLE transcript_segments REPLICA IDENTITY FULL")
+    major = int(await db.fetchval("SELECT current_setting('server_version_num')::int / 10000"))
+
+    await enqueue_job(db, subject_kind="video", subject_id=vid, stage="transcribe")
+    await drain_core(db, rt, only={"transcribe", "second_listen", "subtitle_gen"})
+    job = await _last_listen_job(db, vid)
+    if major >= 18:
+        assert job["state"] == "failed" and "cannot update table" in job["error_cause"]
+        assert "refine" not in _meta(await _active(db, vid))
+    else:
+        assert job["state"] == "done"
+
+    (slot,) = [p for p in list_migrations(sqlite=False) if p.name.startswith("0237_")]
+    for st in up_statements(slot.read_text(encoding="utf-8")):
+        await db.execute(st)
+    ident = await db.fetchval(
+        "SELECT relreplident::text FROM pg_class WHERE oid = 'transcript_segments'::regclass"
+    )
+    assert ident == "d"
+    before = len(heard)
+    if major >= 18:
+        assert await _sweep(db, monkeypatch) == 1
+        await drain_core(db, rt, only={"second_listen", "subtitle_gen"})
+        assert len(heard) == before + 1
+    assert (await _last_listen_job(db, vid))["state"] == "done"
+    row = await _active(db, vid)
+    assert _meta(row)["refine"]["source"] == "hf"
+    assert await _texts(db, row["id"]) == ["قال " + t for _a, _b, t in LINES]
+    cols = await db.fetchval(
+        "SELECT attnames FROM pg_publication_tables WHERE pubname = $1"
+        " AND tablename = 'transcript_segments'",
+        pub,
+    )
+    assert cols is not None and "text" in cols and "search_tsv" not in cols
+    # a reviewer's fix and a delete go through too
+    await db.execute(
+        "UPDATE transcript_segments SET text = text WHERE transcript_id = $1", row["id"]
+    )
+    await db.execute("DELETE FROM transcripts WHERE id = $1", _meta(row)["refine"]["whisper"])

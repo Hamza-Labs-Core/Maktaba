@@ -49,7 +49,7 @@ version is asked for at the next publish. The API refuses to publish without a c
 type BroadcastTier struct {
     ID                     string  // "guest" (inside Pro), "broadcaster" (add-on)
     MaxChannels            int     // 1 / 3
-    Access                 []string // {"invite"} / {"invite","open"} (viewers never pay)
+    Access                 []string // {"invite"} on both: invitation only (README §14, 2026-11-24); viewers never pay
     OnDemandOnly           bool    // true for guest sharing
     MaxConcurrentViewers   int     // 5 / 100 (per publisher, all channels)
     ViewerHoursPerMonth    int     // 50 / 5000
@@ -200,13 +200,11 @@ notice.
 - **The publisher downgrades from Broadcaster to Pro mid-month.**
   - Channels beyond one are unpublished at the period's end, not at once.
   - The publisher picks which one stays. If they don't, the oldest stays.
-  - An `open` channel becomes `invite` at the same time, and the old links ask for an invite.
 - **Pro lapses** (the provider gave up retrying). Broadcasting goes `off` with Pro, the same rule
   as 50.19: no plan, no relay and no broadcast. Viewers see `broadcast.offAir`.
 - **Guest sharing ends with the plan.** When an account's plan stops carrying broadcasting (Pro
   cancelled or lapsed, or changed to Basic or Free, by the provider or by a service admin), the
-  cloud revokes every invite of each of its homes in the same transaction, and an open channel
-  becomes `invite`. The invites' guest passes and paired TVs stop at their next heartbeat (50.26),
+  cloud revokes every invite of each of its homes in the same transaction. The invites' guest passes and paired TVs stop at their next heartbeat (50.26),
   and the home's access state is pushed to the edge at once. Subscribing again revives none of
   it: the publisher makes new invites. `past_due` keeps Pro in force, so a failed payment ends
   nothing while the provider retries.
