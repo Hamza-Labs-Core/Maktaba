@@ -39,10 +39,13 @@ func newRevokeWorld(t *testing.T) *revokeWorld {
 	reg := NewRegistry()
 	store := NewTunnelStore(stores.NewServers(pool.DB))
 	quiet := slog.New(slog.DiscardHandler)
-	srv := httptest.NewServer(&TunnelServer{Registry: reg, Store: store, Logger: quiet, Tickets: NewTickets([]byte(strings.Repeat("k", 32)))})
+	rev := &Revoker{Registry: reg, Store: store.(StandingStore), Logger: quiet, Every: time.Hour}
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	go rev.Run(ctx)
+	srv := httptest.NewServer(&TunnelServer{Registry: reg, Store: store, Logger: quiet, Tickets: NewTickets([]byte(strings.Repeat("k", 32))), Revoker: rev})
 	t.Cleanup(srv.Close)
-	return &revokeWorld{t: t, pool: pool, users: stores.NewUsers(pool.DB), reg: reg, store: store, url: srv.URL, dsn: dsn,
-		rev: &Revoker{Registry: reg, Store: store.(StandingStore), Logger: quiet, Every: time.Hour}}
+	return &revokeWorld{t: t, pool: pool, users: stores.NewUsers(pool.DB), reg: reg, store: store, url: srv.URL, dsn: dsn, rev: rev}
 }
 
 // listen starts the bus as runRelay does: server_changed reaches the revoker.
@@ -185,14 +188,13 @@ func TestRevokerChecksAllWithoutANotification(t *testing.T) {
 	w.up(b)
 	w.status(a, stores.StatusSuspended)
 	down := &Revoker{Registry: w.reg, Store: noStanding{}, Logger: w.rev.Logger}
-	down.check(w.reg.All())
+	down.check(context.Background(), w.reg.All())
 	if w.gone(a)() || w.gone(b)() {
 		t.Fatal("a tunnel closed while the database did not answer")
 	}
-	w.rev.Every = 50 * time.Millisecond
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	go w.rev.Run(ctx)
+	go (&Revoker{Registry: w.reg, Store: w.rev.Store, Logger: w.rev.Logger, Every: 50 * time.Millisecond}).Run(ctx)
 	waitFor(t, "the suspended owner's tunnel to close", w.gone(a))
 	if w.gone(b)() {
 		t.Fatal("an active owner's tunnel closed")
@@ -210,8 +212,8 @@ func (noStanding) Standing(context.Context, []string) (map[string]bool, error) {
 func TestSuspensionDuringAHandshake(t *testing.T) {
 	w := newRevokeWorld(t)
 	a := w.home("rev-a")
-	srv := httptest.NewServer(&TunnelServer{Registry: w.reg, Logger: w.rev.Logger,
-		Store: suspendAfterAuth{TunnelStore: w.store, StandingStore: w.store.(StandingStore), after: func() { w.status(a, stores.StatusSuspended) }}})
+	srv := httptest.NewServer(&TunnelServer{Registry: w.reg, Logger: w.rev.Logger, Revoker: w.rev,
+		Store: suspendAfterAuth{TunnelStore: w.store, after: func() { w.status(a, stores.StatusSuspended) }}})
 	defer srv.Close()
 	c, f := dialAuth(t, srv.URL, AuthPayload{ServerID: a.id, Secret: a.secret})
 	defer func() { _ = c.Close() }()
@@ -235,7 +237,6 @@ func TestSuspensionDuringAHandshake(t *testing.T) {
 
 type suspendAfterAuth struct {
 	TunnelStore
-	StandingStore
 	after func()
 }
 
@@ -244,3 +245,128 @@ func (s suspendAfterAuth) Authenticate(ctx context.Context, id, secret string) (
 	s.after()
 	return sv, err
 }
+
+// The first use of a home's secret ends its claim's retry, whatever becomes of the rest of the
+// handshake: a tunnel of either role, SetOnline failing, or a call to the api with the secret.
+func TestFirstUseOfTheSecretEndsTheClaimsRetry(t *testing.T) {
+	ctx := context.Background()
+	key := strings.Repeat("c3", 32)
+	for name, use := range map[string]func(t *testing.T, w *revokeWorld, h revokeHome){
+		"a tunnel whose SetOnline failed": func(t *testing.T, w *revokeWorld, h revokeHome) {
+			srv := httptest.NewServer(&TunnelServer{Registry: w.reg, Logger: w.rev.Logger, Store: offlineStore{w.store}})
+			t.Cleanup(srv.Close)
+			c, f := dialAuth(t, srv.URL, AuthPayload{ServerID: h.id, Secret: h.secret})
+			t.Cleanup(func() { _ = c.Close() })
+			if f.Kind != KindAuthOK {
+				t.Fatalf("%#x %s", f.Kind, f.Payload)
+			}
+			waitFor(t, "the tunnel", func() bool { _, err := w.reg.Lookup(h.slug); return err == nil })
+		},
+		// a standby records no online: it authenticates as every tunnel does
+		"a standby": func(t *testing.T, w *revokeWorld, h revokeHome) {
+			c, _ := dialAuth(t, w.url, AuthPayload{ServerID: h.id, Secret: h.secret, Role: RoleStandby})
+			_ = c.Close()
+		},
+		"a call to the api": func(t *testing.T, w *revokeWorld, h revokeHome) {
+			if err := stores.NewServers(w.pool.DB).VerifySecret(ctx, h.id, h.secret); err != nil {
+				t.Fatal(err)
+			}
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			w := newRevokeWorld(t)
+			srvs := stores.NewServers(w.pool.DB)
+			h, code := w.claimed(key)
+			use(t, w, h)
+			var seen bool
+			if err := w.pool.DB.QueryRow(`SELECT last_seen_at IS NOT NULL FROM servers WHERE id = $1`, h.id).Scan(&seen); err != nil || seen {
+				t.Fatalf("last_seen_at is set (%v): this does not test the claim's own mark", err)
+			}
+			if _, err := srvs.RedeemClaim(ctx, code, "box", "retry-box", "h", "1", nil, key); !errors.Is(err, stores.ErrClaimInvalid) {
+				t.Fatalf("redeemed again after the home used its secret: %v", err)
+			}
+		})
+	}
+
+	// a wrong secret is not a use
+	w := newRevokeWorld(t)
+	srvs := stores.NewServers(w.pool.DB)
+	h, code := w.claimed(key)
+	if err := srvs.VerifySecret(ctx, h.id, "wrong"); !errors.Is(err, stores.ErrBadServerSecret) {
+		t.Fatal(err)
+	}
+	if _, err := srvs.RedeemClaim(ctx, code, "box", "retry-box", "h", "1", nil, key); err != nil {
+		t.Fatalf("after a wrong secret: %v", err)
+	}
+}
+
+// A retry under way when the first secret is used: the retry replaced that secret, so its use is
+// refused, never a tunnel with a dead secret.
+func TestTheSecretUsedDuringARetryIsRefused(t *testing.T) {
+	ctx := context.Background()
+	w := newRevokeWorld(t)
+	h, _ := w.claimed(strings.Repeat("c3", 32))
+	tx, err := w.pool.DB.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	// what RedeemClaim's retry holds and writes
+	if _, err := tx.Exec(`SELECT 1 FROM server_claims WHERE used_server_id = $1 FOR UPDATE`, h.id); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(`UPDATE servers SET server_secret_hash = 'another' WHERE id = $1`, h.id); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		_, err := w.store.Authenticate(ctx, h.id, h.secret)
+		done <- err
+	}()
+	deadline := time.Now().Add(10 * time.Second)
+	for waiting := 0; waiting == 0; time.Sleep(10 * time.Millisecond) {
+		if err := w.pool.DB.QueryRow(`SELECT count(*) FROM pg_stat_activity WHERE datname = current_database()
+            AND wait_event_type = 'Lock' AND query LIKE '%FROM server_claims WHERE used_server_id%FOR UPDATE%'`).Scan(&waiting); err != nil {
+			t.Fatal(err)
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the use did not wait for the retry")
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-done; !errors.Is(err, stores.ErrBadServerSecret) {
+		t.Fatalf("%v, want ErrBadServerSecret", err)
+	}
+}
+
+// claimed is a home made by a real redeem with a retry key, and its code.
+func (w *revokeWorld) claimed(key string) (revokeHome, string) {
+	w.t.Helper()
+	ctx := context.Background()
+	u, err := w.users.Create(ctx, uuid.NewString()+"@example.test", "x", "R", true)
+	if err != nil {
+		w.t.Fatal(err)
+	}
+	srvs := stores.NewServers(w.pool.DB)
+	code, err := srvs.MintClaim(ctx, u.ID)
+	if err != nil {
+		w.t.Fatal(err)
+	}
+	h := revokeHome{owner: u.ID, slug: "retry-box", secret: "sek-retry"}
+	hash, err := argon2id.Hash(h.secret, argon2id.DefaultParams())
+	if err != nil {
+		w.t.Fatal(err)
+	}
+	sv, err := srvs.RedeemClaim(ctx, code, "box", h.slug, hash, "1", nil, key)
+	if err != nil {
+		w.t.Fatal(err)
+	}
+	h.id = sv.ID
+	return h, code
+}
+
+type offlineStore struct{ TunnelStore }
+
+func (offlineStore) SetOnline(context.Context, string, bool) error { return errors.New("down") }

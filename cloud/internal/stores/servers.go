@@ -81,7 +81,8 @@ var ErrSlugReserved = errors.New("servers: slug reserved")
 // retryKey is the agent's own secret for this claim (empty: an agent that sends none). An agent
 // whose first answer was lost redeems again with the same key, within the claim's lifetime, and
 // gets the same server with the new secret; the secret of the lost answer stops working. It
-// holds only until the home has connected: from then on the claim is spent for everyone.
+// holds only until the home has used its secret (VerifyHome): from then on the claim is spent
+// for everyone.
 func (s *Servers) RedeemClaim(ctx context.Context, code, name, slug, secretHash, version string, pubKey []byte, retryKey string) (Server, error) {
 	tx, err := s.DB.BeginTx(ctx, nil)
 	if err != nil {
@@ -170,8 +171,9 @@ func (s *Servers) RedeemClaim(ctx context.Context, code, name, slug, secretHash,
 	return sv, tx.Commit()
 }
 
-// redeemAgain gives the home a claim already made its new secret, while the home has not connected
-// with the first one. It commits tx.
+// redeemAgain gives the home a claim already made its new secret, while the home has not used
+// the first one: its use clears the claim's retry key (endClaimRetry), and the caller holds the
+// claim's row. It commits tx.
 func redeemAgain(ctx context.Context, tx *sql.Tx, serverID, ownerID, secretHash string) (Server, error) {
 	var sv Server
 	err := tx.QueryRowContext(ctx, `

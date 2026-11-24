@@ -3,6 +3,7 @@ package relay
 import (
 	"context"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/lib/pq"
@@ -42,36 +43,73 @@ func (d dbTunnelStore) Standing(ctx context.Context, serverIDs []string) (map[st
 //
 // It hears of a change from the database's server_changed notification (every relay process
 // listens; the trigger of migration 00500003 sends it on a suspension and on a deletion, in
-// the same transaction), checks all its tunnels when the listener reconnects (notifications may
-// have been missed), and checks them all again every Every (default 1m) as the backstop. While
-// the database is away it closes nothing: a failover must not drop homes.
+// the same transaction), checks each tunnel once it is registered, checks them all when the
+// listener reconnects (notifications may have been missed), and all again every Every (default
+// 1m) as the backstop. While the database is away it closes nothing: a failover must not drop
+// homes.
+//
+// What is to be checked is a set, and Run, its one worker, reads it in batches, one query at a
+// time: a storm of notifications or of reconnects is a few queries, whatever its size, and never
+// takes the pool from the handshakes.
 type Revoker struct {
 	Registry *Registry
 	Store    StandingStore
 	Logger   *slog.Logger
 	Every    time.Duration
+
+	mu      sync.Mutex
+	pending map[*Tunnel]struct{}
+	all     bool
+	wake    chan struct{}
 }
 
-// standingBatch bounds one query of a full check.
+// standingBatch bounds one query.
 const standingBatch = 1000
 
-// Changed checks slug's tunnels (a server_changed notification). It does not block the caller.
-func (r *Revoker) Changed(slug string) {
-	var ts []*Tunnel
-	for _, t := range r.Registry.All() {
-		if t.Slug == slug {
-			ts = append(ts, t)
-		}
+// Changed queues slug's tunnels for a check (a server_changed notification).
+func (r *Revoker) Changed(slug string) { r.Check(r.Registry.OfSlug(slug)...) }
+
+// Check queues ts for a check.
+func (r *Revoker) Check(ts ...*Tunnel) {
+	if len(ts) == 0 {
+		return
 	}
-	if len(ts) > 0 {
-		go r.check(ts)
+	r.mu.Lock()
+	if r.pending == nil {
+		r.pending = map[*Tunnel]struct{}{}
+	}
+	for _, t := range ts {
+		r.pending[t] = struct{}{}
+	}
+	r.mu.Unlock()
+	r.signal()
+}
+
+// All queues every tunnel for a check.
+func (r *Revoker) All() {
+	r.mu.Lock()
+	r.all = true
+	r.mu.Unlock()
+	r.signal()
+}
+
+func (r *Revoker) wakeCh() chan struct{} {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.wake == nil {
+		r.wake = make(chan struct{}, 1)
+	}
+	return r.wake
+}
+
+func (r *Revoker) signal() {
+	select {
+	case r.wakeCh() <- struct{}{}:
+	default: // the worker is already to look
 	}
 }
 
-// All checks every tunnel. It does not block the caller.
-func (r *Revoker) All() { go r.check(r.Registry.All()) }
-
-// Run checks every tunnel each Every, until ctx ends.
+// Run does the checks, until ctx ends. One per Revoker.
 func (r *Revoker) Run(ctx context.Context) {
 	every := r.Every
 	if every <= 0 {
@@ -79,31 +117,52 @@ func (r *Revoker) Run(ctx context.Context) {
 	}
 	t := time.NewTicker(every)
 	defer t.Stop()
+	wake := r.wakeCh()
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-t.C:
-			r.check(r.Registry.All())
+			r.drainQueue(ctx, r.Registry.All())
+		case <-wake:
+			r.drainQueue(ctx, nil)
 		}
 	}
 }
 
-// check closes those of ts whose home has no standing.
-func (r *Revoker) check(ts []*Tunnel) {
-	for len(ts) > 0 {
+// drainQueue checks ts and what is queued.
+func (r *Revoker) drainQueue(ctx context.Context, ts []*Tunnel) {
+	r.mu.Lock()
+	pending, all := r.pending, r.all
+	r.pending, r.all = nil, false
+	r.mu.Unlock()
+	if all && ts == nil {
+		ts = r.Registry.All()
+	}
+	if ts == nil { // the full check holds the queued ones, which are open
+		for t := range pending {
+			ts = append(ts, t)
+		}
+	}
+	for len(ts) > 0 && ctx.Err() == nil {
 		n := min(len(ts), standingBatch)
-		r.checkBatch(ts[:n])
+		r.check(ctx, ts[:n])
 		ts = ts[n:]
 	}
 }
 
-func (r *Revoker) checkBatch(ts []*Tunnel) {
+// check closes those of ts whose home has no standing.
+func (r *Revoker) check(ctx context.Context, ts []*Tunnel) {
 	ids := make([]string, 0, len(ts))
 	for _, t := range ts {
-		ids = append(ids, t.ServerID)
+		if !t.closed.Load() {
+			ids = append(ids, t.ServerID)
+		}
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	if len(ids) == 0 {
+		return
+	}
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	ok, err := r.Store.Standing(ctx, ids)
 	if err != nil {
@@ -111,7 +170,7 @@ func (r *Revoker) checkBatch(ts []*Tunnel) {
 		return
 	}
 	for _, t := range ts {
-		if !ok[t.ServerID] {
+		if !ok[t.ServerID] && !t.closed.Load() {
 			r.logger().Info("relay: tunnel closed: its server is gone or its owner suspended", "home_h", mlog.HashHome(t.ServerID), "event", "tunnel_revoked")
 			t.Close()
 		}

@@ -172,6 +172,11 @@ func TestRedeem_RetryKeyIsTheAgents(t *testing.T) {
 	if len(sent[0]) != 64 || sent[1] != sent[0] || sent[2] != sent[0] {
 		t.Fatalf("the same agent's key changed: %q", sent[:3])
 	}
+	// fixed: an agent updated between its first try and its second must send the same key, so the
+	// derivation (the prefix, the code's form, HMAC-SHA256) never changes
+	if want := "ea63fa43754460eb72fbca3de8f706d3a1649e8a8d638f3940c61265ff65414c"; sent[0] != want {
+		t.Fatalf("the retry key's derivation changed: %s, want %s", sent[0], want)
+	}
 	if sent[3] == sent[0] || sent[4] == sent[0] || sent[5] != "" || sent[0] == hex.EncodeToString(key) {
 		t.Fatalf("keys: %q", sent)
 	}

@@ -12,7 +12,6 @@ import (
 
 	"github.com/gorilla/websocket"
 
-	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/auth/argon2id"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/stores"
 	mlog "github.com/Hamza-Labs-Core/Maktaba/shared/log/go"
 )
@@ -166,17 +165,11 @@ func (d dbTunnelStore) Authenticate(ctx context.Context, serverID, secret string
 	if serverID == "" || secret == "" {
 		return stores.Server{}, errors.New("missing creds")
 	}
-	// We re-query by id; the server_id+secret pair is what authenticates, and the owner must be
-	// active, as Resume asks of a ticket: a suspended account's home holds no tunnel.
-	var hash string
-	var active bool
-	row := d.s.DB.QueryRowContext(ctx, `
-        SELECT s.server_secret_hash, u.status = 'active'
-          FROM servers s JOIN users u ON u.id = s.owner_user_id WHERE s.id = $1`, serverID)
-	if err := row.Scan(&hash, &active); err != nil {
-		return stores.Server{}, err
-	}
-	if err := argon2id.Verify(secret, hash); err != nil {
+	// The server_id+secret pair is what authenticates, and the owner must be active, as Resume
+	// asks of a ticket: a suspended account's home holds no tunnel. The first use of the secret,
+	// for a tunnel of any role, ends the claim's retry, in the database, before the tunnel is up.
+	active, err := d.s.VerifyHome(ctx, serverID, secret)
+	if err != nil {
 		return stores.Server{}, err
 	}
 	if !active {
@@ -253,6 +246,9 @@ type TunnelServer struct {
 	// Rebalancer places homes in the relay pool (story 50.16): the handshake answers with the
 	// home's assignment and moves a home on the wrong relay; nil: the pool is off (one relay).
 	Rebalancer *Rebalancer
+	// Revoker closes the tunnels of a home that may not hold one any more; each tunnel is checked
+	// once it is registered; nil: off.
+	Revoker *Revoker
 }
 
 // ServeHTTP upgrades and authenticates one home's tunnel. The agent must
@@ -388,8 +384,8 @@ func (ts *TunnelServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	// a suspension that committed after this handshake's check and was notified before the
 	// tunnel was registered found nothing to close: checked again now that it is
-	if st, has := store.(StandingStore); has {
-		go (&Revoker{Registry: reg, Store: st, Logger: logger}).check([]*Tunnel{t})
+	if ts.Revoker != nil {
+		ts.Revoker.Check(t)
 	}
 	logger.Info("relay: tunnel up", "home_h", mlog.HashHome(sv.ID), "flow", flow, "method", method, "role", role, "event", "tunnel_up")
 	if assigned {

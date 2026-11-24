@@ -153,6 +153,7 @@ func runRelay(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Mig
 		Directory:  directory,
 		Direct:     directHandler(cfg, pool, logger),
 		Rebalancer: rebalancer,
+		Revoker:    revoker,
 	}).ServeHTTP)
 
 	// All non-control paths fall through to the proxy. We deliberately
