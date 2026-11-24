@@ -74,24 +74,46 @@ var ErrSlugReserved = errors.New("servers: slug reserved")
 // links, in one transaction: the code is spent only when the server is
 // created (a taken slug leaves it usable for another try), and two
 // agents racing the same code cannot both win (the UPDATE … WHERE
-// used_at IS NULL is the one gate).
+// used_at IS NULL is the one gate). A code whose owner is not active
+// (suspended) is refused as an invalid one is.
 func (s *Servers) RedeemClaim(ctx context.Context, code, name, slug, secretHash, version string, pubKey []byte) (Server, error) {
 	tx, err := s.DB.BeginTx(ctx, nil)
 	if err != nil {
 		return Server{}, err
 	}
 	defer func() { _ = tx.Rollback() }()
+	// whose code it is, without locking it: the account is locked first, then its rows (the
+	// order LockAccount's writers and the account purge keep)
 	var uid string
 	err = tx.QueryRowContext(ctx, `
-        UPDATE server_claims SET used_at = now()
-         WHERE token_hash = $1 AND used_at IS NULL AND expires_at > now()
-        RETURNING user_id
+        SELECT user_id FROM server_claims WHERE token_hash = $1 AND used_at IS NULL AND expires_at > now()
     `, hashClaim(code)).Scan(&uid)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Server{}, ErrClaimInvalid
 	}
 	if err != nil {
 		return Server{}, err
+	}
+	// The home takes the plan its owner has at this moment, and no plan change is under way: one
+	// that began first has committed, one that begins now waits and then updates this home too.
+	status, _, err := LockAccount(ctx, tx, uid)
+	if errors.Is(err, ErrUserNotFound) || (err == nil && status != StatusActive) {
+		return Server{}, ErrClaimInvalid
+	}
+	if err != nil {
+		return Server{}, err
+	}
+	res, err := tx.ExecContext(ctx, `
+        UPDATE server_claims SET used_at = now()
+         WHERE token_hash = $1 AND used_at IS NULL AND expires_at > now()
+    `, hashClaim(code))
+	if err != nil {
+		return Server{}, err
+	}
+	if n, err := res.RowsAffected(); err != nil {
+		return Server{}, err
+	} else if n == 0 {
+		return Server{}, ErrClaimInvalid // another agent spent it meanwhile
 	}
 	var reserved int
 	if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM reserved_slugs WHERE slug = $1`, slug).Scan(&reserved); err != nil {
@@ -100,14 +122,19 @@ func (s *Servers) RedeemClaim(ctx context.Context, code, name, slug, secretHash,
 	if reserved > 0 {
 		return Server{}, ErrSlugReserved
 	}
+	// The new home takes its owner's plan and extra streams, as a plan change gives them to the
+	// homes the account already has (SetEffectivePlan, setExtraStreams): the column defaults
+	// (free, 0) would refuse the relay to a home claimed after its owner subscribed.
 	var sv Server
 	err = tx.QueryRowContext(ctx, `
-        INSERT INTO servers (owner_user_id, name, slug, server_secret_hash, version, public_key)
-        VALUES ($1,$2,$3,$4,$5,$6)
+        INSERT INTO servers (owner_user_id, name, slug, server_secret_hash, version, public_key, plan, extra_streams)
+        SELECT $1, $2, $3, $4, $5, $6, u.plan, COALESCE(sub.extra_streams, 0)
+          FROM users u LEFT JOIN subscriptions sub ON sub.user_id = u.id
+         WHERE u.id = $1
         ON CONFLICT (slug) DO NOTHING
-        RETURNING id, owner_user_id, name, slug, plan, version, last_seen_at, direct_ip::text, direct_port, created_at
+        RETURNING id, owner_user_id, name, slug, plan, version, last_seen_at, direct_ip::text, direct_port, created_at, extra_streams
     `, uid, name, slug, secretHash, sql.NullString{String: version, Valid: version != ""}, pubKey).Scan(
-		&sv.ID, &sv.OwnerUserID, &sv.Name, &sv.Slug, &sv.Plan, &sv.Version, &sv.LastSeenAt, &sv.DirectIP, &sv.DirectPort, &sv.CreatedAt,
+		&sv.ID, &sv.OwnerUserID, &sv.Name, &sv.Slug, &sv.Plan, &sv.Version, &sv.LastSeenAt, &sv.DirectIP, &sv.DirectPort, &sv.CreatedAt, &sv.ExtraStreams,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Server{}, ErrSlugTaken

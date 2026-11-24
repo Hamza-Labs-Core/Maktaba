@@ -4585,6 +4585,11 @@ build fails when the two differ.
   schema stays kept for the previous release, which otherwise refused to start on it (`db_ahead`).
   When that slot is not recorded, no Down script runs.
 
+- **A home linked to Maktaba Cloud after its owner chose a plan gets remote play through the
+  relay at once.** A newly linked home started on the Free plan whatever its owner's plan was, so
+  the relay refused it ("remote play through the relay needs a Basic or Pro plan") until the plan
+  was changed again. It now takes its owner's plan and extra streams when it is linked.
+
 ## [0.2.0] - 2026-10-19
 
 Closes the stub audit: features that were half built, settings that were
