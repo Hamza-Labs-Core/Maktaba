@@ -250,6 +250,12 @@ export function Search() {
   const tab: "results" | "ai" = params.get("tab") === "ai" ? "ai" : "results";
   const ai = useAIConversation();
   useAITab(ai, tab === "ai", urlQ);
+  // the tab last chosen: the router renders a URL change in a transition, so `params` (and a
+  // callback's older one) can still be the URL before it
+  const wantTab = useRef(tab);
+  useEffect(() => {
+    wantTab.current = tab;
+  }, [tab]);
   // story 49.10: the order and the facet filters (one string, so the effect sees a change)
   const uSort = urlSort(params.get("sort"));
   const uSelKey = JSON.stringify(selOf(params));
@@ -533,14 +539,9 @@ export function Search() {
     (s: SearchState, push = false) => {
       if (!alive.current) return;
       // a search answering after the person moved to AI mode keeps them there
-      setParams(
-        (prev) => {
-          const p = searchParamsOf(s);
-          if (prev.get("tab") === "ai") p.set("tab", "ai");
-          return p;
-        },
-        { replace: !push }
-      );
+      const p = searchParamsOf(s);
+      if (wantTab.current === "ai") p.set("tab", "ai");
+      setParams(p, { replace: !push });
     },
     [setParams]
   );
@@ -894,6 +895,7 @@ export function Search() {
       m === (uMode ?? modeRef.current) &&
       runKey(query, m, next.sort, next.sel, "") === runKey(urlQ, m, uSort, uSel, "");
     lastRun.current = runKey(query, m, next.sort, next.sel, "");
+    wantTab.current = "results";
     setParams(searchParamsOf({ q: query, mode: m, ...next }), { replace: same });
     void postSearch(query, m, next, { vp: 1, tp: 1 }, { youtube: withYouTube });
   }
@@ -1086,7 +1088,19 @@ export function Search() {
 
   /** The tab, in the URL (a replace: a tab is not a page of its own). */
   function selectTab(id: string) {
-    const p = new URLSearchParams(params);
+    // the results on screen can be there before the rendered URL has their sid: it is kept, or
+    // coming back would search again
+    const s = snapRef.current;
+    const shown = s?.sid && lastRun.current === runKey(s.q, s.mode, s.sort, s.sel, s.sid);
+    const p =
+      s && shown && sid !== s.sid
+        ? searchParamsOf({
+            ...s,
+            vp: titlesRef.current?.page ?? 1,
+            tp: transcriptsRef.current?.page ?? 1,
+          })
+        : new URLSearchParams(params);
+    wantTab.current = id === "ai" ? "ai" : "results";
     if (id === "ai") p.set("tab", "ai");
     else p.delete("tab");
     setParams(p, { replace: true });

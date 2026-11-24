@@ -175,8 +175,7 @@ describe("AI mode tab (story 49.14)", () => {
     renderSearch("/search?q=patience&mode=hybrid");
     expect(tab(E["search.tab.results"]!)).toHaveAttribute("aria-selected", "true");
     await screen.findByTestId("search-videos");
-    // the search answered (its video listed) before AI mode opens: a search still on its way
-    // when the tab changes is dropped, and Results asks again on return
+    // the search answered (its video listed); SRC-60b and SRC-60c open AI mode before that
     await screen.findByText("Patience in hardship", {}, { timeout: 3000 });
     expect(streams).toHaveLength(0);
 
@@ -199,6 +198,52 @@ describe("AI mode tab (story 49.14)", () => {
     fireEvent.click(tab(E["search.tab.ai"]!));
     expect(await screen.findByText(E["search.ai.stopped"]!)).toBeInTheDocument();
     expect(streams).toHaveLength(1);
+  });
+
+  it("SRC-60b: AI mode opened as the results appear, before the URL shows their sid: the search is kept", async () => {
+    renderSearch("/search?q=patience&mode=hybrid");
+    // the results are on screen before the router, which renders the URL in a transition, has
+    // their sid: the tab is clicked at that very moment
+    const opened = new Promise<void>((done) => {
+      const seen = new MutationObserver(() => {
+        if (!screen.queryByText("Patience in hardship")) return;
+        seen.disconnect();
+        expect(params().get("sid")).toBeNull();
+        fireEvent.click(tab(E["search.tab.ai"]!));
+        done();
+      });
+      seen.observe(document.body, { childList: true, subtree: true });
+    });
+    await opened;
+    await waitFor(() => expect(params().get("tab")).toBe("ai"));
+    expect(params().get("sid")).not.toBeNull();
+    fireEvent.click(tab(E["search.tab.results"]!));
+    await waitFor(() => expect(params().get("tab")).toBeNull());
+    expect(await screen.findByText("Patience in hardship")).toBeInTheDocument();
+    expect(searchCalls()).toHaveLength(1);
+  });
+
+  it("SRC-60c: a search that answers after AI mode was opened leaves the person there, and is kept", async () => {
+    const answer = post.getMockImplementation()!;
+    let release!: () => void;
+    const held = new Promise<void>((go) => (release = go));
+    post.mockImplementation(async (url: string, body: unknown) => {
+      if (url === "/api/search") await held;
+      return answer(url, body) as unknown;
+    });
+    renderSearch("/search?q=patience&mode=hybrid");
+    await waitFor(() => expect(searchCalls()).toHaveLength(1));
+    fireEvent.click(tab(E["search.tab.ai"]!));
+    await waitFor(() => expect(params().get("tab")).toBe("ai"));
+    await act(async () => {
+      release();
+      await new Promise((r) => setTimeout(r, 20));
+    });
+    expect(params().get("tab")).toBe("ai");
+    expect(params().get("sid")).not.toBeNull();
+    fireEvent.click(tab(E["search.tab.results"]!));
+    expect(await screen.findByText("Patience in hardship")).toBeInTheDocument();
+    expect(searchCalls()).toHaveLength(1);
   });
 
   it("SRC-61: a link to the AI tab does not run the Results search until Results is opened", async () => {
