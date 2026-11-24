@@ -120,7 +120,8 @@ final class PlayerDemoShots: PlayerUITestCase {
             XCTAssertTrue(element("screen.series").waitForExistence(timeout: 20), "Caminandes; the home saw \(home.seen)")
             XCTAssertTrue(element("episode.v-llama-drama").waitForExistence(timeout: 20), "its first episode")
             XCTAssertTrue(element("episode.v-gran-dillama").exists, "and the second")
-            waitForArt(atLeast: 3)
+            // the two episodes' pictures at least (on the iPhone the page asks for no more)
+            waitForArt(atLeast: 2)
             demoShot("series")
         }
     }

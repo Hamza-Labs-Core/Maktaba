@@ -36,6 +36,15 @@ final class RemoteDemoShotsUITests: XCTestCase {
     func testQueue() throws {
         for (language, locale) in Self.languages {
             let home = try start(language)
+            if language == "ar" {
+                // the stages' names are the home's words (MockHome's are English): in Arabic here
+                home.stub("GET", "/api/queues", body: """
+                {"paused_all":false,"issues_count":0,"stages":[
+                  {"stage":"probe","label":"الفحص","lane":"a","lane_order":1,"hidden":false,"enabled":true,"paused":false},
+                  {"stage":"transcribe","label":"التفريغ النصي","lane":"a","lane_order":2,"hidden":false,"enabled":true,"paused":false}],
+                 "queues":[{"stage":"probe","counts":{"pending":3,"ready":1,"running":1,"failed_open":0,"done_24h":12},"rate_per_min":0,"no_worker":false}]}
+                """)
+            }
             signIn(language, locale: locale, home: home)
 
             openTab(language == "ar" ? "الطابور" : "Queue")
@@ -102,7 +111,8 @@ final class RemoteDemoShotsUITests: XCTestCase {
             XCTAssertTrue(element("approve.found").waitForExistence(timeout: 15), "what is asking; the home saw \(home.seen)")
             XCTAssertTrue(wait(timeout: 10) { !self.app.keyboards.firstMatch.exists }, "the keyboard gone")
             // up to Approve, below the fold on an iPhone (the form makes its rows as they show)
-            let ok = element("approve.approve")
+            // the section's identifier is its rows' too: Approve is its first button
+            let ok = app.buttons.matching(identifier: "approve.found").firstMatch
             for _ in 0 ..< 4 where !(ok.exists && ok.isHittable) { app.swipeUp(velocity: .slow) }
             XCTAssertTrue(ok.waitForExistence(timeout: 5), "Approve")
             waitStill(ok)
@@ -239,11 +249,12 @@ final class RemoteDemoShotsUITests: XCTestCase {
 
     private func element(_ id: String) -> XCUIElement { app.descendants(matching: .any)[id].firstMatch }
 
-    /// A tab: its button in the tab bar (iPhone) or the top tabs (iPad).
+    /// A tab: its button in the tab bar (iPhone), or its row in the sidebar (an iPad in
+    /// landscape shows the tabs as a sidebar's cells).
     private func openTab(_ title: String) {
-        let tab = app.buttons[title].firstMatch
-        XCTAssertTrue(tab.waitForExistence(timeout: 15), "the \(title) tab")
-        tab.tap()
+        let button = app.buttons[title].firstMatch, cell = app.cells[title].firstMatch
+        XCTAssertTrue(wait(timeout: 15) { button.exists || cell.exists }, "the \(title) tab")
+        (cell.exists ? cell : button).tap()
     }
 
     /// The Home tab's row `id`, scrolled to and opened (as RemoteDiagnosticsUITests does).
