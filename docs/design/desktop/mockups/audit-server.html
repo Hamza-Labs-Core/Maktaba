@@ -14,13 +14,9 @@
   <h1 class="display">Audit 2 of 3: the Maktaba app (the server, on Mac, Windows and Linux), today</h1>
   <p>Tauri 2, <code>apps/desktop</code>: WKWebView on the Mac, WebView2 on Windows, webkit2gtk on Linux. The window is the
     web app (<code>web/dist</code>, or the local server); first-run setup is the web page
-    <code>web/src/pages/Setup/SetupWizard.tsx</code>. The images are the web app as maktaba.tv shows it, captured in CI on
-    the demo library (<code>web/packages/website/static/shots/web-home-*-1440.webp</code>). No capture of the shell itself (its
+    <code>web/src/pages/Setup/SetupWizard.tsx</code>. No capture of the shell itself (its
     frame, menus, tray, dialogs, setup screens or installers) exists in the repository or in any CI artifact.</p>
-  <div class="shots" style="grid-template-columns: 1fr 1fr">
-    <figure><img src="../../../../web/packages/website/static/shots/web-home-en-1440.webp" alt=""><figcaption>What the window shows: the web app's Home, English (designed: Ink &amp; Brass, the arch and the lamp).</figcaption></figure>
-    <figure><img src="../../../../web/packages/website/static/shots/web-home-ar-1440.webp" alt=""><figcaption>The same, Arabic: the web app mirrors.</figcaption></figure>
-  </div>
+  <div class="callout" style="margin-block-end: 6px"><span>The CI captures of the web app (<code>web/packages/website/static/shots/web-home-*-1440.webp</code>) are not reproduced here: demo media in mockups and references shows no women or girls, and their demo art is being replaced. The window's content is the web app as those captures show it; this audit is about the shell around it, which no capture shows.</span></div>
   <div class="facts">
     <h2>What is designed, what is stock (from the code; file and line)</h2>
     <div class="good"><span class="k">✓</span><span>The window's content: the web app, on the design system's tokens, dark first, English and Arabic.</span></div>

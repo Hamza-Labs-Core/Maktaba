@@ -22,18 +22,19 @@
   .transport { display: flex; align-items: center; gap: 6px; }
   .scrub { position: relative; block-size: 20px; display: flex; align-items: center; }
   .scrub .track { position: relative; flex: 1; block-size: 5px; border-radius: 5px; background: rgba(255,255,255,.22); }
-  .scrub .buf { position: absolute; inset-block: 0; inset-inline-start: 0; inline-size: 61%; border-radius: inherit; background: rgba(255,255,255,.32); }
-  .scrub .played { position: absolute; inset-block: 0; inset-inline-start: 0; inline-size: 43%; border-radius: inherit; background: var(--dk-brass); }
-  .scrub .knob { position: absolute; inset-block-start: -5px; inset-inline-start: calc(43% - 7px); inline-size: 15px; block-size: 15px; border-radius: 50%; background: var(--dk-brass); box-shadow: 0 0 0 4px rgba(227,178,82,.25); }
+  .scrub .buf { position: absolute; inset-block: 0; inset-inline-start: 0; inline-size: 66%; border-radius: inherit; background: rgba(255,255,255,.32); }
+  .scrub .played { position: absolute; inset-block: 0; inset-inline-start: 0; inline-size: 49%; border-radius: inherit; background: var(--dk-brass); }
+  .scrub .knob { position: absolute; inset-block-start: -5px; inset-inline-start: calc(49% - 7px); inline-size: 15px; block-size: 15px; border-radius: 50%; background: var(--dk-brass); box-shadow: 0 0 0 4px rgba(227,178,82,.25); }
   .scrub .tick { position: absolute; inset-block: -1px; inline-size: 3px; background: rgba(5,8,14,.85); }
   .peek { position: absolute; inset-block-end: 26px; inset-inline-start: calc(58% - 88px); inline-size: 176px; text-align: center; }
   .peek .pic { block-size: 99px; border-radius: 8px; overflow: hidden; border: 2px solid rgba(255,255,255,.85); }
-  .peek .pic img { inline-size: 100%; block-size: 100%; object-fit: cover; object-position: 70% 50%; }
+  .peek .pic img { inline-size: 100%; block-size: 100%; object-fit: cover; object-position: 60% 50%; }
   .peek .pt { margin-block-start: 6px; font-weight: 600; font-size: var(--dk-t-small); text-shadow: 0 1px 3px #000; }
   .row { display: flex; align-items: center; gap: 6px; margin-block-start: 10px; }
   .row .iconbtn { inline-size: 42px; block-size: 42px; border-radius: 50%; }
   .row .iconbtn svg { inline-size: 24px; block-size: 24px; }
   .row .big { inline-size: 52px; block-size: 52px; background: var(--dk-fg); color: #05080e; }
+  .row .big svg path { fill: #05080e; }
   .row .time { margin-inline: 10px; font-weight: 600; }
   .row .time .muted { font-weight: 400; }
   .row .time span { unicode-bidi: isolate; }
@@ -43,7 +44,7 @@
   .vol .bar i { background: var(--dk-fg); }
   .row .iconbtn.open { background: rgba(255,255,255,.14); color: var(--dk-brass); }
   .menu { inset-block-end: 78px; inset-inline-end: 150px; inline-size: 300px; background: rgba(24,36,58,.96); }
-  .sub { position: absolute; inset-inline: 0; inset-block-end: 268px; text-align: center; }
+  .sub { position: absolute; inset-inline: 0; inset-block-end: 330px; text-align: center; }
   .sub span { display: inline-block; padding: 4px 14px; border-radius: 6px; background: rgba(5,8,14,.72); font-size: 26px; line-height: 38px; font-weight: 600; }
   :root[dir="rtl"] .sub span { font-size: 28px; line-height: 44px; }
   .menu .mi .check-i { inline-size: 20px; color: var(--dk-brass); }
@@ -51,7 +52,7 @@
 </head>
 <body>
 <div class="win win11">
-  <div class="video"><img src="../../../../tests/fixtures/demo-library/art/sintel-backdrop.jpg" alt=""></div>
+  <div class="video"><img src="art/saturn.jpg" alt=""></div>
   <div class="top">
     <span class="iconbtn round"><i data-i="back" class="dir"></i></span>
     <div><div class="t1" data-t="name"></div><div class="t2" data-t="chapter"></div></div>
@@ -64,7 +65,7 @@
       <div class="track"><span class="buf"></span><span class="played"></span>
         <span class="tick" style="inset-inline-start: 14%"></span><span class="tick" style="inset-inline-start: 38%"></span><span class="tick" style="inset-inline-start: 62%"></span><span class="tick" style="inset-inline-start: 84%"></span>
         <span class="knob"></span></div>
-      <div class="peek"><div class="pic"><img src="../../../../tests/fixtures/demo-library/art/sintel-backdrop.jpg" alt=""></div><div class="pt"><span class="num" data-t="peekT"></span> · <span data-t="peekC"></span></div></div>
+      <div class="peek"><div class="pic"><img src="art/saturn.jpg" alt=""></div><div class="pt"><span class="num" data-t="peekT"></span> · <span data-t="peekC"></span></div></div>
     </div>
     <div class="row">
       <div class="transport">
@@ -97,16 +98,16 @@
 <script>
 MK.applyKit({
   en: {
-    title: "Player: watching", name: "Sintel", chapter: "Scales flies away",
-    line: "I'll find you. I promise.", peekT: "8:35", peekC: "Scales flies away",
-    now: "6:20", total: "14:48",
+    title: "Player: watching", name: "Journey to Saturn", chapter: "Rings and moons",
+    line: "Cassini crossed the gap between the rings.", peekT: "31:10", peekC: "Rings and moons",
+    now: "25:30", total: "52:10",
     subs: "Subtitles", off: "Off", ar: "Arabic", arNote: "From the transcript", en: "English",
     style: "Subtitle size and colour", transcript: "Show the transcript",
   },
   ar: {
-    title: "المشغّل: المشاهدة", name: "سينتل", chapter: "التنين يحلّق بعيدًا",
-    line: "سأجدك. أعدك بذلك.", peekT: "٨:٣٥", peekC: "التنين يحلّق بعيدًا",
-    now: "٦:٢٠", total: "١٤:٤٨",
+    title: "المشغّل: المشاهدة", name: "رحلة إلى زحل", chapter: "الحلقات والأقمار",
+    line: "عبرت كاسيني الفجوة بين الحلقات.", peekT: "٣١:١٠", peekC: "الحلقات والأقمار",
+    now: "٢٥:٣٠", total: "٥٢:١٠",
     subs: "الترجمة", off: "إيقاف", ar: "العربية", arNote: "من النص المفرَّغ", en: "الإنجليزية",
     style: "حجم الترجمة ولونها", transcript: "عرض النص المفرَّغ",
   },

@@ -13,6 +13,7 @@ stories 13.10–13.18 build it, each in its own pull request.
 | `README.md` | this spec: the audit, the direction, tokens, components, the approach per app, the quality bar, the decisions, the review record |
 | `desktop.css` | the shared look of every mockup, on the real tokens (`web/packages/website/design/site-tokens.css`, generated from `web/design-system/tokens/`) and the real fonts (`web/packages/website/static/fonts/`) |
 | `mockups/*.html` | one file per surface; each holds both languages (`?lang=ar` draws the Arabic) |
+| `mockups/art/` | stand-in art drawn by `make_art.py` (space, desert, reef, sky, mountains, a library's arches); see "Demo media" |
 | `mockups/kit.js` | the icons, the shared copy, the window controls of each platform, the Player's shell and the arch |
 | `mockups/audit-*.html`, `audit.css` | the audit sheets: today's reference images, side by side, with what is stock |
 | `mockups/png/` | the renders: `<mockup>.<lang>.png`, 39 PNGs, each under 1 MB, full colour |
@@ -88,6 +89,19 @@ Mac"), `.defaultSize(1200, 780)`, on the generated `Tokens.swift`.
   in Profile; in Arabic the sidebar and the window controls stay at the left (CI's
   `mac-library-ar.png`).
 - Its installer is the App Store's; it has no menu-bar item.
+
+## Demo media
+
+Demo media in these mockups, and in every visual reference the build stories make, shows no
+women or girls: no posters, thumbnails, frames, avatars, cartoon characters or names. It is
+documentaries (nature, science, space), historical material and children's programmes fit
+for a conservative Muslim household. Until the replacement demo library lands
+(`tests/fixtures/demo-library/`), the mockups use drawn stand-ins (`mockups/art/`, made by
+`make_art.py`) and the demo library's two children's animations with only animals in them
+(Big Buck Bunny; Caminandes: Llamigos and Gran Dillama). The audit sheets show only the parts
+of today's captures with no demo art (the Mac sidebars, Profile, the Compose Player's empty
+cards), and none of the web app's. The build stories' references use the new demo library
+once it has landed.
 
 ## Direction
 
@@ -283,6 +297,8 @@ folders):
   (ClearType and the wallpaper vary).
 - Each build story's pull request shows its capture beside its mockup; the lead records each
   difference as fixed or accepted (`docs/design/desktop/review-NN.md`).
+- Every reference is taken on the demo library and follows "Demo media" above; a reference
+  that shows a woman or a girl is not accepted.
 
 **Accessibility.** WCAG 2.2 AA: the contrast table above; every control reachable by
 keyboard in reading order (mirrored in Arabic); F6 cycles title bar, rail and page; the focus

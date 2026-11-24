@@ -8,6 +8,7 @@
 <link rel="stylesheet" href="../../../../web/packages/website/design/site-tokens.css">
 <link rel="stylesheet" href="../desktop.css">
 <link rel="stylesheet" href="audit.css">
+<style>.crop { inline-size: 148px; block-size: 330px; overflow: hidden; border-radius: 8px; border: 1px solid var(--dk-line); } .crop img { inline-size: 1024px; max-inline-size: none; border: 0; border-radius: 0; }</style>
 </head>
 <body>
 <div class="sheet">
@@ -16,11 +17,12 @@
     (<code>MaktabaKit/…/Tokens.swift</code>). The images are CI's own: the <code>product-shots-mac</code> artifact of main's CI run
     45267535780 (2026-11-23, at 7d22f7d98), the same captures as
     <code>web/packages/website/static/shots/mac-*-1024.webp</code>.</p>
-  <div class="shots" style="grid-template-columns: 1fr 1fr 1fr">
-    <figure><img src="../../../../web/packages/website/static/shots/mac-library-en-1024.webp" alt=""><figcaption>Libraries, English: the system's grey sidebar selection.</figcaption></figure>
-    <figure><img src="../../../../web/packages/website/static/shots/mac-library-ar-1024.webp" alt=""><figcaption>Libraries, Arabic: the text is right-aligned, but the sidebar and the window controls stay at the left.</figcaption></figure>
-    <figure><img src="../../../../web/packages/devportal/static/assets/apps/player-mac-profile-en.webp" alt=""><figcaption>Profile, English (maktaba.dev): system list rows, grey sidebar selection.</figcaption></figure>
+  <div class="shots" style="grid-template-columns: 148px 148px 1fr; align-items: start">
+    <figure><div class="crop"><img src="../../../../web/packages/website/static/shots/mac-library-en-1024.webp" alt=""></div><figcaption>Libraries, English: the sidebar, cropped from CI's capture; the system's grey selection.</figcaption></figure>
+    <figure><div class="crop"><img src="../../../../web/packages/website/static/shots/mac-library-ar-1024.webp" alt=""></div><figcaption>Libraries, Arabic: the labels are Arabic, but the sidebar and the window controls stay at the left.</figcaption></figure>
+    <figure><img src="../../../../web/packages/devportal/static/assets/apps/player-mac-profile-en.webp" alt="" style="max-inline-size: 620px"><figcaption>Profile, English (maktaba.dev): system list rows, grey sidebar selection.</figcaption></figure>
   </div>
+  <p class="small muted" style="margin-block-start: 8px">Only the sidebar column of the Libraries captures is shown: their demo art is being replaced, since demo media in mockups and references shows no women or girls.</p>
   <div class="facts">
     <h2>What is designed, what is stock</h2>
     <div class="good"><span class="k">✓</span><span>Ink &amp; Brass from the token build, Amiri titles, brass segmented control and progress, dark playback.</span></div>

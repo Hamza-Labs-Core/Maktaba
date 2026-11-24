@@ -68,7 +68,11 @@ unbranded installers.
 | `audit-player`, `audit-server`, `audit-mac` | today's references, English | 1280 × 900 |
 
 All copy is the apps' own strings where they exist (`*Strings.kt`, `lang.rs`, the web app's
-`setup.*`) and the demo library's titles (`tests/fixtures/demo-library/`), never lorem ipsum.
+`setup.*`), never lorem ipsum. **Demo media shows no women or girls** (no posters,
+thumbnails, frames, avatars, cartoon characters or names): documentaries, history and
+children's programmes. Until the replacement demo library lands, the mockups use drawn
+stand-ins (`docs/design/desktop/mockups/art/`) and the demo library's animal-only
+animations; the build stories' references use the new library.
 
 **The technical approach per app, with effort and risk**, and **the quality bar** are in
 `docs/design/desktop/README.md` ("How each app gets there", "Quality bar"); the decisions
@@ -112,6 +116,7 @@ beside the first, so each lands with its capture.
   technical approach per app with effort and risk, the quality bar, and mockups of every
   surface in the table above in English and Arabic, rendered from HTML with the real tokens
   and fonts.
+- **Given** any mockup or reference, **then** its demo media shows no woman or girl.
 - **Given** any mockup, **then** its Arabic render uses Arabic copy, mirrors as its platform
   mirrors (layout, window controls), keeps media timelines and transport left to right, and no
   PNG is over 1 MB.
