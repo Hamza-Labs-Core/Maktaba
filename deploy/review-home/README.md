@@ -17,10 +17,10 @@ Updates), and it is registered with Maktaba Cloud like a customer's home, so the
 | `setup.sh` | the provisioning: Docker, ffmpeg, the firewall (SSH, 80, 443), the content set, the stack |
 | `seed.sh` | `seed` (accounts, libraries, channel, titles) and `rotate` (new passwords, devices signed out) |
 | `content/manifest.json` | the content set: each item's titles, licence, attribution, source and checksum |
-| `content/subtitles/` | Cosmos Laundromat's English subtitles and their Arabic translation (CC BY 4.0) |
+| `content/subtitles/` | Curiosity: Landing on Mars's English and Arabic captions, describing the picture, cue for cue (written for the review home; the film is public domain) |
 
 The content set is fetched and checked by [`tools/review_home/content.py`](../../tools/review_home/content.py)
-(each source against the Internet Archive's published SHA-1; the 4K HDR10, MKV/EAC3/WebVTT,
+(each source against its host's published SHA-1, the Internet Archive's or Wikimedia Commons'; the 4K HDR10, MKV/EAC3/WebVTT,
 transcode and audiobook files derived with ffmpeg by the manifest's arguments). The seeding runs
 `maktaba-server review-home` inside the home's container ([`api/internal/reviewhome`](../../api/internal/reviewhome)).
 
@@ -49,3 +49,5 @@ The home takes each release by itself. While a store submission is open, the rel
 holds it (Admin → Updates → Defer, or Skip each new version): see the submission round in
 [docs/stores/review-home.md](../../docs/stores/review-home.md#a-submission-round). A change to the
 content set is a pull request to `content/manifest.json`, then `setup.sh` and `seed.sh seed` again.
+A file the new set no longer lists stays in the media folder until it is removed by hand
+(compare `ls /srv/review-media/*/` with the manifest).

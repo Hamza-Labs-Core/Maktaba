@@ -17,7 +17,8 @@ and audio it plays. An unknown name is `generic`: H.264 and AAC in HLS, at most 
 | Profile | For |
 |---|---|
 | `generic` | anything that names no profile, or one the home does not know |
-| `desktop-player` | the Windows and Linux desktop Player |
+| `desktop-player` | the Windows and Linux desktop Player on JavaFX (H.264 and AAC only) |
+| `desktop-mpv` | the Windows and Linux desktop Player on libmpv (story 13.18), asked for only when the home lists it in `GET /api/stream/capabilities`'s `client_profiles` |
 | `browser-chrome`, `browser-safari` | the web app |
 | `ios-native`, `tvos` | the Apple apps |
 | `android-native`, `androidtv` | the Android apps |
@@ -103,8 +104,8 @@ For a TV profile, the streaming service weighs, in order:
 The older profiles decide on codecs, container, height and bitrate, and transcode (tone-mapped
 to SDR) HDR they do not show: a Dolby Vision source they lack plays as its base layer where they
 show it, and profile 5 is a transcode. Codec names are read as one name each, so a profile's
-`h265` is the probe's `hevc` and `ec-3` is `eac3`. HEVC is on `android-native` and `androidtv`
-only: Chrome decodes it only on some hardware, and Safari and AVPlayer refuse HEVC tagged `hev1`.
+`h265` is the probe's `hevc` and `ec-3` is `eac3`. HEVC is on `android-native`, `androidtv` and
+`desktop-mpv` only (libmpv decodes it in software where the machine has no decoder for it): Chrome decodes it only on some hardware, and Safari and AVPlayer refuse HEVC tagged `hev1`.
 
 ## A transcode's playlist and the video's length
 

@@ -4,6 +4,8 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -11,6 +13,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 )
 
@@ -27,14 +30,51 @@ const maxMigrations = 64 << 20
 // Anything else (a link, a path that climbs, another name) is refused, so a
 // directory it made holds migrations only. It returns how many it wrote.
 func ExtractMigrations(archive []byte, dir string) (int, error) {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return 0, err
+	}
+	return walkMigrations(archive, func(base string, b []byte) error {
+		return os.WriteFile(filepath.Join(dir, base), b, 0o644)
+	})
+}
+
+// MigrationSet is the digest of the migrations a migrations archive holds (release.json's
+// migrations.set_sha256): of each migration's name and the SHA-256 of its text, in name
+// order, and of nothing else. Two releases with the same migrations have the same set
+// whatever their archives' times and order (the archive's own digest changes with every
+// release: its entries carry the release commit's time).
+func MigrationSet(archive []byte) (string, error) {
+	sums := map[string]string{}
+	if _, err := walkMigrations(archive, func(base string, b []byte) error {
+		if _, dup := sums[base]; dup {
+			return fmt.Errorf("migrations archive: %s twice", base)
+		}
+		d := sha256.Sum256(b)
+		sums[base] = hex.EncodeToString(d[:])
+		return nil
+	}); err != nil {
+		return "", err
+	}
+	names := make([]string, 0, len(sums))
+	for n := range sums {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	h := sha256.New()
+	for _, n := range names {
+		_, _ = fmt.Fprintf(h, "%s\x00%s\n", n, sums[n])
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// walkMigrations gives each migration of a migrations archive to use (its base name and
+// text), refusing anything else as ExtractMigrations says. It returns how many it gave.
+func walkMigrations(archive []byte, use func(base string, b []byte) error) (int, error) {
 	gz, err := gzip.NewReader(bytes.NewReader(archive))
 	if err != nil {
 		return 0, fmt.Errorf("migrations archive: %w", err)
 	}
 	defer func() { _ = gz.Close() }()
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return 0, err
-	}
 	tr := tar.NewReader(gz)
 	var total int64
 	n := 0
@@ -75,7 +115,7 @@ func ExtractMigrations(archive []byte, dir string) (int, error) {
 		if err != nil {
 			return n, err
 		}
-		if err := os.WriteFile(filepath.Join(dir, base), b, 0o644); err != nil {
+		if err := use(base, b); err != nil {
 			return n, err
 		}
 		n++

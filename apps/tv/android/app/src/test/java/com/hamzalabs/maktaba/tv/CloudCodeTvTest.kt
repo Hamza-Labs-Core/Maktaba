@@ -120,7 +120,7 @@ class CloudCodeTvTest {
                 // the home lists its relay among its own addresses: the one the cloud gave
                 "/api/discovery/home" -> json(200, """{"id":"instance-7","name":"Den","urls":["$homeUrl","$RELAY"],"api_level":1,"api_level_oldest":1}""")
                 "/api/pairing/device/token" -> json(200, """{"access_token":"$FRESH","refresh_token":"r1"}""")
-                "/api/auth/me" -> if (r.headers["Authorization"] == "Bearer $FRESH") json(200, """{"id":"u1","username":"sara","home_name":"Den"}""") else json(401, "{}")
+                "/api/auth/me" -> if (r.headers["Authorization"] == "Bearer $FRESH") json(200, """{"id":"u1","username":"bilal","home_name":"Den"}""") else json(401, "{}")
                 else -> json(404, "{}")
             }
         }

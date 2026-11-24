@@ -1,0 +1,25 @@
+{
+ "id": "v-ghost-octopus",
+ "library_id": "lib-docs",
+ "path": "",
+ "filename": "ghost-octopus.mkv",
+ "title": "A Ghost Octopus in the Deep",
+ "description": "Four kilometres down off Hawaii, a robot submarine meets a small pale octopus that no one had seen before.",
+ "state": "ready",
+ "detected_language": "en",
+ "duration_sec": 46,
+ "size_bytes": 11500000,
+ "content_hash": "vghostoctopus000000000000000000000000000000000000000000000000000",
+ "created_at": "{{now-1814400}}",
+ "updated_at": "{{now-1813800}}",
+ "published_at": "2016-06-01T00:00:00Z",
+ "playable": true,
+ "tags": [],
+ "poster_url": "/api/videos/v-ghost-octopus/poster",
+ "backdrop_url": "/api/videos/v-ghost-octopus/backdrop",
+ "playback_state": {
+  "position_sec": 46,
+  "completed": true,
+  "updated_at": "{{now-345600}}"
+ }
+}

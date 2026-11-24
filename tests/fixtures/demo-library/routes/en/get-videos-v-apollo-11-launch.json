@@ -1,0 +1,25 @@
+{
+ "id": "v-apollo-11-launch",
+ "library_id": "lib-docs",
+ "path": "",
+ "filename": "apollo-11-launch.mkv",
+ "title": "Apollo 11: The Launch",
+ "description": "Filmed at 500 frames a second from the launch tower: the Saturn V's engines light, and the rocket that carried the first Moon landing rises past the camera.",
+ "state": "ready",
+ "detected_language": "en",
+ "duration_sec": 496,
+ "size_bytes": 124000000,
+ "content_hash": "vapollolaunch000000000000000000000000000000000000000000000000000",
+ "created_at": "{{now-432000}}",
+ "updated_at": "{{now-431400}}",
+ "published_at": "1969-06-01T00:00:00Z",
+ "playable": true,
+ "tags": [],
+ "poster_url": "/api/videos/v-apollo-11-launch/poster",
+ "backdrop_url": "/api/videos/v-apollo-11-launch/backdrop",
+ "playback_state": {
+  "position_sec": 496,
+  "completed": true,
+  "updated_at": "{{now-108000}}"
+ }
+}

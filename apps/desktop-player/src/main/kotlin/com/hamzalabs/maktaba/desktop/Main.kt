@@ -116,6 +116,8 @@ fun main(args: Array<String>) {
         var reporting by remember { mutableStateOf(false) }
         var reportRef by remember { mutableStateOf<String?>(null) }
         var crashNotice by remember { mutableStateOf<com.hamzalabs.maktaba.core.crash.CrashOutbox.Notice?>(null) }
+        // story 13.18: a packaged Player whose libmpv did not load says so once, and plays with JavaFX
+        var engineNotice by remember { mutableStateOf(com.hamzalabs.maktaba.desktop.mpv.Engine.noticeReason()) }
         var myReports by remember { mutableStateOf(false) }
         var askCrashes by remember { mutableStateOf(false) }
         var crashesOn by remember { mutableStateOf(false) }
@@ -214,6 +216,7 @@ fun main(args: Array<String>) {
                     }
                     if (reporting) {
                         ReportProblemDialog(signedIn.client, signedHome.label, crashHeader, crashOutbox, reference = reportRef,
+                            log = { listOf(com.hamzalabs.maktaba.desktop.mpv.Engine.logLine()) },
                             onDismiss = { reporting = false; reportRef = null })
                     }
                     crashNotice?.let { n ->
@@ -224,6 +227,13 @@ fun main(args: Array<String>) {
                                 else texts["crash.lastCrash.kept"])
                             },
                             confirmButton = { androidx.compose.material3.TextButton(onClick = { crashNotice = null }) { Text(texts["report.done"]) } },
+                        )
+                    }
+                    engineNotice?.let { why ->
+                        MaktabaAlertDialog(
+                            onDismissRequest = { engineNotice = null },
+                            text = { Text(texts["engine.fallback", why]) },
+                            confirmButton = { androidx.compose.material3.TextButton(onClick = { engineNotice = null }) { Text(texts["report.done"]) } },
                         )
                     }
                     if (myReports) MyReportsDialog(signedIn.client, onDismiss = { myReports = false })

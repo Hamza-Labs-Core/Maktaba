@@ -3,94 +3,50 @@
  "channels": [
   {
    "channel": {
-    "id": "ch-films",
+    "id": "ch-space",
     "number": 1,
-    "name": "سهرة الأفلام",
-    "slug": "films",
+    "name": "الفضاء",
+    "slug": "space",
     "logo_url": null
    },
    "current": {
-    "channel_id": "ch-films",
-    "kind": "program",
-    "start": "{{now-900}}",
-    "stop": "{{now+900}}",
-    "title": "سينتل",
-    "sub_title": "سينتل",
-    "desc": "شابة وحيدة تجوب الجبال المتجمدة بحثًا عن تنين صغير أنقذته يومًا وربّته حتى كبر.",
-    "poster": "/api/videos/v-sintel/poster",
-    "on_air": "سينتل",
-    "strip_title": "سينتل",
-    "is_live": true,
-    "progress": 0.5
-   },
-   "next": {
-    "channel_id": "ch-films",
-    "kind": "program",
-    "start": "{{now+900}}",
-    "stop": "{{now+1800}}",
-    "title": "مغسلة الكون",
-    "sub_title": "مغسلة الكون",
-    "desc": "على جزيرة مقفرة، يلتقي خروف متعب ببائع غريب يعرض عليه كل حياة يتمناها.",
-    "poster": "/api/videos/v-cosmos-laundromat/poster",
-    "on_air": "مغسلة الكون",
-    "strip_title": "مغسلة الكون"
-   },
-   "on_air": true
-  },
-  {
-   "channel": {
-    "id": "ch-shorts",
-    "number": 2,
-    "name": "قصيرة",
-    "slug": "shorts",
-    "logo_url": null
-   },
-   "current": {
-    "channel_id": "ch-shorts",
+    "channel_id": "ch-space",
     "kind": "program",
     "start": "{{now}}",
     "stop": "{{now+900}}",
-    "title": "رعب الجنيات",
-    "sub_title": "رعب الجنيات",
-    "desc": "مراهقون يخيّمون في غابة مكسوة بالطحالب، فيتعلّمون بالطريقة الصعبة أن حرّاسها الصغار يريدون أن يُتركوا وشأنهم.",
-    "poster": "/api/videos/v-sprite-fright/poster",
-    "series": "حكايات قصيرة",
-    "season": 2,
-    "episode": 2,
-    "on_air": "رعب الجنيات",
-    "strip_title": "رعب الجنيات",
-    "strip_series": "حكايات قصيرة",
+    "title": "على امتداد حلقات زحل",
+    "sub_title": "على امتداد حلقات زحل",
+    "desc": "تمسح كاميرات المسبار كاسيني حلقات زحل بألوانها الحقيقية، من حافتها الخارجية الباهتة إلى ظل الكوكب ثم تعود.",
+    "poster": "/api/videos/v-saturn-rings/poster",
+    "on_air": "على امتداد حلقات زحل",
+    "strip_title": "على امتداد حلقات زحل",
     "is_live": true,
     "progress": 0
    },
    "next": {
-    "channel_id": "ch-shorts",
+    "channel_id": "ch-space",
     "kind": "program",
     "start": "{{now+900}}",
     "stop": "{{now+1800}}",
-    "title": "كاميناندس: صديقا اللاما",
-    "sub_title": "كاميناندس: صديقا اللاما",
-    "desc": "في شتاء باتاغونيا الثلجي، يلتقي كورو بطريق جائع فيتنازعان على آخر حبات التوت.",
-    "poster": "/api/videos/v-llamigos/poster",
-    "series": "حكايات قصيرة",
-    "season": 1,
-    "episode": 2,
-    "on_air": "كاميناندس: صديقا اللاما",
-    "strip_title": "كاميناندس: صديقا اللاما",
-    "strip_series": "حكايات قصيرة"
+    "title": "أبولو 11: الإقلاع",
+    "sub_title": "أبولو 11: الإقلاع",
+    "desc": "صُوِّر بخمسمئة إطار في الثانية من برج الإطلاق: تشتعل محركات ساتورن الخامس، ويرتفع أمام الكاميرا الصاروخ الذي حمل أول رحلة هبطت على القمر.",
+    "poster": "/api/videos/v-apollo-11-launch/poster",
+    "on_air": "أبولو 11: الإقلاع",
+    "strip_title": "أبولو 11: الإقلاع"
    },
    "on_air": true
   },
   {
    "channel": {
-    "id": "ch-family",
-    "number": 3,
-    "name": "العائلة",
-    "slug": "family",
+    "id": "ch-kids",
+    "number": 2,
+    "name": "للأطفال",
+    "slug": "kids",
     "logo_url": null
    },
    "current": {
-    "channel_id": "ch-family",
+    "channel_id": "ch-kids",
     "kind": "program",
     "start": "{{now}}",
     "stop": "{{now+900}}",
@@ -98,26 +54,66 @@
     "sub_title": "كاميناندس: اللاما الكبير",
     "desc": "اللاما كورو يريد العشب على الجانب الآخر من السياج، مهما كلّفه ذلك.",
     "poster": "/api/videos/v-gran-dillama/poster",
-    "series": "حكايات قصيرة",
+    "series": "كاميناندس",
     "season": 1,
-    "episode": 1,
+    "episode": 2,
     "on_air": "كاميناندس: اللاما الكبير",
     "strip_title": "كاميناندس: اللاما الكبير",
-    "strip_series": "حكايات قصيرة",
+    "strip_series": "كاميناندس",
     "is_live": true,
     "progress": 0
    },
    "next": {
-    "channel_id": "ch-family",
+    "channel_id": "ch-kids",
     "kind": "program",
     "start": "{{now+900}}",
     "stop": "{{now+1800}}",
-    "title": "الأرنب الكبير",
-    "sub_title": "الأرنب الكبير",
-    "desc": "أرنب ضخم طيب القلب يضيق ذرعًا بثلاثة متنمرين في الغابة، فيدبّر لهم انتقامًا لطيفًا.",
-    "poster": "/api/videos/v-big-buck-bunny/poster",
-    "on_air": "الأرنب الكبير",
-    "strip_title": "الأرنب الكبير"
+    "title": "كاميناندس: صديقا اللاما",
+    "sub_title": "كاميناندس: صديقا اللاما",
+    "desc": "في شتاء باتاغونيا الثلجي، يلتقي كورو بطريق جائع فيتنازعان على آخر حبات التوت.",
+    "poster": "/api/videos/v-llamigos/poster",
+    "series": "كاميناندس",
+    "season": 2,
+    "episode": 1,
+    "on_air": "كاميناندس: صديقا اللاما",
+    "strip_title": "كاميناندس: صديقا اللاما",
+    "strip_series": "كاميناندس"
+   },
+   "on_air": true
+  },
+  {
+   "channel": {
+    "id": "ch-earth",
+    "number": 3,
+    "name": "الأرض والبحر",
+    "slug": "earth",
+    "logo_url": null
+   },
+   "current": {
+    "channel_id": "ch-earth",
+    "kind": "program",
+    "start": "{{now}}",
+    "stop": "{{now+900}}",
+    "title": "أبولو 11: الإقلاع",
+    "sub_title": "أبولو 11: الإقلاع",
+    "desc": "صُوِّر بخمسمئة إطار في الثانية من برج الإطلاق: تشتعل محركات ساتورن الخامس، ويرتفع أمام الكاميرا الصاروخ الذي حمل أول رحلة هبطت على القمر.",
+    "poster": "/api/videos/v-apollo-11-launch/poster",
+    "on_air": "أبولو 11: الإقلاع",
+    "strip_title": "أبولو 11: الإقلاع",
+    "is_live": true,
+    "progress": 0
+   },
+   "next": {
+    "channel_id": "ch-earth",
+    "kind": "program",
+    "start": "{{now+900}}",
+    "stop": "{{now+1800}}",
+    "title": "بحيرة ناصر من الفضاء",
+    "sub_title": "بحيرة ناصر من الفضاء",
+    "desc": "نصف قرن من صور الأقمار الاصطناعية لاندسات يُظهر البحيرة الكبرى على النيل خلف السد العالي في أسوان، وهي ترتفع وتنخفض مع الفيضان وشمس الصحراء.",
+    "poster": "/api/videos/v-lake-nasser/poster",
+    "on_air": "بحيرة ناصر من الفضاء",
+    "strip_title": "بحيرة ناصر من الفضاء"
    },
    "on_air": true
   }

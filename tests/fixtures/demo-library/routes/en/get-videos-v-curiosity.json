@@ -1,0 +1,25 @@
+{
+ "id": "v-curiosity",
+ "library_id": "lib-docs",
+ "path": "",
+ "filename": "curiosity.mkv",
+ "title": "Curiosity: Landing on Mars",
+ "description": "From launch to the sky crane's last metres: how NASA's Curiosity rover reached Mars and set to work in Gale Crater, told in animation.",
+ "state": "ready",
+ "detected_language": "en",
+ "duration_sec": 680,
+ "size_bytes": 170000000,
+ "content_hash": "vcuriosity000000000000000000000000000000000000000000000000000000",
+ "created_at": "{{now-172800}}",
+ "updated_at": "{{now-172200}}",
+ "published_at": "2011-06-01T00:00:00Z",
+ "playable": true,
+ "tags": [],
+ "poster_url": "/api/videos/v-curiosity/poster",
+ "backdrop_url": "/api/videos/v-curiosity/backdrop",
+ "playback_state": {
+  "position_sec": 380,
+  "completed": false,
+  "updated_at": "{{now-10800}}"
+ }
+}

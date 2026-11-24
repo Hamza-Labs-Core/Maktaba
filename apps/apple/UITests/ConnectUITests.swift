@@ -40,10 +40,10 @@ final class ConnectUITests: XCTestCase {
     func testTheCloudDownShowsTheSavedHomes() throws {
         home.stub("POST", "/v1/auth/login", status: 503, body: #"{"error":"unavailable","message":""}"#)
         let savedAt = Date().timeIntervalSinceReferenceDate - 3600
-        let saved = #"{"user":{"id":"cu1","email":"sara@example.com"},"savedAt":\#(savedAt),"homes":[{"server_id":"srv-1","name":"Kitchen","slug":"kitchen","relay_url":"https://kitchen.relay.maktaba.tv","online":true,"linked":true,"owned":false,"connections":[{"url":"https://kitchen.relay.maktaba.tv","kind":"relay"}]}]}"#
+        let saved = #"{"user":{"id":"cu1","email":"bilal@example.com"},"savedAt":\#(savedAt),"homes":[{"server_id":"srv-1","name":"Kitchen","slug":"kitchen","relay_url":"https://kitchen.relay.maktaba.tv","online":true,"linked":true,"owned":false,"connections":[{"url":"https://kitchen.relay.maktaba.tv","kind":"relay"}]}]}"#
         let hex = Data(saved.utf8).map { String(format: "%02x", $0) }.joined()
         app.terminate()
-        app.launchArguments += ["-cloud.api", home.url, "-cloud.homes.sara@example.com", "<\(hex)>"]
+        app.launchArguments += ["-cloud.api", home.url, "-cloud.homes.bilal@example.com", "<\(hex)>"]
         app.launch()
         dismissWalkthrough()
 
@@ -52,7 +52,7 @@ final class ConnectUITests: XCTestCase {
         cloud.tap()
         let email = app.textFields["cloud.email"]
         XCTAssertTrue(email.waitForExistence(timeout: 10))
-        email.typeExactly("sara@example.com", in: app)
+        email.typeExactly("bilal@example.com", in: app)
         app.secureTextFields["cloud.password"].typeExactly("pw", in: app, secure: true)
         app.buttons["cloud.signin"].tap()
 

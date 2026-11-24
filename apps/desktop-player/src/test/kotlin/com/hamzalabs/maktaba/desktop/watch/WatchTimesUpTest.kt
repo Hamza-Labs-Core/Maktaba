@@ -54,7 +54,7 @@ class WatchTimesUpTest {
             opens.incrementAndGet()
             TestHome.json(timeOver, 403)
         }
-        fake.answer("GET /api/me/parental/guardians", """{"guardians":[{"id":"g1","username":"huda"}]}""")
+        fake.answer("GET /api/me/parental/guardians", """{"guardians":[{"id":"g1","username":"khalid"}]}""")
         fake.answer("POST /api/me/parental/unlock", """{"grant":{"id":"t1","minutes":15}}""")
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default.limitedParallelism(1))
         val playback = Playback(fake.client, scope, scope, signedOut = {}, players = noVideo)

@@ -58,6 +58,8 @@ func (h *Handler) checks() []check {
 	}
 	return append(cs,
 		check{Name: "plex", Fallback: base("plex_livetv", GroupIntegrations, KindPlexLiveTV, "Plex Live TV"), Run: checkPlex},
+		check{Name: "update_check", Fallback: base("update_check", GroupIntegrations, KindUpdateCheck, "Update check"),
+			Run: checkUpdateCheck},
 		check{Name: "queues", Fallback: base("queues", GroupQueuesTV, KindQueues, "Queues"), Run: checkQueues},
 		check{Name: "tv_channels", Fallback: base("tv_channels", GroupQueuesTV, KindTVChannels, "Channels on air"),
 			Run: checkTVChannels},

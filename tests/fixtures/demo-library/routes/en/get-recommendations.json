@@ -6,10 +6,10 @@
    "reason_kind": "continue_watching",
    "items": [
     {
-     "video_id": "v-sintel",
+     "video_id": "v-curiosity",
      "position_sec": 380,
-     "duration_sec": 888,
-     "remaining_sec": 508,
+     "duration_sec": 680,
+     "remaining_sec": 300,
      "last_watched_at": "{{now-10800}}"
     },
     {
@@ -27,24 +27,20 @@
    "reason_kind": "for_you",
    "items": [
     {
-     "video_id": "v-spring",
+     "video_id": "v-saturn-rings",
      "score": 0.95
     },
     {
-     "video_id": "v-coffee-run",
+     "video_id": "v-gran-dillama",
      "score": 0.9
     },
     {
-     "video_id": "v-sprite-fright",
+     "video_id": "v-lake-nasser",
      "score": 0.85
     },
     {
-     "video_id": "v-tears-of-steel",
+     "video_id": "v-moon-phases",
      "score": 0.8
-    },
-    {
-     "video_id": "v-cosmos-laundromat",
-     "score": 0.75
     }
    ]
   }

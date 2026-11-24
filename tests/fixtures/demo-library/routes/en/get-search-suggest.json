@@ -1,6 +1,21 @@
 {
  "suggestions": [
-  "dragon",
-  "Sintel"
+  "Mars",
+  "Curiosity: Landing on Mars"
+ ],
+ "items": [
+  {
+   "text": "Mars",
+   "kind": "history"
+  },
+  {
+   "text": "Mars",
+   "kind": "term"
+  },
+  {
+   "text": "Curiosity: Landing on Mars",
+   "kind": "title",
+   "video_id": "v-curiosity"
+  }
  ]
 }
