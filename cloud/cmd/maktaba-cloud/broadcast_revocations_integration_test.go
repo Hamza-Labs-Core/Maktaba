@@ -19,8 +19,10 @@ import (
 // service admin (T08), every add and lift is audited and moves the list's version, and the pull
 // gives a home the signed list with the entry in it.
 func TestBroadcastKillSwitchRolesAuditAndPull(t *testing.T) {
+	withBroadcastPrices(t)
 	key := ingestKeyFile(t)
 	e := newEnvCfg(t, nil, func(c *config.Config) {
+		c.Broadcast.Enabled = true
 		c.Broadcast.KeyPath = key
 		c.Broadcast.IngestURL = "" // no edge in the test: the push is skipped, the pull serves
 	})

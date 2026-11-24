@@ -64,6 +64,9 @@ func NewRouter(logger *slog.Logger, pool *db.Pool, mig *db.Migrator, build Build
 		r.Use(middleware.FormCORS(o.formPaths, o.formOrigins))
 	}
 	r.Use(middleware.CORS(allowedOrigins))
+	if o.gate != nil {
+		r.Use(o.gate)
+	}
 
 	r.Get("/healthz", healthzHandler(build))
 	ready := readyzHandler(pool, mig)
@@ -104,6 +107,13 @@ type routerOptions struct {
 	tvPaths   []string // the TV's public routes a packaged TV app's origin may call (58.09)
 	// the public forms' routes and the origins that may post to them (50.24)
 	formPaths, formOrigins []string
+	gate                   func(http.Handler) http.Handler
+}
+
+// WithGate runs gate on every request after the platform's middleware and before any route, the
+// unknown ones included (the broadcast gate, handlers/broadcastgate).
+func WithGate(gate func(http.Handler) http.Handler) RouterOption {
+	return func(o *routerOptions) { o.gate = gate }
 }
 
 // WithFormOrigins answers origins on paths, the public forms' routes (Epic 50 story 50.24,
