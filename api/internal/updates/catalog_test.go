@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -42,7 +43,15 @@ func (g *fakeGitHub) serve(w http.ResponseWriter, r *http.Request) {
 	p := r.URL.Path
 	switch {
 	case p == "/repos/o/r/releases":
-		_ = json.NewEncoder(w).Encode(g.releases)
+		// GitHub's pages (per_page, page: 30 and 1 when not asked)
+		per, page := 30, 1
+		_, _ = fmt.Sscan(r.URL.Query().Get("per_page"), &per)
+		_, _ = fmt.Sscan(r.URL.Query().Get("page"), &page)
+		out := []map[string]any{}
+		for i := (page - 1) * per; i >= 0 && i < page*per && i < len(g.releases); i++ {
+			out = append(out, g.releases[i])
+		}
+		_ = json.NewEncoder(w).Encode(out)
 	case strings.HasPrefix(p, "/repos/o/r/releases/tags/"):
 		tag := strings.TrimPrefix(p, "/repos/o/r/releases/tags/")
 		for _, rel := range g.releases {

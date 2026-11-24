@@ -23,19 +23,23 @@ How it is run, updated and provisioned: [`deploy/review-home/`](../../deploy/rev
 
   | Library | Items | Licence |
   |---|---|---|
-  | Films · أفلام (all ages) | Spring, Meridian, Big Buck Bunny | CC BY 4.0, CC BY 4.0, CC BY 3.0 |
-  | Films for older viewers · أفلام للكبار (13+) | Sintel, Cosmos Laundromat: First Cycle | CC BY 3.0, CC BY 4.0 |
+  | Films · أفلام (all ages) | Caminandes: Llama Drama, The Moon's Phases 2023, Big Buck Bunny, Curiosity: Landing on Mars, Caminandes: Llamigos | CC BY 3.0, public domain, CC BY 3.0, public domain, CC BY 3.0 |
+  | Films for older viewers · أفلام للكبار (13+) | Apollo 11: The Launch, Lake Nasser from Space, A Ghost Octopus in the Deep | public domain |
   | Lectures · محاضرات | Math for Teens 1–3 (logic, sets, induction) | CC BY 3.0 |
-  | Audiobooks · كتب مسموعة | Stories from the Arabian Nights, parts 1 and 2 (LibriVox) | public domain |
+  | Audiobooks · كتب مسموعة | أدب الدنيا والدين (al-Mawardi), the introduction and chapter 1 part 1, read in Arabic (LibriVox) | public domain |
 
   and **Review TV · قناة المراجعة**, a live channel looped from the films.
+
+  The content shows no woman or girl in any picture, title or caption: documentaries with no
+  people in them, children's animation whose characters are animals, a lecturer at a whiteboard,
+  and an audiobook read by one man over a still frame.
 - **The test files** a reviewer's TV will hit:
 
   | Path | File |
   |---|---|
-  | 4K HEVC HDR10 | Meridian (HEVC Main 10, PQ, BT.2020, HDR10 metadata) |
-  | 1080p H.264 | Spring |
-  | MKV with EAC3 and WebVTT subtitles in English and Arabic | Cosmos Laundromat: First Cycle |
+  | 4K HEVC HDR10 | The Moon's Phases, 2023 (HEVC Main 10, PQ, BT.2020, HDR10 metadata) |
+  | 1080p H.264 | Caminandes: Llama Drama |
+  | MKV with EAC3 and WebVTT subtitles in English and Arabic | Curiosity: Landing on Mars (captions describing the picture) |
   | a file that needs a transcode | Big Buck Bunny (Theora and Vorbis, which no TV plays) |
 
 ## How the reviewer gets in

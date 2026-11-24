@@ -185,6 +185,23 @@ describe("what happens next", () => {
     expect(text).not.toMatch(/about \d+\b(?! (minutes?|hours?|days?))/);
   });
 
+  it("the home held back by a release that failed there: says so, not up to date", () => {
+    const ov = owners({
+      plan: {
+        held: false,
+        stepping_stone: false,
+        auto_install: true,
+        due: false,
+        reason: "held_back",
+        held_back_by: "0.3.158",
+        waiting: "held_back",
+      },
+    });
+    expect(say(homeNext(ov, NOW, "en", t))).toMatch(
+      /^Nothing installs by itself: 0\.3\.158 failed here/
+    );
+  });
+
   it("the home during a run: updating to the run's release", () => {
     const ov = owners({
       run: {

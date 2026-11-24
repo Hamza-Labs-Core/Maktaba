@@ -132,7 +132,15 @@ none`), at most 100 KB each. They are taken on test data only:
   theme (`mkt:theme`) and the usage-data answer (`mkt:usage:consent`, so its prompt stays
   away) set in local storage first.
 
-Look at every image before adding it: the scan cannot read the pixels.
+The web app's search pages (`web-search`, `web-search-suggest`, `web-search-ai`) are the
+website's web capture (`web/packages/website/scripts/capture-web.mjs`, CI's `product-shots-web`
+artifact) on the demo library; the big screen's are the /tv/ Playwright test's screenshots (CI's
+`tv-web-logs`); Fire TV's are its Roborazzi references.
+
+No screenshot shows a woman or a girl, in a picture, a name or a description: the test data
+behind them uses men's names only (an account, a guardian, a speaker, a device's name) and the
+demo library's films, which have no women in them. Look at every image before adding it: the
+scan cannot read the pixels.
 
 **Keeping the site current.** A pull request that ships or changes a user-facing feature, an
 app screen, a developer-facing API or the plugin system updates the site in the same pull

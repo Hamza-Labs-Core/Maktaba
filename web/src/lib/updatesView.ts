@@ -179,7 +179,10 @@ export function homeNext(ov: UpdatesOverview, now: number, locale: string, t: T)
     return { key: "updates.next.updating", vars: { version: ov.run.version } };
   const plan = ov.plan ?? ({} as UpdatesOverview["plan"]);
   const target = plan.target;
-  if (!target) return { key: "updates.next.upToDate", vars: {} };
+  if (!target)
+    return plan.reason === "held_back" && plan.held_back_by
+      ? { key: "updates.next.heldBack", vars: { version: plan.held_back_by } }
+      : { key: "updates.next.upToDate", vars: {} };
   const version = target.version;
   if (plan.held) return { key: "updates.plan.held", vars: { version } };
   if (plan.next_run_at) {
@@ -273,4 +276,11 @@ export function safeReleaseUrl(raw: unknown): string | null {
   } catch {
     return null; // relative or malformed
   }
+}
+
+/** Why a check failed, in the reader's language (the server's code; GitHub unreachable when it is not one this app knows). */
+export function checkFailedWhy(code: string | undefined, t: (k: string) => string): string {
+  const key = `updates.checkFailed.${code ?? ""}`;
+  const s = t(key);
+  return code && s !== key ? s : t("updates.checkFailed.unreachable");
 }

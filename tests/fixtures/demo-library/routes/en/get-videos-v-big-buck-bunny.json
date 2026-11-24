@@ -1,8 +1,8 @@
 {
  "id": "v-big-buck-bunny",
- "library_id": "lib-films",
+ "library_id": "lib-kids",
  "path": "",
- "filename": "big-buck-bunny.mkv",
+ "filename": "big-buck-bunny.mp4",
  "title": "Big Buck Bunny",
  "description": "A gentle giant rabbit has had enough of three bullies in the forest, and plans a sweet revenge.",
  "state": "ready",
@@ -20,6 +20,6 @@
  "playback_state": {
   "position_sec": 596,
   "completed": true,
-  "updated_at": "{{now-108000}}"
+  "updated_at": "{{now-129600}}"
  }
 }

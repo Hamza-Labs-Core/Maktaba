@@ -10,7 +10,7 @@ import XCTest
 final class PlayerParentalUITests: PlayerUITestCase {
     private static let child = #"{"restricted":true,"max_tier":9,"unrated":"hide","version":4}"#
     private static let notFound = #"{"type":"https://maktaba.tv/problems/not-found","title":"not found","status":404}"#
-    private static let huda = #"{"guardians":[{"id":"g1","username":"Huda"}]}"#
+    private static let khalid = #"{"guardians":[{"id":"g1","username":"Khalid"}]}"#
 
     /// A failure points at the calling line, not at this helper.
     private func waitUntil(_ what: String, timeout: TimeInterval = 15, file: StaticString = #filePath, line: UInt = #line,
@@ -299,7 +299,7 @@ final class PlayerParentalUITests: PlayerUITestCase {
     /// T09 (and T08's other half): Enter parent PIN, a wrong PIN, then the right one opens
     /// the video. The pad's keys keep their order in Arabic.
     func testAParentsPINOpensTheVideo() throws {
-        childWithHiddenVideo(pinHolders: Self.huda)
+        childWithHiddenVideo(pinHolders: Self.khalid)
         home.stub("POST", "/api/me/parental/unlock", status: 403,
                   body: #"{"type":"https://maktaba.tv/problems/parental-pin-wrong","status":403,"code":"pin_wrong"}"#)
         launchSignedIn("ar", sections: ["home"], open: "video/v2")
@@ -333,7 +333,7 @@ final class PlayerParentalUITests: PlayerUITestCase {
     /// they open again by themselves, the sheet never closed. The keys keep their order
     /// left to right, and grow with the text size without leaving their rows.
     func testALockedPINPadSaysSoAndOpensAgainWhenTheLockEnds() throws {
-        childWithHiddenVideo(pinHolders: Self.huda)
+        childWithHiddenVideo(pinHolders: Self.khalid)
         // a 30 s lock: it must outlast the test's steps while the pad is closed. With 12 s, a
         // slow iPad on CI (#1249's run 43573942988) tapped "a closed pad" 16.3 s after the
         // lock began: the pad was open again, the tap typed a 1, the right PIN's keys then
@@ -452,13 +452,13 @@ final class PlayerParentalUITests: PlayerUITestCase {
 
     // MARK: 57.07, 57.08
 
-    private static let children = #"[{"id":"c2","username":"Sara","user_id":"c2","max_tier":13,"unrated":"hide","allow_only":false,"version":3,"updated_at":"2026-11-10T10:00:00Z"}]"#
+    private static let children = #"[{"id":"c2","username":"Bilal","user_id":"c2","max_tier":13,"unrated":"hide","allow_only":false,"version":3,"updated_at":"2026-11-10T10:00:00Z"}]"#
     private static let account = #"{"policy":{"user_id":"c2","max_tier":13,"unrated":"hide","allow_only":false,"version":3,"updated_at":"2026-11-10T10:00:00Z"},"access":"guardian","guardians":[{"id":"u1","username":"tester","created_at":"2026-11-01T10:00:00Z"}],"signals":[{"refresh_family_id":"f1aa22bb-0000-0000-0000-000000000001","lower":9,"upper":12,"declaration":"guardian_declared","region":"US","tier_limit":9,"pending_looser":{"lower":18,"tier_limit":null,"observed_at":"2026-11-11T09:00:00Z"},"observed_at":"2026-11-10T09:00:00Z"}]}"#
 
     private func guardian() {
         home.parental(#"{"restricted":false}"#, children: Self.children)
         home.stub("GET", "/api/parental/requests",
-                  body: #"{"requests":[{"id":"r1","child_id":"c2","subject_kind":"video","subject_id":"v2","status":"pending","created_at":"{{now-600}}","expires_at":"{{now+86400}}","child":{"id":"c2","username":"Sara"},"subject":{"kind":"video","id":"v2","title":"The long night","poster_url":"/api/videos/v2/poster","tier":16}}]}"#)
+                  body: #"{"requests":[{"id":"r1","child_id":"c2","subject_kind":"video","subject_id":"v2","status":"pending","created_at":"{{now-600}}","expires_at":"{{now+86400}}","child":{"id":"c2","username":"Bilal"},"subject":{"kind":"video","id":"v2","title":"The long night","poster_url":"/api/videos/v2/poster","tier":16}}]}"#)
         home.stub("GET", "/api/users/c2/parental", body: Self.account)
         home.stub("GET", "/api/users/c2/parental/rules", body: #"{"rules":[]}"#)
         home.stub("GET", "/api/parental/users/c2/time-rules", body: #"{"rules":[],"time_zone":"Asia/Riyadh"}"#)
@@ -481,10 +481,10 @@ final class PlayerParentalUITests: PlayerUITestCase {
         element("profile.family").tap()
         XCTAssertTrue(element("screen.family").waitForExistence(timeout: 10), "the Family screen")
         XCTAssertTrue(element("family.child.c2").waitForExistence(timeout: 10), "the child")
-        XCTAssertTrue(element("family.child.c2").label.contains("Sara") && element("family.child.c2").label.contains("13+"),
+        XCTAssertTrue(element("family.child.c2").label.contains("Bilal") && element("family.child.c2").label.contains("13+"),
                       element("family.child.c2").label)
         XCTAssertTrue(element("family.request.r1").waitForExistence(timeout: 10), "the request")
-        XCTAssertTrue(app.staticTexts["Sara asks for The long night"].exists, "who asks for what")
+        XCTAssertTrue(app.staticTexts["Bilal asks for The long night"].exists, "who asks for what")
         shot("parental-family")
 
         element("family.request.approve.r1").tap()
@@ -598,7 +598,7 @@ final class PlayerParentalUITests: PlayerUITestCase {
     func testAnAdminMakesAnAccountRestrictedAndAddsAGuardian() {
         guardian()
         home.stub("GET", "/api/admin/library-acl",
-                  body: #"{"users":[{"id":"u1","username":"tester"},{"id":"c2","username":"Sara"},{"id":"u3","username":"Omar"},{"id":"u4","username":"Huda"}],"libraries":[],"grants":[]}"#)
+                  body: #"{"users":[{"id":"u1","username":"tester"},{"id":"c2","username":"Bilal"},{"id":"u3","username":"Omar"},{"id":"u4","username":"Khalid"}],"libraries":[],"grants":[]}"#)
         home.stub("GET", "/api/users/c2/parental", body: Self.account.replacingOccurrences(of: #""access":"guardian""#, with: #""access":"admin""#))
         home.stub("PUT", "/api/users/u3/parental",
                   body: #"{"policy":{"user_id":"u3","max_tier":13,"unrated":"hide","allow_only":false,"version":1},"access":"admin","guardians":[],"signals":[]}"#)

@@ -1744,14 +1744,14 @@ export const APPS = [
               shot(
                 "web-search",
                 "wide",
-                "Search in the web app: Did you mean, the filters in use, the sort and the chips that count the results by library, language, speaker, year and length",
-                "البحث في تطبيق الويب: «هل تقصد»، وعوامل التصفية المستخدمة، والترتيب، والشرائح التي تعدّ النتائج حسب المكتبة واللغة والمتحدث والسنة والمدة"
+                "Search in the web app: a word found in a title and in what is said, in English and in Arabic, each passage with its time, the sort and the recent searches",
+                "البحث في تطبيق الويب: كلمة وُجدت في عنوان وفي ما يقال، بالإنجليزية والعربية، ولكل مقطع وقته، والترتيب وعمليات البحث الأخيرة"
               ),
               shot(
                 "web-search-suggest",
                 "wide",
-                "Suggestions as you type in the web app's Search, each with its kind: an earlier search, a word, a video's title, a speaker",
-                "الاقتراحات أثناء الكتابة في بحث تطبيق الويب، ولكلٍّ منها نوعه: بحث سابق، أو كلمة، أو عنوان مقطع، أو متحدث"
+                "Suggestions as you type in the web app's Search, each with its kind: an earlier search, a word, a video's title",
+                "الاقتراحات أثناء الكتابة في بحث تطبيق الويب، ولكلٍّ منها نوعه: بحث سابق، أو كلمة، أو عنوان مقطع"
               ),
               shot(
                 "web-search-ai",

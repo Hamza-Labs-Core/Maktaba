@@ -10,50 +10,52 @@
   "channel": {"name_en": "Review TV", "name_ar": "قناة المراجعة", "library": "films", "number": 1},
   "items": [
     {
-      "id": "spring",
+      "id": "llama-drama",
       "library": "films",
-      "file": "spring.mp4",
-      "title_en": "Spring",
-      "title_ar": "الربيع",
-      "licence": "CC-BY-4.0",
-      "licence_url": "https://creativecommons.org/licenses/by/4.0/",
-      "attribution": "Spring, Blender Animation Studio (2019)",
+      "file": "caminandes-llama-drama.mp4",
+      "title_en": "Caminandes: Llama Drama",
+      "title_ar": "كاميناندس: دراما اللاما",
+      "licence": "CC-BY-3.0",
+      "licence_url": "https://creativecommons.org/licenses/by/3.0/",
+      "attribution": "Caminandes: Llama Drama, Blender Foundation (2013), caminandes.com; re-encoded as 1080p H.264 for the review home",
       "covers": ["1080p-h264"],
       "sources": [
         {
-          "url": "https://archive.org/download/springopenmovie/springopenmovie.mp4",
-          "page": "https://archive.org/details/springopenmovie",
-          "size": 90190341,
-          "sha1": "13cd5e46194a7c0e6e772824dce8cd565afb8822"
-        }
-      ]
-    },
-    {
-      "id": "meridian",
-      "library": "films",
-      "file": "meridian-4k-hdr10.mp4",
-      "title_en": "Meridian",
-      "title_ar": "ميريديان",
-      "licence": "CC-BY-4.0",
-      "licence_url": "https://creativecommons.org/licenses/by/4.0/",
-      "attribution": "Meridian, Netflix (2016); re-encoded as 4K HEVC Main 10 with HDR10 metadata for the review home",
-      "covers": ["4k-hevc-hdr10"],
-      "sources": [
-        {
-          "url": "https://archive.org/download/meridian-netflix-2016/Meridian_UHD4k5994_HDR_P3PQ.mp4",
-          "page": "https://archive.org/details/meridian-netflix-2016",
-          "size": 850587087,
-          "sha1": "4908929d3f23d8b797c472f5b157a4289f607f31"
+          "url": "https://upload.wikimedia.org/wikipedia/commons/d/d0/Caminandes-_Llama_Drama_-_Short_Movie.ogv",
+          "page": "https://commons.wikimedia.org/wiki/File:Caminandes-_Llama_Drama_-_Short_Movie.ogv",
+          "size": 31428271,
+          "sha1": "c64f247c8fb73c96aa57285077ef9105948ae9dc"
         }
       ],
       "derive": [
-        "-i", "{src0}", "-map", "0:v:0", "-an",
-        "-vf", "format=yuv420p10le",
-        "-c:v", "libx265", "-preset", "medium", "-crf", "20",
-        "-x265-params", "hdr10=1:repeat-headers=1:colorprim=bt2020:transfer=smpte2084:colormatrix=bt2020nc:master-display=G(13250,34500)B(7500,3000)R(34000,16000)WP(15635,16450)L(10000000,1):max-cll=1000,400",
+        "-i", "{src0}", "-map", "0:v:0", "-map", "0:a:0", "-vf", "scale=1920:1080,format=yuv420p",
+        "-c:v", "libx264", "-profile:v", "high", "-preset", "medium", "-crf", "20", "-c:a",
+        "aac", "-b:a", "160k", "-movflags", "+faststart", "{out}"
+      ]
+    },
+    {
+      "id": "moon-phases",
+      "library": "films",
+      "file": "moon-phases-2023-4k-hdr10.mp4",
+      "title_en": "The Moon's Phases, 2023",
+      "title_ar": "أطوار القمر 2023",
+      "licence": "public-domain",
+      "licence_url": "https://creativecommons.org/publicdomain/mark/1.0/",
+      "attribution": "Moon Phase and Libration, 2023, NASA's Scientific Visualization Studio; re-encoded as 4K HEVC Main 10 with HDR10 metadata for the review home",
+      "covers": ["4k-hevc-hdr10"],
+      "sources": [
+        {
+          "url": "https://upload.wikimedia.org/wikipedia/commons/2/26/Moon_Phase_and_Libration%2C_2023_%28SVS5048_-_phases_2023_plain_2160p30%29.webm",
+          "page": "https://commons.wikimedia.org/wiki/File:Moon_Phase_and_Libration,_2023_(SVS5048_-_phases_2023_plain_2160p30).webm",
+          "size": 365230427,
+          "sha1": "c60db7e7dafcdcfc22b2a76c138fea13b1c8f835"
+        }
+      ],
+      "derive": [
+        "-i", "{src0}", "-map", "0:v:0", "-an", "-vf", "format=yuv420p10le", "-c:v", "libx265",
+        "-preset", "medium", "-crf", "20", "-x265-params", "hdr10=1:repeat-headers=1:colorprim=bt2020:transfer=smpte2084:colormatrix=bt2020nc:master-display=G(13250,34500)B(7500,3000)R(34000,16000)WP(15635,16450)L(10000000,1):max-cll=1000,400",
         "-color_primaries", "bt2020", "-color_trc", "smpte2084", "-colorspace", "bt2020nc",
-        "-tag:v", "hvc1", "-movflags", "+faststart",
-        "{out}"
+        "-tag:v", "hvc1", "-movflags", "+faststart", "{out}"
       ]
     },
     {
@@ -77,54 +79,110 @@
       "derive": ["-i", "{src0}", "-map", "0", "-c", "copy", "{out}"]
     },
     {
-      "id": "sintel",
+      "id": "apollo-11-launch",
       "library": "films-older",
-      "file": "sintel.mp4",
-      "title_en": "Sintel",
-      "title_ar": "سينتل",
-      "licence": "CC-BY-3.0",
-      "licence_url": "https://creativecommons.org/licenses/by/3.0/",
-      "attribution": "Sintel, Blender Foundation (2010), durian.blender.org",
+      "file": "apollo-11-launch.mkv",
+      "title_en": "Apollo 11: The Launch",
+      "title_ar": "أبولو 11: الإقلاع",
+      "licence": "public-domain",
+      "licence_url": "https://creativecommons.org/publicdomain/mark/1.0/",
+      "attribution": "Apollo 11 launch, camera E-8 at 500 frames a second, NASA/Kennedy Space Center (1969)",
       "covers": [],
       "sources": [
         {
-          "url": "https://archive.org/download/Sintel/sintel-2048-surround.mp4",
-          "page": "https://archive.org/details/Sintel",
-          "size": 310674005,
-          "sha1": "8a2b4622859894b18748a764a8cd064b9b6eebce"
+          "url": "https://upload.wikimedia.org/wikipedia/commons/6/61/Apollo_11_launch%2C_video_of_engines_at_500_fps_%28camera_E-8%29.ogv",
+          "page": "https://commons.wikimedia.org/wiki/File:Apollo_11_launch,_video_of_engines_at_500_fps_(camera_E-8).ogv",
+          "size": 173578957,
+          "sha1": "d66974c5de98b27fbc58ca267950a8491f97dcb4"
+        }
+      ],
+      "derive": ["-i", "{src0}", "-map", "0", "-c", "copy", "{out}"]
+    },
+    {
+      "id": "curiosity",
+      "library": "films",
+      "file": "curiosity-landing-on-mars.mkv",
+      "title_en": "Curiosity: Landing on Mars",
+      "title_ar": "كيوريوسيتي: الهبوط على المريخ",
+      "licence": "public-domain",
+      "licence_url": "https://creativecommons.org/publicdomain/mark/1.0/",
+      "attribution": "Mars Science Laboratory Curiosity Rover Animation, NASA/JPL-Caltech (2011); audio as EAC3, English and Arabic WebVTT captions written for the review home",
+      "covers": ["mkv-eac3-webvtt"],
+      "sources": [
+        {
+          "url": "https://upload.wikimedia.org/wikipedia/commons/d/dc/Mars_Science_Laboratory_Curiosity_Rover_Animation.webm",
+          "page": "https://commons.wikimedia.org/wiki/File:Mars_Science_Laboratory_Curiosity_Rover_Animation.webm",
+          "size": 85534118,
+          "sha1": "51f1231576859470a65c5c600689bd445709bc2d"
+        }
+      ],
+      "subtitles": [
+        {"lang": "en", "path": "subtitles/curiosity.en.vtt"},
+        {"lang": "ar", "path": "subtitles/curiosity.ar.vtt"}
+      ],
+      "derive": [
+        "-i", "{src0}", "-i", "{sub0}", "-i", "{sub1}", "-map", "0:v:0", "-map", "0:a:0", "-map",
+        "1:0", "-map", "2:0", "-c:v", "copy", "-c:a", "eac3", "-b:a", "448k", "-c:s", "webvtt",
+        "-metadata:s:a:0", "language=eng", "-metadata:s:s:0", "language=eng", "-metadata:s:s:0",
+        "title=English", "-metadata:s:s:1", "language=ara", "-metadata:s:s:1", "title=العربية",
+        "{out}"
+      ]
+    },
+    {
+      "id": "llamigos",
+      "library": "films",
+      "file": "caminandes-llamigos.webm",
+      "title_en": "Caminandes: Llamigos",
+      "title_ar": "كاميناندس: صديقا اللاما",
+      "licence": "CC-BY-3.0",
+      "licence_url": "https://creativecommons.org/licenses/by/3.0/",
+      "attribution": "Caminandes: Llamigos, Blender Foundation (2016), caminandes.com",
+      "covers": [],
+      "sources": [
+        {
+          "url": "https://upload.wikimedia.org/wikipedia/commons/a/ab/Caminandes_3_-_Llamigos_-_Blender_Animated_Short.webm",
+          "page": "https://commons.wikimedia.org/wiki/File:Caminandes_3_-_Llamigos_-_Blender_Animated_Short.webm",
+          "size": 59968030,
+          "sha1": "9e2f3d5340e661947844ecd78874d42513d2fa49"
         }
       ]
     },
     {
-      "id": "cosmos-laundromat",
+      "id": "lake-nasser",
       "library": "films-older",
-      "file": "cosmos-laundromat.mkv",
-      "title_en": "Cosmos Laundromat: First Cycle",
-      "title_ar": "مغسلة الكون: الدورة الأولى",
-      "licence": "CC-BY-4.0",
-      "licence_url": "https://creativecommons.org/licenses/by/4.0/",
-      "attribution": "Cosmos Laundromat: First Cycle, Blender Institute (2015); audio as EAC3, English and Arabic WebVTT subtitles (the Arabic translated for the review home)",
-      "covers": ["mkv-eac3-webvtt"],
+      "file": "lake-nasser-from-space.webm",
+      "title_en": "Lake Nasser from Space",
+      "title_ar": "بحيرة ناصر من الفضاء",
+      "licence": "public-domain",
+      "licence_url": "https://creativecommons.org/publicdomain/mark/1.0/",
+      "attribution": "Lake Nasser Time Series (Landsat), NASA",
+      "covers": [],
       "sources": [
         {
-          "url": "https://archive.org/download/CosmosLaundromatFirstCycle/Cosmos%20Laundromat%20-%20First%20Cycle%20(1080p).mp4",
-          "page": "https://archive.org/details/CosmosLaundromatFirstCycle",
-          "size": 220087570,
-          "sha1": "25c14461f067643515e93f1b89558c8aa78a74c1"
+          "url": "https://upload.wikimedia.org/wikipedia/commons/b/b8/Lake_Nassar_Time_Series_%28Landsat%29.webm",
+          "page": "https://commons.wikimedia.org/wiki/File:Lake_Nassar_Time_Series_(Landsat).webm",
+          "size": 167920595,
+          "sha1": "7aa24cf48d44bbaa85393d6391515e590e31f20d"
         }
-      ],
-      "subtitles": [
-        {"lang": "en", "path": "subtitles/cosmos-laundromat.en.vtt"},
-        {"lang": "ar", "path": "subtitles/cosmos-laundromat.ar.vtt"}
-      ],
-      "derive": [
-        "-i", "{src0}", "-i", "{sub0}", "-i", "{sub1}",
-        "-map", "0:v:0", "-map", "0:a:0", "-map", "1:0", "-map", "2:0",
-        "-c:v", "copy", "-c:a", "eac3", "-b:a", "448k", "-c:s", "webvtt",
-        "-metadata:s:a:0", "language=eng",
-        "-metadata:s:s:0", "language=eng", "-metadata:s:s:0", "title=English",
-        "-metadata:s:s:1", "language=ara", "-metadata:s:s:1", "title=العربية",
-        "{out}"
+      ]
+    },
+    {
+      "id": "ghost-octopus",
+      "library": "films-older",
+      "file": "ghost-octopus.webm",
+      "title_en": "A Ghost Octopus in the Deep",
+      "title_ar": "أخطبوط شبحي في الأعماق",
+      "licence": "public-domain",
+      "licence_url": "https://creativecommons.org/publicdomain/mark/1.0/",
+      "attribution": "NEW Octopus Species: 2016 Hohonu Moana, NOAA Office of Ocean Exploration and Research",
+      "covers": [],
+      "sources": [
+        {
+          "url": "https://upload.wikimedia.org/wikipedia/commons/6/67/NEW_Octopus_Species-_2016_Hohonu_Moana-_Exploring_Deep_Waters.webm",
+          "page": "https://commons.wikimedia.org/wiki/File:NEW_Octopus_Species-_2016_Hohonu_Moana-_Exploring_Deep_Waters.webm",
+          "size": 6903083,
+          "sha1": "68174f630ebafafed61ecc8f78814eb4185cbbf5"
+        }
       ]
     },
     {
@@ -185,55 +243,51 @@
       ]
     },
     {
-      "id": "arabian-nights-1",
+      "id": "adab-al-dunya-1",
       "library": "audiobooks",
-      "file": "stories-from-the-arabian-nights-01.mp4",
-      "title_en": "Stories from the Arabian Nights, part 1",
-      "title_ar": "حكايات من ألف ليلة وليلة، الجزء ١",
+      "file": "adab-al-dunya-wa-al-din-00.mp4",
+      "title_en": "The Ethics of Religion and of This World: introduction",
+      "title_ar": "أدب الدنيا والدين: المقدمة",
       "licence": "public-domain",
       "licence_url": "https://creativecommons.org/publicdomain/mark/1.0/",
-      "attribution": "Stories from the Arabian Nights, Laurence Housman, read for LibriVox; the audio on a still frame, as the home plays videos",
+      "attribution": "Adab al-Dunya wa al-Din, al-Mawardi, read in Arabic for LibriVox by Youssef Safiljil; the audio on a still frame, as the home plays videos",
       "covers": [],
       "sources": [
         {
-          "url": "https://archive.org/download/storiesfromthearabiannights_1610_librivox/storiesfromthearabiannights_01_housman_64kb.mp3",
-          "page": "https://archive.org/details/storiesfromthearabiannights_1610_librivox",
-          "size": 11616768,
-          "sha1": "f3c9f13f828862acf310cb938952c9e776606033"
+          "url": "https://archive.org/download/kitab_adab_dunya_1107_librivox/adabaldunyawaldin_00_almawardi_64kb.mp3",
+          "page": "https://archive.org/details/kitab_adab_dunya_1107_librivox",
+          "size": 1938060,
+          "sha1": "06b8fb0af332edbdaf6634a0a8de07e1427ba115"
         }
       ],
       "derive": [
-        "-f", "lavfi", "-i", "color=c=0x14181d:s=1280x720:r=1", "-i", "{src0}",
-        "-map", "0:v", "-map", "1:a", "-shortest",
-        "-c:v", "libx264", "-tune", "stillimage", "-pix_fmt", "yuv420p",
-        "-c:a", "aac", "-b:a", "96k", "-movflags", "+faststart",
-        "{out}"
+        "-f", "lavfi", "-i", "color=c=0x14181d:s=1280x720:r=1", "-i", "{src0}", "-map", "0:v",
+        "-map", "1:a", "-shortest", "-c:v", "libx264", "-tune", "stillimage", "-pix_fmt", "yuv420p",
+        "-c:a", "aac", "-b:a", "96k", "-movflags", "+faststart", "{out}"
       ]
     },
     {
-      "id": "arabian-nights-2",
+      "id": "adab-al-dunya-2",
       "library": "audiobooks",
-      "file": "stories-from-the-arabian-nights-02.mp4",
-      "title_en": "Stories from the Arabian Nights, part 2",
-      "title_ar": "حكايات من ألف ليلة وليلة، الجزء ٢",
+      "file": "adab-al-dunya-wa-al-din-01.mp4",
+      "title_en": "The Ethics of Religion and of This World: chapter 1, part 1",
+      "title_ar": "أدب الدنيا والدين: الباب الأول، الجزء ١",
       "licence": "public-domain",
       "licence_url": "https://creativecommons.org/publicdomain/mark/1.0/",
-      "attribution": "Stories from the Arabian Nights, Laurence Housman, read for LibriVox; the audio on a still frame, as the home plays videos",
+      "attribution": "Adab al-Dunya wa al-Din, al-Mawardi, read in Arabic for LibriVox by Youssef Safiljil; the audio on a still frame, as the home plays videos",
       "covers": [],
       "sources": [
         {
-          "url": "https://archive.org/download/storiesfromthearabiannights_1610_librivox/storiesfromthearabiannights_02_housman_64kb.mp3",
-          "page": "https://archive.org/details/storiesfromthearabiannights_1610_librivox",
-          "size": 8673792,
-          "sha1": "8636f55770f299718efc934e2eb0104ff6a6d4c1"
+          "url": "https://archive.org/download/kitab_adab_dunya_1107_librivox/adabaldunyawaldin_01_almawardi_64kb.mp3",
+          "page": "https://archive.org/details/kitab_adab_dunya_1107_librivox",
+          "size": 26611033,
+          "sha1": "b52daff2b94888717409eb391e076badd30ba60f"
         }
       ],
       "derive": [
-        "-f", "lavfi", "-i", "color=c=0x14181d:s=1280x720:r=1", "-i", "{src0}",
-        "-map", "0:v", "-map", "1:a", "-shortest",
-        "-c:v", "libx264", "-tune", "stillimage", "-pix_fmt", "yuv420p",
-        "-c:a", "aac", "-b:a", "96k", "-movflags", "+faststart",
-        "{out}"
+        "-f", "lavfi", "-i", "color=c=0x14181d:s=1280x720:r=1", "-i", "{src0}", "-map", "0:v",
+        "-map", "1:a", "-shortest", "-c:v", "libx264", "-tune", "stillimage", "-pix_fmt", "yuv420p",
+        "-c:a", "aac", "-b:a", "96k", "-movflags", "+faststart", "{out}"
       ]
     }
   ]
