@@ -963,20 +963,9 @@ Function MaktabaInstallingShow
   GetDlgItem $0 $MkPage 1027
   ShowWindow $0 ${SW_HIDE}
 
-  ; the ground: one static over the page, in the window colour, below everything
   StrCpy $R1 "STATIC"
   StrCpy $R2 ""
-  StrCpy $R3 0
   StrCpy $R4 0
-  StrCpy $R5 0
-  StrCpy $R6 0
-  StrCpy $R7 400
-  StrCpy $R8 300
-  Call MaktabaChild
-  SetCtlColors $R0 "${MK_FG}" "${MK_WINDOW}"
-  System::Call 'user32::SetWindowPos(p R0, p 1, i 0, i 0, i 0, i 0, i ${MK_SWP_TOP})' ; HWND_BOTTOM
-
-  StrCpy $R1 "STATIC"
   StrCpy $R3 0x4E ; SS_BITMAP | SS_REALSIZECONTROL
   StrCpy $R5 0
   StrCpy $R6 0
@@ -1068,6 +1057,20 @@ Function MaktabaInstallingShow
     SetCtlColors $MkOpen "${MK_FG}" "${MK_WINDOW}"
     SendMessage $MkOpen ${BM_SETCHECK} ${BST_CHECKED} 0
   ${EndIf}
+
+  ; the ground: one static over the page in the window colour, made last (a new control goes
+  ; below the others), kept at the bottom and clipped to what they leave uncovered
+  StrCpy $R1 "STATIC"
+  StrCpy $R2 ""
+  StrCpy $R3 ${MK_WS_CLIPSIBLINGS}
+  StrCpy $R4 0
+  StrCpy $R5 0
+  StrCpy $R6 0
+  StrCpy $R7 400
+  StrCpy $R8 300
+  Call MaktabaChild
+  SetCtlColors $R0 "${MK_FG}" "${MK_WINDOW}"
+  System::Call 'user32::SetWindowPos(p R0, p 1, i 0, i 0, i 0, i 0, i ${MK_SWP_TOP})' ; HWND_BOTTOM
 FunctionEnd
 
 ; MaktabaStep: the step whose glyph is $R0 and words $R1 is now $R2 (1 running, 2 done); the
