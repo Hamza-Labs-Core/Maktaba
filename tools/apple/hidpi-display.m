@@ -12,8 +12,12 @@
 // uses it) made the main one, the menu bar and new windows on it. A window of 1440 x 900
 // points there is 2880 x 1800 pixels, its title bar and toolbar drawn by macOS as on any Mac.
 // It writes READY_FILE ("<width> <height> <scale>") once the display is the main one, and
-// keeps it while it runs: the virtual display goes when the process ends. Exits 1, with the
-// modes it saw, when it cannot.
+// keeps it while it runs: the virtual display goes when the process ends. Exits 1, with what it
+// saw, when it cannot.
+//
+// On GitHub's runner (macOS 27, a virtual machine) a virtual display lists no modes and has no
+// current mode (CGDisplayCopyAllDisplayModes is empty), yet it is online and active at the
+// size asked for: it is taken by its bounds and its pixels, and AppKit's scale for it.
 #import <AppKit/AppKit.h>
 #import <CoreGraphics/CoreGraphics.h>
 #import <Foundation/Foundation.h>
@@ -69,7 +73,7 @@ static CGDisplayModeRef retinaMode(CGDirectDisplayID d, size_t w, size_t h) {
     return best ? CGDisplayModeRetain(best) : NULL;
 }
 
-/// A tenth of a second, the main queue served meanwhile (the virtual display's callbacks).
+/// A tenth of a second, the main queue and AppKit's screen changes served meanwhile.
 static void pause_a_little(void) {
     CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.1, false);
     usleep(100000);
@@ -87,6 +91,64 @@ static BOOL online(CGDirectDisplayID d) {
     return NO;
 }
 
+/// AppKit's scale for the display (its NSScreen's backingScaleFactor), 0 without a screen.
+static CGFloat screenScale(CGDirectDisplayID d) {
+    for (NSScreen *s in NSScreen.screens)
+        if ([s.deviceDescription[@"NSScreenNumber"] unsignedIntValue] == d) return s.backingScaleFactor;
+    return 0;
+}
+
+/// The display's size in points, its pixels and AppKit's scale, in one line.
+static void describe(const char *what, CGDirectDisplayID d) {
+    CGRect b = CGDisplayBounds(d);
+    fprintf(stderr, "%s: display %u, online %d, active %d, main %d, %.0f x %.0f points at (%.0f, %.0f), %zu x %zu pixels, scale %.0f\n",
+            what, d, online(d), CGDisplayIsActive(d), CGMainDisplayID() == d, b.size.width, b.size.height, b.origin.x,
+            b.origin.y, CGDisplayPixelsWide(d), CGDisplayPixelsHigh(d), screenScale(d));
+}
+
+/// Whether the display is `w` x `h` points or more, drawn at 2x (by its pixels or AppKit's scale).
+static BOOL isRetina(CGDirectDisplayID d, unsigned int w, unsigned int h) {
+    CGRect b = CGDisplayBounds(d);
+    if (b.size.width < w || b.size.height < h) return NO;
+    return CGDisplayPixelsWide(d) == 2 * (size_t)b.size.width || screenScale(d) == 2;
+}
+
+/// A virtual display asked for in one of the ways macOS versions take (its modes in pixels or in
+/// points, `hiDPI` 1 or 2): its id once it is online, 0 when it was not made.
+static CGDirectDisplayID makeVirtual(unsigned int w, unsigned int h, unsigned int hiDPI, NSArray<NSNumber *> *scales,
+                                     unsigned int serial) {
+    CGVirtualDisplayDescriptor *desc = [[NSClassFromString(@"CGVirtualDisplayDescriptor") alloc] init];
+    [desc setDispatchQueue:dispatch_get_main_queue()];
+    desc.name = @"Maktaba shots";
+    desc.maxPixelsWide = 2 * w;
+    desc.maxPixelsHigh = 2 * h;
+    // a 16-inch screen's size: 2 * w pixels on it are a Retina density
+    desc.sizeInMillimeters = CGSizeMake(345, 345.0 * h / w);
+    desc.productID = 0x6d6b + serial;
+    desc.vendorID = 0x6d6b;
+    desc.serialNum = serial;
+    desc.terminationHandler = ^(id a, id b) { fprintf(stderr, "a virtual display ended\n"); };
+    CGVirtualDisplay *display = [[NSClassFromString(@"CGVirtualDisplay") alloc] initWithDescriptor:desc];
+    if (!display || display.displayID == 0) return 0;
+    kept = display;
+    CGVirtualDisplaySettings *settings = [[NSClassFromString(@"CGVirtualDisplaySettings") alloc] init];
+    settings.hiDPI = hiDPI;
+    NSMutableArray *modes = [NSMutableArray array];
+    for (NSNumber *s in scales)
+        [modes addObject:[[NSClassFromString(@"CGVirtualDisplayMode") alloc] initWithWidth:s.unsignedIntValue * w
+                                                                                  height:s.unsignedIntValue * h
+                                                                             refreshRate:60]];
+    settings.modes = modes;
+    BOOL applied = [display applySettings:settings];
+    CGDirectDisplayID d = display.displayID;
+    for (int i = 0; i < 50 && !online(d); i++) pause_a_little();
+    // AppKit hears of the new screen through the run loop
+    for (int i = 0; i < 20 && screenScale(d) == 0; i++) pause_a_little();
+    fprintf(stderr, "hiDPI %u, modes x%s: settings taken %d\n", hiDPI,
+            [[scales componentsJoinedByString:@" x"] UTF8String], applied);
+    return d;
+}
+
 int main(int argc, const char *argv[]) {
     @autoreleasepool {
         unsigned int w = 0, h = 0;
@@ -95,102 +157,75 @@ int main(int argc, const char *argv[]) {
             return 2;
         }
         NSString *ready = [NSString stringWithUTF8String:argv[2]];
-        // a connection to the window server as an app has one
+        // a connection to the window server as an app has one, and AppKit's screens
         [NSApplication sharedApplication];
         CGDirectDisplayID first = CGMainDisplayID();
-        fprintf(stderr, "the main display (%u) is %zu x %zu pixels; its modes:\n", first, CGDisplayPixelsWide(first),
-                CGDisplayPixelsHigh(first));
+        describe("the runner's display", first);
         printModes(first);
 
         CGDirectDisplayID target = first;
         CGDisplayModeRef mode = retinaMode(first, w, h);
         if (!mode) {
-            // none of its own: a virtual display offered at 2x. The ways of asking for one
-            // differ between macOS versions (the modes in pixels or in points): each is tried
-            // in turn, until one has the mode
+            // none of its own: a virtual display drawn at 2x, asked for each way in turn
             if (!NSClassFromString(@"CGVirtualDisplayDescriptor")) {
                 fprintf(stderr, "this macOS has no CGVirtualDisplay\n");
                 return 1;
             }
-            struct { unsigned int hiDPI, scale[2]; } ways[] = {{1, {2, 1}}, {1, {1, 0}}, {2, {2, 0}}, {1, {2, 0}}};
-            for (size_t k = 0; k < sizeof ways / sizeof *ways && !mode; k++) {
+            struct { unsigned int hiDPI; NSArray<NSNumber *> *scales; } ways[] = {
+                {1, @[@2, @1]}, {1, @[@1]}, {2, @[@2]}, {1, @[@2]}};
+            BOOL found = NO;
+            for (unsigned int k = 0; k < sizeof ways / sizeof *ways && !found; k++) {
                 kept = nil;
                 for (int i = 0; i < 20; i++) pause_a_little(); // the previous one gone
-                CGVirtualDisplayDescriptor *desc = [[NSClassFromString(@"CGVirtualDisplayDescriptor") alloc] init];
-                [desc setDispatchQueue:dispatch_get_main_queue()];
-                desc.name = @"Maktaba shots";
-                desc.maxPixelsWide = 2 * w;
-                desc.maxPixelsHigh = 2 * h;
-                // a 16-inch screen's size: 2 * w pixels on it are a Retina density
-                desc.sizeInMillimeters = CGSizeMake(345, 345.0 * h / w);
-                desc.productID = 0x6d6b + (unsigned int)k;
-                desc.vendorID = 0x6d6b;
-                desc.serialNum = 1 + (unsigned int)k;
-                desc.terminationHandler = ^(id a, id b) { fprintf(stderr, "a virtual display ended\n"); };
-                CGVirtualDisplay *display = [[NSClassFromString(@"CGVirtualDisplay") alloc] initWithDescriptor:desc];
-                if (!display || display.displayID == 0) {
-                    fprintf(stderr, "way %zu: the virtual display was not made\n", k);
+                CGDirectDisplayID d = makeVirtual(w, h, ways[k].hiDPI, ways[k].scales, k + 1);
+                if (!d) {
+                    fprintf(stderr, "way %u: the virtual display was not made\n", k);
                     continue;
                 }
-                kept = display;
-                CGVirtualDisplaySettings *settings = [[NSClassFromString(@"CGVirtualDisplaySettings") alloc] init];
-                settings.hiDPI = ways[k].hiDPI;
-                NSMutableArray *modes = [NSMutableArray array];
-                for (int s = 0; s < 2 && ways[k].scale[s]; s++)
-                    [modes addObject:[[NSClassFromString(@"CGVirtualDisplayMode") alloc]
-                                         initWithWidth:ways[k].scale[s] * w height:ways[k].scale[s] * h refreshRate:60]];
-                settings.modes = modes;
-                BOOL applied = [display applySettings:settings];
-                target = display.displayID;
-                for (int i = 0; i < 50 && !online(target); i++) pause_a_little();
-                // its modes can come a moment after it is online
-                for (int i = 0; i < 50 && !(mode = retinaMode(target, w, h)); i++) pause_a_little();
-                CGDisplayModeRef now = CGDisplayCopyDisplayMode(target);
-                CGRect b = CGDisplayBounds(target);
-                fprintf(stderr,
-                        "way %zu (hiDPI %u, modes x%u x%u): display %u, settings taken %d, online %d, active %d, "
-                        "bounds %.0f x %.0f, mode now %zu x %zu (%zu x %zu pixels); its modes:\n",
-                        k, ways[k].hiDPI, ways[k].scale[0], ways[k].scale[1], target, applied, online(target),
-                        CGDisplayIsActive(target), b.size.width, b.size.height, now ? CGDisplayModeGetWidth(now) : 0,
-                        now ? CGDisplayModeGetHeight(now) : 0, now ? CGDisplayModeGetPixelWidth(now) : 0,
-                        now ? CGDisplayModeGetPixelHeight(now) : 0);
-                if (now) CGDisplayModeRelease(now);
-                printModes(target);
+                for (int i = 0; i < 30 && !(mode = retinaMode(d, w, h)) && !isRetina(d, w, h); i++) pause_a_little();
+                describe("the virtual display", d);
+                printModes(d);
+                if (mode || isRetina(d, w, h)) {
+                    target = d;
+                    found = YES;
+                }
             }
-            if (!mode) {
-                fprintf(stderr, "no virtual display had a 2x mode of %u x %u points\n", w, h);
+            if (!found) {
+                fprintf(stderr, "no virtual display was %u x %u points at 2x\n", w, h);
                 return 1;
             }
         }
 
         CGDisplayConfigRef config;
         CGBeginDisplayConfiguration(&config);
-        CGConfigureDisplayWithDisplayMode(config, target, mode, NULL);
+        if (mode) CGConfigureDisplayWithDisplayMode(config, target, mode, NULL);
         if (target != first) {
             // the main display is the one at the origin: the virtual one, the runner's beside it
             CGConfigureDisplayOrigin(config, target, 0, 0);
-            CGConfigureDisplayOrigin(config, first, (int32_t)CGDisplayModeGetWidth(mode), 0);
+            CGConfigureDisplayOrigin(config, first, (int32_t)CGDisplayBounds(target).size.width, 0);
         }
         CGError err = CGCompleteDisplayConfiguration(config, kCGConfigureForSession);
-        CGDisplayModeRelease(mode);
+        if (mode) CGDisplayModeRelease(mode);
         if (err != kCGErrorSuccess) {
             fprintf(stderr, "the display configuration failed: %d\n", err);
             return 1;
         }
-        // the screens as AppKit sees them, once the change is through
-        for (int i = 0; i < 50 && CGMainDisplayID() != target; i++)
+        for (int i = 0; i < 50 && (CGMainDisplayID() != target || NSScreen.mainScreen.backingScaleFactor != 2 ||
+                                   [NSScreen.screens.firstObject.deviceDescription[@"NSScreenNumber"] unsignedIntValue] != target);
+             i++)
             pause_a_little();
-        CGDisplayModeRef now = CGDisplayCopyDisplayMode(target);
-        size_t pw = CGDisplayModeGetPixelWidth(now), pt = CGDisplayModeGetWidth(now);
-        size_t ph = CGDisplayModeGetPixelHeight(now), pth = CGDisplayModeGetHeight(now);
-        CGDisplayModeRelease(now);
-        fprintf(stderr, "main display %u (target %u): %zu x %zu points, %zu x %zu pixels\n", CGMainDisplayID(), target, pt,
-                pth, pw, ph);
-        if (CGMainDisplayID() != target || pw != 2 * pt) {
+        describe("the main display", target);
+        describe("the runner's display", first);
+        NSScreen *menuBar = NSScreen.screens.firstObject; // the screen with the menu bar
+        fprintf(stderr, "AppKit: the menu bar's screen %u, %.0f x %.0f points at %.0fx\n",
+                [menuBar.deviceDescription[@"NSScreenNumber"] unsignedIntValue], menuBar.frame.size.width,
+                menuBar.frame.size.height, menuBar.backingScaleFactor);
+        CGRect b = CGDisplayBounds(target);
+        if (CGMainDisplayID() != target || !isRetina(target, w, h)) {
             fprintf(stderr, "the main display is not the 2x one\n");
             return 1;
         }
-        NSString *line = [NSString stringWithFormat:@"%zu %zu %zu\n", pt, pth, pw / pt];
+        NSString *line = [NSString stringWithFormat:@"%.0f %.0f 2\n", b.size.width, b.size.height];
         if (![line writeToFile:ready atomically:YES encoding:NSUTF8StringEncoding error:nil]) {
             fprintf(stderr, "could not write %s\n", argv[2]);
             return 1;
