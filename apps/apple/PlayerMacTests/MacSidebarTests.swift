@@ -6,8 +6,7 @@ import MaktabaKit
 @testable import Maktaba_Player_Mac
 
 /// Story 13.16: the Mac Player's sidebar lists its sections as the apps' side list, Profile at
-/// its bottom; Profile's Language row asks, in English and Arabic, before the Player starts
-/// again in the other language (the desktop design's D5).
+/// its bottom.
 @MainActor @Suite struct MacSidebarLogic {
     @Test func profileSitsAtTheBottomAndTheRestKeepTheirOrder() {
         let rows = MacSidebarRows(PlayerSection.allCases)
@@ -27,17 +26,6 @@ import MaktabaKit
         let rows = MacSidebarRows([.profile])
         #expect(rows.top == [.profile])
         #expect(rows.bottom == nil)
-    }
-
-    @Test func thePromptSpeaksBothLanguagesEnglishFirst() {
-        let toArabic = MacLanguagePrompt(.arabic)
-        #expect(toArabic.title == "Start Maktaba Player again in Arabic?\nهل تريد إعادة تشغيل مشغل مكتبة بالعربية؟")
-        #expect(toArabic.restart == "Restart · إعادة التشغيل")
-        #expect(toArabic.cancel == "Cancel · إلغاء")
-        #expect(toArabic.message.hasPrefix("The Player closes and opens again in the new language."))
-        #expect(toArabic.message.hasSuffix("ويتوقف ما يُعرض الآن."))
-        let toEnglish = MacLanguagePrompt(.english)
-        #expect(toEnglish.title == "Start Maktaba Player again in English?\nهل تريد إعادة تشغيل مشغل مكتبة بالإنجليزية؟")
     }
 }
 

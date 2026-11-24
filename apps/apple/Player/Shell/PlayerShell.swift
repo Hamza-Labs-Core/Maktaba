@@ -185,10 +185,7 @@ struct PlayerShell: View {
     /// traffic lights (`LanguageChoice`). A section's screen is built when it is chosen; its
     /// stack of routes stays in `paths`, so its pages are there again when it comes back.
     private var sidebar: some View {
-        NavigationSplitView {
-            MacSidebar(sections: shown, selection: chosen)
-                .navigationSplitViewColumnWidth(min: 200, ideal: 232, max: 320)
-        } detail: {
+        MacShellSplit(sections: shown, selection: chosen) {
             stack(selection).id(selection)
         }
         .accessibilityIdentifier("player.shell")
@@ -292,6 +289,26 @@ struct PlayerShell: View {
         }
     }
 }
+
+#if os(macOS)
+/// The Mac shell's split view (story 13.16): `MacSidebar` as the sidebar column, 232 points
+/// wide as the design draws it, beside `detail`. AppKit lays the split out in the app's
+/// direction: the sidebar at the start, the right in an app started in Arabic.
+struct MacShellSplit<Detail: View>: View {
+    let sections: [PlayerSection]
+    @Binding var selection: PlayerSection
+    @ViewBuilder let detail: Detail
+
+    var body: some View {
+        NavigationSplitView {
+            MacSidebar(sections: sections, selection: $selection)
+                .navigationSplitViewColumnWidth(min: 200, ideal: 232, max: 320)
+        } detail: {
+            detail
+        }
+    }
+}
+#endif
 
 extension View {
     /// Where each `PlayerRoute` goes: one place, so every section's stack opens a route the
