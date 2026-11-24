@@ -62,8 +62,11 @@ string ships in English and Arabic together.
 - Several publishers can be saved. **Saved broadcasts** lists them, with a "Remove" button.
 - **Native players** play the HLS from `live.maktaba.tv` with the token in the path, so no
   headers are needed. They heartbeat through the play API.
-- The Report button is in the player's menu on every app. Whether it stays, or becomes *Leave
-  channel*, is the open decision `broadcast-invite-only-copyright` (README §14.10).
+- The Report button is in the player's menu on every app. It is deferred with 50.24
+  (2026-11-24) while broadcasting is off.
+- **Off for now (2026-11-24).** Broadcasting stays off: every app hides **Watch a broadcast**
+  and ignores invite links behind a build-time switch (`GuestBroadcast`, off), and the edge
+  serves nothing.
 - Every string ships in English and Arabic (Apple `Localizable.xcstrings`, Android `values`
   and `values-ar`, the web `en.json` and `ar.json`).
 

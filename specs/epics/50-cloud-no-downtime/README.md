@@ -96,7 +96,7 @@ From [research.md](research.md) §1, with the code checked on 2026-11-03:
 | F13 | **The broadcast edge.** The home pushes each segment of each rendition once to Maktaba's Cloudflare edge (Worker, Durable Object, R2). Viewers never reach the home or the Hetzner relay. Segments are cached under token-free keys, so the home's upload doesn't depend on the number of viewers. Stream is a switchable fallback. | 50.21 |
 | F14 | **The home publishes channels**, with the ladder at home (top rung `copy`), an uplink check (≤ 50 % of the measured uplink), encoder-slot accounting against `max_active_channels`, always-on for Broadcaster channels and on demand for Pro guest sharing, and an offline slate. | 50.22 |
 | F15 | **Only publishable items air** (a safety feature on the publisher's home): own recordings, Creative Commons (CC BY detected at YouTube intake) and sources with a recorded permission and proof link; the scheduler skips the rest while a channel is published; optional geo rules. Maktaba Cloud does no curation: channel building, scheduling and intake stay on the home. | 50.23 |
-| F16 | **What hosting status requires** (Maktaba charges for infrastructure, not content): a designated agent, notice and takedown (EN/AR form, counter-notice), a repeat-infringer policy (3 strikes in 12 months), acting on actual knowledge, publisher terms that put rights on the publisher; a Report button on every watch surface and a moderation queue for service admins. How much of this invite-only broadcasting still needs is an open decision (§14.10, `broadcast-invite-only-copyright`). | 50.24 |
+| F16 | **What hosting status requires** (Maktaba charges for infrastructure, not content): a designated agent, notice and takedown (EN/AR form, counter-notice), a repeat-infringer policy (3 strikes in 12 months), acting on actual knowledge, publisher terms that put rights on the publisher; a Report button on every watch surface and a moderation queue for service admins. **Deferred** (2026-11-24): broadcasting is off, and nothing about copyright is shown anywhere until it is switched on. | 50.24 |
 | F17 | **Kill switch.** Per channel, publisher, home or global, through a signed broadcast revocation list (the Epic 54 pattern) that the edge and homes honour within 60 s, plus a break-glass switch. | 50.25 |
 | F18 | **Viewer access by invitation only, free for viewers:** nobody watches a channel without an invite from its publisher; no open links, no public watch pages, no directory. 10-minute heartbeat tokens, concurrency and per-IP limits. | 50.26 |
 | F19 | **Guest viewers** are invited friends who need no Maktaba account. They redeem an invite on `watch.maktaba.tv` or in every Maktaba Player and TV app (the invite link, a QR code of it, or its short code), in English and Arabic. | 50.27 |
@@ -630,6 +630,12 @@ The answers to the open questions, applied to the stories above.
 > - **Access is by invitation only.** Broadcasting exists so people can subscribe to friends'
 >   channels. A channel is visible only to the people its publisher invited: no open links, no
 >   public watch pages, no directory. The `open` mode already built is removed by 50.36.
+> - **Broadcasting stays off for now.** `broadcast.enabled` is false in the cloud (so no home's
+>   licence carries the broadcast flag), the edge's `BROADCAST_ENABLED` is off (watch and live
+>   answer 404 to everything), and no app or web page shows a broadcasting entry point.
+> - **No copyright surface.** Story 50.24 (the designated agent, `copyright@maktaba.tv`, the
+>   notice form, the viewer Report button) is **deferred** with broadcasting, and the copyright
+>   page is gone from maktaba.tv. Its built code stays dormant behind the broadcast flag.
 >
 > The questions still open are in §14.10.
 > **Research:** [research-broadcasting.md](research-broadcasting.md) (Plex, Jellyfin, Emby,
@@ -953,11 +959,12 @@ own (reason 3).
 - The cloud receives only the confirmation's date and version, for the takedown record. The marks,
   the proof links and the schedule stay on the home.
 
-**Invite-only and this section.** The takedown, the Report button, the designated agent and the
-copyright page below were written when channels could be open to anyone. With invitation-only
-access, how much of them stays (they are mostly built) is an open decision
-(`broadcast-invite-only-copyright`, §14.10). The kill switch (50.25) stays either way: it also
-covers incidents, lapsed plans and abuse.
+**Deferred with broadcasting (2026-11-24).** The takedown, the Report button, the designated
+agent and the copyright page below are deferred while broadcasting is off: nothing about
+copyright is shown anywhere, and the copyright page is gone from maktaba.tv. Their built code
+stays dormant behind the broadcast flag. They are decided again, for invitation-only channels,
+before broadcasting is switched on. The kill switch (50.25) stays: it also covers incidents,
+lapsed plans and abuse.
 
 **Takedown (50.24).** It is cheap, and hosting status requires it:
 
@@ -1113,10 +1120,8 @@ Decided on 2026-11-03:
     keeps no shared list. (A shared list of known-permissive sources across publishers could
     come later.)
 15. **Designated agent.** **Default: register with the US Copyright Office** under the legal
-    entity's name before broadcasting opens. With invitation-only access, whether the agent, the
-    notice form and the viewer Report button stay is the open decision
-    `broadcast-invite-only-copyright`; its recommended answer keeps the agent, notice and
-    takedown, and the strikes, and replaces the viewer Report button with *Leave channel*.
+    entity's name before broadcasting opens. **Deferred (2026-11-24)** with broadcasting, as is
+    all of 50.24: no agent, no notice form and no Report button while broadcasting is off.
 16. **Repeat-infringer threshold.** **Default: 3 valid strikes in 12 months; strikes expire after
     12 months.**
 17. **Takedown targets.** **Default: ≤ 24 h from a valid notice; ≤ 1 h for urgent illegal
@@ -1158,12 +1163,14 @@ Work that can start at once: **50.21** (after 50.01) and **50.20** (after 50.19)
    is `stream`.
 4. The designated agent is registered, and the copyright page, the Broadcaster agreement and the
    repeat-infringer policy are live in English and Arabic. (The Broadcaster agreement stays;
-   the rest of this item waits on the decision `broadcast-invite-only-copyright`.)
+   the rest of this item is **deferred** with 50.24, and is decided again before broadcasting
+   is switched on.)
 5. The lawyer's review in §14.9 is done.
 6. The Broadcaster catalog has no `TBD` left.
 7. The canary broadcast has met the §4.2 broadcast SLOs for 14 days.
 
-Until then `broadcast.enabled = false`, except for test publishers an admin grants on staging.
+Until then `broadcast.enabled = false`, except for test publishers an admin grants on staging,
+and the edge's `BROADCAST_ENABLED` is off (decided 2026-11-24: broadcasting stays off for now).
 There is no separate gate for open access: `broadcast.open_access.enabled` is removed by 50.36,
 and every channel is invitation only.
 

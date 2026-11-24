@@ -137,9 +137,13 @@ Android `GuestTest.kt`.
 
 **Not open access, and staying:** the copyright notice form on `maktaba.tv/legal/copyright`
 (`POST /v1/moderation/notices`), the cloud's sign-in Turnstile (50.30), and the Report form on a
-channel page (`POST /v1/moderation/reports`), which only an invited guest now reaches. Whether
-the Report form and the copyright work stay is the open decision
-`broadcast-invite-only-copyright` (README §14.10); this story doesn't change them.
+channel page (`POST /v1/moderation/reports`), which only an invited guest now reaches. The
+copyright work (50.24) is deferred with broadcasting (2026-11-24); this story doesn't change it.
+
+**Already done while broadcasting is off (2026-11-24):** the edge no longer falls back to
+`openChannels()` for a visitor with no pass (`lineup` and `apiGuide` return nothing, and `play`
+answers `invite_required`), every watch page is `noindex`, and `BROADCAST_ENABLED` (off) makes
+watch and live answer 404 to everything. The rest of this story still stands.
 
 ### 2. The work
 

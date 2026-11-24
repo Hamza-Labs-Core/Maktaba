@@ -2638,7 +2638,7 @@
       "title": "Takedown, reports and repeat infringers",
       "epic": "50-cloud-no-downtime",
       "phase": 5,
-      "content": "# Story 50.24 — Takedown, reports and repeat infringers\n\n> Epic 50 · Phase B · Depends on: 50.12 (incident handling), 50.23, 50.25 · Needed by: the\n> broadcasting gate\n\n> **Not legal advice. Confirm with a lawyer before launch** (README §14.9).\n\n> **Invite-only (2026-11-24).** This story was written when channels could be open to anyone.\n> Broadcasting is now invitation only (README §14), so how much of it stays is an open decision,\n> `broadcast-invite-only-copyright` (README §14.10). Its recommended answer keeps the designated\n> agent, notice and takedown, counter-notices and strikes, and rep",
+      "content": "# Story 50.24 — Takedown, reports and repeat infringers\n\n> Epic 50 · Phase B · Depends on: 50.12 (incident handling), 50.23, 50.25 · Needed by: the\n> broadcasting gate\n\n> **Not legal advice. Confirm with a lawyer before launch** (README §14.9).\n\n> **Deferred (2026-11-24).** Broadcasting stays off for now, and nothing about copyright is\n> shown anywhere: no designated agent, no `copyright@maktaba.tv`, no notice form, no copyright\n> page on maktaba.tv and no viewer Report button. The code this story built stays dormant behind\n> the broadcast flag (the cloud's `broadcast.enabled`, off). This stor",
       "tags": [
         "story",
         "50-cloud-no-downtime",

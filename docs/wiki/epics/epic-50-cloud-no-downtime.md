@@ -194,8 +194,9 @@ Mux is ruled out: about $1,369 a month to encode one 24/7 channel.
 repeat-infringer policy (3 strikes in 12 months), acting on actual knowledge, and a short
 Broadcaster agreement that puts rights on the publisher. On top of that: a Report button, and a
 kill switch through a signed revocation list (the Epic 54 pattern). There is no Maktaba directory.
-With invitation-only access, how much of the copyright and Report work stays is an open decision
-(README §14.10).
+**Broadcasting stays off for now (2026-11-24),** and nothing about copyright is shown anywhere:
+50.24 (the agent, the notice form, the Report button) is deferred, its code dormant, and the
+copyright page is gone from maktaba.tv.
 
 | # | Story | Phase |
 |---|---|---|

@@ -156,7 +156,7 @@ Checked on `main` at 154438067 (2026-11-11).
 | `/install/<guide>/` | Epic 59's guides, each at its own address; `/install/` itself redirects (301) to `/download/`, which lists them (2026-11-24) | 60.05 | 1 |
 | `/help/`, `/help/<topic>/` | Epic 41's topics | 60.12 | 3 |
 | `/problems/`, `/problems/<slug>/` | one page per problem type, and an index | 60.06 | 1 |
-| `/legal/privacy/`, `/legal/terms/`, `/legal/copyright/` | privacy, terms, copyright with the notice form | 60.07 | 1 |
+| `/legal/privacy/`, `/legal/terms/` | privacy and terms; `/legal/copyright/` redirects (301) to the terms page while 50.24 is deferred (2026-11-24) | 60.07 | 1 |
 | `/pricing/` | once Epic 50's plans are decided | 60.13 | 3 |
 | `/schema/log-line.json` | the log schema, at its `$id` | 60.03 | 1 |
 | `/.well-known/security.txt` | the same file maktaba.dev serves, both `Canonical` lines | 60.03 | 1 |
