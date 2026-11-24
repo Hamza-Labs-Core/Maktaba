@@ -33,6 +33,7 @@ import (
 	authh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/auth"
 	billingh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/billing"
 	broadcasth "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/broadcast"
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/broadcastgate"
 	edgeh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/edge"
 	healthh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/health"
 	homesh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/homes"
@@ -198,7 +199,9 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 	// Home broadcasting (story 50.20): the publishers' plan state and usage, the edge's signed
 	// usage posts (off without broadcast.edge_public_key), and the agreement and publish check.
 	broadcastStore := &billingpkg.BroadcastStore{DB: pool.DB, Enabled: cfg.Broadcast.Enabled, Enforce: cfg.Broadcast.PlansEnforce}
-	edgeDeps := &edgeh.Deps{Store: broadcastStore, Logger: logger}
+	testPublishers := broadcastgate.DBPublishers{DB: pool.DB}
+	edgeDeps := &edgeh.Deps{Logger: logger,
+		Store: broadcastgate.EdgeStore{Store: broadcastStore, Enabled: cfg.Broadcast.Enabled, Publishers: testPublishers}}
 	if cfg.Broadcast.EdgePublicKey != "" {
 		if edgeDeps.Key, err = config.EdgeKey(cfg.Broadcast.EdgePublicKey); err != nil {
 			return apiRouters{}, nil, err
@@ -334,6 +337,7 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 		Secure:           true,
 		Turnstile:        tsGuard,
 		TurnstileSiteKey: cfg.Turnstile.SiteKey,
+		BroadcastEnabled: cfg.Broadcast.Enabled,
 	}
 	accountDeps := &accounth.Deps{Users: users, Sessions: sess, Audit: auditLog, Logger: logger}
 	// Build the router. Order matters: health probes mount on the
@@ -343,12 +347,25 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 	// peer in server.trusted_proxies (Epic 50 story 50.31).
 	// The user listener answers server.user_hosts only and has no admin route (story 50.32).
 	draining := &atomic.Bool{}
+	// While broadcasting is off, every broadcast and moderation path on both listeners is an
+	// unknown path but the exceptions broadcastgate lists.
+	gate := broadcastgate.Gate{Enabled: cfg.Broadcast.Enabled, Publishers: testPublishers, Agents: servers,
+		EdgeKey: edgeDeps.Key, User: middleware.RequireUser(signer, middleware.UserStatus(pool.DB))}
+	consoleGate := gate
+	consoleGate.Console = true
+	// the Report form's origins are answered only while there is a form
+	var formPaths []string
+	if cfg.Broadcast.Enabled {
+		formPaths = moderationh.ReportPaths
+	}
 	r := server.NewRouter(logger, pool, mig, build, server.DefaultOrigins(cfg),
 		server.WithTrustedProxies(cfg.Server.TrustedProxies), server.WithUserHosts(cfg.Server.UserHosts),
 		server.WithDraining(draining.Load), server.WithTVOrigins(tvcodesh.PublicPaths),
-		server.WithFormOrigins(moderationh.ReportPaths, moderationh.WatchOriginsFor(cfg.Server.Staging())))
+		server.WithFormOrigins(formPaths, moderationh.WatchOriginsFor(cfg.Server.Staging())),
+		server.WithGate(gate.Middleware))
 	adminR := server.NewAdminRouter(logger, pool, mig, build, cfg.Server.AdminHost,
-		cfg.Server.AdminOriginOrDefault(), cfg.Server.TrustedProxies, server.WithDraining(draining.Load))
+		cfg.Server.AdminOriginOrDefault(), cfg.Server.TrustedProxies, server.WithDraining(draining.Load),
+		server.WithGate(consoleGate.Middleware))
 	// NewRouter has already registered the health probes, and chi
 	// refuses Use after a route, so the app routes and their middleware
 	// live in a group.
@@ -403,6 +420,7 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 			DB: pool.DB, Provider: payments, Users: users, Sessions: sess, Abuse: detector, Audit: auditLog,
 			Mailer: mailer, Logger: logger, Entitlements: entSigner, Broadcast: broadcastStore,
 			WebURL: cfg.Server.WebURL, AccessPush: broadcastDeps.PushAccess,
+			BroadcastEnabled: cfg.Broadcast.Enabled,
 		}
 		// Public billing routes: the catalog, the entitlement key, and the
 		// payment-provider webhook (verified by the provider, not our token).

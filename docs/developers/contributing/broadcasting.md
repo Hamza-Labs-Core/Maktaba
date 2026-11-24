@@ -6,6 +6,11 @@ viewer from its cache, so the home's upload is the same for one viewer as for te
 This guide is for contributors who work on the home's side: the Broadcast page, the publish
 checks, and the broadcaster in the front door. The edge itself is in `docs/broadcast-edge.md`.
 
+**Broadcasting is off for now (2026-11-24).** The cloud's `broadcast.enabled` is off, so no
+home's licence carries the `broadcast` flag: the Broadcast panel and the Broadcast access page
+don't show, the edge's `BROADCAST_ENABLED` is off, and the apps hide **Watch a broadcast** behind
+a build-time switch (`GuestBroadcast`). Access, when it is on, is by invitation only.
+
 Every route here is described in the [API reference](https://maktaba.dev/api/), under
 **Broadcasting**. All of them are admin only, and the API enforces that: a viewer gets `403`, a
 caller with no session `401`, before anything is read or sent to Maktaba Cloud.

@@ -246,7 +246,8 @@ jobs:
           set -euo pipefail
           chmod +x ./gradlew
           ./gradlew --no-daemon --stacktrace :client:test test ${{ matrix.tasks }} -Pmaktaba.version=0.0.1 "-Pmaktaba.jbr=${JBR}"
-          # the real libmpv's tests ran, not skipped (story 13.18), and what they measured
+          # the real libmpv's tests ran, not skipped (story 13.18), and what they measured (13.19's
+          # T04 and T05: the decoder probe's time and results, the audio device's channels)
           report=(build/test-results/test/TEST-*MpvRealTest.xml)
           counts=$(grep -m 1 -oE 'tests="[0-9]+" skipped="[0-9]+"' "${report[0]}" || true)
           echo "MpvRealTest: ${counts}"

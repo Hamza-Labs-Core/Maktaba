@@ -10,6 +10,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/subscriptions"
 )
 
 // agent is a fake relay agent: it records each call and answers 201 with a body.
@@ -25,6 +26,55 @@ func agent(t *testing.T) (addr string, seen *[]string) {
 	}))
 	t.Cleanup(srv.Close)
 	return strings.TrimPrefix(srv.URL, "http://"), &calls
+}
+
+// licence is a Pro home's licence with these features.
+func licence(fs ...subscriptions.Feature) *subscriptions.StoreRef {
+	have := map[subscriptions.Feature]bool{}
+	for _, f := range fs {
+		have[f] = true
+	}
+	st := subscriptions.NewStore()
+	st.Set(&subscriptions.Entitlements{Tier: subscriptions.TierPro, Features: have})
+	ref := &subscriptions.StoreRef{}
+	ref.Set(st)
+	return ref
+}
+
+// Role test: without the licence's broadcast feature (the cloud withholds it while broadcasting
+// is off) no one reaches a route, an admin and a manage-scope cloud sign-in included, whatever
+// other features the licence carries, and nothing reaches the agent. A member and no sign-in
+// are refused before the licence is read, so neither learns what the home is licensed for.
+func TestNoBroadcastFeatureRefusesEveryRoute(t *testing.T) {
+	addr, seen := agent(t)
+	admin := &principal.Principal{UserID: "u1", IsAdmin: true}
+	manage := &principal.Principal{UserID: "u1", IsAdmin: true}
+	manage.ApplyCloudScope(principal.CloudScopeManage, nil)
+	member := &principal.Principal{UserID: "u2"}
+	for name, ref := range map[string]*subscriptions.StoreRef{
+		"no licence": nil, "a licence not loaded yet": {},
+		"pro without broadcast": licence(subscriptions.FeatureCloudRelay, subscriptions.FeatureFederation, subscriptions.FeatureMultiUser),
+	} {
+		h := &Handler{AgentAddr: addr, License: ref}
+		for _, c := range routes {
+			for who, p := range map[string]*principal.Principal{"admin": admin, "manage scope": manage} {
+				rec := as(h, p, c.method, c.path, c.body)
+				if rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), "license-required") ||
+					!strings.Contains(rec.Body.String(), `"feature":"broadcast"`) {
+					t.Fatalf("%s, %s %s %s: %d %s", name, who, c.method, c.path, rec.Code, rec.Body)
+				}
+			}
+			if rec := as(h, member, c.method, c.path, c.body); rec.Code != http.StatusForbidden || strings.Contains(rec.Body.String(), "license") {
+				t.Fatalf("%s, member %s %s: %d %s", name, c.method, c.path, rec.Code, rec.Body)
+			}
+			if rec := as(h, nil, c.method, c.path, c.body); rec.Code != http.StatusUnauthorized {
+				t.Fatalf("%s, no sign-in %s %s: %d", name, c.method, c.path, rec.Code)
+			}
+		}
+	}
+	if len(*seen) != 0 {
+		t.Fatalf("the agent saw %q", *seen)
+	}
 }
 
 // as serves the routes to a request made by p (nil: no sign-in).
@@ -58,7 +108,7 @@ var routes = []struct{ method, path, body, agent string }{
 // Role test (story 50.26): an owner or admin reaches every route; the agent sees the call.
 func TestAnAdminManagesViewerAccess(t *testing.T) {
 	addr, seen := agent(t)
-	h := &Handler{AgentAddr: addr}
+	h := &Handler{AgentAddr: addr, License: licence(subscriptions.FeatureBroadcast)}
 	admin := &principal.Principal{UserID: "u1", IsAdmin: true}
 	for _, c := range routes {
 		rec := as(h, admin, c.method, c.path, c.body)
@@ -81,7 +131,7 @@ func TestAnAdminManagesViewerAccess(t *testing.T) {
 // none of the routes, and nothing reaches the agent.
 func TestOnlyAnOwnerOrAdminManagesViewerAccess(t *testing.T) {
 	addr, seen := agent(t)
-	h := &Handler{AgentAddr: addr}
+	h := &Handler{AgentAddr: addr, License: licence(subscriptions.FeatureBroadcast)}
 	member := &principal.Principal{UserID: "u2"}
 	play := &principal.Principal{UserID: "u1", IsAdmin: true}
 	play.ApplyCloudScope(principal.CloudScopePlay, nil)
@@ -104,7 +154,7 @@ func TestOnlyAnOwnerOrAdminManagesViewerAccess(t *testing.T) {
 // An id that is not one segment of id characters never reaches the agent.
 func TestABadIDIsRefused(t *testing.T) {
 	addr, seen := agent(t)
-	h := &Handler{AgentAddr: addr}
+	h := &Handler{AgentAddr: addr, License: licence(subscriptions.FeatureBroadcast)}
 	admin := &principal.Principal{UserID: "u1", IsAdmin: true}
 	for _, c := range []struct{ method, path string }{
 		{http.MethodDelete, Prefix + "/invites/a%2E%2E"},
@@ -124,11 +174,11 @@ func TestABadIDIsRefused(t *testing.T) {
 func TestUnlinkedAndUnreachable(t *testing.T) {
 	t.Setenv("MAKTABA_CLOUDLINK_ADMIN", "")
 	admin := &principal.Principal{UserID: "u1", IsAdmin: true}
-	rec := as(&Handler{}, admin, http.MethodGet, Prefix+"/invites", "")
+	rec := as(&Handler{License: licence(subscriptions.FeatureBroadcast)}, admin, http.MethodGet, Prefix+"/invites", "")
 	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "cloud_not_linked") {
 		t.Fatalf("unlinked: %d %s", rec.Code, rec.Body)
 	}
-	rec = as(&Handler{AgentAddr: "127.0.0.1:1"}, admin, http.MethodGet, Prefix+"/invites", "")
+	rec = as(&Handler{AgentAddr: "127.0.0.1:1", License: licence(subscriptions.FeatureBroadcast)}, admin, http.MethodGet, Prefix+"/invites", "")
 	if rec.Code != http.StatusBadGateway || !strings.Contains(rec.Body.String(), "cloud_unreachable") {
 		t.Fatalf("unreachable: %d %s", rec.Code, rec.Body)
 	}

@@ -25,6 +25,7 @@ import {
 } from "../savedHomes";
 import { useSession } from "../shared/session";
 import { navigateExternal } from "../nav";
+import { useBroadcastOn } from "../providers";
 import { Banner, LoadError, Loading, Page, useErrorMessage, useLoad } from "../shared/ui";
 
 export interface CloudHome {
@@ -56,6 +57,7 @@ export function Homes() {
   const { t } = useI18n();
   const errorMessage = useErrorMessage();
   const { user } = useSession();
+  const broadcastOn = useBroadcastOn();
   // story 50.13: a good list is saved; while the cloud can't be reached, the saved one shows
   const homes = useLoad(async (): Promise<{ homes: CloudHome[]; saved?: SavedList }> => {
     try {
@@ -134,8 +136,9 @@ export function Homes() {
                 <a href={new URL("/account", h.relay_url).toString()}>{t("homes.openHome")}</a>
               </p>
             )}
-            {/* a home's broadcast viewers (story 50.28): its owner only, as the cloud enforces */}
-            {h.owned && (
+            {/* a home's broadcast viewers (story 50.28): its owner only, as the cloud enforces,
+                and only while broadcasting is on */}
+            {broadcastOn && h.owned && (
               <p>
                 <Link to={`/homes/${encodeURIComponent(h.server_id)}/viewers`}>
                   {t("homes.viewers")}

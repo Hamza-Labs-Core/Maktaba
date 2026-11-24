@@ -3,7 +3,7 @@
   "generated_for": "Maktaba",
   "totals": {
     "epics": 60,
-    "stories": 747,
+    "stories": 751,
     "plans": 372,
     "diagrams": 14,
     "mockups": 63
@@ -2064,6 +2064,42 @@
       "slug": "player-libmpv",
       "title": "المشغّل يعمل بـ libmpv: تشغيل مباشر يُبلَغ به الجهاز الرئيسي",
       "story_file": "specs/epics/13-desktop/story-13-18-player-libmpv.md",
+      "plan_files": []
+    },
+    {
+      "id": "13.19",
+      "epic": 13,
+      "num": "19",
+      "slug": "player-device-caps",
+      "title": "مشغّل سطح المكتب يُبلغ بما يشغّله (`device_caps`)",
+      "story_file": "specs/epics/13-desktop/story-13-19-player-device-caps.md",
+      "plan_files": []
+    },
+    {
+      "id": "13.20",
+      "epic": 13,
+      "num": "20",
+      "slug": "player-mpv-subtitles",
+      "title": "الترجمات عبر mpv: مسارات الملف نفسه، وحجمها ولونها",
+      "story_file": "specs/epics/13-desktop/story-13-20-player-mpv-subtitles.md",
+      "plan_files": []
+    },
+    {
+      "id": "13.21",
+      "epic": 13,
+      "num": "21",
+      "slug": "player-engine-choice",
+      "title": "محرّك الفيديو إعدادًا في المشغّل",
+      "story_file": "specs/epics/13-desktop/story-13-21-player-engine-choice.md",
+      "plan_files": []
+    },
+    {
+      "id": "13.22",
+      "epic": 13,
+      "num": "22",
+      "slug": "player-live-mpv",
+      "title": "البث المباشر يعمل بـ libmpv، ثم يغادر JavaFX المشغّل",
+      "story_file": "specs/epics/13-desktop/story-13-22-player-live-mpv.md",
       "plan_files": []
     },
     {

@@ -12,13 +12,17 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/go-chi/chi/v5"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/jwt"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/keys"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/auth"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/subscriptions"
 )
 
 // principalForCookieTest returns a context carrying a cookie-sourced
@@ -95,6 +99,34 @@ func TestServeWithAuth_JWKSAndHeaders(t *testing.T) {
 	}
 	if resp2.Header.Get("Content-Security-Policy") == "" {
 		t.Error("CSP header should be present")
+	}
+}
+
+// The server mounts the viewer-access API with the home's own licence: an operator is refused until
+// the licence carries broadcasting, and the licence loaded after the mount is the one that counts.
+func TestBroadcastAccessIsMountedWithTheLicence(t *testing.T) {
+	t.Setenv("MAKTABA_CLOUDLINK_ADMIN", "") // not linked: an admitted request is 409
+	lic := &subscriptions.StoreRef{}
+	r := chi.NewRouter()
+	mountBroadcastAccess(r, lic)
+	ask := func() *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodGet, "/api/broadcast/access/invites", nil)
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req.WithContext(principal.WithPrincipal(req.Context(), &principal.Principal{UserID: "u1", IsAdmin: true})))
+		return rec
+	}
+	if rec := ask(); rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), "license-required") {
+		t.Fatalf("before a licence: %d %s", rec.Code, rec.Body)
+	}
+	st := subscriptions.NewStore()
+	lic.Set(st)
+	st.Set(&subscriptions.Entitlements{Tier: subscriptions.TierPro, Features: map[subscriptions.Feature]bool{subscriptions.FeatureCloudRelay: true}})
+	if rec := ask(); rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), "license-required") {
+		t.Fatalf("Pro without broadcasting: %d %s", rec.Code, rec.Body)
+	}
+	st.Set(&subscriptions.Entitlements{Tier: subscriptions.TierPro, Features: map[subscriptions.Feature]bool{subscriptions.FeatureBroadcast: true}})
+	if rec := ask(); rec.Code != http.StatusConflict {
+		t.Fatalf("with broadcasting: %d %s", rec.Code, rec.Body)
 	}
 }
 

@@ -47,23 +47,31 @@ data class AudioAnswer(
     @SerialName("max_channels") val maxChannels: Int? = null,
 )
 
-/** One video codec of the report and its limits. */
-data class VideoCap(val codec: String, val maxHeight: Int?, val maxFps: Int?, val bitDepth: Int?)
+/**
+ * One video codec of the report and its limits. [hardware] says whether a hardware decoder takes
+ * it (the desktop Player on libmpv, story 13.19: false is decoded in software, [maxHeight] then
+ * the tallest picture it decodes smoothly); null: not said (Android's report says nothing).
+ */
+data class VideoCap(val codec: String, val maxHeight: Int?, val maxFps: Int?, val bitDepth: Int?, val hardware: Boolean? = null)
 
-/** The report, as `POST /api/stream/sessions` takes it in `device_caps`. */
+/**
+ * The report, as `POST /api/stream/sessions` takes it in `device_caps`. A list that is null is
+ * left out of the JSON (the profile's stands: the desktop Player's report names its video and
+ * channels only); an empty one is sent, the device's "none".
+ */
 data class DeviceCaps(
-    val containers: List<String>,
+    val containers: List<String>?,
     val video: List<VideoCap>,
-    val hdr: List<String>,
-    val audio: List<String>,
-    val passthrough: List<String>,
+    val hdr: List<String>?,
+    val audio: List<String>?,
+    val passthrough: List<String>?,
     val maxAudioChannels: Int?,
-    val hlsSegments: List<String>,
-    val dash: Boolean,
+    val hlsSegments: List<String>?,
+    val dash: Boolean?,
 ) {
-    /** The `device_caps` JSON: every list sent, even empty (an empty list is the device's "none"). */
+    /** The `device_caps` JSON: every list given sent, even empty (an empty list is the device's "none"). */
     fun toJson(): JsonObject = buildJsonObject {
-        put("containers", strings(containers))
+        containers?.let { put("containers", strings(it)) }
         put(
             "video",
             buildJsonArray {
@@ -74,17 +82,18 @@ data class DeviceCaps(
                             v.maxHeight?.let { put("max_height", it) }
                             v.maxFps?.let { put("max_fps", it) }
                             v.bitDepth?.let { put("bit_depth", it) }
+                            v.hardware?.let { put("hardware", it) }
                         },
                     )
                 }
             },
         )
-        put("hdr", strings(hdr))
-        put("audio", strings(audio))
-        put("passthrough", strings(passthrough))
+        hdr?.let { put("hdr", strings(it)) }
+        audio?.let { put("audio", strings(it)) }
+        passthrough?.let { put("passthrough", strings(it)) }
         maxAudioChannels?.let { put("max_audio_channels", it) }
-        put("hls_segments", strings(hlsSegments))
-        put("dash", dash)
+        hlsSegments?.let { put("hls_segments", strings(it)) }
+        dash?.let { put("dash", it) }
     }
 
     private fun strings(l: List<String>) = buildJsonArray { l.forEach { add(kotlinx.serialization.json.JsonPrimitive(it)) } }

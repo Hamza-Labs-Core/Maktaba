@@ -458,9 +458,7 @@ func runServe() error {
 	})
 	wireReportsForwarder(loops, forwarder, logger)
 
-	// Epic 50 story 50.26: who may watch the home's broadcast channels (owner or admin only),
-	// passed to Maktaba Cloud through the relay agent.
-	(&broadcastaccess.Handler{}).Mount(r)
+	mountBroadcastAccess(r, licRef)
 	logger.Info("logs: diagnostics export surface mounted", "event", "logs_mounted")
 
 	// Process supervision (Story 22.9): the supervisor's per-process
@@ -1442,4 +1440,11 @@ func embedderClient(pipelineClient, searchPipelineClient grpcpipeline.Client) an
 func broadcastDeps(db *sql.DB, loops *runner.Runner, logger *slog.Logger) router.BroadcastDeps {
 	return router.BroadcastDeps{DB: db, AgentAddr: os.Getenv("MAKTABA_CLOUDLINK_ADMIN"), Loops: loops, Logger: logger,
 		RevocationKeys: os.Getenv("MAKTABA_BROADCAST_PUBKEYS")}
+}
+
+// mountBroadcastAccess mounts Epic 50 story 50.26's routes: who may watch the home's broadcast
+// channels (owner or admin only, and only with the licence's broadcast feature), passed to
+// Maktaba Cloud through the relay agent.
+func mountBroadcastAccess(r chi.Router, lic *subscriptions.StoreRef) {
+	(&broadcastaccess.Handler{License: lic}).Mount(r)
 }

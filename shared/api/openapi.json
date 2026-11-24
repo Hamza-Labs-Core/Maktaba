@@ -21151,7 +21151,7 @@
             "$ref": "#/components/responses/Unauthorized"
           },
           "403": {
-            "description": "Owner or admin only, or Maktaba Cloud refused the change (its own code, such as `broadcast_open_needs_verification`).",
+            "description": "Owner or admin only; `license-required`: the home's licence doesn't carry broadcasting (always while broadcasting is off), and nothing is asked of Maktaba Cloud; or Maktaba Cloud refused the change (its own code, such as `broadcast_open_needs_verification`).",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -21240,7 +21240,7 @@
             "$ref": "#/components/responses/Unauthorized"
           },
           "403": {
-            "description": "Owner or admin only, or Maktaba Cloud refused the change (its own code, such as `broadcast_open_needs_verification`).",
+            "description": "Owner or admin only; `license-required`: the home's licence doesn't carry broadcasting (always while broadcasting is off), and nothing is asked of Maktaba Cloud; or Maktaba Cloud refused the change (its own code, such as `broadcast_open_needs_verification`).",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -21314,7 +21314,7 @@
             "$ref": "#/components/responses/Unauthorized"
           },
           "403": {
-            "description": "Owner or admin only, or Maktaba Cloud refused the change (its own code, such as `broadcast_open_needs_verification`).",
+            "description": "Owner or admin only; `license-required`: the home's licence doesn't carry broadcasting (always while broadcasting is off), and nothing is asked of Maktaba Cloud; or Maktaba Cloud refused the change (its own code, such as `broadcast_open_needs_verification`).",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -21381,7 +21381,7 @@
             "$ref": "#/components/responses/Unauthorized"
           },
           "403": {
-            "description": "Owner or admin only, or Maktaba Cloud refused the change (its own code, such as `broadcast_open_needs_verification`).",
+            "description": "Owner or admin only; `license-required`: the home's licence doesn't carry broadcasting (always while broadcasting is off), and nothing is asked of Maktaba Cloud; or Maktaba Cloud refused the change (its own code, such as `broadcast_open_needs_verification`).",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -21470,7 +21470,7 @@
             "$ref": "#/components/responses/Unauthorized"
           },
           "403": {
-            "description": "Owner or admin only, or Maktaba Cloud refused the change (its own code, such as `broadcast_open_needs_verification`).",
+            "description": "Owner or admin only; `license-required`: the home's licence doesn't carry broadcasting (always while broadcasting is off), and nothing is asked of Maktaba Cloud; or Maktaba Cloud refused the change (its own code, such as `broadcast_open_needs_verification`).",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -21533,7 +21533,7 @@
             "$ref": "#/components/responses/Unauthorized"
           },
           "403": {
-            "description": "Owner or admin only, or Maktaba Cloud refused the change (its own code, such as `broadcast_open_needs_verification`).",
+            "description": "Owner or admin only; `license-required`: the home's licence doesn't carry broadcasting (always while broadcasting is off), and nothing is asked of Maktaba Cloud; or Maktaba Cloud refused the change (its own code, such as `broadcast_open_needs_verification`).",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -21611,7 +21611,7 @@
             "$ref": "#/components/responses/Unauthorized"
           },
           "403": {
-            "description": "Owner or admin only, or Maktaba Cloud refused the change (its own code, such as `broadcast_open_needs_verification`).",
+            "description": "Owner or admin only; `license-required`: the home's licence doesn't carry broadcasting (always while broadcasting is off), and nothing is asked of Maktaba Cloud; or Maktaba Cloud refused the change (its own code, such as `broadcast_open_needs_verification`).",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -21683,7 +21683,7 @@
             "$ref": "#/components/responses/Unauthorized"
           },
           "403": {
-            "description": "Owner or admin only, or Maktaba Cloud refused the change (its own code, such as `broadcast_open_needs_verification`).",
+            "description": "Owner or admin only; `license-required`: the home's licence doesn't carry broadcasting (always while broadcasting is off), and nothing is asked of Maktaba Cloud; or Maktaba Cloud refused the change (its own code, such as `broadcast_open_needs_verification`).",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -23618,7 +23618,7 @@
           },
           "client_profile": {
             "type": "string",
-            "description": "The client profile the streaming service decides direct play, remux or transcode by: `generic` (also the fallback for a name it does not know), `desktop-player`, `browser-chrome`, `browser-safari`, `ios-native`, `tvos`, `android-native`, `androidtv`, and the TV platforms `firetv`, `tizen`, `webos`, `roku`, `cast` and `vega`. A TV profile alone is a baseline every model of its platform plays (H.264 1080p in HLS); `device_caps` widens it."
+            "description": "The client profile the streaming service decides direct play, remux or transcode by: `generic` (also the fallback for a name it does not know), `desktop-player`, `desktop-mpv`, `browser-chrome`, `browser-safari`, `ios-native`, `tvos`, `android-native`, `androidtv`, and the TV platforms `firetv`, `tizen`, `webos`, `roku`, `cast` and `vega`. A TV profile alone is a baseline every model of its platform plays (H.264 1080p in HLS); `device_caps` widens it. `desktop-mpv` (the desktop Player on libmpv) takes `device_caps` too: it narrows each codec to what the machine decodes smoothly, and a transcode keeps up to its `max_audio_channels` (6 or more, for a source of 6 or more: E-AC-3 5.1; fewer: stereo AAC; none said: the audio as any transcode's)."
           },
           "audio_track": {
             "type": "string",
@@ -23742,7 +23742,7 @@
         "properties": {
           "codec": {
             "type": "string",
-            "description": "`h264`, `hevc`, `av1` or `vp9`."
+            "description": "`h264`, `hevc`, `av1`, `vp9` or `mpeg2video`."
           },
           "max_height": {
             "type": "integer",
@@ -23762,6 +23762,10 @@
               12
             ],
             "description": "The deepest samples it decodes in this codec."
+          },
+          "hardware": {
+            "type": "boolean",
+            "description": "Whether a hardware decoder takes this codec: `false` is decoded in software, and `max_height` is then the tallest picture it decodes smoothly (the desktop Player on libmpv measures it). Left out: not said. No decision reads it; a transcode's reason names it."
           }
         }
       },

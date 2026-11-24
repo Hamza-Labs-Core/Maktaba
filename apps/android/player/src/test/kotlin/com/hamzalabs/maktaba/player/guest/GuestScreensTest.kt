@@ -235,6 +235,42 @@ class GuestScreensTest {
         }
     }
 
+    /**
+     * While the build has broadcasting off ([com.hamzalabs.maktaba.core.guest.GuestBroadcast]): no
+     * entry even with no parental limit, so the home picker shows no Watch a broadcast; turned on
+     * (as the tests above have it, providing the entry), the same gate gives one.
+     */
+    @Test
+    @Config(qualifiers = PHONE)
+    fun broadcastingOffShowsNoEntry() {
+        val switch = com.hamzalabs.maktaba.core.guest.GuestBroadcast
+        assertEquals(false, switch.BUILT)
+        assertEquals(false, switch.ENABLED)
+        val door = com.hamzalabs.maktaba.core.guest.GuestDoor()
+        val allowed = com.hamzalabs.maktaba.core.guest.GuestAccess.Allowed
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        try {
+            val session = AppSession(MapStore(), scope, { MemoryTokens() }, { _, tokens -> ApiClient(server.url("/"), tokens) })
+            compose.setContent {
+                MaktabaTheme(ThemeMode.Dark) {
+                    Surface {
+                        CompositionLocalProvider(LocalWatchBroadcast provides guestEntry(door, allowed)) {
+                            HomePicker(session, MaktabaApp.Player)
+                        }
+                    }
+                }
+            }
+            compose.settledUntil(5_000) { shown("through-cloud") }
+            assertTrue("the picker shows no Watch a broadcast", !shown("picker-watch-broadcast"))
+            assertEquals(null, guestEntry(door, allowed))
+            switch.override = true
+            assertTrue(guestEntry(door, allowed) != null)
+        } finally {
+            switch.override = null
+            scope.cancel()
+        }
+    }
+
     @Test
     @Config(qualifiers = PHONE)
     fun anInviteWaitsForTheHomesWordAndALimitClosesTheGuestSpace() {

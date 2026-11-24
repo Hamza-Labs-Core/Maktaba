@@ -12,10 +12,38 @@ import java.io.File
 object Engine {
     private val load: MpvLoad by lazy { MpvLoad.current }
 
+    /** What this machine plays (story 13.19), once [startProbe] has run; JavaFX has none. */
+    val report = DeviceReport()
+
+    private val runner: ReportRunner? by lazy {
+        val l = load as? MpvLoad.Loaded ?: return@lazy null
+        ReportRunner(
+            report,
+            newDecoder = { MpvProbeDecoder(l.lib) },
+            clipsDir = { Probe.extractClips(File(cacheBase(), "maktaba-player/probe")) },
+            cache = ProbeCache(File(com.hamzalabs.maktaba.desktop.AppDirs.config, "probe.json")),
+            marker = File(com.hamzalabs.maktaba.desktop.AppDirs.config, "probe.running"),
+            busy = { (players as? MpvPlayers)?.playing == true },
+            videosOpened = { (players as? MpvPlayers)?.opened ?: 0L },
+        )
+    }
+
     val players: Players by lazy {
         when (val l = load) {
-            is MpvLoad.Loaded -> MpvPlayers(l.lib, captionFonts())
+            is MpvLoad.Loaded -> MpvPlayers(l.lib, captionFonts(), report, closed = { runner?.watchClosed() })
             is MpvLoad.Missing -> FxPlayers
+        }
+    }
+
+    /**
+     * Starts the decoder probe and the audio device's measurement (story 13.19), off the UI
+     * thread, on handles of their own: nothing when JavaFX plays.
+     */
+    fun startProbe() {
+        // loading libmpv itself is off the UI thread too
+        Thread({ runCatching { runner?.start() } }, "mpv-probe-start").apply {
+            isDaemon = true
+            start()
         }
     }
 
@@ -34,6 +62,13 @@ object Engine {
         fallbackReason?.startsWith("MAKTABA_PLAYER_ENGINE") == true -> null
         else -> fallbackReason
     }
+
+    /**
+     * The problem report's lines: the engine, and with libmpv the device report (story 13.19:
+     * each codec's probe result, the audio channels, the probe's cache key).
+     */
+    fun logLines(now: java.time.Instant = java.time.Instant.now()): List<String> =
+        listOf(logLine(now)) + if (load is MpvLoad.Loaded) listOf(report.logLine(now)) else emptyList()
 
     /** [describe] as a line of the problem report's log (its JSON lines, stamped now). */
     fun logLine(now: java.time.Instant = java.time.Instant.now()): String =
@@ -54,11 +89,7 @@ object Engine {
      * can read; null when it cannot be written (mpv then uses the system's sans-serif).
      */
     private fun captionFonts(): File? = runCatching {
-        // this user's own folder (a shared temporary one could be another user's, fonts planted)
-        val base = System.getenv("LOCALAPPDATA")?.let(::File)
-            ?: System.getenv("XDG_CACHE_HOME")?.let(::File)
-            ?: File(System.getProperty("user.home"), ".cache")
-        val dir = File(base, "maktaba-player/fonts").apply { mkdirs() }
+        val dir = File(cacheBase(), "maktaba-player/fonts").apply { mkdirs() }
         for (name in listOf("ibm_plex_sans_arabic_regular.ttf", "ibm_plex_sans_arabic_semibold.ttf")) {
             val out = File(dir, name)
             if (out.isFile && out.length() > 0) continue
@@ -67,4 +98,9 @@ object Engine {
         }
         dir
     }.getOrNull()
+
+    /** This user's own cache folder (a shared temporary one could be another user's, files planted). */
+    private fun cacheBase(): File = System.getenv("LOCALAPPDATA")?.let(::File)
+        ?: System.getenv("XDG_CACHE_HOME")?.let(::File)
+        ?: File(System.getProperty("user.home"), ".cache")
 }
