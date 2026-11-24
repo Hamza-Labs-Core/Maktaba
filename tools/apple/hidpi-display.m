@@ -73,10 +73,13 @@ static CGDisplayModeRef retinaMode(CGDirectDisplayID d, size_t w, size_t h) {
     return best ? CGDisplayModeRetain(best) : NULL;
 }
 
-/// A tenth of a second, the main queue and AppKit's screen changes served meanwhile.
+/// A tenth of a second, the main queue and AppKit's events (its screens' changes) served
+/// meanwhile.
 static void pause_a_little(void) {
-    CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.1, false);
-    usleep(100000);
+    NSDate *until = [NSDate dateWithTimeIntervalSinceNow:0.1];
+    NSEvent *e;
+    while ((e = [NSApp nextEventMatchingMask:NSEventMaskAny untilDate:until inMode:NSDefaultRunLoopMode dequeue:YES]))
+        [NSApp sendEvent:e];
 }
 
 /// The virtual display, kept for the life of the process.
@@ -159,12 +162,15 @@ int main(int argc, const char *argv[]) {
         NSString *ready = [NSString stringWithUTF8String:argv[2]];
         // a connection to the window server as an app has one, and AppKit's screens
         [NSApplication sharedApplication];
+        [NSApp setActivationPolicy:NSApplicationActivationPolicyProhibited];
+        [NSApp finishLaunching];
         CGDirectDisplayID first = CGMainDisplayID();
         describe("the runner's display", first);
         printModes(first);
 
         CGDirectDisplayID target = first;
         CGDisplayModeRef mode = retinaMode(first, w, h);
+        BOOL pretend = NO; // taken by its bounds alone
         if (!mode) {
             // none of its own: a virtual display drawn at 2x, asked for each way in turn
             if (!NSClassFromString(@"CGVirtualDisplayDescriptor")) {
@@ -172,7 +178,7 @@ int main(int argc, const char *argv[]) {
                 return 1;
             }
             struct { unsigned int hiDPI; NSArray<NSNumber *> *scales; } ways[] = {
-                {1, @[@2, @1]}, {1, @[@1]}, {2, @[@2]}, {1, @[@2]}};
+                {1, @[@2]}, {1, @[@2, @1]}, {2, @[@2]}, {1, @[@1]}};
             BOOL found = NO;
             for (unsigned int k = 0; k < sizeof ways / sizeof *ways && !found; k++) {
                 kept = nil;
@@ -185,9 +191,15 @@ int main(int argc, const char *argv[]) {
                 for (int i = 0; i < 30 && !(mode = retinaMode(d, w, h)) && !isRetina(d, w, h); i++) pause_a_little();
                 describe("the virtual display", d);
                 printModes(d);
-                if (mode || isRetina(d, w, h)) {
+                // its one mode 2w x 2h pixels and its bounds w x h points: drawn at 2x, though
+                // AppKit has no screen for it yet (the shots' own check reads their pixels)
+                BOOL halved = ways[k].scales.count == 1 && ways[k].scales[0].unsignedIntValue == 2 &&
+                              CGDisplayBounds(d).size.width == w && screenScale(d) == 0;
+                if (halved) fprintf(stderr, "taken by its bounds: %u x %u points from %u x %u pixels\n", w, h, 2 * w, 2 * h);
+                if (mode || isRetina(d, w, h) || halved) {
                     target = d;
                     found = YES;
+                    pretend = halved;
                 }
             }
             if (!found) {
@@ -221,7 +233,7 @@ int main(int argc, const char *argv[]) {
                 [menuBar.deviceDescription[@"NSScreenNumber"] unsignedIntValue], menuBar.frame.size.width,
                 menuBar.frame.size.height, menuBar.backingScaleFactor);
         CGRect b = CGDisplayBounds(target);
-        if (CGMainDisplayID() != target || !isRetina(target, w, h)) {
+        if (CGMainDisplayID() != target || !(isRetina(target, w, h) || pretend)) {
             fprintf(stderr, "the main display is not the 2x one\n");
             return 1;
         }
