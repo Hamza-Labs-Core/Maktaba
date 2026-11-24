@@ -57,6 +57,11 @@ class ChannelMpvRealTest {
     private val lineup = listOf(LiveChannel("c1", 1, "One"), LiveChannel("c2", 2, "Two"))
     private val onAir: MutableList<OnAir> = Collections.synchronizedList(mutableListOf())
 
+    init {
+        // mpv's own log of each handle, uploaded with the job's reports when it fails
+        System.setProperty(MpvVideo.LOG_DIR_PROPERTY, File("build/reports/mpv-logs").absolutePath)
+    }
+
     private fun lib(): LibMpv {
         assumeTrue("MAKTABA_LIBMPV_DIR is not set", dir != null)
         val l = MpvLoad.from(dir, emptyMap())
@@ -157,13 +162,26 @@ class ChannelMpvRealTest {
     private fun until(c: ChannelPlayer, what: String, limitMs: Long = 20_000, ok: (MpvVideo?) -> Boolean): Long {
         val from = System.nanoTime()
         val end = System.currentTimeMillis() + limitMs
+        // what the screen went through meanwhile, with mpv's state at each change
+        val trace = mutableListOf<String>()
+        var last: Any? = null
+        var lastVideo: MpvVideo? = null
         while (System.currentTimeMillis() < end) {
             val v = c.video.video as? MpvVideo
+            if (v != null) lastVideo = v
             v?.resize(1280, 720)
+            val now = c.playback.status to (v?.shown?.load)
+            if (now != last) {
+                last = now
+                trace += "${(System.nanoTime() - from) / 1_000_000} ms: $now; ${v?.state()}"
+            }
             if (ok(v)) return (System.nanoTime() - from) / 1_000_000
             Thread.sleep(5)
         }
-        throw AssertionError("never: $what (status ${c.playback.status}; asked ${home.seen.map { it.url.encodedPath }.takeLast(12)})")
+        throw AssertionError(
+            "never: $what (status ${c.playback.status}; mpv ${lastVideo?.state()}; " +
+                "asked ${home.seen.map { it.url.encodedPath }.takeLast(16)}; trace ${trace.takeLast(12)})",
+        )
     }
 
     /** Which channel a frame shows: "red" (one), "blue" (two), or "other". */

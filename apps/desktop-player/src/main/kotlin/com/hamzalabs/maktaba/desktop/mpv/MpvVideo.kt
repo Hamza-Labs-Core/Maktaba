@@ -83,8 +83,10 @@ class MpvVideo internal constructor(
     @Volatile var shown: Shown? = null
         private set
 
-    // a load's first frame is awaited: the frame on screen stays (mpv's frames are drawn, not shown)
-    @Volatile private var holding = false
+    // the stream's picture has not started (the first stream's, or a load's): mpv's frames are
+    // drawn, not shown, so the frame on screen stays (none at first: what mpv draws before the
+    // picture starts is black, not the stream's)
+    @Volatile private var holding = true
 
     // mpv's playlist entry of the newest loadfile (ENTRY_PENDING: issued, its id not read yet;
     // ENTRY_ANY: this mpv does not say). Only its events count: a stream replaced by a load may
@@ -123,6 +125,11 @@ class MpvVideo internal constructor(
             // a hardware decoder whose frames come back to memory, where the machine has one
             opt("hwdec", "auto-copy-safe")
             opt("terminal", "no")
+            // the tests' mpv log (the real-library tests set it; the Player never does)
+            System.getProperty(LOG_DIR_PROPERTY)?.let { d ->
+                File(d).mkdirs()
+                opt("log-file", File(d, "mpv-${System.nanoTime()}.log").absolutePath)
+            }
             opt("input-default-bindings", "no")
             opt("osc", "no")
             if (live) {
@@ -338,6 +345,15 @@ class MpvVideo internal constructor(
         events.ready(duration, audio)
     }
 
+    /** mpv's playback state in one line, for a test that waited in vain. */
+    internal fun state(): String {
+        val c = ctx ?: return "no handle"
+        return listOf(
+            "path", "playlist/0/id", "time-pos", "core-idle", "paused-for-cache", "pause", "eof-reached",
+            "demuxer-cache-duration", "video-codec", "audio-codec", "current-ao", "hwdec-current",
+        ).joinToString(", ") { "$it=${string(c, it)}" } + ", holding=$holding, started=$started, entry=${synchronized(entryLock) { entry }}, startedEntry=$startedEntry"
+    }
+
     private fun string(c: Pointer, name: String): String? {
         val p = lib.mpv_get_property_string(c, name) ?: return null
         return try {
@@ -448,6 +464,9 @@ class MpvVideo internal constructor(
 
     companion object {
         const val CAPTION_FONT = "IBM Plex Sans Arabic"
+
+        /** A folder for mpv's own log, one file per handle (the real-library tests only). */
+        const val LOG_DIR_PROPERTY = "maktaba.mpv.logDir"
 
         private const val ENTRY_PENDING = 0L
         private const val ENTRY_ANY = -1L
