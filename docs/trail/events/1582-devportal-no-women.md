@@ -23,6 +23,7 @@ prs: [1582, 1565]
 - **Reference images:**
   - The Roku search-filter references were replaced with the CI run's screens.
   - The four Android profile references were deleted so verify failed and wrote them (run 45331146241).
+- **Main dropped the Fire TV shots:** while #1582 was in CI, main dropped maktaba.dev's two old-library Fire TV shots (fd098a846). Merging #1565's branch into #1582 kept that deletion, so 10 images were rebuilt, not 14.
 - **CI on a stacked PR:** CI runs only for pull requests to `main`, so #1582, stacked on #1565, targets `main`. Changing the base does not start CI (`edited` is not one of ci.yml's events); an empty commit did.
 
 ## What we learned
