@@ -21,6 +21,9 @@ prs: [1565]
   - Android phone and TV: the actual images Roborazzi wrote in runs 45306789661, 45312070295 and 45313275908.
   - `npm run shots` then remade the 288 files in `static/shots/`.
 - **A unit failure on the way:** `unit / unit` failed in run 45306789661 because the maktaba.tv mockups quote the home page's alt texts and were stale (`design/tests/mockups.test.mjs`). `node design/mockups/make.mjs` fixed it.
+- **Two CI failures on the final head (41ee11967), neither from this change:**
+  - In run 45314595387, `Player UI tests (iphone 1/6)` died before any test ran: the runner's `xcrun simctl ui … appearance dark` aborted with CoreSimulator's "Invalid parameter not satisfying: devicePair" (exit 134). Re-running the failed job passed.
+  - The `Reference images` check from the push (run 45314595191) failed because the PR body did not list the new `static/shots` files yet. The body-edit run passed, but the rollup still showed the push's failure until that run was re-run.
 
 ## What we learned
 - **Look at the whole film, not only its poster.** A contact sheet (48 frames over the whole film, `ffmpeg … fps=1/N,tile=8x6`) checks a film in one image. The player's still and every card come from the library, so checking the library at its source covers every screenshot built on it.
