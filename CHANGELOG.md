@@ -423,6 +423,13 @@ build fails when the two differ.
 
 ### Fixed
 
+- **Less to write for every change on a home with a machine's copy.** Most of the library's
+  tables on the home moved to PostgreSQL 18 on 2026-11-20 had every change logged with the whole
+  old row (REPLICA IDENTITY FULL), where their primary key is enough. A migration (slot 0238)
+  gives every table with a primary key that key as its identity, one table at a time and without
+  rewriting any; the machines' copies keep following them. Tables without a primary key keep the
+  whole row, which a copy needs.
+
 - **The second listen stores its corrections again on PostgreSQL 18.** From the home's move to
   PostgreSQL 18 on 2026-11-20, every second-listen job failed when it stored its corrected
   transcript ("cannot update table transcript_segments"): PostgreSQL 18 refuses an update to a
