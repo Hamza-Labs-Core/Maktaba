@@ -97,9 +97,15 @@
  * link with the guide's name, one line and the onward arrow. The NAS group spans the frame; the
  * other two sit side by side from 768 px. A tile's edge turns brass on hover, as a card's does.
  */
+/* the head's space below it: part B's .section-head asks for --spacing-10, which the tokens do
+   not define (8, then 12), so here it is set from the scale */
+.guides .section-head {
+  margin-block-end: var(--spacing-8);
+}
+
 .guide-groups {
   display: grid;
-  gap: var(--spacing-10) var(--spacing-6);
+  gap: var(--spacing-12) var(--spacing-6);
 }
 
 @media (min-width: 768px) {
