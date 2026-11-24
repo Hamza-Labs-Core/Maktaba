@@ -1,0 +1,15 @@
+Maktaba plays a household's own media from their Maktaba home (a server they run). For review, please use our review home, which carries only public-domain and openly licensed films, lectures and an audiobook.
+
+Home address: review.maktaba.tv
+Username: reviewer
+Password: {{REVIEW_HOME_VIEWER_PASSWORD}}
+
+How to sign in: on the first screen, choose to type the home's address, enter review.maktaba.tv, then sign in with the username and password above.
+
+Parental controls: sign in as "reviewer-child" (password: {{REVIEW_HOME_CHILD_PASSWORD}}).
+
+Test files: Meridian (4K HDR10), Spring (1080p), Cosmos Laundromat (MKV with English and Arabic subtitles), Big Buck Bunny (converted by the home while it plays). Switch the Apple TV's language to Arabic to see the app right to left.
+
+Nothing is sold in the app.
+
+Maktaba is free and open source: https://github.com/Hamza-Labs-Core/Maktaba

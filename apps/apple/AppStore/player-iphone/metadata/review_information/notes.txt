@@ -1,0 +1,19 @@
+Maktaba plays a household's own media from their Maktaba home (a server they run). For review, please use our review home, which carries only public-domain and openly licensed films, lectures and an audiobook.
+
+Home address: review.maktaba.tv
+Username: reviewer
+Password: {{REVIEW_HOME_VIEWER_PASSWORD}}
+
+How to sign in:
+1. On the first screen, choose to type the home's address and enter review.maktaba.tv.
+2. Sign in with the username and password above.
+
+Parental controls: sign in as "reviewer-child" (password: {{REVIEW_HOME_CHILD_PASSWORD}}). The films for older viewers are hidden and "Ask a parent" sends a request to "reviewer".
+
+What the permissions are for: Local Network finds a Maktaba home on the person's own network (Bonjour _maktaba._tcp). Camera (iPhone and iPad only) scans a home's QR code or another device's sign-in code; it is asked for only when the person taps Scan.
+
+App Transport Security: the app sets only NSAllowsLocalNetworking, for plain http to a home on the person's own network (an IP address or a .local name). Everything else, Maktaba Cloud and a home's internet address included, is HTTPS.
+
+Nothing is sold in the app, and it shows no prices or links to buy. The app streams video over cellular only from the person's own home; a test stream is any film on the review home above.
+
+Maktaba is free and open source: https://github.com/Hamza-Labs-Core/Maktaba

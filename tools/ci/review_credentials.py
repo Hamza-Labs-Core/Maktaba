@@ -5,8 +5,8 @@ The store reviewers' home (review.maktaba.tv) has a viewer account whose passwor
 in the release secrets. Each store's submission notes name the secret, and the release session
 fills the password in when it submits. This check fails when:
 
-- a store page (docs/stores/*.md), the review home's deploy files (deploy/review-home/) or its
-  tools (tools/review_home/) hold a password-shaped value: a value after "password", "pwd" or
+- a store page (docs/stores/*.md), the review home's deploy files (deploy/review-home/), its
+  tools (tools/review_home/) or the App Store drafts (apps/apple/AppStore/) hold a password-shaped value: a value after "password", "pwd" or
   "passcode" that is not a secret's name, a placeholder or an environment reference;
 - a store's page (amazon, samsung, lg, roku, cast) does not name the secret or does not point
   to docs/stores/review-home.md.
@@ -26,7 +26,7 @@ ROOT = Path(__file__).resolve().parents[2]
 # the name the submission notes print in place of the value (never the value itself)
 NOTES_VAR = "REVIEW_HOME_VIEWER_PASSWORD"
 STORES = ("amazon", "samsung", "lg", "roku", "cast")
-SCANNED = ("docs/stores/*.md", "deploy/review-home/**/*", "tools/review_home/**/*")
+SCANNED = ("docs/stores/*.md", "deploy/review-home/**/*", "tools/review_home/**/*", "apps/apple/AppStore/**/*")
 TEXT = {".md", ".json", ".yml", ".yaml", ".sh", ".py", ".txt", ".example", ".env", "", ".vtt", ".toml"}
 
 # "password: X", "password = X", "password is X", "Password — X", "password `X`", "password "X""

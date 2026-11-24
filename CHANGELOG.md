@@ -14,6 +14,13 @@ build fails when the two differ.
 
 ### Changed
 
+- **The Apple apps get closer to App Store review.** Each app now carries a privacy manifest
+  (`PrivacyInfo.xcprivacy`) that explains its required-reason APIs and what it sends to Maktaba
+  Cloud. Plain http is allowed only to a home on the local network: the `NSAllowsArbitraryLoads`
+  key, which had no effect, is gone. The Remote's App Store icon no longer has an alpha channel.
+  [`docs/apple-app-review.md`](docs/apple-app-review.md) lists what is left before release, and
+  the App Store text drafts in English and Arabic are in `apps/apple/AppStore/`.
+
 - **A full guide for each NAS on maktaba.tv/install.** QNAP, UGREEN and a new ASUSTOR page each
   walk through the same steps as the TrueNAS and Unraid guides: what to check first, the user and
   its uid:gid, the folders and their permissions, the install in the NAS's own app, the setup and

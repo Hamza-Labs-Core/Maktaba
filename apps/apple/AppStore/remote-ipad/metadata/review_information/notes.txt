@@ -1,0 +1,19 @@
+Maktaba Remote is the admin app for a Maktaba home (a server a household runs for its own media). It needs an admin account on a home. For review, please use our review home's admin account, made for App Review only, on a home with public-domain and openly licensed content.
+
+Home address: review.maktaba.tv
+Username: {{REVIEW_HOME_ADMIN_USERNAME}}
+Password: {{REVIEW_HOME_ADMIN_PASSWORD}}
+
+How to sign in:
+1. On the first screen, choose to type the home's address and enter review.maktaba.tv.
+2. Sign in with the username and password above. The tabs show what needs attention, the queue, libraries, computers and the home.
+
+A viewer account (not an admin) sees a screen that says this app is for the home's admins; that is expected.
+
+What the permissions are for: Local Network finds a Maktaba home on the person's own network (Bonjour _maktaba._tcp). Camera scans a home's QR code or another device's sign-in code; it is asked for only when the person taps Scan.
+
+App Transport Security: the app sets only NSAllowsLocalNetworking, for plain http to a home on the person's own network. Everything else is HTTPS.
+
+Nothing is sold in the app, and it shows no prices or links to buy.
+
+Maktaba is free and open source: https://github.com/Hamza-Labs-Core/Maktaba
