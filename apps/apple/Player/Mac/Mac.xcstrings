@@ -34,6 +34,28 @@
         }
       }
     },
+    "It stays in its language. Try again, or quit and open it." : {
+      "comment" : "Under: the Player could not restart; its language is as it was",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يبقى بلغته الحالية. حاول مجددًا، أو أغلقه ثم افتحه."
+          }
+        }
+      }
+    },
+    "Maktaba Player could not start again" : {
+      "comment" : "The Player could not restart in the language chosen in Profile",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تعذّرت إعادة تشغيل مشغل مكتبة"
+          }
+        }
+      }
+    },
     "Next Episode" : {
       "comment" : "Playback menu (N)",
       "localizations" : {
@@ -41,6 +63,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "الحلقة التالية"
+          }
+        }
+      }
+    },
+    "OK" : {
+      "comment" : "Closes the message that the Player could not restart",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "حسنًا"
           }
         }
       }
@@ -151,6 +184,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "هل تريد إعادة تشغيل مشغل مكتبة بالإنجليزية؟"
+          }
+        }
+      }
+    },
+    "Start Maktaba Player again in the system's language?" : {
+      "comment" : "Asked before the Player restarts in the system's languages, chosen in Profile",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "هل تريد إعادة تشغيل مشغل مكتبة بلغة النظام؟"
           }
         }
       }

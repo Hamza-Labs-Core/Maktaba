@@ -29,9 +29,30 @@ extension FocusedValues {
     @Entry var playerSubtitles: PlayerMenuAction?
 }
 
+/// The ⌘F presses of a window (View ▸ Search): each one is taken once, by the search field
+/// in view (`playerFindFocus()`). A Search screen built again later (the Mac builds a section's
+/// screen when it is chosen, story 13.16) finds nothing left to take, so it does not grab the
+/// focus again on every visit.
+@MainActor @Observable
+final class FindRequests {
+    /// Every ⌘F so far.
+    private(set) var asked = 0
+    @ObservationIgnored private var taken = 0
+
+    /// ⌘F.
+    func ask() { asked += 1 }
+
+    /// True once for each ⌘F not yet taken.
+    func take() -> Bool {
+        guard taken < asked else { return false }
+        taken = asked
+        return true
+    }
+}
+
 extension EnvironmentValues {
-    /// Goes up by one at every ⌘F; a screen with a search field focuses it (`playerFindFocus()`).
-    @Entry var playerFindRequest = 0
+    /// The window's ⌘F presses; a screen with a search field takes each one (`playerFindFocus()`).
+    @Entry var playerFind: FindRequests?
 }
 
 extension View {
@@ -50,36 +71,36 @@ extension View {
 private struct PlayerMenuTargetModifier: ViewModifier {
     let sections: [PlayerSection]
     @Binding var selection: PlayerSection
-    @State private var findRequest = 0
+    @State private var find = FindRequests()
 
     func body(content: Content) -> some View {
         content
-            .environment(\.playerFindRequest, findRequest)
+            .environment(\.playerFind, find)
             .focusedSceneValue(\.playerMenu, target)
     }
 
     private var target: PlayerMenuTarget {
         let selection = $selection
-        let request = $findRequest
+        let find = find
         let sections = sections
         return PlayerMenuTarget(sections: sections, chosen: selection.wrappedValue) { section in
             guard sections.contains(section) else { return }
             selection.wrappedValue = section
         } find: {
             if sections.contains(.search), selection.wrappedValue != .search { selection.wrappedValue = .search }
-            request.wrappedValue += 1
+            find.ask()
         }
     }
 }
 
 private struct PlayerFindFocus: ViewModifier {
-    @Environment(\.playerFindRequest) private var request
+    @Environment(\.playerFind) private var find
     @FocusState private var focused: Bool
 
     func body(content: Content) -> some View {
         content
             .searchFocused($focused)
-            // at each ⌘F, and when ⌘F is what brought this screen up (the request already raised)
-            .task(id: request) { if request > 0 { focused = true } }
+            // at each ⌘F, and when ⌘F is what brought this screen up (asked, not yet taken)
+            .task(id: find?.asked ?? 0) { if find?.take() == true { focused = true } }
     }
 }

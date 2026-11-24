@@ -199,7 +199,7 @@
       }
     },
     "Language" : {
-      "comment" : "The app's language; opens the system's page for it",
+      "comment" : "The app's language: on iPhone and iPad it opens the system's page for it; on the Mac it chooses it",
       "localizations" : {
         "ar" : {
           "stringUnit" : {

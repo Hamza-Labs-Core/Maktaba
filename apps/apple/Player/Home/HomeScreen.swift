@@ -22,16 +22,22 @@ struct HomeScreen: View {
     @State private var dismissFailed = false
     @Environment(\.horizontalSizeClass) private var sizeClass
 
-    init(context: PlayerContext) {
+    /// `model`: the one the Mac's shell keeps while another section is in view (story 13.16).
+    init(context: PlayerContext, model: HomeModel? = nil) {
         self.context = context
+        _model = State(initialValue: model ?? Self.model(context))
+    }
+
+    /// A new Home model for this sign-in.
+    static func model(_ context: PlayerContext) -> HomeModel {
         let session = context.session
-        _model = State(initialValue: HomeModel(
+        return HomeModel(
             client: context.client,
             // Epic 57: a sign-in the home limits keeps no shelves on the device (a limit may
             // tighten while the app is closed, and a kept shelf would show what it hides)
             cache: ParentalStore.wasLimited(home: context.client.home, user: context.user.id)
                 ? nil : HomeCache.of(home: context.client.home, user: context.user.id),
-            signedOut: { session.signedOut() }))
+            signedOut: { session.signedOut() })
     }
 
     var body: some View {

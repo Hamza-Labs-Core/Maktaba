@@ -12,6 +12,17 @@
         }
       }
     },
+    "Hide from the Sidebar" : {
+      "comment" : "A Mac sidebar row's menu: hides that section",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إخفاء من الشريط الجانبي"
+          }
+        }
+      }
+    },
     "Home" : {
       "comment" : "The Home section's tab",
       "localizations" : {
@@ -89,6 +100,17 @@
         }
       }
     },
+    "Sections" : {
+      "comment" : "The Mac sidebar's name for VoiceOver: the Player's sections",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الأقسام"
+          }
+        }
+      }
+    },
     "Series" : {
       "comment" : "A series' page, not built yet",
       "localizations" : {
@@ -96,6 +118,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "المسلسل"
+          }
+        }
+      }
+    },
+    "Show All Sections" : {
+      "comment" : "A Mac sidebar row's menu: shows the hidden sections again",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إظهار كل الأقسام"
           }
         }
       }

@@ -5,13 +5,15 @@ import Testing
 import MaktabaKit
 @testable import Maktaba_Player_Mac
 
-/// Story 13.16: the Mac Player's sidebar lists its sections as the apps' side list, Profile at
-/// its bottom.
+/// Story 13.16: the Mac Player's sidebar lists its sections as the apps' side list, in the
+/// person's order, Profile at its bottom; the View menu's ⌘1 … follow it; ↑ and ↓ move through
+/// it; a section keeps what it holds while another is in view, and ⌘F is taken once.
 @MainActor @Suite struct MacSidebarLogic {
     @Test func profileSitsAtTheBottomAndTheRestKeepTheirOrder() {
         let rows = MacSidebarRows(PlayerSection.allCases)
         #expect(rows.top == [.home, .libraries, .liveTV, .search])
         #expect(rows.bottom == .profile)
+        #expect(rows.all == PlayerSection.allCases)
     }
 
     @Test func withoutProfileNothingSitsAtTheBottom() {
@@ -27,6 +29,80 @@ import MaktabaKit
         #expect(rows.top == [.profile])
         #expect(rows.bottom == nil)
     }
+
+    /// The person's order and hidden sections, and the View menu numbering the sidebar as it
+    /// stands (the shell passes `rows.all` to `playerMenuTarget`).
+    @Test func theArrangedOrderIsTheSidebarsAndTheMenusNumbers() {
+        var arrangement = SidebarArrangement()
+        // Search dragged to the top
+        arrangement.move(MacSidebarRows(PlayerSection.allCases).top.map(\.rawValue), fromOffsets: IndexSet(integer: 3), toOffset: 0)
+        let rows = MacSidebarRows(PlayerSection.allCases, arrangement: SidebarArrangement(stored: arrangement.stored))
+        #expect(rows.top == [.search, .home, .libraries, .liveTV])
+        #expect(rows.bottom == .profile, "Profile stays at the bottom")
+        let menu = PlayerViewMenu.items(rows.all)
+        #expect(menu.map(\.section) == [.search, .home, .libraries, .liveTV, .profile])
+        #expect(menu.map(\.key.character) == ["1", "2", "3", "4", "5"])
+
+        arrangement.hide(PlayerSection.liveTV.rawValue)
+        let hidden = MacSidebarRows(PlayerSection.allCases, arrangement: arrangement, keep: .home)
+        #expect(hidden.all == [.search, .home, .libraries, .profile])
+        #expect(PlayerViewMenu.items(hidden.all).map(\.key.character) == ["1", "2", "3", "4"], "⌘4 is Profile now")
+        // hidden while in view: it stays until another section is chosen
+        #expect(MacSidebarRows(PlayerSection.allCases, arrangement: arrangement, keep: .liveTV).top.contains(.liveTV))
+    }
+
+    @Test func upAndDownChooseTheNeighbouringSection() {
+        let rows = MacSidebarRows(PlayerSection.allCases)
+        #expect(rows.next(after: .home, .down) == .libraries)
+        #expect(rows.next(after: .libraries, .up) == .home)
+        #expect(rows.next(after: .search, .down) == .profile, "down from the last row to Profile at the bottom")
+        #expect(rows.next(after: .home, .up) == nil)
+        #expect(rows.next(after: .profile, .down) == nil)
+        #expect(rows.next(after: .home, .left) == nil && rows.next(after: .home, .right) == nil)
+    }
+
+    /// Switching away and back: the shell's keeper hands Libraries the same state (its stack and
+    /// its chosen library) and Search the same models (its query).
+    @Test func aSectionFindsWhatItHeldOnComingBack() throws {
+        let url = try #require(URL(string: "http://127.0.0.1:9"))
+        let client = APIClient(home: url, tokens: TokenStore(app: "test.mac.keeper", home: url))
+        let defaults = try #require(UserDefaults(suiteName: "test.mac.keeper"))
+        let session = AppSession(app: "test.mac.keeper", defaults: defaults, asksHomes: false)
+        let user = try JSONDecoder().decode(User.self, from: Data(#"{"id":"u1","username":"viewer","is_admin":false}"#.utf8))
+        let context = PlayerContext(session: session, user: user, client: client)
+        let keeper = SectionKeeper<PlayerSection>(lasting: [.libraries, .profile])
+
+        let libraries = keeper.state(.libraries, epoch: 0) { LibrariesState(session: session, client: client) }
+        libraries.choice = .library("lib-docs")
+        libraries.path = [.series(id: "s-seerah"), .video(id: "v1")]
+        let search = keeper.state(.search, epoch: 0) { SearchKept(context) }
+        search.model.query = "mecca"
+        // Home chosen in between
+        _ = keeper.state(.home, epoch: 0) { HomeScreen.model(context) }
+
+        let back = keeper.state(.libraries, epoch: 0) { LibrariesState(session: session, client: client) }
+        #expect(back === libraries)
+        #expect(back.choice == .library("lib-docs"))
+        #expect(back.path == [.series(id: "s-seerah"), .video(id: "v1")])
+        #expect(keeper.state(.search, epoch: 0) { SearchKept(context) }.model.query == "mecca")
+        // a new parental limit: Search reads again, Libraries keeps its stack and reads its lists again itself
+        #expect(keeper.state(.search, epoch: 1) { SearchKept(context) }.model.query == "")
+        #expect(keeper.state(.libraries, epoch: 1) { LibrariesState(session: session, client: client) }.path.count == 2)
+    }
+
+    /// ⌘F: taken once by the search field in view; a Search screen built again later finds
+    /// nothing to take (it does not grab the focus on every visit).
+    @Test func eachFindIsTakenOnce() {
+        let find = FindRequests()
+        #expect(!find.take(), "no ⌘F yet")
+        find.ask()
+        #expect(find.take())
+        #expect(!find.take(), "Search shown again: nothing left")
+        find.ask()
+        find.ask()
+        #expect(find.take())
+        #expect(!find.take())
+    }
 }
 
 /// Story 13.16's references, beside the pages' (`PageSnapshots`, the same tolerance and the
@@ -38,7 +114,8 @@ extension PageSnapshots {
     /// right (AppKit, in an app started in Arabic: not drawn here).
     @Test(arguments: ["en", "ar"]) func sidebarMatchesItsReference(_ lang: String) async throws {
         let size = CGSize(width: 232, height: 420)
-        let root = MacSidebar(sections: PlayerSection.allCases, selection: .constant(.libraries))
+        let root = MacSidebar(rows: MacSidebarRows(PlayerSection.allCases), selection: .constant(.libraries),
+                              arrangement: .constant(SidebarArrangement()))
             .environment(\.locale, Locale(identifier: lang))
             .environment(\.layoutDirection, lang == "ar" ? .rightToLeft : .leftToRight)
             .preferredColorScheme(.dark)
@@ -116,19 +193,19 @@ extension PageSnapshots {
         if let textURL = bundle.url(forResource: name, withExtension: "txt", subdirectory: "Snapshots"),
            let refText = try? String(contentsOf: textURL, encoding: .utf8) {
             let diff = firstDifference(text, refText)
-            #expect(diff == nil, "\(name)'s words differ from its text reference: \(diff ?? ""); if the change is meant, commit the attached \(name).txt")
+            #expect(diff == nil, "\(name)'s words differ from its text reference: \(diff ?? ""); if the change is meant, take the attached \(name).txt with `tools/apple/snapshots.py <run id>` and commit it")
         } else {
-            Issue.record("no text reference for \(name): commit the attached \(name).txt as PlayerMacTests/Snapshots/\(name).txt")
+            Issue.record("no text reference for \(name): take it from CI's run with `tools/apple/snapshots.py <run id>` (it copies the attached \(name).txt to PlayerMacTests/Snapshots/), read it, and commit it")
         }
         guard let refURL = bundle.url(forResource: name, withExtension: "png", subdirectory: "Snapshots"),
               let refData = try? Data(contentsOf: refURL),
               let ref = NSBitmapImageRep(data: refData) else {
-            Issue.record("no reference for \(name): commit the attached \(name).png as PlayerMacTests/Snapshots/\(name).png")
+            Issue.record("no reference for \(name): take it from CI's run with `tools/apple/snapshots.py <run id>` (it copies the attached \(name).png to PlayerMacTests/Snapshots/), look at it, and commit it")
             return
         }
         let diff = try difference(image, ref)
         #expect(diff <= tolerance,
-                "\(name) differs from its reference in \(String(format: "%.2f", diff * 100)) % of its pixels; if the change is meant, commit the attached image")
+                "\(name) differs from its reference in \(String(format: "%.2f", diff * 100)) % of its pixels; if the change is meant, take the attached image with `tools/apple/snapshots.py <run id>` and commit it")
     }
 }
 

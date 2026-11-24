@@ -9,27 +9,40 @@ import SwiftUI
 /// desktop Players. The column is the window's split view sidebar, so the system keeps its
 /// vibrancy and the traffic lights over it; in Arabic AppKit puts it at the right
 /// (`LanguageChoice`, D5) and the rows mirror.
+///
+/// The rows above Profile are the person's to arrange, as the iPad's tabs are: drag one to move
+/// it, a row's menu hides it, and Show All Sections brings them back (`SidebarArrangement`,
+/// kept by the shell). The column takes the keyboard's focus: ↑ and ↓ choose the section above
+/// or below. VoiceOver reads it as Sections, the chosen row as selected.
 struct MacSidebar: View {
-    let sections: [PlayerSection]
+    let rows: MacSidebarRows
     @Binding var selection: PlayerSection
+    @Binding var arrangement: SidebarArrangement
 
     var body: some View {
-        let rows = MacSidebarRows(sections)
         List {
-            ForEach(rows.top) { row($0) }
+            ForEach(rows.top) { row($0, arranged: true) }
+                .onMove { offsets, destination in
+                    arrangement.move(rows.top.map(\.rawValue), fromOffsets: offsets, toOffset: destination)
+                }
         }
         .listStyle(.sidebar)
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if let bottom = rows.bottom {
-                row(bottom)
+                row(bottom, arranged: false)
                     .padding(.horizontal, MaktabaTokens.Spacing.s4) // in line with the list's rows
                     .padding(.vertical, MaktabaTokens.Spacing.s3)
             }
         }
+        .focusable()
+        .onMoveCommand { direction in
+            if let next = rows.next(after: selection, direction) { selection = next }
+        }
+        .accessibilityLabel(Text("Sections", tableName: "Shell", comment: "The Mac sidebar's name for VoiceOver: the Player's sections"))
         .accessibilityIdentifier("player.sidebar")
     }
 
-    private func row(_ section: PlayerSection) -> some View {
+    private func row(_ section: PlayerSection, arranged: Bool) -> some View {
         Button {
             selection = section
         } label: {
@@ -38,18 +51,57 @@ struct MacSidebar: View {
         .buttonStyle(.plain)
         .accessibilityAddTraits(section == selection ? .isSelected : [])
         .accessibilityIdentifier("player.sidebar.\(section.rawValue)")
+        .contextMenu {
+            if arranged, rows.top.count > 1 {
+                Button {
+                    arrangement.hide(section.rawValue)
+                } label: {
+                    Text("Hide from the Sidebar", tableName: "Shell", comment: "A Mac sidebar row's menu: hides that section")
+                }
+            }
+            if !arrangement.hidden.isEmpty {
+                Button {
+                    arrangement.showAll()
+                } label: {
+                    Text("Show All Sections", tableName: "Shell", comment: "A Mac sidebar row's menu: shows the hidden sections again")
+                }
+            }
+        }
     }
 }
 
-/// Which sections the sidebar lists at the top and which one sits at its bottom: Profile, when
-/// it shows, at the bottom; the rest at the top in their order.
+/// Which sections the sidebar lists at the top, in the person's order (`SidebarArrangement`,
+/// the hidden ones left out but the one in view), and which one sits at its bottom: Profile,
+/// when it shows. `all` is the sidebar from top to bottom, which the View menu's ⌘1, ⌘2 …
+/// follow.
 struct MacSidebarRows: Equatable {
     let top: [PlayerSection]
     let bottom: PlayerSection?
 
-    init(_ sections: [PlayerSection]) {
-        top = sections.filter { $0 != .profile }
-        bottom = sections.contains(.profile) && !top.isEmpty ? .profile : nil
+    init(_ sections: [PlayerSection], arrangement: SidebarArrangement = SidebarArrangement(), keep: PlayerSection? = nil) {
+        let rest = sections.filter { $0 != .profile }
+        if rest.isEmpty {
+            top = sections
+            bottom = nil
+        } else {
+            top = arrangement.arrange(rest.map(\.rawValue), keep: keep?.rawValue).compactMap(PlayerSection.init(rawValue:))
+            bottom = sections.contains(.profile) ? .profile : nil
+        }
+    }
+
+    /// The sidebar from top to bottom.
+    var all: [PlayerSection] { top + (bottom.map { [$0] } ?? []) }
+
+    /// The section ↑ or ↓ chooses from `section`: the one above or below it, none past either
+    /// end (← and →: none).
+    func next(after section: PlayerSection, _ direction: MoveCommandDirection) -> PlayerSection? {
+        let list = all
+        guard let at = list.firstIndex(of: section) else { return list.first }
+        switch direction {
+        case .up: return at > 0 ? list[at - 1] : nil
+        case .down: return at + 1 < list.count ? list[at + 1] : nil
+        default: return nil
+        }
     }
 }
 

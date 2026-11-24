@@ -19,14 +19,12 @@ struct LibraryBrowser: View {
     @Binding var playing: Bool
 
     @State private var playback: Playback
-    @State private var model: LibrariesModel
-    @State private var path: [PlayerRoute]
-    @State private var choice: LibrariesChoice?
-    /// Moves when the account's parental limit changes: the lists are read again.
-    @State private var fresh = 0
+    /// The section's lists, its chosen library and its stack: the shell's on the Mac, kept
+    /// while another section is in view (story 13.16); this view's own elsewhere.
+    @State private var state: LibrariesState
     @Environment(\.horizontalSizeClass) private var width
 
-    init(session: AppSession, user: User, client: APIClient, playing: Binding<Bool>) {
+    init(session: AppSession, user: User, client: APIClient, playing: Binding<Bool>, state: LibrariesState? = nil) {
         self.session = session
         self.user = user
         self.client = client
@@ -36,10 +34,7 @@ struct LibraryBrowser: View {
         let parental = session.parental
         playback.limited = { parental.current.limited }
         _playback = State(initialValue: playback)
-        _model = State(initialValue: LibrariesModel(client: client, signedOut: { session.signedOut() }))
-        // a Debug build's `-maktaba-open library/lib-docs` (the UI tests): opened at launch
-        let start = ShellLaunch.section()
-        _path = State(initialValue: (start == nil || start == .libraries) ? ShellLaunch.route().map { [$0] } ?? [] : [])
+        _state = State(initialValue: state ?? LibrariesState(session: session, client: client))
     }
 
     private var context: PlayerContext { PlayerContext(session: session, user: user, client: client) }
@@ -53,30 +48,29 @@ struct LibraryBrowser: View {
             // Epic 57: the limit changed (`ParentalStore.epoch`). The lists and the pages are
             // read again, so nothing hidden stays on them; what plays keeps playing (the home
             // stops it if it must) and the stack stays where it is
-            .onChange(of: session.parental.epoch) {
-                model = LibrariesModel(client: client, signedOut: { session.signedOut() })
-                fresh += 1
-            }
-            .onChange(of: model.libraries.map(\.id)) { _, ids in
+            // (also when it changed while another section was in view, on the Mac)
+            .onChange(of: session.parental.epoch, initial: true) { state.follow(epoch: session.parental.epoch) }
+            .onChange(of: state.model.libraries.map(\.id)) { _, ids in
                 // wide: the library beside the list is no longer one the home gives
-                if case let .library(id)? = choice, !ids.isEmpty, !ids.contains(id) { choice = ids.first.map { .library($0) } }
+                if case let .library(id)? = state.choice, !ids.isEmpty, !ids.contains(id) { state.choice = ids.first.map { .library($0) } }
             }
     }
 
     @ViewBuilder private var layout: some View {
+        @Bindable var state = state
         if width == .compact {
-            NavigationStack(path: $path) {
-                LibrariesScreen(context: context, model: model)
-                    .id(fresh)
+            NavigationStack(path: $state.path) {
+                LibrariesScreen(context: context, model: state.model)
+                    .id(state.fresh)
                     .toolbar { LibrariesAccountMenu(context: context) }
                     .librariesDestinations(context)
             }
-            .environment(\.playerPush, PlayerPush { path.append($0) })
+            .environment(\.playerPush, PlayerPush { state.path.append($0) })
             .player(playback, session: session)
         } else {
             NavigationSplitView(columnVisibility: .constant(.all)) {
-                LibrariesScreen(context: context, model: model, choice: $choice)
-                    .id(fresh)
+                LibrariesScreen(context: context, model: state.model, choice: $state.choice)
+                    .id(state.fresh)
                     .toolbar { LibrariesAccountMenu(context: context) }
                     #if os(macOS)
                     .navigationSplitViewColumnWidth(min: 300, ideal: 360, max: 480)
@@ -84,16 +78,16 @@ struct LibraryBrowser: View {
                     .navigationSplitViewColumnWidth(min: 320, ideal: 360, max: 480)
                     #endif
             } detail: {
-                NavigationStack(path: $path) {
+                NavigationStack(path: $state.path) {
                     FreshOnLimit(session: session) { page }.librariesDestinations(context)
                 }
-                .environment(\.playerPush, PlayerPush { path.append($0) })
+                .environment(\.playerPush, PlayerPush { state.path.append($0) })
             }
             .navigationSplitViewStyle(.balanced)
-            .onChange(of: choice) { old, _ in if old != nil { path = [] } }
-            .onChange(of: model.libraries.first?.id, initial: true) { _, first in
+            .onChange(of: state.choice) { old, _ in if old != nil { state.path = [] } }
+            .onChange(of: state.model.libraries.first?.id, initial: true) { _, first in
                 // a wide window shows a page, not an empty column
-                if choice == nil, let first { choice = .library(first) }
+                if state.choice == nil, let first { state.choice = .library(first) }
             }
             .player(playback, session: session)
             #if os(macOS)
@@ -104,9 +98,9 @@ struct LibraryBrowser: View {
 
     /// The page beside the list.
     @ViewBuilder private var page: some View {
-        switch choice {
+        switch state.choice {
         case let .library(id): LibraryScreen(context: context, id: id).id(id)
-        case .series: SeriesPage(context: context, model: model)
+        case .series: SeriesPage(context: context, model: state.model)
         case nil:
             ContentUnavailableView {
                 Label { Text("Choose a library", tableName: "Libraries", comment: "A wide window's page before a library is chosen") } icon: {
@@ -114,6 +108,39 @@ struct LibraryBrowser: View {
                 }
             }
         }
+    }
+}
+
+/// The Libraries section's state (story 13.16): its lists (`model`), the library chosen beside
+/// them, and its stack. The Mac's shell keeps one while another section is in view, so coming
+/// back finds the same library and the same pages, without reading the lists again.
+@MainActor @Observable
+final class LibrariesState {
+    var path: [PlayerRoute]
+    var choice: LibrariesChoice?
+    private(set) var model: LibrariesModel
+    /// Moves when the account's parental limit changes: the lists are read again.
+    private(set) var fresh = 0
+    /// The parental epoch the lists were read under (nil: not yet followed).
+    @ObservationIgnored private var epoch: Int?
+    @ObservationIgnored private let remake: () -> LibrariesModel
+
+    init(session: AppSession, client: APIClient) {
+        let remake = { LibrariesModel(client: client, signedOut: { session.signedOut() }) }
+        self.remake = remake
+        model = remake()
+        // a Debug build's `-maktaba-open library/lib-docs` (the UI tests): opened at launch
+        let start = ShellLaunch.section()
+        path = (start == nil || start == .libraries) ? ShellLaunch.route().map { [$0] } ?? [] : []
+    }
+
+    /// Epic 57: the limit changed (`ParentalStore.epoch`). The lists and the pages are read
+    /// again, so nothing hidden stays on them; the stack stays where it is.
+    func follow(epoch now: Int) {
+        defer { epoch = now }
+        guard let epoch, epoch != now else { return }
+        model = remake()
+        fresh += 1
     }
 }
 

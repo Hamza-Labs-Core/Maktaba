@@ -20,6 +20,12 @@ struct PlayerApp: App {
     @State private var guestNotice: String?
 
     init() {
+        #if os(macOS)
+        // first, before AppKit reads its layout direction (it does at the first window): right
+        // to left for a Player starting in Arabic, left to right otherwise, however the
+        // language was chosen (Profile's Language, or the system's per-app language), story 13.16
+        LanguageChoice.applyLayout(to: .standard)
+        #endif
         #if DEBUG && os(iOS)
         // the UI tests' app writes nothing to standard error (`ConsoleHook`; only when launched
         // with its flag): first, before the app logs anything

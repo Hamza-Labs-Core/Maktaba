@@ -31,10 +31,16 @@ struct ProfileScreen: View {
     @State private var opened: URL?
     #endif
 
-    init(context: PlayerContext) {
+    /// `model`: the one the Mac's shell keeps while another section is in view (story 13.16).
+    init(context: PlayerContext, model: ProfileModel? = nil) {
         self.context = context
+        _model = State(initialValue: model ?? Self.model(context))
+    }
+
+    /// A new Profile model for this sign-in.
+    static func model(_ context: PlayerContext) -> ProfileModel {
         let session = context.session
-        _model = State(initialValue: ProfileModel(client: context.client) { session.signedOut() })
+        return ProfileModel(client: context.client) { session.signedOut() }
     }
 
     private var homeName: String { context.session.current?.name ?? context.client.home.host() ?? "" }
@@ -163,7 +169,7 @@ struct ProfileScreen: View {
                         Text(verbatim: ProfileLinks.currentLanguageName)
                     } label: {
                         Label {
-                            Text("Language", tableName: "Profile", comment: "The app's language; opens the system's page for it")
+                            Text("Language", tableName: "Profile", comment: "The app's language: on iPhone and iPad it opens the system's page for it; on the Mac it chooses it")
                         } icon: {
                             Image(systemName: "globe")
                         }

@@ -13,7 +13,8 @@ import MaktabaKit
 @MainActor @Suite(.serialized) struct PlayerShellMac {
     @Test(arguments: [false, true]) func theSidebarSitsAtTheStart(_ rightToLeft: Bool) async throws {
         let size = CGSize(width: 1200, height: 780)
-        let view = MacShellSplit(sections: PlayerSection.allCases, selection: .constant(.home)) {
+        let view = MacShellSplit(rows: MacSidebarRows(PlayerSection.allCases), selection: .constant(.home),
+                                 arrangement: .constant(SidebarArrangement())) {
             Color.mktBackground
         }
         .environment(\.layoutDirection, rightToLeft ? .rightToLeft : .leftToRight)
@@ -39,6 +40,8 @@ import MaktabaKit
         let frame = sidebar.accessibilityFrame()
         let win = window.frame
         #expect(frame.width > 150 && frame.width < 400, "a sidebar column's width: \(frame)")
+        // VoiceOver's name for it, and the chosen row said to be selected
+        #expect((PageSnapshots.ax(sidebar as! NSObject, "accessibilityLabel") as? String) == "Sections")
         if rightToLeft {
             #expect(frame.midX > win.midX, "at the right of the window: \(frame) in \(win)")
         } else {

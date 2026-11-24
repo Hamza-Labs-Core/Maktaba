@@ -71,12 +71,9 @@ final class PlayerMacDemoShotsUITests: XCTestCase {
         try home.start()
         self.home = home
         self.language = language
-        // as PlayerMacMenuUITests: `-key value` pairs only, no window restored. In Arabic the
-        // window right to left, as the Player starts after its own language switch
-        // (`LanguageChoice.keep`, story 13.16): the sidebar and the traffic lights at the right
+        // as PlayerMacMenuUITests: `-key value` pairs only, no window restored
         app.launchArguments = ["-NSTreatUnknownArgumentsAsOpen", "NO", "-ApplePersistenceIgnoreState", "YES",
                                "-AppleLanguages", "(\(language))", "-AppleLocale", language == "ar" ? "ar_JO" : "en_US",
-                               "-AppleTextDirection", language == "ar" ? "YES" : "NO",
                                "-theme", "dark",
                                "-maktaba-permissions-reset", "-maktaba-permissions-fake", "granted", "-maktaba-session-reset",
                                "-maktaba-section", section, "-maktaba-open", open] + extra
