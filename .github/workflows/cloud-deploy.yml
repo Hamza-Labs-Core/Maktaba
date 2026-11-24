@@ -144,8 +144,9 @@ jobs:
           TREE: ${{ steps.tree.outputs.tree }}
         run: |
           set -euo pipefail
-          runs="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/cloud-deploy.yml/runs?status=success&per_page=50" \
-            --jq '.workflow_runs[] | select(.display_title | startswith("cloud deploy qa ")) | .id')"
+          # main's runs only: another branch's copy of this workflow could record anything
+          runs="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/cloud-deploy.yml/runs?status=success&branch=main&event=workflow_dispatch&per_page=50" \
+            --jq '.workflow_runs[] | select(.head_branch == "main" and .event == "workflow_dispatch") | select(.display_title | startswith("cloud deploy qa ")) | .id')"
           for run in $runs; do
             d="$(mktemp -d)"
             if gh run download "$run" --repo "$GITHUB_REPOSITORY" -n qa-passed -D "$d" >/dev/null 2>&1 &&

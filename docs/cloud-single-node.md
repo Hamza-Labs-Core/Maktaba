@@ -78,8 +78,8 @@ a release tag (blank: the latest release).
 
 1. **resolve**: the release's images by digest, each verified with cosign; the cloud rehearsal
    passed on the release's commit (`tools/release/cloud-guard.sh`). For `prod`: a successful
-   QA run of this workflow recorded the same three digests and the same `deploy/cloud-relay`
-   tree, or nothing deploys.
+   QA run of this workflow on main recorded the same three digests and the same
+   `deploy/cloud-relay` tree, or nothing deploys.
 2. **web** (QA): the cloud web app built from the release's source. Production gets QA's
    build, byte for byte.
 3. **deploy**: the DNS records; `setup.sh` (idempotent: Docker from Ubuntu's packages, the
