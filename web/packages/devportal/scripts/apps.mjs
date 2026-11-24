@@ -378,8 +378,8 @@ export const APPS = [
                 "**قائمة الانتظار**: **شغّل تاليًا** و**أضف إلى قائمة الانتظار** في المقطع، ويبدأ «التالي» من قائمة الانتظار أولًا، و**تابع قائمة الانتظار** في الرئيسية. وعلى أندرويد **الحفظ كقائمة تشغيل ذكية** من مرشّحات المكتبة."
               ),
               t(
-                "**Live TV**: **Now**, with what is on each channel and how far it has gone, and the **Guide**; choose a channel to watch it live.",
-                "**البث المباشر**: قسم **الآن** بما يُعرض على كل قناة ومقدار ما مضى منه، و**الدليل**؛ اختر قناة لتشاهدها مباشرة."
+                "**Live TV**: **Now**, with what is on each channel and how far it has gone, and the **Guide**; choose a channel to watch it live. On Windows and Linux a channel plays with the same engine as the videos, libmpv: the next channel starts in the same player, its last picture held until the new one's first, and **Back to live** after a pause goes back to the live edge.",
+                "**البث المباشر**: قسم **الآن** بما يُعرض على كل قناة ومقدار ما مضى منه، و**الدليل**؛ اختر قناة لتشاهدها مباشرة. وعلى ويندوز ولينكس تُشغَّل القناة بالمحرّك نفسه الذي تُشغَّل به المقاطع، مكتبة libmpv: تبدأ القناة التالية في المشغّل نفسه وتبقى آخر صورة ظاهرة حتى تظهر أول صورة من القناة الجديدة، و**العودة إلى البث المباشر** بعد الإيقاف المؤقت تعود إلى أحدث نقطة في البث."
               ),
               t(
                 "**Search**: titles and transcripts; a transcript result plays the video at that moment. On Android and on Windows and Linux, suggestions as you type say what each one is (an earlier search, a word, a video's title, which opens it, or a speaker); **Did you mean** offers the closest spelling when a search finds few videos; **Filters** count the videos found by library, language, speaker, year and length (in a sheet on a phone, as chips above the results on a computer), several at once, each removable, with **Clear all filters**; and **Sort by** orders the results by relevance, newest or most matches.",

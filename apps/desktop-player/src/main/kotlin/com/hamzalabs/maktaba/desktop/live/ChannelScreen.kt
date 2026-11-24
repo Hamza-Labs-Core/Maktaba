@@ -32,11 +32,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -57,15 +55,15 @@ import com.hamzalabs.maktaba.core.api.LiveSource
 import com.hamzalabs.maktaba.core.api.LiveStream
 import com.hamzalabs.maktaba.core.api.channelNow
 import com.hamzalabs.maktaba.desktop.LocalTexts
-import com.hamzalabs.maktaba.desktop.Playback
+import com.hamzalabs.maktaba.desktop.Players
 import com.hamzalabs.maktaba.desktop.StreamProxy
 import com.hamzalabs.maktaba.desktop.VideoSurface
 import com.hamzalabs.maktaba.desktop.deviceLabel
+import com.hamzalabs.maktaba.desktop.mpv.Engine
+import com.hamzalabs.maktaba.desktop.shell.DesktopHome
 import com.hamzalabs.maktaba.desktop.shell.LocalDesktopHome
 import com.hamzalabs.maktaba.desktop.shell.featureUnavailableSentence
-import javafx.application.Platform
-import javafx.scene.media.Media
-import javafx.scene.media.MediaPlayer
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.ZoneId
@@ -76,44 +74,19 @@ import java.time.temporal.ChronoUnit
  * channel's guide for the rest of the day, and the controls below the picture: Pause / Play,
  * Back to live, Previous and Next channel (also Page Up / Page Down and Up / Down) and Close
  * (Escape). Away from home it plays through a remote session, ended when the screen is left.
+ * The picture is the Player's engine's (story 13.22): libmpv's, drawn by Compose as the watch
+ * screen's, or JavaFX's when libmpv cannot load or JavaFX is chosen.
  */
 @Composable
-fun ChannelScreen(id: String) {
+fun ChannelScreen(id: String, players: Players = Engine.players) {
     val t = LocalTexts.current
     val home = LocalDesktopHome.current
     val live = home.liveTv()
     val scope = rememberCoroutineScope()
-    var player by remember { mutableStateOf<MediaPlayer?>(null) }
     val proxy = remember(home.client) { StreamProxy(home.client) }
-    val playback = remember(home.client) {
-        var cp: ChannelPlayback? = null
-        val source = LiveSource(live.api, home.background, deviceLabel(), onEnded = { cp?.ended() })
-        proxy.relayToken = { source.token.value }
-        ChannelPlayback(
-            source, scope,
-            local = { s ->
-                when (s) {
-                    is LiveStream.Lan -> proxy.local(s.url)
-                    is LiveStream.Relay -> proxy.relaySession(s.url)
-                }
-            },
-            show = { url ->
-                val next = Playback.onFx { MediaPlayer(Media(url)).apply { setOnReady { play() } } }
-                player?.let { old -> Platform.runLater { old.dispose() } }
-                player = next
-            },
-            hide = {
-                player?.let { old -> Platform.runLater { old.dispose() } }
-                player = null
-            },
-            signedOut = home::signedOut,
-            // under a parental limit the home is asked before the channel plays (Epic 57 story 57.10)
-            limited = { home.parental.mine.value.limited },
-            gate = { home.client.channelNow(it) },
-            // the home's instants against the home's clock, not this computer's
-            nowMs = home.client::homeNowMs,
-        ).also { cp = it }
-    }
+    val channel = remember(home.client) { channelPlayback(home, live, scope, proxy, players) }
+    val playback = channel.playback
+    val player = channel.video.video
     LaunchedEffect(id) {
         playback.open(id)
         if (live.now == null) live.loadNow()
@@ -131,14 +104,7 @@ fun ChannelScreen(id: String) {
     val focus = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
     val togglePause = {
-        val p = player
-        if (playback.paused) {
-            p?.let { Platform.runLater { it.play() } }
-            playback.resume()
-        } else {
-            p?.let { Platform.runLater { it.pause() } }
-            playback.pause()
-        }
+        if (playback.paused) playback.resume() else playback.pause()
     }
     Column(
         Modifier.fillMaxSize().background(Color.Black).testTag("channel")
@@ -163,7 +129,7 @@ fun ChannelScreen(id: String) {
                 }
                 ChannelStatus.Playing -> VideoSurface(player, Modifier.fillMaxSize())
                 is ChannelStatus.Failed -> Stopped(s.key?.let { t[it] } ?: t["live.cantPlay"], retry = if (s.retryable) playback::retry else null, close = { home.nav.back() })
-                ChannelStatus.Ended -> Stopped(t["live.sessionEnded"], retry = null, close = { home.nav.back() })
+                ChannelStatus.Ended -> Stopped(t[playback.endedKey], retry = null, close = { home.nav.back() })
                 is ChannelStatus.NotNow -> Stopped(
                     t["live.parental.slate"] + (s.retryAt?.let { "\n" + t["live.parental.back", com.hamzalabs.maktaba.desktop.watch.ParentalTime.next(it, t.lang)] } ?: ""),
                     retry = null, close = { home.nav.back() },
@@ -192,6 +158,41 @@ fun ChannelScreen(id: String) {
         }
         DayGuide(current, live)
     }
+}
+
+/** A channel screen's playback and its picture, made together ([channelPlayback]). */
+class ChannelPlayer(val playback: ChannelPlayback, val video: ChannelVideo)
+
+/**
+ * The channel screen's playback (story 55.07) on [home], its stream in [players]' video (story
+ * 13.22: the Player's engine, libmpv's or JavaFX's): at home the web port's HLS through
+ * [proxy], away from home the remote session's, the proxy writing its newest token in.
+ */
+fun channelPlayback(home: DesktopHome, live: LiveTvState, scope: CoroutineScope, proxy: StreamProxy, players: Players): ChannelPlayer {
+    var cp: ChannelPlayback? = null
+    val video = ChannelVideo(players, scope, onEnded = { cp?.streamEnded() }, onFailed = { cp?.streamFailed() })
+    val source = LiveSource(live.api, home.background, deviceLabel(), onEnded = { cp?.ended() })
+    proxy.relayToken = { source.token.value }
+    val playback = ChannelPlayback(
+        source, scope,
+        local = { s ->
+            when (s) {
+                is LiveStream.Lan -> proxy.local(s.url)
+                is LiveStream.Relay -> proxy.relaySession(s.url)
+            }
+        },
+        show = video::show,
+        hide = video::hide,
+        pauseVideo = video::pause,
+        playVideo = video::play,
+        signedOut = home::signedOut,
+        // under a parental limit the home is asked before the channel plays (Epic 57 story 57.10)
+        limited = { home.parental.mine.value.limited },
+        gate = { home.client.channelNow(it) },
+        // the home's instants against the home's clock, not this computer's
+        nowMs = home.client::homeNowMs,
+    ).also { cp = it }
+    return ChannelPlayer(playback, video)
 }
 
 private fun clockOf(ms: Long): String =

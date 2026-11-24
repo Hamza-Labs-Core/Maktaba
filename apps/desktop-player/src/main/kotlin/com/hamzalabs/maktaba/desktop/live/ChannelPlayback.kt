@@ -51,19 +51,24 @@ sealed interface ChannelStatus {
  * A channel's playback on the desktop (story 55.07), apart from [com.hamzalabs.maktaba.desktop.Playback]
  * (videos): [source] picks where it plays — at home the web port's HLS, away from home a remote
  * session's Cloudflare URL (tuned, a 202 asked again until live, a heartbeat that may bring a
- * new token) — and [local] gives JavaFX its address through the stream proxy, which writes the
- * newest token into every relay request. A new token never reopens the player; only another
- * channel, Back to live or Try again do ([opened] counts them).
+ * new token) — and [local] gives the player its address through the stream proxy, which writes
+ * the newest token into every relay request. A new token never reopens the player; only another
+ * channel, Back to live or Try again do ([opened] counts them). The player is the Player's
+ * engine's ([ChannelVideo], story 13.22): libmpv's, or JavaFX's when libmpv cannot load.
  */
 class ChannelPlayback(
     private val source: LiveSource,
     private val scope: CoroutineScope,
     /** The proxy's address for a stream (null: not one it serves). */
     private val local: (LiveStream) -> String?,
-    /** Shows [url] in the player (JavaFX), from its live edge. */
+    /** Shows [url] in the player, from its live edge. */
     private val show: suspend (url: String) -> Unit,
     /** Stops the player. */
     private val hide: () -> Unit = {},
+    /** Pauses the player (Pause). */
+    private val pauseVideo: () -> Unit = {},
+    /** Plays on after a pause (Play). */
+    private val playVideo: () -> Unit = {},
     private val signedOut: () -> Unit = {},
     /** Whether this sign-in is under a parental limit now (only then is [gate] asked). */
     private val limited: () -> Boolean = { false },
@@ -107,18 +112,44 @@ class ChannelPlayback(
         neighbour(lineup, channelId, by)?.let { open(it.id) }
     }
 
+    /** Why it [ChannelStatus.Ended]: the remote session ended, or the channel's stream did. */
+    var endedKey by mutableStateOf("live.sessionEnded")
+        private set
+
     /** The home ended the remote session (LiveSource's onEnded). */
     fun ended() {
         hide()
+        endedKey = "live.sessionEnded"
         status = ChannelStatus.Ended
+    }
+
+    /** The playing stream ended (its playlist's end; story 13.22), from any thread. */
+    fun streamEnded() {
+        scope.launch {
+            if (status != ChannelStatus.Playing) return@launch
+            hide()
+            endedKey = "live.channelEnded"
+            status = ChannelStatus.Ended
+        }
+    }
+
+    /** The playing stream failed or stalled, from any thread: Try again tunes it again. */
+    fun streamFailed() {
+        scope.launch {
+            if (status != ChannelStatus.Playing) return@launch
+            hide()
+            status = ChannelStatus.Failed(null, retryable = true)
+        }
     }
 
     fun pause() {
         paused = true
+        pauseVideo()
     }
 
     fun resume() {
         paused = false
+        playVideo()
     }
 
     /** Back to live after a pause: the stream again from its live edge (the same session). */

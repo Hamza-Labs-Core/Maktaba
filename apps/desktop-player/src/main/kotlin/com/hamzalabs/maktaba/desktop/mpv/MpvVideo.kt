@@ -32,6 +32,10 @@ import java.util.concurrent.TimeUnit
  *
  * Every call returns at once: mpv's commands run on this video's own thread, its events are
  * read on another, its frames drawn on a third.
+ *
+ * A [live] stream (a channel, story 13.22) opens with mpv's options for live HLS, its end is
+ * the channel ending ([VideoEvents.ended]), and another channel or Back to live is [load]ed
+ * into the same handle, the last frame held until the new one's first.
  */
 class MpvVideo internal constructor(
     private val lib: LibMpv,
@@ -40,6 +44,7 @@ class MpvVideo internal constructor(
     private val autoplay: Boolean,
     private val events: VideoEvents,
     private val fontsDir: File?,
+    private val live: Boolean = false,
 ) : Video {
     private val lock = Any()
     @Volatile private var ctx: Pointer? = null
@@ -67,6 +72,19 @@ class MpvVideo internal constructor(
     @Volatile var hwdec: String? = null
         private set
 
+    /** How many times another stream was [load]ed into this handle. */
+    @Volatile var loads = 0
+        private set
+
+    /** Which load the frame on screen comes from (0: the first stream; [loads] once the newest shows). */
+    @Volatile var frameLoad = 0
+        private set
+
+    // a load's first frame is awaited: the frame on screen stays (mpv's frames are drawn, not shown)
+    @Volatile private var holding = false
+    // and its file has not opened yet (a playback-restart before it is the stream before's)
+    @Volatile private var loading = false
+
     init {
         ops.execute(::start)
     }
@@ -92,15 +110,24 @@ class MpvVideo internal constructor(
             opt("terminal", "no")
             opt("input-default-bindings", "no")
             opt("osc", "no")
-            // the end stays on screen, so a seek back after it plays again; eof-reached says it ended
-            opt("keep-open", "yes")
+            if (live) {
+                // a live stream's end is the channel ending, not a frame to hold; it plays from
+                // its live edge, buffered ahead, in its best rendition
+                opt("keep-open", "no")
+                opt("cache", "yes")
+                opt("demuxer-readahead-secs", "10")
+                opt("hls-bitrate", "max")
+            } else {
+                // the end stays on screen, so a seek back after it plays again; eof-reached says it ended
+                opt("keep-open", "yes")
+            }
             // the Player's own subtitles are drawn as captions; a file's own stay off
             opt("sid", "no")
             opt("sub-auto", "no")
             opt("volume", (events.volume * 100).toInt().toString())
             opt("mute", if (events.muted) "yes" else "no")
             opt("pause", if (autoplay) "no" else "yes")
-            if (fromMs > 0) opt("start", "+" + (fromMs / 1000.0).toString())
+            if (fromMs > 0 && !live) opt("start", "+" + (fromMs / 1000.0).toString())
             // captions in Maktaba's face (IBM Plex Sans Arabic), joined and right to left by libass
             if (fontsDir != null) {
                 opt("osd-fonts-dir", fontsDir.absolutePath)
@@ -127,7 +154,8 @@ class MpvVideo internal constructor(
             lib.mpv_render_context_set_update_callback(r, onUpdate, null)
             lib.mpv_observe_property(c, 1, "time-pos", MpvConst.FORMAT_DOUBLE)
             lib.mpv_observe_property(c, 2, "pause", MpvConst.FORMAT_FLAG)
-            lib.mpv_observe_property(c, 3, "eof-reached", MpvConst.FORMAT_FLAG)
+            // without keep-open, eof-reached is cleared as soon as it is set: a live end is end-file's
+            if (!live) lib.mpv_observe_property(c, 3, "eof-reached", MpvConst.FORMAT_FLAG)
             ctx = c
             render = r
             loop = Thread({ read(c) }, "mpv-events").apply {
@@ -162,6 +190,9 @@ class MpvVideo internal constructor(
             val flags = lib.mpv_render_context_update(r)
             val (w, h) = size
             if (w <= 0 || h <= 0) continue
+            // read before drawing: a frame drawn while a load waits for its first is not shown
+            val load = loads
+            val hold = holding
             if (flags and MpvConst.RENDER_UPDATE_FRAME == 0L && drawn == (w to h)) continue
             val b = pool[next]?.takeIf { it.width == w && it.height == h } ?: Bitmap().also {
                 // a size's bitmaps are left to the collector: the screen may still show one
@@ -183,7 +214,10 @@ class MpvVideo internal constructor(
             if (lib.mpv_render_context_render(r, p) < 0) continue
             b.notifyPixelsChanged()
             drawn = w to h
+            // held: drawn into the same bitmap again, never the one on screen
+            if (hold) continue
             frame = b.asComposeImageBitmap()
+            frameLoad = load
             next = (next + 1) % pool.size
         }
     }
@@ -193,9 +227,13 @@ class MpvVideo internal constructor(
             val ev = lib.mpv_wait_event(c, -1.0)
             when (ev.getInt(0)) {
                 MpvConst.EVENT_SHUTDOWN -> return
-                MpvConst.EVENT_FILE_LOADED -> loaded(c)
+                MpvConst.EVENT_FILE_LOADED -> {
+                    loading = false
+                    loaded(c)
+                }
                 MpvConst.EVENT_PLAYBACK_RESTART -> {
                     started = true
+                    if (!loading) holding = false
                     if (hwdec == null) hwdec = string(c, "hwdec-current")?.also { Engine.hwdec = it }
                 }
                 MpvConst.EVENT_PROPERTY_CHANGE -> {
@@ -209,7 +247,11 @@ class MpvVideo internal constructor(
                 }
                 MpvConst.EVENT_END_FILE -> {
                     val d = ev.getPointer(16) ?: continue
-                    if (d.getInt(0) == MpvConst.END_ERROR) events.failed(lib.mpv_error_string(d.getInt(4)))
+                    when (d.getInt(0)) {
+                        MpvConst.END_ERROR -> events.failed(lib.mpv_error_string(d.getInt(4)))
+                        // a live stream's playlist ended: the channel ended (a replaced one stops, not ends)
+                        MpvConst.END_EOF -> if (live) events.ended()
+                    }
                 }
             }
         }
@@ -258,6 +300,24 @@ class MpvVideo internal constructor(
     override fun toggle() = onMpv { lib.mpv_command(it, arrayOf("cycle", "pause", null)) }
 
     override fun pause() = onMpv { lib.mpv_set_property_string(it, "pause", "yes") }
+
+    override fun play() = onMpv { lib.mpv_set_property_string(it, "pause", "no") }
+
+    /**
+     * [url] into this handle (`loadfile <url> replace`), playing: the frame on screen stays
+     * until the new stream's first is drawn.
+     */
+    override fun load(url: String): Boolean {
+        if (closed) return false
+        holding = true
+        loading = true
+        loads++
+        onMpv {
+            lib.mpv_set_property_string(it, "pause", "no")
+            lib.mpv_command(it, arrayOf("loadfile", url, "replace", null))
+        }
+        return true
+    }
 
     override fun seek(ms: Long) = onMpv {
         lib.mpv_command(it, arrayOf("seek", (ms.coerceAtLeast(0) / 1000.0).toString(), "absolute", null))
@@ -364,6 +424,9 @@ class MpvPlayers(private val lib: LibMpv, private val fontsDir: File?) : Players
 
     override suspend fun open(url: String, fromMs: Long, autoplay: Boolean, events: VideoEvents): Video =
         MpvVideo(lib, url, fromMs, autoplay, events, fontsDir)
+
+    override suspend fun openLive(url: String, events: VideoEvents): Video =
+        MpvVideo(lib, url, 0, autoplay = true, events, fontsDir, live = true)
 }
 
 /** The streaming service's profile for libmpv (streaming/internal/capability/matrix.go). */

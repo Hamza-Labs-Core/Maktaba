@@ -98,7 +98,12 @@ fun VideoSurface(player: MediaPlayer?, modifier: Modifier = Modifier, caption: S
 fun VideoSurface(video: Video?, modifier: Modifier = Modifier, caption: String? = null, captionScale: Float = 1f) {
     val mpv = video as? com.hamzalabs.maktaba.desktop.mpv.MpvVideo
     if (mpv == null) {
-        VideoSurface((video as? FxVideo)?.media, modifier, caption, captionScale)
+        if (video == null || video is FxVideo) {
+            VideoSurface((video as? FxVideo)?.media, modifier, caption, captionScale)
+        } else {
+            // a player that draws nowhere (the tests'): the black picture, nothing else
+            androidx.compose.foundation.layout.Box(modifier.background(Color.Black).testTag("video-surface"))
+        }
         return
     }
     androidx.compose.runtime.LaunchedEffect(mpv, caption, captionScale) {

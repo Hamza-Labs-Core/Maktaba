@@ -102,6 +102,16 @@ interface Video {
 
     /** Its picture has started: a failure after it is not the file's (true when the player cannot tell). */
     val started: Boolean get() = true
+
+    /** Plays on after [pause] (a channel's Play; story 13.22). */
+    fun play() {}
+
+    /**
+     * Plays [url] in this same player, from its start (a live stream's live edge), the picture
+     * on screen held until the new one's first frame (story 13.22: a channel changed, Back to
+     * live); false: this player cannot, and a new one is opened.
+     */
+    fun load(url: String): Boolean = false
 }
 
 /** What a [Video] tells its [Playback], from any thread. */
@@ -124,12 +134,19 @@ fun interface Players {
 
     /** The streaming service's profile for what these players play. */
     val profile: String get() = STREAM_PROFILE
+
+    /**
+     * Makes the [Video] for a live stream (a channel, story 13.22) the proxy serves at [url],
+     * playing at once from its live edge; a player that has no live options opens it as any.
+     */
+    suspend fun openLive(url: String, events: VideoEvents): Video = open(url, 0, true, events)
 }
 
 /** A JavaFX player, driven on its own thread. */
 class FxVideo(val media: MediaPlayer) : Video {
     override fun toggle() = Playback.fx { if (media.status == MediaPlayer.Status.PLAYING) media.pause() else media.play() }
     override fun pause() = Playback.fx { media.pause() }
+    override fun play() = Playback.fx { media.play() }
     override fun seek(ms: Long) = Playback.fx { media.seek(Duration.millis(ms.coerceAtLeast(0).toDouble())) }
     override fun sound(volume: Float, muted: Boolean) = Playback.fx {
         media.volume = volume.toDouble()

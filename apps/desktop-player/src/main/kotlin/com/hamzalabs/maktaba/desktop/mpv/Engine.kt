@@ -12,11 +12,13 @@ import java.io.File
 object Engine {
     private val load: MpvLoad by lazy { MpvLoad.current }
 
-    val players: Players by lazy {
-        when (val l = load) {
-            is MpvLoad.Loaded -> MpvPlayers(l.lib, captionFonts())
-            is MpvLoad.Missing -> FxPlayers
-        }
+    /** The players of videos and of channels (story 13.22: Live TV asks here too). */
+    val players: Players by lazy { playersFor(load) }
+
+    /** libmpv's players when it loaded, else JavaFX's (its library missing, or JavaFX chosen). */
+    internal fun playersFor(load: MpvLoad, fonts: () -> File? = ::captionFonts): Players = when (load) {
+        is MpvLoad.Loaded -> MpvPlayers(load.lib, fonts())
+        is MpvLoad.Missing -> FxPlayers
     }
 
     val fallbackReason: String? get() = (load as? MpvLoad.Missing)?.reason

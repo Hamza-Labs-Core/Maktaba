@@ -25,6 +25,12 @@ build fails when the two differ.
   problem names why. The home's `GET /api/stream/capabilities` lists the `client_profiles` it
   knows.
 
+- **Live TV in the Windows and Linux Player plays with libmpv too.** A channel plays with the same
+  engine as the videos: the next or previous channel starts in the same player, its last picture
+  held until the new channel's first, Pause pauses it, and Back to live goes back to the live
+  edge. A channel whose stream ends says so; one that fails, or stops moving for 15 seconds,
+  offers Try again. If the Player's libmpv cannot load, channels play as before.
+
 - **The Windows and Linux Player's own title bar.** The Player's window has Maktaba's dark title
   bar in place of the system's frame and its menu bar: the menu button holds Account, Big screen,
   Language and Help in the Player's language, beside the app's name, Big screen and Help, with
