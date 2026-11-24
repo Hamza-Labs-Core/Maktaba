@@ -488,6 +488,9 @@ func (r recordFile) NoteNext(running, next, dump string) error {
 func (r recordFile) MarkDown(version, from, reason string) (bool, error) {
 	return layout.MarkRecordDown(string(r), version, from, reason)
 }
+func (r recordFile) SchemaBefore(version string) (int64, bool, error) {
+	return layout.RecordSchemaBefore(string(r), version)
+}
 func (r recordFile) MarkKept(version, from, reason string) (bool, error) {
 	return layout.MarkRecordKept(string(r), version, from, reason)
 }

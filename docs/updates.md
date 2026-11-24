@@ -304,7 +304,9 @@ When its migrations ran, the database goes back by their own Down scripts: it st
 left it when every one of them is additive and the previous release runs on a newer schema;
 else their Down scripts undo them, the one that failed part way by its own Down script first
 (`maktaba-api migrate undo-failed`), back to the slot the database was at before the update
-(recorded as `schema_before` when the migrations start).
+(recorded as `schema_before` when the migrations start). They never go below that slot: a
+schema an earlier rollback kept is left as it is, still kept for the previous release, and when
+its slot is not recorded no Down script runs.
 
 A layout install (the `.deb`/`.rpm`, `setup --self-managed`) keeps the release before's
 migrations in `bin/releases/<v>/` and undoes the same way; until 2026-11-24 its rollback
