@@ -13,6 +13,7 @@ import (
 	"reflect"
 	"regexp"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -191,8 +192,7 @@ func TestBroadcastOffAnswersNothing(t *testing.T) {
 				if r.method == http.MethodGet {
 					body = nil
 				}
-				// OPTIONS is the platform's CORS answer on any path; every other method is asked
-				for _, method := range []string{r.method, http.MethodTrace} {
+				for _, method := range []string{r.method, http.MethodTrace, http.MethodHead} {
 					req := httptest.NewRequest(method, "https://api.example.test"+path, bytes.NewReader(body))
 					c.sign(req, body)
 					rec := e.raw(r.listener, req)
@@ -223,11 +223,35 @@ func TestBroadcastOffAnswersNothing(t *testing.T) {
 			t.Errorf("%s: %d %s", name, rec.Code, rec.Body)
 		}
 	}
-	// the report form's origins aren't answered either
-	pre := e.client()
-	pre.origin = moderationh.WatchOrigins[0]
-	if r := pre.do("OPTIONS", moderationh.ReportPaths[0], nil); r.header.Get("Access-Control-Allow-Origin") != "" {
-		t.Errorf("the report form's preflight is answered: %v", r.header)
+	// a preflight, which the platform answers on any path before the gate, is the unknown path's
+	// own from every origin: the web app's, the forms', another site's, none
+	for _, origin := range []string{"", "https://maktaba.tv", "https://app.maktaba.tv", moderationh.WatchOrigins[0],
+		moderationh.StagingWatchOrigin, "https://evil.test", "https://" + testAdminHost} {
+		preflight := func(listener, path string) *httptest.ResponseRecorder {
+			req := httptest.NewRequest(http.MethodOptions, "https://api.example.test"+path, nil)
+			req.Header.Set("Access-Control-Request-Method", "POST")
+			if origin != "" {
+				req.Header.Set("Origin", origin)
+			}
+			h := e.router
+			if listener == "console" {
+				h, req.Host = e.admin, testAdminHost
+			}
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, req)
+			return rec
+		}
+		for _, r := range routeTable(t, e) {
+			if !broadcastgate.Covers(r.pattern) {
+				continue
+			}
+			path := routeParam.ReplaceAllString(r.pattern, home.id)
+			got, want := preflight(r.listener, path), preflight(r.listener, "/v1/no-such-route")
+			if got.Code != want.Code || got.Body.String() != want.Body.String() || !sameHeaders(got.Header(), want.Header()) {
+				t.Errorf("a preflight of %s from %q on %s = %d %v, want an unknown path's %d %v", path, origin, r.listener,
+					got.Code, got.Header(), want.Code, want.Header())
+			}
+		}
 	}
 	// the account's own data still answers: the export, and deletion
 	owner.mustStatus(owner.do("GET", "/v1/account/export", nil), http.StatusOK)
@@ -322,6 +346,22 @@ func TestBroadcastOffKeepsTheKillSwitch(t *testing.T) {
 	}
 	if out := usage(plain.id); len(out["taken"].([]any)) != 0 {
 		t.Fatalf("its owner's other home's usage = %v", out)
+	}
+	// each of the marked home's own routes reaches its handler (its answer is JSON, never the gate's
+	// text), and with another home's secret is the gate's
+	for _, ex := range broadcastgate.Exceptions() {
+		if ex.Who != broadcastgate.Home && ex.Who != broadcastgate.EdgeOrHome {
+			continue
+		}
+		path := routeParam.ReplaceAllString(ex.Path, "0b9a4b5e-5d1c-4a43-9a5e-1c2b3d4e5f60")
+		for secret, want := range map[string]bool{home.secret: true, plain.secret: false} {
+			req := httptest.NewRequest(ex.Method, "https://api.example.test"+path, strings.NewReader(`{}`))
+			req.SetBasicAuth(home.id, secret)
+			rec := e.raw("user", req)
+			if reached := rec.Body.String() != "404 page not found\n"; reached != want || rec.Code == http.StatusUnauthorized {
+				t.Errorf("a marked home's %s %s: reached %v (%d %s), want %v", ex.Method, path, reached, rec.Code, rec.Body, want)
+			}
+		}
 	}
 	// the mark opens nothing more: the owner's access page, analytics, billing and moderation
 	for _, p := range []string{"/v1/broadcast/homes/" + home.id + "/access", "/v1/broadcast/analytics?server=" + home.id,
