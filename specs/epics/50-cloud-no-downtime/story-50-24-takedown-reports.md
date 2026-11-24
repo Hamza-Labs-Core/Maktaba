@@ -5,6 +5,12 @@
 
 > **Not legal advice. Confirm with a lawyer before launch** (README §14.9).
 
+> **Deferred (2026-11-24).** Broadcasting stays off for now, and nothing about copyright is
+> shown anywhere: no designated agent, no `copyright@maktaba.tv`, no notice form, no copyright
+> page on maktaba.tv and no viewer Report button. The code this story built stays dormant behind
+> the broadcast flag (the cloud's `broadcast.enabled`, off). This story is decided again, for
+> invitation-only channels (README §14), before broadcasting is switched on.
+
 ## Why
 
 Maktaba Cloud is an **infrastructure and hosting provider**: it carries publishers' streams and
@@ -227,7 +233,8 @@ counsel**). A service admin can export them for a lawyer as CSV and JSON.
 1. The queue and forms ship dark.
 2. The owner registers the agent.
 3. Counsel reviews the page, the forms and the policy (README §14.9).
-4. The page goes live before any `open` channel (the broadcasting gate, item 4).
+4. Deferred with broadcasting (2026-11-24): the copyright page was removed from maktaba.tv, and
+   this step is decided again before broadcasting is switched on.
 
 ### Rollback
 
