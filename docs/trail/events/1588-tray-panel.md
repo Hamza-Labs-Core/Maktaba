@@ -22,6 +22,7 @@ The second build story of the approved desktop design (#1556), D2.
 - **On Windows the press on the tray icon takes focus first**: the panel's blur handler hid it and the release reopened it. A short "just closed by blur" window (400 ms) makes a click on the icon a toggle.
 - **A panel that re-renders on every download percent must not move focus on render**: focus only when it opens.
 - **Lazy chunks are a failure point for a tiny always-ready window**: import it statically.
+- **Focus set in a passive effect races the first picture**: CI met the panel before its first action had the focus. `useLayoutEffect` sets it with the first picture, so a key pressed at once is not lost either.
 
 ## Keep doing
 - A pure placement function with table tests for every taskbar edge and screen; the window code only applies it.
