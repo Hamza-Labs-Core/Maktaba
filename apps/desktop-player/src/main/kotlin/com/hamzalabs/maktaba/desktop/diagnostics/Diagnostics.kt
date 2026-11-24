@@ -10,7 +10,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
+import com.hamzalabs.maktaba.desktop.shell.MaktabaAlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -148,7 +148,7 @@ fun lastReference(): String? = RequestId.recent().lastOrNull()?.take(8)
 @Composable
 fun CrashQuestionDialog(home: String, answer: (Boolean) -> Unit) {
     val t = LocalTexts.current
-    AlertDialog(
+    MaktabaAlertDialog(
         onDismissRequest = {},
         title = { Text(t["crash.question.title", home]) },
         text = { Text(t["crash.question.body", home]) },
@@ -188,14 +188,14 @@ fun ReportProblemDialog(
     val lines = remember { ReportPart.lines(log(), System.currentTimeMillis(), Redact::scrub) }
     val crashCount = remember { outbox.files().size }
     val scope = rememberCoroutineScope()
-    AlertDialog(
+    MaktabaAlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(t["report.title"]) },
         text = {
             val n = number
             if (n != null) {
                 Text(t["report.sentTo", home, n])
-                return@AlertDialog
+                return@MaktabaAlertDialog
             }
             Column(Modifier.heightIn(max = 520.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(t["report.what"], style = MaterialTheme.typography.titleSmall)
@@ -281,7 +281,7 @@ fun MyReportsDialog(client: ApiClient, onDismiss: () -> Unit) {
             failed = true
         }
     }
-    AlertDialog(
+    MaktabaAlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(t["report.mine"]) },
         text = {

@@ -7,8 +7,12 @@ compose = "1.12.2"
 javafx = "21.0.13"
 jmdns = "3.6.4"
 jna = "5.19.1"
+# Story 13.15: the decorated window (Maktaba's title bar with the system's resizing, snapping and
+# Snap Layouts) on the JetBrains Runtime; built on Compose foundation 1.12.1
+jewel = "0.42.0-263.7307.353"
 
 [libraries]
+jewel-decorated-window = { module = "org.jetbrains.jewel:jewel-int-ui-decorated-window", version.ref = "jewel" }
 jmdns = { module = "org.jmdns:jmdns", version.ref = "jmdns" }
 jna-platform = { module = "net.java.dev.jna:jna-platform", version.ref = "jna" }
 compose-material3 = { module = "org.jetbrains.compose.material3:material3", version = "1.9.0" }

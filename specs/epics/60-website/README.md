@@ -7,6 +7,9 @@
 > - `watch.`: Epic 50 (50.21, 50.27), on [Epic 34](../34-tv-public-site/README.md)'s site;
 > - `plugins.`: [Epic 54](../54-plugins/README.md).
 >
+> Story 60.14 carries the site's design to the apps' store listings (App Store, Google Play
+> and the TV stores): their gallery images, not a page on the zone.
+>
 > **Builds on:**
 > - [Epic 17](../17-ux-design-system/README.md) (the design tokens; it left the marketing site as
 >   a separate effort, and no epic has owned it since);
@@ -149,8 +152,8 @@ Checked on `main` at 154438067 (2026-11-11).
 | Path (each with `/ar/…`) | What it is | Story | Phase |
 |---|---|---|---|
 | `/` | Phase 1: a short front door (what Maktaba is, install, download from GitHub, help, maktaba.dev). Phase 2: the home page | 60.03, 60.10 | 1, 2 |
-| `/download/` | every device, with its real release asset | 60.11 | 2 |
-| `/install/…` | Epic 59's nine guides, then the per-platform install pages | 60.05 | 1 |
+| `/download/` | Get Maktaba, the one page: every device with its real release asset, and every setup guide (NAS, Docker, after setup, troubleshooting) | 60.11, 60.05 | 2 |
+| `/install/<guide>/` | Epic 59's guides, each at its own address; `/install/` itself redirects (301) to `/download/`, which lists them (2026-11-24) | 60.05 | 1 |
 | `/help/`, `/help/<topic>/` | Epic 41's topics | 60.12 | 3 |
 | `/problems/`, `/problems/<slug>/` | one page per problem type, and an index | 60.06 | 1 |
 | `/legal/privacy/`, `/legal/terms/`, `/legal/copyright/` | privacy, terms, copyright with the notice form | 60.07 | 1 |
@@ -447,7 +450,7 @@ monthly (security.txt's `Expires`, as on maktaba.dev):
 | Phase | Stories | Leaves a visitor with |
 |---|---|---|
 | **1. No dead links** | 60.01 part A (the shell), 60.02 part A (the voice), 60.03, 60.04, 60.05, 60.06, 60.07, 60.08 | every link the product prints opens a real page in their language: the install guides, a plain page per error, privacy, terms and copyright with its notice form, a short front door and a real 404. The image the guides pull is public, and CI keeps both true |
-| **2. The front of the site** | 60.01 part B (full direction and mockups), 60.02 part B (tagline and page copy), 60.09, 60.10, 60.11 | a designed home page that says what Maktaba is and shows it in real screenshots, and a download page with the right file for each device |
+| **2. The front of the site** | 60.01 part B (full direction and mockups), 60.02 part B (tagline and page copy), 60.09, 60.10, 60.11; 60.14 (the store galleries, design first) | a designed home page that says what Maktaba is and shows it in real screenshots, a download page with the right file for each device, and the same look in every app store |
 | **3. Help, one design everywhere, pricing** | 60.12; 60.05, 60.06 and 60.07 moved onto the full design; 60.13 once Epic 50's plans are decided | help readable before installing, the whole site in one design, and prices once there are prices |
 
 - **The design gate:** 60.01 starts first.
@@ -476,6 +479,7 @@ monthly (security.txt's `Expires`, as on maktaba.dev):
 | 60.11 | [Download: every device, with its real release asset](story-60-11-download.md) | web, release | 2 |
 | 60.12 | [Help on maktaba.tv, from the app's own topics](story-60-12-help.md) | web | 3 |
 | 60.13 | [Pricing, from the plans the cloud enforces](story-60-13-pricing.md) | web, cloud | 3 |
+| 60.14 | [Store gallery images: every app's listing, in every store it ships to, in English and Arabic](story-60-14-store-gallery.md) | design, apps, CI | 2 |
 
 ## 9. Test and rehearsal plan
 

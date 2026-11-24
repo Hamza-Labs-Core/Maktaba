@@ -37,7 +37,10 @@ w() { if [ -n "$x" ]; then cygpath -w "$1"; else printf '%s' "$1"; fi; }
 sock="-k ''"
 [ -z "$x" ] || sock=""
 mkdir -p "$scratch"
-port=$((55000 + RANDOM % 900))
+# four ports in a row: PostgreSQL 18, pg_upgrade's old and new servers, the 16 cluster's own
+# shellcheck source=tools/release/free-ports.sh
+. "$(dirname "${BASH_SOURCE[0]}")/free-ports.sh"
+port="$(free_ports 4)"
 # the flags the bundled server starts PostgreSQL 18 with that matter here (pgbundle.serverArgs)
 flags="-p $port $sock -c listen_addresses=127.0.0.1 -c wal_level=logical -c max_replication_slots=40 -c shared_preload_libraries=pg_textsearch"
 psql18() { PGCLIENTENCODING=UTF8 "$pg18/psql$x" -X -h 127.0.0.1 -p "$port" -U maktaba -Atq -v ON_ERROR_STOP=1 "$@"; }

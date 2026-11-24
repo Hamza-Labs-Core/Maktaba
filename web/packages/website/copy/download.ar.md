@@ -261,3 +261,103 @@ macOS، عبر Homebrew
 ## server.other.windows
 
 الخادم وحده، لنظام Windows ‏(`.zip`)
+
+## guides.h2
+
+الإعداد خطوةً خطوة
+
+## guides.lead
+
+يرافقكم كل دليل خطوةً خطوة في متصفحكم، وبعد ذلك يحدّث البرنامج نفسه بنفسه.
+
+## guides.nas-guides
+
+على خادم تخزين شبكي
+
+## guides.nas-guides.unsure
+
+لستم متأكدين من الدليل المناسب لجهازكم؟ قائمة الطرازات تخبركم أي دليل تتّبعون.
+
+## guides.nas-guides.find
+
+ابحثوا عن جهازكم
+
+## guides.synology
+
+Synology
+
+## guides.synology.line
+
+نظام DSM بإصداره 7.2 أو أحدث، مع تطبيق إدارة الحاويات
+
+## guides.truenas
+
+TrueNAS
+
+## guides.truenas.line
+
+الإصدار 25.04 أو أحدث، تطبيقًا
+
+## guides.unraid
+
+Unraid
+
+## guides.unraid.line
+
+من متجر التطبيقات المجتمعية
+
+## guides.qnap
+
+QNAP
+
+## guides.qnap.line
+
+باستخدام محطة الحاويات
+
+## guides.ugreen
+
+UGREEN
+
+## guides.ugreen.line
+
+باستخدام تطبيق Docker في نظام UGOS Pro
+
+## guides.asustor
+
+ASUSTOR
+
+## guides.asustor.line
+
+باستخدام Portainer من App Central
+
+## guides.docker-guide
+
+على أي حاسوب آخر
+
+## guides.docker
+
+Docker
+
+## guides.docker.line
+
+أي حاسوب بنظام لينكس يبقى مشغّلًا، ويملأ الدليل ملف الإعداد عنكم وأنتم تجيبون عن أسئلته
+
+## guides.after-guides
+
+بعد أن يعمل
+
+## guides.after-setup
+
+بعد الإعداد
+
+## guides.after-setup.line
+
+مكتباتكم، ومن يرى ماذا، والتحديثات، وغير ذلك
+
+## guides.troubleshooting
+
+حلّ المشكلات
+
+## guides.troubleshooting.line
+
+حين لا يعمل شيء كما ينبغي، مشكلةً تلو الأخرى

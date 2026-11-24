@@ -183,6 +183,24 @@ func waitFor(t *testing.T, what string, ok func() bool) {
 	}
 }
 
+// startCtl runs c until the test ends, then stops it and waits for Run to return (stopAll
+// waits for each channel's session) before the test's temp dir is removed: a test that only
+// cancelled left a channel writing its segments into the dir as it was removed (main's CI
+// run 45298651218, TestCtlAlwaysOnIgnoresSleep: "TempDir RemoveAll cleanup: unlinkat
+// …/src: directory not empty"). Cleanups run last first, so this one, registered after the
+// dir's, runs before it.
+func startCtl(t *testing.T, c *Ctl) context.Context {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { c.Run(ctx); close(done) }()
+	t.Cleanup(func() {
+		cancel()
+		<-done
+	})
+	return ctx
+}
+
 func newTestCtl(t *testing.T, store *memStore, src *fakeSource, ff *fakeFFmpeg) *Ctl {
 	return &Ctl{Store: store, Source: src, Runner: ff, Dir: t.TempDir(), Poll: 20 * time.Millisecond,
 		StateEvery: 50 * time.Millisecond, Grace: 100 * time.Millisecond, RestartDelay: 10 * time.Millisecond,
@@ -240,9 +258,7 @@ func TestCtlOnDemand(t *testing.T) {
 		Creds: Creds{Token: "tok", IngestURL: srv.URL, Channel: "edge1", ExpiresAt: time.Now().Add(time.Hour)}}}}
 	src, ff := &fakeSource{}, &fakeFFmpeg{}
 	c := newTestCtl(t, store, src, ff)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	go c.Run(ctx)
+	ctx := startCtl(t, c)
 
 	// published, nobody watching, the edge silent: nothing is sent
 	time.Sleep(150 * time.Millisecond)
@@ -287,9 +303,7 @@ func TestCtlAlwaysOnIgnoresSleep(t *testing.T) {
 		Channel: ch, Name: "Seerah", Rungs: []string{"src"}, Mode: "always_on", State: "live",
 		Creds: Creds{Token: "tok", IngestURL: srv.URL, Channel: "edge1", ExpiresAt: time.Now().Add(time.Hour)}}}}
 	c := newTestCtl(t, store, &fakeSource{}, &fakeFFmpeg{})
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	go c.Run(ctx)
+	ctx := startCtl(t, c)
 	waitFor(t, "the start", func() bool { return len(c.Running()) == 1 })
 	c.Event(ctx, ch, Event{Type: "sleep"})
 	time.Sleep(c.Grace + 150*time.Millisecond)
@@ -317,9 +331,7 @@ func TestCtlTokenExpiryAndRevoke(t *testing.T) {
 		Channel: ch, Name: "Seerah", Rungs: []string{"src"}, Mode: "always_on", State: "live",
 		Creds: Creds{Token: "tok", IngestURL: srv.URL, Channel: "edge1", ExpiresAt: time.Now().Add(time.Hour)}}}}
 	c := newTestCtl(t, store, &fakeSource{}, &fakeFFmpeg{})
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	go c.Run(ctx)
+	startCtl(t, c)
 	waitFor(t, "the start", func() bool { return len(c.Running()) == 1 })
 
 	revoked.Store(true)

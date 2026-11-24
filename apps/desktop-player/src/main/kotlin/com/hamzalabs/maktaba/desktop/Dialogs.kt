@@ -3,7 +3,7 @@ package com.hamzalabs.maktaba.desktop
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.material3.AlertDialog
+import com.hamzalabs.maktaba.desktop.shell.MaktabaAlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.OutlinedTextField
@@ -97,7 +97,7 @@ fun ApproveDialog(client: ApiClient, onDismiss: () -> Unit) {
     }
 
     val ready = asking != null || older
-    AlertDialog(
+    MaktabaAlertDialog(
         onDismissRequest = { if (!busy) onDismiss() },
         title = { Text(t["approve.title"]) },
         text = {
@@ -167,7 +167,7 @@ fun UpdateDialog(onDismiss: () -> Unit, onInstalling: () -> Unit) {
         }
     }
     val o = offer
-    AlertDialog(
+    MaktabaAlertDialog(
         onDismissRequest = { if (!busy) onDismiss() },
         title = { Text(t["update.title"]) },
         text = {
