@@ -209,7 +209,7 @@ describe("SetupWizard", () => {
     renderWizard(api);
     await userEvent.click(screen.getByRole("button", { name: "Set up this Mac" }));
     expect(await screen.findByText("Indexing, transcription and search")).toBeInTheDocument();
-    expect(screen.getByText("96.0 GB (needs 16.0 GB)")).toBeInTheDocument();
+    expect(screen.getByText(/96\.0 GB.* \(needs .*16\.0 GB.*\)/)).toBeInTheDocument();
     // a Mac asks for its permissions too
     expect(screen.getByText("Step 1 of 9")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Next" })).toBeEnabled();

@@ -30,7 +30,7 @@ import { Toggle } from "@ds/components/Choice/Toggle";
 import { Radio, RadioGroup } from "@ds/components/Choice/Radio";
 import { Checkbox } from "@ds/components/Choice/Checkbox";
 import { ProgressBar } from "@ds/components/ProgressBar/ProgressBar";
-import { useI18n } from "../../lib/i18n";
+import { bidiIsolate, useI18n } from "../../lib/i18n";
 import {
   formatBytes,
   isStepError,
@@ -192,8 +192,12 @@ function Meter({
         <DesktopIcon name={icon} size={16} />
         <span>{label}</span>
       </div>
-      <div className="mkt-setup__meter-value" dir="ltr">
-        {t("setup.check.have", { have: formatBytes(have), need: formatBytes(need) })}
+      <div className="mkt-setup__meter-value">
+        {/* each size isolated: "412.0 GB" keeps its order in an Arabic sentence */}
+        {t("setup.check.have", {
+          have: bidiIsolate(formatBytes(have)),
+          need: bidiIsolate(formatBytes(need)),
+        })}
       </div>
       <div className="mkt-dbar" aria-hidden="true">
         <i style={{ inlineSize: `${Math.round(share * 100)}%` }} />

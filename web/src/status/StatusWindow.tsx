@@ -275,8 +275,8 @@ function line(p: StatusPart, t: T, words: Record<string, string>): string {
     if (p.bytes) {
       return t("statusWindow.note.modelBytes", {
         name: bidiIsolate(p.model),
-        done: formatBytes(p.bytes[0]),
-        total: formatBytes(p.bytes[1]),
+        done: bidiIsolate(formatBytes(p.bytes[0])),
+        total: bidiIsolate(formatBytes(p.bytes[1])),
       });
     }
     return p.model;
@@ -296,9 +296,7 @@ function Tile({ part, words }: { part: StatusPart; words: Record<string, string>
         <span className={`mkt-ddot is-${part.tone}`} aria-hidden="true" />
       </div>
       <div className="mkt-status__value">{value(part, t)}</div>
-      <div className="mkt-status__line" dir="auto">
-        {line(part, t, words)}
-      </div>
+      <div className="mkt-status__line">{line(part, t, words)}</div>
       {pct !== null && (
         <div
           className="mkt-dbar"

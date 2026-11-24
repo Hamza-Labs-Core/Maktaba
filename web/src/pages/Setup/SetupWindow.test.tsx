@@ -145,8 +145,8 @@ describe("the setup window", () => {
     await userEvent.click(await screen.findByRole("button", { name: /Set up this PC/ }));
     expect(await screen.findByRole("heading", { name: "What will run" })).toBeInTheDocument();
     expect(screen.getByText("Indexing, transcription (4 workers) and search")).toBeInTheDocument();
-    expect(screen.getByText("16.0 GB (needs 8.0 GB)")).toBeInTheDocument();
-    expect(screen.getByText("412.0 GB (needs 20.0 GB)")).toBeInTheDocument();
+    expect(screen.getByText(/^.?16\.0 GB.* \(needs .*8\.0 GB.*\)$/)).toBeInTheDocument();
+    expect(screen.getByText(/412\.0 GB.* \(needs .*20\.0 GB.*\)/)).toBeInTheDocument();
     expect(
       screen.getByText(
         "No NVIDIA graphics card: this PC transcribes on its processor, many times slower than on a graphics card."
@@ -165,7 +165,9 @@ describe("the setup window", () => {
     const short = { ...CHECK, ram_bytes: 4 * GB, ok: false, problems: [], warnings: [] };
     wizard(fakeApi({}, { adopt: { sources: [] }, check: short }));
     await userEvent.click(await screen.findByRole("button", { name: /Set up this PC/ }));
-    const ram = (await screen.findByText("4.0 GB (needs 8.0 GB)")).closest(".mkt-setup__meter");
+    const ram = (await screen.findByText(/^.?4\.0 GB.* \(needs .*8\.0 GB.*\)$/)).closest(
+      ".mkt-setup__meter"
+    );
     expect(ram).toHaveClass("is-short");
     expect(screen.getByRole("button", { name: "Next" })).toBeDisabled();
   });

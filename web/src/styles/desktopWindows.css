@@ -46,6 +46,18 @@
 .mkt-dwin * {
   box-sizing: border-box;
 }
+.mkt-wizard .mkt-visually-hidden,
+.mkt-dwin .mkt-visually-hidden {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
 .mkt-wizard :focus-visible,
 .mkt-dwin :focus-visible {
   outline: 2px solid var(--color-accent);
@@ -292,6 +304,13 @@
 .mkt-wizard .mkt-setup__card > * + * {
   margin-block-start: 12px;
 }
+.mkt-wizard .mkt-setup__card > * {
+  flex-shrink: 0;
+}
+.mkt-setup__foot > .mk-btn,
+.mkt-setup__foot > .mkt-wizard__lang {
+  flex: none;
+}
 .mkt-wizard .mkt-setup__title {
   font-family: var(--font-heading);
   font-weight: 700;
@@ -319,7 +338,6 @@
   flex: none;
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
   gap: 10px;
   padding: 16px 40px;
   border-block-start: 1px solid var(--color-desktop-line);
@@ -388,6 +406,7 @@
 }
 .mkt-setup__option-text h2 {
   margin: 0;
+  font-family: var(--font-family);
   font-size: var(--dk-t-lead);
   line-height: var(--dk-t-lead-lh);
   font-weight: 600;
@@ -531,11 +550,6 @@
 .mkt-setup__meter-value {
   margin-block: 2px 8px;
   font-weight: 600;
-  text-align: start;
-  unicode-bidi: isolate;
-}
-:root[dir="rtl"] .mkt-setup__meter-value {
-  text-align: end;
 }
 .mkt-setup__meter .mkt-dbar > i {
   background: var(--color-success);
@@ -573,7 +587,9 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  flex: 0 1 auto;
   min-inline-size: 0;
+  overflow: hidden;
   color: var(--color-muted);
 }
 .mkt-setup__datadir bdi {

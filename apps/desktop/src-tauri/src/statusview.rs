@@ -140,9 +140,9 @@ fn fold(tones: &[Tone]) -> Tone {
     })
 }
 
-/// A detail's progress: its `pct` value (the venv being installed), 0 to 1.
+/// A detail's progress: its `percent` value (the transcription tools being installed), 0 to 1.
 fn progress_of(d: &Detail) -> Option<f64> {
-    let pct = d.params.as_ref()?.get("pct")?.as_f64()?;
+    let pct = d.params.as_ref()?.get("percent")?.as_f64()?;
     Some((pct / 100.0).clamp(0.0, 1.0))
 }
 
@@ -294,20 +294,20 @@ mod tests {
     fn a_part_carries_what_it_waits_on_and_its_progress() {
         let install: Child = serde_json::from_value(json!({
             "role": "pipeline", "state": "starting",
-            "detail": "Installing (40%)", "detail_code": "venv_install",
-            "detail_params": { "pct": 40 }
+            "detail": "Installing (40%)", "detail_code": "venv_building",
+            "detail_params": { "percent": 40 }
         }))
         .unwrap();
         let p = parts(Some(&snap(vec![install])));
         assert_eq!(p[0].tone, Tone::Busy);
         let d = p[0].detail.as_ref().expect("the detail");
-        assert_eq!(d.code.as_deref(), Some("venv_install"));
+        assert_eq!(d.code.as_deref(), Some("venv_building"));
         assert_eq!(p[0].progress, Some(0.4));
         // flat, as the starting screen reads a status's detail
         let j = serde_json::to_value(&p[0]).unwrap();
         assert_eq!(j["detail"], "Installing (40%)");
-        assert_eq!(j["detail_code"], "venv_install");
-        assert_eq!(j["detail_params"]["pct"], 40);
+        assert_eq!(j["detail_code"], "venv_building");
+        assert_eq!(j["detail_params"]["percent"], 40);
         // a running process's detail is no news
         let done: Child = serde_json::from_value(json!({
             "role": "pipeline", "state": "running", "detail": "Installed"

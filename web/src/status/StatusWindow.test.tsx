@@ -33,8 +33,8 @@ const RUNNING: StatusWindowView = {
       tone: "busy",
       running: 0,
       detail: "Installing (40%)",
-      detail_code: "venv_install",
-      detail_params: { pct: 40 },
+      detail_code: "venv_building",
+      detail_params: { percent: 40 },
       progress: 0.4,
     },
     {
@@ -93,10 +93,15 @@ describe("StatusWindow", () => {
     expect(within(items[0]).getByText("Private to Maktaba")).toBeInTheDocument();
     // a part on its way says what it waits on, in the window's words, with its progress
     expect(within(items[3]).getByText("Starting")).toBeInTheDocument();
+    expect(
+      within(items[3]).getByText("Installing the transcription tools (40%).")
+    ).toBeInTheDocument();
     expect(within(items[3]).getByRole("progressbar")).toHaveAttribute("aria-valuenow", "40");
     // the language model's download
     expect(within(items[4]).getByText("Downloading")).toBeInTheDocument();
-    expect(within(items[4]).getByText(/qwen2\.5:7b.* · 1\.0 GB of 4\.0 GB/)).toBeInTheDocument();
+    expect(
+      within(items[4]).getByText(/qwen2\.5:7b.* · .*1\.0 GB.* of .*4\.0 GB/)
+    ).toBeInTheDocument();
     expect(within(items[4]).getByRole("progressbar")).toHaveAttribute("aria-valuenow", "25");
     expect(screen.getByText("Closing this window keeps the server running.")).toBeInTheDocument();
   });
