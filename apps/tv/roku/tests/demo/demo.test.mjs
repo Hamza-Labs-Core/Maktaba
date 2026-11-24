@@ -9,9 +9,14 @@
 // reads every `screenshots/demo/` folder under apps/). UPDATE_SCREENS=1 rewrites them.
 //
 // The screens: sign in with a code, Home, the Caminandes series, the player with the Arabic
-// subtitle line (brs-engine draws no video picture: the line and the overlay on black), and
-// Search with the library's query, in English, then the same in Arabic. Roku has no Live TV
-// screen, so the gallery's guide beat has no Roku capture.
+// subtitle line, and Search with the library's query, in English, then the same in Arabic. Roku
+// has no Live TV screen, so the gallery's guide beat has no Roku capture.
+//
+// brs-engine plays no video, so the player's picture is a still of the film: the frame of
+// Curiosity: Landing on Mars in the fixture's test stream (Apple's demo-picture-0.ts, the still
+// at 7:00, public domain, NASA/JPL-Caltech; the library's art is the same frame), decoded with
+// ffmpeg and drawn by tests/video_frame.cjs in the Video node's rectangle as brs-engine renders
+// the node, under the channel's own subtitle line and overlay. Needs ffmpeg on the PATH.
 //
 // It runs alone (`npm test` runs it after the other files): one brs-engine at a time holds
 // ECP's port.
@@ -33,6 +38,7 @@ import { demoHome } from "./demohome.mjs";
 const require = createRequire(import.meta.url);
 const { createCanvas, loadImage } = require("canvas");
 const REFS = join(ROKU, "tests", "screenshots", "demo");
+const STILL = join(ROKU, "..", "..", "apple", "UITests", "Fixtures", "Stream", "demo-picture-0.ts");
 /** Mean absolute difference per channel (0–255), as screens.test.mjs allows. */
 const TOLERANCE = 12;
 
@@ -44,6 +50,7 @@ let cloud;
 let zip;
 let data;
 let tlsDir;
+let frame;
 
 before(async () => {
   tlsDir = mkdtempSync(join(tmpdir(), "maktaba-roku-tls-"));
@@ -56,6 +63,13 @@ before(async () => {
   mkdirSync(LOGS, { recursive: true });
   zip = await build(["--test", "--cloud", `http://127.0.0.1:${cloud.port}`, "--probe-ip", "127.0.0.9", "--probe-port", String(home.port), "--out", join(ROKU, "build", "maktaba-roku-demo.zip")]);
   data = mkdtempSync(join(tmpdir(), "maktaba-roku-demo-"));
+  // the film's picture: the test stream's first frame (a still), as a PNG
+  frame = join(data, "film-frame.png");
+  try {
+    execFileSync("ffmpeg", ["-hide_banner", "-loglevel", "error", "-y", "-i", STILL, "-frames:v", "1", frame], { stdio: ["ignore", "ignore", "pipe"] });
+  } catch (e) {
+    throw new Error(`the player's picture needs ffmpeg on the PATH to decode ${STILL}: ${e.stderr?.toString() || e.message}`);
+  }
 });
 
 after(() => {
@@ -87,7 +101,7 @@ async function shoot(c, name, settle = 2500) {
     copyFileSync(path, ref);
     compared.push(`${file}: reference written`);
     if (process.env.CI) assert.fail(`${file}: no reference in tests/screenshots/demo (run with UPDATE_SCREENS=1 and commit it)`);
-    return;
+    return path;
   }
   const a = (await small(path)).getContext("2d").getImageData(0, 0, 480, 270).data;
   const b = (await small(ref)).getContext("2d").getImageData(0, 0, 480, 270).data;
@@ -96,6 +110,31 @@ async function shoot(c, name, settle = 2500) {
   const mean = sum / ((a.length / 4) * 3);
   compared.push(`${file}: mean difference ${mean.toFixed(2)} (tolerance ${TOLERANCE})`);
   assert.ok(mean <= TOLERANCE, `${file} differs from tests/screenshots/demo/${file}.png by ${mean.toFixed(2)} (tolerance ${TOLERANCE}); see build/screens/${file}.png`);
+  return path;
+}
+
+/**
+ * The player's picture is the film's: above the overlay (which starts at y 700) the screen is
+ * the still's Martian sky and the rover, not the scene's background (0x0B111C).
+ */
+async function assertPicture(path) {
+  const img = await loadImage(readFileSync(path));
+  const c = createCanvas(img.width, img.height);
+  const ctx = c.getContext("2d");
+  ctx.drawImage(img, 0, 0);
+  const px = ctx.getImageData(0, 0, 1920, 600).data;
+  let background = 0;
+  let r = 0;
+  let b = 0;
+  for (let i = 0; i < px.length; i += 4) {
+    if (Math.abs(px[i] - 0x0b) + Math.abs(px[i + 1] - 0x11) + Math.abs(px[i + 2] - 0x1c) < 12) background++;
+    r += px[i];
+    b += px[i + 2];
+  }
+  const n = px.length / 4;
+  assert.ok(background / n < 0.01, `${path}: ${((100 * background) / n).toFixed(1)}% of the picture above the overlay is the scene's background, not the film`);
+  // Mars: a warm picture, more red than blue
+  assert.ok(r / n > b / n + 20, `${path}: the picture above the overlay is not the film's (mean red ${(r / n).toFixed(0)}, blue ${(b / n).toFixed(0)})`);
 }
 
 /** Presses key until the channel's log matches re (at most max presses). */
@@ -150,7 +189,9 @@ async function screens(c, lang) {
   await c.waitFor(/\[subs\] cue at\s+\d+/, 20000);
   assert.match(c.out, /\[screen\] PlayerScreen ready mode=direct/);
   assert.match(c.out.slice(c.out.lastIndexOf("[link] play")), /\[subs\] own ar/, "the Arabic line is the channel's own layer");
-  await shoot(c, `subtitles-${lang}`, 1500);
+  const player = await shoot(c, `subtitles-${lang}`, 1500);
+  assert.equal(existsSync(`${frame}.drawn`) && readFileSync(`${frame}.drawn`, "utf8").trim(), "1280x720 in 1920x1080 at 0,0", "the film's picture is drawn in the Video node's rectangle");
+  await assertPicture(player);
   await c.key("Back");
   await c.waitFor(/\[nav\] back to HomeScreen/);
 
@@ -176,7 +217,7 @@ async function screens(c, lang) {
 }
 
 test("60.14: the channel on the demo library, English then Arabic", { timeout: 600000 }, async () => {
-  const c = await Channel.start("demo", zip, data);
+  const c = await Channel.start("demo", zip, data, undefined, { videoFrame: frame });
   try {
     await c.waitFor(/\[screen\] StartScreen ready homes=\s*0/, 30000);
     await signIn(c, "en");

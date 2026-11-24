@@ -21,8 +21,12 @@ export class Channel {
     this.seen = 0;
   }
 
-  /** Runs zip with a registry kept in dataDir (a saved home survives to the next launch). */
-  static async start(name, zip, dataDir, deepLink) {
+  /**
+   * Runs zip with a registry kept in dataDir (a saved home survives to the next launch).
+   * `videoFrame`: a still of the film, drawn where the Video node shows its picture
+   * (tests/video_frame.cjs: brs-engine plays no video).
+   */
+  static async start(name, zip, dataDir, deepLink, { videoFrame } = {}) {
     const c = new Channel(name);
     mkdirSync(SCREENS, { recursive: true });
     mkdirSync(LOGS, { recursive: true });
@@ -32,7 +36,7 @@ export class Channel {
     c.started = Date.now();
     c.proc = spawn("python3", args, {
       cwd: join(ROKU, "build"),
-      env: { ...process.env, HOME: dataDir, XDG_DATA_HOME: join(dataDir, "data"), XDG_CONFIG_HOME: join(dataDir, "config"), FORCE_COLOR: "0", NODE_OPTIONS: `--dns-result-order=ipv4first --require ${join(ROKU, "tests", "roku_text.cjs")}` },
+      env: { ...process.env, HOME: dataDir, XDG_DATA_HOME: join(dataDir, "data"), XDG_CONFIG_HOME: join(dataDir, "config"), FORCE_COLOR: "0", MAKTABA_VIDEO_FRAME: videoFrame ?? "", NODE_OPTIONS: `--dns-result-order=ipv4first --require ${join(ROKU, "tests", "roku_text.cjs")} --require ${join(ROKU, "tests", "video_frame.cjs")}` },
       stdio: ["pipe", "pipe", "pipe"],
     });
     const take = (d) => {

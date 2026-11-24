@@ -5,14 +5,19 @@
 // every `/api/*` request is answered from the demo library (tests/fixtures/demo-library,
 // `buildRoutes`), the clock is pinned to the library's, and Playwright's Chromium takes it at
 // 1920×1080, dark, at device scale 1 (a TV's screen). The sign-in code is the launcher's own
-// first screen (the cloud code, maktaba.tv/tv), served by Vite from apps/tv/web.
+// first screen (the cloud code, maktaba.tv/tv), built as the release builds the packages
+// (tv-web-release.yml: `VERSION=X.Y.Z pnpm run build:launcher`, which stamps the version the
+// screen shows) and served from web/dist-launcher by `vite preview`. The version is the next
+// release's, as the release session computes its tag (tools/release/next_tag.py's next_patch:
+// the highest vX.Y.Z tag, here and on the remote, plus one patch), or --version X.Y.Z.
 //
-//   node scripts/capture-tvweb.mjs [--out DIR] [--only home,player]
+//   node scripts/capture-tvweb.mjs [--out DIR] [--only home,player] [--version X.Y.Z]
 //
 // Writes DIR/<store>-<screen>-<lang>.png, the names the store gallery's compose.mjs reads
 // (design/store-gallery/beats.json: Samsung and LG show English screens with the Arabic home
 // second), one capture written under every name that shows it, and DIR/tvweb-capture.log
-// (Vite's output, each page's console errors, every /api request the table could not answer).
+// (Vite's and the launcher build's output, each page's console errors, every /api request the
+// table could not answer).
 // CI runs it in _website.yml's shots job and uploads DIR as `store-shots-tvweb`.
 //
 // What the library lacks is made here, from it: the player's stream is a still of Curiosity:
@@ -130,6 +135,70 @@ export function findFfmpeg(install = true) {
   throw new Error("no ffmpeg: install Playwright's (npx playwright install ffmpeg)");
 }
 
+/** The highest vX.Y.Z of `tags` plus one patch, as next_tag.py's next_patch counts it. */
+export function nextPatch(tags) {
+  const versions = tags
+    .map((t) => /^v(\d+)\.(\d+)\.(\d+)$/.exec(t.trim()))
+    .filter(Boolean)
+    .map((m) => [Number(m[1]), Number(m[2]), Number(m[3])]);
+  if (!versions.length) throw new Error("no vX.Y.Z tag to count from");
+  versions.sort((a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2]);
+  const [x, y, z] = versions.at(-1);
+  return `${x}.${y}.${z + 1}`;
+}
+
+/**
+ * The v* tags: this checkout's and the remote's (CI's checkout is shallow and has none; GitHub's
+ * own address in CI, origin's otherwise). The remote is asked from outside the checkout, whose
+ * ownership a container's git may refuse.
+ */
+export function releaseTags(log) {
+  const git = (args, cwd) => {
+    const r = spawnSync("git", args, { cwd, encoding: "utf8" });
+    if (r.status !== 0) {
+      appendFileSync(log, `[version] git ${args.join(" ")}: ${r.stderr || r.error?.message}\n`);
+      return "";
+    }
+    return r.stdout;
+  };
+  const tags = git(["tag", "-l", "v*"], REPO).split("\n");
+  const remote =
+    process.env.GITHUB_REPOSITORY && process.env.GITHUB_SERVER_URL
+      ? `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}.git`
+      : git(["remote", "get-url", "origin"], REPO).trim();
+  if (remote)
+    for (const line of git(["ls-remote", "--tags", "--refs", remote, "v*"], tmpdir()).split("\n"))
+      if (line.includes("refs/tags/")) tags.push(line.slice(line.indexOf("refs/tags/") + 10));
+  return tags.filter(Boolean);
+}
+
+/** The version the launcher is built at: `given` (--version), else the next release's. */
+export function launcherVersion(given, tags) {
+  const version = given ?? nextPatch(tags());
+  if (!/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(version))
+    throw new Error(`not a release version (X.Y.Z): ${version}`);
+  return version;
+}
+
+/** The launcher as tv-web-release.yml builds it: `pnpm run build:launcher` at VERSION. */
+function buildLauncher(version, log) {
+  appendFileSync(log, `[launcher] build:launcher at ${version}\n`);
+  const r = spawnSync("pnpm", ["run", "build:launcher"], {
+    cwd: WEB,
+    env: { ...process.env, VERSION: version },
+    encoding: "utf8",
+    maxBuffer: 1 << 26,
+  });
+  appendFileSync(log, `[launcher] ${r.stdout ?? ""}${r.stderr ?? ""}\n`);
+  if (r.status !== 0)
+    throw new Error(`build:launcher failed (${r.status ?? r.error?.message}); see the log`);
+  const assets = join(WEB, "dist-launcher", "assets");
+  const stamped = readdirSync(assets)
+    .filter((f) => f.endsWith(".js"))
+    .some((f) => readFileSync(join(assets, f), "utf8").includes(JSON.stringify(version)));
+  if (!stamped) throw new Error(`the launcher build does not carry its version ${version}`);
+}
+
 /** A WebM of `seconds` of one still (a frame a second, each after the first a repeat). */
 export function stillVideo(jpeg, seconds, file) {
   const frame = readFileSync(jpeg);
@@ -196,7 +265,7 @@ function webosShim() {
   };
 }
 
-export async function capture({ out, only, log }) {
+export async function capture({ out, only, log, version }) {
   const lib = loadLibrary();
   const film = lib.videos.find((v) => v.id === FILM);
   const scratch = mkdtempSync(join(tmpdir(), "maktaba-tvweb-"));
@@ -211,13 +280,18 @@ export async function capture({ out, only, log }) {
       film.duration_sec,
       join(scratch, "film.webm")
     );
+    const launcher = !only || only.includes("code");
+    if (launcher) buildLauncher(version, log);
     procs.push(vite([], port, log, "vite"));
-    procs.push(vite(["--config", "vite.launcher.config.ts"], launcherPort, log, "vite-launcher"));
+    if (launcher)
+      procs.push(
+        vite(["preview", "--config", "vite.launcher.config.ts"], launcherPort, log, "vite-launcher")
+      );
     writeFileSync(join(out, "vite.pid"), procs.map((p) => p.pid).join("\n"));
     const base = `http://127.0.0.1:${port}`;
     const launcherBase = `http://127.0.0.1:${launcherPort}`;
     await waitForServer(base, 90_000);
-    await waitForServer(launcherBase, 90_000);
+    if (launcher) await waitForServer(launcherBase, 90_000);
     // /tv/ is the TV build's page (index.tv.html), which Vite serves transformed at its own path
     const tvPage = await (await fetch(`${base}/index.tv.html`)).text();
     browser = await chromium.launch();
@@ -381,6 +455,12 @@ export async function capture({ out, only, log }) {
           });
         }
         await page.waitForSelector(screen.ready, { timeout: 30_000 });
+        if (screen.launcher) {
+          // the version the release stamps, never the unstamped build's "dev"
+          const shown = await page.textContent(".ml-version");
+          if (!shown?.includes(version))
+            throw new Error(`the launcher shows "${shown}", not version ${version}`);
+        }
         const late = await settle(page);
         if (late.length)
           throw new Error(
@@ -446,8 +526,18 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     console.error("capture-tvweb: run `pnpm -C web install` first (Vite)");
     process.exit(1);
   }
-  capture({ out, only: only.length ? only : null, log }).then(
-    (files) => console.log(`capture-tvweb: ${files.length} images in ${out} (log: ${log})`),
+  let version;
+  try {
+    version = launcherVersion(arg("--version", undefined), () => releaseTags(log));
+  } catch (e) {
+    console.error(`capture-tvweb: ${e.message} (log: ${log})`);
+    process.exit(1);
+  }
+  capture({ out, only: only.length ? only : null, log, version }).then(
+    (files) =>
+      console.log(
+        `capture-tvweb: ${files.length} images in ${out}, the launcher at ${version} (log: ${log})`
+      ),
     (e) => {
       console.error(`capture-tvweb: ${e.message} (log: ${log})`);
       process.exit(1);
