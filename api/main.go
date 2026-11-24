@@ -458,9 +458,10 @@ func runServe() error {
 	})
 	wireReportsForwarder(loops, forwarder, logger)
 
-	// Epic 50 story 50.26: who may watch the home's broadcast channels (owner or admin only),
+	// Epic 50 story 50.26: who may watch the home's broadcast channels (owner or admin only,
+	// and only with the licence's broadcast feature),
 	// passed to Maktaba Cloud through the relay agent.
-	(&broadcastaccess.Handler{}).Mount(r)
+	(&broadcastaccess.Handler{License: licRef}).Mount(r)
 	logger.Info("logs: diagnostics export surface mounted", "event", "logs_mounted")
 
 	// Process supervision (Story 22.9): the supervisor's per-process

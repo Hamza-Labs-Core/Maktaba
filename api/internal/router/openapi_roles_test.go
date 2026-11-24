@@ -34,6 +34,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/placement"
 	pluginsh "github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/plugins"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/plugins"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/subscriptions"
 )
 
 // RoleAdmin is the x-maktaba-role of an operation only admins may call.
@@ -52,7 +53,11 @@ func apiSurface(t *testing.T) chi.Router {
 	t.Cleanup(func() { _ = db.Close() })
 	(&pluginsh.Admin{L: &plugins.Lifecycle{DB: db}}).Mount(r)
 	// story 50.26: the home's broadcast viewer access (main.go mounts it beside the logs)
-	(&broadcastaccess.Handler{}).Mount(r)
+	// with the licence's broadcast feature: what is asked here is the role (its own test asks without)
+	lic, st := &subscriptions.StoreRef{}, subscriptions.NewStore()
+	st.Set(&subscriptions.Entitlements{Tier: subscriptions.TierPro, Features: map[subscriptions.Feature]bool{subscriptions.FeatureBroadcast: true}})
+	lic.Set(st)
+	(&broadcastaccess.Handler{License: lic}).Mount(r)
 	return r
 }
 

@@ -18,12 +18,11 @@ import (
 	broadcasth "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/broadcast"
 )
 
-// Story 50.21: the api role mounts the ingest-token route. Without broadcast.key_path (the
-// default) it answers 503 broadcast_disabled; with the key it asks for the home's own agent
-// credential.
+// Story 50.21: the api role mounts the ingest-token route. While broadcasting is off it is
+// an unknown path; with it on, it asks for the home's own agent credential.
 func TestBroadcastIngestTokenRouteIsWired(t *testing.T) {
 	off := newEnv(t).client()
-	if r := off.do(http.MethodPost, "/v1/broadcast/ingest-token", map[string]any{"channel": "c1", "rungs": []string{"720p"}}); r.code != http.StatusServiceUnavailable || r.errCode() != "broadcast_disabled" {
+	if r := off.do(http.MethodPost, "/v1/broadcast/ingest-token", map[string]any{"channel": "c1", "rungs": []string{"720p"}}); r.code != http.StatusNotFound {
 		t.Fatalf("broadcast off: %d %s", r.code, r.body)
 	}
 
@@ -52,7 +51,7 @@ func ingestKeyFile(t *testing.T) string {
 // Story 50.23 §5: Maktaba's broadcast country deny list is a service admin's, with a reason,
 // audited; the ingest route reads it from the same table.
 func TestBroadcastGeoDenyIsAServiceAdmins(t *testing.T) {
-	e := newEnv(t)
+	e := newEnvCfg(t, nil, broadcastOn(t, nil))
 	const path = "/v1/admin/broadcast/geo-deny"
 	body := map[string]any{"countries": []string{"kp", "IR", "KP"}, "reason": "sanctions review"}
 	if r := e.registerVerified("user@example.test").do("PUT", path, body); r.code != http.StatusUnauthorized {
@@ -122,7 +121,8 @@ func ingestClaims(t *testing.T, r resp) broadcast.IngestClaims {
 }
 
 // Role rules for the ingest token, from 50.20's entitlements: with the gate shut (the key set,
-// broadcast.enabled off) only a test publisher a service admin granted gets one; with the gate
+// broadcast.enabled off) only a test publisher a service admin granted gets one (404 for any
+// other home); with the gate
 // open, guest sharing and the Broadcaster add-on get their catalog tier's rungs and top bitrate;
 // no plan, or a suspended owner, gets none. The token's publisher is the home.
 func TestBroadcastIngestTokenEntitlements(t *testing.T) {
@@ -136,12 +136,12 @@ func TestBroadcastIngestTokenEntitlements(t *testing.T) {
 		h := claimHome(e, owner, "shut")
 		cid := publishedChannel(t, e, h)
 		setPlan(e, uid, billingpkg.PlanFree)
-		if r := ingestRungs(h, cid, "src"); r.code != http.StatusForbidden || r.errCode() != "broadcast_not_in_plan" {
+		if r := ingestRungs(h, cid, "src"); r.code != http.StatusNotFound {
 			t.Fatalf("free: %d %s", r.code, r.body)
 		}
 		setPlan(e, uid, billingpkg.PlanPro)
 		e.exec(`UPDATE servers SET broadcast_plan = 'broadcaster' WHERE id = $1`, h.id)
-		if r := ingestRungs(h, cid, "src"); r.code != http.StatusForbidden || r.errCode() != "broadcast_not_enabled" {
+		if r := ingestRungs(h, cid, "src"); r.code != http.StatusNotFound {
 			t.Fatalf("broadcaster, not a test publisher: %d %s", r.code, r.body)
 		}
 		e.exec(`UPDATE servers SET broadcast_test_publisher = true WHERE id = $1`, h.id)

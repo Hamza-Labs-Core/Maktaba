@@ -1,0 +1,350 @@
+//go:build integration
+
+package main
+
+import (
+	"bytes"
+	"crypto/ed25519"
+	"crypto/rand"
+	"encoding/base64"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"reflect"
+	"regexp"
+	"runtime"
+	"testing"
+	"time"
+
+	"github.com/go-chi/chi/v5"
+
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/broadcast"
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/config"
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/broadcastgate"
+	moderationh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/moderation"
+)
+
+// Home broadcasting is off (broadcast.enabled = false, the default): every broadcast and
+// moderation route of the api role's real routers answers what an unknown path answers, whoever
+// asks, but broadcastgate's exceptions.
+
+// routeRow is one registered route of a listener.
+type routeRow struct {
+	listener, method, pattern, handler string
+}
+
+// routeTable walks both listeners' routers.
+func routeTable(t *testing.T, e *env) []routeRow {
+	t.Helper()
+	var out []routeRow
+	for name, h := range map[string]http.Handler{"user": e.router, "console": e.admin} {
+		mux, ok := h.(chi.Routes)
+		if !ok {
+			t.Fatalf("the %s listener is a %T", name, h)
+		}
+		if err := chi.Walk(mux, func(method, pattern string, h http.Handler, _ ...func(http.Handler) http.Handler) error {
+			out = append(out, routeRow{name, method, pattern, handlerName(h)})
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(out) < 100 {
+		t.Fatalf("only %d routes", len(out))
+	}
+	return out
+}
+
+// handlerName is the Go name of a route's handler, behind its inline middleware.
+func handlerName(h http.Handler) string {
+	if c, ok := h.(*chi.ChainHandler); ok {
+		h = c.Endpoint
+	}
+	if f, ok := h.(http.HandlerFunc); ok {
+		return runtime.FuncForPC(reflect.ValueOf(f).Pointer()).Name()
+	}
+	return reflect.TypeOf(h).String()
+}
+
+// aboutBroadcasting: a handler of the broadcast, edge or moderation packages, or any with
+// broadcasting in its name or path.
+var aboutBroadcasting = regexp.MustCompile(`(?i)handlers/(broadcast|edge|moderation)\.|broadcast|moderation|takedown|geodeny|/_edge`)
+
+func (r routeRow) aboutBroadcasting() bool {
+	return aboutBroadcasting.MatchString(r.handler) || aboutBroadcasting.MatchString(r.pattern)
+}
+
+// A broadcast or moderation handler is mounted only under the gate's paths, so a new one is
+// closed without doing anything; every exception names a route that exists.
+func TestBroadcastRoutesAreAllBehindTheGate(t *testing.T) {
+	rows := routeTable(t, newEnv(t))
+	n := 0
+	have := map[string]bool{}
+	for _, r := range rows {
+		have[r.method+" "+r.pattern] = true
+		if !r.aboutBroadcasting() {
+			if broadcastgate.Covers(r.pattern) {
+				t.Errorf("%s %s (%s) is under the gate but not about broadcasting", r.method, r.pattern, r.handler)
+			}
+			continue
+		}
+		n++
+		if !broadcastgate.Covers(r.pattern) {
+			t.Errorf("%s listener: %s %s (%s) answers while broadcasting is off: mount it under one of %v",
+				r.listener, r.method, r.pattern, r.handler, broadcastgate.Paths)
+		}
+	}
+	if n < 55 {
+		t.Errorf("only %d broadcast routes found: the table no longer sees them", n)
+	}
+	for _, ex := range broadcastgate.Exceptions() {
+		if !have[ex.Method+" "+ex.Path] {
+			t.Errorf("the exception %s %s names no route", ex.Method, ex.Path)
+		}
+	}
+}
+
+// raw sends one request to a listener as the console or the portal would.
+func (e *env) raw(listener string, req *http.Request) *httptest.ResponseRecorder {
+	h := e.router
+	if listener == "console" {
+		h = e.admin
+		req.Host = testAdminHost
+		req.Header.Set("Origin", "https://"+testAdminHost)
+		req.Header.Set("X-Maktaba-Staff", "1")
+	}
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	return rec
+}
+
+var routeParam = regexp.MustCompile(`\{[^}]+\}`)
+
+// Every route, asked by everyone who could reach it while it is on, is the same 404 as a path
+// that doesn't exist: no credential, a home (its secret right), its owner, a service admin, the
+// edge's signature, each with an id that exists and one that doesn't. Nothing is written.
+func TestBroadcastOffAnswersNothing(t *testing.T) {
+	pub, priv, _ := ed25519.GenerateKey(rand.Reader)
+	e := newEnvCfg(t, nil, func(c *config.Config) {
+		c.Broadcast.KeyPath = ingestKeyFile(t) // the keys are there: only the switch is off
+		c.Broadcast.EdgePublicKey = base64.RawURLEncoding.EncodeToString(pub)
+		c.Broadcast.IngestURL = ""
+	})
+	owner := e.registerVerified("off@example.test")
+	home := claimHome(e, owner, "offhome")
+	setPlan(e, e.userID("off@example.test"), "pro")
+	// another home is marked: its mark opens nothing for this one
+	marked := claimHome(e, e.registerVerified("marked@example.test"), "markedhome")
+	e.exec(`UPDATE servers SET broadcast_test_publisher = true WHERE id = $1`, marked.id)
+	ops := e.serviceAdmin("ops@example.test")
+
+	unknown := map[string]*httptest.ResponseRecorder{}
+	for _, l := range []string{"user", "console"} {
+		unknown[l] = e.raw(l, httptest.NewRequest("GET", "https://api.example.test/v1/no-such-route", nil))
+		if unknown[l].Code != http.StatusNotFound {
+			t.Fatalf("an unknown path on %s = %d", l, unknown[l].Code)
+		}
+	}
+	type caller struct {
+		who  broadcastgate.Who
+		sign func(*http.Request, []byte)
+	}
+	callers := map[string]caller{
+		"nobody": {"", func(*http.Request, []byte) {}},
+		"a home that isn't marked": {"", func(r *http.Request, _ []byte) {
+			r.SetBasicAuth(home.id, home.secret)
+		}},
+		"a marked home's id with a wrong secret": {"", func(r *http.Request, _ []byte) { r.SetBasicAuth(marked.id, home.secret) }},
+		"an owner":                               {"", func(r *http.Request, _ []byte) { r.Header.Set("Authorization", "Bearer "+owner.token) }},
+		"a service admin": {broadcastgate.Staff, func(r *http.Request, _ []byte) {
+			r.Header.Set("Authorization", "Bearer "+ops.token)
+			for k, v := range ops.header {
+				r.Header.Set(k, v)
+			}
+		}},
+		"the edge": {broadcastgate.Edge, func(r *http.Request, body []byte) {
+			broadcast.SignEdgeRequest(priv, r.Header, r.Method, r.URL.Path, time.Now().UnixMilli(), body)
+		}},
+		"a bad edge signature": {"", func(r *http.Request, _ []byte) {
+			r.Header.Set(broadcast.HeaderEdgeSignature, "AAAA")
+		}},
+	}
+	open := map[string]broadcastgate.Who{}
+	for _, ex := range broadcastgate.Exceptions() {
+		open[ex.Method+" "+ex.Path] = ex.Who
+	}
+	asked := 0
+	for _, r := range routeTable(t, e) {
+		if !broadcastgate.Covers(r.pattern) {
+			continue
+		}
+		for name, c := range callers {
+			switch who := open[r.method+" "+r.pattern]; {
+			case who == broadcastgate.Staff && r.listener == "console":
+				continue // the staff gate answers (TestBroadcastOffKeepsTheKillSwitch)
+			case who == broadcastgate.Edge && c.who == broadcastgate.Edge, who == broadcastgate.EdgeOrHome && c.who == broadcastgate.Edge:
+				continue // the edge's own (below)
+			}
+			for _, id := range []string{home.id, "0b9a4b5e-5d1c-4a43-9a5e-1c2b3d4e5f60"} {
+				path := routeParam.ReplaceAllString(r.pattern, id)
+				body := []byte(`{}`)
+				if r.method == http.MethodGet {
+					body = nil
+				}
+				// OPTIONS is the platform's CORS answer on any path; every other method is asked
+				for _, method := range []string{r.method, http.MethodTrace} {
+					req := httptest.NewRequest(method, "https://api.example.test"+path, bytes.NewReader(body))
+					c.sign(req, body)
+					rec := e.raw(r.listener, req)
+					asked++
+					want := unknown[r.listener]
+					if rec.Code != want.Code || rec.Body.String() != want.Body.String() || !sameHeaders(rec.Header(), want.Header()) {
+						t.Fatalf("%s: %s listener %s %s = %d %q %v, want an unknown path's %d %q %v", name, r.listener, method, path,
+							rec.Code, rec.Body, rec.Header(), want.Code, want.Body, want.Header())
+					}
+				}
+			}
+		}
+	}
+	if asked < 1000 {
+		t.Errorf("only %d requests asked", asked)
+	}
+	for _, table := range []string{"broadcast_channels", "broadcast_invites", "broadcast_agreements", "moderation_notices",
+		"moderation_reports", "broadcast_usage_windows"} {
+		if n := e.count(`SELECT count(*) FROM ` + table); n != 0 {
+			t.Errorf("%s has %d rows", table, n)
+		}
+	}
+	for name, path := range map[string]string{"encoded": "/v1/%62roadcast/state", "encoded id": "/v1/broadcast/channels/%2e%2e",
+		"longer": "/v1/broadcast-new/x", "trailing": "/v1/moderation/notices/"} {
+		req := httptest.NewRequest("GET", "https://api.example.test"+path, nil)
+		req.SetBasicAuth(marked.id, marked.secret)
+		if rec := e.raw("user", req); rec.Code != http.StatusNotFound || rec.Body.String() != unknown["user"].Body.String() {
+			t.Errorf("%s: %d %s", name, rec.Code, rec.Body)
+		}
+	}
+	// the report form's origins aren't answered either
+	pre := e.client()
+	pre.origin = moderationh.WatchOrigins[0]
+	if r := pre.do("OPTIONS", moderationh.ReportPaths[0], nil); r.header.Get("Access-Control-Allow-Origin") != "" {
+		t.Errorf("the report form's preflight is answered: %v", r.header)
+	}
+	// the account's own data still answers: the export, and deletion
+	owner.mustStatus(owner.do("GET", "/v1/account/export", nil), http.StatusOK)
+}
+
+func sameHeaders(a, b http.Header) bool {
+	a, b = a.Clone(), b.Clone()
+	for _, h := range []http.Header{a, b} {
+		h.Del("X-Request-Id")
+		h.Del("Date")
+	}
+	return reflect.DeepEqual(a, b)
+}
+
+// What keeps "off" safe: the edge still reads the kill switch's list, and only the edge; the
+// console still changes it, staff only; and the edge's calls know a test publisher and no one else.
+func TestBroadcastOffKeepsTheKillSwitch(t *testing.T) {
+	pub, priv, _ := ed25519.GenerateKey(rand.Reader)
+	e := newEnvCfg(t, nil, func(c *config.Config) {
+		c.Broadcast.KeyPath = ingestKeyFile(t)
+		c.Broadcast.EdgePublicKey = base64.RawURLEncoding.EncodeToString(pub)
+		c.Broadcast.IngestURL = ""
+	})
+	owner := e.registerVerified("kill@example.test")
+	home := claimHome(e, owner, "killhome")
+	setPlan(e, e.userID("kill@example.test"), "pro")
+	plain := claimHome(e, owner, "plainhome")
+	setPlan(e, e.userID("kill@example.test"), "pro")
+	ops := e.serviceAdmin("ops@example.test")
+	const list = "/v1/admin/broadcast/revocations"
+
+	if r := owner.do("GET", list, nil); r.code != http.StatusUnauthorized {
+		t.Fatalf("a customer on the kill switch = %d", r.code)
+	}
+	if r := e.staff("norole@example.test", "").do("GET", list, nil); r.code != http.StatusForbidden {
+		t.Fatalf("staff without the role on the kill switch = %d", r.code)
+	}
+	r := ops.mustStatus(ops.do("POST", list, map[string]any{"kind": "home", "ref": home.id, "action": "suspend", "reason": "abuse"}), http.StatusCreated).json(t)
+	id := r["entry"].(map[string]any)["id"].(string)
+
+	signed := func(method, path string, body []byte) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(method, "https://api.example.test"+path, bytes.NewReader(body))
+		broadcast.SignEdgeRequest(priv, req.Header, method, path, time.Now().UnixMilli(), body)
+		return e.raw("user", req)
+	}
+	if rec := signed("GET", "/v1/broadcast/revocations", nil); rec.Code != http.StatusOK || rec.Header().Get("X-Maktaba-Revocations-Version") != "1" {
+		t.Fatalf("the edge's pull while off = %d %s", rec.Code, rec.Body)
+	}
+	if r := home.agent.do("GET", "/v1/broadcast/revocations", nil); r.code != http.StatusNotFound {
+		t.Fatalf("an unmarked home's pull while off = %d", r.code)
+	}
+
+	// a publisher's state and usage: unknown until the home is marked
+	usage := func(server string) map[string]any {
+		start := time.Now().UTC().Truncate(5 * time.Minute).Add(-5 * time.Minute)
+		key := server + ":" + start.Format(time.RFC3339)
+		body, _ := json.Marshal(broadcast.UsagePost{Edge: "test", Windows: []broadcast.UsageWindow{{Key: key, Publisher: server,
+			WindowStart: start, WindowEnd: start.Add(5 * time.Minute), MinutesFull: 3}}})
+		rec := signed("POST", "/_edge/usage", body)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("the edge's usage post = %d %s", rec.Code, rec.Body)
+		}
+		var out map[string]any
+		if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+			t.Fatal(err)
+		}
+		return out
+	}
+	if rec := signed("GET", "/_edge/publishers/"+home.id, nil); rec.Code != http.StatusNotFound || rec.Body.String() != "404 page not found\n" {
+		t.Fatalf("an unmarked publisher's state = %d %s", rec.Code, rec.Body)
+	}
+	for _, server := range []string{home.id, "0b9a4b5e-5d1c-4a43-9a5e-1c2b3d4e5f60"} {
+		if out := usage(server); len(out["taken"].([]any)) != 0 || len(out["rejected"].([]any)) != 1 || len(out["states"].([]any)) != 0 {
+			t.Fatalf("usage of %s while off = %v", server, out)
+		}
+	}
+	// the mark is a service admin's, with a reason
+	mark := func(server string, on bool) {
+		ops.mustStatus(ops.do("POST", "/v1/admin/servers/"+server+"/broadcast",
+			map[string]any{"plan": "", "test_publisher": on, "reason": "rehearsal"}), http.StatusNoContent)
+	}
+	mark(home.id, true)
+	home.agent.mustStatus(home.agent.do("GET", "/v1/broadcast/revocations", nil), http.StatusOK)
+	home.agent.mustStatus(home.agent.do("GET", "/v1/broadcast/state", nil), http.StatusOK)
+	home.agent.mustStatus(home.agent.do("GET", "/v1/broadcast/invites", nil), http.StatusOK)
+	owner.mustStatus(owner.do("GET", "/v1/broadcast/agreement", nil), http.StatusOK)
+	if rec := signed("GET", "/_edge/publishers/"+home.id, nil); rec.Code != http.StatusOK {
+		t.Fatalf("a marked publisher's state = %d %s", rec.Code, rec.Body)
+	}
+	if out := usage(home.id); len(out["taken"].([]any)) != 1 || len(out["states"].([]any)) != 1 {
+		t.Fatalf("a marked publisher's usage = %v", out)
+	}
+	if out := usage(plain.id); len(out["taken"].([]any)) != 0 {
+		t.Fatalf("its owner's other home's usage = %v", out)
+	}
+	// the mark opens nothing more: the owner's access page, analytics, billing and moderation
+	for _, p := range []string{"/v1/broadcast/homes/" + home.id + "/access", "/v1/broadcast/analytics?server=" + home.id,
+		"/v1/billing/broadcast?server_id=" + home.id} {
+		if r := owner.do("GET", p, nil); r.code != http.StatusNotFound {
+			t.Errorf("the owner's %s = %d", p, r.code)
+		}
+	}
+	for _, p := range []string{"/v1/broadcast/home/analytics", "/v1/broadcast/takedowns", "/v1/broadcast/moderation"} {
+		if r := home.agent.do("GET", p, nil); r.code != http.StatusNotFound {
+			t.Errorf("the marked home's %s = %d", p, r.code)
+		}
+	}
+	if r := plain.agent.do("GET", "/v1/broadcast/state", nil); r.code != http.StatusNotFound {
+		t.Errorf("its owner's other home = %d", r.code)
+	}
+	// unmarked again: closed at once; and the kill switch lifts
+	mark(home.id, false)
+	if r := home.agent.do("GET", "/v1/broadcast/state", nil); r.code != http.StatusNotFound {
+		t.Errorf("unmarked = %d", r.code)
+	}
+	if r := owner.do("GET", "/v1/broadcast/agreement", nil); r.code != http.StatusNotFound {
+		t.Errorf("the owner of no marked home = %d", r.code)
+	}
+	ops.mustStatus(ops.do("POST", list+"/"+id+"/lift", map[string]any{"note": "rehearsal over"}), http.StatusOK)
+}

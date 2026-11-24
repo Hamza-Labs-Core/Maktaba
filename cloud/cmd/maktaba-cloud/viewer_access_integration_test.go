@@ -108,7 +108,9 @@ func accessEnvPay(t *testing.T, edge *fakeEdge, pay *fakeProvider, adjust func(*
 	if err := os.WriteFile(key, seed, 0o600); err != nil {
 		t.Fatal(err)
 	}
+	withBroadcastPrices(t)
 	e := newEnvCfg(t, pay, func(c *config.Config) {
+		c.Broadcast.Enabled = true
 		c.Broadcast.KeyPath = key
 		c.Broadcast.IngestURL = edge.srv.URL
 		c.Broadcast.WatchURL = "https://watch.example.test"
@@ -314,7 +316,7 @@ func TestViewerInvitesAndTheirRoles(t *testing.T) {
 func TestViewerAccessOpenNeedsVerification(t *testing.T) {
 	withBroadcastPrices(t)
 	edge := newFakeEdge(t)
-	// the flag off: the Broadcaster plan alone doesn't open a channel
+	// open_access off: the Broadcaster plan alone doesn't open a channel
 	off, _ := accessEnv(t, edge, nil)
 	owner, h, ch := publisherHome(off, "a@example.test", "ahome", "news")
 	off.exec(`UPDATE servers SET broadcast_plan = 'broadcaster' WHERE id = $1`, h.id)
@@ -323,7 +325,6 @@ func TestViewerAccessOpenNeedsVerification(t *testing.T) {
 	}
 
 	on, _ := accessEnv(t, edge, func(c *config.Config) {
-		c.Broadcast.Enabled = true
 		c.Broadcast.OpenAccess = true
 	})
 	owner, h, ch = publisherHome(on, "b@example.test", "bhome", "news")
@@ -354,9 +355,12 @@ func TestViewerAccessOpenNeedsVerification(t *testing.T) {
 }
 
 func TestViewerInvitesOffWithoutAKey(t *testing.T) {
-	e := newEnv(t)
-	owner, h, _ := publisherHome(e, "c@example.test", "chome", "news")
-	if r := owner.do("POST", "/v1/broadcast/homes/"+h.id+"/invites", map[string]any{}); r.code != http.StatusServiceUnavailable || r.errCode() != "broadcast_disabled" {
+	e := newEnv(t) // off: the marked home's own routes are the ones that answer
+	owner := e.registerVerified("c@example.test")
+	h := claimHome(e, owner, "chome")
+	setPlan(e, e.userID("c@example.test"), "pro")
+	e.exec(`UPDATE servers SET broadcast_test_publisher = true WHERE id = $1`, h.id)
+	if r := h.agent.do("POST", "/v1/broadcast/invites", map[string]any{}); r.code != http.StatusServiceUnavailable || r.errCode() != "broadcast_disabled" {
 		t.Fatalf("no key: %d %s", r.code, r.body)
 	}
 }
