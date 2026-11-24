@@ -2,7 +2,7 @@
 schema: 1
 kind: pr
 pr: 1556
-title: "Story 13.9: the desktop apps' audit and design, mockups in both languages, awaiting the owner"
+title: "Story 13.9: the desktop apps' audit and design, mockups in both languages, approved with libmpv for the Player (13.18)"
 date: 2026-11-23
 session: e17bc07f-84d4-4215-9722-3af0a39bc002
 agent: claude-code
@@ -19,6 +19,8 @@ The audit:
 The design adds:
 - 18 HTML mockups on the real tokens and fonts, which render to 39 PNGs.
 - A proposed `desktop` token group with its contrast table.
+
+The owner approved the design on 2026-11-24 with D1–D5, recorded in the story and the README in a second commit. D4 also moves the Player's video from JavaFX to libmpv through JNA, and story 13.18 was written for it: direct play reported as `desktop-mpv` with `device_caps` (as #1521 did on Android), libmpv and FFmpeg bundled per OS in an LGPL build, the update and rollback path, and a time-to-first-frame test. Kotlin stayed over Rust, Java or .NET to keep `:client` shared with Android.
 - The approach for each app, with effort and risk.
 - The quality bar, eight proposed build stories (13.10–13.17), and five decisions for the owner (D1–D5).
 
@@ -32,9 +34,11 @@ The design adds:
 - One HTML source holding both languages (`?lang=ar`), rendered at each window's real size. Render checks run in the same script: missing copy keys, failed requests, sideways overflow, contrast pairs, and logical CSS properties only.
 - Verify each audit claim against a file and line before it goes into the sheet. A first draft said "white title bar on Windows 10", which the code cannot show.
 
+- Run `trail check` from agent-trail v0.2.1: CLAUDE.md's v0.2.0 is the version d20261122 measured at minutes per run, and here it was still running after five minutes; v0.2.1 took seconds.
+
 ## Stop doing
 - Quoting a CI or reference image without saying where it came from (run id, artifact, path).
 
 ## Open
-- The owner's review of #1556 and the decisions D1–D5. The outcome goes in `docs/design/desktop/README.md` under "Review".
-- Build stories 13.10–13.17 open only after that approval. Story 13.17 adds the desktop visual references to CI.
+- Build stories 13.10–13.18, each its own pull request, in the order the story gives: 13.10, 13.12, 13.11, 13.15, 13.18, 13.13, 13.14, 13.16, with 13.17 (the desktop visual references in CI) beside the first.
+- 13.18 starts with a spike: draw mpv's frames as an OpenGL texture under Compose, or in a native child window. The choice is recorded in that pull request.
