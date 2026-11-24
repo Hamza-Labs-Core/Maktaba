@@ -18,15 +18,14 @@ Status words used below:
 
 | App Store Connect record | Scheme (`apps/apple/project.yml`) | Bundle ID | Platform | Channel |
 |---|---|---|---|---|
-| Maktaba Player | Maktaba Player | `com.hamzalabs.maktaba.player` | iPhone (iOS 27+) | App Store |
-| Maktaba Player for iPad | Maktaba Player iPad | `com.hamzalabs.maktaba.player.tablet` | iPad (iPadOS 27+) | App Store |
+| Maktaba Player | Maktaba Player | `com.hamzalabs.maktaba.player` | iPhone and iPad (iOS and iPadOS 27+), one universal app (#1616) | App Store |
 | Maktaba Player for Mac | Maktaba Player Mac | `com.hamzalabs.maktaba.player.mac` | macOS 15+, Apple silicon | Mac App Store |
-| Maktaba Remote | Maktaba Remote | `com.hamzalabs.maktaba.remote` | iPhone | App Store |
-| Maktaba Remote iPad | Maktaba Remote iPad | `com.hamzalabs.maktaba.remote.tablet` | iPad | App Store |
+| Maktaba Remote | Maktaba Remote | `com.hamzalabs.maktaba.remote` | iPhone and iPad, one universal app (#1616) | App Store |
+| *(retired)* Maktaba Player for iPad, Maktaba Remote iPad | — (removed in #1616) | `….player.tablet`, `….remote.tablet` | iPad | never submitted |
 | Maktaba TV | Maktaba TV (sources in `apps/tv/tvos/`) | `com.hamzalabs.maktaba.tv` | Apple TV (tvOS 27+) | App Store |
 | — | Maktaba.app (Tauri, `apps/desktop/`) | — | macOS | **Developer ID + notarization only** |
 
-`testflight.yml` archives all six App Store apps on the `xcode-27` runner and uploads them on
+`testflight.yml` archives the App Store apps (four once #1616 merges) on the `xcode-27` runner and uploads them on
 every tag (`.github/workflows/testflight.yml:87-103`).
 
 **Maktaba.app, the Mac server, stays outside the Mac App Store.** The Mac App Store requires
@@ -81,10 +80,10 @@ Runtime and no App Review. Two dated changes affect that path:
      Apple TV app offer **Watch a broadcast** (`StartViews.swift:224-229`;
      `apps/tv/tvos/MaktabaTV/Views/StartViews.swift`). Both fail for a reviewer.
    - A feature that cannot work during review is a 2.1 rejection.
-   - *Mitigation (a decision first):* launch the cloud before submitting, or hide both entries
-     until it is live. Hiding needs a runtime switch, because one binary goes from TestFlight to
-     the App Store. `docs/broadcasting.md` ("Not yet") already plans a remote `guest.enabled`
-     switch; the cloud entry would need the same.
+   - **Decided (2026-11-24, decision `apple-cloud-entries`):** Maktaba Cloud launches before
+     the first submission, and both entries stay. The apps are submitted only once
+     `api.maktaba.tv`, `watch.maktaba.tv`, `live.maktaba.tv` and `status.maktaba.tv` answer
+     (owner action 3).
 3. **Watch a broadcast has no in-app Report (1.2 user-generated content).**
    - Viewers watch channels other people publish, which is user-generated content.
    - Guideline 1.2 requires "A mechanism to report offensive content and timely responses",
@@ -124,10 +123,10 @@ Runtime and no App Review. Two dated changes affect that path:
      a separate iPad app (`"2"`), built from the same sources.
    - App Review may reject the second record of each pair as a duplicate. It also tests the
      iPhone app on an iPad, in compatibility mode.
-   - *Mitigation:* one universal app per product (`TARGETED_DEVICE_FAMILY: "1,2"`, the iPhone
-     record kept, the iPad record left unreleased). This is an owner decision: the records
-     already exist and the CI matrix has a leg for each. Until then, say in the review notes why
-     the iPad app is separate.
+   - **Decided (2026-11-24, decision `apple-universal-apps`), done in #1616:** one universal
+     app per product (`TARGETED_DEVICE_FAMILY: "1,2"`). The iPhone bundle IDs and records are
+     kept; the `.tablet` targets are gone, and their records are never submitted. The drafts
+     here have one folder per universal app.
 6. **The privacy policy does not cover Maktaba Cloud accounts or broadcast viewers (5.1.1(i)).**
    - https://maktaba.tv/legal/privacy/ (`web/packages/website/copy/legal/privacy.en.md`) says
      "The apps send nothing to us unless you choose to send us a problem report".
@@ -171,14 +170,22 @@ Runtime and no App Review. Two dated changes affect that path:
    - Its privacy manifest declares Device ID, Product Interaction and Other Diagnostic Data for
      analytics. Xcode's privacy report adds those to the app's report even when the SDK never
      starts.
-   - *Mitigation:* register the receiver and turn Cast on, or leave the SDK out of the App Store
-     builds until then.
+   - **Decided (2026-11-24, decision `apple-cast`):** Cast goes on and is tested for review.
+     The Player's Cast code and its CI tests already exist (`apps/apple/Player/Cast/`,
+     `UITests/PlayerCastUITests.swift` against a fake Cast context, since no runner has a Cast
+     device). What turns it on is the receiver's application ID in `shared/cast/app.json`, and
+     that ID exists only once the receiver is registered (owner action 6).
+   - Google's pages say an unpublished receiver loads only on devices registered in the Cast
+     console (https://developers.google.com/cast/docs/registration), so App Review's devices
+     need the receiver **published**, after the real-device checklist in `docs/stores/cast.md`.
+   - No multicast entitlement is needed: Google's iOS sender page asks only for the two
+     Bonjour types (`_googlecast._tcp`, `_<app id>._googlecast._tcp`) and the local network
+     prompt, which `Config/Cast.xcconfig` declares once the ID is set
+     (https://developers.google.com/cast/docs/ios_sender).
 10. **Name wording for the iPad Remote (App Store marketing guidelines).**
-    - The record is "Maktaba Remote iPad". Apple's marketing guidelines say "say app name for
-      iPhone or app name for iPad … Don't say iPhone app name"
-      (https://developer.apple.com/app-store/marketing/guidelines/).
-    - *Mitigation:* rename it "Maktaba Remote for iPad" (owner action 7).
-    - "Maktaba Player for iPad" and "for Mac" follow the rule.
+    - No longer applies: the iPad Remote is the universal Maktaba Remote (risk 5), and its
+      "Maktaba Remote iPad" record is never submitted. "Maktaba Player for Mac" follows Apple's
+      "app name for Mac" rule (https://developer.apple.com/app-store/marketing/guidelines/).
 11. **No privacy policy link inside the apps (5.1.1(i)).**
     - 5.1.1(i): "All apps must include a link to their privacy policy in the App Store Connect
       metadata field and within the app."
@@ -337,18 +344,20 @@ repository; the notes name the secrets.
    throwaway home reset after each round. Put its username and password in the release secrets
    as `REVIEW_HOME_ADMIN_USERNAME` and `REVIEW_HOME_ADMIN_PASSWORD`, and rotate them after each
    round like the viewer's.
-5. **Decide risks 2, 3, 4, 5 and 9:**
-   - launch the cloud, or hide its entries;
-   - Report for broadcasts;
-   - YouTube and Plex in the Apple apps;
-   - universal iPhone and iPad apps;
-   - Google Cast on or out.
-6. **Capabilities on the App IDs** (Certificates, Identifiers & Profiles): Declared Age Range on
-   the Player's App IDs. The multicast entitlement
-   (https://developer.apple.com/contact/request/networking-multicast) is needed only if Cast is
-   turned on.
-7. **Rename "Maktaba Remote iPad" to "Maktaba Remote for iPad"** in App Store Connect, and set
-   each record's Arabic localization from `apps/apple/AppStore/`.
+5. **Decide risks 3 and 4** (asked again on the decisions page): Report and Block for
+   broadcasts, and YouTube and Plex in the Apple apps. Risks 2, 5 and 9 were decided on
+   2026-11-24: launch the cloud first, universal apps (#1616), Cast on.
+6. **Capabilities and the Cast receiver.**
+   - Declared Age Range on the Player's App ID (Certificates, Identifiers & Profiles).
+   - Register the Cast receiver in the Google Cast SDK Developer Console (one-time $5), with
+     `https://cast.maktaba.tv/r/` as its URL, and give the application ID it shows (public, not
+     a secret) for `shared/cast/app.json`. Register the test devices, deploy the receiver
+     (`CAST_RECEIVER_LIVE` and the `cast.maktaba.tv` name), pass the checklist in
+     `docs/stores/cast.md`, then **publish** the receiver before submitting the Player.
+   - No multicast entitlement is needed for Cast (risk 9).
+7. **Leave the iPad-only records unsubmitted** (Maktaba Player for iPad, Maktaba Remote iPad),
+   tell iPad testers to install Maktaba Player and Maktaba Remote, and set each submitted
+   record's Arabic localization from `apps/apple/AppStore/`.
 8. **A support contact on maktaba.tv/help/**, in English and Arabic: a mailbox (for example
    `support@maktaba.tv`) or a contact form. App Store Connect's Support URL must show it.
 9. **Read and approve the privacy policy's new text** (English and Arabic, in this pull request;
@@ -356,7 +365,7 @@ repository; the notes name the secrets.
 10. **In-app links** (a small app change, for a design story): a Privacy policy link in each
     app (5.1.1(i) asks for one "within the app"). Once the cloud is live, a Manage or delete
     your account link in the cloud sheet.
-11. **App Privacy label**: fill in App Store Connect's App Privacy for each of the six records
+11. **App Privacy label**: fill in App Store Connect's App Privacy for each of the four records
     from the table above. **Age rating**: answer the questionnaire, including the two questions
     due 12 January 2027. **Content rights**: answer it. **Category**: Entertainment, with Photo
     & Video second (Utilities for the Remote). **Review contact**: name, email and phone in

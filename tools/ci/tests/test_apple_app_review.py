@@ -196,8 +196,17 @@ DRAFTS = sorted(p for p in STORE.glob("*/metadata") if p.is_dir())
 
 
 def test_every_app_has_drafts() -> None:
+    """One apps/apple/AppStore/<app>/ per App Store app, its scheme.txt naming the target. The
+    retired iPad-only targets (bundle ids ending .tablet, #1616: one universal app instead)
+    are never submitted and need none."""
     schemes = {(p.parent / "scheme.txt").read_text(encoding="utf-8").strip() for p in DRAFTS}
-    assert schemes == set(APPS), "one apps/apple/AppStore/<app>/ per app target, its scheme.txt naming it"
+    store = {
+        name
+        for name, app in APPS.items()
+        if not str(app["settings"]["base"].get("PRODUCT_BUNDLE_IDENTIFIER", "")).endswith(".tablet")
+    }
+    assert schemes <= set(APPS), f"drafts for schemes that are no app target: {sorted(schemes - set(APPS))}"
+    assert schemes == store, f"an App Store app without drafts: {sorted(store - schemes)}"
 
 
 @pytest.mark.parametrize("folder", DRAFTS, ids=lambda p: p.parent.name)

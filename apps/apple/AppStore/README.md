@@ -8,12 +8,14 @@ pasted (or uploaded) into App Store Connect. The audit they come from is
 
 | Folder | Scheme | App Store Connect record |
 |---|---|---|
-| `player-iphone/` | Maktaba Player | Maktaba Player |
-| `player-ipad/` | Maktaba Player iPad | Maktaba Player for iPad |
+| `player/` | Maktaba Player | Maktaba Player: one app for iPhone and iPad |
 | `player-mac/` | Maktaba Player Mac | Maktaba Player for Mac |
-| `remote-iphone/` | Maktaba Remote | Maktaba Remote |
-| `remote-ipad/` | Maktaba Remote iPad | Maktaba Remote for iPad (its record says "Maktaba Remote iPad": Apple's marketing guidelines want "for iPad") |
+| `remote/` | Maktaba Remote | Maktaba Remote: one app for iPhone and iPad |
 | `tv/` | Maktaba TV | Maktaba TV (Apple TV) |
+
+The Player and the Remote are each one universal app (#1616, App Review 4.3(a)). The
+iPad-only records, Maktaba Player for iPad and Maktaba Remote iPad, get no text: they are
+never submitted.
 
 - **No secret is written here.** The review notes name the release secrets in double braces
   (`{{REVIEW_HOME_VIEWER_PASSWORD}}`); whoever submits fills each in from the secrets at

@@ -1,1 +1,0 @@
-media server,home server,self-hosted,video player,films,series,subtitles,Arabic,lectures,NAS
