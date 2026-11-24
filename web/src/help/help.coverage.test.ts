@@ -250,6 +250,17 @@ describe("help links from the app", () => {
     expect([...SYSTEM_HEALTH_KINDS].sort()).toEqual([...api].sort());
   });
 
+  // research P10: an update that stopped waiting for a desktop app that never took it
+  it("an app that never answers is said, with what to do, and explained", () => {
+    const enWords = en as Record<string, string>;
+    const arWords = ar as Record<string, string>;
+    expect(UPDATE_CODE_HELP.get("app_no_answer")).toBe("code-desktop-app");
+    expect(enWords["updates.code.app_no_answer"]).toMatch(/not running on this machine/);
+    expect(enWords["updates.fix.app_no_answer"]).toMatch(/open Maktaba/);
+    expect(arWords["updates.code.app_no_answer"]?.trim()).toBeTruthy();
+    expect(arWords["updates.fix.app_no_answer"]?.trim()).toBeTruthy();
+  });
+
   it("every reason an update stops with has its entry, listed by name", () => {
     const codes = Object.keys(en)
       .filter((k) => k.startsWith("updates.code."))

@@ -319,4 +319,12 @@ class SayTest {
         assertEquals("جهاز يلحق بالبقية", ar.trigger("catch_up"))
         assertEquals("solar flare", ar.trigger("solar_flare"))
     }
+
+    // research P10: an update that stopped waiting for a desktop app that never took it
+    @Test
+    fun anAppThatNeverAnswersIsSaid() {
+        val id = WebWords.updateCode.getValue("app_no_answer")
+        assertTrue(XmlLookup.english.text(id).contains("not running on this machine"))
+        assertTrue(XmlLookup.arabic.text(id).contains("لا يعمل على هذا الجهاز"))
+    }
 }
