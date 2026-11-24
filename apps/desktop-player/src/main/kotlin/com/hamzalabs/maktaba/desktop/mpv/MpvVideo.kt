@@ -145,6 +145,8 @@ class MpvVideo internal constructor(
             }
             // the Player's own subtitles are drawn as captions; a file's own stay off
             opt("sid", "no")
+            // no audio device (a server, a remote desktop, CI): the picture plays, timed as if heard
+            opt("audio-fallback-to-null", "yes")
             opt("sub-auto", "no")
             opt("volume", (events.volume * 100).toInt().toString())
             opt("mute", if (events.muted) "yes" else "no")
@@ -284,7 +286,7 @@ class MpvVideo internal constructor(
                             else -> entry == ENTRY_ANY || end.first == entry
                         }
                     }
-                    if (now) ended(end.second, end.third)
+                    if (now) ended(end.first, end.second, end.third)
                 }
             }
         }
@@ -297,9 +299,15 @@ class MpvVideo internal constructor(
     }
 
     /** The newest entry's end: an error is a failure, a live stream's end the channel's. */
-    private fun ended(reason: Int, error: Int) {
+    private fun ended(id: Long, reason: Int, error: Int) {
         when (reason) {
-            MpvConst.END_ERROR -> events.failed(lib.mpv_error_string(error))
+            // a computer with no audio device plays the picture; mpv still ends that file with
+            // the audio's error, which is an end, not a failure, once the picture played
+            MpvConst.END_ERROR -> if (error == MpvConst.ERROR_AO_INIT_FAILED && (restartedEntry == id || (id == 0L && started))) {
+                if (live) events.ended()
+            } else {
+                events.failed(lib.mpv_error_string(error))
+            }
             // a live stream's playlist ended: the channel ended (a replaced one stops, not ends)
             MpvConst.END_EOF -> if (live) events.ended()
         }
@@ -320,7 +328,7 @@ class MpvVideo internal constructor(
         // opened, or its picture started, before its id was read (a very fast home)
         if (id != ENTRY_ANY && loadedEntry == id) loaded(c)
         if (id != ENTRY_ANY && restartedEntry == id) restarted()
-        for ((_, reason, error) in ends) ended(reason, error)
+        for ((id2, reason, error) in ends) ended(id2, reason, error)
     }
 
     /** The file is open: its length and its audio tracks, in order. */

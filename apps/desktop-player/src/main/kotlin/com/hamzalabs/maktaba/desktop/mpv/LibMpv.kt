@@ -69,6 +69,9 @@ internal object MpvConst {
     const val END_EOF = 0
     const val END_ERROR = 4
 
+    /** MPV_ERROR_AO_INIT_FAILED: no audio device could be opened (the picture plays on). */
+    const val ERROR_AO_INIT_FAILED = -14
+
     /** dlopen's RTLD_LAZY alone (Linux): local symbols, as RTLD_LOCAL is 0. */
     const val RTLD_LAZY_FLAG = 1
 

@@ -128,6 +128,31 @@ class MpvVideoEntryTest {
     }
 
     @Test
+    fun noAudioDeviceEndsALiveStreamThatPlayedAndFailsOneThatDidNot() {
+        // CI's runners have no sound card: mpv ends the file with AO_INIT_FAILED even after the
+        // picture played to its end
+        val lib = FakeLib()
+        val heard = Heard()
+        val v = MpvVideo(lib, "http://127.0.0.1:1/c1.m3u8", 0, true, heard, null, live = true)
+        try {
+            until("the first loadfile") { lib.commands.any { it[0] == "loadfile" } }
+            lib.startFile(1)
+            lib.endFile(1, MpvConst.END_ERROR, MpvConst.ERROR_AO_INIT_FAILED)
+            until("a stream that never showed failed") { heard.failed.size == 1 }
+            v.load("http://127.0.0.1:1/c2.m3u8")
+            lib.startFile(2)
+            lib.push(MpvConst.EVENT_FILE_LOADED)
+            lib.push(MpvConst.EVENT_PLAYBACK_RESTART)
+            until("the second stream started") { v.started }
+            lib.endFile(2, MpvConst.END_ERROR, MpvConst.ERROR_AO_INIT_FAILED)
+            until("the second stream ended") { heard.ended == 1 }
+            assertEquals(1, heard.failed.size)
+        } finally {
+            v.dispose()
+        }
+    }
+
+    @Test
     fun onlyTheNewestLoadsEventsCount() {
         val lib = FakeLib()
         val heard = Heard()
