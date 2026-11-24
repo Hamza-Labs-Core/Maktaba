@@ -26,9 +26,12 @@ WINDOW_ORIGIN = (200, 120)
 
 
 def layout(config_path: str) -> dict:
-    dmg = json.load(open(config_path, encoding="utf-8"))["bundle"]["macOS"]["dmg"]
-    product = json.load(open(config_path, encoding="utf-8"))["productName"]
+    conf = json.load(open(config_path, encoding="utf-8"))
+    dmg = conf["bundle"]["macOS"]["dmg"]
+    product = conf["productName"]
     return {
+        # tauri names the image's volume after the product (bundle_dmg --volname)
+        "volume": product,
         "background": os.path.basename(dmg["background"]),
         "size": (dmg["windowSize"]["width"], dmg["windowSize"]["height"]),
         "icons": {
@@ -85,6 +88,25 @@ def write(mount: str, want: dict) -> None:
             d[name]["Iloc"] = (ix, iy)
 
 
+def alias_problems(alias, mount: str, want: dict) -> list[str]:
+    """Whether the background's alias resolves to the background in this image: its volume's
+    name, its path within the volume, and the file's and its folder's catalog ids (an HFS+
+    image keeps them from one mount to the next)."""
+    problems = []
+    background = os.path.join(mount, ".background", want["background"])
+    target, volume = alias.target, alias.volume
+    if volume.name != want["volume"]:
+        problems.append(f"the background's alias is on the volume {volume.name!r}, not {want['volume']!r}")
+    path = (target.posix_path or "").lstrip("/")
+    if path != f".background/{want['background']}":
+        problems.append(f"the background's alias names {path!r} in its volume, not .background/{want['background']}")
+    if target.cnid != os.stat(background).st_ino:
+        problems.append(f"the background's alias names file id {target.cnid}, not the background's {os.stat(background).st_ino}")
+    if target.folder_cnid != os.stat(os.path.dirname(background)).st_ino:
+        problems.append("the background's alias names another folder than .background")
+    return problems
+
+
 def check(mount: str, want: dict) -> list[str]:
     from ds_store import DSStore
     from mac_alias import Alias
@@ -101,9 +123,7 @@ def check(mount: str, want: dict) -> list[str]:
         if icvp.get("backgroundType") != 2:
             problems.append(f"the window's background is not a picture (backgroundType {icvp.get('backgroundType')})")
         else:
-            target = Alias.from_bytes(icvp["backgroundImageAlias"]).target
-            if target.filename != want["background"]:
-                problems.append(f"the background's alias names {target.filename}, not {want['background']}")
+            problems += alias_problems(Alias.from_bytes(icvp["backgroundImageAlias"]), mount, want)
         if icvp.get("iconSize") != ICON_SIZE:
             problems.append(f"icon size {icvp.get('iconSize')}, not {ICON_SIZE}")
         bounds = d["."]["bwsp"].get("WindowBounds", "")

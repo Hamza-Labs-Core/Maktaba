@@ -8,7 +8,8 @@ What a Windows or a Mac build would show, checked from the files that make it:
   renders it (tools/release/win-app/nsis_template.py) for a server and a client build: its
   two pages in place of MUI's, every word in English and Arabic, every bitmap it embeds, and
   tauri's own sections and functions kept (the template is taken from one tauri-bundler);
-- tauri.conf.json: the template, the languages, the .msi's bitmaps and words, the .dmg window;
+- tauri.conf.json: the template, the languages, the .dmg window (tauri's own .msi is left
+  as it was: the server app ships none, so nothing would build it);
 - the WiX words (tools/release/msi/wixui.py) and the Player .msi's theming decisions
   (theme_msi.py's plain functions; the database work is Windows', checked by CI's Player job);
 - the colours: the desktop tokens, and the .dmg shelf's names readable in light and dark.
@@ -32,7 +33,6 @@ import pytest
 ROOT = Path(__file__).resolve().parents[3]
 SRC_TAURI = ROOT / "apps" / "desktop" / "src-tauri"
 NSIS_ART = SRC_TAURI / "windows" / "installer"
-WIX_ART = SRC_TAURI / "windows" / "wix"
 PLAYER_ART = ROOT / "apps" / "desktop-player" / "msi"
 CONF = json.loads((SRC_TAURI / "tauri.conf.json").read_text(encoding="utf-8"))
 TEMPLATE = (SRC_TAURI / "windows" / "installer.nsi").read_text(encoding="utf-8")
@@ -75,7 +75,7 @@ def test_the_setup_exes_bitmaps_are_there_at_each_scale(piece: str, pct: int, la
 
 @pytest.mark.parametrize(
     "path",
-    [WIX_ART / "dialog.bmp", PLAYER_ART / "dialog-en.bmp", PLAYER_ART / "dialog-ar.bmp"],
+    [PLAYER_ART / "dialog-en.bmp", PLAYER_ART / "dialog-ar.bmp"],
     ids=lambda p: str(p.relative_to(ROOT)),
 )
 def test_the_msi_dialog_bitmaps_are_wixs_size(path: Path) -> None:
@@ -84,7 +84,7 @@ def test_the_msi_dialog_bitmaps_are_wixs_size(path: Path) -> None:
 
 @pytest.mark.parametrize(
     "path",
-    [WIX_ART / "banner.bmp", PLAYER_ART / "banner-en.bmp", PLAYER_ART / "banner-ar.bmp"],
+    [PLAYER_ART / "banner-en.bmp", PLAYER_ART / "banner-ar.bmp"],
     ids=lambda p: str(p.relative_to(ROOT)),
 )
 def test_the_msi_banners_are_wixs_size(path: Path) -> None:
@@ -93,8 +93,7 @@ def test_the_msi_banners_are_wixs_size(path: Path) -> None:
 
 def test_the_arabic_msi_art_is_mirrored_not_copied() -> None:
     assert (PLAYER_ART / "dialog-ar.bmp").read_bytes() != (PLAYER_ART / "dialog-en.bmp").read_bytes()
-    # the English dialog bitmap is the server app's too (tauri takes one per kind)
-    assert (PLAYER_ART / "dialog-en.bmp").read_bytes() == (WIX_ART / "dialog.bmp").read_bytes()
+    assert (PLAYER_ART / "banner-ar.bmp").read_bytes() != (PLAYER_ART / "banner-en.bmp").read_bytes()
 
 
 def tiff_sizes(path: Path) -> list[tuple[int, int]]:
@@ -248,8 +247,61 @@ def test_two_pages_in_place_of_muis(script: str) -> None:
     # the installing page is drawn by Maktaba's function
     i = script.index("!insertmacro MUI_PAGE_INSTFILES")
     assert "!define MUI_PAGE_CUSTOMFUNCTION_SHOW MaktabaInstallingShow" in script[i - 300 : i]
-    # the welcome page comes first
-    assert pages.index("Page custom MaktabaWelcome MaktabaWelcomeLeave") == 0
+    # it holds the folder, so it stands where tauri's directory page did: after the reinstall
+    # page (an earlier install's uninstall) and the install mode page, before the Start menu's
+    assert pages.index("Page custom PageReinstall PageLeaveReinstall") < pages.index("Page custom MaktabaWelcome MaktabaWelcomeLeave")
+    assert pages.index("Page custom MaktabaWelcome MaktabaWelcomeLeave") < pages.index("!insertmacro MUI_PAGE_STARTMENU")
+    if "!insertmacro MULTIUSER_PAGE_INSTALLMODE" in pages:
+        assert pages.index("!insertmacro MULTIUSER_PAGE_INSTALLMODE") < pages.index("Page custom MaktabaWelcome MaktabaWelcomeLeave")
+
+
+def function(script: str, name: str) -> str:
+    m = re.search(rf"^Function {re.escape(name)}\b.*?^FunctionEnd", script, re.M | re.S)
+    assert m, f"no Function {name}"
+    return m.group(0)
+
+
+def test_an_upgrade_keeps_the_desktop_shortcut(script: str) -> None:
+    # the reinstall page's default runs the old uninstaller, which deletes the shortcut; so does
+    # the WiX .msi's: the welcome page's desktop box starts ticked when either is there
+    init = function(script, ".onInit")
+    assert "StrCpy $MkDesktop 0" in init
+    assert init.index("StrCpy $MkDesktop 0") < init.index("Call MaktabaPriorDesktop")
+    assert init.index("!insertmacro SetContext") < init.index("Call MaktabaPriorDesktop")
+    prior = function(script, "MaktabaPriorDesktop")
+    assert '${FileExists} "$DESKTOP\\${PRODUCTNAME}.lnk"' in prior
+    assert "EnumRegKey $1 HKLM \"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\"" in prior
+    assert '"msiexec"' in prior and prior.count("StrCpy $MkDesktop 1") == 2
+    # and the box decides for a person at the window
+    install = re.search(r"^Section Install.*?^SectionEnd", script, re.M | re.S).group(0)
+    assert "${ElseIf} $MkDesktop = ${BST_CHECKED}\n    Call CreateOrUpdateDesktopShortcut" in install
+
+
+def test_a_failed_install_keeps_its_details_on_screen(script: str) -> None:
+    i = script.index("!insertmacro MUI_PAGE_INSTFILES")
+    assert "!define MUI_PAGE_CUSTOMFUNCTION_LEAVE MaktabaInstallingLeave" in script[i - 400 : i]
+    leave = function(script, "MaktabaInstallingLeave")
+    assert leave.splitlines()[1].strip() == "IfAbort +2" and leave.splitlines()[2].strip() == "Return"
+    for shown in ("SetDetailsView show", "GetDlgItem $0 $MkPage 1016", "GetDlgItem $0 $MkPage 1027", "GetDlgItem $0 $MkPage 1006", "$(mkFailed)"):
+        assert shown in leave, shown
+    assert "Function .onInstFailed" not in script
+    # the window closes by itself only after the install succeeded (the end of Section Install)
+    install = re.search(r"^Section Install.*?^SectionEnd", script, re.M | re.S).group(0)
+    assert install.rstrip().splitlines()[-2].strip() == "SetAutoClose true"
+
+
+def test_a_cleared_start_menu_box_holds_in_every_mode(script: str) -> None:
+    fn = function(script, "CreateOrUpdateStartMenuShortcut")
+    box = fn.index("${If} $MkStartMenu <> ${BST_CHECKED}")
+    assert box < fn.index("${If} $WixMode = 0"), "the box is read only outside WiX mode"
+    assert fn[box:].splitlines()[1].strip() == "Return"
+
+
+def test_the_welcome_page_goes_back_only_to_the_reinstall_page(script: str) -> None:
+    assert "StrCpy $MkReinstallShown 1" in function(script, "PageReinstall")
+    assert "Call MaktabaNormalWindow" in function(script, "PageReinstall")
+    welcome = function(script, "MaktabaWelcome")
+    assert "${If} $MkReinstallShown <> 1" in welcome and "EnableWindow $0 0" in welcome
 
 
 def test_english_and_arabic(script: str) -> None:
@@ -306,26 +358,17 @@ def test_no_comment_swallows_the_next_line() -> None:
 # --- the .msi files ------------------------------------------------------------------------
 
 
-def test_tauris_msi_takes_the_art_and_both_languages() -> None:
-    wix = CONF["bundle"]["windows"]["wix"]
-    assert wix["bannerPath"] == "windows/wix/banner.bmp"
-    assert wix["dialogImagePath"] == "windows/wix/dialog.bmp"
-    assert set(wix["language"]) == {"en-US", "ar-SA"}
-    for lang, cfg in wix["language"].items():
-        assert (SRC_TAURI / cfg["localePath"]).is_file(), lang
-    assert wix["fragmentPaths"] == ["windows/wix/maktaba-ui.wxs"]
-    assert wix["componentGroupRefs"] == ["MaktabaUiStyles"]
+def test_tauris_own_msi_is_left_as_it_was() -> None:
+    # the server app ships no .msi (desktop-release.yml builds its NSIS installer only), so
+    # nothing would build a themed one: its settings stay tauri's
+    assert CONF["bundle"]["windows"]["wix"] == {"language": ["en-US"]}
+    assert not (SRC_TAURI / "windows" / "wix").exists()
 
 
-def test_tauris_wix_files_are_what_wixui_writes() -> None:
-    for path, text in wixui.tauri_files().items():
-        assert path.read_text(encoding="utf-8") == text, f"{path.name} is stale: run tools/release/msi/wixui.py write"
-
-
-def test_the_wix_words_cover_what_the_art_carries() -> None:
+def test_the_wix_words_are_there_in_both_languages() -> None:
     strings = wixui.load()["strings"]
-    for key in wixui.ON_DIALOG + wixui.ON_BANNER:
-        assert strings[key]["en"] and re.search(r"[؀-ۿ]", strings[key]["ar"]), key
+    for key in ("WelcomeDlgTitle", "WelcomeDlgDescription", "InstallDirDlgTitle", "ProgressDlgTitleInstalling", "ExitDialogTitle", "WixUINext"):
+        assert strings[key]["en"] and re.search(r"[\u0600-\u06ff]", strings[key]["ar"]), key
 
 
 @pytest.mark.parametrize(
@@ -380,6 +423,54 @@ def test_the_arabic_transform_translates_wixs_and_jpackages_words() -> None:
     assert list(rows) == ["WelcomeDlg\x1fTitle"]
 
 
+class FakeMsi:
+    """theme_msi's database calls over in-memory tables: (key columns, column kinds, rows)."""
+
+    def __init__(self, tables: dict) -> None:
+        self.tables = tables
+        self.bound: list[tuple] = []
+
+    def keys(self, db, name):
+        return self.tables[name][0]
+
+    def kinds(self, db, sql):
+        name = re.search(r"FROM `(\w+)`", sql).group(1)
+        cols = re.findall(r"`(\w+)`", sql.split(" FROM ")[0])
+        return "".join(self.tables[name][1][c] for c in cols)
+
+    def rows(self, db, sql, kinds):
+        name = re.search(r"FROM `(\w+)`", sql).group(1)
+        cols = re.findall(r"`(\w+)`", sql.split(" FROM ")[0])
+        for row in self.tables[name][2]:
+            got = [row[c] for c in cols]
+            for value, kind in zip(got, kinds):
+                assert isinstance(value, int if kind == "i" else str)
+            yield got
+
+    def execute(self, db, sql, *params):
+        self.bound.append((sql, params))
+
+
+def test_integer_keys_are_bound_as_integers() -> None:
+    table = theme_msi.translations(wixui.load()["strings"])
+    msi = FakeMsi({
+        # the Error table: Error (an integer key), Message
+        "Error": (["Error"], {"Error": "i", "Message": "s"}, [{"Error": 1, "Message": "Cancel"}, {"Error": 2, "Message": "no Arabic for these words"}]),
+        # RadioButton: Property (a string) and Order (an integer)
+        "RadioButton": (["Property", "Order"], {"Property": "s", "Order": "i", "Text": "s"}, [{"Property": "WixUI_InstallMode", "Order": 1, "Text": "&Next"}]),
+        "Dialog": (["Dialog"], {"Dialog": "s", "Title": "s"}, [{"Dialog": "WelcomeDlg", "Title": "[ProductName] Setup"}]),
+    })
+    assert theme_msi.arabic_table(msi, 0, "Error", "Message", {"Cancel": "إلغاء الأمر"}) == 1
+    assert theme_msi.arabic_table(msi, 0, "RadioButton", "Text", table) == 1
+    assert theme_msi.arabic_table(msi, 0, "Dialog", "Title", table) == 1
+    (sql, params), (sql2, params2), (sql3, params3) = msi.bound
+    assert sql == "UPDATE `Error` SET `Message` = ? WHERE `Error` = ?" and params == ("إلغاء الأمر", 1)
+    assert type(params[1]) is int
+    assert sql2.endswith("WHERE `Property` = ? AND `Order` = ?") and params2[1:] == ("WixUI_InstallMode", 1)
+    assert type(params2[2]) is int
+    assert params3[1:] == ("WelcomeDlg",) and type(params3[1]) is str
+
+
 def test_jpackages_words_keep_their_placeholders() -> None:
     for en, ar in theme_msi.JPACKAGE_AR.items():
         assert set(re.findall(r"\[\w+\]", en)) == set(re.findall(r"\[\w+\]", ar)), en
@@ -417,6 +508,44 @@ def test_the_dmg_window_comes_from_the_config() -> None:
     for name, (x, y) in want["icons"].items():
         assert 64 <= x <= w - 64 and 64 <= y <= h - 64, name
     assert set(want["icons"]) == {"Maktaba.app", "Applications"}
+
+
+class _Rec:
+    def __init__(self, **kw):
+        self.__dict__.update(kw)
+
+
+def test_the_dmg_check_resolves_the_backgrounds_alias(tmp_path: Path) -> None:
+    want = dmg_layout.layout(str(SRC_TAURI / "tauri.conf.json"))
+    bg = tmp_path / ".background" / want["background"]
+    bg.parent.mkdir()
+    bg.write_bytes(b"tiff")
+
+    def alias(name="Maktaba", path=f"/.background/{want['background']}", cnid=None, folder=None):
+        return _Rec(
+            volume=_Rec(name=name),
+            target=_Rec(posix_path=path, cnid=bg.stat().st_ino if cnid is None else cnid,
+                        folder_cnid=bg.parent.stat().st_ino if folder is None else folder),
+        )
+
+    assert dmg_layout.alias_problems(alias(), str(tmp_path), want) == []
+    # what a mount through a link (/var/folders for /private/var/folders) recorded: a path out
+    # of the volume
+    assert dmg_layout.alias_problems(alias(path="/../../var/folders/x/mnt/.background/" + want["background"]), str(tmp_path), want)
+    assert dmg_layout.alias_problems(alias(name="Other"), str(tmp_path), want)
+    assert dmg_layout.alias_problems(alias(cnid=1), str(tmp_path), want)
+    assert dmg_layout.alias_problems(alias(folder=1), str(tmp_path), want)
+
+
+def test_the_dmg_layout_mounts_at_the_real_path_and_waits_out_a_busy_image() -> None:
+    layout = (ROOT / "tools/release/mac-app/dmg-layout.sh").read_text(encoding="utf-8")
+    assert 'SCRATCH="$(cd "$(mktemp -d' in layout and '&& pwd -P)"' in layout
+    assert "grep -q 'Resource busy'" in layout
+    # every hdiutil step goes through the retry, but the exit trap's best-effort detach
+    plain = [l.strip() for l in layout.splitlines() if re.match(r"\s*hdiutil (attach|convert|detach)", l) and not l.rstrip().endswith("|| true")]
+    assert plain == [], plain
+    for step in ("hdi attach", "hdi convert", "hdi detach"):
+        assert step in layout, step
 
 
 def test_every_mac_build_lays_its_dmg_out_and_checks_it() -> None:

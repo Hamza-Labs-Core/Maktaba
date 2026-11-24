@@ -6,10 +6,9 @@
 //     brand-<lang>-<100|150|200>.bmp            the brand pane at 100, 150 and 200% (the
 //                                               template picks one by the window's DPI)
 //     title-<welcome|progress>-<lang>-<scale>.bmp  each page's title in Maktaba Display
-//   apps/desktop/src-tauri/windows/wix/         the server app's .msi (WiX, tauri):
-//     dialog.bmp 493x312, banner.bmp 493x58     WixUIDialogBmp, WixUIBannerBmp
 //   apps/desktop-player/msi/                    the Player's .msi (theme_msi.py puts them in):
-//     dialog-<lang>.bmp, banner-<lang>.bmp      the Arabic ones mirrored, for its ar-SA transform
+//     dialog-<lang>.bmp 493x312, banner-<lang>.bmp 493x58: WixUIDialogBmp, WixUIBannerBmp,
+//                                               the Arabic ones mirrored, for its Arabic transform
 //   apps/desktop/src-tauri/macos/               the .dmg's Finder background:
 //     dmg-background.tiff                       660x400 with its 1320x800 @2x (tiffutil)
 //   docs/design/desktop/installer-art/preview.png   every piece at 1x, for review
@@ -38,7 +37,6 @@ const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, "..", "..", "..");
 const ART = join(here, "installer-art", "art.html");
 const NSIS = "apps/desktop/src-tauri/windows/installer";
-const WIX = "apps/desktop/src-tauri/windows/wix";
 const PLAYER = "apps/desktop-player/msi";
 const MAC = "apps/desktop/src-tauri/macos";
 const SCALES = { 100: 1, 150: 1.5, 200: 2 };
@@ -56,9 +54,6 @@ function pieces() {
     out.push({ q: { piece: "wix-dialog", lang }, w: 493, h: 312, scale: 1, file: `${PLAYER}/dialog-${lang}.bmp` });
     out.push({ q: { piece: "wix-banner", lang }, w: 493, h: 58, scale: 1, file: `${PLAYER}/banner-${lang}.bmp` });
   }
-  // tauri's .msi takes one bitmap per kind for every language: the English layout
-  out.push({ q: { piece: "wix-dialog", lang: "en" }, w: 493, h: 312, scale: 1, file: `${WIX}/dialog.bmp` });
-  out.push({ q: { piece: "wix-banner", lang: "en" }, w: 493, h: 58, scale: 1, file: `${WIX}/banner.bmp` });
   out.push({ q: { piece: "dmg", lang: "en" }, w: 660, h: 400, scale: 1, file: "dmg@1x.png", tmp: true });
   out.push({ q: { piece: "dmg", lang: "en" }, w: 660, h: 400, scale: 2, file: "dmg@2x.png", tmp: true });
   return out;

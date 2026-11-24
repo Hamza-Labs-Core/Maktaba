@@ -35,7 +35,10 @@ DMG="$1"
 fetch() { "$REPO_ROOT/tools/release/fetch-pinned.sh" "$1" "$2" "$CACHE/${1##*/}"; }
 wheels=("$(fetch "$DS_STORE_URL" "$DS_STORE_SHA256")" "$(fetch "$MAC_ALIAS_URL" "$MAC_ALIAS_SHA256")")
 
-SCRATCH="$(mktemp -d "${TMPDIR:-/tmp}/dmg-layout.XXXXXX")"
+# the real path: $TMPDIR is /var/folders/..., a link, and the kernel mounts the image at
+# /private/var/folders/...; the background's alias records the volume's mount point and the
+# file's path within it, so both must be the one the kernel reports
+SCRATCH="$(cd "$(mktemp -d "${TMPDIR:-/tmp}/dmg-layout.XXXXXX")" && pwd -P)"
 MNT="$SCRATCH/mnt"
 mkdir "$MNT"
 cleanup() {
@@ -44,22 +47,41 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# hdi ARGS: hdiutil, tried again after a pause while macOS still holds the image ("Resource
+# busy", as tauri-build.sh does for tauri's own hdiutil create), at most HDIUTIL_TRIES times in
+# all; any other failure fails at once
+hdi() {
+    local n out
+    for ((n = 1; ; n++)); do
+        if out="$(hdiutil "$@" 2>&1)"; then
+            [ -z "$out" ] || printf '%s\n' "$out"
+            return 0
+        fi
+        printf '%s\n' "$out" >&2
+        if ! grep -q 'Resource busy' <<<"$out" || [ "$n" -ge "${HDIUTIL_TRIES:-3}" ]; then
+            return 1
+        fi
+        echo "dmg-layout: hdiutil $1 found the image busy (try $n of ${HDIUTIL_TRIES:-3}): again" >&2
+        sleep "${HDIUTIL_PAUSE:-10}"
+    done
+}
+
 if [ "$MODE" = check ]; then
-    hdiutil attach -quiet -readonly -nobrowse -noautoopen -mountpoint "$MNT" "$DMG" || die "cannot mount $DMG"
+    hdi attach -quiet -readonly -nobrowse -noautoopen -mountpoint "$MNT" "$DMG" || die "cannot mount $DMG"
     /usr/bin/python3 -I "$SCRIPT_DIR/dmg_layout.py" check "$MNT" "$CONFIG" "${wheels[@]}" || die "${DMG##*/}: its Finder window is not laid out (above)"
     echo "dmg-layout: ${DMG##*/}: the background, the window and the icons' places"
     exit 0
 fi
 
 rw="$SCRATCH/rw.dmg"
-hdiutil convert -quiet "$DMG" -format UDRW -o "$rw" || die "cannot open $DMG for writing"
-hdiutil attach -quiet -readwrite -nobrowse -noautoopen -mountpoint "$MNT" "$rw" || die "cannot mount ${rw##*/}"
+hdi convert -quiet "$DMG" -format UDRW -ov -o "$rw" || die "cannot open $DMG for writing"
+hdi attach -quiet -readwrite -nobrowse -noautoopen -mountpoint "$MNT" "$rw" || die "cannot mount ${rw##*/}"
 /usr/bin/python3 -I "$SCRIPT_DIR/dmg_layout.py" write "$MNT" "$CONFIG" "${wheels[@]}"
 rm -rf "$MNT/.fseventsd"
 sync
-hdiutil detach -quiet "$MNT" || hdiutil detach -quiet -force "$MNT"
+hdi detach -quiet "$MNT" || hdiutil detach -quiet -force "$MNT" || die "cannot detach ${rw##*/}"
 out="$SCRATCH/out.dmg"
-hdiutil convert -quiet "$rw" -format UDZO -imagekey zlib-level=9 -o "$out" || die "cannot compress ${rw##*/}"
+hdi convert -quiet "$rw" -format UDZO -imagekey zlib-level=9 -ov -o "$out" || die "cannot compress ${rw##*/}"
 mv -f "$out" "$DMG"
 id="${APPLE_SIGNING_IDENTITY:-}"
 if [ -n "$id" ] && [ "$id" != "-" ]; then

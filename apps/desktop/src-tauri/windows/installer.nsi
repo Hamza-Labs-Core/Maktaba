@@ -148,6 +148,7 @@ Var MkStep3
 Var MkStep3Text
 Var MkNow          ; what is being done now
 Var MkOpen         ; the "open when done" check box
+Var MkReinstallShown ; 1: the reinstall page came before the welcome page
 
 Name "${PRODUCTNAME}"
 BrandingText "${COPYRIGHT}"
@@ -239,9 +240,9 @@ VIAddVersionKey "ProductVersion" "${VERSION}"
 
 ; Installer pages, must be ordered as they appear
 ; 1. Welcome Page
-; Maktaba (13.14): Maktaba's welcome page (where it installs, the Start menu and desktop
-; shortcuts) in place of MUI's welcome, directory and finish pages; skipped when passive
-Page custom MaktabaWelcome MaktabaWelcomeLeave
+; Maktaba (13.14): Maktaba's welcome page stands where tauri's directory page did (5, below):
+; it holds the folder, so it comes after the reinstall page (an earlier install's uninstall)
+; and the install mode page, as the folder did
 
 ; 2. License Page (if defined)
 !if "${LICENSE}" != ""
@@ -260,6 +261,9 @@ Page custom MaktabaWelcome MaktabaWelcomeLeave
 Var ReinstallPageCheck
 Page custom PageReinstall PageLeaveReinstall
 Function PageReinstall
+  ; Maktaba (13.14): back from the welcome page, MUI's header again
+  Call MaktabaNormalWindow
+
   ; Uninstall previous WiX installation if exists.
   ;
   ; A WiX installer stores the installation info in registry
@@ -296,6 +300,8 @@ Function PageReinstall
   ; Compare this installar version with the existing installation
   ; and modify the messages presented to the user accordingly
   compare_version:
+  ; Maktaba (13.14): this page is shown, so the welcome page can go back to it
+  StrCpy $MkReinstallShown 1
   StrCpy $R4 "$(older)"
   ${If} $WixMode = 1
     ReadRegStr $R0 HKLM "$R6" "DisplayVersion"
@@ -468,7 +474,10 @@ Function PageLeaveReinstall
 FunctionEnd
 
 ; 5. Choose install directory page
-; Maktaba (13.14): on the welcome page (its folder field and Change button)
+; Maktaba (13.14): Maktaba's welcome page (where it installs, the Start menu and desktop
+; shortcuts) in place of MUI's welcome, directory and finish pages; skipped when passive.
+; On a first install it is the first page.
+Page custom MaktabaWelcome MaktabaWelcomeLeave
 
 ; 6. Start menu shortcut page
 Var AppStartMenuFolder
@@ -481,9 +490,11 @@ Var AppStartMenuFolder
 !insertmacro MUI_PAGE_STARTMENU Application $AppStartMenuFolder
 
 ; 7. Installation page
-; Maktaba (13.14): drawn as Maktaba's installing page (MaktabaInstallingShow); the details
-; list comes back when the install fails (.onInstFailed)
+; Maktaba (13.14): drawn as Maktaba's installing page (MaktabaInstallingShow); when the
+; install fails the window stays open with the details shown (MaktabaInstallingLeave, which
+; MUI calls as the install ends)
 !define MUI_PAGE_CUSTOMFUNCTION_SHOW MaktabaInstallingShow
+!define MUI_PAGE_CUSTOMFUNCTION_LEAVE MaktabaInstallingLeave
 !insertmacro MUI_PAGE_INSTFILES
 
 ; 8. Finish page
@@ -827,6 +838,11 @@ Function MaktabaWelcome
 
   GetDlgItem $0 $HWNDPARENT 1
   SendMessage $0 ${WM_SETTEXT} 0 "STR:$(^InstallBtn)"
+  ; Back only to the reinstall page, when it was shown
+  ${If} $MkReinstallShown <> 1
+    GetDlgItem $0 $HWNDPARENT 3
+    EnableWindow $0 0
+  ${EndIf}
   nsDialogs::Show
   ${NSD_FreeImage} $MkBrandImage
   ${NSD_FreeImage} $MkTitleImage
@@ -1114,11 +1130,19 @@ FunctionEnd
   Pop $R0
 !macroend
 
-; the details list comes back when the install fails, where the steps were
-Function .onInstFailed
+; as the install ends: when it failed, the details come back where the steps were (with
+; "Show details" and the status line), and the window stays open (no auto close on a failure)
+Function MaktabaInstallingLeave
+  IfAbort +2
+  Return
   ${If} $MkPage == ""
     Return
   ${EndIf}
+  SetDetailsView show
+  GetDlgItem $0 $MkPage 1027
+  ShowWindow $0 ${SW_SHOW}
+  GetDlgItem $0 $MkPage 1006
+  ShowWindow $0 ${SW_SHOW}
   GetDlgItem $0 $MkPage 1016
   StrCpy $R5 121
   StrCpy $R6 96
@@ -1129,6 +1153,36 @@ Function .onInstFailed
   ${If} $MkNow != ""
     SendMessage $MkNow ${WM_SETTEXT} 0 "STR:$(mkFailed)"
   ${EndIf}
+FunctionEnd
+
+; MaktabaPriorDesktop: the welcome page's desktop box starts ticked when this PC has the
+; shortcut already (an upgrade's uninstall, the reinstall page's default, takes it away and this
+; install makes it again), or has the WiX .msi this installer replaces (its uninstall takes the
+; shortcut away too; the reinstall page finds it the same way)
+Function MaktabaPriorDesktop
+  ${If} ${FileExists} "$DESKTOP\${PRODUCTNAME}.lnk"
+    StrCpy $MkDesktop 1
+    Return
+  ${EndIf}
+  StrCpy $0 0
+  ${Do}
+    EnumRegKey $1 HKLM "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall" $0
+    ${If} $1 == ""
+      ${Break}
+    ${EndIf}
+    IntOp $0 $0 + 1
+    ReadRegStr $2 HKLM "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$1" "DisplayName"
+    ReadRegStr $3 HKLM "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$1" "Publisher"
+    ${If} "$2$3" == "${PRODUCTNAME}${MANUFACTURER}"
+      ReadRegStr $2 HKLM "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$1" "UninstallString"
+      ${StrCase} $3 $2 "L"
+      ${StrLoc} $2 $3 "msiexec" ">"
+      ${If} $2 == 0
+        StrCpy $MkDesktop 1
+        ${Break}
+      ${EndIf}
+    ${EndIf}
+  ${Loop}
 FunctionEnd
 
 Function .onInit
@@ -1157,6 +1211,9 @@ Function .onInit
   !endif
 
   !insertmacro SetContext
+
+  ; Maktaba (13.14): an earlier install's desktop shortcut is kept
+  Call MaktabaPriorDesktop
 
   ${If} $INSTDIR == "${PLACEHOLDER_INSTALL_DIR}"
     ; Set default install location
@@ -1631,13 +1688,16 @@ Function CreateOrUpdateStartMenuShortcut
     Return
   ${EndIf}
 
+  ; Maktaba (13.14): the welcome page's Start menu box was cleared (in every mode)
+  ${If} $MkStartMenu <> ${BST_CHECKED}
+    Return
+  ${EndIf}
+
   ; Skip creating shortcut if in update mode or no shortcut mode
   ; but always create if migrating from wix
   ${If} $WixMode = 0
     ${If} $UpdateMode = 1
     ${OrIf} $NoShortcutMode = 1
-    ; Maktaba (13.14): or the welcome page's Start menu box was cleared
-    ${OrIf} $MkStartMenu <> ${BST_CHECKED}
       Return
     ${EndIf}
   ${EndIf}

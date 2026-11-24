@@ -247,6 +247,28 @@ class Msi:
     def tables(self, db) -> set[str]:
         return {r[0] for r in self.rows(db, "SELECT `Name` FROM `_Tables`", "s")}
 
+    def keys(self, db, table: str) -> list[str]:
+        """The primary key columns of TABLE."""
+        keys = self.H()
+        self.check(self.dll.MsiDatabaseGetPrimaryKeysW(db, table, self.c.byref(keys)), f"the keys of {table}")
+        try:
+            return [self.string(keys, i) for i in range(1, self.dll.MsiRecordGetFieldCount(keys) + 1)]
+        finally:
+            self.close(keys)
+
+    def kinds(self, db, sql: str) -> str:
+        """SQL's columns as "s" (a string) or "i" (an integer), from the view's column types
+        (MSICOLINFO_TYPES: s, l, g a string, i, j an integer, v a stream; capital when nullable)."""
+        v = self.view(db, sql)
+        rec = self.H()
+        try:
+            self.check(self.dll.MsiViewGetColumnInfo(v, 1, self.c.byref(rec)), f"the column types of {sql}")
+            n = self.dll.MsiRecordGetFieldCount(rec)
+            return "".join("i" if self.string(rec, i)[:1].lower() in "ij" else "s" for i in range(1, n + 1))
+        finally:
+            self.close(rec)
+            self.close(v)
+
     def stream_bytes(self, db, table: str, key: str, value: str) -> bytes:
         v = self.H()
         sql = f"SELECT `Data` FROM `{table}` WHERE `{key}` = '{value}'"
@@ -321,7 +343,7 @@ def _styles(msi: Msi, db) -> None:
         msi.execute(db, "UPDATE `Control` SET `Text` = ? WHERE `Dialog_` = ? AND `Control` = ?", text, dialog, control)
 
 
-def arabic_rows(rows: list[tuple[str, str]], table: dict[str, str]) -> dict[str, str]:
+def arabic_rows(rows: list[tuple], table: dict[str, str]) -> dict:
     """For one column's (key, text) rows: key -> the Arabic text, for each with Arabic words."""
     out = {}
     for key, text in rows:
@@ -331,14 +353,20 @@ def arabic_rows(rows: list[tuple[str, str]], table: dict[str, str]) -> dict[str,
     return out
 
 
-def _keys(msi: Msi, db, table: str) -> list[str]:
-    """The primary key columns of TABLE."""
-    keys = msi.H()
-    msi.check(msi.dll.MsiDatabaseGetPrimaryKeysW(db, table, msi.c.byref(keys)), f"the keys of {table}")
-    try:
-        return [msi.string(keys, i) for i in range(1, msi.dll.MsiRecordGetFieldCount(keys) + 1)]
-    finally:
-        msi.close(keys)
+def arabic_table(msi, db, name: str, column: str, table: dict[str, str]) -> int:
+    """NAME's COLUMN in Arabic, each row found by its primary key, bound as the key's own type
+    (the Error and RadioButton tables' keys are integers: a string never matches them). MSI is
+    anything with keys(), kinds(), rows() and execute() (msi.dll's, or a test's). The rows
+    changed."""
+    keys = msi.keys(db, name)
+    sql = "SELECT " + ", ".join(f"`{k}`" for k in keys) + f", `{column}` FROM `{name}`"
+    kinds = msi.kinds(db, sql)
+    rows = [(tuple(r[:-1]), r[-1]) for r in msi.rows(db, sql, kinds)]
+    where = " AND ".join(f"`{k}` = ?" for k in keys)
+    changed = arabic_rows(rows, table)
+    for key, ar in changed.items():
+        msi.execute(db, f"UPDATE `{name}` SET `{column}` = ? WHERE {where}", ar, *key)
+    return len(changed)
 
 
 def _arabic(msi: Msi, db) -> None:
@@ -347,12 +375,7 @@ def _arabic(msi: Msi, db) -> None:
     for name, column in TRANSLATED:
         if name not in present:
             continue
-        keys = _keys(msi, db, name)
-        sel = ", ".join(f"`{k}`" for k in keys)
-        rows = [("\x1f".join(r[:-1]), r[-1]) for r in msi.rows(db, f"SELECT {sel}, `{column}` FROM `{name}`", "s" * (len(keys) + 1))]
-        for key, ar in arabic_rows(rows, table).items():
-            where = " AND ".join(f"`{k}` = ?" for k in keys)
-            msi.execute(db, f"UPDATE `{name}` SET `{column}` = ? WHERE {where}", ar, *key.split("\x1f"))
+        arabic_table(msi, db, name, column, table)
     dialogs = _dialogs(msi, db)
     for (dialog, control), (x, attrs) in mirror(_controls(msi, db), dialogs).items():
         msi.execute(db, "UPDATE `Control` SET `X` = ?, `Attributes` = ? WHERE `Dialog_` = ? AND `Control` = ?", x, attrs, dialog, control)

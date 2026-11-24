@@ -350,13 +350,14 @@ every piece at 1x. Where the build differs from the mockups (`installer-welcome`
 | | the words in Segoe UI; the titles and the wordmark in Maktaba Display, as bitmaps (100, 150, 200%) | NSIS cannot load the faces |
 | | Windows' own buttons (Cancel, Install), not brass | NSIS buttons are system push buttons |
 | | the check boxes drawn classic, their words in the page's colours | a themed check box ignores its text colour, which would be black on ink |
+| | over an earlier install, MUI's reinstall page comes first and the welcome page second | the welcome page holds the folder, and tauri asks about the earlier install before the folder |
 | | no "Start Maktaba when I sign in" on the welcome page; an "Installs in" caption over the folder | the app's setup decides the sign-in start (`run_entry.rs`), and the installer never did; the folder field needs a name for screen readers |
 | | three steps (the app; the server and its tools; the Start menu and shortcuts), ✓ ● ○ glyphs, no percentage | the steps the installer really takes; the sign-in task is setup's |
 | | "Open Maktaba when it's done" at the page's foot, not in the button strip | the strip is NSIS's outer window |
 | | the reinstall page (only over an earlier install) and the uninstaller stay MUI's, their header in the chrome colour | radio buttons and the uninstaller's pages keep Windows' look |
 | Player `.msi` | no version note on the dialog bitmap; Windows' buttons and button strip | WiX draws no version there; Windows Installer draws its buttons |
 | | Arabic through an embedded language transform (WiX's Arabic words, mirrored dialogs, mirrored bitmaps) | jpackage builds one language; compose empties jpackage's resource folder, so the theming is applied to the built `.msi` |
-| server `.msi` (tauri; not released) | the bitmaps and text styles, an `ar-SA` build in WiX's Arabic, its dialogs not mirrored | tauri's WiX takes the words but no per-control layout |
+| server `.msi` (tauri) | not themed: tauri's settings as they were | the server app ships no `.msi` (desktop-release.yml builds the NSIS installer only), so no build would make or check a themed one |
 | `.dmg` (no mockup) | the app stands in the arch, a brass arrow to Applications, the two names on a shelf whose tone reads black and white names at 4.5:1 | Finder draws the names black or white by the Mac's appearance |
 
 Windows' and Finder's own drawing is checked by CI's builds (win-app, Desktop Player, mac-app's

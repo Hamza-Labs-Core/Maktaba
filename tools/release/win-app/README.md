@@ -171,11 +171,15 @@ marked `Maktaba (13.14)`.
 
 - **Welcome:** the brand pane (the wordmark, the version and size, the arch), the title in
   Maktaba Display, a line on what it installs, the folder with Change, the Start menu and desktop
-  shortcuts, the licence. Skipped by `/P` and `/S`.
+  shortcuts, the licence. Skipped by `/P` and `/S`. It stands where tauri's folder page did, after
+  the reinstall page, so on a first install it is the first page. The desktop box starts ticked
+  when the PC has the shortcut already or has the WiX `.msi` this installer replaces (an
+  upgrade's uninstall removes the shortcut, and this install makes it again).
 - **Installing:** tauri's progress page drawn as Maktaba's: the brand pane, the title, a brass
   progress bar, the steps (the app, the server and its tools, the Start menu and shortcuts) and
   "Open Maktaba when it's done". It closes itself when done; a failure keeps it open and shows
-  the details.
+  the details, the status line and "Show details" (the page's leave function, which MUI calls as
+  the install ends, with `IfAbort`).
 - The reinstall page (only over an earlier install) and the uninstaller's pages are MUI's, their
   header in the chrome colour. English and Arabic (`languages`), by Windows' language; Arabic is
   right to left.

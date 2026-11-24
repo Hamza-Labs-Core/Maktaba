@@ -20,7 +20,8 @@ build fails when the two differ.
   leave that ticked. Both follow Windows' language, English or Arabic (right to left). The
   Player's `.msi` has Maktaba's art and light-on-dark words, and its dialogs come in Arabic where
   Windows is Arabic. On the Mac, opening the `.dmg` shows Maktaba standing in the arch and an
-  arrow to Applications. The desktop shortcut is now off unless you tick it.
+  arrow to Applications. On a new install the desktop shortcut is off unless you tick it;
+  an upgrade keeps the one you have.
 
 - **The Windows and Linux Player's own title bar.** The Player's window has Maktaba's dark title
   bar in place of the system's frame and its menu bar: the menu button holds Account, Big screen,

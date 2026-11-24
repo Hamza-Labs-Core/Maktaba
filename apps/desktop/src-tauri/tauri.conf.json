@@ -70,14 +70,7 @@
         "displayLanguageSelector": false
       },
       "wix": {
-        "language": {
-          "en-US": { "localePath": "windows/wix/en-US.wxl" },
-          "ar-SA": { "localePath": "windows/wix/ar-SA.wxl" }
-        },
-        "bannerPath": "windows/wix/banner.bmp",
-        "dialogImagePath": "windows/wix/dialog.bmp",
-        "fragmentPaths": ["windows/wix/maktaba-ui.wxs"],
-        "componentGroupRefs": ["MaktabaUiStyles"]
+        "language": ["en-US"]
       }
     },
     "linux": {
