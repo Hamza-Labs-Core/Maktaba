@@ -44,7 +44,8 @@ type Config struct {
 type BroadcastConfig struct {
 	// Enabled is broadcast.enabled, the broadcasting gate (default false): off, only the test
 	// publishers a service admin granted may publish, and homes' licences don't carry the
-	// broadcast flag. The api role refuses to start with it on while any broadcast catalog
+	// broadcast flag; every broadcast and moderation route is an unknown path but
+	// handlers/broadcastgate's exceptions. The api role refuses to start with it on while any broadcast catalog
 	// value is TBD (billing.BroadcastLaunchCheck), naming each.
 	Enabled bool
 	// PlansEnforce is broadcast.plans.enforce (default true). Off is the rollback: every

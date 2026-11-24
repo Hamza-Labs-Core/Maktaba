@@ -1224,6 +1224,13 @@ build fails when the two differ.
   is refused, and the owner is
   alerted.
 
+- **Broadcasting answers nothing while it is off.** Maktaba Cloud's broadcast and moderation routes
+  (publishing, invites, upload tokens, viewer analytics, broadcast billing, notices and reports)
+  answer as a page that doesn't exist while broadcasting is off, whoever asks; the kill switch, the
+  broadcast edge's copy of its list, and the homes Maktaba marks for its own tests still work. A
+  home refuses its viewer-access API (`/api/broadcast/access`) unless its licence includes
+  broadcasting, whatever the web app shows.
+
 ### Added
 
 - **Search in the web app, on the big screen and on Samsung and LG TVs has an AI mode tab that

@@ -71,8 +71,10 @@ func instructions(t *testing.T, key broadcast.Key, text string) []moderation.Ins
 // later (T06); the third strike ends broadcasting (T05); an urgent report pages (T07); a home sees
 // only its own records; every staff action is audited, and the records export.
 func TestModerationNoticeTakedownCounterRestore(t *testing.T) {
+	withBroadcastPrices(t)
 	keyPath := ingestKeyFile(t)
 	e := newEnvCfg(t, nil, func(c *config.Config) {
+		c.Broadcast.Enabled = true
 		c.Broadcast.KeyPath = keyPath
 		c.Broadcast.IngestURL = "" // no edge: the push is skipped
 	})
@@ -399,7 +401,7 @@ func TestEdgeChannelBindsOnce(t *testing.T) {
 // its preflight is answered (no credentials), and its report (which names the channel on
 // watch.maktaba.tv, as the edge's REPORT_WATCH_HOST does) lands on the home's channel. watch.maktaba.tv still works there; any other site is still refused.
 func TestStagingTakesTheStagingWatchPagesReports(t *testing.T) {
-	e := newEnvCfg(t, nil, func(c *config.Config) { c.Server.Env = "staging" })
+	e := newEnvCfg(t, nil, broadcastOn(t, func(c *config.Config) { c.Server.Env = "staging" }))
 	h, ch, edge := modHome(t, e, e.registerVerified("stagingpub@example.test"), "staginghome")
 	page := e.client()
 	page.origin = moderationh.StagingWatchOrigin
