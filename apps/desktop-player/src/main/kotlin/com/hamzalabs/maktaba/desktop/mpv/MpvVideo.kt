@@ -487,8 +487,8 @@ class MpvVideo internal constructor(
 class MpvPlayers(
     private val lib: LibMpv,
     private val fontsDir: File?,
-    /** More of mpv's options for each video (a test's log file). */
-    private val extra: Map<String, String> = emptyMap(),
+    /** More of mpv's options for each video, asked at each open (a test's log file). */
+    private val extra: () -> Map<String, String> = { emptyMap() },
 ) : Players {
     override val profile: String get() = MPV_PROFILE
 
@@ -496,7 +496,7 @@ class MpvPlayers(
     override val drawsSubtitles: Boolean get() = true
 
     override suspend fun open(url: String, fromMs: Long, autoplay: Boolean, events: VideoEvents): Video =
-        MpvVideo(lib, url, fromMs, autoplay, events, fontsDir, extra)
+        MpvVideo(lib, url, fromMs, autoplay, events, fontsDir, extra())
 }
 
 /** The streaming service's profile for libmpv (streaming/internal/capability/matrix.go). */

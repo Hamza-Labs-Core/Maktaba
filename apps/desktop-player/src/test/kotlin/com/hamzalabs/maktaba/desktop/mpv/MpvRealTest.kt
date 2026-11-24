@@ -154,8 +154,8 @@ class MpvRealTest {
 
     @get:org.junit.Rule val tmp = org.junit.rules.TemporaryFolder()
 
-    /** mpv's log of the video playing (build/reports/mpv/). */
-    private var mpvLog: File? = null
+    /** mpv's log of each player made (build/reports/mpv/). */
+    private val mpvLogs: MutableList<File> = java.util.Collections.synchronizedList(mutableListOf())
 
     /** The Player's caption face, from its resources, in a folder libass reads (as Engine's). */
     private fun fonts(): File = tmp.newFolder("fonts").also { d ->
@@ -176,14 +176,19 @@ class MpvRealTest {
             TestHome.json("""{"session_id":"s$n","mode":"direct","direct_url":"/stream/subs.mkv","stream_sig":"sig$n"}""")
         }
         home.answer("GET /api/videos/v1/subtitles", """{"items":[{"id":1,"language":"en","format":"srt","source":"external"}]}""")
+        // the position posted every 10 s: a home that does not know the session would end the stream
+        for (n in 1..4) home.answer("POST /api/stream/sessions/s$n/progress", "{}")
         home.answer("GET /stream/s1/subs/sidecar/en.vtt") {
             MockResponse.Builder().code(200).addHeader("Content-Type", "text/vtt")
                 .body("WEBVTT\n\n00:00:01.000 --> 00:00:29.000\nWelcome to Maktaba\n").build()
         }
         val fonts = fonts()
-        // mpv's own log for the run, kept with the job's reports
-        mpvLog = File("build/reports/mpv/${System.nanoTime()}.log").absoluteFile.also { it.parentFile.mkdirs() }
-        val extra = mapOf("log-file" to mpvLog!!.path, "msg-level" to "all=v")
+        // mpv's own log for each player, kept with the job's reports
+        val extra = {
+            val f = File("build/reports/mpv/${System.nanoTime()}.log").absoluteFile.also { it.parentFile.mkdirs() }
+            mpvLogs += f
+            mapOf("log-file" to f.path, "msg-level" to "all=v")
+        }
         val p = Playback(home.client, scope, background, signedOut = {}, settings = { values }, engine = { MpvPlayers(lib, fonts, extra) }, log = { println("log: $it") })
         playback = p
         // from the start: each line is on from 1 s to 29 s
@@ -265,9 +270,14 @@ class MpvRealTest {
         val v = runBlocking { withContext(main) { p.player } } as? MpvVideo
         val state = listOf("time-pos", "sid", "sub-text", "current-tracks/sub/codec", "track-list/count", "vo-configured", "osd-dimensions/w")
             .joinToString(", ") { "$it=${v?.property(it)}" }
-        val lines = mpvLog?.takeIf { it.isFile }?.readLines().orEmpty()
-            .filter { l -> listOf("sub", "ass", "font", "libass", "error", "Error").any { it in l } }.takeLast(60)
-        throw AssertionError("${title ?: "the sidecar"}: no line drawn (last $last); mpv: $state\n" + lines.joinToString("\n"))
+        val playing = runBlocking { withContext(main) { "position ${p.positionMs} ms, playing ${p.playing}, problem ${p.problem}, note ${p.note}, sessions ${opened.get()}, players ${mpvLogs.size}, frame ${v?.frame != null}" } }
+        last?.let { _ ->
+            (runBlocking { withContext(main) { p.player } } as? MpvVideo)?.frame?.let { f ->
+                javax.imageio.ImageIO.write(f.toAwtImage(), "png", File("build/reports/mpv/${title ?: "sidecar"}-missed.png").also { it.parentFile.mkdirs() })
+            }
+        }
+        val lines = mpvLogs.flatMap { f -> listOf("--- ${f.name}") + f.takeIf { it.isFile }?.readLines().orEmpty().filter { l -> "[d]" !in l }.takeLast(40) }
+        throw AssertionError("${title ?: "the sidecar"}: no line drawn (last $last); mpv: $state; $playing\n" + lines.joinToString("\n"))
     }
 
     /** As FrameReferencesTest: compared on Linux with src/test/resources/references/[name].png; a missing one is written and fails. */
