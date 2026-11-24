@@ -307,16 +307,24 @@ final class RemoteDemoShotsUITests: XCTestCase {
     private func attach(_ shot: XCUIScreenshot, _ name: String) {
         let image = shot.image
         let a: XCTAttachment
-        if isPad, image.size.width < image.size.height {
-            let size = CGSize(width: image.size.height, height: image.size.width)
+        if isPad {
             let format = UIGraphicsImageRendererFormat()
             format.scale = image.scale
-            let upright = UIGraphicsImageRenderer(size: size, format: format).pngData { ctx in
-                ctx.cgContext.translateBy(x: 0, y: size.height)
-                ctx.cgContext.rotate(by: -.pi / 2)
-                image.draw(at: .zero)
+            let png: Data
+            if image.size.width < image.size.height {
+                let size = CGSize(width: image.size.height, height: image.size.width)
+                png = UIGraphicsImageRenderer(size: size, format: format).pngData { ctx in
+                    ctx.cgContext.translateBy(x: 0, y: size.height)
+                    ctx.cgContext.rotate(by: -.pi / 2)
+                    image.draw(at: .zero)
+                }
+            } else {
+                // already as seen: the image carries its orientation, which the screenshot's own
+                // PNG does not keep (CI: the shot came out upright, the content on its side), so
+                // it is drawn out as it shows
+                png = UIGraphicsImageRenderer(size: image.size, format: format).pngData { _ in image.draw(at: .zero) }
             }
-            a = XCTAttachment(data: upright, uniformTypeIdentifier: "public.png")
+            a = XCTAttachment(data: png, uniformTypeIdentifier: "public.png")
         } else {
             a = XCTAttachment(screenshot: shot)
         }
