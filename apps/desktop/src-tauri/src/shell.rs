@@ -343,7 +343,8 @@ pub(crate) fn choose_tray_item(app: &AppHandle, id: &str) {
     on_tray_event(app, id);
 }
 
-/// The app's name in the tray's language.
+/// The app's name in the tray's language (the panel's; Linux has none).
+#[cfg_attr(target_os = "linux", allow(dead_code))]
 pub(crate) fn brand(app: &AppHandle) -> &'static str {
     shell(app).lang.words().brand
 }
