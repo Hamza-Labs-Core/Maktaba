@@ -68,6 +68,14 @@ function wizard(api: SetupApi) {
   );
 }
 
+/** "Set up this PC", once it can be pressed: on Windows it waits for the look for an install
+ * to move in (the adopt step), which answers after the first render. */
+async function setUpThisPc() {
+  const button = await screen.findByRole("button", { name: /Set up this PC/ });
+  await waitFor(() => expect(button).toBeEnabled());
+  return button;
+}
+
 function steps(name = "Setup steps") {
   const list = within(screen.getByRole("complementary", { name })).getByRole("list");
   return within(list).getAllByRole("listitem");
@@ -99,7 +107,7 @@ describe("the setup window", () => {
   it("offers the two ways as cards, this machine chosen, and one button for the way chosen", async () => {
     const api = fakeApi();
     wizard(api);
-    expect(await screen.findByRole("button", { name: /Set up this PC/ })).toBeEnabled();
+    expect(await setUpThisPc()).toBeEnabled();
     const [here, remote] = screen.getAllByRole("radio");
     expect(here).toBeChecked();
     expect(here).toHaveAccessibleName("Run Maktaba on this PC");
@@ -142,7 +150,7 @@ describe("the setup window", () => {
 
   it("what will run: a row each, memory and disk against what is needed, the data folder", async () => {
     wizard(fakeApi({}, { adopt: { sources: [] }, check: CHECK }));
-    await userEvent.click(await screen.findByRole("button", { name: /Set up this PC/ }));
+    await userEvent.click(await setUpThisPc());
     expect(await screen.findByRole("heading", { name: "What will run" })).toBeInTheDocument();
     expect(screen.getByText("Indexing, transcription (4 workers) and search")).toBeInTheDocument();
     expect(screen.getByText(/^.?16\.0 GB.* \(needs .*8\.0 GB.*\)$/)).toBeInTheDocument();
@@ -164,7 +172,7 @@ describe("the setup window", () => {
   it("memory short of what is needed shows short", async () => {
     const short = { ...CHECK, ram_bytes: 4 * GB, ok: false, problems: [], warnings: [] };
     wizard(fakeApi({}, { adopt: { sources: [] }, check: short }));
-    await userEvent.click(await screen.findByRole("button", { name: /Set up this PC/ }));
+    await userEvent.click(await setUpThisPc());
     const ram = (await screen.findByText(/^.?4\.0 GB.* \(needs .*8\.0 GB.*\)$/)).closest(
       ".mkt-setup__meter"
     );
