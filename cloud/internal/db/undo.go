@@ -81,18 +81,33 @@ func (m *Migrator) Undo(ctx context.Context, versions []int64) error {
 	if err != nil {
 		return err
 	}
+	// every one is judged before any refusal is given, the gravest first: one that can't be undone
+	// must not hide behind another that is only better kept (the previous release would be started
+	// on a schema it can't run on), nor behind one that could not be read
+	var lossy, keeps, unread []string
 	for _, v := range order {
 		name, text, err := migrationFile(sub, v)
 		if err != nil {
-			return fmt.Errorf("%w: %v", ErrUndoLossy, err)
+			lossy = append(lossy, err.Error())
+			continue
 		}
 		verdict, err := m.Judge(ctx, text)
-		if err != nil {
-			return fmt.Errorf("migrate undo: reading what %s would delete: %w", name, err)
+		switch {
+		case err != nil:
+			unread = append(unread, name+": "+err.Error())
+		case errors.Is(verdict.Err, ErrUndoLossy):
+			lossy = append(lossy, name+" "+verdict.Why)
+		case verdict.Why != "":
+			keeps = append(keeps, name+" "+verdict.Why)
 		}
-		if verdict.Why != "" {
-			return fmt.Errorf("%w: %s %s", verdict.Err, name, verdict.Why)
-		}
+	}
+	switch {
+	case len(lossy) > 0:
+		return fmt.Errorf("%w: %s", ErrUndoLossy, strings.Join(lossy, "; "))
+	case len(unread) > 0:
+		return fmt.Errorf("migrate undo: reading what a Down script would delete: %s", strings.Join(unread, "; "))
+	case len(keeps) > 0:
+		return fmt.Errorf("%w: %s", ErrUndoKeeps, strings.Join(keeps, "; "))
 	}
 	p, err := goose.NewProvider(goose.DialectPostgres, m.pool.DB, sub, goose.WithAllowOutofOrder(true))
 	if err != nil {

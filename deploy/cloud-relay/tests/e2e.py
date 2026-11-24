@@ -42,7 +42,7 @@ Nothing secret is printed: the account's password, its tokens, the claim code an
 are made here and masked in the CI log (::add-mask::) before any use.
 
 Env: RELAY_DOMAIN, API_DOMAIN, APP_DOMAIN, NODE_IP, HOME_IMAGE, NODE_SSH (a command that runs
-its arguments on the node, stdin passed through), RUN_ID, OUT (the results folder), CA_FILE
+its arguments on the node, stdin passed through), RUN_ID, DEPLOY_ID (the deploy whose lease to renew), OUT (the results folder), CA_FILE
 (optional: the node's own CA, RELAY_TLS=internal), PIN_HOSTS=1 (names not in public DNS yet:
 the runner's /etc/hosts points them at NODE_IP), LOAD_PLAYERS (8), LOAD_SECONDS (60).
 """
@@ -187,6 +187,17 @@ def node(cmd: str, stdin: str | None = None, check_rc: bool = True, timeout: flo
 
 def ops(args: str, email: str) -> str:
     return node(f"/opt/maktaba-relay/ops/cloud-ops.py {args}", stdin=email + "\n").strip()
+
+
+def keep_renewing(stop: threading.Event) -> None:
+    """The deploy's lease on the node, renewed while this runs (ops/rollout.sh, "A lost runner"):
+    a runner that goes away stops renewing, and the node goes back by itself."""
+    deploy = os.environ.get("DEPLOY_ID", "")
+    while deploy and not stop.wait(60):
+        try:
+            node(f"/usr/local/sbin/maktaba-rollout renew {shlex.quote(deploy)}", timeout=40)
+        except Exception as e:  # noqa: BLE001 - a missed renewal is one of many
+            log(f"renew: {str(e)[:200]}")
 
 
 def docker(*args: str, stdin: str | None = None, check_rc: bool = True, timeout: float = 900) -> subprocess.CompletedProcess:
@@ -765,6 +776,8 @@ def main() -> int:
         pin_hosts()
     acct = Account()
     home = Home()
+    done = threading.Event()
+    threading.Thread(target=keep_renewing, args=(done,), daemon=True).start()
     try:
         check("tls", check_tls)
         check("health", check_health)
@@ -784,6 +797,7 @@ def main() -> int:
     finally:
         stop_home()
         check("ended", lambda: check_ended(acct))
+        done.set()
         (OUT / "results.json").write_text(json.dumps(results, indent=2))
         mark = {True: "✅", False: "❌", None: "⏭️"}
         lines = [f"| {mark[r['ok']]} | {r['check']} | {r['sec']} s | {r['detail']} |" for r in results]

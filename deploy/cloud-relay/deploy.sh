@@ -1,12 +1,19 @@
 #!/usr/bin/env bash
-# Maktaba Cloud, one node: the rollout step of a CI deploy (.github/workflows/cloud-deploy.yml).
+# Maktaba Cloud, one node: a CI deploy's rollout, commit and rollback on the node
+# (.github/workflows/cloud-deploy.yml), each as a unit of the node's own.
 #
-# Runs after `ops/rollout.sh begin` (the node's present set saved, the images pulled) and setup.sh
-# (the new set written): hands the node the symbol uploaders' token, then runs `maktaba-rollout
-# apply` there, which rolls the release out and restores the saved set on any failure. The
-# workflow then tests the node and commits or rolls back.
+#   deploy.sh apply      after `ops/rollout.sh begin` (the node's present set saved, the images
+#                        pulled) and setup.sh (the new set written): hands the node the symbol
+#                        uploaders' token, then rolls the release out there; any failure restores
+#                        the saved set. The workflow then tests the node and
+#   deploy.sh commit     keeps it, or
+#   deploy.sh rollback   goes back.
+#
+# Each is started once on the node and followed from here; a cut session is picked up again, and
+# asking again after a lost answer gives the same one. Nothing on the node stops when this does.
 #
 # Required env:
+#   DEPLOY_ID        the deploy's name, the one `begin` was given.
 #   RELAY_SSH_HOST   the node's hostname or IP.
 #   RELAY_SSH_USER   SSH login user (root).
 #
@@ -19,6 +26,8 @@
 #                      the QA_SSH_KNOWN_HOSTS / RELAY_SSH_KNOWN_HOSTS variables), the host
 #                      key must match it (StrictHostKeyChecking=yes); unset, a laptop's own
 #                      known_hosts applies and a new host is accepted on first use.
+#   FOLLOW_SECONDS     how long to go on trying to reach the node (default: 2700)
+#   RETRY_SECONDS      between two tries (default: 5)
 #   DEPLOY_DIR         stack dir on the node (default: /opt/maktaba-relay,
 #                      matching setup.sh).
 #   MAKTABA_SYMBOLS_TOKEN  the token release symbol tables are uploaded with
@@ -32,6 +41,11 @@ set -euo pipefail
 # --- config ---------------------------------------------------------------
 : "${RELAY_SSH_HOST:?RELAY_SSH_HOST is required}"
 : "${RELAY_SSH_USER:?RELAY_SSH_USER is required}"
+: "${DEPLOY_ID:?DEPLOY_ID is required}"
+ACTION="${1:-apply}"
+case "$ACTION" in apply | commit | rollback) ;; *) echo "usage: deploy.sh apply | commit | rollback" >&2; exit 2 ;; esac
+FOLLOW_SECONDS="${FOLLOW_SECONDS:-2700}"
+RETRY_SECONDS="${RETRY_SECONDS:-5}"
 DEPLOY_DIR="${DEPLOY_DIR:-/opt/maktaba-relay}"
 RELAY_SSH_PORT="${RELAY_SSH_PORT:-22}"
 
@@ -42,14 +56,17 @@ err() { printf '\033[1;31m[deploy:error]\033[0m %s\n' "$*" >&2; }
 # CI hands the key in via the RELAY_SSH_KEY secret (key *contents*). Stage
 # it as a locked-down temp file and clean it up on exit. Without it, fall
 # back to the caller's ambient SSH config (agent / ~/.ssh/id_*).
-SSH_OPTS=(-o ConnectTimeout=15 -o BatchMode=yes -p "$RELAY_SSH_PORT")
+SSH_OPTS=(-o ConnectTimeout=15 -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o BatchMode=yes -p "$RELAY_SSH_PORT")
 KEY_FILE=""
 KH_FILE=""
+OUT=""
+ROUND=""
 # (an if, not `[ ] && rm`: an EXIT trap's last status is the script's, so a run with no
 # key file would end 1 after a good deploy)
 cleanup() {
   if [ -n "$KEY_FILE" ]; then rm -f "$KEY_FILE"; fi
   if [ -n "$KH_FILE" ]; then rm -f "$KH_FILE"; fi
+  if [ -n "$OUT" ]; then rm -f "$OUT" "$ROUND"; fi
 }
 trap cleanup EXIT
 
@@ -70,14 +87,14 @@ fi
 
 SSH_TARGET="${RELAY_SSH_USER}@${RELAY_SSH_HOST}"
 
-log "Deploying to ${SSH_TARGET}:${DEPLOY_DIR}"
+log "${ACTION} on ${SSH_TARGET}:${DEPLOY_DIR} (deploy ${DEPLOY_ID})"
 
 # --- the symbol uploaders' token ------------------------------------------
 # As deploy/cloud-ha/deploy.sh does on the pair: over SSH's stdin (never an
 # argument, never echoed), into the read-only secrets mount, readable by its
 # owner only and owned like the log key; replaced only when it changed. The
 # api reads MAKTABA_CLOUD_SYMBOLS_TOKEN_FILE when the rollout below restarts it.
-if [ -n "${MAKTABA_SYMBOLS_TOKEN:-}" ]; then
+if [ "$ACTION" = apply ] && [ -n "${MAKTABA_SYMBOLS_TOKEN:-}" ]; then
   # the remote script is single-quoted on purpose: it expands on the VPS, with the
   # deploy dir as its one (quoted) argument
   # shellcheck disable=SC2016,SC2029
@@ -108,18 +125,36 @@ fi
 fi
 
 # --- the rollout ------------------------------------------------------------
-# On the node: ops/rollout.sh apply (installed by `begin` as maktaba-rollout). It migrates, brings
-# the stack up, watches its health, switches the web app, and restores what was before on any
-# failure. Its last line is a marker: a remote command cut short can end at 0 too, so only the
-# marker says it ran to its end.
-REMOTE_LOG="$(mktemp)"
-# shellcheck disable=SC2029  # expands here, on purpose: the quoted argument
-ssh "${SSH_OPTS[@]}" "$SSH_TARGET" "DEPLOY_DIR=$(printf '%q' "$DEPLOY_DIR") /usr/local/sbin/maktaba-rollout apply" </dev/null | tee "$REMOTE_LOG"
-
-if ! grep -qx '__maktaba_deploy_complete__' "$REMOTE_LOG"; then
-  rm -f "$REMOTE_LOG"
+# On the node, as a unit of its own (ops/rollout.sh job, installed by `begin` as maktaba-rollout): it
+# outlives this session, so a cut one is picked up again from the line it ended at. apply migrates,
+# brings the stack up, watches its health, switches the web app, and restores what was before on
+# any failure. Its last line is a marker: only it says apply ran to its end.
+OUT="$(mktemp)"
+ROUND="$(mktemp)"
+from=0
+end=$((SECONDS + FOLLOW_SECONDS))
+while :; do
+  rc=0
+  # shellcheck disable=SC2029  # expands here, on purpose: the quoted arguments
+  ssh "${SSH_OPTS[@]}" "$SSH_TARGET" "if [ ! -x /usr/local/sbin/maktaba-rollout ]; then echo '[rollout] no deploy has begun on this node'; exit $([ "$ACTION" = rollback ] && echo 0 || echo 1); fi; \
+DEPLOY_DIR=$(printf '%q' "$DEPLOY_DIR") /usr/local/sbin/maktaba-rollout job $(printf '%q' "$DEPLOY_ID") $ACTION $from" </dev/null | tee "$ROUND" || rc="${PIPESTATUS[0]}"
+  cat "$ROUND" >>"$OUT"
+  from=$((from + $(wc -l <"$ROUND")))
+  # 255 is ssh's own: the session was cut or not made, the unit goes on
+  [ "$rc" = 255 ] || break
+  if [ "$SECONDS" -ge "$end" ]; then
+    err "the node could not be reached to its end: $ACTION goes on there, and the node comes to a known state by itself (ops/rollout.sh, \"A lost runner\")"
+    break
+  fi
+  log "the session was cut: following $ACTION again from line $from"
+  sleep "$RETRY_SECONDS"
+done
+if [ "$rc" = 0 ] && [ "$ACTION" = apply ] && ! grep -qx '__maktaba_deploy_complete__' "$OUT"; then
   err "the remote script stopped before its end: nothing is known to be rolled out"
-  exit 1
+  rc=1
 fi
-rm -f "$REMOTE_LOG"
-log "Applied. It is the node's once its tests pass (maktaba-rollout commit)."
+[ "$rc" = 0 ] || exit "$rc"
+case "$ACTION" in
+  apply) log "Applied. It is the node's once its tests pass (deploy.sh commit)." ;;
+  *) log "$ACTION: done." ;;
+esac

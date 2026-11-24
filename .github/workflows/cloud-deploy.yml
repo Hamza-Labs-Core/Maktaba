@@ -6,13 +6,15 @@
 #            cloud rehearsal passed on the release's commit (tools/release/cloud-guard.sh);
 #            production only: this run is main's, and a QA run of main passed with the same
 #            image digests (the release's, Postgres and Redis) and the same files (this workflow,
-#            the rehearsal guard, deploy/cloud-relay with its tests); its web bundle is the one
-#            production gets
+#            the rehearsal guard, deploy/cloud-relay with its tests), which main still has; its web
+#            bundle, by its SHA-256, is the one production gets. A re-run checks it all again
 #   web      the cloud web app (web/cloud) built from the release's source (QA only)
 #   deploy   ops/rollout.sh begin (room, the images pulled, a backup, the present set saved), the
 #            node's DNS records (with CLOUDFLARE_DNS_TOKEN), setup.sh (idempotent), the web
-#            bundle, deploy.sh (migrate, swap, health); over SSH with the pinned host key. Any
-#            failure from here on, the tests' included, restores the saved set; a pass commits
+#            bundle, deploy.sh apply (migrate, swap, health), a unit of the node's own; over SSH
+#            with the pinned host key. Any failure from here on, the tests' included, restores the
+#            saved set (deploy.sh rollback); a pass commits (deploy.sh commit). A lost runner or a
+#            cut session leaves the node to come to a known state by itself
 #   test     deploy/cloud-relay/tests/e2e.py against the node: full on QA (a real home linked
 #            through the relay, sign-in and play, plans, a relay restart, firewall, backups,
 #            load and sizing), smoke on production (the same without the restart and the load)
@@ -44,7 +46,8 @@ on:
 permissions:
   contents: read
 
-# one deploy per node at a time; a deploy that waits is never cancelled
+# one deploy per node at a time, and one under way is never cancelled (GitHub keeps one waiting: a
+# newer dispatch takes an older waiting one's place)
 concurrency:
   group: cloud-deploy-${{ inputs.target || 'qa' }}
   cancel-in-progress: false
@@ -71,6 +74,8 @@ jobs:
       postgres_ref: ${{ steps.images.outputs.postgres_ref }}
       redis_ref: ${{ steps.images.outputs.redis_ref }}
       files: ${{ steps.files.outputs.files }}
+      attempt: ${{ github.run_attempt }}
+      web_sha256: ${{ steps.qa.outputs.web_sha256 }}
       qa_run: ${{ steps.qa.outputs.run }}
     steps:
       # anything but qa: only main's own copy of this workflow, dispatched by hand
@@ -162,6 +167,13 @@ jobs:
             printf '%s=%s ' "$f" "$(git rev-parse "HEAD:$f")"; done)"
           echo "$files"
           echo "files=${files% }" >> "$GITHUB_OUTPUT"
+          # production: main still has them (an old run started again would put older ones back)
+          if [ "$TARGET" = prod ]; then
+            git fetch -q origin main
+            now="$(for f in .github/workflows/cloud-deploy.yml tools/release/cloud-guard.sh deploy/cloud-relay; do
+              printf '%s=%s ' "$f" "$(git rev-parse "origin/main:$f")"; done)"
+            [ "$now" = "$files" ] || { echo "::error::main has other deploy files by now: dispatch a new run"; exit 1; }
+          fi
 
       # production deploys only what QA passed: the same digests and the same files, in a
       # successful QA run of this workflow on main (its qa-passed record)
@@ -179,20 +191,28 @@ jobs:
         run: |
           set -euo pipefail
           # main's runs only: another branch's copy of this workflow could record anything
+          git fetch -q origin main
           runs="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/cloud-deploy.yml/runs?status=success&branch=main&event=workflow_dispatch&per_page=50" \
-            --jq '.workflow_runs[] | select(.head_branch == "main" and .event == "workflow_dispatch") | select(.display_title | startswith("cloud deploy qa ")) | .id')"
-          for run in $runs; do
+            --jq '.workflow_runs[] | select(.head_branch == "main" and .event == "workflow_dispatch") | select(.display_title | startswith("cloud deploy qa ")) | [.id, .head_sha] | @tsv')"
+          while read -r run sha; do
+            # by its commit, not its branch's name alone (a tag can be named main)
+            if [ -z "$sha" ] || ! git merge-base --is-ancestor "$sha" origin/main 2>/dev/null; then continue; fi
             d="$(mktemp -d)"
-            if gh run download "$run" --repo "$GITHUB_REPOSITORY" -n qa-passed -D "$d" >/dev/null 2>&1 &&
-              jq -e --arg c "$CLOUD" --arg s "$SERVER" --arg k "$CADDY" \
-                --arg p "$POSTGRES" --arg r "$REDIS" --arg f "$FILES" \
-                '.cloud_ref == $c and .server_ref == $s and .caddy_ref == $k and .postgres_ref == $p and .redis_ref == $r and .files == $f' "$d/qa-passed.json" >/dev/null; then
-              echo "QA passed this release and these deploy files in run $run"
-              echo "run=$run" >> "$GITHUB_OUTPUT"
-              exit 0
-            fi
-          done
-          echo "::error::no successful QA run of this workflow with these images and deploy files: deploy to qa first"
+            gh run download "$run" --repo "$GITHUB_REPOSITORY" -p 'qa-passed-*' -D "$d" >/dev/null 2>&1 || continue
+            for rec in "$d"/*/qa-passed.json; do
+              [ -s "$rec" ] || continue
+              if jq -e --arg c "$CLOUD" --arg s "$SERVER" --arg k "$CADDY" \
+                --arg p "$POSTGRES" --arg r "$REDIS" --arg f "$FILES" --arg run "$run" \
+                '.cloud_ref == $c and .server_ref == $s and .caddy_ref == $k and .postgres_ref == $p and .redis_ref == $r and .files == $f
+                 and .run == $run and (.web_sha256 | test("^[0-9a-f]{64}$"))' "$rec" >/dev/null; then
+                echo "QA passed this release and these deploy files in run $run"
+                echo "run=$run" >> "$GITHUB_OUTPUT"
+                echo "web_sha256=$(jq -r .web_sha256 "$rec")" >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
+            done
+          done <<< "$runs"
+          echo "::error::no successful QA run of this workflow on main with these images and deploy files: deploy to qa first"
           exit 1
 
   web:
@@ -200,6 +220,8 @@ jobs:
     if: inputs.target != 'prod'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    outputs:
+      sha256: ${{ steps.bundle.outputs.sha256 }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -223,14 +245,17 @@ jobs:
           node-version-file: web/.nvmrc
           package-manager-cache: false
       - name: Build the cloud web app (the release's source)
+        id: bundle
         working-directory: ${{ runner.temp }}/release/web
         run: |
           pnpm install --frozen-lockfile
           pnpm build:cloud
           tar -C dist-cloud -czf "$RUNNER_TEMP/cloud-web.tar.gz" .
+          echo "sha256=$(sha256sum "$RUNNER_TEMP/cloud-web.tar.gz" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: cloud-web
+          # named by what it is: a run started again can leave two
+          name: cloud-web-${{ steps.bundle.outputs.sha256 }}
           path: ${{ runner.temp }}/cloud-web.tar.gz
           retention-days: 90
 
@@ -244,16 +269,26 @@ jobs:
       actions: read # the QA run's web bundle (production)
     environment:
       name: ${{ inputs.target || 'qa' }}
+    env:
+      # this deploy's name on the node: its commands do nothing to another's
+      DEPLOY_ID: ${{ github.run_id }}-${{ github.run_attempt }}
     steps:
-      # again here, where the secrets are: this job could be run again on its own
+      # again here, where the secrets are. This job started again on its own would carry the first
+      # attempt's answers: production's gate is asked again, or nothing is deployed.
       - name: Production deploys from main only
         if: inputs.target != 'qa'
         env:
           TARGET_INPUT: ${{ inputs.target }}
+          GATE_ATTEMPT: ${{ needs.resolve.outputs.attempt }}
         run: |
-          if [ "$TARGET_INPUT" = prod ] && [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] && [ "$GITHUB_REF" = refs/heads/main ]; then exit 0; fi
-          echo "::error::production deploys only from main, by hand"
-          exit 1
+          if [ "$TARGET_INPUT" != prod ] || [ "$GITHUB_EVENT_NAME" != workflow_dispatch ] || [ "$GITHUB_REF" != refs/heads/main ]; then
+            echo "::error::production deploys only from main, by hand"
+            exit 1
+          fi
+          if [ "$GATE_ATTEMPT" != "$GITHUB_RUN_ATTEMPT" ]; then
+            echo "::error::production's gate was asked in attempt $GATE_ATTEMPT, this is $GITHUB_RUN_ATTEMPT: run all jobs again"
+            exit 1
+          fi
 
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -323,7 +358,7 @@ jobs:
           # the names expand here, on purpose
           # shellcheck disable=SC2029
           ssh node "command -v docker >/dev/null || SETUP_DOCKER_ONLY=yes bash /opt/maktaba-relay-src/setup.sh; \
-            RELAY_DOMAIN='$RELAY_DOMAIN' API_DOMAIN='$API_DOMAIN' APP_DOMAIN='$APP_DOMAIN' RELAY_TLS='$RELAY_TLS' \
+            DEPLOY_ID='$DEPLOY_ID' RELAY_DOMAIN='$RELAY_DOMAIN' API_DOMAIN='$API_DOMAIN' APP_DOMAIN='$APP_DOMAIN' RELAY_TLS='$RELAY_TLS' \
             MAKTABA_CLOUD_TAG='$CLOUD_REF' MAKTABA_CADDY_TAG='$CADDY_REF' bash /opt/maktaba-relay-src/ops/rollout.sh begin" </dev/null
 
       - name: The node's DNS records (with the DNS token)
@@ -346,30 +381,35 @@ jobs:
           # shellcheck disable=SC2029
           printf '%s\n%s\n' "${CF_API_TOKEN:-}" "${LICENSE_SIGNING_KEY:-}" | ssh node "read -r t; read -r k; \
             [ -z \"\$t\" ] || export CF_API_TOKEN=\"\$t\"; [ -z \"\$k\" ] || export LICENSE_SIGNING_KEY=\"\$k\"; \
-            cd /opt/maktaba-relay-src && SETUP_START=no RELAY_DOMAIN='$RELAY_DOMAIN' API_DOMAIN='$API_DOMAIN' \
+            RELAY_DOMAIN='$RELAY_DOMAIN' API_DOMAIN='$API_DOMAIN' \
             APP_DOMAIN='$APP_DOMAIN' ACME_EMAIL='$ACME_EMAIL' RELAY_TLS='$RELAY_TLS' \
             RELAY_PLANS_ENFORCE='$RELAY_PLANS_ENFORCE' MAKTABA_CLOUD_TAG='$CLOUD_REF' MAKTABA_CADDY_TAG='$CADDY_REF' \
-            bash setup.sh"
+            /usr/local/sbin/maktaba-rollout setup '$DEPLOY_ID'"
 
       - name: The cloud web app's bundle (QA's build)
         env:
           GH_TOKEN: ${{ github.token }}
           QA_RUN: ${{ needs.resolve.outputs.qa_run }}
+          # what QA recorded (production), or what this run's web job built
+          WEB_SHA256: ${{ inputs.target == 'prod' && needs.resolve.outputs.web_sha256 || needs.web.outputs.sha256 }}
         run: |
           set -euo pipefail
+          [[ "$WEB_SHA256" =~ ^[0-9a-f]{64}$ ]] || { echo "::error::no web bundle is named"; exit 1; }
           d="$(mktemp -d)"
           run="$GITHUB_RUN_ID"; [ "$TARGET" != prod ] || run="$QA_RUN"
           # the artifact store answers 503 now and then
           for try in 1 2 3; do
-            gh run download "$run" --repo "$GITHUB_REPOSITORY" -n cloud-web -D "$d" && break
+            gh run download "$run" --repo "$GITHUB_REPOSITORY" -n "cloud-web-$WEB_SHA256" -D "$d" && break
             [ "$try" -lt 3 ] || exit 1
             sleep 30
           done
-          sha256sum "$d/cloud-web.tar.gz"
+          echo "$WEB_SHA256  $d/cloud-web.tar.gz" | sha256sum -c -
           # unpacked beside the version being served; the rollout switches to it in one rename
-          ssh node '/usr/local/sbin/maktaba-rollout web' < "$d/cloud-web.tar.gz"
+          # shellcheck disable=SC2029
+          ssh node "/usr/local/sbin/maktaba-rollout web '$DEPLOY_ID'" < "$d/cloud-web.tar.gz"
 
       - name: Deploy (deploy.sh)
+        timeout-minutes: 50
         env:
           RELAY_SSH_HOST: ${{ env.NODE_IP }}
           RELAY_SSH_USER: ${{ env.NODE_USER }}
@@ -379,7 +419,7 @@ jobs:
           set -euo pipefail
           RELAY_SSH_KNOWN_HOSTS="$(cat ~/.ssh/known_hosts_node)"
           export RELAY_SSH_KNOWN_HOSTS
-          bash deploy/cloud-relay/deploy.sh
+          bash deploy/cloud-relay/deploy.sh apply
           ssh node 'cd /opt/maktaba-relay && docker compose --env-file .env ps --format "{{.Service}} {{.Status}}"'
 
       - name: The node's own CA (certificates before DNS)
@@ -423,15 +463,30 @@ jobs:
 
       - name: Commit (the node's set is this one)
         id: commit
-        run: ssh node '/usr/local/sbin/maktaba-rollout commit && rm -rf /opt/maktaba-relay-src' </dev/null
+        env:
+          RELAY_SSH_HOST: ${{ env.NODE_IP }}
+          RELAY_SSH_USER: ${{ env.NODE_USER }}
+          RELAY_SSH_KEY: ${{ secrets.RELAY_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          RELAY_SSH_KNOWN_HOSTS="$(cat ~/.ssh/known_hosts_node)"
+          export RELAY_SSH_KNOWN_HOSTS
+          bash deploy/cloud-relay/deploy.sh commit
 
       # anything failed or was cancelled after the deploy began: what was before comes back (a node
-      # that can't go back is held, and this step says why)
+      # that can't go back is held, and this step says why). It is a unit of the node's own: started
+      # in seconds, and done whether or not this run lives to see it.
       - name: Roll back (what was before this deploy)
         if: (failure() || cancelled()) && steps.begin.outcome != 'skipped' && steps.commit.outcome != 'success'
+        env:
+          RELAY_SSH_HOST: ${{ env.NODE_IP }}
+          RELAY_SSH_USER: ${{ env.NODE_USER }}
+          RELAY_SSH_KEY: ${{ secrets.RELAY_SSH_KEY }}
         run: |
-          ssh node 'test ! -x /usr/local/sbin/maktaba-rollout || /usr/local/sbin/maktaba-rollout rollback' </dev/null 2>&1 | tee "$RUNNER_TEMP/rollback.log"
-          exit "${PIPESTATUS[0]}"
+          set -euo pipefail
+          RELAY_SSH_KNOWN_HOSTS="$(cat ~/.ssh/known_hosts_node)"
+          export RELAY_SSH_KNOWN_HOSTS
+          bash deploy/cloud-relay/deploy.sh rollback
 
       # before any further action runs on this runner
       - name: Forget the key
@@ -447,7 +502,7 @@ jobs:
           if-no-files-found: ignore
 
   record:
-    needs: [resolve, deploy]
+    needs: [resolve, web, deploy]
     if: inputs.target != 'prod'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -461,14 +516,16 @@ jobs:
           POSTGRES: ${{ needs.resolve.outputs.postgres_ref }}
           REDIS: ${{ needs.resolve.outputs.redis_ref }}
           FILES: ${{ needs.resolve.outputs.files }}
+          WEB_SHA256: ${{ needs.web.outputs.sha256 }}
         run: |
+          [[ "$WEB_SHA256" =~ ^[0-9a-f]{64}$ ]] || { echo "::error::no web bundle is named"; exit 1; }
           jq -n --arg tag "$TAG" --arg c "$CLOUD" --arg s "$SERVER" --arg k "$CADDY" --arg p "$POSTGRES" --arg r "$REDIS" --arg f "$FILES" \
-            --arg run "$GITHUB_RUN_ID" --arg sha "$GITHUB_SHA" \
-            '{tag: $tag, cloud_ref: $c, server_ref: $s, caddy_ref: $k, postgres_ref: $p, redis_ref: $r, files: $f, run: $run, workflow_sha: $sha}' \
+            --arg run "$GITHUB_RUN_ID" --arg sha "$GITHUB_SHA" --arg w "$WEB_SHA256" \
+            '{tag: $tag, cloud_ref: $c, server_ref: $s, caddy_ref: $k, postgres_ref: $p, redis_ref: $r, files: $f, web_sha256: $w, run: $run, workflow_sha: $sha}' \
             > qa-passed.json
           cat qa-passed.json
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: qa-passed
+          name: qa-passed-${{ github.run_attempt }}
           path: qa-passed.json
           retention-days: 90

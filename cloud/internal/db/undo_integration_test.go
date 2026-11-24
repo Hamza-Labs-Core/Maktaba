@@ -209,3 +209,37 @@ func TestUndoJudgesEveryMigration(t *testing.T) {
 		t.Errorf("%d judged, %d applied", judged, len(applied))
 	}
 }
+
+// One that can't be undone is never hidden by another that is only better kept, whichever of them
+// was applied last, nor by one whose rows could not be read: the previous release must not be
+// started on a schema it can't run on.
+func TestUndoTheGravestRefusalWins(t *testing.T) {
+	ctx := context.Background()
+	contract := "-- contract: nothing reads it\n-- +goose Up\nALTER TABLE ua DROP COLUMN kept;\n-- +goose Down\nALTER TABLE ua ADD COLUMN kept TEXT;\n"
+	seeded := "-- +goose Up\nCREATE TABLE uh (id INT);\nINSERT INTO uh VALUES (1);\n-- +goose Down\nDROP TABLE uh;\n"
+	unreadable := "-- +goose Up\nCREATE TABLE ui (id INT);\n-- +goose Down\nDROP TABLE a.b.c.d;\n"
+	for name, deploy := range map[string]map[string]string{
+		"the contract first":           {"00000010_c.sql": contract, "00000011_s.sql": seeded},
+		"the contract last":            {"00000010_s.sql": seeded, "00000011_c.sql": contract},
+		"between two kept":             {"00000010_s.sql": seeded, "00000011_c.sql": contract, "00000012_t.sql": tabl},
+		"behind one that is not read":  {"00000010_c.sql": contract, "00000011_u.sql": unreadable},
+		"and the Down script is empty": {"00000010_n.sql": "-- +goose Up\nCREATE TABLE uj (id INT);\n", "00000011_s.sql": seeded},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, m := undoWorld(t, deploy)
+			before, _ := m.Applied(ctx)
+			err := m.Undo(ctx, before[2:])
+			if !errors.Is(err, db.ErrUndoLossy) || errors.Is(err, db.ErrUndoKeeps) {
+				t.Fatalf("%v, want ErrUndoLossy", err)
+			}
+			if after, _ := m.Applied(ctx); !slices.Equal(before, after) {
+				t.Fatalf("something was undone: %v", after)
+			}
+		})
+	}
+	// and each refusal names every migration behind it
+	_, m := undoWorld(t, map[string]string{"00000010_s.sql": seeded, "00000011_s.sql": strings.ReplaceAll(seeded, "uh", "uk")})
+	if err := m.Undo(ctx, []int64{10, 11}); !errors.Is(err, db.ErrUndoKeeps) || !strings.Contains(err.Error(), "00000010_s.sql") || !strings.Contains(err.Error(), "00000011_s.sql") {
+		t.Fatalf("%v", err)
+	}
+}

@@ -265,9 +265,13 @@ jobs:
   # setup.sh, ops/rollout.sh and the compose stack as a node runs them, each way a deploy can
   # fail made to happen, and the node back as it was (or held, saying why)
   single-node:
-    name: single-node
+    name: single-node (${{ matrix.part }})
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 80
+    strategy:
+      fail-fast: false
+      matrix:
+        part: ['1', '2']
     steps:
       - uses: actions/checkout@v6.0.2
         with:
@@ -277,22 +281,58 @@ jobs:
       - name: Rehearse the rollout
         env:
           OUT: ${{ runner.temp }}/rehearsal
+          PART: ${{ matrix.part }}
         run: |
-          sudo --preserve-env=CI,GITHUB_STEP_SUMMARY REPO="$PWD" OUT="$OUT" python3 -I deploy/cloud-relay/tests/rollout_rehearsal.py 2>&1 | tee "${RUNNER_TEMP}/scenario.log"
+          sudo --preserve-env=CI,GITHUB_STEP_SUMMARY,GITHUB_RUN_ID,PART REPO="$PWD" OUT="$OUT" python3 -I deploy/cloud-relay/tests/rollout_rehearsal.py 2>&1 | tee "${RUNNER_TEMP}/scenario.log"
           exit "${PIPESTATUS[0]}"
       - name: The node's logs (on failure)
         if: failure()
         run: |
-          sudo bash -c 'cd /opt/maktaba-relay && docker compose --env-file .env ps -a; docker compose --env-file .env logs --tail 300 --no-color; journalctl -u maktaba-relay -n 200 --no-pager' 2>&1 |
+          sudo bash -c 'cd /opt/maktaba-relay && docker compose --env-file .env ps -a; docker compose --env-file .env logs --tail 300 --no-color; journalctl -u maktaba-relay -u "maktaba-rollout*" -n 400 --no-pager; tail -n 200 /var/lib/maktaba-cloud-deploy/jobs/*/log' 2>&1 |
             sudo tee "${RUNNER_TEMP}/rehearsal/node.log" >/dev/null || true
       - uses: actions/upload-artifact@v7.0.1
         if: always()
         with:
-          name: rehearsal-single-node
+          name: rehearsal-single-node-${{ matrix.part }}
           path: |
             ${{ runner.temp }}/rehearsal
             ${{ runner.temp }}/scenario.log
           retention-days: 14
+
+  # The rehearsal rehearsed: the node's scripts with one guarantee taken out at a time, and the
+  # cases that must notice. Nightly and by hand; a mutation nobody notices is a case that is missing.
+  single-node-mutations:
+    name: single-node without ${{ matrix.mutation }}
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        mutation:
+          - no-backup
+          - no-lock
+          - drop-in-place
+          - web-not-atomic
+          - never-settled
+          - keeps-no-backup
+          - in-the-session
+          - no-watch
+          - boot-starts-anyway
+          - hold-by-compose
+          - first-by-what-runs
+          - truncated-dump
+          - no-reserve
+          - downgrades
+    steps:
+      - uses: actions/checkout@v6.0.2
+        with:
+          persist-credentials: false
+      - name: The cases that must notice
+        env:
+          OUT: ${{ runner.temp }}/rehearsal
+          MUTATE: ${{ matrix.mutation }}
+        run: sudo --preserve-env=CI,GITHUB_STEP_SUMMARY,GITHUB_RUN_ID,MUTATE REPO="$PWD" OUT="$OUT" python3 -I deploy/cloud-relay/tests/rollout_rehearsal.py
 
   cloud-rehearsal:
     name: cloud-rehearsal

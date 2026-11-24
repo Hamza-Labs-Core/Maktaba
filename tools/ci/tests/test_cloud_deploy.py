@@ -53,14 +53,27 @@ def named(job: str, name: str) -> dict[str, Any]:
     ],
 )
 def test_production_is_refused_anywhere_but_main(job: str, target: str, event: str, ref: str, ok: bool) -> None:
+    assert _refusal(job, target, event, ref) is ok
+
+
+def _refusal(job: str, target: str, event: str, ref: str, gate: str = "2", attempt: str = "2") -> bool:
     first = steps(job)[0]
     assert first["if"] == "inputs.target != 'qa'", "the refusal is the job's first step, for anything but qa"
     p = subprocess.run(
         ["bash", "-c", first["run"]],
-        env={"PATH": os.environ["PATH"], "TARGET_INPUT": target, "GITHUB_EVENT_NAME": event, "GITHUB_REF": ref},
+        env={"PATH": os.environ["PATH"], "TARGET_INPUT": target, "GITHUB_EVENT_NAME": event, "GITHUB_REF": ref,
+             "GATE_ATTEMPT": gate, "GITHUB_RUN_ATTEMPT": attempt},
         capture_output=True,
     )
-    assert (p.returncode == 0) is ok
+    return p.returncode == 0
+
+
+def test_a_deploy_job_run_again_on_its_own_asks_the_gate_again() -> None:
+    assert _refusal("deploy", "prod", "workflow_dispatch", "refs/heads/main", gate="1", attempt="1")
+    assert not _refusal("deploy", "prod", "workflow_dispatch", "refs/heads/main", gate="1", attempt="2")
+    assert not _refusal("deploy", "prod", "workflow_dispatch", "refs/heads/main", gate="", attempt="1")
+    assert steps("deploy")[0]["env"]["GATE_ATTEMPT"] == "${{ needs.resolve.outputs.attempt }}"
+    assert wf()["jobs"]["resolve"]["outputs"]["attempt"] == "${{ github.run_attempt }}"
 
 
 def test_the_deploy_job_itself_needs_main_for_production() -> None:
@@ -74,9 +87,18 @@ def test_what_qa_records_is_what_production_compares() -> None:
     assert record
     keys = set(re.findall(r"(\w+): \$", record[1])) - {"tag", "run", "workflow_sha"}
     gate = named("resolve", "QA passed this release")["run"]
-    assert keys == set(re.findall(r"\.(\w+) == \$", gate)) == {
+    assert keys - {"web_sha256"} == set(re.findall(r"\.(\w+) == \$", gate)) - {"run"} == {
         "cloud_ref", "server_ref", "caddy_ref", "postgres_ref", "redis_ref", "files"}
     assert "branch=main&event=workflow_dispatch" in gate and '.head_branch == "main"' in gate
+    # by its commit too: a tag can be named main
+    assert 'merge-base --is-ancestor "$sha" origin/main' in gate
+    # the web bundle by what it is, recorded and checked
+    assert "web_sha256" in keys and "web_sha256=$(jq -r .web_sha256" in gate
+    web = named("deploy", "The cloud web app's bundle")
+    assert "cloud-web-$WEB_SHA256" in web["run"] and "sha256sum -c" in web["run"]
+    assert "needs.resolve.outputs.web_sha256" in web["env"]["WEB_SHA256"]
+    # and main still has the files: an old run started again puts none back
+    assert 'git rev-parse "origin/main:$f"' in named("resolve", "The deploy's files")["run"]
     files = named("resolve", "The deploy's files")["run"]
     for f in (".github/workflows/cloud-deploy.yml", "tools/release/cloud-guard.sh", "deploy/cloud-relay"):
         assert f in files and (ROOT / f).exists()
@@ -117,6 +139,11 @@ def test_a_failure_after_begin_rolls_back_and_a_pass_commits() -> None:
              "Deploy (deploy.sh)", "Test (deploy/cloud-relay/tests/e2e.py)", "End the test accounts",
              "Commit (the node's set is this one)", "Roll back (what was before this deploy)", "Forget the key"]
     assert [names.index(n) for n in order] == sorted(names.index(n) for n in order)
+    for name, action in (("Deploy (deploy.sh)", "apply"), ("Commit", "commit"), ("Roll back", "rollback")):
+        assert f"bash deploy/cloud-relay/deploy.sh {action}" in named("deploy", name)["run"], name
+    assert wf()["jobs"]["deploy"]["env"]["DEPLOY_ID"] == "${{ github.run_id }}-${{ github.run_attempt }}"
+    for name in ("Set up the node", "The cloud web app's bundle"):
+        assert "'$DEPLOY_ID'" in named("deploy", name)["run"], name
     back = named("deploy", "Roll back")
     assert back["if"] == "(failure() || cancelled()) && steps.begin.outcome != 'skipped' && steps.commit.outcome != 'success'"
     assert "if" not in named("deploy", "Commit"), "only after everything before it passed"
@@ -255,3 +282,36 @@ def test_a_run_that_leaves_something_behind_fails(e2e: Any, monkeypatch: pytest.
     e2e.results.clear()
     assert e2e.check("ended", lambda: e2e.check_ended(acct)) is False
     assert "deletion failed" in e2e.results[0]["detail"] or "sign-in" in e2e.results[0]["detail"]
+
+
+# --- the rehearsal
+
+
+def test_every_mutation_is_run_and_names_cases_that_exist() -> None:
+    text = (NODE / "tests/rollout_rehearsal.py").read_text()
+    table = text[text.index("MUTATIONS: dict") : text.index("def mutate(")]
+    names = re.findall(r'^    "([\w-]+)": \("ops/', table, re.M)
+    cases = set(re.findall(r'^        \("([^"]+)", ', text, re.M))
+    noticed = {c for group in re.findall(r"\[((?:\"[^\"]+\"(?:, )?)+)\]\)", table) for c in re.findall(r'"([^"]+)"', group)}
+    assert len(names) >= 14 and noticed <= cases, noticed - cases
+    run = yaml.safe_load((ROOT / ".github/workflows/cloud-rehearsal.yml").read_text())["jobs"]
+    assert run["single-node-mutations"]["strategy"]["matrix"]["mutation"] == names
+    assert run["single-node"]["strategy"]["matrix"]["part"] == ["1", "2"]
+    assert "single-node" in run["cloud-rehearsal"]["needs"]
+
+
+def test_every_mutation_still_finds_what_it_takes_out(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("REPO", str(ROOT))
+    spec = importlib.util.spec_from_file_location("rollout_rehearsal", NODE / "tests/rollout_rehearsal.py")
+    assert spec and spec.loader
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    for name in m.MUTATIONS:
+        src = tmp_path / name
+        (src / "ops").mkdir(parents=True)
+        for f in ("rollout.sh", "backup.sh"):
+            (src / "ops" / f).write_text((NODE / "ops" / f).read_text())
+        m.MUTATE = name
+        m.mutate(src)  # it fails when nothing is taken out, or what is left does not parse
+        changed = m.MUTATIONS[name][0]
+        assert (src / changed).read_text() != (NODE / changed).read_text(), name

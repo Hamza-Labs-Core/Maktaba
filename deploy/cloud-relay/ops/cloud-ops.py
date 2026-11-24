@@ -16,7 +16,7 @@ list, shell history or CI log; this tool prints no email, password, token or cod
   mail, the operator confirms an account here: the change and its audit row ("cli",
   auth.email_verified) in one transaction.
 - end-test-accounts: the accounts of the deploy's tests (ci-e2e-<digits>@example.com, nothing
-  else): their homes deleted, their sessions ended, their 30-day deletion holds on, in one
+  else): their homes and claim codes deleted, their sessions ended, their 30-day deletion holds on, in one
   transaction, audited. It prints how many it ended and how many are left active or with a home
   (the tests fail unless none is). A test that stopped early is ended by the next deploy's.
 - set-plan: through the operator console's API (story 50.33) on the stack's private network
@@ -133,7 +133,10 @@ TEST_EMAIL = r"^ci-e2e-[0-9]+@example\.com$"
 def end_test_accounts() -> None:
     out = psql(
         f"""BEGIN;
-CREATE TEMP TABLE t ON COMMIT DROP AS SELECT id FROM users WHERE email ~ '{TEST_EMAIL}';
+-- each account's lock first, as a claim takes it: a home redeeming its code now is either in
+-- already (and deleted below) or finds its code gone
+CREATE TEMP TABLE t ON COMMIT DROP AS SELECT id FROM users WHERE email ~ '{TEST_EMAIL}' FOR NO KEY UPDATE;
+DELETE FROM server_claims WHERE user_id IN (SELECT id FROM t);
 CREATE TEMP TABLE n ON COMMIT DROP AS
   SELECT t.id, EXISTS (SELECT 1 FROM servers s WHERE s.owner_user_id = t.id) AS homes,
          NOT EXISTS (SELECT 1 FROM account_deletions d WHERE d.user_id = t.id AND d.cancelled_at IS NULL) AS active

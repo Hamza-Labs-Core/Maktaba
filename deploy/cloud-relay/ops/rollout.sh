@@ -1,22 +1,35 @@
 #!/usr/bin/env bash
 # Maktaba Cloud, one node: a deploy that can always go back (docs/cloud-single-node.md, "When a
 # deploy fails"). Runs on the node, as root; installed as /usr/local/sbin/maktaba-rollout, outside
-# the stack it saves and restores, by `begin`.
+# the stack it saves and restores, by `begin`. Every command of a deploy names the deploy (ID): one
+# of an older deploy does nothing to a newer one.
 #
-#   begin     before anything changes: room on the disk, the release's images pulled (by digest), a
-#             backup, and the node's present set saved (compose file, Caddyfile, cloud.toml, .env,
-#             secrets, ops, the web app's version, the migrations applied). Run from the new source
-#             folder, with MAKTABA_CLOUD_TAG and MAKTABA_CADDY_TAG. A failure leaves the node as it was.
-#   web       a web app's tar on stdin, unpacked beside the one being served; not served yet
-#   apply     after setup.sh wrote the new set: migrations in a throwaway container, the stack, its
-#             health watched, then the web app switched. Any failure restores the saved set.
-#   commit    after the deploy's tests passed: the new set is the node's, the saved one is dropped,
-#             unused images are removed
-#   rollback  the tests failed, or the run stopped: restores the saved set
-#   boot      the systemd unit's condition: a node that rebooted during a deploy restores first;
-#             a held node does not start (exit 1)
-#   unhold    a person decided: the node is as it is now, deploys may go on
-#   status    prints what is pending or held
+#   begin         before anything changes: room on the disk, the release's images pulled (by digest),
+#                 no older release than the node's, a backup, and the node's present set saved
+#                 (compose file, Caddyfile, cloud.toml, .env, secrets, ops, the web app's version, the
+#                 migrations applied). Run from the new source folder, with DEPLOY_ID,
+#                 MAKTABA_CLOUD_TAG and MAKTABA_CADDY_TAG. A failure leaves the node as it was.
+#   setup ID      the new source folder's setup.sh, under the lock and only in this deploy
+#   web ID        a web app's tar on stdin, unpacked beside the one being served; not served yet
+#   job ID CMD N  apply, rollback or commit of ID as a unit of its own (systemd), started once, its
+#                 output followed from line N: it outlives the SSH session that asked for it, and
+#                 asking again follows the same one
+#   apply ID      migrations in a throwaway container, the stack, its health watched, then the web
+#                 app switched. Any failure restores the saved set.
+#   commit ID     after the deploy's tests passed: the new set is the node's, the saved one is
+#                 dropped, unused images are removed
+#   rollback ID   the tests failed, or the run stopped: restores the saved set
+#   renew ID      the deploy is still being worked on (below)
+#   watch         a timer, each minute: a deploy nobody is working on any more goes back
+#   boot          the stack's unit asks before it starts: a node that rebooted during a deploy
+#                 restores first; a held node, or one a command is at work on, is not started
+#   unhold        a person decided: the node is as it is now, deploys may go on
+#   status        prints what is pending or held
+#
+# A lost runner. apply and rollback are units of the node's own, so a cut SSH session or a cancelled
+# run never stops them. A deploy that begins has a lease (LEASE_SECONDS); the workflow renews it
+# while it works. When it runs out, or a command was stopped part way (killed, out of memory), the
+# watch restores the saved set: the node reaches a known state with nobody there.
 #
 # Restoring: the migrations this deploy applied go back by their Down scripts (`maktaba-cloud migrate
 # undo`, with the new release's image), then the saved files, then the previous images.
@@ -28,11 +41,16 @@
 set -euo pipefail
 
 DEPLOY_DIR="${DEPLOY_DIR:-/opt/maktaba-relay}"
+SRC_DIR="${SRC_DIR:-/opt/maktaba-relay-src}"
 STATE="${STATE_DIR:-/var/lib/maktaba-cloud-deploy}"
 SELF=/usr/local/sbin/maktaba-rollout
+PROJECT=maktaba-relay
 MIN_FREE_MB="${MIN_FREE_MB:-3072}"
 # how long the new stack's health and readiness must hold
 WATCH_SECONDS="${WATCH_SECONDS:-45}"
+# how long a deploy may go without a word from its workflow
+LEASE_SECONDS="${LEASE_SECONDS:-1200}"
+LOCK_WAIT="${LOCK_WAIT:-60}"
 APP=(maktaba-cloud api worker)
 SET=(.env docker-compose.yml Caddyfile cloud.toml cloud.toml.template secrets ops)
 
@@ -53,10 +71,23 @@ saved() {
 }
 env_of() { grep -E "^$1=" "$DEPLOY_DIR/.env" 2>/dev/null | sed -n 1p | cut -d= -f2- || true; }
 
-running() { [ -f "$DEPLOY_DIR/.env" ] && [ -f "$DEPLOY_DIR/docker-compose.yml" ] && dc ps --status running --services 2>/dev/null | grep -x "$1" >/dev/null; }
+# a service's running containers by their labels, whatever the compose file says by now
+containers() { docker ps -q --filter "label=com.docker.compose.project=$PROJECT" --filter "label=com.docker.compose.service=$1"; }
+running() { [ -n "$(containers "$1")" ]; }
+# stop_all SERVICE...: stopped, and seen to be (docker keeps a stopped container stopped at boot)
+stop_all() {
+	local s c left=()
+	for s in "$@"; do
+		for c in $(containers "$s"); do docker stop -t 30 "$c" >/dev/null 2>&1 || true; done
+	done
+	for s in "$@"; do
+		if running "$s"; then left+=("$s"); fi
+	done
+	[ ${#left[@]} -eq 0 ] || { err "still running: ${left[*]}"; return 1; }
+}
 
-# the migrations the database records, one a line, in the order they were applied (COMPOSE: dc or saved)
-applied() {
+# the migrations the database records, one a line, in the order they were applied
+applied() { # applied COMPOSE(dc|saved) ENVFILE
 	local u d
 	u="$(grep -E '^POSTGRES_USER=' "$2" | sed -n 1p | cut -d= -f2-)"; d="$(grep -E '^POSTGRES_DB=' "$2" | sed -n 1p | cut -d= -f2-)"
 	"$1" exec -T postgres psql -X -q -A -t -v ON_ERROR_STOP=1 -U "${u:-maktaba}" -d "${d:-maktaba}" -c \
@@ -64,22 +95,83 @@ applied() {
 		</dev/null | sed '/^$/d'
 }
 
-# a first deploy has nothing to go back to: nothing was ever committed, and nothing serves
-first_deploy() { [ ! -f "$STATE/committed" ] && ! running maktaba-cloud; }
+# a first deploy has nothing to go back to: no database was ever made here, or the only deploys
+# there were failed as first ones. Anything else (a node set up by hand, one a person unheld) has a
+# set worth saving, whether or not it serves at this moment.
+first_deploy() {
+	[ ! -f "$STATE/committed" ] || return 1
+	[ ! -f "$STATE/no-release" ] || return 0
+	! docker volume inspect "${PROJECT}_pg_data" >/dev/null 2>&1
+}
+
+# --- the deploy under way ---------------------------------------------------------------------
+
+valid_id() { [[ "${1:-}" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$ ]]; }
+pending_id() { cat "$STATE/pending/id" 2>/dev/null || true; }
+# need_this CMD ID: this deploy is the one under way
+need_this() {
+	valid_id "${2:-}" || die "$1: name the deploy"
+	[ -d "$STATE/pending" ] || die "$1: no deploy has begun"
+	[ "$(pending_id)" = "$2" ] || die "$1: the deploy under way is $(pending_id), not $2"
+	[ ! -f "$STATE/held" ] || die "$1: the node is held"
+}
+lease() { printf '%s\n' "$(($(date +%s) + LEASE_SECONDS))" > "$STATE/pending/lease.new" && mv "$STATE/pending/lease.new" "$STATE/pending/lease"; }
+lease_over() { [ "$(date +%s)" -gt "$(cat "$STATE/pending/lease" 2>/dev/null || echo 0)" ]; }
+
+# vX.Y.Z@sha256:... as a number to compare ("" for anything else: a rehearsal's)
+version_number() {
+	[[ "${1:-}" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)(@|$) ]] || return 0
+	printf '%d%05d%05d' "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}" "${BASH_REMATCH[3]}"
+}
+
+# the timer that brings back a deploy nobody works on any more
+install_watch() {
+	cat > /etc/systemd/system/maktaba-rollout-watch.service <<UNIT
+[Unit]
+Description=Maktaba Cloud: a deploy nobody works on any more goes back
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=$SELF watch
+TimeoutStartSec=3600
+UNIT
+	cat > /etc/systemd/system/maktaba-rollout-watch.timer <<'UNIT'
+[Unit]
+Description=Maktaba Cloud: look after a deploy under way
+
+[Timer]
+OnBootSec=90
+OnUnitInactiveSec=${WATCH_EVERY}
+
+[Install]
+WantedBy=timers.target
+UNIT
+	sed -i "s/\${WATCH_EVERY}/${WATCH_EVERY:-60}/" /etc/systemd/system/maktaba-rollout-watch.timer
+	systemctl daemon-reload
+	systemctl enable maktaba-rollout-watch.timer >/dev/null 2>&1
+	systemctl restart maktaba-rollout-watch.timer
+}
 
 cmd_begin() {
-	local src tmp refs ref room p try
+	local src tmp refs ref room p try was now
 	src="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+	valid_id "${DEPLOY_ID:-}" || die "begin: name the deploy (DEPLOY_ID)"
 	if [ -z "${MAKTABA_CLOUD_TAG:-}" ] || [ -z "${MAKTABA_CADDY_TAG:-}" ]; then die "begin: MAKTABA_CLOUD_TAG and MAKTABA_CADDY_TAG are required"; fi
 	case "$MAKTABA_CLOUD_TAG $MAKTABA_CADDY_TAG" in
 		*@sha256:*\ *@sha256:*) ;;
 		*) die "begin: the images are named by digest" ;;
 	esac
 	[ ! -f "$STATE/held" ] || { cat "$STATE/held" >&2; die "the node is held: a person decides first (maktaba-rollout unhold)"; }
-	install -m 0755 "${BASH_SOURCE[0]}" "$SELF"
-	if [ -d "$STATE/pending" ]; then
-		log "an earlier deploy was cut off: restoring what was before it"
-		restore "a deploy that was cut off" || exit 1
+	[ ! -d "$STATE/pending" ] || die "begin: a deploy is under way ($(pending_id)): nothing was changed"
+	finish_commit
+
+	# a release older than the node's is never deployed (an old run started again, say): its code
+	# may not know the schema, and a database never goes back by itself
+	was="$(version_number "$(cat "$STATE/committed" 2>/dev/null || env_of MAKTABA_CLOUD_TAG)")"
+	now="$(version_number "$MAKTABA_CLOUD_TAG")"
+	if [ -n "$was" ] && [ -n "$now" ] && [ "$now" -lt "$was" ]; then
+		die "begin: ${MAKTABA_CLOUD_TAG%%@*} is older than the node's release: nothing was changed"
 	fi
 
 	for p in /var/lib/docker "$(dirname "$DEPLOY_DIR")" /var/backups; do
@@ -116,12 +208,13 @@ cmd_begin() {
 	rm -rf "$STATE/pending.new"
 	(umask 077; mkdir -p "$STATE/pending.new/set")
 	cat /proc/sys/kernel/random/boot_id > "$STATE/pending.new/boot_id"
+	printf '%s\n' "$DEPLOY_ID" > "$STATE/pending.new/id"
 	if first_deploy; then
 		touch "$STATE/pending.new/first"
 		log "a first deploy: nothing to go back to"
 	else
 		dc up -d --wait postgres </dev/null >/dev/null 2>&1 || die "begin: the database does not come up: nothing was changed"
-		DEPLOY_DIR="$DEPLOY_DIR" bash "$src/ops/backup.sh" || die "begin: the backup before the deploy failed: nothing was changed"
+		DEPLOY_DIR="$DEPLOY_DIR" ROLLOUT_LOCKED=1 bash "$src/ops/backup.sh" || die "begin: the backup before the deploy failed: nothing was changed"
 		applied dc "$DEPLOY_DIR/.env" > "$STATE/pending.new/applied"
 		for p in "${SET[@]}"; do
 			[ ! -e "$DEPLOY_DIR/$p" ] || cp -a "$DEPLOY_DIR/$p" "$STATE/pending.new/set/"
@@ -132,30 +225,41 @@ cmd_begin() {
 		printf 'MAKTABA_CLOUD_TAG=%s\n' "$MAKTABA_CLOUD_TAG"
 		printf 'MAKTABA_CLOUD_IMAGE=%s\n' "${MAKTABA_CLOUD_IMAGE:-ghcr.io/hamza-labs-core/maktaba-cloud}"
 	} > "$STATE/pending.new/release"
+	printf '%s\n' "$(($(date +%s) + LEASE_SECONDS))" > "$STATE/pending.new/lease"
+	# room kept for going back, should the disk fill meanwhile (restore gives it up first)
+	mkdir -p "$DEPLOY_DIR"
+	if ! fallocate -l 16M "$DEPLOY_DIR/.reserve" || ! fallocate -l 64M "$STATE/reserve"; then die "begin: no room to keep for going back: nothing was changed"; fi
+	install_watch
 	sync
 	mv "$STATE/pending.new" "$STATE/pending"
-	log "the present set is saved"
+	log "the present set is saved (deploy $DEPLOY_ID)"
 }
 
-need_pending() { [ -d "$STATE/pending" ] || die "$1: no deploy has begun"; }
+cmd_setup() {
+	need_this setup "${1:-}"
+	lease
+	log "setup.sh"
+	(cd "$SRC_DIR" && SETUP_START=no bash setup.sh) || die "setup.sh failed"
+}
 
 cmd_web() {
 	local t sha
-	need_pending web
+	need_this web "${1:-}"
+	lease
 	t="$(mktemp -d "$DEPLOY_DIR/.web.XXXXXX")"
 	# shellcheck disable=SC2064
 	trap "rm -rf '$t'" EXIT
 	cat > "$t/web.tar.gz"
 	sha="$(sha256sum "$t/web.tar.gz" | cut -c1-16)"
-	mkdir "$t/new"
-	tar --no-same-owner -xzf "$t/web.tar.gz" -C "$t/new"
-	[ -s "$t/new/index.html" ] || die "web: the app has no index.html"
-	chmod -R a+rX "$t/new"
-	mkdir -p "$DEPLOY_DIR/web/releases"
-	rm -rf "$DEPLOY_DIR/web/releases/$sha.part"
-	mv "$t/new" "$DEPLOY_DIR/web/releases/$sha.part"
-	rm -rf "${DEPLOY_DIR:?}/web/releases/$sha"
-	mv "$DEPLOY_DIR/web/releases/$sha.part" "$DEPLOY_DIR/web/releases/$sha"
+	# the same bundle again: it is there whole (it arrived by one rename) and may be the one served
+	if [ ! -d "$DEPLOY_DIR/web/releases/$sha" ]; then
+		mkdir "$t/new"
+		tar --no-same-owner -xzf "$t/web.tar.gz" -C "$t/new"
+		[ -s "$t/new/index.html" ] || die "web: the app has no index.html"
+		chmod -R a+rX "$t/new"
+		mkdir -p "$DEPLOY_DIR/web/releases"
+		mv -T "$t/new" "$DEPLOY_DIR/web/releases/$sha"
+	fi
 	printf 'releases/%s' "$sha" > "$STATE/pending/web-next"
 	log "web app $sha unpacked (not served yet)"
 }
@@ -193,8 +297,8 @@ fail() { # fail WHY: restore, and the deploy failed
 }
 
 cmd_apply() {
-	need_pending apply
-	[ ! -f "$STATE/held" ] || die "apply: the node is held"
+	need_this apply "${1:-}"
+	touch "$STATE/pending/applying"
 	log "the database and the cache"
 	dc up -d --wait postgres redis </dev/null || fail "the database or the cache does not come up"
 	log "the migrations"
@@ -208,25 +312,29 @@ cmd_apply() {
 	if [ -s "$STATE/pending/web-next" ]; then
 		web_to "$(cat "$STATE/pending/web-next")" || fail "the web app could not be switched"
 	fi
+	lease || fail "the state folder can't be written"
+	touch "$STATE/pending/live" || fail "the state folder can't be written"
+	rm -f "$STATE/pending/applying"
 	log "applied: $(env_of MAKTABA_CLOUD_TAG) (pending its tests)"
 	echo "__maktaba_deploy_complete__"
 }
 
 hold() { # hold WHY: stop the app, say why, leave the rest to a person
+	local stopped="The relay, api and worker are stopped."
+	stop_all "${APP[@]}" || stopped="NOT ALL of the relay, api and worker could be stopped: see docker ps."
 	{
 		echo "HELD $(date -u +%FT%TZ): $1"
-		echo "The relay, api and worker are stopped. The database is as the migrations and any Down"
+		echo "$stopped The database is as the migrations and any Down"
 		echo "scripts left it; nothing was put back over it. The set from before the deploy is in"
 		echo "$STATE/pending/set, its migrations in $STATE/pending/applied, and the backups in"
 		echo "/var/backups/maktaba-cloud. When the node is right again: maktaba-rollout unhold."
 	} > "$STATE/held.new"
 	mv "$STATE/held.new" "$STATE/held"
-	dc stop "${APP[@]}" </dev/null >/dev/null 2>&1 || true
 	cat "$STATE/held" >&2
 	return 1
 }
 
-put_back() { # the saved files and the web app's version, each copied whole before it replaces
+put_back() { # the saved files and the web app's version, each copied whole before any replaces
 	local p
 	for p in "${SET[@]}"; do
 		[ -e "$STATE/pending/set/$p" ] || continue
@@ -235,8 +343,13 @@ put_back() { # the saved files and the web app's version, each copied whole befo
 	done
 	for p in "${SET[@]}"; do
 		[ -e "$DEPLOY_DIR/$p.restore" ] || continue
-		rm -rf "${DEPLOY_DIR:?}/${p:?}" || return 1
-		mv "$DEPLOY_DIR/$p.restore" "$DEPLOY_DIR/$p" || return 1
+		# a file by one rename (a backup reading .env finds the old or the new); a folder by two
+		if [ -d "$DEPLOY_DIR/$p.restore" ] && [ -e "$DEPLOY_DIR/$p" ]; then
+			rm -rf "${DEPLOY_DIR:?}/$p.replaced" || return 1
+			mv -T "$DEPLOY_DIR/$p" "$DEPLOY_DIR/$p.replaced" || return 1
+		fi
+		mv -T "$DEPLOY_DIR/$p.restore" "$DEPLOY_DIR/$p" || return 1
+		rm -rf "${DEPLOY_DIR:?}/$p.replaced" || return 1
 	done
 	if [ -s "$STATE/pending/web" ]; then
 		web_to "$(cat "$STATE/pending/web")" || return 1
@@ -245,23 +358,29 @@ put_back() { # the saved files and the web app's version, each copied whole befo
 	fi
 }
 
-# gone in one rename: a half-removed saved set must never be found by a restore after a crash
+# gone in one rename: a half-removed saved set must never be found by a restore after a crash. What
+# can't be removed afterwards is nobody's, and is tried again next time.
 drop_pending() {
-	rm -rf "$STATE/done"
-	mv "$STATE/pending" "$STATE/done" && sync && rm -rf "$STATE/done"
+	mkdir -p "$STATE/dropped"
+	mv -T "$STATE/pending" "$STATE/dropped/$(date +%s).$$" || return 1
+	sync
+	rm -rf "$STATE/dropped" "$STATE/reserve" "$DEPLOY_DIR/.reserve" 2>/dev/null || true
 }
 
-restore() { # restore WHY: back to the saved set; 0 restored, 1 held (or nothing could be)
+restore() { # restore WHY: back to the saved set; 0 restored (or nothing to), 1 held
 	# every step checks itself: this runs where errexit does not (restore ... || ...). Each can be
-	# done again: a crash part way is followed by another restore (boot, or the next deploy)
+	# done again: a crash part way is followed by another restore (the watch, a boot)
 	local why="$1" added rc release=()
 	[ -d "$STATE/pending" ] || { log "nothing to restore"; return 0; }
 	log "restoring the set from before the deploy ($why)"
+	rm -f "$STATE/reserve" "$DEPLOY_DIR/.reserve"
+	touch "$STATE/pending/restoring" || { hold "the state folder can't be written ($why)"; return 1; }
 	if [ -f "$STATE/pending/first" ]; then
-		if [ -f "$DEPLOY_DIR/docker-compose.yml" ] && [ -f "$DEPLOY_DIR/.env" ]; then dc stop "${APP[@]}" caddy </dev/null >/dev/null 2>&1 || true; fi
-		drop_pending
+		stop_all "${APP[@]}" caddy || { hold "a failed first deploy does not stop ($why)"; return 1; }
+		touch "$STATE/no-release" || { hold "the state folder can't be written ($why)"; return 1; }
+		drop_pending || { hold "the saved set can't be dropped ($why)"; return 1; }
 		err "a first deploy failed: there is no earlier release to go back to, so the stack is stopped"
-		return 1
+		return 0
 	fi
 
 	# the migrations this deploy applied (by apply, or by a role that started on its own), newest
@@ -269,7 +388,7 @@ restore() { # restore WHY: back to the saved set; 0 restored, 1 held (or nothing
 	if [ ! -f "$STATE/pending/settled" ]; then
 		saved up -d --wait postgres </dev/null >/dev/null 2>&1 || { hold "the database does not come up ($why)"; return 1; }
 		# nothing may apply one again meanwhile: a starting role migrates
-		saved stop "${APP[@]}" </dev/null >/dev/null 2>&1 || { hold "the app does not stop ($why)"; return 1; }
+		stop_all "${APP[@]}" || { hold "the app does not stop ($why)"; return 1; }
 		applied saved "$STATE/pending/set/.env" > "$STATE/pending/applied.now" || { hold "the applied migrations can't be read ($why)"; return 1; }
 		added="$(comm -13 <(sort "$STATE/pending/applied") <(sort "$STATE/pending/applied.now") | tr '\n' ' ')" || { hold "the migrations can't be compared ($why)"; return 1; }
 		if [ -n "${added// /}" ]; then
@@ -299,26 +418,112 @@ restore() { # restore WHY: back to the saved set; 0 restored, 1 held (or nothing
 }
 
 cmd_rollback() {
+	valid_id "${1:-}" || die "rollback: name the deploy"
 	[ ! -f "$STATE/held" ] || { cat "$STATE/held" >&2; exit 1; }
-	restore "${1:-tests failed, or the run stopped}"
+	[ -d "$STATE/pending" ] || { log "nothing to restore"; return 0; }
+	if [ "$1" != "$(pending_id)" ]; then
+		log "the deploy under way is $(pending_id), not $1: nothing to restore"
+		return 0
+	fi
+	restore "${2:-tests failed, or the run stopped}"
+}
+
+# the last line of a commit, also after a crash just before it (the saved set is gone by then)
+finish_commit() {
+	if [ ! -f "$STATE/committed.new" ] || [ -d "$STATE/pending" ]; then return 0; fi
+	mv "$STATE/committed.new" "$STATE/committed"
+	rm -f "$STATE/no-release"
 }
 
 cmd_commit() {
 	local cur
-	need_pending commit
-	[ ! -f "$STATE/held" ] || die "commit: the node is held"
-	drop_pending
+	valid_id "${1:-}" || die "commit: name the deploy"
+	finish_commit
+	# asked again after its answer was lost
+	if [ ! -d "$STATE/pending" ] && [ "$(cat "$STATE/committed-id" 2>/dev/null)" = "$1" ]; then
+		log "committed already: $(cat "$STATE/committed")"
+		return 0
+	fi
+	need_this commit "$1"
+	[ -f "$STATE/pending/live" ] || die "commit: the deploy was not applied"
+	if [ -f "$STATE/pending/applying" ] || [ -f "$STATE/pending/restoring" ]; then die "commit: the deploy is being restored"; fi
 	env_of MAKTABA_CLOUD_TAG > "$STATE/committed.new"
-	mv "$STATE/committed.new" "$STATE/committed"
+	printf '%s\n' "$1" > "$STATE/committed-id"
+	drop_pending
+	finish_commit
 	# the web app's other versions, and the layout before versions (files right in web/)
 	cur="$(readlink "$DEPLOY_DIR/web/current" 2>/dev/null || true)"
-	if [ -n "$cur" ]; then
-		find "$DEPLOY_DIR/web" -mindepth 1 -maxdepth 1 ! -name releases ! -name current -exec rm -rf {} +
-		find "$DEPLOY_DIR/web/releases" -mindepth 1 -maxdepth 1 ! -name "${cur##*/}" -exec rm -rf {} +
+	if [ -n "$cur" ] && [ "$cur" != . ]; then
+		find "$DEPLOY_DIR/web" -mindepth 1 -maxdepth 1 ! -name releases ! -name current -exec rm -rf {} + || true
+		find "$DEPLOY_DIR/web/releases" -mindepth 1 -maxdepth 1 ! -name "${cur##*/}" -exec rm -rf {} + || true
 	fi
 	# images no container uses: the last release's, and any older
 	docker image prune -af >/dev/null 2>&1 || true
+	rm -rf "${SRC_DIR:?}"
+	find "$STATE/jobs" -mindepth 1 -maxdepth 1 -mtime +14 -exec rm -rf {} + 2>/dev/null || true
 	log "committed: $(cat "$STATE/committed")"
+}
+
+cmd_renew() {
+	need_this renew "${1:-}"
+	lease
+}
+
+# --- jobs: a command as a unit of the node's own ----------------------------------------------
+
+# job ID CMD FROM: starts CMD of deploy ID once, then follows its output from line FROM to its end
+cmd_job() {
+	local id="${1:-}" cmd="${2:-}" from="${3:-0}" dir unit lines rc gone=0
+	valid_id "$id" || die "job: name the deploy"
+	case "$cmd" in apply | rollback | commit) ;; *) die "job: apply, rollback or commit" ;; esac
+	[[ "$from" =~ ^[0-9]+$ ]] || die "job: from which line?"
+	(umask 077; mkdir -p "$STATE/jobs")
+	dir="$STATE/jobs/$id.$cmd"
+	unit="maktaba-rollout-$cmd-$id"
+	if mkdir "$dir" 2>/dev/null; then
+		: > "$dir/log"
+		if ! systemd-run --quiet --collect --unit="$unit" --property=RuntimeMaxSec=3000 --property=KillMode=mixed \
+			--setenv=DEPLOY_DIR="$DEPLOY_DIR" --setenv=WATCH_SECONDS="$WATCH_SECONDS" --setenv=LEASE_SECONDS="$LEASE_SECONDS" \
+			--setenv=HOME="${HOME:-/root}" "$SELF" run-job "$dir" "$cmd" "$id"; then
+			rmdir "$dir" 2>/dev/null || rm -rf "$dir"
+			die "job: $cmd could not be started"
+		fi
+	fi
+	while :; do
+		# the code first: lines written before it are all there once it is
+		rc="$(cat "$dir/rc" 2>/dev/null || true)"
+		lines="$(wc -l < "$dir/log")"
+		if [ "$lines" -gt "$from" ]; then
+			sed -n "$((from + 1)),${lines}p" "$dir/log"
+			from="$lines"
+		fi
+		[ -z "$rc" ] || exit "$rc"
+		# the unit ended without leaving a code (killed, or it never ran)
+		if systemctl is-active --quiet "$unit" || [ -f "$dir/rc" ]; then gone=0; else gone=$((gone + 1)); fi
+		[ "$gone" -lt 10 ] || { err "$cmd was stopped part way: the watch brings the node to a known state"; exit 70; }
+		sleep 1
+	done
+}
+
+# the unit's own command: CMD's output and code, kept for whoever follows it
+cmd_run_job() {
+	local dir="$1" cmd="$2" id="$3" rc=0
+	touch "$dir/started"
+	"$SELF" "$cmd" "$id" >> "$dir/log" 2>&1 </dev/null || rc=$?
+	# 255 is what ssh itself ends with
+	[ "$rc" -lt 250 ] || rc=1
+	printf '%s\n' "$rc" > "$dir/rc.new"
+	mv "$dir/rc.new" "$dir/rc"
+}
+
+cmd_watch() {
+	[ -d "$STATE/pending" ] || exit 0
+	[ ! -f "$STATE/held" ] || exit 0
+	if [ -f "$STATE/pending/applying" ] || [ -f "$STATE/pending/restoring" ]; then
+		restore "a command of the deploy was stopped part way" || true
+	elif lease_over; then
+		restore "no word from the deploy for $((LEASE_SECONDS / 60)) minutes" || true
+	fi
 }
 
 cmd_boot() {
@@ -327,8 +532,12 @@ cmd_boot() {
 		exit 1
 	fi
 	[ -d "$STATE/pending" ] || exit 0
-	# the unit started again in the same boot (docker restarted by setup.sh): the deploy goes on
-	if [ "$(cat "$STATE/pending/boot_id")" = "$(cat /proc/sys/kernel/random/boot_id)" ]; then exit 0; fi
+	if [ "$(cat "$STATE/pending/boot_id")" = "$(cat /proc/sys/kernel/random/boot_id)" ] && [ ! -f "$STATE/pending/restoring" ]; then
+		# started again in the same boot (docker restarted): what was applied goes on; what was not
+		# yet, apply starts
+		[ -f "$STATE/pending/live" ] || exit 1
+		exit 0
+	fi
 	log "the node rebooted during a deploy"
 	restore "the node rebooted during the deploy" || exit 1
 	exit 0
@@ -338,16 +547,32 @@ cmd_unhold() {
 	[ -f "$STATE/held" ] || die "the node is not held"
 	if [ -d "$STATE/pending" ]; then
 		rm -rf "$STATE/held-set"
-		mv "$STATE/pending" "$STATE/held-set"
+		mv -T "$STATE/pending" "$STATE/held-set"
 	fi
-	rm -f "$STATE/held"
+	rm -f "$STATE/held" "$STATE/reserve" "$DEPLOY_DIR/.reserve"
 	log "not held any more; the set from before the failed deploy is in $STATE/held-set"
 }
 
 cmd_status() {
 	if [ -f "$STATE/held" ]; then cat "$STATE/held"; return 0; fi
-	if [ -d "$STATE/pending" ]; then echo "pending: a deploy began and is neither committed nor rolled back"; return 0; fi
+	if [ -d "$STATE/pending" ]; then echo "pending: deploy $(pending_id) began and is neither committed nor rolled back"; return 0; fi
 	echo "committed: $(cat "$STATE/committed" 2>/dev/null || echo none)"
+}
+
+# begin alone: an earlier deploy that was cut off is undone first, as a unit of its own (this
+# session may be cut too)
+undo_cut_off() {
+	local id
+	if [ ! -d "$STATE/pending" ] || [ -f "$STATE/held" ]; then return 0; fi
+	id="$(pending_id)"
+	valid_id "$id" || id=unnamed
+	log "an earlier deploy ($id) was cut off: restoring what was before it"
+	[ "$id" != unnamed ] || printf '%s\n' "$id" > "$STATE/pending/id"
+	# a rollback of it that ran and ended before is not followed again
+	rm -rf "$STATE/jobs/$id.rollback.old"
+	[ ! -f "$STATE/jobs/$id.rollback/rc" ] || mv -T "$STATE/jobs/$id.rollback" "$STATE/jobs/$id.rollback.old"
+	"$SELF" job "$id" rollback 0 || exit 1
+	[ ! -d "$STATE/pending" ] || die "begin: the earlier deploy is still under way: nothing was changed"
 }
 
 main() {
@@ -355,29 +580,43 @@ main() {
 	(umask 077; mkdir -p "$STATE")
 	chmod 0700 "$STATE"
 	local c="${1:-}"
+	if [ "$c" = begin ]; then
+		install -m 0755 "${BASH_SOURCE[0]}" "$SELF.new" && mv "$SELF.new" "$SELF"
+		undo_cut_off
+	fi
 	case "$c" in
-		begin | web | apply | commit | rollback | unhold)
+		begin | setup | web | apply | commit | rollback | unhold)
 			exec 9>"$STATE/lock"
-			# a rollback waits for an apply whose SSH session was cut to end
-			flock -w "$([ "$c" = rollback ] && echo 1200 || echo 60)" 9 || die "another deploy is running"
+			# a rollback waits for what is at work (an apply whose run was cancelled) to end
+			flock -w "$([ "$c" = rollback ] && echo 2400 || echo "$LOCK_WAIT")" 9 || die "another deploy command is at work"
 			;;
-		boot)
-			# a deploy under way holds the lock: the unit's start is part of it
+		watch)
 			exec 9>"$STATE/lock"
 			flock -n 9 || exit 0
+			;;
+		boot)
+			# a command at work starts the stack itself, the one it is at; the unit's start would
+			# start another
+			exec 9>"$STATE/lock"
+			flock -n 9 || exit 1
 			;;
 	esac
 	shift || true
 	case "$c" in
 		begin) cmd_begin ;;
-		web) cmd_web ;;
-		apply) cmd_apply ;;
-		commit) cmd_commit ;;
+		setup) cmd_setup "$@" ;;
+		web) cmd_web "$@" ;;
+		apply) cmd_apply "$@" ;;
+		commit) cmd_commit "$@" ;;
 		rollback) cmd_rollback "$@" ;;
+		renew) cmd_renew "$@" ;;
+		job) cmd_job "$@" ;;
+		run-job) cmd_run_job "$@" ;;
+		watch) cmd_watch ;;
 		boot) cmd_boot ;;
 		unhold) cmd_unhold ;;
 		status) cmd_status ;;
-		*) die "usage: rollout.sh begin | web | apply | commit | rollback | boot | unhold | status" ;;
+		*) die "usage: rollout.sh begin | setup ID | web ID | job ID apply|rollback|commit FROM | renew ID | watch | boot | unhold | status" ;;
 	esac
 }
 

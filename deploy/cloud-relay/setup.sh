@@ -248,6 +248,11 @@ set_env MAKTABA_CADDYFILE_SHA "$(sha256sum "$DEPLOY_DIR/Caddyfile" | cut -c1-16)
 # 5. Ownership + permissions (secrets are sensitive)
 # ---------------------------------------------------------------------
 chown -R "$SERVICE_USER:$SERVICE_USER" "$DEPLOY_DIR"
+# the operator tool's own state stays root's alone (ops/cloud-ops.py)
+if [ -d "$DEPLOY_DIR/ops-state" ]; then
+	chown -R root:root "$DEPLOY_DIR/ops-state"
+	chmod 0700 "$DEPLOY_DIR/ops-state"
+fi
 chmod 0700 "$DEPLOY_DIR/secrets"
 chmod 0600 "$ENV_FILE" "$ENTITLEMENT_KEY" "$LOG_KEY"
 

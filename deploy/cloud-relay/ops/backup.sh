@@ -2,7 +2,7 @@
 # Maktaba Cloud, one node: the nightly backup (maktaba-cloud-backup.timer, setup.sh), also taken
 # before each deploy (ops/rollout.sh begin).
 #
-# - the database: pg_dump's custom format, checked by listing it with pg_restore before it is
+# - the database: pg_dump's custom format, read to its end with pg_restore before it is
 #   kept, and beside it every table's rows as the dump has them (both in one snapshot);
 # - the node's keys: .env and secrets/ (the token secrets, the entitlement seed every home's
 #   assertion key derives from, the log key), without which a restored database can't be
@@ -85,7 +85,12 @@ seed_ok() {
 }
 
 take() {
-	local ts tmp
+	local ts tmp lock="${STATE_DIR:-/var/lib/maktaba-cloud-deploy}/lock"
+	# not while a deploy's command moves the stack under it (a deploy's own backup holds the lock)
+	if [ "${ROLLOUT_LOCKED:-}" != 1 ] && [ -e "$lock" ]; then
+		exec 8<"$lock"
+		flock -w 3000 8 || die "a deploy command is still at work"
+	fi
 	ts="$(date -u +%Y%m%dT%H%M%SZ)"
 	tmp="$OUT/.part-$ts"
 	# shellcheck disable=SC2064
@@ -105,8 +110,11 @@ SQL
 	sort "$tmp/counts.raw" >"$tmp/counts"
 	[ -s "$tmp/counts" ] || die "no table was counted"
 	pg cat "/tmp/backup-$ts.dump" </dev/null >"$tmp/dump"
-	pg pg_restore --list <"$tmp/dump" >/dev/null
 	[ -s "$tmp/dump" ] || die "the dump is empty"
+	# the copy is the dump, to the last byte, and every row of it can be read (a dump cut in half
+	# still lists its contents)
+	[ "$(sha256sum <"$tmp/dump" | cut -d' ' -f1)" = "$(pg sha256sum "/tmp/backup-$ts.dump" </dev/null | cut -d' ' -f1)" ] || die "the dump was cut short on its way out"
+	pg pg_restore -f /dev/null <"$tmp/dump" || die "the dump can't be read to its end"
 	tar -C "$DEPLOY_DIR" -czf "$tmp/keys" .env secrets
 	(cd "$DEPLOY_DIR" && find .env secrets -type f -exec sha256sum {} + | sort -k2) >"$tmp/sha256"
 	mv "$tmp/counts" "$OUT/db-$ts.counts"

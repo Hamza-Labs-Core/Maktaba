@@ -83,32 +83,45 @@ a release tag (blank: the latest release).
 1. **resolve**: the release's images by digest, each verified with cosign, and the Postgres and
    Redis the compose file pins; the cloud rehearsal passed on the release's commit
    (`tools/release/cloud-guard.sh`). For `prod`: the run is main's (and the `prod` environment
-   deploys from main only), and a successful QA run of main recorded the same digests and the
-   same files (this workflow, the guard, `deploy/cloud-relay` with its tests), or nothing deploys.
+   deploys from main only), main still has the run's deploy files, and a successful QA run of a
+   commit of main recorded the same digests and the same files (this workflow, the guard,
+   `deploy/cloud-relay` with its tests), or nothing deploys. A run started again asks all of it
+   again.
 2. **web** (QA): the cloud web app built from the release's source. Production gets QA's
-   build, byte for byte.
+   build, by the SHA-256 QA recorded.
 3. **deploy**:
-   - `ops/rollout.sh begin`: room on the disk, every image pulled by digest, a backup, and the
-     node's present set saved. A failure leaves the node as it was.
+   - `ops/rollout.sh begin`: no release older than the node's, room on the disk (and some kept for
+     going back), every image pulled by digest, a backup, and the node's present set saved. A
+     failure leaves the node as it was.
    - the DNS records (a name with an AAAA or another record that sends clients elsewhere is
      refused before any is changed);
-   - `setup.sh` (idempotent: Docker from Ubuntu's packages, the `maktaba` user, the secrets it
+   - `setup.sh`, under the rollout's lock (idempotent: Docker from Ubuntu's packages, the `maktaba` user, the secrets it
      generates once, `cloud.toml` from its template, Docker's log caps, UFW, the backup timer,
      the unit);
    - the web bundle, unpacked beside the one being served;
-   - `deploy.sh`: `maktaba-rollout apply` on the node (migrations in a throwaway container, the
-     stack, its health and readiness watched for 45 s, then the web app switched in one rename).
-     A changed `cloud.toml` or Caddyfile recreates the containers that read it.
-4. **test**: `deploy/cloud-relay/tests/e2e.py` (below). Then `maktaba-rollout commit`, which also
+   - `deploy.sh apply`: `maktaba-rollout apply` on the node (migrations in a throwaway container,
+     the stack, its health and readiness watched for 45 s, then the web app switched in one
+     rename). A changed `cloud.toml` or Caddyfile recreates the containers that read it.
+4. **test**: `deploy/cloud-relay/tests/e2e.py` (below). Then `deploy.sh commit`, which also
    removes the images no container uses, and QA records what it passed.
 
 ### When a deploy fails
 
-Anything that fails or is cancelled after `begin`, the tests included, ends in `maktaba-rollout
-rollback`, on the node:
+Anything that fails or is cancelled after `begin`, the tests included, ends in `deploy.sh rollback`.
+`apply`, `commit` and `rollback` are systemd units of the node's own, started once and followed over
+SSH: a cut session, a cancelled run or a lost runner does not stop them, and a session is picked up
+again where it was. Every command names its deploy, and does nothing to another's.
 
-1. The migrations this deploy applied go back by their Down scripts (`maktaba-cloud migrate undo`,
-   with the new release's image), newest first, every one checked before the first runs.
+**A lost runner.** A deploy has a lease of 20 minutes, renewed while the workflow works (each minute
+during the tests). `maktaba-rollout-watch.timer` looks each minute: when the lease is over, or a
+command was stopped part way (killed, out of memory), it restores the saved set. The node comes to
+a known state, the previous release or held, with nobody there.
+
+A rollback, on the node:
+
+1. The migrations this deploy applied (its `apply`, or a role that started on its own) go back by
+   their Down scripts (`maktaba-cloud migrate undo`, with the new release's image), newest first,
+   every one judged before the first runs, the gravest refusal winning.
    - A Down script that would delete rows written since is not run: the schema is **kept**, and the
      previous release runs on it (a release's migrations only expand the schema, story 50.08).
    - A migration whose Up lost data (or is a contract), or a Down script that fails: the node is
@@ -119,14 +132,17 @@ rollback`, on the node:
 A **held** node has its relay, api and worker stopped, refuses deploys and does not start at boot;
 `maktaba-rollout status` says why and where the saved set and the backups are. A dump is never put
 back by itself. A person sets the node right, then `maktaba-rollout unhold`. A node that reboots
-during a deploy restores first (the unit's condition), and a deploy that finds an earlier one cut
-off undoes it before it begins. A failed first deploy has nothing to go back to: the stack stops.
+during a deploy restores first (the stack's unit asks before it starts, and never starts anything
+while a command is at work), and a deploy that finds an earlier one cut off undoes it before it
+begins. A failed first deploy has nothing to go back to: the stack stops.
 
 What does not go back: the DNS records, the firewall, Docker's settings and the systemd units.
-Each failure is rehearsed in CI (`cloud-rehearsal.yml`, the `single-node` job:
-`deploy/cloud-relay/tests/rollout_rehearsal.py`).
+Each failure is rehearsed in CI (`cloud-rehearsal.yml`, the `single-node` jobs:
+`deploy/cloud-relay/tests/rollout_rehearsal.py`), and nightly the rehearsal itself is: the node's
+scripts with one guarantee taken out at a time, which a case must notice.
 
-One deploy per node at a time. The GitHub environments `qa` and `prod` hold the deploy jobs.
+One deploy per node at a time; one under way is never cancelled by another (of the ones waiting,
+GitHub keeps the newest). The GitHub environments `qa` and `prod` hold the deploy jobs.
 
 ## Tests
 
@@ -176,8 +192,8 @@ container mounts.
 
 ## Backups
 
-`maktaba-cloud-backup.timer`, nightly at 03:17 UTC, and before each deploy: `pg_dump` (checked by
-listing it with `pg_restore` before it is kept) with every table's rows counted in the same
+`maktaba-cloud-backup.timer`, nightly at 03:17 UTC, and before each deploy: `pg_dump` (its copy equal
+to the last byte and read to its end with `pg_restore` before it is kept) with every table's rows counted in the same
 snapshot, and the node's keys (`.env`, `secrets/`) with each file's SHA-256, into
 `/var/backups/maktaba-cloud`, 14 days kept. `ops/backup.sh --check` restores the newest one and
 compares it with what was recorded, exactly.
