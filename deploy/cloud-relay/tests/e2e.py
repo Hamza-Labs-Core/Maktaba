@@ -385,11 +385,16 @@ def check_link(acct: Account, home: Home) -> str:
     need(s, b, (200, 201), "the cloud's link assertion")
     s, b = home.call("POST", "/api/me/cloud-link", {"assertion": mask(b["assertion"])})
     need(s, b, (200, 201), "complete the link on the home")
-    s, b = http("GET", f"{API}/v1/homes", token=acct.token)
-    linked = [h for h in b.get("homes", []) if h.get("slug") == SLUG and h.get("linked")]
-    if not linked:
-        raise AssertionError("the account's homes don't say linked")
-    return "the home's admin linked to the cloud account; the cloud lists the home as linked"
+    # the home reports its links to the cloud through its agent (PUT /v1/servers/{id}/links),
+    # after the link: the cloud lists the home as linked a moment later
+    t0 = time.monotonic()
+
+    def linked() -> bool:
+        s, b = http("GET", f"{API}/v1/homes", token=acct.token)
+        return any(h.get("slug") == SLUG and h.get("linked") for h in (b or {}).get("homes", []))
+
+    wait("the cloud lists the home as linked", linked, 3 * 60, every=3)
+    return f"the home's admin linked to the cloud account; the cloud lists it as linked {time.monotonic() - t0:.0f} s later"
 
 
 def relay_signin(acct: Account, home: Home) -> str:
