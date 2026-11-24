@@ -134,8 +134,11 @@ fi
 # .env + `up --wait` on health failure.
 # ssh joins its arguments into one command line for the remote shell, so each is quoted here
 # (%q): an empty HEALTH_URL would otherwise vanish and the remote script stop on an unbound $3.
+# The remote script's last line is a marker: a script cut short (a command that swallowed
+# its stdin) ends at 0 too, so only the marker says it ran to its end.
+REMOTE_LOG="$(mktemp)"
 # shellcheck disable=SC2029  # expands here, on purpose: the quoted arguments
-ssh "${SSH_OPTS[@]}" "$SSH_TARGET" "bash -s -- $(printf '%q ' "$DEPLOY_DIR" "$NEW_TAG" "$HEALTH_URL")" <<'REMOTE'
+ssh "${SSH_OPTS[@]}" "$SSH_TARGET" "bash -s -- $(printf '%q ' "$DEPLOY_DIR" "$NEW_TAG" "$HEALTH_URL")" <<'REMOTE' | tee "$REMOTE_LOG"
 set -euo pipefail
 DEPLOY_DIR="$1"
 NEW_TAG="$2"
@@ -180,7 +183,9 @@ rlog "ensuring postgres + redis are up..."
 $COMPOSE up -d --wait postgres redis
 
 rlog "running database migrations..."
-$COMPOSE run --rm maktaba-cloud migrate up
+# -T and </dev/null: this script reaches bash on stdin (bash -s), and a command that reads
+# stdin would swallow the rest of it; bash would then end here, at 0, with nothing rolled out
+$COMPOSE run --rm -T maktaba-cloud migrate up </dev/null
 
 # Swap the serving stack. --wait blocks until every service reports its
 # Docker healthcheck healthy (or times out non-zero).
@@ -197,14 +202,14 @@ fi
 # relay's own /healthz on the loopback listener.
 rlog "verifying relay health..."
 health_ok=1
-if ! $COMPOSE exec -T maktaba-cloud /usr/local/bin/healthcheck; then
+if ! $COMPOSE exec -T maktaba-cloud /usr/local/bin/healthcheck </dev/null; then
   health_ok=0
 fi
 
 # Optional public-endpoint check (readyz reports migrations_behind etc.).
 if [ "$health_ok" = "1" ] && [ -n "$HEALTH_URL" ]; then
   rlog "checking public endpoint ${HEALTH_URL}..."
-  if ! curl -fsS --max-time 10 "$HEALTH_URL" >/dev/null; then
+  if ! curl -fsS --max-time 10 "$HEALTH_URL" >/dev/null </dev/null; then
     health_ok=0
   fi
 fi
@@ -221,6 +226,13 @@ if [ "$health_ok" = "0" ]; then
 fi
 
 rlog "deploy of ${NEW_TAG} succeeded and is healthy."
+echo "__maktaba_deploy_complete__"
 REMOTE
 
+if ! grep -qx '__maktaba_deploy_complete__' "$REMOTE_LOG"; then
+  rm -f "$REMOTE_LOG"
+  err "the remote script stopped before its end: nothing is known to be rolled out"
+  exit 1
+fi
+rm -f "$REMOTE_LOG"
 log "Deploy finished successfully."
