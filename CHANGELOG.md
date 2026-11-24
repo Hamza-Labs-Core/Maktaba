@@ -4515,6 +4515,20 @@ build fails when the two differ.
   release before runs on it. Otherwise their own Down scripts undo them when they lose no data,
   in seconds. Only failing both does the backup go back, as before.
 
+- **A failed update is undone by its own Down scripts, not by putting the whole backup back.**
+  On 2026-11-23 and 2026-11-24 an update's migration (0235's index build, cancelled by its lock
+  timeout) failed part way, and the update put the whole 34 GB library database back from its
+  backup, about three hours down each time, though the migrations' Down scripts undo them in
+  seconds. The database step now undoes the migration that failed part way with its own Down
+  script (`maktaba-api migrate undo-failed`), drops the INVALID indexes it left, and runs the
+  Down scripts of the ones that ran, back to the slot the database was at before the update. It
+  puts the backup back only when those Down scripts fail, or when a migration that ran had
+  deleted data they cannot bring back. That is logged at level=error, and the Updates page says
+  why, in English and Arabic. migration-lint now requires a Down script in every migration, one
+  that works after any part of a NO TRANSACTION migration's Up, and an Up that loses no data or
+  says so. The update rehearsal runs every new migration's Down script after each partial Up on
+  the bundled PostgreSQL.
+
 ## [0.2.0] - 2026-10-19
 
 Closes the stub audit: features that were half built, settings that were

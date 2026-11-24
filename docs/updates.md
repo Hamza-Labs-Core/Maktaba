@@ -206,13 +206,21 @@ the next start from the update's journal (`updates/journal.json`).
 A release that does not stay healthy is **rolled back**: the previous release runs again, at once.
 Nothing is dumped before it starts. When the failed release added no migration, or its migrations
 never ran, that is all: a restart onto the previous release, which knows the database as it is.
-When its migrations ran, the database goes back the cheapest safe way: it stays as they left it
-when every one of them is additive and the previous release runs on a newer schema; else their
-Down scripts undo them when they lose no data; else the backup taken before them is put back
-first (every release refuses a database a newer one migrated), and writes made between that
-backup and the rollback are lost — minutes, inside the window, with the jobs drained — and the
-failed state is not kept. The same three ways, in that order, apply when the migrations
-themselves fail part way (since 2026-11-23; before, that always put the backup back). The release
+When its migrations ran, the database goes back by their own Down scripts: it stays as they
+left it when every one of them is additive and the previous release runs on a newer schema;
+else their Down scripts undo them, the one that failed part way by its own Down script first
+(`maktaba-api migrate undo-failed`), back to the slot the database was at before the update
+(recorded as `schema_before` when the migrations start). The backup taken before them is put
+back only when those Down scripts fail (`db_down_failed`), when a migration that ran deleted or
+overwrote data its Down script cannot give back (`db_restored_lossy`: migration-lint refuses
+such a migration unless it says so), or when the way back cannot be told
+(`db_restored_unknown`). Each is logged at level=error and named on the Updates page, since it
+is not the way back. Writes made between that backup and the rollback are then lost (minutes,
+inside the window, with the jobs drained), and the failed state is not kept. The same applies
+when the migrations themselves fail part way: since 2026-11-24, after the backup went back on
+2026-11-23 (v0.3.158) and 2026-11-24 (v0.3.157), about three hours down each time. The way back
+is the new release's code (its database step runs the migrations and undoes them), so it holds
+for every update to a release that has it, whatever the release before. The release
 is then blocked until a newer one appears or an admin unblocks it (Admin → Updates → **Try it
 again**, or **Update now** naming it). A release that rolled back (or whose migrations failed on
 the rehearsal's copy) also holds back, until an admin retries it, every release below it, and
@@ -248,7 +256,8 @@ new release does not confirm in time (15 minutes) or stops three times in ten mi
 - **When the migrations fail part way.** The library stays stopped and the start says what
   happened: `db_kept` (nothing put back: the changes so far are additive and the previous
   release runs on them), `db_undone` (their Down scripts undid them), or `db_restored` (the
-  backup put back). The update's watch then rolls back to the previous release, and the
+  backup put back, and the update attempt's code says why: `db_down_failed`,
+  `db_restored_lossy` or `db_restored_unknown`). The update's watch then rolls back to the previous release, and the
   release is blocked as above.
 - **The backup is taken on the side.** `pg_dump` reads one snapshot, so the library keeps serving
   while it runs. Writes made between its start and the switch (a minute or two, with the jobs

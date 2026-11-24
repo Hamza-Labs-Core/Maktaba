@@ -295,7 +295,7 @@ func firstLine(s string) string {
 func runSQLiteMigrate(ctx context.Context, dsn, dir, action string) error {
 	switch action {
 	case "up", "status", "version":
-	case "down", "down-to":
+	case "down", "down-to", "undo-failed":
 		return errors.New("down migrations are not supported on SQLite; restore from a backup")
 	default:
 		return fmt.Errorf("unknown migrate action %q (try 'up', 'status', 'version', 'validate')", action)
