@@ -176,6 +176,49 @@ func TestThePublishableRuleTravelsToTheCopy(t *testing.T) {
 	}
 }
 
+// A copied table's replica identity never holds a generated column (slot 0237): PostgreSQL 18
+// refuses every UPDATE and DELETE on a published table whose identity holds one the
+// publication does not send, and a machine's publication sends none. A copied table with a
+// generated column has a primary key (its identity; cluster_copy_publication makes a table
+// without one FULL, every column) and is not FULL.
+func TestNoCopiedTableHasAGeneratedColumnInItsIdentity(t *testing.T) {
+	if os.Getenv("MAKTABA_TEST_PG_URL") == "" {
+		t.Skip("MAKTABA_TEST_PG_URL unset")
+	}
+	db, _ := clustertest.ScratchDB(t)
+	bad := tablesOf(t, db, `SELECT c::text FROM cluster_copy_tables() c JOIN pg_class k ON k.oid = c
+	    WHERE EXISTS (SELECT 1 FROM pg_attribute a WHERE a.attrelid = c AND a.attnum > 0
+	                     AND NOT a.attisdropped AND a.attgenerated <> '')
+	      AND (k.relreplident = 'f'
+	           OR NOT EXISTS (SELECT 1 FROM pg_index i WHERE i.indrelid = c AND i.indisprimary))`)
+	if len(bad) > 0 {
+		t.Fatalf("copied tables with a generated column and no primary key as their identity: %v "+
+			"(PostgreSQL 18 would refuse their updates once a machine's copy is published)", bad)
+	}
+	// and slot 0237 gives one at FULL its primary key back
+	var tab string
+	if err := db.QueryRow(`SELECT c::text FROM cluster_copy_tables() c
+	    WHERE EXISTS (SELECT 1 FROM pg_attribute a WHERE a.attrelid = c AND a.attnum > 0
+	                     AND NOT a.attisdropped AND a.attgenerated <> '') LIMIT 1`).Scan(&tab); err != nil {
+		t.Fatalf("a copied table with a generated column (transcript_segments): %v", err)
+	}
+	if _, err := db.Exec(`ALTER TABLE ` + tab + ` REPLICA IDENTITY FULL`); err != nil {
+		t.Fatal(err)
+	}
+	up, err := os.ReadFile("../../../shared/db/migrations/0237_replica_identity_generated.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	section, _, _ := strings.Cut(string(up), "-- +goose Down")
+	if _, err := db.Exec(section); err != nil {
+		t.Fatalf("slot 0237's Up: %v", err)
+	}
+	var ident string
+	if err := db.QueryRow(`SELECT relreplident::text FROM pg_class WHERE oid = $1::regclass`, tab).Scan(&ident); err != nil || ident != "d" {
+		t.Fatalf("%s's replica identity after slot 0237 = %q (%v), want d", tab, ident, err)
+	}
+}
+
 func tablesOf(t *testing.T, db *sql.DB, q string) []string {
 	t.Helper()
 	rows, err := db.Query(q)

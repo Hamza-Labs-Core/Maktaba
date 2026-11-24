@@ -46,8 +46,8 @@ type Call struct {
 
 // Outbound is every outbound call, in no particular order.
 var Outbound = []Call{
-	{Name: "updates", Hosts: []string{"api.github.com", "github.com"}, By: "auto",
-		What: "the update check, the release download and the self-update (GitHub Releases)",
+	{Name: "updates", Hosts: []string{"maktaba.tv", "api.github.com", "github.com"}, By: "auto",
+		What: "the update check (the signed release feed on maktaba.tv, GitHub's release list when it cannot be reached), the release download and the self-update (GitHub Releases)",
 		Off:  "MAKTABA_UPDATE_DISABLE=1"},
 	{Name: "sigstore-tuf", Hosts: []string{"tuf-repo-cdn.sigstore.dev"}, By: "auto",
 		What: "Sigstore's trusted root, refreshed for release verification and passed on to the machines",

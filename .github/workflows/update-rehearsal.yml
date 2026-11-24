@@ -382,6 +382,20 @@ jobs:
           go test -tags integration -count=1 -run '^(TestRealMajorUpgrade|TestRealPgTextsearchPreloaded)$' -v ./internal/pgbundle/ 2>&1 | tee "$RUNNER_TEMP/major.out"
           grep -q -- '--- PASS: TestRealMajorUpgrade' "$RUNNER_TEMP/major.out"
 
+      # a failed update is undone by its migrations' Down scripts, never by the dump unless
+      # they fail (the outages of 2026-11-23 and 2026-11-24): every migration since 0.3.153's
+      # 0230 undone by its Down script after each partial Up and after its whole Up, and
+      # 0235's failure on the owner's home undone end to end (api/migrate_down_e2e_test.go)
+      - name: Every migration's Down script after a partial Up (TestMigrationsDownAfterPartialUp)
+        working-directory: api
+        env:
+          MAKTABA_TEST_PG_HOME: ${{ env.KIT }}/pg18
+        run: |
+          set -o pipefail
+          go test -count=1 -timeout 20m -run '^(TestMigrationsDownAfterPartialUp|TestHomeFailureOf0235UndoneByDownScripts)$' -v . 2>&1 | tee "$RUNNER_TEMP/down.out"
+          grep -q -- '--- PASS: TestMigrationsDownAfterPartialUp' "$RUNNER_TEMP/down.out"
+          grep -q -- '--- PASS: TestHomeFailureOf0235UndoneByDownScripts' "$RUNNER_TEMP/down.out"
+
       - name: Pack the kit
         run: tar -C "$KIT/.." -cf "$RUNNER_TEMP/rh-kit.tar" "$(basename "$KIT")"
 
