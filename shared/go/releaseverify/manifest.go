@@ -70,6 +70,10 @@ func (m *Manifest) PostgresMajor(payload string) int {
 type Migrations struct {
 	Archive string `json:"archive"`
 	SHA256  string `json:"sha256"`
+	// SetSHA256 is MigrationSet of the archive: the same for two releases that carry the
+	// same migrations (absent before 2026-11-24). A home holds back a release whose
+	// migrations are those of one that rolled back there, until one changes them.
+	SetSHA256 string `json:"set_sha256,omitempty"`
 }
 
 // Asset is one platform's server archive and the digests of the binaries in it.
@@ -221,7 +225,8 @@ func (m *Manifest) Validate(tag string, sums Checksums) error {
 		}
 	}
 	if mg := m.Migrations; mg != nil {
-		if !validFileName(mg.Archive) || !hexRe.MatchString(mg.SHA256) {
+		if !validFileName(mg.Archive) || !hexRe.MatchString(mg.SHA256) ||
+			(mg.SetSHA256 != "" && !hexRe.MatchString(mg.SetSHA256)) {
 			return bad("migrations: bad archive name or digest")
 		}
 		if got, ok := sums[mg.Archive]; !ok || got != mg.SHA256 {

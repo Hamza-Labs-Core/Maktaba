@@ -18,7 +18,7 @@ final class TVParentalUITests: XCTestCase {
 
     private static let child = #"{"restricted":true,"max_tier":9,"unrated":"hide","version":4}"#
     private static let notFound = #"{"type":"https://maktaba.tv/problems/not-found","title":"not found","status":404}"#
-    private static let huda = #"{"guardians":[{"id":"g1","username":"Huda"}]}"#
+    private static let khalid = #"{"guardians":[{"id":"g1","username":"Khalid"}]}"#
     private static let videos = (1...12).map { "v\($0)" }
 
     override func setUp() async throws {
@@ -203,7 +203,7 @@ final class TVParentalUITests: XCTestCase {
     /// left to right and the focus moves over them as drawn; a wrong PIN says so, the right
     /// one opens the video.
     func testAParentsPINOnTheRemoteOpensTheVideo() throws {
-        childWithEveryVideoHidden(pinHolders: Self.huda)
+        childWithEveryVideoHidden(pinHolders: Self.khalid)
         home.stub("POST", "/api/me/parental/unlock", status: 403,
                   body: #"{"type":"https://maktaba.tv/problems/parental-pin-wrong","status":403,"code":"pin_wrong"}"#)
         signIn("ar")
@@ -328,7 +328,7 @@ final class TVParentalUITests: XCTestCase {
     /// the minutes chosen as a `time` request; a parent's PIN gives them.
     func testTimeUpAtTheStartAsksForMoreTimeInArabic() throws {
         home.parental(Self.child, time: #"{"allowed":false,"limited":true,"reason":"outside_slot","remaining_seconds":0,"slot_ends_at":null,"next_allowed_at":"{{now+3600}}","now":"{{now}}"}"#)
-        home.stub("GET", "/api/me/parental/guardians", body: Self.huda)
+        home.stub("GET", "/api/me/parental/guardians", body: Self.khalid)
         home.stub("POST", "/api/stream/sessions", status: 403, body: timeOver("outside_slot"))
         home.stub("POST", "/api/me/parental/requests", status: 201,
                   body: #"{"request":{"id":"r9","child_id":"u1","subject_kind":"time","subject_id":"15","minutes":15,"status":"pending","created_at":"{{now}}","expires_at":"{{now+3600}}"}}"#)

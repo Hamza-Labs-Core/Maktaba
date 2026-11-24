@@ -18,7 +18,7 @@ import java.time.Instant
  *
  * ```
  * val demo = DemoLibrary.load("ar")
- * demo.answer("GET", "/api/videos/v-sintel")   // the Arabic film page's JSON
+ * demo.answer("GET", "/api/videos/v-curiosity")   // the Arabic film page's JSON
  * ```
  */
 class DemoLibrary private constructor(val dir: File, val lang: String) {

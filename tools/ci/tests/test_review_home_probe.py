@@ -152,13 +152,13 @@ def test_an_admin_reviewer_fails_the_sign_in(stand_in: Any) -> None:
 
 def test_a_missing_title_or_licence_fails_the_content_check(stand_in: Any) -> None:
     home, p = stand_in
-    home.videos[0]["title"] = "Spring"
+    home.videos[0]["title"] = "Llama Drama"
     home.videos[1]["description"] = "a film"
     ok, note = p.run()["content"]
     assert not ok
-    assert "Spring: needs an English and an Arabic title" in note
+    assert "Llama Drama: needs an English and an Arabic title" in note
     assert "no licence note" in note
-    assert "not listed: spring" in note
+    assert "not listed: llama-drama" in note
 
 
 def test_a_stream_that_will_not_start_fails_the_streams_check(stand_in: Any) -> None:

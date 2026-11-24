@@ -1,6 +1,9 @@
 package genrelease
 
 import (
+	"archive/tar"
+	"bytes"
+	"compress/gzip"
 	"crypto/sha256"
 	"encoding/hex"
 	"os"
@@ -232,7 +235,7 @@ func TestBuildNamesTheMigrations(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dist, rel.Archive), rel.Files[rel.Archive], 0o644); err != nil {
 		t.Fatal(err)
 	}
-	body := []byte("not really a tarball, digested all the same")
+	body := migrationsArchive(t, "0001_init.sql", "CREATE TABLE a (id int);")
 	if err := os.WriteFile(filepath.Join(dist, "maktaba-migrations-1.5.0.tar.gz"), body, 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -245,6 +248,10 @@ func TestBuildNamesTheMigrations(t *testing.T) {
 	if m.Migrations == nil || m.Migrations.Archive != "maktaba-migrations-1.5.0.tar.gz" ||
 		m.Migrations.SHA256 != hex.EncodeToString(sum[:]) {
 		t.Fatalf("migrations = %+v", m.Migrations)
+	}
+	// the set of its migrations (2026-11-24): what a home compares, as releaseverify reads it
+	if want, err := rv.MigrationSet(body); err != nil || m.Migrations.SetSHA256 != want {
+		t.Fatalf("migrations set = %q, want %q (%v)", m.Migrations.SetSHA256, want, err)
 	}
 	if err := os.WriteFile(filepath.Join(dist, "maktaba-migrations-1.4.0.tar.gz"), body, 0o644); err != nil {
 		t.Fatal(err)
@@ -310,4 +317,25 @@ func TestBuildNamesTheComponentIndexAndChecksItsPacks(t *testing.T) {
 	if _, err := Build(Options{Tag: "v1.5.0", Commit: commit, Dist: dist, Repo: repo}); err == nil {
 		t.Fatal("another version's index was taken")
 	}
+}
+
+// migrationsArchive is a .tar.gz holding one migration.
+func migrationsArchive(t *testing.T, name, text string) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gz)
+	if err := tw.WriteHeader(&tar.Header{Name: name, Mode: 0o644, Size: int64(len(text)), Typeflag: tar.TypeReg}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tw.Write([]byte(text)); err != nil {
+		t.Fatal(err)
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := gz.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
 }

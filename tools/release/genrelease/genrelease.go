@@ -331,7 +331,18 @@ func Build(o Options) (*rv.Manifest, error) {
 			if err != nil {
 				return nil, err
 			}
-			m.Migrations = &rv.Migrations{Archive: name, SHA256: d}
+			// the set of its migrations, which the archive's digest is not (its entries
+			// carry the release commit's time): a home holds back a release whose
+			// migrations rolled back there until one changes them
+			b, err := os.ReadFile(filepath.Join(o.Dist, name))
+			if err != nil {
+				return nil, err
+			}
+			set, err := rv.MigrationSet(b)
+			if err != nil {
+				return nil, fmt.Errorf("%s: %w", name, err)
+			}
+			m.Migrations = &rv.Migrations{Archive: name, SHA256: d, SetSHA256: set}
 		}
 	}
 	if len(m.Assets) == 0 {

@@ -76,7 +76,7 @@ class ParentalPagesTest {
     @Test
     fun aHiddenVideoIsTheBlockedPageAndAParentsPinOpensIt() = TestHome().use { fake ->
         // the home answers a hidden video as a missing one
-        fake.answer("GET /api/me/parental/guardians", """{"guardians":[{"id":"g1","username":"huda"}]}""")
+        fake.answer("GET /api/me/parental/guardians", """{"guardians":[{"id":"g1","username":"khalid"}]}""")
         fake.answer("POST /api/me/parental/requests", """{"request":{"id":"r1","subject_kind":"video","subject_id":"v1","status":"pending"}}""", 201)
         fake.answer("POST /api/me/parental/unlock") {
             // opened: the home now gives the video

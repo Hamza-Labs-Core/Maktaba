@@ -1,7 +1,7 @@
 import XCTest
 
 /// The Mac Player's product screenshots (story 60.09): the library window (Libraries on the
-/// demo's Films) and Sintel playing with the Arabic subtitles on, in English and in Arabic,
+/// demo's Documentaries) and Curiosity playing with the Arabic subtitles on, in English and in Arabic,
 /// dark, on the demo library (`MockHome(demo:)`, from `tests/fixtures/demo-library/`) with
 /// its clock pinned to `library.json`'s noon. Each is the window as an attachment named
 /// `shot-mac-<screen>-<language>`, kept always: CI exports them from the result bundle as
@@ -27,7 +27,7 @@ final class PlayerMacDemoShotsUITests: XCTestCase {
 
     func testLibrary() throws {
         for language in ["en", "ar"] {
-            try launchSignedIn(language, section: "libraries", open: "library/lib-films")
+            try launchSignedIn(language, section: "libraries", open: "library/lib-docs")
             XCTAssertTrue(element("screen.library").waitForExistence(timeout: 20), "the Films library; the home saw \(home?.seen ?? [])")
             waitForArt(atLeast: 4)
             shot("library")
@@ -36,7 +36,7 @@ final class PlayerMacDemoShotsUITests: XCTestCase {
 
     func testPlayer() throws {
         for language in ["en", "ar"] {
-            try launchSignedIn(language, section: "home", open: "watch/v-sintel@420",
+            try launchSignedIn(language, section: "home", open: "watch/v-curiosity@420",
                                extra: ["-playback.subtitles_on", "YES", "-playback.subtitle_language", "ar"])
             XCTAssertTrue(element("player.window").waitForExistence(timeout: 30), "the player; the home saw \(home?.seen ?? [])")
             // what plays, from what the player asked the home (XCUITest on macOS reads no value
@@ -67,7 +67,7 @@ final class PlayerMacDemoShotsUITests: XCTestCase {
         home?.stop()
         let home = try MockHome(demo: language)
         home.clock = MockHome.demoClock
-        if let seconds = home.demoVideo("v-sintel")?["duration_sec"] as? Int { home.streamSeconds = seconds / 2 * 2 }
+        if let seconds = home.demoVideo("v-curiosity")?["duration_sec"] as? Int { home.streamSeconds = seconds / 2 * 2 }
         try home.start()
         self.home = home
         self.language = language

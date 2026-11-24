@@ -53,7 +53,7 @@ func (v ReleaseVerifier) VerifyRelease(ctx context.Context, tag string, f Releas
 			Published: m.Published, SchemaRev: m.SchemaRev, MinNodeSchema: m.MinNodeSchema,
 			BreaksPreviousHome: m.BreaksPreviousHome, MinUpgradeFrom: m.MinUpgradeFrom,
 			EdgeProtocol: m.EdgeProtocol, LauncherProtocol: m.LauncherProtocol, AgentProtocol: m.AgentProtocol,
-			AppPostgresMajor: m.AppPostgresMajor},
+			AppPostgresMajor: m.AppPostgresMajor, Migrations: m.Migrations},
 		ChecksumsSHA256: res.ChecksumsSHA256, SignedAt: res.SignedAt, Identity: res.Identity,
 	}, nil
 }
