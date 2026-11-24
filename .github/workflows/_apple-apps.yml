@@ -199,7 +199,8 @@ jobs:
       matrix:
         device: [iphone, ipad]
         # `shots`: the product screenshots (PlayerDemoShots, story 60.09), on a shard of their own
-        shard: ${{ fromJSON(inputs.shots_only && '["shots"]' || '["1", "2", "3", "4", "5", "6", "shots"]') }}
+        # DIAGNOSTIC (never merged): Search's UI tests alone, on every shard
+        shard: ["1", "2", "3", "4", "5", "6"]
         shards: [6]
     env:
       PRODUCTS: ${{ github.workspace }}/build/player-ui-products
@@ -329,8 +330,7 @@ jobs:
             only=(-only-testing "$target/PlayerDemoShots")
           else
             # this shard's tests: longest first, to the shard with the least time so far
-            while IFS= read -r t; do only+=(-only-testing "$target/$t"); done \
-              < <(python3 ../../tools/apple/ui-shard.py "$device" "$shard" "$shards" UITests/Player*Tests.swift)
+            only=(-only-testing "$target/PlayerSearchUITests")
           fi
           echo "shard $shard/$shards: ${#only[@]} arguments for $((${#only[@]} / 2)) tests"
           printf '%s\n' "${only[@]}" > "$RESULTS/$device-$shard.selection"
@@ -350,6 +350,7 @@ jobs:
       # #1312: 1 iteration of 20, the job green). Reads the result bundle and fails on no test
       # run, a selected test missing from it, or fewer iterations than asked.
       - name: Check every selected test ran
+        if: false
         run: python3 tools/ci/xcresult_ran.py "${{ matrix.device }} ${{ matrix.shard }}/${{ matrix.shards }}" "$RESULTS/${{ matrix.device }}-${{ matrix.shard }}.xcresult" "$RESULTS/${{ matrix.device }}-${{ matrix.shard }}.selection"
 
       # the app's own log (MaktabaKit's `Log`: the requests to the mock home, connects,
