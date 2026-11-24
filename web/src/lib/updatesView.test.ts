@@ -3,7 +3,9 @@
 // that has its units, and one status word for each machine.
 import { describe, it, expect } from "vitest";
 import en from "../i18n/en.json";
+import ar from "../i18n/ar.json";
 import {
+  checkFailedWhy,
   dayText,
   homeNext,
   inText,
@@ -314,5 +316,18 @@ describe("the release", () => {
     );
     expect(safeReleaseUrl("javascript:alert(1)")).toBeNull();
     expect(safeReleaseUrl(42)).toBeNull();
+  });
+});
+
+describe("why a check failed", () => {
+  it("names a refused release feed apart from GitHub being out of reach, in both languages", () => {
+    for (const cat of [en, ar] as Record<string, string>[]) {
+      const t = (k: string) => cat[k] ?? k;
+      const refused = checkFailedWhy("feed_refused", t);
+      expect(refused).toBe(cat["updates.checkFailed.feed_refused"]);
+      expect(refused).not.toBe(cat["updates.checkFailed.unreachable"]);
+      // a code this app does not know reads as GitHub out of reach
+      expect(checkFailedWhy("something_new", t)).toBe(cat["updates.checkFailed.unreachable"]);
+    }
   });
 });

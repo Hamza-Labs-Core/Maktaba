@@ -60,6 +60,10 @@ _go: &go
   # cloud/internal/billing's tests read them
   - 'deploy/review-home/content/manifest.json'
   - 'deploy/review-home/review-home.env.example'
+  # GitHub's release list as a home reads it, recorded (the incident of 2026-11-24): the
+  # release list's caps are tested against it (api/internal/updates, the About check,
+  # selfupdate, ghasset)
+  - 'tests/fixtures/github-releases/**'
 
 # the pipeline, and what its tests read outside it
 _pipeline: &pipeline
@@ -635,6 +639,9 @@ replica:
   - 'tools/rehearsal/postgres18.sh'
   - 'tools/release/linux-app/pins.env'
   - '.github/workflows/_replica.yml'
+  # the second listen with a machine's copy published, on PostgreSQL 18 (slot 0237)
+  - 'pipeline/tests/stages/test_second_listen.py'
+  - 'plugins/first-party/transcription/src/maktaba_fp_transcription/stages/**'
 
 # the compose stack (the api, streaming, pipeline and web images) driven by tests/e2e
 e2e:

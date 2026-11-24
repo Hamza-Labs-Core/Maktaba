@@ -372,6 +372,10 @@ func (d *Driver) prefetch(ctx context.Context, run Run) {
 
 // platforms are the platforms the cluster's approved machines run (their rows, and what
 // their agents say).
+// Platforms are the release.json platforms ("linux/amd64") the cluster's machines run
+// (the release feed reads each one's).
+func (d *Driver) Platforms(ctx context.Context) []string { return d.platforms(ctx) }
+
 func (d *Driver) platforms(ctx context.Context) []string {
 	nodes, _ := d.nodes(ctx)
 	_, states := d.agentStates()

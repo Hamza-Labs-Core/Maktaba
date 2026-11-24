@@ -1,0 +1,93 @@
+{
+  "v": 1,
+  "version": "0.3.161",
+  "tag": "v0.3.161",
+  "commit": "1680cbaf69879b1bda2fac8f4320f7d1aacd6985",
+  "channel": "stable",
+  "published": "2026-11-24T02:07:17Z",
+  "schema_rev": 236,
+  "min_node_schema": 128,
+  "breaks_previous_home": false,
+  "min_upgrade_from": "0.1.0-rc.1",
+  "edge_protocol": 1,
+  "launcher_protocol": 1,
+  "agent_protocol": 2,
+  "assets": {
+    "darwin/amd64": {
+      "archive": "maktaba-server-0.3.161-darwin-amd64.tar.gz",
+      "sha256": "201196598478c4b411f1b5b70587991454cac292e419e8ae92c2d790913c728f",
+      "files": {
+        "maktaba-api": "1b797e04263fcefb0007a53a5e55351726c619f3feac47b2ff0caa5aa2aea766",
+        "maktaba-launcher": "4ac9055a544640a53ef934eae279158a4f2fe5f7081334e6b1ae36ad0a2c161f",
+        "maktaba-server": "5a3bd61f200830eef6febf4264de0478cb5296961266617f7ce714bbfbd8bab2",
+        "maktaba-streaming": "28007bf5361266c3cf3d0126e49809c641ac40ed35242f33c21f002928cf218f"
+      }
+    },
+    "darwin/arm64": {
+      "archive": "maktaba-server-0.3.161-darwin-arm64.tar.gz",
+      "sha256": "1b442278f403f62f33bc747894c54b4ef0562836ea1e97c372280d13bce84577",
+      "files": {
+        "maktaba-api": "4979f82449980bddabbfdcb0969d97a3393428ba01c6e52e7a80a9711371fd4f",
+        "maktaba-launcher": "e9d0a9cd24448a4c838dbd08d2f4b60c1bedd576bb921e71be37e338bcd90dd0",
+        "maktaba-plugind": "fcbe42dcf546d40a4d1ccc19536cb50b837fdc417d5fc5c4f0353a9bb754af0f",
+        "maktaba-server": "720b637f85b15f914140adaebf56516111a8c4455ef4c2b3958d370a0795e20e",
+        "maktaba-streaming": "11a89fe0372ff119b2e91a3ac9726bad8a0e57fdffc0241415b4597f25900768"
+      }
+    },
+    "linux/amd64": {
+      "archive": "maktaba-server-0.3.161-linux-amd64.tar.gz",
+      "sha256": "0050bc9e15c0f20a2a232cc2b8ea36f23a1022afb9e48d3dc1cde2bc2bc1c464",
+      "files": {
+        "maktaba-api": "f4c14e001fe2cbb10c718ace990c51386741e0757447144c8b87486857eb0797",
+        "maktaba-launcher": "700c36863617e36a2782bade17d8d02b22dfc0f9e31f20565df790c1a83b2012",
+        "maktaba-plugind": "e8ef062f056a32f45633c3dd7195c8a6367f876f60321730450bcd8ff8ac455c",
+        "maktaba-server": "628c3a44e2c1df3dd44bf780fcbf153e35ce59c6b4ec1265c2e00483e2dd983b",
+        "maktaba-streaming": "ba5990944983275365c37983d3c9efb09d7d9183d5550f04afa906f044e4b94f"
+      }
+    },
+    "linux/arm64": {
+      "archive": "maktaba-server-0.3.161-linux-arm64.tar.gz",
+      "sha256": "e8f499735cae68e716ec8fdb486c0171a4974f79e702a022096500a92594a5fc",
+      "files": {
+        "maktaba-api": "dd19eb4ef44e8fb9f5938bf6b8a3b8dfb6190ab1bea4e81d6932508410402f9e",
+        "maktaba-launcher": "16f40071ce497972c7f5542a4216d7e37c2d2857003a0c1ad522e19dd877a2c7",
+        "maktaba-plugind": "7e887c629ffa54ab6a66490bd3db74261f4ccd68c64bfb040c34fc331ed227c0",
+        "maktaba-server": "933040d7f745c567aa9dd205e30f682d8593ddffbd5f8d485991bf3307ddcf51",
+        "maktaba-streaming": "2b3f928ac67ccfc67b9162bbaa6e147034271d052f4b6166519c5568a0b5ed9e"
+      }
+    },
+    "windows/amd64": {
+      "archive": "maktaba-server-0.3.161-windows-amd64.zip",
+      "sha256": "ff3e5b2ed8d4bd6148988fd884849f89cb66e73fe6b0926ecb8d0f5bddb1ee6c",
+      "files": {
+        "maktaba-api.exe": "89c3ec61e67c502f31ca03dd4738d4d955c17e79cb5a5fa99d4273538e74c554",
+        "maktaba-launcher.exe": "774d3c0a47e7f36ea2b60ab1366029d9af35a2402277e4a231bbe9e8a0d5c337",
+        "maktaba-server.exe": "e4a3cba962708b98ed1cda645d904d80c066cc5efd938ba56ae7d14957345891",
+        "maktaba-streaming.exe": "0d086a2243c846a60d67b6f4b034096fb45611fa6f85c83a235d0cc012ad674d"
+      }
+    }
+  },
+  "pipeline": {
+    "wheel": "maktaba_pipeline-0.3.161-py3-none-any.whl",
+    "wheel_sha256": "6ccc3cd2a6fcd800e0d047f7d201daa4651959c7d1f89cef66bce87553d0751f",
+    "constraints": "maktaba-pipeline-0.3.161-constraints.txt",
+    "constraints_sha256": "3a3a25f83105797835a41e0aa4f6f403ec76e706b81a6abaeded63c233550f44",
+    "constraints_cuda": "maktaba-pipeline-0.3.161-constraints-cuda.txt",
+    "constraints_cuda_sha256": "e78b11aac420d475d232c32e715c3410f9ea1e19e6d9a04f9667b9c31bc5e7e8",
+    "python": "3.12"
+  },
+  "migrations": {
+    "archive": "maktaba-migrations-0.3.161.tar.gz",
+    "sha256": "6a34c7fa0804e05a2c42616c9155586bb34ebf78a21c50e1ad6b01cb26ae00ef"
+  },
+  "app_postgres_major": {
+    "linux-app": 16,
+    "mac-app": 16,
+    "win-app": 16
+  },
+  "handover_protocol": 1,
+  "components": {
+    "index": "components-0.3.161.json",
+    "sha256": "b6b2839e28c94ac16a5db940ce0a7ecc0b3bd387462f608885e49b17adb90635"
+  }
+}
