@@ -2,6 +2,9 @@ package com.hamzalabs.maktaba.desktop
 
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.foundation.background
 import androidx.compose.ui.awt.SwingPanel
 import androidx.compose.ui.graphics.Color
 import javafx.application.Platform
@@ -84,4 +87,30 @@ fun VideoSurface(player: MediaPlayer?, modifier: Modifier = Modifier, caption: S
         },
         modifier = modifier,
     )
+}
+
+/**
+ * A watch screen's picture (story 13.18): libmpv's frames, drawn by Compose at the size they
+ * were drawn for (mpv letterboxes, and draws the caption itself); JavaFX's panel for an
+ * [FxVideo].
+ */
+@Composable
+fun VideoSurface(video: Video?, modifier: Modifier = Modifier, caption: String? = null, captionScale: Float = 1f) {
+    val mpv = video as? com.hamzalabs.maktaba.desktop.mpv.MpvVideo
+    if (mpv == null) {
+        VideoSurface((video as? FxVideo)?.media, modifier, caption, captionScale)
+        return
+    }
+    androidx.compose.runtime.LaunchedEffect(mpv, caption, captionScale) {
+        mpv.caption(caption, caption?.let(::isRtlText) == true, captionScale)
+    }
+    val frame = mpv.frame
+    androidx.compose.foundation.Canvas(
+        modifier
+            .background(Color.Black)
+            .onSizeChanged { mpv.resize(it.width, it.height) }
+            .testTag("video-surface"),
+    ) {
+        frame?.let { drawImage(it) }
+    }
 }

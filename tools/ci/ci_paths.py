@@ -98,6 +98,7 @@ NOT_IN_CI: dict[str, str] = {
     ".github/workflows/broadcast-rehearsal.yml": "its own workflow and path filter (the broadcast rehearsal, Epic 50 story 50.29)",
     "tools/broadcast-viewers/**": "broadcast-rehearsal.yml (the simulated viewers and the scenarios, story 50.29)",
     ".github/workflows/trusted-root.yml": "its own scheduled workflow",
+    ".github/workflows/github-release-list.yml": "its own scheduled workflow (GitHub's release list read as a home reads it, hourly); tools/ci/tests checks its shape on every pull request",
     ".github/workflows/components-nightly.yml": "its own scheduled workflow (components-chaos)",
     ".github/workflows/update-rehearsal.yml": "its own workflow and path filter",
     ".github/workflows/nas.yml": "its own workflow and path filter (nas-shapes, Epic 59 story 59.15)",

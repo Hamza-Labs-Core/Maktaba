@@ -26,12 +26,13 @@ Everything that decides **what airs** stays here on the home, under the publishe
 - **Per channel it shows:**
   - its publishable share (50.23): how many of the channel's scheduled hours this week are
     publishable;
-  - the access (`invite` or `open`);
+  - the access, which is always `invite`: every channel is invitation only (README §14);
   - the ladder;
-  - the mode (always-on, or on demand for invite-only);
+  - the mode (always-on for Broadcaster, or on demand for Pro guest sharing);
   - the countries;
   - the state: `draft`, `live`, `offline`, `off_air`, `revoked`;
-  - the link, QR code and short code once it is live.
+  - its invites once it is live: each invite's link, QR code and short code, uses and expiry
+    (50.26). The channel has no link of its own that plays without an invite.
 - **Publishing** a channel runs these checks in order, and names the first one that fails:
   1. **The plan.** The channel count, access and ladder are within the tier.
   2. **The Broadcaster agreement** is accepted (50.20 §0).
@@ -72,9 +73,9 @@ Everything that decides **what airs** stays here on the home, under the publishe
   - It keeps at most 8 segments per rung on disk.
   - It posts state every 10 s (`POST …/state`): rungs, bandwidths, resolutions, encoder health.
 - **Always-on vs on demand.**
-  - `open` channels are **always-on**: the channel is placed and **never released** by the warm
-    grace while it is published.
-  - Invite-only channels in `on_demand` mode start when the edge sends `wake` over the control
+  - Broadcaster channels are **always-on**: the channel is placed and **never released** by the
+    warm grace while it is published.
+  - Pro guest-sharing channels, in `on_demand` mode, start when the edge sends `wake` over the control
     WebSocket (`/v1/ingest/ws`), and stop 5 minutes after the edge reports no viewers. That
     matches Epic 34 R3.6's `top_n` wake. The target is the first segment at the edge ≤ 15 s after
     `wake`.
@@ -190,10 +191,10 @@ since     = "<the release that ships this story>"
 - **Given** a host with `max_active_channels = 8`, 5 channels in use and `reserve_slots = 2`,
   **when** the admin publishes a channel with 3 rungs (1 + 0.5 + 0.5 = 2 slots),
   **then** it is refused with `broadcast.noCapacity`.
-- **Given** a published `open` channel with no viewers for an hour,
+- **Given** a published always-on Broadcaster channel with no viewers for an hour,
   **when** the warm grace passes,
   **then** the channel stays placed and keeps uploading.
-- **Given** an invite-only on-demand channel,
+- **Given** an on-demand guest-sharing channel,
   **when** a guest presses play,
   **then** the edge wakes the home and the first segment is live within 15 s, while the tuning
   card shows.

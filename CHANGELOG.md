@@ -14,6 +14,17 @@ build fails when the two differ.
 
 ### Changed
 
+- **The Windows and Linux Player plays files as they are.** It now plays with libmpv, which it
+  carries: MKV, WebM, MP4, MOV and TS; H.264, HEVC (10-bit too), VP9, AV1 and MPEG-2; AAC, AC-3,
+  E-AC-3, DTS, FLAC, Opus, Vorbis and MP3, 5.1 and 7.1 included (folded down to stereo
+  speakers), and HDR10 and HLG on any screen. A home that knows the new `desktop-mpv` profile
+  sends such files as they are instead of converting them first, so a film starts sooner and
+  the home's processor rests; an older home converts as before. A file that does not play as it
+  is opens once more converted. Captions are drawn in the Player's own face, right to left in
+  Arabic. If the Player's libmpv cannot load, it says so once and plays as before, and Report a
+  problem names why. The home's `GET /api/stream/capabilities` lists the `client_profiles` it
+  knows.
+
 - **The Windows and Linux Player's own title bar.** The Player's window has Maktaba's dark title
   bar in place of the system's frame and its menu bar: the menu button holds Account, Big screen,
   Language and Help in the Player's language, beside the app's name, Big screen and Help, with
@@ -412,22 +423,17 @@ build fails when the two differ.
 
 ### Fixed
 
-- **`maktaba-server update` on a self-managed or package install is no longer undone after 15
-  minutes.** Its switch was never confirmed, so the launcher went back to the previous release
-  once the new one had run for a quarter of an hour. The new release now confirms itself once it
-  has run healthy, as it does after a switch by hand, including a switch made by an older
-  `maktaba-server update`.
-
-- **A release that hangs while it starts after an update is now timed out.** Its own update watch
-  pushed the launcher's deadline on every minute, without limit. The release that switches now
-  writes the latest that deadline may reach, and the launcher never waits longer, nor more than a
-  day after the switch.
-
-- **An update no longer waits forever for a desktop app that is not running.** When the Mac or
-  Windows app never takes the update, the update stops waiting at the end of its window (or after
-  three hours) and says so on the Updates page, in English and Arabic: open Maktaba on that machine,
-  then update again. A failed start of the app is now written in the update's log. The Linux app
-  has nothing to download for its update, so the update goes on without it after 10 minutes.
+- **A home that can't check for updates now says so.** When two checks in a row fail, the Updates
+  page says "Can't check for updates since …" with the reason (GitHub's list is larger than this
+  version reads, GitHub asked to wait, GitHub answered with an error or could not be reached) and
+  what GitHub answered; one failure is a quiet line. System health has a new **Update check** item
+  that turns yellow with the same words, and admins get a notification. Before, a failed check was
+  only written to the log: from 2026-11-23 every home's check failed for over a day and nothing on
+  screen said so. A page of GitHub's list of releases may now be 16 MiB (it is some 3.2 MB today),
+  and the About check and the server's own updater read the list the same way and say "larger than
+  … bytes" instead of failing to decode it. A check in CI reads the real list every hour, and
+  after each release, exactly as a home does, and fails when any answer passes 70% of what a home
+  reads or the newest release is not one a home can pick.
 
 - **A home whose update rolled back no longer installs an older release instead, and it sees new
   releases again.** Since 2026-11-23 GitHub's list of the newest 30 releases has been larger than
@@ -1020,6 +1026,13 @@ build fails when the two differ.
   id first, and anything that isn't one is refused.
 
 ### Security
+
+- **The cloud's sign-in limit holds under a burst.** The shared limit on sign-in, password reset,
+  mail and claim redeem (Epic 50 story 50.17) could let one request past its burst when many
+  arrived at once on several api nodes: a refused request whose database transaction started in
+  the same microsecond as the last allowed one read as allowed. Each request's answer now comes
+  from whether it took a token, and a request that waited on another never refills the same time
+  twice.
 
 - **Watch a broadcast stays closed on Apple devices until a parental limit is ruled out (Epic 50,
   story 50.27; Epic 57).** On Apple TV and in the Player on iPhone, iPad and the Mac, the Watch a
@@ -4491,6 +4504,23 @@ build fails when the two differ.
   migrations still fail part way, nothing is put back if what they changed is additive and the
   release before runs on it. Otherwise their own Down scripts undo them when they lose no data,
   in seconds. Only failing both does the backup go back, as before.
+
+- **`maktaba-server update` on a self-managed or package install is no longer undone after 15
+  minutes.** Its switch was never confirmed, so the launcher went back to the previous release
+  once the new one had run for a quarter of an hour. The new release now confirms itself once it
+  has run healthy, as it does after a switch by hand, including a switch made by an older
+  `maktaba-server update`.
+
+- **A release that hangs while it starts after an update is now timed out.** Its own update watch
+  pushed the launcher's deadline on every minute, without limit. The release that switches now
+  writes the latest that deadline may reach, and the launcher never waits longer, nor more than a
+  day after the switch.
+
+- **An update no longer waits forever for a desktop app that is not running.** When the Mac or
+  Windows app never takes the update, the update stops waiting at the end of its window (or after
+  three hours) and says so on the Updates page, in English and Arabic: open Maktaba on that machine,
+  then update again. A failed start of the app is now written in the update's log. The Linux app
+  has nothing to download for its update, so the update goes on without it after 10 minutes.
 
 ## [0.2.0] - 2026-10-19
 
