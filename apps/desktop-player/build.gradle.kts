@@ -152,9 +152,10 @@ compose.desktop {
 
 // Story 13.18: libmpv (in the app's resources, which jpackage does not read for dependencies)
 // uses the system's libass, libva, PulseAudio and ALSA client libraries: the .deb and the .rpm
-// depend on them by their package names
-val libmpvDebDeps = "libass9, libva2, libva-drm2, libpulse0, libasound2"
-val libmpvRpmDeps = "libass, libva, pulseaudio-libs, alsa-lib"
+// depend on them by their package names (no spaces: compose writes the args file one argument
+// to a line, and jpackage reads a space as a separator)
+val libmpvDebDeps = "libass9,libva2,libva-drm2,libpulse0,libasound2"
+val libmpvRpmDeps = "libass,libva,pulseaudio-libs,alsa-lib"
 tasks.withType<org.jetbrains.compose.desktop.application.tasks.AbstractJPackageTask>().configureEach {
     when {
         name.endsWith("Deb") -> freeArgs.addAll("--linux-package-deps", libmpvDebDeps)
