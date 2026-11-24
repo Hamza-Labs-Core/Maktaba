@@ -108,7 +108,9 @@ import java.util.TimeZone
  * composer reads (`web/packages/website/design/store-gallery/compose.mjs`):
  *
  * - `android-phone` (a 6.3" phone, 1233 × 2673): Home and a film's page (Curiosity), search,
- *   a series (Caminandes), Live TV's On now, the player, and a child's blocked page;
+ *   a series (Caminandes), Live TV's On now, the player, and a child's blocked page; and the
+ *   player again with the phone turned (`android-phone-player-landscape`, 2673 × 1233), for a
+ *   store's landscape canvas;
  * - `android-tablet` (a 10" tablet in landscape, 2560 × 1600) and `android-tablet-7` (a 7"
  *   tablet upright, 1200 × 1920): Home and the same five.
  *
@@ -329,7 +331,8 @@ class DemoScreenshotTest {
             compose.onNodeWithTag("tracks-button").performClick()
             compose.settled(home, "the subtitles picker") { count("subtitle-off") > 0 && count("subtitle-1") > 0 }
         }
-        shoot("player")
+        // the phone turned: its own name, beside the upright one (a store's landscape canvas)
+        shoot(if (surface() == Form.PhoneLandscape) "player-landscape" else "player")
         player.release()
     }
 
@@ -376,6 +379,14 @@ class DemoScreenshotTest {
 
     @Test @Config(qualifiers = "ar-$PHONE")
     fun askAParentPhoneArabic() = askAParentScreen()
+
+    // ---- the phone turned (891 × 411 dp at 3×: 2673 × 1233), the player only ----
+
+    @Test @Config(qualifiers = PHONE_LANDSCAPE)
+    fun playerPhoneLandscapeEnglish() = playerScreen()
+
+    @Test @Config(qualifiers = "ar-$PHONE_LANDSCAPE")
+    fun playerPhoneLandscapeArabic() = playerScreen()
 
     // ---- the 10" tablet in landscape (1280 × 800 dp at 2×: 2560 × 1600) ----
 
@@ -456,12 +467,15 @@ class DemoScreenshotTest {
     /** The windows the shots are taken in, with the name each file starts with. */
     enum class Form(val qualifiers: String, val widthDp: Int, val heightDp: Int, val prefix: String) {
         Phone(PHONE, 411, 891, "android-phone"),
+        PhoneLandscape(PHONE_LANDSCAPE, 891, 411, "android-phone"),
         Tablet(TABLET, 1280, 800, "android-tablet"),
         Tablet7(TABLET7, 600, 960, "android-tablet-7"),
     }
 
     companion object {
         const val PHONE = "w411dp-h891dp-xxhdpi"
+        /** The same phone turned, for the player on a store's landscape canvas. */
+        const val PHONE_LANDSCAPE = "w891dp-h411dp-land-xxhdpi"
         const val TABLET = "w1280dp-h800dp-xhdpi"
         const val TABLET7 = "w600dp-h960dp-xhdpi"
 
