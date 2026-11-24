@@ -74,24 +74,46 @@ var ErrSlugReserved = errors.New("servers: slug reserved")
 // links, in one transaction: the code is spent only when the server is
 // created (a taken slug leaves it usable for another try), and two
 // agents racing the same code cannot both win (the UPDATE … WHERE
-// used_at IS NULL is the one gate).
+// used_at IS NULL is the one gate). A code whose owner is not active
+// (suspended) is refused as an invalid one is.
 func (s *Servers) RedeemClaim(ctx context.Context, code, name, slug, secretHash, version string, pubKey []byte) (Server, error) {
 	tx, err := s.DB.BeginTx(ctx, nil)
 	if err != nil {
 		return Server{}, err
 	}
 	defer func() { _ = tx.Rollback() }()
+	// whose code it is, without locking it: the account is locked first, then its rows (the
+	// order LockAccount's writers and the account purge keep)
 	var uid string
 	err = tx.QueryRowContext(ctx, `
-        UPDATE server_claims SET used_at = now()
-         WHERE token_hash = $1 AND used_at IS NULL AND expires_at > now()
-        RETURNING user_id
+        SELECT user_id FROM server_claims WHERE token_hash = $1 AND used_at IS NULL AND expires_at > now()
     `, hashClaim(code)).Scan(&uid)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Server{}, ErrClaimInvalid
 	}
 	if err != nil {
 		return Server{}, err
+	}
+	// The home takes the plan its owner has at this moment, and no plan change is under way: one
+	// that began first has committed, one that begins now waits and then updates this home too.
+	status, err := LockAccount(ctx, tx, uid)
+	if errors.Is(err, ErrUserNotFound) || (err == nil && status != StatusActive) {
+		return Server{}, ErrClaimInvalid
+	}
+	if err != nil {
+		return Server{}, err
+	}
+	res, err := tx.ExecContext(ctx, `
+        UPDATE server_claims SET used_at = now()
+         WHERE token_hash = $1 AND used_at IS NULL AND expires_at > now()
+    `, hashClaim(code))
+	if err != nil {
+		return Server{}, err
+	}
+	if n, err := res.RowsAffected(); err != nil {
+		return Server{}, err
+	} else if n == 0 {
+		return Server{}, ErrClaimInvalid // another agent spent it meanwhile
 	}
 	var reserved int
 	if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM reserved_slugs WHERE slug = $1`, slug).Scan(&reserved); err != nil {

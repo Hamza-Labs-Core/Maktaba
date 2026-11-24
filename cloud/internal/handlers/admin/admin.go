@@ -430,6 +430,15 @@ func (d *Deps) SetPlan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer func() { _ = tx.Rollback() }()
+	// the account first, then its subscription and homes (stores.LockAccount)
+	if _, err := stores.LockAccount(ctx, tx, id); err != nil {
+		if errors.Is(err, stores.ErrUserNotFound) {
+			writeErr(w, http.StatusNotFound, "not_found", "")
+			return
+		}
+		d.fail(w, r, "lock account", err)
+		return
+	}
 	var provider sql.NullString
 	var status string
 	err = tx.QueryRowContext(ctx, `SELECT provider, status FROM subscriptions WHERE user_id = $1 FOR UPDATE`, id).Scan(&provider, &status)
