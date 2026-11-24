@@ -3870,6 +3870,31 @@ build fails when the two differ.
   that cannot draw the frame (another Maktaba in client mode, or an older home) keeps the
   system's. In English and Arabic.
 
+- **The tray's panel.** On Windows and the Mac a click on the tray or menu-bar icon opens a small
+  panel beside it: the server's status with its colour, what it waits on (the language model's
+  download, a release the home ordered), the update when one waits for a restart, the tray's
+  actions and the two ways to quit. It shows what the tray menu shows, in the system's
+  language, and acts through the same items; a right click still opens the menu, and the arrow
+  keys and Escape work in the panel. In English and Arabic.
+
+- **Maktaba's own dialog for the app's errors.** When the Maktaba app reports a problem (the
+  server could not start, an update failed, a page could not open), it says so in its own
+  window instead of the system's message box: what happened, the programs' own error as it is,
+  a way to the logs when this computer runs the server, and Close (Enter or Escape). The
+  system's box stays only for a computer that cannot show it. In English and Arabic.
+
+- **Setup and the server's status in their own windows.** The Maktaba app's first-run setup
+  opens in its own window, with Maktaba's dark title bar: a pane at the start lists the five
+  steps (welcome, what will run, the admin account, the library folders, getting Maktaba ready)
+  under the arch, and each screen keeps its buttons in a footer. The welcome offers this computer
+  or another Maktaba as two cards, with the language switch beside them; what will run shows each
+  part, the memory and disk it needs, and the data folder. Once the setup opens a server, the
+  main window shows it. Server status, in the tray (and in the Server menu on Linux without a
+  tray), opens a window with the server's state, its release, a release on its way, a tile for
+  each part (the library database, the server, playback and Live TV, indexing, the language
+  model and its download, plugins) and pause, resume, open, the logs and report a problem.
+  Closing it keeps the server running. In English and Arabic.
+
 - **New pictures on maktaba.tv.** The screenshots of every app now show a library of
   documentaries and children's animation: NASA's Curiosity rover, the Apollo 11 launch, Saturn's
   rings, Lake Nasser seen from space, the Moon's phases, a deep-sea octopus, Big Buck Bunny and
@@ -3910,31 +3935,6 @@ build fails when the two differ.
   broadcasting row and Subscription does not list it, unless the home's licence includes
   broadcasting. The broadcast edge takes no uploads while broadcasting is off, with a valid token
   included; only the list of revoked access still reaches it.
-
-- **Setup and the server's status in their own windows.** The Maktaba app's first-run setup
-  opens in its own window, with Maktaba's dark title bar: a pane at the start lists the five
-  steps (welcome, what will run, the admin account, the library folders, getting Maktaba ready)
-  under the arch, and each screen keeps its buttons in a footer. The welcome offers this computer
-  or another Maktaba as two cards, with the language switch beside them; what will run shows each
-  part, the memory and disk it needs, and the data folder. Once the setup opens a server, the
-  main window shows it. Server status, in the tray (and in the Server menu on Linux without a
-  tray), opens a window with the server's state, its release, a release on its way, a tile for
-  each part (the library database, the server, playback and Live TV, indexing, the language
-  model and its download, plugins) and pause, resume, open, the logs and report a problem.
-  Closing it keeps the server running. In English and Arabic.
-
-- **The tray's panel.** On Windows and the Mac a click on the tray or menu-bar icon opens a small
-  panel beside it: the server's status with its colour, what it waits on (the language model's
-  download, a release the home ordered), the update when one waits for a restart, the tray's
-  actions and the two ways to quit. It shows what the tray menu shows, in the system's
-  language, and acts through the same items; a right click still opens the menu, and the arrow
-  keys and Escape work in the panel. In English and Arabic.
-
-- **Maktaba's own dialog for the app's errors.** When the Maktaba app reports a problem (the
-  server could not start, an update failed, a page could not open), it says so in its own
-  window instead of the system's message box: what happened, the programs' own error as it is,
-  a way to the logs when this computer runs the server, and Close (Enter or Escape). The
-  system's box stays only for a computer that cannot show it. In English and Arabic.
 
 ### Fixed
 
