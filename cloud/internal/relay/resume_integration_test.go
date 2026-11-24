@@ -26,7 +26,7 @@ func TestResumeChecksTheServersStanding(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sv, err := srvs.RedeemClaim(ctx, code, "box", "resume-box", "h", "1", nil, "")
+	sv, err := srvs.RedeemClaim(ctx, code, "box", "resume-box", "h", "1", nil, "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

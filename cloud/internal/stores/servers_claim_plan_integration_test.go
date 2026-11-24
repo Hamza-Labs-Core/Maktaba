@@ -41,7 +41,7 @@ func TestRedeemClaimGivesTheHomeItsOwnersPlan(t *testing.T) {
 			t.Fatal(err)
 		}
 		slug := "s" + uuid.NewString()[:8]
-		sv, err := servers.RedeemClaim(ctx, code, "h", slug, "x", "", nil, "")
+		sv, err := servers.RedeemClaim(ctx, code, "h", slug, "x", "", nil, "", nil)
 		if err != nil {
 			t.Fatalf("%s: redeem: %v", tc.plan, err)
 		}

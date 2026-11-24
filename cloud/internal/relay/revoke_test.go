@@ -160,3 +160,30 @@ func TestRevokerChecksEveryRole(t *testing.T) {
 	}
 	keep.Close()
 }
+
+// A tunnel queued between a full check's reading of the registry and its taking of the queue is
+// in neither the one nor lost: it is checked in that pass.
+func TestRevokerNeverDropsWhatIsQueued(t *testing.T) {
+	reg := NewRegistry()
+	st := &countingStanding{}
+	rev := &Revoker{Registry: reg, Store: st, Logger: slog.New(slog.DiscardHandler)}
+	snapshot := reg.All() // the ticker's, before the tunnel registered
+	late := NewTunnel("gone", "late", newIdleConn())
+	reg.Up("late", late, func() {})
+	st.revoked.Store("gone", true)
+	rev.Check(late)
+	rev.drainQueue(context.Background(), snapshot)
+	if !late.closed.Load() {
+		t.Fatal("the queued tunnel was not checked")
+	}
+	// one both in the snapshot and in the queue is asked for once
+	twice := NewTunnel("kept", "twice", newIdleConn())
+	reg.Up("twice", twice, func() {})
+	rev.Check(twice)
+	before := st.biggest.Load()
+	rev.drainQueue(context.Background(), []*Tunnel{twice})
+	if n := st.biggest.Load(); n > max(before, 1) {
+		t.Fatalf("%d asked for", n)
+	}
+	twice.Close()
+}

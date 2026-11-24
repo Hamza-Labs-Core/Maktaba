@@ -222,7 +222,7 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 	// takedowns, reports and repeat infringers (50.24): the public forms, a home's instructions
 	// and records, and the console's queue (wired on the admin listener below)
 	modDeps := moderationDeps(cfg, servers, pool, logger, mailer, revDeps, secret, tsGuard, o.Turnstile)
-	serversDeps := serversh.Deps{Servers: servers, Assertions: assertions, Licenses: licenses,
+	serversDeps := serversh.Deps{Servers: servers, ClaimKey: []byte(cfg.Auth.TokenSecret), Assertions: assertions, Licenses: licenses,
 		ManageURL: strings.TrimRight(cfg.Server.WebURL, "/") + "/billing"}
 	homes := &homesh.Deps{Servers: servers, Users: users, Signer: assertions, RelayHost: cfg.Relay.PublicHost,
 		WebURL: cfg.Server.WebURL}

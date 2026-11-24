@@ -139,10 +139,12 @@ func (r *Revoker) drainQueue(ctx context.Context, ts []*Tunnel) {
 	if all && ts == nil {
 		ts = r.Registry.All()
 	}
-	if ts == nil { // the full check holds the queued ones, which are open
-		for t := range pending {
-			ts = append(ts, t)
-		}
+	// always the queued ones too: one queued after ts was read is not in it
+	for _, t := range ts {
+		delete(pending, t)
+	}
+	for t := range pending {
+		ts = append(ts, t)
 	}
 	for len(ts) > 0 && ctx.Err() == nil {
 		n := min(len(ts), standingBatch)

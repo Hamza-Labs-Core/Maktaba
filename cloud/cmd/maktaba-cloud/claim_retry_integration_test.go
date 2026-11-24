@@ -11,7 +11,7 @@ import (
 )
 
 // A redeem whose answer was lost: the same agent (the same retry key) redeems the code again
-// within the claim's lifetime and gets the same home with a new secret; nobody else can, and
+// within the claim's lifetime and gets the same home and the same secret; nobody else can, and
 // nobody can once the home connected, the claim expired, the owner was suspended or the home
 // was deleted.
 func TestRedeemAgainAfterALostAnswer(t *testing.T) {
@@ -54,7 +54,7 @@ func TestRedeemAgainAfterALostAnswer(t *testing.T) {
 			t.Fatalf("again: %d %s", r.code, r.body)
 		}
 		b := r.json(t)
-		if b["server_id"] != a["server_id"] || b["slug"] != "retry-home" || b["server_secret"] == a["server_secret"] || b["assertion_public_key"] != a["assertion_public_key"] {
+		if b["server_id"] != a["server_id"] || b["slug"] != "retry-home" || b["server_secret"] != a["server_secret"] || b["assertion_public_key"] != a["assertion_public_key"] {
 			t.Fatalf("again: %v, first %v", b, a)
 		}
 		if n := w.e.count(`SELECT count(*) FROM servers WHERE owner_user_id = $1`, w.uid); n != 1 {
@@ -65,10 +65,7 @@ func TestRedeemAgainAfterALostAnswer(t *testing.T) {
 			t.Fatal(err)
 		}
 		if argon2id.Verify(b["server_secret"].(string), hash) != nil {
-			t.Fatal("the new secret does not work")
-		}
-		if argon2id.Verify(a["server_secret"].(string), hash) == nil {
-			t.Fatal("the lost answer's secret still works")
+			t.Fatal("the answers' secret does not work")
 		}
 		if n := w.e.count(`SELECT count(*) FROM server_claims WHERE retry_key_hash LIKE '%' || $1 || '%'`, key); n != 0 {
 			t.Fatal("the retry key is stored as it is")
@@ -126,12 +123,24 @@ func TestRedeemAgainAfterALostAnswer(t *testing.T) {
 			}()
 		}
 		ids := map[any]bool{}
+		var secrets []string
 		for range 2 {
 			r := <-done
 			if r.code != http.StatusCreated {
 				t.Fatalf("%d %s", r.code, r.body)
 			}
 			ids[r.json(t)["server_id"]] = true
+			secrets = append(secrets, r.json(t)["server_secret"].(string))
+		}
+		// whichever answer the agent keeps, its secret works
+		var hash string
+		if err := w.e.pool.DB.QueryRow(`SELECT server_secret_hash FROM servers WHERE owner_user_id = $1`, w.uid).Scan(&hash); err != nil {
+			t.Fatal(err)
+		}
+		for i, s := range secrets {
+			if argon2id.Verify(s, hash) != nil {
+				t.Errorf("answer %d's secret does not work", i+1)
+			}
 		}
 		if len(ids) != 1 || w.e.count(`SELECT count(*) FROM servers WHERE owner_user_id = $1`, w.uid) != 1 {
 			t.Fatalf("homes: %v", ids)
