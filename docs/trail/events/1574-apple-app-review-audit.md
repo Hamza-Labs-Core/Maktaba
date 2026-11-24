@@ -26,7 +26,17 @@ agent: claude-code
 - **Metadata drafts.** English and Arabic drafts in `apps/apple/AppStore/`, in fastlane
   deliver's layout, never uploaded.
 
+- **Decisions of 2026-11-24 recorded in the audit.** Cloud: launch before submitting. Universal
+  apps (#1616). Cast on once its receiver is published (#1621). The drafts became one folder
+  per universal app; their test skips the retired `.tablet` targets, so it passes before and
+  after #1616.
+- **Broadcasting is off for now (2026-11-24).** Product Interaction left the manifests, the label
+  table and the privacy page (its `apps-source` recomputed), and the audit records "Leave
+  channel" plus an invite-only review note for when it returns.
+
 ## What we learned
+- **No multicast entitlement for Cast.** The first audit listed a multicast entitlement for
+  Cast. Google's iOS sender page (SDK 4.8.x) needs none, and Apple grants none just for Cast.
 - **ATS.** Apple's docs: iOS 10+ and macOS 10.12+ ignore `NSAllowsArbitraryLoads` when
   `NSAllowsLocalNetworking` is present. So the key never let plain http reach a non-local
   host, yet it still needed a review justification.
