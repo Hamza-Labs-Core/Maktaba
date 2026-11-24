@@ -65,6 +65,10 @@ Actions:
                (up does this before and after it runs)
   down         Roll back the most recently applied migration
   down-to <v>  Roll back until the schema is at version <v>
+  undo-failed  Undo what the first migration not recorded did before it failed
+               part way (a NO TRANSACTION one: its Down script), then drop the
+               INVALID indexes its cancelled builds left (a failed update runs
+               it before down-to)
 
 A database holding migrations newer than these (a newer Maktaba migrated
 it) is refused by up: exit status 3 (any other failure: 1).
@@ -113,7 +117,7 @@ Flags:`)
 	// when the guard is set or the target is malformed. Mirrors the
 	// `validate` short-circuit above.
 	var downToTarget int64
-	if action == "down" || action == "down-to" {
+	if action == "down" || action == "down-to" || action == "undo-failed" {
 		if err := guardDown(); err != nil {
 			return err
 		}
@@ -199,8 +203,12 @@ Flags:`)
 		fmt.Fprintf(os.Stderr, "migrate: rolling back to schema version %d in %s against %s\n",
 			downToTarget, dir, redactDSN(dsn))
 		return runGooseDownTo(ctx, db, dir, downToTarget)
+	case "undo-failed":
+		fmt.Fprintf(os.Stderr, "migrate: undoing a migration that failed part way in %s against %s\n",
+			dir, redactDSN(dsn))
+		return runUndoFailed(ctx, db, dir)
 	default:
-		return fmt.Errorf("unknown migrate action %q (try 'up', 'down', 'down-to', 'status', 'version', 'validate', 'drop-invalid')", action)
+		return fmt.Errorf("unknown migrate action %q (try 'up', 'down', 'down-to', 'undo-failed', 'status', 'version', 'validate', 'drop-invalid')", action)
 	}
 }
 

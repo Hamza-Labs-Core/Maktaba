@@ -1095,6 +1095,7 @@ func (g *migrationGate) run(ctx context.Context, report func(supervisor.Detail))
 		// a start that did not finish migrating (stopped, cut off, its putting
 		// back failed): go on; the dump is still the one from before it all
 		update.From, update.Dump, update.DumpKeptFor = rec.From, rec.Dump, rec.DumpKeptFor
+		update.SchemaBefore = rec.SchemaBefore
 	case ran != "" && ran == cur: // the same release: nothing to update
 		update = apppayload.Database{}
 	default:
@@ -1151,6 +1152,15 @@ func (g *migrationGate) run(ctx context.Context, report func(supervisor.Detail))
 		}
 	}
 	migrating := update.State == apppayload.DatabaseMigrating
+	if migrating && rec.State != apppayload.DatabaseMigrating && !back {
+		// the slot a failure's Down scripts go back to (backWithoutDump)
+		if v, verr := schemaVersionOf(ctx, g); verr == nil && v > 0 {
+			update.SchemaBefore = v
+		} else if verr != nil {
+			fmt.Fprintf(g.log, "[serve] level=warn the library database's schema version before the update cannot "+
+				"be read (%v): if the migrations fail, their Down scripts go back to the release before's newest\n", verr)
+		}
+	}
 	if migrating {
 		if err := g.save(update); err != nil {
 			return err
@@ -1225,11 +1235,14 @@ func (g *migrationGate) run(ctx context.Context, report func(supervisor.Detail))
 	// a failed update: the database goes back to how it was before it, without the dump
 	// when that is safe (its migrations' changes kept, or undone by their Down scripts)
 	if !back {
-		if done, herr := g.backWithoutDump(ctx, cur, update, err); done {
+		if done, herr := g.backWithoutDump(ctx, cur, &update, err); done {
 			return herr
 		}
 	}
 	update.State, update.Failed, update.Error = apppayload.DatabaseRestoring, cur, err.Error()
+	if update.Restore == "" && !back {
+		update.Restore = "db_restored_unknown"
+	}
 	if err := g.save(update); err != nil {
 		return err
 	}
@@ -1254,23 +1267,40 @@ func (g *migrationGate) run(ctx context.Context, report func(supervisor.Detail))
 //     new dump, which runs what did not finish again. The rollback after it (the update's
 //     watch) keeps it too: the same rule (updater.Machine.keepSchema).
 //   - down: the migrations that ran are undone by their Down scripts (`migrate down-to`,
-//     the release before's newest slot), the sessions they wait on ended as for the
-//     migrations; the record is the release before's, migrated, down_from cur.
+//     the slot the database was at before the update: schema_before, else the release
+//     before's newest), the sessions they wait on ended as for the migrations; the record
+//     is the release before's, migrated, down_from cur.
 //
-// Either way the INVALID indexes the failed migration's cancelled builds left are dropped
-// first (`migrate drop-invalid`): the release before would keep them up on every write,
-// and the next try builds them again. A Down script that fails puts the dump back after
-// all, as before.
-func (g *migrationGate) backWithoutDump(ctx context.Context, cur string, update apppayload.Database, cause error) (bool, error) {
-	if g.prev == nil || update.From == "" || g.api == nil {
+// Either way the migration that failed part way is undone by its own Down script first
+// (`migrate undo-failed`), and the INVALID indexes its cancelled builds left are dropped
+// (`migrate drop-invalid`): the release before would keep them up on every write, and the
+// next try builds them again. The dump goes back only when the Down scripts fail
+// (db_down_failed), when a migration that ran lost data they cannot give back
+// (db_restored_lossy), or when the way back cannot be told (db_restored_unknown): logged
+// at level=error, and the update attempt's code says which on the Updates page.
+func (g *migrationGate) backWithoutDump(ctx context.Context, cur string, upd *apppayload.Database, cause error) (bool, error) {
+	update := *upd
+	// the dump goes back: why, on the update attempt and in the log, loudly (it is not the
+	// way back; the Down scripts are)
+	dumpBack := func(code, why string) (bool, error) {
+		upd.Restore = code
+		fmt.Fprintf(g.log, "[serve] level=error the update to %s failed (%s) and its Down scripts do not take the "+
+			"database back (%s: %s): the whole dump %s goes back instead\n", cur, cause, code, why, update.Dump)
 		return false, nil
+	}
+	if update.From == "" || g.api == nil {
+		return dumpBack("db_restored_unknown", "the release before, or this release's api, is not known")
+	}
+	prev := ""
+	if g.prev != nil {
+		prev = g.prev(update.From)
 	}
 	applied, verr := schemaVersionOf(ctx, g)
 	if verr != nil {
-		applied = -1 // not known: only a kept schema needs no count
+		applied = -1 // not known: every migration above the slot before is judged
 		fmt.Fprintf(g.log, "[serve] the library database's schema version cannot be read: %v\n", verr)
 	}
-	how, schema, why := failedBack(g.prev(update.From), migrationsDirOf(g.api), applied, update.DumpKeptFor != "")
+	how, schema, why := failedBack(prev, migrationsDirOf(g.api), applied, update.SchemaBefore, update.DumpKeptFor != "")
 	settle := func(code string) {
 		settleAttempt(g.updates, cur, update.From, false, g.log, func(a *attempts.Attempt) {
 			if a.From == "" {
@@ -1295,6 +1325,18 @@ func (g *migrationGate) backWithoutDump(ctx context.Context, cur string, update 
 	}
 	switch how {
 	case updater.FailedKeep:
+		// the one that failed part way is undone by its own Down script all the same (what
+		// it made is additive, but its next try makes it whole again)
+		stop := g.freeMigrations(ctx)
+		uerr := runMigrateUndoFailed(ctx, g.api, g.log)
+		stop()
+		if ctx.Err() != nil {
+			return true, ctx.Err()
+		}
+		if uerr != nil {
+			fmt.Fprintf(g.log, "[serve] level=warn the Down script of the migration of %s that failed part way did not "+
+				"run (%v): what it made is additive and stays, its next try finishes it\n", cur, uerr)
+		}
 		g.dropLeftovers(ctx)
 		if done, err := gaveUp(); done {
 			return true, err
@@ -1317,14 +1359,17 @@ func (g *migrationGate) backWithoutDump(ctx context.Context, cur string, update 
 		fmt.Fprintf(g.log, "[serve] the update to %s failed (%s): undoing its migrations with their Down scripts, back "+
 			"to slot %04d (%s): nothing is put back from the dump\n", cur, cause, schema, why)
 		stop := g.freeMigrations(ctx)
-		err := runMigrateDownTo(ctx, g.api, schema, g.log)
+		// the one that failed part way first (its own Down script), then the ones that ran
+		err := runMigrateUndoFailed(ctx, g.api, g.log)
+		if err == nil {
+			err = runMigrateDownTo(ctx, g.api, schema, g.log)
+		}
 		stop()
 		if ctx.Err() != nil {
 			return true, ctx.Err() // the record still says migrating: the next start decides again
 		}
 		if err != nil {
-			fmt.Fprintf(g.log, "[serve] level=error the Down scripts of %s failed (%v): the dump goes back instead\n", cur, err)
-			return false, nil
+			return dumpBack("db_down_failed", fmt.Sprintf("the Down scripts of %s failed: %v", cur, err))
 		}
 		g.dropLeftovers(ctx)
 		if done, err := gaveUp(); done {
@@ -1342,8 +1387,10 @@ func (g *migrationGate) backWithoutDump(ctx context.Context, cur string, update 
 		settle("undone")
 		return true, supervisor.Halt(undoneUpdate(rec))
 	}
-	fmt.Fprintf(g.log, "[serve] the update to %s failed: the dump goes back (%s)\n", cur, why)
-	return false, nil
+	if how == updater.FailedLossy {
+		return dumpBack("db_restored_lossy", why)
+	}
+	return dumpBack("db_restored_unknown", why)
 }
 
 // dropLeftovers drops the INVALID indexes the failed migrations' cancelled builds left
@@ -1402,7 +1449,12 @@ func (g *migrationGate) restore(ctx context.Context, rec apppayload.Database, re
 	}
 	report(detail("db_restoring", fmt.Sprintf("The update to %s could not change the library database: putting it "+
 		"back as it was", rec.Failed), rec.Failed, rec.Dump))
-	fmt.Fprintf(g.log, "[serve] the update to %s failed (%s): restoring %s\n", rec.Failed, rec.Error, rec.Dump)
+	why := ""
+	if rec.Restore != "" {
+		why = " (" + rec.Restore + ")"
+	}
+	fmt.Fprintf(g.log, "[serve] level=error the update to %s failed (%s): restoring the whole dump %s%s\n",
+		rec.Failed, rec.Error, rec.Dump, why)
 	err := g.putBack(ctx, rec.Dump)
 	if ctx.Err() != nil {
 		return rec, ctx.Err() // the record still says restoring: the next start finishes it
@@ -1412,6 +1464,9 @@ func (g *migrationGate) restore(ctx context.Context, rec apppayload.Database, re
 	code := "db_migrate_failed" // its own migrations failed (this start is the failed release's)
 	if layout.NormalizeVersion(rec.Failed) != layout.NormalizeVersion(g.version) {
 		code = reasonCode(rec.Error) // the release before puts it back (a rollback marked it)
+	}
+	if rec.Restore != "" {
+		code = rec.Restore // why its Down scripts did not take it back: the Updates page says so
 	}
 	settleAttempt(g.updates, rec.Failed, rec.From, false, g.log, func(a *attempts.Attempt) {
 		if a.From == "" {

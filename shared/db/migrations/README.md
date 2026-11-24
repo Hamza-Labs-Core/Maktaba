@@ -41,9 +41,30 @@ DATABASE_URL=... make migrate-status
 5. **Backfills are separate jobs.** DDL ships in one migration;
    idempotent backfill work is queued via `processing_jobs`
    (architecture §7).
-6. **Down migrations are dev-only.** `+goose Down` blocks may exist for
-   local convenience but are never run in production paths. Rollback
-   in production is handled at the artifact layer (Story 22.6).
+6. **Every migration has a Down script, and it is the way back.** A failed
+   update is undone by its migrations' own Down scripts
+   (`cmd/maktaba-server/internal/updater/failedback.go`): the one that
+   failed part way by its own (`maktaba-api migrate undo-failed`), the
+   ones that ran by `migrate down-to`. The whole pre-update dump goes back
+   only when they fail, and that is logged at level=error and named on the
+   Updates page. So every file has a `+goose Down` section with its
+   statements. A NO TRANSACTION file's Down runs after any part of its Up,
+   so each Down statement is harmless when what it undoes is not there
+   (`DROP … IF EXISTS`, `ALTER TABLE … DROP COLUMN IF EXISTS`, `CREATE OR
+   REPLACE`, a constraint dropped `IF EXISTS` before it is added back, a
+   `DO` block that checks first). An Up statement that deletes,
+   overwrites, recasts or drops data (`DELETE`, `UPDATE … SET`,
+   `TRUNCATE`, `ALTER … TYPE`, `DROP TABLE`/`COLUMN`) loses what no Down
+   script gives back, and a failed update across it puts the dump back.
+   Keep the data instead (copy it aside, rename rather than drop, backfill
+   in the pipeline), or say which it is in a comment of the file: `--
+   +maktaba down-restores: <how>` when its Down script gives the data back
+   (a backfill of a column the Down drops, a setting the Down sets back:
+   the way back then takes the file as lossless), or `-- +maktaba
+   lossy-up: <why>`. migration-lint enforces the three from slot 0237
+   (the Down section in every file), and the update rehearsal's kit job
+   runs every Down script after each partial Up of its file and after its
+   whole Up on the bundled PostgreSQL (`api/migrate_down_e2e_test.go`).
 7. **Numbering only goes up.** Slots are claimed in
    [`MANIFEST.md`](MANIFEST.md) at the next integer after the highest slot
    on `main`; if two PRs race for the next slot, the later one renumbers

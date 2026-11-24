@@ -25,6 +25,11 @@ import (
 // every row and its own record. Then the home updates to a good release with PostgreSQL 18:
 // the upgrade is made again (the 16 cluster moved on while it ran), the home serves it on 18
 // with every row, pg_textsearch can be created, and the 16 cluster is still there as it was.
+//
+// The home is set up as the owner's was when it moved to 18 on 2026-11-20: a machine's copy
+// published, and transcript_segments at REPLICA IDENTITY FULL with its generated search_tsv.
+// On 18 the second listen's writes to it must go through (slot 0237): PostgreSQL 18 refused
+// them, and every second_listen job failed, until then.
 func TestUpdateRehearsal17PostgresMajorUpgrade(t *testing.T) {
 	r := newRehearsal(t)
 	k := r.kit
@@ -34,6 +39,7 @@ func TestUpdateRehearsal17PostgresMajorUpgrade(t *testing.T) {
 	home, _ := r.homeOnPrev(profile("small"))
 	db := home.superDB("maktaba")
 	before := seedCounts(t, db)
+	pub := publishedAsTheHomeWas(t, db)
 	_ = db.Close()
 	old := filepath.Join(home.root, "postgres")
 	if got := pgVersionOf(t, old); got != "16" {
@@ -96,6 +102,7 @@ func TestUpdateRehearsal17PostgresMajorUpgrade(t *testing.T) {
 	if err := db.QueryRow("SHOW shared_preload_libraries").Scan(&preload); err != nil || !strings.Contains(preload, "pg_textsearch") {
 		t.Errorf("shared_preload_libraries = %q (%v)", preload, err)
 	}
+	secondListenStores(t, db, pub)
 	if got := pgVersionOf(t, old); got != "16" {
 		t.Errorf("the 16 cluster is gone after the upgrade (%q): a switch back would have nothing to start on", got)
 	}
@@ -127,4 +134,78 @@ func serverMajor(t *testing.T, db interface {
 		t.Fatalf("the server's version: %v", err)
 	}
 	return strconv.Itoa(n)
+}
+
+// publishedAsTheHomeWas makes the seeded home's database what the owner's was when it moved
+// to PostgreSQL 18: a machine's copy published (cluster_copy_publication, slot 0147) and
+// transcript_segments at REPLICA IDENTITY FULL. The publication's name.
+func publishedAsTheHomeWas(t *testing.T, db *sql.DB) string {
+	t.Helper()
+	var pub string
+	if err := db.QueryRow(`SELECT cluster_copy_publication('00000000-0000-0000-0000-0000000c0b1e'::uuid)`).Scan(&pub); err != nil {
+		t.Fatalf("a machine's publication: %v", err)
+	}
+	if _, err := db.Exec(`ALTER TABLE transcript_segments REPLICA IDENTITY FULL`); err != nil {
+		t.Fatalf("transcript_segments at REPLICA IDENTITY FULL: %v", err)
+	}
+	return pub
+}
+
+// secondListenStores runs, on the updated home, the second_listen stage's own writes to
+// transcript_segments (its registered statements, plugins/first-party/transcription/queries)
+// and a reviewer's fix (edits.carry_over), each in a transaction rolled back: PostgreSQL 18
+// refuses them while the table's replica identity holds a generated column the publication
+// does not send (slot 0237). The table stays published, without search_tsv.
+func secondListenStores(t *testing.T, db *sql.DB, pub string) {
+	t.Helper()
+	var ident string
+	if err := db.QueryRow(`SELECT relreplident::text FROM pg_class WHERE oid = 'transcript_segments'::regclass`).Scan(&ident); err != nil || ident != "d" {
+		t.Errorf("transcript_segments' replica identity after the update is %q (%v), want d (its primary key)", ident, err)
+	}
+	var tid string
+	if err := db.QueryRow(`SELECT transcript_id::text FROM transcript_segments LIMIT 1`).Scan(&tid); err != nil {
+		t.Fatalf("a seeded transcript: %v", err)
+	}
+	for _, name := range []string{"second_listen.store.4", "second_listen.store.6", "edits.carry_over.4"} {
+		args := []any{tid}
+		if name == "edits.carry_over.4" {
+			args = []any{tid, 0, "text", nil}
+		}
+		tx, err := db.Begin()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tx.Exec(registeredStatement(t, name), args...); err != nil {
+			t.Errorf("%s on the home on PostgreSQL 18 with a machine's copy published: %v", name, err)
+		}
+		_ = tx.Rollback()
+	}
+	var cols string
+	if err := db.QueryRow(`SELECT attnames::text FROM pg_publication_tables WHERE pubname = $1 AND tablename = 'transcript_segments'`,
+		pub).Scan(&cols); err != nil {
+		t.Errorf("transcript_segments left the publication %s: %v", pub, err)
+	} else if strings.Contains(cols, "search_tsv") || !strings.Contains(cols, "text") {
+		t.Errorf("the publication's columns of transcript_segments are %s", cols)
+	}
+}
+
+// registeredStatement is the SQL of a first-party transcription statement as registered
+// (queries/<name>.sql, its header comments left out).
+func registeredStatement(t *testing.T, name string) string {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join("..", "plugins", "first-party", "transcription", "queries", name+".sql"))
+	if err != nil {
+		t.Fatalf("the statement %s: %v", name, err)
+	}
+	var body []string
+	for _, l := range strings.Split(string(raw), "\n") {
+		if !strings.HasPrefix(l, "--") {
+			body = append(body, l)
+		}
+	}
+	q := strings.TrimSpace(strings.Join(body, "\n"))
+	if q == "" {
+		t.Fatalf("the statement %s is empty", name)
+	}
+	return q
 }
