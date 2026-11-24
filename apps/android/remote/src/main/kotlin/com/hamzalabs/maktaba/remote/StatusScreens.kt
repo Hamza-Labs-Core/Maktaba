@@ -171,7 +171,7 @@ private fun LazyListScope.updatesRows(ov: UpdatesOverview, run: UpdateRunView?, 
             if (plan.held) Fact(say.t(R.string.held), say.t(R.string.yes))
             plan.reason?.takeIf { it.isNotEmpty() && it != plan.waiting }?.let { Fact(say.t(R.string.reason), say.waiting(it, plan.target?.version ?: "")) }
             plan.eligibleAt?.let { Fact(say.t(R.string.old_enough_on), say.whenText(it)) }
-            Fact(say.t(R.string.automatic_updates), if (ov.policy.autoInstall) listOf(say.t(R.string.auto_on), ov.policy.channel, ov.policy.window).filter { it.isNotEmpty() }.joinToString(" · ") else say.t(R.string.auto_paused))
+            Fact(say.t(R.string.automatic_updates), say.autoUpdates(ov.policy.autoInstall, ov.policy.channel, ov.policy.window))
             ov.lastCheckOk?.let { Fact(say.t(R.string.last_checked), say.whenText(it)) }
         }
     }
@@ -264,9 +264,11 @@ private fun RunDetail(v: UpdateRunView) {
         }
         if (v.steps.isNotEmpty()) {
             Text(stringResource(R.string.steps), style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+            // the home's steps by their names; a machine's after the machine's name (never a host id)
+            val names = v.targets.associate { it.nodeId to it.name }
             v.steps.forEach { s ->
                 Column {
-                    Text("${s.host} · ${say.step(s.step)}", style = MaterialTheme.typography.bodyLarge)
+                    Text(listOfNotNull(stepHost(s.host, names), say.step(s.step)).joinToString(" · "), style = MaterialTheme.typography.bodyLarge)
                     Text(say.runState(s.state), color = toneOf(s.state), style = MaterialTheme.typography.bodySmall)
                     s.detail.text("detail")?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                 }
@@ -286,7 +288,7 @@ private fun TargetDetail(t: UpdateTarget) {
         Fact(stringResource(R.string.state), say.runState(t.state))
         Fact(stringResource(R.string.version), versions(t.fromVersion, t.toVersion))
         if (t.platform.isNotEmpty()) Fact(stringResource(R.string.system), t.platform)
-        if (t.kind.isNotEmpty()) Fact(stringResource(R.string.install), t.kind)
+        if (t.kind.isNotEmpty()) Fact(stringResource(R.string.install), say.installKind(t.kind))
         Fact(stringResource(R.string.attempts), say.number(t.attempts))
         t.appliedAt?.let { Fact(stringResource(R.string.updated), say.whenText(it)) }
         t.healthyAt?.let { Fact(stringResource(R.string.healthy), say.whenText(it)) }
@@ -306,7 +308,7 @@ private fun MachineUpdateDetail(m: UpdateMachine) {
         val last = m.lastUpdate
         Fact(
             stringResource(R.string.last_update),
-            if (last == null) stringResource(R.string.none_recorded) else listOfNotNull(last.to, (last.endedAt ?: last.at)?.let(say::whenText), Say.spaced(last.source).ifEmpty { null }).joinToString(" · "),
+            if (last == null) stringResource(R.string.none_recorded) else listOfNotNull(last.to, (last.endedAt ?: last.at)?.let(say::whenText), last.source.ifEmpty { null }?.let(say::updateSource)).joinToString(" · "),
         )
     }
 }
@@ -432,7 +434,7 @@ internal fun LazyListScope.runningRows(jobs: List<JobRef>?, labelOf: (String) ->
                 headlineContent = { Text(j.subjectLabel.ifEmpty { j.subjectId }, maxLines = 2) },
                 supportingContent = {
                     Column {
-                        Text(listOfNotNull(labelOf(j.stage), j.progress?.step?.ifEmpty { null }?.let(Say::spaced), j.claimedBy).joinToString(" · "))
+                        Text(listOfNotNull(labelOf(j.stage), j.progress?.step?.ifEmpty { null }?.let(say::jobStep), j.claimedBy).joinToString(" · "))
                         j.progress?.fraction?.let { LinearProgressIndicator(progress = { it }, Modifier.fillMaxWidth().padding(top = 6.dp)) }
                     }
                 },
@@ -450,12 +452,12 @@ internal fun JobDetail(j: JobRef, stageLabel: String) {
     Detail {
         Fact(stringResource(R.string.queue), stageLabel)
         Fact(stringResource(R.string.state), say.jobState(j.state))
-        Fact(stringResource(R.string.item), "${Say.spaced(j.subjectKind)} ${j.subjectId}".trim())
+        Fact(stringResource(R.string.item), "${say.subjectKind(j.subjectKind)} ${j.subjectId}".trim())
         if (j.maxAttempts > 0) Fact(stringResource(R.string.attempt), stringResource(R.string.of_total, j.attempts, j.maxAttempts))
         j.startedAt?.let { Fact(stringResource(R.string.started), say.whenText(it)) }
         j.claimedBy?.let { Fact(stringResource(R.string.worker), it) }
         j.progress?.let { p ->
-            if (p.step.isNotEmpty()) Fact(stringResource(R.string.step), Say.spaced(p.step) + if (p.steps.size > 1) stringResource(R.string.step_of, p.steps.indexOf(p.step) + 1, p.steps.size) else "")
+            if (p.step.isNotEmpty()) Fact(stringResource(R.string.step), say.jobStep(p.step) + if (p.steps.size > 1) stringResource(R.string.step_of, p.steps.indexOf(p.step) + 1, p.steps.size) else "")
             p.fraction?.let { LinearProgressIndicator(progress = { it }, Modifier.fillMaxWidth()) }
             p.message?.takeIf { it.isNotEmpty() }?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant) }
         }

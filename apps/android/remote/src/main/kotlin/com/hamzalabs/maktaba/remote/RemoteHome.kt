@@ -62,6 +62,8 @@ import com.hamzalabs.maktaba.core.api.User
 import com.hamzalabs.maktaba.core.layout.HingeSplit
 import com.hamzalabs.maktaba.core.layout.ListDetailSplit
 import com.hamzalabs.maktaba.core.layout.ListPaneWidth
+import com.hamzalabs.maktaba.core.layout.DetailPaneMinWidth
+import androidx.compose.ui.unit.Dp
 import com.hamzalabs.maktaba.core.layout.Panes
 import com.hamzalabs.maktaba.core.layout.currentPanes
 import com.hamzalabs.maktaba.core.session.AppSession
@@ -385,23 +387,46 @@ fun AdminScreen(
             }
         }
     }
-    when (panes) {
-        // on a table: the page on the upright half, the list on the flat one (touched)
-        is Panes.Tabletop -> HingeSplit(panes, first = { page(detail != null) }, second = { list(Modifier.fillMaxSize()) })
-        // like a book: the list on the start page (beside the rail), the page on the other, as the Player
-        is Panes.Book -> HingeSplit(panes, first = { list(Modifier.fillMaxSize()) }, second = { page(false) })
-        // the divider between them can be dragged; one split for every Remote screen
-        Panes.ListDetail -> ListDetailSplit(
-            key = "remote",
-            preferredList = ListPaneWidth + 40.dp,
-            list = { list(Modifier.fillMaxSize()) },
-            detail = { page(false) },
-        )
-        Panes.One -> if (detail != null) {
+    val one: @Composable () -> Unit = {
+        if (detail != null) {
             BackHandler(onBack = onUnchoose)
             page(true)
         } else {
             list(Modifier.fillMaxSize())
         }
     }
+    when (panes) {
+        // on a table: the page on the upright half, the list on the flat one (touched)
+        is Panes.Tabletop -> HingeSplit(panes, first = { page(detail != null) }, second = { list(Modifier.fillMaxSize()) })
+        // like a book: the list on the start page (beside the rail), the page on the other, as the Player
+        is Panes.Book -> HingeSplit(panes, first = { list(Modifier.fillMaxSize()) }, second = { page(false) })
+        // the divider between them can be dragged; one split for every Remote screen. Only where
+        // both panes fit at their least width beside the rail: a 7" tablet upright or a foldable
+        // open flat (about 600 dp) shows one pane at a time, as a phone does, never a list too
+        // narrow for its lines
+        Panes.ListDetail -> BoxWithConstraints(Modifier.fillMaxSize()) {
+            if (twoPanesFit(maxWidth)) {
+                ListDetailSplit(
+                    key = "remote",
+                    preferredList = ListPaneWidth + 40.dp,
+                    minList = RemoteListMinWidth,
+                    list = { list(Modifier.fillMaxSize()) },
+                    detail = { page(false) },
+                )
+            } else {
+                one()
+            }
+        }
+        Panes.One -> one()
+    }
 }
+
+/**
+ * The Remote's list beside a page is never narrower than this: its rows' label and value side by
+ * side ("Automatic updates", "On · Stable channel · quiet window 03:00–05:00"), its stage rows
+ * with their counts and their "done today", and the bar's Retry all or Pause all.
+ */
+val RemoteListMinWidth = 360.dp
+
+/** True when a screen [width] wide (beside the rail) holds the list and the page at their least widths. */
+fun twoPanesFit(width: Dp): Boolean = width >= RemoteListMinWidth + DetailPaneMinWidth

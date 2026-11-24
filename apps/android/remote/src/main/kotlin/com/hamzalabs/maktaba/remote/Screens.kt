@@ -46,6 +46,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.rememberTextMeasurer
 import com.hamzalabs.maktaba.core.api.ClusterOverview
 import com.hamzalabs.maktaba.core.api.FailureGroup
 import com.hamzalabs.maktaba.core.api.JobRef
@@ -94,12 +98,43 @@ internal fun Detail(content: @Composable () -> Unit) {
 
 @Composable
 internal fun Fact(label: String, value: String) {
-    // the label keeps its width; a long value wraps beside it
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-        Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(value, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge, textAlign = TextAlign.End)
+    // the label keeps its width and a long value wraps beside it, while each of the value's words
+    // fits whole in what the label leaves; else (a narrow pane, a large text size) the value goes
+    // under the label, never letter by letter down a sliver of a column
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val measurer = rememberTextMeasurer()
+        val labelStyle = LocalTextStyle.current
+        val valueStyle = MaterialTheme.typography.bodyLarge
+        val density = LocalDensity.current
+        val gap = 16.dp
+        val width = maxWidth
+        val beside = remember(label, value, width, labelStyle, valueStyle, density) {
+            with(density) {
+                val labelWidth = measurer.measure(label, labelStyle, maxLines = 1).size.width.toDp()
+                val longestWord = value.split(' ', '\n').filter { it.isNotEmpty() }
+                    .maxOfOrNull { measurer.measure(it, valueStyle, maxLines = 1).size.width }?.toDp() ?: 0.dp
+                factBeside(width, width - labelWidth - gap, longestWord)
+            }
+        }
+        if (beside) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(gap)) {
+                Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(value, Modifier.weight(1f), style = valueStyle, textAlign = TextAlign.End)
+            }
+        } else {
+            Column(Modifier.fillMaxWidth()) {
+                Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(value, Modifier.fillMaxWidth(), style = valueStyle)
+            }
+        }
     }
 }
+
+/**
+ * A fact's value beside its label when what the label leaves ([left] of [width]) holds each of
+ * the value's words whole ([longestWord]) and is at least a third of the row; else under it.
+ */
+internal fun factBeside(width: Dp, left: Dp, longestWord: Dp): Boolean = left >= longestWord && left >= width / 3
 
 @Composable
 internal fun Busy() = CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
@@ -171,8 +206,8 @@ internal fun AttentionContent(
             {
                 Detail {
                     Text(pluralStringResource(R.plurals.jobs, g.count, g.count), style = MaterialTheme.typography.headlineSmall)
-                    Fact(stringResource(R.string.stage), g.stage)
-                    Fact(stringResource(R.string.cause), causeKind(g.cause))
+                    // the stage in words; the cause is the page's title
+                    Fact(stringResource(R.string.stage), say.stageTitle(g.stage))
                     g.sampleMessage?.takeIf { it.isNotEmpty() }?.let {
                         Text(say.sampleMessage(it), style = MaterialTheme.typography.bodyMedium.copy(textDirection = TextDirection.Content), color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
@@ -203,7 +238,7 @@ internal fun AttentionContent(
                     headlineContent = { Text(stringResource(R.string.count_label, g.count, say.groupTitle(g)), Modifier.testTag("group-title")) },
                     supportingContent = {
                         Column {
-                            Text(g.stage)
+                            Text(say.stageTitle(g.stage))
                             g.sampleMessage?.takeIf { it.isNotEmpty() }?.let {
                                 // the home's English reads left to right in an Arabic list, the app's words in their own
                                 Text(say.sampleMessage(it), maxLines = 2, overflow = TextOverflow.Ellipsis, style = LocalTextStyle.current.copy(textDirection = TextDirection.Content))
@@ -290,8 +325,9 @@ internal fun QueueContent(
 ) {
     val row = snap?.rows?.firstOrNull { it.id == chosen }
     val job = running?.firstOrNull { "job:${it.id}" == chosen }
-    val labelOf = { stage: String -> snap?.stages?.firstOrNull { it.stage == stage }?.label?.ifEmpty { null } ?: stage }
     val say = rememberSay()
+    // a stage's title in this language; the home's label only for a stage this app has no words for
+    val labelOf = { stage: String -> say.stageTitle(stage, snap?.stages?.firstOrNull { it.stage == stage }?.label) }
     AdminScreen(
         title = stringResource(R.string.place_queue),
         remote = remote,
@@ -307,7 +343,7 @@ internal fun QueueContent(
                 }
             }
         },
-        chosenTitle = row?.label ?: job?.let { it.subjectLabel.ifEmpty { it.subjectId } },
+        chosenTitle = row?.let { labelOf(it.id) } ?: job?.let { it.subjectLabel.ifEmpty { it.subjectId } },
         onUnchoose = { choose(null) },
         detail = when {
             row != null -> { { StageDetail(row, failures?.takeIf { it.first == row.id }?.second, busy == row.id, remote.client.home.toString()) { act(row.id) { if (row.stage.paused) resumeStage(row.id) else pauseStage(row.id) } } } }
@@ -335,7 +371,7 @@ internal fun QueueContent(
                     val c = r.counts
                     val health = say.health(r.summary?.health, c.failedOpen)
                     ListItem(
-                        headlineContent = { Text(r.label) },
+                        headlineContent = { Text(say.stageTitle(r.id, r.label)) },
                         supportingContent = {
                             Column {
                                 Text(
@@ -375,7 +411,7 @@ internal fun QueueContent(
 private fun waitingOf(r: StageRow, say: Say): String? {
     val q = r.summary ?: return null
     if (q.waitingReason == "idle") return null
-    return say.queueWaiting(q.waitingReason, q.retryingService, r.label, q.component)
+    return say.queueWaiting(q.waitingReason, q.retryingService, say.stageTitle(r.id, r.label), q.component)
 }
 
 @Composable
@@ -410,7 +446,7 @@ private fun StageDetail(r: StageRow, failures: List<FailureGroup>?, busy: Boolea
             }
         }
         // a component's hold is said above, in words (waitingOf)
-        r.stage.disabledReason?.takeIf { it != "component_off" && it != "component_held" }?.let {
+        r.stage.disabledReason?.let(say::disabledReason)?.let {
             Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         // Epic 51: the stage's component is off or stopped; it is turned on in Components

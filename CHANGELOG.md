@@ -412,6 +412,18 @@ build fails when the two differ.
 
 ### Fixed
 
+- **The Android Remote on a 7" tablet, and in Arabic.** On a window about 600 dp wide (a 7"
+  tablet upright, a foldable open flat) the Remote shows one pane at a time, as on a phone: the
+  list sits beside the page only where both fit at their least widths, and the list is never
+  narrower than 360 dp. A detail's value no longer wraps letter by letter beside a long label: it
+  goes under the label when a word of it would not fit. In Arabic the Remote no longer shows the
+  home's English: every processing stage's name (in Needs attention, the queue and its running
+  jobs), every failure cause (the plugins' too, and a stage's failing cause), a running job's
+  step and what it works on, the update channel and quiet window, how a machine is installed and
+  what installed its last update are in the Remote's words, the web's where it has them. An
+  update's steps no longer start with the home's host id. Needs attention's page no longer
+  repeats its cause as a code; a stage or cause this app has no words for still shows as the home
+  sent it.
 - **On Roku, Down at the end of a library's loaded titles no longer jumps back to the first
   title.** The Library tab's grid loads 36 titles at a time; pressing Down on its last row while
   the next titles were still loading took focus round to the first title. Focus now stays on the
