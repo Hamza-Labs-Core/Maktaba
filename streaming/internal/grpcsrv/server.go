@@ -94,6 +94,9 @@ type Capabilities struct {
 	// SoftwareOnly: every transcode here is in software (no GPU encoder
 	// works): players prefer direct play and remux (Epic 59 story 59.05).
 	SoftwareOnly bool
+	// ClientProfiles are the client profiles this home knows (capability.Registry): a
+	// player asks for a newer one (desktop-mpv, story 13.18) only when it is listed.
+	ClientProfiles []string
 }
 
 // Status mirrors the HealthCheck reply.
@@ -779,6 +782,9 @@ func (s *Server) GetCapabilities(_ context.Context) (Capabilities, error) {
 		SupportedContainers: []string{"mp4", "mkv", "webm", "mov", "ts"},
 		TranscodeUsed:       s.Allocator.Used(),
 		TranscodeCapacity:   s.Allocator.MaxConcurrent(),
+	}
+	if s.Profiles != nil {
+		c.ClientProfiles = s.Profiles.Names()
 	}
 	if c.HWAccel == "" {
 		c.HWAccel = "software"

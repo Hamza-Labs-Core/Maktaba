@@ -93,8 +93,13 @@ type Overview struct {
 	Catalog              []Release  `json:"catalog"`
 	LastCheckOK          *time.Time `json:"last_check_ok,omitempty"`
 	LastCheckError       string     `json:"last_check_error,omitempty"`
-	CheckStale           bool       `json:"check_stale"`
-	TimeZone             string     `json:"time_zone"`
+	// LastCheckCode is what the last check failed on (CheckFail*); CheckFailures how many
+	// checks in a row failed, since CheckFailingSince ("Can't check for updates since …").
+	LastCheckCode     string     `json:"last_check_code,omitempty"`
+	CheckFailures     int        `json:"check_failures,omitempty"`
+	CheckFailingSince *time.Time `json:"check_failing_since,omitempty"`
+	CheckStale        bool       `json:"check_stale"`
+	TimeZone          string     `json:"time_zone"`
 	// Machines are the home and every joined machine (story 35.12).
 	Machines []Machine `json:"machines"`
 	// Last is the newest finished run (nil: none yet).
@@ -163,7 +168,8 @@ func (s *Service) Overview(ctx context.Context) (Overview, error) {
 	}
 	o := Overview{Current: NormalizeVersion(s.Current), Watermark: wm, Policy: pol,
 		AutoInstallAvailable: AutoInstallAvailable(), Plan: pl, Run: run, Catalog: cat,
-		LastCheckOK: st.LastCheckOK, LastCheckError: st.LastCheckErr, TimeZone: s.loc().String(),
+		LastCheckOK: st.LastCheckOK, LastCheckError: st.LastCheckErr, LastCheckCode: st.LastCheckCode,
+		CheckFailures: st.Failures, CheckFailingSince: st.FailingSince, TimeZone: s.loc().String(),
 		LastTick: s.LastTick()}
 	if pl.Target != nil && run == nil {
 		o.Stuck = s.stuck(ctx, pl.Target.Version)
