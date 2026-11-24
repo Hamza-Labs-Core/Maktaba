@@ -282,7 +282,7 @@ func TestFirstUseOfTheSecretEndsTheClaimsRetry(t *testing.T) {
 			if err := w.pool.DB.QueryRow(`SELECT last_seen_at IS NOT NULL FROM servers WHERE id = $1`, h.id).Scan(&seen); err != nil || seen {
 				t.Fatalf("last_seen_at is set (%v): this does not test the claim's own mark", err)
 			}
-			if _, err := srvs.RedeemClaim(ctx, code, "box", "retry-box", "h", "1", nil, key, nil); !errors.Is(err, stores.ErrClaimInvalid) {
+			if _, err := srvs.RedeemClaim(ctx, code, "box", "retry-box", "h", "1", nil, key, func(string) bool { return true }); !errors.Is(err, stores.ErrClaimInvalid) {
 				t.Fatalf("redeemed again after the home used its secret: %v", err)
 			}
 		})
@@ -295,7 +295,7 @@ func TestFirstUseOfTheSecretEndsTheClaimsRetry(t *testing.T) {
 	if err := srvs.VerifySecret(ctx, h.id, "wrong"); !errors.Is(err, stores.ErrBadServerSecret) {
 		t.Fatal(err)
 	}
-	if _, err := srvs.RedeemClaim(ctx, code, "box", "retry-box", "h", "1", nil, key, nil); err != nil {
+	if _, err := srvs.RedeemClaim(ctx, code, "box", "retry-box", "h", "1", nil, key, func(string) bool { return true }); err != nil {
 		t.Fatalf("after a wrong secret: %v", err)
 	}
 }

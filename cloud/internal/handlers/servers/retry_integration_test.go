@@ -60,8 +60,9 @@ func TestRedeemRouteTakesTheRetryKey(t *testing.T) {
 	}
 }
 
-// The cloud's own key changed between the first answer and the second: the second carries the
-// secret that works now. Without a key of its own the cloud takes no retry key at all.
+// The cloud's own key changed between the first answer and the second, or two of its nodes have
+// different ones: the claim is refused rather than answered with another secret, so every answer
+// given works, two at once included. Without a key of its own the cloud takes no retry key at all.
 func TestRedeemRetryAcrossTheCloudsKeys(t *testing.T) {
 	pool := dbtest.Migrated(t)
 	ctx := context.Background()
@@ -91,12 +92,47 @@ func TestRedeemRetryAcrossTheCloudsKeys(t *testing.T) {
 	}
 	code := mint()
 	_, first := redeem("one", code)
-	st, again := redeem("two", code)
-	if st != http.StatusCreated || again["server_secret"] == first["server_secret"] {
-		t.Fatalf("%d %v", st, again)
+	if st, again := redeem("two", code); st != http.StatusNotFound || again["error"] != "claim_invalid" {
+		t.Fatalf("under another key: %d %v", st, again)
 	}
-	if err := srvs.VerifySecret(ctx, again["server_id"].(string), again["server_secret"].(string)); err != nil {
-		t.Fatalf("the second answer's secret: %v", err)
+	if st, again := redeem("one", code); st != http.StatusCreated || again["server_secret"] != first["server_secret"] {
+		t.Fatalf("under its own key again: %d %v", st, again)
+	}
+	if err := srvs.VerifySecret(ctx, first["server_id"].(string), first["server_secret"].(string)); err != nil {
+		t.Fatalf("the first answer's secret: %v", err)
+	}
+
+	// two nodes with different keys at once, several rounds: whichever answers work
+	for range 5 {
+		code := mint()
+		type answer struct {
+			st  int
+			out map[string]any
+		}
+		done := make(chan answer, 2)
+		for _, k := range []string{"one", "two"} {
+			go func() {
+				st, out := redeem(k, code)
+				done <- answer{st, out}
+			}()
+		}
+		given := 0
+		for range 2 {
+			a := <-done
+			switch a.st {
+			case http.StatusCreated:
+				given++
+				if err := srvs.VerifySecret(ctx, a.out["server_id"].(string), a.out["server_secret"].(string)); err != nil {
+					t.Fatalf("an answer's secret does not work: %v", err)
+				}
+			case http.StatusNotFound:
+			default:
+				t.Fatalf("%d %v", a.st, a.out)
+			}
+		}
+		if given != 1 {
+			t.Fatalf("%d answers of two", given)
+		}
 	}
 
 	code = mint()

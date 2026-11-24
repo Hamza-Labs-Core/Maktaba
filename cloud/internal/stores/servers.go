@@ -81,9 +81,9 @@ var ErrSlugReserved = errors.New("servers: slug reserved")
 // retryKey is the agent's own secret for this claim (empty: an agent that sends none). An agent
 // whose first answer was lost redeems again with the same key, within the claim's lifetime, and
 // gets the same server. The caller derives the secret from the key, so every answer carries the
-// same one and all of them work, two at once included; isSecret says whether a stored hash is
-// already that secret's, and only when it is not (the cloud's own key changed in between) does
-// the server get secretHash. It
+// same one and all of them work, two at once included; isSecret says whether the stored hash is
+// that secret's. When it is not (the cloud's own key changed in between, or differs between its
+// nodes), the claim is refused: an answer already given is never made useless. It
 // holds only until the home has used its secret (VerifyHome): from then on the claim is spent
 // for everyone.
 func (s *Servers) RedeemClaim(ctx context.Context, code, name, slug, secretHash, version string, pubKey []byte, retryKey string, isSecret func(hash string) bool) (Server, error) {
@@ -131,7 +131,7 @@ func (s *Servers) RedeemClaim(ctx context.Context, code, name, slug, secretHash,
 			subtle.ConstantTimeCompare([]byte(keyHash.String), []byte(retryHash.String)) != 1 {
 			return Server{}, ErrClaimInvalid
 		}
-		return redeemAgain(ctx, tx, usedServer.String, uid, secretHash, isSecret)
+		return redeemAgain(ctx, tx, usedServer.String, uid, isSecret)
 	}
 	if _, err := tx.ExecContext(ctx, `
         UPDATE server_claims SET used_at = now(), retry_key_hash = $2 WHERE token_hash = $1
@@ -177,7 +177,7 @@ func (s *Servers) RedeemClaim(ctx context.Context, code, name, slug, secretHash,
 // redeemAgain answers a claim already made, while the home has not used its secret: its use
 // clears the claim's retry key (endClaimRetry), and the caller holds the claim's row. It commits
 // tx.
-func redeemAgain(ctx context.Context, tx *sql.Tx, serverID, ownerID, secretHash string, isSecret func(hash string) bool) (Server, error) {
+func redeemAgain(ctx context.Context, tx *sql.Tx, serverID, ownerID string, isSecret func(hash string) bool) (Server, error) {
 	var sv Server
 	var have string
 	err := tx.QueryRowContext(ctx, `
@@ -193,9 +193,7 @@ func redeemAgain(ctx context.Context, tx *sql.Tx, serverID, ownerID, secretHash 
 		return Server{}, err
 	}
 	if isSecret == nil || !isSecret(have) {
-		if _, err := tx.ExecContext(ctx, `UPDATE servers SET server_secret_hash = $2 WHERE id = $1`, sv.ID, secretHash); err != nil {
-			return Server{}, err
-		}
+		return Server{}, ErrClaimInvalid
 	}
 	return sv, tx.Commit()
 }
