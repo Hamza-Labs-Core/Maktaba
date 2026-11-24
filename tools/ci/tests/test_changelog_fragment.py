@@ -371,6 +371,59 @@ def test_convert_in_a_merge_takes_mains_files(repo: Repo) -> None:
     assert repo.git("diff", "--name-only", "--diff-filter=U") == ""
 
 
+@pytest.mark.parametrize("merging", [False, True])
+@pytest.mark.parametrize("squash", [False, True])
+def test_stacked_branches_move_a_shared_entry_once(repo: Repo, squash: bool, merging: bool) -> None:
+    lines(repo, "first")
+    repo.git("checkout", "-q", "-b", "second")
+    repo.write(**{f: repo.read(f).replace(LINE[lang], LINE[lang] + "\n- " + ("second", "ثانٍ")[lang == "ar"] + "\n")
+                  for lang, f in cf.FILES.items()})  # fmt: skip
+    repo.commit("feat: second")
+    repo.land()
+    # the first moves its entry and merges
+    repo.git("checkout", "-q", "first")
+    repo.git("merge", "-q", "--no-edit", "main")
+    assert repo.tool("convert", "--base", "main")[0] == 0
+    repo.commit("a fragment")
+    repo.git("checkout", "-q", "main")
+    repo.git("merge", "-q", "--squash", "first") if squash else repo.git("merge", "-q", "--no-ff", "--no-edit", "first")
+    main = {"en": "\n- main\n", "ar": "\n- الرئيسي\n"}
+    repo.write(**{f: changelog(lang, main[lang]) for lang, f in cf.FILES.items()})
+    repo.commit("another")
+    repo.git("checkout", "-q", "second")
+    if merging:
+        repo.git("merge", "--no-commit", "main", check=False)
+        code, out = repo.tool("convert", "--merge")
+    else:
+        code, out = repo.tool("convert", "--base", "main")
+    assert code == 0 and "moved 1 entry" in out, out
+    assert pair(repo, "second") == ("### Fixed\n\n- second\n", "### أُصلح\n\n- ثانٍ\n")
+    repo.git("commit", "-qam", "a fragment")
+    if not merging:
+        repo.git("merge", "-q", "--no-edit", "main")
+    for lang, f in cf.FILES.items():
+        assert repo.read(f) == changelog(lang, main[lang])
+    files = {q.name: q.read_text(encoding="utf-8") for q in (repo.path / cf.DIR).iterdir() if q.name != "README.md"}
+    assert len(files) == 4 and cf.check_fragments(files) == []
+
+
+def test_a_branch_whose_every_entry_is_in_a_fragment_only_loses_its_lines(repo: Repo) -> None:
+    repo.land()
+    lines(repo)
+    day = datetime.date.today().isoformat()
+    repo.write(**{f"{cf.DIR}/{day}-x.md": "### Fixed\n" + LINE["en"], f"{cf.DIR}/{day}-x.ar.md": "### أُصلح\n" + LINE["ar"]})
+    code, out = repo.tool("convert", "--base", "main")
+    assert code == 0 and "no entry to move" in out, out
+    assert repo.read("CHANGELOG.md") == changelog("en")
+
+
+def test_an_entry_in_two_fragments_fails() -> None:
+    twice = {**GOOD, **{f.replace("-25-", "-26-"): t for f, t in GOOD.items()}}
+    errors = cf.check_fragments(twice)
+    assert [f for f, _ in errors] == ["2026-11-26-a.ar.md", "2026-11-26-a.md"]
+    assert "an entry that changelog.d/2026-11-25-a.md has" in errors[1][1]
+
+
 def test_convert_in_a_merge_stops_when_both_sides_changed_an_entry(repo: Repo) -> None:
     lines(repo)
     repo.write(**{"CHANGELOG.md": repo.read("CHANGELOG.md").replace("some words", "our words")})

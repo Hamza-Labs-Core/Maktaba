@@ -167,7 +167,21 @@ def check_fragments(files: dict[str, str]) -> list[tuple[str, str]]:
             share = latin_share(files[pair["ar"]])
             if share > MAX_LATIN:
                 errors.append((pair["ar"], f"{share:.0%} of its letters are Latin: write it in Arabic"))
+    first: dict[str, str] = {}  # an entry is in one fragment: stacked branches carry each other's
+    for name in sorted(files):
+        for e in entries_of(name, files[name]):
+            if first.setdefault(e, name) != name:
+                errors.append((name, f"it has an entry that {DIR}/{first[e]} has: {e.splitlines()[0][:70]!r}"))
     return errors
+
+
+def entries_of(name: str, text: str) -> list[str]:
+    """A fragment's entries, none when it is malformed."""
+    try:
+        got = outline(text, "ar" if name.endswith(".ar.md") else "en")
+    except Bad:
+        return []
+    return [e.strip("\n") for entries in got.values() for e in entries]
 
 
 # ---- git ------------------------------------------------------------------------------------
@@ -251,13 +265,24 @@ def check_frozen(base: str, head: str) -> list[tuple[str, str, str]]:
     return out
 
 
-def check(base: str, head: str) -> int:
+def fragments_here() -> dict[str, str]:
+    """The files of changelog.d/ in the working tree but its README: name -> text."""
     folder = pathlib.Path(DIR)
     files = {}
     for p in sorted(folder.rglob("*")) if folder.is_dir() else []:
         name = p.relative_to(folder).as_posix()
         if p.is_file() and name != "README.md":
             files[name] = p.read_text(encoding="utf-8", errors="replace")
+    return files
+
+
+def fragments_at(rev: str) -> dict[str, str]:
+    names = git("ls-tree", "--name-only", f"{rev}:{DIR}", ok=False).splitlines()
+    return {n: at(rev, f"{DIR}/{n}") for n in names if n.endswith(".md") and n != "README.md"}
+
+
+def check(base: str, head: str) -> int:
+    files = fragments_here()
     found = [("error", f"{DIR}/{name}", what) for name, what in check_fragments(files)]
     found += check_frozen(base, head)
     for level, f, what in found:
@@ -279,15 +304,16 @@ def _words(doc: changelog_merge.Doc) -> list[str]:
     return [x for p in doc.prose() for x in p.splitlines() if x.strip() and not x.startswith("### ")]
 
 
-def take(base: str, ours: str, theirs: str, lang: str) -> tuple[list[tuple[str, str]], str]:
+def take(base: str, ours: str, theirs: str, lang: str, moved: frozenset[str] = frozenset()) -> tuple[list[tuple[str, str]], str]:
     """The entries ours adds under [Unreleased] (section, text), and the file without them:
-    theirs, with ours's edits of the base's entries."""
+    theirs, with ours's edits of the base's entries. `moved` entries are in a fragment already."""
     b, o, t = (changelog_merge.parse(x) for x in (base, ours, theirs))
     if _words(b) != _words(o):
         raise Bad(f"{FILES[lang]}: this branch changed text that is not an entry")
     edits = changelog_merge.replacements(b, o)
     old = {e.text for e in b.entries()} | {e.text for e in t.entries()}
     new = [e for e in o.entries() if e.text not in old and e.text not in edits.values()]
+    new = [e for e in new if e.text.strip("\n") not in moved]
     names = {f"### {SECTIONS[s] if lang == 'ar' else s}": s for s in SECTIONS}
     out = []
     for e in new:
@@ -319,6 +345,12 @@ def render(entries: Sequence[tuple[str, str]], lang: str) -> str:
     return "\n\n".join(blocks) + "\n"
 
 
+def write(files: dict[str, str]) -> None:
+    for f, text in files.items():
+        pathlib.Path(f).write_bytes(text.encode("utf-8"))
+    git("add", "--", *files)
+
+
 def slug_of(branch: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", branch.lower()).strip("-")[:60].strip("-") or "change"
 
@@ -333,14 +365,25 @@ def convert(base: str, slug: str | None, merging: bool) -> int:
         if git("rev-parse", "-q", "--verify", "MERGE_HEAD", ok=False).strip():
             raise Bad("a merge is in progress: tools/dev/merge-main.sh finishes it")
         point = theirs = fork_point(base, "HEAD")
+    # what a fragment already has (a branch this one is stacked on moved them): not moved twice
+    there = [fragments_here(), {} if merging else fragments_at(base)]
+    moved = frozenset(e for files in there for f, t in files.items() for e in entries_of(f, t))
     got: dict[str, list[tuple[str, str]]] = {}
     result: dict[str, str] = {}
+    stale: dict[str, bool] = {}
     for lang, f in FILES.items():
         ours = at("HEAD", f) if merging else pathlib.Path(f).read_text(encoding="utf-8")
-        got[lang], result[f] = take(at(point, f), ours, at(theirs, f), lang)
+        got[lang], result[f] = take(at(point, f), ours, at(theirs, f), lang, moved)
+        stale[f] = ours != result[f]
     if not got["en"] and not got["ar"]:
-        print("changelog_fragment: this branch adds no CHANGELOG entry; nothing to convert")
-        return 3 if merging else 0
+        # the files change all the same when the branch's entries are in a fragment already
+        if not merging and not any(stale.values()):
+            print("changelog_fragment: this branch adds no CHANGELOG entry; nothing to convert")
+            return 0
+        write(result)
+        print("changelog_fragment: no entry to move; the CHANGELOGs are main's"
+              + ("" if merging else " (staged: commit them)"))  # fmt: skip
+        return 0
     count = {lang: {s: sum(sec == s for sec, _ in got[lang]) for s in SECTIONS} for lang in FILES}
     if count["en"] != count["ar"]:
         fmt = lambda d: ", ".join(f"{s}: {n}" for s, n in d.items() if n) or "none"  # noqa: E731
@@ -357,10 +400,7 @@ def convert(base: str, slug: str | None, merging: bool) -> int:
     if errors:
         raise Bad("; ".join(f"{f}: {what}" for f, what in errors))
     pathlib.Path(DIR).mkdir(exist_ok=True)
-    written = {**{f"{DIR}/{f}": text for f, text in pair.items()}, **result}
-    for f, text in written.items():
-        pathlib.Path(f).write_bytes(text.encode("utf-8"))
-    git("add", "--", *written)
+    write({**{f"{DIR}/{f}": text for f, text in pair.items()}, **result})
     total = len(got["en"])
     print(f"changelog_fragment: moved {total} entr{'y' if total == 1 else 'ies'} to {DIR}/{name}.md and {DIR}/{name}.ar.md"
           + ("" if merging else " (staged: commit them with the two CHANGELOGs)"))  # fmt: skip

@@ -116,7 +116,8 @@ written.
 ## The changelog
 
 A change a user or a developer sees gets a changelog entry, in two new files of its own, so two
-pull requests never conflict on it. The name is the day and a short slug: `changelog.d/2026-11-25-short-slug.md` holds
+pull requests never conflict on it. The name is the day and a short slug:
+`changelog.d/2026-11-25-short-slug.md` holds
 
 ```markdown
 ### Fixed
@@ -126,7 +127,8 @@ pull requests never conflict on it. The name is the day and a short slug: `chang
 ```
 
 The Arabic file, `changelog.d/2026-11-25-short-slug.ar.md`, has the same sections, named in
-Arabic, with the same number of entries. The files hold sections and entries only. The sections, English and Arabic:
+Arabic, with the same number of entries. The files hold sections and entries only. The sections, English
+and Arabic:
 
 | English      | Arabic   |
 | ------------ | -------- |

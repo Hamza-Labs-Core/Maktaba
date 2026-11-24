@@ -104,7 +104,7 @@ for f in ${conflicted[@]+"${conflicted[@]}"}; do
 done
 git commit -q --no-edit
 if [ "$moved" = 1 ]; then
-  echo "merge-main: merged $ref; this branch's entries are a fragment in changelog.d/"
+  echo "merge-main: merged $ref; the CHANGELOGs are main's, this branch's entries in changelog.d/"
 elif [ "$n" -gt 0 ]; then
   echo "merge-main: merged $ref; kept both sides of:${conflicted[*]+ ${conflicted[*]}}"
   suggest
