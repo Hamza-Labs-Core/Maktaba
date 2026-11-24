@@ -153,6 +153,7 @@ else
   ldd "$out/libmpv-2.dll" | tee "$work/ldd.txt"
   dlls="$(awk '$3 ~ /^\/ucrt64\/bin\// {print $3}' "$work/ldd.txt" | sort -u)"
   [ -n "$dlls" ] || { echo "::error::ldd found none of MSYS2's DLLs libmpv-2.dll needs (libass at least)" >&2; exit 1; }
+  refused=0
   for path in $dlls; do
     cp "$path" "$out/"
     owner="$(pacman -Qqo "$path")"
@@ -169,13 +170,15 @@ else
     esac
     if [ -z "$why" ] && grep -qE '(^|[^L])GPL' <<<"$libl" && ! grep -qE ' OR | WITH ' <<<"$libl"; then
       echo "::error::$(basename "$path") ($owner) is $lic" >&2
-      exit 1
+      refused=1
     fi
     note "$(basename "$path"): MSYS2 $owner ($lic)${why:+; $why}"
     for f in /ucrt64/share/licenses/"${owner#mingw-w64-ucrt-x86_64-}"/*; do
       if [ -f "$f" ]; then cp "$f" "$out/licences/${owner#mingw-w64-ucrt-x86_64-}-$(basename "$f").txt"; fi
     done
   done
+  # every DLL looked at first, so one run names them all
+  [ "$refused" = 0 ] || exit 1
 fi
 echo "libmpv built into $out"
 cat "$info"
