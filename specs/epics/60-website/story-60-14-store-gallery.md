@@ -105,7 +105,8 @@ them at upload.
   shows the English one.
 - **Samsung and LG** show English screens, with the Arabic screen second: Samsung hides number
   3 on some TVs.
-- **Roku** drops the language beat (6 at most, and each language has its own set).
+- **Roku** leaves out live channels: the channel has no Live TV screen (found when its shots
+  were made in part 2), which also keeps it at the 6 shots Roku takes.
 
 **Mockups** (`node web/packages/website/design/store-gallery/make.mjs`, then `render.mjs`):
 - sheets for the iPhone Player and Remote, the iPad and Mac Player, Apple TV, Google Play

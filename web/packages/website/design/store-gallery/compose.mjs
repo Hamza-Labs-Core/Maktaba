@@ -202,7 +202,7 @@ function html(job, src) {
   const l = lang === "all" ? "en" : lang;
   switch (set.style) {
     case "captioned":
-      return captioned({ W, H, lang: l, beat, surface: set.surface, src });
+      return captioned({ W, H, lang: l, beat, surface: set.surface, src, screenW: job.screenW });
     case "plain":
       return plain({ W, H, lang: l, beat, surface: set.surface, src });
     case "tile":
@@ -321,6 +321,12 @@ export async function compose({ captureDirs, out, only, allowMissing = false, lo
         const link = `${job.capture}.png`;
         writeFileSync(join(linkDir, link), readFileSync(file));
         src = `/captures/${link}`;
+        // a portrait screen on a landscape canvas (the iPad Player upright, in the iPad 13" set)
+        // is sized by the height, so its panel shows most of the screen instead of its top
+        if (job.set.style === "captioned" && job.W > job.H) {
+          const m = await sharp(file).metadata();
+          if (m.height > m.width) job.screenW = (1.05 * job.H * (m.width / m.height)) / job.W;
+        }
       }
       let buf;
       const body = html(job, src);

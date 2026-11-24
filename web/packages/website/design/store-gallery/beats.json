@@ -502,8 +502,8 @@
         }
       ],
       "drop": {
-        "$comment": "Beats a per-language set leaves out where the store takes fewer shots: Roku takes up to 6, and each language's set is already in that language.",
-        "roku": ["arabic"]
+        "$comment": "Beats a per-language set leaves out: the Roku channel has no Live TV screen, which also brings it to the 6 shots Roku takes.",
+        "roku": ["live"]
       },
       "singleSet": {
         "$comment": "Samsung and LG take one set of images for every language: English screens, with the Arabic screen second (Samsung hides number 3 on some TVs).",

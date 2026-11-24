@@ -158,29 +158,20 @@ gh workflow run store-gallery.yml --ref main -f run_id=<run>     # in CI, as an 
 
 ### Captures
 
-92 distinct screens make the 260 images. These are captured today on the demo library:
+Every screen the 13 listings need is captured on the demo library, in English and Arabic (91
+screens, 260 images). Each comes from the app's own shot tests:
 
-- iPhone, iPad: home and player;
-- Mac: library and player;
-- Apple TV, Android TV and Fire TV: home, the series or library, player and guide;
-- Android phone: home;
-- Roku: home, the series, the player with its Arabic line, search and the code screen, in
-  English and Arabic (`apps/tv/roku/tests/demo/`, brs-engine at 1920 × 1080; references in
-  `apps/tv/roku/tests/screenshots/demo/`, compared on every run like the channel's other
-  screens). brs-engine draws no video picture: the player is its overlay and the subtitle line
-  on black;
-- Samsung and LG: every screen their sets show, from the TV web UI the launchers open (`/tv/`)
-  and the launcher's cloud code screen (`scripts/capture-tvweb.mjs`, in `_website.yml`'s shots
-  job, uploaded as `store-shots-tvweb`).
+| Surface                                    | Source                                                                                                                          | Screens                                                                                                      |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| iPhone, iPad (Player)                      | `apps/apple/UITests/PlayerDemoShots.swift`, CI's `product-shots-iphone`, `-ipad`                                                | home, film, player, search, series, live, parental                                                           |
+| iPhone, iPad (Remote)                      | `RemoteDemoShotsUITests.swift`, `product-shots-iphone-remote`, `-ipad-remote` (iPad in landscape)                               | remote-dashboards, -attention, -queue, -approve-code, -updates                                               |
+| Mac                                        | `PlayerMacDemoShotsUITests.swift`, `product-shots-mac` (1024 × 674: the runner's 1× display)                                    | library, player, search, series, live                                                                        |
+| Apple TV                                   | `TVDemoShotsUITests.swift`, `product-shots-appletv`                                                                             | home, series, player, guide, search, code                                                                    |
+| Android phone, 7" and 10" tablets (Player) | Roborazzi, `apps/android/player/src/test/screenshots/demo/`                                                                     | home, film (phone), player, search, series, live, ask-a-parent                                               |
+| Android phone and tablets (Remote)         | Roborazzi, `apps/android/remote/src/test/screenshots/demo/`                                                                     | remote-dashboards, -attention, -queue, -approve-code, -updates                                               |
+| Android TV, Fire TV                        | Roborazzi, `apps/tv/android/app/src/test/screenshots/demo/`                                                                     | home, library or series, player, guide, search, code                                                         |
+| Roku                                       | brs-engine, `apps/tv/roku/tests/screenshots/demo/` (no video picture: the player is its overlay and the subtitle line on black) | home, series, subtitles, search, code. The channel has no Live TV screen, so Roku's set leaves that beat out |
+| Samsung, LG                                | `scripts/capture-tvweb.mjs` (the TV web UI the launchers open, and the launcher's code screen), `store-shots-tvweb`             | home, series, player with subtitles, guide, code                                                             |
 
-`node -e` over `plan()` lists the rest. Each is a shot test to add on the new demo library:
-
-| Surface                                   | Screens to add                                                                          |
-| ----------------------------------------- | --------------------------------------------------------------------------------------- |
-| iPhone, iPad (Player)                     | search, series, live, parental                                                          |
-| iPhone, iPad (Remote)                     | dashboards, attention, queue, approve-code, updates                                     |
-| Mac                                       | search, series, live                                                                    |
-| Android phone, 7" and 10" tablet (Player) | search, series, live, player, ask-a-parent (and every screen on the 7" and 10" tablets) |
-| Android phone and tablets (Remote)        | dashboards, attention, queue, approve-code, updates                                     |
-| Apple TV, Android TV, Fire TV             | search and code (and the series on Android TV)                                          |
-| Roku                                      | guide: the channel has no Live TV screen yet                                            |
+A run of ci.yml on a pull request that touches the Apple apps and the website holds every
+artifact `store-gallery.yml` needs: the Apple `product-shots-*` and `store-shots-tvweb`.
