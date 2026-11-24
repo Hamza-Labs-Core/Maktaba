@@ -320,7 +320,7 @@ test("the baseline's stories", () => {
   assert.equal(storyFor("/"), "60.03");
   assert.equal(storyFor("/docs"), "60.03");
   assert.equal(storyFor("/schema/log-line.json"), "60.03");
-  assert.equal(storyFor("/legal/copyright/"), "60.07");
+  assert.equal(storyFor("/legal/terms/"), "60.07");
 });
 
 test("--write-manifest lists dist/'s files and each page's ids, and the Worker's redirects", (t) => {
