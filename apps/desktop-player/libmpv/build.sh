@@ -87,10 +87,15 @@ note "libplacebo $LIBPLACEBO_TAG: $LIBPLACEBO_GIT at $LIBPLACEBO_COMMIT, LGPL-2.
 # FFmpeg, dav1d and libplacebo are static only (their archives inside libmpv): each .pc's
 # private libraries join its Libs, so mpv links what they need without asking meson to prefer
 # static libraries everywhere (the system's own static archives are not position-independent)
+# (and Requires.private joins Requires: a static archive comes before those it needs)
 for pc in "$prefix"/lib/pkgconfig/*.pc; do
   priv="$(sed -n 's/^Libs.private: *//p' "$pc")"
-  [ -n "$priv" ] || continue
-  sed -i.bak -e "s|^Libs: \(.*\)|Libs: \1 $priv|" -e '/^Libs.private:/d' "$pc"
+  reqp="$(sed -n 's/^Requires.private: *//p' "$pc")"
+  req="$(sed -n 's/^Requires: *//p' "$pc")"
+  sed -i.bak -e '/^Libs.private:/d' -e '/^Requires.private:/d' -e '/^Requires:/d' "$pc"
+  all="${req}${req:+${reqp:+, }}${reqp}"
+  [ -n "$all" ] && printf 'Requires: %s\n' "$all" >>"$pc"
+  [ -n "$priv" ] && sed -i.bak -e "s|^Libs: \(.*\)|Libs: \1 $priv|" "$pc"
   rm -f "$pc.bak"
 done
 unpack "$(fetch "$MPV_URL" "$MPV_SHA256")"
