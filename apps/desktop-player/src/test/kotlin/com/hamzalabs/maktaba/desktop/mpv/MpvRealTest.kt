@@ -127,6 +127,10 @@ class MpvRealTest {
         val lib = lib()
         val c = lib.mpv_create()!!
         try {
+            // properties are read once the handle is initialized; nothing to show or play here
+            lib.mpv_set_option_string(c, "vo", "null")
+            lib.mpv_set_option_string(c, "ao", "null")
+            assertTrue("mpv_initialize", lib.mpv_initialize(c) >= 0)
             val p = lib.mpv_get_property_string(c, "mpv-configuration")!!
             val conf = p.getString(0, "UTF-8").also { lib.mpv_free(p) }
             println("mpv-configuration: $conf")
