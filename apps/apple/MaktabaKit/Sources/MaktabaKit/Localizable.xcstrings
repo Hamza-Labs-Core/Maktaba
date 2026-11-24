@@ -5806,6 +5806,23 @@
         }
       }
     },
+    "updates.code.db_down_failed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The update's own Down scripts could not undo its database changes. Nothing was put back by itself: Maktaba stopped and waits for you to choose"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تعذّر على نصوص التراجع الخاصة بالتحديث إلغاء تغييراته في قاعدة البيانات. لم يُرجَع شيء تلقائيًا: توقفت مكتبة وتنتظر اختيارك"
+          }
+        }
+      }
+    },
     "updates.code.db_dump_failed" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5819,6 +5836,57 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "تعذّر حفظ قاعدة بيانات المكتبة قبل التحديث، فلم يتغيّر شيء"
+          }
+        }
+      }
+    },
+    "updates.code.db_held_lossy" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A database change of the update had already deleted or changed data its Down script cannot bring back. Nothing was put back by itself: Maktaba stopped and waits for you to choose"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "كان أحد تغييرات التحديث في قاعدة البيانات قد حذف بيانات أو غيّرها بما لا يستطيع نص التراجع الخاص به إرجاعه. لم يُرجَع شيء تلقائيًا: توقفت مكتبة وتنتظر اختيارك"
+          }
+        }
+      }
+    },
+    "updates.code.db_held_unasked" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The library database was marked to be put back from the backup without anyone asking. Nothing was put back by itself: Maktaba stopped and waits for you to choose"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "وُسمت قاعدة بيانات المكتبة لتُعاد من النسخة الاحتياطية دون أن يطلب ذلك أحد. لم يُرجَع شيء تلقائيًا: توقفت مكتبة وتنتظر اختيارك"
+          }
+        }
+      }
+    },
+    "updates.code.db_held_unknown" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "How to undo the update's database changes could not be worked out. Nothing was put back by itself: Maktaba stopped and waits for you to choose"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تعذّر تحديد طريقة إلغاء تغييرات التحديث في قاعدة البيانات. لم يُرجَع شيء تلقائيًا: توقفت مكتبة وتنتظر اختيارك"
           }
         }
       }

@@ -86,6 +86,10 @@
     <string name="w_updates_code_check_failed">تعذّر على التطبيق البحث عن التحديث</string>
     <string name="w_updates_code_db_dump_failed">تعذّر حفظ قاعدة بيانات المكتبة قبل التحديث، فلم يتغيّر شيء</string>
     <string name="w_updates_code_db_migrate_failed">تعذّر تحديث قاعدة بيانات المكتبة للإصدار الجديد</string>
+    <string name="w_updates_code_db_down_failed">تعذّر على نصوص التراجع الخاصة بالتحديث إلغاء تغييراته في قاعدة البيانات. لم يُرجَع شيء تلقائيًا: توقفت مكتبة وتنتظر اختيارك</string>
+    <string name="w_updates_code_db_held_lossy">كان أحد تغييرات التحديث في قاعدة البيانات قد حذف بيانات أو غيّرها بما لا يستطيع نص التراجع الخاص به إرجاعه. لم يُرجَع شيء تلقائيًا: توقفت مكتبة وتنتظر اختيارك</string>
+    <string name="w_updates_code_db_held_unknown">تعذّر تحديد طريقة إلغاء تغييرات التحديث في قاعدة البيانات. لم يُرجَع شيء تلقائيًا: توقفت مكتبة وتنتظر اختيارك</string>
+    <string name="w_updates_code_db_held_unasked">وُسمت قاعدة بيانات المكتبة لتُعاد من النسخة الاحتياطية دون أن يطلب ذلك أحد. لم يُرجَع شيء تلقائيًا: توقفت مكتبة وتنتظر اختيارك</string>
     <string name="w_updates_code_db_restore_failed">تعذّرت إعادة قاعدة بيانات المكتبة كما كانت قبل التحديث</string>
     <string name="w_updates_code_db_ahead">غيّرت قاعدةَ بيانات المكتبة نسخةٌ أحدث من مكتبة من هذه</string>
     <string name="w_updates_code_db_refused_older">هذا الإصدار أقدم من قاعدة بيانات المكتبة: ثبّت الإصدار الأحدث مجدداً</string>

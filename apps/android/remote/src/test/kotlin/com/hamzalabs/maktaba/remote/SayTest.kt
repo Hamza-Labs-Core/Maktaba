@@ -321,4 +321,14 @@ class SayTest {
         assertEquals("جهاز يلحق بالبقية", ar.trigger("catch_up"))
         assertEquals("solar flare", ar.trigger("solar_flare"))
     }
+
+    // #1605: an update that stopped and asks says why (nothing put back by itself)
+    @Test
+    fun aHeldUpdateSaysWhy() {
+        for (code in listOf("db_down_failed", "db_held_lossy", "db_held_unknown", "db_held_unasked")) {
+            val id = WebWords.updateCode.getValue(code)
+            assertTrue(code, XmlLookup.english.text(id).contains("Nothing was put back by itself"))
+            assertTrue(code, XmlLookup.arabic.text(id).contains("لم يُرجَع شيء تلقائيًا"))
+        }
+    }
 }

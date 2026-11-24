@@ -392,4 +392,14 @@ import Testing
     func saysADuration(secs: Double, want: String) {
         #expect(shortDuration(secs) == want)
     }
+
+    /// #1605: an update that stopped and asks says why in both languages (nothing put back).
+    @Test func aHeldUpdateSaysWhy() {
+        for code in ["db_down_failed", "db_held_lossy", "db_held_unknown", "db_held_unasked"] {
+            let en = words(StatusWords.codes, "updates.code.", code, Locale(identifier: "en"))
+            let ar = words(StatusWords.codes, "updates.code.", code, Locale(identifier: "ar"))
+            #expect(en.contains("Nothing was put back by itself"), "\(code): \(en)")
+            #expect(ar.contains("لم يُرجَع شيء تلقائيًا"), "\(code): \(ar)")
+        }
+    }
 }

@@ -91,6 +91,10 @@
     <string name="w_updates_code_check_failed">The app could not check for the update</string>
     <string name="w_updates_code_db_dump_failed">The library database could not be saved before the update, so nothing was changed</string>
     <string name="w_updates_code_db_migrate_failed">The library database could not be brought up to date for the new release</string>
+    <string name="w_updates_code_db_down_failed">The update\'s own Down scripts could not undo its database changes. Nothing was put back by itself: Maktaba stopped and waits for you to choose</string>
+    <string name="w_updates_code_db_held_lossy">A database change of the update had already deleted or changed data its Down script cannot bring back. Nothing was put back by itself: Maktaba stopped and waits for you to choose</string>
+    <string name="w_updates_code_db_held_unknown">How to undo the update\'s database changes could not be worked out. Nothing was put back by itself: Maktaba stopped and waits for you to choose</string>
+    <string name="w_updates_code_db_held_unasked">The library database was marked to be put back from the backup without anyone asking. Nothing was put back by itself: Maktaba stopped and waits for you to choose</string>
     <string name="w_updates_code_db_restore_failed">The library database could not be put back as it was before the update</string>
     <string name="w_updates_code_db_ahead">The library database was changed by a newer Maktaba than this one</string>
     <string name="w_updates_code_db_refused_older">This release is older than the library database: install the newer release again</string>
