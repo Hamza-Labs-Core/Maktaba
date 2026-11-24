@@ -1,0 +1,45 @@
+name: scratch probe (cloud relay)
+on: push
+permissions: { contents: read }
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: ssh
+        env:
+          KEY: ${{ secrets.RELAY_SSH_KEY }}
+          QA_KH: ${{ vars.QA_SSH_KNOWN_HOSTS }}
+          PR_KH: ${{ vars.RELAY_SSH_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/id && chmod 600 ~/.ssh/id
+          printf '%s\n%s\n' "$QA_KH" "$PR_KH" > ~/.ssh/known_hosts
+          for h in ${{ vars.QA_HOST }} ${{ vars.RELAY_HOST }}; do
+            echo "=================== $h"
+            ssh -i ~/.ssh/id -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o BatchMode=yes root@$h '
+              . /etc/os-release; echo "$PRETTY_NAME"; uname -m; nproc; free -m; df -h /; 
+              cat /sys/class/dmi/id/product_name 2>/dev/null; 
+              curl -s -m3 http://169.254.169.254/hetzner/v1/metadata | grep -E "^(hostname|region|availability-zone|instance-id)" ;
+              command -v docker && docker ps -a; ls /opt; ufw status verbose 2>&1 | head -20; ss -tlnpu | head -30; 
+              systemctl list-units --type=service --state=running --no-pager | head -40; uptime; ip -br a'
+          done
+          rm -f ~/.ssh/id
+      - name: cloudflare
+        env:
+          CF: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          api() { curl -s -H "Authorization: Bearer $CF" -H 'Content-Type: application/json' "$@"; }
+          api https://api.cloudflare.com/client/v4/user/tokens/verify | jq -c '{success, status: .result.status}'
+          api 'https://api.cloudflare.com/client/v4/zones?per_page=50' | jq -c '[.result[] | {name, status, plan: .plan.name}]'
+          for z in maktaba.tv maktaba.dev; do
+            zid=$(api "https://api.cloudflare.com/client/v4/zones?name=$z" | jq -r '.result[0].id')
+            echo "== $z"
+            api "https://api.cloudflare.com/client/v4/zones/$zid/dns_records?per_page=100" | jq -c '.success, [.result[]? | {type, name, proxied}]'
+            r=$(api -X POST "https://api.cloudflare.com/client/v4/zones/$zid/dns_records" --data '{"type":"TXT","name":"_maktaba-dns-probe.'$z'","content":"probe","ttl":60}')
+            echo "$r" | jq -c '{success, errors}'
+            id=$(echo "$r" | jq -r '.result.id // empty')
+            [ -n "$id" ] && api -X DELETE "https://api.cloudflare.com/client/v4/zones/$zid/dns_records/$id" | jq -c '{success}'
+            api "https://api.cloudflare.com/client/v4/zones/$zid/settings/ssl" | jq -c '{success, v: .result.value}'
+            api "https://api.cloudflare.com/client/v4/zones/$zid/settings/always_use_https" | jq -c '{success, v: .result.value}'
+          done
