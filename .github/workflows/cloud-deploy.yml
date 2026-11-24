@@ -298,11 +298,13 @@ jobs:
         run: |
           set -euo pipefail
           d="$(mktemp -d)"
-          if [ "$TARGET" = prod ]; then
-            gh run download "$QA_RUN" --repo "$GITHUB_REPOSITORY" -n cloud-web -D "$d"
-          else
-            gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" -n cloud-web -D "$d"
-          fi
+          run="$GITHUB_RUN_ID"; [ "$TARGET" != prod ] || run="$QA_RUN"
+          # the artifact store answers 503 now and then
+          for try in 1 2 3; do
+            gh run download "$run" --repo "$GITHUB_REPOSITORY" -n cloud-web -D "$d" && break
+            [ "$try" -lt 3 ] || exit 1
+            sleep 30
+          done
           sha256sum "$d/cloud-web.tar.gz"
           # in place (Caddy's bind mount holds the folder itself, so it is never replaced)
           ssh node 'set -e; cd /opt/maktaba-relay; rm -rf web.new; mkdir web.new; tar -xzf - -C web.new; \
