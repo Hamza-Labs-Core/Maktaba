@@ -16,7 +16,26 @@ func (r *Registry) DecideFor(profile *Profile, caps *DeviceCaps, src Source, ov 
 		v.Clamped = clamped
 		v.Reason += "; the device's report was clamped to the " + profile.Name + " ceiling (" + strings.Join(clamped, ", ") + ")"
 	}
+	if profile.AudioByReport && !profile.Detailed && v.Mode != ModeDirect {
+		// an older profile's remux verdict is a transcode too (grpcsrv)
+		v.AudioCodec = TranscodeAudio(caps, src)
+		if h := eff.VideoHeights["h264"]; h > 0 {
+			v.ReportHeightCap = h
+		}
+	}
 	return v
+}
+
+// TranscodeAudio is what a transcode for an AudioByReport profile (desktop-mpv,
+// story 13.19) encodes the audio to: "eac3" (5.1 at 640 kbit/s, as a TV
+// profile's remux does) when the device's report has 6 channels or more and
+// the source more than stereo (or of unknown channels), else "aac" (stereo at
+// 192 kbit/s), as without a report.
+func TranscodeAudio(caps *DeviceCaps, src Source) string {
+	if caps != nil && caps.MaxAudioChannels >= 6 && (src.AudioChannels == 0 || src.AudioChannels > 2) {
+		return "eac3"
+	}
+	return "aac"
 }
 
 // has reports whether list names v, both read through canon.

@@ -15,6 +15,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.util.Collections
@@ -50,8 +51,22 @@ class PlaybackMpvTest {
 
     private val made: MutableList<FakeMpv> = Collections.synchronizedList(mutableListOf())
 
+    /** The probe's report (story 13.19): HEVC 10-bit in hardware, AV1 in software up to 1080p, 5.1 speakers. */
+    private val report = DeviceReport().apply {
+        probe = ProbeResult(
+            "k",
+            listOf(
+                ClipResult("hevc", 10, decoded = true, hwdec = "vaapi-copy"),
+                ClipResult("av1", 10, decoded = true, hwdec = "no", softwareFps = 20.0),
+            ),
+            900,
+        )
+        channels = 6
+    }
+
     private val players = object : Players {
         override val profile = MPV_PROFILE
+        override fun deviceCaps() = report.json()
         override suspend fun open(url: String, fromMs: Long, autoplay: Boolean, events: VideoEvents): Video =
             FakeMpv(events).also { made += it }
     }
@@ -114,6 +129,72 @@ class PlaybackMpvTest {
         made[1].events.failed("again")
         Thread.sleep(300)
         assertEquals(2, opened.get())
+    }
+
+    /** Story 13.19 T06: the report goes with desktop-mpv, not on the forced transcode's reopen. */
+    @Test
+    fun t06_theReportGoesWithDesktopMpvButNotOnAForcedTranscode() {
+        home.answer("GET /api/stream/capabilities", """{"client_profiles":["desktop-mpv"]}""")
+        onMain { playback.play(PlayRequest("v1", "v1", startSec = 0)) }
+        until("playing") { playback.player != null }
+        val first = bodies().single()
+        assertTrue(first, first.contains(""""device_caps":{"video":[{"codec":"hevc","max_height":2160,"bit_depth":10,"hardware":true},{"codec":"av1","max_height":1080,"bit_depth":10,"hardware":false}],"max_audio_channels":6}"""))
+        made.single().events.failed("no decoder for this stream")
+        until("reopened") { opened.get() == 2 }
+        val second = bodies()[1]
+        assertTrue(second, second.contains("\"force_transcode\":true"))
+        assertFalse(second, second.contains("device_caps"))
+    }
+
+    /** T06: an older home (desktop-player) is sent no report, nor is JavaFX's engine. */
+    @Test
+    fun t06_noReportWithDesktopPlayer() {
+        home.answer("GET /api/stream/capabilities", """{"codecs":["h264"]}""")
+        onMain { playback.play(PlayRequest("v1", "v1", startSec = 0)) }
+        until("playing") { playback.player != null }
+        assertTrue(bodies().single(), bodies().single().contains("\"client_profile\":\"desktop-player\""))
+        assertFalse(bodies().single(), bodies().single().contains("device_caps"))
+        // JavaFX's players have no report
+        assertEquals(null, com.hamzalabs.maktaba.desktop.FxPlayers.deviceCaps())
+    }
+
+    /** T06: before the probe has run, a video opens with the profile alone. */
+    @Test
+    fun beforeTheProbeAVideoOpensWithTheProfileAlone() {
+        report.probe = null
+        home.answer("GET /api/stream/capabilities", """{"client_profiles":["desktop-mpv"]}""")
+        onMain { playback.play(PlayRequest("v1", "v1", startSec = 0)) }
+        until("playing") { playback.player != null }
+        assertTrue(bodies().single(), bodies().single().contains("\"client_profile\":\"desktop-mpv\""))
+        assertFalse(bodies().single(), bodies().single().contains("device_caps"))
+    }
+
+    /**
+     * Story 13.19 T07: a home whose session body reader refuses device_caps: the stream opens
+     * without it on the same open, and the Player sends this home no report again.
+     */
+    @Test
+    fun t07_aHomeThatRefusesTheReportIsAskedAgainWithoutIt() {
+        home.answer("GET /api/stream/capabilities", """{"client_profiles":["desktop-mpv"]}""")
+        home.answer("POST /api/stream/sessions") { r ->
+            if (r.body!!.utf8().contains("device_caps")) {
+                TestHome.json("""{"type":"https://maktaba.dev/problems/invalid-json","title":"invalid json","status":400,"detail":"json: unknown field \"device_caps\""}""", 400)
+            } else {
+                val n = opened.incrementAndGet()
+                TestHome.json("""{"session_id":"s$n","mode":"direct","direct_url":"/stream/s$n.mkv"}""")
+            }
+        }
+        onMain { playback.play(PlayRequest("v1", "v1", startSec = 0)) }
+        until("playing") { playback.player != null }
+        assertEquals(null, playback.problem)
+        assertEquals(2, bodies().size)
+        assertTrue(bodies()[0].contains("device_caps"))
+        assertFalse(bodies()[1].contains("device_caps"))
+        // the next video: no report sent to this home
+        onMain { playback.play(PlayRequest("v2", "v2", startSec = 0)) }
+        until("the second plays") { opened.get() == 2 && made.size == 2 }
+        assertEquals(3, bodies().size)
+        assertFalse(bodies()[2], bodies()[2].contains("device_caps"))
     }
 
     @Test
