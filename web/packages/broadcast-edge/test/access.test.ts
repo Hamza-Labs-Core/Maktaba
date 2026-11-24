@@ -339,42 +339,22 @@ describe("T02 short codes", () => {
   });
 });
 
-describe("T03 Turnstile", () => {
-  it("ok / fail / replay; and an open channel without it is 403 turnstile_required", async () => {
+describe("T03 invitation only (README §14, 2026-11-24)", () => {
+  it("a channel still marked open is invite only: no pass is 401, and an open session plays nothing", async () => {
     const s = await setup();
-    // AC: an open channel, no Turnstile
+    // s.ch2 is stored as an open channel: without a pass it is refused like any other
     const none = await playWith(s, s.ch2, "");
-    expect(none.r.status).toBe(403);
-    expect(none.j.error).toBe("turnstile_required");
-    // an invite channel without a pass
+    expect(none.r.status).toBe(401);
+    expect(none.j.error).toBe("invite_required");
     expect((await playWith(s, s.ch, "")).j.error).toBe("invite_required");
+    // a Turnstile session (the dormant open route, removed by 50.36) opens no channel
     const ok = await post("/api/v1/open/turnstile", { token: "good-1" });
-    expect(ok.status).toBe(200);
-    const j = (await ok.json()) as { session: string };
-    expect(j.session).toMatch(/^mkbo1\./);
-    expect(ok.headers.get("Set-Cookie")).toMatch(/^mko=mkbo1\..*Max-Age=43200; HttpOnly/);
-    expect((await post("/api/v1/open/turnstile", { token: "bad" })).status).toBe(403);
-    expect((await post("/api/v1/open/turnstile", { token: "good-1" })).status).toBe(403);
-    // the open session plays the open channel, not the invite one
-    expect((await playWith(s, s.ch2, j.session)).r.status).toBe(200);
-    expect((await playWith(s, s.ch, j.session)).j.error).toBe("invite_required");
-    // not verified, or the flag off: the open channel is invite-only for new sessions
-    await access(s.pub, {
-      open_allowed: false,
-      channels: { [s.ch2]: { access: "open", max_viewers: 0 } },
-    });
-    expect((await playWith(s, s.ch2, j.session)).j.error).toBe("invite_required");
-    // without a secret, no open sessions
-    expect(
-      (
-        await post(
-          "/api/v1/open/turnstile",
-          { token: "good-2" },
-          {},
-          { TURNSTILE_SECRET: undefined }
-        )
-      ).status
-    ).toBe(503);
+    const j = (await ok.json()) as { session?: string };
+    expect(j.session).toBeDefined();
+    expect((await playWith(s, s.ch2, j.session!)).j.error).toBe("invite_required");
+    expect((await playWith(s, s.ch, j.session!)).j.error).toBe("invite_required");
+    // a guest pass still plays
+    expect((await playWith(s, s.ch, await guest(s))).r.status).toBe(200);
   });
 });
 
@@ -667,7 +647,7 @@ describe("T06 limits", () => {
     expect((await playWith(s, s.ch, pass)).r.status).toBe(403);
   });
 
-  it("the channel's cap, the network's open sessions (a pass bypasses it), daily minutes", async () => {
+  it("the channel's cap and daily minutes", async () => {
     const s = await setup(
       {},
       {
@@ -675,44 +655,26 @@ describe("T06 limits", () => {
       }
     );
     const ch = newChannel();
-    const open = newChannel();
+    const other = newChannel();
     await access(s.pub, {
-      open_allowed: true,
-      max_sessions_per_ip: 2,
+      open_allowed: false,
       daily_minutes: 2,
       channels: {
         [ch]: { access: "invite", max_viewers: 1, indexable: false },
-        [open]: { access: "open", max_viewers: 0, indexable: false },
+        [other]: { access: "invite", max_viewers: 0, indexable: false },
       },
     });
     const pass = await guest(s);
     expect((await playWith(s, ch, pass)).r.status).toBe(200);
     expect((await playWith(s, ch, await guest(s))).j.error).toBe("broadcast_full");
-    // open sessions: 2 per network
-    const sess = async (n: number) =>
-      (
-        (await (
-          await post("/api/v1/open/turnstile", { token: `good-ip-${pubN}-${n}` })
-        ).json()) as { session: string }
-      ).session;
-    const o = [await sess(1), await sess(2), await sess(3)];
-    expect((await playWith(s, open, o[0]!, "100.64.0.1")).r.status).toBe(200);
-    expect((await playWith(s, open, o[1]!, "100.64.0.1")).r.status).toBe(200);
-    const third = await playWith(s, open, o[2]!, "100.64.0.1");
-    expect(third.r.status).toBe(429);
-    expect(third.j.error).toBe("broadcast_ip_limit");
-    expect(third.j.key).toBe("broadcast.ipLimit");
-    expect((await playWith(s, open, o[2]!, "100.64.0.2")).r.status).toBe(200);
-    // a guest pass on that busy network still plays
-    expect((await playWith(s, open, pass, "100.64.0.1")).r.status).toBe(200);
     // daily minutes: two counted minutes, then new plays wait for tomorrow
     const d = await guest(s);
-    const p = await playWith(s, open, d, "100.64.0.9");
+    const p = await playWith(s, other, d, "100.64.0.9");
     for (let i = 0; i < 2; i++) {
       advanceClock(60_000);
       await beatOf(s.pub, p.j.session_id as string);
     }
-    expect((await playWith(s, open, d, "100.64.0.9")).j.error).toBe("broadcast_daily_limit");
+    expect((await playWith(s, other, d, "100.64.0.9")).j.error).toBe("broadcast_daily_limit");
   });
 
   it("the per-address rate limit answers 429 before anything else", async () => {
@@ -817,7 +779,9 @@ describe("T09 strings", () => {
       { publisher: s.pub, channel: s.ch2 },
       { "Accept-Language": "en-GB,en;q=0.9" }
     );
-    expect(((await en.json()) as { message?: string }).message).toBeUndefined(); // turnstile_required has no message
+    expect(((await en.json()) as { message?: string }).message).toBe(
+      STRINGS["broadcast.inviteRequired"]!.en
+    );
     const ar = await post(
       "/api/v1/play",
       { publisher: s.pub, channel: s.ch },
@@ -877,15 +841,17 @@ describe("the kill switch on watch.maktaba.tv (50.25)", () => {
     expect(j.error).toBe("invite_revoked");
   });
 
-  it("the guide page shows a stopped open channel as revoked", async () => {
+  it("the guide page shows a stopped channel as revoked to a guest", async () => {
     const s = await setup();
+    const p = (await readPass(await guest(s), env.VIEWER_TOKEN_KEY, now()))!;
+    const cred = { kind: "pass" as const, id: p.id, inv: p.inv, chs: p.chs };
     const state = async () =>
-      (await lineup(env, s.pub, { kind: "none" })).channels.find((c) => c.id === s.ch2)?.state;
+      (await lineup(env, s.pub, cred)).channels.find((c) => c.id === s.ch)?.state;
     expect(await state()).not.toBe("revoked");
     expect(
       (
         await installList([
-          { id: "w-4", kind: "channel", ref: s.ch2, action: "off_air", reason: "notice" },
+          { id: "w-4", kind: "channel", ref: s.ch, action: "off_air", reason: "notice" },
         ])
       ).status
     ).toBe(200);

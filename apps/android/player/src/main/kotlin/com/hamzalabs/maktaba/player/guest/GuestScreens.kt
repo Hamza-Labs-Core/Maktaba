@@ -138,9 +138,12 @@ private fun GuestDoorNotice(key: String, tag: String, onClose: () -> Unit) {
     )
 }
 
-/** Watch a broadcast for the entry (the home picker, Profile): null while [access] keeps it shut. */
+/**
+ * Watch a broadcast for the entry (the home picker, Profile): null while [access] keeps it shut,
+ * and always while the build has broadcasting off ([com.hamzalabs.maktaba.core.guest.GuestBroadcast]).
+ */
 fun guestEntry(door: GuestDoor, access: GuestAccess): (() -> Unit)? =
-    if (access == GuestAccess.Allowed) ({ door.request(null, GuestAccess.Allowed) }) else null
+    if (com.hamzalabs.maktaba.core.guest.GuestBroadcast.ENABLED && access == GuestAccess.Allowed) ({ door.request(null, GuestAccess.Allowed) }) else null
 
 /**
  * The guest space, full screen: from the home picker, Profile, or an invite's link ([invite], the

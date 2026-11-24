@@ -1,5 +1,27 @@
 import Foundation
 
+/// Whether this build shows Watch a broadcast (story 50.27) at all: off while home
+/// broadcasting is off. Off, no app shows the entry (home picker, settings), an invite link
+/// opens nothing and saved broadcasts never show; the guest code stays, unreached, for when
+/// broadcasting is turned on (`built` set to true). On, `GuestGate` still decides each time.
+public enum GuestBroadcast {
+    /// The build's switch.
+    public static let built = false
+
+    /// Unit tests set it (nil: the build's switch).
+    nonisolated(unsafe) public static var override: Bool?
+
+    /// Whether the entry, invite links and saved broadcasts may show in this build. A Debug
+    /// build launched by the UI tests with `-maktaba-guest-broadcast` turns it on.
+    public static var enabled: Bool {
+        if let override { return override }
+        #if DEBUG
+        if CommandLine.arguments.contains("-maktaba-guest-broadcast") { return true }
+        #endif
+        return built
+    }
+}
+
 /// Whether Watch a broadcast (story 50.27) may open on this device now.
 ///
 /// A guest has no account the edge could check, so hiding the entry under a parental limit
@@ -51,6 +73,10 @@ public enum GuestGate: Equatable, Sendable {
 }
 
 public extension AppSession {
+    /// Whether Watch a broadcast shows now: the build has it on (`GuestBroadcast`) and the
+    /// gate allows it (`GuestGate`).
+    var showsWatchBroadcast: Bool { GuestBroadcast.enabled && guestGate.allowed }
+
     /// Watch a broadcast's gate now (`GuestGate`).
     var guestGate: GuestGate {
         GuestGate.decide(signedIn: signedIn, restoring: restoring || connecting, confirmed: parental.confirmed,

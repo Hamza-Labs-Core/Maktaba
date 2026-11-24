@@ -15,7 +15,7 @@ const out = join(here, "review-sheet.html");
 
 const TITLES = {
   "front-door": ["Front door", "The text page as Phase 1's front door"],
-  legal: ["Legal page", "The text page as privacy, terms and copyright use it"],
+  legal: ["Legal page", "The text page as privacy and terms use it"],
   problem: ["Problem page", "One message: home-unreachable"],
   problems: ["Problem index", "Every message, by area, with the in-page filter"],
   "install-guide": [

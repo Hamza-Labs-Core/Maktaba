@@ -27,9 +27,11 @@ import (
 // with every row, pg_textsearch can be created, and the 16 cluster is still there as it was.
 //
 // The home is set up as the owner's was when it moved to 18 on 2026-11-20: a machine's copy
-// published, and transcript_segments at REPLICA IDENTITY FULL with its generated search_tsv.
-// On 18 the second listen's writes to it must go through (slot 0237): PostgreSQL 18 refused
-// them, and every second_listen job failed, until then.
+// published, and its tables with a primary key at REPLICA IDENTITY FULL, transcript_segments
+// with its generated search_tsv among them. On 18 the second listen's writes to it must go
+// through (slot 0237): PostgreSQL 18 refused them, and every second_listen job failed, until
+// then. And every table with a primary key has it as its identity again (slot 0238), while
+// one without keeps FULL.
 func TestUpdateRehearsal17PostgresMajorUpgrade(t *testing.T) {
 	r := newRehearsal(t)
 	k := r.kit
@@ -103,6 +105,7 @@ func TestUpdateRehearsal17PostgresMajorUpgrade(t *testing.T) {
 		t.Errorf("shared_preload_libraries = %q (%v)", preload, err)
 	}
 	secondListenStores(t, db, pub)
+	identitiesAfterTheUpdate(t, db)
 	if got := pgVersionOf(t, old); got != "16" {
 		t.Errorf("the 16 cluster is gone after the upgrade (%q): a switch back would have nothing to start on", got)
 	}
@@ -137,18 +140,49 @@ func serverMajor(t *testing.T, db interface {
 }
 
 // publishedAsTheHomeWas makes the seeded home's database what the owner's was when it moved
-// to PostgreSQL 18: a machine's copy published (cluster_copy_publication, slot 0147) and
-// transcript_segments at REPLICA IDENTITY FULL. The publication's name.
+// to PostgreSQL 18: a machine's copy published (cluster_copy_publication, slot 0147, which
+// makes the tables without a primary key FULL) and every table with a primary key at REPLICA
+// IDENTITY FULL, transcript_segments among them. The publication's name.
 func publishedAsTheHomeWas(t *testing.T, db *sql.DB) string {
 	t.Helper()
 	var pub string
 	if err := db.QueryRow(`SELECT cluster_copy_publication('00000000-0000-0000-0000-0000000c0b1e'::uuid)`).Scan(&pub); err != nil {
 		t.Fatalf("a machine's publication: %v", err)
 	}
-	if _, err := db.Exec(`ALTER TABLE transcript_segments REPLICA IDENTITY FULL`); err != nil {
-		t.Fatalf("transcript_segments at REPLICA IDENTITY FULL: %v", err)
+	if _, err := db.Exec(`DO $$ DECLARE t regclass; BEGIN
+	    FOR t IN SELECT c.oid::regclass FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+	              WHERE n.nspname = 'public' AND c.relkind = 'r'
+	                AND EXISTS (SELECT 1 FROM pg_index i WHERE i.indrelid = c.oid AND i.indisprimary) LOOP
+	        EXECUTE format('ALTER TABLE %s REPLICA IDENTITY FULL', t);
+	    END LOOP; END $$`); err != nil {
+		t.Fatalf("the tables with a primary key at REPLICA IDENTITY FULL: %v", err)
 	}
 	return pub
+}
+
+// identitiesAfterTheUpdate: on the updated home no table with a primary key is at REPLICA
+// IDENTITY FULL (slot 0238), and the published ones without a primary key still are (the
+// home could not update them otherwise).
+func identitiesAfterTheUpdate(t *testing.T, db *sql.DB) {
+	t.Helper()
+	var full, keyless int
+	if err := db.QueryRow(`SELECT count(*) FILTER (WHERE has_key), count(*) FILTER (WHERE NOT has_key)
+	    FROM (SELECT EXISTS (SELECT 1 FROM pg_index i WHERE i.indrelid = c.oid AND i.indisprimary) AS has_key
+	            FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+	           WHERE n.nspname = 'public' AND c.relkind = 'r' AND c.relreplident = 'f') x`).Scan(&full, &keyless); err != nil {
+		t.Fatalf("the tables' replica identities: %v", err)
+	}
+	if full > 0 {
+		t.Errorf("%d tables with a primary key are still at REPLICA IDENTITY FULL after the update (slot 0238)", full)
+	} else {
+		t.Logf("after the update: %d tables without a primary key at FULL, none with one", keyless)
+	}
+	var published int
+	if err := db.QueryRow(`SELECT count(*) FROM pg_publication_rel r JOIN pg_class c ON c.oid = r.prrelid
+	    WHERE NOT EXISTS (SELECT 1 FROM pg_index i WHERE i.indrelid = c.oid AND i.indisprimary)
+	      AND c.relreplident <> 'f'`).Scan(&published); err != nil || published > 0 {
+		t.Errorf("%d published tables without a primary key lost REPLICA IDENTITY FULL (%v)", published, err)
+	}
 }
 
 // secondListenStores runs, on the updated home, the second_listen stage's own writes to

@@ -59,7 +59,10 @@ reaches a home on the Mac's network by its address (`192.0.2.20:8088`).
   core's `Guests` seals passes with a Keystore key (`<app>.guest`) and `GuestPlayer` plays the
   channel through a data source that puts the newest viewer token in each request's path and
   refuses a body cut short (`WholeBodyDataSource`, also on the home players). The states come
-  from `shared/broadcast/viewer-states.json`, as on the edge and the Apple apps.
+  from `shared/broadcast/viewer-states.json`, as on the edge and the Apple apps. Off in this
+  build: home broadcasting is off for now, so `GuestBroadcast.BUILT` is false and no app shows the
+  entry, opens an invite link or shows saved broadcasts; tests turn it on with
+  `GuestBroadcast.override`.
 - **Finding a home:** a home announces itself over mDNS as `_maktaba._tcp`
   (`cmd/maktaba-server/internal/mdns`). The home picker lists every `role=home` announcement
   (a cluster's worker machines say `role=node` and are left out) at its web port (`web=` in

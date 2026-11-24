@@ -150,6 +150,91 @@ func openWith(t *testing.T, row *probe.Row, profile string, caps *capability.Dev
 	return resp, fake, srv
 }
 
+// Story 13.19: the desktop Player's report reaches the transcode. A 2160p AV1 file on a
+// machine that decodes AV1 in software up to 1080p and H.264 up to 720p, with 5.1 speakers,
+// is transcoded to no rung over 720p with E-AC-3 5.1; on stereo speakers stereo AAC.
+func TestOpenSession_DesktopMpvReportShapesTheTranscode(t *testing.T) {
+	hw := false
+	row := &probe.Row{
+		VideoID: uuid.New(), LibraryID: uuid.New(), ContentHash: "av1",
+		Path: "/v/film.mkv", Container: "matroska,webm", VideoCodec: "av1", AudioCodec: "eac3",
+		Height: 2160, Width: 3840, BitrateKbps: 20000, AudioChannels: 6, Probed: true, HasAudio: true,
+	}
+	report := func(channels int) *capability.DeviceCaps {
+		return &capability.DeviceCaps{Video: []capability.VideoCap{
+			{Codec: "h264", MaxHeight: 720, Hardware: &hw},
+			{Codec: "av1", MaxHeight: 1080, BitDepth: 10, Hardware: &hw},
+		}, MaxAudioChannels: channels}
+	}
+	resp, fake, _ := openWith(t, row, "desktop-mpv", report(6), "")
+	if resp.Mode != "transcode" || fake.calls != 1 {
+		t.Fatalf("mode %s, ffmpeg runs %d", resp.Mode, fake.calls)
+	}
+	if fake.lastJob.AudioCodec != "eac3" {
+		t.Errorf("5.1 speakers: audio %q, want eac3", fake.lastJob.AudioCodec)
+	}
+	for _, r := range fake.lastJob.Ladder {
+		if min(r.Width, r.Height) > 720 {
+			t.Errorf("a rung of %dx%d over the report's 720p H.264", r.Width, r.Height)
+		}
+	}
+	if len(resp.Ladder) == 0 || resp.Ladder[0].Height > 720 {
+		t.Errorf("the session's ladder: %+v", resp.Ladder)
+	}
+	_, fake, _ = openWith(t, row, "desktop-mpv", report(2), "")
+	if fake.lastJob.AudioCodec != "aac" {
+		t.Errorf("stereo speakers: audio %q, want aac", fake.lastJob.AudioCodec)
+	}
+	// the JavaFX profile's transcode is as it was: the encoder's AAC, the full ladder
+	_, fake, _ = openWith(t, row, "desktop-player", nil, "")
+	if fake.lastJob.AudioCodec != "" || fake.lastJob.Ladder[0].Height != 1080 {
+		t.Errorf("desktop-player: audio %q, top rung %d", fake.lastJob.AudioCodec, fake.lastJob.Ladder[0].Height)
+	}
+	// desktop-mpv with no report (a 13.18 Player, an open before the probe ended): as it was too
+	_, fake, _ = openWith(t, row, "desktop-mpv", &capability.DeviceCaps{Video: []capability.VideoCap{
+		{Codec: "av1", MaxHeight: 1080, Hardware: &hw}}}, "")
+	if fake.lastJob.AudioCodec != "" {
+		t.Errorf("a report without channels: audio %q, want the encoder's default", fake.lastJob.AudioCodec)
+	}
+}
+
+// A reused desktop-mpv transcode hands back the same capped ladder as when it was opened.
+func TestOpenSession_DesktopMpvReusedSessionKeepsTheCap(t *testing.T) {
+	hw := false
+	srv, fb, _ := setupServer(t)
+	row := &probe.Row{
+		VideoID: uuid.New(), LibraryID: uuid.New(), ContentHash: "av1r",
+		Path: "/v/film.mkv", Container: "matroska,webm", VideoCodec: "av1", AudioCodec: "eac3",
+		Height: 2160, Width: 3840, BitrateKbps: 20000, AudioChannels: 6, Probed: true, HasAudio: true,
+	}
+	fb.Set(row)
+	srv.Transcode = &fakeOrchestrator{}
+	dir := t.TempDir()
+	srv.ResolveDir = func(id string) string { return dir + "/" + id }
+	caps := &capability.DeviceCaps{Video: []capability.VideoCap{
+		{Codec: "h264", MaxHeight: 720, Hardware: &hw}, {Codec: "av1", MaxHeight: 1080, Hardware: &hw}}, MaxAudioChannels: 6}
+	user := uuid.New().String()
+	open := func() OpenSessionResponse {
+		t.Helper()
+		resp, err := srv.OpenSession(context.Background(), OpenSessionRequest{
+			VideoID: row.VideoID.String(), UserID: user, ClientProfile: "desktop-mpv", DeviceCaps: caps,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return resp
+	}
+	a, b := open(), open()
+	if a.SessionID != b.SessionID {
+		t.Fatal("the same report should share its session")
+	}
+	for _, r := range b.Ladder {
+		if min(r.Width, r.Height) > 720 {
+			t.Errorf("the reused session's ladder has %dx%d, over the report's 720p H.264", r.Width, r.Height)
+		}
+	}
+}
+
 // Story 58.02's acceptance: a Cast receiver listing fmp4 only, an HEVC source to
 // remux: a remux job in fMP4 (no transcode slot taken), its session's
 // subtitle renditions mapped on fMP4's timestamps.
