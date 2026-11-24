@@ -37,7 +37,8 @@ networks:
 
 services:
   postgres:
-    image: postgres:16-alpine
+    # pinned: QA tests this one, and production runs the same (cloud-deploy.yml records it)
+    image: postgres:16-alpine@sha256:f2f98726820d0342055351c6e9d36e705f5bfffb3dd53ff556325114b08afb6d
     restart: *restart
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-maktaba}
@@ -54,7 +55,8 @@ services:
     # No `ports:` — reachable only on the internal compose network.
 
   redis:
-    image: redis:7-alpine
+    # pinned: QA tests this one, and production runs the same (cloud-deploy.yml records it)
+    image: redis:7-alpine@sha256:7f7d30b7fdd09467bac58198a1f166dd69789d348d4fe859cccb20e0cf287fbe
     restart: *restart
     # A cache: nothing in it may matter after a restart (story 50.05), so no
     # AOF and no snapshots.
@@ -67,8 +69,11 @@ services:
       start_period: 10s
 
   maktaba-cloud:
-    image: ghcr.io/hamza-labs-core/maktaba-cloud:${MAKTABA_CLOUD_TAG:-latest}
+    image: ${MAKTABA_CLOUD_IMAGE:-ghcr.io/hamza-labs-core/maktaba-cloud}:${MAKTABA_CLOUD_TAG:-latest}
     restart: *restart
+    # a change of cloud.toml recreates the container (setup.sh writes the hash)
+    labels:
+      maktaba.config: "${MAKTABA_CONFIG_SHA:-}"
     command: ["serve", "--role", "relay", "--config", "/etc/maktaba/cloud/cloud.toml"]
     # the maktaba user (setup.sh writes its ids): the secrets mount is its own, 0700/0600
     user: "${MAKTABA_UID:?run setup.sh}:${MAKTABA_GID:?run setup.sh}"
@@ -122,8 +127,11 @@ services:
   # The api role (accounts, sign-in, claims, plans): the same image and cloud.toml as the relay.
   # Caddy is its only client (API_DOMAIN).
   api:
-    image: ghcr.io/hamza-labs-core/maktaba-cloud:${MAKTABA_CLOUD_TAG:-latest}
+    image: ${MAKTABA_CLOUD_IMAGE:-ghcr.io/hamza-labs-core/maktaba-cloud}:${MAKTABA_CLOUD_TAG:-latest}
     restart: *restart
+    # a change of cloud.toml recreates the container (setup.sh writes the hash)
+    labels:
+      maktaba.config: "${MAKTABA_CONFIG_SHA:-}"
     command: ["serve", "--role", "api", "--config", "/etc/maktaba/cloud/cloud.toml"]
     # the maktaba user (setup.sh writes its ids): the secrets mount is its own, 0700/0600
     user: "${MAKTABA_UID:?run setup.sh}:${MAKTABA_GID:?run setup.sh}"
@@ -163,8 +171,11 @@ services:
   # The worker role: the periodic jobs (bandwidth roll-ups, expired-token cleanup,
   # account-deletion purges), under the worker's leader lock. Its control port is its health.
   worker:
-    image: ghcr.io/hamza-labs-core/maktaba-cloud:${MAKTABA_CLOUD_TAG:-latest}
+    image: ${MAKTABA_CLOUD_IMAGE:-ghcr.io/hamza-labs-core/maktaba-cloud}:${MAKTABA_CLOUD_TAG:-latest}
     restart: *restart
+    # a change of cloud.toml recreates the container (setup.sh writes the hash)
+    labels:
+      maktaba.config: "${MAKTABA_CONFIG_SHA:-}"
     command: ["serve", "--role", "worker", "--config", "/etc/maktaba/cloud/cloud.toml"]
     # the maktaba user (setup.sh writes its ids): the secrets mount is its own, 0700/0600
     user: "${MAKTABA_UID:?run setup.sh}:${MAKTABA_GID:?run setup.sh}"
@@ -193,7 +204,9 @@ services:
   caddy:
     # Caddy with the Cloudflare DNS module (deploy/caddy): the wildcard certificate
     # for RELAY_DOMAIN and *.RELAY_DOMAIN by DNS-01 (Epic 50 story 50.02)
-    image: ghcr.io/hamza-labs-core/maktaba-caddy:${MAKTABA_CADDY_TAG:-2.11.7-cf0.2.4}
+    image: ${MAKTABA_CADDY_IMAGE:-ghcr.io/hamza-labs-core/maktaba-caddy}:${MAKTABA_CADDY_TAG:-2.11.7-cf0.2.4}
+    labels:
+      maktaba.config: "${MAKTABA_CADDYFILE_SHA:-}"
     restart: *restart
     depends_on:
       maktaba-cloud:
@@ -218,7 +231,8 @@ services:
       CF_API_TOKEN: ${CF_API_TOKEN:-}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      # the cloud web app's files (web/cloud), staged by the deploy
+      # the cloud web app's versions (web/releases) and the one served (web/current, a symlink
+      # the deploy switches in one rename)
       - ./web:/srv/cloud-web:ro
       - caddy_data:/data      # issued certs + ACME account (persist!)
       - caddy_config:/config

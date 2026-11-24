@@ -24,7 +24,8 @@ def _tree(tmp_path: Path) -> Path:
     for rel in ("deploy/cloud-relay", "deploy/cloud-ha", deploy_secrets.API_DIR):
         shutil.copytree(ROOT / rel, tmp_path / rel)
     (tmp_path / ".github/workflows").mkdir(parents=True)
-    shutil.copy(ROOT / deploy_secrets.WORKFLOW, tmp_path / deploy_secrets.WORKFLOW)
+    for wf in deploy_secrets.WORKFLOWS.values():
+        shutil.copy(ROOT / wf, tmp_path / wf)
     return tmp_path
 
 
@@ -35,14 +36,14 @@ def test_the_repository_wires_every_secret_on_both_paths() -> None:
 
 def test_a_secret_one_deploy_step_lacks_is_named(tmp_path: Path) -> None:
     root = _tree(tmp_path)
-    wf = root / deploy_secrets.WORKFLOW
+    wf = root / deploy_secrets.WORKFLOWS["single VPS"]
     text = wf.read_text()
-    single = text.index("Deploy (the single VPS)")
+    single = text.index("Deploy (deploy.sh)")
     line = "          MAKTABA_SYMBOLS_TOKEN: ${{ secrets.MAKTABA_SYMBOLS_TOKEN }}\n"
     cut = text.index(line, single)
     wf.write_text(text[:cut] + text[cut + len(line) :])
     got = deploy_secrets.gaps(root)
-    assert any("'Deploy (the single VPS)' is not" in g and "MAKTABA_SYMBOLS_TOKEN" in g for g in got), got
+    assert any("'Deploy (deploy.sh)' is not" in g and "MAKTABA_SYMBOLS_TOKEN" in g for g in got), got
 
 
 def test_a_token_file_one_path_never_sets_is_named(tmp_path: Path) -> None:
@@ -66,10 +67,10 @@ def _fake_ssh(tmp_path: Path) -> Path:
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     ssh = bin_dir / "ssh"
-    # options until the target (user@host), then the remote command: the rollout's `bash -s --
-    # <quoted args>` payload is swallowed (no Docker here) and answered with the end marker a
-    # whole remote script prints (FAKE_CUT_SHORT=1: a script cut short, no marker); anything
-    # else runs as a remote shell would
+    # options until the target (user@host), then the remote command: the rollout
+    # (`maktaba-rollout apply`, no Docker here) is answered with the end marker a whole one
+    # prints (FAKE_CUT_SHORT=1: a script cut short, no marker); anything else runs as a remote
+    # shell would
     ssh.write_text(
         """#!/usr/bin/env bash
 while [ $# -gt 0 ]; do
@@ -80,7 +81,7 @@ while [ $# -gt 0 ]; do
   esac
 done
 case "$1" in
-  "bash -s"*)
+  DEPLOY_DIR=*" /usr/local/sbin/maktaba-rollout apply")
     cat >/dev/null; echo rollout >>"$SSH_LOG"
     [ "${FAKE_CUT_SHORT:-}" = 1 ] || echo __maktaba_deploy_complete__
     exit 0 ;;
@@ -104,7 +105,6 @@ def _deploy(tmp_path: Path, token: str | None) -> tuple[subprocess.CompletedProc
         "RELAY_SSH_HOST": "vps.invalid",
         "RELAY_SSH_USER": "maktaba",
         "DEPLOY_DIR": str(stack),
-        "MAKTABA_CLOUD_TAG": "v2",
         "SSH_LOG": str(tmp_path / "ssh.log"),
         "FAKE_CUT_SHORT": os.environ.get("FAKE_CUT_SHORT", ""),
     }

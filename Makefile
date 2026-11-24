@@ -890,13 +890,10 @@ image-size-guard:  ## Fail if any image exceeds the AC4 size cap.
 # ---------------------------------------------------------------------------
 #
 # `relay-ci` mirrors the relay.yml PR gates (lint + test + build) so a
-# developer reproduces CI locally; `relay-deploy` is a thin wrapper over
-# the single-source-of-truth deploy script (also called by the CI deploy
-# job). Both keep the Story 22.8 "no logic CI and devs must keep in sync"
-# rule — the deploy logic lives in deploy.sh, not here.
+# developer reproduces CI locally. A deploy is cloud-deploy.yml's alone
+# (docs/cloud-single-node.md): production runs what QA passed.
 
 CLOUD_DIR := cloud
-RELAY_DEPLOY_SCRIPT := deploy/cloud-relay/deploy.sh
 
 .PHONY: relay-ci
 relay-ci: relay-lint relay-test relay-build  ## Run the relay PR gates locally (lint + test + build), mirroring relay.yml.
@@ -924,10 +921,6 @@ relay-build:  ## Cross-compile the maktaba-cloud relay binary for linux/{amd64,a
 				-ldflags "-buildid= -s -w -X main.Version=$(VERSION) -X main.Commit=$(COMMIT)" \
 				-o "../dist/maktaba-cloud-linux-$$arch" ./cmd/maktaba-cloud); \
 	done
-
-.PHONY: relay-deploy
-relay-deploy:  ## Roll a new relay image onto the VPS via deploy.sh (set RELAY_SSH_HOST/USER + MAKTABA_CLOUD_TAG).
-	@bash $(RELAY_DEPLOY_SCRIPT)
 
 .PHONY: clean
 clean:

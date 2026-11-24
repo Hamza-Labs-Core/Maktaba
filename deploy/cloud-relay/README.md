@@ -190,8 +190,8 @@ roll out the `maktaba-cloud` image on its own triggers.
 |---|---|
 | PR touching `cloud/**` or `deploy/cloud-relay/**` | `lint` + `test` + `build` |
 | Push to `main` (same paths) | the above, then `docker` build + push (`:edge`, `:sha-<short>`) |
-| Tag `v*` | the above with `:vX.Y.Z` + `:latest`, then `sign` (cosign) and `deploy` |
-| Manual `workflow_dispatch` | `deploy` only, of a chosen (or `latest`) tag |
+| Tag `v*` | the above with `:vX.Y.Z` + `:latest`, then `sign` (cosign) |
+| Manual `workflow_dispatch` | the checks, or a tag's run by hand (`tag`) |
 
 **Jobs**
 
@@ -213,51 +213,18 @@ roll out the `maktaba-cloud` image on its own triggers.
     --certificate-identity https://github.com/Hamza-Labs-Core/Maktaba/.github/workflows/relay.yml@refs/tags/vX.Y.Z \
     --certificate-oidc-issuer https://token.actions.githubusercontent.com
   ```
-- **deploy** — runs [`deploy.sh`](deploy.sh) against the VPS, as the
-  `production` GitHub Environment. Runs on a manual dispatch, or on a `v*`
-  tag when the `RELAY_DEPLOY` repo variable is `true` and the image
-  built and pushed. `production` has no protection rules by default, so a
-  deploy does not wait for anyone; to gate it, add required reviewers in
-  **Settings → Environments → production**.
+- **deploy** — the Phase 1 pair only (`deploy/cloud-ha`), once it exists; never this stack.
 
 The repo's [`release.yml`](../../.github/workflows/release.yml) *also*
 builds + signs the `cloud` binary and image as part of the full release
 matrix (single-arch image, multi-arch binaries); `relay.yml` is the
-relay-focused, multi-arch, deploy-capable leg.
+relay-focused, multi-arch leg.
 
-### Required GitHub secrets & variables
+### Deploying
 
-Set these under **Settings → Secrets and variables → Actions** (put the
-SSH secrets on the `production` environment so only the deploy job can
-read them):
-
-| Name | Kind | Purpose |
-|---|---|---|
-| `RELAY_SSH_HOST` | secret | VPS hostname or IP for the deploy SSH |
-| `RELAY_SSH_USER` | secret | SSH login user (must be in the `docker` group) |
-| `RELAY_SSH_KEY` | secret | Private key **contents** (PEM) for that user |
-| `REGISTRY_TOKEN` | secret | *Optional* — only if pushing to a non-GHCR registry; otherwise the auto-provisioned `GITHUB_TOKEN` is used |
-| `MAKTABA_REGISTRY` | variable | *Optional* — override the default `ghcr.io/hamza-labs-core` registry |
-| `RELAY_PUBLIC_URL` | variable | *Optional* — shown as the deployment URL on the environment |
-| `RELAY_DEPLOY` | variable | Set to `true` to roll out every `v*` tag automatically. Unset, tags only publish the image; a manual dispatch still deploys |
-
-### Deploying by hand
-
-`deploy.sh` is the single source of truth — CI and a laptop run the same
-script. Roll out a specific tag:
-
-```bash
-RELAY_SSH_HOST=relay.example.com \
-RELAY_SSH_USER=maktaba \
-MAKTABA_CLOUD_TAG=v1.2.3 \
-make relay-deploy
-```
-
-It SSHes in, pulls the image, runs migrations in a throwaway container,
-swaps the stack (`docker compose up -d --wait`), verifies health, and
-**rolls back to the previous tag if the health check fails**. Override the
-target dir with `DEPLOY_DIR=` and add a public probe with
-`HEALTH_URL=https://relay.example.com/readyz` if desired.
+By `.github/workflows/cloud-deploy.yml` only ([docs/cloud-single-node.md](../../docs/cloud-single-node.md)):
+Actions → **Cloud deploy**, a target (`qa` or `prod`) and a release. Production takes what QA
+passed. There is no deploy from a laptop and none from `relay.yml`.
 
 Run the PR gates locally before pushing:
 

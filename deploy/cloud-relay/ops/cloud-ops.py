@@ -6,6 +6,7 @@ Run on the node, as root, from the CI deploy (over SSH) or by hand:
     cloud-ops.py verify-email   < email        confirm an account's email (no mail is sent)
     cloud-ops.py set-plan PLAN  < email        set an account's plan (free, basic, pro)
     cloud-ops.py account        < email        print the account's id, plan and whether confirmed
+    cloud-ops.py end-test-accounts             end what the deploy's tests left (below)
 
 The account's email is read from stdin, never from the command line, so it is in no process
 list, shell history or CI log; this tool prints no email, password, token or code.
@@ -14,6 +15,10 @@ list, shell history or CI log; this tool prints no email, password, token or cod
   and the link's code, so a sign-up's confirmation can't reach anyone. Until the cloud sends
   mail, the operator confirms an account here: the change and its audit row ("cli",
   auth.email_verified) in one transaction.
+- end-test-accounts: the accounts of the deploy's tests (ci-e2e-<digits>@example.com, nothing
+  else): their homes deleted, their sessions ended, their 30-day deletion holds on, in one
+  transaction, audited. It prints how many it ended and how many are left active or with a home
+  (the tests fail unless none is). A test that stopped early is ended by the next deploy's.
 - set-plan: through the operator console's API (story 50.33) on the stack's private network
   (172.30.77.10:8091, Host admin.internal), signed in as this node's own staff account
   (cloud-ops@maktaba.tv, service_admin): made on first use with `maktaba-cloud staff add`, its
@@ -119,6 +124,39 @@ SELECT email_verified FROM users WHERE lower(email) = lower(:'email');
     if out[-1] != "t":
         die("the account is still not confirmed")
     print("confirmed" if len(out) > 1 else "already confirmed")
+
+
+# a deploy's test account (tests/e2e.py), never a person's
+TEST_EMAIL = r"^ci-e2e-[0-9]+@example\.com$"
+
+
+def end_test_accounts() -> None:
+    out = psql(
+        f"""BEGIN;
+CREATE TEMP TABLE t ON COMMIT DROP AS SELECT id FROM users WHERE email ~ '{TEST_EMAIL}';
+CREATE TEMP TABLE n ON COMMIT DROP AS
+  SELECT t.id, EXISTS (SELECT 1 FROM servers s WHERE s.owner_user_id = t.id) AS homes,
+         NOT EXISTS (SELECT 1 FROM account_deletions d WHERE d.user_id = t.id AND d.cancelled_at IS NULL) AS active
+    FROM t;
+DELETE FROM servers WHERE owner_user_id IN (SELECT id FROM t);
+UPDATE sessions SET revoked_at = now() WHERE user_id IN (SELECT id FROM t) AND revoked_at IS NULL;
+INSERT INTO account_deletions (user_id, purge_after)
+  SELECT id, now() + INTERVAL '30 days' FROM n WHERE active
+  ON CONFLICT (user_id) DO UPDATE SET requested_at = now(), purge_after = now() + INTERVAL '30 days', cancelled_at = NULL;
+INSERT INTO audit_log (actor_kind, action, target_kind, target_id, detail)
+  SELECT 'cli', 'account.delete', 'user', id::text, '{{"by":"cloud-ops end-test-accounts"}}' FROM n WHERE active OR homes;
+SELECT (SELECT count(*) FROM n WHERE active), (SELECT count(*) FROM n WHERE homes);
+COMMIT;
+SELECT (SELECT count(*) FROM users u WHERE u.email ~ '{TEST_EMAIL}'
+          AND NOT EXISTS (SELECT 1 FROM account_deletions d WHERE d.user_id = u.id AND d.cancelled_at IS NULL)),
+       (SELECT count(*) FROM servers s JOIN users u ON u.id = s.owner_user_id WHERE u.email ~ '{TEST_EMAIL}');
+""",
+        "",
+    ).split()
+    if len(out) != 2:
+        die("ending the test accounts printed no counts")
+    ended, left = (tuple(int(x) for x in row.split("|")) for row in out)
+    print(json.dumps({"ended": ended[0], "homes_removed": ended[1], "left_active": left[0], "left_homes": left[1]}))
 
 
 # --- the node's staff account ---------------------------------------------------------------
@@ -240,8 +278,10 @@ def main() -> None:
         set_plan(args[1], read_email())
     elif args[:1] == ["account"] and len(args) == 1:
         account(read_email())
+    elif args == ["end-test-accounts"]:
+        end_test_accounts()
     else:
-        die("usage: cloud-ops.py verify-email | set-plan PLAN | account   (the email on stdin)")
+        die("usage: cloud-ops.py verify-email | set-plan PLAN | account (the email on stdin) | end-test-accounts")
 
 
 if __name__ == "__main__":

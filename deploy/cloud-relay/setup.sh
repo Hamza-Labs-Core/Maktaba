@@ -20,11 +20,12 @@
 #   7. configures UFW to allow only SSH + 80 + 443
 #   8. installs the nightly database backup (maktaba-cloud-backup.timer)
 #   9. pulls images and brings the stack up (SETUP_START=no: only enables it at boot;
-#      the CI deploy starts it with deploy.sh)
+#      the CI deploy starts it, ops/rollout.sh)
 #
 # Settings a deploy hands in (.github/workflows/cloud-deploy.yml), written into .env when set
 # in this script's environment, never printed: RELAY_DOMAIN, API_DOMAIN, APP_DOMAIN,
-# ACME_EMAIL, RELAY_TLS, RELAY_PLANS_ENFORCE, MAKTABA_CLOUD_TAG, MAKTABA_CADDY_TAG and the
+# ACME_EMAIL, RELAY_TLS, RELAY_PLANS_ENFORCE, MAKTABA_CLOUD_TAG, MAKTABA_CADDY_TAG (and
+# MAKTABA_CLOUD_IMAGE, MAKTABA_CADDY_IMAGE: another registry, the rehearsal's) and the
 # secrets CF_API_TOKEN and LICENSE_SIGNING_KEY.
 set -euo pipefail
 
@@ -74,6 +75,8 @@ else
 	fi
 	systemctl enable --now docker
 fi
+# a node's first deploy pulls its images before anything else is set up (ops/rollout.sh begin)
+[ "${SETUP_DOCKER_ONLY:-no}" != yes ] || exit 0
 # openssl/ufw may be needed even when docker was pre-installed.
 command -v openssl >/dev/null 2>&1 || { apt-get update -y && apt-get install -y openssl; }
 command -v ufw     >/dev/null 2>&1 || { apt-get update -y && apt-get install -y ufw; }
@@ -100,8 +103,14 @@ install -m 0644 "$SRC_DIR/Caddyfile"           "$DEPLOY_DIR/Caddyfile"
 install -m 0644 "$SRC_DIR/cloud.toml.template" "$DEPLOY_DIR/cloud.toml.template"
 install -m 0755 "$SRC_DIR/ops/cloud-ops.py"    "$DEPLOY_DIR/ops/cloud-ops.py"
 install -m 0755 "$SRC_DIR/ops/backup.sh"       "$DEPLOY_DIR/ops/backup.sh"
-# the cloud web app's page until a deploy stages its files
-[ -e "$DEPLOY_DIR/web/index.html" ] || printf '%s\n' '<!doctype html><title>Maktaba Cloud</title>' > "$DEPLOY_DIR/web/index.html"
+# the deploy that can go back, outside the stack it saves (a CI deploy's `begin` installed it)
+install -m 0755 "$SRC_DIR/ops/rollout.sh"      /usr/local/sbin/maktaba-rollout
+# the cloud web app's page until a deploy switches to its own (web/current, ops/rollout.sh)
+if [ ! -e "$DEPLOY_DIR/web/current" ]; then
+	mkdir -p "$DEPLOY_DIR/web/releases/none"
+	printf '%s\n' '<!doctype html><title>Maktaba Cloud</title>' > "$DEPLOY_DIR/web/releases/none/index.html"
+	ln -s releases/none "$DEPLOY_DIR/web/current"
+fi
 
 # .env: create from template on first run; never clobber an existing one.
 if [ ! -f "$DEPLOY_DIR/.env" ]; then
@@ -143,7 +152,7 @@ is_placeholder() {
 # The settings a deploy hands in (see the header): each one set in this script's environment
 # replaces its line in .env. CF_API_TOKEN is a secret: written, never echoed.
 for k in RELAY_DOMAIN API_DOMAIN APP_DOMAIN ACME_EMAIL RELAY_TLS RELAY_PLANS_ENFORCE \
-	MAKTABA_CLOUD_TAG MAKTABA_CADDY_TAG CF_API_TOKEN; do
+	MAKTABA_CLOUD_TAG MAKTABA_CADDY_TAG MAKTABA_CLOUD_IMAGE MAKTABA_CADDY_IMAGE CF_API_TOKEN; do
 	if [ -n "${!k:-}" ]; then
 		set_env "$k" "${!k}"
 	fi
@@ -228,6 +237,9 @@ sed -e "s|\${RELAY_DOMAIN}|$(get_env RELAY_DOMAIN)|g" \
 	-e "s|\${RELAY_PLANS_ENFORCE}|${RELAY_PLANS_ENFORCE_V:-false}|g" \
 	"$DEPLOY_DIR/cloud.toml.template" > "$DEPLOY_DIR/cloud.toml.new"
 mv "$DEPLOY_DIR/cloud.toml.new" "$DEPLOY_DIR/cloud.toml"
+# what the containers read as files: compose recreates a container when its file changed
+set_env MAKTABA_CONFIG_SHA "$(sha256sum "$DEPLOY_DIR/cloud.toml" | cut -c1-16)"
+set_env MAKTABA_CADDYFILE_SHA "$(sha256sum "$DEPLOY_DIR/Caddyfile" | cut -c1-16)"
 
 # ---------------------------------------------------------------------
 # 5. Ownership + permissions (secrets are sensitive)
@@ -239,20 +251,42 @@ chmod 0600 "$ENV_FILE" "$ENTITLEMENT_KEY" "$LOG_KEY"
 # ---------------------------------------------------------------------
 # 6. Container log rotation (docker json-file driver caps)
 # ---------------------------------------------------------------------
+# merged into the file there may be: what it sets already stays, the caps are added when it has
+# none. A log driver of its own is left alone, with a warning. Docker restarts on a change only.
 DAEMON_JSON=/etc/docker/daemon.json
-if [ ! -f "$DAEMON_JSON" ]; then
-	log "Configuring docker log rotation (10m x 3 per container)..."
-	mkdir -p /etc/docker
-	cat > "$DAEMON_JSON" <<'JSON'
-{
-  "log-driver": "json-file",
-  "log-opts": { "max-size": "10m", "max-file": "3" }
-}
-JSON
-	systemctl restart docker
-else
-	warn "$DAEMON_JSON exists; leaving it untouched. Ensure log-opts cap container logs."
-fi
+mkdir -p /etc/docker
+case "$(python3 - "$DAEMON_JSON" <<'PY'
+import json, os, sys
+p = sys.argv[1]
+text = open(p, encoding="utf-8").read() if os.path.exists(p) else ""
+try:
+    have = json.loads(text) if text.strip() else {}
+except ValueError:
+    sys.exit("daemon.json is not JSON: " + p)
+if have.get("log-driver", "json-file") not in ("json-file", "local"):
+    print("driver")
+    sys.exit(0)
+want = dict(have)
+want.setdefault("log-driver", "json-file")
+want["log-opts"] = {"max-size": "10m", "max-file": "3", **have.get("log-opts", {})}
+if want == have:
+    print("same")
+    sys.exit(0)
+with open(p + ".new", "w", encoding="utf-8") as f:
+    json.dump(want, f, indent=2)
+    f.write("\n")
+os.replace(p + ".new", p)
+print("changed")
+PY
+)" in
+	changed)
+		log "Configured docker log rotation (10m x 3 per container); restarting docker..."
+		systemctl restart docker
+		;;
+	same) log "Docker's logs are capped already." ;;
+	driver) warn "$DAEMON_JSON names another log driver; leaving it. Ensure it caps container logs." ;;
+	*) die "could not read $DAEMON_JSON" ;;
+esac
 
 # ---------------------------------------------------------------------
 # 7. Firewall — SSH + 80 + 443 only
@@ -312,11 +346,13 @@ Wants=network-online.target
 Type=oneshot
 RemainAfterExit=yes
 WorkingDirectory=${DEPLOY_DIR}
+# a node that rebooted during a deploy goes back first; a held one does not start (ops/rollout.sh)
+ExecCondition=/usr/local/sbin/maktaba-rollout boot
 # --wait blocks until every service is healthy (or fails the start).
 ExecStart=/usr/bin/docker compose --env-file .env up -d --wait
 ExecStop=/usr/bin/docker compose --env-file .env down
 ExecReload=/usr/bin/docker compose --env-file .env up -d --wait
-TimeoutStartSec=300
+TimeoutStartSec=900
 Restart=on-failure
 RestartSec=10
 

@@ -106,7 +106,7 @@
 		import api
 	}
 	handle {
-		root * /srv/cloud-web
+		root * /srv/cloud-web/current
 		try_files {path} /index.html
 		file_server
 	}

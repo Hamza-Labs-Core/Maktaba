@@ -4,9 +4,11 @@
     CF_API_TOKEN=... dns-records.py ZONE IP NAME...     # each NAME an A record to IP
 
 Each name gets exactly one A record to IP: DNS only (never proxied: relayed video never
-goes through Cloudflare's proxy), TTL 300. A name with an A record elsewhere is updated, one
-with another record type is refused (nothing is deleted). Idempotent: a record already right is
-left alone. The token needs Zone -> DNS -> Edit on ZONE; it is never printed.
+goes through Cloudflare's proxy), TTL 300. A name with an A record elsewhere is updated. A name
+with another record that answers for its address (AAAA, CNAME, HTTPS, SVCB, NS) is refused before
+any name is changed: the node has no IPv6 name, and a stale one would send IPv6 clients to another
+machine. Nothing is deleted; TXT, CAA and MX records are left alone. Idempotent: a record already
+right is left alone. The token needs Zone -> DNS -> Edit on ZONE; it is never printed.
 """
 from __future__ import annotations
 
@@ -18,6 +20,8 @@ import urllib.parse
 import urllib.request
 
 BASE = os.environ.get("CF_API_BASE", "https://api.cloudflare.com/client/v4")
+# record types that answer, beside an A record, where a client of the name goes
+ELSEWHERE = {"AAAA", "CNAME", "HTTPS", "SVCB", "NS"}
 
 
 def cf(method: str, path: str, body: dict | None = None) -> dict:
@@ -44,18 +48,23 @@ def main() -> None:
     if not z:
         sys.exit(f"dns-records: the token sees no zone {zone}")
     zid = z[0]["id"]
+    # every name is read and judged before the first is written
+    records: dict[str, list[dict]] = {}
     for name in names:
         if name != zone and not name.endswith("." + zone):
             sys.exit(f"dns-records: {name} is not in {zone}")
-        have = cf("GET", f"/zones/{zid}/dns_records?" + urllib.parse.urlencode({"name": name, "per_page": 50}))["result"]
-        other = [r for r in have if r["type"] not in ("A",)]
-        if [r for r in other if r["type"] in ("CNAME",)]:
-            sys.exit(f"dns-records: {name} has a CNAME; not touching it")
+        have = cf("GET", f"/zones/{zid}/dns_records?" + urllib.parse.urlencode({"name": name, "per_page": 100}))["result"]
+        other = sorted({r["type"] for r in have} & ELSEWHERE)
+        if other:
+            sys.exit(f"dns-records: {name} has {', '.join(other)} records, which send clients elsewhere: "
+                     "remove them first (nothing was changed)")
+        records[name] = [r for r in have if r["type"] == "A"]
+        if len(records[name]) > 1:
+            sys.exit(f"dns-records: {name} has {len(records[name])} A records; one is expected (nothing was changed)")
+    for name in names:
         want = {"type": "A", "name": name, "content": ip, "ttl": 300, "proxied": False,
                 "comment": "Maktaba Cloud node (deploy/cloud-relay, cloud-deploy.yml)"}
-        a = [r for r in have if r["type"] == "A"]
-        if len(a) > 1:
-            sys.exit(f"dns-records: {name} has {len(a)} A records; one is expected")
+        a = records[name]
         if not a:
             cf("POST", f"/zones/{zid}/dns_records", want)
             print(f"{name}: A {ip} created (DNS only, TTL 300)")

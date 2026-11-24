@@ -5,7 +5,8 @@
 # and Caddy on a Docker network, and the simulated homes and clients run in the test.
 #
 # Jobs: image (this commit's relay, tools/rehearsal-cloud/Dockerfile), one job per scenario
-# (cloud/rehearsal/scenarios_test.go, -tags cloudrehearsal), and cloud-rehearsal, the verdict. A
+# (cloud/rehearsal/scenarios_test.go, -tags cloudrehearsal), single-node (the one node's deploy,
+# deploy/cloud-relay/tests/rollout_rehearsal.py), and cloud-rehearsal, the verdict. A
 # scenario a later story builds is listed in tools/rehearsal-cloud/expected-failures.txt: reported,
 # not counted, until that story removes its line. The relay's deploy job (relay.yml) refuses a
 # commit this workflow did not pass on (tools/release/cloud-guard.sh).
@@ -260,9 +261,42 @@ jobs:
             ${{ runner.temp }}/scenario.log
           retention-days: 14
 
+  # The single node's deploy (deploy/cloud-relay, docs/cloud-single-node.md), on the runner itself:
+  # setup.sh, ops/rollout.sh and the compose stack as a node runs them, each way a deploy can
+  # fail made to happen, and the node back as it was (or held, saying why)
+  single-node:
+    name: single-node
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6.0.2
+        with:
+          persist-credentials: false
+      - name: shellcheck (the node's scripts)
+        run: shellcheck deploy/cloud-relay/setup.sh deploy/cloud-relay/deploy.sh deploy/cloud-relay/ops/*.sh
+      - name: Rehearse the rollout
+        env:
+          OUT: ${{ runner.temp }}/rehearsal
+        run: |
+          sudo --preserve-env=CI,GITHUB_STEP_SUMMARY REPO="$PWD" OUT="$OUT" python3 -I deploy/cloud-relay/tests/rollout_rehearsal.py 2>&1 | tee "${RUNNER_TEMP}/scenario.log"
+          exit "${PIPESTATUS[0]}"
+      - name: The node's logs (on failure)
+        if: failure()
+        run: |
+          sudo bash -c 'cd /opt/maktaba-relay && docker compose --env-file .env ps -a; docker compose --env-file .env logs --tail 300 --no-color; journalctl -u maktaba-relay -n 200 --no-pager' 2>&1 |
+            sudo tee "${RUNNER_TEMP}/rehearsal/node.log" >/dev/null || true
+      - uses: actions/upload-artifact@v7.0.1
+        if: always()
+        with:
+          name: rehearsal-single-node
+          path: |
+            ${{ runner.temp }}/rehearsal
+            ${{ runner.temp }}/scenario.log
+          retention-days: 14
+
   cloud-rehearsal:
     name: cloud-rehearsal
-    needs: [image, scenario]
+    needs: [image, scenario, single-node]
     if: always()
     runs-on: ubuntu-24.04
     steps:
@@ -277,7 +311,7 @@ jobs:
             echo "Not built yet (not counted): ${NOT_BUILT}" >> "$GITHUB_STEP_SUMMARY"
           fi
           fail=0
-          for j in image scenario; do
+          for j in image scenario single-node; do
             r="$(echo "$RESULTS" | jq -r ".\"$j\".result")"
             [ "$r" = success ] || { echo "::error::$j: $r"; fail=1; }
           done

@@ -27,6 +27,8 @@ What it proves, each a check in the summary:
              (the cloud signs with the key releases embed, docs/licensing.md)
   plans      the Free plan has no relay (402 relay_needs_plan); Basic does again
   restart    (full) the relay container restarted: the home is back through the relay, plays
+  ended      what the test registered is ended, whatever failed before: no test account left
+             active, no home linked (the cloud's 30-day deletion hold remains)
   broadcast-off  broadcasting is off: every public broadcast and moderation route answers 404
              (with and without a signed-in account), the providers and plans lists offer
              none, no home is a test publisher, and only the node's six services run
@@ -64,7 +66,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 from typing import Any, Callable
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlsplit
 
 RELAY = os.environ["RELAY_DOMAIN"]
 API_HOST = os.environ["API_DOMAIN"]
@@ -512,6 +514,24 @@ def relay_signin(acct: Account, home: Home) -> str:
     return mask(b["access_token"])
 
 
+class SameOrigin(urllib.request.HTTPRedirectHandler):
+    """A media request is answered by the relay itself, never by where it sends the player."""
+
+    def redirect_request(self, req: Any, fp: Any, code: int, msg: str, headers: Any, newurl: str) -> Any:
+        raise AssertionError(f"the media URL redirects ({code}) to {urlsplit(newurl).netloc or newurl[:80]}")
+
+
+MEDIA_OPENER = urllib.request.build_opener(urllib.request.HTTPSHandler(context=CTX), SameOrigin)
+
+
+def media_url(url: str) -> str:
+    """The session's media URL, on the home's relay name: bytes from anywhere else prove nothing."""
+    full = urljoin(HOME + "/", url)
+    if urlsplit(full)[:2] != urlsplit(HOME)[:2]:
+        raise AssertionError(f"the media URL leaves the relay: {urlsplit(full).scheme}://{urlsplit(full).netloc}")
+    return full
+
+
 def play(token: str, home: Home, until: float = 0) -> tuple[int, float]:
     """Plays the whole test video and checks its bytes; with until (a monotonic time), stops there."""
     full = True
@@ -525,8 +545,7 @@ def play(token: str, home: Home, until: float = 0) -> tuple[int, float]:
     t0 = time.monotonic()
     h = hashlib.sha256()
     n = 0
-    req = urllib.request.Request(urljoin(HOME + "/", url))
-    with urllib.request.urlopen(req, timeout=120, context=CTX) as r:
+    with MEDIA_OPENER.open(urllib.request.Request(media_url(url)), timeout=120) as r:
         while chunk := r.read(1 << 20):
             h.update(chunk)
             n += len(chunk)
@@ -698,18 +717,38 @@ def check_load(home: Home) -> str:
             f"{sizing['node_mem_total_mb']} MB, NIC in {rx:.0f} / out {tx:.0f} Mbit/s")
 
 
-def cleanup(acct: Account) -> None:
+def stop_home() -> None:
+    """The home's log kept, its container and volumes gone from the runner."""
     p = docker("logs", "--tail", "400", CONTAINER, check_rc=False)
     (OUT / "home.log").write_text((p.stdout or "") + (p.stderr or ""), encoding="utf-8")
     docker("rm", "-f", CONTAINER, check_rc=False)
     docker("volume", "rm", "-f", VOL_DATA, VOL_MEDIA, check_rc=False)
+
+
+def check_ended(acct: Account) -> str:
+    """What the test registered is ended, whatever failed before: the account as its owner would
+    (signed in, its password confirmed) when it got that far, then every test account through the
+    node (one whose confirmation or plan failed, or a run that stopped early). None may be left
+    active, and no home linked; the 30-day deletion hold is the cloud's own rule."""
+    own = ""
+    own_error = ""
     if acct.token:
-        # the test account goes into the cloud's 30-day deletion hold, then is purged
         try:
             acct.login()
-            http("DELETE", f"{API}/v1/account/me", {"password": acct.password}, acct.token)
-        except Exception as e:  # noqa: BLE001 - cleanup never hides the result
-            log(f"cleanup: the test account: {e}")
+            s, b = http("DELETE", f"{API}/v1/account/me", {"password": acct.password}, acct.token)
+            need(s, b, (204,), "the account's own deletion")
+            own = "the account deleted by its owner; "
+        except Exception as e:  # noqa: BLE001 - the node ends it below; the check still fails on this
+            own_error = str(e)[:300]
+    got = json.loads(node("/opt/maktaba-relay/ops/cloud-ops.py end-test-accounts"))
+    if got["left_active"] or got["left_homes"]:
+        raise AssertionError(f"left behind: {got['left_active']} active test accounts, {got['left_homes']} homes")
+    s, _ = http("GET", f"{HOME}/api/system/health")
+    if s == 200:
+        raise AssertionError("the test home still answers through the relay")
+    if own_error:
+        raise AssertionError(f"the account's own deletion failed (the node ended it instead): {own_error}")
+    return f"{own}{got['ended']} ended by the node, {got['homes_removed']} homes removed; none left active, no home linked"
 
 
 def main() -> int:
@@ -738,7 +777,8 @@ def main() -> int:
             check("restart", lambda: check_restart(home), needs=(p,))
             check("load", lambda: check_load(home), needs=(p,))
     finally:
-        cleanup(acct)
+        stop_home()
+        check("ended", lambda: check_ended(acct))
         (OUT / "results.json").write_text(json.dumps(results, indent=2))
         mark = {True: "✅", False: "❌", None: "⏭️"}
         lines = [f"| {mark[r['ok']]} | {r['check']} | {r['sec']} s | {r['detail']} |" for r in results]

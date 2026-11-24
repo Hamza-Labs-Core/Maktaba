@@ -80,17 +80,51 @@ CA, which the tests trust).
 Actions → **Cloud deploy** (`.github/workflows/cloud-deploy.yml`): a target (`qa` or `prod`) and
 a release tag (blank: the latest release).
 
-1. **resolve**: the release's images by digest, each verified with cosign; the cloud rehearsal
-   passed on the release's commit (`tools/release/cloud-guard.sh`). For `prod`: a successful
-   QA run of this workflow on main recorded the same three digests and the same
-   `deploy/cloud-relay` tree, or nothing deploys.
+1. **resolve**: the release's images by digest, each verified with cosign, and the Postgres and
+   Redis the compose file pins; the cloud rehearsal passed on the release's commit
+   (`tools/release/cloud-guard.sh`). For `prod`: the run is main's (and the `prod` environment
+   deploys from main only), and a successful QA run of main recorded the same digests and the
+   same files (this workflow, the guard, `deploy/cloud-relay` with its tests), or nothing deploys.
 2. **web** (QA): the cloud web app built from the release's source. Production gets QA's
    build, byte for byte.
-3. **deploy**: the DNS records; `setup.sh` (idempotent: Docker from Ubuntu's packages, the
-   `maktaba` user, the secrets it generates once, `cloud.toml` from its template, UFW, the
-   backup timer, the unit); the web bundle; `deploy.sh` (pull by digest, migrations in a
-   throwaway container, swap, health, and a rollback to the previous digest if health fails).
-4. **test**: `deploy/cloud-relay/tests/e2e.py` (below), then QA records what it passed.
+3. **deploy**:
+   - `ops/rollout.sh begin`: room on the disk, every image pulled by digest, a backup, and the
+     node's present set saved. A failure leaves the node as it was.
+   - the DNS records (a name with an AAAA or another record that sends clients elsewhere is
+     refused before any is changed);
+   - `setup.sh` (idempotent: Docker from Ubuntu's packages, the `maktaba` user, the secrets it
+     generates once, `cloud.toml` from its template, Docker's log caps, UFW, the backup timer,
+     the unit);
+   - the web bundle, unpacked beside the one being served;
+   - `deploy.sh`: `maktaba-rollout apply` on the node (migrations in a throwaway container, the
+     stack, its health and readiness watched for 45 s, then the web app switched in one rename).
+     A changed `cloud.toml` or Caddyfile recreates the containers that read it.
+4. **test**: `deploy/cloud-relay/tests/e2e.py` (below). Then `maktaba-rollout commit`, which also
+   removes the images no container uses, and QA records what it passed.
+
+### When a deploy fails
+
+Anything that fails or is cancelled after `begin`, the tests included, ends in `maktaba-rollout
+rollback`, on the node:
+
+1. The migrations this deploy applied go back by their Down scripts (`maktaba-cloud migrate undo`,
+   with the new release's image), newest first, every one checked before the first runs.
+   - A Down script that would delete rows written since is not run: the schema is **kept**, and the
+     previous release runs on it (a release's migrations only expand the schema, story 50.08).
+   - A migration whose Up lost data (or is a contract), or a Down script that fails: the node is
+     **held**.
+2. The saved compose file, Caddyfile, `cloud.toml`, `.env`, secrets, scripts and web app come back,
+   and the previous images with them, recreated and watched.
+
+A **held** node has its relay, api and worker stopped, refuses deploys and does not start at boot;
+`maktaba-rollout status` says why and where the saved set and the backups are. A dump is never put
+back by itself. A person sets the node right, then `maktaba-rollout unhold`. A node that reboots
+during a deploy restores first (the unit's condition), and a deploy that finds an earlier one cut
+off undoes it before it begins. A failed first deploy has nothing to go back to: the stack stops.
+
+What does not go back: the DNS records, the firewall, Docker's settings and the systemd units.
+Each failure is rehearsed in CI (`cloud-rehearsal.yml`, the `single-node` job:
+`deploy/cloud-relay/tests/rollout_rehearsal.py`).
 
 One deploy per node at a time. The GitHub environments `qa` and `prod` hold the deploy jobs.
 
@@ -104,7 +138,7 @@ production (no relay restart, no load):
 | tls | the relay's apex, the api and the app answer HTTPS with a valid certificate; later a home's name (the wildcard) |
 | health | `/healthz` and `/readyz` on the relay and the api; the web app's page |
 | firewall | from outside, of 1,040 TCP ports only 22, 80 and 443 answer; UFW is active and denies incoming; only Caddy publishes a port |
-| backup | the timer is on; a backup taken now restores into a scratch database with the live accounts and homes |
+| backup | the timer is on; a backup taken now restores into a scratch database, every table's rows equal to those recorded in the dump's own snapshot, and its keys into a scratch folder, every file whole and the password good for the database |
 | account | a new account is refused sign-in until confirmed; the operator tool confirms it and gives it Basic |
 | broadcast-off | broadcasting is off: every public broadcast and moderation route answers 404, with and without an account; the providers and plans lists offer none; no home is a test publisher; `broadcast.enabled` is false; only the node's six services run (no broadcast edge) |
 | home | the release's `maktaba-server` image on the runner, set up headlessly with a test video; its claim code minted by the account; online in the account's homes |
@@ -117,8 +151,9 @@ production (no relay restart, no load):
 | load | (QA) players through the relay for a minute while the node's CPU, memory and network are sampled: `sizing.json` |
 
 The run's artifact `e2e-<target>` holds `results.json`, `summary.md`, `sizing.json` and the logs.
-The test account goes into the 30-day deletion hold at the end; its home's container and volumes
-are removed from the runner.
+Whatever failed, the run ends with `ended`: the test account deleted (the cloud's 30-day hold), its
+home deleted from the cloud, its container and volumes removed from the runner, and no test
+account of any run left active or with a home; a leftover fails the run.
 
 ## Operator actions
 
@@ -129,6 +164,8 @@ nothing secret is printed:
 echo 'someone@example.com' | /opt/maktaba-relay/ops/cloud-ops.py verify-email   # confirm the account's email
 echo 'someone@example.com' | /opt/maktaba-relay/ops/cloud-ops.py set-plan pro    # free, basic or pro
 echo 'someone@example.com' | /opt/maktaba-relay/ops/cloud-ops.py account         # id, plan, confirmed
+/opt/maktaba-relay/ops/cloud-ops.py end-test-accounts                            # the deploy tests' own (ci-e2e-*)
+maktaba-rollout status                                                          # committed, pending or held
 ```
 
 `verify-email` changes the account and writes its audit row (`cli`, `auth.email_verified`) in
@@ -139,10 +176,11 @@ container mounts.
 
 ## Backups
 
-`maktaba-cloud-backup.timer`, nightly at 03:17 UTC: `pg_dump` (checked by listing it with
-`pg_restore` before it is kept) and the node's keys (`.env`, `secrets/`) into
-`/var/backups/maktaba-cloud`, 14 days kept. `ops/backup.sh --check` restores the newest dump
-into a scratch database and compares it with the live one.
+`maktaba-cloud-backup.timer`, nightly at 03:17 UTC, and before each deploy: `pg_dump` (checked by
+listing it with `pg_restore` before it is kept) with every table's rows counted in the same
+snapshot, and the node's keys (`.env`, `secrets/`) with each file's SHA-256, into
+`/var/backups/maktaba-cloud`, 14 days kept. `ops/backup.sh --check` restores the newest one and
+compares it with what was recorded, exactly.
 
 **They stay on the node.** Losing the machine loses the cloud's accounts and homes since the
 last copy taken elsewhere. Hetzner's own backups (20 % of the server's price) or a Storage Box
@@ -151,7 +189,8 @@ would keep a copy off the machine; neither is set up.
 ## Monitoring
 
 The deploy's tests are the checks today. GitHub mails the owner when a run fails. The outside
-probe (`cloud-probe.yml`, story 50.10) is built for the pair's witness and stays off.
+probe (`cloud-probe.yml`, story 50.10) is built for the pair's witness and stays off. Nothing
+watches the certificates or the nightly backup between deploys yet ([#1665](https://github.com/Hamza-Labs-Core/Maktaba/issues/1665)).
 
 ## Sizing
 
