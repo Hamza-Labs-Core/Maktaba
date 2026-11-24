@@ -25,7 +25,7 @@
 # Settings a deploy hands in (.github/workflows/cloud-deploy.yml), written into .env when set
 # in this script's environment, never printed: RELAY_DOMAIN, API_DOMAIN, APP_DOMAIN,
 # ACME_EMAIL, RELAY_TLS, RELAY_PLANS_ENFORCE, MAKTABA_CLOUD_TAG, MAKTABA_CADDY_TAG and the
-# secret CF_API_TOKEN.
+# secrets CF_API_TOKEN and LICENSE_SIGNING_KEY.
 set -euo pipefail
 
 DEPLOY_DIR=${DEPLOY_DIR:-/opt/maktaba-relay}
@@ -190,6 +190,21 @@ fi
 # cloud loader (entitlement.LoadSignerFromFile) accepts a base64'd
 # 32-byte seed. Used by --role api; harmless to pre-provision for relay.
 ENTITLEMENT_KEY="$DEPLOY_DIR/secrets/entitlement.key"
+# The licence signing key (docs/licensing.md, "The key"): releases embed its public half
+# (MAKTABA_LICENSE_PUBKEY), so a home trusts only licences signed with it. A deploy hands it in
+# as LICENSE_SIGNING_KEY (a hex seed, never printed); it replaces a generated key, and the api
+# restarts on it below. Without it a node keeps its own key, which no released home trusts.
+KEY_CHANGED=no
+if [ -n "${LICENSE_SIGNING_KEY:-}" ]; then
+	( umask 077; printf '%s' "$LICENSE_SIGNING_KEY" > "$ENTITLEMENT_KEY.new" )
+	if [ -s "$ENTITLEMENT_KEY" ] && cmp -s "$ENTITLEMENT_KEY.new" "$ENTITLEMENT_KEY"; then
+		rm -f "$ENTITLEMENT_KEY.new"
+	else
+		mv "$ENTITLEMENT_KEY.new" "$ENTITLEMENT_KEY"
+		KEY_CHANGED=yes
+		log "Installed the licence signing key -> secrets/entitlement.key"
+	fi
+fi
 if [ ! -s "$ENTITLEMENT_KEY" ]; then
 	log "Generating Ed25519 entitlement key -> secrets/entitlement.key..."
 	openssl rand 32 | base64 | tr -d '\n' > "$ENTITLEMENT_KEY"
@@ -310,6 +325,12 @@ WantedBy=multi-user.target
 UNITEOF
 systemctl daemon-reload
 systemctl enable --now maktaba-cloud-backup.timer >/dev/null
+
+# a new signing key reaches a running api only by a restart (licences and home assertions)
+if [ "$KEY_CHANGED" = yes ] && (cd "$DEPLOY_DIR" && docker compose --env-file .env ps --status running --services 2>/dev/null | grep -qx api); then
+	log "Restarting the api for the new signing key..."
+	(cd "$DEPLOY_DIR" && docker compose --env-file .env restart api >/dev/null)
+fi
 
 # ---------------------------------------------------------------------
 # 10. Pull + start (guard against an unedited template)

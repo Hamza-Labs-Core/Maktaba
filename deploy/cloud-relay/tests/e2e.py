@@ -18,9 +18,11 @@ What it proves, each a check in the summary:
              the relay, online in the account's homes
   link       the home's admin linked to the cloud account (the link flow the home's
              Linked accounts page runs, with the cloud web app's step done by API)
-  play       sign in through the cloud (a sign-in assertion, POST /api/auth/cloud through the
-             home's relay name) and play the video through the relay: a stream session, its
-             bytes, checked against the file
+  relay-play the home's own sign-in through its relay name, and the video played through the
+             relay: a stream session, its bytes, checked against the file
+  cloud-play sign in through the cloud (a sign-in assertion, POST /api/auth/cloud through the
+             home's relay name) and play again: needs the home to trust the cloud's licence
+             (the cloud signs with the key releases embed, docs/licensing.md)
   plans      the Free plan has no relay (402 relay_needs_plan); Basic does again
   restart    (full) the relay container restarted: the home is back through the relay, plays
   firewall   from outside, only 22, 80 and 443 answer on TCP; UFW denies the rest
@@ -89,17 +91,24 @@ def mask(value: str) -> str:
     return value
 
 
-def check(name: str, fn: Callable[[], str]) -> None:
+def check(name: str, fn: Callable[[], str], needs: tuple[bool, ...] = ()) -> bool:
+    """Runs one check and records it; a check whose prerequisite failed is recorded as skipped
+    (and counts as a failure of the run, through its prerequisite)."""
+    if not all(needs):
+        results.append({"check": name, "ok": None, "detail": "skipped: a check it needs failed", "sec": 0})
+        log(f"skip {name}")
+        return False
     t0 = time.monotonic()
     log(f"-- {name}")
     try:
         detail = fn()
         results.append({"check": name, "ok": True, "detail": detail, "sec": round(time.monotonic() - t0, 1)})
         log(f"ok  {name}: {detail}")
-    except Exception as e:  # noqa: BLE001 - every check reports, then the run fails
+        return True
+    except Exception as e:  # noqa: BLE001 - every check reports; the run fails at the end
         results.append({"check": name, "ok": False, "detail": str(e)[:600], "sec": round(time.monotonic() - t0, 1)})
         log(f"FAIL {name}: {str(e)[:600]}")
-        raise
+        return False
 
 
 def wait(what: str, probe: Callable[[], Any], seconds: float, every: float = 5) -> Any:
@@ -397,6 +406,13 @@ def check_link(acct: Account, home: Home) -> str:
     return f"the home's admin linked to the cloud account; the cloud lists it as linked {time.monotonic() - t0:.0f} s later"
 
 
+def relay_login(home: Home) -> str:
+    """The home's own sign-in, through the relay (what an app does with the home's password)."""
+    s, b = http("POST", f"{HOME}/api/auth/login", {"username": "e2e-admin", "password": home.password})
+    need(s, b, (200,), "the home's own sign-in through the relay")
+    return mask(b["access_token"])
+
+
 def relay_signin(acct: Account, home: Home) -> str:
     s, b = http("POST", f"{API}/v1/homes/{home.server_id}/assertion", {"purpose": "signin"}, acct.token)
     need(s, b, (200, 201), "the cloud's sign-in assertion")
@@ -428,13 +444,19 @@ def play(token: str, home: Home, full: bool = True) -> tuple[int, float]:
     return n, sec
 
 
-def check_play(acct: Account, home: Home) -> str:
+def check_relay_play(home: Home) -> str:
     tls = tls_one(f"{SLUG}.{RELAY}")
-    token = relay_signin(acct, home)
+    token = relay_login(home)
     s, b = http("GET", f"{HOME}/api/videos?limit=5", token=token)
     need(s, b, (200,), "the library through the relay")
     n, sec = play(token, home)
-    return f"TLS {tls}; signed in through the cloud; played {n / 1e6:.1f} MB in {sec:.1f} s ({n * 8 / sec / 1e6:.0f} Mbit/s), bytes match the file"
+    return f"TLS {tls}; the home's own sign-in through the relay; played {n / 1e6:.1f} MB in {sec:.1f} s ({n * 8 / sec / 1e6:.0f} Mbit/s), bytes match the file"
+
+
+def check_cloud_play(acct: Account, home: Home) -> str:
+    token = relay_signin(acct, home)
+    n, sec = play(token, home)
+    return f"signed in through the cloud (a sign-in assertion, POST /api/auth/cloud on the relay name); played {n / 1e6:.1f} MB in {sec:.1f} s, bytes match the file"
 
 
 def check_plans(acct: Account, home: Home) -> str:
@@ -455,14 +477,14 @@ def check_plans(acct: Account, home: Home) -> str:
     return f"Free: 402 relay_needs_plan; Basic: served again; speed and stream caps enforced: {enforce}"
 
 
-def check_restart(acct: Account, home: Home) -> str:
+def check_restart(home: Home) -> str:
     t0 = time.monotonic()
     node("cd /opt/maktaba-relay && docker compose --env-file .env restart maktaba-cloud", timeout=400)
     restarted = time.monotonic() - t0
     wait("the home back through the relay", lambda: http("GET", f"{HOME}/api/system/health", timeout=10)[0] == 200,
          5 * 60, every=2)
     back = time.monotonic() - t0
-    n, sec = play(relay_signin(acct, home), home)
+    n, sec = play(relay_login(home), home)
     return f"restart took {restarted:.0f} s; the home answered through the relay {back:.0f} s after it began; played {n / 1e6:.1f} MB"
 
 
@@ -519,10 +541,10 @@ def sample_node(stop: threading.Event, samples: list[dict[str, Any]]) -> None:
         stop.wait(5)
 
 
-def check_load(acct: Account, home: Home) -> str:
+def check_load(home: Home) -> str:
     players = int(os.environ.get("LOAD_PLAYERS", "8"))
     seconds = int(os.environ.get("LOAD_SECONDS", "60"))
-    tokens = [relay_signin(acct, home) for _ in range(min(players, 4))]
+    tokens = [relay_login(home) for _ in range(min(players, 4))]
     total = [0]
     lock = threading.Lock()
     end = time.monotonic() + seconds
@@ -578,12 +600,12 @@ def check_load(acct: Account, home: Home) -> str:
             f"{sizing['node_mem_total_mb']} MB, NIC in {rx:.0f} / out {tx:.0f} Mbit/s")
 
 
-def cleanup(acct: Account | None) -> None:
+def cleanup(acct: Account) -> None:
     p = docker("logs", "--tail", "400", CONTAINER, check_rc=False)
     (OUT / "home.log").write_text((p.stdout or "") + (p.stderr or ""), encoding="utf-8")
     docker("rm", "-f", CONTAINER, check_rc=False)
     docker("volume", "rm", "-f", VOL_DATA, VOL_MEDIA, check_rc=False)
-    if acct and acct.token:
+    if acct.token:
         # the test account goes into the cloud's 30-day deletion hold, then is purged
         try:
             acct.login()
@@ -599,35 +621,33 @@ def main() -> int:
     OUT.mkdir(parents=True, exist_ok=True)
     if os.environ.get("PIN_HOSTS") == "1":
         pin_hosts()
-    acct: Account | None = None
+    acct = Account()
     home = Home()
-    ok = True
     try:
         check("tls", check_tls)
         check("health", check_health)
         check("firewall", check_firewall)
         check("backup", check_backup)
-        acct = Account()
-        check("account", lambda: check_account(acct))
-        check("home", lambda: make_home(acct, home))
-        check("link", lambda: check_link(acct, home))
-        check("play", lambda: check_play(acct, home))
-        check("plans", lambda: check_plans(acct, home))
+        a = check("account", lambda: check_account(acct))
+        h = check("home", lambda: make_home(acct, home), needs=(a,))
+        p = check("relay-play", lambda: check_relay_play(home), needs=(h,))
+        check("plans", lambda: check_plans(acct, home), needs=(p,))
+        lk = check("link", lambda: check_link(acct, home), needs=(h,))
+        check("cloud-play", lambda: check_cloud_play(acct, home), needs=(lk,))
         if mode == "full":
-            check("restart", lambda: check_restart(acct, home))
-            check("load", lambda: check_load(acct, home))
-    except Exception:  # noqa: BLE001 - the failed check is in results
-        ok = False
+            check("restart", lambda: check_restart(home), needs=(p,))
+            check("load", lambda: check_load(home), needs=(p,))
     finally:
         cleanup(acct)
         (OUT / "results.json").write_text(json.dumps(results, indent=2))
-        lines = [f"| {'✅' if r['ok'] else '❌'} | {r['check']} | {r['sec']} s | {r['detail']} |" for r in results]
+        mark = {True: "✅", False: "❌", None: "⏭️"}
+        lines = [f"| {mark[r['ok']]} | {r['check']} | {r['sec']} s | {r['detail']} |" for r in results]
         summary = "\n".join(["| | check | time | result |", "|---|---|---|---|", *lines])
         (OUT / "summary.md").write_text(summary + "\n")
         if os.environ.get("GITHUB_STEP_SUMMARY"):
             with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as f:
                 f.write(f"### Cloud e2e ({mode}) on {RELAY}\n\n{summary}\n\n")
-    return 0 if ok else 1
+    return 0 if results and all(r["ok"] for r in results) else 1
 
 
 if __name__ == "__main__":

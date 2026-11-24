@@ -18,7 +18,9 @@
 #
 # Secrets: RELAY_SSH_KEY (both nodes), CLOUDFLARE_DNS_TOKEN (Zone → DNS → Edit on maktaba.tv
 # and maktaba.dev; without it QA runs on Caddy's own CA and production does not deploy unless
-# the CLOUD_TLS variable is "http" with the records made by hand), MAKTABA_SYMBOLS_TOKEN.
+# the CLOUD_TLS variable is "http" with the records made by hand), MAKTABA_LICENSE_SIGNING_KEY
+# (the licence signing seed whose public half releases embed, docs/licensing.md: without it a
+# node signs with its own key, which no released home trusts), MAKTABA_SYMBOLS_TOKEN.
 # Variables: QA_HOST, QA_SSH_USER, QA_SSH_KNOWN_HOSTS; RELAY_HOST, RELAY_SSH_USER,
 # RELAY_SSH_KNOWN_HOSTS. Each target's names are in deploy/cloud-relay/targets/<target>.env.
 name: Cloud deploy
@@ -264,6 +266,7 @@ jobs:
       - name: Set up the node (setup.sh, idempotent)
         env:
           CF_API_TOKEN: ${{ secrets.CLOUDFLARE_DNS_TOKEN }}
+          LICENSE_SIGNING_KEY: ${{ secrets.MAKTABA_LICENSE_SIGNING_KEY }}
           CLOUD_REF: ${{ needs.resolve.outputs.cloud_ref }}
           CADDY_REF: ${{ needs.resolve.outputs.caddy_ref }}
         run: |
@@ -271,7 +274,8 @@ jobs:
           tar -C deploy/cloud-relay -czf - . | ssh node 'rm -rf /opt/maktaba-relay-src && mkdir -p /opt/maktaba-relay-src && tar -xzf - -C /opt/maktaba-relay-src'
           # the token on stdin, never on a command line; the names expand here, on purpose
           # shellcheck disable=SC2029
-          printf '%s\n' "${CF_API_TOKEN:-}" | ssh node "read -r t; [ -z \"\$t\" ] || export CF_API_TOKEN=\"\$t\"; \
+          printf '%s\n%s\n' "${CF_API_TOKEN:-}" "${LICENSE_SIGNING_KEY:-}" | ssh node "read -r t; read -r k; \
+            [ -z \"\$t\" ] || export CF_API_TOKEN=\"\$t\"; [ -z \"\$k\" ] || export LICENSE_SIGNING_KEY=\"\$k\"; \
             cd /opt/maktaba-relay-src && SETUP_START=no RELAY_DOMAIN='$RELAY_DOMAIN' API_DOMAIN='$API_DOMAIN' \
             APP_DOMAIN='$APP_DOMAIN' ACME_EMAIL='$ACME_EMAIL' RELAY_TLS='$RELAY_TLS' \
             RELAY_PLANS_ENFORCE='$RELAY_PLANS_ENFORCE' MAKTABA_CLOUD_TAG='$CLOUD_REF' MAKTABA_CADDY_TAG='$CADDY_REF' \
