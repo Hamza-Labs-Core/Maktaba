@@ -1,0 +1,28 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "setup-window",
+  "description": "Epic 13 story 13.13: the first-run setup in its own window of the app's own bundled pages (ownwindows.rs). It runs the setup's steps and finishes them, opens this machine's server or another Maktaba in the main window, reads and opens the macOS permissions the setup asks for, opens the allow-listed setup pages in the browser, and draws its own frame (its caption buttons, dragging, maximizing). Not the main window's file, dialog, updater or menu commands.",
+  "windows": [
+    "setup"
+  ],
+  "permissions": [
+    "core:default",
+    "allow-app-version",
+    "allow-discover-servers",
+    "allow-app-state",
+    "allow-setup-step",
+    "allow-finish-setup",
+    "allow-open-login-items",
+    "allow-server-status",
+    "allow-open-local-server",
+    "allow-use-remote-server",
+    "allow-open-external",
+    "allow-host-permissions",
+    "allow-open-privacy-pane",
+    "allow-permissions-seen",
+    "core:window:allow-start-dragging",
+    "core:window:allow-internal-toggle-maximize",
+    "allow-frame-claim",
+    "allow-frame-action"
+  ]
+}

@@ -39,6 +39,7 @@ mod flavour;
 mod frame;
 mod lang;
 mod mode;
+mod ownwindows;
 mod permissions;
 mod recovery;
 mod redact;
@@ -46,6 +47,7 @@ mod run_entry;
 mod setup;
 mod shell;
 mod status;
+mod statusview;
 mod tray;
 mod webcache;
 
@@ -221,6 +223,9 @@ pub fn run() {
             app.manage(bigscreen::BigScreen::new(&shell::state_dir(handle)));
             // story 13.10: the page's claim on the window's frame (frame.rs)
             app.manage(frame::Frame::default());
+            // story 13.13: the setup and status windows (ownwindows.rs)
+            app.manage(ownwindows::SetupApart::default());
+            app.manage(ownwindows::KeepInTray(keep_in_tray));
             let menu = build_menu(handle, !keep_in_tray)?;
             app.set_menu(menu)?;
 
@@ -248,6 +253,8 @@ pub fn run() {
             // Open logs, the player's Play / Pause, Settings, Quit (the
             // window only) and Stop server and quit. See shell.rs/tray.rs.
             shell::init(handle)?;
+            // story 13.13: a machine not set up shows its setup window, the main one hidden
+            shell::setup_at_start(handle, hidden);
 
             // Close-to-tray (Story 13.4 AC-5): closing the window hides
             // it instead of terminating the app; Quit (tray/menu) still
@@ -293,6 +300,8 @@ pub fn run() {
             frame::frame_action,
             frame::frame_menu_items,
             frame::frame_menu,
+            ownwindows::status_window_state,
+            ownwindows::status_window_action,
         ])
         .run(tauri::generate_context!())
         .unwrap_or_else(|e| {

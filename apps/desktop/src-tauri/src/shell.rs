@@ -30,9 +30,11 @@ use crate::autoinstall;
 use crate::flavour;
 use crate::lang::{self, Lang};
 use crate::mode::{self, AppMode, Target};
+use crate::ownwindows::{self, Kind};
 use crate::recovery;
 use crate::setup::{self, Progress, StepError};
 use crate::status::{self, Probe, Quiet, ServerStatus, StatusView};
+use crate::statusview::{self, StatusWindowView, UpdateView};
 use crate::tray::{self, Entry};
 use crate::webcache;
 
@@ -77,7 +79,110 @@ fn mode_path(app: &AppHandle) -> PathBuf {
 /// a release's first start (webcache.rs); hidden when the app starts in its tray.
 pub fn open_window(app: &AppHandle, hidden: bool) -> tauri::Result<()> {
     let stamp = webcache::Stamp::new(state_dir(app).join(webcache::STAMP_FILE));
-    webcache::open_main(app, &bundled_url(app), stamp, &own_version(app), hidden)
+    // story 13.13: a machine not set up shows its setup window (setup_at_start); the main
+    // window waits hidden until the setup opens a server
+    let setup = mode::start_target(mode::load(&mode_path(app)).as_ref(), server_bin().is_some())
+        == Target::Setup;
+    webcache::open_main(
+        app,
+        &bundled_url(app),
+        stamp,
+        &own_version(app),
+        hidden || setup,
+    )
+}
+
+/// The bundled maktaba-server, when this build carries the server. MAKTABA_SERVER_BIN points
+/// a dev build (`tauri dev`, outside Maktaba.app) at a maktaba-server to run setup against.
+fn server_bin() -> Option<PathBuf> {
+    std::env::var_os("MAKTABA_SERVER_BIN")
+        .map(PathBuf::from)
+        .or_else(|| {
+            let exe = std::env::current_exe().ok()?;
+            let paths = BundlePaths::from_exe(&exe)?;
+            paths.payload_present().then(|| paths.server_bin())
+        })
+}
+
+/// Story 13.13: at start, a machine that is not set up runs its setup in its own window, and
+/// the main window stays hidden (the window-state plugin may have shown it). Started at
+/// sign-in only the tray shows; Open Maktaba brings the setup window.
+pub fn setup_at_start(app: &AppHandle, hidden: bool) {
+    if shell(app).target() != Target::Setup {
+        return;
+    }
+    ownwindows::claim_setup(app);
+    if let Some(w) = app.get_webview_window(webcache::MAIN) {
+        let _ = w.hide();
+    }
+    if !hidden {
+        ownwindows::show(app, Kind::Setup);
+    }
+}
+
+/// The setup window could not be made: the main window shows the setup screens (its page
+/// asks again what to show).
+pub(crate) fn setup_in_main(app: &AppHandle) {
+    if let Err(e) = navigate_main(app, &bundled_url(app)) {
+        applog::warn("the window could not show the setup screens", e);
+    }
+    if let Some(w) = app.get_webview_window(webcache::MAIN) {
+        let _ = w.show();
+        let _ = w.set_focus();
+    }
+}
+
+/// The shell's words (the system's language).
+pub(crate) fn words(app: &AppHandle) -> &'static lang::Words {
+    shell(app).lang.words()
+}
+
+/// A status window's button that is a tray item: as a click on it.
+pub(crate) fn act_as_tray(app: &AppHandle, id: &str) {
+    on_tray_event(app, id);
+}
+
+/// A page of this machine's web app in the main window (the status window's Libraries and
+/// Devices).
+pub(crate) fn open_local_page(app: &AppHandle, path: &str) -> Result<(), String> {
+    let Some(AppMode::Server { web_url, .. }) = shell(app).mode() else {
+        return Err("this machine does not run the server".into());
+    };
+    navigate_main(app, &format!("{}{path}", web_url.trim_end_matches('/')))?;
+    focus_main(app);
+    Ok(())
+}
+
+/// What the status window shows (statusview.rs): the status as the tray has it, the last
+/// snapshot's parts, and a release on its way.
+pub(crate) fn status_window_view(app: &AppHandle) -> StatusWindowView {
+    let sh = shell(app);
+    let snap = sh.snapshot.locked().clone();
+    let update = match autoinstall::shown(sh.order.locked().as_ref()) {
+        Some(order) => Some(UpdateView::of_order(&order)),
+        // the Linux app catching up with its server: a click installs it
+        None if sh.update_ready.load(Ordering::SeqCst) => Some(UpdateView {
+            version: sh
+                .catch_up
+                .locked()
+                .clone()
+                .or_else(|| sh.update_version.locked().clone())
+                .unwrap_or_default(),
+            by: String::new(),
+            installing: sh.installing.load(Ordering::SeqCst),
+            install: true,
+        }),
+        None => None,
+    };
+    let status = sh.status.locked().clone();
+    StatusWindowView {
+        status,
+        host: snap.as_ref().map(|s| s.host.clone()).unwrap_or_default(),
+        version: own_version(app),
+        since: snap.as_ref().and_then(|s| s.started_at.clone()),
+        parts: statusview::parts(snap.as_ref()),
+        update,
+    }
 }
 
 pub struct Shell {
@@ -120,6 +225,9 @@ pub struct Shell {
     #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     catch_up_at: Mutex<Option<Instant>>,
     status: Mutex<StatusView>,
+    /// The supervisor's last answer (the status window's parts, story 13.13); None while it
+    /// does not answer.
+    snapshot: Mutex<Option<status::Snapshot>>,
     menu: Mutex<Vec<Entry>>,
     /// The badge the tray icon shows now (tray::badge_color), and the plain
     /// icon it is drawn on (RGBA, width, height). Not on a Mac.
@@ -143,13 +251,7 @@ impl Shell {
         if attempts::set_local_build_from(updater_pubkey(app).as_deref()) {
             attempts::log("this app was built locally (no release key): it updates nothing itself");
         }
-        let server_bin = std::env::var_os("MAKTABA_SERVER_BIN")
-            .map(PathBuf::from)
-            .or_else(|| {
-                let exe = std::env::current_exe().ok()?;
-                let paths = BundlePaths::from_exe(&exe)?;
-                paths.payload_present().then(|| paths.server_bin())
-            });
+        let server_bin = server_bin();
         let core_feed_key = std::env::current_exe()
             .ok()
             .and_then(|exe| BundlePaths::from_exe(&exe))
@@ -186,6 +288,7 @@ impl Shell {
                 status: ServerStatus::Starting,
                 detail: None,
             }),
+            snapshot: Mutex::new(None),
             menu: Mutex::new(Vec::new()),
             badge: Mutex::new(None),
             plain_icon: Mutex::new(None),
@@ -260,6 +363,7 @@ impl Shell {
                 status: ServerStatus::SetupNeeded,
                 detail: None,
             };
+            *self.snapshot.locked() = None;
             return (view, None);
         };
         let addr = status::addr_of(&supervisor_url)
@@ -267,6 +371,10 @@ impl Shell {
         let probe = status::probe(&addr);
         let model = match &probe {
             Probe::Snapshot(s) => status::model_line(s.llm.as_ref(), self.lang.words()),
+            Probe::Unreachable => None,
+        };
+        *self.snapshot.locked() = match &probe {
+            Probe::Snapshot(s) => Some(s.clone()),
             Probe::Unreachable => None,
         };
         // a live agent (Windows, Linux) whose supervisor does not answer is
@@ -342,6 +450,14 @@ fn portable_app() -> bool {
 }
 
 pub fn focus_main(app: &AppHandle) {
+    // story 13.13: while this machine is not set up, the setup window is the app's window
+    if app
+        .try_state::<Shell>()
+        .is_some_and(|sh| sh.target() == Target::Setup)
+    {
+        ownwindows::show(app, Kind::Setup);
+        return;
+    }
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.show();
         let _ = w.unminimize();
@@ -1103,6 +1219,8 @@ fn refresh(app: &AppHandle) {
         lang.words().brand.into()
     };
     *sh.status.locked() = view.clone();
+    // story 13.13: an open status window follows each refresh
+    ownwindows::status_changed(app);
     let mut last = sh.menu.locked();
     let mut last_badge = sh.badge.locked();
     let new_badge = *last_badge != badge;
@@ -1212,6 +1330,11 @@ fn handle_tray_event(app: &AppHandle, id: &str) {
             focus_main(app);
             Ok(())
         }
+        // story 13.13: the server's status in its own window
+        "show-status" => {
+            ownwindows::show(app, Kind::Status);
+            Ok(())
+        }
         // Transport controls, Settings and Report a problem go to the web shell through the
         // same "menu" channel as the menu bar (web/src/lib/desktop.ts); all but the
         // transport controls bring the window forward first.
@@ -1242,8 +1365,14 @@ fn handle_tray_event(app: &AppHandle, id: &str) {
         "start-safe" => start_choice("safe"),
         "start-rollback" => start_choice("rollback"),
         "update-logs" => see_logs(app),
+        // story 13.13: the setup in its own window, the main window hidden until it is done
+        // (marked first: the main window's page asks again, and must not show it too)
         "change-server" => sh.clear_mode().and_then(|()| {
-            focus_main(app);
+            ownwindows::claim_setup(app);
+            if let Some(w) = app.get_webview_window(webcache::MAIN) {
+                let _ = w.hide();
+            }
+            ownwindows::show(app, Kind::Setup);
             navigate_main(app, &bundled_url(app))
         }),
         "update" => update_clicked(app),
@@ -2139,12 +2268,19 @@ pub struct AppState {
     /// screens' words follow it ("this Mac" / "this PC", the menu bar / the
     /// tray; Epic 38 story 38.6).
     platform: &'static str,
+    /// Story 13.13: the setup screens run in their own window, not this one (the main
+    /// window's page shows nothing then).
+    setup_window: bool,
 }
 
 #[tauri::command(async)]
-pub fn app_state(app: AppHandle) -> AppState {
+pub fn app_state(app: AppHandle, window: tauri::WebviewWindow) -> AppState {
     let sh = shell(&app);
     AppState {
+        setup_window: ownwindows::setup_elsewhere(
+            app.state::<ownwindows::SetupApart>().get(),
+            window.label(),
+        ),
         target: sh.target(),
         server_available: sh.server_bin.is_some(),
         login_item: agent::login_item(),
@@ -2157,7 +2293,11 @@ pub fn app_state(app: AppHandle) -> AppState {
 /// (Windows; setup::OWNER_WINDOW_ENV). None elsewhere, or with no window.
 #[cfg(windows)]
 fn owner_window(app: &AppHandle) -> Option<isize> {
-    let hwnd = app.get_webview_window("main")?.hwnd().ok()?;
+    // story 13.13: the setup window, while the setup runs in it
+    let window = app
+        .get_webview_window(ownwindows::SETUP)
+        .or_else(|| app.get_webview_window(webcache::MAIN))?;
+    let hwnd = window.hwnd().ok()?;
     Some(hwnd.0 as isize)
 }
 
@@ -2290,7 +2430,10 @@ pub fn open_local_server(app: AppHandle) -> Result<(), String> {
             }
             // Epic 46: Start in Big Screen opens the page at /big
             let start = app.state::<crate::bigscreen::BigScreen>().start();
-            navigate_main(&app, &crate::bigscreen::entry_url(&web_url, start))
+            navigate_main(&app, &crate::bigscreen::entry_url(&web_url, start))?;
+            // story 13.13: the setup window's server is open: the main window shows it
+            ownwindows::setup_done(&app);
+            Ok(())
         }
         _ => Err("this Mac does not run the server".into()),
     }
@@ -2312,7 +2455,9 @@ pub fn use_remote_server(app: AppHandle, url: String) -> Result<(), String> {
         server_url: url.clone(),
     })?;
     refresh(&app);
-    navigate_main(&app, &url)
+    navigate_main(&app, &url)?;
+    ownwindows::setup_done(&app);
+    Ok(())
 }
 
 /// Pages the setup screens may open in the browser (Plex link, the

@@ -1,0 +1,18 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "status-window",
+  "description": "Epic 13 story 13.13: the server's status in its own window of the app's own bundled pages (ownwindows.rs). It reads the status, its parts and a release on its way, listens for new ones, does the tray's server actions through its buttons (pause, resume, open, logs, report a problem, settings, the update; never quit or stop), opens this machine's libraries and devices pages in the main window, and draws its own frame (its caption buttons, dragging, maximizing). Nothing else.",
+  "windows": [
+    "status"
+  ],
+  "permissions": [
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
+    "core:window:allow-start-dragging",
+    "core:window:allow-internal-toggle-maximize",
+    "allow-status-window-state",
+    "allow-status-window-action",
+    "allow-frame-claim",
+    "allow-frame-action"
+  ]
+}

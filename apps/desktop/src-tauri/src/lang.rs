@@ -150,6 +150,11 @@ pub struct Words {
     pub open_components: &'static str,
     /// Report a problem to the home's admin (Epic 53 story 53.15): the web app's form.
     pub report_problem: &'static str,
+    /// Story 13.13: the status window, its tray item (a machine that runs the server) and
+    /// the two windows' titles (the taskbar's, the window switcher's).
+    pub show_status: &'static str,
+    pub status_title: &'static str,
+    pub setup_title: &'static str,
     /// The recovery console (Epic 53 story 53.04), and the launcher's can't-start
     /// cut-off with its choices (story 53.05; `{count}`, `{version}`).
     pub open_recovery: &'static str,
@@ -268,6 +273,9 @@ pub static EN: Words = Words {
     open_logs: "Open logs",
     open_components: "Open Components",
     report_problem: "Report a problem…",
+    show_status: "Server status",
+    status_title: "Maktaba status",
+    setup_title: "Set up Maktaba",
     open_recovery: "Open recovery page",
     cant_start: "Maktaba can't start: it stopped {count} times in a row",
     cant_start_retry: "Try again",
@@ -344,6 +352,9 @@ pub static AR: Words = Words {
     open_logs: "فتح السجلات",
     open_components: "فتح المكوّنات",
     report_problem: "الإبلاغ عن مشكلة…",
+    show_status: "حالة الخادم",
+    status_title: "حالة مكتبة",
+    setup_title: "إعداد مكتبة",
     open_recovery: "افتح صفحة الاستعادة",
     cant_start: "تعذّر تشغيل مكتبة: توقف {count} مرات متتالية",
     cant_start_retry: "حاول مجددًا",
@@ -728,6 +739,9 @@ mod tests {
             ("open_logs", Some(w.open_logs)),
             ("open_components", Some(w.open_components)),
             ("report_problem", Some(w.report_problem)),
+            ("show_status", Some(w.show_status)),
+            ("status_title", Some(w.status_title)),
+            ("setup_title", Some(w.setup_title)),
             ("play", Some(w.play)),
             ("pause_playback", Some(w.pause_playback)),
             ("settings", Some(w.settings)),

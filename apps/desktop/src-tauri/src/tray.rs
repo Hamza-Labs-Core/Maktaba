@@ -276,6 +276,10 @@ pub fn entries_with_order(
         out.push(Entry::Separator);
     }
     out.push(item("show", w.open));
+    // the server's status in its own window (story 13.13), once there is a server
+    if server && *status != ServerStatus::SetupNeeded {
+        out.push(item("show-status", w.show_status));
+    }
     if !server {
         // client mode: the way back to the setup screens (another address,
         // or this Mac when the build carries the server)
@@ -454,6 +458,9 @@ pub fn with_recovery(
 /// window_label's), or None for a separator.
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 pub const WINDOW_ITEMS: &[Option<&str>] = &[
+    // the status window (story 13.13): without a tray, the way to the server's status
+    Some("show-status"),
+    None,
     Some("update"),
     None,
     Some("server-pause"),
@@ -476,6 +483,7 @@ pub fn window_menu_title(lang: Lang) -> &'static str {
 pub fn window_label(lang: Lang, id: &str) -> Option<&'static str> {
     let w = lang.words();
     Some(match id {
+        "show-status" => w.show_status,
         "update" => w.install_update,
         "server-pause" => w.pause,
         "server-resume" => w.resume,
@@ -641,6 +649,7 @@ mod tests {
             [
                 "status",
                 "show",
+                "show-status",
                 "server-pause",
                 "open-logs",
                 "open-components",
@@ -652,6 +661,11 @@ mod tests {
                 "stop-and-quit"
             ]
         );
+        assert!(e.contains(&Entry::Item {
+            id: "show-status",
+            label: "Server status".into(),
+            enabled: true
+        }));
         assert_eq!(
             e[0],
             Entry::Item {
@@ -693,6 +707,8 @@ mod tests {
         let got = ids(&e);
         assert!(!got.contains(&"server-pause") && !got.contains(&"server-resume"));
         assert!(!got.contains(&"stop-and-quit"));
+        // no server yet: no status window (story 13.13)
+        assert!(!got.contains(&"show-status"));
         assert!(e.contains(&Entry::Item {
             id: "quit",
             label: "Quit".into(),
@@ -891,6 +907,8 @@ mod tests {
             Some("استئناف الخادم")
         );
         assert_eq!(window_label(Lang::En, "show"), None);
+        assert_eq!(window_label(Lang::Ar, "show-status"), Some("حالة الخادم"));
+        assert_eq!(WINDOW_ITEMS[0], Some("show-status"));
         assert_eq!(
             window_label(Lang::Ar, "open-components"),
             Some("فتح المكوّنات")
@@ -1200,6 +1218,7 @@ mod tests {
                 "مكتبة تعمل",
                 "التحديث جاهز: أعد التشغيل لتثبيته",
                 "فتح مكتبة",
+                "حالة الخادم",
                 "إيقاف الخادم مؤقتًا",
                 "فتح السجلات",
                 "فتح المكوّنات",
@@ -1301,6 +1320,7 @@ mod tests {
         assert_eq!(
             window_ids,
             [
+                "show-status",
                 "update",
                 "server-pause",
                 "server-resume",
@@ -1311,7 +1331,9 @@ mod tests {
         );
         let running = entries(Lang::En, true, &ServerStatus::Running, false);
         assert!(
-            window_enabled(&running, "server-pause") && window_enabled(&running, "stop-and-quit")
+            window_enabled(&running, "server-pause")
+                && window_enabled(&running, "show-status")
+                && window_enabled(&running, "stop-and-quit")
         );
         assert!(!window_enabled(&running, "server-resume") && !window_enabled(&running, "update"));
         let paused = entries(Lang::En, true, &ServerStatus::Paused, true);

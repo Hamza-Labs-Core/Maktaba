@@ -34,6 +34,10 @@ const COMMANDS: &[&str] = &[
     "frame_action",
     "frame_menu_items",
     "frame_menu",
+    // Epic 13 story 13.13: the status window (ownwindows.rs), granted to its own window only
+    // (capabilities/status-window.json)
+    "status_window_state",
+    "status_window_action",
 ];
 
 fn main() {
