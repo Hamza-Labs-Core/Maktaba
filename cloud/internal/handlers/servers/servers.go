@@ -92,6 +92,9 @@ type redeemReq struct {
 	Slug    string `json:"slug"`
 	Version string `json:"version"`
 	PubKey  string `json:"public_key_pem"`
+	// RetryKey is the agent's secret for this claim: the same one redeems it again when the
+	// first answer was lost (stores.RedeemClaim). An older agent sends none.
+	RetryKey string `json:"retry_key"`
 }
 
 type redeemResp struct {
@@ -134,7 +137,7 @@ func (d *Deps) RedeemClaim(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 500, "hash_failed", err.Error())
 		return
 	}
-	sv, err := d.Servers.RedeemClaim(r.Context(), req.Code, req.Name, req.Slug, secretHash, req.Version, []byte(req.PubKey))
+	sv, err := d.Servers.RedeemClaim(r.Context(), req.Code, req.Name, req.Slug, secretHash, req.Version, []byte(req.PubKey), req.RetryKey)
 	switch {
 	case errors.Is(err, stores.ErrClaimInvalid):
 		writeErr(w, 404, "claim_invalid", "code expired or already used")

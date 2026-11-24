@@ -92,14 +92,26 @@ func runRelay(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Mig
 	// failover, dropped at once by the database's change notifications.
 	// One LISTEN connection per node (story 50.17 §4, cachepkg.Bus): a reconnect expires every
 	// entry, so none is served fresh before the database is read again.
+	// It also closes the tunnels of a home whose owner was suspended or that was deleted.
 	var cache *relayh.HomeCache
 	bus := &cachepkg.Bus{Logger: logger}
 	if cfg.Relay.CacheEnabled {
 		cache = &relayh.HomeCache{Lookup: serversStore}
 		bus.Add(cachepkg.Funcs{OnInvalidate: func(_, slug string) { cache.Invalidate(slug) }, OnReset: cache.Expire})
-		if err := bus.Start(ctx, cfg.Database.ListenURL()); err != nil {
-			logger.Warn("relay: the change listener did not start; the cache refreshes each minute", "err", err)
-		}
+	}
+	tunnelStore := relaypkg.NewTunnelStore(serversStore)
+	revoker := &relaypkg.Revoker{Registry: registry, Store: tunnelStore.(relaypkg.StandingStore), Logger: logger}
+	bus.Add(cachepkg.Funcs{
+		OnInvalidate: func(kind, slug string) {
+			if kind == cachepkg.KindServer {
+				revoker.Changed(slug)
+			}
+		},
+		OnReset: revoker.All,
+	})
+	go revoker.Run(ctx)
+	if err := bus.Start(ctx, cfg.Database.ListenURL()); err != nil {
+		logger.Warn("relay: the change listener did not start; the cache refreshes and the homes' standing is checked each minute", "err", err)
 	}
 	r := server.NewRouter(logger, pool, mig, build, server.DefaultOrigins(cfg), relayRouterOptions(cfg, cache, registry)...)
 
@@ -134,7 +146,7 @@ func runRelay(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Mig
 	}
 	r.Get("/v1/relay/ws", (&relaypkg.TunnelServer{
 		Registry:   registry,
-		Store:      relaypkg.NewTunnelStore(serversStore),
+		Store:      tunnelStore,
 		Logger:     logger,
 		Tickets:    tickets,
 		Drain:      cfg.Relay.DrainEnabled,

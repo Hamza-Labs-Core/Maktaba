@@ -166,14 +166,21 @@ func (d dbTunnelStore) Authenticate(ctx context.Context, serverID, secret string
 	if serverID == "" || secret == "" {
 		return stores.Server{}, errors.New("missing creds")
 	}
-	// We re-query by id; the server_id+secret pair is what authenticates.
+	// We re-query by id; the server_id+secret pair is what authenticates, and the owner must be
+	// active, as Resume asks of a ticket: a suspended account's home holds no tunnel.
 	var hash string
-	row := d.s.DB.QueryRowContext(ctx, `SELECT server_secret_hash FROM servers WHERE id = $1`, serverID)
-	if err := row.Scan(&hash); err != nil {
+	var active bool
+	row := d.s.DB.QueryRowContext(ctx, `
+        SELECT s.server_secret_hash, u.status = 'active'
+          FROM servers s JOIN users u ON u.id = s.owner_user_id WHERE s.id = $1`, serverID)
+	if err := row.Scan(&hash, &active); err != nil {
 		return stores.Server{}, err
 	}
 	if err := argon2id.Verify(secret, hash); err != nil {
 		return stores.Server{}, err
+	}
+	if !active {
+		return stores.Server{}, ErrServerRevoked
 	}
 	return d.s.BySlugOrID(ctx, serverID)
 }
@@ -378,6 +385,11 @@ func (ts *TunnelServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		t.Close()
 		logger.Info("relay: a stale tunnel attempt dropped", "home_h", mlog.HashHome(sv.ID), "event", "tunnel_stale")
 		return
+	}
+	// a suspension that committed after this handshake's check and was notified before the
+	// tunnel was registered found nothing to close: checked again now that it is
+	if st, has := store.(StandingStore); has {
+		go (&Revoker{Registry: reg, Store: st, Logger: logger}).check([]*Tunnel{t})
 	}
 	logger.Info("relay: tunnel up", "home_h", mlog.HashHome(sv.ID), "flow", flow, "method", method, "role", role, "event", "tunnel_up")
 	if assigned {
