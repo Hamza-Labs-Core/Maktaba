@@ -195,7 +195,8 @@ jobs:
             tools/release/homebrew-tap-test.sh tools/release/play-version.sh tools/release/play-version-test.sh \
             tools/release/cloud-guard.sh tools/release/cloud-guard-test.sh \
             tools/release/postgres-cdn.sh tools/release/postgres-cdn-test.sh \
-            tools/release/gh-retry.sh tools/release/gh-retry-test.sh
+            tools/release/gh-retry.sh tools/release/gh-retry-test.sh \
+            tools/release/free-ports.sh tools/release/free-ports-test.sh
       - name: install-node.sh dry runs
         run: deploy/packaging/node/tests/install-node-dry-run.sh
       # The home-server install.sh refuses a release missing checksums.txt,
@@ -235,6 +236,11 @@ jobs:
       - name: release calls retry transient errors
         if: runner.os == 'Linux'
         run: bash tools/release/gh-retry-test.sh
+      # the app checks' scratch servers take ports from free-ports.sh: below every ephemeral
+      # range, and a run something listens on is skipped (a 55xxx port once failed to bind)
+      - name: scratch servers' ports
+        if: runner.os == 'Linux'
+        run: bash tools/release/free-ports-test.sh
       # The Postgres archives postgres-cdn.yml publishes to Maktaba's CDN: each checked against
       # its pin before it is uploaded, one already there skipped (a scratch CDN, a stub upload)
       - name: Postgres archives to the CDN

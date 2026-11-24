@@ -798,6 +798,7 @@ mac_app:
   - *ci
   - 'tools/release/mac-app/**'
   - 'tools/release/pg18-check.sh'
+  - 'tools/release/free-ports.sh'
   # the bundled Postgres each app runs, and its major's upgrade (Epic 49)
   - 'cmd/maktaba-server/internal/pgbundle/**'
   - 'tools/release/bundle-size/**'
@@ -840,6 +841,7 @@ win_app:
   - *ci
   - 'tools/release/win-app/**'
   - 'tools/release/pg18-check.sh'
+  - 'tools/release/free-ports.sh'
   # the bundled Postgres each app runs, and its major's upgrade (Epic 49)
   - 'cmd/maktaba-server/internal/pgbundle/**'
   - 'apps/desktop/**'
@@ -862,6 +864,7 @@ linux_app:
   - *ci
   - 'tools/release/linux-app/**'
   - 'tools/release/pg18-check.sh'
+  - 'tools/release/free-ports.sh'
   # the bundled Postgres each app runs, and its major's upgrade (Epic 49)
   - 'cmd/maktaba-server/internal/pgbundle/**'
   - 'apps/desktop/**'

@@ -101,7 +101,9 @@ echo "PostgreSQL"
 plugins="$(find "$PAYLOAD/postgres/lib" -type f ! -name 'pgoutput.*' -exec grep -l -a -F _PG_output_plugin_init {} + 2>/dev/null || true)"
 if [ -z "$plugins" ]; then ok "no output plugin but pgoutput"; else fail "output plugins besides pgoutput: $(printf '%s\n' "$plugins" | tr '\n' ' ')"; fi
 pg="$PAYLOAD/postgres/bin"
-port=$((54000 + RANDOM % 900))
+# shellcheck source=tools/release/free-ports.sh
+. "$SCRIPT_DIR/../free-ports.sh"
+port="$(free_ports 1)"
 if "$pg/initdb" -D "$SCRATCH/pgdata" -U maktaba --auth=trust -E UTF8 --locale=C >"$SCRATCH/initdb.log" 2>&1 &&
     "$pg/pg_ctl" -D "$SCRATCH/pgdata" -l "$SCRATCH/pg.log" -w -t 30 \
         -o "-p $port -k '' -c listen_addresses=127.0.0.1" start >/dev/null 2>&1; then
