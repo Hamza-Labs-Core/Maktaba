@@ -26,4 +26,5 @@ pasted (or uploaded) into App Store Connect. The audit they come from is
   limits (30 characters for a name, 100 bytes of keywords: an Arabic letter is 2 bytes).
 - The contact fields of App Review Information (name, email, phone) are left out: the owner
   fills them in App Store Connect.
-- Screenshots are not here: the store gallery is its own piece of work (pull request #1566).
+- Screenshots are not here: `.github/workflows/store-gallery.yml` (#1566) makes them as an
+  artifact in deliver's layout (`apple/`), to sit beside these folders' `metadata/` at upload.

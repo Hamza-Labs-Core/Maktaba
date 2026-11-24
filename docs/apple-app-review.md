@@ -218,7 +218,7 @@ Runtime and no App Review. Two dated changes affect that path:
 | Marketing URL | done | https://maktaba.tv/ and `/ar/` answer 200 |
 | Name, subtitle, description, keywords, promotional text in English and Arabic | **fixed** (drafts) | `apps/apple/AppStore/<app>/metadata/{en-US,ar-SA}/`, within App Store Connect's limits (checked by the test); owner approval before use |
 | Review notes and demo account | **fixed** (drafts) / **owner** (account) | `apps/apple/AppStore/*/metadata/review_information/notes.txt`: secrets named, never written (`tools/ci/review_credentials.py` now scans the folder) |
-| Screenshots | in progress | pull request #1566 (store gallery, waiting for the owner's approval). iPhone 6.9" (1320×2868) and 6.3", iPad 13" (2064×2752), Mac 16:10, Apple TV 1920×1080 (https://developer.apple.com/help/app-store-connect/reference/app-information/screenshot-specifications). Demo media shows no women or girls |
+| Screenshots | done (made) / **owner** (upload) | `.github/workflows/store-gallery.yml` (#1566) composes every app's gallery as an artifact laid out for fastlane deliver (`apple/`); uploading it is an owner action. iPhone 6.9" (1320×2868) and 6.3", iPad 13" (2064×2752), Mac 16:10, Apple TV 1920×1080 (https://developer.apple.com/help/app-store-connect/reference/app-information/screenshot-specifications). Demo media shows no women or girls |
 | Accurate metadata (2.3) | **fixed** (drafts) | the drafts say a Maktaba home is needed, name no other app or platform brand, and carry no price |
 | Content rights | **owner** | answer "No, it does not contain, show, or access third-party content" only if the review home's content is all the app shows. Its content is public domain or CC BY (`deploy/review-home/content/manifest.json`), so say so in the notes |
 | EU Digital Services Act trader status | **owner** | without it apps are removed from the EU store (https://developer.apple.com/news/?id=einwn76m) |
@@ -364,7 +364,7 @@ repository; the notes name the secrets.
 12. **The Mac server app's Developer ID certificate**: make sure the `APPLE_CERTIFICATE` used
     by `desktop-release.yml` is from the current Developer ID intermediate before 1 February
     2027 (https://developer.apple.com/news/?id=w4atic4c).
-13. **Screenshots**: approve pull request #1566's store gallery.
+13. **Screenshots**: run `store-gallery.yml` and upload its `apple/` images to each record (#1566).
 
 ## Sources
 
