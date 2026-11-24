@@ -26,8 +26,10 @@ These are research item 3's small bugs (`docs/research/update-process.md`, #1601
   - `app_no_answer` has its words on web, Apple and Android.
 
 - **After its review (Kimi K3.1 Pro: 2 majors, 2 minors):** `app_no_answer` counts no attempt (three windows without the app had blocked the release); a guard's explicit `latest` is honoured past a day; a release is confirmed watermark first, marker next, database record last; the runtime's fallback never overwrites a late answer or a withdrawn order.
+- **After the second review:** the cap counted by the wall clock rolled a good update back, and held the home, at the first look after a 5 h power-off. The launcher counts running time instead, across its starts (`guardclock.go`); a rollback under way has its own.
 
 ## What we learned
+- **A limit on a release is a limit on its running time.** By the wall clock, a power cut, a sleep or a clock set forward uses it up, and a clock set back gives it away.
 - **The updater rig's clock moves a minute on every read.** A deadline check made at every tick of `await` would fire in other order tests on a slow CI runner. The check looks once a minute of wall time (`AnswerCheckEvery`, -1 in tests).
 - **The `affected-tests` gate counts tests per changed source file, not per package.**
   - New words in `WebWords.kt`, `StatusWords.swift` and `registry.ts` each need a test in their own client.
