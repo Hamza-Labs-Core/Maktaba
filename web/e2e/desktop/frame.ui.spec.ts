@@ -132,6 +132,8 @@ async function open(page: Page, path: string, s: Setup) {
   await page.evaluate(() => document.fonts.ready);
   // the frame only: the page under it is other stories' (and changes with them)
   await page.addStyleTag({ content: ".mkt-shell__body { visibility: hidden !important; }" });
+  // the pointer starts at (0, 0): over the close button of a right-to-left window
+  await page.mouse.move(640, 700);
 }
 
 /** The title bar and a little of what is under it. */
