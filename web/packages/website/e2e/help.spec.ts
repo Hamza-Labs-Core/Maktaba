@@ -3,8 +3,21 @@
 // language, and no request leaves the page. Without JavaScript the box stays hidden and every
 // topic is there. And a topic page: its table of contents goes to its sections, and an app route
 // is text, not a link.
-import { expect, test } from "@playwright/test";
-import { settle } from "./pages";
+import { expect, test, type Page } from "@playwright/test";
+import { settle, sitePages, type Lang } from "./pages";
+
+/** The topics' pages the build published in a language: /help/<topic>/, the index apart. */
+const topics = (lang: Lang): string[] =>
+  sitePages()
+    .filter((p) => p.lang === lang && p.kind === "help")
+    .map((p) => p.url)
+    .sort();
+
+/** The topics an index lists, as its links name them. */
+const listed = (page: Page): Promise<string[]> =>
+  page
+    .locator("[data-filter-list] li a")
+    .evaluateAll((as) => as.map((a) => a.getAttribute("href") ?? "").sort());
 
 for (const lang of ["en", "ar"] as const) {
   const pre = lang === "ar" ? "/ar" : "";
@@ -16,8 +29,11 @@ for (const lang of ["en", "ar"] as const) {
       await page.goto(url);
       await settle(page);
       const items = page.locator(`${list} li`);
+      const published = topics(lang);
+      expect(published.length, "the build published topics").toBeGreaterThan(20);
+      expect(await listed(page), "the index lists every topic, each once").toEqual(published);
       const all = await items.count();
-      expect(all, "the index lists every topic").toBe(46);
+      expect(all).toBe(published.length);
       await expect(page.locator("#count")).toContainText(String(all));
       const box = page.locator("#filter");
       await expect(box).toBeVisible();
@@ -76,6 +92,7 @@ test.describe("help without JavaScript", () => {
   test("the box is hidden and every topic is there", async ({ page }) => {
     await page.goto("/help/");
     await expect(page.locator(".filter")).toBeHidden();
-    await expect(page.locator("[data-filter-list] li:visible")).toHaveCount(46);
+    expect(await listed(page)).toEqual(topics("en"));
+    await expect(page.locator("[data-filter-list] li:visible")).toHaveCount(topics("en").length);
   });
 });

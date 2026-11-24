@@ -23,7 +23,7 @@ func TestPGDirectory(t *testing.T) {
 		t.Fatal(err)
 	}
 	code, _ := srvs.MintClaim(ctx, u.ID)
-	sv, err := srvs.RedeemClaim(ctx, code, "box", "dir-box", "h", "1", nil)
+	sv, err := srvs.RedeemClaim(ctx, code, "box", "dir-box", "h", "1", nil, "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

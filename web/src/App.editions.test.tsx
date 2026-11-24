@@ -96,12 +96,14 @@ describe("full edition (the default the server ships)", () => {
     ).toBeVisible();
   });
 
-  // Epic 50 story 50.26: who may watch the home's broadcast channels
-  it("has the Broadcast access page for an admin", async () => {
+  // Epic 50 story 50.26: who may watch the home's broadcast channels. Broadcasting is off by
+  // default (2026-11-24): without the licence's broadcast flag the page is not there.
+  it("has no Broadcast access page while broadcasting is off", async () => {
     await open("full", "/admin/broadcast-access", admin);
+    expect(await screen.findByTestId("not-found")).toBeVisible();
     expect(
-      await screen.findByRole("heading", { level: 1, name: en["broadcastAccess.title"] })
-    ).toBeVisible();
+      screen.queryByRole("heading", { level: 1, name: en["broadcastAccess.title"] })
+    ).not.toBeInTheDocument();
   });
 
   it("hides the Manage section from a viewer", async () => {

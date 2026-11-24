@@ -20,9 +20,6 @@ concurrency:
 
 jobs:
   apple:
-    permissions:
-      contents: read
-      actions: read # the Player shards wait for their build's artifact
     uses: ./.github/workflows/_apple-apps.yml
     with:
       build: true

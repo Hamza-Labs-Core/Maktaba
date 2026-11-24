@@ -42,6 +42,7 @@ afterEach(() => {
 describe("a home's viewers", () => {
   it("shows the folded counts: Egypt 12 and Other 2, no Germany", async () => {
     const f = stubFetch({
+      "GET /v1/auth/providers": [200, { broadcast: true }],
       "POST /v1/auth/refresh": session(user()),
       "GET /v1/broadcast/analytics": [200, FULL],
     });
@@ -62,6 +63,7 @@ describe("a home's viewers", () => {
 
   it("asks for another period", async () => {
     const f = stubFetch({
+      "GET /v1/auth/providers": [200, { broadcast: true }],
       "POST /v1/auth/refresh": session(user()),
       "GET /v1/broadcast/analytics": [200, FULL],
     });
@@ -76,6 +78,7 @@ describe("a home's viewers", () => {
 
   it("Pro's guest sharing sees hours, and what the Broadcaster add-on adds", async () => {
     stubFetch({
+      "GET /v1/auth/providers": [200, { broadcast: true }],
       "POST /v1/auth/refresh": session(user()),
       "GET /v1/broadcast/analytics": [
         200,
@@ -96,6 +99,7 @@ describe("a home's viewers", () => {
 
   it("someone else's home: the cloud's 403 is shown, nothing else", async () => {
     stubFetch({
+      "GET /v1/auth/providers": [200, { broadcast: true }],
       "POST /v1/auth/refresh": session(user()),
       "GET /v1/broadcast/analytics": [403, { error: "broadcast_analytics_forbidden" }],
     });
@@ -107,6 +111,7 @@ describe("a home's viewers", () => {
   it("reads in Arabic", async () => {
     localStorage.setItem("mkt:cloud:locale", "ar");
     stubFetch({
+      "GET /v1/auth/providers": [200, { broadcast: true }],
       "POST /v1/auth/refresh": session(user()),
       "GET /v1/broadcast/analytics": [200, FULL],
     });

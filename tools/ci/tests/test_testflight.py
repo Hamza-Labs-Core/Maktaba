@@ -93,7 +93,11 @@ def test_every_uploaded_app_is_built_on_pull_requests() -> None:
         s["run"] for s in APPLE_CI["apple-apps"]["steps"] if s.get("name") == "Build the apps"
     )
     built = {line.split('"')[1] for line in run.splitlines() if line.strip().startswith('build "')}
-    ui_legs = APPLE_CI["player-ui-build"]["strategy"]["matrix"]["include"]
+    ui_legs = [
+        leg
+        for device in ("iphone", "ipad")
+        for leg in APPLE_CI[f"player-ui-build-{device}"]["strategy"]["matrix"]["include"]
+    ]
     built |= {leg["scheme"] for leg in ui_legs}
     for leg in LEGS:
         assert leg["scheme"] in built, leg

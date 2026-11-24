@@ -25,6 +25,33 @@ export { Pairing } from "./pairing";
 
 export type Host = "ingest" | "live" | "watch";
 
+/** broadcastingOn is BROADCAST_ENABLED: off (the default), the edge takes and serves nothing. */
+export function broadcastingOn(env: Env): boolean {
+  return env.BROADCAST_ENABLED === "1" || env.BROADCAST_ENABLED === "true";
+}
+
+/**
+ * openWhileOff is the one thing that answers while broadcasting is off: the cloud's signed
+ * revocation list, which only ever takes access away (the cron pulls the same list). Uploads,
+ * state, guides, the control socket, the speed test, plans and viewer access are refused, a
+ * valid token or signature included.
+ */
+function openWhileOff(host: Host, path: string): boolean {
+  return host === "ingest" && path === "/v1/control/revocations";
+}
+
+/** The answer of everything else while broadcasting is off: nothing about any channel. */
+function offResponse(): Response {
+  return new Response("Not found\n", {
+    status: 404,
+    headers: {
+      "Content-Type": "text/plain; charset=utf-8",
+      "Cache-Control": "no-store",
+      "X-Robots-Tag": "noindex, nofollow",
+    },
+  });
+}
+
 /**
  * hostOf picks the edge's role from the hostname. Any other host (wrangler dev on localhost, the
  * CI rehearsal) is routed by path: /v1/… is ingest; /api/…, /i/…, /s/…, /pair and /ar/… or /en/…
@@ -45,7 +72,10 @@ export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
     try {
-      switch (hostOf(env, url)) {
+      const host = hostOf(env, url);
+      // broadcasting is off (2026-11-24): checked before any route, token or stored state
+      if (!broadcastingOn(env) && !openWhileOff(host, url.pathname)) return offResponse();
+      switch (host) {
         case "ingest":
           // the viewer-access control posts (50.26) beside 50.21's
           if (url.pathname === "/v1/control/access" || url.pathname === "/v1/control/passes")

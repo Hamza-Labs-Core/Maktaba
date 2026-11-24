@@ -26,12 +26,12 @@ SIM_LOG = ROOT / "tools/apple/sim-log.py"
 PERSIST = '--mode "level:debug,persist:debug"'
 
 
-def _steps(job: str = "player-ui-tests") -> list[dict[str, Any]]:
+def _steps(job: str = "player-ui-tests-iphone") -> list[dict[str, Any]]:
     steps: list[dict[str, Any]] = WORKFLOW["jobs"][job]["steps"]
     return steps
 
 
-def _run(name: str, job: str = "player-ui-tests") -> str:
+def _run(name: str, job: str = "player-ui-tests-iphone") -> str:
     script: str = next(s for s in _steps(job) if s.get("name") == name)["run"]
     return script
 
@@ -77,6 +77,8 @@ def test_the_app_writes_the_launch_lines() -> None:
 
 
 def test_iphone_and_ipad_keep_info_and_debug() -> None:
+    # (the two devices' jobs run the same steps)
+    assert _steps("player-ui-tests-ipad") == _steps("player-ui-tests-iphone")
     # configured on the shard's simulator right after it boots
     boot = _run("Make, boot and settle the simulator")
     assert f'log config --subsystem "$bundle" {PERSIST}' in boot
@@ -105,7 +107,7 @@ def test_mac_keeps_info_and_debug() -> None:
 
 
 def test_the_logs_are_uploaded() -> None:
-    for job in ("player-ui-tests", "player-ui-mac"):
+    for job in ("player-ui-tests-iphone", "player-ui-tests-ipad", "player-ui-mac"):
         upload = next(s for s in _steps(job) if s.get("uses", "").startswith("actions/upload-artifact") and s.get("if") == "always()")
         assert "build/player-results" in upload["with"]["path"]
 

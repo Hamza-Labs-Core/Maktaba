@@ -43,6 +43,7 @@ const invite = (over: Record<string, unknown> = {}) => ({
 
 function routes(view = access(), invites = [invite()]) {
   return {
+    "GET /v1/auth/providers": [200, { broadcast: true }] as [number, unknown],
     "POST /v1/auth/refresh": session(user()),
     "GET /v1/homes": [
       200,

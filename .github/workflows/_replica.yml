@@ -331,6 +331,15 @@ jobs:
             grep -q -- "--- PASS: $t " "$RUNNER_TEMP/dbsafe.out" || { echo "::error::$t did not run"; exit 1; }
           done
 
+      - name: A failed update on a schema an earlier rollback kept (server)
+        working-directory: cmd/maktaba-server
+        run: |
+          set -euo pipefail
+          go test -count=1 -v -timeout 15m -run '^(TestAFailedUpdateNeverUndoesAKeptSchema|TestSchemaVersionAt)$' . | tee "$RUNNER_TEMP/keptdown.out"
+          for t in TestAFailedUpdateNeverUndoesAKeptSchema TestSchemaVersionAt; do
+            grep -q -- "--- PASS: $t " "$RUNNER_TEMP/keptdown.out" || { echo "::error::$t did not run"; exit 1; }
+          done
+
       - name: A home and a node update themselves (e2e)
         working-directory: api
         env:

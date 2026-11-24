@@ -25,6 +25,16 @@ build fails when the two differ.
   problem names why. The home's `GET /api/stream/capabilities` lists the `client_profiles` it
   knows.
 
+- **The Windows and Linux Player tells the home what the machine plays smoothly.** At start it
+  plays a few short clips on its own to learn which codecs the graphics card decodes, how sharp
+  a picture the processor keeps up with for the rest, and how many channels the sound has, and
+  sends that with each video (`device_caps`, with a new `hardware` flag per codec). A slower
+  laptop now gets a smooth 1080p version of a 4K film it would have stuttered through, and a
+  converted film keeps its 5.1 sound as E-AC-3 on 5.1 speakers and comes as stereo to stereo
+  speakers.
+  The results are kept until the graphics card, its driver, the processor or the Player's libmpv
+  change; the sound is checked again after each video. Report a problem lists what was found.
+
 - **The Windows and Linux Player's own title bar.** The Player's window has Maktaba's dark title
   bar in place of the system's frame and its menu bar: the menu button holds Account, Big screen,
   Language and Help in the Player's language, beside the app's name, Big screen and Help, with
@@ -422,6 +432,13 @@ build fails when the two differ.
   second failed probe and Broadcasting shows an outage. It is no longer an expected failure.
 
 ### Fixed
+
+- **Less to write for every change on a home with a machine's copy.** Most of the library's
+  tables on the home moved to PostgreSQL 18 on 2026-11-20 had every change logged with the whole
+  old row (REPLICA IDENTITY FULL), where their primary key is enough. A migration (slot 0238)
+  gives every table with a primary key that key as its identity, one table at a time and without
+  rewriting any; the machines' copies keep following them. Tables without a primary key keep the
+  whole row, which a copy needs.
 
 - **The second listen stores its corrections again on PostgreSQL 18.** From the home's move to
   PostgreSQL 18 on 2026-11-20, every second-listen job failed when it stored its corrected
@@ -1206,6 +1223,13 @@ build fails when the two differ.
   a sign that its key was copied, is turned off, every session of the account ends, the step
   is refused, and the owner is
   alerted.
+
+- **Broadcasting answers nothing while it is off.** Maktaba Cloud's broadcast and moderation routes
+  (publishing, invites, upload tokens, viewer analytics, broadcast billing, notices and reports)
+  answer as a page that doesn't exist while broadcasting is off, whoever asks; the kill switch, the
+  broadcast edge's copy of its list, and the homes Maktaba marks for its own tests still work. A
+  home refuses its viewer-access API (`/api/broadcast/access`) unless its licence includes
+  broadcasting, whatever the web app shows.
 
 ### Added
 
@@ -3868,6 +3892,25 @@ build fails when the two differ.
   marks it withdrawn. Homes on v0.3.153 to v0.3.161 keep reading GitHub, unchanged.
   `MAKTABA_UPDATE_FEED=off` turns the feed off.
 
+- **Broadcasting is off, and nothing about copyright shows.** Home broadcasting stays off for
+  now: no app shows **Watch a broadcast** (iPhone, iPad, Mac, Apple TV, Android, Android TV), and
+  invite links open nothing. The web app has no **Broadcast access** page unless the home's
+  licence includes broadcasting, and Maktaba Cloud's web app shows no **Broadcast** page,
+  broadcasting offer or **Viewers** link while the cloud has broadcasting off. The broadcast edge
+  (watch.maktaba.tv, live.maktaba.tv) answers "not found" to everything while broadcasting is
+  off. When it is on, a visitor without an invite sees no channel or guide, and no watch page is
+  indexed. maktaba.tv has no copyright page any more: /legal/copyright opens the terms page, and
+  the menu, footer, terms and privacy pages no longer mention it or copyright@maktaba.tv. The
+  plugin directory's report form has no Copyright reason. maktaba.dev no longer describes
+  watching a broadcast. In English and Arabic.
+
+- **No help or setting about broadcasting while it is off.** The Broadcast access help topic is
+  gone from the app's help and from maktaba.tv, in English and Arabic; its old address opens the
+  help index. The web app's Rules page has no Broadcasting section, the Components page has no
+  broadcasting row and Subscription does not list it, unless the home's licence includes
+  broadcasting. The broadcast edge takes no uploads while broadcasting is off, with a valid token
+  included; only the list of revoked access still reaches it.
+
 - **Maktaba Player and Maktaba Remote are each one app for iPhone and iPad.** The iPad no
   longer has its own Maktaba Player for iPad and Maktaba Remote iPad: the same app from
   TestFlight (and later the App Store) runs on both, with the iPad's sidebar and wide layouts.
@@ -4548,6 +4591,27 @@ build fails when the two differ.
   that works after any part of a NO TRANSACTION migration's Up, and an Up that loses no data or
   says so. The update rehearsal runs every new migration's Down script after each partial Up on
   the bundled PostgreSQL.
+
+- **A rollback never undoes the migrations kept by an earlier one.** When a rolled back update had
+  left the library database on its newer schema (kept, since its changes were additive), and the
+  next update was rolled back with its Down scripts, they went back to the previous release's own
+  newest migration, so they also undid the ones kept before and dropped what they held. The Down
+  scripts now stop at the slot the database was at before the update (`schema_before`), and that
+  schema stays kept for the previous release, which otherwise refused to start on it (`db_ahead`).
+  When that slot is not recorded, no Down script runs.
+
+- **A home linked to Maktaba Cloud after its owner chose a plan gets remote play through the
+  relay at once.** A newly linked home started on the Free plan whatever its owner's plan was, so
+  the relay refused it ("remote play through the relay needs a Basic or Pro plan") until the plan
+  was changed again. It now takes its owner's plan and extra streams when it is linked.
+
+- **Suspending a Maktaba Cloud account ends its homes' remote connections at once.** A home that
+  was already connected stayed reachable through the relay, and one that lost its connection
+  could connect again with its own secret. Reinstating the account lets its homes back.
+
+- **Linking a home to Maktaba Cloud can be tried again when the answer was lost.** The code was
+  spent and the home had no credentials, so linking needed a new code and another name. The same
+  home now uses the same code again, for as long as the code lasts.
 
 ## [0.2.0] - 2026-10-19
 

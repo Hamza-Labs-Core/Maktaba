@@ -11,13 +11,15 @@ Worker, which:
 - redirects `www.maktaba.tv` and plain http to `https://maktaba.tv`;
 - redirects `/install/` to `/download/` and `/ar/install/` to `/ar/download/` (the guides'
   index is the download page, 60.05 and 60.11; each guide keeps its `/install/<guide>/`);
+- redirects `/legal/copyright/` to `/legal/terms/` and `/ar/legal/copyright/` to
+  `/ar/legal/terms/` (the site no longer publishes that page, story 60.07);
 - redirects `/docs` to `/help/` and `/ar/docs` to `/ar/help/` (story 60.12): the table is
   `src/redirects.json`, which the link check reads too (a link to `/docs` passes when the page it
   redirects to exists), and where a help topic whose id changes keeps its old path;
 - answers a missing path with the 404 page in its language (`/404.html`, or `/ar/404.html`
   under `/ar/`) and status 404;
-- sets the headers on every answer (`src/headers.ts`): a strict CSP (no other origin; the
-  copyright page alone may reach Turnstile and the cloud API), HSTS without
+- sets the headers on every answer (`src/headers.ts`): a strict CSP (no other origin, on any
+  path), HSTS without
   `includeSubDomains`, `Referrer-Policy`, `X-Content-Type-Options`, `Permissions-Policy`, and
   the cache policy (HTML revalidated, content-hashed files for a year).
 
@@ -28,7 +30,7 @@ Worker, which:
 | `/`, `/ar/`                     | the home page (60.10)                             | `scripts/home.mjs`, `copy/home.*.md`, `static/shots`                  |
 | `/install/`, `/ar/install/`     | a 301 to `/download/`, which lists every guide    | `src/redirects.json`                                                  |
 | `/install/…`, `/ar/install/…`   | Epic 59's install guides                          | `web/packages/install` (`pnpm -C web build:install`)                  |
-| `/legal/…`, `/ar/legal/…`       | privacy, terms, copyright (60.07)                 | `copy/legal/`, `scripts/legal.mjs`                                    |
+| `/legal/…`, `/ar/legal/…`       | privacy and terms (60.07)                         | `copy/legal/`, `scripts/legal.mjs`                                    |
 | `/problems/…`, `/ar/problems/…` | a page per problem type, and the index (60.06)    | `shared/api/problems.json`, `scripts/problems.mjs`                    |
 | `/download/`, `/ar/download/`   | every device's file and every setup guide (60.11) | the GitHub Releases API, `src/downloads.json`, `scripts/download.mjs` |
 | `/help/…`, `/ar/help/…`         | the app's help topics, and the index (60.12)      | `web/src/help/` (topics and content), `scripts/help.mjs`              |
@@ -112,9 +114,8 @@ The legal pages are copy (`copy/legal/<page>.<lang>.md`) that `scripts/legal.mjs
 structured document and renders with one function (`renderLegal`). The privacy page reads
 `privacy.CurrentPolicy()` through `go run ./cmd/privacy-json` (in `cloud/`: the build needs Go)
 and is written from `docs/app-privacy.md`; a change to either without the page's copy fails the
-build, naming the section. The copyright page's notice form (`src/copyright-form.ts`) is built
-only when `WEBSITE_NOTICE_ENDPOINT` and `WEBSITE_TURNSTILE_SITEKEY` are both set, once Epic 50's
-endpoint is live; until then the page gives the agent's email and what a notice must contain.
+build, naming the section. The site publishes no copyright page: `/legal/copyright/` and
+`/ar/legal/copyright/` answer a 301 to the terms page (`src/redirects.json`).
 
 ## Product screenshots
 

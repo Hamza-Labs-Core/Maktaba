@@ -32,6 +32,13 @@ type world struct {
 	installBy *time.Time // when the order says the app installs
 	answerErr error
 	extends   int // the launcher's guard pushed on (Extender)
+	// what the record says of the database before the update (SchemaBeforeRecords), and
+	// what DownTo was asked with
+	before     int64
+	onKept     bool
+	beforeErr  error
+	downBefore int64
+	downOnKept bool
 }
 
 // app answers the order like the desktop app.
@@ -94,7 +101,10 @@ type fakeInst struct {
 }
 
 // DownTo implements SchemaReverter.
-func (f *fakeInst) DownTo(*Journal) (int64, bool, string) {
+func (f *fakeInst) DownTo(_ *Journal, before int64, onKept bool) (int64, bool, string) {
+	f.w.mu.Lock()
+	f.w.downBefore, f.w.downOnKept = before, onKept
+	f.w.mu.Unlock()
 	if f.reverts {
 		return 191, true, "the fake's migrations lose no data"
 	}
@@ -222,6 +232,11 @@ func (r fakeRecords) Unmark(string) error {
 	defer r.w.mu.Unlock()
 	r.w.marked, r.w.kept = false, false
 	return nil
+}
+func (r fakeRecords) SchemaBefore(string) (int64, bool, error) {
+	r.w.mu.Lock()
+	defer r.w.mu.Unlock()
+	return r.w.before, r.w.onKept, r.w.beforeErr
 }
 func (r fakeRecords) MarkDown(_, _, _ string) (bool, error) {
 	r.w.mu.Lock()
@@ -933,8 +948,11 @@ func TestRollbackRunsTheDownScriptsBeforeAnyDump(t *testing.T) {
 		reverts bool
 		fails   bool
 		down    bool // the Down scripts are what put it back
+		// the record of the database before the update cannot be read: no Down script runs
+		unread bool
 	}{
 		"down":       {reverts: true, down: true},
+		"unread":     {reverts: true, unread: true},
 		"down fails": {reverts: true, fails: true},
 		"loses data": {reverts: false},
 	} {
@@ -946,6 +964,10 @@ func TestRollbackRunsTheDownScriptsBeforeAnyDump(t *testing.T) {
 			_ = r.m.Apply("run-1")
 			r.waitExit()
 			w.migrated = true
+			w.before, w.onKept = 191, true
+			if c.unread {
+				w.beforeErr = errors.New("database.json: unexpected end of JSON input")
+			}
 			r.stop()
 			n := startRig(t, r.dir, w, Verdict{Why: "api /readyz 503"})
 			n.inst.reverts = c.reverts
@@ -968,7 +990,13 @@ func TestRollbackRunsTheDownScriptsBeforeAnyDump(t *testing.T) {
 			w.mu.Lock()
 			marked, down, next := w.marked, w.down, w.next
 			w.mu.Unlock()
-			if want := int32(map[bool]int{true: 1}[c.reverts]); ran.Load() != want {
+			w.mu.Lock()
+			askedBefore, askedKept := w.downBefore, w.downOnKept
+			w.mu.Unlock()
+			if !c.unread && (askedBefore != 191 || !askedKept) {
+				t.Fatalf("DownTo asked with the slot before %d, kept %v", askedBefore, askedKept)
+			}
+			if want := int32(map[bool]int{true: 1}[c.reverts && !c.unread]); ran.Load() != want {
 				t.Fatalf("the Down scripts ran %d times, want %d", ran.Load(), want)
 			}
 			if down != c.down || marked == c.down || (restored.Load() == 1) == c.down {

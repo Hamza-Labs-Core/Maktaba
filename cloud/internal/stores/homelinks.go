@@ -17,21 +17,66 @@ var ErrBadServerSecret = errors.New("servers: bad server credentials")
 // VerifySecret authenticates a home agent's server id + secret (the
 // credentials claim redeem issued; argon2id at rest).
 func (s *Servers) VerifySecret(ctx context.Context, serverID, secret string) error {
+	_, err := s.VerifyHome(ctx, serverID, secret)
+	return err
+}
+
+// VerifyHome is VerifySecret, and says whether the home's owner is active. The first time a
+// home uses its secret ends the retry of the claim that made it (RedeemClaim): it has its
+// answer, so nothing may issue another secret. That is written before the caller is let in; when
+// it can't be, the home is refused and tries again.
+func (s *Servers) VerifyHome(ctx context.Context, serverID, secret string) (active bool, err error) {
 	if serverID == "" || secret == "" || !looksLikeUUID(serverID) {
-		return ErrBadServerSecret
+		return false, ErrBadServerSecret
 	}
 	var hash string
-	err := s.DB.QueryRowContext(ctx, `SELECT server_secret_hash FROM servers WHERE id = $1`, serverID).Scan(&hash)
+	var retry bool
+	err = s.DB.QueryRowContext(ctx, `
+        SELECT s.server_secret_hash, u.status = 'active',
+               EXISTS (SELECT 1 FROM server_claims c WHERE c.used_server_id = s.id AND c.retry_key_hash IS NOT NULL AND c.expires_at > now())
+          FROM servers s JOIN users u ON u.id = s.owner_user_id WHERE s.id = $1`, serverID).Scan(&hash, &active, &retry)
 	if errors.Is(err, sql.ErrNoRows) {
-		return ErrBadServerSecret
+		return false, ErrBadServerSecret
 	}
+	if err != nil {
+		return false, err
+	}
+	if argon2id.Verify(secret, hash) != nil {
+		return false, ErrBadServerSecret
+	}
+	if retry {
+		if err := s.endClaimRetry(ctx, serverID, hash); err != nil {
+			return false, err
+		}
+	}
+	return active, nil
+}
+
+// endClaimRetry ends the retry of serverID's claim, whose secret's hash was just checked. A retry
+// that was under way (it holds the claim's row) has replaced that secret: ErrBadServerSecret.
+func (s *Servers) endClaimRetry(ctx context.Context, serverID, hash string) error {
+	tx, err := s.DB.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
-	if argon2id.Verify(secret, hash) != nil {
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, `SELECT 1 FROM server_claims WHERE used_server_id = $1 AND retry_key_hash IS NOT NULL FOR UPDATE`, serverID); err != nil {
+		return err
+	}
+	// read after the lock, in a statement of its own
+	var now string
+	if err := tx.QueryRowContext(ctx, `SELECT server_secret_hash FROM servers WHERE id = $1`, serverID).Scan(&now); errors.Is(err, sql.ErrNoRows) {
+		return ErrBadServerSecret
+	} else if err != nil {
+		return err
+	}
+	if now != hash {
 		return ErrBadServerSecret
 	}
-	return nil
+	if _, err := tx.ExecContext(ctx, `UPDATE server_claims SET retry_key_hash = NULL WHERE used_server_id = $1 AND retry_key_hash IS NOT NULL`, serverID); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // ReplaceLinks sets the cloud accounts a home has linked (home_links) to
