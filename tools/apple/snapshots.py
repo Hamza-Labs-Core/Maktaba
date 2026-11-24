@@ -11,8 +11,9 @@ and say.
     tools/apple/snapshots.py <path/to/mac.xcresult>
     tools/apple/snapshots.py --self-test
 
-Only names PageSnapshots makes are copied (<page>-<panels>-<lang>[-ax3].png or .txt, and the
-Apple TV form's tv-panel-<lang>.png or .txt).
+Only names PageSnapshots makes are copied (<page>-<panels>-<lang>[-ax3].png or .txt, the
+Apple TV form's tv-panel-<lang>.png or .txt, and story 13.16's Mac sidebar and Profile,
+sidebar-<lang> and profile-<lang>).
 """
 
 from __future__ import annotations
@@ -28,7 +29,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 DEST = ROOT / "apps/apple/PlayerMacTests/Snapshots"
 NAME = re.compile(
-    r"^((?:library|series|video)-(?:none|collapsed|open)-(?:en|ar)(?:-ax3)?|tv-panel-(?:en|ar))(?:[._-].*)?\.(png|txt)$"
+    r"^((?:library|series|video)-(?:none|collapsed|open)-(?:en|ar)(?:-ax3)?|(?:tv-panel|sidebar|profile)-(?:en|ar))(?:[._-].*)?\.(png|txt)$"
 )
 
 
@@ -91,6 +92,10 @@ def self_test() -> int:
     assert reference_name("tv-panel-ar.png") == "tv-panel-ar.png"
     assert reference_name("tv-panel-en_0_1A2B.txt") == "tv-panel-en.txt"
     assert reference_name("tv-panel-fr.png") is None
+    assert reference_name("sidebar-ar.png") == "sidebar-ar.png"
+    assert reference_name("profile-en_0_9C.txt") == "profile-en.txt"
+    assert reference_name("profile-fr.png") is None
+    assert reference_name("sidebar.png") is None
     assert reference_name("library-open-fr.png") is None
     assert reference_name("Screenshot.png") is None
     manifest = [

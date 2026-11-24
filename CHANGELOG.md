@@ -14,6 +14,14 @@ build fails when the two differ.
 
 ### Changed
 
+- **The Mac Player's sidebar in brass, and on the right in Arabic.** The Player for Mac marks
+  the section you are in with a brass fill and brass symbols instead of the system's grey, with
+  Profile at the bottom of the sidebar. Profile's rows are the apps' own full-width rows with
+  brass symbols in place of the system's buttons. Language in Profile now picks English or
+  العربية in the Player itself: it asks first, in English and Arabic, then starts the Player again
+  in that language, and in Arabic the sidebar and the window's buttons move to the right. The
+  iPhone and iPad apps are unchanged.
+
 - **The Windows and Linux Player's own title bar.** The Player's window has Maktaba's dark title
   bar in place of the system's frame and its menu bar: the menu button holds Account, Big screen,
   Language and Help in the Player's language, beside the app's name, Big screen and Help, with

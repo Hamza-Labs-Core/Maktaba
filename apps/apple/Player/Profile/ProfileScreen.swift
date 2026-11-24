@@ -134,6 +134,9 @@ struct ProfileScreen: View {
                     row(Text("Sign out", tableName: "Profile", comment: "Signs out of this home"), "rectangle.portrait.and.arrow.right")
                 }
                 .foregroundStyle(Color.red)
+                #if os(macOS)
+                .tint(Color.red) // its symbol too, in the Mac's row style
+                #endif
                 .accessibilityIdentifier("profile.signOut")
             } header: {
                 sectionTitle(Text("Account", tableName: "Profile", comment: "A Profile group: sessions, switching home, signing out"))
@@ -149,6 +152,10 @@ struct ProfileScreen: View {
                 }
                 .pickerStyle(.segmented)
                 .accessibilityIdentifier("profile.theme")
+                #if os(macOS)
+                // chosen here, the Player starting again in it (story 13.16, D5)
+                MacLanguageRow()
+                #else
                 Button {
                     open(ProfileLinks.languageSettings)
                 } label: {
@@ -165,6 +172,7 @@ struct ProfileScreen: View {
                 .accessibilityIdentifier("profile.language")
                 .accessibilityHint(Text("Opens the system's settings for this app", tableName: "Profile",
                                         comment: "What the Language row does, spoken"))
+                #endif
                 pageRow(.playback, Text("Playback", tableName: "Profile", comment: "The playback settings page"), "play.rectangle")
             } header: {
                 sectionTitle(Text("Settings on this device", tableName: "Profile", comment: "A Profile group: theme, language, playback"))
@@ -196,6 +204,9 @@ struct ProfileScreen: View {
                 pageRow(.myReports, Text(verbatim: ReportWords.mine), "person.crop.rectangle.stack")
             }
         }
+        #if os(macOS)
+        .macRows()
+        #endif
         .maktabaSurface()
         .accessibilityIdentifier("screen.profile")
         .navigationTitle(Text(PlayerSection.profile.title))
@@ -312,7 +323,13 @@ struct ProfileScreen: View {
     }
 
     private func sectionTitle(_ title: Text) -> some View {
-        title.accessibilityAddTraits(.isHeader)
+        title
+            #if os(macOS)
+            // the apps' group head: caption, 600, muted
+            .font(.maktabaBody(12, weight: .semibold, relativeTo: .caption))
+            .foregroundStyle(Color.mktMuted)
+            #endif
+            .accessibilityAddTraits(.isHeader)
     }
 
     // MARK: links

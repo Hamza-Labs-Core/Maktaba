@@ -15,7 +15,8 @@ struct PlayerContext {
 
 /// The signed-in Player (Epic 48, FR-5 to FR-7): its sections in a `TabView` that adapts,
 /// a bottom tab bar on an iPhone (a folded iPhone Duo too), top tabs that become a sidebar
-/// on an iPad and an open Duo, a sidebar on the Mac. Each section keeps its own stack of
+/// on an iPad and an open Duo; on the Mac a split view with the Player's own sidebar
+/// (`MacSidebar`, story 13.16). Each section keeps its own stack of
 /// `PlayerRoute`s; choosing the section already chosen takes it back to its first screen.
 ///
 /// Only `PlayerSection.enabled` shows. With one section (Libraries, until the other screens
@@ -36,7 +37,7 @@ struct PlayerShell: View {
     /// A linked page over a section with no route stack (Libraries' split view), in a sheet.
     @State private var linked: PlayerRoute?
     @State private var paths: [PlayerSection: [PlayerRoute]]
-    /// The tabs' order and the sidebar's sections as the person arranged them (iPad, Mac).
+    /// The tabs' order and the sidebar's sections as the person arranged them (iPad).
     @AppStorage("player.tabs") private var customization = TabViewCustomization()
     #if os(macOS)
     /// The player over the whole window, sidebar and all (`WindowPlayer`).
@@ -87,7 +88,11 @@ struct PlayerShell: View {
                 // its stack (and the routes) without a tab bar; Libraries stays its split view
                 stack(only)
             } else {
+                #if os(macOS)
+                sidebar
+                #else
                 tabs
+                #endif
             }
         }
         .onChange(of: context.session.capabilities.answered) { settleLaunch() }
@@ -173,8 +178,25 @@ struct PlayerShell: View {
         .accessibilityIdentifier("player.shell")
     }
 
-    /// Search's tab is the system's search tab on an iPhone and the Mac, and an ordinary tab
-    /// on an iPad. There, on iPadOS 27.2, the search role's tab is set again each time its
+    #if os(macOS)
+    /// The Mac's sections (story 13.16): the window's split view with the Player's own sidebar
+    /// (`MacSidebar`: brass selection, Profile at the bottom) beside the chosen section's stack.
+    /// The split view is AppKit's, so it is at the right in an app started in Arabic, with the
+    /// traffic lights (`LanguageChoice`). A section's screen is built when it is chosen; its
+    /// stack of routes stays in `paths`, so its pages are there again when it comes back.
+    private var sidebar: some View {
+        NavigationSplitView {
+            MacSidebar(sections: shown, selection: chosen)
+                .navigationSplitViewColumnWidth(min: 200, ideal: 232, max: 320)
+        } detail: {
+            stack(selection).id(selection)
+        }
+        .accessibilityIdentifier("player.shell")
+    }
+    #endif
+
+    /// Search's tab is the system's search tab on an iPhone, and an ordinary tab
+    /// on an iPad (the Mac has no tabs: `sidebar`). There, on iPadOS 27.2, the search role's tab is set again each time its
     /// field takes the keyboard: the tab's screen goes off and on, the field lets the
     /// keyboard go, and a field that already holds a search never takes it back (CI: the
     /// field tapped after a submitted search had no keyboard; the field's end of editing came
