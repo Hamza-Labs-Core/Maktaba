@@ -2052,6 +2052,39 @@ func TestAppBundleStartsOnTheSchemaItsDownScriptsLeft(t *testing.T) {
 	}
 }
 
+// A database a rollback kept on a newer schema (v0.2.5's) for v0.2.0: v0.3.0's migrations
+// fail and their Down scripts undo them, back to the kept slot. It is still kept for
+// v0.2.0, which starts on it (its own code refuses a schema ahead that is not: db_ahead).
+func TestAppBundleDownScriptsLeaveAKeptSchemaKept(t *testing.T) {
+	cfg, payload := appEnv(t, "v0.3.0", "")
+	if err := os.MkdirAll(filepath.Join(updater.KeptPayloadDir(updatesDirOf(cfg, ""), "v0.2.0"), "migrations"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	record(t, cfg, apppayload.Database{Version: "v0.2.5", State: apppayload.DatabaseMigrated, Release: "v0.2.0",
+		KeptFor: "0.2.0", KeptReason: "watch_timeout"})
+	f := installFakeDB(t, cfg)
+	f.pending, f.known = 2, true
+	f.back, f.backSchema, f.before, f.applied = updater.FailedDown, 234, 234, 235
+	f.migrateErr = errors.New("migrate: ERROR 0236_x.sql: boom")
+	ps := appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), io.Discard)
+	err := prepareOf(t, ps, supervisor.RoleAPI)(context.Background(), noReport)
+	if !supervisor.Halted(err) || supervisor.DetailOf(err).Code != "db_undone" {
+		t.Fatalf("the failed update = %v", err)
+	}
+	if len(f.downs) != 1 || f.downs[0] != "migrating 234" || len(f.befores) != 1 || f.befores[0] != 234 {
+		t.Fatalf("Down scripts %v, decided with the slot before %v", f.downs, f.befores)
+	}
+	if rec := recorded(t, cfg); rec.Version != "v0.2.0" || rec.KeptFor != "0.2.0" || rec.KeptReason == "" {
+		t.Fatalf("record %+v", rec)
+	}
+	newPayload(t, payload, "v0.2.0")
+	f.migrateErr, f.ahead = nil, true // the database is ahead of v0.2.0's own migrations
+	ps = appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), io.Discard)
+	if err := prepareOf(t, ps, supervisor.RoleAPI)(context.Background(), noReport); err != nil {
+		t.Fatalf("v0.2.0 on the kept schema: %v", err)
+	}
+}
+
 // The payload is saved as the one that ran once every process ran healthy.
 func TestConfirmAppPayloadAfterAHealthyRun(t *testing.T) {
 	spawnsPrograms(t) // a real child under the supervisor

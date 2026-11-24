@@ -1355,6 +1355,12 @@ func (g *migrationGate) backWithoutDump(ctx context.Context, cur string, upd *ap
 		}
 		rec := apppayload.Database{Version: update.From, State: apppayload.DatabaseMigrated, From: update.From,
 			Dump: update.Dump, Failed: cur, Error: cause.Error(), DownFrom: cur, DownReason: cause.Error()}
+		if update.DumpKeptFor != "" {
+			// back on the kept, newer schema the release before ran on: still kept for it, or
+			// it refuses it as ahead of its own (db_ahead)
+			rec.KeptFor = layout.NormalizeVersion(update.From)
+			rec.KeptReason = "kept before the update to " + cur + ", which failed"
+		}
 		if err := g.save(rec); err != nil {
 			return true, err
 		}

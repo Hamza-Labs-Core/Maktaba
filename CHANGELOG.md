@@ -4558,6 +4558,14 @@ build fails when the two differ.
   says so. The update rehearsal runs every new migration's Down script after each partial Up on
   the bundled PostgreSQL.
 
+- **A rollback never undoes the migrations kept by an earlier one.** When a rolled back update had
+  left the library database on its newer schema (kept, since its changes were additive), and the
+  next update was rolled back with its Down scripts, they went back to the previous release's own
+  newest migration, so they also undid the ones kept before and dropped what they held. The Down
+  scripts now stop at the slot the database was at before the update (`schema_before`), and that
+  schema stays kept for the previous release, which otherwise refused to start on it (`db_ahead`).
+  When that slot is not recorded, no Down script runs.
+
 ## [0.2.0] - 2026-10-19
 
 Closes the stub audit: features that were half built, settings that were

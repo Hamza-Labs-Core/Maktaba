@@ -56,11 +56,48 @@ func TestDownToFrom(t *testing.T) {
 	from := migrationsDir(t, nil, map[string]string{"0001_a.sql": up("SELECT 1;")}, false)
 	to := migrationsDir(t, nil, map[string]string{"0001_a.sql": up("SELECT 1;"),
 		"0002_b.sql": up("ALTER TABLE p ADD COLUMN c int;")}, false)
-	if schema, ok, why := DownToFrom(from, to); !ok || schema != 1 {
+	if schema, ok, why := DownToFrom(from, to, 0, false); !ok || schema != 1 {
 		t.Fatalf("schema %d, ok %v: %s", schema, ok, why)
 	}
-	if _, ok, _ := DownToFrom("", to); ok {
+	if _, ok, _ := DownToFrom("", to, 0, false); ok {
 		t.Fatal("an unknown release before")
+	}
+}
+
+// A database an earlier rollback left on a newer release's schema, kept (slot 3, that
+// release's 0002 and 0003 above the release before's 0001): the Down scripts of the next
+// release undo its own migrations only, and never the ones kept before it, which hold
+// data. What the kept slot is not recorded for, or the schemas do not explain, they do not
+// undo. Until 2026-11-24 they went back to slot 1.
+func TestDownToFromNeverUndoesAKeptSchema(t *testing.T) {
+	from := migrationsDir(t, nil, map[string]string{"0001_a.sql": up("SELECT 1;")}, true)
+	to := migrationsDir(t, nil, map[string]string{"0001_a.sql": up("SELECT 1;"),
+		"0002_b.sql": up("ALTER TABLE p ADD COLUMN c int;"), "0003_c.sql": up("CREATE TABLE n (id int);"),
+		"0004_d.sql": up("ALTER TABLE p ADD COLUMN d int;")}, false)
+	for _, c := range []struct {
+		name   string
+		before int64
+		onKept bool
+		schema int64 // 0: not undone
+	}{
+		{"kept", 3, true, 3},
+		{"its own schema", 1, false, 1},
+		{"not recorded, not kept (a record from before schema_before)", 0, false, 1},
+		{"kept, its slot not recorded", 0, true, 0},
+		{"ahead, not kept", 3, false, 0},
+		{"kept, ahead of the new release", 5, true, 0},
+		{"kept, nothing to undo", 4, true, 0},
+	} {
+		schema, ok, why := DownToFrom(from, to, c.before, c.onKept)
+		if ok != (c.schema > 0) || (ok && schema != c.schema) {
+			t.Errorf("%s: schema %d, ok %v (%s), want %d", c.name, schema, ok, why, c.schema)
+		}
+	}
+	// the kept migrations are not judged either: they stay
+	lossyKept := migrationsDir(t, nil, map[string]string{"0001_a.sql": up("SELECT 1;"),
+		"0002_b.sql": up("DELETE FROM p;"), "0003_c.sql": up("ALTER TABLE p ADD COLUMN d int;")}, false)
+	if schema, ok, why := DownToFrom(from, lossyKept, 2, true); !ok || schema != 2 {
+		t.Fatalf("the kept migrations judged: %d %v (%s)", schema, ok, why)
 	}
 }
 
