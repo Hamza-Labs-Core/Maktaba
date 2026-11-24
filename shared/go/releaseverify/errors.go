@@ -35,6 +35,10 @@ var (
 	// refresh within RootStore.MaxAge) or TUF reports expired metadata.
 	// Verification fails closed.
 	ErrRootExpired = errors.New("sigstore trusted root expired")
+	// ErrFeed: the release feed (feed.go) is malformed, too large, older than one
+	// already read, or names another repository, channel, platform or download address.
+	// Its signature failing is ErrSignature, ErrIdentity or ErrTlog, as for a release.
+	ErrFeed = errors.New("update feed invalid")
 )
 
 // Error is a typed verification failure naming the file it is about.

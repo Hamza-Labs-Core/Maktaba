@@ -343,6 +343,9 @@ RELISTEN_EVERY_S = 600.0
 RELISTEN_BATCH = 20
 RELISTEN_AFTER_S = 3600.0
 RELISTEN_PRIORITY = 500
+#: ...and at most this many each time of the transcripts whose second listen failed to store
+#: (:func:`_stranded_sql`): more than its throughput on a home, so the GPU never waits for them
+RELISTEN_STRANDED_BATCH = 100
 _LAST_RELISTEN: list[float] = []
 # How many tries a transcript gets and how far apart: rules.transcription
 # (relisten_tries, relisten_wait_hours, relisten_wait_max_hours, relisten_round;
@@ -393,7 +396,8 @@ async def read_rules(db: Any) -> None:
 
 async def relisten(db: Any) -> int:
     """Queue the second listen again for the videos whose transcript was made without it
-    (``metadata.refine.source = skipped``) as relisten jobs (a worker without the second
+    (``metadata.refine.source = skipped``), and for those whose second listen ran but failed
+    to store (:func:`_stranded_sql`), as relisten jobs (a worker without the second
     listen gives them back): ``second_listen`` for a transcript with its words stored
     (``metadata.words``), else ``transcribe``, which stores them (its second listen
     follows). Once per ``RELISTEN_EVERY_S``, and only once this
@@ -412,27 +416,33 @@ async def relisten(db: Any) -> int:
         return 0
     _LAST_RELISTEN[:] = [t]
     rules = _RULES
-    skipped = _skipped_sql(db)
+    skipped, stranded = _skipped_sql(db), _stranded_sql(db)
     await _forget_gone(db)
     await _settle_tries(db, rules)
     await _reset_relistens(db, model, rules.relisten_round)
-    await _stop_relistens(db, skipped, rules)
+    await _stop_relistens(db, f"({skipped} OR {stranded})", rules)
     at = now()
-    rows = await db.fetch(
-        f"SELECT t.video_id, COALESCE(r.attempts, 0) AS attempts, {_words_sql(db)} AS words"
-        " FROM transcripts t"
-        " JOIN videos v ON v.id = t.video_id"
-        " LEFT JOIN relisten_attempts r ON r.video_id = t.video_id"
-        f" WHERE t.is_active AND {skipped} AND t.created_at < $1 AND NOT {_GONE}"
-        " AND (r.video_id IS NULL OR (r.stopped_at IS NULL AND r.attempts < $3"
-        "  AND r.ended_at IS NOT NULL AND r.next_at <= $4))"
-        f" AND NOT {_OPEN_JOB}"
-        " ORDER BY COALESCE(r.attempts, 0), t.created_at LIMIT $2",
-        to_ts(db, at - timedelta(seconds=RELISTEN_AFTER_S)),
-        RELISTEN_BATCH,
-        rules.relisten_tries,
-        to_ts(db, at),
-    )
+    rows: list[Any] = []
+    # the stranded ones in no order: ordering them would read every candidate each time
+    # (9 s on a home with 46,000 of them, 20 ms without)
+    for which, order, batch in (
+        (skipped, " ORDER BY COALESCE(r.attempts, 0), t.created_at", RELISTEN_BATCH),
+        (stranded, "", RELISTEN_STRANDED_BATCH),
+    ):
+        rows += await db.fetch(
+            f"SELECT t.video_id, COALESCE(r.attempts, 0) AS attempts, {_words_sql(db)} AS words"
+            " FROM transcripts t"
+            " JOIN videos v ON v.id = t.video_id"
+            " LEFT JOIN relisten_attempts r ON r.video_id = t.video_id"
+            f" WHERE t.is_active AND {which} AND t.created_at < $1 AND NOT {_GONE}"
+            " AND (r.video_id IS NULL OR (r.stopped_at IS NULL AND r.attempts < $3"
+            "  AND r.ended_at IS NOT NULL AND r.next_at <= $4))"
+            f" AND NOT {_OPEN_JOB}{order} LIMIT $2",
+            to_ts(db, at - timedelta(seconds=RELISTEN_AFTER_S)),
+            batch,
+            rules.relisten_tries,
+            to_ts(db, at),
+        )
     queued = 0
     for r in rows:
         res = await enqueue_job(
@@ -485,6 +495,25 @@ def _skipped_sql(db: Any) -> str:
     if is_pg(db):
         return "t.metadata -> 'refine' ->> 'source' = 'skipped'"
     return "json_extract(t.metadata, '$.refine.source') = 'skipped'"
+
+
+def _stranded_sql(db: Any) -> str:
+    """The transcript ``t`` is still Whisper's, with its words stored, because its video's
+    last ``second_listen`` job failed to store the corrected one: the database refused the
+    write (``cannot update table``). From 2026-11-20 a home moved to PostgreSQL 18 refused
+    every one (slot 0237); the job fails for good, so nothing else queues it again."""
+    no_refine = (
+        "t.metadata -> 'refine' IS NULL"
+        if is_pg(db)
+        else "json_extract(t.metadata, '$.refine') IS NULL"
+    )
+    return (
+        f"({no_refine} AND {_words_sql(db)} AND EXISTS (SELECT 1 FROM"
+        " (SELECT j.state, j.error_cause FROM processing_jobs j WHERE j.subject_kind = 'video'"
+        " AND j.subject_id = t.video_id AND j.stage = 'second_listen'"
+        " ORDER BY j.id DESC LIMIT 1) l"
+        " WHERE l.state = 'failed' AND l.error_cause LIKE '%cannot update table%'))"
+    )
 
 
 def _words_sql(db: Any) -> str:

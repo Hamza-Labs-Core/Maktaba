@@ -722,6 +722,25 @@ var runMigrateDownTo = func(ctx context.Context, api *exec.Cmd, schema int64, lo
 	return nil
 }
 
+// runMigrateUndoFailed is `maktaba-api migrate undo-failed` with the api's binary,
+// environment and folder: the Down script of the migration that failed part way (tests
+// replace it).
+var runMigrateUndoFailed = func(ctx context.Context, api *exec.Cmd, log io.Writer) error {
+	cmd := exec.CommandContext(ctx, api.Path, "migrate", "--timeout", "0", "--lock-timeout", migrateLockTimeout,
+		"undo-failed")
+	cmd.Env, cmd.Dir = withoutEnv(api.Env, "MAKTABA_DISABLE_DOWN"), api.Dir
+	tail := &tailWriter{max: 4 << 10}
+	cmd.Stdout = io.MultiWriter(log, tail)
+	cmd.Stderr = cmd.Stdout
+	if err := cmd.Run(); err != nil {
+		if msg := tail.lastLines(3); msg != "" {
+			return errors.New(msg)
+		}
+		return err
+	}
+	return nil
+}
+
 // withoutEnv is env without key (a rollback's Down scripts are this release's own
 // decision, not an operator's guard against a down by hand).
 func withoutEnv(env []string, key string) []string {

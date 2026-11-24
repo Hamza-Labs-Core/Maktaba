@@ -5,6 +5,7 @@ import com.hamzalabs.maktaba.core.api.ApiException
 import com.hamzalabs.maktaba.core.api.AuthTokens
 import com.hamzalabs.maktaba.core.api.ErrorKind
 import com.hamzalabs.maktaba.core.api.errorKind
+import com.hamzalabs.maktaba.core.api.streamCapabilities
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.runBlocking
@@ -100,6 +101,18 @@ class ApiClientTest {
         assertTrue(body, body.contains("\"audio_track\":1") && body.contains("\"format\":\"hls\""))
         c.openStream("v1")
         assertFalse(seen.last().body!!.utf8().contains("audio_track"))
+    }
+
+    /** Story 13.18: the home's client profiles; a home older than the list answers without it. */
+    @Test
+    fun aHomeSaysWhichClientProfilesItKnows() = runBlocking {
+        val c = client(MemoryTokens(fresh, "r1"))
+        route = { json(200, """{"codecs":["h264"],"hwaccel":"none","max_bitrate_kbps":40000,"supported_containers":["mp4"],"client_profiles":["desktop-mpv","desktop-player"]}""") }
+        assertEquals(listOf("desktop-mpv", "desktop-player"), c.streamCapabilities().clientProfiles)
+        assertEquals("/api/stream/capabilities", seen.last().url.encodedPath)
+        route = { json(200, """{"codecs":["h264"],"hwaccel":"none","max_bitrate_kbps":40000,"supported_containers":["mp4"],"software_only":true}""") }
+        val old = c.streamCapabilities()
+        assertTrue(old.clientProfiles.isEmpty() && old.softwareOnly)
     }
 
     /** Story 58.05: a TV sends what it plays; a home from before 58.02 refuses the key, so it is asked again without. */

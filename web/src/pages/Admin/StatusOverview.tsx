@@ -16,6 +16,7 @@ import { componentTitle } from "../../components/cluster/format";
 import { HelpLink } from "../../help/HelpLink";
 import { roleName } from "./Processes";
 import { systemHealthHelp } from "../../help/registry";
+import { checkFailedWhy } from "../../lib/updatesView";
 
 export const GROUPS = ["services", "workers", "dependencies", "integrations", "queues_tv"] as const;
 
@@ -47,6 +48,7 @@ const NAMED = new Set([
   "host_access",
   "host_load",
   "plugin_runners",
+  "update_check",
 ]);
 
 /**
@@ -89,7 +91,13 @@ export function itemName(it: StatusItem, t: T): string {
 }
 
 /** The item's reason in the reader's language; the server's English when the catalog has none. */
-export function itemReason(it: StatusItem, t: T, fmt: Fmt, n: (v: number) => string): string {
+export function itemReason(
+  it: StatusItem,
+  t: T,
+  fmt: Fmt,
+  n: (v: number) => string,
+  date: (iso: string) => string = (iso) => new Date(iso).toLocaleString()
+): string {
   const vars: Record<string, string | number> = {};
   for (const [k, v] of Object.entries(it.params ?? {})) {
     if (typeof v === "number") {
@@ -114,6 +122,11 @@ export function itemReason(it: StatusItem, t: T, fmt: Fmt, n: (v: number) => str
   // Epic 54: a failed plugin runner on the home says the home in the person's language
   if (it.kind === "plugin_runners" && it.params?.machine === "home")
     vars.machine = t("plugins.runners.home");
+  // the update check: since when (a date, not an age) and why, in the reader's language
+  if (it.kind === "update_check") {
+    if (typeof it.params?.since === "string") vars.since = date(it.params.since);
+    vars.why = checkFailedWhy(typeof it.params?.code === "string" ? it.params.code : undefined, t);
+  }
   const key = `health.reason.${it.code}`;
   const s = t(key, vars);
   return s === key ? it.reason : s;
@@ -141,7 +154,7 @@ export function StatusBanner({
   report: StatusReport | null;
   unreachable: boolean;
 }) {
-  const { t, n, locale } = useI18n();
+  const { t, n, locale, formatDate } = useI18n();
   const fmt = useFmt();
   if (!report) {
     if (!unreachable) return null;
@@ -182,7 +195,8 @@ export function StatusBanner({
           <ul className="mkt-health-banner__list">
             {culprits.slice(0, 4).map((i) => (
               <li key={i.id}>
-                <strong>{bidiIsolate(itemName(i, t))}</strong>: {itemReason(i, t, fmt, n)}{" "}
+                <strong>{bidiIsolate(itemName(i, t))}</strong>:{" "}
+                {itemReason(i, t, fmt, n, formatDate)}{" "}
                 <HelpLink
                   to={systemHealthHelp(i.help || i.kind)}
                   label={t("health.learnMoreAbout", { name: itemName(i, t) })}
@@ -214,7 +228,7 @@ function workerLine(it: StatusItem, t: T, n: (v: number) => string): ReactNode {
 }
 
 function Tile({ it }: { it: StatusItem }) {
-  const { t, n } = useI18n();
+  const { t, n, formatDate } = useI18n();
   const fmt = useFmt();
   const name = itemName(it, t);
   const tone = it.history ? "history" : it.status;
@@ -234,7 +248,7 @@ function Tile({ it }: { it: StatusItem }) {
         )}
         {it.attention && !it.history && <Badge tone="accent">{t("health.needsYou")}</Badge>}
       </div>
-      <p className="mkt-health-tile__reason">{itemReason(it, t, fmt, n)}</p>
+      <p className="mkt-health-tile__reason">{itemReason(it, t, fmt, n, formatDate)}</p>
       {it.kind === "worker" && workerLine(it, t, n)}
       <div className="mkt-health-tile__foot">
         <span className="mkt-muted">

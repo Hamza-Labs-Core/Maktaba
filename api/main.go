@@ -807,6 +807,7 @@ func runServe() error {
 			// scheduler (/api/cluster/updates). Verification is story 35.1's.
 			router.MountP35(r, router.P35Deps{DB: appDB, Loops: loops, Logger: logger, Current: version.Version, Notifier: notifyHub,
 				BaseChannel: version.Channel(), Ref: updatesRef, RunLoops: true, Hub: hubRef, GitHubBaseURL: e2eGitHubAPI(),
+				FeedURL: e2eUpdateFeed(), FeedDownloadBase: e2eGitHubAPI(),
 				Verifier: updates.ReleaseVerifier{Trust: updater}, DataDir: statsDataDir, TV: tvChanges})
 			logger.Info("p27: live-channel + guide handlers mounted",
 				"event", "p27_mounted")
@@ -1219,6 +1220,7 @@ func buildUpdater(logger *slog.Logger) *system.Updater {
 		Disabled:       disabled,
 		Token:          os.Getenv("MAKTABA_GITHUB_TOKEN"),
 		Logger:         logger,
+		FeedURL:        e2eAboutFeed(),
 	})
 }
 

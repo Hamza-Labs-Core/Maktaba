@@ -209,6 +209,13 @@ func (s *Store) Seen(ctx context.Context, r Release) (bool, error) {
 	return false, err
 }
 
+// SetAssets replaces a release's files (signedAssets: the feed's and every other signed one).
+func (s *Store) SetAssets(ctx context.Context, version string, assets []Asset) error {
+	b, _ := json.Marshal(nonNilAssets(assets))
+	_, err := s.DB.ExecContext(ctx, `UPDATE release_catalog SET assets = $2 WHERE version = $1`, version, string(b))
+	return err
+}
+
 // SetVerified stores a verified manifest.
 func (s *Store) SetVerified(ctx context.Context, version string, v Verified) error {
 	m := v.Manifest
@@ -553,9 +560,23 @@ type State struct {
 	LastCheckOK  *time.Time `json:"last_check_ok,omitempty"`
 	LastCheckErr string     `json:"last_check_error,omitempty"`
 	LastCheckAt  *time.Time `json:"last_check_at,omitempty"`
+	// LastCheckCode is what the last check failed on (a CheckFail code; "" when it worked).
+	LastCheckCode string `json:"last_check_code,omitempty"`
+	// Failures counts the checks that failed in a row since the last one that worked, and
+	// FailingSince is the first of them (nil while the checks work): the Updates page's
+	// "Can't check for updates since …", raised from FailingAfter failures.
+	Failures     int        `json:"failures,omitempty"`
+	FailingSince *time.Time `json:"failing_since,omitempty"`
 	// Since is the first check this home made (the stale hint's start when no check
 	// ever succeeded).
 	Since *time.Time `json:"since,omitempty"`
+	// LastCheckSource is where the last check read the releases: "feed" (the release
+	// feed) or "github" (GitHub's list: no feed, or the feed could not be reached, FeedError).
+	LastCheckSource string `json:"last_check_source,omitempty"`
+	FeedError       string `json:"feed_error,omitempty"`
+	// FeedSignedAt is the signed time of each feed file last read ("stable/linux-amd64.json"):
+	// an older one is refused.
+	FeedSignedAt map[string]time.Time `json:"feed_signed_at,omitempty"`
 }
 
 const stateKey = "updates.state"

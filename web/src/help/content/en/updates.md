@@ -99,6 +99,7 @@ Admins open [Admin → Updates](/admin/updates). It shows, in this order:
 - **Release … was withdrawn (…) and will not be installed**: the release was pulled after it came out.
 - **Release … was re-published with other files and was refused**: see below.
 - **No successful update check for … days**: see below.
+- **Can't check for updates: … checks in a row failed**: see [Can't check for updates](/help/updates#check-failing).
 - **The update to … could not start (…)**: see below.
 - **… is installed, but the TV stays on …: its check failed**: see [The TV stayed on the previous version](/help/updates#tv-held).
 
@@ -140,6 +141,13 @@ An update is available. Admins open [Admin → Updates](/admin/updates) to see i
 - **Does Maktaba fix it itself?** Yes: it keeps what you have.
 - **What you can do:** Nothing. Wait for the next release.
 
+### Can't check for updates since … {#check-failing}
+
+- **What it means:** two or more checks in a row (6 hours apart) could not read the list of releases on GitHub. The Updates page and [System health](/admin/health) say since when and why. Until a check works the server does not see new releases: it can only update to a release it already knew, which may be older than the newest one.
+- **The reasons:** **GitHub's list of releases is larger than Maktaba reads** (the list grew past what this version accepts: install the newest release by hand from the release page, or wait for the fix to reach you); **GitHub asked Maktaba to wait** (too many requests from your network: it clears by itself); **GitHub answered with an error**; **GitHub's answer could not be read**; **GitHub could not be reached** (check the server's internet access).
+- **Does Maktaba fix it itself?** It keeps checking every 6 hours, and the notice clears at the first check that works.
+- **What you can do:** Press **Check now** to try again at once. If the reason is that the list is too large, see the release page on GitHub for the newest version.
+
 ### No successful update check for 14 days {#check-stale}
 
 - **What it means:** Maktaba could not reach the release site (GitHub) for two weeks.
@@ -155,7 +163,7 @@ An update is available. Admins open [Admin → Updates](/admin/updates) to see i
 ### The library database could not be updated {#code-database}
 
 - **What it means:** The step that saves the library database and brings it up to date for the new version failed, or the changes failed when tried on a copy first, or the new version needs another database version than this machine has.
-- **Does Maktaba fix it itself?** In most cases: nothing was changed, or the database was put back as it was before the update and the previous version runs. That version is not installed again by itself.
+- **Does Maktaba fix it itself?** In most cases: nothing was changed, or the update's own Down scripts undid its database changes and the previous version runs on the database as it knows it. That version is not installed again by itself. The whole backup taken before the update is put back only when those Down scripts fail, or when a change had already deleted data they cannot bring back. The reason then says so, and the logs say why.
 - **What you can do:** Read the reason and **See the logs**. When it says the database could not be put back, or the version is older than the database, [put a backup back](/help/updates#restore-backup).
 
 ### The TV during an update {#code-tv}
