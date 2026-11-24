@@ -154,9 +154,12 @@ else
     cp "$path" "$out/"
     owner="$(pacman -Qqo "$path")"
     lic="$(pacman -Qi "$owner" | sed -n 's/^Licenses *: //p')"
+    # the library's own licence: MSYS2 labels the other parts' ("documentation:spdx:GPL-3.0-or-
+    # later" for libiconv's manual), which the Player does not carry
+    libl="$(sed -E 's/[a-z]+:spdx:[^ ]+//g' <<<"$lic")"
     # a GPL licence (not LGPL) is refused unless the package offers another (" OR ") or carries
     # a linking exception (" WITH ")
-    if grep -qE '(^|[^L])GPL' <<<"$lic" && ! grep -qE ' OR | WITH ' <<<"$lic"; then
+    if grep -qE '(^|[^L])GPL' <<<"$libl" && ! grep -qE ' OR | WITH ' <<<"$libl"; then
       echo "::error::$(basename "$path") ($owner) is $lic" >&2
       exit 1
     fi
