@@ -20,8 +20,6 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
-		<key>NSAllowsArbitraryLoads</key>
-		<true/>
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>

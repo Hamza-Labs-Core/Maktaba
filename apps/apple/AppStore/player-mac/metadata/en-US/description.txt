@@ -1,0 +1,20 @@
+Maktaba plays the films, series, lectures and audiobooks you keep on your own Maktaba home: the computer or NAS in your house that runs Maktaba. Nothing is sold in the app, and your library stays in your home.
+
+To use it you need a Maktaba home. Maktaba is free and open source; it installs on a Mac, a Windows or Linux computer, or a NAS, from maktaba.tv.
+
+What you can do
+- Find your home on your network, scan its QR code, or type its address.
+- Browse your libraries, series and collections, and pick up where you stopped.
+- Watch with subtitles in English and Arabic, made by your home if a film has none.
+- Search your library by words, or by meaning when your home has it turned on.
+- Watch the live channels your home makes from your own library.
+- Listen to audiobooks and lectures with the screen locked.
+- AirPlay to a TV, and keep watching in Picture in Picture.
+- Set what each child in your house may watch, and how long, with parental controls that your home enforces on every screen.
+- Reach your home away from it through Maktaba Cloud, if the person who runs your home has linked it.
+
+English and Arabic
+The whole app is in English and Arabic, right to left in Arabic.
+
+Your privacy
+The app talks to your home. It sends nothing to us unless you choose to: see maktaba.tv/legal/privacy.

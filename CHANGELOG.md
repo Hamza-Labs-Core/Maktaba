@@ -3778,6 +3778,14 @@ build fails when the two differ.
   and tries again at its next start. PostgreSQL 18 brings pg_textsearch, which ranked keyword
   search will use.
 
+- **The Apple apps get closer to App Store review.** Each app now carries a privacy manifest
+  (`PrivacyInfo.xcprivacy`) that explains its required-reason APIs and what it sends to Maktaba
+  Cloud. Plain http is allowed only to a home on the local network: the `NSAllowsArbitraryLoads`
+  key, which had no effect, is gone. The Remote's App Store icon no longer has an alpha channel. maktaba.tv's privacy page now says
+  what reaches Maktaba Cloud when you sign in through it or watch a broadcast.
+  [`docs/apple-app-review.md`](docs/apple-app-review.md) lists what is left before release, and
+  the App Store text drafts in English and Arabic are in `apps/apple/AppStore/`.
+
 ### Fixed
 
 - **A TV held on its old streaming software stays there through schedule and settings

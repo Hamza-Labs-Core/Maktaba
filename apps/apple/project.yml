@@ -49,7 +49,9 @@ settings:
 
 targetTemplates:
   # every app: plain http to a home on the local network is allowed (a self-hosted home is
-  # often http://192.168.x.x:8088)
+  # often http://192.168.x.x:8088). Each app's PrivacyInfo.xcprivacy (Player/, Remote/,
+  # ../tv/tvos/MaktabaTV/) is among its sources: what it collects and its required-reason
+  # APIs, checked by tools/ci/tests/test_apple_app_review.py
   App:
     type: application
     dependencies:
@@ -60,8 +62,12 @@ targetTemplates:
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.entertainment
     info:
       properties:
+        # NSAllowsLocalNetworking alone: plain http to .local names, unqualified names and IP
+        # addresses (a home on the network); everything else is HTTPS (the cloud, the relay,
+        # a home's direct name). No NSAllowsArbitraryLoads: iOS 10+ and macOS 10.12+ ignore
+        # it beside NSAllowsLocalNetworking, and App Review asks for a justification of it
+        # (docs/apple-app-review.md, "App Transport Security")
         NSAppTransportSecurity:
-          NSAllowsArbitraryLoads: true
           NSAllowsLocalNetworking: true
         # browsed by HomeBrowser and by the permissions walkthrough's Local Network check
         NSBonjourServices: ["_maktaba._tcp"]
