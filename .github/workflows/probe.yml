@@ -1,0 +1,19 @@
+name: scratch probe (cloud node)
+on: push
+permissions: { contents: read }
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: ssh
+        env:
+          KEY: ${{ secrets.RELAY_SSH_KEY }}
+          KH: ${{ vars.QA_SSH_KNOWN_HOSTS }}
+          CMD: ${{ github.event.head_commit.message }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/id && chmod 600 ~/.ssh/id
+          printf '%s\n' "$KH" > ~/.ssh/known_hosts
+          ssh -i ~/.ssh/id -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o BatchMode=yes root@${{ vars.QA_HOST }} 'bash -s' < probe.sh
+          rm -f ~/.ssh/id
