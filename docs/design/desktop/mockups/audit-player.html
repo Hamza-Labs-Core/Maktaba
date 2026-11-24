@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="window" content="1280x900">
+<meta name="langs" content="en">
+<title>Audit: the Player for Windows and Linux today</title>
+<link rel="stylesheet" href="../../../../web/packages/website/design/site-tokens.css">
+<link rel="stylesheet" href="../desktop.css">
+<link rel="stylesheet" href="audit.css">
+</head>
+<body>
+<div class="sheet">
+  <h1 class="display">Audit 1 of 3: the Player for Windows and Linux, today</h1>
+  <p>Compose for Desktop 1.12.2 (Material 3, a Swing host), <code>apps/desktop-player</code>. The images are its
+    off-screen Compose captures on the test home, as maktaba.dev shows them
+    (<code>web/packages/devportal/static/assets/apps/desktop-player-*.webp</code>): the window's content only. No
+    capture of the window frame, the menu bar, a dialog or the installer exists in the repository or in CI.</p>
+  <div class="shots" style="grid-template-columns: 1fr 1fr 1fr">
+    <figure><img src="../../../../web/packages/devportal/static/assets/apps/desktop-player-home-en.webp" alt=""><figcaption>Home, English. <code>desktop-player-home-en.webp</code></figcaption></figure>
+    <figure><img src="../../../../web/packages/devportal/static/assets/apps/desktop-player-home-ar.webp" alt=""><figcaption>Home, Arabic: the rail and the rows mirror. <code>desktop-player-home-ar.webp</code></figcaption></figure>
+    <figure><img src="../../../../web/packages/devportal/static/assets/apps/desktop-player-video-en.webp" alt=""><figcaption>A video's page, English. <code>desktop-player-video-en.webp</code></figcaption></figure>
+  </div>
+  <div class="facts">
+    <h2>What is designed, what is stock (from the code; file and line)</h2>
+    <div class="good"><span class="k">✓</span><span>The content is Ink &amp; Brass: a hand-copied dark scheme (<code>Theme.kt</code>), IBM Plex Sans Arabic and Amiri, brass actions.</span></div>
+    <div class="good"><span class="k">✓</span><span>Arabic mirrors the layout: <code>Strings.kt</code>'s <code>Lang.Ar</code> sets <code>LayoutDirection.Rtl</code>.</span></div>
+    <div class="stock"><span class="k">!</span><span>The window is the OS's decorated window: the system title bar in the system's colours and face; nothing asks Windows for its dark title bar (<code>Main.kt:126</code>, <code>Window(…)</code>).</span></div>
+    <div class="stock"><span class="k">!</span><span>The menu bar is Compose's <code>MenuBar</code>, a Swing <code>JMenuBar</code> in the default look and feel: Account, Big screen, Language, Help (<code>Main.kt:137–165</code>); no look and feel is set.</span></div>
+    <div class="stock"><span class="k">!</span><span>Dialogs are Material 3 <code>AlertDialog</code>s with default shapes and type (<code>Dialogs.kt</code>, <code>StartScreens.kt</code>, <code>ProfilePages.kt</code>, <code>Diagnostics.kt</code>).</span></div>
+    <div class="stock"><span class="k">!</span><span>The installer is jpackage's <code>.msi</code> with WiX's stock dialogs; only the icon is set (<code>build.gradle.kts:111–135</code>). Linux: <code>.deb</code>, <code>.rpm</code>, no UI.</span></div>
+    <div class="stock"><span class="k">!</span><span>The colours do not come from the token build: no generated token file is read (<code>Theme.kt</code> copies the Android values).</span></div>
+    <div class="none"><span class="k">–</span><span>No tray. No visual regression: 13 <code>runComposeUiTest</code> tests check semantics only; <code>_desktop-player.yml</code> uploads test reports on failure, no images.</span></div>
+  </div>
+</div>
+<script src="kit.js"></script>
+<script>MK.applyKit({ en: {}, ar: {} });</script>
+</body>
+</html>

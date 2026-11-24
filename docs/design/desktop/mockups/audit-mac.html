@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="window" content="1280x900">
+<meta name="langs" content="en">
+<title>Audit: the Player for Mac today</title>
+<link rel="stylesheet" href="../../../../web/packages/website/design/site-tokens.css">
+<link rel="stylesheet" href="../desktop.css">
+<link rel="stylesheet" href="audit.css">
+<style>.crop { inline-size: 148px; block-size: 330px; overflow: hidden; border-radius: 8px; border: 1px solid var(--dk-line); } .crop img { inline-size: 1024px; max-inline-size: none; border: 0; border-radius: 0; }</style>
+</head>
+<body>
+<div class="sheet">
+  <h1 class="display">Audit 3 of 3: the Player for Mac, today</h1>
+  <p>SwiftUI with some AppKit, <code>apps/apple</code> ("Maktaba Player Mac"), on the generated tokens
+    (<code>MaktabaKit/…/Tokens.swift</code>). The images are CI's own: the <code>product-shots-mac</code> artifact of main's CI run
+    45267535780 (2026-11-23, at 7d22f7d98), the same captures as
+    <code>web/packages/website/static/shots/mac-*-1024.webp</code>.</p>
+  <div class="shots" style="grid-template-columns: 148px 148px 1fr; align-items: start">
+    <figure><div class="crop"><img src="../../../../web/packages/website/static/shots/mac-library-en-1024.webp" alt=""></div><figcaption>Libraries, English: the sidebar, cropped from CI's capture; the system's grey selection.</figcaption></figure>
+    <figure><div class="crop"><img src="../../../../web/packages/website/static/shots/mac-library-ar-1024.webp" alt=""></div><figcaption>Libraries, Arabic: the labels are Arabic, but the sidebar and the window controls stay at the left.</figcaption></figure>
+    <figure><img src="../../../../web/packages/devportal/static/assets/apps/player-mac-profile-en.webp" alt="" style="max-inline-size: 620px"><figcaption>Profile, English (maktaba.dev): system list rows, grey sidebar selection.</figcaption></figure>
+  </div>
+  <p class="small muted" style="margin-block-start: 8px">Only the sidebar column of the Libraries captures is shown: their demo art is being replaced, since demo media in mockups and references shows no women or girls.</p>
+  <div class="facts">
+    <h2>What is designed, what is stock</h2>
+    <div class="good"><span class="k">✓</span><span>Ink &amp; Brass from the token build, Amiri titles, brass segmented control and progress, dark playback.</span></div>
+    <div class="good"><span class="k">✓</span><span>Snapshot tests: <code>PlayerMacTests/PageSnapshotTests.swift</code> against committed PNGs (library, series, video, TV panel; en, ar, ax3).</span></div>
+    <div class="stock"><span class="k">!</span><span>The sidebar is a stock <code>NavigationSplitView</code> list: grey selection, white icons, the system's materials.</span></div>
+    <div class="stock"><span class="k">!</span><span>In Arabic the split view keeps the sidebar at the left (the image in the middle).</span></div>
+    <div class="stock"><span class="k">!</span><span>Profile and settings are system list rows with brass text, not the apps' row style.</span></div>
+    <div class="none"><span class="k">–</span><span>No menu-bar item (the Player has none); the server app's Mac menu-bar item is audit 2's tray.</span></div>
+  </div>
+</div>
+<script src="kit.js"></script>
+<script>MK.applyKit({ en: {}, ar: {} });</script>
+</body>
+</html>

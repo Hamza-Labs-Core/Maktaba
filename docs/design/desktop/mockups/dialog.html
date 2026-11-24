@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="window" content="560x300">
+<title>Server: an error, in Maktaba's own dialog</title>
+<link rel="stylesheet" href="../../../../web/packages/website/design/site-tokens.css">
+<link rel="stylesheet" href="../desktop.css">
+<style>
+  .win { background: var(--dk-raised); }
+  .titlebar { block-size: 36px; }
+  .titlebar .caption-btns span { inline-size: 42px; }
+  .d { flex: 1; display: flex; gap: 16px; padding: 10px 24px 0; }
+  .d .dicon { flex: none; display: grid; place-items: center; inline-size: 44px; block-size: 44px; border-radius: 12px; background: rgba(240,112,127,.14); color: var(--dk-error); }
+  .d h1 { font-size: var(--dk-t-h3); line-height: var(--dk-t-h3-lh); font-weight: 600; margin-block-end: 6px; }
+  .d .code { margin-block-start: 12px; padding: 8px 12px; border-radius: 8px; background: var(--dk-window); border: 1px solid var(--dk-line); font-family: ui-monospace, Consolas, monospace; font-size: 12.5px; line-height: 19px; color: var(--dk-muted); direction: ltr; text-align: start; unicode-bidi: isolate; }
+  .dfoot { display: flex; align-items: center; gap: 10px; padding: 14px 24px; background: var(--dk-pane); border-block-start: 1px solid var(--dk-line); }
+  .dfoot .grow { flex: 1; }
+</style>
+</head>
+<body>
+<div class="win win11">
+  <header class="titlebar">
+    <div class="app"><img src="../../../../web/public/icons/icon-192.png" alt=""><span data-t="c.server"></span></div>
+    <div class="grow"></div>
+    <div data-caption="close"></div>
+  </header>
+  <div class="d">
+    <span class="dicon"><i data-i="warn" class="s24"></i></span>
+    <div style="min-inline-size: 0">
+      <h1 data-t="h"></h1>
+      <p class="muted" data-t="p"></p>
+      <div class="code">maktaba-api: listen tcp 0.0.0.0:8080: bind: address already in use (held by: plexmediaserver.exe)</div>
+    </div>
+  </div>
+  <div class="dfoot">
+    <span class="btn ghost"><i data-i="logs" class="s16"></i><span data-t="logs"></span></span>
+    <span class="grow"></span>
+    <span class="btn" data-t="close"></span>
+    <span class="btn primary focus" data-t="retry"></span>
+  </div>
+</div>
+<script src="kit.js"></script>
+<script>
+MK.applyKit({
+  en: {
+    title: "Server: an error dialog", h: "The Maktaba server could not start.",
+    p: "Another program uses the port Maktaba listens on. Maktaba can move to a free port and start again.",
+    logs: "See the logs", close: "Close", retry: "Use a free port and start",
+  },
+  ar: {
+    title: "الخادم: نافذة خطأ", h: "تعذّر تشغيل خادم مكتبة.",
+    p: "برنامج آخر يستخدم المنفذ الذي تستمع عليه مكتبة. تستطيع مكتبة الانتقال إلى منفذ متاح والبدء من جديد.",
+    logs: "عرض السجلات", close: "إغلاق", retry: "استخدام منفذ متاح والبدء",
+  },
+});
+</script>
+</body>
+</html>

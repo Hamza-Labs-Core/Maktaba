@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="window" content="1280x800">
+<title>Player: a library</title>
+<link rel="stylesheet" href="../../../../web/packages/website/design/site-tokens.css">
+<link rel="stylesheet" href="../desktop.css">
+<style>
+  .head { display: flex; align-items: flex-end; gap: 16px; }
+  .head h1 { font-size: var(--dk-t-h1); line-height: var(--dk-t-h1-lh); }
+  .crumbs { display: flex; align-items: center; gap: 6px; color: var(--dk-muted); font-size: var(--dk-t-small); margin-block-end: 4px; }
+  .tools { display: flex; align-items: center; gap: 8px; margin-block: 18px 22px; }
+  .tools .grow { flex: 1; }
+  .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 26px 20px; }
+  .grid .card { inline-size: auto; }
+  .hoverplay { position: absolute; inset: 0; display: grid; place-items: center; background: linear-gradient(0deg, rgba(5,8,14,.55), rgba(5,8,14,.15)); }
+  .hoverplay span { display: grid; place-items: center; inline-size: 48px; block-size: 48px; border-radius: 50%; background: var(--dk-brass); color: var(--dk-on-brass); }
+  .hoverplay span svg { inline-size: 20px; block-size: 20px; margin-inline-start: 3px; }
+  :root[dir="rtl"] .hoverplay span svg { margin-inline-start: 0; margin-inline-end: 3px; }
+  .watched { position: absolute; inset-block-start: 8px; inset-inline-start: 8px; display: grid; place-items: center; inline-size: 24px; block-size: 24px; border-radius: 50%; background: rgba(5,8,14,.75); color: var(--dk-brass); }
+  .watched svg { inline-size: 14px; block-size: 14px; stroke-width: 2.4; }
+</style>
+</head>
+<body>
+<div data-shell="player" data-on="libraries">
+    <main class="page pad">
+      <div class="crumbs"><span data-t="nav.libraries"></span><i data-i="chevron" class="s16 dir"></i><span data-t="lib"></span></div>
+      <div class="head">
+        <h1 class="display" data-t="lib"></h1>
+        <span class="muted" style="margin-block-end: 8px" data-t="count"></span>
+      </div>
+      <div class="tools">
+        <span class="chip on" data-t="f.all"></span>
+        <span class="chip" data-t="f.unwatched"></span>
+        <span class="chip" data-t="f.progress"></span>
+        <span class="grow"></span>
+        <span class="btn ghost"><i data-i="filter" class="s16"></i><span data-t="sort"></span><i data-i="chevdown" class="s16"></i></span>
+        <span class="seg"><span class="on"><i data-i="grid" class="s16"></i></span><span><i data-i="list" class="s16"></i></span></span>
+        <span class="btn primary"><i data-i="play" class="s16"></i><span data-t="playall"></span></span>
+      </div>
+      <div class="grid">
+        <div class="card"><div class="art"><img src="art/dunes.jpg" alt=""><span class="dur num" data-t="d1"></span></div><div class="t" data-t="v.dunes"></div><div class="m" data-t="m.dunes"></div></div>
+        <div class="card focus"><div class="art"><img src="art/saturn.jpg" alt=""><div class="hoverplay"><span><i data-i="play"></i></span></div><span class="prog"><i style="inline-size: 49%"></i></span></div><div class="t" data-t="v.saturn"></div><div class="m" data-t="m.saturn"></div></div>
+        <div class="card"><div class="art"><img src="art/mountains.jpg" alt=""><span class="watched"><i data-i="check"></i></span><span class="dur num" data-t="d3"></span></div><div class="t" data-t="v.roof"></div><div class="m" data-t="m.roof"></div></div>
+        <div class="card"><div class="art"><img src="art/reef.jpg" alt=""><span class="dur num" data-t="d4"></span></div><div class="t" data-t="v.reef"></div><div class="m" data-t="m.reef"></div></div>
+        <div class="card"><div class="art"><img src="art/aurora.jpg" alt=""><span class="dur num" data-t="d5"></span></div><div class="t" data-t="v.aurora"></div><div class="m" data-t="m.aurora"></div></div>
+        <div class="card"><div class="art"><img src="art/library.jpg" alt=""><span class="watched"><i data-i="check"></i></span><span class="dur num" data-t="d6"></span></div><div class="t" data-t="v.wisdom"></div><div class="m" data-t="m.wisdom"></div></div>
+      </div>
+    </main>
+</div>
+<script src="kit.js"></script>
+<script>
+MK.applyKit({
+  en: {
+    title: "Player: a library",
+   
+    lib: "Documentaries", count: "6 videos",
+    "f.all": "All", "f.unwatched": "Unwatched", "f.progress": "In progress",
+    sort: "Newest first", playall: "Play all",
+    "v.dunes": "The Great Dunes", "m.dunes": "2019 · Added yesterday",
+    "v.saturn": "Journey to Saturn", "m.saturn": "2017 · 26:40 left",
+    "v.roof": "Roof of the World", "m.roof": "2016 · Watched",
+    "v.reef": "Life on the Reef", "m.reef": "2021",
+    "v.aurora": "The Northern Lights", "m.aurora": "2018",
+    "v.wisdom": "The House of Wisdom", "m.wisdom": "2020 · Watched",
+    d1: "48:30", d3: "50:45", d4: "44:05", d5: "39:20", d6: "58:12",
+  },
+  ar: {
+    title: "المشغّل: مكتبة",
+    lib: "وثائقيات", count: "٦ مقاطع",
+    "f.all": "الكل", "f.unwatched": "لم تُشاهَد", "f.progress": "قيد المشاهدة",
+    sort: "الأحدث أولًا", playall: "تشغيل الكل",
+    "v.dunes": "الكثبان العظيمة", "m.dunes": "٢٠١٩ · أضيف أمس",
+    "v.saturn": "رحلة إلى زحل", "m.saturn": "٢٠١٧ · بقي ٢٦:٤٠",
+    "v.roof": "سقف العالم", "m.roof": "٢٠١٦ · تمت المشاهدة",
+    "v.reef": "الحياة في الشعاب المرجانية", "m.reef": "٢٠٢١",
+    "v.aurora": "الشفق القطبي", "m.aurora": "٢٠١٨",
+    "v.wisdom": "بيت الحكمة", "m.wisdom": "٢٠٢٠ · تمت المشاهدة",
+    d1: "٤٨:٣٠", d3: "٥٠:٤٥", d4: "٤٤:٠٥", d5: "٣٩:٢٠", d6: "٥٨:١٢",
+  },
+});
+</script>
+</body>
+</html>

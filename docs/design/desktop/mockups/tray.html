@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="window" content="960x640">
+<title>Server: the tray flyout on Windows 11</title>
+<link rel="stylesheet" href="../../../../web/packages/website/design/site-tokens.css">
+<link rel="stylesheet" href="../desktop.css">
+<style>
+  /* Windows 11's own taskbar, drawn only as the ground the flyout opens from */
+  .taskbar { position: absolute; inset-inline: 0; inset-block-end: 0; block-size: 48px; display: flex; align-items: center; gap: 6px; padding-inline: 12px;
+             background: rgba(28,32,40,.92); border-block-start: 1px solid rgba(255,255,255,.08); color: #fff; font-family: "Segoe UI", system-ui, sans-serif; }
+  .taskbar .grow { flex: 1; }
+  .taskbar .tray { display: flex; align-items: center; gap: 2px; }
+  .taskbar .tray span { display: grid; place-items: center; inline-size: 30px; block-size: 36px; border-radius: 4px; opacity: .85; }
+  .taskbar .tray span svg { inline-size: 16px; block-size: 16px; }
+  .taskbar .tray .mk { position: relative; opacity: 1; background: rgba(255,255,255,.1); }
+  .taskbar .tray .mk img { inline-size: 18px; block-size: 18px; border-radius: 3px; }
+  .taskbar .tray .mk .dot { position: absolute; inset-block-end: 7px; inset-inline-end: 4px; inline-size: 7px; block-size: 7px; box-shadow: 0 0 0 1.5px #1c2028; }
+  .taskbar .clock { text-align: end; font-size: 12px; line-height: 16px; padding-inline: 8px; }
+  .fly { position: absolute; inset-block-end: 58px; inset-inline-end: 12px; inline-size: 360px; border-radius: 12px; overflow: hidden;
+         background: rgba(24,36,58,.94); border: 1px solid #2b3b5a; box-shadow: var(--dk-shadow); backdrop-filter: blur(30px); }
+  .fly .top { display: flex; align-items: center; gap: 12px; padding: 16px 16px 12px; }
+  .fly .top img { inline-size: 36px; block-size: 36px; border-radius: 8px; }
+  .fly .top .t { font-weight: 600; font-size: var(--dk-t-lead); line-height: var(--dk-t-lead-lh); display: flex; align-items: center; gap: 8px; }
+  .fly .top .s { color: var(--dk-muted); font-size: var(--dk-t-small); line-height: var(--dk-t-small-lh); }
+  .fly .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; padding: 0 16px 12px; }
+  .fly .stats div { padding: 8px 10px; border-radius: 8px; background: rgba(11,17,28,.45); }
+  .fly .stats b { display: block; font-size: var(--dk-t-lead); }
+  .fly .stats span { color: var(--dk-muted); font-size: var(--dk-t-caption); line-height: var(--dk-t-caption-lh); }
+  .fly .upd { display: flex; align-items: center; gap: 10px; margin: 0 16px 10px; padding: 8px 10px; border-radius: 8px; background: var(--dk-brass-soft); color: var(--dk-brass); font-size: var(--dk-t-small); font-weight: 600; }
+  .fly .upd .grow { flex: 1; }
+  .fly .menu { position: static; inline-size: auto; border: 0; border-radius: 0; box-shadow: none; background: transparent; border-block-start: 1px solid var(--dk-line); padding: 6px; }
+  .fly .acts { display: flex; flex-direction: column; gap: 8px; padding: 12px 16px; background: rgba(11,17,28,.4); border-block-start: 1px solid var(--dk-line); }
+  .fly .acts .btn { inline-size: 100%; }
+</style>
+</head>
+<body>
+<div class="desk" style="background: #101a2c"></div>
+<div class="fly">
+  <div class="top"><img src="../../../../web/public/icons/icon-192.png" alt=""><div><div class="t"><span data-t="running"></span><span class="dot"></span></div><div class="s" data-th="sub"></div></div></div>
+  <div class="stats">
+    <div><b class="num" data-t="a"></b><span data-t="aS"></span></div>
+    <div><b class="num" data-t="b"></b><span data-t="bS"></span></div>
+    <div><b class="num" data-t="c"></b><span data-t="cS"></span></div>
+  </div>
+  <div class="upd"><i data-i="update" class="s16"></i><span data-th="upd"></span><span class="grow"></span><span data-t="updGo"></span></div>
+  <div class="menu">
+    <div class="mi hover"><i data-i="window"></i><span data-t="open"></span><span class="end">Ctrl O</span></div>
+    <div class="mi"><i data-i="pausecircle"></i><span data-t="pause"></span></div>
+    <div class="mi"><i data-i="logs"></i><span data-t="logs"></span></div>
+    <div class="mi"><i data-i="grid"></i><span data-t="comp"></span></div>
+    <div class="mi"><i data-i="flag"></i><span data-t="report"></span></div>
+  </div>
+  <div class="acts"><span class="btn" data-t="quit"></span><span class="btn danger" data-t="stop"></span></div>
+</div>
+<div class="taskbar">
+  <span class="grow"></span>
+  <div class="tray">
+    <span><i data-i="chevdown" style="transform: rotate(180deg)"></i></span>
+    <span class="mk"><img src="../../../../web/public/icons/icon-192.png" alt=""><span class="dot"></span></span>
+    <span><i data-i="wifi"></i></span><span><i data-i="speaker"></i></span><span><i data-i="battery"></i></span>
+  </div>
+  <div class="clock num"><div data-t="time"></div><div data-t="date"></div></div>
+</div>
+<script src="kit.js"></script>
+<script>
+const pc = '<bdi dir="ltr">Haddad-PC</bdi>';
+MK.applyKit({
+  en: {
+    title: "Server: tray flyout", running: "Maktaba is running", sub: `${pc} · version 0.3.112`,
+    a: "3", aS: "devices", b: "1", bS: "watching now", c: "128", cS: "videos waiting",
+    upd: "Update ready: 0.3.113", updGo: "Restart",
+    open: "Open Maktaba", pause: "Pause server", logs: "Open logs", comp: "Open Components", report: "Report a problem…",
+    quit: "Quit (server keeps running)", stop: "Stop server and quit", time: "21:40", date: "23/11/2026",
+  },
+  ar: {
+    title: "الخادم: لوحة شريط المهام", running: "مكتبة تعمل", sub: `${pc} · الإصدار <bdi>0.3.112</bdi>`,
+    a: "٣", aS: "أجهزة", b: "١", bS: "يشاهد الآن", c: "١٢٨", cS: "مقطعًا في الانتظار",
+    upd: "التحديث جاهز: <bdi>0.3.113</bdi>", updGo: "إعادة التشغيل",
+    open: "فتح مكتبة", pause: "إيقاف الخادم مؤقتًا", logs: "فتح السجلات", comp: "فتح المكوّنات", report: "الإبلاغ عن مشكلة…",
+    quit: "خروج (يبقى الخادم عاملًا)", stop: "إيقاف الخادم والخروج", time: "٢١:٤٠", date: "٢٣/١١/٢٠٢٦",
+  },
+});
+</script>
+</body>
+</html>

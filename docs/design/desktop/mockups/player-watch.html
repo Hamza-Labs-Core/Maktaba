@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="window" content="1280x800">
+<title>Player: watching</title>
+<link rel="stylesheet" href="../../../../web/packages/website/design/site-tokens.css">
+<link rel="stylesheet" href="../desktop.css">
+<style>
+  .video { position: absolute; inset: 0; background: #000; }
+  .video img { inline-size: 100%; block-size: 100%; object-fit: cover; filter: saturate(1.05); }
+  .top { position: absolute; inset-inline: 0; inset-block-start: 0; display: flex; align-items: center; gap: 14px; block-size: 64px; padding-inline-start: 18px;
+         background: linear-gradient(180deg, rgba(5,8,14,.85), rgba(5,8,14,0)); }
+  .top .caption-btns { align-self: flex-start; block-size: 44px; }
+  .top .t1 { font-weight: 600; font-size: var(--dk-t-lead); }
+  .top .t2 { color: var(--dk-muted); font-size: var(--dk-t-small); }
+  .top .grow { flex: 1; }
+  .ctrl { position: absolute; inset-inline: 0; inset-block-end: 0; padding: 70px 28px 18px;
+          background: linear-gradient(0deg, rgba(5,8,14,.92) 0%, rgba(5,8,14,.6) 55%, rgba(5,8,14,0) 100%); }
+  /* media never mirrors: the timeline and the transport keep left-to-right in Arabic */
+  .scrub, .transport { direction: ltr; }
+  .transport { display: flex; align-items: center; gap: 6px; }
+  .scrub { position: relative; block-size: 20px; display: flex; align-items: center; }
+  .scrub .track { position: relative; flex: 1; block-size: 5px; border-radius: 5px; background: rgba(255,255,255,.22); }
+  .scrub .buf { position: absolute; inset-block: 0; inset-inline-start: 0; inline-size: 66%; border-radius: inherit; background: rgba(255,255,255,.32); }
+  .scrub .played { position: absolute; inset-block: 0; inset-inline-start: 0; inline-size: 49%; border-radius: inherit; background: var(--dk-brass); }
+  .scrub .knob { position: absolute; inset-block-start: -5px; inset-inline-start: calc(49% - 7px); inline-size: 15px; block-size: 15px; border-radius: 50%; background: var(--dk-brass); box-shadow: 0 0 0 4px rgba(227,178,82,.25); }
+  .scrub .tick { position: absolute; inset-block: -1px; inline-size: 3px; background: rgba(5,8,14,.85); }
+  .peek { position: absolute; inset-block-end: 26px; inset-inline-start: calc(58% - 88px); inline-size: 176px; text-align: center; }
+  .peek .pic { block-size: 99px; border-radius: 8px; overflow: hidden; border: 2px solid rgba(255,255,255,.85); }
+  .peek .pic img { inline-size: 100%; block-size: 100%; object-fit: cover; object-position: 60% 50%; }
+  .peek .pt { margin-block-start: 6px; font-weight: 600; font-size: var(--dk-t-small); text-shadow: 0 1px 3px #000; }
+  .row { display: flex; align-items: center; gap: 6px; margin-block-start: 10px; }
+  .row .iconbtn { inline-size: 42px; block-size: 42px; border-radius: 50%; }
+  .row .iconbtn svg { inline-size: 24px; block-size: 24px; }
+  .row .big { inline-size: 52px; block-size: 52px; background: var(--dk-fg); color: #05080e; }
+  .row .big svg path { fill: #05080e; }
+  .row .time { margin-inline: 10px; font-weight: 600; }
+  .row .time .muted { font-weight: 400; }
+  .row .time span { unicode-bidi: isolate; }
+  .row .grow { flex: 1; }
+  .vol { display: flex; align-items: center; gap: 8px; }
+  .vol .bar { inline-size: 84px; block-size: 4px; }
+  .vol .bar i { background: var(--dk-fg); }
+  .row .iconbtn.open { background: rgba(255,255,255,.14); color: var(--dk-brass); }
+  .menu { inset-block-end: 78px; inset-inline-end: 150px; inline-size: 300px; background: rgba(24,36,58,.96); }
+  .sub { position: absolute; inset-inline: 0; inset-block-end: 330px; text-align: center; }
+  .sub span { display: inline-block; padding: 4px 14px; border-radius: 6px; background: rgba(5,8,14,.72); font-size: 26px; line-height: 38px; font-weight: 600; }
+  :root[dir="rtl"] .sub span { font-size: 28px; line-height: 44px; }
+  .menu .mi .check-i { inline-size: 20px; color: var(--dk-brass); }
+</style>
+</head>
+<body>
+<div class="win win11">
+  <div class="video"><img src="art/saturn.jpg" alt=""></div>
+  <div class="top">
+    <span class="iconbtn round"><i data-i="back" class="dir"></i></span>
+    <div><div class="t1" data-t="name"></div><div class="t2" data-t="chapter"></div></div>
+    <div class="grow"></div>
+    <div data-caption></div>
+  </div>
+  <div class="sub"><span data-t="line"></span></div>
+  <div class="ctrl">
+    <div class="scrub">
+      <div class="track"><span class="buf"></span><span class="played"></span>
+        <span class="tick" style="inset-inline-start: 14%"></span><span class="tick" style="inset-inline-start: 38%"></span><span class="tick" style="inset-inline-start: 62%"></span><span class="tick" style="inset-inline-start: 84%"></span>
+        <span class="knob"></span></div>
+      <div class="peek"><div class="pic"><img src="art/saturn.jpg" alt=""></div><div class="pt"><span class="num" data-t="peekT"></span> · <span data-t="peekC"></span></div></div>
+    </div>
+    <div class="row">
+      <div class="transport">
+        <span class="iconbtn big round"><i data-i="pause"></i></span>
+        <span class="iconbtn"><i data-i="back10"></i></span>
+        <span class="iconbtn"><i data-i="fwd10"></i></span>
+        <span class="iconbtn"><i data-i="next"></i></span>
+        <span class="time num"><span data-t="now"></span><span class="muted"> / </span><span class="muted" data-t="total"></span></span>
+      </div>
+      <div class="vol"><i data-i="speaker"></i><div class="bar"><i style="inline-size: 70%"></i></div></div>
+      <span class="grow"></span>
+      <span class="iconbtn open"><i data-i="cc"></i></span>
+      <span class="iconbtn"><i data-i="audio"></i></span>
+      <span class="iconbtn"><i data-i="quality"></i></span>
+      <span class="iconbtn"><i data-i="pip"></i></span>
+      <span class="iconbtn"><i data-i="full"></i></span>
+    </div>
+  </div>
+  <div class="menu">
+    <div class="head" data-t="subs"></div>
+    <div class="mi"><span class="check-i"></span><span data-t="off"></span></div>
+    <div class="mi on hover"><span class="check-i"><i data-i="check"></i></span><span data-t="ar"></span><span class="end" data-t="arNote"></span></div>
+    <div class="mi"><span class="check-i"></span><span data-t="en"></span></div>
+    <div class="sep"></div>
+    <div class="mi"><span class="check-i"></span><span data-t="style"></span><i data-i="chevron" class="s16 dir" style="margin-inline-start:auto"></i></div>
+    <div class="mi"><span class="check-i"></span><span data-t="transcript"></span><span class="end">T</span></div>
+  </div>
+</div>
+<script src="kit.js"></script>
+<script>
+MK.applyKit({
+  en: {
+    title: "Player: watching", name: "Journey to Saturn", chapter: "Rings and moons",
+    line: "Cassini crossed the gap between the rings.", peekT: "31:10", peekC: "Rings and moons",
+    now: "25:30", total: "52:10",
+    subs: "Subtitles", off: "Off", ar: "Arabic", arNote: "From the transcript", en: "English",
+    style: "Subtitle size and colour", transcript: "Show the transcript",
+  },
+  ar: {
+    title: "المشغّل: المشاهدة", name: "رحلة إلى زحل", chapter: "الحلقات والأقمار",
+    line: "عبرت كاسيني الفجوة بين الحلقات.", peekT: "٣١:١٠", peekC: "الحلقات والأقمار",
+    now: "٢٥:٣٠", total: "٥٢:١٠",
+    subs: "الترجمة", off: "إيقاف", ar: "العربية", arNote: "من النص المفرَّغ", en: "الإنجليزية",
+    style: "حجم الترجمة ولونها", transcript: "عرض النص المفرَّغ",
+  },
+});
+</script>
+</body>
+</html>
