@@ -322,6 +322,9 @@ export const UPDATE_CODE_HELP: ReadonlyMap<string, string> = new Map([
   ["db_migrate_failed", "code-database"],
   ["db_refused_older", "code-database"],
   ["db_restore_failed", "code-database"],
+  ["db_down_failed", "code-database"],
+  ["db_restored_lossy", "code-database"],
+  ["db_restored_unknown", "code-database"],
   ["rehearsal_failed", "code-database"],
   ["pg_major_change", "code-database"],
   // updates#code-tv

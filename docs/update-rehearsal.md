@@ -239,6 +239,7 @@ one already made.
 | Scenario 12, the loops the previous release runs on the rehearsal's home | `api/rehearsal_components_e2e_test.go` (read from the previous release's `component_status` and component rows before the update: nothing to keep per release) |
 | Scenarios 13 and 14, the releases' packs and their index, the offline import | `api/rehearsal_packs_e2e_test.go`; the packs in the kit: `tools/rehearsal/build.sh`, `tools/release/packs/build.sh` |
 | Scenarios 16.x, the waves' stages across an update | `api/rehearsal_waves_e2e_test.go`; each release's pipeline wheel: `tools/rehearsal/build.sh`; their environments: `tools/rehearsal/venvs.sh` (CI: the kit job builds them, the previous release's from its cache by tag, and hands them to the 16.x jobs as the `rehearsal-venvs` artifact); the sleeping stages: `tools/rehearsal/sleepy/maktaba_rehearsal_sleepy.py` |
+| Every migration's Down script after a partial Up and after its whole Up (since 0.3.153's 0230), and 0235's failure on the owner's home undone by `migrate undo-failed` and `down-to` (the kit job, on its PostgreSQL 18) | `api/migrate_down_e2e_test.go` (`TestMigrationsDownAfterPartialUp`, `TestHomeFailureOf0235UndoneByDownScripts`) |
 | Expected failures | `tools/rehearsal/expected-failures.txt` |
 | The release gate | `tools/release/tag-guard.sh` (`passed_on`), `tools/release/tag-guard-test.sh` |
 
