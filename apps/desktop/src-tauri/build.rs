@@ -38,6 +38,15 @@ const COMMANDS: &[&str] = &[
     // (capabilities/status-window.json)
     "status_window_state",
     "status_window_action",
+    // Epic 13 story 13.12: the tray's panel (traypanel.rs), granted to its own window only
+    // (capabilities/tray-panel.json)
+    "tray_panel_state",
+    "tray_panel_choose",
+    "tray_panel_hide",
+    // Epic 13 story 13.11: Maktaba's own dialog for the shell's errors (shelldialog.rs), granted
+    // to its own window only (capabilities/shell-dialog.json)
+    "shell_dialog_content",
+    "shell_dialog_choose",
 ];
 
 fn main() {

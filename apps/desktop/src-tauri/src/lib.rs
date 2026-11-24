@@ -46,9 +46,11 @@ mod redact;
 mod run_entry;
 mod setup;
 mod shell;
+mod shelldialog;
 mod status;
 mod statusview;
 mod tray;
+mod traypanel;
 mod webcache;
 
 use shell::focus_main;
@@ -308,6 +310,11 @@ pub fn run() {
             frame::frame_menu,
             ownwindows::status_window_state,
             ownwindows::status_window_action,
+            traypanel::tray_panel_state,
+            traypanel::tray_panel_choose,
+            traypanel::tray_panel_hide,
+            shelldialog::shell_dialog_content,
+            shelldialog::shell_dialog_choose,
         ])
         .run(tauri::generate_context!())
         .unwrap_or_else(|e| {

@@ -16,6 +16,10 @@ import { ownWindow } from "./lib/ownWindow";
 import { I18nProvider } from "./lib/i18n";
 import { DesktopFrame } from "./components/DesktopFrame";
 import { StatusWindow } from "./status/StatusWindow";
+import { isTrayPanel } from "./lib/trayPanel";
+import { TrayPanel } from "./tray/TrayPanel";
+import { isShellDialog } from "./lib/shellDialog";
+import { ShellDialog } from "./dialog/ShellDialog";
 // the theme's fonts, bundled (SIL OFL): Plex for text, Amiri for headings
 import "@fontsource/ibm-plex-sans-arabic/400.css";
 import "@fontsource/ibm-plex-sans-arabic/500.css";
@@ -29,6 +33,10 @@ import "./styles/app.css";
 import "./styles/frame.css";
 // story 13.13: the desktop app's setup and status windows
 import "./styles/desktopWindows.css";
+// story 13.12: the tray's panel
+import "./styles/trayPanel.css";
+// story 13.11: the shell's own dialog
+import "./styles/shellDialog.css";
 import "./styles/library.css";
 import "./styles/browse.css";
 import "./styles/connect.css";
@@ -52,10 +60,15 @@ if (!rootEl) {
 
 ReactDOM.createRoot(rootEl).render(
   <React.StrictMode>
-    {/* story 13.13: the desktop app's status window is a window of these pages that draws
-        the server's status instead of the app (ownwindows.rs marks it before the page loads);
-        the setup window is the app, which shows the setup */}
-    {ownWindow() === "status" ? (
+    {/* the desktop app's own windows of these pages, marked before the page loads: the tray's
+        panel (story 13.12, traypanel.rs), the shell's dialog for its errors (13.11,
+        shelldialog.rs) and the server's status (13.13, ownwindows.rs) draw that instead of the
+        app; the setup window is the app, which shows the setup */}
+    {isTrayPanel() ? (
+      <TrayPanel />
+    ) : isShellDialog() ? (
+      <ShellDialog />
+    ) : ownWindow() === "status" ? (
       <I18nProvider>
         <DesktopFrame />
         <StatusWindow />
@@ -66,7 +79,7 @@ ReactDOM.createRoot(rootEl).render(
   </React.StrictMode>
 );
 
-if (ownWindow() === null) {
+if (ownWindow() === null && !isTrayPanel() && !isShellDialog()) {
   registerServiceWorker();
   // a page an older release left open: its chunks are gone after an update
   reloadOnStaleChunks();
