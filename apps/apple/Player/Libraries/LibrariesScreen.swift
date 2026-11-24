@@ -58,8 +58,29 @@ struct LibrariesScreen: View {
                 choice.wrappedValue = model.libraries.first.map { .library($0.id) }
             }
         }
-        .navigationTitle(Text("Libraries", tableName: "Libraries", comment: "The Libraries section's title"))
+        .modifier(ListTitle(shown: titled))
         .accessibilityIdentifier("screen.libraries")
+    }
+
+    /// The Mac's window has one title, the page's beside the list.
+    private var titled: Bool {
+        #if os(macOS)
+        choice == nil
+        #else
+        true
+        #endif
+    }
+
+    private struct ListTitle: ViewModifier {
+        let shown: Bool
+
+        func body(content: Content) -> some View {
+            if shown {
+                content.navigationTitle(Text("Libraries", tableName: "Libraries", comment: "The Libraries section's title"))
+            } else {
+                content
+            }
+        }
     }
 
     private var columns: [GridItem] {

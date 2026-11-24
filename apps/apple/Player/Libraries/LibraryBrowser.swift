@@ -68,22 +68,7 @@ struct LibraryBrowser: View {
             .environment(\.playerPush, PlayerPush { state.path.append($0) })
             .player(playback, session: session)
         } else {
-            NavigationSplitView(columnVisibility: .constant(.all)) {
-                LibrariesScreen(context: context, model: state.model, choice: $state.choice)
-                    .id(state.fresh)
-                    .toolbar { LibrariesAccountMenu(context: context) }
-                    #if os(macOS)
-                    .navigationSplitViewColumnWidth(min: 300, ideal: 360, max: 480)
-                    #else
-                    .navigationSplitViewColumnWidth(min: 320, ideal: 360, max: 480)
-                    #endif
-            } detail: {
-                NavigationStack(path: $state.path) {
-                    FreshOnLimit(session: session) { page }.librariesDestinations(context)
-                }
-                .environment(\.playerPush, PlayerPush { state.path.append($0) })
-            }
-            .navigationSplitViewStyle(.balanced)
+            wide
             .onChange(of: state.choice) { old, _ in if old != nil { state.path = [] } }
             .onChange(of: state.model.libraries.first?.id, initial: true) { _, first in
                 // a wide window shows a page, not an empty column
@@ -94,6 +79,35 @@ struct LibraryBrowser: View {
             .frame(minWidth: 760, minHeight: 480)
             #endif
         }
+    }
+
+    /// The list and the page beside it. On the Mac the two are set side by side: the section is
+    /// already the detail of the window's split view (`MacShellSplit`), and a split view inside
+    /// it insets its page by the sidebar's width again (the page was 160 points of a 1024-point
+    /// window).
+    @ViewBuilder private var wide: some View {
+        @Bindable var state = state
+        let list = LibrariesScreen(context: context, model: state.model, choice: $state.choice)
+            .id(state.fresh)
+            .toolbar { LibrariesAccountMenu(context: context) }
+        let pages = NavigationStack(path: $state.path) {
+            FreshOnLimit(session: session) { page }.librariesDestinations(context)
+        }
+        .environment(\.playerPush, PlayerPush { state.path.append($0) })
+        #if os(macOS)
+        HStack(spacing: 0) {
+            list.frame(width: 344)
+            Divider()
+            pages.frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        #else
+        NavigationSplitView(columnVisibility: .constant(.all)) {
+            list.navigationSplitViewColumnWidth(min: 320, ideal: 360, max: 480)
+        } detail: {
+            pages
+        }
+        .navigationSplitViewStyle(.balanced)
+        #endif
     }
 
     /// The page beside the list.

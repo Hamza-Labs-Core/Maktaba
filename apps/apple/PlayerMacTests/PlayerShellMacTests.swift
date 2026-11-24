@@ -49,6 +49,51 @@ import MaktabaKit
         }
     }
 
+    /// The Libraries section at the product shots' size, in the shell's split view: the page has
+    /// what the sidebar and the list leave (a split view inside the split view inset it by the
+    /// sidebar's width again: 160 points of 1024).
+    @Test func thePageHasTheRoomTheSidebarAndTheListLeave() async throws {
+        let home = try MockHome()
+        home.clock = PageSnapshots.clock
+        try home.start()
+        let url = try #require(URL(string: home.url))
+        let client = APIClient(home: url, tokens: TokenStore(app: "test.mac.shell", home: url))
+        let defaults = try #require(UserDefaults(suiteName: "test.mac.shell"))
+        let session = AppSession(app: "test.mac.shell", defaults: defaults, asksHomes: false)
+        let user = try JSONDecoder().decode(User.self, from: Data(#"{"id":"u1","username":"viewer","is_admin":false}"#.utf8))
+        let state = LibrariesState(session: session, client: client)
+        state.choice = .library("lib-docs")
+        let size = CGSize(width: 1024, height: 674)
+        let view = MacShellSplit(rows: MacSidebarRows(PlayerSection.allCases), selection: .constant(.libraries),
+                                 arrangement: .constant(SidebarArrangement())) {
+            LibraryBrowser(session: session, user: user, client: client, playing: .constant(false), state: state)
+        }
+        .preferredColorScheme(.dark)
+        .frame(width: size.width, height: size.height)
+        let window = NSWindow(contentRect: NSRect(origin: .zero, size: size), styleMask: [.titled, .fullSizeContentView],
+                              backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.appearance = NSAppearance(named: .darkAqua)
+        defer { window.close() }
+        let hosting = NSHostingView(rootView: view)
+        window.contentView = hosting
+        window.orderFrontRegardless()
+
+        let enhanced = NSAccessibility.Attribute(rawValue: "AXEnhancedUserInterface")
+        NSApp.accessibilitySetValue(true, forAttribute: enhanced)
+        defer { NSApp.accessibilitySetValue(false, forAttribute: enhanced) }
+        var page: NSAccessibilityProtocol?
+        for _ in 0 ..< 100 where page == nil {
+            try await Task.sleep(for: .milliseconds(100))
+            hosting.layoutSubtreeIfNeeded()
+            page = Self.element(hosting, id: "screen.library")
+        }
+        let frame = try #require(page, "the library's page by its identifier").accessibilityFrame()
+        let list = try #require(Self.element(hosting, id: "screen.libraries"), "the list by its identifier").accessibilityFrame()
+        #expect(frame.minX >= list.maxX - 1, "the page after the list: \(frame), \(list)")
+        #expect(frame.width > 400, "the page's width: \(frame) in \(window.frame), the list \(list)")
+    }
+
     /// The accessibility element with `id`, depth first.
     static func element(_ root: Any, id: String) -> NSAccessibilityProtocol? {
         guard let o = root as? NSObject else { return nil }
