@@ -41,7 +41,7 @@ check() {
 	[ -n "$newest" ] || die "check: no dump in $OUT"
 	ts="${newest##*/db-}"; ts="${ts%.dump}"
 	[ -s "$OUT/db-$ts.counts" ] || die "check: no row counts beside $(basename "$newest")"
-	[ -s "$OUT/keys-$ts.tar.gz" ] && [ -s "$OUT/keys-$ts.sha256" ] || die "check: no keys beside $(basename "$newest")"
+	if [ ! -s "$OUT/keys-$ts.tar.gz" ] || [ ! -s "$OUT/keys-$ts.sha256" ]; then die "check: no keys beside $(basename "$newest")"; fi
 	scratch="restore_check_$$"
 	dir="$(mktemp -d)"
 	# shellcheck disable=SC2064  # expands now, on purpose
@@ -66,7 +66,7 @@ check() {
 	local k v
 	for k in POSTGRES_PASSWORD MAKTABA_CLOUD_DB_URL MAKTABA_CLOUD_TOKEN_SECRET MAKTABA_CLOUD_STAFF_TOKEN_SECRET MAKTABA_CLOUD_STAFF_SECRET_KEY RELAY_DOMAIN; do
 		v="$(env_in "$dir/keys/.env" "$k")"
-		[ -n "$v" ] && [ "$v" != CHANGEME ] || die "check: the saved .env has no $k"
+		if [ -z "$v" ] || [ "$v" = CHANGEME ]; then die "check: the saved .env has no $k"; fi
 	done
 	seed_ok "$dir/keys/secrets/entitlement.key" || die "check: the saved entitlement key is not a 32-byte seed"
 	[ "$(wc -c <"$dir/keys/secrets/log.key" | tr -d ' ')" = 32 ] || die "check: the saved log key is not 32 bytes"

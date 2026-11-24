@@ -60,7 +60,7 @@ first_deploy() { [ ! -f "$STATE/committed" ] && ! running maktaba-cloud; }
 cmd_begin() {
 	local src tmp refs ref room p try
 	src="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-	[ -n "${MAKTABA_CLOUD_TAG:-}" ] && [ -n "${MAKTABA_CADDY_TAG:-}" ] || die "begin: MAKTABA_CLOUD_TAG and MAKTABA_CADDY_TAG are required"
+	if [ -z "${MAKTABA_CLOUD_TAG:-}" ] || [ -z "${MAKTABA_CADDY_TAG:-}" ]; then die "begin: MAKTABA_CLOUD_TAG and MAKTABA_CADDY_TAG are required"; fi
 	case "$MAKTABA_CLOUD_TAG $MAKTABA_CADDY_TAG" in
 		*@sha256:*\ *@sha256:*) ;;
 		*) die "begin: the images are named by digest" ;;
