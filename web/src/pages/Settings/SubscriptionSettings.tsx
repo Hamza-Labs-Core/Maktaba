@@ -104,7 +104,8 @@ function FeatureList({ features }: { features: Record<string, boolean> }) {
   const { t } = useI18n();
   return (
     <ul className="mkt-subscription__features" aria-label={t("subscription.features")}>
-      {FEATURES.map((f) => (
+      {/* broadcasting is listed only when the licence carries it (off by default, 2026-11-24) */}
+      {FEATURES.filter((f) => f !== "broadcast" || features[f]).map((f) => (
         <li key={f}>
           <Badge tone={features[f] ? "success" : "neutral"}>
             {features[f] ? t("subscription.feature.on") : t("subscription.feature.off")}

@@ -32,7 +32,14 @@ ROOT = Path(__file__).resolve().parents[3]
 SCRIPT = ROOT / "tools/ci/xcresult_ran.py"
 FIXTURES = Path(__file__).resolve().parent / "fixtures/xcresult"
 WORKFLOW = yaml.safe_load((ROOT / ".github/workflows/_apple-apps.yml").read_text(encoding="utf-8"))
-UI_JOBS = ("player-ui-tests", "tv-ui-tests", "player-ui-mac", "remote-ui-tests", "remote-ui-ipad")
+UI_JOBS = (
+    "player-ui-tests-iphone",
+    "player-ui-tests-ipad",
+    "tv-ui-tests",
+    "player-ui-mac",
+    "remote-ui-tests",
+    "remote-ui-ipad",
+)
 LOOPED = [
     "-only-testing",
     "Maktaba Player iPad UITests/PlayerProfileUITests/testPlaybackSettingsAreKept",

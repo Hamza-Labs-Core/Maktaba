@@ -280,6 +280,9 @@ class PlayerUITestCase: XCTestCase {
         if let section { args += ["-maktaba-section", section] }
         if let open { args += ["-maktaba-open", open] }
         if controlsStay { args += ["-player.controls_hide_after", "600"] }
+        // no Cast unless the test asks for it: CI's build names a receiver for the tests of the
+        // real Cast SDK, which no other test starts
+        if !extra.contains("-maktaba-cast") { args += ["-maktaba-cast", "off"] }
         // the app takes the text sizes `setTextSize` asks for (`TextSizeHook`)
         args.append(TextSizeHook.flag)
         // and counts the touches the system cancels (`TouchHook`, read by `record(_:)`)

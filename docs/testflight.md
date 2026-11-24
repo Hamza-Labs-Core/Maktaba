@@ -167,7 +167,7 @@ What the jobs picked before Xcode 27:
   among the device types whose name starts with "Apple TV 4K". That is
   `com.apple.CoreSimulator.SimDeviceType.Apple-TV-4K-4K`, the first-generation Apple TV 4K
   (`…-4K-4K` sorts after `…-4K-3rd-generation-4K`), not the newest one.
-- **The Players and the Remote** (`player-ui-tests`, `remote-ui-tests`): the newest iOS
+- **The Players and the Remote** (`player-ui-tests-iphone`, `player-ui-tests-ipad`, `remote-ui-tests`): the newest iOS
   runtime, with the highest-numbered "iPhone N" (iPhone 17) or the highest "iPad Pro 11-inch
   (MN)" (M5).
 
