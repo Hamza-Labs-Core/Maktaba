@@ -38,6 +38,8 @@ func TestAFailedUpdateNeverUndoesAKeptSchema(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(root) })
 	b, _ := pgtest.Bundle(ctx, t, programs, root, false)
+	// a disk with little room is no failure here: the dumps are small
+	b.Room = &pgbundle.RoomPolicy{ReserveShare: 0.0001, ReserveMin: 1 << 20, MaxShare: 1}
 	dsn, err := b.URL()
 	if err != nil {
 		t.Fatal(err)
