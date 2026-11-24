@@ -3670,6 +3670,7 @@
   "updates.checkFailed.http_error": "GitHub answered with an error",
   "updates.checkFailed.decode": "GitHub's answer could not be read",
   "updates.checkFailed.unreachable": "GitHub could not be reached",
+  "updates.checkFailed.feed_refused": "Maktaba's release feed failed its signature or content checks, so it was not used",
   "updates.settings.page": "Every machine's version, and each update step by step: the Updates page",
   "updates.plan.none": "No update planned: you are up to date.",
   "updates.plan.at": "Version {version} installs on {at}.",

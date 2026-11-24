@@ -81,6 +81,7 @@ NOT_IN_CI: dict[str, str] = {
     ".github/workflows/web-release.yml": "runs on a tag",
     ".github/workflows/testflight.yml": "runs on a tag",
     ".github/workflows/packages.yml": "runs after a release",
+    ".github/workflows/update-feed.yml": "runs after a release (the release feed; its code's tests run in the Go unit job)",
     ".github/workflows/postgres-cdn.yml": "runs after a release (its script's test runs in node packaging)",
     ".github/workflows/store-gallery.yml": "runs by hand (its composer's test runs in the website job, story 60.14)",
     ".github/workflows/relay.yml": "its own workflow (cloud relay)",

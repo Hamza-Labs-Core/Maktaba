@@ -3856,6 +3856,18 @@ build fails when the two differ.
   screenshots on the Apps pages were retaken on test data with men's names only and on the new
   demo library. In English and Arabic.
 
+- **Homes find updates in Maktaba's own signed release feed.** A home no longer reads GitHub's
+  list of every release, which had grown to 10.5 MB and stopped every home's update check on
+  2026-11-23. It reads one small file for its channel and platform from maktaba.tv
+  (`/updates/v1/<channel>/<platform>.json`, about 4 KB as served). The file lists the newest 10
+  releases with only the files that platform installs. It is signed like a release, and every
+  home checks the signature before using any of it. The home's catalog, the re-check before an
+  update, the About page and `maktaba-server update` all read it. GitHub's list is read only when
+  the feed cannot be reached; a feed that fails its signature check stops the check instead.
+  A bad release is now pulled from the feed (`tools/release/pull-release.sh`), and every home
+  marks it withdrawn. Homes on v0.3.153 to v0.3.161 keep reading GitHub, unchanged.
+  `MAKTABA_UPDATE_FEED=off` turns the feed off.
+
 ### Fixed
 
 - **A TV held on its old streaming software stays there through schedule and settings
