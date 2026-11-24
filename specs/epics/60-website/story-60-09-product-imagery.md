@@ -26,9 +26,16 @@ apps change.
 
 **The demo content** (`tests/fixtures/demo-library/`):
 - **Films and series under open licences, with their own artwork:**
-  - Blender's open movies (Big Buck Bunny, Sintel, Tears of Steel, Elephants Dream, Spring,
-    Cosmos Laundromat), CC BY;
-  - public-domain titles where their art is also public domain.
+  - public-domain documentaries (NASA's and NOAA's films of space, the Earth seen from orbit
+    and the deep sea) and Creative Commons ones, with no people in them;
+  - children's animation whose characters are all animals (Blender's Big Buck Bunny and the
+    Caminandes films), CC BY or CC BY-SA;
+  - each title's art is a frame of the film or the film's own openly licensed card.
+- **No woman or girl in any picture, title or text:** no poster, thumbnail, still, frame or
+  character, and no name or description that implies one; nothing a conservative household
+  would not show (no music videos). Each film is checked through, frame by frame on a contact
+  sheet, and every picture by eye; a title that cannot be checked is replaced. A test scans the
+  titles, synopses and lines for words that name or describe a woman or girl.
 - Each title has an English and an Arabic title and synopsis, written for the fixture.
 - **No person's name, LAN address or media path:** the household is "The Haddad family", the home
   is «الجهاز الرئيسي» / "Living room", and paths and addresses never show.

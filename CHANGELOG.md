@@ -14,6 +14,12 @@ build fails when the two differ.
 
 ### Changed
 
+- **New pictures on maktaba.tv.** The screenshots of every app now show a library of
+  documentaries and children's animation: NASA's Curiosity rover, the Apollo 11 launch, Saturn's
+  rings, Lake Nasser seen from space, the Moon's phases, a deep-sea octopus, Big Buck Bunny and
+  the Caminandes llama films. Every title is public domain or Creative Commons, credited, and
+  no woman or girl appears in any picture. In English and Arabic.
+
 - **A full guide for each NAS on maktaba.tv/install.** QNAP, UGREEN and a new ASUSTOR page each
   walk through the same steps as the TrueNAS and Unraid guides: what to check first, the user and
   its uid:gid, the folders and their permissions, the install in the NAS's own app, the setup and

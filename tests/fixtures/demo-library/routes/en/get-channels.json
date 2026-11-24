@@ -1,12 +1,12 @@
 {
  "items": [
   {
-   "id": "ch-films",
+   "id": "ch-space",
    "number": 1,
-   "name": "Film Night",
-   "slug": "films",
+   "name": "Space",
+   "slug": "space",
    "logo_url": null,
-   "library_id": "lib-films",
+   "library_id": "lib-docs",
    "logo_path": "",
    "art": {
     "watermark": {
@@ -29,20 +29,20 @@
    "created_at": "{{now-17280000}}",
    "updated_at": "{{now-864000}}",
    "now_playing": {
-    "title": "Sintel",
-    "start_at": "{{now-900}}",
+    "title": "Along the Rings of Saturn",
+    "start_at": "{{now}}",
     "end_at": "{{now+900}}",
-    "progress": 0.5
+    "progress": 0
    },
    "guide_until": "{{now+86400}}"
   },
   {
-   "id": "ch-shorts",
+   "id": "ch-kids",
    "number": 2,
-   "name": "Shorts",
-   "slug": "shorts",
+   "name": "Kids",
+   "slug": "kids",
    "logo_url": null,
-   "library_id": "lib-shorts",
+   "library_id": "lib-kids",
    "logo_path": "",
    "art": {
     "watermark": {
@@ -65,7 +65,7 @@
    "created_at": "{{now-17280000}}",
    "updated_at": "{{now-864000}}",
    "now_playing": {
-    "title": "Sprite Fright",
+    "title": "Caminandes: Gran Dillama",
     "start_at": "{{now}}",
     "end_at": "{{now+900}}",
     "progress": 0
@@ -73,12 +73,12 @@
    "guide_until": "{{now+86400}}"
   },
   {
-   "id": "ch-family",
+   "id": "ch-earth",
    "number": 3,
-   "name": "Family",
-   "slug": "family",
+   "name": "Earth and Sea",
+   "slug": "earth",
    "logo_url": null,
-   "library_id": "lib-films",
+   "library_id": "lib-docs",
    "logo_path": "",
    "art": {
     "watermark": {
@@ -101,7 +101,7 @@
    "created_at": "{{now-17280000}}",
    "updated_at": "{{now-864000}}",
    "now_playing": {
-    "title": "Caminandes: Gran Dillama",
+    "title": "Apollo 11: The Launch",
     "start_at": "{{now}}",
     "end_at": "{{now+900}}",
     "progress": 0

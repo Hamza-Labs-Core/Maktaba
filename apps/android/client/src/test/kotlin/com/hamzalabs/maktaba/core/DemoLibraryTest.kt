@@ -21,17 +21,17 @@ class DemoLibraryTest {
 
     @Test
     fun eachLanguageAnswersItsOwnTitles() {
-        val en = DemoLibrary.load("en").answer("GET", "/api/videos/v-sintel")!!
-        val ar = DemoLibrary.load("ar").answer("GET", "/api/videos/v-sintel")!!
+        val en = DemoLibrary.load("en").answer("GET", "/api/videos/v-curiosity")!!
+        val ar = DemoLibrary.load("ar").answer("GET", "/api/videos/v-curiosity")!!
         assertEquals(200, en.status)
-        assertTrue(String(en.body).contains("\"Sintel\""))
-        assertTrue(String(ar.body).contains("سينتل"))
+        assertTrue(String(en.body).contains("\"Curiosity: Landing on Mars\""))
+        assertTrue(String(ar.body).contains("كيوريوسيتي: الهبوط على المريخ"))
         assertFalse("every time filled", String(DemoLibrary.load("en").answer("GET", "/api/channels/now")!!.body).contains("{{"))
     }
 
     @Test
     fun anImageRouteAnswersItsJpeg() {
-        val poster = DemoLibrary.load("en").answer("GET", "/api/videos/v-sintel/poster")
+        val poster = DemoLibrary.load("en").answer("GET", "/api/videos/v-curiosity/poster")
         assertNotNull(poster)
         assertEquals("image/jpeg", poster!!.contentType)
         // a JPEG starts with FF D8
@@ -42,9 +42,9 @@ class DemoLibraryTest {
     @Test
     fun aNamedSegmentMatchesAnyOneSegmentAndNothingElseIsAnswered() {
         val demo = DemoLibrary.load("en")
-        assertNotNull(demo.answer("GET", "/api/videos/v-spring/chapters"))
+        assertNotNull(demo.answer("GET", "/api/videos/v-moon-phases/chapters"))
         assertNull(demo.answer("GET", "/api/nothing/here"))
-        assertNull(demo.answer("DELETE", "/api/videos/v-sintel"))
+        assertNull(demo.answer("DELETE", "/api/videos/v-curiosity"))
     }
 
     @Test

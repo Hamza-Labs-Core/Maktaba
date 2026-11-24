@@ -1,7 +1,7 @@
 import XCTest
 
-/// The Apple TV's product screenshots (story 60.09): Home, the series Open Shorts with its
-/// seasons, Sintel playing, and the live channel guide, in English and in Arabic (the TV is
+/// The Apple TV's product screenshots (story 60.09): Home, the series Caminandes with its
+/// seasons, Curiosity playing, and the live channel guide, in English and in Arabic (the TV is
 /// dark by default), with the Siri remote, on the demo library (`MockHome(demo:)`, from
 /// `tests/fixtures/demo-library/`). Each is an attachment named
 /// `shot-appletv-<screen>-<language>`, kept always: CI exports them from the result bundle as
@@ -32,13 +32,13 @@ final class TVDemoShotsUITests: XCTestCase {
         for language in ["en", "ar"] {
             try signIn(language, clock: MockHome.quarterHour())
             XCTAssertTrue(element("home.row.continue").waitForExistence(timeout: 20), "Home; the home saw \(seen)")
-            XCTAssertTrue(element("video.card.v-sintel.art").waitForExistence(timeout: 20), "Sintel's picture")
+            XCTAssertTrue(element("video.card.v-curiosity.art").waitForExistence(timeout: 20), "Curiosity's picture")
             waitForQuiet()
             shot("home")
         }
     }
 
-    /// Home's Continue row: Sintel, then Llamigos (an Open Shorts episode); its page's Go to
+    /// Home's Continue row: Curiosity, then Llamigos (a Caminandes episode); its page's Go to
     /// series opens the series.
     func testSeries() throws {
         for language in ["en", "ar"] {
@@ -64,24 +64,24 @@ final class TVDemoShotsUITests: XCTestCase {
         }
     }
 
-    /// Sintel from Home's Continue row: Resume (focused first) plays it through a queue.
+    /// Curiosity from Home's Continue row: Resume (focused first) plays it through a queue.
     func testPlayer() throws {
         for language in ["en", "ar"] {
             try signIn(language)
             // the TV counts a session's stream from where it opened (Resume: the demo's
             // `position_sec`), so the stream is the rest of the film
-            if let home, let length = home.demoVideo("v-sintel")?["duration_sec"] as? Int,
-               let at = home.demoDocument("get-me-videos-v-sintel")?["position_sec"] as? Int {
+            if let home, let length = home.demoVideo("v-curiosity")?["duration_sec"] as? Int,
+               let at = home.demoDocument("get-me-videos-v-curiosity")?["position_sec"] as? Int {
                 home.streamSeconds = (length - at) / 2 * 2
             }
-            let card = element("video.card.v-sintel.art")
-            XCTAssertTrue(card.waitForExistence(timeout: 20), "Sintel on Home; the home saw \(seen)")
+            let card = element("video.card.v-curiosity.art")
+            XCTAssertTrue(card.waitForExistence(timeout: 20), "Curiosity on Home; the home saw \(seen)")
             remote.press(.down)
             usleep(500_000)
-            moveFocusInRow(to: "v-sintel")
+            moveFocusInRow(to: "v-curiosity")
             remote.press(.select)
             let resume = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", language == "ar" ? "استئناف" : "Resume")).firstMatch
-            XCTAssertTrue(resume.waitForExistence(timeout: 20), "Sintel's page offers Resume")
+            XCTAssertTrue(resume.waitForExistence(timeout: 20), "Curiosity's page offers Resume")
             XCTAssertTrue(wait(timeout: 10) { resume.hasFocus }, "Resume focused first")
             remote.press(.select)
             XCTAssertTrue(element("queue.player").waitForExistence(timeout: 20), "the player; the home saw \(seen)")
@@ -99,7 +99,7 @@ final class TVDemoShotsUITests: XCTestCase {
             try signIn(language, clock: MockHome.quarterHour())
             openLiveTab(language == "ar" ? "البث المباشر" : "Live TV")
             openGuide()
-            let first = app.buttons["live.guide.ch-films.now"]
+            let first = app.buttons["live.guide.ch-space.now"]
             XCTAssertTrue(first.waitForExistence(timeout: 20), "the guide; the home saw \(seen)")
             remote.press(.down)
             XCTAssertTrue(wait(timeout: 5) { first.hasFocus }, "down lands on what is on now")

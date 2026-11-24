@@ -1,6 +1,6 @@
 import XCTest
 
-/// The product screenshots of the Player on iPhone and iPad (story 60.09): Home, Sintel's
+/// The product screenshots of the Player on iPhone and iPad (story 60.09): Home, Curiosity's
 /// page and the player with Arabic subtitles, in English and in Arabic, dark, on the demo
 /// library (`MockHome(demo:)`, from `tests/fixtures/demo-library/`) with its clock pinned
 /// (`library.json`'s noon; Home's On now row, drawn against the device's clock, counts from
@@ -27,15 +27,15 @@ final class PlayerDemoShots: PlayerUITestCase {
     func testFilm() throws {
         for language in ["en", "ar"] {
             try demo(language)
-            launchSignedIn(language, section: "home", open: "video/v-sintel")
-            XCTAssertTrue(element("screen.video").waitForExistence(timeout: 20), "Sintel's page")
+            launchSignedIn(language, section: "home", open: "video/v-curiosity")
+            XCTAssertTrue(element("screen.video").waitForExistence(timeout: 20), "Curiosity's page")
             XCTAssertTrue(element("video.title").waitForExistence(timeout: 10), "its title")
             waitForArt(atLeast: 1)
             demoShot("film")
         }
     }
 
-    /// Sintel playing with the Arabic subtitles on (in both languages: the Arabic line is what
+    /// Curiosity playing with the Arabic subtitles on (in both languages: the Arabic line is what
     /// the page shows off), the controls gone so the line reads clear of them: on the iPhone in
     /// landscape, on the iPad upright (its sidebar floats over a landscape player).
     func testPlayer() throws {
@@ -44,11 +44,11 @@ final class PlayerDemoShots: PlayerUITestCase {
             try demo(language)
             // the stream as long as the film (the demo's `duration_sec`): the player seeks to 7:00
             // in it (`Playback.load`); the cue lasts the whole film
-            if let seconds = home.demoVideo("v-sintel")?["duration_sec"] as? Int { home.streamSeconds = seconds / 2 * 2 }
+            if let seconds = home.demoVideo("v-curiosity")?["duration_sec"] as? Int { home.streamSeconds = seconds / 2 * 2 }
             // signed in upright (in landscape the keyboard covers the sign-in's choices), turned
             // once the player is open
             XCUIDevice.shared.orientation = .portrait
-            launchSignedIn(language, section: "home", open: "watch/v-sintel@420", controlsStay: false,
+            launchSignedIn(language, section: "home", open: "watch/v-curiosity@420", controlsStay: false,
                            extra: ["-playback.subtitles_on", "YES", "-playback.subtitle_language", "ar"])
             let surface = element("player.surface")
             XCTAssertTrue(surface.waitForExistence(timeout: 30), "the player")
