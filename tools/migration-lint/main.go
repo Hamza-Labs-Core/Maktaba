@@ -22,6 +22,10 @@
 //     MANIFEST.md's "Permanent gaps", and every listed one is unused (gaps.go).
 //  8. Goose annotations: Up, Down and StatementBegin/End come in the order goose
 //     parses (goose.go).
+//  9. Down script: every migration has a Down script, and a NO TRANSACTION file's runs
+//     after any part of its Up (rules_down.go).
+//  10. Lossless Up: a new migration's Up loses no data its Down cannot give back, or says
+//     so (`-- +maktaba down-restores:` / `-- +maktaba lossy-up:`; rules_down.go).
 //
 // Exit code 0 = clean; non-zero = at least one violation. The output
 // is human-readable and lists every violation found (does not bail on
@@ -111,6 +115,11 @@ func main() {
 		}
 
 		for _, v := range noTxCheck(f, body) {
+			violations++
+			report(v)
+		}
+
+		for _, v := range downCheck(f, body) {
 			violations++
 			report(v)
 		}

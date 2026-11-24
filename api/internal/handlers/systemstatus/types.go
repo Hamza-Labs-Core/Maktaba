@@ -66,13 +66,15 @@ const (
 	KindPluginRunners = "plugin_runners"
 	// KindHostLoad: the load of the machine this server runs on (hostload.go).
 	KindHostLoad = "host_load"
+	// KindUpdateCheck: whether the home can read GitHub's list of releases (update_check.go).
+	KindUpdateCheck = "update_check"
 )
 
 // Kinds lists every kind (the help coverage test).
 var Kinds = []string{
 	KindAPI, KindPostgres, KindStreaming, KindPipeline, KindProcess, KindWorkers, KindWorker,
 	KindStreamingHost, KindDependency, KindPlexLiveTV, KindQueues, KindTVChannels, KindTVChange,
-	KindTVSlot, KindTVTuner, KindHostAccess, KindComponents, KindPluginRunners, KindHostLoad,
+	KindTVSlot, KindTVTuner, KindHostAccess, KindComponents, KindPluginRunners, KindHostLoad, KindUpdateCheck,
 }
 
 // Item is one part of Maktaba on the page.
