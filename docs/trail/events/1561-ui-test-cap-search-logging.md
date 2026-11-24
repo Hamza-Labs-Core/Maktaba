@@ -2,7 +2,7 @@
 schema: 1
 kind: pr
 pr: 1561
-title: "Search changes the screen once the keyboard has hidden; a hung UI test is cut at 10 minutes; the Mac app's crash reports kept"
+title: "Search changes the screen once the keyboard has hidden; a failure in tearDown no longer hangs XCTest; a hung test is cut at 10 minutes"
 date: 2026-11-24
 session: 71f9924d-5382-420c-bb6a-d0e85685bd01
 agent: claude-code
@@ -47,6 +47,26 @@ prs: [1561]
     card was cut off by the one below it.
   - So the check measures mid-relayout on a slow simulator. No fix yet: excusing the check
     would be a skip.
+- **"Failed to terminate" then a hang, root-caused:**
+  - #1561's own run 45302179115 hit it on iPad 4/6
+    (`PlayerReportProblemUITests.testAlsoSendToMaktabaWhenTheHomeAllowsIt`). The 10-minute
+    cap cut it, and the shard went on.
+  - The spindump XCTest kept has the runner's main thread in `PlayerUITestCase.tearDown` →
+    `close` → `terminate` → `record(_:)` → `_interruptTest` → `_performTearDownSequence…` →
+    `XCTWaiter _synchronouslyWaitForTimeInterval`.
+  - With `continueAfterFailure` false, XCTest answers a failure inside an async tearDown by
+    running the tear-down sequence again from inside it. It then waits on the main thread
+    for that inner async tearDown, which needs the main thread, so neither ends. The app had
+    already exited.
+  - Every UI-test tearDown that ends its app now sets `continueAfterFailure = true` first.
+    "Failed to terminate" itself, XCTest giving up on ending the app, still has no cause.
+- **TV Search's suggestions:** `testSuggestionsShowTheirKindsAndATitleOpensItsPage` failed in
+  the same run.
+  - Its check of the cells' focus never saw the row's first suggestion, so it always
+    pressed Down four times, main's passing run 45292196113 included.
+  - In 45302179115 those presses went past the row to Search for "se", as the screen
+    recording shows.
+  - It now moves by where the focused element is, relative to the title suggestion's row.
 - **The Mac's "Lost connection":** the Mac app's last line was "connect" at 18:33:53. The next
   test's app launched at 18:34:04, so the app ended without a word. The Mac job now keeps the
   Maktaba apps' crash reports from `~/Library/Logs/DiagnosticReports`.
@@ -73,7 +93,7 @@ prs: [1561]
 - Search's lost presses (Filters after Return; a recent search after a row was removed): none
   in 24 diagnostic runs of the suite. The Filters case followed Return, so the keyboard fix
   may cover it. The next failure's app log will say whether the action ran.
-- "Failed to terminate": cut at 10 minutes now, but the test still fails. The next
-  occurrence's spindump will show where the runner was.
+- "Failed to terminate": it no longer hangs, but the test still fails. Why XCTest cannot end
+  the app (twice the app was alive and serving, once it had exited) is not known.
 - The audit's "Text clipped" measured mid-relayout (above), the Mac's "Lost connection" (its
   crash report comes with the next one), and `WalkthroughModel`'s 1 s timing.
