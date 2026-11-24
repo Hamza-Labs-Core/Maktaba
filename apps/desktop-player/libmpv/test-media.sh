@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # The files MpvRealTest plays (story 13.18 T01, T02), made with the runner's ffmpeg into DIR:
 # a 120 s 1080p H.264 MKV with AC-3 5.1, and a 20 s 2160p HEVC 10-bit MKV. Story 13.20 (T05,
-# T06): a 12 s black 1280x720 MKV with three Arabic subtitle tracks, each on from 1 s to 9 s.
+# T06): a 30 s black 1280x720 MKV with three Arabic subtitle tracks, each on from 1 s to 29 s.
 set -euo pipefail
 dir="${1:?usage: test-media.sh DIR}"
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -10,7 +10,7 @@ mkdir -p "$dir"
 # committed PGS picture (make-pgs.java: ffmpeg has no PGS encoder)
 cat >"$dir/arabic.srt" <<'SRT'
 1
-00:00:01,000 --> 00:00:09,000
+00:00:01,000 --> 00:00:29,000
 مرحبا بكم في مكتبة
 SRT
 cat >"$dir/arabic.ass" <<'ASS'
@@ -25,9 +25,9 @@ Style: Default,Arial,48,&H0000FF00,&H0000FF00,&H00000000,&H00000000,0,0,0,0,100,
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
-Dialogue: 0,0:00:01.00,0:00:09.00,Default,,0,0,0,,مرحبا بكم في مكتبة
+Dialogue: 0,0:00:01.00,0:00:29.00,Default,,0,0,0,,مرحبا بكم في مكتبة
 ASS
-ffmpeg -v error -y -f lavfi -t 12 -i color=c=black:size=1280x720:rate=24 \
+ffmpeg -v error -y -f lavfi -t 30 -i color=c=black:size=1280x720:rate=24 \
   -i "$dir/arabic.srt" -i "$dir/arabic.ass" -i "$here/../src/test/resources/subs/arabic.sup" \
   -map 0:v -map 1:s -map 2:s -map 3:s -c:v libx264 -preset ultrafast -crf 30 -g 24 \
   -c:s:0 srt -c:s:1 ass -c:s:2 copy \

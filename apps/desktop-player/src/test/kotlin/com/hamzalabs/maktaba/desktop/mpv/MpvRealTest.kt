@@ -31,7 +31,7 @@ import java.util.concurrent.atomic.AtomicInteger
  *  - T07 at run time: the library says it was configured without GPL.
  *
  * Story 13.20, on test-media.sh's `subs-ar.mkv` (a black 1280x720 picture; an Arabic SRT, an
- * Arabic ASS whose style names Arial in green, and the committed PGS, each on from 1 s to 9 s)
+ * Arabic ASS whose style names Arial in green, and the committed PGS, each on from 1 s to 29 s)
  * and a sidecar the pretend home serves:
  *  - T05: each, chosen in the menu, is drawn by mpv; the frame is compared on Linux with its
  *    reference (src/test/resources/references/mpv-subs-*.png, reviewed once for Arabic joined
@@ -154,6 +154,9 @@ class MpvRealTest {
 
     @get:org.junit.Rule val tmp = org.junit.rules.TemporaryFolder()
 
+    /** mpv's log of the video playing (build/reports/mpv/). */
+    private var mpvLog: File? = null
+
     /** The Player's caption face, from its resources, in a folder libass reads (as Engine's). */
     private fun fonts(): File = tmp.newFolder("fonts").also { d ->
         for (name in listOf("ibm_plex_sans_arabic_regular.ttf", "ibm_plex_sans_arabic_semibold.ttf")) {
@@ -175,12 +178,16 @@ class MpvRealTest {
         home.answer("GET /api/videos/v1/subtitles", """{"items":[{"id":1,"language":"en","format":"srt","source":"external"}]}""")
         home.answer("GET /stream/s1/subs/sidecar/en.vtt") {
             MockResponse.Builder().code(200).addHeader("Content-Type", "text/vtt")
-                .body("WEBVTT\n\n00:00:01.000 --> 00:00:09.000\nWelcome to Maktaba\n").build()
+                .body("WEBVTT\n\n00:00:01.000 --> 00:00:29.000\nWelcome to Maktaba\n").build()
         }
         val fonts = fonts()
-        val p = Playback(home.client, scope, background, signedOut = {}, settings = { values }, engine = { MpvPlayers(lib, fonts) }, log = { println("log: $it") })
+        // mpv's own log for the run, kept with the job's reports
+        mpvLog = File("build/reports/mpv/${System.nanoTime()}.log").absoluteFile.also { it.parentFile.mkdirs() }
+        val extra = mapOf("log-file" to mpvLog!!.path, "msg-level" to "all=v")
+        val p = Playback(home.client, scope, background, signedOut = {}, settings = { values }, engine = { MpvPlayers(lib, fonts, extra) }, log = { println("log: $it") })
         playback = p
-        runBlocking { withContext(main) { p.play(PlayRequest("v1", "v1", startSec = 3)) } }
+        // from the start: each line is on from 1 s to 29 s
+        runBlocking { withContext(main) { p.play(PlayRequest("v1", "v1", startSec = 0)) } }
         val end = System.currentTimeMillis() + 20_000
         while (runBlocking { withContext(main) { p.subtitleOptions.size } } < 4) {
             if (System.currentTimeMillis() > end) throw AssertionError("no subtitles menu: ${runBlocking { withContext(main) { p.subtitleOptions } }}")
@@ -255,7 +262,12 @@ class MpvRealTest {
             }
             Thread.sleep(50)
         }
-        throw AssertionError("${title ?: "the sidecar"}: no line drawn (last $last)")
+        val v = runBlocking { withContext(main) { p.player } } as? MpvVideo
+        val state = listOf("time-pos", "sid", "sub-text", "current-tracks/sub/codec", "track-list/count", "vo-configured", "osd-dimensions/w")
+            .joinToString(", ") { "$it=${v?.property(it)}" }
+        val lines = mpvLog?.takeIf { it.isFile }?.readLines().orEmpty()
+            .filter { l -> listOf("sub", "ass", "font", "libass", "error", "Error").any { it in l } }.takeLast(60)
+        throw AssertionError("${title ?: "the sidecar"}: no line drawn (last $last); mpv: $state\n" + lines.joinToString("\n"))
     }
 
     /** As FrameReferencesTest: compared on Linux with src/test/resources/references/[name].png; a missing one is written and fails. */

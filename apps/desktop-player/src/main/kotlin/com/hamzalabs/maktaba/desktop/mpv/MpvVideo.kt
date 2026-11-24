@@ -43,6 +43,8 @@ class MpvVideo internal constructor(
     private val autoplay: Boolean,
     private val events: VideoEvents,
     private val fontsDir: File?,
+    /** More of mpv's options, after the Player's (a test's log file). */
+    private val extra: Map<String, String> = emptyMap(),
 ) : Video {
     private val lock = Any()
     @Volatile private var ctx: Pointer? = null
@@ -134,6 +136,7 @@ class MpvVideo internal constructor(
             }
             opt("osd-font", CAPTION_FONT)
             opt("sub-font", CAPTION_FONT)
+            for ((k, v) in extra) opt(k, v)
             val err = lib.mpv_initialize(c)
             if (err < 0) {
                 lib.mpv_terminate_destroy(c)
@@ -343,6 +346,9 @@ class MpvVideo internal constructor(
         return null
     }
 
+    /** One of mpv's properties now, as a string (a test's look at what mpv is doing). */
+    internal fun property(name: String): String? = ctx?.let { string(it, name) }
+
     /** Subtitles drawn by mpv (story 13.20): a file's own track, a home's file, or none. An HLS rendition is not one. */
     override fun selectSubtitle(option: SubtitleOption?): Boolean {
         if (option?.kind == SubtitleOption.Kind.Stream) return false
@@ -478,14 +484,19 @@ class MpvVideo internal constructor(
 }
 
 /** libmpv's players (story 13.18): each video in its own [MpvVideo]. */
-class MpvPlayers(private val lib: LibMpv, private val fontsDir: File?) : Players {
+class MpvPlayers(
+    private val lib: LibMpv,
+    private val fontsDir: File?,
+    /** More of mpv's options for each video (a test's log file). */
+    private val extra: Map<String, String> = emptyMap(),
+) : Players {
     override val profile: String get() = MPV_PROFILE
 
     /** mpv draws a file's own subtitle tracks and the home's files itself (story 13.20). */
     override val drawsSubtitles: Boolean get() = true
 
     override suspend fun open(url: String, fromMs: Long, autoplay: Boolean, events: VideoEvents): Video =
-        MpvVideo(lib, url, fromMs, autoplay, events, fontsDir)
+        MpvVideo(lib, url, fromMs, autoplay, events, fontsDir, extra)
 }
 
 /** The streaming service's profile for libmpv (streaming/internal/capability/matrix.go). */

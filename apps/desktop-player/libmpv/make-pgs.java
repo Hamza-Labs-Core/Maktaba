@@ -5,7 +5,7 @@
 //     src/test/resources/subs/arabic.sup
 //
 // One Arabic line, white, drawn with the Player's face (joined and right to left by Java2D), shown
-// over a 1280x720 picture from 1 s to 9 s. Each pixel's coverage is one of 16 palette entries,
+// over a 1280x720 picture from 1 s to 29 s. Each pixel's coverage is one of 16 palette entries,
 // white at that opacity; the picture is run-length coded as PGS's object definition segment.
 import java.awt.Color;
 import java.awt.Font;
@@ -43,7 +43,7 @@ public class MakePgs {
         if (rle.length + 4 > 0xFFFF - 7) throw new IllegalStateException("the picture needs more than one object segment");
 
         ByteArrayOutputStream out = new ByteArrayOutputStream();
-        long show = 90_000L, clear = 9 * 90_000L;
+        long show = 90_000L, clear = 29 * 90_000L;
         // the line on: composition (epoch start), window, palette, object, end
         segment(out, show, 0x16, pcs(0, 0x80, true));
         segment(out, show, 0x17, wds());
