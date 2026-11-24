@@ -18,7 +18,7 @@ The desktop and mobile apps' own updates (their badge, the signing key, the mobi
 | Installing on the home | In the quiet window, once the release is old enough, with its migrations rehearsed first. | Turning it off, a pin, a deferral, skipping a version, **Update now**. |
 | Installing on the machines | After the home commits the release: downloaded from the home, verified on each machine, switched one at a time. | What a machine's failure does to the others (`node_failure_policy`), when a machine that was offline catches up (`catch_up`). |
 | TV | Plain server installs keep TV playing across the restart; the streaming software then moves to the new release at programme boundaries, without an approval. | The viewers a restart may interrupt (`tv_staging.quiet_max_viewers`, 0) on installs that restart whole. |
-| Going back | A release that does not stay healthy is rolled back: a restart onto the previous release, its database put back first from the dump taken before the failed release's migrations when they ran. Nothing is dumped on the way back. | Rolling back by hand, restoring an older backup. |
+| Going back | A release that does not stay healthy is rolled back: a restart onto the previous release, the failed release's migrations undone first by their Down scripts when they ran (or kept, when they are additive). No backup is put back by itself: when the Down scripts cannot undo them, the update stops and asks. | Rolling back by hand, restoring an older backup. |
 | A desktop app that runs the server (Maktaba.app, the Windows or Linux app) | It downloads and stages the release the home orders, says when it installs, and installs and restarts by itself: for an **Update now** as soon as the home has committed the release, in the window for an automatic update. No click on the machine (decision D1, 2026-10-27). Machines follow once the home commits: while the home updates, the run shows them waiting for it; a home that rolls back orders none (2026-10-28). | The same as any machine. |
 
 Automatic installs are on by default (`rules.updates.auto_install`). With them off (Admin →
@@ -181,8 +181,8 @@ cluster stays where it is until stable passes it.
    migration takes no backup at all: the switch is a restart of seconds. One that adds migrations
    is backed up while the running release keeps serving (`backups/pre-<old>-to-<new>.dump`, checked
    to read back; Admin → Updates shows the **Back up** step and how much it wrote); only the
-   switch waits for it. The new release's start then migrates at once, and puts the backup back if
-   a migration fails. Its health is watched (every role running, the API ready and answering as
+   switch waits for it. The new release's start then migrates at once, and undoes a
+   migration that fails with its Down script. Its health is watched (every role running, the API ready and answering as
    the new version) for 10 minutes, and its TV change goes on the air; then the release is kept
    (committed).
 4. **Every machine follows**, after the home commits: they download and verify in parallel (at
@@ -333,7 +333,32 @@ database (`db_refused_older`) and stops the same way, putting nothing back. A re
 such a release, or its launcher, wrote (`restoring` with no person named) is held too by every
 release since: the dump is not put back. Only an update to a release with this rule is
 protected by it: a release from before it runs its own database step and puts the backup back
-as it always did. The automatic restores of 2026-11-14, 2026-11-23 (v0.3.158) and 2026-11-24
+as it always did.
+
+The first update to such a release is protected too, under the launcher and the release that were
+there before it (a layout install, a container and the Linux app keep their launcher). Their
+guard, and the older release coming back by itself, mark the record `restoring` only when it names
+a backup (`dump`); one that names none they leave alone, as every release with a guard has. So
+until its watch passes, the new release's record keeps its backup's path where only releases
+with this rule read it (`dump_unconfirmed`), and names it once the release is confirmed, or when
+the update is held. Given up on, the older release refuses the database as newer than its own
+(`db_refused_older`) and stops, with nothing put back; its own recovery page and `restore` still
+put the backup back when a person asks. Update rehearsal 21 runs the previous release's real
+launcher and server against it.
+
+**When the switch back fails** (the previous release gone, a pointer that cannot be written), a
+held record stays held: its Down scripts may have run in part, and the failed release never
+migrates and runs on that by itself.
+
+**A restore that cannot finish** (its backup lost or unreadable, no room) changes nothing, and has
+a way out: the next start tries it again; the recovery page and `maktaba-server restore` can put
+the same or another backup back; **Give this restore up** (`maktaba-server restore --abandon
+--confirm`) leaves the database as it was before it (a held update waits again; on a home that
+ran well, the release that ran on it starts again); and a release newer than the one that failed
+goes on from there. While a restore runs, none of these is possible, and one whose database is
+gone is not given up: only a restore brings a database back.
+
+The automatic restores of 2026-11-14, 2026-11-23 (v0.3.158) and 2026-11-24
 (v0.3.157) each kept the library stopped for about three hours. The release
 is then blocked until a newer one appears or an admin unblocks it (Admin → Updates → **Try it
 again**, or **Update now** naming it). A release that rolled back (or whose migrations failed on
@@ -411,7 +436,7 @@ migration), and that release puts the backup back before anything else runs; the
 replaces is set aside first (`replaced-<version>-<time>.dump`). **Every change made since the
 backup was taken is lost.** It refuses while an update runs, and when no kept release has the
 backup's schema (it names the release to install first). The machines copy the restored database
-anew. The updater itself never runs a down migration.
+anew.
 
 ## Which release is newer
 

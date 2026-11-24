@@ -1124,6 +1124,10 @@ func (m *Machine) Resume() {
 		_ = m.endStep(StepRollback, "done", "")
 		_ = m.mutate(func(j *Journal) { j.State, j.Step = StateRolledBack, "" })
 		m.logf("rolled back to %s (%s)", orNone(running), j.Reason)
+	case StateCommitted:
+		if newRel {
+			m.confirmRecord(j) // a commit cut short before it
+		}
 	}
 }
 
@@ -1362,6 +1366,7 @@ func (m *Machine) commit() bool {
 		m.logf("cannot keep %s yet (tried again): %v", j.Job.Version, err)
 		return false
 	}
+	m.confirmRecord(j)
 	// the dump the new release's start took before its migrations is the run's backup
 	if f, ok := m.Rehearser.(BackupFinder); ok && j.Job.Home {
 		if b := f.UpdateDump(j.From, j.Job.Version); b != nil {
@@ -1384,6 +1389,24 @@ func (m *Machine) commit() bool {
 	m.logf("committed %s", j.Job.Version)
 	m.replaceLauncher()
 	return true
+}
+
+// ConfirmRecords is a Records that can be told the release is confirmed: the backup its
+// update took is named where every release reads it (layout.ConfirmRecord).
+type ConfirmRecords interface {
+	Confirm(version string) error
+}
+
+// confirmRecord tells the database's record that j's release is kept. Best effort: a record
+// that still withholds its backup says it to the releases that know where.
+func (m *Machine) confirmRecord(j *Journal) {
+	c, ok := m.Records.(ConfirmRecords)
+	if !ok || j == nil || !j.Job.Home {
+		return
+	}
+	if err := c.Confirm(j.Job.Version); err != nil {
+		m.logf("the database's record cannot say %s is kept: %v", j.Job.Version, err)
+	}
 }
 
 // replaceLauncher hands over to the release's launcher when it needs a newer one (story
@@ -1494,7 +1517,8 @@ func (m *Machine) rollback(reason string) {
 	if err := m.withJournal(func(j *Journal) error { return m.Installer.Revert(context.Background(), j) }); err != nil {
 		if migrated {
 			// the new release stays, and so does its database: no start may put the dump
-			// back under it
+			// back under it. A held record stays held (recordFile.Unmark): its Down scripts may
+			// have run in part, so no start of it may migrate and run by itself
 			if uerr := m.Records.Unmark(j.Job.Version); uerr != nil {
 				m.errorf("cannot take the restore mark back: %v", uerr)
 			}

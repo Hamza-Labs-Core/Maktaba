@@ -494,6 +494,10 @@ func (r recordFile) SchemaBefore(version string) (int64, bool, error) {
 func (r recordFile) MarkKept(version, from, reason string) (bool, error) {
 	return layout.MarkRecordKept(string(r), version, from, reason)
 }
+func (r recordFile) Confirm(version string) error {
+	_, err := layout.ConfirmRecord(string(r), version)
+	return err
+}
 func (r recordFile) Unmark(version string) error {
 	if _, err := layout.UnmarkRecordKept(string(r), version); err != nil {
 		return err
@@ -850,7 +854,7 @@ func (u *updates) adminHandler(base http.Handler, token string) http.Handler {
 			u.serveLog(w, r)
 			return
 		}
-		if name == "backups" || name == "restore" {
+		if name == "backups" || name == "restore" || name == "restore-abandon" {
 			u.serveRestore(w, r, name)
 			return
 		}

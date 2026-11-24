@@ -144,7 +144,9 @@ func healthyFor(snap supervisor.Snapshot, d time.Duration) bool {
 
 // confirmPending removes the launcher's pending marker (and raises the
 // watermark) once this release has run healthy for confirmAfter.
-func confirmPending(ctx context.Context, sup *supervisor.Supervisor, releaseDir string) {
+// record is the home's database record ("" none): its update's backup is named where every
+// release reads it once the release is confirmed (layout.ConfirmRecord).
+func confirmPending(ctx context.Context, sup *supervisor.Supervisor, releaseDir, record string) {
 	after := confirmAfter()
 	if releaseDir == "" || after <= 0 {
 		return
@@ -170,6 +172,9 @@ func confirmPending(ctx context.Context, sup *supervisor.Supervisor, releaseDir 
 					return
 				}
 				_ = l.RaiseWatermark(ver)
+				if _, err := layout.ConfirmRecord(record, ver); err != nil {
+					fmt.Fprintf(os.Stderr, "[serve] the database's record cannot say %s is confirmed: %v\n", ver, err)
+				}
 				fmt.Fprintf(os.Stderr, "[serve] release %s confirmed (healthy for %s)\n", ver, after)
 				return
 			}

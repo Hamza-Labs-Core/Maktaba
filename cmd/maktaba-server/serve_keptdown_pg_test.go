@@ -38,6 +38,8 @@ func TestAFailedUpdateNeverUndoesAKeptSchema(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(root) })
 	b, _ := pgtest.Bundle(ctx, t, programs, root, false)
+	// a disk with little room is no failure here: the dumps are small
+	b.Room = &pgbundle.RoomPolicy{ReserveShare: 0.0001, ReserveMin: 1 << 20, MaxShare: 1}
 	dsn, err := b.URL()
 	if err != nil {
 		t.Fatal(err)
@@ -66,7 +68,7 @@ func TestAFailedUpdateNeverUndoesAKeptSchema(t *testing.T) {
 			"-- +goose Down\nALTER TABLE a_t DROP CONSTRAINT c_check;\nALTER TABLE nowhere DROP COLUMN x;\n"
 	)
 	// the releases' trees: <releases>/<version>/migrations
-	releases := filepath.Join(root, "releases")
+	releases := filepath.Join(root, "bin", "releases")
 	release := func(version string, files ...string) string {
 		dir := filepath.Join(releases, version, "migrations")
 		if err := os.MkdirAll(filepath.Join(dir, "meta"), 0o755); err != nil {
@@ -178,12 +180,18 @@ func TestAFailedUpdateNeverUndoesAKeptSchema(t *testing.T) {
 
 	// C's migrations work, and its watch fails: each install kind's rollback
 	app := &updater.AppInstaller{Payload: filepath.Join(releases, "v0.3.1"), LauncherRoot: filepath.Join(root, "launcher")}
+	// the side-by-side layout names its releases without the v
+	if err := os.Symlink("v0.1.0", filepath.Join(releases, "0.1.0")); err != nil {
+		t.Fatal(err)
+	}
+	side := &updater.LayoutInstaller{Layout: layout.New(root)}
 	rt := &updater.RuntimeInstaller{Runtime: appruntime.Runtime{Root: releases}}
 	for name, c := range map[string]struct {
 		inst updater.SchemaReverter
 		j    updater.Journal
 	}{
 		"app":     {app, updater.Journal{From: "v0.1.0", FromRef: filepath.Join(releases, "v0.1.0")}},
+		"layout":  {side, updater.Journal{From: "v0.1.0", Staged: filepath.Join(releases, "v0.3.1")}},
 		"runtime": {rt, updater.Journal{From: "v0.1.0", FromRef: "v0.1.0", Staged: "v0.3.1"}},
 	} {
 		must(start("v0.3.1"))

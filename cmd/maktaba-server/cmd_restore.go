@@ -28,6 +28,7 @@ func newRestoreCmd() *cobra.Command {
 	var (
 		backup  string
 		confirm bool
+		abandon bool
 	)
 	cmd := &cobra.Command{
 		Use:   "restore",
@@ -51,12 +52,33 @@ next start of the server does it (an install with a launcher only).`,
 			if err != nil {
 				return err
 			}
+			if abandon {
+				return runAbandon(cmd.Context(), cmd.OutOrStdout(), cfg, confirm)
+			}
 			return runRestore(cmd.Context(), cmd.OutOrStdout(), cfg, backup, confirm)
 		},
 	}
 	cmd.Flags().StringVar(&backup, "backup", "", "the backup's file name (in the home's backups folder), or its path there")
 	cmd.Flags().BoolVar(&confirm, "confirm", false, "restore it: every change since the backup was taken is lost")
+	cmd.Flags().BoolVar(&abandon, "abandon", false, "give up a restore that could not finish (with --confirm): the database stays as it was before it")
 	return cmd
+}
+
+// runAbandon gives up a restore that could not finish, through the running server (it keeps
+// the database up: whether the library database is still there is asked of it).
+func runAbandon(ctx context.Context, out io.Writer, cfg config.Config, confirm bool) error {
+	if !confirm {
+		return errors.New("not abandoned: run it again with --confirm (the library database stays as it was before the restore)")
+	}
+	a := supervisorAsker(cfg)
+	if a == nil {
+		return errors.New("no Maktaba server answered here: start it (it stops on the restore that failed), then run this again")
+	}
+	if _, _, err := a.do(ctx, http.MethodPost, "/update/restore-abandon", restoreRequest{By: "the command line", Confirm: true}); err != nil {
+		return err
+	}
+	fmt.Fprintln(out, "The restore is given up: the home restarts on the database as it was before it.")
+	return nil
 }
 
 // restoreAsker reaches the running supervisor's loopback admin (nil: none answers).
@@ -228,7 +250,12 @@ func offlineRestorer(cfg config.Config) (*restorer, layout.Layout, error) {
 
 func printBackups(out io.Writer, l backupList) {
 	if l.Restoring != "" {
-		fmt.Fprintf(out, "A restore of %s is under way: the next start of the server finishes it.\n\n", l.Restoring)
+		if l.RestoreError != "" {
+			fmt.Fprintf(out, "The restore of %s could not finish (%s): the next start of the server tries again. Put "+
+				"another backup back (--backup), or give it up (--abandon --confirm).\n\n", l.Restoring, l.RestoreError)
+		} else {
+			fmt.Fprintf(out, "A restore of %s is under way: the next start of the server finishes it.\n\n", l.Restoring)
+		}
 	}
 	if len(l.Backups) == 0 {
 		fmt.Fprintln(out, "This home has no backups.")

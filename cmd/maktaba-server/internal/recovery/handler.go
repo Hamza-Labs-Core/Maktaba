@@ -38,6 +38,18 @@ type Actions struct {
 	// nothing was put back by itself), nil when none: the page says what happened and the
 	// choices, the backup to put back among them.
 	Held func() *Held
+	// Stuck is a restore that could not finish, nil when none; Abandon gives it up (asked
+	// twice: the library database stays as it was before it).
+	Stuck   func() *Stuck
+	Abandon func(by string) error
+}
+
+// Stuck is a restore that could not finish: its backup (file name), why, and whether it can
+// be given up.
+type Stuck struct {
+	Backup     string `json:"backup"`
+	Why        string `json:"why,omitempty"`
+	CanAbandon bool   `json:"can_abandon"`
 }
 
 // Held is an update that stopped with nothing put back by itself: the release that
@@ -203,6 +215,7 @@ type State struct {
 	Rollback   string               `json:"rollback,omitempty"`
 	SafeMode   bool                 `json:"safe_mode"`
 	Held       *Held                `json:"held,omitempty"`
+	Stuck      *Stuck               `json:"stuck,omitempty"`
 }
 
 func (h *Handler) state() State {
@@ -273,6 +286,9 @@ func (h *Handler) state() State {
 	}
 	if h.Actions.Held != nil {
 		st.Held = h.Actions.Held()
+	}
+	if h.Actions.Stuck != nil {
+		st.Stuck = h.Actions.Stuck()
 	}
 	return st
 }
@@ -408,7 +424,7 @@ func (h *Handler) action(w http.ResponseWriter, r *http.Request, who Who) {
 		return
 	}
 	need := 1
-	if req.Action == "restore" || req.Action == "rollback" || r.Header.Get("X-Maktaba-Via") != "" {
+	if req.Action == "restore" || req.Action == "rollback" || req.Action == "abandon_restore" || r.Header.Get("X-Maktaba-Via") != "" {
 		need = 2
 	}
 	if req.Confirm < need {
@@ -465,6 +481,16 @@ func (h *Handler) action(w http.ResponseWriter, r *http.Request, who Who) {
 			by += " (" + who.UserID + ")"
 		}
 		err = h.Actions.Restore(req.Backup, by)
+	case "abandon_restore":
+		if h.Actions.Abandon == nil {
+			err = errors.New("no restore that failed waits here")
+			break
+		}
+		by := "the recovery console"
+		if who.UserID != "" {
+			by += " (" + who.UserID + ")"
+		}
+		err = h.Actions.Abandon(by)
 	default:
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "no such action"})
 		return

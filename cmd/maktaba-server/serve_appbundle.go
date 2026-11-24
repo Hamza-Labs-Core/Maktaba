@@ -47,9 +47,10 @@ import (
 //     release before took for it while it still served (the update's backup step,
 //     internal/updater), else it dumps the database now (backups/pre-<old>-to-<new>.dump,
 //     the way back), and records the update before migrating; then it runs the api's
-//     migrations (`maktaba-api migrate up`) and records them done. When they fail, it
-//     puts the dump back (nothing is dumped first) and keeps the server stopped,
-//     saying so;
+//     migrations (`maktaba-api migrate up`) and records them done. When they fail, their
+//     Down scripts take the database back (or it is kept, when they are additive), and
+//     when those cannot, the update is held: nothing is put back by itself, the server
+//     stays stopped and a person chooses (backWithoutDump, heldUpdate);
 //   - the pipeline's processes then wait for the venv bootstrap (one run for all
 //     of them), unless MAKTABA_PYTHON or [pipeline] python names their Python;
 //   - postgres refuses a cluster another major made;
@@ -1054,6 +1055,14 @@ func (g *migrationGate) run(ctx context.Context, report func(supervisor.Detail))
 			return err
 		}
 	}
+	// a restore a person asked for that could not finish, under a release newer than what
+	// it was for, which a person installed since: it goes on from what was there before
+	if base, ok := newerThanRestore(rec, cur); ok {
+		fmt.Fprintf(g.log, "[serve] the restore of %s failed (%s): %s, installed since, goes on from the database as it "+
+			"was before it\n", rec.Dump, rec.RestoreError, cur)
+		rec = base
+		held = rec.Version
+	}
 	// a restore a person asked for (cut short, or not begun): it is done first
 	if rec.State == apppayload.DatabaseRestoring {
 		if rec, err = g.restoreAsked(ctx, rec, report); err != nil {
@@ -1531,6 +1540,13 @@ func (g *migrationGate) restoreAsked(ctx context.Context, rec apppayload.Databas
 			"from %s (%s): this Maktaba runs no database of its own to put it back into", rec.Dump, rec.Error),
 			rec.Failed, rec.Error, rec.Dump))
 	}
+	if rec.RestoreError != "" {
+		// tried again: under way until it ends, so nothing replaces it meanwhile
+		rec.RestoreError = ""
+		if err := g.save(rec); err != nil {
+			return rec, err
+		}
+	}
 	report(detail("db_restoring_backup", fmt.Sprintf("Putting the library database back from %s, as %s asked",
 		rec.Dump, rec.By), rec.Dump, rec.By))
 	g.setAsideReplaced(ctx, rec)
@@ -1540,8 +1556,16 @@ func (g *migrationGate) restoreAsked(ctx context.Context, rec apppayload.Databas
 		return rec, ctx.Err() // the record still says restoring: the next start finishes it
 	}
 	if err != nil {
+		// a way out of one that can never finish: the recovery page and `maktaba-server
+		// restore` may try it again, put another backup back, or abandon it
+		rec.RestoreError = err.Error()
+		if serr := g.save(rec); serr != nil {
+			fmt.Fprintf(g.log, "[serve] level=warn the failed restore cannot be recorded: %v\n", serr)
+		}
 		return rec, supervisor.Halt(detailErr("db_restore_backup_failed", fmt.Sprintf("putting the library database "+
-			"back from %s failed: %v. Nothing was changed; Maktaba stays stopped and its next start tries again",
+			"back from %s failed: %v. Nothing was changed. Maktaba stays stopped; its next start tries again, and on the "+
+			"recovery page (/recovery) or with `maktaba-server restore` you can put another backup back or give this "+
+			"restore up",
 			rec.Dump, err), rec.Dump, err.Error()))
 	}
 	// the dump of a schema kept for a release is that schema again, kept for it
@@ -1552,6 +1576,25 @@ func (g *migrationGate) restoreAsked(ctx context.Context, rec apppayload.Databas
 	}
 	fmt.Fprintf(g.log, "[serve] the library database is back as it was in %s\n", rec.Dump)
 	return done, nil
+}
+
+// newerThanRestore is the record a restore that could not finish replaced, when release cur
+// is newer than the one that record waits on (the failed release of a held update, else the
+// release that ran on it): cur was installed by a person since. ok false: none, and the
+// restore is tried again.
+func newerThanRestore(rec apppayload.Database, cur string) (apppayload.Database, bool) {
+	if rec.State != apppayload.DatabaseRestoring || rec.By == "" || rec.RestoreError == "" || rec.Before == nil {
+		return rec, false
+	}
+	base := *rec.Before
+	than := base.Ran()
+	if base.State == apppayload.DatabaseHeld {
+		than = base.Failed
+	}
+	if than == "" || !apppayload.Older(layout.NormalizeVersion(than), layout.NormalizeVersion(cur)) {
+		return rec, false
+	}
+	return base, true
 }
 
 // heldUpdate is the detail of an update that stopped with nothing put back by itself

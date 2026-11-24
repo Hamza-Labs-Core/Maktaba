@@ -129,7 +129,7 @@ func TestRecordRestoringMarkAndUnmark(t *testing.T) {
 
 // A failed update stops and asks (no start puts the dump back by itself): the record is
 // held, its version stays the failed release's so every older release refuses it, and a
-// switch back that fails takes the mark back.
+// switch back that fails leaves it held (its Down scripts may have run in part).
 func TestRecordHeldMarkAndUnmark(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "database.json")
 	_ = os.WriteFile(path, []byte(`{"version":"1.5.0","state":"migrating","from":"1.4.0","dump":"/b/pre-1.4.0-to-1.5.0.dump","schema_before":230}`), 0o644)
@@ -151,16 +151,70 @@ func TestRecordHeldMarkAndUnmark(t *testing.T) {
 	if rec := readRecord(t, path); rec["state"] != "held" {
 		t.Fatalf("a held record was marked restoring: %v", rec)
 	}
-	if ok, err := UnmarkRecordRestoring(path, "1.5.0"); err != nil || !ok {
-		t.Fatalf("unmark: %v %v", ok, err)
+	if ok, err := UnmarkRecordRestoring(path, "1.5.0"); err != nil || ok {
+		t.Fatalf("a held record unmarked: %v %v", ok, err)
 	}
-	if rec := readRecord(t, path); rec["state"] != "migrated" || rec["failed"] != nil {
-		t.Fatalf("unmarked record %v", rec)
+	if rec := readRecord(t, path); rec["state"] != "held" || rec["failed"] != "1.5.0" {
+		t.Fatalf("after a switch back that failed: %v", rec)
+	}
+	// the other way round: an older launcher marked it restoring first, with no person
+	// asking; the new release's watch holds it. A person's restore is left as it is
+	for by, want := range map[string]string{"": "held", "admin": "restoring"} {
+		_ = os.WriteFile(path, []byte(`{"version":"1.5.0","state":"restoring","from":"1.4.0","failed":"1.5.0","by":"`+by+
+			`","dump":"/b/pre-1.4.0-to-1.5.0.dump"}`), 0o644)
+		if ok, err := MarkRecordHeld(path, "1.5.0", "watch_timeout"); err != nil || !ok {
+			t.Fatalf("held over restoring (by %q): %v %v", by, ok, err)
+		}
+		if rec := readRecord(t, path); rec["state"] != want || rec["dump"] != "/b/pre-1.4.0-to-1.5.0.dump" {
+			t.Fatalf("held over restoring (by %q): %v, want %s", by, rec, want)
+		}
 	}
 	// no dump: nothing to hold for (the update added no migration)
 	_ = os.WriteFile(path, []byte(`{"version":"1.5.0","state":"migrated"}`), 0o644)
 	if ok, err := MarkRecordHeld(path, "1.5.0", "x"); err != nil || ok {
 		t.Fatalf("held without a dump: %v %v", ok, err)
+	}
+}
+
+// An update's record not confirmed yet withholds its backup from older code: a guard of any
+// release before 2026-11-24 leaves it alone (no dump), a release since holds it, with the
+// backup named where every release reads it; its confirmation names it too.
+func TestUnconfirmedRecordIsLeftAloneByOlderCode(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "database.json")
+	const unconfirmed = `{"version":"1.5.0","state":"migrated","from":"1.4.0","dump_unconfirmed":"/b/d.dump","schema_before":230}`
+	write := func(s string) { _ = os.WriteFile(path, []byte(s), 0o644) }
+	write(unconfirmed)
+	if ok, err := MarkRecordRestoring(path, "1.5.0", "launcher_boot_loop"); err != nil || ok {
+		t.Fatalf("older code marked it restoring: %v %v", ok, err)
+	}
+	if b, _ := os.ReadFile(path); string(b) != unconfirmed {
+		t.Fatalf("older code changed it: %s", b)
+	}
+	if ok, err := MarkRecordHeld(path, "1.5.0", "watch_timeout"); err != nil || !ok {
+		t.Fatalf("held: %v %v", ok, err)
+	}
+	if rec := readRecord(t, path); rec["state"] != "held" || rec["dump"] != "/b/d.dump" || rec["dump_unconfirmed"] != nil {
+		t.Fatalf("held %v", rec)
+	}
+	if ok, err := ConfirmRecord(path, "1.5.0"); err != nil || ok {
+		t.Fatalf("a held record confirmed: %v %v", ok, err)
+	}
+	write(unconfirmed)
+	if ok, err := ConfirmRecord(path, "1.4.0"); err != nil || ok {
+		t.Fatalf("another release's record confirmed: %v %v", ok, err)
+	}
+	if ok, err := ConfirmRecord(path, "v1.5.0"); err != nil || !ok {
+		t.Fatalf("confirm: %v %v", ok, err)
+	}
+	if rec := readRecord(t, path); rec["dump"] != "/b/d.dump" || rec["confirmed"] != true || rec["dump_unconfirmed"] != nil ||
+		rec["schema_before"] != float64(230) {
+		t.Fatalf("confirmed %v", rec)
+	}
+	if ok, _ := ConfirmRecord(path, "1.5.0"); ok {
+		t.Fatal("confirmed twice")
+	}
+	if ok, err := ConfirmRecord(filepath.Join(t.TempDir(), "none.json"), "1.5.0"); ok || err != nil {
+		t.Fatalf("no record: %v %v", ok, err)
 	}
 }
 
