@@ -81,6 +81,9 @@ var (
 	errFeedStale       = errors.New("the update feed is older than the one read before")
 )
 
+// errFeedRefused wraps a feed that was read and failed its checks (CheckFailFeedRefused).
+var errFeedRefused = errors.New("update feed refused")
+
 func feedFallsBack(err error) bool {
 	return errors.Is(err, errFeedUnreachable) || errors.Is(err, errFeedStale)
 }
@@ -279,7 +282,7 @@ func (d *Discoverer) listing(ctx context.Context, channel string, st *State) (re
 		case !feedFallsBack(err):
 			d.log().Error("update feed refused", "event", "update_feed_refused", "err", err.Error())
 			st.LastCheckSource = SourceFeed
-			return nil, nil, nil, fmt.Errorf("update feed refused: %w", err)
+			return nil, nil, nil, fmt.Errorf("%w: %w", errFeedRefused, err)
 		}
 		st.FeedError = err.Error()
 		d.log().Warn("update feed not read: reading GitHub's release list", "event", "update_feed_fallback", "err", err.Error())
@@ -322,7 +325,7 @@ func (d *Discoverer) feedWithdrawn(ctx context.Context, r Release, channel strin
 	case feedFallsBack(err):
 		return "", false, nil
 	case err != nil:
-		return "", false, fmt.Errorf("update feed refused: %w", err)
+		return "", false, fmt.Errorf("%w: %w", errFeedRefused, err)
 	}
 	d.Store.SaveState(ctx, st)
 	return withdrawn[r.Tag], true, nil

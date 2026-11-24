@@ -651,6 +651,51 @@ does it: migrations, a TV change that waits, rollbacks with and without a restor
 restore under logins and killed part way, halted roles, no room, a joined machine). The
 release's tag guard refuses a commit the rehearsal did not pass on.
 
+## The caps on GitHub's release list
+
+A home reads GitHub's releases through its update check (`api/internal/updates/catalog.go`),
+and the server's own updater and the About check read the same list. Each answer is held to a
+cap, so a broken or hostile answer cannot exhaust a home. A cap a real answer grows past stops
+every home's updates: on 2026-11-23 GitHub's list of the newest 30 releases (some 190 assets each)
+passed the 8 MiB a home read, and every check failed for over a day, unnoticed.
+
+| What a home reads | Request | Cap | Real size (2026-11-24) |
+|---|---|---:|---:|
+| The list, 3 pages of 10 releases | `GET /repos/<repo>/releases?per_page=10&page=N` | 16 MiB a page | 3.2 MB a page |
+| One release by its tag (before a run starts) | `GET /repos/<repo>/releases/tags/<tag>` | 8 MiB | 325 KB |
+| `checksums.txt`, its Sigstore bundle, `release.json` | the release's download URLs | 4 MiB each | 15 KB at most |
+
+A home asks unauthenticated, with `Accept: application/vnd.github+json` and
+`X-GitHub-Api-Version: 2022-11-28`; GitHub then answers minified JSON. (Asked with another
+`Accept`, as curl does by default, GitHub pretty-prints the same list, some 23% longer: that is
+not what a home reads. A token with push access lists the drafts first.) Each list page is read
+one release at a time, so its cap bounds the answer, not the memory.
+
+**Three checks keep the caps honest:**
+
+- **The tests** read a real page, recorded as a home asks for it
+  ([`tests/fixtures/github-releases`](../tests/fixtures/github-releases/README.md)): every cap must
+  hold the recorded answers within 70% (`updates.ListHeadroom`), and the worst page the next
+  releases can make (each release twice the largest recorded one, `AssetGrowth`) too. The About
+  check, `selfupdate` and `ghasset` are tested against the same page.
+- **GitHub's release list check** (`api/cmd/release-list-check`, through the home's own code: the same
+  URLs, headers, pages and caps) reads the live list hourly
+  ([`github-release-list.yml`](../.github/workflows/github-release-list.yml), which opens an issue on a failure
+  and closes it once the list reads again), and in each release workflow once it publishes
+  (`tools/release/release-list-check.sh`). It fails when any page or the newest release's own read is over
+  70% of its cap, or when the newest published stable release is not one a home's catalog can
+  select (not in the pages a home reads, a draft or prerelease, or without its signed files).
+- **The update rehearsal**'s scenario 20 serves the list at its real size and shape, twice as
+  large, and then past its cap ([update-rehearsal.md](update-rehearsal.md)).
+
+**When a check fails:** re-record the page (`tests/fixtures/github-releases/record.sh`) and look at
+what grew. Raise the cap or lower `listPerPage` in `catalog.go`, and the matching constants of the
+About check (`api/internal/system/updater.go`) and `selfupdate`, so the tests pass with the new
+page; a release already out reads with its own caps, so the fix ships in the next release. The
+home itself raises a failing check: from two failures in a row the Updates page says "Can't check
+for updates since …" with the reason, System health's **Update check** item turns yellow, and
+admins get the `update.check_failing` notification.
+
 ## How a release is made
 
 A session pushes each tag. A scheduled release session on the owner's machine runs every 30

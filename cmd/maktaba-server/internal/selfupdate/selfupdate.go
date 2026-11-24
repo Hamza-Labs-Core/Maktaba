@@ -108,7 +108,24 @@ type ghRelease struct {
 // ErrNoRelease: nothing matches.
 var ErrNoRelease = errors.New("no such release")
 
-func (c *Client) get(ctx context.Context, path string, out any) error {
+// What the client reads from GitHub is held to these caps, each checked against the real
+// list (tests/fixtures/github-releases) with room for the releases' assets to double in
+// under 70% of it. A release is some 330 KB as GitHub lists it today (some 190 assets): the
+// list asks for listPerPage of them, some 3.3 MB, against listLimit; one release by its tag
+// against releaseLimit; each small signed file (checksums.txt, its Sigstore bundle,
+// release.json: some 15 KB at most) against smallFileLimit. A page of 30 passed the old
+// 8 MiB on 2026-11-23, and every look for an update failed from then on.
+const (
+	listPerPage    = 10
+	listLimit      = 16 << 20
+	releaseLimit   = 8 << 20
+	smallFileLimit = 4 << 20
+)
+
+// errTooLarge is an answer longer than its cap.
+var errTooLarge = errors.New("larger than its cap")
+
+func (c *Client) get(ctx context.Context, path string, limit int64, out any) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.o.APIBase+path, nil)
 	if err != nil {
 		return err
@@ -129,7 +146,15 @@ func (c *Client) get(ctx context.Context, path string, out any) error {
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("github releases %s: HTTP %d", path, resp.StatusCode)
 	}
-	return json.NewDecoder(io.LimitReader(resp.Body, 8<<20)).Decode(out)
+	// one byte past the cap tells an answer that is too long from one that does not decode
+	b, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
+	if err != nil {
+		return fmt.Errorf("github releases %s: %w", path, err)
+	}
+	if int64(len(b)) > limit {
+		return fmt.Errorf("github releases %s: larger than %d bytes: %w", path, limit, errTooLarge)
+	}
+	return json.Unmarshal(b, out)
 }
 
 func toRelease(r ghRelease) *Release {
@@ -150,8 +175,7 @@ func (c *Client) Latest(ctx context.Context) (*Release, error) {
 		}
 	}
 	var rels []ghRelease
-	// the newest 10: 30 passed get's 8 MiB cap on 2026-11-23 (some 190 assets a release)
-	if err := c.get(ctx, "/repos/"+c.o.Identity.Repo()+"/releases?per_page=10", &rels); err != nil {
+	if err := c.get(ctx, fmt.Sprintf("/repos/%s/releases?per_page=%d", c.o.Identity.Repo(), listPerPage), listLimit, &rels); err != nil {
 		return nil, err
 	}
 	var best *ghRelease
@@ -180,7 +204,7 @@ func (c *Client) ByTag(ctx context.Context, version string) (*Release, error) {
 		return nil, fmt.Errorf("invalid version %q", version)
 	}
 	var r ghRelease
-	if err := c.get(ctx, "/repos/"+c.o.Identity.Repo()+"/releases/tags/"+tag, &r); err != nil {
+	if err := c.get(ctx, "/repos/"+c.o.Identity.Repo()+"/releases/tags/"+tag, releaseLimit, &r); err != nil {
 		return nil, err
 	}
 	if r.Draft {
@@ -347,7 +371,7 @@ func (c *Client) FetchAsset(ctx context.Context, rel *Release, name, dir string)
 		if !ok {
 			return nil, nil
 		}
-		b, err := get(ctx, u, 4<<20)
+		b, err := get(ctx, u, smallFileLimit)
 		if err != nil {
 			return nil, fmt.Errorf("download %s: %w", n, err)
 		}

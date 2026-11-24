@@ -387,7 +387,10 @@ func TestFeedRefusedNeverFallsBack(t *testing.T) {
 			if len(catalogOf(t, store)) != 0 {
 				t.Fatal("the catalog changed")
 			}
-			if st := store.LoadState(ctx); !strings.Contains(st.LastCheckErr, "update feed refused") {
+			// a failed check like any other (the streak the Updates page and System health
+			// report), with its own code
+			if st := store.LoadState(ctx); !strings.Contains(st.LastCheckErr, "update feed refused") ||
+				st.LastCheckCode != CheckFailFeedRefused || st.Failures != 1 || st.FailingSince == nil {
 				t.Fatalf("state: %+v", st)
 			}
 		})
