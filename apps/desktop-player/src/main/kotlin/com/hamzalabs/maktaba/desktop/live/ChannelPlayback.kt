@@ -118,7 +118,7 @@ class ChannelPlayback(
 
     /** The home ended the remote session (LiveSource's onEnded). */
     fun ended() {
-        hide()
+        stop()
         endedKey = "live.sessionEnded"
         status = ChannelStatus.Ended
     }
@@ -127,7 +127,7 @@ class ChannelPlayback(
     fun streamEnded() {
         scope.launch {
             if (status != ChannelStatus.Playing) return@launch
-            hide()
+            stop()
             endedKey = "live.channelEnded"
             status = ChannelStatus.Ended
         }
@@ -137,7 +137,7 @@ class ChannelPlayback(
     fun streamFailed() {
         scope.launch {
             if (status != ChannelStatus.Playing) return@launch
-            hide()
+            stop()
             status = ChannelStatus.Failed(null, retryable = true)
         }
     }
@@ -154,19 +154,29 @@ class ChannelPlayback(
 
     /** Back to live after a pause: the stream again from its live edge (the same session). */
     fun backToLive() {
+        // only while a channel plays: behind Ended or Try again there is nothing to go back to
+        if (status != ChannelStatus.Playing) return
         val u = url ?: return
         paused = false
-        scope.launch {
+        // under the channel's job: another channel or leaving cancels it, never both shown
+        job?.cancel()
+        job = scope.launch {
             opened++
             show(u)
         }
+    }
+
+    /** The player stops; nothing is paused any more. */
+    private fun stop() {
+        hide()
+        paused = false
     }
 
     /** The screen is left (or the window closed): the remote session is ended on the home. */
     suspend fun close() {
         job?.cancel()
         recheck?.cancel()
-        hide()
+        stop()
         withContext(NonCancellable) { runCatching { source.close() } }
     }
 
@@ -196,7 +206,7 @@ class ChannelPlayback(
         } catch (e: CancellationException) {
             throw e
         } catch (e: LiveFailure) {
-            hide()
+            stop()
             status = when (e.code) {
                 "session_ended" -> ChannelStatus.Ended
                 "component_off" -> ChannelStatus.Off
@@ -210,7 +220,7 @@ class ChannelPlayback(
                 notNow(id, programme.retryAt)
                 return
             }
-            hide()
+            stop()
             status = if (e.errorKind() == ErrorKind.Off) ChannelStatus.Off else ChannelStatus.Failed(null, retryable = true)
         }
     }
@@ -218,7 +228,7 @@ class ChannelPlayback(
     /** The programme on air is above the limit: nothing plays, and the home is asked again later. */
     private fun notNow(id: String, retryAt: java.time.Instant?, clock: com.hamzalabs.maktaba.core.api.HomeClock? = null) {
         if (channelId != id) return
-        hide()
+        stop()
         status = ChannelStatus.NotNow(retryAt)
         askAgain(id, retryAt, allowed = false, clock)
     }

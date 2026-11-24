@@ -15,10 +15,12 @@ import com.hamzalabs.maktaba.desktop.TestHome
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.util.concurrent.CountDownLatch
 
 /**
  * Story 13.22 on the channel screen, with the engine's players faked: the channel plays in the
- * engine's player through the stream proxy, Next channel loads into the same player, Pause
+ * engine's player through the stream proxy, Next channel loads into the same player (its
+ * picture kept under the spinner while the channel tunes), Pause
  * pauses it, Back to live loads the same address again, and leaving disposes it.
  */
 @OptIn(ExperimentalTestApi::class)
@@ -38,7 +40,13 @@ class ChannelScreenTest {
             val first = players.calls.single()
             // the stream proxy's loopback address, which carries the token on to the home
             assertTrue(first, first.startsWith("open http://127.0.0.1:") && first.endsWith("/stream/channel/c1/index.m3u8"))
+            // the next channel tunes (the home's answer held): the picture stays under the spinner
+            val gate = CountDownLatch(1)
+            f.held("GET /api/tv/info", { "{}" }, gate)
             onNodeWithTag("channel-next").performClick()
+            waitUntil(timeoutMillis = STALL_MS) { onAllNodes(hasTestTag("channel-tuning")).fetchSemanticsNodes().isNotEmpty() }
+            onNodeWithTag("video-surface").assertExists()
+            gate.countDown()
             waitUntil(timeoutMillis = STALL_MS) { players.calls.size >= 2 }
             onNodeWithTag("channel-pause").performClick()
             onNodeWithTag("back-to-live").performClick()

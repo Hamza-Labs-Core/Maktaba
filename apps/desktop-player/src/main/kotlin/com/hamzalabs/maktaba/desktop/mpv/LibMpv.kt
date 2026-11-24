@@ -52,6 +52,7 @@ internal object MpvConst {
 
     const val EVENT_NONE = 0
     const val EVENT_SHUTDOWN = 1
+    const val EVENT_START_FILE = 6
     const val EVENT_END_FILE = 7
     const val EVENT_FILE_LOADED = 8
     const val EVENT_PLAYBACK_RESTART = 21

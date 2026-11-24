@@ -10,7 +10,9 @@ import com.hamzalabs.maktaba.desktop.Video
 import com.hamzalabs.maktaba.desktop.VideoEvents
 import com.hamzalabs.maktaba.desktop.mpv.Engine
 import com.hamzalabs.maktaba.desktop.mpv.MpvLoad
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.currentTime
@@ -18,11 +20,14 @@ import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import java.util.Collections
 
 /**
  * Story 13.22's [ChannelVideo] with fake players: a player that cannot load into itself (JavaFX's)
@@ -52,10 +57,11 @@ class ChannelVideoTest {
         val (cp, _) = channelOnFakes(players)
         cp.open("c1")
         runCurrent()
-        // not started yet: the home's own answer says whether it fails
+        // opened but no picture yet (a slow first segment): the home's own answer says whether it fails
+        val events = players.events.single()
+        events.ready(null, emptyList())
         advanceTimeBy(ChannelVideo.STALL_MS * 2)
         assertEquals(ChannelStatus.Playing, cp.status)
-        val events = players.events.single()
         events.position(0)
         advanceTimeBy(10_000)
         events.position(10_000)
@@ -69,6 +75,66 @@ class ChannelVideoTest {
         advanceTimeBy(4_000)
         runCurrent()
         assertEquals(ChannelStatus.Failed(null, retryable = true), cp.status)
+    }
+
+    /** Players whose every open waits for its gate (JavaFX's, made on its own thread). */
+    private class SlowPlayers : Players {
+        class Made(val url: String) : Video {
+            @Volatile var disposed = false
+            override fun toggle() {}
+            override fun pause() {}
+            override fun seek(ms: Long) {}
+            override fun sound(volume: Float, muted: Boolean) {}
+            override fun dispose() {
+                disposed = true
+            }
+        }
+        val gates: MutableList<CompletableDeferred<Unit>> = Collections.synchronizedList(mutableListOf())
+        val made: MutableList<Made> = Collections.synchronizedList(mutableListOf())
+        override suspend fun open(url: String, fromMs: Long, autoplay: Boolean, events: VideoEvents): Video = error("a channel opens live")
+        override suspend fun openLive(url: String, events: VideoEvents): Video {
+            val gate = CompletableDeferred<Unit>().also { gates += it }
+            gate.await()
+            return Made(url).also { made += it }
+        }
+        fun made(url: String) = made.single { it.url == url }
+    }
+
+    @Test
+    fun aPlayerMadeWhileHiddenOrReplacedIsDisposedAndNeverShown() = runTest {
+        val players = SlowPlayers()
+        val video = ChannelVideo(players, backgroundScope)
+        // hidden while its player was being made
+        backgroundScope.launch { video.show("u1") }
+        runCurrent()
+        video.hide()
+        players.gates[0].complete(Unit)
+        runCurrent()
+        assertNull(video.video)
+        assertTrue(players.made("u1").disposed)
+        // two streams given at once (Back to live over a channel change): the newest shows
+        backgroundScope.launch { video.show("u2") }
+        runCurrent()
+        backgroundScope.launch { video.show("u3") }
+        runCurrent()
+        players.gates[2].complete(Unit)
+        runCurrent()
+        players.gates[1].complete(Unit)
+        runCurrent()
+        assertSame(players.made("u3"), video.video)
+        assertTrue(players.made("u2").disposed)
+        assertFalse(players.made("u3").disposed)
+        // the caller cancelled while its player was made, then hidden: disposed all the same
+        video.hide()
+        val j = backgroundScope.launch { video.show("u4") }
+        runCurrent()
+        j.cancel()
+        video.hide()
+        players.gates[3].complete(Unit)
+        runCurrent()
+        assertTrue(players.made("u4").disposed)
+        assertNull(video.video)
+        assertTrue(players.made("u3").disposed)
     }
 
     @Test

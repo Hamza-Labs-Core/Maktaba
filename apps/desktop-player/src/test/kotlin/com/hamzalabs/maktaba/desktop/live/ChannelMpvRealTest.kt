@@ -1,5 +1,6 @@
 package com.hamzalabs.maktaba.desktop.live
 
+import androidx.compose.ui.graphics.toPixelMap
 import com.hamzalabs.maktaba.core.api.LiveApi
 import com.hamzalabs.maktaba.core.api.LiveChannel
 import com.hamzalabs.maktaba.desktop.StreamProxy
@@ -17,26 +18,32 @@ import mockwebserver3.MockResponse
 import okio.Buffer
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Test
 import java.io.File
 import java.util.Collections
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 /**
  * Story 13.22 against the libmpv the Player carries (CI's Desktop Player job sets
- * MAKTABA_LIBMPV_DIR and MAKTABA_TEST_MEDIA, libmpv/test-media.sh's live HLS among the files;
- * elsewhere these tests are skipped). The fake home serves a channel at home, as the web port
- * does, through the stream proxy: a live playlist whose window of six segments moves on by one
- * each second while the test runs, as ffmpeg's hls_list_size makes it.
+ * MAKTABA_LIBMPV_DIR and MAKTABA_TEST_MEDIA, libmpv/test-media.sh's two live HLS among the
+ * files; elsewhere these tests are skipped). The fake home serves channels at home, as the web
+ * port does, through the stream proxy: live playlists whose window of six segments moves on by
+ * one each second while the test runs, as ffmpeg's hls_list_size makes it. Channel one's
+ * picture is red and channel two's blue, so the frame on screen says which channel it is.
  *  - T02: a channel opens on libmpv and its first frame shows within 2 s on Linux (the time is
  *    printed on both systems);
- *  - T03: Next channel loads into the same handle, the last frame held, the next channel's
- *    first frame within 2 s; Pause then Back to live loads the stream again from its live edge;
+ *  - T03: Next channel loads into the same handle: channel one's last frame stays on screen
+ *    until channel two's first, within 2 s; Pause then Back to live loads the stream again from
+ *    its live edge;
  *  - T04: the stream stops moving on, then its playlist ends: the channel ended; a channel
- *    whose playlist answers 404 failed, with Try again.
+ *    whose playlist answers 404, opened or loaded into the playing handle, failed, with Try
+ *    again; a playing stream whose home stops answering failed, with Try again.
  */
 class ChannelMpvRealTest {
     private val dir = System.getenv("MAKTABA_LIBMPV_DIR")
@@ -48,6 +55,7 @@ class ChannelMpvRealTest {
     private val proxy = StreamProxy(home.client)
     private var channel: ChannelPlayer? = null
     private val lineup = listOf(LiveChannel("c1", 1, "One"), LiveChannel("c2", 2, "Two"))
+    private val onAir: MutableList<OnAir> = Collections.synchronizedList(mutableListOf())
 
     private fun lib(): LibMpv {
         assumeTrue("MAKTABA_LIBMPV_DIR is not set", dir != null)
@@ -56,18 +64,23 @@ class ChannelMpvRealTest {
         return (l as MpvLoad.Loaded).lib
     }
 
-    /** test-media.sh's live segments, in order. */
-    private fun segments(): List<File> {
+    /** test-media.sh's live segments in [name] (live: red, live2: blue), in order. */
+    private fun segments(name: String): List<File> {
         assumeTrue("MAKTABA_TEST_MEDIA is not set", media != null)
-        val full = File(media, "live/full.m3u8").also { assertTrue("$it is missing", it.isFile) }
+        val full = File(media, "$name/full.m3u8").also { assertTrue("$it is missing", it.isFile) }
         return full.readLines().filter { it.endsWith(".ts") }.map { File(full.parentFile, it.substringAfterLast('/')) }
     }
 
-    /** A channel on air: its window moves on each second until [freeze]; [end] closes its playlist. */
+    /**
+     * A channel on air: its window moves on each second until [freeze]; [end] closes its
+     * playlist; [hang] holds every answer (a home that stopped answering).
+     */
     private class OnAir(val count: Int) {
         private val t0 = System.nanoTime()
         @Volatile private var frozen: Int? = null
         @Volatile private var ended = false
+        val hang = CountDownLatch(1)
+        @Volatile var hanging = false
 
         /** The newest segment listed now. */
         fun last(): Int = frozen ?: minOf(count - 1, START - 1 + ((System.nanoTime() - t0) / 1_000_000_000L).toInt())
@@ -79,6 +92,10 @@ class ChannelMpvRealTest {
         fun end() {
             freeze()
             ended = true
+        }
+
+        fun waitIfHanging() {
+            if (hanging) hang.await(60, TimeUnit.SECONDS)
         }
 
         fun playlist(): String {
@@ -101,14 +118,16 @@ class ChannelMpvRealTest {
     private val fetched: MutableList<String> = Collections.synchronizedList(mutableListOf())
 
     private fun onAir(id: String, files: List<File>): OnAir {
-        val air = OnAir(files.size)
+        val air = OnAir(files.size).also { onAir += it }
         home.answer("GET /stream/channel/$id/index.m3u8") {
+            air.waitIfHanging()
             MockResponse.Builder().code(200).addHeader("Content-Type", "application/vnd.apple.mpegurl")
                 .addHeader("Cache-Control", "no-cache").body(air.playlist()).build()
         }
         files.forEachIndexed { i, f ->
             val bytes = f.readBytes()
             home.answer("GET /stream/channel/$id/${f.name}") {
+                air.waitIfHanging()
                 fetched += "$id $i"
                 MockResponse.Builder().code(200).addHeader("Content-Type", "video/mp2t").body(Buffer().apply { write(bytes) }).build()
             }
@@ -125,6 +144,7 @@ class ChannelMpvRealTest {
 
     @After
     fun tearDown() {
+        onAir.forEach { it.hang.countDown() }
         channel?.let { c -> runBlocking(main) { c.playback.close() } }
         proxy.close()
         home.close()
@@ -133,10 +153,10 @@ class ChannelMpvRealTest {
 
     private fun <T> onMain(block: () -> T): T = runBlocking { withContext(main) { block() } }
 
-    /** Waits up to 20 s for [ok], the screen's picture given its size meanwhile; the time it took, in ms. */
-    private fun until(c: ChannelPlayer, what: String, ok: (MpvVideo?) -> Boolean): Long {
+    /** Waits up to [limitMs] for [ok], the screen's picture given its size meanwhile; the time it took, in ms. */
+    private fun until(c: ChannelPlayer, what: String, limitMs: Long = 20_000, ok: (MpvVideo?) -> Boolean): Long {
         val from = System.nanoTime()
-        val end = System.currentTimeMillis() + 20_000
+        val end = System.currentTimeMillis() + limitMs
         while (System.currentTimeMillis() < end) {
             val v = c.video.video as? MpvVideo
             v?.resize(1280, 720)
@@ -146,29 +166,49 @@ class ChannelMpvRealTest {
         throw AssertionError("never: $what (status ${c.playback.status}; asked ${home.seen.map { it.url.encodedPath }.takeLast(12)})")
     }
 
+    /** Which channel a frame shows: "red" (one), "blue" (two), or "other". */
+    private fun colour(s: MpvVideo.Shown): String {
+        val px = s.image.toPixelMap(s.image.width / 2, s.image.height / 2, 1, 1)[0, 0]
+        return when {
+            px.red > 0.5f && px.blue < 0.35f -> "red"
+            px.blue > 0.5f && px.red < 0.35f -> "blue"
+            else -> "other(${px.red}, ${px.green}, ${px.blue})"
+        }
+    }
+
     private val linux = System.getProperty("os.name").startsWith("Linux")
 
     @Test
     fun t02_t03_aChannelStartsWithinTwoSecondsAndTheNextLoadsIntoTheSameHandle() {
         val lib = lib()
-        val files = segments()
-        onAir("c1", files)
-        val two = onAir("c2", files)
+        onAir("c1", segments("live"))
+        val two = onAir("c2", segments("live2"))
         val c = start(lib)
         onMain { c.playback.open("c1") }
-        val first = until(c, "the first frame") { it?.frame != null }
+        val first = until(c, "the first frame") { it?.shown != null }
         println("13.22 T02 channel's first frame (libmpv, live HLS, ${System.getProperty("os.name")}): $first ms")
         assertEquals(ChannelStatus.Playing, c.playback.status)
+        assertEquals("channel one's picture", "red", colour((c.video.video as MpvVideo).shown!!))
         if (linux) assertTrue("first frame after $first ms", first < 2_000)
 
-        // Next channel: the same handle, loaded; the last frame stays on screen until the next's first
+        // Next channel: the same handle, loaded; channel one's last frame stays on screen until
+        // channel two's first, never another picture or none
         val v = c.video.video as MpvVideo
+        var held = 0
         onMain { c.playback.next(lineup) }
         val next = until(c, "the next channel's first frame") {
-            assertTrue("the picture went blank", it?.frame != null)
-            it!!.loads == 1 && it.frameLoad == 1
+            val s = v.shown!!
+            val shows = colour(s)
+            if (s.load == 0) {
+                assertEquals("before channel two's first frame", "red", shows)
+                held++
+            } else {
+                assertEquals("from channel two's first frame", "blue", shows)
+            }
+            s.load == 1
         }
-        println("13.22 T03 next channel's first frame (libmpv, the same handle): $next ms")
+        println("13.22 T03 next channel's first frame (libmpv, the same handle): $next ms, channel one's frame held over $held looks")
+        assertTrue("channel one's last frame was not held", held > 0)
         assertSame("a new handle", v, c.video.video)
         assertEquals("c2", c.playback.channelId)
         if (linux) assertTrue("next channel's first frame after $next ms", next < 2_000)
@@ -179,12 +219,14 @@ class ChannelMpvRealTest {
         val edge = two.last()
         val mark = fetched.size
         onMain { c.playback.backToLive() }
-        val back = until(c, "the picture back from the live edge") { it!!.loads == 2 && it.frameLoad == 2 }
+        val back = until(c, "the picture back from the live edge") { it!!.shown!!.load == 2 }
         val after = synchronized(fetched) { fetched.drop(mark) }.map { it.substringAfter(' ').toInt() }
         println("13.22 Back to live: the picture back after $back ms; the live edge was segment $edge, then asked for $after")
-        assertTrue("Back to live asked for no segment", after.isNotEmpty())
-        // from the live edge (the playlist's last three), not from where it was paused
-        assertTrue("Back to live started at segment ${after.min()}, the live edge being $edge", after.min() >= edge - 4)
+        // the playlist's last segments asked for again (a new start at the live edge, not the
+        // paused stream's next ones), and nothing from where it was paused
+        assertTrue("Back to live asked again for no segment at the live edge: $after", after.any { it in edge - 3..edge })
+        assertTrue("Back to live started at segment ${after.minOrNull()}, the live edge being $edge", after.min() >= edge - 4)
+        assertEquals("blue", colour(v.shown!!))
         assertSame(v, c.video.video)
         assertEquals(ChannelStatus.Playing, c.playback.status)
     }
@@ -192,10 +234,10 @@ class ChannelMpvRealTest {
     @Test
     fun t04_aStreamWhosePlaylistEndsIsTheChannelEnded() {
         val lib = lib()
-        val air = onAir("c1", segments())
+        val air = onAir("c1", segments("live"))
         val c = start(lib)
         onMain { c.playback.open("c1") }
-        until(c, "the first frame") { it?.frame != null }
+        until(c, "the first frame") { it?.shown != null }
         // the stream stops moving on, then its playlist ends
         air.freeze()
         Thread.sleep(2_000)
@@ -203,18 +245,50 @@ class ChannelMpvRealTest {
         val ms = until(c, "the channel ended") { c.playback.status == ChannelStatus.Ended }
         println("13.22 T04 the channel ended $ms ms after its playlist did")
         assertEquals("live.channelEnded", c.playback.endedKey)
-        assertEquals(null, c.video.video)
+        assertNull(c.video.video)
     }
 
     @Test
     fun t04_aChannelThatAnswers404FailedAndCanBeTriedAgain() {
         val lib = lib()
-        segments()
+        segments("live")
         val c = start(lib)
         // no route for c3's playlist: the fake home answers 404
         onMain { c.playback.open("c3") }
         val ms = until(c, "the channel failed") { c.playback.status is ChannelStatus.Failed }
         println("13.22 T04 a 404 failed after $ms ms")
+        assertEquals(ChannelStatus.Failed(null, retryable = true), c.playback.status)
+    }
+
+    @Test
+    fun t04_aChannelLoadedIntoThePlayingHandleThatAnswers404Failed() {
+        val lib = lib()
+        onAir("c1", segments("live"))
+        val c = start(lib)
+        onMain { c.playback.open("c1") }
+        until(c, "the first frame") { it?.shown != null }
+        val v = c.video.video as MpvVideo
+        // channel two has no route: its playlist answers 404, loaded into the same handle
+        onMain { c.playback.next(lineup) }
+        val ms = until(c, "the next channel failed") { c.playback.status is ChannelStatus.Failed }
+        println("13.22 T04 a 404 loaded into the playing handle failed after $ms ms")
+        assertEquals(1, v.loads)
+        assertEquals(ChannelStatus.Failed(null, retryable = true), c.playback.status)
+        assertNull(c.video.video)
+    }
+
+    @Test
+    fun t04_aPlayingStreamWhoseHomeStopsAnsweringFailed() {
+        val lib = lib()
+        val air = onAir("c1", segments("live"))
+        val c = start(lib)
+        onMain { c.playback.open("c1") }
+        until(c, "the first frame") { it?.shown != null }
+        // the home stops answering: what is buffered plays out, then nothing moves for 15 s
+        air.hanging = true
+        val ms = until(c, "the stalled channel failed", limitMs = 45_000) { c.playback.status is ChannelStatus.Failed }
+        println("13.22 T04 a stalled stream failed after $ms ms")
+        assertTrue("failed after $ms ms, before a 15 s stall", ms >= ChannelVideo.STALL_MS)
         assertEquals(ChannelStatus.Failed(null, retryable = true), c.playback.status)
     }
 }

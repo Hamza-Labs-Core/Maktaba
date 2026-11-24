@@ -54,6 +54,7 @@ import com.hamzalabs.maktaba.core.api.Feature
 import com.hamzalabs.maktaba.core.api.LiveSource
 import com.hamzalabs.maktaba.core.api.LiveStream
 import com.hamzalabs.maktaba.core.api.channelNow
+import com.hamzalabs.maktaba.desktop.FxVideo
 import com.hamzalabs.maktaba.desktop.LocalTexts
 import com.hamzalabs.maktaba.desktop.Players
 import com.hamzalabs.maktaba.desktop.StreamProxy
@@ -123,9 +124,14 @@ fun ChannelScreen(id: String, players: Players = Engine.players) {
     ) {
         Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
             when (val s = playback.status) {
-                ChannelStatus.Tuning -> Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    CircularProgressIndicator()
-                    Text(t["live.tuning"], color = Color.White)
+                ChannelStatus.Tuning -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    // another channel tuning: the picture on screen stays under the spinner until the
+                    // new one's first frame (a Compose-drawn one; JavaFX's panel would hide the spinner)
+                    if (player != null && player !is FxVideo) VideoSurface(player, Modifier.fillMaxSize())
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.testTag("channel-tuning")) {
+                        CircularProgressIndicator()
+                        Text(t["live.tuning"], color = Color.White)
+                    }
                 }
                 ChannelStatus.Playing -> VideoSurface(player, Modifier.fillMaxSize())
                 is ChannelStatus.Failed -> Stopped(s.key?.let { t[it] } ?: t["live.cantPlay"], retry = if (s.retryable) playback::retry else null, close = { home.nav.back() })

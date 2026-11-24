@@ -173,4 +173,31 @@ class ChannelPlaybackTest {
         runCurrent()
         assertEquals(ChannelStatus.Playing, cp.status)
     }
+
+    @Test
+    fun story1322_backToLiveDoesNothingBehindEndedOrTryAgainAndAStopUnpauses() = runTest {
+        val players = RecordingPlayers()
+        val (cp, _) = channelOnFakes(players)
+        cp.open("c1")
+        runCurrent()
+        cp.pause()
+        assertTrue(cp.paused)
+        players.events.single().ended()
+        runCurrent()
+        assertEquals(ChannelStatus.Ended, cp.status)
+        assertFalse("a stopped channel is not paused", cp.paused)
+        cp.backToLive()
+        runCurrent()
+        assertEquals(ChannelStatus.Ended, cp.status)
+        cp.retry()
+        runCurrent()
+        players.events.last().failed("loading failed")
+        runCurrent()
+        cp.backToLive()
+        runCurrent()
+        assertEquals(ChannelStatus.Failed(null, retryable = true), cp.status)
+        // two streams given (the open and Try again's), none by Back to live
+        assertEquals(listOf("open ${channelUrl("c1")}", "pause", "dispose 1", "open ${channelUrl("c1")}", "dispose 2"), players.calls)
+        assertEquals(2, cp.opened)
+    }
 }
