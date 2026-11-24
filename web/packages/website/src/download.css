@@ -90,3 +90,132 @@
   overflow: visible;
   white-space: nowrap;
 }
+
+/*
+ * The setup guides (story 60.05's install chooser, folded into this page): a group per kind of
+ * machine, each headed like a download card (the icon ring and a name), its guides as tiles: a
+ * link with the guide's name, one line and the onward arrow. The NAS group spans the frame; the
+ * other two sit side by side from 768 px. A tile's edge turns brass on hover, as a card's does.
+ */
+.guide-groups {
+  display: grid;
+  gap: var(--spacing-10) var(--spacing-6);
+}
+
+@media (min-width: 768px) {
+  .guide-groups {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .guide-groups > #nas-guides {
+    grid-column: 1 / -1;
+  }
+}
+
+.guide-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-4);
+  min-inline-size: 0;
+  scroll-margin-block-start: var(--spacing-6);
+}
+
+.guide-group .group-head {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-3);
+}
+
+.guide-group .group-head .ring {
+  display: inline-grid;
+  place-items: center;
+  inline-size: 44px;
+  block-size: 44px;
+  flex: none;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--site-line-control);
+  color: var(--color-semantic-fg);
+}
+
+.guide-group h3 {
+  margin: 0;
+  font-size: var(--fs-h3);
+  line-height: var(--lh-h3);
+  font-weight: 600;
+}
+
+.guide-list {
+  display: grid;
+  gap: var(--spacing-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+@media (min-width: 768px) {
+  #nas-guides .guide-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1024px) {
+  #nas-guides .guide-list {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.guide-tile {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-4);
+  block-size: 100%;
+  min-block-size: 44px;
+  box-sizing: border-box;
+  padding-block: var(--spacing-4);
+  padding-inline: var(--spacing-5);
+  background: var(--site-surface-section);
+  border: 1px solid var(--site-line-rule);
+  border-radius: var(--radius-lg);
+  color: var(--color-semantic-fg);
+  text-decoration: none;
+}
+
+.guide-tile:hover {
+  border-color: var(--site-accent-mark);
+}
+
+.guide-tile .tile-text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-1);
+  min-inline-size: 0;
+}
+
+.guide-tile .tile-name {
+  font-weight: 600;
+  color: var(--color-semantic-accent-text);
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
+.guide-tile .tile-line {
+  font-size: var(--fs-small);
+  line-height: var(--lh-small);
+  color: var(--color-semantic-muted);
+}
+
+.guide-tile svg {
+  flex: none;
+  color: var(--color-semantic-accent-text);
+}
+
+.guide-find {
+  margin: 0;
+  color: var(--color-semantic-muted);
+}
+
+@media (forced-colors: active) {
+  .guide-tile {
+    border-color: LinkText;
+  }
+}

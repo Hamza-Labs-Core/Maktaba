@@ -26,6 +26,8 @@ import {
   readRelease,
   releaseData,
   releaseDate,
+  GUIDES,
+  guideGroups,
   renderBody,
   styleFile,
   tapName,
@@ -61,7 +63,8 @@ test("T01: the fixture's release makes the Mac, Windows, Linux and NAS cards, an
     assert.equal(k[id].primary.url, a.browser_download_url);
   }
   assert.equal(k.nas.primary, null);
-  assert.equal(k.nas.href, "/install/nas/");
+  // its button goes to the NAS guides on this page (60.05's chooser, folded in)
+  assert.equal(k.nas.href, "#nas-guides");
   assert.deepEqual(
     k.linux.others.map((o) => o.asset.name),
     [
@@ -379,4 +382,68 @@ test("plain(): a copy string's text, no tag left however nested, entities as tex
   assert.equal(plain("Run <code>brew</code> &amp; wait"), "Run brew & wait");
   assert.equal(plain("<scr<script>ipt>alert(1)</script>"), "alert(1)");
   assert.equal(plain("a &lt;b&gt; c"), "a b c");
+});
+
+// ---- the setup guides (60.05's chooser on this page; /install/ redirects here) -----------------
+
+const GUIDE_IDS = GUIDES.flatMap((g) => g.guides);
+const builtGuides = (href) => /^(\/ar)?\/install\/[a-z-]+\/$/.test(href);
+
+test("60.05: every install guide is on the page, by group, once built, in both languages", () => {
+  assert.deepEqual(GUIDE_IDS, [
+    "synology",
+    "truenas",
+    "unraid",
+    "qnap",
+    "ugreen",
+    "asustor",
+    "docker",
+    "after-setup",
+    "troubleshooting",
+  ]);
+  const d = data();
+  const ks = cards(d, readPlatforms(), NO_ENV);
+  for (const lang of ["en", "ar"]) {
+    const pre = lang === "ar" ? "/ar" : "";
+    const html = renderBody(d, ks, { lang, resolves: builtGuides, manifest: readManifest() });
+    assert.ok(html.includes('id="guides"'), lang);
+    for (const g of GUIDES) assert.ok(html.includes(`id="${g.id}"`), `${lang}: ${g.id}`);
+    for (const n of [...GUIDE_IDS, "nas"])
+      assert.ok(html.includes(`href="${pre}/install/${n}/"`), `${lang}: ${n}`);
+    // the NAS card's button and the need block go to the guides on this page
+    assert.ok(html.includes('class="button" href="#nas-guides"'), lang);
+    assert.ok(html.includes('<a class="onward" href="#guides">'), lang);
+    // the guides come after the cards and before "What do I need?"
+    const at = (s) => html.indexOf(s);
+    assert.ok(at('class="cards"') < at('id="guides"') && at('id="guides"') < at('id="need-title"'));
+    assert.ok(!html.includes("undefined"), lang);
+  }
+});
+
+test("60.05: a guide the site has not built is left out, and an empty group with it", () => {
+  const only = (names) => (href) => names.some((n) => href.endsWith(`/install/${n}/`));
+  assert.deepEqual(
+    guideGroups(only(["docker"])).map((g) => [g.id, g.guides, g.find]),
+    [["docker-guide", ["docker"], null]]
+  );
+  const d = data();
+  const ks = cards(d, readPlatforms(), NO_ENV);
+  const html = renderBody(d, ks, { lang: "en", manifest: readManifest() });
+  assert.ok(!html.includes('id="guides"'));
+  assert.ok(!html.includes('href="#guides"'));
+});
+
+test("60.05: the guides' words are in both languages, with the same keys", () => {
+  for (const lang of ["en", "ar"]) {
+    const c = readCopy(lang);
+    for (const key of [
+      "guides.h2",
+      "guides.lead",
+      ...GUIDES.map((g) => `guides.${g.id}`),
+      "guides.nas-guides.unsure",
+      "guides.nas-guides.find",
+      ...GUIDE_IDS.flatMap((n) => [`guides.${n}`, `guides.${n}.line`]),
+    ])
+      assert.ok(c[key], `copy/download.${lang}.md: ${key}`);
+  }
 });

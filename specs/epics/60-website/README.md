@@ -149,8 +149,8 @@ Checked on `main` at 154438067 (2026-11-11).
 | Path (each with `/ar/…`) | What it is | Story | Phase |
 |---|---|---|---|
 | `/` | Phase 1: a short front door (what Maktaba is, install, download from GitHub, help, maktaba.dev). Phase 2: the home page | 60.03, 60.10 | 1, 2 |
-| `/download/` | every device, with its real release asset | 60.11 | 2 |
-| `/install/…` | Epic 59's nine guides, then the per-platform install pages | 60.05 | 1 |
+| `/download/` | Get Maktaba, the one page: every device with its real release asset, and every setup guide (NAS, Docker, after setup, troubleshooting) | 60.11, 60.05 | 2 |
+| `/install/<guide>/` | Epic 59's guides, each at its own address; `/install/` itself redirects (301) to `/download/`, which lists them (2026-11-24) | 60.05 | 1 |
 | `/help/`, `/help/<topic>/` | Epic 41's topics | 60.12 | 3 |
 | `/problems/`, `/problems/<slug>/` | one page per problem type, and an index | 60.06 | 1 |
 | `/legal/privacy/`, `/legal/terms/`, `/legal/copyright/` | privacy, terms, copyright with the notice form | 60.07 | 1 |

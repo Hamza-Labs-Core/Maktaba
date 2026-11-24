@@ -84,5 +84,7 @@ its page, and each model's name in the table links there (`nasPage.test.ts`).
 
 **Hosting:** the site builds to `web/dist-install/` (its hashed files under `install/assets/`),
 and maktaba.tv's build (`web/packages/website`, Epic 60 story 60.03) copies it to the root of
-the website, at `/install/` and `/ar/install/`. `website-deploy.yml` deploys it with the rest of
+the website, at `/install/<guide>/` and `/ar/install/<guide>/`; `/install/` itself redirects to
+the website's download page, which lists every guide, and each guide's "All NAS guides" goes there
+(`/download/#nas-guides`). `website-deploy.yml` deploys it with the rest of
 the site.

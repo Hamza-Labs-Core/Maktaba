@@ -14,6 +14,14 @@ build fails when the two differ.
 
 ### Changed
 
+- **One page to get Maktaba: maktaba.tv/download.** The download page now lists every setup
+  guide under its download buttons: Synology, TrueNAS, Unraid, QNAP, UGREEN and ASUSTOR, Docker,
+  after setup and troubleshooting, each with one line on what it covers. The NAS card's button
+  goes straight to the NAS guides. maktaba.tv/install now opens the download page, every guide
+  keeps its own address (maktaba.tv/install/synology and the others), and each guide's "All NAS
+  guides" link goes back to it. The site's menu has Download, Help and Messages. In English and
+  Arabic.
+
 - **A full guide for each NAS on maktaba.tv/install.** QNAP, UGREEN and a new ASUSTOR page each
   walk through the same steps as the TrueNAS and Unraid guides: what to check first, the user and
   its uid:gid, the folders and their permissions, the install in the NAS's own app, the setup and
