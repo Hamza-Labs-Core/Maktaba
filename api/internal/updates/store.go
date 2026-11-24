@@ -553,6 +553,13 @@ type State struct {
 	LastCheckOK  *time.Time `json:"last_check_ok,omitempty"`
 	LastCheckErr string     `json:"last_check_error,omitempty"`
 	LastCheckAt  *time.Time `json:"last_check_at,omitempty"`
+	// LastCheckCode is what the last check failed on (a CheckFail code; "" when it worked).
+	LastCheckCode string `json:"last_check_code,omitempty"`
+	// Failures counts the checks that failed in a row since the last one that worked, and
+	// FailingSince is the first of them (nil while the checks work): the Updates page's
+	// "Can't check for updates since …", raised from FailingAfter failures.
+	Failures     int        `json:"failures,omitempty"`
+	FailingSince *time.Time `json:"failing_since,omitempty"`
 	// Since is the first check this home made (the stale hint's start when no check
 	// ever succeeded).
 	Since *time.Time `json:"since,omitempty"`

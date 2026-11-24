@@ -3003,13 +3003,14 @@
         "story-50.32",
         "story-50.33",
         "story-50.34",
-        "story-50.35"
+        "story-50.35",
+        "story-50.36"
       ],
       "files": {
         "readme": "specs/epics/50-cloud-no-downtime/README.md"
       },
       "metadata": {
-        "story_count": 35,
+        "story_count": 36,
         "plan_count": 0,
         "mockup_count": 0
       },

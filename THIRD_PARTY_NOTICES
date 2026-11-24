@@ -34,3 +34,36 @@ ffmpeg (LGPL-2.1+ / GPL-2+ as Debian builds it), tini (MIT), libnss-wrapper (BSD
 ca-certificates (MPL-2.0 / GPL-2+), tzdata (public domain), avahi-utils and the Avahi
 client libraries it brings (LGPL-2.1+; avahi-publish-service, run only when the host's system
 D-Bus socket is mounted).
+
+Third-party software in the Maktaba Player for Windows and Linux
+================================================================
+
+The Player (apps/desktop-player) carries libmpv, built by apps/desktop-player/libmpv/build.sh
+from the sources pinned in apps/desktop-player/libmpv/pins.env (Epic 13 story 13.18), in its
+install folder (lib/app/resources on Linux, app\resources on Windows), and loads it
+dynamically. The build fails if FFmpeg or mpv is configured GPL or non-free. Each part keeps
+its own licence; the texts and the exact configure lines are beside the library, in
+licences/ and BUILD-INFO.txt.
+
+mpv 0.42.0, built as libmpv with -Dgpl=false
+  https://mpv.io, source https://github.com/mpv-player/mpv. Licence: LGPL-2.1-or-later.
+
+FFmpeg 8.1.3, built without --enable-gpl and --enable-nonfree, inside libmpv
+  https://ffmpeg.org, source https://ffmpeg.org/releases/ffmpeg-8.1.3.tar.xz.
+  Licence: LGPL-2.1-or-later.
+
+libplacebo 7.387.0, inside libmpv
+  Source https://code.videolan.org/videolan/libplacebo (mirror github.com/haasn/libplacebo).
+  Licence: LGPL-2.1-or-later.
+
+dav1d 1.5.5 (AV1 decoding), inside libmpv
+  Source https://code.videolan.org/videolan/dav1d. Licence: BSD-2-Clause.
+
+On Linux libmpv uses the system's libass (ISC), FreeType (FTL), FriBidi (LGPL-2.1-or-later),
+HarfBuzz (MIT), ALSA's and PulseAudio's client libraries (LGPL-2.1-or-later) and libva (MIT),
+which the .deb and .rpm depend on. On Windows the same libraries come from MSYS2's UCRT64
+packages, beside libmpv-2.dll; BUILD-INFO.txt lists each DLL with its package and licence.
+
+The Player also carries the JetBrains Runtime 25 (GPL-2.0 with the Classpath Exception,
+https://github.com/JetBrains/JetBrainsRuntime) and, for one more release, OpenJFX
+(GPL-2.0 with the Classpath Exception).

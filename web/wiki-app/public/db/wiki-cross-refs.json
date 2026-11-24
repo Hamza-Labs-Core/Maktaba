@@ -6052,7 +6052,7 @@
       "epic": 50,
       "num": "26",
       "slug": "viewer-access",
-      "title": "Viewer access: invite and open; limits and tokens",
+      "title": "Viewer access by invitation; limits and tokens",
       "story_file": "specs/epics/50-cloud-no-downtime/story-50-26-viewer-access.md",
       "plan_files": []
     },
@@ -6061,7 +6061,7 @@
       "epic": 50,
       "num": "27",
       "slug": "guest-viewers",
-      "title": "Guest viewers: the watch pages and the Maktaba apps",
+      "title": "Guest viewers: invited friends on the watch pages and the Maktaba apps",
       "story_file": "specs/epics/50-cloud-no-downtime/story-50-27-guest-viewers.md",
       "plan_files": []
     },
@@ -6135,6 +6135,15 @@
       "slug": "remote-access-capability",
       "title": "Remote access is on when any remote path is on",
       "story_file": "specs/epics/50-cloud-no-downtime/story-50-35-remote-access-capability.md",
+      "plan_files": []
+    },
+    {
+      "id": "50.36",
+      "epic": 50,
+      "num": "36",
+      "slug": "close-open-links",
+      "title": "Invite-only broadcasting: close the open links",
+      "story_file": "specs/epics/50-cloud-no-downtime/story-50-36-close-open-links.md",
       "plan_files": []
     },
     {

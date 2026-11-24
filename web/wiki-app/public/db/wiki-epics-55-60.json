@@ -2913,7 +2913,7 @@
       "title": "Legal: privacy, terms, and copyright with Epic 50's notice form",
       "epic": "60-website",
       "phase": 5,
-      "content": "# Story 60.07 — Legal: privacy, terms, and copyright with Epic 50's notice form\n\n> Epic 60 · Phase 1 (pages), Phase 3 (onto the full design) · Depends on: 60.03, 60.04, 60.02\n> part A; the notice form's sending part on Epic 50 story 50.24's cloud handlers · Owner actions:\n> A3 (mailboxes), A4 (the designated agent), Q6, Q7\n\n## Why\n\n- **Privacy:** a household deciding whether to trust Maktaba with its library reads the privacy\n  page first. App Store and Google Play listings need a privacy policy URL too.\n- **Terms:** the project offers downloads and, with Epic 50, a paid cloud service, and bot",
+      "content": "# Story 60.07 — Legal: privacy, terms, and copyright with Epic 50's notice form\n\n> Epic 60 · Phase 1 (pages), Phase 3 (onto the full design) · Depends on: 60.03, 60.04, 60.02\n> part A; the notice form's sending part on Epic 50 story 50.24's cloud handlers · Owner actions:\n> A3 (mailboxes), A4 (the designated agent), Q6, Q7\n\n> **The copyright page is removed (2026-11-24).** Broadcasting stays off for now, and nothing\n> about copyright is shown anywhere. `/legal/copyright/` and `/ar/legal/copyright/` redirect\n> (301) to the terms page, and the nav, the footer, the sitemap, the terms and privacy ",
       "tags": [
         "story",
         "60-website",
