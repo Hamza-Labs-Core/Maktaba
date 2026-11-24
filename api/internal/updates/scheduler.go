@@ -40,7 +40,34 @@ const (
 	WaitRetryBackoff = "retry_backoff"
 	WaitRetryWindow  = "retry_next_window"
 	WaitNeedsPerson  = "needs_person"
+	// the list of releases is stale (catalogStale): no automatic install until a check
+	// reads it again; an admin's Update now still installs
+	WaitCatalogStale = "catalog_stale"
 )
+
+// StaleHoldAfter is how old the last good read of the list of releases may be before
+// automatic installs wait for a fresh one: two checks (CheckInterval) missed. On
+// 2026-11-24 a home whose checks had failed for a day chose a release older than one that
+// had rolled back, from a list that no longer knew the newest releases (research B3).
+const StaleHoldAfter = 2*CheckInterval + 30*time.Minute
+
+// catalogStale says why the list of releases is too stale to install from by itself ("":
+// fresh enough): its last good read is older than StaleHoldAfter, or every check so far
+// failed. A home that never checked (no state) is not held: what its catalog holds came
+// from no check.
+func catalogStale(st State, now time.Time) string {
+	switch {
+	case st.LastCheckOK != nil && now.Sub(*st.LastCheckOK) > StaleHoldAfter:
+		why := fmt.Sprintf("the list of releases was last read %s ago", now.Sub(*st.LastCheckOK).Round(time.Minute))
+		if st.LastCheckErr != "" {
+			why += ": " + st.LastCheckErr
+		}
+		return why
+	case st.LastCheckOK == nil && st.LastCheckErr != "":
+		return "the list of releases has never been read: " + st.LastCheckErr
+	}
+	return ""
+}
 
 // retryBackoff is the pause before a release's third automatic run in one window;
 // triesPerWindow how many automatic runs of one release a window takes.
@@ -317,6 +344,12 @@ func (s *Service) tick(ctx context.Context) (Decision, error) {
 		}
 		return Decision{Action: "none", Reason: pl.Waiting}, nil
 	}
+	if why := catalogStale(s.Store.LoadState(ctx), s.now()); why != "" {
+		// no automatic install from a list that may not know the newest releases (or that
+		// a release was withdrawn); the pre-run recheck reads only the target's own entry
+		s.staleHeld(ctx, pl.Target.Version, why)
+		return Decision{Action: "none", Reason: WaitCatalogStale, Version: pl.Target.Version}, nil
+	}
 	if wait := s.retryWait(ctx, pol, pl.Target.Version); wait != "" {
 		return Decision{Action: "none", Reason: wait, Version: pl.Target.Version}, nil
 	}
@@ -339,6 +372,16 @@ func (s *Service) tick(ctx context.Context) (Decision, error) {
 		return Decision{Action: "failed", Reason: err.Error(), Version: pl.Target.Version, RunID: run.ID}, err
 	}
 	return Decision{Action: "started", Version: run.Version, RunID: run.ID}, nil
+}
+
+// staleHeld says, once a day, that version's automatic install waits for a fresh read of
+// the list of releases: logged at warn, and the admins notified.
+func (s *Service) staleHeld(ctx context.Context, version, why string) {
+	s.log().Warn("updates: automatic install held: the list of releases is stale", "event", "update_held_stale",
+		"version", version, "why", why)
+	s.notify(ctx, NoticeHeldStale, notify.Payload{Severity: notify.SeverityWarn,
+		Params: map[string]any{"version": version, "why": why}, Link: "/admin/updates",
+		Subject: "update_held_stale", Every: 24 * time.Hour})
 }
 
 // retryWait says why a due automatic run of version waits for an earlier one that failed

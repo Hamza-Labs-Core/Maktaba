@@ -412,6 +412,13 @@ build fails when the two differ.
 
 ### Fixed
 
+- **Automatic updates wait while the list of releases cannot be read.** When the home's checks
+  for updates have failed for over 12 hours, nothing installs by itself until a check reads the
+  list again: a stale list may not know the newest releases, nor that one was withdrawn. On
+  2026-11-24 a home installed a release older than one that had rolled back, from a list it had
+  not been able to read for a day. The Updates page says why the update waits and the admins are
+  notified once a day, in English and Arabic; **Update now** still installs.
+
 - **A home whose update rolled back no longer installs an older release instead, and it sees new
   releases again.** Since 2026-11-23 GitHub's list of the newest 30 releases has been larger than
   the 8 MiB a home reads, so every check for updates failed and homes stopped learning of new

@@ -38,6 +38,7 @@ const (
 	NoticeReleaseHeld     = "update.release_held"
 	NoticeReleaseWithdrew = "update.release_withdrawn"
 	NoticeCheckStale      = "update.check_stale"
+	NoticeHeldStale       = "update.held_stale"
 	NoticeReplay          = "update.replay"
 	NoticeRunFailed       = "update.run_failed"
 )
