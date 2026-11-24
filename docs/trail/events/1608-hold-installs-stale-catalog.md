@@ -20,6 +20,7 @@ prs: [1592, 1597, 1601]
   - the Updates page and the Apple and Android remotes say why.
 - **Not held:** an admin's **Update now**, and a home that has never checked (no state).
 - **After its review:** the list is read again before it holds an install (at most every 15 minutes), and holds only while that fails; the limit follows the cadence; a time still to come is not fresh; the hold comes after the other blockers and is told once it lasts.
+- **After the second review:** a hold's start ends when the list is read (one night's tick of it told the admins at once the next night); the list is read again past half a day at any cadence, and only the cadence's own limit holds.
 
 ## What we learned
 - **Age is not failure.** A rule on how old the last good check is held homes whose checks never failed (asleep, started before the network, one check a day). Try first, hold on the failure.
