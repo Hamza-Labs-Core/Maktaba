@@ -12,7 +12,8 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * One clip the probe plays (story 13.19): [codec] (the profile's name) at [bitDepth], the file
- * in `resources/probe/` (probe-media.sh, outside libmpv/ so the libmpv build cache keeps its key), [height] its picture's (2160, MPEG-2's 1080).
+ * in `resources/probe/` (made by `apps/desktop-player/probe-media.sh`, outside libmpv/ so the
+ * libmpv build cache keeps its key), [height] its picture's (2160, MPEG-2's 1080).
  */
 data class ProbeClip(val codec: String, val bitDepth: Int, val file: String, val height: Int = 2160)
 
@@ -20,7 +21,9 @@ data class ProbeClip(val codec: String, val bitDepth: Int, val file: String, val
  * What the probe found for one clip. [hwdec] is mpv's `hwdec-current` on its first
  * `playback-restart` with `hwdec=auto-copy-safe` ("no": software; null: it did not decode);
  * [softwareFps] the frames per second software decoded it at, scaled to 2160p (null when a
- * hardware decoder took it).
+ * hardware decoder took it). [fallback] says why a clip has no speed though it is counted as
+ * decoding in software, at [DesktopCaps.SAFE_HEIGHT]: it ran out of time, or the probe before
+ * stopped in it (libmpv crashed, or the Player was killed).
  */
 @Serializable
 data class ClipResult(
@@ -29,9 +32,15 @@ data class ClipResult(
     val decoded: Boolean,
     val hwdec: String? = null,
     @SerialName("software_fps") val softwareFps: Double? = null,
+    val fallback: String? = null,
 ) {
     /** A hardware decoder took it: anything but "no". */
     val hardware: Boolean get() = decoded && hwdec != null && hwdec != "no"
+
+    companion object {
+        const val TIMED_OUT = "timed out"
+        const val STOPPED_HERE = "skipped: the last probe stopped in this clip"
+    }
 }
 
 /** The probe's answers on this machine, kept in `probe.json` under the [key] they were measured with. */
@@ -40,31 +49,51 @@ data class ProbeResult(
     val key: String,
     val clips: List<ClipResult>,
     @SerialName("took_ms") val tookMs: Long,
-    /** Every clip was played within the probe's bound (an incomplete probe runs again at the next start). */
+    /** Every clip was measured (none left out, none a fallback): an incomplete probe is tried again after a back-off. */
     val complete: Boolean = true,
+    /** When it was measured (epoch milliseconds), and how many probes in a row were incomplete. */
+    val at: Long = 0,
+    val attempts: Int = 1,
 )
 
-/** One play of a clip by libmpv: the decoder it used ("no": software), and how many frames in how long. */
-data class Played(val hwdec: String, val frames: Int, val nanos: Long)
+/** What one play of a clip came to. */
+sealed interface Play
+
+/**
+ * A clip decoded: the decoder used ("no": software), and the frames decoded after the first
+ * picture ([frames]) in the time from mpv's first `playback-restart` to the file's end.
+ */
+data class Played(val hwdec: String, val frames: Int, val nanos: Long) : Play
+
+/** It did not decode. */
+data object PlayFailed : Play
+
+/** It did not end in the time it had. */
+data object PlayTimedOut : Play
 
 /** The libmpv side of the probe (a test gives a fake). */
 interface ProbeDecoder {
     /** libmpv's and its FFmpeg's versions, for the cache key. */
     val version: String
 
-    /** Plays [clip] once with [hwdec] ("auto-copy-safe", "no"); null: it did not decode within [timeoutMs]. */
-    fun play(clip: File, hwdec: String, timeoutMs: Long): Played?
+    /** Plays [clip] once with [hwdec] ("auto-copy-safe", "no"), within [timeoutMs]. */
+    fun play(clip: File, hwdec: String, timeoutMs: Long): Play
+
+    /** Plays [clip] once, untimed, so libmpv's first-use costs are paid before a clip is timed. */
+    fun warmUp(clip: File, timeoutMs: Long) {}
 
     /** The default audio output's channel count for [clip] (a silent 7.1 clip); null: no device opened. */
     fun channels(clip: File, timeoutMs: Long): Int?
 
+    /** Frees the probe's libmpv handle (the channel measurement opens its own each time). */
     fun close() {}
 }
 
 /**
  * What the probe's results are cached under: the GPUs (each adapter's name and its driver's
- * version), the CPU and libmpv's version. A key that changed (another GPU, a new driver, a new
- * libmpv in an update) probes again.
+ * version; on Linux also the VA-API drivers' files, which Mesa updates change), the CPU and
+ * libmpv's version. A key that changed (another GPU, a new driver, a new libmpv in an update)
+ * probes again.
  */
 data class ProbeKey(val gpus: List<String>, val cpu: String, val libmpv: String) {
     override fun toString(): String = "gpu=" + gpus.ifEmpty { listOf("none") }.joinToString(" + ") + "; cpu=$cpu; libmpv=$libmpv"
@@ -73,7 +102,11 @@ data class ProbeKey(val gpus: List<String>, val cpu: String, val libmpv: String)
         /** This machine's key, read from the system (never throws: what cannot be read is "unknown"). */
         fun of(libmpv: String, os: String = System.getProperty("os.name").orEmpty()): ProbeKey = when {
             os.startsWith("Windows") -> ProbeKey(runCatching { windowsGpus() }.getOrDefault(emptyList()), windowsCpu(), libmpv)
-            os.startsWith("Linux") -> ProbeKey(runCatching { linuxGpus(File("/sys/class/drm")) }.getOrDefault(emptyList()), linuxCpu(), libmpv)
+            os.startsWith("Linux") -> ProbeKey(
+                runCatching { linuxGpus(File("/sys/class/drm")) }.getOrDefault(emptyList()) +
+                    runCatching { vaDrivers(vaDriverDirs(System.getenv("LIBVA_DRIVERS_PATH"))) }.getOrDefault(emptyList()),
+                linuxCpu(), libmpv,
+            )
             else -> ProbeKey(emptyList(), cpuFallback(), libmpv)
         }
 
@@ -94,6 +127,22 @@ data class ProbeKey(val gpus: List<String>, val cpu: String, val libmpv: String)
                     ?: kernel ?: "?"
                 "$vendor:$device $driver $version"
             }
+
+        /** Where libva looks for its drivers: LIBVA_DRIVERS_PATH, else the distributions' folders. */
+        fun vaDriverDirs(env: String?): List<File> =
+            (env?.split(':')?.filter { it.isNotBlank() }
+                ?: listOf("/usr/lib/x86_64-linux-gnu/dri", "/usr/lib/aarch64-linux-gnu/dri", "/usr/lib64/dri", "/usr/lib/dri"))
+                .map(::File)
+
+        /**
+         * The VA-API drivers' files (`*_drv_video.so`: Mesa's radeonsi and nouveau, Intel's iHD,
+         * …), each by name, size and modification time: a Mesa or driver update changes them,
+         * and the user-space driver decides what VA-API decodes. Cheap: no file is read.
+         */
+        fun vaDrivers(dirs: List<File>): List<String> = dirs.flatMap { d ->
+            (d.listFiles() ?: emptyArray()).filter { it.name.endsWith("_drv_video.so") && it.isFile }.sortedBy { it.name }
+                .map { f -> "va:${f.name} ${f.length()} ${f.lastModified() / 1000}" }
+        }
 
         private fun linuxCpu(): String {
             val info = runCatching { File("/proc/cpuinfo").readLines() }.getOrDefault(emptyList())
@@ -147,13 +196,23 @@ class ProbeCache(private val file: File) {
 
 /**
  * The decoder probe (story 13.19), run at start off the UI thread on its own libmpv handle,
- * never a watch screen's. Each clip is played once with `hwdec=auto-copy-safe`: its
- * `hwdec-current` says whether a hardware decoder took it; one it did not is decoded in
- * software, and its speed (frames per second, scaled to 2160p by pixel count) gives the tallest
- * picture it decodes smoothly ([DesktopCaps.heightFor]). The results are cached in [cache]
- * under the [key]: the same key reads them back, another probes again. The probe is bounded at
- * [boundMs] of decoding (what it has then is kept, the rest left out) and waits between clips
- * while [busy] (a watch screen is open).
+ * never a watch screen's. libmpv is warmed up once (a clip played untimed), then each clip is
+ * played with `hwdec=auto-copy-safe`: its `hwdec-current` says whether a hardware decoder took
+ * it; one it did not is decoded in software from its first picture, timed from mpv's first
+ * `playback-restart` to its end, and that speed (scaled to 2160p by pixel count) gives the
+ * tallest picture it decodes smoothly ([DesktopCaps.heightFor]).
+ *
+ * - The results are cached in [cache] under the [key]: the same key reads them back, another
+ *   probes again. An incomplete probe is cached too and tried again after a back-off
+ *   ([backoffMs]), never at every start.
+ * - Decoding is bounded at [boundMs]; a clip has at most [CLIP_TIMEOUT_MS]. A clip that runs out
+ *   of time counts as software at [DesktopCaps.SAFE_HEIGHT]; clips the bound leaves unplayed
+ *   are left out of the narrowing (the report lists their codec without limits).
+ * - It waits between clips while [busy] (a watch screen is open), and a clip during which a
+ *   video was opened ([videosOpened] moved, or [busy]) is measured again.
+ * - [marker] names the clip being played; a probe that finds it at its start (libmpv crashed
+ *   the Player in it, or the Player was killed) skips that clip, counted as software at the
+ *   safe height, so a crash in a clip never repeats at every start.
  */
 class Probe(
     private val decoder: ProbeDecoder,
@@ -161,47 +220,106 @@ class Probe(
     private val cache: ProbeCache,
     private val key: String,
     private val busy: () -> Boolean = { false },
+    private val videosOpened: () -> Long = { 0L },
+    private val marker: File? = null,
     private val boundMs: Long = BOUND_MS,
     private val nanoTime: () -> Long = System::nanoTime,
+    private val now: () -> Long = System::currentTimeMillis,
 ) {
-    /** The cached results when their key is this machine's, else a new probe's (cached). */
+    /** The cached results when their key is this machine's (an incomplete one until its back-off ends), else a new probe's (cached). */
     fun run(): ProbeResult {
-        cache.read()?.takeIf { it.key == key && it.complete }?.let { return it }
-        val r = measure()
+        val stopped = marker?.let { m -> runCatching { m.readText().trim() }.getOrNull() }?.takeIf { it.isNotEmpty() }
+        val cached = cache.read()?.takeIf { it.key == key }
+        if (cached != null && stopped == null) {
+            if (cached.complete) return cached
+            if (now() < cached.at + backoffMs(cached.attempts)) return cached
+        }
+        val attempts = if (cached != null && !cached.complete) cached.attempts + 1 else 1
+        val r = measure(stopped, attempts)
         cache.write(r)
+        marker?.delete()
         return r
     }
 
-    private fun measure(): ProbeResult {
-        var spent = 0L
-        val results = mutableListOf<ClipResult>()
-        var complete = true
-        for (clip in CLIPS) {
-            while (busy()) Thread.sleep(200)
-            val left = boundMs - spent / 1_000_000
-            if (left <= 0) {
-                complete = false
-                break
-            }
-            val file = File(clipsDir, clip.file)
-            val t0 = nanoTime()
-            val played = decoder.play(file, "auto-copy-safe", left)
-            spent += nanoTime() - t0
-            results += when {
-                played == null -> ClipResult(clip.codec, clip.bitDepth, decoded = false)
-                played.hwdec != "no" -> ClipResult(clip.codec, clip.bitDepth, decoded = true, hwdec = played.hwdec)
-                // the hardware did not take it: mpv decoded it in software from its first frame,
-                // which is the speed measured (a second play with hwdec=no measures the same)
-                else -> ClipResult(clip.codec, clip.bitDepth, decoded = true, hwdec = "no", softwareFps = fpsAt2160(played, clip))
+    private fun mark(clip: String?) {
+        val m = marker ?: return
+        runCatching {
+            if (clip == null) m.delete() else {
+                m.parentFile?.mkdirs()
+                m.writeText(clip)
             }
         }
-        if (results.size < CLIPS.size) complete = false
-        return ProbeResult(key, results, spent / 1_000_000, complete)
+    }
+
+    private fun measure(stopped: String?, attempts: Int): ProbeResult {
+        var spent = 0L
+        fun left() = boundMs - spent / 1_000_000
+        fun timed(block: () -> Play): Play {
+            val t0 = nanoTime()
+            return try {
+                block()
+            } finally {
+                spent += nanoTime() - t0
+            }
+        }
+        val results = mutableListOf<ClipResult>()
+        var warmed = false
+        for (clip in CLIPS) {
+            if (clip.file == stopped) {
+                results += ClipResult(clip.codec, clip.bitDepth, decoded = true, hwdec = "no", fallback = ClipResult.STOPPED_HERE)
+                continue
+            }
+            val file = File(clipsDir, clip.file)
+            var result: ClipResult? = null
+            var tries = 0
+            while (result == null && tries < MAX_TRIES && left() > 0) {
+                tries++
+                while (busy()) Thread.sleep(200)
+                if (!warmed) {
+                    // libmpv's first use (its decoders' and threads' start) is paid here, untimed
+                    mark(clip.file)
+                    timed { decoder.warmUp(file, minOf(left(), CLIP_TIMEOUT_MS)); PlayFailed }
+                    mark(null)
+                    warmed = true
+                    if (left() <= 0) break
+                }
+                val opened = videosOpened()
+                mark(clip.file)
+                val p = timed { decoder.play(file, "auto-copy-safe", minOf(left(), CLIP_TIMEOUT_MS)) }
+                mark(null)
+                // a video opened meanwhile shared the machine: this clip is measured again
+                if (busy() || videosOpened() != opened) continue
+                result = when (p) {
+                    PlayFailed -> ClipResult(clip.codec, clip.bitDepth, decoded = false)
+                    PlayTimedOut -> ClipResult(clip.codec, clip.bitDepth, decoded = true, hwdec = "no", fallback = ClipResult.TIMED_OUT)
+                    is Played -> if (p.hwdec != "no") {
+                        ClipResult(clip.codec, clip.bitDepth, decoded = true, hwdec = p.hwdec)
+                    } else {
+                        ClipResult(clip.codec, clip.bitDepth, decoded = true, hwdec = "no", softwareFps = fpsAt2160(p, clip))
+                    }
+                }
+            }
+            // out of time (or a video kept interrupting it): this clip is left out
+            result?.let { results += it }
+        }
+        val complete = results.size == CLIPS.size && results.none { it.fallback != null }
+        return ProbeResult(key, results, spent / 1_000_000, complete, at = now(), attempts = if (complete) 1 else attempts)
     }
 
     companion object {
         /** The bound on the probe's decoding; on the CI runners it takes under 5 s. */
         const val BOUND_MS = 20_000L
+
+        /** The most one clip may take. */
+        const val CLIP_TIMEOUT_MS = 8_000L
+
+        /** A clip a video kept interrupting is left out after this many plays. */
+        const val MAX_TRIES = 3
+
+        private const val DAY_MS = 24L * 60 * 60 * 1000
+
+        /** How long an incomplete probe stands before it is tried again: a day, doubling, at most 30. */
+        fun backoffMs(attempts: Int): Long = (DAY_MS shl (attempts - 1).coerceIn(0, 5)).coerceAtMost(30 * DAY_MS)
 
         val CLIPS = listOf(
             ProbeClip("h264", 8, "h264-8.mkv"),
@@ -262,16 +380,19 @@ class DeviceReport {
     fun describe(): String {
         val p = probe ?: return "device report: " + (probeError?.let { "probe failed ($it)" } ?: "probe not run yet") +
             ", audio channels: ${channels ?: "unknown"}"
-        val codecs = p.clips.joinToString(", ") { c ->
-            val name = c.codec + if (c.bitDepth >= 10) " 10-bit" else ""
+        val codecs = Probe.CLIPS.joinToString(", ") { clip ->
+            val name = clip.codec + if (clip.bitDepth >= 10) " 10-bit" else ""
+            val c = p.clips.firstOrNull { it.codec == clip.codec && it.bitDepth == clip.bitDepth }
             when {
+                c == null -> "$name: not probed (not narrowed)"
                 !c.decoded -> "$name: did not decode"
                 c.hardware -> "$name: hardware (${c.hwdec}) 2160p"
+                c.fallback != null -> "$name: software ${DesktopCaps.SAFE_HEIGHT}p (${c.fallback})"
                 else -> "$name: software ${DesktopCaps.heightFor(c.softwareFps ?: 0.0)}p (%.1f fps at 2160p)".format(java.util.Locale.ROOT, c.softwareFps ?: 0.0)
             }
         }
         return "device report: $codecs; audio channels: ${channels ?: "unknown"}; probe ${p.tookMs} ms" +
-            (if (cached) " (cached)" else "") + (if (!p.complete) " (incomplete)" else "") + "; cache key: ${p.key}"
+            (if (cached) " (cached)" else "") + (if (!p.complete) " (incomplete, try ${p.attempts})" else "") + "; cache key: ${p.key}"
     }
 
     /** [describe] as a line of the problem report's log (its JSON lines, stamped now). */
@@ -285,24 +406,28 @@ class DeviceReport {
 
 /**
  * Runs the probe and the channel measurement for [report] on a thread of their own: [start]
- * once at start (the channels, then the probe), [watchClosed] after each watch screen closes
- * (the channels again).
+ * once at start (the channels, then the probe, whose libmpv handle is freed once it ends),
+ * [watchClosed] after each watch screen closes (the channels again, on a handle of their own).
  */
 class ReportRunner(
     private val report: DeviceReport,
-    private val decoder: () -> ProbeDecoder,
+    private val newDecoder: () -> ProbeDecoder,
     private val clipsDir: () -> File,
     private val cache: ProbeCache,
+    private val marker: File,
     private val busy: () -> Boolean,
+    private val videosOpened: () -> Long,
 ) {
     private val worker = Executors.newSingleThreadExecutor { r -> Thread(r, "mpv-probe").apply { isDaemon = true; priority = Thread.MIN_PRIORITY } }
     private val started = AtomicBoolean(false)
     @Volatile private var dec: ProbeDecoder? = null
 
-    private fun decoder(): ProbeDecoder = dec ?: decoder().also { dec = it }
+    private fun decoder(): ProbeDecoder = dec ?: newDecoder().also { dec = it }
 
     fun start() {
         if (!started.compareAndSet(false, true)) return
+        // a Player that quits mid-clip is no crash: the marker goes (a crash runs no hook)
+        runCatching { Runtime.getRuntime().addShutdownHook(Thread { if (report.probe == null) marker.delete() }) }
         worker.execute {
             try {
                 val d = decoder()
@@ -310,11 +435,14 @@ class ReportRunner(
                 report.channels = d.channels(File(dir, Probe.SILENCE), CHANNELS_TIMEOUT_MS)
                 val key = ProbeKey.of(d.version).toString()
                 val before = cache.read()
-                val r = Probe(d, dir, cache, key, busy).run()
+                val r = Probe(d, dir, cache, key, busy, videosOpened, marker).run()
                 report.cached = before != null && before == r
                 report.probe = r
             } catch (e: Throwable) {
                 report.probeError = e.message ?: e.toString()
+            } finally {
+                // the probe's handle is freed; the channels open their own when measured again
+                runCatching { dec?.close() }
             }
         }
     }
@@ -333,15 +461,17 @@ class ReportRunner(
 
 /**
  * The probe on libmpv: a handle of its own with no video or audio output (`vo=null`, `ao=null`,
- * `untimed=yes`, `audio=no`), each clip loaded in turn; and for the channels, a short-lived
- * handle on the system's default output (`audio-channels=auto-safe`, volume 0), never a watch
- * screen's.
+ * `untimed=yes`, `audio=no`), made at its first play and freed by [close], each clip loaded in
+ * turn; and for the channels, a short-lived handle on the system's default output
+ * (`audio-channels=auto-safe`, volume 0), never a watch screen's.
  */
 class MpvProbeDecoder(private val lib: LibMpv) : ProbeDecoder {
-    private val ctx: Pointer = lib.mpv_create() ?: error("libmpv could not start")
+    private var handle: Pointer? = null
 
-    init {
-        fun opt(name: String, value: String) = lib.mpv_set_option_string(ctx, name, value)
+    @Synchronized
+    private fun ctx(): Pointer = handle ?: run {
+        val c = lib.mpv_create() ?: error("libmpv could not start")
+        fun opt(name: String, value: String) = lib.mpv_set_option_string(c, name, value)
         opt("vo", "null")
         opt("ao", "null")
         opt("audio", "no")
@@ -350,54 +480,61 @@ class MpvProbeDecoder(private val lib: LibMpv) : ProbeDecoder {
         opt("idle", "yes")
         opt("terminal", "no")
         opt("hwdec", "auto-copy-safe")
-        val err = lib.mpv_initialize(ctx)
+        val err = lib.mpv_initialize(c)
         if (err < 0) {
-            lib.mpv_terminate_destroy(ctx)
+            lib.mpv_terminate_destroy(c)
             error("libmpv: " + lib.mpv_error_string(err))
         }
+        handle = c
+        c
     }
 
     override val version: String by lazy {
-        listOfNotNull(string(ctx, "mpv-version"), string(ctx, "ffmpeg-version")?.let { "ffmpeg $it" }).joinToString(" ")
+        val c = ctx()
+        listOfNotNull(string(c, "mpv-version"), string(c, "ffmpeg-version")?.let { "ffmpeg $it" }).joinToString(" ")
             .ifBlank { "unknown" }
     }
 
-    override fun play(clip: File, hwdec: String, timeoutMs: Long): Played? {
+    override fun warmUp(clip: File, timeoutMs: Long) {
+        play(clip, "no", timeoutMs)
+    }
+
+    override fun play(clip: File, hwdec: String, timeoutMs: Long): Play {
+        val ctx = ctx()
         lib.mpv_set_property_string(ctx, "hwdec", hwdec)
-        if (lib.mpv_command(ctx, arrayOf("loadfile", clip.absolutePath, null)) < 0) return null
+        if (lib.mpv_command(ctx, arrayOf("loadfile", clip.absolutePath, null)) < 0) return PlayFailed
         val end = System.nanoTime() + timeoutMs * 1_000_000
-        var loadedAt = 0L
+        var restartAt = 0L
         var used: String? = null
-        var frames = 0
+        var frames = 24
         while (true) {
             val left = (end - System.nanoTime()) / 1e9
             if (left <= 0) {
-                // past the bound: stopped, and its end waited for
+                // past its time: stopped, and its end waited for
                 lib.mpv_command(ctx, arrayOf("stop", null))
-                drainUntilEnd(2.0)
-                return null
+                drainUntilEnd(ctx, 2.0)
+                return PlayTimedOut
             }
             val ev = lib.mpv_wait_event(ctx, left)
             when (ev.getInt(0)) {
-                MpvConst.EVENT_FILE_LOADED -> {
-                    loadedAt = System.nanoTime()
-                    frames = string(ctx, "estimated-frame-count")?.toIntOrNull() ?: 24
+                MpvConst.EVENT_FILE_LOADED -> frames = string(ctx, "estimated-frame-count")?.toIntOrNull()?.takeIf { it > 1 } ?: 24
+                MpvConst.EVENT_PLAYBACK_RESTART -> if (used == null) {
+                    // the first picture is out: the decoder has started (a failed hardware
+                    // attempt is behind it); the frames after it are the ones timed
+                    restartAt = System.nanoTime()
+                    used = string(ctx, "hwdec-current") ?: "no"
                 }
-                MpvConst.EVENT_PLAYBACK_RESTART -> if (used == null) used = string(ctx, "hwdec-current") ?: "no"
                 MpvConst.EVENT_END_FILE -> {
                     val reason = ev.getPointer(16)?.getInt(0) ?: MpvConst.END_ERROR
-                    // timed from the file's opening to its end: every frame decoded, the
-                    // decoder's start counted (a slow start is a slow decoder too)
-                    val took = System.nanoTime() - loadedAt
                     val hw = used
-                    return if (reason == MpvConst.END_EOF && hw != null && loadedAt > 0) Played(hw, frames, took) else null
+                    return if (reason == MpvConst.END_EOF && hw != null) Played(hw, frames - 1, System.nanoTime() - restartAt) else PlayFailed
                 }
-                MpvConst.EVENT_SHUTDOWN -> return null
+                MpvConst.EVENT_SHUTDOWN -> return PlayFailed
             }
         }
     }
 
-    private fun drainUntilEnd(seconds: Double) {
+    private fun drainUntilEnd(ctx: Pointer, seconds: Double) {
         val end = System.nanoTime() + (seconds * 1e9).toLong()
         while (System.nanoTime() < end) {
             val id = lib.mpv_wait_event(ctx, 0.2).getInt(0)
@@ -434,7 +571,11 @@ class MpvProbeDecoder(private val lib: LibMpv) : ProbeDecoder {
         }
     }
 
-    override fun close() = lib.mpv_terminate_destroy(ctx)
+    @Synchronized
+    override fun close() {
+        handle?.let { lib.mpv_terminate_destroy(it) }
+        handle = null
+    }
 
     private fun string(c: Pointer, name: String): String? {
         val p = lib.mpv_get_property_string(c, name) ?: return null

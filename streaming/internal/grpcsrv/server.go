@@ -352,6 +352,12 @@ func (s *Server) OpenSession(ctx context.Context, req OpenSessionRequest) (OpenS
 		if s.hwaccel() == ffmpeg.HWAccelSoftware || req.ForceSoftware {
 			ladder = capLadder(ladder, s.SoftwareMaxHeight)
 		}
+		if reuse.Mode == session.ModeTranscode {
+			// story 13.19: the same report's cap as when the session was opened (it fits it)
+			if h := capability.ReportH264Height(profile, req.DeviceCaps); h > 0 {
+				ladder = capLadder(ladder, h)
+			}
+		}
 		return s.respFor(reuse, ladder), nil
 	}
 

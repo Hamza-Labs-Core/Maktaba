@@ -19,21 +19,39 @@ func (r *Registry) DecideFor(profile *Profile, caps *DeviceCaps, src Source, ov 
 	if profile.AudioByReport && !profile.Detailed && v.Mode != ModeDirect {
 		// an older profile's remux verdict is a transcode too (grpcsrv)
 		v.AudioCodec = TranscodeAudio(caps, src)
-		if h := eff.VideoHeights["h264"]; h > 0 {
-			v.ReportHeightCap = h
-		}
+		v.ReportHeightCap = ReportH264Height(profile, caps)
 	}
 	return v
 }
 
+// ReportH264Height is the tallest H.264 picture an AudioByReport profile's
+// report (desktop-mpv, story 13.19) says the device decodes (0: no report, or
+// it says none): a transcode's ladder stops there.
+func ReportH264Height(profile *Profile, caps *DeviceCaps) int {
+	if !profile.AudioByReport || caps == nil {
+		return 0
+	}
+	eff, _ := Apply(profile, caps)
+	return eff.VideoHeights["h264"]
+}
+
 // TranscodeAudio is what a transcode for an AudioByReport profile (desktop-mpv,
-// story 13.19) encodes the audio to: "eac3" (5.1 at 640 kbit/s, as a TV
-// profile's remux does) when the device's report has 6 channels or more and
-// the source more than stereo (or of unknown channels), else "aac" (stereo at
-// 192 kbit/s), as without a report.
+// story 13.19) encodes the audio to, by the report's channels:
+//   - no report, or none said: "" (the encoder's AAC at the source's channels,
+//     as every transcode before: a Player from before the report, an open
+//     before its probe ended and a force_transcode reopen are not folded down);
+//   - 6 or more, and a source of 6 or more: "eac3" (5.1 at 640 kbit/s, as a TV
+//     profile's remux does); a source of unknown channels: "" (never upmixed);
+//   - fewer, or a source of fewer: "aac" (stereo at 192 kbit/s).
 func TranscodeAudio(caps *DeviceCaps, src Source) string {
-	if caps != nil && caps.MaxAudioChannels >= 6 && (src.AudioChannels == 0 || src.AudioChannels > 2) {
+	if caps == nil || caps.MaxAudioChannels <= 0 {
+		return ""
+	}
+	switch {
+	case caps.MaxAudioChannels >= 6 && src.AudioChannels >= 6:
 		return "eac3"
+	case caps.MaxAudioChannels >= 6 && src.AudioChannels == 0:
+		return ""
 	}
 	return "aac"
 }

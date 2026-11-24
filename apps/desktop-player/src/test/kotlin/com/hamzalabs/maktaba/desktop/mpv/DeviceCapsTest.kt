@@ -69,17 +69,35 @@ class DeviceCapsTest {
             ClipResult("av1", 10, decoded = false),
         )
         val caps = DesktopCaps.build(clips, 12)
-        assertEquals(listOf("hevc"), caps.video.map { it.codec })
+        // AV1 did not decode: left out; H.264, VP9 and MPEG-2 were not probed: listed without limits
+        assertEquals(listOf("h264", "hevc", "vp9", "mpeg2video"), caps.video.map { it.codec })
         // the 10-bit clip did not decode: 8-bit
-        assertEquals(8, caps.video.single().bitDepth)
+        assertEquals(8, caps.video.single { it.codec == "hevc" }.bitDepth)
+        assertEquals(
+            Json.parseToJsonElement("""{"codec":"vp9"}"""),
+            video(caps.toJson(), "vp9"),
+        )
         // more channels than the profile's 8 are 8
         assertEquals(8, caps.maxAudioChannels)
         // a device mpv could not open leaves the channels out
         assertFalse("max_audio_channels" in DesktopCaps.build(clips, null).toJson())
         // a machine with no GPU driver: every codec in software, still narrowed by the CPU
         val vm = DesktopCaps.build(listOf(ClipResult("hevc", 8, decoded = true, hwdec = "no", softwareFps = 14.0)), 2)
-        assertEquals(1080, vm.video.single().maxHeight)
-        assertEquals(false, vm.video.single().hardware)
+        assertEquals(1080, vm.video.single { it.codec == "hevc" }.maxHeight)
+        assertEquals(false, vm.video.single { it.codec == "hevc" }.hardware)
+        // the 10-bit clip not reached: no bit depth said
+        assertNull(vm.video.single { it.codec == "hevc" }.bitDepth)
+        // a clip that ran out of time, or that the last probe stopped in: software at the safe height
+        val fallback = DesktopCaps.build(
+            listOf(
+                ClipResult("av1", 8, decoded = true, hwdec = "no", softwareFps = 60.0),
+                ClipResult("av1", 10, decoded = true, hwdec = "no", fallback = ClipResult.TIMED_OUT),
+                ClipResult("mpeg2video", 8, decoded = true, hwdec = "no", fallback = ClipResult.STOPPED_HERE),
+            ),
+            null,
+        )
+        assertEquals(720, fallback.video.single { it.codec == "av1" }.maxHeight)
+        assertEquals(720, fallback.video.single { it.codec == "mpeg2video" }.maxHeight)
     }
 
     @Test
@@ -97,19 +115,33 @@ class DeviceCapsTest {
     }
 
     /** A decoder answering from [recorded], counting its plays. */
-    private class FakeDecoder(override val version: String, private val answers: List<ClipResult>) : ProbeDecoder {
+    private class FakeDecoder(
+        override val version: String,
+        private val answers: List<ClipResult>,
+        private val during: (String) -> Unit = {},
+    ) : ProbeDecoder {
         val plays = mutableListOf<String>()
-        override fun play(clip: File, hwdec: String, timeoutMs: Long): Played? {
+        var warmUps = 0
+        var closed = false
+        override fun warmUp(clip: File, timeoutMs: Long) {
+            warmUps++
+        }
+        override fun play(clip: File, hwdec: String, timeoutMs: Long): Play {
             plays += clip.name
+            during(clip.name)
             val c = Probe.CLIPS.single { it.file == clip.name }
             val a = answers.single { it.codec == c.codec && it.bitDepth == c.bitDepth }
-            if (!a.decoded) return null
-            if (a.hardware) return Played(a.hwdec!!, 24, 100_000_000)
+            if (!a.decoded) return PlayFailed
+            if (a.fallback == ClipResult.TIMED_OUT) return PlayTimedOut
+            if (a.hardware) return Played(a.hwdec!!, 23, 100_000_000)
             // frames in a time that gives the recorded speed at 2160p
             val scale = (c.height / 2160.0).let { it * it }
-            return Played("no", 24, (24 / (a.softwareFps!! / scale) * 1e9).toLong())
+            return Played("no", 23, (23 / (a.softwareFps!! / scale) * 1e9).toLong())
         }
         override fun channels(clip: File, timeoutMs: Long): Int? = 6
+        override fun close() {
+            closed = true
+        }
     }
 
     @Test
@@ -122,6 +154,9 @@ class DeviceCapsTest {
         val first = FakeDecoder("mpv v0.40.0", recorded)
         val r = Probe(first, clips, cache, key()).run()
         assertEquals(Probe.CLIPS.size, first.plays.size)
+        // libmpv warmed up once, before the first timed clip
+        assertEquals(1, first.warmUps)
+        assertTrue(r.complete)
         assertEquals(recorded.map { it.codec to it.hardware }, r.clips.map { it.codec to it.hardware })
         assertEquals(1080, DesktopCaps.build(r.clips, 6).video.single { it.codec == "av1" }.maxHeight)
         assertTrue(File(tmp.root, "probe.json").isFile)
@@ -143,27 +178,114 @@ class DeviceCapsTest {
     }
 
     @Test
-    fun theProbeIsBoundedAndWaitsWhileAVideoPlays() {
+    fun anIncompleteProbeNarrowsNothingItDidNotReachAndIsRetriedAfterABackOff() {
         val cache = ProbeCache(File(tmp.root, "probe.json"))
-        var now = 0L
+        var nanos = 0L
+        var clock = 1_000_000L
+        var plays = 0
         val slow = object : ProbeDecoder {
             override val version = "mpv"
-            override fun play(clip: File, hwdec: String, timeoutMs: Long): Played? {
-                now += 8_000_000_000L // eight seconds a clip
-                return Played("no", 24, 8_000_000_000L)
+            override fun play(clip: File, hwdec: String, timeoutMs: Long): Play {
+                plays++
+                nanos += 7_000_000_000L // seven seconds a clip
+                return Played("no", 23, 7_000_000_000L)
             }
             override fun channels(clip: File, timeoutMs: Long): Int? = null
         }
-        val r = Probe(slow, tmp.root, cache, "k", nanoTime = { now }).run()
-        // 20 s: three clips, the rest left out, and the next start probes again
+        val r = Probe(slow, tmp.root, cache, "k", nanoTime = { nanos }, now = { clock }).run()
+        // 20 s: three clips, the rest not reached
         assertEquals(3, r.clips.size)
         assertFalse(r.complete)
+        assertEquals(clock, r.at)
+        // the codecs not reached are listed without limits: an MPEG-2 file still plays as it is
+        val caps = DesktopCaps.build(r.clips, null)
+        assertEquals(listOf("h264", "hevc", "vp9", "av1", "mpeg2video"), caps.video.map { it.codec })
+        assertNull(caps.video.single { it.codec == "mpeg2video" }.maxHeight)
+        assertNull(caps.video.single { it.codec == "av1" }.maxHeight)
+        // the next start, within a day: the incomplete result stands, nothing is played
+        plays = 0
+        clock += Probe.backoffMs(1) - 1
+        assertEquals(r, Probe(slow, tmp.root, cache, "k", nanoTime = { nanos }, now = { clock }).run())
+        assertEquals(0, plays)
+        // after it: tried again, and the back-off doubles while it stays incomplete
+        clock += 2
+        val second = Probe(slow, tmp.root, cache, "k", nanoTime = { nanos }, now = { clock }).run()
+        assertTrue(plays > 0)
+        assertEquals(2, second.attempts)
+        assertEquals(2 * Probe.backoffMs(1), Probe.backoffMs(2))
+        assertEquals(30L * 24 * 60 * 60 * 1000, Probe.backoffMs(9))
+        // a clip that runs out of its time: software at the safe height, not "does not decode"
+        val timedOut = recorded.map { if (it.codec == "av1" && it.bitDepth == 10) it.copy(fallback = ClipResult.TIMED_OUT) else it }
+        val t = Probe(FakeDecoder("mpv", timedOut), tmp.root, ProbeCache(File(tmp.root, "t.json")), "k").run()
+        val av1 = t.clips.single { it.codec == "av1" && it.bitDepth == 10 }
+        assertTrue(av1.decoded && av1.fallback == ClipResult.TIMED_OUT)
+        assertEquals(720, DesktopCaps.build(t.clips, null).video.single { it.codec == "av1" }.maxHeight)
+        assertFalse("a timed-out clip is tried again later", t.complete)
+    }
+
+    @Test
+    fun aVideoOpenedDuringAClipHasItMeasuredAgain() {
+        var opened = 0L
+        var playing = false
         var waits = 0
-        val busy = { waits++ < 3 }
-        val counted = FakeDecoder("mpv", recorded)
-        Probe(counted, tmp.root, cache, "k", busy = busy).run()
-        assertEquals("probed again: the last one was cut short", Probe.CLIPS.size, counted.plays.size)
-        assertTrue(waits > 3)
+        // a watch screen opens during the HEVC 10-bit clip, and closes three checks later
+        val decoder = FakeDecoder("mpv", recorded, during = { name ->
+            if (name == "hevc-10.mkv" && opened == 0L) {
+                opened++
+                playing = true
+            }
+        })
+        val busy = { if (playing && ++waits > 3) playing = false; playing }
+        val r = Probe(decoder, tmp.root, ProbeCache(File(tmp.root, "probe.json")), "k", busy = busy, videosOpened = { opened }).run()
+        assertEquals(listOf("hevc-10.mkv", "hevc-10.mkv"), decoder.plays.filter { it == "hevc-10.mkv" })
+        assertTrue(r.complete)
+        assertEquals(Probe.CLIPS.size, r.clips.size)
+    }
+
+    @Test
+    fun aClipTheLastProbeStoppedInIsSkipped() {
+        val marker = File(tmp.root, "probe.running")
+        val cache = ProbeCache(File(tmp.root, "probe.json"))
+        // the probe before crashed in the AV1 10-bit clip: its marker is still there
+        marker.writeText("av1-10.mkv")
+        val d = FakeDecoder("mpv", recorded)
+        val r = Probe(d, tmp.root, cache, "k", marker = marker).run()
+        assertFalse("av1-10.mkv" in d.plays)
+        val av1 = r.clips.single { it.codec == "av1" && it.bitDepth == 10 }
+        assertEquals(ClipResult.STOPPED_HERE, av1.fallback)
+        assertEquals(720, DesktopCaps.build(r.clips, null).video.single { it.codec == "av1" }.maxHeight)
+        assertFalse("the marker is gone once the probe ends", marker.exists())
+        assertFalse(r.complete)
+        // the problem report says so
+        val report = DeviceReport().apply { probe = r }
+        assertTrue(report.describe(), report.describe().contains("av1 10-bit: software 720p (skipped: the last probe stopped in this clip)"))
+        // while a clip plays, the marker names it
+        val seen = mutableListOf<String>()
+        Probe(FakeDecoder("mpv", recorded, during = { seen += marker.readText() }), tmp.root, ProbeCache(File(tmp.root, "x.json")), "k", marker = marker).run()
+        assertEquals(Probe.CLIPS.map { it.file }, seen)
+    }
+
+    @Test
+    fun theProbesHandleIsFreedWhenItEnds() {
+        val d = FakeDecoder("mpv", recorded)
+        val report = DeviceReport()
+        val runner = ReportRunner(report, { d }, { tmp.root }, ProbeCache(File(tmp.root, "probe.json")), File(tmp.root, "probe.running"), { false }, { 0L })
+        runner.start()
+        val end = System.currentTimeMillis() + 10_000
+        while ((report.probe == null || !d.closed) && System.currentTimeMillis() < end) Thread.sleep(10)
+        assertTrue("probe ${report.probe}, error ${report.probeError}, closed ${d.closed}", report.probe != null && d.closed)
+        assertEquals(6, report.channels)
+    }
+
+    @Test
+    fun vaApiDriversAreInTheLinuxKey() {
+        val dri = tmp.newFolder("dri")
+        File(dri, "radeonsi_drv_video.so").writeBytes(ByteArray(12))
+        File(dri, "radeonsi_dri.so").writeBytes(ByteArray(3))
+        File(dri, "radeonsi_drv_video.so").setLastModified(1_700_000_000_000)
+        assertEquals(listOf("va:radeonsi_drv_video.so 12 1700000000"), ProbeKey.vaDrivers(listOf(dri, File(tmp.root, "none"))))
+        assertEquals(listOf(File("/a"), File("/b")), ProbeKey.vaDriverDirs("/a::/b"))
+        assertTrue(ProbeKey.vaDriverDirs(null).any { it.path == "/usr/lib/x86_64-linux-gnu/dri" })
     }
 
     @Test

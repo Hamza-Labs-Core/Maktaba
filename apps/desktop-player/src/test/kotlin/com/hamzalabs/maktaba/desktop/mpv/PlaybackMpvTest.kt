@@ -138,7 +138,8 @@ class PlaybackMpvTest {
         onMain { playback.play(PlayRequest("v1", "v1", startSec = 0)) }
         until("playing") { playback.player != null }
         val first = bodies().single()
-        assertTrue(first, first.contains(""""device_caps":{"video":[{"codec":"hevc","max_height":2160,"bit_depth":10,"hardware":true},{"codec":"av1","max_height":1080,"bit_depth":10,"hardware":false}],"max_audio_channels":6}"""))
+        // the codecs this recorded probe did not reach are listed without limits
+        assertTrue(first, first.contains(""""device_caps":{"video":[{"codec":"h264"},{"codec":"hevc","max_height":2160,"bit_depth":10,"hardware":true},{"codec":"vp9"},{"codec":"av1","max_height":1080,"bit_depth":10,"hardware":false},{"codec":"mpeg2video"}],"max_audio_channels":6}"""))
         made.single().events.failed("no decoder for this stream")
         until("reopened") { opened.get() == 2 }
         val second = bodies()[1]

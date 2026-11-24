@@ -380,9 +380,15 @@ class MpvPlayers(
     /** A video is open (a watch screen): the probe waits between its clips meanwhile. */
     val playing: Boolean get() = open.get() > 0
 
+    private val openedCount = java.util.concurrent.atomic.AtomicLong()
+
+    /** How many videos were opened so far: a probe clip during which it moved is measured again. */
+    val opened: Long get() = openedCount.get()
+
     override fun deviceCaps(): kotlinx.serialization.json.JsonObject? = report?.json()
 
     override suspend fun open(url: String, fromMs: Long, autoplay: Boolean, events: VideoEvents): Video {
+        openedCount.incrementAndGet()
         open.incrementAndGet()
         return MpvVideo(lib, url, fromMs, autoplay, events, fontsDir) {
             if (open.decrementAndGet() == 0) closed()

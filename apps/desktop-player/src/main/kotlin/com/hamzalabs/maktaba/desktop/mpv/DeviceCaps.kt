@@ -11,7 +11,9 @@ import com.hamzalabs.maktaba.core.playback.VideoCap
  *   hardware decoder took every clip of it, else the height its slowest clip decodes smoothly
  *   in software, [heightFor]), its bit depth (10 when its 10-bit clip decoded, 8 when only the
  *   8-bit one did; not said for H.264 and MPEG-2, which have no 10-bit clip), and `hardware`.
- *   A codec none of whose clips decoded is left out (the home transcodes it).
+ *   A codec none of whose clips decoded is left out (the home transcodes it); a clip that ran
+ *   out of time, or that the probe before stopped in, counts as software at [SAFE_HEIGHT]; a
+ *   codec the probe did not reach is listed without limits.
  * - `max_audio_channels`: the audio device's channels, at most the profile's 8; left out when
  *   the device could not be opened.
  * - containers, audio, HDR (and the TV fields) are left out: the desktop-mpv profile's lists
@@ -40,19 +42,37 @@ object DesktopCaps {
         else -> 720
     }
 
-    /** The report from the probe's [clips] and the audio device's [channels] (null: unknown). */
+    /** The height of a clip that decoded in software with no speed measured ([ClipResult.fallback]). */
+    const val SAFE_HEIGHT = 720
+
+    /**
+     * The report from the probe's [clips] and the audio device's [channels] (null: unknown). A
+     * codec the probe did not reach (an incomplete probe) is listed without limits, so the home
+     * does not narrow it: a listed `video` is read as the whole list, and leaving it out would
+     * transcode every file of it.
+     */
     fun build(clips: List<ClipResult>, channels: Int?): DeviceCaps {
         val video = CODECS.mapNotNull { codec ->
-            val decoded = clips.filter { it.codec == codec && it.decoded }
+            val probed = clips.filter { it.codec == codec }
+            if (probed.isEmpty()) return@mapNotNull VideoCap(codec, null, null, null, null)
+            val decoded = probed.filter { it.decoded }
             if (decoded.isEmpty()) return@mapNotNull null
             val hardware = decoded.all { it.hardware }
-            val height = decoded.minOf { if (it.hardware) 2160 else heightFor(it.softwareFps ?: 0.0) }
-            val hasTenBitClip = clips.any { it.codec == codec && it.bitDepth >= 10 }
+            val height = decoded.minOf {
+                when {
+                    it.hardware -> 2160
+                    it.fallback != null -> SAFE_HEIGHT
+                    else -> heightFor(it.softwareFps ?: 0.0)
+                }
+            }
+            val tenBitClip = Probe.CLIPS.any { it.codec == codec && it.bitDepth >= 10 }
             val depth = when {
                 decoded.any { it.bitDepth >= 10 } -> 10
-                hasTenBitClip -> 8
+                // its 10-bit clip was played and did not decode: 8
+                probed.any { it.bitDepth >= 10 } -> 8
+                // H.264 and MPEG-2 have no 10-bit clip; one not reached says nothing
                 else -> null
-            }
+            }.takeIf { tenBitClip }
             VideoCap(codec, height, null, depth, hardware)
         }
         return DeviceCaps(

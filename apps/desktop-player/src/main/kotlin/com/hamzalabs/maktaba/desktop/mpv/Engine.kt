@@ -19,10 +19,12 @@ object Engine {
         val l = load as? MpvLoad.Loaded ?: return@lazy null
         ReportRunner(
             report,
-            decoder = { MpvProbeDecoder(l.lib) },
+            newDecoder = { MpvProbeDecoder(l.lib) },
             clipsDir = { Probe.extractClips(File(cacheBase(), "maktaba-player/probe")) },
             cache = ProbeCache(File(com.hamzalabs.maktaba.desktop.AppDirs.config, "probe.json")),
+            marker = File(com.hamzalabs.maktaba.desktop.AppDirs.config, "probe.running"),
             busy = { (players as? MpvPlayers)?.playing == true },
+            videosOpened = { (players as? MpvPlayers)?.opened ?: 0L },
         )
     }
 

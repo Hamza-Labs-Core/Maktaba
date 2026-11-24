@@ -128,7 +128,8 @@ class MpvRealTest {
     /**
      * Story 13.19 T04: the decoder probe on the committed clips. Every codec decodes, mpv's
      * hwdec-current is read for each ("no" on the runners, which have no GPU decoder), the
-     * report is built, and it takes under 5 s on the Linux runner (the times are printed for both).
+     * report is built, and it takes under 5 s on the Linux runner (asserted there only; Windows'
+     * time and each clip's speed are printed, for both).
      */
     @Test
     fun t1319_04_theProbeDecodesEveryClip() {
@@ -152,7 +153,11 @@ class MpvRealTest {
                 }
                 val caps = DesktopCaps.build(r.clips, null)
                 assertEquals(DesktopCaps.CODECS, caps.video.map { it.codec })
-                if (System.getProperty("os.name").startsWith("Linux")) assertTrue("the probe took $ms ms", ms < 5_000)
+                // the 5 s budget is held on the Linux runner only; Windows' time is printed, and
+                // both stay within the probe's own 20 s bound
+                assertTrue("the probe took $ms ms, over its bound", ms < Probe.BOUND_MS)
+                if (System.getProperty("os.name").startsWith("Linux")) assertTrue("the probe took $ms ms on Linux, over 5 s", ms < 5_000)
+                for (c in r.clips) println("T04   ${c.codec} ${c.bitDepth}-bit: hwdec ${c.hwdec}, %.1f fps at 2160p".format(c.softwareFps ?: 0.0))
                 // run again with the same key: read back, nothing decoded
                 val again = System.nanoTime()
                 assertEquals(r, Probe(decoder, clips, ProbeCache(File(dir, "probe.json")), key.toString()).run())

@@ -122,8 +122,11 @@ func TestDesktopMpv_TheReportNarrowsPerCodec(t *testing.T) {
 	}
 }
 
-// Story 13.19 T09: a desktop-mpv transcode keeps up to the report's channels: 6 or more give
-// E-AC-3 5.1, fewer stereo AAC, no report stereo AAC. Other profiles' transcodes are untouched.
+// Story 13.19 T09: a desktop-mpv transcode keeps up to the report's channels: 6 or more (and a
+// source of 6 or more) give E-AC-3 5.1, fewer stereo AAC. No report keeps every transcode's
+// audio as it was ("": the encoder's AAC at the source's channels), so a Player from before the
+// report, an open before its probe ended and a forced reopen are not folded to stereo; a source
+// of unknown channels is never upmixed. Other profiles' transcodes are untouched.
 func TestDesktopMpv_TranscodeAudioFollowsTheReportsChannels(t *testing.T) {
 	r := NewRegistry()
 	p, _ := r.Get("desktop-mpv")
@@ -138,9 +141,14 @@ func TestDesktopMpv_TranscodeAudioFollowsTheReportsChannels(t *testing.T) {
 		{"6 channels", mpvReport(2160, 6), surround, "eac3"},
 		{"8 channels", mpvReport(2160, 8), surround, "eac3"},
 		{"2 channels", mpvReport(2160, 2), surround, "aac"},
-		{"no report", nil, surround, "aac"},
+		{"no report", nil, surround, ""},
+		{"a report without channels (no audio device)", mpvReport(2160, 0), surround, ""},
 		{"a stereo source on 5.1 speakers", mpvReport(2160, 6), Source{Container: "mp4", VideoCodec: "hevc",
 			AudioCodec: "truehd", Height: 2160, AudioChannels: 2, BitrateKbps: 40000}, "aac"},
+		{"a source of unknown channels on 5.1 speakers", mpvReport(2160, 6), Source{Container: "mp4", VideoCodec: "hevc",
+			AudioCodec: "truehd", Height: 2160, BitrateKbps: 40000}, ""},
+		{"a source of unknown channels on stereo speakers", mpvReport(2160, 2), Source{Container: "mp4", VideoCodec: "hevc",
+			AudioCodec: "truehd", Height: 2160, BitrateKbps: 40000}, "aac"},
 	}
 	for _, c := range cases {
 		v := r.DecideFor(p, c.caps, c.src, Override{})
@@ -148,9 +156,9 @@ func TestDesktopMpv_TranscodeAudioFollowsTheReportsChannels(t *testing.T) {
 			t.Errorf("%s: %s (%s), audio %q; want transcode with %q", c.name, v.Mode, v.Reason, v.AudioCodec, c.want)
 		}
 	}
-	// a forced transcode (a file that did not play) keeps the channels too
-	if v := r.DecideFor(p, mpvReport(2160, 6), surround, Override{ForceTranscode: true}); v.AudioCodec != "eac3" {
-		t.Errorf("force_transcode: audio %q, want eac3", v.AudioCodec)
+	// a forced transcode is sent no report (as on Android): its audio is as it always was
+	if v := r.DecideFor(p, nil, surround, Override{ForceTranscode: true}); v.AudioCodec != "" || v.ReportHeightCap != 0 {
+		t.Errorf("force_transcode without a report: audio %q, cap %d", v.AudioCodec, v.ReportHeightCap)
 	}
 	// every other profile's transcode is as it was
 	for _, name := range []string{"desktop-player", "generic", "android-native"} {

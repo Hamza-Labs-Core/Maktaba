@@ -30,7 +30,8 @@ build fails when the two differ.
   a picture the processor keeps up with for the rest, and how many channels the sound has, and
   sends that with each video (`device_caps`, with a new `hardware` flag per codec). A slower
   laptop now gets a smooth 1080p version of a 4K film it would have stuttered through, and a
-  converted film keeps its 5.1 sound on 5.1 speakers (E-AC-3) instead of being folded to stereo.
+  converted film keeps its 5.1 sound as E-AC-3 on 5.1 speakers and comes as stereo to stereo
+  speakers.
   The results are kept until the graphics card, its driver, the processor or the Player's libmpv
   change; the sound is checked again after each video. Report a problem lists what was found.
 
