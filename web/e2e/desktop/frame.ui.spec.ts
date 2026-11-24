@@ -160,7 +160,7 @@ for (const lang of ["en", "ar"] as const) {
           side: controls === "mac" ? (lang === "ar" ? "right" : "left") : "end",
         });
         const header = page.getByRole("banner");
-        await expect(header).toHaveAttribute("data-tauri-drag-region", "deep");
+        await expect(header).toHaveAttribute("data-tauri-drag-region", "");
         await expect(page.getByTestId("frame-bar")).toHaveCount(0);
         await expect(page).toHaveScreenshot(`frame-header-${controls}-${lang}.png`, BAR);
       });

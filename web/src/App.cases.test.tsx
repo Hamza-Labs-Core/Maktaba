@@ -251,7 +251,22 @@ describe("The desktop app's own window frame (story 13.10)", () => {
     );
     open("/login");
     const bar = await screen.findByTestId("frame-bar");
-    expect(bar).toHaveAttribute("data-tauri-drag-region", "deep");
+    expect(bar).toHaveAttribute("data-tauri-drag-region", "");
+    expect(screen.getByRole("button", { name: "Close" })).toBeInTheDocument();
+  });
+
+  it("keeps the title bar when a page crashes, so the window can still be moved and closed", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {};
+    invoke.mockImplementation(async (cmd: string) =>
+      cmd === "frame_claim"
+        ? { controls: "windows", layout: "", side: "end", maximized: false, snapLayouts: false }
+        : null
+    );
+    crash.keys.add("login.username");
+    open("/login");
+    await screen.findByRole("alert");
+    expect(await screen.findByTestId("frame-bar")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Close" })).toBeInTheDocument();
   });
 

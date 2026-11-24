@@ -973,8 +973,7 @@ cast_receiver:
   - '.github/workflows/_cast-receiver.yml'
   - '.github/workflows/cast-receiver-release.yml'
 
-# The desktop Player for Windows and Linux (Epic 42.4): its project, the portable client
-# and the fonts it shares with the Android apps, the catalog.
+# The desktop app's own window frame (Epic 13 story 13.10), drawn by the web app.
 desktop_frame:
   - *ci
   # story 13.10: the desktop app's window frame, drawn by the web app (the header, its
@@ -990,6 +989,8 @@ desktop_frame:
   - 'web/playwright.desktop.config.ts'
   - '.github/workflows/_desktop-frame.yml'
 
+# The desktop Player for Windows and Linux (Epic 42.4): its project, the portable client
+# and the fonts it shares with the Android apps, the catalog.
 desktop_player:
   - *ci
   - 'apps/desktop-player/**'

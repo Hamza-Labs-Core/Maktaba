@@ -22,6 +22,8 @@ export interface FrameInfo {
   /** "end" (Windows, GNOME: at the end of the page's direction); Mac: "left" or "right" */
   side: "end" | "left" | "right";
   maximized: boolean;
+  /** full screen (big screen): the page draws no frame */
+  fullscreen?: boolean;
   snapLayouts: boolean;
 }
 
@@ -85,6 +87,7 @@ export async function claimFrame(): Promise<FrameInfo | null> {
       layout: p.layout ?? "",
       side: p.side ?? "end",
       maximized: p.maximized ?? false,
+      fullscreen: p.fullscreen ?? false,
       snapLayouts: p.snapLayouts ?? false,
     };
   }

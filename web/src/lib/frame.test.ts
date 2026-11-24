@@ -77,6 +77,7 @@ describe("the shell's frame commands", () => {
       layout: ":close",
       side: "end",
       maximized: false,
+      fullscreen: false,
       snapLayouts: false,
     });
     await frameAction("close");

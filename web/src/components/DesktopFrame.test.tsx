@@ -60,7 +60,7 @@ function shell(info: Partial<FrameInfo>) {
 function Header() {
   const frame = useFrameHost();
   return (
-    <header data-testid="header" data-tauri-drag-region={frame ? "deep" : undefined}>
+    <header data-testid="header" data-tauri-drag-region={frame ? "" : undefined}>
       {frame && <FrameStart />}
       <span>Maktaba</span>
       {frame && <WindowControls />}
@@ -96,7 +96,7 @@ describe("DesktopFrame", () => {
     shell({ controls: "windows" });
     renderFrame();
     const bar = await screen.findByTestId("frame-bar");
-    expect(bar).toHaveAttribute("data-tauri-drag-region", "deep");
+    expect(bar).toHaveAttribute("data-tauri-drag-region", "");
     expect(within(bar).getByRole("button", { name: "Minimize" })).toBeInTheDocument();
     expect(within(bar).getByRole("button", { name: "Maximize" })).toBeInTheDocument();
     expect(within(bar).getByRole("button", { name: "Close" })).toBeInTheDocument();
@@ -107,7 +107,7 @@ describe("DesktopFrame", () => {
     shell({ controls: "windows", maximized: true });
     renderFrame(<Header />);
     const header = await screen.findByTestId("header");
-    await waitFor(() => expect(header).toHaveAttribute("data-tauri-drag-region", "deep"));
+    await waitFor(() => expect(header).toHaveAttribute("data-tauri-drag-region", ""));
     expect(screen.queryByTestId("frame-bar")).toBeNull();
     expect(within(header).getByRole("button", { name: "Restore down" })).toBeInTheDocument();
     expect(within(header).getByRole("button", { name: "Menu" })).toBeInTheDocument();
@@ -186,6 +186,42 @@ describe("DesktopFrame", () => {
     await userEvent.keyboard("{Enter}");
     expect(invoke).toHaveBeenCalledWith("frame_menu", { id: "big-screen-start" });
     expect(screen.queryByRole("menu")).toBeNull();
+  });
+
+  it("names each group of the menu by its menu's title, for a screen reader", async () => {
+    shell({ controls: "windows" });
+    renderFrame();
+    await userEvent.click(await screen.findByRole("button", { name: "Menu" }));
+    const menu = await screen.findByRole("menu");
+    expect(within(menu).getByRole("group", { name: "View" })).toContainElement(
+      within(menu).getByRole("menuitemcheckbox", { name: /Start in Big Screen/ })
+    );
+  });
+
+  it("never drags the window from inside the menu, and closes it on a press outside", async () => {
+    shell({ controls: "windows" });
+    renderFrame();
+    await userEvent.click(await screen.findByRole("button", { name: "Menu" }));
+    const menu = await screen.findByRole("menu");
+    // only the bar itself drags ("": that element only, Tauri's drag.js): nothing around the
+    // menu drags its subtree, and nothing in it is a drag region
+    expect(menu.closest('[data-tauri-drag-region="deep"]')).toBeNull();
+    expect(menu.querySelector("[data-tauri-drag-region]")).toBeNull();
+    // a press outside closes it even when Tauri's drag region stops the document's mousedown
+    act(() => {
+      // jsdom has no PointerEvent: a plain event of the type is what the listener reads
+      document.body.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    });
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+
+  it("draws no bar when the window is already full screen (Start in Big Screen)", async () => {
+    shell({ controls: "windows", fullscreen: true });
+    renderFrame();
+    await act(async () => {});
+    await act(async () => {});
+    expect(screen.queryByTestId("frame-bar")).toBeNull();
+    expect(document.documentElement.dataset.frame).toBeUndefined();
   });
 
   it("closes the menu with Escape, focus back on its button", async () => {

@@ -187,7 +187,7 @@ pub fn open_main(
     let window = WebviewWindowBuilder::from_config(app, &config)?
         .on_page_load(|w, load| {
             if starts_claim_wait(load.event()) {
-                crate::frame::on_page_load(&w);
+                crate::frame::on_page_load(&w, load.url());
             }
         })
         .build()?;

@@ -76,6 +76,8 @@ pub struct FrameInfo {
     /// page's direction), or on the Mac "left"/"right" (where AppKit draws them)
     pub side: &'static str,
     pub maximized: bool,
+    /// full screen (big screen, Start in Big Screen): the page draws no frame
+    pub fullscreen: bool,
     /// Windows 11's Snap Layouts can be asked for (Win+Z)
     pub snap_layouts: bool,
 }
@@ -86,14 +88,20 @@ pub fn frame_claim<R: Runtime>(window: WebviewWindow<R>) -> Result<FrameInfo, St
     if window.label() != webcache::MAIN {
         return Err("only the main window has Maktaba's frame".into());
     }
-    let app = window.app_handle();
-    app.state::<Frame>().claim();
-    take_frame(&window).map_err(|e| e.to_string())?;
+    if let Err(e) = take_frame(&window) {
+        // half taken (decorations off, the shadow refused): the system's frame back, and the
+        // page draws none
+        let _ = release(&window);
+        return Err(e.to_string());
+    }
+    // recorded once the frame is the page's: a failed claim leaves the load unclaimed
+    window.app_handle().state::<Frame>().claim();
     Ok(FrameInfo {
         controls: controls(),
         layout: decoration_layout(),
         side: controls_side(),
         maximized: window.is_maximized().unwrap_or(false),
+        fullscreen: window.is_fullscreen().unwrap_or(false),
         snap_layouts: snap_layouts_available(),
     })
 }
@@ -112,9 +120,12 @@ pub fn frame_action<R: Runtime>(window: WebviewWindow<R>, action: String) -> Res
         }
         // the window's CloseRequested decides (to the tray, or quit: lib.rs)
         "close" => window.close(),
+        // only for this window when it is the foreground one: Win+Z opens the layouts of
+        // whichever window is, and a hover must not take the focus from another app
         "snap" => {
-            let _ = window.set_focus();
-            show_snap_layouts();
+            if is_foreground(&window) {
+                show_snap_layouts();
+            }
             Ok(())
         }
         other => return Err(format!("no frame action {other}")),
@@ -154,6 +165,11 @@ pub fn frame_menu_items<R: Runtime>(app: AppHandle<R>) -> Vec<MenuGroup> {
     if let Some(menu) = app.menu() {
         for kind in menu.items().unwrap_or_default() {
             if let MenuItemKind::Submenu(sub) = kind {
+                // the shell's own server actions (Linux without a tray): never a page's to
+                // choose; that menu bar stays shown instead (take_frame)
+                if sub.id().as_ref() == crate::tray::WINDOW_MENU_ID {
+                    continue;
+                }
                 let mut items = Vec::new();
                 for item in sub.items().unwrap_or_default() {
                     if let Some(e) = entry(&item) {
@@ -198,8 +214,31 @@ pub fn frame_menu(app: AppHandle, id: String) -> Result<(), String> {
     if !known {
         return Err(format!("no enabled menu item {id}"));
     }
+    // a check item toggles first, as a click on the menu bar does (menu_event's handlers,
+    // bigscreen::on_start_menu, read the new state)
+    if let Some(MenuItemKind::Check(c)) = find_item(&app, &id) {
+        let now = c.is_checked().unwrap_or(false);
+        c.set_checked(!now).map_err(|e| e.to_string())?;
+    }
     crate::menu_event(&app, &id);
     Ok(())
+}
+
+/// The menu bar's item `id`, in whichever menu it is.
+fn find_item<R: Runtime>(app: &AppHandle<R>, id: &str) -> Option<MenuItemKind<R>> {
+    fn walk<R: Runtime>(items: Vec<MenuItemKind<R>>, id: &str) -> Option<MenuItemKind<R>> {
+        for item in items {
+            if let MenuItemKind::Submenu(sub) = &item {
+                if let Some(found) = walk(sub.items().unwrap_or_default(), id) {
+                    return Some(found);
+                }
+            } else if item.id().as_ref() == id {
+                return Some(item);
+            }
+        }
+        None
+    }
+    walk(app.menu()?.items().ok()?, id)
 }
 
 fn entry<R: Runtime>(item: &MenuItemKind<R>) -> Option<MenuEntry> {
@@ -251,17 +290,45 @@ pub fn tidy(items: Vec<MenuEntry>) -> Vec<MenuEntry> {
 
 /// A page began loading in the main window: unless it claims the frame within CLAIM_WAIT,
 /// the system's frame comes back.
-pub fn on_page_load<R: Runtime>(window: &WebviewWindow<R>) {
+pub fn on_page_load<R: Runtime>(window: &WebviewWindow<R>, url: &tauri::Url) {
     let gen = window.app_handle().state::<Frame>().load_started();
+    if !may_claim(url) {
+        // another home's pages (client mode) cannot call the shell: the system's frame now
+        give_back(window, gen);
+        return;
+    }
     let window = window.clone();
     std::thread::spawn(move || {
         std::thread::sleep(CLAIM_WAIT);
-        if window.app_handle().state::<Frame>().unclaimed(gen) {
-            if let Err(e) = release(&window) {
+        give_back(&window, gen);
+    });
+}
+
+/// Unless generation `gen`'s page claimed the frame, the system's comes back. The check and
+/// the release run together on the main thread, where `frame_claim` runs: a claim cannot land
+/// between them.
+fn give_back<R: Runtime>(window: &WebviewWindow<R>, gen: u64) {
+    let w = window.clone();
+    let _ = window.run_on_main_thread(move || {
+        if w.app_handle().state::<Frame>().unclaimed(gen) {
+            if let Err(e) = release(&w) {
                 crate::applog::warn("the window's frame could not be given back", e);
             }
         }
     });
+}
+
+/// Pages that can call the shell, and so claim the frame: the bundled pages and this machine's
+/// own server's (capabilities/local-server.json). Another home's, in client mode, cannot.
+pub fn may_claim(url: &tauri::Url) -> bool {
+    match url.scheme() {
+        "tauri" => true,
+        "http" | "https" => matches!(
+            url.host_str(),
+            Some("tauri.localhost" | "127.0.0.1" | "localhost")
+        ),
+        _ => false,
+    }
 }
 
 /// The window was resized: the page's maximize button follows.
@@ -294,7 +361,16 @@ fn release<R: Runtime>(w: &WebviewWindow<R>) -> tauri::Result<()> {
 #[cfg(target_os = "linux")]
 fn take_frame<R: Runtime>(w: &WebviewWindow<R>) -> tauri::Result<()> {
     w.set_decorations(false)?;
-    let _ = w.hide_menu();
+    // with no tray, the menu bar's Server menu is the way to the server's actions, which the
+    // title bar's menu leaves out: that menu bar stays
+    let server_menu = w
+        .app_handle()
+        .menu()
+        .and_then(|m| m.get(crate::tray::WINDOW_MENU_ID))
+        .is_some();
+    if !server_menu {
+        let _ = w.hide_menu();
+    }
     Ok(())
 }
 
@@ -397,6 +473,20 @@ fn windows_build() -> Option<u32> {
         .trim()
         .parse()
         .ok()
+}
+
+/// Whether `w` is the foreground window.
+#[cfg(windows)]
+fn is_foreground<R: Runtime>(w: &WebviewWindow<R>) -> bool {
+    use windows_sys::Win32::UI::WindowsAndMessaging::GetForegroundWindow;
+    let Ok(hwnd) = w.hwnd() else { return false };
+    // SAFETY: takes no arguments and returns a handle, or null.
+    let fg = unsafe { GetForegroundWindow() };
+    !fg.is_null() && fg as isize == hwnd.0 as isize
+}
+#[cfg(not(windows))]
+fn is_foreground<R: Runtime>(_w: &WebviewWindow<R>) -> bool {
+    false
 }
 
 /// Windows 11's Snap Layouts for the focused window: Win+Z.
@@ -527,12 +617,26 @@ mod tests {
     }
 
     #[test]
+    fn only_the_bundled_pages_and_this_machine_s_server_may_claim_the_frame() {
+        let ok = |u: &str| may_claim(&u.parse().unwrap());
+        assert!(ok("tauri://localhost/"));
+        assert!(ok("http://tauri.localhost/setup"));
+        assert!(ok("http://127.0.0.1:8080/"));
+        assert!(ok("http://localhost:5173/"));
+        // another home, in client mode: the system's frame at once
+        assert!(!ok("https://home.example.org/"));
+        assert!(!ok("http://192.168.1.20:8080/"));
+        assert!(!ok("about:blank"));
+    }
+
+    #[test]
     fn the_info_is_camel_case() {
         let info = FrameInfo {
             controls: "windows",
             layout: String::new(),
             side: "end",
             maximized: false,
+            fullscreen: false,
             snap_layouts: true,
         };
         let v = serde_json::to_value(&info).unwrap();

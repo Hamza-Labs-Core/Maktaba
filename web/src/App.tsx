@@ -106,14 +106,15 @@ function PublicPages() {
 export function App() {
   return (
     <I18nProvider>
+      {/* Epic 13 story 13.10: the desktop app's own window frame (a title bar for the pages
+          without the app's header; the header draws it otherwise). Outside the boundary: a
+          crashed page keeps a window that can be moved and closed. */}
+      <DesktopFrame />
       {/* the last net: a crash outside any page (the shell, a provider) shows
           an error with Try again instead of a blank window */}
       <RouteErrorBoundary resetKey="app">
         <ThemeSync>
           <ToastProvider>
-            {/* Epic 13 story 13.10: the desktop app's own window frame (a title bar for the
-                pages without the app's header; the header draws it otherwise) */}
-            <DesktopFrame />
             {/* Epic 36: Maktaba.app's first-run setup / server starting screens */}
             <DesktopGate>
               {/* Epic 35: a paused node shows the paused page instead of the app */}

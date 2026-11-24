@@ -73,10 +73,16 @@ export function DesktopFrame() {
     let stop = () => {};
     void claimFrame().then((i) => {
       if (!live || !i) return;
-      update({ info: i, state: { maximized: i.maximized } });
-      void onFrameState((s) => update({ state: s })).then((f) => {
-        if (live) stop = f;
-        else f();
+      update({ info: i, state: { maximized: i.maximized, fullscreen: i.fullscreen } });
+      void onFrameState((s) => update({ state: s })).then(async (f) => {
+        if (!live) return f();
+        stop = f;
+        // a change between the claim and the listener (a window made full screen at start,
+        // Start in Big Screen) is read again now; claiming twice is harmless
+        const again = await claimFrame();
+        if (live && again) {
+          update({ state: { maximized: again.maximized, fullscreen: again.fullscreen } });
+        }
       });
     });
     return () => {
@@ -143,7 +149,7 @@ export function WindowControls() {
 export function FrameBar() {
   const { t } = useI18n();
   return (
-    <div className="mkt-frame-bar" data-tauri-drag-region="deep" data-testid="frame-bar">
+    <div className="mkt-frame-bar" data-tauri-drag-region="" data-testid="frame-bar">
       <FrameStart />
       <span className="mkt-frame-bar__title">
         <img src="/icons/favicon-32.png" alt="" width={16} height={16} />
@@ -256,7 +262,12 @@ function GtkButtons({ buttons }: { buttons: GtkButton[] }) {
         >
           <svg viewBox="0 0 10 10" aria-hidden="true">
             {b === "minimize" && <path d="M2 6.5h6" />}
-            {b === "maximize" && <rect x="2" y="2" width="6" height="6" rx="1" />}
+            {b === "maximize" &&
+              (state.maximized ? (
+                <path d="M3.5 3.5V2.5h4v4h-1M2.5 3.5h4v4h-4z" />
+              ) : (
+                <rect x="2" y="2" width="6" height="6" rx="1" />
+              ))}
             {b === "close" && <path d="M2 2l6 6M8 2l-6 6" />}
           </svg>
         </button>
@@ -269,25 +280,9 @@ function GtkButtons({ buttons }: { buttons: GtkButton[] }) {
 // The title bar's menu: the menu bar's items (Windows and Linux)
 // ---------------------------------------------------------------------------
 
-type Row =
-  | { kind: "head"; key: string; title: string }
-  | { kind: "sep"; key: string }
-  | { kind: "item"; key: string; item: FrameMenuEntry };
-
-function rows(groups: FrameMenuGroup[]): Row[] {
-  const out: Row[] = [];
-  groups.forEach((g, gi) => {
-    if (gi > 0) out.push({ kind: "sep", key: `g${gi}` });
-    if (g.title) out.push({ kind: "head", key: `h${gi}`, title: g.title });
-    g.items.forEach((item, ii) => {
-      out.push(
-        item.separator
-          ? { kind: "sep", key: `s${gi}-${ii}` }
-          : { kind: "item", key: `i${gi}-${ii}-${item.id}`, item }
-      );
-    });
-  });
-  return out;
+/** The menu's items in order (separators and headings are not items): the keys' list. */
+function itemsOf(groups: FrameMenuGroup[]): FrameMenuEntry[] {
+  return groups.flatMap((g) => g.items.filter((i) => !i.separator));
 }
 
 export function FrameMenuButton() {
@@ -300,15 +295,15 @@ export function FrameMenuButton() {
   const listRef = useRef<HTMLDivElement>(null);
   const itemRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
-  const list = useMemo(() => rows(groups), [groups]);
+  const items = useMemo(() => itemsOf(groups), [groups]);
   const enabled = useMemo(
-    () => list.map((r, i) => (r.kind === "item" && r.item.enabled ? i : -1)).filter((i) => i >= 0),
-    [list]
+    () => items.map((it, i) => (it.enabled ? i : -1)).filter((i) => i >= 0),
+    [items]
   );
 
   useEffect(() => {
     if (!open) return;
-    const onDown = (e: MouseEvent) => {
+    const onDown = (e: PointerEvent) => {
       if (
         !listRef.current?.contains(e.target as Node) &&
         !triggerRef.current?.contains(e.target as Node)
@@ -316,8 +311,15 @@ export function FrameMenuButton() {
         setOpen(false);
       }
     };
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
+    const onBlur = () => setOpen(false);
+    // the window's capture phase: Tauri's drag region stops a mousedown on the document before
+    // a document listener hears it, and a drag of the window must close the menu too
+    window.addEventListener("pointerdown", onDown, true);
+    window.addEventListener("blur", onBlur);
+    return () => {
+      window.removeEventListener("pointerdown", onDown, true);
+      window.removeEventListener("blur", onBlur);
+    };
   }, [open]);
 
   useEffect(() => {
@@ -328,8 +330,7 @@ export function FrameMenuButton() {
     // the items as they are now: a check, an item the server's state turned off
     const g = await frameMenuItems();
     setGroups(g);
-    const first = rows(g).findIndex((r) => r.kind === "item" && r.item.enabled);
-    setActive(first);
+    setActive(itemsOf(g).findIndex((it) => it.enabled));
     setOpen(true);
   }
 
@@ -398,42 +399,61 @@ export function FrameMenuButton() {
           className="mkt-frame-menu__list"
           onKeyDown={onKeyDown}
         >
-          {list.map((r, i) => {
-            if (r.kind === "sep")
-              return <div key={r.key} role="separator" className="mkt-frame-menu__sep" />;
-            if (r.kind === "head")
+          {(() => {
+            let n = -1;
+            return groups.map((g, gi) => {
+              const headId = `${menuId}-g${gi}`;
               return (
-                <div key={r.key} role="presentation" className="mkt-frame-menu__head">
-                  {r.title}
+                <div key={`g${gi}`} className="mkt-frame-menu__group">
+                  {gi > 0 && <div role="separator" className="mkt-frame-menu__sep" />}
+                  <div
+                    role="group"
+                    aria-labelledby={g.title ? headId : undefined}
+                    aria-label={g.title ? undefined : t("frame.menu")}
+                  >
+                    {g.title && (
+                      <div id={headId} className="mkt-frame-menu__head">
+                        {g.title}
+                      </div>
+                    )}
+                    {g.items.map((item, ii) => {
+                      if (item.separator)
+                        return (
+                          <div key={`s${ii}`} role="separator" className="mkt-frame-menu__sep" />
+                        );
+                      n += 1;
+                      const i = n;
+                      const check = item.checked !== undefined;
+                      return (
+                        <button
+                          key={`i${ii}-${item.id}`}
+                          ref={(el) => {
+                            itemRefs.current[i] = el;
+                          }}
+                          type="button"
+                          role={check ? "menuitemcheckbox" : "menuitem"}
+                          aria-checked={check ? item.checked : undefined}
+                          aria-disabled={!item.enabled || undefined}
+                          disabled={!item.enabled}
+                          tabIndex={i === active ? 0 : -1}
+                          className="mkt-frame-menu__item"
+                          onClick={() => {
+                            close();
+                            void chooseFrameMenu(item.id);
+                          }}
+                        >
+                          <span className="mkt-frame-menu__check" aria-hidden="true">
+                            {item.checked ? "✓" : ""}
+                          </span>
+                          {item.label}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               );
-            const { item } = r;
-            const check = item.checked !== undefined;
-            return (
-              <button
-                key={r.key}
-                ref={(el) => {
-                  itemRefs.current[i] = el;
-                }}
-                type="button"
-                role={check ? "menuitemcheckbox" : "menuitem"}
-                aria-checked={check ? item.checked : undefined}
-                aria-disabled={!item.enabled || undefined}
-                disabled={!item.enabled}
-                tabIndex={i === active ? 0 : -1}
-                className="mkt-frame-menu__item"
-                onClick={() => {
-                  close();
-                  void chooseFrameMenu(item.id);
-                }}
-              >
-                <span className="mkt-frame-menu__check" aria-hidden="true">
-                  {item.checked ? "✓" : ""}
-                </span>
-                {item.label}
-              </button>
-            );
-          })}
+            });
+          })()}
         </div>
       )}
     </div>

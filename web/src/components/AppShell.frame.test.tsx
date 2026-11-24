@@ -60,7 +60,7 @@ describe("AppShell as the desktop window's title bar", () => {
     );
     renderShell();
     const header = await screen.findByRole("banner");
-    await waitFor(() => expect(header).toHaveAttribute("data-tauri-drag-region", "deep"));
+    await waitFor(() => expect(header).toHaveAttribute("data-tauri-drag-region", ""));
     expect(within(header).getByRole("button", { name: "Menu" })).toBeInTheDocument();
     expect(within(header).getByRole("button", { name: "Close" })).toBeInTheDocument();
     // one bar: no slim bar above the header

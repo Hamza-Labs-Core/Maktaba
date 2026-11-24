@@ -250,3 +250,9 @@
     color: HighlightText;
   }
 }
+
+/* the bar is not selectable text; what opens from it (the bell's panel) is */
+:root[data-frame] .mkt-shell__header--frame .mkt-bell__panel {
+  user-select: text;
+  -webkit-user-select: text;
+}

@@ -284,11 +284,15 @@ export function AppShell() {
       <header
         className={frame ? "mkt-shell__header mkt-shell__header--frame" : "mkt-shell__header"}
         role="banner"
-        // story 13.10: in the desktop app the header is the window's title bar
-        data-tauri-drag-region={frame ? "deep" : undefined}
+        // story 13.10: in the desktop app the header is the window's title bar. Only the bar
+        // itself and the name drag the window ("" is Tauri's "this element only"): a popover
+        // in the header (the bell's, the menu) never does.
+        data-tauri-drag-region={frame ? "" : undefined}
       >
         {frame && <FrameStart />}
-        <div className="mkt-shell__brand">{t("app.title")}</div>
+        <div className="mkt-shell__brand" data-tauri-drag-region={frame ? "" : undefined}>
+          {t("app.title")}
+        </div>
         <form className="mkt-shell__search" role="search" onSubmit={onSearch}>
           <input
             ref={searchRef}
