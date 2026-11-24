@@ -227,6 +227,11 @@ def test_a_cut_session_is_picked_up_where_it_ended(tmp_path: Path, action: str) 
     assert lines == [f"line {n}" for n in range(1, 11)], "a line was lost or repeated"
 
 
+def test_a_killed_session_is_picked_up_too(tmp_path: Path) -> None:
+    p = _follow(tmp_path, "rollback", 'if [ "$3" = 0 ]; then echo one; kill -9 $$; fi\necho two\n')
+    assert p.returncode == 0 and p.stdout.splitlines().count("one") == 1 and "two" in p.stdout, p.stdout + p.stderr
+
+
 def test_the_units_own_failure_is_the_steps_and_is_not_tried_again(tmp_path: Path) -> None:
     p = _follow(tmp_path, "rollback", 'echo "asked $*" >>"$T/asked"; echo HELD; exit 3\n')
     assert p.returncode == 3 and "HELD" in p.stdout

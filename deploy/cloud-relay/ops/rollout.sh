@@ -518,8 +518,8 @@ cmd_run_job() {
 	local dir="$1" cmd="$2" id="$3" rc=0
 	touch "$dir/started"
 	"$SELF" "$cmd" "$id" >> "$dir/log" 2>&1 </dev/null || rc=$?
-	# 255 is what ssh itself ends with
-	[ "$rc" -lt 250 ] || rc=1
+	# above 128 is what a cut or killed ssh ends with (deploy.sh)
+	[ "$rc" -le 125 ] || rc=1
 	printf '%s\n' "$rc" > "$dir/rc.new"
 	mv "$dir/rc.new" "$dir/rc"
 }

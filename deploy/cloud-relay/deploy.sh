@@ -140,8 +140,9 @@ while :; do
 DEPLOY_DIR=$(printf '%q' "$DEPLOY_DIR") /usr/local/sbin/maktaba-rollout job $(printf '%q' "$DEPLOY_ID") $ACTION $from" </dev/null | tee "$ROUND" || rc="${PIPESTATUS[0]}"
   cat "$ROUND" >>"$OUT"
   from=$((from + $(wc -l <"$ROUND")))
-  # 255 is ssh's own: the session was cut or not made, the unit goes on
-  [ "$rc" = 255 ] || break
+  # 255 is ssh's own (the session was cut or not made), above 128 is an ssh that was killed: the
+  # unit goes on. Its own codes are below (rollout.sh run-job)
+  [ "$rc" -gt 128 ] || break
   if [ "$SECONDS" -ge "$end" ]; then
     err "the node could not be reached to its end: $ACTION goes on there, and the node comes to a known state by itself (ops/rollout.sh, \"A lost runner\")"
     break

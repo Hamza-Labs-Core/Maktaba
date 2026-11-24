@@ -832,6 +832,13 @@ def said(log: Path, text: str) -> Callable[[], bool]:
     return lambda: text in log.read_text(errors="replace")
 
 
+def cut_it(at_the_node: bool) -> None:
+    """The session ended under it: its client killed, or the node's end of it (a dropped network)."""
+    pattern = "sshd.*root@notty" if at_the_node else "^ssh .*maktaba-rollout job"
+    code, _ = rc(f"pkill -9 -f '{pattern}'")
+    assert code == 0, f"no session to cut ({pattern})"
+
+
 def cut_session() -> str:
     """The SSH session killed in the middle of apply, then of rollback: the node's unit goes on, and
     deploy.sh picks it up where it was."""
@@ -841,7 +848,7 @@ def cut_session() -> str:
     p = remote("apply", log)
     for text in ("the migrations", "its health"):
         wait_for(text, said(log, text), 120)
-        sh("pkill -9 -f '^ssh .*maktaba-rollout job' || true")
+        cut_it(text in ("its health", "undone by their Down scripts"))
     assert p.wait(300) == 0, log.read_text()[-3000:]
     text = log.read_text()
     assert text.count("the session was cut") >= 2 and text.count("[rollout] the migrations") == 1, text[-3000:]
@@ -849,7 +856,7 @@ def cut_session() -> str:
     p = remote("rollback", log)
     for text in ("restoring the set", "undone by their Down scripts"):
         wait_for(text, said(log, text), 120)
-        sh("pkill -9 -f '^ssh .*maktaba-rollout job' || true")
+        cut_it(text in ("its health", "undone by their Down scripts"))
     assert p.wait(400) == 0, log.read_text()[-3000:]
     assert "serves again" in log.read_text() and "HELD" not in log.read_text()
     not_pending()
