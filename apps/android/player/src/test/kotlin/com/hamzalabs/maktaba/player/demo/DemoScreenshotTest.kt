@@ -282,7 +282,11 @@ class DemoScreenshotTest {
         home.answer("/api/me/videos/$BLOCKED") { MockResponse.Builder().code(404).build() }
         runBlocking { home.home.parental.refresh() }
         open(Route.Video(BLOCKED))
-        compose.settled(home, "the blocked page with Ask a parent") { count("parental-blocked") > 0 && count("parental-ask") > 0 }
+        // Enter parent PIN comes once the PIN holders (the guardians) have loaded: on CI's slower
+        // runner the shot was once taken before it (#1593, run 45401018003)
+        compose.settled(home, "the blocked page with Ask a parent and Enter parent PIN") {
+            count("parental-blocked") > 0 && count("parental-ask") > 0 && count("parental-pin") > 0
+        }
         shoot("ask-a-parent")
     }
 

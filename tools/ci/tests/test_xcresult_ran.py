@@ -17,6 +17,8 @@ Every UI job in .github/workflows/_apple-apps.yml writes its selection and runs 
 
 from __future__ import annotations
 
+import re
+
 import json
 import subprocess
 import sys
@@ -189,12 +191,22 @@ def test_every_ui_job_writes_its_selection_and_checks_its_bundle(job: str) -> No
     run_script: str = steps[runs[0]]["run"]
     cmd: str = steps[check]["run"]
     assert "if" not in steps[check], f"{job}: the check runs when the tests passed"
-    bundle = cmd.split('"')[3]
-    selection = cmd.split('"')[5]
-    assert cmd.startswith("python3 tools/ci/xcresult_ran.py ")
-    assert bundle.removesuffix(".xcresult") == selection.removesuffix(".selection")
-    # the run writes that selection from the very arguments it hands xcodebuild
-    written = selection.replace("${{ matrix.device }}-${{ matrix.shard }}", "$device-$shard")
-    assert f'printf \'%s\\n\' "${{only[@]}}" > "{written}"' in run_script
-    assert '"${only[@]}"' in run_script.split("xcodebuild test", 1)[1]
-    assert bundle.replace("${{ matrix.device }}-${{ matrix.shard }}", "$device-$shard") in run_script
+    calls = re.findall(r'python3 tools/ci/xcresult_ran\.py "[^"]*" "([^"]+)" "([^"]+)"', cmd)
+    assert calls, f"{job}: the check calls xcresult_ran.py"
+    for bundle, selection in calls:
+        assert bundle.removesuffix(".xcresult") == selection.removesuffix(".selection")
+        if '"$RESULTS/$name.selection"' in run_script:
+            # the Mac job runs xcodebuild twice through one helper (its tests on the runner's
+            # display, then the product shots on a 2x one): `run NAME SELECTION...` writes
+            # NAME.selection from the arguments it hands xcodebuild, and NAME.xcresult
+            name = selection.rsplit("/", 1)[1].removesuffix(".selection")
+            assert re.search(rf"^\s*run {re.escape(name)} ", run_script, re.M), f"{job}: no run of {name}"
+            assert 'printf \'%s\\n\' "$@" > "$RESULTS/$name.selection"' in run_script
+            assert '-resultBundlePath "$RESULTS/$name.xcresult" "$@"' in run_script
+            continue
+        assert cmd.startswith("python3 tools/ci/xcresult_ran.py ")
+        # the run writes that selection from the very arguments it hands xcodebuild
+        written = selection.replace("${{ matrix.device }}-${{ matrix.shard }}", "$device-$shard")
+        assert f'printf \'%s\\n\' "${{only[@]}}" > "{written}"' in run_script
+        assert '"${only[@]}"' in run_script.split("xcodebuild test", 1)[1]
+        assert bundle.replace("${{ matrix.device }}-${{ matrix.shard }}", "$device-$shard") in run_script
