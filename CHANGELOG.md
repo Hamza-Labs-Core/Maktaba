@@ -3812,6 +3812,10 @@ build fails when the two differ.
   the Caminandes llama films. Every title is public domain or Creative Commons, credited, and
   no woman or girl appears in any picture. In English and Arabic.
 
+- **maktaba.dev's screenshots show no woman or girl.** The big screen, Roku and web search
+  screenshots on the Apps pages were retaken on test data with men's names only and on the new
+  demo library. In English and Arabic.
+
 ### Fixed
 
 - **A TV held on its old streaming software stays there through schedule and settings

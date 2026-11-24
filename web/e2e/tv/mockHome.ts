@@ -214,7 +214,7 @@ function searchAnswer(body: Record<string, unknown>) {
       ],
       speaker: [
         { value: ar ? "أحمد" : "Ahmad", count: 4 },
-        { value: ar ? "مريم" : "Maryam", count: 2 },
+        { value: ar ? "إبراهيم" : "Ibrahim", count: 2 },
       ],
       year: [
         {

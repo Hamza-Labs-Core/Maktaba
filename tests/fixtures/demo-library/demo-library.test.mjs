@@ -117,6 +117,12 @@ test("no title, synopsis or line names or describes a woman or girl", () => {
     ...lib.channels.map((c) => c.name),
   ].flatMap((t) => Object.values(t));
   texts.push(...lib.search.passages.map((p) => p.text.replace(/<\/?mark>/g, "")));
+  const ai = lib.search.ai;
+  texts.push(
+    ...[ai.question, ...ai.sources.map((s) => s.text), ...ai.sentences.map((s) => s.text)].flatMap(
+      (t) => Object.values(t)
+    )
+  );
   for (const text of texts)
     for (const word of text.toLowerCase().split(/[^\p{L}]+/u))
       assert.ok(!FEMALE.has(word), `"${text}": "${word}"`);
