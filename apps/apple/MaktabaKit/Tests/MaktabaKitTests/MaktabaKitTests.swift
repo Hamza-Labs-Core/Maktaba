@@ -109,7 +109,11 @@ import Testing
         #expect(ClientHeader.make(bundleID: "com.hamzalabs.maktaba.tv", version: "") == "tv/dev \(tail)")
         #elseif os(iOS)
         #expect(ClientHeader.make(bundleID: "com.hamzalabs.maktaba.player", version: "1.3.0") == "player/1.3.0 (ios; phone)")
-        #expect(ClientHeader.make(bundleID: "com.hamzalabs.maktaba.remote.tablet", version: "1.0") == "remote/1.0 (ipados; tablet)")
+        // one universal app: the device, not the bundle id, says iPad
+        #expect(ClientHeader.make(bundleID: "com.hamzalabs.maktaba.remote", version: "1.0", pad: true) == "remote/1.0 (ipados; tablet)")
+        #expect(ClientHeader.make(bundleID: "com.hamzalabs.maktaba.player", version: "1.0", pad: true) == "player/1.0 (ipados; tablet)")
+        #expect(ClientHeader.isPad(model: "iPad16,3"))
+        #expect(!ClientHeader.isPad(model: "iPhone17,1"))
         #endif
         #expect(ClientHeader.value.range(of: #"^(player|remote|tv)/\S+ \([a-z]+; [a-z]+\)$"#, options: .regularExpression) != nil)
     }

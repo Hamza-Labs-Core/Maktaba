@@ -1,7 +1,7 @@
-"""testflight.yml uploads the iPhone, iPad, Mac and Apple TV apps, each in its own leg.
+"""testflight.yml uploads the iPhone and iPad, Mac and Apple TV apps, each in its own leg.
 
-Every `v*` tag archives, signs and uploads Maktaba Player (iPhone), Maktaba Player iPad,
-Maktaba Remote (iPhone), Maktaba Remote iPad, Maktaba Player Mac (macOS) and Maktaba TV (tvOS)
+Every `v*` tag archives, signs and uploads Maktaba Player and Maktaba Remote (each one app for
+iPhone and iPad), Maktaba Player Mac (macOS) and Maktaba TV (tvOS)
 to App Store Connect.
 Each is its own matrix leg with fail-fast off, so one app's failed upload (its App Store
 Connect record not made yet, say) leaves the others' alone. Each leg archives for its scheme's
@@ -82,9 +82,7 @@ def test_every_app_is_in_the_matrix_once() -> None:
     assert sorted(schemes) == [
         "Maktaba Player",
         "Maktaba Player Mac",
-        "Maktaba Player iPad",
         "Maktaba Remote",
-        "Maktaba Remote iPad",
         "Maktaba TV",
     ]
 

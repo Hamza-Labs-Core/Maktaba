@@ -26,7 +26,7 @@ import Testing
     }
 
     @Test func thePlayersInfoPlistsDeclareTheAudioMode() throws {
-        for plist in ["Player/Info-iPhone.plist", "Player/Info-iPad.plist"] {
+        for plist in ["Player/Info-iOS.plist"] {
             let data = try Data(contentsOf: appleDir.appendingPathComponent(plist))
             let info = try PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any]
             #expect(BackgroundAudio.isDeclared(in: info), "\(plist): UIBackgroundModes has audio")

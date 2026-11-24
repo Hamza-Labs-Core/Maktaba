@@ -265,10 +265,9 @@ and the home's transcoding lowers it to fit the connection.
 
 | App | Built from | Identity | Notes |
 |---|---|---|---|
-| Player, iPhone (iPhone Duo too) | `apps/apple`, SwiftUI | `com.hamzalabs.maktaba.player` | scheme "Maktaba Player" (started: PR on `feat/apple-native-apps`) |
-| Player, iPad | `apps/apple` | `com.hamzalabs.maktaba.player.tablet` | its own listing |
+| Player, iPhone (iPhone Duo too) and iPad | `apps/apple`, SwiftUI | `com.hamzalabs.maktaba.player` | scheme "Maktaba Player": one universal app and one listing (App Review 4.3(a); the iPad-only `.player.tablet` was retired on 2026-11-24) |
 | Player, Mac (Apple silicon) | `apps/apple` | `com.hamzalabs.maktaba.player.mac` | the desktop player on macOS |
-| Remote, iPhone / iPad | `apps/apple` | `com.hamzalabs.maktaba.remote`, `.remote.tablet` | admin push notifications (failures, health) |
+| Remote, iPhone and iPad | `apps/apple` | `com.hamzalabs.maktaba.remote` | one universal app (the iPad-only `.remote.tablet` was retired on 2026-11-24); admin push notifications (failures, health) |
 | Player and Remote, Android phone / foldable / tablet | Compose | `com.hamzalabs.maktaba.player`; `com.hamzalabs.maktaba.remote` | one Google Play listing each, for every screen (2026-11-01: the `.foldable` / `.tablet` flavours were removed, see `docs/google-play.md`) |
 | Player, Windows / Linux | Compose for Desktop | `com.hamzalabs.maktaba.player` | its own updater feed |
 | Desktop Server | today's Tauri app (Epics 36, 38, 39), web edition `full` | `com.hamzalabs.maktaba` | unchanged |

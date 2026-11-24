@@ -14,6 +14,12 @@ build fails when the two differ.
 
 ### Changed
 
+- **Maktaba Player and Maktaba Remote are each one app for iPhone and iPad.** The iPad no
+  longer has its own Maktaba Player for iPad and Maktaba Remote iPad: the same app from
+  TestFlight (and later the App Store) runs on both, with the iPad's sidebar and wide layouts.
+  An iPad tester installs Maktaba Player or Maktaba Remote and signs in again. Apple's review
+  turns down a second app that is the same app (guideline 4.3(a)).
+
 - **The Windows and Linux Player's own title bar.** The Player's window has Maktaba's dark title
   bar in place of the system's frame and its menu bar: the menu button holds Account, Big screen,
   Language and Help in the Player's language, beside the app's name, Big screen and Help, with
