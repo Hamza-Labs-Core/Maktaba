@@ -91,6 +91,9 @@ export interface UpdatesPlan {
   held: boolean;
   stepping_stone: boolean;
   reason?: string;
+  /** The newest release that failed here (rolled back): older ones are not installed by
+   * themselves, nor newer ones with its migrations (reason held_back when none is left). */
+  held_back_by?: string;
   auto_install: boolean;
   due: boolean;
   next_run_at?: string;
