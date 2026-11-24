@@ -1,3 +1,4 @@
+import AppKit
 import XCTest
 
 /// The Mac Player's product screenshots (story 60.09): the library window (Libraries on the
@@ -121,7 +122,7 @@ final class PlayerMacDemoShotsUITests: XCTestCase {
         // as PlayerMacMenuUITests: `-key value` pairs only, no window restored
         app.launchArguments = ["-NSTreatUnknownArgumentsAsOpen", "NO", "-ApplePersistenceIgnoreState", "YES",
                                "-AppleLanguages", "(\(language))", "-AppleLocale", language == "ar" ? "ar_JO" : "en_US",
-                               "-theme", "dark",
+                               "-theme", "dark", "-maktaba-window-size", "\(Int(Self.window.width))x\(Int(Self.window.height))",
                                "-maktaba-permissions-reset", "-maktaba-permissions-fake", "granted", "-maktaba-session-reset",
                                "-maktaba-section", section] + (open.map { ["-maktaba-open", $0] } ?? []) + extra
         app.launch()
@@ -177,9 +178,22 @@ final class PlayerMacDemoShotsUITests: XCTestCase {
         return condition()
     }
 
-    /// The window as an attachment named `shot-mac-<screen>-<language>`, kept always.
+    /// The window's size in points (the app sizes it: `-maktaba-window-size`): at 2x, the Mac
+    /// App Store's 2880 x 1800.
+    static let window = CGSize(width: 1440, height: 900)
+
+    /// The window as an attachment named `shot-mac-<screen>-<language>`, kept always: 2880 x
+    /// 1800 pixels, the window at 1440 x 900 points on a 2x display (CI's is made by
+    /// tools/apple/hidpi-display.m; the runner's own is 1x), its title bar and toolbar as
+    /// macOS draws them.
     private func shot(_ screen: String) {
-        let a = XCTAttachment(screenshot: app.windows.firstMatch.screenshot())
+        let window = app.windows.firstMatch
+        XCTAssertTrue(wait(10) { window.frame.size == Self.window }, "the window at \(Self.window): \(window.frame)")
+        let screenshot = window.screenshot()
+        let pixels = NSBitmapImageRep(data: screenshot.pngRepresentation).map { CGSize(width: $0.pixelsWide, height: $0.pixelsHigh) }
+        XCTAssertEqual(pixels, CGSize(width: 2 * Self.window.width, height: 2 * Self.window.height),
+                       "the shot at 2x (a 2x main display: tools/apple/hidpi-display.m)")
+        let a = XCTAttachment(screenshot: screenshot)
         a.name = "shot-mac-\(screen)-\(language)"
         a.lifetime = .keepAlways
         add(a)

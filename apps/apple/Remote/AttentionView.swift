@@ -65,7 +65,8 @@ struct GroupRow: View {
                 }
             }
             if showsStage {
-                Text(group.stage).font(.caption).foregroundStyle(.secondary)
+                // the stage in the app's words (the home sends its id)
+                Text(verbatim: group.stageTitle()).font(.caption).foregroundStyle(.secondary)
             }
             if let m = group.readableSample {
                 Text(m).font(.caption).foregroundStyle(.secondary).lineLimit(3)
