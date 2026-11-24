@@ -12,7 +12,8 @@ import (
 // migrations before any of its roles start (cmd/maktaba-server's database step), with
 // the library stopped, and says so with MAKTABA_MIGRATE_OFFLINE=1. Their index builds
 // then run plainly, not CONCURRENTLY: a plain CREATE INDEX takes a SHARE lock (writes to
-// that table wait, which nothing of the stopped library makes), waits for no older
+// that table wait: the stopped library makes none, and a joined machine's session that does
+// waits for the build, or is ended when a migration waits on it), waits for no older
 // snapshot (a CONCURRENTLY build waits for every transaction older than it: on 2026-11-14
 // and 2026-11-23 that was a machine's copy, for half an hour, until the lock timeout
 // cancelled it), and rolls back whole instead of leaving an INVALID index. The files keep

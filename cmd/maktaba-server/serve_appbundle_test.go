@@ -2780,6 +2780,26 @@ func TestAppBundleCopiesStayOutUntilTheSchemaIsSettled(t *testing.T) {
 			t.Fatal("a Down script that failed is said to have worked")
 		}
 		h.check(t, "pause migrated|down|resume migrated|pause migrated|down", true)
+		// an update with no backup cannot be held: its record stays migrated, and the copies
+		// stay out all the same, for the minute's look and at the release before's start
+		if ok, err := layout.MarkRecordHeld(apppayload.DatabasePath(h.cfg.StateDir()), "v0.3.0", "watch_timeout"); ok || err != nil {
+			t.Fatalf("held with no backup: %v %v", ok, err)
+		}
+		if schemaSettled(h.cfg.StateDir()) {
+			t.Fatal("a schema part way is settled")
+		}
+		newPayload(t, h.payload, "v0.2.0")
+		if err := h.start(t); !supervisor.Halted(err) {
+			t.Fatalf("the release before: %v", err)
+		}
+		h.check(t, "pause migrated|down|resume migrated|pause migrated|down", true)
+		// the failed release started again runs its migrations to their end: settled
+		newPayload(t, h.payload, "v0.3.0")
+		h.f.downErr = nil
+		if err := h.start(t); err != nil {
+			t.Fatal(err)
+		}
+		h.check(t, "pause migrated|down|resume migrated|pause migrated|down|resume migrated", false)
 	})
 }
 

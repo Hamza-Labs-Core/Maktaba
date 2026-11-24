@@ -1039,6 +1039,9 @@ func (g *migrationGate) run(ctx context.Context, report func(supervisor.Detail))
 	// the machines' copies come back once the step leaves a settled schema
 	defer func() {
 		if g.api != nil && ctx.Err() == nil {
+			if err == nil {
+				clearDownFailed(g.stateDir) // this release's migrations ran to their end
+			}
 			g.resumeCopies()
 		}
 	}()

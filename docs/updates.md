@@ -410,9 +410,12 @@ new release does not confirm in time (15 minutes) or stops three times in ten mi
 - **Index builds are plain while the library is stopped (since 2026-11-24).** The migrations
   run before any role starts, so their `CREATE INDEX CONCURRENTLY` and `DROP INDEX CONCURRENTLY`
   run without `CONCURRENTLY` (`MAKTABA_MIGRATE_OFFLINE=1`, set by the database step and the
-  rehearsal on a copy). A plain build takes a lock that only holds writes back, which the
-  stopped library makes none of, waits for no older transaction, and rolls back whole: it leaves
-  no INVALID index. The migration files keep `CONCURRENTLY`; a function's body or a `DO` block is
+  rehearsal on a copy). A plain build takes a lock that only holds writes to that table
+  back, waits for no older transaction, and rolls back whole: it leaves no INVALID index. The
+  stopped library writes nothing. A joined machine's own sessions (`maktaba_node_*`) are ended
+  when the migrations start and may come back: one that writes to a table while its index is
+  built waits for the build, and one a migration waits on for more than 10 seconds is ended; the
+  machine's workers try again once the home answers. The migration files keep `CONCURRENTLY`; a function's body or a `DO` block is
   left as it is. An INVALID index an earlier try left is dropped, and built again, plainly too.
 - **When the migrations fail part way.** The library stays stopped and the start says what
   happened: `db_kept` (nothing put back: the changes so far are additive and the previous
