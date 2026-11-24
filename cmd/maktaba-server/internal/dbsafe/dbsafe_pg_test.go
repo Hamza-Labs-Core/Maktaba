@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbundle"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgtest"
@@ -689,5 +690,89 @@ func TestDumpSchema(t *testing.T) {
 	_ = os.WriteFile(bad, []byte("not a dump"), 0o600)
 	if _, err := r.t.DumpSchema(ctx, bad); err == nil || !strings.Contains(err.Error(), "dump_unreadable") {
 		t.Fatalf("not a dump: %v", err)
+	}
+}
+
+// A server killed (kill -9) in the middle of a restore commits nothing: psql's input ends
+// before the script's own COMMIT. (With psql's --single-transaction, which commits at the
+// end of its input wherever that is, the part it had read was committed.)
+func TestRestoreKilledPartWayCommitsNothing(t *testing.T) {
+	if os.Getenv("DBSAFE_RESTORE") != "" { // the server that is killed
+		tg := Target{URL: os.Getenv("DBSAFE_RESTORE"), Bin: func(name string) string {
+			return filepath.Join(os.Getenv("DBSAFE_BIN"), name)
+		}}
+		t.Fatalf("the restore ended: %v", tg.Restore(context.Background(), os.Getenv("DBSAFE_DUMP"), os.Stderr))
+	}
+	r := newPGRig(t)
+	if runtime.GOOS == "windows" || !havePSQL(r.t.bin("psql")) {
+		t.Skip("needs psql and a shell")
+	}
+	ctx := context.Background()
+	dump := filepath.Join(r.t.Backups, "pre-1.4.0-to-1.5.0.dump")
+	if err := r.t.Dump(ctx, dump); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.db.Exec(`INSERT INTO app_settings (key, value) VALUES ('after.update', '1')`); err != nil {
+		t.Fatal(err)
+	}
+	// the programs, with a pg_restore that writes the tables and then hangs (until the server
+	// that runs it is gone)
+	bin := filepath.Join(t.TempDir(), "bin")
+	if err := os.MkdirAll(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range []string{"psql", "pg_dump"} {
+		if err := os.Symlink(r.t.bin(n), filepath.Join(bin, n)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	mark := filepath.Join(bin, "wrote")
+	script := "#!/bin/sh\n'" + r.t.bin("pg_restore") + "' --no-owner --no-publications --section=pre-data --file=- \"$DBSAFE_DUMP\"\n" +
+		"echo \"SELECT pg_notify('x', 'y');\"\n: > '" + mark + "'\nwhile kill -0 $PPID; do sleep 1; done\n"
+	if err := os.WriteFile(filepath.Join(bin, "pg_restore"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(os.Args[0], "-test.run=^TestRestoreKilledPartWayCommitsNothing$")
+	cmd.Env = append(os.Environ(), "DBSAFE_RESTORE="+r.t.URL, "DBSAFE_BIN="+bin, "DBSAFE_DUMP="+dump)
+	var out bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &out, &out
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = cmd.Process.Kill() })
+	pgtest.WaitFor(t, "the script's tables written", time.Minute, func() bool {
+		_, err := os.Stat(mark)
+		return err == nil
+	})
+	time.Sleep(2 * time.Second) // psql ran what it read
+	_ = cmd.Process.Kill()
+	_ = cmd.Wait()
+	db, err := r.t.open(ctx, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	pgtest.WaitFor(t, "psql to end", time.Minute, func() bool {
+		var n int
+		return db.QueryRow(`SELECT count(*) FROM pg_stat_activity WHERE application_name = 'psql'`).Scan(&n) == nil && n == 0
+	})
+	var n int
+	if err := db.QueryRow(`SELECT count(*) FROM app_settings WHERE key = 'after.update'`).Scan(&n); err != nil || n != 1 {
+		t.Fatalf("a killed restore changed the database: %d %v\n%s", n, err, out.String())
+	}
+	if !r.has(t, "videos") {
+		t.Fatal("the library's tables are gone")
+	}
+	var log bytes.Buffer
+	if err := r.t.Restore(ctx, dump, &log); err != nil { // whole, it is committed
+		t.Fatalf("%v\n%s", err, log.String())
+	}
+	db2, err := r.t.open(ctx, "") // the restore ended the other sessions
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db2.Close()
+	if err := db2.QueryRow(`SELECT count(*) FROM app_settings WHERE key = 'after.update'`).Scan(&n); err != nil || n != 0 {
+		t.Fatalf("not restored: %d %v", n, err)
 	}
 }
