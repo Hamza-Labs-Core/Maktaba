@@ -19,8 +19,10 @@ prs: [1592, 1597, 1601]
   - it notifies the admins once a day (`update.held_stale`);
   - the Updates page and the Apple and Android remotes say why.
 - **Not held:** an admin's **Update now**, and a home that has never checked (no state).
+- **After its review:** the list is read again before it holds an install (at most every 15 minutes), and holds only while that fails; the limit follows the cadence; a time still to come is not fresh; the hold comes after the other blockers and is told once it lasts.
 
 ## What we learned
+- **Age is not failure.** A rule on how old the last good check is held homes whose checks never failed (asleep, started before the network, one check a day). Try first, hold on the failure.
 - **Holding when the state has no `last_check_ok` would have broken every scheduler test.** They seed releases without any check state. The rule holds only when a check has run and failed, or when the last good read is old.
 - **#1597 counts failures in a row and alerts, but holds nothing.** This PR builds on main's `LastCheckOK` alone, so the two merge in either order.
 
