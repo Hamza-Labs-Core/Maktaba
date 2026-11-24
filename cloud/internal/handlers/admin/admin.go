@@ -415,12 +415,10 @@ func (d *Deps) SetPlan(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusUnprocessableEntity, "bad_plan", "plan must be free, pro or family")
 		return
 	}
-	target, err := d.lookup(ctx, id)
-	if errors.Is(err, stores.ErrUserNotFound) {
+	if _, err := d.lookup(ctx, id); errors.Is(err, stores.ErrUserNotFound) {
 		writeErr(w, http.StatusNotFound, "not_found", "")
 		return
-	}
-	if err != nil {
+	} else if err != nil {
 		d.fail(w, r, "load account", err)
 		return
 	}
@@ -430,12 +428,14 @@ func (d *Deps) SetPlan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer func() { _ = tx.Rollback() }()
-	// the account first, then its subscription and homes (stores.LockAccount)
-	if _, err := stores.LockAccount(ctx, tx, id); err != nil {
-		if errors.Is(err, stores.ErrUserNotFound) {
-			writeErr(w, http.StatusNotFound, "not_found", "")
-			return
-		}
+	// the account first, then its subscription and homes (stores.LockAccount); the plan it had is
+	// read under the lock, so the audit names the one this change replaced
+	_, previous, err := stores.LockAccount(ctx, tx, id)
+	if errors.Is(err, stores.ErrUserNotFound) {
+		writeErr(w, http.StatusNotFound, "not_found", "")
+		return
+	}
+	if err != nil {
 		d.fail(w, r, "lock account", err)
 		return
 	}
@@ -475,7 +475,7 @@ func (d *Deps) SetPlan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := audit.WriteTx(ctx, tx, d.entry(r, audit.ActionAdminSetPlan, id,
-		map[string]any{"reason": reason, "plan": req.Plan, "previous_plan": target.Plan})); err != nil {
+		map[string]any{"reason": reason, "plan": req.Plan, "previous_plan": previous})); err != nil {
 		d.fail(w, r, "audit", err)
 		return
 	}

@@ -96,7 +96,7 @@ func (s *Servers) RedeemClaim(ctx context.Context, code, name, slug, secretHash,
 	}
 	// The home takes the plan its owner has at this moment, and no plan change is under way: one
 	// that began first has committed, one that begins now waits and then updates this home too.
-	status, err := LockAccount(ctx, tx, uid)
+	status, _, err := LockAccount(ctx, tx, uid)
 	if errors.Is(err, ErrUserNotFound) || (err == nil && status != StatusActive) {
 		return Server{}, ErrClaimInvalid
 	}

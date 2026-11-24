@@ -93,19 +93,19 @@ func escapeLike(s string) string {
 	return strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(s)
 }
 
-// LockAccount locks the account's row until tx ends and returns its status. Everything that
+// LockAccount locks the account's row until tx ends and returns its status and plan. Everything that
 // changes what an account's homes get (its plan, its extra streams) and the claim that adds a
 // home to it take this lock first, before any row of subscriptions, server_claims or servers:
 // a claim then copies a plan no change is halfway through, and a change waits for a claim under
 // way and reaches its home. Rows that only refer to the account (sessions, audit) are not
 // blocked (FOR NO KEY UPDATE). What the caller reads after it must be a statement of its own:
 // the lock's statement sees the other tables as they were before it waited.
-func LockAccount(ctx context.Context, tx *sql.Tx, id string) (status string, err error) {
-	err = tx.QueryRowContext(ctx, `SELECT status FROM users WHERE id = $1 FOR NO KEY UPDATE`, id).Scan(&status)
+func LockAccount(ctx context.Context, tx *sql.Tx, id string) (status, plan string, err error) {
+	err = tx.QueryRowContext(ctx, `SELECT status, plan FROM users WHERE id = $1 FOR NO KEY UPDATE`, id).Scan(&status, &plan)
 	if errors.Is(err, sql.ErrNoRows) {
-		return "", ErrUserNotFound
+		return "", "", ErrUserNotFound
 	}
-	return status, err
+	return status, plan, err
 }
 
 // SetStatus suspends or reinstates an account. Suspending records when

@@ -128,7 +128,7 @@ func (d *Deps) applyEvent(ctx context.Context, tx *sql.Tx, provider string, ev b
 		}
 		// the account first, then its subscription and homes (stores.LockAccount): a claim under
 		// way ends first and its home gets this change, or it waits and copies it
-		if _, err := stores.LockAccount(ctx, tx, uid); errors.Is(err, stores.ErrUserNotFound) {
+		if _, _, err := stores.LockAccount(ctx, tx, uid); errors.Is(err, stores.ErrUserNotFound) {
 			return nil, nil // purged since: nothing to apply
 		} else if err != nil {
 			return nil, err
