@@ -491,6 +491,14 @@ var (
 		}
 		return t.SchemaVersion(ctx)
 	}
+	// the slot the database itself recorded before at (goose's own record)
+	schemaVersionAt = func(ctx context.Context, g *migrationGate, at time.Time) (int64, error) {
+		t, err := g.target()
+		if err != nil {
+			return 0, err
+		}
+		return t.SchemaVersionAt(ctx, at)
+	}
 	dropInvalidIndexes = runDropInvalid
 	// how many of the payload's migrations the database lacks (known false: that cannot be
 	// told, and the update dumps as before)
@@ -1072,6 +1080,16 @@ func (g *migrationGate) run(ctx context.Context, report func(supervisor.Detail))
 		// back failed): go on; the dump is still the one from before it all
 		update.From, update.Dump, update.DumpKeptFor = rec.From, rec.Dump, rec.DumpKeptFor
 		update.SchemaBefore = rec.SchemaBefore
+		if update.SchemaBefore == 0 && !rec.At.IsZero() {
+			// begun by a release from before schema_before: the record was saved as the
+			// migrations started, and goose says what the database held then
+			if v, verr := schemaVersionAt(ctx, g, rec.At); verr == nil && v > 0 {
+				update.SchemaBefore = v
+			} else if verr != nil {
+				fmt.Fprintf(g.log, "[serve] level=warn the library database's schema version before the update cannot "+
+					"be read (%v)\n", verr)
+			}
+		}
 	case ran != "" && ran == cur: // the same release: nothing to update
 		update = apppayload.Database{}
 	default:
