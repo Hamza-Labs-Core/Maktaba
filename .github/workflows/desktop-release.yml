@@ -642,16 +642,20 @@ jobs:
             os: windows-latest
             tasks: packageMsi
             jbr: windows-x64
+            mpv: windows-x64
           - label: linux-x86_64
             os: ubuntu-22.04
             tasks: packageDeb packageRpm
             jbr: linux-x64
+            mpv: linux-x64
           - label: linux-aarch64
             os: ubuntu-22.04-arm
             tasks: packageDeb packageRpm
             jbr: linux-aarch64
+            mpv: linux-arm64
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 45
+    # a libmpv build (linux-aarch64 always: main caches only the CI systems) takes up to half an hour
+    timeout-minutes: 90
     env:
       SIGN: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
     defaults:
@@ -712,6 +716,55 @@ jobs:
 
       # the version from the tag (the installers take its numeric core) and the apps' updater
       # key, against which the player checks its updates
+      # Story 13.18: the libmpv the Player carries (apps/desktop-player/libmpv/build.sh, its
+      # pinned LGPL sources), from the cache main's Desktop Player job saved for this system
+      # (read only), else built here; its system libraries are installed for the .deb's
+      # dependencies to be found
+      - name: libmpv's cache key
+        id: mpv-pin
+        run: echo "key=libmpv-${{ matrix.mpv }}-${{ hashFiles('apps/desktop-player/libmpv/**', 'tools/release/fetch-pinned.sh') }}" >>"$GITHUB_OUTPUT"
+      - id: mpv-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: apps/desktop-player/build/libmpv
+          key: ${{ steps.mpv-pin.outputs.key }}
+      - name: libmpv's libraries and build tools (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          set -euo pipefail
+          sudo apt-get -o Acquire::Retries=3 install -y -qq libass9 libva2 libva-drm2 libpulse0 libasound2 \
+            nasm ninja-build pkg-config libass-dev libfreetype-dev libfribidi-dev libharfbuzz-dev libasound2-dev \
+            libpulse-dev libva-dev zlib1g-dev
+          pip3 install --user --quiet 'meson==1.6.1'
+          echo "$HOME/.local/bin" >>"$GITHUB_PATH"
+      - name: MSYS2, for libmpv (Windows)
+        if: runner.os == 'Windows' && steps.mpv-cache.outputs.cache-hit != 'true'
+        uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e # v2.33.0
+        with:
+          msystem: UCRT64
+          update: false
+          install: >-
+            git curl base-devel
+            mingw-w64-ucrt-x86_64-toolchain mingw-w64-ucrt-x86_64-meson mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-nasm mingw-w64-ucrt-x86_64-pkgconf mingw-w64-ucrt-x86_64-libass
+            mingw-w64-ucrt-x86_64-ntldd mingw-w64-ucrt-x86_64-zlib mingw-w64-ucrt-x86_64-python
+      - name: Build libmpv (Linux)
+        if: runner.os == 'Linux' && steps.mpv-cache.outputs.cache-hit != 'true'
+        working-directory: apps/desktop-player
+        run: libmpv/build.sh build/libmpv
+      - name: Build libmpv (Windows)
+        if: runner.os == 'Windows' && steps.mpv-cache.outputs.cache-hit != 'true'
+        working-directory: apps/desktop-player
+        shell: msys2 {0}
+        run: libmpv/build.sh build/libmpv
+      - name: libmpv into the installers
+        working-directory: apps/desktop-player
+        run: |
+          set -euo pipefail
+          mkdir -p "resources/${{ matrix.mpv }}"
+          cp -R build/libmpv/. "resources/${{ matrix.mpv }}/"
+          ls -l "resources/${{ matrix.mpv }}"
+
       - name: Build and check the installers
         working-directory: apps/desktop-player
         env:
@@ -736,6 +789,7 @@ jobs:
             # listed once (grep -q on a pipe ends it early, and tar's write then fails)
             files=$(dpkg-deb -c "$out"/deb/*.deb)
             grep -q '/bin/maktaba-player$' <<<"${files}"
+            grep -q '/lib/app/resources/libmpv\.so\.2$' <<<"${files}"
             grep -q '/lib/runtime/' <<<"${files}"
             info=$(rpm -qip "$out"/rpm/*.rpm)
             grep -q '^Name *: maktaba-player' <<<"${info}"
